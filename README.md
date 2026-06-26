@@ -49,6 +49,7 @@ Docker Compose（3 个容器）：
 
 ## 文档
 
+- [贡献指南](CONTRIBUTING.md) — 开发流程、代码规范、提交规范
 - [PRD Phase 1](docs/PRD-Phase1.md) — 产品需求文档（source of truth）
 - [技术参考](docs/tech-ref/) — 开发团队技术参考
   - [01 模型能力矩阵](docs/tech-ref/01-provider-capability-matrix.md)
