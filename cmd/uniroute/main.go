@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -150,17 +153,33 @@ func main() {
 		}
 
 		if apiKey.AllowedModels != "" && apiKey.AllowedModels != "*" {
+			// Buffer body so we can peek at model and still pass it to relay
+			bodyBytes, err := io.ReadAll(r.Body)
+			if err != nil {
+				http.Error(w, `{"error":{"type":"server_error","message":"Failed to read request body"}}`, http.StatusBadRequest)
+				return
+			}
+			r.Body.Close()
+			r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
 			var req struct {
 				Model string `json:"model"`
 			}
-			allowed := false
-			for _, m := range strings.Split(apiKey.AllowedModels, ",") {
-				if strings.TrimSpace(m) == req.Model {
-					allowed = true
-					break
+			if err := json.Unmarshal(bodyBytes, &req); err == nil && req.Model != "" {
+				allowed := false
+				for _, m := range strings.Split(apiKey.AllowedModels, ",") {
+					if strings.TrimSpace(m) == req.Model {
+						allowed = true
+						break
+					}
+				}
+				if !allowed {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusForbidden)
+					fmt.Fprintf(w, `{"error":{"type":"auth_error.model_not_allowed","message":"Model %s is not allowed for this API key","model":"%s"}}`, req.Model, req.Model)
+					return
 				}
 			}
-			_ = allowed // relay will re-check
 		}
 		relay.HandleChatCompletion(w, r)
 	})
