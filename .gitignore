@@ -39,18 +39,20 @@ frontend/.vite/
 docker-compose.override.yml
 
 # Agent 协作文件（本地使用，不推送）
-AGENT-PROTOCOL.md
 AGENTS.md
-FIX-SIGNAL.md
-VERIFY-RESULT.md
-CHECKLIST.md
-PLAN.md
-CONTEXT_HANDOFF.md
+docs/agent-workflows/
 
-# 讨论和问题跟踪（本地使用，不推送）
-Test discuss/
-issues/
+# 顾问咨询原始反馈（只推送总结）
+docs/consultations/raw/
 
-# 测试和评审文档（本地使用，不推送）
+# 已解决的 issue 归档（本地参考）
+docs/archive/issues/
+
+# 测试文档（已完成，本地保留）
 docs/testing/
+
+# 评审文档（已完成，本地保留）
 docs/reviews/
+
+# 临时文件
+*.bak

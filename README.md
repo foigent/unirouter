@@ -65,7 +65,7 @@ Docker Compose（3 个容器）：
 ## 项目结构
 
 ```
-unirouter/
+UniRouter/
 ├── cmd/uniroute/         # 入口
 │   └── main.go
 ├── internal/             # 内部包
@@ -75,14 +75,18 @@ unirouter/
 │   ├── middleware/        # 中间件（鉴权、限流）
 │   ├── admin/            # 管理后台 API
 │   └── gateway/          # 网关路由
-├── api/                  # OpenAPI spec
-├── web/                  # 前端
-│   ├── console/          # 用户控制台
-│   └── admin/            # 管理后台
+├── frontend/             # 前端源码（React + Semi Design）
+│   └── src/pages/
+├── web/admin/            # 前端构建产物（CDN 静态资源）
 ├── migrations/           # 数据库迁移
-├── scripts/              # 运维脚本
 ├── docs/                 # 文档
+│   ├── PRD-Phase1.md     # 产品需求文档
+│   ├── ops/              # 运维文档
+│   ├── tech-ref/         # 技术参考
+│   ├── issues/           # 待处理问题
+│   └── consultations/    # 顾问咨询记录
 ├── .env.example          # 环境变量模板
+├── Dockerfile            # 后端容器
 ├── docker-compose.yml    # Docker 编排
 ├── go.mod                # Go 模块
 └── README.md
