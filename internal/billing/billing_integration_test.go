@@ -1,0 +1,627 @@
+//go:build integration
+
+package billing
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+	"github.com/uniroute/unirouter/internal/testutil"
+)
+
+// --- helpers ---
+// （helper 逻辑直接内联在各测试中，使用 testutil.SetupTestDB/NewTestOrg/NewTestWallet/NewTestGrant/NewTestModelPrice）
+
+// --- Freeze tests ---
+
+func TestFreeze_Success_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
+	testutil.NewTestWallet(t, pool, orgID, 10000)
+	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
+
+	b := NewBilling(pool, nil)
+	result, err := b.Freeze(context.Background(), FreezeRequest{
+		RequestID:       fmt.Sprintf("freeze-ok-%d", time.Now().UnixNano()),
+		OrgID:           orgID,
+		Model:           "gpt-4o",
+		EstimatedTokens: 1000,
+		SafetyFactor:    1.5,
+		MinFreezeAmount: 10,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Success, "freeze should succeed: %s - %s", result.ErrorCode, result.ErrorDetail)
+	require.GreaterOrEqual(t, result.Amount, 10, "freeze amount should be >= minFreezeAmount")
+
+	// Verify wallet state
+	var balance, frozen int
+	err = pool.QueryRow(context.Background(),
+		`SELECT balance, frozen FROM wallets WHERE org_id = $1`, orgID,
+	).Scan(&balance, &frozen)
+	require.NoError(t, err)
+	require.Equal(t, result.Amount, frozen, "frozen should match freeze amount")
+	require.Equal(t, 10000-result.Amount, balance, "balance should decrease by freeze amount")
+}
+
+func TestFreeze_InsufficientBalance_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
+	testutil.NewTestWallet(t, pool, orgID, 5) // only 5 cents
+	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
+
+	b := NewBilling(pool, nil)
+	result, err := b.Freeze(context.Background(), FreezeRequest{
+		RequestID:       fmt.Sprintf("freeze-insuf-%d", time.Now().UnixNano()),
+		OrgID:           orgID,
+		Model:           "gpt-4o",
+		EstimatedTokens: 10000,
+		SafetyFactor:    1.5,
+		MinFreezeAmount: 10,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.Success, "freeze should fail with insufficient balance")
+	require.Equal(t, "insufficient_balance", result.ErrorCode)
+}
+
+func TestFreeze_Idempotency_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
+	testutil.NewTestWallet(t, pool, orgID, 10000)
+	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
+
+	b := NewBilling(pool, nil)
+	reqID := fmt.Sprintf("freeze-idem-%d", time.Now().UnixNano())
+
+	// First freeze
+	result1, err := b.Freeze(context.Background(), FreezeRequest{
+		RequestID:       reqID,
+		OrgID:           orgID,
+		Model:           "gpt-4o",
+		EstimatedTokens: 1000,
+		SafetyFactor:    1.5,
+		MinFreezeAmount: 10,
+	})
+	require.NoError(t, err)
+	require.True(t, result1.Success)
+
+	// Second freeze with same request_id — should be idempotent
+	result2, err := b.Freeze(context.Background(), FreezeRequest{
+		RequestID:       reqID,
+		OrgID:           orgID,
+		Model:           "gpt-4o",
+		EstimatedTokens: 1000,
+		SafetyFactor:    1.5,
+		MinFreezeAmount: 10,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result2)
+
+	// Verify balance only deducted once
+	var balance int
+	err = pool.QueryRow(context.Background(),
+		`SELECT balance FROM wallets WHERE org_id = $1`, orgID,
+	).Scan(&balance)
+	require.NoError(t, err)
+	require.Equal(t, 10000-result1.Amount, balance, "balance should only be deducted once")
+}
+
+func TestFreeze_MinAmount_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
+	testutil.NewTestWallet(t, pool, orgID, 10000)
+	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
+
+	b := NewBilling(pool, nil)
+	result, err := b.Freeze(context.Background(), FreezeRequest{
+		RequestID:       fmt.Sprintf("freeze-min-%d", time.Now().UnixNano()),
+		OrgID:           orgID,
+		Model:           "gpt-4o",
+		EstimatedTokens: 1, // very small
+		SafetyFactor:    1.0,
+		MinFreezeAmount: 10,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Success)
+	require.GreaterOrEqual(t, result.Amount, 10, "should respect min freeze amount")
+}
+
+// --- Settle tests ---
+
+func TestSettle_Success_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
+	testutil.NewTestWallet(t, pool, orgID, 10000)
+	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
+
+	b := NewBilling(pool, nil)
+	reqID := fmt.Sprintf("settle-ok-%d", time.Now().UnixNano())
+
+	// Freeze first
+	freezeResult, err := b.Freeze(context.Background(), FreezeRequest{
+		RequestID:       reqID,
+		OrgID:           orgID,
+		Model:           "gpt-4o",
+		EstimatedTokens: 1000,
+		SafetyFactor:    1.5,
+		MinFreezeAmount: 10,
+	})
+	require.NoError(t, err)
+	require.True(t, freezeResult.Success)
+
+	// Settle with actual cost less than frozen
+	settleResult, err := b.Settle(context.Background(), SettleRequest{
+		RequestID:        reqID,
+		OrgID:            orgID,
+		ActualCost:       freezeResult.Amount - 5,
+		PromptTokens:     500,
+		CompletionTokens: 300,
+		UsageSource:      "upstream",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, settleResult)
+	require.True(t, settleResult.Success, "settle should succeed: %s", settleResult.ErrorCode)
+	require.GreaterOrEqual(t, settleResult.Refund, 0, "refund should be non-negative")
+
+	// Verify frozen is now 0
+	var frozen int
+	err = pool.QueryRow(context.Background(),
+		`SELECT frozen FROM wallets WHERE org_id = $1`, orgID,
+	).Scan(&frozen)
+	require.NoError(t, err)
+	require.Equal(t, 0, frozen, "frozen should be 0 after settle")
+}
+
+func TestSettle_NotFound_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
+
+	b := NewBilling(pool, nil)
+	result, err := b.Settle(context.Background(), SettleRequest{
+		RequestID:  "nonexistent-request-id",
+		OrgID:      orgID,
+		ActualCost: 100,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.Success)
+	require.Equal(t, "not_found", result.ErrorCode)
+}
+
+// --- Cancel tests ---
+
+func TestCancel_Success_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
+	testutil.NewTestWallet(t, pool, orgID, 10000)
+	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
+
+	b := NewBilling(pool, nil)
+	reqID := fmt.Sprintf("cancel-ok-%d", time.Now().UnixNano())
+
+	// Freeze
+	freezeResult, err := b.Freeze(context.Background(), FreezeRequest{
+		RequestID:       reqID,
+		OrgID:           orgID,
+		Model:           "gpt-4o",
+		EstimatedTokens: 1000,
+		SafetyFactor:    1.5,
+		MinFreezeAmount: 10,
+	})
+	require.NoError(t, err)
+	require.True(t, freezeResult.Success)
+
+	// Cancel
+	err = b.Cancel(context.Background(), reqID, orgID)
+	require.NoError(t, err)
+
+	// Verify frozen is 0 and balance restored
+	var balance, frozen int
+	err = pool.QueryRow(context.Background(),
+		`SELECT balance, frozen FROM wallets WHERE org_id = $1`, orgID,
+	).Scan(&balance, &frozen)
+	require.NoError(t, err)
+	require.Equal(t, 0, frozen, "frozen should be 0 after cancel")
+	require.Equal(t, 10000, balance, "balance should be fully restored")
+}
+
+func TestCancel_AlreadyCancelled_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
+	testutil.NewTestWallet(t, pool, orgID, 10000)
+	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
+
+	b := NewBilling(pool, nil)
+	reqID := fmt.Sprintf("cancel-twice-%d", time.Now().UnixNano())
+
+	// Freeze
+	freezeResult, err := b.Freeze(context.Background(), FreezeRequest{
+		RequestID:       reqID,
+		OrgID:           orgID,
+		Model:           "gpt-4o",
+		EstimatedTokens: 1000,
+		SafetyFactor:    1.5,
+		MinFreezeAmount: 10,
+	})
+	require.NoError(t, err)
+	require.True(t, freezeResult.Success)
+
+	// Cancel first time
+	err = b.Cancel(context.Background(), reqID, orgID)
+	require.NoError(t, err)
+
+	// Cancel second time — idempotent, no error expected
+	err = b.Cancel(context.Background(), reqID, orgID)
+	// Cancel is idempotent: canceling an already-cancelled freeze succeeds silently
+	require.NoError(t, err, "cancel should be idempotent")
+}
+
+// --- EstimateFreezeAmount tests ---
+
+func TestEstimateFreezeAmount_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
+
+	b := NewBilling(pool, nil)
+
+	// Normal case
+	amount, err := b.EstimateFreezeAmount(context.Background(), "gpt-4o", 1000, 1.5, 10)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, amount, 10)
+
+	// Small estimate should respect min
+	amount, err = b.EstimateFreezeAmount(context.Background(), "gpt-4o", 1, 1.0, 10)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, amount, 10)
+}
+
+// --- CalculateCost tests ---
+
+func TestCalculateCost_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
+
+	b := NewBilling(pool, nil)
+
+	// cost = (500*2 + 300*10) / 1000 = 4
+	cost, err := b.CalculateCost(context.Background(), "gpt-4o", 500, 300)
+	require.NoError(t, err)
+	require.Equal(t, 4, cost)
+
+	// Very small should be at least 1
+	cost, err = b.CalculateCost(context.Background(), "gpt-4o", 1, 1)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, cost, 1, "minimum cost should be 1 cent")
+}
+
+// --- QueryModelPrice tests ---
+
+func TestQueryModelPrice_Found_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	testutil.NewTestModelPrice(t, pool, "gpt-4o", 5, 15)
+
+	b := NewBilling(pool, nil)
+	inputCost, outputCost, err := b.QueryModelPrice(context.Background(), "gpt-4o")
+	require.NoError(t, err)
+	require.Equal(t, 5, inputCost)
+	require.Equal(t, 15, outputCost)
+}
+
+func TestQueryModelPrice_NotFound_Fallback_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+
+	b := NewBilling(pool, nil)
+	inputCost, outputCost, err := b.QueryModelPrice(context.Background(), "nonexistent-model")
+	require.NoError(t, err)
+	require.Equal(t, 2, inputCost, "should fallback to default input cost")
+	require.Equal(t, 10, outputCost, "should fallback to default output cost")
+}
+
+// --- QueryModelPriceForOrg tests ---
+
+func TestQueryModelPriceForOrg_NoMultiplier_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	testutil.NewTestModelPrice(t, pool, "claude-opus", 15, 75)
+
+	b := NewBilling(pool, nil)
+	inputCost, outputCost, err := b.QueryModelPriceForOrg(context.Background(), 99999, "claude-opus")
+	require.NoError(t, err)
+	require.Equal(t, 15, inputCost, "should return base price when no org multiplier")
+	require.Equal(t, 75, outputCost)
+}
+
+func TestQueryModelPriceForOrg_WithMultiplier_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
+	testutil.NewTestModelPrice(t, pool, "org-model-test", 10, 50)
+
+	// Set org-level multiplier
+	_, err := pool.Exec(context.Background(),
+		`INSERT INTO org_model_prices (org_id, model_name, multiplier) VALUES ($1, $2, $3)
+		 ON CONFLICT (org_id, model_name) DO UPDATE SET multiplier = $3`,
+		orgID, "org-model-test", 2.0)
+	require.NoError(t, err)
+
+	b := NewBilling(pool, nil)
+	inputCost, outputCost, err := b.QueryModelPriceForOrg(context.Background(), orgID, "org-model-test")
+	require.NoError(t, err)
+	require.Equal(t, 20, inputCost, "10 * 2.0 = 20")
+	require.Equal(t, 100, outputCost, "50 * 2.0 = 100")
+}
+
+func TestQueryModelPriceForOrg_MultiplierOne_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
+	testutil.NewTestModelPrice(t, pool, "mult1-model", 10, 50)
+
+	_, err := pool.Exec(context.Background(),
+		`INSERT INTO org_model_prices (org_id, model_name, multiplier) VALUES ($1, $2, $3)`,
+		orgID, "mult1-model", 1.0)
+	require.NoError(t, err)
+
+	b := NewBilling(pool, nil)
+	inputCost, outputCost, err := b.QueryModelPriceForOrg(context.Background(), orgID, "mult1-model")
+	require.NoError(t, err)
+	require.Equal(t, 10, inputCost, "10 * 1.0 = 10")
+	require.Equal(t, 50, outputCost, "50 * 1.0 = 50")
+}
+
+func TestQueryModelPriceForOrg_FallbackThenMultiplier_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
+	// No model_prices entry → will fallback to default (2, 10)
+
+	_, err := pool.Exec(context.Background(),
+		`INSERT INTO org_model_prices (org_id, model_name, multiplier) VALUES ($1, $2, $3)`,
+		orgID, "fallback-model", 3.0)
+	require.NoError(t, err)
+
+	b := NewBilling(pool, nil)
+	inputCost, outputCost, err := b.QueryModelPriceForOrg(context.Background(), orgID, "fallback-model")
+	require.NoError(t, err)
+	require.Equal(t, 6, inputCost, "2 * 3.0 = 6")
+	require.Equal(t, 30, outputCost, "10 * 3.0 = 30")
+}
+
+// --- CalculateCost: boundary tests ---
+
+func TestCalculateCost_ExactlyOneCent_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	// price: input=2, output=10 cents per 1K
+	// cost = (prompt*2 + completion*10) / 1000
+	// For cost=1: need promptTokens*2 + completionTokens*10 >= 1000
+	// e.g. 500 prompt (=1000 input units) → cost=1
+	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
+
+	b := NewBilling(pool, nil)
+	// 500 prompt tokens * 2 / 1000 = 1.0 → ceil? No, it's int division: 1000/1000 = 1
+	cost, err := b.CalculateCost(context.Background(), "gpt-4o", 500, 0)
+	require.NoError(t, err)
+	require.Equal(t, 1, cost, "500 * 2 / 1000 = 1")
+}
+
+func TestCalculateCost_SubCentRoundsUp_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
+
+	b := NewBilling(pool, nil)
+	// 1 prompt token * 2 / 1000 = 0.002 → int(0) → min 1
+	cost, err := b.CalculateCost(context.Background(), "gpt-4o", 1, 0)
+	require.NoError(t, err)
+	require.Equal(t, 1, cost, "sub-cent cost should be rounded up to 1")
+}
+
+func TestCalculateCost_LargeTokens_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
+
+	b := NewBilling(pool, nil)
+	// 100000 prompt + 50000 completion = (200000 + 500000) / 1000 = 700
+	cost, err := b.CalculateCost(context.Background(), "gpt-4o", 100000, 50000)
+	require.NoError(t, err)
+	require.Equal(t, 700, cost)
+}
+
+func TestCalculateCost_OnlyCompletionTokens_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
+
+	b := NewBilling(pool, nil)
+	// 0 prompt + 100 completion * 10 / 1000 = 1
+	cost, err := b.CalculateCost(context.Background(), "gpt-4o", 0, 100)
+	require.NoError(t, err)
+	require.Equal(t, 1, cost)
+}
+
+// --- EstimateFreezeAmount: boundary tests ---
+
+func TestEstimateFreezeAmount_SafetyFactorBoundaries_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
+
+	b := NewBilling(pool, nil)
+
+	// safetyFactor 0.5: 1000 * 10 / 1000 * 0.5 = 5 → minFreezeAmount=1 → 5
+	amount, err := b.EstimateFreezeAmount(context.Background(), "gpt-4o", 1000, 0.5, 1)
+	require.NoError(t, err)
+	require.Equal(t, 5, amount)
+
+	// safetyFactor 2.0: 1000 * 10 / 1000 * 2.0 = 20
+	amount, err = b.EstimateFreezeAmount(context.Background(), "gpt-4o", 1000, 2.0, 1)
+	require.NoError(t, err)
+	require.Equal(t, 20, amount)
+}
+
+func TestEstimateFreezeAmount_MinFreezeDominates_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
+
+	b := NewBilling(pool, nil)
+
+	// 1 token * 10 / 1000 * 1.0 = 0 (int rounds down) → minFreeze=100 → 100
+	amount, err := b.EstimateFreezeAmount(context.Background(), "gpt-4o", 1, 1.0, 100)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, amount, 100, "min freeze amount should dominate")
+}
+
+func TestEstimateFreezeAmount_ZeroSafetyFactor_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
+
+	b := NewBilling(pool, nil)
+
+	// safetyFactor 0.0: 1000 * 10 / 1000 * 0.0 = 0 → minFreezeAmount=5 → 5
+	amount, err := b.EstimateFreezeAmount(context.Background(), "gpt-4o", 1000, 0.0, 5)
+	require.NoError(t, err)
+	require.Equal(t, 5, amount, "zero safety factor should fall back to min")
+}
+
+// --- Freeze: granted_balance priority tests ---
+
+func TestFreeze_ConsumesGrantedFirst_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
+	// Wallet: balance=5000, granted_balance=3000
+	testutil.NewTestWallet(t, pool, orgID, 5000)
+	testutil.NewTestGrant(t, pool, orgID, 3000, nil)
+	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
+
+	// Also set wallet's granted_balance to match the grant
+	_, err := pool.Exec(context.Background(),
+		`UPDATE wallets SET granted_balance = 3000 WHERE org_id = $1`, orgID)
+	require.NoError(t, err)
+
+	b := NewBilling(pool, nil)
+	// Freeze 2000: should take 2000 from granted_balance, balance stays 5000
+	result, err := b.Freeze(context.Background(), FreezeRequest{
+		RequestID:       fmt.Sprintf("freeze-grant-%d", time.Now().UnixNano()),
+		OrgID:           orgID,
+		Model:           "gpt-4o",
+		EstimatedTokens: 10000,
+		SafetyFactor:    1.0,
+		MinFreezeAmount: 2000,
+	})
+	require.NoError(t, err)
+	require.True(t, result.Success, "freeze should succeed: %s - %s", result.ErrorCode, result.ErrorDetail)
+
+	var balance, grantedBalance, frozen int
+	err = pool.QueryRow(context.Background(),
+		`SELECT balance, granted_balance, frozen FROM wallets WHERE org_id = $1`, orgID,
+	).Scan(&balance, &grantedBalance, &frozen)
+	require.NoError(t, err)
+	require.Equal(t, 2000, frozen, "2000 should be frozen")
+	require.Equal(t, 5000, balance, "balance should be untouched (granted consumed first)")
+	require.Equal(t, 1000, grantedBalance, "3000 - 2000 = 1000 remaining granted")
+}
+
+func TestFreeze_PartialGrantPartialBalance_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
+	// Wallet: balance=5000, granted_balance=500
+	testutil.NewTestWallet(t, pool, orgID, 5000)
+	testutil.NewTestGrant(t, pool, orgID, 500, nil)
+	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
+
+	_, err := pool.Exec(context.Background(),
+		`UPDATE wallets SET granted_balance = 500 WHERE org_id = $1`, orgID)
+	require.NoError(t, err)
+
+	b := NewBilling(pool, nil)
+	// Freeze 2000: should take 500 from granted, 1500 from balance
+	result, err := b.Freeze(context.Background(), FreezeRequest{
+		RequestID:       fmt.Sprintf("freeze-partial-%d", time.Now().UnixNano()),
+		OrgID:           orgID,
+		Model:           "gpt-4o",
+		EstimatedTokens: 10000,
+		SafetyFactor:    1.0,
+		MinFreezeAmount: 2000,
+	})
+	require.NoError(t, err)
+	require.True(t, result.Success)
+
+	var balance, grantedBalance, frozen int
+	err = pool.QueryRow(context.Background(),
+		`SELECT balance, granted_balance, frozen FROM wallets WHERE org_id = $1`, orgID,
+	).Scan(&balance, &grantedBalance, &frozen)
+	require.NoError(t, err)
+	require.Equal(t, 2000, frozen)
+	require.Equal(t, 3500, balance, "5000 - 1500 = 3500")
+	require.Equal(t, 0, grantedBalance, "all granted consumed")
+}
+
+// --- Settle: boundary tests ---
+
+func TestSettle_ExactCost_NoRefund_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
+	testutil.NewTestWallet(t, pool, orgID, 10000)
+	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
+
+	b := NewBilling(pool, nil)
+	reqID := fmt.Sprintf("settle-exact-%d", time.Now().UnixNano())
+
+	// Freeze
+	fr, err := b.Freeze(context.Background(), FreezeRequest{
+		RequestID: reqID, OrgID: orgID, Model: "gpt-4o",
+		EstimatedTokens: 1000, SafetyFactor: 1.0, MinFreezeAmount: 10,
+	})
+	require.NoError(t, err)
+	require.True(t, fr.Success)
+
+	// Settle with exact cost
+	sr, err := b.Settle(context.Background(), SettleRequest{
+		RequestID:  reqID,
+		OrgID:      orgID,
+		ActualCost: fr.Amount,
+	})
+	require.NoError(t, err)
+	require.True(t, sr.Success)
+	require.Equal(t, 0, sr.Refund, "exact cost should have 0 refund")
+}
+
+func TestSettle_CostExceedsFrozen_LossLogged_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
+	testutil.NewTestWallet(t, pool, orgID, 10000)
+	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
+
+	b := NewBilling(pool, nil)
+	reqID := fmt.Sprintf("settle-loss-%d", time.Now().UnixNano())
+
+	// Freeze small
+	fr, err := b.Freeze(context.Background(), FreezeRequest{
+		RequestID: reqID, OrgID: orgID, Model: "gpt-4o",
+		EstimatedTokens: 10, SafetyFactor: 1.0, MinFreezeAmount: 5,
+	})
+	require.NoError(t, err)
+	require.True(t, fr.Success)
+
+	// Settle with cost > frozen — should still succeed but log warning
+	sr, err := b.Settle(context.Background(), SettleRequest{
+		RequestID:        reqID,
+		OrgID:            orgID,
+		ActualCost:       fr.Amount + 100,
+		PromptTokens:     500,
+		CompletionTokens: 300,
+		UsageSource:      "upstream",
+	})
+	require.NoError(t, err)
+	require.True(t, sr.Success, "settle should succeed even when cost > frozen (refund caps at 0)")
+	require.Equal(t, 0, sr.Refund, "refund should be 0 when cost exceeds frozen")
+}
+
+// --- Cancel: idempotency edge case ---
+
+func TestCancel_NonExistent_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
+
+	b := NewBilling(pool, nil)
+	err := b.Cancel(context.Background(), "never-existed-request", orgID)
+	require.NoError(t, err, "cancelling non-existent should be idempotent (no error)")
+}

@@ -1,0 +1,343 @@
+package gateway
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/uniroute/unirouter/internal/filter"
+	"github.com/uniroute/unirouter/internal/middleware"
+)
+
+func TestWriteError(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writeError(rec, http.StatusBadRequest, "invalid_request", "model is required")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+	var errResp map[string]interface{}
+	json.Unmarshal(rec.Body.Bytes(), &errResp)
+	errObj, ok := errResp["error"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected error object in response")
+	}
+	if errObj["type"] != "invalid_request" {
+		t.Fatalf("expected type invalid_request, got %v", errObj["type"])
+	}
+	if errObj["message"] != "model is required" {
+		t.Fatalf("expected message 'model is required', got %v", errObj["message"])
+	}
+}
+
+func TestChatCompletionRequest_Parse(t *testing.T) {
+	maxTokens := 100
+	req := ChatCompletionRequest{
+		Model:     "gpt-4o",
+		Messages:  []Message{{Role: "user", Content: "Hello"}},
+		Stream:    false,
+		MaxTokens: &maxTokens,
+	}
+	data, _ := json.Marshal(req)
+	var decoded ChatCompletionRequest
+	json.Unmarshal(data, &decoded)
+	if decoded.Model != "gpt-4o" {
+		t.Fatalf("model mismatch: %s", decoded.Model)
+	}
+	if len(decoded.Messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(decoded.Messages))
+	}
+	if decoded.Messages[0].Role != "user" {
+		t.Fatalf("role mismatch: %s", decoded.Messages[0].Role)
+	}
+	if decoded.MaxTokens == nil || *decoded.MaxTokens != 100 {
+		t.Fatal("MaxTokens mismatch")
+	}
+}
+
+func TestSensitiveWordFilter_Integration(t *testing.T) {
+	f := filter.NewDFAFilter([]string{"赌博", "色情", "spam"})
+
+	testCases := []struct {
+		content string
+		expect  bool
+	}{
+		{"Hello, how are you?", false},
+		{"我想了解一下赌博网站", true},
+		{"正常的问题", false},
+		{"this is spam content", true},
+		{"clean message", false},
+	}
+
+	for _, tc := range testCases {
+		matched, _ := f.IsSensitive(tc.content)
+		if matched != tc.expect {
+			t.Fatalf("content %q: expected match=%v, got %v", tc.content, tc.expect, matched)
+		}
+	}
+}
+
+func TestRequestWithContext(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqID := middleware.GetRequestIDFromContext(r.Context())
+		orgID := middleware.GetOrgIDFromContext(r.Context())
+		keyID := middleware.GetKeyIDFromContext(r.Context())
+
+		if reqID != "test-req-123" {
+			t.Fatalf("expected reqID=test-req-123, got %s", reqID)
+		}
+		if orgID != 42 {
+			t.Fatalf("expected orgID=42, got %d", orgID)
+		}
+		if keyID != 99 {
+			t.Fatalf("expected keyID=99, got %d", keyID)
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest("POST", "/v1/chat/completions", nil)
+	ctx := context.WithValue(req.Context(), middleware.CtxRequestID, "test-req-123")
+	ctx = context.WithValue(ctx, middleware.CtxOrgID, int64(42))
+	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(99))
+	req = req.WithContext(ctx)
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+}
+
+func TestWriteError_VariousStatuses(t *testing.T) {
+	cases := []struct {
+		code int
+		typ  string
+		msg  string
+	}{
+		{400, "invalid_request", "bad input"},
+		{401, "auth_error", "unauthorized"},
+		{403, "forbidden", "access denied"},
+		{429, "rate_limit", "too many requests"},
+		{500, "internal_error", "something broke"},
+		{502, "upstream_error", "bad gateway"},
+	}
+	for _, c := range cases {
+		rec := httptest.NewRecorder()
+		writeError(rec, c.code, c.typ, c.msg)
+		if rec.Code != c.code {
+			t.Fatalf("status %d: expected %d, got %d", c.code, c.code, rec.Code)
+		}
+		var resp map[string]interface{}
+		json.Unmarshal(rec.Body.Bytes(), &resp)
+		errObj := resp["error"].(map[string]interface{})
+		if errObj["type"] != c.typ {
+			t.Fatalf("status %d: type mismatch: %v", c.code, errObj["type"])
+		}
+	}
+}
+
+func TestWriteError_ContentType(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writeError(rec, 400, "test", "msg")
+	ct := rec.Header().Get("Content-Type")
+	if ct != "application/json" {
+		t.Fatalf("expected application/json, got %s", ct)
+	}
+}
+
+func TestWriteError_InternalServerError(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writeError(rec, 500, "internal_error", "something went wrong")
+	if rec.Code != 500 {
+		t.Fatalf("expected 500, got %d", rec.Code)
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(rec.Body.Bytes(), &resp)
+	errObj := resp["error"].(map[string]interface{})
+	if errObj["type"] != "internal_error" {
+		t.Fatalf("expected internal_error, got %v", errObj["type"])
+	}
+}
+
+func TestWriteError_UnicodeMessage(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writeError(rec, 400, "test", "请求包含禁止内容 🚫")
+	var resp map[string]interface{}
+	json.Unmarshal(rec.Body.Bytes(), &resp)
+	errObj := resp["error"].(map[string]interface{})
+	if errObj["message"] != "请求包含禁止内容 🚫" {
+		t.Fatalf("unicode emoji should be preserved, got %v", errObj["message"])
+	}
+}
+
+func TestWriteError_ContentTypeOnError(t *testing.T) {
+	testCases := []int{400, 401, 403, 404, 429, 500, 502, 503}
+	for _, code := range testCases {
+		rec := httptest.NewRecorder()
+		writeError(rec, code, "test", "msg")
+		ct := rec.Header().Get("Content-Type")
+		if ct != "application/json" {
+			t.Fatalf("code %d: expected application/json, got %s", code, ct)
+		}
+	}
+}
+
+// --- ChatCompletionRequest additional parse tests ---
+
+func TestChatCompletionRequest_Parse_Stream(t *testing.T) {
+	req := ChatCompletionRequest{
+		Model:    "gpt-4o",
+		Messages: []Message{{Role: "user", Content: "hi"}},
+		Stream:   true,
+	}
+	data, _ := json.Marshal(req)
+	var decoded ChatCompletionRequest
+	json.Unmarshal(data, &decoded)
+	if !decoded.Stream {
+		t.Fatal("stream should be true")
+	}
+}
+
+func TestChatCompletionRequest_Parse_NilMaxTokens(t *testing.T) {
+	data := []byte(`{"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]}`)
+	var decoded ChatCompletionRequest
+	json.Unmarshal(data, &decoded)
+	if decoded.MaxTokens != nil {
+		t.Fatal("max_tokens should be nil when omitted")
+	}
+}
+
+func TestChatCompletionRequest_Parse_ZeroMaxTokens(t *testing.T) {
+	maxTokens := 0
+	req := ChatCompletionRequest{
+		Model:     "gpt-4o",
+		Messages:  []Message{{Role: "user", Content: "hi"}},
+		MaxTokens: &maxTokens,
+	}
+	data, _ := json.Marshal(req)
+	var decoded ChatCompletionRequest
+	json.Unmarshal(data, &decoded)
+	if decoded.MaxTokens == nil || *decoded.MaxTokens != 0 {
+		t.Fatal("max_tokens should be 0")
+	}
+}
+
+func TestChatCompletionRequest_Parse_ExtraFields(t *testing.T) {
+	data := []byte(`{"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}], "temperature": 0.7, "top_p": 1.0}`)
+	var decoded ChatCompletionRequest
+	err := json.Unmarshal(data, &decoded)
+	if err != nil {
+		t.Fatalf("extra fields should not cause error: %v", err)
+	}
+	if decoded.Model != "gpt-4o" {
+		t.Fatalf("model mismatch: %s", decoded.Model)
+	}
+}
+
+func TestChatCompletionRequest_Parse_EmptyMessages(t *testing.T) {
+	data := []byte(`{"model": "gpt-4o", "messages": []}`)
+	var decoded ChatCompletionRequest
+	err := json.Unmarshal(data, &decoded)
+	if err != nil {
+		t.Fatalf("empty messages should parse: %v", err)
+	}
+	if len(decoded.Messages) != 0 {
+		t.Fatalf("expected 0 messages, got %d", len(decoded.Messages))
+	}
+}
+
+// --- EmbeddingsRequest parse tests ---
+
+func TestEmbeddingsRequest_Parse_StringInput(t *testing.T) {
+	data := []byte(`{"model": "text-embedding-3-small", "input": "hello world"}`)
+	var req EmbeddingsRequest
+	err := json.Unmarshal(data, &req)
+	if err != nil {
+		t.Fatalf("should parse string input: %v", err)
+	}
+	if req.Model != "text-embedding-3-small" {
+		t.Fatalf("model mismatch: %s", req.Model)
+	}
+	s, ok := req.Input.(string)
+	if !ok || s != "hello world" {
+		t.Fatalf("input mismatch: %v", req.Input)
+	}
+}
+
+func TestEmbeddingsRequest_Parse_ArrayInput(t *testing.T) {
+	data := []byte(`{"model": "text-embedding-3-small", "input": ["hello", "world"]}`)
+	var req EmbeddingsRequest
+	err := json.Unmarshal(data, &req)
+	if err != nil {
+		t.Fatalf("should parse array input: %v", err)
+	}
+	arr, ok := req.Input.([]interface{})
+	if !ok || len(arr) != 2 {
+		t.Fatalf("input should be []interface{} with 2 items, got %T", req.Input)
+	}
+}
+
+func TestEmbeddingsRequest_Parse_EmptyModel(t *testing.T) {
+	data := []byte(`{"model": "", "input": "hello"}`)
+	var req EmbeddingsRequest
+	err := json.Unmarshal(data, &req)
+	if err != nil {
+		t.Fatalf("empty model should parse: %v", err)
+	}
+	if req.Model != "" {
+		t.Fatalf("model should be empty")
+	}
+}
+
+func TestEmbeddingsRequest_Parse_InvalidJSON(t *testing.T) {
+	data := []byte(`not json`)
+	var req EmbeddingsRequest
+	err := json.Unmarshal(data, &req)
+	if err == nil {
+		t.Fatal("invalid JSON should error")
+	}
+}
+
+// --- writeError status code edge cases ---
+
+func TestWriteError_StatusCode200(t *testing.T) {
+	// Unusual: writeError with 200 means success with error body.
+	// Not in production but should not panic.
+	rec := httptest.NewRecorder()
+	writeError(rec, 200, "ok", "everything is fine")
+	if rec.Code != 200 {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+}
+
+func TestWriteError_LargeMessage(t *testing.T) {
+	rec := httptest.NewRecorder()
+	largeMsg := ""
+	for i := 0; i < 10000; i++ {
+		largeMsg += "x"
+	}
+	writeError(rec, 400, "test", largeMsg)
+	if rec.Code != 400 {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(rec.Body.Bytes(), &resp)
+	errObj := resp["error"].(map[string]interface{})
+	if len(errObj["message"].(string)) != 10000 {
+		t.Fatalf("message should be 10000 chars, got %d", len(errObj["message"].(string)))
+	}
+}
+
+// --- estimateTokens with maxTokens=nil vs pointer to 0 ---
+
+func TestEstimateTokens_NilVersusZeroMaxTokens(t *testing.T) {
+	msgs := []Message{{Role: "user", Content: "Hi"}}
+	nilResult := estimateTokens(msgs, nil)
+	zero := 0
+	zeroResult := estimateTokens(msgs, &zero)
+	// nil uses default 1000, zero explicitly means 0
+	if nilResult <= zeroResult {
+		t.Fatalf("nil (default 1000) should be > zero maxTokens: nil=%d, zero=%d", nilResult, zeroResult)
+	}
+}

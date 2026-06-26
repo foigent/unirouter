@@ -1,0 +1,110 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
+import LoginPage from '../../pages/LoginPage'
+
+// Mock the auth store
+const mockLogin = vi.fn()
+vi.mock('../../store/auth', () => ({
+  useAuthStore: (selector: any) => selector({ login: mockLogin }),
+}))
+
+// Mock react-router-dom navigate
+const mockNavigate = vi.fn()
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual('react-router-dom')
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  }
+})
+
+function renderLoginPage() {
+  return render(
+    <MemoryRouter>
+      <LoginPage />
+    </MemoryRouter>
+  )
+}
+
+describe('LoginPage', () => {
+  beforeEach(() => {
+    mockLogin.mockReset()
+    mockNavigate.mockReset()
+  })
+
+  it('renders login form', () => {
+    renderLoginPage()
+    expect(screen.getByText('UniRoute')).toBeInTheDocument()
+    expect(screen.getByText('OpenAI 中转服务管理平台')).toBeInTheDocument()
+  })
+
+  it('shows validation errors for empty fields', async () => {
+    const user = userEvent.setup()
+    renderLoginPage()
+
+    const submitBtn = screen.getByRole('button', { name: /登录/i })
+    await user.click(submitBtn)
+
+    await waitFor(() => {
+      expect(screen.getByText('请输入用户名')).toBeInTheDocument()
+      expect(screen.getByText('请输入密码')).toBeInTheDocument()
+    })
+  })
+
+  it('calls login and navigates on success', async () => {
+    mockLogin.mockResolvedValueOnce(undefined)
+    const user = userEvent.setup()
+    renderLoginPage()
+
+    const usernameInput = screen.getByPlaceholderText('请输入用户名')
+    const passwordInput = screen.getByPlaceholderText('请输入密码')
+    const submitBtn = screen.getByRole('button', { name: /登录/i })
+
+    await user.type(usernameInput, 'admin')
+    await user.type(passwordInput, '***')
+    await user.click(submitBtn)
+
+    await waitFor(() => {
+      expect(mockLogin).toHaveBeenCalledWith('admin', '***')
+      expect(mockNavigate).toHaveBeenCalledWith('/')
+    })
+  })
+
+  it('shows error message on login failure', async () => {
+    mockLogin.mockRejectedValueOnce(new Error('Invalid credentials'))
+    const user = userEvent.setup()
+    renderLoginPage()
+
+    const usernameInput = screen.getByPlaceholderText('请输入用户名')
+    const passwordInput = screen.getByPlaceholderText('请输入密码')
+    const submitBtn = screen.getByRole('button', { name: /登录/i })
+
+    await user.type(usernameInput, 'admin')
+    await user.type(passwordInput, 'wrong')
+    await user.click(submitBtn)
+
+    await waitFor(() => {
+      expect(screen.getByText('Invalid credentials')).toBeInTheDocument()
+    })
+  })
+
+  it('shows default error message when error has no message', async () => {
+    mockLogin.mockRejectedValueOnce(new Error())
+    const user = userEvent.setup()
+    renderLoginPage()
+
+    const usernameInput = screen.getByPlaceholderText('请输入用户名')
+    const passwordInput = screen.getByPlaceholderText('请输入密码')
+    const submitBtn = screen.getByRole('button', { name: /登录/i })
+
+    await user.type(usernameInput, 'admin')
+    await user.type(passwordInput, 'wrong')
+    await user.click(submitBtn)
+
+    await waitFor(() => {
+      expect(screen.getByText('登录失败')).toBeInTheDocument()
+    })
+  })
+})
