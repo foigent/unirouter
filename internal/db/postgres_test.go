@@ -14,7 +14,10 @@ func getTestDSN(t *testing.T) string {
 	t.Helper()
 	dsn := os.Getenv("TEST_DB_DSN")
 	if dsn == "" {
-		dsn = "postgres://uniroute:***@localhost:5432/uniroute_test?sslmode=disable"
+		dsn = os.Getenv("TEST_DATABASE_URL")
+	}
+	if dsn == "" {
+		dsn = "postgres://uniroute:uniroute@localhost:5432/uniroute_test?sslmode=disable"
 	}
 	return dsn
 }

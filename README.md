@@ -65,24 +65,52 @@ Docker Compose（3 个容器）：
 ## 项目结构
 
 ```
-unirouter/
+UniRouter/
 ├── cmd/uniroute/         # 入口
 │   └── main.go
 ├── internal/             # 内部包
+│   ├── admin/            # 管理后台 API handlers
+│   ├── auth/             # 认证逻辑
+│   ├── billing/          # 计费模块（计价、告警、对账）
+│   ├── circuitbreaker/   # 熔断器
 │   ├── config/           # 配置加载
+│   ├── db/               # 数据库连接
+│   ├── filter/           # 请求过滤
+│   ├── gateway/          # 网关路由 & 中继
+│   ├── middleware/        # HTTP 中间件（鉴权、限流、CORS）
+│   ├── migrate/          # 数据库迁移执行器
 │   ├── models/           # 数据模型
-│   ├── billing/          # 计费模块
-│   ├── middleware/        # 中间件（鉴权、限流）
-│   ├── admin/            # 管理后台 API
-│   └── gateway/          # 网关路由
-├── api/                  # OpenAPI spec
-├── web/                  # 前端
-│   ├── console/          # 用户控制台
-│   └── admin/            # 管理后台
-├── migrations/           # 数据库迁移
-├── scripts/              # 运维脚本
+│   ├── ratelimit/        # 限流实现
+│   ├── redisx/           # Redis 封装
+│   ├── testutil/         # 测试工具
+│   └── tokenutil/        # Token 计数工具
+├── frontend/             # 前端源码（React + Semi Design）
+│   └── src/
+│       ├── api/          # API 请求
+│       ├── components/   # 通用组件
+│       ├── hooks/        # 自定义 hooks
+│       ├── pages/        # 页面（Dashboard、Channels、Users 等）
+│       ├── store/        # 状态管理
+│       ├── test/         # 前端测试
+│       └── utils/        # 工具函数
+├── web/
+│   ├── admin/            # 管理后台构建产物（CDN 静态资源）
+│   └── console/          # 控制台构建产物
+├── migrations/           # SQL 迁移脚本
+├── scripts/              # 脚本工具
+├── api/                  # API 定义
 ├── docs/                 # 文档
+│   ├── PRD-Phase1.md     # 产品需求文档
+│   ├── ops/              # 部署 & 测试
+│   ├── tech-ref/         # 技术参考（模型矩阵、计费状态机等）
+│   ├── agent-workflows/  # Agent 工作流
+│   ├── consultations/    # 顾问咨询记录
+│   ├── reviews/          # 代码评审
+│   ├── testing/          # 测试文档
+│   ├── issues/           # 问题跟踪
+│   └── archive/          # 归档
 ├── .env.example          # 环境变量模板
+├── Dockerfile            # 后端容器
 ├── docker-compose.yml    # Docker 编排
 ├── go.mod                # Go 模块
 └── README.md

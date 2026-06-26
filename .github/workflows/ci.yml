@@ -16,12 +16,12 @@ jobs:
         image: postgres:16-alpine
         env:
           POSTGRES_USER: uniroute
-          POSTGRES_PASSWORD: test_pass
+          POSTGRES_PASSWORD: uniroute
           POSTGRES_DB: uniroute_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U uniroute"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -37,7 +37,8 @@ jobs:
           --health-retries 5
     
     env:
-      DB_DSN: postgres://uniroute:test_pass@localhost:5432/uniroute_test?sslmode=disable
+      TEST_DATABASE_URL: postgres://uniroute:uniroute@localhost:5432/uniroute_test?sslmode=disable
+      DB_DSN: postgres://uniroute:uniroute@localhost:5432/uniroute_test?sslmode=disable
       REDIS_ADDR: localhost:6379
       REDIS_PASSWORD: ""
       REDIS_DB: 0
@@ -52,7 +53,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.24'
           cache: true
       
       - name: Download dependencies

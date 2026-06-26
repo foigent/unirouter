@@ -4,7 +4,7 @@
 
 ## 项目架构
 
-详见 [AGENTS.md](./AGENTS.md) 和 [AGENT-PROTOCOL.md](./AGENT-PROTOCOL.md)。
+详见 [AGENTS.md](./AGENTS.md) 和 [AGENT-PROTOCOL.md](./docs/agent-workflows/AGENT-PROTOCOL.md)。
 
 ## 开发流程
 
@@ -74,15 +74,15 @@ Codex 开发 → Canary 验收 → Sentinel 提交 PR → 合并
 ```
 
 **详细流程**：
-1. **Codex** 完成开发，更新 `FIX-SIGNAL.md`
-2. **Canary** 按 `FIX-SIGNAL.md` 逐条验收，写入 `VERIFY-RESULT.md`
+1. **Codex** 完成开发，更新 `docs/agent-workflows/FIX-SIGNAL.md`
+2. **Canary** 按 `docs/agent-workflows/FIX-SIGNAL.md` 逐条验收，写入 `docs/agent-workflows/VERIFY-RESULT.md`
 3. 验收通过后，**Sentinel** 提交 PR
 4. CI 自动运行（GitHub Actions）
 5. **Nicholas** 确认后，**Sentinel** 合并 PR
 
 **关键文件**：
-- `FIX-SIGNAL.md` — Codex 给 Canary 的验收指令（覆盖写入）
-- `VERIFY-RESULT.md` — Canary 的验收结果（覆盖写入）
+- `docs/agent-workflows/FIX-SIGNAL.md` — Codex 给 Canary 的验收指令（覆盖写入）
+- `docs/agent-workflows/VERIFY-RESULT.md` — Canary 的验收结果（覆盖写入）
 
 ### 5. PR 规范
 
