@@ -40,16 +40,12 @@ docker-compose.override.yml
 
 # Agent 协作文件（本地使用，不推送）
 AGENTS.md
-docs/agent-workflows/
 
 # 顾问咨询原始反馈（只推送总结）
 docs/consultations/raw/
 
 # 已解决的 issue 归档（本地参考）
 docs/archive/issues/
-
-# 测试文档（已完成，本地保留）
-docs/testing/
 
 # 评审文档（已完成，本地保留）
 docs/reviews/
