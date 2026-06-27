@@ -398,3 +398,52 @@ main_test.go 已同步更新，AllowedModels 分支逻辑与 main.go 一致 ✅
 - [x] Fix #14（Bug #11）：**PASS**
 - [x] 前 12 条 fix 回归：**PASS**
 - [x] 全量测试回归：**PASS**（14 包，0 FAIL）
+
+---
+
+## Fix #15 验收（Bug #12 修复 — SSE Flusher 接口缺失）
+
+**验收日期：** 2026-06-27
+**修复者：** Codex
+
+### 代码审查
+
+- `internal/middleware/metrics.go:108-113` — `responseWriter` 新增 `Flush()` 方法 ✅
+- 安全检查：先断言底层 writer 是否实现 `http.Flusher`，实现则代理调用 ✅
+- 不会 panic：未实现 `Flusher` 时静默跳过 ✅
+
+### 单元测试
+
+- `TestMetricsMiddleware_FlusherInterface` — PASS ✅
+  - 验证 `w.(http.Flusher)` 断言成功
+  - 验证 `flusher.Flush()` 正常调用
+  - 验证 SSE 数据（`data: hello`, `data: world`）全部写入响应体
+
+### 全量回归
+
+- `go test ./internal/middleware/ -v -count=1` → PASS ✅
+- `go build ./...` → PASS ✅
+- `go vet ./internal/middleware/` → PASS ✅
+
+### 验收结论
+
+- [x] Fix #15（Bug #12）：**PASS**
+- [x] 前 14 条 fix 回归：**PASS**
+- [x] 全量测试回归：**PASS**
+
+### 快速摘要（更新）
+
+| Fix | 描述 | 状态 |
+|-----|------|------|
+| #1 | QueryModelPrice 列名修正 | PASS |
+| #2 | relay.go defer-in-loop 资源泄漏 | PASS |
+| #3 | router.go Exec 错误处理 | PASS |
+| #4 | XOR vs AES-GCM 确认 | PASS |
+| #5 | fallback 静默降级加日志 | PASS |
+| #6 | freeze_idempotency 查询列 | PASS |
+| #7 | Settle INSERT $3 参数类型 | PASS |
+| #8 | PriceProvider 接口注入 | PASS |
+| #9 | GatewayAuth 纯函数提取 | PASS |
+| #10 | AllowedModels 限制不生效 | PASS |
+| #11 | 供应商下拉框硬编码 | PASS |
+| #12 | SSE Flusher 接口缺失 | PASS |

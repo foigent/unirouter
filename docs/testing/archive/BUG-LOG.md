@@ -1,7 +1,7 @@
 # UniRouter Bug 记录
 
 > 维护者: Canary (测试 agent)
-> 最后更新: 2026-06-27 11:12（新增 metrics_test.go, middleware 覆盖率 93.3%）
+> 最后更新: 2026-06-27（修复 Bug #12: SSE Flusher 接口缺失）
 > 格式: 每个 bug 一个条目，包含发现、验证、修复状态
 > 规则: 只记录不修。修复由 Codex 负责。
 
@@ -170,6 +170,7 @@
 | #8 | 集成测试并行竞态 | High | 阶段 5 | ✅ |
 | #10 | AllowedModels 限制不生效 | Critical | 第 5 轮 + MVP 验收 | ✅ |
 | #11 | 供应商下拉框硬编码 | Medium | 第 6 轮 | ✅ |
+| #12 | SSE Flusher 接口缺失 | Critical | 第 7 轮 | ✅ |
 
 ## 当前未修复
 
@@ -181,6 +182,40 @@
 
 | 编号 | 描述 | 严重性 | 状态 |
 |------|------|--------|------|
-| #12 | 模型价格 provider 字段为空 | Low | ⚠️ 待排查 |
+| #12 | 模型价格 provider 字段为空 | Low | ✅ 已修复 |
 | #13 | RPM 限流延迟生效（第 4 个才触发） | Low | ⚠️ 待排查 |
 | #14 | Embeddings 端点 502 | Low | ⚠️ 上游不支持（非代码 bug） |
+
+### Bug #12 — SSE 流式响应失败：MetricsMiddleware 的 responseWriter 未实现 Flusher (Critical)
+
+- **发现日期**: 2026-06-27
+- **严重性**: Critical
+- **类型**: 中间件接口缺失
+- **状态**: ✅ 已修复验收 (2026-06-27)
+- **发现者**: Atlas（部署排查）+ Canary（代码确认）
+- **文件**: `internal/middleware/metrics.go`
+
+**问题**：MetricsMiddleware 的 `responseWriter` 结构体只嵌入了 `http.ResponseWriter`，没有代理 `Flush()` 方法。当 relay 的 `relayStreamRequest` 执行 `w.(http.Flusher)` 断言时失败，SSE 流式无法推送数据。
+
+**根因**：
+```go
+// metrics.go 当前代码
+type responseWriter struct {
+    http.ResponseWriter
+    statusCode int
+}
+// 缺少：func (rw *responseWriter) Flush() { rw.ResponseWriter.(http.Flusher).Flush() }
+```
+
+**影响**：所有 SSE 流式请求（`stream: true`）全部失败，返回空响应。
+
+**建议修复**：给 `responseWriter` 添加 `Flush()` 方法：
+```go
+func (rw *responseWriter) Flush() {
+    if f, ok := rw.ResponseWriter.(http.Flusher); ok {
+        f.Flush()
+    }
+}
+```
+
+**验证**：修复后重跑 `curl -N ... stream:true`，应收到 SSE 数据行。

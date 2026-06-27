@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"fmt"
+	"strings"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -173,3 +175,30 @@ func TestMetricsEndpoint(t *testing.T) {
 	}
 }
 
+func TestMetricsMiddleware_FlusherInterface(t *testing.T) {
+	// Bug #12: responseWriter must implement http.Flusher for SSE streaming
+	handler := MetricsMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("responseWriter does not implement http.Flusher — SSE streaming will fail")
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "data: hello\n\n")
+		flusher.Flush()
+		fmt.Fprintf(w, "data: world\n\n")
+		flusher.Flush()
+	}))
+
+	req := httptest.NewRequest("POST", "/v1/chat/completions", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("Expected 200, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "data: hello") || !strings.Contains(body, "data: world") {
+		t.Errorf("Expected SSE data in response body, got: %s", body)
+	}
+}
