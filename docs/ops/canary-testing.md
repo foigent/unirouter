@@ -23,12 +23,14 @@ Canary（金丝雀）测试是一种渐进式发布策略：将少量流量导�
 ```
 客户端
   ↓
-Nginx (TLS 终止 + canary 权重路由)
+Nginx (canary 权重路由)
   ├── /v1/*, /api/* → upstream backend_canary
   │     ├── 90% → uniroute-api:8080        (stable)
   │     └── 10% → uniroute-api-canary:8080  (canary)
   ├── /health/* → uniroute-api:8080          (直连 stable)
   └── /* → uniroute-frontend:80              (静态资源)
+
+注：测试环境走 HTTP:80；生产环境启用 TLS 后走 HTTPS:443
 ```
 
 ### 关键设计决策
@@ -47,6 +49,7 @@ Nginx (TLS 终止 + canary 权重路由)
 1. `docker-compose.yml` 中的 stable 实例正常运行
 2. `curl http://localhost:8080/health/ready` 返回 `{"status":"ok"}`
 3. 数据库已备份（可选但推荐）
+4. **⚠️ 无 TLS 证书时**：确认 `nginx/nginx.conf` 中 HTTPS redirect 已注释，且 HTTPS server block 已注释（详见 deployment-runbook.md 第九章）
 
 ---
 

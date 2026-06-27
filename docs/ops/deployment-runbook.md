@@ -269,12 +269,31 @@ curl http://localhost:8080/health/ready
 
 ## 九、Canary 测试部署
 
-### 9.1 架构说明
+### 9.1 前置条件：Nginx 配置
+
+**⚠️ 无 TLS 证书时（如阿里云测试环境），部署前必须修改 `nginx/nginx.conf`：**
+
+1. **HTTP → HTTPS 重定向**：确认 `return 301 https://...` 已注释（默认已注释）
+2. **HTTPS server block**：注释掉整个 `# --- HTTPS 主站 ---` 的 server block（第 443 行起）
+
+原因：无证书时 nginx 启动会失败（找不到 `fullchain.pem` / `privkey.pem`），且 80 端口的 301 重定向会指向不可用的 HTTPS，导致全站不可访问。
+
+```bash
+# 快速检查：确认 nginx 配置语法正确
+docker compose exec nginx nginx -t
+```
+
+启用 HTTPS 后（如部署到生产环境）：
+1. 取消注释 HTTPS server block
+2. 取消注释 HTTP → HTTPS 重定向
+3. 挂载证书到容器（见第十章）
+
+### 9.2 架构说明
 
 Canary 测试通过外层 Nginx 将部分流量路由到新版（canary）后端实例，同时保持旧版（stable）实例处理大部分请求。
 
 ```
-客户端 → Nginx:443 (TLS 终止)
+客户端 → Nginx:80 (HTTP)
             ├── 90% → uniroute-api:8080        (stable)
             └── 10% → uniroute-api-canary:8080  (canary，共享 PG/Redis)
 ```
@@ -284,7 +303,7 @@ Canary 测试通过外层 Nginx 将部分流量路由到新版（canary）后端
 - canary 实例 **跳过** 数据库迁移（`SKIP_MIGRATION=true`），由 stable 实例负责迁移
 - 健康检查和 Prometheus 指标 **只走 stable**
 
-### 9.2 启动 Canary
+### 9.3 启动 Canary
 
 ```bash
 cd /opt/uniroute
@@ -301,7 +320,7 @@ docker compose -f docker-compose.yml -f docker-compose.canary.yml ps
 # 应看到 6 个容器：postgres, redis, backend, frontend, nginx, backend-canary
 ```
 
-### 9.3 验证流量分发
+### 9.4 验证流量分发
 
 ```bash
 # 连续请求 20 次，观察响应差异
@@ -310,7 +329,7 @@ for i in $(seq 1 20); do
 done
 ```
 
-### 9.4 调整 canary 权重
+### 9.5 调整 canary 权重
 
 编辑 `nginx/nginx.conf`，修改 `upstream backend_canary` 的 `weight` 值：
 
@@ -332,7 +351,7 @@ upstream backend_canary {
 docker compose exec nginx nginx -s reload
 ```
 
-### 9.5 监控 canary
+### 9.6 监控 canary
 
 ```bash
 # 查看 canary 日志（独立容器）
