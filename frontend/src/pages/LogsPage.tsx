@@ -33,6 +33,7 @@ export default function LogsPage() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [filters, setFilters] = useState<LogFilters>({});
+  const [providers, setProviders] = useState<string[]>([]);
 
   const loadLogs = (p: number) => {
     setLoading(true);
@@ -43,6 +44,14 @@ export default function LogsPage() {
       })
       .finally(() => setLoading(false));
   };
+
+  useEffect(() => {
+    api.getChannels(1, 100).then((data) => {
+      const channels = data.data || data.channels || [];
+      const unique = [...new Set(channels.map((c: any) => c.provider).filter(Boolean))] as string[];
+      setProviders(unique);
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => { loadLogs(page); }, [page]);
 
@@ -108,10 +117,9 @@ export default function LogsPage() {
               style={{ width: '100%' }}
             >
               <Select.Option value="">全部</Select.Option>
-              <Select.Option value="openai">OpenAI</Select.Option>
-              <Select.Option value="deepseek">DeepSeek</Select.Option>
-              <Select.Option value="qwen">Qwen</Select.Option>
-              <Select.Option value="zhipu">Zhipu</Select.Option>
+              {providers.map((p) => (
+                <Select.Option key={p} value={p}>{p}</Select.Option>
+              ))}
             </Select>
           </Col>
           <Col span={3}>
