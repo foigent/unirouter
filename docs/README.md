@@ -19,6 +19,7 @@
 
 ## 归档（本地保留，不推送 GitHub）
 - `archive/issues/` — 已解决的 issue
+- `archive/todolist/` — 待办事项（非 Bug，如功能集成、配置完善）
 - `testing/archive/` — 测试阶段完整文档
 - `agent-workflows/` — Agent 协作流程文件
 - `reviews/` — PRD 评审记录

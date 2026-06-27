@@ -1,9 +1,11 @@
 # Prometheus Metrics（监控指标）
 
-> **版本**：v1.0
-> **日期**：2026-06-24
+> **版本**：v1.2
+> **日期**：2026-06-27
 > **用途**：开发团队理解监控指标体系的核心参考
-> **变更**：初始版本，覆盖 G3 迭代实现
+> **变更**：
+> - v1.2：补充 3.2 节——业务指标在 relay.go 中的完整调用位置表（15 处调用点，含行号、函数、标签值、触发条件）
+> - v1.1：新增 Grafana Dashboard JSON、Prometheus 抓取配置、k6 压测脚本说明；初始版本覆盖 G3 迭代实现
 
 ---
 
@@ -81,20 +83,89 @@ func MetricsMiddleware(next http.Handler) http.Handler {
 
 ### 3.2 业务代码手动采集
 
-在 relay 和 billing 模块中，通过辅助函数记录业务指标：
+以下表格列出 `internal/gateway/relay.go` 中所有 15 处 `middleware.Record*` 调用的精确位置、触发条件和标签值。所有调用均已在代码中落地并通过编译验证（`go build ./...` + `go test` PASS）。
 
-```go
-// 记录 Token 使用量
-middleware.RecordTokenUsage("prompt", "gpt-4", 150)
-middleware.RecordTokenUsage("completion", "gpt-4", 500)
+#### 3.2.1 `RecordBillingFreeze` — 6 处调用
 
-// 记录上游延迟
-middleware.RecordUpstreamLatency("openai", "gpt-4", 1.2*time.Second)
+`BillingFreeze` 在每次请求的计费预冻结阶段调用，记录冻结是否成功。
 
-// 记录计费冻结
-middleware.RecordBillingFreeze("success")
-middleware.RecordBillingFreeze("error")
-```
+**函数：`HandleChatCompletion`（`/v1/chat/completions`）** — 4 处
+
+| 行号 | 标签值 | 触发条件 |
+|------|--------|---------|
+| 150 | `"error"` | Freeze 成功返回但业务失败，错误码 `insufficient_balance`（余额不足） |
+| 153 | `"error"` | Freeze 成功返回但业务失败，错误码 `already_frozen`（幂等冲突） |
+| 156 | `"error"` | Freeze 成功返回但业务失败，其他未知错误码 |
+| 161 | `"success"` | Freeze 成功且业务成功，请求继续进入路由选择阶段 |
+
+**函数：`HandleEmbeddings`（`/v1/embeddings`）** — 2 处
+
+| 行号 | 标签值 | 触发条件 |
+|------|--------|---------|
+| 666 | `"error"` | Freeze 失败（`err != nil` 或 `!freezeResult.Success`，含 `insufficient_balance` 和其他错误） |
+| 674 | `"success"` | Freeze 成功，请求继续进入路由选择阶段 |
+
+> **注意**：ChatCompletion 路径对 `!freezeResult.Success` 做了三分支 switch（`insufficient_balance` / `already_frozen` / default），每个分支独立记录 `"error"`。Embeddings 路径合并为统一的 `"error"` 分支。`err != nil`（网络/DB 层错误）在两个路径中都不调用 `RecordBillingFreeze`，而是直接返回 500，因为此时 freeze 未产生有效结果。
+
+#### 3.2.2 `RecordTokenUsage` — 5 处调用
+
+`RecordTokenUsage` 在请求完成后、Settle 结算成功后调用，记录实际消耗的 token 数。
+
+**函数：`relayNonStreamRequest`（非流式 ChatCompletion）** — 2 处
+
+| 行号 | type 标签 | model 标签 | 值来源 |
+|------|-----------|-----------|--------|
+| 287 | `"prompt"` | `model`（请求中的模型名） | `usage.Usage.PromptTokens` — 从上游响应 JSON 的 `usage.prompt_tokens` 解析 |
+| 288 | `"completion"` | `model` | `usage.Usage.CompletionTokens` — 从上游响应 JSON 的 `usage.completion_tokens` 解析 |
+
+调用时机：Settle 结算完成后（无论 Settle 是否报错都记录，因为 usage 数据来自上游，Settle 错误是计费侧问题）。
+
+**函数：`relayStreamRequest`（流式 ChatCompletion）** — 2 处
+
+| 行号 | type 标签 | model 标签 | 值来源 |
+|------|-----------|-----------|--------|
+| 503 | `"prompt"` | `model` | `tokenCounter.InputTokens()` — 若上游发送了 `stream_options.include_usage=true` 的最终 chunk 则取上游值，否则由 `tokenutil.EstimateRequestTokens` 从 messages 估算 |
+| 504 | `"completion"` | `model` | `tokenCounter.OutputTokens()` — 若上游发送了 usage 则取上游值，否则从流式 delta content 估算 |
+
+调用时机：流读取结束后、Settle 结算完成后。`usageSource` 字段（`"api"` vs `"stream_estimate"`）决定了 token 数据的可信度。
+
+**函数：`HandleEmbeddings`（`/v1/embeddings`）** — 1 处
+
+| 行号 | type 标签 | model 标签 | 值来源 |
+|------|-----------|-----------|--------|
+| 739 | `"prompt"` | `req.Model`（请求中的模型名） | `usage.Usage.PromptTokens` — 从上游响应 JSON 的 `usage.prompt_tokens` 解析 |
+
+Embeddings 请求只有 input token，无 completion token，因此只记录 `"prompt"` 类型。
+
+#### 3.2.3 `RecordUpstreamLatency` — 4 处调用
+
+`RecordUpstreamLatency` 记录从发送上游请求到收到响应的耗时。使用 `time.Duration` 直接传入，函数内部调用 `.Seconds()` 转换后传给 Prometheus Histogram。
+
+**函数：`HandleChatCompletion`（非流式上游请求）** — 1 处
+
+| 行号 | provider 标签 | model 标签 | 计时范围 |
+|------|--------------|-----------|---------|
+| 208 | `route.Channel.Provider`（渠道供应商标识） | `req.Model` | `client.Do(upstreamReq)` 前后 — 从发送请求到收到完整响应头+体 |
+
+此调用位于路由重试循环内部，每次重试（不同渠道）都会独立记录一次上游延迟。即使请求失败（err != nil 或非 200），也会记录延迟，因为延迟数据本身就是有价值的——慢的失败也是慢。
+
+**函数：`relayStreamRequest`（流式上游请求）** — 1 处
+
+| 行号 | provider 标签 | model 标签 | 计时范围 |
+|------|--------------|-----------|---------|
+| 508 | `route.Channel.Provider` | `model` | `streamStart` 到流读取结束（`time.Since(streamStart)`） |
+
+此调用记录的是整个流式请求的端到端耗时（从开始流读取到所有 chunk 处理完毕），而非单个 chunk 的延迟。`streamStart` 在流读取循环开始前设置（约第 400 行）。
+
+**函数：`HandleEmbeddings`（Embeddings 上游请求）** — 1 处
+
+| 行号 | provider 标签 | model 标签 | 计时范围 |
+|------|--------------|-----------|---------|
+| 712 | `route.Channel.Provider` | `req.Model` | `client.Do(upstreamReq)` 前后 — 从发送请求到收到完整响应 |
+
+与 ChatCompletion 非流式路径结构相同，但 Embeddings 路径无重试机制，只调用一次。
+
+> **标签值一致性说明**：`provider` 标签来自 `route.Channel.Provider`（数据库 channels 表的 provider 字段），`model` 标签来自请求体中的原始模型名（`req.Model`），而非渠道映射后的模型名（`route.MappedModel`）。这确保同一模型在不同供应商上的延迟可以对比。
 
 ---
 
@@ -160,7 +231,60 @@ histogram_quantile(0.95, rate(unirouter_upstream_latency_seconds_bucket[5m]))
 
 ---
 
-## 六、扩展方向
+## 六、基础设施文件
+
+项目提供完整的 Prometheus + Grafana 监控栈配置：
+
+| 文件 | 用途 |
+|------|------|
+| `infra/prometheus/prometheus.yml` | Prometheus 抓取配置，5s 间隔采集 backend:8080/metrics |
+| `infra/grafana/provisioning/datasources/datasource.yml` | 自动注册 Prometheus 数据源 |
+| `infra/grafana/provisioning/dashboards/dashboards.yml` | Dashboard 文件夹 provisioning |
+| `infra/grafana/dashboards/unirouter-overview.json` | 预置 8 面板 Grafana Dashboard |
+| `infra/loadtest/k6-chat-completions.js` | k6 压测脚本（梯度爬坡 + 突发尖峰） |
+
+```bash
+# 启动监控栈（需要 Docker）
+docker compose up -d prometheus grafana
+
+# Grafana: http://localhost:3001  admin/admin
+# Prometheus: http://localhost:9090
+```
+
+### 6.1 Dashboard 导入导出
+
+Dashboard JSON 可通过 Grafana UI 的 Import 功能导入，也可通过 API 导出：
+
+```bash
+# 导出 Dashboard
+curl -s http://admin:admin@localhost:3001/api/dashboards/uid/unirouter-overview | jq '.dashboard' > dashboard.json
+
+# 导入 Dashboard
+curl -X POST http://admin:admin@localhost:3001/api/dashboards/db \
+  -H "Content-Type: application/json" \
+  -d "{\"dashboard\": $(cat infra/grafana/dashboards/unirouter-overview.json), \"overwrite\": true}"
+```
+
+### 6.2 k6 压测
+
+```bash
+# 安装 k6
+brew install k6
+
+# 运行压测
+k6 run infra/loadtest/k6-chat-completions.js
+
+# 自定义目标地址和 API Key
+BASE_URL=http://your-server:8080 API_KEY=your-key k6 run infra/loadtest/k6-chat-completions.js
+```
+
+脚本包含两个 scenario：
+- **sustained_load**：0→10 VU 梯度爬坡，维持 2 分钟
+- **spike_test**：正常 5 req/s → 突增 50 req/s → 恢复，测试熔断和指标在压力下的表现
+
+---
+
+## 七、扩展方向
 
 | 方向 | 说明 |
 |------|------|

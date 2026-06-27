@@ -147,14 +147,18 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	if !freezeResult.Success {
 		switch freezeResult.ErrorCode {
 		case "insufficient_balance":
+			middleware.RecordBillingFreeze("error")
 			writeError(w, http.StatusPaymentRequired, "billing_error", "billing_error.insufficient_balance", "Insufficient balance")
 		case "already_frozen":
+			middleware.RecordBillingFreeze("error")
 			writeError(w, http.StatusConflict, "billing_error", "billing_error.idempotent_conflict", "Request already being processed")
 		default:
+			middleware.RecordBillingFreeze("error")
 			writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", freezeResult.ErrorCode)
 		}
 		return
 	}
+	middleware.RecordBillingFreeze("success")
 
 	// Get all available routes for failover
 	routes, err := relay.router.RouteAll(ctx, req.Model)
@@ -198,7 +202,10 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		upstreamReq.Header.Set("Content-Type", "application/json")
 		upstreamReq.Header.Set("Authorization", "Bearer "+apiKey)
 
+		upstreamStart := time.Now()
 		resp, err := client.Do(upstreamReq)
+		upstreamDuration := time.Since(upstreamStart)
+		middleware.RecordUpstreamLatency(route.Channel.Provider, req.Model, upstreamDuration)
 		if err != nil {
 			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Upstream request failed: %v", err)
 			relay.router.MarkChannelFail(ctx, route.Channel.ID, 5, 300)
@@ -277,6 +284,8 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 	if err != nil {
 		reqLog.Error("Billing settle error: %v", err)
 	}
+	middleware.RecordTokenUsage("prompt", model, usage.Usage.PromptTokens)
+	middleware.RecordTokenUsage("completion", model, usage.Usage.CompletionTokens)
 	relay.checkBudgetAlert(ctx)
 
 	// Record request log
@@ -491,7 +500,12 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	if settleErr != nil {
 		reqLog.Error("Billing settle error: %v", settleErr)
 	}
+	middleware.RecordTokenUsage("prompt", model, tokenCounter.InputTokens())
+	middleware.RecordTokenUsage("completion", model, tokenCounter.OutputTokens())
 	relay.checkBudgetAlert(ctx)
+
+	streamDuration := time.Since(streamStart)
+	middleware.RecordUpstreamLatency(route.Channel.Provider, model, streamDuration)
 
 	usageSource := "stream_estimate"
 	if usedUpstreamUsage {
@@ -649,6 +663,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !freezeResult.Success {
+		middleware.RecordBillingFreeze("error")
 		if freezeResult.ErrorCode == "insufficient_balance" {
 			writeError(w, http.StatusPaymentRequired, "billing_error", "billing_error.insufficient_balance", "Insufficient balance")
 		} else {
@@ -656,6 +671,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	middleware.RecordBillingFreeze("success")
 
 	// Get route
 	route, err := relay.router.Route(ctx, req.Model)
@@ -690,7 +706,10 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	upstreamReq.Header.Set("Authorization", "Bearer "+apiKey)
 
 	client := &http.Client{Timeout: 120 * time.Second}
+	upstreamStart := time.Now()
 	resp, err := client.Do(upstreamReq)
+	upstreamDuration := time.Since(upstreamStart)
+	middleware.RecordUpstreamLatency(route.Channel.Provider, req.Model, upstreamDuration)
 	if err != nil {
 		reqLog.Error("Upstream embeddings request failed: %v", err)
 		relay.billing.Cancel(ctx, requestID, orgID)
@@ -717,6 +736,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		PromptTokens: usage.Usage.PromptTokens,
 		UsageSource:  "api",
 	})
+	middleware.RecordTokenUsage("prompt", req.Model, usage.Usage.PromptTokens)
 	relay.checkBudgetAlert(ctx)
 
 	relay.recordRequest(ctx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, req.Model, req.Model, r.RemoteAddr,
