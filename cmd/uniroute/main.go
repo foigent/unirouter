@@ -24,6 +24,7 @@ import (
 	"github.com/uniroute/unirouter/internal/filter"
 	"github.com/uniroute/unirouter/internal/gateway"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/uniroute/unirouter/internal/migrate"
 	"github.com/uniroute/unirouter/internal/redisx"
 )
@@ -43,16 +44,19 @@ func main() {
 	defer postgres.Close()
 	log.Println("Connected to PostgreSQL")
 
-	// Run migrations
-	migrationsDir := cfg.MigrationsDir
-	if migrationsDir == "" {
-		// Default: look for migrations/ relative to binary or CWD
-		migrationsDir = findMigrationsDir()
+	// Run migrations (skip for canary instances sharing the same DB)
+	if cfg.SkipMigration {
+		log.Println("SKIP_MIGRATION=true, skipping database migrations")
+	} else {
+		migrationsDir := cfg.MigrationsDir
+		if migrationsDir == "" {
+			migrationsDir = findMigrationsDir()
+		}
+		if err := migrate.Run(context.Background(), postgres.Pool, migrationsDir); err != nil {
+			log.Fatalf("Migration failed: %v", err)
+		}
+		log.Println("Migrations complete")
 	}
-	if err := migrate.Run(context.Background(), postgres.Pool, migrationsDir); err != nil {
-		log.Fatalf("Migration failed: %v", err)
-	}
-	log.Println("Migrations complete")
 
 	// Initialize Redis
 	redisClient, err := redisx.NewRedis(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB, cfg.RedisMaxConns)
@@ -65,6 +69,7 @@ func main() {
 	// Initialize core components
 	router := gateway.NewRouter(postgres.Pool)
 	billingSvc := billing.NewBilling(postgres.Pool, redisClient.Client)
+	admissionCtrl := middleware.NewDefaultAdmissionController()
 	sensitiveFilter := filter.NewDFAFilter([]string{})
 	encKey := []byte(cfg.EncryptionKey)
 	relay := gateway.NewRelay(postgres.Pool, redisClient.Client, router, billingSvc, sensitiveFilter, encKey)
@@ -139,6 +144,9 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"service":"uniroute","version":"1.0.0","status":"running"}`)
 	})
+
+	// Prometheus metrics endpoint
+	mux.Handle("GET /metrics", promhttp.Handler())
 
 	// Gateway endpoints (with auth + rate limiting)
 	gatewayAuth := middleware.GatewayAuth(postgres.Pool, cfg.JWTSecret)
@@ -257,7 +265,12 @@ func main() {
 mux.Handle("POST /api/v1/channels/{id}/test", adminAuth(http.HandlerFunc(adminHandler.TestChannel)))
 mux.Handle("GET /api/v1/wallet/transactions/export", adminAuth(http.HandlerFunc(adminHandler.ExportWalletTransactions)))
 	// CORS middleware
-	corsHandler := middleware.CORS(mux)
+	admissionMiddleware := middleware.AdmissionMiddleware(admissionCtrl, func(r *http.Request) int {
+		return 1 // Default org ID - in production would extract from JWT
+	})
+	admissionHandler := admissionMiddleware(mux)
+	metricsHandler := middleware.MetricsMiddleware(admissionHandler)
+	corsHandler := middleware.CORS(metricsHandler)
 
 	// Create server
 	addr := fmt.Sprintf(":%d", cfg.ListenPort)

@@ -8,7 +8,10 @@
 - [tech-ref/](tech-ref/) — 开发团队技术参考（6 份文档）
 
 ## 运维文档
-- [ops/](ops/) — 部署和测试
+- [ops/deployment-runbook.md](ops/deployment-runbook.md) — 部署手册（含 Canary + HTTPS 章节）
+- [ops/canary-testing.md](ops/canary-testing.md) — 灰度测试操作指南
+- [ops/test-plan.md](ops/test-plan.md) — 测试计划
+- [ops/test-report.md](ops/test-report.md) — 测试报告
 
 ## 项目管理
 - [issues/](issues/) — 待处理问题（已解决的归档在 archive/issues/）

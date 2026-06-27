@@ -377,7 +377,7 @@ FREEZE_REQUESTED → FREEZE_SUCCESS → SETTLED
 
 ---
 
-### F11: 限流
+### F11: 限流 + 准入控制
 
 **两层限流**：
 
@@ -385,11 +385,14 @@ FREEZE_REQUESTED → FREEZE_SUCCESS → SETTLED
 |------|------|------|------|
 | 按 Key | Redis | 令牌桶 | `api_keys.rpm_limit`（默认 60） |
 | 按渠道 | Redis | 令牌桶 | `channels.rpm_limit` / `channels.tpm_limit` |
+| 准入控制 | Go channel | 信号量 | 全局 500 并发 + 单组织 50 并发 |
 
 **Acceptance Criteria**：
 - [ ] Key RPM 超限 → 429 + `rate_limit_error.rpm_exceeded`
 - [ ] 渠道 TPM 超限 → 自动切换到同模型其他渠道
 - [ ] 限流计数器在 Redis 中，服务重启不丢失
+- [ ] 并发超过全局上限 → 429 + `rate_limit.exceeded`
+- [ ] 并发超过组织上限 → 429 + `rate_limit.exceeded`
 
 ---
 
@@ -565,24 +568,43 @@ HEALTHY ──连续失败≥5次──→ OPEN（熔断）
 | 可靠性 | Docker `restart: always`，Redis AOF always | 部署验证 |
 | 备份 | 每日 pg_dump 全量备份，保留 7 天 | 脚本验证 |
 | 审计 | 所有管理操作写 `audit_logs` | 代码审查 |
-| 日志 | 结构化日志（zap），含 `request_id` / `org_id` / `model` | 日志检查 |
+| 日志 | 结构化日志（stdlib log），含 `request_id` / `org_id` / `model` / `channel_id`，详见 tech-ref/07 | 日志检查 |
 
 ---
 
 ## 六、部署架构
 
+### 基础部署（开发/测试）
+
 ```
-Docker Compose（3 个容器）：
-├── uniroute（单个 Go 二进制）
+Docker Compose（4 个容器）：
+├── uniroute-api（单个 Go 二进制）
 │   ├── gateway/（路由转发，OneAPI 集成）
 │   ├── billing/（计费模块）
 │   ├── admin/（管理 API）
-│   └── middleware/（鉴权、限流）
+│   ├── logger/（结构化日志）
+│   └── middleware/（鉴权、限流、监控指标、准入控制）
+├── uniroute-frontend（React + Vite，Nginx 静态服务）
 ├── PostgreSQL 15
 └── Redis 7（AOF always）
 ```
 
-完整部署指南见 `ops/deployment-runbook.md`。
+### 生产部署（HTTPS + Canary）
+
+```
+Docker Compose（6 个容器）：
+├── nginx（外层反向代理，TLS 终止 + canary 权重路由）
+├── uniroute-api（stable 后端，90% 流量）
+├── uniroute-api-canary（canary 后端，10% 流量，共享 PG/Redis，跳过 migration）
+├── uniroute-frontend（React + Vite）
+├── PostgreSQL 15
+└── Redis 7（AOF always）
+```
+
+- Canary 测试：`docker compose -f docker-compose.yml -f docker-compose.canary.yml up -d`
+- 权重在 Nginx 层调整，代码零改动
+
+完整部署指南见 `ops/deployment-runbook.md`，灰度测试详见 `ops/canary-testing.md`。
 
 ---
 
@@ -609,6 +631,12 @@ Docker Compose（3 个容器）：
 - [ ] 渠道熔断后自动切换到备用渠道
 - [ ] 敏感词请求返回 400
 - [ ] 重复请求（相同 X-Request-Id）不重复扣费
+- [ ] 并发超限返回 429（准入控制）
+
+### 可观测性
+- [ ] 每条请求日志包含 request_id / org_id / channel_id
+- [ ] Prometheus /metrics 端点返回指标数据
+- [ ] Grafana 面板可展示请求速率、延迟、错误率
 
 ---
 

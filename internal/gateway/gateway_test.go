@@ -13,7 +13,7 @@ import (
 
 func TestWriteError(t *testing.T) {
 	rec := httptest.NewRecorder()
-	writeError(rec, http.StatusBadRequest, "invalid_request", "model is required")
+	writeError(rec, http.StatusBadRequest, "invalid_request_error", "validation_error.invalid_request", "model is required")
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rec.Code)
 	}
@@ -23,7 +23,7 @@ func TestWriteError(t *testing.T) {
 	if !ok {
 		t.Fatal("expected error object in response")
 	}
-	if errObj["type"] != "invalid_request" {
+	if errObj["type"] != "invalid_request_error" {
 		t.Fatalf("expected type invalid_request, got %v", errObj["type"])
 	}
 	if errObj["message"] != "model is required" {
@@ -111,35 +111,39 @@ func TestRequestWithContext(t *testing.T) {
 
 func TestWriteError_VariousStatuses(t *testing.T) {
 	cases := []struct {
-		code int
-		typ  string
-		msg  string
+		httpCode int
+		typ      string
+		code     string
+		msg      string
 	}{
-		{400, "invalid_request", "bad input"},
-		{401, "auth_error", "unauthorized"},
-		{403, "forbidden", "access denied"},
-		{429, "rate_limit", "too many requests"},
-		{500, "internal_error", "something broke"},
-		{502, "upstream_error", "bad gateway"},
+		{400, "invalid_request_error", "validation_error.invalid", "bad input"},
+		{401, "authentication_error", "auth_error.invalid_key", "unauthorized"},
+		{403, "permission_error", "auth_error.model_not_allowed", "access denied"},
+		{429, "rate_limit_error", "rate_limit.rpm_exceeded", "too many requests"},
+		{500, "server_error", "server_error.internal", "something broke"},
+		{502, "server_error", "server_error.upstream", "bad gateway"},
 	}
 	for _, c := range cases {
 		rec := httptest.NewRecorder()
-		writeError(rec, c.code, c.typ, c.msg)
-		if rec.Code != c.code {
-			t.Fatalf("status %d: expected %d, got %d", c.code, c.code, rec.Code)
+		writeError(rec, c.httpCode, c.typ, c.code, c.msg)
+		if rec.Code != c.httpCode {
+			t.Fatalf("status %d: expected %d, got %d", c.httpCode, c.httpCode, rec.Code)
 		}
 		var resp map[string]interface{}
 		json.Unmarshal(rec.Body.Bytes(), &resp)
 		errObj := resp["error"].(map[string]interface{})
 		if errObj["type"] != c.typ {
-			t.Fatalf("status %d: type mismatch: %v", c.code, errObj["type"])
+			t.Fatalf("status %d: type mismatch: %v", c.httpCode, errObj["type"])
+		}
+		if errObj["code"] != c.code {
+			t.Fatalf("status %d: code mismatch: expected %s, got %v", c.httpCode, c.code, errObj["code"])
 		}
 	}
 }
 
 func TestWriteError_ContentType(t *testing.T) {
 	rec := httptest.NewRecorder()
-	writeError(rec, 400, "test", "msg")
+	writeError(rec, 400, "test", "test.code", "msg")
 	ct := rec.Header().Get("Content-Type")
 	if ct != "application/json" {
 		t.Fatalf("expected application/json, got %s", ct)
@@ -148,21 +152,21 @@ func TestWriteError_ContentType(t *testing.T) {
 
 func TestWriteError_InternalServerError(t *testing.T) {
 	rec := httptest.NewRecorder()
-	writeError(rec, 500, "internal_error", "something went wrong")
+	writeError(rec, 500, "server_error", "server_error.internal", "something went wrong")
 	if rec.Code != 500 {
 		t.Fatalf("expected 500, got %d", rec.Code)
 	}
 	var resp map[string]interface{}
 	json.Unmarshal(rec.Body.Bytes(), &resp)
 	errObj := resp["error"].(map[string]interface{})
-	if errObj["type"] != "internal_error" {
+	if errObj["type"] != "server_error" {
 		t.Fatalf("expected internal_error, got %v", errObj["type"])
 	}
 }
 
 func TestWriteError_UnicodeMessage(t *testing.T) {
 	rec := httptest.NewRecorder()
-	writeError(rec, 400, "test", "请求包含禁止内容 🚫")
+	writeError(rec, 400, "test", "test.code", "请求包含禁止内容 🚫")
 	var resp map[string]interface{}
 	json.Unmarshal(rec.Body.Bytes(), &resp)
 	errObj := resp["error"].(map[string]interface{})
@@ -175,7 +179,7 @@ func TestWriteError_ContentTypeOnError(t *testing.T) {
 	testCases := []int{400, 401, 403, 404, 429, 500, 502, 503}
 	for _, code := range testCases {
 		rec := httptest.NewRecorder()
-		writeError(rec, code, "test", "msg")
+		writeError(rec, code, "test", "test.code", "msg")
 		ct := rec.Header().Get("Content-Type")
 		if ct != "application/json" {
 			t.Fatalf("code %d: expected application/json, got %s", code, ct)
@@ -305,7 +309,7 @@ func TestWriteError_StatusCode200(t *testing.T) {
 	// Unusual: writeError with 200 means success with error body.
 	// Not in production but should not panic.
 	rec := httptest.NewRecorder()
-	writeError(rec, 200, "ok", "everything is fine")
+	writeError(rec, 200, "ok", "ok.success", "everything is fine")
 	if rec.Code != 200 {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
@@ -317,7 +321,7 @@ func TestWriteError_LargeMessage(t *testing.T) {
 	for i := 0; i < 10000; i++ {
 		largeMsg += "x"
 	}
-	writeError(rec, 400, "test", largeMsg)
+	writeError(rec, 400, "test", "test.large", largeMsg)
 	if rec.Code != 400 {
 		t.Fatalf("expected 400, got %d", rec.Code)
 	}

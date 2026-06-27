@@ -224,7 +224,7 @@ func TestEstimateTokens_SystemAndAssistantRoles(t *testing.T) {
 
 func TestWriteError_EmptyFields(t *testing.T) {
 	rec := httptest.NewRecorder()
-	writeError(rec, 400, "", "")
+	writeError(rec, 400, "", "", "")
 	var resp map[string]interface{}
 	json.Unmarshal(rec.Body.Bytes(), &resp)
 	errObj := resp["error"].(map[string]interface{})
@@ -235,7 +235,7 @@ func TestWriteError_EmptyFields(t *testing.T) {
 
 func TestWriteError_SpecialCharsInMessage(t *testing.T) {
 	rec := httptest.NewRecorder()
-	writeError(rec, 400, "test", "message with \"quotes\" and \n newlines")
+	writeError(rec, 400, "test", "test.escapes", "message with \"quotes\" and \n newlines")
 	var resp map[string]interface{}
 	json.Unmarshal(rec.Body.Bytes(), &resp)
 	errObj := resp["error"].(map[string]interface{})
