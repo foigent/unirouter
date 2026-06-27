@@ -1,9 +1,9 @@
 # Deployment Runbook（部署运维手册）
 
-> **版本**：v1.1
-> **日期**：2026-06-19
+> **版本**：v1.2
+> **日期**：2026-06-27
 > **用途**：运维人员部署和维护 UniRoute 的操作手册
-> **变更记录**：v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）、Prometheus 标记为规划中
+> **变更记录**：v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）、Prometheus 标记为规划中
 
 ---
 
@@ -264,7 +264,169 @@ curl http://localhost:8080/health/ready
 
 ---
 
-## 九、安全加固
+
+---
+
+## 九、Canary 测试部署
+
+### 9.1 架构说明
+
+Canary 测试通过外层 Nginx 将部分流量路由到新版（canary）后端实例，同时保持旧版（stable）实例处理大部分请求。
+
+```
+客户端 → Nginx:443 (TLS 终止)
+            ├── 90% → uniroute-api:8080        (stable)
+            └── 10% → uniroute-api-canary:8080  (canary，共享 PG/Redis)
+```
+
+关键约束：
+- canary 实例 **共享** stable 的 PostgreSQL 和 Redis
+- canary 实例 **跳过** 数据库迁移（`SKIP_MIGRATION=true`），由 stable 实例负责迁移
+- 健康检查和 Prometheus 指标 **只走 stable**
+
+### 9.2 启动 Canary
+
+```bash
+cd /opt/uniroute
+
+# 确保 stable 实例正常运行
+docker compose up -d
+curl http://localhost:8080/health/ready  # 必须返回 ok
+
+# 启动 canary（叠加配置）
+docker compose -f docker-compose.yml -f docker-compose.canary.yml up -d
+
+# 验证 canary 容器
+docker compose -f docker-compose.yml -f docker-compose.canary.yml ps
+# 应看到 6 个容器：postgres, redis, backend, frontend, nginx, backend-canary
+```
+
+### 9.3 验证流量分发
+
+```bash
+# 连续请求 20 次，观察响应差异
+for i in $(seq 1 20); do
+  curl -s http://localhost/v1/chat/completions     -H "Authorization: Bearer sk-test"     -H "Content-Type: application/json"     -d '{"model":"deepseek-chat","messages":[{"role":"user","content":"ping"}]}'     | jq -r '.model // "error"'
+done
+```
+
+### 9.4 调整 canary 权重
+
+编辑 `nginx/nginx.conf`，修改 `upstream backend_canary` 的 `weight` 值：
+
+```nginx
+upstream backend_canary {
+    server uniroute-api:8080        weight=9;   # stable
+    server uniroute-api-canary:8080 weight=1;   # canary
+}
+```
+
+常用权重比例：
+- `9:1` — 10% canary（保守）
+- `3:1` — 25% canary（中等）
+- `1:1` — 50% canary（激进，用于发布前验证）
+
+修改后重载 Nginx：
+
+```bash
+docker compose exec nginx nginx -s reload
+```
+
+### 9.5 监控 canary
+
+```bash
+# 查看 canary 日志（独立容器）
+docker compose -f docker-compose.yml -f docker-compose.canary.yml logs -f backend-canary
+
+# 对比 stable 和 canary 的错误率
+echo "=== Stable errors ==="
+docker compose logs backend --since 5m | grep -i "error\|panic\|fatal" | wc -l
+
+echo "=== Canary errors ==="
+docker compose logs backend-canary --since 5m | grep -i "error\|panic\|fatal" | wc -l
+
+# 检查 canary 的计费准确性（对比 call_logs）
+docker compose exec postgres psql -U uniroute -c \
+    "SELECT api_key_id, SUM(total_cost_cents) as total, COUNT(*) as requests \
+     FROM call_logs WHERE created_at > NOW() - INTERVAL '1 hour' \
+     GROUP BY api_key_id ORDER BY requests DESC LIMIT 10;"
+```
+
+### 9.6 回滚 canary
+
+如果 canary 出现问题，立即停止 canary 容器：
+
+```bash
+# 停止 canary（Nginx 会自动回退到 stable）
+docker compose -f docker-compose.yml -f docker-compose.canary.yml stop backend-canary
+docker compose -f docker-compose.yml -f docker-compose.canary.yml rm -f backend-canary
+
+# 验证流量全部回到 stable
+curl http://localhost/v1/models -H "Authorization: Bearer sk-test"
+```
+
+### 9.7 升级 stable
+
+canary 验证通过后，将 stable 升级到 canary 版本：
+
+```bash
+# 1. 停止 canary
+docker compose -f docker-compose.yml -f docker-compose.canary.yml stop backend-canary
+
+# 2. 备份数据库
+docker compose exec postgres pg_dump -U uniroute uniroute > pre_upgrade_$(date +%Y%m%d).sql
+
+# 3. 重建 stable（新代码）
+docker compose build backend
+docker compose up -d backend
+
+# 4. 验证
+curl http://localhost:8080/health/ready
+
+# 5. 移除外层 Nginx（可选，如果不需要持续 canary）
+docker compose -f docker-compose.yml -f docker-compose.canary.yml down nginx
+```
+
+---
+
+## 十、生产环境部署（HTTPS）
+
+### 10.1 架构
+
+```
+客户端 → Nginx:443 (TLS) → backend:8080 + frontend:80
+```
+
+### 10.2 申请 SSL 证书
+
+```bash
+# 安装 certbot
+apt install certbot
+
+# 申请证书（需先停止 Nginx 或使用 DNS 验证）
+certbot certonly --standalone -d your-domain.com
+
+# 证书路径
+# /etc/letsencrypt/live/your-domain.com/fullchain.pem
+# /etc/letsencrypt/live/your-domain.com/privkey.pem
+```
+
+### 10.3 配置 Nginx
+
+编辑 `nginx/nginx.conf`：
+1. 将 `server_name _;` 改为你的域名
+2. 取消注释 TLS 证书路径
+3. 取消注释 HTTP→HTTPS 重定向
+
+### 10.4 启动
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.canary.yml up -d
+```
+
+---
+
+## 十一、安全加固
 
 | 措施 | 说明 |
 |------|------|

@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -19,6 +18,7 @@ import (
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/filter"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/logger"
 	"github.com/uniroute/unirouter/internal/tokenutil"
 )
 
@@ -81,18 +81,18 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	var req ChatCompletionRequest
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Failed to read request body")
+		writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.invalid_request", "Failed to read request body")
 		return
 	}
 	defer r.Body.Close()
 
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+		writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.invalid_request", "Invalid JSON body")
 		return
 	}
 
 	if req.Model == "" {
-		writeError(w, http.StatusBadRequest, "invalid_request", "model is required")
+		writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.invalid_request", "model is required")
 		return
 	}
 
@@ -100,7 +100,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	if relay.filter != nil && relay.filter.WordCount() > 0 {
 		for _, msg := range req.Messages {
 			if matched, _ := relay.filter.IsSensitive(msg.Content); matched {
-				writeError(w, http.StatusBadRequest, "content_policy_violation", "Request contains prohibited content")
+				writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.sensitive_word_detected", "Request contains prohibited content")
 				return
 			}
 		}
@@ -117,7 +117,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 			}
 		}
 		if !allowed {
-			writeError(w, http.StatusForbidden, "model_not_allowed",
+			writeError(w, http.StatusForbidden, "permission_error", "auth_error.model_not_allowed",
 				fmt.Sprintf("Model '%s' is not allowed for this API key", req.Model))
 			return
 		}
@@ -129,6 +129,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	// Freeze balance once (before trying any upstream)
 	orgID := middleware.GetOrgIDFromContext(ctx)
 	keyID := middleware.GetKeyIDFromContext(ctx)
+	reqLog := logger.New(logger.Fields{RequestID: requestID, OrgID: uint(orgID), Module: "chat"})
 
 	freezeResult, err := relay.billing.Freeze(ctx, billing.FreezeRequest{
 		RequestID:       requestID,
@@ -139,18 +140,18 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		MinFreezeAmount: 10,
 	})
 	if err != nil {
-		log.Printf("[%s] Billing freeze error: %v", requestID, err)
-		writeError(w, http.StatusInternalServerError, "billing_error", "Failed to process billing")
+		reqLog.Error("Billing freeze error: %v", err)
+		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to process billing")
 		return
 	}
 	if !freezeResult.Success {
 		switch freezeResult.ErrorCode {
 		case "insufficient_balance":
-			writeError(w, http.StatusPaymentRequired, "insufficient_balance", "Insufficient balance")
+			writeError(w, http.StatusPaymentRequired, "billing_error", "billing_error.insufficient_balance", "Insufficient balance")
 		case "already_frozen":
-			writeError(w, http.StatusConflict, "already_frozen", "Request already being processed")
+			writeError(w, http.StatusConflict, "billing_error", "billing_error.idempotent_conflict", "Request already being processed")
 		default:
-			writeError(w, http.StatusInternalServerError, "billing_error", freezeResult.ErrorCode)
+			writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", freezeResult.ErrorCode)
 		}
 		return
 	}
@@ -159,7 +160,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	routes, err := relay.router.RouteAll(ctx, req.Model)
 	if err != nil {
 		relay.billing.Cancel(ctx, requestID, orgID)
-		writeError(w, http.StatusServiceUnavailable, "no_route", fmt.Sprintf("No available channel for model: %s", req.Model))
+		writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", fmt.Sprintf("No available channel for model: %s", req.Model))
 		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, req.Model, r.RemoteAddr, 0, 0, 0, 503, false, "no_route")
 		return
 	}
@@ -177,7 +178,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	for _, route := range routes {
 		apiKey, err := auth.DecryptKey(route.ChannelKey.KeyEnc, relay.encKey)
 		if err != nil {
-			log.Printf("[%s] Failed to decrypt key for channel %d: %v", requestID, route.Channel.ID, err)
+			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Failed to decrypt key: %v", err)
 			continue
 		}
 
@@ -190,7 +191,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		upstreamURL := strings.TrimRight(route.Channel.BaseURL, "/") + "/v1/chat/completions"
 		upstreamReq, err := http.NewRequestWithContext(ctx, "POST", upstreamURL, bytes.NewReader(routeBody))
 		if err != nil {
-			log.Printf("[%s] Failed to create upstream request for channel %d: %v", requestID, route.Channel.ID, err)
+			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Failed to create upstream request: %v", err)
 			continue
 		}
 
@@ -199,7 +200,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 
 		resp, err := client.Do(upstreamReq)
 		if err != nil {
-			log.Printf("[%s] Upstream channel %d request failed: %v", requestID, route.Channel.ID, err)
+			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Upstream request failed: %v", err)
 			relay.router.MarkChannelFail(ctx, route.Channel.ID, 5, 300)
 			relay.router.MarkKeyFail(ctx, route.ChannelKey.ID)
 			lastErr = err
@@ -207,7 +208,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		}
 		if resp.StatusCode != http.StatusOK {
 			errBody, _ := io.ReadAll(resp.Body)
-			log.Printf("[%s] Upstream channel %d returned %d: %s", requestID, route.Channel.ID, resp.StatusCode, string(errBody))
+			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Upstream returned %d: %s", resp.StatusCode, string(errBody))
 			relay.router.MarkChannelFail(ctx, route.Channel.ID, 5, 300)
 			relay.router.MarkKeyFail(ctx, route.ChannelKey.ID)
 			lastStatusCode = resp.StatusCode
@@ -221,9 +222,9 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		relay.router.MarkKeySuccess(ctx, route.ChannelKey.ID)
 
 		if req.Stream {
-			relay.relayStreamRequest(ctx, w, resp, &route, requestID, orgID, keyID, req.Model, req.Model, r.RemoteAddr, req.Messages)
+			relay.relayStreamRequest(ctx, w, resp, &route, requestID, orgID, keyID, req.Model, req.Model, r.RemoteAddr, req.Messages, reqLog)
 		} else {
-			relay.relayNonStreamRequest(ctx, w, resp, &route, requestID, orgID, keyID, req.Model, req.Model, r.RemoteAddr)
+			relay.relayNonStreamRequest(ctx, w, resp, &route, requestID, orgID, keyID, req.Model, req.Model, r.RemoteAddr, reqLog)
 		}
 		return
 	}
@@ -231,25 +232,25 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	// All channels failed
 	relay.billing.Cancel(ctx, requestID, orgID)
 	if lastErr != nil {
-		log.Printf("[%s] All upstream channels failed, last error: %v", requestID, lastErr)
+		reqLog.Error("All upstream channels failed, last error: %v", lastErr)
 	}
 	// Log the failed request
 	if len(routes) > 0 {
 		relay.recordRequest(ctx, requestID, orgID, keyID, routes[0].Channel.ID, routes[0].Channel.Provider, routes[0].Channel.Name, req.Model, req.Model, r.RemoteAddr, 0, 0, 0, lastStatusCode, false, "upstream_failed")
 	}
 	if lastStatusCode > 0 {
-		writeError(w, http.StatusBadGateway, "upstream_error", fmt.Sprintf("All upstream channels failed (last status: %d)", lastStatusCode))
+		writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_error", fmt.Sprintf("All upstream channels failed (last status: %d)", lastStatusCode))
 	} else {
-		writeError(w, http.StatusBadGateway, "upstream_error", "All upstream channels failed")
+		writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_error", "All upstream channels failed")
 	}
 }
 
 // relayNonStreamRequest handles non-streaming responses.
-func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWriter, resp *http.Response, route *RouteResult, requestID string, orgID, keyID int64, model, requestedModel, clientIP string) {
+func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWriter, resp *http.Response, route *RouteResult, requestID string, orgID, keyID int64, model, requestedModel, clientIP string, reqLog *logger.Logger) {
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("[%s] Failed to read response body: %v", requestID, err)
+		reqLog.Error("Failed to read response body: %v", err)
 		return
 	}
 
@@ -274,7 +275,7 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 		UsageSource:      "api",
 	})
 	if err != nil {
-		log.Printf("[%s] Billing settle error: %v", requestID, err)
+		reqLog.Error("Billing settle error: %v", err)
 	}
 	relay.checkBudgetAlert(ctx)
 
@@ -306,7 +307,7 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 // relayStreamRequest handles streaming SSE responses.
 // Balance check goroutine signals via a channel; the main loop owns all writes
 // and the upstream body lifecycle. No goroutine touches resp.Body directly.
-func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWriter, resp *http.Response, route *RouteResult, requestID string, orgID, keyID int64, model, requestedModel, clientIP string, messages []Message) {
+func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWriter, resp *http.Response, route *RouteResult, requestID string, orgID, keyID int64, model, requestedModel, clientIP string, messages []Message, reqLog *logger.Logger) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -314,7 +315,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		log.Printf("[%s] ResponseWriter does not support Flusher", requestID)
+		reqLog.Error("ResponseWriter does not support Flusher")
 		return
 	}
 
@@ -335,11 +336,11 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 				err := relay.db.QueryRow(balanceCancelCtx,
 					`SELECT COALESCE(w.balance + w.granted_balance, 0) FROM wallets w WHERE w.org_id = $1`, orgID).Scan(&balance)
 				if err != nil {
-					log.Printf("[%s] Balance check error: %v", requestID, err)
+					reqLog.Error("Balance check error: %v", err)
 					continue
 				}
 				if balance <= 0 {
-					log.Printf("[%s] Balance exhausted during streaming, signaling main loop", requestID)
+					reqLog.Warn("Balance exhausted during streaming, signaling main loop")
 					select {
 					case balanceExhausted <- struct{}{}:
 					default:
@@ -438,7 +439,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		// Check for balance exhaustion signal from background goroutine
 		select {
 		case <-balanceExhausted:
-			log.Printf("[%s] Balance exhausted at %d output tokens, sending error", requestID, tokenCounter.OutputTokens())
+			reqLog.Warn("Balance exhausted at %d output tokens, sending error", tokenCounter.OutputTokens())
 			writeMu.Lock()
 			fmt.Fprintf(w, "data: {\"error\":{\"type\":\"insufficient_balance\",\"message\":\"Balance exhausted\"}}\n\n")
 			flusher.Flush()
@@ -454,7 +455,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			err := relay.db.QueryRow(ctx,
 				`SELECT COALESCE(w.balance + w.granted_balance, 0) FROM wallets w WHERE w.org_id = $1`, orgID).Scan(&balance)
 			if err == nil && balance <= 0 {
-				log.Printf("[%s] Balance exhausted at %d output tokens, closing upstream", requestID, tokenCounter.OutputTokens())
+				reqLog.Warn("Balance exhausted at %d output tokens, closing upstream", tokenCounter.OutputTokens())
 				writeMu.Lock()
 				fmt.Fprintf(w, "data: {\"error\":{\"type\":\"insufficient_balance\",\"message\":\"Balance exhausted\"}}\n\n")
 				flusher.Flush()
@@ -488,7 +489,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		UsageSource:      func() string { if usedUpstreamUsage { return "api" }; return "stream_estimate" }(),
 	})
 	if settleErr != nil {
-		log.Printf("[%s] Billing settle error: %v", requestID, settleErr)
+		reqLog.Error("Billing settle error: %v", settleErr)
 	}
 	relay.checkBudgetAlert(ctx)
 
@@ -528,9 +529,10 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 
 // calculateCost computes the actual cost in cents using model prices.
 func (relay *Relay) calculateCost(ctx context.Context, orgID int64, model string, promptTokens, completionTokens int) int {
+	costLog := logger.New(logger.Fields{OrgID: uint(orgID), Module: "billing"})
 	inputPerToken, outputPerToken, err := relay.billing.QueryModelPriceForOrg(ctx, orgID, model)
 	if err != nil {
-		log.Printf("QueryModelPriceForOrg error for %s: %v, using default", model, err)
+		costLog.Warn("QueryModelPriceForOrg error for %s: %v, using default", model, err)
 		inputPerToken = 2
 		outputPerToken = 10
 	}
@@ -544,13 +546,14 @@ func (relay *Relay) calculateCost(ctx context.Context, orgID int64, model string
 
 // recordRequest logs the request to the call_logs table.
 func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, keyID, channelID int64, provider, channelName, model, requestedModel, clientIP string, promptTokens, completionTokens, costCents, statusCode int, isStream bool, usageSource string) {
+	reqLog := logger.New(logger.Fields{RequestID: requestID, OrgID: uint(orgID), Module: "records"})
 	_, err := relay.db.Exec(ctx,
 		`INSERT INTO call_logs (request_id, org_id, api_key_id, model, requested_model, provider, channel, prompt_tokens, completion_tokens, total_tokens, cost_cents, status_code, usage_source, is_stream, ip_address)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
 		requestID, orgID, keyID, model, requestedModel, provider, channelName, promptTokens, completionTokens, promptTokens+completionTokens, costCents, statusCode, usageSource, isStream, clientIP,
 	)
 	if err != nil {
-		log.Printf("[%s] Failed to record request log: %v", requestID, err)
+		reqLog.Error("Failed to record request log: %v", err)
 	}
 }
 
@@ -568,14 +571,18 @@ func estimateTokens(messages []Message, maxTokens *int) int {
 	return inputTokens + outputTokens
 }
 
-// writeError writes an OpenAI-compatible error response.
-func writeError(w http.ResponseWriter, statusCode int, errType, message string) {
+// writeError writes an OpenAI-compatible error response with both type and code fields.
+// errType is the OpenAI-style type (e.g. "invalid_request_error"), code is the
+// two-part {category}.{specific} code (e.g. "validation_error.invalid_request").
+func writeError(w http.ResponseWriter, statusCode int, errType, code, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"error": map[string]interface{}{
 			"type":    errType,
+			"code":    code,
 			"message": message,
+			"param":   nil,
 		},
 	})
 }
@@ -594,22 +601,23 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	var req EmbeddingsRequest
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Failed to read request body")
+		writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.invalid_request", "Failed to read request body")
 		return
 	}
 	defer r.Body.Close()
 
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body")
+		writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.invalid_request", "Invalid JSON body")
 		return
 	}
 	if req.Model == "" {
-		writeError(w, http.StatusBadRequest, "invalid_request", "model is required")
+		writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.invalid_request", "model is required")
 		return
 	}
 
 	orgID := middleware.GetOrgIDFromContext(ctx)
 	keyID := middleware.GetKeyIDFromContext(ctx)
+	reqLog := logger.New(logger.Fields{RequestID: requestID, OrgID: uint(orgID), Module: "embeddings"})
 
 	// Estimate tokens (embeddings are typically input-only)
 	inputTokens := 500
@@ -636,15 +644,15 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		MinFreezeAmount: 10,
 	})
 	if err != nil {
-		log.Printf("[%s] Billing freeze error: %v", requestID, err)
-		writeError(w, http.StatusInternalServerError, "billing_error", "Failed to process billing")
+		reqLog.Error("Billing freeze error: %v", err)
+		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to process billing")
 		return
 	}
 	if !freezeResult.Success {
 		if freezeResult.ErrorCode == "insufficient_balance" {
-			writeError(w, http.StatusPaymentRequired, "insufficient_balance", "Insufficient balance")
+			writeError(w, http.StatusPaymentRequired, "billing_error", "billing_error.insufficient_balance", "Insufficient balance")
 		} else {
-			writeError(w, http.StatusInternalServerError, "billing_error", freezeResult.ErrorCode)
+			writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", freezeResult.ErrorCode)
 		}
 		return
 	}
@@ -653,7 +661,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	route, err := relay.router.Route(ctx, req.Model)
 	if err != nil {
 		relay.billing.Cancel(ctx, requestID, orgID)
-		writeError(w, http.StatusServiceUnavailable, "no_route", fmt.Sprintf("No available channel for model: %s", req.Model))
+		writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", fmt.Sprintf("No available channel for model: %s", req.Model))
 		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, req.Model, r.RemoteAddr, 0, 0, 0, 503, false, "no_route")
 		return
 	}
@@ -661,7 +669,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	apiKey, err := auth.DecryptKey(route.ChannelKey.KeyEnc, relay.encKey)
 	if err != nil {
 		relay.billing.Cancel(ctx, requestID, orgID)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to decrypt API key")
+		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to decrypt API key")
 		return
 	}
 
@@ -675,7 +683,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	upstreamReq, err := http.NewRequestWithContext(ctx, "POST", upstreamURL, bytes.NewReader(replacedBody))
 	if err != nil {
 		relay.billing.Cancel(ctx, requestID, orgID)
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create upstream request")
+		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to create upstream request")
 		return
 	}
 	upstreamReq.Header.Set("Content-Type", "application/json")
@@ -684,9 +692,9 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(upstreamReq)
 	if err != nil {
-		log.Printf("[%s] Upstream embeddings request failed: %v", requestID, err)
+		reqLog.Error("Upstream embeddings request failed: %v", err)
 		relay.billing.Cancel(ctx, requestID, orgID)
-		writeError(w, http.StatusBadGateway, "upstream_error", "Upstream request failed")
+		writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_error", "Upstream request failed")
 		return
 	}
 	respBody, _ := io.ReadAll(resp.Body)
@@ -776,7 +784,7 @@ func (relay *Relay) handleModelsFallback(w http.ResponseWriter, r *http.Request)
 	rows, err := relay.db.Query(r.Context(),
 		`SELECT model_name FROM model_prices ORDER BY model_name`)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to query models")
+		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to query models")
 		return
 	}
 	defer rows.Close()

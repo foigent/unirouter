@@ -4,14 +4,17 @@
 
 ## 文档列表
 
-| # | 文档 | 说明 |
-|---|------|------|
-| 01 | [模型能力矩阵](01-provider-capability-matrix.md) | 6 家模型厂商能力对比 |
-| 02 | [计费状态机](02-billing-state-machine.md) | 计费流程完整定义 |
-| 03 | [错误处理矩阵](03-error-handling-matrix.md) | 错误分类 + 重试策略 |
-| 04 | [OneAPI Hook 清单](04-oneapi-hook-manifest.md) | 上游 Hook 分析 |
-| 05 | [OpenAPI Spec](05-openapi-spec.yaml) | API 规范（yaml） |
-| 06 | [前端页面规格](06-frontend-spec.md) | 页面布局 + 交互规格 |
+| # | 文档 | 说明 | 版本 |
+|---|------|------|------|
+| 01 | [模型能力矩阵](01-provider-capability-matrix.md) | 6 家模型厂商能力对比 | v2.0 |
+| 02 | [计费状态机](02-billing-state-machine.md) | 计费流程完整定义 | v2.0 |
+| 03 | [错误处理矩阵](03-error-handling-matrix.md) | 错误分类 + 重试策略 | v2.0 |
+| 04 | [OneAPI Hook 清单](04-oneapi-hook-manifest.md) | 上游 Hook 分析 | — |
+| 05 | [OpenAPI Spec](05-openapi-spec.yaml) | API 规范（yaml） | — |
+| 06 | [前端页面规格](06-frontend-spec.md) | 页面布局 + 交互规格 | — |
+| 07 | [结构化日志](07-structured-logging.md) | 日志架构 + 使用方式 | v1.0 |
+| 08 | [监控指标](08-prometheus-metrics.md) | Prometheus 指标体系 | v1.0 |
+| 09 | [准入控制](09-admission-control.md) | 并发限流架构 | v1.0 |
 
 ## 关联文档
 - [PRD Phase 1](../PRD-Phase1.md) — 产品需求文档

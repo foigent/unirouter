@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"github.com/uniroute/unirouter/internal/logger"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -601,7 +602,7 @@ func TestRelayNonStreamRequest_Success(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-001", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1")
+	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-001", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-001", OrgID: 1}))
 
 	if !settleCalled {
 		t.Fatal("expected settle to be called")
@@ -642,7 +643,7 @@ func TestRelayNonStreamRequest_SettleError(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-002", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1")
+	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-002", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-002", OrgID: 1}))
 
 	// Should still return 200 even if settle fails
 	if rec.Code != 200 {
@@ -701,7 +702,7 @@ func TestRelayStreamRequest_NormalFlow(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-1", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", []Message{{Role: "user", Content: "Hi"}})
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-1", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", []Message{{Role: "user", Content: "Hi"}}, logger.New(logger.Fields{RequestID: "req-stream-1", OrgID: 1}))
 
 	if !settleCalled {
 		t.Fatal("expected settle to be called")
@@ -765,7 +766,7 @@ func TestRelayStreamRequest_NoUpstreamUsage(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-2", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", []Message{{Role: "user", Content: "Hello"}})
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-2", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", []Message{{Role: "user", Content: "Hello"}}, logger.New(logger.Fields{RequestID: "req-stream-2", OrgID: 1}))
 
 	if !settleCalled {
 		t.Fatal("expected settle to be called")
@@ -804,7 +805,7 @@ func TestRelayStreamRequest_SettleError(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-3", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil)
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-3", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-3", OrgID: 1}))
 
 	// Should still produce valid output even if settle fails
 	body := rec.Body.String()
@@ -850,7 +851,7 @@ func TestRelayStreamRequest_UpstreamUsageSource(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-4", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil)
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-4", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-4", OrgID: 1}))
 }
 
 func TestRelayStreamRequest_EmptyStream(t *testing.T) {
@@ -885,7 +886,7 @@ func TestRelayStreamRequest_EmptyStream(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-5", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil)
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-5", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-5", OrgID: 1}))
 
 	body := rec.Body.String()
 	if !strings.Contains(body, "data: [DONE]") {
@@ -925,7 +926,7 @@ func TestRelayStreamRequest_UnirouteExtension(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-6", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil)
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-6", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-6", OrgID: 1}))
 
 	body := rec.Body.String()
 	// Extension data (request_id, cost) should be present in output

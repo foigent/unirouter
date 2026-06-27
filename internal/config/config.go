@@ -56,6 +56,9 @@ type Config struct {
 
 	// Cleanup
 	LogRetentionDays int
+
+	// Canary
+	SkipMigration bool
 }
 
 // Validate checks that all required configuration values are valid.
@@ -110,6 +113,8 @@ func Load() (*Config, error) {
 		TokenRatioEN: getEnvFloat("TOKEN_RATIO_EN", 4),
 
 		LogRetentionDays: getEnvInt("LOG_RETENTION_DAYS", 30),
+
+		SkipMigration: getEnvBool("SKIP_MIGRATION", false),
 	}
 
 	if err := cfg.Validate(); err != nil {

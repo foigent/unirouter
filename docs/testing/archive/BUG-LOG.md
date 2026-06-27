@@ -1,7 +1,7 @@
 # UniRouter Bug 记录
 
 > 维护者: Canary (测试 agent)
-> 最后更新: 2026-06-27（Bug #10 + #11 已修复）
+> 最后更新: 2026-06-27 11:12（新增 metrics_test.go, middleware 覆盖率 93.3%）
 > 格式: 每个 bug 一个条目，包含发现、验证、修复状态
 > 规则: 只记录不修。修复由 Codex 负责。
 
