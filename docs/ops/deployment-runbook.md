@@ -1,9 +1,9 @@
 # Deployment Runbook（部署运维手册）
 
-> **版本**：v1.2
+> **版本**：v1.3
 > **日期**：2026-06-27
 > **用途**：运维人员部署和维护 UniRoute 的操作手册
-> **变更记录**：v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）、Prometheus 标记为规划中
+> **变更记录**：v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
 
 ---
 
@@ -44,11 +44,13 @@ openssl rand -hex 32  # 用于 ENCRYPTION_KEY
 docker compose up -d
 ```
 
-服务包含 4 个容器：
+服务包含 6 个容器：
 - `backend` — Go API 服务（端口 8080）
 - `frontend` — Nginx 静态文件 + 反向代理（端口 3000）
 - `postgres` — PostgreSQL 数据库（内部端口 5432）
 - `redis` — Redis 缓存（内部端口 6379）
+- `prometheus` — 指标采集与存储（端口 9090）
+- `grafana` — 监控面板可视化（端口 3001）
 
 ### 2.3 验证部署
 
@@ -168,26 +170,84 @@ docker compose logs backend | grep "req_a1b2c3d4"
 
 ## 六、监控
 
-### 6.1 当前可用
+### 6.1 健康检查
 
 ```bash
-# 健康检查
+# 后端健康检查
 curl http://localhost:8080/health/ready
 # 期望：{"status":"ok","db":"ok","redis":"ok"}
 
 # 通过管理 API 查看系统状态
 curl http://localhost:8080/api/v1/dashboard/stats \
     -H "Authorization: Bearer <JWT>"
-# 返回：请求统计、模型价格、最近日志
 ```
 
-### 6.2 后续规划：Prometheus Metrics
+### 6.2 Prometheus 指标
 
-以下功能尚未实现，列入后续版本：
+后端暴露 `/metrics` 端点，自动采集 HTTP 请求、延迟、上游延迟、Token 用量、计费冻结等指标。
 
-- `/metrics` 端点暴露 Prometheus 指标
-- 关键指标：请求数、延迟、冻结/结算次数、错误率、熔断器状态
-- Grafana Dashboard 模板
+```bash
+# 查看原始指标
+curl http://localhost:8080/metrics
+
+# Prometheus 已配置自动抓取 backend:8080/metrics（5s 间隔）
+# Prometheus UI: http://localhost:9090
+```
+
+完整指标清单见 `docs/tech-ref/08-prometheus-metrics.md`。
+
+### 6.3 Grafana Dashboard
+
+Grafana 预置了 UniRouter Overview 面板，包含 8 个面板：
+
+| 面板 | 说明 |
+|------|------|
+| QPS | 每秒请求数，按 method/status 分组 |
+| P99/P95/P50 延迟 | 请求处理耗时分位数 |
+| 活跃请求数 | 当前并发处理中的请求数（三色阈值） |
+| 错误率 | 5xx 占比百分比 |
+| 上游延迟 | 按 provider+model 分组的 P95 |
+| Token 吞吐 | 按 type+model 分组的 Token 处理速率 |
+| 计费冻结 | 按 status 分组的冻结操作频率 |
+| 延迟热力图 | 请求耗时分布热力图 |
+
+```bash
+# Grafana 登录
+# 地址：http://localhost:3001
+# 用户名：admin
+# 密码：admin
+# Dashboard 路径：Dashboards → UniRouter Overview
+```
+
+Dashboard JSON 位于 `infra/grafana/dashboards/unirouter-overview.json`，可通过 Grafana UI 导入导出。
+
+### 6.4 性能压测
+
+项目内置 k6 压测脚本，包含梯度爬坡和突发尖峰两个场景：
+
+```bash
+# 安装 k6
+brew install k6
+
+# 运行压测
+k6 run infra/loadtest/k6-chat-completions.js
+
+# 自定义目标地址和 API Key
+BASE_URL=http://your-server:8080 API_KEY=your-key k6 run infra/loadtest/k6-chat-completions.js
+```
+
+脚本路径：`infra/loadtest/k6-chat-completions.js`
+
+### 6.5 告警建议
+
+生产环境建议配置以下 Prometheus 告警规则：
+
+| 告警 | 条件 | 严重程度 |
+|------|------|---------|
+| 错误率过高 | 5xx rate > 5% 持续 5 分钟 | critical |
+| P99 延迟过高 | P99 > 3s 持续 5 分钟 | warning |
+| 活跃请求数过高 | > 100 持续 2 分钟 | warning |
+| 上游全部失败 | 所有渠道熔断 | critical |
 
 ---
 

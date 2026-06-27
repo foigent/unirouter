@@ -425,6 +425,12 @@ main_test.go 已同步更新，AllowedModels 分支逻辑与 main.go 一致 ✅
 - `go build ./...` → PASS ✅
 - `go vet ./internal/middleware/` → PASS ✅
 
+### 线上验证（2026-06-27 15:35 部署后）
+
+- `curl -N ... stream:true` 通过 Nginx → ✅ 收到 SSE 数据
+- chunks=15, done=2, content='1+1 等于 **2**'
+- Bug #12 修复确认生效
+
 ### 验收结论
 
 - [x] Fix #15（Bug #12）：**PASS**

@@ -19,3 +19,14 @@
 ## 关联文档
 - [PRD Phase 1](../PRD-Phase1.md) — 产品需求文档
 - [运维文档](../ops/) — 部署和测试
+
+## 基础设施配置
+
+| 文件 | 说明 |
+|------|------|
+| `infra/prometheus/prometheus.yml` | Prometheus 抓取配置 |
+| `infra/grafana/provisioning/` | Grafana datasource + dashboard provisioning |
+| `infra/grafana/dashboards/unirouter-overview.json` | 预置 Grafana Dashboard（8 面板） |
+| `infra/loadtest/k6-chat-completions.js` | k6 压测脚本 |
+
+启动监控栈：`docker compose up -d prometheus grafana`
