@@ -366,3 +366,35 @@ main_test.go 已同步更新，AllowedModels 分支逻辑与 main.go 一致 ✅
 - [x] Fix #13：**PASS**
 - [x] 前 12 条 fix 回归：**PASS**
 - [x] 全量测试回归：**PASS**（14 包，0 FAIL）
+
+---
+
+## Fix #14 验收（Bug #11 修复）
+
+**验收日期：** 2026-06-27 10:01
+**修复者：** Codex
+
+### 代码审查
+
+- `LogsPage.tsx:36` — `providers` state 声明 ✅
+- `LogsPage.tsx:48-52` — 从 `/api/v1/channels` 获取渠道，提取去重 provider ✅
+- `LogsPage.tsx:119-122` — `{providers.map((p) => <Select.Option>)}` 动态渲染 ✅
+- 硬编码的 openai/deepseek/qwen/zhipu 已移除 ✅
+
+### 前端构建
+
+- `npm run build` → 4109 modules, 3.04s ✅
+- 无 TypeScript 错误 ✅
+
+### 全量回归
+
+- `go test ./... -count=1` → 14 包全部 PASS ✅
+- `go build ./...` → PASS ✅
+- `go vet ./cmd/uniroute/` → PASS ✅
+
+### 验收结论（第 6 轮）
+
+- [x] Fix #13（Bug #10）：**PASS**
+- [x] Fix #14（Bug #11）：**PASS**
+- [x] 前 12 条 fix 回归：**PASS**
+- [x] 全量测试回归：**PASS**（14 包，0 FAIL）
