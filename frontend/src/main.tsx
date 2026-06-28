@@ -16,6 +16,8 @@ import ModelPricesPage from './pages/ModelPricesPage'
 import OrgModelPricesPage from './pages/OrgModelPricesPage'
 import GrantsPage from './pages/GrantsPage'
 import AuditLogsPage from './pages/AuditLogsPage'
+import ReconciliationPage from './pages/ReconciliationPage'
+import TestPage from './pages/TestPage'
 import ErrorBoundary from './components/ErrorBoundary'
 import { useAuthStore } from './store/auth'
 
@@ -43,6 +45,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="org-model-prices" element={<OrgModelPricesPage />} />
             <Route path="grants" element={<GrantsPage />} />
             <Route path="audit-logs" element={<AuditLogsPage />} />
+            <Route path="reconciliation" element={<ReconciliationPage />} />
+            <Route path="test" element={<TestPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>
         </Routes>

@@ -2039,6 +2039,12 @@ func TestListModelPrices_QueryError(t *testing.T) {
 func TestListChannelKeys_Success(t *testing.T) {
 	now := time.Now()
 	db := &adminMockDB{
+		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &adminMockRow{scanFn: func(dest ...any) error {
+				*dest[0].(*int) = 1
+				return nil
+			}}
+		},
 		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			return &adminMockRows{
 				rows: []func(dest ...any) error{
@@ -2288,7 +2294,7 @@ func TestDashboardStats_Success(t *testing.T) {
 				scanFn: func(dest ...any) error {
 					queryCount++
 					// Different queries scan different types
-					if queryCount == 3 {
+					if queryCount == 3 || queryCount == 8 {
 						// avgLatencyMs is float64
 						*dest[0].(*float64) = 350.5
 						return nil
@@ -2326,6 +2332,34 @@ func TestDashboardStats_Success(t *testing.T) {
 							*dest[0].(*string) = "gpt-4o"
 							*dest[1].(*int) = 5
 							*dest[2].(*int) = 15
+							return nil
+						},
+					},
+				}, nil
+			}
+			if strings.Contains(sql, "channels") {
+				// channel health: id, name, provider, enabled, success_count, fail_count
+				return &adminMockRows{
+					rows: []func(dest ...any) error{
+						func(dest ...any) error {
+							*dest[0].(*int) = 1
+							*dest[1].(*string) = "channel-1"
+							*dest[2].(*string) = "openai"
+							*dest[3].(*bool) = true
+							*dest[4].(*int) = 80
+							*dest[5].(*int) = 5
+							return nil
+						},
+					},
+				}, nil
+			}
+			if strings.Contains(sql, "GROUP BY model") {
+				// model distribution: model, cnt
+				return &adminMockRows{
+					rows: []func(dest ...any) error{
+						func(dest ...any) error {
+							*dest[0].(*string) = "gpt-4o"
+							*dest[1].(*int) = 50
 							return nil
 						},
 					},

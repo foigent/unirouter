@@ -737,6 +737,7 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 	statusCodeFilter := r.URL.Query().Get("status_code")
 	startTime := r.URL.Query().Get("start_time")
 	endTime := r.URL.Query().Get("end_time")
+	requestIDFilter := r.URL.Query().Get("request_id")
 
 	// Build WHERE clause dynamically
 	var conditions []string
@@ -768,6 +769,34 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 	if endTime != "" {
 		conditions = append(conditions, fmt.Sprintf("created_at <= $%d", argIdx))
 		args = append(args, endTime)
+		argIdx++
+	}
+	if requestIDFilter != "" {
+		conditions = append(conditions, fmt.Sprintf("request_id = $%d", argIdx))
+		args = append(args, requestIDFilter)
+		argIdx++
+	}
+	latencyMin := r.URL.Query().Get("latency_min")
+	latencyMax := r.URL.Query().Get("latency_max")
+	if latencyMin != "" {
+		if lm, err := strconv.Atoi(latencyMin); err == nil {
+			conditions = append(conditions, fmt.Sprintf("latency_ms >= $%d", argIdx))
+			args = append(args, lm)
+			argIdx++
+		}
+	}
+	if latencyMax != "" {
+		if lx, err := strconv.Atoi(latencyMax); err == nil {
+			conditions = append(conditions, fmt.Sprintf("latency_ms <= $%d", argIdx))
+			args = append(args, lx)
+			argIdx++
+		}
+	}
+	// Global search: search across request_id, model, provider, upstream_error
+	search := r.URL.Query().Get("search")
+	if search != "" {
+		conditions = append(conditions, fmt.Sprintf("(request_id ILIKE $%d OR model ILIKE $%d OR provider ILIKE $%d OR upstream_error ILIKE $%d)", argIdx, argIdx, argIdx, argIdx))
+		args = append(args, "%"+search+"%")
 		argIdx++
 	}
 
@@ -812,6 +841,57 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"data": logs, "total": total})
+}
+
+// --- Log Detail ---
+
+func (h *Handler) GetLogDetail(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "invalid id"})
+		return
+	}
+	var requestID, model, provider, channel string
+	var promptTokens, completionTokens, totalTokens, costCents, statusCode, latencyMs, ttftMs int
+	var upstreamStatusCode *int
+	var upstreamError, usageSource, ipAddress, requestedModel string
+	var isStream bool
+	var createdAt time.Time
+	err = h.db.QueryRow(r.Context(),
+		`SELECT request_id, model, provider, channel, prompt_tokens, completion_tokens, total_tokens,
+		        cost_cents, status_code, latency_ms, ttft_ms, upstream_status_code, upstream_error,
+		        usage_source, is_stream, ip_address, requested_model, created_at
+		 FROM call_logs WHERE id = $1`, id,
+	).Scan(&requestID, &model, &provider, &channel, &promptTokens, &completionTokens, &totalTokens,
+		&costCents, &statusCode, &latencyMs, &ttftMs, &upstreamStatusCode, &upstreamError,
+		&usageSource, &isStream, &ipAddress, &requestedModel, &createdAt)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "log not found"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"id":                    id,
+		"request_id":            requestID,
+		"model":                 model,
+		"provider":              provider,
+		"channel":               channel,
+		"prompt_tokens":         promptTokens,
+		"completion_tokens":     completionTokens,
+		"total_tokens":          totalTokens,
+		"cost_cents":            costCents,
+		"status_code":           statusCode,
+		"latency_ms":            latencyMs,
+		"ttft_ms":               ttftMs,
+		"upstream_status_code":  upstreamStatusCode,
+		"upstream_error":        upstreamError,
+		"usage_source":          usageSource,
+		"is_stream":             isStream,
+		"ip_address":            ipAddress,
+		"requested_model":       requestedModel,
+		"created_at":            createdAt,
+	})
 }
 
 // --- Helpers ---
@@ -1003,24 +1083,40 @@ func (h *Handler) UpdateSetting(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	// Optional time range params; default to last 24h
+	startTime := r.URL.Query().Get("start_time")
+	endTime := r.URL.Query().Get("end_time")
+	if startTime == "" {
+		startTime = time.Now().Add(-24 * time.Hour).Format(time.RFC3339)
+	}
+	if endTime == "" {
+		endTime = time.Now().Format(time.RFC3339)
+	}
+
 	var totalRequests int
 	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM call_logs`).Scan(&totalRequests)
 
 	var todayCostCents int
 	h.db.QueryRow(ctx,
-		`SELECT COALESCE(SUM(cost_cents), 0) FROM call_logs WHERE created_at >= CURRENT_DATE`,
+		`SELECT COALESCE(SUM(cost_cents), 0) FROM call_logs WHERE created_at >= $1 AND created_at <= $2`,
+		startTime, endTime,
 	).Scan(&todayCostCents)
 
 	var avgLatencyMs float64
 	h.db.QueryRow(ctx,
-		`SELECT COALESCE(AVG(latency_ms), 0) FROM call_logs WHERE created_at >= CURRENT_DATE`,
+		`SELECT COALESCE(AVG(latency_ms), 0) FROM call_logs WHERE created_at >= $1 AND created_at <= $2`,
+		startTime, endTime,
 	).Scan(&avgLatencyMs)
 
 	var successCount, totalCount int
 	h.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM call_logs WHERE status_code >= 200 AND status_code < 300`,
+		`SELECT COUNT(*) FROM call_logs WHERE created_at >= $1 AND created_at <= $2 AND status_code >= 200 AND status_code < 300`,
+		startTime, endTime,
 	).Scan(&successCount)
-	totalCount = totalRequests
+	h.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM call_logs WHERE created_at >= $1 AND created_at <= $2`,
+		startTime, endTime,
+	).Scan(&totalCount)
 	successRate := 0.0
 	if totalCount > 0 {
 		successRate = float64(successCount) / float64(totalCount)
@@ -1099,18 +1195,116 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 		 FROM wallets ORDER BY org_id LIMIT 1`,
 	).Scan(&walletBalance, &walletGranted, &walletFrozen, &walletThreshold)
 
+	// Model distribution (top 5 models by request count in time range)
+	modelDistRows, err := h.db.Query(ctx,
+		`SELECT model, COUNT(*) as cnt
+		 FROM call_logs
+		 WHERE created_at >= $1 AND created_at <= $2
+		 GROUP BY model ORDER BY cnt DESC LIMIT 5`, startTime, endTime)
+	if err != nil {
+		modelDistRows = nil
+	}
+	modelDistribution := make([]map[string]interface{}, 0)
+	if modelDistRows != nil {
+		defer modelDistRows.Close()
+		for modelDistRows.Next() {
+			var model string
+			var cnt int
+			modelDistRows.Scan(&model, &cnt)
+			modelDistribution = append(modelDistribution, map[string]interface{}{
+				"model":    model,
+				"requests": cnt,
+			})
+		}
+	}
+
+	// Channel health (enabled channels with recent stats)
+	channelHealthRows, err := h.db.Query(ctx,
+		`SELECT c.id, c.name, c.provider, c.enabled,
+		        COALESCE(SUM(CASE WHEN cl.status_code >= 200 AND cl.status_code < 300 THEN 1 ELSE 0 END), 0) as success_count,
+		        COALESCE(SUM(CASE WHEN cl.status_code >= 400 OR cl.status_code = 0 THEN 1 ELSE 0 END), 0) as fail_count
+		 FROM channels c
+		 LEFT JOIN call_logs cl ON cl.channel = c.name AND cl.created_at >= $1 AND cl.created_at <= $2
+		 GROUP BY c.id, c.name, c.provider, c.enabled
+		 ORDER BY c.id`, startTime, endTime)
+	if err != nil {
+		channelHealthRows = nil
+	}
+	channelHealth := make([]map[string]interface{}, 0)
+	if channelHealthRows != nil {
+		defer channelHealthRows.Close()
+		for channelHealthRows.Next() {
+			var id int
+			var name, provider string
+			var enabled bool
+			var successCount, failCount int
+			channelHealthRows.Scan(&id, &name, &provider, &enabled, &successCount, &failCount)
+			status := "healthy"
+			if !enabled {
+				status = "disabled"
+			} else if failCount > 0 && successCount == 0 {
+				status = "error"
+			} else if failCount > 0 && float64(failCount)/float64(successCount+failCount) > 0.5 {
+				status = "warning"
+			}
+			channelHealth = append(channelHealth, map[string]interface{}{
+				"id":            id,
+				"name":          name,
+				"provider":      provider,
+				"enabled":       enabled,
+				"status":        status,
+				"success_count": successCount,
+				"fail_count":    failCount,
+			})
+		}
+	}
+
+	// Yesterday KPIs for delta comparison
+	yesterdayStart := time.Now().Add(-48 * time.Hour).Format(time.RFC3339)
+	yesterdayEnd := time.Now().Add(-24 * time.Hour).Format(time.RFC3339)
+	var yesterCostCents int
+	h.db.QueryRow(ctx,
+		`SELECT COALESCE(SUM(cost_cents), 0) FROM call_logs WHERE created_at >= $1 AND created_at <= $2`,
+		yesterdayStart, yesterdayEnd,
+	).Scan(&yesterCostCents)
+	var yesterLatency float64
+	h.db.QueryRow(ctx,
+		`SELECT COALESCE(AVG(latency_ms), 0) FROM call_logs WHERE created_at >= $1 AND created_at <= $2`,
+		yesterdayStart, yesterdayEnd,
+	).Scan(&yesterLatency)
+	var yesterSuccess, yesterTotal int
+	h.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM call_logs WHERE created_at >= $1 AND created_at <= $2 AND status_code >= 200 AND status_code < 300`,
+		yesterdayStart, yesterdayEnd,
+	).Scan(&yesterSuccess)
+	h.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM call_logs WHERE created_at >= $1 AND created_at <= $2`,
+		yesterdayStart, yesterdayEnd,
+	).Scan(&yesterTotal)
+	yesterRate := 0.0
+	if yesterTotal > 0 {
+		yesterRate = float64(yesterSuccess) / float64(yesterTotal)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"total_requests":   totalRequests,
-		"today_cost_cents": todayCostCents,
-		"avg_latency_ms":   avgLatencyMs,
-		"success_rate":     successRate,
-		"recent_logs":      recentLogs,
-		"model_prices":     modelPrices,
-		"daily_trend":      dailyTrend,
-		"wallet_balance":   walletBalance,
-		"wallet_granted":   walletGranted,
-		"wallet_frozen":    walletFrozen,
-		"wallet_threshold": walletThreshold,
+		"total_requests":      totalRequests,
+		"today_cost_cents":    todayCostCents,
+		"avg_latency_ms":      avgLatencyMs,
+		"success_rate":        successRate,
+		"recent_logs":         recentLogs,
+		"model_prices":        modelPrices,
+		"daily_trend":         dailyTrend,
+		"wallet_balance":      walletBalance,
+		"wallet_granted":      walletGranted,
+		"wallet_frozen":       walletFrozen,
+		"wallet_threshold":    walletThreshold,
+		"model_distribution":  modelDistribution,
+		"channel_health":      channelHealth,
+		"delta_vs_yesterday": map[string]interface{}{
+			"cost_cents": todayCostCents - yesterCostCents,
+			"latency_ms": avgLatencyMs - yesterLatency,
+			"success_rate": successRate - yesterRate,
+		},
 	})
 }
 
@@ -1118,12 +1312,32 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 // --- Channel Keys ---
 
 func (h *Handler) ListChannelKeys(w http.ResponseWriter, r *http.Request) {
+	// Pagination
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+	offset := (page - 1) * pageSize
+
+	// Count total
+	var total int
+	err := h.db.QueryRow(r.Context(), `SELECT COUNT(*) FROM channel_keys`).Scan(&total)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Count failed"})
+		return
+	}
+
 	rows, err := h.db.Query(r.Context(),
 		`SELECT ck.id, ck.channel_id, c.name as channel_name, ck.key_enc, ck.allowed_models, ck.status,
 		        ck.fail_count, ck.last_used_at, ck.cooldown_until, ck.created_at
 		 FROM channel_keys ck
 		 JOIN channels c ON c.id = ck.channel_id
-		 ORDER BY ck.id ASC`)
+		 ORDER BY ck.id ASC
+		 LIMIT $1 OFFSET $2`, pageSize, offset)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Query failed"})
 		return
@@ -1145,7 +1359,7 @@ func (h *Handler) ListChannelKeys(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{"data": keys, "total": len(keys)})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": keys, "total": total})
 }
 
 func (h *Handler) CreateChannelKey(w http.ResponseWriter, r *http.Request) {
@@ -1534,9 +1748,30 @@ func (h *Handler) ListOrgModelPrices(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid org_id"})
 		return
 	}
+
+	// Pagination
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+	offset := (page - 1) * pageSize
+
+	// Count total
+	var total int
+	err = h.db.QueryRow(r.Context(), `SELECT COUNT(*) FROM org_model_prices WHERE org_id = $1`, orgID).Scan(&total)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Count failed"})
+		return
+	}
+
 	rows, err := h.db.Query(r.Context(),
 		`SELECT id, org_id, model_name, multiplier, created_at, updated_at
-		 FROM org_model_prices WHERE org_id = $1 ORDER BY model_name`, orgID)
+		 FROM org_model_prices WHERE org_id = $1 ORDER BY model_name
+		 LIMIT $2 OFFSET $3`, orgID, pageSize, offset)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Query failed"})
 		return
@@ -1553,7 +1788,7 @@ func (h *Handler) ListOrgModelPrices(w http.ResponseWriter, r *http.Request) {
 	if items == nil {
 		items = []models.OrgModelPrice{}
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"items": items})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": items, "total": total})
 }
 
 func (h *Handler) CreateOrgModelPrice(w http.ResponseWriter, r *http.Request) {

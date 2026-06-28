@@ -1,7 +1,7 @@
 # UniRouter Bug 记录
 
 > 维护者: Canary (测试 agent)
-> 最后更新: 2026-06-27 15:40（Bug #12 线上验证通过，SSE 流式正常）
+> 最后更新: [文件系统时间戳为准]（第 9 轮 Bug #14-#17 验收通过）
 > 格式: 每个 bug 一个条目，包含发现、验证、修复状态
 > 规则: 只记录不修。修复由 Codex 负责。
 
@@ -154,6 +154,96 @@
 
 ---
 
+
+## Bug #14 — DashboardStats SQL 语法错误 (Critical)
+
+- **发现日期**: 2026-07-01
+- **严重性**: Critical
+- **类型**: SQL 语法不兼容
+- **状态**: ✅ 已修复验收 (第 9 轮 FIX-SIGNAL Fix #14 PASS)
+- **发现者**: Canary（代码审查）
+- **文件**: `internal/admin/handlers.go:1083`
+
+**问题**：`DashboardStats` 使用 `COUNT(*) FILTER (WHERE ...)` 语法，这是 PostgreSQL 特有语法，SQLite 不支持。
+
+**修复**：改为标准 SQL `COUNT(*) + WHERE` 子句。
+
+**验证**：`grep -n 'FILTER' internal/admin/handlers.go` 返回 0 匹配。
+
+---
+
+## Bug #15 — LogsPage 字段名错误 (Medium)
+
+- **发现日期**: 2026-07-01
+- **严重性**: Medium
+- **类型**: 前端字段名不匹配
+- **状态**: ✅ 已修复验收 (第 9 轮 FIX-SIGNAL Fix #15 PASS)
+- **发现者**: Canary（代码审查）
+- **文件**: `frontend/src/pages/LogsPage.tsx:269`
+
+**问题**：`rowKey="request_id"` 但后端返回 `id`，导致 React key 为 undefined。
+
+**修复**：改为 `rowKey="id"`。
+
+**验证**：`grep -n 'rowKey=' frontend/src/pages/LogsPage.tsx` 确认字段名为 `"id"`。
+
+---
+
+## Bug #16 — ChannelKeysPage/OrgModelPricesPage 缺少分页 (Medium)
+
+- **发现日期**: 2026-07-01
+- **严重性**: Medium
+- **类型**: 前后端分页缺失
+- **状态**: ✅ 已修复验收 (第 9 轮 FIX-SIGNAL Fix #16 PASS)
+- **发现者**: Canary（代码审查）
+- **文件**:
+  - `internal/admin/handlers.go:1314` — `ListChannelKeys`
+  - `internal/admin/handlers.go:1741` — `ListOrgModelPrices`
+  - `frontend/src/pages/ChannelKeysPage.tsx`
+  - `frontend/src/pages/OrgModelPricesPage.tsx`
+
+**问题**：后端全量查询，前端 `pagination={false}`。
+
+**修复**：
+1. 后端添加 `page`/`page_size` 参数和 `COUNT(*)` 查询
+2. 前端添加分页状态和 Semi UI 分页控件
+
+**验证**：`grep -n 'page_size' internal/admin/handlers.go` 确认分页参数存在。
+
+---
+
+## Bug #16 回归 — TestListChannelKeys_Success mock 缺失
+
+- **发现日期**: 2026-07-01
+- **严重性**: High
+- **类型**: 测试回归
+- **状态**: ✅ 已修复验收 (第 9 轮 FIX-SIGNAL Fix #16 回归 PASS)
+- **发现者**: Canary（测试运行）
+- **文件**: `internal/admin/admin_mock_test.go`
+
+**问题**：新增的 `QueryRow` COUNT 查询在 mock DB 中没有被 mock，导致 `TestListChannelKeys_Success` 失败。
+
+**修复**：在 mock DB 中添加 `queryRowFn` 支持。
+
+**验证**：`go test ./internal/admin/ -run TestListChannelKeys -v` 两个测试均 PASS。
+
+---
+
+## Bug #17 — DashboardPage 缺少 API 调用 (Medium)
+
+- **发现日期**: 2026-07-01
+- **严重性**: Medium
+- **类型**: 前端硬编码
+- **状态**: ✅ 已修复验收 (第 9 轮 FIX-SIGNAL Fix #17 PASS)
+- **发现者**: Canary（代码审查）
+- **文件**: `frontend/src/pages/DashboardPage.tsx`
+
+**问题**：DashboardPage 硬编码空数据，未调用 `/api/admin/dashboard/stats` API。
+
+**修复**：添加 `getDashboardStats` API 调用。
+
+**验证**：`grep -n 'getDashboardStats' frontend/src/pages/DashboardPage.tsx` 确认 API 调用存在。
+
 ## 已修复汇总
 
 | Bug # | 描述 | 严重性 | 修复轮次 | 状态 |
@@ -171,6 +261,11 @@
 | #10 | AllowedModels 限制不生效 | Critical | 第 5 轮 + MVP 验收 | ✅ |
 | #11 | 供应商下拉框硬编码 | Medium | 第 6 轮 | ✅ |
 | #12 | SSE Flusher 接口缺失 | Critical | 第 7 轮 | ✅ |
+| #14 | DashboardStats SQL 语法错误 | Critical | 第 9 轮 | ✅ |
+| #15 | LogsPage 字段名错误 | Medium | 第 9 轮 | ✅ |
+| #16 | ChannelKeysPage/OrgModelPricesPage 分页缺失 | Medium | 第 9 轮 | ✅ |
+| #16 回归 | TestListChannelKeys mock 缺失 | High | 第 9 轮 | ✅ |
+| #17 | DashboardPage 缺少 API 调用 | Medium | 第 9 轮 | ✅ |
 
 ## 当前未修复
 
@@ -219,3 +314,51 @@ func (rw *responseWriter) Flush() {
 ```
 
 **验证**：修复后重跑 `curl -N ... stream:true`，应收到 SSE 数据行。
+
+---
+
+## Bug #13 — ReconciliationPage 和 TestPage 缺少路由 (P1 前端 Bug)
+
+- **发现日期**: 2026-07-01
+- **严重性**: High
+- **类型**: 前端路由缺失
+- **状态**: ✅ 已修复 (2026-07-01)
+- **发现者**: Atlas（UI 审查）
+- **文件**: `frontend/src/main.tsx`
+
+**问题**：`App.tsx` 的 `navItems` 包含 14 个导航项，但 `main.tsx` 的 `<Routes>` 只注册了 12 个路由。`ReconciliationPage`（Token对账）和 `TestPage`（渠道测试）虽然页面文件存在，但没有注册路由，点击导航会白屏。
+
+**根因**：`main.tsx` 缺少这两个页面的 import 和 Route 注册。
+
+**影响**：点击侧边栏的"Token对账"和"渠道测试"会显示空白页面。
+
+**修复**：
+1. 添加 import：`ReconciliationPage` 和 `TestPage`
+2. 在 Routes 中添加 `/reconciliation` 和 `/test` 路由
+
+**验证**：修复后点击这两个导航项应正常显示页面内容。
+
+---
+
+## Bug #14 — DashboardPage model_prices 字段名不匹配 (P2 前端 Bug)
+
+- **发现日期**: 2026-06-28
+- **严重性**: Medium
+- **类型**: 前端字段名不匹配
+- **状态**: ✅ 已修复验收（Codex 2026-06-28 修复并验收）
+- **发现者**: Canary（第 9 轮验收）
+- **文件**: `frontend/src/pages/DashboardPage.tsx`
+
+**问题**：DashboardPage 的 `priceColumns` 使用 `dataIndex: 'model'`，但后端 `DashboardStats` API 返回的 `model_prices` 数组中字段名为 `model_name`。导致仪表盘模型价格表的"模型名称"列显示为空。
+
+**后端返回**：`{"model_name": "gpt-4", "input_price_cents": 100, "output_price_cents": 200}`
+**前端期望**：`dataIndex: 'model'`
+
+**影响**：仪表盘模型价格表的模型名称列为空，用户无法看到模型名称。
+
+**修复**（3 处）：
+1. 类型接口 `model: string` → `model_name: string`（:15）
+2. priceColumns `dataIndex: 'model'` → `dataIndex: 'model_name'`（:202）
+3. Table `rowKey="model"` → `rowKey="model_name"`（:339）
+
+**验证**：`go build ./...` ✅ | `go test ./...` PASS ✅ | `vite build` ✅

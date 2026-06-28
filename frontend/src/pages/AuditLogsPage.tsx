@@ -16,6 +16,7 @@ export default function AuditLogsPage() {
   const [logs, setLogs] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(true);
 
   const load = (p = page) => {
@@ -48,7 +49,7 @@ export default function AuditLogsPage() {
     <div>
       <Title heading={4} style={{ marginBottom: 16 }}>审计日志</Title>
       <Table columns={columns} dataSource={logs} loading={loading} rowKey="id"
-        pagination={{ currentPage: page, pageSize: 20, total, onPageChange: (p) => { setPage(p); load(p); } }} />
+        pagination={{ currentPage: page, pageSize, pageSizeOpts: [20, 50, 100], showSizeChanger: true, total, onPageChange: (p) => { setPage(p); load(p); }, onPageSizeChange: (s) => { setPageSize(s); setPage(1); load(1); } }} />
     </div>
   );
 }

@@ -1,6 +1,5 @@
-import { formatDateTime } from '../utils/formatDate';
 import { useState, useEffect } from 'react';
-import { Typography, Button, Table, Modal, Form, Tag, Toast } from '@douyinfe/semi-ui';
+import { Typography, Button, Table, Modal, Form, Tag, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 
@@ -10,220 +9,153 @@ interface ChannelKey {
   id: number;
   channel_id: number;
   channel_name: string;
-  key_masked: string;
-  allowed_models: string;
+  api_key: string;
+  key_prefix: string;
   status: string;
-  fail_count: number;
-  last_used_at: string | null;
-  cooldown_until: string | null;
   created_at: string;
-}
-
-interface Channel {
-  id: number;
-  name: string;
 }
 
 export default function ChannelKeysPage() {
   const [keys, setKeys] = useState<ChannelKey[]>([]);
-  const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [editKey, setEditKey] = useState<ChannelKey | null>(null);
+  const [showDrawer, setShowDrawer] = useState(false);
+  const [editing, setEditing] = useState<ChannelKey | null>(null);
   const [formApi, setFormApi] = useState<any>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [total, setTotal] = useState(0);
+  const [channels, setChannels] = useState<any[]>([]);
 
-  const loadKeys = () => {
+  const load = (p = page) => {
     setLoading(true);
-    api.getChannelKeys()
-      .then((data: any) => setKeys(data.data || []))
+    api.getChannelKeys(p, pageSize)
+      .then((d: any) => { setKeys(d.data || []); setTotal(d.total || 0); })
       .catch(console.error)
       .finally(() => setLoading(false));
   };
 
   const loadChannels = () => {
     api.getChannels(1, 100)
-      .then((data: any) => setChannels(data.data || []))
-      .catch(console.error);
+      .then((d: any) => {
+        const list = (d.data || d.channels || []).map((c: any) => ({ label: c.name, value: c.id }));
+        setChannels(list);
+      })
+      .catch(() => {});
   };
 
-  useEffect(() => { loadKeys(); loadChannels(); }, []);
+  useEffect(() => { load(1); loadChannels(); }, []);
 
-  const handleCreate = async (values: Record<string, any>) => {
+  const closeDrawer = () => { setShowDrawer(false); setEditing(null); };
+
+  const handleSubmit = async (values: Record<string, any>) => {
     try {
-      await api.createChannelKey(values);
-      Toast.success('上游密钥创建成功');
-      setShowModal(false);
-      formApi?.reset();
-      loadKeys();
+      if (editing) {
+        await api.updateChannelKey(editing.id, {
+          channel_id: parseInt(values.channel_id),
+          api_key: values.api_key,
+        });
+        Toast.success('更新成功');
+      } else {
+        await api.createChannelKey({
+          channel_id: parseInt(values.channel_id),
+          api_key: values.api_key,
+        });
+        Toast.success('创建成功');
+      }
+      closeDrawer();
+      load();
     } catch {
-      Toast.error('创建失败');
+      Toast.error(editing ? '更新失败' : '创建失败');
     }
   };
 
-  const handleUpdate = async (values: Record<string, any>) => {
-    if (!editKey) return;
-    try {
-      await api.updateChannelKey(editKey.id, {
-        channel_id: values.channel_id,
-        status: values.status,
-        allowed_models: values.allowed_models || '',
-      });
-      Toast.success('更新成功');
-      setEditKey(null);
-      loadKeys();
-    } catch {
-      Toast.error('更新失败');
-    }
-  };
-
-  const handleDelete = (record: ChannelKey) => {
+  const handleDelete = async (id: number) => {
     Modal.confirm({
       title: '确认删除',
-      content: `确定要删除该上游密钥吗？`,
+      content: '删除后该密钥将无法使用，确定吗？',
       onOk: async () => {
         try {
-          await api.deleteChannelKey(record.id);
-          Toast.success('删除成功');
-          loadKeys();
-        } catch {
-          Toast.error('删除失败');
-        }
+          await api.deleteChannelKey(id);
+          Toast.success('已删除');
+          load();
+        } catch { Toast.error('删除失败'); }
       },
     });
   };
 
+  const openEdit = (record: ChannelKey) => {
+    setEditing(record);
+    setShowDrawer(true);
+    setTimeout(() => {
+      formApi?.setValues({
+        channel_id: record.channel_id?.toString(),
+        api_key: record.api_key,
+      });
+    }, 100);
+  };
+
+  const openCreate = () => {
+    setEditing(null);
+    setShowDrawer(true);
+    formApi?.reset();
+  };
+
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 60 },
-    { title: '渠道', dataIndex: 'channel_name' },
-    { title: '允许模型', dataIndex: 'allowed_models', render: (v: string) => v || '全部' },
+    { title: '渠道', dataIndex: 'channel_name', render: (v: string) => v || '-' },
+    { title: 'Key 前缀', dataIndex: 'key_prefix', render: (v: string) => <code>{v}***</code> },
     {
-      title: '密钥',
-      dataIndex: 'key_masked',
-      render: (v: string) => <span style={{ fontFamily: 'monospace' }}>{v}</span>,
+      title: '状态', dataIndex: 'status', width: 80,
+      render: (v: string) => <Tag color={v === 'active' ? 'green' : 'red' as any}>{v}</Tag>,
     },
+    { title: '创建时间', dataIndex: 'created_at', width: 180 },
     {
-      title: '状态',
-      dataIndex: 'status',
-      render: (v: string) => (
-        <Tag color={v === 'active' ? 'green' : v === 'cooldown' ? 'orange' : 'red'}>{v}</Tag>
-      ),
-    },
-    { title: '失败次数', dataIndex: 'fail_count' },
-    {
-      title: '最后使用',
-      dataIndex: 'last_used_at',
-      render: (v: string | null) => (v ? formatDateTime(v) : '-'),
-    },
-    {
-      title: '创建时间',
-      dataIndex: 'created_at',
-      render: (v: string) => formatDateTime(v),
-    },
-    {
-      title: '操作',
+      title: '操作', width: 120,
       render: (_: any, record: ChannelKey) => (
-        <div style={{ display: 'flex', gap: 8 }}>
-          <Button
-            size="small"
-            icon={<IconEdit />}
-            onClick={() => setEditKey(record)}
-          >
-            编辑
-          </Button>
-          <Button
-            size="small"
-            theme="solid"
-            type="danger"
-            icon={<IconDelete />}
-            onClick={() => handleDelete(record)}
-          >
-            删除
-          </Button>
-        </div>
+        <Space>
+          <Button icon={<IconEdit />} size="small" onClick={() => openEdit(record)} />
+          <Button icon={<IconDelete />} size="small" type="danger" onClick={() => handleDelete(record.id)} />
+        </Space>
       ),
     },
   ];
 
-  const channelOptions = channels.map((c) => ({
-    label: c.name,
-    value: c.id,
-  }));
-
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <Title heading={4} style={{ margin: 0 }}>上游密钥管理</Title>
-        <Button icon={<IconPlus />} theme="solid" onClick={() => setShowModal(true)}>
-          新增密钥
-        </Button>
+        <Title heading={4} style={{ margin: 0 }}>渠道密钥管理</Title>
+        <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增渠道密钥</Button>
       </div>
+
       <Table
-        columns={columns}
         dataSource={keys}
-        loading={loading}
+        columns={columns}
         rowKey="id"
-        pagination={false}
+        loading={loading}
+        pagination={{
+          currentPage: page, pageSize, total,
+          pageSizeOpts: [20, 50, 100], showSizeChanger: true,
+          onPageChange: (p: number) => { setPage(p); load(p); },
+          onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1); },
+        }}
       />
 
-      {/* Create Modal */}
-      <Modal
-        title="新增上游密钥"
-        visible={showModal}
-        onCancel={() => { setShowModal(false); formApi?.reset(); }}
-        onOk={() => formApi?.submitForm()}
-        okText="创建"
+      <SideSheet
+        title={editing ? '编辑渠道密钥' : '新增渠道密钥'}
+        visible={showDrawer}
+        onCancel={closeDrawer}
+        width={480}
       >
-        <Form getFormApi={(api) => setFormApi(api)} onSubmit={handleCreate}>
-          <Form.Select
-            field="channel_id"
-            label="所属渠道"
-            placeholder="选择渠道"
-            optionList={channelOptions}
-            rules={[{ required: true, message: '请选择渠道' }]}
-          />
-          <Form.Input
-            field="key"
-            label="API Key"
-            placeholder="输入上游 API Key"
-            rules={[{ required: true, message: '请输入 Key' }]}
-          />
-          <Form.Input field="allowed_models" label="允许模型 (逗号分隔，留空=全部)" placeholder="gpt-4o,gpt-4o-mini" />
+        <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleSubmit}>
+          <Form.Select field="channel_id" label="所属渠道" rules={[{ required: true, message: '必填' }]}
+            optionList={channels} disabled={!!editing} />
+          <Form.Input field="api_key" label="API Key" rules={[{ required: true, message: '必填' }]} placeholder="sk-..." />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
+            <Button onClick={closeDrawer}>取消</Button>
+            <Button type="primary" onClick={() => formApi?.submitForm()}>{editing ? '更新' : '创建'}</Button>
+          </div>
         </Form>
-      </Modal>
-
-      {/* Edit Modal */}
-      <Modal
-        title="编辑上游密钥"
-        visible={!!editKey}
-        onCancel={() => setEditKey(null)}
-        onOk={() => {
-          const form = document.querySelector('.semi-modal-content form') as HTMLFormElement;
-          if (form) form.requestSubmit();
-        }}
-        okText="保存"
-      >
-        <Form
-          initValues={editKey ? { channel_id: editKey.channel_id, status: editKey.status, allowed_models: editKey.allowed_models || '' } : {}}
-          onSubmit={handleUpdate}
-        >
-          <Form.Select
-            field="channel_id"
-            label="所属渠道"
-            optionList={channelOptions}
-            rules={[{ required: true, message: '请选择渠道' }]}
-          />
-          <Form.Select
-            field="status"
-            label="状态"
-            optionList={[
-              { label: 'active', value: 'active' },
-              { label: 'disabled', value: 'disabled' },
-              { label: 'cooldown', value: 'cooldown' },
-            ]}
-            rules={[{ required: true, message: '请选择状态' }]}
-          />
-        </Form>
-      </Modal>
+      </SideSheet>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Typography, Button, Table, Modal, Form, Tag, Toast, Space, Tooltip } from '@douyinfe/semi-ui';
+import { Typography, Button, Table, Modal, Form, Tag, Toast, Space, Tooltip, SideSheet } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 
@@ -22,10 +22,11 @@ interface Channel {
 export default function ChannelsPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
+  const [showDrawer, setShowDrawer] = useState(false);
   const [editing, setEditing] = useState<Channel | null>(null);
   const [formApi, setFormApi] = useState<any>(null);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
 
   const load = (p = page) => {
@@ -41,6 +42,8 @@ export default function ChannelsPage() {
 
   useEffect(() => { load(1); }, []);
 
+  const closeDrawer = () => { setShowDrawer(false); setEditing(null); };
+
   const handleSubmit = async (values: Record<string, any>) => {
     try {
       if (editing) {
@@ -50,8 +53,7 @@ export default function ChannelsPage() {
         await api.createChannel(values);
         Toast.success('渠道创建成功');
       }
-      setShowModal(false);
-      setEditing(null);
+      closeDrawer();
       load();
     } catch {
       Toast.error(editing ? '更新失败' : '创建失败');
@@ -76,7 +78,7 @@ export default function ChannelsPage() {
 
   const openEdit = (record: Channel) => {
     setEditing(record);
-    setShowModal(true);
+    setShowDrawer(true);
     setTimeout(() => {
       formApi?.setValues({
         name: record.name,
@@ -90,7 +92,7 @@ export default function ChannelsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setShowModal(true);
+    setShowDrawer(true);
     formApi?.reset();
   };
 
@@ -158,20 +160,22 @@ export default function ChannelsPage() {
         loading={loading}
         pagination={{
           currentPage: page,
-          pageSize: 20,
+          pageSize,
           total,
-          onPageChange: (p) => { setPage(p); load(p); },
+          pageSizeOpts: [20, 50, 100],
+          showSizeChanger: true,
+          onPageChange: (p: number) => { setPage(p); load(p); },
+          onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1); },
         }}
       />
 
-      <Modal
+      <SideSheet
         title={editing ? '编辑渠道' : '新增渠道'}
-        visible={showModal}
-        onCancel={() => { setShowModal(false); setEditing(null); }}
-        onOk={() => formApi?.submitForm()}
-        okText={editing ? '更新' : '创建'}
+        visible={showDrawer}
+        onCancel={closeDrawer}
+        width={480}
       >
-        <Form getFormApi={(api) => setFormApi(api)} onSubmit={handleSubmit}>
+        <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleSubmit}>
           <Form.Input field="name" label="渠道名称" rules={[{ required: true, message: '必填' }]} />
           <Form.Select field="provider" label="Provider" rules={[{ required: true, message: '必填' }]}
             optionList={[
@@ -185,8 +189,12 @@ export default function ChannelsPage() {
           <Form.Input field="models" label="支持模型 (逗号分隔)" rules={[{ required: true, message: '必填' }]} />
           <Form.InputNumber field="priority" label="优先级 (越小越优先)" initValue={100} />
           <Form.InputNumber field="degradation_threshold" label="降级阈值 (连续失败次数)" initValue={10} />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
+            <Button onClick={closeDrawer}>取消</Button>
+            <Button type="primary" onClick={() => formApi?.submitForm()}>{editing ? '更新' : '创建'}</Button>
+          </div>
         </Form>
-      </Modal>
+      </SideSheet>
     </div>
   );
 }
