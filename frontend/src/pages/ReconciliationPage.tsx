@@ -19,6 +19,7 @@ export default function ReconciliationPage() {
   const [records, setRecords] = useState<ReconRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(true);
   const [modelFilter, setModelFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -109,9 +110,12 @@ export default function ReconciliationPage() {
           rowKey="id"
           pagination={{
             currentPage: page,
-            pageSize: 20,
+            pageSize,
+            pageSizeOpts: [20, 50, 100],
+            showSizeChanger: true,
             total,
             onChange: (p: number) => setPage(p),
+            onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); },
           }}
         />
       </Card>

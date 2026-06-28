@@ -1,8 +1,8 @@
-import { formatDateTime } from '../utils/formatDate';
 import { useState, useEffect } from 'react';
-import { Typography, Button, Table, Modal, Form, Toast } from '@douyinfe/semi-ui';
+import { Typography, Button, Table, Form, Toast, SideSheet } from '@douyinfe/semi-ui';
 import { IconPlus } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
+import { formatDateTime } from '../utils/formatDate';
 
 const { Title } = Typography;
 
@@ -10,8 +10,9 @@ export default function GrantsPage() {
   const [grants, setGrants] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
+  const [showDrawer, setShowDrawer] = useState(false);
   const [formApi, setFormApi] = useState<any>(null);
 
   const load = (p = page) => {
@@ -31,7 +32,7 @@ export default function GrantsPage() {
         reason: v.reason,
       });
       Toast.success('赠送成功');
-      setShowCreate(false);
+      setShowDrawer(false);
       formApi?.reset();
       load(1);
     } catch { Toast.error('赠送失败'); }
@@ -49,20 +50,37 @@ export default function GrantsPage() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <Title heading={4} style={{ margin: 0 }}>赠送管理</Title>
-        <Button icon={<IconPlus />} theme="solid" onClick={() => setShowCreate(true)}>新增赠送</Button>
+        <Title heading={4} style={{ margin: 0 }}>额度赠送</Title>
+        <Button icon={<IconPlus />} type="primary" onClick={() => { formApi?.reset(); setShowDrawer(true); }}>赠送额度</Button>
       </div>
-      <Table columns={columns} dataSource={grants} loading={loading} rowKey="id"
-        pagination={{ currentPage: page, pageSize: 20, total, onPageChange: (p) => { setPage(p); load(p); } }} />
 
-      <Modal title="新增赠送" visible={showCreate}
-        onCancel={() => { setShowCreate(false); formApi?.reset(); }}
-        onOk={() => formApi?.submitForm()} okText="确认赠送">
-        <Form getFormApi={(a) => setFormApi(a)} onSubmit={handleCreate}>
-          <Form.Input field="amount" label="金额（元）" placeholder="100.00" rules={[{ required: true }]} />
-          <Form.Input field="reason" label="原因" placeholder="试用赠送" rules={[{ required: true }]} />
+      <Table
+        columns={columns}
+        dataSource={grants}
+        loading={loading}
+        rowKey="id"
+        pagination={{
+          currentPage: page, pageSize, total,
+          onPageChange: (p: number) => { setPage(p); load(p); },
+          onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1); },
+        }}
+      />
+
+      <SideSheet
+        title="赠送额度"
+        visible={showDrawer}
+        onCancel={() => setShowDrawer(false)}
+        width={480}
+      >
+        <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleCreate}>
+          <Form.Input field="amount" label="金额（元）" rules={[{ required: true, message: '必填' }]} placeholder="100.00" />
+          <Form.Input field="reason" label="原因" placeholder="新用户赠送 / 活动奖励" />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
+            <Button onClick={() => setShowDrawer(false)}>取消</Button>
+            <Button type="primary" onClick={() => formApi?.submitForm()}>赠送</Button>
+          </div>
         </Form>
-      </Modal>
+      </SideSheet>
     </div>
   );
 }

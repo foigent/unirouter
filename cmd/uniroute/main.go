@@ -229,6 +229,7 @@ func main() {
 	mux.Handle("GET /api/v1/wallet/transactions", adminAuth(http.HandlerFunc(adminHandler.ListWalletTransactions)))
 
 	mux.Handle("GET /api/v1/logs", adminAuth(http.HandlerFunc(adminHandler.ListLogs)))
+	mux.Handle("GET /api/v1/logs/{id}", adminAuth(http.HandlerFunc(adminHandler.GetLogDetail)))
 	mux.Handle("GET /api/v1/dashboard/stats", adminAuth(http.HandlerFunc(adminHandler.DashboardStats)))
 
 	mux.Handle("GET /api/v1/model-prices", adminAuth(http.HandlerFunc(adminHandler.ListModelPrices)))

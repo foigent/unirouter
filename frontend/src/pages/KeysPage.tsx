@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Typography, Button, Table, Modal, Form, Tag, Toast, Space } from '@douyinfe/semi-ui';
+import { Typography, Button, Table, Modal, Form, Tag, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 
@@ -18,10 +18,11 @@ interface ApiKey {
 export default function KeysPage() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
+  const [showDrawer, setShowDrawer] = useState(false);
   const [editing, setEditing] = useState<ApiKey | null>(null);
   const [formApi, setFormApi] = useState<any>(null);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
 
   const load = (p = page) => {
@@ -37,6 +38,8 @@ export default function KeysPage() {
 
   useEffect(() => { load(1); }, []);
 
+  const closeDrawer = () => { setShowDrawer(false); setEditing(null); };
+
   const handleSubmit = async (values: Record<string, any>) => {
     try {
       if (editing) {
@@ -46,8 +49,7 @@ export default function KeysPage() {
         await api.createKey(values);
         Toast.success('密钥创建成功');
       }
-      setShowModal(false);
-      setEditing(null);
+      closeDrawer();
       load();
     } catch {
       Toast.error(editing ? '更新失败' : '创建失败');
@@ -72,7 +74,7 @@ export default function KeysPage() {
 
   const openEdit = (record: ApiKey) => {
     setEditing(record);
-    setShowModal(true);
+    setShowDrawer(true);
     setTimeout(() => {
       formApi?.setValues({
         name: record.name,
@@ -84,33 +86,26 @@ export default function KeysPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setShowModal(true);
+    setShowDrawer(true);
     formApi?.reset();
   };
 
   const columns = [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
     { title: '名称', dataIndex: 'name', key: 'name' },
-    { title: 'Key', dataIndex: 'key_prefix', key: 'prefix', render: (v: string) => <code>{v}...</code> },
-    { title: 'IP白名单', dataIndex: 'allowed_ips', key: 'ips', ellipsis: true, render: (v: string) => v || '不限' },
-    { title: '模型限制', dataIndex: 'allowed_models', key: 'models', ellipsis: true, render: (v: string) => v || '全部' },
+    { title: 'Key 前缀', dataIndex: 'key_prefix', key: 'prefix', render: (v: string) => <code>{v}***</code> },
+    { title: '允许 IP', dataIndex: 'allowed_ips', key: 'ips', render: (v: string) => v || '全部' },
+    { title: '允许模型', dataIndex: 'allowed_models', key: 'models', render: (v: string) => v || '全部' },
     {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      width: 80,
-      render: (v: string) => <Tag color={v === 'active' ? 'green' : 'grey'}>{v === 'active' ? '启用' : '禁用'}</Tag>,
+      title: '状态', dataIndex: 'status', key: 'status', width: 80,
+      render: (v: string) => <Tag color={v === 'active' ? 'green' : 'red' as any}>{v}</Tag>,
     },
     {
-      title: '操作',
-      key: 'actions',
-      width: 120,
+      title: '操作', key: 'actions', width: 140,
       render: (_: any, record: ApiKey) => (
         <Space>
           <Button icon={<IconEdit />} size="small" onClick={() => openEdit(record)} />
-          {record.status === 'active' && (
-            <Button icon={<IconDelete />} size="small" type="danger" onClick={() => handleDisable(record.id)} />
-          )}
+          <Button icon={<IconDelete />} size="small" type="danger" onClick={() => handleDisable(record.id)} />
         </Space>
       ),
     },
@@ -119,8 +114,8 @@ export default function KeysPage() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <Title heading={4} style={{ margin: 0 }}>密钥管理</Title>
-        <Button icon={<IconPlus />} type="primary" onClick={openCreate}>创建密钥</Button>
+        <Title heading={4} style={{ margin: 0 }}>API 密钥</Title>
+        <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增密钥</Button>
       </div>
 
       <Table
@@ -129,33 +124,29 @@ export default function KeysPage() {
         rowKey="id"
         loading={loading}
         pagination={{
-          currentPage: page,
-          pageSize: 20,
-          total,
-          onPageChange: (p) => { setPage(p); load(p); },
+          currentPage: page, pageSize, total,
+          pageSizeOpts: [20, 50, 100], showSizeChanger: true,
+          onPageChange: (p: number) => { setPage(p); load(p); },
+          onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1); },
         }}
       />
 
-      <Modal
-        title={editing ? '编辑密钥' : '创建密钥'}
-        visible={showModal}
-        onCancel={() => { setShowModal(false); setEditing(null); }}
-        onOk={() => formApi?.submitForm()}
-        okText={editing ? '更新' : '创建'}
+      <SideSheet
+        title={editing ? '编辑密钥' : '新增密钥'}
+        visible={showDrawer}
+        onCancel={closeDrawer}
+        width={480}
       >
-        <Form getFormApi={(api) => setFormApi(api)} onSubmit={handleSubmit}>
+        <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleSubmit}>
           <Form.Input field="name" label="密钥名称" rules={[{ required: true, message: '必填' }]} />
-          {!editing && <Form.Input field="org_id" label="组织ID" initValue={1} />}
-          <Form.Input field="allowed_ips" label="IP白名单 (逗号分隔，留空不限)" />
-          <Form.Input field="allowed_models" label="模型限制 (逗号分隔，留空全部)" />
-          {editing && (
-            <Form.Select field="status" label="状态" optionList={[
-              { label: '启用', value: 'active' },
-              { label: '禁用', value: 'disabled' },
-            ]} />
-          )}
+          <Form.Input field="allowed_ips" label="允许 IP (逗号分隔，留空=全部)" placeholder="127.0.0.1,10.0.0.0/8" />
+          <Form.Input field="allowed_models" label="允许模型 (逗号分隔，留空=全部)" placeholder="gpt-4o,claude-3-opus" />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
+            <Button onClick={closeDrawer}>取消</Button>
+            <Button type="primary" onClick={() => formApi?.submitForm()}>{editing ? '更新' : '创建'}</Button>
+          </div>
         </Form>
-      </Modal>
+      </SideSheet>
     </div>
   );
 }

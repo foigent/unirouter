@@ -2,7 +2,7 @@
 
 > **日期**: 2026-06-27
 > **来源**: Canary 测试发现
-> **状态**: ✅ 已完成（P1 已集成，P2/P3 为运维任务）
+> **状态**: ✅ P1+P2 已完成，P3 待执行
 
 ## 背景
 
@@ -18,11 +18,12 @@
 | `RecordUpstreamLatency(provider, model, duration)` | 记录上游延迟 | handleUpstreamWithFallback / relayStreamRequest / HandleEmbeddings 上游请求完成后 |
 | `RecordBillingFreeze(status)` | 记录计费冻结操作 | ChatCompletion + Embeddings Freeze 调用后（success/error） |
 
-### 2. Prometheus + Grafana 部署验证（P2）
+### 2. Prometheus + Grafana 部署验证（P2）✅
 
-- Prometheus 容器需要运行并配置抓取 `/metrics`
-- Grafana 需要导入 `infra/grafana/dashboards/unirouter-overview.json`
-- 验证 Dashboard 面板显示数据
+- Prometheus: http://8.130.18.85:9090, target=up, scrape_interval=5s
+- Grafana: http://8.130.18.85:3001, UniRouter Overview 8 面板
+- 数据链路: Grafana → Prometheus → Backend `/metrics` 已打通
+- 线上验证: 3 个业务指标均有数据（tokens/upstream/billing_freeze）
 
 ### 3. k6 压测执行（P2）
 
