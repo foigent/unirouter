@@ -2338,14 +2338,14 @@ func TestDashboardStats_Success(t *testing.T) {
 				}, nil
 			}
 			if strings.Contains(sql, "channels") {
-				// channel health: id, name, provider, enabled, success_count, fail_count
+				// channel health: id, name, provider, status, success_count, fail_count
 				return &adminMockRows{
 					rows: []func(dest ...any) error{
 						func(dest ...any) error {
 							*dest[0].(*int) = 1
 							*dest[1].(*string) = "channel-1"
 							*dest[2].(*string) = "openai"
-							*dest[3].(*bool) = true
+							*dest[3].(*string) = "active"
 							*dest[4].(*int) = 80
 							*dest[5].(*int) = 5
 							return nil
@@ -4040,6 +4040,88 @@ func TestCreateGrant_TxBeginFail(t *testing.T) {
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d", rec.Code)
+	}
+}
+
+
+func TestNormalizeModels(t *testing.T) {
+	cases := []struct {
+		name   string
+		input  string
+		expect string
+	}{
+		{"normal", "gpt-4o,gpt-4o-mini", "gpt-4o,gpt-4o-mini"},
+		{"full-width comma", "gpt-4o，gpt-4o-mini", "gpt-4o,gpt-4o-mini"},
+		{"mixed comma", "gpt-4o，gpt-4o-mini,claude-3", "gpt-4o,gpt-4o-mini,claude-3"},
+		{"spaces around", " gpt-4o , gpt-4o-mini ", "gpt-4o,gpt-4o-mini"},
+		{"duplicate removal", "gpt-4o,gpt-4o,gpt-4o-mini", "gpt-4o,gpt-4o-mini"},
+		{"empty parts", "gpt-4o,,gpt-4o-mini", "gpt-4o,gpt-4o-mini"},
+		{"full-width + spaces + dupes", " gpt-4o ， gpt-4o ，gpt-4o-mini", "gpt-4o,gpt-4o-mini"},
+		{"single model", "gpt-4o", "gpt-4o"},
+		{"all empty after trim", ", ,", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := normalizeModels(c.input)
+			if got != c.expect {
+				t.Errorf("normalizeModels(%q) = %q, want %q", c.input, got, c.expect)
+			}
+		})
+	}
+}
+
+func TestCreateChannel_NormalizesModels(t *testing.T) {
+	var capturedModels string
+	db := &adminMockDB{
+		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			// args: name(0), provider(1), base_url(2), models(3), priority(4), degradation_threshold(5)
+			if len(args) > 3 {
+				if m, ok := args[3].(string); ok {
+					capturedModels = m
+				}
+			}
+			return &adminMockRow{
+				scanFn: func(dest ...any) error {
+					*dest[0].(*int64) = 1
+					return nil
+				},
+			}
+		},
+		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	h := newTestHandler(db)
+
+	// Full-width comma, spaces, duplicates
+	body := `{"name":"test","provider":"openai","base_url":"https://api.openai.com","models":" gpt-4o ， gpt-4o ，gpt-4o-mini "}`
+	req := httptest.NewRequest("POST", "/channels", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.CreateChannel(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if capturedModels != "gpt-4o,gpt-4o-mini" {
+		t.Errorf("expected normalized models %q, got %q", "gpt-4o,gpt-4o-mini", capturedModels)
+	}
+}
+
+func TestCreateChannel_NormalizesAllEmpty_Rejected(t *testing.T) {
+	h := newTestHandler(&adminMockDB{})
+
+	// All full-width commas + whitespace should normalize to empty => rejected
+	body := `{"name":"test","provider":"openai","base_url":"https://api.openai.com","models":" ， ， "}`
+	req := httptest.NewRequest("POST", "/channels", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.CreateChannel(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for empty-after-normalize models, got %d", rec.Code)
 	}
 }
 

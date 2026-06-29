@@ -1,8 +1,8 @@
 # Dashboard v2 Wireframe
 
 > **Version**: 2.0  
-> **Status**: 待定稿（基于 GPT 咨询 + 团队讨论）  
-> **Last Updated**: 2026-06-28  
+> **Status**: ✅ 已实现（基于 GPT 咨询 + 团队讨论 + 代码实现）  
+> **Last Updated**: 2026-06-29  
 > **Target User**: 个人开发者 / 小团队运维人员
 
 ---
@@ -159,8 +159,8 @@
 | 数据 | API | 当前状态 |
 |------|-----|----------|
 | KPI 数据 | `GET /dashboard/overview` | ✅ 已实现 |
-| 趋势数据 | `GET /dashboard/daily_trend` | ⚠️ API 存在但前端未渲染 |
-| 渠道健康 | `GET /dashboard/channel_health` | ❌ 不存在 |
+| 趋势数据 | `GET /dashboard/daily_trend` | ✅ 已实现（Area Chart + 指标切换） |
+| 渠道健康 | `GET /dashboard/channel_health` | ✅ 已实现（卡片网格） |
 | 最近请求 | `GET /logs?limit=10` | ✅ 已实现 |
 
 > **注意**: 趋势图需要先确认 `daily_trend` API 返回的数据格式，再决定是否需要调整前端渲染逻辑。

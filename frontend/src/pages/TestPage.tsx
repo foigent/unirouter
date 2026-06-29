@@ -9,6 +9,7 @@ interface Channel {
   name: string;
   provider: string;
   status: string;
+  models: string;
 }
 
 interface TestResult {
@@ -26,12 +27,18 @@ export default function TestPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [testing, setTesting] = useState(false);
   const [results, setResults] = useState<TestResult[]>([]);
+  const [selectedChannelId, setSelectedChannelId] = useState<number | null>(null);
 
   useEffect(() => {
     api.getChannels(1, 100).then((res: any) => {
       setChannels(res.data || []);
     });
   }, []);
+
+  const selectedChannel = channels.find(c => c.id === selectedChannelId);
+  const modelOptions = selectedChannel?.models
+    ? selectedChannel.models.split(',').map(m => m.trim()).filter(Boolean).map(m => ({ label: m, value: m }))
+    : [];
 
   const runTest = async (channelId: number, channelName: string, model: string, prompt: string) => {
     try {
@@ -148,11 +155,13 @@ export default function TestPage() {
               value: c.id,
             }))}
             style={{ width: 300 }}
+            onChange={(v) => setSelectedChannelId(Number(v))}
           />
-          <Form.Input
+          <Form.Select
             field="model"
             label="测试模型"
-            placeholder="gpt-3.5-turbo"
+            placeholder="选择模型"
+            optionList={modelOptions}
             style={{ width: 200 }}
           />
           <Form.TextArea

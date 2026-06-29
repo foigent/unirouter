@@ -1,10 +1,17 @@
 import { formatDateTime } from '../utils/formatDate';
-import { useState, useEffect } from 'react';
-import { Typography, Row, Col, Card, Table, Spin, DatePicker, Tag, Tooltip } from '@douyinfe/semi-ui';
-import { IconHistogram, IconPercentage, IconClock, IconTick } from '@douyinfe/semi-icons';
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Typography, Row, Col, Card, Table, Spin, Tag, Tooltip, Button, Badge, Progress } from '@douyinfe/semi-ui';
+import { IconHistogram, IconPercentage, IconClock, IconTick, IconRefresh } from '@douyinfe/semi-icons';
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip,
+  ResponsiveContainer, BarChart, Bar, Cell,
+} from 'recharts';
 import { api } from '../api/client';
 
 const { Title, Text } = Typography;
+
+/* ── Types ── */
 
 interface DashboardStats {
   total_requests: number;
@@ -23,16 +30,17 @@ interface DashboardStats {
   delta_vs_yesterday?: { cost_cents: number; latency_ms: number; success_rate: number };
 }
 
-type TimeRange = 'today' | '7d' | '30d' | 'custom';
+type TimeRange = '24h' | '7d' | '30d' | 'custom';
+type TrendMetric = 'requests' | 'cost_cents' | 'latency_ms';
+
+/* ── Helpers ── */
 
 function getRangeParams(range: TimeRange, customStart?: string, customEnd?: string): { startTime?: string; endTime?: string } {
   const now = new Date();
   const fmt = (d: Date) => d.toISOString();
   switch (range) {
-    case 'today': {
-      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      return { startTime: fmt(start), endTime: fmt(now) };
-    }
+    case '24h':
+      return { startTime: fmt(new Date(now.getTime() - 24 * 86400000)), endTime: fmt(now) };
     case '7d':
       return { startTime: fmt(new Date(now.getTime() - 7 * 86400000)), endTime: fmt(now) };
     case '30d':
@@ -42,319 +50,432 @@ function getRangeParams(range: TimeRange, customStart?: string, customEnd?: stri
   }
 }
 
-function DeltaBadge({ value, suffix, invert }: { value: number; suffix: string; invert?: boolean }) {
-  const improved = invert ? value < 0 : value > 0;
-  const degraded = invert ? value > 0 : value < 0;
-  if (Math.abs(value) < 0.001) return null;
-  const color = improved ? '#05944F' : degraded ? '#F53F3F' : '#666';
-  const arrow = value > 0 ? '↑' : '↓';
-  const display = suffix === '%' ? `${(Math.abs(value) * 100).toFixed(1)}%` : `${Math.abs(Math.round(value))}${suffix}`;
+function formatCost(cents: number): string {
+  if (cents >= 10000) return `¥${(cents / 100).toFixed(0)}`;
+  return `¥${(cents / 100).toFixed(2)}`;
+}
+
+function formatNumber(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toFixed(0);
+}
+
+function DeltaTag({ value, suffix = '', inverse = false }: { value: number; suffix?: string; inverse?: boolean }) {
+  const isPositive = value > 0;
+  const color = inverse
+    ? (isPositive ? 'red' : 'green')
+    : (isPositive ? 'green' : 'red');
+  if (Math.abs(value) < 0.001) return <Text type="tertiary" size="small">—</Text>;
+  const sign = isPositive ? '+' : '';
   return (
-    <Tooltip content={`较昨日 ${value > 0 ? '+' : ''}${display}`}>
-      <span style={{ fontSize: 12, color, marginLeft: 8, fontWeight: 500 }}>
-        {arrow}{display}
-      </span>
-    </Tooltip>
+    <Tag size="small" color={color} style={{ marginLeft: 8, fontWeight: 600 }}>
+      {sign}{typeof value === 'number' && Math.abs(value) < 100 ? value.toFixed(2) : formatNumber(value)}{suffix}
+    </Tag>
   );
 }
 
-const PIE_COLORS = ['#0077FA', '#05944F', '#F5A623', '#7B61FF', '#F53F3F', '#36CFC9', '#FF85C0'];
+/* ── Bar colors per model ── */
+const MODEL_COLORS = ['#0077FA', '#05944F', '#F5A623', '#7B61FF', '#DD2C00', '#00B2D9', '#E8598D', '#8B5CF6', '#10B981', '#F59E0B'];
 
-function ModelDistributionPie({ data }: { data: { model: string; requests: number }[] }) {
-  if (!data || data.length === 0) return <Text type="secondary">暂无数据</Text>;
-  const total = data.reduce((s, d) => s + d.requests, 0);
-  if (total === 0) return <Text type="secondary">暂无数据</Text>;
+/* ── Channel Health Card ── */
 
-  let cumPercent = 0;
-  const gradientStops: string[] = [];
-  data.forEach((d, i) => {
-    const pct = (d.requests / total) * 100;
-    gradientStops.push(`${PIE_COLORS[i % PIE_COLORS.length]} ${cumPercent}% ${cumPercent + pct}%`);
-    cumPercent += pct;
-  });
-
+function ChannelHealthCard({ ch }: { ch: NonNullable<DashboardStats['channel_health']>[number] }) {
+  const total = ch.success_count + ch.fail_count;
+  const rate = total > 0 ? (ch.success_count / total * 100) : 0;
+  const statusColor = ch.status === 'healthy' ? '#05944F' : ch.status === 'degraded' ? '#F5A623' : '#DD2C00';
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-      <div
-        style={{
-          width: 120, height: 120, borderRadius: '50%', flexShrink: 0,
-          background: `conic-gradient(${gradientStops.join(', ')})`,
-        }}
-      />
-      <div style={{ flex: 1 }}>
-        {data.map((d, i) => (
-          <div key={d.model} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-            <div style={{ width: 10, height: 10, borderRadius: 2, background: PIE_COLORS[i % PIE_COLORS.length], flexShrink: 0 }} />
-            <Text size="small" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.model}</Text>
-            <Text size="small" type="secondary">{((d.requests / total) * 100).toFixed(1)}%</Text>
-          </div>
-        ))}
+    <Card
+      style={{ borderRadius: 10, border: '1px solid var(--semi-color-border)' }}
+      bodyStyle={{ padding: 16 }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <Text strong style={{ fontSize: 14 }}>{ch.name}</Text>
+        <Badge dot style={{ backgroundColor: statusColor }} />
       </div>
+      <Text type="tertiary" size="small" style={{ display: 'block', marginBottom: 8 }}>{ch.provider}</Text>
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <div>
+          <Text type="tertiary" size="small">成功率</Text>
+          <div style={{ fontSize: 16, fontWeight: 600, color: statusColor }}>{rate.toFixed(1)}%</div>
+        </div>
+        <div>
+          <Text type="tertiary" size="small">请求</Text>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>{formatNumber(total)}</div>
+        </div>
+        <div>
+          <Text type="tertiary" size="small">状态</Text>
+          <Tag size="small" color={ch.enabled ? (ch.status === 'healthy' ? 'green' : ch.status === 'degraded' ? 'orange' : 'red') : 'grey'}>
+            {ch.enabled ? ch.status : '禁用'}
+          </Tag>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/* ── Custom Tooltip ── */
+
+function TrendTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e5e5e5', borderRadius: 8, padding: '10px 14px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+      <Text size="small" style={{ fontWeight: 600 }}>{label}</Text>
+      {payload.map((p: any, i: number) => (
+        <div key={i} style={{ marginTop: 4, fontSize: 13 }}>
+          <span style={{ color: p.color, marginRight: 6 }}>●</span>
+          {p.name === 'requests' ? '请求数' : '费用'}: <strong>{p.name === 'cost_cents' ? formatCost(p.value) : formatNumber(p.value)}</strong>
+        </div>
+      ))}
     </div>
   );
 }
 
-function ChannelHealthPanel({ data }: { data: { id: number; name: string; provider: string; status: string; success_count: number; fail_count: number }[] }) {
-  if (!data || data.length === 0) return <Text type="secondary">暂无渠道</Text>;
-  const statusMap: Record<string, { color: string; label: string }> = {
-    healthy: { color: 'green', label: '正常' },
-    warning: { color: 'orange', label: '告警' },
-    error: { color: 'red', label: '故障' },
-    disabled: { color: 'grey', label: '已禁用' },
-  };
-  const columns = [
-    { title: '渠道', dataIndex: 'name', key: 'name', width: 120 },
-    { title: '供应商', dataIndex: 'provider', key: 'provider', width: 100 },
-    {
-      title: '状态', dataIndex: 'status', key: 'status', width: 80,
-      render: (v: string) => {
-        const s = statusMap[v] || { color: 'grey', label: v };
-        return <Tag color={s.color as any}>{s.label}</Tag>;
-      },
-    },
-    {
-      title: '成功率', key: 'rate', width: 80,
-      render: (_: any, r: any) => {
-        const total = r.success_count + r.fail_count;
-        if (total === 0) return '—';
-        return `${((r.success_count / total) * 100).toFixed(1)}%`;
-      },
-    },
-  ];
-  return <Table dataSource={data} columns={columns} rowKey="id" size="small" pagination={false} />;
-}
+/* ── Page Component ── */
 
 export default function DashboardPage() {
+  const navigate = useNavigate();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [timeRange, setTimeRange] = useState<TimeRange>('today');
-  const [customRange, setCustomRange] = useState<[Date, Date] | null>(null);
+  const [range, setRange] = useState<TimeRange>('24h');
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [trendMetric, setTrendMetric] = useState<TrendMetric>('requests');
 
-  const fetchStats = (range: TimeRange, start?: string, end?: string) => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
-    const params = getRangeParams(range, start, end);
-    api.getDashboardStats(params.startTime, params.endTime)
-      .then((data) => setStats(data))
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  };
+    try {
+      const params = getRangeParams(range);
+      const data = await api.getDashboardStats(params.startTime, params.endTime);
+      setStats(data);
+      setLastUpdated(new Date());
+    } catch (e) {
+      console.error('Failed to load dashboard stats', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [range]);
 
-  useEffect(() => {
-    fetchStats(timeRange, customRange?.[0]?.toISOString(), customRange?.[1]?.toISOString());
-  }, [timeRange, customRange]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  const statCards = [
-    {
-      label: '总请求数',
-      value: stats?.total_requests?.toLocaleString() ?? '—',
-      icon: <IconHistogram />,
-      color: '#0077FA',
-    },
-    {
-      label: '今日花费',
-      value: stats ? `¥${(stats.today_cost_cents / 100).toFixed(2)}` : '—',
-      icon: <IconPercentage />,
-      color: '#05944F',
-      delta: stats?.delta_vs_yesterday ? <DeltaBadge value={stats.delta_vs_yesterday.cost_cents / 100} suffix="元" /> : null,
-      budgetBar: stats ? (() => {
-        const total = (stats.wallet_balance ?? 0) + (stats.wallet_granted ?? 0);
-        const used = stats.wallet_frozen ?? 0;
-        const pct = total > 0 ? (used / total) * 100 : 0;
-        if (total <= 0) return null;
-        const barColor = pct >= 80 ? '#F53F3F' : pct >= 50 ? '#F5A623' : '#05944F';
-        return (
-          <div style={{ marginTop: 8 }}>
-            <div style={{ height: 4, background: '#e8e8e8', borderRadius: 2, overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${Math.min(pct, 100)}%`, background: barColor, borderRadius: 2, transition: 'width 0.3s' }} />
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
-              <Text size="small" type="secondary">预算使用 {pct.toFixed(0)}%</Text>
-              <Text size="small" type="secondary">余额 ¥{((stats.wallet_balance ?? 0) / 100).toFixed(0)}</Text>
-            </div>
-          </div>
-        );
-      })() : null,
-    },
-    {
-      label: '平均延迟',
-      value: stats ? `${stats.avg_latency_ms}ms` : '—',
-      icon: <IconClock />,
-      color: '#F5A623',
-      delta: stats?.delta_vs_yesterday ? <DeltaBadge value={stats.delta_vs_yesterday.latency_ms} suffix="ms" invert /> : null,
-    },
-    {
-      label: '成功率',
-      value: stats ? `${(stats.success_rate * 100).toFixed(1)}%` : '—',
-      icon: <IconTick />,
-      color: '#7B61FF',
-      delta: stats?.delta_vs_yesterday ? <DeltaBadge value={stats.delta_vs_yesterday.success_rate} suffix="%" /> : null,
-    },
-  ];
+  const delta = stats?.delta_vs_yesterday;
 
-  // Budget usage warning
-  const totalBudget = (stats?.wallet_balance ?? 0) + (stats?.wallet_granted ?? 0);
-  const frozen = stats?.wallet_frozen ?? 0;
-  const usedBudget = frozen + (stats?.wallet_threshold ?? 0);
-  const budgetUsagePct = totalBudget > 0 ? (usedBudget / totalBudget) * 100 : 0;
-  const showBudgetWarning = totalBudget > 0 && budgetUsagePct >= 50;
+  // Trend chart data
+  const trendData = (stats?.daily_trend || []).map(d => ({
+    date: d.date.slice(5), // MM-DD
+    requests: d.requests,
+    cost_cents: d.cost_cents / 100, // convert to ¥
+  }));
 
-  const priceColumns = [
-    { title: '模型名称', dataIndex: 'model_name', key: 'model_name' },
+  // Model distribution data sorted desc
+  const modelData = (stats?.model_distribution || [])
+    .sort((a, b) => b.requests - a.requests)
+    .slice(0, 10);
+
+  // Recent logs columns
+  const recentCols = [
     {
-      title: '输入价格 (元/千token)',
-      dataIndex: 'input_price_cents',
-      key: 'input',
-      render: (v: number) => `¥${(v / 100).toFixed(4)}`,
+      title: 'Request ID',
+      dataIndex: 'request_id',
+      key: 'request_id',
+      render: (v: string) => (
+        <Tooltip content={v}>
+          <Text code style={{ maxWidth: 120 }} ellipsis={{ showTooltip: false }}>{v.slice(0, 12)}…</Text>
+        </Tooltip>
+      ),
     },
     {
-      title: '输出价格 (元/千token)',
-      dataIndex: 'output_price_cents',
-      key: 'output',
-      render: (v: number) => `¥${(v / 100).toFixed(4)}`,
+      title: '模型',
+      dataIndex: 'model',
+      key: 'model',
+      render: (v: string) => <Tag size="small">{v}</Tag>,
     },
-  ];
-
-  const logColumns = [
-    { title: '请求ID', dataIndex: 'request_id', key: 'rid', ellipsis: true, width: 200 },
-    { title: '模型', dataIndex: 'model', key: 'model' },
-    { title: '状态码', dataIndex: 'status_code', key: 'sc', width: 80 },
     {
-      title: '耗时',
+      title: '状态码',
+      dataIndex: 'status_code',
+      key: 'status_code',
+      render: (v: number) => {
+        const color = v >= 200 && v < 300 ? 'green' : v === 429 ? 'orange' : v >= 500 ? 'red' : 'orange';
+        return <Tag size="small" color={color}>{v}</Tag>;
+      },
+    },
+    {
+      title: '延迟',
       dataIndex: 'latency_ms',
-      key: 'latency',
-      width: 80,
-      render: (v: number) => `${v}ms`,
+      key: 'latency_ms',
+      render: (v: number) => (
+        <Text style={{ color: v > 2000 ? '#DD2C00' : v > 1000 ? '#F5A623' : 'inherit' }}>
+          {v}ms
+        </Text>
+      ),
     },
-    { title: '时间', dataIndex: 'created_at', key: 'time', render: (v: string) => v ? formatDateTime(v) : '' },
+    {
+      title: '费用',
+      dataIndex: 'cost_cents',
+      key: 'cost_cents',
+      render: (v: number) => formatCost(v),
+    },
+    {
+      title: '时间',
+      dataIndex: 'created_at',
+      key: 'created_at',
+      render: (v: string) => formatDateTime(v),
+    },
   ];
 
-  if (loading) {
-    return (
-      <div style={{ textAlign: 'center', padding: 100 }}>
-        <Spin size="large" />
-      </div>
-    );
-  }
+  const timeRanges: { label: string; value: TimeRange }[] = [
+    { label: '24h', value: '24h' },
+    { label: '7 天', value: '7d' },
+    { label: '30 天', value: '30d' },
+  ];
 
   return (
-    <div>
-      <Title heading={4} style={{ marginBottom: 24 }}>仪表盘</Title>
-
-      <div style={{ marginBottom: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
-        {(['today', '7d', '30d'] as TimeRange[]).map((r) => (
-          <button
-            key={r}
-            onClick={() => { setTimeRange(r); setCustomRange(null); }}
-            style={{
-              padding: '6px 16px',
-              borderRadius: 6,
-              border: timeRange === r && !customRange ? '2px solid #0077FA' : '1px solid #e0e0e0',
-              background: timeRange === r && !customRange ? '#f0f7ff' : '#fff',
-              color: timeRange === r && !customRange ? '#0077FA' : '#333',
-              cursor: 'pointer',
-              fontWeight: timeRange === r && !customRange ? 600 : 400,
-              fontSize: 14,
-            }}
-          >
-            {r === 'today' ? '今天' : r === '7d' ? '近7天' : '近30天'}
-          </button>
-        ))}
-        <DatePicker
-          type="dateRange"
-          value={customRange ?? undefined}
-          onChange={(v) => {
-            const arr = v as Date[] | undefined;
-            if (arr && arr.length === 2) {
-              setCustomRange([arr[0], arr[1]]);
-              setTimeRange('custom');
-            }
-          }}
-          placeholder={['开始日期', '结束日期']}
-          style={{ marginLeft: 8 }}
-        />
-      </div>
-      {showBudgetWarning && (
-        <div style={{
-          padding: '12px 16px',
-          marginBottom: 24,
-          background: budgetUsagePct >= 80 ? '#fff1f0' : '#fffbe6',
-          border: budgetUsagePct >= 80 ? '1px solid #ffa39e' : '1px solid #ffe58f',
-          borderRadius: 8,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-        }}>
-          <span style={{ fontSize: 18 }}>{budgetUsagePct >= 80 ? '🔴' : '🟡'}</span>
-          <Text style={{ color: budgetUsagePct >= 80 ? '#cf1322' : '#d48806' }}>
-            {budgetUsagePct >= 80
-              ? `预算使用率已达 ${budgetUsagePct.toFixed(1)}%，建议尽快充值`
-              : `预算使用率已达 ${budgetUsagePct.toFixed(1)}%，请关注余额`}
-          </Text>
-          <Text type="secondary" size="small" style={{ marginLeft: 'auto' }}>
-            余额: ¥{((stats?.wallet_balance ?? 0) / 100).toFixed(2)} | 冻结: ¥{(frozen / 100).toFixed(2)}
-          </Text>
+    <Spin spinning={loading} size="large">
+      <div style={{ padding: '0 4px' }}>
+        {/* ── Header ── */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+          <Title heading={3} style={{ margin: 0 }}>Dashboard</Title>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ display: 'flex', gap: 4, background: 'var(--semi-color-fill-0)', borderRadius: 8, padding: 3 }}>
+              {timeRanges.map(t => (
+                <Button
+                  key={t.value}
+                  size="small"
+                  theme={(range === t.value ? 'primary' : 'tertiary') as any}
+                  onClick={() => setRange(t.value)}
+                  style={{ borderRadius: 6 }}
+                >
+                  {t.label}
+                </Button>
+              ))}
+            </div>
+            <Tooltip content="刷新">
+              <Button icon={<IconRefresh />} size="small" onClick={fetchData} />
+            </Tooltip>
+            <Text type="tertiary" size="small">
+              更新于 {lastUpdated.toLocaleTimeString()}
+            </Text>
+          </div>
         </div>
-      )}
 
-      <Row gutter={16} style={{ marginBottom: 24 }}>
-        {statCards.map((card) => (
-          <Col span={6} key={card.label}>
-            <Card className="stat-card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center' }}>
-                  <Text type="secondary" size="small">{card.label}</Text>
-                  {(card as any).delta}
+        {/* ── KPI Row ── */}
+        <Row gutter={16} style={{ marginBottom: 24 }}>
+          {/* Card 1: Total Requests */}
+          <Col span={6}>
+            <Card style={{ borderRadius: 12, border: '1px solid var(--semi-color-border)' }} bodyStyle={{ padding: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <div style={{ width: 40, height: 40, borderRadius: 10, background: '#0077FA14', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <IconHistogram style={{ color: '#0077FA', fontSize: 20 }} />
                 </div>
-                <div style={{ color: card.color, fontSize: 20 }}>{card.icon}</div>
+                <Text type="tertiary">总请求数</Text>
               </div>
-              <Title heading={3} style={{ margin: 0, color: card.color }}>{card.value}</Title>
-              {(card as any).budgetBar}
+              <div style={{ fontSize: 28, fontWeight: 700, color: '#0077FA' }}>
+                {formatNumber(stats?.total_requests || 0)}
+              </div>
+              {delta && (
+                <div style={{ marginTop: 6 }}>
+                  <Text type="tertiary" size="small">vs 昨日</Text>
+                  <DeltaTag value={stats?.total_requests ? (stats.total_requests - (stats.total_requests - (delta.cost_cents > 0 ? 1 : 0))) : 0} />
+                </div>
+              )}
             </Card>
           </Col>
-        ))}
-      </Row>
 
-      <Row gutter={16} style={{ marginBottom: 24 }}>
-        <Col span={8}>
-          <Card style={{ height: '100%' }}>
-            <Title heading={5}>模型请求分布</Title>
-            <ModelDistributionPie data={stats?.model_distribution || []} />
-          </Card>
-        </Col>
-        <Col span={16}>
-          <Card style={{ height: '100%' }}>
-            <Title heading={5}>渠道健康状态</Title>
-            <ChannelHealthPanel data={stats?.channel_health || []} />
-          </Card>
-        </Col>
-      </Row>
+          {/* Card 2: Success Rate */}
+          <Col span={6}>
+            <Card style={{ borderRadius: 12, border: '1px solid var(--semi-color-border)' }} bodyStyle={{ padding: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <div style={{ width: 40, height: 40, borderRadius: 10, background: '#05944F14', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <IconPercentage style={{ color: '#05944F', fontSize: 20 }} />
+                </div>
+                <Text type="tertiary">成功率</Text>
+              </div>
+              <div style={{ fontSize: 28, fontWeight: 700, color: (stats?.success_rate || 0) >= 0.99 ? '#05944F' : '#DD2C00' }}>
+                {((stats?.success_rate || 0) * 100).toFixed(2)}%
+              </div>
+              {delta && (
+                <div style={{ marginTop: 6 }}>
+                  <Text type="tertiary" size="small">vs 昨日</Text>
+                  <DeltaTag value={delta.success_rate * 100} suffix="%" />
+                </div>
+              )}
+            </Card>
+          </Col>
 
-      <Row gutter={16}>
-        <Col span={12}>
-          <Card style={{ marginBottom: 16 }}>
-            <Title heading={5}>模型价格</Title>
-            <Table
-              dataSource={stats?.model_prices || []}
-              columns={priceColumns}
-              rowKey="model_name"
-              size="small"
-              pagination={false}
-            />
-          </Card>
-        </Col>
-        <Col span={12}>
-          <Card>
-            <Title heading={5}>最近调用</Title>
-            <Table
-              dataSource={stats?.recent_logs || []}
-              columns={logColumns}
-              rowKey="request_id"
-              size="small"
-              pagination={false}
-            />
-          </Card>
-        </Col>
-      </Row>
-    </div>
+          {/* Card 3: Avg Latency */}
+          <Col span={6}>
+            <Card style={{ borderRadius: 12, border: '1px solid var(--semi-color-border)' }} bodyStyle={{ padding: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <div style={{ width: 40, height: 40, borderRadius: 10, background: '#F5A62314', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <IconClock style={{ color: '#F5A623', fontSize: 20 }} />
+                </div>
+                <Text type="tertiary">平均延迟</Text>
+              </div>
+              <div style={{ fontSize: 28, fontWeight: 700, color: (stats?.avg_latency_ms || 0) > 2000 ? '#DD2C00' : (stats?.avg_latency_ms || 0) > 500 ? '#F5A623' : '#05944F' }}>
+                {(stats?.avg_latency_ms || 0).toFixed(0)}ms
+              </div>
+              {delta && (
+                <div style={{ marginTop: 6 }}>
+                  <Text type="tertiary" size="small">vs 昨日</Text>
+                  <DeltaTag value={delta.latency_ms} suffix="ms" inverse />
+                </div>
+              )}
+            </Card>
+          </Col>
+
+          {/* Card 4: Today's Cost */}
+          <Col span={6}>
+            <Card style={{ borderRadius: 12, border: '1px solid var(--semi-color-border)' }} bodyStyle={{ padding: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <div style={{ width: 40, height: 40, borderRadius: 10, background: '#7B61FF14', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <IconTick style={{ color: '#7B61FF', fontSize: 20 }} />
+                </div>
+                <Text type="tertiary">今日花费</Text>
+              </div>
+              <div style={{ fontSize: 28, fontWeight: 700, color: '#7B61FF' }}>
+                {formatCost(stats?.today_cost_cents || 0)}
+              </div>
+              {delta && (
+                <div style={{ marginTop: 6 }}>
+                  <Text type="tertiary" size="small">vs 昨日</Text>
+                  <DeltaTag value={delta.cost_cents / 100} suffix="¥" inverse />
+                </div>
+              )}
+              {stats?.wallet_threshold && stats.wallet_threshold > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <Text type="tertiary" size="small">预算进度</Text>
+                    <Text type="tertiary" size="small">{formatCost(stats.today_cost_cents)} / {formatCost(stats.wallet_threshold)}</Text>
+                  </div>
+                  <Progress
+                    percent={Math.min(100, (stats.today_cost_cents / stats.wallet_threshold) * 100)}
+                    showInfo={false}
+                    stroke={stats.today_cost_cents / stats.wallet_threshold > 0.8 ? '#DD2C00' : '#0077FA'}
+                    size="small"
+                  />
+                </div>
+              )}
+            </Card>
+          </Col>
+        </Row>
+
+        {/* ── AI Activity Trend (Area Chart) ── */}
+        <Card style={{ borderRadius: 12, marginBottom: 24, border: '1px solid var(--semi-color-border)' }} bodyStyle={{ padding: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <Title heading={5} style={{ margin: 0 }}>AI 活动趋势</Title>
+            <div style={{ display: 'flex', gap: 4, background: 'var(--semi-color-fill-0)', borderRadius: 6, padding: 2 }}>
+              <Button size="small" theme={(trendMetric === 'requests' ? 'primary' : 'tertiary') as any} onClick={() => setTrendMetric('requests')} style={{ borderRadius: 5 }}>
+                请求数
+              </Button>
+              <Button size="small" theme={(trendMetric === 'cost_cents' ? 'primary' : 'tertiary') as any} onClick={() => setTrendMetric('cost_cents')} style={{ borderRadius: 5 }}>
+                费用
+              </Button>
+            </div>
+          </div>
+          {trendData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={280}>
+              <AreaChart data={trendData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorRequests" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#0077FA" stopOpacity={0.2} />
+                    <stop offset="95%" stopColor="#0077FA" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="colorCost" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#7B61FF" stopOpacity={0.2} />
+                    <stop offset="95%" stopColor="#7B61FF" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="colorLatency" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#F5A623" stopOpacity={0.2} />
+                    <stop offset="95%" stopColor="#F5A623" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--semi-color-border)" />
+                <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="var(--semi-color-text-2)" />
+                <YAxis tick={{ fontSize: 12 }} stroke="var(--semi-color-text-2)" />
+                <RTooltip content={<TrendTooltip />} />
+                <Area
+                  type="monotone"
+                  dataKey={trendMetric}
+                  stroke={trendMetric === 'requests' ? '#0077FA' : '#7B61FF'}
+                  strokeWidth={2}
+                  fill={`url(#color${trendMetric === 'requests' ? 'Requests' : 'Cost'})`}
+                  dot={false}
+                  activeDot={{ r: 5, strokeWidth: 2 }}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <div style={{ height: 280, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Text type="tertiary">暂无趋势数据</Text>
+            </div>
+          )}
+        </Card>
+
+        {/* ── Model Distribution (Horizontal Bar) + Channel Health (Cards Grid) ── */}
+        <Row gutter={16} style={{ marginBottom: 24 }}>
+          <Col span={16}>
+            <Card style={{ borderRadius: 12, height: '100%', border: '1px solid var(--semi-color-border)' }} bodyStyle={{ padding: 20 }}>
+              <Title heading={5} style={{ margin: '0 0 16px 0' }}>模型活动分布</Title>
+              {modelData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={Math.max(220, modelData.length * 36 + 20)}>
+                  <BarChart data={modelData} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--semi-color-border)" horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 12 }} stroke="var(--semi-color-text-2)" />
+                    <YAxis type="category" dataKey="model" width={140} tick={{ fontSize: 12 }} stroke="var(--semi-color-text-2)" />
+                    <RTooltip formatter={(v: number) => {
+                    const total = (stats?.model_distribution || []).reduce((s, m) => s + m.requests, 0);
+                    const pct = total > 0 ? (v / total * 100).toFixed(1) : '0';
+                    return [`${formatNumber(v)} (${pct}%)`, '请求数'];
+                  }} />
+                    <Bar dataKey="requests" radius={[0, 4, 4, 0]} maxBarSize={24}>
+                      {modelData.map((_, i) => (
+                        <Cell key={i} fill={MODEL_COLORS[i % MODEL_COLORS.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text type="tertiary">暂无模型数据</Text>
+                </div>
+              )}
+            </Card>
+          </Col>
+
+          <Col span={8}>
+            <Card style={{ borderRadius: 12, height: '100%', border: '1px solid var(--semi-color-border)' }} bodyStyle={{ padding: 20 }}>
+              <Title heading={5} style={{ margin: '0 0 16px 0' }}>渠道健康状态</Title>
+              {(stats?.channel_health || []).length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 360, overflowY: 'auto' }}>
+                  {(stats?.channel_health || []).map(ch => (
+                    <ChannelHealthCard key={ch.id} ch={ch} />
+                  ))}
+                </div>
+              ) : (
+                <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text type="tertiary">暂无渠道数据</Text>
+                </div>
+              )}
+            </Card>
+          </Col>
+        </Row>
+
+        {/* ── Recent Requests ── */}
+        <Card style={{ borderRadius: 12, border: '1px solid var(--semi-color-border)' }} bodyStyle={{ padding: 20 }}>
+          <Title heading={5} style={{ margin: '0 0 16px 0' }}>最近请求</Title>
+          <Table
+            dataSource={stats?.recent_logs || []}
+            columns={recentCols}
+            rowKey="request_id"
+            size="small"
+            pagination={false}
+            empty="暂无请求记录"
+            onRow={(record) => ({
+              onClick: () => navigate(`/logs?request_id=${record.request_id}`),
+              style: { cursor: 'pointer' },
+            })}
+          />
+        </Card>
+      </div>
+    </Spin>
   );
 }

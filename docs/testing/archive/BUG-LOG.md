@@ -362,3 +362,130 @@ func (rw *responseWriter) Flush() {
 3. Table `rowKey="model"` → `rowKey="model_name"`（:339）
 
 **验证**：`go build ./...` ✅ | `go test ./...` PASS ✅ | `vite build` ✅
+
+---
+
+## Bug #16 — 仪表盘模型分布和渠道健康显示"暂无数据" (Medium 后端 Bug)
+
+- **发现日期**: 2026-06-29
+- **严重性**: Medium
+- **类型**: 数据查询/显示
+- **状态**: ✅ 已修复验收 (2026-07-08 Codex 实际提交)
+- **发现者**: Nicholas（生产环境测试）
+
+**问题**：DashboardPage 的"模型请求分布"显示"暂无数据"，"渠道健康状态"显示"暂无渠道"。
+
+**根因**：`handlers.go:1223` 的 channel_health 查询使用 `c.enabled` 字段，但 channels 表的字段名可能是 `status`（值为 "active"/"disabled"），而非布尔 `enabled`。导致查询结果与前端期望不匹配。
+
+**FIX-SIGNAL 状态**：Codex 标注"已修复验收 (2026-07-02)"，但代码未实际提交到 main 分支。**待 Codex 实际提交后重新验收。**
+
+**实际修复 (2026-07-08)**：
+1. `internal/admin/handlers.go` `DashboardStats` 的 channel_health 查询已使用 `c.status`（非 `c.enabled`），LEFT JOIN call_logs 使用 `cl.channel = c.name`。模型分布查询 `GROUP BY model` 正确。
+2. `internal/admin/admin_mock_test.go` 修复 channel health mock 中 `dest[3]` 类型从 `*bool` 改为 `*string`（值 "active"），与 handler 的 `rows.Scan` 匹配。
+
+
+**实际修复 (2026-07-08)**：`cmd/uniroute/main.go` 新增 `GET /docs` 路由，返回简单 HTML 页面列出主要 API endpoints。SettingsPage 的"查看 API 文档"链接现在有内容。
+
+## Bug #17 — TestPage 测试模型需手动输入 (Low 前端 Bug)
+
+- **发现日期**: 2026-06-29
+- **严重性**: Low
+- **类型**: UI 交互
+- **状态**: ✅ 已修复验收 (2026-06-29)
+- **发现者**: Nicholas（生产环境测试）
+
+**问题**：渠道测试页面选择渠道后，"测试模型"字段是自由文本输入（`Form.Input`），而非从渠道已配置的 models 列表中选择。
+
+**当前代码**：`frontend/src/pages/TestPage.tsx:152` 使用 `Form.Input field="model"`
+
+**FIX-SIGNAL 状态**：Codex 标注"已修复验收 (2026-07-02)"，但代码未实际提交到 main 分支。**待 Codex 实际提交后重新验收。**
+
+**实际修复 (2026-07-08)**：前端 `TestPage.tsx` 添加 `GET /api/v1/channels` 调用，解析每个 channel 的 `models` 字段（逗号分隔）去重后填充 `<Select>`。文件：`frontend/src/pages/TestPage.tsx`。
+
+---
+
+## Bug #18 — 系统设置用户信息显示"-" (Medium 后端 Bug)
+
+- **发现日期**: 2026-06-29
+- **严重性**: Medium
+- **类型**: API 缺失
+- **状态**: ✅ 已修复验收 (2026-06-29)
+- **发现者**: Nicholas（生产环境测试）
+
+**问题**：系统设置页面的用户名/角色/组织/创建时间全部显示"-"。
+
+**根因**：`SettingsPage.tsx` 调用 `api.getMe()`（`GET /api/v1/me`），但后端 `cmd/uniroute/main.go` 没有注册此路由。Go 返回 404，前端 `profile` 为 null，所有字段显示 `|| '-'`。
+
+**FIX-SIGNAL 状态**：Codex 标注"已修复验收 (2026-07-02)"，但代码未实际提交到 main 分支。**待 Codex 实际提交后重新验收。**
+
+**实际修复 (2026-07-08)**：
+1. `internal/admin/handlers.go` 新增 `GetMe` handler，通过 `r.Context().Value("user_id")` 取 user_id，查 users 表返回 id/username/role/is_active
+2. `cmd/uniroute/main.go` 注册 `GET /api/v1/me` 路由（adminAuth 中间件保护）
+
+---
+
+## Bug #19 — API 文档链接无内容 (Low 后端 Bug)
+
+- **发现日期**: 2026-06-29
+- **严重性**: Low
+- **类型**: API 缺失
+- **状态**: ✅ 已修复验收 (2026-07-08 Codex 实际提交)
+- **发现者**: Nicholas（生产环境测试）
+
+**问题**：系统设置页面"查看 API 文档"链接指向 `/docs`，后端没有注册此路由也没有 Swagger/OpenAPI 配置。
+
+**FIX-SIGNAL 状态**：Codex 标注"已修复验收 (2026-07-02)"，但代码未实际提交到 main 分支。**待 Codex 实际提交后重新验收。**
+
+**实际修复 (2026-07-08)**：`internal/admin/handlers.go` `ListReconciliation` 将 `statusFilter` 从 Go 侧 `continue` 过滤移至 SQL `WHERE` 子句：`status = "error"` → `status_code >= 400`，`status = "reconciled"` → `status_code < 400`。COUNT 和 LIMIT/OFFSET 均在 SQL 层完成，分页准确。
+
+## Bug #20 — Token 对账 statusFilter 分页不准 (Low 后端 Bug)
+
+- **发现日期**: 2026-06-29
+- **严重性**: Low
+- **类型**: 数据查询
+- **状态**: ✅ 已修复验收 (2026-07-08 Codex 实际提交)
+- **发现者**: Nicholas（生产环境测试）
+
+**问题**：Token 对账页面的 status 筛选用 Go 侧 `continue` 过滤（`handlers.go:974`），但 `COUNT(*)` 查询不过滤 status，导致总数和分页不准确。
+
+**FIX-SIGNAL 状态**：Codex 标注"已修复验收 (2026-07-02)"，但代码未实际提交到 main 分支。**待 Codex 实际提交后重新验收。**
+
+---
+
+## Bug #21 — 渠道密钥创建失败：前端 api_key ≠ 后端 key (High 前端 Bug)
+
+- **发现日期**: 2026-06-29
+- **严重性**: High
+- **类型**: API 字段名不匹配
+- **状态**: ✅ 已修复 (2026-07-08)
+- **发现者**: Nicholas（生产环境测试）
+
+**问题**：上游密钥渠道管理 → 新增渠道密钥 → 填写 API Key → 点击创建 → 显示"创建失败"。
+
+**根因**：前端 `ChannelKeysPage.tsx` 发送 `{ channel_id, api_key }`，后端 `CreateChannelKey` handler 期望 `{ channel_id, key }`。后端 `req.Key` 为空 → 返回 400 `"channel_id and key are required"`。
+
+**已执行修复**：`frontend/src/pages/ChannelKeysPage.tsx` — create/update 两个调用的 payload 字段 `api_key` → `key`，与后端 `json:"key"` 对齐。
+
+**影响**：无法通过 UI 创建任何渠道密钥。
+
+---
+
+## Bug #22 — 渠道 models 字段中文逗号分隔 (Medium 数据/输入防御)
+
+- **发现日期**: 2026-06-29
+- **严重性**: Medium
+- **类型**: 数据录入 + 输入防御缺失
+- **状态**: ✅ 已修复 (2026-06-29)
+- **发现者**: Nicholas（生产环境测试）
+
+**问题**：`channels` 表 id=8（Mimo Token Plan）的 `models` 字段使用中文逗号 `，` 分隔，导致前端 `split(',')` 无法正确解析，模型下拉只显示 1 个选项（整个字符串）。
+
+**已执行修复**：
+1. 脏数据修复：`UPDATE channels SET models = REPLACE(models, '，', ',') WHERE id = 8`
+2. 后端防御：`internal/admin/handlers.go` 新增 `normalizeModels()` 函数，在 `CreateChannel` 和 `UpdateChannel` 中自动处理：
+   - 全角逗号 `，` → 半角 `,`
+   - 去除首尾空格
+   - 去除空项
+   - 去重（保持顺序）
+3. 前端提示：`ChannelsPage.tsx` models 输入框 placeholder 改为 `多个模型用英文逗号分隔，如 gpt-4o, gpt-4o-mini`
+4. 测试覆盖：4 个新测试（`TestNormalizeModels` 9 子用例 + `TestCreateChannel_NormalizesModels` + `TestCreateChannel_NormalizesAllEmpty_Rejected`）

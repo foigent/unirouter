@@ -1,7 +1,7 @@
 # UniRouter UI 设计文档
 
 > **Status**: 定稿（基于 GPT 设计咨询 + 团队讨论确认）
-> **Last Updated**: 2026-06-28
+> **Last Updated**: 2026-06-29
 > **Scope**: 现有功能 UI 改版，不新增功能
 
 ## 快速导航
@@ -10,8 +10,8 @@
 |------|------|------|
 | [manifesto.md](manifesto.md) | 产品愿景 + 设计原则 | ✅ 定稿 |
 | [spec-v1.md](spec-v1.md) | 可实施的设计规范 | ✅ 定稿 |
-| [pages/dashboard-v2.md](pages/dashboard-v2.md) | Dashboard 线框图 | 📝 待定稿 |
-| [pages/logs-explorer-v2.md](pages/logs-explorer-v2.md) | Logs Explorer 规范 | 📝 待定稿 |
+| [pages/dashboard-v2.md](pages/dashboard-v2.md) | Dashboard 线框图 | ✅ 已实现 |
+| [pages/logs-explorer-v2.md](pages/logs-explorer-v2.md) | Logs Explorer 规范 | ✅ 已实现 |
 
 ## 设计决策摘要
 
