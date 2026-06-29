@@ -47,8 +47,8 @@ services:
       REDIS_ADDR: redis:6379
       REDIS_PASSWORD: ""
       REDIS_DB: 0
-      JWT_SECRET: dev_jwt_secret_change_in_prod
-      ENCRYPTION_KEY: dev_enc_key_32bytes_change_me!!
+      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
     depends_on:
       postgres:
         condition: service_healthy
