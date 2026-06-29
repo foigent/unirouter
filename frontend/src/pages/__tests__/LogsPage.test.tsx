@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import LogsPage from '../LogsPage';
 
@@ -132,7 +132,7 @@ describe('LogsPage', () => {
 
   it('handles API error gracefully', async () => {
     mockGetLogs.mockRejectedValue(new Error('Network error'));
-    const { container } = renderLogs();
+    renderLogs();
     // Should not crash
     await waitFor(() => {
       expect(mockGetLogs).toHaveBeenCalled();
