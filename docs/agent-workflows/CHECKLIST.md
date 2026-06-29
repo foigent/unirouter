@@ -8,9 +8,9 @@
 - [x] `go test ./...` — 12/12 测试套件通过 (admin, auth, billing, circuitbreaker, config, db, filter, gateway, middleware, models, redisx, tokenutil)
 - [x] `go test ./... -race` — 0 DATA RACE
 - [x] `npm run build` (frontend) — 生产构建通过
-- [x] Vitest 前端测试 — 18/18 通过
+- [x] Vitest 前端测试 — 33/33 通过
 - [x] 压力测试 — 17K RPS, 0 失败
-- [x] **总计 529 测试 (418 单元 + 93 集成 + 18 前端), 0 FAIL**
+- [x] **总计 592 测试 (559 后端 + 33 前端), 0 FAIL, 0 RACE**
 
 ## F01: OpenAI-compatible relay proxy ✅
 - [x] POST /v1/chat/completions — 请求转发（流式 + 非流式）

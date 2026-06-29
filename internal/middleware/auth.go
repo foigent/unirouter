@@ -65,6 +65,8 @@ const (
 	CtxOrgID     contextKey = "org_id"
 	CtxKeyID     contextKey = "key_id"
 	CtxRequestID contextKey = "request_id"
+	CtxUserID    contextKey = "user_id"
+	CtxUserRole  contextKey = "user_role"
 )
 
 // GetRequestIDFromContext retrieves the request ID from context.
@@ -88,6 +90,18 @@ func GetOrgIDFromContext(ctx context.Context) int64 {
 // GetKeyIDFromContext retrieves the key ID from context.
 func GetKeyIDFromContext(ctx context.Context) int64 {
 	v, _ := ctx.Value(CtxKeyID).(int64)
+	return v
+}
+
+// GetUserIDFromContext retrieves the user ID from context (set by AdminAuth).
+func GetUserIDFromContext(ctx context.Context) int64 {
+	v, _ := ctx.Value(CtxUserID).(int64)
+	return v
+}
+
+// GetUserRoleFromContext retrieves the user role from context (set by AdminAuth).
+func GetUserRoleFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(CtxUserRole).(string)
 	return v
 }
 
@@ -242,8 +256,10 @@ func AdminAuth(jwtSecret string) func(http.Handler) http.Handler {
 				return
 			}
 
-			// Inject org ID into context
+			// Inject org ID and user info into context
 			ctx := context.WithValue(r.Context(), CtxOrgID, claims.OrgID)
+			ctx = context.WithValue(ctx, CtxUserID, claims.UserID)
+			ctx = context.WithValue(ctx, CtxUserRole, claims.Role)
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

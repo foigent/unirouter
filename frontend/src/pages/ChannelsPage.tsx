@@ -186,7 +186,7 @@ export default function ChannelsPage() {
             ]}
           />
           <Form.Input field="base_url" label="Base URL" rules={[{ required: true, message: '必填' }]} />
-          <Form.Input field="models" label="支持模型 (逗号分隔)" rules={[{ required: true, message: '必填' }]} />
+          <Form.Input field="models" label="支持模型" placeholder="多个模型用英文逗号分隔，如 gpt-4o, gpt-4o-mini" rules={[{ required: true, message: '必填' }]} />
           <Form.InputNumber field="priority" label="优先级 (越小越优先)" initValue={100} />
           <Form.InputNumber field="degradation_threshold" label="降级阈值 (连续失败次数)" initValue={10} />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>

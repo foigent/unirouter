@@ -11,7 +11,7 @@ body {
   height: 100vh;
 }
 
-/* Dashboard stat cards */
+/* ── Dashboard stat cards (legacy, kept for backward compat) ── */
 .stat-card {
   border-radius: 12px;
   padding: 24px;
@@ -23,28 +23,46 @@ body {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
-/* Mobile responsive */
+/* ── Logs three-panel layout ── */
+.logs-explorer {
+  display: flex;
+  height: calc(100vh - 120px);
+}
+.logs-filter-panel {
+  width: 280px;
+  min-width: 280px;
+  border-right: 1px solid var(--semi-color-border);
+  padding-right: 16px;
+  overflow-y: auto;
+}
+.logs-results-panel {
+  flex: 1;
+  min-width: 0;
+  padding-left: 16px;
+  overflow-y: auto;
+}
+.logs-detail-panel {
+  width: 420px;
+  min-width: 420px;
+  border-left: 1px solid var(--semi-color-border);
+  padding-left: 16px;
+  overflow-y: auto;
+}
+
+/* ── Mobile responsive ── */
 @media (max-width: 768px) {
   .stat-card {
     padding: 16px;
   }
-  
-  /* Stack stat cards vertically on mobile */
   .stat-card .semi-col {
     margin-bottom: 12px;
   }
-  
-  /* Make tables scrollable horizontally */
   .semi-table-wrapper {
     overflow-x: auto;
   }
-  
-  /* Reduce padding on mobile */
   .semi-layout-content {
     padding: 12px !important;
   }
-  
-  /* Hide sidebar on mobile, show as overlay */
   .semi-layout-sider {
     position: fixed !important;
     z-index: 1000;
@@ -52,12 +70,9 @@ body {
     transform: translateX(-100%);
     transition: transform 0.3s ease;
   }
-  
   .semi-layout-sider.open {
     transform: translateX(0);
   }
-  
-  /* Mobile menu toggle button */
   .mobile-menu-toggle {
     display: block;
     position: fixed;
@@ -71,8 +86,6 @@ body {
     cursor: pointer;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   }
-  
-  /* Overlay when sidebar is open */
   .sidebar-overlay {
     display: none;
     position: fixed;
@@ -83,23 +96,38 @@ body {
     background: rgba(0, 0, 0, 0.5);
     z-index: 999;
   }
-  
   .sidebar-overlay.open {
     display: block;
   }
-  
-  /* Time range buttons wrap on mobile */
   .time-range-selector {
     flex-wrap: wrap;
   }
-  
   .time-range-selector button {
     flex: 1;
     min-width: 60px;
   }
-  
-  /* DatePicker full width on mobile */
   .semi-datepicker {
     width: 100% !important;
+  }
+  /* Logs: stack panels on mobile */
+  .logs-explorer {
+    flex-direction: column;
+    height: auto;
+  }
+  .logs-filter-panel {
+    width: 100%;
+    min-width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--semi-color-border);
+    padding-right: 0;
+    padding-bottom: 12px;
+  }
+  .logs-detail-panel {
+    width: 100%;
+    min-width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--semi-color-border);
+    padding-left: 0;
+    padding-top: 12px;
   }
 }

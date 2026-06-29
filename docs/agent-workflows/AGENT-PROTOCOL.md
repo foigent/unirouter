@@ -220,6 +220,7 @@ go test ./...
 
 ## 当前状态
 
-**当前轮次：** 第 9 轮
-**状态：** 17/17 fix 全部 PASS，VERIFY-RESULT.md 已更新
+**当前轮次：** 第 13 轮
+**状态：** 第 13 轮 FIX-SIGNAL.md 已发出，等待 Canary 验收
+**本轮修复：** Bug #21（渠道密钥创建字段名 api_key → key）
 **issues/ 待处理：** 无

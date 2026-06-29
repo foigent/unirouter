@@ -205,6 +205,29 @@ func main() {
 
 	// Admin endpoints
 	mux.HandleFunc("POST /api/v1/auth/login", adminHandler.Login)
+	mux.Handle("GET /api/v1/me", adminAuth(http.HandlerFunc(adminHandler.GetMe)))
+	mux.HandleFunc("GET /docs", func(w http.ResponseWriter, r *http.Request) {
+		html := `<!DOCTYPE html>
+<html>
+<head><title>UniRouter API Docs</title></head>
+<body>
+<h1>UniRouter API Documentation</h1>
+<p>API documentation is under construction.</p>
+<p>Base URL: /api/v1</p>
+<h2>Endpoints</h2>
+<ul>
+<li>POST /api/v1/auth/login - Login</li>
+<li>GET /api/v1/me - Get current user</li>
+<li>GET /api/v1/channels - List channels</li>
+<li>GET /api/v1/keys - List API keys</li>
+<li>GET /api/v1/dashboard/stats - Dashboard stats</li>
+</ul>
+</body>
+</html>`
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(html))
+	})
+
 
 	mux.Handle("GET /api/v1/channels", adminAuth(http.HandlerFunc(adminHandler.ListChannels)))
 	mux.Handle("POST /api/v1/channels", adminAuth(http.HandlerFunc(adminHandler.CreateChannel)))

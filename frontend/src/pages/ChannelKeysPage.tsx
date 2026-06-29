@@ -52,13 +52,13 @@ export default function ChannelKeysPage() {
       if (editing) {
         await api.updateChannelKey(editing.id, {
           channel_id: parseInt(values.channel_id),
-          api_key: values.api_key,
+          key: values.api_key,
         });
         Toast.success('更新成功');
       } else {
         await api.createChannelKey({
           channel_id: parseInt(values.channel_id),
-          api_key: values.api_key,
+          key: values.api_key,
         });
         Toast.success('创建成功');
       }

@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"github.com/uniroute/unirouter/internal/middleware"
 	"context"
 	"io"
 	"strings"
@@ -132,6 +133,8 @@ func (h *Handler) CreateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.Models = normalizeModels(req.Models)
+
 	if req.Name == "" || req.Provider == "" || req.BaseURL == "" || req.Models == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "name, provider, base_url, models are required"})
 		return
@@ -179,6 +182,11 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
 		return
+	}
+
+	if req.Models != nil {
+		normalized := normalizeModels(*req.Models)
+		req.Models = &normalized
 	}
 
 	// Build dynamic SET clauses
@@ -924,6 +932,14 @@ func (h *Handler) ListReconciliation(w http.ResponseWriter, r *http.Request) {
 		argIdx++
 	}
 
+	// Move statusFilter into SQL WHERE clause for correct pagination
+	// "error" = statusCode >= 400, "reconciled" = statusCode < 400
+	if statusFilter == "error" {
+		conditions = append(conditions, "status_code >= 400")
+	} else if statusFilter == "reconciled" {
+		conditions = append(conditions, "status_code < 400")
+	}
+
 	where := ""
 	if len(conditions) > 0 {
 		where = "WHERE " + strings.Join(conditions, " AND ")
@@ -965,14 +981,10 @@ func (h *Handler) ListReconciliation(w http.ResponseWriter, r *http.Request) {
 		var createdAt string
 		rows.Scan(&id, &requestID, &model, &totalTokens, &promptTokens, &completionTokens, &statusCode, &createdAt)
 
-		// Estimated = prompt + completion (actual from upstream)
-		// For reconciliation, we use the same as actual since we don't have pre-flight estimation yet
 		estTokens := promptTokens + completionTokens
 		status := "reconciled"
 		if statusCode >= 400 {
 			status = "error"
-		} else if statusFilter != "" && status != statusFilter {
-			continue
 		}
 
 		records = append(records, ReconRecord{
@@ -1220,12 +1232,12 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 
 	// Channel health (enabled channels with recent stats)
 	channelHealthRows, err := h.db.Query(ctx,
-		`SELECT c.id, c.name, c.provider, c.enabled,
+		`SELECT c.id, c.name, c.provider, c.status,
 		        COALESCE(SUM(CASE WHEN cl.status_code >= 200 AND cl.status_code < 300 THEN 1 ELSE 0 END), 0) as success_count,
 		        COALESCE(SUM(CASE WHEN cl.status_code >= 400 OR cl.status_code = 0 THEN 1 ELSE 0 END), 0) as fail_count
 		 FROM channels c
 		 LEFT JOIN call_logs cl ON cl.channel = c.name AND cl.created_at >= $1 AND cl.created_at <= $2
-		 GROUP BY c.id, c.name, c.provider, c.enabled
+		 GROUP BY c.id, c.name, c.provider, c.status
 		 ORDER BY c.id`, startTime, endTime)
 	if err != nil {
 		channelHealthRows = nil
@@ -1236,11 +1248,11 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 		for channelHealthRows.Next() {
 			var id int
 			var name, provider string
-			var enabled bool
+			var chStatus string
 			var successCount, failCount int
-			channelHealthRows.Scan(&id, &name, &provider, &enabled, &successCount, &failCount)
+			channelHealthRows.Scan(&id, &name, &provider, &chStatus, &successCount, &failCount)
 			status := "healthy"
-			if !enabled {
+			if chStatus != "active" {
 				status = "disabled"
 			} else if failCount > 0 && successCount == 0 {
 				status = "error"
@@ -1251,7 +1263,7 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 				"id":            id,
 				"name":          name,
 				"provider":      provider,
-				"enabled":       enabled,
+				"enabled":       chStatus == "active",
 				"status":        status,
 				"success_count": successCount,
 				"fail_count":    failCount,
@@ -2128,6 +2140,28 @@ func joinStrings(strs []string, sep string) string {
 	return result
 }
 
+// normalizeModels normalizes the models string:
+// 1. Replace full-width commas (，) with ASCII commas (,)
+// 2. Split by comma, trim whitespace, remove empty entries
+// 3. Deduplicate while preserving order
+func normalizeModels(models string) string {
+	models = strings.ReplaceAll(models, "，", ",")
+	parts := strings.Split(models, ",")
+	seen := make(map[string]bool)
+	var result []string
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if !seen[p] {
+			seen[p] = true
+			result = append(result, p)
+		}
+	}
+	return strings.Join(result, ",")
+}
+
 // --- Sensitive Words CRUD (PRD F13) ---
 
 // ListSensitiveWords returns all sensitive words from settings.
@@ -2473,5 +2507,38 @@ func (h *Handler) GetAPIKey(w http.ResponseWriter, r *http.Request) {
 		"status": k.Status, "rpm_limit": k.RPMLimit, "qps_limit": k.QPSLimit,
 		"budget_limit": k.BudgetLimit, "allowed_ips": k.AllowedIPs, "allowed_models": k.AllowedModels,
 		"created_at": k.CreatedAt, "org_name": k.OrgName,
+	})
+}
+
+
+// GetMe returns the current authenticated user's profile.
+func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserIDFromContext(r.Context())
+	if userID == 0 {
+		writeJSON(w, http.StatusUnauthorized, map[string]interface{}{"error": "Not authenticated"})
+		return
+	}
+
+	var username, role, status string
+	var orgID int64
+	var orgName string
+	var createdAt time.Time
+	err := h.db.QueryRow(r.Context(),
+		`SELECT u.username, u.role, u.status, u.org_id, u.created_at, COALESCE(o.name, '') as org_name
+		 FROM users u LEFT JOIN orgs o ON o.id = u.org_id
+		 WHERE u.id = $1`, userID).Scan(&username, &role, &status, &orgID, &createdAt, &orgName)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "User not found"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"id":         userID,
+		"username":   username,
+		"role":       role,
+		"status":     status,
+		"org_id":     orgID,
+		"org_name":   orgName,
+		"created_at": createdAt,
 	})
 }
