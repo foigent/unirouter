@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Typography, Button, Table, Modal, Form, Tag, Toast, SideSheet } from '@douyinfe/semi-ui';
+import { Button, Table, Modal, Form, Tag, Toast, SideSheet } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
-
-const { Title } = Typography;
+import { PageHeader, StatusTag, Surface } from '../ui';
 
 const ROLES = [
   { label: '系统管理员 (admin)', value: 'admin' },
@@ -93,7 +92,7 @@ export default function UsersPage() {
     { title: 'ID', dataIndex: 'id', width: 60 },
     { title: '用户名', dataIndex: 'username' },
     { title: '角色', dataIndex: 'role', render: (v: string) => <Tag color={roleColor(v) as any}>{v}</Tag> },
-    { title: '状态', dataIndex: 'status', render: (v: string) => <Tag color={v === 'active' ? 'green' : 'red' as any}>{v}</Tag> },
+    { title: '状态', dataIndex: 'status', render: (v: string) => <StatusTag status={v}>{v}</StatusTag> },
     { title: '创建时间', dataIndex: 'created_at', render: (v: string) => formatDateTime(v) },
     {
       title: '操作', width: 120,
@@ -107,23 +106,29 @@ export default function UsersPage() {
   ];
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <Title heading={4} style={{ margin: 0 }}>用户管理</Title>
-        <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增用户</Button>
-      </div>
-
-      <Table
-        columns={columns}
-        dataSource={users}
-        loading={loading}
-        rowKey="id"
-        pagination={{
-          currentPage: page, pageSize, total,
-          onPageChange: (p: number) => { setPage(p); load(p); },
-          onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1); },
-        }}
+    <div className="ur-page">
+      <PageHeader
+        eyebrow="Access"
+        title="用户管理"
+        description="管理系统管理员、组织管理员和组织查看者账号。"
+        actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增用户</Button>}
       />
+
+      <Surface>
+        <div className="ur-table-shell">
+          <Table
+            columns={columns}
+            dataSource={users}
+            loading={loading}
+            rowKey="id"
+            pagination={{
+              currentPage: page, pageSize, total,
+              onPageChange: (p: number) => { setPage(p); load(p); },
+              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1); },
+            }}
+          />
+        </div>
+      </Surface>
 
       <SideSheet
         title={editUser ? '编辑用户' : '新增用户'}

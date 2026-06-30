@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { Card, Form, Button, Toast, Tag, Typography, Table } from '@douyinfe/semi-ui';
+import { Form, Button, Toast, Typography, Table } from '@douyinfe/semi-ui';
 import { api } from '../api/client';
+import { LatencyText, PageHeader, StatusTag, Surface } from '../ui';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 interface Channel {
   id: number;
@@ -101,7 +102,7 @@ export default function TestPage() {
       key: 'success',
       width: 80,
       render: (v: boolean) => (
-        <Tag color={v ? 'green' : 'red'}>{v ? '成功' : '失败'}</Tag>
+        <StatusTag status={v ? 'success' : 'failed'}>{v ? '成功' : '失败'}</StatusTag>
       ),
     },
     { title: '渠道', dataIndex: 'channel_name', key: 'channel_name', width: 150 },
@@ -110,18 +111,14 @@ export default function TestPage() {
       dataIndex: 'latency_ms',
       key: 'latency_ms',
       width: 100,
-      render: (v: number) => `${v}ms`,
+      render: (v: number) => <LatencyText value={v} />,
     },
     {
       title: '状态码',
       dataIndex: 'status_code',
       key: 'status_code',
       width: 80,
-      render: (v: number) => (
-        <Tag color={v >= 200 && v < 300 ? 'green' : v >= 400 ? 'red' : 'orange'}>
-          {v}
-        </Tag>
-      ),
+      render: (v: number) => <StatusTag status={v}>{v}</StatusTag>,
     },
     { title: '模型', dataIndex: 'model', key: 'model', width: 150 },
     {
@@ -141,10 +138,14 @@ export default function TestPage() {
   ];
 
   return (
-    <div>
-      <Title heading={4} style={{ marginBottom: 16 }}>渠道测试</Title>
+    <div className="ur-page">
+      <PageHeader
+        eyebrow="Traffic"
+        title="渠道测试"
+        description="对单个渠道或全部活跃渠道发起非流式探测，记录延迟、状态码和错误信息。"
+      />
 
-      <Card style={{ marginBottom: 16 }}>
+      <Surface title="测试请求">
         <Form onSubmit={handleTest} getFormApi={(api) => { formApiRef.current = api; }}>
           <Form.Select
             field="channel_id"
@@ -184,20 +185,18 @@ export default function TestPage() {
             </Button>
           </div>
         </Form>
-      </Card>
+      </Surface>
 
-      <Card>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-          <Title heading={5}>测试结果</Title>
-          <Button onClick={() => setResults([])}>清空结果</Button>
+      <Surface title="测试结果" actions={<Button onClick={() => setResults([])}>清空结果</Button>}>
+        <div className="ur-table-shell">
+          <Table
+            columns={columns}
+            dataSource={results}
+            rowKey={(record) => record ? `${record.channel_id}-${record.latency_ms}` : String(Math.random())}
+            pagination={false}
+          />
         </div>
-        <Table
-          columns={columns}
-          dataSource={results}
-          rowKey={(record) => record ? `${record.channel_id}-${record.latency_ms}` : String(Math.random())}
-          pagination={false}
-        />
-      </Card>
+      </Surface>
     </div>
   );
 }

@@ -62,6 +62,25 @@ This audit is based on source-code review, local route/API comparison, and exist
 - Removed the misleading total-request delta formula from Dashboard because the backend does not return a request-count delta.
 - Updated API client tests to cover successful calls, non-2xx errors, and 401 redirect behavior.
 
+## PRD1 UI Redesign Applied After This Audit
+
+The original audit identified the missing UI architecture layer. Codex subsequently implemented the PRD1 closeout redesign recorded in `docs/design/PRD1-UI-REDESIGN-SPEC.md`.
+
+Implemented locally:
+
+- Added `frontend/src/ui/` with `PageHeader`, `Surface`, `MetricTile`, `MoneyText`, `LatencyText`, `StatusTag`, and `EmptyState`.
+- Added global console design tokens and layout classes in `frontend/src/index.css`.
+- Refreshed the app shell, login page, Dashboard, Logs Explorer, Wallet, API Docs, and major resource pages.
+- Fixed Dashboard 24h range calculation from 24 days to 24 hours.
+- Disabled Recharts animation for stable browser screenshots.
+- Added local Playwright screenshot evidence under ignored `output/playwright/`.
+
+Residual PRD2 architecture work remains:
+
+- Split large page modules into feature folders.
+- Introduce typed OpenAPI-backed API contracts.
+- Convert resource pages to a declarative `ResourcePage`/`ResourceTable`/`ResourceDrawerForm` abstraction.
+
 ## Recommended PRD1 Closeout Scope
 
 PRD1 should not attempt a full frontend rewrite. It should close the highest-risk contract and UX defects while preparing the codebase for PRD2.

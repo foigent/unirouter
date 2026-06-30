@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Typography, Button, Table, Modal, Form, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
+import { Button, Table, Modal, Form, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-
-const { Title } = Typography;
+import { MoneyText, PageHeader, Surface } from '../ui';
 
 export default function ModelPricesPage() {
   const [prices, setPrices] = useState<any[]>([]);
@@ -90,8 +89,8 @@ export default function ModelPricesPage() {
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 60 },
     { title: '模型名称', dataIndex: 'model_name' },
-    { title: '输入价格（元/千token）', dataIndex: 'input_price_cents', render: (v: number) => `¥${(v / 100).toFixed(4)}` },
-    { title: '输出价格（元/千token）', dataIndex: 'output_price_cents', render: (v: number) => `¥${(v / 100).toFixed(4)}` },
+    { title: '输入价格（元/千token）', dataIndex: 'input_price_cents', render: (v: number) => <MoneyText cents={v} precision={4} /> },
+    { title: '输出价格（元/千token）', dataIndex: 'output_price_cents', render: (v: number) => <MoneyText cents={v} precision={4} /> },
     { title: '更新时间', dataIndex: 'updated_at', render: (v: string) => v || '-' },
     {
       title: '操作', width: 120,
@@ -105,23 +104,29 @@ export default function ModelPricesPage() {
   ];
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <Title heading={4} style={{ margin: 0 }}>模型价格配置</Title>
-        <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增价格</Button>
-      </div>
-
-      <Table
-        columns={columns}
-        dataSource={prices}
-        loading={loading}
-        rowKey="id"
-        pagination={{
-          currentPage: page, pageSize, total,
-          onPageChange: (p: number) => { setPage(p); load(p); },
-          onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1); },
-        }}
+    <div className="ur-page">
+      <PageHeader
+        eyebrow="Billing"
+        title="模型价格配置"
+        description="维护平台基础模型输入/输出价格，用于预冻结和结算。"
+        actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增价格</Button>}
       />
+
+      <Surface>
+        <div className="ur-table-shell">
+          <Table
+            columns={columns}
+            dataSource={prices}
+            loading={loading}
+            rowKey="id"
+            pagination={{
+              currentPage: page, pageSize, total,
+              onPageChange: (p: number) => { setPage(p); load(p); },
+              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1); },
+            }}
+          />
+        </div>
+      </Surface>
 
       <SideSheet
         title={editPrice ? '编辑价格' : '新增价格'}

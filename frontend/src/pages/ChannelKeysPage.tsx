@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Typography, Button, Table, Modal, Form, Tag, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
+import { Button, Table, Modal, Form, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-
-const { Title } = Typography;
+import { PageHeader, StatusTag, Surface } from '../ui';
 
 interface ChannelKey {
   id: number;
@@ -106,7 +105,7 @@ export default function ChannelKeysPage() {
     { title: 'Key 前缀', dataIndex: 'key_prefix', render: (v: string) => <code>{v}***</code> },
     {
       title: '状态', dataIndex: 'status', width: 80,
-      render: (v: string) => <Tag color={v === 'active' ? 'green' : 'red' as any}>{v}</Tag>,
+      render: (v: string) => <StatusTag status={v}>{v}</StatusTag>,
     },
     { title: '创建时间', dataIndex: 'created_at', width: 180 },
     {
@@ -121,24 +120,30 @@ export default function ChannelKeysPage() {
   ];
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <Title heading={4} style={{ margin: 0 }}>渠道密钥管理</Title>
-        <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增渠道密钥</Button>
-      </div>
-
-      <Table
-        dataSource={keys}
-        columns={columns}
-        rowKey="id"
-        loading={loading}
-        pagination={{
-          currentPage: page, pageSize, total,
-          pageSizeOpts: [20, 50, 100], showSizeChanger: true,
-          onPageChange: (p: number) => { setPage(p); load(p); },
-          onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1); },
-        }}
+    <div className="ur-page">
+      <PageHeader
+        eyebrow="Traffic"
+        title="渠道密钥管理"
+        description="管理每个上游渠道绑定的 provider API key。"
+        actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增渠道密钥</Button>}
       />
+
+      <Surface>
+        <div className="ur-table-shell">
+          <Table
+            dataSource={keys}
+            columns={columns}
+            rowKey="id"
+            loading={loading}
+            pagination={{
+              currentPage: page, pageSize, total,
+              pageSizeOpts: [20, 50, 100], showSizeChanger: true,
+              onPageChange: (p: number) => { setPage(p); load(p); },
+              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1); },
+            }}
+          />
+        </div>
+      </Surface>
 
       <SideSheet
         title={editing ? '编辑渠道密钥' : '新增渠道密钥'}

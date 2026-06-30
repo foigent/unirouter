@@ -10,6 +10,7 @@
 |------|------|------|
 | [manifesto.md](manifesto.md) | 产品愿景 + 设计原则 | ✅ 定稿 |
 | [spec-v1.md](spec-v1.md) | 可实施的设计规范 | ✅ 定稿 |
+| [PRD1-UI-REDESIGN-SPEC.md](PRD1-UI-REDESIGN-SPEC.md) | PRD1 UI 重设计执行规范与验收清单 | ⏳ 本地已实现，待验收 |
 | [pages/dashboard-v2.md](pages/dashboard-v2.md) | Dashboard 线框图 | ✅ 已实现 |
 | [pages/logs-explorer-v2.md](pages/logs-explorer-v2.md) | Logs Explorer 规范 | ✅ 已实现 |
 
@@ -25,6 +26,7 @@
 2. **Dashboard 重设计**: 从"配置展示"转向"活动监控"
 3. **Logs Explorer 升级**: 从"日志表格"转向"调查工作区"
 4. **页面模板统一**: 三种模板覆盖所有页面（资源管理 / 探索器 / 分析）
+5. **工程化落地**: `frontend/src/ui/` 提供 PageHeader、Surface、MetricTile、MoneyText、LatencyText、StatusTag、EmptyState，避免设计只停留在文档层
 
 ### 暂缓事项
 - **Dark Mode**: Semi Design 原生支持，但当前优先级不高，后续迭代

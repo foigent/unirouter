@@ -1,10 +1,11 @@
 import { formatDateTime } from '../utils/formatDate';
 import { useState, useEffect } from 'react';
-import { Typography, Button, Card, Form, Toast, Tag, Row, Col, Divider } from '@douyinfe/semi-ui';
+import { Typography, Button, Form, Toast, Tag } from '@douyinfe/semi-ui';
 import { IconSetting, IconLock, IconUser } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
+import { EmptyState, PageHeader, Surface } from '../ui';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 export default function SettingsPage() {
   const [profile, setProfile] = useState<any>(null);
@@ -36,20 +37,19 @@ export default function SettingsPage() {
   };
 
   if (loading) {
-    return <div style={{ textAlign: 'center', padding: 100 }}><Title heading={5}>加载中...</Title></div>;
+    return <div className="ur-page"><EmptyState title="加载中..." minHeight={360} /></div>;
   }
 
   return (
-    <div>
-      <Title heading={4} style={{ marginBottom: 24 }}>系统设置</Title>
+    <div className="ur-page">
+      <PageHeader
+        eyebrow="System"
+        title="系统设置"
+        description="管理当前账号信息、密码和系统入口信息。"
+      />
 
-      <Row gutter={16}>
-        <Col span={12}>
-          <Card style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-              <IconUser />
-              <Title heading={5} style={{ margin: 0 }}>个人信息</Title>
-            </div>
+      <div className="ur-settings-grid">
+        <Surface title="个人信息" actions={<IconUser />}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
                 <Text type="secondary">用户名</Text>
@@ -72,15 +72,9 @@ export default function SettingsPage() {
                 <div style={{ marginTop: 4 }}><Text>{profile?.created_at ? formatDateTime(profile.created_at) : '—'}</Text></div>
               </div>
             </div>
-          </Card>
-        </Col>
+        </Surface>
 
-        <Col span={12}>
-          <Card>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-              <IconLock />
-              <Title heading={5} style={{ margin: 0 }}>修改密码</Title>
-            </div>
+        <Surface title="修改密码" actions={<IconLock />}>
             <Form getFormApi={(api) => setPasswordApi(api)} onSubmit={handleChangePassword}>
               <Form.Input
                 field="old_password"
@@ -111,32 +105,25 @@ export default function SettingsPage() {
               />
               <Button type="primary" htmlType="submit" style={{ marginTop: 8 }}>修改密码</Button>
             </Form>
-          </Card>
-        </Col>
-      </Row>
+        </Surface>
+      </div>
 
-      <Divider style={{ margin: '24px 0' }} />
-
-      <Card>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-          <IconSetting />
-          <Title heading={5} style={{ margin: 0 }}>系统信息</Title>
-        </div>
-        <Row gutter={16}>
-          <Col span={8}>
+      <Surface title="系统信息" actions={<IconSetting />}>
+        <div className="ur-system-info-grid">
+          <div>
             <Text type="secondary">版本</Text>
             <div style={{ marginTop: 4 }}><Text>v1.0.0</Text></div>
-          </Col>
-          <Col span={8}>
+          </div>
+          <div>
             <Text type="secondary">API 端点</Text>
             <div style={{ marginTop: 4 }}><Text code>/v1/chat/completions</Text></div>
-          </Col>
-          <Col span={8}>
+          </div>
+          <div>
             <Text type="secondary">文档</Text>
             <div style={{ marginTop: 4 }}><a href="/docs" target="_blank">查看 API 文档</a></div>
-          </Col>
-        </Row>
-      </Card>
+          </div>
+        </div>
+      </Surface>
     </div>
   );
 }

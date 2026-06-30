@@ -77,7 +77,8 @@ The UI is part of PRD1 closeout because the admin console is required for operat
 | PRD1-QA-003 | Stability | Verify 100 concurrent billing requests do not create negative balance | Open |
 | PRD1-QA-004 | Routing | Verify failover and circuit breaker behavior | Open |
 | PRD1-UI-001 | UI | Audit frontend architecture, component reuse, and visual consistency | Canary passed |
-| PRD1-UI-002 | UI | Browser/manual validation of core admin flows by a capable step, not Canary/OpenClaw | Open |
+| PRD1-UI-002 | UI | Browser/manual validation of core admin flows by a capable step, not Canary/OpenClaw | Codex visual QA complete locally; awaiting Canary non-visual verification |
+| PRD1-UI-003 | UI | PRD1 visual redesign and reusable UI foundation | Fixed awaiting Canary |
 | PRD1-ENG-001 | Contract | Resolve frontend `/me/password` client/backend route mismatch | Canary passed |
 | PRD1-ENG-002 | Contract | Verify and prevent frontend route drift in key/wallet/admin flows | Canary passed |
 | PRD1-DOC-001 | Docs | Reconcile historical docs only where they affect current open issues | Canary passed |
@@ -88,7 +89,7 @@ Codex completed the local code/test closeout items that are possible in this wor
 
 - Docker Compose clean deployment cannot be run here because `docker` is unavailable.
 - Real upstream provider E2E requires configured provider keys and channels.
-- Browser/manual UI validation requires a human or browser-capable step; Canary/OpenClaw cannot perform visual acceptance.
+- Browser/manual UI validation requires a human or browser-capable step; Codex completed a local Playwright screenshot pass, while Canary/OpenClaw cannot perform visual acceptance.
 - Grafana dashboard validation requires a running Grafana environment.
 
 ## Cloud Deployment Evidence
@@ -113,6 +114,26 @@ Still external after cloud smoke:
 - Browser/manual UI walkthrough.
 - Grafana panel-level visual verification.
 - Stress, failover, and interrupted-streaming scenarios.
+
+## User-Reported UI Findings
+
+On 2026-07-01, the user reported seven UI/product issues. Codex classified them in `docs/issues/PRD1-UI-FINDINGS-2026-07-01.md`.
+
+Fixed locally and awaiting Canary:
+
+- Logs model filter options now come from model names instead of time-range Dashboard distribution.
+- Dashboard trend buckets now differ for 24h versus longer ranges.
+- Dashboard channel health card layout no longer relies on crowded inline fields.
+- Wallet admin actions are visible when backend role is admin/platform_admin, and adjustment uses the backend `target_balance` contract.
+- Login audit writes synchronously with actor context, and the audit page maps backend fields correctly.
+- `/docs` has a frontend route and a less-placeholder backend page.
+
+PRD1 visual redesign completed locally and awaiting Canary non-visual verification:
+
+- Added `frontend/src/ui/` design-layer primitives: `PageHeader`, `Surface`, `MetricTile`, `MoneyText`, `LatencyText`, `StatusTag`, `EmptyState`.
+- Updated the admin shell, login, Dashboard, Logs, Wallet, API Docs, Channels, Keys, Channel Keys, Model Prices, Org Model Prices, Grants, Users, Audit Logs, Settings, Test, and Reconciliation pages to use a shared visual system.
+- Added `docs/design/PRD1-UI-REDESIGN-SPEC.md` as the executable design-system handoff.
+- Codex local screenshot evidence is kept under ignored `output/playwright/`.
 
 ## What Can Move To PRD2
 

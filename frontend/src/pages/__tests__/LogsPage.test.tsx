@@ -4,11 +4,13 @@ import { MemoryRouter } from 'react-router-dom';
 import LogsPage from '../LogsPage';
 
 const mockGetLogs = vi.fn();
-const mockGetDashboardStats = vi.fn();
+const mockGetModelNames = vi.fn();
+const mockGetChannels = vi.fn();
 vi.mock('../../api/client', () => ({
   api: {
     getLogs: (...args: any[]) => mockGetLogs(...args),
-    getDashboardStats: (...args: any[]) => mockGetDashboardStats(...args),
+    getModelNames: (...args: any[]) => mockGetModelNames(...args),
+    getChannels: (...args: any[]) => mockGetChannels(...args),
   },
 }));
 
@@ -60,9 +62,12 @@ const MOCK_LOGS_RESPONSE = {
   total: 2,
 };
 
-const MOCK_DASHBOARD = {
-  model_distribution: [{ model: 'gpt-4o' }, { model: 'claude-3.5-sonnet' }],
-  channel_health: [
+const MOCK_MODEL_NAMES = {
+  data: ['gpt-4o', 'claude-3.5-sonnet'],
+};
+
+const MOCK_CHANNELS = {
+  data: [
     { provider: 'openai' },
     { provider: 'anthropic' },
   ],
@@ -80,7 +85,8 @@ describe('LogsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetLogs.mockResolvedValue(MOCK_LOGS_RESPONSE);
-    mockGetDashboardStats.mockResolvedValue(MOCK_DASHBOARD);
+    mockGetModelNames.mockResolvedValue(MOCK_MODEL_NAMES);
+    mockGetChannels.mockResolvedValue(MOCK_CHANNELS);
   });
 
   it('fetches logs with default page params', async () => {
@@ -139,10 +145,11 @@ describe('LogsPage', () => {
     });
   });
 
-  it('calls getDashboardStats on mount', async () => {
+  it('loads model names and channels for filter options on mount', async () => {
     renderLogs();
     await waitFor(() => {
-      expect(mockGetDashboardStats).toHaveBeenCalled();
+      expect(mockGetModelNames).toHaveBeenCalled();
+      expect(mockGetChannels).toHaveBeenCalledWith(1, 100);
     });
   });
 });

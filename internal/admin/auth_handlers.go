@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -56,8 +57,9 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Audit log for successful login
-	go h.recordAudit(r.Context(), "login", "user", fmt.Sprintf("%d", userID),
+	auditCtx := context.WithValue(context.Background(), middleware.CtxOrgID, orgID)
+	auditCtx = context.WithValue(auditCtx, middleware.CtxUserID, userID)
+	h.recordAudit(auditCtx, "login", "user", fmt.Sprintf("%d", userID),
 		map[string]interface{}{"username": req.Username, "role": role}, r.RemoteAddr)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -135,7 +137,7 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go h.recordAudit(r.Context(), "change_password", "user", fmt.Sprintf("%d", userID), nil, r.RemoteAddr)
+	h.recordAudit(r.Context(), "change_password", "user", fmt.Sprintf("%d", userID), nil, r.RemoteAddr)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 }

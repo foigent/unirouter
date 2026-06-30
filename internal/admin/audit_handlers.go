@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/uniroute/unirouter/internal/middleware"
 )
 
 func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
@@ -57,10 +59,12 @@ func (h *Handler) recordAudit(ctx context.Context, action, resource, resourceID 
 	if b, err := json.Marshal(detail); err == nil {
 		detailJSON = string(b)
 	}
+	orgID := middleware.GetOrgIDFromContext(ctx)
+	userID := middleware.GetUserIDFromContext(ctx)
 	_, err := h.db.Exec(ctx,
 		`INSERT INTO audit_logs (org_id, user_id, action, resource, resource_id, detail, ip, request_id, created_at)
-		 VALUES (0, 0, $1, $2, $3, $4::jsonb, $5, '', NOW())`,
-		action, resource, resourceID, detailJSON, ip)
+		 VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, '', NOW())`,
+		orgID, userID, action, resource, resourceID, detailJSON, ip)
 	if err != nil {
 		log.Printf("audit log failed: %s %s/%s: %v", action, resource, resourceID, err)
 	}

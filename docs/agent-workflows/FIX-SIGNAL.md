@@ -1,284 +1,203 @@
-# FIX-SIGNAL.md — PRD1 Cloud API Smoke Follow-up Round
+# FIX-SIGNAL.md — PRD1 UI Redesign Closeout
 
 **修复者：** Codex
-**日期：** 以文件系统时间戳为准
-**修复轮次：** PRD1 cloud API smoke follow-up
+**日期：** 2026-07-01
+**修复轮次：** PRD1 UI redesign closeout
 
 ---
 
-## 前置条件
+## 背景
 
-| 项目 | 预期状态 | 原因 |
-|------|----------|------|
-| OpenClaw Canary | 不修改代码 | 只做测试、审查、记录结果 |
-| 本轮范围 | 非破坏性云端 API smoke 证据、admin list scan/NULL 修复、PRD1 状态同步 | PRD1 收尾 |
-| 视觉/人工 UI 验收 | 不属于 Canary 能力范围 | 继续作为外部验收项保留 |
-| Docker/云部署/真实 provider | 云端非破坏性 API smoke 已完成；真实 provider 不在本轮范围 | 真实 provider 付费调用、压测、断流、故障注入需用户确认凭据和安全条件 |
+用户确认 PRD1 关闭前需要做完整视觉重设计，并明确 Canary/OpenClaw 没有视觉验收能力。
+
+Codex 本轮执行的是 PRD1 控制台 UI 收尾：
+
+- 不替换 Semi UI。
+- 不新增产品功能。
+- 不修改真实 provider、付费调用或生产数据。
+- 将已有 SPE 设计文档工程化为可复用前端 UI 基础层。
 
 ---
 
-## Fix #1: 云端非破坏性 API smoke 证据入档
+## Fix #1: 新增 PRD1 UI 基础层
 
 **文件：**
-- `docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md`
-- `docs/ops/CURRENT-STATUS.md`
-- `docs/ops/PRD-ACCEPTANCE-MATRIX.md`
-- `docs/ops/PRD1-CLOSEOUT-PLAN.md`
-- `docs/issues/OPEN-ISSUES.md`
+
+- `frontend/src/ui/layout/PageHeader.tsx`
+- `frontend/src/ui/layout/Surface.tsx`
+- `frontend/src/ui/layout/MetricTile.tsx`
+- `frontend/src/ui/data/MoneyText.tsx`
+- `frontend/src/ui/data/LatencyText.tsx`
+- `frontend/src/ui/data/StatusTag.tsx`
+- `frontend/src/ui/feedback/EmptyState.tsx`
+- `frontend/src/ui/index.ts`
+- `frontend/src/index.css`
 
 **修复内容：**
-- 记录 Alibaba Cloud 只读/认证类 smoke 结果
-- 覆盖 frontend、backend health、backend metrics、Prometheus、Grafana login
-- 覆盖 gateway missing-key 401、admin missing-token 401
-- 覆盖 authenticated admin GET/read-only API：dashboard、channels、keys、channel keys、wallet、transactions、logs、model prices、model names、org model prices、reconciliation、users、grants、audit logs、settings、sensitive words
-- 明确排除真实 provider 付费调用、写入 mutation、压测、断流和故障注入
 
-**验证方法：**
-```bash
-rg -n "non-destructive|8080/metrics|/api/v1/logs|missing-key|missing-token|PRD1-ENG-003" docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md docs/ops/CURRENT-STATUS.md docs/ops/PRD-ACCEPTANCE-MATRIX.md docs/ops/PRD1-CLOSEOUT-PLAN.md docs/issues/OPEN-ISSUES.md
-```
+- 增加 UniRouter 领域 UI 层，继续以 Semi UI 为基础。
+- 增加控制台 design tokens、页面容器、面板、KPI、表格 shell、Explorer 三栏、移动端安全间距。
+- 统一金额、延迟、状态和空状态表达。
 
 ---
 
-## Fix #2: admin list scan/NULL 修复
+## Fix #2: 重构控制台外壳和主要页面视觉
 
 **文件：**
-- `internal/admin/key_handlers.go`
-- `internal/admin/log_handlers.go`
-- `internal/admin/admin_mock_test.go`
 
-**修复内容：**
-- `ListAPIKeys` 对 nullable `api_keys.budget_limit` 使用 `COALESCE(ak.budget_limit, 0)`
-- `ListLogs` 对 nullable `call_logs.upstream_error` 使用 `COALESCE(upstream_error, '')`
-- 两个列表 handler 均检查 `rows.Scan` 和 `rows.Err`
-- 新增 scan-error 回归测试，避免后续吞错并返回零值字段
-
-**验证方法：**
-```bash
-go test ./internal/admin -run 'TestList(APIKeys|Logs)_(Success|ScanError|QueryError)$'
-go test ./...
-```
-
----
-
-## Prior Canary-passed context from previous closeout round
-
-The following items were already verified by OpenClaw Canary in the previous `PRD1 remaining closeout` round and are kept here only as context.
-
-## Fix #1: 补齐 `/me/password` 后端契约
-
-**文件：**
-- `internal/admin/auth_handlers.go`
-- `cmd/uniroute/main.go`
-
-**修复内容：**
-- 新增 `ChangePassword` handler
-- 注册 `PUT /api/v1/me/password`
-- 从 `AdminAuth` context 读取当前 user_id
-- 校验旧密码 bcrypt
-- 新密码 bcrypt hash 后更新当前用户
-- 未认证返回 401
-- 旧密码错误返回 401
-- 新旧密码相同或新密码过短返回 400
-
-**验证方法：**
-```bash
-go test ./internal/admin -run 'TestChangePassword|TestLogin'
-rg -n "PUT /api/v1/me/password|ChangePassword" cmd/uniroute/main.go internal/admin/auth_handlers.go
-```
-
----
-
-## Fix #2: 前端 Settings 改密校验
-
-**文件：**
+- `frontend/src/App.tsx`
+- `frontend/src/pages/LoginPage.tsx`
+- `frontend/src/pages/DashboardPage.tsx`
+- `frontend/src/pages/LogsPage.tsx`
+- `frontend/src/pages/WalletPage.tsx`
+- `frontend/src/pages/ApiDocsPage.tsx`
+- `frontend/src/pages/ChannelsPage.tsx`
+- `frontend/src/pages/KeysPage.tsx`
+- `frontend/src/pages/ChannelKeysPage.tsx`
+- `frontend/src/pages/ModelPricesPage.tsx`
+- `frontend/src/pages/OrgModelPricesPage.tsx`
+- `frontend/src/pages/GrantsPage.tsx`
+- `frontend/src/pages/UsersPage.tsx`
+- `frontend/src/pages/AuditLogsPage.tsx`
 - `frontend/src/pages/SettingsPage.tsx`
-- `frontend/src/api/__tests__/client.test.ts`
+- `frontend/src/pages/TestPage.tsx`
+- `frontend/src/pages/ReconciliationPage.tsx`
 
 **修复内容：**
-- 前端提交前校验 `new_password` 与 `confirm_password` 一致
-- API client 测试覆盖 `PUT /api/v1/me/password`
 
-**验证方法：**
-```bash
-cd frontend
-npm test -- --run src/api/__tests__/client.test.ts
-npm run build
-```
+- 刷新 sidebar brand、内容 shell、移动端汉堡按钮和 `/docs` 导航入口。
+- Dashboard 使用分析视图模板、KPI tiles、稳定图表、健康卡片、表格 surface。
+- Logs 使用 Explorer 模板；详情打开后列表使用紧凑列，完整字段在右侧详情。
+- Wallet 显示清晰 KPI、预算进度、管理员操作和组织信息。
+- 资源管理页统一 PageHeader + Surface + table shell。
+- Login、Settings、Test、Reconciliation、API Docs 统一视觉骨架。
 
 ---
 
-## Fix #3: 增加前端/后端 route parity 守卫
+## Fix #3: Dashboard 时间窗口和图表稳定性
 
 **文件：**
-- `cmd/uniroute/route_parity_test.go`
+
+- `frontend/src/pages/DashboardPage.tsx`
 
 **修复内容：**
-- 增加管理端路由静态守卫，覆盖当前 frontend API client 使用的主要 `/api/v1/*` 路由
-- 包含 `PUT /api/v1/me/password`
 
-**验证方法：**
-```bash
-go test ./cmd/uniroute -run TestAdminRoutesRegisteredForFrontendClient -v
-```
+- 修正 `24h` range 由错误的 `24 * 86400000` 改为 `86400000`。
+- 关闭 Recharts 动画，避免 Playwright 截图时趋势图/柱图未绘制完成。
 
 ---
 
-## Fix #4: 历史测试报告纠偏 + OpenAPI 路径快照刷新
+## Fix #4: PRD1 UI 设计执行文档和状态同步
 
 **文件：**
-- `docs/ops/test-report.md`
-- `docs/DOC-INVENTORY.md`
-- `docs/tech-ref/05-openapi-spec.yaml`
-- `docs/tech-ref/README.md`
-- `docs/CODEBASE-MAP.md`
 
-**修复内容：**
-- 在 `test-report.md` 顶部加入 historical report/stale banner
-- 将原“XOR 加密”结论改为历史更正：当前代码使用 AES-GCM
-- `DOC-INVENTORY.md` 更新该历史报告的角色说明
-- 重写 `docs/tech-ref/05-openapi-spec.yaml` 为当前 PRD1 API path snapshot
-- OpenAPI YAML 已解析通过，包含 38 个 path，且不再包含 `/api/v1/admin/*`
-- `docs/tech-ref/README.md`、`CODEBASE-MAP.md`、`DOC-INVENTORY.md` 已同步
-
-**验证方法：**
-```bash
-python3 - <<'PY'
-from pathlib import Path
-import yaml
-data = yaml.safe_load(Path('docs/tech-ref/05-openapi-spec.yaml').read_text())
-assert data['openapi'] == '3.0.3'
-paths = data['paths']
-assert '/api/v1/me/password' in paths
-assert '/metrics' in paths
-assert not [p for p in paths if p.startswith('/api/v1/admin/')]
-print(f"parsed {len(paths)} paths")
-PY
-rg -n "XOR|AES-GCM|Historical report|test-report.md|route_parity_test|v1.1" docs/ops/test-report.md docs/DOC-INVENTORY.md docs/tech-ref/05-openapi-spec.yaml docs/tech-ref/README.md docs/CODEBASE-MAP.md internal/auth/auth.go
-```
-
----
-
-## Fix #5: 新增 PRD1 剩余验收包
-
-**文件：**
-- `docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md`
-- `docs/README.md`
-
-**修复内容：**
-- 记录 Codex 本地已完成证据
-- 记录本地不可完成的外部验收项：Docker Compose、真实 provider、流式中断、并发压测、failover/circuit breaker、视觉/人工 UI、Grafana
-- 文档索引加入该验收包
-
-**验证方法：**
-```bash
-rg -n "PRD1-REMAINING-ACCEPTANCE-PACK|External Acceptance Queue|Docker|provider|visual" docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md docs/README.md
-```
-
----
-
-## Fix #6: 同步 PRD1 状态文档
-
-**文件：**
+- `docs/design/PRD1-UI-REDESIGN-SPEC.md`
+- `docs/design/README.md`
+- `docs/ui/FRONTEND-UI-ARCHITECTURE-AUDIT.md`
 - `docs/issues/OPEN-ISSUES.md`
+- `docs/issues/PRD1-UI-FINDINGS-2026-07-01.md`
 - `docs/ops/CURRENT-STATUS.md`
 - `docs/ops/PRD1-CLOSEOUT-PLAN.md`
 - `docs/ops/PRD-ACCEPTANCE-MATRIX.md`
+- `README.md`
+- `.gitignore`
 
 **修复内容：**
-- `ENG-001` 标为 `Fixed awaiting Canary`
-- `SEC-001` 保持 `Fixed awaiting Canary`，证据改为 stale-doc correction
-- `DOC-002` 标为 `Fixed awaiting Canary`
-- 新增 `DOC-005` 记录 OpenAPI Admin spec stale，状态为 `Fixed awaiting Canary`
-- `QA-001` 标为 `In progress`，指向剩余验收包
-- `PRD1-ENG-001` 标为 `Fixed awaiting Canary`
-- `PRD1-DOC-001` 标为 `Fixed awaiting Canary`
-- `Frontend API client matches backend routes` 标为 `Unit tested`
-- `/metrics` 标为本地当前源码 `E2E accepted`，部署环境仍需复验
 
-**验证方法：**
-```bash
-rg -n "ENG-001|SEC-001|DOC-002|DOC-005|QA-001|PRD1-ENG-001|PRD1-DOC-001|Frontend API client matches backend routes|Prometheus" docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD1-CLOSEOUT-PLAN.md docs/ops/PRD-ACCEPTANCE-MATRIX.md
-```
+- 新增 PRD1 UI redesign 执行规范和验收清单。
+- 将 UI-005 标记为 fixed awaiting Canary。
+- 记录 Codex 本地 Playwright 视觉 QA 证据。
+- 忽略本地截图产物 `output/playwright/*.png`，避免 PR 带入二进制噪音。
 
 ---
 
 ## Codex 已执行验证
 
 ```bash
-rg -n "non-destructive|8080/metrics|/api/v1/logs|missing-key|missing-token|PRD1-ENG-003" docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md docs/ops/CURRENT-STATUS.md docs/ops/PRD-ACCEPTANCE-MATRIX.md docs/ops/PRD1-CLOSEOUT-PLAN.md docs/issues/OPEN-ISSUES.md docs/agent-workflows/FIX-SIGNAL.md internal/admin/key_handlers.go internal/admin/log_handlers.go
-go test ./internal/admin -run 'TestList(APIKeys|Logs)_(Success|ScanError|QueryError)$'
 go test ./...
+cd frontend && npm run build
+cd frontend && npm test -- --run
 git diff --check
 ```
 
-本轮云端非破坏性 API smoke：
+结果：
 
-- `GET http://8.130.18.85:3000/`: PASS
-- `GET http://8.130.18.85:8080/health/live`: PASS
-- `GET http://8.130.18.85:8080/health/ready`: PASS
-- `GET http://8.130.18.85:8080/metrics`: PASS
-- `GET http://8.130.18.85:3000/health/ready`: PASS
-- `GET http://8.130.18.85:9090/-/healthy`: PASS
-- `GET http://8.130.18.85:3001/login`: PASS
-- `GET /v1/models` without API key: PASS, expected 401
-- `GET /api/v1/channels` without admin token: PASS, expected 401
-- Authenticated admin read-only GET APIs: PASS
+- `go test ./...`: PASS
+- `npm run build`: PASS，仅保留既有 Vite large chunk warning
+- `npm test -- --run`: PASS，36/36 tests
+- `git diff --check`: PASS
 
-上一轮已执行验证保留为背景：
+Codex 还执行了本地 Playwright 视觉 QA，使用只读 mock API 数据，不调用真实 provider、不写生产数据。
 
-```bash
-cd frontend && npm test -- --run
-cd frontend && npm run build
-go test ./cmd/uniroute -run TestAdminRoutesRegisteredForFrontendClient -v
-go test ./internal/admin -run 'TestChangePassword|TestLogin'
-```
+最终保留的本地截图证据：
 
-临时当前源码服务验证：
+- `output/playwright/login.png`
+- `output/playwright/dashboard-final.png`
+- `output/playwright/logs-detail-final-v4.png`
+- `output/playwright/wallet-final.png`
+- `output/playwright/api-docs.png`
+- `output/playwright/channels.png`
+- `output/playwright/dashboard-mobile-final.png`
+- `output/playwright/logs-mobile-final.png`
 
-- `GET /health/live`: PASS
-- `GET /metrics`: PASS，返回 Prometheus metrics
-- `POST /api/v1/auth/login`: PASS
-- `GET /api/v1/me`: PASS
-- `GET /api/v1/settings`: PASS
-- `GET /api/v1/dashboard/stats`: PASS
-- `PUT /api/v1/me/password` without auth: PASS, returned 401
+说明：
+
+- Canary/OpenClaw 不需要也不能判断截图视觉质量。
+- Canary 可以验证截图路径存在，但视觉判断由 Codex/User 完成。
+- Playwright 临时会话目录 `.playwright-cli/` 已移动到 `trash/playwright-cli-20260701-ui-redesign/`。
+
+---
 
 ## Canary 验收命令
 
 ```bash
 cd /Users/m4/Desktop/projects/UniRouter
-git diff --check -- internal/admin/key_handlers.go internal/admin/log_handlers.go internal/admin/admin_mock_test.go docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD1-CLOSEOUT-PLAN.md docs/ops/PRD-ACCEPTANCE-MATRIX.md docs/agent-workflows/FIX-SIGNAL.md
-rg -n "COALESCE\\(ak.budget_limit, 0\\)|COALESCE\\(upstream_error, ''\\)|Scan failed|Rows failed" internal/admin/key_handlers.go internal/admin/log_handlers.go
-rg -n "non-destructive|8080/metrics|/api/v1/logs|missing-key|missing-token|PRD1-ENG-003" docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md docs/ops/CURRENT-STATUS.md docs/ops/PRD-ACCEPTANCE-MATRIX.md docs/ops/PRD1-CLOSEOUT-PLAN.md docs/issues/OPEN-ISSUES.md docs/agent-workflows/FIX-SIGNAL.md
-go test ./internal/admin -run 'TestList(APIKeys|Logs)_(Success|ScanError|QueryError)$'
+git diff --check
 go test ./...
+cd frontend && npm run build
+cd frontend && npm test -- --run
 ```
+
+Source-level checks:
+
+```bash
+cd /Users/m4/Desktop/projects/UniRouter
+rg -n "PageHeader|Surface|MetricTile|MoneyText|LatencyText|StatusTag|EmptyState" frontend/src/ui frontend/src/pages frontend/src/App.tsx
+rg -n "86400000|isAnimationActive=\\{false\\}" frontend/src/pages/DashboardPage.tsx
+rg -n "PRD1 UI Redesign|frontend/src/ui|output/playwright" docs/design/PRD1-UI-REDESIGN-SPEC.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/agent-workflows/FIX-SIGNAL.md
+test -f output/playwright/dashboard-final.png
+test -f output/playwright/logs-detail-final-v4.png
+test -f output/playwright/dashboard-mobile-final.png
+```
+
+---
 
 ## 期望输出格式
 
-验收结果写入 `docs/agent-workflows/VERIFY-RESULT.md`：
+请将验收结果写入 `docs/agent-workflows/VERIFY-RESULT.md`：
 
 ```markdown
-# VERIFY-RESULT.md — PRD1 Cloud API Smoke Follow-up 验收结果
+# VERIFY-RESULT.md — PRD1 UI Redesign Closeout 验收结果
 
 **验收者：** OpenClaw Canary
 **日期：** 以文件系统时间戳为准
-**对应轮次：** PRD1 cloud API smoke follow-up
+**对应轮次：** PRD1 UI redesign closeout
 
 ## 逐条结果
 
-- Fix #1: PASS/FAIL — 云端非破坏性 API smoke 证据是否入档且边界清楚
-- Fix #2: PASS/FAIL — admin list scan/NULL 修复是否正确
+- Fix #1: PASS/FAIL — `frontend/src/ui/` 是否存在并提供 PageHeader/Surface/MetricTile/MoneyText/LatencyText/StatusTag/EmptyState
+- Fix #2: PASS/FAIL — 主要页面是否接入统一 PageHeader/Surface/table shell 或等价 UI 基础层
+- Fix #3: PASS/FAIL — Dashboard 24h 是否使用 `86400000`，图表是否关闭动画用于稳定截图
+- Fix #4: PASS/FAIL — PRD1 UI redesign 文档、状态、open issues、README 是否同步
 
 ## 全局验证
 
 - `git diff --check`: PASS/FAIL
-- `rg` evidence checks: PASS/FAIL
-- targeted admin tests: PASS/FAIL
 - `go test ./...`: PASS/FAIL
-- 视觉/人工 UI 验收: NOT_APPLICABLE_TO_CANARY
-- 真实 provider/压测/断流/故障注入: NOT_APPLICABLE_TO_CANARY
+- `npm run build`: PASS/FAIL
+- `npm test -- --run`: PASS/FAIL
+- 本地截图文件存在性: PASS/FAIL
+- 浏览器视觉验收: NOT_APPLICABLE_TO_CANARY
 
 ## 新发现的问题
 

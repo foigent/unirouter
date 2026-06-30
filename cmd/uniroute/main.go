@@ -210,19 +210,36 @@ func main() {
 	mux.HandleFunc("GET /docs", func(w http.ResponseWriter, r *http.Request) {
 		html := `<!DOCTYPE html>
 <html>
-<head><title>UniRouter API Docs</title></head>
+<head>
+<title>UniRouter API Docs</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:960px;margin:40px auto;padding:0 24px;line-height:1.6;color:#1f2937}
+h1{margin-bottom:4px}.muted{color:#6b7280}code{background:#f3f4f6;padding:2px 6px;border-radius:4px}
+table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid #e5e7eb;padding:10px;text-align:left}th{background:#f9fafb}
+.method{font-weight:700}
+</style>
+</head>
 <body>
 <h1>UniRouter API Documentation</h1>
-<p>API documentation is under construction.</p>
-<p>Base URL: /api/v1</p>
-<h2>Endpoints</h2>
-<ul>
-<li>POST /api/v1/auth/login - Login</li>
-<li>GET /api/v1/me - Get current user</li>
-<li>GET /api/v1/channels - List channels</li>
-<li>GET /api/v1/keys - List API keys</li>
-<li>GET /api/v1/dashboard/stats - Dashboard stats</li>
-</ul>
+<p class="muted">PRD1 API index. Admin APIs use JWT Bearer auth. Gateway APIs use UniRouter API keys.</p>
+<p>Admin Base URL: <code>/api/v1</code> &nbsp; Gateway Base URL: <code>/v1</code></p>
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td class="method">POST</td><td><code>/api/v1/auth/login</code></td><td>Admin login</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/me</code></td><td>Current admin user</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/me/password</code></td><td>Change current password</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/dashboard/stats</code></td><td>Dashboard statistics</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/channels</code></td><td>List channels</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/keys</code></td><td>List API keys</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/logs</code></td><td>Call logs with filters</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/wallet</code></td><td>Wallet information</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/audit-logs</code></td><td>Audit logs</td></tr>
+<tr><td class="method">GET</td><td><code>/v1/models</code></td><td>OpenAI-compatible model list</td></tr>
+<tr><td class="method">POST</td><td><code>/v1/chat/completions</code></td><td>OpenAI-compatible chat completions</td></tr>
+</tbody>
+</table>
+<p class="muted">Repository source of truth: <code>docs/tech-ref/05-openapi-spec.yaml</code>.</p>
 </body>
 </html>`
 		w.Header().Set("Content-Type", "text/html")
