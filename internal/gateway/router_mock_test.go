@@ -9,98 +9,14 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/uniroute/unirouter/internal/testutil"
 	"github.com/jackc/pgx/v5/pgtype"
 )
-
-// --- Mock DBQuerier ---
-
-type mockRow struct {
-	scanFn func(dest ...any) error
-}
-
-func (m *mockRow) Scan(dest ...any) error {
-	if m.scanFn != nil {
-		return m.scanFn(dest...)
-	}
-	return fmt.Errorf("no rows")
-}
-
-func (m *mockRow) FieldDescriptions() []pgconn.FieldDescription { return nil }
-func (m *mockRow) Values() ([]any, error)                       { return nil, nil }
-func (m *mockRow) RawValues() [][]byte                          { return nil }
-func (m *mockRow) Err() error                                   { return nil }
-func (m *mockRow) Close()                                       {}
-func (m *mockRow) Next() bool                                   { return false }
-
-type mockRows struct {
-	rows   []func(dest ...any) error
-	idx    int
-	closed bool
-}
-
-func (m *mockRows) Close()                                       { m.closed = true }
-func (m *mockRows) Err() error                                   { return nil }
-func (m *mockRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
-func (m *mockRows) RawValues() [][]byte                          { return nil }
-func (m *mockRows) Values() ([]any, error)                       { return nil, nil }
-func (m *mockRows) CommandTag() pgconn.CommandTag                { return pgconn.CommandTag{} }
-func (m *mockRows) Conn() *pgx.Conn                              { return nil }
-
-func (m *mockRows) Next() bool {
-	if m.idx < len(m.rows) {
-		return true
-	}
-	return false
-}
-
-func (m *mockRows) Scan(dest ...any) error {
-	if m.idx >= len(m.rows) {
-		return fmt.Errorf("no more rows")
-	}
-	err := m.rows[m.idx](dest...)
-	m.idx++
-	return err
-}
-
-type mockDB struct {
-	queryFn    func(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	queryRowFn func(ctx context.Context, sql string, args ...any) pgx.Row
-	execFn     func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
-	beginFn    func(ctx context.Context) (pgx.Tx, error)
-}
-
-func (m *mockDB) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-	if m.queryFn != nil {
-		return m.queryFn(ctx, sql, args...)
-	}
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (m *mockDB) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
-	if m.queryRowFn != nil {
-		return m.queryRowFn(ctx, sql, args...)
-	}
-	return &mockRow{}
-}
-
-func (m *mockDB) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-	if m.execFn != nil {
-		return m.execFn(ctx, sql, args...)
-	}
-	return pgconn.CommandTag{}, nil
-}
-
-func (m *mockDB) Begin(ctx context.Context) (pgx.Tx, error) {
-	if m.beginFn != nil {
-		return m.beginFn(ctx)
-	}
-	return nil, fmt.Errorf("not implemented")
-}
 
 // --- NewRouter tests ---
 
 func TestNewRouter_WithMockDB(t *testing.T) {
-	db := &mockDB{}
+	db := &testutil.MockDB{}
 	r := NewRouter(db)
 	if r == nil {
 		t.Fatal("NewRouter should not return nil")
@@ -110,10 +26,10 @@ func TestNewRouter_WithMockDB(t *testing.T) {
 // --- Route tests ---
 
 func TestRoute_Found(t *testing.T) {
-	db := &mockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &mockRows{
-				rows: []func(dest ...any) error{
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						// ch fields: id, name, provider, base_url, models, model_mapping, max_context, default_max_output, priority, status, circuit_state, half_open_until, fail_count
 						*dest[0].(*int64) = 1
@@ -139,7 +55,7 @@ func TestRoute_Found(t *testing.T) {
 				},
 			}, nil
 		},
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -160,9 +76,9 @@ func TestRoute_Found(t *testing.T) {
 }
 
 func TestRoute_NotFound(t *testing.T) {
-	db := &mockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &mockRows{}, nil // empty rows
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{}, nil // empty rows
 		},
 	}
 	r := NewRouter(db)
@@ -173,8 +89,8 @@ func TestRoute_NotFound(t *testing.T) {
 }
 
 func TestRoute_QueryError(t *testing.T) {
-	db := &mockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			return nil, fmt.Errorf("db connection failed")
 		},
 	}
@@ -189,10 +105,10 @@ func TestRoute_QueryError(t *testing.T) {
 
 func TestRouteAll_MultipleChannels(t *testing.T) {
 	callCount := 0
-	db := &mockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &mockRows{
-				rows: []func(dest ...any) error{
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1
 						*dest[1].(*string) = "ch1"
@@ -250,9 +166,9 @@ func TestRouteAll_MultipleChannels(t *testing.T) {
 }
 
 func TestRouteAll_Empty(t *testing.T) {
-	db := &mockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &mockRows{}, nil
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{}, nil
 		},
 	}
 	r := NewRouter(db)
@@ -265,8 +181,8 @@ func TestRouteAll_Empty(t *testing.T) {
 // --- MarkChannelSuccess tests ---
 
 func TestMarkChannelSuccess_OK(t *testing.T) {
-	db := &mockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -278,8 +194,8 @@ func TestMarkChannelSuccess_OK(t *testing.T) {
 }
 
 func TestMarkChannelSuccess_Error(t *testing.T) {
-	db := &mockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, fmt.Errorf("db error")
 		},
 	}
@@ -293,10 +209,10 @@ func TestMarkChannelSuccess_Error(t *testing.T) {
 // --- MarkChannelFail tests ---
 
 func TestMarkChannelFail_BelowThreshold(t *testing.T) {
-	db := &mockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &mockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int) = 2 // fail_count = 2, threshold = 5
 					return nil
 				},
@@ -312,16 +228,16 @@ func TestMarkChannelFail_BelowThreshold(t *testing.T) {
 
 func TestMarkChannelFail_AtThreshold_TransitionsToHalfOpen(t *testing.T) {
 	execCalled := false
-	db := &mockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &mockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int) = 5 // fail_count = 5, threshold = 5
 					return nil
 				},
 			}
 		},
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			execCalled = true
 			return pgconn.CommandTag{}, nil
 		},
@@ -337,10 +253,10 @@ func TestMarkChannelFail_AtThreshold_TransitionsToHalfOpen(t *testing.T) {
 }
 
 func TestMarkChannelFail_QueryError(t *testing.T) {
-	db := &mockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &mockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					return fmt.Errorf("db error")
 				},
 			}
@@ -356,8 +272,8 @@ func TestMarkChannelFail_QueryError(t *testing.T) {
 // --- MarkKeyCooldown tests ---
 
 func TestMarkKeyCooldown_OK(t *testing.T) {
-	db := &mockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -371,10 +287,10 @@ func TestMarkKeyCooldown_OK(t *testing.T) {
 // --- MarkKeyFail tests ---
 
 func TestMarkKeyFail_BelowThreshold(t *testing.T) {
-	db := &mockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &mockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int) = 2 // fail_count = 2, threshold = 3
 					return nil
 				},
@@ -390,16 +306,16 @@ func TestMarkKeyFail_BelowThreshold(t *testing.T) {
 
 func TestMarkKeyFail_AtThreshold_Invalidate(t *testing.T) {
 	execCalled := false
-	db := &mockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &mockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int) = 3 // fail_count = 3
 					return nil
 				},
 			}
 		},
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			execCalled = true
 			return pgconn.CommandTag{}, nil
 		},
@@ -417,8 +333,8 @@ func TestMarkKeyFail_AtThreshold_Invalidate(t *testing.T) {
 // --- MarkKeySuccess tests ---
 
 func TestMarkKeySuccess_OK(t *testing.T) {
-	db := &mockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -453,10 +369,10 @@ var _ = time.Now()    // suppress unused import
 // --- Route scan error path ---
 
 func TestRoute_ScanError(t *testing.T) {
-	db := &mockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &mockRows{
-				rows: []func(dest ...any) error{
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						return fmt.Errorf("scan error")
 					},
@@ -474,10 +390,10 @@ func TestRoute_ScanError(t *testing.T) {
 // --- RouteAll scan error path ---
 
 func TestRouteAll_ScanError(t *testing.T) {
-	db := &mockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &mockRows{
-				rows: []func(dest ...any) error{
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						return fmt.Errorf("scan error")
 					},
@@ -495,10 +411,10 @@ func TestRouteAll_ScanError(t *testing.T) {
 // --- MarkKeyFail scan error path ---
 
 func TestMarkKeyFail_ScanError(t *testing.T) {
-	db := &mockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &mockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					return fmt.Errorf("scan error")
 				},
 			}

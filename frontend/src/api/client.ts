@@ -88,6 +88,7 @@ export const api = {
   getModelPrices: () => request('/model-prices'),
   getModelPriceList: (page = 1, pageSize = 20) =>
     request(`/model-prices?page=${page}&page_size=${pageSize}`),
+  getModelNames: () => request('/model-names'),
   createModelPrice: (data: any) =>
     request('/model-prices', { method: 'POST', body: JSON.stringify(data) }),
   updateModelPrice: (id: number, data: any) =>

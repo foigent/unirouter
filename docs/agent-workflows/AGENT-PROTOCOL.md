@@ -220,7 +220,7 @@ go test ./...
 
 ## 当前状态
 
-**当前轮次：** 第 13 轮
-**状态：** 第 13 轮 FIX-SIGNAL.md 已发出，等待 Canary 验收
-**本轮修复：** Bug #21（渠道密钥创建字段名 api_key → key）
+**当前轮次：** 第 14 轮
+**状态：** 第 14 轮 FIX-SIGNAL 验收通过（8/8 PASS）
+**本轮修复：** Bug #23-#28 + GetModelNames 新端点 + key_prefix 字段
 **issues/ 待处理：** 无

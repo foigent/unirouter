@@ -13,140 +13,13 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/uniroute/unirouter/internal/testutil"
 )
 
 // --- Mock infrastructure for admin handler tests ---
 
-type adminMockRow struct {
-	scanFn func(dest ...any) error
-}
-
-func (m *adminMockRow) Scan(dest ...any) error {
-	if m.scanFn != nil {
-		return m.scanFn(dest...)
-	}
-	return fmt.Errorf("no rows")
-}
-func (m *adminMockRow) FieldDescriptions() []pgconn.FieldDescription { return nil }
-func (m *adminMockRow) Values() ([]any, error)                       { return nil, nil }
-func (m *adminMockRow) RawValues() [][]byte                          { return nil }
-func (m *adminMockRow) Err() error                                   { return nil }
-func (m *adminMockRow) Close()                                       {}
-func (m *adminMockRow) Next() bool                                   { return false }
-
-type adminMockRows struct {
-	rows   []func(dest ...any) error
-	idx    int
-	closed bool
-}
-
-func (m *adminMockRows) Close()                                       { m.closed = true }
-func (m *adminMockRows) Err() error                                   { return nil }
-func (m *adminMockRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
-func (m *adminMockRows) RawValues() [][]byte                          { return nil }
-func (m *adminMockRows) Values() ([]any, error)                       { return nil, nil }
-func (m *adminMockRows) CommandTag() pgconn.CommandTag                { return pgconn.CommandTag{} }
-func (m *adminMockRows) Conn() *pgx.Conn                              { return nil }
-
-func (m *adminMockRows) Next() bool {
-	if m.idx < len(m.rows) {
-		return true
-	}
-	return false
-}
-
-func (m *adminMockRows) Scan(dest ...any) error {
-	if m.idx >= len(m.rows) {
-		return fmt.Errorf("no more rows")
-	}
-	err := m.rows[m.idx](dest...)
-	m.idx++
-	return err
-}
-
-type adminMockTx struct {
-	execFn     func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
-	queryFn    func(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	queryRowFn func(ctx context.Context, sql string, args ...any) pgx.Row
-	commitFn   func(ctx context.Context) error
-	rollbackFn func(ctx context.Context) error
-}
-
-func (m *adminMockTx) Begin(ctx context.Context) (pgx.Tx, error) { return nil, fmt.Errorf("nested begin not supported") }
-func (m *adminMockTx) Commit(ctx context.Context) error {
-	if m.commitFn != nil {
-		return m.commitFn(ctx)
-	}
-	return nil
-}
-func (m *adminMockTx) Rollback(ctx context.Context) error {
-	if m.rollbackFn != nil {
-		return m.rollbackFn(ctx)
-	}
-	return nil
-}
-func (m *adminMockTx) CopyFrom(ctx context.Context, tableName pgx.Identifier, columnNames []string, rowSrc pgx.CopyFromSource) (int64, error) {
-	return 0, fmt.Errorf("not implemented")
-}
-func (m *adminMockTx) SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults { return nil }
-func (m *adminMockTx) LargeObjects() pgx.LargeObjects                                { return pgx.LargeObjects{} }
-func (m *adminMockTx) Prepare(ctx context.Context, name, sql string) (*pgconn.StatementDescription, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-func (m *adminMockTx) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-	if m.execFn != nil {
-		return m.execFn(ctx, sql, args...)
-	}
-	return pgconn.CommandTag{}, nil
-}
-func (m *adminMockTx) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-	if m.queryFn != nil {
-		return m.queryFn(ctx, sql, args...)
-	}
-	return nil, fmt.Errorf("not implemented")
-}
-func (m *adminMockTx) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
-	if m.queryRowFn != nil {
-		return m.queryRowFn(ctx, sql, args...)
-	}
-	return &adminMockRow{}
-}
-func (m *adminMockTx) Conn() *pgx.Conn { return nil }
-
-type adminMockDB struct {
-	queryFn    func(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	queryRowFn func(ctx context.Context, sql string, args ...any) pgx.Row
-	execFn     func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
-	beginFn    func(ctx context.Context) (pgx.Tx, error)
-}
-
-func (m *adminMockDB) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-	if m.queryFn != nil {
-		return m.queryFn(ctx, sql, args...)
-	}
-	return nil, fmt.Errorf("not implemented")
-}
-func (m *adminMockDB) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
-	if m.queryRowFn != nil {
-		return m.queryRowFn(ctx, sql, args...)
-	}
-	return &adminMockRow{}
-}
-func (m *adminMockDB) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-	if m.execFn != nil {
-		return m.execFn(ctx, sql, args...)
-	}
-	return pgconn.CommandTag{}, nil
-}
-func (m *adminMockDB) Begin(ctx context.Context) (pgx.Tx, error) {
-	if m.beginFn != nil {
-		return m.beginFn(ctx)
-	}
-	return nil, fmt.Errorf("not implemented")
-}
-
 // --- Helper to create handler with mock DB ---
-func newTestHandler(db *adminMockDB) *Handler {
+func newTestHandler(db *testutil.MockDB) *Handler {
 	return NewHandler(db, "test-secret", []byte("0123456789abcdef01234567"), nil)
 }
 
@@ -160,10 +33,10 @@ func TestLogin_Success(t *testing.T) {
 	// bcrypt hash of "password123" with cost 10
 	hash := "$2a$10$FQbk3L3IVXe.UiYojf7YVeq1nbfb4oI.igx8Jed8fxF6slCek.hLG"
 
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 1    // id
 					*dest[1].(*int64) = 1    // org_id
 					*dest[2].(*string) = hash // password_hash
@@ -198,10 +71,10 @@ func TestLogin_Success(t *testing.T) {
 
 func TestLogin_WrongPassword(t *testing.T) {
 	hash := "$2a$10$FQbk3L3IVXe.UiYojf7YVeq1nbfb4oI.igx8Jed8fxF6slCek.hLG"
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 1
 					*dest[1].(*int64) = 1
 					*dest[2].(*string) = hash
@@ -227,10 +100,10 @@ func TestLogin_WrongPassword(t *testing.T) {
 }
 
 func TestLogin_UserNotFound(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					return fmt.Errorf("no rows")
 				},
 			}
@@ -252,10 +125,10 @@ func TestLogin_UserNotFound(t *testing.T) {
 
 func TestLogin_DisabledAccount(t *testing.T) {
 	hash := "$2a$10$FQbk3L3IVXe.UiYojf7YVeq1nbfb4oI.igx8Jed8fxF6slCek.hLG"
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 1
 					*dest[1].(*int64) = 1
 					*dest[2].(*string) = hash
@@ -281,7 +154,7 @@ func TestLogin_DisabledAccount(t *testing.T) {
 }
 
 func TestLogin_EmptyBody(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 	body := `{"username":"","password":""}`
 	req := httptest.NewRequest("POST", "/auth/login", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -295,7 +168,7 @@ func TestLogin_EmptyBody(t *testing.T) {
 }
 
 func TestLogin_InvalidJSON(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 	req := httptest.NewRequest("POST", "/auth/login", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -308,7 +181,7 @@ func TestLogin_InvalidJSON(t *testing.T) {
 }
 
 func TestLogin_WrongMethod(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 	req := httptest.NewRequest("GET", "/auth/login", nil)
 	rec := httptest.NewRecorder()
 
@@ -325,10 +198,10 @@ func TestLogin_WrongMethod(t *testing.T) {
 
 func TestGetWallet_Success(t *testing.T) {
 	now := time.Now()
-	db := &adminMockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &adminMockRows{
-				rows: []func(dest ...any) error{
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1     // org_id
 						*dest[1].(*int) = 10000   // balance
@@ -367,9 +240,9 @@ func TestGetWallet_Success(t *testing.T) {
 }
 
 func TestGetWallet_NotFound(t *testing.T) {
-	db := &adminMockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &adminMockRows{}, nil // empty rows
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{}, nil // empty rows
 		},
 	}
 	h := newTestHandler(db)
@@ -385,8 +258,8 @@ func TestGetWallet_NotFound(t *testing.T) {
 }
 
 func TestGetWallet_QueryError(t *testing.T) {
-	db := &adminMockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			return nil, fmt.Errorf("connection refused")
 		},
 	}
@@ -408,27 +281,27 @@ func TestGetWallet_QueryError(t *testing.T) {
 
 func TestTopUp_Success(t *testing.T) {
 	txCommitted := false
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 1 // wallet org_id
 					return nil
 				},
 			}
 		},
-		beginFn: func(ctx context.Context) (pgx.Tx, error) {
-			return &adminMockTx{
-				execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+			return &testutil.MockTx{
+				ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 					return pgconn.CommandTag{}, nil
 				},
-				commitFn: func(ctx context.Context) error {
+				CommitFn: func(ctx context.Context) error {
 					txCommitted = true
 					return nil
 				},
 			}, nil
 		},
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil // audit log
 		},
 	}
@@ -450,7 +323,7 @@ func TestTopUp_Success(t *testing.T) {
 }
 
 func TestTopUp_NegativeAmount(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	body := `{"amount_cents":-100}`
 	req := httptest.NewRequest("POST", "/wallet/topup", strings.NewReader(body))
@@ -465,7 +338,7 @@ func TestTopUp_NegativeAmount(t *testing.T) {
 }
 
 func TestTopUp_ZeroAmount(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	body := `{"amount_cents":0}`
 	req := httptest.NewRequest("POST", "/wallet/topup", strings.NewReader(body))
@@ -480,7 +353,7 @@ func TestTopUp_ZeroAmount(t *testing.T) {
 }
 
 func TestTopUp_InvalidJSON(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("POST", "/wallet/topup", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -495,10 +368,10 @@ func TestTopUp_InvalidJSON(t *testing.T) {
 
 func TestTopUp_Idempotency(t *testing.T) {
 	callCount := 0
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					callCount++
 					if callCount == 1 {
 						*dest[0].(*int64) = 1 // wallet org_id
@@ -531,10 +404,10 @@ func TestTopUp_Idempotency(t *testing.T) {
 }
 
 func TestTopUp_WalletNotFound(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					return fmt.Errorf("no rows")
 				},
 			}
@@ -555,16 +428,16 @@ func TestTopUp_WalletNotFound(t *testing.T) {
 }
 
 func TestTopUp_TxBeginFail(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 1
 					return nil
 				},
 			}
 		},
-		beginFn: func(ctx context.Context) (pgx.Tx, error) {
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
 			return nil, fmt.Errorf("connection pool exhausted")
 		},
 	}
@@ -583,18 +456,18 @@ func TestTopUp_TxBeginFail(t *testing.T) {
 }
 
 func TestTopUp_TxExecFail_WalletUpdate(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 1
 					return nil
 				},
 			}
 		},
-		beginFn: func(ctx context.Context) (pgx.Tx, error) {
-			return &adminMockTx{
-				execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+			return &testutil.MockTx{
+				ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 					if strings.Contains(sql, "UPDATE wallets") {
 						return pgconn.CommandTag{}, fmt.Errorf("deadlock")
 					}
@@ -618,21 +491,21 @@ func TestTopUp_TxExecFail_WalletUpdate(t *testing.T) {
 }
 
 func TestTopUp_TxCommitFail(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 1
 					return nil
 				},
 			}
 		},
-		beginFn: func(ctx context.Context) (pgx.Tx, error) {
-			return &adminMockTx{
-				execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+			return &testutil.MockTx{
+				ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 					return pgconn.CommandTag{}, nil
 				},
-				commitFn: func(ctx context.Context) error {
+				CommitFn: func(ctx context.Context) error {
 					return fmt.Errorf("commit failed")
 				},
 			}, nil
@@ -657,24 +530,24 @@ func TestTopUp_TxCommitFail(t *testing.T) {
 // ===================================================================
 
 func TestBalanceAdjust_Success(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 1  // org_id
 					*dest[1].(*int) = 5000 // current balance
 					return nil
 				},
 			}
 		},
-		beginFn: func(ctx context.Context) (pgx.Tx, error) {
-			return &adminMockTx{
-				execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+			return &testutil.MockTx{
+				ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 					return pgconn.CommandTag{}, nil
 				},
 			}, nil
 		},
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil // audit log
 		},
 	}
@@ -704,7 +577,7 @@ func TestBalanceAdjust_Success(t *testing.T) {
 }
 
 func TestBalanceAdjust_NegativeTarget(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	body := `{"target_balance":-100}`
 	req := httptest.NewRequest("POST", "/wallet/adjust", strings.NewReader(body))
@@ -719,7 +592,7 @@ func TestBalanceAdjust_NegativeTarget(t *testing.T) {
 }
 
 func TestBalanceAdjust_WrongMethod(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("GET", "/wallet/adjust", nil)
 	rec := httptest.NewRecorder()
@@ -732,10 +605,10 @@ func TestBalanceAdjust_WrongMethod(t *testing.T) {
 }
 
 func TestBalanceAdjust_WalletNotFound(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					return fmt.Errorf("no rows")
 				},
 			}
@@ -756,7 +629,7 @@ func TestBalanceAdjust_WalletNotFound(t *testing.T) {
 }
 
 func TestBalanceAdjust_InvalidJSON(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("POST", "/wallet/adjust", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -775,10 +648,10 @@ func TestBalanceAdjust_InvalidJSON(t *testing.T) {
 
 func TestListChannels_Success(t *testing.T) {
 	now := time.Now()
-	db := &adminMockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &adminMockRows{
-				rows: []func(dest ...any) error{
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1           // id
 						*dest[1].(*string) = "openai"   // name
@@ -821,9 +694,9 @@ func TestListChannels_Success(t *testing.T) {
 }
 
 func TestListChannels_Empty(t *testing.T) {
-	db := &adminMockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &adminMockRows{}, nil
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{}, nil
 		},
 	}
 	h := newTestHandler(db)
@@ -845,8 +718,8 @@ func TestListChannels_Empty(t *testing.T) {
 }
 
 func TestListChannels_QueryError(t *testing.T) {
-	db := &adminMockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			return nil, fmt.Errorf("connection refused")
 		},
 	}
@@ -867,10 +740,10 @@ func TestListChannels_QueryError(t *testing.T) {
 // ===================================================================
 
 func TestCreateUser_Success(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 42 // new user id
 					return nil
 				},
@@ -897,7 +770,7 @@ func TestCreateUser_Success(t *testing.T) {
 }
 
 func TestCreateUser_EmptyUsername(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	body := `{"username":"","password":"secret123"}`
 	req := httptest.NewRequest("POST", "/users", strings.NewReader(body))
@@ -912,7 +785,7 @@ func TestCreateUser_EmptyUsername(t *testing.T) {
 }
 
 func TestCreateUser_EmptyPassword(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	body := `{"username":"testuser","password":""}`
 	req := httptest.NewRequest("POST", "/users", strings.NewReader(body))
@@ -927,10 +800,10 @@ func TestCreateUser_EmptyPassword(t *testing.T) {
 }
 
 func TestCreateUser_DuplicateUsername(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					return fmt.Errorf("duplicate key value violates unique constraint")
 				},
 			}
@@ -952,8 +825,8 @@ func TestCreateUser_DuplicateUsername(t *testing.T) {
 
 func TestCreateUser_DefaultRole(t *testing.T) {
 	var insertedRole string
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			if strings.Contains(sql, "INSERT") {
 				// Capture the role argument (4th arg)
 				if len(args) >= 4 {
@@ -962,8 +835,8 @@ func TestCreateUser_DefaultRole(t *testing.T) {
 					}
 				}
 			}
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 1
 					return nil
 				},
@@ -993,8 +866,8 @@ func TestCreateUser_DefaultRole(t *testing.T) {
 
 func TestDeleteChannel_Success(t *testing.T) {
 	execCalled := false
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			execCalled = true
 			return pgconn.NewCommandTag("DELETE 1"), nil
 		},
@@ -1016,7 +889,7 @@ func TestDeleteChannel_Success(t *testing.T) {
 }
 
 func TestDeleteChannel_InvalidID(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("DELETE", "/channels/abc", nil)
 	req.SetPathValue("id", "abc")
@@ -1030,8 +903,8 @@ func TestDeleteChannel_InvalidID(t *testing.T) {
 }
 
 func TestDeleteChannel_DBError(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, fmt.Errorf("foreign key violation")
 		},
 	}
@@ -1054,8 +927,8 @@ func TestDeleteChannel_DBError(t *testing.T) {
 
 func TestRecordAudit_Success(t *testing.T) {
 	execCalled := false
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			execCalled = true
 			return pgconn.CommandTag{}, nil
 		},
@@ -1071,8 +944,8 @@ func TestRecordAudit_Success(t *testing.T) {
 }
 
 func TestRecordAudit_DBError(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, fmt.Errorf("db error")
 		},
 	}
@@ -1088,8 +961,8 @@ func TestRecordAudit_DBError(t *testing.T) {
 
 func TestCleanupOldData_Success(t *testing.T) {
 	execCount := 0
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			execCount++
 			return pgconn.CommandTag{}, nil
 		},
@@ -1109,8 +982,8 @@ func TestCleanupOldData_Success(t *testing.T) {
 
 func TestCleanupOldData_DefaultRetention(t *testing.T) {
 	var retentionArg int
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			if len(args) > 0 {
 				if v, ok := args[0].(int); ok && retentionArg == 0 {
 					retentionArg = v
@@ -1132,8 +1005,8 @@ func TestCleanupOldData_DefaultRetention(t *testing.T) {
 }
 
 func TestCleanupOldData_ExecError(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, fmt.Errorf("disk full")
 		},
 	}
@@ -1151,10 +1024,10 @@ func TestCleanupOldData_ExecError(t *testing.T) {
 
 func TestListAPIKeys_Success(t *testing.T) {
 	now := time.Now()
-	db := &adminMockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &adminMockRows{
-				rows: []func(dest ...any) error{
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1           // id
 						*dest[1].(*int64) = 1           // org_id
@@ -1193,8 +1066,8 @@ func TestListAPIKeys_Success(t *testing.T) {
 }
 
 func TestListAPIKeys_QueryError(t *testing.T) {
-	db := &adminMockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			return nil, fmt.Errorf("db error")
 		},
 	}
@@ -1215,10 +1088,10 @@ func TestListAPIKeys_QueryError(t *testing.T) {
 // ===================================================================
 
 func TestCreateAPIKey_Success(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 42 // new key id
 					return nil
 				},
@@ -1240,7 +1113,7 @@ func TestCreateAPIKey_Success(t *testing.T) {
 }
 
 func TestCreateAPIKey_EmptyName(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	body := `{"org_id":1,"name":""}`
 	req := httptest.NewRequest("POST", "/keys", strings.NewReader(body))
@@ -1255,7 +1128,7 @@ func TestCreateAPIKey_EmptyName(t *testing.T) {
 }
 
 func TestCreateAPIKey_InvalidJSON(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("POST", "/keys", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -1269,10 +1142,10 @@ func TestCreateAPIKey_InvalidJSON(t *testing.T) {
 }
 
 func TestCreateAPIKey_DBError(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					return fmt.Errorf("duplicate key")
 				},
 			}
@@ -1297,8 +1170,8 @@ func TestCreateAPIKey_DBError(t *testing.T) {
 // ===================================================================
 
 func TestDeleteUser_Success(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.NewCommandTag("DELETE 1"), nil
 		},
 	}
@@ -1316,7 +1189,7 @@ func TestDeleteUser_Success(t *testing.T) {
 }
 
 func TestDeleteUser_InvalidID(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("DELETE", "/users/abc", nil)
 	req.SetPathValue("id", "abc")
@@ -1330,8 +1203,8 @@ func TestDeleteUser_InvalidID(t *testing.T) {
 }
 
 func TestDeleteUser_DBError(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, fmt.Errorf("fk violation")
 		},
 	}
@@ -1353,10 +1226,10 @@ func TestDeleteUser_DBError(t *testing.T) {
 // ===================================================================
 
 func TestListSettings_Success(t *testing.T) {
-	db := &adminMockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &adminMockRows{
-				rows: []func(dest ...any) error{
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*string) = "site_name"
 						*dest[1].(*[]byte) = []byte(`"UniRouter"`)
@@ -1384,8 +1257,8 @@ func TestListSettings_Success(t *testing.T) {
 }
 
 func TestListSettings_QueryError(t *testing.T) {
-	db := &adminMockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			return nil, fmt.Errorf("db error")
 		},
 	}
@@ -1406,8 +1279,8 @@ func TestListSettings_QueryError(t *testing.T) {
 // ===================================================================
 
 func TestUpdateSetting_Success(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -1427,8 +1300,8 @@ func TestUpdateSetting_Success(t *testing.T) {
 }
 
 func TestUpdateSetting_DBError(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, fmt.Errorf("db error")
 		},
 	}
@@ -1453,18 +1326,18 @@ func TestUpdateSetting_DBError(t *testing.T) {
 
 func TestListUsers_Success(t *testing.T) {
 	now := time.Now()
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int) = 1 // total
 					return nil
 				},
 			}
 		},
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &adminMockRows{
-				rows: []func(dest ...any) error{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1           // id
 						*dest[1].(*int64) = 1           // org_id
@@ -1498,11 +1371,11 @@ func TestListUsers_Success(t *testing.T) {
 }
 
 func TestListUsers_QueryError(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{scanFn: func(dest ...any) error { return nil }}
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error { return nil }}
 		},
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			return nil, fmt.Errorf("db error")
 		},
 	}
@@ -1519,17 +1392,17 @@ func TestListUsers_QueryError(t *testing.T) {
 }
 
 func TestListUsers_Empty(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int) = 0
 					return nil
 				},
 			}
 		},
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &adminMockRows{}, nil
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{}, nil
 		},
 	}
 	h := newTestHandler(db)
@@ -1553,18 +1426,18 @@ func strPtr(s string) *string { return &s }
 
 func TestListWalletTransactions_Success(t *testing.T) {
 	_ = time.Now()
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int) = 2 // total
 					return nil
 				},
 			}
 		},
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &adminMockRows{
-				rows: []func(dest ...any) error{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1
 						*dest[1].(*string) = "topup"
@@ -1604,11 +1477,11 @@ func TestListWalletTransactions_Success(t *testing.T) {
 }
 
 func TestListWalletTransactions_QueryError(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{scanFn: func(dest ...any) error { return nil }}
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error { return nil }}
 		},
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			return nil, fmt.Errorf("db error")
 		},
 	}
@@ -1630,10 +1503,10 @@ func TestListWalletTransactions_QueryError(t *testing.T) {
 
 func TestGetChannel_Success(t *testing.T) {
 	now := time.Now()
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 1
 					*dest[1].(*string) = "openai"
 					*dest[2].(*string) = "openai"
@@ -1669,7 +1542,7 @@ func TestGetChannel_Success(t *testing.T) {
 }
 
 func TestGetChannel_InvalidID(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("GET", "/channels/abc", nil)
 	req.SetPathValue("id", "abc")
@@ -1683,10 +1556,10 @@ func TestGetChannel_InvalidID(t *testing.T) {
 }
 
 func TestGetChannel_NotFound(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					return fmt.Errorf("no rows")
 				},
 			}
@@ -1711,10 +1584,10 @@ func TestGetChannel_NotFound(t *testing.T) {
 
 func TestGetAPIKey_Success(t *testing.T) {
 	now := time.Now()
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 1
 					*dest[1].(*int64) = 1
 					*dest[2].(*string) = "test-key"
@@ -1745,7 +1618,7 @@ func TestGetAPIKey_Success(t *testing.T) {
 }
 
 func TestGetAPIKey_InvalidID(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("GET", "/keys/abc", nil)
 	req.SetPathValue("id", "abc")
@@ -1759,10 +1632,10 @@ func TestGetAPIKey_InvalidID(t *testing.T) {
 }
 
 func TestGetAPIKey_NotFound(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					return fmt.Errorf("no rows")
 				},
 			}
@@ -1788,18 +1661,18 @@ func TestGetAPIKey_NotFound(t *testing.T) {
 func TestListGrants_Success(t *testing.T) {
 	now := time.Now()
 	orgName := "Default"
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int) = 1
 					return nil
 				},
 			}
 		},
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &adminMockRows{
-				rows: []func(dest ...any) error{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1
 						*dest[1].(*int64) = 1
@@ -1827,11 +1700,11 @@ func TestListGrants_Success(t *testing.T) {
 }
 
 func TestListGrants_QueryError(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{scanFn: func(dest ...any) error { return nil }}
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error { return nil }}
 		},
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			return nil, fmt.Errorf("db error")
 		},
 	}
@@ -1852,10 +1725,10 @@ func TestListGrants_QueryError(t *testing.T) {
 // ===================================================================
 
 func TestListSensitiveWords_Success(t *testing.T) {
-	db := &adminMockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &adminMockRows{
-				rows: []func(dest ...any) error{
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1
 						*dest[1].(*string) = "赌博"
@@ -1879,10 +1752,10 @@ func TestListSensitiveWords_Success(t *testing.T) {
 }
 
 func TestListSensitiveWords_QueryError(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					return fmt.Errorf("db error")
 				},
 			}
@@ -1913,18 +1786,18 @@ func TestListSensitiveWords_QueryError(t *testing.T) {
 
 func TestListAuditLogs_Success(t *testing.T) {
 	now := time.Now()
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int) = 1
 					return nil
 				},
 			}
 		},
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &adminMockRows{
-				rows: []func(dest ...any) error{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1
 						*dest[1].(*int64) = 0
@@ -1952,11 +1825,11 @@ func TestListAuditLogs_Success(t *testing.T) {
 }
 
 func TestListAuditLogs_QueryError(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{scanFn: func(dest ...any) error { return nil }}
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error { return nil }}
 		},
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			return nil, fmt.Errorf("db error")
 		},
 	}
@@ -1978,18 +1851,18 @@ func TestListAuditLogs_QueryError(t *testing.T) {
 
 func TestListModelPrices_Success(t *testing.T) {
 	_ = time.Now()
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int) = 1
 					return nil
 				},
 			}
 		},
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &adminMockRows{
-				rows: []func(dest ...any) error{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1
 						*dest[1].(*string) = "gpt-4o"
@@ -2015,8 +1888,8 @@ func TestListModelPrices_Success(t *testing.T) {
 }
 
 func TestListModelPrices_QueryError(t *testing.T) {
-	db := &adminMockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			return nil, fmt.Errorf("db error")
 		},
 	}
@@ -2038,16 +1911,16 @@ func TestListModelPrices_QueryError(t *testing.T) {
 
 func TestListChannelKeys_Success(t *testing.T) {
 	now := time.Now()
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
 				*dest[0].(*int) = 1
 				return nil
 			}}
 		},
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &adminMockRows{
-				rows: []func(dest ...any) error{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1
 						*dest[1].(*int64) = 1
@@ -2078,8 +1951,8 @@ func TestListChannelKeys_Success(t *testing.T) {
 }
 
 func TestListChannelKeys_QueryError(t *testing.T) {
-	db := &adminMockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			return nil, fmt.Errorf("db error")
 		},
 	}
@@ -2105,30 +1978,37 @@ var _ = time.Now()
 func TestListLogs_Success(t *testing.T) {
 	now := time.Now()
 	callCount := 0
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int) = 1 // total
 					return nil
 				},
 			}
 		},
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			callCount++
-			return &adminMockRows{
-				rows: []func(dest ...any) error{
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1
 						*dest[1].(*string) = "req-001"
 						*dest[2].(*string) = "gpt-4o"
 						*dest[3].(*string) = "openai"
-						*dest[4].(*int) = 100
-						*dest[5].(*int) = 50
-						*dest[6].(*int) = 5
-						*dest[7].(*int) = 200
-						*dest[8].(*int) = 350
-						*dest[9].(*time.Time) = now
+						*dest[4].(*string) = "test-channel"
+						*dest[5].(*int) = 100
+						*dest[6].(*int) = 50
+						*dest[7].(*int) = 150
+						*dest[8].(*int) = 200
+						*dest[9].(*int) = 200
+						*dest[10].(*int) = 350
+						*dest[11].(*int) = 0
+						dest[12] = (*int)(nil)
+						*dest[13].(*string) = ""
+						*dest[14].(*string) = "backend"
+						*dest[15].(*bool) = false
+						*dest[16].(*time.Time) = now
 						return nil
 					},
 				},
@@ -2149,29 +2029,36 @@ func TestListLogs_Success(t *testing.T) {
 
 func TestListLogs_WithFilters(t *testing.T) {
 	now := time.Now()
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int) = 0
 					return nil
 				},
 			}
 		},
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &adminMockRows{
-				rows: []func(dest ...any) error{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1
 						*dest[1].(*string) = "req-002"
 						*dest[2].(*string) = "gpt-4o"
 						*dest[3].(*string) = "openai"
-						*dest[4].(*int) = 200
-						*dest[5].(*int) = 100
-						*dest[6].(*int) = 10
-						*dest[7].(*int) = 200
-						*dest[8].(*int) = 500
-						*dest[9].(*time.Time) = now
+						*dest[4].(*string) = "test-channel"
+						*dest[5].(*int) = 200
+						*dest[6].(*int) = 100
+						*dest[7].(*int) = 300
+						*dest[8].(*int) = 200
+						*dest[9].(*int) = 200
+						*dest[10].(*int) = 500
+						*dest[11].(*int) = 0
+						dest[12] = (*int)(nil)
+						*dest[13].(*string) = ""
+						*dest[14].(*string) = "backend"
+						*dest[15].(*bool) = false
+						*dest[16].(*time.Time) = now
 						return nil
 					},
 				},
@@ -2191,11 +2078,11 @@ func TestListLogs_WithFilters(t *testing.T) {
 }
 
 func TestListLogs_QueryError(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{scanFn: func(dest ...any) error { return nil }}
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error { return nil }}
 		},
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			return nil, fmt.Errorf("db error")
 		},
 	}
@@ -2216,18 +2103,18 @@ func TestListLogs_QueryError(t *testing.T) {
 // ===================================================================
 
 func TestListReconciliation_Success(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int) = 1
 					return nil
 				},
 			}
 		},
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &adminMockRows{
-				rows: []func(dest ...any) error{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1
 						*dest[1].(*string) = "req-001"
@@ -2261,11 +2148,11 @@ func TestListReconciliation_Success(t *testing.T) {
 }
 
 func TestListReconciliation_QueryError(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{scanFn: func(dest ...any) error { return nil }}
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error { return nil }}
 		},
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			return nil, fmt.Errorf("db error")
 		},
 	}
@@ -2288,10 +2175,10 @@ func TestListReconciliation_QueryError(t *testing.T) {
 func TestDashboardStats_Success(t *testing.T) {
 	now := time.Now()
 	queryCount := 0
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					queryCount++
 					// Different queries scan different types
 					if queryCount == 3 || queryCount == 8 {
@@ -2324,10 +2211,10 @@ func TestDashboardStats_Success(t *testing.T) {
 				},
 			}
 		},
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			if strings.Contains(sql, "model_prices") {
-				return &adminMockRows{
-					rows: []func(dest ...any) error{
+				return &testutil.MockRows{
+					Rows: []func(dest ...any) error{
 						func(dest ...any) error {
 							*dest[0].(*string) = "gpt-4o"
 							*dest[1].(*int) = 5
@@ -2339,8 +2226,8 @@ func TestDashboardStats_Success(t *testing.T) {
 			}
 			if strings.Contains(sql, "channels") {
 				// channel health: id, name, provider, status, success_count, fail_count
-				return &adminMockRows{
-					rows: []func(dest ...any) error{
+				return &testutil.MockRows{
+					Rows: []func(dest ...any) error{
 						func(dest ...any) error {
 							*dest[0].(*int) = 1
 							*dest[1].(*string) = "channel-1"
@@ -2355,8 +2242,8 @@ func TestDashboardStats_Success(t *testing.T) {
 			}
 			if strings.Contains(sql, "GROUP BY model") {
 				// model distribution: model, cnt
-				return &adminMockRows{
-					rows: []func(dest ...any) error{
+				return &testutil.MockRows{
+					Rows: []func(dest ...any) error{
 						func(dest ...any) error {
 							*dest[0].(*string) = "gpt-4o"
 							*dest[1].(*int) = 50
@@ -2366,8 +2253,8 @@ func TestDashboardStats_Success(t *testing.T) {
 				}, nil
 			}
 			// recent logs or daily trend
-			return &adminMockRows{
-				rows: []func(dest ...any) error{
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						if strings.Contains(sql, "DATE") {
 							// daily trend: day, requests, cost
@@ -2420,16 +2307,16 @@ func TestDashboardStats_Success(t *testing.T) {
 // ===================================================================
 
 func TestCreateChannel_Success(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 42
 					return nil
 				},
 			}
 		},
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -2448,7 +2335,7 @@ func TestCreateChannel_Success(t *testing.T) {
 }
 
 func TestCreateChannel_MissingFields(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	body := `{"name":"test-channel"}`
 	req := httptest.NewRequest("POST", "/channels", strings.NewReader(body))
@@ -2463,7 +2350,7 @@ func TestCreateChannel_MissingFields(t *testing.T) {
 }
 
 func TestCreateChannel_InvalidJSON(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("POST", "/channels", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -2477,10 +2364,10 @@ func TestCreateChannel_InvalidJSON(t *testing.T) {
 }
 
 func TestCreateChannel_DBError(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					return fmt.Errorf("duplicate key")
 				},
 			}
@@ -2505,8 +2392,8 @@ func TestCreateChannel_DBError(t *testing.T) {
 // ===================================================================
 
 func TestDisableAPIKey_Success(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.NewCommandTag("UPDATE 1"), nil
 		},
 	}
@@ -2524,7 +2411,7 @@ func TestDisableAPIKey_Success(t *testing.T) {
 }
 
 func TestDisableAPIKey_InvalidID(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("POST", "/keys/abc/disable", nil)
 	req.SetPathValue("id", "abc")
@@ -2538,8 +2425,8 @@ func TestDisableAPIKey_InvalidID(t *testing.T) {
 }
 
 func TestDisableAPIKey_NotFound(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil // RowsAffected=0
 		},
 	}
@@ -2561,8 +2448,8 @@ func TestDisableAPIKey_NotFound(t *testing.T) {
 // ===================================================================
 
 func TestDeleteModelPrice_Success(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.NewCommandTag("DELETE 1"), nil
 		},
 	}
@@ -2580,7 +2467,7 @@ func TestDeleteModelPrice_Success(t *testing.T) {
 }
 
 func TestDeleteModelPrice_InvalidID(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("DELETE", "/model-prices/abc", nil)
 	req.SetPathValue("id", "abc")
@@ -2594,8 +2481,8 @@ func TestDeleteModelPrice_InvalidID(t *testing.T) {
 }
 
 func TestDeleteModelPrice_DBError(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, fmt.Errorf("fk violation")
 		},
 	}
@@ -2617,8 +2504,8 @@ func TestDeleteModelPrice_DBError(t *testing.T) {
 // ===================================================================
 
 func TestDeleteChannelKey_Success(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.NewCommandTag("DELETE 1"), nil
 		},
 	}
@@ -2636,7 +2523,7 @@ func TestDeleteChannelKey_Success(t *testing.T) {
 }
 
 func TestDeleteChannelKey_InvalidID(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("DELETE", "/channel-keys/abc", nil)
 	req.SetPathValue("id", "abc")
@@ -2650,8 +2537,8 @@ func TestDeleteChannelKey_InvalidID(t *testing.T) {
 }
 
 func TestDeleteChannelKey_DBError(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, fmt.Errorf("fk violation")
 		},
 	}
@@ -2673,10 +2560,10 @@ func TestDeleteChannelKey_DBError(t *testing.T) {
 // ===================================================================
 
 func TestCreateModelPrice_Success(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 42
 					return nil
 				},
@@ -2698,7 +2585,7 @@ func TestCreateModelPrice_Success(t *testing.T) {
 }
 
 func TestCreateModelPrice_InvalidJSON(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("POST", "/model-prices", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -2712,10 +2599,10 @@ func TestCreateModelPrice_InvalidJSON(t *testing.T) {
 }
 
 func TestCreateModelPrice_DBError(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					return fmt.Errorf("duplicate key")
 				},
 			}
@@ -2741,18 +2628,18 @@ func TestCreateModelPrice_DBError(t *testing.T) {
 
 func TestListOrgModelPrices_Success(t *testing.T) {
 	now := time.Now()
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int) = 1
 					return nil
 				},
 			}
 		},
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &adminMockRows{
-				rows: []func(dest ...any) error{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1
 						*dest[1].(*int64) = 1
@@ -2778,11 +2665,11 @@ func TestListOrgModelPrices_Success(t *testing.T) {
 }
 
 func TestListOrgModelPrices_QueryError(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{scanFn: func(dest ...any) error { return nil }}
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error { return nil }}
 		},
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			return nil, fmt.Errorf("db error")
 		},
 	}
@@ -2803,10 +2690,10 @@ func TestListOrgModelPrices_QueryError(t *testing.T) {
 // ===================================================================
 
 func TestCreateOrgModelPrice_Success(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 42
 					return nil
 				},
@@ -2828,7 +2715,7 @@ func TestCreateOrgModelPrice_Success(t *testing.T) {
 }
 
 func TestCreateOrgModelPrice_InvalidJSON(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("POST", "/org-model-prices", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -2842,10 +2729,10 @@ func TestCreateOrgModelPrice_InvalidJSON(t *testing.T) {
 }
 
 func TestCreateOrgModelPrice_DBError(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					return fmt.Errorf("duplicate key")
 				},
 			}
@@ -2870,8 +2757,8 @@ func TestCreateOrgModelPrice_DBError(t *testing.T) {
 // ===================================================================
 
 func TestUpdateSensitiveWords_Success(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -2890,7 +2777,7 @@ func TestUpdateSensitiveWords_Success(t *testing.T) {
 }
 
 func TestUpdateSensitiveWords_InvalidJSON(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("PUT", "/sensitive-words", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -2904,8 +2791,8 @@ func TestUpdateSensitiveWords_InvalidJSON(t *testing.T) {
 }
 
 func TestUpdateSensitiveWords_DBError(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, fmt.Errorf("db error")
 		},
 	}
@@ -2928,8 +2815,8 @@ func TestUpdateSensitiveWords_DBError(t *testing.T) {
 // ===================================================================
 
 func TestUpdateChannel_Success(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.NewCommandTag("UPDATE 1"), nil
 		},
 	}
@@ -2949,7 +2836,7 @@ func TestUpdateChannel_Success(t *testing.T) {
 }
 
 func TestUpdateChannel_InvalidID(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	body := `{"name":"test"}`
 	req := httptest.NewRequest("PUT", "/channels/abc", strings.NewReader(body))
@@ -2965,7 +2852,7 @@ func TestUpdateChannel_InvalidID(t *testing.T) {
 }
 
 func TestUpdateChannel_InvalidJSON(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("PUT", "/channels/1", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -2980,7 +2867,7 @@ func TestUpdateChannel_InvalidJSON(t *testing.T) {
 }
 
 func TestUpdateChannel_NoFields(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	body := `{}`
 	req := httptest.NewRequest("PUT", "/channels/1", strings.NewReader(body))
@@ -2996,8 +2883,8 @@ func TestUpdateChannel_NoFields(t *testing.T) {
 }
 
 func TestUpdateChannel_DBError(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, fmt.Errorf("db error")
 		},
 	}
@@ -3017,8 +2904,8 @@ func TestUpdateChannel_DBError(t *testing.T) {
 }
 
 func TestUpdateChannel_NotFound(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil // RowsAffected=0
 		},
 	}
@@ -3042,8 +2929,8 @@ func TestUpdateChannel_NotFound(t *testing.T) {
 // ===================================================================
 
 func TestUpdateAPIKey_Success(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.NewCommandTag("UPDATE 1"), nil
 		},
 	}
@@ -3063,7 +2950,7 @@ func TestUpdateAPIKey_Success(t *testing.T) {
 }
 
 func TestUpdateAPIKey_InvalidID(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	body := `{"name":"test"}`
 	req := httptest.NewRequest("PUT", "/keys/abc", strings.NewReader(body))
@@ -3079,7 +2966,7 @@ func TestUpdateAPIKey_InvalidID(t *testing.T) {
 }
 
 func TestUpdateAPIKey_InvalidJSON(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("PUT", "/keys/1", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -3094,7 +2981,7 @@ func TestUpdateAPIKey_InvalidJSON(t *testing.T) {
 }
 
 func TestUpdateAPIKey_NoFields(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	body := `{}`
 	req := httptest.NewRequest("PUT", "/keys/1", strings.NewReader(body))
@@ -3110,8 +2997,8 @@ func TestUpdateAPIKey_NoFields(t *testing.T) {
 }
 
 func TestUpdateAPIKey_DBError(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, fmt.Errorf("db error")
 		},
 	}
@@ -3131,8 +3018,8 @@ func TestUpdateAPIKey_DBError(t *testing.T) {
 }
 
 func TestUpdateAPIKey_NotFound(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -3156,8 +3043,8 @@ func TestUpdateAPIKey_NotFound(t *testing.T) {
 // ===================================================================
 
 func TestUpdateUser_Success(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.NewCommandTag("UPDATE 1"), nil
 		},
 	}
@@ -3178,7 +3065,7 @@ func TestUpdateUser_Success(t *testing.T) {
 }
 
 func TestUpdateUser_InvalidID(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("PUT", "/users/abc", strings.NewReader(`{"role":"admin"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -3193,7 +3080,7 @@ func TestUpdateUser_InvalidID(t *testing.T) {
 }
 
 func TestUpdateUser_InvalidJSON(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("PUT", "/users/1", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -3208,7 +3095,7 @@ func TestUpdateUser_InvalidJSON(t *testing.T) {
 }
 
 func TestUpdateUser_NoFields(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("PUT", "/users/1", strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -3223,8 +3110,8 @@ func TestUpdateUser_NoFields(t *testing.T) {
 }
 
 func TestUpdateUser_DBError(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, fmt.Errorf("db error")
 		},
 	}
@@ -3243,8 +3130,8 @@ func TestUpdateUser_DBError(t *testing.T) {
 }
 
 func TestUpdateUser_NotFound(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -3267,8 +3154,8 @@ func TestUpdateUser_NotFound(t *testing.T) {
 // ===================================================================
 
 func TestDeleteOrgModelPrice_Success(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.NewCommandTag("DELETE 1"), nil
 		},
 	}
@@ -3286,7 +3173,7 @@ func TestDeleteOrgModelPrice_Success(t *testing.T) {
 }
 
 func TestDeleteOrgModelPrice_InvalidID(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("DELETE", "/org-model-prices/abc", nil)
 	req.SetPathValue("id", "abc")
@@ -3300,8 +3187,8 @@ func TestDeleteOrgModelPrice_InvalidID(t *testing.T) {
 }
 
 func TestDeleteOrgModelPrice_DBError(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, fmt.Errorf("fk violation")
 		},
 	}
@@ -3323,8 +3210,8 @@ func TestDeleteOrgModelPrice_DBError(t *testing.T) {
 // ===================================================================
 
 func TestUpdateModelPrice_Success(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.NewCommandTag("UPDATE 1"), nil
 		},
 	}
@@ -3344,7 +3231,7 @@ func TestUpdateModelPrice_Success(t *testing.T) {
 }
 
 func TestUpdateModelPrice_InvalidID(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("PUT", "/model-prices/abc", strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -3359,7 +3246,7 @@ func TestUpdateModelPrice_InvalidID(t *testing.T) {
 }
 
 func TestUpdateModelPrice_InvalidJSON(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("PUT", "/model-prices/1", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -3374,7 +3261,7 @@ func TestUpdateModelPrice_InvalidJSON(t *testing.T) {
 }
 
 func TestUpdateModelPrice_NoFields(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("PUT", "/model-prices/1", strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -3389,8 +3276,8 @@ func TestUpdateModelPrice_NoFields(t *testing.T) {
 }
 
 func TestUpdateModelPrice_DBError(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, fmt.Errorf("db error")
 		},
 	}
@@ -3410,8 +3297,8 @@ func TestUpdateModelPrice_DBError(t *testing.T) {
 }
 
 func TestUpdateModelPrice_NotFound(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -3435,8 +3322,8 @@ func TestUpdateModelPrice_NotFound(t *testing.T) {
 // ===================================================================
 
 func TestUpdateOrgModelPrice_Success(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.NewCommandTag("UPDATE 1"), nil
 		},
 	}
@@ -3456,7 +3343,7 @@ func TestUpdateOrgModelPrice_Success(t *testing.T) {
 }
 
 func TestUpdateOrgModelPrice_InvalidID(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("PUT", "/org-model-prices/abc", strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -3471,7 +3358,7 @@ func TestUpdateOrgModelPrice_InvalidID(t *testing.T) {
 }
 
 func TestUpdateOrgModelPrice_InvalidJSON(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("PUT", "/org-model-prices/1", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -3486,7 +3373,7 @@ func TestUpdateOrgModelPrice_InvalidJSON(t *testing.T) {
 }
 
 func TestUpdateOrgModelPrice_NoFields(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("PUT", "/org-model-prices/1", strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -3501,8 +3388,8 @@ func TestUpdateOrgModelPrice_NoFields(t *testing.T) {
 }
 
 func TestUpdateOrgModelPrice_DBError(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, fmt.Errorf("db error")
 		},
 	}
@@ -3522,8 +3409,8 @@ func TestUpdateOrgModelPrice_DBError(t *testing.T) {
 }
 
 func TestUpdateOrgModelPrice_NotFound(t *testing.T) {
-	db := &adminMockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -3547,16 +3434,16 @@ func TestUpdateOrgModelPrice_NotFound(t *testing.T) {
 // ===================================================================
 
 func TestAddSensitiveWords_Success(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*string) = `["赌博"]`
 					return nil
 				},
 			}
 		},
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -3581,7 +3468,7 @@ func TestAddSensitiveWords_Success(t *testing.T) {
 }
 
 func TestAddSensitiveWords_InvalidJSON(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("POST", "/sensitive-words/add", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -3596,15 +3483,15 @@ func TestAddSensitiveWords_InvalidJSON(t *testing.T) {
 
 func TestAddSensitiveWords_DBQueryError(t *testing.T) {
 	// When query fails, valueJSON defaults to "[]"
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					return fmt.Errorf("db error")
 				},
 			}
 		},
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -3623,16 +3510,16 @@ func TestAddSensitiveWords_DBQueryError(t *testing.T) {
 }
 
 func TestAddSensitiveWords_ExecError(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*string) = `[]`
 					return nil
 				},
 			}
 		},
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, fmt.Errorf("db error")
 		},
 	}
@@ -3655,16 +3542,16 @@ func TestAddSensitiveWords_ExecError(t *testing.T) {
 // ===================================================================
 
 func TestDeleteSensitiveWords_Success(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*string) = `["赌博","色情","spam"]`
 					return nil
 				},
 			}
 		},
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -3689,7 +3576,7 @@ func TestDeleteSensitiveWords_Success(t *testing.T) {
 }
 
 func TestDeleteSensitiveWords_InvalidJSON(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("POST", "/sensitive-words/delete", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -3703,10 +3590,10 @@ func TestDeleteSensitiveWords_InvalidJSON(t *testing.T) {
 }
 
 func TestDeleteSensitiveWords_QueryError(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					return fmt.Errorf("db error")
 				},
 			}
@@ -3728,16 +3615,16 @@ func TestDeleteSensitiveWords_QueryError(t *testing.T) {
 }
 
 func TestDeleteSensitiveWords_ExecError(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*string) = `["赌博","色情"]`
 					return nil
 				},
 			}
 		},
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, fmt.Errorf("db error")
 		},
 	}
@@ -3761,10 +3648,10 @@ func TestDeleteSensitiveWords_ExecError(t *testing.T) {
 
 func TestExportWalletTransactions_Success(t *testing.T) {
 	now := time.Now()
-	db := &adminMockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &adminMockRows{
-				rows: []func(dest ...any) error{
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1
 						*dest[1].(*string) = "topup"
@@ -3803,8 +3690,8 @@ func TestExportWalletTransactions_Success(t *testing.T) {
 }
 
 func TestExportWalletTransactions_QueryError(t *testing.T) {
-	db := &adminMockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			return nil, fmt.Errorf("db error")
 		},
 	}
@@ -3827,16 +3714,16 @@ func TestExportWalletTransactions_QueryError(t *testing.T) {
 func TestCreateChannelKey_Success(t *testing.T) {
 	// encKey must be 16, 24, or 32 bytes for AES
 	encKey := []byte("0123456789abcdef01234567") // 24 bytes
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 42
 					return nil
 				},
 			}
 		},
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -3855,7 +3742,7 @@ func TestCreateChannelKey_Success(t *testing.T) {
 }
 
 func TestCreateChannelKey_MissingFields(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	body := `{"channel_id":1}`
 	req := httptest.NewRequest("POST", "/channel-keys", strings.NewReader(body))
@@ -3870,7 +3757,7 @@ func TestCreateChannelKey_MissingFields(t *testing.T) {
 }
 
 func TestCreateChannelKey_InvalidJSON(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("POST", "/channel-keys", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -3885,10 +3772,10 @@ func TestCreateChannelKey_InvalidJSON(t *testing.T) {
 
 func TestCreateChannelKey_DBError(t *testing.T) {
 	encKey := []byte("0123456789abcdef01234567")
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					return fmt.Errorf("duplicate key")
 				},
 			}
@@ -3913,11 +3800,11 @@ func TestCreateChannelKey_DBError(t *testing.T) {
 // ===================================================================
 
 func TestCreateGrant_Success(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			callCount := 0
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					callCount++
 					if callCount == 1 {
 						// idempotency check: no existing grant
@@ -3927,17 +3814,17 @@ func TestCreateGrant_Success(t *testing.T) {
 				},
 			}
 		},
-		beginFn: func(ctx context.Context) (pgx.Tx, error) {
-			return &adminMockTx{
-				queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-					return &adminMockRow{
-						scanFn: func(dest ...any) error {
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+			return &testutil.MockTx{
+				QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+					return &testutil.MockRow{
+						ScanFn: func(dest ...any) error {
 							*dest[0].(*int64) = 42 // grant id
 							return nil
 						},
 					}
 				},
-				execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+				ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 					return pgconn.CommandTag{}, nil
 				},
 			}, nil
@@ -3958,7 +3845,7 @@ func TestCreateGrant_Success(t *testing.T) {
 }
 
 func TestCreateGrant_ZeroAmount(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	body := `{"org_id":1,"amount_cents":0}`
 	req := httptest.NewRequest("POST", "/grants", strings.NewReader(body))
@@ -3973,7 +3860,7 @@ func TestCreateGrant_ZeroAmount(t *testing.T) {
 }
 
 func TestCreateGrant_InvalidJSON(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	req := httptest.NewRequest("POST", "/grants", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -3987,10 +3874,10 @@ func TestCreateGrant_InvalidJSON(t *testing.T) {
 }
 
 func TestCreateGrant_Idempotency(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 99 // existing grant id
 					return nil
 				},
@@ -4017,15 +3904,15 @@ func TestCreateGrant_Idempotency(t *testing.T) {
 }
 
 func TestCreateGrant_TxBeginFail(t *testing.T) {
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					return fmt.Errorf("no rows")
 				},
 			}
 		},
-		beginFn: func(ctx context.Context) (pgx.Tx, error) {
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
 			return nil, fmt.Errorf("connection pool exhausted")
 		},
 	}
@@ -4072,22 +3959,22 @@ func TestNormalizeModels(t *testing.T) {
 
 func TestCreateChannel_NormalizesModels(t *testing.T) {
 	var capturedModels string
-	db := &adminMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			// args: name(0), provider(1), base_url(2), models(3), priority(4), degradation_threshold(5)
 			if len(args) > 3 {
 				if m, ok := args[3].(string); ok {
 					capturedModels = m
 				}
 			}
-			return &adminMockRow{
-				scanFn: func(dest ...any) error {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 1
 					return nil
 				},
 			}
 		},
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -4110,7 +3997,7 @@ func TestCreateChannel_NormalizesModels(t *testing.T) {
 }
 
 func TestCreateChannel_NormalizesAllEmpty_Rejected(t *testing.T) {
-	h := newTestHandler(&adminMockDB{})
+	h := newTestHandler(&testutil.MockDB{})
 
 	// All full-width commas + whitespace should normalize to empty => rejected
 	body := `{"name":"test","provider":"openai","base_url":"https://api.openai.com","models":" ， ， "}`

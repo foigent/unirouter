@@ -392,6 +392,7 @@ func (rw *responseWriter) Flush() {
 - **严重性**: Low
 - **类型**: UI 交互
 - **状态**: ✅ 已修复验收 (2026-06-29)
+- **生产环境验证**: ✅ 已在 8.130.18.85 验证通过 (2026-06-29 19:36)
 - **发现者**: Nicholas（生产环境测试）
 
 **问题**：渠道测试页面选择渠道后，"测试模型"字段是自由文本输入（`Form.Input`），而非从渠道已配置的 models 列表中选择。
@@ -410,6 +411,7 @@ func (rw *responseWriter) Flush() {
 - **严重性**: Medium
 - **类型**: API 缺失
 - **状态**: ✅ 已修复验收 (2026-06-29)
+- **生产环境验证**: ✅ 已在 8.130.18.85 验证通过 (2026-06-29 19:36)
 - **发现者**: Nicholas（生产环境测试）
 
 **问题**：系统设置页面的用户名/角色/组织/创建时间全部显示"-"。
@@ -489,3 +491,226 @@ func (rw *responseWriter) Flush() {
    - 去重（保持顺序）
 3. 前端提示：`ChannelsPage.tsx` models 输入框 placeholder 改为 `多个模型用英文逗号分隔，如 gpt-4o, gpt-4o-mini`
 4. 测试覆盖：4 个新测试（`TestNormalizeModels` 9 子用例 + `TestCreateChannel_NormalizesModels` + `TestCreateChannel_NormalizesAllEmpty_Rejected`）
+
+---
+
+## Bug #23 — 调用日志页面崩溃：total_tokens 字段不存在 (High 前端 Bug)
+
+- **发现日期**: 2026-06-29
+- **严重性**: High
+- **类型**: 前后端字段不匹配
+- **状态**: ⚠️ 待修复
+- **发现者**: Nicholas（生产环境测试）
+
+**问题**：点击"调用日志"页面，显示"页面出错了"。
+
+**根因**：前端 `LogsPage.tsx` 期望 `total_tokens` 字段（line 22, 270, 556），后端 `ListLogs` handler 只返回 `prompt_tokens` + `completion_tokens`，没有 `total_tokens`。`undefined.toLocaleString()` 抛 TypeError。
+
+```
+后端返回: { prompt_tokens: 5, completion_tokens: 3, cost_cents: 1, ... }
+前端期望: total_tokens (line 22) → undefined → .toLocaleString() → TypeError
+```
+
+---
+
+## Bug #24 — 渠道测试 Mimo Token Plan 返回 404 (Medium 后端 Bug)
+
+- **发现日期**: 2026-06-29
+- **严重性**: Medium
+- **类型**: URL 构造错误
+- **状态**: ⚠️ 待修复
+- **发现者**: Nicholas（生产环境测试）
+
+**问题**：渠道测试选择 Mimo Token Plan，返回 404。
+
+**根因**：Mimo Token Plan 的 `base_url` 为 `https://token-plan-cn.xiaomimimo.com/v1`（已含 `/v1`），后端 `TestChannel` handler（handlers.go:2374）盲目拼接 `baseURL + "/v1/models"`，导致 URL 变成 `/v1/v1/models` → 404。
+
+```
+base_url: https://token-plan-cn.xiaomimimo.com/v1
+拼接后:   https://token-plan-cn.xiaomimimo.com/v1/v1/models → 404
+```
+
+---
+
+## Bug #25 — 渠道测试成功却显示"测试失败: undefined" (Medium 前端 Bug)
+
+- **发现日期**: 2026-06-29
+- **严重性**: Medium
+- **类型**: 前后端字段不匹配
+- **状态**: ⚠️ 待修复
+- **发现者**: Nicholas（生产环境测试）
+
+**问题**：Kimi 渠道测试实际成功（status_code=200, latency=1246ms），但前端显示"测试失败: undefined"。
+
+**根因**：前端 `TestPage.tsx:72` 检查 `result.success`，但后端 TestChannel 返回 `status: "ok"` 而非 `success: true`。`result.success` 始终为 undefined（falsy）→ 所有测试都显示失败。
+
+```
+后端返回: { status: "ok", status_code: 200, latency_ms: 1246, ... }
+前端检查: if (result.success) → undefined → 走 else → "测试失败: undefined"
+```
+
+---
+
+## Bug #26 — 模型价格新增模型名称为手动输入 (Low UI/设计)
+
+- **发现日期**: 2026-06-29
+- **严重性**: Low
+- **类型**: UI 交互 / 设计缺失
+- **状态**: ⚠️ 待设计确认
+- **发现者**: Nicholas（生产环境测试）
+
+**问题**：模型价格配置 → 新增价格 → 模型名称为 `Form.Input`（手动输入），不是从已有渠道配置的 models 中选择的下拉框。
+
+**设计建议**：按 厂商→模型 两层下拉更合适。
+
+---
+
+## Bug #27 — 组织倍率新增模型名称为手动输入 (Low UI/设计)
+
+- **发现日期**: 2026-06-29
+- **严重性**: Low
+- **类型**: UI 交互 / 设计缺失
+- **状态**: ⚠️ 待设计确认
+- **发现者**: Nicholas（生产环境测试）
+
+**问题**：组织倍率 → 新增价格覆盖 → 模型名称为 `Form.Input`（手动输入）。
+
+**设计建议**：同 Bug #26，按 厂商→模型 两层下拉。
+
+---
+
+## Bug #28 — Token 对账模型筛选与渠道配置不匹配 (Low 前端/设计)
+
+- **发现日期**: 2026-06-29
+- **严重性**: Low
+- **类型**: 数据源不一致
+- **状态**: ⚠️ 待设计确认
+- **发现者**: Nicholas（生产环境测试）
+
+**问题**：Token 对账页面的模型筛选下拉与实际渠道配置的模型不匹配。筛选数据来源未定义（call_logs 中的模型 vs channels 中配置的模型）。
+
+---
+
+## Bug #29 — 仪表盘渠道健康 success/fail 全为 0 (非 Bug — 时间窗口)
+
+- **发现日期**: 2026-06-29
+- **严重性**: N/A
+- **类型**: 非 Bug
+- **状态**: ✅ 非 Bug（预期行为）
+- **发现者**: Canary（全功能扫描）
+
+**问题**：DashboardStats 默认 24 小时窗口内 channel_health 全为 0。
+
+**验证**：call_logs 数据来自 2026-06-27（2+ 天前），dashboard 默认查询最近 24 小时。用 7 天范围查询结果正常：deepseek success=20/fail=4, kimi success=5, mimo success=3。
+
+**结论**：非 Bug，预期行为。需要有近期 API 调用数据才会显示。
+
+---
+
+## Bug #23 — ListLogs SELECT 列数不匹配 (High 后端)
+
+- **发现日期**: 2026-06-29
+- **严重性**: High
+- **类型**: 后端 / SQL 不匹配
+- **状态**: ✅ 已修复（第 14 轮）
+- **发现者**: Canary（全功能扫描）
+
+**问题**：ListLogs handler SELECT 只查 10 列，前端 columns 定义 17 列。Scan dest 越界会 panic。
+
+**修复**：SELECT 扩展为 17 列（新增 channel, total_tokens, ttft_ms, upstream_status_code, upstream_error, usage_source, is_stream），同步修复 mock 测试。
+
+---
+
+## Bug #24 — TestChannel URL 双重 /v1/ (High 后端)
+
+- **发现日期**: 2026-06-29
+- **严重性**: High
+- **类型**: 后端 / URL 拼接
+- **状态**: ✅ 已修复（第 14 轮）
+- **发现者**: Canary（全功能扫描）
+
+**问题**：TestChannel 拼接 URL 时，如果 baseURL 已含 `/v1`，则结果出现 `/v1/v1/chat/completions`。
+
+**修复**：TrimRight + TrimSuffix 双重清理，避免重复路径段。
+
+---
+
+## Bug #25 — TestChannel 成功响应缺少 success 字段 (Medium 后端)
+
+- **发现日期**: 2026-06-29
+- **严重性**: Medium
+- **类型**: 后端 / 响应格式
+- **状态**: ✅ 已修复（第 14 轮）
+- **发现者**: Canary（全功能扫描）
+
+**问题**：TestChannel 成功时响应不含 `success` 字段，前端依赖此字段判断状态。
+
+**修复**：响应体增加 `"success": true`。
+
+---
+
+## Bug #26 — 模型价格新增模型名称为手动输入 (Medium 前端)
+
+- **发现日期**: 2026-06-29
+- **严重性**: Medium
+- **类型**: UI 交互 / 设计缺失
+- **状态**: ✅ 已修复（第 14 轮）
+- **发现者**: Nicholas（生产环境测试）
+
+**问题**：ModelPricesPage 新增/编辑价格时模型名为 `Form.Input`，用户需手动输入。
+
+**修复**：改为 `Form.Select` + filter 搜索，数据源从 `GET /model-names` 动态获取。
+
+---
+
+## Bug #27 — 组织倍率新增模型名称为手动输入 (Low 前端)
+
+- **发现日期**: 2026-06-29
+- **严重性**: Low
+- **类型**: UI 交互 / 设计缺失
+- **状态**: ✅ 已修复（第 14 轮）
+- **发现者**: Nicholas（生产环境测试）
+
+**问题**：OrgModelPricesPage 新增价格覆盖时模型名为 `Form.Input`。
+
+**修复**：同 Bug #26，改为 `Form.Select` 动态下拉。
+
+---
+
+## Bug #28 — Token 对账模型筛选硬编码 (Medium 前端)
+
+- **发现日期**: 2026-06-29
+- **严重性**: Medium
+- **类型**: 数据源不一致
+- **状态**: ✅ 已修复（第 14 轮）
+- **发现者**: Canary（全功能扫描）
+
+**问题**：ReconciliationPage 模型筛选下拉硬编码 `['gpt-4', 'gpt-3.5-turbo', 'claude-3-opus']`。
+
+**修复**：替换为 `modelNames` state，从 `/model-names` API 动态加载。
+
+---
+
+## channel_keys key_prefix 字段不匹配 (High 后端)
+
+- **发现日期**: 2026-06-29
+- **严重性**: High
+- **类型**: 后端 / 字段名
+- **状态**: ✅ 已修复（第 14 轮）
+- **发现者**: Canary（全功能扫描）
+
+**问题**：CreateChannelKey handler 读 `req.KeyPrefix`（Go 零值），JSON tag 是 `prefix`。UpdateChannelKey 缺少 return 导致后续逻辑穿透。
+
+**修复**：`req.KeyPrefix` → `req.Prefix`；UpdateChannelKey 添加 `return`。
+
+---
+
+## GetModelNames 新端点 (Enhancement)
+
+- **发现日期**: 2026-06-29
+- **类型**: Enhancement
+- **状态**: ✅ 已修复（第 14 轮，数据源已纠正为 model_prices）
+
+**内容**：新增 `GET /model-names` 端点，查询 `SELECT DISTINCT model_name FROM model_prices ORDER BY model_name`。前端 `api.ts` 新增 `getModelNames()` 方法，ModelPricesPage / OrgModelPricesPage / ReconciliationPage 三处动态加载。
+
+**数据源说明**：业务上应查 `model_prices`（已配置的模型列表），而非 `call_logs`（历史调用记录）。新配置但未调用的模型也应出现在下拉中。第 14 轮 Canary 验收发现此不一致，Codex 已修正为 `model_prices`。

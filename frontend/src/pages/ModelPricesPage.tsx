@@ -14,6 +14,7 @@ export default function ModelPricesPage() {
   const [showDrawer, setShowDrawer] = useState(false);
   const [editPrice, setEditPrice] = useState<any>(null);
   const [formApi, setFormApi] = useState<any>(null);
+  const [modelNames, setModelNames] = useState<string[]>([]);
 
   const load = (p = page) => {
     setLoading(true);
@@ -23,7 +24,7 @@ export default function ModelPricesPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(1); }, []);
+  useEffect(() => { load(1); api.getModelNames().then((d: any) => setModelNames(d.data || [])).catch(() => {}); }, []);
 
   const closeDrawer = () => { setShowDrawer(false); setEditPrice(null); };
 
@@ -129,7 +130,7 @@ export default function ModelPricesPage() {
         width={480}
       >
         <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={editPrice ? handleUpdate : handleCreate}>
-          <Form.Input field="model_name" label="模型名称" rules={[{ required: true, message: '必填' }]} placeholder="gpt-4o" />
+          <Form.Select field="model_name" label="模型名称" rules={[{ required: true, message: '请选择模型' }]} filter optionList={modelNames.map(m => ({ label: m, value: m }))} placeholder="选择或搜索模型" />
           <Form.Input field="input_price" label="输入价格（元/千token）" rules={[{ required: true, message: '必填' }]} placeholder="0.01" />
           <Form.Input field="output_price" label="输出价格（元/千token）" rules={[{ required: true, message: '必填' }]} placeholder="0.03" />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>

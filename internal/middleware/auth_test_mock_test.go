@@ -8,57 +8,20 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/uniroute/unirouter/internal/testutil"
 )
 
 // --- Mock DBQuerier for middleware tests ---
-
-type mwMockRow struct {
-	scanFn func(dest ...any) error
-}
-
-func (m *mwMockRow) Scan(dest ...any) error {
-	if m.scanFn != nil {
-		return m.scanFn(dest...)
-	}
-	return fmt.Errorf("no rows")
-}
-func (m *mwMockRow) FieldDescriptions() []pgconn.FieldDescription { return nil }
-func (m *mwMockRow) Values() ([]any, error)                       { return nil, nil }
-func (m *mwMockRow) RawValues() [][]byte                          { return nil }
-func (m *mwMockRow) Err() error                                   { return nil }
-func (m *mwMockRow) Close()                                       {}
-func (m *mwMockRow) Next() bool                                   { return false }
-
-type mwMockDB struct {
-	queryRowFn func(ctx context.Context, sql string, args ...any) pgx.Row
-}
-
-func (m *mwMockDB) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-func (m *mwMockDB) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
-	if m.queryRowFn != nil {
-		return m.queryRowFn(ctx, sql, args...)
-	}
-	return &mwMockRow{}
-}
-func (m *mwMockDB) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-	return pgconn.CommandTag{}, nil
-}
-func (m *mwMockDB) Begin(ctx context.Context) (pgx.Tx, error) {
-	return nil, fmt.Errorf("not implemented")
-}
 
 // --- resolveAPIKey tests ---
 
 func TestResolveAPIKey_Success(t *testing.T) {
 	budgetLimit := 10000
-	db := &mwMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &mwMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 1          // id
 					*dest[1].(*int64) = 1          // org_id
 					*dest[2].(*string) = "active"  // status
@@ -95,10 +58,10 @@ func TestResolveAPIKey_Success(t *testing.T) {
 }
 
 func TestResolveAPIKey_NotFound(t *testing.T) {
-	db := &mwMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &mwMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					return fmt.Errorf("no rows")
 				},
 			}
@@ -115,10 +78,10 @@ func TestResolveAPIKey_NotFound(t *testing.T) {
 
 func TestGatewayAuth_Success(t *testing.T) {
 	budgetLimit := 10000
-	db := &mwMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &mwMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 1
 					*dest[1].(*int64) = 1
 					*dest[2].(*string) = "active"
@@ -166,7 +129,7 @@ func TestGatewayAuth_Success(t *testing.T) {
 }
 
 func TestGatewayAuth_MissingHeader(t *testing.T) {
-	db := &mwMockDB{}
+	db := &testutil.MockDB{}
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -184,10 +147,10 @@ func TestGatewayAuth_MissingHeader(t *testing.T) {
 }
 
 func TestGatewayAuth_InvalidKey(t *testing.T) {
-	db := &mwMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &mwMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					return fmt.Errorf("no rows")
 				},
 			}
@@ -212,10 +175,10 @@ func TestGatewayAuth_InvalidKey(t *testing.T) {
 
 func TestGatewayAuth_DisabledKey(t *testing.T) {
 	budgetLimit := 10000
-	db := &mwMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &mwMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 1
 					*dest[1].(*int64) = 1
 					*dest[2].(*string) = "disabled" // key disabled
@@ -252,10 +215,10 @@ func TestGatewayAuth_DisabledKey(t *testing.T) {
 
 func TestGatewayAuth_DisabledOrg(t *testing.T) {
 	budgetLimit := 10000
-	db := &mwMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &mwMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 1
 					*dest[1].(*int64) = 1
 					*dest[2].(*string) = "active"
@@ -292,10 +255,10 @@ func TestGatewayAuth_DisabledOrg(t *testing.T) {
 
 func TestGatewayAuth_IPWhitelist(t *testing.T) {
 	budgetLimit := 10000
-	db := &mwMockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &mwMockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 1
 					*dest[1].(*int64) = 1
 					*dest[2].(*string) = "active"
