@@ -35,6 +35,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+	if handled, err := runCLI(context.Background(), os.Args[1:], cfg); handled {
+		if err != nil {
+			log.Fatalf("Command failed: %v", err)
+		}
+		return
+	}
 
 	// Initialize PostgreSQL
 	postgres, err := db.NewPostgres(cfg.DB_DSN, cfg.DBMaxConnections, cfg.DBMaxIdleConns)
@@ -135,7 +141,7 @@ func main() {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `{"status":"ready"}`)
+		fmt.Fprintf(w, `{"status":"ok","db":"ok","redis":"ok"}`)
 	})
 
 	// Root endpoint

@@ -8,10 +8,11 @@
 1. `docs/ops/CURRENT-STATUS.md` - current verified project status.
 2. `docs/ops/PRD-ACCEPTANCE-MATRIX.md` - Phase 1 acceptance progress and missing evidence.
 3. `docs/ops/PRD1-CLOSEOUT-PLAN.md` - closeout plan from PRD1 to PRD2, including UI.
-4. `docs/issues/OPEN-ISSUES.md` - active unresolved issues.
-5. `docs/agent-workflows/AGENT-PROTOCOL.md` - mandatory Codex/OpenClaw/Sentinel/Atlas workflow.
-6. `docs/CODEBASE-MAP.md` - code, route, data, test, and deployment map.
-7. `docs/DOC-INVENTORY.md` - which docs are current, historical, or reference-only.
+4. `docs/ops/PRD1-STRICT-CLOSEOUT-RUNBOOK.md` - final strict closeout gate before PRD1 can close.
+5. `docs/issues/OPEN-ISSUES.md` - active unresolved issues.
+6. `docs/agent-workflows/AGENT-PROTOCOL.md` - mandatory Codex/OpenClaw/Sentinel/Atlas workflow.
+7. `docs/CODEBASE-MAP.md` - code, route, data, test, and deployment map.
+8. `docs/DOC-INVENTORY.md` - which docs are current, historical, or reference-only.
 
 ## Current Project Shape
 
@@ -65,7 +66,7 @@ Results:
 - Frontend tests: PASS, 33 tests.
 - Frontend build: PASS with Vite large chunk warning.
 
-This does not equal Phase 1 delivery acceptance. E2E provider calls, browser validation, concurrency, failover, interrupted streaming, and deployment evidence still need current verification.
+This does not equal Phase 1 delivery acceptance. E2E provider calls, browser validation, concurrency, failover, interrupted streaming, default-admin remediation deployment, and deployment evidence still need current verification.
 
 ## Worktree Warning
 

@@ -73,11 +73,19 @@ docker compose logs -f backend
 ### 2.4 初始化管理员
 
 ```bash
-# 创建平台超管（首次部署）
-docker compose exec backend ./uniroute admin create \
+# 首次部署会随迁移创建 admin 用户，但公开默认密码不可用于生产。
+# 部署后必须立即轮换密码，否则 PRD1 不能关闭。
+docker compose exec backend ./uniroute admin set-password \
     --username admin \
-    --password <your-password> \
-    --role platform_admin
+    --password <strong-password> \
+    --org-id 1
+
+# 如需额外管理员，可显式创建，禁止使用 admin123456。
+docker compose exec backend ./uniroute admin create \
+    --username <new-admin> \
+    --password <strong-password> \
+    --role admin \
+    --org-id 1
 ```
 
 ---
@@ -100,12 +108,14 @@ Migrations complete
 docker compose exec backend ./uniroute migrate status
 ```
 
-### 3.3 回滚迁移
+### 3.3 手动补跑迁移
 
 ```bash
-# 回滚最近一次迁移
-docker compose exec backend ./uniroute migrate down
+# 正常情况下服务启动会自动迁移；需要手动补跑时使用：
+docker compose exec backend ./uniroute migrate up
 ```
+
+当前二进制不提供自动 down 回滚命令。回滚必须由运维人员按具体 migration `.down.sql` 和备份恢复方案执行。
 
 ---
 

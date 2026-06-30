@@ -25,16 +25,17 @@
 | Admin can view billing and call logs | E2E accepted | Non-destructive cloud API smoke verified authenticated GETs for dashboard, wallet, wallet transactions, logs, reconciliation, users, grants, audit logs, settings, sensitive words, model prices, org prices, keys, channel keys, and channels; logs model filter source fixed locally | Browser UX walkthrough still needed |
 | Admin can top up and adjust wallet | Implemented not accepted | Routes and frontend page exist; wallet admin action visibility and adjust request contract fixed locally | Current manual/API mutation evidence needed in safe test conditions |
 | Docker Compose one-command deployment succeeds | Production verified | Alibaba Cloud smoke passed: frontend `:3000`, backend health `:8080`, Prometheus `:9090`, Grafana login `:3001`, admin login/me/dashboard/settings through nginx | Keep Sentinel/Atlas deployment logs as release evidence |
+| Seeded default admin password is not usable in public deployment | Implemented not accepted | Codex confirmed current Alibaba Cloud accepted `admin/admin123456` on 2026-07-01; local code now blocks this login and adds `admin set-password` CLI | Canary verification, redeploy, and cloud smoke must prove default login returns 401/403 |
 
 ## Frontend UI
 
 | PRD Item | Status | Current Evidence | Gap To Acceptance |
 |----------|--------|------------------|-------------------|
-| Admin frontend has a coherent navigation and layout shell | Implemented not accepted | `frontend/src/App.tsx` defines grouped sidebar, protected layout, `/docs` nav entry, and refreshed console shell; Codex Playwright screenshots captured desktop and mobile layouts | Canary non-visual verification and user visual acceptance still needed |
-| Admin pages use consistent table/form/modal patterns | Implemented not accepted | PRD1 UI layer added under `frontend/src/ui/`; major resource pages now use shared `PageHeader`/`Surface` and table shell patterns | Deeper typed resource-page abstraction can move to PRD2 |
-| Core admin workflows are usable from browser | Implemented not accepted | Frontend build/tests pass; Codex screenshot pass covered Login, Dashboard, Logs detail, Wallet, API Docs, Channels, mobile Dashboard, and mobile Logs with mocked read-only data | Human/cloud browser walkthrough still useful before release |
-| UI has consistent visual hierarchy, spacing, empty/error/loading states | Implemented not accepted | `docs/design/PRD1-UI-REDESIGN-SPEC.md` records the implemented visual system; Dashboard chart/health, Logs explorer, Wallet actions, API Docs, and mobile hamburger overlap were visually checked by Codex | Canary cannot judge visual quality; user acceptance remains the final visual gate |
-| Frontend API client matches backend routes | Unit tested | `ApiError` added; `/me/password` backend route added; `route_parity_test.go` guards frontend admin routes | Canary verification needed for latest password/route-parity round |
+| Admin frontend has a coherent navigation and layout shell | Implemented not accepted | `frontend/src/App.tsx` defines grouped sidebar, protected layout, `/docs` nav entry, and refreshed console shell; Codex Playwright screenshots captured desktop and mobile layouts; Canary non-visual verification passed | User/cloud visual acceptance still needed |
+| Admin pages use consistent table/form/modal patterns | Implemented not accepted | PRD1 UI layer added under `frontend/src/ui/`; major resource pages now use shared `PageHeader`/`Surface` and table shell patterns; Canary non-visual verification passed | Deeper typed resource-page abstraction can move to PRD2 after user accepts PRD1 UI |
+| Core admin workflows are usable from browser | Implemented not accepted | Frontend build/tests pass; Codex screenshot pass covered Login, Dashboard, Logs detail, Wallet, API Docs, Channels, mobile Dashboard, and mobile Logs with mocked read-only data | Human/cloud browser walkthrough still needed before strict close |
+| UI has consistent visual hierarchy, spacing, empty/error/loading states | Implemented not accepted | `docs/design/PRD1-UI-REDESIGN-SPEC.md` records the implemented visual system; Dashboard chart/health, Logs explorer, Wallet actions, API Docs, and mobile hamburger overlap were visually checked by Codex; Canary non-visual verification passed | Canary cannot judge visual quality; user acceptance remains the final visual gate |
+| Frontend API client matches backend routes | Unit tested | `ApiError` added; `/me/password` backend route added; `route_parity_test.go` guards frontend admin routes; Canary verification passed for route parity round | Keep route parity checks in future frontend/API changes |
 
 ## Stability
 
@@ -52,6 +53,7 @@
 |----------|--------|------------------|-------------------|
 | Each request log includes request_id/org_id/channel_id | Implemented not accepted | `call_logs` schema and handlers exist | Current E2E log row evidence needed |
 | Prometheus `/metrics` returns metrics | Production verified | Local current-source `/metrics` returned metrics; Alibaba Cloud backend `:8080/metrics` returned Prometheus text metrics; Prometheus `:9090/-/healthy` returned 200 | Keep Atlas deployment logs as release evidence |
+| `/health/ready` returns PRD shape with DB/Redis status | Implemented not accepted | Local code now returns `{"status":"ok","db":"ok","redis":"ok"}`; current cloud may still be on old `{"status":"ready"}` response until redeploy | Canary verification, redeploy, and cloud smoke evidence needed |
 | Grafana dashboard shows request rate, latency, error rate | Implemented not accepted | Grafana `:3001/login` is reachable on Alibaba Cloud | Current running Grafana panel screenshot/manual evidence needed |
 
 ## Acceptance Rule
