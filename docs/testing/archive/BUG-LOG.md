@@ -713,6 +713,4 @@ base_url: https://token-plan-cn.xiaomimimo.com/v1
 
 **内容**：新增 `GET /model-names` 端点，查询 `SELECT DISTINCT model_name FROM model_prices ORDER BY model_name`。前端 `api.ts` 新增 `getModelNames()` 方法，ModelPricesPage / OrgModelPricesPage / ReconciliationPage 三处动态加载。
 
-**数据源说明**：业务上应查 `model_prices`（已配置的模型列表），而非 `call_logs`（历史调用记录）。新配置但未调用的模型也应出现在下拉中。第 14 轮 Canary 验收发现此不一致，Codex 已修正。
-
-**问题**：FIX-SIGNAL 声明查询 `model_prices` 表，实际代码查询 `call_logs` 表。`call_logs` 返回已使用的模型，`model_prices` 返回已配置的模型。创建新模型价格时，新模型无 call log 则不出现在下拉中。需要 Codex 确认数据源选择意图。
+**数据源说明**：业务上应查 `model_prices`（已配置的模型列表），而非 `call_logs`（历史调用记录）。新配置但未调用的模型也应出现在下拉中。第 14 轮 Canary 验收发现此不一致，Codex 已修正为 `model_prices`。

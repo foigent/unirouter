@@ -221,6 +221,6 @@ go test ./...
 ## 当前状态
 
 **当前轮次：** 第 14 轮
-**状态：** 第 14 轮 FIX-SIGNAL 已验收（7 PASS / 1 FAIL — GetModelNames 数据源不一致）
+**状态：** 第 14 轮 FIX-SIGNAL 验收通过（8/8 PASS）
 **本轮修复：** Bug #23-#28 + GetModelNames 新端点 + key_prefix 字段
-**issues/ 待处理：** GetModelNames 数据源选择（call_logs vs model_prices）
+**issues/ 待处理：** 无
