@@ -1,6 +1,6 @@
 # TEST-STATUS.md — 测试状态总览
 
-**最后更新：** 2026-06-30（第 15 轮 — handlers.go 拆分 + billing 单元测试 + DashboardStats 重构）
+**最后更新：** 2026-06-30 13:43（生产环境测试 + Round 14 部署确认）
 **轮次：** 第 15 轮
 
 ---
@@ -40,47 +40,26 @@
 
 ---
 
-## 最近一轮变更 (第 15 轮)
+## 部署状态
 
-**handlers.go 拆分 (P1):**
-- `internal/admin/handlers.go` (2577行) → 15 个文件:
-  - `handlers.go` (struct + NewHandler + parsePagination + common helpers + GetMe)
-  - `auth_handlers.go` — Login
-  - `channel_handlers.go` — Channels CRUD + GetChannel
-  - `key_handlers.go` — API Keys CRUD + GetAPIKey
-  - `wallet_handlers.go` — Wallet + ExportWalletTransactions
-  - `log_handlers.go` — ListLogs + GetLogDetail
-  - `model_handlers.go` — ListReconciliation + ListModelPrices + Model Prices CRUD + Org Model Prices
-  - `settings_handlers.go` — ListSettings + UpdateSetting
-  - `dashboard_handlers.go` — DashboardStats
-  - `channel_key_handlers.go` — Channel Keys CRUD + GetModelNames + maskKey
-  - `user_handlers.go` — Users CRUD
-  - `grant_handlers.go` — Grants
-  - `audit_handlers.go` — Audit + CleanupOldData
-  - `sensitive_handlers.go` — Sensitive Words CRUD
-  - `test_handlers.go` — TestChannel
+| 项目 | 状态 |
+|------|------|
+| 后端 commit | d83545f (Round 14, PR #12) |
+| 部署时间 | 2026-06-30 13:01 CST |
+| 后端容器 | ✅ 运行中 |
+| 前端 | ✅ 已部署 |
 
-**DashboardStats 内部拆分 (P2):**
-- 230 行单方法 → 30 行编排 + 8 个私有方法:
-  - `dashboardOverview` — 总请求数、成本、延迟、成功率
-  - `dashboardRecentLogs` — 最近 10 条日志
-  - `dashboardModelPrices` — 模型价格
-  - `dashboardDailyTrend` — 7 天趋势
-  - `dashboardWalletInfo` — 钱包信息
-  - `dashboardModelDistribution` — 模型分布 Top 5
-  - `dashboardChannelHealth` — 渠道健康（含状态判定逻辑）
-  - `dashboardYesterdayDelta` — 昨日对比
+## 生产环境 Bug 状态 (2026-06-30)
 
-**billing 单元测试 (P3):**
-- 新增 `billing_price_test.go` — 9 个测试:
-  - TestQueryModelPrice_Success / Error / ZeroPrices
-  - TestCalculateCost_SingleToken / HighPriceModel
-  - TestEstimateFreezeAmount_LargeSafetyFactor / ExactMinFreeze
-  - TestWithPriceProvider_ReturnsSelf / NilPriceProvider
-
-**Round 14 FIX-SIGNAL 验收:**
-- 7 PASS / 1 FAIL（GetModelNames 数据源与 FIX-SIGNAL 不一致）
-- 详见 `docs/agent-workflows/VERIFY-RESULT.md`
+| Bug | 问题 | 状态 |
+|-----|------|------|
+| #30 | 调用日志崩溃（total_tokens undefined） | ✅ 已修复（d83545f 部署） |
+| #31 | 渠道测试显示失败 undefined | ✅ 已修复（d83545f 部署） |
+| #32 | 渠道切换后模型不更新 | ⚠️ 待修复（前端 Bug） |
+| #33 | 钱包无充值/调账按钮 | ⚠️ 待修复（前端实现缺失） |
+| #34 | 趋势图日期不随时间范围变化 | ⚠️ 待修复（后端 Bug） |
+| #35 | API密钥允许模型手动输入 | ⚠️ 待优化（UX） |
+| #36 | 审计日志无登录记录 | ⚠️ 待修复（后端实现缺失） |
 
 ---
 

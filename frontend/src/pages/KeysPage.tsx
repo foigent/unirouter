@@ -24,6 +24,7 @@ export default function KeysPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
 
   const load = (p = page) => {
     setLoading(true);
@@ -37,10 +38,20 @@ export default function KeysPage() {
   };
 
   useEffect(() => { load(1); }, []);
+  useEffect(() => {
+    api.request('/dashboard/models').then((d: any) => {
+      const models = (d || []).map((m: any) => m.model).filter(Boolean);
+      setAvailableModels(models);
+    }).catch(() => {});
+  }, []);
 
   const closeDrawer = () => { setShowDrawer(false); setEditing(null); };
 
   const handleSubmit = async (values: Record<string, any>) => {
+    // Convert allowed_models array to comma-separated string
+    if (Array.isArray(values.allowed_models)) {
+      values.allowed_models = values.allowed_models.join(',');
+    }
     try {
       if (editing) {
         await api.updateKey(editing.id, values);
@@ -79,7 +90,7 @@ export default function KeysPage() {
       formApi?.setValues({
         name: record.name,
         allowed_ips: record.allowed_ips,
-        allowed_models: record.allowed_models,
+        allowed_models: record.allowed_models ? record.allowed_models.split(',').map(m => m.trim()).filter(Boolean) : [],
       });
     }, 100);
   };
@@ -140,7 +151,14 @@ export default function KeysPage() {
         <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleSubmit}>
           <Form.Input field="name" label="密钥名称" rules={[{ required: true, message: '必填' }]} />
           <Form.Input field="allowed_ips" label="允许 IP (逗号分隔，留空=全部)" placeholder="127.0.0.1,10.0.0.0/8" />
-          <Form.Input field="allowed_models" label="允许模型 (逗号分隔，留空=全部)" placeholder="gpt-4o,claude-3-opus" />
+          <Form.Select
+            field="allowed_models"
+            label="允许模型 (留空=全部)"
+            placeholder="选择允许的模型"
+            multiple
+            optionList={availableModels.map(m => ({ label: m, value: m }))}
+            style={{ width: '100%' }}
+          />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
             <Button onClick={closeDrawer}>取消</Button>
             <Button type="primary" onClick={() => formApi?.submitForm()}>{editing ? '更新' : '创建'}</Button>

@@ -22,7 +22,7 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 	totalRequests, todayCostCents, avgLatencyMs, successRate := h.dashboardOverview(ctx, startTime, endTime)
 	recentLogs := h.dashboardRecentLogs(ctx)
 	modelPrices := h.dashboardModelPrices(ctx)
-	dailyTrend := h.dashboardDailyTrend(ctx)
+	dailyTrend := h.dashboardDailyTrend(ctx, startTime, endTime)
 	walletBalance, walletGranted, walletFrozen, walletThreshold := h.dashboardWalletInfo(ctx)
 	modelDistribution := h.dashboardModelDistribution(ctx, startTime, endTime)
 	channelHealth := h.dashboardChannelHealth(ctx, startTime, endTime)
@@ -121,13 +121,13 @@ func (h *Handler) dashboardModelPrices(ctx context.Context) []map[string]interfa
 }
 
 // dashboardDailyTrend returns 7-day daily request count and cost.
-func (h *Handler) dashboardDailyTrend(ctx context.Context) []map[string]interface{} {
+func (h *Handler) dashboardDailyTrend(ctx context.Context, startTime, endTime string) []map[string]interface{} {
 	rows, err := h.db.Query(ctx,
 		`SELECT DATE(created_at) AS day, COUNT(*) AS requests, COALESCE(SUM(cost_cents), 0) AS cost
 		 FROM call_logs
-		 WHERE created_at >= NOW() - INTERVAL '7 days'
+		 WHERE created_at >= $1 AND created_at <= $2
 		 GROUP BY DATE(created_at)
-		 ORDER BY day ASC`)
+		 ORDER BY day ASC`, startTime, endTime)
 	if err != nil {
 		return nil
 	}

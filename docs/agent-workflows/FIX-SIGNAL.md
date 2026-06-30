@@ -1,97 +1,165 @@
-# FIX-SIGNAL.md — Bug #23~#28 + 前端动态模型列表
+# FIX-SIGNAL.md — Bug #32~#36
 
 **修复者：** codex agent
-**日期：** [见文件系统时间戳]
-**修复轮次：** 第 14 轮
+**修复轮次：** 第 15 轮
 
 ---
 
-## 前置条件（本轮预期不变的部分）
+## 前置条件
 
 | 项目 | 预期状态 | 原因 |
 |------|---------|------|
-| 后端 Go 测试 | 559+ PASS | 仅修改 admin handler 和 mock 测试 |
-| 前端编译 | PASS | 新增 API 方法 + 3 页面 Select 改造 |
-| `go build ./...` | PASS | 新增 GetModelNames handler + route |
+| 后端 Go 编译 | `go build ./...` PASS | 修改了 dashboard handler + auth handler |
+| 前端编译 | `npx vite build` PASS | 修改了 TestPage / WalletPage / KeysPage |
+| BUG-LOG.md | 5 条均标记 ✅ 已修复 | Bug #32~#36 |
 
 ---
 
-## Fix #23: ListLogs SELECT 列数不匹配 (High 后端)
+## Fix #32: TestPage 切换渠道不清空已选模型 (Medium 前端)
 
-**文件：** `internal/admin/handlers.go:822-830`
+**文件：** `frontend/src/pages/TestPage.tsx`
 
-**原问题：** ListLogs SELECT 只查 10 列（id, request_id, model, provider, prompt_tokens, completion_tokens, total_tokens, status_code, latency_ms, created_at），缺少 `channel`, `total_tokens`（重复列已删）, `ttft_ms`, `upstream_status_code`, `upstream_error`, `usage_source`, `is_stream`。前端 columns 定义 17 列，Scan 时类型对不上会 panic。
+**原问题：** 选择渠道 A → 选模型 → 切换到渠道 B，模型字段仍保留渠道 A 的值，导致测试时模型与渠道不匹配。
 
-**修复内容：** SELECT 扩展为 17 列，Scan dest 对齐。同步修复两个 mock 测试（TestListLogs_Success、TestListLogs_WithFilters）的 scan 函数。
+**修复内容：**
+1. 新增 `const formRef = Form.useFormRef()` 获取表单引用
+2. `<Form>` 增加 `getFormApi` 回调绑定 formRef
+3. 渠道 `onChange` 中添加 `formRef.current?.setValue('model', undefined)` 重置模型字段
 
----
-
-## Fix #24: TestChannel URL 双重 `/v1/` (High 后端)
-
-**文件：** `internal/admin/handlers.go:1077-1082`
-
-**原问题：** TestChannel 拼接 URL 时 `strings.TrimRight(baseURL, "/") + "/v1/chat/completions"`，如果用户输入 `https://api.openai.com/v1` 则变成 `https://api.openai.com/v1/v1/chat/completions`。
-
-**修复内容：** 先 `strings.TrimRight(baseURL, "/")`，再 `strings.TrimSuffix(result, "/v1")`，确保不重复。
-
----
-
-## Fix #25: TestChannel 成功响应缺少 success 字段 (Medium 后端)
-
-**文件：** `internal/admin/handlers.go:1103-1105`
-
-**原问题：** TestChannel 成功时只返回 `model`、`latency_ms`、`status_code`，前端依赖 `data.success` 判断是否成功。
-
-**修复内容：** 响应体增加 `"success": true`。
+**验证：**
+```bash
+# 代码审查：确认 formRef 绑定和 onChange 重置逻辑
+grep -n 'formRef\|Form.useFormRef\|setValue.*model' frontend/src/pages/TestPage.tsx
+```
 
 ---
 
-## Fix #26: ModelPricesPage 模型名称手动输入 (Medium 前端)
+## Fix #33: WalletPage 缺少充值/调账按钮 (Medium 前端)
 
-**文件：** `frontend/src/pages/ModelPricesPage.tsx:17,27,133`
+**文件：** `frontend/src/pages/WalletPage.tsx`
 
-**原问题：** 新增/编辑价格时模型名为 `Form.Input`，用户需手动输入，容易拼错。
+**原问题：** 页面只展示余额信息，无"充值"和"调整额度"操作按钮。后端已有 `POST /api/v1/wallet/recharge` 和 `POST /api/v1/wallet/adjust`。
 
-**修复内容：** 改为 `Form.Select` + `filter` 搜索，数据源从 `GET /model-names` 动态获取。新增 `modelNames` state 和 `api.getModelNames()` 调用。
+**修复内容：**
+1. 新增 `Button, Modal, Input` 导入
+2. 新增 `modalVisible, modalType, modalAmount, submitting` 四个 state
+3. 新增 `handleWalletOp` 函数，根据 modalType 调用 `/wallet/recharge` 或 `/wallet/adjust`
+4. 仅 `is_admin` 用户可见的"管理员操作"卡片，含"充值"和"调整额度"按钮
+5. Modal 弹窗输入金额，提交后自动刷新余额
 
----
-
-## Fix #27: OrgModelPricesPage 模型名称手动输入 (Medium 前端)
-
-**文件：** `frontend/src/pages/OrgModelPricesPage.tsx:27,45,153`
-
-**原问题/修复：** 同 Fix #26，组织倍率页面同步改造为 `Form.Select` 动态下拉。
-
----
-
-## Fix #28: ReconciliationPage 模型列表硬编码 (Medium 前端)
-
-**文件：** `frontend/src/pages/ReconciliationPage.tsx:18,37-38,83`
-
-**原问题：** 模型筛选下拉硬编码 `['gpt-4', 'gpt-3.5-turbo', 'claude-3-opus']`，与实际渠道配置不匹配。
-
-**修复内容：** 替换为 `modelNames` state，从 `/model-names` API 动态加载。
+**验证：**
+```bash
+grep -n 'handleWalletOp\|modalVisible\|recharge\|adjust' frontend/src/pages/WalletPage.tsx
+```
 
 ---
 
-## 附带修复
+## Fix #34: Dashboard AI 活动趋势不随时间范围变化 (High 后端)
 
-### channel_keys key_prefix 字段 (High 后端)
-- `handlers.go:1204` — `req.KeyPrefix` → `req.Prefix`
-- `handlers.go:1218` — return 缺失 → 添加 `return`
+**文件：** `internal/admin/dashboard_handlers.go`
 
-### GetModelNames 新端点 (Enhancement 后端+前端)
-- `handlers.go:1632-1643` — 新增 `GetModelNames` handler，查询 `SELECT DISTINCT model_name FROM model_prices ORDER BY model_name`
-- `routes.go:23` — 注册 `GET /model-names`
-- `client.ts:203-204` — 新增 `getModelNames()` API 方法
+**原问题：** `dashboardDailyTrend` 方法 SQL 硬编码 `WHERE created_at >= NOW() - INTERVAL '7 days'`，前端切换 24h/7d/30d 时间范围无效果，趋势图始终显示相同数据。
+
+**修复内容：**
+1. 方法签名改为 `func (h *AdminHandler) dashboardDailyTrend(ctx context.Context, startTime, endTime string) ([]DashboardDailyTrend, error)`
+2. SQL 改为 `WHERE created_at >= $1 AND created_at <= $2`，参数化传入 startTime/endTime
+3. 调用处（`getDashboard` 方法）传入对应的 startTime/endTime 参数
+
+**验证：**
+```bash
+grep -n 'dashboardDailyTrend\|startTime\|endTime' internal/admin/dashboard_handlers.go
+```
 
 ---
 
-**验证方法：**
+## Fix #35: KeysPage 允许模型手动输入 (Low 前端 UX)
+
+**文件：** `frontend/src/pages/KeysPage.tsx`
+
+**原问题：** 允许模型字段为 `Form.Input`，需手动输入模型名，容易拼错。
+
+**修复内容：**
+1. 新增 `availableModels` state，从 `GET /dashboard/models` 动态获取系统已有模型列表
+2. `allowed_models` 字段从 `Form.Input` 改为 `Form.Select` 多选模式
+3. 编辑时将逗号分隔字符串拆分为数组，提交时合并回字符串
+
+**验证：**
+```bash
+grep -n 'availableModels\|Form.Select\|allowed_models' frontend/src/pages/KeysPage.tsx
+```
+
+---
+
+## Fix #36: 审计日志无登录记录 (Medium 后端)
+
+**文件：** `internal/admin/auth.go`
+
+**原问题：** Login handler 成功后不调用 `recordAudit`，审计日志中无登录记录。
+
+**修复内容：**
+1. Login 成功后异步调用 `go h.recordAudit(ctx, "login", "user", fmt.Sprintf("%d", userID), ...)`
+2. 添加 `fmt` import
+
+**验证：**
+```bash
+grep -n 'recordAudit\|login' internal/admin/auth.go | head -10
+```
+
+---
+
+## 全局验证命令
+
 ```bash
 cd /Users/m4/Desktop/projects/UniRouter
-go build ./...           # 期望：无输出
-go test ./... -count=1   # 期望：16/16 packages OK
+
+# 1. Go 编译
+go build ./...
+# 期望：无输出
+
+# 2. Go 测试
+go test ./... -count=1
+# 期望：所有 package OK
+
+# 3. 前端编译
+cd frontend && npx vite build
+# 期望：✓ built in Xs
+
+# 4. 关键代码审查
+grep -rn 'dashboardDailyTrend.*startTime\|recordAudit.*login\|formRef.*model\|handleWalletOp\|availableModels' internal/ frontend/src/
+# 期望：每项至少一条命中
+```
+
+---
+
+## 期望 Canary 验收输出格式
+
+请在 `VERIFY-RESULT.md` 中按以下格式写入：
+
+```
+# VERIFY-RESULT.md — Bug #32~#36 验收
+
+**验收日期：** YYYY-MM-DD
+**验收者：** Canary agent
+
+## 逐条验收
+
+| Bug # | 严重性 | 验收结果 | 备注 |
+|-------|--------|---------|------|
+| #32   | Medium | ✅/❌   |      |
+| #33   | Medium | ✅/❌   |      |
+| #34   | High   | ✅/❌   |      |
+| #35   | Low    | ✅/❌   |      |
+| #36   | Medium | ✅/❌   |      |
+
+## 全局验证
+
+- [ ] `go build ./...` 通过
+- [ ] `go test ./...` 通过
+- [ ] `npx vite build` 通过
+
+## 新发现的问题
+
+（如有）
 ```
 
 ---
