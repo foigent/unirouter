@@ -1,5 +1,40 @@
 const BASE_URL = '/api/v1';
 
+export class ApiError extends Error {
+  status: number;
+  payload: unknown;
+
+  constructor(message: string, status: number, payload: unknown) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.payload = payload;
+  }
+}
+
+function getErrorMessage(payload: unknown, fallback: string) {
+  if (payload && typeof payload === 'object') {
+    const data = payload as { message?: unknown; error?: unknown };
+    if (typeof data.message === 'string') return data.message;
+    if (typeof data.error === 'string') return data.error;
+    if (data.error && typeof data.error === 'object') {
+      const nested = data.error as { message?: unknown };
+      if (typeof nested.message === 'string') return nested.message;
+    }
+  }
+  return fallback;
+}
+
+async function parseResponse(res: Response) {
+  const text = await res.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
 async function request(path: string, options: RequestInit = {}) {
   const token = localStorage.getItem('token');
   const headers: Record<string, string> = {
@@ -11,12 +46,19 @@ async function request(path: string, options: RequestInit = {}) {
   }
 
   const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+  const payload = await parseResponse(res);
+
   if (res.status === 401) {
     localStorage.removeItem('token');
     window.location.href = '/login';
-    throw new Error('Unauthorized');
+    throw new ApiError(getErrorMessage(payload, 'Unauthorized'), res.status, payload);
   }
-  return res.json();
+
+  if (!res.ok) {
+    throw new ApiError(getErrorMessage(payload, `Request failed with status ${res.status}`), res.status, payload);
+  }
+
+  return payload;
 }
 
 export const api = {

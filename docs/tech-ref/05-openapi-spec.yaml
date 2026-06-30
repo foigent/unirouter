@@ -1,94 +1,102 @@
 openapi: 3.0.3
 info:
   title: UniRoute API
+  version: 1.0.0
   description: |
-    UniRoute 企业级 AI 模型管控平台 API。
+    Current PRD1 API contract snapshot.
 
-    **Gateway 端点**兼容 OpenAI API 格式。
-    **Admin 端点**用于平台管理。
+    Route source: `cmd/uniroute/main.go`.
+    Route parity guard: `cmd/uniroute/route_parity_test.go`.
 
-    认证方式：
+    Authentication:
     - Gateway: `Authorization: Bearer ur-XXXX-...`
     - Admin: `Authorization: Bearer <JWT>`
-  version: 1.0.0
 
 servers:
   - url: http://localhost:8080
-    description: 本地开发
+    description: Local development
 
 tags:
   - name: Gateway
-    description: OpenAI 兼容网关端点
   - name: Auth
-    description: 管理员认证
-  - name: Admin - Organizations
-    description: 组织管理
-  - name: Admin - Users
-    description: 用户管理
-  - name: Admin - Channels
-    description: 渠道管理
-  - name: Admin - API Keys
-    description: API Key 管理
-  - name: Admin - Wallets
-    description: 钱包管理
-  - name: Admin - Prices
-    description: 模型价格管理
-  - name: Admin - Logs
-    description: 调用日志
-  - name: Admin - Dashboard
-    description: 仪表盘
-  - name: Admin - Settings
-    description: 系统设置
+  - name: Admin
   - name: Health
-    description: 健康检查
+  - name: Observability
 
 paths:
-  # ==========================================
-  # Gateway 端点（OpenAI 兼容）
-  # ==========================================
+  /health/live:
+    get:
+      tags: [Health]
+      summary: Liveness check
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Readiness check
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+        "503":
+          $ref: "#/components/responses/JSON"
+
+  /metrics:
+    get:
+      tags: [Observability]
+      summary: Prometheus metrics
+      responses:
+        "200":
+          description: Prometheus metrics text format
+          content:
+            text/plain:
+              schema:
+                type: string
+
   /v1/chat/completions:
     post:
       tags: [Gateway]
-      summary: 聊天补全
-      description: |
-        OpenAI 兼容的聊天补全接口。支持流式（SSE）和非流式。
-        响应体包含 `_uniroute` 扩展字段。
+      summary: OpenAI-compatible chat completions
+      security:
+        - gatewayKey: []
       parameters:
-        - $ref: '#/components/parameters/XRequestId'
+        - $ref: "#/components/parameters/XRequestId"
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ChatCompletionRequest'
+              $ref: "#/components/schemas/ChatCompletionRequest"
       responses:
-        '200':
-          description: 成功
+        "200":
+          description: Chat completion or SSE stream
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChatCompletionResponse'
+                type: object
             text/event-stream:
               schema:
                 type: string
-                description: SSE 流，每个 data 行是 JSON，结束标记 data: [DONE]
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '402':
-          $ref: '#/components/responses/InsufficientBalance'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '429':
-          $ref: '#/components/responses/RateLimited'
-        '502':
-          $ref: '#/components/responses/UpstreamError'
+        "401":
+          $ref: "#/components/responses/Error"
+        "402":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "502":
+          $ref: "#/components/responses/Error"
 
   /v1/embeddings:
     post:
       tags: [Gateway]
-      summary: 文本嵌入
+      summary: OpenAI-compatible embeddings
+      security:
+        - gatewayKey: []
       parameters:
-        - $ref: '#/components/parameters/XRequestId'
+        - $ref: "#/components/parameters/XRequestId"
       requestBody:
         required: true
         content:
@@ -99,7 +107,6 @@ paths:
               properties:
                 model:
                   type: string
-                  example: qwen3.7-max
                 input:
                   oneOf:
                     - type: string
@@ -109,38 +116,30 @@ paths:
                 encoding_format:
                   type: string
                   enum: [float, base64]
-                  default: float
       responses:
-        '200':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/EmbeddingResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '402':
-          $ref: '#/components/responses/InsufficientBalance'
+        "200":
+          $ref: "#/components/responses/JSON"
+        "401":
+          $ref: "#/components/responses/Error"
+        "402":
+          $ref: "#/components/responses/Error"
+        "502":
+          $ref: "#/components/responses/Error"
 
   /v1/models:
     get:
       tags: [Gateway]
-      summary: 模型列表
+      summary: OpenAI-compatible model list
+      security:
+        - gatewayKey: []
       responses:
-        '200':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ModelListResponse'
+        "200":
+          $ref: "#/components/responses/JSON"
 
-  # ==========================================
-  # 认证
-  # ==========================================
   /api/v1/auth/login:
     post:
       tags: [Auth]
-      summary: 管理员登录
+      summary: Admin login
       requestBody:
         required: true
         content:
@@ -154,684 +153,226 @@ paths:
                 password:
                   type: string
       responses:
-        '200':
-          description: 登录成功
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  token:
-                    type: string
-                    description: JWT token
-                  expires_in:
-                    type: integer
-                    description: 过期时间（秒）
-                  user:
-                    $ref: '#/components/schemas/User'
-        '401':
-          description: 用户名或密码错误
+        "200":
+          $ref: "#/components/responses/JSON"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
 
-  # ==========================================
-  # 组织管理
-  # ==========================================
-  /api/v1/admin/orgs:
+  /api/v1/me:
     get:
-      tags: [Admin - Organizations]
-      summary: 组织列表
+      tags: [Admin]
+      summary: Current admin user profile
       security:
         - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/PageSize'
       responses:
-        '200':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Organization'
-                  total:
-                    type: integer
-    post:
-      tags: [Admin - Organizations]
-      summary: 创建组织
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OrganizationCreate'
-      responses:
-        '201':
-          description: 创建成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Organization'
+        "200":
+          $ref: "#/components/responses/JSON"
+        "401":
+          $ref: "#/components/responses/Error"
 
-  /api/v1/admin/orgs/{id}:
-    get:
-      tags: [Admin - Organizations]
-      summary: 获取组织详情
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/Id'
-      responses:
-        '200':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Organization'
+  /api/v1/me/password:
     put:
-      tags: [Admin - Organizations]
-      summary: 更新组织
+      tags: [Admin]
+      summary: Change current admin user password
       security:
         - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/Id'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/OrganizationUpdate'
+              type: object
+              required: [old_password, new_password]
+              properties:
+                old_password:
+                  type: string
+                new_password:
+                  type: string
+                  minLength: 6
       responses:
-        '200':
-          description: 更新成功
+        "200":
+          $ref: "#/components/responses/JSON"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/channels:
+    get: { $ref: "#/components/pathItems/ListChannels" }
+    post: { $ref: "#/components/pathItems/CreateChannel" }
+
+  /api/v1/channels/{id}:
+    get: { $ref: "#/components/pathItems/GetById" }
+    put: { $ref: "#/components/pathItems/UpdateById" }
+    delete: { $ref: "#/components/pathItems/DeleteById" }
+
+  /api/v1/channels/{id}/test:
+    post:
+      tags: [Admin]
+      summary: Test channel connectivity
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+
+  /api/v1/keys:
+    get: { $ref: "#/components/pathItems/List" }
+    post: { $ref: "#/components/pathItems/Create" }
+
+  /api/v1/keys/{id}:
+    get: { $ref: "#/components/pathItems/GetById" }
+    put: { $ref: "#/components/pathItems/UpdateById" }
+
+  /api/v1/keys/{id}/disable:
+    post:
+      tags: [Admin]
+      summary: Disable API key
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+
+  /api/v1/channel-keys:
+    get: { $ref: "#/components/pathItems/List" }
+    post: { $ref: "#/components/pathItems/Create" }
+
+  /api/v1/channel-keys/{id}:
+    put: { $ref: "#/components/pathItems/UpdateById" }
+    delete: { $ref: "#/components/pathItems/DeleteById" }
+
+  /api/v1/wallet:
+    get: { $ref: "#/components/pathItems/Get" }
+
+  /api/v1/wallet/topup:
+    post: { $ref: "#/components/pathItems/Create" }
+
+  /api/v1/wallet/adjust:
+    post: { $ref: "#/components/pathItems/Create" }
+
+  /api/v1/wallet/transactions:
+    get: { $ref: "#/components/pathItems/List" }
+
+  /api/v1/wallet/transactions/export:
+    get:
+      tags: [Admin]
+      summary: Export wallet transactions
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Export file or JSON payload
+
+  /api/v1/logs:
+    get: { $ref: "#/components/pathItems/List" }
+
+  /api/v1/logs/{id}:
+    get: { $ref: "#/components/pathItems/GetById" }
+
+  /api/v1/dashboard/stats:
+    get: { $ref: "#/components/pathItems/Get" }
+
+  /api/v1/model-prices:
+    get: { $ref: "#/components/pathItems/List" }
+    post: { $ref: "#/components/pathItems/Create" }
+
+  /api/v1/model-prices/{id}:
+    put: { $ref: "#/components/pathItems/UpdateById" }
+    delete: { $ref: "#/components/pathItems/DeleteById" }
+
+  /api/v1/model-names:
+    get: { $ref: "#/components/pathItems/Get" }
+
+  /api/v1/org-model-prices:
+    get: { $ref: "#/components/pathItems/List" }
+    post: { $ref: "#/components/pathItems/Create" }
+
+  /api/v1/org-model-prices/{id}:
+    put: { $ref: "#/components/pathItems/UpdateById" }
+    delete: { $ref: "#/components/pathItems/DeleteById" }
+
+  /api/v1/reconciliation:
+    get: { $ref: "#/components/pathItems/List" }
+
+  /api/v1/users:
+    get: { $ref: "#/components/pathItems/List" }
+    post: { $ref: "#/components/pathItems/Create" }
+
+  /api/v1/users/{id}:
+    put: { $ref: "#/components/pathItems/UpdateById" }
+    delete: { $ref: "#/components/pathItems/DeleteById" }
+
+  /api/v1/grants:
+    get: { $ref: "#/components/pathItems/List" }
+    post: { $ref: "#/components/pathItems/Create" }
+
+  /api/v1/audit-logs:
+    get: { $ref: "#/components/pathItems/List" }
+
+  /api/v1/settings:
+    get: { $ref: "#/components/pathItems/List" }
+
+  /api/v1/settings/{key}:
+    put:
+      tags: [Admin]
+      summary: Update setting
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                value:
+                  nullable: true
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+
+  /api/v1/sensitive-words:
+    get: { $ref: "#/components/pathItems/List" }
+    post: { $ref: "#/components/pathItems/Create" }
+    put:
+      tags: [Admin]
+      summary: Replace sensitive words
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
     delete:
-      tags: [Admin - Organizations]
-      summary: 删除组织（软删除）
+      tags: [Admin]
+      summary: Delete sensitive words
       security:
         - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/Id'
       responses:
-        '204':
-          description: 删除成功
+        "200":
+          $ref: "#/components/responses/JSON"
 
-  # ==========================================
-  # 渠道管理
-  # ==========================================
-  /api/v1/admin/channels:
-    get:
-      tags: [Admin - Channels]
-      summary: 渠道列表
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/PageSize'
-        - name: status
-          in: query
-          schema:
-            type: string
-            enum: [active, deprecated, disabled]
-      responses:
-        '200':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Channel'
-                  total:
-                    type: integer
-    post:
-      tags: [Admin - Channels]
-      summary: 创建渠道
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ChannelCreate'
-      responses:
-        '201':
-          description: 创建成功
-
-  /api/v1/admin/channels/{id}:
-    get:
-      tags: [Admin - Channels]
-      summary: 渠道详情
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/Id'
-      responses:
-        '200':
-          description: 成功
-    put:
-      tags: [Admin - Channels]
-      summary: 更新渠道
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/Id'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ChannelUpdate'
-      responses:
-        '200':
-          description: 更新成功
-    delete:
-      tags: [Admin - Channels]
-      summary: 删除渠道
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/Id'
-      responses:
-        '204':
-          description: 删除成功
-
-  /api/v1/admin/channels/{id}/test:
-    post:
-      tags: [Admin - Channels]
-      summary: 测试渠道连通性
-      description: |
-        向渠道发送测试请求，返回响应内容、费用、延迟、curl 示例。
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/Id'
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                model:
-                  type: string
-                  description: 测试用模型名
-                message:
-                  type: string
-                  default: "Hello, this is a test."
-      responses:
-        '200':
-          description: 测试结果
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ChannelTestResult'
-
-  # ==========================================
-  # API Key 管理
-  # ==========================================
-  /api/v1/admin/keys:
-    get:
-      tags: [Admin - API Keys]
-      summary: API Key 列表
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/PageSize'
-        - name: org_id
-          in: query
-          schema:
-            type: integer
-      responses:
-        '200':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/ApiKey'
-                  total:
-                    type: integer
-    post:
-      tags: [Admin - API Keys]
-      summary: 创建 API Key
-      description: 返回完整 Key（只显示一次）。
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ApiKeyCreate'
-      responses:
-        '201':
-          description: 创建成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiKeyCreated'
-
-  /api/v1/admin/keys/{id}:
-    get:
-      tags: [Admin - API Keys]
-      summary: API Key 详情（不含明文）
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/Id'
-      responses:
-        '200':
-          description: 成功
-    put:
-      tags: [Admin - API Keys]
-      summary: 更新 API Key
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/Id'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ApiKeyUpdate'
-      responses:
-        '200':
-          description: 更新成功
-    delete:
-      tags: [Admin - API Keys]
-      summary: 吊销 API Key
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/Id'
-      responses:
-        '204':
-          description: 吊销成功
-
-  # ==========================================
-  # 钱包管理
-  # ==========================================
-  /api/v1/admin/wallets/{org_id}:
-    get:
-      tags: [Admin - Wallets]
-      summary: 获取组织钱包
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: org_id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        '200':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Wallet'
-
-  /api/v1/admin/wallets/{org_id}/recharge:
-    post:
-      tags: [Admin - Wallets]
-      summary: 充值
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: org_id
-          in: path
-          required: true
-          schema:
-            type: integer
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [amount, client_request_id]
-              properties:
-                amount:
-                  type: integer
-                  description: 充值金额（分）
-                client_request_id:
-                  type: string
-                  description: 幂等 key
-                note:
-                  type: string
-      responses:
-        '200':
-          description: 充值成功
-        '409':
-          description: 重复请求
-
-  /api/v1/admin/wallets/{org_id}/adjust:
-    post:
-      tags: [Admin - Wallets]
-      summary: 管理员调账
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: org_id
-          in: path
-          required: true
-          schema:
-            type: integer
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [amount, client_request_id]
-              properties:
-                amount:
-                  type: integer
-                  description: 调账金额（分，正数增加，负数减少）
-                client_request_id:
-                  type: string
-                reason:
-                  type: string
-      responses:
-        '200':
-          description: 调账成功
-
-  /api/v1/admin/wallets/{org_id}/grant:
-    post:
-      tags: [Admin - Wallets]
-      summary: 赠送额度
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: org_id
-          in: path
-          required: true
-          schema:
-            type: integer
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [amount, client_request_id]
-              properties:
-                amount:
-                  type: integer
-                  description: 赠送金额（分）
-                client_request_id:
-                  type: string
-                expires_at:
-                  type: string
-                  format: date-time
-                  description: 过期时间
-                reason:
-                  type: string
-      responses:
-        '200':
-          description: 赠送成功
-
-  # ==========================================
-  # 模型价格管理
-  # ==========================================
-  /api/v1/admin/prices:
-    get:
-      tags: [Admin - Prices]
-      summary: 模型价格列表
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/ModelPrice'
-    post:
-      tags: [Admin - Prices]
-      summary: 创建/更新模型价格
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ModelPriceCreate'
-      responses:
-        '200':
-          description: 成功
-
-  /api/v1/admin/prices/overrides:
-    get:
-      tags: [Admin - Prices]
-      summary: 组织级定价覆盖列表
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: org_id
-          in: query
-          schema:
-            type: integer
-      responses:
-        '200':
-          description: 成功
-    post:
-      tags: [Admin - Prices]
-      summary: 创建/更新组织级覆盖
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PriceOverride'
-      responses:
-        '200':
-          description: 成功
-
-  # ==========================================
-  # 调用日志
-  # ==========================================
-  /api/v1/admin/logs:
-    get:
-      tags: [Admin - Logs]
-      summary: 调用日志列表
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/Page'
-        - $ref: '#/components/parameters/PageSize'
-        - name: org_id
-          in: query
-          schema:
-            type: integer
-        - name: model
-          in: query
-          schema:
-            type: string
-        - name: status
-          in: query
-          schema:
-            type: string
-            enum: [success, error]
-        - name: start_time
-          in: query
-          schema:
-            type: string
-            format: date-time
-        - name: end_time
-          in: query
-          schema:
-            type: string
-            format: date-time
-      responses:
-        '200':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/CallLog'
-                  total:
-                    type: integer
-
-  /api/v1/admin/logs/export:
-    get:
-      tags: [Admin - Logs]
-      summary: 导出调用日志 CSV
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: org_id
-          in: query
-          schema:
-            type: integer
-        - name: start_time
-          in: query
-          schema:
-            type: string
-            format: date-time
-        - name: end_time
-          in: query
-          schema:
-            type: string
-            format: date-time
-      responses:
-        '200':
-          description: CSV 文件
-          content:
-            text/csv:
-              schema:
-                type: string
-
-  # ==========================================
-  # Dashboard
-  # ==========================================
-  /api/v1/admin/dashboard:
-    get:
-      tags: [Admin - Dashboard]
-      summary: 仪表盘统计数据
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: period
-          in: query
-          schema:
-            type: string
-            enum: [today, week, month]
-            default: today
-      responses:
-        '200':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Dashboard'
-
-  # ==========================================
-  # 系统设置
-  # ==========================================
-  /api/v1/admin/settings:
-    get:
-      tags: [Admin - Settings]
-      summary: 获取所有设置
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: 成功
-    put:
-      tags: [Admin - Settings]
-      summary: 更新设置
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-      responses:
-        '200':
-          description: 更新成功
-
-  # ==========================================
-  # 健康检查
-  # ==========================================
-  /health/live:
-    get:
-      tags: [Health]
-      summary: 存活检查
-      responses:
-        '200':
-          description: 服务存活
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: ok
-
-  /health/ready:
-    get:
-      tags: [Health]
-      summary: 就绪检查
-      responses:
-        '200':
-          description: 服务就绪
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: ok
-                  db:
-                    type: string
-                    example: ok
-                  redis:
-                    type: string
-                    example: ok
-        '503':
-          description: 服务不可用
-
-# ==========================================
-# Components
-# ==========================================
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    gatewayKey:
+      type: http
+      scheme: bearer
 
   parameters:
     Id:
@@ -845,638 +386,162 @@ components:
       in: query
       schema:
         type: integer
+        minimum: 1
         default: 1
     PageSize:
       name: page_size
       in: query
       schema:
         type: integer
-        default: 20
+        minimum: 1
         maximum: 100
+        default: 20
     XRequestId:
       name: X-Request-Id
       in: header
-      description: 幂等 key（UUID v4）
+      required: false
       schema:
         type: string
-        format: uuid
+
+  responses:
+    JSON:
+      description: JSON response
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    Error:
+      description: Error response
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  pathItems:
+    Get:
+      tags: [Admin]
+      summary: Get resource
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+    List:
+      tags: [Admin]
+      summary: List resources
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+    ListChannels:
+      tags: [Admin]
+      summary: List channels
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+    Create:
+      tags: [Admin]
+      summary: Create resource
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+        "201":
+          $ref: "#/components/responses/JSON"
+    CreateChannel:
+      tags: [Admin]
+      summary: Create channel
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "201":
+          $ref: "#/components/responses/JSON"
+    GetById:
+      tags: [Admin]
+      summary: Get resource by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+    UpdateById:
+      tags: [Admin]
+      summary: Update resource by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+    DeleteById:
+      tags: [Admin]
+      summary: Delete resource by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+        "204":
+          description: Deleted
 
   schemas:
-    # Gateway
     ChatCompletionRequest:
       type: object
       required: [model, messages]
       properties:
         model:
           type: string
-          example: deepseek-v4-pro
         messages:
           type: array
           items:
             type: object
-            properties:
-              role:
-                type: string
-                enum: [system, user, assistant]
-              content:
-                type: string
+            additionalProperties: true
         stream:
           type: boolean
           default: false
-        max_tokens:
-          type: integer
-        temperature:
-          type: number
-        top_p:
-          type: number
-
-    ChatCompletionResponse:
-      type: object
-      properties:
-        id:
-          type: string
-        object:
-          type: string
-        created:
-          type: integer
-        model:
-          type: string
-        choices:
-          type: array
-          items:
-            type: object
-            properties:
-              index:
-                type: integer
-              message:
-                type: object
-                properties:
-                  role:
-                    type: string
-                  content:
-                    type: string
-              finish_reason:
-                type: string
-        usage:
-          type: object
-          properties:
-            prompt_tokens:
-              type: integer
-            completion_tokens:
-              type: integer
-            total_tokens:
-              type: integer
-        _uniroute:
-          type: object
-          properties:
-            request_id:
-              type: string
-            cost:
-              type: object
-              properties:
-                amount:
-                  type: number
-                currency:
-                  type: string
-            provider:
-              type: string
-            channel:
-              type: string
-            ttft_ms:
-              type: integer
-            cache_hit:
-              type: boolean
-            fallback:
-              type: boolean
-
-    EmbeddingResponse:
-      type: object
-      properties:
-        object:
-          type: string
-        data:
-          type: array
-          items:
-            type: object
-            properties:
-              object:
-                type: string
-              embedding:
-                type: array
-                items:
-                  type: number
-              index:
-                type: integer
-        model:
-          type: string
-        usage:
-          type: object
-          properties:
-            prompt_tokens:
-              type: integer
-            total_tokens:
-              type: integer
-
-    ModelListResponse:
-      type: object
-      properties:
-        object:
-          type: string
-        data:
-          type: array
-          items:
-            type: object
-            properties:
-              id:
-                type: string
-              object:
-                type: string
-              created:
-                type: integer
-              owned_by:
-                type: string
-
-    # Admin
-    Organization:
-      type: object
-      properties:
-        id:
-          type: integer
-        name:
-          type: string
-        status:
-          type: string
-          enum: [active, suspended, banned]
-        org_type:
-          type: string
-          enum: [customer, partner]
-        settings:
-          type: object
-        created_at:
-          type: string
-          format: date-time
-
-    OrganizationCreate:
-      type: object
-      required: [name]
-      properties:
-        name:
-          type: string
-        org_type:
-          type: string
-          enum: [customer, partner]
-          default: customer
-        settings:
-          type: object
-
-    OrganizationUpdate:
-      type: object
-      properties:
-        name:
-          type: string
-        status:
-          type: string
-          enum: [active, suspended, banned]
-        settings:
-          type: object
-
-    Channel:
-      type: object
-      properties:
-        id:
-          type: integer
-        name:
-          type: string
-        provider:
-          type: string
-        base_url:
-          type: string
-        models:
-          type: string
-          description: 逗号分隔的模型列表
-        model_mapping:
-          type: object
-          description: 上游模型名映射
-        max_context:
-          type: integer
-        default_max_output:
-          type: integer
-        priority:
-          type: integer
-        rpm_limit:
-          type: integer
-        tpm_limit:
-          type: integer
-        status:
-          type: string
-          enum: [active, deprecated, disabled]
-        circuit_state:
-          type: string
-          enum: [healthy, open, half_open]
-        keys:
-          type: array
-          items:
-            type: object
-            properties:
-              id:
-                type: integer
-              status:
-                type: string
-              last_used_at:
-                type: string
-                format: date-time
-        created_at:
-          type: string
-          format: date-time
-
-    ChannelCreate:
-      type: object
-      required: [name, provider, base_url, models]
-      properties:
-        name:
-          type: string
-        provider:
-          type: string
-        base_url:
-          type: string
-        models:
-          type: string
-        model_mapping:
-          type: object
-        max_context:
-          type: integer
-          default: 128000
-        default_max_output:
-          type: integer
-          default: 4096
-        priority:
-          type: integer
-          default: 100
-        rpm_limit:
-          type: integer
-          default: 600
-        tpm_limit:
-          type: integer
-          default: 100000
-        keys:
-          type: array
-          items:
-            type: object
-            properties:
-              key:
-                type: string
-                description: 上游 API Key（明文，服务端加密存储）
-
-    ChannelUpdate:
-      type: object
-      properties:
-        name:
-          type: string
-        base_url:
-          type: string
-        models:
-          type: string
-        model_mapping:
-          type: object
-        max_context:
-          type: integer
-        default_max_output:
-          type: integer
-        priority:
-          type: integer
-        rpm_limit:
-          type: integer
-        tpm_limit:
-          type: integer
-        status:
-          type: string
-          enum: [active, deprecated, disabled]
-
-    ChannelTestResult:
-      type: object
-      properties:
-        success:
-          type: boolean
-        response:
-          type: string
-          description: 上游响应内容
-        cost:
-          type: object
-          properties:
-            amount:
-              type: number
-            currency:
-              type: string
-        latency:
-          type: object
-          properties:
-            ttft_ms:
-              type: integer
-            total_ms:
-              type: integer
-        curl_example:
-          type: string
-        error:
-          type: object
-          properties:
-            message:
-              type: string
-            hint:
-              type: string
-            upstream_error:
-              type: string
-
-    ApiKey:
-      type: object
-      properties:
-        id:
-          type: integer
-        org_id:
-          type: integer
-        name:
-          type: string
-        key_prefix:
-          type: string
-        ip_whitelist:
-          type: string
-        allowed_models:
-          type: string
-        rpm_limit:
-          type: integer
-        qps_limit:
-          type: integer
-        budget_limit:
-          type: integer
-        status:
-          type: string
-          enum: [active, disabled, revoked]
-        created_at:
-          type: string
-          format: date-time
-
-    ApiKeyCreate:
-      type: object
-      required: [org_id]
-      properties:
-        org_id:
-          type: integer
-        name:
-          type: string
-        ip_whitelist:
-          type: string
-          description: 逗号分隔的 IP 列表
-        allowed_models:
-          type: string
-          description: 逗号分隔的模型列表，空表示不限制
-        rpm_limit:
-          type: integer
-          default: 60
-        qps_limit:
-          type: integer
-          default: 10
-        budget_limit:
-          type: integer
-          description: 预算上限（分）
-
-    ApiKeyCreated:
-      type: object
-      properties:
-        id:
-          type: integer
-        key:
-          type: string
-          description: 完整 Key（只显示一次）
-        key_prefix:
-          type: string
-        message:
-          type: string
-
-    ApiKeyUpdate:
-      type: object
-      properties:
-        name:
-          type: string
-        ip_whitelist:
-          type: string
-        allowed_models:
-          type: string
-        rpm_limit:
-          type: integer
-        qps_limit:
-          type: integer
-        budget_limit:
-          type: integer
-        status:
-          type: string
-          enum: [active, disabled]
-
-    Wallet:
-      type: object
-      properties:
-        org_id:
-          type: integer
-        balance:
-          type: integer
-          description: 充值余额（分）
-        granted_balance:
-          type: integer
-          description: 赠送余额（分）
-        frozen:
-          type: integer
-          description: 冻结金额（分）
-        total_spent:
-          type: integer
-          description: 累计消费（分）
-        updated_at:
-          type: string
-          format: date-time
-
-    ModelPrice:
-      type: object
-      properties:
-        id:
-          type: integer
-        model_name:
-          type: string
-        provider:
-          type: string
-        input_price_cents:
-          type: integer
-          description: 输入价格（分/百万 Token）
-        output_price_cents:
-          type: integer
-          description: 输出价格（分/百万 Token）
-        max_context:
-          type: integer
-        default_max_output:
-          type: integer
-
-    ModelPriceCreate:
-      type: object
-      required: [model_name, input_price_cents, output_price_cents]
-      properties:
-        model_name:
-          type: string
-        provider:
-          type: string
-        input_price_cents:
-          type: integer
-        output_price_cents:
-          type: integer
-        max_context:
-          type: integer
-        default_max_output:
-          type: integer
-
-    PriceOverride:
-      type: object
-      required: [org_id, model_name, multiplier]
-      properties:
-        org_id:
-          type: integer
-        model_name:
-          type: string
-        multiplier:
-          type: number
-          description: 价格倍数（如 1.15 = 加价 15%）
-
-    CallLog:
-      type: object
-      properties:
-        id:
-          type: integer
-        request_id:
-          type: string
-        org_id:
-          type: integer
-        api_key_id:
-          type: integer
-        model:
-          type: string
-        provider:
-          type: string
-        channel:
-          type: string
-        prompt_tokens:
-          type: integer
-        completion_tokens:
-          type: integer
-        total_tokens:
-          type: integer
-        cost_cents:
-          type: integer
-        latency_ms:
-          type: integer
-        ttft_ms:
-          type: integer
-        status_code:
-          type: integer
-        upstream_status_code:
-          type: integer
-        upstream_error:
-          type: string
-        usage_source:
-          type: string
-          enum: [upstream, estimated]
-        is_stream:
-          type: boolean
-        created_at:
-          type: string
-          format: date-time
-
-    Dashboard:
-      type: object
-      properties:
-        period:
-          type: string
-        total_requests:
-          type: integer
-        total_cost_cents:
-          type: integer
-        active_keys:
-          type: integer
-        active_orgs:
-          type: integer
-        top_models:
-          type: array
-          items:
-            type: object
-            properties:
-              model:
-                type: string
-              requests:
-                type: integer
-              cost_cents:
-                type: integer
-        cost_trend:
-          type: array
-          items:
-            type: object
-            properties:
-              date:
-                type: string
-              cost_cents:
-                type: integer
-
-    User:
-      type: object
-      properties:
-        id:
-          type: integer
-        org_id:
-          type: integer
-        username:
-          type: string
-        role:
-          type: string
-          enum: [platform_admin, org_admin, org_viewer]
-        status:
-          type: string
-
-    Error:
+      additionalProperties: true
+    ErrorResponse:
       type: object
       properties:
         error:
-          type: object
-          properties:
-            message:
-              type: string
-            type:
-              type: string
-            code:
-              type: string
-            param:
-              type: string
-              nullable: true
-
-  responses:
-    Unauthorized:
-      description: 认证失败
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-    InsufficientBalance:
-      description: 余额不足
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-    Forbidden:
-      description: 权限不足
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-    RateLimited:
-      description: 限流
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-    UpstreamError:
-      description: 上游不可用
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
+          oneOf:
+            - type: string
+            - type: object
+              additionalProperties: true

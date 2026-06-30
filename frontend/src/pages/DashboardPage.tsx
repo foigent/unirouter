@@ -31,7 +31,7 @@ interface DashboardStats {
 }
 
 type TimeRange = '24h' | '7d' | '30d' | 'custom';
-type TrendMetric = 'requests' | 'cost_cents' | 'latency_ms';
+type TrendMetric = 'requests' | 'cost_cents';
 
 /* ── Helpers ── */
 
@@ -240,7 +240,8 @@ export default function DashboardPage() {
                 <Button
                   key={t.value}
                   size="small"
-                  theme={(range === t.value ? 'primary' : 'tertiary') as any}
+                  theme={range === t.value ? 'solid' : 'borderless'}
+                  type={range === t.value ? 'primary' : 'tertiary'}
                   onClick={() => setRange(t.value)}
                   style={{ borderRadius: 6 }}
                 >
@@ -273,8 +274,7 @@ export default function DashboardPage() {
               </div>
               {delta && (
                 <div style={{ marginTop: 6 }}>
-                  <Text type="tertiary" size="small">vs 昨日</Text>
-                  <DeltaTag value={stats?.total_requests ? (stats.total_requests - (stats.total_requests - (delta.cost_cents > 0 ? 1 : 0))) : 0} />
+                  <Text type="tertiary" size="small">当前累计</Text>
                 </div>
               )}
             </Card>
@@ -363,10 +363,22 @@ export default function DashboardPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <Title heading={5} style={{ margin: 0 }}>AI 活动趋势</Title>
             <div style={{ display: 'flex', gap: 4, background: 'var(--semi-color-fill-0)', borderRadius: 6, padding: 2 }}>
-              <Button size="small" theme={(trendMetric === 'requests' ? 'primary' : 'tertiary') as any} onClick={() => setTrendMetric('requests')} style={{ borderRadius: 5 }}>
+              <Button
+                size="small"
+                theme={trendMetric === 'requests' ? 'solid' : 'borderless'}
+                type={trendMetric === 'requests' ? 'primary' : 'tertiary'}
+                onClick={() => setTrendMetric('requests')}
+                style={{ borderRadius: 5 }}
+              >
                 请求数
               </Button>
-              <Button size="small" theme={(trendMetric === 'cost_cents' ? 'primary' : 'tertiary') as any} onClick={() => setTrendMetric('cost_cents')} style={{ borderRadius: 5 }}>
+              <Button
+                size="small"
+                theme={trendMetric === 'cost_cents' ? 'solid' : 'borderless'}
+                type={trendMetric === 'cost_cents' ? 'primary' : 'tertiary'}
+                onClick={() => setTrendMetric('cost_cents')}
+                style={{ borderRadius: 5 }}
+              >
                 费用
               </Button>
             </div>

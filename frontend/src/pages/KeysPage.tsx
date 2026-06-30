@@ -39,8 +39,11 @@ export default function KeysPage() {
 
   useEffect(() => { load(1); }, []);
   useEffect(() => {
-    api.request('/dashboard/models').then((d: any) => {
-      const models = (d || []).map((m: any) => m.model).filter(Boolean);
+    api.getModelNames().then((d: any) => {
+      const source = Array.isArray(d?.data) ? d.data : d;
+      const models = (Array.isArray(source) ? source : [])
+        .map((m: any) => typeof m === 'string' ? m : m.model)
+        .filter(Boolean);
       setAvailableModels(models);
     }).catch(() => {});
   }, []);

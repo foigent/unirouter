@@ -1,5 +1,7 @@
 # Phase 1 验收测试报告
 
+> Historical report only. Do not use this file as current truth without cross-checking `docs/ops/CURRENT-STATUS.md`, `docs/ops/PRD-ACCEPTANCE-MATRIX.md`, and source code. The original report contains stale observations, including the channel-key encryption note; current source code uses AES-GCM in `internal/auth/auth.go`.
+
 **日期**：2026-07-24
 **测试人**：MiMo (Codex Agent)
 **环境**：go build → localhost:8080, PostgreSQL (uniroute), Redis (localhost:6379)
@@ -101,5 +103,5 @@
 
 1. **上游无真实渠道**：billing_error 因为没有配置真实的 API Key，无法测试端到端转发
 2. **单 org 简化**：钱包查询假设单 org（first wallet），多 org 场景待 v2
-3. **XOR 加密**：channel key 使用 XOR 编码，生产应替换为 AES-GCM
+3. **历史更正：channel key 加密**：本报告原始版本曾写“XOR 加密”，该结论已过期；当前代码使用 AES-GCM，见 `internal/auth/auth.go`
 4. **前端无法浏览器验证**：CLI 环境无法打开浏览器，但 TypeScript 编译和 Vite 构建均通过

@@ -17,6 +17,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/uniroute/unirouter/internal/admin"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/config"
@@ -24,7 +25,6 @@ import (
 	"github.com/uniroute/unirouter/internal/filter"
 	"github.com/uniroute/unirouter/internal/gateway"
 	"github.com/uniroute/unirouter/internal/middleware"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/uniroute/unirouter/internal/migrate"
 	"github.com/uniroute/unirouter/internal/redisx"
 )
@@ -138,7 +138,6 @@ func main() {
 		fmt.Fprintf(w, `{"status":"ready"}`)
 	})
 
-
 	// Root endpoint
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -151,6 +150,7 @@ func main() {
 	// Gateway endpoints (with auth + rate limiting)
 	gatewayAuth := middleware.GatewayAuth(postgres.Pool, cfg.JWTSecret)
 	rateLimiter := middleware.RateLimit(redisClient.Client)
+	admissionMiddleware := middleware.AdmissionFromContext(admissionCtrl)
 
 	// Wrap gateway handler with middleware
 	chatHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -196,9 +196,9 @@ func main() {
 		relay.HandleEmbeddings(w, r)
 	})
 
-	mux.Handle("POST /v1/chat/completions", gatewayAuth(rateLimiter(chatHandler)))
-	mux.Handle("POST /v1/embeddings", gatewayAuth(rateLimiter(embeddingsHandler)))
-	mux.Handle("GET /v1/models", gatewayAuth(http.HandlerFunc(relay.HandleModels)))
+	mux.Handle("POST /v1/chat/completions", gatewayAuth(admissionMiddleware(rateLimiter(chatHandler))))
+	mux.Handle("POST /v1/embeddings", gatewayAuth(admissionMiddleware(rateLimiter(embeddingsHandler))))
+	mux.Handle("GET /v1/models", gatewayAuth(admissionMiddleware(http.HandlerFunc(relay.HandleModels))))
 
 	// Admin auth middleware
 	adminAuth := middleware.AdminAuth(cfg.JWTSecret)
@@ -206,6 +206,7 @@ func main() {
 	// Admin endpoints
 	mux.HandleFunc("POST /api/v1/auth/login", adminHandler.Login)
 	mux.Handle("GET /api/v1/me", adminAuth(http.HandlerFunc(adminHandler.GetMe)))
+	mux.Handle("PUT /api/v1/me/password", adminAuth(http.HandlerFunc(adminHandler.ChangePassword)))
 	mux.HandleFunc("GET /docs", func(w http.ResponseWriter, r *http.Request) {
 		html := `<!DOCTYPE html>
 <html>
@@ -227,7 +228,6 @@ func main() {
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte(html))
 	})
-
 
 	mux.Handle("GET /api/v1/channels", adminAuth(http.HandlerFunc(adminHandler.ListChannels)))
 	mux.Handle("POST /api/v1/channels", adminAuth(http.HandlerFunc(adminHandler.CreateChannel)))
@@ -280,21 +280,14 @@ func main() {
 	mux.Handle("GET /api/v1/settings", adminAuth(http.HandlerFunc(adminHandler.ListSettings)))
 	mux.Handle("PUT /api/v1/settings/{key}", adminAuth(http.HandlerFunc(adminHandler.UpdateSetting)))
 
-
-
 	// Sensitive Words CRUD (PRD F13)
 	mux.Handle("GET /api/v1/sensitive-words", adminAuth(http.HandlerFunc(adminHandler.ListSensitiveWords)))
 	mux.Handle("POST /api/v1/sensitive-words", adminAuth(http.HandlerFunc(adminHandler.AddSensitiveWords)))
 	mux.Handle("PUT /api/v1/sensitive-words", adminAuth(http.HandlerFunc(adminHandler.UpdateSensitiveWords)))
 	mux.Handle("DELETE /api/v1/sensitive-words", adminAuth(http.HandlerFunc(adminHandler.DeleteSensitiveWords)))
-mux.Handle("POST /api/v1/channels/{id}/test", adminAuth(http.HandlerFunc(adminHandler.TestChannel)))
-mux.Handle("GET /api/v1/wallet/transactions/export", adminAuth(http.HandlerFunc(adminHandler.ExportWalletTransactions)))
-	// CORS middleware
-	admissionMiddleware := middleware.AdmissionMiddleware(admissionCtrl, func(r *http.Request) int {
-		return 1 // Default org ID - in production would extract from JWT
-	})
-	admissionHandler := admissionMiddleware(mux)
-	metricsHandler := middleware.MetricsMiddleware(admissionHandler)
+	mux.Handle("POST /api/v1/channels/{id}/test", adminAuth(http.HandlerFunc(adminHandler.TestChannel)))
+	mux.Handle("GET /api/v1/wallet/transactions/export", adminAuth(http.HandlerFunc(adminHandler.ExportWalletTransactions)))
+	metricsHandler := middleware.MetricsMiddleware(mux)
 	corsHandler := middleware.CORS(metricsHandler)
 
 	// Create server
@@ -349,6 +342,7 @@ func findMigrationsDir() string {
 }
 
 // loadSensitiveWords loads sensitive words from the settings table.
+// The value is stored as a JSON array by admin handlers.
 func loadSensitiveWords(ctx context.Context, pool *pgxpool.Pool) []string {
 	var value string
 	err := pool.QueryRow(ctx,
@@ -358,15 +352,9 @@ func loadSensitiveWords(ctx context.Context, pool *pgxpool.Pool) []string {
 		return nil
 	}
 	var words []string
-	value = trimQuotes(value)
-	if len(value) > 2 && value[0] == '[' && value[len(value)-1] == ']' {
-		parts := splitModels(value[1 : len(value)-1])
-		for _, p := range parts {
-			p = trimQuotes(p)
-			if p != "" {
-				words = append(words, p)
-			}
-		}
+	if err := json.Unmarshal([]byte(value), &words); err != nil {
+		log.Printf("[filter] failed to parse sensitive_words JSON: %v", err)
+		return nil
 	}
 	return words
 }

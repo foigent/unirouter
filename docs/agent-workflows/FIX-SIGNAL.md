@@ -1,167 +1,224 @@
-# FIX-SIGNAL.md — Bug #32~#36
+# FIX-SIGNAL.md — PRD1 Remaining Closeout Round
 
-**修复者：** codex agent
-**修复轮次：** 第 15 轮
+**修复者：** Codex
+**日期：** 以文件系统时间戳为准
+**修复轮次：** PRD1 remaining closeout
 
 ---
 
 ## 前置条件
 
 | 项目 | 预期状态 | 原因 |
-|------|---------|------|
-| 后端 Go 编译 | `go build ./...` PASS | 修改了 dashboard handler + auth handler |
-| 前端编译 | `npx vite build` PASS | 修改了 TestPage / WalletPage / KeysPage |
-| BUG-LOG.md | 5 条均标记 ✅ 已修复 | Bug #32~#36 |
+|------|----------|------|
+| OpenClaw Canary | 不修改代码 | 只做测试、审查、记录结果 |
+| 本轮范围 | `/me/password` 契约修复、route parity、历史文档纠偏、PRD1 剩余验收包 | PRD1 收尾 |
+| 视觉/人工 UI 验收 | 不属于 Canary 能力范围 | 继续作为外部验收项保留 |
+| Docker/云部署/真实 provider | 不属于本地 Codex 已完成项 | `docker` 在当前 workspace 不可用，真实 provider/cloud 由 Sentinel/Atlas 或配置环境验证 |
 
 ---
 
-## Fix #32: TestPage 切换渠道不清空已选模型 (Medium 前端)
+## Fix #1: 补齐 `/me/password` 后端契约
 
-**文件：** `frontend/src/pages/TestPage.tsx`
-
-**原问题：** 选择渠道 A → 选模型 → 切换到渠道 B，模型字段仍保留渠道 A 的值，导致测试时模型与渠道不匹配。
+**文件：**
+- `internal/admin/auth_handlers.go`
+- `cmd/uniroute/main.go`
 
 **修复内容：**
-1. 新增 `const formRef = Form.useFormRef()` 获取表单引用
-2. `<Form>` 增加 `getFormApi` 回调绑定 formRef
-3. 渠道 `onChange` 中添加 `formRef.current?.setValue('model', undefined)` 重置模型字段
+- 新增 `ChangePassword` handler
+- 注册 `PUT /api/v1/me/password`
+- 从 `AdminAuth` context 读取当前 user_id
+- 校验旧密码 bcrypt
+- 新密码 bcrypt hash 后更新当前用户
+- 未认证返回 401
+- 旧密码错误返回 401
+- 新旧密码相同或新密码过短返回 400
 
-**验证：**
+**验证方法：**
 ```bash
-# 代码审查：确认 formRef 绑定和 onChange 重置逻辑
-grep -n 'formRef\|Form.useFormRef\|setValue.*model' frontend/src/pages/TestPage.tsx
+go test ./internal/admin -run 'TestChangePassword|TestLogin'
+rg -n "PUT /api/v1/me/password|ChangePassword" cmd/uniroute/main.go internal/admin/auth_handlers.go
 ```
 
 ---
 
-## Fix #33: WalletPage 缺少充值/调账按钮 (Medium 前端)
+## Fix #2: 前端 Settings 改密校验
 
-**文件：** `frontend/src/pages/WalletPage.tsx`
-
-**原问题：** 页面只展示余额信息，无"充值"和"调整额度"操作按钮。后端已有 `POST /api/v1/wallet/recharge` 和 `POST /api/v1/wallet/adjust`。
+**文件：**
+- `frontend/src/pages/SettingsPage.tsx`
+- `frontend/src/api/__tests__/client.test.ts`
 
 **修复内容：**
-1. 新增 `Button, Modal, Input` 导入
-2. 新增 `modalVisible, modalType, modalAmount, submitting` 四个 state
-3. 新增 `handleWalletOp` 函数，根据 modalType 调用 `/wallet/recharge` 或 `/wallet/adjust`
-4. 仅 `is_admin` 用户可见的"管理员操作"卡片，含"充值"和"调整额度"按钮
-5. Modal 弹窗输入金额，提交后自动刷新余额
+- 前端提交前校验 `new_password` 与 `confirm_password` 一致
+- API client 测试覆盖 `PUT /api/v1/me/password`
 
-**验证：**
+**验证方法：**
 ```bash
-grep -n 'handleWalletOp\|modalVisible\|recharge\|adjust' frontend/src/pages/WalletPage.tsx
+cd frontend
+npm test -- --run src/api/__tests__/client.test.ts
+npm run build
 ```
 
 ---
 
-## Fix #34: Dashboard AI 活动趋势不随时间范围变化 (High 后端)
+## Fix #3: 增加前端/后端 route parity 守卫
 
-**文件：** `internal/admin/dashboard_handlers.go`
-
-**原问题：** `dashboardDailyTrend` 方法 SQL 硬编码 `WHERE created_at >= NOW() - INTERVAL '7 days'`，前端切换 24h/7d/30d 时间范围无效果，趋势图始终显示相同数据。
+**文件：**
+- `cmd/uniroute/route_parity_test.go`
 
 **修复内容：**
-1. 方法签名改为 `func (h *AdminHandler) dashboardDailyTrend(ctx context.Context, startTime, endTime string) ([]DashboardDailyTrend, error)`
-2. SQL 改为 `WHERE created_at >= $1 AND created_at <= $2`，参数化传入 startTime/endTime
-3. 调用处（`getDashboard` 方法）传入对应的 startTime/endTime 参数
+- 增加管理端路由静态守卫，覆盖当前 frontend API client 使用的主要 `/api/v1/*` 路由
+- 包含 `PUT /api/v1/me/password`
 
-**验证：**
+**验证方法：**
 ```bash
-grep -n 'dashboardDailyTrend\|startTime\|endTime' internal/admin/dashboard_handlers.go
+go test ./cmd/uniroute -run TestAdminRoutesRegisteredForFrontendClient -v
 ```
 
 ---
 
-## Fix #35: KeysPage 允许模型手动输入 (Low 前端 UX)
+## Fix #4: 历史测试报告纠偏 + OpenAPI 路径快照刷新
 
-**文件：** `frontend/src/pages/KeysPage.tsx`
-
-**原问题：** 允许模型字段为 `Form.Input`，需手动输入模型名，容易拼错。
+**文件：**
+- `docs/ops/test-report.md`
+- `docs/DOC-INVENTORY.md`
+- `docs/tech-ref/05-openapi-spec.yaml`
+- `docs/tech-ref/README.md`
+- `docs/CODEBASE-MAP.md`
 
 **修复内容：**
-1. 新增 `availableModels` state，从 `GET /dashboard/models` 动态获取系统已有模型列表
-2. `allowed_models` 字段从 `Form.Input` 改为 `Form.Select` 多选模式
-3. 编辑时将逗号分隔字符串拆分为数组，提交时合并回字符串
+- 在 `test-report.md` 顶部加入 historical report/stale banner
+- 将原“XOR 加密”结论改为历史更正：当前代码使用 AES-GCM
+- `DOC-INVENTORY.md` 更新该历史报告的角色说明
+- 重写 `docs/tech-ref/05-openapi-spec.yaml` 为当前 PRD1 API path snapshot
+- OpenAPI YAML 已解析通过，包含 38 个 path，且不再包含 `/api/v1/admin/*`
+- `docs/tech-ref/README.md`、`CODEBASE-MAP.md`、`DOC-INVENTORY.md` 已同步
 
-**验证：**
+**验证方法：**
 ```bash
-grep -n 'availableModels\|Form.Select\|allowed_models' frontend/src/pages/KeysPage.tsx
+python3 - <<'PY'
+from pathlib import Path
+import yaml
+data = yaml.safe_load(Path('docs/tech-ref/05-openapi-spec.yaml').read_text())
+assert data['openapi'] == '3.0.3'
+paths = data['paths']
+assert '/api/v1/me/password' in paths
+assert '/metrics' in paths
+assert not [p for p in paths if p.startswith('/api/v1/admin/')]
+print(f"parsed {len(paths)} paths")
+PY
+rg -n "XOR|AES-GCM|Historical report|test-report.md|route_parity_test|v1.1" docs/ops/test-report.md docs/DOC-INVENTORY.md docs/tech-ref/05-openapi-spec.yaml docs/tech-ref/README.md docs/CODEBASE-MAP.md internal/auth/auth.go
 ```
 
 ---
 
-## Fix #36: 审计日志无登录记录 (Medium 后端)
+## Fix #5: 新增 PRD1 剩余验收包
 
-**文件：** `internal/admin/auth.go`
-
-**原问题：** Login handler 成功后不调用 `recordAudit`，审计日志中无登录记录。
+**文件：**
+- `docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md`
+- `docs/README.md`
 
 **修复内容：**
-1. Login 成功后异步调用 `go h.recordAudit(ctx, "login", "user", fmt.Sprintf("%d", userID), ...)`
-2. 添加 `fmt` import
+- 记录 Codex 本地已完成证据
+- 记录本地不可完成的外部验收项：Docker Compose、真实 provider、流式中断、并发压测、failover/circuit breaker、视觉/人工 UI、Grafana
+- 文档索引加入该验收包
 
-**验证：**
+**验证方法：**
 ```bash
-grep -n 'recordAudit\|login' internal/admin/auth.go | head -10
+rg -n "PRD1-REMAINING-ACCEPTANCE-PACK|External Acceptance Queue|Docker|provider|visual" docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md docs/README.md
 ```
 
 ---
 
-## 全局验证命令
+## Fix #6: 同步 PRD1 状态文档
+
+**文件：**
+- `docs/issues/OPEN-ISSUES.md`
+- `docs/ops/CURRENT-STATUS.md`
+- `docs/ops/PRD1-CLOSEOUT-PLAN.md`
+- `docs/ops/PRD-ACCEPTANCE-MATRIX.md`
+
+**修复内容：**
+- `ENG-001` 标为 `Fixed awaiting Canary`
+- `SEC-001` 保持 `Fixed awaiting Canary`，证据改为 stale-doc correction
+- `DOC-002` 标为 `Fixed awaiting Canary`
+- 新增 `DOC-005` 记录 OpenAPI Admin spec stale，状态为 `Fixed awaiting Canary`
+- `QA-001` 标为 `In progress`，指向剩余验收包
+- `PRD1-ENG-001` 标为 `Fixed awaiting Canary`
+- `PRD1-DOC-001` 标为 `Fixed awaiting Canary`
+- `Frontend API client matches backend routes` 标为 `Unit tested`
+- `/metrics` 标为本地当前源码 `E2E accepted`，部署环境仍需复验
+
+**验证方法：**
+```bash
+rg -n "ENG-001|SEC-001|DOC-002|DOC-005|QA-001|PRD1-ENG-001|PRD1-DOC-001|Frontend API client matches backend routes|Prometheus" docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD1-CLOSEOUT-PLAN.md docs/ops/PRD-ACCEPTANCE-MATRIX.md
+```
+
+---
+
+## Codex 已执行验证
+
+```bash
+go test ./...
+cd frontend && npm test -- --run
+cd frontend && npm run build
+go test ./cmd/uniroute -run TestAdminRoutesRegisteredForFrontendClient -v
+go test ./internal/admin -run 'TestChangePassword|TestLogin'
+```
+
+临时当前源码服务验证：
+
+- `GET /health/live`: PASS
+- `GET /metrics`: PASS，返回 Prometheus metrics
+- `POST /api/v1/auth/login`: PASS
+- `GET /api/v1/me`: PASS
+- `GET /api/v1/settings`: PASS
+- `GET /api/v1/dashboard/stats`: PASS
+- `PUT /api/v1/me/password` without auth: PASS, returned 401
+
+## Canary 验收命令
 
 ```bash
 cd /Users/m4/Desktop/projects/UniRouter
-
-# 1. Go 编译
-go build ./...
-# 期望：无输出
-
-# 2. Go 测试
-go test ./... -count=1
-# 期望：所有 package OK
-
-# 3. 前端编译
-cd frontend && npx vite build
-# 期望：✓ built in Xs
-
-# 4. 关键代码审查
-grep -rn 'dashboardDailyTrend.*startTime\|recordAudit.*login\|formRef.*model\|handleWalletOp\|availableModels' internal/ frontend/src/
-# 期望：每项至少一条命中
+git diff --check -- cmd/uniroute/main.go cmd/uniroute/route_parity_test.go internal/admin/auth_handlers.go internal/admin/admin_mock_test.go frontend/src/pages/SettingsPage.tsx frontend/src/api/__tests__/client.test.ts docs/ops/test-report.md docs/DOC-INVENTORY.md docs/tech-ref/05-openapi-spec.yaml docs/tech-ref/README.md docs/CODEBASE-MAP.md docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md docs/README.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD1-CLOSEOUT-PLAN.md docs/ops/PRD-ACCEPTANCE-MATRIX.md docs/agent-workflows/FIX-SIGNAL.md
+go test ./...
+cd frontend && npm test -- --run
+cd frontend && npm run build
 ```
 
----
+## 期望输出格式
 
-## 期望 Canary 验收输出格式
+验收结果写入 `docs/agent-workflows/VERIFY-RESULT.md`：
 
-请在 `VERIFY-RESULT.md` 中按以下格式写入：
+```markdown
+# VERIFY-RESULT.md — PRD1 Remaining Closeout 验收结果
 
-```
-# VERIFY-RESULT.md — Bug #32~#36 验收
+**验收者：** OpenClaw Canary
+**日期：** 以文件系统时间戳为准
+**对应轮次：** PRD1 remaining closeout
 
-**验收日期：** YYYY-MM-DD
-**验收者：** Canary agent
+## 逐条结果
 
-## 逐条验收
-
-| Bug # | 严重性 | 验收结果 | 备注 |
-|-------|--------|---------|------|
-| #32   | Medium | ✅/❌   |      |
-| #33   | Medium | ✅/❌   |      |
-| #34   | High   | ✅/❌   |      |
-| #35   | Low    | ✅/❌   |      |
-| #36   | Medium | ✅/❌   |      |
+- Fix #1: PASS/FAIL — [原因]
+- Fix #2: PASS/FAIL — [原因]
+- Fix #3: PASS/FAIL — [原因]
+- Fix #4: PASS/FAIL — [原因]
+- Fix #5: PASS/FAIL — [原因]
+- Fix #6: PASS/FAIL — [原因]
 
 ## 全局验证
 
-- [ ] `go build ./...` 通过
-- [ ] `go test ./...` 通过
-- [ ] `npx vite build` 通过
+- `git diff --check`: PASS/FAIL
+- `go test ./...`: PASS/FAIL
+- `npm test -- --run`: PASS/FAIL
+- `npm run build`: PASS/FAIL
+- 视觉/人工 UI 验收: NOT_APPLICABLE_TO_CANARY
+- Docker/云部署/真实 provider: NOT_APPLICABLE_TO_CANARY
 
 ## 新发现的问题
 
-（如有）
+- [如有，在此列出；没有则写“无”]
+
+## 结论
+
+- [全部通过 / 需要 Codex 修复以下问题]
 ```
-
----
-
-**请 Canary 验收：** `docs/agent-workflows/FIX-SIGNAL.md`

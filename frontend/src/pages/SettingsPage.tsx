@@ -19,6 +19,10 @@ export default function SettingsPage() {
   }, []);
 
   const handleChangePassword = async (v: any) => {
+    if (v.new_password !== v.confirm_password) {
+      Toast.error('两次输入的新密码不一致');
+      return;
+    }
     try {
       await api.changePassword({
         old_password: v.old_password,
@@ -99,6 +103,10 @@ export default function SettingsPage() {
                 type="password"
                 rules={[
                   { required: true, message: '必填' },
+                  {
+                    validator: (_rule, value) => value === passwordApi?.getValue('new_password'),
+                    message: '两次输入的新密码不一致',
+                  },
                 ]}
               />
               <Button type="primary" htmlType="submit" style={{ marginTop: 8 }}>修改密码</Button>

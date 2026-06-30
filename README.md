@@ -42,7 +42,7 @@ Docker Compose（3 个容器）：
 
 ## 技术栈
 
-- **后端**：Go + Gin + pgx + go-redis
+- **后端**：Go `net/http` + pgx + go-redis
 - **数据库**：PostgreSQL 15 + Redis 7
 - **前端**：React 18 + Semi Design + Vite
 - **基础**：OneAPI（Go, MIT）Deep Fork
@@ -50,7 +50,13 @@ Docker Compose（3 个容器）：
 ## 文档
 
 - [贡献指南](CONTRIBUTING.md) — 开发流程、代码规范、提交规范
-- [PRD Phase 1](docs/PRD-Phase1.md) — 产品需求文档（source of truth）
+- [Agent Handoff](docs/PROJECT-HANDOFF.md) — 其他 agent 接手项目的第一入口
+- [当前状态](docs/ops/CURRENT-STATUS.md) — 当前真实进度、测试和缺口
+- [PRD1 收尾计划](docs/ops/PRD1-CLOSEOUT-PLAN.md) — PRD1 到 PRD2 的退出标准和收尾项
+- [PRD 验收矩阵](docs/ops/PRD-ACCEPTANCE-MATRIX.md) — Phase 1 验收进度
+- [Open Issues](docs/issues/OPEN-ISSUES.md) — 当前未关闭问题
+- [Agent 协议](docs/agent-workflows/AGENT-PROTOCOL.md) — Codex/OpenClaw 协作和验收流程
+- [PRD Phase 1](docs/PRD-Phase1.md) — 产品需求文档（需求和验收标准的 source of truth）
 - [技术参考](docs/tech-ref/) — 开发团队技术参考
   - [01 模型能力矩阵](docs/tech-ref/01-provider-capability-matrix.md)
   - [02 计费状态机](docs/tech-ref/02-billing-state-machine.md)
@@ -97,9 +103,10 @@ UniRouter/
 │   ├── admin/            # 管理后台构建产物（CDN 静态资源）
 │   └── console/          # 控制台构建产物
 ├── migrations/           # SQL 迁移脚本
-├── scripts/              # 脚本工具
-├── api/                  # API 定义
 ├── docs/                 # 文档
+│   ├── PROJECT-HANDOFF.md # Agent 接手入口
+│   ├── CODEBASE-MAP.md   # 代码结构地图
+│   ├── DOC-INVENTORY.md  # 文档清单和边界
 │   ├── PRD-Phase1.md     # 产品需求文档
 │   ├── ops/              # 部署 & 测试
 │   ├── tech-ref/         # 技术参考（模型矩阵、计费状态机等）

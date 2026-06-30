@@ -104,7 +104,7 @@
 - **发现日期**: 2026-06-25
 - **严重性**: Medium
 - **类型**: 测试壁垒
-- **状态**: ⚠️ 待 Codex 重构
+- **状态**: ✅ 已解决（admin 覆盖率 1.0% → 79.7%，mock 测试覆盖）
 - **根因**: admin handler 紧耦合 `*pgxpool.Pool`，集成测试不计入 `go test -cover`
 
 ---
@@ -499,7 +499,7 @@ func (rw *responseWriter) Flush() {
 - **发现日期**: 2026-06-29
 - **严重性**: High
 - **类型**: 前后端字段不匹配
-- **状态**: ⚠️ 待修复
+- **状态**: ✅ 已修复（第 14 轮，同下方 FIX-SIGNAL 验收记录）
 - **发现者**: Nicholas（生产环境测试）
 
 **问题**：点击"调用日志"页面，显示"页面出错了"。
@@ -518,7 +518,7 @@ func (rw *responseWriter) Flush() {
 - **发现日期**: 2026-06-29
 - **严重性**: Medium
 - **类型**: URL 构造错误
-- **状态**: ⚠️ 待修复
+- **状态**: ✅ 已修复（第 14 轮，同下方 FIX-SIGNAL 验收记录）
 - **发现者**: Nicholas（生产环境测试）
 
 **问题**：渠道测试选择 Mimo Token Plan，返回 404。
@@ -537,7 +537,7 @@ base_url: https://token-plan-cn.xiaomimimo.com/v1
 - **发现日期**: 2026-06-29
 - **严重性**: Medium
 - **类型**: 前后端字段不匹配
-- **状态**: ⚠️ 待修复
+- **状态**: ✅ 已修复（第 14 轮，同下方 FIX-SIGNAL 验收记录）
 - **发现者**: Nicholas（生产环境测试）
 
 **问题**：Kimi 渠道测试实际成功（status_code=200, latency=1246ms），但前端显示"测试失败: undefined"。
@@ -556,7 +556,7 @@ base_url: https://token-plan-cn.xiaomimimo.com/v1
 - **发现日期**: 2026-06-29
 - **严重性**: Low
 - **类型**: UI 交互 / 设计缺失
-- **状态**: ⚠️ 待设计确认
+- **状态**: ✅ 已修复（第 14 轮，改为 Form.Select 动态下拉）
 - **发现者**: Nicholas（生产环境测试）
 
 **问题**：模型价格配置 → 新增价格 → 模型名称为 `Form.Input`（手动输入），不是从已有渠道配置的 models 中选择的下拉框。
@@ -570,7 +570,7 @@ base_url: https://token-plan-cn.xiaomimimo.com/v1
 - **发现日期**: 2026-06-29
 - **严重性**: Low
 - **类型**: UI 交互 / 设计缺失
-- **状态**: ⚠️ 待设计确认
+- **状态**: ✅ 已修复（第 14 轮，改为 Form.Select 动态下拉）
 - **发现者**: Nicholas（生产环境测试）
 
 **问题**：组织倍率 → 新增价格覆盖 → 模型名称为 `Form.Input`（手动输入）。
@@ -584,7 +584,7 @@ base_url: https://token-plan-cn.xiaomimimo.com/v1
 - **发现日期**: 2026-06-29
 - **严重性**: Low
 - **类型**: 数据源不一致
-- **状态**: ⚠️ 待设计确认
+- **状态**: ✅ 已修复（第 14 轮，从 /model-names API 动态加载）
 - **发现者**: Nicholas（生产环境测试）
 
 **问题**：Token 对账页面的模型筛选下拉与实际渠道配置的模型不匹配。筛选数据来源未定义（call_logs 中的模型 vs channels 中配置的模型）。
@@ -822,3 +822,59 @@ base_url: https://token-plan-cn.xiaomimimo.com/v1
 **问题**：Login handler 成功后不调用 recordAudit，审计日志中无登录记录。
 
 **修复**：Login 成功后异步调用 `go h.recordAudit(ctx, "login", "user", fmt.Sprintf("%d", userID), ...)` 记录登录审计日志，添加 `fmt` import。
+
+---
+
+## Bug #40 — Dashboard 查询缺少 org_id 过滤 (High 安全 Bug)
+
+- **发现日期**: 2026-06-30
+- **严重性**: High (数据安全)
+- **类型**: 后端数据隔离缺失
+- **状态**: ✅ 已修复验收（第 16 轮）
+- **发现者**: Codex（代码审查）
+
+**问题**：Dashboard 所有查询方法（overview、recentLogs、dailyTrend、walletInfo、modelDistribution、yesterdayDelta）均无 `org_id` 过滤条件，返回全局聚合数据。任何 admin 用户可看到所有组织的财务和请求数据。
+
+**根因**：初版实现时 Dashboard 查询未考虑多组织数据隔离，`call_logs` 和 `wallets` 表均有 `org_id` 列但查询未使用。
+
+**修复**：
+- `DashboardStats` 提取 `middleware.GetOrgIDFromContext(ctx)`
+- 所有涉及 `call_logs` 和 `wallets` 的查询添加 `WHERE org_id = $N` 条件
+- `model_prices` 和 `channels` 为全局表，保持不变
+
+**验证**：`go test ./internal/admin/ -v` PASS，`go build ./...` PASS
+
+---
+
+## Bug #41 — Relay 对所有非 200 上游响应触发熔断 (High 逻辑 Bug)
+
+- **发现日期**: 2026-06-30
+- **严重性**: High (逻辑错误)
+- **类型**: 错误分类不当
+- **状态**: ✅ 已修复验收（第 16 轮）
+- **发现者**: Codex（PRD F12 对照审查）
+
+**问题**：`relay.go` 非流式重试循环中，所有 `resp.StatusCode != 200` 都调用 `MarkChannelFail` + `MarkKeyFail`，包括 400（客户端错误）、401（密钥无效）、429（限流）。
+
+**违反 PRD F12 规则**：
+- 408/500/502/503 + 连接超时 → 触发熔断器（应为唯一触发条件）
+- 401/403 → 标记密钥失效
+- 429 → 标记密钥冷却 60s
+- 400/其他 4xx → 不标记任何失败
+
+**修复**：使用 `switch` 分类上游状态码：
+```go
+switch {
+case resp.StatusCode == 408 || resp.StatusCode == 500 || resp.StatusCode == 502 || resp.StatusCode == 503:
+    relay.router.MarkChannelFail(ctx, route.Channel.ID, 5, 300)
+    relay.router.MarkKeyFail(ctx, route.ChannelKey.ID)
+case resp.StatusCode == 401 || resp.StatusCode == 403:
+    relay.router.MarkKeyCooldown(ctx, route.ChannelKey.ID, 3600)
+case resp.StatusCode == 429:
+    relay.router.MarkKeyCooldown(ctx, route.ChannelKey.ID, 60)
+default:
+    // 4xx client errors — don't mark as failure
+}
+```
+
+**验证**：`go test ./internal/gateway/ -v` PASS，`go build ./...` PASS

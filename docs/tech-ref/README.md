@@ -10,7 +10,7 @@
 | 02 | [计费状态机](02-billing-state-machine.md) | 计费流程完整定义 | v2.0 |
 | 03 | [错误处理矩阵](03-error-handling-matrix.md) | 错误分类 + 重试策略 | v2.0 |
 | 04 | [OneAPI Hook 清单](04-oneapi-hook-manifest.md) | 上游 Hook 分析 | — |
-| 05 | [OpenAPI Spec](05-openapi-spec.yaml) | API 规范（yaml） | — |
+| 05 | [OpenAPI Spec](05-openapi-spec.yaml) | 当前 PRD1 API 路径快照，按 `cmd/uniroute/main.go` 和 `route_parity_test.go` 对齐 | v1.1 |
 | 06 | [前端页面规格](06-frontend-spec.md) | 页面布局 + 交互规格 | — |
 | 07 | [结构化日志](07-structured-logging.md) | 日志架构 + 使用方式 | v1.0 |
 | 08 | [监控指标](08-prometheus-metrics.md) | Prometheus 指标体系 | v1.0 |

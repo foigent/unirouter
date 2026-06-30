@@ -24,7 +24,7 @@ func TestBreaker_ClosedToOpen(t *testing.T) {
 }
 
 func TestBreaker_OpenToHalfOpen(t *testing.T) {
-	b := NewBreaker(1, 50*time.Millisecond, 10)
+	b := NewBreaker(1, 50*time.Millisecond, 100)
 	b.RecordFailure() // -> open
 	if b.GetState() != StateOpen {
 		t.Fatal("should be open")
@@ -95,7 +95,7 @@ func TestBreaker_Allow_Open_BeforeRecover(t *testing.T) {
 }
 
 func TestBreaker_Allow_HalfOpen(t *testing.T) {
-	b := NewBreaker(1, 10*time.Millisecond, 10)
+	b := NewBreaker(1, 10*time.Millisecond, 100)
 	b.RecordFailure()
 	time.Sleep(15 * time.Millisecond)
 	b.Allow() // -> half-open
@@ -220,7 +220,7 @@ func TestBreaker_ZeroThreshold(t *testing.T) {
 }
 
 func TestBreaker_VeryShortRecover(t *testing.T) {
-	b := NewBreaker(1, 1*time.Millisecond, 10)
+	b := NewBreaker(1, 1*time.Millisecond, 100)
 	b.RecordFailure()
 	time.Sleep(5 * time.Millisecond)
 	if !b.Allow() {
