@@ -20,7 +20,15 @@ vi.stubGlobal('localStorage', localStorageMock)
 vi.stubGlobal('window', { location: { href: '/' } })
 
 // Import after mocks are set up
-const { api } = await import('../client')
+const { api, ApiError } = await import('../client')
+
+function mockJsonResponse(payload: unknown, status = 200) {
+  mockFetch.mockResolvedValueOnce({
+    ok: status >= 200 && status < 300,
+    status,
+    text: () => Promise.resolve(JSON.stringify(payload)),
+  })
+}
 
 describe('API Client', () => {
   beforeEach(() => {
@@ -30,10 +38,7 @@ describe('API Client', () => {
 
   describe('login', () => {
     it('sends POST to /api/v1/auth/login', async () => {
-      mockFetch.mockResolvedValueOnce({
-        json: () => Promise.resolve({ token: 'abc', user_id: 1, username: 'admin' }),
-        status: 200,
-      })
+      mockJsonResponse({ token: 'abc', user_id: 1, username: 'admin' })
 
       const result = await api.login('admin', 'password')
       expect(mockFetch).toHaveBeenCalledWith(
@@ -49,10 +54,7 @@ describe('API Client', () => {
 
   describe('getChannels', () => {
     it('sends GET to /api/v1/channels with pagination', async () => {
-      mockFetch.mockResolvedValueOnce({
-        json: () => Promise.resolve({ data: [], total: 0 }),
-        status: 200,
-      })
+      mockJsonResponse({ data: [], total: 0 })
 
       await api.getChannels(2, 10)
       expect(mockFetch).toHaveBeenCalledWith(
@@ -64,10 +66,7 @@ describe('API Client', () => {
 
   describe('getWallet', () => {
     it('sends GET to /api/v1/wallet', async () => {
-      mockFetch.mockResolvedValueOnce({
-        json: () => Promise.resolve({ balance_cents: 10000 }),
-        status: 200,
-      })
+      mockJsonResponse({ balance_cents: 10000 })
 
       await api.getWallet()
       expect(mockFetch).toHaveBeenCalledWith(
@@ -79,10 +78,7 @@ describe('API Client', () => {
 
   describe('topUp', () => {
     it('sends POST to /api/v1/wallet/topup', async () => {
-      mockFetch.mockResolvedValueOnce({
-        json: () => Promise.resolve({ message: 'Top-up successful' }),
-        status: 200,
-      })
+      mockJsonResponse({ message: 'Top-up successful' })
 
       await api.topUp({ amount_cents: 5000 })
       expect(mockFetch).toHaveBeenCalledWith(
@@ -95,13 +91,25 @@ describe('API Client', () => {
     })
   })
 
+  describe('changePassword', () => {
+    it('sends PUT to /api/v1/me/password', async () => {
+      mockJsonResponse({ success: true })
+
+      await api.changePassword({ old_password: 'oldpass', new_password: 'newpass123' })
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/v1/me/password',
+        expect.objectContaining({
+          method: 'PUT',
+          body: JSON.stringify({ old_password: 'oldpass', new_password: 'newpass123' }),
+        })
+      )
+    })
+  })
+
   describe('authorization header', () => {
     it('includes token when present', async () => {
       localStorageMock.setItem('token', 'my-token')
-      mockFetch.mockResolvedValueOnce({
-        json: () => Promise.resolve({}),
-        status: 200,
-      })
+      mockJsonResponse({})
 
       await api.getWallet()
       expect(mockFetch).toHaveBeenCalledWith(
@@ -115,10 +123,7 @@ describe('API Client', () => {
     })
 
     it('does not include Authorization when no token', async () => {
-      mockFetch.mockResolvedValueOnce({
-        json: () => Promise.resolve({}),
-        status: 200,
-      })
+      mockJsonResponse({})
 
       await api.getWallet()
       const callArgs = mockFetch.mock.calls[0]
@@ -129,15 +134,33 @@ describe('API Client', () => {
 
   describe('getLogs with filters', () => {
     it('encodes filter parameters', async () => {
-      mockFetch.mockResolvedValueOnce({
-        json: () => Promise.resolve({ data: [], total: 0 }),
-        status: 200,
-      })
+      mockJsonResponse({ data: [], total: 0 })
 
       await api.getLogs(1, 20, { model: 'gpt-4o', provider: 'openai' })
       const url = mockFetch.mock.calls[0][0]
       expect(url).toContain('model=gpt-4o')
       expect(url).toContain('provider=openai')
+    })
+  })
+
+  describe('error handling', () => {
+    it('throws ApiError for non-2xx responses', async () => {
+      mockJsonResponse({ error: { message: 'invalid amount' } }, 400)
+
+      await expect(api.topUp({ amount_cents: 0 })).rejects.toMatchObject({
+        name: 'ApiError',
+        status: 400,
+        message: 'invalid amount',
+      })
+    })
+
+    it('clears token and redirects on 401', async () => {
+      localStorageMock.setItem('token', 'expired-token')
+      mockJsonResponse({ message: 'token expired' }, 401)
+
+      await expect(api.getWallet()).rejects.toBeInstanceOf(ApiError)
+      expect(localStorageMock.getItem('token')).toBeNull()
+      expect(window.location.href).toBe('/login')
     })
   })
 })

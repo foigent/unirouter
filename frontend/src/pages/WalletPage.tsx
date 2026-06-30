@@ -24,7 +24,7 @@ export default function WalletPage() {
 
   const load = () => {
     setLoading(true);
-    api.request('/wallet')
+    api.getWallet()
       .then((d: any) => setWallet(d))
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -53,11 +53,14 @@ export default function WalletPage() {
     }
     setSubmitting(true);
     try {
-      const endpoint = modalType === 'recharge' ? '/wallet/recharge' : '/wallet/adjust';
-      await api.request(endpoint, {
-        method: 'POST',
-        body: JSON.stringify({ amount_cents: amountCents }),
-      });
+      if (modalType === 'recharge') {
+        await api.topUp({ amount_cents: amountCents });
+      } else {
+        await api.request('/wallet/adjust', {
+          method: 'POST',
+          body: JSON.stringify({ amount_cents: amountCents }),
+        });
+      }
       Toast.success(modalType === 'recharge' ? '充值成功' : '调整成功');
       setModalVisible(false);
       setModalAmount('');

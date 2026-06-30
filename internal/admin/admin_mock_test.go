@@ -13,7 +13,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/testutil"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // --- Mock infrastructure for admin handler tests ---
@@ -37,10 +39,10 @@ func TestLogin_Success(t *testing.T) {
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			return &testutil.MockRow{
 				ScanFn: func(dest ...any) error {
-					*dest[0].(*int64) = 1    // id
-					*dest[1].(*int64) = 1    // org_id
-					*dest[2].(*string) = hash // password_hash
-					*dest[3].(*string) = "admin" // role
+					*dest[0].(*int64) = 1         // id
+					*dest[1].(*int64) = 1         // org_id
+					*dest[2].(*string) = hash     // password_hash
+					*dest[3].(*string) = "admin"  // role
 					*dest[4].(*string) = "active" // status
 					return nil
 				},
@@ -117,6 +119,104 @@ func TestLogin_UserNotFound(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	h.Login(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestChangePassword_Success(t *testing.T) {
+	oldHash := "$2a$10$FQbk3L3IVXe.UiYojf7YVeq1nbfb4oI.igx8Jed8fxF6slCek.hLG"
+	var updatedHash string
+	var updatedUserID int64
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			if args[0] != int64(42) {
+				t.Fatalf("expected user id 42, got %v", args[0])
+			}
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
+					*dest[0].(*string) = oldHash
+					return nil
+				},
+			}
+		},
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(sql, "INSERT INTO audit_logs") {
+				return pgconn.NewCommandTag("INSERT 1"), nil
+			}
+			updatedHash = args[0].(string)
+			updatedUserID = args[1].(int64)
+			return pgconn.NewCommandTag("UPDATE 1"), nil
+		},
+	}
+	h := newTestHandler(db)
+
+	body := `{"old_password":"password123","new_password":"newpass123"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/me/password", strings.NewReader(body))
+	ctx := context.WithValue(req.Context(), middleware.CtxUserID, int64(42))
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	h.ChangePassword(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if updatedUserID != 42 {
+		t.Fatalf("expected updated user id 42, got %d", updatedUserID)
+	}
+	if updatedHash == "" || updatedHash == oldHash {
+		t.Fatal("expected a new password hash")
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(updatedHash), []byte("newpass123")); err != nil {
+		t.Fatalf("updated hash does not match new password: %v", err)
+	}
+}
+
+func TestChangePassword_WrongOldPassword(t *testing.T) {
+	oldHash := "$2a$10$FQbk3L3IVXe.UiYojf7YVeq1nbfb4oI.igx8Jed8fxF6slCek.hLG"
+	execCalled := false
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
+					*dest[0].(*string) = oldHash
+					return nil
+				},
+			}
+		},
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			execCalled = true
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	h := newTestHandler(db)
+
+	body := `{"old_password":"wrongpass","new_password":"newpass123"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/me/password", strings.NewReader(body))
+	ctx := context.WithValue(req.Context(), middleware.CtxUserID, int64(42))
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	h.ChangePassword(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if execCalled {
+		t.Fatal("password update should not run when old password is wrong")
+	}
+}
+
+func TestChangePassword_Unauthenticated(t *testing.T) {
+	h := newTestHandler(&testutil.MockDB{})
+
+	body := `{"old_password":"password123","new_password":"newpass123"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/me/password", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	h.ChangePassword(rec, req)
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", rec.Code)
@@ -203,14 +303,14 @@ func TestGetWallet_Success(t *testing.T) {
 			return &testutil.MockRows{
 				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
-						*dest[0].(*int64) = 1     // org_id
-						*dest[1].(*int) = 10000   // balance
-						*dest[2].(*int) = 5000    // granted_balance
-						*dest[3].(*int) = 0       // frozen
-						*dest[4].(*int) = 2500    // total_spent
-						*dest[5].(*string) = "USD" // currency
-						*dest[6].(*bool) = true   // auto_freeze
-						*dest[7].(*int) = 1000    // low_balance_threshold_cents
+						*dest[0].(*int64) = 1       // org_id
+						*dest[1].(*int) = 10000     // balance
+						*dest[2].(*int) = 5000      // granted_balance
+						*dest[3].(*int) = 0         // frozen
+						*dest[4].(*int) = 2500      // total_spent
+						*dest[5].(*string) = "USD"  // currency
+						*dest[6].(*bool) = true     // auto_freeze
+						*dest[7].(*int) = 1000      // low_balance_threshold_cents
 						*dest[8].(*time.Time) = now // created_at
 						*dest[9].(*time.Time) = now // updated_at
 						return nil
@@ -653,17 +753,17 @@ func TestListChannels_Success(t *testing.T) {
 			return &testutil.MockRows{
 				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
-						*dest[0].(*int64) = 1           // id
-						*dest[1].(*string) = "openai"   // name
-						*dest[2].(*string) = "openai"   // provider
+						*dest[0].(*int64) = 1                         // id
+						*dest[1].(*string) = "openai"                 // name
+						*dest[2].(*string) = "openai"                 // provider
 						*dest[3].(*string) = "https://api.openai.com" // base_url
-						*dest[4].(*string) = "gpt-4o"   // models
-						*dest[5].(*int) = 100           // priority
-						*dest[6].(*int) = 5             // degradation_threshold
-						*dest[7].(*string) = "active"   // status
-						*dest[8].(*string) = "healthy"  // circuit_state
-						*dest[9].(*int) = 0             // fail_count
-						*dest[10].(*time.Time) = now    // created_at
+						*dest[4].(*string) = "gpt-4o"                 // models
+						*dest[5].(*int) = 100                         // priority
+						*dest[6].(*int) = 5                           // degradation_threshold
+						*dest[7].(*string) = "active"                 // status
+						*dest[8].(*string) = "healthy"                // circuit_state
+						*dest[9].(*int) = 0                           // fail_count
+						*dest[10].(*time.Time) = now                  // created_at
 						return nil
 					},
 				},
@@ -1339,14 +1439,14 @@ func TestListUsers_Success(t *testing.T) {
 			return &testutil.MockRows{
 				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
-						*dest[0].(*int64) = 1           // id
-						*dest[1].(*int64) = 1           // org_id
+						*dest[0].(*int64) = 1                   // id
+						*dest[1].(*int64) = 1                   // org_id
 						*dest[2].(**string) = strPtr("Default") // org_name
-						*dest[3].(*string) = "admin"    // username
-						*dest[4].(*string) = "admin"    // role
-						*dest[5].(*string) = "active"   // status
-						*dest[6].(*time.Time) = now     // created_at
-						*dest[7].(*time.Time) = now     // updated_at
+						*dest[3].(*string) = "admin"            // username
+						*dest[4].(*string) = "admin"            // role
+						*dest[5].(*string) = "active"           // status
+						*dest[6].(*time.Time) = now             // created_at
+						*dest[7].(*time.Time) = now             // updated_at
 						return nil
 					},
 				},
@@ -1443,7 +1543,7 @@ func TestListWalletTransactions_Success(t *testing.T) {
 						*dest[1].(*string) = "topup"
 						*dest[2].(*int) = 5000
 						*dest[3].(*string) = "Admin top-up"
-						
+
 						return nil
 					},
 					func(dest ...any) error {
@@ -1451,7 +1551,7 @@ func TestListWalletTransactions_Success(t *testing.T) {
 						*dest[1].(*string) = "settle"
 						*dest[2].(*int) = -100
 						*dest[3].(*string) = "Settle for request"
-						
+
 						return nil
 					},
 				},
@@ -1868,7 +1968,7 @@ func TestListModelPrices_Success(t *testing.T) {
 						*dest[1].(*string) = "gpt-4o"
 						*dest[2].(*int) = 5
 						*dest[3].(*int) = 15
-						
+
 						return nil
 					},
 				},
@@ -3929,7 +4029,6 @@ func TestCreateGrant_TxBeginFail(t *testing.T) {
 		t.Fatalf("expected 500, got %d", rec.Code)
 	}
 }
-
 
 func TestNormalizeModels(t *testing.T) {
 	cases := []struct {

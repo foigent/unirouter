@@ -4,10 +4,13 @@ import (
 	"context"
 	"net/http"
 	"time"
+
+	"github.com/uniroute/unirouter/internal/middleware"
 )
 
 func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	orgID := middleware.GetOrgIDFromContext(ctx)
 
 	// Optional time range params; default to last 24h
 	startTime := r.URL.Query().Get("start_time")
@@ -19,14 +22,14 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 		endTime = time.Now().Format(time.RFC3339)
 	}
 
-	totalRequests, todayCostCents, avgLatencyMs, successRate := h.dashboardOverview(ctx, startTime, endTime)
-	recentLogs := h.dashboardRecentLogs(ctx)
+	totalRequests, todayCostCents, avgLatencyMs, successRate := h.dashboardOverview(ctx, orgID, startTime, endTime)
+	recentLogs := h.dashboardRecentLogs(ctx, orgID)
 	modelPrices := h.dashboardModelPrices(ctx)
-	dailyTrend := h.dashboardDailyTrend(ctx, startTime, endTime)
-	walletBalance, walletGranted, walletFrozen, walletThreshold := h.dashboardWalletInfo(ctx)
-	modelDistribution := h.dashboardModelDistribution(ctx, startTime, endTime)
+	dailyTrend := h.dashboardDailyTrend(ctx, orgID, startTime, endTime)
+	walletBalance, walletGranted, walletFrozen, walletThreshold := h.dashboardWalletInfo(ctx, orgID)
+	modelDistribution := h.dashboardModelDistribution(ctx, orgID, startTime, endTime)
 	channelHealth := h.dashboardChannelHealth(ctx, startTime, endTime)
-	deltaCost, deltaLatency, deltaRate := h.dashboardYesterdayDelta(ctx, todayCostCents, avgLatencyMs, successRate)
+	deltaCost, deltaLatency, deltaRate := h.dashboardYesterdayDelta(ctx, orgID, todayCostCents, avgLatencyMs, successRate)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"total_requests":     totalRequests,
@@ -51,25 +54,25 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 }
 
 // dashboardOverview returns total requests, period cost, avg latency, and success rate.
-func (h *Handler) dashboardOverview(ctx context.Context, startTime, endTime string) (totalRequests, todayCostCents int, avgLatencyMs float64, successRate float64) {
-	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM call_logs`).Scan(&totalRequests)
+func (h *Handler) dashboardOverview(ctx context.Context, orgID int64, startTime, endTime string) (totalRequests, todayCostCents int, avgLatencyMs float64, successRate float64) {
+	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM call_logs WHERE org_id = $1`, orgID).Scan(&totalRequests)
 	h.db.QueryRow(ctx,
-		`SELECT COALESCE(SUM(cost_cents), 0) FROM call_logs WHERE created_at >= $1 AND created_at <= $2`,
-		startTime, endTime,
+		`SELECT COALESCE(SUM(cost_cents), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3`,
+		orgID, startTime, endTime,
 	).Scan(&todayCostCents)
 	h.db.QueryRow(ctx,
-		`SELECT COALESCE(AVG(latency_ms), 0) FROM call_logs WHERE created_at >= $1 AND created_at <= $2`,
-		startTime, endTime,
+		`SELECT COALESCE(AVG(latency_ms), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3`,
+		orgID, startTime, endTime,
 	).Scan(&avgLatencyMs)
 
 	var successCount, totalCount int
 	h.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM call_logs WHERE created_at >= $1 AND created_at <= $2 AND status_code >= 200 AND status_code < 300`,
-		startTime, endTime,
+		`SELECT COUNT(*) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3 AND status_code >= 200 AND status_code < 300`,
+		orgID, startTime, endTime,
 	).Scan(&successCount)
 	h.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM call_logs WHERE created_at >= $1 AND created_at <= $2`,
-		startTime, endTime,
+		`SELECT COUNT(*) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3`,
+		orgID, startTime, endTime,
 	).Scan(&totalCount)
 	if totalCount > 0 {
 		successRate = float64(successCount) / float64(totalCount)
@@ -78,10 +81,10 @@ func (h *Handler) dashboardOverview(ctx context.Context, startTime, endTime stri
 }
 
 // dashboardRecentLogs returns the last 10 call logs.
-func (h *Handler) dashboardRecentLogs(ctx context.Context) []map[string]interface{} {
+func (h *Handler) dashboardRecentLogs(ctx context.Context, orgID int64) []map[string]interface{} {
 	rows, err := h.db.Query(ctx,
 		`SELECT request_id, model, status_code, latency_ms, cost_cents, created_at
-		 FROM call_logs ORDER BY created_at DESC LIMIT 10`)
+		 FROM call_logs WHERE org_id = $1 ORDER BY created_at DESC LIMIT 10`, orgID)
 	if err != nil {
 		return nil
 	}
@@ -121,13 +124,13 @@ func (h *Handler) dashboardModelPrices(ctx context.Context) []map[string]interfa
 }
 
 // dashboardDailyTrend returns 7-day daily request count and cost.
-func (h *Handler) dashboardDailyTrend(ctx context.Context, startTime, endTime string) []map[string]interface{} {
+func (h *Handler) dashboardDailyTrend(ctx context.Context, orgID int64, startTime, endTime string) []map[string]interface{} {
 	rows, err := h.db.Query(ctx,
 		`SELECT DATE(created_at) AS day, COUNT(*) AS requests, COALESCE(SUM(cost_cents), 0) AS cost
 		 FROM call_logs
-		 WHERE created_at >= $1 AND created_at <= $2
+		 WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3
 		 GROUP BY DATE(created_at)
-		 ORDER BY day ASC`, startTime, endTime)
+		 ORDER BY day ASC`, orgID, startTime, endTime)
 	if err != nil {
 		return nil
 	}
@@ -145,21 +148,22 @@ func (h *Handler) dashboardDailyTrend(ctx context.Context, startTime, endTime st
 }
 
 // dashboardWalletInfo returns wallet balance, granted, frozen, and threshold.
-func (h *Handler) dashboardWalletInfo(ctx context.Context) (balance, granted, frozen, threshold int) {
+func (h *Handler) dashboardWalletInfo(ctx context.Context, orgID int64) (balance, granted, frozen, threshold int) {
 	h.db.QueryRow(ctx,
 		`SELECT COALESCE(balance,0), COALESCE(granted_balance,0), COALESCE(frozen,0), COALESCE(low_balance_threshold_cents,0)
-		 FROM wallets ORDER BY org_id LIMIT 1`,
+		 FROM wallets WHERE org_id = $1`,
+		orgID,
 	).Scan(&balance, &granted, &frozen, &threshold)
 	return
 }
 
 // dashboardModelDistribution returns top 5 models by request count in the time range.
-func (h *Handler) dashboardModelDistribution(ctx context.Context, startTime, endTime string) []map[string]interface{} {
+func (h *Handler) dashboardModelDistribution(ctx context.Context, orgID int64, startTime, endTime string) []map[string]interface{} {
 	rows, err := h.db.Query(ctx,
 		`SELECT model, COUNT(*) as cnt
 		 FROM call_logs
-		 WHERE created_at >= $1 AND created_at <= $2
-		 GROUP BY model ORDER BY cnt DESC LIMIT 5`, startTime, endTime)
+		 WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3
+		 GROUP BY model ORDER BY cnt DESC LIMIT 5`, orgID, startTime, endTime)
 	if err != nil {
 		return nil
 	}
@@ -212,27 +216,27 @@ func (h *Handler) dashboardChannelHealth(ctx context.Context, startTime, endTime
 }
 
 // dashboardYesterdayDelta computes delta vs yesterday for cost, latency, and success rate.
-func (h *Handler) dashboardYesterdayDelta(ctx context.Context, todayCost int, todayLatency, todayRate float64) (deltaCost int, deltaLatency, deltaRate float64) {
+func (h *Handler) dashboardYesterdayDelta(ctx context.Context, orgID int64, todayCost int, todayLatency, todayRate float64) (deltaCost int, deltaLatency, deltaRate float64) {
 	yesterdayStart := time.Now().Add(-48 * time.Hour).Format(time.RFC3339)
 	yesterdayEnd := time.Now().Add(-24 * time.Hour).Format(time.RFC3339)
 	var yesterCost int
 	h.db.QueryRow(ctx,
-		`SELECT COALESCE(SUM(cost_cents), 0) FROM call_logs WHERE created_at >= $1 AND created_at <= $2`,
-		yesterdayStart, yesterdayEnd,
+		`SELECT COALESCE(SUM(cost_cents), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3`,
+		orgID, yesterdayStart, yesterdayEnd,
 	).Scan(&yesterCost)
 	var yesterLatency float64
 	h.db.QueryRow(ctx,
-		`SELECT COALESCE(AVG(latency_ms), 0) FROM call_logs WHERE created_at >= $1 AND created_at <= $2`,
-		yesterdayStart, yesterdayEnd,
+		`SELECT COALESCE(AVG(latency_ms), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3`,
+		orgID, yesterdayStart, yesterdayEnd,
 	).Scan(&yesterLatency)
 	var yesterSuccess, yesterTotal int
 	h.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM call_logs WHERE created_at >= $1 AND created_at <= $2 AND status_code >= 200 AND status_code < 300`,
-		yesterdayStart, yesterdayEnd,
+		`SELECT COUNT(*) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3 AND status_code >= 200 AND status_code < 300`,
+		orgID, yesterdayStart, yesterdayEnd,
 	).Scan(&yesterSuccess)
 	h.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM call_logs WHERE created_at >= $1 AND created_at <= $2`,
-		yesterdayStart, yesterdayEnd,
+		`SELECT COUNT(*) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3`,
+		orgID, yesterdayStart, yesterdayEnd,
 	).Scan(&yesterTotal)
 	yesterRate := 0.0
 	if yesterTotal > 0 {

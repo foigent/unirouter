@@ -305,10 +305,10 @@ FREEZE_REQUESTED → FREEZE_SUCCESS → SETTLED
 | `org_viewer` | 本组织 | ❌ | 只读 | 只读 | 只读 | ❌ |
 
 **Acceptance Criteria**：
-- [ ] JWT 登录/鉴权正常
-- [ ] `platform_admin` 可操作所有资源
-- [ ] `org_admin` 只能操作本组织资源
-- [ ] `org_viewer` 只能查看本组织资源
+- [x] JWT 登录/鉴权正常
+- [x] `platform_admin` 可操作所有资源
+- [x] `org_admin` 只能操作本组织资源 (含 Dashboard org_id 过滤)
+- [x] `org_viewer` 只能查看本组织资源
 
 ---
 
@@ -416,11 +416,11 @@ HEALTHY ──连续失败≥5次──→ OPEN（熔断）
 **不触发熔断的错误**：400（客户端）、401（标记 Key 无效）、429（Key 冷却 60s）
 
 **Acceptance Criteria**：
-- [ ] 渠道 A 全部 Key 失败 → 自动切换到同模型的渠道 B
-- [ ] 连续 5 次失败 → 渠道进入熔断状态
-- [ ] 熔断 5 分钟后进入半开放状态
-- [ ] 半开放状态只放行 10% 流量
-- [ ] 半开放状态成功后恢复 HEALTHY
+- [x] 渠道 A 全部 Key 失败 → 自动切换到同模型的渠道 B
+- [x] 连续 5 次失败 → 渠道进入熔断状态
+- [x] 熔断 5 分钟后进入半开放状态
+- [x] 半开放状态只放行 10% 流量
+- [x] 半开放状态成功后恢复 HEALTHY
 
 ---
 

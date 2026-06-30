@@ -132,3 +132,26 @@ func NewDefaultAdmissionController() *AdmissionController {
 func NewProductionAdmissionController() *AdmissionController {
 	return NewAdmissionController(500, 50) // 500 global, 50 per org
 }
+
+// AdmissionFromContext creates admission middleware that reads org ID from context.
+// Use this when GatewayAuth has already run and set CtxOrgID.
+func AdmissionFromContext(ac *AdmissionController) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			orgID := int(GetOrgIDFromContext(r.Context()))
+			if orgID == 0 {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			if !ac.TryAcquire(orgID) {
+				http.Error(w, `{"error":{"type":"rate_limit.exceeded","message":"Too many concurrent requests"}}`, http.StatusTooManyRequests)
+				RecordBillingFreeze("admission_rejected")
+				return
+			}
+			defer ac.Release(orgID)
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}

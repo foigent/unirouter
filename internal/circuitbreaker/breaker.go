@@ -3,6 +3,7 @@ package circuitbreaker
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"time"
 )
@@ -58,13 +59,22 @@ func (b *Breaker) Allow() bool {
 		if time.Since(b.lastFail) > b.recoverAfter {
 			b.state = StateHalfOpen
 			log.Printf("[circuit] transitioning to half_open after %v", b.recoverAfter)
-			return true
+			return b.allowHalfOpen()
 		}
 		return false
 	case StateHalfOpen:
-		return true
+		return b.allowHalfOpen()
 	}
 	return false
+}
+
+// allowHalfOpen samples requests in half-open state based on halfOpenPct.
+// Returns true if this request should be allowed through.
+func (b *Breaker) allowHalfOpen() bool {
+	if b.halfOpenPct <= 0 || b.halfOpenPct >= 100 {
+		return true
+	}
+	return rand.Intn(100) < b.halfOpenPct
 }
 
 // RecordSuccess records a successful request.

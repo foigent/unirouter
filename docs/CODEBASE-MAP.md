@@ -1,0 +1,119 @@
+# UniRouter Codebase Map
+
+> Purpose: help agents locate implementation quickly without rediscovering the repository from scratch.
+
+## Runtime Entry
+
+| Area | Path | Notes |
+|------|------|-------|
+| Main server | `cmd/uniroute/main.go` | Loads config, connects Postgres/Redis, runs migrations, wires gateway/admin routes, starts background cleanup and alerts |
+| Main tests | `cmd/uniroute/main_test.go` | Top-level route behavior tests |
+| Config | `internal/config/config.go` | Environment config and validation, including `ENCRYPTION_KEY` length |
+| Database | `internal/db/postgres.go` | pgx pool setup and health |
+| Redis | `internal/redisx/redis.go` | Redis setup, health, wallet cache helpers |
+| Migrations | `migrations/*.sql` | Base schema plus wallet/schema/PRD alignment migrations |
+
+## Backend Packages
+
+| Package | Responsibility |
+|---------|----------------|
+| `internal/admin` | Admin REST handlers: auth, channels, channel keys, API keys, wallet, grants, logs, dashboard, prices, users, settings, audit, sensitive words, channel tests |
+| `internal/auth` | JWT generation/validation, API key hashing, upstream key AES-GCM encryption/decryption |
+| `internal/billing` | Cost calculation, freeze/settle/cancel, price provider, budget alert |
+| `internal/circuitbreaker` | Standalone circuit breaker implementation and tests |
+| `internal/filter` | DFA sensitive-word filter |
+| `internal/gateway` | Model routing, upstream relay, chat completions, embeddings, model listing, request logging |
+| `internal/middleware` | Gateway auth, admin auth, rate limit, admission control, CORS, Prometheus metrics |
+| `internal/migrate` | SQL migration runner |
+| `internal/models` | Shared data model types |
+| `internal/testutil` | Mock DB and test DB helpers |
+| `internal/tokenutil` | Token estimation and stream counting |
+| `internal/logger` | Logging helpers |
+
+## Main Backend Routes
+
+Defined in `cmd/uniroute/main.go`.
+
+| Route Group | Routes |
+|-------------|--------|
+| Health | `GET /`, `GET /health/live`, `GET /health/ready` |
+| Metrics | `GET /metrics` |
+| Gateway | `POST /v1/chat/completions`, `POST /v1/embeddings`, `GET /v1/models` |
+| Auth | `POST /api/v1/auth/login`, `GET /api/v1/me` |
+| Channels | `GET/POST /api/v1/channels`, `GET/PUT/DELETE /api/v1/channels/{id}`, `POST /api/v1/channels/{id}/test` |
+| API keys | `GET/POST /api/v1/keys`, `GET/PUT /api/v1/keys/{id}`, `POST /api/v1/keys/{id}/disable` |
+| Channel keys | `GET/POST /api/v1/channel-keys`, `PUT/DELETE /api/v1/channel-keys/{id}` |
+| Wallet | `GET /api/v1/wallet`, `POST /api/v1/wallet/topup`, `POST /api/v1/wallet/adjust`, `GET /api/v1/wallet/transactions`, `GET /api/v1/wallet/transactions/export` |
+| Logs/dashboard | `GET /api/v1/logs`, `GET /api/v1/logs/{id}`, `GET /api/v1/dashboard/stats` |
+| Pricing | `GET/POST /api/v1/model-prices`, `PUT/DELETE /api/v1/model-prices/{id}`, `GET /api/v1/model-names`, `GET/POST /api/v1/org-model-prices`, `PUT/DELETE /api/v1/org-model-prices/{id}` |
+| Users/access | User CRUD, grants, audit logs |
+| Settings/filter | Settings CRUD and sensitive-word CRUD |
+| Docs | `GET /docs` simple HTML endpoint |
+
+Contract guard: `cmd/uniroute/route_parity_test.go` checks the frontend admin API routes against registered backend route strings. `PUT /api/v1/me/password` is now registered in `cmd/uniroute/main.go`.
+
+OpenAPI snapshot: `docs/tech-ref/05-openapi-spec.yaml` was refreshed during PRD1 closeout to remove stale `/api/v1/admin/*` routes and include current paths such as `PUT /api/v1/me/password`.
+
+## Frontend Map
+
+| Area | Path |
+|------|------|
+| App routes | `frontend/src/main.tsx` |
+| Sidebar/navigation shell | `frontend/src/App.tsx` |
+| API client | `frontend/src/api/client.ts` |
+| Auth store | `frontend/src/store/auth.ts` |
+| Pages | `frontend/src/pages/*.tsx` |
+| Shared error boundary | `frontend/src/components/ErrorBoundary.tsx` |
+| Global CSS | `frontend/src/index.css` |
+| Tests | `frontend/src/**/__tests__/*.test.tsx`, `frontend/src/**/__tests__/*.test.ts` |
+
+Frontend route pages currently include dashboard, channels, channel keys, API keys, wallet, logs, users, model prices, org model prices, grants, audit logs, reconciliation, test page, settings, and login.
+
+## Data Model
+
+Base schema is in `migrations/000001_init_schema.up.sql`. Main tables:
+
+| Domain | Tables |
+|--------|--------|
+| Tenant/user | `orgs`, `users` |
+| Routing | `channels`, `channel_keys` |
+| Client access | `api_keys` |
+| Pricing | `model_prices`, `org_model_prices` |
+| Billing | `wallets`, `transactions`, `grants`, `freeze_idempotency` |
+| Observability | `call_logs`, `audit_logs` |
+| Configuration | `settings` |
+
+Later migrations add wallet features, org pricing and alert fields, schema gap fixes, and PRD alignment fields like `call_logs.requested_model`, `call_logs.ip_address`, `audit_logs.source`, and `wallets.freeze_expire_at`.
+
+## Security Notes
+
+Current code uses AES-GCM helpers in `internal/auth/auth.go` for upstream key encryption/decryption, and config enforces a 32-byte `ENCRYPTION_KEY`. Historical docs that mention XOR encryption are stale unless current code proves otherwise.
+
+Admin auth and gateway auth are separate:
+
+- Admin: JWT via `middleware.AdminAuth`.
+- Gateway: API key via `middleware.GatewayAuth`.
+
+## Deployment And Operations
+
+| File | Purpose |
+|------|---------|
+| `Dockerfile` | Builds single Go backend binary |
+| `frontend/Dockerfile` | Builds frontend static site served by nginx |
+| `docker-compose.yml` | Postgres, Redis, backend, frontend, Prometheus, Grafana |
+| `docker-compose.canary.yml` | Nginx and canary backend override |
+| `nginx/nginx.conf` | Reverse proxy/canary routing |
+| `infra/prometheus/prometheus.yml` | Prometheus scrape config |
+| `infra/grafana/dashboards/unirouter-overview.json` | Grafana dashboard |
+| `infra/loadtest/k6-chat-completions.js` | k6 load test |
+
+## Verification Commands
+
+```bash
+go test ./...
+go vet ./...
+cd frontend && npm test -- --run
+cd frontend && npm run build
+```
+
+Potentially environment-dependent tests use a real database only when configured by test helpers. Read `internal/testutil/testdb.go` before assuming integration tests always run.

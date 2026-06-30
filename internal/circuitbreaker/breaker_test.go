@@ -33,7 +33,7 @@ func TestBreaker_OpenAfterThreshold(t *testing.T) {
 }
 
 func TestBreaker_HalfOpenAfterRecovery(t *testing.T) {
-	b := NewBreaker(2, 50*time.Millisecond, 50)
+	b := NewBreaker(2, 50*time.Millisecond, 100)
 	b.RecordFailure()
 	b.RecordFailure()
 	if b.state != StateOpen {
@@ -50,7 +50,7 @@ func TestBreaker_HalfOpenAfterRecovery(t *testing.T) {
 }
 
 func TestBreaker_HalfOpenSuccess(t *testing.T) {
-	b := NewBreaker(2, 50*time.Millisecond, 50)
+	b := NewBreaker(2, 50*time.Millisecond, 100)
 	b.RecordFailure()
 	b.RecordFailure()
 	time.Sleep(60 * time.Millisecond)
@@ -63,7 +63,7 @@ func TestBreaker_HalfOpenSuccess(t *testing.T) {
 }
 
 func TestBreaker_HalfOpenFailure(t *testing.T) {
-	b := NewBreaker(2, 50*time.Millisecond, 50)
+	b := NewBreaker(2, 50*time.Millisecond, 100)
 	b.RecordFailure()
 	b.RecordFailure()
 	time.Sleep(60 * time.Millisecond)
