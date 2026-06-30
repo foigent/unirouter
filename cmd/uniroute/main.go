@@ -261,6 +261,7 @@ func main() {
 	mux.Handle("PUT /api/v1/model-prices/{id}", adminAuth(http.HandlerFunc(adminHandler.UpdateModelPrice)))
 	mux.Handle("DELETE /api/v1/model-prices/{id}", adminAuth(http.HandlerFunc(adminHandler.DeleteModelPrice)))
 	// Org model prices (org-level pricing overrides)
+	mux.Handle("GET /api/v1/model-names", adminAuth(http.HandlerFunc(adminHandler.GetModelNames)))
 	mux.Handle("GET /api/v1/org-model-prices", adminAuth(http.HandlerFunc(adminHandler.ListOrgModelPrices)))
 	mux.Handle("POST /api/v1/org-model-prices", adminAuth(http.HandlerFunc(adminHandler.CreateOrgModelPrice)))
 	mux.Handle("PUT /api/v1/org-model-prices/{id}", adminAuth(http.HandlerFunc(adminHandler.UpdateOrgModelPrice)))

@@ -14,6 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/uniroute/unirouter/internal/testutil"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/billing"
@@ -69,7 +70,7 @@ func (m *mockBilling) Cancel(ctx context.Context, requestID string, orgID int64)
 
 // --- Helper to create Relay with mocks ---
 
-func newTestRelay(db *mockDB, b *mockBilling) *Relay {
+func newTestRelay(db *testutil.MockDB, b *mockBilling) *Relay {
 	return &Relay{
 		db:      db,
 		router:  NewRouter(db),
@@ -80,10 +81,10 @@ func newTestRelay(db *mockDB, b *mockBilling) *Relay {
 // --- HandleModels tests ---
 
 func TestHandleModels_WithAllowedModels(t *testing.T) {
-	db := &mockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &mockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*string) = "gpt-4o,gpt-3.5-turbo"
 					return nil
 				},
@@ -113,18 +114,18 @@ func TestHandleModels_WithAllowedModels(t *testing.T) {
 
 func TestHandleModels_FallbackToModelPrices(t *testing.T) {
 	callCount := 0
-	db := &mockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &mockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					callCount++
 					return fmt.Errorf("no key found")
 				},
 			}
 		},
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &mockRows{
-				rows: []func(dest ...any) error{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*string) = "gpt-4o"
 						return nil
@@ -159,15 +160,15 @@ func TestHandleModels_FallbackToModelPrices(t *testing.T) {
 }
 
 func TestHandleModels_FallbackQueryError(t *testing.T) {
-	db := &mockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &mockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					return fmt.Errorf("no key")
 				},
 			}
 		},
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			return nil, fmt.Errorf("db error")
 		},
 	}
@@ -188,18 +189,18 @@ func TestHandleModels_FallbackQueryError(t *testing.T) {
 
 func TestHandleModels_EmptyAllowedModels(t *testing.T) {
 	// When allowed_models is empty, falls back to model_prices
-	db := &mockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &mockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*string) = "" // empty allowed_models
 					return nil
 				},
 			}
 		},
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &mockRows{
-				rows: []func(dest ...any) error{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*string) = "gpt-4o"
 						return nil
@@ -226,7 +227,7 @@ func TestHandleModels_EmptyAllowedModels(t *testing.T) {
 // --- calculateCost tests ---
 
 func TestCalculateCost_Success(t *testing.T) {
-	relay := newTestRelay(&mockDB{}, &mockBilling{
+	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
 		queryModelPriceFn: func(ctx context.Context, orgID int64, model string) (int, int, error) {
 			return 5, 15, nil // 5 cents per 1K input, 15 cents per 1K output
 		},
@@ -240,7 +241,7 @@ func TestCalculateCost_Success(t *testing.T) {
 }
 
 func TestCalculateCost_MinimumCost(t *testing.T) {
-	relay := newTestRelay(&mockDB{}, &mockBilling{
+	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
 		queryModelPriceFn: func(ctx context.Context, orgID int64, model string) (int, int, error) {
 			return 1, 1, nil
 		},
@@ -254,7 +255,7 @@ func TestCalculateCost_MinimumCost(t *testing.T) {
 }
 
 func TestCalculateCost_FallbackOnError(t *testing.T) {
-	relay := newTestRelay(&mockDB{}, &mockBilling{
+	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
 		queryModelPriceFn: func(ctx context.Context, orgID int64, model string) (int, int, error) {
 			return 0, 0, fmt.Errorf("db error")
 		},
@@ -272,8 +273,8 @@ func TestCalculateCost_FallbackOnError(t *testing.T) {
 
 func TestRecordRequest_Success(t *testing.T) {
 	execCalled := false
-	db := &mockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			execCalled = true
 			return pgconn.CommandTag{}, nil
 		},
@@ -288,8 +289,8 @@ func TestRecordRequest_Success(t *testing.T) {
 }
 
 func TestRecordRequest_DBError(t *testing.T) {
-	db := &mockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, fmt.Errorf("db error")
 		},
 	}
@@ -302,7 +303,7 @@ func TestRecordRequest_DBError(t *testing.T) {
 // --- checkBudgetAlert tests ---
 
 func TestCheckBudgetAlert_NilAlertSvc(t *testing.T) {
-	relay := newTestRelay(&mockDB{}, &mockBilling{})
+	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{})
 	relay.alertSvc = nil
 
 	// Should not panic
@@ -312,7 +313,7 @@ func TestCheckBudgetAlert_NilAlertSvc(t *testing.T) {
 // --- SetAlertService tests ---
 
 func TestSetAlertService(t *testing.T) {
-	relay := newTestRelay(&mockDB{}, &mockBilling{})
+	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{})
 	relay.SetAlertService(nil, "https://webhook.example.com", 5000)
 
 	if relay.webhookURL != "https://webhook.example.com" {
@@ -326,7 +327,7 @@ func TestSetAlertService(t *testing.T) {
 // --- NewRelay tests ---
 
 func TestNewRelay(t *testing.T) {
-	db := &mockDB{}
+	db := &testutil.MockDB{}
 	b := &mockBilling{}
 	relay := NewRelay(db, nil, nil, b, nil, []byte("0123456789abcdef01234567"))
 	if relay == nil {
@@ -337,7 +338,7 @@ func TestNewRelay(t *testing.T) {
 // --- HandleChatCompletion basic tests ---
 
 func TestHandleChatCompletion_NoModel(t *testing.T) {
-	relay := newTestRelay(&mockDB{}, &mockBilling{})
+	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{})
 
 	body := `{"messages":[{"role":"user","content":"hello"}]}`
 	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(body))
@@ -356,9 +357,9 @@ func TestHandleChatCompletion_NoModel(t *testing.T) {
 }
 
 func TestHandleChatCompletion_NoMessages(t *testing.T) {
-	db := &mockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &mockRows{}, nil
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{}, nil
 		},
 	}
 	relay := newTestRelay(db, &mockBilling{
@@ -385,7 +386,7 @@ func TestHandleChatCompletion_NoMessages(t *testing.T) {
 }
 
 func TestHandleChatCompletion_InvalidJSON(t *testing.T) {
-	relay := newTestRelay(&mockDB{}, &mockBilling{})
+	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{})
 
 	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -403,9 +404,9 @@ func TestHandleChatCompletion_InvalidJSON(t *testing.T) {
 }
 
 func TestHandleChatCompletion_NoRoute(t *testing.T) {
-	db := &mockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &mockRows{}, nil // no routes
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{}, nil // no routes
 		},
 	}
 	relay := newTestRelay(db, &mockBilling{
@@ -431,7 +432,7 @@ func TestHandleChatCompletion_NoRoute(t *testing.T) {
 }
 
 func TestHandleChatCompletion_FreezeInsufficientBalance(t *testing.T) {
-	relay := newTestRelay(&mockDB{}, &mockBilling{
+	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
 			return &billing.FreezeResult{Success: false, ErrorCode: "insufficient_balance", ErrorDetail: "balance too low"}, nil
 		},
@@ -454,7 +455,7 @@ func TestHandleChatCompletion_FreezeInsufficientBalance(t *testing.T) {
 }
 
 func TestHandleChatCompletion_FreezeError(t *testing.T) {
-	relay := newTestRelay(&mockDB{}, &mockBilling{
+	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
 			return nil, fmt.Errorf("billing service down")
 		},
@@ -479,7 +480,7 @@ func TestHandleChatCompletion_FreezeError(t *testing.T) {
 // --- HandleEmbeddings basic tests ---
 
 func TestHandleEmbeddings_NoModel(t *testing.T) {
-	relay := newTestRelay(&mockDB{}, &mockBilling{})
+	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{})
 
 	body := `{"input":"hello world"}`
 	req := httptest.NewRequest("POST", "/v1/embeddings", strings.NewReader(body))
@@ -498,7 +499,7 @@ func TestHandleEmbeddings_NoModel(t *testing.T) {
 }
 
 func TestHandleEmbeddings_InvalidJSON(t *testing.T) {
-	relay := newTestRelay(&mockDB{}, &mockBilling{})
+	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{})
 
 	req := httptest.NewRequest("POST", "/v1/embeddings", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -516,7 +517,7 @@ func TestHandleEmbeddings_InvalidJSON(t *testing.T) {
 }
 
 func TestHandleEmbeddings_FreezeInsufficientBalance(t *testing.T) {
-	relay := newTestRelay(&mockDB{}, &mockBilling{
+	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
 			return &billing.FreezeResult{Success: false, ErrorCode: "insufficient_balance"}, nil
 		},
@@ -539,9 +540,9 @@ func TestHandleEmbeddings_FreezeInsufficientBalance(t *testing.T) {
 }
 
 func TestHandleEmbeddings_NoRoute(t *testing.T) {
-	db := &mockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &mockRows{}, nil
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{}, nil
 		},
 	}
 	relay := newTestRelay(db, &mockBilling{
@@ -573,8 +574,8 @@ var _ = pgtype.Int4{}
 
 func TestRelayNonStreamRequest_Success(t *testing.T) {
 	settleCalled := false
-	db := &mockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -619,8 +620,8 @@ func TestRelayNonStreamRequest_Success(t *testing.T) {
 }
 
 func TestRelayNonStreamRequest_SettleError(t *testing.T) {
-	db := &mockDB{
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -655,16 +656,16 @@ func TestRelayNonStreamRequest_SettleError(t *testing.T) {
 
 func TestRelayStreamRequest_NormalFlow(t *testing.T) {
 	settleCalled := false
-	db := &mockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &mockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int) = 10000 // balance
 					return nil
 				},
 			}
 		},
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -727,16 +728,16 @@ func TestRelayStreamRequest_NormalFlow(t *testing.T) {
 
 func TestRelayStreamRequest_NoUpstreamUsage(t *testing.T) {
 	settleCalled := false
-	db := &mockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &mockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int) = 10000
 					return nil
 				},
 			}
 		},
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -774,16 +775,16 @@ func TestRelayStreamRequest_NoUpstreamUsage(t *testing.T) {
 }
 
 func TestRelayStreamRequest_SettleError(t *testing.T) {
-	db := &mockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &mockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int) = 10000
 					return nil
 				},
 			}
 		},
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -815,16 +816,16 @@ func TestRelayStreamRequest_SettleError(t *testing.T) {
 }
 
 func TestRelayStreamRequest_UpstreamUsageSource(t *testing.T) {
-	db := &mockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &mockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int) = 10000
 					return nil
 				},
 			}
 		},
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -855,16 +856,16 @@ func TestRelayStreamRequest_UpstreamUsageSource(t *testing.T) {
 }
 
 func TestRelayStreamRequest_EmptyStream(t *testing.T) {
-	db := &mockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &mockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int) = 10000
 					return nil
 				},
 			}
 		},
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -895,16 +896,16 @@ func TestRelayStreamRequest_EmptyStream(t *testing.T) {
 }
 
 func TestRelayStreamRequest_UnirouteExtension(t *testing.T) {
-	db := &mockDB{
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &mockRow{
-				scanFn: func(dest ...any) error {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					*dest[0].(*int) = 10000
 					return nil
 				},
 			}
 		},
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -960,12 +961,12 @@ func TestHandleChatCompletion_Success_NonStream(t *testing.T) {
 
 	// Mock DB: RouteAll needs channel query + key update + record insert
 	callCount := 0
-	db := &mockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			callCount++
 			// RouteAll query
-			return &mockRows{
-				rows: []func(dest ...any) error{
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1           // ch.ID
 						*dest[1].(*string) = "test-ch"  // ch.Name
@@ -989,15 +990,15 @@ func TestHandleChatCompletion_Success_NonStream(t *testing.T) {
 				},
 			}, nil
 		},
-		queryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &mockRow{
-				scanFn: func(dest ...any) error {
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
 					// For recordRequest or other QueryRow calls
 					return nil
 				},
 			}
 		},
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -1020,9 +1021,9 @@ func TestHandleChatCompletion_Success_NonStream(t *testing.T) {
 	encryptedKey, _ := auth.EncryptKey([]byte("sk-test-key"), encKey)
 
 	// Re-create the mock to return the encrypted key
-	db.queryFn = func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-		return &mockRows{
-			rows: []func(dest ...any) error{
+	db.QueryFn = func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+		return &testutil.MockRows{
+			Rows: []func(dest ...any) error{
 				func(dest ...any) error {
 					*dest[0].(*int64) = 1
 					*dest[1].(*string) = "test-ch"
@@ -1088,10 +1089,10 @@ func TestHandleChatCompletion_UpstreamError_AllFail(t *testing.T) {
 	encKey := []byte("0123456789abcdef01234567")
 	encryptedKey, _ := auth.EncryptKey([]byte("sk-test-key"), encKey)
 
-	db := &mockDB{
-		queryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &mockRows{
-				rows: []func(dest ...any) error{
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1
 						*dest[1].(*string) = "test-ch"
@@ -1115,7 +1116,7 @@ func TestHandleChatCompletion_UpstreamError_AllFail(t *testing.T) {
 				},
 			}, nil
 		},
-		execFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -1161,7 +1162,7 @@ func TestHandleChatCompletion_UpstreamError_AllFail(t *testing.T) {
 
 func TestHandleChatCompletion_ModelNotAllowed(t *testing.T) {
 	encKey := []byte("0123456789abcdef01234567")
-	db := &mockDB{}
+	db := &testutil.MockDB{}
 	b := &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
 			return &billing.FreezeResult{FreezeID: 1, Amount: 100, Success: true}, nil
@@ -1192,7 +1193,7 @@ func TestHandleChatCompletion_ModelNotAllowed(t *testing.T) {
 func TestHandleChatCompletion_SensitiveContent(t *testing.T) {
 	encKey := []byte("0123456789abcdef01234567")
 	f := filter.NewDFAFilter([]string{"赌博", "色情"})
-	db := &mockDB{}
+	db := &testutil.MockDB{}
 	b := &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
 			return &billing.FreezeResult{FreezeID: 1, Amount: 100, Success: true}, nil

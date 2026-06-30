@@ -23,6 +23,7 @@ export default function ReconciliationPage() {
   const [loading, setLoading] = useState(true);
   const [modelFilter, setModelFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [modelNames, setModelNames] = useState<string[]>([]);
 
   const load = (p = page) => {
     setLoading(true);
@@ -39,6 +40,7 @@ export default function ReconciliationPage() {
   };
 
   useEffect(() => { load(); }, [page, modelFilter, statusFilter]);
+  useEffect(() => { api.getModelNames().then((d: any) => setModelNames(d.data || [])).catch(() => {}); }, []);
 
   const columns = [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 80 },
@@ -83,9 +85,7 @@ export default function ReconciliationPage() {
             onChange={(v) => { setModelFilter((v as string) || ''); setPage(1); }}
             optionList={[
               { label: '全部模型', value: '' },
-              { label: 'gpt-4', value: 'gpt-4' },
-              { label: 'gpt-3.5-turbo', value: 'gpt-3.5-turbo' },
-              { label: 'claude-3-opus', value: 'claude-3-opus' },
+              ...modelNames.map(m => ({ label: m, value: m })),
             ]}
           />
           <Select

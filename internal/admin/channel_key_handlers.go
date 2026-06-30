@@ -1,0 +1,207 @@
+package admin
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/uniroute/unirouter/internal/auth"
+)
+
+func (h *Handler) ListChannelKeys(w http.ResponseWriter, r *http.Request) {
+	// Pagination
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+	offset := (page - 1) * pageSize
+
+	// Count total
+	var total int
+	err := h.db.QueryRow(r.Context(), `SELECT COUNT(*) FROM channel_keys`).Scan(&total)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Count failed"})
+		return
+	}
+
+	rows, err := h.db.Query(r.Context(),
+		`SELECT ck.id, ck.channel_id, c.name as channel_name, ck.key_enc, ck.allowed_models, ck.status,
+		        ck.fail_count, ck.last_used_at, ck.cooldown_until, ck.created_at
+		 FROM channel_keys ck
+		 JOIN channels c ON c.id = ck.channel_id
+		 ORDER BY ck.id ASC
+		 LIMIT $1 OFFSET $2`, pageSize, offset)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Query failed"})
+		return
+	}
+	defer rows.Close()
+
+	keys := make([]map[string]interface{}, 0)
+	for rows.Next() {
+		var id, channelID int64
+		var channelName, keyEnc, allowedModels, status string
+		var failCount int
+		var lastUsedAt, cooldownUntil *time.Time
+		var createdAt time.Time
+		rows.Scan(&id, &channelID, &channelName, &keyEnc, &allowedModels, &status, &failCount, &lastUsedAt, &cooldownUntil, &createdAt)
+		keys = append(keys, map[string]interface{}{
+			"id": id, "channel_id": channelID, "channel_name": channelName,
+			"key_prefix": maskKey(keyEnc), "allowed_models": allowedModels, "status": status,
+			"fail_count": failCount, "last_used_at": lastUsedAt, "cooldown_until": cooldownUntil, "created_at": createdAt,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": keys, "total": total})
+}
+
+func (h *Handler) CreateChannelKey(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ChannelID     int64  `json:"channel_id"`
+		Key           string `json:"key"`
+		AllowedModels string `json:"allowed_models"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
+		return
+	}
+
+	if req.ChannelID == 0 || req.Key == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "channel_id and key are required"})
+		return
+	}
+
+	// Encrypt the key
+	keyEnc, err := auth.EncryptKey([]byte(req.Key), h.encKey)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to encrypt key"})
+		return
+	}
+
+	var id int64
+	err = h.db.QueryRow(r.Context(),
+		`INSERT INTO channel_keys (channel_id, key_enc, allowed_models, status, fail_count, created_at, updated_at)
+		 VALUES ($1, $2, $3, 'active', 0, NOW(), NOW())
+		 RETURNING id`,
+		req.ChannelID, keyEnc, req.AllowedModels,
+	).Scan(&id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to create channel key"})
+		return
+	}
+
+	h.recordAudit(r.Context(), "channelkey.create", "channel_key", fmt.Sprintf("%d", id),
+		map[string]interface{}{"channel_id": req.ChannelID}, r.RemoteAddr)
+
+	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id})
+}
+
+func (h *Handler) UpdateChannelKey(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid ID"})
+		return
+	}
+
+	var req struct {
+		ChannelID     *int64  `json:"channel_id"`
+		Status        *string `json:"status"`
+		AllowedModels *string `json:"allowed_models"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
+		return
+	}
+
+	var sets []string
+	var args []interface{}
+	argIdx := 1
+
+	if req.ChannelID != nil {
+		sets = append(sets, fmt.Sprintf("channel_id = $%d", argIdx))
+		args = append(args, *req.ChannelID)
+		argIdx++
+	}
+	if req.Status != nil {
+		sets = append(sets, fmt.Sprintf("status = $%d", argIdx))
+		args = append(args, *req.Status)
+		argIdx++
+	}
+
+	if len(sets) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "No fields to update"})
+		return
+	}
+
+	sets = append(sets, "updated_at = NOW()")
+	args = append(args, id)
+
+	query := fmt.Sprintf("UPDATE channel_keys SET %s WHERE id = $%d", joinStrings(sets, ", "), argIdx)
+	tag, err := h.db.Exec(r.Context(), query, args...)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Channel key not found"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
+}
+
+func (h *Handler) DeleteChannelKey(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid ID"})
+		return
+	}
+
+	tag, err := h.db.Exec(r.Context(), `DELETE FROM channel_keys WHERE id = $1`, id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Delete failed"})
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Channel key not found"})
+		return
+	}
+
+	h.recordAudit(r.Context(), "channelkey.delete", "channel_key", idStr, map[string]interface{}{}, r.RemoteAddr)
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
+}
+
+// maskKey returns a masked version of an encrypted key, showing only the last 4 hex chars.
+func (h *Handler) GetModelNames(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.db.Query(r.Context(),
+		`SELECT DISTINCT model_name FROM model_prices ORDER BY model_name`)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Query failed"})
+		return
+	}
+	defer rows.Close()
+
+	names := make([]string, 0)
+	for rows.Next() {
+		var name string
+		rows.Scan(&name)
+		names = append(names, name)
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": names})
+}
+
+func maskKey(keyEnc string) string {
+	if len(keyEnc) <= 8 {
+		return "****"
+	}
+	return "****" + keyEnc[len(keyEnc)-4:]
+}
