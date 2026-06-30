@@ -39,6 +39,75 @@ Results:
 - Temporary current-source `/api/v1/dashboard/stats`: PASS
 - Temporary current-source `/api/v1/me/password` unauthenticated behavior: PASS, returned 401 through `AdminAuth`
 
+## Alibaba Cloud Smoke Evidence
+
+Environment:
+
+- Frontend / nginx base: `http://8.130.18.85:3000`
+- Backend direct health: `http://8.130.18.85:8080`
+- Prometheus: `http://8.130.18.85:9090`
+- Grafana: `http://8.130.18.85:3001`
+- Verified: 2026-07-01
+
+Commands/results:
+
+```bash
+curl -i http://8.130.18.85:8080/health/live
+# 200 {"status":"ok","service":"uniroute"}
+
+curl -i http://8.130.18.85:8080/health/ready
+# 200 {"status":"ready"}
+
+curl -i http://8.130.18.85:3000/
+# 200 frontend HTML, asset bundle index-kz7ioahi.js
+
+curl -i http://8.130.18.85:3000/health/ready
+# 200 {"status":"ready"}
+
+curl -i http://8.130.18.85:9090/-/healthy
+# 200 Prometheus Server is Healthy.
+
+curl -i http://8.130.18.85:3001/login
+# 200 Grafana login HTML
+```
+
+Admin API smoke through nginx:
+
+- `POST /api/v1/auth/login`: PASS, returned JWT for admin
+- `GET /api/v1/me`: PASS, returned active admin user
+- `GET /api/v1/dashboard/stats`: PASS
+- `GET /api/v1/channels?page=1&page_size=5`: PASS
+- `GET /api/v1/keys?page=1&page_size=5`: PASS
+- `GET /api/v1/channel-keys?page=1&page_size=5`: PASS
+- `GET /api/v1/wallet`: PASS
+- `GET /api/v1/wallet/transactions?page=1&page_size=5`: PASS
+- `GET /api/v1/logs?page=1&page_size=5`: PASS
+- `GET /api/v1/model-prices?page=1&page_size=5`: PASS
+- `GET /api/v1/model-names`: PASS
+- `GET /api/v1/org-model-prices?org_id=1&page=1&page_size=5`: PASS
+- `GET /api/v1/reconciliation?page=1&page_size=5`: PASS
+- `GET /api/v1/users?page=1&page_size=5`: PASS
+- `GET /api/v1/grants?page=1&page_size=5`: PASS
+- `GET /api/v1/audit-logs?page=1&page_size=5`: PASS
+- `GET /api/v1/settings`: PASS
+- `GET /api/v1/sensitive-words?page=1&page_size=5`: PASS
+
+Negative auth smoke:
+
+- `GET /v1/models` without API key through nginx: PASS, returned 401 `auth_error.invalid_api_key`
+- `GET /api/v1/channels?page=1&page_size=1` without admin token through nginx: PASS, returned 401 `auth_error.missing_token`
+
+Metrics smoke:
+
+- `GET http://8.130.18.85:8080/metrics`: PASS, returned Prometheus text metrics
+- `GET http://8.130.18.85:9090/-/healthy`: PASS, returned Prometheus healthy response
+
+Notes:
+
+- `http://8.130.18.85:3000/metrics` returns frontend HTML, so metrics should be verified via backend `:8080/metrics` or Prometheus `:9090`.
+- Scope was intentionally non-destructive: no real provider paid requests, no API key/channel/wallet mutations, no load test, no stream disconnect, and no failover/fault injection.
+- Cloud smoke exposed a handler quality issue where nullable database fields could be scanned into non-nullable Go types while `rows.Scan` errors were ignored, producing zero-value timestamps. Codex fixed this locally for API key and call-log list handlers; deployment needs a new build before that fix is visible in cloud.
+
 ## Code Fixes Completed
 
 ### PRD1-ENG-001: `/me/password` contract mismatch
@@ -82,19 +151,34 @@ Remaining:
 
 - Expand schema detail before using generated clients in PRD2
 
+### PRD1-ENG-003: admin list scan errors can produce zero-value fields
+
+Completed:
+
+- Made `ListAPIKeys` null-safe for `api_keys.budget_limit` with `COALESCE`
+- Made `ListLogs` null-safe for `call_logs.upstream_error` with `COALESCE`
+- Added row-level `Scan` error handling in both list handlers
+- Added regression tests for scan-error paths
+
+Files:
+
+- `internal/admin/key_handlers.go`
+- `internal/admin/log_handlers.go`
+- `internal/admin/admin_mock_test.go`
+
 ## External Acceptance Queue
 
 These items are not honestly closable from this workspace.
 
 | ID | Required Capability | Owner Stage | Blocking Reason | Evidence Needed |
 |----|---------------------|-------------|-----------------|-----------------|
-| EXT-001 | Docker Compose clean deployment | Sentinel/Atlas | `docker` is unavailable locally | `docker compose up --build` health output, backend/frontend/PG/Redis/Prometheus/Grafana status |
+| EXT-001 | Docker Compose / cloud deployment | Sentinel/Atlas | Basic Alibaba Cloud smoke passed; local Docker remains unavailable | Keep deployment logs/CI output as final release evidence |
 | EXT-002 | Real upstream provider E2E | Sentinel/Atlas or configured test environment | Requires valid provider keys and configured channels | Non-stream and stream `/v1/chat/completions` responses with `_uniroute`, call log rows, wallet before/after |
 | EXT-003 | Interrupted streaming settlement | Capable runtime tester | Requires controlled client disconnect against real stream | Call log with estimated usage and wallet settlement evidence |
 | EXT-004 | 100 concurrent billing requests | Capable runtime tester | Requires load tool and controlled test wallet | No negative balance, idempotency/freeze rows, latency/error summary |
 | EXT-005 | Failover and circuit breaker | Capable runtime tester | Requires controlled upstream failures | Primary channel fail counts, backup channel selected, circuit state/cooldown evidence |
 | EXT-006 | Browser/manual frontend validation | Human or browser-capable agent | Canary/OpenClaw has no visual capability | Walkthrough notes for Dashboard, Channels, Keys, Wallet, Logs, Settings |
-| EXT-007 | Grafana dashboard visual verification | Atlas or browser-capable operator | Requires deployed Grafana | Dashboard import/provisioning evidence and panel screenshot/manual notes |
+| EXT-007 | Grafana dashboard visual verification | Atlas or browser-capable operator | Grafana login is reachable; panels not visually verified by Codex | Dashboard import/provisioning evidence and panel screenshot/manual notes |
 | EXT-008 | Full typed OpenAPI schemas | Codex/Sentinel before typed-client work | Current spec is path-accurate but intentionally uses generic schemas for many admin resources | Detailed schemas matching handler payloads |
 
 ## Recommended Handoff

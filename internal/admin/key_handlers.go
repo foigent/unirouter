@@ -13,7 +13,7 @@ import (
 func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(r.Context(),
 		`SELECT ak.id, ak.org_id, ak.name, ak.key_prefix, ak.status, ak.rpm_limit, ak.qps_limit,
-		        ak.budget_limit, ak.allowed_ips, ak.allowed_models, ak.created_at,
+		        COALESCE(ak.budget_limit, 0), ak.allowed_ips, ak.allowed_models, ak.created_at,
 		        o.name as org_name
 		 FROM api_keys ak
 		 JOIN orgs o ON o.id = ak.org_id
@@ -32,13 +32,20 @@ func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 		var rpmLimit, qpsLimit, budgetLimit int
 		var allowedIPs, allowedModels string
 		var createdAt time.Time
-		rows.Scan(&id, &orgID, &name, &keyPrefix, &status, &rpmLimit, &qpsLimit, &budgetLimit, &allowedIPs, &allowedModels, &createdAt, &orgName)
+		if err := rows.Scan(&id, &orgID, &name, &keyPrefix, &status, &rpmLimit, &qpsLimit, &budgetLimit, &allowedIPs, &allowedModels, &createdAt, &orgName); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
+			return
+		}
 		keys = append(keys, map[string]interface{}{
 			"id": id, "org_id": orgID, "name": name, "key_prefix": keyPrefix,
 			"status": status, "rpm_limit": rpmLimit, "qps_limit": qpsLimit,
 			"budget_limit": budgetLimit, "allowed_ips": allowedIPs, "allowed_models": allowedModels,
 			"created_at": createdAt, "org_name": orgName,
 		})
+	}
+	if err := rows.Err(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Rows failed"})
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"data": keys, "total": len(keys)})

@@ -91,6 +91,29 @@ Codex completed the local code/test closeout items that are possible in this wor
 - Browser/manual UI validation requires a human or browser-capable step; Canary/OpenClaw cannot perform visual acceptance.
 - Grafana dashboard validation requires a running Grafana environment.
 
+## Cloud Deployment Evidence
+
+Alibaba Cloud non-destructive API smoke passed on 2026-07-01:
+
+- `http://8.130.18.85:3000/` returns frontend HTML.
+- `http://8.130.18.85:8080/health/live` returns 200.
+- `http://8.130.18.85:8080/health/ready` returns 200.
+- `http://8.130.18.85:8080/metrics` returns Prometheus text metrics.
+- `http://8.130.18.85:3000/health/ready` returns 200 through nginx.
+- `http://8.130.18.85:9090/-/healthy` returns 200.
+- `http://8.130.18.85:3001/login` returns Grafana login HTML.
+- Gateway no-key smoke through `:3000/v1/models` returns expected 401.
+- Admin no-token smoke through `:3000/api/v1/channels` returns expected 401.
+- Authenticated admin API smoke through `:3000` passed for login, `/api/v1/me`, dashboard, channels, keys, channel keys, wallet, wallet transactions, logs, model prices, model names, org model prices, reconciliation, users, grants, audit logs, settings, and sensitive words.
+- No real provider paid calls, write mutations, pressure tests, stream disconnects, or fault injection were run in this pass.
+
+Still external after cloud smoke:
+
+- Real provider E2E and billing/reconciliation evidence.
+- Browser/manual UI walkthrough.
+- Grafana panel-level visual verification.
+- Stress, failover, and interrupted-streaming scenarios.
+
 ## What Can Move To PRD2
 
 Only move an item to PRD2 if PRD1 can still be operated safely and the user explicitly agrees. Candidates may include deeper UI redesign, advanced analytics, SSO/2FA, SaaS multi-tenancy, semantic cache, and broader provider-specific capability tuning.

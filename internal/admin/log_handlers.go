@@ -101,7 +101,7 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 
 	selectQuery := fmt.Sprintf(
 		`SELECT id, request_id, model, provider, channel, prompt_tokens, completion_tokens, total_tokens,
-		        cost_cents, status_code, latency_ms, ttft_ms, upstream_status_code, upstream_error,
+		        cost_cents, status_code, latency_ms, ttft_ms, upstream_status_code, COALESCE(upstream_error, ''),
 		        usage_source, is_stream, created_at
 		 FROM call_logs%s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`,
 		whereClause, argIdx, argIdx+1)
@@ -123,9 +123,12 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 		var upstreamError, usageSource string
 		var isStream bool
 		var createdAt time.Time
-		rows.Scan(&id, &requestID, &model, &provider, &channel, &promptTokens, &completionTokens, &totalTokens,
+		if err := rows.Scan(&id, &requestID, &model, &provider, &channel, &promptTokens, &completionTokens, &totalTokens,
 			&costCents, &statusCode, &latencyMs, &ttftMs, &upstreamStatusCode, &upstreamError,
-			&usageSource, &isStream, &createdAt)
+			&usageSource, &isStream, &createdAt); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
+			return
+		}
 		logs = append(logs, map[string]interface{}{
 			"id": id, "request_id": requestID, "model": model, "provider": provider, "channel": channel,
 			"prompt_tokens": promptTokens, "completion_tokens": completionTokens, "total_tokens": totalTokens,
@@ -133,6 +136,10 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 			"upstream_status_code": upstreamStatusCode, "upstream_error": upstreamError,
 			"usage_source": usageSource, "is_stream": isStream, "created_at": createdAt,
 		})
+	}
+	if err := rows.Err(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Rows failed"})
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"data": logs, "total": total})

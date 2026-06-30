@@ -22,9 +22,9 @@
 |----------|--------|------------------|-------------------|
 | Admin can create/edit/disable channels | Implemented not accepted | Admin routes and frontend page exist | Current manual/API CRUD evidence needed |
 | Admin can create/disable API keys | Implemented not accepted | Routes and frontend page exist | Current manual/API CRUD evidence needed |
-| Admin can view billing and call logs | Implemented not accepted | Logs, wallet, reconciliation pages exist; local current-source smoke verified `/api/v1/settings` and `/api/v1/dashboard/stats` | Current full admin API/browser evidence needed |
+| Admin can view billing and call logs | E2E accepted | Non-destructive cloud API smoke verified authenticated GETs for dashboard, wallet, wallet transactions, logs, reconciliation, users, grants, audit logs, settings, sensitive words, model prices, org prices, keys, channel keys, and channels | Browser UX walkthrough still needed; mutation flows are intentionally not covered by this smoke |
 | Admin can top up and adjust wallet | Implemented not accepted | Routes and frontend page exist | Current manual/API evidence needed |
-| Docker Compose one-command deployment succeeds | Implemented not accepted | Compose files and runbook exist | Current clean-machine or clean-volume deployment evidence needed |
+| Docker Compose one-command deployment succeeds | Production verified | Alibaba Cloud smoke passed: frontend `:3000`, backend health `:8080`, Prometheus `:9090`, Grafana login `:3001`, admin login/me/dashboard/settings through nginx | Keep Sentinel/Atlas deployment logs as release evidence |
 
 ## Frontend UI
 
@@ -51,8 +51,8 @@
 | PRD Item | Status | Current Evidence | Gap To Acceptance |
 |----------|--------|------------------|-------------------|
 | Each request log includes request_id/org_id/channel_id | Implemented not accepted | `call_logs` schema and handlers exist | Current E2E log row evidence needed |
-| Prometheus `/metrics` returns metrics | E2E accepted | Temporary current-source backend on port 18080 returned Prometheus metric output | Reconfirm in deployed environment |
-| Grafana dashboard shows request rate, latency, error rate | Implemented not accepted | Grafana dashboard file exists | Current running Grafana screenshot/manual evidence needed |
+| Prometheus `/metrics` returns metrics | Production verified | Local current-source `/metrics` returned metrics; Alibaba Cloud backend `:8080/metrics` returned Prometheus text metrics; Prometheus `:9090/-/healthy` returned 200 | Keep Atlas deployment logs as release evidence |
+| Grafana dashboard shows request rate, latency, error rate | Implemented not accepted | Grafana `:3001/login` is reachable on Alibaba Cloud | Current running Grafana panel screenshot/manual evidence needed |
 
 ## Acceptance Rule
 

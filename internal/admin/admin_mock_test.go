@@ -1183,6 +1183,33 @@ func TestListAPIKeys_QueryError(t *testing.T) {
 	}
 }
 
+func TestListAPIKeys_ScanError(t *testing.T) {
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			if !strings.Contains(sql, "COALESCE(ak.budget_limit, 0)") {
+				t.Fatalf("expected budget_limit to be null-safe, got query: %s", sql)
+			}
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
+					func(dest ...any) error {
+						return fmt.Errorf("scan error")
+					},
+				},
+			}, nil
+		},
+	}
+	h := newTestHandler(db)
+
+	req := httptest.NewRequest("GET", "/keys", nil)
+	rec := httptest.NewRecorder()
+
+	h.ListAPIKeys(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", rec.Code)
+	}
+}
+
 // ===================================================================
 // CreateAPIKey tests
 // ===================================================================
@@ -2189,6 +2216,41 @@ func TestListLogs_QueryError(t *testing.T) {
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest("GET", "/logs", nil)
+	rec := httptest.NewRecorder()
+
+	h.ListLogs(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", rec.Code)
+	}
+}
+
+func TestListLogs_ScanError(t *testing.T) {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
+					*dest[0].(*int) = 1
+					return nil
+				},
+			}
+		},
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			if !strings.Contains(sql, "COALESCE(upstream_error, '')") {
+				t.Fatalf("expected upstream_error to be null-safe, got query: %s", sql)
+			}
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
+					func(dest ...any) error {
+						return fmt.Errorf("scan error")
+					},
+				},
+			}, nil
+		},
+	}
+	h := newTestHandler(db)
+
+	req := httptest.NewRequest("GET", "/logs?page=1&page_size=10", nil)
 	rec := httptest.NewRecorder()
 
 	h.ListLogs(rec, req)
