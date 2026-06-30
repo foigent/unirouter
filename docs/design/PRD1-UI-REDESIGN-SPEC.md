@@ -1,6 +1,6 @@
 # PRD1 UI Redesign Execution Spec
 
-Status: implemented locally, awaiting verification
+Status: reference-inspired pass implemented locally, awaiting verification
 Owner: Codex
 Last updated: 2026-07-01
 
@@ -13,7 +13,7 @@ The redesign stays inside the PRD1 scope:
 - No new product features.
 - No backend contract changes.
 - No replacement of Semi UI.
-- No decorative hero, gradients, blobs, or marketing layout.
+- No marketing landing page. The admin console may use restrained gradients, glass surfaces, and dashboard previews where they directly support product context.
 
 ## Confirmed Root Cause
 
@@ -55,20 +55,40 @@ frontend/src/index.css
 Key classes:
 
 - `ur-app-shell`, `ur-sider`, `ur-content`
+- `ur-topbar`, `ur-global-search`, `ur-user-chip`
 - `ur-page`, `ur-page-wide`, `ur-page-header`
 - `ur-surface`, `ur-table-shell`
 - `ur-kpi-grid`, `ur-metric`
+- `ur-dashboard-hero`, `ur-hero-insight`
 - `ur-explorer`, `ur-explorer-with-detail`
 - `ur-channel-card`, `ur-wallet-budget`
-- `ur-login-page`, `ur-login-panel`
+- `ur-login-page`, `ur-login-shell`, `ur-login-showcase`, `ur-login-panel`
+
+## Reference-Inspired Visual Pass
+
+User-provided references:
+
+- Dribbble AdFlux Marketing Dashboard Web Design
+- Pinterest light dashboard reference image
+
+Codex applied the reusable parts of those references to an enterprise AI gateway console:
+
+- Dark, high-contrast left navigation with clear active state.
+- Soft light workspace background with elevated white/glass panels.
+- Pill-shaped top search and operational status controls.
+- Larger first-viewport Dashboard command panel instead of a plain page header.
+- Login page with an actual dashboard preview rather than an empty brand card.
+- More deliberate KPI cards, empty states, table shells, and channel cards.
+
+The reference pass intentionally avoids changing PRD1 behavior or creating a marketing site. It is a visual system pass over the existing admin console.
 
 ## Page Coverage
 
 | Area | Pages | PRD1 redesign result |
 |------|-------|----------------------|
-| Shell | `App.tsx` | Unified sidebar, brand block, content surface, `/docs` nav entry |
-| Login | `LoginPage.tsx` | Product console login shell, no marketing layout |
-| Overview | `DashboardPage.tsx` | Analysis-view template, KPI tiles, chart surface, health panel, table surface |
+| Shell | `App.tsx` | Unified dark sidebar, brand block, topbar search/actions, content workspace, `/docs` nav entry |
+| Login | `LoginPage.tsx` | Product console login shell with dashboard preview, no marketing landing page |
+| Overview | `DashboardPage.tsx` | Command-center hero, KPI tiles, chart surface, health panel, table surface |
 | Traffic | `LogsPage.tsx` | Explorer template with filter/result/detail panels |
 | Traffic | `ChannelsPage.tsx`, `KeysPage.tsx`, `ChannelKeysPage.tsx`, `TestPage.tsx` | Shared page header and surface/table treatment |
 | Billing | `WalletPage.tsx`, `ModelPricesPage.tsx`, `OrgModelPricesPage.tsx`, `GrantsPage.tsx`, `ReconciliationPage.tsx` | Shared billing visual system, money formatting, action panels |
@@ -123,12 +143,10 @@ git diff --check
 
 Codex should also run a browser screenshot pass because Canary cannot visually inspect UI:
 
-- Login
-- Dashboard
-- Logs
-- Wallet
-- API Docs
-- At least one resource page, such as Channels
+- Login: `output/playwright/ui-redesign-login.png`
+- Dashboard: `output/playwright/ui-redesign-dashboard.png`
+- Mobile Dashboard: `output/playwright/ui-redesign-mobile.png`
+- Existing broader evidence remains under `output/playwright/` for Logs, Wallet, API Docs, Channels, and previous mobile checks.
 
 Canary/OpenClaw should verify source-level and test-level evidence only:
 
@@ -136,6 +154,9 @@ Canary/OpenClaw should verify source-level and test-level evidence only:
 - All main pages import and use `PageHeader` and/or `Surface`
 - `frontend/src/App.tsx` has a `/docs` nav item
 - `DashboardPage.tsx` uses a correct 24h range calculation
+- `App.tsx` contains the topbar/search/user chip shell
+- `LoginPage.tsx` contains the reference-inspired showcase
+- `DashboardPage.tsx` contains the command-center hero and insight cards
 - `npm run build` passes
 - `npm test -- --run` passes
 - Browser visual validation is `NOT_APPLICABLE_TO_CANARY`

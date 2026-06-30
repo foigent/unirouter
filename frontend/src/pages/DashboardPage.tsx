@@ -2,7 +2,7 @@ import { formatDateTime } from '../utils/formatDate';
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Typography, Table, Spin, Tag, Tooltip, Button, Progress } from '@douyinfe/semi-ui';
-import { IconHistogram, IconPercentage, IconClock, IconRefresh, IconCoinMoney } from '@douyinfe/semi-icons';
+import { IconHistogram, IconPercentage, IconClock, IconRefresh, IconCoinMoney, IconServer, IconPulse } from '@douyinfe/semi-icons';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip,
   ResponsiveContainer, BarChart, Bar, Cell,
@@ -161,6 +161,8 @@ export default function DashboardPage() {
     .slice(0, 10);
   const budgetThreshold = stats?.wallet_threshold || 0;
   const budgetPercent = budgetThreshold > 0 ? Math.min(100, (stats?.today_cost_cents || 0) / budgetThreshold * 100) : 0;
+  const healthyChannels = (stats?.channel_health || []).filter(ch => ch.enabled && ch.status !== 'error').length;
+  const channelTotal = (stats?.channel_health || []).length;
 
   const recentCols = [
     {
@@ -214,32 +216,56 @@ export default function DashboardPage() {
   return (
     <Spin spinning={loading} size="large">
       <div className="ur-page ur-page-wide">
-        <PageHeader
-          eyebrow="Overview"
-          title="Dashboard"
-          description="全局观察请求量、成功率、延迟、成本和渠道健康状态。"
-          actions={(
-            <>
-              <div className="ur-toolbar time-range-selector">
-                {timeRanges.map(t => (
-                  <Button
-                    key={t.value}
-                    size="small"
-                    theme={range === t.value ? 'solid' : 'borderless'}
-                    type={range === t.value ? 'primary' : 'tertiary'}
-                    onClick={() => setRange(t.value)}
-                  >
-                    {t.label}
-                  </Button>
-                ))}
+        <section className="ur-dashboard-hero">
+          <PageHeader
+            eyebrow="Gateway overview"
+            title="AI Gateway Command Center"
+            description="全局观察请求量、成功率、延迟、成本和渠道健康状态。"
+            actions={(
+              <>
+                <div className="ur-toolbar time-range-selector">
+                  {timeRanges.map(t => (
+                    <Button
+                      key={t.value}
+                      size="small"
+                      theme={range === t.value ? 'solid' : 'borderless'}
+                      type={range === t.value ? 'primary' : 'tertiary'}
+                      onClick={() => setRange(t.value)}
+                    >
+                      {t.label}
+                    </Button>
+                  ))}
+                </div>
+                <Tooltip content="刷新">
+                  <Button icon={<IconRefresh />} size="small" onClick={fetchData} className="ur-icon-button" />
+                </Tooltip>
+              </>
+            )}
+          />
+          <div className="ur-hero-insights">
+            <div className="ur-hero-insight">
+              <IconPulse />
+              <div>
+                <Text>更新时间</Text>
+                <strong>{lastUpdated.toLocaleTimeString()}</strong>
               </div>
-              <Tooltip content="刷新">
-                <Button icon={<IconRefresh />} size="small" onClick={fetchData} />
-              </Tooltip>
-              <Text type="tertiary" size="small">更新于 {lastUpdated.toLocaleTimeString()}</Text>
-            </>
-          )}
-        />
+            </div>
+            <div className="ur-hero-insight">
+              <IconServer />
+              <div>
+                <Text>健康渠道</Text>
+                <strong>{healthyChannels}/{channelTotal || 0}</strong>
+              </div>
+            </div>
+            <div className="ur-hero-insight">
+              <IconCoinMoney />
+              <div>
+                <Text>钱包余额</Text>
+                <strong>{formatMoney((stats?.wallet_balance || 0) + (stats?.wallet_granted || 0))}</strong>
+              </div>
+            </div>
+          </div>
+        </section>
 
         <div className="ur-kpi-grid">
           <MetricTile
@@ -289,6 +315,7 @@ export default function DashboardPage() {
         <Surface
           title="AI 活动趋势"
           description="切换时间范围或指标后重新拉取聚合数据，避免图表与筛选条件脱节。"
+          className="ur-primary-chart"
           actions={(
             <div className="ur-toolbar">
               <Button

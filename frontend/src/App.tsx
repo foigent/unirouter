@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Nav, Button } from '@douyinfe/semi-ui';
+import { Layout, Nav, Button, Input, Tag, Typography, Avatar } from '@douyinfe/semi-ui';
 import {
   IconSetting,
   IconKey,
@@ -15,10 +15,12 @@ import {
   IconGift,
   IconSearch,
   IconMenu,
+  IconBell,
 } from '@douyinfe/semi-icons';
 import { useAuthStore } from './store/auth';
 
 const { Sider, Content } = Layout;
+const { Text } = Typography;
 
 const navItems = [
   {
@@ -83,6 +85,7 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const logout = useAuthStore((s) => s.logout);
+  const user = useAuthStore((s) => s.user);
 
   const handleNavClick = (data: { itemKey?: string | number; domEvent?: MouseEvent; isOpen?: boolean }) => {
     const key = data.itemKey;
@@ -134,6 +137,25 @@ export default function App() {
         />
       </Sider>
       <Content className="ur-content">
+        <div className="ur-topbar">
+          <Input
+            className="ur-global-search"
+            prefix={<IconSearch />}
+            placeholder="搜索请求、渠道、密钥"
+            showClear
+          />
+          <div className="ur-topbar-actions">
+            <Tag className="ur-env-pill" color="green">生产环境</Tag>
+            <Button icon={<IconBell />} theme="borderless" className="ur-icon-button" aria-label="通知" />
+            <div className="ur-user-chip">
+              <Avatar size="small" color="purple">{(user?.username || 'U').slice(0, 1).toUpperCase()}</Avatar>
+              <div className="ur-user-copy">
+                <Text className="ur-user-name">{user?.username || 'Operator'}</Text>
+                <Text className="ur-user-role">平台管理员</Text>
+              </div>
+            </div>
+          </div>
+        </div>
         <Outlet />
       </Content>
     </Layout>

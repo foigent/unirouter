@@ -1,140 +1,118 @@
-# FIX-SIGNAL.md — PRD1 Strict Closeout Security/Ops Fix
+# FIX-SIGNAL.md — PRD1 Reference-Inspired UI Redesign 验收请求
 
 **修复者：** Codex
 **日期：** 2026-07-01
-**修复轮次：** PRD1 strict closeout security and ops gate
+**修复轮次：** PRD1 reference-inspired visual redesign pass
 
 ---
 
 ## 背景
 
-用户确认 PRD1 必须全部对齐 PRD 验收矩阵后才能关闭。Codex 在部署后严格检查时发现：
+用户明确指出 PRD1 UI 仍然“太难看”，并给出两类参考方向：
 
-- Alibaba Cloud 当前公开部署接受 `admin/admin123456` 并返回 JWT。
-- 这说明 seeded public default admin password 仍可用于生产登录，是 PRD1 关闭阻断。
-- `/health/ready` 当前代码返回旧形态 `{"status":"ready"}`，而 PRD1 要求 DB/Redis 就绪形态。
-- README/runbook 仍引用不存在或过期的 CLI/部署说明。
+- Dribbble AdFlux Marketing Dashboard Web Design
+- Pinterest light dashboard reference image
 
-本轮修复不运行真实 provider 付费请求，不做生产钱包/渠道/API key 写入，不做压测或故障注入。
+本轮目标不是新增业务功能，而是在 PRD1 已有页面和 Semi UI 技术栈内，把控制台视觉语言提升到可关闭 PRD1 的水平：
+
+- 保持现有路由、API contract、PRD1 功能范围不变。
+- 不替换 Semi UI，不引入新的前端框架。
+- 优先重做全局 shell、登录页、Dashboard 和通用视觉 tokens。
+- 由 Codex 执行浏览器截图视觉检查；Canary 只做源码、构建和测试验收。
 
 ---
 
-## Fix #1: 阻断公开默认管理员密码登录
+## Fix #1: 全局应用壳层视觉升级
 
 **文件：**
 
-- `internal/admin/auth_handlers.go`
-- `internal/admin/admin_mock_test.go`
+- `frontend/src/App.tsx`
+- `frontend/src/index.css`
 
 **修复内容：**
 
-- Web 登录在 bcrypt 校验通过后拒绝 `admin/admin123456`。
-- 仅当显式设置 `UNIROUTE_ALLOW_DEFAULT_ADMIN_LOGIN=true` 时允许该默认口令，用于临时本地开发。
-- 默认拒绝发生在 JWT 生成和 audit 写入之前。
-- 增加测试覆盖默认口令拒绝和显式 dev override。
+- 将浅色普通侧边栏升级为深色控制台侧栏，增加品牌区、选中态、hover 态和导航图标一致性。
+- 增加顶部搜索、生产环境标识、通知按钮和用户 chip。
+- 统一全局 tokens：背景、边框、阴影、圆角、状态色、玻璃质感 surface。
+- 修复桌面端移动菜单按钮误显示问题：移动菜单默认隐藏，仅移动端展示。
 
 ---
 
-## Fix #2: 增加管理员运维 CLI
+## Fix #2: 登录页重做为参考级控制台入口
 
 **文件：**
 
-- `cmd/uniroute/cli.go`
-- `cmd/uniroute/cli_test.go`
-- `cmd/uniroute/main.go`
+- `frontend/src/pages/LoginPage.tsx`
+- `frontend/src/index.css`
 
 **修复内容：**
 
-- 增加 `./uniroute admin set-password --username admin --password <strong-password> --org-id 1`。
-- 增加 `./uniroute admin create --username <name> --password <strong-password> --role admin --org-id 1`。
-- CLI 默认拒绝创建或设置 `admin/admin123456`。
-- 增加 `./uniroute migrate up` 和 `./uniroute migrate status`，对齐部署文档。
-- 启动时先处理 CLI，未传 CLI 参数时保持正常服务模式。
+- 从单卡片登录页升级为双栏登录 shell。
+- 左侧增加 UniRoute 品牌、运行状态 tag、KPI 预览、趋势柱图和渠道状态列表。
+- 右侧保留登录表单和原有测试可识别文案 `OpenAI 中转服务管理平台`。
+- 按 PRD1 控制台定位处理，而不是营销落地页。
 
 ---
 
-## Fix #3: `/health/ready` 对齐 PRD 响应形态
+## Fix #3: Dashboard 首屏与关键状态重构
 
 **文件：**
 
-- `cmd/uniroute/main.go`
+- `frontend/src/pages/DashboardPage.tsx`
+- `frontend/src/index.css`
 
 **修复内容：**
 
-- PostgreSQL 和 Redis 都健康时返回：
-
-```json
-{"status":"ok","db":"ok","redis":"ok"}
-```
-
----
-
-## Fix #4: 增加 PRD1 严格关闭 Runbook 和云端 smoke 脚本
-
-**文件：**
-
-- `scripts/prd1-cloud-smoke.sh`
-- `docs/ops/PRD1-STRICT-CLOSEOUT-RUNBOOK.md`
-- `docs/DOC-INVENTORY.md`
-- `docs/PROJECT-HANDOFF.md`
-- `README.md`
-
-**修复内容：**
-
-- 新增 PRD1 strict closeout gate，明确 S0/S1/S2/S3/S4 安全等级。
-- 新增云端 smoke 脚本，验证 health、metrics、docs、Prometheus、Grafana、未授权 401、默认 admin 拒绝。
-- 脚本不做真实 provider 调用、不做钱包/渠道/API key 写入、不做压测或故障注入。
-- 脚本不使用批量删除目录；临时响应文件保留在 `/tmp`。
-- README 增加 strict closeout runbook 链接，并修正 compose 容器数量和管理员初始化说明。
+- 将普通 PageHeader 升级为 `AI Gateway Command Center` 首屏 panel。
+- 首屏增加更新时间、健康渠道、钱包余额三个运营 insight。
+- 重做 KPI 卡片、AI 活动趋势 surface、空状态、渠道列表和表格视觉层次。
+- 保留 24h / 7天 / 30天切换、刷新、趋势指标切换等既有行为。
 
 ---
 
-## Fix #5: 同步 PRD1 状态、验收矩阵和 open issues
+## Fix #4: PRD1 UI 文档同步
 
 **文件：**
 
+- `docs/design/PRD1-UI-REDESIGN-SPEC.md`
+- `docs/issues/PRD1-UI-FINDINGS-2026-07-01.md`
 - `docs/ops/CURRENT-STATUS.md`
-- `docs/issues/OPEN-ISSUES.md`
-- `docs/ops/PRD-ACCEPTANCE-MATRIX.md`
-- `docs/ops/PRD1-CLOSEOUT-PLAN.md`
-- `docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md`
-- `docs/ops/deployment-runbook.md`
-- `.env.example`
+- `docs/agent-workflows/FIX-SIGNAL.md`
 
 **修复内容：**
 
-- 明确 PRD1 不能关闭，直到 default admin 修复部署并通过云端 smoke。
-- 将 UI redesign 的 Canary 非视觉验证同步为 passed，同时保留用户/cloud 视觉验收门禁。
-- 记录云端已确认 `/api/v1/keys`、`/api/v1/logs` 等管理员只读接口返回 200。
-- 新增 `SEC-002` Critical issue，跟踪默认管理员安全阻断。
-- 修正 deployment runbook 中不存在的旧 `migrate down` / 旧管理员初始化说明。
-- `.env.example` 增加 `UNIROUTE_ALLOW_DEFAULT_ADMIN_LOGIN=false` 安全说明。
+- 记录本轮 reference-inspired pass 的范围、约束和验收边界。
+- 明确 Canary/OpenClaw 不做视觉审美结论，只验证源码、构建、测试和截图证据存在。
+- 将新增截图证据登记到 UI findings/status。
 
 ---
 
 ## Codex 已执行验证
 
+本轮 Codex 已完成本地浏览器截图检查，截图保留在：
+
+```text
+output/playwright/ui-redesign-login.png
+output/playwright/ui-redesign-dashboard.png
+output/playwright/ui-redesign-mobile.png
+```
+
+Codex 交付前已重新执行：
+
 ```bash
-go test ./cmd/uniroute ./internal/admin
+cd /Users/m4/Desktop/projects/UniRouter
+git diff --check
 go test ./...
-JWT_SECRET=test-secret ENCRYPTION_KEY=0123456789abcdef0123456789abcdef go run ./cmd/uniroute admin set-password --username admin
-JWT_SECRET=test-secret ENCRYPTION_KEY=0123456789abcdef0123456789abcdef go run ./cmd/uniroute admin set-password --username admin --password admin123456
-JWT_SECRET=test-secret ENCRYPTION_KEY=0123456789abcdef0123456789abcdef go run ./cmd/uniroute migrate status
+cd frontend && npm run build
+cd frontend && npm test -- --run
 ```
 
 结果：
 
-- `go test ./cmd/uniroute ./internal/admin`: PASS
+- `git diff --check`: PASS
 - `go test ./...`: PASS
-- CLI missing-password validation: PASS，返回 `--username and --password are required`
-- CLI default-password refusal: PASS，返回 `refusing to set the public default admin password`
-- CLI migration status: PASS，列出本地已应用 migrations
-- Local `/health/ready` runtime smoke: PASS，返回 `{"status":"ok","db":"ok","redis":"ok"}`
-
-云端事实检查：
-
-- Alibaba Cloud 当前部署 `admin/admin123456` 返回 JWT：FAIL，确认 PRD1 关闭阻断。
-- Authenticated admin read smoke for `/api/v1/me`, `/api/v1/keys`, `/api/v1/logs`, `/api/v1/audit-logs`, `/api/v1/model-names`: PASS，均返回 200。
+- `cd frontend && npm run build`: PASS，保留既有 Vite large chunk warning
+- `cd frontend && npm test -- --run`: PASS，36/36 tests passed
 
 ---
 
@@ -151,14 +129,18 @@ cd frontend && npm test -- --run
 Source-level checks:
 
 ```bash
-rg -n "UNIROUTE_ALLOW_DEFAULT_ADMIN_LOGIN|Default admin password is disabled|admin123456" internal/admin/auth_handlers.go internal/admin/admin_mock_test.go .env.example
-rg -n "admin set-password|admin create|migrate up|migrate status" cmd/uniroute/cli.go docs/ops/deployment-runbook.md README.md docs/ops/PRD1-STRICT-CLOSEOUT-RUNBOOK.md
-rg -n '\"status\":\"ok\",\"db\":\"ok\",\"redis\":\"ok\"' cmd/uniroute/main.go
-rg -n "SEC-002|default admin|PRD1-STRICT-CLOSEOUT|prd1-cloud-smoke" docs/issues/OPEN-ISSUES.md docs/ops docs/PROJECT-HANDOFF.md docs/DOC-INVENTORY.md README.md scripts/prd1-cloud-smoke.sh
-bash -n scripts/prd1-cloud-smoke.sh
+rg -n "ur-topbar|ur-user-chip|ur-env-pill" frontend/src/App.tsx frontend/src/index.css
+rg -n "ur-login-shell|ur-login-showcase|ur-preview-chart" frontend/src/pages/LoginPage.tsx frontend/src/index.css
+rg -n "ur-dashboard-hero|ur-hero-insight|AI Gateway Command Center" frontend/src/pages/DashboardPage.tsx frontend/src/index.css
+rg -n "mobile-menu-toggle|semi-navigation-item-icon-toggle-right|ur-empty-state::before" frontend/src/index.css
+test -f output/playwright/ui-redesign-login.png
+test -f output/playwright/ui-redesign-dashboard.png
+test -f output/playwright/ui-redesign-mobile.png
 ```
 
 Do not run destructive cleanup. Do not run real provider paid calls, wallet/channel/API-key mutations, pressure tests, stream disconnects, or fault injection in Canary.
+
+Visual beauty judgment is `NOT_APPLICABLE_TO_CANARY`; Canary should only report whether source/build/test/screenshot evidence exists.
 
 ---
 
@@ -167,19 +149,18 @@ Do not run destructive cleanup. Do not run real provider paid calls, wallet/chan
 请将验收结果写入 `docs/agent-workflows/VERIFY-RESULT.md`：
 
 ```markdown
-# VERIFY-RESULT.md — PRD1 Strict Closeout Security/Ops Fix 验收结果
+# VERIFY-RESULT.md — PRD1 Reference-Inspired UI Redesign 验收结果
 
 **验收者：** OpenClaw Canary
 **日期：** 以文件系统时间戳为准
-**对应轮次：** PRD1 strict closeout security and ops gate
+**对应轮次：** PRD1 reference-inspired visual redesign pass
 
 ## 逐条结果
 
-- Fix #1: PASS/FAIL — 默认 admin/admin123456 是否被 Web 登录阻断，测试是否覆盖
-- Fix #2: PASS/FAIL — admin set-password/create 和 migrate up/status CLI 是否存在并有基础测试
-- Fix #3: PASS/FAIL — /health/ready 是否返回 PRD DB/Redis shape
-- Fix #4: PASS/FAIL — strict closeout runbook 和 cloud smoke 脚本是否存在且无批量删除目录行为
-- Fix #5: PASS/FAIL — CURRENT-STATUS / OPEN-ISSUES / PRD-ACCEPTANCE-MATRIX / closeout docs 是否同步默认 admin 阻断
+- Fix #1: PASS/FAIL — 全局 shell/topbar/sidebar/tokens 是否存在且源码可验证
+- Fix #2: PASS/FAIL — 登录页双栏 showcase 是否实现且保留原测试文案
+- Fix #3: PASS/FAIL — Dashboard hero/insight/card/empty state 是否实现
+- Fix #4: PASS/FAIL — UI 文档和当前协议交接是否同步
 
 ## 全局验证
 
@@ -187,7 +168,7 @@ Do not run destructive cleanup. Do not run real provider paid calls, wallet/chan
 - `go test ./...`: PASS/FAIL
 - `npm run build`: PASS/FAIL
 - `npm test -- --run`: PASS/FAIL
-- `bash -n scripts/prd1-cloud-smoke.sh`: PASS/FAIL
+- Screenshot evidence files: PASS/FAIL
 
 ## 新发现的问题
 

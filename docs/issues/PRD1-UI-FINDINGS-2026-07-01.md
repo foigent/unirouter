@@ -12,7 +12,7 @@ Purpose: classify the user-reported UI/product issues against PRD1 and record wh
 | 4 | 钱包管理没有任何可编辑入口 | PRD1 planned: F08 wallet management + F10 admin frontend | Backend/frontend contract bug | Fixed: backend returns `is_admin` and frontend field aliases; frontend adjustment now sends `target_balance` matching backend |
 | 5 | 审计日志没有登录审计 | PRD1 planned: audit/security requirements | Backend bug + frontend mapping bug | Fixed: login audit writes synchronously with actor context; audit page maps `user_id/resource/resource_id` correctly |
 | 6 | 系统设置文档链接 `/docs` 为空 | PRD1 planned: admin/API documentation surface | Deployment/frontend route bug + incomplete backend placeholder | Fixed: frontend `/docs` route added; backend direct `/docs` page expanded from placeholder to API index |
-| 7 | 整体 UI 很丑、没有品味 | PRD1 includes usable admin frontend; high-end visual system is not fully specified | UI quality debt / PRD1 acceptance risk | Fixed locally for PRD1 closeout: added `frontend/src/ui/` design layer, global tokens, refreshed shell, Dashboard, Logs, Wallet, Docs, resource pages, settings/test/reconciliation, and mobile spacing |
+| 7 | 整体 UI 很丑、没有品味 | PRD1 includes usable admin frontend; high-end visual system is not fully specified | UI quality debt / PRD1 acceptance risk | Fixed locally for PRD1 closeout: added `frontend/src/ui/` design layer, global tokens, refreshed shell, Dashboard, Logs, Wallet, Docs, resource pages, settings/test/reconciliation, mobile spacing, and a reference-inspired shell/login/Dashboard visual pass |
 
 ## Screenshot Status
 
@@ -28,6 +28,9 @@ Current local visual evidence:
 - `output/playwright/channels.png`
 - `output/playwright/dashboard-mobile-final.png`
 - `output/playwright/logs-mobile-final.png`
+- `output/playwright/ui-redesign-login.png`
+- `output/playwright/ui-redesign-dashboard.png`
+- `output/playwright/ui-redesign-mobile.png`
 
 The screenshots are ignored by Git and retained as local QA evidence.
 
