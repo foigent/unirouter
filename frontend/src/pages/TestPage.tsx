@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, Form, Button, Toast, Tag, Typography, Table } from '@douyinfe/semi-ui';
 import { api } from '../api/client';
 
@@ -28,6 +28,7 @@ export default function TestPage() {
   const [testing, setTesting] = useState(false);
   const [results, setResults] = useState<TestResult[]>([]);
   const [selectedChannelId, setSelectedChannelId] = useState<number | null>(null);
+  const formApiRef = useRef<any>(null);
 
   useEffect(() => {
     api.getChannels(1, 100).then((res: any) => {
@@ -144,7 +145,7 @@ export default function TestPage() {
       <Title heading={4} style={{ marginBottom: 16 }}>渠道测试</Title>
 
       <Card style={{ marginBottom: 16 }}>
-        <Form onSubmit={handleTest}>
+        <Form onSubmit={handleTest} getFormApi={(api) => { formApiRef.current = api; }}>
           <Form.Select
             field="channel_id"
             label="选择渠道"
@@ -155,7 +156,10 @@ export default function TestPage() {
               value: c.id,
             }))}
             style={{ width: 300 }}
-            onChange={(v) => setSelectedChannelId(Number(v))}
+            onChange={(v) => {
+              setSelectedChannelId(Number(v));
+              formApiRef.current?.setValue('model', undefined as any);
+            }}
           />
           <Form.Select
             field="model"

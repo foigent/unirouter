@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Typography, Card, Tag, Row, Col, Progress } from '@douyinfe/semi-ui';
+import { Typography, Card, Tag, Row, Col, Progress, Button, Modal, Input } from '@douyinfe/semi-ui';
 import { api } from '../api/client';
+import { Toast } from '@douyinfe/semi-ui';
 
 const { Title, Text } = Typography;
 
@@ -16,6 +17,10 @@ interface WalletInfo {
 export default function WalletPage() {
   const [wallet, setWallet] = useState<WalletInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalType, setModalType] = useState<'recharge' | 'adjust'>('recharge');
+  const [modalAmount, setModalAmount] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -39,6 +44,30 @@ export default function WalletPage() {
   const used = wallet.frozen_cents;
   const usagePct = total > 0 ? (used / total) * 100 : 0;
   const barColor = usagePct >= 80 ? '#F53F3F' : usagePct >= 50 ? '#F5A623' : '#05944F';
+
+  const handleWalletOp = async () => {
+    const amountCents = Math.round(parseFloat(modalAmount) * 100);
+    if (isNaN(amountCents) || amountCents <= 0) {
+      Toast.error('请输入有效金额');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const endpoint = modalType === 'recharge' ? '/wallet/recharge' : '/wallet/adjust';
+      await api.request(endpoint, {
+        method: 'POST',
+        body: JSON.stringify({ amount_cents: amountCents }),
+      });
+      Toast.success(modalType === 'recharge' ? '充值成功' : '调整成功');
+      setModalVisible(false);
+      setModalAmount('');
+      load();
+    } catch (err: any) {
+      Toast.error(err.message || '操作失败');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div>
@@ -90,6 +119,20 @@ export default function WalletPage() {
         </div>
       </Card>
 
+      {wallet.is_admin && (
+        <Card style={{ marginBottom: 24 }}>
+          <Title heading={5} style={{ marginBottom: 16 }}>管理员操作</Title>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <Button type="primary" onClick={() => { setModalType('recharge'); setModalVisible(true); }}>
+              充值
+            </Button>
+            <Button type="tertiary" onClick={() => { setModalType('adjust'); setModalVisible(true); }}>
+              调整额度
+            </Button>
+          </div>
+        </Card>
+      )}
+
       {wallet.org_name && (
         <Card>
           <Title heading={5} style={{ marginBottom: 16 }}>组织信息</Title>
@@ -97,6 +140,27 @@ export default function WalletPage() {
           <Text style={{ marginLeft: 16 }}>角色: <Tag color={wallet.is_admin ? 'red' : 'grey' as any}>{wallet.is_admin ? '管理员' : '普通用户'}</Tag></Text>
         </Card>
       )}
+
+      <Modal
+        title={modalType === 'recharge' ? '充值' : '调整额度'}
+        visible={modalVisible}
+        onCancel={() => { setModalVisible(false); setModalAmount(''); }}
+        onOk={handleWalletOp}
+        confirmLoading={submitting}
+        okText={modalType === 'recharge' ? '确认充值' : '确认调整'}
+      >
+        <div style={{ padding: '8px 0' }}>
+          <Text style={{ display: 'block', marginBottom: 8 }}>
+            {modalType === 'recharge' ? '充值金额（元）' : '调整金额（元，正数增加，负数减少）'}
+          </Text>
+          <Input
+            value={modalAmount}
+            onChange={setModalAmount}
+            placeholder="请输入金额，例如 100.00"
+            type="number"
+          />
+        </div>
+      </Modal>
     </div>
   );
 }

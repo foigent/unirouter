@@ -2,6 +2,7 @@ package admin
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/uniroute/unirouter/internal/auth"
@@ -53,6 +54,10 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to generate token"})
 		return
 	}
+
+	// Audit log for successful login
+	go h.recordAudit(r.Context(), "login", "user", fmt.Sprintf("%d", userID),
+		map[string]interface{}{"username": req.Username, "role": role}, r.RemoteAddr)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"token":    token,

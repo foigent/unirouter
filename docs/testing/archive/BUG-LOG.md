@@ -714,3 +714,111 @@ base_url: https://token-plan-cn.xiaomimimo.com/v1
 **内容**：新增 `GET /model-names` 端点，查询 `SELECT DISTINCT model_name FROM model_prices ORDER BY model_name`。前端 `api.ts` 新增 `getModelNames()` 方法，ModelPricesPage / OrgModelPricesPage / ReconciliationPage 三处动态加载。
 
 **数据源说明**：业务上应查 `model_prices`（已配置的模型列表），而非 `call_logs`（历史调用记录）。新配置但未调用的模型也应出现在下拉中。第 14 轮 Canary 验收发现此不一致，Codex 已修正为 `model_prices`。
+
+---
+
+## Bug #30 — 调用日志页面崩溃：total_tokens undefined (High 前后端版本不一致)
+
+- **发现日期**: 2026-06-30
+- **严重性**: High
+- **类型**: 前后端版本不一致
+- **状态**: ✅ 已修复（Round 14 commit d83545f 已于 2026-06-30 13:01 部署）
+- **发现者**: Nicholas（生产环境测试）
+
+**问题**：前端 LogsPage.tsx:273 对 `total_tokens` 调用 `toLocaleString()`，但后端 Round 9 的 ListLogs 只返回 10 列（无 `total_tokens`），导致 `undefined.toLocaleString()` 页面白屏。
+
+**根因**：前端已更新到 Round 14（期望 17 列），后端仍为 Round 9（只返回 10 列）。
+
+**修复**：Round 14 后端已部署（d83545f），ListLogs 现返回 17 列。
+
+---
+
+## Bug #31 — 渠道测试显示"测试失败: undefined" (Medium 前后端版本不一致)
+
+- **发现日期**: 2026-06-30
+- **严重性**: Medium
+- **类型**: 前后端版本不一致
+- **状态**: ✅ 已修复（Round 14 commit d83545f 已于 2026-06-30 13:01 部署）
+- **发现者**: Nicholas（生产环境测试）
+
+**问题**：前端 TestPage.tsx:72 检查 `result.success` 字段，后端 Round 9 的 TestChannel 不返回 `success` 字段。`undefined` → falsy → 显示"测试失败: undefined"。实际测试成功（kimi 131ms, deepseek 108ms）。
+
+**根因**：同 Bug #30，前后端版本不一致。
+
+**修复**：部署 Round 14 后端代码即可。
+
+---
+
+## Bug #32 — 渠道切换后测试模型不更新 (Medium 前端 Bug)
+
+- **发现日期**: 2026-06-30
+- **严重性**: Medium
+- **类型**: 前端 UX
+- **状态**: ✅ 已修复验收（第 15 轮）
+- **发现者**: Nicholas（生产环境测试）
+
+**问题**：TestPage.tsx 选择渠道后切换到另一个渠道，模型下拉仍显示前一个渠道的模型。
+
+**根因**：channel onChange 只更新 selectedChannelId，不重置 model 字段。Semi Design Form 的 field 值不会因 optionList 变化而自动清除。
+
+**修复**：onChange 中添加 `formRef.current?.formApi.setValue('model', undefined)`。
+
+---
+
+## Bug #33 — 钱包管理没有充值/调账按钮 (Medium 前端实现缺失)
+
+- **发现日期**: 2026-06-30
+- **严重性**: Medium
+- **类型**: 前端实现缺失
+- **状态**: ✅ 已修复验收（第 15 轮）
+- **发现者**: Nicholas（生产环境测试）
+
+**问题**：WalletPage 只展示余额信息，无"充值"和"调账"操作按钮。后端已有 POST /api/v1/wallet/recharge 和 POST /api/v1/wallet/adjust 端点。
+
+**根因**：PRD F07 有要求，后端已实现，前端未实现。
+
+**修复**：WalletPage 添加"管理员操作"卡片，包含"充值"和"调整额度"按钮，使用 Modal 弹窗输入金额，调用对应后端 API。仅 is_admin 用户可见。
+
+---
+
+## Bug #34 — AI 活动趋势日期不随时间范围变化 (High 后端 Bug)
+
+- **发现日期**: 2026-06-30
+- **严重性**: High
+- **类型**: 后端逻辑错误
+- **状态**: ✅ 已修复验收（第 15 轮）
+- **发现者**: Nicholas（生产环境测试）
+
+**问题**：Dashboard 切换 24h/7d/30d 时间范围，趋势图始终显示相同数据（6/26-6/27）。
+
+**根因**：dashboard_handlers.go:128 `dashboardDailyTrend` 方法硬编码 `WHERE created_at >= NOW() - INTERVAL '7 days'`，不使用 startTime/endTime 参数。
+
+**修复**：`dashboardDailyTrend` 方法签名改为接收 `(ctx, startTime, endTime string)`，SQL 改为 `WHERE created_at >= $1 AND created_at <= $2`，调用处传入 startTime/endTime 参数。
+
+---
+
+## Bug #35 — API 密钥允许模型手动输入 (Low UX 问题)
+
+- **发现日期**: 2026-06-30
+- **严重性**: Low
+- **类型**: UX 设计
+- **状态**: ✅ 已修复验收（第 15 轮）
+- **发现者**: Nicholas（生产环境测试）
+
+**问题**：KeysPage 允许模型字段为 Form.Input，需手动输入模型名，容易拼错。
+
+**修复**：改为 `Form.Select` 多选模式，选项从 `/dashboard/models` API 动态获取系统中已有的模型列表。编辑时自动将逗号分隔字符串拆分为数组，提交时合并回字符串。
+
+---
+
+## Bug #36 — 审计日志无登录记录 (Medium 后端实现缺失)
+
+- **发现日期**: 2026-06-30
+- **严重性**: Medium
+- **类型**: 后端实现缺失
+- **状态**: ✅ 已修复验收（第 15 轮）
+- **发现者**: Nicholas（生产环境测试）
+
+**问题**：Login handler 成功后不调用 recordAudit，审计日志中无登录记录。
+
+**修复**：Login 成功后异步调用 `go h.recordAudit(ctx, "login", "user", fmt.Sprintf("%d", userID), ...)` 记录登录审计日志，添加 `fmt` import。

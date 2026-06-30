@@ -1,35 +1,26 @@
-# VERIFY-RESULT.md — 第 14 轮 FIX-SIGNAL 验收结果（最终）
+# VERIFY-RESULT.md — Bug #32~#36 验收
 
-**验收者：** Canary
-**日期：** 2026-06-30（文件系统时间戳为准）
-**对应轮次：** 第 14 轮（对应 FIX-SIGNAL.md — Bug #23~#28 + 前端动态模型列表）
-**commit:** 87f2a59
+**验收日期：** 2026-06-30
+**验收者：** Canary agent
+**对应轮次：** 第 15 轮（对应 FIX-SIGNAL.md — Bug #32~#36）
 
 ---
 
-## 逐条结果
+## 逐条验收
 
-- **Fix #23 (ListLogs SELECT 列数不匹配):** PASS — `log_handlers.go` SELECT 扩展为 17 列，Scan dest 对齐
-- **Fix #24 (TestChannel URL 双重 /v1/):** PASS — `test_handlers.go` TrimRight + HasSuffix 双重清理
-- **Fix #25 (TestChannel 成功响应缺少 success 字段):** PASS — 错误/成功路径均返回 `success` 字段
-- **Fix #26 (ModelPricesPage 模型名称手动输入):** PASS — 改为 `Form.Select` + filter 动态下拉
-- **Fix #27 (OrgModelPricesPage 模型名称手动输入):** PASS — 同 Fix #26
-- **Fix #28 (Token 对账模型筛选硬编码):** PASS — 从 `/model-names` API 动态加载
-- **GetModelNames 数据源:** PASS — `channel_key_handlers.go:186` 已修正为 `SELECT DISTINCT model_name FROM model_prices ORDER BY model_name`（Codex 第二轮修复）
-- **key_prefix 字段:** PASS — `channel_key_handlers.go` 返回 `key_prefix` 而非 `key_masked`
+| Bug # | 严重性 | 验收结果 | 备注 |
+|-------|--------|---------|------|
+| #32   | Medium | ✅ | TestPage.tsx:31 formRef + :161 setValue('model', undefined) |
+| #33   | Medium | ✅ | WalletPage.tsx:48 handleWalletOp + :126/129 充值/调账按钮 + Modal |
+| #34   | High   | ✅ | dashboard_handlers.go:124 dashboardDailyTrend 接收 startTime/endTime，:130 参数化 SQL |
+| #35   | Low    | ✅ | KeysPage.tsx:27 availableModels + :154 Form.Select 多选 + :52 join(',') |
+| #36   | Medium | ✅ | auth_handlers.go:59 go h.recordAudit("login", ...) 异步调用 |
 
-## 前置条件核验
+## 全局验证
 
-- 后端 Go 测试：568 PASS ✅（FIX-SIGNAL 预期 559+，实际 568，因 Canary 新增 9 个 billing 单元测试）
-- `go build ./...`: PASS ✅
-- `go vet ./...`: PASS ✅
-- 前端编译：未验证（node_modules 未安装，环境问题非代码问题）
-
-## 全局构建
-
-- `go build ./...`: PASS
-- `go vet ./...`: PASS
-- `go test ./... -count=1`: PASS（16/16 包 OK）
+- [x] `go build ./...` — PASS（无输出）
+- [x] `go test ./... -count=1` — PASS（16/16 包 OK）
+- [x] `npx vite build` — PASS（✓ built in 3.63s）
 
 ## 新发现的问题
 
@@ -37,4 +28,4 @@
 
 ## 结论
 
-**8/8 全部 PASS。** 第 14 轮修复验收通过。GetModelNames 数据源已在第二轮修复中更正为 `model_prices`。
+**5/5 全部 PASS。** Bug #32-#36 修复验收通过。
