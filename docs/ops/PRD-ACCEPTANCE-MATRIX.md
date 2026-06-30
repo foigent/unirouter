@@ -2,7 +2,7 @@
 
 > Purpose: track acceptance against `docs/PRD-Phase1.md`.
 > Status values: `Not started`, `Implemented not accepted`, `Unit tested`, `E2E accepted`, `Production verified`, `Out of scope`.
-> Last verified: 2026-07-01 local workspace.
+> Last verified: 2026-07-01 local workspace plus Alibaba Cloud S0/S1 smoke.
 
 ## Core Flow
 
@@ -25,7 +25,7 @@
 | Admin can view billing and call logs | E2E accepted | Non-destructive cloud API smoke verified authenticated GETs for dashboard, wallet, wallet transactions, logs, reconciliation, users, grants, audit logs, settings, sensitive words, model prices, org prices, keys, channel keys, and channels; logs model filter source fixed locally | Browser UX walkthrough still needed |
 | Admin can top up and adjust wallet | Implemented not accepted | Routes and frontend page exist; wallet admin action visibility and adjust request contract fixed locally | Current manual/API mutation evidence needed in safe test conditions |
 | Docker Compose one-command deployment succeeds | Production verified | Alibaba Cloud smoke passed: frontend `:3000`, backend health `:8080`, Prometheus `:9090`, Grafana login `:3001`, admin login/me/dashboard/settings through nginx | Keep Sentinel/Atlas deployment logs as release evidence |
-| Seeded default admin password is not usable in public deployment | Implemented not accepted | Codex confirmed current Alibaba Cloud accepted `admin/admin123456` on 2026-07-01; local code now blocks this login and adds `admin set-password` CLI | Canary verification, redeploy, and cloud smoke must prove default login returns 401/403 |
+| Seeded default admin password is not usable in public deployment | Production verified | `scripts/prd1-cloud-smoke.sh` passed `default-admin-password-rejected`; direct cloud login with `admin/admin123456` returned 403 on 2026-07-01 | None |
 
 ## Frontend UI
 
@@ -53,7 +53,7 @@
 |----------|--------|------------------|-------------------|
 | Each request log includes request_id/org_id/channel_id | Implemented not accepted | `call_logs` schema and handlers exist | Current E2E log row evidence needed |
 | Prometheus `/metrics` returns metrics | Production verified | Local current-source `/metrics` returned metrics; Alibaba Cloud backend `:8080/metrics` returned Prometheus text metrics; Prometheus `:9090/-/healthy` returned 200 | Keep Atlas deployment logs as release evidence |
-| `/health/ready` returns PRD shape with DB/Redis status | Implemented not accepted | Local code now returns `{"status":"ok","db":"ok","redis":"ok"}`; current cloud may still be on old `{"status":"ready"}` response until redeploy | Canary verification, redeploy, and cloud smoke evidence needed |
+| `/health/ready` returns PRD shape with DB/Redis status | Production verified | Cloud `GET http://8.130.18.85:8080/health/ready` returned `{"status":"ok","db":"ok","redis":"ok"}` on 2026-07-01; `scripts/prd1-cloud-smoke.sh` passed `backend-ready-prd-shape` | None |
 | Grafana dashboard shows request rate, latency, error rate | Implemented not accepted | Grafana `:3001/login` is reachable on Alibaba Cloud | Current running Grafana panel screenshot/manual evidence needed |
 
 ## Acceptance Rule

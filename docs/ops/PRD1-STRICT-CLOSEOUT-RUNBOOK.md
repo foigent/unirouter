@@ -62,9 +62,9 @@ RUN_ADMIN_READ_SMOKE=1 ADMIN_USERNAME='<admin>' ADMIN_PASSWORD='<password>' scri
 | Observability | `/metrics`, Prometheus healthy, Grafana dashboard/panel screenshot or manual notes |
 | UI | cloud browser walkthrough for Dashboard, Channels, Keys, Wallet, Logs, Settings, Docs |
 
-## Current PRD1 Blocking Finding
+## Resolved PRD1 Blocking Finding
 
-On 2026-07-01 Codex confirmed Alibaba Cloud accepted `admin/admin123456` and returned a JWT. This is a security blocker for strict PRD1 closure.
+On 2026-07-01 Codex confirmed Alibaba Cloud accepted `admin/admin123456` and returned a JWT. After redeploy, `scripts/prd1-cloud-smoke.sh` passed and the same default login returned 403.
 
 Code-level remediation in this round:
 
@@ -72,7 +72,7 @@ Code-level remediation in this round:
 - `./uniroute admin set-password --username admin --password <new-password>` is available for deployment remediation.
 - `./uniroute admin create --username <name> --password <password> --role <role>` is available for bootstrap operations.
 
-Deployment remediation:
+Deployment remediation command used by operators:
 
 ```bash
 docker compose exec backend ./uniroute admin set-password \
@@ -82,3 +82,9 @@ docker compose exec backend ./uniroute admin set-password \
 ```
 
 Do not set the password back to `admin123456`; the CLI refuses it by default.
+
+Current cloud evidence:
+
+- `GET http://8.130.18.85:8080/health/ready`: `{"status":"ok","db":"ok","redis":"ok"}`
+- `GET http://8.130.18.85:3000/health/ready`: `{"status":"ok","db":"ok","redis":"ok"}`
+- `POST http://8.130.18.85:3000/api/v1/auth/login` with `admin/admin123456`: 403

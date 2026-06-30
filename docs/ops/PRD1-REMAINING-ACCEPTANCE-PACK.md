@@ -23,6 +23,9 @@ go test ./...
 cd frontend && npm test -- --run
 cd frontend && npm run build
 go test ./cmd/uniroute -run TestAdminRoutesRegisteredForFrontendClient -v
+scripts/prd1-cloud-smoke.sh
+curl -fsS http://8.130.18.85:3000/docs
+curl -fsS http://8.130.18.85:8080/docs
 ```
 
 Results:
@@ -31,6 +34,9 @@ Results:
 - Frontend tests: PASS, 36 tests
 - Frontend build: PASS, with existing Vite large chunk warning
 - Route parity guard: PASS
+- Cloud S0/S1 smoke: PASS after redeploy
+- Cloud frontend `/docs`: PASS, returns frontend SPA shell
+- Cloud backend `/docs`: PASS, returns `UniRouter API Documentation`
 - Temporary current-source backend health: PASS
 - Temporary current-source `/metrics`: PASS, returned Prometheus metric output
 - Temporary current-source admin login: PASS
@@ -56,13 +62,13 @@ curl -i http://8.130.18.85:8080/health/live
 # 200 {"status":"ok","service":"uniroute"}
 
 curl -i http://8.130.18.85:8080/health/ready
-# 200 {"status":"ready"}
+# 200 {"status":"ok","db":"ok","redis":"ok"}
 
 curl -i http://8.130.18.85:3000/
 # 200 frontend HTML, asset bundle index-kz7ioahi.js
 
 curl -i http://8.130.18.85:3000/health/ready
-# 200 {"status":"ready"}
+# 200 {"status":"ok","db":"ok","redis":"ok"}
 
 curl -i http://8.130.18.85:9090/-/healthy
 # 200 Prometheus Server is Healthy.
@@ -107,7 +113,7 @@ Notes:
 - `http://8.130.18.85:3000/metrics` returns frontend HTML, so metrics should be verified via backend `:8080/metrics` or Prometheus `:9090`.
 - Scope was intentionally non-destructive: no real provider paid requests, no API key/channel/wallet mutations, no load test, no stream disconnect, and no failover/fault injection.
 - Cloud smoke exposed a handler quality issue where nullable database fields could be scanned into non-nullable Go types while `rows.Scan` errors were ignored, producing zero-value timestamps. Codex fixed this locally for API key and call-log list handlers; deployment needs a new build before that fix is visible in cloud.
-- Strict closeout smoke on 2026-07-01 found the public cloud accepted `admin/admin123456` and returned a JWT. This is a PRD1 security blocker until the patched build is deployed and the default login returns 401/403.
+- Strict closeout smoke after redeploy on 2026-07-01 passed. The public cloud rejected `admin/admin123456` with 403, and `/health/ready` returned the PRD DB/Redis shape.
 
 ## Code Fixes Completed
 
@@ -183,11 +189,11 @@ Completed locally:
 - CLI refuses to create or set `admin/admin123456` by default.
 - Added regression tests for default admin login blocking and CLI validation.
 
-Remaining:
+Cloud follow-up:
 
-- OpenClaw Canary must verify code/tests/docs.
-- Sentinel/Atlas must redeploy.
-- Cloud smoke must show `admin/admin123456` returns 401/403.
+- OpenClaw Canary verified the relevant code/tests/docs in the protocol flow.
+- Sentinel/Atlas redeployed the patched build.
+- Cloud smoke on 2026-07-01 showed `admin/admin123456` returns 403.
 
 ### PRD1-OPS-001: `/health/ready` PRD response shape
 
@@ -195,11 +201,11 @@ Completed locally:
 
 - `/health/ready` now returns `{"status":"ok","db":"ok","redis":"ok"}` when PostgreSQL and Redis are healthy.
 
-Remaining:
+Cloud follow-up:
 
-- OpenClaw Canary must verify code/tests/docs.
-- Sentinel/Atlas must redeploy.
-- Cloud smoke must show the PRD response shape.
+- OpenClaw Canary verified the relevant code/tests/docs in the protocol flow.
+- Sentinel/Atlas redeployed the patched build.
+- Cloud smoke on 2026-07-01 showed `{"status":"ok","db":"ok","redis":"ok"}`.
 
 ## External Acceptance Queue
 
@@ -215,7 +221,7 @@ These items are not honestly closable from this workspace.
 | EXT-006 | Browser/manual frontend validation | Human or browser-capable agent | Canary/OpenClaw has no visual capability | Walkthrough notes for Dashboard, Channels, Keys, Wallet, Logs, Settings |
 | EXT-007 | Grafana dashboard visual verification | Atlas or browser-capable operator | Grafana login is reachable; panels not visually verified by Codex | Dashboard import/provisioning evidence and panel screenshot/manual notes |
 | EXT-008 | Full typed OpenAPI schemas | Codex/Sentinel before typed-client work | Current spec is path-accurate but intentionally uses generic schemas for many admin resources | Detailed schemas matching handler payloads |
-| EXT-009 | Default admin remediation redeploy | Sentinel/Atlas | Current public cloud accepted `admin/admin123456`; local fix is not production-verified yet | Patched deployment plus `scripts/prd1-cloud-smoke.sh` showing default login rejected |
+| EXT-009 | Default admin remediation redeploy | Sentinel/Atlas | Completed on 2026-07-01 | Patched deployment plus `scripts/prd1-cloud-smoke.sh` showing default login rejected with 403 |
 
 ## Recommended Handoff
 
@@ -224,3 +230,5 @@ These items are not honestly closable from this workspace.
 3. Sentinel should run CI and, if available, Docker Compose validation.
 4. Atlas should run cloud deployment and complete EXT-001, EXT-002, EXT-007.
 5. Browser/manual UI validation remains separate from Canary.
+
+For exact Codex-vs-user testing ownership and required credentials/safety scope, use `docs/ops/PRD1-ACCEPTANCE-TEST-OWNERSHIP.md`.

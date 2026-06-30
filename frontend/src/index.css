@@ -670,6 +670,27 @@ body {
   margin-top: 8px;
 }
 
+.ur-secret-reveal {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  border: 1px solid var(--ur-border);
+  border-radius: 14px;
+  background: rgba(248, 246, 252, 0.92);
+  padding: 14px;
+}
+
+.ur-secret-reveal code {
+  display: block;
+  overflow-wrap: anywhere;
+  border-radius: 10px;
+  background: #11151f;
+  color: #ffffff;
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 .ur-explorer {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);

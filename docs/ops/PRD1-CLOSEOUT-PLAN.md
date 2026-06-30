@@ -79,8 +79,8 @@ The UI is part of PRD1 closeout because the admin console is required for operat
 | PRD1-UI-001 | UI | Audit frontend architecture, component reuse, and visual consistency | Canary passed |
 | PRD1-UI-002 | UI | Browser/manual validation of core admin flows by a capable step, not Canary/OpenClaw | Codex visual QA complete locally; Canary non-visual verification passed; user/cloud visual acceptance still pending |
 | PRD1-UI-003 | UI | PRD1 visual redesign and reusable UI foundation | Canary passed |
-| PRD1-SEC-002 | Security | Public seeded default admin password must not work in cloud | Fixed locally; awaiting Canary, Sentinel/Atlas redeploy, and cloud smoke |
-| PRD1-OPS-001 | Ops | `/health/ready` must match PRD response shape | Fixed locally; awaiting Canary and redeploy |
+| PRD1-SEC-002 | Security | Public seeded default admin password must not work in cloud | Production verified: cloud returned 403 for `admin/admin123456` |
+| PRD1-OPS-001 | Ops | `/health/ready` must match PRD response shape | Production verified: cloud returned `{"status":"ok","db":"ok","redis":"ok"}` |
 | PRD1-ENG-001 | Contract | Resolve frontend `/me/password` client/backend route mismatch | Canary passed |
 | PRD1-ENG-002 | Contract | Verify and prevent frontend route drift in key/wallet/admin flows | Canary passed |
 | PRD1-DOC-001 | Docs | Reconcile historical docs only where they affect current open issues | Canary passed |
@@ -100,9 +100,9 @@ Alibaba Cloud non-destructive API smoke passed on 2026-07-01:
 
 - `http://8.130.18.85:3000/` returns frontend HTML.
 - `http://8.130.18.85:8080/health/live` returns 200.
-- `http://8.130.18.85:8080/health/ready` returns 200.
+- `http://8.130.18.85:8080/health/ready` returns 200 with `{"status":"ok","db":"ok","redis":"ok"}`.
 - `http://8.130.18.85:8080/metrics` returns Prometheus text metrics.
-- `http://8.130.18.85:3000/health/ready` returns 200 through nginx.
+- `http://8.130.18.85:3000/health/ready` returns 200 through nginx with the PRD DB/Redis shape.
 - `http://8.130.18.85:9090/-/healthy` returns 200.
 - `http://8.130.18.85:3001/login` returns Grafana login HTML.
 - Gateway no-key smoke through `:3000/v1/models` returns expected 401.
@@ -112,8 +112,6 @@ Alibaba Cloud non-destructive API smoke passed on 2026-07-01:
 
 Still external after cloud smoke:
 
-- Default admin password remediation must be redeployed and verified.
-- `/health/ready` PRD response shape must be redeployed and verified.
 - Real provider E2E and billing/reconciliation evidence.
 - Browser/manual UI walkthrough.
 - Grafana panel-level visual verification.
@@ -139,18 +137,18 @@ PRD1 visual redesign completed locally and Canary non-visual verification passed
 - Added `docs/design/PRD1-UI-REDESIGN-SPEC.md` as the executable design-system handoff.
 - Codex local screenshot evidence is kept under ignored `output/playwright/`.
 
-## Security Blocker Found During Strict Closeout
+## Security Blocker Resolved During Strict Closeout
 
-On 2026-07-01, Codex confirmed the public Alibaba Cloud deployment accepted `admin/admin123456` and returned a JWT. This blocks PRD1 closure.
+On 2026-07-01, Codex confirmed the public Alibaba Cloud deployment accepted `admin/admin123456` and returned a JWT. After the patched build was redeployed, the same default login returned 403 and `scripts/prd1-cloud-smoke.sh` passed `default-admin-password-rejected`.
 
-Local remediation completed in this round:
+Remediation completed in this round:
 
 - Web login rejects the public default admin password unless `UNIROUTE_ALLOW_DEFAULT_ADMIN_LOGIN=true`.
 - `./uniroute admin set-password --username admin --password <strong-password> --org-id 1` supports secure bootstrap remediation.
 - `./uniroute admin create` supports creating additional admins without relying on a nonexistent historical command.
-- `/health/ready` now returns the PRD shape `{"status":"ok","db":"ok","redis":"ok"}`.
+- `/health/ready` now returns the PRD shape `{"status":"ok","db":"ok","redis":"ok"}` in cloud through both backend direct and nginx routes.
 
-After Sentinel/Atlas redeploy, run `scripts/prd1-cloud-smoke.sh`. PRD1 remains open until default admin login is rejected and the ready response has the PRD shape.
+This specific security/ops blocker is closed. PRD1 remains open only if the remaining acceptance-matrix items are not evidenced or explicitly deferred.
 
 ## What Can Move To PRD2
 
