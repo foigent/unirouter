@@ -1,18 +1,17 @@
-# VERIFY-RESULT.md — PRD1 Strict Closeout Security/Ops Fix 验收结果
+# VERIFY-RESULT.md — PRD1 Reference-Inspired UI Redesign 验收结果
 
 **验收者：** OpenClaw Canary
 **日期：** 2026-07-01
-**对应轮次：** PRD1 strict closeout security and ops gate
+**对应轮次：** PRD1 reference-inspired visual redesign pass
 
 ---
 
 ## 逐条结果
 
-- **Fix #1 (阻断公开默认管理员密码登录):** PASS — `auth_handlers.go:57` 登录拒绝默认口令返回 "Default admin password is disabled"；`:82` 仅当 `UNIROUTE_ALLOW_DEFAULT_ADMIN_LOGIN=true` 时放行；`:85` 硬编码检查 `admin/admin123456`。`admin_mock_test.go` 覆盖两个场景：默认拒绝（`:148-169`）和显式 dev override 放行（`:181-202`）。`TestLogin_DefaultAdminPasswordBlocked` 和 `TestLogin_DefaultAdminPasswordAllowedForExplicitDevOverride` 均 PASS。`.env.example:28` 设置 `UNIROUTE_ALLOW_DEFAULT_ADMIN_LOGIN=false`
-- **Fix #2 (管理员运维 CLI):** PASS — `cli.go:40` 注册 `admin create`，`:57` 注册 `admin set-password`；`cli_test.go` 存在。`deployment-runbook.md` 和 `README.md` 均记录 CLI 用法（`admin set-password`、`admin create`、`migrate up`、`migrate status`）。`PRD1-STRICT-CLOSEOUT-RUNBOOK.md:72-78` 记录 CLI 补救流程
-- **Fix #3 (`/health/ready` 对齐 PRD 响应形态):** PASS — `main.go:144` 返回 `{"status":"ok","db":"ok","redis":"ok"}`
-- **Fix #4 (PRD1 严格关闭 Runbook 和云端 smoke 脚本):** PASS — `scripts/prd1-cloud-smoke.sh` 语法检查通过（`bash -n` PASS）；无 `rm -rf` 或批量删除目录行为；`docs/ops/PRD1-STRICT-CLOSEOUT-RUNBOOK.md` 存在并定义 S0-S4 安全等级；`README.md:59` 链接到 runbook；`DOC-INVENTORY.md:51` 和 `PROJECT-HANDOFF.md:11` 均已同步
-- **Fix #5 (PRD1 状态、验收矩阵和 open issues 同步):** PASS — `OPEN-ISSUES.md:33` 新增 `SEC-002` Critical（Fixed awaiting Canary）；`CURRENT-STATUS.md:59` 记录 Alibaba Cloud 默认口令安全阻断；`PRD-ACCEPTANCE-MATRIX.md:28` 标注 "Implemented not accepted"；`PRD1-CLOSEOUT-PLAN.md:82` 记录 PRD1-SEC-002；`PRD1-REMAINING-ACCEPTANCE-PACK.md:176` 记录完整修复链
+- **Fix #1 (全局应用壳层视觉升级):** PASS — `App.tsx:140` 使用 `ur-topbar`，`:148` 使用 `ur-env-pill`（生产环境标识），`:150` 使用 `ur-user-chip`。`index.css:137` 定义 `.ur-topbar`，`:162` 定义 `.ur-env-pill`，`:175` 定义 `.ur-user-chip`，`:126` 隐藏侧边栏图标 toggle，`:206` 移动菜单默认隐藏（`:1053` 响应式展示）
+- **Fix #2 (登录页重做):** PASS — `LoginPage.tsx:30` 使用 `ur-login-shell`（双栏），`:31` 使用 `ur-login-showcase`（左侧品牌/KPI），`:65` 使用 `ur-preview-chart`。`index.css:792-910` 定义完整登录页视觉 tokens。保留测试文案 `OpenAI 中转服务管理平台`
+- **Fix #3 (Dashboard 首屏重构):** PASS — `DashboardPage.tsx:219` 使用 `ur-dashboard-hero`，`:222` 标题 "AI Gateway Command Center"，`:245-260` 使用 `ur-hero-insight` 三个运营 insight。`index.css:447-520` 定义完整 hero 区域视觉 tokens
+- **Fix #4 (PRD1 UI 文档同步):** PASS — `PRD1-UI-REDESIGN-SPEC.md:3` 记录 "reference-inspired pass implemented locally"，`:146-148` 登记 3 张截图证据；`PRD1-UI-FINDINGS-2026-07-01.md:15` 更新 Finding #7 状态为 Fixed locally；`CURRENT-STATUS.md:19` 记录 reference-inspired pass 截图
 
 ## 全局验证
 
@@ -20,23 +19,19 @@
 |--------|------|
 | `git diff --check` | PASS |
 | `go test ./...` | PASS（16/16 包） |
-| `npm run build` | PASS（3.99s） |
+| `npm run build` | PASS（3.83s） |
 | `npm test -- --run` | PASS（36/36 测试，5 文件） |
-| `bash -n scripts/prd1-cloud-smoke.sh` | PASS |
-| `TestLogin_DefaultAdminPasswordBlocked` | PASS |
-| `TestLogin_DefaultAdminPasswordAllowedForExplicitDevOverride` | PASS |
-| 浏览器视觉验收 | NOT_APPLICABLE_TO_CANARY |
-| 真实 provider/压测/故障注入 | NOT_APPLICABLE_TO_CANARY |
+| `ur-topbar/ur-user-chip/ur-env-pill` 源码检查 | PASS |
+| `ur-login-shell/ur-login-showcase/ur-preview-chart` 源码检查 | PASS |
+| `ur-dashboard-hero/ur-hero-insight/AI Gateway Command Center` 源码检查 | PASS |
+| `mobile-menu-toggle/ur-empty-state::before` CSS 检查 | PASS |
+| 截图文件存在（3/3） | PASS |
+| 浏览器视觉审美判断 | NOT_APPLICABLE_TO_CANARY |
 
 ## 新发现的问题
 
 无
 
-## 非阻断注意事项
-
-- `SEC-002` 本地修复已验证，但生产部署需 Sentinel/Atlas 重新部署后运行 `scripts/prd1-cloud-smoke.sh` 确认默认口令被拒绝
-- PRD1 关闭门禁：默认管理员口令拒绝 + `/health/ready` PRD 形态 + 云端 smoke 全部通过
-
 ## 结论
 
-**5/5 全部 PASS。** PRD1 strict closeout security/ops fix 验收通过。待 Sentinel/Atlas 重新部署并运行云端 smoke 确认后，PRD1 可关闭。
+**4/4 全部 PASS。** PRD1 reference-inspired UI redesign 验收通过。视觉质量由 Codex/用户判断，Canary 仅验证源码/构建/测试/文档/截图证据。
