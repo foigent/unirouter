@@ -18,7 +18,7 @@ UniRouter Phase 1 is in MVP hardening. Core backend modules, admin APIs, fronten
 | PRD1 remaining closeout Canary | PASS | `VERIFY-RESULT.md` reports 6/6 PASS for PRD1 remaining closeout; external-only items remain in `PRD1-REMAINING-ACCEPTANCE-PACK.md` |
 | Browser/manual frontend validation | Not current | No current browser verification recorded in this pass; this is not covered by Canary/OpenClaw capability |
 | Real upstream provider E2E | Partially evidenced historically | Needs current repeatable evidence for PRD acceptance |
-| Production deployment status | Unverified in this pass | Docker is unavailable in this workspace; Sentinel/Atlas must verify deployment |
+| Production deployment status | PASS non-destructive cloud API smoke | Alibaba Cloud `http://8.130.18.85:3000` frontend reachable; `:8080/health/live`, `:8080/health/ready`, `:8080/metrics`, `:3000/health/ready`, `:9090/-/healthy`, `:3001/login`, gateway missing-key 401, admin missing-token 401, and authenticated admin read-only API smoke passed on 2026-07-01 |
 
 ## Phase 1 Delivery State
 
@@ -45,13 +45,14 @@ UniRouter Phase 1 is in MVP hardening. Core backend modules, admin APIs, fronten
 
 ## Known Gaps
 
-1. PRD acceptance checklist is not fully reconciled with current evidence.
+1. PRD acceptance checklist is partially reconciled with current evidence; non-destructive cloud API smoke is now recorded, while real provider E2E and stress/failover scenarios still need current evidence.
 2. Some historical status files disagree about whether specific bugs are open or fixed.
 3. `docs/testing/archive/` contains useful history but should not be used as the current status source.
 4. Active issues are now centralized in `docs/issues/OPEN-ISSUES.md`; older issue status still needs item-by-item reconciliation.
 5. Frontend API/client route contract needs continued explicit verification; this round fixed confirmed `KeysPage`, `WalletPage`, and `/me/password` route drift, added `ApiError`, added a route parity guard, and Canary passed the remaining closeout verification.
 6. Historical docs mention XOR channel-key encryption, but current code uses AES-GCM helpers in `internal/auth/auth.go`; `docs/ops/test-report.md` now marks the XOR note as stale, and Canary passed the correction.
 7. UI quality, frontend architecture, component reuse, and browser/manual validation are now explicit PRD1 closeout items, not deferred wholesale to PRD2. Current source audit is recorded in `docs/ui/FRONTEND-UI-ARCHITECTURE-AUDIT.md` and Canary verified the non-visual round as PASS; browser/visual validation remains pending a separate capable step and is not assigned to Canary/OpenClaw.
+8. Cloud smoke found API list handlers could hide row scan errors and emit zero-value fields when nullable database columns were scanned into non-nullable Go types. Codex fixed `ListAPIKeys` and `ListLogs` locally; deploy this build before rechecking the cloud responses.
 
 ## Active Sources Of Truth
 

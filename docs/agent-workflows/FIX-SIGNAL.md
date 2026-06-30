@@ -1,8 +1,8 @@
-# FIX-SIGNAL.md — PRD1 Remaining Closeout Round
+# FIX-SIGNAL.md — PRD1 Cloud API Smoke Follow-up Round
 
 **修复者：** Codex
 **日期：** 以文件系统时间戳为准
-**修复轮次：** PRD1 remaining closeout
+**修复轮次：** PRD1 cloud API smoke follow-up
 
 ---
 
@@ -11,11 +11,59 @@
 | 项目 | 预期状态 | 原因 |
 |------|----------|------|
 | OpenClaw Canary | 不修改代码 | 只做测试、审查、记录结果 |
-| 本轮范围 | `/me/password` 契约修复、route parity、历史文档纠偏、PRD1 剩余验收包 | PRD1 收尾 |
+| 本轮范围 | 非破坏性云端 API smoke 证据、admin list scan/NULL 修复、PRD1 状态同步 | PRD1 收尾 |
 | 视觉/人工 UI 验收 | 不属于 Canary 能力范围 | 继续作为外部验收项保留 |
-| Docker/云部署/真实 provider | 不属于本地 Codex 已完成项 | `docker` 在当前 workspace 不可用，真实 provider/cloud 由 Sentinel/Atlas 或配置环境验证 |
+| Docker/云部署/真实 provider | 云端非破坏性 API smoke 已完成；真实 provider 不在本轮范围 | 真实 provider 付费调用、压测、断流、故障注入需用户确认凭据和安全条件 |
 
 ---
+
+## Fix #1: 云端非破坏性 API smoke 证据入档
+
+**文件：**
+- `docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md`
+- `docs/ops/CURRENT-STATUS.md`
+- `docs/ops/PRD-ACCEPTANCE-MATRIX.md`
+- `docs/ops/PRD1-CLOSEOUT-PLAN.md`
+- `docs/issues/OPEN-ISSUES.md`
+
+**修复内容：**
+- 记录 Alibaba Cloud 只读/认证类 smoke 结果
+- 覆盖 frontend、backend health、backend metrics、Prometheus、Grafana login
+- 覆盖 gateway missing-key 401、admin missing-token 401
+- 覆盖 authenticated admin GET/read-only API：dashboard、channels、keys、channel keys、wallet、transactions、logs、model prices、model names、org model prices、reconciliation、users、grants、audit logs、settings、sensitive words
+- 明确排除真实 provider 付费调用、写入 mutation、压测、断流和故障注入
+
+**验证方法：**
+```bash
+rg -n "non-destructive|8080/metrics|/api/v1/logs|missing-key|missing-token|PRD1-ENG-003" docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md docs/ops/CURRENT-STATUS.md docs/ops/PRD-ACCEPTANCE-MATRIX.md docs/ops/PRD1-CLOSEOUT-PLAN.md docs/issues/OPEN-ISSUES.md
+```
+
+---
+
+## Fix #2: admin list scan/NULL 修复
+
+**文件：**
+- `internal/admin/key_handlers.go`
+- `internal/admin/log_handlers.go`
+- `internal/admin/admin_mock_test.go`
+
+**修复内容：**
+- `ListAPIKeys` 对 nullable `api_keys.budget_limit` 使用 `COALESCE(ak.budget_limit, 0)`
+- `ListLogs` 对 nullable `call_logs.upstream_error` 使用 `COALESCE(upstream_error, '')`
+- 两个列表 handler 均检查 `rows.Scan` 和 `rows.Err`
+- 新增 scan-error 回归测试，避免后续吞错并返回零值字段
+
+**验证方法：**
+```bash
+go test ./internal/admin -run 'TestList(APIKeys|Logs)_(Success|ScanError|QueryError)$'
+go test ./...
+```
+
+---
+
+## Prior Canary-passed context from previous closeout round
+
+The following items were already verified by OpenClaw Canary in the previous `PRD1 remaining closeout` round and are kept here only as context.
 
 ## Fix #1: 补齐 `/me/password` 后端契约
 
@@ -158,7 +206,28 @@ rg -n "ENG-001|SEC-001|DOC-002|DOC-005|QA-001|PRD1-ENG-001|PRD1-DOC-001|Frontend
 ## Codex 已执行验证
 
 ```bash
+rg -n "non-destructive|8080/metrics|/api/v1/logs|missing-key|missing-token|PRD1-ENG-003" docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md docs/ops/CURRENT-STATUS.md docs/ops/PRD-ACCEPTANCE-MATRIX.md docs/ops/PRD1-CLOSEOUT-PLAN.md docs/issues/OPEN-ISSUES.md docs/agent-workflows/FIX-SIGNAL.md internal/admin/key_handlers.go internal/admin/log_handlers.go
+go test ./internal/admin -run 'TestList(APIKeys|Logs)_(Success|ScanError|QueryError)$'
 go test ./...
+git diff --check
+```
+
+本轮云端非破坏性 API smoke：
+
+- `GET http://8.130.18.85:3000/`: PASS
+- `GET http://8.130.18.85:8080/health/live`: PASS
+- `GET http://8.130.18.85:8080/health/ready`: PASS
+- `GET http://8.130.18.85:8080/metrics`: PASS
+- `GET http://8.130.18.85:3000/health/ready`: PASS
+- `GET http://8.130.18.85:9090/-/healthy`: PASS
+- `GET http://8.130.18.85:3001/login`: PASS
+- `GET /v1/models` without API key: PASS, expected 401
+- `GET /api/v1/channels` without admin token: PASS, expected 401
+- Authenticated admin read-only GET APIs: PASS
+
+上一轮已执行验证保留为背景：
+
+```bash
 cd frontend && npm test -- --run
 cd frontend && npm run build
 go test ./cmd/uniroute -run TestAdminRoutesRegisteredForFrontendClient -v
@@ -179,10 +248,11 @@ go test ./internal/admin -run 'TestChangePassword|TestLogin'
 
 ```bash
 cd /Users/m4/Desktop/projects/UniRouter
-git diff --check -- cmd/uniroute/main.go cmd/uniroute/route_parity_test.go internal/admin/auth_handlers.go internal/admin/admin_mock_test.go frontend/src/pages/SettingsPage.tsx frontend/src/api/__tests__/client.test.ts docs/ops/test-report.md docs/DOC-INVENTORY.md docs/tech-ref/05-openapi-spec.yaml docs/tech-ref/README.md docs/CODEBASE-MAP.md docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md docs/README.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD1-CLOSEOUT-PLAN.md docs/ops/PRD-ACCEPTANCE-MATRIX.md docs/agent-workflows/FIX-SIGNAL.md
+git diff --check -- internal/admin/key_handlers.go internal/admin/log_handlers.go internal/admin/admin_mock_test.go docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD1-CLOSEOUT-PLAN.md docs/ops/PRD-ACCEPTANCE-MATRIX.md docs/agent-workflows/FIX-SIGNAL.md
+rg -n "COALESCE\\(ak.budget_limit, 0\\)|COALESCE\\(upstream_error, ''\\)|Scan failed|Rows failed" internal/admin/key_handlers.go internal/admin/log_handlers.go
+rg -n "non-destructive|8080/metrics|/api/v1/logs|missing-key|missing-token|PRD1-ENG-003" docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md docs/ops/CURRENT-STATUS.md docs/ops/PRD-ACCEPTANCE-MATRIX.md docs/ops/PRD1-CLOSEOUT-PLAN.md docs/issues/OPEN-ISSUES.md docs/agent-workflows/FIX-SIGNAL.md
+go test ./internal/admin -run 'TestList(APIKeys|Logs)_(Success|ScanError|QueryError)$'
 go test ./...
-cd frontend && npm test -- --run
-cd frontend && npm run build
 ```
 
 ## 期望输出格式
@@ -190,29 +260,25 @@ cd frontend && npm run build
 验收结果写入 `docs/agent-workflows/VERIFY-RESULT.md`：
 
 ```markdown
-# VERIFY-RESULT.md — PRD1 Remaining Closeout 验收结果
+# VERIFY-RESULT.md — PRD1 Cloud API Smoke Follow-up 验收结果
 
 **验收者：** OpenClaw Canary
 **日期：** 以文件系统时间戳为准
-**对应轮次：** PRD1 remaining closeout
+**对应轮次：** PRD1 cloud API smoke follow-up
 
 ## 逐条结果
 
-- Fix #1: PASS/FAIL — [原因]
-- Fix #2: PASS/FAIL — [原因]
-- Fix #3: PASS/FAIL — [原因]
-- Fix #4: PASS/FAIL — [原因]
-- Fix #5: PASS/FAIL — [原因]
-- Fix #6: PASS/FAIL — [原因]
+- Fix #1: PASS/FAIL — 云端非破坏性 API smoke 证据是否入档且边界清楚
+- Fix #2: PASS/FAIL — admin list scan/NULL 修复是否正确
 
 ## 全局验证
 
 - `git diff --check`: PASS/FAIL
+- `rg` evidence checks: PASS/FAIL
+- targeted admin tests: PASS/FAIL
 - `go test ./...`: PASS/FAIL
-- `npm test -- --run`: PASS/FAIL
-- `npm run build`: PASS/FAIL
 - 视觉/人工 UI 验收: NOT_APPLICABLE_TO_CANARY
-- Docker/云部署/真实 provider: NOT_APPLICABLE_TO_CANARY
+- 真实 provider/压测/断流/故障注入: NOT_APPLICABLE_TO_CANARY
 
 ## 新发现的问题
 
