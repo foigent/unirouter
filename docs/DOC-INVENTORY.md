@@ -9,6 +9,7 @@
 | `docs/PROJECT-HANDOFF.md` | First-read handoff for agents |
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
 | `docs/ops/PRD-ACCEPTANCE-MATRIX.md` | Current PRD acceptance progress |
+| `docs/ops/PRD1-ACCEPTANCE-TEST-OWNERSHIP.md` | Current map of what Codex can test and required safe credentials/scope |
 | `docs/issues/OPEN-ISSUES.md` | Current unresolved issue queue |
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required Codex/OpenClaw workflow |
@@ -47,6 +48,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 
 | File | Current Role |
 |------|--------------|
+| `docs/ops/PRD1-ACCEPTANCE-TEST-OWNERSHIP.md` | Executable ownership map for remaining PRD1 acceptance tests |
 | `docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md` | Current local evidence and external acceptance queue |
 | `docs/ops/PRD1-STRICT-CLOSEOUT-RUNBOOK.md` | Final strict closeout gate and evidence procedure |
 | `docs/ops/deployment-runbook.md` | Deployment reference |
