@@ -1,43 +1,37 @@
-# VERIFY-RESULT.md — PRD1 Cloud API Smoke Follow-up 验收结果
+# VERIFY-RESULT.md — PRD1 UI Redesign Closeout 验收结果
 
 **验收者：** OpenClaw Canary
 **日期：** 2026-07-01
-**对应轮次：** PRD1 cloud API smoke follow-up
+**对应轮次：** PRD1 UI redesign closeout
 
 ---
 
 ## 逐条结果
 
-- **Fix #1 (云端非破坏性 API smoke 证据入档):** PASS — `PRD1-REMAINING-ACCEPTANCE-PACK.md` 完整记录 Alibaba Cloud smoke 结果：frontend 可达、health/ready PASS、metrics PASS、Prometheus PASS、Grafana login PASS、gateway missing-key 401 PASS、admin missing-token 401 PASS、18 个 authenticated admin read-only GET API 全部 PASS。非破坏性边界清楚（无真实 provider 付费调用、无写入 mutation、无压测、无断流、无故障注入）。`CURRENT-STATUS.md`、`PRD-ACCEPTANCE-MATRIX.md`、`PRD1-CLOSEOUT-PLAN.md`、`OPEN-ISSUES.md` 均已同步
-- **Fix #2 (admin list scan/NULL 修复):** PASS — `key_handlers.go:16` 使用 `COALESCE(ak.budget_limit, 0)`，`log_handlers.go:104` 使用 `COALESCE(upstream_error, '')`，两个 handler 均有 `rows.Scan` 错误检查（"Scan failed"）和 `rows.Err()` 检查（"Rows failed"）。6 个回归测试全部 PASS：TestListAPIKeys_Success/ScanError/QueryError + TestListLogs_Success/ScanError/QueryError
+- **Fix #1 (新增 PRD1 UI 基础层):** PASS — `frontend/src/ui/` 目录存在，包含 `layout/PageHeader.tsx`、`layout/Surface.tsx`、`layout/MetricTile.tsx`、`data/MoneyText.tsx`、`data/LatencyText.tsx`、`data/StatusTag.tsx`、`feedback/EmptyState.tsx`、`index.ts`。`index.ts` 正确 export 全部 7 个组件
+- **Fix #2 (重构控制台外壳和主要页面视觉):** PASS — `DashboardPage.tsx` 大量使用 PageHeader/Surface/MetricTile/MoneyText/LatencyText/StatusTag/EmptyState（30+ 处引用）；`LogsPage.tsx` 使用 PageHeader/StatusTag/LatencyText/MoneyText；`WalletPage.tsx` 使用 EmptyState/MetricTile/MoneyText/PageHeader/Surface。所有主要页面已接入统一 UI 基础层
+- **Fix #3 (Dashboard 时间窗口和图表稳定性):** PASS — `DashboardPage.tsx:40` 24h 使用 `86400000`（1天，非 `24 * 86400000`）✅；`:337` 和 `:361` 图表 `isAnimationActive={false}` ✅
+- **Fix #4 (PRD1 UI 设计执行文档和状态同步):** PASS — `docs/design/PRD1-UI-REDESIGN-SPEC.md` 存在；`OPEN-ISSUES.md:32` UI-005 标记为 "Fixed awaiting Canary"；`CURRENT-STATUS.md:19` 记录 Codex Playwright 截图证据；`.gitignore` 忽略 `output/playwright/*.png`
 
 ## 全局验证
 
 | 检查项 | 结果 |
 |--------|------|
-| `git diff --check` | PASS（无 trailing whitespace） |
-| `grep` evidence checks（COALESCE + Scan/Rows failed） | PASS（6 处匹配） |
-| `grep` evidence checks（non-destructive + metrics + missing-key/token + PRD1-ENG-003） | PASS（多处匹配） |
-| `go test ./internal/admin -run 'TestList(APIKeys\|Logs)_(Success\|ScanError\|QueryError)$'` | PASS（6/6） |
+| `git diff --check` | PASS |
 | `go test ./...` | PASS（16/16 包） |
-| 视觉/人工 UI 验收 | NOT_APPLICABLE_TO_CANARY |
-| 真实 provider/压测/断流/故障注入 | NOT_APPLICABLE_TO_CANARY |
+| `npm run build` | PASS（3.93s） |
+| `npm test -- --run` | PASS（36/36 测试，5 文件） |
+| `frontend/src/ui/` 组件完整性 | PASS（7/7 组件） |
+| 页面接入 UI 基础层 | PASS（Dashboard/Logs/Wallet 等） |
+| Dashboard 24h 时间修正 | PASS（`86400000`） |
+| 图表动画关闭 | PASS（`isAnimationActive={false}`） |
+| 本地截图文件存在 | PASS（3/3） |
+| 浏览器视觉验收 | NOT_APPLICABLE_TO_CANARY |
 
 ## 新发现的问题
 
 无
 
-## 非阻断残余风险
-
-以下项需外部能力补充（已在 PRD1-REMAINING-ACCEPTANCE-PACK.md 中记录）：
-
-1. 真实上游 provider E2E（需配置 provider keys + 用户确认凭据）
-2. 流式中断结算验证
-3. 并发压测
-4. Failover/circuit breaker 实际触发验证
-5. 浏览器/人工 UI walkthrough
-6. Grafana 仪表盘验证
-
 ## 结论
 
-**2/2 全部 PASS。** PRD1 cloud API smoke follow-up 验收通过。外部验收项已记录在 PRD1-REMAINING-ACCEPTANCE-PACK.md，需 Sentinel/Atlas 或配置环境完成。
+**4/4 全部 PASS。** PRD1 UI redesign closeout 验收通过。视觉质量由 Codex/用户判断，Canary 仅验证源码/构建/测试/文档一致性。

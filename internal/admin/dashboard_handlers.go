@@ -123,25 +123,36 @@ func (h *Handler) dashboardModelPrices(ctx context.Context) []map[string]interfa
 	return prices
 }
 
-// dashboardDailyTrend returns 7-day daily request count and cost.
+// dashboardDailyTrend returns hourly buckets for short ranges and daily buckets for longer ranges.
 func (h *Handler) dashboardDailyTrend(ctx context.Context, orgID int64, startTime, endTime string) []map[string]interface{} {
+	start, startErr := time.Parse(time.RFC3339, startTime)
+	end, endErr := time.Parse(time.RFC3339, endTime)
+	granularity := "day"
+	if startErr == nil && endErr == nil && end.Sub(start) <= 48*time.Hour {
+		granularity = "hour"
+	}
+
 	rows, err := h.db.Query(ctx,
-		`SELECT DATE(created_at) AS day, COUNT(*) AS requests, COALESCE(SUM(cost_cents), 0) AS cost
+		`SELECT date_trunc($4, created_at) AS bucket, COUNT(*) AS requests, COALESCE(SUM(cost_cents), 0) AS cost
 		 FROM call_logs
 		 WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3
-		 GROUP BY DATE(created_at)
-		 ORDER BY day ASC`, orgID, startTime, endTime)
+		 GROUP BY bucket
+		 ORDER BY bucket ASC`, orgID, startTime, endTime, granularity)
 	if err != nil {
 		return nil
 	}
 	defer rows.Close()
 	trend := make([]map[string]interface{}, 0)
 	for rows.Next() {
-		var day time.Time
+		var bucket time.Time
 		var requests, cost int
-		rows.Scan(&day, &requests, &cost)
+		rows.Scan(&bucket, &requests, &cost)
+		bucketValue := bucket.Format("2006-01-02")
+		if granularity == "hour" {
+			bucketValue = bucket.Format(time.RFC3339)
+		}
 		trend = append(trend, map[string]interface{}{
-			"date": day.Format("2006-01-02"), "requests": requests, "cost_cents": cost,
+			"date": bucketValue, "requests": requests, "cost_cents": cost,
 		})
 	}
 	return trend

@@ -14,6 +14,7 @@ import {
   IconPriceTag,
   IconGift,
   IconSearch,
+  IconMenu,
 } from '@douyinfe/semi-icons';
 import { useAuthStore } from './store/auth';
 
@@ -67,6 +68,7 @@ const navItems = [
     icon: <IconSetting />,
     items: [
       { itemKey: '/settings', text: '系统设置', icon: <IconSetting /> },
+      { itemKey: '/docs', text: 'API 文档', icon: <IconFile /> },
     ],
   },
 ];
@@ -91,21 +93,25 @@ export default function App() {
 
   return (
     <>
-      {/* Mobile menu toggle */}
-      <div className="mobile-menu-toggle" onClick={toggleSidebar}>
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M3 12h18M3 6h18M3 18h18" />
-        </svg>
-      </div>
-      
-      {/* Sidebar overlay */}
+      <Button
+        className="mobile-menu-toggle"
+        icon={<IconMenu />}
+        onClick={toggleSidebar}
+        aria-label="打开导航"
+      />
+
       <div className={`sidebar-overlay ${sidebarOpen ? "open" : ""}`} onClick={closeSidebar} />
-      
-      <Layout style={{ height: '100vh' }}>
-      <Sider className={sidebarOpen ? 'open' : ''} style={{ borderRight: '1px solid var(--semi-color-border)' }}>
-        <div style={{ padding: '24px 24px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <IconBolt size="extra-large" style={{ color: 'var(--semi-color-primary)' }} />
-          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>UniRoute</h1>
+
+      <Layout className="ur-app-shell">
+      <Sider className={`ur-sider ${sidebarOpen ? 'open' : ''}`}>
+        <div className="ur-brand">
+          <div className="ur-brand-mark">
+            <IconBolt size="large" />
+          </div>
+          <div>
+            <h1 className="ur-brand-name">UniRoute</h1>
+            <div className="ur-brand-caption">AI Gateway Console</div>
+          </div>
         </div>
         <Nav
           selectedKeys={[location.pathname]}
@@ -127,7 +133,7 @@ export default function App() {
           }
         />
       </Sider>
-      <Content style={{ padding: 24, overflow: 'auto', background: 'var(--semi-color-bg-0)' }}>
+      <Content className="ur-content">
         <Outlet />
       </Content>
     </Layout>

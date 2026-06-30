@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Table, Card, Select, Toast, Tag, Typography } from '@douyinfe/semi-ui';
+import { Button, Table, Select, Toast, Tag } from '@douyinfe/semi-ui';
 import { api } from '../api/client';
-
-const { Title } = Typography;
+import { PageHeader, StatusTag, Surface } from '../ui';
 
 interface ReconRecord {
   id: number;
@@ -65,18 +64,22 @@ export default function ReconciliationPage() {
       key: 'status',
       width: 100,
       render: (v: string) => (
-        <Tag color={v === 'reconciled' ? 'green' : v === 'pending' ? 'orange' : 'red'}>
+        <StatusTag status={v === 'reconciled' ? 'success' : v === 'pending' ? 'pending' : 'failed'}>
           {v === 'reconciled' ? '已调账' : v === 'pending' ? '待处理' : v}
-        </Tag>
+        </StatusTag>
       ),
     },
     { title: '时间', dataIndex: 'created_at', key: 'created_at', width: 180 },
   ];
 
   return (
-    <div>
-      <Title heading={4} style={{ marginBottom: 16 }}>Token 对账</Title>
-      <Card style={{ marginBottom: 16 }}>
+    <div className="ur-page">
+      <PageHeader
+        eyebrow="Billing"
+        title="Token 对账"
+        description="对比估算 Token 和实际 Token，辅助发现计费偏差。"
+      />
+      <Surface title="筛选条件">
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
           <Select
             placeholder="模型筛选"
@@ -99,26 +102,28 @@ export default function ReconciliationPage() {
               { label: '已调账', value: 'reconciled' },
             ]}
           />
-          <button className="semi-button semi-button-secondary" onClick={() => load()}>刷新</button>
+          <Button onClick={() => load()}>刷新</Button>
         </div>
-      </Card>
-      <Card>
-        <Table
-          columns={columns}
-          dataSource={records}
-          loading={loading}
-          rowKey="id"
-          pagination={{
-            currentPage: page,
-            pageSize,
-            pageSizeOpts: [20, 50, 100],
-            showSizeChanger: true,
-            total,
-            onChange: (p: number) => setPage(p),
-            onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); },
-          }}
-        />
-      </Card>
+      </Surface>
+      <Surface>
+        <div className="ur-table-shell">
+          <Table
+            columns={columns}
+            dataSource={records}
+            loading={loading}
+            rowKey="id"
+            pagination={{
+              currentPage: page,
+              pageSize,
+              pageSizeOpts: [20, 50, 100],
+              showSizeChanger: true,
+              total,
+              onChange: (p: number) => setPage(p),
+              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); },
+            }}
+          />
+        </div>
+      </Surface>
     </div>
   );
 }

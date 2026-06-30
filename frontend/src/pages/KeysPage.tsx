@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Typography, Button, Table, Modal, Form, Tag, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
+import { Button, Table, Modal, Form, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-
-const { Title } = Typography;
+import { PageHeader, StatusTag, Surface } from '../ui';
 
 interface ApiKey {
   id: number;
@@ -112,7 +111,7 @@ export default function KeysPage() {
     { title: '允许模型', dataIndex: 'allowed_models', key: 'models', render: (v: string) => v || '全部' },
     {
       title: '状态', dataIndex: 'status', key: 'status', width: 80,
-      render: (v: string) => <Tag color={v === 'active' ? 'green' : 'red' as any}>{v}</Tag>,
+      render: (v: string) => <StatusTag status={v}>{v}</StatusTag>,
     },
     {
       title: '操作', key: 'actions', width: 140,
@@ -126,24 +125,30 @@ export default function KeysPage() {
   ];
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <Title heading={4} style={{ margin: 0 }}>API 密钥</Title>
-        <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增密钥</Button>
-      </div>
-
-      <Table
-        dataSource={keys}
-        columns={columns}
-        rowKey="id"
-        loading={loading}
-        pagination={{
-          currentPage: page, pageSize, total,
-          pageSizeOpts: [20, 50, 100], showSizeChanger: true,
-          onPageChange: (p: number) => { setPage(p); load(p); },
-          onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1); },
-        }}
+    <div className="ur-page">
+      <PageHeader
+        eyebrow="Traffic"
+        title="API 密钥"
+        description="管理调用方密钥、允许 IP 和允许模型范围。"
+        actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增密钥</Button>}
       />
+
+      <Surface>
+        <div className="ur-table-shell">
+          <Table
+            dataSource={keys}
+            columns={columns}
+            rowKey="id"
+            loading={loading}
+            pagination={{
+              currentPage: page, pageSize, total,
+              pageSizeOpts: [20, 50, 100], showSizeChanger: true,
+              onPageChange: (p: number) => { setPage(p); load(p); },
+              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1); },
+            }}
+          />
+        </div>
+      </Surface>
 
       <SideSheet
         title={editing ? '编辑密钥' : '新增密钥'}

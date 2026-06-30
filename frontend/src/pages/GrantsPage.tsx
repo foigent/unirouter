@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Typography, Button, Table, Form, Toast, SideSheet } from '@douyinfe/semi-ui';
+import { Button, Table, Form, Toast, SideSheet } from '@douyinfe/semi-ui';
 import { IconPlus } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
-
-const { Title } = Typography;
+import { MoneyText, PageHeader, Surface } from '../ui';
 
 export default function GrantsPage() {
   const [grants, setGrants] = useState<any[]>([]);
@@ -41,30 +40,36 @@ export default function GrantsPage() {
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 60 },
     { title: '组织', dataIndex: 'org_name', render: (v: string) => v || '-' },
-    { title: '金额（元）', dataIndex: 'amount_cents', render: (v: number) => `¥${(v / 100).toFixed(2)}` },
+    { title: '金额（元）', dataIndex: 'amount_cents', render: (v: number) => <MoneyText cents={v} tone="income" /> },
     { title: '原因', dataIndex: 'reason' },
     { title: '请求ID', dataIndex: 'client_request_id', render: (v: string) => <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{v}</span> },
     { title: '时间', dataIndex: 'created_at', render: (v: string) => formatDateTime(v) },
   ];
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <Title heading={4} style={{ margin: 0 }}>额度赠送</Title>
-        <Button icon={<IconPlus />} type="primary" onClick={() => { formApi?.reset(); setShowDrawer(true); }}>赠送额度</Button>
-      </div>
-
-      <Table
-        columns={columns}
-        dataSource={grants}
-        loading={loading}
-        rowKey="id"
-        pagination={{
-          currentPage: page, pageSize, total,
-          onPageChange: (p: number) => { setPage(p); load(p); },
-          onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1); },
-        }}
+    <div className="ur-page">
+      <PageHeader
+        eyebrow="Billing"
+        title="额度赠送"
+        description="记录组织赠送额度和业务原因，辅助财务追踪。"
+        actions={<Button icon={<IconPlus />} type="primary" onClick={() => { formApi?.reset(); setShowDrawer(true); }}>赠送额度</Button>}
       />
+
+      <Surface>
+        <div className="ur-table-shell">
+          <Table
+            columns={columns}
+            dataSource={grants}
+            loading={loading}
+            rowKey="id"
+            pagination={{
+              currentPage: page, pageSize, total,
+              onPageChange: (p: number) => { setPage(p); load(p); },
+              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1); },
+            }}
+          />
+        </div>
+      </Surface>
 
       <SideSheet
         title="赠送额度"

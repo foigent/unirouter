@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/uniroute/unirouter/internal/middleware"
 )
 
 func (h *Handler) GetWallet(w http.ResponseWriter, r *http.Request) {
@@ -24,18 +26,27 @@ func (h *Handler) GetWallet(w http.ResponseWriter, r *http.Request) {
 		var currency string
 		var autoFreeze bool
 		var createdAt, updatedAt time.Time
-		rows.Scan(&orgID, &balanceCents, &grantedCents, &frozenCents, &totalSpentCents, &currency, &autoFreeze, &lowThreshold, &createdAt, &updatedAt)
+		if err := rows.Scan(&orgID, &balanceCents, &grantedCents, &frozenCents, &totalSpentCents, &currency, &autoFreeze, &lowThreshold, &createdAt, &updatedAt); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
+			return
+		}
+
+		role := middleware.GetUserRoleFromContext(r.Context())
+		isAdmin := role == "admin" || role == "platform_admin"
 
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"id":                          orgID,
 			"org_id":                      orgID,
 			"balance_cents":               balanceCents,
+			"granted_cents":               grantedCents,
 			"granted_balance_cents":       grantedCents,
 			"frozen_cents":                frozenCents,
+			"threshold_cents":             lowThreshold,
 			"currency":                    currency,
 			"auto_freeze":                 autoFreeze,
 			"low_balance_threshold_cents": lowThreshold,
 			"total_spent_cents":           totalSpentCents,
+			"is_admin":                    isAdmin,
 			"created_at":                  createdAt,
 			"updated_at":                  updatedAt,
 		})

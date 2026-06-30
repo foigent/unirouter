@@ -54,6 +54,7 @@ Docker Compose（3 个容器）：
 - [当前状态](docs/ops/CURRENT-STATUS.md) — 当前真实进度、测试和缺口
 - [PRD1 收尾计划](docs/ops/PRD1-CLOSEOUT-PLAN.md) — PRD1 到 PRD2 的退出标准和收尾项
 - [PRD 验收矩阵](docs/ops/PRD-ACCEPTANCE-MATRIX.md) — Phase 1 验收进度
+- [PRD1 UI Redesign](docs/design/PRD1-UI-REDESIGN-SPEC.md) — PRD1 控制台视觉重设计和前端 UI 基础层
 - [Open Issues](docs/issues/OPEN-ISSUES.md) — 当前未关闭问题
 - [Agent 协议](docs/agent-workflows/AGENT-PROTOCOL.md) — Codex/OpenClaw 协作和验收流程
 - [PRD Phase 1](docs/PRD-Phase1.md) — 产品需求文档（需求和验收标准的 source of truth）
@@ -98,6 +99,7 @@ UniRouter/
 │       ├── pages/        # 页面（Dashboard、Channels、Users 等）
 │       ├── store/        # 状态管理
 │       ├── test/         # 前端测试
+│       ├── ui/           # PRD1 UI 基础层（页面头、面板、指标、状态/金额/延迟显示）
 │       └── utils/        # 工具函数
 ├── web/
 │   ├── admin/            # 管理后台构建产物（CDN 静态资源）
@@ -116,6 +118,7 @@ UniRouter/
 │   ├── testing/          # 测试文档
 │   ├── issues/           # 问题跟踪
 │   └── archive/          # 归档
+├── trash/                # 本地无用调试产物隔离区；仅 README 入库，内容不参与运行/发布
 ├── .env.example          # 环境变量模板
 ├── Dockerfile            # 后端容器
 ├── docker-compose.yml    # Docker 编排

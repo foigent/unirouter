@@ -53,3 +53,10 @@ docs/reviews/
 # 临时文件
 *.bak
 uniroute-linux
+
+# Local artifact quarantine. Keep trash/README.md tracked.
+trash/*
+!trash/README.md
+
+# Local visual QA evidence. Keep screenshots on disk, not in PRs.
+output/playwright/*.png

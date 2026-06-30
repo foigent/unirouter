@@ -22,18 +22,18 @@
 |----------|--------|------------------|-------------------|
 | Admin can create/edit/disable channels | Implemented not accepted | Admin routes and frontend page exist | Current manual/API CRUD evidence needed |
 | Admin can create/disable API keys | Implemented not accepted | Routes and frontend page exist | Current manual/API CRUD evidence needed |
-| Admin can view billing and call logs | E2E accepted | Non-destructive cloud API smoke verified authenticated GETs for dashboard, wallet, wallet transactions, logs, reconciliation, users, grants, audit logs, settings, sensitive words, model prices, org prices, keys, channel keys, and channels | Browser UX walkthrough still needed; mutation flows are intentionally not covered by this smoke |
-| Admin can top up and adjust wallet | Implemented not accepted | Routes and frontend page exist | Current manual/API evidence needed |
+| Admin can view billing and call logs | E2E accepted | Non-destructive cloud API smoke verified authenticated GETs for dashboard, wallet, wallet transactions, logs, reconciliation, users, grants, audit logs, settings, sensitive words, model prices, org prices, keys, channel keys, and channels; logs model filter source fixed locally | Browser UX walkthrough still needed |
+| Admin can top up and adjust wallet | Implemented not accepted | Routes and frontend page exist; wallet admin action visibility and adjust request contract fixed locally | Current manual/API mutation evidence needed in safe test conditions |
 | Docker Compose one-command deployment succeeds | Production verified | Alibaba Cloud smoke passed: frontend `:3000`, backend health `:8080`, Prometheus `:9090`, Grafana login `:3001`, admin login/me/dashboard/settings through nginx | Keep Sentinel/Atlas deployment logs as release evidence |
 
 ## Frontend UI
 
 | PRD Item | Status | Current Evidence | Gap To Acceptance |
 |----------|--------|------------------|-------------------|
-| Admin frontend has a coherent navigation and layout shell | Implemented not accepted | `frontend/src/App.tsx` defines grouped sidebar and protected layout; UI source audit passed Canary non-visual review | Current browser/manual UX evidence needed |
-| Admin pages use consistent table/form/modal patterns | Implemented not accepted | Pages exist under `frontend/src/pages`; `docs/ui/FRONTEND-UI-ARCHITECTURE-AUDIT.md` documents reuse gaps and PRD2 architecture | Further component refactor can move to PRD2 unless user wants it in PRD1 |
-| Core admin workflows are usable from browser | Implemented not accepted | Frontend build and limited page tests pass | Browser/manual validation needed |
-| UI has consistent visual hierarchy, spacing, empty/error/loading states | Implemented not accepted | Semi UI is used; source audit completed and non-visual fixes passed Canary | Browser/manual validation still needed |
+| Admin frontend has a coherent navigation and layout shell | Implemented not accepted | `frontend/src/App.tsx` defines grouped sidebar, protected layout, `/docs` nav entry, and refreshed console shell; Codex Playwright screenshots captured desktop and mobile layouts | Canary non-visual verification and user visual acceptance still needed |
+| Admin pages use consistent table/form/modal patterns | Implemented not accepted | PRD1 UI layer added under `frontend/src/ui/`; major resource pages now use shared `PageHeader`/`Surface` and table shell patterns | Deeper typed resource-page abstraction can move to PRD2 |
+| Core admin workflows are usable from browser | Implemented not accepted | Frontend build/tests pass; Codex screenshot pass covered Login, Dashboard, Logs detail, Wallet, API Docs, Channels, mobile Dashboard, and mobile Logs with mocked read-only data | Human/cloud browser walkthrough still useful before release |
+| UI has consistent visual hierarchy, spacing, empty/error/loading states | Implemented not accepted | `docs/design/PRD1-UI-REDESIGN-SPEC.md` records the implemented visual system; Dashboard chart/health, Logs explorer, Wallet actions, API Docs, and mobile hamburger overlap were visually checked by Codex | Canary cannot judge visual quality; user acceptance remains the final visual gate |
 | Frontend API client matches backend routes | Unit tested | `ApiError` added; `/me/password` backend route added; `route_parity_test.go` guards frontend admin routes | Canary verification needed for latest password/route-parity round |
 
 ## Stability

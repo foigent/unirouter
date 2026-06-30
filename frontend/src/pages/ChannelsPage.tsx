@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Typography, Button, Table, Modal, Form, Tag, Toast, Space, Tooltip, SideSheet } from '@douyinfe/semi-ui';
+import { Button, Table, Modal, Form, Tag, Toast, Space, Tooltip, SideSheet } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-
-const { Title } = Typography;
+import { PageHeader, StatusTag, Surface } from '../ui';
 
 interface Channel {
   id: number;
@@ -96,19 +95,6 @@ export default function ChannelsPage() {
     formApi?.reset();
   };
 
-  const statusColor = (s: string) => {
-    if (s === 'active') return 'green';
-    if (s === 'deprecated') return 'yellow';
-    if (s === 'disabled') return 'grey';
-    return 'red';
-  };
-
-  const circuitColor = (s: string) => {
-    if (s === 'healthy') return 'green';
-    if (s === 'half_open') return 'orange';
-    return 'red';
-  };
-
   const columns = [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
     { title: '名称', dataIndex: 'name', key: 'name' },
@@ -124,14 +110,14 @@ export default function ChannelsPage() {
       width: 80,
       render: (v: string) => v === 'deprecated'
         ? <Tooltip content="该渠道已废弃，建议尽快迁移到新渠道"><Tag color="yellow">deprecated ⚠</Tag></Tooltip>
-        : <Tag color={statusColor(v) as any}>{v}</Tag>,
+        : <StatusTag status={v}>{v}</StatusTag>,
     },
     {
       title: '熔断',
       dataIndex: 'circuit_state',
       key: 'circuit',
       width: 100,
-      render: (v: string) => <Tag color={circuitColor(v) as any}>{v}</Tag>,
+      render: (v: string) => <StatusTag status={v}>{v}</StatusTag>,
     },
     {
       title: '操作',
@@ -147,27 +133,33 @@ export default function ChannelsPage() {
   ];
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <Title heading={4} style={{ margin: 0 }}>渠道管理</Title>
-        <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增渠道</Button>
-      </div>
-
-      <Table
-        dataSource={channels}
-        columns={columns}
-        rowKey="id"
-        loading={loading}
-        pagination={{
-          currentPage: page,
-          pageSize,
-          total,
-          pageSizeOpts: [20, 50, 100],
-          showSizeChanger: true,
-          onPageChange: (p: number) => { setPage(p); load(p); },
-          onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1); },
-        }}
+    <div className="ur-page">
+      <PageHeader
+        eyebrow="Traffic"
+        title="渠道管理"
+        description="配置上游 provider、模型能力、优先级和熔断状态。"
+        actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增渠道</Button>}
       />
+
+      <Surface>
+        <div className="ur-table-shell">
+          <Table
+            dataSource={channels}
+            columns={columns}
+            rowKey="id"
+            loading={loading}
+            pagination={{
+              currentPage: page,
+              pageSize,
+              total,
+              pageSizeOpts: [20, 50, 100],
+              showSizeChanger: true,
+              onPageChange: (p: number) => { setPage(p); load(p); },
+              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1); },
+            }}
+          />
+        </div>
+      </Surface>
 
       <SideSheet
         title={editing ? '编辑渠道' : '新增渠道'}

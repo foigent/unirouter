@@ -71,6 +71,49 @@ func TestLogin_Success(t *testing.T) {
 	}
 }
 
+func TestLogin_WritesAuditWithActor(t *testing.T) {
+	hash := "$2a$10$FQbk3L3IVXe.UiYojf7YVeq1nbfb4oI.igx8Jed8fxF6slCek.hLG"
+	var auditOrgID, auditUserID int64
+	var auditAction string
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
+					*dest[0].(*int64) = 7
+					*dest[1].(*int64) = 3
+					*dest[2].(*string) = hash
+					*dest[3].(*string) = "admin"
+					*dest[4].(*string) = "active"
+					return nil
+				},
+			}
+		},
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if !strings.Contains(sql, "INSERT INTO audit_logs") {
+				return pgconn.CommandTag{}, nil
+			}
+			auditOrgID = args[0].(int64)
+			auditUserID = args[1].(int64)
+			auditAction = args[2].(string)
+			return pgconn.NewCommandTag("INSERT 1"), nil
+		},
+	}
+	h := newTestHandler(db)
+
+	req := httptest.NewRequest("POST", "/auth/login", strings.NewReader(`{"username":"admin","password":"password123"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.Login(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if auditOrgID != 3 || auditUserID != 7 || auditAction != "login" {
+		t.Fatalf("expected login audit org=3 user=7 action=login, got org=%d user=%d action=%s", auditOrgID, auditUserID, auditAction)
+	}
+}
+
 func TestLogin_WrongPassword(t *testing.T) {
 	hash := "$2a$10$FQbk3L3IVXe.UiYojf7YVeq1nbfb4oI.igx8Jed8fxF6slCek.hLG"
 	db := &testutil.MockDB{
@@ -336,6 +379,56 @@ func TestGetWallet_Success(t *testing.T) {
 	}
 	if resp["currency"] != "USD" {
 		t.Fatalf("expected currency=USD, got %v", resp["currency"])
+	}
+	if resp["granted_cents"].(float64) != 5000 {
+		t.Fatalf("expected granted_cents=5000, got %v", resp["granted_cents"])
+	}
+	if resp["threshold_cents"].(float64) != 1000 {
+		t.Fatalf("expected threshold_cents=1000, got %v", resp["threshold_cents"])
+	}
+	if resp["is_admin"].(bool) {
+		t.Fatalf("expected is_admin=false without admin role context")
+	}
+}
+
+func TestGetWallet_AdminRole(t *testing.T) {
+	now := time.Now()
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
+					func(dest ...any) error {
+						*dest[0].(*int64) = 1
+						*dest[1].(*int) = 10000
+						*dest[2].(*int) = 5000
+						*dest[3].(*int) = 0
+						*dest[4].(*int) = 2500
+						*dest[5].(*string) = "USD"
+						*dest[6].(*bool) = true
+						*dest[7].(*int) = 1000
+						*dest[8].(*time.Time) = now
+						*dest[9].(*time.Time) = now
+						return nil
+					},
+				},
+			}, nil
+		},
+	}
+	h := newTestHandler(db)
+
+	req := httptest.NewRequest("GET", "/wallet", nil)
+	req = req.WithContext(context.WithValue(req.Context(), middleware.CtxUserRole, "admin"))
+	rec := httptest.NewRecorder()
+
+	h.GetWallet(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(rec.Body.Bytes(), &resp)
+	if !resp["is_admin"].(bool) {
+		t.Fatal("expected is_admin=true for admin role")
 	}
 }
 
@@ -2418,8 +2511,8 @@ func TestDashboardStats_Success(t *testing.T) {
 			return &testutil.MockRows{
 				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
-						if strings.Contains(sql, "DATE") {
-							// daily trend: day, requests, cost
+						if strings.Contains(sql, "date_trunc") {
+							// trend: bucket, requests, cost
 							*dest[0].(*time.Time) = now
 							*dest[1].(*int) = 50
 							*dest[2].(*int) = 1000
