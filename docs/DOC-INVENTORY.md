@@ -48,6 +48,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | File | Current Role |
 |------|--------------|
 | `docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md` | Current local evidence and external acceptance queue |
+| `docs/ops/PRD1-STRICT-CLOSEOUT-RUNBOOK.md` | Final strict closeout gate and evidence procedure |
 | `docs/ops/deployment-runbook.md` | Deployment reference |
 | `docs/ops/canary-testing.md` | Canary deployment/testing reference |
 | `docs/ops/test-plan.md` | Test case catalog |

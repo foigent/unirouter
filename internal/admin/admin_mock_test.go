@@ -144,6 +144,72 @@ func TestLogin_WrongPassword(t *testing.T) {
 	}
 }
 
+func TestLogin_DefaultAdminPasswordBlocked(t *testing.T) {
+	t.Setenv("UNIROUTE_ALLOW_DEFAULT_ADMIN_LOGIN", "")
+	hash, err := bcrypt.GenerateFromPassword([]byte("admin123456"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
+					*dest[0].(*int64) = 1
+					*dest[1].(*int64) = 1
+					*dest[2].(*string) = string(hash)
+					*dest[3].(*string) = "admin"
+					*dest[4].(*string) = "active"
+					return nil
+				},
+			}
+		},
+	}
+	h := newTestHandler(db)
+
+	req := httptest.NewRequest("POST", "/auth/login", strings.NewReader(`{"username":"admin","password":"admin123456"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.Login(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for default admin password, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestLogin_DefaultAdminPasswordAllowedForExplicitDevOverride(t *testing.T) {
+	t.Setenv("UNIROUTE_ALLOW_DEFAULT_ADMIN_LOGIN", "true")
+	hash, err := bcrypt.GenerateFromPassword([]byte("admin123456"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
+					*dest[0].(*int64) = 1
+					*dest[1].(*int64) = 1
+					*dest[2].(*string) = string(hash)
+					*dest[3].(*string) = "admin"
+					*dest[4].(*string) = "active"
+					return nil
+				},
+			}
+		},
+	}
+	h := newTestHandler(db)
+
+	req := httptest.NewRequest("POST", "/auth/login", strings.NewReader(`{"username":"admin","password":"admin123456"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.Login(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 with explicit override, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestLogin_UserNotFound(t *testing.T) {
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {

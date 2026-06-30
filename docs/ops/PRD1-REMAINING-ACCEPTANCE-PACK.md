@@ -107,6 +107,7 @@ Notes:
 - `http://8.130.18.85:3000/metrics` returns frontend HTML, so metrics should be verified via backend `:8080/metrics` or Prometheus `:9090`.
 - Scope was intentionally non-destructive: no real provider paid requests, no API key/channel/wallet mutations, no load test, no stream disconnect, and no failover/fault injection.
 - Cloud smoke exposed a handler quality issue where nullable database fields could be scanned into non-nullable Go types while `rows.Scan` errors were ignored, producing zero-value timestamps. Codex fixed this locally for API key and call-log list handlers; deployment needs a new build before that fix is visible in cloud.
+- Strict closeout smoke on 2026-07-01 found the public cloud accepted `admin/admin123456` and returned a JWT. This is a PRD1 security blocker until the patched build is deployed and the default login returns 401/403.
 
 ## Code Fixes Completed
 
@@ -166,6 +167,40 @@ Files:
 - `internal/admin/log_handlers.go`
 - `internal/admin/admin_mock_test.go`
 
+Cloud follow-up:
+
+- After deployment, authenticated GET `/api/v1/keys?page=1&page_size=5` returned 200.
+- After deployment, authenticated GET `/api/v1/logs?page=1&page_size=5` returned 200.
+- Verified on Alibaba Cloud on 2026-07-01.
+
+### PRD1-SEC-002: public default admin password works in cloud
+
+Completed locally:
+
+- Web login rejects `admin/admin123456` unless `UNIROUTE_ALLOW_DEFAULT_ADMIN_LOGIN=true`.
+- Added `./uniroute admin set-password --username admin --password <strong-password> --org-id 1`.
+- Added `./uniroute admin create --username <name> --password <strong-password> --role admin --org-id 1`.
+- CLI refuses to create or set `admin/admin123456` by default.
+- Added regression tests for default admin login blocking and CLI validation.
+
+Remaining:
+
+- OpenClaw Canary must verify code/tests/docs.
+- Sentinel/Atlas must redeploy.
+- Cloud smoke must show `admin/admin123456` returns 401/403.
+
+### PRD1-OPS-001: `/health/ready` PRD response shape
+
+Completed locally:
+
+- `/health/ready` now returns `{"status":"ok","db":"ok","redis":"ok"}` when PostgreSQL and Redis are healthy.
+
+Remaining:
+
+- OpenClaw Canary must verify code/tests/docs.
+- Sentinel/Atlas must redeploy.
+- Cloud smoke must show the PRD response shape.
+
 ## External Acceptance Queue
 
 These items are not honestly closable from this workspace.
@@ -180,6 +215,7 @@ These items are not honestly closable from this workspace.
 | EXT-006 | Browser/manual frontend validation | Human or browser-capable agent | Canary/OpenClaw has no visual capability | Walkthrough notes for Dashboard, Channels, Keys, Wallet, Logs, Settings |
 | EXT-007 | Grafana dashboard visual verification | Atlas or browser-capable operator | Grafana login is reachable; panels not visually verified by Codex | Dashboard import/provisioning evidence and panel screenshot/manual notes |
 | EXT-008 | Full typed OpenAPI schemas | Codex/Sentinel before typed-client work | Current spec is path-accurate but intentionally uses generic schemas for many admin resources | Detailed schemas matching handler payloads |
+| EXT-009 | Default admin remediation redeploy | Sentinel/Atlas | Current public cloud accepted `admin/admin123456`; local fix is not production-verified yet | Patched deployment plus `scripts/prd1-cloud-smoke.sh` showing default login rejected |
 
 ## Recommended Handoff
 

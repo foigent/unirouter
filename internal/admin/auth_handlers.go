@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"strings"
 
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
@@ -50,6 +52,12 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]interface{}{"error": "Invalid credentials"})
 		return
 	}
+	if isBlockedDefaultAdminLogin(req.Username, req.Password) {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{
+			"error": "Default admin password is disabled; run admin set-password before login",
+		})
+		return
+	}
 
 	token, err := auth.GenerateJWT(userID, orgID, role, h.jwtSecret, 24)
 	if err != nil {
@@ -68,6 +76,13 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		"username": req.Username,
 		"role":     role,
 	})
+}
+
+func isBlockedDefaultAdminLogin(username, password string) bool {
+	if os.Getenv("UNIROUTE_ALLOW_DEFAULT_ADMIN_LOGIN") == "true" {
+		return false
+	}
+	return strings.EqualFold(username, "admin") && password == "admin123456"
 }
 
 func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {

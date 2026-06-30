@@ -20,24 +20,27 @@ docker compose up -d
 curl http://localhost:8080/health/ready
 # {"status":"ok","db":"ok","redis":"ok"}
 
-# 5. 执行数据库迁移
-docker compose exec uniroute ./uniroute migrate
+# 5. 数据库迁移会在后端启动时自动执行；也可以手动补跑
+docker compose exec backend ./uniroute migrate up
 
-# 6. 创建管理员
-docker compose exec uniroute ./uniroute admin create \
-    --username admin --password <your-password> --role platform_admin
+# 6. 首次部署后必须立刻轮换默认管理员密码
+docker compose exec backend ./uniroute admin set-password \
+    --username admin --password <strong-password> --org-id 1
 ```
 
 ## 架构
 
 ```
-Docker Compose（3 个容器）：
-├── uniroute（单个 Go 二进制）
+Docker Compose（6 个容器）：
+├── backend（Go 二进制）
 │   ├── /v1/*       → OpenAI 兼容网关
 │   ├── /api/v1/*   → 管理后台 API
 │   └── /health/*   → 健康检查
+├── frontend（Nginx + React 静态资源）
 ├── PostgreSQL 15
-└── Redis 7（AOF always）
+├── Redis 7
+├── Prometheus
+└── Grafana
 ```
 
 ## 技术栈
@@ -53,6 +56,7 @@ Docker Compose（3 个容器）：
 - [Agent Handoff](docs/PROJECT-HANDOFF.md) — 其他 agent 接手项目的第一入口
 - [当前状态](docs/ops/CURRENT-STATUS.md) — 当前真实进度、测试和缺口
 - [PRD1 收尾计划](docs/ops/PRD1-CLOSEOUT-PLAN.md) — PRD1 到 PRD2 的退出标准和收尾项
+- [PRD1 严格关闭 Runbook](docs/ops/PRD1-STRICT-CLOSEOUT-RUNBOOK.md) — PRD1 全量对齐关闭前的执行门禁
 - [PRD 验收矩阵](docs/ops/PRD-ACCEPTANCE-MATRIX.md) — Phase 1 验收进度
 - [PRD1 UI Redesign](docs/design/PRD1-UI-REDESIGN-SPEC.md) — PRD1 控制台视觉重设计和前端 UI 基础层
 - [Open Issues](docs/issues/OPEN-ISSUES.md) — 当前未关闭问题
@@ -105,6 +109,7 @@ UniRouter/
 │   ├── admin/            # 管理后台构建产物（CDN 静态资源）
 │   └── console/          # 控制台构建产物
 ├── migrations/           # SQL 迁移脚本
+├── scripts/              # 验收/运维辅助脚本
 ├── docs/                 # 文档
 │   ├── PROJECT-HANDOFF.md # Agent 接手入口
 │   ├── CODEBASE-MAP.md   # 代码结构地图
