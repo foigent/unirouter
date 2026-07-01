@@ -26,14 +26,14 @@ import (
 // --- Mock BillingProvider ---
 
 type mockBilling struct {
-	queryModelPriceFn func(ctx context.Context, orgID int64, model string) (int, int, error)
+	queryModelPriceFn func(ctx context.Context, orgID int64, model string) (float64, float64, error)
 	calculateCostFn   func(ctx context.Context, model string, promptTokens, completionTokens int) (int, error)
 	freezeFn          func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error)
 	settleFn          func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error)
 	cancelFn          func(ctx context.Context, requestID string, orgID int64) error
 }
 
-func (m *mockBilling) QueryModelPriceForOrg(ctx context.Context, orgID int64, model string) (int, int, error) {
+func (m *mockBilling) QueryModelPriceForOrg(ctx context.Context, orgID int64, model string) (float64, float64, error) {
 	if m.queryModelPriceFn != nil {
 		return m.queryModelPriceFn(ctx, orgID, model)
 	}
@@ -228,7 +228,7 @@ func TestHandleModels_EmptyAllowedModels(t *testing.T) {
 
 func TestCalculateCost_Success(t *testing.T) {
 	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
-		queryModelPriceFn: func(ctx context.Context, orgID int64, model string) (int, int, error) {
+		queryModelPriceFn: func(ctx context.Context, orgID int64, model string) (float64, float64, error) {
 			return 5, 15, nil // 5 cents per 1K input, 15 cents per 1K output
 		},
 	})
@@ -242,7 +242,7 @@ func TestCalculateCost_Success(t *testing.T) {
 
 func TestCalculateCost_MinimumCost(t *testing.T) {
 	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
-		queryModelPriceFn: func(ctx context.Context, orgID int64, model string) (int, int, error) {
+		queryModelPriceFn: func(ctx context.Context, orgID int64, model string) (float64, float64, error) {
 			return 1, 1, nil
 		},
 	})
@@ -256,7 +256,7 @@ func TestCalculateCost_MinimumCost(t *testing.T) {
 
 func TestCalculateCost_FallbackOnError(t *testing.T) {
 	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
-		queryModelPriceFn: func(ctx context.Context, orgID int64, model string) (int, int, error) {
+		queryModelPriceFn: func(ctx context.Context, orgID int64, model string) (float64, float64, error) {
 			return 0, 0, fmt.Errorf("db error")
 		},
 	})
@@ -273,18 +273,26 @@ func TestCalculateCost_FallbackOnError(t *testing.T) {
 
 func TestRecordRequest_Success(t *testing.T) {
 	execCalled := false
+	var capturedArgs []any
 	db := &testutil.MockDB{
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			execCalled = true
+			capturedArgs = append([]any(nil), args...)
 			return pgconn.CommandTag{}, nil
 		},
 	}
 	relay := newTestRelay(db, &mockBilling{})
 
-	relay.recordRequest(context.Background(), "req-001", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, false, "upstream")
+	relay.recordRequest(context.Background(), "req-001", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, 123, 0, false, "upstream")
 
 	if !execCalled {
 		t.Fatal("expected exec to be called")
+	}
+	if len(capturedArgs) != 17 {
+		t.Fatalf("expected 17 insert args, got %d", len(capturedArgs))
+	}
+	if capturedArgs[12] != 123 {
+		t.Fatalf("expected latency_ms arg 123, got %v", capturedArgs[12])
 	}
 }
 
@@ -297,7 +305,7 @@ func TestRecordRequest_DBError(t *testing.T) {
 	relay := newTestRelay(db, &mockBilling{})
 
 	// Should not panic on error (just logs)
-	relay.recordRequest(context.Background(), "req-001", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, false, "upstream")
+	relay.recordRequest(context.Background(), "req-001", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, 123, 0, false, "upstream")
 }
 
 // --- checkBudgetAlert tests ---
@@ -580,7 +588,7 @@ func TestRelayNonStreamRequest_Success(t *testing.T) {
 		},
 	}
 	b := &mockBilling{
-		queryModelPriceFn: func(ctx context.Context, orgID int64, model string) (int, int, error) {
+		queryModelPriceFn: func(ctx context.Context, orgID int64, model string) (float64, float64, error) {
 			return 5, 15, nil
 		},
 		settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
@@ -603,7 +611,7 @@ func TestRelayNonStreamRequest_Success(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-001", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-001", OrgID: 1}))
+	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-001", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-001", OrgID: 1}), time.Now())
 
 	if !settleCalled {
 		t.Fatal("expected settle to be called")
@@ -644,7 +652,7 @@ func TestRelayNonStreamRequest_SettleError(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-002", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-002", OrgID: 1}))
+	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-002", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-002", OrgID: 1}), time.Now())
 
 	// Should still return 200 even if settle fails
 	if rec.Code != 200 {
@@ -670,7 +678,7 @@ func TestRelayStreamRequest_NormalFlow(t *testing.T) {
 		},
 	}
 	b := &mockBilling{
-		queryModelPriceFn: func(ctx context.Context, orgID int64, model string) (int, int, error) {
+		queryModelPriceFn: func(ctx context.Context, orgID int64, model string) (float64, float64, error) {
 			return 5, 15, nil
 		},
 		settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
@@ -703,7 +711,7 @@ func TestRelayStreamRequest_NormalFlow(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-1", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", []Message{{Role: "user", Content: "Hi"}}, logger.New(logger.Fields{RequestID: "req-stream-1", OrgID: 1}))
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-1", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", []Message{{Role: "user", Content: "Hi"}}, logger.New(logger.Fields{RequestID: "req-stream-1", OrgID: 1}), time.Now())
 
 	if !settleCalled {
 		t.Fatal("expected settle to be called")
@@ -774,7 +782,7 @@ func TestRelayStreamRequest_NoUpstreamUsage(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-2", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", []Message{{Role: "user", Content: "Hello"}}, logger.New(logger.Fields{RequestID: "req-stream-2", OrgID: 1}))
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-2", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", []Message{{Role: "user", Content: "Hello"}}, logger.New(logger.Fields{RequestID: "req-stream-2", OrgID: 1}), time.Now())
 
 	if !settleCalled {
 		t.Fatal("expected settle to be called")
@@ -813,7 +821,7 @@ func TestRelayStreamRequest_SettleError(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-3", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-3", OrgID: 1}))
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-3", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-3", OrgID: 1}), time.Now())
 
 	// Should still produce valid output even if settle fails
 	body := rec.Body.String()
@@ -859,7 +867,7 @@ func TestRelayStreamRequest_UpstreamUsageSource(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-4", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-4", OrgID: 1}))
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-4", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-4", OrgID: 1}), time.Now())
 }
 
 func TestRelayStreamRequest_EmptyStream(t *testing.T) {
@@ -894,7 +902,7 @@ func TestRelayStreamRequest_EmptyStream(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-5", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-5", OrgID: 1}))
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-5", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-5", OrgID: 1}), time.Now())
 
 	body := rec.Body.String()
 	if !strings.Contains(body, "data: [DONE]") {
@@ -934,7 +942,7 @@ func TestRelayStreamRequest_UnirouteExtension(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-6", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-6", OrgID: 1}))
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-6", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-6", OrgID: 1}), time.Now())
 
 	body := rec.Body.String()
 	// Extension data (request_id, cost) should be present in output

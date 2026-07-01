@@ -8,15 +8,15 @@ import (
 )
 
 // mockPrice returns a PriceProvider that always returns the given prices.
-func mockPrice(inputCents, outputCents int) PriceProvider {
-	return PriceProviderFunc(func(_ context.Context, _ string) (int, int, error) {
+func mockPrice(inputCents, outputCents float64) PriceProvider {
+	return PriceProviderFunc(func(_ context.Context, _ string) (float64, float64, error) {
 		return inputCents, outputCents, nil
 	})
 }
 
 // errPrice returns a PriceProvider that always returns an error.
 func errPrice(err error) PriceProvider {
-	return PriceProviderFunc(func(_ context.Context, _ string) (int, int, error) {
+	return PriceProviderFunc(func(_ context.Context, _ string) (float64, float64, error) {
 		return 0, 0, err
 	})
 }
@@ -36,6 +36,18 @@ func TestCalculateCost_Normal(t *testing.T) {
 	// (1000*2 + 500*10) / 1000 = 7000 / 1000 = 7
 	if cost != 7 {
 		t.Errorf("expected 7, got %d", cost)
+	}
+}
+
+func TestCalculateCost_FractionalCentPrice(t *testing.T) {
+	b := newTestBilling(mockPrice(0.2, 0.1))
+	cost, err := b.CalculateCost(context.Background(), "mimo-v2.5", 10000, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 10000 input tokens at 0.2 cents / 1K tokens = 2 cents.
+	if cost != 2 {
+		t.Errorf("expected 2, got %d", cost)
 	}
 }
 

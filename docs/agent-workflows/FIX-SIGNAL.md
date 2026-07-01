@@ -1,101 +1,117 @@
-# FIX-SIGNAL.md — PRD1 UI/API Follow-up Fix 验收请求
+# FIX-SIGNAL.md — PRD1 Latency / Decimal Pricing Fix 验收请求
 
 **修复者：** Codex
 **日期：** 2026-07-01
-**修复轮次：** PRD1 channel-key edit, token reconciliation pagination, and Dashboard trend fix
+**修复轮次：** PRD1 dashboard latency persistence, decimal model pricing, and Mimo provider recheck
 
 ---
 
 ## 本轮背景
 
-用户在云端 PRD1 继续验收时报告三类问题：
+用户在云端 PRD1 验收时报告：
 
-- `上游密钥 -> 渠道密钥管理 -> 编辑渠道密钥` 中，“所属渠道”下拉无法点击，且需要更新 Mimo key。
-- `Token 对账` 每页只显示一条数据。
-- `仪表盘 -> AI 活动趋势` 图表是否正确存在疑问。
+- 仪表盘平均延迟显示为 `0ms`。
+- 模型价格配置中把 `mimo-v2.5` 设置为输入 `0.002` 元/千 token、输出 `0.001` 元/千 token 后，列表显示价格为 0。
+- `Mimo Token Plan` 上游 key 已更新，需要复核 provider 是否仍是阻断项。
 
-代码与云端接口核查结论：
+云端核查结论：
 
-- 前端编辑渠道密钥时禁用了 `所属渠道` 下拉；后端 `UpdateChannelKey` 也没有接收 `key` 字段，所以用户即使输入新 key 也不会真正更新上游密钥。
-- `UpdateChannelKey` 更新 key 后应清理 `fail_count/cooldown_until/last_used_at`，否则 Mimo key 即使替换后仍可能被冷却状态挡住。
-- `ListReconciliation` 把 `created_at` timestamp 扫到 `string`，并忽略 `rows.Scan` 错误；云端 `total=145` 但任意 `page_size` 都只返回 1 行。
-- `ReconciliationPage` 请求里把 `page_size` 写死为 `20`，并使用了后端不支持的 `pending` 状态筛选。
-- Dashboard `total_requests` 查询没有使用所选时间范围，导致 24h KPI/趋势图口径不一致；趋势图也没有补零 bucket，24h/7d/30d 在稀疏数据下很容易看起来“不变”。
+- `/api/v1/dashboard/stats` 返回 `avg_latency_ms=0`，最近调用日志 `latency_ms=0`，根因是网关 `recordRequest` 插入 `call_logs` 时没有写入 `latency_ms/ttft_ms`，数据库默认值一直是 0。
+- `/api/v1/model-prices` 中 `mimo-v2.5` 已被保存为 `input_price_cents=0/output_price_cents=0`，根因是前端将“元/千 token”乘以 100 后 `Math.round` 到整数分，`0.002` 元会变成 `0.2` 分再被四舍五入为 0；后端和数据库字段也按整数处理。
+- 更新后的 channel 8 `Mimo Token Plan` key 已通过云端真实测试：后台渠道测试 `mimo-v2.5` 返回 HTTP 200；临时 UniRouter API key 网关调用 `mimo-v2.5` 返回 HTTP 200，`_uniroute.channel=Mimo Token Plan`，扣费 1 分，临时 key 已禁用。
 
 ---
 
-## Fix #1: 渠道密钥编辑可更新所属渠道和上游 key
+## Fix #1: 调用日志写入真实 latency_ms / ttft_ms
 
 **文件：**
 
-- `frontend/src/pages/ChannelKeysPage.tsx`
-- `internal/admin/channel_key_handlers.go`
-- `internal/admin/admin_mock_test.go`
+- `internal/gateway/relay.go`
+- `internal/gateway/relay_mock_test.go`
 
 **修复内容：**
 
-- 编辑渠道密钥时不再禁用 `所属渠道` 下拉。
-- 编辑表单不回显旧 key，提示用户输入新的完整上游 API key。
-- 后端 `UpdateChannelKey` 支持 `key` 字段，更新时重新加密写入 `key_enc`。
-- 更新 key 时自动重置 `fail_count=0`、`cooldown_until=NULL`、`last_used_at=NULL`。
-- 后端同时补齐 `allowed_models` 更新路径和 `channelkey.update` audit。
-- 增加 `TestUpdateChannelKey_KeyResetsCooldown`。
+- `HandleChatCompletion` 和 `HandleEmbeddings` 记录 `requestStart`。
+- `recordRequest` 新增 `latencyMs` 和 `ttftMs` 参数。
+- `call_logs` insert 显式写入 `latency_ms` 和 `ttft_ms`。
+- 非流式、流式、无路由、上游失败、embeddings 成功/无路由路径传入真实耗时。
+- 流式路径继续写入已有 TTFT。
+- `TestRecordRequest_Success` 断言 insert 参数包含 `latency_ms`。
+
+**预期效果：**
+
+- 新部署后的新调用日志不再全部是 `latency_ms=0`。
+- Dashboard `avg_latency_ms` 对新产生的调用会逐步显示真实平均延迟。
+- 历史旧日志仍然是 0，这是历史数据事实，不应通过代码回填伪造。
 
 ---
 
-## Fix #2: Token 对账分页返回多行并使用真实 pageSize
+## Fix #2: 模型价格支持小数分，保留小额价格
 
 **文件：**
 
+- `migrations/000001_init_schema.up.sql`
+- `migrations/000008_model_price_decimal_cents.up.sql`
+- `migrations/000008_model_price_decimal_cents.down.sql`
+- `internal/models/models.go`
 - `internal/admin/model_handlers.go`
-- `internal/admin/admin_mock_test.go`
-- `frontend/src/pages/ReconciliationPage.tsx`
-
-**修复内容：**
-
-- `ListReconciliation` 将 `created_at` 扫描为 `time.Time`，再格式化为 RFC3339 字符串。
-- `ListReconciliation` 不再忽略 count/row scan/rows errors。
-- 前端请求使用当前 `pageSize`，不再写死 `page_size=20`。
-- 前端分页使用 `onPageChange`，pageSize 改变时重新拉取。
-- 状态筛选改为后端真实支持的 `reconciled` / `error`。
-- `TestListReconciliation_Success` 改为覆盖 2 行 timestamp 结果。
-
----
-
-## Fix #3: Dashboard 活动趋势与时间范围口径一致
-
-**文件：**
-
 - `internal/admin/dashboard_handlers.go`
-- `internal/admin/admin_mock_test.go`
+- `internal/billing/price_provider.go`
+- `internal/billing/billing.go`
+- `internal/testutil/testdb.go`
+- `frontend/src/pages/ModelPricesPage.tsx`
+- `frontend/src/pages/__tests__/ModelPricesPage.test.tsx`
+- related Go tests under `internal/admin`, `internal/billing`, `internal/gateway`
 
 **修复内容：**
 
-- `dashboardOverview.total_requests` 改为按 `start_time/end_time` 查询，不再返回全量历史。
-- `dashboardDailyTrend` 使用 `time.RFC3339Nano` 解析前端 ISO 时间。
-- 趋势图按时间范围补零 bucket：短范围按小时，长范围按天。
-- bucket 统一 UTC 格式化，避免数据库时区导致 bucket 对不上。
-- 增加 `TestDashboardOverview_TotalUsesTimeRange`。
+- `model_prices.input_price_cents/output_price_cents` 从 integer 迁移到 `NUMERIC(18,6)`。
+- 后端模型价格 list/create/update 使用 `float64`，并拒绝负价格。
+- Dashboard model price summary 使用 float scan。
+- Billing price provider 和 org multiplier 查询使用小数价格参与计算，最终费用仍按整数分结算。
+- 前端模型价格页把“元/千 token”转换成“分/千 token”时保留 6 位小数，不再 `Math.round` 到整数。
+- 新增 `yuanPerKToCents('0.002') === 0.2` 前端测试。
+- 新增 `TestCreateModelPrice_DecimalCents` 和 `TestCalculateCost_FractionalCentPrice`。
+
+**预期效果：**
+
+- 用户输入 `0.002` 元/千 token 后，API 应保存 `input_price_cents=0.2`。
+- 表格用 `MoneyText` 显示为 `¥0.0020`，不再显示为 `¥0.0000`。
+- 计费计算不会把小额模型价格退化成 0。
+
+---
+
+## Runtime Evidence: Mimo provider key 已恢复
+
+**云端验证：**
+
+- Channel 8 `Mimo Token Plan` key prefix changed to `****df24`，`fail_count=0`，`cooldown_until=null`。
+- `POST /api/v1/channels/8/test` with `model=mimo-v2.5`: PASS, HTTP 200, `latency_ms=1385`, `tokens_used=267`。
+- 临时 API key `id=30` 网关调用 `POST /v1/chat/completions` with `model=mimo-v2.5`: PASS, HTTP 200, `_uniroute.channel=Mimo Token Plan`, `_uniroute.cost.charged=1`。
+- 临时 API key `id=30` 已禁用，disable API returned HTTP 200。
+
+**结论：**
+
+- `PRD1-PROVIDER-001` 的“上游 key 无效”阻断可关闭。
+- `PRD1-LOAD-001` 仍是独立容量/压测问题，不因单次 provider E2E 成功自动关闭。
 
 ---
 
 ## Codex 已执行验证
 
 ```bash
-go test ./internal/admin -run 'TestUpdateChannelKey_KeyResetsCooldown|TestListReconciliation|TestDashboardOverview|TestDashboardStats' -v
+go test ./internal/billing ./internal/admin ./internal/gateway -run 'TestCalculateCost_FractionalCentPrice|TestCalculateCost_Normal|TestQueryModelPrice|TestCreateModelPrice_DecimalCents|TestListModelPrices_Success|TestDashboardStats_Success|TestRecordRequest_Success|TestRelayNonStreamRequest|TestRelayStreamRequest' -v
 go test ./...
-cd frontend && npm run build
 cd frontend && npm test -- --run
-git diff --check
+cd frontend && npm run build
 ```
 
 结果：
 
-- targeted admin tests: PASS
+- targeted Go tests: PASS
 - `go test ./...`: PASS
+- `npm test -- --run`: PASS, 37/37 tests
 - `npm run build`: PASS，保留既有 Vite large chunk warning
-- `npm test -- --run`: PASS，36/36 tests passed
-- `git diff --check`: PASS
 
 ---
 
@@ -104,19 +120,22 @@ git diff --check
 ```bash
 cd /Users/m4/Desktop/projects/UniRouter
 git diff --check
-go test ./internal/admin -run 'TestUpdateChannelKey_KeyResetsCooldown|TestListReconciliation|TestDashboardOverview|TestDashboardStats' -v
+go test ./internal/gateway -run 'TestRecordRequest_Success|TestRelayNonStreamRequest|TestRelayStreamRequest' -v
+go test ./internal/admin -run 'TestCreateModelPrice_DecimalCents|TestListModelPrices_Success|TestDashboardStats_Success' -v
+go test ./internal/billing -run 'TestCalculateCost_FractionalCentPrice|TestQueryModelPrice|TestCalculateCost' -v
 go test ./...
-cd frontend && npm run build
 cd frontend && npm test -- --run
+cd frontend && npm run build
 ```
 
 Source-level checks:
 
 ```bash
-rg -n "Key \\*string|key_enc =|cooldown_until = NULL|last_used_at = NULL|TestUpdateChannelKey_KeyResetsCooldown" internal/admin/channel_key_handlers.go internal/admin/admin_mock_test.go
-rg -n "createdAt time.Time|rows.Scan|rows.Err|page_size: String\\(pageSize\\)|onPageChange|value: 'error'" internal/admin/model_handlers.go frontend/src/pages/ReconciliationPage.tsx
-rg -n "COUNT\\(\\*\\).*created_at >= \\$2|RFC3339Nano|Truncate\\(time.Hour\\)|TestDashboardOverview_TotalUsesTimeRange" internal/admin/dashboard_handlers.go internal/admin/admin_mock_test.go
-rg -n "optionList=\\{channels\\}|输入新的上游 API Key|已有密钥不会回显" frontend/src/pages/ChannelKeysPage.tsx
+rg -n "latency_ms, ttft_ms|elapsedMilliseconds|requestStart|TestRecordRequest_Success" internal/gateway/relay.go internal/gateway/relay_mock_test.go
+rg -n "NUMERIC\\(18,6\\)|model_price_decimal_cents" migrations
+rg -n "input_price_cents::float8|OutputPriceCents float64|TestCreateModelPrice_DecimalCents" internal/admin internal/models
+rg -n "QueryModelPrice.*float64|FractionalCentPrice|QueryModelPriceForOrg.*float64" internal/billing internal/gateway
+rg -n "yuanPerKToCents|0.002|0.001" frontend/src/pages/ModelPricesPage.tsx frontend/src/pages/__tests__/ModelPricesPage.test.tsx
 ```
 
 Do not run destructive cleanup. Do not run real provider paid calls, wallet/channel/API-key mutations, pressure tests, stream disconnects, or fault injection in Canary.
@@ -128,223 +147,25 @@ Do not run destructive cleanup. Do not run real provider paid calls, wallet/chan
 请将验收结果写入 `docs/agent-workflows/VERIFY-RESULT.md`：
 
 ```markdown
-# VERIFY-RESULT.md — PRD1 UI/API Follow-up Fix 验收结果
+# VERIFY-RESULT.md — PRD1 Latency / Decimal Pricing Fix 验收结果
 
 **验收者：** OpenClaw Canary
 **日期：** 以文件系统时间戳为准
-**对应轮次：** PRD1 channel-key edit, token reconciliation pagination, and Dashboard trend fix
+**对应轮次：** PRD1 dashboard latency persistence, decimal model pricing, and Mimo provider recheck
 
 ## 逐条结果
 
-- Fix #1: PASS/FAIL — 渠道密钥编辑是否可改渠道和 key，且后端更新 key 会清理冷却状态
-- Fix #2: PASS/FAIL — Token 对账是否按 page/page_size 返回多行，并修正前端分页和状态筛选
-- Fix #3: PASS/FAIL — Dashboard total_requests 与趋势图是否使用同一时间范围，趋势 bucket 是否补零
+- Fix #1: PASS/FAIL — 网关是否写入 call_logs.latency_ms/ttft_ms，且覆盖非流式、流式、失败路径
+- Fix #2: PASS/FAIL — 模型价格是否支持小数分，前端 0.002 元是否转换为 0.2 分
+- Runtime Evidence: PASS/FAIL — 文档是否记录 Mimo provider key 云端恢复证据，且不误关 PRD1-LOAD-001
 
 ## 全局验证
 
 - `git diff --check`: PASS/FAIL
-- targeted admin tests: PASS/FAIL
+- targeted Go tests: PASS/FAIL
 - `go test ./...`: PASS/FAIL
-- `npm run build`: PASS/FAIL
 - `npm test -- --run`: PASS/FAIL
-
-## 新发现的问题
-
-- [如有，在此列出；没有则写“无”]
-
-## 结论
-
-- [全部通过 / 需要 Codex 修复以下问题]
-```
-
----
-
-## 历史上一轮背景
-
-## 背景
-
-用户在 PRD1 验收准备中发现三类问题：
-
-- 创建 API key 后虽然弹出完整 key，但点击复制在 HTTP 云端页面失败。
-- 新建 API key 可以使用重复名称，没有明确提示。
-- 渠道测试选择 `Mimo Token Plan` / `mimo-v2.5` 后，结果显示“成功”，但上游状态码是 401。
-- 真实网关非流式调用 `mimo-v2.5` 返回 502，最后上游状态 404。云端渠道 `Mimo Token Plan` 的 `base_url` 是 `https://token-plan-cn.xiaomimimo.com/v1`，而 relay 无条件再拼 `/v1/chat/completions`，会形成 `/v1/v1/chat/completions`。
-- 真实流式调用 `moonshot-v1-8k` 返回 200，但部署版本先转发 `[DONE]`，再追加成本/渠道元数据，且该元数据没有 `_uniroute` 包装；PRD1 要求最后 chunk 含 `usage` 和 `_uniroute`。
-
-代码核查结论：
-
-- 浏览器 `navigator.clipboard.writeText()` 在非 secure context 下可能失败，需要 fallback。
-- 后端 `api_keys` 只对 `key_prefix` 有唯一约束，未校验同 org 下 name 重复。
-- 渠道测试接口只要收到上游 HTTP 响应就设置 `success: true`，且旧逻辑固定测 `/v1/models`，没有使用前端选择的 model/prompt。
-- gateway relay 对 `base_url` 已包含 `/v1` 的渠道没有做路径归一化。
-- gateway stream relay 直接转发上游 `[DONE]`，导致 UniRouter final metadata 在 `[DONE]` 之后，OpenAI-compatible 客户端可能停止读取。
-
----
-
-## Fix #1: API key 完整密钥复制 fallback
-
-**文件：**
-
-- `frontend/src/pages/KeysPage.tsx`
-
-**修复内容：**
-
-- 保留 secure context 下的 `navigator.clipboard.writeText()`。
-- 非 secure context 或 Clipboard API 不可用时，使用临时 `textarea + document.execCommand('copy')` fallback。
-- 复制失败时仍保留手动复制提示。
-
----
-
-## Fix #2: API key 重名校验
-
-**文件：**
-
-- `internal/admin/key_handlers.go`
-- `internal/admin/admin_mock_test.go`
-- `frontend/src/pages/KeysPage.tsx`
-
-**修复内容：**
-
-- 创建 API key 前检查同 `org_id + name` 是否已存在。
-- 重名时返回 HTTP 409 和 `API key name already exists`。
-- 前端创建/更新失败 Toast 展示后端错误信息，不再只显示泛化“创建失败”。
-- 增加 `TestCreateAPIKey_DuplicateName`。
-
----
-
-## Fix #3: 渠道测试 401 不再算成功，并真正使用所选模型
-
-**文件：**
-
-- `internal/admin/test_handlers.go`
-- `internal/admin/admin_mock_test.go`
-
-**修复内容：**
-
-- 渠道测试从固定 `GET /v1/models` 改为 `POST /v1/chat/completions`。
-- 使用前端提交的 `model` 和 `prompt` 生成 OpenAI-compatible 测试 payload。
-- 只有上游 HTTP 2xx 才返回 `success: true`。
-- 401/403/404/5xx 等上游响应返回 `success: false`，并带 `status_code` 和错误信息。
-- 解析 `usage.total_tokens` 作为 `tokens_used`。
-- 增加 `TestTestChannel_Upstream401IsFailureAndUsesSelectedModel`，覆盖 401 必须失败且模型为用户选择值。
-
----
-
-## Fix #4: Gateway 上游 URL 不再双拼 `/v1`
-
-**文件：**
-
-- `internal/gateway/relay.go`
-- `internal/gateway/relay_mock_test.go`
-
-**修复内容：**
-
-- 新增 `upstreamEndpoint(baseURL, endpoint)` 统一拼接上游 URL。
-- 当渠道 `base_url` 已以 `/v1` 结尾，endpoint 也以 `/v1/` 开头时，自动去掉 endpoint 的重复 `v1/`。
-- `HandleChatCompletion` 和 `HandleEmbeddings` 都使用该 helper。
-- 增加 `TestUpstreamEndpoint_DoesNotDoubleAppendV1`，覆盖 base_url 带 `/v1`、不带 `/v1`、带 trailing slash 的情况。
-
----
-
-## Fix #5: Streaming final chunk 顺序和 `_uniroute` 包装
-
-**文件：**
-
-- `internal/gateway/relay.go`
-- `internal/gateway/relay_mock_test.go`
-
-**修复内容：**
-
-- `relayStreamRequest` 不再直接转发上游 `data: [DONE]`。
-- 结算完成后发送一个 final data chunk，包含：
-  - `usage.prompt_tokens`
-  - `usage.completion_tokens`
-  - `usage.total_tokens`
-  - `_uniroute.request_id`
-  - `_uniroute.cost`
-  - `_uniroute.provider`
-  - `_uniroute.channel`
-- 最后只发送一个 terminal `data: [DONE]`。
-- 更新流式单测，明确校验 `_uniroute` 在 `[DONE]` 前，且 `[DONE]` 只出现一次。
-
----
-
-## Codex 已执行验证
-
-```bash
-go test ./internal/admin -run 'TestCreateAPIKey|TestTestChannel' -v
-go test ./internal/gateway -run 'TestRelayStreamRequest|TestUpstreamEndpoint|TestHandleChatCompletion' -v
-go test ./...
-cd frontend && npm run build
-cd frontend && npm test -- --run
-git diff --check
-```
-
-结果：
-
-- targeted admin tests: PASS
-- targeted gateway tests including stream final chunk: PASS
-- `go test ./...`: PASS
-- `npm run build`: PASS，保留既有 Vite large chunk warning
-- `npm test -- --run`: PASS，36/36 tests passed
-- `git diff --check`: PASS
-
----
-
-## Canary 验收命令
-
-```bash
-cd /Users/m4/Desktop/projects/UniRouter
-git diff --check
-go test ./internal/admin -run 'TestCreateAPIKey|TestTestChannel' -v
-go test ./internal/gateway -run 'TestRelayStreamRequest|TestUpstreamEndpoint|TestHandleChatCompletion' -v
-go test ./...
-cd frontend && npm run build
-cd frontend && npm test -- --run
-```
-
-Source-level checks:
-
-```bash
-rg -n "fallbackCopyText|document.execCommand\\('copy'\\)|window.isSecureContext" frontend/src/pages/KeysPage.tsx
-rg -n "API key name already exists|SELECT 1 FROM api_keys WHERE org_id" internal/admin/key_handlers.go
-rg -n "TestCreateAPIKey_DuplicateName|TestTestChannel_Upstream401IsFailureAndUsesSelectedModel" internal/admin/admin_mock_test.go
-rg -n "chat/completions|success := resp.StatusCode >= 200|tokens_used|upstream returned HTTP" internal/admin/test_handlers.go
-rg -n "func upstreamEndpoint|upstreamEndpoint\\(route.Channel.BaseURL|TestUpstreamEndpoint_DoesNotDoubleAppendV1" internal/gateway/relay.go internal/gateway/relay_mock_test.go
-rg -n "data: \\[DONE\\]|\\\"_uniroute\\\"|TestRelayStreamRequest_UnirouteExtension" internal/gateway/relay.go internal/gateway/relay_mock_test.go
-```
-
-Do not run destructive cleanup. Do not run real provider paid calls, wallet/channel/API-key mutations, pressure tests, stream disconnects, or fault injection in Canary.
-
----
-
-## 期望输出格式
-
-请将验收结果写入 `docs/agent-workflows/VERIFY-RESULT.md`：
-
-```markdown
-# VERIFY-RESULT.md — PRD1 API Key and Channel Test Fix 验收结果
-
-**验收者：** OpenClaw Canary
-**日期：** 以文件系统时间戳为准
-**对应轮次：** PRD1 API key, channel test, upstream URL, and stream final chunk fix
-
-## 逐条结果
-
-- Fix #1: PASS/FAIL — API key 完整密钥复制是否有 HTTP fallback
-- Fix #2: PASS/FAIL — API key 重名是否返回 409 且前端显示后端错误
-- Fix #3: PASS/FAIL — 渠道测试是否用所选 model/prompt 调 chat completions，且 401 不算成功
-- Fix #4: PASS/FAIL — gateway relay 是否避免对 `/v1` base_url 双拼 `/v1`
-- Fix #5: PASS/FAIL — stream final chunk 是否在 `[DONE]` 前包含 `usage` 和 `_uniroute`，且只发送一个 `[DONE]`
-
-## 全局验证
-
-- `git diff --check`: PASS/FAIL
-- targeted admin tests: PASS/FAIL
-- targeted gateway tests including stream final chunk: PASS/FAIL
-- `go test ./...`: PASS/FAIL
 - `npm run build`: PASS/FAIL
-- `npm test -- --run`: PASS/FAIL
 
 ## 新发现的问题
 

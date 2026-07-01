@@ -112,8 +112,29 @@ Notes:
 
 - `http://8.130.18.85:3000/metrics` returns frontend HTML, so metrics should be verified via backend `:8080/metrics` or Prometheus `:9090`.
 - Scope was intentionally non-destructive: no real provider paid requests, no API key/channel/wallet mutations, no load test, no stream disconnect, and no failover/fault injection.
-- Cloud smoke exposed a handler quality issue where nullable database fields could be scanned into non-nullable Go types while `rows.Scan` errors were ignored, producing zero-value timestamps. Codex fixed this locally for API key and call-log list handlers; deployment needs a new build before that fix is visible in cloud.
+- Cloud smoke exposed a handler quality issue where nullable database fields could be scanned into non-nullable Go types while `rows.Scan` errors were ignored, producing zero-value timestamps. Codex fixed this for API key and call-log list handlers; after deployment, authenticated cloud reads for `/api/v1/keys` and `/api/v1/logs` returned 200.
 - Strict closeout smoke after redeploy on 2026-07-01 passed. The public cloud rejected `admin/admin123456` with 403, and `/health/ready` returned the PRD DB/Redis shape.
+
+## Alibaba Cloud UI/API Follow-up Verification
+
+Environment:
+
+- Frontend / nginx base: `http://8.130.18.85:3000`
+- Backend through nginx: `http://8.130.18.85:3000/api/v1`
+- Verified: 2026-07-01 after deployment
+
+Results:
+
+- Canary protocol verification: `docs/agent-workflows/VERIFY-RESULT.md` reports 3/3 PASS for channel-key edit, Token reconciliation pagination, and Dashboard trend fixes.
+- Cloud smoke: `RUN_ADMIN_READ_SMOKE=1 scripts/prd1-cloud-smoke.sh` PASS after deployment.
+- Token reconciliation pagination: `GET /api/v1/reconciliation?page=1&page_size=1/5/20/50` returned `total=145` and `data_len=1/5/20/50`, so the former one-row page bug is resolved in cloud.
+- Dashboard trend range semantics: `GET /api/v1/dashboard/stats` for 24h, 7d, and 30d returned range-scoped `total_requests` values equal to the sum of trend buckets; zero buckets were present.
+- Channel key edit UI: Playwright opened the Mimo Token Plan edit drawer, verified the channel selector is clickable and expands with channel options, and verified the API key field is empty with the new-key prompt. Codex did not submit a real provider key.
+
+Conclusion:
+
+- `PRD1-UI-006`, `PRD1-API-001`, and `PRD1-DASH-001` are closed as deployed code bugs.
+- The actual Mimo provider credential was later corrected by the user and rechecked; see "Alibaba Cloud Mimo Provider Recheck" below.
 
 ## Alibaba Cloud Provider E2E Attempt
 
@@ -157,6 +178,28 @@ Post stream-fix deployment verification:
 Safety decision:
 
 - Codex did not run load against the invalid Mimo route. Load testing used the successful `moonshot-v1-8k` route.
+
+## Alibaba Cloud Mimo Provider Recheck
+
+Environment:
+
+- Frontend / nginx base: `http://8.130.18.85:3000`
+- Admin API through nginx: `http://8.130.18.85:3000/api/v1`
+- Model: `mimo-v2.5`
+- Verified: 2026-07-01 after user updated the `Mimo Token Plan` key
+
+Results:
+
+- Channel key state: channel 8 key prefix changed to `****df24`; `fail_count=0`; `cooldown_until=null`.
+- Admin channel test: `POST /api/v1/channels/8/test` with `model=mimo-v2.5` returned `success=true`, HTTP 200, `latency_ms=1385`, `tokens_used=267`.
+- Gateway E2E: Codex created temporary API key id `30` with `allowed_models=mimo-v2.5`, called `POST /v1/chat/completions`, received HTTP 200, `usage.total_tokens=259`, `_uniroute.channel=Mimo Token Plan`, and `_uniroute.cost.charged=1`.
+- Cleanup: temporary API key id `30` was disabled; disable API returned HTTP 200.
+- Latest Mimo call log for request `req_18be0749be049809` records `status_code=200`, `cost_cents=1`, and `usage_source=api`. Its `latency_ms=0` reflects the pre-fix logging bug now tracked as `PRD1-DASH-002`.
+
+Conclusion:
+
+- `PRD1-PROVIDER-001` is closed as a provider-key blocker.
+- `PRD1-LOAD-001` remains open because single-call provider success does not prove 20 VU / 60s capacity.
 
 ## Alibaba Cloud 20 VU / 60s Load Attempt
 

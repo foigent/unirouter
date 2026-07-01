@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -2252,8 +2253,8 @@ func TestListModelPrices_Success(t *testing.T) {
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1
 						*dest[1].(*string) = "gpt-4o"
-						*dest[2].(*int) = 5
-						*dest[3].(*int) = 15
+						*dest[2].(*float64) = 5
+						*dest[3].(*float64) = 15
 
 						return nil
 					},
@@ -2653,8 +2654,8 @@ func TestDashboardStats_Success(t *testing.T) {
 					Rows: []func(dest ...any) error{
 						func(dest ...any) error {
 							*dest[0].(*string) = "gpt-4o"
-							*dest[1].(*int) = 5
-							*dest[2].(*int) = 15
+							*dest[1].(*float64) = 5
+							*dest[2].(*float64) = 15
 							return nil
 						},
 					},
@@ -3056,6 +3057,42 @@ func TestCreateModelPrice_Success(t *testing.T) {
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCreateModelPrice_DecimalCents(t *testing.T) {
+	var capturedArgs []any
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			capturedArgs = append([]any(nil), args...)
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
+					*dest[0].(*int64) = 42
+					return nil
+				},
+			}
+		},
+	}
+	h := newTestHandler(db)
+
+	body := `{"model_name":"mimo-v2.5","input_price_cents":0.2,"output_price_cents":0.1}`
+	req := httptest.NewRequest("POST", "/model-prices", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.CreateModelPrice(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(capturedArgs) != 3 {
+		t.Fatalf("expected 3 insert args, got %d", len(capturedArgs))
+	}
+	if math.Abs(capturedArgs[1].(float64)-0.2) > 0.000001 {
+		t.Fatalf("expected input_price_cents=0.2, got %v", capturedArgs[1])
+	}
+	if math.Abs(capturedArgs[2].(float64)-0.1) > 0.000001 {
+		t.Fatalf("expected output_price_cents=0.1, got %v", capturedArgs[2])
 	}
 }
 

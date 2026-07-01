@@ -109,7 +109,7 @@ func (h *Handler) dashboardRecentLogs(ctx context.Context, orgID int64) []map[st
 // dashboardModelPrices returns all model prices.
 func (h *Handler) dashboardModelPrices(ctx context.Context) []map[string]interface{} {
 	rows, err := h.db.Query(ctx,
-		`SELECT model_name, input_price_cents, output_price_cents FROM model_prices ORDER BY model_name`)
+		`SELECT model_name, input_price_cents::float8, output_price_cents::float8 FROM model_prices ORDER BY model_name`)
 	if err != nil {
 		return nil
 	}
@@ -117,8 +117,10 @@ func (h *Handler) dashboardModelPrices(ctx context.Context) []map[string]interfa
 	prices := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var modelName string
-		var inputPrice, outputPrice int
-		rows.Scan(&modelName, &inputPrice, &outputPrice)
+		var inputPrice, outputPrice float64
+		if err := rows.Scan(&modelName, &inputPrice, &outputPrice); err != nil {
+			return nil
+		}
 		prices = append(prices, map[string]interface{}{
 			"model_name": modelName, "input_price_cents": inputPrice, "output_price_cents": outputPrice,
 		})

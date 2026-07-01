@@ -70,19 +70,19 @@ func (b *Billing) WithPriceProvider(p PriceProvider) *Billing {
 
 // QueryModelPrice returns the per-token cost in cents for a model.
 // Falls back to a default rate if the model is not in model_prices.
-func (b *Billing) QueryModelPrice(ctx context.Context, model string) (inputCost, outputCost int, err error) {
+func (b *Billing) QueryModelPrice(ctx context.Context, model string) (inputCost, outputCost float64, err error) {
 	return b.prices.QueryModelPrice(ctx, model)
 }
 
 // QueryModelPriceForOrg returns per-token costs with org-level multiplier applied.
 // Merges base price lookup and org multiplier into a single SQL query to reduce
 // round-trips from 3 (PriceProvider + fallback + multiplier) to 1.
-func (b *Billing) QueryModelPriceForOrg(ctx context.Context, orgID int64, model string) (inputCost, outputCost int, err error) {
+func (b *Billing) QueryModelPriceForOrg(ctx context.Context, orgID int64, model string) (inputCost, outputCost float64, err error) {
 	var multiplier float64
 	err = b.db.QueryRow(ctx, `
 		SELECT
-			COALESCE(mp.input_price_cents, 2),
-			COALESCE(mp.output_price_cents, 10),
+			COALESCE(mp.input_price_cents, 2)::float8,
+			COALESCE(mp.output_price_cents, 10)::float8,
 			COALESCE(omp.multiplier, 1.0)
 		FROM (SELECT 1) AS stub
 		LEFT JOIN model_prices mp ON mp.model_name = $1
@@ -95,8 +95,8 @@ func (b *Billing) QueryModelPriceForOrg(ctx context.Context, orgID int64, model 
 		err = nil
 		return
 	}
-	inputCost = int(float64(inputCost) * multiplier)
-	outputCost = int(float64(outputCost) * multiplier)
+	inputCost = inputCost * multiplier
+	outputCost = outputCost * multiplier
 	return
 }
 
@@ -106,7 +106,7 @@ func (b *Billing) CalculateCost(ctx context.Context, model string, promptTokens,
 	if err != nil {
 		return 0, err
 	}
-	total := (promptTokens*inputCost + completionTokens*outputCost) / 1000
+	total := int((float64(promptTokens)*inputCost + float64(completionTokens)*outputCost) / 1000)
 	if total < 1 {
 		total = 1
 	}
@@ -119,7 +119,7 @@ func (b *Billing) EstimateFreezeAmount(ctx context.Context, model string, estima
 	if err != nil {
 		return 0, err
 	}
-	estimated := int(math.Round(float64(estimatedTokens) * float64(outputCost) / 1000.0 * safetyFactor))
+	estimated := int(math.Round(float64(estimatedTokens) * outputCost / 1000.0 * safetyFactor))
 	if estimated < minFreezeAmount {
 		estimated = minFreezeAmount
 	}

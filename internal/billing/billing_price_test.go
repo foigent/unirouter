@@ -15,10 +15,10 @@ func TestQueryModelPrice_Success(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if input != 5 {
-		t.Errorf("expected input 5, got %d", input)
+		t.Errorf("expected input 5, got %v", input)
 	}
 	if output != 15 {
-		t.Errorf("expected output 15, got %d", output)
+		t.Errorf("expected output 15, got %v", output)
 	}
 }
 
@@ -40,7 +40,7 @@ func TestQueryModelPrice_ZeroPrices(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if input != 0 || output != 0 {
-		t.Errorf("expected 0/0, got %d/%d", input, output)
+		t.Errorf("expected 0/0, got %v/%v", input, output)
 	}
 }
 
