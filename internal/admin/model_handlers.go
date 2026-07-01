@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/models"
 )
 
@@ -16,6 +18,7 @@ func (h *Handler) ListReconciliation(w http.ResponseWriter, r *http.Request) {
 
 	modelFilter := r.URL.Query().Get("model")
 	statusFilter := r.URL.Query().Get("status")
+	usageSourceFilter := r.URL.Query().Get("usage_source")
 
 	var conditions []string
 	var args []interface{}
@@ -34,6 +37,11 @@ func (h *Handler) ListReconciliation(w http.ResponseWriter, r *http.Request) {
 	} else if statusFilter == "reconciled" {
 		conditions = append(conditions, "status_code < 400")
 	}
+	if usageSourceFilter != "" {
+		conditions = append(conditions, fmt.Sprintf("usage_source = $%d", argIdx))
+		args = append(args, metering.NormalizeUsageSource(usageSourceFilter))
+		argIdx++
+	}
 
 	where := ""
 	if len(conditions) > 0 {
@@ -48,7 +56,9 @@ func (h *Handler) ListReconciliation(w http.ResponseWriter, r *http.Request) {
 
 	offset := (page - 1) * pageSize
 	query := fmt.Sprintf(
-		`SELECT id, request_id, model, total_tokens, prompt_tokens, completion_tokens, status_code, created_at
+		`SELECT id, request_id, model, total_tokens, prompt_tokens, completion_tokens,
+		        COALESCE(NULLIF(estimated_tokens, 0), prompt_tokens + completion_tokens),
+		        status_code, usage_source, usage_confidence, created_at
 		 FROM call_logs %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`,
 		where, argIdx, argIdx+1)
 	args = append(args, pageSize, offset)
@@ -61,40 +71,59 @@ func (h *Handler) ListReconciliation(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type ReconRecord struct {
-		ID           int64  `json:"id"`
-		RequestID    string `json:"request_id"`
-		Model        string `json:"model"`
-		EstTokens    int    `json:"estimated_tokens"`
-		ActualTokens int    `json:"actual_tokens"`
-		Delta        int    `json:"delta"`
-		Status       string `json:"status"`
-		CreatedAt    string `json:"created_at"`
+		ID           int64   `json:"id"`
+		RequestID    string  `json:"request_id"`
+		Model        string  `json:"model"`
+		EstTokens    int     `json:"estimated_tokens"`
+		ActualTokens int     `json:"actual_tokens"`
+		Delta        int     `json:"delta"`
+		UsageSource  string  `json:"usage_source"`
+		Variance     int     `json:"variance_tokens"`
+		VarianceRate float64 `json:"variance_ratio"`
+		Confidence   float64 `json:"source_confidence"`
+		Status       string  `json:"status"`
+		CreatedAt    string  `json:"created_at"`
 	}
 
 	records := make([]ReconRecord, 0)
+	var estimatedTokenTotal int
+	var upstreamTokenTotal int
 	for rows.Next() {
 		var id int64
-		var requestID, model string
-		var totalTokens, promptTokens, completionTokens, statusCode int
+		var requestID, model, usageSource string
+		var totalTokens, promptTokens, completionTokens, estimatedTokens, statusCode int
+		var usageConfidence float64
 		var createdAt time.Time
-		if err := rows.Scan(&id, &requestID, &model, &totalTokens, &promptTokens, &completionTokens, &statusCode, &createdAt); err != nil {
+		if err := rows.Scan(&id, &requestID, &model, &totalTokens, &promptTokens, &completionTokens, &estimatedTokens, &statusCode, &usageSource, &usageConfidence, &createdAt); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 			return
 		}
 
-		estTokens := promptTokens + completionTokens
+		usageSource = metering.NormalizeUsageSource(usageSource)
 		status := "reconciled"
 		if statusCode >= 400 {
 			status = "error"
 		}
+		if statusCode < 400 {
+			if metering.IsNonUpstreamUsage(usageSource) {
+				estimatedTokenTotal += totalTokens
+			} else if usageSource == metering.UsageSourceUpstream {
+				upstreamTokenTotal += totalTokens
+			}
+		}
+		variance := metering.VarianceTokens(estimatedTokens, totalTokens)
 
 		records = append(records, ReconRecord{
 			ID:           id,
 			RequestID:    requestID,
 			Model:        model,
-			EstTokens:    estTokens,
+			EstTokens:    estimatedTokens,
 			ActualTokens: totalTokens,
-			Delta:        totalTokens - estTokens,
+			Delta:        variance,
+			UsageSource:  usageSource,
+			Variance:     variance,
+			VarianceRate: metering.VarianceRatio(estimatedTokens, totalTokens),
+			Confidence:   usageConfidence,
 			Status:       status,
 			CreatedAt:    createdAt.Format(time.RFC3339),
 		})
@@ -104,7 +133,37 @@ func (h *Handler) ListReconciliation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{"data": records, "total": total, "page": page, "page_size": pageSize})
+	threshold := h.meteringEstimatedRatioThreshold(r.Context())
+	estimatedRatio := metering.EstimatedTokenRatio(estimatedTokenTotal, upstreamTokenTotal)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"data": records, "total": total, "page": page, "page_size": pageSize,
+		"summary": map[string]interface{}{
+			"estimated_tokens":                        estimatedTokenTotal,
+			"upstream_tokens":                         upstreamTokenTotal,
+			"estimated_ratio":                         estimatedRatio,
+			"estimated_ratio_alert_threshold":         threshold,
+			"estimated_usage_alert":                   estimatedRatio > threshold,
+			"estimated_ratio_alert_threshold_setting": "token_metering.estimated_ratio_alert_threshold",
+			"estimated_ratio_scope":                   "current_page",
+		},
+	})
+}
+
+func (h *Handler) meteringEstimatedRatioThreshold(ctx context.Context) float64 {
+	var raw string
+	err := h.db.QueryRow(ctx,
+		`SELECT value::text FROM settings WHERE key = $1`,
+		"token_metering.estimated_ratio_alert_threshold",
+	).Scan(&raw)
+	if err != nil {
+		return metering.DefaultEstimatedRatioAlertThreshold
+	}
+	raw = strings.Trim(strings.TrimSpace(raw), `"`)
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil || value <= 0 || value >= 1 {
+		return metering.DefaultEstimatedRatioAlertThreshold
+	}
+	return value
 }
 
 func (h *Handler) ListModelPrices(w http.ResponseWriter, r *http.Request) {

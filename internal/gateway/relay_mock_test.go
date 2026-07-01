@@ -18,6 +18,7 @@ import (
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/filter"
 	"github.com/uniroute/unirouter/internal/logger"
+	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/testutil"
@@ -284,19 +285,25 @@ func TestRecordRequest_Success(t *testing.T) {
 	relay := newTestRelay(db, &mockBilling{})
 
 	ctx := context.WithValue(context.Background(), middleware.CtxProjectID, int64(7))
-	relay.recordRequest(ctx, "req-001", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, 123, 0, false, "upstream")
+	relay.recordRequest(ctx, "req-001", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, 123, 0, false, metering.UsageSourceUpstream, 180)
 
 	if !execCalled {
 		t.Fatal("expected exec to be called")
 	}
-	if len(capturedArgs) != 18 {
-		t.Fatalf("expected 18 insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != 20 {
+		t.Fatalf("expected 20 insert args, got %d", len(capturedArgs))
 	}
 	if capturedArgs[2] != int64(7) {
 		t.Fatalf("expected project_id arg 7, got %v", capturedArgs[2])
 	}
 	if capturedArgs[13] != 123 {
 		t.Fatalf("expected latency_ms arg 123, got %v", capturedArgs[13])
+	}
+	if capturedArgs[18] != 180 {
+		t.Fatalf("expected estimated_tokens arg 180, got %v", capturedArgs[18])
+	}
+	if capturedArgs[19] != 1.0 {
+		t.Fatalf("expected upstream usage confidence 1.0, got %v", capturedArgs[19])
 	}
 }
 
@@ -309,7 +316,7 @@ func TestRecordRequest_DBError(t *testing.T) {
 	relay := newTestRelay(db, &mockBilling{})
 
 	// Should not panic on error (just logs)
-	relay.recordRequest(context.Background(), "req-001", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, 123, 0, false, "upstream")
+	relay.recordRequest(context.Background(), "req-001", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, 123, 0, false, metering.UsageSourceUpstream, 180)
 }
 
 // --- checkBudgetAlert tests ---
@@ -615,7 +622,7 @@ func TestRelayNonStreamRequest_Success(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-001", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-001", OrgID: 1}), time.Now(), nil)
+	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-001", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-001", OrgID: 1}), time.Now(), nil, 1200)
 
 	if !settleCalled {
 		t.Fatal("expected settle to be called")
@@ -656,7 +663,7 @@ func TestRelayNonStreamRequest_SettleError(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-002", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-002", OrgID: 1}), time.Now(), nil)
+	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-002", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-002", OrgID: 1}), time.Now(), nil, 1200)
 
 	// Should still return 200 even if settle fails
 	if rec.Code != 200 {
@@ -715,7 +722,7 @@ func TestRelayStreamRequest_NormalFlow(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-1", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", []Message{{Role: "user", Content: "Hi"}}, logger.New(logger.Fields{RequestID: "req-stream-1", OrgID: 1}), time.Now())
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-1", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", []Message{{Role: "user", Content: "Hi"}}, logger.New(logger.Fields{RequestID: "req-stream-1", OrgID: 1}), time.Now(), 1000)
 
 	if !settleCalled {
 		t.Fatal("expected settle to be called")
@@ -764,8 +771,8 @@ func TestRelayStreamRequest_NoUpstreamUsage(t *testing.T) {
 		settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
 			settleCalled = true
 			// When no upstream usage, tokens are estimated
-			if req.UsageSource != "stream_estimate" {
-				t.Errorf("expected usageSource=stream_estimate, got %s", req.UsageSource)
+			if req.UsageSource != metering.UsageSourceCounterV2 {
+				t.Errorf("expected usageSource=counter_v2, got %s", req.UsageSource)
 			}
 			return &billing.SettleResult{SettleID: 1, Success: true}, nil
 		},
@@ -786,7 +793,7 @@ func TestRelayStreamRequest_NoUpstreamUsage(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-2", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", []Message{{Role: "user", Content: "Hello"}}, logger.New(logger.Fields{RequestID: "req-stream-2", OrgID: 1}), time.Now())
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-2", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", []Message{{Role: "user", Content: "Hello"}}, logger.New(logger.Fields{RequestID: "req-stream-2", OrgID: 1}), time.Now(), 1000)
 
 	if !settleCalled {
 		t.Fatal("expected settle to be called")
@@ -825,7 +832,7 @@ func TestRelayStreamRequest_SettleError(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-3", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-3", OrgID: 1}), time.Now())
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-3", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-3", OrgID: 1}), time.Now(), 1000)
 
 	// Should still produce valid output even if settle fails
 	body := rec.Body.String()
@@ -850,8 +857,8 @@ func TestRelayStreamRequest_UpstreamUsageSource(t *testing.T) {
 	}
 	b := &mockBilling{
 		settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
-			if req.UsageSource != "api" {
-				t.Errorf("expected usageSource=api, got %s", req.UsageSource)
+			if req.UsageSource != metering.UsageSourceUpstream {
+				t.Errorf("expected usageSource=upstream, got %s", req.UsageSource)
 			}
 			return &billing.SettleResult{SettleID: 1, Success: true}, nil
 		},
@@ -871,7 +878,7 @@ func TestRelayStreamRequest_UpstreamUsageSource(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-4", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-4", OrgID: 1}), time.Now())
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-4", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-4", OrgID: 1}), time.Now(), 1000)
 }
 
 func TestRelayStreamRequest_EmptyStream(t *testing.T) {
@@ -906,7 +913,7 @@ func TestRelayStreamRequest_EmptyStream(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-5", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-5", OrgID: 1}), time.Now())
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-5", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-5", OrgID: 1}), time.Now(), 1000)
 
 	body := rec.Body.String()
 	if !strings.Contains(body, "data: [DONE]") {
@@ -946,7 +953,7 @@ func TestRelayStreamRequest_UnirouteExtension(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-6", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-6", OrgID: 1}), time.Now())
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-6", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-6", OrgID: 1}), time.Now(), 1000)
 
 	body := rec.Body.String()
 	// Extension data (request_id, cost) should be present in output

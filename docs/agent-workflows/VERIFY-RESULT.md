@@ -1,26 +1,26 @@
-# VERIFY-RESULT.md — PRD2 Implementation Batch 4 验收结果
+# VERIFY-RESULT.md — PRD2 Implementation Batch 5 验收结果
 
 **验收者：** OpenClaw Canary
 **日期：** 2026-07-01
-**对应轮次：** PRD2 implementation batch 4 — Provider Adapter backend foundation
+**对应轮次：** PRD2 implementation batch 5 — Token Metering V2 backend foundation
 
 ---
 
 ## 逐条结果
 
-- **Fix #1 (Batch 3 验收状态同步):** PASS — `CURRENT-STATUS.md:8` 记录 batch 3 "Canary passed 6/6, and User reported Sentinel completed"。`:24` 表记录 "Canary passed; Sentinel complete"。`PRD2-ACCEPTANCE-MATRIX.md:43-48` Model Governance 项为 Unit tested（未误标 E2E）
-- **Fix #2 (Channel adapter schema + admin metadata):** PASS — `migrations/000011_prd2_provider_adapter_foundation.up.sql:7` `adapter_type VARCHAR(50) DEFAULT 'openai_compatible'`，`:10` `adapter_config JSONB DEFAULT '{}'`。`models.go` 增加 `AdapterType`/`AdapterConfig`。`channel_handlers.go` 读写 adapter metadata。`TestCreateChannel_DefaultsAdapterType`/`TestCreateChannel_InvalidAdapterType`/`TestUpdateChannel_InvalidAdapterType` 3/3 PASS
-- **Fix #3 (Adapter interface + registry + openai_compatible):** PASS — `adapters/types.go:111` `Adapter` interface（`BuildRequest`/`ParseResponse`/`Test`/`ClassifyHTTPStatus`），`:78` `NormalizedResponse`。`registry.go:20` `DefaultRegistry` 注册 `openai_compatible`。`openai_compatible.go` 实现全部 4 个方法。`internal/adapters` 测试 PASS
-- **Fix #4 (Gateway relay uses adapter boundary):** PASS — `router.go:34` 查询 `adapter_type`，`:76/120` `NormalizeType` 空值映射为 `openai_compatible`。`relay.go:191` `DefaultRegistry()`，`:203` `adapterRegistry.Get()`，`:209` `adapter.BuildRequest`，`:300` `adapter.ParseResponse`。Embeddings 同理（`:765-800`）。未知 adapter type 返回错误（`:205`）
-- **Fix #5 (Channel test uses adapter smoke path):** PASS — `test_handlers.go:26` 查询 `adapter_type`，`:75` `DefaultRegistry().Get()`，`:78-80` 未知 adapter 返回 `adapter_error`，`:90` 通过 adapter 执行 smoke test，`:111` 返回 `adapter_type`
-- **Fix #6 (PRD2 matrix records Provider Adapter foundation):** PASS — `PRD2-ACCEPTANCE-MATRIX.md:49-52` Provider Adapter 项标记为 Unit tested，gap 列表包含 native adapter、stream normalization、real upstream E2E
+- **Fix #1 (Batch 4 验收状态同步):** PASS — `CURRENT-STATUS.md:8` 记录 batch 4 "Canary passed 6/6, and User reported Sentinel completed"。`:24` 表记录 "Canary passed; Sentinel complete"。`PRD2-ACCEPTANCE-MATRIX.md:49-52` Provider Adapter 项为 Unit tested
+- **Fix #2 (Token Metering V2 contract + schema):** PASS — `docs/tech-ref/12-token-metering-v2.md` 存在，定义 canonical sources（`upstream`/`counter_v2`/`adapter_estimated`/`estimated`/`no_route`/`upstream_failed`）。Migration 添加 `estimated_tokens`（`:7`）、`usage_confidence`（`:10`），迁移 legacy `api→upstream`（`:17`）、`stream_estimate→counter_v2`，seed alert threshold `0.2`（`:32`）。`models.go:223/231` 增加字段
+- **Fix #3 (Shared metering source normalization):** PASS — `internal/metering/metering.go` 定义 `NormalizeUsageSource`（`:16`，`api→upstream`、`stream_estimate→counter_v2`）、`SourceConfidence`（`:38`）、`EstimatedTokenRatio`（`:64`）。`internal/metering` 测试 PASS
+- **Fix #4 (Gateway writes estimated tokens + canonical source + confidence):** PASS — `relay.go:187/278` no-route/upstream-failed 写 `metering.UsageSourceNoRoute`/`UsageSourceUpstreamFailed` + estimatedTokens。`:540-542` stream 判断 `counter_v2`/`upstream`。`:628-629` `NormalizeUsageSource` + `SourceConfidence`。`:631` INSERT 包含 `estimated_tokens, usage_confidence`。`TestRecordRequest_Success`/`TestRelayStreamRequest_NoUpstreamUsage`/`TestRelayStreamRequest_UpstreamUsageSource` PASS
+- **Fix #5 (Reconciliation usage_source filter + variance signal):** PASS — `model_handlers.go:21` 支持 `usage_source` 过滤，`:80-83` 响应包含 `usage_source`/`variance_tokens`/`variance_ratio`/`source_confidence`，`:143-147` summary 包含 `estimated_ratio`/`estimated_ratio_alert_threshold`/`estimated_ratio_scope`。`TestListReconciliation_Success`/`TestListReconciliation_UsageSourceFilterNormalizesLegacyAlias` PASS
+- **Fix #6 (PRD2 status/matrix):** PASS — `CURRENT-STATUS.md:17` 标记 batch 5 awaiting Canary。`PRD2-ACCEPTANCE-MATRIX.md` Token Metering V2 项为 Unit tested
 
 ## 前置条件核验
 
 - Frontend 无功能变化: PASS ✅
-- Native adapter proof 未声称完成: PASS ✅
-- Stream response normalization 未声称完整迁移: PASS ✅
-- Token Metering V2 / reconciliation UI 未声称完成: PASS ✅
+- Notification/dashboard delivery 未声称完成: PASS ✅
+- Full-query analytics aggregation 未声称完成: PASS ✅
+- Native adapter-specific estimates 未声称完成: PASS ✅
 - 真实上游 E2E / 浏览器验收未声称完成: PASS ✅
 - PRD2 acceptance matrix 未过度标注: PASS ✅
 
@@ -28,13 +28,13 @@
 
 | 检查项 | 结果 |
 |--------|------|
-| `go test ./internal/adapters ./internal/gateway ./internal/admin ./cmd/uniroute` | PASS |
-| `go test ./...` | PASS（含新包 `internal/adapters`） |
+| `go test ./internal/metering ./internal/adapters ./internal/gateway ./internal/admin ./cmd/uniroute` | PASS |
+| `go test ./...` | PASS（含新包 `internal/metering`） |
 | `git diff --check` | PASS |
-| Migration up/down 存在 | PASS |
-| Adapter interface + openai_compatible 测试 | PASS |
-| Channel adapter 3 tests | PASS |
-| Gateway adapter 路径 | PASS |
+| Migration + tech-ref + models 字段 | PASS |
+| metering 单元测试 | PASS |
+| Gateway estimated_tokens/usage_confidence 写入 | PASS |
+| Reconciliation usage_source filter + variance | PASS |
 | Matrix 未过度标注 | PASS |
 
 ## 新发现的问题
@@ -43,4 +43,4 @@
 
 ## 结论
 
-**6/6 全部 PASS。** PRD2 implementation batch 4 验收通过。Provider Adapter 后端底座就绪。
+**6/6 全部 PASS。** PRD2 implementation batch 5 验收通过。Token Metering V2 后端底座就绪。
