@@ -129,6 +129,58 @@ type OrgModelPrice struct {
 	UpdatedAt  time.Time `json:"updated_at" db:"updated_at"`
 }
 
+// ModelRegistryEntry represents an internal governed model.
+type ModelRegistryEntry struct {
+	ID                      int64     `json:"id" db:"id"`
+	OrgID                   int64     `json:"org_id" db:"org_id"`
+	ModelName               string    `json:"model_name" db:"model_name"`
+	DisplayName             string    `json:"display_name" db:"display_name"`
+	ProviderFamily          string    `json:"provider_family" db:"provider_family"`
+	Lifecycle               string    `json:"lifecycle" db:"lifecycle"`
+	ContextLength           int       `json:"context_length" db:"context_length"`
+	OutputLimit             int       `json:"output_limit" db:"output_limit"`
+	CapabilityTags          string    `json:"capability_tags" db:"capability_tags"`
+	DataResidency           string    `json:"data_residency" db:"data_residency"`
+	PricingModelName        string    `json:"pricing_model_name" db:"pricing_model_name"`
+	ApprovedCatalog         bool      `json:"approved_catalog" db:"approved_catalog"`
+	MigrationRecommendation string    `json:"migration_recommendation" db:"migration_recommendation"`
+	CreatedAt               time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt               time.Time `json:"updated_at" db:"updated_at"`
+}
+
+// ModelAlias represents an enterprise-facing stable model alias.
+type ModelAlias struct {
+	ID          int64     `json:"id" db:"id"`
+	OrgID       int64     `json:"org_id" db:"org_id"`
+	Alias       string    `json:"alias" db:"alias"`
+	TargetModel string    `json:"target_model" db:"target_model"`
+	DisplayName string    `json:"display_name" db:"display_name"`
+	Description string    `json:"description" db:"description"`
+	Status      string    `json:"status" db:"status"`
+	CreatedAt   time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
+}
+
+// ModelSet represents a curated group of models and aliases.
+type ModelSet struct {
+	ID          int64     `json:"id" db:"id"`
+	OrgID       int64     `json:"org_id" db:"org_id"`
+	Name        string    `json:"name" db:"name"`
+	Slug        string    `json:"slug" db:"slug"`
+	Description string    `json:"description" db:"description"`
+	Status      string    `json:"status" db:"status"`
+	CreatedAt   time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
+}
+
+// ModelSetItem represents a model or alias inside a model set.
+type ModelSetItem struct {
+	ModelSetID int64     `json:"model_set_id" db:"model_set_id"`
+	ItemType   string    `json:"item_type" db:"item_type"`
+	ItemName   string    `json:"item_name" db:"item_name"`
+	CreatedAt  time.Time `json:"created_at" db:"created_at"`
+}
+
 // Wallet represents the wallets table.
 type Wallet struct {
 	OrgID          int64     `json:"org_id" db:"org_id"`

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -27,6 +28,7 @@ import (
 	"github.com/uniroute/unirouter/internal/gateway"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/migrate"
+	"github.com/uniroute/unirouter/internal/modelgov"
 	"github.com/uniroute/unirouter/internal/redisx"
 )
 
@@ -167,23 +169,62 @@ func main() {
 			return
 		}
 
-		if apiKey.AllowedModels != "" && apiKey.AllowedModels != "*" {
-			// Buffer body so we can peek at model and still pass it to relay
-			bodyBytes, err := io.ReadAll(r.Body)
-			if err != nil {
-				http.Error(w, `{"error":{"type":"server_error","message":"Failed to read request body"}}`, http.StatusBadRequest)
+		var req struct {
+			Model string `json:"model"`
+		}
+		bodyBytes, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, `{"error":{"type":"server_error","message":"Failed to read request body"}}`, http.StatusBadRequest)
+			return
+		}
+		r.Body.Close()
+		r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+		_ = json.Unmarshal(bodyBytes, &req)
+
+		var resolvedModel string
+		if req.Model != "" {
+			projectID := int64(0)
+			if apiKey.ProjectID != nil {
+				projectID = *apiKey.ProjectID
+			}
+			access, err := modelgov.CheckAccess(r.Context(), postgres.Pool, apiKey.OrgID, projectID, req.Model)
+			if errors.Is(err, modelgov.ErrModelRetired) || errors.Is(err, modelgov.ErrModelDenied) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"error": map[string]interface{}{
+						"type":    "auth_error.model_not_allowed",
+						"message": "Model is not available for this project",
+						"model":   req.Model,
+						"reason":  access.Reason,
+					},
+				})
 				return
 			}
-			r.Body.Close()
-			r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-
-			var req struct {
-				Model string `json:"model"`
+			if err != nil && !errors.Is(err, modelgov.ErrModelRequired) {
+				http.Error(w, `{"error":{"type":"server_error","message":"Model governance check failed"}}`, http.StatusInternalServerError)
+				return
 			}
-			if err := json.Unmarshal(bodyBytes, &req); err == nil && req.Model != "" {
+			resolvedModel = access.ResolvedModel
+			if resolvedModel != "" && resolvedModel != req.Model {
+				r = r.WithContext(context.WithValue(r.Context(), middleware.CtxModelAlias, req.Model))
+				var payload map[string]interface{}
+				if json.Unmarshal(bodyBytes, &payload) == nil {
+					payload["model"] = resolvedModel
+					if rewritten, err := json.Marshal(payload); err == nil {
+						bodyBytes = rewritten
+						r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+					}
+				}
+			}
+		}
+
+		if apiKey.AllowedModels != "" && apiKey.AllowedModels != "*" {
+			if req.Model != "" {
 				allowed := false
 				for _, m := range strings.Split(apiKey.AllowedModels, ",") {
-					if strings.TrimSpace(m) == req.Model {
+					model := strings.TrimSpace(m)
+					if model == req.Model || (resolvedModel != "" && model == resolvedModel) {
 						allowed = true
 						break
 					}
@@ -200,6 +241,80 @@ func main() {
 	})
 
 	embeddingsHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		apiKey := middleware.GetAPIKeyFromContext(r.Context())
+		if apiKey == nil {
+			http.Error(w, `{"error":{"type":"auth_error.invalid_api_key","message":"No API key"}}`, http.StatusUnauthorized)
+			return
+		}
+
+		var req struct {
+			Model string `json:"model"`
+		}
+		bodyBytes, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, `{"error":{"type":"server_error","message":"Failed to read request body"}}`, http.StatusBadRequest)
+			return
+		}
+		r.Body.Close()
+		r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+		_ = json.Unmarshal(bodyBytes, &req)
+
+		var resolvedModel string
+		if req.Model != "" {
+			projectID := int64(0)
+			if apiKey.ProjectID != nil {
+				projectID = *apiKey.ProjectID
+			}
+			access, err := modelgov.CheckAccess(r.Context(), postgres.Pool, apiKey.OrgID, projectID, req.Model)
+			if errors.Is(err, modelgov.ErrModelRetired) || errors.Is(err, modelgov.ErrModelDenied) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"error": map[string]interface{}{
+						"type":    "auth_error.model_not_allowed",
+						"message": "Model is not available for this project",
+						"model":   req.Model,
+						"reason":  access.Reason,
+					},
+				})
+				return
+			}
+			if err != nil && !errors.Is(err, modelgov.ErrModelRequired) {
+				http.Error(w, `{"error":{"type":"server_error","message":"Model governance check failed"}}`, http.StatusInternalServerError)
+				return
+			}
+			resolvedModel = access.ResolvedModel
+			if resolvedModel != "" && resolvedModel != req.Model {
+				r = r.WithContext(context.WithValue(r.Context(), middleware.CtxModelAlias, req.Model))
+				var payload map[string]interface{}
+				if json.Unmarshal(bodyBytes, &payload) == nil {
+					payload["model"] = resolvedModel
+					if rewritten, err := json.Marshal(payload); err == nil {
+						bodyBytes = rewritten
+						r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+					}
+				}
+			}
+		}
+
+		if apiKey.AllowedModels != "" && apiKey.AllowedModels != "*" {
+			if req.Model != "" {
+				allowed := false
+				for _, m := range strings.Split(apiKey.AllowedModels, ",") {
+					model := strings.TrimSpace(m)
+					if model == req.Model || (resolvedModel != "" && model == resolvedModel) {
+						allowed = true
+						break
+					}
+				}
+				if !allowed {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusForbidden)
+					fmt.Fprintf(w, `{"error":{"type":"auth_error.model_not_allowed","message":"Model %s is not allowed for this API key","model":"%s"}}`, req.Model, req.Model)
+					return
+				}
+			}
+		}
 		relay.HandleEmbeddings(w, r)
 	})
 
@@ -294,6 +409,8 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("POST /api/v1/projects", orgAdminRoute(adminHandler.CreateProject))
 	mux.Handle("GET /api/v1/projects/{id}", projectReadRoute(adminHandler.GetProject))
 	mux.Handle("PUT /api/v1/projects/{id}", roleRoute(adminHandler.UpdateProject, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin))
+	mux.Handle("GET /api/v1/projects/{id}/model-sets", projectReadRoute(adminHandler.ListProjectModelSets))
+	mux.Handle("PUT /api/v1/projects/{id}/model-sets", roleRoute(adminHandler.ReplaceProjectModelSets, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin))
 
 	mux.Handle("GET /api/v1/channel-keys", platformRoute(adminHandler.ListChannelKeys))
 	mux.Handle("POST /api/v1/channel-keys", platformRoute(adminHandler.CreateChannelKey))
@@ -314,6 +431,16 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("POST /api/v1/model-prices", orgAdminRoute(adminHandler.CreateModelPrice))
 	mux.Handle("PUT /api/v1/model-prices/{id}", orgAdminRoute(adminHandler.UpdateModelPrice))
 	mux.Handle("DELETE /api/v1/model-prices/{id}", orgAdminRoute(adminHandler.DeleteModelPrice))
+	mux.Handle("GET /api/v1/model-registry", orgAdminRoute(adminHandler.ListModelRegistry))
+	mux.Handle("POST /api/v1/model-registry", orgAdminRoute(adminHandler.CreateModelRegistry))
+	mux.Handle("PUT /api/v1/model-registry/{id}", orgAdminRoute(adminHandler.UpdateModelRegistry))
+	mux.Handle("GET /api/v1/model-catalog", projectReadRoute(adminHandler.ListApprovedModelCatalog))
+	mux.Handle("GET /api/v1/model-aliases", orgAdminRoute(adminHandler.ListModelAliases))
+	mux.Handle("POST /api/v1/model-aliases", orgAdminRoute(adminHandler.CreateModelAlias))
+	mux.Handle("PUT /api/v1/model-aliases/{id}", orgAdminRoute(adminHandler.UpdateModelAlias))
+	mux.Handle("GET /api/v1/model-sets", orgAdminRoute(adminHandler.ListModelSets))
+	mux.Handle("POST /api/v1/model-sets", orgAdminRoute(adminHandler.CreateModelSet))
+	mux.Handle("PUT /api/v1/model-sets/{id}/items", orgAdminRoute(adminHandler.ReplaceModelSetItems))
 	// Org model prices (org-level pricing overrides)
 	mux.Handle("GET /api/v1/model-names", orgAdminRoute(adminHandler.GetModelNames))
 	mux.Handle("GET /api/v1/org-model-prices", orgAdminRoute(adminHandler.ListOrgModelPrices))

@@ -60,13 +60,14 @@ func validateKeyAndOrgStatus(apiKey *models.ApiKey, orgStatus string) error {
 type contextKey string
 
 const (
-	CtxAPIKey    contextKey = "api_key"
-	CtxOrgID     contextKey = "org_id"
-	CtxProjectID contextKey = "project_id"
-	CtxKeyID     contextKey = "key_id"
-	CtxRequestID contextKey = "request_id"
-	CtxUserID    contextKey = "user_id"
-	CtxUserRole  contextKey = "user_role"
+	CtxAPIKey     contextKey = "api_key"
+	CtxOrgID      contextKey = "org_id"
+	CtxProjectID  contextKey = "project_id"
+	CtxKeyID      contextKey = "key_id"
+	CtxRequestID  contextKey = "request_id"
+	CtxUserID     contextKey = "user_id"
+	CtxUserRole   contextKey = "user_role"
+	CtxModelAlias contextKey = "model_alias"
 )
 
 // GetRequestIDFromContext retrieves the request ID from context.
@@ -108,6 +109,12 @@ func GetUserIDFromContext(ctx context.Context) int64 {
 // GetUserRoleFromContext retrieves the user role from context (set by AdminAuth).
 func GetUserRoleFromContext(ctx context.Context) string {
 	v, _ := ctx.Value(CtxUserRole).(string)
+	return v
+}
+
+// GetModelAliasFromContext retrieves the original requested model when the gateway resolves an alias.
+func GetModelAliasFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(CtxModelAlias).(string)
 	return v
 }
 
