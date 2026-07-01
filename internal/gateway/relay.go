@@ -42,6 +42,7 @@ type Relay struct {
 	filter      *filter.DFAFilter
 	encKey      []byte
 	alertSvc    *billing.AlertService
+	eventSvc    *billing.EventService
 	webhookURL  string
 	alertThresh int
 }
@@ -56,6 +57,11 @@ func (relay *Relay) SetAlertService(svc *billing.AlertService, webhookURL string
 	relay.alertSvc = svc
 	relay.webhookURL = webhookURL
 	relay.alertThresh = thresholdCents
+}
+
+// SetEventService configures PRD2 notification events for post-settle project checks.
+func (relay *Relay) SetEventService(svc *billing.EventService) {
+	relay.eventSvc = svc
 }
 
 func upstreamEndpoint(baseURL, endpoint string) string {
@@ -328,11 +334,11 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 	}
 	middleware.RecordTokenUsage("prompt", model, normalized.Usage.PromptTokens)
 	middleware.RecordTokenUsage("completion", model, normalized.Usage.CompletionTokens)
-	relay.checkBudgetAlert(ctx)
 
 	// Record request log
 	relay.recordRequest(ctx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, model, requestedModel, clientIP,
 		normalized.Usage.PromptTokens, normalized.Usage.CompletionTokens, actualCost, resp.StatusCode, elapsedMilliseconds(requestStart), 0, false, normalized.Usage.Source, estimatedTokens)
+	relay.checkBudgetAlert(ctx)
 
 	// Build response with _uniroute extension field
 	var responseMap map[string]interface{}
@@ -554,13 +560,13 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	}
 	middleware.RecordTokenUsage("prompt", model, tokenCounter.InputTokens())
 	middleware.RecordTokenUsage("completion", model, tokenCounter.OutputTokens())
-	relay.checkBudgetAlert(ctx)
 
 	streamDuration := time.Since(streamStart)
 	middleware.RecordUpstreamLatency(route.Channel.Provider, model, streamDuration)
 
 	relay.recordRequest(ctx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, model, requestedModel, clientIP,
 		tokenCounter.InputTokens(), tokenCounter.OutputTokens(), actualCost, http.StatusOK, elapsedMilliseconds(requestStart), ttftMs, true, usageSource, estimatedTokens)
+	relay.checkBudgetAlert(ctx)
 
 	// Send usage + _uniroute extension as the final data chunk before [DONE].
 	unirouteData := map[string]interface{}{
@@ -819,10 +825,10 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		UsageSource:  normalized.Usage.Source,
 	})
 	middleware.RecordTokenUsage("prompt", req.Model, normalized.Usage.PromptTokens)
-	relay.checkBudgetAlert(ctx)
 
 	relay.recordRequest(ctx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, req.Model, requestedModel, r.RemoteAddr,
 		normalized.Usage.PromptTokens, 0, actualCost, resp.StatusCode, elapsedMilliseconds(requestStart), 0, false, normalized.Usage.Source, inputTokens)
+	relay.checkBudgetAlert(ctx)
 
 	// Build response with _uniroute extension
 	var responseMap map[string]interface{}
@@ -911,8 +917,18 @@ func (relay *Relay) handleModelsFallback(w http.ResponseWriter, r *http.Request)
 
 // checkBudgetAlert triggers an async budget check after settlement.
 func (relay *Relay) checkBudgetAlert(ctx context.Context) {
-	if relay.alertSvc == nil {
-		return
+	if relay.alertSvc != nil {
+		go relay.alertSvc.CheckAndNotify(context.Background(), relay.webhookURL, relay.alertThresh)
 	}
-	go relay.alertSvc.CheckAndNotify(context.Background(), relay.webhookURL, relay.alertThresh)
+	if relay.eventSvc != nil {
+		orgID := middleware.GetOrgIDFromContext(ctx)
+		projectID := middleware.GetProjectIDFromContext(ctx)
+		if orgID > 0 && projectID > 0 {
+			go func() {
+				if _, err := relay.eventSvc.CheckProjectBudget(context.Background(), orgID, projectID); err != nil {
+					logger.New(logger.Fields{OrgID: uint(orgID), Module: "notifications"}).Error("Project budget notification check failed for project_id=%d: %v", projectID, err)
+				}
+			}()
+		}
+	}
 }

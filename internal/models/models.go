@@ -45,6 +45,54 @@ type Project struct {
 	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
 }
 
+// NotificationEvent represents a persisted PRD2 event/notification record.
+type NotificationEvent struct {
+	ID             int64           `json:"id" db:"id"`
+	OrgID          int64           `json:"org_id" db:"org_id"`
+	ProjectID      *int64          `json:"project_id" db:"project_id"`
+	EventType      string          `json:"event_type" db:"event_type"`
+	Severity       string          `json:"severity" db:"severity"`
+	Title          string          `json:"title" db:"title"`
+	Message        string          `json:"message" db:"message"`
+	Resource       string          `json:"resource" db:"resource"`
+	ResourceID     string          `json:"resource_id" db:"resource_id"`
+	Payload        json.RawMessage `json:"payload" db:"payload"`
+	Status         string          `json:"status" db:"status"`
+	DedupeKey      string          `json:"dedupe_key" db:"dedupe_key"`
+	DeliveryState  string          `json:"delivery_state" db:"delivery_state"`
+	LastDeliveryAt *time.Time      `json:"last_delivery_at" db:"last_delivery_at"`
+	CreatedAt      time.Time       `json:"created_at" db:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at" db:"updated_at"`
+}
+
+// NotificationWebhook represents a webhook route for notification delivery.
+type NotificationWebhook struct {
+	ID         int64           `json:"id" db:"id"`
+	OrgID      int64           `json:"org_id" db:"org_id"`
+	ProjectID  *int64          `json:"project_id" db:"project_id"`
+	Name       string          `json:"name" db:"name"`
+	URL        string          `json:"url" db:"url"`
+	EventTypes json.RawMessage `json:"event_types" db:"event_types"`
+	Enabled    bool            `json:"enabled" db:"enabled"`
+	CreatedAt  time.Time       `json:"created_at" db:"created_at"`
+	UpdatedAt  time.Time       `json:"updated_at" db:"updated_at"`
+}
+
+// NotificationDelivery represents delivery state for one webhook attempt.
+type NotificationDelivery struct {
+	ID             int64      `json:"id" db:"id"`
+	EventID        int64      `json:"event_id" db:"event_id"`
+	WebhookID      *int64     `json:"webhook_id" db:"webhook_id"`
+	Status         string     `json:"status" db:"status"`
+	Attempts       int        `json:"attempts" db:"attempts"`
+	ResponseStatus *int       `json:"response_status" db:"response_status"`
+	Error          string     `json:"error" db:"error"`
+	NextRetryAt    *time.Time `json:"next_retry_at" db:"next_retry_at"`
+	DeliveredAt    *time.Time `json:"delivered_at" db:"delivered_at"`
+	CreatedAt      time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at" db:"updated_at"`
+}
+
 // ProjectMember represents a user's project-scoped membership.
 type ProjectMember struct {
 	ProjectID int64     `json:"project_id" db:"project_id"`

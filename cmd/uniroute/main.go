@@ -83,6 +83,8 @@ func main() {
 	encKey := []byte(cfg.EncryptionKey)
 	relay := gateway.NewRelay(postgres.Pool, redisClient.Client, router, billingSvc, sensitiveFilter, encKey)
 	alertSvc := billing.NewAlertService(postgres.Pool)
+	eventSvc := billing.NewEventService(postgres.Pool)
+	relay.SetEventService(eventSvc)
 
 	// Wire alert service into relay for post-settle budget checks
 	go func() {
@@ -342,6 +344,12 @@ func main() {
 	usageRoute := func(h http.HandlerFunc) http.Handler {
 		return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper, auth.RoleViewer)
 	}
+	notificationReadRoute := func(h http.HandlerFunc) http.Handler {
+		return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleProjectAdmin)
+	}
+	notificationWriteRoute := func(h http.HandlerFunc) http.Handler {
+		return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleProjectAdmin)
+	}
 	projectReadRoute := func(h http.HandlerFunc) http.Handler {
 		return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper, auth.RoleViewer)
 	}
@@ -455,6 +463,12 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 
 	mux.Handle("GET /api/v1/grants", billingRoute(adminHandler.ListGrants))
 	mux.Handle("POST /api/v1/grants", billingRoute(adminHandler.CreateGrant))
+
+	mux.Handle("GET /api/v1/notification-events", notificationReadRoute(adminHandler.ListNotificationEvents))
+	mux.Handle("GET /api/v1/notification-deliveries", notificationReadRoute(adminHandler.ListNotificationDeliveries))
+	mux.Handle("GET /api/v1/notification-webhooks", notificationReadRoute(adminHandler.ListNotificationWebhooks))
+	mux.Handle("POST /api/v1/notification-webhooks", notificationWriteRoute(adminHandler.CreateNotificationWebhook))
+	mux.Handle("PUT /api/v1/notification-webhooks/{id}", notificationWriteRoute(adminHandler.UpdateNotificationWebhook))
 
 	mux.Handle("GET /api/v1/audit-logs", roleRoute(adminHandler.ListAuditLogs, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin))
 

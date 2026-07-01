@@ -19,6 +19,7 @@
 | 11 | [Project And RBAC Model](11-project-rbac-model.md) | PRD2 Project/RBAC 数据与权限模型 | v0.1 |
 | 12 | [Token Metering V2](12-token-metering-v2.md) | PRD2 token metering source and reconciliation contract | v0.1 |
 | 13 | [Audit Schema Upgrade](13-audit-schema-upgrade.md) | PRD2 audit source, filter, and before/after contract | v0.1 |
+| 14 | [Notification And Event Foundation](14-notification-event-foundation.md) | PRD2 notification events, webhook routing, and project budget threshold contract | v0.1 |
 
 ## 关联文档
 - [PRD Phase 1](../PRD-Phase1.md) — 产品需求文档
