@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -134,13 +135,15 @@ func (h *Handler) TopUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Write audit log
-	_, _ = h.db.Exec(r.Context(),
-		`INSERT INTO audit_logs (org_id, user_id, action, resource, resource_id, detail, request_id, source, created_at)
-		 VALUES ($1, $2, 'wallet.topup', 'wallet', $3, $4, $5, 'admin', NOW())`,
-		walletOrgID, int64(0), fmt.Sprintf("%d", walletOrgID),
-		fmt.Sprintf(`{"amount_cents":%d,"description":"%s"}`, req.AmountCents, req.Description),
-		requestID)
+	r = r.WithContext(context.WithValue(r.Context(), middleware.CtxRequestID, requestID))
+	h.recordAuditForOrgProjectFromRequest(r, walletOrgID, 0, "wallet.topup", "wallet", fmt.Sprintf("%d", walletOrgID), map[string]interface{}{
+		"amount_cents": req.AmountCents,
+		"description":  req.Description,
+		"after": map[string]interface{}{
+			"amount_cents": req.AmountCents,
+			"description":  req.Description,
+		},
+	})
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"message": "Top-up successful"})
 }
@@ -210,13 +213,18 @@ func (h *Handler) BalanceAdjust(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Write audit log
-	_, _ = h.db.Exec(r.Context(),
-		`INSERT INTO audit_logs (org_id, user_id, action, resource, resource_id, detail, request_id, source, created_at)
-		 VALUES ($1, $2, 'wallet.adjust', 'wallet', $3, $4, $5, 'admin', NOW())`,
-		walletOrgID, int64(0), fmt.Sprintf("%d", walletOrgID),
-		fmt.Sprintf(`{"from":%d,"to":%d,"description":"%s"}`, currentBalance, req.TargetBalance, req.Description),
-		requestID)
+	r = r.WithContext(context.WithValue(r.Context(), middleware.CtxRequestID, requestID))
+	h.recordAuditForOrgProjectFromRequest(r, walletOrgID, 0, "wallet.adjust", "wallet", fmt.Sprintf("%d", walletOrgID), map[string]interface{}{
+		"from":        currentBalance,
+		"to":          req.TargetBalance,
+		"description": req.Description,
+		"before": map[string]interface{}{
+			"balance_cents": currentBalance,
+		},
+		"after": map[string]interface{}{
+			"balance_cents": req.TargetBalance,
+		},
+	})
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success":       true,

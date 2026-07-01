@@ -1,8 +1,8 @@
-# FIX-SIGNAL.md — PRD2 implementation batch 5 Token Metering V2 backend foundation
+# FIX-SIGNAL.md — PRD2 implementation batch 6 Audit Schema Upgrade backend foundation
 
 **修复者：** main agent
 **日期：** 文件系统时间戳为准
-**修复轮次：** PRD2 implementation batch 5
+**修复轮次：** PRD2 implementation batch 6
 
 ---
 
@@ -10,170 +10,173 @@
 
 | 项目 | 预期状态 | 原因 |
 |------|---------|------|
-| PRD2 batch 4 | Canary PASS + Sentinel complete | User 已报告 Canary 和 Sentinel 都完成，本轮同步状态并推进 batch 5 |
-| Frontend | 预期无功能变化 | 本轮只做 Token Metering V2 后端基础，不做 reconciliation UI 筛选 |
-| Notification/dashboard delivery | 仍未完成 | 本轮只在 reconciliation response 暴露 estimated-ratio alert signal |
-| Full-query analytics aggregation | 仍未完成 | 本轮 summary scope 是 `current_page`，P2-F14 再做高级分析聚合 |
-| Native adapter-specific estimates | 仍未完成 | 本轮只定义 source contract 和 OpenAI-compatible/stream fallback 路径 |
-| 真实上游 E2E / 浏览器验收 | 仍未完成 | 本轮提供 schema、gateway write path、reconciliation API 和单元测试证据 |
+| PRD2 batch 5 | Canary PASS + Sentinel complete | User 已报告 Canary 和 Sentinel 都完成，本轮同步状态并推进 batch 6 |
+| Frontend | 预期无功能变化 | 本轮只做 Audit Schema Upgrade 后端基础，不做 Audit Logs UI 筛选 |
+| Gateway-originated audit events | 仍未完成 | 本轮只定义 `gateway_api` source contract，不在 gateway 发审计事件 |
+| All historical audit actions before/after | 仍未完成 | 本轮只覆盖关键 P2-F07 验收动作，不批量改写所有历史 handler |
+| 真实 JWT/API E2E / 浏览器验收 | 仍未完成 | 本轮提供 schema、helper、filters 和单元测试证据 |
 
-> Canary 验收时：上述未完成项不算 FAIL；如果本轮声称完成前端 usage_source 筛选、通知发送、Dashboard 告警卡、全量聚合分析、native adapter-specific estimate 或生产/E2E 验收，则应标为 FAIL。
+> Canary 验收时：上述未完成项不算 FAIL；如果本轮声称完成前端 Audit Logs 筛选、gateway audit event emission、所有历史动作 before/after 全覆盖或真实 E2E/浏览器验收，则应标为 FAIL。
 
 ---
 
-## Fix #1: Batch 4 验收状态同步
+## Fix #1: Batch 5 验收状态同步
 
 **文件：** `docs/ops/CURRENT-STATUS.md`, `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`
 
-**原问题：** User 报告 batch 4 的 Canary 和 Sentinel 已完成，但当前状态需要同步。
+**原问题：** User 报告 batch 5 的 Canary 和 Sentinel 已完成，但当前状态需要同步。
 
 **当前状态：**
 
-- `CURRENT-STATUS.md` 记录 batch 4 为 Canary passed / Sentinel complete。
-- `PRD2-ACCEPTANCE-MATRIX.md` 将 Provider Adapter 证据更新为 Canary 6/6 PASS + User reported Sentinel completed。
-- 当前活跃轮次更新为 batch 5 fixed locally awaiting Canary。
+- `CURRENT-STATUS.md` 记录 batch 5 为 Canary passed / Sentinel complete。
+- `PRD2-ACCEPTANCE-MATRIX.md` 将 Token Metering V2 证据更新为 Canary 6/6 PASS + User reported Sentinel completed。
+- 当前活跃轮次更新为 batch 6 fixed locally awaiting Canary。
 
 **验证方法：**
 
 ```bash
 sed -n '1,34p' docs/ops/CURRENT-STATUS.md
-sed -n '48,58p' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
+sed -n '52,62p' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
 ```
 
 ---
 
-## Fix #2: Token Metering V2 contract and schema foundation
+## Fix #2: Audit schema contract and migration
 
-**文件：** `docs/tech-ref/12-token-metering-v2.md`, `docs/tech-ref/README.md`, `docs/DOC-INVENTORY.md`, `migrations/000012_prd2_token_metering_v2.up.sql`, `migrations/000012_prd2_token_metering_v2.down.sql`, `internal/models/models.go`
+**文件：** `docs/tech-ref/13-audit-schema-upgrade.md`, `docs/tech-ref/README.md`, `docs/DOC-INVENTORY.md`, `migrations/000013_prd2_audit_schema_upgrade.up.sql`, `migrations/000013_prd2_audit_schema_upgrade.down.sql`, `internal/models/models.go`
 
-**原问题：** PRD2 要求 usage normalization、source confidence 和 estimated-vs-upstream variance，但 PRD1 `call_logs` 只有历史 `usage_source` 字符串，无法保存预冻结估算或置信度。
+**原问题：** PRD2 P2-F07 要求 actor/org/project/source/request metadata 和 before/after，但当前 schema/文档没有结构化 before/after contract。
 
 **当前实现：**
 
-- 新增 tech-ref，定义 canonical usage source：
-  - `upstream`
-  - `counter_v2`
-  - `adapter_estimated`
-  - `estimated`
-  - `no_route`
-  - `upstream_failed`
-- migration 新增 `call_logs.estimated_tokens`。
-- migration 新增 `call_logs.usage_confidence`。
-- migration 将 legacy `api` 迁移为 `upstream`。
-- migration 将 legacy `stream_estimate` 迁移为 `counter_v2`。
-- migration 新增 `idx_call_logs_usage_source_created`。
-- migration seed `settings` key `token_metering.estimated_ratio_alert_threshold`，默认 `0.2`。
-- `models.CallLog` 增加 `EstimatedTokens` 和 `UsageConfidence`。
+- 新增 tech-ref，定义 canonical audit source：
+  - `admin_console`
+  - `developer_console`
+  - `gateway_api`
+  - `system`
+- migration 新增 `audit_logs.before_state JSONB`。
+- migration 新增 `audit_logs.after_state JSONB`。
+- migration 将 legacy `source='admin'` 归一为 `admin_console`。
+- migration 新增 action/resource/source 相关索引。
+- `models.AuditLog` 增加 `Before`、`After`、`Source` 字段。
 
 **验证方法：**
 
 ```bash
-test -f docs/tech-ref/12-token-metering-v2.md
-test -f migrations/000012_prd2_token_metering_v2.up.sql
-test -f migrations/000012_prd2_token_metering_v2.down.sql
-rg -n "estimated_tokens|usage_confidence|counter_v2|token_metering.estimated_ratio_alert_threshold" migrations/000012_prd2_token_metering_v2.up.sql internal/models/models.go docs/tech-ref/12-token-metering-v2.md
+test -f docs/tech-ref/13-audit-schema-upgrade.md
+test -f migrations/000013_prd2_audit_schema_upgrade.up.sql
+test -f migrations/000013_prd2_audit_schema_upgrade.down.sql
+rg -n "before_state|after_state|admin_console|developer_console|gateway_api|system" docs/tech-ref/13-audit-schema-upgrade.md migrations/000013_prd2_audit_schema_upgrade.up.sql internal/models/models.go
 ```
 
 ---
 
-## Fix #3: Shared metering source normalization
+## Fix #3: Audit helper writes source, request metadata, project, before, and after
 
-**文件：** `internal/metering/metering.go`, `internal/metering/metering_test.go`, `internal/adapters/openai_compatible.go`
+**文件：** `internal/admin/audit_handlers.go`, `internal/admin/admin_mock_test.go`
 
-**原问题：** usage source 字符串分散在 gateway、adapter 和测试里，且 `api`/`stream_estimate` 与 PRD2 source 语义不一致。
+**原问题：** `recordAudit` 只写 `detail`，不统一写 `source`、`user_agent`、`request_id`、`before_state`、`after_state`，且 source 仍可能是 legacy `admin`。
 
 **当前实现：**
 
-- 新增 `internal/metering` 包。
-- `NormalizeUsageSource` 把 `api` 映射为 `upstream`。
-- `NormalizeUsageSource` 把 `stream_estimate` 映射为 `counter_v2`。
-- `SourceConfidence` 为不同 source 提供置信度。
-- `EstimatedTokenRatio` 支持 estimated-ratio alert signal。
-- `openai_compatible` adapter 成功响应的 usage source 改为 `upstream`。
+- 新增 `recordAuditFromRequest`。
+- 新增 `recordAuditForProjectFromRequest`。
+- 新增 `recordAuditForOrgProjectFromRequest`。
+- `recordAuditEntry` 统一写：
+  - `org_id`
+  - `project_id`
+  - actor `user_id`
+  - `ip`
+  - `user_agent`
+  - `request_id`
+  - canonical `source`
+  - `before_state`
+  - `after_state`
+- `detail.before` / `detail.after` 自动抽取为结构化 fields，同时保留原始 `detail`。
+- source 根据上下文角色映射为 `admin_console` 或 `developer_console`；空系统上下文为 `system`。
 
 **关键测试：**
 
-- `TestNormalizeUsageSource_LegacyAliases`
-- `TestSourceConfidence`
-- `TestEstimatedTokenRatio`
+- `TestRecordAudit_Success`
 
 **验证方法：**
 
 ```bash
-go test ./internal/metering ./internal/adapters -v
+go test ./internal/admin -run TestRecordAudit_Success -v
 ```
 
 ---
 
-## Fix #4: Gateway writes estimated tokens, canonical usage source, and confidence
+## Fix #4: Audit list supports PRD2 filters and returns enriched fields
 
-**文件：** `internal/gateway/relay.go`, `internal/gateway/relay_mock_test.go`
+**文件：** `internal/admin/audit_handlers.go`, `internal/admin/admin_mock_test.go`
 
-**原问题：** gateway 只写最终 tokens 和历史 source，reconciliation 不能看见预冻结估算，也无法区分 upstream 与 deterministic fallback 的可信度。
+**原问题：** `/api/v1/audit-logs` 只能全量分页读取，不能按 org/project/actor/action/resource/time/source 过滤，也不返回 PRD2 audit metadata。
 
 **当前实现：**
 
-- `recordRequest` 写入 `estimated_tokens` 和 `usage_confidence`。
-- `recordRequest` 写入前统一调用 `metering.NormalizeUsageSource`。
-- chat no-route 写 `no_route` 和预冻结估算。
-- chat all-upstream-failed 写 `upstream_failed` 和预冻结估算。
-- non-stream successful adapter usage 写 canonical `upstream`。
-- stream upstream final usage 写 canonical `upstream`。
-- stream missing upstream usage 写 canonical `counter_v2`。
-- embeddings 写入 input estimate 作为 `estimated_tokens`。
+- 支持过滤：
+  - `org_id`
+  - `project_id`
+  - `actor_id`
+  - `user_id`
+  - `action`
+  - `resource`
+  - `resource_id`
+  - `source`
+  - `start_time`
+  - `end_time`
+- `source=admin` 作为 legacy alias 归一化为 `admin_console`。
+- 响应返回：
+  - `actor_id` 和兼容字段 `user_id`
+  - `org_id`
+  - `project_id`
+  - `detail`
+  - `before`
+  - `after`
+  - `ip`
+  - `user_agent`
+  - `request_id`
+  - `source`
+  - pagination metadata。
 
 **关键测试：**
 
-- `TestRecordRequest_Success`
-- `TestRelayStreamRequest_NoUpstreamUsage`
-- `TestRelayStreamRequest_UpstreamUsageSource`
+- `TestListAuditLogs_Success`
+- `TestListAuditLogs_Filters`
+- `TestListAuditLogs_QueryError`
 
 **验证方法：**
 
 ```bash
-go test ./internal/gateway -run 'Test(RecordRequest_Success|RelayStreamRequest_NoUpstreamUsage|RelayStreamRequest_UpstreamUsageSource)' -v
+go test ./internal/admin -run 'TestListAuditLogs' -v
 ```
 
 ---
 
-## Fix #5: Reconciliation supports usage_source filter and variance signal
+## Fix #5: Critical PRD2 audit actions record before/after evidence
 
-**文件：** `internal/admin/model_handlers.go`, `internal/admin/admin_mock_test.go`
+**文件：** `internal/admin/key_handlers.go`, `internal/admin/model_governance_handlers.go`, `internal/admin/wallet_handlers.go`, `internal/admin/admin_mock_test.go`, `internal/admin/model_governance_handlers_test.go`
 
-**原问题：** `/api/v1/reconciliation` 只能按 model/status 过滤，且 `estimated_tokens` 实际由 prompt+completion 推导，无法表达预冻结估算、usage source、source confidence 或 estimated-ratio alert。
+**原问题：** P2-F07 acceptance 要求 project key creation、model lifecycle change、wallet adjustment 等关键动作有 actor/project/before/after 审计证据。
 
 **当前实现：**
 
-- `GET /api/v1/reconciliation?usage_source=...` 支持 source 筛选。
-- legacy filter alias `usage_source=api` 映射为 `upstream`。
-- legacy filter alias `usage_source=stream_estimate` 映射为 `counter_v2`。
-- record 增加：
-  - `usage_source`
-  - `variance_tokens`
-  - `variance_ratio`
-  - `source_confidence`
-- 保留现有字段：
-  - `estimated_tokens`
-  - `actual_tokens`
-  - `delta`
-- response 增加 page-scoped `summary`：
-  - `estimated_tokens`
-  - `upstream_tokens`
-  - `estimated_ratio`
-  - `estimated_ratio_alert_threshold`
-  - `estimated_usage_alert`
-  - `estimated_ratio_alert_threshold_setting`
-  - `estimated_ratio_scope`
+- Project API key creation 使用 request-aware project audit helper，并写 after-state。
+- Model registry update 在更新前读取 lifecycle baseline，并写 before/after state。
+- Wallet top-up 使用统一 audit helper。
+- Wallet balance adjustment 写 before/after balance。
 
 **关键测试：**
 
-- `TestListReconciliation_Success`
-- `TestListReconciliation_UsageSourceFilterNormalizesLegacyAlias`
+- `TestCreateAPIKey_AuditIncludesProjectAndAfterState`
+- `TestUpdateModelRegistry_LifecycleAuditBeforeAfter`
+- `TestBalanceAdjust_Success`
 
 **验证方法：**
 
 ```bash
-go test ./internal/admin -run 'TestListReconciliation_(Success|UsageSourceFilterNormalizesLegacyAlias)' -v
+go test ./internal/admin -run 'Test(CreateAPIKey_AuditIncludesProjectAndAfterState|UpdateModelRegistry_LifecycleAuditBeforeAfter|BalanceAdjust_Success)' -v
 ```
 
 ---
@@ -184,15 +187,15 @@ go test ./internal/admin -run 'TestListReconciliation_(Success|UsageSourceFilter
 
 **当前状态：**
 
-- `CURRENT-STATUS.md` 标记 batch 5 为 fixed locally awaiting Canary。
-- `P2-F06 Token Metering V2`、missing stream usage、estimated-vs-upstream variance rows 标记为 `Unit tested`。
-- 未把 frontend usage_source filter、notification delivery、Dashboard alert、full-query analytics aggregation、native adapter-specific estimates 或真实上游 E2E 标记完成。
+- `CURRENT-STATUS.md` 标记 batch 6 为 fixed locally awaiting Canary。
+- `P2-F07 Audit schema upgrade`、Model lifecycle before/after、Project key audit rows 标记为 `Unit tested`。
+- 未把 frontend audit filters、gateway audit event emission、所有历史动作 before/after 全覆盖或真实 JWT/API E2E 标记完成。
 
 **验证方法：**
 
 ```bash
 sed -n '1,34p' docs/ops/CURRENT-STATUS.md
-sed -n '50,60p' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
+sed -n '56,64p' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
 ```
 
 ---
@@ -201,7 +204,7 @@ sed -n '50,60p' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
 
 ```bash
 cd /Users/m4/Desktop/projects/UniRouter
-go test ./internal/metering ./internal/adapters ./internal/gateway ./internal/admin ./cmd/uniroute
+go test ./internal/admin ./cmd/uniroute
 go test ./...
 git diff --check
 git diff --check -- $(git ls-files --others --exclude-standard)
@@ -217,7 +220,7 @@ git status --short
 
 **验收者：** canary agent
 **日期：** 文件系统时间戳为准
-**对应轮次：** PRD2 implementation batch 5
+**对应轮次：** PRD2 implementation batch 6
 
 ---
 
@@ -233,15 +236,14 @@ git status --short
 ## 前置条件核验
 
 - Frontend 无功能变化: PASS/FAIL
-- Notification/dashboard delivery 未声称完成: PASS/FAIL
-- Full-query analytics aggregation 未声称完成: PASS/FAIL
-- Native adapter-specific estimates 未声称完成: PASS/FAIL
-- 真实上游 E2E / 浏览器验收未声称完成: PASS/FAIL
+- Gateway-originated audit events 未声称完成: PASS/FAIL
+- All historical audit actions before/after 未声称完成: PASS/FAIL
+- 真实 JWT/API E2E / 浏览器验收未声称完成: PASS/FAIL
 - PRD2 acceptance matrix 未过度标注: PASS/FAIL
 
 ## 全局验证
 
-- go test ./internal/metering ./internal/adapters ./internal/gateway ./internal/admin ./cmd/uniroute: PASS/FAIL
+- go test ./internal/admin ./cmd/uniroute: PASS/FAIL
 - go test ./...: PASS/FAIL
 - git diff --check: PASS/FAIL
 - git diff --check -- $(git ls-files --others --exclude-standard): PASS/FAIL

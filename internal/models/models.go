@@ -243,9 +243,12 @@ type AuditLog struct {
 	Resource   string          `json:"resource" db:"resource"`
 	ResourceID string          `json:"resource_id" db:"resource_id"`
 	Detail     json.RawMessage `json:"detail" db:"detail"`
+	Before     json.RawMessage `json:"before" db:"before_state"`
+	After      json.RawMessage `json:"after" db:"after_state"`
 	IP         string          `json:"ip" db:"ip"`
 	UserAgent  string          `json:"user_agent" db:"user_agent"`
 	RequestID  string          `json:"request_id" db:"request_id"`
+	Source     string          `json:"source" db:"source"`
 	CreatedAt  time.Time       `json:"created_at" db:"created_at"`
 }
 

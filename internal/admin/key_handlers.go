@@ -157,8 +157,22 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.recordAuditForProject(r.Context(), "apikey.create", "apikey", strconv.FormatInt(id, 10), projectID,
-		map[string]interface{}{"org_id": req.OrgID, "project_id": projectID, "name": req.Name}, r.RemoteAddr)
+	h.recordAuditForProjectFromRequest(r, "apikey.create", "apikey", strconv.FormatInt(id, 10), projectID,
+		map[string]interface{}{
+			"org_id":     req.OrgID,
+			"project_id": projectID,
+			"name":       req.Name,
+			"after": map[string]interface{}{
+				"org_id":         req.OrgID,
+				"project_id":     projectID,
+				"name":           req.Name,
+				"status":         "active",
+				"rpm_limit":      req.RPMLimit,
+				"qps_limit":      req.QPSLimit,
+				"allowed_ips":    req.AllowedIPs,
+				"allowed_models": req.AllowedModels,
+			},
+		})
 
 	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "key": rawKey, "key_prefix": keyPrefix, "project_id": projectID})
 }

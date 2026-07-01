@@ -249,6 +249,21 @@ func (h *Handler) UpdateModelRegistry(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "No fields to update"})
 		return
 	}
+	beforeState := map[string]interface{}{"id": id}
+	var beforeModelName, beforeLifecycle, beforeMigrationRecommendation string
+	var beforeApprovedCatalog bool
+	if err := h.db.QueryRow(r.Context(),
+		`SELECT model_name, lifecycle, approved_catalog, migration_recommendation FROM model_registry WHERE id = $1`,
+		id,
+	).Scan(&beforeModelName, &beforeLifecycle, &beforeApprovedCatalog, &beforeMigrationRecommendation); err == nil {
+		beforeState = map[string]interface{}{
+			"id":                       id,
+			"model_name":               beforeModelName,
+			"lifecycle":                beforeLifecycle,
+			"approved_catalog":         beforeApprovedCatalog,
+			"migration_recommendation": beforeMigrationRecommendation,
+		}
+	}
 	sets = append(sets, "updated_at = NOW()")
 	args = append(args, id)
 	query := fmt.Sprintf("UPDATE model_registry SET %s WHERE id = $%d", strings.Join(sets, ", "), argIdx)
@@ -261,7 +276,24 @@ func (h *Handler) UpdateModelRegistry(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Model not found"})
 		return
 	}
-	h.recordAudit(r.Context(), "model_registry.update", "model_registry", strconv.FormatInt(id, 10), map[string]interface{}{"id": id}, r.RemoteAddr)
+	afterState := map[string]interface{}{"id": id}
+	if req.ModelName != nil {
+		afterState["model_name"] = strings.TrimSpace(*req.ModelName)
+	}
+	if req.Lifecycle != nil {
+		afterState["lifecycle"] = strings.TrimSpace(*req.Lifecycle)
+	}
+	if req.ApprovedCatalog != nil {
+		afterState["approved_catalog"] = *req.ApprovedCatalog
+	}
+	if req.MigrationRecommendation != nil {
+		afterState["migration_recommendation"] = strings.TrimSpace(*req.MigrationRecommendation)
+	}
+	h.recordAuditFromRequest(r, "model_registry.update", "model_registry", strconv.FormatInt(id, 10), map[string]interface{}{
+		"id":     id,
+		"before": beforeState,
+		"after":  afterState,
+	})
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 }
 

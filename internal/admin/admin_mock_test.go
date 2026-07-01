@@ -791,6 +791,7 @@ func TestTopUp_TxCommitFail(t *testing.T) {
 // ===================================================================
 
 func TestBalanceAdjust_Success(t *testing.T) {
+	var auditArgs []any
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			return &testutil.MockRow{
@@ -809,6 +810,9 @@ func TestBalanceAdjust_Success(t *testing.T) {
 			}, nil
 		},
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(sql, "INSERT INTO audit_logs") {
+				auditArgs = append([]any(nil), args...)
+			}
 			return pgconn.CommandTag{}, nil // audit log
 		},
 	}
@@ -834,6 +838,12 @@ func TestBalanceAdjust_Success(t *testing.T) {
 	}
 	if resp["adjust_amount"].(float64) != 5000 {
 		t.Fatalf("expected adjust_amount=5000, got %v", resp["adjust_amount"])
+	}
+	if len(auditArgs) != 13 {
+		t.Fatalf("expected 13 audit args, got %#v", auditArgs)
+	}
+	if !strings.Contains(auditArgs[11].(string), `"balance_cents":5000`) || !strings.Contains(auditArgs[12].(string), `"balance_cents":10000`) {
+		t.Fatalf("expected wallet before/after balance audit, got before=%v after=%v", auditArgs[11], auditArgs[12])
 	}
 }
 
@@ -1190,19 +1200,41 @@ func TestDeleteChannel_DBError(t *testing.T) {
 
 func TestRecordAudit_Success(t *testing.T) {
 	execCalled := false
+	var capturedSQL string
+	var capturedArgs []any
 	db := &testutil.MockDB{
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			execCalled = true
+			capturedSQL = sql
+			capturedArgs = append([]any(nil), args...)
 			return pgconn.CommandTag{}, nil
 		},
 	}
 	h := newTestHandler(db)
 
 	// recordAudit should not panic even on success
-	h.recordAudit(context.Background(), "test.action", "resource", "1", map[string]interface{}{"key": "value"}, "127.0.0.1")
+	ctx := context.WithValue(context.Background(), middleware.CtxUserID, int64(7))
+	ctx = context.WithValue(ctx, middleware.CtxUserRole, auth.RoleDeveloper)
+	h.recordAudit(ctx, "test.action", "resource", "1", map[string]interface{}{
+		"key":    "value",
+		"before": map[string]interface{}{"status": "old"},
+		"after":  map[string]interface{}{"status": "new"},
+	}, "127.0.0.1")
 
 	if !execCalled {
 		t.Fatal("expected exec to be called")
+	}
+	if !strings.Contains(capturedSQL, "before_state") || !strings.Contains(capturedSQL, "after_state") {
+		t.Fatalf("expected audit insert to include before_state/after_state, got %s", capturedSQL)
+	}
+	if capturedArgs[1] != int64(7) {
+		t.Fatalf("expected actor user id 7, got %v", capturedArgs[1])
+	}
+	if capturedArgs[9] != "developer_console" {
+		t.Fatalf("expected developer_console source, got %v", capturedArgs[9])
+	}
+	if !strings.Contains(capturedArgs[11].(string), "old") || !strings.Contains(capturedArgs[12].(string), "new") {
+		t.Fatalf("expected before/after JSON, got before=%v after=%v", capturedArgs[11], capturedArgs[12])
 	}
 }
 
@@ -1401,6 +1433,52 @@ func TestCreateAPIKey_Success(t *testing.T) {
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCreateAPIKey_AuditIncludesProjectAndAfterState(t *testing.T) {
+	var auditArgs []any
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
+					if strings.Contains(sql, "FROM projects") || strings.Contains(sql, "INSERT INTO projects") {
+						*dest[0].(*int64) = 9
+						return nil
+					}
+					*dest[0].(*int64) = 42
+					return nil
+				},
+			}
+		},
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(sql, "INSERT INTO audit_logs") {
+				auditArgs = append([]any(nil), args...)
+			}
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	h := newTestHandler(db)
+
+	body := `{"org_id":1,"project_id":9,"name":"project-key","rpm_limit":120,"qps_limit":20,"allowed_models":"company-chat"}`
+	req := httptest.NewRequest("POST", "/keys", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "audit-test")
+	rec := httptest.NewRecorder()
+
+	h.CreateAPIKey(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(auditArgs) != 13 {
+		t.Fatalf("expected 13 audit args, got %#v", auditArgs)
+	}
+	if auditArgs[10] != int64(9) {
+		t.Fatalf("expected project_id audit arg 9, got %v", auditArgs[10])
+	}
+	if !strings.Contains(auditArgs[12].(string), "project-key") || !strings.Contains(auditArgs[12].(string), "company-chat") {
+		t.Fatalf("expected after state to include key fields, got %v", auditArgs[12])
 	}
 }
 
@@ -2198,12 +2276,20 @@ func TestListAuditLogs_Success(t *testing.T) {
 				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1
-						*dest[1].(*int64) = 0
-						*dest[2].(*string) = "channel.create"
-						*dest[3].(*string) = "channel"
-						*dest[4].(*string) = "1"
-						*dest[5].(*[]byte) = []byte(`{}`)
-						*dest[6].(*time.Time) = now
+						*dest[1].(*int64) = 3
+						*dest[2].(*int64) = 9
+						*dest[3].(*int64) = 7
+						*dest[4].(*string) = "channel.create"
+						*dest[5].(*string) = "channel"
+						*dest[6].(*string) = "1"
+						*dest[7].(*[]byte) = []byte(`{"key":"value"}`)
+						*dest[8].(*[]byte) = []byte(`{"status":"old"}`)
+						*dest[9].(*[]byte) = []byte(`{"status":"new"}`)
+						*dest[10].(*string) = "127.0.0.1"
+						*dest[11].(*string) = "agent"
+						*dest[12].(*string) = "req-1"
+						*dest[13].(*string) = "admin_console"
+						*dest[14].(*time.Time) = now
 						return nil
 					},
 				},
@@ -2219,6 +2305,49 @@ func TestListAuditLogs_Success(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	row := resp["data"].([]interface{})[0].(map[string]interface{})
+	if row["actor_id"].(float64) != 7 || row["project_id"].(float64) != 9 {
+		t.Fatalf("expected actor/project fields, got %#v", row)
+	}
+	if row["source"] != "admin_console" || row["request_id"] != "req-1" || row["user_agent"] != "agent" {
+		t.Fatalf("expected source/request/user_agent fields, got %#v", row)
+	}
+}
+
+func TestListAuditLogs_Filters(t *testing.T) {
+	var capturedArgs []any
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			if !strings.Contains(sql, "org_id = $1") || !strings.Contains(sql, "project_id = $2") || !strings.Contains(sql, "user_id = $3") || !strings.Contains(sql, "source = $6") {
+				t.Fatalf("expected filtered count query, got %s", sql)
+			}
+			capturedArgs = append([]any(nil), args...)
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int) = 0
+				return nil
+			}}
+		},
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{}, nil
+		},
+	}
+	h := newTestHandler(db)
+
+	req := httptest.NewRequest("GET", "/audit-logs?org_id=3&project_id=9&actor_id=7&action=model_registry.update&resource=model_registry&source=admin", nil)
+	rec := httptest.NewRecorder()
+
+	h.ListAuditLogs(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(capturedArgs) != 6 || capturedArgs[5] != "admin_console" {
+		t.Fatalf("expected normalized admin_console source filter, got %#v", capturedArgs)
 	}
 }
 

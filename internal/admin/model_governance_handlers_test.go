@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/testutil"
@@ -26,6 +27,56 @@ func TestCreateModelRegistry_InvalidLifecycle(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdateModelRegistry_LifecycleAuditBeforeAfter(t *testing.T) {
+	var auditArgs []any
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*string) = "gpt-4o"
+				*dest[1].(*string) = "ga"
+				*dest[2].(*bool) = true
+				*dest[3].(*string) = ""
+				return nil
+			}}
+		},
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(sql, "INSERT INTO audit_logs") {
+				auditArgs = append([]any(nil), args...)
+				return pgconn.CommandTag{}, nil
+			}
+			return pgconn.NewCommandTag("UPDATE 1"), nil
+		},
+	}
+	h := newTestHandler(db)
+
+	req := httptest.NewRequest(http.MethodPut, "/model-registry/10", strings.NewReader(`{"lifecycle":"deprecated","migration_recommendation":"Use company-chat-v2"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "audit-test")
+	req.SetPathValue("id", "10")
+	ctx := context.WithValue(req.Context(), middleware.CtxUserID, int64(7))
+	ctx = context.WithValue(ctx, middleware.CtxUserRole, auth.RolePlatformAdmin)
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	h.UpdateModelRegistry(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(auditArgs) != 13 {
+		t.Fatalf("expected 13 audit args, got %#v", auditArgs)
+	}
+	if auditArgs[1] != int64(7) || auditArgs[9] != "admin_console" {
+		t.Fatalf("expected actor/source in audit args, got %#v", auditArgs)
+	}
+	if !strings.Contains(auditArgs[11].(string), `"lifecycle":"ga"`) {
+		t.Fatalf("expected before lifecycle ga, got %v", auditArgs[11])
+	}
+	if !strings.Contains(auditArgs[12].(string), `"lifecycle":"deprecated"`) {
+		t.Fatalf("expected after lifecycle deprecated, got %v", auditArgs[12])
 	}
 }
 
