@@ -5,21 +5,22 @@
 
 ## Summary
 
-UniRouter Phase 1 is in MVP hardening. Core backend modules, admin APIs, frontend pages, migrations, Docker deployment files, and monitoring assets exist. The project is not an early scaffold, but it is not yet fully PRD-accepted because several end-to-end and production-style acceptance cases still need current evidence, provider capacity, or explicit user-approved deferral. The default-admin cloud security blocker and the channel-key/reconciliation/Dashboard follow-up fixes have been redeployed and verified in cloud. The Mimo provider key has also been cloud-verified as valid; the latest latency persistence, decimal-pricing, Dashboard trend UX, and Grafana observability fixes are local and await Canary/deploy.
+UniRouter Phase 1 is in MVP hardening. Core backend modules, admin APIs, frontend pages, migrations, Docker deployment files, and monitoring assets exist. The project is not an early scaffold, but it is not yet fully PRD-accepted because several end-to-end and production-style acceptance cases still need current evidence, provider capacity, or explicit user-approved deferral. The default-admin cloud security blocker and the channel-key/reconciliation/Dashboard follow-up fixes have been redeployed and verified in cloud. The Mimo provider key has also been cloud-verified as valid; latency persistence and decimal pricing are now production-verified after redeploy. Dashboard trend UX passed Canary and local visual smoke. User/Atlas reported the Grafana runtime fix resolved, and Codex verified Grafana default `admin/admin` is rejected. A final Logs/Dashboard UI follow-up is fixed locally and awaiting Canary for absolute log timestamps, Request ID copy feedback, log detail layout, filter order, and model/channel health balance.
 
 ## Current Verification
 
 | Area | Status | Evidence |
 |------|--------|----------|
 | Go tests | PASS | `go test ./...` passed on 2026-07-01 |
-| Frontend tests | PASS | `npm test -- --run` passed in `frontend/` with 37 tests on 2026-07-01; Canary verified earlier rounds as PASS |
+| Frontend tests | PASS | `npm test -- --run` passed in `frontend/` with 42 tests on 2026-07-01; Canary verified earlier rounds as PASS |
 | Frontend build | PASS with warning | `npm run build` passed; Canary verified PASS; Vite reported large chunk warning |
 | Route parity guard | PASS | `go test ./cmd/uniroute -run TestAdminRoutesRegisteredForFrontendClient -v` passed on 2026-07-01 |
 | Local current-source smoke | PASS | Temporary `go run ./cmd/uniroute` on port 18080 passed health, metrics, login, `/me`, settings, dashboard, and unauthenticated password-route checks |
 | PRD1 latest Canary | PASS | `VERIFY-RESULT.md` reports 4/4 PASS for the latest PRD1 reference-inspired UI redesign; earlier closeout rounds also passed through the protocol, while external-only items remain in `PRD1-REMAINING-ACCEPTANCE-PACK.md` |
 | PRD1 latest follow-up fixes | Canary passed and production verified | `VERIFY-RESULT.md` reports 3/3 PASS for channel-key edit, Token reconciliation pagination, and Dashboard trend fixes; cloud follow-up verified the channel selector expands, reconciliation `page_size=20` returns 20 rows, and 24h/7d/30d Dashboard totals match trend sums |
-| PRD1 latency/decimal pricing fixes | Fixed awaiting Canary | `FIX-SIGNAL.md` requests verification for gateway `latency_ms/ttft_ms` persistence and decimal model pricing; local `go test ./...`, frontend tests, and frontend build passed |
-| PRD1 Dashboard/Grafana follow-up fixes | Fixed awaiting Canary | Cloud probe showed Dashboard trend data is range-specific but the chart UX is misleading; Prometheus is healthy but Grafana dashboard datasource UID and PromQL need correction; local fix updates Dashboard trend controls, Grafana datasource/dashboard config, and Grafana password deployment docs |
+| PRD1 latency/decimal pricing fixes | Production verified | After redeploy, temporary request `codex-latency-smoke-1782874625` logged `latency_ms=1290`; Dashboard 24h average became `11.4159ms`; re-saving `mimo-v2.5` preserved `input_price_cents=0.2/output_price_cents=0.1` |
+| PRD1 Dashboard/Grafana follow-up fixes | Production verified with operator evidence | Dashboard trend UX passed Canary and local Playwright visual smoke. User/Atlas reported Grafana runtime fixed; Codex verified Grafana health, Prometheus query success, and `admin/admin` rejection with HTTP 401 |
+| PRD1 Logs/Dashboard UI follow-up fixes | Fixed awaiting Canary | Local source now renders call-log timestamps as absolute time, adds Request ID copy fallback/toast, reorders Provider before Model, improves request detail layout, caps model distribution to Top 6, and clarifies channel health provider labels. Targeted frontend tests, full frontend tests, build, `git diff --check`, and Codex Playwright smoke passed locally |
 | Browser/manual frontend validation | Codex visual QA PASS locally | Codex Playwright screenshots captured Login, Dashboard, Logs detail, Wallet, API Docs, Channels, mobile Dashboard, mobile Logs, and the reference-inspired Login/Dashboard/mobile pass under local `output/playwright/`; Canary/OpenClaw visual acceptance remains not applicable |
 | Real upstream provider E2E | E2E accepted for Moonshot and Mimo single calls | `moonshot-v1-8k` non-stream and stream calls reached a real provider and settled; after the user updated the key, channel 8 `mimo-v2.5` test returned HTTP 200 and a UniRouter gateway call returned HTTP 200 with `_uniroute.channel=Mimo Token Plan` |
 | Production deployment status | PASS for S0/S1 smoke | `scripts/prd1-cloud-smoke.sh` passed against Alibaba Cloud on 2026-07-01: frontend, live/ready, metrics, docs, Prometheus, Grafana login, unauthenticated 401 checks, and default-admin rejection |
@@ -35,11 +36,11 @@ UniRouter Phase 1 is in MVP hardening. Core backend modules, admin APIs, fronten
 | F03 API key management | Implemented | Includes allowed models and disable path |
 | F04 Gateway auth middleware | Implemented | Tests pass |
 | F05 Pre-freeze billing | Implemented | Needs current E2E balance and concurrency acceptance evidence |
-| F06 Call logs | Implemented | Logs page and admin APIs exist |
+| F06 Call logs | Implemented, latest UI follow-up awaiting Canary | Logs page and admin APIs exist; local follow-up now uses absolute timestamps, Request ID copy feedback/fallback, and a structured detail inspector |
 | F07 Admin API | Implemented | Broad handler coverage exists |
 | F08 Wallet management | Implemented | Top-up, adjustment, transactions exist |
-| F09 Model pricing | Fixed awaiting Canary | Base and org pricing exist; decimal model-price persistence is fixed locally and awaiting Canary/deploy |
-| F10 Admin frontend | Implemented | Build, component tests, Canary source verification, and Codex local visual screenshot pass are complete; user/cloud browser visual acceptance still gates strict close |
+| F09 Model pricing | Production verified for decimal cents | Base and org pricing exist; cloud API preserved `mimo-v2.5` decimal-cent prices `0.2/0.1` after redeploy |
+| F10 Admin frontend | Implemented, latest UI follow-up awaiting Canary | Build, component tests, Canary source verification, and Codex local visual screenshot pass are complete; latest Logs/Dashboard UI fixes passed local tests/build/smoke and await Canary; user/cloud browser visual acceptance still gates strict close |
 | F11 Rate limit and admission control | Implemented | Needs current concurrency acceptance evidence |
 | F12 Failover and circuit breaker | Implemented | Needs current failover/circuit acceptance evidence |
 | F13 Sensitive-word filter | Implemented | Needs current E2E request rejection evidence |
@@ -48,7 +49,7 @@ UniRouter Phase 1 is in MVP hardening. Core backend modules, admin APIs, fronten
 | F16 Budget alert | Implemented | Needs current webhook acceptance evidence |
 | F17 System settings | Implemented | Settings page/API exist |
 | F18 Health checks | Production verified for PRD shape | `/health/live`, `/health/ready`, `/metrics` exist; cloud `/health/ready` returned `{"status":"ok","db":"ok","redis":"ok"}` after redeploy |
-| Observability dashboards | Fixed awaiting Canary | Prometheus target and UniRouter metrics are present in cloud; Grafana dashboard config now pins datasource UID `prometheus` and uses aggregated PromQL; production panel evidence still requires redeploy plus browser/manual check |
+| Observability dashboards | Production verified with operator evidence | Prometheus target and UniRouter metrics are present in cloud; Grafana dashboard config pins datasource UID `prometheus` and uses aggregated PromQL; user/Atlas reported the runtime Grafana issue resolved, and Codex verified Grafana health plus default credential rejection |
 
 ## Known Gaps
 
@@ -62,7 +63,8 @@ UniRouter Phase 1 is in MVP hardening. Core backend modules, admin APIs, fronten
 8. Cloud smoke found API list handlers could hide row scan errors and emit zero-value fields when nullable database columns were scanned into non-nullable Go types. Codex fixed `ListAPIKeys` and `ListLogs`; after deployment, authenticated cloud reads for `/api/v1/keys` and `/api/v1/logs` returned 200 on 2026-07-01.
 9. User-reported PRD1 UI findings on logs filters, Dashboard trend/health cards, wallet edit actions, audit login records, `/docs`, and overall visual quality were classified in `docs/issues/PRD1-UI-FINDINGS-2026-07-01.md`; concrete bugs and the PRD1 visual redesign passed Canary non-visual verification.
 10. Alibaba Cloud strict S0/S1 closeout smoke passed on 2026-07-01 after redeploy. The former default-admin blocker is fixed in cloud, and `/health/ready` now exposes the PRD DB/Redis shape. Remaining PRD1 closure depends on acceptance evidence or explicit deferral for the still-open matrix items.
-11. Cloud Grafana currently needs a follow-up deploy/runtime action: Prometheus itself is healthy, but the dashboard provisioning must use the fixed datasource UID and Grafana's own default `admin/admin` password must be rotated.
+11. Cloud Grafana runtime follow-up was reported resolved by user/Atlas. Codex verified Prometheus query success, Grafana health, and rejection of Grafana `admin/admin`; authenticated datasource UID inspection now requires the rotated Grafana credential.
+12. Latest user-reported Logs/Dashboard UI follow-up is fixed locally and recorded in `docs/agent-workflows/FIX-SIGNAL.md`: absolute log timestamps, Request ID copy feedback/fallback, log detail inspector, Provider-before-Model filters, and Dashboard model/channel health layout. Canary must verify non-visual source/build/tests before deployment.
 
 ## Active Sources Of Truth
 

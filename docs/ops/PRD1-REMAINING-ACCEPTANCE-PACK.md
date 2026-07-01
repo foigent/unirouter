@@ -28,10 +28,10 @@ curl -fsS http://8.130.18.85:3000/docs
 curl -fsS http://8.130.18.85:8080/docs
 ```
 
-Results:
+Initial results before the Grafana runtime follow-up:
 
 - Go tests: PASS
-- Frontend tests: PASS, latest source has 38 tests after Dashboard trend control coverage
+- Frontend tests: PASS, latest source has 42 tests after Logs/Dashboard UI follow-up coverage
 - Frontend build: PASS, with existing Vite large chunk warning
 - Route parity guard: PASS
 - Cloud S0/S1 smoke: PASS after redeploy
@@ -132,7 +132,7 @@ Results:
 - Prometheus `/api/v1/targets` showed the `unirouter` target `backend:8080/metrics` as `up`.
 - Prometheus had UniRouter metrics including `unirouter_http_requests_total`, `unirouter_http_request_duration_seconds_*`, `unirouter_upstream_latency_seconds_*`, `unirouter_tokens_processed_total`, and `unirouter_billing_freeze_total`.
 - Grafana `/api/health` returned 200, but the provisioned datasource UID was generated (`PBFA97CFB590B2093`) while the dashboard JSON references datasource UID `prometheus`.
-- Grafana accepted the default `admin/admin` login and showed the password-change prompt. This is separate from the UniRouter seeded admin remediation and must be rotated in deployment.
+- Grafana accepted the default `admin/admin` login and showed the password-change prompt. This was separate from the UniRouter seeded admin remediation and required a deployment/runtime fix.
 
 Local fixes prepared:
 
@@ -142,11 +142,18 @@ Local fixes prepared:
 - Grafana dashboard PromQL now aggregates histogram buckets correctly and uses `$__rate_interval`.
 - Docker Compose now reads `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` from `.env` instead of hardcoding `admin/admin`.
 
-Acceptance still needed:
+Acceptance follow-up:
 
-- Canary should verify source/config/tests from `docs/agent-workflows/FIX-SIGNAL.md`.
-- Atlas should redeploy the fixed Grafana provisioning, set a strong `GRAFANA_ADMIN_PASSWORD`, restart Grafana, and confirm the existing persisted Grafana admin password is rotated.
-- Browser-capable validation should capture or manually record that UniRouter Overview panels resolve the Prometheus datasource and display request-rate/latency/error-rate data.
+- Canary verified source/config/tests from `docs/agent-workflows/FIX-SIGNAL.md`.
+- Atlas/user reported the Grafana runtime issue resolved after deployment/runtime work.
+- Codex rechecked Grafana health, Prometheus health/query success, and default credential rejection. Browser/panel screenshots or manual notes should remain with release evidence.
+
+Post-deployment follow-up:
+
+- Latency persistence is production-verified. Codex created temporary API key id `31`, called `mimo-v2.5` once with request id `codex-latency-smoke-1782874625`, then disabled the key. The call returned HTTP 200, cost `1` cent, and the cloud call log recorded `latency_ms=1290`.
+- Dashboard 24h stats after that request returned `avg_latency_ms=11.415929203539823`; the remaining old zero-latency rows are pre-fix historical data.
+- Decimal model pricing is production-verified. Before re-save, cloud `mimo-v2.5` still held the old `0/0` price values; after `PUT /api/v1/model-prices/16` with `input_price_cents=0.2/output_price_cents=0.1`, the cloud API preserved both decimal-cent values.
+- Grafana runtime follow-up is user/Atlas reported resolved. Codex rechecked `/api/health` (`database=ok`), Prometheus health/query success, and confirmed Grafana `admin/admin` now returns HTTP 401. Authenticated datasource UID confirmation requires the rotated Grafana credential, so panel screenshot/manual notes should stay with release evidence.
 
 ## Alibaba Cloud UI/API Follow-up Verification
 
@@ -168,6 +175,57 @@ Conclusion:
 
 - `PRD1-UI-006`, `PRD1-API-001`, and `PRD1-DASH-001` are closed as deployed code bugs.
 - The actual Mimo provider credential was later corrected by the user and rechecked; see "Alibaba Cloud Mimo Provider Recheck" below.
+
+## Local Logs/Dashboard UI Follow-up
+
+Environment:
+
+- Workspace: `/Users/m4/Desktop/projects/UniRouter`
+- Frontend dev server: local Vite, read-only mocked data
+- Verified: 2026-07-01 after user reported Logs and Dashboard UI concerns
+
+User-reported concerns:
+
+- Call logs showed relative time such as `24分钟前` instead of an audit-friendly timestamp.
+- Request ID copy button had no visible effect.
+- Request detail typography, spacing, and content grouping felt cramped.
+- Logs filter order placed model before channel/provider.
+- Dashboard model activity distribution visually crowded channel health.
+- Channel health repeated provider labels such as `deepseek / deepseek` and showed `Mimo Token Plan / openai`, which was semantically unclear.
+
+Local fixes prepared:
+
+- Call-log timestamps now render as absolute `YYYY-MM-DD HH:mm:ss` values.
+- Request ID copy uses Clipboard API plus textarea fallback and success/error Toast feedback.
+- Logs filters now place `渠道 / Provider` before `模型`.
+- Request details now use a structured inspector layout with clearer request, routing, token, cost, and error grouping.
+- Dashboard model activity distribution is capped to Top 6 with fixed chart height and a balanced split grid.
+- Channel health hides duplicate provider labels and displays `Provider: OpenAI-compatible` for OpenAI-compatible adapter channels whose display name is not OpenAI.
+
+Validation:
+
+```bash
+(cd frontend && npm test -- --run src/pages/__tests__/LogsPage.test.tsx src/pages/__tests__/DashboardPage.test.tsx)
+(cd frontend && npm test -- --run)
+(cd frontend && npm run build)
+git diff --check
+```
+
+Results:
+
+- Logs + Dashboard targeted frontend tests: PASS, 20/20 tests.
+- Full frontend tests: PASS, 42/42 tests.
+- Frontend build: PASS, retained existing Vite large chunk warning.
+- `git diff --check`: PASS.
+- Codex local Playwright visual smoke captured:
+  - `output/playwright/prd1-logs-followup-inspector.png`
+  - `output/playwright/prd1-dashboard-model-channel-balance.png`
+
+Protocol status:
+
+- `docs/agent-workflows/FIX-SIGNAL.md` is updated for Canary.
+- `PRD1-LOG-001`, `PRD1-LOG-002`, `PRD1-LOG-003`, and `PRD1-DASH-004` are `Fixed awaiting Canary`.
+- Canary cannot provide visual judgment; after deployment, user/browser-capable role should visually confirm the cloud Logs and Dashboard pages.
 
 ## Alibaba Cloud Provider E2E Attempt
 

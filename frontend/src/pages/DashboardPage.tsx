@@ -91,16 +91,24 @@ function DeltaTag({ value, suffix = '', inverse = false }: { value: number; suff
 
 const MODEL_COLORS = ['#1f6feb', '#0f8f5f', '#b76e00', '#6f4bd8', '#d92d20', '#0e7490', '#be185d', '#475467'];
 
+function providerDisplayName(provider: string, channelName: string): string | null {
+  if (!provider) return null;
+  if (provider.toLowerCase() === channelName.toLowerCase()) return null;
+  if (provider === 'openai' && !channelName.toLowerCase().includes('openai')) return 'OpenAI-compatible';
+  return provider;
+}
+
 function ChannelHealthCard({ ch }: { ch: NonNullable<DashboardStats['channel_health']>[number] }) {
   const total = ch.success_count + ch.fail_count;
   const rate = total > 0 ? (ch.success_count / total * 100) : 0;
   const statusText = ch.enabled ? (ch.status === 'warning' ? 'warning' : ch.status) : 'disabled';
+  const providerLabel = providerDisplayName(ch.provider, ch.name);
 
   return (
     <div className="ur-channel-card">
       <div style={{ minWidth: 0 }}>
         <Text className="ur-channel-name" title={ch.name}>{ch.name}</Text>
-        <Text className="ur-channel-provider" title={ch.provider}>{ch.provider}</Text>
+        {providerLabel && <Text className="ur-channel-provider" title={ch.provider}>Provider: {providerLabel}</Text>}
         <div className="ur-channel-meta">
           <div className="ur-channel-stat">
             <Text className="ur-channel-stat-label">成功率</Text>
@@ -170,7 +178,7 @@ export default function DashboardPage() {
   }));
   const modelData = [...(stats?.model_distribution || [])]
     .sort((a, b) => b.requests - a.requests)
-    .slice(0, 10);
+    .slice(0, 6);
   const budgetThreshold = stats?.wallet_threshold || 0;
   const budgetPercent = budgetThreshold > 0 ? Math.min(100, (stats?.today_cost_cents || 0) / budgetThreshold * 100) : 0;
   const healthyChannels = (stats?.channel_health || []).filter(ch => ch.enabled && ch.status !== 'error').length;
@@ -423,11 +431,11 @@ export default function DashboardPage() {
         <div className="ur-split-grid">
           <Surface title="模型活动分布" description="按请求数展示 Top 模型，优先帮助定位成本和流量集中点。">
             {modelData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={Math.max(240, modelData.length * 38 + 30)}>
+              <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={modelData} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--ur-border-soft)" horizontal={false} />
                   <XAxis type="number" tick={{ fontSize: 12 }} stroke="var(--ur-text-muted)" />
-                  <YAxis type="category" dataKey="model" width={150} tick={{ fontSize: 12 }} stroke="var(--ur-text-muted)" />
+                  <YAxis type="category" dataKey="model" width={132} tick={{ fontSize: 12 }} stroke="var(--ur-text-muted)" />
                   <RTooltip formatter={(v: any) => {
                     const value = Number(v);
                     const total = (stats?.model_distribution || []).reduce((s, m) => s + m.requests, 0);

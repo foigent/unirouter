@@ -1,52 +1,44 @@
-# VERIFY-RESULT.md — PRD1 Dashboard Trend / Grafana Observability Fix 验收结果
+# VERIFY-RESULT.md — PRD1 Logs / Dashboard UI Follow-up 验收结果
 
 **验收者：** OpenClaw Canary
 **日期：** 2026-07-01
-**对应轮次：** PRD1 Dashboard trend UX, Grafana datasource/PromQL, and Grafana admin hardening
+**对应轮次：** PRD1 call-log readability/copy UX and Dashboard model/channel balance
 
 ---
 
 ## Carry-over 验证
 
-- **latency_ms/ttft_ms 持久化**: PASS — `TestRecordRequest_Success` + `TestRelayNonStreamRequest` + `TestRelayStreamRequest` 9/9 PASS
-- **decimal model pricing**: PASS — `TestCreateModelPrice_DecimalCents` + `TestListModelPrices_Success` + `TestDashboardStats_Success` 3/3 PASS；`TestCalculateCost_FractionalCentPrice` + `TestQueryModelPrice` + `TestCalculateCost` 15/15 PASS
+- **Dashboard 双指标趋势**: PASS — `DashboardPage.test.tsx` 10/10 PASS（含趋势复选框测试）
 
 ---
 
 ## 逐条结果
 
-- **Fix #1 (Dashboard AI 活动趋势支持双指标叠加):** PASS — `DashboardPage.tsx:33` 定义 `TrendMetric = 'requests' | 'cost_yuan'`，`:147` `visibleTrendMetrics` state 默认 `['requests', 'cost_yuan']`，`:341` 使用 `ur-trend-checklist` 复选框（非互斥按钮），`:380/404` 双 Y 轴（`yAxisId='cost_yuan'`），`:134` tooltip 同时展示请求数和费用。`index.css:424` 定义 `.ur-trend-checklist`。`DashboardPage.test.tsx:140` 测试 checkbox 元素存在。Dashboard 测试 9/9 PASS
-- **Fix #2 (Grafana datasource UID 对齐 + PromQL 修正):** PASS — `datasource.yml:5` 显式 `uid: prometheus`。`unirouter-overview.json` 全部使用 `$__rate_interval`（`:16/35/40/45/87/112/131/150/169`），`:87` 使用 `clamp_min` 避免除零，`:16/35` 使用 `sum by (method, status)` 和 `sum by (le)` 标准聚合。`08-prometheus-metrics.md` 同步更新 PromQL。Dashboard JSON parse PASS
-- **Fix #3 (Grafana admin 密码改为部署环境变量):** PASS — `docker-compose.yml:94` 使用 `${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env before starting Grafana}`（必填），`.env.example:34` `GRAFANA_ADMIN_PASSWORD=CHANGE_ME_GRAFANA_ADMIN_PASSWORD`，`README.md:13` 提示修改，`deployment-runbook.md:34/40/230/529` 记录密码设置要求，`08-prometheus-metrics.md:250` 使用 `$GRAFANA_ADMIN_USER / $GRAFANA_ADMIN_PASSWORD`。`OPEN-ISSUES.md:45` `PRD1-SEC-003` 记录为 Fixed awaiting Canary
+- **Fix #1 (调用日志时间改为绝对时间):** PASS — `LogsPage.tsx:5` 导入 `formatDateTime`，`:271` 使用 `formatDateTime(v)` 渲染时间列，`:526` 详情面板也使用 `formatDateTime`。`LogsPage.test.tsx:119` 测试 "renders absolute timestamps instead of relative time text"，`:124` 断言 `not.toContain('分钟前')`
+- **Fix #2 (Request ID 复制增加 fallback 与反馈):** PASS — `LogsPage.tsx:60` 定义 `fallbackCopyText`，`:75` 定义 `copyToClipboard`（Clipboard API + fallback），`:82` 成功 Toast "已复制 Request ID"，`:218` `aria-label="复制 Request ID"`。`LogsPage.test.tsx:144` 断言 `button[aria-label="复制 Request ID"]` 存在
+- **Fix #3 (日志详情与筛选器布局优化):** PASS — 筛选器顺序：`:350` 渠道/Provider → `:364` 模型（Provider 在模型前）。`:490` `ur-detail-hero` + `:503` `ur-detail-grid` 结构化详情面板。`index.css:820/832` 定义样式。`LogsPage.test.tsx:133-136` 断言 "渠道 / Provider" 在 "模型" 之前
+- **Fix #4 (Dashboard 模型分布与渠道健康平衡):** PASS — `DashboardPage.tsx:181` `.slice(0, 6)` Top 6 模型，`:431` `ur-split-grid` 布局，`:434` `height={260}` 固定高度，`:94` `providerDisplayName` 函数，`:97` openai 渠道显示 "OpenAI-compatible"。`DashboardPage.test.tsx:150` 断言 `toContain('Provider: OpenAI-compatible')`
 
 ## 全局验证
 
 | 检查项 | 结果 |
 |--------|------|
 | `git diff --check` | PASS |
-| carry-over gateway tests（9/9） | PASS |
-| carry-over admin tests（3/3） | PASS |
-| carry-over billing tests（15/15） | PASS |
-| Dashboard targeted frontend tests（9/9） | PASS |
-| `go test ./...` | PASS（16/16 包） |
-| `npm test -- --run` | PASS（38/38 测试，6 文件） |
-| `npm run build` | PASS（4.37s） |
-| Grafana dashboard JSON parse | PASS |
-| `uid: prometheus` datasource | PASS |
-| `$__rate_interval` + `clamp_min` PromQL | PASS |
-| `GRAFANA_ADMIN_PASSWORD` 必填变量 | PASS |
-| 浏览器/Grafana 视觉验收 | NOT_APPLICABLE_TO_CANARY |
+| Logs targeted tests（10/10） | PASS |
+| Dashboard targeted tests（10/10） | PASS |
+| `npm test -- --run` | PASS（42/42 测试，6 文件） |
+| `npm run build` | PASS（4.53s） |
+| 绝对时间（无"分钟前"） | PASS |
+| 复制按钮 aria-label | PASS |
+| 筛选器顺序（渠道/Provider < 模型） | PASS |
+| Provider displayName（OpenAI-compatible） | PASS |
+| PRD1-LOG-001/002/003 + PRD1-DASH-004 文档同步 | PASS |
+| 浏览器视觉验收 | NOT_APPLICABLE_TO_CANARY |
 
 ## 新发现的问题
 
 无
 
-## 部署注意事项
-
-- Atlas 重部署 Grafana 前必须在 `.env` 设置 `GRAFANA_ADMIN_PASSWORD` 强密码
-- 云端 Grafana 旧实例仍使用 `admin/admin`，需手动轮换密码
-- Dashboard 双指标趋势图的视觉效果需用户/浏览器确认
-
 ## 结论
 
-**3/3 Fix + carry-over 全部 PASS。** PRD1 Dashboard trend / Grafana observability fix 验收通过。前端测试从 37 增至 38（Dashboard 从 8 增至 9）。
+**4/4 Fix + carry-over 全部 PASS。** PRD1 logs / dashboard UI follow-up 验收通过。前端测试从 38 增至 42（Logs 7→10, Dashboard 9→10）。

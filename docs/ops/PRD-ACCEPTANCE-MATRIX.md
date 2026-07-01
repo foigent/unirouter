@@ -2,7 +2,7 @@
 
 > Purpose: track acceptance against `docs/PRD-Phase1.md`.
 > Status values: `Not started`, `Implemented not accepted`, `Unit tested`, `E2E accepted`, `Production verified`, `Out of scope`.
-> Last verified: 2026-07-01 local workspace plus Alibaba Cloud S0/S1 smoke, real-provider E2E, 20 VU load attempts, UI/API follow-up deployment verification, and Mimo provider recheck.
+> Last verified: 2026-07-01 local workspace plus Alibaba Cloud S0/S1 smoke, real-provider E2E, 20 VU load attempts, UI/API follow-up deployment verification, Mimo provider recheck, and local Logs/Dashboard UI follow-up.
 
 ## Core Flow
 
@@ -22,7 +22,7 @@
 |----------|--------|------------------|-------------------|
 | Admin can create/edit/disable channels | Implemented not accepted | Admin routes and frontend page exist | Current manual/API CRUD evidence needed |
 | Admin can create/disable API keys | Implemented not accepted | Routes and frontend page exist | Current manual/API CRUD evidence needed |
-| Admin can view billing and call logs | E2E accepted | Non-destructive cloud API smoke verified authenticated GETs for dashboard, wallet, wallet transactions, logs, reconciliation, users, grants, audit logs, settings, sensitive words, model prices, org prices, keys, channel keys, and channels; deployment follow-up verified reconciliation `page_size=20` returns 20 rows and Dashboard trend sums match range-scoped totals; latency persistence is fixed locally and awaiting deploy | Browser UX walkthrough still needed |
+| Admin can view billing and call logs | E2E accepted | Non-destructive cloud API smoke verified authenticated GETs for dashboard, wallet, wallet transactions, logs, reconciliation, users, grants, audit logs, settings, sensitive words, model prices, org prices, keys, channel keys, and channels; deployment follow-up verified reconciliation `page_size=20` returns 20 rows and Dashboard trend sums match range-scoped totals; after redeploy, new request `codex-latency-smoke-1782874625` recorded `latency_ms=1290` and Dashboard 24h average became `11.4159ms`; local Logs UI follow-up now renders absolute timestamps, copy feedback/fallback, and a structured detail inspector | Browser UX walkthrough still needed after latest UI follow-up deployment |
 | Admin can top up and adjust wallet | Implemented not accepted | Routes and frontend page exist; wallet admin action visibility and adjust request contract fixed locally | Current manual/API mutation evidence needed in safe test conditions |
 | Docker Compose one-command deployment succeeds | Production verified | Alibaba Cloud smoke passed: frontend `:3000`, backend health `:8080`, Prometheus `:9090`, Grafana login `:3001`, admin login/me/dashboard/settings through nginx | Keep Sentinel/Atlas deployment logs as release evidence |
 | Seeded default admin password is not usable in public deployment | Production verified | `scripts/prd1-cloud-smoke.sh` passed `default-admin-password-rejected`; direct cloud login with `admin/admin123456` returned 403 on 2026-07-01 | None |
@@ -33,15 +33,15 @@
 |----------|--------|------------------|-------------------|
 | Admin frontend has a coherent navigation and layout shell | Implemented not accepted | `frontend/src/App.tsx` defines grouped sidebar, protected layout, `/docs` nav entry, and refreshed console shell; Codex Playwright screenshots captured desktop and mobile layouts; Canary non-visual verification passed | User/cloud visual acceptance still needed |
 | Admin pages use consistent table/form/modal patterns | Implemented not accepted | PRD1 UI layer added under `frontend/src/ui/`; major resource pages now use shared `PageHeader`/`Surface` and table shell patterns; Canary non-visual verification passed | Deeper typed resource-page abstraction can move to PRD2 after user accepts PRD1 UI |
-| Core admin workflows are usable from browser | Implemented not accepted | Frontend build/tests pass; Codex screenshot pass covered Login, Dashboard, Logs detail, Wallet, API Docs, Channels, mobile Dashboard, and mobile Logs with mocked read-only data; cloud UI follow-up verified the Mimo Token Plan channel-key edit drawer can expand the channel selector and accept a new key input | Human/cloud browser walkthrough still needed before strict close |
-| UI has consistent visual hierarchy, spacing, empty/error/loading states | Implemented not accepted | `docs/design/PRD1-UI-REDESIGN-SPEC.md` records the implemented visual system; Dashboard chart/health, Logs explorer, Wallet actions, API Docs, and mobile hamburger overlap were visually checked by Codex; Dashboard trend now supports simultaneous request/cost curves with checkbox controls; Canary non-visual verification passed for earlier UI rounds | Canary cannot judge visual quality; user acceptance remains the final visual gate |
+| Core admin workflows are usable from browser | Implemented not accepted | Frontend build/tests pass; Codex screenshot pass covered Login, Dashboard, Logs detail, Wallet, API Docs, Channels, mobile Dashboard, and mobile Logs with mocked read-only data; cloud UI follow-up verified the Mimo Token Plan channel-key edit drawer can expand the channel selector and accept a new key input; latest local Logs/Dashboard UI follow-up passed targeted tests and Playwright smoke | Human/cloud browser walkthrough still needed before strict close |
+| UI has consistent visual hierarchy, spacing, empty/error/loading states | Implemented not accepted | `docs/design/PRD1-UI-REDESIGN-SPEC.md` records the implemented visual system; Dashboard chart/health, Logs explorer, Wallet actions, API Docs, and mobile hamburger overlap were visually checked by Codex; Dashboard trend now supports simultaneous request/cost curves with checkbox controls; latest local follow-up improves log detail hierarchy, filter order, Request ID copy feedback, model distribution height, and channel health provider labels | Canary cannot judge visual quality; latest follow-up still needs Canary source/build/test verification and user acceptance remains the final visual gate |
 | Frontend API client matches backend routes | Unit tested | `ApiError` added; `/me/password` backend route added; `route_parity_test.go` guards frontend admin routes; Canary verification passed for route parity round | Keep route parity checks in future frontend/API changes |
 
 ## Pricing
 
 | PRD Item | Status | Current Evidence | Gap To Acceptance |
 |----------|--------|------------------|-------------------|
-| Model price configuration preserves small CNY prices | Fixed awaiting Canary | Local fix migrates `model_prices` price columns to `NUMERIC(18,6)`, updates admin/billing/frontend handling to decimal cents, and adds `0.002 yuan -> 0.2 cents` tests | Deploy, re-save `mimo-v2.5` price as `0.002/0.001`, then verify API and UI show non-zero values |
+| Model price configuration preserves small CNY prices | Production verified | After redeploy, Codex re-saved `mimo-v2.5` as `input_price_cents=0.2/output_price_cents=0.1`; cloud API preserved the decimal-cent values, matching `0.002/0.001` yuan per 1K tokens | UI display can be spot-checked in browser, but API persistence is accepted |
 
 ## Stability
 
@@ -60,7 +60,7 @@
 | Each request log includes request_id/org_id/channel_id | Implemented not accepted | Cloud call logs recorded Mimo 401/503 failures and Moonshot 200 successes with request IDs and costs; list response currently shows channel fields as names/nullable values | Verify channel_id/org_id visibility if PRD requires them in admin list response |
 | Prometheus `/metrics` returns metrics | Production verified | Local current-source `/metrics` returned metrics; Alibaba Cloud backend `:8080/metrics` returned Prometheus text metrics; Prometheus `:9090/-/healthy` returned 200 | Keep Atlas deployment logs as release evidence |
 | `/health/ready` returns PRD shape with DB/Redis status | Production verified | Cloud `GET http://8.130.18.85:8080/health/ready` returned `{"status":"ok","db":"ok","redis":"ok"}` on 2026-07-01; `scripts/prd1-cloud-smoke.sh` passed `backend-ready-prd-shape` | None |
-| Grafana dashboard shows request rate, latency, error rate | Fixed awaiting Canary | Cloud probe confirmed Prometheus healthy, target `backend:8080/metrics` up, and UniRouter metrics present; local fix pins datasource UID `prometheus`, updates dashboard PromQL, and makes Grafana admin password env-driven | Canary/source verification, Atlas redeploy, then current running Grafana panel screenshot/manual evidence |
+| Grafana dashboard shows request rate, latency, error rate | Production verified with operator evidence | Prometheus is healthy and PromQL queries return data; Canary passed the source/config fix; user/Atlas reported the Grafana runtime issue resolved; Codex verified Grafana `/api/health` and that `admin/admin` now returns 401 | Keep Grafana panel screenshot/manual notes with release evidence; authenticated datasource UID inspection requires rotated Grafana credential |
 
 ## Acceptance Rule
 
