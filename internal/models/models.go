@@ -220,6 +220,7 @@ type CallLog struct {
 	PromptTokens       int            `json:"prompt_tokens" db:"prompt_tokens"`
 	CompletionTokens   int            `json:"completion_tokens" db:"completion_tokens"`
 	TotalTokens        int            `json:"total_tokens" db:"total_tokens"`
+	EstimatedTokens    int            `json:"estimated_tokens" db:"estimated_tokens"`
 	CostCents          int            `json:"cost_cents" db:"cost_cents"`
 	LatencyMs          int            `json:"latency_ms" db:"latency_ms"`
 	TtftMs             int            `json:"ttft_ms" db:"ttft_ms"`
@@ -227,6 +228,7 @@ type CallLog struct {
 	UpstreamStatusCode *int           `json:"upstream_status_code" db:"upstream_status_code"`
 	UpstreamError      sql.NullString `json:"upstream_error" db:"upstream_error"`
 	UsageSource        string         `json:"usage_source" db:"usage_source"`
+	UsageConfidence    float64        `json:"usage_confidence" db:"usage_confidence"`
 	IsStream           bool           `json:"is_stream" db:"is_stream"`
 	CreatedAt          time.Time      `json:"created_at" db:"created_at"`
 }

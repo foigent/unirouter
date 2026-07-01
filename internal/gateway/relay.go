@@ -18,6 +18,7 @@ import (
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/filter"
 	"github.com/uniroute/unirouter/internal/logger"
+	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/tokenutil"
 )
@@ -183,7 +184,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		relay.billing.Cancel(ctx, requestID, orgID)
 		writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", fmt.Sprintf("No available channel for model: %s", req.Model))
-		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, 503, elapsedMilliseconds(requestStart), 0, false, "no_route")
+		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, 503, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceNoRoute, estimatedTokens)
 		return
 	}
 
@@ -260,9 +261,9 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		relay.router.MarkKeySuccess(ctx, route.ChannelKey.ID)
 
 		if req.Stream {
-			relay.relayStreamRequest(ctx, w, resp, &route, requestID, orgID, keyID, req.Model, requestedModel, r.RemoteAddr, req.Messages, reqLog, requestStart)
+			relay.relayStreamRequest(ctx, w, resp, &route, requestID, orgID, keyID, req.Model, requestedModel, r.RemoteAddr, req.Messages, reqLog, requestStart, estimatedTokens)
 		} else {
-			relay.relayNonStreamRequest(ctx, w, resp, &route, requestID, orgID, keyID, req.Model, requestedModel, r.RemoteAddr, reqLog, requestStart, adapter)
+			relay.relayNonStreamRequest(ctx, w, resp, &route, requestID, orgID, keyID, req.Model, requestedModel, r.RemoteAddr, reqLog, requestStart, adapter, estimatedTokens)
 		}
 		return
 	}
@@ -274,7 +275,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	}
 	// Log the failed request
 	if len(routes) > 0 {
-		relay.recordRequest(ctx, requestID, orgID, keyID, routes[0].Channel.ID, routes[0].Channel.Provider, routes[0].Channel.Name, req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, lastStatusCode, elapsedMilliseconds(requestStart), 0, false, "upstream_failed")
+		relay.recordRequest(ctx, requestID, orgID, keyID, routes[0].Channel.ID, routes[0].Channel.Provider, routes[0].Channel.Name, req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, lastStatusCode, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceUpstreamFailed, estimatedTokens)
 	}
 	if lastStatusCode > 0 {
 		writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_error", fmt.Sprintf("All upstream channels failed (last status: %d)", lastStatusCode))
@@ -284,7 +285,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 }
 
 // relayNonStreamRequest handles non-streaming responses.
-func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWriter, resp *http.Response, route *RouteResult, requestID string, orgID, keyID int64, model, requestedModel, clientIP string, reqLog *logger.Logger, requestStart time.Time, adapter adapters.Adapter) {
+func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWriter, resp *http.Response, route *RouteResult, requestID string, orgID, keyID int64, model, requestedModel, clientIP string, reqLog *logger.Logger, requestStart time.Time, adapter adapters.Adapter, estimatedTokens int) {
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -331,7 +332,7 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 
 	// Record request log
 	relay.recordRequest(ctx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, model, requestedModel, clientIP,
-		normalized.Usage.PromptTokens, normalized.Usage.CompletionTokens, actualCost, resp.StatusCode, elapsedMilliseconds(requestStart), 0, false, normalized.Usage.Source)
+		normalized.Usage.PromptTokens, normalized.Usage.CompletionTokens, actualCost, resp.StatusCode, elapsedMilliseconds(requestStart), 0, false, normalized.Usage.Source, estimatedTokens)
 
 	// Build response with _uniroute extension field
 	var responseMap map[string]interface{}
@@ -357,7 +358,7 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 // relayStreamRequest handles streaming SSE responses.
 // Balance check goroutine signals via a channel; the main loop owns all writes
 // and the upstream body lifecycle. No goroutine touches resp.Body directly.
-func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWriter, resp *http.Response, route *RouteResult, requestID string, orgID, keyID int64, model, requestedModel, clientIP string, messages []Message, reqLog *logger.Logger, requestStart time.Time) {
+func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWriter, resp *http.Response, route *RouteResult, requestID string, orgID, keyID int64, model, requestedModel, clientIP string, messages []Message, reqLog *logger.Logger, requestStart time.Time, estimatedTokens int) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -536,18 +537,17 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	}
 
 	actualCost := relay.calculateCost(ctx, orgID, model, tokenCounter.InputTokens(), tokenCounter.OutputTokens())
+	usageSource := metering.UsageSourceCounterV2
+	if usedUpstreamUsage {
+		usageSource = metering.UsageSourceUpstream
+	}
 	_, settleErr := relay.billing.Settle(ctx, billing.SettleRequest{
 		RequestID:        requestID,
 		OrgID:            orgID,
 		ActualCost:       actualCost,
 		PromptTokens:     tokenCounter.InputTokens(),
 		CompletionTokens: tokenCounter.OutputTokens(),
-		UsageSource: func() string {
-			if usedUpstreamUsage {
-				return "api"
-			}
-			return "stream_estimate"
-		}(),
+		UsageSource:      usageSource,
 	})
 	if settleErr != nil {
 		reqLog.Error("Billing settle error: %v", settleErr)
@@ -559,12 +559,8 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	streamDuration := time.Since(streamStart)
 	middleware.RecordUpstreamLatency(route.Channel.Provider, model, streamDuration)
 
-	usageSource := "stream_estimate"
-	if usedUpstreamUsage {
-		usageSource = "api"
-	}
 	relay.recordRequest(ctx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, model, requestedModel, clientIP,
-		tokenCounter.InputTokens(), tokenCounter.OutputTokens(), actualCost, http.StatusOK, elapsedMilliseconds(requestStart), ttftMs, true, usageSource)
+		tokenCounter.InputTokens(), tokenCounter.OutputTokens(), actualCost, http.StatusOK, elapsedMilliseconds(requestStart), ttftMs, true, usageSource, estimatedTokens)
 
 	// Send usage + _uniroute extension as the final data chunk before [DONE].
 	unirouteData := map[string]interface{}{
@@ -622,17 +618,19 @@ func (relay *Relay) calculateCost(ctx context.Context, orgID int64, model string
 }
 
 // recordRequest logs the request to the call_logs table.
-func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, keyID, channelID int64, provider, channelName, model, requestedModel, clientIP string, promptTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs int, isStream bool, usageSource string) {
+func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, keyID, channelID int64, provider, channelName, model, requestedModel, clientIP string, promptTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs int, isStream bool, usageSource string, estimatedTokens int) {
 	reqLog := logger.New(logger.Fields{RequestID: requestID, OrgID: uint(orgID), Module: "records"})
 	projectID := middleware.GetProjectIDFromContext(ctx)
 	var projectIDArg interface{}
 	if projectID > 0 {
 		projectIDArg = projectID
 	}
+	usageSource = metering.NormalizeUsageSource(usageSource)
+	usageConfidence := metering.SourceConfidence(usageSource)
 	_, err := relay.db.Exec(ctx,
-		`INSERT INTO call_logs (request_id, org_id, project_id, api_key_id, model, requested_model, provider, channel, prompt_tokens, completion_tokens, total_tokens, cost_cents, status_code, latency_ms, ttft_ms, usage_source, is_stream, ip_address)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
-		requestID, orgID, projectIDArg, keyID, model, requestedModel, provider, channelName, promptTokens, completionTokens, promptTokens+completionTokens, costCents, statusCode, latencyMs, ttftMs, usageSource, isStream, clientIP,
+		`INSERT INTO call_logs (request_id, org_id, project_id, api_key_id, model, requested_model, provider, channel, prompt_tokens, completion_tokens, total_tokens, cost_cents, status_code, latency_ms, ttft_ms, usage_source, is_stream, ip_address, estimated_tokens, usage_confidence)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
+		requestID, orgID, projectIDArg, keyID, model, requestedModel, provider, channelName, promptTokens, completionTokens, promptTokens+completionTokens, costCents, statusCode, latencyMs, ttftMs, usageSource, isStream, clientIP, estimatedTokens, usageConfidence,
 	)
 	if err != nil {
 		reqLog.Error("Failed to record request log: %v", err)
@@ -751,7 +749,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		relay.billing.Cancel(ctx, requestID, orgID)
 		writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", fmt.Sprintf("No available channel for model: %s", req.Model))
-		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, 503, elapsedMilliseconds(requestStart), 0, false, "no_route")
+		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, 503, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceNoRoute, inputTokens)
 		return
 	}
 
@@ -824,7 +822,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	relay.checkBudgetAlert(ctx)
 
 	relay.recordRequest(ctx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, req.Model, requestedModel, r.RemoteAddr,
-		normalized.Usage.PromptTokens, 0, actualCost, resp.StatusCode, elapsedMilliseconds(requestStart), 0, false, normalized.Usage.Source)
+		normalized.Usage.PromptTokens, 0, actualCost, resp.StatusCode, elapsedMilliseconds(requestStart), 0, false, normalized.Usage.Source, inputTokens)
 
 	// Build response with _uniroute extension
 	var responseMap map[string]interface{}

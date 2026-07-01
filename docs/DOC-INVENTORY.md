@@ -47,6 +47,7 @@
 | `docs/tech-ref/09-admission-control.md` | Admission control reference |
 | `docs/tech-ref/10-provider-adapter-framework.md` | PRD2 provider adapter framework draft |
 | `docs/tech-ref/11-project-rbac-model.md` | PRD2 project/RBAC model draft |
+| `docs/tech-ref/12-token-metering-v2.md` | PRD2 token metering source and reconciliation contract |
 
 PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 

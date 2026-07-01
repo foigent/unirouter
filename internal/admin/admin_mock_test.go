@@ -2541,6 +2541,14 @@ func TestListReconciliation_Success(t *testing.T) {
 	now := time.Date(2026, 6, 25, 4, 0, 0, 0, time.UTC)
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			if strings.Contains(sql, "FROM settings") {
+				return &testutil.MockRow{
+					ScanFn: func(dest ...any) error {
+						*dest[0].(*string) = "0.25"
+						return nil
+					},
+				}
+			}
 			return &testutil.MockRow{
 				ScanFn: func(dest ...any) error {
 					*dest[0].(*int) = 2
@@ -2558,8 +2566,11 @@ func TestListReconciliation_Success(t *testing.T) {
 						*dest[3].(*int) = 150
 						*dest[4].(*int) = 100
 						*dest[5].(*int) = 50
-						*dest[6].(*int) = 200
-						*dest[7].(*time.Time) = now
+						*dest[6].(*int) = 180
+						*dest[7].(*int) = 200
+						*dest[8].(*string) = "upstream"
+						*dest[9].(*float64) = 1.0
+						*dest[10].(*time.Time) = now
 						return nil
 					},
 					func(dest ...any) error {
@@ -2569,8 +2580,11 @@ func TestListReconciliation_Success(t *testing.T) {
 						*dest[3].(*int) = 14
 						*dest[4].(*int) = 12
 						*dest[5].(*int) = 2
-						*dest[6].(*int) = 200
-						*dest[7].(*time.Time) = now.Add(time.Minute)
+						*dest[6].(*int) = 30
+						*dest[7].(*int) = 200
+						*dest[8].(*string) = "counter_v2"
+						*dest[9].(*float64) = 0.65
+						*dest[10].(*time.Time) = now.Add(time.Minute)
 						return nil
 					},
 				},
@@ -2594,6 +2608,52 @@ func TestListReconciliation_Success(t *testing.T) {
 	}
 	if got := len(resp["data"].([]interface{})); got != 2 {
 		t.Fatalf("expected 2 rows, got %d", got)
+	}
+	first := resp["data"].([]interface{})[0].(map[string]interface{})
+	if first["usage_source"] != "upstream" {
+		t.Fatalf("expected usage_source upstream, got %v", first["usage_source"])
+	}
+	summary := resp["summary"].(map[string]interface{})
+	if summary["estimated_ratio_alert_threshold"].(float64) != 0.25 {
+		t.Fatalf("expected threshold 0.25, got %v", summary["estimated_ratio_alert_threshold"])
+	}
+}
+
+func TestListReconciliation_UsageSourceFilterNormalizesLegacyAlias(t *testing.T) {
+	var capturedCountArgs []any
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			if strings.Contains(sql, "FROM settings") {
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*string) = "0.2"
+					return nil
+				}}
+			}
+			capturedCountArgs = append([]any(nil), args...)
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int) = 0
+				return nil
+			}}
+		},
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			if !strings.Contains(sql, "usage_source = $1") {
+				t.Fatalf("expected usage_source filter in query, got %s", sql)
+			}
+			return &testutil.MockRows{}, nil
+		},
+	}
+	h := newTestHandler(db)
+
+	req := httptest.NewRequest("GET", "/reconciliation?usage_source=stream_estimate", nil)
+	rec := httptest.NewRecorder()
+
+	h.ListReconciliation(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(capturedCountArgs) != 1 || capturedCountArgs[0] != "counter_v2" {
+		t.Fatalf("expected normalized counter_v2 filter, got %#v", capturedCountArgs)
 	}
 }
 

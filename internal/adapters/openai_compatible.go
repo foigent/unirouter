@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/uniroute/unirouter/internal/metering"
 )
 
 type OpenAICompatible struct{}
@@ -51,7 +53,7 @@ func (a *OpenAICompatible) BuildRequest(ctx context.Context, in RequestInput) (*
 
 func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) (*NormalizedResponse, error) {
 	_ = ctx
-	usage := Usage{Source: "api"}
+	usage := Usage{Source: metering.UsageSourceUpstream}
 	if in.StatusCode >= 200 && in.StatusCode < 300 {
 		var parsed struct {
 			Usage struct {
