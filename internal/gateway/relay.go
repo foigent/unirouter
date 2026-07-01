@@ -113,6 +113,10 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.invalid_request", "model is required")
 		return
 	}
+	requestedModel := middleware.GetModelAliasFromContext(ctx)
+	if requestedModel == "" {
+		requestedModel = req.Model
+	}
 
 	// Check sensitive words in messages
 	if relay.filter != nil && relay.filter.WordCount() > 0 {
@@ -129,7 +133,8 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	if apiKey != nil && apiKey.AllowedModels != "" {
 		allowed := false
 		for _, m := range strings.Split(apiKey.AllowedModels, ",") {
-			if strings.TrimSpace(m) == "*" || strings.TrimSpace(m) == req.Model {
+			model := strings.TrimSpace(m)
+			if model == "*" || model == req.Model || model == requestedModel {
 				allowed = true
 				break
 			}
@@ -183,7 +188,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		relay.billing.Cancel(ctx, requestID, orgID)
 		writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", fmt.Sprintf("No available channel for model: %s", req.Model))
-		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, req.Model, r.RemoteAddr, 0, 0, 0, 503, elapsedMilliseconds(requestStart), 0, false, "no_route")
+		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, 503, elapsedMilliseconds(requestStart), 0, false, "no_route")
 		return
 	}
 
@@ -260,9 +265,9 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		relay.router.MarkKeySuccess(ctx, route.ChannelKey.ID)
 
 		if req.Stream {
-			relay.relayStreamRequest(ctx, w, resp, &route, requestID, orgID, keyID, req.Model, req.Model, r.RemoteAddr, req.Messages, reqLog, requestStart)
+			relay.relayStreamRequest(ctx, w, resp, &route, requestID, orgID, keyID, req.Model, requestedModel, r.RemoteAddr, req.Messages, reqLog, requestStart)
 		} else {
-			relay.relayNonStreamRequest(ctx, w, resp, &route, requestID, orgID, keyID, req.Model, req.Model, r.RemoteAddr, reqLog, requestStart)
+			relay.relayNonStreamRequest(ctx, w, resp, &route, requestID, orgID, keyID, req.Model, requestedModel, r.RemoteAddr, reqLog, requestStart)
 		}
 		return
 	}
@@ -274,7 +279,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	}
 	// Log the failed request
 	if len(routes) > 0 {
-		relay.recordRequest(ctx, requestID, orgID, keyID, routes[0].Channel.ID, routes[0].Channel.Provider, routes[0].Channel.Name, req.Model, req.Model, r.RemoteAddr, 0, 0, 0, lastStatusCode, elapsedMilliseconds(requestStart), 0, false, "upstream_failed")
+		relay.recordRequest(ctx, requestID, orgID, keyID, routes[0].Channel.ID, routes[0].Channel.Provider, routes[0].Channel.Name, req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, lastStatusCode, elapsedMilliseconds(requestStart), 0, false, "upstream_failed")
 	}
 	if lastStatusCode > 0 {
 		writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_error", fmt.Sprintf("All upstream channels failed (last status: %d)", lastStatusCode))
@@ -687,6 +692,10 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.invalid_request", "model is required")
 		return
 	}
+	requestedModel := middleware.GetModelAliasFromContext(ctx)
+	if requestedModel == "" {
+		requestedModel = req.Model
+	}
 
 	orgID := middleware.GetOrgIDFromContext(ctx)
 	keyID := middleware.GetKeyIDFromContext(ctx)
@@ -737,7 +746,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		relay.billing.Cancel(ctx, requestID, orgID)
 		writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", fmt.Sprintf("No available channel for model: %s", req.Model))
-		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, req.Model, r.RemoteAddr, 0, 0, 0, 503, elapsedMilliseconds(requestStart), 0, false, "no_route")
+		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, 503, elapsedMilliseconds(requestStart), 0, false, "no_route")
 		return
 	}
 
@@ -798,7 +807,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	middleware.RecordTokenUsage("prompt", req.Model, usage.Usage.PromptTokens)
 	relay.checkBudgetAlert(ctx)
 
-	relay.recordRequest(ctx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, req.Model, req.Model, r.RemoteAddr,
+	relay.recordRequest(ctx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, req.Model, requestedModel, r.RemoteAddr,
 		usage.Usage.PromptTokens, 0, actualCost, resp.StatusCode, elapsedMilliseconds(requestStart), 0, false, "api")
 
 	// Build response with _uniroute extension
