@@ -20,10 +20,10 @@ An item should not move to `Production verified` unless the evidence comes from 
 
 | PRD2 Item | Status | Current Evidence | Gap To Acceptance |
 |-----------|--------|------------------|-------------------|
-| PRD2 formal PRD exists | Planned | `docs/planning/PRD2-DISCOVERY.md` direction confirmed by User | Canary/source verification of `docs/PRD-Phase2.md` |
-| PRD2 acceptance matrix exists | Planned | This matrix created as planning baseline | Canary/source verification; rows updated as implementation starts |
-| PRD1/PRD2 phase boundary is clear | Planned | Discovery defines PRD1 frozen and PRD2 separate mainline | `CURRENT-STATUS.md` and `DOC-INVENTORY.md` updated and verified |
-| Sentinel GitHub guidance is documented | Planned | Discovery defines PR separation, branch names, PR description, merge gate | Canary verifies docs are discoverable and non-conflicting |
+| PRD2 formal PRD exists | E2E accepted | `docs/agent-workflows/VERIFY-RESULT.md` reports Fix #1 PASS; User reported Sentinel confirmed PRD2 planning round 1 complete and CI green | None for planning round 1 |
+| PRD2 acceptance matrix exists | E2E accepted | `docs/agent-workflows/VERIFY-RESULT.md` reports Fix #2 PASS; User reported Sentinel confirmed PRD2 planning round 1 complete and CI green | Update rows as implementation starts |
+| PRD1/PRD2 phase boundary is clear | E2E accepted | `docs/agent-workflows/VERIFY-RESULT.md` reports Fix #6 PASS and `CURRENT-STATUS.md` Phase Status points to PRD2 docs | None for planning round 1 |
+| Sentinel GitHub guidance is documented | E2E accepted | `docs/planning/PRD2-DISCOVERY.md` documents PR separation, branch names, PR description, merge gate; round passed Canary and Sentinel CI | None for planning round 1 |
 
 ## P0 Product Scope
 
