@@ -2,7 +2,7 @@
 
 **修复者：** Codex
 **日期：** 2026-07-01
-**修复轮次：** PRD1 API key creation, duplicate-name, copy fallback, and channel test semantics
+**修复轮次：** PRD1 API key, channel test, and upstream URL fix
 
 ---
 
@@ -13,12 +13,14 @@
 - 创建 API key 后虽然弹出完整 key，但点击复制在 HTTP 云端页面失败。
 - 新建 API key 可以使用重复名称，没有明确提示。
 - 渠道测试选择 `Mimo Token Plan` / `mimo-v2.5` 后，结果显示“成功”，但上游状态码是 401。
+- 真实网关非流式调用 `mimo-v2.5` 返回 502，最后上游状态 404。云端渠道 `Mimo Token Plan` 的 `base_url` 是 `https://token-plan-cn.xiaomimimo.com/v1`，而 relay 无条件再拼 `/v1/chat/completions`，会形成 `/v1/v1/chat/completions`。
 
 代码核查结论：
 
 - 浏览器 `navigator.clipboard.writeText()` 在非 secure context 下可能失败，需要 fallback。
 - 后端 `api_keys` 只对 `key_prefix` 有唯一约束，未校验同 org 下 name 重复。
 - 渠道测试接口只要收到上游 HTTP 响应就设置 `success: true`，且旧逻辑固定测 `/v1/models`，没有使用前端选择的 model/prompt。
+- gateway relay 对 `base_url` 已包含 `/v1` 的渠道没有做路径归一化。
 
 ---
 
@@ -71,10 +73,27 @@
 
 ---
 
+## Fix #4: Gateway 上游 URL 不再双拼 `/v1`
+
+**文件：**
+
+- `internal/gateway/relay.go`
+- `internal/gateway/relay_mock_test.go`
+
+**修复内容：**
+
+- 新增 `upstreamEndpoint(baseURL, endpoint)` 统一拼接上游 URL。
+- 当渠道 `base_url` 已以 `/v1` 结尾，endpoint 也以 `/v1/` 开头时，自动去掉 endpoint 的重复 `v1/`。
+- `HandleChatCompletion` 和 `HandleEmbeddings` 都使用该 helper。
+- 增加 `TestUpstreamEndpoint_DoesNotDoubleAppendV1`，覆盖 base_url 带 `/v1`、不带 `/v1`、带 trailing slash 的情况。
+
+---
+
 ## Codex 已执行验证
 
 ```bash
 go test ./internal/admin -run 'TestCreateAPIKey|TestTestChannel' -v
+go test ./internal/gateway -run 'TestUpstreamEndpoint|TestHandleChatCompletion' -v
 go test ./...
 cd frontend && npm run build
 cd frontend && npm test -- --run
@@ -84,6 +103,7 @@ git diff --check
 结果：
 
 - targeted admin tests: PASS
+- targeted gateway tests: PASS
 - `go test ./...`: PASS
 - `npm run build`: PASS，保留既有 Vite large chunk warning
 - `npm test -- --run`: PASS，36/36 tests passed
@@ -97,6 +117,7 @@ git diff --check
 cd /Users/m4/Desktop/projects/UniRouter
 git diff --check
 go test ./internal/admin -run 'TestCreateAPIKey|TestTestChannel' -v
+go test ./internal/gateway -run 'TestUpstreamEndpoint|TestHandleChatCompletion' -v
 go test ./...
 cd frontend && npm run build
 cd frontend && npm test -- --run
@@ -109,6 +130,7 @@ rg -n "fallbackCopyText|document.execCommand\\('copy'\\)|window.isSecureContext"
 rg -n "API key name already exists|SELECT 1 FROM api_keys WHERE org_id" internal/admin/key_handlers.go
 rg -n "TestCreateAPIKey_DuplicateName|TestTestChannel_Upstream401IsFailureAndUsesSelectedModel" internal/admin/admin_mock_test.go
 rg -n "chat/completions|success := resp.StatusCode >= 200|tokens_used|upstream returned HTTP" internal/admin/test_handlers.go
+rg -n "func upstreamEndpoint|upstreamEndpoint\\(route.Channel.BaseURL|TestUpstreamEndpoint_DoesNotDoubleAppendV1" internal/gateway/relay.go internal/gateway/relay_mock_test.go
 ```
 
 Do not run destructive cleanup. Do not run real provider paid calls, wallet/channel/API-key mutations, pressure tests, stream disconnects, or fault injection in Canary.
@@ -124,18 +146,20 @@ Do not run destructive cleanup. Do not run real provider paid calls, wallet/chan
 
 **验收者：** OpenClaw Canary
 **日期：** 以文件系统时间戳为准
-**对应轮次：** PRD1 API key creation, duplicate-name, copy fallback, and channel test semantics
+**对应轮次：** PRD1 API key, channel test, and upstream URL fix
 
 ## 逐条结果
 
 - Fix #1: PASS/FAIL — API key 完整密钥复制是否有 HTTP fallback
 - Fix #2: PASS/FAIL — API key 重名是否返回 409 且前端显示后端错误
 - Fix #3: PASS/FAIL — 渠道测试是否用所选 model/prompt 调 chat completions，且 401 不算成功
+- Fix #4: PASS/FAIL — gateway relay 是否避免对 `/v1` base_url 双拼 `/v1`
 
 ## 全局验证
 
 - `git diff --check`: PASS/FAIL
 - targeted admin tests: PASS/FAIL
+- targeted gateway tests: PASS/FAIL
 - `go test ./...`: PASS/FAIL
 - `npm run build`: PASS/FAIL
 - `npm test -- --run`: PASS/FAIL

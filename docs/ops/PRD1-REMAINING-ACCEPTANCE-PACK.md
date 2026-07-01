@@ -115,6 +115,34 @@ Notes:
 - Cloud smoke exposed a handler quality issue where nullable database fields could be scanned into non-nullable Go types while `rows.Scan` errors were ignored, producing zero-value timestamps. Codex fixed this locally for API key and call-log list handlers; deployment needs a new build before that fix is visible in cloud.
 - Strict closeout smoke after redeploy on 2026-07-01 passed. The public cloud rejected `admin/admin123456` with 403, and `/health/ready` returned the PRD DB/Redis shape.
 
+## Alibaba Cloud Provider E2E Attempt
+
+Environment:
+
+- Frontend / nginx base: `http://8.130.18.85:3000`
+- Admin user: `codex-test`
+- Test model requested: `mimo-v2.5`
+- Verified: 2026-07-01
+
+Results:
+
+- Admin login: PASS, returned JWT.
+- `RUN_ADMIN_READ_SMOKE=1 scripts/prd1-cloud-smoke.sh`: PASS.
+- `GET /v1/models` with the dedicated UniRouter test API key: PASS, returned 200 with 3 models including `mimo-v2.5`.
+- `POST /v1/chat/completions` with model `mimo-v2.5`: FAIL, returned 502 with `All upstream channels failed (last status: 404)`.
+- Wallet before/after the failed E2E attempt was unchanged: `balance_cents=316`, `total_spent_cents=116`.
+- Latest call logs include failed `mimo-v2.5` rows with `status_code=404` and `cost_cents=0`.
+
+Root cause found locally:
+
+- Cloud channel `Mimo Token Plan` has `base_url = https://token-plan-cn.xiaomimimo.com/v1`.
+- Current deployed relay code appends `/v1/chat/completions` unconditionally, producing an invalid `/v1/v1/chat/completions` path.
+- Codex fixed this locally with `upstreamEndpoint()` in `internal/gateway/relay.go`; redeploy is required before repeating provider E2E and load tests.
+
+Safety decision:
+
+- Codex did not run the authorized 20 VU / 60s load test because the baseline provider E2E path failed. Running load at that point would only amplify known 502/404 failures; the failed single-call path did not spend wallet balance.
+
 ## Code Fixes Completed
 
 ### PRD1-ENG-001: `/me/password` contract mismatch
