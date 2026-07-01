@@ -317,7 +317,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		relay.router.MarkKeySuccess(ctx, route.ChannelKey.ID)
 
 		if req.Stream {
-			relay.relayStreamRequest(ctx, w, resp, &route, requestID, orgID, keyID, req.Model, requestedModel, r.RemoteAddr, req.Messages, reqLog, requestStart, estimatedTokens)
+			relay.relayStreamRequest(ctx, w, resp, &route, requestID, orgID, keyID, req.Model, requestedModel, r.RemoteAddr, req.Messages, reqLog, requestStart, estimatedTokens, adapter)
 		} else {
 			relay.relayNonStreamRequest(ctx, w, resp, &route, requestID, orgID, keyID, req.Model, requestedModel, r.RemoteAddr, reqLog, requestStart, adapter, estimatedTokens)
 		}
@@ -420,7 +420,7 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 // relayStreamRequest handles streaming SSE responses.
 // Balance check goroutine signals via a channel; the main loop owns all writes
 // and the upstream body lifecycle. No goroutine touches resp.Body directly.
-func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWriter, resp *http.Response, route *RouteResult, requestID string, orgID, keyID int64, model, requestedModel, clientIP string, messages []Message, reqLog *logger.Logger, requestStart time.Time, estimatedTokens int) {
+func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWriter, resp *http.Response, route *RouteResult, requestID string, orgID, keyID int64, model, requestedModel, clientIP string, messages []Message, reqLog *logger.Logger, requestStart time.Time, estimatedTokens int, adapter adapters.Adapter) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -497,10 +497,95 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	ttftMs := 0
 	streamStart := time.Now()
 	firstTokenReceived := false
+	var streamNormalizer adapters.StreamNormalizer
+	if adapter != nil {
+		streamNormalizer, _ = adapter.(adapters.StreamNormalizer)
+	}
+	streamState := &adapters.StreamState{}
 
 	done := false
 	for !done && scanner.Scan() {
 		line := scanner.Text()
+
+		if streamNormalizer != nil {
+			if strings.TrimSpace(line) == "" || strings.HasPrefix(line, "event:") || strings.HasPrefix(line, ":") {
+				continue
+			}
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+			data := strings.TrimPrefix(line, "data: ")
+			if data == "[DONE]" {
+				done = true
+				continue
+			}
+			chunk, err := streamNormalizer.NormalizeStreamChunk(ctx, adapters.StreamChunkInput{
+				Data:           []byte(data),
+				Channel:        route.Channel,
+				RequestedModel: requestedModel,
+				UpstreamModel:  route.MappedModel,
+				State:          streamState,
+			})
+			if err != nil {
+				reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Failed to normalize stream chunk: %v", err)
+				continue
+			}
+			if chunk == nil {
+				continue
+			}
+			if chunk.HasUsage {
+				tokenCounter.SetUpstreamUsage(chunk.Usage.PromptTokens, chunk.Usage.CompletionTokens)
+				usedUpstreamUsage = true
+			}
+			if !usedUpstreamUsage && chunk.TextDelta != "" {
+				tokenCounter.AddOutputDelta(chunk.TextDelta)
+			}
+			if !chunk.Skip && len(chunk.Data) > 0 {
+				if !firstTokenReceived {
+					firstTokenReceived = true
+					ttftMs = int(time.Since(streamStart).Milliseconds())
+				}
+				writeMu.Lock()
+				fmt.Fprintf(w, "data: %s\n\n", chunk.Data)
+				writeMu.Unlock()
+				flusher.Flush()
+			}
+			if chunk.Done {
+				done = true
+			}
+			if done {
+				continue
+			}
+			// Check for balance exhaustion signal from background goroutine
+			select {
+			case <-balanceExhausted:
+				reqLog.Warn("Balance exhausted at %d output tokens, sending error", tokenCounter.OutputTokens())
+				writeMu.Lock()
+				fmt.Fprintf(w, "data: {\"error\":{\"type\":\"insufficient_balance\",\"message\":\"Balance exhausted\"}}\n\n")
+				flusher.Flush()
+				writeMu.Unlock()
+				resp.Body.Close()
+				done = true
+			default:
+			}
+
+			// Token-count-based balance check — every 100 output tokens (inline, no extra goroutine)
+			if !done && tokenCounter.ShouldCheckBalance() {
+				var balance int
+				err := relay.db.QueryRow(ctx,
+					`SELECT COALESCE(w.balance + w.granted_balance, 0) FROM wallets w WHERE w.org_id = $1`, orgID).Scan(&balance)
+				if err == nil && balance <= 0 {
+					reqLog.Warn("Balance exhausted at %d output tokens, closing upstream", tokenCounter.OutputTokens())
+					writeMu.Lock()
+					fmt.Fprintf(w, "data: {\"error\":{\"type\":\"insufficient_balance\",\"message\":\"Balance exhausted\"}}\n\n")
+					flusher.Flush()
+					writeMu.Unlock()
+					resp.Body.Close()
+					done = true
+				}
+			}
+			continue
+		}
 
 		// Track TTFT
 		if !firstTokenReceived && strings.HasPrefix(line, "data: ") && line != "data: [DONE]" {

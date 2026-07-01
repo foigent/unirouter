@@ -81,7 +81,7 @@ func TestAnthropicNativeBuildRequest_ConvertsOpenAIChat(t *testing.T) {
 	}
 }
 
-func TestAnthropicNativeBuildRequest_RejectsUnsupportedEndpointsAndStream(t *testing.T) {
+func TestAnthropicNativeBuildRequest_RejectsUnsupportedEndpoints(t *testing.T) {
 	adapter := NewAnthropicNative()
 	_, err := adapter.BuildRequest(context.Background(), RequestInput{
 		Endpoint:       EndpointEmbeddings,
@@ -92,15 +92,28 @@ func TestAnthropicNativeBuildRequest_RejectsUnsupportedEndpointsAndStream(t *tes
 	if err == nil || !strings.Contains(err.Error(), "does not support endpoint") {
 		t.Fatalf("expected endpoint error, got %v", err)
 	}
+}
 
-	_, err = adapter.BuildRequest(context.Background(), RequestInput{
+func TestAnthropicNativeBuildRequest_ConvertsStreamFlag(t *testing.T) {
+	adapter := NewAnthropicNative()
+	req, err := adapter.BuildRequest(context.Background(), RequestInput{
 		Endpoint:       EndpointChatCompletions,
 		DownstreamBody: []byte(`{"model":"claude","stream":true,"messages":[{"role":"user","content":"hello"}]}`),
 		Channel:        models.Channel{BaseURL: "https://api.anthropic.com"},
 		APIKey:         "sk",
 	})
-	if err == nil || !strings.Contains(err.Error(), "streaming is not supported") {
-		t.Fatalf("expected streaming error, got %v", err)
+	if err != nil {
+		t.Fatalf("BuildRequest failed: %v", err)
+	}
+	body, _ := io.ReadAll(req.Body)
+	var payload struct {
+		Stream bool `json:"stream"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("bad payload: %v", err)
+	}
+	if !payload.Stream {
+		t.Fatalf("expected anthropic stream flag, got body %s", body)
 	}
 }
 
@@ -185,6 +198,75 @@ func TestAnthropicNativeClassifyHTTPStatus(t *testing.T) {
 	}
 }
 
+func TestAnthropicNativeNormalizeStreamChunk(t *testing.T) {
+	adapter := NewAnthropicNative()
+	state := &StreamState{}
+	input := StreamChunkInput{
+		RequestedModel: "company-chat",
+		UpstreamModel:  "claude-3-5-sonnet-20241022",
+		State:          state,
+	}
+
+	chunk, err := adapter.NormalizeStreamChunk(context.Background(), withStreamData(input, `{"type":"message_start","message":{"id":"msg_stream","model":"claude-3-5-sonnet-20241022","usage":{"input_tokens":11,"output_tokens":0}}}`))
+	if err != nil {
+		t.Fatalf("message_start failed: %v", err)
+	}
+	if chunk.Skip || !strings.Contains(string(chunk.Data), `"role":"assistant"`) {
+		t.Fatalf("expected role chunk, got %+v body=%s", chunk, chunk.Data)
+	}
+	if chunk.HasUsage {
+		t.Fatalf("message_start should store partial usage without marking complete usage")
+	}
+
+	chunk, err = adapter.NormalizeStreamChunk(context.Background(), withStreamData(input, `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}`))
+	if err != nil {
+		t.Fatalf("content_block_delta failed: %v", err)
+	}
+	if chunk.TextDelta != "Hello" || !strings.Contains(string(chunk.Data), `"content":"Hello"`) {
+		t.Fatalf("expected content chunk, got %+v body=%s", chunk, chunk.Data)
+	}
+
+	chunk, err = adapter.NormalizeStreamChunk(context.Background(), withStreamData(input, `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":7}}`))
+	if err != nil {
+		t.Fatalf("message_delta failed: %v", err)
+	}
+	if !chunk.HasUsage || chunk.Usage.PromptTokens != 11 || chunk.Usage.CompletionTokens != 7 || chunk.Usage.Source != metering.UsageSourceUpstream {
+		t.Fatalf("unexpected usage: %+v", chunk.Usage)
+	}
+	if !strings.Contains(string(chunk.Data), `"finish_reason":"stop"`) {
+		t.Fatalf("expected stop chunk, got %s", chunk.Data)
+	}
+
+	chunk, err = adapter.NormalizeStreamChunk(context.Background(), withStreamData(input, `{"type":"message_stop"}`))
+	if err != nil {
+		t.Fatalf("message_stop failed: %v", err)
+	}
+	if !chunk.Done || !chunk.Skip {
+		t.Fatalf("expected done skip chunk, got %+v", chunk)
+	}
+}
+
+func TestAnthropicNativeNormalizeStreamChunk_MissingUsageAllowsFallback(t *testing.T) {
+	adapter := NewAnthropicNative()
+	state := &StreamState{}
+	input := StreamChunkInput{RequestedModel: "company-chat", State: state}
+
+	_, err := adapter.NormalizeStreamChunk(context.Background(), withStreamData(input, `{"type":"message_start","message":{"id":"msg_stream","usage":{"input_tokens":11,"output_tokens":0}}}`))
+	if err != nil {
+		t.Fatalf("message_start failed: %v", err)
+	}
+	chunk, err := adapter.NormalizeStreamChunk(context.Background(), withStreamData(input, `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"fallback text"}}`))
+	if err != nil {
+		t.Fatalf("content_block_delta failed: %v", err)
+	}
+	if chunk.HasUsage {
+		t.Fatalf("content delta without message_delta usage should not mark upstream usage")
+	}
+	if chunk.TextDelta != "fallback text" {
+		t.Fatalf("expected fallback text delta, got %+v", chunk)
+	}
+}
+
 func TestAnthropicNativeTest(t *testing.T) {
 	adapter := NewAnthropicNative()
 	result, err := adapter.Test(context.Background(), TestInput{
@@ -226,4 +308,9 @@ func TestDefaultRegistryIncludesAnthropicNative(t *testing.T) {
 	if !DefaultRegistry().Has(TypeAnthropicNative) {
 		t.Fatal("default registry should include anthropic_native")
 	}
+}
+
+func withStreamData(in StreamChunkInput, data string) StreamChunkInput {
+	in.Data = []byte(data)
+	return in
 }
