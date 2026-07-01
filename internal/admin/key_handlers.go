@@ -79,6 +79,23 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		req.QPSLimit = 10
 	}
 
+	existingRows, err := h.db.Query(r.Context(),
+		`SELECT 1 FROM api_keys WHERE org_id = $1 AND name = $2 LIMIT 1`,
+		req.OrgID, req.Name)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to check duplicate key name"})
+		return
+	}
+	defer existingRows.Close()
+	if existingRows.Next() {
+		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "API key name already exists"})
+		return
+	}
+	if err := existingRows.Err(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to check duplicate key name"})
+		return
+	}
+
 	rawKey, keyPrefix, err := auth.GenerateAPIKey(req.OrgID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to generate key"})

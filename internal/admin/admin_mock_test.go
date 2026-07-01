@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/testutil"
 	"golang.org/x/crypto/bcrypt"
@@ -1413,6 +1414,33 @@ func TestCreateAPIKey_EmptyName(t *testing.T) {
 	}
 }
 
+func TestCreateAPIKey_DuplicateName(t *testing.T) {
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			if strings.Contains(sql, "FROM api_keys") && strings.Contains(sql, "name") {
+				return &testutil.MockRows{
+					Rows: []func(dest ...any) error{
+						func(dest ...any) error { return nil },
+					},
+				}, nil
+			}
+			return &testutil.MockRows{}, nil
+		},
+	}
+	h := newTestHandler(db)
+
+	body := `{"org_id":1,"name":"test-key"}`
+	req := httptest.NewRequest("POST", "/keys", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.CreateAPIKey(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestCreateAPIKey_InvalidJSON(t *testing.T) {
 	h := newTestHandler(&testutil.MockDB{})
 
@@ -1448,6 +1476,78 @@ func TestCreateAPIKey_DBError(t *testing.T) {
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d", rec.Code)
+	}
+}
+
+func TestTestChannel_Upstream401IsFailureAndUsesSelectedModel(t *testing.T) {
+	var gotPath string
+	var gotMethod string
+	var gotModel string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotMethod = r.Method
+		var body struct {
+			Model string `json:"model"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		gotModel = body.Model
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":"invalid api key"}`))
+	}))
+	defer upstream.Close()
+
+	keyEnc, err := auth.EncryptKey([]byte("bad-upstream-key"), []byte("0123456789abcdef01234567"))
+	if err != nil {
+		t.Fatalf("encrypt key: %v", err)
+	}
+
+	queryCount := 0
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			queryCount++
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
+					switch queryCount {
+					case 1:
+						*dest[0].(*string) = upstream.URL
+						*dest[1].(*string) = "mimo-v2.5"
+					case 2:
+						*dest[0].(*string) = keyEnc
+					default:
+						t.Fatalf("unexpected query count %d", queryCount)
+					}
+					return nil
+				},
+			}
+		},
+	}
+	h := newTestHandler(db)
+
+	body := `{"model":"mimo-v2.5","prompt":"ping"}`
+	req := httptest.NewRequest("POST", "/channels/1/test", strings.NewReader(body))
+	req.SetPathValue("id", "1")
+	rec := httptest.NewRecorder()
+
+	h.TestChannel(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected handler 200 wrapper, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp["success"] != false {
+		t.Fatalf("expected success=false for upstream 401, got %v: %s", resp["success"], rec.Body.String())
+	}
+	if int(resp["status_code"].(float64)) != http.StatusUnauthorized {
+		t.Fatalf("expected status_code=401, got %v", resp["status_code"])
+	}
+	if gotMethod != http.MethodPost || gotPath != "/v1/chat/completions" {
+		t.Fatalf("expected POST /v1/chat/completions, got %s %s", gotMethod, gotPath)
+	}
+	if gotModel != "mimo-v2.5" {
+		t.Fatalf("expected selected model mimo-v2.5, got %q", gotModel)
 	}
 }
 
