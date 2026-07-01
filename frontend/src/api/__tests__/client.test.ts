@@ -179,6 +179,55 @@ describe('API Client', () => {
       const url = mockFetch.mock.calls[0][0]
       expect(url).toBe('/api/v1/model-catalog?page=1&page_size=100&project_id=7')
     })
+
+    it('loads and replaces project model sets', async () => {
+      mockJsonResponse({ data: [], total: 0 })
+      await api.getProjectModelSets(7)
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/projects/7/model-sets')
+
+      mockJsonResponse({ success: true })
+      await api.replaceProjectModelSets(7, [1, 2])
+      expect(mockFetch.mock.calls[1][0]).toBe('/api/v1/projects/7/model-sets')
+      expect(mockFetch.mock.calls[1][1]).toEqual(expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ model_set_ids: [1, 2] }),
+      }))
+    })
+  })
+
+  describe('model governance APIs', () => {
+    it('loads model registry with filters', async () => {
+      mockJsonResponse({ data: [], total: 0 })
+
+      await api.getModelRegistry(2, 50, { lifecycle: 'ga', approved_only: true, q: 'chat' })
+      const url = mockFetch.mock.calls[0][0]
+      expect(url).toBe('/api/v1/model-registry?page=2&page_size=50&lifecycle=ga&approved_only=true&q=chat')
+    })
+
+    it('creates and updates aliases', async () => {
+      mockJsonResponse({ id: 1 })
+      await api.createModelAlias({ alias: 'company-chat', target_model: 'gpt-4o' })
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/model-aliases')
+
+      mockJsonResponse({ success: true })
+      await api.updateModelAlias(1, { status: 'disabled' })
+      expect(mockFetch.mock.calls[1][0]).toBe('/api/v1/model-aliases/1')
+      expect(mockFetch.mock.calls[1][1]).toEqual(expect.objectContaining({ method: 'PUT' }))
+    })
+
+    it('loads and replaces model set items', async () => {
+      mockJsonResponse({ data: [], total: 0 })
+      await api.getModelSetItems(3)
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/model-sets/3/items')
+
+      mockJsonResponse({ success: true })
+      await api.replaceModelSetItems(3, { items: [{ item_type: 'alias', item_name: 'company-chat' }] })
+      expect(mockFetch.mock.calls[1][0]).toBe('/api/v1/model-sets/3/items')
+      expect(mockFetch.mock.calls[1][1]).toEqual(expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ items: [{ item_type: 'alias', item_name: 'company-chat' }] }),
+      }))
+    })
   })
 
   describe('error handling', () => {

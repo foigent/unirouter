@@ -171,3 +171,44 @@ func TestCreateModelSet_InvalidItem(t *testing.T) {
 		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestListModelSetItems_ReturnsOrgScopedItems(t *testing.T) {
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			if !strings.Contains(sql, "JOIN model_sets ms") || !strings.Contains(sql, "ms.org_id = $2") {
+				t.Fatalf("expected org-scoped model set item query, got %s", sql)
+			}
+			if args[0] != int64(10) || args[1] != int64(1) {
+				t.Fatalf("unexpected args: %#v", args)
+			}
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
+					func(dest ...any) error {
+						*dest[0].(*string) = "alias"
+						*dest[1].(*string) = "company-chat"
+						return nil
+					},
+				},
+			}, nil
+		},
+	}
+	h := newTestHandler(db)
+
+	req := httptest.NewRequest(http.MethodGet, "/model-sets/10/items?org_id=1", nil)
+	req.SetPathValue("id", "10")
+	rec := httptest.NewRecorder()
+
+	h.ListModelSetItems(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	items := resp["data"].([]interface{})
+	if len(items) != 1 || items[0].(map[string]interface{})["item_name"] != "company-chat" {
+		t.Fatalf("unexpected items: %#v", resp["data"])
+	}
+}

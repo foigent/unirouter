@@ -68,6 +68,7 @@ const fullAdminNavItems = [
       { itemKey: '/channels', text: '渠道管理', icon: <IconServer /> },
       { itemKey: '/channel-keys', text: '上游密钥', icon: <IconKey /> },
       { itemKey: '/keys', text: 'API 密钥', icon: <IconKey /> },
+      { itemKey: '/model-governance', text: '模型治理', icon: <IconServer /> },
       { itemKey: '/logs', text: '调用日志', icon: <IconFile /> },
       { itemKey: '/test', text: '渠道测试', icon: <IconBolt /> },
     ],

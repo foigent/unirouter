@@ -14,6 +14,7 @@ import ChannelKeysPage from './pages/ChannelKeysPage'
 import LogsPage from './pages/LogsPage'
 import SettingsPage from './pages/SettingsPage'
 import UsersPage from './pages/UsersPage'
+import ModelGovernancePage from './pages/ModelGovernancePage'
 import ModelPricesPage from './pages/ModelPricesPage'
 import OrgModelPricesPage from './pages/OrgModelPricesPage'
 import GrantsPage from './pages/GrantsPage'
@@ -85,6 +86,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="channel-keys" element={<RoleRoute><ChannelKeysPage /></RoleRoute>} />
             <Route path="logs" element={<RoleRoute><LogsPage /></RoleRoute>} />
             <Route path="users" element={<RoleRoute><UsersPage /></RoleRoute>} />
+            <Route path="model-governance" element={<RoleRoute><ModelGovernancePage /></RoleRoute>} />
             <Route path="model-prices" element={<RoleRoute><ModelPricesPage /></RoleRoute>} />
             <Route path="org-model-prices" element={<RoleRoute><OrgModelPricesPage /></RoleRoute>} />
             <Route path="grants" element={<RoleRoute><GrantsPage /></RoleRoute>} />
