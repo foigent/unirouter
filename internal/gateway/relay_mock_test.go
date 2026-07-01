@@ -615,7 +615,7 @@ func TestRelayNonStreamRequest_Success(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-001", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-001", OrgID: 1}), time.Now())
+	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-001", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-001", OrgID: 1}), time.Now(), nil)
 
 	if !settleCalled {
 		t.Fatal("expected settle to be called")
@@ -656,7 +656,7 @@ func TestRelayNonStreamRequest_SettleError(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-002", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-002", OrgID: 1}), time.Now())
+	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-002", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-002", OrgID: 1}), time.Now(), nil)
 
 	// Should still return 200 even if settle fails
 	if rec.Code != 200 {
@@ -1035,17 +1035,19 @@ func TestHandleChatCompletion_Success_NonStream(t *testing.T) {
 						*dest[3].(*string) = upstream.URL                   // ch.BaseURL
 						*dest[4].(*string) = "gpt-4o"                       // ch.Models
 						*dest[5].(*json.RawMessage) = json.RawMessage(`{}`) // ch.ModelMapping
-						*dest[6].(*int) = 128000                            // ch.MaxContext
-						*dest[7].(*int) = 4096                              // ch.DefaultMaxOutput
-						*dest[8].(*int) = 100                               // ch.Priority
-						*dest[9].(*string) = "active"                       // ch.Status
-						*dest[10].(*string) = "healthy"                     // ch.CircuitState
-						*dest[11].(**time.Time) = nil                       // ch.HalfOpenUntil
-						*dest[12].(*int) = 0                                // ch.FailCount
-						*dest[13].(*int64) = 1                              // ck.ID
-						*dest[14].(*string) = "sk-encrypted"                // ck.KeyEnc
-						*dest[15].(*string) = "active"                      // ck.Status
-						*dest[16].(**time.Time) = nil                       // ck.CooldownUntil
+						*dest[6].(*string) = "openai_compatible"            // ch.AdapterType
+						*dest[7].(*json.RawMessage) = json.RawMessage(`{}`) // ch.AdapterConfig
+						*dest[8].(*int) = 128000                            // ch.MaxContext
+						*dest[9].(*int) = 4096                              // ch.DefaultMaxOutput
+						*dest[10].(*int) = 100                              // ch.Priority
+						*dest[11].(*string) = "active"                      // ch.Status
+						*dest[12].(*string) = "healthy"                     // ch.CircuitState
+						*dest[13].(**time.Time) = nil                       // ch.HalfOpenUntil
+						*dest[14].(*int) = 0                                // ch.FailCount
+						*dest[15].(*int64) = 1                              // ck.ID
+						*dest[16].(*string) = "sk-encrypted"                // ck.KeyEnc
+						*dest[17].(*string) = "active"                      // ck.Status
+						*dest[18].(**time.Time) = nil                       // ck.CooldownUntil
 						return nil
 					},
 				},
@@ -1092,17 +1094,19 @@ func TestHandleChatCompletion_Success_NonStream(t *testing.T) {
 					*dest[3].(*string) = upstream.URL
 					*dest[4].(*string) = "gpt-4o"
 					*dest[5].(*json.RawMessage) = json.RawMessage(`{}`)
-					*dest[6].(*int) = 128000
-					*dest[7].(*int) = 4096
-					*dest[8].(*int) = 100
-					*dest[9].(*string) = "active"
-					*dest[10].(*string) = "healthy"
-					*dest[11].(**time.Time) = nil
-					*dest[12].(*int) = 0
-					*dest[13].(*int64) = 1
-					*dest[14].(*string) = encryptedKey
-					*dest[15].(*string) = "active"
-					*dest[16].(**time.Time) = nil
+					*dest[6].(*string) = "openai_compatible"
+					*dest[7].(*json.RawMessage) = json.RawMessage(`{}`)
+					*dest[8].(*int) = 128000
+					*dest[9].(*int) = 4096
+					*dest[10].(*int) = 100
+					*dest[11].(*string) = "active"
+					*dest[12].(*string) = "healthy"
+					*dest[13].(**time.Time) = nil
+					*dest[14].(*int) = 0
+					*dest[15].(*int64) = 1
+					*dest[16].(*string) = encryptedKey
+					*dest[17].(*string) = "active"
+					*dest[18].(**time.Time) = nil
 					return nil
 				},
 			},
@@ -1161,17 +1165,19 @@ func TestHandleChatCompletion_UpstreamError_AllFail(t *testing.T) {
 						*dest[3].(*string) = upstream.URL
 						*dest[4].(*string) = "gpt-4o"
 						*dest[5].(*json.RawMessage) = json.RawMessage(`{}`)
-						*dest[6].(*int) = 128000
-						*dest[7].(*int) = 4096
-						*dest[8].(*int) = 100
-						*dest[9].(*string) = "active"
-						*dest[10].(*string) = "healthy"
-						*dest[11].(**time.Time) = nil
-						*dest[12].(*int) = 0
-						*dest[13].(*int64) = 1
-						*dest[14].(*string) = encryptedKey
-						*dest[15].(*string) = "active"
-						*dest[16].(**time.Time) = nil
+						*dest[6].(*string) = "openai_compatible"
+						*dest[7].(*json.RawMessage) = json.RawMessage(`{}`)
+						*dest[8].(*int) = 128000
+						*dest[9].(*int) = 4096
+						*dest[10].(*int) = 100
+						*dest[11].(*string) = "active"
+						*dest[12].(*string) = "healthy"
+						*dest[13].(**time.Time) = nil
+						*dest[14].(*int) = 0
+						*dest[15].(*int64) = 1
+						*dest[16].(*string) = encryptedKey
+						*dest[17].(*string) = "active"
+						*dest[18].(**time.Time) = nil
 						return nil
 					},
 				},

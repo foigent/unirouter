@@ -62,6 +62,8 @@ type Channel struct {
 	BaseURL          string          `json:"base_url" db:"base_url"`
 	Models           string          `json:"models" db:"models"`
 	ModelMapping     json.RawMessage `json:"model_mapping" db:"model_mapping"`
+	AdapterType      string          `json:"adapter_type" db:"adapter_type"`
+	AdapterConfig    json.RawMessage `json:"adapter_config" db:"adapter_config"`
 	MaxContext       int             `json:"max_context" db:"max_context"`
 	DefaultMaxOutput int             `json:"default_max_output" db:"default_max_output"`
 	Priority         int             `json:"priority" db:"priority"`

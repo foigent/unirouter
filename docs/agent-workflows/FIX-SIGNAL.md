@@ -1,8 +1,8 @@
-# FIX-SIGNAL.md — PRD2 implementation batch 3 Model Governance backend foundation
+# FIX-SIGNAL.md — PRD2 implementation batch 4 Provider Adapter backend foundation
 
 **修复者：** main agent
 **日期：** 文件系统时间戳为准
-**修复轮次：** PRD2 implementation batch 3
+**修复轮次：** PRD2 implementation batch 4
 
 ---
 
@@ -10,160 +10,158 @@
 
 | 项目 | 预期状态 | 原因 |
 |------|---------|------|
-| PRD2 batch 2 | Canary PASS + Sentinel complete | User 已报告 Canary 和 Sentinel 都完成，本轮同步状态并推进 batch 3 |
-| Frontend | 预期无功能变化 | 本轮只做 Model Governance 后端基础，不做 Developer Console UI |
-| Provider Adapter / Token Metering V2 | 仍未完成 | PRD2 推荐顺序中位于 Model Governance 之后 |
-| 真实上游 E2E / 浏览器验收 | 仍未完成 | 本轮提供 schema、API、gateway gate 和单元测试证据 |
+| PRD2 batch 3 | Canary PASS + Sentinel complete | User 已报告 Canary 和 Sentinel 都完成，本轮同步状态并推进 batch 4 |
+| Frontend | 预期无功能变化 | 本轮只做 Provider Adapter 后端基础，不做 Developer Console UI |
+| Native adapter proof | 仍未完成 | 本轮只提供 `openai_compatible` adapter 底座 |
+| Stream response normalization | 仍未完整迁移 | 本轮 stream 请求构造经过 adapter，响应流仍沿用现有 relay 逻辑 |
+| Token Metering V2 / reconciliation UI | 仍未完成 | 本轮只让非流式成功响应通过 adapter 归一化 usage/meta |
+| 真实上游 E2E / 浏览器验收 | 仍未完成 | 本轮提供 schema、adapter、gateway/admin 接入和单元测试证据 |
 
-> Canary 验收时：上述未完成项不算 FAIL；如果本轮声称完成完整前端模型目录、Provider Adapter、Token Metering V2 或生产/E2E 验收，则应标为 FAIL。
+> Canary 验收时：上述未完成项不算 FAIL；如果本轮声称完成 native provider adapter、完整 stream 归一化、Token Metering V2、Developer Console UI 或生产/E2E 验收，则应标为 FAIL。
 
 ---
 
-## Fix #1: Batch 2 验收状态同步
+## Fix #1: Batch 3 验收状态同步
 
-**文件：** `docs/ops/CURRENT-STATUS.md`
+**文件：** `docs/ops/CURRENT-STATUS.md`, `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`
 
-**原问题：** User 报告 batch 2 的 Canary 和 Sentinel 已完成，但状态文档仍停留在 awaiting Canary。
+**原问题：** User 报告 batch 3 的 Canary 和 Sentinel 已完成，但当前状态需要同步到 PRD2 状态入口。
 
 **当前状态：**
 
-- `CURRENT-STATUS.md` 记录 batch 2 为 Canary passed / Sentinel complete。
-- `PRD2-ACCEPTANCE-MATRIX.md` 将 batch 2 RBAC 证据更新为 Canary 5/5 PASS + User reported Sentinel completed。
-- 未把缺少真实 JWT/E2E 的 RBAC 项误标为 `E2E accepted`。
+- `CURRENT-STATUS.md` 记录 batch 3 为 Canary passed / Sentinel complete。
+- `PRD2-ACCEPTANCE-MATRIX.md` 保留 Model Governance 为单测支撑状态，未提升为 E2E。
+- 当前活跃轮次更新为 batch 4 fixed locally awaiting Canary。
 
 **验证方法：**
 
 ```bash
-sed -n '1,32p' docs/ops/CURRENT-STATUS.md
-sed -n '34,62p' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
+sed -n '1,34p' docs/ops/CURRENT-STATUS.md
+sed -n '42,70p' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
 ```
 
 ---
 
-## Fix #2: Model Governance schema and compatibility seed
+## Fix #2: Channel adapter schema and admin metadata
 
-**文件：** `migrations/000010_prd2_model_governance.up.sql`
+**文件：** `migrations/000011_prd2_provider_adapter_foundation.up.sql`, `migrations/000011_prd2_provider_adapter_foundation.down.sql`, `internal/models/models.go`, `internal/admin/channel_handlers.go`
 
-**原问题：** PRD2 P2-F04 要求企业内部模型目录、别名、模型集、项目模型集授权和生命周期，但 PRD1 只有 `model_prices` 与渠道 `models` 字符串。
-
-**当前实现：**
-
-- 新增 `model_registry`：生命周期 `staging/ga/deprecated/retired`、上下文长度、输出限制、能力标签、数据驻留、定价引用、catalog 可见性、迁移建议。
-- 新增 `model_aliases`：企业稳定别名到真实模型。
-- 新增 `model_sets`、`model_set_items`、`project_model_sets`：项目可用模型集。
-- 从现有 `model_prices` 为每个 org seed `ga + approved_catalog=true` 注册项，保留 PRD1 兼容。
-- 新增 rollback 文件 `000010_prd2_model_governance.down.sql`。
-
-**验证方法：**
-
-```bash
-test -f migrations/000010_prd2_model_governance.up.sql
-test -f migrations/000010_prd2_model_governance.down.sql
-rg -n "model_registry|model_aliases|project_model_sets|lifecycle" migrations/000010_prd2_model_governance.up.sql
-```
-
----
-
-## Fix #3: Shared model governance access logic
-
-**文件：** `internal/modelgov/modelgov.go`
-
-**原问题：** lifecycle、alias、project model set 规则如果分散在 handler/gateway 中，后续 Adapter 接入会产生规则分叉。
+**原问题：** PRD2 P2-F05 要求 provider adapter framework，但 channel 仍只有 `base_url/models/model_mapping`，无法标识 adapter 类型或保存 adapter 配置。
 
 **当前实现：**
 
-- `CheckAccess` 解析 active alias 到真实模型。
-- `retired` 模型返回拒绝。
-- 项目有模型集绑定时，只允许模型集中的 model 或 alias。
-- 项目没有模型集绑定时保持 PRD1 兼容，不突然拦截旧 key。
-- `NormalizeCSV`、`NormalizeSlug`、生命周期/status/item type 校验集中在 `modelgov`。
+- 新增 `channels.adapter_type`，默认 `openai_compatible`。
+- 新增 `channels.adapter_config`，默认 `{}`。
+- `models.Channel` 增加 `AdapterType` 和 `AdapterConfig`。
+- channel list/get/create/update 读写 adapter metadata。
+- channel create/update 对未知 `adapter_type` 返回 400。
 
 **关键测试：**
 
-- `TestCheckAccess_DeniesRetiredModel`
-- `TestCheckAccess_ProjectSetDeniesUnassignedModel`
-- `TestCheckAccess_ResolvesAliasAllowedByProjectSet`
-- `TestNormalizeCSV`
+- `TestCreateChannel_DefaultsAdapterType`
+- `TestCreateChannel_InvalidAdapterType`
+- `TestUpdateChannel_InvalidAdapterType`
 
 **验证方法：**
 
 ```bash
-go test ./internal/modelgov -v
+go test ./internal/admin -run 'Test(CreateChannel_DefaultsAdapterType|CreateChannel_InvalidAdapterType|UpdateChannel_InvalidAdapterType)' -v
+rg -n "adapter_type|adapter_config" migrations/000011_prd2_provider_adapter_foundation.up.sql internal/admin/channel_handlers.go internal/models/models.go
 ```
 
 ---
 
-## Fix #4: Gateway enforces lifecycle, project model sets, and aliases
+## Fix #3: Adapter interface, registry, and openai_compatible implementation
 
-**文件：** `cmd/uniroute/main.go`, `internal/gateway/relay.go`, `internal/middleware/auth.go`
+**文件：** `internal/adapters/types.go`, `internal/adapters/registry.go`, `internal/adapters/openai_compatible.go`
 
-**原问题：** 即使有模型目录，gateway 如果不检查 lifecycle/project model set，旧 key 仍可调用 retired 或项目外模型。
-
-**当前实现：**
-
-- `/v1/chat/completions` 和 `/v1/embeddings` 在进入 relay 前执行 `modelgov.CheckAccess`。
-- retired/project-denied 模型返回 403。
-- alias 请求会被改写为真实模型供路由使用。
-- key 级 `allowed_models` 同时接受原始 alias 或解析后模型。
-- 新增 `CtxModelAlias`，relay 的 `requested_model` 保留原始 alias，`model` 记录解析后模型。
-
-**验证方法：**
-
-```bash
-go test ./internal/gateway ./internal/middleware ./cmd/uniroute
-rg -n "CheckAccess|CtxModelAlias|requestedModel" cmd/uniroute/main.go internal/gateway/relay.go internal/middleware/auth.go
-```
-
----
-
-## Fix #5: Admin APIs for registry, catalog, aliases, and model sets
-
-**文件：** `internal/admin/model_governance_handlers.go`, `cmd/uniroute/main.go`
-
-**原问题：** PRD2 需要 Admin 管理模型注册表、Developer-facing approved catalog、模型别名和项目模型集绑定。
+**原问题：** UniRouter 下游保持 OpenAI-compatible，但上游 provider 需要独立 adapter 边界；否则后续 Anthropic/Gemini/Baidu 等 native 协议会继续污染 relay 主流程。
 
 **当前实现：**
 
-- `GET/POST/PUT /api/v1/model-registry`
-- `GET /api/v1/model-catalog`
-- `GET/POST/PUT /api/v1/model-aliases`
-- `GET/POST /api/v1/model-sets`
-- `PUT /api/v1/model-sets/{id}/items`
-- `GET/PUT /api/v1/projects/{id}/model-sets`
-- catalog 只返回 `approved_catalog=true` 且 lifecycle 为 `ga/deprecated` 的模型。
-- project model-set 写入继续走 batch 2 的 project write authorization。
+- 定义 `Adapter` interface：`BuildRequest`, `ParseResponse`, `Test`, `ClassifyHTTPStatus`。
+- 定义归一化输出：`NormalizedResponse`, `Usage`, `ProviderMeta`, `NormalizedError`。
+- 定义失败类型：`client_error`, `auth_error`, `rate_limit`, `channel_failure`。
+- `DefaultRegistry` 注册 `openai_compatible`，空 adapter type 兼容映射为 `openai_compatible`。
+- `OpenAICompatible` 负责 URL 拼接、模型映射、请求头、usage/meta 解析、HTTP 状态分类和 channel smoke test。
 
 **关键测试：**
 
-- `TestCreateModelRegistry_InvalidLifecycle`
-- `TestListApprovedModelCatalog_FiltersApprovedLifecycle`
-- `TestReplaceProjectModelSets_DeveloperForbidden`
-- `TestCreateModelSet_InvalidItem`
-- `TestAdminRoutesRegisteredForFrontendClient`
+- `TestOpenAICompatibleBuildRequest_RewritesModelAndURL`
+- `TestOpenAICompatibleParseResponse_Usage`
+- `TestOpenAICompatibleClassifyHTTPStatus`
+- `TestOpenAICompatibleTest`
 
 **验证方法：**
 
 ```bash
-go test ./internal/admin ./cmd/uniroute -v
+go test ./internal/adapters -v
 ```
 
 ---
 
-## Fix #6: PRD2 status, matrix, and acceptance discipline
+## Fix #4: Gateway relay uses adapter boundary for chat and embeddings
+
+**文件：** `internal/gateway/router.go`, `internal/gateway/relay.go`
+
+**原问题：** relay 直接按 OpenAI-compatible 上游构造请求，Provider Adapter Framework 即使有 interface 也不会真正接入网关主路径。
+
+**当前实现：**
+
+- router 查询 channel 时读取 `adapter_type` 和 `adapter_config`。
+- 空 adapter type 在 route 层归一化为 `openai_compatible`。
+- chat completions 通过 adapter registry 获取 adapter。
+- chat 非流式请求通过 `BuildRequest` 构造上游请求，通过 `ParseResponse` 解析 usage/meta 后进入扣费、日志和指标。
+- chat 流式请求构造通过 adapter，响应流处理仍沿用现有 relay 逻辑，未声称完整 stream adapter normalization。
+- embeddings 请求通过 adapter 构造上游请求并解析 usage/meta。
+- 未知 adapter type 会跳过该 channel，不会按错误协议静默调用。
+
+**验证方法：**
+
+```bash
+go test ./internal/gateway -v
+rg -n "DefaultRegistry|BuildRequest|ParseResponse|AdapterType" internal/gateway/router.go internal/gateway/relay.go
+```
+
+---
+
+## Fix #5: Channel test endpoint uses adapter smoke path
+
+**文件：** `internal/admin/test_handlers.go`, `internal/admin/admin_mock_test.go`
+
+**原问题：** Admin channel test 仍手写 OpenAI-compatible curl/request，后续 adapter 类型不同会测试错协议。
+
+**当前实现：**
+
+- `/api/v1/channels/{id}/test` 查询 channel 的 adapter metadata。
+- 通过 adapter registry 执行 smoke test。
+- 返回结果包含 `adapter_type` 和 adapter 生成的 request URL。
+- 未知 adapter type 返回 400 `adapter_error`。
+
+**验证方法：**
+
+```bash
+go test ./internal/admin -run TestTestChannel -v
+rg -n "adapter_type|adapter_error|DefaultRegistry" internal/admin/test_handlers.go internal/admin/admin_mock_test.go
+```
+
+---
+
+## Fix #6: PRD2 matrix records Provider Adapter foundation without overclaiming
 
 **文件：** `docs/ops/CURRENT-STATUS.md`, `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`
 
 **当前状态：**
 
-- `CURRENT-STATUS.md` 标记 batch 3 为 fixed locally awaiting Canary。
-- Model Registry、Approved Catalog、Model Set、Model Alias、Retired lifecycle 等行更新为 `Unit tested` 或 `Implemented not accepted`。
-- 未把缺少真实迁移、浏览器 UI、真实 JWT/API E2E 的项目标记为 `E2E accepted`。
+- `CURRENT-STATUS.md` 标记 batch 4 为 fixed locally awaiting Canary。
+- `P2-F05 Provider Adapter Framework`、`channels.adapter_type`、current relay `openai_compatible`、adapter usage/error/meta 归一化只标记为 `Unit tested`。
+- native adapter、完整 stream normalization、真实上游 E2E、迁移-on-existing-DB 仍列为 gap。
 
 **验证方法：**
 
 ```bash
-sed -n '1,32p' docs/ops/CURRENT-STATUS.md
-sed -n '42,62p' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
+sed -n '1,34p' docs/ops/CURRENT-STATUS.md
+sed -n '56,76p' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
 ```
 
 ---
@@ -172,9 +170,10 @@ sed -n '42,62p' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
 
 ```bash
 cd /Users/m4/Desktop/projects/UniRouter
-go test ./internal/modelgov ./internal/admin ./internal/gateway ./internal/middleware ./cmd/uniroute
+go test ./internal/adapters ./internal/gateway ./internal/admin ./cmd/uniroute
 go test ./...
 git diff --check
+git diff --check -- $(git ls-files --others --exclude-standard)
 git status --short
 ```
 
@@ -187,7 +186,7 @@ git status --short
 
 **验收者：** canary agent
 **日期：** 文件系统时间戳为准
-**对应轮次：** PRD2 implementation batch 3
+**对应轮次：** PRD2 implementation batch 4
 
 ---
 
@@ -203,15 +202,18 @@ git status --short
 ## 前置条件核验
 
 - Frontend 无功能变化: PASS/FAIL
-- Provider Adapter / Token Metering V2 未声称完成: PASS/FAIL
+- Native adapter proof 未声称完成: PASS/FAIL
+- Stream response normalization 未声称完整迁移: PASS/FAIL
+- Token Metering V2 / reconciliation UI 未声称完成: PASS/FAIL
 - 真实上游 E2E / 浏览器验收未声称完成: PASS/FAIL
 - PRD2 acceptance matrix 未过度标注: PASS/FAIL
 
 ## 全局验证
 
-- go test ./internal/modelgov ./internal/admin ./internal/gateway ./internal/middleware ./cmd/uniroute: PASS/FAIL
+- go test ./internal/adapters ./internal/gateway ./internal/admin ./cmd/uniroute: PASS/FAIL
 - go test ./...: PASS/FAIL
 - git diff --check: PASS/FAIL
+- git diff --check -- $(git ls-files --others --exclude-standard): PASS/FAIL
 
 ## 新发现的问题
 

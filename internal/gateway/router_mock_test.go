@@ -9,8 +9,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/uniroute/unirouter/internal/testutil"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/uniroute/unirouter/internal/testutil"
 )
 
 // --- NewRouter tests ---
@@ -31,25 +31,27 @@ func TestRoute_Found(t *testing.T) {
 			return &testutil.MockRows{
 				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
-						// ch fields: id, name, provider, base_url, models, model_mapping, max_context, default_max_output, priority, status, circuit_state, half_open_until, fail_count
+						// ch fields: id, name, provider, base_url, models, model_mapping, adapter_type, adapter_config, max_context, default_max_output, priority, status, circuit_state, half_open_until, fail_count
 						*dest[0].(*int64) = 1
 						*dest[1].(*string) = "openai"
 						*dest[2].(*string) = "openai"
 						*dest[3].(*string) = "https://api.openai.com"
 						*dest[4].(*string) = "gpt-4o,gpt-3.5-turbo"
 						*dest[5].(*json.RawMessage) = json.RawMessage(`{}`)
-						*dest[6].(*int) = 128000
-						*dest[7].(*int) = 4096
-						*dest[8].(*int) = 100
-						*dest[9].(*string) = "active"
-						*dest[10].(*string) = "healthy"
-						*dest[11].(**time.Time) = nil
-						*dest[12].(*int) = 0
+						*dest[6].(*string) = "openai_compatible"
+						*dest[7].(*json.RawMessage) = json.RawMessage(`{}`)
+						*dest[8].(*int) = 128000
+						*dest[9].(*int) = 4096
+						*dest[10].(*int) = 100
+						*dest[11].(*string) = "active"
+						*dest[12].(*string) = "healthy"
+						*dest[13].(**time.Time) = nil
+						*dest[14].(*int) = 0
 						// ck fields: id, key_enc, status, cooldown_until
-						*dest[13].(*int64) = 1
-						*dest[14].(*string) = "encrypted-key"
-						*dest[15].(*string) = "active"
-						*dest[16].(**time.Time) = nil
+						*dest[15].(*int64) = 1
+						*dest[16].(*string) = "encrypted-key"
+						*dest[17].(*string) = "active"
+						*dest[18].(**time.Time) = nil
 						return nil
 					},
 				},
@@ -72,6 +74,9 @@ func TestRoute_Found(t *testing.T) {
 	}
 	if result.MappedModel != "gpt-4o" {
 		t.Fatalf("expected gpt-4o, got %s", result.MappedModel)
+	}
+	if result.Channel.AdapterType != "openai_compatible" {
+		t.Fatalf("expected adapter_type openai_compatible, got %q", result.Channel.AdapterType)
 	}
 }
 
@@ -116,17 +121,19 @@ func TestRouteAll_MultipleChannels(t *testing.T) {
 						*dest[3].(*string) = "https://api.openai.com"
 						*dest[4].(*string) = "gpt-4o"
 						*dest[5].(*json.RawMessage) = json.RawMessage(`{}`)
-						*dest[6].(*int) = 128000
-						*dest[7].(*int) = 4096
-						*dest[8].(*int) = 100
-						*dest[9].(*string) = "active"
-						*dest[10].(*string) = "healthy"
-						*dest[11].(**time.Time) = nil
-						*dest[12].(*int) = 0
-						*dest[13].(*int64) = 1
-						*dest[14].(*string) = "key1"
-						*dest[15].(*string) = "active"
-						*dest[16].(**time.Time) = nil
+						*dest[6].(*string) = "openai_compatible"
+						*dest[7].(*json.RawMessage) = json.RawMessage(`{}`)
+						*dest[8].(*int) = 128000
+						*dest[9].(*int) = 4096
+						*dest[10].(*int) = 100
+						*dest[11].(*string) = "active"
+						*dest[12].(*string) = "healthy"
+						*dest[13].(**time.Time) = nil
+						*dest[14].(*int) = 0
+						*dest[15].(*int64) = 1
+						*dest[16].(*string) = "key1"
+						*dest[17].(*string) = "active"
+						*dest[18].(**time.Time) = nil
 						callCount++
 						return nil
 					},
@@ -137,17 +144,19 @@ func TestRouteAll_MultipleChannels(t *testing.T) {
 						*dest[3].(*string) = "https://api.anthropic.com"
 						*dest[4].(*string) = "gpt-4o"
 						*dest[5].(*json.RawMessage) = json.RawMessage(`{}`)
-						*dest[6].(*int) = 128000
-						*dest[7].(*int) = 4096
-						*dest[8].(*int) = 200
-						*dest[9].(*string) = "active"
-						*dest[10].(*string) = "healthy"
-						*dest[11].(**time.Time) = nil
-						*dest[12].(*int) = 0
-						*dest[13].(*int64) = 2
-						*dest[14].(*string) = "key2"
-						*dest[15].(*string) = "active"
-						*dest[16].(**time.Time) = nil
+						*dest[6].(*string) = "openai_compatible"
+						*dest[7].(*json.RawMessage) = json.RawMessage(`{}`)
+						*dest[8].(*int) = 128000
+						*dest[9].(*int) = 4096
+						*dest[10].(*int) = 200
+						*dest[11].(*string) = "active"
+						*dest[12].(*string) = "healthy"
+						*dest[13].(**time.Time) = nil
+						*dest[14].(*int) = 0
+						*dest[15].(*int64) = 2
+						*dest[16].(*string) = "key2"
+						*dest[17].(*string) = "active"
+						*dest[18].(**time.Time) = nil
 						callCount++
 						return nil
 					},

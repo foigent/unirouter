@@ -1,16 +1,15 @@
 package admin
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
+	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/models"
 )
 
 func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
@@ -21,10 +20,12 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var baseURL, models string
+	var baseURL, channelModels, adapterType string
+	var adapterConfig json.RawMessage
 	err = h.db.QueryRow(r.Context(),
-		`SELECT base_url, models FROM channels WHERE id = $1`, id,
-	).Scan(&baseURL, &models)
+		`SELECT base_url, models, COALESCE(adapter_type, 'openai_compatible'), COALESCE(adapter_config, '{}'::jsonb)
+		 FROM channels WHERE id = $1`, id,
+	).Scan(&baseURL, &channelModels, &adapterType, &adapterConfig)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Channel not found"})
 		return
@@ -36,7 +37,7 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&reqBody)
 	if strings.TrimSpace(reqBody.Model) == "" {
-		for _, m := range strings.Split(models, ",") {
+		for _, m := range strings.Split(channelModels, ",") {
 			if model := strings.TrimSpace(m); model != "" {
 				reqBody.Model = model
 				break
@@ -71,86 +72,50 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build the test URL
-	testURL := strings.TrimRight(baseURL, "/")
-	if strings.HasSuffix(testURL, "/v1") {
-		testURL += "/chat/completions"
-	} else {
-		testURL += "/v1/chat/completions"
-	}
-
-	payload, err := json.Marshal(map[string]interface{}{
-		"model": reqBody.Model,
-		"messages": []map[string]string{
-			{"role": "user", "content": reqBody.Prompt},
-		},
-		"max_tokens":  16,
-		"temperature": 0,
-	})
+	adapter, err := adapters.DefaultRegistry().Get(adapterType)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to build test payload"})
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"error":        "Unknown adapter_type",
+			"adapter_type": adapterType,
+			"status":       "adapter_error",
+		})
 		return
 	}
 
-	start := time.Now()
-	req, err := http.NewRequestWithContext(r.Context(), "POST", testURL, bytes.NewReader(payload))
+	result, err := adapter.Test(r.Context(), adapters.TestInput{
+		Channel: models.Channel{
+			ID:            id,
+			BaseURL:       baseURL,
+			Models:        channelModels,
+			AdapterType:   adapters.NormalizeType(adapterType),
+			AdapterConfig: adapterConfig,
+		},
+		APIKey: apiKey,
+		Model:  reqBody.Model,
+		Prompt: reqBody.Prompt,
+	})
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"status": "error", "error": err.Error(),
 		})
 		return
 	}
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	latency := time.Since(start).Milliseconds()
-	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"success":    false,
-			"status":     "error",
-			"error":      err.Error(),
-			"latency_ms": latency,
-		})
-		return
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-	success := resp.StatusCode >= 200 && resp.StatusCode < 300
-	status := "failed"
-	if success {
-		status = "ok"
-	}
-	errorMessage := ""
-	if !success {
-		errorMessage = fmt.Sprintf("upstream returned HTTP %d", resp.StatusCode)
-	}
-
-	var tokensUsed int
-	var parsed struct {
-		Usage struct {
-			TotalTokens int `json:"total_tokens"`
-		} `json:"usage"`
-	}
-	if err := json.Unmarshal(body, &parsed); err == nil {
-		tokensUsed = parsed.Usage.TotalTokens
-	}
 
 	// Build curl example
-	curlExample := fmt.Sprintf("curl %s -H \"Authorization: Bearer sk-***\" -H \"Content-Type: application/json\" -d '{\"model\":\"%s\",\"messages\":[{\"role\":\"user\",\"content\":\"%s\"}]}'", testURL, reqBody.Model, reqBody.Prompt)
+	curlExample := fmt.Sprintf("curl %s -H \"Authorization: Bearer sk-***\" -H \"Content-Type: application/json\" -d '{\"model\":\"%s\",\"messages\":[{\"role\":\"user\",\"content\":\"%s\"}]}'", result.RequestURL, reqBody.Model, reqBody.Prompt)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success":      success,
-		"status":       status,
+		"success":      result.Success,
+		"status":       result.Status,
 		"channel_id":   id,
-		"status_code":  resp.StatusCode,
-		"latency_ms":   latency,
+		"adapter_type": adapters.NormalizeType(adapterType),
+		"status_code":  result.StatusCode,
+		"latency_ms":   result.LatencyMs,
 		"model":        reqBody.Model,
-		"tokens_used":  tokensUsed,
-		"models":       models,
-		"error":        errorMessage,
-		"response":     string(body),
+		"tokens_used":  result.TokensUsed,
+		"models":       channelModels,
+		"error":        result.Error,
+		"response":     string(result.Body),
 		"curl_example": curlExample,
 	})
 }

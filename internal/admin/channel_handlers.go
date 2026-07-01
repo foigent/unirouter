@@ -6,11 +6,14 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/uniroute/unirouter/internal/adapters"
 )
 
 func (h *Handler) ListChannels(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(r.Context(),
-		`SELECT id, name, provider, base_url, models, priority, degradation_threshold, status, circuit_state, fail_count, created_at
+		`SELECT id, name, provider, base_url, models, COALESCE(adapter_type, 'openai_compatible'), COALESCE(adapter_config, '{}'::jsonb),
+		        priority, degradation_threshold, status, circuit_state, fail_count, created_at
 		 FROM channels ORDER BY priority ASC, id ASC`,
 	)
 	if err != nil {
@@ -22,13 +25,15 @@ func (h *Handler) ListChannels(w http.ResponseWriter, r *http.Request) {
 	channels := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var id int64
-		var name, provider, baseURL, models, status, circuitState string
+		var name, provider, baseURL, models, adapterType, status, circuitState string
+		var adapterConfig json.RawMessage
 		var priority, failCount, degradationThreshold int
 		var createdAt time.Time
-		rows.Scan(&id, &name, &provider, &baseURL, &models, &priority, &degradationThreshold, &status, &circuitState, &failCount, &createdAt)
+		rows.Scan(&id, &name, &provider, &baseURL, &models, &adapterType, &adapterConfig, &priority, &degradationThreshold, &status, &circuitState, &failCount, &createdAt)
 		channels = append(channels, map[string]interface{}{
 			"id": id, "name": name, "provider": provider, "base_url": baseURL,
-			"models": models, "priority": priority, "degradation_threshold": degradationThreshold, "status": status,
+			"models": models, "adapter_type": adapters.NormalizeType(adapterType), "adapter_config": adapterConfig,
+			"priority": priority, "degradation_threshold": degradationThreshold, "status": status,
 			"circuit_state": circuitState, "fail_count": failCount, "created_at": createdAt,
 		})
 	}
@@ -38,12 +43,14 @@ func (h *Handler) ListChannels(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) CreateChannel(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name                 string `json:"name"`
-		Provider             string `json:"provider"`
-		BaseURL              string `json:"base_url"`
-		Models               string `json:"models"`
-		Priority             int    `json:"priority"`
-		DegradationThreshold int    `json:"degradation_threshold"`
+		Name                 string          `json:"name"`
+		Provider             string          `json:"provider"`
+		BaseURL              string          `json:"base_url"`
+		Models               string          `json:"models"`
+		AdapterType          string          `json:"adapter_type"`
+		AdapterConfig        json.RawMessage `json:"adapter_config"`
+		Priority             int             `json:"priority"`
+		DegradationThreshold int             `json:"degradation_threshold"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
@@ -51,6 +58,14 @@ func (h *Handler) CreateChannel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.Models = normalizeModels(req.Models)
+	req.AdapterType = adapters.NormalizeType(req.AdapterType)
+	if !adapters.DefaultRegistry().Has(req.AdapterType) {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid adapter_type"})
+		return
+	}
+	if len(req.AdapterConfig) == 0 || string(req.AdapterConfig) == "null" {
+		req.AdapterConfig = json.RawMessage(`{}`)
+	}
 
 	if req.Name == "" || req.Provider == "" || req.BaseURL == "" || req.Models == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "name, provider, base_url, models are required"})
@@ -63,10 +78,10 @@ func (h *Handler) CreateChannel(w http.ResponseWriter, r *http.Request) {
 
 	var id int64
 	err := h.db.QueryRow(r.Context(),
-		`INSERT INTO channels (name, provider, base_url, models, priority, degradation_threshold, status, circuit_state, fail_count, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, 'active', 'healthy', 0, NOW(), NOW())
+		`INSERT INTO channels (name, provider, base_url, models, adapter_type, adapter_config, priority, degradation_threshold, status, circuit_state, fail_count, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, 'active', 'healthy', 0, NOW(), NOW())
 		 RETURNING id`,
-		req.Name, req.Provider, req.BaseURL, req.Models, req.Priority, req.DegradationThreshold,
+		req.Name, req.Provider, req.BaseURL, req.Models, req.AdapterType, string(req.AdapterConfig), req.Priority, req.DegradationThreshold,
 	).Scan(&id)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to create channel"})
@@ -88,13 +103,15 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name                 *string `json:"name"`
-		Provider             *string `json:"provider"`
-		BaseURL              *string `json:"base_url"`
-		Models               *string `json:"models"`
-		Priority             *int    `json:"priority"`
-		Status               *string `json:"status"`
-		DegradationThreshold *int    `json:"degradation_threshold"`
+		Name                 *string          `json:"name"`
+		Provider             *string          `json:"provider"`
+		BaseURL              *string          `json:"base_url"`
+		Models               *string          `json:"models"`
+		AdapterType          *string          `json:"adapter_type"`
+		AdapterConfig        *json.RawMessage `json:"adapter_config"`
+		Priority             *int             `json:"priority"`
+		Status               *string          `json:"status"`
+		DegradationThreshold *int             `json:"degradation_threshold"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
@@ -104,6 +121,18 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 	if req.Models != nil {
 		normalized := normalizeModels(*req.Models)
 		req.Models = &normalized
+	}
+	if req.AdapterType != nil {
+		normalized := adapters.NormalizeType(*req.AdapterType)
+		if !adapters.DefaultRegistry().Has(normalized) {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid adapter_type"})
+			return
+		}
+		req.AdapterType = &normalized
+	}
+	if req.AdapterConfig != nil && (len(*req.AdapterConfig) == 0 || string(*req.AdapterConfig) == "null") {
+		empty := json.RawMessage(`{}`)
+		req.AdapterConfig = &empty
 	}
 
 	// Build dynamic SET clauses
@@ -129,6 +158,16 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 	if req.Models != nil {
 		sets = append(sets, fmt.Sprintf("models = $%d", argIdx))
 		args = append(args, *req.Models)
+		argIdx++
+	}
+	if req.AdapterType != nil {
+		sets = append(sets, fmt.Sprintf("adapter_type = $%d", argIdx))
+		args = append(args, *req.AdapterType)
+		argIdx++
+	}
+	if req.AdapterConfig != nil {
+		sets = append(sets, fmt.Sprintf("adapter_config = $%d::jsonb", argIdx))
+		args = append(args, string(*req.AdapterConfig))
 		argIdx++
 	}
 	if req.Priority != nil {
@@ -179,6 +218,12 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 	if req.Models != nil {
 		changedFields = append(changedFields, "models")
 	}
+	if req.AdapterType != nil {
+		changedFields = append(changedFields, "adapter_type")
+	}
+	if req.AdapterConfig != nil {
+		changedFields = append(changedFields, "adapter_config")
+	}
 	if req.Priority != nil {
 		changedFields = append(changedFields, "priority")
 	}
@@ -228,6 +273,8 @@ func (h *Handler) GetChannel(w http.ResponseWriter, r *http.Request) {
 		ID                   int64
 		Name, Provider       string
 		BaseURL, Models      string
+		AdapterType          string
+		AdapterConfig        json.RawMessage
 		Priority             int
 		DegradationThreshold int
 		Status               string
@@ -236,9 +283,10 @@ func (h *Handler) GetChannel(w http.ResponseWriter, r *http.Request) {
 		CreatedAt            time.Time
 	}
 	err = h.db.QueryRow(r.Context(),
-		`SELECT id, name, provider, base_url, models, priority, degradation_threshold, status, circuit_state, fail_count, created_at
+		`SELECT id, name, provider, base_url, models, COALESCE(adapter_type, 'openai_compatible'), COALESCE(adapter_config, '{}'::jsonb),
+		        priority, degradation_threshold, status, circuit_state, fail_count, created_at
 		 FROM channels WHERE id = $1`, id).Scan(
-		&ch.ID, &ch.Name, &ch.Provider, &ch.BaseURL, &ch.Models, &ch.Priority,
+		&ch.ID, &ch.Name, &ch.Provider, &ch.BaseURL, &ch.Models, &ch.AdapterType, &ch.AdapterConfig, &ch.Priority,
 		&ch.DegradationThreshold, &ch.Status, &ch.CircuitState, &ch.FailCount, &ch.CreatedAt)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Channel not found"})
@@ -246,7 +294,8 @@ func (h *Handler) GetChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"id": ch.ID, "name": ch.Name, "provider": ch.Provider, "base_url": ch.BaseURL,
-		"models": ch.Models, "priority": ch.Priority, "degradation_threshold": ch.DegradationThreshold,
+		"models": ch.Models, "adapter_type": adapters.NormalizeType(ch.AdapterType), "adapter_config": ch.AdapterConfig,
+		"priority": ch.Priority, "degradation_threshold": ch.DegradationThreshold,
 		"status": ch.Status, "circuit_state": ch.CircuitState, "fail_count": ch.FailCount, "created_at": ch.CreatedAt,
 	})
 }

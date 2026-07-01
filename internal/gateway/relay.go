@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/db"
@@ -58,12 +58,7 @@ func (relay *Relay) SetAlertService(svc *billing.AlertService, webhookURL string
 }
 
 func upstreamEndpoint(baseURL, endpoint string) string {
-	base := strings.TrimRight(baseURL, "/")
-	path := strings.TrimLeft(endpoint, "/")
-	if strings.HasSuffix(base, "/v1") && strings.HasPrefix(path, "v1/") {
-		path = strings.TrimPrefix(path, "v1/")
-	}
-	return base + "/" + path
+	return adapters.UpstreamEndpoint(baseURL, endpoint)
 }
 
 func elapsedMilliseconds(start time.Time) int {
@@ -192,12 +187,8 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Build upstream body once — replace model with mapped model name
-	upstreamBody := make(map[string]interface{})
-	json.Unmarshal(body, &upstreamBody)
-	replacedBodyBase, _ := json.Marshal(upstreamBody)
-
 	client := &http.Client{Timeout: 300 * time.Second}
+	adapterRegistry := adapters.DefaultRegistry()
 
 	// Failover loop: try each route until one succeeds
 	var lastErr error
@@ -209,21 +200,25 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 			continue
 		}
 
-		// Inject the correct mapped model for this route
-		var bodyMap map[string]interface{}
-		json.Unmarshal(replacedBodyBase, &bodyMap)
-		bodyMap["model"] = route.MappedModel
-		routeBody, _ := json.Marshal(bodyMap)
-
-		upstreamURL := upstreamEndpoint(route.Channel.BaseURL, "/v1/chat/completions")
-		upstreamReq, err := http.NewRequestWithContext(ctx, "POST", upstreamURL, bytes.NewReader(routeBody))
+		adapter, err := adapterRegistry.Get(route.Channel.AdapterType)
+		if err != nil {
+			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Unknown adapter_type %q: %v", route.Channel.AdapterType, err)
+			lastErr = err
+			continue
+		}
+		upstreamReq, err := adapter.BuildRequest(ctx, adapters.RequestInput{
+			Endpoint:       adapters.EndpointChatCompletions,
+			DownstreamBody: body,
+			RequestedModel: requestedModel,
+			MappedModel:    route.MappedModel,
+			Channel:        route.Channel,
+			APIKey:         apiKey,
+			RequestID:      requestID,
+		})
 		if err != nil {
 			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Failed to create upstream request: %v", err)
 			continue
 		}
-
-		upstreamReq.Header.Set("Content-Type", "application/json")
-		upstreamReq.Header.Set("Authorization", "Bearer "+apiKey)
 
 		upstreamStart := time.Now()
 		resp, err := client.Do(upstreamReq)
@@ -267,7 +262,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		if req.Stream {
 			relay.relayStreamRequest(ctx, w, resp, &route, requestID, orgID, keyID, req.Model, requestedModel, r.RemoteAddr, req.Messages, reqLog, requestStart)
 		} else {
-			relay.relayNonStreamRequest(ctx, w, resp, &route, requestID, orgID, keyID, req.Model, requestedModel, r.RemoteAddr, reqLog, requestStart)
+			relay.relayNonStreamRequest(ctx, w, resp, &route, requestID, orgID, keyID, req.Model, requestedModel, r.RemoteAddr, reqLog, requestStart, adapter)
 		}
 		return
 	}
@@ -289,44 +284,54 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 }
 
 // relayNonStreamRequest handles non-streaming responses.
-func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWriter, resp *http.Response, route *RouteResult, requestID string, orgID, keyID int64, model, requestedModel, clientIP string, reqLog *logger.Logger, requestStart time.Time) {
+func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWriter, resp *http.Response, route *RouteResult, requestID string, orgID, keyID int64, model, requestedModel, clientIP string, reqLog *logger.Logger, requestStart time.Time, adapter adapters.Adapter) {
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		reqLog.Error("Failed to read response body: %v", err)
+		relay.billing.Cancel(ctx, requestID, orgID)
+		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to read upstream response")
 		return
 	}
 
-	// Parse usage from response
-	var usage struct {
-		Usage struct {
-			PromptTokens     int `json:"prompt_tokens"`
-			CompletionTokens int `json:"completion_tokens"`
-			TotalTokens      int `json:"total_tokens"`
-		} `json:"usage"`
+	if adapter == nil {
+		adapter = adapters.NewOpenAICompatible()
 	}
-	json.Unmarshal(body, &usage)
+	normalized, err := adapter.ParseResponse(ctx, adapters.ResponseInput{
+		StatusCode:     resp.StatusCode,
+		Header:         resp.Header,
+		Body:           body,
+		Channel:        route.Channel,
+		RequestedModel: requestedModel,
+		UpstreamModel:  route.MappedModel,
+	})
+	if err != nil {
+		reqLog.Error("Failed to parse adapter response: %v", err)
+		relay.billing.Cancel(ctx, requestID, orgID)
+		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to parse upstream response")
+		return
+	}
 
 	// Settle billing with actual usage
-	actualCost := relay.calculateCost(ctx, orgID, model, usage.Usage.PromptTokens, usage.Usage.CompletionTokens)
+	actualCost := relay.calculateCost(ctx, orgID, model, normalized.Usage.PromptTokens, normalized.Usage.CompletionTokens)
 	_, err = relay.billing.Settle(ctx, billing.SettleRequest{
 		RequestID:        requestID,
 		OrgID:            orgID,
 		ActualCost:       actualCost,
-		PromptTokens:     usage.Usage.PromptTokens,
-		CompletionTokens: usage.Usage.CompletionTokens,
-		UsageSource:      "api",
+		PromptTokens:     normalized.Usage.PromptTokens,
+		CompletionTokens: normalized.Usage.CompletionTokens,
+		UsageSource:      normalized.Usage.Source,
 	})
 	if err != nil {
 		reqLog.Error("Billing settle error: %v", err)
 	}
-	middleware.RecordTokenUsage("prompt", model, usage.Usage.PromptTokens)
-	middleware.RecordTokenUsage("completion", model, usage.Usage.CompletionTokens)
+	middleware.RecordTokenUsage("prompt", model, normalized.Usage.PromptTokens)
+	middleware.RecordTokenUsage("completion", model, normalized.Usage.CompletionTokens)
 	relay.checkBudgetAlert(ctx)
 
 	// Record request log
 	relay.recordRequest(ctx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, model, requestedModel, clientIP,
-		usage.Usage.PromptTokens, usage.Usage.CompletionTokens, actualCost, resp.StatusCode, elapsedMilliseconds(requestStart), 0, false, "api")
+		normalized.Usage.PromptTokens, normalized.Usage.CompletionTokens, actualCost, resp.StatusCode, elapsedMilliseconds(requestStart), 0, false, normalized.Usage.Source)
 
 	// Build response with _uniroute extension field
 	var responseMap map[string]interface{}
@@ -757,21 +762,26 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Replace model name and forward
-	upstreamBody := make(map[string]interface{})
-	json.Unmarshal(body, &upstreamBody)
-	upstreamBody["model"] = route.MappedModel
-	replacedBody, _ := json.Marshal(upstreamBody)
-
-	upstreamURL := upstreamEndpoint(route.Channel.BaseURL, "/v1/embeddings")
-	upstreamReq, err := http.NewRequestWithContext(ctx, "POST", upstreamURL, bytes.NewReader(replacedBody))
+	adapter, err := adapters.DefaultRegistry().Get(route.Channel.AdapterType)
+	if err != nil {
+		relay.billing.Cancel(ctx, requestID, orgID)
+		writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_error", fmt.Sprintf("Unknown adapter_type: %s", route.Channel.AdapterType))
+		return
+	}
+	upstreamReq, err := adapter.BuildRequest(ctx, adapters.RequestInput{
+		Endpoint:       adapters.EndpointEmbeddings,
+		DownstreamBody: body,
+		RequestedModel: requestedModel,
+		MappedModel:    route.MappedModel,
+		Channel:        route.Channel,
+		APIKey:         apiKey,
+		RequestID:      requestID,
+	})
 	if err != nil {
 		relay.billing.Cancel(ctx, requestID, orgID)
 		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to create upstream request")
 		return
 	}
-	upstreamReq.Header.Set("Content-Type", "application/json")
-	upstreamReq.Header.Set("Authorization", "Bearer "+apiKey)
 
 	client := &http.Client{Timeout: 120 * time.Second}
 	upstreamStart := time.Now()
@@ -787,28 +797,34 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	respBody, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 
-	// Parse usage for settlement
-	var usage struct {
-		Usage struct {
-			PromptTokens int `json:"prompt_tokens"`
-			TotalTokens  int `json:"total_tokens"`
-		} `json:"usage"`
+	normalized, err := adapter.ParseResponse(ctx, adapters.ResponseInput{
+		StatusCode:     resp.StatusCode,
+		Header:         resp.Header,
+		Body:           respBody,
+		Channel:        route.Channel,
+		RequestedModel: requestedModel,
+		UpstreamModel:  route.MappedModel,
+	})
+	if err != nil {
+		reqLog.Error("Failed to parse adapter response: %v", err)
+		relay.billing.Cancel(ctx, requestID, orgID)
+		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to parse upstream response")
+		return
 	}
-	json.Unmarshal(respBody, &usage)
 
-	actualCost := relay.calculateCost(ctx, orgID, req.Model, usage.Usage.PromptTokens, 0)
+	actualCost := relay.calculateCost(ctx, orgID, req.Model, normalized.Usage.PromptTokens, 0)
 	relay.billing.Settle(ctx, billing.SettleRequest{
 		RequestID:    requestID,
 		OrgID:        orgID,
 		ActualCost:   actualCost,
-		PromptTokens: usage.Usage.PromptTokens,
-		UsageSource:  "api",
+		PromptTokens: normalized.Usage.PromptTokens,
+		UsageSource:  normalized.Usage.Source,
 	})
-	middleware.RecordTokenUsage("prompt", req.Model, usage.Usage.PromptTokens)
+	middleware.RecordTokenUsage("prompt", req.Model, normalized.Usage.PromptTokens)
 	relay.checkBudgetAlert(ctx)
 
 	relay.recordRequest(ctx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, req.Model, requestedModel, r.RemoteAddr,
-		usage.Usage.PromptTokens, 0, actualCost, resp.StatusCode, elapsedMilliseconds(requestStart), 0, false, "api")
+		normalized.Usage.PromptTokens, 0, actualCost, resp.StatusCode, elapsedMilliseconds(requestStart), 0, false, normalized.Usage.Source)
 
 	// Build response with _uniroute extension
 	var responseMap map[string]interface{}
