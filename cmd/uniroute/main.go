@@ -19,6 +19,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/uniroute/unirouter/internal/admin"
+	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/config"
 	"github.com/uniroute/unirouter/internal/db"
@@ -208,11 +209,35 @@ func main() {
 
 	// Admin auth middleware
 	adminAuth := middleware.AdminAuth(cfg.JWTSecret)
+	adminRoute := func(h http.HandlerFunc) http.Handler {
+		return adminAuth(http.HandlerFunc(h))
+	}
+	roleRoute := func(h http.HandlerFunc, roles ...string) http.Handler {
+		return adminAuth(middleware.RequireRoles(roles...)(http.HandlerFunc(h)))
+	}
+	platformRoute := func(h http.HandlerFunc) http.Handler {
+		return roleRoute(h, auth.RolePlatformAdmin)
+	}
+	orgAdminRoute := func(h http.HandlerFunc) http.Handler {
+		return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin)
+	}
+	billingRoute := func(h http.HandlerFunc) http.Handler {
+		return roleRoute(h, auth.RolePlatformAdmin, auth.RoleBillingAdmin)
+	}
+	usageRoute := func(h http.HandlerFunc) http.Handler {
+		return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper, auth.RoleViewer)
+	}
+	projectReadRoute := func(h http.HandlerFunc) http.Handler {
+		return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper, auth.RoleViewer)
+	}
+	projectWriteRoute := func(h http.HandlerFunc) http.Handler {
+		return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper)
+	}
 
 	// Admin endpoints
 	mux.HandleFunc("POST /api/v1/auth/login", adminHandler.Login)
-	mux.Handle("GET /api/v1/me", adminAuth(http.HandlerFunc(adminHandler.GetMe)))
-	mux.Handle("PUT /api/v1/me/password", adminAuth(http.HandlerFunc(adminHandler.ChangePassword)))
+	mux.Handle("GET /api/v1/me", adminRoute(adminHandler.GetMe))
+	mux.Handle("PUT /api/v1/me/password", adminRoute(adminHandler.ChangePassword))
 	mux.HandleFunc("GET /docs", func(w http.ResponseWriter, r *http.Request) {
 		html := `<!DOCTYPE html>
 <html>
@@ -253,69 +278,69 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 		w.Write([]byte(html))
 	})
 
-	mux.Handle("GET /api/v1/channels", adminAuth(http.HandlerFunc(adminHandler.ListChannels)))
-	mux.Handle("POST /api/v1/channels", adminAuth(http.HandlerFunc(adminHandler.CreateChannel)))
-	mux.Handle("GET /api/v1/channels/{id}", adminAuth(http.HandlerFunc(adminHandler.GetChannel)))
-	mux.Handle("PUT /api/v1/channels/{id}", adminAuth(http.HandlerFunc(adminHandler.UpdateChannel)))
-	mux.Handle("DELETE /api/v1/channels/{id}", adminAuth(http.HandlerFunc(adminHandler.DeleteChannel)))
+	mux.Handle("GET /api/v1/channels", platformRoute(adminHandler.ListChannels))
+	mux.Handle("POST /api/v1/channels", platformRoute(adminHandler.CreateChannel))
+	mux.Handle("GET /api/v1/channels/{id}", platformRoute(adminHandler.GetChannel))
+	mux.Handle("PUT /api/v1/channels/{id}", platformRoute(adminHandler.UpdateChannel))
+	mux.Handle("DELETE /api/v1/channels/{id}", platformRoute(adminHandler.DeleteChannel))
 
-	mux.Handle("GET /api/v1/keys", adminAuth(http.HandlerFunc(adminHandler.ListAPIKeys)))
-	mux.Handle("POST /api/v1/keys", adminAuth(http.HandlerFunc(adminHandler.CreateAPIKey)))
-	mux.Handle("GET /api/v1/keys/{id}", adminAuth(http.HandlerFunc(adminHandler.GetAPIKey)))
-	mux.Handle("PUT /api/v1/keys/{id}", adminAuth(http.HandlerFunc(adminHandler.UpdateAPIKey)))
-	mux.Handle("POST /api/v1/keys/{id}/disable", adminAuth(http.HandlerFunc(adminHandler.DisableAPIKey)))
+	mux.Handle("GET /api/v1/keys", projectReadRoute(adminHandler.ListAPIKeys))
+	mux.Handle("POST /api/v1/keys", projectWriteRoute(adminHandler.CreateAPIKey))
+	mux.Handle("GET /api/v1/keys/{id}", projectReadRoute(adminHandler.GetAPIKey))
+	mux.Handle("PUT /api/v1/keys/{id}", roleRoute(adminHandler.UpdateAPIKey, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin))
+	mux.Handle("POST /api/v1/keys/{id}/disable", roleRoute(adminHandler.DisableAPIKey, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin))
 
-	mux.Handle("GET /api/v1/projects", adminAuth(http.HandlerFunc(adminHandler.ListProjects)))
-	mux.Handle("POST /api/v1/projects", adminAuth(http.HandlerFunc(adminHandler.CreateProject)))
-	mux.Handle("GET /api/v1/projects/{id}", adminAuth(http.HandlerFunc(adminHandler.GetProject)))
-	mux.Handle("PUT /api/v1/projects/{id}", adminAuth(http.HandlerFunc(adminHandler.UpdateProject)))
+	mux.Handle("GET /api/v1/projects", projectReadRoute(adminHandler.ListProjects))
+	mux.Handle("POST /api/v1/projects", orgAdminRoute(adminHandler.CreateProject))
+	mux.Handle("GET /api/v1/projects/{id}", projectReadRoute(adminHandler.GetProject))
+	mux.Handle("PUT /api/v1/projects/{id}", roleRoute(adminHandler.UpdateProject, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin))
 
-	mux.Handle("GET /api/v1/channel-keys", adminAuth(http.HandlerFunc(adminHandler.ListChannelKeys)))
-	mux.Handle("POST /api/v1/channel-keys", adminAuth(http.HandlerFunc(adminHandler.CreateChannelKey)))
-	mux.Handle("PUT /api/v1/channel-keys/{id}", adminAuth(http.HandlerFunc(adminHandler.UpdateChannelKey)))
-	mux.Handle("DELETE /api/v1/channel-keys/{id}", adminAuth(http.HandlerFunc(adminHandler.DeleteChannelKey)))
+	mux.Handle("GET /api/v1/channel-keys", platformRoute(adminHandler.ListChannelKeys))
+	mux.Handle("POST /api/v1/channel-keys", platformRoute(adminHandler.CreateChannelKey))
+	mux.Handle("PUT /api/v1/channel-keys/{id}", platformRoute(adminHandler.UpdateChannelKey))
+	mux.Handle("DELETE /api/v1/channel-keys/{id}", platformRoute(adminHandler.DeleteChannelKey))
 
-	mux.Handle("GET /api/v1/wallet", adminAuth(http.HandlerFunc(adminHandler.GetWallet)))
-	mux.Handle("POST /api/v1/wallet/topup", adminAuth(http.HandlerFunc(adminHandler.TopUp)))
-	mux.Handle("POST /api/v1/wallet/adjust", adminAuth(http.HandlerFunc(adminHandler.BalanceAdjust)))
-	mux.Handle("GET /api/v1/wallet/transactions", adminAuth(http.HandlerFunc(adminHandler.ListWalletTransactions)))
+	mux.Handle("GET /api/v1/wallet", billingRoute(adminHandler.GetWallet))
+	mux.Handle("POST /api/v1/wallet/topup", billingRoute(adminHandler.TopUp))
+	mux.Handle("POST /api/v1/wallet/adjust", billingRoute(adminHandler.BalanceAdjust))
+	mux.Handle("GET /api/v1/wallet/transactions", billingRoute(adminHandler.ListWalletTransactions))
 
-	mux.Handle("GET /api/v1/logs", adminAuth(http.HandlerFunc(adminHandler.ListLogs)))
-	mux.Handle("GET /api/v1/logs/{id}", adminAuth(http.HandlerFunc(adminHandler.GetLogDetail)))
-	mux.Handle("GET /api/v1/dashboard/stats", adminAuth(http.HandlerFunc(adminHandler.DashboardStats)))
+	mux.Handle("GET /api/v1/logs", usageRoute(adminHandler.ListLogs))
+	mux.Handle("GET /api/v1/logs/{id}", usageRoute(adminHandler.GetLogDetail))
+	mux.Handle("GET /api/v1/dashboard/stats", usageRoute(adminHandler.DashboardStats))
 
-	mux.Handle("GET /api/v1/model-prices", adminAuth(http.HandlerFunc(adminHandler.ListModelPrices)))
-	mux.Handle("GET /api/v1/reconciliation", adminAuth(http.HandlerFunc(adminHandler.ListReconciliation)))
-	mux.Handle("POST /api/v1/model-prices", adminAuth(http.HandlerFunc(adminHandler.CreateModelPrice)))
-	mux.Handle("PUT /api/v1/model-prices/{id}", adminAuth(http.HandlerFunc(adminHandler.UpdateModelPrice)))
-	mux.Handle("DELETE /api/v1/model-prices/{id}", adminAuth(http.HandlerFunc(adminHandler.DeleteModelPrice)))
+	mux.Handle("GET /api/v1/model-prices", orgAdminRoute(adminHandler.ListModelPrices))
+	mux.Handle("GET /api/v1/reconciliation", billingRoute(adminHandler.ListReconciliation))
+	mux.Handle("POST /api/v1/model-prices", orgAdminRoute(adminHandler.CreateModelPrice))
+	mux.Handle("PUT /api/v1/model-prices/{id}", orgAdminRoute(adminHandler.UpdateModelPrice))
+	mux.Handle("DELETE /api/v1/model-prices/{id}", orgAdminRoute(adminHandler.DeleteModelPrice))
 	// Org model prices (org-level pricing overrides)
-	mux.Handle("GET /api/v1/model-names", adminAuth(http.HandlerFunc(adminHandler.GetModelNames)))
-	mux.Handle("GET /api/v1/org-model-prices", adminAuth(http.HandlerFunc(adminHandler.ListOrgModelPrices)))
-	mux.Handle("POST /api/v1/org-model-prices", adminAuth(http.HandlerFunc(adminHandler.CreateOrgModelPrice)))
-	mux.Handle("PUT /api/v1/org-model-prices/{id}", adminAuth(http.HandlerFunc(adminHandler.UpdateOrgModelPrice)))
-	mux.Handle("DELETE /api/v1/org-model-prices/{id}", adminAuth(http.HandlerFunc(adminHandler.DeleteOrgModelPrice)))
+	mux.Handle("GET /api/v1/model-names", orgAdminRoute(adminHandler.GetModelNames))
+	mux.Handle("GET /api/v1/org-model-prices", orgAdminRoute(adminHandler.ListOrgModelPrices))
+	mux.Handle("POST /api/v1/org-model-prices", orgAdminRoute(adminHandler.CreateOrgModelPrice))
+	mux.Handle("PUT /api/v1/org-model-prices/{id}", orgAdminRoute(adminHandler.UpdateOrgModelPrice))
+	mux.Handle("DELETE /api/v1/org-model-prices/{id}", orgAdminRoute(adminHandler.DeleteOrgModelPrice))
 
-	mux.Handle("GET /api/v1/users", adminAuth(http.HandlerFunc(adminHandler.ListUsers)))
-	mux.Handle("POST /api/v1/users", adminAuth(http.HandlerFunc(adminHandler.CreateUser)))
-	mux.Handle("PUT /api/v1/users/{id}", adminAuth(http.HandlerFunc(adminHandler.UpdateUser)))
-	mux.Handle("DELETE /api/v1/users/{id}", adminAuth(http.HandlerFunc(adminHandler.DeleteUser)))
+	mux.Handle("GET /api/v1/users", orgAdminRoute(adminHandler.ListUsers))
+	mux.Handle("POST /api/v1/users", orgAdminRoute(adminHandler.CreateUser))
+	mux.Handle("PUT /api/v1/users/{id}", orgAdminRoute(adminHandler.UpdateUser))
+	mux.Handle("DELETE /api/v1/users/{id}", orgAdminRoute(adminHandler.DeleteUser))
 
-	mux.Handle("GET /api/v1/grants", adminAuth(http.HandlerFunc(adminHandler.ListGrants)))
-	mux.Handle("POST /api/v1/grants", adminAuth(http.HandlerFunc(adminHandler.CreateGrant)))
+	mux.Handle("GET /api/v1/grants", billingRoute(adminHandler.ListGrants))
+	mux.Handle("POST /api/v1/grants", billingRoute(adminHandler.CreateGrant))
 
-	mux.Handle("GET /api/v1/audit-logs", adminAuth(http.HandlerFunc(adminHandler.ListAuditLogs)))
+	mux.Handle("GET /api/v1/audit-logs", roleRoute(adminHandler.ListAuditLogs, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin))
 
-	mux.Handle("GET /api/v1/settings", adminAuth(http.HandlerFunc(adminHandler.ListSettings)))
-	mux.Handle("PUT /api/v1/settings/{key}", adminAuth(http.HandlerFunc(adminHandler.UpdateSetting)))
+	mux.Handle("GET /api/v1/settings", orgAdminRoute(adminHandler.ListSettings))
+	mux.Handle("PUT /api/v1/settings/{key}", orgAdminRoute(adminHandler.UpdateSetting))
 
 	// Sensitive Words CRUD (PRD F13)
-	mux.Handle("GET /api/v1/sensitive-words", adminAuth(http.HandlerFunc(adminHandler.ListSensitiveWords)))
-	mux.Handle("POST /api/v1/sensitive-words", adminAuth(http.HandlerFunc(adminHandler.AddSensitiveWords)))
-	mux.Handle("PUT /api/v1/sensitive-words", adminAuth(http.HandlerFunc(adminHandler.UpdateSensitiveWords)))
-	mux.Handle("DELETE /api/v1/sensitive-words", adminAuth(http.HandlerFunc(adminHandler.DeleteSensitiveWords)))
-	mux.Handle("POST /api/v1/channels/{id}/test", adminAuth(http.HandlerFunc(adminHandler.TestChannel)))
-	mux.Handle("GET /api/v1/wallet/transactions/export", adminAuth(http.HandlerFunc(adminHandler.ExportWalletTransactions)))
+	mux.Handle("GET /api/v1/sensitive-words", orgAdminRoute(adminHandler.ListSensitiveWords))
+	mux.Handle("POST /api/v1/sensitive-words", orgAdminRoute(adminHandler.AddSensitiveWords))
+	mux.Handle("PUT /api/v1/sensitive-words", orgAdminRoute(adminHandler.UpdateSensitiveWords))
+	mux.Handle("DELETE /api/v1/sensitive-words", orgAdminRoute(adminHandler.DeleteSensitiveWords))
+	mux.Handle("POST /api/v1/channels/{id}/test", platformRoute(adminHandler.TestChannel))
+	mux.Handle("GET /api/v1/wallet/transactions/export", billingRoute(adminHandler.ExportWalletTransactions))
 	metricsHandler := middleware.MetricsMiddleware(mux)
 	corsHandler := middleware.CORS(metricsHandler)
 

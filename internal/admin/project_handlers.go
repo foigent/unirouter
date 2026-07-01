@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
 )
 
@@ -41,6 +42,14 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 		}
 		conditions = append(conditions, fmt.Sprintf("p.status = $%d", argIdx))
 		args = append(args, status)
+		argIdx++
+	}
+	if auth.IsProjectScopedRole(actorRole(r.Context())) {
+		conditions = append(conditions, fmt.Sprintf(`EXISTS (
+			SELECT 1 FROM project_members pm
+			WHERE pm.project_id = p.id AND pm.user_id = $%d
+		)`, argIdx))
+		args = append(args, middleware.GetUserIDFromContext(r.Context()))
 		argIdx++
 	}
 
@@ -172,6 +181,10 @@ func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid project ID"})
 		return
 	}
+	if !h.canReadProject(r.Context(), id) {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		return
+	}
 
 	var orgID, keyCount int64
 	var name, slug, description, status, budgetPeriod, orgName string
@@ -199,6 +212,10 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid project ID"})
+		return
+	}
+	if !h.canWriteProject(r.Context(), id) {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 		return
 	}
 

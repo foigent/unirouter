@@ -1,0 +1,136 @@
+package admin
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/testutil"
+)
+
+func TestListLogs_ProjectScopedRoleRequiresProjectID(t *testing.T) {
+	h := newTestHandler(&testutil.MockDB{})
+
+	req := httptest.NewRequest(http.MethodGet, "/logs", nil)
+	ctx := context.WithValue(req.Context(), middleware.CtxUserRole, auth.RoleDeveloper)
+	ctx = context.WithValue(ctx, middleware.CtxUserID, int64(10))
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	h.ListLogs(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestListLogs_ProjectScopedRoleWithMembership(t *testing.T) {
+	now := time.Now()
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				if strings.Contains(sql, "FROM project_members") {
+					*dest[0].(*int) = 1
+					return nil
+				}
+				*dest[0].(*int) = 1
+				return nil
+			}}
+		},
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			if !strings.Contains(sql, "project_id =") {
+				t.Fatalf("expected project_id filter, got %s", sql)
+			}
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
+					func(dest ...any) error {
+						*dest[0].(*int64) = 1
+						*dest[1].(*int64) = 7
+						*dest[2].(*string) = "req-001"
+						*dest[3].(*string) = "gpt-4o"
+						*dest[4].(*string) = "openai"
+						*dest[5].(*string) = "test-channel"
+						*dest[6].(*int) = 100
+						*dest[7].(*int) = 50
+						*dest[8].(*int) = 150
+						*dest[9].(*int) = 200
+						*dest[10].(*int) = 200
+						*dest[11].(*int) = 350
+						*dest[12].(*int) = 0
+						dest[13] = (*int)(nil)
+						*dest[14].(*string) = ""
+						*dest[15].(*string) = "api"
+						*dest[16].(*bool) = false
+						*dest[17].(*time.Time) = now
+						return nil
+					},
+				},
+			}, nil
+		},
+	}
+	h := newTestHandler(db)
+
+	req := httptest.NewRequest(http.MethodGet, "/logs?project_id=7", nil)
+	ctx := context.WithValue(req.Context(), middleware.CtxUserRole, auth.RoleDeveloper)
+	ctx = context.WithValue(ctx, middleware.CtxUserID, int64(10))
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	h.ListLogs(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCreateAPIKey_DeveloperRequiresProjectID(t *testing.T) {
+	h := newTestHandler(&testutil.MockDB{})
+
+	req := httptest.NewRequest(http.MethodPost, "/keys", strings.NewReader(`{"org_id":1,"name":"dev-key"}`))
+	req.Header.Set("Content-Type", "application/json")
+	ctx := context.WithValue(req.Context(), middleware.CtxUserRole, auth.RoleDeveloper)
+	ctx = context.WithValue(ctx, middleware.CtxUserID, int64(10))
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	h.CreateAPIKey(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCreateUser_InvalidRole(t *testing.T) {
+	h := newTestHandler(&testutil.MockDB{})
+
+	req := httptest.NewRequest(http.MethodPost, "/users", strings.NewReader(`{"org_id":1,"username":"u","password":"secret123","role":"owner"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.CreateUser(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdateUser_InvalidRole(t *testing.T) {
+	h := newTestHandler(&testutil.MockDB{})
+
+	req := httptest.NewRequest(http.MethodPut, "/users/1", strings.NewReader(`{"role":"owner"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", "1")
+	rec := httptest.NewRecorder()
+
+	h.UpdateUser(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}

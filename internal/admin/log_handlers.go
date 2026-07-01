@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/uniroute/unirouter/internal/auth"
 )
 
 func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
@@ -73,6 +75,13 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 		conditions = append(conditions, fmt.Sprintf("project_id = $%d", argIdx))
 		args = append(args, projectID)
 		argIdx++
+		if !h.canReadProjectUsage(r.Context(), projectID) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			return
+		}
+	} else if auth.IsProjectScopedRole(actorRole(r.Context())) {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "project_id is required"})
+		return
 	}
 	latencyMin := r.URL.Query().Get("latency_min")
 	latencyMax := r.URL.Query().Get("latency_max")
@@ -182,6 +191,10 @@ func (h *Handler) GetLogDetail(w http.ResponseWriter, r *http.Request) {
 		&usageSource, &isStream, &ipAddress, &requestedModel, &createdAt)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "log not found"})
+		return
+	}
+	if !h.canReadProjectUsage(r.Context(), projectID) {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 		return
 	}
 

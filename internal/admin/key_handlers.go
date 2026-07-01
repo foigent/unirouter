@@ -9,17 +9,36 @@ import (
 	"time"
 
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/middleware"
 )
 
 func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
+	var conditions []string
+	var args []interface{}
+	argIdx := 1
+	if auth.IsProjectScopedRole(actorRole(r.Context())) {
+		conditions = append(conditions, fmt.Sprintf(`EXISTS (
+			SELECT 1 FROM project_members pm
+			WHERE pm.project_id = ak.project_id AND pm.user_id = $%d
+		)`, argIdx))
+		args = append(args, middleware.GetUserIDFromContext(r.Context()))
+		argIdx++
+	}
+	whereClause := ""
+	if len(conditions) > 0 {
+		whereClause = "WHERE " + joinStrings(conditions, " AND ")
+	}
+
 	rows, err := h.db.Query(r.Context(),
-		`SELECT ak.id, ak.org_id, COALESCE(ak.project_id, 0), ak.name, ak.key_prefix, ak.status, ak.rpm_limit, ak.qps_limit,
+		fmt.Sprintf(`SELECT ak.id, ak.org_id, COALESCE(ak.project_id, 0), ak.name, ak.key_prefix, ak.status, ak.rpm_limit, ak.qps_limit,
 		        COALESCE(ak.budget_limit, 0), ak.allowed_ips, ak.allowed_models, ak.created_at,
 		        o.name as org_name, COALESCE(p.name, '') as project_name
 		 FROM api_keys ak
 		 JOIN orgs o ON o.id = ak.org_id
 		 LEFT JOIN projects p ON p.id = ak.project_id
-		 ORDER BY ak.id ASC`,
+		 %s
+		 ORDER BY ak.id ASC`, whereClause),
+		args...,
 	)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Query failed"})
@@ -99,6 +118,11 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if auth.IsProjectScopedRole(actorRole(r.Context())) && req.ProjectID == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "project_id is required"})
+		return
+	}
+
 	projectID, err := h.resolveAPIKeyProjectID(r.Context(), req.OrgID, req.ProjectID)
 	if err != nil {
 		if req.ProjectID > 0 {
@@ -106,6 +130,10 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		} else {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to resolve default project"})
 		}
+		return
+	}
+	if !h.canCreateProjectKey(r.Context(), projectID) {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 		return
 	}
 
@@ -183,9 +211,14 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ProjectID != nil {
 		var orgID int64
-		err := h.db.QueryRow(r.Context(), `SELECT org_id FROM api_keys WHERE id = $1`, id).Scan(&orgID)
+		var currentProjectID int64
+		err := h.db.QueryRow(r.Context(), `SELECT org_id, COALESCE(project_id, 0) FROM api_keys WHERE id = $1`, id).Scan(&orgID, &currentProjectID)
 		if err != nil {
 			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Key not found"})
+			return
+		}
+		if !h.canWriteProject(r.Context(), currentProjectID) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 			return
 		}
 		projectID, err := h.resolveAPIKeyProjectID(r.Context(), orgID, *req.ProjectID)
@@ -193,9 +226,25 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid project_id"})
 			return
 		}
+		if !h.canWriteProject(r.Context(), projectID) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			return
+		}
 		sets = append(sets, fmt.Sprintf("project_id = $%d", argIdx))
 		args = append(args, projectID)
 		argIdx++
+	}
+	if req.ProjectID == nil && auth.IsProjectScopedRole(actorRole(r.Context())) {
+		var currentProjectID int64
+		err := h.db.QueryRow(r.Context(), `SELECT COALESCE(project_id, 0) FROM api_keys WHERE id = $1`, id).Scan(&currentProjectID)
+		if err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Key not found"})
+			return
+		}
+		if !h.canWriteProject(r.Context(), currentProjectID) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			return
+		}
 	}
 	if req.RPMLimit != nil {
 		sets = append(sets, fmt.Sprintf("rpm_limit = $%d", argIdx))
@@ -263,6 +312,19 @@ func (h *Handler) DisableAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if auth.IsProjectScopedRole(actorRole(r.Context())) {
+		var projectID int64
+		err := h.db.QueryRow(r.Context(), `SELECT COALESCE(project_id, 0) FROM api_keys WHERE id = $1`, id).Scan(&projectID)
+		if err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Key not found"})
+			return
+		}
+		if !h.canWriteProject(r.Context(), projectID) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			return
+		}
+	}
+
 	tag, err := h.db.Exec(r.Context(),
 		`UPDATE api_keys SET status = 'disabled', updated_at = NOW() WHERE id = $1`, id)
 	if err != nil {
@@ -305,6 +367,10 @@ func (h *Handler) GetAPIKey(w http.ResponseWriter, r *http.Request) {
 		&k.BudgetLimit, &k.AllowedIPs, &k.AllowedModels, &k.CreatedAt, &k.OrgName, &k.ProjectName)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "API key not found"})
+		return
+	}
+	if !h.canReadProject(r.Context(), k.ProjectID) {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{

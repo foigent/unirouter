@@ -14,6 +14,17 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+const (
+	RoleLegacyAdmin   = "admin"
+	RolePlatformAdmin = "platform_admin"
+	RoleOrgAdmin      = "org_admin"
+	RoleBillingAdmin  = "billing_admin"
+	RoleProjectAdmin  = "project_admin"
+	RoleDeveloper     = "developer"
+	RoleViewer        = "viewer"
+	RoleOrgViewer     = "org_viewer"
+)
+
 // --- API Key hashing (HMAC-SHA256) ---
 
 // HashAPIKey computes HMAC-SHA256 of a raw API key.
@@ -135,17 +146,60 @@ func ParseJWT(tokenStr, secret string) (*Claims, error) {
 
 // --- Permission helpers ---
 
+// NormalizeRole maps legacy PRD1 roles to their PRD2 equivalents.
+func NormalizeRole(role string) string {
+	switch role {
+	case RoleLegacyAdmin:
+		return RolePlatformAdmin
+	case RoleOrgViewer:
+		return RoleViewer
+	default:
+		return role
+	}
+}
+
+// IsValidRole checks whether a role is known to UniRouter.
+func IsValidRole(role string) bool {
+	switch role {
+	case RoleLegacyAdmin, RolePlatformAdmin, RoleOrgAdmin, RoleBillingAdmin, RoleProjectAdmin, RoleDeveloper, RoleViewer, RoleOrgViewer:
+		return true
+	default:
+		return false
+	}
+}
+
+// RoleIn checks whether role matches any normalized allowed role.
+func RoleIn(role string, allowed ...string) bool {
+	normalized := NormalizeRole(role)
+	for _, candidate := range allowed {
+		if normalized == NormalizeRole(candidate) {
+			return true
+		}
+	}
+	return false
+}
+
 // IsPlatformAdmin checks if the role is a platform admin.
 func IsPlatformAdmin(role string) bool {
-	return role == "platform_admin"
+	return NormalizeRole(role) == RolePlatformAdmin
 }
 
 // IsOrgAdmin checks if the role is an org admin.
 func IsOrgAdmin(role string) bool {
-	return role == "org_admin" || role == "platform_admin"
+	return RoleIn(role, RoleOrgAdmin, RolePlatformAdmin)
+}
+
+// IsBillingAdmin checks if the role has billing-admin privileges.
+func IsBillingAdmin(role string) bool {
+	return RoleIn(role, RoleBillingAdmin, RolePlatformAdmin)
+}
+
+// IsProjectScopedRole checks if the role must be constrained by project membership.
+func IsProjectScopedRole(role string) bool {
+	return RoleIn(role, RoleProjectAdmin, RoleDeveloper, RoleViewer)
 }
 
 // CanWrite checks if the role has write permissions.
 func CanWrite(role string) bool {
-	return role == "platform_admin" || role == "org_admin"
+	return RoleIn(role, RolePlatformAdmin, RoleOrgAdmin)
 }
