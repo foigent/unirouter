@@ -438,7 +438,7 @@ body {
 
 .ur-split-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.75fr);
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 1fr);
   gap: 16px;
   align-items: stretch;
 }
@@ -585,6 +585,7 @@ body {
   display: flex;
   gap: 14px;
   margin-top: 12px;
+  flex-wrap: wrap;
 }
 
 .ur-channel-stat {
@@ -720,7 +721,7 @@ body {
 }
 
 .ur-explorer-with-detail {
-  grid-template-columns: 260px minmax(0, 1fr) 340px;
+  grid-template-columns: 260px minmax(360px, 1fr) minmax(420px, 0.78fr);
 }
 
 .ur-explorer-panel {
@@ -747,6 +748,12 @@ body {
   margin-bottom: 16px;
 }
 
+.ur-panel-hint {
+  color: var(--ur-text-muted) !important;
+  font-size: 12px;
+  font-weight: 650;
+}
+
 .ur-filter-group {
   margin-bottom: 16px;
 }
@@ -765,17 +772,74 @@ body {
   flex-wrap: wrap;
 }
 
+.ur-request-id-cell,
+.ur-request-id-full {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ur-request-id-full {
+  margin-top: 5px;
+  align-items: flex-start;
+}
+
+.ur-request-id-full .semi-typography {
+  min-width: 0;
+  word-break: break-all;
+}
+
+.ur-copy-button {
+  min-width: 0 !important;
+  padding: 0 4px !important;
+  flex: 0 0 auto;
+}
+
 .ur-detail-stack {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
+.ur-detail-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -18px -18px 16px;
+  border-bottom: 1px solid var(--ur-border-soft);
+  background: rgba(248, 246, 252, 0.96);
+  padding: 16px 18px;
+  backdrop-filter: blur(12px);
+}
+
+.ur-detail-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+  border: 1px solid rgba(255,255,255,0.76);
+  border-radius: var(--ur-radius);
+  background: linear-gradient(135deg, rgba(255,255,255,0.96), rgba(239,245,255,0.72));
+  padding: 15px;
+  box-shadow: var(--ur-shadow-sm);
+}
+
+.ur-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 18px;
+}
+
 .ur-detail-card {
   border: 1px solid var(--ur-border-soft);
   border-radius: var(--ur-radius);
   background: var(--ur-bg-elevated);
-  padding: 14px;
+  padding: 16px;
 }
 
 .ur-detail-card-title {
@@ -1162,6 +1226,13 @@ body {
   }
   .ur-explorer {
     min-height: auto;
+  }
+  .ur-detail-grid,
+  .ur-detail-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ur-detail-header {
+    margin: -18px -18px 16px;
   }
   .ur-explorer-filters,
   .ur-explorer-detail {

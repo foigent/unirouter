@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Typography, Table, Tag, Input, Select, Button, Space, Descriptions, Tooltip, Divider } from '@douyinfe/semi-ui';
+import { Typography, Table, Tag, Input, Select, Button, Space, Descriptions, Tooltip, Divider, Toast } from '@douyinfe/semi-ui';
 import { IconSearch, IconRefresh, IconClose, IconCopy } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
@@ -57,16 +57,32 @@ function paramsToFilters(): LogFilters {
   return f;
 }
 
-function copyToClipboard(text: string) {
-  navigator.clipboard.writeText(text).catch(() => {});
+function fallbackCopyText(text: string) {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.select();
+  try {
+    return document.execCommand('copy');
+  } finally {
+    document.body.removeChild(textarea);
+  }
 }
 
-function relativeTime(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  if (diff < 60000) return '刚刚';
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`;
-  return formatDateTime(dateStr);
+async function copyToClipboard(text: string) {
+  try {
+    if (navigator.clipboard?.writeText && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else if (!fallbackCopyText(text)) {
+      throw new Error('fallback copy failed');
+    }
+    Toast.success('已复制 Request ID');
+  } catch {
+    Toast.error('复制失败，请手动复制');
+  }
 }
 
 export default function LogsPage() {
@@ -190,7 +206,7 @@ export default function LogsPage() {
       key: 'request_id',
       width: 140,
       render: (v: string) => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <div className="ur-request-id-cell">
           <Text code style={{ fontSize: 12, maxWidth: 100 }} ellipsis={{ showTooltip: false }}>{v.slice(0, 12)}…</Text>
           <Tooltip content="复制">
             <Button
@@ -198,7 +214,8 @@ export default function LogsPage() {
               size="small"
               icon={<IconCopy />}
               onClick={(e) => { e.stopPropagation(); copyToClipboard(v); }}
-              style={{ minWidth: 0, padding: '0 4px' }}
+              className="ur-copy-button"
+              aria-label="复制 Request ID"
             />
           </Tooltip>
         </div>
@@ -251,14 +268,7 @@ export default function LogsPage() {
       dataIndex: 'created_at',
       key: 'created_at',
       width: 160,
-      render: (v: string) => {
-        const diff = Date.now() - new Date(v).getTime();
-        return diff < 86400000 ? (
-          <Tooltip content={formatDateTime(v)}>
-            <Text size="small">{relativeTime(v)}</Text>
-          </Tooltip>
-        ) : <Text size="small">{formatDateTime(v)}</Text>;
-      },
+      render: (v: string) => <Text size="small">{formatDateTime(v)}</Text>,
     },
   ];
   const compactColumnWidths: Record<string, number> = {
@@ -337,20 +347,6 @@ export default function LogsPage() {
           <Divider style={{ margin: '12px 0' }} />
 
           <div className="ur-filter-group">
-            <Text className="ur-filter-label">模型</Text>
-            <Select
-              size="small"
-              placeholder="模型名称"
-              value={filters.model || undefined}
-              onChange={(v) => updateFilter('model', v as string)}
-              style={{ width: '100%' }}
-              filter
-            >
-              {modelOptions.map(m => <Select.Option key={m} value={m}>{m}</Select.Option>)}
-            </Select>
-          </div>
-
-          <div className="ur-filter-group">
             <Text className="ur-filter-label">渠道 / Provider</Text>
             <Select
               size="small"
@@ -361,6 +357,20 @@ export default function LogsPage() {
               filter
             >
               {providerOptions.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
+            </Select>
+          </div>
+
+          <div className="ur-filter-group">
+            <Text className="ur-filter-label">模型</Text>
+            <Select
+              size="small"
+              placeholder="模型名称"
+              value={filters.model || undefined}
+              onChange={(v) => updateFilter('model', v as string)}
+              style={{ width: '100%' }}
+              filter
+            >
+              {modelOptions.map(m => <Select.Option key={m} value={m}>{m}</Select.Option>)}
             </Select>
           </div>
 
@@ -434,7 +444,7 @@ export default function LogsPage() {
         <main className="ur-explorer-panel">
           <div className="ur-panel-title">
             <Title heading={5} style={{ margin: 0 }}>日志记录</Title>
-            <Text type="tertiary" size="small">点击行查看请求详情</Text>
+            <Text className="ur-panel-hint">点击行查看详情</Text>
           </div>
 
           <div className="ur-table-shell">
@@ -468,39 +478,52 @@ export default function LogsPage() {
 
         {showDetail && selectedLog && (
           <aside className="ur-explorer-panel ur-explorer-detail">
-            <div className="ur-panel-title" style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--ur-bg-subtle)' }}>
-              <Title heading={5} style={{ margin: 0 }}>请求详情</Title>
+            <div className="ur-detail-header">
+              <div>
+                <Text className="ur-panel-hint">Request inspector</Text>
+                <Title heading={5} style={{ margin: 0 }}>请求详情</Title>
+              </div>
               <Button type="tertiary" size="small" icon={<IconClose />} onClick={() => setShowDetail(false)} />
             </div>
 
             <div className="ur-detail-stack">
+              <div className="ur-detail-hero">
+                <div>
+                  <Text type="tertiary" size="small">Request ID</Text>
+                  <div className="ur-request-id-full">
+                    <Text code>{selectedLog.request_id}</Text>
+                    <Button type="tertiary" size="small" icon={<IconCopy />} onClick={() => copyToClipboard(selectedLog.request_id)} className="ur-copy-button" aria-label="复制 Request ID" />
+                  </div>
+                </div>
+                <StatusTag status={selectedLog.status_code}>{selectedLog.status_code}</StatusTag>
+              </div>
+
               <div className="ur-detail-card">
                 <Text className="ur-detail-card-title">请求信息</Text>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div className="ur-detail-grid">
                   <div>
-                    <Text type="tertiary" size="small">Request ID</Text>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <Text code style={{ fontSize: 12, wordBreak: 'break-all' }}>{selectedLog.request_id}</Text>
-                      <Button type="tertiary" size="small" icon={<IconCopy />} onClick={() => copyToClipboard(selectedLog.request_id)} style={{ minWidth: 0, padding: '0 4px' }} />
-                    </div>
+                    <Text type="tertiary" size="small">模型</Text>
+                    <div><Tag size="small">{selectedLog.model}</Tag></div>
                   </div>
-                  <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                    <div>
-                      <Text type="tertiary" size="small">模型</Text>
-                      <div><Tag size="small">{selectedLog.model}</Tag></div>
-                    </div>
-                    <div>
-                      <Text type="tertiary" size="small">请求模型</Text>
-                      <div><Text size="small">{selectedLog.requested_model || '-'}</Text></div>
-                    </div>
-                    <div>
-                      <Text type="tertiary" size="small">渠道</Text>
-                      <div><Tag size="small" color="blue">{selectedLog.provider}</Tag></div>
-                    </div>
-                    <div>
-                      <Text type="tertiary" size="small">IP</Text>
-                      <div><Text size="small">{selectedLog.ip_address || '-'}</Text></div>
-                    </div>
+                  <div>
+                    <Text type="tertiary" size="small">请求模型</Text>
+                    <div><Text size="small">{selectedLog.requested_model || '-'}</Text></div>
+                  </div>
+                  <div>
+                    <Text type="tertiary" size="small">渠道名称</Text>
+                    <div><Text size="small">{selectedLog.channel || '-'}</Text></div>
+                  </div>
+                  <div>
+                    <Text type="tertiary" size="small">Provider / 协议</Text>
+                    <div><Tag size="small" color="blue">{selectedLog.provider || '-'}</Tag></div>
+                  </div>
+                  <div>
+                    <Text type="tertiary" size="small">IP</Text>
+                    <div><Text size="small">{selectedLog.ip_address || '-'}</Text></div>
+                  </div>
+                  <div>
+                    <Text type="tertiary" size="small">时间</Text>
+                    <div><Text size="small">{formatDateTime(selectedLog.created_at)}</Text></div>
                   </div>
                 </div>
               </div>
@@ -554,10 +577,6 @@ export default function LogsPage() {
                 <Text type="tertiary" size="small" style={{ fontStyle: 'italic' }}>响应体内容未存储（隐私策略）</Text>
               </div>
 
-              <div className="ur-detail-card">
-                <Text className="ur-detail-card-title">时间</Text>
-                <Text size="small">{formatDateTime(selectedLog.created_at)}</Text>
-              </div>
             </div>
           </aside>
         )}

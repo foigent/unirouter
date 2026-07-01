@@ -131,6 +131,26 @@ describe('DashboardPage', () => {
     });
   });
 
+  it('labels channel provider without repeating identical channel names', async () => {
+    mockGetDashboardStats.mockResolvedValue({
+      ...MOCK_STATS,
+      channel_health: [
+        { id: 1, name: 'deepseek', provider: 'deepseek', enabled: true, status: 'healthy', success_count: 10, fail_count: 0 },
+        { id: 2, name: 'Mimo Token Plan', provider: 'openai', enabled: true, status: 'healthy', success_count: 5, fail_count: 0 },
+      ],
+    });
+
+    const { container } = renderDashboard();
+    await waitFor(() => {
+      const html = container.textContent || '';
+      expect(html).toContain('Mimo Token Plan');
+    });
+
+    const html = container.textContent || '';
+    expect(html).toContain('Provider: OpenAI-compatible');
+    expect(html).not.toContain('Provider: deepseek');
+  });
+
   it('renders trend metrics as selectable checkboxes', async () => {
     const { container } = renderDashboard();
     await waitFor(() => {

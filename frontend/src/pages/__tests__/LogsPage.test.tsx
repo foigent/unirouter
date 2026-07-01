@@ -116,6 +116,34 @@ describe('LogsPage', () => {
     });
   });
 
+  it('renders absolute timestamps instead of relative time text', async () => {
+    const { container } = renderLogs();
+    await waitFor(() => {
+      const html = container.textContent || '';
+      expect(html).toContain('2026-06-29');
+      expect(html).not.toContain('分钟前');
+    });
+  });
+
+  it('places provider filter before model filter', async () => {
+    const { container } = renderLogs();
+    await waitFor(() => {
+      expect(mockGetChannels).toHaveBeenCalled();
+    });
+    const labels = Array.from(container.querySelectorAll('.ur-filter-label')).map(el => el.textContent || '');
+    expect(labels.indexOf('渠道 / Provider')).toBeGreaterThanOrEqual(0);
+    expect(labels.indexOf('模型')).toBeGreaterThanOrEqual(0);
+    expect(labels.indexOf('渠道 / Provider')).toBeLessThan(labels.indexOf('模型'));
+  });
+
+  it('renders request id copy buttons', async () => {
+    const { container } = renderLogs();
+    await waitFor(() => {
+      expect(mockGetLogs).toHaveBeenCalled();
+    });
+    expect(container.querySelectorAll('button[aria-label="复制 Request ID"]').length).toBeGreaterThan(0);
+  });
+
   it('renders search input with correct placeholder', async () => {
     renderLogs();
     await waitFor(() => {
