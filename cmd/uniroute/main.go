@@ -281,6 +281,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("PUT /api/v1/model-aliases/{id}", orgAdminRoute(adminHandler.UpdateModelAlias))
 	mux.Handle("GET /api/v1/model-sets", orgAdminRoute(adminHandler.ListModelSets))
 	mux.Handle("POST /api/v1/model-sets", orgAdminRoute(adminHandler.CreateModelSet))
+	mux.Handle("GET /api/v1/model-sets/{id}/items", orgAdminRoute(adminHandler.ListModelSetItems))
 	mux.Handle("PUT /api/v1/model-sets/{id}/items", orgAdminRoute(adminHandler.ReplaceModelSetItems))
 	// Org model prices (org-level pricing overrides)
 	mux.Handle("GET /api/v1/model-names", orgAdminRoute(adminHandler.GetModelNames))

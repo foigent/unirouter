@@ -913,6 +913,87 @@ body {
   grid-column: 1 / -1;
 }
 
+.ur-modelgov-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid rgba(255,255,255,0.82);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.76);
+  padding: 4px;
+  box-shadow: var(--ur-shadow-sm);
+}
+
+.ur-modelgov-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ur-modelgov-summary > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid rgba(255,255,255,0.74);
+  border-radius: var(--ur-radius);
+  background: rgba(255,255,255,0.82);
+  box-shadow: var(--ur-shadow-card);
+  padding: 14px 16px;
+}
+
+.ur-modelgov-summary strong {
+  font-size: 24px;
+  line-height: 1.15;
+  color: var(--ur-text);
+}
+
+.ur-modelgov-filters {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) 220px auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.ur-modelgov-name {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.ur-modelgov-name .semi-typography {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ur-modelgov-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ur-modelgov-assignment {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.6fr) minmax(320px, 1fr);
+  gap: 14px;
+  align-items: end;
+}
+
+.ur-modelgov-assignment-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.ur-modelgov-assignment .ur-chip-row {
+  grid-column: 1 / -1;
+  min-height: 28px;
+}
+
 .ur-form-actions {
   display: flex;
   justify-content: flex-end;
@@ -1413,6 +1494,10 @@ body {
   .ur-split-grid,
   .ur-dev-main-grid,
   .ur-dev-lookup-grid,
+  .ur-modelgov-summary,
+  .ur-modelgov-filters,
+  .ur-modelgov-form-grid,
+  .ur-modelgov-assignment,
   .ur-dashboard-analytics-grid,
   .ur-dashboard-status-strip,
   .ur-dashboard-hero,
@@ -1437,6 +1522,16 @@ body {
   .ur-dev-code {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+  .ur-modelgov-tabs {
+    width: 100%;
+    border-radius: 16px;
+  }
+  .ur-modelgov-tabs .semi-button {
+    flex: 1 1 150px;
+  }
+  .ur-modelgov-assignment-actions {
+    justify-content: flex-start;
   }
   .ur-dashboard-hero {
     padding: 20px;

@@ -22,6 +22,7 @@ describe('navigation role boundaries', () => {
     expect(itemKeys).toContain('/docs');
     expect(itemKeys).not.toContain('/channels');
     expect(itemKeys).not.toContain('/channel-keys');
+    expect(itemKeys).not.toContain('/model-governance');
   });
 
   it('blocks admin routes for project-scoped roles', () => {
@@ -35,7 +36,9 @@ describe('navigation role boundaries', () => {
     const itemKeys = flattenItemKeys(getNavItemsForRole('org_admin'));
 
     expect(itemKeys).toContain('/channels');
+    expect(itemKeys).toContain('/model-governance');
     expect(itemKeys).toContain('/model-prices');
+    expect(isRouteAllowedForRole('/model-governance', 'org_admin')).toBe(true);
     expect(isRouteAllowedForRole('/settings', 'org_admin')).toBe(true);
   });
 

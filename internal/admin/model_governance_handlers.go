@@ -663,6 +663,45 @@ func (h *Handler) ReplaceModelSetItems(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 }
 
+func (h *Handler) ListModelSetItems(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid ID"})
+		return
+	}
+	orgID, err := orgIDFromRequest(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid org_id"})
+		return
+	}
+	rows, err := h.db.Query(r.Context(),
+		`SELECT msi.item_type, msi.item_name
+		 FROM model_set_items msi
+		 JOIN model_sets ms ON ms.id = msi.model_set_id
+		 WHERE msi.model_set_id = $1 AND ms.org_id = $2
+		 ORDER BY msi.item_type ASC, msi.item_name ASC`,
+		id, orgID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Query failed"})
+		return
+	}
+	defer rows.Close()
+	items := make([]map[string]interface{}, 0)
+	for rows.Next() {
+		var itemType, itemName string
+		if err := rows.Scan(&itemType, &itemName); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
+			return
+		}
+		items = append(items, map[string]interface{}{"item_type": itemType, "item_name": itemName})
+	}
+	if err := rows.Err(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Rows failed"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": items, "total": len(items)})
+}
+
 func (h *Handler) ListProjectModelSets(w http.ResponseWriter, r *http.Request) {
 	projectID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || projectID <= 0 {
