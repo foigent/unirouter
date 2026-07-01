@@ -3,12 +3,17 @@ package testutil
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
+	"github.com/uniroute/unirouter/internal/migrate"
 )
 
 // TestDB_DSN returns the test database DSN from environment or default.
@@ -48,6 +53,92 @@ func SetupTestDB(t *testing.T) *pgxpool.Pool {
 	})
 
 	return pool
+}
+
+// SetupIsolatedTestDB creates a temporary PostgreSQL database for integration
+// tests that must run migrations from a clean schema.
+func SetupIsolatedTestDB(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+
+	baseDSN := TestDB_DSN()
+	adminDSN, tempDSN, dbName, err := tempDatabaseDSNs(baseDSN)
+	require.NoError(t, err, "build temporary database DSN")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	adminPool, err := pgxpool.New(ctx, adminDSN)
+	if err != nil {
+		t.Skipf("cannot connect to PostgreSQL admin database: %v", err)
+	}
+	if err := adminPool.Ping(ctx); err != nil {
+		adminPool.Close()
+		t.Skipf("cannot ping PostgreSQL admin database: %v", err)
+	}
+
+	if _, err := adminPool.Exec(ctx, `CREATE DATABASE `+quoteIdent(dbName)); err != nil {
+		adminPool.Close()
+		t.Skipf("cannot create temporary test database %s: %v", dbName, err)
+	}
+
+	pool, err := pgxpool.New(ctx, tempDSN)
+	if err != nil {
+		_, _ = adminPool.Exec(ctx, `DROP DATABASE IF EXISTS `+quoteIdent(dbName))
+		adminPool.Close()
+		t.Skipf("cannot connect to temporary test database %s: %v", dbName, err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		_, _ = adminPool.Exec(ctx, `DROP DATABASE IF EXISTS `+quoteIdent(dbName))
+		adminPool.Close()
+		t.Skipf("cannot ping temporary test database %s: %v", dbName, err)
+	}
+
+	t.Cleanup(func() {
+		pool.Close()
+		dropCtx, dropCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer dropCancel()
+		_, _ = adminPool.Exec(dropCtx, `DROP DATABASE IF EXISTS `+quoteIdent(dbName))
+		adminPool.Close()
+	})
+
+	return pool
+}
+
+// SetupMigratedTestDB creates a clean temporary database and applies all repo migrations.
+func SetupMigratedTestDB(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	pool := SetupIsolatedTestDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	require.NoError(t, migrate.Run(ctx, pool, MigrationsDir(t)), "run migrations in isolated test database")
+	TruncateAll(t, pool)
+	return pool
+}
+
+// MigrationsDir returns the repository migrations directory from the testutil package location.
+func MigrationsDir(t *testing.T) string {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	require.True(t, ok, "resolve testutil path")
+	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "migrations"))
+}
+
+func tempDatabaseDSNs(baseDSN string) (adminDSN, tempDSN, dbName string, err error) {
+	parsed, err := url.Parse(baseDSN)
+	if err != nil {
+		return "", "", "", err
+	}
+	dbName = fmt.Sprintf("uniroute_it_%d_%d", os.Getpid(), time.Now().UnixNano())
+	admin := *parsed
+	admin.Path = "/postgres"
+	temp := *parsed
+	temp.Path = "/" + dbName
+	return admin.String(), temp.String(), dbName, nil
+}
+
+func quoteIdent(value string) string {
+	return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
 }
 
 // TruncateAll truncates all business tables in dependency order.
