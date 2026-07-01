@@ -1,7 +1,7 @@
 import { formatDateTime } from '../utils/formatDate';
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Typography, Table, Spin, Tag, Tooltip, Button, Progress } from '@douyinfe/semi-ui';
+import { Typography, Table, Spin, Tag, Tooltip, Button, Progress, Checkbox } from '@douyinfe/semi-ui';
 import { IconHistogram, IconPercentage, IconClock, IconRefresh, IconCoinMoney, IconServer, IconPulse } from '@douyinfe/semi-icons';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip,
@@ -30,7 +30,12 @@ interface DashboardStats {
 }
 
 type TimeRange = '24h' | '7d' | '30d' | 'custom';
-type TrendMetric = 'requests' | 'cost_cents';
+type TrendMetric = 'requests' | 'cost_yuan';
+
+const TREND_METRIC_META: Record<TrendMetric, { label: string; color: string; yAxisId: TrendMetric }> = {
+  requests: { label: '请求数', color: '#1f6feb', yAxisId: 'requests' },
+  cost_yuan: { label: '费用', color: '#6f4bd8', yAxisId: 'cost_yuan' },
+};
 
 function getRangeParams(range: TimeRange, customStart?: string, customEnd?: string): { startTime?: string; endTime?: string } {
   const now = new Date();
@@ -60,6 +65,13 @@ function formatTrendLabel(value: string): string {
     return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:00`;
   }
   return value.length >= 10 ? value.slice(5, 10) : value;
+}
+
+function formatYuan(n: number): string {
+  if (n >= 1_000_000) return `¥${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `¥${(n / 1_000).toFixed(1)}K`;
+  if (n >= 10) return `¥${n.toFixed(0)}`;
+  return `¥${n.toFixed(2)}`;
 }
 
 function DeltaTag({ value, suffix = '', inverse = false }: { value: number; suffix?: string; inverse?: boolean }) {
@@ -117,9 +129,9 @@ function TrendTooltip({ active, payload, label }: any) {
     <div className="ur-chart-tooltip">
       <Text size="small" style={{ fontWeight: 600 }}>{label}</Text>
       {payload.map((p: any) => (
-        <div key={p.name} style={{ marginTop: 4, fontSize: 13 }}>
+        <div key={p.dataKey} style={{ marginTop: 4, fontSize: 13 }}>
           <span style={{ color: p.color, marginRight: 6 }}>●</span>
-          {p.name === 'requests' ? '请求数' : '费用'}: <strong>{p.name === 'cost_cents' ? `¥${Number(p.value).toFixed(2)}` : formatNumber(Number(p.value))}</strong>
+          {TREND_METRIC_META[p.dataKey as TrendMetric]?.label || p.name}: <strong>{p.dataKey === 'cost_yuan' ? formatYuan(Number(p.value)) : formatNumber(Number(p.value))}</strong>
         </div>
       ))}
     </div>
@@ -132,7 +144,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState<TimeRange>('24h');
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
-  const [trendMetric, setTrendMetric] = useState<TrendMetric>('requests');
+  const [visibleTrendMetrics, setVisibleTrendMetrics] = useState<TrendMetric[]>(['requests', 'cost_yuan']);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -154,7 +166,7 @@ export default function DashboardPage() {
   const trendData = (stats?.daily_trend || []).map(d => ({
     date: formatTrendLabel(d.date),
     requests: d.requests,
-    cost_cents: d.cost_cents / 100,
+    cost_yuan: d.cost_cents / 100,
   }));
   const modelData = [...(stats?.model_distribution || [])]
     .sort((a, b) => b.requests - a.requests)
@@ -212,6 +224,15 @@ export default function DashboardPage() {
     { label: '7 天', value: '7d' },
     { label: '30 天', value: '30d' },
   ];
+
+  const toggleTrendMetric = (metric: TrendMetric) => {
+    setVisibleTrendMetrics(prev => {
+      if (prev.includes(metric)) {
+        return prev.length === 1 ? prev : prev.filter(item => item !== metric);
+      }
+      return [...prev, metric];
+    });
+  };
 
   return (
     <Spin spinning={loading} size="large">
@@ -314,32 +335,28 @@ export default function DashboardPage() {
 
         <Surface
           title="AI 活动趋势"
-          description="切换时间范围或指标后重新拉取聚合数据，避免图表与筛选条件脱节。"
+          description="按当前时间窗口展示请求量与费用走势，帮助对照流量和成本变化。"
           className="ur-primary-chart"
           actions={(
-            <div className="ur-toolbar">
-              <Button
-                size="small"
-                theme={trendMetric === 'requests' ? 'solid' : 'borderless'}
-                type={trendMetric === 'requests' ? 'primary' : 'tertiary'}
-                onClick={() => setTrendMetric('requests')}
-              >
-                请求数
-              </Button>
-              <Button
-                size="small"
-                theme={trendMetric === 'cost_cents' ? 'solid' : 'borderless'}
-                type={trendMetric === 'cost_cents' ? 'primary' : 'tertiary'}
-                onClick={() => setTrendMetric('cost_cents')}
-              >
-                费用
-              </Button>
+            <div className="ur-toolbar ur-trend-checklist">
+              {(Object.keys(TREND_METRIC_META) as TrendMetric[]).map(metric => (
+                <Checkbox
+                  key={metric}
+                  checked={visibleTrendMetrics.includes(metric)}
+                  onChange={() => toggleTrendMetric(metric)}
+                  aria-label={`显示${TREND_METRIC_META[metric].label}`}
+                >
+                  <span className="ur-trend-check-label" style={{ color: TREND_METRIC_META[metric].color }}>
+                    {TREND_METRIC_META[metric].label}
+                  </span>
+                </Checkbox>
+              ))}
             </div>
           )}
         >
           {trendData.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={trendData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+              <AreaChart data={trendData} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorRequests" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#1f6feb" stopOpacity={0.18} />
@@ -352,18 +369,50 @@ export default function DashboardPage() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--ur-border-soft)" />
                 <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="var(--ur-text-muted)" />
-                <YAxis tick={{ fontSize: 12 }} stroke="var(--ur-text-muted)" />
-                <RTooltip content={<TrendTooltip />} />
-                <Area
-                  type="monotone"
-                  dataKey={trendMetric}
-                  stroke={trendMetric === 'requests' ? '#1f6feb' : '#6f4bd8'}
-                  strokeWidth={2}
-                  fill={`url(#color${trendMetric === 'requests' ? 'Requests' : 'Cost'})`}
-                  dot={false}
-                  isAnimationActive={false}
-                  activeDot={{ r: 5, strokeWidth: 2 }}
+                <YAxis
+                  yAxisId="requests"
+                  tick={{ fontSize: 12 }}
+                  stroke="var(--ur-text-muted)"
+                  tickFormatter={formatNumber}
+                  allowDecimals={false}
                 />
+                <YAxis
+                  yAxisId="cost_yuan"
+                  orientation="right"
+                  tick={{ fontSize: 12 }}
+                  stroke="var(--ur-text-muted)"
+                  tickFormatter={formatYuan}
+                  width={64}
+                />
+                <RTooltip content={<TrendTooltip />} />
+                {visibleTrendMetrics.includes('requests') && (
+                  <Area
+                    yAxisId="requests"
+                    type="monotone"
+                    dataKey="requests"
+                    name="请求数"
+                    stroke={TREND_METRIC_META.requests.color}
+                    strokeWidth={2}
+                    fill="url(#colorRequests)"
+                    dot={false}
+                    isAnimationActive={false}
+                    activeDot={{ r: 5, strokeWidth: 2 }}
+                  />
+                )}
+                {visibleTrendMetrics.includes('cost_yuan') && (
+                  <Area
+                    yAxisId="cost_yuan"
+                    type="monotone"
+                    dataKey="cost_yuan"
+                    name="费用"
+                    stroke={TREND_METRIC_META.cost_yuan.color}
+                    strokeWidth={2}
+                    fill="url(#colorCost)"
+                    dot={false}
+                    isAnimationActive={false}
+                    activeDot={{ r: 5, strokeWidth: 2 }}
+                  />
+                )}
               </AreaChart>
             </ResponsiveContainer>
           ) : (

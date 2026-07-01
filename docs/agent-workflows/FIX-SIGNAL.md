@@ -1,117 +1,169 @@
-# FIX-SIGNAL.md — PRD1 Latency / Decimal Pricing Fix 验收请求
+# FIX-SIGNAL.md — PRD1 Dashboard Trend / Grafana Observability Fix 验收请求
 
 **修复者：** Codex
 **日期：** 2026-07-01
-**修复轮次：** PRD1 dashboard latency persistence, decimal model pricing, and Mimo provider recheck
+**修复轮次：** PRD1 Dashboard trend UX, Grafana datasource/PromQL, and Grafana admin hardening
+
+---
+
+## Carry-over Scope
+
+`docs/issues/OPEN-ISSUES.md` 中 `PRD1-DASH-002`（平均延迟一直为 0）和 `PRD1-PRICE-001`（小额模型价格被四舍五入为 0）仍处于 `Fixed awaiting Canary`。本文件继续把这两项纳入 Canary 验收范围，避免前一轮 FIX-SIGNAL 被本轮 Dashboard/Grafana 信号覆盖后产生协议断档。
+
+Carry-over 修复点：
+
+- `internal/gateway/relay.go` 已在 call log 写入真实 `latency_ms/ttft_ms`。
+- `model_prices.input_price_cents/output_price_cents` 已迁移为 decimal cents，后端/计费/前端保留小数分价格。
+
+Carry-over targeted tests 本轮重新执行：
+
+```bash
+go test ./internal/gateway -run 'TestRecordRequest_Success|TestRelayNonStreamRequest|TestRelayStreamRequest' -v
+go test ./internal/admin -run 'TestCreateModelPrice_DecimalCents|TestListModelPrices_Success|TestDashboardStats_Success' -v
+go test ./internal/billing -run 'TestCalculateCost_FractionalCentPrice|TestQueryModelPrice|TestCalculateCost' -v
+```
+
+结果：全部 PASS。
 
 ---
 
 ## 本轮背景
 
-用户在云端 PRD1 验收时报告：
+用户在 PRD1 云端验收后继续报告：
 
-- 仪表盘平均延迟显示为 `0ms`。
-- 模型价格配置中把 `mimo-v2.5` 设置为输入 `0.002` 元/千 token、输出 `0.001` 元/千 token 后，列表显示价格为 0。
-- `Mimo Token Plan` 上游 key 已更新，需要复核 provider 是否仍是阻断项。
+- `Dashboard -> AI 活动趋势` 有数据的点看起来一直停在最右侧，没有清楚体现滚动时间窗口。
+- `费用 / 请求数` 用互斥按钮切换不合理，应该允许同时展示两条曲线。
+- 需要检查 Grafana `http://8.130.18.85:3001/` 和 Prometheus `http://8.130.18.85:9090/` 是否存在问题。
 
-云端核查结论：
+Codex 云端核查结论：
 
-- `/api/v1/dashboard/stats` 返回 `avg_latency_ms=0`，最近调用日志 `latency_ms=0`，根因是网关 `recordRequest` 插入 `call_logs` 时没有写入 `latency_ms/ttft_ms`，数据库默认值一直是 0。
-- `/api/v1/model-prices` 中 `mimo-v2.5` 已被保存为 `input_price_cents=0/output_price_cents=0`，根因是前端将“元/千 token”乘以 100 后 `Math.round` 到整数分，`0.002` 元会变成 `0.2` 分再被四舍五入为 0；后端和数据库字段也按整数处理。
-- 更新后的 channel 8 `Mimo Token Plan` key 已通过云端真实测试：后台渠道测试 `mimo-v2.5` 返回 HTTP 200；临时 UniRouter API key 网关调用 `mimo-v2.5` 返回 HTTP 200，`_uniroute.channel=Mimo Token Plan`，扣费 1 分，临时 key 已禁用。
+- Dashboard stats API 的 24h/7d/30d 趋势桶是按范围变化的；24h 的非零桶集中在最近两个小时，7d/30d 的非零桶集中在实际有调用的日期。后端范围聚合不是这次主要缺陷。
+- 前端图表只允许单指标、单 Y 轴展示，导致近期桶视觉上像“永远在右侧”，也无法对照成本和请求量。
+- Prometheus 健康：`/-/ready`、`/-/healthy` 均 200；`unirouter` target `backend:8080/metrics` 为 `up`；UniRouter 指标存在。
+- Grafana 健康接口可用，但当前 datasource UID 是 Grafana 自动生成值，而 Dashboard JSON 固定引用 `uid: prometheus`，面板可能显示 datasource not found。
+- 当前云端 Grafana 仍接受 `admin/admin` 并显示改密码提示，这是独立于 UniRouter seeded admin 的 Grafana 部署安全问题。
 
 ---
 
-## Fix #1: 调用日志写入真实 latency_ms / ttft_ms
+## Fix #1: Dashboard AI 活动趋势支持双指标叠加
 
 **文件：**
 
-- `internal/gateway/relay.go`
-- `internal/gateway/relay_mock_test.go`
+- `frontend/src/pages/DashboardPage.tsx`
+- `frontend/src/index.css`
+- `frontend/src/pages/__tests__/DashboardPage.test.tsx`
 
 **修复内容：**
 
-- `HandleChatCompletion` 和 `HandleEmbeddings` 记录 `requestStart`。
-- `recordRequest` 新增 `latencyMs` 和 `ttftMs` 参数。
-- `call_logs` insert 显式写入 `latency_ms` 和 `ttft_ms`。
-- 非流式、流式、无路由、上游失败、embeddings 成功/无路由路径传入真实耗时。
-- 流式路径继续写入已有 TTFT。
-- `TestRecordRequest_Success` 断言 insert 参数包含 `latency_ms`。
+- 把 `请求数 / 费用` 从互斥按钮改为可选复选框。
+- 默认同时显示 `请求数` 和 `费用`。
+- 增加双 Y 轴：左轴为请求数，右轴为费用（元）。
+- tooltip 同时展示当前 bucket 的请求数和费用。
+- 防止两个指标都被取消，避免空图误导。
+- 增加 Dashboard 单测覆盖趋势指标复选框。
 
 **预期效果：**
 
-- 新部署后的新调用日志不再全部是 `latency_ms=0`。
-- Dashboard `avg_latency_ms` 对新产生的调用会逐步显示真实平均延迟。
-- 历史旧日志仍然是 0，这是历史数据事实，不应通过代码回填伪造。
+- 用户可以同时看到请求数曲线和费用曲线。
+- 最近 bucket 仍会出现在时间窗口右侧，但用户可以通过完整窗口和双指标对照判断趋势，而不是被单指标切换误导。
 
 ---
 
-## Fix #2: 模型价格支持小数分，保留小额价格
+## Fix #2: Grafana datasource UID 与 Dashboard JSON 对齐
 
 **文件：**
 
-- `migrations/000001_init_schema.up.sql`
-- `migrations/000008_model_price_decimal_cents.up.sql`
-- `migrations/000008_model_price_decimal_cents.down.sql`
-- `internal/models/models.go`
-- `internal/admin/model_handlers.go`
-- `internal/admin/dashboard_handlers.go`
-- `internal/billing/price_provider.go`
-- `internal/billing/billing.go`
-- `internal/testutil/testdb.go`
-- `frontend/src/pages/ModelPricesPage.tsx`
-- `frontend/src/pages/__tests__/ModelPricesPage.test.tsx`
-- related Go tests under `internal/admin`, `internal/billing`, `internal/gateway`
+- `infra/grafana/provisioning/datasources/datasource.yml`
+- `infra/grafana/dashboards/unirouter-overview.json`
+- `docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md`
+- `docs/ops/PRD-ACCEPTANCE-MATRIX.md`
+- `docs/ops/CURRENT-STATUS.md`
+- `docs/issues/OPEN-ISSUES.md`
 
 **修复内容：**
 
-- `model_prices.input_price_cents/output_price_cents` 从 integer 迁移到 `NUMERIC(18,6)`。
-- 后端模型价格 list/create/update 使用 `float64`，并拒绝负价格。
-- Dashboard model price summary 使用 float scan。
-- Billing price provider 和 org multiplier 查询使用小数价格参与计算，最终费用仍按整数分结算。
-- 前端模型价格页把“元/千 token”转换成“分/千 token”时保留 6 位小数，不再 `Math.round` 到整数。
-- 新增 `yuanPerKToCents('0.002') === 0.2` 前端测试。
-- 新增 `TestCreateModelPrice_DecimalCents` 和 `TestCalculateCost_FractionalCentPrice`。
+- Prometheus datasource provisioning 显式设置 `uid: prometheus`。
+- Dashboard JSON 继续引用 `uid: prometheus`，避免 Grafana 自动生成 UID 后面板找不到 datasource。
+- Dashboard PromQL 改成标准聚合写法：
+  - QPS 使用 `sum by (method, status)`.
+  - histogram_quantile 查询使用 `sum by (le)` 或 `sum by (le, provider, model)`。
+  - rate 窗口使用 Grafana `$__rate_interval`。
+  - Error Rate 使用 `clamp_min` 避免除零。
+- PRD1 验收矩阵从“Grafana login reachable”升级为必须确认 datasource 和面板数据。
 
 **预期效果：**
 
-- 用户输入 `0.002` 元/千 token 后，API 应保存 `input_price_cents=0.2`。
-- 表格用 `MoneyText` 显示为 `¥0.0020`，不再显示为 `¥0.0000`。
-- 计费计算不会把小额模型价格退化成 0。
+- 新部署的 Grafana Dashboard 面板能够解析 Prometheus datasource。
+- Request rate、latency、error rate 等核心面板不再因为 UID 不匹配或错误 histogram 查询而失效。
 
 ---
 
-## Runtime Evidence: Mimo provider key 已恢复
+## Fix #3: Grafana admin 密码改为部署环境变量
 
-**云端验证：**
+**文件：**
 
-- Channel 8 `Mimo Token Plan` key prefix changed to `****df24`，`fail_count=0`，`cooldown_until=null`。
-- `POST /api/v1/channels/8/test` with `model=mimo-v2.5`: PASS, HTTP 200, `latency_ms=1385`, `tokens_used=267`。
-- 临时 API key `id=30` 网关调用 `POST /v1/chat/completions` with `model=mimo-v2.5`: PASS, HTTP 200, `_uniroute.channel=Mimo Token Plan`, `_uniroute.cost.charged=1`。
-- 临时 API key `id=30` 已禁用，disable API returned HTTP 200。
+- `docker-compose.yml`
+- `.env.example`
+- `README.md`
+- `docs/ops/deployment-runbook.md`
+- `docs/tech-ref/08-prometheus-metrics.md`
+- `docs/issues/OPEN-ISSUES.md`
 
-**结论：**
+**修复内容：**
 
-- `PRD1-PROVIDER-001` 的“上游 key 无效”阻断可关闭。
-- `PRD1-LOAD-001` 仍是独立容量/压测问题，不因单次 provider E2E 成功自动关闭。
+- `docker-compose.yml` 不再硬编码 `GF_SECURITY_ADMIN_PASSWORD: admin`。
+- 新增 `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` 环境变量。
+- `GRAFANA_ADMIN_PASSWORD` 设为 Compose 必填变量。
+- README、部署 runbook 和监控技术参考明确要求设置 Grafana 强密码。
+
+**预期效果：**
+
+- 新部署不会静默使用 `admin/admin`。
+- 现有云端 Grafana 仍需要 Atlas 设置 `.env` 并轮换持久化实例中的旧密码。
 
 ---
 
 ## Codex 已执行验证
 
 ```bash
-go test ./internal/billing ./internal/admin ./internal/gateway -run 'TestCalculateCost_FractionalCentPrice|TestCalculateCost_Normal|TestQueryModelPrice|TestCreateModelPrice_DecimalCents|TestListModelPrices_Success|TestDashboardStats_Success|TestRecordRequest_Success|TestRelayNonStreamRequest|TestRelayStreamRequest' -v
-go test ./...
+go test ./internal/gateway -run 'TestRecordRequest_Success|TestRelayNonStreamRequest|TestRelayStreamRequest' -v
+go test ./internal/admin -run 'TestCreateModelPrice_DecimalCents|TestListModelPrices_Success|TestDashboardStats_Success' -v
+go test ./internal/billing -run 'TestCalculateCost_FractionalCentPrice|TestQueryModelPrice|TestCalculateCost' -v
+cd frontend && npm test -- --run src/pages/__tests__/DashboardPage.test.tsx
 cd frontend && npm test -- --run
 cd frontend && npm run build
+node -e "JSON.parse(require('fs').readFileSync('infra/grafana/dashboards/unirouter-overview.json','utf8')); console.log('grafana dashboard json ok')"
+git diff --check
 ```
 
 结果：
 
-- targeted Go tests: PASS
-- `go test ./...`: PASS
-- `npm test -- --run`: PASS, 37/37 tests
-- `npm run build`: PASS，保留既有 Vite large chunk warning
+- Dashboard targeted frontend tests: PASS, 9/9 tests.
+- Gateway/admin/billing targeted Go tests for carry-over latency/pricing fixes: PASS.
+- Full frontend tests: PASS, 38/38 tests.
+- Frontend build: PASS, retained existing Vite large chunk warning.
+- Grafana dashboard JSON parse: PASS.
+- `git diff --check`: PASS.
+- Codex local Playwright visual smoke: PASS, generated `output/playwright/prd1-dashboard-trend-dual-metric.png` with 2 trend checkboxes and rendered chart SVGs using mocked Dashboard data.
+
+Cloud Prometheus query validation:
+
+```bash
+sum by (method, status) (rate(unirouter_http_requests_total[5m]))
+histogram_quantile(0.99, sum by (le) (rate(unirouter_http_request_duration_seconds_bucket[5m])))
+100 * sum(rate(unirouter_http_requests_total{status=~"5.."}[5m])) / clamp_min(sum(rate(unirouter_http_requests_total[5m])), 1e-9)
+histogram_quantile(0.95, sum by (le, provider, model) (rate(unirouter_upstream_latency_seconds_bucket[5m])))
+sum by (type, model) (rate(unirouter_tokens_processed_total[5m]))
+sum by (status) (rate(unirouter_billing_freeze_total[5m]))
+sum by (le) (rate(unirouter_http_request_duration_seconds_bucket[5m]))
+```
+
+结果：全部通过 Prometheus API，返回 `status=success`。
+
+未执行：
+
+- `docker compose config` 未运行成功，因为当前工作机没有 `docker` 命令。
+- Grafana 面板视觉验收未执行；Canary 不具备视觉能力，部署后需要 Atlas 或浏览器能力方确认。
 
 ---
 
@@ -123,55 +175,25 @@ git diff --check
 go test ./internal/gateway -run 'TestRecordRequest_Success|TestRelayNonStreamRequest|TestRelayStreamRequest' -v
 go test ./internal/admin -run 'TestCreateModelPrice_DecimalCents|TestListModelPrices_Success|TestDashboardStats_Success' -v
 go test ./internal/billing -run 'TestCalculateCost_FractionalCentPrice|TestQueryModelPrice|TestCalculateCost' -v
-go test ./...
-cd frontend && npm test -- --run
-cd frontend && npm run build
+(cd frontend && npm test -- --run src/pages/__tests__/DashboardPage.test.tsx)
+(cd frontend && npm test -- --run)
+(cd frontend && npm run build)
+node -e "JSON.parse(require('fs').readFileSync('infra/grafana/dashboards/unirouter-overview.json','utf8')); console.log('grafana dashboard json ok')"
 ```
 
 Source-level checks:
 
 ```bash
-rg -n "latency_ms, ttft_ms|elapsedMilliseconds|requestStart|TestRecordRequest_Success" internal/gateway/relay.go internal/gateway/relay_mock_test.go
-rg -n "NUMERIC\\(18,6\\)|model_price_decimal_cents" migrations
-rg -n "input_price_cents::float8|OutputPriceCents float64|TestCreateModelPrice_DecimalCents" internal/admin internal/models
-rg -n "QueryModelPrice.*float64|FractionalCentPrice|QueryModelPriceForOrg.*float64" internal/billing internal/gateway
-rg -n "yuanPerKToCents|0.002|0.001" frontend/src/pages/ModelPricesPage.tsx frontend/src/pages/__tests__/ModelPricesPage.test.tsx
+rg -n "visibleTrendMetrics|ur-trend-checklist|cost_yuan|显示.*请求数|显示.*费用" frontend/src/pages/DashboardPage.tsx frontend/src/index.css frontend/src/pages/__tests__/DashboardPage.test.tsx
+rg -n "uid: prometheus" infra/grafana/provisioning/datasources/datasource.yml
+rg -n "\\$__rate_interval|sum by \\(le\\)|clamp_min|sum by \\(method, status\\)" infra/grafana/dashboards/unirouter-overview.json docs/tech-ref/08-prometheus-metrics.md
+rg -n "GRAFANA_ADMIN_PASSWORD|GF_SECURITY_ADMIN_PASSWORD" docker-compose.yml .env.example README.md docs/ops/deployment-runbook.md docs/tech-ref/08-prometheus-metrics.md
+rg -n "PRD1-DASH-003|PRD1-OBS-001|PRD1-SEC-003" docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD-ACCEPTANCE-MATRIX.md docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md
 ```
 
-Do not run destructive cleanup. Do not run real provider paid calls, wallet/channel/API-key mutations, pressure tests, stream disconnects, or fault injection in Canary.
+Expected:
 
----
-
-## 期望输出格式
-
-请将验收结果写入 `docs/agent-workflows/VERIFY-RESULT.md`：
-
-```markdown
-# VERIFY-RESULT.md — PRD1 Latency / Decimal Pricing Fix 验收结果
-
-**验收者：** OpenClaw Canary
-**日期：** 以文件系统时间戳为准
-**对应轮次：** PRD1 dashboard latency persistence, decimal model pricing, and Mimo provider recheck
-
-## 逐条结果
-
-- Fix #1: PASS/FAIL — 网关是否写入 call_logs.latency_ms/ttft_ms，且覆盖非流式、流式、失败路径
-- Fix #2: PASS/FAIL — 模型价格是否支持小数分，前端 0.002 元是否转换为 0.2 分
-- Runtime Evidence: PASS/FAIL — 文档是否记录 Mimo provider key 云端恢复证据，且不误关 PRD1-LOAD-001
-
-## 全局验证
-
-- `git diff --check`: PASS/FAIL
-- targeted Go tests: PASS/FAIL
-- `go test ./...`: PASS/FAIL
-- `npm test -- --run`: PASS/FAIL
-- `npm run build`: PASS/FAIL
-
-## 新发现的问题
-
-- [如有，在此列出；没有则写“无”]
-
-## 结论
-
-- [全部通过 / 需要 Codex 修复以下问题]
-```
+- All commands pass.
+- Canary should mark visual/browser checks as not applicable.
+- If Canary passes, Sentinel can proceed with PR/CI.
+- Atlas must set `GRAFANA_ADMIN_PASSWORD` before redeploying Grafana and verify the running Grafana datasource/panels after deployment.

@@ -131,6 +131,18 @@ describe('DashboardPage', () => {
     });
   });
 
+  it('renders trend metrics as selectable checkboxes', async () => {
+    const { container } = renderDashboard();
+    await waitFor(() => {
+      expect(mockGetDashboardStats).toHaveBeenCalled();
+    });
+
+    const trendControls = container.querySelectorAll('.ur-trend-checklist input[type="checkbox"]');
+    expect(trendControls).toHaveLength(2);
+    expect(container.textContent || '').toContain('请求数');
+    expect(container.textContent || '').toContain('费用');
+  });
+
   it('handles API error gracefully', async () => {
     mockGetDashboardStats.mockRejectedValue(new Error('Network error'));
     const { container } = renderDashboard();

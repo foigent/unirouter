@@ -5,7 +5,7 @@
 
 ## Summary
 
-UniRouter Phase 1 is in MVP hardening. Core backend modules, admin APIs, frontend pages, migrations, Docker deployment files, and monitoring assets exist. The project is not an early scaffold, but it is not yet fully PRD-accepted because several end-to-end and production-style acceptance cases still need current evidence, provider capacity, or explicit user-approved deferral. The default-admin cloud security blocker and the channel-key/reconciliation/Dashboard follow-up fixes have been redeployed and verified in cloud. The Mimo provider key has also been cloud-verified as valid; the latest latency persistence and decimal-pricing fixes are local and await Canary/deploy.
+UniRouter Phase 1 is in MVP hardening. Core backend modules, admin APIs, frontend pages, migrations, Docker deployment files, and monitoring assets exist. The project is not an early scaffold, but it is not yet fully PRD-accepted because several end-to-end and production-style acceptance cases still need current evidence, provider capacity, or explicit user-approved deferral. The default-admin cloud security blocker and the channel-key/reconciliation/Dashboard follow-up fixes have been redeployed and verified in cloud. The Mimo provider key has also been cloud-verified as valid; the latest latency persistence, decimal-pricing, Dashboard trend UX, and Grafana observability fixes are local and await Canary/deploy.
 
 ## Current Verification
 
@@ -19,6 +19,7 @@ UniRouter Phase 1 is in MVP hardening. Core backend modules, admin APIs, fronten
 | PRD1 latest Canary | PASS | `VERIFY-RESULT.md` reports 4/4 PASS for the latest PRD1 reference-inspired UI redesign; earlier closeout rounds also passed through the protocol, while external-only items remain in `PRD1-REMAINING-ACCEPTANCE-PACK.md` |
 | PRD1 latest follow-up fixes | Canary passed and production verified | `VERIFY-RESULT.md` reports 3/3 PASS for channel-key edit, Token reconciliation pagination, and Dashboard trend fixes; cloud follow-up verified the channel selector expands, reconciliation `page_size=20` returns 20 rows, and 24h/7d/30d Dashboard totals match trend sums |
 | PRD1 latency/decimal pricing fixes | Fixed awaiting Canary | `FIX-SIGNAL.md` requests verification for gateway `latency_ms/ttft_ms` persistence and decimal model pricing; local `go test ./...`, frontend tests, and frontend build passed |
+| PRD1 Dashboard/Grafana follow-up fixes | Fixed awaiting Canary | Cloud probe showed Dashboard trend data is range-specific but the chart UX is misleading; Prometheus is healthy but Grafana dashboard datasource UID and PromQL need correction; local fix updates Dashboard trend controls, Grafana datasource/dashboard config, and Grafana password deployment docs |
 | Browser/manual frontend validation | Codex visual QA PASS locally | Codex Playwright screenshots captured Login, Dashboard, Logs detail, Wallet, API Docs, Channels, mobile Dashboard, mobile Logs, and the reference-inspired Login/Dashboard/mobile pass under local `output/playwright/`; Canary/OpenClaw visual acceptance remains not applicable |
 | Real upstream provider E2E | E2E accepted for Moonshot and Mimo single calls | `moonshot-v1-8k` non-stream and stream calls reached a real provider and settled; after the user updated the key, channel 8 `mimo-v2.5` test returned HTTP 200 and a UniRouter gateway call returned HTTP 200 with `_uniroute.channel=Mimo Token Plan` |
 | Production deployment status | PASS for S0/S1 smoke | `scripts/prd1-cloud-smoke.sh` passed against Alibaba Cloud on 2026-07-01: frontend, live/ready, metrics, docs, Prometheus, Grafana login, unauthenticated 401 checks, and default-admin rejection |
@@ -47,6 +48,7 @@ UniRouter Phase 1 is in MVP hardening. Core backend modules, admin APIs, fronten
 | F16 Budget alert | Implemented | Needs current webhook acceptance evidence |
 | F17 System settings | Implemented | Settings page/API exist |
 | F18 Health checks | Production verified for PRD shape | `/health/live`, `/health/ready`, `/metrics` exist; cloud `/health/ready` returned `{"status":"ok","db":"ok","redis":"ok"}` after redeploy |
+| Observability dashboards | Fixed awaiting Canary | Prometheus target and UniRouter metrics are present in cloud; Grafana dashboard config now pins datasource UID `prometheus` and uses aggregated PromQL; production panel evidence still requires redeploy plus browser/manual check |
 
 ## Known Gaps
 
@@ -60,6 +62,7 @@ UniRouter Phase 1 is in MVP hardening. Core backend modules, admin APIs, fronten
 8. Cloud smoke found API list handlers could hide row scan errors and emit zero-value fields when nullable database columns were scanned into non-nullable Go types. Codex fixed `ListAPIKeys` and `ListLogs`; after deployment, authenticated cloud reads for `/api/v1/keys` and `/api/v1/logs` returned 200 on 2026-07-01.
 9. User-reported PRD1 UI findings on logs filters, Dashboard trend/health cards, wallet edit actions, audit login records, `/docs`, and overall visual quality were classified in `docs/issues/PRD1-UI-FINDINGS-2026-07-01.md`; concrete bugs and the PRD1 visual redesign passed Canary non-visual verification.
 10. Alibaba Cloud strict S0/S1 closeout smoke passed on 2026-07-01 after redeploy. The former default-admin blocker is fixed in cloud, and `/health/ready` now exposes the PRD DB/Redis shape. Remaining PRD1 closure depends on acceptance evidence or explicit deferral for the still-open matrix items.
+11. Cloud Grafana currently needs a follow-up deploy/runtime action: Prometheus itself is healthy, but the dashboard provisioning must use the fixed datasource UID and Grafana's own default `admin/admin` password must be rotated.
 
 ## Active Sources Of Truth
 
