@@ -2,6 +2,8 @@ package billing
 
 import (
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestFreezeRequest_Fields(t *testing.T) {
@@ -94,5 +96,14 @@ func TestBilling_Constructor_NilDB(t *testing.T) {
 	b := NewBilling(nil, nil)
 	if b == nil {
 		t.Fatal("NewBilling should not return nil")
+	}
+}
+
+func TestIsUniqueViolation(t *testing.T) {
+	if !isUniqueViolation(&pgconn.PgError{Code: "23505"}) {
+		t.Fatal("expected PostgreSQL 23505 to be treated as unique violation")
+	}
+	if isUniqueViolation(&pgconn.PgError{Code: "23503"}) {
+		t.Fatal("foreign-key violation must not be treated as unique violation")
 	}
 }

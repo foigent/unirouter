@@ -5,6 +5,7 @@ package billing
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -108,6 +109,76 @@ func TestFreeze_Idempotency_Integration(t *testing.T) {
 	).Scan(&balance)
 	require.NoError(t, err)
 	require.Equal(t, 10000-result1.Amount, balance, "balance should only be deducted once")
+}
+
+func TestFreeze_ConcurrentDuplicateRequestAcrossInstances_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
+	testutil.NewTestWallet(t, pool, orgID, 10000)
+	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
+
+	stable := NewBilling(pool, nil)
+	canary := NewBilling(pool, nil)
+	reqID := fmt.Sprintf("ha-freeze-%d", time.Now().UnixNano())
+	req := FreezeRequest{
+		RequestID:       reqID,
+		OrgID:           orgID,
+		Model:           "gpt-4o",
+		EstimatedTokens: 1000,
+		SafetyFactor:    1.5,
+		MinFreezeAmount: 10,
+	}
+
+	start := make(chan struct{})
+	results := make(chan *FreezeResult, 2)
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	for _, instance := range []*Billing{stable, canary} {
+		wg.Add(1)
+		go func(b *Billing) {
+			defer wg.Done()
+			<-start
+			result, err := b.Freeze(context.Background(), req)
+			results <- result
+			errs <- err
+		}(instance)
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	close(errs)
+
+	var freezeAmount int
+	for err := range errs {
+		require.NoError(t, err, "duplicate request across HA instances should not surface an idempotency race")
+	}
+	for result := range results {
+		require.NotNil(t, result)
+		require.True(t, result.Success)
+		if freezeAmount == 0 {
+			freezeAmount = result.Amount
+		}
+		require.Equal(t, freezeAmount, result.Amount)
+	}
+
+	var balance, frozen, idemRows, freezeTxRows int
+	err := pool.QueryRow(context.Background(),
+		`SELECT balance, frozen FROM wallets WHERE org_id = $1`, orgID,
+	).Scan(&balance, &frozen)
+	require.NoError(t, err)
+	err = pool.QueryRow(context.Background(),
+		`SELECT COUNT(*) FROM freeze_idempotency WHERE request_id = $1`, reqID,
+	).Scan(&idemRows)
+	require.NoError(t, err)
+	err = pool.QueryRow(context.Background(),
+		`SELECT COUNT(*) FROM transactions WHERE request_id = $1 AND type = 'freeze'`, reqID,
+	).Scan(&freezeTxRows)
+	require.NoError(t, err)
+
+	require.Equal(t, 1, idemRows, "shared DB idempotency row must be unique")
+	require.Equal(t, 1, freezeTxRows, "duplicate HA request must not write duplicate freeze transactions")
+	require.Equal(t, freezeAmount, frozen, "wallet frozen amount should reflect a single freeze")
+	require.Equal(t, 10000-freezeAmount, balance, "wallet balance should be deducted once")
 }
 
 func TestFreeze_MinAmount_Integration(t *testing.T) {

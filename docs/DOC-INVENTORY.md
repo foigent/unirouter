@@ -50,6 +50,7 @@
 | `docs/tech-ref/12-token-metering-v2.md` | PRD2 token metering source and reconciliation contract |
 | `docs/tech-ref/13-audit-schema-upgrade.md` | PRD2 audit source, filter, and before/after contract |
 | `docs/tech-ref/14-notification-event-foundation.md` | PRD2 notification event, webhook routing, and project budget threshold contract |
+| `docs/tech-ref/15-ha-readiness.md` | PRD2 multi-instance, shared-state, smoke, and rollback contract |
 
 PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 

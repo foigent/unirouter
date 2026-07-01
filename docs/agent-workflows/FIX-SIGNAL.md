@@ -1,8 +1,8 @@
-# FIX-SIGNAL.md — PRD2 implementation batch 7 Notification/Event backend foundation
+# FIX-SIGNAL.md — PRD2 implementation batch 8 HA Readiness backend/ops foundation
 
 **修复者：** main agent
 **日期：** 文件系统时间戳为准
-**修复轮次：** PRD2 implementation batch 7
+**修复轮次：** PRD2 implementation batch 8
 
 ---
 
@@ -10,171 +10,157 @@
 
 | 项目 | 预期状态 | 原因 |
 |------|---------|------|
-| PRD2 batch 6 | Canary PASS + Sentinel complete | User 已报告 Canary 和 Sentinel 都完成，本轮同步状态并推进 batch 7 |
-| Frontend notification center | 仍未完成 | 本轮只做 Notification/Event 后端基础，不做前端通知中心 |
-| Email / IM delivery | 仍未完成 | PRD2 允许分阶段，batch 7 只做 webhook route |
-| Background retry worker | 仍未完成 | 本轮记录 failed delivery 和 `next_retry_at`，不启动自动重试 worker |
-| Production webhook E2E | 仍未完成 | 本轮提供 schema、service、API 和单元测试证据 |
-| Key/model/provider/license/estimated-usage emitters | 仅保留事件类型扩展空间 | 本轮只实际接入 project budget threshold 事件 |
+| PRD2 batch 7 | Canary PASS + Sentinel complete | User 已报告 Canary 和 Sentinel 都完成，本轮同步状态并推进 batch 8 |
+| Managed PostgreSQL HA / Redis Sentinel | 仍未完成 | PRD2 P2-F09 要求 HA readiness，不强制完整 HA 平台栈 |
+| 真实负载均衡器双实例线上 smoke | 仍未完成 | 本轮提供脚本、runbook 和本地 integration 证据，实际目标环境 smoke 需后续执行 |
+| 全局分布式 admission semaphore | 仍未完成 | 当前 admission controller 是单实例容量保护；PRD2 batch 8 文档明确容量口径 |
+| 生产备份恢复演练 | 仍未完成 | 本轮文档化备份/恢复/回滚步骤，不声称生产演练完成 |
 
-> Canary 验收时：上述未完成项不算 FAIL；如果本轮声称完成前端通知中心、邮件/IM、自动 retry worker、生产 webhook E2E 或所有事件 emitters 全覆盖，则应标为 FAIL。
+> Canary 验收时：上述未完成项不算 FAIL；如果本轮声称已经完成 Redis Sentinel、PG replica、线上 LB smoke、全局 admission semaphore 或生产备份恢复演练，则应标为 FAIL。
 
 ---
 
-## Fix #1: Batch 6 验收状态同步
+## Fix #1: Batch 7 验收状态同步
 
 **文件：** `docs/ops/CURRENT-STATUS.md`, `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`
 
-**原问题：** User 报告 batch 6 的 Canary 和 Sentinel 已完成，但状态文档仍停留在 awaiting Canary。
+**原问题：** User 报告 batch 7 的 Canary 和 Sentinel 已完成，但状态文档仍停留在 awaiting Canary。
 
 **当前实现：**
 
-- `CURRENT-STATUS.md` 记录 batch 6 为 Canary passed / Sentinel complete。
-- `PRD2-ACCEPTANCE-MATRIX.md` 将 P2-F07 Audit Schema Upgrade 证据更新为 Canary 6/6 PASS + User reported Sentinel completed。
-- 当前活跃轮次更新为 batch 7 fixed locally awaiting Canary。
+- `CURRENT-STATUS.md` 记录 batch 7 为 Canary passed / Sentinel complete。
+- `PRD2-ACCEPTANCE-MATRIX.md` 将 P2-F08 Notification/Event 证据更新为 Canary 7/7 PASS + User reported Sentinel completed。
+- 当前活跃轮次更新为 batch 8 fixed locally awaiting Canary。
 
 **验证方法：**
 
 ```bash
 sed -n '1,34p' docs/ops/CURRENT-STATUS.md
-sed -n '56,72p' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
+sed -n '64,72p' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
 ```
 
 ---
 
-## Fix #2: Notification/Event schema and tech-ref
+## Fix #2: HA readiness contract and runbook
 
-**文件：** `migrations/000014_prd2_notification_event_foundation.up.sql:6`, `migrations/000014_prd2_notification_event_foundation.down.sql`, `internal/models/models.go`, `docs/tech-ref/14-notification-event-foundation.md`, `docs/tech-ref/README.md`, `docs/DOC-INVENTORY.md`
+**文件：** `docs/tech-ref/15-ha-readiness.md:8`, `docs/ops/deployment-runbook.md:481`, `docs/tech-ref/README.md`, `docs/DOC-INVENTORY.md`
 
-**原问题：** PRD2 P2-F08 要求事件持久化、webhook routing 和 delivery failure visibility，但当前只有 PRD1 全局低余额 webhook alert，缺少 PRD2 事件层。
+**原问题：** PRD2 P2-F09 要求 multi-instance assumptions、shared DB/Redis state、backup/restore/rollback 和 two-instance smoke，但当前只有 PRD1/Canary 部署说明，缺少 PRD2 HA readiness contract。
 
 **当前实现：**
 
-- 新增 `notification_events`。
-- 新增 `notification_webhooks`。
-- 新增 `notification_deliveries`。
-- 新增 delivery state：`not_configured` / `pending` / `delivered` / `failed`。
-- 新增 partial unique dedupe index，避免同一项目同一周期预算阈值重复事件。
-- `models.go` 增加 `NotificationEvent`、`NotificationWebhook`、`NotificationDelivery`。
-- 新增 tech-ref 14 并写入技术参考索引和文档清单。
+- 新增 HA Readiness tech-ref。
+- 明确应用实例本地状态和 DB/Redis 共享状态边界。
+- 明确 secondary/canary 必须 `SKIP_MIGRATION=true`。
+- 明确 `/health/ready` 需要返回 `{"status":"ok","db":"ok","redis":"ok"}`。
+- 明确 rollback 和 schema-bearing release 的恢复步骤。
+- deployment runbook 新增 PRD2 HA readiness smoke 章节。
 
 **验证方法：**
 
 ```bash
-test -f docs/tech-ref/14-notification-event-foundation.md
-test -f migrations/000014_prd2_notification_event_foundation.up.sql
-test -f migrations/000014_prd2_notification_event_foundation.down.sql
-rg -n "notification_events|notification_webhooks|notification_deliveries|delivery_state" migrations/000014_prd2_notification_event_foundation.up.sql internal/models/models.go docs/tech-ref/14-notification-event-foundation.md
+test -f docs/tech-ref/15-ha-readiness.md
+rg -n "SKIP_MIGRATION|Two-Instance Smoke|Wallet And Idempotency Safety|Rollback" docs/tech-ref/15-ha-readiness.md docs/ops/deployment-runbook.md
 ```
 
 ---
 
-## Fix #3: EventService persists events and records webhook delivery state
+## Fix #3: Two-instance HA smoke script
 
-**文件：** `internal/billing/notifications.go:52`, `internal/billing/notifications_test.go`
+**文件：** `scripts/prd2-ha-smoke.sh:1`
 
-**原问题：** 现有 `AlertService` 只做 PRD1 全局钱包告警，成功时写 audit，不支持独立事件表、webhook route 匹配、delivery failure visibility。
+**原问题：** P2-F09 要求 two-instance smoke procedure where practical；当前没有可复制执行的 PRD2 双实例 smoke 脚本。
 
 **当前实现：**
 
-- `EventService.Emit` 持久化事件。
-- 根据 `org_id`、可选 `project_id` 和 `event_types` 匹配 enabled webhook routes。
-- webhook 成功时写 `notification_deliveries.status='delivered'`。
-- webhook 失败时写 `status='failed'`、`response_status/error` 和 `next_retry_at`。
-- 无 webhook 时事件 `delivery_state='not_configured'`。
+- 新增 `scripts/prd2-ha-smoke.sh`。
+- 默认验证 stable/canary `/health/ready`。
+- 可选验证 proxy `/health/ready`。
+- 默认不发真实模型请求。
+- 只有显式设置 `UNIROUTE_RUN_GATEWAY_SMOKE=1` 和 `UNIROUTE_API_KEY` 时才发 gateway smoke。
+- 脚本已设置可执行权限。
+
+**验证方法：**
+
+```bash
+bash -n scripts/prd2-ha-smoke.sh
+test -x scripts/prd2-ha-smoke.sh
+rg -n "UNIROUTE_STABLE_URL|UNIROUTE_CANARY_URL|UNIROUTE_RUN_GATEWAY_SMOKE|health/ready" scripts/prd2-ha-smoke.sh
+```
+
+---
+
+## Fix #4: Duplicate freeze race hardening for shared-DB HA
+
+**文件：** `internal/billing/billing.go:206`, `internal/billing/billing.go:231`, `internal/billing/billing.go:239`, `internal/billing/billing_test.go:102`
+
+**原问题：** 两个实例并发收到同一个 request id 时，PostgreSQL 主键能避免双扣，但输掉 `freeze_idempotency` 插入竞争的一方可能把唯一键冲突暴露成错误。
+
+**当前实现：**
+
+- `Freeze` 在 `freeze_idempotency` unique violation 后主动 rollback。
+- rollback 后回读已存在的 `frozen_amount`。
+- 如果回读成功，返回 `Success=true` 和既有冻结金额。
+- 新增 `isUniqueViolation` 单元测试。
 
 **关键测试：**
 
-- `TestEventService_EmitDeliversWebhook`
-- `TestEventService_EmitRecordsFailedDelivery`
+- `TestIsUniqueViolation`
 
 **验证方法：**
 
 ```bash
-go test ./internal/billing -run 'TestEventService_Emit' -v
+go test ./internal/billing -run TestIsUniqueViolation -v
 ```
 
 ---
 
-## Fix #4: Project budget threshold emits deduplicated event
+## Fix #5: Shared-DB idempotency and wallet safety integration evidence
 
-**文件：** `internal/billing/notifications.go:138`, `internal/gateway/relay.go:62`, `internal/gateway/relay.go:919`
+**文件：** `internal/billing/billing_integration_test.go:114`
 
-**原问题：** PRD2 要求项目预算过阈值创建事件并按配置 webhook 发送；现有 relay 只触发全局 wallet alert，且检查发生在 `call_logs` 写入前，无法用当前调用成本做项目预算聚合。
+**原问题：** P2-F09 acceptance 要求 repeated requests through two instances do not violate idempotency or wallet safety；已有单实例 freeze idempotency 测试，但没有 stable/canary 双实例视角。
 
 **当前实现：**
 
-- `EventService.CheckProjectBudget` 读取 active project 的 `budget_cents` / `budget_period`。
-- 按 `daily` 或 `monthly` 周期聚合 `call_logs.cost_cents`。
-- 过阈值后创建 `project_budget.threshold` 事件。
-- dedupe key 按 project + period + threshold 生成。
-- relay 新增 `SetEventService`。
-- relay 在 `recordRequest` 后调用 post-settle budget check，确保当前请求被计入聚合。
-
-**关键测试：**
-
-- `TestEventService_CheckProjectBudgetEmitsThresholdEvent`
-- gateway 包现有 relay 回归测试继续通过。
+- 新增 `TestFreeze_ConcurrentDuplicateRequestAcrossInstances_Integration`。
+- 使用两个 `Billing` 实例共享同一个 PostgreSQL pool 来模拟 stable/canary。
+- 两个实例并发使用同一 `request_id` 调用 `Freeze`。
+- 断言：
+  - 两个调用都不暴露 idempotency race。
+  - `freeze_idempotency` 只有一行。
+  - `transactions` 中 freeze 交易只有一行。
+  - 钱包 `balance` 只扣一次。
+  - 钱包 `frozen` 只增加一次。
 
 **验证方法：**
 
 ```bash
-go test ./internal/billing -run TestEventService_CheckProjectBudgetEmitsThresholdEvent -v
-go test ./internal/gateway -run 'Test(CheckBudgetAlert|SetAlertService|Handle)' -v
+go test -tags integration ./internal/billing -run TestFreeze_ConcurrentDuplicateRequestAcrossInstances_Integration -v
 ```
+
+> 本地运行结果：2026-07-02 PASS。本机测试库缺少部分较新 PRD2 表，`testutil.TruncateAll` 会输出 nonfatal truncate warning；目标测试通过。
 
 ---
 
-## Fix #5: Admin-visible notification APIs and webhook configuration
+## Fix #6: Sensitive-word cache convergence across instances
 
-**文件：** `internal/admin/notification_handlers.go:17`, `internal/admin/notification_handlers.go:100`, `internal/admin/notification_handlers.go:254`, `internal/admin/notification_handlers.go:308`, `cmd/uniroute/main.go:467`
+**文件：** `cmd/uniroute/main.go:101`, `cmd/uniroute/main.go:549`
 
-**原问题：** PRD2 要求至少 admin-visible notification records 和 webhook routing；当前没有 notification/event admin API。
+**原问题：** 敏感词配置保存在 DB，但每个实例有本地 DFA cache。此前启动加载和本实例热更新可用，但多实例下其它实例不会自动收敛。
 
 **当前实现：**
 
-- 新增 `GET /api/v1/notification-events`。
-- 新增 `GET /api/v1/notification-deliveries`。
-- 新增 `GET /api/v1/notification-webhooks`。
-- 新增 `POST /api/v1/notification-webhooks`。
-- 新增 `PUT /api/v1/notification-webhooks/{id}`。
-- Project-scoped admin 查询必须提供可访问 `project_id`。
-- Webhook create/update 写审计 before/after where applicable。
-- Route parity guard 增加新 API 路由。
-
-**关键测试：**
-
-- `TestListNotificationEvents_Success`
-- `TestListNotificationDeliveries_ShowsFailureState`
-- `TestCreateNotificationWebhook_WritesAudit`
-- `TestAdminRoutesRegisteredForFrontendClient`
+- 用 `startSensitiveWordsReloadLoop` 替换一次性加载。
+- 每个实例启动时加载一次。
+- 每分钟从 DB-backed `settings.sensitive_words` 重新加载。
+- 保持 admin handler 本实例热更新路径不变。
 
 **验证方法：**
 
 ```bash
-go test ./internal/admin -run 'Test(ListNotificationEvents|ListNotificationDeliveries|CreateNotificationWebhook)' -v
-go test ./cmd/uniroute -run TestAdminRoutesRegisteredForFrontendClient -v
-```
-
----
-
-## Fix #6: Project budget configuration audit before/after
-
-**文件：** `internal/admin/project_handlers.go:174`, `internal/admin/project_handlers.go:243`, `internal/admin/project_handlers.go:334`, `internal/admin/project_handlers.go:387`
-
-**原问题：** Project budget fields existed, but project create/update audit did not preserve budget before/after state required by P2-F08 acceptance.
-
-**当前实现：**
-
-- Project create audit writes after-state with `budget_cents` and `budget_period`.
-- Project update reads `projectAuditSnapshot` before update.
-- Project update audit writes changed fields plus `before` and `after`.
-
-**验证方法：**
-
-```bash
-go test ./internal/admin -run TestUpdateProject_Success -v
-rg -n "projectAuditSnapshot|budget_cents|budget_period" internal/admin/project_handlers.go
+go test ./cmd/uniroute -v
+rg -n "startSensitiveWordsReloadLoop|loadSensitiveWords" cmd/uniroute/main.go
 ```
 
 ---
@@ -183,19 +169,19 @@ rg -n "projectAuditSnapshot|budget_cents|budget_period" internal/admin/project_h
 
 **文件：** `docs/ops/CURRENT-STATUS.md`, `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`
 
-**原问题：** P2-F08 was still Planned and batch 6 status was stale.
+**原问题：** P2-F09 was still Planned and batch 7 status was stale.
 
 **当前实现：**
 
-- P2-F08 Notification/Event foundation is marked `Unit tested`, not E2E accepted.
-- Project budget alerts are marked `Unit tested`, not E2E accepted.
-- Remaining gaps explicitly include Canary verification, frontend notification center, retry worker, production webhook E2E, and remaining emitters.
+- P2-F09 HA readiness is marked `Unit tested`, not E2E accepted.
+- Remaining gaps explicitly include Canary verification, live two-instance target smoke, load-balancer/proxy evidence, and production backup/restore rehearsal.
+- P2-F12 acceptance discipline keeps HA readiness at backend/ops foundation scope.
 
 **验证方法：**
 
 ```bash
-sed -n '1,38p' docs/ops/CURRENT-STATUS.md
-sed -n '64,76p' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
+sed -n '1,34p' docs/ops/CURRENT-STATUS.md
+sed -n '64,72p' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
 ```
 
 ---
@@ -205,22 +191,27 @@ sed -n '64,76p' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
 Canary 请从仓库根目录执行：
 
 ```bash
-go test ./internal/billing ./internal/admin ./internal/gateway ./cmd/uniroute
+go test ./internal/billing ./cmd/uniroute
 go test ./...
+go test -tags integration ./internal/billing -run TestFreeze_ConcurrentDuplicateRequestAcrossInstances_Integration -v
+bash -n scripts/prd2-ha-smoke.sh
+test -x scripts/prd2-ha-smoke.sh
 git diff --check
 git diff --check -- $(git ls-files --others --exclude-standard)
 ```
+
+如果 Canary 环境没有 PostgreSQL test DB，integration test 可按现有 `testutil.SetupTestDB` 行为 skip；但若环境可连接 `TEST_DATABASE_URL` 或默认 `uniroute_test`，该测试应 PASS。
 
 ## 期望的 VERIFY-RESULT.md 输出格式
 
 请覆盖写入 `docs/agent-workflows/VERIFY-RESULT.md`：
 
 ```markdown
-# VERIFY-RESULT.md — PRD2 Implementation Batch 7 验收结果
+# VERIFY-RESULT.md — PRD2 Implementation Batch 8 验收结果
 
 **验收者：** OpenClaw Canary
-**日期：** 2026-07-01
-**对应轮次：** PRD2 implementation batch 7 — Notification/Event backend foundation
+**日期：** 2026-07-02
+**对应轮次：** PRD2 implementation batch 8 — HA Readiness backend/ops foundation
 
 ## 逐条结果
 
@@ -234,23 +225,22 @@ git diff --check -- $(git ls-files --others --exclude-standard)
 
 ## 前置条件核验
 
-- Frontend notification center 未声称完成: PASS/FAIL
-- Email / IM delivery 未声称完成: PASS/FAIL
-- Background retry worker 未声称完成: PASS/FAIL
-- Production webhook E2E 未声称完成: PASS/FAIL
-- Remaining emitters 未声称全覆盖: PASS/FAIL
+- Managed PostgreSQL HA / Redis Sentinel 未声称完成: PASS/FAIL
+- 真实负载均衡器双实例线上 smoke 未声称完成: PASS/FAIL
+- 全局分布式 admission semaphore 未声称完成: PASS/FAIL
+- 生产备份恢复演练未声称完成: PASS/FAIL
 
 ## 全局验证
 
 | 检查项 | 结果 |
 |--------|------|
-| `go test ./internal/billing ./internal/admin ./internal/gateway ./cmd/uniroute` | PASS/FAIL |
+| `go test ./internal/billing ./cmd/uniroute` | PASS/FAIL |
 | `go test ./...` | PASS/FAIL |
+| `go test -tags integration ./internal/billing -run TestFreeze_ConcurrentDuplicateRequestAcrossInstances_Integration -v` | PASS/FAIL/SKIP |
+| `bash -n scripts/prd2-ha-smoke.sh` | PASS/FAIL |
+| `test -x scripts/prd2-ha-smoke.sh` | PASS/FAIL |
 | `git diff --check` | PASS/FAIL |
-| schema + tech-ref | PASS/FAIL |
-| EventService webhook delivery tests | PASS/FAIL |
-| Project budget threshold test | PASS/FAIL |
-| Admin notification API tests | PASS/FAIL |
+| HA tech-ref/runbook | PASS/FAIL |
 | Matrix 未过度标注 | PASS/FAIL |
 
 ## 新发现的问题
