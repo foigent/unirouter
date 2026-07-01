@@ -31,11 +31,13 @@ cp .env.example .env
 # - DB_DSN: PostgreSQL 连接串
 # - JWT_SECRET: 32 字节随机字符串
 # - ENCRYPTION_KEY: 32 字节随机字符串
+# - GRAFANA_ADMIN_PASSWORD: Grafana 管理员强密码
 # - MIGRATIONS_DIR: 迁移文件目录（默认 /app/migrations）
 
 # 生成随机密钥
 openssl rand -hex 32  # 用于 JWT_SECRET
 openssl rand -hex 32  # 用于 ENCRYPTION_KEY
+openssl rand -base64 24  # 用于 GRAFANA_ADMIN_PASSWORD
 ```
 
 ### 2.2 启动服务
@@ -224,12 +226,12 @@ Grafana 预置了 UniRouter Overview 面板，包含 8 个面板：
 ```bash
 # Grafana 登录
 # 地址：http://localhost:3001
-# 用户名：admin
-# 密码：admin
+# 用户名：$GRAFANA_ADMIN_USER（默认 admin）
+# 密码：$GRAFANA_ADMIN_PASSWORD
 # Dashboard 路径：Dashboards → UniRouter Overview
 ```
 
-Dashboard JSON 位于 `infra/grafana/dashboards/unirouter-overview.json`，可通过 Grafana UI 导入导出。
+Dashboard JSON 位于 `infra/grafana/dashboards/unirouter-overview.json`，可通过 Grafana UI 导入导出。Prometheus datasource provisioning 固定使用 UID `prometheus`，Dashboard 面板也引用该 UID；如果已有 Grafana 持久化卷来自旧配置，部署后应确认 datasource UID 是否已同步。
 
 ### 6.4 性能压测
 
@@ -524,4 +526,5 @@ docker compose -f docker-compose.yml -f docker-compose.canary.yml up -d
 | 数据库 | 不暴露外部端口，只通过 Docker 网络访问 |
 | Redis | 设置密码，不暴露外部端口 |
 | 密钥 | JWT_SECRET 和 ENCRYPTION_KEY 定期轮换 |
+| Grafana | 设置 `GRAFANA_ADMIN_PASSWORD`，禁止继续使用 `admin/admin` |
 | 备份 | 备份文件加密存储 |

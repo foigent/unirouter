@@ -31,7 +31,7 @@ curl -fsS http://8.130.18.85:8080/docs
 Results:
 
 - Go tests: PASS
-- Frontend tests: PASS, 36 tests
+- Frontend tests: PASS, latest source has 38 tests after Dashboard trend control coverage
 - Frontend build: PASS, with existing Vite large chunk warning
 - Route parity guard: PASS
 - Cloud S0/S1 smoke: PASS after redeploy
@@ -114,6 +114,39 @@ Notes:
 - Scope was intentionally non-destructive: no real provider paid requests, no API key/channel/wallet mutations, no load test, no stream disconnect, and no failover/fault injection.
 - Cloud smoke exposed a handler quality issue where nullable database fields could be scanned into non-nullable Go types while `rows.Scan` errors were ignored, producing zero-value timestamps. Codex fixed this for API key and call-log list handlers; after deployment, authenticated cloud reads for `/api/v1/keys` and `/api/v1/logs` returned 200.
 - Strict closeout smoke after redeploy on 2026-07-01 passed. The public cloud rejected `admin/admin123456` with 403, and `/health/ready` returned the PRD DB/Redis shape.
+
+## Alibaba Cloud Dashboard/Grafana Follow-up
+
+Environment:
+
+- Frontend / nginx base: `http://8.130.18.85:3000`
+- Prometheus: `http://8.130.18.85:9090`
+- Grafana: `http://8.130.18.85:3001`
+- Verified: 2026-07-01 after the user reported Dashboard trend and Grafana concerns
+
+Results:
+
+- Dashboard trend API returned range-specific buckets. For the sampled 24h window, non-zero requests were in the latest two hourly buckets; for 7d/30d, non-zero buckets were limited to the days with actual calls. This means the backend range aggregation is not the primary defect for the reported behavior.
+- Dashboard trend UI still used one selected metric at a time on a single axis, so a recent active bucket visually looked like it was always stuck at the right edge and users could not compare 请求数 and 费用 together.
+- Prometheus `/-/ready` and `/-/healthy` returned 200.
+- Prometheus `/api/v1/targets` showed the `unirouter` target `backend:8080/metrics` as `up`.
+- Prometheus had UniRouter metrics including `unirouter_http_requests_total`, `unirouter_http_request_duration_seconds_*`, `unirouter_upstream_latency_seconds_*`, `unirouter_tokens_processed_total`, and `unirouter_billing_freeze_total`.
+- Grafana `/api/health` returned 200, but the provisioned datasource UID was generated (`PBFA97CFB590B2093`) while the dashboard JSON references datasource UID `prometheus`.
+- Grafana accepted the default `admin/admin` login and showed the password-change prompt. This is separate from the UniRouter seeded admin remediation and must be rotated in deployment.
+
+Local fixes prepared:
+
+- Dashboard AI activity trend now uses checkbox controls and can show 请求数 and 费用 simultaneously with separate Y axes.
+- Codex local Playwright visual smoke generated `output/playwright/prd1-dashboard-trend-dual-metric.png` using mocked Dashboard data; it verified 2 trend checkboxes and rendered chart SVGs without obvious overlap.
+- Grafana datasource provisioning now pins UID `prometheus`.
+- Grafana dashboard PromQL now aggregates histogram buckets correctly and uses `$__rate_interval`.
+- Docker Compose now reads `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` from `.env` instead of hardcoding `admin/admin`.
+
+Acceptance still needed:
+
+- Canary should verify source/config/tests from `docs/agent-workflows/FIX-SIGNAL.md`.
+- Atlas should redeploy the fixed Grafana provisioning, set a strong `GRAFANA_ADMIN_PASSWORD`, restart Grafana, and confirm the existing persisted Grafana admin password is rotated.
+- Browser-capable validation should capture or manually record that UniRouter Overview panels resolve the Prometheus datasource and display request-rate/latency/error-rate data.
 
 ## Alibaba Cloud UI/API Follow-up Verification
 

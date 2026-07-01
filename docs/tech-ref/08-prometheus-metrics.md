@@ -202,19 +202,19 @@ CORS → Metrics → Admission → Router
 ### 5.1 请求速率面板
 
 ```promql
-rate(unirouter_http_requests_total{path="/v1/chat/completions"}[5m])
+sum by (method, status) (rate(unirouter_http_requests_total[$__rate_interval]))
 ```
 
 ### 5.2 延迟分布面板
 
 ```promql
-histogram_quantile(0.95, rate(unirouter_http_request_duration_seconds_bucket[5m]))
+histogram_quantile(0.95, sum by (le) (rate(unirouter_http_request_duration_seconds_bucket[$__rate_interval])))
 ```
 
 ### 5.3 错误率面板
 
 ```promql
-rate(unirouter_http_requests_total{status=~"5.."}[5m]) / rate(unirouter_http_requests_total[5m])
+100 * sum(rate(unirouter_http_requests_total{status=~"5.."}[$__rate_interval])) / clamp_min(sum(rate(unirouter_http_requests_total[$__rate_interval])), 1e-9)
 ```
 
 ### 5.4 活跃请求面板
@@ -247,7 +247,7 @@ histogram_quantile(0.95, rate(unirouter_upstream_latency_seconds_bucket[5m]))
 # 启动监控栈（需要 Docker）
 docker compose up -d prometheus grafana
 
-# Grafana: http://localhost:3001  admin/admin
+# Grafana: http://localhost:3001  $GRAFANA_ADMIN_USER / $GRAFANA_ADMIN_PASSWORD
 # Prometheus: http://localhost:9090
 ```
 
