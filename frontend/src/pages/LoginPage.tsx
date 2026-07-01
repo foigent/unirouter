@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Form, Button, Typography, Tag } from '@douyinfe/semi-ui';
 import { IconBolt, IconHistogram, IconShield, IconServer } from '@douyinfe/semi-icons';
 import { useAuthStore } from '../store/auth';
+import { getDefaultPathForRole } from '../navigation';
 
 const { Title, Text } = Typography;
 
@@ -16,8 +17,8 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
     try {
-      await login(values.username, values.password);
-      navigate('/');
+      const user = await login(values.username, values.password);
+      navigate(getDefaultPathForRole(user.role));
     } catch (e: any) {
       setError(e.message || '登录失败');
     } finally {

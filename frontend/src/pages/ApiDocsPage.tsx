@@ -7,7 +7,7 @@ const endpointGroups = [
   {
     area: 'Auth',
     endpoints: [
-      ['POST', '/api/v1/auth/login', '管理员登录并返回 JWT'],
+      ['POST', '/api/v1/auth/login', '登录并返回 JWT'],
       ['GET', '/api/v1/me', '当前登录用户信息'],
       ['PUT', '/api/v1/me/password', '修改当前用户密码'],
     ],
@@ -18,6 +18,17 @@ const endpointGroups = [
       ['GET', '/v1/models', 'OpenAI-compatible 模型列表'],
       ['POST', '/v1/chat/completions', 'OpenAI-compatible Chat Completions'],
       ['POST', '/v1/embeddings', 'OpenAI-compatible Embeddings'],
+    ],
+  },
+  {
+    area: 'Developer Console',
+    endpoints: [
+      ['GET', '/api/v1/projects', '当前账号可访问项目'],
+      ['GET', '/api/v1/keys?project_id={id}', '项目 API Key 列表'],
+      ['POST', '/api/v1/keys', '创建项目 API Key'],
+      ['GET', '/api/v1/model-catalog?project_id={id}', '项目可用模型目录'],
+      ['GET', '/api/v1/logs?project_id={id}', '项目调用日志'],
+      ['GET', '/api/v1/logs?project_id={id}&request_id={rid}', '按 Request ID 查询项目请求'],
     ],
   },
   {
@@ -46,7 +57,7 @@ export default function ApiDocsPage() {
       <PageHeader
         eyebrow="System"
         title="API 文档"
-        description="PRD1 当前可用接口索引。完整路径快照见仓库内 docs/tech-ref/05-openapi-spec.yaml。"
+        description="PRD2 当前可用接口索引。Developer Console 使用同一登录会话和项目级 API，不暴露上游 provider key。"
       />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {endpointGroups.map(group => (

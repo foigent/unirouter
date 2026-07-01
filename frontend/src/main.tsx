@@ -1,10 +1,12 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { Spin } from '@douyinfe/semi-ui'
 import './index.css'
 import App from './App'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
+import DeveloperConsolePage from './pages/DeveloperConsolePage'
 import ChannelsPage from './pages/ChannelsPage'
 import KeysPage from './pages/KeysPage'
 import WalletPage from './pages/WalletPage'
@@ -21,11 +23,51 @@ import TestPage from './pages/TestPage'
 import ApiDocsPage from './pages/ApiDocsPage'
 import ErrorBoundary from './components/ErrorBoundary'
 import { useAuthStore } from './store/auth'
+import { getDefaultPathForRole, isProjectConsoleRole, isRouteAllowedForRole } from './navigation'
+
+function RouteLoading() {
+  return (
+    <div className="ur-route-loading">
+      <Spin size="large" />
+    </div>
+  )
+}
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const user = useAuthStore((s) => s.user)
+  const profileLoading = useAuthStore((s) => s.profileLoading)
+  const loadProfile = useAuthStore((s) => s.loadProfile)
+
+  React.useEffect(() => {
+    if (isAuthenticated && !user?.role && !profileLoading) {
+      loadProfile().catch(() => {})
+    }
+  }, [isAuthenticated, loadProfile, profileLoading, user?.role])
+
   if (!isAuthenticated) return <Navigate to="/login" replace />
+  if (!user?.role) return <RouteLoading />
   return <>{children}</>
+}
+
+function RoleRoute({ children }: { children: React.ReactNode }) {
+  const location = useLocation()
+  const role = useAuthStore((s) => s.user?.role)
+
+  if (!isRouteAllowedForRole(location.pathname, role)) {
+    return <Navigate to={getDefaultPathForRole(role)} replace />
+  }
+  return <>{children}</>
+}
+
+function HomeRoute() {
+  const role = useAuthStore((s) => s.user?.role)
+  if (isProjectConsoleRole(role)) return <Navigate to="/developer" replace />
+  return (
+    <RoleRoute>
+      <DashboardPage />
+    </RoleRoute>
+  )
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -35,20 +77,21 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/" element={<ProtectedRoute><App /></ProtectedRoute>}>
-            <Route index element={<DashboardPage />} />
-            <Route path="channels" element={<ChannelsPage />} />
-            <Route path="keys" element={<KeysPage />} />
-            <Route path="wallet" element={<WalletPage />} />
-            <Route path="channel-keys" element={<ChannelKeysPage />} />
-            <Route path="logs" element={<LogsPage />} />
-            <Route path="users" element={<UsersPage />} />
-            <Route path="model-prices" element={<ModelPricesPage />} />
-            <Route path="org-model-prices" element={<OrgModelPricesPage />} />
-            <Route path="grants" element={<GrantsPage />} />
-            <Route path="audit-logs" element={<AuditLogsPage />} />
-            <Route path="reconciliation" element={<ReconciliationPage />} />
-            <Route path="test" element={<TestPage />} />
-            <Route path="settings" element={<SettingsPage />} />
+            <Route index element={<HomeRoute />} />
+            <Route path="developer" element={<RoleRoute><DeveloperConsolePage /></RoleRoute>} />
+            <Route path="channels" element={<RoleRoute><ChannelsPage /></RoleRoute>} />
+            <Route path="keys" element={<RoleRoute><KeysPage /></RoleRoute>} />
+            <Route path="wallet" element={<RoleRoute><WalletPage /></RoleRoute>} />
+            <Route path="channel-keys" element={<RoleRoute><ChannelKeysPage /></RoleRoute>} />
+            <Route path="logs" element={<RoleRoute><LogsPage /></RoleRoute>} />
+            <Route path="users" element={<RoleRoute><UsersPage /></RoleRoute>} />
+            <Route path="model-prices" element={<RoleRoute><ModelPricesPage /></RoleRoute>} />
+            <Route path="org-model-prices" element={<RoleRoute><OrgModelPricesPage /></RoleRoute>} />
+            <Route path="grants" element={<RoleRoute><GrantsPage /></RoleRoute>} />
+            <Route path="audit-logs" element={<RoleRoute><AuditLogsPage /></RoleRoute>} />
+            <Route path="reconciliation" element={<RoleRoute><ReconciliationPage /></RoleRoute>} />
+            <Route path="test" element={<RoleRoute><TestPage /></RoleRoute>} />
+            <Route path="settings" element={<RoleRoute><SettingsPage /></RoleRoute>} />
             <Route path="docs" element={<ApiDocsPage />} />
           </Route>
         </Routes>

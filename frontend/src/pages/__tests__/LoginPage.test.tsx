@@ -54,7 +54,7 @@ describe('LoginPage', () => {
   })
 
   it('calls login and navigates on success', async () => {
-    mockLogin.mockResolvedValueOnce(undefined)
+    mockLogin.mockResolvedValueOnce({ id: 1, username: 'admin', role: 'org_admin' })
     const user = userEvent.setup()
     renderLoginPage()
 
@@ -69,6 +69,20 @@ describe('LoginPage', () => {
     await waitFor(() => {
       expect(mockLogin).toHaveBeenCalledWith('admin', '***')
       expect(mockNavigate).toHaveBeenCalledWith('/')
+    })
+  })
+
+  it('navigates project users to developer console after login', async () => {
+    mockLogin.mockResolvedValueOnce({ id: 2, username: 'dev', role: 'developer' })
+    const user = userEvent.setup()
+    renderLoginPage()
+
+    await user.type(screen.getByPlaceholderText('请输入用户名'), 'dev')
+    await user.type(screen.getByPlaceholderText('请输入密码'), '***')
+    await user.click(screen.getByRole('button', { name: /登录/i }))
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/developer')
     })
   })
 

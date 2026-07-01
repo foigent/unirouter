@@ -815,6 +815,111 @@ body {
   line-height: 1.55;
 }
 
+.ur-route-loading,
+.ur-dev-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 260px;
+  color: var(--ur-text-muted);
+  font-weight: 650;
+}
+
+.ur-dev-context {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  border: 1px solid rgba(255, 255, 255, 0.74);
+  border-radius: var(--ur-radius);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: var(--ur-shadow-card);
+  padding: 14px 18px;
+}
+
+.ur-dev-context > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  margin-right: auto;
+}
+
+.ur-dev-context strong {
+  overflow: hidden;
+  max-width: 360px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ur-dev-main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(360px, 0.65fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.ur-dev-docs {
+  display: grid;
+  gap: 14px;
+}
+
+.ur-dev-code {
+  overflow-x: auto;
+  margin: 0;
+  border-radius: 14px;
+  background: #11151f;
+  color: #ffffff;
+  padding: 14px;
+  line-height: 1.6;
+  white-space: pre;
+}
+
+.ur-dev-model-name {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.ur-dev-lookup {
+  display: grid;
+  gap: 14px;
+}
+
+.ur-dev-lookup-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ur-dev-lookup-grid > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  border: 1px solid var(--ur-border-soft);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.68);
+  padding: 12px;
+}
+
+.ur-dev-lookup-grid strong,
+.ur-dev-lookup-grid .semi-typography {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ur-dev-lookup-wide {
+  grid-column: 1 / -1;
+}
+
+.ur-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 24px;
+}
+
 .ur-explorer {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
@@ -1306,6 +1411,8 @@ body {
   }
   .ur-kpi-grid,
   .ur-split-grid,
+  .ur-dev-main-grid,
+  .ur-dev-lookup-grid,
   .ur-dashboard-analytics-grid,
   .ur-dashboard-status-strip,
   .ur-dashboard-hero,
@@ -1318,6 +1425,18 @@ body {
   }
   .ur-topbar {
     display: none;
+  }
+  .ur-dev-context,
+  .ur-dev-context > div {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .ur-dev-context strong {
+    max-width: 100%;
+  }
+  .ur-dev-code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
   .ur-dashboard-hero {
     padding: 20px;
