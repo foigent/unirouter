@@ -290,23 +290,24 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		if resp.StatusCode != http.StatusOK {
 			errBody, _ := io.ReadAll(resp.Body)
 			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Upstream returned %d: %s", resp.StatusCode, string(errBody))
-			// Per PRD F12: only server errors (408, 500, 502, 503) and connection
-			// timeouts trigger circuit breaker. Client errors are not channel failures.
-			switch {
-			case resp.StatusCode == 408 || resp.StatusCode == 500 || resp.StatusCode == 502 || resp.StatusCode == 503:
+			// Per PRD F12: adapters normalize provider-specific HTTP semantics
+			// into routing failure kinds. Client errors are not channel failures.
+			classified := adapter.ClassifyHTTPStatus(resp.StatusCode, errBody)
+			switch classified.FailureKind {
+			case adapters.FailureChannel:
 				relay.router.MarkChannelFail(ctx, route.Channel.ID, 5, 300)
 				relay.router.MarkKeyFail(ctx, route.ChannelKey.ID)
-			case resp.StatusCode == 401 || resp.StatusCode == 403:
+			case adapters.FailureAuth:
 				// Auth failure — mark key as invalid immediately
 				relay.router.MarkKeyCooldown(ctx, route.ChannelKey.ID, 3600)
-			case resp.StatusCode == 429:
+			case adapters.FailureRateLimit:
 				// Rate limited — cooldown key for 60s
 				relay.router.MarkKeyCooldown(ctx, route.ChannelKey.ID, 60)
 			default:
 				// 4xx client errors (400, 404, etc.) — don't mark as failure
 			}
 			lastStatusCode = resp.StatusCode
-			lastErr = fmt.Errorf("upstream returned %d: %s", resp.StatusCode, string(errBody))
+			lastErr = fmt.Errorf("upstream returned %d: %s", resp.StatusCode, classified.Message)
 			resp.Body.Close()
 			continue
 		}
@@ -393,7 +394,11 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 
 	// Build response with _uniroute extension field
 	var responseMap map[string]interface{}
-	json.Unmarshal(body, &responseMap)
+	responseBody := normalized.Body
+	if len(responseBody) == 0 {
+		responseBody = body
+	}
+	json.Unmarshal(responseBody, &responseMap)
 	responseMap["_uniroute"] = map[string]interface{}{
 		"request_id": requestID,
 		"cost": map[string]interface{}{

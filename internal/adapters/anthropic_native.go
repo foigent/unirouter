@@ -1,0 +1,409 @@
+package adapters
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/uniroute/unirouter/internal/metering"
+)
+
+const defaultAnthropicVersion = "2023-06-01"
+
+type AnthropicNative struct{}
+
+func NewAnthropicNative() *AnthropicNative {
+	return &AnthropicNative{}
+}
+
+func (a *AnthropicNative) Type() string {
+	return TypeAnthropicNative
+}
+
+func (a *AnthropicNative) BuildRequest(ctx context.Context, in RequestInput) (*http.Request, error) {
+	if in.Endpoint != EndpointChatCompletions {
+		return nil, fmt.Errorf("anthropic_native does not support endpoint %s", in.Endpoint)
+	}
+
+	var downstream struct {
+		Model       string                   `json:"model"`
+		Messages    []anthropicOpenAIMessage `json:"messages"`
+		MaxTokens   int                      `json:"max_tokens"`
+		Temperature *float64                 `json:"temperature,omitempty"`
+		TopP        *float64                 `json:"top_p,omitempty"`
+		Stream      bool                     `json:"stream"`
+	}
+	if err := json.Unmarshal(in.DownstreamBody, &downstream); err != nil {
+		return nil, fmt.Errorf("decode downstream body: %w", err)
+	}
+	if downstream.Stream {
+		return nil, fmt.Errorf("anthropic_native streaming is not supported yet")
+	}
+
+	mappedModel := strings.TrimSpace(in.MappedModel)
+	if mappedModel == "" {
+		mappedModel = strings.TrimSpace(in.RequestedModel)
+	}
+	if mappedModel == "" {
+		mappedModel = strings.TrimSpace(downstream.Model)
+	}
+	if mappedModel == "" {
+		return nil, fmt.Errorf("model is required")
+	}
+
+	maxTokens := downstream.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = in.Channel.DefaultMaxOutput
+	}
+	if maxTokens <= 0 {
+		maxTokens = 1024
+	}
+
+	messages, system := convertAnthropicMessages(downstream.Messages)
+	payload := map[string]interface{}{
+		"model":      mappedModel,
+		"max_tokens": maxTokens,
+		"messages":   messages,
+	}
+	if system != "" {
+		payload["system"] = system
+	}
+	if downstream.Temperature != nil {
+		payload["temperature"] = *downstream.Temperature
+	}
+	if downstream.TopP != nil {
+		payload["top_p"] = *downstream.TopP
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("encode anthropic request: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, UpstreamEndpoint(in.Channel.BaseURL, "/v1/messages"), bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+
+	cfg := parseAnthropicConfig(in.Channel.AdapterConfig)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", in.APIKey)
+	req.Header.Set("anthropic-version", cfg.Version)
+	if cfg.Beta != "" {
+		req.Header.Set("anthropic-beta", cfg.Beta)
+	}
+	if in.RequestID != "" {
+		req.Header.Set("X-Request-ID", in.RequestID)
+	}
+	return req, nil
+}
+
+func (a *AnthropicNative) ParseResponse(ctx context.Context, in ResponseInput) (*NormalizedResponse, error) {
+	_ = ctx
+	normalized := &NormalizedResponse{
+		StatusCode: in.StatusCode,
+		Header:     in.Header,
+		Meta: ProviderMeta{
+			Provider:       in.Channel.Provider,
+			ChannelID:      in.Channel.ID,
+			ChannelName:    in.Channel.Name,
+			AdapterType:    NormalizeType(in.Channel.AdapterType),
+			RequestedModel: in.RequestedModel,
+			UpstreamModel:  in.UpstreamModel,
+			TTFTMillis:     in.TTFTMillis,
+		},
+		Usage: Usage{Source: metering.UsageSourceUpstream},
+	}
+
+	if in.StatusCode < 200 || in.StatusCode >= 300 {
+		normalized.Body = in.Body
+		normalized.Error = a.ClassifyHTTPStatus(in.StatusCode, in.Body)
+		return normalized, nil
+	}
+
+	var parsed anthropicMessageResponse
+	if err := json.Unmarshal(in.Body, &parsed); err != nil {
+		return nil, fmt.Errorf("decode anthropic response: %w", err)
+	}
+	normalized.Usage.PromptTokens = parsed.Usage.InputTokens
+	normalized.Usage.CompletionTokens = parsed.Usage.OutputTokens
+	normalized.Usage.TotalTokens = parsed.Usage.InputTokens + parsed.Usage.OutputTokens
+
+	model := strings.TrimSpace(in.RequestedModel)
+	if model == "" {
+		model = strings.TrimSpace(in.UpstreamModel)
+	}
+	if model == "" {
+		model = parsed.Model
+	}
+	body, err := json.Marshal(map[string]interface{}{
+		"id":      firstNonEmpty(parsed.ID, "chatcmpl-anthropic"),
+		"object":  "chat.completion",
+		"created": time.Now().Unix(),
+		"model":   model,
+		"choices": []map[string]interface{}{
+			{
+				"index":         0,
+				"finish_reason": normalizeAnthropicStopReason(parsed.StopReason),
+				"message": map[string]interface{}{
+					"role":    "assistant",
+					"content": joinAnthropicText(parsed.Content),
+				},
+			},
+		},
+		"usage": map[string]int{
+			"prompt_tokens":     normalized.Usage.PromptTokens,
+			"completion_tokens": normalized.Usage.CompletionTokens,
+			"total_tokens":      normalized.Usage.TotalTokens,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encode openai-compatible response: %w", err)
+	}
+	normalized.Body = body
+	return normalized, nil
+}
+
+func (a *AnthropicNative) Test(ctx context.Context, in TestInput) (*TestResult, error) {
+	client := in.Client
+	if client == nil {
+		client = http.DefaultClient
+	}
+	prompt := strings.TrimSpace(in.Prompt)
+	if prompt == "" {
+		prompt = "Hello, this is a test message."
+	}
+	payload, err := json.Marshal(map[string]interface{}{
+		"model": in.Model,
+		"messages": []map[string]string{
+			{"role": "user", "content": prompt},
+		},
+		"max_tokens": 16,
+	})
+	if err != nil {
+		return nil, err
+	}
+	req, err := a.BuildRequest(ctx, RequestInput{
+		Endpoint:       EndpointChatCompletions,
+		DownstreamBody: payload,
+		RequestedModel: in.Model,
+		MappedModel:    in.Model,
+		Channel:        in.Channel,
+		APIKey:         in.APIKey,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	start := time.Now()
+	resp, err := client.Do(req)
+	latency := time.Since(start).Milliseconds()
+	if err != nil {
+		return &TestResult{Success: false, Status: "error", LatencyMs: latency, Model: in.Model, Error: err.Error(), RequestURL: req.URL.String()}, nil
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	normalized, err := a.ParseResponse(ctx, ResponseInput{
+		StatusCode:     resp.StatusCode,
+		Header:         resp.Header,
+		Body:           body,
+		Channel:        in.Channel,
+		RequestedModel: in.Model,
+		UpstreamModel:  in.Model,
+	})
+	if err != nil {
+		return nil, err
+	}
+	success := resp.StatusCode >= 200 && resp.StatusCode < 300
+	status := "failed"
+	errorMessage := ""
+	if success {
+		status = "ok"
+	} else if normalized.Error != nil {
+		errorMessage = normalized.Error.Message
+	}
+	return &TestResult{
+		Success:    success,
+		Status:     status,
+		StatusCode: resp.StatusCode,
+		LatencyMs:  latency,
+		Model:      in.Model,
+		TokensUsed: normalized.Usage.TotalTokens,
+		Body:       normalized.Body,
+		Error:      errorMessage,
+		RequestURL: req.URL.String(),
+	}, nil
+}
+
+func (a *AnthropicNative) ClassifyHTTPStatus(statusCode int, body []byte) *NormalizedError {
+	err := &NormalizedError{
+		HTTPStatus: statusCode,
+		Category:   "upstream_error",
+		Code:       fmt.Sprintf("anthropic_http_%d", statusCode),
+		Message:    fmt.Sprintf("anthropic returned HTTP %d", statusCode),
+	}
+	if code, msg := extractAnthropicError(body); msg != "" || code != "" {
+		if code != "" {
+			err.Code = code
+		}
+		if msg != "" {
+			err.Message = msg
+		}
+	}
+	switch {
+	case statusCode == 400 || statusCode == 404:
+		err.FailureKind = FailureClientRequest
+	case statusCode == 401 || statusCode == 403:
+		err.FailureKind = FailureAuth
+	case statusCode == 408 || statusCode == 500 || statusCode == 502 || statusCode == 503 || statusCode == 529:
+		err.FailureKind = FailureChannel
+		err.Retryable = true
+	case statusCode == 429:
+		err.FailureKind = FailureRateLimit
+		err.Retryable = true
+	default:
+		err.FailureKind = FailureUnknown
+	}
+	return err
+}
+
+type anthropicConfig struct {
+	Version string `json:"anthropic_version"`
+	Beta    string `json:"anthropic_beta"`
+}
+
+func parseAnthropicConfig(raw []byte) anthropicConfig {
+	cfg := anthropicConfig{Version: defaultAnthropicVersion}
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &cfg)
+	}
+	if strings.TrimSpace(cfg.Version) == "" {
+		cfg.Version = defaultAnthropicVersion
+	}
+	cfg.Beta = strings.TrimSpace(cfg.Beta)
+	return cfg
+}
+
+type anthropicOpenAIMessage struct {
+	Role    string          `json:"role"`
+	Content json.RawMessage `json:"content"`
+}
+
+type anthropicMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+func convertAnthropicMessages(messages []anthropicOpenAIMessage) ([]anthropicMessage, string) {
+	result := make([]anthropicMessage, 0, len(messages))
+	var systemParts []string
+	for _, message := range messages {
+		role := strings.TrimSpace(message.Role)
+		content := openAIContentToText(message.Content)
+		if content == "" {
+			continue
+		}
+		switch role {
+		case "system":
+			systemParts = append(systemParts, content)
+		case "assistant":
+			result = append(result, anthropicMessage{Role: "assistant", Content: content})
+		default:
+			result = append(result, anthropicMessage{Role: "user", Content: content})
+		}
+	}
+	return result, strings.Join(systemParts, "\n\n")
+}
+
+func openAIContentToText(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var text string
+	if json.Unmarshal(raw, &text) == nil {
+		return strings.TrimSpace(text)
+	}
+	var parts []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(raw, &parts) == nil {
+		values := make([]string, 0, len(parts))
+		for _, part := range parts {
+			if part.Type == "text" && strings.TrimSpace(part.Text) != "" {
+				values = append(values, strings.TrimSpace(part.Text))
+			}
+		}
+		return strings.Join(values, "\n")
+	}
+	return ""
+}
+
+type anthropicMessageResponse struct {
+	ID         string `json:"id"`
+	Model      string `json:"model"`
+	StopReason string `json:"stop_reason"`
+	Content    []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	} `json:"content"`
+	Usage struct {
+		InputTokens  int `json:"input_tokens"`
+		OutputTokens int `json:"output_tokens"`
+	} `json:"usage"`
+}
+
+func joinAnthropicText(content []struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}) string {
+	parts := make([]string, 0, len(content))
+	for _, item := range content {
+		if item.Type == "text" && item.Text != "" {
+			parts = append(parts, item.Text)
+		}
+	}
+	return strings.Join(parts, "")
+}
+
+func normalizeAnthropicStopReason(reason string) string {
+	switch strings.TrimSpace(reason) {
+	case "end_turn":
+		return "stop"
+	case "max_tokens":
+		return "length"
+	case "stop_sequence":
+		return "stop"
+	case "tool_use":
+		return "tool_calls"
+	default:
+		return "stop"
+	}
+}
+
+func extractAnthropicError(body []byte) (string, string) {
+	var parsed struct {
+		Error struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &parsed) != nil {
+		return "", ""
+	}
+	return parsed.Error.Type, parsed.Error.Message
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}

@@ -1,0 +1,229 @@
+package adapters
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/uniroute/unirouter/internal/metering"
+	"github.com/uniroute/unirouter/internal/models"
+)
+
+func TestAnthropicNativeBuildRequest_ConvertsOpenAIChat(t *testing.T) {
+	adapter := NewAnthropicNative()
+	req, err := adapter.BuildRequest(context.Background(), RequestInput{
+		Endpoint: EndpointChatCompletions,
+		DownstreamBody: []byte(`{
+			"model":"company-chat",
+			"messages":[
+				{"role":"system","content":"You are concise."},
+				{"role":"user","content":[{"type":"text","text":"Hello"}]},
+				{"role":"assistant","content":"Hi"},
+				{"role":"user","content":"Continue"}
+			],
+			"max_tokens":32,
+			"temperature":0.2
+		}`),
+		RequestedModel: "company-chat",
+		MappedModel:    "claude-3-5-sonnet-20241022",
+		Channel: models.Channel{
+			BaseURL:       "https://api.anthropic.com/v1",
+			AdapterType:   TypeAnthropicNative,
+			AdapterConfig: json.RawMessage(`{"anthropic_version":"2023-06-01","anthropic_beta":"prompt-caching-2024-07-31"}`),
+		},
+		APIKey:    "sk-ant-test",
+		RequestID: "req-ant-1",
+	})
+	if err != nil {
+		t.Fatalf("BuildRequest failed: %v", err)
+	}
+	if got := req.Method; got != http.MethodPost {
+		t.Fatalf("expected POST, got %s", got)
+	}
+	if got := req.URL.String(); got != "https://api.anthropic.com/v1/messages" {
+		t.Fatalf("unexpected url %q", got)
+	}
+	if got := req.Header.Get("x-api-key"); got != "sk-ant-test" {
+		t.Fatalf("unexpected x-api-key %q", got)
+	}
+	if got := req.Header.Get("anthropic-version"); got != "2023-06-01" {
+		t.Fatalf("unexpected anthropic-version %q", got)
+	}
+	if got := req.Header.Get("anthropic-beta"); got != "prompt-caching-2024-07-31" {
+		t.Fatalf("unexpected anthropic-beta %q", got)
+	}
+
+	body, _ := io.ReadAll(req.Body)
+	var payload struct {
+		Model       string  `json:"model"`
+		MaxTokens   int     `json:"max_tokens"`
+		System      string  `json:"system"`
+		Temperature float64 `json:"temperature"`
+		Messages    []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("bad payload: %v", err)
+	}
+	if payload.Model != "claude-3-5-sonnet-20241022" || payload.MaxTokens != 32 {
+		t.Fatalf("unexpected model/max_tokens: %+v", payload)
+	}
+	if payload.System != "You are concise." {
+		t.Fatalf("unexpected system prompt %q", payload.System)
+	}
+	if len(payload.Messages) != 3 || payload.Messages[0].Role != "user" || payload.Messages[0].Content != "Hello" {
+		t.Fatalf("unexpected messages: %+v", payload.Messages)
+	}
+}
+
+func TestAnthropicNativeBuildRequest_RejectsUnsupportedEndpointsAndStream(t *testing.T) {
+	adapter := NewAnthropicNative()
+	_, err := adapter.BuildRequest(context.Background(), RequestInput{
+		Endpoint:       EndpointEmbeddings,
+		DownstreamBody: []byte(`{"model":"claude","input":"hello"}`),
+		Channel:        models.Channel{BaseURL: "https://api.anthropic.com"},
+		APIKey:         "sk",
+	})
+	if err == nil || !strings.Contains(err.Error(), "does not support endpoint") {
+		t.Fatalf("expected endpoint error, got %v", err)
+	}
+
+	_, err = adapter.BuildRequest(context.Background(), RequestInput{
+		Endpoint:       EndpointChatCompletions,
+		DownstreamBody: []byte(`{"model":"claude","stream":true,"messages":[{"role":"user","content":"hello"}]}`),
+		Channel:        models.Channel{BaseURL: "https://api.anthropic.com"},
+		APIKey:         "sk",
+	})
+	if err == nil || !strings.Contains(err.Error(), "streaming is not supported") {
+		t.Fatalf("expected streaming error, got %v", err)
+	}
+}
+
+func TestAnthropicNativeParseResponse_ConvertsToOpenAICompatibleBody(t *testing.T) {
+	adapter := NewAnthropicNative()
+	resp, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		StatusCode: http.StatusOK,
+		Body: []byte(`{
+			"id":"msg_123",
+			"type":"message",
+			"role":"assistant",
+			"model":"claude-3-5-sonnet-20241022",
+			"content":[{"type":"text","text":"Hello"},{"type":"text","text":" world"}],
+			"stop_reason":"end_turn",
+			"usage":{"input_tokens":7,"output_tokens":5}
+		}`),
+		Channel:        models.Channel{ID: 9, Name: "anthropic-primary", Provider: "anthropic", AdapterType: TypeAnthropicNative},
+		RequestedModel: "company-chat",
+		UpstreamModel:  "claude-3-5-sonnet-20241022",
+	})
+	if err != nil {
+		t.Fatalf("ParseResponse failed: %v", err)
+	}
+	if resp.Usage.PromptTokens != 7 || resp.Usage.CompletionTokens != 5 || resp.Usage.TotalTokens != 12 {
+		t.Fatalf("unexpected usage: %+v", resp.Usage)
+	}
+	if resp.Usage.Source != metering.UsageSourceUpstream {
+		t.Fatalf("expected upstream usage source, got %s", resp.Usage.Source)
+	}
+	var body struct {
+		ID      string `json:"id"`
+		Object  string `json:"object"`
+		Model   string `json:"model"`
+		Choices []struct {
+			FinishReason string `json:"finish_reason"`
+			Message      struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+		Usage struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+			TotalTokens      int `json:"total_tokens"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal(resp.Body, &body); err != nil {
+		t.Fatalf("decode normalized body: %v", err)
+	}
+	if body.ID != "msg_123" || body.Object != "chat.completion" || body.Model != "company-chat" {
+		t.Fatalf("unexpected normalized body: %+v", body)
+	}
+	if len(body.Choices) != 1 || body.Choices[0].Message.Content != "Hello world" || body.Choices[0].FinishReason != "stop" {
+		t.Fatalf("unexpected choices: %+v", body.Choices)
+	}
+	if body.Usage.TotalTokens != 12 {
+		t.Fatalf("unexpected body usage: %+v", body.Usage)
+	}
+}
+
+func TestAnthropicNativeClassifyHTTPStatus(t *testing.T) {
+	adapter := NewAnthropicNative()
+	cases := []struct {
+		status int
+		kind   FailureKind
+		retry  bool
+	}{
+		{400, FailureClientRequest, false},
+		{401, FailureAuth, false},
+		{429, FailureRateLimit, true},
+		{500, FailureChannel, true},
+		{529, FailureChannel, true},
+	}
+	for _, tc := range cases {
+		got := adapter.ClassifyHTTPStatus(tc.status, []byte(`{"error":{"type":"overloaded_error","message":"overloaded"}}`))
+		if got.FailureKind != tc.kind || got.Retryable != tc.retry {
+			t.Fatalf("status %d = kind %s retry %v, want %s %v", tc.status, got.FailureKind, got.Retryable, tc.kind, tc.retry)
+		}
+		if got.Code != "overloaded_error" || got.Message != "overloaded" {
+			t.Fatalf("status %d error parse failed: %+v", tc.status, got)
+		}
+	}
+}
+
+func TestAnthropicNativeTest(t *testing.T) {
+	adapter := NewAnthropicNative()
+	result, err := adapter.Test(context.Background(), TestInput{
+		Channel: models.Channel{BaseURL: "https://api.anthropic.com", Provider: "anthropic", AdapterType: TypeAnthropicNative},
+		APIKey:  "sk-ant-test",
+		Model:   "claude-3-5-sonnet-20241022",
+		Client: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if !strings.HasSuffix(req.URL.String(), "/v1/messages") {
+				t.Fatalf("unexpected url: %s", req.URL.String())
+			}
+			if req.Header.Get("x-api-key") != "sk-ant-test" {
+				t.Fatalf("missing x-api-key header")
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(`{
+					"id":"msg_test",
+					"model":"claude-3-5-sonnet-20241022",
+					"content":[{"type":"text","text":"pong"}],
+					"stop_reason":"end_turn",
+					"usage":{"input_tokens":4,"output_tokens":3}
+				}`)),
+			}, nil
+		}),
+	})
+	if err != nil {
+		t.Fatalf("Test failed: %v", err)
+	}
+	if !result.Success || result.TokensUsed != 7 {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	if !strings.Contains(string(result.Body), `"chat.completion"`) {
+		t.Fatalf("expected OpenAI-compatible body, got %s", result.Body)
+	}
+}
+
+func TestDefaultRegistryIncludesAnthropicNative(t *testing.T) {
+	if !DefaultRegistry().Has(TypeAnthropicNative) {
+		t.Fatal("default registry should include anthropic_native")
+	}
+}

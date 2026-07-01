@@ -103,6 +103,9 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 
 	// Build curl example
 	curlExample := fmt.Sprintf("curl %s -H \"Authorization: Bearer sk-***\" -H \"Content-Type: application/json\" -d '{\"model\":\"%s\",\"messages\":[{\"role\":\"user\",\"content\":\"%s\"}]}'", result.RequestURL, reqBody.Model, reqBody.Prompt)
+	if adapters.NormalizeType(adapterType) == adapters.TypeAnthropicNative {
+		curlExample = fmt.Sprintf("curl %s -H \"x-api-key: sk-***\" -H \"anthropic-version: 2023-06-01\" -H \"Content-Type: application/json\" -d '{\"model\":\"%s\",\"max_tokens\":16,\"messages\":[{\"role\":\"user\",\"content\":\"%s\"}]}'", result.RequestURL, reqBody.Model, reqBody.Prompt)
+	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success":      result.Success,

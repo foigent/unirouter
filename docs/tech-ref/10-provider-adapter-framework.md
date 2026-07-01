@@ -55,7 +55,7 @@ This is a compatibility refactor, not a downstream API change.
 | Adapter Type | Phase | Purpose |
 |--------------|-------|---------|
 | `openai_compatible` | P0 | Existing relay semantics for OpenAI-compatible upstreams |
-| `anthropic_native` | P1 candidate | Native Anthropic Messages API and stream usage proof |
+| `anthropic_native` | P1 proof in progress | Native Anthropic Messages API non-stream proof; native stream translation remains a later batch |
 | `gemini_native` | P1/P2 candidate | Native Gemini API proof if customer demand requires |
 | `vendor_native_*` | Later | Baidu, Tongyi, Wenxin, or other native providers |
 
@@ -230,7 +230,24 @@ Every adapter must include:
 
 `openai_compatible` must additionally prove existing PRD1 providers still work through the refactor path.
 
-## 12. Implementation Order
+## 12. Current Implementation Notes
+
+As of PRD2 Batch 12 local implementation, `anthropic_native` is registered in the default adapter registry for non-stream chat completions:
+
+- Downstream clients still call UniRouter's OpenAI-compatible `/v1/chat/completions`.
+- The adapter converts OpenAI-compatible chat requests to Anthropic `/v1/messages`.
+- Anthropic `input_tokens/output_tokens` are normalized to `prompt_tokens/completion_tokens`.
+- Anthropic non-stream responses are converted back to OpenAI-compatible `chat.completion` response bodies before UniRouter injects `_uniroute`.
+- Adapter-specific HTTP failure classification is used by relay routing/cooldown logic.
+- Admin channel test and channel configuration support `adapter_type = anthropic_native`.
+
+Known Batch 12 boundary:
+
+- `anthropic_native` does not support embeddings.
+- `anthropic_native` rejects `stream: true` until native SSE translation is implemented.
+- Real upstream Anthropic E2E remains pending configured provider credentials.
+
+## 13. Implementation Order
 
 1. Add `adapter_type` migration with default `openai_compatible`.
 2. Introduce normalized adapter data types.

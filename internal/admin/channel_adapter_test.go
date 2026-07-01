@@ -55,6 +55,38 @@ func TestCreateChannel_InvalidAdapterType(t *testing.T) {
 	}
 }
 
+func TestCreateChannel_AcceptsAnthropicNativeAdapterType(t *testing.T) {
+	var capturedAdapterType string
+	var capturedAdapterConfig string
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			capturedAdapterType = args[4].(string)
+			capturedAdapterConfig = args[5].(string)
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int64) = 42
+				return nil
+			}}
+		},
+	}
+	h := newTestHandler(db)
+
+	req := httptest.NewRequest(http.MethodPost, "/channels", strings.NewReader(`{"name":"anthropic","provider":"anthropic","base_url":"https://api.anthropic.com","models":"company-chat","adapter_type":"anthropic_native","adapter_config":{"anthropic_version":"2023-06-01"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.CreateChannel(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if capturedAdapterType != "anthropic_native" {
+		t.Fatalf("expected anthropic_native, got %q", capturedAdapterType)
+	}
+	if !strings.Contains(capturedAdapterConfig, "anthropic_version") {
+		t.Fatalf("expected adapter_config to be persisted, got %q", capturedAdapterConfig)
+	}
+}
+
 func TestUpdateChannel_InvalidAdapterType(t *testing.T) {
 	h := newTestHandler(&testutil.MockDB{})
 

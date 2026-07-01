@@ -1666,6 +1666,98 @@ func TestTestChannel_Upstream401IsFailureAndUsesSelectedModel(t *testing.T) {
 	}
 }
 
+func TestTestChannel_AnthropicNativeUsesMessagesEndpoint(t *testing.T) {
+	var gotPath string
+	var gotAPIKey string
+	var gotModel string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAPIKey = r.Header.Get("x-api-key")
+		var body struct {
+			Model string `json:"model"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		gotModel = body.Model
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"id":"msg_test",
+			"model":"claude-3-5-sonnet-20241022",
+			"content":[{"type":"text","text":"ok"}],
+			"stop_reason":"end_turn",
+			"usage":{"input_tokens":4,"output_tokens":3}
+		}`))
+	}))
+	defer upstream.Close()
+
+	keyEnc, err := auth.EncryptKey([]byte("sk-ant-test"), []byte("0123456789abcdef01234567"))
+	if err != nil {
+		t.Fatalf("encrypt key: %v", err)
+	}
+
+	queryCount := 0
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			queryCount++
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
+					switch queryCount {
+					case 1:
+						*dest[0].(*string) = upstream.URL
+						*dest[1].(*string) = "claude-3-5-sonnet-20241022"
+						*dest[2].(*string) = "anthropic_native"
+						*dest[3].(*json.RawMessage) = json.RawMessage(`{"anthropic_version":"2023-06-01"}`)
+					case 2:
+						*dest[0].(*string) = keyEnc
+					default:
+						t.Fatalf("unexpected query count %d", queryCount)
+					}
+					return nil
+				},
+			}
+		},
+	}
+	h := newTestHandler(db)
+
+	body := `{"model":"claude-3-5-sonnet-20241022","prompt":"ping"}`
+	req := httptest.NewRequest("POST", "/channels/1/test", strings.NewReader(body))
+	req.SetPathValue("id", "1")
+	rec := httptest.NewRecorder()
+
+	h.TestChannel(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected handler 200 wrapper, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp["success"] != true {
+		t.Fatalf("expected success=true, got %v: %s", resp["success"], rec.Body.String())
+	}
+	if resp["adapter_type"] != "anthropic_native" {
+		t.Fatalf("expected adapter_type anthropic_native, got %v", resp["adapter_type"])
+	}
+	if int(resp["tokens_used"].(float64)) != 7 {
+		t.Fatalf("expected 7 tokens, got %v", resp["tokens_used"])
+	}
+	if gotPath != "/v1/messages" {
+		t.Fatalf("expected POST /v1/messages, got %s", gotPath)
+	}
+	if gotAPIKey != "sk-ant-test" {
+		t.Fatalf("expected x-api-key header, got %q", gotAPIKey)
+	}
+	if gotModel != "claude-3-5-sonnet-20241022" {
+		t.Fatalf("expected model claude-3-5-sonnet-20241022, got %q", gotModel)
+	}
+	if !strings.Contains(resp["response"].(string), "chat.completion") {
+		t.Fatalf("expected normalized OpenAI-compatible response, got %v", resp["response"])
+	}
+	if !strings.Contains(resp["curl_example"].(string), "x-api-key") || strings.Contains(resp["curl_example"].(string), "Authorization: Bearer") {
+		t.Fatalf("expected anthropic-native curl example, got %v", resp["curl_example"])
+	}
+}
+
 // ===================================================================
 // DeleteUser tests
 // ===================================================================
