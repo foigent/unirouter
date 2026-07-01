@@ -141,6 +141,44 @@ describe('API Client', () => {
       expect(url).toContain('model=gpt-4o')
       expect(url).toContain('provider=openai')
     })
+
+    it('adds project_id for project-scoped usage queries', async () => {
+      mockJsonResponse({ data: [], total: 0 })
+
+      await api.getLogs(2, 50, { project_id: 7, request_id: 'req-001' })
+      const url = mockFetch.mock.calls[0][0]
+      expect(url).toContain('/api/v1/logs?')
+      expect(url).toContain('page=2')
+      expect(url).toContain('page_size=50')
+      expect(url).toContain('project_id=7')
+      expect(url).toContain('request_id=req-001')
+    })
+  })
+
+  describe('project developer APIs', () => {
+    it('filters keys by project_id', async () => {
+      mockJsonResponse({ data: [], total: 0 })
+
+      await api.getKeys(1, 20, { project_id: 7 })
+      const url = mockFetch.mock.calls[0][0]
+      expect(url).toBe('/api/v1/keys?page=1&page_size=20&project_id=7')
+    })
+
+    it('loads accessible projects', async () => {
+      mockJsonResponse({ data: [], total: 0 })
+
+      await api.getProjects(1, 100, { status: 'active' })
+      const url = mockFetch.mock.calls[0][0]
+      expect(url).toBe('/api/v1/projects?page=1&page_size=100&status=active')
+    })
+
+    it('loads approved catalog by project_id', async () => {
+      mockJsonResponse({ data: [], total: 0 })
+
+      await api.getModelCatalog(1, 100, { project_id: 7 })
+      const url = mockFetch.mock.calls[0][0]
+      expect(url).toBe('/api/v1/model-catalog?page=1&page_size=100&project_id=7')
+    })
   })
 
   describe('error handling', () => {

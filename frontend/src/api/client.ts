@@ -61,6 +61,17 @@ async function request(path: string, options: RequestInit = {}) {
   return payload;
 }
 
+function appendParams(path: string, params: Record<string, string | number | undefined | null>) {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      search.set(key, String(value));
+    }
+  });
+  const query = search.toString();
+  return query ? `${path}?${query}` : path;
+}
+
 export const api = {
   // Auth
   login: (username: string, password: string) =>
@@ -90,8 +101,8 @@ export const api = {
     request(`/channels/${id}`, { method: 'DELETE' }),
 
   // Keys
-  getKeys: (page = 1, pageSize = 20) =>
-    request(`/keys?page=${page}&page_size=${pageSize}`),
+  getKeys: (page = 1, pageSize = 20, filters?: { project_id?: number }) =>
+    request(appendParams('/keys', { page, page_size: pageSize, project_id: filters?.project_id })),
   createKey: (data: any) =>
     request('/keys', { method: 'POST', body: JSON.stringify(data) }),
   updateKey: (id: number, data: any) =>
@@ -111,20 +122,32 @@ export const api = {
     model?: string; provider?: string; status_code?: string;
     start_time?: string; end_time?: string; request_id?: string;
     latency_min?: string; latency_max?: string; search?: string;
+    project_id?: number; usage_source?: string;
   }) => {
-    let url = `/logs?page=${page}&page_size=${pageSize}`;
-    if (filters?.model) url += `&model=${encodeURIComponent(filters.model)}`;
-    if (filters?.provider) url += `&provider=${encodeURIComponent(filters.provider)}`;
-    if (filters?.status_code) url += `&status_code=${encodeURIComponent(filters.status_code)}`;
-    if (filters?.start_time) url += `&start_time=${encodeURIComponent(filters.start_time)}`;
-    if (filters?.end_time) url += `&end_time=${encodeURIComponent(filters.end_time)}`;
-    if (filters?.request_id) url += `&request_id=${encodeURIComponent(filters.request_id)}`;
-    if (filters?.latency_min) url += `&latency_min=${encodeURIComponent(filters.latency_min)}`;
-    if (filters?.latency_max) url += `&latency_max=${encodeURIComponent(filters.latency_max)}`;
-    if (filters?.search) url += `&search=${encodeURIComponent(filters.search)}`;
-    return request(url);
+    return request(appendParams('/logs', {
+      page,
+      page_size: pageSize,
+      model: filters?.model,
+      provider: filters?.provider,
+      status_code: filters?.status_code,
+      start_time: filters?.start_time,
+      end_time: filters?.end_time,
+      request_id: filters?.request_id,
+      latency_min: filters?.latency_min,
+      latency_max: filters?.latency_max,
+      search: filters?.search,
+      project_id: filters?.project_id,
+      usage_source: filters?.usage_source,
+    }));
   },
   getLogDetail: (id: number) => request(`/logs/${id}`),
+
+  // Projects and developer catalog
+  getProjects: (page = 1, pageSize = 20, filters?: { status?: string; org_id?: number }) =>
+    request(appendParams('/projects', { page, page_size: pageSize, status: filters?.status, org_id: filters?.org_id })),
+  getProject: (id: number) => request(`/projects/${id}`),
+  getModelCatalog: (page = 1, pageSize = 20, filters?: { project_id?: number; org_id?: number }) =>
+    request(appendParams('/model-catalog', { page, page_size: pageSize, project_id: filters?.project_id, org_id: filters?.org_id })),
 
   // Model prices
   getModelPrices: () => request('/model-prices'),

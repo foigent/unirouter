@@ -1,8 +1,8 @@
-# FIX-SIGNAL.md — PRD2 Batch 9.5 Billing Settle Hardening
+# FIX-SIGNAL.md — PRD2 Batch 10 Developer Console MVP
 
 **修复者：** main agent
 **日期：** 文件系统时间戳为准
-**修复轮次：** PRD2 Batch 9.5
+**修复轮次：** PRD2 Batch 10
 
 ---
 
@@ -10,151 +10,186 @@
 
 | 项目 | 预期状态 | 原因 |
 |------|----------|------|
-| PRD2 Batch 1-9 | Canary full-context regression PASS | User 已转发 Canary 报告，Batch 10 无阻断项 |
-| `PRD2-ERR-001` | Fixed awaiting Canary | 本轮只修 Medium settle/frozen hardening |
-| `PRD2-AUDIT-001` | 仍 Open | 当前代码已有 `channel.create/update/delete` 基础审计；剩余是 before/after 细化和 `channel.test` 审计增强，不混入本轮 |
-| Batch 10 Developer Console | 未实现 | 本轮不做前端 Developer Console |
-| Atlas 部署 / 真实 upstream provider E2E | 未执行 | 本轮是本地后端 hardening，不触发部署 |
+| PRD2 Batch 1-9.5 | Canary/Sentinel 已完成 | User 已报告 Canary 和 Sentinel 完成，`PRD2-ERR-001` 为 Canary passed |
+| Atlas 部署 | 未执行 | 本轮是本地 Developer Console 实现，不触发部署 |
+| Playground | 未实现 | `docs/design/PRD2-DEVELOPER-CONSOLE-SPEC.md` 明确 Playground 是 P2，不属于本轮 P0 |
+| 独立公开 Portal | 未实现 | PRD2 决策是一个登录、一个前端应用、角色感知导航 |
+| Developer 停用 Key | 未放开 | 当前后端仅允许 `platform_admin/org_admin/project_admin` 停用 Key；Developer Console 对 `developer` 隐藏停用按钮，不在本轮扩大权限 |
+| PRD2 Low hardening follow-ups | 仍 Open | `PRD2-MIG-001/002`, `PRD2-GOV-001`, `PRD2-AUDIT-001` 不混入 Batch 10 |
 
-> Canary 验收时：上述未完成项不算 FAIL；如果本轮声称完成 Developer Console、Atlas 部署、真实 upstream E2E 或 `PRD2-AUDIT-001` 全量审计增强，应标为 FAIL。
-
----
-
-## Fix #1: Settlement retry and cancel fallback
-
-**文件：** `internal/gateway/relay.go:90`
-
-**原问题：** `PRD2-ERR-001` 指出 chat 非流式和流式路径在 `billing.Settle` 返回错误时只写日志，然后继续成功响应，可能让 `freeze_idempotency.status='frozen'` 和 `wallets.frozen` 长期残留。
-
-**当前实现：**
-
-- 新增 `settleBillingWithRetry`。
-- 对 settlement 执行最多 3 次重试。
-- 使用独立 `context.Background()` + timeout，避免客户端断开导致关键 billing 操作被取消。
-- 3 次仍失败时调用 `billing.Cancel` 释放冻结金额。
-- `Settle` 返回 `Success=false` 或 nil result 也视为 settle failure。
-
-**验证方法：**
-
-```bash
-go test ./internal/gateway -run 'TestRelayNonStreamRequest_Settle|TestRelayStreamRequest_SettleError' -v
-```
-
-期望：
-
-- `TestRelayNonStreamRequest_SettleRetrySuccess` PASS：前两次 settle 失败，第三次成功，不调用 Cancel，最终 HTTP 200。
-- `TestRelayNonStreamRequest_SettleError` PASS：三次 settle 失败后调用 Cancel，最终 HTTP 500，响应包含 `billing_error.settle_failed`。
-- `TestRelayStreamRequest_SettleError` PASS：三次 settle 失败后调用 Cancel，SSE 仍以 `[DONE]` 正常收尾，`_uniroute.billing_status=settle_failed_cancelled` 且 charged 为 0。
+> Canary 验收时：上述未完成项不算 FAIL。若本轮声称完成部署、Playground、公开 Portal、Developer 停用 Key 权限扩大或 Low hardening 全量修复，应标为 FAIL。
 
 ---
 
-## Fix #2: Non-stream and embeddings no longer return success on unrecovered settle failure
+## Fix #1: Project-filtered API key listing
 
-**文件：** `internal/gateway/relay.go:373`, `internal/gateway/relay.go:881`
+**文件：** `internal/admin/key_handlers.go`, `internal/admin/rbac_handlers_test.go`
 
-**原问题：** 非流式 chat 和 embeddings 在上游成功后，如果 settlement 无法完成，继续返回成功会造成“客户端成功、资金仍冻结”的不一致状态。
+**原问题：** Developer Console 有项目选择器，但现有 `GET /api/v1/keys` 只能按项目角色做成员隔离，不能按选中的 `project_id` 过滤。多项目成员会看到混合 Key 列表。
 
 **当前实现：**
 
-- 非流式 chat 在 settle 重试后仍失败时返回 HTTP 500，不记录成功 call log，不触发 budget alert。
-- embeddings 路径也使用同一 settlement helper；settle unrecovered 时返回 HTTP 500。
-- 流式路径因为内容可能已写出，不能改 HTTP status；因此取消冻结、记录 charged=0，并在 `_uniroute.billing_status` 中暴露状态。
+- `GET /api/v1/keys?project_id=<id>` 解析并校验 `project_id`。
+- 先调用 `canReadProject`，无权限返回 403。
+- SQL 追加 `ak.project_id = $n`，项目角色仍保留 membership EXISTS 过滤。
+- 新增测试覆盖允许路径和无权限路径。
 
-**验证方法：**
+**建议验证：**
 
 ```bash
-go test ./internal/gateway
-go test -count=1 -tags integration ./cmd/uniroute -run 'TestPRD2P0' -v
+go test ./internal/admin -run 'TestListAPIKeys_ProjectIDFilter|TestListAPIKeys_Success|TestCreateAPIKey_DeveloperRequiresProjectID' -v
 ```
 
 ---
 
-## Fix #3: Cleanup no longer deletes frozen idempotency rows directly
+## Fix #2: Auth profile refresh and role-aware routing
 
-**文件：** `internal/admin/audit_handlers.go:279`
+**文件：** `frontend/src/store/auth.ts`, `frontend/src/main.tsx`, `frontend/src/App.tsx`, `frontend/src/navigation.tsx`, `frontend/src/pages/LoginPage.tsx`
 
-**原问题：** 旧 cleanup 会删除 30 天以上的 `freeze_idempotency` 行，不区分 `status='frozen'`。如果某笔 frozen 因 settle 异常残留，删除幂等记录后将更难恢复钱包冻结金额。
-
-**当前实现：**
-
-- cleanup 先释放 `updated_at < NOW() - INTERVAL '24 hours'` 且仍为 `status='frozen'` 的 stale freeze。
-- 钱包按 org 聚合释放 frozen，并把对应 idempotency 行标记为 `cancelled`。
-- 30 天清理只删除 `status <> 'frozen'` 的旧幂等记录。
-
-**验证方法：**
-
-```bash
-go test ./internal/admin -run 'TestCleanupOldData' -v
-go test -count=1 -tags integration ./internal/admin -run TestCleanupOldData_ReleasesStaleFrozen_Integration -v
-```
-
-期望：
-
-- `TestCleanupOldData_ReleasesStaleFrozenBeforeDeletingIdempotency` PASS。
-- 测试确认 cleanup SQL 包含 stale frozen release，并且 delete 语句包含 `status <> 'frozen'`。
-- `TestCleanupOldData_ReleasesStaleFrozen_Integration` PASS，真实迁移库中 stale frozen 被标记 `cancelled`，钱包 `frozen` 归零并退回 `balance`。
-
----
-
-## Fix #4: Current status and issue queue updated without overclaim
-
-**文件：** `docs/issues/OPEN-ISSUES.md`, `docs/ops/CURRENT-STATUS.md`, `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`
+**原问题：** 前端只用 token 判断是否登录，刷新后没有 `/me` profile，无法知道角色；侧边栏也对所有用户显示管理员菜单。
 
 **当前实现：**
 
-- `PRD2-ERR-001` 标记为 `Fixed awaiting Canary`。
-- `CURRENT-STATUS.md` 标记 Batch 9.5 fixed locally awaiting Canary。
-- PRD2 matrix 只写本地修复证据，不把 Batch 9.5 提升为 Canary accepted。
-- `PRD2-AUDIT-001` 修正为审计增强项并保持 Open。
+- Auth store 增加 `UserProfile`、`profileLoading`、`loadProfile()`。
+- `ProtectedRoute` 在有 token 但无角色时读取 `/api/v1/me`。
+- 登录成功后按角色跳转：项目角色进入 `/developer`，管理员/账单角色进入 `/`。
+- `navigation.tsx` 集中定义角色标签、默认落点、菜单和前端路由允许列表。
+- `developer/viewer/project_admin` 只显示 Developer Console 和 Docs。
+- Direct URL 前端 guard 会把项目角色访问 `/channels` 等管理员路径重定向回 `/developer`；后端 RBAC 仍是最终权限边界。
 
-**验证方法：**
+**建议验证：**
 
 ```bash
-rg -n "PRD2-ERR-001|Batch 9.5|settle-error|PRD2-AUDIT-001" docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD2-ACCEPTANCE-MATRIX.md
+npm --prefix frontend test -- navigation.test.tsx LoginPage.test.tsx
 ```
 
 ---
 
-## 全局验证命令
+## Fix #3: Developer Console MVP page
 
-Canary 请从仓库根目录执行：
+**文件：** `frontend/src/pages/DeveloperConsolePage.tsx`, `frontend/src/pages/ApiDocsPage.tsx`, `frontend/src/index.css`
+
+**当前实现：**
+
+- 在既有前端应用内新增 `/developer`。
+- 项目选择器来自 `GET /api/v1/projects?status=active`。
+- 项目 API Key 列表使用 `GET /api/v1/keys?project_id=<id>`。
+- 创建项目 Key 时发送 `org_id`、`project_id`、name、allowed models、IP allowlist、RPM/QPS，并只显示一次完整 Key。
+- Approved Models 使用 `GET /api/v1/model-catalog?project_id=<id>`，展示 alias、lifecycle、provider family、context length、capability tags、data residency。
+- 最近调用使用 `GET /api/v1/logs?project_id=<id>`，展示 request_id、status、model、tokens、cost、latency。
+- Request Lookup 使用 `GET /api/v1/logs?project_id=<id>&request_id=<id>` 后再查 `/logs/{id}`，UI 不展示 provider key、完整 API key、prompt、response。
+- Quickstart 使用当前 origin `/v1` 和当前 approved model/alias 生成 curl 示例。
+- `/docs` 静态接口索引从 PRD1 文案更新为 PRD2，并加入 Developer Console 相关项目 API。
+- CSS 增加固定网格、代码块换行、lookup 摘要网格和移动端响应式约束。
+
+**建议验证：**
 
 ```bash
-go test ./internal/gateway -run 'TestRelayNonStreamRequest_Settle|TestRelayStreamRequest_SettleError' -v
-go test ./internal/admin -run 'TestCleanupOldData' -v
-go test ./internal/gateway ./internal/admin
-go test ./internal/billing
+npm --prefix frontend test -- DeveloperConsolePage.test.tsx
+npm --prefix frontend run build
+```
+
+---
+
+## Fix #4: Frontend API client supports project Developer Console contracts
+
+**文件：** `frontend/src/api/client.ts`, `frontend/src/api/__tests__/client.test.ts`
+
+**当前实现：**
+
+- 新增 `appendParams()`，避免继续手拼 query string。
+- `getKeys(page, pageSize, { project_id })`。
+- `getProjects(page, pageSize, { status, org_id })`。
+- `getProject(id)`。
+- `getModelCatalog(page, pageSize, { project_id, org_id })`。
+- `getLogs()` filters 增加 `project_id` 和 `usage_source`。
+- API client tests 覆盖 keys/projects/model-catalog/logs 的 project query。
+
+**建议验证：**
+
+```bash
+npm --prefix frontend test -- client.test.ts
+```
+
+---
+
+## Fix #5: PRD2 status documents updated without overclaim
+
+**文件：** `docs/ops/CURRENT-STATUS.md`, `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`, `docs/agent-workflows/FIX-SIGNAL.md`
+
+**当前实现：**
+
+- `CURRENT-STATUS.md` 标记 Batch 10 fixed locally awaiting Canary。
+- `PRD2-ACCEPTANCE-MATRIX.md` 将 `P2-F03 Developer Console MVP` 从 `Planned` 改为 `Implemented not accepted`，并保留 Canary/browser/Sentinel 缺口。
+- 不把 Batch 10 提前标成 `E2E accepted` 或 `Production verified`。
+
+**建议验证：**
+
+```bash
+rg -n "Batch 10|Developer Console MVP|P2-F03|project_id" docs/ops/CURRENT-STATUS.md docs/ops/PRD2-ACCEPTANCE-MATRIX.md docs/agent-workflows/FIX-SIGNAL.md
+```
+
+---
+
+## 本地已执行并通过
+
+```bash
+go test ./internal/admin ./cmd/uniroute
 go test ./...
-go test -count=1 -tags integration ./internal/admin -run TestCleanupOldData_ReleasesStaleFrozen_Integration -v
-go test -count=1 -tags integration ./cmd/uniroute -run 'TestPRD2P0' -v
-go test -count=1 -tags integration ./internal/billing -run TestFreeze_ConcurrentDuplicateRequestAcrossInstances_Integration -v
-go test -count=1 -tags integration ./internal/migrate -run TestMigration000009BackfillsDefaultProjectForPRD1Data_Integration -v
+npm --prefix frontend test
+npm --prefix frontend run build
 git diff --check
 git diff --check -- $(git ls-files --others --exclude-standard)
 ```
 
-本地已执行并通过：
+`npm --prefix frontend run build` 仍显示既有 Vite large chunk warning；构建退出码为 0。
 
-- `go test ./internal/gateway -run 'TestRelayNonStreamRequest_Settle|TestRelayStreamRequest_SettleError' -v`
-- `go test ./internal/admin -run 'TestCleanupOldData' -v`
-- `go test ./internal/gateway ./internal/admin`
-- `go test ./internal/billing`
-- `go test ./...`
-- `go test -count=1 -tags integration ./internal/admin -run TestCleanupOldData_ReleasesStaleFrozen_Integration -v`
-- `go test -count=1 -tags integration ./cmd/uniroute -run 'TestPRD2P0' -v`
-- `go test -count=1 -tags integration ./internal/billing -run TestFreeze_ConcurrentDuplicateRequestAcrossInstances_Integration -v`
-- `go test -count=1 -tags integration ./internal/migrate -run TestMigration000009BackfillsDefaultProjectForPRD1Data_Integration -v`
+Codex 还执行了本地 Playwright mock-browser smoke：
+
+- `/login` 渲染通过，无 console error。
+- 未登录访问 `/developer` 重定向到 `/login`。
+- 使用 Playwright route mock `/api/v1/me`, `/projects`, `/keys`, `/model-catalog`, `/logs` 后，`/developer` 桌面和 390px 移动端视口渲染通过，无 console error。
+- 截图保存到被 git ignore 的本地证据：`output/playwright/prd2-batch10-login.png`, `output/playwright/prd2-batch10-developer-console.png`, `output/playwright/prd2-batch10-developer-console-mobile.png`。
+
+---
+
+## Canary 全局验证建议
+
+请从仓库根目录执行：
+
+```bash
+go test ./internal/admin -run 'TestListAPIKeys_ProjectIDFilter|TestListAPIKeys_Success|TestCreateAPIKey_DeveloperRequiresProjectID' -v
+go test ./internal/admin ./cmd/uniroute
+go test ./...
+npm --prefix frontend test
+npm --prefix frontend run build
+git diff --check
+git diff --check -- $(git ls-files --others --exclude-standard)
+```
+
+如果具备浏览器自动化能力，可补充：
+
+```bash
+npm --prefix frontend run dev
+# Browser smoke:
+# 1. developer/project_admin login lands on /developer.
+# 2. /developer shows project selector, project key table, approved models, recent calls, request lookup, quickstart.
+# 3. developer direct /channels redirects to /developer.
+# 4. project_admin can open create-key drawer and plaintext key modal appears after create.
+```
+
+---
 
 ## 期望的 VERIFY-RESULT.md 输出格式
 
 请覆盖写入 `docs/agent-workflows/VERIFY-RESULT.md`：
 
 ```markdown
-# VERIFY-RESULT.md — PRD2 Batch 9.5 验收结果
+# VERIFY-RESULT.md — PRD2 Batch 10 验收结果
 
 **验收者：** OpenClaw Canary
 **日期：** 2026-07-02
-**对应轮次：** PRD2 Batch 9.5 Billing Settle Hardening
+**对应轮次：** PRD2 Batch 10 Developer Console MVP
 
 ## 逐条结果
 
@@ -162,19 +197,22 @@ git diff --check -- $(git ls-files --others --exclude-standard)
 - Fix #2: PASS/FAIL — evidence
 - Fix #3: PASS/FAIL — evidence
 - Fix #4: PASS/FAIL — evidence
+- Fix #5: PASS/FAIL — evidence
 
 ## 命令结果
 
 | 命令 | 结果 | 备注 |
 |------|------|------|
-| `go test ./internal/gateway -run 'TestRelayNonStreamRequest_Settle|TestRelayStreamRequest_SettleError' -v` | PASS/FAIL | |
-| `go test ./internal/admin -run 'TestCleanupOldData' -v` | PASS/FAIL | |
-| `go test ./internal/gateway ./internal/admin` | PASS/FAIL | |
-| `go test ./internal/billing` | PASS/FAIL | |
+| `go test ./internal/admin -run 'TestListAPIKeys_ProjectIDFilter|TestListAPIKeys_Success|TestCreateAPIKey_DeveloperRequiresProjectID' -v` | PASS/FAIL | |
+| `go test ./internal/admin ./cmd/uniroute` | PASS/FAIL | |
 | `go test ./...` | PASS/FAIL | |
-| `go test -count=1 -tags integration ./internal/admin -run TestCleanupOldData_ReleasesStaleFrozen_Integration -v` | PASS/FAIL/SKIP | note DB/skips if any |
-| PRD2 integration tests | PASS/FAIL/SKIP | note DB/skips if any |
+| `npm --prefix frontend test` | PASS/FAIL | |
+| `npm --prefix frontend run build` | PASS/FAIL | note large chunk warning if present |
 | `git diff --check` | PASS/FAIL | |
+
+## 浏览器烟测（如执行）
+
+- PASS/FAIL/SKIP — evidence
 
 ## 新发现
 
@@ -182,5 +220,5 @@ git diff --check -- $(git ls-files --others --exclude-standard)
 
 ## 结论
 
-PASS/FAIL. 明确说明 `PRD2-ERR-001` 是否可改为 Canary passed，以及是否存在 Batch 10 blocker。
+PASS/FAIL. 明确说明 Batch 10 是否可交给 Sentinel，以及是否存在 Batch 11 blocker。
 ```

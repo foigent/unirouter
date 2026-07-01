@@ -1,30 +1,42 @@
-# VERIFY-RESULT.md — PRD2 Batch 9.5 Billing Settle Hardening 验收结果
+# VERIFY-RESULT.md — PRD2 Batch 10 Developer Console MVP 验收结果
 
 **验收者：** OpenClaw Canary
-**日期：** 2026-07-02 03:19 CST
-**对应轮次：** PRD2 Batch 9.5 Billing Settle Hardening
+**日期：** 2026-07-02 03:51 CST
+**对应轮次：** PRD2 Batch 10 Developer Console MVP
 
 ---
 
 ## 逐条结果
 
-- **Fix #1 (Settlement retry + cancel fallback):** PASS — `relay.go:90` `settleBillingWithRetry` 最多重试 3 次，使用独立 `context.Background()` + timeout。3 次仍失败时调用 `billing.Cancel`。`TestRelayNonStreamRequest_SettleRetrySuccess`（前两次失败第三次成功，不调 Cancel）PASS。`TestRelayNonStreamRequest_SettleError`（三次失败后 Cancel，返回 500 `billing_error.settle_failed`）PASS。`TestRelayStreamRequest_SettleError`（三次失败后 Cancel，SSE 以 `[DONE]` 收尾，`_uniroute.billing_status=settle_failed_cancelled`）PASS
-- **Fix #2 (非流式/embeddings 不再在 settle 失败时返回成功):** PASS — `relay.go:373` 非流式 chat settle 失败返回 500。`relay.go:881` embeddings 同理。流式路径因内容已写出，取消冻结并记录 `charged=0`
-- **Fix #3 (Cleanup 不再直接删除 frozen 行):** PASS — `audit_handlers.go:280` 先释放 `updated_at < 24h` 且 `status='frozen'` 的 stale freeze，标记为 `cancelled`。`:308` 30 天清理只删 `status <> 'frozen'` 的旧记录。`TestCleanupOldData_ReleasesStaleFrozen_Integration` 在临时迁移库中验证 stale frozen 被释放（`released 1 stale frozen`）PASS
-- **Fix #4 (状态同步):** PASS — `PRD2-ERR-001` 标记为 `Fixed awaiting Canary`。`CURRENT-STATUS.md` 标记 Batch 9.5 awaiting Canary
+- **Fix #1 (Project-filtered API key listing):** PASS — `key_handlers.go` 支持 `project_id` 查询参数，`canReadProject` 校验权限。`TestListAPIKeys_ProjectIDFilterRequiresProjectAccess` + `TestListAPIKeys_ProjectIDFilterRejectsUnauthorizedProject` + `TestListAPIKeys_Success` + `TestCreateAPIKey_DeveloperRequiresProjectID` 4/4 PASS
+- **Fix #2 (Auth profile refresh + role-aware routing):** PASS — `auth.ts` 增加 `UserProfile`/`loadProfile()`。`navigation.tsx` 集中定义角色菜单和路由允许列表。`LoginPage.test.tsx` 新增 "navigates project users to developer console after login" 测试 PASS。前端测试 6→6（LoginPage 新增 1 个）
+- **Fix #3 (Developer Console MVP page):** PASS — `DeveloperConsolePage.tsx` 实现项目选择器、key 列表/创建、approved models、recent calls、request lookup、quickstart。`DeveloperConsolePage.test.tsx` 新增测试 PASS。前端测试文件 6→8（+2 新增）
+- **Fix #4 (Frontend API client supports project contracts):** PASS — `client.ts` 新增 `appendParams()`、`getKeys`/`getProjects`/`getProject`/`getModelCatalog` 支持 `project_id`。`client.test.ts` 覆盖 project query 测试 PASS
+- **Fix #5 (PRD2 status documents):** PASS — `CURRENT-STATUS.md` 标记 Batch 10 awaiting Canary。`PRD2-ACCEPTANCE-MATRIX.md` P2-F03 标记为 `Implemented not accepted`
 
 ## 命令结果
 
 | # | 命令 | 结果 |
 |---|------|------|
-| 1 | `go test ./internal/gateway -run 'TestRelayNonStreamRequest_Settle\|TestRelayStreamRequest_SettleError' -v` | **PASS**（3/3） |
-| 2 | `go test ./internal/admin -run 'TestCleanupOldData' -v` | **PASS**（4/4） |
+| 1 | `go test ./internal/admin -run 'TestListAPIKeys_ProjectIDFilter\|TestListAPIKeys_Success\|TestCreateAPIKey_DeveloperRequiresProjectID' -v` | **PASS**（4/4） |
+| 2 | `go test ./internal/admin ./cmd/uniroute` | **PASS** |
 | 3 | `go test ./... -count=1` | **PASS**（18/18 包） |
-| 4 | `go test -tags integration ./internal/admin -run TestCleanupOldData_ReleasesStaleFrozen_Integration` | **PASS** |
-| 5 | `go test -tags integration ./cmd/uniroute -run 'TestPRD2P0'` | **PASS**（2/2） |
-| 6 | `go test -tags integration ./internal/billing -run TestFreeze_ConcurrentDuplicate` | **PASS**（truncate warnings nonfatal） |
-| 7 | `go test -tags integration ./internal/migrate -run TestMigration000009` | **PASS** |
-| 8 | `git diff --check` | **PASS** |
+| 4 | `npm --prefix frontend test` | **PASS**（55/55 测试，8 文件，+12 新增） |
+| 5 | `npm --prefix frontend run build` | **PASS**（4.26s，large chunk warning） |
+| 6 | `git diff --check` | **PASS** |
+
+## 浏览器烟测
+
+SKIP — Canary 无浏览器自动化能力。Codex 已执行本地 Playwright mock-browser smoke 并保存截图。
+
+## 前置条件核验
+
+- Atlas 部署未声称完成: PASS ✅
+- Playground 未声称完成: PASS ✅
+- 独立公开 Portal 未声称完成: PASS ✅
+- Developer 停用 Key 权限未扩大: PASS ✅
+- Low hardening follow-ups 未混入: PASS ✅
+- Matrix 未过度标注: PASS ✅（P2-F03 为 Implemented not accepted，非 E2E accepted）
 
 ## 新发现
 
@@ -32,4 +44,4 @@
 
 ## 结论
 
-**4/4 全部 PASS。** PRD2 Batch 9.5 验收通过。`PRD2-ERR-001` 可标记为 Canary passed。Settle 重试 + cancel-on-failure + stale frozen cleanup 三层防护就绪。无 Batch 10 blocker。
+**5/5 全部 PASS。** PRD2 Batch 10 Developer Console MVP 验收通过。后端 project_id 过滤 + 前端 Developer Console 页面 + 角色路由 + API client 全部就绪。无 Batch 11 blocker。

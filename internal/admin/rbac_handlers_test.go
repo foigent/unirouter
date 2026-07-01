@@ -106,6 +106,80 @@ func TestCreateAPIKey_DeveloperRequiresProjectID(t *testing.T) {
 	}
 }
 
+func TestListAPIKeys_ProjectIDFilterRequiresProjectAccess(t *testing.T) {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			if !strings.Contains(sql, "FROM project_members") {
+				t.Fatalf("expected membership check, got %s", sql)
+			}
+			if args[0] != int64(7) || args[1] != int64(10) {
+				t.Fatalf("unexpected membership args: %#v", args)
+			}
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int) = 1
+				return nil
+			}}
+		},
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			if !strings.Contains(sql, "ak.project_id = $1") {
+				t.Fatalf("expected api key project_id filter, got %s", sql)
+			}
+			if !strings.Contains(sql, "pm.project_id = ak.project_id") {
+				t.Fatalf("expected project-scoped membership filter, got %s", sql)
+			}
+			if args[0] != int64(7) || args[1] != int64(10) {
+				t.Fatalf("unexpected query args: %#v", args)
+			}
+			return &testutil.MockRows{}, nil
+		},
+	}
+	h := newTestHandler(db)
+
+	req := httptest.NewRequest(http.MethodGet, "/keys?project_id=7", nil)
+	ctx := context.WithValue(req.Context(), middleware.CtxUserRole, auth.RoleDeveloper)
+	ctx = context.WithValue(ctx, middleware.CtxUserID, int64(10))
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	h.ListAPIKeys(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestListAPIKeys_ProjectIDFilterRejectsUnauthorizedProject(t *testing.T) {
+	queryCalled := false
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int) = 0
+				return nil
+			}}
+		},
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			queryCalled = true
+			return &testutil.MockRows{}, nil
+		},
+	}
+	h := newTestHandler(db)
+
+	req := httptest.NewRequest(http.MethodGet, "/keys?project_id=8", nil)
+	ctx := context.WithValue(req.Context(), middleware.CtxUserRole, auth.RoleDeveloper)
+	ctx = context.WithValue(ctx, middleware.CtxUserID, int64(10))
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	h.ListAPIKeys(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if queryCalled {
+		t.Fatal("expected key query to be skipped after forbidden project access")
+	}
+}
+
 func TestCreateUser_InvalidRole(t *testing.T) {
 	h := newTestHandler(&testutil.MockDB{})
 

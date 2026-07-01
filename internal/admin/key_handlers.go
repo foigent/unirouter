@@ -16,6 +16,20 @@ func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 	var conditions []string
 	var args []interface{}
 	argIdx := 1
+	if projectIDParam := r.URL.Query().Get("project_id"); projectIDParam != "" {
+		projectID, err := strconv.ParseInt(projectIDParam, 10, 64)
+		if err != nil || projectID <= 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid project_id"})
+			return
+		}
+		if !h.canReadProject(r.Context(), projectID) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			return
+		}
+		conditions = append(conditions, fmt.Sprintf("ak.project_id = $%d", argIdx))
+		args = append(args, projectID)
+		argIdx++
+	}
 	if auth.IsProjectScopedRole(actorRole(r.Context())) {
 		conditions = append(conditions, fmt.Sprintf(`EXISTS (
 			SELECT 1 FROM project_members pm

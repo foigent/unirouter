@@ -2,80 +2,17 @@ import { useState, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Nav, Button, Input, Tag, Typography, Avatar } from '@douyinfe/semi-ui';
 import {
-  IconSetting,
-  IconKey,
-  IconServer,
-  IconCoinMoney,
-  IconFile,
-  IconGridRectangle,
   IconExit,
   IconBolt,
-  IconUser,
-  IconPriceTag,
-  IconGift,
   IconSearch,
   IconMenu,
   IconBell,
 } from '@douyinfe/semi-icons';
 import { useAuthStore } from './store/auth';
+import { getDefaultOpenKeysForRole, getNavItemsForRole, ROLE_LABELS } from './navigation';
 
 const { Sider, Content } = Layout;
 const { Text } = Typography;
-
-const navItems = [
-  {
-    itemKey: 'g-overview',
-    text: '概览',
-    icon: <IconGridRectangle />,
-    items: [
-      { itemKey: '/', text: '仪表盘', icon: <IconGridRectangle /> },
-    ],
-  },
-  {
-    itemKey: 'g-traffic',
-    text: 'AI 流量',
-    icon: <IconServer />,
-    items: [
-      { itemKey: '/channels', text: '渠道管理', icon: <IconServer /> },
-      { itemKey: '/channel-keys', text: '上游密钥', icon: <IconKey /> },
-      { itemKey: '/keys', text: 'API 密钥', icon: <IconKey /> },
-      { itemKey: '/logs', text: '调用日志', icon: <IconFile /> },
-      { itemKey: '/test', text: '渠道测试', icon: <IconBolt /> },
-    ],
-  },
-  {
-    itemKey: 'g-billing',
-    text: '账单',
-    icon: <IconCoinMoney />,
-    items: [
-      { itemKey: '/wallet', text: '钱包管理', icon: <IconCoinMoney /> },
-      { itemKey: '/model-prices', text: '模型价格', icon: <IconPriceTag /> },
-      { itemKey: '/org-model-prices', text: '组织倍率', icon: <IconPriceTag /> },
-      { itemKey: '/reconciliation', text: 'Token对账', icon: <IconSearch /> },
-      { itemKey: '/grants', text: '赠送管理', icon: <IconGift /> },
-    ],
-  },
-  {
-    itemKey: 'g-access',
-    text: '权限',
-    icon: <IconUser />,
-    items: [
-      { itemKey: '/users', text: '用户管理', icon: <IconUser /> },
-      { itemKey: '/audit-logs', text: '审计日志', icon: <IconSearch /> },
-    ],
-  },
-  {
-    itemKey: 'g-system',
-    text: '系统',
-    icon: <IconSetting />,
-    items: [
-      { itemKey: '/settings', text: '系统设置', icon: <IconSetting /> },
-      { itemKey: '/docs', text: 'API 文档', icon: <IconFile /> },
-    ],
-  },
-];
-
-const defaultOpenKeys = ['g-overview', 'g-traffic', 'g-billing', 'g-access', 'g-system'];
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -86,6 +23,10 @@ export default function App() {
   const location = useLocation();
   const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
+  const role = user?.role;
+  const navItems = getNavItemsForRole(role);
+  const defaultOpenKeys = getDefaultOpenKeysForRole(role);
+  const roleLabel = ROLE_LABELS[role || ''] || role || '未加载角色';
 
   const handleNavClick = (data: { itemKey?: string | number; domEvent?: MouseEvent; isOpen?: boolean }) => {
     const key = data.itemKey;
@@ -141,7 +82,7 @@ export default function App() {
           <Input
             className="ur-global-search"
             prefix={<IconSearch />}
-            placeholder="搜索请求、渠道、密钥"
+            placeholder="搜索 Request ID、模型、密钥"
             showClear
           />
           <div className="ur-topbar-actions">
@@ -151,7 +92,7 @@ export default function App() {
               <Avatar size="small" color="purple">{(user?.username || 'U').slice(0, 1).toUpperCase()}</Avatar>
               <div className="ur-user-copy">
                 <Text className="ur-user-name">{user?.username || 'Operator'}</Text>
-                <Text className="ur-user-role">平台管理员</Text>
+                <Text className="ur-user-role">{roleLabel}</Text>
               </div>
             </div>
           </div>
