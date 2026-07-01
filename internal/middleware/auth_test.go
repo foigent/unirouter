@@ -110,6 +110,16 @@ func TestGetOrgIDFromContext(t *testing.T) {
 	}
 }
 
+func TestGetProjectIDFromContext(t *testing.T) {
+	ctx := context.WithValue(context.Background(), CtxProjectID, int64(77))
+	if GetProjectIDFromContext(ctx) != 77 {
+		t.Fatal("should retrieve project ID")
+	}
+	if GetProjectIDFromContext(context.Background()) != 0 {
+		t.Fatal("empty context should return 0")
+	}
+}
+
 func TestGetKeyIDFromContext(t *testing.T) {
 	ctx := context.WithValue(context.Background(), CtxKeyID, int64(99))
 	if GetKeyIDFromContext(ctx) != 99 {
@@ -420,7 +430,6 @@ func TestGetClientIP_RemoteAddr_WithPort(t *testing.T) {
 		t.Fatalf("expected 192.168.1.1, got %s", ip)
 	}
 }
-
 
 func TestGetClientIP_XForwardedFor_TakesPrecedence(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)

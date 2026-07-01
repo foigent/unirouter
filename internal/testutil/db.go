@@ -106,6 +106,8 @@ func CleanupTestData(t *testing.T, pool *pgxpool.Pool, orgID int64) {
 	pool.Exec(ctx, `DELETE FROM grants WHERE org_id = $1`, orgID)
 	pool.Exec(ctx, `DELETE FROM wallets WHERE org_id = $1`, orgID)
 	pool.Exec(ctx, `DELETE FROM api_keys WHERE org_id = $1`, orgID)
+	pool.Exec(ctx, `DELETE FROM project_members WHERE project_id IN (SELECT id FROM projects WHERE org_id = $1)`, orgID)
 	pool.Exec(ctx, `DELETE FROM users WHERE org_id = $1`, orgID)
+	pool.Exec(ctx, `DELETE FROM projects WHERE org_id = $1`, orgID)
 	pool.Exec(ctx, `DELETE FROM orgs WHERE id = $1`, orgID)
 }

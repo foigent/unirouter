@@ -238,6 +238,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">GET</td><td><code>/api/v1/dashboard/stats</code></td><td>Dashboard statistics</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/channels</code></td><td>List channels</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/keys</code></td><td>List API keys</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/projects</code></td><td>List projects</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/logs</code></td><td>Call logs with filters</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/wallet</code></td><td>Wallet information</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/audit-logs</code></td><td>Audit logs</td></tr>
@@ -263,6 +264,11 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("GET /api/v1/keys/{id}", adminAuth(http.HandlerFunc(adminHandler.GetAPIKey)))
 	mux.Handle("PUT /api/v1/keys/{id}", adminAuth(http.HandlerFunc(adminHandler.UpdateAPIKey)))
 	mux.Handle("POST /api/v1/keys/{id}/disable", adminAuth(http.HandlerFunc(adminHandler.DisableAPIKey)))
+
+	mux.Handle("GET /api/v1/projects", adminAuth(http.HandlerFunc(adminHandler.ListProjects)))
+	mux.Handle("POST /api/v1/projects", adminAuth(http.HandlerFunc(adminHandler.CreateProject)))
+	mux.Handle("GET /api/v1/projects/{id}", adminAuth(http.HandlerFunc(adminHandler.GetProject)))
+	mux.Handle("PUT /api/v1/projects/{id}", adminAuth(http.HandlerFunc(adminHandler.UpdateProject)))
 
 	mux.Handle("GET /api/v1/channel-keys", adminAuth(http.HandlerFunc(adminHandler.ListChannelKeys)))
 	mux.Handle("POST /api/v1/channel-keys", adminAuth(http.HandlerFunc(adminHandler.CreateChannelKey)))

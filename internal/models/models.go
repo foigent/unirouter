@@ -30,6 +30,30 @@ type User struct {
 	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
 }
 
+// Project represents the projects table.
+type Project struct {
+	ID           int64     `json:"id" db:"id"`
+	OrgID        int64     `json:"org_id" db:"org_id"`
+	Name         string    `json:"name" db:"name"`
+	Slug         string    `json:"slug" db:"slug"`
+	Description  string    `json:"description" db:"description"`
+	Status       string    `json:"status" db:"status"`
+	BudgetCents  *int      `json:"budget_cents" db:"budget_cents"`
+	BudgetPeriod string    `json:"budget_period" db:"budget_period"`
+	CreatedBy    *int64    `json:"created_by" db:"created_by"`
+	CreatedAt    time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
+}
+
+// ProjectMember represents a user's project-scoped membership.
+type ProjectMember struct {
+	ProjectID int64     `json:"project_id" db:"project_id"`
+	UserID    int64     `json:"user_id" db:"user_id"`
+	Role      string    `json:"role" db:"role"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+}
+
 // Channel represents the channels table.
 type Channel struct {
 	ID               int64           `json:"id" db:"id"`
@@ -68,6 +92,7 @@ type ChannelKey struct {
 type ApiKey struct {
 	ID            int64     `json:"id" db:"id"`
 	OrgID         int64     `json:"org_id" db:"org_id"`
+	ProjectID     *int64    `json:"project_id" db:"project_id"`
 	Name          string    `json:"name" db:"name"`
 	KeyPrefix     string    `json:"key_prefix" db:"key_prefix"`
 	KeyHash       string    `json:"-" db:"key_hash"`
@@ -119,6 +144,7 @@ type Transaction struct {
 	ID           int64     `json:"id" db:"id"`
 	RequestID    string    `json:"request_id" db:"request_id"`
 	OrgID        int64     `json:"org_id" db:"org_id"`
+	ProjectID    *int64    `json:"project_id" db:"project_id"`
 	Type         string    `json:"type" db:"type"`
 	Status       string    `json:"status" db:"status"`
 	Amount       int       `json:"amount" db:"amount"`
@@ -132,6 +158,7 @@ type CallLog struct {
 	ID                 int64          `json:"id" db:"id"`
 	RequestID          string         `json:"request_id" db:"request_id"`
 	OrgID              int64          `json:"org_id" db:"org_id"`
+	ProjectID          *int64         `json:"project_id" db:"project_id"`
 	ApiKeyID           *int64         `json:"api_key_id" db:"api_key_id"`
 	Model              string         `json:"model" db:"model"`
 	Provider           string         `json:"provider" db:"provider"`
@@ -154,6 +181,7 @@ type CallLog struct {
 type AuditLog struct {
 	ID         int64           `json:"id" db:"id"`
 	OrgID      int64           `json:"org_id" db:"org_id"`
+	ProjectID  *int64          `json:"project_id" db:"project_id"`
 	UserID     int64           `json:"user_id" db:"user_id"`
 	Action     string          `json:"action" db:"action"`
 	Resource   string          `json:"resource" db:"resource"`

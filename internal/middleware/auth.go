@@ -2,21 +2,20 @@ package middleware
 
 import (
 	"context"
-	"net"
-	"time"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/models"
 )
-
 
 // AuthError represents an authentication error with HTTP status.
 type AuthError struct {
@@ -63,6 +62,7 @@ type contextKey string
 const (
 	CtxAPIKey    contextKey = "api_key"
 	CtxOrgID     contextKey = "org_id"
+	CtxProjectID contextKey = "project_id"
 	CtxKeyID     contextKey = "key_id"
 	CtxRequestID contextKey = "request_id"
 	CtxUserID    contextKey = "user_id"
@@ -84,6 +84,12 @@ func GetAPIKeyFromContext(ctx context.Context) *models.ApiKey {
 // GetOrgIDFromContext retrieves the org ID from context.
 func GetOrgIDFromContext(ctx context.Context) int64 {
 	v, _ := ctx.Value(CtxOrgID).(int64)
+	return v
+}
+
+// GetProjectIDFromContext retrieves the project ID from context.
+func GetProjectIDFromContext(ctx context.Context) int64 {
+	v, _ := ctx.Value(CtxProjectID).(int64)
 	return v
 }
 
@@ -165,8 +171,9 @@ func checkIPWhitelist(clientIP, whitelist string) bool {
 func resolveAPIKey(ctx context.Context, q db.DBQuerier, keyHash string) (*models.ApiKey, string, error) {
 	var apiKey models.ApiKey
 	var orgStatus string
+	var projectID int64
 	err := q.QueryRow(ctx,
-		`SELECT ak.id, ak.org_id, ak.status, ak.allowed_ips, ak.allowed_models,
+		`SELECT ak.id, ak.org_id, COALESCE(ak.project_id, 0), ak.status, ak.allowed_ips, ak.allowed_models,
 		        ak.rpm_limit, ak.qps_limit, ak.budget_limit, ak.key_prefix, ak.name,
 		        o.status
 		 FROM api_keys ak
@@ -174,12 +181,15 @@ func resolveAPIKey(ctx context.Context, q db.DBQuerier, keyHash string) (*models
 		 WHERE ak.key_hash = $1`,
 		keyHash,
 	).Scan(
-		&apiKey.ID, &apiKey.OrgID, &apiKey.Status, &apiKey.IPWhitelist,
+		&apiKey.ID, &apiKey.OrgID, &projectID, &apiKey.Status, &apiKey.IPWhitelist,
 		&apiKey.AllowedModels, &apiKey.RPMLimit, &apiKey.QPSLimit,
 		&apiKey.BudgetLimit, &apiKey.KeyPrefix, &apiKey.Name, &orgStatus,
 	)
 	if err != nil {
 		return nil, "", err
+	}
+	if projectID > 0 {
+		apiKey.ProjectID = &projectID
 	}
 	return &apiKey, orgStatus, nil
 }
@@ -229,6 +239,9 @@ func GatewayAuth(q db.DBQuerier, jwtSecret string) func(http.Handler) http.Handl
 			}
 			ctx := context.WithValue(r.Context(), CtxAPIKey, apiKey)
 			ctx = context.WithValue(ctx, CtxOrgID, apiKey.OrgID)
+			if apiKey.ProjectID != nil {
+				ctx = context.WithValue(ctx, CtxProjectID, *apiKey.ProjectID)
+			}
 			ctx = context.WithValue(ctx, CtxKeyID, apiKey.ID)
 			ctx = context.WithValue(ctx, CtxRequestID, requestID)
 

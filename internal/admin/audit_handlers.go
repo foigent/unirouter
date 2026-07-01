@@ -55,16 +55,24 @@ func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 
 // recordAudit logs an admin action to audit_logs. Non-blocking, errors are logged.
 func (h *Handler) recordAudit(ctx context.Context, action, resource, resourceID string, detail map[string]interface{}, ip string) {
+	h.recordAuditForProject(ctx, action, resource, resourceID, middleware.GetProjectIDFromContext(ctx), detail, ip)
+}
+
+func (h *Handler) recordAuditForProject(ctx context.Context, action, resource, resourceID string, projectID int64, detail map[string]interface{}, ip string) {
 	detailJSON := "{}"
 	if b, err := json.Marshal(detail); err == nil {
 		detailJSON = string(b)
 	}
 	orgID := middleware.GetOrgIDFromContext(ctx)
 	userID := middleware.GetUserIDFromContext(ctx)
+	var projectIDArg interface{}
+	if projectID > 0 {
+		projectIDArg = projectID
+	}
 	_, err := h.db.Exec(ctx,
-		`INSERT INTO audit_logs (org_id, user_id, action, resource, resource_id, detail, ip, request_id, created_at)
-		 VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, '', NOW())`,
-		orgID, userID, action, resource, resourceID, detailJSON, ip)
+		`INSERT INTO audit_logs (org_id, user_id, action, resource, resource_id, detail, ip, request_id, project_id, created_at)
+		 VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, '', $8, NOW())`,
+		orgID, userID, action, resource, resourceID, detailJSON, ip, projectIDArg)
 	if err != nil {
 		log.Printf("audit log failed: %s %s/%s: %v", action, resource, resourceID, err)
 	}

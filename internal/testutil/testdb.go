@@ -64,10 +64,12 @@ func TruncateAll(t *testing.T, pool *pgxpool.Pool) {
 		"grants",
 		"wallets",
 		"api_keys",
+		"project_members",
 		"channel_keys",
 		"org_model_prices",
 		"model_prices",
 		"users",
+		"projects",
 		"orgs",
 	}
 

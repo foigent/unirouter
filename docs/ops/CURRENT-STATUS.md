@@ -1,11 +1,11 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, Codex, and OpenClaw Canary.
-> Last verified: 2026-07-01 PRD2 planning docs Canary verification plus Sentinel CI.
+> Last verified: 2026-07-01 PRD2 implementation batch 1 local Go test pass; awaiting Canary.
 
 ## Summary
 
-Per User direction in the PRD2 planning session, PRD1 is treated as closed/frozen for forward planning. Historical PRD1 closeout evidence remains in this file and related PRD1 ops documents, but new product planning should use the PRD2 documents listed below. PRD2 is now in planning/draft state with formal requirements, an acceptance matrix, and initial Provider Adapter, Project/RBAC, and Developer Console specs. OpenClaw Canary verified PRD2 planning docs round 1 as 6/6 PASS with no new issues, and User reported Sentinel confirmed PRD2 planning round 1 complete with CI green on the first run.
+Per User direction in the PRD2 planning session, PRD1 is treated as closed/frozen for forward planning. Historical PRD1 closeout evidence remains in this file and related PRD1 ops documents, but new product planning should use the PRD2 documents listed below. PRD2 has formal requirements, an acceptance matrix, and initial Provider Adapter, Project/RBAC, and Developer Console specs. OpenClaw Canary verified PRD2 planning docs round 1 as 6/6 PASS with no new issues, and User reported Sentinel confirmed PRD2 planning round 1 complete with CI green on the first run. PRD2 implementation batch 1 is now locally implemented for Project/Workspace foundation and awaits Canary verification.
 
 Historical PRD1 summary: Core backend modules, admin APIs, frontend pages, migrations, Docker deployment files, and monitoring assets exist. The default-admin cloud security blocker and the channel-key/reconciliation/Dashboard follow-up fixes were redeployed and verified in cloud. The Mimo provider key was cloud-verified as valid; latency persistence and decimal pricing were production-verified after redeploy. Dashboard trend UX passed Canary and local visual smoke. User/Atlas reported the Grafana runtime fix resolved, and Codex verified Grafana default `admin/admin` is rejected. Some PRD1 status rows below still preserve historical follow-up language; they should not be interpreted as PRD2 scope unless explicitly converted into `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`.
 
@@ -14,12 +14,13 @@ Historical PRD1 summary: Core backend modules, admin APIs, frontend pages, migra
 | Phase | Status | Active Documents |
 |-------|--------|------------------|
 | PRD1 | Closed/frozen for forward planning per User direction | `docs/PRD-Phase1.md`, `docs/ops/PRD-ACCEPTANCE-MATRIX.md`, PRD1 ops evidence docs |
-| PRD2 | Planning / Draft for Review; planning docs round 1 Canary passed and Sentinel CI green | `docs/planning/PRD2-DISCOVERY.md`, `docs/PRD-Phase2.md`, `docs/ops/PRD2-ACCEPTANCE-MATRIX.md` |
+| PRD2 | Implementation batch 1 awaiting Canary; planning docs round 1 Canary passed and Sentinel CI green | `docs/planning/PRD2-DISCOVERY.md`, `docs/PRD-Phase2.md`, `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`, `docs/agent-workflows/FIX-SIGNAL.md` |
 
 ## Current Verification
 
 | Area | Status | Evidence |
 |------|--------|----------|
+| PRD2 implementation batch 1 | Fixed locally awaiting Canary | Project/Workspace foundation migration and backend APIs added; `go test ./internal/middleware ./internal/gateway ./internal/admin` and `go test ./...` passed locally on 2026-07-01 |
 | PRD2 planning docs round 1 | Canary passed; Sentinel CI green | `docs/agent-workflows/VERIFY-RESULT.md` reports 6/6 PASS, no new issues, no code changes; User reported Sentinel confirmed PRD2 planning documentation round 1 complete and CI passed on the first run |
 | Go tests | PASS | `go test ./...` passed on 2026-07-01 |
 | Frontend tests | PASS | `npm test -- --run` passed in `frontend/` with 43 tests on 2026-07-01; Canary verified earlier rounds as PASS |

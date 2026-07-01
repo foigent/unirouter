@@ -240,6 +240,14 @@ paths:
         "200":
           $ref: "#/components/responses/JSON"
 
+  /api/v1/projects:
+    get: { $ref: "#/components/pathItems/List" }
+    post: { $ref: "#/components/pathItems/Create" }
+
+  /api/v1/projects/{id}:
+    get: { $ref: "#/components/pathItems/GetById" }
+    put: { $ref: "#/components/pathItems/UpdateById" }
+
   /api/v1/channel-keys:
     get: { $ref: "#/components/pathItems/List" }
     post: { $ref: "#/components/pathItems/Create" }

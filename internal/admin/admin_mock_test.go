@@ -1292,16 +1292,18 @@ func TestListAPIKeys_Success(t *testing.T) {
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1           // id
 						*dest[1].(*int64) = 1           // org_id
-						*dest[2].(*string) = "test-key" // name
-						*dest[3].(*string) = "sk-ab12"  // key_prefix
-						*dest[4].(*string) = "active"   // status
-						*dest[5].(*int) = 60            // rpm_limit
-						*dest[6].(*int) = 10            // qps_limit
-						*dest[7].(*int) = 0             // budget_limit
-						*dest[8].(*string) = ""         // allowed_ips
-						*dest[9].(*string) = ""         // allowed_models
-						*dest[10].(*time.Time) = now    // created_at
-						*dest[11].(*string) = "Default" // org_name
+						*dest[2].(*int64) = 7           // project_id
+						*dest[3].(*string) = "test-key" // name
+						*dest[4].(*string) = "sk-ab12"  // key_prefix
+						*dest[5].(*string) = "active"   // status
+						*dest[6].(*int) = 60            // rpm_limit
+						*dest[7].(*int) = 10            // qps_limit
+						*dest[8].(*int) = 0             // budget_limit
+						*dest[9].(*string) = ""         // allowed_ips
+						*dest[10].(*string) = ""        // allowed_models
+						*dest[11].(*time.Time) = now    // created_at
+						*dest[12].(*string) = "Default" // org_name
+						*dest[13].(*string) = "Core"    // project_name
 						return nil
 					},
 				},
@@ -1977,15 +1979,18 @@ func TestGetAPIKey_Success(t *testing.T) {
 				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 1
 					*dest[1].(*int64) = 1
-					*dest[2].(*string) = "test-key"
-					*dest[3].(*string) = "sk-ab12"
-					*dest[4].(*string) = "active"
-					*dest[5].(*int) = 60
-					*dest[6].(*int) = 10
-					*dest[7].(*int) = 0
-					*dest[8].(*string) = ""
+					*dest[2].(*int64) = 7
+					*dest[3].(*string) = "test-key"
+					*dest[4].(*string) = "sk-ab12"
+					*dest[5].(*string) = "active"
+					*dest[6].(*int) = 60
+					*dest[7].(*int) = 10
+					*dest[8].(*int) = 0
 					*dest[9].(*string) = ""
-					*dest[10].(*time.Time) = now
+					*dest[10].(*string) = ""
+					*dest[11].(*time.Time) = now
+					*dest[12].(*string) = "Default"
+					*dest[13].(*string) = "Core"
 					return nil
 				},
 			}
@@ -2380,22 +2385,23 @@ func TestListLogs_Success(t *testing.T) {
 				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1
-						*dest[1].(*string) = "req-001"
-						*dest[2].(*string) = "gpt-4o"
-						*dest[3].(*string) = "openai"
-						*dest[4].(*string) = "test-channel"
-						*dest[5].(*int) = 100
-						*dest[6].(*int) = 50
-						*dest[7].(*int) = 150
-						*dest[8].(*int) = 200
+						*dest[1].(*int64) = 7
+						*dest[2].(*string) = "req-001"
+						*dest[3].(*string) = "gpt-4o"
+						*dest[4].(*string) = "openai"
+						*dest[5].(*string) = "test-channel"
+						*dest[6].(*int) = 100
+						*dest[7].(*int) = 50
+						*dest[8].(*int) = 150
 						*dest[9].(*int) = 200
-						*dest[10].(*int) = 350
-						*dest[11].(*int) = 0
-						dest[12] = (*int)(nil)
-						*dest[13].(*string) = ""
-						*dest[14].(*string) = "backend"
-						*dest[15].(*bool) = false
-						*dest[16].(*time.Time) = now
+						*dest[10].(*int) = 200
+						*dest[11].(*int) = 350
+						*dest[12].(*int) = 0
+						dest[13] = (*int)(nil)
+						*dest[14].(*string) = ""
+						*dest[15].(*string) = "backend"
+						*dest[16].(*bool) = false
+						*dest[17].(*time.Time) = now
 						return nil
 					},
 				},
@@ -2430,22 +2436,23 @@ func TestListLogs_WithFilters(t *testing.T) {
 				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1
-						*dest[1].(*string) = "req-002"
-						*dest[2].(*string) = "gpt-4o"
-						*dest[3].(*string) = "openai"
-						*dest[4].(*string) = "test-channel"
-						*dest[5].(*int) = 200
-						*dest[6].(*int) = 100
-						*dest[7].(*int) = 300
-						*dest[8].(*int) = 200
+						*dest[1].(*int64) = 7
+						*dest[2].(*string) = "req-002"
+						*dest[3].(*string) = "gpt-4o"
+						*dest[4].(*string) = "openai"
+						*dest[5].(*string) = "test-channel"
+						*dest[6].(*int) = 200
+						*dest[7].(*int) = 100
+						*dest[8].(*int) = 300
 						*dest[9].(*int) = 200
-						*dest[10].(*int) = 500
-						*dest[11].(*int) = 0
-						dest[12] = (*int)(nil)
-						*dest[13].(*string) = ""
-						*dest[14].(*string) = "backend"
-						*dest[15].(*bool) = false
-						*dest[16].(*time.Time) = now
+						*dest[10].(*int) = 200
+						*dest[11].(*int) = 500
+						*dest[12].(*int) = 0
+						dest[13] = (*int)(nil)
+						*dest[14].(*string) = ""
+						*dest[15].(*string) = "backend"
+						*dest[16].(*bool) = false
+						*dest[17].(*time.Time) = now
 						return nil
 					},
 				},
