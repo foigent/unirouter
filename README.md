@@ -10,7 +10,7 @@ git clone <repo-url> && cd uniroute
 
 # 2. 配置环境变量
 cp .env.example .env
-# 编辑 .env，修改 JWT_SECRET、ENCRYPTION_KEY 和 GRAFANA_ADMIN_PASSWORD
+# 编辑 .env，修改 JWT_SECRET、API_KEY_HASH_SECRET、ENCRYPTION_KEY 和 GRAFANA_ADMIN_PASSWORD
 openssl rand -hex 32  # 生成密钥
 
 # 3. 启动服务

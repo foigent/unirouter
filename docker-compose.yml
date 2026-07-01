@@ -48,6 +48,7 @@ services:
       REDIS_PASSWORD: ""
       REDIS_DB: 0
       JWT_SECRET: ${JWT_SECRET}
+      API_KEY_HASH_SECRET: ${API_KEY_HASH_SECRET:-}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
     depends_on:
       postgres:

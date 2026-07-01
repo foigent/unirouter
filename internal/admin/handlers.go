@@ -16,15 +16,25 @@ import (
 
 // Handler contains all admin API handlers.
 type Handler struct {
-	sensitiveFilter *filter.DFAFilter
-	db              db.DBQuerier
-	jwtSecret       string
-	encKey          []byte
+	sensitiveFilter  *filter.DFAFilter
+	db               db.DBQuerier
+	jwtSecret        string
+	apiKeyHashSecret string
+	encKey           []byte
 }
 
 // NewHandler creates a new admin Handler.
 func NewHandler(db db.DBQuerier, jwtSecret string, encKey []byte, sf *filter.DFAFilter) *Handler {
-	return &Handler{db: db, jwtSecret: jwtSecret, encKey: encKey, sensitiveFilter: sf}
+	return NewHandlerWithAPIKeyHashSecret(db, jwtSecret, jwtSecret, encKey, sf)
+}
+
+// NewHandlerWithAPIKeyHashSecret creates a Handler with separate JWT signing
+// and API-key HMAC secrets. Use this in production wiring.
+func NewHandlerWithAPIKeyHashSecret(db db.DBQuerier, jwtSecret, apiKeyHashSecret string, encKey []byte, sf *filter.DFAFilter) *Handler {
+	if apiKeyHashSecret == "" {
+		apiKeyHashSecret = jwtSecret
+	}
+	return &Handler{db: db, jwtSecret: jwtSecret, apiKeyHashSecret: apiKeyHashSecret, encKey: encKey, sensitiveFilter: sf}
 }
 
 // --- Helpers ---

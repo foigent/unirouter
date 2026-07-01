@@ -91,7 +91,7 @@ func main() {
 		}
 	}()
 
-	adminHandler := admin.NewHandler(postgres.Pool, cfg.JWTSecret, encKey, sensitiveFilter)
+	adminHandler := admin.NewHandlerWithAPIKeyHashSecret(postgres.Pool, cfg.JWTSecret, cfg.APIKeyHashSecret, encKey, sensitiveFilter)
 
 	// Load sensitive words from settings and periodically refresh all instances.
 	go startSensitiveWordsReloadLoop(postgres.Pool, sensitiveFilter, time.Minute)
@@ -146,7 +146,7 @@ func main() {
 	mux.Handle("GET /metrics", promhttp.Handler())
 
 	// Gateway endpoints (with auth + rate limiting)
-	gatewayAuth := middleware.GatewayAuth(postgres.Pool, cfg.JWTSecret)
+	gatewayAuth := middleware.GatewayAuthWithAPIKeyHashSecret(postgres.Pool, cfg.APIKeyHashSecret)
 	rateLimiter := middleware.RateLimit(redisClient.Client)
 	admissionMiddleware := middleware.AdmissionFromContext(admissionCtrl)
 

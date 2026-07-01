@@ -1,9 +1,9 @@
 # Deployment Runbook（部署运维手册）
 
-> **版本**：v1.3
-> **日期**：2026-06-27
+> **版本**：v1.4
+> **日期**：2026-07-02
 > **用途**：运维人员部署和维护 UniRoute 的操作手册
-> **变更记录**：v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
+> **变更记录**：v1.4 新增生产 `.env` 保护、`API_KEY_HASH_SECRET`、rsync 安全同步规则和 PR #44 部署事故复盘；v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
 
 ---
 
@@ -30,14 +30,38 @@ cp .env.example .env
 # 编辑 .env，必须修改以下项：
 # - DB_DSN: PostgreSQL 连接串
 # - JWT_SECRET: 32 字节随机字符串
+# - API_KEY_HASH_SECRET: API Key HMAC 稳定密钥
 # - ENCRYPTION_KEY: 32 字节随机字符串
 # - GRAFANA_ADMIN_PASSWORD: Grafana 管理员强密码
 # - MIGRATIONS_DIR: 迁移文件目录（默认 /app/migrations）
 
 # 生成随机密钥
 openssl rand -hex 32  # 用于 JWT_SECRET
+openssl rand -hex 32  # 用于 API_KEY_HASH_SECRET
 openssl rand -hex 32  # 用于 ENCRYPTION_KEY
 openssl rand -base64 24  # 用于 GRAFANA_ADMIN_PASSWORD
+```
+
+密钥职责：
+
+| 变量 | 作用 | 丢失/变更影响 |
+|------|------|---------------|
+| `JWT_SECRET` | Admin JWT 签名 | 管理员需要重新登录；不应影响 API Key |
+| `API_KEY_HASH_SECRET` | API Key HMAC 哈希 | 变更会导致既有 API Key 全部失效 |
+| `ENCRYPTION_KEY` | 上游渠道密钥 AES-GCM 加密 | 变更且无法恢复会导致已保存 channel key 无法解密 |
+
+现有部署升级到支持 `API_KEY_HASH_SECRET` 的版本时：
+
+1. 先将 `API_KEY_HASH_SECRET` 设置为当前正在使用的 `JWT_SECRET` 值。
+2. 部署新版本并验证既有 API Key 仍可调用。
+3. 之后如需轮换管理员 JWT，只轮换 `JWT_SECRET`，保持 `API_KEY_HASH_SECRET` 不变。
+4. 只有在接受“所有 API Key 需要重新生成”的前提下，才轮换 `API_KEY_HASH_SECRET`。
+
+生产 `.env` 必须视为状态文件，不属于代码发布目录的可删除内容。建议在部署机保留只读备份：
+
+```bash
+cp .env .env.production
+chmod 600 .env .env.production
 ```
 
 ### 2.2 启动服务
@@ -89,6 +113,37 @@ docker compose exec backend ./uniroute admin create \
     --role admin \
     --org-id 1
 ```
+
+### 2.5 发布同步安全规则
+
+生产发布时禁止让代码同步删除运行态密钥文件。PR #44 部署时曾因 `rsync --delete` 删除服务器 `.env`，导致只能重新生成 `JWT_SECRET`；由于历史 API Key 的 `key_hash` 使用旧 JWT secret 计算，31 个 API Key 全部失效。`ENCRYPTION_KEY` 从历史记录恢复后，上游渠道密钥未受影响。
+
+如必须使用 `rsync --delete`，至少排除生产密钥和运行态数据：
+
+```bash
+rsync -az --delete \
+  --exclude='.env' \
+  --exclude='.env.production' \
+  --exclude='backups/' \
+  --exclude='data/' \
+  ./ <deploy-user>@<host>:/opt/uniroute/
+```
+
+同步后必须检查：
+
+```bash
+test -s .env
+test -s .env.production
+grep -E '^(JWT_SECRET|API_KEY_HASH_SECRET|ENCRYPTION_KEY)=' .env
+docker compose config >/tmp/uniroute-compose-check.yml
+```
+
+若 `.env` 丢失：
+
+1. 先从 `.env.production` 恢复，不要生成新密钥。
+2. 如果 `ENCRYPTION_KEY` 无法恢复，已保存上游渠道密钥需要重新录入。
+3. 如果 `API_KEY_HASH_SECRET` 无法恢复，既有 API Key 无法验证，必须重新生成。
+4. 如果仅 `JWT_SECRET` 无法恢复，管理员需要重新登录；在 `API_KEY_HASH_SECRET` 已独立保存的版本中，API Key 不应受影响。
 
 ---
 
@@ -274,7 +329,7 @@ docker compose logs backend
 # 常见原因：
 # - DB_DSN 连接失败 → 检查 PostgreSQL 容器状态
 # - REDIS_ADDR 连接失败 → 检查 Redis 容器状态
-# - JWT_SECRET 未设置 → 检查 .env 文件
+# - JWT_SECRET/API_KEY_HASH_SECRET/ENCRYPTION_KEY 未设置 → 检查 .env 文件
 ```
 
 ### 7.2 请求返回 502
@@ -575,6 +630,6 @@ docker compose -f docker-compose.yml -f docker-compose.canary.yml up -d
 | 防火墙 | 只开放 80/443 端口 |
 | 数据库 | 不暴露外部端口，只通过 Docker 网络访问 |
 | Redis | 设置密码，不暴露外部端口 |
-| 密钥 | JWT_SECRET 和 ENCRYPTION_KEY 定期轮换 |
+| 密钥 | `JWT_SECRET` 可按需轮换；`API_KEY_HASH_SECRET` 和 `ENCRYPTION_KEY` 轮换前必须确认会话、API Key、上游渠道密钥的影响 |
 | Grafana | 设置 `GRAFANA_ADMIN_PASSWORD`，禁止继续使用 `admin/admin` |
 | 备份 | 备份文件加密存储 |

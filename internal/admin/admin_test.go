@@ -12,6 +12,22 @@ func TestNewHandler(t *testing.T) {
 	if h == nil {
 		t.Fatal("NewHandler should not return nil")
 	}
+	if h.apiKeyHashSecret != "test-secret" {
+		t.Fatalf("expected API key hash secret to default to JWT secret, got %q", h.apiKeyHashSecret)
+	}
+}
+
+func TestNewHandlerWithAPIKeyHashSecret(t *testing.T) {
+	h := NewHandlerWithAPIKeyHashSecret(nil, "jwt-secret", "api-key-secret", []byte("0123456789abcdef01234567"), nil)
+	if h == nil {
+		t.Fatal("NewHandlerWithAPIKeyHashSecret should not return nil")
+	}
+	if h.jwtSecret != "jwt-secret" {
+		t.Fatalf("expected jwt secret, got %q", h.jwtSecret)
+	}
+	if h.apiKeyHashSecret != "api-key-secret" {
+		t.Fatalf("expected API key hash secret override, got %q", h.apiKeyHashSecret)
+	}
 }
 
 func TestWriteJSON(t *testing.T) {
@@ -77,12 +93,16 @@ func TestWriteJSON_ComplexData(t *testing.T) {
 func TestHandler_Fields(t *testing.T) {
 	encKey := []byte("0123456789abcdef01234567")
 	h := &Handler{
-		db:        nil,
-		jwtSecret: "my-secret",
-		encKey:    encKey,
+		db:               nil,
+		jwtSecret:        "my-secret",
+		apiKeyHashSecret: "api-key-secret",
+		encKey:           encKey,
 	}
 	if h.jwtSecret != "my-secret" {
 		t.Fatal("jwtSecret mismatch")
+	}
+	if h.apiKeyHashSecret != "api-key-secret" {
+		t.Fatal("apiKeyHashSecret mismatch")
 	}
 	if len(h.encKey) != 24 {
 		t.Fatalf("encKey length mismatch: %d", len(h.encKey))
