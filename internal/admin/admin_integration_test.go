@@ -346,6 +346,38 @@ func TestCreateChannel_InvalidJSON_Integration(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
+func TestCleanupOldData_ReleasesStaleFrozen_Integration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
+	testutil.NewTestWallet(t, pool, orgID, 900)
+
+	_, err := pool.Exec(t.Context(),
+		`UPDATE wallets SET frozen = 100 WHERE org_id = $1`,
+		orgID,
+	)
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(),
+		`INSERT INTO freeze_idempotency (request_id, org_id, frozen_amount, status, created_at, updated_at)
+		 VALUES ('stale-settle-cleanup', $1, 100, 'frozen', NOW() - INTERVAL '25 hours', NOW() - INTERVAL '25 hours')`,
+		orgID,
+	)
+	require.NoError(t, err)
+
+	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
+	require.NoError(t, h.CleanupOldData(t.Context(), 30))
+
+	var balance, frozen int
+	err = pool.QueryRow(t.Context(), `SELECT balance, frozen FROM wallets WHERE org_id = $1`, orgID).Scan(&balance, &frozen)
+	require.NoError(t, err)
+	require.Equal(t, 1000, balance)
+	require.Equal(t, 0, frozen)
+
+	var status string
+	err = pool.QueryRow(t.Context(), `SELECT status FROM freeze_idempotency WHERE request_id = 'stale-settle-cleanup'`).Scan(&status)
+	require.NoError(t, err)
+	require.Equal(t, "cancelled", status)
+}
+
 // --- TopUp handler tests ---
 
 func TestTopUp_Success_Integration(t *testing.T) {

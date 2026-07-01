@@ -76,6 +76,55 @@ func elapsedMilliseconds(start time.Time) int {
 	return ms
 }
 
+const (
+	billingSettleMaxAttempts = 3
+	billingSettleRetryDelay  = 25 * time.Millisecond
+)
+
+type billingSettleOutcome struct {
+	Result    *billing.SettleResult
+	Settled   bool
+	Cancelled bool
+}
+
+func (relay *Relay) settleBillingWithRetry(req billing.SettleRequest, reqLog *logger.Logger) (billingSettleOutcome, error) {
+	var lastErr error
+	settleCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	for attempt := 1; attempt <= billingSettleMaxAttempts; attempt++ {
+		result, err := relay.billing.Settle(settleCtx, req)
+		if err == nil && result != nil && result.Success {
+			return billingSettleOutcome{Result: result, Settled: true}, nil
+		}
+		if err == nil {
+			if result == nil {
+				err = fmt.Errorf("settle returned nil result")
+			} else {
+				err = fmt.Errorf("settle unsuccessful: %s", result.ErrorCode)
+			}
+		}
+		lastErr = err
+		reqLog.Error("Billing settle attempt %d/%d failed: %v", attempt, billingSettleMaxAttempts, err)
+		if attempt == billingSettleMaxAttempts {
+			break
+		}
+		select {
+		case <-settleCtx.Done():
+			lastErr = settleCtx.Err()
+			attempt = billingSettleMaxAttempts
+		case <-time.After(billingSettleRetryDelay):
+		}
+	}
+
+	cancelCtx, cancelCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelCancel()
+	if cancelErr := relay.billing.Cancel(cancelCtx, req.RequestID, req.OrgID); cancelErr != nil {
+		return billingSettleOutcome{}, fmt.Errorf("settle failed after %d attempts: %w; cancel failed: %v", billingSettleMaxAttempts, lastErr, cancelErr)
+	}
+	return billingSettleOutcome{Cancelled: true}, fmt.Errorf("settle failed after %d attempts; frozen amount cancelled: %w", billingSettleMaxAttempts, lastErr)
+}
+
 // ChatCompletionRequest represents an incoming chat completion request.
 type ChatCompletionRequest struct {
 	Model     string    `json:"model"`
@@ -321,16 +370,18 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 
 	// Settle billing with actual usage
 	actualCost := relay.calculateCost(ctx, orgID, model, normalized.Usage.PromptTokens, normalized.Usage.CompletionTokens)
-	_, err = relay.billing.Settle(ctx, billing.SettleRequest{
+	_, err = relay.settleBillingWithRetry(billing.SettleRequest{
 		RequestID:        requestID,
 		OrgID:            orgID,
 		ActualCost:       actualCost,
 		PromptTokens:     normalized.Usage.PromptTokens,
 		CompletionTokens: normalized.Usage.CompletionTokens,
 		UsageSource:      normalized.Usage.Source,
-	})
+	}, reqLog)
 	if err != nil {
-		reqLog.Error("Billing settle error: %v", err)
+		reqLog.Error("Billing settle failed; response withheld: %v", err)
+		writeError(w, http.StatusInternalServerError, "server_error", "billing_error.settle_failed", "Failed to settle billing")
+		return
 	}
 	middleware.RecordTokenUsage("prompt", model, normalized.Usage.PromptTokens)
 	middleware.RecordTokenUsage("completion", model, normalized.Usage.CompletionTokens)
@@ -547,16 +598,23 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	if usedUpstreamUsage {
 		usageSource = metering.UsageSourceUpstream
 	}
-	_, settleErr := relay.billing.Settle(ctx, billing.SettleRequest{
+	settleOutcome, settleErr := relay.settleBillingWithRetry(billing.SettleRequest{
 		RequestID:        requestID,
 		OrgID:            orgID,
 		ActualCost:       actualCost,
 		PromptTokens:     tokenCounter.InputTokens(),
 		CompletionTokens: tokenCounter.OutputTokens(),
 		UsageSource:      usageSource,
-	})
+	}, reqLog)
+	chargedCost := actualCost
+	billingStatus := "settled"
 	if settleErr != nil {
-		reqLog.Error("Billing settle error: %v", settleErr)
+		reqLog.Error("Billing settle failed after stream completed: %v", settleErr)
+		chargedCost = 0
+		billingStatus = "settle_failed_unresolved"
+		if settleOutcome.Cancelled {
+			billingStatus = "settle_failed_cancelled"
+		}
 	}
 	middleware.RecordTokenUsage("prompt", model, tokenCounter.InputTokens())
 	middleware.RecordTokenUsage("completion", model, tokenCounter.OutputTokens())
@@ -565,22 +623,25 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	middleware.RecordUpstreamLatency(route.Channel.Provider, model, streamDuration)
 
 	relay.recordRequest(ctx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, model, requestedModel, clientIP,
-		tokenCounter.InputTokens(), tokenCounter.OutputTokens(), actualCost, http.StatusOK, elapsedMilliseconds(requestStart), ttftMs, true, usageSource, estimatedTokens)
-	relay.checkBudgetAlert(ctx)
+		tokenCounter.InputTokens(), tokenCounter.OutputTokens(), chargedCost, http.StatusOK, elapsedMilliseconds(requestStart), ttftMs, true, usageSource, estimatedTokens)
+	if settleErr == nil {
+		relay.checkBudgetAlert(ctx)
+	}
 
 	// Send usage + _uniroute extension as the final data chunk before [DONE].
 	unirouteData := map[string]interface{}{
 		"request_id": requestID,
 		"cost": map[string]interface{}{
 			"actual":    actualCost,
-			"charged":   actualCost,
+			"charged":   chargedCost,
 			"cache_hit": false,
 		},
-		"provider":  route.Channel.Provider,
-		"channel":   route.Channel.Name,
-		"ttft_ms":   ttftMs,
-		"cache_hit": false,
-		"fallback":  false,
+		"provider":       route.Channel.Provider,
+		"channel":        route.Channel.Name,
+		"ttft_ms":        ttftMs,
+		"cache_hit":      false,
+		"fallback":       false,
+		"billing_status": billingStatus,
 	}
 	finalChunk := map[string]interface{}{
 		"object":  "chat.completion.chunk",
@@ -817,13 +878,17 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	actualCost := relay.calculateCost(ctx, orgID, req.Model, normalized.Usage.PromptTokens, 0)
-	relay.billing.Settle(ctx, billing.SettleRequest{
+	if _, err := relay.settleBillingWithRetry(billing.SettleRequest{
 		RequestID:    requestID,
 		OrgID:        orgID,
 		ActualCost:   actualCost,
 		PromptTokens: normalized.Usage.PromptTokens,
 		UsageSource:  normalized.Usage.Source,
-	})
+	}, reqLog); err != nil {
+		reqLog.Error("Billing settle failed; embeddings response withheld: %v", err)
+		writeError(w, http.StatusInternalServerError, "server_error", "billing_error.settle_failed", "Failed to settle billing")
+		return
+	}
 	middleware.RecordTokenUsage("prompt", req.Model, normalized.Usage.PromptTokens)
 
 	relay.recordRequest(ctx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, req.Model, requestedModel, r.RemoteAddr,

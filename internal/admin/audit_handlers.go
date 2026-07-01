@@ -277,14 +277,40 @@ func (h *Handler) CleanupOldData(ctx context.Context, retentionDays int) error {
 	}
 	log.Printf("Cleanup: deleted %d old transactions (older than %d days)", result.RowsAffected(), retentionDays)
 
-	// Keep freeze_idempotency records for 30 days (needed for idempotency checks)
+	// Release stale frozen requests before pruning idempotency rows. This prevents
+	// a failed settle from leaving wallet.frozen permanently held after cleanup.
 	result, err = h.db.Exec(ctx,
-		`DELETE FROM freeze_idempotency WHERE created_at < NOW() - INTERVAL '30 days'`,
+		`WITH stale AS (
+		     SELECT org_id, SUM(frozen_amount)::integer AS total_frozen
+		     FROM freeze_idempotency
+		     WHERE status = 'frozen' AND updated_at < NOW() - INTERVAL '24 hours'
+		     GROUP BY org_id
+		 ), released AS (
+		     UPDATE wallets w
+		     SET frozen = GREATEST(w.frozen - LEAST(w.frozen, stale.total_frozen), 0),
+		         balance = w.balance + LEAST(w.frozen, stale.total_frozen),
+		         updated_at = NOW()
+		     FROM stale
+		     WHERE w.org_id = stale.org_id
+		     RETURNING w.org_id
+		 )
+		 UPDATE freeze_idempotency
+		 SET status = 'cancelled', updated_at = NOW()
+		 WHERE status = 'frozen' AND updated_at < NOW() - INTERVAL '24 hours'`,
+	)
+	if err != nil {
+		return fmt.Errorf("release stale frozen requests: %w", err)
+	}
+	log.Printf("Cleanup: released %d stale frozen freeze_idempotency records (>24h)", result.RowsAffected())
+
+	// Keep active frozen records until they either settle or the stale-release guard above cancels them.
+	result, err = h.db.Exec(ctx,
+		`DELETE FROM freeze_idempotency WHERE created_at < NOW() - INTERVAL '30 days' AND status <> 'frozen'`,
 	)
 	if err != nil {
 		return fmt.Errorf("cleanup freeze_idempotency: %w", err)
 	}
-	log.Printf("Cleanup: deleted %d expired freeze_idempotency records (>30d)", result.RowsAffected())
+	log.Printf("Cleanup: deleted %d expired non-frozen freeze_idempotency records (>30d)", result.RowsAffected())
 
 	// First: deduct expired grants from wallets.granted_balance
 	result, err = h.db.Exec(ctx,

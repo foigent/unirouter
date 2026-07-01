@@ -1275,6 +1275,36 @@ func TestCleanupOldData_Success(t *testing.T) {
 	}
 }
 
+func TestCleanupOldData_ReleasesStaleFrozenBeforeDeletingIdempotency(t *testing.T) {
+	sawRelease := false
+	sawSafeDelete := false
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(sql, "UPDATE freeze_idempotency") && strings.Contains(sql, "status = 'frozen'") && strings.Contains(sql, "INTERVAL '24 hours'") {
+				sawRelease = true
+			}
+			if strings.Contains(sql, "DELETE FROM freeze_idempotency") {
+				if !strings.Contains(sql, "status <> 'frozen'") {
+					t.Fatalf("freeze_idempotency cleanup must not delete frozen rows directly: %s", sql)
+				}
+				sawSafeDelete = true
+			}
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	h := newTestHandler(db)
+
+	if err := h.CleanupOldData(context.Background(), 30); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !sawRelease {
+		t.Fatal("expected cleanup to release stale frozen requests")
+	}
+	if !sawSafeDelete {
+		t.Fatal("expected cleanup to delete only non-frozen idempotency rows")
+	}
+}
+
 func TestCleanupOldData_DefaultRetention(t *testing.T) {
 	var retentionArg int
 	db := &testutil.MockDB{
