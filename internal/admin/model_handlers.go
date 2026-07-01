@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/uniroute/unirouter/internal/models"
 )
@@ -40,7 +41,10 @@ func (h *Handler) ListReconciliation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var total int
-	h.db.QueryRow(r.Context(), fmt.Sprintf(`SELECT COUNT(*) FROM call_logs %s`, where), args...).Scan(&total)
+	if err := h.db.QueryRow(r.Context(), fmt.Sprintf(`SELECT COUNT(*) FROM call_logs %s`, where), args...).Scan(&total); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Count failed"})
+		return
+	}
 
 	offset := (page - 1) * pageSize
 	query := fmt.Sprintf(
@@ -72,8 +76,11 @@ func (h *Handler) ListReconciliation(w http.ResponseWriter, r *http.Request) {
 		var id int64
 		var requestID, model string
 		var totalTokens, promptTokens, completionTokens, statusCode int
-		var createdAt string
-		rows.Scan(&id, &requestID, &model, &totalTokens, &promptTokens, &completionTokens, &statusCode, &createdAt)
+		var createdAt time.Time
+		if err := rows.Scan(&id, &requestID, &model, &totalTokens, &promptTokens, &completionTokens, &statusCode, &createdAt); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
+			return
+		}
 
 		estTokens := promptTokens + completionTokens
 		status := "reconciled"
@@ -89,8 +96,12 @@ func (h *Handler) ListReconciliation(w http.ResponseWriter, r *http.Request) {
 			ActualTokens: totalTokens,
 			Delta:        totalTokens - estTokens,
 			Status:       status,
-			CreatedAt:    createdAt,
+			CreatedAt:    createdAt.Format(time.RFC3339),
 		})
+	}
+	if err := rows.Err(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Rows failed"})
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"data": records, "total": total, "page": page, "page_size": pageSize})

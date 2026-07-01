@@ -1,10 +1,165 @@
-# FIX-SIGNAL.md — PRD1 API Key, Channel Test, Gateway, and Stream Fix 验收请求
+# FIX-SIGNAL.md — PRD1 UI/API Follow-up Fix 验收请求
 
 **修复者：** Codex
 **日期：** 2026-07-01
-**修复轮次：** PRD1 API key, channel test, upstream URL, and stream final chunk fix
+**修复轮次：** PRD1 channel-key edit, token reconciliation pagination, and Dashboard trend fix
 
 ---
+
+## 本轮背景
+
+用户在云端 PRD1 继续验收时报告三类问题：
+
+- `上游密钥 -> 渠道密钥管理 -> 编辑渠道密钥` 中，“所属渠道”下拉无法点击，且需要更新 Mimo key。
+- `Token 对账` 每页只显示一条数据。
+- `仪表盘 -> AI 活动趋势` 图表是否正确存在疑问。
+
+代码与云端接口核查结论：
+
+- 前端编辑渠道密钥时禁用了 `所属渠道` 下拉；后端 `UpdateChannelKey` 也没有接收 `key` 字段，所以用户即使输入新 key 也不会真正更新上游密钥。
+- `UpdateChannelKey` 更新 key 后应清理 `fail_count/cooldown_until/last_used_at`，否则 Mimo key 即使替换后仍可能被冷却状态挡住。
+- `ListReconciliation` 把 `created_at` timestamp 扫到 `string`，并忽略 `rows.Scan` 错误；云端 `total=145` 但任意 `page_size` 都只返回 1 行。
+- `ReconciliationPage` 请求里把 `page_size` 写死为 `20`，并使用了后端不支持的 `pending` 状态筛选。
+- Dashboard `total_requests` 查询没有使用所选时间范围，导致 24h KPI/趋势图口径不一致；趋势图也没有补零 bucket，24h/7d/30d 在稀疏数据下很容易看起来“不变”。
+
+---
+
+## Fix #1: 渠道密钥编辑可更新所属渠道和上游 key
+
+**文件：**
+
+- `frontend/src/pages/ChannelKeysPage.tsx`
+- `internal/admin/channel_key_handlers.go`
+- `internal/admin/admin_mock_test.go`
+
+**修复内容：**
+
+- 编辑渠道密钥时不再禁用 `所属渠道` 下拉。
+- 编辑表单不回显旧 key，提示用户输入新的完整上游 API key。
+- 后端 `UpdateChannelKey` 支持 `key` 字段，更新时重新加密写入 `key_enc`。
+- 更新 key 时自动重置 `fail_count=0`、`cooldown_until=NULL`、`last_used_at=NULL`。
+- 后端同时补齐 `allowed_models` 更新路径和 `channelkey.update` audit。
+- 增加 `TestUpdateChannelKey_KeyResetsCooldown`。
+
+---
+
+## Fix #2: Token 对账分页返回多行并使用真实 pageSize
+
+**文件：**
+
+- `internal/admin/model_handlers.go`
+- `internal/admin/admin_mock_test.go`
+- `frontend/src/pages/ReconciliationPage.tsx`
+
+**修复内容：**
+
+- `ListReconciliation` 将 `created_at` 扫描为 `time.Time`，再格式化为 RFC3339 字符串。
+- `ListReconciliation` 不再忽略 count/row scan/rows errors。
+- 前端请求使用当前 `pageSize`，不再写死 `page_size=20`。
+- 前端分页使用 `onPageChange`，pageSize 改变时重新拉取。
+- 状态筛选改为后端真实支持的 `reconciled` / `error`。
+- `TestListReconciliation_Success` 改为覆盖 2 行 timestamp 结果。
+
+---
+
+## Fix #3: Dashboard 活动趋势与时间范围口径一致
+
+**文件：**
+
+- `internal/admin/dashboard_handlers.go`
+- `internal/admin/admin_mock_test.go`
+
+**修复内容：**
+
+- `dashboardOverview.total_requests` 改为按 `start_time/end_time` 查询，不再返回全量历史。
+- `dashboardDailyTrend` 使用 `time.RFC3339Nano` 解析前端 ISO 时间。
+- 趋势图按时间范围补零 bucket：短范围按小时，长范围按天。
+- bucket 统一 UTC 格式化，避免数据库时区导致 bucket 对不上。
+- 增加 `TestDashboardOverview_TotalUsesTimeRange`。
+
+---
+
+## Codex 已执行验证
+
+```bash
+go test ./internal/admin -run 'TestUpdateChannelKey_KeyResetsCooldown|TestListReconciliation|TestDashboardOverview|TestDashboardStats' -v
+go test ./...
+cd frontend && npm run build
+cd frontend && npm test -- --run
+git diff --check
+```
+
+结果：
+
+- targeted admin tests: PASS
+- `go test ./...`: PASS
+- `npm run build`: PASS，保留既有 Vite large chunk warning
+- `npm test -- --run`: PASS，36/36 tests passed
+- `git diff --check`: PASS
+
+---
+
+## Canary 验收命令
+
+```bash
+cd /Users/m4/Desktop/projects/UniRouter
+git diff --check
+go test ./internal/admin -run 'TestUpdateChannelKey_KeyResetsCooldown|TestListReconciliation|TestDashboardOverview|TestDashboardStats' -v
+go test ./...
+cd frontend && npm run build
+cd frontend && npm test -- --run
+```
+
+Source-level checks:
+
+```bash
+rg -n "Key \\*string|key_enc =|cooldown_until = NULL|last_used_at = NULL|TestUpdateChannelKey_KeyResetsCooldown" internal/admin/channel_key_handlers.go internal/admin/admin_mock_test.go
+rg -n "createdAt time.Time|rows.Scan|rows.Err|page_size: String\\(pageSize\\)|onPageChange|value: 'error'" internal/admin/model_handlers.go frontend/src/pages/ReconciliationPage.tsx
+rg -n "COUNT\\(\\*\\).*created_at >= \\$2|RFC3339Nano|Truncate\\(time.Hour\\)|TestDashboardOverview_TotalUsesTimeRange" internal/admin/dashboard_handlers.go internal/admin/admin_mock_test.go
+rg -n "optionList=\\{channels\\}|输入新的上游 API Key|已有密钥不会回显" frontend/src/pages/ChannelKeysPage.tsx
+```
+
+Do not run destructive cleanup. Do not run real provider paid calls, wallet/channel/API-key mutations, pressure tests, stream disconnects, or fault injection in Canary.
+
+---
+
+## 期望输出格式
+
+请将验收结果写入 `docs/agent-workflows/VERIFY-RESULT.md`：
+
+```markdown
+# VERIFY-RESULT.md — PRD1 UI/API Follow-up Fix 验收结果
+
+**验收者：** OpenClaw Canary
+**日期：** 以文件系统时间戳为准
+**对应轮次：** PRD1 channel-key edit, token reconciliation pagination, and Dashboard trend fix
+
+## 逐条结果
+
+- Fix #1: PASS/FAIL — 渠道密钥编辑是否可改渠道和 key，且后端更新 key 会清理冷却状态
+- Fix #2: PASS/FAIL — Token 对账是否按 page/page_size 返回多行，并修正前端分页和状态筛选
+- Fix #3: PASS/FAIL — Dashboard total_requests 与趋势图是否使用同一时间范围，趋势 bucket 是否补零
+
+## 全局验证
+
+- `git diff --check`: PASS/FAIL
+- targeted admin tests: PASS/FAIL
+- `go test ./...`: PASS/FAIL
+- `npm run build`: PASS/FAIL
+- `npm test -- --run`: PASS/FAIL
+
+## 新发现的问题
+
+- [如有，在此列出；没有则写“无”]
+
+## 结论
+
+- [全部通过 / 需要 Codex 修复以下问题]
+```
+
+---
+
+## 历史上一轮背景
 
 ## 背景
 

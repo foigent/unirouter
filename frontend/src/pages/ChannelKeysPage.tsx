@@ -25,9 +25,9 @@ export default function ChannelKeysPage() {
   const [total, setTotal] = useState(0);
   const [channels, setChannels] = useState<any[]>([]);
 
-  const load = (p = page) => {
+  const load = (p = page, size = pageSize) => {
     setLoading(true);
-    api.getChannelKeys(p, pageSize)
+    api.getChannelKeys(p, size)
       .then((d: any) => { setKeys(d.data || []); setTotal(d.total || 0); })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -87,8 +87,8 @@ export default function ChannelKeysPage() {
     setShowDrawer(true);
     setTimeout(() => {
       formApi?.setValues({
-        channel_id: record.channel_id?.toString(),
-        api_key: record.api_key,
+        channel_id: record.channel_id,
+        api_key: '',
       });
     }, 100);
   };
@@ -138,8 +138,8 @@ export default function ChannelKeysPage() {
             pagination={{
               currentPage: page, pageSize, total,
               pageSizeOpts: [20, 50, 100], showSizeChanger: true,
-              onPageChange: (p: number) => { setPage(p); load(p); },
-              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1); },
+              onPageChange: (p: number) => { setPage(p); load(p, pageSize); },
+              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1, s); },
             }}
           />
         </div>
@@ -153,8 +153,14 @@ export default function ChannelKeysPage() {
       >
         <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleSubmit}>
           <Form.Select field="channel_id" label="所属渠道" rules={[{ required: true, message: '必填' }]}
-            optionList={channels} disabled={!!editing} />
-          <Form.Input field="api_key" label="API Key" rules={[{ required: true, message: '必填' }]} placeholder="sk-..." />
+            optionList={channels} />
+          <Form.Input
+            field="api_key"
+            label="API Key"
+            rules={[{ required: true, message: '必填' }]}
+            placeholder={editing ? '输入新的上游 API Key，保存后会重置冷却状态' : 'sk-...'}
+            extraText={editing ? '出于安全原因，已有密钥不会回显；请输入新的完整密钥。' : undefined}
+          />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
             <Button onClick={closeDrawer}>取消</Button>
             <Button type="primary" onClick={() => formApi?.submitForm()}>{editing ? '更新' : '创建'}</Button>
