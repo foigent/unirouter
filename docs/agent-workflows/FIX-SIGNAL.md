@@ -1,257 +1,204 @@
-# FIX-SIGNAL.md — PRD1 Dashboard Percentile / Layout Closeout 验收请求
+# FIX-SIGNAL.md — PRD2 planning document baseline
 
-**修复者：** Codex
-**日期：** 2026-07-01
-**修复轮次：** PRD1 Dashboard latency percentile metrics and layout polish
-
----
-
-## 本轮背景
-
-用户在云端部署后继续指出 Dashboard 的 PRD1 收尾问题：
-
-- 平均延迟不足以判断真实 provider 体验，询问是否需要展示 P95/P99。
-- Dashboard 整体布局仍显松散，像营销大屏，不像高频运营后台。
-- 顶部搜索框没有和页面正文左侧对齐；右侧 `生产环境 / Operator / 平台管理员` 没有贴齐正文右侧。
-- `更新时间 / 健康渠道 / 钱包余额` 在 hero 右侧悬浮，和 KPI/图表上下左右关系不稳定。
-- `AI 活动趋势` 横向过长。
-- `渠道健康状态` 需要更直观的状态图标表达，并且不应过度靠右。
-
-Codex 判断：
-
-- P95/P99 应进入 PRD1 Dashboard。平均值会被快失败、短请求和历史 0 延迟样本稀释，不适合作为主要延迟 SLI。
-- PRD1 不需要再做大规模视觉重写，但需要一次结构性收束：统一 1440px 内容网格、降低 hero 大屏感、把状态信息变成 compact status strip、把趋势图和延迟分位并列。
+**修复者：** main agent
+**日期：** 文件系统时间戳为准
+**修复轮次：** PRD2 planning docs round 1
 
 ---
 
-## Fix #1: Dashboard API 返回 P95/P99 延迟
+## 前置条件（本轮预期不变的部分）
 
-**文件：**
+| 项目 | 预期状态 | 原因 |
+|------|---------|------|
+| 后端/前端代码 | 不应变化 | 本轮只补 PRD2 规划与技术文档 |
+| PRD1 历史证据 | 保留历史内容 | 本轮不重写 PRD1 closeout 证据，只标明 PRD1/PRD2 阶段边界 |
+| 构建/单测 | 不要求运行 | 本轮没有代码变更，Canary 可做文档存在性和一致性验证 |
 
-- `internal/admin/dashboard_handlers.go:26`
-- `internal/admin/dashboard_handlers.go:39`
-- `internal/admin/dashboard_handlers.go:89`
-- `internal/admin/admin_mock_test.go:2741`
-- `internal/admin/admin_mock_test.go:2788`
+> Canary 验收时：以上前置条件中列出的未运行构建/测试不算 FAIL；如发现代码文件变更，应标为 FAIL。
 
-**原问题：**
+---
 
-Dashboard API 只返回 `avg_latency_ms`。前端无法展示 P95/P99，只能用平均值判断延迟，容易误导。
+## Fix #1: 新增正式 PRD2 草案
 
-**当前代码：**
+**文件：** `docs/PRD-Phase2.md:1`
 
-- `DashboardStats` 调用 `dashboardLatencyPercentiles(ctx, orgID, startTime, endTime)`。
-- JSON 响应新增：
-  - `p95_latency_ms`
-  - `p99_latency_ms`
-- SQL 使用 PostgreSQL `percentile_cont(0.95/0.99) WITHIN GROUP (ORDER BY latency_ms)`。
-- 延迟聚合统一排除 `latency_ms <= 0`，避免历史日志 bug 产生的 0 延迟污染 SLI。
-- `delta_vs_yesterday.latency_ms` 现在对比 P95 延迟，而不是平均延迟。
+**原问题：** PRD2 只有 Discovery 共识，没有正式 PRD 草案。
+
+**当前代码/文档：**
+
+```markdown
+# UniRouter Product Requirements Document - Phase 2
+```
 
 **验证方法：**
 
-```bash
-go test ./internal/admin -run 'TestDashboardStats_Success|TestDashboardOverview_TotalUsesTimeRange|TestDashboardLatencyPercentiles_UsesOrgTimeRangeAndPositiveLatency' -v
-```
-
-期望：
-
-- `TestDashboardStats_Success` 断言响应包含 `p95_latency_ms=420.5`、`p99_latency_ms=950.25`。
-- `TestDashboardLatencyPercentiles_UsesOrgTimeRangeAndPositiveLatency` 断言 SQL 包含 `org_id = $1`、时间窗口、`latency_ms > 0`、`percentile_cont(0.95)`、`percentile_cont(0.99)`。
+1. 确认 `docs/PRD-Phase2.md` 存在。
+2. 确认文档包含 PRD2 定位、P0/P1/P2 范围、非目标、功能需求、数据模型影响、阶段治理和首批开发顺序。
+3. 确认 PRD2 未把支付、发票、实名、优惠券、Campaign、代理商体系、跨模型 fallback 等后置项写入 PRD2 开发目标。
 
 ---
 
-## Fix #2: Dashboard 主 KPI 从平均延迟改为 P95 延迟
+## Fix #2: 新增 PRD2 验收矩阵
 
-**文件：**
+**文件：** `docs/ops/PRD2-ACCEPTANCE-MATRIX.md:1`
 
-- `frontend/src/pages/DashboardPage.tsx:31`
-- `frontend/src/pages/DashboardPage.tsx:250`
-- `frontend/src/pages/DashboardPage.tsx:383`
-- `frontend/src/pages/__tests__/DashboardPage.test.tsx:21`
-- `frontend/src/pages/__tests__/DashboardPage.test.tsx:175`
+**原问题：** PRD2 没有独立验收矩阵，容易复用 PRD1 matrix 造成阶段混淆。
 
-**原问题：**
+**当前代码/文档：**
 
-Dashboard 主卡展示“平均延迟”，不能代表用户实际尾部体验。
-
-**当前代码：**
-
-- `DashboardStats` 类型新增 `p95_latency_ms`、`p99_latency_ms`。
-- 主 KPI 标题改为 `P95 延迟`。
-- 主值展示 `p95_latency_ms`。
-- 副信息展示 `Avg ...ms · P99 ...ms`。
-- 如果后端尚未返回 P95/P99，前端回退到 avg，保持向后兼容。
+```markdown
+# PRD2 Acceptance Matrix
+```
 
 **验证方法：**
 
-```bash
-cd frontend
-npm test -- --run src/pages/__tests__/DashboardPage.test.tsx
-```
-
-期望：
-
-- DashboardPage 测试包含 `P95 延迟`、`780ms`、`P99`、`1290ms`。
+1. 确认 `docs/ops/PRD2-ACCEPTANCE-MATRIX.md` 存在。
+2. 确认矩阵按 Planning/Governance、P0、P1、P2、Deferred 分组。
+3. 确认状态值和 E2E/Production 证据规则存在。
+4. 确认 deferred 表中包含代理商、支付/发票/实名/优惠券/Campaign、公有 SaaS 双 Portal、跨模型 fallback 等后置项。
 
 ---
 
-## Fix #3: Dashboard 顶部和主内容统一对齐
+## Fix #3: 新增 PRD2 Provider Adapter 技术规格
 
-**文件：**
+**文件：** `docs/tech-ref/10-provider-adapter-framework.md:1`
 
-- `frontend/src/pages/DashboardPage.tsx:319`
-- `frontend/src/index.css:137`
-- `frontend/src/index.css:469`
-- `frontend/src/index.css:502`
+**原问题：** 当前 UniRouter 主要是 OpenAI-compatible HTTP relay，缺少 PRD2 上游 native provider adapter 的架构边界。
 
-**原问题：**
+**当前代码/文档：**
 
-Dashboard 使用 `ur-page-wide` 全宽铺开，而 topbar 限制在 1440px；搜索框和右侧用户区无法与正文形成一致边界。原 Dashboard hero 使用左右大块布局，状态卡悬浮在右侧。
-
-**当前代码：**
-
-- Dashboard 根容器改回 `className="ur-page"`，和 topbar 共享 1440px 内容宽度。
-- topbar grid 改为 `minmax(280px, 520px) minmax(0, 1fr)`，右侧 actions 能贴齐页面右边界。
-- Dashboard hero 收束为普通 header surface：
-  - 标题字号从 38px 降到 30px。
-  - 移除大面积渐变/装饰圆。
-  - `更新时间 / 健康渠道 / 钱包余额` 改为三列 `ur-dashboard-status-strip`。
+```markdown
+# Provider Adapter Framework
+```
 
 **验证方法：**
 
-```bash
-rg -n "ur-page\\\"|ur-dashboard-status-strip|grid-template-columns: minmax\\(280px, 520px\\)" frontend/src/pages/DashboardPage.tsx frontend/src/index.css
-```
-
-期望：
-
-- Dashboard 不再使用 `ur-page-wide`。
-- 状态条存在。
-- topbar 第二列为 `minmax(0, 1fr)`。
+1. 确认文档明确下游保持 OpenAI-compatible。
+2. 确认 `openai_compatible` 被定义为 P0 adapter 类型。
+3. 确认文档包含 adapter interface、channel model changes、failure classification、streaming contract、billing/logs boundary、test requirements。
+4. 确认文档没有要求下游客户直接使用 Anthropic/Gemini/Baidu/Tongyi/Wenxin SDK。
 
 ---
 
-## Fix #4: AI 活动趋势不再无节制横向拉伸
+## Fix #4: 新增 PRD2 Project/RBAC 技术规格
 
-**文件：**
+**文件：** `docs/tech-ref/11-project-rbac-model.md:1`
 
-- `frontend/src/pages/DashboardPage.tsx:417`
-- `frontend/src/pages/DashboardPage.tsx:501`
-- `frontend/src/index.css:451`
-- `frontend/src/index.css:556`
+**原问题：** PRD2 确认 Project 是核心边界，但缺少数据模型、角色、权限矩阵和迁移规则。
 
-**原问题：**
+**当前代码/文档：**
 
-趋势图独占整行，宽屏下横向过长，右侧空间没有用于高价值运营信息。
-
-**当前代码：**
-
-- 新增 `ur-dashboard-analytics-grid`：左侧为 AI 活动趋势，右侧为延迟分位。
-- 趋势图高度从 300 降为 280，减少“大屏”感。
-- 新增 `延迟分位` 面板展示 Avg / P95 / P99，配合进度条表达尾部延迟。
+```markdown
+# Project And RBAC Model
+```
 
 **验证方法：**
 
-```bash
-rg -n "ur-dashboard-analytics-grid|延迟分位|LatencyPercentilePanel|height=\\{280\\}" frontend/src/pages/DashboardPage.tsx frontend/src/index.css frontend/src/pages/__tests__/DashboardPage.test.tsx
-```
-
-期望：
-
-- DashboardPage 测试断言 `.ur-dashboard-analytics-grid` 和 `.ur-latency-surface` 存在。
+1. 确认文档定义 `org -> project -> api key -> request` 层级。
+2. 确认包含 roles、permission matrix、authorization rules、gateway authorization、model access、audit requirements、migration plan。
+3. 确认迁移规则包含每个 org 默认 project 和现有 key 映射。
+4. 确认权限矩阵要求 backend checks，而不是只依赖前端隐藏导航。
 
 ---
 
-## Fix #5: 渠道健康状态使用状态图标和成功率进度
+## Fix #5: 新增 PRD2 Developer Console 设计规格
 
-**文件：**
+**文件：** `docs/design/PRD2-DEVELOPER-CONSOLE-SPEC.md:1`
 
-- `frontend/src/pages/DashboardPage.tsx:114`
-- `frontend/src/pages/DashboardPage.tsx:161`
-- `frontend/src/index.css:663`
-- `frontend/src/index.css:679`
+**原问题：** PRD2 需要开发者自助区，但不能误做成公有 SaaS 独立 Portal。
 
-**原问题：**
+**当前代码/文档：**
 
-渠道健康状态主要依赖文字 tag，不够直观；渠道卡视觉重量不稳定，状态不够一眼可读。
-
-**当前代码：**
-
-- 新增 `channelHealthView()`，统一映射：
-  - `健康` + `IconTickCircle`
-  - `告警` + `IconAlertTriangle`
-  - `异常` + `IconAlertTriangle`
-  - `禁用` + `IconMinusCircle`
-- 渠道卡加入成功率 Progress。
-- `健康渠道` 计数只统计真正 `healthy` 的渠道，不再把 warning 简单算作健康。
+```markdown
+# PRD2 Developer Console Spec
+```
 
 **验证方法：**
 
-```bash
-rg -n "channelHealthView|IconTickCircle|IconAlertTriangle|IconMinusCircle|ur-channel-state|ur-channel-progress" frontend/src/pages/DashboardPage.tsx frontend/src/index.css
-```
-
-期望：
-
-- source check 命中上述状态映射和 CSS 类。
+1. 确认文档说明 Developer Console 是现有前端应用内的 role-aware area。
+2. 确认 MVP 页面包含 Project Overview、API Keys、Approved Models、Usage、Request Lookup、Docs。
+3. 确认 Approved Models 默认是企业批准模型，不是上百模型 marketplace。
+4. 确认 Request Lookup 不展示 provider key、完整 API key、prompt/response 明文。
 
 ---
 
-## Codex 已执行验证
+## Fix #6: 更新状态入口和文档索引
 
-```bash
-go test ./internal/admin -run 'TestDashboard|TestListLogs' -v
-cd frontend && npm test -- --run src/pages/__tests__/DashboardPage.test.tsx
-cd frontend && npm test -- --run
-cd frontend && npm run build
-go test ./...
+**文件：**
+
+- `docs/ops/CURRENT-STATUS.md:1`
+- `docs/DOC-INVENTORY.md:1`
+- `docs/tech-ref/README.md:1`
+
+**原问题：** PRD2 文档新增后，当前状态和索引没有指向 PRD2 主线，后续 agent/Sentinel 可能继续把 PRD1 matrix 当成活跃主线。
+
+**当前代码/文档：**
+
+```markdown
+| PRD2 | Planning / Draft for Review | `docs/planning/PRD2-DISCOVERY.md`, `docs/PRD-Phase2.md`, `docs/ops/PRD2-ACCEPTANCE-MATRIX.md` |
 ```
 
-结果：
+**验证方法：**
 
-- Admin targeted Go tests: PASS.
-- Dashboard targeted frontend tests: PASS, 11/11 tests.
-- Full frontend tests: PASS, 43/43 tests.
-- Frontend build: PASS, retained existing Vite large chunk warning.
-- Full Go tests: PASS.
-- `git diff --check`: PASS.
-- Codex local Playwright visual smoke: PASS with mocked read-only Dashboard data.
-  - `output/playwright/prd1-dashboard-percentile-layout-desktop.png`
-  - `output/playwright/prd1-dashboard-percentile-layout-mobile.png`
-
-Playwright smoke 覆盖：
-
-- Desktop 1440px: `.ur-topbar` and `.ur-page` left/right bounds aligned within 2px.
-- Desktop 1440px: page includes `P95 延迟` and `P99`.
-- Desktop 1440px and mobile 390px: no horizontal overflow.
-- Console errors were only existing React/Semi StrictMode `findDOMNode` deprecation warnings, not business/runtime errors.
+1. 确认 `docs/ops/CURRENT-STATUS.md` 有 `Phase Status` 表，且 PRD2 指向 Discovery、正式 PRD 和 PRD2 acceptance matrix。
+2. 确认 `docs/DOC-INVENTORY.md` 登记 PRD2 PRD、PRD2 matrix、Provider Adapter、Project/RBAC、Developer Console spec。
+3. 确认 `docs/tech-ref/README.md` 登记 10/11 两份 PRD2 技术参考。
 
 ---
 
-## Canary 验收命令
+## 全局验证命令
 
 ```bash
 cd /Users/m4/Desktop/projects/UniRouter
+test -f docs/PRD-Phase2.md
+test -f docs/ops/PRD2-ACCEPTANCE-MATRIX.md
+test -f docs/tech-ref/10-provider-adapter-framework.md
+test -f docs/tech-ref/11-project-rbac-model.md
+test -f docs/design/PRD2-DEVELOPER-CONSOLE-SPEC.md
+rg -n "PRD2" docs/DOC-INVENTORY.md docs/ops/CURRENT-STATUS.md docs/tech-ref/README.md
 git diff --check
-go test ./internal/admin -run 'TestDashboard|TestListLogs' -v
-(cd frontend && npm test -- --run src/pages/__tests__/DashboardPage.test.tsx)
-(cd frontend && npm test -- --run)
-(cd frontend && npm run build)
+git status --short
 ```
 
-Source-level checks:
+## 期望输出格式
 
-```bash
-rg -n "p95_latency_ms|p99_latency_ms|dashboardLatencyPercentiles|percentile_cont|latency_ms > 0" internal/admin/dashboard_handlers.go internal/admin/admin_mock_test.go
-rg -n "P95 延迟|Avg .*P99|ur-dashboard-status-strip|ur-dashboard-analytics-grid|LatencyPercentilePanel|ur-latency-surface" frontend/src/pages/DashboardPage.tsx frontend/src/index.css frontend/src/pages/__tests__/DashboardPage.test.tsx
-rg -n "channelHealthView|IconTickCircle|IconAlertTriangle|IconMinusCircle|ur-channel-state|ur-channel-progress" frontend/src/pages/DashboardPage.tsx frontend/src/index.css
-rg -n "PRD1-DASH-005" docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD-ACCEPTANCE-MATRIX.md docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md
+验收结果写入 `docs/agent-workflows/VERIFY-RESULT.md`：
+
+```markdown
+# VERIFY-RESULT.md — 验收结果
+
+**验收者：** canary agent
+**日期：** 文件系统时间戳为准
+**对应轮次：** PRD2 planning docs round 1
+
+---
+
+## 逐条结果
+
+- Fix #1: PASS/FAIL — [原因]
+- Fix #2: PASS/FAIL — [原因]
+- Fix #3: PASS/FAIL — [原因]
+- Fix #4: PASS/FAIL — [原因]
+- Fix #5: PASS/FAIL — [原因]
+- Fix #6: PASS/FAIL — [原因]
+
+## 前置条件核验
+
+- 后端/前端代码：未变化/有变化 → [结论]
+- PRD1 历史证据：保留/被误改 → [结论]
+- 构建/单测：本轮不要求运行 → [结论]
+
+## 全局验证
+
+- planning files exist: PASS/FAIL
+- PRD2 references in index/status: PASS/FAIL
+- git diff --check: PASS/FAIL
+
+## 新发现的问题
+
+- [如有，在此列出；没有则写"无"]
+
+## 结论
+
+- [全部通过 / 需要 Codex 修复以下问题：...]
 ```
-
-Expected:
-
-- All commands pass.
-- Canary should mark visual/browser checks as not applicable.
-- If Canary passes, Sentinel can proceed with PR/CI for this Dashboard closeout round.
-- After deployment, user/browser-capable role should confirm the cloud Dashboard visual alignment and P95/P99 rendering.
