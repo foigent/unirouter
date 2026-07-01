@@ -40,9 +40,35 @@ func TestGenerateAPIKey_HexChars(t *testing.T) {
 
 // --- Permission helper tests ---
 
+func TestNormalizeRole(t *testing.T) {
+	if NormalizeRole("admin") != RolePlatformAdmin {
+		t.Fatal("legacy admin should normalize to platform_admin")
+	}
+	if NormalizeRole("org_viewer") != RoleViewer {
+		t.Fatal("org_viewer should normalize to viewer")
+	}
+	if NormalizeRole("developer") != RoleDeveloper {
+		t.Fatal("developer should remain developer")
+	}
+}
+
+func TestIsValidRole(t *testing.T) {
+	for _, role := range []string{RoleLegacyAdmin, RolePlatformAdmin, RoleOrgAdmin, RoleBillingAdmin, RoleProjectAdmin, RoleDeveloper, RoleViewer, RoleOrgViewer} {
+		if !IsValidRole(role) {
+			t.Fatalf("expected role %s to be valid", role)
+		}
+	}
+	if IsValidRole("owner") {
+		t.Fatal("unexpected custom role should be invalid")
+	}
+}
+
 func TestIsPlatformAdmin(t *testing.T) {
 	if !IsPlatformAdmin("platform_admin") {
 		t.Fatal("platform_admin should be platform admin")
+	}
+	if !IsPlatformAdmin("admin") {
+		t.Fatal("legacy admin should be platform admin")
 	}
 	if IsPlatformAdmin("org_admin") {
 		t.Fatal("org_admin should not be platform admin")

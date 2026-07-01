@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/uniroute/unirouter/internal/auth"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -70,7 +71,11 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Role == "" {
-		req.Role = "org_viewer"
+		req.Role = auth.RoleOrgViewer
+	}
+	if !auth.IsValidRole(req.Role) {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid role"})
+		return
 	}
 	if req.OrgId == 0 {
 		h.db.QueryRow(r.Context(), `SELECT id FROM orgs LIMIT 1`).Scan(&req.OrgId)
@@ -113,6 +118,10 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	var args []interface{}
 	argIdx := 1
 	if req.Role != nil {
+		if !auth.IsValidRole(*req.Role) {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid role"})
+			return
+		}
 		sets = append(sets, fmt.Sprintf("role = $%d", argIdx))
 		args = append(args, *req.Role)
 		argIdx++

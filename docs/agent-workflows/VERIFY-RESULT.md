@@ -1,35 +1,34 @@
-# VERIFY-RESULT.md — PRD2 Implementation Batch 1 验收结果
+# VERIFY-RESULT.md — PRD2 Implementation Batch 2 验收结果
 
 **验收者：** OpenClaw Canary
 **日期：** 2026-07-01
-**对应轮次：** PRD2 implementation batch 1 — Project/Workspace foundation
+**对应轮次：** PRD2 implementation batch 2 — RBAC backend foundation
 
 ---
 
 ## 逐条结果
 
-- **Fix #1 (Project/Workspace schema + compatibility backfill):** PASS — `migrations/000009_prd2_project_foundation.up.sql` 创建 `projects` 表（`:6`，`UNIQUE (org_id, slug)` `:20`）、`project_members`（`:26`，`(project_id, user_id)` 主键 `:33`）。`api_keys`/`call_logs`/`transactions`/`audit_logs` 均增加 nullable `project_id`（`:38-41`）。`:44` 为每个 org 创建 Default Project，`:59-86` 回填既有数据。Down migration 对称（DROP INDEX → DROP COLUMN → DROP TABLE）
-- **Fix #2 (Project admin API routes + handlers):** PASS — `project_handlers.go` 实现 `ListProjects`（`:14`）、`CreateProject`（`:100`）、`GetProject`（`:169`）、`UpdateProject`（`:198`）。`main.go:268-271` 注册 4 条路由。`TestListProjects_Success`/`TestCreateProject_Success`/`TestCreateProject_DuplicateSlug`/`TestGetProject_Success`/`TestUpdateProject_Success`/`TestUpdateProject_NoFields` 6/6 PASS
-- **Fix #3 (API keys project-scoped + default-project compatibility):** PASS — `key_handlers.go:59` `ProjectID int64`，`:102` `resolveAPIKeyProjectID`，`:318` 未传 project_id 时通过 `ON CONFLICT` 获取/创建 default project。List/Get 响应包含 `project_id` 和 `project_name`（`:18/42/311`）
-- **Fix #4 (Gateway auth context + call logs carry project_id):** PASS — `auth.go:65` `CtxProjectID`，`:91` `GetProjectIDFromContext`，`:176` 查询 `COALESCE(ak.project_id, 0)`，`:243` 注入 context。`relay.go:617` 从 context 读取 project，`:623` INSERT 包含 `project_id`
-- **Fix #5 (Logs/audit/test utilities/docs track project scope):** PASS — `log_handlers.go:28` 支持 `project_id` 查询参数过滤，`:114/176` 响应包含 `project_id`。`audit_handlers.go:58` 调用 `recordAuditForProject`，`:61` 定义该函数，`:73` INSERT 包含 `project_id`。`testutil/db.go:109` 清理顺序包含 `project_members`。`PRD2-ACCEPTANCE-MATRIX.md:32-34` 标记为 Unit tested / Implemented not accepted
+- **Fix #1 (Batch 1 验收状态同步):** PASS — `CURRENT-STATUS.md:8` 记录 "PRD2 implementation batch 1 Project/Workspace backend foundation passed Canary 5/5, and User reported Sentinel completed"。`:24` Current Verification 表记录 "Canary passed; Sentinel complete"。`PRD2-ACCEPTANCE-MATRIX.md:32-34` batch 1 条目标记为 Unit tested / Implemented not accepted（未误标 E2E accepted）
+- **Fix #2 (PRD2 role constants + compatibility mapping + RequireRoles middleware):** PASS — `auth.go:18-24` 定义 8 个角色常量，`:149-155` `NormalizeRole` 映射 `admin→platform_admin`、`org_viewer→viewer`，`:162` `IsValidRole` 校验。`rbac.go:13` `RequireRoles` middleware。`TestNormalizeRole`/`TestRequireRoles_DeniesBillingAdminForPlatformOnlyRoute` PASS
+- **Fix #3 (Admin routes grouped by PRD2 role boundaries):** PASS — `main.go:218-233` 定义 `platformRoute`/`orgAdminRoute`/`billingRoute`/`usageRoute`/`projectReadRoute`/`projectWriteRoute`。`:281-285` channel routes 走 `platformRoute`，`:303-306` wallet 走 `billingRoute`，`:332` audit 只允许 `PlatformAdmin`/`OrgAdmin`/`BillingAdmin`（developer/viewer 排除）。`TestAdminRoutesRegisteredForFrontendClient` PASS
+- **Fix #4 (Project-scoped handlers enforce project membership):** PASS — `rbac_helpers.go:24/41/58/75` 定义 `canReadProject`/`canWriteProject`/`canCreateProjectKey`/`canReadProjectUsage`。`project_handlers.go:184/217` 项目详情/更新校验 membership。`key_handlers.go:135/220/229/322/372` key CRUD 校验。`log_handlers.go:78/196` logs 校验。`TestListLogs_ProjectScopedRoleRequiresProjectID`/`TestListLogs_ProjectScopedRoleWithMembership`/`TestCreateAPIKey_DeveloperRequiresProjectID` 3/3 PASS
+- **Fix #5 (User roles validated before write):** PASS — `user_handlers.go:76` CreateUser 校验 `IsValidRole`，`:121` UpdateUser 校验。`auth.go:162` `IsValidRole` 检查已知角色。`TestCreateUser_InvalidRole`/`TestUpdateUser_InvalidRole` 2/2 PASS
 
 ## 前置条件核验
 
 - Frontend 无功能变化: PASS ✅（无 .ts/.tsx/.css 文件变更）
-- 完整 RBAC 未声称完成: PASS ✅（P2-F02 仍为 Planned `:48`）
-- Model Registry / Provider Adapter 未声称完成: PASS ✅（P2-F04/P2-F05 仍为 Planned）
+- 完整项目成员管理 UI/API 未声称完成: PASS ✅
+- Model Registry / Provider Adapter 未声称完成: PASS ✅
 
 ## 全局验证
 
 | 检查项 | 结果 |
 |--------|------|
-| `go test ./internal/middleware ./internal/gateway ./internal/admin` | PASS |
+| `go test ./internal/auth ./internal/middleware ./internal/admin ./cmd/uniroute` | PASS |
 | `go test ./...` | PASS（16/16 包） |
 | `git diff --check` | PASS |
-| Migration up/down 对称 | PASS |
-| Project handlers 6/6 tests | PASS |
-| PRD2 acceptance matrix 未过度标注 | PASS（实现项 Unit tested，未标 E2E/Production） |
+| PRD2 acceptance matrix 未过度标注 | PASS |
+| Audit route 排除 developer/viewer | PASS |
 | 前端无变更 | PASS |
 
 ## 新发现的问题
@@ -38,4 +37,4 @@
 
 ## 结论
 
-**5/5 全部 PASS。** PRD2 implementation batch 1 验收通过。Project/Workspace 后端底座就绪，待 Canary 确认后可进入 Sentinel CI。
+**5/5 全部 PASS。** PRD2 implementation batch 2 验收通过。RBAC 后端底座就绪。

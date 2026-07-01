@@ -1,8 +1,8 @@
-# FIX-SIGNAL.md — PRD2 implementation batch 1 Project/Workspace foundation
+# FIX-SIGNAL.md — PRD2 implementation batch 2 RBAC backend foundation
 
 **修复者：** main agent
 **日期：** 文件系统时间戳为准
-**修复轮次：** PRD2 implementation batch 1
+**修复轮次：** PRD2 implementation batch 2
 
 ---
 
@@ -10,136 +10,148 @@
 
 | 项目 | 预期状态 | 原因 |
 |------|---------|------|
-| PRD2 planning docs round 1 | 已由 Canary/Sentinel 通过 | 本轮不重写 PRD2 规划正文，只推进第一批后端实现 |
-| Frontend | 预期无功能变化 | 本轮只做 Project/Workspace 后端底座，不做 Developer Console UI |
-| RBAC 完整权限矩阵 | 仍未完成 | 本轮只承载 `project_id` 数据边界，完整 role enforcement 在后续批次 |
-| Model Registry / Provider Adapter | 仍未实现 | 本轮按计划先打 Project/RBAC 数据底座 |
+| PRD2 batch 1 | Canary PASS + Sentinel complete | User 已报告 Canary 和 Sentinel 都完成，本轮只同步状态并推进 batch 2 |
+| Frontend | 预期无功能变化 | 本轮只做后端 RBAC gate，不做 Developer Console UI |
+| 完整项目成员管理 UI/API | 仍未完成 | 本轮使用 batch 1 的 `project_members` 表做读取校验，成员管理 API 后续实现 |
+| Model Registry / Provider Adapter | 仍未实现 | 本轮只推进 RBAC 后端底座 |
 
-> Canary 验收时：上述未完成项不算 FAIL；如果本轮声称完成完整 RBAC、Developer Console 或 Model Registry，则应标为 FAIL。
-
----
-
-## Fix #1: PRD2 Project/Workspace schema and compatibility backfill
-
-**文件：** `migrations/000009_prd2_project_foundation.up.sql:6`
-
-**原问题：** PRD1 schema 只有 `org_id -> api_key_id -> request_id`，没有 PRD2 所需的企业内部 Project/Workspace 边界。
-
-**当前代码/文档：**
-
-```sql
-CREATE TABLE IF NOT EXISTS projects (...);
-CREATE TABLE IF NOT EXISTS project_members (...);
-ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS project_id BIGINT REFERENCES projects(id) ON DELETE SET NULL;
-ALTER TABLE call_logs ADD COLUMN IF NOT EXISTS project_id BIGINT REFERENCES projects(id) ON DELETE SET NULL;
-```
-
-`migrations/000009_prd2_project_foundation.up.sql:43` 为每个现有 org 创建 `Default Project`，并在 `:58` 到 `:84` 回填既有 `api_keys`、`call_logs`、`transactions`。
-
-**验证方法：**
-
-1. 审查 `migrations/000009_prd2_project_foundation.up.sql` 和 `.down.sql`，确认 up/down 对称。
-2. 确认 `projects` 有 `(org_id, slug)` 唯一约束，`project_members` 有 `(project_id, user_id)` 主键。
-3. 确认 `api_keys`、`call_logs`、`transactions`、`audit_logs` 均增加 nullable `project_id`，避免破坏旧数据。
+> Canary 验收时：上述未完成项不算 FAIL；如果本轮声称完成完整 Developer Console、Model Registry 或 Provider Adapter，则应标为 FAIL。
 
 ---
 
-## Fix #2: Project admin API routes and handlers
+## Fix #1: Batch 1 验收状态同步
 
-**文件：** `internal/admin/project_handlers.go:14`
+**文件：** `docs/ops/CURRENT-STATUS.md:4`
 
-**原问题：** PRD2 Developer Console 和项目级 key/logs 需要后端项目对象，但当前没有 Project API。
+**原问题：** batch 1 已由 Canary/Sentinel 完成，但状态文档仍停留在 awaiting Canary。
 
 **当前代码/文档：**
 
-```go
-func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request)
-func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request)
-func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request)
-func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request)
-```
-
-路由在 `cmd/uniroute/main.go:268` 注册：
-
-```go
-mux.Handle("GET /api/v1/projects", adminAuth(http.HandlerFunc(adminHandler.ListProjects)))
-mux.Handle("POST /api/v1/projects", adminAuth(http.HandlerFunc(adminHandler.CreateProject)))
+```markdown
+| PRD2 implementation batch 1 | Canary passed; Sentinel complete | `docs/agent-workflows/VERIFY-RESULT.md` reports 5/5 PASS, global Go tests PASS, no new issues; User reported Sentinel completed |
 ```
 
 **验证方法：**
 
-1. 运行 `go test ./internal/admin -run 'Test(ListProjects|CreateProject|GetProject|UpdateProject)' -v`。
-2. 确认 `/api/v1/projects`、`/api/v1/projects/{id}` 出现在 `cmd/uniroute/main.go` 和 `docs/tech-ref/05-openapi-spec.yaml`。
-3. 确认本轮没有新增删除项目的 API；批量/危险删除不属于本轮。
+1. 读取 `docs/agent-workflows/VERIFY-RESULT.md`，确认对应 PRD2 implementation batch 1 且 5/5 PASS。
+2. 确认 `docs/ops/CURRENT-STATUS.md` 记录 batch 1 Canary passed 和 User reported Sentinel completed。
+3. 确认 `docs/ops/PRD2-ACCEPTANCE-MATRIX.md` 没把缺少 E2E 证据的 batch 1 条目误标为 `E2E accepted`。
 
 ---
 
-## Fix #3: API keys are project-scoped while keeping default-project compatibility
+## Fix #2: PRD2 role constants, compatibility mapping, and route RBAC middleware
 
-**文件：** `internal/admin/key_handlers.go:56`
+**文件：** `internal/auth/auth.go:17`
 
-**原问题：** API key 只能绑定 org，无法表示 PRD2 的 project-scoped key。
+**原问题：** PRD1 只有松散字符串角色，`admin`/`org_viewer` 与 PRD2 `platform_admin`/`viewer` 没有统一映射，后端路由也缺少复用式 role gate。
 
-**当前代码/文档：**
+**当前代码：**
 
 ```go
-ProjectID int64 `json:"project_id"`
-projectID, err := h.resolveAPIKeyProjectID(r.Context(), req.OrgID, req.ProjectID)
+const (
+    RoleLegacyAdmin   = "admin"
+    RolePlatformAdmin = "platform_admin"
+    RoleOrgAdmin      = "org_admin"
+    RoleBillingAdmin  = "billing_admin"
+    RoleProjectAdmin  = "project_admin"
+    RoleDeveloper     = "developer"
+    RoleViewer        = "viewer"
+    RoleOrgViewer     = "org_viewer"
+)
 ```
 
-`internal/admin/key_handlers.go:318` 的 `resolveAPIKeyProjectID` 在未传 `project_id` 时通过 `ON CONFLICT (org_id, slug)` 获取或创建 org 的 default project。
+`internal/auth/auth.go:149` 的 `NormalizeRole` 将 `admin -> platform_admin`、`org_viewer -> viewer`。`internal/middleware/rbac.go:13` 新增 `RequireRoles`，按归一化角色返回 403。
 
 **验证方法：**
 
-1. 审查 `CreateAPIKey`，确认新建 key 插入 `api_keys.project_id`。
-2. 审查 `ListAPIKeys` 和 `GetAPIKey`，确认响应包含 `project_id` 和 `project_name`。
-3. 运行 `go test ./internal/admin -run 'Test(CreateAPIKey|ListAPIKeys|GetAPIKey|UpdateAPIKey)' -v`。
+1. 运行 `go test ./internal/auth ./internal/middleware`。
+2. 确认 `TestNormalizeRole` 覆盖 legacy role 映射。
+3. 确认 `TestRequireRoles_DeniesBillingAdminForPlatformOnlyRoute` 覆盖 billing admin 被 platform-only route 拒绝。
 
 ---
 
-## Fix #4: Gateway auth context and call logs carry project_id
+## Fix #3: Admin routes grouped by PRD2 role boundaries
 
-**文件：** `internal/middleware/auth.go:62`
+**文件：** `cmd/uniroute/main.go:210`
 
-**原问题：** GatewayAuth 只注入 org/key/request，没有 project context，relay 无法把请求日志落到 project。
+**原问题：** 大多数 `/api/v1/*` admin route 只有 JWT 登录校验，没有区分 platform/org/billing/project/developer/viewer。
 
-**当前代码/文档：**
+**当前代码：**
 
 ```go
-CtxProjectID contextKey = "project_id"
-func GetProjectIDFromContext(ctx context.Context) int64
+platformRoute := func(h http.HandlerFunc) http.Handler { ... }
+orgAdminRoute := func(h http.HandlerFunc) http.Handler { ... }
+billingRoute := func(h http.HandlerFunc) http.Handler { ... }
+usageRoute := func(h http.HandlerFunc) http.Handler { ... }
+projectReadRoute := func(h http.HandlerFunc) http.Handler { ... }
+projectWriteRoute := func(h http.HandlerFunc) http.Handler { ... }
 ```
 
-`internal/middleware/auth.go:175` 查询 `COALESCE(ak.project_id, 0)`，`internal/middleware/auth.go:242` 将 project 注入 context。`internal/gateway/relay.go:617` 从 context 读取 project 并写入 `call_logs.project_id`。
+关键路由：
+
+- `cmd/uniroute/main.go:281` channel/provider routes 只允许 `platform_admin`。
+- `cmd/uniroute/main.go:303` wallet/grants/reconciliation routes 走 `billingRoute`。
+- `cmd/uniroute/main.go:287` project key reads/creates 走 project read/write gates。
+- `cmd/uniroute/main.go:332` global audit logs 只允许 platform/org/billing roles，不允许 developer/viewer。
 
 **验证方法：**
 
-1. 运行 `go test ./internal/middleware ./internal/gateway`。
-2. 审查 `internal/gateway/relay_mock_test.go:286`，确认 `recordRequest` 单测验证了 `project_id` insert arg。
-3. 确认没有改变 OpenAI-compatible 下游协议；`project_id` 只进入 UniRouter 内部 context/log。
+1. 运行 `go test ./cmd/uniroute`。
+2. 审查 `cmd/uniroute/main.go`，确认 channel/channel-key/channel-test 不是普通 `adminAuth`。
+3. 审查 audit route，确认 developer/viewer 不在 allowed roles。
 
 ---
 
-## Fix #5: Logs, audit, test utilities, and docs track project scope
+## Fix #4: Project-scoped handlers enforce project membership
 
-**文件：** `internal/admin/log_handlers.go:28`
+**文件：** `internal/admin/rbac_helpers.go:24`
 
-**原问题：** Project 数据即使写入，也无法通过日志 API 过滤/返回，审计也无法承载 project context。
+**原问题：** batch 1 已有 `project_id`，但 project-scoped roles 仍可能读取无项目过滤的数据或访问非成员项目。
 
-**当前代码/文档：**
+**当前代码：**
 
 ```go
-projectIDFilter := r.URL.Query().Get("project_id")
-conditions = append(conditions, fmt.Sprintf("project_id = $%d", argIdx))
+func (h *Handler) canReadProject(ctx context.Context, projectID int64) bool
+func (h *Handler) canWriteProject(ctx context.Context, projectID int64) bool
+func (h *Handler) canCreateProjectKey(ctx context.Context, projectID int64) bool
+func (h *Handler) canReadProjectUsage(ctx context.Context, projectID int64) bool
 ```
 
-`internal/admin/audit_handlers.go:61` 新增 `recordAuditForProject`，`docs/ops/CURRENT-STATUS.md:23` 和 `docs/ops/PRD2-ACCEPTANCE-MATRIX.md:32` 记录本轮状态。
+落点：
+
+- `internal/admin/project_handlers.go` 对项目列表、详情、更新做 membership 过滤/校验。
+- `internal/admin/key_handlers.go:19` project-scoped role 只能看到有 `project_members` 的 key；`:121` developer/project role 创建 key 必须显式传 `project_id`。
+- `internal/admin/log_handlers.go:69` logs API 对项目级角色要求 `project_id`，并校验 membership。
 
 **验证方法：**
 
-1. 运行 `go test ./internal/admin -run 'TestListLogs|TestRecordAudit|TestCreateAPIKey' -v`。
-2. 审查 `internal/testutil/testdb.go` 和 `internal/testutil/db.go`，确认测试清理顺序包含 `project_members` 和 `projects`。
-3. 确认 `docs/ops/PRD2-ACCEPTANCE-MATRIX.md` 未把本轮标为 `E2E accepted` 或 `Production verified`。
+1. 运行 `go test ./internal/admin -run 'TestListLogs_ProjectScopedRole|TestCreateAPIKey_DeveloperRequiresProjectID' -v`。
+2. 确认 `TestListLogs_ProjectScopedRoleRequiresProjectID` 返回 403。
+3. 确认 `TestListLogs_ProjectScopedRoleWithMembership` 在 membership 存在时返回 200。
+
+---
+
+## Fix #5: User roles are validated before write
+
+**文件：** `internal/admin/user_handlers.go:73`
+
+**原问题：** 用户创建/更新可写入任意 role 字符串，后续 RBAC 可能被脏角色绕过或产生不可预期状态。
+
+**当前代码：**
+
+```go
+if !auth.IsValidRole(req.Role) {
+    writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid role"})
+    return
+}
+```
+
+`internal/admin/rbac_handlers_test.go:109` 和 `:123` 分别覆盖 CreateUser/UpdateUser 的 invalid role 400。
+
+**验证方法：**
+
+1. 运行 `go test ./internal/admin -run 'Test(CreateUser_InvalidRole|UpdateUser_InvalidRole)' -v`。
+2. 确认默认角色仍为兼容角色 `org_viewer`，不会破坏 PRD1 用户创建测试。
 
 ---
 
@@ -147,11 +159,11 @@ conditions = append(conditions, fmt.Sprintf("project_id = $%d", argIdx))
 
 ```bash
 cd /Users/m4/Desktop/projects/UniRouter
-go test ./internal/middleware ./internal/gateway ./internal/admin
+go test ./internal/auth ./internal/middleware ./internal/admin ./cmd/uniroute
 go test ./...
 git diff --check
 git status --short
-sed -n '30,60p' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
+sed -n '34,44p' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
 ```
 
 ## 期望输出格式
@@ -163,7 +175,7 @@ sed -n '30,60p' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
 
 **验收者：** canary agent
 **日期：** 文件系统时间戳为准
-**对应轮次：** PRD2 implementation batch 1
+**对应轮次：** PRD2 implementation batch 2
 
 ---
 
@@ -178,12 +190,12 @@ sed -n '30,60p' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
 ## 前置条件核验
 
 - Frontend 无功能变化: PASS/FAIL
-- 完整 RBAC 未声称完成: PASS/FAIL
+- 完整项目成员管理 UI/API 未声称完成: PASS/FAIL
 - Model Registry / Provider Adapter 未声称完成: PASS/FAIL
 
 ## 全局验证
 
-- go test ./internal/middleware ./internal/gateway ./internal/admin: PASS/FAIL
+- go test ./internal/auth ./internal/middleware ./internal/admin ./cmd/uniroute: PASS/FAIL
 - go test ./...: PASS/FAIL
 - git diff --check: PASS/FAIL
 - PRD2 acceptance matrix 状态未过度标注: PASS/FAIL
