@@ -10,17 +10,17 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"github.com/uniroute/unirouter/internal/logger"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/uniroute/unirouter/internal/testutil"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/filter"
+	"github.com/uniroute/unirouter/internal/logger"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/models"
+	"github.com/uniroute/unirouter/internal/testutil"
 )
 
 // --- Mock BillingProvider ---
@@ -945,6 +945,41 @@ func TestRelayStreamRequest_UnirouteExtension(t *testing.T) {
 
 // --- HandleChatCompletion with mock upstream ---
 
+func TestUpstreamEndpoint_DoesNotDoubleAppendV1(t *testing.T) {
+	tests := []struct {
+		name     string
+		baseURL  string
+		endpoint string
+		want     string
+	}{
+		{
+			name:     "base without v1",
+			baseURL:  "https://provider.example.com",
+			endpoint: "/v1/chat/completions",
+			want:     "https://provider.example.com/v1/chat/completions",
+		},
+		{
+			name:     "base with v1",
+			baseURL:  "https://provider.example.com/v1",
+			endpoint: "/v1/chat/completions",
+			want:     "https://provider.example.com/v1/chat/completions",
+		},
+		{
+			name:     "base with v1 trailing slash",
+			baseURL:  "https://provider.example.com/v1/",
+			endpoint: "/v1/embeddings",
+			want:     "https://provider.example.com/v1/embeddings",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := upstreamEndpoint(tt.baseURL, tt.endpoint); got != tt.want {
+				t.Fatalf("upstreamEndpoint() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestHandleChatCompletion_Success_NonStream(t *testing.T) {
 	// Mock upstream server
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -968,23 +1003,23 @@ func TestHandleChatCompletion_Success_NonStream(t *testing.T) {
 			return &testutil.MockRows{
 				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
-						*dest[0].(*int64) = 1           // ch.ID
-						*dest[1].(*string) = "test-ch"  // ch.Name
-						*dest[2].(*string) = "openai"   // ch.Provider
-						*dest[3].(*string) = upstream.URL // ch.BaseURL
-						*dest[4].(*string) = "gpt-4o"   // ch.Models
+						*dest[0].(*int64) = 1                               // ch.ID
+						*dest[1].(*string) = "test-ch"                      // ch.Name
+						*dest[2].(*string) = "openai"                       // ch.Provider
+						*dest[3].(*string) = upstream.URL                   // ch.BaseURL
+						*dest[4].(*string) = "gpt-4o"                       // ch.Models
 						*dest[5].(*json.RawMessage) = json.RawMessage(`{}`) // ch.ModelMapping
-						*dest[6].(*int) = 128000        // ch.MaxContext
-						*dest[7].(*int) = 4096          // ch.DefaultMaxOutput
-						*dest[8].(*int) = 100           // ch.Priority
-						*dest[9].(*string) = "active"   // ch.Status
-						*dest[10].(*string) = "healthy"  // ch.CircuitState
-						*dest[11].(**time.Time) = nil   // ch.HalfOpenUntil
-						*dest[12].(*int) = 0            // ch.FailCount
-						*dest[13].(*int64) = 1          // ck.ID
-						*dest[14].(*string) = "sk-encrypted" // ck.KeyEnc
-						*dest[15].(*string) = "active"  // ck.Status
-						*dest[16].(**time.Time) = nil   // ck.CooldownUntil
+						*dest[6].(*int) = 128000                            // ch.MaxContext
+						*dest[7].(*int) = 4096                              // ch.DefaultMaxOutput
+						*dest[8].(*int) = 100                               // ch.Priority
+						*dest[9].(*string) = "active"                       // ch.Status
+						*dest[10].(*string) = "healthy"                     // ch.CircuitState
+						*dest[11].(**time.Time) = nil                       // ch.HalfOpenUntil
+						*dest[12].(*int) = 0                                // ch.FailCount
+						*dest[13].(*int64) = 1                              // ck.ID
+						*dest[14].(*string) = "sk-encrypted"                // ck.KeyEnc
+						*dest[15].(*string) = "active"                      // ck.Status
+						*dest[16].(**time.Time) = nil                       // ck.CooldownUntil
 						return nil
 					},
 				},

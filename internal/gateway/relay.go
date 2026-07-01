@@ -17,8 +17,8 @@ import (
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/filter"
-	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/logger"
+	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/tokenutil"
 )
 
@@ -55,6 +55,15 @@ func (relay *Relay) SetAlertService(svc *billing.AlertService, webhookURL string
 	relay.alertSvc = svc
 	relay.webhookURL = webhookURL
 	relay.alertThresh = thresholdCents
+}
+
+func upstreamEndpoint(baseURL, endpoint string) string {
+	base := strings.TrimRight(baseURL, "/")
+	path := strings.TrimLeft(endpoint, "/")
+	if strings.HasSuffix(base, "/v1") && strings.HasPrefix(path, "v1/") {
+		path = strings.TrimPrefix(path, "v1/")
+	}
+	return base + "/" + path
 }
 
 // ChatCompletionRequest represents an incoming chat completion request.
@@ -192,7 +201,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		bodyMap["model"] = route.MappedModel
 		routeBody, _ := json.Marshal(bodyMap)
 
-		upstreamURL := strings.TrimRight(route.Channel.BaseURL, "/") + "/v1/chat/completions"
+		upstreamURL := upstreamEndpoint(route.Channel.BaseURL, "/v1/chat/completions")
 		upstreamReq, err := http.NewRequestWithContext(ctx, "POST", upstreamURL, bytes.NewReader(routeBody))
 		if err != nil {
 			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Failed to create upstream request: %v", err)
@@ -311,14 +320,14 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 	responseMap["_uniroute"] = map[string]interface{}{
 		"request_id": requestID,
 		"cost": map[string]interface{}{
-			"actual":      actualCost,
-			"charged":     actualCost,
-			"cache_hit":   false,
+			"actual":    actualCost,
+			"charged":   actualCost,
+			"cache_hit": false,
 		},
-		"provider":    route.Channel.Provider,
-		"channel":     route.Channel.Name,
-		"cache_hit":   false,
-		"fallback":    false,
+		"provider":  route.Channel.Provider,
+		"channel":   route.Channel.Name,
+		"cache_hit": false,
+		"fallback":  false,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -508,7 +517,12 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		ActualCost:       actualCost,
 		PromptTokens:     tokenCounter.InputTokens(),
 		CompletionTokens: tokenCounter.OutputTokens(),
-		UsageSource:      func() string { if usedUpstreamUsage { return "api" }; return "stream_estimate" }(),
+		UsageSource: func() string {
+			if usedUpstreamUsage {
+				return "api"
+			}
+			return "stream_estimate"
+		}(),
 	})
 	if settleErr != nil {
 		reqLog.Error("Billing settle error: %v", settleErr)
@@ -708,7 +722,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	upstreamBody["model"] = route.MappedModel
 	replacedBody, _ := json.Marshal(upstreamBody)
 
-	upstreamURL := strings.TrimRight(route.Channel.BaseURL, "/") + "/v1/embeddings"
+	upstreamURL := upstreamEndpoint(route.Channel.BaseURL, "/v1/embeddings")
 	upstreamReq, err := http.NewRequestWithContext(ctx, "POST", upstreamURL, bytes.NewReader(replacedBody))
 	if err != nil {
 		relay.billing.Cancel(ctx, requestID, orgID)
