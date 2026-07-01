@@ -638,7 +638,8 @@ func TestRelayNonStreamRequest_Success(t *testing.T) {
 	}
 }
 
-func TestRelayNonStreamRequest_SettleError(t *testing.T) {
+func TestRelayNonStreamRequest_SettleRetrySuccess(t *testing.T) {
+	settleCalls := 0
 	db := &testutil.MockDB{
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil
@@ -646,7 +647,59 @@ func TestRelayNonStreamRequest_SettleError(t *testing.T) {
 	}
 	b := &mockBilling{
 		settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
+			settleCalls++
+			if settleCalls < billingSettleMaxAttempts {
+				return nil, fmt.Errorf("temporary settle failure")
+			}
+			return &billing.SettleResult{SettleID: 1, Success: true}, nil
+		},
+		cancelFn: func(ctx context.Context, requestID string, orgID int64) error {
+			t.Fatal("cancel should not be called after retry success")
+			return nil
+		},
+	}
+	relay := newTestRelay(db, b)
+
+	respBody := `{"usage":{"prompt_tokens":10,"completion_tokens":5}}`
+	resp := &http.Response{
+		StatusCode: 200,
+		Body:       io.NopCloser(strings.NewReader(respBody)),
+		Header:     http.Header{},
+	}
+	route := &RouteResult{
+		Channel: models.Channel{ID: 1, Name: "openai", Provider: "openai"},
+	}
+
+	rec := httptest.NewRecorder()
+	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-retry", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-retry", OrgID: 1}), time.Now(), nil, 1200)
+
+	if settleCalls != billingSettleMaxAttempts {
+		t.Fatalf("expected %d settle attempts, got %d", billingSettleMaxAttempts, settleCalls)
+	}
+	if rec.Code != 200 {
+		t.Fatalf("expected 200 after retry success, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRelayNonStreamRequest_SettleError(t *testing.T) {
+	settleCalls := 0
+	cancelCalled := false
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	b := &mockBilling{
+		settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
+			settleCalls++
 			return nil, fmt.Errorf("settle failed")
+		},
+		cancelFn: func(ctx context.Context, requestID string, orgID int64) error {
+			cancelCalled = true
+			if requestID != "req-002" || orgID != 1 {
+				t.Fatalf("unexpected cancel args request_id=%s org_id=%d", requestID, orgID)
+			}
+			return nil
 		},
 	}
 	relay := newTestRelay(db, b)
@@ -665,9 +718,17 @@ func TestRelayNonStreamRequest_SettleError(t *testing.T) {
 	rec := httptest.NewRecorder()
 	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-002", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-002", OrgID: 1}), time.Now(), nil, 1200)
 
-	// Should still return 200 even if settle fails
-	if rec.Code != 200 {
-		t.Fatalf("expected 200, got %d", rec.Code)
+	if settleCalls != billingSettleMaxAttempts {
+		t.Fatalf("expected %d settle attempts, got %d", billingSettleMaxAttempts, settleCalls)
+	}
+	if !cancelCalled {
+		t.Fatal("expected cancel to release frozen amount after settle failure")
+	}
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "billing_error.settle_failed") {
+		t.Fatalf("expected settle failure code in response, got %s", rec.Body.String())
 	}
 }
 
@@ -801,6 +862,8 @@ func TestRelayStreamRequest_NoUpstreamUsage(t *testing.T) {
 }
 
 func TestRelayStreamRequest_SettleError(t *testing.T) {
+	settleCalls := 0
+	cancelCalled := false
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			return &testutil.MockRow{
@@ -816,7 +879,15 @@ func TestRelayStreamRequest_SettleError(t *testing.T) {
 	}
 	b := &mockBilling{
 		settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
+			settleCalls++
 			return nil, fmt.Errorf("settle failed")
+		},
+		cancelFn: func(ctx context.Context, requestID string, orgID int64) error {
+			cancelCalled = true
+			if requestID != "req-stream-3" || orgID != 1 {
+				t.Fatalf("unexpected cancel args request_id=%s org_id=%d", requestID, orgID)
+			}
+			return nil
 		},
 	}
 	relay := newTestRelay(db, b)
@@ -834,10 +905,21 @@ func TestRelayStreamRequest_SettleError(t *testing.T) {
 	rec := httptest.NewRecorder()
 	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-3", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-3", OrgID: 1}), time.Now(), 1000)
 
-	// Should still produce valid output even if settle fails
+	if settleCalls != billingSettleMaxAttempts {
+		t.Fatalf("expected %d settle attempts, got %d", billingSettleMaxAttempts, settleCalls)
+	}
+	if !cancelCalled {
+		t.Fatal("expected cancel to release frozen amount after stream settle failure")
+	}
 	body := rec.Body.String()
 	if !strings.Contains(body, "data: [DONE]") {
 		t.Fatal("expected [DONE] even after settle error")
+	}
+	if !strings.Contains(body, `"billing_status":"settle_failed_cancelled"`) {
+		t.Fatalf("expected settle failure billing status, got %s", body)
+	}
+	if !strings.Contains(body, `"charged":0`) {
+		t.Fatalf("expected charged cost to be zero after cancelled settle failure, got %s", body)
 	}
 }
 
