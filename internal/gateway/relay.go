@@ -614,10 +614,15 @@ func (relay *Relay) calculateCost(ctx context.Context, orgID int64, model string
 // recordRequest logs the request to the call_logs table.
 func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, keyID, channelID int64, provider, channelName, model, requestedModel, clientIP string, promptTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs int, isStream bool, usageSource string) {
 	reqLog := logger.New(logger.Fields{RequestID: requestID, OrgID: uint(orgID), Module: "records"})
+	projectID := middleware.GetProjectIDFromContext(ctx)
+	var projectIDArg interface{}
+	if projectID > 0 {
+		projectIDArg = projectID
+	}
 	_, err := relay.db.Exec(ctx,
-		`INSERT INTO call_logs (request_id, org_id, api_key_id, model, requested_model, provider, channel, prompt_tokens, completion_tokens, total_tokens, cost_cents, status_code, latency_ms, ttft_ms, usage_source, is_stream, ip_address)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
-		requestID, orgID, keyID, model, requestedModel, provider, channelName, promptTokens, completionTokens, promptTokens+completionTokens, costCents, statusCode, latencyMs, ttftMs, usageSource, isStream, clientIP,
+		`INSERT INTO call_logs (request_id, org_id, project_id, api_key_id, model, requested_model, provider, channel, prompt_tokens, completion_tokens, total_tokens, cost_cents, status_code, latency_ms, ttft_ms, usage_source, is_stream, ip_address)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+		requestID, orgID, projectIDArg, keyID, model, requestedModel, provider, channelName, promptTokens, completionTokens, promptTokens+completionTokens, costCents, statusCode, latencyMs, ttftMs, usageSource, isStream, clientIP,
 	)
 	if err != nil {
 		reqLog.Error("Failed to record request log: %v", err)

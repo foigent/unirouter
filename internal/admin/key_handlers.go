@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -12,11 +13,12 @@ import (
 
 func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(r.Context(),
-		`SELECT ak.id, ak.org_id, ak.name, ak.key_prefix, ak.status, ak.rpm_limit, ak.qps_limit,
+		`SELECT ak.id, ak.org_id, COALESCE(ak.project_id, 0), ak.name, ak.key_prefix, ak.status, ak.rpm_limit, ak.qps_limit,
 		        COALESCE(ak.budget_limit, 0), ak.allowed_ips, ak.allowed_models, ak.created_at,
-		        o.name as org_name
+		        o.name as org_name, COALESCE(p.name, '') as project_name
 		 FROM api_keys ak
 		 JOIN orgs o ON o.id = ak.org_id
+		 LEFT JOIN projects p ON p.id = ak.project_id
 		 ORDER BY ak.id ASC`,
 	)
 	if err != nil {
@@ -27,20 +29,20 @@ func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 
 	keys := make([]map[string]interface{}, 0)
 	for rows.Next() {
-		var id, orgID int64
-		var name, keyPrefix, status, orgName string
+		var id, orgID, projectID int64
+		var name, keyPrefix, status, orgName, projectName string
 		var rpmLimit, qpsLimit, budgetLimit int
 		var allowedIPs, allowedModels string
 		var createdAt time.Time
-		if err := rows.Scan(&id, &orgID, &name, &keyPrefix, &status, &rpmLimit, &qpsLimit, &budgetLimit, &allowedIPs, &allowedModels, &createdAt, &orgName); err != nil {
+		if err := rows.Scan(&id, &orgID, &projectID, &name, &keyPrefix, &status, &rpmLimit, &qpsLimit, &budgetLimit, &allowedIPs, &allowedModels, &createdAt, &orgName, &projectName); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 			return
 		}
 		keys = append(keys, map[string]interface{}{
-			"id": id, "org_id": orgID, "name": name, "key_prefix": keyPrefix,
+			"id": id, "org_id": orgID, "project_id": projectID, "name": name, "key_prefix": keyPrefix,
 			"status": status, "rpm_limit": rpmLimit, "qps_limit": qpsLimit,
 			"budget_limit": budgetLimit, "allowed_ips": allowedIPs, "allowed_models": allowedModels,
-			"created_at": createdAt, "org_name": orgName,
+			"created_at": createdAt, "org_name": orgName, "project_name": projectName,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -54,6 +56,7 @@ func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		OrgID         int64  `json:"org_id"`
+		ProjectID     int64  `json:"project_id"`
 		Name          string `json:"name"`
 		RPMLimit      int    `json:"rpm_limit"`
 		QPSLimit      int    `json:"qps_limit"`
@@ -96,6 +99,16 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	projectID, err := h.resolveAPIKeyProjectID(r.Context(), req.OrgID, req.ProjectID)
+	if err != nil {
+		if req.ProjectID > 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid project_id"})
+		} else {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to resolve default project"})
+		}
+		return
+	}
+
 	rawKey, keyPrefix, err := auth.GenerateAPIKey(req.OrgID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to generate key"})
@@ -106,17 +119,20 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 
 	var id int64
 	err = h.db.QueryRow(r.Context(),
-		`INSERT INTO api_keys (org_id, name, key_hash, key_prefix, status, rpm_limit, qps_limit, allowed_ips, allowed_models, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, NOW(), NOW())
+		`INSERT INTO api_keys (org_id, project_id, name, key_hash, key_prefix, status, rpm_limit, qps_limit, allowed_ips, allowed_models, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, 'active', $6, $7, $8, $9, NOW(), NOW())
 		 RETURNING id`,
-		req.OrgID, req.Name, keyHash, keyPrefix, req.RPMLimit, req.QPSLimit, req.AllowedIPs, req.AllowedModels,
+		req.OrgID, projectID, req.Name, keyHash, keyPrefix, req.RPMLimit, req.QPSLimit, req.AllowedIPs, req.AllowedModels,
 	).Scan(&id)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to create key"})
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "key": rawKey, "key_prefix": keyPrefix})
+	h.recordAuditForProject(r.Context(), "apikey.create", "apikey", strconv.FormatInt(id, 10), projectID,
+		map[string]interface{}{"org_id": req.OrgID, "project_id": projectID, "name": req.Name}, r.RemoteAddr)
+
+	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "key": rawKey, "key_prefix": keyPrefix, "project_id": projectID})
 }
 
 func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
@@ -132,6 +148,7 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		AllowedIPs    *string `json:"allowed_ips"`
 		AllowedModels *string `json:"allowed_models"`
 		Status        *string `json:"status"`
+		ProjectID     *int64  `json:"project_id"`
 		RPMLimit      *int    `json:"rpm_limit"`
 		QPSLimit      *int    `json:"qps_limit"`
 	}
@@ -162,6 +179,22 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 	if req.Status != nil {
 		sets = append(sets, fmt.Sprintf("status = $%d", argIdx))
 		args = append(args, *req.Status)
+		argIdx++
+	}
+	if req.ProjectID != nil {
+		var orgID int64
+		err := h.db.QueryRow(r.Context(), `SELECT org_id FROM api_keys WHERE id = $1`, id).Scan(&orgID)
+		if err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Key not found"})
+			return
+		}
+		projectID, err := h.resolveAPIKeyProjectID(r.Context(), orgID, *req.ProjectID)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid project_id"})
+			return
+		}
+		sets = append(sets, fmt.Sprintf("project_id = $%d", argIdx))
+		args = append(args, projectID)
 		argIdx++
 	}
 	if req.RPMLimit != nil {
@@ -207,6 +240,9 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 	if req.Status != nil {
 		changedFields = append(changedFields, "status")
 	}
+	if req.ProjectID != nil {
+		changedFields = append(changedFields, "project_id")
+	}
 	if req.RPMLimit != nil {
 		changedFields = append(changedFields, "rpm_limit")
 	}
@@ -251,29 +287,54 @@ func (h *Handler) GetAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var k struct {
-		ID, OrgID                       int64
+		ID, OrgID, ProjectID            int64
 		Name, KeyPrefix                 string
 		Status                          string
 		RPMLimit, QPSLimit, BudgetLimit int
 		AllowedIPs, AllowedModels       string
-		OrgName                         string
+		OrgName, ProjectName            string
 		CreatedAt                       time.Time
 	}
 	err = h.db.QueryRow(r.Context(),
-		`SELECT ak.id, ak.org_id, ak.name, ak.key_prefix, ak.status, ak.rpm_limit, ak.qps_limit,
-		        ak.budget_limit, ak.allowed_ips, ak.allowed_models, ak.created_at, o.name
+		`SELECT ak.id, ak.org_id, COALESCE(ak.project_id, 0), ak.name, ak.key_prefix, ak.status, ak.rpm_limit, ak.qps_limit,
+		        ak.budget_limit, ak.allowed_ips, ak.allowed_models, ak.created_at, o.name, COALESCE(p.name, '')
 		 FROM api_keys ak JOIN orgs o ON o.id = ak.org_id
+		 LEFT JOIN projects p ON p.id = ak.project_id
 		 WHERE ak.id = $1`, id).Scan(
-		&k.ID, &k.OrgID, &k.Name, &k.KeyPrefix, &k.Status, &k.RPMLimit, &k.QPSLimit,
-		&k.BudgetLimit, &k.AllowedIPs, &k.AllowedModels, &k.CreatedAt, &k.OrgName)
+		&k.ID, &k.OrgID, &k.ProjectID, &k.Name, &k.KeyPrefix, &k.Status, &k.RPMLimit, &k.QPSLimit,
+		&k.BudgetLimit, &k.AllowedIPs, &k.AllowedModels, &k.CreatedAt, &k.OrgName, &k.ProjectName)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "API key not found"})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"id": k.ID, "org_id": k.OrgID, "name": k.Name, "key_prefix": k.KeyPrefix,
+		"id": k.ID, "org_id": k.OrgID, "project_id": k.ProjectID, "name": k.Name, "key_prefix": k.KeyPrefix,
 		"status": k.Status, "rpm_limit": k.RPMLimit, "qps_limit": k.QPSLimit,
 		"budget_limit": k.BudgetLimit, "allowed_ips": k.AllowedIPs, "allowed_models": k.AllowedModels,
-		"created_at": k.CreatedAt, "org_name": k.OrgName,
+		"created_at": k.CreatedAt, "org_name": k.OrgName, "project_name": k.ProjectName,
 	})
+}
+
+func (h *Handler) resolveAPIKeyProjectID(ctx context.Context, orgID, requestedProjectID int64) (int64, error) {
+	if orgID <= 0 {
+		return 0, fmt.Errorf("invalid org_id")
+	}
+	if requestedProjectID > 0 {
+		var projectID int64
+		err := h.db.QueryRow(ctx,
+			`SELECT id FROM projects WHERE id = $1 AND org_id = $2 AND status = 'active'`,
+			requestedProjectID, orgID,
+		).Scan(&projectID)
+		return projectID, err
+	}
+
+	var projectID int64
+	err := h.db.QueryRow(ctx,
+		`INSERT INTO projects (org_id, name, slug, description, status, created_at, updated_at)
+		 VALUES ($1, 'Default Project', 'default', 'Default project created for PRD2 compatibility', 'active', NOW(), NOW())
+		 ON CONFLICT (org_id, slug) DO UPDATE SET updated_at = projects.updated_at
+		 RETURNING id`,
+		orgID,
+	).Scan(&projectID)
+	return projectID, err
 }

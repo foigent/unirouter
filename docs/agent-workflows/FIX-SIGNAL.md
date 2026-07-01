@@ -1,8 +1,8 @@
-# FIX-SIGNAL.md — PRD2 planning round 1 status sync
+# FIX-SIGNAL.md — PRD2 implementation batch 1 Project/Workspace foundation
 
 **修复者：** main agent
 **日期：** 文件系统时间戳为准
-**修复轮次：** PRD2 planning status sync after Canary/Sentinel
+**修复轮次：** PRD2 implementation batch 1
 
 ---
 
@@ -10,51 +10,136 @@
 
 | 项目 | 预期状态 | 原因 |
 |------|---------|------|
-| 后端/前端代码 | 不应变化 | 本轮只记录 Canary/Sentinel/CI 结果到状态文档 |
-| PRD2 规划正文与技术规格 | 不应变化 | Canary 已对 PRD2 planning docs round 1 做 6/6 PASS |
-| 构建/单测 | 不要求运行 | User 已报告 Sentinel CI 一次全绿；本轮仅文档状态同步 |
+| PRD2 planning docs round 1 | 已由 Canary/Sentinel 通过 | 本轮不重写 PRD2 规划正文，只推进第一批后端实现 |
+| Frontend | 预期无功能变化 | 本轮只做 Project/Workspace 后端底座，不做 Developer Console UI |
+| RBAC 完整权限矩阵 | 仍未完成 | 本轮只承载 `project_id` 数据边界，完整 role enforcement 在后续批次 |
+| Model Registry / Provider Adapter | 仍未实现 | 本轮按计划先打 Project/RBAC 数据底座 |
 
-> Canary 验收时：如果发现代码文件变化，或 PRD2 正文/技术规格被本轮额外修改，应标为 FAIL。
+> Canary 验收时：上述未完成项不算 FAIL；如果本轮声称完成完整 RBAC、Developer Console 或 Model Registry，则应标为 FAIL。
 
 ---
 
-## Fix #1: CURRENT-STATUS 记录 PRD2 planning round 1 验收与 CI 结果
+## Fix #1: PRD2 Project/Workspace schema and compatibility backfill
 
-**文件：** `docs/ops/CURRENT-STATUS.md:1`
+**文件：** `migrations/000009_prd2_project_foundation.up.sql:6`
 
-**原问题：** `CURRENT-STATUS.md` 仍描述 PRD2 规划文档“created locally for Canary verification”，没有记录 Canary 6/6 PASS、Sentinel 确认和 CI 一次全绿。
+**原问题：** PRD1 schema 只有 `org_id -> api_key_id -> request_id`，没有 PRD2 所需的企业内部 Project/Workspace 边界。
 
 **当前代码/文档：**
 
-```markdown
-| PRD2 planning docs round 1 | Canary passed; Sentinel CI green | `docs/agent-workflows/VERIFY-RESULT.md` reports 6/6 PASS, no new issues, no code changes; User reported Sentinel confirmed PRD2 planning documentation round 1 complete and CI passed on the first run |
+```sql
+CREATE TABLE IF NOT EXISTS projects (...);
+CREATE TABLE IF NOT EXISTS project_members (...);
+ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS project_id BIGINT REFERENCES projects(id) ON DELETE SET NULL;
+ALTER TABLE call_logs ADD COLUMN IF NOT EXISTS project_id BIGINT REFERENCES projects(id) ON DELETE SET NULL;
+```
+
+`migrations/000009_prd2_project_foundation.up.sql:43` 为每个现有 org 创建 `Default Project`，并在 `:58` 到 `:84` 回填既有 `api_keys`、`call_logs`、`transactions`。
+
+**验证方法：**
+
+1. 审查 `migrations/000009_prd2_project_foundation.up.sql` 和 `.down.sql`，确认 up/down 对称。
+2. 确认 `projects` 有 `(org_id, slug)` 唯一约束，`project_members` 有 `(project_id, user_id)` 主键。
+3. 确认 `api_keys`、`call_logs`、`transactions`、`audit_logs` 均增加 nullable `project_id`，避免破坏旧数据。
+
+---
+
+## Fix #2: Project admin API routes and handlers
+
+**文件：** `internal/admin/project_handlers.go:14`
+
+**原问题：** PRD2 Developer Console 和项目级 key/logs 需要后端项目对象，但当前没有 Project API。
+
+**当前代码/文档：**
+
+```go
+func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request)
+func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request)
+func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request)
+func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request)
+```
+
+路由在 `cmd/uniroute/main.go:268` 注册：
+
+```go
+mux.Handle("GET /api/v1/projects", adminAuth(http.HandlerFunc(adminHandler.ListProjects)))
+mux.Handle("POST /api/v1/projects", adminAuth(http.HandlerFunc(adminHandler.CreateProject)))
 ```
 
 **验证方法：**
 
-1. 读取 `docs/agent-workflows/VERIFY-RESULT.md`，确认结论为 6/6 PASS、无新问题、无代码变更。
-2. 确认 `docs/ops/CURRENT-STATUS.md` Summary 记录 PRD2 planning docs round 1 Canary PASS，以及 User reported Sentinel/CI green。
-3. 确认 `docs/ops/CURRENT-STATUS.md` 的 `Phase Status` 表中 PRD2 状态包含 planning docs round 1 Canary passed and Sentinel CI green。
+1. 运行 `go test ./internal/admin -run 'Test(ListProjects|CreateProject|GetProject|UpdateProject)' -v`。
+2. 确认 `/api/v1/projects`、`/api/v1/projects/{id}` 出现在 `cmd/uniroute/main.go` 和 `docs/tech-ref/05-openapi-spec.yaml`。
+3. 确认本轮没有新增删除项目的 API；批量/危险删除不属于本轮。
 
 ---
 
-## Fix #2: PRD2 Acceptance Matrix 标记 planning/governance 项已通过验收
+## Fix #3: API keys are project-scoped while keeping default-project compatibility
 
-**文件：** `docs/ops/PRD2-ACCEPTANCE-MATRIX.md:19`
+**文件：** `internal/admin/key_handlers.go:56`
 
-**原问题：** PRD2 planning/governance 行仍停留在 `Planned`，没有反映 Canary 和 Sentinel/CI 已确认 PRD2 规划文档第一轮完成。
+**原问题：** API key 只能绑定 org，无法表示 PRD2 的 project-scoped key。
 
 **当前代码/文档：**
 
-```markdown
-| PRD2 formal PRD exists | E2E accepted | `docs/agent-workflows/VERIFY-RESULT.md` reports Fix #1 PASS; User reported Sentinel confirmed PRD2 planning round 1 complete and CI green | None for planning round 1 |
+```go
+ProjectID int64 `json:"project_id"`
+projectID, err := h.resolveAPIKeyProjectID(r.Context(), req.OrgID, req.ProjectID)
 ```
+
+`internal/admin/key_handlers.go:318` 的 `resolveAPIKeyProjectID` 在未传 `project_id` 时通过 `ON CONFLICT (org_id, slug)` 获取或创建 org 的 default project。
 
 **验证方法：**
 
-1. 确认 `docs/ops/PRD2-ACCEPTANCE-MATRIX.md` 的 Planning And Governance 四行均为 `E2E accepted`。
-2. 确认这些行的证据引用 `VERIFY-RESULT.md` 和 User reported Sentinel CI green。
-3. 确认 P0/P1/P2 实现项仍保持 `Planned`，没有被误标为已实现。
+1. 审查 `CreateAPIKey`，确认新建 key 插入 `api_keys.project_id`。
+2. 审查 `ListAPIKeys` 和 `GetAPIKey`，确认响应包含 `project_id` 和 `project_name`。
+3. 运行 `go test ./internal/admin -run 'Test(CreateAPIKey|ListAPIKeys|GetAPIKey|UpdateAPIKey)' -v`。
+
+---
+
+## Fix #4: Gateway auth context and call logs carry project_id
+
+**文件：** `internal/middleware/auth.go:62`
+
+**原问题：** GatewayAuth 只注入 org/key/request，没有 project context，relay 无法把请求日志落到 project。
+
+**当前代码/文档：**
+
+```go
+CtxProjectID contextKey = "project_id"
+func GetProjectIDFromContext(ctx context.Context) int64
+```
+
+`internal/middleware/auth.go:175` 查询 `COALESCE(ak.project_id, 0)`，`internal/middleware/auth.go:242` 将 project 注入 context。`internal/gateway/relay.go:617` 从 context 读取 project 并写入 `call_logs.project_id`。
+
+**验证方法：**
+
+1. 运行 `go test ./internal/middleware ./internal/gateway`。
+2. 审查 `internal/gateway/relay_mock_test.go:286`，确认 `recordRequest` 单测验证了 `project_id` insert arg。
+3. 确认没有改变 OpenAI-compatible 下游协议；`project_id` 只进入 UniRouter 内部 context/log。
+
+---
+
+## Fix #5: Logs, audit, test utilities, and docs track project scope
+
+**文件：** `internal/admin/log_handlers.go:28`
+
+**原问题：** Project 数据即使写入，也无法通过日志 API 过滤/返回，审计也无法承载 project context。
+
+**当前代码/文档：**
+
+```go
+projectIDFilter := r.URL.Query().Get("project_id")
+conditions = append(conditions, fmt.Sprintf("project_id = $%d", argIdx))
+```
+
+`internal/admin/audit_handlers.go:61` 新增 `recordAuditForProject`，`docs/ops/CURRENT-STATUS.md:23` 和 `docs/ops/PRD2-ACCEPTANCE-MATRIX.md:32` 记录本轮状态。
+
+**验证方法：**
+
+1. 运行 `go test ./internal/admin -run 'TestListLogs|TestRecordAudit|TestCreateAPIKey' -v`。
+2. 审查 `internal/testutil/testdb.go` 和 `internal/testutil/db.go`，确认测试清理顺序包含 `project_members` 和 `projects`。
+3. 确认 `docs/ops/PRD2-ACCEPTANCE-MATRIX.md` 未把本轮标为 `E2E accepted` 或 `Production verified`。
 
 ---
 
@@ -62,12 +147,11 @@
 
 ```bash
 cd /Users/m4/Desktop/projects/UniRouter
-sed -n '1,80p' docs/agent-workflows/VERIFY-RESULT.md
-sed -n '1,45p' docs/ops/CURRENT-STATUS.md
-sed -n '19,28p' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
-git diff --name-only -- '*.go' '*.ts' '*.tsx' '*.css' '*.js' '*.jsx'
+go test ./internal/middleware ./internal/gateway ./internal/admin
+go test ./...
 git diff --check
 git status --short
+sed -n '30,60p' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
 ```
 
 ## 期望输出格式
@@ -79,7 +163,7 @@ git status --short
 
 **验收者：** canary agent
 **日期：** 文件系统时间戳为准
-**对应轮次：** PRD2 planning status sync after Canary/Sentinel
+**对应轮次：** PRD2 implementation batch 1
 
 ---
 
@@ -87,19 +171,22 @@ git status --short
 
 - Fix #1: PASS/FAIL — [原因]
 - Fix #2: PASS/FAIL — [原因]
+- Fix #3: PASS/FAIL — [原因]
+- Fix #4: PASS/FAIL — [原因]
+- Fix #5: PASS/FAIL — [原因]
 
 ## 前置条件核验
 
-- 后端/前端代码：未变化/有变化 → [结论]
-- PRD2 规划正文与技术规格：未变化/有额外变化 → [结论]
-- 构建/单测：本轮不要求运行，Sentinel CI 已由 User 报告全绿 → [结论]
+- Frontend 无功能变化: PASS/FAIL
+- 完整 RBAC 未声称完成: PASS/FAIL
+- Model Registry / Provider Adapter 未声称完成: PASS/FAIL
 
 ## 全局验证
 
-- VERIFY-RESULT round 1 结论可追溯: PASS/FAIL
-- CURRENT-STATUS 状态同步: PASS/FAIL
-- PRD2-ACCEPTANCE-MATRIX planning rows: PASS/FAIL
+- go test ./internal/middleware ./internal/gateway ./internal/admin: PASS/FAIL
+- go test ./...: PASS/FAIL
 - git diff --check: PASS/FAIL
+- PRD2 acceptance matrix 状态未过度标注: PASS/FAIL
 
 ## 新发现的问题
 

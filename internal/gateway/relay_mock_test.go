@@ -283,16 +283,20 @@ func TestRecordRequest_Success(t *testing.T) {
 	}
 	relay := newTestRelay(db, &mockBilling{})
 
-	relay.recordRequest(context.Background(), "req-001", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, 123, 0, false, "upstream")
+	ctx := context.WithValue(context.Background(), middleware.CtxProjectID, int64(7))
+	relay.recordRequest(ctx, "req-001", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, 123, 0, false, "upstream")
 
 	if !execCalled {
 		t.Fatal("expected exec to be called")
 	}
-	if len(capturedArgs) != 17 {
-		t.Fatalf("expected 17 insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != 18 {
+		t.Fatalf("expected 18 insert args, got %d", len(capturedArgs))
 	}
-	if capturedArgs[12] != 123 {
-		t.Fatalf("expected latency_ms arg 123, got %v", capturedArgs[12])
+	if capturedArgs[2] != int64(7) {
+		t.Fatalf("expected project_id arg 7, got %v", capturedArgs[2])
+	}
+	if capturedArgs[13] != 123 {
+		t.Fatalf("expected latency_ms arg 123, got %v", capturedArgs[13])
 	}
 }
 

@@ -22,17 +22,18 @@ func TestResolveAPIKey_Success(t *testing.T) {
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			return &testutil.MockRow{
 				ScanFn: func(dest ...any) error {
-					*dest[0].(*int64) = 1          // id
-					*dest[1].(*int64) = 1          // org_id
-					*dest[2].(*string) = "active"  // status
-					*dest[3].(*string) = ""        // allowed_ips
-					*dest[4].(*string) = ""        // allowed_models
-					*dest[5].(*int) = 60           // rpm_limit
-					*dest[6].(*int) = 10           // qps_limit
-					*dest[7].(**int) = &budgetLimit // budget_limit
-					*dest[8].(*string) = "sk-ab12" // key_prefix
-					*dest[9].(*string) = "test"    // name
-					*dest[10].(*string) = "active" // org_status
+					*dest[0].(*int64) = 1           // id
+					*dest[1].(*int64) = 1           // org_id
+					*dest[2].(*int64) = 11          // project_id
+					*dest[3].(*string) = "active"   // status
+					*dest[4].(*string) = ""         // allowed_ips
+					*dest[5].(*string) = ""         // allowed_models
+					*dest[6].(*int) = 60            // rpm_limit
+					*dest[7].(*int) = 10            // qps_limit
+					*dest[8].(**int) = &budgetLimit // budget_limit
+					*dest[9].(*string) = "sk-ab12"  // key_prefix
+					*dest[10].(*string) = "test"    // name
+					*dest[11].(*string) = "active"  // org_status
 					return nil
 				},
 			}
@@ -48,6 +49,9 @@ func TestResolveAPIKey_Success(t *testing.T) {
 	}
 	if apiKey.OrgID != 1 {
 		t.Fatalf("expected OrgID=1, got %d", apiKey.OrgID)
+	}
+	if apiKey.ProjectID == nil || *apiKey.ProjectID != 11 {
+		t.Fatalf("expected ProjectID=11, got %v", apiKey.ProjectID)
 	}
 	if orgStatus != "active" {
 		t.Fatalf("expected orgStatus=active, got %s", orgStatus)
@@ -84,15 +88,16 @@ func TestGatewayAuth_Success(t *testing.T) {
 				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 1
 					*dest[1].(*int64) = 1
-					*dest[2].(*string) = "active"
-					*dest[3].(*string) = ""
+					*dest[2].(*int64) = 11
+					*dest[3].(*string) = "active"
 					*dest[4].(*string) = ""
-					*dest[5].(*int) = 60
-					*dest[6].(*int) = 10
-					*dest[7].(**int) = &budgetLimit
-					*dest[8].(*string) = "sk-ab12"
-					*dest[9].(*string) = "test"
-					*dest[10].(*string) = "active"
+					*dest[5].(*string) = ""
+					*dest[6].(*int) = 60
+					*dest[7].(*int) = 10
+					*dest[8].(**int) = &budgetLimit
+					*dest[9].(*string) = "sk-ab12"
+					*dest[10].(*string) = "test"
+					*dest[11].(*string) = "active"
 					return nil
 				},
 			}
@@ -108,6 +113,10 @@ func TestGatewayAuth_Success(t *testing.T) {
 		orgID := GetOrgIDFromContext(r.Context())
 		if orgID != 1 {
 			t.Errorf("expected orgID=1, got %d", orgID)
+		}
+		projectID := GetProjectIDFromContext(r.Context())
+		if projectID != 11 {
+			t.Errorf("expected projectID=11, got %d", projectID)
 		}
 		w.WriteHeader(http.StatusOK)
 	})
@@ -181,15 +190,16 @@ func TestGatewayAuth_DisabledKey(t *testing.T) {
 				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 1
 					*dest[1].(*int64) = 1
-					*dest[2].(*string) = "disabled" // key disabled
-					*dest[3].(*string) = ""
+					*dest[2].(*int64) = 11
+					*dest[3].(*string) = "disabled" // key disabled
 					*dest[4].(*string) = ""
-					*dest[5].(*int) = 60
-					*dest[6].(*int) = 10
-					*dest[7].(**int) = &budgetLimit
-					*dest[8].(*string) = "sk-ab12"
-					*dest[9].(*string) = "test"
-					*dest[10].(*string) = "active"
+					*dest[5].(*string) = ""
+					*dest[6].(*int) = 60
+					*dest[7].(*int) = 10
+					*dest[8].(**int) = &budgetLimit
+					*dest[9].(*string) = "sk-ab12"
+					*dest[10].(*string) = "test"
+					*dest[11].(*string) = "active"
 					return nil
 				},
 			}
@@ -221,15 +231,16 @@ func TestGatewayAuth_DisabledOrg(t *testing.T) {
 				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 1
 					*dest[1].(*int64) = 1
-					*dest[2].(*string) = "active"
-					*dest[3].(*string) = ""
+					*dest[2].(*int64) = 11
+					*dest[3].(*string) = "active"
 					*dest[4].(*string) = ""
-					*dest[5].(*int) = 60
-					*dest[6].(*int) = 10
-					*dest[7].(**int) = &budgetLimit
-					*dest[8].(*string) = "sk-ab12"
-					*dest[9].(*string) = "test"
-					*dest[10].(*string) = "disabled" // org disabled
+					*dest[5].(*string) = ""
+					*dest[6].(*int) = 60
+					*dest[7].(*int) = 10
+					*dest[8].(**int) = &budgetLimit
+					*dest[9].(*string) = "sk-ab12"
+					*dest[10].(*string) = "test"
+					*dest[11].(*string) = "disabled" // org disabled
 					return nil
 				},
 			}
@@ -261,15 +272,16 @@ func TestGatewayAuth_IPWhitelist(t *testing.T) {
 				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 1
 					*dest[1].(*int64) = 1
-					*dest[2].(*string) = "active"
-					*dest[3].(*string) = "10.0.0.0/8" // only allow internal IPs
-					*dest[4].(*string) = ""
-					*dest[5].(*int) = 60
-					*dest[6].(*int) = 10
-					*dest[7].(**int) = &budgetLimit
-					*dest[8].(*string) = "sk-ab12"
-					*dest[9].(*string) = "test"
-					*dest[10].(*string) = "active"
+					*dest[2].(*int64) = 11
+					*dest[3].(*string) = "active"
+					*dest[4].(*string) = "10.0.0.0/8" // only allow internal IPs
+					*dest[5].(*string) = ""
+					*dest[6].(*int) = 60
+					*dest[7].(*int) = 10
+					*dest[8].(**int) = &budgetLimit
+					*dest[9].(*string) = "sk-ab12"
+					*dest[10].(*string) = "test"
+					*dest[11].(*string) = "active"
 					return nil
 				},
 			}
