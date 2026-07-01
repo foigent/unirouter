@@ -478,6 +478,56 @@ curl http://localhost:8080/health/ready
 docker compose -f docker-compose.yml -f docker-compose.canary.yml down nginx
 ```
 
+### 9.8 PRD2 HA readiness smoke
+
+PRD2 HA readiness 的最小验收目标是：两个 UniRouter 应用实例连接同一 PostgreSQL 和 Redis，且各自的 gateway/admin health check 均可服务。完整边界见 `docs/tech-ref/15-ha-readiness.md`。
+
+关键约束：
+
+- stable 实例负责迁移。
+- canary/secondary 实例必须设置 `SKIP_MIGRATION=true`。
+- PostgreSQL 和 Redis 是共享状态源。
+- in-process admission controller 是单实例容量保护，不是全局分布式 semaphore。
+
+健康验证：
+
+```bash
+UNIROUTE_STABLE_URL=http://localhost:8080 \
+UNIROUTE_CANARY_URL=http://localhost:8081 \
+scripts/prd2-ha-smoke.sh
+```
+
+通过 Nginx 或负载均衡器验证：
+
+```bash
+UNIROUTE_STABLE_URL=http://localhost:8080 \
+UNIROUTE_CANARY_URL=http://localhost:8081 \
+UNIROUTE_PROXY_URL=http://localhost \
+scripts/prd2-ha-smoke.sh
+```
+
+可选真实 gateway smoke（会真实发起模型请求，必须显式开启）：
+
+```bash
+UNIROUTE_STABLE_URL=http://localhost:8080 \
+UNIROUTE_CANARY_URL=http://localhost:8081 \
+UNIROUTE_RUN_GATEWAY_SMOKE=1 \
+UNIROUTE_API_KEY=sk-... \
+UNIROUTE_MODEL=gpt-4o \
+scripts/prd2-ha-smoke.sh
+```
+
+回滚验证：
+
+```bash
+# 1. 将 canary weight 调整为 0 或停止 backend-canary
+docker compose -f docker-compose.yml -f docker-compose.canary.yml stop backend-canary
+
+# 2. 验证 stable 仍然可服务
+curl -fsS http://localhost:8080/health/ready
+# 期望：{"status":"ok","db":"ok","redis":"ok"}
+```
+
 ---
 
 ## 十、生产环境部署（HTTPS）

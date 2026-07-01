@@ -57,15 +57,15 @@ An item should not move to `Production verified` unless the evidence comes from 
 | Model lifecycle changes audit before/after | Unit tested | Canary verified batch 6 lifecycle audit before/after test and no overclaim; User reported Sentinel completed | API E2E with real JWT |
 | Project key creation audit includes project | Unit tested | Canary verified batch 6 project key audit after-state and project id evidence; User reported Sentinel completed | E2E create key then inspect audit log |
 | Developer cannot read global audit logs | Implemented not accepted | `docs/agent-workflows/VERIFY-RESULT.md` reports audit route allows only platform/org/billing and excludes developer/viewer | API E2E with developer JWT |
-| P2-F12 Acceptance discipline | Unit tested | Batch 6 Canary verified matrix did not overmark frontend/E2E/all-action migration gaps; batch 7 keeps Notification/Event at backend foundation scope | Canary verification for batch 7 |
+| P2-F12 Acceptance discipline | Unit tested | Batch 7 Canary verified matrix did not overmark frontend/retry-worker/production webhook gaps; batch 8 keeps HA Readiness at backend/ops foundation scope | Canary verification for batch 8 |
 
 ## P1 Product Scope
 
 | PRD2 Item | Status | Current Evidence | Gap To Acceptance |
 |-----------|--------|------------------|-------------------|
-| P2-F08 Notification/event foundation | Unit tested | Batch 7 adds `docs/tech-ref/14-notification-event-foundation.md`, migration `000014_prd2_notification_event_foundation`, persistent events, webhook routes, delivery state, admin APIs, project budget event service, and focused billing/admin/gateway/cmd tests | Canary verification, frontend notification center, retry worker, production webhook E2E, remaining emitters for key/model/provider/license/estimated-usage events |
-| Project budget alerts | Unit tested | Batch 7 `TestEventService_CheckProjectBudgetEmitsThresholdEvent` verifies configured project budget crossing emits deduplicated `project_budget.threshold`; project update audit writes budget before/after state | Canary verification, API/browser E2E, period-boundary integration test, production webhook delivery evidence |
-| P2-F09 HA readiness | Planned | PRD2 defines multi-instance readiness without mandatory HA stack | Runbook, two-instance smoke, idempotency/wallet safety test |
+| P2-F08 Notification/event foundation | Unit tested | `docs/agent-workflows/VERIFY-RESULT.md` reports PRD2 implementation batch 7 7/7 PASS; User reported Sentinel completed | Frontend notification center, retry worker, production webhook E2E, remaining emitters for key/model/provider/license/estimated-usage events |
+| Project budget alerts | Unit tested | Canary verified batch 7 project budget threshold event service, webhook route/delivery state tests, and budget before/after audit; User reported Sentinel completed | API/browser E2E, period-boundary integration test, production webhook delivery evidence |
+| P2-F09 HA readiness | Unit tested | Batch 8 adds `docs/tech-ref/15-ha-readiness.md`, `scripts/prd2-ha-smoke.sh`, deployment runbook HA smoke/rollback steps, periodic sensitive-word reload, duplicate freeze race hardening, and HA integration test for shared-DB idempotency/wallet safety | Canary verification, two live-instance smoke in target env, load-balancer/proxy evidence, production backup/restore rehearsal |
 | P2-F10 License foundation | Planned | PRD2 defines offline license, expiry, Admin page, audit | License verifier, invalid/expiring license tests |
 | P2-F11 Prompt/Response storage policy | Planned | PRD2 says plaintext not stored by default and policy must be discussed | User decision, design doc, no implementation before approval |
 | Native adapter proof | Planned | PRD2 default candidate is `anthropic_native` | Adapter-specific spec, mock upstream, stream usage test |

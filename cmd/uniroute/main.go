@@ -98,16 +98,8 @@ func main() {
 
 	adminHandler := admin.NewHandler(postgres.Pool, cfg.JWTSecret, encKey, sensitiveFilter)
 
-	// Load sensitive words from settings (best effort)
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		words := loadSensitiveWords(ctx, postgres.Pool)
-		if len(words) > 0 {
-			sensitiveFilter.UpdateWords(words)
-			log.Printf("Loaded %d sensitive words from settings", len(words))
-		}
-	}()
+	// Load sensitive words from settings and periodically refresh all instances.
+	go startSensitiveWordsReloadLoop(postgres.Pool, sensitiveFilter, time.Minute)
 
 	// Start cleanup goroutine
 	if cfg.LogRetentionDays > 0 {
@@ -552,6 +544,29 @@ func loadSensitiveWords(ctx context.Context, pool *pgxpool.Pool) []string {
 		return nil
 	}
 	return words
+}
+
+// startSensitiveWordsReloadLoop keeps each gateway instance converged with DB-backed settings.
+func startSensitiveWordsReloadLoop(pool *pgxpool.Pool, sensitiveFilter *filter.DFAFilter, interval time.Duration) {
+	if sensitiveFilter == nil || interval <= 0 {
+		return
+	}
+	reload := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		words := loadSensitiveWords(ctx, pool)
+		if words != nil {
+			sensitiveFilter.UpdateWords(words)
+			log.Printf("Loaded %d sensitive words from settings", len(words))
+		}
+	}
+	reload()
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for range ticker.C {
+		reload()
+	}
 }
 
 // trimQuotes removes surrounding double quotes from a string.

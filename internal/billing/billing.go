@@ -2,11 +2,13 @@ package billing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"math"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
@@ -204,6 +206,13 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 		`INSERT INTO freeze_idempotency (request_id, org_id, frozen_amount, status)
 		 VALUES ($1, $2, $3, 'frozen')`, req.RequestID, req.OrgID, freezeAmount)
 	if err != nil {
+		if isUniqueViolation(err) {
+			_ = tx.Rollback(ctx)
+			existing, lookupErr := b.lookupFrozenAmount(ctx, req.RequestID)
+			if lookupErr == nil {
+				return &FreezeResult{Amount: existing, Success: true}, nil
+			}
+		}
 		return nil, fmt.Errorf("insert idempotency: %w", err)
 	}
 
@@ -217,6 +226,19 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 		NewBalance: newBalance,
 		Success:    true,
 	}, nil
+}
+
+func (b *Billing) lookupFrozenAmount(ctx context.Context, requestID string) (int, error) {
+	var existingAmount int
+	err := b.db.QueryRow(ctx,
+		`SELECT frozen_amount FROM freeze_idempotency WHERE request_id = $1 AND status = 'frozen'`,
+		requestID).Scan(&existingAmount)
+	return existingAmount, err
+}
+
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
 // Settle settles a frozen request with the actual cost.
