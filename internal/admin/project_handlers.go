@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -169,8 +171,14 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.recordAuditForProject(r.Context(), "project.create", "project", strconv.FormatInt(id, 10), id,
-		map[string]interface{}{"org_id": req.OrgID, "name": req.Name, "slug": req.Slug}, r.RemoteAddr)
+	h.recordAuditForProjectFromRequest(r, "project.create", "project", strconv.FormatInt(id, 10), id,
+		map[string]interface{}{"after": map[string]interface{}{
+			"org_id":        req.OrgID,
+			"name":          req.Name,
+			"slug":          req.Slug,
+			"budget_cents":  req.BudgetCents,
+			"budget_period": req.BudgetPeriod,
+		}})
 
 	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "org_id": req.OrgID, "name": req.Name, "slug": req.Slug})
 }
@@ -232,9 +240,12 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	before, beforeFound := h.projectAuditSnapshot(r.Context(), id)
+
 	var sets []string
 	var args []interface{}
 	var changed []string
+	after := map[string]interface{}{}
 	argIdx := 1
 
 	if req.Name != nil {
@@ -246,6 +257,7 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		sets = append(sets, fmt.Sprintf("name = $%d", argIdx))
 		args = append(args, name)
 		changed = append(changed, "name")
+		after["name"] = name
 		argIdx++
 	}
 	if req.Slug != nil {
@@ -253,12 +265,14 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		sets = append(sets, fmt.Sprintf("slug = $%d", argIdx))
 		args = append(args, slug)
 		changed = append(changed, "slug")
+		after["slug"] = slug
 		argIdx++
 	}
 	if req.Description != nil {
 		sets = append(sets, fmt.Sprintf("description = $%d", argIdx))
 		args = append(args, *req.Description)
 		changed = append(changed, "description")
+		after["description"] = *req.Description
 		argIdx++
 	}
 	if req.Status != nil {
@@ -269,12 +283,14 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		sets = append(sets, fmt.Sprintf("status = $%d", argIdx))
 		args = append(args, *req.Status)
 		changed = append(changed, "status")
+		after["status"] = *req.Status
 		argIdx++
 	}
 	if req.BudgetCents != nil {
 		sets = append(sets, fmt.Sprintf("budget_cents = $%d", argIdx))
 		args = append(args, *req.BudgetCents)
 		changed = append(changed, "budget_cents")
+		after["budget_cents"] = *req.BudgetCents
 		argIdx++
 	}
 	if req.BudgetPeriod != nil {
@@ -285,6 +301,7 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		sets = append(sets, fmt.Sprintf("budget_period = $%d", argIdx))
 		args = append(args, *req.BudgetPeriod)
 		changed = append(changed, "budget_period")
+		after["budget_period"] = *req.BudgetPeriod
 		argIdx++
 	}
 
@@ -310,8 +327,11 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.recordAuditForProject(r.Context(), "project.update", "project", strconv.FormatInt(id, 10), id,
-		map[string]interface{}{"fields": changed}, r.RemoteAddr)
+	detail := map[string]interface{}{"fields": changed, "after": after}
+	if beforeFound {
+		detail["before"] = before
+	}
+	h.recordAuditForProjectFromRequest(r, "project.update", "project", strconv.FormatInt(id, 10), id, detail)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"message": "Project updated"})
 }
@@ -362,4 +382,33 @@ func validProjectStatus(status string) bool {
 
 func validBudgetPeriod(period string) bool {
 	return period == "none" || period == "daily" || period == "monthly"
+}
+
+func (h *Handler) projectAuditSnapshot(ctx context.Context, projectID int64) (map[string]interface{}, bool) {
+	var orgID int64
+	var name, slug, description, status, budgetPeriod string
+	var budgetCents sql.NullInt64
+	err := h.db.QueryRow(ctx,
+		`SELECT org_id, name, slug, description, status, budget_cents, budget_period
+		 FROM projects
+		 WHERE id = $1`,
+		projectID,
+	).Scan(&orgID, &name, &slug, &description, &status, &budgetCents, &budgetPeriod)
+	if err != nil {
+		return nil, false
+	}
+	snapshot := map[string]interface{}{
+		"org_id":        orgID,
+		"name":          name,
+		"slug":          slug,
+		"description":   description,
+		"status":        status,
+		"budget_period": budgetPeriod,
+	}
+	if budgetCents.Valid {
+		snapshot["budget_cents"] = budgetCents.Int64
+	} else {
+		snapshot["budget_cents"] = nil
+	}
+	return snapshot, true
 }

@@ -1,8 +1,8 @@
-# FIX-SIGNAL.md — PRD2 implementation batch 6 Audit Schema Upgrade backend foundation
+# FIX-SIGNAL.md — PRD2 implementation batch 7 Notification/Event backend foundation
 
 **修复者：** main agent
 **日期：** 文件系统时间戳为准
-**修复轮次：** PRD2 implementation batch 6
+**修复轮次：** PRD2 implementation batch 7
 
 ---
 
@@ -10,249 +10,254 @@
 
 | 项目 | 预期状态 | 原因 |
 |------|---------|------|
-| PRD2 batch 5 | Canary PASS + Sentinel complete | User 已报告 Canary 和 Sentinel 都完成，本轮同步状态并推进 batch 6 |
-| Frontend | 预期无功能变化 | 本轮只做 Audit Schema Upgrade 后端基础，不做 Audit Logs UI 筛选 |
-| Gateway-originated audit events | 仍未完成 | 本轮只定义 `gateway_api` source contract，不在 gateway 发审计事件 |
-| All historical audit actions before/after | 仍未完成 | 本轮只覆盖关键 P2-F07 验收动作，不批量改写所有历史 handler |
-| 真实 JWT/API E2E / 浏览器验收 | 仍未完成 | 本轮提供 schema、helper、filters 和单元测试证据 |
+| PRD2 batch 6 | Canary PASS + Sentinel complete | User 已报告 Canary 和 Sentinel 都完成，本轮同步状态并推进 batch 7 |
+| Frontend notification center | 仍未完成 | 本轮只做 Notification/Event 后端基础，不做前端通知中心 |
+| Email / IM delivery | 仍未完成 | PRD2 允许分阶段，batch 7 只做 webhook route |
+| Background retry worker | 仍未完成 | 本轮记录 failed delivery 和 `next_retry_at`，不启动自动重试 worker |
+| Production webhook E2E | 仍未完成 | 本轮提供 schema、service、API 和单元测试证据 |
+| Key/model/provider/license/estimated-usage emitters | 仅保留事件类型扩展空间 | 本轮只实际接入 project budget threshold 事件 |
 
-> Canary 验收时：上述未完成项不算 FAIL；如果本轮声称完成前端 Audit Logs 筛选、gateway audit event emission、所有历史动作 before/after 全覆盖或真实 E2E/浏览器验收，则应标为 FAIL。
+> Canary 验收时：上述未完成项不算 FAIL；如果本轮声称完成前端通知中心、邮件/IM、自动 retry worker、生产 webhook E2E 或所有事件 emitters 全覆盖，则应标为 FAIL。
 
 ---
 
-## Fix #1: Batch 5 验收状态同步
+## Fix #1: Batch 6 验收状态同步
 
 **文件：** `docs/ops/CURRENT-STATUS.md`, `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`
 
-**原问题：** User 报告 batch 5 的 Canary 和 Sentinel 已完成，但当前状态需要同步。
+**原问题：** User 报告 batch 6 的 Canary 和 Sentinel 已完成，但状态文档仍停留在 awaiting Canary。
 
-**当前状态：**
+**当前实现：**
 
-- `CURRENT-STATUS.md` 记录 batch 5 为 Canary passed / Sentinel complete。
-- `PRD2-ACCEPTANCE-MATRIX.md` 将 Token Metering V2 证据更新为 Canary 6/6 PASS + User reported Sentinel completed。
-- 当前活跃轮次更新为 batch 6 fixed locally awaiting Canary。
+- `CURRENT-STATUS.md` 记录 batch 6 为 Canary passed / Sentinel complete。
+- `PRD2-ACCEPTANCE-MATRIX.md` 将 P2-F07 Audit Schema Upgrade 证据更新为 Canary 6/6 PASS + User reported Sentinel completed。
+- 当前活跃轮次更新为 batch 7 fixed locally awaiting Canary。
 
 **验证方法：**
 
 ```bash
 sed -n '1,34p' docs/ops/CURRENT-STATUS.md
-sed -n '52,62p' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
+sed -n '56,72p' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
 ```
 
 ---
 
-## Fix #2: Audit schema contract and migration
+## Fix #2: Notification/Event schema and tech-ref
 
-**文件：** `docs/tech-ref/13-audit-schema-upgrade.md`, `docs/tech-ref/README.md`, `docs/DOC-INVENTORY.md`, `migrations/000013_prd2_audit_schema_upgrade.up.sql`, `migrations/000013_prd2_audit_schema_upgrade.down.sql`, `internal/models/models.go`
+**文件：** `migrations/000014_prd2_notification_event_foundation.up.sql:6`, `migrations/000014_prd2_notification_event_foundation.down.sql`, `internal/models/models.go`, `docs/tech-ref/14-notification-event-foundation.md`, `docs/tech-ref/README.md`, `docs/DOC-INVENTORY.md`
 
-**原问题：** PRD2 P2-F07 要求 actor/org/project/source/request metadata 和 before/after，但当前 schema/文档没有结构化 before/after contract。
+**原问题：** PRD2 P2-F08 要求事件持久化、webhook routing 和 delivery failure visibility，但当前只有 PRD1 全局低余额 webhook alert，缺少 PRD2 事件层。
 
 **当前实现：**
 
-- 新增 tech-ref，定义 canonical audit source：
-  - `admin_console`
-  - `developer_console`
-  - `gateway_api`
-  - `system`
-- migration 新增 `audit_logs.before_state JSONB`。
-- migration 新增 `audit_logs.after_state JSONB`。
-- migration 将 legacy `source='admin'` 归一为 `admin_console`。
-- migration 新增 action/resource/source 相关索引。
-- `models.AuditLog` 增加 `Before`、`After`、`Source` 字段。
+- 新增 `notification_events`。
+- 新增 `notification_webhooks`。
+- 新增 `notification_deliveries`。
+- 新增 delivery state：`not_configured` / `pending` / `delivered` / `failed`。
+- 新增 partial unique dedupe index，避免同一项目同一周期预算阈值重复事件。
+- `models.go` 增加 `NotificationEvent`、`NotificationWebhook`、`NotificationDelivery`。
+- 新增 tech-ref 14 并写入技术参考索引和文档清单。
 
 **验证方法：**
 
 ```bash
-test -f docs/tech-ref/13-audit-schema-upgrade.md
-test -f migrations/000013_prd2_audit_schema_upgrade.up.sql
-test -f migrations/000013_prd2_audit_schema_upgrade.down.sql
-rg -n "before_state|after_state|admin_console|developer_console|gateway_api|system" docs/tech-ref/13-audit-schema-upgrade.md migrations/000013_prd2_audit_schema_upgrade.up.sql internal/models/models.go
+test -f docs/tech-ref/14-notification-event-foundation.md
+test -f migrations/000014_prd2_notification_event_foundation.up.sql
+test -f migrations/000014_prd2_notification_event_foundation.down.sql
+rg -n "notification_events|notification_webhooks|notification_deliveries|delivery_state" migrations/000014_prd2_notification_event_foundation.up.sql internal/models/models.go docs/tech-ref/14-notification-event-foundation.md
 ```
 
 ---
 
-## Fix #3: Audit helper writes source, request metadata, project, before, and after
+## Fix #3: EventService persists events and records webhook delivery state
 
-**文件：** `internal/admin/audit_handlers.go`, `internal/admin/admin_mock_test.go`
+**文件：** `internal/billing/notifications.go:52`, `internal/billing/notifications_test.go`
 
-**原问题：** `recordAudit` 只写 `detail`，不统一写 `source`、`user_agent`、`request_id`、`before_state`、`after_state`，且 source 仍可能是 legacy `admin`。
+**原问题：** 现有 `AlertService` 只做 PRD1 全局钱包告警，成功时写 audit，不支持独立事件表、webhook route 匹配、delivery failure visibility。
 
 **当前实现：**
 
-- 新增 `recordAuditFromRequest`。
-- 新增 `recordAuditForProjectFromRequest`。
-- 新增 `recordAuditForOrgProjectFromRequest`。
-- `recordAuditEntry` 统一写：
-  - `org_id`
-  - `project_id`
-  - actor `user_id`
-  - `ip`
-  - `user_agent`
-  - `request_id`
-  - canonical `source`
-  - `before_state`
-  - `after_state`
-- `detail.before` / `detail.after` 自动抽取为结构化 fields，同时保留原始 `detail`。
-- source 根据上下文角色映射为 `admin_console` 或 `developer_console`；空系统上下文为 `system`。
+- `EventService.Emit` 持久化事件。
+- 根据 `org_id`、可选 `project_id` 和 `event_types` 匹配 enabled webhook routes。
+- webhook 成功时写 `notification_deliveries.status='delivered'`。
+- webhook 失败时写 `status='failed'`、`response_status/error` 和 `next_retry_at`。
+- 无 webhook 时事件 `delivery_state='not_configured'`。
 
 **关键测试：**
 
-- `TestRecordAudit_Success`
+- `TestEventService_EmitDeliversWebhook`
+- `TestEventService_EmitRecordsFailedDelivery`
 
 **验证方法：**
 
 ```bash
-go test ./internal/admin -run TestRecordAudit_Success -v
+go test ./internal/billing -run 'TestEventService_Emit' -v
 ```
 
 ---
 
-## Fix #4: Audit list supports PRD2 filters and returns enriched fields
+## Fix #4: Project budget threshold emits deduplicated event
 
-**文件：** `internal/admin/audit_handlers.go`, `internal/admin/admin_mock_test.go`
+**文件：** `internal/billing/notifications.go:138`, `internal/gateway/relay.go:62`, `internal/gateway/relay.go:919`
 
-**原问题：** `/api/v1/audit-logs` 只能全量分页读取，不能按 org/project/actor/action/resource/time/source 过滤，也不返回 PRD2 audit metadata。
+**原问题：** PRD2 要求项目预算过阈值创建事件并按配置 webhook 发送；现有 relay 只触发全局 wallet alert，且检查发生在 `call_logs` 写入前，无法用当前调用成本做项目预算聚合。
 
 **当前实现：**
 
-- 支持过滤：
-  - `org_id`
-  - `project_id`
-  - `actor_id`
-  - `user_id`
-  - `action`
-  - `resource`
-  - `resource_id`
-  - `source`
-  - `start_time`
-  - `end_time`
-- `source=admin` 作为 legacy alias 归一化为 `admin_console`。
-- 响应返回：
-  - `actor_id` 和兼容字段 `user_id`
-  - `org_id`
-  - `project_id`
-  - `detail`
-  - `before`
-  - `after`
-  - `ip`
-  - `user_agent`
-  - `request_id`
-  - `source`
-  - pagination metadata。
+- `EventService.CheckProjectBudget` 读取 active project 的 `budget_cents` / `budget_period`。
+- 按 `daily` 或 `monthly` 周期聚合 `call_logs.cost_cents`。
+- 过阈值后创建 `project_budget.threshold` 事件。
+- dedupe key 按 project + period + threshold 生成。
+- relay 新增 `SetEventService`。
+- relay 在 `recordRequest` 后调用 post-settle budget check，确保当前请求被计入聚合。
 
 **关键测试：**
 
-- `TestListAuditLogs_Success`
-- `TestListAuditLogs_Filters`
-- `TestListAuditLogs_QueryError`
+- `TestEventService_CheckProjectBudgetEmitsThresholdEvent`
+- gateway 包现有 relay 回归测试继续通过。
 
 **验证方法：**
 
 ```bash
-go test ./internal/admin -run 'TestListAuditLogs' -v
+go test ./internal/billing -run TestEventService_CheckProjectBudgetEmitsThresholdEvent -v
+go test ./internal/gateway -run 'Test(CheckBudgetAlert|SetAlertService|Handle)' -v
 ```
 
 ---
 
-## Fix #5: Critical PRD2 audit actions record before/after evidence
+## Fix #5: Admin-visible notification APIs and webhook configuration
 
-**文件：** `internal/admin/key_handlers.go`, `internal/admin/model_governance_handlers.go`, `internal/admin/wallet_handlers.go`, `internal/admin/admin_mock_test.go`, `internal/admin/model_governance_handlers_test.go`
+**文件：** `internal/admin/notification_handlers.go:17`, `internal/admin/notification_handlers.go:100`, `internal/admin/notification_handlers.go:254`, `internal/admin/notification_handlers.go:308`, `cmd/uniroute/main.go:467`
 
-**原问题：** P2-F07 acceptance 要求 project key creation、model lifecycle change、wallet adjustment 等关键动作有 actor/project/before/after 审计证据。
+**原问题：** PRD2 要求至少 admin-visible notification records 和 webhook routing；当前没有 notification/event admin API。
 
 **当前实现：**
 
-- Project API key creation 使用 request-aware project audit helper，并写 after-state。
-- Model registry update 在更新前读取 lifecycle baseline，并写 before/after state。
-- Wallet top-up 使用统一 audit helper。
-- Wallet balance adjustment 写 before/after balance。
+- 新增 `GET /api/v1/notification-events`。
+- 新增 `GET /api/v1/notification-deliveries`。
+- 新增 `GET /api/v1/notification-webhooks`。
+- 新增 `POST /api/v1/notification-webhooks`。
+- 新增 `PUT /api/v1/notification-webhooks/{id}`。
+- Project-scoped admin 查询必须提供可访问 `project_id`。
+- Webhook create/update 写审计 before/after where applicable。
+- Route parity guard 增加新 API 路由。
 
 **关键测试：**
 
-- `TestCreateAPIKey_AuditIncludesProjectAndAfterState`
-- `TestUpdateModelRegistry_LifecycleAuditBeforeAfter`
-- `TestBalanceAdjust_Success`
+- `TestListNotificationEvents_Success`
+- `TestListNotificationDeliveries_ShowsFailureState`
+- `TestCreateNotificationWebhook_WritesAudit`
+- `TestAdminRoutesRegisteredForFrontendClient`
 
 **验证方法：**
 
 ```bash
-go test ./internal/admin -run 'Test(CreateAPIKey_AuditIncludesProjectAndAfterState|UpdateModelRegistry_LifecycleAuditBeforeAfter|BalanceAdjust_Success)' -v
+go test ./internal/admin -run 'Test(ListNotificationEvents|ListNotificationDeliveries|CreateNotificationWebhook)' -v
+go test ./cmd/uniroute -run TestAdminRoutesRegisteredForFrontendClient -v
 ```
 
 ---
 
-## Fix #6: PRD2 status, matrix, and acceptance discipline
+## Fix #6: Project budget configuration audit before/after
+
+**文件：** `internal/admin/project_handlers.go:174`, `internal/admin/project_handlers.go:243`, `internal/admin/project_handlers.go:334`, `internal/admin/project_handlers.go:387`
+
+**原问题：** Project budget fields existed, but project create/update audit did not preserve budget before/after state required by P2-F08 acceptance.
+
+**当前实现：**
+
+- Project create audit writes after-state with `budget_cents` and `budget_period`.
+- Project update reads `projectAuditSnapshot` before update.
+- Project update audit writes changed fields plus `before` and `after`.
+
+**验证方法：**
+
+```bash
+go test ./internal/admin -run TestUpdateProject_Success -v
+rg -n "projectAuditSnapshot|budget_cents|budget_period" internal/admin/project_handlers.go
+```
+
+---
+
+## Fix #7: PRD2 matrix/status updated without overclaim
 
 **文件：** `docs/ops/CURRENT-STATUS.md`, `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`
 
-**当前状态：**
+**原问题：** P2-F08 was still Planned and batch 6 status was stale.
 
-- `CURRENT-STATUS.md` 标记 batch 6 为 fixed locally awaiting Canary。
-- `P2-F07 Audit schema upgrade`、Model lifecycle before/after、Project key audit rows 标记为 `Unit tested`。
-- 未把 frontend audit filters、gateway audit event emission、所有历史动作 before/after 全覆盖或真实 JWT/API E2E 标记完成。
+**当前实现：**
+
+- P2-F08 Notification/Event foundation is marked `Unit tested`, not E2E accepted.
+- Project budget alerts are marked `Unit tested`, not E2E accepted.
+- Remaining gaps explicitly include Canary verification, frontend notification center, retry worker, production webhook E2E, and remaining emitters.
 
 **验证方法：**
 
 ```bash
-sed -n '1,34p' docs/ops/CURRENT-STATUS.md
-sed -n '56,64p' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
+sed -n '1,38p' docs/ops/CURRENT-STATUS.md
+sed -n '64,76p' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
 ```
 
 ---
 
 ## 全局验证命令
 
+Canary 请从仓库根目录执行：
+
 ```bash
-cd /Users/m4/Desktop/projects/UniRouter
-go test ./internal/admin ./cmd/uniroute
+go test ./internal/billing ./internal/admin ./internal/gateway ./cmd/uniroute
 go test ./...
 git diff --check
 git diff --check -- $(git ls-files --others --exclude-standard)
-git status --short
 ```
 
-## 期望输出格式
+## 期望的 VERIFY-RESULT.md 输出格式
 
-验收结果写入 `docs/agent-workflows/VERIFY-RESULT.md`：
+请覆盖写入 `docs/agent-workflows/VERIFY-RESULT.md`：
 
 ```markdown
-# VERIFY-RESULT.md — 验收结果
+# VERIFY-RESULT.md — PRD2 Implementation Batch 7 验收结果
 
-**验收者：** canary agent
-**日期：** 文件系统时间戳为准
-**对应轮次：** PRD2 implementation batch 6
-
----
+**验收者：** OpenClaw Canary
+**日期：** 2026-07-01
+**对应轮次：** PRD2 implementation batch 7 — Notification/Event backend foundation
 
 ## 逐条结果
 
-- Fix #1: PASS/FAIL — [原因]
-- Fix #2: PASS/FAIL — [原因]
-- Fix #3: PASS/FAIL — [原因]
-- Fix #4: PASS/FAIL — [原因]
-- Fix #5: PASS/FAIL — [原因]
-- Fix #6: PASS/FAIL — [原因]
+- Fix #1: PASS/FAIL — evidence
+- Fix #2: PASS/FAIL — evidence
+- Fix #3: PASS/FAIL — evidence
+- Fix #4: PASS/FAIL — evidence
+- Fix #5: PASS/FAIL — evidence
+- Fix #6: PASS/FAIL — evidence
+- Fix #7: PASS/FAIL — evidence
 
 ## 前置条件核验
 
-- Frontend 无功能变化: PASS/FAIL
-- Gateway-originated audit events 未声称完成: PASS/FAIL
-- All historical audit actions before/after 未声称完成: PASS/FAIL
-- 真实 JWT/API E2E / 浏览器验收未声称完成: PASS/FAIL
-- PRD2 acceptance matrix 未过度标注: PASS/FAIL
+- Frontend notification center 未声称完成: PASS/FAIL
+- Email / IM delivery 未声称完成: PASS/FAIL
+- Background retry worker 未声称完成: PASS/FAIL
+- Production webhook E2E 未声称完成: PASS/FAIL
+- Remaining emitters 未声称全覆盖: PASS/FAIL
 
 ## 全局验证
 
-- go test ./internal/admin ./cmd/uniroute: PASS/FAIL
-- go test ./...: PASS/FAIL
-- git diff --check: PASS/FAIL
-- git diff --check -- $(git ls-files --others --exclude-standard): PASS/FAIL
+| 检查项 | 结果 |
+|--------|------|
+| `go test ./internal/billing ./internal/admin ./internal/gateway ./cmd/uniroute` | PASS/FAIL |
+| `go test ./...` | PASS/FAIL |
+| `git diff --check` | PASS/FAIL |
+| schema + tech-ref | PASS/FAIL |
+| EventService webhook delivery tests | PASS/FAIL |
+| Project budget threshold test | PASS/FAIL |
+| Admin notification API tests | PASS/FAIL |
+| Matrix 未过度标注 | PASS/FAIL |
 
 ## 新发现的问题
 
-- [如有，在此列出；没有则写"无"]
+无 / 列表
 
 ## 结论
 
-- [全部通过 / 需要 Codex 修复以下问题：...]
+PASS/FAIL summary
 ```

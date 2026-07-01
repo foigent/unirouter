@@ -71,6 +71,11 @@ func TestAdminRoutesRegisteredForFrontendClient(t *testing.T) {
 		"DELETE /api/v1/users/{id}",
 		"GET /api/v1/grants",
 		"POST /api/v1/grants",
+		"GET /api/v1/notification-events",
+		"GET /api/v1/notification-deliveries",
+		"GET /api/v1/notification-webhooks",
+		"POST /api/v1/notification-webhooks",
+		"PUT /api/v1/notification-webhooks/{id}",
 		"GET /api/v1/audit-logs",
 	}
 
