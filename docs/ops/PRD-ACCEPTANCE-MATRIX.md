@@ -2,18 +2,18 @@
 
 > Purpose: track acceptance against `docs/PRD-Phase1.md`.
 > Status values: `Not started`, `Implemented not accepted`, `Unit tested`, `E2E accepted`, `Production verified`, `Out of scope`.
-> Last verified: 2026-07-01 local workspace plus Alibaba Cloud S0/S1 smoke.
+> Last verified: 2026-07-01 local workspace plus Alibaba Cloud S0/S1 smoke, real-provider E2E, and 20 VU load attempts.
 
 ## Core Flow
 
 | PRD Item | Status | Current Evidence | Gap To Acceptance |
 |----------|--------|------------------|-------------------|
-| Change base URL and call DeepSeek/Qwen/GLM/GPT/Claude/Gemini | Implemented not accepted | Gateway/provider routing code exists; tests pass | Current real-provider matrix needed |
-| Create API key, call API, return response and `_uniroute.cost` | Implemented not accepted | API key and relay/billing paths exist | Current E2E evidence needed |
-| Top up, call, deduct balance, reconcile | Implemented not accepted | Wallet and billing code exists | Current balance-before/after and reconciliation evidence needed |
+| Change base URL and call DeepSeek/Qwen/GLM/GPT/Claude/Gemini | Implemented not accepted | `moonshot-v1-8k` real provider call through the `kimi` channel returned 200; `mimo-v2.5` reaches upstream auth but channel 8 key is rejected with 401 | Provider matrix and valid Mimo/channel credentials still needed |
+| Create API key, call API, return response and `_uniroute.cost` | Implemented not accepted | Existing dedicated test API key successfully called `moonshot-v1-8k` and returned usage plus `_uniroute.cost.charged=1`; API key creation UX/name fixes are locally tested | Fresh create-key-to-call E2E still needed after redeploy |
+| Top up, call, deduct balance, reconcile | Implemented not accepted | Wallet decreased by 1 cent for non-stream and 1 cent for stream single calls; load spend matched successful calls only | Current top-up/reconciliation mutation evidence still needed |
 | Insufficient balance returns 402 | Unit tested | Billing and relay tests pass | Current E2E evidence needed |
 | Disabled key returns 401 | Unit tested | Auth/key tests pass | Current E2E evidence needed |
-| Streaming request returns fully and settles correctly | Implemented not accepted | SSE flusher path fixed historically; gateway tests pass | Current real streaming evidence needed |
+| Streaming request returns fully and settles correctly | Implemented not accepted | Cloud stream for `moonshot-v1-8k` returned 200 and settled 1 cent, but deployed response sent UniRouter metadata after `[DONE]`; local fix now emits `usage` + `_uniroute` before a single `[DONE]` and gateway tests pass | Canary verify, redeploy, and rerun stream E2E |
 | Interrupted streaming settles by received/estimated tokens | Implemented not accepted | Stream accounting code exists | Controlled disconnect acceptance needed |
 
 ## Admin Capability
@@ -41,17 +41,17 @@
 
 | PRD Item | Status | Current Evidence | Gap To Acceptance |
 |----------|--------|------------------|-------------------|
-| 100 concurrent requests do not create negative wallet balance | Implemented not accepted | Wallet constraints and billing tests exist | k6/wrk concurrency acceptance needed |
+| 100 concurrent requests do not create negative wallet balance | Implemented not accepted | 20 VU / 60s k6 attempts did not create uncontrolled spend; wallet spend matched successful calls only | Capacity acceptance failed under current provider key configuration; add provider capacity/keys or defer capacity target |
 | Circuit breaker switches to backup channel | Implemented not accepted | Circuit breaker and relay tests pass | Current failover simulation needed |
 | Sensitive-word request returns 400 | Implemented not accepted | DFA filter and routes exist | Current gateway E2E evidence needed |
 | Same `X-Request-Id` does not double charge | Implemented not accepted | Idempotency table and billing paths exist | Current repeated-request E2E evidence needed |
-| Admission over concurrency limit returns 429 | Unit tested | Admission middleware tests pass | Current load/concurrency acceptance needed |
+| Admission over concurrency limit returns 429 | Unit tested | Admission middleware tests pass; load attempts produced controlled 429/503/502/402 rather than runaway spend | Need targeted admission-only test separate from provider cooldown behavior |
 
 ## Observability
 
 | PRD Item | Status | Current Evidence | Gap To Acceptance |
 |----------|--------|------------------|-------------------|
-| Each request log includes request_id/org_id/channel_id | Implemented not accepted | `call_logs` schema and handlers exist | Current E2E log row evidence needed |
+| Each request log includes request_id/org_id/channel_id | Implemented not accepted | Cloud call logs recorded Mimo 401/503 failures and Moonshot 200 successes with request IDs and costs; list response currently shows channel fields as names/nullable values | Verify channel_id/org_id visibility if PRD requires them in admin list response |
 | Prometheus `/metrics` returns metrics | Production verified | Local current-source `/metrics` returned metrics; Alibaba Cloud backend `:8080/metrics` returned Prometheus text metrics; Prometheus `:9090/-/healthy` returned 200 | Keep Atlas deployment logs as release evidence |
 | `/health/ready` returns PRD shape with DB/Redis status | Production verified | Cloud `GET http://8.130.18.85:8080/health/ready` returned `{"status":"ok","db":"ok","redis":"ok"}` on 2026-07-01; `scripts/prd1-cloud-smoke.sh` passed `backend-ready-prd-shape` | None |
 | Grafana dashboard shows request rate, latency, error rate | Implemented not accepted | Grafana `:3001/login` is reachable on Alibaba Cloud | Current running Grafana panel screenshot/manual evidence needed |

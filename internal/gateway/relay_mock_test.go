@@ -713,12 +713,19 @@ func TestRelayStreamRequest_NormalFlow(t *testing.T) {
 	if !strings.Contains(body, "data: [DONE]") {
 		t.Fatal("expected [DONE] in output")
 	}
-	// Check that the extension data is present (contains request_id and cost)
-	if !strings.Contains(body, "request_id") {
-		t.Fatal("expected request_id in output")
+	if strings.Count(body, "data: [DONE]") != 1 {
+		t.Fatalf("expected exactly 1 [DONE] marker, got %d", strings.Count(body, "data: [DONE]"))
 	}
-	if !strings.Contains(body, "\"cost\"") {
-		t.Fatal("expected cost in output")
+	unirouteIndex := strings.Index(body, "\"_uniroute\"")
+	doneIndex := strings.Index(body, "data: [DONE]")
+	if unirouteIndex == -1 {
+		t.Fatal("expected _uniroute in output")
+	}
+	if doneIndex == -1 || unirouteIndex > doneIndex {
+		t.Fatal("expected _uniroute before [DONE]")
+	}
+	if !strings.Contains(body, "\"usage\"") {
+		t.Fatal("expected usage in final extension chunk")
 	}
 	// Check SSE headers
 	if rec.Header().Get("Content-Type") != "text/event-stream" {
@@ -931,15 +938,22 @@ func TestRelayStreamRequest_UnirouteExtension(t *testing.T) {
 
 	body := rec.Body.String()
 	// Extension data (request_id, cost) should be present in output
-	if !strings.Contains(body, "request_id") {
-		t.Fatal("expected request_id in output")
+	if !strings.Contains(body, "\"_uniroute\"") {
+		t.Fatal("expected _uniroute in output")
 	}
 	if !strings.Contains(body, "\"cost\"") {
 		t.Fatal("expected cost in output")
 	}
-	// Should have at least two [DONE] markers (original + relay's)
-	if strings.Count(body, "data: [DONE]") < 2 {
-		t.Fatal("expected at least 2 [DONE] markers")
+	if !strings.Contains(body, "\"usage\"") {
+		t.Fatal("expected usage in output")
+	}
+	if strings.Count(body, "data: [DONE]") != 1 {
+		t.Fatalf("expected exactly 1 [DONE] marker, got %d", strings.Count(body, "data: [DONE]"))
+	}
+	unirouteIndex := strings.Index(body, "\"_uniroute\"")
+	doneIndex := strings.Index(body, "data: [DONE]")
+	if doneIndex == -1 || unirouteIndex == -1 || unirouteIndex > doneIndex {
+		t.Fatal("expected _uniroute before [DONE]")
 	}
 }
 

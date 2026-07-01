@@ -5,7 +5,7 @@
 
 ## Summary
 
-UniRouter Phase 1 is in MVP hardening. Core backend modules, admin APIs, frontend pages, migrations, Docker deployment files, and monitoring assets exist. The project is not an early scaffold, but it is not yet fully PRD-accepted because several end-to-end and production-style acceptance cases still need current evidence or explicit user-approved deferral. The default-admin cloud security blocker found on 2026-07-01 has been redeployed and verified as fixed.
+UniRouter Phase 1 is in MVP hardening. Core backend modules, admin APIs, frontend pages, migrations, Docker deployment files, and monitoring assets exist. The project is not an early scaffold, but it is not yet fully PRD-accepted because several end-to-end and production-style acceptance cases still need current evidence, fixes, valid provider capacity, or explicit user-approved deferral. The default-admin cloud security blocker found on 2026-07-01 has been redeployed and verified as fixed.
 
 ## Current Verification
 
@@ -18,7 +18,7 @@ UniRouter Phase 1 is in MVP hardening. Core backend modules, admin APIs, fronten
 | Local current-source smoke | PASS | Temporary `go run ./cmd/uniroute` on port 18080 passed health, metrics, login, `/me`, settings, dashboard, and unauthenticated password-route checks |
 | PRD1 latest Canary | PASS | `VERIFY-RESULT.md` reports 4/4 PASS for the latest PRD1 reference-inspired UI redesign; earlier closeout rounds also passed through the protocol, while external-only items remain in `PRD1-REMAINING-ACCEPTANCE-PACK.md` |
 | Browser/manual frontend validation | Codex visual QA PASS locally | Codex Playwright screenshots captured Login, Dashboard, Logs detail, Wallet, API Docs, Channels, mobile Dashboard, mobile Logs, and the reference-inspired Login/Dashboard/mobile pass under local `output/playwright/`; Canary/OpenClaw visual acceptance remains not applicable |
-| Real upstream provider E2E | Partially evidenced historically | Needs current repeatable evidence for PRD acceptance |
+| Real upstream provider E2E | Partially accepted | `moonshot-v1-8k` non-stream and stream calls reached a real provider and settled; Mimo channel key is invalid; deployed stream final metadata order still needs the local fix redeployed |
 | Production deployment status | PASS for S0/S1 smoke | `scripts/prd1-cloud-smoke.sh` passed against Alibaba Cloud on 2026-07-01: frontend, live/ready, metrics, docs, Prometheus, Grafana login, unauthenticated 401 checks, and default-admin rejection |
 | Default admin password protection | Production verified | Cloud `POST /api/v1/auth/login` with `admin/admin123456` returned 403 on 2026-07-01; script check `default-admin-password-rejected` passed |
 | `/health/ready` PRD response shape | Production verified | Cloud `GET http://8.130.18.85:8080/health/ready` returned `{"status":"ok","db":"ok","redis":"ok"}` on 2026-07-01 |
@@ -27,7 +27,7 @@ UniRouter Phase 1 is in MVP hardening. Core backend modules, admin APIs, fronten
 
 | PRD Area | Current State | Notes |
 |----------|---------------|-------|
-| F01 OpenAI-compatible gateway | Implemented, tested by unit/mock paths | Real multi-provider E2E still needs current acceptance evidence |
+| F01 OpenAI-compatible gateway | Implemented, partially cloud-accepted | Non-stream real provider path works for `moonshot-v1-8k`; stream final chunk ordering fixed locally and awaiting Canary/redeploy; Mimo provider config blocked by invalid key |
 | F02 Channel management | Implemented | Admin API and frontend page exist |
 | F03 API key management | Implemented | Includes allowed models and disable path |
 | F04 Gateway auth middleware | Implemented | Tests pass |
@@ -48,7 +48,7 @@ UniRouter Phase 1 is in MVP hardening. Core backend modules, admin APIs, fronten
 
 ## Known Gaps
 
-1. PRD acceptance checklist is partially reconciled with current evidence; non-destructive cloud API smoke is now recorded, while real provider E2E and stress/failover scenarios still need current evidence.
+1. PRD acceptance checklist is partially reconciled with current evidence; cloud API smoke and Moonshot real-provider E2E are recorded, while Mimo provider credentials, stream final chunk redeploy, capacity load, and failover scenarios still need closure.
 2. Some historical status files disagree about whether specific bugs are open or fixed.
 3. `docs/testing/archive/` contains useful history but should not be used as the current status source.
 4. Active issues are now centralized in `docs/issues/OPEN-ISSUES.md`; older issue status still needs item-by-item reconciliation.
