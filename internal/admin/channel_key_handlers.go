@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/uniroute/unirouter/internal/auth"
@@ -112,6 +113,7 @@ func (h *Handler) UpdateChannelKey(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		ChannelID     *int64  `json:"channel_id"`
+		Key           *string `json:"key"`
 		Status        *string `json:"status"`
 		AllowedModels *string `json:"allowed_models"`
 	}
@@ -129,9 +131,30 @@ func (h *Handler) UpdateChannelKey(w http.ResponseWriter, r *http.Request) {
 		args = append(args, *req.ChannelID)
 		argIdx++
 	}
+	if req.Key != nil {
+		key := strings.TrimSpace(*req.Key)
+		if key == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "key cannot be empty"})
+			return
+		}
+		keyEnc, err := auth.EncryptKey([]byte(key), h.encKey)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to encrypt key"})
+			return
+		}
+		sets = append(sets, fmt.Sprintf("key_enc = $%d", argIdx))
+		args = append(args, keyEnc)
+		argIdx++
+		sets = append(sets, "fail_count = 0", "cooldown_until = NULL", "last_used_at = NULL")
+	}
 	if req.Status != nil {
 		sets = append(sets, fmt.Sprintf("status = $%d", argIdx))
 		args = append(args, *req.Status)
+		argIdx++
+	}
+	if req.AllowedModels != nil {
+		sets = append(sets, fmt.Sprintf("allowed_models = $%d", argIdx))
+		args = append(args, *req.AllowedModels)
 		argIdx++
 	}
 
@@ -153,6 +176,13 @@ func (h *Handler) UpdateChannelKey(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Channel key not found"})
 		return
 	}
+
+	h.recordAudit(r.Context(), "channelkey.update", "channel_key", idStr, map[string]interface{}{
+		"channel_id_updated":     req.ChannelID != nil,
+		"key_updated":            req.Key != nil,
+		"status_updated":         req.Status != nil,
+		"allowed_models_updated": req.AllowedModels != nil,
+	}, r.RemoteAddr)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 }

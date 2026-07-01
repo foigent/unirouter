@@ -2524,11 +2524,12 @@ func TestListLogs_ScanError(t *testing.T) {
 // ===================================================================
 
 func TestListReconciliation_Success(t *testing.T) {
+	now := time.Date(2026, 6, 25, 4, 0, 0, 0, time.UTC)
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			return &testutil.MockRow{
 				ScanFn: func(dest ...any) error {
-					*dest[0].(*int) = 1
+					*dest[0].(*int) = 2
 					return nil
 				},
 			}
@@ -2544,7 +2545,18 @@ func TestListReconciliation_Success(t *testing.T) {
 						*dest[4].(*int) = 100
 						*dest[5].(*int) = 50
 						*dest[6].(*int) = 200
-						*dest[7].(*string) = "2026-06-25T04:00:00Z"
+						*dest[7].(*time.Time) = now
+						return nil
+					},
+					func(dest ...any) error {
+						*dest[0].(*int64) = 2
+						*dest[1].(*string) = "req-002"
+						*dest[2].(*string) = "moonshot-v1-8k"
+						*dest[3].(*int) = 14
+						*dest[4].(*int) = 12
+						*dest[5].(*int) = 2
+						*dest[6].(*int) = 200
+						*dest[7].(*time.Time) = now.Add(time.Minute)
 						return nil
 					},
 				},
@@ -2563,8 +2575,11 @@ func TestListReconciliation_Success(t *testing.T) {
 	}
 	var resp map[string]interface{}
 	json.Unmarshal(rec.Body.Bytes(), &resp)
-	if resp["total"].(float64) != 1 {
-		t.Fatalf("expected total=1, got %v", resp["total"])
+	if resp["total"].(float64) != 2 {
+		t.Fatalf("expected total=2, got %v", resp["total"])
+	}
+	if got := len(resp["data"].([]interface{})); got != 2 {
+		t.Fatalf("expected 2 rows, got %d", got)
 	}
 }
 
@@ -2720,6 +2735,45 @@ func TestDashboardStats_Success(t *testing.T) {
 	}
 	if _, ok := resp["daily_trend"]; !ok {
 		t.Fatal("expected daily_trend in response")
+	}
+}
+
+func TestDashboardOverview_TotalUsesTimeRange(t *testing.T) {
+	var firstSQL string
+	var firstArgs []any
+	queryCount := 0
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			queryCount++
+			if queryCount == 1 {
+				firstSQL = sql
+				firstArgs = append([]any(nil), args...)
+			}
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
+					switch d := dest[0].(type) {
+					case *int:
+						*d = 7
+					case *float64:
+						*d = 123
+					}
+					return nil
+				},
+			}
+		},
+	}
+	h := newTestHandler(db)
+
+	total, _, _, _ := h.dashboardOverview(context.Background(), 1, "2026-07-01T00:00:00Z", "2026-07-01T01:00:00Z")
+
+	if total != 7 {
+		t.Fatalf("expected total=7, got %d", total)
+	}
+	if !strings.Contains(firstSQL, "created_at >= $2") || !strings.Contains(firstSQL, "created_at <= $3") {
+		t.Fatalf("expected total query to use time range, got %s", firstSQL)
+	}
+	if len(firstArgs) != 3 {
+		t.Fatalf("expected org/start/end args, got %d", len(firstArgs))
 	}
 }
 
@@ -4213,6 +4267,54 @@ func TestCreateChannelKey_DBError(t *testing.T) {
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d", rec.Code)
+	}
+}
+
+func TestUpdateChannelKey_KeyResetsCooldown(t *testing.T) {
+	encKey := []byte("0123456789abcdef01234567")
+	var updateSQL string
+	var updateArgs []any
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if strings.HasPrefix(sql, "UPDATE channel_keys") {
+				updateSQL = sql
+				updateArgs = append([]any(nil), args...)
+				return pgconn.NewCommandTag("UPDATE 1"), nil
+			}
+			return pgconn.NewCommandTag("INSERT 1"), nil
+		},
+	}
+	h := &Handler{db: db, jwtSecret: "test", encKey: encKey}
+
+	body := `{"channel_id":8,"key":"sk-new-mimo","status":"active","allowed_models":"mimo-v2.5"}`
+	req := httptest.NewRequest("PUT", "/channel-keys/9", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", "9")
+	rec := httptest.NewRecorder()
+
+	h.UpdateChannelKey(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{"channel_id =", "key_enc =", "fail_count = 0", "cooldown_until = NULL", "last_used_at = NULL", "status =", "allowed_models ="} {
+		if !strings.Contains(updateSQL, want) {
+			t.Fatalf("expected update SQL to contain %q, got %s", want, updateSQL)
+		}
+	}
+	if len(updateArgs) < 5 {
+		t.Fatalf("expected update args, got %v", updateArgs)
+	}
+	encryptedKey, ok := updateArgs[1].(string)
+	if !ok || encryptedKey == "" {
+		t.Fatalf("expected encrypted key arg, got %#v", updateArgs[1])
+	}
+	decrypted, err := auth.DecryptKey(encryptedKey, encKey)
+	if err != nil {
+		t.Fatalf("decrypt updated key: %v", err)
+	}
+	if decrypted != "sk-new-mimo" {
+		t.Fatalf("expected decrypted key sk-new-mimo, got %s", decrypted)
 	}
 }
 

@@ -10,10 +10,10 @@
 |----------|--------|------------------|-------------------|
 | Change base URL and call DeepSeek/Qwen/GLM/GPT/Claude/Gemini | Implemented not accepted | `moonshot-v1-8k` real provider call through the `kimi` channel returned 200; `mimo-v2.5` reaches upstream auth but channel 8 key is rejected with 401 | Provider matrix and valid Mimo/channel credentials still needed |
 | Create API key, call API, return response and `_uniroute.cost` | Implemented not accepted | Existing dedicated test API key successfully called `moonshot-v1-8k` and returned usage plus `_uniroute.cost.charged=1`; API key creation UX/name fixes are locally tested | Fresh create-key-to-call E2E still needed after redeploy |
-| Top up, call, deduct balance, reconcile | Implemented not accepted | Wallet decreased by 1 cent for non-stream and 1 cent for stream single calls; load spend matched successful calls only | Current top-up/reconciliation mutation evidence still needed |
+| Top up, call, deduct balance, reconcile | Implemented not accepted | Wallet decreased by 1 cent for non-stream and 1 cent for stream single calls after stream-fix redeploy; load spend matched successful calls only | Current top-up/reconciliation mutation evidence still needed |
 | Insufficient balance returns 402 | Unit tested | Billing and relay tests pass | Current E2E evidence needed |
 | Disabled key returns 401 | Unit tested | Auth/key tests pass | Current E2E evidence needed |
-| Streaming request returns fully and settles correctly | Implemented not accepted | Cloud stream for `moonshot-v1-8k` returned 200 and settled 1 cent, but deployed response sent UniRouter metadata after `[DONE]`; local fix now emits `usage` + `_uniroute` before a single `[DONE]` and gateway tests pass | Canary verify, redeploy, and rerun stream E2E |
+| Streaming request returns fully and settles correctly | E2E accepted | After stream-fix redeploy, cloud stream for `moonshot-v1-8k` returned 200, emitted `usage` + `_uniroute` before a single `[DONE]`, logged `is_stream=true`, and settled 1 cent | Interrupted-stream settlement remains separate |
 | Interrupted streaming settles by received/estimated tokens | Implemented not accepted | Stream accounting code exists | Controlled disconnect acceptance needed |
 
 ## Admin Capability

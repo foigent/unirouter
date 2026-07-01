@@ -55,7 +55,10 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 
 // dashboardOverview returns total requests, period cost, avg latency, and success rate.
 func (h *Handler) dashboardOverview(ctx context.Context, orgID int64, startTime, endTime string) (totalRequests, todayCostCents int, avgLatencyMs float64, successRate float64) {
-	h.db.QueryRow(ctx, `SELECT COUNT(*) FROM call_logs WHERE org_id = $1`, orgID).Scan(&totalRequests)
+	h.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3`,
+		orgID, startTime, endTime,
+	).Scan(&totalRequests)
 	h.db.QueryRow(ctx,
 		`SELECT COALESCE(SUM(cost_cents), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3`,
 		orgID, startTime, endTime,
@@ -125,8 +128,8 @@ func (h *Handler) dashboardModelPrices(ctx context.Context) []map[string]interfa
 
 // dashboardDailyTrend returns hourly buckets for short ranges and daily buckets for longer ranges.
 func (h *Handler) dashboardDailyTrend(ctx context.Context, orgID int64, startTime, endTime string) []map[string]interface{} {
-	start, startErr := time.Parse(time.RFC3339, startTime)
-	end, endErr := time.Parse(time.RFC3339, endTime)
+	start, startErr := time.Parse(time.RFC3339Nano, startTime)
+	end, endErr := time.Parse(time.RFC3339Nano, endTime)
 	granularity := "day"
 	if startErr == nil && endErr == nil && end.Sub(start) <= 48*time.Hour {
 		granularity = "hour"
@@ -142,18 +145,58 @@ func (h *Handler) dashboardDailyTrend(ctx context.Context, orgID int64, startTim
 		return nil
 	}
 	defer rows.Close()
-	trend := make([]map[string]interface{}, 0)
+	type bucketValue struct {
+		requests int
+		cost     int
+	}
+	values := make(map[string]bucketValue)
 	for rows.Next() {
 		var bucket time.Time
 		var requests, cost int
-		rows.Scan(&bucket, &requests, &cost)
-		bucketValue := bucket.Format("2006-01-02")
-		if granularity == "hour" {
-			bucketValue = bucket.Format(time.RFC3339)
+		if err := rows.Scan(&bucket, &requests, &cost); err != nil {
+			return nil
 		}
+		bucket = bucket.UTC()
+		bucketKey := bucket.Format("2006-01-02")
+		if granularity == "hour" {
+			bucketKey = bucket.Format(time.RFC3339)
+		}
+		values[bucketKey] = bucketValue{requests: requests, cost: cost}
+	}
+
+	if startErr != nil || endErr != nil || !end.After(start) {
+		trend := make([]map[string]interface{}, 0, len(values))
+		for bucket, value := range values {
+			trend = append(trend, map[string]interface{}{"date": bucket, "requests": value.requests, "cost_cents": value.cost})
+		}
+		return trend
+	}
+
+	start = start.UTC()
+	end = end.UTC()
+	var cursor, stop time.Time
+	var step time.Duration
+	if granularity == "hour" {
+		cursor = start.Truncate(time.Hour)
+		stop = end.Truncate(time.Hour)
+		step = time.Hour
+	} else {
+		cursor = time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.UTC)
+		stop = time.Date(end.Year(), end.Month(), end.Day(), 0, 0, 0, 0, time.UTC)
+		step = 24 * time.Hour
+	}
+
+	trend := make([]map[string]interface{}, 0)
+	for !cursor.After(stop) {
+		key := cursor.Format("2006-01-02")
+		if granularity == "hour" {
+			key = cursor.Format(time.RFC3339)
+		}
+		value := values[key]
 		trend = append(trend, map[string]interface{}{
-			"date": bucketValue, "requests": requests, "cost_cents": cost,
+			"date": key, "requests": value.requests, "cost_cents": value.cost,
 		})
+		cursor = cursor.Add(step)
 	}
 	return trend
 }

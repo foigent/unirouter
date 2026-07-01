@@ -26,7 +26,7 @@ export default function ReconciliationPage() {
 
   const load = (p = page) => {
     setLoading(true);
-    const params = new URLSearchParams({ page: String(p), page_size: '20' });
+    const params = new URLSearchParams({ page: String(p), page_size: String(pageSize) });
     if (modelFilter) params.set('model', modelFilter);
     if (statusFilter) params.set('status', statusFilter);
     api.request(`/reconciliation?${params.toString()}`)
@@ -38,7 +38,7 @@ export default function ReconciliationPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, [page, modelFilter, statusFilter]);
+  useEffect(() => { load(); }, [page, pageSize, modelFilter, statusFilter]);
   useEffect(() => { api.getModelNames().then((d: any) => setModelNames(d.data || [])).catch(() => {}); }, []);
 
   const columns = [
@@ -65,7 +65,7 @@ export default function ReconciliationPage() {
       width: 100,
       render: (v: string) => (
         <StatusTag status={v === 'reconciled' ? 'success' : v === 'pending' ? 'pending' : 'failed'}>
-          {v === 'reconciled' ? '已调账' : v === 'pending' ? '待处理' : v}
+          {v === 'reconciled' ? '正常' : v === 'error' ? '错误' : v}
         </StatusTag>
       ),
     },
@@ -98,8 +98,8 @@ export default function ReconciliationPage() {
             onChange={(v) => { setStatusFilter((v as string) || ''); setPage(1); }}
             optionList={[
               { label: '全部', value: '' },
-              { label: '待处理', value: 'pending' },
-              { label: '已调账', value: 'reconciled' },
+              { label: '正常', value: 'reconciled' },
+              { label: '错误', value: 'error' },
             ]}
           />
           <Button onClick={() => load()}>刷新</Button>
@@ -118,7 +118,7 @@ export default function ReconciliationPage() {
               pageSizeOpts: [20, 50, 100],
               showSizeChanger: true,
               total,
-              onChange: (p: number) => setPage(p),
+              onPageChange: (p: number) => setPage(p),
               onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); },
             }}
           />

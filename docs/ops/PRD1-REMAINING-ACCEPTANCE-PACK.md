@@ -134,9 +134,9 @@ Results:
 - Admin channel test for channel 8 `Mimo Token Plan` / `mimo-v2.5`: PASS for corrected semantics, returned `success=false`, `status_code=401`, `error=upstream returned HTTP 401`, and upstream body `Invalid API Key`.
 - Channel test curl example no longer contains `/v1/v1/`, confirming the gateway/admin path normalization fix is deployed.
 - `POST /v1/chat/completions` with model `moonshot-v1-8k`: PASS, returned 200, response content `pong`, usage `prompt_tokens=12`, `completion_tokens=2`, `total_tokens=14`, `_uniroute.cost.charged=1`, provider/channel `kimi`.
-- `POST /v1/chat/completions` with `stream=true` and model `moonshot-v1-8k`: PARTIAL, returned 200 with SSE usage and `pong`, but deployed cloud sent `[DONE]` before the UniRouter metadata chunk and the metadata was not wrapped in `_uniroute`.
+- `POST /v1/chat/completions` with `stream=true` and model `moonshot-v1-8k`: PASS after stream-fix redeploy. Returned 200 with `pong`, usage, one terminal `[DONE]`, and a final data chunk containing `_uniroute` before `[DONE]`.
 - Wallet evidence: failed Mimo calls cost `0`; successful Moonshot non-stream and stream calls each cost `1` cent.
-- Latest call logs include failed `mimo-v2.5` rows with `status_code=401` and `status_code=503`, both with `cost_cents=0`, and successful `moonshot-v1-8k` rows with `status_code=200`, `cost_cents=1`.
+- Latest call logs include failed `mimo-v2.5` rows with `status_code=401` and `status_code=503`, both with `cost_cents=0`, and successful `moonshot-v1-8k` rows with `status_code=200`, `cost_cents=1`, including `is_stream=true` and `usage_source=api`.
 
 Conclusion:
 
@@ -145,7 +145,14 @@ Conclusion:
 - Current blocker is provider credential/configuration: the active channel key for channel 8 is rejected by upstream as `Invalid API Key`.
 - The subsequent stream 503 is explained by the router excluding keys with `cooldown_until > NOW()` after a 401/403 auth failure.
 - The real-provider happy path works through `moonshot-v1-8k` on the `kimi` channel.
-- Codex fixed the stream metadata ordering locally so the relay now suppresses upstream `[DONE]`, emits a final chunk containing both `usage` and `_uniroute`, then emits one terminal `[DONE]`.
+- The stream metadata ordering fix is deployed and accepted: the relay suppresses upstream `[DONE]`, emits a final chunk containing both `usage` and `_uniroute`, then emits one terminal `[DONE]`.
+
+Post stream-fix deployment verification:
+
+- Verified: 2026-07-01 01:04 UTC.
+- Non-stream `moonshot-v1-8k`: PASS, HTTP 200, content `pong`, usage `12/2/14`, `_uniroute.cost.charged=1`.
+- Stream `moonshot-v1-8k`: PASS, HTTP 200, `STREAM_DONE_COUNT=1`, `STREAM_UNIROUTE_COUNT=1`, `STREAM_USAGE_COUNT=3`, `STREAM_UNIROUTE_BEFORE_DONE=True`.
+- Wallet moved from `balance_cents=291`, `total_spent_cents=141` to `balance_cents=289`, `total_spent_cents=143`, matching two successful one-cent calls.
 
 Safety decision:
 
@@ -179,6 +186,7 @@ Conclusion:
 
 - The current deployment is safe from uncontrolled spend under this load, but it does not meet a "20 VU / 60s mostly successful requests" acceptance bar.
 - This is primarily a capacity/configuration blocker: the available `kimi` channel key appears to rate-limit quickly, and the current router returns no route while the only usable key is cooling down.
+- Capacity config after stream-fix redeploy remained unchanged: the dedicated API key has `rpm_limit=60`, `qps_limit=10`, and the `kimi` channel has one active key. Codex did not rerun 20 VU / 60s after redeploy because the capacity prerequisites had not changed.
 
 ## Code Fixes Completed
 
