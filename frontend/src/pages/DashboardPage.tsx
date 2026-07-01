@@ -2,7 +2,19 @@ import { formatDateTime } from '../utils/formatDate';
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Typography, Table, Spin, Tag, Tooltip, Button, Progress, Checkbox } from '@douyinfe/semi-ui';
-import { IconHistogram, IconPercentage, IconClock, IconRefresh, IconCoinMoney, IconServer, IconPulse } from '@douyinfe/semi-icons';
+import {
+  IconActivity,
+  IconAlertTriangle,
+  IconClock,
+  IconCoinMoney,
+  IconHistogram,
+  IconMinusCircle,
+  IconPercentage,
+  IconPulse,
+  IconRefresh,
+  IconServer,
+  IconTickCircle,
+} from '@douyinfe/semi-icons';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip,
   ResponsiveContainer, BarChart, Bar, Cell,
@@ -16,6 +28,8 @@ interface DashboardStats {
   total_requests: number;
   today_cost_cents: number;
   avg_latency_ms: number;
+  p95_latency_ms?: number;
+  p99_latency_ms?: number;
   success_rate: number;
   recent_logs: any[];
   model_prices: { model_name: string; input_price_cents: number; output_price_cents: number }[];
@@ -91,6 +105,12 @@ function DeltaTag({ value, suffix = '', inverse = false }: { value: number; suff
 
 const MODEL_COLORS = ['#1f6feb', '#0f8f5f', '#b76e00', '#6f4bd8', '#d92d20', '#0e7490', '#be185d', '#475467'];
 
+function latencyTone(value: number): 'green' | 'amber' | 'red' {
+  if (value > 2000) return 'red';
+  if (value > 500) return 'amber';
+  return 'green';
+}
+
 function providerDisplayName(provider: string, channelName: string): string | null {
   if (!provider) return null;
   if (provider.toLowerCase() === channelName.toLowerCase()) return null;
@@ -98,17 +118,31 @@ function providerDisplayName(provider: string, channelName: string): string | nu
   return provider;
 }
 
+function channelHealthView(ch: NonNullable<DashboardStats['channel_health']>[number]) {
+  if (!ch.enabled) return { tone: 'disabled', label: '禁用', icon: <IconMinusCircle /> };
+  if (ch.status === 'error') return { tone: 'error', label: '异常', icon: <IconAlertTriangle /> };
+  if (ch.status === 'warning' || ch.status === 'degraded') return { tone: 'warning', label: '告警', icon: <IconAlertTriangle /> };
+  return { tone: 'healthy', label: '健康', icon: <IconTickCircle /> };
+}
+
 function ChannelHealthCard({ ch }: { ch: NonNullable<DashboardStats['channel_health']>[number] }) {
   const total = ch.success_count + ch.fail_count;
   const rate = total > 0 ? (ch.success_count / total * 100) : 0;
-  const statusText = ch.enabled ? (ch.status === 'warning' ? 'warning' : ch.status) : 'disabled';
   const providerLabel = providerDisplayName(ch.provider, ch.name);
+  const health = channelHealthView(ch);
 
   return (
     <div className="ur-channel-card">
       <div style={{ minWidth: 0 }}>
         <Text className="ur-channel-name" title={ch.name}>{ch.name}</Text>
         {providerLabel && <Text className="ur-channel-provider" title={ch.provider}>Provider: {providerLabel}</Text>}
+        <Progress
+          percent={rate}
+          showInfo={false}
+          size="small"
+          className="ur-channel-progress"
+          stroke={rate >= 99 ? '#13a671' : rate >= 90 ? '#bd7a13' : '#d94c48'}
+        />
         <div className="ur-channel-meta">
           <div className="ur-channel-stat">
             <Text className="ur-channel-stat-label">成功率</Text>
@@ -124,9 +158,40 @@ function ChannelHealthCard({ ch }: { ch: NonNullable<DashboardStats['channel_hea
           </div>
         </div>
       </div>
-      <div>
-        <StatusTag status={statusText}>{statusText}</StatusTag>
+      <div className={`ur-channel-state ur-channel-state-${health.tone}`}>
+        {health.icon}
+        <span>{health.label}</span>
       </div>
+    </div>
+  );
+}
+
+function LatencyPercentilePanel({ avg, p95, p99 }: { avg: number; p95: number; p99: number }) {
+  const rows = [
+    { label: 'Avg', value: avg },
+    { label: 'P95', value: p95 },
+    { label: 'P99', value: p99 },
+  ];
+
+  return (
+    <div className="ur-latency-stack">
+      {rows.map(row => {
+        const tone = latencyTone(row.value);
+        return (
+          <div key={row.label} className={`ur-latency-row ur-latency-row-${tone}`}>
+            <div className="ur-latency-row-head">
+              <Text>{row.label}</Text>
+              <strong>{row.value.toFixed(0)}ms</strong>
+            </div>
+            <Progress
+              percent={Math.min(100, row.value / 2500 * 100)}
+              showInfo={false}
+              size="small"
+              stroke={tone === 'red' ? '#d94c48' : tone === 'amber' ? '#bd7a13' : '#13a671'}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -181,7 +246,10 @@ export default function DashboardPage() {
     .slice(0, 6);
   const budgetThreshold = stats?.wallet_threshold || 0;
   const budgetPercent = budgetThreshold > 0 ? Math.min(100, (stats?.today_cost_cents || 0) / budgetThreshold * 100) : 0;
-  const healthyChannels = (stats?.channel_health || []).filter(ch => ch.enabled && ch.status !== 'error').length;
+  const avgLatency = stats?.avg_latency_ms || 0;
+  const p95Latency = stats?.p95_latency_ms ?? avgLatency;
+  const p99Latency = stats?.p99_latency_ms ?? p95Latency;
+  const healthyChannels = (stats?.channel_health || []).filter(ch => channelHealthView(ch).tone === 'healthy').length;
   const channelTotal = (stats?.channel_health || []).length;
 
   const recentCols = [
@@ -244,11 +312,11 @@ export default function DashboardPage() {
 
   return (
     <Spin spinning={loading} size="large">
-      <div className="ur-page ur-page-wide">
+      <div className="ur-page">
         <section className="ur-dashboard-hero">
           <PageHeader
             eyebrow="Gateway overview"
-            title="AI Gateway Command Center"
+            title="AI Gateway 控制台"
             description="全局观察请求量、成功率、延迟、成本和渠道健康状态。"
             actions={(
               <>
@@ -271,22 +339,22 @@ export default function DashboardPage() {
               </>
             )}
           />
-          <div className="ur-hero-insights">
-            <div className="ur-hero-insight">
+          <div className="ur-dashboard-status-strip">
+            <div className="ur-dashboard-status-card">
               <IconPulse />
               <div>
                 <Text>更新时间</Text>
                 <strong>{lastUpdated.toLocaleTimeString()}</strong>
               </div>
             </div>
-            <div className="ur-hero-insight">
+            <div className="ur-dashboard-status-card">
               <IconServer />
               <div>
                 <Text>健康渠道</Text>
                 <strong>{healthyChannels}/{channelTotal || 0}</strong>
               </div>
             </div>
-            <div className="ur-hero-insight">
+            <div className="ur-dashboard-status-card">
               <IconCoinMoney />
               <div>
                 <Text>钱包余额</Text>
@@ -312,11 +380,16 @@ export default function DashboardPage() {
             meta={delta && <><Text type="tertiary" size="small">vs 昨日</Text><DeltaTag value={delta.success_rate * 100} suffix="%" /></>}
           />
           <MetricTile
-            label="平均延迟"
-            value={`${(stats?.avg_latency_ms || 0).toFixed(0)}ms`}
-            tone={(stats?.avg_latency_ms || 0) > 2000 ? 'red' : (stats?.avg_latency_ms || 0) > 500 ? 'amber' : 'green'}
+            label="P95 延迟"
+            value={`${p95Latency.toFixed(0)}ms`}
+            tone={latencyTone(p95Latency)}
             icon={<IconClock />}
-            meta={delta && <><Text type="tertiary" size="small">vs 昨日</Text><DeltaTag value={delta.latency_ms} suffix="ms" inverse /></>}
+            meta={(
+              <div className="ur-kpi-meta-stack">
+                <Text type="tertiary" size="small">Avg {avgLatency.toFixed(0)}ms · P99 {p99Latency.toFixed(0)}ms</Text>
+                {delta && <div><Text type="tertiary" size="small">vs 昨日</Text><DeltaTag value={delta.latency_ms} suffix="ms" inverse /></div>}
+              </div>
+            )}
           />
           <MetricTile
             label="今日花费"
@@ -341,92 +414,105 @@ export default function DashboardPage() {
           />
         </div>
 
-        <Surface
-          title="AI 活动趋势"
-          description="按当前时间窗口展示请求量与费用走势，帮助对照流量和成本变化。"
-          className="ur-primary-chart"
-          actions={(
-            <div className="ur-toolbar ur-trend-checklist">
-              {(Object.keys(TREND_METRIC_META) as TrendMetric[]).map(metric => (
-                <Checkbox
-                  key={metric}
-                  checked={visibleTrendMetrics.includes(metric)}
-                  onChange={() => toggleTrendMetric(metric)}
-                  aria-label={`显示${TREND_METRIC_META[metric].label}`}
-                >
-                  <span className="ur-trend-check-label" style={{ color: TREND_METRIC_META[metric].color }}>
-                    {TREND_METRIC_META[metric].label}
-                  </span>
-                </Checkbox>
-              ))}
-            </div>
-          )}
-        >
-          {trendData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={trendData} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorRequests" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#1f6feb" stopOpacity={0.18} />
-                    <stop offset="95%" stopColor="#1f6feb" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="colorCost" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6f4bd8" stopOpacity={0.18} />
-                    <stop offset="95%" stopColor="#6f4bd8" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--ur-border-soft)" />
-                <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="var(--ur-text-muted)" />
-                <YAxis
-                  yAxisId="requests"
-                  tick={{ fontSize: 12 }}
-                  stroke="var(--ur-text-muted)"
-                  tickFormatter={formatNumber}
-                  allowDecimals={false}
-                />
-                <YAxis
-                  yAxisId="cost_yuan"
-                  orientation="right"
-                  tick={{ fontSize: 12 }}
-                  stroke="var(--ur-text-muted)"
-                  tickFormatter={formatYuan}
-                  width={64}
-                />
-                <RTooltip content={<TrendTooltip />} />
-                {visibleTrendMetrics.includes('requests') && (
-                  <Area
+        <div className="ur-dashboard-analytics-grid">
+          <Surface
+            title="AI 活动趋势"
+            description="按当前时间窗口展示请求量与费用走势，帮助对照流量和成本变化。"
+            className="ur-primary-chart"
+            actions={(
+              <div className="ur-toolbar ur-trend-checklist">
+                {(Object.keys(TREND_METRIC_META) as TrendMetric[]).map(metric => (
+                  <Checkbox
+                    key={metric}
+                    checked={visibleTrendMetrics.includes(metric)}
+                    onChange={() => toggleTrendMetric(metric)}
+                    aria-label={`显示${TREND_METRIC_META[metric].label}`}
+                  >
+                    <span className="ur-trend-check-label" style={{ color: TREND_METRIC_META[metric].color }}>
+                      {TREND_METRIC_META[metric].label}
+                    </span>
+                  </Checkbox>
+                ))}
+              </div>
+            )}
+          >
+            {trendData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={280}>
+                <AreaChart data={trendData} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorRequests" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#1f6feb" stopOpacity={0.18} />
+                      <stop offset="95%" stopColor="#1f6feb" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="colorCost" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#6f4bd8" stopOpacity={0.18} />
+                      <stop offset="95%" stopColor="#6f4bd8" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--ur-border-soft)" />
+                  <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="var(--ur-text-muted)" />
+                  <YAxis
                     yAxisId="requests"
-                    type="monotone"
-                    dataKey="requests"
-                    name="请求数"
-                    stroke={TREND_METRIC_META.requests.color}
-                    strokeWidth={2}
-                    fill="url(#colorRequests)"
-                    dot={false}
-                    isAnimationActive={false}
-                    activeDot={{ r: 5, strokeWidth: 2 }}
+                    tick={{ fontSize: 12 }}
+                    stroke="var(--ur-text-muted)"
+                    tickFormatter={formatNumber}
+                    allowDecimals={false}
                   />
-                )}
-                {visibleTrendMetrics.includes('cost_yuan') && (
-                  <Area
+                  <YAxis
                     yAxisId="cost_yuan"
-                    type="monotone"
-                    dataKey="cost_yuan"
-                    name="费用"
-                    stroke={TREND_METRIC_META.cost_yuan.color}
-                    strokeWidth={2}
-                    fill="url(#colorCost)"
-                    dot={false}
-                    isAnimationActive={false}
-                    activeDot={{ r: 5, strokeWidth: 2 }}
+                    orientation="right"
+                    tick={{ fontSize: 12 }}
+                    stroke="var(--ur-text-muted)"
+                    tickFormatter={formatYuan}
+                    width={64}
                   />
-                )}
-              </AreaChart>
-            </ResponsiveContainer>
-          ) : (
-            <EmptyState title="暂无趋势数据" minHeight={300} />
-          )}
-        </Surface>
+                  <RTooltip content={<TrendTooltip />} />
+                  {visibleTrendMetrics.includes('requests') && (
+                    <Area
+                      yAxisId="requests"
+                      type="monotone"
+                      dataKey="requests"
+                      name="请求数"
+                      stroke={TREND_METRIC_META.requests.color}
+                      strokeWidth={2}
+                      fill="url(#colorRequests)"
+                      dot={false}
+                      isAnimationActive={false}
+                      activeDot={{ r: 5, strokeWidth: 2 }}
+                    />
+                  )}
+                  {visibleTrendMetrics.includes('cost_yuan') && (
+                    <Area
+                      yAxisId="cost_yuan"
+                      type="monotone"
+                      dataKey="cost_yuan"
+                      name="费用"
+                      stroke={TREND_METRIC_META.cost_yuan.color}
+                      strokeWidth={2}
+                      fill="url(#colorCost)"
+                      dot={false}
+                      isAnimationActive={false}
+                      activeDot={{ r: 5, strokeWidth: 2 }}
+                    />
+                  )}
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <EmptyState title="暂无趋势数据" minHeight={280} />
+            )}
+          </Surface>
+
+          <Surface title="延迟分位" description="当前窗口的平均与尾部延迟。" className="ur-latency-surface">
+            <div className="ur-latency-heading">
+              <IconActivity />
+              <div>
+                <Text>P95 延迟</Text>
+                <strong>{p95Latency.toFixed(0)}ms</strong>
+              </div>
+            </div>
+            <LatencyPercentilePanel avg={avgLatency} p95={p95Latency} p99={p99Latency} />
+          </Surface>
+        </div>
 
         <div className="ur-split-grid">
           <Surface title="模型活动分布" description="按请求数展示 Top 模型，优先帮助定位成本和流量集中点。">

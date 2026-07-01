@@ -1,168 +1,231 @@
-# FIX-SIGNAL.md — PRD1 Logs / Dashboard UI Follow-up 验收请求
+# FIX-SIGNAL.md — PRD1 Dashboard Percentile / Layout Closeout 验收请求
 
 **修复者：** Codex
 **日期：** 2026-07-01
-**修复轮次：** PRD1 call-log readability/copy UX and Dashboard model/channel balance
-
----
-
-## Carry-over Scope
-
-`docs/issues/OPEN-ISSUES.md` 中 `PRD1-DASH-003`（Dashboard AI 活动趋势仅支持单指标且可读性差）仍处于 `Fixed awaiting Canary`。本文件继续把该项纳入 Canary 验收范围，避免前一轮 FIX-SIGNAL 被本轮日志/Dashboard UI 信号覆盖后产生协议断档。
-
-Carry-over 修复点：
-
-- `frontend/src/pages/DashboardPage.tsx` 已把 `请求数 / 费用` 从互斥切换改为复选框，可同时展示两条曲线。
-- Dashboard 趋势图已使用双 Y 轴：左侧请求数，右侧费用（元）。
-- 防止两个指标都被取消，避免空图误导。
-
-Carry-over targeted tests 本轮重新执行并通过：
-
-```bash
-(cd frontend && npm test -- --run src/pages/__tests__/DashboardPage.test.tsx)
-```
+**修复轮次：** PRD1 Dashboard latency percentile metrics and layout polish
 
 ---
 
 ## 本轮背景
 
-用户在 PRD1 云端验收后继续报告调用日志和 Dashboard 视觉/交互问题：
+用户在云端部署后继续指出 Dashboard 的 PRD1 收尾问题：
 
-- `调用日志 -> 日志记录` 时间显示为“24分钟前”，而不是审计友好的正常时间。
-- Request ID 复制按钮点击后没有可感知效果。
-- 10:57 真实 provider 测试延迟 `1290ms` 是否异常。
-- 点击行后的请求详情文字大小、位置和展示方式局促，和整体页面不匹配。
-- `调用日志 -> 筛选器` 中 `渠道 / Provider` 应该在 `模型` 上方。
-- `仪表盘 -> 模型活动分布` 过长，压缩了 `渠道健康状态`。
-- 渠道健康状态中 `deepseek` 下方再显示 `deepseek`、`mimo` 下方再显示 `mimo`、`Mimo Token Plan` 下方显示 `openai`，语义不直观。
+- 平均延迟不足以判断真实 provider 体验，询问是否需要展示 P95/P99。
+- Dashboard 整体布局仍显松散，像营销大屏，不像高频运营后台。
+- 顶部搜索框没有和页面正文左侧对齐；右侧 `生产环境 / Operator / 平台管理员` 没有贴齐正文右侧。
+- `更新时间 / 健康渠道 / 钱包余额` 在 hero 右侧悬浮，和 KPI/图表上下左右关系不稳定。
+- `AI 活动趋势` 横向过长。
+- `渠道健康状态` 需要更直观的状态图标表达，并且不应过度靠右。
 
-Codex 评估结论：
+Codex 判断：
 
-- 日志页使用相对时间不是后端 bug，但对调用审计不合适；PRD1 关闭前应改为绝对时间，避免“24分钟前”这类显示随刷新变化。
-- `1290ms` 对一次真实公网 LLM provider 端到端调用不构成单点 bug；应结合 P95/P99、provider/model/channel 分布判断。当前已确认云端日志能记录真实延迟，这个样本可作为延迟持久化证据。
-- Request ID 复制无反馈/失败无提示是前端 UX bug。
-- 日志详情页和 Dashboard 健康/分布卡片属于 PRD1 UI 质量缺陷，应在关闭前修。
+- P95/P99 应进入 PRD1 Dashboard。平均值会被快失败、短请求和历史 0 延迟样本稀释，不适合作为主要延迟 SLI。
+- PRD1 不需要再做大规模视觉重写，但需要一次结构性收束：统一 1440px 内容网格、降低 hero 大屏感、把状态信息变成 compact status strip、把趋势图和延迟分位并列。
 
 ---
 
-## Fix #1: 调用日志时间改为绝对时间
+## Fix #1: Dashboard API 返回 P95/P99 延迟
 
 **文件：**
 
-- `frontend/src/pages/LogsPage.tsx`
-- `frontend/src/pages/__tests__/LogsPage.test.tsx`
+- `internal/admin/dashboard_handlers.go:26`
+- `internal/admin/dashboard_handlers.go:39`
+- `internal/admin/dashboard_handlers.go:89`
+- `internal/admin/admin_mock_test.go:2741`
+- `internal/admin/admin_mock_test.go:2788`
 
-**修复内容：**
+**原问题：**
 
-- 移除日志列表中的相对时间展示。
-- `时间` 列统一使用 `YYYY-MM-DD HH:mm:ss` 绝对时间。
-- 增加单测确保不再显示 `分钟前`，并显示实际日期。
+Dashboard API 只返回 `avg_latency_ms`。前端无法展示 P95/P99，只能用平均值判断延迟，容易误导。
 
-**预期效果：**
+**当前代码：**
 
-- 调用日志可用于审计、排查和截图交接。
-- 同一条记录不会因为页面刷新从“24分钟前”变成“25分钟前”而降低可追溯性。
+- `DashboardStats` 调用 `dashboardLatencyPercentiles(ctx, orgID, startTime, endTime)`。
+- JSON 响应新增：
+  - `p95_latency_ms`
+  - `p99_latency_ms`
+- SQL 使用 PostgreSQL `percentile_cont(0.95/0.99) WITHIN GROUP (ORDER BY latency_ms)`。
+- 延迟聚合统一排除 `latency_ms <= 0`，避免历史日志 bug 产生的 0 延迟污染 SLI。
+- `delta_vs_yesterday.latency_ms` 现在对比 P95 延迟，而不是平均延迟。
+
+**验证方法：**
+
+```bash
+go test ./internal/admin -run 'TestDashboardStats_Success|TestDashboardOverview_TotalUsesTimeRange|TestDashboardLatencyPercentiles_UsesOrgTimeRangeAndPositiveLatency' -v
+```
+
+期望：
+
+- `TestDashboardStats_Success` 断言响应包含 `p95_latency_ms=420.5`、`p99_latency_ms=950.25`。
+- `TestDashboardLatencyPercentiles_UsesOrgTimeRangeAndPositiveLatency` 断言 SQL 包含 `org_id = $1`、时间窗口、`latency_ms > 0`、`percentile_cont(0.95)`、`percentile_cont(0.99)`。
 
 ---
 
-## Fix #2: Request ID 复制增加 fallback 与反馈
+## Fix #2: Dashboard 主 KPI 从平均延迟改为 P95 延迟
 
 **文件：**
 
-- `frontend/src/pages/LogsPage.tsx`
-- `frontend/src/pages/__tests__/LogsPage.test.tsx`
+- `frontend/src/pages/DashboardPage.tsx:31`
+- `frontend/src/pages/DashboardPage.tsx:250`
+- `frontend/src/pages/DashboardPage.tsx:383`
+- `frontend/src/pages/__tests__/DashboardPage.test.tsx:21`
+- `frontend/src/pages/__tests__/DashboardPage.test.tsx:175`
 
-**修复内容：**
+**原问题：**
 
-- `navigator.clipboard.writeText` 成功时显示 Toast。
-- 如果浏览器安全上下文或权限导致 Clipboard API 失败，回退到临时 textarea + `document.execCommand('copy')`。
-- fallback 也失败时显示错误 Toast，避免“点击无效果”。
-- 复制按钮增加 `aria-label="复制 Request ID"`，便于测试和可访问性。
+Dashboard 主卡展示“平均延迟”，不能代表用户实际尾部体验。
 
-**预期效果：**
+**当前代码：**
 
-- 在 HTTPS/localhost/部分 HTTP 管理环境中尽可能复制成功。
-- 无法复制时用户能明确知道失败，而不是误以为按钮坏了。
+- `DashboardStats` 类型新增 `p95_latency_ms`、`p99_latency_ms`。
+- 主 KPI 标题改为 `P95 延迟`。
+- 主值展示 `p95_latency_ms`。
+- 副信息展示 `Avg ...ms · P99 ...ms`。
+- 如果后端尚未返回 P95/P99，前端回退到 avg，保持向后兼容。
+
+**验证方法：**
+
+```bash
+cd frontend
+npm test -- --run src/pages/__tests__/DashboardPage.test.tsx
+```
+
+期望：
+
+- DashboardPage 测试包含 `P95 延迟`、`780ms`、`P99`、`1290ms`。
 
 ---
 
-## Fix #3: 日志详情与筛选器布局优化
+## Fix #3: Dashboard 顶部和主内容统一对齐
 
 **文件：**
 
-- `frontend/src/pages/LogsPage.tsx`
-- `frontend/src/index.css`
-- `frontend/src/pages/__tests__/LogsPage.test.tsx`
+- `frontend/src/pages/DashboardPage.tsx:319`
+- `frontend/src/index.css:137`
+- `frontend/src/index.css:469`
+- `frontend/src/index.css:502`
 
-**修复内容：**
+**原问题：**
 
-- 筛选器顺序调整为：状态、`渠道 / Provider`、模型、时间范围、Search。
-- 行详情提示改为更克制的 `点击行查看详情`。
-- 请求详情面板改为 header + hero + detail grid，突出 Request ID、状态、模型、渠道、provider/protocol、token、费用、错误信息。
-- 增加详情面板 responsive 样式，避免内容堆在窄卡片中。
+Dashboard 使用 `ur-page-wide` 全宽铺开，而 topbar 限制在 1440px；搜索框和右侧用户区无法与正文形成一致边界。原 Dashboard hero 使用左右大块布局，状态卡悬浮在右侧。
 
-**预期效果：**
+**当前代码：**
 
-- Provider/渠道先于模型，符合用户先定位上游通道、再定位模型的排查顺序。
-- 请求详情的视觉层级和当前 PRD1 redesign shell 更一致。
+- Dashboard 根容器改回 `className="ur-page"`，和 topbar 共享 1440px 内容宽度。
+- topbar grid 改为 `minmax(280px, 520px) minmax(0, 1fr)`，右侧 actions 能贴齐页面右边界。
+- Dashboard hero 收束为普通 header surface：
+  - 标题字号从 38px 降到 30px。
+  - 移除大面积渐变/装饰圆。
+  - `更新时间 / 健康渠道 / 钱包余额` 改为三列 `ur-dashboard-status-strip`。
+
+**验证方法：**
+
+```bash
+rg -n "ur-page\\\"|ur-dashboard-status-strip|grid-template-columns: minmax\\(280px, 520px\\)" frontend/src/pages/DashboardPage.tsx frontend/src/index.css
+```
+
+期望：
+
+- Dashboard 不再使用 `ur-page-wide`。
+- 状态条存在。
+- topbar 第二列为 `minmax(0, 1fr)`。
 
 ---
 
-## Fix #4: Dashboard 模型分布与渠道健康状态平衡
+## Fix #4: AI 活动趋势不再无节制横向拉伸
 
 **文件：**
 
-- `frontend/src/pages/DashboardPage.tsx`
-- `frontend/src/index.css`
-- `frontend/src/pages/__tests__/DashboardPage.test.tsx`
+- `frontend/src/pages/DashboardPage.tsx:417`
+- `frontend/src/pages/DashboardPage.tsx:501`
+- `frontend/src/index.css:451`
+- `frontend/src/index.css:556`
 
-**修复内容：**
+**原问题：**
 
-- `模型活动分布` 从最多 10 条压缩为 Top 6，避免长尾模型挤压渠道健康卡片。
-- 左右卡片布局从 `1.2fr / 0.8fr` 调整为更均衡的 `1fr / 1fr`。
-- 图表高度固定为 260，减少数据量变化造成的版面跳动。
-- 渠道健康状态不再重复展示与渠道名相同的 provider。
-- 当渠道名不是 OpenAI 但 provider 为 `openai` 时，显示 `Provider: OpenAI-compatible`，表达这是协议/适配器类型，不是渠道显示名。
+趋势图独占整行，宽屏下横向过长，右侧空间没有用于高价值运营信息。
 
-**预期效果：**
+**当前代码：**
 
-- `模型活动分布` 不再主导整行布局。
-- `deepseek / deepseek`、`mimo / mimo` 这类重复文本消失。
-- `Mimo Token Plan / openai` 改为更准确的 `Provider: OpenAI-compatible`。
+- 新增 `ur-dashboard-analytics-grid`：左侧为 AI 活动趋势，右侧为延迟分位。
+- 趋势图高度从 300 降为 280，减少“大屏”感。
+- 新增 `延迟分位` 面板展示 Avg / P95 / P99，配合进度条表达尾部延迟。
+
+**验证方法：**
+
+```bash
+rg -n "ur-dashboard-analytics-grid|延迟分位|LatencyPercentilePanel|height=\\{280\\}" frontend/src/pages/DashboardPage.tsx frontend/src/index.css frontend/src/pages/__tests__/DashboardPage.test.tsx
+```
+
+期望：
+
+- DashboardPage 测试断言 `.ur-dashboard-analytics-grid` 和 `.ur-latency-surface` 存在。
+
+---
+
+## Fix #5: 渠道健康状态使用状态图标和成功率进度
+
+**文件：**
+
+- `frontend/src/pages/DashboardPage.tsx:114`
+- `frontend/src/pages/DashboardPage.tsx:161`
+- `frontend/src/index.css:663`
+- `frontend/src/index.css:679`
+
+**原问题：**
+
+渠道健康状态主要依赖文字 tag，不够直观；渠道卡视觉重量不稳定，状态不够一眼可读。
+
+**当前代码：**
+
+- 新增 `channelHealthView()`，统一映射：
+  - `健康` + `IconTickCircle`
+  - `告警` + `IconAlertTriangle`
+  - `异常` + `IconAlertTriangle`
+  - `禁用` + `IconMinusCircle`
+- 渠道卡加入成功率 Progress。
+- `健康渠道` 计数只统计真正 `healthy` 的渠道，不再把 warning 简单算作健康。
+
+**验证方法：**
+
+```bash
+rg -n "channelHealthView|IconTickCircle|IconAlertTriangle|IconMinusCircle|ur-channel-state|ur-channel-progress" frontend/src/pages/DashboardPage.tsx frontend/src/index.css
+```
+
+期望：
+
+- source check 命中上述状态映射和 CSS 类。
 
 ---
 
 ## Codex 已执行验证
 
 ```bash
-(cd frontend && npm test -- --run src/pages/__tests__/LogsPage.test.tsx src/pages/__tests__/DashboardPage.test.tsx)
-(cd frontend && npm test -- --run)
-(cd frontend && npm run build)
-git diff --check
+go test ./internal/admin -run 'TestDashboard|TestListLogs' -v
+cd frontend && npm test -- --run src/pages/__tests__/DashboardPage.test.tsx
+cd frontend && npm test -- --run
+cd frontend && npm run build
+go test ./...
 ```
 
 结果：
 
-- Logs + Dashboard targeted frontend tests: PASS, 20/20 tests.
-- Full frontend tests: PASS, 42/42 tests.
+- Admin targeted Go tests: PASS.
+- Dashboard targeted frontend tests: PASS, 11/11 tests.
+- Full frontend tests: PASS, 43/43 tests.
 - Frontend build: PASS, retained existing Vite large chunk warning.
+- Full Go tests: PASS.
 - `git diff --check`: PASS.
-- Codex local Playwright visual smoke: PASS with mocked read-only data.
-  - `output/playwright/prd1-logs-followup-inspector.png`
-  - `output/playwright/prd1-dashboard-model-channel-balance.png`
+- Codex local Playwright visual smoke: PASS with mocked read-only Dashboard data.
+  - `output/playwright/prd1-dashboard-percentile-layout-desktop.png`
+  - `output/playwright/prd1-dashboard-percentile-layout-mobile.png`
 
 Playwright smoke 覆盖：
 
-- 调用日志显示绝对时间 `2026-07-01 10:57:06`，页面不再出现 `分钟前`。
-- `渠道 / Provider` 筛选器位于 `模型` 上方。
-- 点击日志行后请求详情面板可见，详情信息分组展示。
-- Dashboard 渠道健康状态不再出现 `Provider: deepseek`。
-- `Mimo Token Plan` 的 provider 语义显示为 `Provider: OpenAI-compatible`。
-
-说明：
-
-- 本轮没有执行真实 provider 付费调用或压测；用户问题属于前端显示/交互修复。
-- `1290ms` 单点延迟样本不判定为 bug；它证明真实延迟已入库。是否异常应看同 provider/model 的 P95/P99 和时间窗口分布。
+- Desktop 1440px: `.ur-topbar` and `.ur-page` left/right bounds aligned within 2px.
+- Desktop 1440px: page includes `P95 延迟` and `P99`.
+- Desktop 1440px and mobile 390px: no horizontal overflow.
+- Console errors were only existing React/Semi StrictMode `findDOMNode` deprecation warnings, not business/runtime errors.
 
 ---
 
@@ -171,7 +234,8 @@ Playwright smoke 覆盖：
 ```bash
 cd /Users/m4/Desktop/projects/UniRouter
 git diff --check
-(cd frontend && npm test -- --run src/pages/__tests__/LogsPage.test.tsx src/pages/__tests__/DashboardPage.test.tsx)
+go test ./internal/admin -run 'TestDashboard|TestListLogs' -v
+(cd frontend && npm test -- --run src/pages/__tests__/DashboardPage.test.tsx)
 (cd frontend && npm test -- --run)
 (cd frontend && npm run build)
 ```
@@ -179,15 +243,15 @@ git diff --check
 Source-level checks:
 
 ```bash
-rg -n "formatDateTime|copyToClipboard|fallbackCopyText|复制 Request ID|ur-detail-hero|ur-detail-grid" frontend/src/pages/LogsPage.tsx frontend/src/index.css frontend/src/pages/__tests__/LogsPage.test.tsx
-rg -n "渠道 / Provider|模型|filter-label" frontend/src/pages/LogsPage.tsx frontend/src/pages/__tests__/LogsPage.test.tsx
-rg -n "providerDisplayName|OpenAI-compatible|slice\\(0, 6\\)|height=\\{260\\}|ur-split-grid" frontend/src/pages/DashboardPage.tsx frontend/src/index.css frontend/src/pages/__tests__/DashboardPage.test.tsx
-rg -n "PRD1-LOG-001|PRD1-LOG-002|PRD1-LOG-003|PRD1-DASH-004" docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD-ACCEPTANCE-MATRIX.md docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md
+rg -n "p95_latency_ms|p99_latency_ms|dashboardLatencyPercentiles|percentile_cont|latency_ms > 0" internal/admin/dashboard_handlers.go internal/admin/admin_mock_test.go
+rg -n "P95 延迟|Avg .*P99|ur-dashboard-status-strip|ur-dashboard-analytics-grid|LatencyPercentilePanel|ur-latency-surface" frontend/src/pages/DashboardPage.tsx frontend/src/index.css frontend/src/pages/__tests__/DashboardPage.test.tsx
+rg -n "channelHealthView|IconTickCircle|IconAlertTriangle|IconMinusCircle|ur-channel-state|ur-channel-progress" frontend/src/pages/DashboardPage.tsx frontend/src/index.css
+rg -n "PRD1-DASH-005" docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD-ACCEPTANCE-MATRIX.md docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md
 ```
 
 Expected:
 
 - All commands pass.
 - Canary should mark visual/browser checks as not applicable.
-- If Canary passes, Sentinel can proceed with PR/CI for this UI follow-up.
-- After deployment, user/browser-capable role should visually confirm the cloud Logs and Dashboard pages because Canary has no visual judgment capability.
+- If Canary passes, Sentinel can proceed with PR/CI for this Dashboard closeout round.
+- After deployment, user/browser-capable role should confirm the cloud Dashboard visual alignment and P95/P99 rendering.

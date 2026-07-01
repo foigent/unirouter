@@ -2611,15 +2611,21 @@ func TestListReconciliation_QueryError(t *testing.T) {
 
 func TestDashboardStats_Success(t *testing.T) {
 	now := time.Now()
-	queryCount := 0
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			return &testutil.MockRow{
 				ScanFn: func(dest ...any) error {
-					queryCount++
-					// Different queries scan different types
-					if queryCount == 3 || queryCount == 8 {
-						// avgLatencyMs is float64
+					if strings.Contains(sql, "percentile_cont(0.95)") {
+						switch len(dest) {
+						case 1:
+							*dest[0].(*float64) = 420.5
+						case 2:
+							*dest[0].(*float64) = 420.5
+							*dest[1].(*float64) = 950.25
+						}
+						return nil
+					}
+					if strings.Contains(sql, "AVG(latency_ms)") {
 						*dest[0].(*float64) = 350.5
 						return nil
 					}
@@ -2638,11 +2644,6 @@ func TestDashboardStats_Success(t *testing.T) {
 						*dest[1].(*int) = 2000
 						*dest[2].(*int) = 0
 						*dest[3].(*int) = 1000
-					default:
-						// avg latency
-						if len(dest) == 1 {
-							*dest[0].(*float64) = 350.5
-						}
 					}
 					return nil
 				},
@@ -2737,6 +2738,12 @@ func TestDashboardStats_Success(t *testing.T) {
 	if _, ok := resp["daily_trend"]; !ok {
 		t.Fatal("expected daily_trend in response")
 	}
+	if resp["p95_latency_ms"] != 420.5 {
+		t.Fatalf("expected p95_latency_ms=420.5, got %#v", resp["p95_latency_ms"])
+	}
+	if resp["p99_latency_ms"] != 950.25 {
+		t.Fatalf("expected p99_latency_ms=950.25, got %#v", resp["p99_latency_ms"])
+	}
 }
 
 func TestDashboardOverview_TotalUsesTimeRange(t *testing.T) {
@@ -2775,6 +2782,46 @@ func TestDashboardOverview_TotalUsesTimeRange(t *testing.T) {
 	}
 	if len(firstArgs) != 3 {
 		t.Fatalf("expected org/start/end args, got %d", len(firstArgs))
+	}
+}
+
+func TestDashboardLatencyPercentiles_UsesOrgTimeRangeAndPositiveLatency(t *testing.T) {
+	var sqlSeen string
+	var argsSeen []any
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			sqlSeen = sql
+			argsSeen = append([]any(nil), args...)
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
+					*dest[0].(*float64) = 820
+					*dest[1].(*float64) = 1240
+					return nil
+				},
+			}
+		},
+	}
+	h := newTestHandler(db)
+
+	p95, p99 := h.dashboardLatencyPercentiles(context.Background(), 42, "2026-07-01T00:00:00Z", "2026-07-01T01:00:00Z")
+
+	if p95 != 820 || p99 != 1240 {
+		t.Fatalf("expected p95=820 and p99=1240, got p95=%v p99=%v", p95, p99)
+	}
+	for _, expected := range []string{
+		"percentile_cont(0.95)",
+		"percentile_cont(0.99)",
+		"org_id = $1",
+		"created_at >= $2",
+		"created_at <= $3",
+		"latency_ms > 0",
+	} {
+		if !strings.Contains(sqlSeen, expected) {
+			t.Fatalf("expected percentile query to contain %q, got %s", expected, sqlSeen)
+		}
+	}
+	if len(argsSeen) != 3 || argsSeen[0] != int64(42) {
+		t.Fatalf("expected org/start/end args, got %#v", argsSeen)
 	}
 }
 
