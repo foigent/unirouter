@@ -1,18 +1,14 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -28,7 +24,6 @@ import (
 	"github.com/uniroute/unirouter/internal/gateway"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/migrate"
-	"github.com/uniroute/unirouter/internal/modelgov"
 	"github.com/uniroute/unirouter/internal/redisx"
 )
 
@@ -155,162 +150,8 @@ func main() {
 	rateLimiter := middleware.RateLimit(redisClient.Client)
 	admissionMiddleware := middleware.AdmissionFromContext(admissionCtrl)
 
-	// Wrap gateway handler with middleware
-	chatHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		apiKey := middleware.GetAPIKeyFromContext(r.Context())
-		if apiKey == nil {
-			http.Error(w, `{"error":{"type":"auth_error.invalid_api_key","message":"No API key"}}`, http.StatusUnauthorized)
-			return
-		}
-
-		var req struct {
-			Model string `json:"model"`
-		}
-		bodyBytes, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, `{"error":{"type":"server_error","message":"Failed to read request body"}}`, http.StatusBadRequest)
-			return
-		}
-		r.Body.Close()
-		r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-		_ = json.Unmarshal(bodyBytes, &req)
-
-		var resolvedModel string
-		if req.Model != "" {
-			projectID := int64(0)
-			if apiKey.ProjectID != nil {
-				projectID = *apiKey.ProjectID
-			}
-			access, err := modelgov.CheckAccess(r.Context(), postgres.Pool, apiKey.OrgID, projectID, req.Model)
-			if errors.Is(err, modelgov.ErrModelRetired) || errors.Is(err, modelgov.ErrModelDenied) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusForbidden)
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"error": map[string]interface{}{
-						"type":    "auth_error.model_not_allowed",
-						"message": "Model is not available for this project",
-						"model":   req.Model,
-						"reason":  access.Reason,
-					},
-				})
-				return
-			}
-			if err != nil && !errors.Is(err, modelgov.ErrModelRequired) {
-				http.Error(w, `{"error":{"type":"server_error","message":"Model governance check failed"}}`, http.StatusInternalServerError)
-				return
-			}
-			resolvedModel = access.ResolvedModel
-			if resolvedModel != "" && resolvedModel != req.Model {
-				r = r.WithContext(context.WithValue(r.Context(), middleware.CtxModelAlias, req.Model))
-				var payload map[string]interface{}
-				if json.Unmarshal(bodyBytes, &payload) == nil {
-					payload["model"] = resolvedModel
-					if rewritten, err := json.Marshal(payload); err == nil {
-						bodyBytes = rewritten
-						r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-					}
-				}
-			}
-		}
-
-		if apiKey.AllowedModels != "" && apiKey.AllowedModels != "*" {
-			if req.Model != "" {
-				allowed := false
-				for _, m := range strings.Split(apiKey.AllowedModels, ",") {
-					model := strings.TrimSpace(m)
-					if model == req.Model || (resolvedModel != "" && model == resolvedModel) {
-						allowed = true
-						break
-					}
-				}
-				if !allowed {
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusForbidden)
-					fmt.Fprintf(w, `{"error":{"type":"auth_error.model_not_allowed","message":"Model %s is not allowed for this API key","model":"%s"}}`, req.Model, req.Model)
-					return
-				}
-			}
-		}
-		relay.HandleChatCompletion(w, r)
-	})
-
-	embeddingsHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		apiKey := middleware.GetAPIKeyFromContext(r.Context())
-		if apiKey == nil {
-			http.Error(w, `{"error":{"type":"auth_error.invalid_api_key","message":"No API key"}}`, http.StatusUnauthorized)
-			return
-		}
-
-		var req struct {
-			Model string `json:"model"`
-		}
-		bodyBytes, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, `{"error":{"type":"server_error","message":"Failed to read request body"}}`, http.StatusBadRequest)
-			return
-		}
-		r.Body.Close()
-		r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-		_ = json.Unmarshal(bodyBytes, &req)
-
-		var resolvedModel string
-		if req.Model != "" {
-			projectID := int64(0)
-			if apiKey.ProjectID != nil {
-				projectID = *apiKey.ProjectID
-			}
-			access, err := modelgov.CheckAccess(r.Context(), postgres.Pool, apiKey.OrgID, projectID, req.Model)
-			if errors.Is(err, modelgov.ErrModelRetired) || errors.Is(err, modelgov.ErrModelDenied) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusForbidden)
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"error": map[string]interface{}{
-						"type":    "auth_error.model_not_allowed",
-						"message": "Model is not available for this project",
-						"model":   req.Model,
-						"reason":  access.Reason,
-					},
-				})
-				return
-			}
-			if err != nil && !errors.Is(err, modelgov.ErrModelRequired) {
-				http.Error(w, `{"error":{"type":"server_error","message":"Model governance check failed"}}`, http.StatusInternalServerError)
-				return
-			}
-			resolvedModel = access.ResolvedModel
-			if resolvedModel != "" && resolvedModel != req.Model {
-				r = r.WithContext(context.WithValue(r.Context(), middleware.CtxModelAlias, req.Model))
-				var payload map[string]interface{}
-				if json.Unmarshal(bodyBytes, &payload) == nil {
-					payload["model"] = resolvedModel
-					if rewritten, err := json.Marshal(payload); err == nil {
-						bodyBytes = rewritten
-						r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-					}
-				}
-			}
-		}
-
-		if apiKey.AllowedModels != "" && apiKey.AllowedModels != "*" {
-			if req.Model != "" {
-				allowed := false
-				for _, m := range strings.Split(apiKey.AllowedModels, ",") {
-					model := strings.TrimSpace(m)
-					if model == req.Model || (resolvedModel != "" && model == resolvedModel) {
-						allowed = true
-						break
-					}
-				}
-				if !allowed {
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusForbidden)
-					fmt.Fprintf(w, `{"error":{"type":"auth_error.model_not_allowed","message":"Model %s is not allowed for this API key","model":"%s"}}`, req.Model, req.Model)
-					return
-				}
-			}
-		}
-		relay.HandleEmbeddings(w, r)
-	})
+	chatHandler := newGatewayChatHandler(postgres.Pool, relay)
+	embeddingsHandler := newGatewayEmbeddingsHandler(postgres.Pool, relay)
 
 	mux.Handle("POST /v1/chat/completions", gatewayAuth(admissionMiddleware(rateLimiter(chatHandler))))
 	mux.Handle("POST /v1/embeddings", gatewayAuth(admissionMiddleware(rateLimiter(embeddingsHandler))))
