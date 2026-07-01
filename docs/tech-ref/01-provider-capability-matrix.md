@@ -96,7 +96,7 @@ freezeAmount = max(9.06 + 130.50, 10) = 139.56 分 = ¥1.40
 
 ## 五、价格管理
 
-- `model_prices` 表存储全局基础价格（以分为单位，CNY）
+- `model_prices` 表存储全局基础价格（以分为单位，CNY；支持小数分以覆盖 `¥0.002/千 token` 这类小额价格）
 - `org_model_prices` 表存储组织级覆盖（`multiplier` 字段）
 - 海外模型价格 = USD × `EXCHANGE_RATE`（环境变量，默认 7.25）
 - 价格变更后立即生效（无缓存延迟）

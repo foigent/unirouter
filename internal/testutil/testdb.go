@@ -128,7 +128,7 @@ func NewTestGrant(t *testing.T, pool *pgxpool.Pool, orgID int64, amount int, exp
 }
 
 // NewTestModelPrice creates a model price entry.
-func NewTestModelPrice(t *testing.T, pool *pgxpool.Pool, model string, inputPrice, outputPrice int) {
+func NewTestModelPrice(t *testing.T, pool *pgxpool.Pool, model string, inputPrice, outputPrice float64) {
 	t.Helper()
 	ctx := context.Background()
 

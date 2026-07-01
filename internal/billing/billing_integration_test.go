@@ -308,8 +308,8 @@ func TestQueryModelPrice_Found_Integration(t *testing.T) {
 	b := NewBilling(pool, nil)
 	inputCost, outputCost, err := b.QueryModelPrice(context.Background(), "gpt-4o")
 	require.NoError(t, err)
-	require.Equal(t, 5, inputCost)
-	require.Equal(t, 15, outputCost)
+	require.InDelta(t, 5.0, inputCost, 0.000001)
+	require.InDelta(t, 15.0, outputCost, 0.000001)
 }
 
 func TestQueryModelPrice_NotFound_Fallback_Integration(t *testing.T) {
@@ -318,8 +318,8 @@ func TestQueryModelPrice_NotFound_Fallback_Integration(t *testing.T) {
 	b := NewBilling(pool, nil)
 	inputCost, outputCost, err := b.QueryModelPrice(context.Background(), "nonexistent-model")
 	require.NoError(t, err)
-	require.Equal(t, 2, inputCost, "should fallback to default input cost")
-	require.Equal(t, 10, outputCost, "should fallback to default output cost")
+	require.InDelta(t, 2.0, inputCost, 0.000001, "should fallback to default input cost")
+	require.InDelta(t, 10.0, outputCost, 0.000001, "should fallback to default output cost")
 }
 
 // --- QueryModelPriceForOrg tests ---
@@ -331,8 +331,8 @@ func TestQueryModelPriceForOrg_NoMultiplier_Integration(t *testing.T) {
 	b := NewBilling(pool, nil)
 	inputCost, outputCost, err := b.QueryModelPriceForOrg(context.Background(), 99999, "claude-opus")
 	require.NoError(t, err)
-	require.Equal(t, 15, inputCost, "should return base price when no org multiplier")
-	require.Equal(t, 75, outputCost)
+	require.InDelta(t, 15.0, inputCost, 0.000001, "should return base price when no org multiplier")
+	require.InDelta(t, 75.0, outputCost, 0.000001)
 }
 
 func TestQueryModelPriceForOrg_WithMultiplier_Integration(t *testing.T) {
@@ -350,8 +350,8 @@ func TestQueryModelPriceForOrg_WithMultiplier_Integration(t *testing.T) {
 	b := NewBilling(pool, nil)
 	inputCost, outputCost, err := b.QueryModelPriceForOrg(context.Background(), orgID, "org-model-test")
 	require.NoError(t, err)
-	require.Equal(t, 20, inputCost, "10 * 2.0 = 20")
-	require.Equal(t, 100, outputCost, "50 * 2.0 = 100")
+	require.InDelta(t, 20.0, inputCost, 0.000001, "10 * 2.0 = 20")
+	require.InDelta(t, 100.0, outputCost, 0.000001, "50 * 2.0 = 100")
 }
 
 func TestQueryModelPriceForOrg_MultiplierOne_Integration(t *testing.T) {
@@ -367,8 +367,8 @@ func TestQueryModelPriceForOrg_MultiplierOne_Integration(t *testing.T) {
 	b := NewBilling(pool, nil)
 	inputCost, outputCost, err := b.QueryModelPriceForOrg(context.Background(), orgID, "mult1-model")
 	require.NoError(t, err)
-	require.Equal(t, 10, inputCost, "10 * 1.0 = 10")
-	require.Equal(t, 50, outputCost, "50 * 1.0 = 50")
+	require.InDelta(t, 10.0, inputCost, 0.000001, "10 * 1.0 = 10")
+	require.InDelta(t, 50.0, outputCost, 0.000001, "50 * 1.0 = 50")
 }
 
 func TestQueryModelPriceForOrg_FallbackThenMultiplier_Integration(t *testing.T) {
@@ -384,8 +384,8 @@ func TestQueryModelPriceForOrg_FallbackThenMultiplier_Integration(t *testing.T) 
 	b := NewBilling(pool, nil)
 	inputCost, outputCost, err := b.QueryModelPriceForOrg(context.Background(), orgID, "fallback-model")
 	require.NoError(t, err)
-	require.Equal(t, 6, inputCost, "2 * 3.0 = 6")
-	require.Equal(t, 30, outputCost, "10 * 3.0 = 30")
+	require.InDelta(t, 6.0, inputCost, 0.000001, "2 * 3.0 = 6")
+	require.InDelta(t, 30.0, outputCost, 0.000001, "10 * 3.0 = 30")
 }
 
 // --- CalculateCost: boundary tests ---

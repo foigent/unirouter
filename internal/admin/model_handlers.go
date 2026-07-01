@@ -119,7 +119,7 @@ func (h *Handler) ListModelPrices(w http.ResponseWriter, r *http.Request) {
 
 	offset := (page - 1) * pageSize
 	rows, err := h.db.Query(r.Context(),
-		`SELECT id, model_name, input_price_cents, output_price_cents FROM model_prices ORDER BY model_name LIMIT $1 OFFSET $2`,
+		`SELECT id, model_name, input_price_cents::float8, output_price_cents::float8 FROM model_prices ORDER BY model_name LIMIT $1 OFFSET $2`,
 		pageSize, offset)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Query failed"})
@@ -131,12 +131,19 @@ func (h *Handler) ListModelPrices(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var id int64
 		var modelName string
-		var inputPrice, outputPrice int
-		rows.Scan(&id, &modelName, &inputPrice, &outputPrice)
+		var inputPrice, outputPrice float64
+		if err := rows.Scan(&id, &modelName, &inputPrice, &outputPrice); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
+			return
+		}
 		prices = append(prices, map[string]interface{}{
 			"id": id, "model_name": modelName, "input_price_cents": inputPrice,
 			"output_price_cents": outputPrice, "currency": "CNY",
 		})
+	}
+	if err := rows.Err(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Rows failed"})
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"data": prices, "total": total, "page": page, "page_size": pageSize})
@@ -144,9 +151,9 @@ func (h *Handler) ListModelPrices(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) CreateModelPrice(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		ModelName        string `json:"model_name"`
-		InputPriceCents  int    `json:"input_price_cents"`
-		OutputPriceCents int    `json:"output_price_cents"`
+		ModelName        string  `json:"model_name"`
+		InputPriceCents  float64 `json:"input_price_cents"`
+		OutputPriceCents float64 `json:"output_price_cents"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
@@ -154,6 +161,10 @@ func (h *Handler) CreateModelPrice(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ModelName == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "model_name required"})
+		return
+	}
+	if req.InputPriceCents < 0 || req.OutputPriceCents < 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "price must be >= 0"})
 		return
 	}
 	var newID int64
@@ -177,9 +188,9 @@ func (h *Handler) UpdateModelPrice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		InputPriceCents  *int    `json:"input_price_cents"`
-		OutputPriceCents *int    `json:"output_price_cents"`
-		ModelName        *string `json:"model_name"`
+		InputPriceCents  *float64 `json:"input_price_cents"`
+		OutputPriceCents *float64 `json:"output_price_cents"`
+		ModelName        *string  `json:"model_name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
@@ -194,11 +205,19 @@ func (h *Handler) UpdateModelPrice(w http.ResponseWriter, r *http.Request) {
 		argIdx++
 	}
 	if req.InputPriceCents != nil {
+		if *req.InputPriceCents < 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "input_price_cents must be >= 0"})
+			return
+		}
 		sets = append(sets, fmt.Sprintf("input_price_cents = $%d", argIdx))
 		args = append(args, *req.InputPriceCents)
 		argIdx++
 	}
 	if req.OutputPriceCents != nil {
+		if *req.OutputPriceCents < 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "output_price_cents must be >= 0"})
+			return
+		}
 		sets = append(sets, fmt.Sprintf("output_price_cents = $%d", argIdx))
 		args = append(args, *req.OutputPriceCents)
 		argIdx++

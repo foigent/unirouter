@@ -32,53 +32,53 @@ type User struct {
 
 // Channel represents the channels table.
 type Channel struct {
-	ID                int64           `json:"id" db:"id"`
-	Name              string          `json:"name" db:"name"`
-	Provider          string          `json:"provider" db:"provider"`
-	BaseURL           string          `json:"base_url" db:"base_url"`
-	Models            string          `json:"models" db:"models"`
-	ModelMapping      json.RawMessage `json:"model_mapping" db:"model_mapping"`
-	MaxContext        int             `json:"max_context" db:"max_context"`
-	DefaultMaxOutput  int             `json:"default_max_output" db:"default_max_output"`
-	Priority          int             `json:"priority" db:"priority"`
-	RPMLimit          int             `json:"rpm_limit" db:"rpm_limit"`
-	TPMLimit          int             `json:"tpm_limit" db:"tpm_limit"`
-	Status            string          `json:"status" db:"status"`
-	CircuitState      string          `json:"circuit_state" db:"circuit_state"`
-	HalfOpenUntil     *time.Time      `json:"half_open_until" db:"half_open_until"`
-	FailCount         int             `json:"fail_count" db:"fail_count"`
-	CreatedAt         time.Time       `json:"created_at" db:"created_at"`
-	UpdatedAt         time.Time       `json:"updated_at" db:"updated_at"`
+	ID               int64           `json:"id" db:"id"`
+	Name             string          `json:"name" db:"name"`
+	Provider         string          `json:"provider" db:"provider"`
+	BaseURL          string          `json:"base_url" db:"base_url"`
+	Models           string          `json:"models" db:"models"`
+	ModelMapping     json.RawMessage `json:"model_mapping" db:"model_mapping"`
+	MaxContext       int             `json:"max_context" db:"max_context"`
+	DefaultMaxOutput int             `json:"default_max_output" db:"default_max_output"`
+	Priority         int             `json:"priority" db:"priority"`
+	RPMLimit         int             `json:"rpm_limit" db:"rpm_limit"`
+	TPMLimit         int             `json:"tpm_limit" db:"tpm_limit"`
+	Status           string          `json:"status" db:"status"`
+	CircuitState     string          `json:"circuit_state" db:"circuit_state"`
+	HalfOpenUntil    *time.Time      `json:"half_open_until" db:"half_open_until"`
+	FailCount        int             `json:"fail_count" db:"fail_count"`
+	CreatedAt        time.Time       `json:"created_at" db:"created_at"`
+	UpdatedAt        time.Time       `json:"updated_at" db:"updated_at"`
 }
 
 // ChannelKey represents the channel_keys table.
 type ChannelKey struct {
-	ID          int64        `json:"id" db:"id"`
-	ChannelID   int64        `json:"channel_id" db:"channel_id"`
-	KeyEnc      string       `json:"-" db:"key_enc"`
-	Status      string       `json:"status" db:"status"`
-	FailCount   int          `json:"fail_count" db:"fail_count"`
-	LastUsedAt  *time.Time   `json:"last_used_at" db:"last_used_at"`
+	ID            int64      `json:"id" db:"id"`
+	ChannelID     int64      `json:"channel_id" db:"channel_id"`
+	KeyEnc        string     `json:"-" db:"key_enc"`
+	Status        string     `json:"status" db:"status"`
+	FailCount     int        `json:"fail_count" db:"fail_count"`
+	LastUsedAt    *time.Time `json:"last_used_at" db:"last_used_at"`
 	CooldownUntil *time.Time `json:"cooldown_until" db:"cooldown_until"`
-	CreatedAt   time.Time    `json:"created_at" db:"created_at"`
-	UpdatedAt   time.Time    `json:"updated_at" db:"updated_at"`
+	CreatedAt     time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at" db:"updated_at"`
 }
 
 // ApiKey represents the api_keys table.
 type ApiKey struct {
-	ID             int64          `json:"id" db:"id"`
-	OrgID          int64          `json:"org_id" db:"org_id"`
-	Name           string         `json:"name" db:"name"`
-	KeyPrefix      string         `json:"key_prefix" db:"key_prefix"`
-	KeyHash        string         `json:"-" db:"key_hash"`
-	IPWhitelist    string         `json:"allowed_ips" db:"allowed_ips"`
-	AllowedModels  string         `json:"allowed_models" db:"allowed_models"`
-	RPMLimit       int            `json:"rpm_limit" db:"rpm_limit"`
-	QPSLimit       int            `json:"qps_limit" db:"qps_limit"`
-	BudgetLimit    *int           `json:"budget_limit" db:"budget_limit"`
-	Status         string         `json:"status" db:"status"`
-	CreatedAt      time.Time      `json:"created_at" db:"created_at"`
-	UpdatedAt      time.Time      `json:"updated_at" db:"updated_at"`
+	ID            int64     `json:"id" db:"id"`
+	OrgID         int64     `json:"org_id" db:"org_id"`
+	Name          string    `json:"name" db:"name"`
+	KeyPrefix     string    `json:"key_prefix" db:"key_prefix"`
+	KeyHash       string    `json:"-" db:"key_hash"`
+	IPWhitelist   string    `json:"allowed_ips" db:"allowed_ips"`
+	AllowedModels string    `json:"allowed_models" db:"allowed_models"`
+	RPMLimit      int       `json:"rpm_limit" db:"rpm_limit"`
+	QPSLimit      int       `json:"qps_limit" db:"qps_limit"`
+	BudgetLimit   *int      `json:"budget_limit" db:"budget_limit"`
+	Status        string    `json:"status" db:"status"`
+	CreatedAt     time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // ModelPrice represents the model_prices table.
@@ -86,8 +86,8 @@ type ModelPrice struct {
 	ID               int64     `json:"id" db:"id"`
 	ModelName        string    `json:"model_name" db:"model_name"`
 	Provider         string    `json:"provider" db:"provider"`
-	InputPriceCents  int       `json:"input_price_cents" db:"input_price_cents"`
-	OutputPriceCents int       `json:"output_price_cents" db:"output_price_cents"`
+	InputPriceCents  float64   `json:"input_price_cents" db:"input_price_cents"`
+	OutputPriceCents float64   `json:"output_price_cents" db:"output_price_cents"`
 	MaxContext       int       `json:"max_context" db:"max_context"`
 	DefaultMaxOutput int       `json:"default_max_output" db:"default_max_output"`
 	CreatedAt        time.Time `json:"created_at" db:"created_at"`
@@ -116,15 +116,15 @@ type Wallet struct {
 
 // Transaction represents the transactions table.
 type Transaction struct {
-	ID            int64     `json:"id" db:"id"`
-	RequestID     string    `json:"request_id" db:"request_id"`
-	OrgID         int64     `json:"org_id" db:"org_id"`
-	Type          string    `json:"type" db:"type"`
-	Status        string    `json:"status" db:"status"`
-	Amount        int       `json:"amount" db:"amount"`
-	BalanceAfter  *int      `json:"balance_after" db:"balance_after"`
-	Note          string    `json:"note" db:"note"`
-	CreatedAt     time.Time `json:"created_at" db:"created_at"`
+	ID           int64     `json:"id" db:"id"`
+	RequestID    string    `json:"request_id" db:"request_id"`
+	OrgID        int64     `json:"org_id" db:"org_id"`
+	Type         string    `json:"type" db:"type"`
+	Status       string    `json:"status" db:"status"`
+	Amount       int       `json:"amount" db:"amount"`
+	BalanceAfter *int      `json:"balance_after" db:"balance_after"`
+	Note         string    `json:"note" db:"note"`
+	CreatedAt    time.Time `json:"created_at" db:"created_at"`
 }
 
 // CallLog represents the call_logs table.

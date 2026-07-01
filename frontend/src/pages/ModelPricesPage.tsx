@@ -4,6 +4,14 @@ import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { MoneyText, PageHeader, Surface } from '../ui';
 
+export function yuanPerKToCents(value: unknown) {
+  const price = Number.parseFloat(String(value));
+  if (!Number.isFinite(price) || price < 0) {
+    throw new Error('invalid price');
+  }
+  return Number((price * 100).toFixed(6));
+}
+
 export default function ModelPricesPage() {
   const [prices, setPrices] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
@@ -15,9 +23,9 @@ export default function ModelPricesPage() {
   const [formApi, setFormApi] = useState<any>(null);
   const [modelNames, setModelNames] = useState<string[]>([]);
 
-  const load = (p = page) => {
+  const load = (p = page, size = pageSize) => {
     setLoading(true);
-    api.getModelPriceList(p, 20)
+    api.getModelPriceList(p, size)
       .then((d: any) => { setPrices(d.data || []); setTotal(d.total || 0); })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -31,8 +39,8 @@ export default function ModelPricesPage() {
     try {
       await api.createModelPrice({
         model_name: v.model_name,
-        input_price_cents: Math.round(parseFloat(v.input_price) * 100),
-        output_price_cents: Math.round(parseFloat(v.output_price) * 100),
+        input_price_cents: yuanPerKToCents(v.input_price),
+        output_price_cents: yuanPerKToCents(v.output_price),
       });
       Toast.success('价格创建成功');
       closeDrawer();
@@ -45,8 +53,8 @@ export default function ModelPricesPage() {
     try {
       await api.updateModelPrice(editPrice.id, {
         model_name: v.model_name,
-        input_price_cents: Math.round(parseFloat(v.input_price) * 100),
-        output_price_cents: Math.round(parseFloat(v.output_price) * 100),
+        input_price_cents: yuanPerKToCents(v.input_price),
+        output_price_cents: yuanPerKToCents(v.output_price),
       });
       Toast.success('更新成功');
       closeDrawer();
@@ -121,8 +129,8 @@ export default function ModelPricesPage() {
             rowKey="id"
             pagination={{
               currentPage: page, pageSize, total,
-              onPageChange: (p: number) => { setPage(p); load(p); },
-              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1); },
+              onPageChange: (p: number) => { setPage(p); load(p, pageSize); },
+              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1, s); },
             }}
           />
         </div>
@@ -136,8 +144,8 @@ export default function ModelPricesPage() {
       >
         <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={editPrice ? handleUpdate : handleCreate}>
           <Form.Select field="model_name" label="模型名称" rules={[{ required: true, message: '请选择模型' }]} filter optionList={modelNames.map(m => ({ label: m, value: m }))} placeholder="选择或搜索模型" />
-          <Form.Input field="input_price" label="输入价格（元/千token）" rules={[{ required: true, message: '必填' }]} placeholder="0.01" />
-          <Form.Input field="output_price" label="输出价格（元/千token）" rules={[{ required: true, message: '必填' }]} placeholder="0.03" />
+          <Form.Input field="input_price" label="输入价格（元/千token）" rules={[{ required: true, message: '必填' }]} placeholder="0.002" />
+          <Form.Input field="output_price" label="输出价格（元/千token）" rules={[{ required: true, message: '必填' }]} placeholder="0.001" />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
             <Button onClick={closeDrawer}>取消</Button>
             <Button type="primary" onClick={() => formApi?.submitForm()}>{editPrice ? '更新' : '创建'}</Button>

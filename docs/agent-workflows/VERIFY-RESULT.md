@@ -1,29 +1,31 @@
-# VERIFY-RESULT.md — PRD1 UI/API Follow-up Fix 验收结果
+# VERIFY-RESULT.md — PRD1 Latency / Decimal Pricing Fix 验收结果
 
 **验收者：** OpenClaw Canary
 **日期：** 2026-07-01
-**对应轮次：** PRD1 channel-key edit, token reconciliation pagination, and Dashboard trend fix
+**对应轮次：** PRD1 dashboard latency persistence, decimal model pricing, and Mimo provider recheck
 
 ---
 
 ## 逐条结果
 
-- **Fix #1 (渠道密钥编辑可更新所属渠道和上游 key):** PASS — `channel_key_handlers.go:116` `UpdateChannelKey` 接收 `Key *string`，`:134` 非空时加密写入 `key_enc`，`:148` 自动重置 `fail_count=0, cooldown_until=NULL, last_used_at=NULL`。`ChannelKeysPage.tsx:156` 编辑时 `optionList={channels}` 可选渠道，`:161` placeholder 提示"输入新的上游 API Key，保存后会重置冷却状态"，`:162` extraText"已有密钥不会回显"。`TestUpdateChannelKey_KeyResetsCooldown` PASS
-- **Fix #2 (Token 对账分页返回多行):** PASS — `model_handlers.go:79` `createdAt` 扫描为 `time.Time`，`:80` `rows.Scan` 错误不忽略，`:102` `rows.Err()` 检查。`ReconciliationPage.tsx:29` 使用 `page_size: String(pageSize)` 动态分页，`:102` 状态筛选改为 `error`（后端支持），`:121` `onPageChange`。`TestListReconciliation_Success` PASS
-- **Fix #3 (Dashboard 活动趋势与时间范围口径一致):** PASS — `dashboard_handlers.go:59/73/77` `COUNT(*)` 使用 `created_at >= $2 AND created_at <= $3` 时间范围过滤，`:131-132` 使用 `time.RFC3339Nano` 解析前端 ISO 时间，`:180-181` 按 `time.Hour` 补零 bucket。`TestDashboardOverview_TotalUsesTimeRange` PASS
+- **Fix #1 (调用日志写入真实 latency_ms / ttft_ms):** PASS — `relay.go:69` 定义 `elapsedMilliseconds` helper，`:94` 记录 `requestStart`，`:618` INSERT 包含 `latency_ms, ttft_ms` 列。非流式（`:324`）、流式（`:557`）、无路由（`:186`）、上游失败（`:277`）、embeddings（`:797`）均传入 `elapsedMilliseconds(requestStart)`。`TestRecordRequest_Success` PASS
+- **Fix #2 (模型价格支持小数分):** PASS — `migrations/000008_model_price_decimal_cents.up.sql:3-4` 迁移 `input_price_cents/output_price_cents` 为 `NUMERIC(18,6)`。`models.go:90` `OutputPriceCents float64`，`model_handlers.go:156` `OutputPriceCents float64`，`:122` 使用 `::float8` cast。`dashboard_handlers.go:112` 使用 `::float8`。`billing.go:73/80` `QueryModelPrice/QueryModelPriceForOrg` 返回 `float64`。`ModelPricesPage.tsx:7` `yuanPerKToCents` 保留小数，`:147-148` placeholder `0.002`/`0.001`。`ModelPricesPage.test.tsx:6-7` 验证 `yuanPerKToCents('0.002') === 0.2`。`TestCreateModelPrice_DecimalCents` 和 `TestCalculateCost_FractionalCentPrice` 均 PASS
+- **Runtime Evidence (Mimo provider key 恢复):** PASS — `OPEN-ISSUES.md:35` `PRD1-PROVIDER-001` 标记为 "Closed"，记录云端 200 响应和临时 key 已禁用；`:37` `PRD1-LOAD-001` 保持 "Open"（未误关）。`CURRENT-STATUS.md:8` 和 `:23` 记录 Mimo 云端验证。`PRD-ACCEPTANCE-MATRIX.md:12` 记录 E2E accepted
 
 ## 全局验证
 
 | 检查项 | 结果 |
 |--------|------|
 | `git diff --check` | PASS |
-| `TestUpdateChannelKey_KeyResetsCooldown` | PASS |
-| `TestListReconciliation_Success/QueryError` | PASS |
-| `TestDashboardOverview_TotalUsesTimeRange` | PASS |
-| `TestDashboardStats_Success` | PASS |
+| gateway targeted tests（9/9：RecordRequest + NonStream + Stream） | PASS |
+| admin targeted tests（3/3：DecimalCents + ListModelPrices + DashboardStats） | PASS |
+| billing targeted tests（15/15：CalculateCost + QueryModelPrice） | PASS |
 | `go test ./...` | PASS（16/16 包） |
-| `npm run build` | PASS（4.43s） |
-| `npm test -- --run` | PASS（36/36 测试，5 文件） |
+| `npm test -- --run` | PASS（37/37 测试，6 文件） |
+| `npm run build` | PASS（3.93s） |
+| `NUMERIC(18,6)` migration | PASS |
+| `yuanPerKToCents('0.002') === 0.2` 测试 | PASS |
+| PRD1-PROVIDER-001 关闭 + PRD1-LOAD-001 未误关 | PASS |
 
 ## 新发现的问题
 
@@ -31,4 +33,4 @@
 
 ## 结论
 
-**3/3 全部 PASS。** PRD1 UI/API follow-up fix 验收通过。
+**2/2 Fix + Runtime Evidence 全部 PASS。** PRD1 latency / decimal pricing fix 验收通过。前端测试从 36 增至 37（新增 ModelPricesPage 测试）。
