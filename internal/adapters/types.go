@@ -9,6 +9,7 @@ import (
 
 const (
 	TypeOpenAICompatible = "openai_compatible"
+	TypeAnthropicNative  = "anthropic_native"
 )
 
 type Endpoint string

@@ -10,6 +10,8 @@ interface Channel {
   provider: string;
   base_url: string;
   models: string;
+  adapter_type?: string;
+  adapter_config?: Record<string, unknown> | string;
   priority: number;
   degradation_threshold: number;
   status: string;
@@ -43,13 +45,44 @@ export default function ChannelsPage() {
 
   const closeDrawer = () => { setShowDrawer(false); setEditing(null); };
 
+  const normalizeAdapterConfig = (value: unknown) => {
+    if (value === undefined || value === null || value === '') return {};
+    if (typeof value === 'object') return value;
+    if (typeof value === 'string') return JSON.parse(value);
+    return {};
+  };
+
+  const formatAdapterConfig = (value: unknown) => {
+    if (value === undefined || value === null || value === '') return '{}';
+    if (typeof value === 'string') {
+      try {
+        return JSON.stringify(JSON.parse(value), null, 2);
+      } catch {
+        return value;
+      }
+    }
+    return JSON.stringify(value, null, 2);
+  };
+
   const handleSubmit = async (values: Record<string, any>) => {
+    let adapterConfig: Record<string, unknown>;
+    try {
+      adapterConfig = normalizeAdapterConfig(values.adapter_config) as Record<string, unknown>;
+    } catch {
+      Toast.error('Adapter Config 必须是合法 JSON');
+      return;
+    }
+    const payload = {
+      ...values,
+      adapter_type: values.adapter_type || 'openai_compatible',
+      adapter_config: adapterConfig,
+    };
     try {
       if (editing) {
-        await api.updateChannel(editing.id, values);
+        await api.updateChannel(editing.id, payload);
         Toast.success('渠道更新成功');
       } else {
-        await api.createChannel(values);
+        await api.createChannel(payload);
         Toast.success('渠道创建成功');
       }
       closeDrawer();
@@ -84,6 +117,8 @@ export default function ChannelsPage() {
         provider: record.provider,
         base_url: record.base_url,
         models: record.models,
+        adapter_type: record.adapter_type || 'openai_compatible',
+        adapter_config: formatAdapterConfig(record.adapter_config),
         priority: record.priority,
       });
     }, 100);
@@ -93,12 +128,14 @@ export default function ChannelsPage() {
     setEditing(null);
     setShowDrawer(true);
     formApi?.reset();
+    setTimeout(() => formApi?.setValues({ adapter_type: 'openai_compatible', adapter_config: '{}' }), 0);
   };
 
   const columns = [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
     { title: '名称', dataIndex: 'name', key: 'name' },
     { title: 'Provider', dataIndex: 'provider', key: 'provider' },
+    { title: 'Adapter', dataIndex: 'adapter_type', key: 'adapter_type', render: (v: string) => v || 'openai_compatible' },
     { title: 'Base URL', dataIndex: 'base_url', key: 'base_url', ellipsis: true },
     { title: '支持模型', dataIndex: 'models', key: 'models', ellipsis: true },
     { title: '优先级', dataIndex: 'priority', key: 'priority', width: 80 },
@@ -179,6 +216,13 @@ export default function ChannelsPage() {
           />
           <Form.Input field="base_url" label="Base URL" rules={[{ required: true, message: '必填' }]} />
           <Form.Input field="models" label="支持模型" placeholder="多个模型用英文逗号分隔，如 gpt-4o, gpt-4o-mini" rules={[{ required: true, message: '必填' }]} />
+          <Form.Select field="adapter_type" label="Adapter Type" initValue="openai_compatible"
+            optionList={[
+              { label: 'OpenAI Compatible', value: 'openai_compatible' },
+              { label: 'Anthropic Native', value: 'anthropic_native' },
+            ]}
+          />
+          <Form.TextArea field="adapter_config" label="Adapter Config (JSON)" placeholder='{"anthropic_version":"2023-06-01"}' rows={4} />
           <Form.InputNumber field="priority" label="优先级 (越小越优先)" initValue={100} />
           <Form.InputNumber field="degradation_threshold" label="降级阈值 (连续失败次数)" initValue={10} />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>

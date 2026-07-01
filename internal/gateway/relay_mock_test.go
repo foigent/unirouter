@@ -1232,6 +1232,140 @@ func TestHandleChatCompletion_Success_NonStream(t *testing.T) {
 	}
 }
 
+func TestHandleChatCompletion_AnthropicNativeNonStream(t *testing.T) {
+	var upstreamPath string
+	var upstreamModel string
+	var upstreamSystem string
+	var upstreamAPIKey string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamPath = r.URL.Path
+		upstreamAPIKey = r.Header.Get("x-api-key")
+		var body struct {
+			Model    string `json:"model"`
+			System   string `json:"system"`
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		upstreamModel = body.Model
+		upstreamSystem = body.System
+		if len(body.Messages) != 1 || body.Messages[0].Role != "user" || body.Messages[0].Content != "hello" {
+			t.Fatalf("unexpected anthropic messages: %+v", body.Messages)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"id":"msg_123",
+			"type":"message",
+			"role":"assistant",
+			"model":"claude-3-5-sonnet-20241022",
+			"content":[{"type":"text","text":"Hi from Anthropic"}],
+			"stop_reason":"end_turn",
+			"usage":{"input_tokens":10,"output_tokens":5}
+		}`))
+	}))
+	defer upstream.Close()
+
+	encKey := []byte("0123456789abcdef01234567")
+	encryptedKey, err := auth.EncryptKey([]byte("sk-ant-test"), encKey)
+	if err != nil {
+		t.Fatalf("encrypt key: %v", err)
+	}
+	var settleReq billing.SettleRequest
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
+					func(dest ...any) error {
+						*dest[0].(*int64) = 1
+						*dest[1].(*string) = "anthropic-primary"
+						*dest[2].(*string) = "anthropic"
+						*dest[3].(*string) = upstream.URL
+						*dest[4].(*string) = "company-chat"
+						*dest[5].(*json.RawMessage) = json.RawMessage(`{"company-chat":"claude-3-5-sonnet-20241022"}`)
+						*dest[6].(*string) = "anthropic_native"
+						*dest[7].(*json.RawMessage) = json.RawMessage(`{"anthropic_version":"2023-06-01"}`)
+						*dest[8].(*int) = 200000
+						*dest[9].(*int) = 4096
+						*dest[10].(*int) = 1
+						*dest[11].(*string) = "active"
+						*dest[12].(*string) = "healthy"
+						*dest[13].(**time.Time) = nil
+						*dest[14].(*int) = 0
+						*dest[15].(*int64) = 1
+						*dest[16].(*string) = encryptedKey
+						*dest[17].(*string) = "active"
+						*dest[18].(**time.Time) = nil
+						return nil
+					},
+				},
+			}, nil
+		},
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	b := &mockBilling{
+		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
+			return &billing.FreezeResult{FreezeID: 1, Amount: 100, NewBalance: 900, Success: true}, nil
+		},
+		settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
+			settleReq = req
+			return &billing.SettleResult{SettleID: 1, Refund: 0, NewBalance: 900, Success: true}, nil
+		},
+	}
+	relay := &Relay{db: db, router: NewRouter(db), billing: b, encKey: encKey}
+
+	body := `{"model":"company-chat","messages":[{"role":"system","content":"Be direct."},{"role":"user","content":"hello"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	ctx := context.WithValue(req.Context(), middleware.CtxOrgID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxRequestID, "req-anthropic-1")
+	ctx = context.WithValue(ctx, middleware.CtxAPIKey, &models.ApiKey{ID: 1, OrgID: 1, Status: "active"})
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	relay.HandleChatCompletion(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if upstreamPath != "/v1/messages" {
+		t.Fatalf("expected anthropic /v1/messages, got %s", upstreamPath)
+	}
+	if upstreamAPIKey != "sk-ant-test" {
+		t.Fatalf("expected x-api-key from decrypted key, got %q", upstreamAPIKey)
+	}
+	if upstreamModel != "claude-3-5-sonnet-20241022" {
+		t.Fatalf("expected mapped upstream model, got %q", upstreamModel)
+	}
+	if upstreamSystem != "Be direct." {
+		t.Fatalf("expected system prompt conversion, got %q", upstreamSystem)
+	}
+	if settleReq.PromptTokens != 10 || settleReq.CompletionTokens != 5 || settleReq.UsageSource != metering.UsageSourceUpstream {
+		t.Fatalf("unexpected settle request: %+v", settleReq)
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp["object"] != "chat.completion" || resp["id"] != "msg_123" {
+		t.Fatalf("expected OpenAI-compatible normalized body, got %v", resp)
+	}
+	choices := resp["choices"].([]interface{})
+	message := choices[0].(map[string]interface{})["message"].(map[string]interface{})
+	if message["content"] != "Hi from Anthropic" {
+		t.Fatalf("unexpected assistant content: %v", message["content"])
+	}
+	if _, ok := resp["_uniroute"].(map[string]interface{}); !ok {
+		t.Fatalf("expected _uniroute extension, got %v", resp)
+	}
+}
+
 func TestHandleChatCompletion_UpstreamError_AllFail(t *testing.T) {
 	// Mock upstream that returns 500
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

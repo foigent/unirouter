@@ -18,7 +18,7 @@ func NewRegistry(adapters ...Adapter) *Registry {
 }
 
 func DefaultRegistry() *Registry {
-	return NewRegistry(NewOpenAICompatible())
+	return NewRegistry(NewOpenAICompatible(), NewAnthropicNative())
 }
 
 func (r *Registry) Register(adapter Adapter) {
