@@ -23,18 +23,21 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	totalRequests, todayCostCents, avgLatencyMs, successRate := h.dashboardOverview(ctx, orgID, startTime, endTime)
+	p95LatencyMs, p99LatencyMs := h.dashboardLatencyPercentiles(ctx, orgID, startTime, endTime)
 	recentLogs := h.dashboardRecentLogs(ctx, orgID)
 	modelPrices := h.dashboardModelPrices(ctx)
 	dailyTrend := h.dashboardDailyTrend(ctx, orgID, startTime, endTime)
 	walletBalance, walletGranted, walletFrozen, walletThreshold := h.dashboardWalletInfo(ctx, orgID)
 	modelDistribution := h.dashboardModelDistribution(ctx, orgID, startTime, endTime)
 	channelHealth := h.dashboardChannelHealth(ctx, startTime, endTime)
-	deltaCost, deltaLatency, deltaRate := h.dashboardYesterdayDelta(ctx, orgID, todayCostCents, avgLatencyMs, successRate)
+	deltaCost, deltaLatency, deltaRate := h.dashboardYesterdayDelta(ctx, orgID, todayCostCents, p95LatencyMs, successRate)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"total_requests":     totalRequests,
 		"today_cost_cents":   todayCostCents,
 		"avg_latency_ms":     avgLatencyMs,
+		"p95_latency_ms":     p95LatencyMs,
+		"p99_latency_ms":     p99LatencyMs,
 		"success_rate":       successRate,
 		"recent_logs":        recentLogs,
 		"model_prices":       modelPrices,
@@ -64,7 +67,7 @@ func (h *Handler) dashboardOverview(ctx context.Context, orgID int64, startTime,
 		orgID, startTime, endTime,
 	).Scan(&todayCostCents)
 	h.db.QueryRow(ctx,
-		`SELECT COALESCE(AVG(latency_ms), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3`,
+		`SELECT COALESCE(AVG(latency_ms), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3 AND latency_ms > 0`,
 		orgID, startTime, endTime,
 	).Scan(&avgLatencyMs)
 
@@ -80,6 +83,19 @@ func (h *Handler) dashboardOverview(ctx context.Context, orgID int64, startTime,
 	if totalCount > 0 {
 		successRate = float64(successCount) / float64(totalCount)
 	}
+	return
+}
+
+// dashboardLatencyPercentiles returns tail latency for the selected org/time range.
+func (h *Handler) dashboardLatencyPercentiles(ctx context.Context, orgID int64, startTime, endTime string) (p95LatencyMs, p99LatencyMs float64) {
+	h.db.QueryRow(ctx,
+		`SELECT
+			COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms), 0),
+			COALESCE(percentile_cont(0.99) WITHIN GROUP (ORDER BY latency_ms), 0)
+		 FROM call_logs
+		 WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3 AND latency_ms > 0`,
+		orgID, startTime, endTime,
+	).Scan(&p95LatencyMs, &p99LatencyMs)
 	return
 }
 
@@ -271,7 +287,7 @@ func (h *Handler) dashboardChannelHealth(ctx context.Context, startTime, endTime
 	return health
 }
 
-// dashboardYesterdayDelta computes delta vs yesterday for cost, latency, and success rate.
+// dashboardYesterdayDelta computes delta vs yesterday for cost, P95 latency, and success rate.
 func (h *Handler) dashboardYesterdayDelta(ctx context.Context, orgID int64, todayCost int, todayLatency, todayRate float64) (deltaCost int, deltaLatency, deltaRate float64) {
 	yesterdayStart := time.Now().Add(-48 * time.Hour).Format(time.RFC3339)
 	yesterdayEnd := time.Now().Add(-24 * time.Hour).Format(time.RFC3339)
@@ -282,7 +298,7 @@ func (h *Handler) dashboardYesterdayDelta(ctx context.Context, orgID int64, toda
 	).Scan(&yesterCost)
 	var yesterLatency float64
 	h.db.QueryRow(ctx,
-		`SELECT COALESCE(AVG(latency_ms), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3`,
+		`SELECT COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3 AND latency_ms > 0`,
 		orgID, yesterdayStart, yesterdayEnd,
 	).Scan(&yesterLatency)
 	var yesterSuccess, yesterTotal int

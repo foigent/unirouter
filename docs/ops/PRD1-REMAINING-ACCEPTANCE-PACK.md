@@ -31,7 +31,7 @@ curl -fsS http://8.130.18.85:8080/docs
 Initial results before the Grafana runtime follow-up:
 
 - Go tests: PASS
-- Frontend tests: PASS, latest source has 42 tests after Logs/Dashboard UI follow-up coverage
+- Frontend tests: PASS, latest source has 43 tests after Dashboard percentile/layout closeout coverage
 - Frontend build: PASS, with existing Vite large chunk warning
 - Route parity guard: PASS
 - Cloud S0/S1 smoke: PASS after redeploy
@@ -226,6 +226,67 @@ Protocol status:
 - `docs/agent-workflows/FIX-SIGNAL.md` is updated for Canary.
 - `PRD1-LOG-001`, `PRD1-LOG-002`, `PRD1-LOG-003`, and `PRD1-DASH-004` are `Fixed awaiting Canary`.
 - Canary cannot provide visual judgment; after deployment, user/browser-capable role should visually confirm the cloud Logs and Dashboard pages.
+
+## Local Dashboard Percentile/Layout Closeout
+
+Environment:
+
+- Workspace: `/Users/m4/Desktop/projects/UniRouter`
+- Verified: 2026-07-01 after user reported remaining Dashboard alignment and metric-quality concerns
+
+User-reported concerns:
+
+- Dashboard should likely show P95/P99, not just average latency.
+- The page still looked too loose and hero-like for an operations console.
+- The global search and right-side environment/user controls did not align with the page content.
+- `更新时间 / 健康渠道 / 钱包余额` floated awkwardly in the hero.
+- `AI 活动趋势` was too wide.
+- `渠道健康状态` needed clearer icon-based status expression.
+
+Local fixes prepared:
+
+- Dashboard API now returns `p95_latency_ms` and `p99_latency_ms` for the selected org/time window.
+- Latency aggregates exclude `latency_ms <= 0`, avoiding historical zero-latency bug rows from distorting SLI values.
+- Dashboard main latency KPI now uses P95, with Avg/P99 context.
+- Dashboard content no longer uses `ur-page-wide`, so the page aligns with the global topbar at the same 1440px width.
+- The former hero area is reduced to a control header plus a three-column status strip.
+- AI activity trend is paired with a new latency percentile panel instead of stretching alone across the row.
+- Channel health cards now use explicit status icons and success-rate progress bars.
+
+Validation:
+
+```bash
+go test ./internal/admin -run 'TestDashboard|TestListLogs' -v
+(cd frontend && npm test -- --run src/pages/__tests__/DashboardPage.test.tsx)
+(cd frontend && npm test -- --run)
+(cd frontend && npm run build)
+go test ./...
+```
+
+Results:
+
+- Admin targeted Go tests: PASS.
+- Dashboard targeted frontend tests: PASS, 11/11 tests.
+- Full frontend tests: PASS, 43/43 tests.
+- Frontend build: PASS, retained existing Vite large chunk warning.
+- Full Go tests: PASS.
+- `git diff --check`: PASS.
+- Codex local Playwright visual smoke captured:
+  - `output/playwright/prd1-dashboard-percentile-layout-desktop.png`
+  - `output/playwright/prd1-dashboard-percentile-layout-mobile.png`
+
+Playwright smoke checked:
+
+- Desktop 1440px topbar/content left and right bounds align within 2px.
+- Desktop and mobile have no horizontal overflow.
+- P95/P99 latency text renders in the Dashboard.
+- Browser console errors were existing React/Semi StrictMode `findDOMNode` deprecation warnings only.
+
+Protocol status:
+
+- `docs/agent-workflows/FIX-SIGNAL.md` is updated for Canary.
+- `PRD1-DASH-005` is `Fixed awaiting Canary`.
+- Canary cannot provide visual judgment; after deployment, user/browser-capable role should visually confirm the cloud Dashboard alignment and P95/P99 rendering.
 
 ## Alibaba Cloud Provider E2E Attempt
 

@@ -18,6 +18,8 @@ const MOCK_STATS = {
   total_requests: 12345,
   today_cost_cents: 5678,
   avg_latency_ms: 320,
+  p95_latency_ms: 780,
+  p99_latency_ms: 1290,
   success_rate: 0.987,
   wallet_balance: 100000,
   wallet_granted: 20000,
@@ -161,6 +163,22 @@ describe('DashboardPage', () => {
     expect(trendControls).toHaveLength(2);
     expect(container.textContent || '').toContain('请求数');
     expect(container.textContent || '').toContain('费用');
+  });
+
+  it('renders latency percentiles and the aligned dashboard layout sections', async () => {
+    const { container } = renderDashboard();
+    await waitFor(() => {
+      expect(mockGetDashboardStats).toHaveBeenCalled();
+    });
+
+    const html = container.textContent || '';
+    expect(html).toContain('P95 延迟');
+    expect(html).toContain('780ms');
+    expect(html).toContain('P99');
+    expect(html).toContain('1290ms');
+    expect(container.querySelector('.ur-dashboard-status-strip')).toBeTruthy();
+    expect(container.querySelector('.ur-dashboard-analytics-grid')).toBeTruthy();
+    expect(container.querySelector('.ur-latency-surface')).toBeTruthy();
   });
 
   it('handles API error gracefully', async () => {
