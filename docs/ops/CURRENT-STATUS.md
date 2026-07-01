@@ -1,11 +1,20 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, Codex, and OpenClaw Canary.
-> Last verified: 2026-07-01 local workspace and Alibaba Cloud follow-up.
+> Last verified: 2026-07-01 local documentation planning round.
 
 ## Summary
 
-UniRouter Phase 1 is in MVP hardening. Core backend modules, admin APIs, frontend pages, migrations, Docker deployment files, and monitoring assets exist. The project is not an early scaffold, but it is not yet fully PRD-accepted because several end-to-end and production-style acceptance cases still need current evidence, provider capacity, or explicit user-approved deferral. The default-admin cloud security blocker and the channel-key/reconciliation/Dashboard follow-up fixes have been redeployed and verified in cloud. The Mimo provider key has also been cloud-verified as valid; latency persistence and decimal pricing are now production-verified after redeploy. Dashboard trend UX passed Canary and local visual smoke. User/Atlas reported the Grafana runtime fix resolved, and Codex verified Grafana default `admin/admin` is rejected. Logs/Dashboard UI follow-up is fixed locally and awaiting Canary. A further Dashboard closeout is now fixed locally and awaiting Canary for P95/P99 latency metrics, aligned topbar/content layout, status strip, trend/latency split, and channel-health status icons.
+Per User direction in the PRD2 planning session, PRD1 is treated as closed/frozen for forward planning. Historical PRD1 closeout evidence remains in this file and related PRD1 ops documents, but new product planning should use the PRD2 documents listed below. PRD2 is now in planning/draft state with formal requirements, an acceptance matrix, and initial Provider Adapter, Project/RBAC, and Developer Console specs created locally for Canary verification.
+
+Historical PRD1 summary: Core backend modules, admin APIs, frontend pages, migrations, Docker deployment files, and monitoring assets exist. The default-admin cloud security blocker and the channel-key/reconciliation/Dashboard follow-up fixes were redeployed and verified in cloud. The Mimo provider key was cloud-verified as valid; latency persistence and decimal pricing were production-verified after redeploy. Dashboard trend UX passed Canary and local visual smoke. User/Atlas reported the Grafana runtime fix resolved, and Codex verified Grafana default `admin/admin` is rejected. Some PRD1 status rows below still preserve historical follow-up language; they should not be interpreted as PRD2 scope unless explicitly converted into `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`.
+
+## Phase Status
+
+| Phase | Status | Active Documents |
+|-------|--------|------------------|
+| PRD1 | Closed/frozen for forward planning per User direction | `docs/PRD-Phase1.md`, `docs/ops/PRD-ACCEPTANCE-MATRIX.md`, PRD1 ops evidence docs |
+| PRD2 | Planning / Draft for Review | `docs/planning/PRD2-DISCOVERY.md`, `docs/PRD-Phase2.md`, `docs/ops/PRD2-ACCEPTANCE-MATRIX.md` |
 
 ## Current Verification
 
@@ -72,7 +81,13 @@ UniRouter Phase 1 is in MVP hardening. Core backend modules, admin APIs, fronten
 
 | Need | Use This File |
 |------|---------------|
-| Product requirements | `docs/PRD-Phase1.md` |
+| PRD1 product requirements | `docs/PRD-Phase1.md` |
+| PRD2 discovery and decisions | `docs/planning/PRD2-DISCOVERY.md` |
+| PRD2 product requirements draft | `docs/PRD-Phase2.md` |
+| PRD2 acceptance planning | `docs/ops/PRD2-ACCEPTANCE-MATRIX.md` |
+| PRD2 provider adapter spec | `docs/tech-ref/10-provider-adapter-framework.md` |
+| PRD2 Project/RBAC spec | `docs/tech-ref/11-project-rbac-model.md` |
+| PRD2 Developer Console spec | `docs/design/PRD2-DEVELOPER-CONSOLE-SPEC.md` |
 | Agent handoff | `docs/PROJECT-HANDOFF.md` |
 | Codebase map | `docs/CODEBASE-MAP.md` |
 | Documentation inventory | `docs/DOC-INVENTORY.md` |

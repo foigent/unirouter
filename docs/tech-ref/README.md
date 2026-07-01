@@ -15,9 +15,12 @@
 | 07 | [结构化日志](07-structured-logging.md) | 日志架构 + 使用方式 | v1.0 |
 | 08 | [监控指标](08-prometheus-metrics.md) | Prometheus 指标体系 | v1.0 |
 | 09 | [准入控制](09-admission-control.md) | 并发限流架构 | v1.0 |
+| 10 | [Provider Adapter Framework](10-provider-adapter-framework.md) | PRD2 上游适配器框架 | v0.1 |
+| 11 | [Project And RBAC Model](11-project-rbac-model.md) | PRD2 Project/RBAC 数据与权限模型 | v0.1 |
 
 ## 关联文档
 - [PRD Phase 1](../PRD-Phase1.md) — 产品需求文档
+- [PRD Phase 2](../PRD-Phase2.md) — PRD2 产品需求草案
 - [运维文档](../ops/) — 部署和测试
 
 ## 基础设施配置

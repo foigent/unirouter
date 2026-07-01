@@ -8,7 +8,8 @@
 |------|------|
 | `docs/PROJECT-HANDOFF.md` | First-read handoff for agents |
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
-| `docs/ops/PRD-ACCEPTANCE-MATRIX.md` | Current PRD acceptance progress |
+| `docs/ops/PRD2-ACCEPTANCE-MATRIX.md` | PRD2 acceptance planning and future evidence matrix |
+| `docs/ops/PRD-ACCEPTANCE-MATRIX.md` | PRD1 acceptance progress and historical closeout evidence |
 | `docs/ops/PRD1-ACCEPTANCE-TEST-OWNERSHIP.md` | Current map of what Codex can test and required safe credentials/scope |
 | `docs/issues/OPEN-ISSUES.md` | Current unresolved issue queue |
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
@@ -22,7 +23,10 @@
 |----------|------|-------|
 | `docs/PRD-Phase1.md` | Product requirements and acceptance criteria | Requirements source, not current progress source |
 | `docs/PRD-Phase1.pdf` | PRD PDF export | May lag Markdown |
+| `docs/planning/PRD2-DISCOVERY.md` | PRD2 direction and scope discovery | Confirmed planning direction, not formal PRD |
+| `docs/PRD-Phase2.md` | PRD2 formal product requirements | Draft for review |
 | `docs/design/` | UI design decisions | Current design reference unless contradicted by code |
+| `docs/design/PRD2-DEVELOPER-CONSOLE-SPEC.md` | PRD2 Developer Console design spec | Draft for review |
 | `docs/ui/FRONTEND-UI-ARCHITECTURE-AUDIT.md` | Frontend UI/architecture audit | Current PRD1 closeout and PRD2 frontend architecture guidance |
 | `docs/consultations/` | External/internal consultation history | Background, not current status |
 | `docs/analysis/UNIROUTER-VS-ONEAPI-COMPARISON.md` | OneAPI comparison | Reference only |
@@ -41,6 +45,8 @@
 | `docs/tech-ref/07-structured-logging.md` | Logging plan/reference |
 | `docs/tech-ref/08-prometheus-metrics.md` | Metrics reference |
 | `docs/tech-ref/09-admission-control.md` | Admission control reference |
+| `docs/tech-ref/10-provider-adapter-framework.md` | PRD2 provider adapter framework draft |
+| `docs/tech-ref/11-project-rbac-model.md` | PRD2 project/RBAC model draft |
 
 PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 
