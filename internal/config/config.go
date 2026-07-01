@@ -25,8 +25,9 @@ type Config struct {
 	RedisMaxConns int
 
 	// Security
-	JWTSecret     string
-	EncryptionKey string
+	JWTSecret        string
+	APIKeyHashSecret string
+	EncryptionKey    string
 
 	// Billing
 	MinFreezeAmount    int
@@ -66,6 +67,9 @@ func (c *Config) Validate() error {
 	if c.JWTSecret == "" {
 		return fmt.Errorf("JWT_SECRET environment variable is required and cannot be empty")
 	}
+	if c.APIKeyHashSecret == "" {
+		return fmt.Errorf("API_KEY_HASH_SECRET environment variable is required and cannot be empty")
+	}
 	if len(c.EncryptionKey) != 32 {
 		return fmt.Errorf("ENCRYPTION_KEY must be exactly 32 bytes for AES-256, got %d bytes", len(c.EncryptionKey))
 	}
@@ -73,6 +77,7 @@ func (c *Config) Validate() error {
 }
 
 func Load() (*Config, error) {
+	jwtSecret := getEnvStr("JWT_SECRET", "")
 	cfg := &Config{
 		ListenPort:    getEnvInt("LISTEN_PORT", 8080),
 		LogLevel:      getEnvStr("LOG_LEVEL", "info"),
@@ -88,8 +93,9 @@ func Load() (*Config, error) {
 		RedisDB:       getEnvInt("REDIS_DB", 0),
 		RedisMaxConns: getEnvInt("REDIS_MAX_CONNECTIONS", 10),
 
-		JWTSecret:     getEnvStr("JWT_SECRET", ""),
-		EncryptionKey: getEnvStr("ENCRYPTION_KEY", ""),
+		JWTSecret:        jwtSecret,
+		APIKeyHashSecret: getEnvStr("API_KEY_HASH_SECRET", jwtSecret),
+		EncryptionKey:    getEnvStr("ENCRYPTION_KEY", ""),
 
 		MinFreezeAmount:    getEnvInt("MIN_FREEZE_AMOUNT", 10),
 		FreezeSafetyFactor: getEnvFloat("FREEZE_SAFETY_FACTOR", 1.5),

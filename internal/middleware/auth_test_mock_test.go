@@ -137,6 +137,56 @@ func TestGatewayAuth_Success(t *testing.T) {
 	}
 }
 
+func TestGatewayAuthWithAPIKeyHashSecret_UsesSeparateSecret(t *testing.T) {
+	rawKey := "ur-0001-separate-secret"
+	expectedHash := hashKey(rawKey, "api-key-secret")
+	var capturedHash string
+	budgetLimit := 10000
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			capturedHash = args[0].(string)
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
+					*dest[0].(*int64) = 1
+					*dest[1].(*int64) = 1
+					*dest[2].(*int64) = 11
+					*dest[3].(*string) = "active"
+					*dest[4].(*string) = ""
+					*dest[5].(*string) = ""
+					*dest[6].(*int) = 60
+					*dest[7].(*int) = 10
+					*dest[8].(**int) = &budgetLimit
+					*dest[9].(*string) = "ur-0001"
+					*dest[10].(*string) = "test"
+					*dest[11].(*string) = "active"
+					return nil
+				},
+			}
+		},
+	}
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := GatewayAuthWithAPIKeyHashSecret(db, "api-key-secret")(inner)
+
+	req := httptest.NewRequest("POST", "/v1/chat/completions", nil)
+	req.Header.Set("Authorization", "Bearer "+rawKey)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if capturedHash != expectedHash {
+		t.Fatalf("expected hash from API key secret %s, got %s", expectedHash, capturedHash)
+	}
+	if capturedHash == hashKey(rawKey, "jwt-secret") {
+		t.Fatal("expected API key hash not to use JWT secret")
+	}
+}
+
 func TestGatewayAuth_MissingHeader(t *testing.T) {
 	db := &testutil.MockDB{}
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

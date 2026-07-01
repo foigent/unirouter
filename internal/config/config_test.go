@@ -7,8 +7,9 @@ import (
 
 func TestValidate_MissingJWTSecret(t *testing.T) {
 	cfg := &Config{
-		JWTSecret:     "",
-		EncryptionKey: "0123456789abcdef0123456789abcdef",
+		JWTSecret:        "",
+		APIKeyHashSecret: "api-key-secret",
+		EncryptionKey:    "0123456789abcdef0123456789abcdef",
 	}
 	err := cfg.Validate()
 	if err == nil {
@@ -18,8 +19,9 @@ func TestValidate_MissingJWTSecret(t *testing.T) {
 
 func TestValidate_ShortEncryptionKey(t *testing.T) {
 	cfg := &Config{
-		JWTSecret:     "secret",
-		EncryptionKey: "short",
+		JWTSecret:        "secret",
+		APIKeyHashSecret: "api-key-secret",
+		EncryptionKey:    "short",
 	}
 	err := cfg.Validate()
 	if err == nil {
@@ -27,10 +29,23 @@ func TestValidate_ShortEncryptionKey(t *testing.T) {
 	}
 }
 
+func TestValidate_MissingAPIKeyHashSecret(t *testing.T) {
+	cfg := &Config{
+		JWTSecret:        "secret",
+		APIKeyHashSecret: "",
+		EncryptionKey:    "0123456789abcdef0123456789abcdef",
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for empty API_KEY_HASH_SECRET")
+	}
+}
+
 func TestValidate_Exact32ByteKey(t *testing.T) {
 	cfg := &Config{
-		JWTSecret:     "secret",
-		EncryptionKey: "0123456789abcdef0123456789abcdef", // 32 bytes
+		JWTSecret:        "secret",
+		APIKeyHashSecret: "api-key-secret",
+		EncryptionKey:    "0123456789abcdef0123456789abcdef", // 32 bytes
 	}
 	err := cfg.Validate()
 	if err != nil {
@@ -40,8 +55,9 @@ func TestValidate_Exact32ByteKey(t *testing.T) {
 
 func TestValidate_LongEncryptionKey(t *testing.T) {
 	cfg := &Config{
-		JWTSecret:     "secret",
-		EncryptionKey: "0123456789abcdef0123456789abcdefEXTRA",
+		JWTSecret:        "secret",
+		APIKeyHashSecret: "api-key-secret",
+		EncryptionKey:    "0123456789abcdef0123456789abcdefEXTRA",
 	}
 	err := cfg.Validate()
 	if err == nil {
@@ -53,7 +69,7 @@ func TestLoad_Defaults(t *testing.T) {
 	// Clear all env vars to test defaults
 	envVars := []string{
 		"LISTEN_PORT", "LOG_LEVEL", "GIN_MODE", "DB_DSN", "DB_MAX_CONNECTIONS",
-		"REDIS_ADDR", "REDIS_PASSWORD", "REDIS_DB", "JWT_SECRET", "ENCRYPTION_KEY",
+		"REDIS_ADDR", "REDIS_PASSWORD", "REDIS_DB", "JWT_SECRET", "API_KEY_HASH_SECRET", "ENCRYPTION_KEY",
 		"MIN_FREEZE_AMOUNT", "FREEZE_SAFETY_FACTOR", "DEFAULT_KEY_RPM", "DEFAULT_KEY_QPS",
 	}
 	for _, v := range envVars {
@@ -63,16 +79,16 @@ func TestLoad_Defaults(t *testing.T) {
 	// Load() will fail because JWT_SECRET is empty and ENCRYPTION_KEY is empty
 	// But we can test that defaults are set before validation
 	cfg := &Config{
-		ListenPort:    getEnvInt("LISTEN_PORT", 8080),
-		LogLevel:      getEnvStr("LOG_LEVEL", "info"),
-		GinMode:       getEnvStr("GIN_MODE", "release"),
-		DB_DSN:        getEnvStr("DB_DSN", "postgres://uniroute:password@localhost:5432/uniroute?sslmode=disable"),
-		DBMaxConnections: getEnvInt("DB_MAX_CONNECTIONS", 25),
-		RedisAddr:     getEnvStr("REDIS_ADDR", "localhost:6379"),
-		MinFreezeAmount: getEnvInt("MIN_FREEZE_AMOUNT", 10),
+		ListenPort:         getEnvInt("LISTEN_PORT", 8080),
+		LogLevel:           getEnvStr("LOG_LEVEL", "info"),
+		GinMode:            getEnvStr("GIN_MODE", "release"),
+		DB_DSN:             getEnvStr("DB_DSN", "postgres://uniroute:password@localhost:5432/uniroute?sslmode=disable"),
+		DBMaxConnections:   getEnvInt("DB_MAX_CONNECTIONS", 25),
+		RedisAddr:          getEnvStr("REDIS_ADDR", "localhost:6379"),
+		MinFreezeAmount:    getEnvInt("MIN_FREEZE_AMOUNT", 10),
 		FreezeSafetyFactor: getEnvFloat("FREEZE_SAFETY_FACTOR", 1.5),
-		DefaultKeyRPM: getEnvInt("DEFAULT_KEY_RPM", 60),
-		DefaultKeyQPS: getEnvInt("DEFAULT_KEY_QPS", 10),
+		DefaultKeyRPM:      getEnvInt("DEFAULT_KEY_RPM", 60),
+		DefaultKeyQPS:      getEnvInt("DEFAULT_KEY_QPS", 10),
 	}
 
 	if cfg.ListenPort != 8080 {
@@ -110,6 +126,7 @@ func TestLoad_EnvOverrides(t *testing.T) {
 		os.Unsetenv("LISTEN_PORT")
 		os.Unsetenv("LOG_LEVEL")
 		os.Unsetenv("JWT_SECRET")
+		os.Unsetenv("API_KEY_HASH_SECRET")
 		os.Unsetenv("ENCRYPTION_KEY")
 	}()
 
@@ -122,6 +139,31 @@ func TestLoad_EnvOverrides(t *testing.T) {
 	}
 	if cfg.LogLevel != "debug" {
 		t.Fatalf("expected 'debug', got %s", cfg.LogLevel)
+	}
+	if cfg.APIKeyHashSecret != "test-secret" {
+		t.Fatalf("expected APIKeyHashSecret to default to JWT_SECRET, got %s", cfg.APIKeyHashSecret)
+	}
+}
+
+func TestLoad_APIKeyHashSecretOverride(t *testing.T) {
+	os.Setenv("JWT_SECRET", "jwt-secret")
+	os.Setenv("API_KEY_HASH_SECRET", "api-key-hash-secret")
+	os.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+	defer func() {
+		os.Unsetenv("JWT_SECRET")
+		os.Unsetenv("API_KEY_HASH_SECRET")
+		os.Unsetenv("ENCRYPTION_KEY")
+	}()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.JWTSecret != "jwt-secret" {
+		t.Fatalf("expected JWTSecret override, got %s", cfg.JWTSecret)
+	}
+	if cfg.APIKeyHashSecret != "api-key-hash-secret" {
+		t.Fatalf("expected APIKeyHashSecret override, got %s", cfg.APIKeyHashSecret)
 	}
 }
 

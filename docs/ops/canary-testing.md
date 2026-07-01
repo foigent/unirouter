@@ -281,7 +281,7 @@ docker compose -f docker-compose.yml -f docker-compose.canary.yml down
 docker compose -f docker-compose.yml -f docker-compose.canary.yml logs backend-canary
 
 # 常见原因：
-# - JWT_SECRET/ENCRYPTION_KEY 未设置 → 检查 .env
+# - JWT_SECRET/API_KEY_HASH_SECRET/ENCRYPTION_KEY 未设置 → 检查 .env
 # - PostgreSQL 未就绪 → 检查 depends_on 条件
 # - 端口冲突 → canary 不应暴露端口
 ```
@@ -319,4 +319,5 @@ docker compose exec nginx nginx -T | grep "proxy_read_timeout"
 | `CANARY_LOG_LEVEL` | `debug` | canary 日志级别（便于排查） |
 | `DB_DSN` | 见 .env.example | canary 复用 stable 的数据库连接 |
 | `JWT_SECRET` | 必填 | canary 必须与 stable 相同 |
+| `API_KEY_HASH_SECRET` | 必填 | canary 必须与 stable 相同；否则 canary 会拒绝 stable 创建的 API Key |
 | `ENCRYPTION_KEY` | 必填 | canary 必须与 stable 相同 |

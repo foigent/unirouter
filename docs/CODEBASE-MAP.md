@@ -8,7 +8,7 @@
 |------|------|-------|
 | Main server | `cmd/uniroute/main.go` | Loads config, connects Postgres/Redis, runs migrations, wires gateway/admin routes, starts background cleanup and alerts |
 | Main tests | `cmd/uniroute/main_test.go` | Top-level route behavior tests |
-| Config | `internal/config/config.go` | Environment config and validation, including `ENCRYPTION_KEY` length |
+| Config | `internal/config/config.go` | Environment config and validation, including `JWT_SECRET`, `API_KEY_HASH_SECRET`, and `ENCRYPTION_KEY` length |
 | Database | `internal/db/postgres.go` | pgx pool setup and health |
 | Redis | `internal/redisx/redis.go` | Redis setup, health, wallet cache helpers |
 | Migrations | `migrations/*.sql` | Base schema plus wallet/schema/PRD alignment migrations |
@@ -87,12 +87,12 @@ Later migrations add wallet features, org pricing and alert fields, schema gap f
 
 ## Security Notes
 
-Current code uses AES-GCM helpers in `internal/auth/auth.go` for upstream key encryption/decryption, and config enforces a 32-byte `ENCRYPTION_KEY`. Historical docs that mention XOR encryption are stale unless current code proves otherwise.
+Current code uses AES-GCM helpers in `internal/auth/auth.go` for upstream key encryption/decryption, and config enforces a 32-byte `ENCRYPTION_KEY`. API Key `key_hash` uses a stable HMAC secret from `API_KEY_HASH_SECRET`; if the variable is unset, config falls back to `JWT_SECRET` for backward compatibility. Historical docs that mention XOR encryption or API Key hashes based on `ENCRYPTION_KEY` are stale unless current code proves otherwise.
 
 Admin auth and gateway auth are separate:
 
 - Admin: JWT via `middleware.AdminAuth`.
-- Gateway: API key via `middleware.GatewayAuth`.
+- Gateway: API key via `middleware.GatewayAuthWithAPIKeyHashSecret`.
 
 ## Deployment And Operations
 

@@ -203,6 +203,12 @@ func resolveAPIKey(ctx context.Context, q db.DBQuerier, keyHash string) (*models
 
 // GatewayAuth returns middleware that authenticates API requests via API Key.
 func GatewayAuth(q db.DBQuerier, jwtSecret string) func(http.Handler) http.Handler {
+	return GatewayAuthWithAPIKeyHashSecret(q, jwtSecret)
+}
+
+// GatewayAuthWithAPIKeyHashSecret returns middleware that authenticates API
+// requests via API Key using an API-key-specific HMAC secret.
+func GatewayAuthWithAPIKeyHashSecret(q db.DBQuerier, apiKeyHashSecret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Extract API Key from Authorization header
@@ -216,7 +222,7 @@ func GatewayAuth(q db.DBQuerier, jwtSecret string) func(http.Handler) http.Handl
 			}
 
 			// Hash the key and look up in DB
-			keyHash := hashKey(rawKey, jwtSecret)
+			keyHash := hashKey(rawKey, apiKeyHashSecret)
 			apiKey, orgStatus, err := resolveAPIKey(r.Context(), q, keyHash)
 			if err != nil {
 				http.Error(w, `{"error":{"type":"auth_error.invalid_api_key","message":"Invalid API key"}}`, http.StatusUnauthorized)

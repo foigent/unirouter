@@ -157,7 +157,7 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	keyHash := auth.HashAPIKey(rawKey, h.jwtSecret)
+	keyHash := auth.HashAPIKey(rawKey, h.apiKeyHashSecret)
 
 	var id int64
 	err = h.db.QueryRow(r.Context(),
