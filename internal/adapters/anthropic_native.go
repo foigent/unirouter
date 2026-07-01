@@ -41,9 +41,6 @@ func (a *AnthropicNative) BuildRequest(ctx context.Context, in RequestInput) (*h
 	if err := json.Unmarshal(in.DownstreamBody, &downstream); err != nil {
 		return nil, fmt.Errorf("decode downstream body: %w", err)
 	}
-	if downstream.Stream {
-		return nil, fmt.Errorf("anthropic_native streaming is not supported yet")
-	}
 
 	mappedModel := strings.TrimSpace(in.MappedModel)
 	if mappedModel == "" {
@@ -78,6 +75,9 @@ func (a *AnthropicNative) BuildRequest(ctx context.Context, in RequestInput) (*h
 	}
 	if downstream.TopP != nil {
 		payload["top_p"] = *downstream.TopP
+	}
+	if downstream.Stream {
+		payload["stream"] = true
 	}
 
 	body, err := json.Marshal(payload)
@@ -166,6 +166,92 @@ func (a *AnthropicNative) ParseResponse(ctx context.Context, in ResponseInput) (
 	}
 	normalized.Body = body
 	return normalized, nil
+}
+
+func (a *AnthropicNative) NormalizeStreamChunk(ctx context.Context, in StreamChunkInput) (*NormalizedStreamChunk, error) {
+	_ = ctx
+	if in.State == nil {
+		return nil, fmt.Errorf("stream state is required")
+	}
+	if in.State.Created == 0 {
+		in.State.Created = time.Now().Unix()
+	}
+
+	var event anthropicStreamEvent
+	if err := json.Unmarshal(in.Data, &event); err != nil {
+		return nil, fmt.Errorf("decode anthropic stream chunk: %w", err)
+	}
+
+	model := firstNonEmpty(in.RequestedModel, in.UpstreamModel)
+	result := &NormalizedStreamChunk{}
+	switch event.Type {
+	case "message_start":
+		if event.Message != nil {
+			in.State.ID = firstNonEmpty(event.Message.ID, in.State.ID, "chatcmpl-anthropic")
+			if model == "" {
+				model = event.Message.Model
+			}
+			if event.Message.Usage.InputTokens > 0 {
+				in.State.PromptTokens = event.Message.Usage.InputTokens
+			}
+			if event.Message.Usage.OutputTokens > 0 {
+				in.State.CompletionTokens = event.Message.Usage.OutputTokens
+			}
+		}
+		result.Data = marshalOpenAIStreamChunk(in.State, model, map[string]interface{}{"role": "assistant"}, nil)
+	case "content_block_start":
+		if event.ContentBlock == nil || event.ContentBlock.Type != "text" || event.ContentBlock.Text == "" {
+			result.Skip = true
+			return result, nil
+		}
+		result.TextDelta = event.ContentBlock.Text
+		result.Data = marshalOpenAIStreamChunk(in.State, model, map[string]interface{}{"content": event.ContentBlock.Text}, nil)
+	case "content_block_delta":
+		if event.Delta == nil || event.Delta.Type != "text_delta" || event.Delta.Text == "" {
+			result.Skip = true
+			return result, nil
+		}
+		result.TextDelta = event.Delta.Text
+		result.Data = marshalOpenAIStreamChunk(in.State, model, map[string]interface{}{"content": event.Delta.Text}, nil)
+	case "message_delta":
+		if event.Usage != nil {
+			in.State.CompletionTokens = event.Usage.OutputTokens
+			if in.State.PromptTokens > 0 {
+				result.HasUsage = true
+				result.Usage = Usage{
+					PromptTokens:     in.State.PromptTokens,
+					CompletionTokens: in.State.CompletionTokens,
+					TotalTokens:      in.State.PromptTokens + in.State.CompletionTokens,
+					Source:           metering.UsageSourceUpstream,
+				}
+			}
+		}
+		if event.Delta == nil || event.Delta.StopReason == "" {
+			result.Skip = true
+			return result, nil
+		}
+		result.Data = marshalOpenAIStreamChunk(in.State, model, map[string]interface{}{}, normalizeAnthropicStopReason(event.Delta.StopReason))
+	case "message_stop":
+		result.Skip = true
+		result.Done = true
+	case "ping":
+		result.Skip = true
+	case "error":
+		body, err := json.Marshal(map[string]interface{}{
+			"error": map[string]interface{}{
+				"type":    firstNonEmpty(event.Error.Type, "upstream_error"),
+				"message": firstNonEmpty(event.Error.Message, "Anthropic stream error"),
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		result.Data = body
+		result.Done = true
+	default:
+		result.Skip = true
+	}
+	return result, nil
 }
 
 func (a *AnthropicNative) Test(ctx context.Context, in TestInput) (*TestResult, error) {
@@ -356,6 +442,60 @@ type anthropicMessageResponse struct {
 		InputTokens  int `json:"input_tokens"`
 		OutputTokens int `json:"output_tokens"`
 	} `json:"usage"`
+}
+
+type anthropicStreamEvent struct {
+	Type    string `json:"type"`
+	Message *struct {
+		ID    string `json:"id"`
+		Model string `json:"model"`
+		Usage struct {
+			InputTokens  int `json:"input_tokens"`
+			OutputTokens int `json:"output_tokens"`
+		} `json:"usage"`
+	} `json:"message,omitempty"`
+	ContentBlock *struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	} `json:"content_block,omitempty"`
+	Delta *struct {
+		Type       string `json:"type"`
+		Text       string `json:"text"`
+		StopReason string `json:"stop_reason"`
+	} `json:"delta,omitempty"`
+	Usage *struct {
+		InputTokens  int `json:"input_tokens"`
+		OutputTokens int `json:"output_tokens"`
+	} `json:"usage,omitempty"`
+	Error struct {
+		Type    string `json:"type"`
+		Message string `json:"message"`
+	} `json:"error,omitempty"`
+}
+
+func marshalOpenAIStreamChunk(state *StreamState, model string, delta map[string]interface{}, finishReason interface{}) []byte {
+	id := "chatcmpl-anthropic"
+	created := time.Now().Unix()
+	if state != nil {
+		id = firstNonEmpty(state.ID, id)
+		if state.Created > 0 {
+			created = state.Created
+		}
+	}
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":      id,
+		"object":  "chat.completion.chunk",
+		"created": created,
+		"model":   model,
+		"choices": []map[string]interface{}{
+			{
+				"index":         0,
+				"delta":         delta,
+				"finish_reason": finishReason,
+			},
+		},
+	})
+	return body
 }
 
 func joinAnthropicText(content []struct {

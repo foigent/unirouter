@@ -85,6 +85,34 @@ type NormalizedResponse struct {
 	Error      *NormalizedError
 }
 
+type StreamState struct {
+	ID               string
+	Created          int64
+	PromptTokens     int
+	CompletionTokens int
+}
+
+type StreamChunkInput struct {
+	Data           []byte
+	Channel        models.Channel
+	RequestedModel string
+	UpstreamModel  string
+	State          *StreamState
+}
+
+type NormalizedStreamChunk struct {
+	Data      []byte
+	Skip      bool
+	Done      bool
+	Usage     Usage
+	HasUsage  bool
+	TextDelta string
+}
+
+type StreamNormalizer interface {
+	NormalizeStreamChunk(ctx context.Context, in StreamChunkInput) (*NormalizedStreamChunk, error)
+}
+
 type HTTPDoer interface {
 	Do(req *http.Request) (*http.Response, error)
 }

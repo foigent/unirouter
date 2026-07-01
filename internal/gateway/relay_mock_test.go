@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/filter"
@@ -783,7 +784,7 @@ func TestRelayStreamRequest_NormalFlow(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-1", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", []Message{{Role: "user", Content: "Hi"}}, logger.New(logger.Fields{RequestID: "req-stream-1", OrgID: 1}), time.Now(), 1000)
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-1", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", []Message{{Role: "user", Content: "Hi"}}, logger.New(logger.Fields{RequestID: "req-stream-1", OrgID: 1}), time.Now(), 1000, nil)
 
 	if !settleCalled {
 		t.Fatal("expected settle to be called")
@@ -854,10 +855,69 @@ func TestRelayStreamRequest_NoUpstreamUsage(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-2", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", []Message{{Role: "user", Content: "Hello"}}, logger.New(logger.Fields{RequestID: "req-stream-2", OrgID: 1}), time.Now(), 1000)
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-2", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", []Message{{Role: "user", Content: "Hello"}}, logger.New(logger.Fields{RequestID: "req-stream-2", OrgID: 1}), time.Now(), 1000, nil)
 
 	if !settleCalled {
 		t.Fatal("expected settle to be called")
+	}
+}
+
+func TestRelayStreamRequest_AnthropicNativeMissingUsageFallsBack(t *testing.T) {
+	settleCalled := false
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
+					*dest[0].(*int) = 10000
+					return nil
+				},
+			}
+		},
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	b := &mockBilling{
+		settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
+			settleCalled = true
+			if req.UsageSource != metering.UsageSourceCounterV2 {
+				t.Fatalf("expected usageSource=counter_v2 for missing Anthropic stream usage, got %s", req.UsageSource)
+			}
+			if req.PromptTokens <= 0 || req.CompletionTokens <= 0 {
+				t.Fatalf("expected fallback prompt/completion tokens, got %+v", req)
+			}
+			return &billing.SettleResult{SettleID: 1, Success: true}, nil
+		},
+	}
+	relay := newTestRelay(db, b)
+
+	sseStream := "event: message_start\n" +
+		"data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_stream\",\"usage\":{\"input_tokens\":11,\"output_tokens\":0}}}\n\n" +
+		"event: content_block_delta\n" +
+		"data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"fallback text\"}}\n\n" +
+		"event: message_stop\n" +
+		"data: {\"type\":\"message_stop\"}\n\n"
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(sseStream)),
+	}
+	route := &RouteResult{
+		Channel:     models.Channel{ID: 1, Name: "anthropic", Provider: "anthropic", AdapterType: adapters.TypeAnthropicNative},
+		MappedModel: "claude-3-5-sonnet-20241022",
+	}
+
+	rec := httptest.NewRecorder()
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-ant-missing-usage", 1, 1, "company-chat", "company-chat", "127.0.0.1", []Message{{Role: "user", Content: "Hello"}}, logger.New(logger.Fields{RequestID: "req-ant-missing-usage", OrgID: 1}), time.Now(), 1000, adapters.NewAnthropicNative())
+
+	if !settleCalled {
+		t.Fatal("expected settle to be called")
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "message_start") || strings.Contains(body, "content_block_delta") {
+		t.Fatalf("expected Anthropic events to be normalized away, got %s", body)
+	}
+	if !strings.Contains(body, `"content":"fallback text"`) {
+		t.Fatalf("expected normalized fallback content chunk, got %s", body)
 	}
 }
 
@@ -903,7 +963,7 @@ func TestRelayStreamRequest_SettleError(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-3", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-3", OrgID: 1}), time.Now(), 1000)
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-3", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-3", OrgID: 1}), time.Now(), 1000, nil)
 
 	if settleCalls != billingSettleMaxAttempts {
 		t.Fatalf("expected %d settle attempts, got %d", billingSettleMaxAttempts, settleCalls)
@@ -960,7 +1020,7 @@ func TestRelayStreamRequest_UpstreamUsageSource(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-4", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-4", OrgID: 1}), time.Now(), 1000)
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-4", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-4", OrgID: 1}), time.Now(), 1000, nil)
 }
 
 func TestRelayStreamRequest_EmptyStream(t *testing.T) {
@@ -995,7 +1055,7 @@ func TestRelayStreamRequest_EmptyStream(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-5", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-5", OrgID: 1}), time.Now(), 1000)
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-5", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-5", OrgID: 1}), time.Now(), 1000, nil)
 
 	body := rec.Body.String()
 	if !strings.Contains(body, "data: [DONE]") {
@@ -1035,7 +1095,7 @@ func TestRelayStreamRequest_UnirouteExtension(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-6", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-6", OrgID: 1}), time.Now(), 1000)
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-6", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-6", OrgID: 1}), time.Now(), 1000, nil)
 
 	body := rec.Body.String()
 	// Extension data (request_id, cost) should be present in output
@@ -1363,6 +1423,140 @@ func TestHandleChatCompletion_AnthropicNativeNonStream(t *testing.T) {
 	}
 	if _, ok := resp["_uniroute"].(map[string]interface{}); !ok {
 		t.Fatalf("expected _uniroute extension, got %v", resp)
+	}
+}
+
+func TestHandleChatCompletion_AnthropicNativeStream(t *testing.T) {
+	var upstreamPath string
+	var upstreamStream bool
+	var upstreamAPIKey string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamPath = r.URL.Path
+		upstreamAPIKey = r.Header.Get("x-api-key")
+		var body struct {
+			Model  string `json:"model"`
+			Stream bool   `json:"stream"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		upstreamStream = body.Stream
+		if body.Model != "claude-3-5-sonnet-20241022" {
+			t.Fatalf("expected mapped anthropic model, got %q", body.Model)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(
+			"event: message_start\n" +
+				"data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_stream\",\"model\":\"claude-3-5-sonnet-20241022\",\"usage\":{\"input_tokens\":11,\"output_tokens\":0}}}\n\n" +
+				"event: content_block_delta\n" +
+				"data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hi\"}}\n\n" +
+				"event: content_block_delta\n" +
+				"data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\" there\"}}\n\n" +
+				"event: message_delta\n" +
+				"data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":6}}\n\n" +
+				"event: message_stop\n" +
+				"data: {\"type\":\"message_stop\"}\n\n",
+		))
+	}))
+	defer upstream.Close()
+
+	encKey := []byte("0123456789abcdef01234567")
+	encryptedKey, err := auth.EncryptKey([]byte("sk-ant-stream"), encKey)
+	if err != nil {
+		t.Fatalf("encrypt key: %v", err)
+	}
+	var settleReq billing.SettleRequest
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
+					func(dest ...any) error {
+						*dest[0].(*int64) = 1
+						*dest[1].(*string) = "anthropic-stream"
+						*dest[2].(*string) = "anthropic"
+						*dest[3].(*string) = upstream.URL
+						*dest[4].(*string) = "company-chat"
+						*dest[5].(*json.RawMessage) = json.RawMessage(`{"company-chat":"claude-3-5-sonnet-20241022"}`)
+						*dest[6].(*string) = "anthropic_native"
+						*dest[7].(*json.RawMessage) = json.RawMessage(`{"anthropic_version":"2023-06-01"}`)
+						*dest[8].(*int) = 200000
+						*dest[9].(*int) = 4096
+						*dest[10].(*int) = 1
+						*dest[11].(*string) = "active"
+						*dest[12].(*string) = "healthy"
+						*dest[13].(**time.Time) = nil
+						*dest[14].(*int) = 0
+						*dest[15].(*int64) = 1
+						*dest[16].(*string) = encryptedKey
+						*dest[17].(*string) = "active"
+						*dest[18].(**time.Time) = nil
+						return nil
+					},
+				},
+			}, nil
+		},
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	b := &mockBilling{
+		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
+			return &billing.FreezeResult{FreezeID: 1, Amount: 100, NewBalance: 900, Success: true}, nil
+		},
+		settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
+			settleReq = req
+			return &billing.SettleResult{SettleID: 1, Refund: 0, NewBalance: 900, Success: true}, nil
+		},
+	}
+	relay := &Relay{db: db, router: NewRouter(db), billing: b, encKey: encKey}
+
+	body := `{"model":"company-chat","stream":true,"messages":[{"role":"user","content":"hello"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	ctx := context.WithValue(req.Context(), middleware.CtxOrgID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxRequestID, "req-anthropic-stream")
+	ctx = context.WithValue(ctx, middleware.CtxAPIKey, &models.ApiKey{ID: 1, OrgID: 1, Status: "active"})
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	relay.HandleChatCompletion(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if upstreamPath != "/v1/messages" {
+		t.Fatalf("expected anthropic /v1/messages, got %s", upstreamPath)
+	}
+	if !upstreamStream {
+		t.Fatal("expected upstream anthropic stream=true")
+	}
+	if upstreamAPIKey != "sk-ant-stream" {
+		t.Fatalf("expected x-api-key from decrypted key, got %q", upstreamAPIKey)
+	}
+	if settleReq.PromptTokens != 11 || settleReq.CompletionTokens != 6 || settleReq.UsageSource != metering.UsageSourceUpstream {
+		t.Fatalf("unexpected settle request: %+v", settleReq)
+	}
+
+	responseBody := rec.Body.String()
+	if strings.Contains(responseBody, "message_start") || strings.Contains(responseBody, "content_block_delta") {
+		t.Fatalf("expected Anthropic event types to be normalized away, got %s", responseBody)
+	}
+	if !strings.Contains(responseBody, `"object":"chat.completion.chunk"`) {
+		t.Fatalf("expected OpenAI-compatible stream chunks, got %s", responseBody)
+	}
+	if !strings.Contains(responseBody, `"role":"assistant"`) || !strings.Contains(responseBody, `"content":"Hi"`) || !strings.Contains(responseBody, `"content":" there"`) {
+		t.Fatalf("expected translated role/content chunks, got %s", responseBody)
+	}
+	if !strings.Contains(responseBody, `"_uniroute"`) {
+		t.Fatalf("expected _uniroute final chunk, got %s", responseBody)
+	}
+	if strings.Count(responseBody, "data: [DONE]") != 1 {
+		t.Fatalf("expected exactly one [DONE], got %d in %s", strings.Count(responseBody, "data: [DONE]"), responseBody)
+	}
+	unirouteIndex := strings.Index(responseBody, `"_uniroute"`)
+	doneIndex := strings.Index(responseBody, "data: [DONE]")
+	if doneIndex == -1 || unirouteIndex == -1 || unirouteIndex > doneIndex {
+		t.Fatalf("expected _uniroute before [DONE], got %s", responseBody)
 	}
 }
 

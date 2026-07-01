@@ -1,35 +1,34 @@
-# VERIFY-RESULT.md — PRD2 Batch 12 验收结果
+# VERIFY-RESULT.md — PRD2 Batch 13 验收结果
 
 **验收者：** OpenClaw Canary
 **日期：** 2026-07-02
-**对应轮次：** PRD2 Batch 12 Anthropic Native Adapter Proof
+**对应轮次：** PRD2 Batch 13 Anthropic Native Stream Translation
 
 ## 逐条结果
 
-- Fix #1: **PASS** — `anthropic_native` adapter 已注册到 `DefaultRegistry()`。`BuildRequest()` 正确将 OpenAI chat body 转换为 Anthropic `/v1/messages` body（system 合并、user/assistant 转换、max_tokens fallback、x-api-key header）。`ParseResponse()` 将 Anthropic 响应转回 OpenAI-compatible body，usage 映射正确。`stream:true` 和 embeddings 返回 unsupported error。10 个 adapter 测试全部通过。
-- Fix #2: **PASS** — relay 非流式成功响应使用 `normalized.Body` 注入 `_uniroute`。非 200 通过 `adapter.ClassifyHTTPStatus()` 分类 FailureKind。`TestHandleChatCompletion_AnthropicNativeNonStream` 验证下游 OpenAI-compatible 请求 → 上游 Anthropic `/v1/messages` → 响应转回 OpenAI-compatible + `_uniroute`。`TestHandleChatCompletion_UpstreamError_AllFail` 验证 500 错误分类。3 个 gateway 测试全部通过。
-- Fix #3: **PASS** — `CreateChannel` 接受 `adapter_type=anthropic_native` 并持久化 `adapter_config`。无效 adapter type 返回错误。Channel test 使用 Anthropic native 时调用 `/v1/messages`，response 归一化为 OpenAI-compatible，`curl_example` 使用 `x-api-key`。5 个 admin 测试全部通过。
-- Fix #4: **PASS** — `ChannelsPage.tsx` 增加 Adapter 列、Adapter Type select（openai_compatible/anthropic_native）、Adapter Config JSON textarea。非法 JSON 拦截。build 通过。
-- Fix #5: **PASS** — `CURRENT-STATUS.md` 标记 Batch 12 "fixed locally; awaiting Canary"。`PRD2-ACCEPTANCE-MATRIX.md` Native adapter proof 行从 Planned 推进到 "Implemented not accepted"，保留 Canary/stream/real upstream 缺口。adapter tech-ref 记录当前能力和边界。文档 grep 确认一致性。
+- Fix #1: **PASS** — `StreamNormalizer` 可选接口已添加到 `types.go`，含 `StreamState`、`StreamChunkInput`、`NormalizedStreamChunk`。现有 `openai_compatible` adapter 不受影响。Gateway 仅在 adapter 实现 `StreamNormalizer` 时进入 native stream 分支。`TestAnthropicNativeBuildRequest_ConvertsStreamFlag` 验证 stream 转换逻辑。
+- Fix #2: **PASS** — `BuildRequest()` 不再拒绝 `stream:true`，正确写入 Anthropic `/v1/messages` body。embeddings 仍明确 unsupported。`TestAnthropicNativeBuildRequest_ConvertsStreamFlag` 和 `TestAnthropicNativeBuildRequest_RejectsUnsupportedEndpoints` 通过。
+- Fix #3: **PASS** — Anthropic SSE 事件转换正确：`message_start` → role chunk，`content_block_delta` → content delta，`message_delta.stop_reason` → finish chunk，`message_stop` 结束但不透出 Anthropic event，`ping` 跳过，`error` → error data chunk。usage 映射 `input_tokens/output_tokens` → `prompt_tokens/completion_tokens`。missing usage fallback 正确。`TestAnthropicNativeNormalizeStreamChunk` 和 `TestAnthropicNativeNormalizeStreamChunk_MissingUsageAllowsFallback` 通过。
+- Fix #4: **PASS** — `relayStreamRequest()` 对 `StreamNormalizer` adapter 跳过 Anthropic `event:`/空行/comment，只处理 `data:` payload，输出 OpenAI-compatible SSE chunk。复用现有 balance check、token counter、billing settle、call log、`_uniroute`、`[DONE]`。9 个 gateway 测试全部通过（含 `TestHandleChatCompletion_AnthropicNativeStream`、`TestRelayStreamRequest_NormalFlow`、settle error、empty stream、uniroute extension 等）。
+- Fix #5: **PASS** — `CURRENT-STATUS.md` 标记 Batch 13 "fixed locally; awaiting Canary"，Batch 12 已更新为 Canary PASS + Sentinel merged (24e0abf) + Atlas completed。`PRD2-ACCEPTANCE-MATRIX.md` Batch 13 native stream 写为本地证据，不标 E2E/Production。adapter tech-ref 记录 non-stream + stream proof 及边界。
 
 ## 命令结果
 
 | 命令 | 结果 | 备注 |
 |------|------|------|
-| `go test ./internal/adapters -run 'TestAnthropicNative\|TestDefaultRegistryIncludesAnthropicNative\|TestOpenAICompatible' -v` | ✅ PASS | 10 tests, 0.510s |
-| `go test ./internal/gateway -run 'TestHandleChatCompletion_AnthropicNativeNonStream\|TestHandleChatCompletion_Success_NonStream\|TestHandleChatCompletion_UpstreamError_AllFail' -v` | ✅ PASS | 3 tests, 0.565s |
-| `go test ./internal/admin -run 'TestCreateChannel_AcceptsAnthropicNativeAdapterType\|TestCreateChannel_InvalidAdapterType\|TestUpdateChannel_InvalidAdapterType\|TestTestChannel_AnthropicNativeUsesMessagesEndpoint\|TestTestChannel_Upstream401IsFailureAndUsesSelectedModel' -v` | ✅ PASS | 5 tests, 0.797s |
+| `go test ./internal/adapters -run 'TestAnthropicNative' -v` | ✅ PASS | 8 tests, 0.806s |
+| `go test ./internal/gateway -run 'TestRelayStreamRequest\|TestHandleChatCompletion_AnthropicNative' -v` | ✅ PASS | 9 tests, 1.018s |
 | `go test ./internal/admin ./internal/adapters ./internal/gateway` | ✅ PASS | 3 packages |
 | `go test ./... -count=1` | ✅ PASS | 19 packages, 0 FAIL |
-| `npm --prefix frontend test` | ✅ PASS | 9 files, 64 tests, 10.10s |
-| `npm --prefix frontend run build` | ✅ PASS | 4.55s, large chunk warning（既有） |
-| docs grep command | ✅ PASS | Batch 12/anthropic_native 引用一致 |
+| `npm --prefix frontend test` | ✅ PASS | 9 files, 64 tests, 10.19s |
+| `npm --prefix frontend run build` | ✅ PASS | 4.48s, large chunk warning（既有） |
+| docs grep command | ✅ PASS | Batch 12/13 引用一致 |
 | `git diff --check` | ✅ PASS | exit 0 |
 | `git diff --check -- $(git ls-files --others --exclude-standard)` | ✅ PASS | exit 0 |
 
 ## 浏览器烟测
 
-- **SKIP** — 当前环境无浏览器自动化能力。FIX-SIGNAL 中 5 项浏览器建议留给后续验证。
+- **SKIP** — 纯后端 stream batch，浏览器烟测非必需。FIX-SIGNAL 未要求。
 
 ## 新发现
 
@@ -38,6 +37,6 @@
 
 ## 结论
 
-**PASS (5/5)**。Batch 12 可交给 Sentinel 进行 commit/push/PR 操作。无 Batch 13 blocker。
+**PASS (5/5)**。Batch 13 可交给 Sentinel 进行 commit/push/PR 操作。无 Batch 14 blocker。
 
-`anthropic_native` adapter 实现正确：OpenAI-compatible 下游 → Anthropic Messages API 上游 → 响应归一化回 OpenAI-compatible。stream:true 和 embeddings 明确拒绝。adapter 驱动的 failure classification 工作正常。admin UI 已暴露 adapter 配置入口。文档更新一致且未过度声称（native stream、real upstream E2E 标记为后续 batch）。
+`anthropic_native` stream 翻译实现正确：下游 OpenAI-compatible `stream:true` → Anthropic `/v1/messages` native stream → SSE 事件转 OpenAI-compatible `chat.completion.chunk` → billing settle 使用 upstream usage。`StreamNormalizer` 可选接口设计合理，不影响现有 `openai_compatible` adapter。文档更新一致且未过度声称。
