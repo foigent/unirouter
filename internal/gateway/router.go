@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/models"
 )
@@ -30,6 +31,7 @@ type RouteResult struct {
 }
 
 const channelQuery = `SELECT c.id, c.name, c.provider, c.base_url, c.models, c.model_mapping,
+        COALESCE(c.adapter_type, 'openai_compatible'), COALESCE(c.adapter_config, '{}'::jsonb),
         c.max_context, c.default_max_output, c.priority, c.status,
         c.circuit_state, c.half_open_until, c.fail_count,
         ck.id, ck.key_enc, ck.status, ck.cooldown_until
@@ -57,7 +59,7 @@ func (r *Router) Route(ctx context.Context, modelName string) (*RouteResult, err
 		var ck models.ChannelKey
 		err := rows.Scan(
 			&ch.ID, &ch.Name, &ch.Provider, &ch.BaseURL, &ch.Models, &ch.ModelMapping,
-			&ch.MaxContext, &ch.DefaultMaxOutput, &ch.Priority, &ch.Status,
+			&ch.AdapterType, &ch.AdapterConfig, &ch.MaxContext, &ch.DefaultMaxOutput, &ch.Priority, &ch.Status,
 			&ch.CircuitState, &ch.HalfOpenUntil, &ch.FailCount,
 			&ck.ID, &ck.KeyEnc, &ck.Status, &ck.CooldownUntil,
 		)
@@ -71,6 +73,7 @@ func (r *Router) Route(ctx context.Context, modelName string) (*RouteResult, err
 		}
 
 		mappedModel := resolveModelMapping(modelName, ch.ModelMapping)
+		ch.AdapterType = adapters.NormalizeType(ch.AdapterType)
 		// Update last_used_at for round-robin
 		_, _ = r.db.Exec(ctx, `UPDATE channel_keys SET last_used_at = NOW() WHERE id = $1`, ck.ID)
 
@@ -100,7 +103,7 @@ func (r *Router) RouteAll(ctx context.Context, modelName string) ([]RouteResult,
 		var ck models.ChannelKey
 		err := rows.Scan(
 			&ch.ID, &ch.Name, &ch.Provider, &ch.BaseURL, &ch.Models, &ch.ModelMapping,
-			&ch.MaxContext, &ch.DefaultMaxOutput, &ch.Priority, &ch.Status,
+			&ch.AdapterType, &ch.AdapterConfig, &ch.MaxContext, &ch.DefaultMaxOutput, &ch.Priority, &ch.Status,
 			&ch.CircuitState, &ch.HalfOpenUntil, &ch.FailCount,
 			&ck.ID, &ck.KeyEnc, &ck.Status, &ck.CooldownUntil,
 		)
@@ -114,6 +117,7 @@ func (r *Router) RouteAll(ctx context.Context, modelName string) ([]RouteResult,
 		}
 
 		mappedModel := resolveModelMapping(modelName, ch.ModelMapping)
+		ch.AdapterType = adapters.NormalizeType(ch.AdapterType)
 		results = append(results, RouteResult{
 			Channel:     ch,
 			ChannelKey:  ck,

@@ -919,12 +919,14 @@ func TestListChannels_Success(t *testing.T) {
 						*dest[2].(*string) = "openai"                 // provider
 						*dest[3].(*string) = "https://api.openai.com" // base_url
 						*dest[4].(*string) = "gpt-4o"                 // models
-						*dest[5].(*int) = 100                         // priority
-						*dest[6].(*int) = 5                           // degradation_threshold
-						*dest[7].(*string) = "active"                 // status
-						*dest[8].(*string) = "healthy"                // circuit_state
-						*dest[9].(*int) = 0                           // fail_count
-						*dest[10].(*time.Time) = now                  // created_at
+						*dest[5].(*string) = "openai_compatible"      // adapter_type
+						*dest[6].(*json.RawMessage) = json.RawMessage(`{}`)
+						*dest[7].(*int) = 100           // priority
+						*dest[8].(*int) = 5             // degradation_threshold
+						*dest[9].(*string) = "active"   // status
+						*dest[10].(*string) = "healthy" // circuit_state
+						*dest[11].(*int) = 0            // fail_count
+						*dest[12].(*time.Time) = now    // created_at
 						return nil
 					},
 				},
@@ -1514,6 +1516,8 @@ func TestTestChannel_Upstream401IsFailureAndUsesSelectedModel(t *testing.T) {
 					case 1:
 						*dest[0].(*string) = upstream.URL
 						*dest[1].(*string) = "mimo-v2.5"
+						*dest[2].(*string) = "openai_compatible"
+						*dest[3].(*json.RawMessage) = json.RawMessage(`{}`)
 					case 2:
 						*dest[0].(*string) = keyEnc
 					default:
@@ -1901,12 +1905,14 @@ func TestGetChannel_Success(t *testing.T) {
 					*dest[2].(*string) = "openai"
 					*dest[3].(*string) = "https://api.openai.com"
 					*dest[4].(*string) = "gpt-4o"
-					*dest[5].(*int) = 100
-					*dest[6].(*int) = 5
-					*dest[7].(*string) = "active"
-					*dest[8].(*string) = "healthy"
-					*dest[9].(*int) = 0
-					*dest[10].(*time.Time) = now
+					*dest[5].(*string) = "openai_compatible"
+					*dest[6].(*json.RawMessage) = json.RawMessage(`{}`)
+					*dest[7].(*int) = 100
+					*dest[8].(*int) = 5
+					*dest[9].(*string) = "active"
+					*dest[10].(*string) = "healthy"
+					*dest[11].(*int) = 0
+					*dest[12].(*time.Time) = now
 					return nil
 				},
 			}

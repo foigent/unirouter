@@ -1,0 +1,117 @@
+package adapters
+
+import (
+	"context"
+	"net/http"
+
+	"github.com/uniroute/unirouter/internal/models"
+)
+
+const (
+	TypeOpenAICompatible = "openai_compatible"
+)
+
+type Endpoint string
+
+const (
+	EndpointChatCompletions Endpoint = "/v1/chat/completions"
+	EndpointEmbeddings      Endpoint = "/v1/embeddings"
+)
+
+type FailureKind string
+
+const (
+	FailureNone          FailureKind = ""
+	FailureClientRequest FailureKind = "client_request"
+	FailureAuth          FailureKind = "auth"
+	FailureRateLimit     FailureKind = "rate_limit"
+	FailureChannel       FailureKind = "channel_failure"
+	FailureUnknown       FailureKind = "unknown"
+)
+
+type Usage struct {
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
+	Source           string
+}
+
+type ProviderMeta struct {
+	Provider       string
+	ChannelID      int64
+	ChannelName    string
+	AdapterType    string
+	RequestedModel string
+	UpstreamModel  string
+	TTFTMillis     int
+}
+
+type NormalizedError struct {
+	HTTPStatus  int
+	Category    string
+	Code        string
+	Message     string
+	Retryable   bool
+	FailureKind FailureKind
+}
+
+type RequestInput struct {
+	Endpoint       Endpoint
+	DownstreamBody []byte
+	RequestedModel string
+	MappedModel    string
+	Channel        models.Channel
+	APIKey         string
+	RequestID      string
+}
+
+type ResponseInput struct {
+	StatusCode     int
+	Header         http.Header
+	Body           []byte
+	Channel        models.Channel
+	RequestedModel string
+	UpstreamModel  string
+	TTFTMillis     int
+}
+
+type NormalizedResponse struct {
+	StatusCode int
+	Header     http.Header
+	Body       []byte
+	Usage      Usage
+	Meta       ProviderMeta
+	Error      *NormalizedError
+}
+
+type HTTPDoer interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
+type TestInput struct {
+	Channel models.Channel
+	APIKey  string
+	Model   string
+	Prompt  string
+	Client  HTTPDoer
+}
+
+type TestResult struct {
+	Success    bool
+	Status     string
+	StatusCode int
+	LatencyMs  int64
+	Model      string
+	TokensUsed int
+	Body       []byte
+	Error      string
+	RequestURL string
+}
+
+type Adapter interface {
+	Type() string
+	BuildRequest(ctx context.Context, in RequestInput) (*http.Request, error)
+	ParseResponse(ctx context.Context, in ResponseInput) (*NormalizedResponse, error)
+	Test(ctx context.Context, in TestInput) (*TestResult, error)
+	ClassifyHTTPStatus(statusCode int, body []byte) *NormalizedError
+}
