@@ -122,26 +122,63 @@ Environment:
 - Frontend / nginx base: `http://8.130.18.85:3000`
 - Admin user: `codex-test`
 - Test model requested: `mimo-v2.5`
-- Verified: 2026-07-01
+- Verified: 2026-07-01, rerun after gateway `/v1` fix deployment
 
 Results:
 
 - Admin login: PASS, returned JWT.
 - `RUN_ADMIN_READ_SMOKE=1 scripts/prd1-cloud-smoke.sh`: PASS.
 - `GET /v1/models` with the dedicated UniRouter test API key: PASS, returned 200 with 3 models including `mimo-v2.5`.
-- `POST /v1/chat/completions` with model `mimo-v2.5`: FAIL, returned 502 with `All upstream channels failed (last status: 404)`.
-- Wallet before/after the failed E2E attempt was unchanged: `balance_cents=316`, `total_spent_cents=116`.
-- Latest call logs include failed `mimo-v2.5` rows with `status_code=404` and `cost_cents=0`.
+- `POST /v1/chat/completions` with model `mimo-v2.5`: FAIL, returned 502 with `All upstream channels failed (last status: 401)`.
+- `POST /v1/chat/completions` with `stream=true`: FAIL, returned 503 `No available channel for model: mimo-v2.5` after the 401 path put the invalid channel key on cooldown.
+- Admin channel test for channel 8 `Mimo Token Plan` / `mimo-v2.5`: PASS for corrected semantics, returned `success=false`, `status_code=401`, `error=upstream returned HTTP 401`, and upstream body `Invalid API Key`.
+- Channel test curl example no longer contains `/v1/v1/`, confirming the gateway/admin path normalization fix is deployed.
+- `POST /v1/chat/completions` with model `moonshot-v1-8k`: PASS, returned 200, response content `pong`, usage `prompt_tokens=12`, `completion_tokens=2`, `total_tokens=14`, `_uniroute.cost.charged=1`, provider/channel `kimi`.
+- `POST /v1/chat/completions` with `stream=true` and model `moonshot-v1-8k`: PARTIAL, returned 200 with SSE usage and `pong`, but deployed cloud sent `[DONE]` before the UniRouter metadata chunk and the metadata was not wrapped in `_uniroute`.
+- Wallet evidence: failed Mimo calls cost `0`; successful Moonshot non-stream and stream calls each cost `1` cent.
+- Latest call logs include failed `mimo-v2.5` rows with `status_code=401` and `status_code=503`, both with `cost_cents=0`, and successful `moonshot-v1-8k` rows with `status_code=200`, `cost_cents=1`.
 
-Root cause found locally:
+Conclusion:
 
 - Cloud channel `Mimo Token Plan` has `base_url = https://token-plan-cn.xiaomimimo.com/v1`.
-- Current deployed relay code appends `/v1/chat/completions` unconditionally, producing an invalid `/v1/v1/chat/completions` path.
-- Codex fixed this locally with `upstreamEndpoint()` in `internal/gateway/relay.go`; redeploy is required before repeating provider E2E and load tests.
+- The previous `/v1/v1/chat/completions` 404 blocker is resolved in cloud.
+- Current blocker is provider credential/configuration: the active channel key for channel 8 is rejected by upstream as `Invalid API Key`.
+- The subsequent stream 503 is explained by the router excluding keys with `cooldown_until > NOW()` after a 401/403 auth failure.
+- The real-provider happy path works through `moonshot-v1-8k` on the `kimi` channel.
+- Codex fixed the stream metadata ordering locally so the relay now suppresses upstream `[DONE]`, emits a final chunk containing both `usage` and `_uniroute`, then emits one terminal `[DONE]`.
 
 Safety decision:
 
-- Codex did not run the authorized 20 VU / 60s load test because the baseline provider E2E path failed. Running load at that point would only amplify known 502/404 failures; the failed single-call path did not spend wallet balance.
+- Codex did not run load against the invalid Mimo route. Load testing used the successful `moonshot-v1-8k` route.
+
+## Alibaba Cloud 20 VU / 60s Load Attempt
+
+Environment:
+
+- Frontend / nginx base: `http://8.130.18.85:3000`
+- Model: `moonshot-v1-8k`
+- Tool: `k6 v2.1.0`
+- Script: `infra/loadtest/k6-prd1-acceptance.js`
+- Budget guard: max tokens `8`, expected cost `1` cent per successful request
+
+Run 1:
+
+- Shape: 20 VU / 60s, `SLEEP_SECONDS=12`, no initial stagger.
+- Result: FAIL. `requests=100`, `successes=3`, `error_rate=0.97`, `charged_cents=3`, `tokens_total=42`, `p95_ms=336.17`.
+- Failure evidence: backend metrics showed `/v1/chat/completions` status counts including `429`, `503`, `502`, and `402`; wallet spent only 3 cents.
+- Cause: first burst exceeded the API key/provider capacity and put the channel key into cooldown.
+
+Run 2:
+
+- Shape: 20 VU / 60s, `STAGGER_SECONDS=20`, `SLEEP_SECONDS=25`.
+- Result: FAIL. `requests=50`, `successes=20`, `error_rate=0.60`, `charged_cents=20`, `tokens_total=280`, `p95_ms=640.49`.
+- Wallet moved from `balance_cents=311`, `total_spent_cents=121` to `balance_cents=291`, `total_spent_cents=141`, matching the 20 successful one-cent calls.
+- Failure evidence: Kimi channel key entered cooldown until `2026-07-01T00:52:45.7264Z`; later call-log rows were `503` with `usage_source=no_route` and `cost_cents=0`.
+
+Conclusion:
+
+- The current deployment is safe from uncontrolled spend under this load, but it does not meet a "20 VU / 60s mostly successful requests" acceptance bar.
+- This is primarily a capacity/configuration blocker: the available `kimi` channel key appears to rate-limit quickly, and the current router returns no route while the only usable key is cooling down.
 
 ## Code Fixes Completed
 

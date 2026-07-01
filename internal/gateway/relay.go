@@ -426,13 +426,19 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			ttftMs = int(time.Since(streamStart).Milliseconds())
 		}
 
-		// Forward the line as-is
+		if line == "data: [DONE]" {
+			done = true
+			continue
+		}
+
+		// Forward the upstream line as-is, except for [DONE]. UniRouter sends
+		// its final usage/cost extension before the single terminal [DONE].
 		writeMu.Lock()
 		fmt.Fprintf(w, "%s\n", line)
 		writeMu.Unlock()
 		flusher.Flush()
 
-		if !strings.HasPrefix(line, "data: ") || line == "data: [DONE]" {
+		if !strings.HasPrefix(line, "data: ") {
 			continue
 		}
 
@@ -541,7 +547,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	relay.recordRequest(ctx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, model, requestedModel, clientIP,
 		tokenCounter.InputTokens(), tokenCounter.OutputTokens(), actualCost, http.StatusOK, true, usageSource)
 
-	// Send _uniroute extension as a final SSE chunk
+	// Send usage + _uniroute extension as the final data chunk before [DONE].
 	unirouteData := map[string]interface{}{
 		"request_id": requestID,
 		"cost": map[string]interface{}{
@@ -555,9 +561,20 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		"cache_hit": false,
 		"fallback":  false,
 	}
-	unirouteJSON, _ := json.Marshal(unirouteData)
+	finalChunk := map[string]interface{}{
+		"object":  "chat.completion.chunk",
+		"model":   model,
+		"choices": []interface{}{},
+		"usage": map[string]int{
+			"prompt_tokens":     tokenCounter.InputTokens(),
+			"completion_tokens": tokenCounter.OutputTokens(),
+			"total_tokens":      tokenCounter.InputTokens() + tokenCounter.OutputTokens(),
+		},
+		"_uniroute": unirouteData,
+	}
+	finalJSON, _ := json.Marshal(finalChunk)
 	writeMu.Lock()
-	fmt.Fprintf(w, "data: %s\n\n", unirouteJSON)
+	fmt.Fprintf(w, "data: %s\n\n", finalJSON)
 	writeMu.Unlock()
 	flusher.Flush()
 
