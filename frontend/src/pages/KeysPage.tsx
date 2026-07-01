@@ -6,6 +6,21 @@ import { PageHeader, StatusTag, Surface } from '../ui';
 
 const { Text } = Typography;
 
+function fallbackCopyText(text: string) {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.select();
+  try {
+    return document.execCommand('copy');
+  } finally {
+    document.body.removeChild(textarea);
+  }
+}
+
 interface ApiKey {
   id: number;
   name: string;
@@ -74,8 +89,9 @@ export default function KeysPage() {
       }
       closeDrawer();
       load();
-    } catch {
-      Toast.error(editing ? '更新失败' : '创建失败');
+    } catch (err: any) {
+      const message = err?.message ? `：${err.message}` : '';
+      Toast.error(`${editing ? '更新失败' : '创建失败'}${message}`);
     }
   };
 
@@ -114,7 +130,11 @@ export default function KeysPage() {
   const copyCreatedKey = async () => {
     if (!createdKey?.key) return;
     try {
-      await navigator.clipboard.writeText(createdKey.key);
+      if (navigator.clipboard?.writeText && window.isSecureContext) {
+        await navigator.clipboard.writeText(createdKey.key);
+      } else if (!fallbackCopyText(createdKey.key)) {
+        throw new Error('fallback copy failed');
+      }
       Toast.success('已复制完整密钥');
     } catch {
       Toast.error('复制失败，请手动复制');

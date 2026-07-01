@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,6 +30,27 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var reqBody struct {
+		Model  string `json:"model"`
+		Prompt string `json:"prompt"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&reqBody)
+	if strings.TrimSpace(reqBody.Model) == "" {
+		for _, m := range strings.Split(models, ",") {
+			if model := strings.TrimSpace(m); model != "" {
+				reqBody.Model = model
+				break
+			}
+		}
+	}
+	if strings.TrimSpace(reqBody.Model) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "model is required"})
+		return
+	}
+	if strings.TrimSpace(reqBody.Prompt) == "" {
+		reqBody.Prompt = "Hello, this is a test message."
+	}
+
 	// Get first active channel key for this channel
 	var keyEnc string
 	err = h.db.QueryRow(r.Context(),
@@ -51,13 +74,26 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 	// Build the test URL
 	testURL := strings.TrimRight(baseURL, "/")
 	if strings.HasSuffix(testURL, "/v1") {
-		testURL += "/models"
+		testURL += "/chat/completions"
 	} else {
-		testURL += "/v1/models"
+		testURL += "/v1/chat/completions"
+	}
+
+	payload, err := json.Marshal(map[string]interface{}{
+		"model": reqBody.Model,
+		"messages": []map[string]string{
+			{"role": "user", "content": reqBody.Prompt},
+		},
+		"max_tokens":  16,
+		"temperature": 0,
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to build test payload"})
+		return
 	}
 
 	start := time.Now()
-	req, err := http.NewRequestWithContext(r.Context(), "GET", testURL, nil)
+	req, err := http.NewRequestWithContext(r.Context(), "POST", testURL, bytes.NewReader(payload))
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"status": "error", "error": err.Error(),
@@ -65,6 +101,7 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	latency := time.Since(start).Milliseconds()
@@ -80,16 +117,39 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
+	success := resp.StatusCode >= 200 && resp.StatusCode < 300
+	status := "failed"
+	if success {
+		status = "ok"
+	}
+	errorMessage := ""
+	if !success {
+		errorMessage = fmt.Sprintf("upstream returned HTTP %d", resp.StatusCode)
+	}
+
+	var tokensUsed int
+	var parsed struct {
+		Usage struct {
+			TotalTokens int `json:"total_tokens"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal(body, &parsed); err == nil {
+		tokensUsed = parsed.Usage.TotalTokens
+	}
 
 	// Build curl example
-	curlExample := fmt.Sprintf("curl %s -H \"Authorization: Bearer sk-***\"", testURL)
+	curlExample := fmt.Sprintf("curl %s -H \"Authorization: Bearer sk-***\" -H \"Content-Type: application/json\" -d '{\"model\":\"%s\",\"messages\":[{\"role\":\"user\",\"content\":\"%s\"}]}'", testURL, reqBody.Model, reqBody.Prompt)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success":      true,
-		"status":       "ok",
+		"success":      success,
+		"status":       status,
+		"channel_id":   id,
 		"status_code":  resp.StatusCode,
 		"latency_ms":   latency,
+		"model":        reqBody.Model,
+		"tokens_used":  tokensUsed,
 		"models":       models,
+		"error":        errorMessage,
 		"response":     string(body),
 		"curl_example": curlExample,
 	})
