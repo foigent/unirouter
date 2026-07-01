@@ -18,6 +18,7 @@
 | 10 | [Provider Adapter Framework](10-provider-adapter-framework.md) | PRD2 上游适配器框架 | v0.1 |
 | 11 | [Project And RBAC Model](11-project-rbac-model.md) | PRD2 Project/RBAC 数据与权限模型 | v0.1 |
 | 12 | [Token Metering V2](12-token-metering-v2.md) | PRD2 token metering source and reconciliation contract | v0.1 |
+| 13 | [Audit Schema Upgrade](13-audit-schema-upgrade.md) | PRD2 audit source, filter, and before/after contract | v0.1 |
 
 ## 关联文档
 - [PRD Phase 1](../PRD-Phase1.md) — 产品需求文档
