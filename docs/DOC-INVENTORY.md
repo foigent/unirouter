@@ -9,6 +9,7 @@
 | `docs/PROJECT-HANDOFF.md` | First-read handoff for agents |
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
 | `docs/ops/PRD2-ACCEPTANCE-MATRIX.md` | PRD2 acceptance planning and future evidence matrix |
+| `docs/ops/PRD2-COMPLETION-PLAN.md` | Current PRD2 remaining-work plan and user-confirmed completion decisions |
 | `docs/ops/PRD-ACCEPTANCE-MATRIX.md` | PRD1 acceptance progress and historical closeout evidence |
 | `docs/ops/PRD1-ACCEPTANCE-TEST-OWNERSHIP.md` | Current map of what Codex can test and required safe credentials/scope |
 | `docs/issues/OPEN-ISSUES.md` | Current unresolved issue queue |

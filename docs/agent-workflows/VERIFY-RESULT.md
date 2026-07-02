@@ -1,47 +1,33 @@
-# VERIFY-RESULT.md — PRD2 Batch 15 验收结果
+# VERIFY-RESULT.md — PRD2 Full Completion Plan Update 验收结果
 
 **验收者：** OpenClaw Canary
 **日期：** 2026-07-02
-**对应轮次：** PRD2 Batch 15 License Foundation
+**对应轮次：** PRD2 completion planning after Batch 15
 
 ## 逐条结果
 
-- Fix #1: **PASS** — `internal/licensing/license.go` 实现 Ed25519 离线 License verifier。`Payload` 包含 customer/deployment_id/tier/expires_at/features/limits/metadata。`VerifyBytes()` 支持 active/expiring/expired/invalid/missing 状态。Ed25519 public key 支持 base64/raw-base64/hex 解析。6 个 verifier 测试全部通过。
-- Fix #2: **PASS** — `config.go` 新增 `LicensePublicKey` 和 `LicenseExpiryWarningDays`（默认 30）。负数 warning days 被 `Validate()` 拒绝。`LICENSE_PUBLIC_KEY` 缺失时服务可启动，但 import 会失败。License API 走 `platformRoute`（admin/platform_admin）。route parity test 通过。`.env.example`、compose 文件已更新。
-- Fix #3: **PASS** — `license_handlers.go` 实现 `GET/PUT /api/v1/license`。License 存储在 `settings` 表 `license.offline` key。无效签名返回 400 且不写数据库。`license.update` 审计只写 before/after summary，不写原始 signature。3 个 handler 测试全部通过。
-- Fix #4: **PASS** — `LicensePage.tsx` 实现 License 查看/导入页面。`/license` route 走 `RoleRoute`，仅 `platform_admin` 可访问。前端 API client 新增 `getLicense`/`updateLicense`。navigation 测试确认 admin 可见、org_admin 不可见。26 个前端指定测试通过。
-- Fix #5: **PASS** — `docs/tech-ref/16-license-foundation.md` 记录格式/签名/API/状态/审计/非目标。`CURRENT-STATUS.md` 标记 "fixed locally; awaiting Canary"。`PRD2-ACCEPTANCE-MATRIX.md` P2-F10 行标记 "Unit tested"。compose/env/runbook/canary 文档均已更新。docs grep 一致。
+- Fix #1: **PASS** — `docs/ops/PRD2-COMPLETION-PLAN.md` 存在。覆盖完整范围（P2-F13/F14/F15 mandatory、OIDC first、budget hard-block、production HA、OpenRouter vs direct Anthropic）。拆分 Batch 16-25 含 real-backend E2E、Model Governance 完整化、OpenRouter/Anthropic 分离验收、notification/budget、audit/hardening、HA/deployment、License production、P2-F13/F14/F15、OIDC、final closeout。
+- Fix #2: **PASS** — `PRD2-ACCEPTANCE-MATRIX.md` 新增 "PRD2 full-completion plan exists" 行（Implemented not accepted）。Project budget 新增 hard-block enforcement 行（Planned）。Native adapter 区分 OpenRouter Claude 与 direct Anthropic。SSO 改为 OIDC first。P2-F13/F14/F15 标记 User confirmed mandatory（Planned）。Prompt/response 记录默认不存 plaintext。
+- Fix #3: **PASS** — `CURRENT-STATUS.md` Last verified 行说明 PRD2 full-completion plan update fixed locally awaiting Canary。Summary 记录 User 最新范围决策（P2-F13/F14/F15 mandatory、OIDC first、budget alert-only first、OpenRouter vs Anthropic 分离）。Phase Status 指向 `PRD2-COMPLETION-PLAN.md`。
+- Fix #4: **PASS** — `OPEN-ISSUES.md` 新增 `PRD2-AUTH-001`（OIDC first SSO, Medium, Open）、`PRD2-BUDGET-001`（budget hard-block, Medium, Open）、`PRD2-HA-001`（production HA, Medium, Open）。`DOC-INVENTORY.md` Current Truth 增加 `docs/ops/PRD2-COMPLETION-PLAN.md`。
 
 ## 命令结果
 
 | 命令 | 结果 | 备注 |
 |------|------|------|
-| `go test ./internal/licensing -run 'TestVerifier' -count=1` | ✅ PASS | 6 tests, 0.712s |
-| `go test ./internal/config ./cmd/uniroute -run 'TestValidate\|TestLoad\|TestAdminRoutesRegisteredForFrontendClient' -count=1` | ✅ PASS | 10 tests |
-| `go test ./internal/admin -run 'TestGetLicense\|TestUpdateLicense' -count=1` | ✅ PASS | 3 tests, 1.029s |
-| targeted combined backend | ✅ PASS | 4 packages |
-| `npm --prefix frontend test -- LicensePage client navigation` | ✅ PASS | 3 files, 26 tests |
-| `go test ./... -count=1` | ✅ PASS | 20 packages（含 licensing），0 FAIL |
-| `npm --prefix frontend test` | ✅ PASS | 10 files, 68 tests |
-| `npm --prefix frontend run build` | ✅ PASS | large chunk warning（既有） |
-| docs grep command | ✅ PASS | Batch 15/P2-F10 引用一致 |
+| `test -f docs/ops/PRD2-COMPLETION-PLAN.md` | ✅ PASS | 文件存在 |
+| completion plan grep | ✅ PASS | Batch 16-25、OIDC、OpenRouter、anthropic_native、Cache Research、Prompt/response 全部覆盖 |
+| acceptance matrix grep | ✅ PASS | full-completion、hard-block、OIDC first、OpenRouter、P2-F13/F14/F15 引用一致 |
+| current status grep | ✅ PASS | full-completion、PRD2-COMPLETION-PLAN、P2-F13、OpenRouter、hard-block、production HA 引用一致 |
+| open issues / doc inventory grep | ✅ PASS | PRD2-AUTH-001、PRD2-BUDGET-001、PRD2-HA-001、PRD2-COMPLETION-PLAN 全部记录 |
 | `git diff --check` | ✅ PASS | exit 0 |
-| untracked diff check | ✅ PASS | exit 0 |
-
-## 边界复核
-
-- P2-F11 prompt/response storage 是否仍未实现: **PASS** — 仍为 `Planned`
-- License online activation/hardware fingerprint/reseller/marketplace 是否未被引入: **PASS** — gateway relay 无 license 拦截代码
-- Gateway request blocking 是否未被提前引入: **PASS** — relay.go 无 license enforcement
-- License audit 是否未写 raw signature: **PASS** — license_handlers.go 无 raw signature 写入
 
 ## 新发现
 
-- 无新发现。所有测试通过，代码/文档实现与 FIX-SIGNAL 描述一致。
-- 代码当前为 uncommitted 状态，需 Sentinel commit/push。
+- 无新发现。文档一致性验证通过。
 
 ## 结论
 
-**PASS (5/5)**。Batch 15 可交给 Sentinel 进行 commit/push/PR 操作。无 Batch 16 blocker。
+**PASS (4/4)**。本轮 docs-only full-completion plan 可交给 Sentinel。下一轮应进入 Batch 16（Real Backend Browser And Developer Console E2E）。
 
-License foundation 实现正确：Ed25519 离线验证器覆盖 active/expiring/expired/invalid/missing 状态；平台管理员 API 和前端页面工作正常；审计只写 summary 不泄露签名；`LICENSE_PUBLIC_KEY` 缺失时服务可启动但 import 被拒绝。文档一致且未 overclaim。
+PRD2 收尾范围已明确记录：P2-F13/F14/F15 mandatory、OIDC first SSO（后期待实现）、budget alert-only first + hard-block 后续、production HA 待目标环境验证、OpenRouter Claude 仅覆盖 openai_compatible 路径。文档无 overclaim。
