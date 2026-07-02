@@ -100,6 +100,9 @@ func applyModelGovernance(w http.ResponseWriter, r *http.Request, pool *pgxpool.
 		http.Error(w, `{"error":{"type":"server_error","message":"Model governance check failed"}}`, http.StatusInternalServerError)
 		return nil, nil, "", false
 	}
+	if access.Lifecycle == "" {
+		recordUnregisteredModelAudit(r.Context(), pool, apiKey, requestedModel, projectID)
+	}
 
 	resolvedModel := access.ResolvedModel
 	if resolvedModel == "" || resolvedModel == requestedModel {
@@ -117,6 +120,35 @@ func applyModelGovernance(w http.ResponseWriter, r *http.Request, pool *pgxpool.
 		return r, bodyBytes, resolvedModel, true
 	}
 	return r, rewritten, resolvedModel, true
+}
+
+func recordUnregisteredModelAudit(ctx context.Context, pool *pgxpool.Pool, apiKey *models.ApiKey, requestedModel string, projectID int64) {
+	if pool == nil || apiKey == nil || apiKey.OrgID <= 0 || strings.TrimSpace(requestedModel) == "" {
+		return
+	}
+	projectIDValue := interface{}(nil)
+	if projectID > 0 {
+		projectIDValue = projectID
+	}
+	detail := map[string]interface{}{
+		"model":      requestedModel,
+		"api_key_id": apiKey.ID,
+		"key_prefix": apiKey.KeyPrefix,
+		"project_id": projectIDValue,
+	}
+	detailJSON, err := json.Marshal(detail)
+	if err != nil {
+		return
+	}
+	resourceID := requestedModel
+	if len(resourceID) > 64 {
+		resourceID = resourceID[:64]
+	}
+	_, _ = pool.Exec(ctx,
+		`INSERT INTO audit_logs (org_id, user_id, action, resource, resource_id, detail, ip, user_agent, request_id, source, project_id, before_state, after_state, created_at)
+		 VALUES ($1, 0, 'model.unregistered.call', 'model', $2, $3::jsonb, '', '', $4, 'gateway_api', $5, '{}'::jsonb, $3::jsonb, NOW())`,
+		apiKey.OrgID, resourceID, string(detailJSON), middleware.GetRequestIDFromContext(ctx), projectIDValue,
+	)
 }
 
 func apiKeyAllowsModel(allowedModels, requestedModel, resolvedModel string) bool {

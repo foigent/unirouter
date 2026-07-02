@@ -1,6 +1,7 @@
 import { formatDateTime } from '../utils/formatDate';
 import { useState, useEffect } from 'react';
-import { Table, Tag } from '@douyinfe/semi-ui';
+import { Button, Input, Select, Space, Table, Tag } from '@douyinfe/semi-ui';
+import { IconRefresh, IconSearch } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { PageHeader, Surface } from '../ui';
 
@@ -17,25 +18,57 @@ function actionColor(action: string): TagColor {
   return ACTION_COLORS[action] || ACTION_COLORS[suffix] || 'grey';
 }
 
+interface AuditFilters {
+  org_id?: string;
+  project_id?: string;
+  actor_id?: string;
+  action?: string;
+  resource?: string;
+  resource_id?: string;
+  source?: string;
+  start_time?: string;
+  end_time?: string;
+}
+
+const sourceOptions = [
+  { label: 'admin_console', value: 'admin_console' },
+  { label: 'developer_console', value: 'developer_console' },
+  { label: 'gateway_api', value: 'gateway_api' },
+  { label: 'system', value: 'system' },
+];
+
 export default function AuditLogsPage() {
   const [logs, setLogs] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState<AuditFilters>({});
 
-  const load = (p = page) => {
+  const load = (p = page, size = pageSize) => {
     setLoading(true);
-    api.getAuditLogs(p, 20)
+    api.getAuditLogs(p, size, filters)
       .then((d: any) => { setLogs(d.data || []); setTotal(d.total || 0); })
       .catch(console.error)
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(1); }, []);
+  useEffect(() => { load(page, pageSize); }, [page, pageSize, filters]);
+
+  const updateFilter = (key: keyof AuditFilters, value: string | undefined) => {
+    setFilters(prev => ({ ...prev, [key]: value || undefined }));
+    setPage(1);
+  };
+
+  const clearFilters = () => {
+    setFilters({});
+    setPage(1);
+  };
 
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 60 },
+    { title: 'Org', dataIndex: 'org_id', width: 80 },
+    { title: 'Project', dataIndex: 'project_id', width: 90, render: (v: number | null) => v || '-' },
     { title: '操作者', dataIndex: 'user_id', render: (v: number) => v ? `User #${v}` : '-' },
     {
       title: '动作', dataIndex: 'action',
@@ -43,6 +76,7 @@ export default function AuditLogsPage() {
     },
     { title: '目标类型', dataIndex: 'resource' },
     { title: '目标ID', dataIndex: 'resource_id', render: (v: string) => v || '-' },
+    { title: '来源', dataIndex: 'source', render: (v: string) => v ? <Tag>{v}</Tag> : '-' },
     {
       title: '详情', dataIndex: 'detail',
       render: (v: any) => v ? <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{JSON.stringify(v)}</span> : '-',
@@ -58,9 +92,28 @@ export default function AuditLogsPage() {
         description="查看登录、变更、充值、赠送和结算等关键后台动作。"
       />
       <Surface>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+          <Input prefix="Org" placeholder="org_id" value={filters.org_id || ''} onChange={(v) => updateFilter('org_id', v)} />
+          <Input prefix="Project" placeholder="project_id" value={filters.project_id || ''} onChange={(v) => updateFilter('project_id', v)} />
+          <Input prefix="Actor" placeholder="actor_id" value={filters.actor_id || ''} onChange={(v) => updateFilter('actor_id', v)} />
+          <Input placeholder="action" value={filters.action || ''} onChange={(v) => updateFilter('action', v)} />
+          <Input placeholder="resource" value={filters.resource || ''} onChange={(v) => updateFilter('resource', v)} />
+          <Input placeholder="resource_id" value={filters.resource_id || ''} onChange={(v) => updateFilter('resource_id', v)} />
+          <Select placeholder="source" value={filters.source || undefined} onChange={(v) => updateFilter('source', v as string)} style={{ width: '100%' }} showClear>
+            {sourceOptions.map(option => <Select.Option key={option.value} value={option.value}>{option.label}</Select.Option>)}
+          </Select>
+          <Input placeholder="start_time RFC3339" value={filters.start_time || ''} onChange={(v) => updateFilter('start_time', v)} />
+          <Input placeholder="end_time RFC3339" value={filters.end_time || ''} onChange={(v) => updateFilter('end_time', v)} />
+        </div>
+        <Space style={{ marginTop: 12 }}>
+          <Button icon={<IconSearch />} onClick={() => load(1, pageSize)}>筛选</Button>
+          <Button icon={<IconRefresh />} onClick={clearFilters}>重置</Button>
+        </Space>
+      </Surface>
+      <Surface>
         <div className="ur-table-shell">
           <Table columns={columns} dataSource={logs} loading={loading} rowKey="id"
-            pagination={{ currentPage: page, pageSize, pageSizeOpts: [20, 50, 100], showSizeChanger: true, total, onPageChange: (p) => { setPage(p); load(p); }, onPageSizeChange: (s) => { setPageSize(s); setPage(1); load(1); } }} />
+            pagination={{ currentPage: page, pageSize, pageSizeOpts: [20, 50, 100], showSizeChanger: true, total, onPageChange: (p) => setPage(p), onPageSizeChange: (s) => { setPageSize(s); setPage(1); } }} />
         </div>
       </Surface>
     </div>

@@ -63,10 +63,16 @@ func TestMigration000009BackfillsDefaultProjectForPRD1Data_Integration(t *testin
 		orgID,
 	)
 	require.NoError(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO audit_logs (org_id, user_id, action, resource, resource_id, detail)
+		 VALUES ($1, $2, 'channel.create', 'channel', '7', '{}'::jsonb)`,
+		orgID, userID,
+	)
+	require.NoError(t, err)
 
 	applyMigrationFiles(t, pool, "000009_prd2_project_foundation.up.sql")
 
-	var projectID, keyProjectID, logProjectID, txProjectID int64
+	var projectID, keyProjectID, logProjectID, txProjectID, auditProjectID int64
 	err = pool.QueryRow(ctx,
 		`SELECT id FROM projects WHERE org_id = $1 AND slug = 'default'`,
 		orgID,
@@ -85,6 +91,10 @@ func TestMigration000009BackfillsDefaultProjectForPRD1Data_Integration(t *testin
 		`SELECT project_id FROM transactions WHERE request_id = 'prd1-tx-req'`,
 	).Scan(&txProjectID)
 	require.NoError(t, err)
+	err = pool.QueryRow(ctx,
+		`SELECT project_id FROM audit_logs WHERE action = 'channel.create' AND resource_id = '7'`,
+	).Scan(&auditProjectID)
+	require.NoError(t, err)
 
 	var membershipCount int
 	err = pool.QueryRow(ctx,
@@ -96,7 +106,54 @@ func TestMigration000009BackfillsDefaultProjectForPRD1Data_Integration(t *testin
 	require.Equal(t, projectID, keyProjectID)
 	require.Equal(t, projectID, logProjectID)
 	require.Equal(t, projectID, txProjectID)
+	require.Equal(t, projectID, auditProjectID)
 	require.Equal(t, 1, membershipCount)
+}
+
+func TestMigration000012DownRestoresLegacyUsageSourceValues_Integration(t *testing.T) {
+	pool := testutil.SetupIsolatedTestDB(t)
+	ctx := context.Background()
+
+	applyMigrationFiles(t, pool,
+		"000001_init_schema.up.sql",
+		"000003_add_wallet_features.up.sql",
+		"000005_add_org_pricing_and_alert_fields.up.sql",
+		"000006_fix_schema_gaps.up.sql",
+		"000007_prd_v15_alignment.up.sql",
+		"000008_model_price_decimal_cents.up.sql",
+		"000009_prd2_project_foundation.up.sql",
+		"000010_prd2_model_governance.up.sql",
+		"000011_prd2_provider_adapter_foundation.up.sql",
+	)
+
+	orgID := testutil.NewTestOrg(t, pool)
+	_, err := pool.Exec(ctx,
+		`INSERT INTO call_logs (request_id, org_id, model, provider, channel, status_code, usage_source)
+		 VALUES ('usage-api', $1, 'gpt-4o', 'mock', 'mock', 200, 'api'),
+		        ('usage-stream', $1, 'gpt-4o', 'mock', 'mock', 200, 'stream_estimate')`,
+		orgID,
+	)
+	require.NoError(t, err)
+
+	applyMigrationFiles(t, pool, "000012_prd2_token_metering_v2.up.sql")
+
+	var upstreamSource, counterSource string
+	err = pool.QueryRow(ctx, `SELECT usage_source FROM call_logs WHERE request_id = 'usage-api'`).Scan(&upstreamSource)
+	require.NoError(t, err)
+	err = pool.QueryRow(ctx, `SELECT usage_source FROM call_logs WHERE request_id = 'usage-stream'`).Scan(&counterSource)
+	require.NoError(t, err)
+	require.Equal(t, "upstream", upstreamSource)
+	require.Equal(t, "counter_v2", counterSource)
+
+	applyMigrationFiles(t, pool, "000012_prd2_token_metering_v2.down.sql")
+
+	var apiSource, streamSource string
+	err = pool.QueryRow(ctx, `SELECT usage_source FROM call_logs WHERE request_id = 'usage-api'`).Scan(&apiSource)
+	require.NoError(t, err)
+	err = pool.QueryRow(ctx, `SELECT usage_source FROM call_logs WHERE request_id = 'usage-stream'`).Scan(&streamSource)
+	require.NoError(t, err)
+	require.Equal(t, "api", apiSource)
+	require.Equal(t, "stream_estimate", streamSource)
 }
 
 func applyMigrationFiles(t *testing.T, pool interface {
