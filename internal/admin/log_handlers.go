@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/metering"
 )
 
 func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
@@ -28,6 +29,7 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 	endTime := r.URL.Query().Get("end_time")
 	requestIDFilter := r.URL.Query().Get("request_id")
 	projectIDFilter := r.URL.Query().Get("project_id")
+	usageSourceFilter := r.URL.Query().Get("usage_source")
 
 	// Build WHERE clause dynamically
 	var conditions []string
@@ -64,6 +66,11 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 	if requestIDFilter != "" {
 		conditions = append(conditions, fmt.Sprintf("request_id = $%d", argIdx))
 		args = append(args, requestIDFilter)
+		argIdx++
+	}
+	if usageSourceFilter != "" {
+		conditions = append(conditions, fmt.Sprintf("usage_source = $%d", argIdx))
+		args = append(args, metering.NormalizeUsageSource(usageSourceFilter))
 		argIdx++
 	}
 	if projectIDFilter != "" {

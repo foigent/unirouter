@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Button, Table, Select, Toast, Tag } from '@douyinfe/semi-ui';
+import { IconAlertTriangle, IconCoinMoney, IconRefresh, IconServer } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-import { PageHeader, StatusTag, Surface } from '../ui';
+import { MetricTile, PageHeader, StatusTag, Surface } from '../ui';
 
 interface ReconRecord {
   id: number;
@@ -10,35 +11,71 @@ interface ReconRecord {
   estimated_tokens: number;
   actual_tokens: number;
   delta: number;
+  usage_source?: string;
+  variance_tokens?: number;
+  variance_ratio?: number;
+  source_confidence?: number;
   status: string;
   created_at: string;
 }
 
+interface ReconSummary {
+  estimated_tokens: number;
+  upstream_tokens: number;
+  preflight_estimated_tokens: number;
+  actual_tokens: number;
+  variance_tokens: number;
+  variance_ratio: number;
+  average_source_confidence: number;
+  estimated_ratio: number;
+  estimated_ratio_alert_threshold: number;
+  estimated_usage_alert: boolean;
+  estimated_ratio_scope: string;
+}
+
+const usageSourceOptions = [
+  { label: '全部来源', value: '' },
+  { label: 'upstream', value: 'upstream' },
+  { label: 'counter_v2', value: 'counter_v2' },
+  { label: 'adapter_estimated', value: 'adapter_estimated' },
+  { label: 'estimated', value: 'estimated' },
+  { label: 'no_route', value: 'no_route' },
+  { label: 'upstream_failed', value: 'upstream_failed' },
+];
+
+function formatPercent(value?: number) {
+  return `${((value || 0) * 100).toFixed(1)}%`;
+}
+
 export default function ReconciliationPage() {
   const [records, setRecords] = useState<ReconRecord[]>([]);
+  const [summary, setSummary] = useState<ReconSummary | null>(null);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(true);
   const [modelFilter, setModelFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [usageSourceFilter, setUsageSourceFilter] = useState('');
   const [modelNames, setModelNames] = useState<string[]>([]);
 
   const load = (p = page) => {
     setLoading(true);
-    const params = new URLSearchParams({ page: String(p), page_size: String(pageSize) });
-    if (modelFilter) params.set('model', modelFilter);
-    if (statusFilter) params.set('status', statusFilter);
-    api.request(`/reconciliation?${params.toString()}`)
+    api.getReconciliation(p, pageSize, {
+      model: modelFilter,
+      status: statusFilter,
+      usage_source: usageSourceFilter,
+    })
       .then((res: any) => {
         setRecords(res.data || []);
+        setSummary(res.summary || null);
         setTotal(res.total || 0);
       })
       .catch(() => Toast.error({ content: '加载失败' }))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, [page, pageSize, modelFilter, statusFilter]);
+  useEffect(() => { load(); }, [page, pageSize, modelFilter, statusFilter, usageSourceFilter]);
   useEffect(() => { api.getModelNames().then((d: any) => setModelNames(d.data || [])).catch(() => {}); }, []);
 
   const columns = [
@@ -47,6 +84,13 @@ export default function ReconciliationPage() {
     { title: '模型', dataIndex: 'model', key: 'model', width: 150 },
     { title: '估算 Token', dataIndex: 'estimated_tokens', key: 'estimated_tokens', width: 120 },
     { title: '实际 Token', dataIndex: 'actual_tokens', key: 'actual_tokens', width: 120 },
+    {
+      title: '来源',
+      dataIndex: 'usage_source',
+      key: 'usage_source',
+      width: 132,
+      render: (v: string) => v ? <StatusTag status={v}>{v}</StatusTag> : '-',
+    },
     {
       title: '差值',
       dataIndex: 'delta',
@@ -57,6 +101,20 @@ export default function ReconciliationPage() {
           {v > 0 ? '+' : ''}{v}
         </Tag>
       ),
+    },
+    {
+      title: '偏差率',
+      dataIndex: 'variance_ratio',
+      key: 'variance_ratio',
+      width: 100,
+      render: (v: number) => <Tag color={(v || 0) > 0 ? 'red' : (v || 0) < 0 ? 'green' : 'grey'}>{formatPercent(v)}</Tag>,
+    },
+    {
+      title: '置信度',
+      dataIndex: 'source_confidence',
+      key: 'source_confidence',
+      width: 100,
+      render: (v: number) => formatPercent(v),
     },
     {
       title: '状态',
@@ -102,9 +160,54 @@ export default function ReconciliationPage() {
               { label: '错误', value: 'error' },
             ]}
           />
-          <Button onClick={() => load()}>刷新</Button>
+          <Select
+            placeholder="来源筛选"
+            style={{ width: 190 }}
+            value={usageSourceFilter || undefined}
+            onChange={(v) => { setUsageSourceFilter((v as string) || ''); setPage(1); }}
+            optionList={usageSourceOptions}
+          />
+          <Button icon={<IconRefresh />} onClick={() => load()}>刷新</Button>
         </div>
       </Surface>
+      <div className="ur-kpi-grid">
+        <MetricTile
+          label="估算占比"
+          value={formatPercent(summary?.estimated_ratio)}
+          icon={<IconAlertTriangle />}
+          tone={summary?.estimated_usage_alert ? 'red' : 'green'}
+          meta={(
+            <span>
+              阈值 {formatPercent(summary?.estimated_ratio_alert_threshold)}
+              {' '}
+              <StatusTag status={summary?.estimated_usage_alert ? 'warning' : 'success'}>
+                {summary?.estimated_usage_alert ? '已触发' : '正常'}
+              </StatusTag>
+            </span>
+          )}
+        />
+        <MetricTile
+          label="估算来源 Token"
+          value={(summary?.estimated_tokens || 0).toLocaleString()}
+          icon={<IconServer />}
+          tone="amber"
+          meta={`口径 ${summary?.estimated_ratio_scope || 'filtered_query'}`}
+        />
+        <MetricTile
+          label="上游 Token"
+          value={(summary?.upstream_tokens || 0).toLocaleString()}
+          icon={<IconCoinMoney />}
+          tone="blue"
+          meta={`实际合计 ${(summary?.actual_tokens || 0).toLocaleString()}`}
+        />
+        <MetricTile
+          label="全量偏差"
+          value={`${summary?.variance_tokens && summary.variance_tokens > 0 ? '+' : ''}${(summary?.variance_tokens || 0).toLocaleString()}`}
+          icon={<IconAlertTriangle />}
+          tone={(summary?.variance_tokens || 0) === 0 ? 'slate' : 'violet'}
+          meta={`偏差率 ${formatPercent(summary?.variance_ratio)} / 置信度 ${formatPercent(summary?.average_source_confidence)}`}
+        />
+      </div>
       <Surface>
         <div className="ur-table-shell">
           <Table

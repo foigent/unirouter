@@ -33,6 +33,7 @@ interface LogFilters {
   model?: string;
   provider?: string;
   status_code?: string;
+  usage_source?: string;
   start_time?: string;
   end_time?: string;
   request_id?: string;
@@ -50,12 +51,21 @@ function filtersToParams(filters: LogFilters): string {
 function paramsToFilters(): LogFilters {
   const params = new URLSearchParams(window.location.search);
   const f: LogFilters = {};
-  ['model', 'provider', 'status_code', 'start_time', 'end_time', 'request_id', 'latency_min', 'latency_max', 'search'].forEach(k => {
+  ['model', 'provider', 'status_code', 'usage_source', 'start_time', 'end_time', 'request_id', 'latency_min', 'latency_max', 'search'].forEach(k => {
     const v = params.get(k);
     if (v) (f as any)[k] = v;
   });
   return f;
 }
+
+const usageSourceOptions = [
+  { label: 'upstream', value: 'upstream' },
+  { label: 'counter_v2', value: 'counter_v2' },
+  { label: 'adapter_estimated', value: 'adapter_estimated' },
+  { label: 'estimated', value: 'estimated' },
+  { label: 'no_route', value: 'no_route' },
+  { label: 'upstream_failed', value: 'upstream_failed' },
+];
 
 function fallbackCopyText(text: string) {
   const textarea = document.createElement('textarea');
@@ -257,6 +267,13 @@ export default function LogsPage() {
       render: (v: number) => <Text size="small">{v.toLocaleString()}</Text>,
     },
     {
+      title: '来源',
+      dataIndex: 'usage_source',
+      key: 'usage_source',
+      width: 122,
+      render: (v: string) => v ? <StatusTag status={v}>{v}</StatusTag> : '-',
+    },
+    {
       title: '费用',
       dataIndex: 'cost_cents',
       key: 'cost_cents',
@@ -387,6 +404,21 @@ export default function LogsPage() {
               <Select.Option value="4xx">4xx 客户端错误</Select.Option>
               <Select.Option value="429">429 限流</Select.Option>
               <Select.Option value="5xx">5xx 服务端错误</Select.Option>
+            </Select>
+          </div>
+
+          <div className="ur-filter-group">
+            <Text className="ur-filter-label">Usage Source</Text>
+            <Select
+              size="small"
+              placeholder="来源"
+              style={{ width: '100%' }}
+              onChange={(v) => { setFilters(prev => ({ ...prev, usage_source: v as string || undefined })); setPage(1); }}
+              value={filters.usage_source || undefined}
+            >
+              {usageSourceOptions.map(option => (
+                <Select.Option key={option.value} value={option.value}>{option.label}</Select.Option>
+              ))}
             </Select>
           </div>
 

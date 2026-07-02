@@ -882,6 +882,18 @@ body {
   min-width: 0;
 }
 
+.ur-dev-migration {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ur-dev-migration .semi-icon,
+.ur-dev-migration .semi-typography {
+  color: #b45309 !important;
+}
+
 .ur-dev-lookup {
   display: grid;
   gap: 14px;

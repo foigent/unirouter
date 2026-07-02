@@ -336,6 +336,12 @@ export default function DeveloperConsolePage() {
               {splitCSV(record.aliases).slice(0, 3).map(alias => <StatusTag key={alias} status="alias">{alias}</StatusTag>)}
             </div>
           )}
+          {record.lifecycle === 'deprecated' && record.migration_recommendation && (
+            <div className="ur-dev-migration">
+              <IconAlertTriangle />
+              <Text type="warning" size="small">{record.migration_recommendation}</Text>
+            </div>
+          )}
         </div>
       ),
     },

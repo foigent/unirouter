@@ -153,6 +153,24 @@ describe('API Client', () => {
       expect(url).toContain('project_id=7')
       expect(url).toContain('request_id=req-001')
     })
+
+    it('adds usage_source for usage-source drilldown', async () => {
+      mockJsonResponse({ data: [], total: 0 })
+
+      await api.getLogs(1, 20, { usage_source: 'counter_v2' })
+      const url = mockFetch.mock.calls[0][0]
+      expect(url).toContain('usage_source=counter_v2')
+    })
+  })
+
+  describe('getReconciliation with filters', () => {
+    it('encodes usage_source filter', async () => {
+      mockJsonResponse({ data: [], total: 0 })
+
+      await api.getReconciliation(2, 50, { model: 'company-chat', status: 'reconciled', usage_source: 'adapter_estimated' })
+      const url = mockFetch.mock.calls[0][0]
+      expect(url).toBe('/api/v1/reconciliation?page=2&page_size=50&model=company-chat&status=reconciled&usage_source=adapter_estimated')
+    })
   })
 
   describe('project developer APIs', () => {

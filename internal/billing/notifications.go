@@ -16,7 +16,8 @@ import (
 )
 
 const (
-	EventProjectBudgetThreshold = "project_budget.threshold"
+	EventProjectBudgetThreshold          = "project_budget.threshold"
+	EventTokenMeteringEstimatedRatioHigh = "token_metering.estimated_ratio.high"
 
 	NotificationSeverityInfo     = "info"
 	NotificationSeverityWarning  = "warning"

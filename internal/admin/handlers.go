@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/middleware"
 
 	"github.com/uniroute/unirouter/internal/db"
@@ -22,6 +23,7 @@ type Handler struct {
 	jwtSecret        string
 	apiKeyHashSecret string
 	licenseVerifier  *licensing.Verifier
+	eventService     *billing.EventService
 	encKey           []byte
 }
 
@@ -41,6 +43,10 @@ func NewHandlerWithAPIKeyHashSecret(db db.DBQuerier, jwtSecret, apiKeyHashSecret
 
 func (h *Handler) SetLicenseVerifier(verifier *licensing.Verifier) {
 	h.licenseVerifier = verifier
+}
+
+func (h *Handler) SetEventService(svc *billing.EventService) {
+	h.eventService = svc
 }
 
 // --- Helpers ---

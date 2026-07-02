@@ -249,10 +249,11 @@ export const api = {
     request('/me/password', { method: 'PUT', body: JSON.stringify(data) }),
 
   // Reconciliation
-  getReconciliation: (page = 1, pageSize = 20, filters?: { model?: string; status?: string }) => {
+  getReconciliation: (page = 1, pageSize = 20, filters?: { model?: string; status?: string; usage_source?: string }) => {
     let url = `/reconciliation?page=${page}&page_size=${pageSize}`;
     if (filters?.model) url += `&model=${encodeURIComponent(filters.model)}`;
     if (filters?.status) url += `&status=${encodeURIComponent(filters.status)}`;
+    if (filters?.usage_source) url += `&usage_source=${encodeURIComponent(filters.usage_source)}`;
     return request(url);
   },
 
