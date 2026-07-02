@@ -230,8 +230,22 @@ export const api = {
     request('/grants', { method: 'POST', body: JSON.stringify(data) }),
 
   // Audit Logs
-  getAuditLogs: (page = 1, pageSize = 20) =>
-    request(`/audit-logs?page=${page}&page_size=${pageSize}`),
+  getAuditLogs: (page = 1, pageSize = 20, filters?: {
+    org_id?: string; project_id?: string; actor_id?: string; action?: string; resource?: string; resource_id?: string;
+    source?: string; start_time?: string; end_time?: string;
+  }) => request(appendParams('/audit-logs', {
+    page,
+    page_size: pageSize,
+    org_id: filters?.org_id,
+    project_id: filters?.project_id,
+    actor_id: filters?.actor_id,
+    action: filters?.action,
+    resource: filters?.resource,
+    resource_id: filters?.resource_id,
+    source: filters?.source,
+    start_time: filters?.start_time,
+    end_time: filters?.end_time,
+  })),
 
   // Org Model Prices
   getOrgModelPrices: (orgId = 1, page = 1, pageSize = 20) =>

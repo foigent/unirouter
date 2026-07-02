@@ -129,6 +129,66 @@ func TestPRD2P0DeveloperProjectKeyGatewayE2E_Integration(t *testing.T) {
 	assertGatewayModelDenied(t, chatHandler, createResp.Key, "batch9-p0-e2e-retired", "legacy-model", "model_retired")
 }
 
+func TestGatewayUnregisteredModelAllowedButAudited_Integration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"cmpl-unregistered","object":"chat.completion","model":"unregistered-chat","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}`))
+	}))
+	defer upstream.Close()
+
+	orgID, userID, projectID := seedPRD2P0OrgProjectUser(t, pool, "developer")
+	testutil.NewTestWallet(t, pool, orgID, 10000)
+	testutil.NewTestModelPrice(t, pool, "unregistered-chat", 2, 10)
+	seedPRD2P0Channel(t, pool, upstream.URL, "unregistered-chat")
+
+	h := admin.NewHandler(pool, prd2E2EJWTSecret, prd2E2EEncryptionKey, nil)
+	createBody := []byte(`{"org_id":` + jsonNumber(orgID) + `,"project_id":` + jsonNumber(projectID) + `,"name":"unregistered-key","allowed_models":"unregistered-chat","rpm_limit":60,"qps_limit":10}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/keys", bytes.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq = createReq.WithContext(projectActorContext(createReq.Context(), orgID, userID, auth.RoleDeveloper, "batch20-create-key"))
+	createRec := httptest.NewRecorder()
+
+	h.CreateAPIKey(createRec, createReq)
+
+	require.Equal(t, http.StatusCreated, createRec.Code, "body: %s", createRec.Body.String())
+	var createResp struct {
+		Key string `json:"key"`
+	}
+	require.NoError(t, json.Unmarshal(createRec.Body.Bytes(), &createResp))
+	require.NotEmpty(t, createResp.Key)
+
+	relay := gateway.NewRelay(pool, nil, gateway.NewRouter(pool), billing.NewBilling(pool, nil), filter.NewDFAFilter(nil), prd2E2EEncryptionKey)
+	chatHandler := middleware.GatewayAuth(pool, prd2E2EJWTSecret)(newGatewayChatHandler(pool, relay))
+
+	requestID := "batch20-unregistered-model"
+	chatReq := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader([]byte(`{"model":"unregistered-chat","messages":[{"role":"user","content":"hello"}],"stream":false}`)))
+	chatReq.Header.Set("Authorization", "Bearer "+createResp.Key)
+	chatReq.Header.Set("Content-Type", "application/json")
+	chatReq.Header.Set("X-Request-ID", requestID)
+	chatRec := httptest.NewRecorder()
+
+	chatHandler.ServeHTTP(chatRec, chatReq)
+
+	require.Equal(t, http.StatusOK, chatRec.Code, "body: %s", chatRec.Body.String())
+
+	var auditProjectID int64
+	var auditSource, auditModel, auditKeyPrefix string
+	err := pool.QueryRow(ctx,
+		`SELECT project_id, source, after_state->>'model', after_state->>'key_prefix'
+		 FROM audit_logs
+		 WHERE action = 'model.unregistered.call' AND resource_id = 'unregistered-chat' AND request_id = $1`,
+		requestID,
+	).Scan(&auditProjectID, &auditSource, &auditModel, &auditKeyPrefix)
+	require.NoError(t, err)
+	require.Equal(t, projectID, auditProjectID)
+	require.Equal(t, "gateway_api", auditSource)
+	require.Equal(t, "unregistered-chat", auditModel)
+	require.NotEmpty(t, auditKeyPrefix)
+}
+
 func TestPRD2P0RouteRBACNegativeE2E_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 
@@ -173,6 +233,61 @@ func TestPRD2P0RouteRBACNegativeE2E_Integration(t *testing.T) {
 	)
 	rec := serveBearer(usageRoute, http.MethodGet, "/api/v1/logs?project_id="+jsonNumber(otherProjectID), projectAdminToken)
 	require.Equal(t, http.StatusForbidden, rec.Code, "body: %s", rec.Body.String())
+}
+
+func TestPRD2AuditFiltersJWTBeforeAfterE2E_Integration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+
+	orgID := testutil.NewTestOrg(t, pool)
+	_, userID, projectID := seedPRD2P0UserOnly(t, pool, orgID, auth.RoleOrgAdmin)
+	_, err := pool.Exec(ctx,
+		`INSERT INTO audit_logs (org_id, project_id, user_id, action, resource, resource_id, detail, before_state, after_state, source, request_id, created_at)
+		 VALUES ($1, $2, $3, 'channel.update', 'channel', '77',
+		         '{"fields":["name"]}'::jsonb,
+		         '{"name":"before"}'::jsonb,
+		         '{"name":"after"}'::jsonb,
+		         'admin_console',
+		         'audit-filter-e2e',
+		         NOW())`,
+		orgID, projectID, userID,
+	)
+	require.NoError(t, err)
+
+	h := admin.NewHandler(pool, prd2E2EJWTSecret, prd2E2EEncryptionKey, nil)
+	auditRoute := middleware.AdminAuth(prd2E2EJWTSecret)(
+		middleware.RequireRoles(auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin)(http.HandlerFunc(h.ListAuditLogs)),
+	)
+	token := mustJWT(t, userID, orgID, auth.RoleOrgAdmin)
+	target := "/api/v1/audit-logs?org_id=" + jsonNumber(orgID) +
+		"&project_id=" + jsonNumber(projectID) +
+		"&actor_id=" + jsonNumber(userID) +
+		"&action=channel.update&resource=channel&resource_id=77&source=admin_console"
+	rec := serveBearer(auditRoute, http.MethodGet, target, token)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	var resp struct {
+		Data []struct {
+			ProjectID int64           `json:"project_id"`
+			ActorID   int64           `json:"actor_id"`
+			Action    string          `json:"action"`
+			Resource  string          `json:"resource"`
+			Source    string          `json:"source"`
+			Before    json.RawMessage `json:"before"`
+			After     json.RawMessage `json:"after"`
+		} `json:"data"`
+		Total int `json:"total"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, 1, resp.Total)
+	require.Len(t, resp.Data, 1)
+	require.Equal(t, projectID, resp.Data[0].ProjectID)
+	require.Equal(t, userID, resp.Data[0].ActorID)
+	require.Equal(t, "channel.update", resp.Data[0].Action)
+	require.Equal(t, "channel", resp.Data[0].Resource)
+	require.Equal(t, "admin_console", resp.Data[0].Source)
+	require.Contains(t, string(resp.Data[0].Before), `"name":"before"`)
+	require.Contains(t, string(resp.Data[0].After), `"name":"after"`)
 }
 
 func assertGatewayModelDenied(t *testing.T, handler http.Handler, rawKey, requestID, model, reason string) {

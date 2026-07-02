@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -89,7 +90,7 @@ func (h *Handler) CreateChannel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.recordAudit(r.Context(), "channel.create", "channel", fmt.Sprintf("%d", id),
-		map[string]interface{}{"name": req.Name, "provider": req.Provider}, r.RemoteAddr)
+		map[string]interface{}{"after": channelAuditState(id, req.Name, req.Provider, req.BaseURL, req.Models, req.AdapterType, req.Priority, req.DegradationThreshold, "active", "healthy", 0)}, r.RemoteAddr)
 
 	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id})
 }
@@ -191,6 +192,8 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	before, beforeFound := h.channelAuditSnapshot(r.Context(), id)
+
 	sets = append(sets, "updated_at = NOW()")
 	args = append(args, id)
 
@@ -233,8 +236,14 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 	if req.DegradationThreshold != nil {
 		changedFields = append(changedFields, "degradation_threshold")
 	}
-	h.recordAudit(r.Context(), "channel.update", "channel", idStr,
-		map[string]interface{}{"fields": changedFields}, r.RemoteAddr)
+	detail := map[string]interface{}{"fields": changedFields}
+	if beforeFound {
+		detail["before"] = before
+	}
+	if after, ok := h.channelAuditSnapshot(r.Context(), id); ok {
+		detail["after"] = after
+	}
+	h.recordAudit(r.Context(), "channel.update", "channel", idStr, detail, r.RemoteAddr)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"message": "Channel updated"})
 }
@@ -247,6 +256,8 @@ func (h *Handler) DeleteChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	before, beforeFound := h.channelAuditSnapshot(r.Context(), id)
+
 	tag, err := h.db.Exec(r.Context(), `DELETE FROM channels WHERE id = $1`, id)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to delete channel"})
@@ -257,9 +268,44 @@ func (h *Handler) DeleteChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.recordAudit(r.Context(), "channel.delete", "channel", idStr, map[string]interface{}{}, r.RemoteAddr)
+	detail := map[string]interface{}{}
+	if beforeFound {
+		detail["before"] = before
+	}
+	h.recordAudit(r.Context(), "channel.delete", "channel", idStr, detail, r.RemoteAddr)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"message": "Channel deleted"})
+}
+
+func channelAuditState(id int64, name, provider, baseURL, models, adapterType string, priority, degradationThreshold int, status, circuitState string, failCount int) map[string]interface{} {
+	return map[string]interface{}{
+		"id":                    id,
+		"name":                  name,
+		"provider":              provider,
+		"base_url":              baseURL,
+		"models":                models,
+		"adapter_type":          adapters.NormalizeType(adapterType),
+		"priority":              priority,
+		"degradation_threshold": degradationThreshold,
+		"status":                status,
+		"circuit_state":         circuitState,
+		"fail_count":            failCount,
+	}
+}
+
+func (h *Handler) channelAuditSnapshot(ctx context.Context, id int64) (map[string]interface{}, bool) {
+	var name, provider, baseURL, models, adapterType, status, circuitState string
+	var priority, degradationThreshold, failCount int
+	err := h.db.QueryRow(ctx,
+		`SELECT name, provider, base_url, models, COALESCE(adapter_type, 'openai_compatible'),
+		        priority, degradation_threshold, status, circuit_state, fail_count
+		 FROM channels WHERE id = $1`,
+		id,
+	).Scan(&name, &provider, &baseURL, &models, &adapterType, &priority, &degradationThreshold, &status, &circuitState, &failCount)
+	if err != nil {
+		return nil, false
+	}
+	return channelAuditState(id, name, provider, baseURL, models, adapterType, priority, degradationThreshold, status, circuitState, failCount), true
 }
 
 func (h *Handler) GetChannel(w http.ResponseWriter, r *http.Request) {

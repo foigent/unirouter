@@ -1,8 +1,8 @@
-# FIX-SIGNAL.md — PRD2 Docs Boundary Sync And PRD3 Deferred Items
+# FIX-SIGNAL.md — PRD2 Batch 20 Audit Completion And Hardening
 
 **修复者：** Codex
 **日期：** 2026-07-02
-**修复轮次：** PRD2 documentation sync after Batch 19
+**修复轮次：** PRD2 Batch 20
 
 ---
 
@@ -10,130 +10,239 @@
 
 | 项目 | 预期状态 | 原因 |
 |------|---------|------|
-| Runtime code | Unchanged | This round only updates planning/status documents |
 | Batch 18 | Open / deferred | User explicitly deferred real-upstream provider acceptance |
-| Production webhook evidence | Not claimed | Batch 19 has local production-like webhook evidence only |
-| `VERIFY-RESULT.md` | Historical Batch 19 record remains unchanged | It records what Canary verified during Batch 19 and should not be rewritten by Codex |
+| Production webhook evidence | Not claimed | This round does not change Batch 19 production webhook boundary |
+| Unregistered models | Still callable | User direction was to preserve PRD1 compatibility and add visibility, not hard-block |
+| Frontend warnings | Existing non-blocking warnings may appear | React Router future flag, Semi `findDOMNode`, and Vite large chunk warnings are pre-existing |
 
 ---
 
-## Fix #1: Batch 19 status docs no longer say awaiting Canary
+## Fix #1: Audit Logs frontend filters and API client parameters
 
 **Files:**
 
-- `docs/ops/CURRENT-STATUS.md:4`
-- `docs/ops/CURRENT-STATUS.md:17`
-- `docs/ops/CURRENT-STATUS.md:23`
-- `docs/issues/OPEN-ISSUES.md:43`
-- `docs/ops/PRD2-COMPLETION-PLAN.md:257`
-- `docs/ops/PRD2-ACCEPTANCE-MATRIX.md:67`
-- `docs/ops/PRD2-ACCEPTANCE-MATRIX.md:68`
-- `docs/ops/PRD2-ACCEPTANCE-MATRIX.md:72`
+- `frontend/src/api/client.ts`
+- `frontend/src/pages/AuditLogsPage.tsx`
+- `frontend/src/pages/__tests__/AuditLogsPage.test.tsx`
+- `frontend/src/api/__tests__/client.test.ts`
 
 **Original issue:**
 
-The user reported Canary, Sentinel, and Atlas completed for Batch 19, and `main`/`origin/main` contains PR #51 at `5bbbf07`, but current docs still described Batch 19 as fixed locally and awaiting Canary.
+P2-F07 had backend filtering support, but the Audit Logs UI/client did not expose filters for org, project, actor, action, resource, time range, or source.
 
-**Current state:**
+**Current code:**
 
-- `CURRENT-STATUS.md` records Batch 19 as Canary/Sentinel/Atlas complete per user report.
-- `OPEN-ISSUES.md` marks `PRD2-B19-001` as `Canary passed`.
-- `PRD2-ACCEPTANCE-MATRIX.md` moves P2-F08 Notification/event foundation and Project budget alerts to `E2E accepted`.
-- Production webhook delivery evidence remains an explicit gap before `Production verified`.
-- Batch 18 remains open/deferred and is not marked complete.
+- `api.getAuditLogs` accepts filter parameters and serializes them to `/api/v1/audit-logs`.
+- Audit Logs page exposes filters for `org_id`, `project_id`, `actor_id`, `action`, `resource`, `resource_id`, `source`, `start_time`, and `end_time`.
+- Audit table renders org/project/source columns.
 
 **Verification method:**
 
 ```bash
-rg -n "PRD2-B19-001.*Fixed awaiting|Batch 19.*awaiting Canary|P2-F08 Notification/event foundation \\| Implemented not accepted|Project budget alerts \\| Implemented not accepted" \
-  docs/ops/CURRENT-STATUS.md \
-  docs/issues/OPEN-ISSUES.md \
-  docs/ops/PRD2-COMPLETION-PLAN.md \
-  docs/ops/PRD2-ACCEPTANCE-MATRIX.md
-
-rg -n "PRD2-B19-001|Batch 19 PASS|PR #51|Production webhook delivery evidence" \
-  docs/ops/CURRENT-STATUS.md \
-  docs/issues/OPEN-ISSUES.md \
-  docs/ops/PRD2-COMPLETION-PLAN.md \
-  docs/ops/PRD2-ACCEPTANCE-MATRIX.md
+npm --prefix frontend test -- --run AuditLogsPage client
+npm --prefix frontend test -- --run
+npm --prefix frontend run build
 ```
 
 Expected:
 
-- First command returns no matches.
-- Second command shows Batch 19 PASS/PR #51/current evidence and still shows production webhook evidence as a remaining gap.
+- `AuditLogsPage.test.tsx` verifies filter controls and default API call.
+- `client.test.ts` verifies the audit filter query string.
+- Full frontend tests pass; build passes with only the existing large chunk warning.
 
 ---
 
-## Fix #2: PRD2 architecture decisions to finalize are documented
-
-**File:**
-
-- `docs/ops/PRD2-COMPLETION-PLAN.md:30`
-- `docs/ops/PRD2-COMPLETION-PLAN.md:31`
-- `docs/ops/PRD2-COMPLETION-PLAN.md:60`
-
-**Original issue:**
-
-The user asked whether plugin support, OIDC/SSO, deployment docs, and development standards should be discussed now or delayed to PRD3. The repo did not yet state the recommended PRD2 boundary in one place.
-
-**Current state:**
-
-- PRD2 keeps core product features plus static code/config extension points.
-- OIDC first SSO is documented as core authentication infrastructure, not an arbitrary runtime plugin.
-- Runtime loading of third-party plugin code is not part of PRD2.
-- Plugin-suitable PRD3 candidates are provider adapters, notification sinks, audit/SIEM exporters, usage/report exporters, model-catalog sync, status connectors, and error-doc connectors.
-- Security/accounting boundaries remain core: OIDC/SSO, RBAC, API-key hashing, wallet/billing settlement, license verification, prompt/response storage policy, and runtime cache policy.
-
-**Verification method:**
-
-```bash
-rg -n "Extension/plugin boundary|OIDC boundary|Architecture Decisions To Finalize|runtime loading of third-party code|Security/accounting boundaries stay core" \
-  docs/ops/PRD2-COMPLETION-PLAN.md
-```
-
-Expected:
-
-- Matches show the PRD2 boundary and the OIDC-as-core decision.
-
----
-
-## Fix #3: PRD3/later unimplemented items are tracked
+## Fix #2: Channel create/update/delete audit before/after coverage
 
 **Files:**
 
-- `docs/issues/OPEN-ISSUES.md:44`
-- `docs/issues/OPEN-ISSUES.md:45`
-- `docs/issues/OPEN-ISSUES.md:46`
-- `docs/ops/PRD2-COMPLETION-PLAN.md:391`
-- `docs/ops/PRD2-ACCEPTANCE-MATRIX.md:100`
-- `docs/ops/PRD2-ACCEPTANCE-MATRIX.md:101`
-- `docs/ops/PRD2-ACCEPTANCE-MATRIX.md:102`
-- `docs/ops/PRD2-ACCEPTANCE-MATRIX.md:103`
+- `internal/admin/channel_handlers.go`
+- `internal/admin/channel_audit_test.go`
 
 **Original issue:**
 
-The user asked that PRD3 topics not implemented now be recorded as unfinished work rather than lost in discussion.
+`channel.create/update/delete` audit rows were thin. They did not consistently expose structured before/after evidence.
 
-**Current state:**
+**Current code:**
 
-- `PRD3-PLUGIN-001` tracks the missing runtime plugin platform.
-- `PRD3-DEPLOY-001` tracks missing enterprise deployment packaging and IaC.
-- `PRD3-ENG-001` tracks missing full engineering handbook and release governance.
-- The PRD2 acceptance matrix explicitly defers runtime plugins, plugin marketplace/third-party install, Kubernetes/Helm/Terraform packaging, and full engineering governance.
+- `channel.create` records an `after_state` snapshot.
+- `channel.update` records changed fields plus `before_state` and `after_state` snapshots when available.
+- `channel.delete` records a `before_state` snapshot.
+- Snapshots include channel metadata but not channel provider keys.
 
 **Verification method:**
 
 ```bash
-rg -n "PRD3-PLUGIN-001|PRD3-DEPLOY-001|PRD3-ENG-001|Runtime plugin platform|Plugin marketplace|Kubernetes / Helm / Terraform|Full engineering handbook" \
-  docs/issues/OPEN-ISSUES.md \
-  docs/ops/PRD2-COMPLETION-PLAN.md \
-  docs/ops/PRD2-ACCEPTANCE-MATRIX.md
+go test ./internal/admin -run 'Test(CreateChannel_AuditIncludesAfterState|UpdateChannel_AuditIncludesBeforeAfterState|DeleteChannel_AuditIncludesBeforeState)' -count=1
 ```
 
 Expected:
 
-- Matches show all three issue IDs and all deferred PRD3 categories.
+- Create audit includes `after_state.name` and normalized adapter type.
+- Update audit includes before and after names.
+- Delete audit includes before state and no `sk-` key material.
+
+---
+
+## Fix #3: `channel.test` audit event without secret leakage
+
+**Files:**
+
+- `internal/admin/test_handlers.go`
+- `internal/admin/channel_audit_test.go`
+
+**Original issue:**
+
+Testing a channel did not produce an audit event, and adding one must avoid leaking provider keys, prompt text, response bodies, or generated curl examples.
+
+**Current code:**
+
+- `TestChannel` records `channel.test` for no-key, decrypt, adapter, transport, success, and upstream-failure outcomes.
+- Audit `after_state` includes channel id, model, adapter type, success/status/status_code/latency/tokens/error summary where applicable.
+- Audit excludes provider key, prompt, upstream response body, and curl example.
+
+**Verification method:**
+
+```bash
+go test ./internal/admin -run 'TestTestChannel_WritesAuditWithoutSecret|TestTestChannel_Upstream401IsFailureAndUsesSelectedModel|TestTestChannel_AnthropicNativeUsesMessagesEndpoint' -count=1
+```
+
+Expected:
+
+- `channel.test` audit row is written for an upstream 401.
+- Audit JSON includes failure metadata but not `bad-upstream-key`, `sk-`, or `curl`.
+- Existing channel test behavior still passes for OpenAI-compatible and Anthropic-native adapters.
+
+---
+
+## Fix #4: Migration hardening for historical audit project backfill and rollback fidelity
+
+**Files:**
+
+- `migrations/000009_prd2_project_foundation.up.sql`
+- `migrations/000012_prd2_token_metering_v2.down.sql`
+- `internal/migrate/prd2_project_migration_integration_test.go`
+
+**Original issue:**
+
+- 000009 backfilled project ids for API keys, call logs, and transactions, but not historical audit rows.
+- 000012 normalized `usage_source` values on up migration but did not reverse those values on down migration.
+
+**Current code:**
+
+- 000009 maps historical org-scoped audit rows to each org's default project when `audit_logs.project_id` is null.
+- 000012 down maps `upstream -> api` and `counter_v2 -> stream_estimate` before dropping V2 columns.
+- Integration tests verify both behaviors.
+
+**Verification method:**
+
+```bash
+go test -tags=integration ./internal/migrate -run 'TestMigration000009BackfillsDefaultProjectForPRD1Data_Integration|TestMigration000012DownRestoresLegacyUsageSourceValues_Integration' -count=1 -v
+```
+
+Expected:
+
+- 000009 test verifies `audit_logs.project_id` equals the default project id.
+- 000012 test verifies up migration canonicalizes values and down migration restores legacy values.
+
+---
+
+## Fix #5: Unregistered model calls stay compatible but become auditable
+
+**Files:**
+
+- `cmd/uniroute/gateway_handlers.go`
+- `cmd/uniroute/prd2_p0_e2e_integration_test.go`
+
+**Original issue:**
+
+Unregistered models remain callable by design for PRD1 compatibility, but there was no visibility signal for typo or unmanaged model calls.
+
+**Current code:**
+
+- When model governance returns an empty lifecycle, the gateway preserves the request path.
+- The gateway writes a non-blocking `model.unregistered.call` audit row with `source=gateway_api`, request id, project id, API key id, key prefix, and model name.
+- No API key hash or provider key is stored.
+
+**Verification method:**
+
+```bash
+go test -tags=integration ./cmd/uniroute -run 'TestGatewayUnregisteredModelAllowedButAudited_Integration' -count=1 -v
+```
+
+Expected:
+
+- Gateway request for `unregistered-chat` returns HTTP 200.
+- Audit row `model.unregistered.call` is present with source `gateway_api` and project id.
+
+---
+
+## Fix #6: Real JWT/API audit filter E2E
+
+**Files:**
+
+- `cmd/uniroute/prd2_p0_e2e_integration_test.go`
+- `internal/admin/audit_handlers.go`
+
+**Original issue:**
+
+Audit filtering needed a real JWT/API E2E path that proves filters and before/after response fields work through auth middleware, not only handler mocks.
+
+**Current code:**
+
+- `TestPRD2AuditFiltersJWTBeforeAfterE2E_Integration` seeds a migrated DB audit row with `before_state` and `after_state`.
+- The test calls `GET /api/v1/audit-logs` through `AdminAuth` and role middleware using an org-admin JWT.
+- Filters include `org_id`, `project_id`, `actor_id`, `action`, `resource`, `resource_id`, and `source`.
+
+**Verification method:**
+
+```bash
+go test -tags=integration ./cmd/uniroute -run 'TestPRD2AuditFiltersJWTBeforeAfterE2E_Integration' -count=1 -v
+```
+
+Expected:
+
+- Response is 200.
+- Exactly one row is returned.
+- Row contains project id, actor id, source, and `before`/`after` JSON.
+
+---
+
+## Fix #7: Status docs record Batch 20 local completion without overclaim
+
+**Files:**
+
+- `docs/ops/CURRENT-STATUS.md`
+- `docs/ops/PRD2-COMPLETION-PLAN.md`
+- `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`
+- `docs/issues/OPEN-ISSUES.md`
+
+**Original issue:**
+
+Batch 20 work needed to be reflected in the active status sources after local implementation.
+
+**Current state:**
+
+- `CURRENT-STATUS.md` marks Batch 20 fixed locally awaiting Canary.
+- `PRD2-COMPLETION-PLAN.md` records the Batch 20 local work and commands.
+- `PRD2-ACCEPTANCE-MATRIX.md` keeps P2-F07 at `Implemented not accepted` until Canary verifies.
+- `PRD2-MIG-001`, `PRD2-MIG-002`, `PRD2-GOV-001`, and `PRD2-AUDIT-001` are `Fixed awaiting Canary`.
+
+**Verification method:**
+
+```bash
+rg -n "Batch 20|PRD2-MIG-001|PRD2-MIG-002|PRD2-GOV-001|PRD2-AUDIT-001|Implemented not accepted" \
+  docs/ops/CURRENT-STATUS.md \
+  docs/ops/PRD2-COMPLETION-PLAN.md \
+  docs/ops/PRD2-ACCEPTANCE-MATRIX.md \
+  docs/issues/OPEN-ISSUES.md
+```
+
+Expected:
+
+- Batch 20 is not marked Canary passed.
+- P2-F07 is not overclaimed as E2E accepted.
+- Four hardening issues are fixed awaiting Canary.
 
 ---
 
@@ -141,14 +250,23 @@ Expected:
 
 ```bash
 cd /Users/m4/Desktop/projects/UniRouter
+go test ./internal/admin -run 'Test(CreateChannel_AuditIncludesAfterState|UpdateChannel_AuditIncludesBeforeAfterState|DeleteChannel_AuditIncludesBeforeState|TestChannel_WritesAuditWithoutSecret|ListAuditLogs_Filters)' -count=1
+go test ./cmd/uniroute -run Test -count=1
+go test -tags=integration ./internal/migrate -run 'TestMigration000009BackfillsDefaultProjectForPRD1Data_Integration|TestMigration000012DownRestoresLegacyUsageSourceValues_Integration' -count=1 -v
+go test -tags=integration ./cmd/uniroute -run 'TestPRD2AuditFiltersJWTBeforeAfterE2E_Integration|TestGatewayUnregisteredModelAllowedButAudited_Integration' -count=1 -v
+go test ./...
+go test -tags=integration ./cmd/uniroute ./internal/migrate -count=1
+npm --prefix frontend test -- --run AuditLogsPage client
+npm --prefix frontend test -- --run
+npm --prefix frontend run build
 git diff --check
-git status --short
 ```
 
-Expected:
+Codex local notes:
 
-- `git diff --check` exits 0.
-- Only documentation files are modified.
+- All listed commands passed on 2026-07-02.
+- `npm --prefix frontend test -- --run` still prints existing React Router/Semi warnings.
+- `npm --prefix frontend run build` still prints the existing Vite large chunk warning.
 
 ---
 
@@ -156,8 +274,13 @@ Expected:
 
 Canary should write `docs/agent-workflows/VERIFY-RESULT.md` with:
 
-1. PASS/FAIL for Fix #1 Batch 19 status sync.
-2. PASS/FAIL for Fix #2 architecture-boundary documentation.
-3. PASS/FAIL for Fix #3 PRD3/later unfinished item tracking.
-4. Command results for the listed `rg` checks and `git diff --check`.
-5. A conclusion stating whether the docs are self-consistent and whether this docs-only round can move to Sentinel if the user wants a PR.
+1. PASS/FAIL for Fix #1 Audit Logs frontend filters/client parameters.
+2. PASS/FAIL for Fix #2 channel create/update/delete audit before/after.
+3. PASS/FAIL for Fix #3 `channel.test` audit without secret leakage.
+4. PASS/FAIL for Fix #4 migration hardening.
+5. PASS/FAIL for Fix #5 unregistered model audit compatibility.
+6. PASS/FAIL for Fix #6 real JWT/API audit filter E2E.
+7. PASS/FAIL for Fix #7 status docs discipline.
+8. Command result table for every listed command.
+9. New findings, if any.
+10. Conclusion stating whether Batch 20 can move to Sentinel.

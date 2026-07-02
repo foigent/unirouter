@@ -83,6 +83,13 @@ WHERE tx.project_id IS NULL
   AND p.org_id = tx.org_id
   AND p.slug = 'default';
 
+UPDATE audit_logs al
+SET project_id = p.id
+FROM projects p
+WHERE al.project_id IS NULL
+  AND p.org_id = al.org_id
+  AND p.slug = 'default';
+
 CREATE INDEX IF NOT EXISTS idx_api_keys_project_id ON api_keys(project_id);
 CREATE INDEX IF NOT EXISTS idx_call_logs_project_created ON call_logs(project_id, created_at) WHERE project_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_transactions_project_created ON transactions(project_id, created_at) WHERE project_id IS NOT NULL;

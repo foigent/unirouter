@@ -58,6 +58,11 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 		`SELECT key_enc FROM channel_keys WHERE channel_id = $1 AND status = 'active' ORDER BY id LIMIT 1`, id,
 	).Scan(&keyEnc)
 	if err != nil {
+		h.recordChannelTestAudit(r, id, reqBody.Model, adapterType, map[string]interface{}{
+			"success": false,
+			"status":  "no_key",
+			"error":   "No active key found for this channel",
+		})
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 			"error":  "No active key found for this channel",
 			"status": "no_key",
@@ -68,12 +73,22 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 	// Decrypt the key
 	apiKey, err := auth.DecryptKey(keyEnc, h.encKey)
 	if err != nil {
+		h.recordChannelTestAudit(r, id, reqBody.Model, adapterType, map[string]interface{}{
+			"success": false,
+			"status":  "decrypt_error",
+			"error":   "Failed to decrypt key",
+		})
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to decrypt key"})
 		return
 	}
 
 	adapter, err := adapters.DefaultRegistry().Get(adapterType)
 	if err != nil {
+		h.recordChannelTestAudit(r, id, reqBody.Model, adapterType, map[string]interface{}{
+			"success": false,
+			"status":  "adapter_error",
+			"error":   "Unknown adapter_type",
+		})
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 			"error":        "Unknown adapter_type",
 			"adapter_type": adapterType,
@@ -95,6 +110,11 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 		Prompt: reqBody.Prompt,
 	})
 	if err != nil {
+		h.recordChannelTestAudit(r, id, reqBody.Model, adapterType, map[string]interface{}{
+			"success": false,
+			"status":  "error",
+			"error":   auditErrorSummary(err.Error()),
+		})
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"status": "error", "error": err.Error(),
 		})
@@ -106,6 +126,15 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 	if adapters.NormalizeType(adapterType) == adapters.TypeAnthropicNative {
 		curlExample = fmt.Sprintf("curl %s -H \"x-api-key: sk-***\" -H \"anthropic-version: 2023-06-01\" -H \"Content-Type: application/json\" -d '{\"model\":\"%s\",\"max_tokens\":16,\"messages\":[{\"role\":\"user\",\"content\":\"%s\"}]}'", result.RequestURL, reqBody.Model, reqBody.Prompt)
 	}
+
+	h.recordChannelTestAudit(r, id, reqBody.Model, adapterType, map[string]interface{}{
+		"success":     result.Success,
+		"status":      result.Status,
+		"status_code": result.StatusCode,
+		"latency_ms":  result.LatencyMs,
+		"tokens_used": result.TokensUsed,
+		"error":       auditErrorSummary(result.Error),
+	})
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success":      result.Success,
@@ -121,4 +150,29 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 		"response":     string(result.Body),
 		"curl_example": curlExample,
 	})
+}
+
+func (h *Handler) recordChannelTestAudit(r *http.Request, channelID int64, model, adapterType string, result map[string]interface{}) {
+	after := map[string]interface{}{
+		"channel_id":   channelID,
+		"model":        model,
+		"adapter_type": adapters.NormalizeType(adapterType),
+	}
+	for key, value := range result {
+		if value != nil && value != "" {
+			after[key] = value
+		}
+	}
+	h.recordAuditFromRequest(r, "channel.test", "channel", strconv.FormatInt(channelID, 10), map[string]interface{}{"after": after})
+}
+
+func auditErrorSummary(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if len(value) > 512 {
+		value = value[:512]
+	}
+	return value
 }

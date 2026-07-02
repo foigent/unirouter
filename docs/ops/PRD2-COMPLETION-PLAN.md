@@ -279,6 +279,34 @@ Target rows/issues:
 - `PRD2-GOV-001`.
 - `PRD2-AUDIT-001`.
 
+Status update on 2026-07-02:
+
+- Codex implemented Batch 20 locally:
+  - Audit Logs frontend filters for org, project, actor, action, resource, resource id, source, start time, and end time;
+  - audit API client filter parameters;
+  - real JWT/API E2E for audit filters and before/after response fields;
+  - channel create/update/delete before/after audit snapshots;
+  - `channel.test` success/failure audit without provider key, prompt, response, or curl example leakage;
+  - 000009 historical `audit_logs.project_id` default-project backfill;
+  - 000012 down migration reverse mapping for `usage_source`;
+  - gateway audit signal `model.unregistered.call` for unregistered model calls while keeping PRD1 compatibility.
+- Local validation passed:
+
+```bash
+go test ./internal/admin -run 'Test(CreateChannel_AuditIncludesAfterState|UpdateChannel_AuditIncludesBeforeAfterState|DeleteChannel_AuditIncludesBeforeState|TestChannel_WritesAuditWithoutSecret|ListAuditLogs_Filters)' -count=1
+go test ./cmd/uniroute -run Test -count=1
+go test -tags=integration ./internal/migrate -run 'TestMigration000009BackfillsDefaultProjectForPRD1Data_Integration|TestMigration000012DownRestoresLegacyUsageSourceValues_Integration' -count=1 -v
+go test -tags=integration ./cmd/uniroute -run 'TestPRD2AuditFiltersJWTBeforeAfterE2E_Integration|TestGatewayUnregisteredModelAllowedButAudited_Integration' -count=1 -v
+go test ./...
+go test -tags=integration ./cmd/uniroute ./internal/migrate -count=1
+npm --prefix frontend test -- --run AuditLogsPage client
+npm --prefix frontend test -- --run
+npm --prefix frontend run build
+git diff --check
+```
+
+- Current protocol state: fixed locally by Codex and awaiting Canary verification through `docs/agent-workflows/FIX-SIGNAL.md`.
+
 ### Batch 21: HA And Deployment Validation
 
 Goal: prove two-instance readiness in a safe environment and record production gaps honestly.
