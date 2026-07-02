@@ -321,3 +321,5 @@ docker compose exec nginx nginx -T | grep "proxy_read_timeout"
 | `JWT_SECRET` | 必填 | canary 必须与 stable 相同 |
 | `API_KEY_HASH_SECRET` | 必填 | canary 必须与 stable 相同；否则 canary 会拒绝 stable 创建的 API Key |
 | `ENCRYPTION_KEY` | 必填 | canary 必须与 stable 相同 |
+| `LICENSE_PUBLIC_KEY` | 可选 | 如果 stable 已启用离线 License，canary 必须使用相同公钥 |
+| `LICENSE_EXPIRY_WARNING_DAYS` | `30` | License 临期 warning 窗口 |

@@ -65,12 +65,25 @@ func TestValidate_LongEncryptionKey(t *testing.T) {
 	}
 }
 
+func TestValidate_NegativeLicenseExpiryWarningDays(t *testing.T) {
+	cfg := &Config{
+		JWTSecret:                "secret",
+		APIKeyHashSecret:         "api-key-secret",
+		EncryptionKey:            "0123456789abcdef0123456789abcdef",
+		LicenseExpiryWarningDays: -1,
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative LICENSE_EXPIRY_WARNING_DAYS")
+	}
+}
+
 func TestLoad_Defaults(t *testing.T) {
 	// Clear all env vars to test defaults
 	envVars := []string{
 		"LISTEN_PORT", "LOG_LEVEL", "GIN_MODE", "DB_DSN", "DB_MAX_CONNECTIONS",
 		"REDIS_ADDR", "REDIS_PASSWORD", "REDIS_DB", "JWT_SECRET", "API_KEY_HASH_SECRET", "ENCRYPTION_KEY",
-		"MIN_FREEZE_AMOUNT", "FREEZE_SAFETY_FACTOR", "DEFAULT_KEY_RPM", "DEFAULT_KEY_QPS",
+		"LICENSE_PUBLIC_KEY", "LICENSE_EXPIRY_WARNING_DAYS", "MIN_FREEZE_AMOUNT", "FREEZE_SAFETY_FACTOR", "DEFAULT_KEY_RPM", "DEFAULT_KEY_QPS",
 	}
 	for _, v := range envVars {
 		os.Unsetenv(v)
@@ -122,12 +135,16 @@ func TestLoad_EnvOverrides(t *testing.T) {
 	os.Setenv("LOG_LEVEL", "debug")
 	os.Setenv("JWT_SECRET", "test-secret")
 	os.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+	os.Setenv("LICENSE_PUBLIC_KEY", "test-public-key")
+	os.Setenv("LICENSE_EXPIRY_WARNING_DAYS", "45")
 	defer func() {
 		os.Unsetenv("LISTEN_PORT")
 		os.Unsetenv("LOG_LEVEL")
 		os.Unsetenv("JWT_SECRET")
 		os.Unsetenv("API_KEY_HASH_SECRET")
 		os.Unsetenv("ENCRYPTION_KEY")
+		os.Unsetenv("LICENSE_PUBLIC_KEY")
+		os.Unsetenv("LICENSE_EXPIRY_WARNING_DAYS")
 	}()
 
 	cfg, err := Load()
@@ -142,6 +159,12 @@ func TestLoad_EnvOverrides(t *testing.T) {
 	}
 	if cfg.APIKeyHashSecret != "test-secret" {
 		t.Fatalf("expected APIKeyHashSecret to default to JWT_SECRET, got %s", cfg.APIKeyHashSecret)
+	}
+	if cfg.LicensePublicKey != "test-public-key" {
+		t.Fatalf("expected LicensePublicKey override, got %s", cfg.LicensePublicKey)
+	}
+	if cfg.LicenseExpiryWarningDays != 45 {
+		t.Fatalf("expected LicenseExpiryWarningDays=45, got %d", cfg.LicenseExpiryWarningDays)
 	}
 }
 

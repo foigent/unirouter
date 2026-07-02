@@ -12,6 +12,7 @@ import (
 	"github.com/uniroute/unirouter/internal/db"
 
 	"github.com/uniroute/unirouter/internal/filter"
+	"github.com/uniroute/unirouter/internal/licensing"
 )
 
 // Handler contains all admin API handlers.
@@ -20,6 +21,7 @@ type Handler struct {
 	db               db.DBQuerier
 	jwtSecret        string
 	apiKeyHashSecret string
+	licenseVerifier  *licensing.Verifier
 	encKey           []byte
 }
 
@@ -35,6 +37,10 @@ func NewHandlerWithAPIKeyHashSecret(db db.DBQuerier, jwtSecret, apiKeyHashSecret
 		apiKeyHashSecret = jwtSecret
 	}
 	return &Handler{db: db, jwtSecret: jwtSecret, apiKeyHashSecret: apiKeyHashSecret, encKey: encKey, sensitiveFilter: sf}
+}
+
+func (h *Handler) SetLicenseVerifier(verifier *licensing.Verifier) {
+	h.licenseVerifier = verifier
 }
 
 // --- Helpers ---

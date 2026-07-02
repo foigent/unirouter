@@ -9,6 +9,7 @@ import {
   IconSearch,
   IconServer,
   IconSetting,
+  IconShield,
   IconUser,
 } from '@douyinfe/semi-icons';
 
@@ -99,6 +100,7 @@ const fullAdminNavItems = [
     text: '系统',
     icon: <IconSetting />,
     items: [
+      { itemKey: '/license', text: 'License', icon: <IconShield /> },
       { itemKey: '/settings', text: '系统设置', icon: <IconSetting /> },
       { itemKey: '/docs', text: 'API 文档', icon: <IconFile /> },
     ],
@@ -151,7 +153,12 @@ const developerNavItems = [
 export function getNavItemsForRole(role?: string | null) {
   if (isProjectConsoleRole(role)) return developerNavItems;
   if (isBillingRole(role)) return billingNavItems;
-  if (isOrgAdminRole(role)) return fullAdminNavItems;
+  if (isOrgAdminRole(role)) {
+    if (isPlatformAdminRole(role)) return fullAdminNavItems;
+    return fullAdminNavItems.map(item => item.itemKey === 'g-system'
+      ? { ...item, items: item.items?.filter(child => child.itemKey !== '/license') }
+      : item);
+  }
   return developerNavItems;
 }
 
@@ -178,6 +185,7 @@ export function isRouteAllowedForRole(path: string, role?: string | null) {
   const route = firstSegmentPath(path);
   if (route === '/login') return true;
   if (route === '/docs') return true;
+  if (route === '/license') return isPlatformAdminRole(role);
 
   if (isOrgAdminRole(role)) return true;
 

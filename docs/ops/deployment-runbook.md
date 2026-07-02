@@ -32,6 +32,7 @@ cp .env.example .env
 # - JWT_SECRET: 32 字节随机字符串
 # - API_KEY_HASH_SECRET: API Key HMAC 稳定密钥
 # - ENCRYPTION_KEY: 32 字节随机字符串
+# - LICENSE_PUBLIC_KEY: 离线 License Ed25519 公钥（导入 License 前必填）
 # - GRAFANA_ADMIN_PASSWORD: Grafana 管理员强密码
 # - MIGRATIONS_DIR: 迁移文件目录（默认 /app/migrations）
 
@@ -49,6 +50,9 @@ openssl rand -base64 24  # 用于 GRAFANA_ADMIN_PASSWORD
 | `JWT_SECRET` | Admin JWT 签名 | 管理员需要重新登录；不应影响 API Key |
 | `API_KEY_HASH_SECRET` | API Key HMAC 哈希 | 变更会导致既有 API Key 全部失效 |
 | `ENCRYPTION_KEY` | 上游渠道密钥 AES-GCM 加密 | 变更且无法恢复会导致已保存 channel key 无法解密 |
+| `LICENSE_PUBLIC_KEY` | 离线 License Ed25519 签名校验公钥 | 缺失时可启动服务，但无法导入或验证 License |
+
+License 公钥由 License 签发方提供，支持 base64 或 hex 编码的 32 字节 Ed25519 public key。该值不是 secret，但 stable/canary 应保持一致，避免同一份 license 在不同实例上校验结果不同。
 
 现有部署升级到支持 `API_KEY_HASH_SECRET` 的版本时：
 
@@ -134,7 +138,7 @@ rsync -az --delete \
 ```bash
 test -s .env
 test -s .env.production
-grep -E '^(JWT_SECRET|API_KEY_HASH_SECRET|ENCRYPTION_KEY)=' .env
+grep -E '^(JWT_SECRET|API_KEY_HASH_SECRET|ENCRYPTION_KEY|LICENSE_PUBLIC_KEY)=' .env
 docker compose config >/tmp/uniroute-compose-check.yml
 ```
 
@@ -330,6 +334,7 @@ docker compose logs backend
 # - DB_DSN 连接失败 → 检查 PostgreSQL 容器状态
 # - REDIS_ADDR 连接失败 → 检查 Redis 容器状态
 # - JWT_SECRET/API_KEY_HASH_SECRET/ENCRYPTION_KEY 未设置 → 检查 .env 文件
+# - License 导入失败且提示 public key → 检查 LICENSE_PUBLIC_KEY
 ```
 
 ### 7.2 请求返回 502
@@ -630,6 +635,6 @@ docker compose -f docker-compose.yml -f docker-compose.canary.yml up -d
 | 防火墙 | 只开放 80/443 端口 |
 | 数据库 | 不暴露外部端口，只通过 Docker 网络访问 |
 | Redis | 设置密码，不暴露外部端口 |
-| 密钥 | `JWT_SECRET` 可按需轮换；`API_KEY_HASH_SECRET` 和 `ENCRYPTION_KEY` 轮换前必须确认会话、API Key、上游渠道密钥的影响 |
+| 密钥 | `JWT_SECRET` 可按需轮换；`API_KEY_HASH_SECRET` 和 `ENCRYPTION_KEY` 轮换前必须确认会话、API Key、上游渠道密钥的影响；`LICENSE_PUBLIC_KEY` 由签发方管理 |
 | Grafana | 设置 `GRAFANA_ADMIN_PASSWORD`，禁止继续使用 `admin/admin` |
 | 备份 | 备份文件加密存储 |

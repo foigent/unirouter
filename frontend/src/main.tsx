@@ -13,6 +13,7 @@ import WalletPage from './pages/WalletPage'
 import ChannelKeysPage from './pages/ChannelKeysPage'
 import LogsPage from './pages/LogsPage'
 import SettingsPage from './pages/SettingsPage'
+import LicensePage from './pages/LicensePage'
 import UsersPage from './pages/UsersPage'
 import ModelGovernancePage from './pages/ModelGovernancePage'
 import ModelPricesPage from './pages/ModelPricesPage'
@@ -94,6 +95,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="reconciliation" element={<RoleRoute><ReconciliationPage /></RoleRoute>} />
             <Route path="test" element={<RoleRoute><TestPage /></RoleRoute>} />
             <Route path="settings" element={<RoleRoute><SettingsPage /></RoleRoute>} />
+            <Route path="license" element={<RoleRoute><LicensePage /></RoleRoute>} />
             <Route path="docs" element={<ApiDocsPage />} />
           </Route>
         </Routes>
