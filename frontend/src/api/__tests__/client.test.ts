@@ -230,6 +230,23 @@ describe('API Client', () => {
     })
   })
 
+  describe('license APIs', () => {
+    it('loads and updates offline license', async () => {
+      mockJsonResponse({ status: 'missing' })
+      await api.getLicense()
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/license')
+
+      const license = { payload: { customer: 'Acme' }, signature: 'sig' }
+      mockJsonResponse({ status: 'active' })
+      await api.updateLicense(license)
+      expect(mockFetch.mock.calls[1][0]).toBe('/api/v1/license')
+      expect(mockFetch.mock.calls[1][1]).toEqual(expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ license }),
+      }))
+    })
+  })
+
   describe('error handling', () => {
     it('throws ApiError for non-2xx responses', async () => {
       mockJsonResponse({ error: { message: 'invalid amount' } }, 400)

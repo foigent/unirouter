@@ -29,6 +29,10 @@ type Config struct {
 	APIKeyHashSecret string
 	EncryptionKey    string
 
+	// License
+	LicensePublicKey         string
+	LicenseExpiryWarningDays int
+
 	// Billing
 	MinFreezeAmount    int
 	FreezeSafetyFactor float64
@@ -73,6 +77,9 @@ func (c *Config) Validate() error {
 	if len(c.EncryptionKey) != 32 {
 		return fmt.Errorf("ENCRYPTION_KEY must be exactly 32 bytes for AES-256, got %d bytes", len(c.EncryptionKey))
 	}
+	if c.LicenseExpiryWarningDays < 0 {
+		return fmt.Errorf("LICENSE_EXPIRY_WARNING_DAYS must be >= 0")
+	}
 	return nil
 }
 
@@ -96,6 +103,9 @@ func Load() (*Config, error) {
 		JWTSecret:        jwtSecret,
 		APIKeyHashSecret: getEnvStr("API_KEY_HASH_SECRET", jwtSecret),
 		EncryptionKey:    getEnvStr("ENCRYPTION_KEY", ""),
+
+		LicensePublicKey:         getEnvStr("LICENSE_PUBLIC_KEY", ""),
+		LicenseExpiryWarningDays: getEnvInt("LICENSE_EXPIRY_WARNING_DAYS", 30),
 
 		MinFreezeAmount:    getEnvInt("MIN_FREEZE_AMOUNT", 10),
 		FreezeSafetyFactor: getEnvFloat("FREEZE_SAFETY_FACTOR", 1.5),

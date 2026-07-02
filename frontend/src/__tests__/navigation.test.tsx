@@ -23,6 +23,7 @@ describe('navigation role boundaries', () => {
     expect(itemKeys).not.toContain('/channels');
     expect(itemKeys).not.toContain('/channel-keys');
     expect(itemKeys).not.toContain('/model-governance');
+    expect(itemKeys).not.toContain('/license');
   });
 
   it('blocks admin routes for project-scoped roles', () => {
@@ -38,8 +39,18 @@ describe('navigation role boundaries', () => {
     expect(itemKeys).toContain('/channels');
     expect(itemKeys).toContain('/model-governance');
     expect(itemKeys).toContain('/model-prices');
+    expect(itemKeys).not.toContain('/license');
     expect(isRouteAllowedForRole('/model-governance', 'org_admin')).toBe(true);
     expect(isRouteAllowedForRole('/settings', 'org_admin')).toBe(true);
+    expect(isRouteAllowedForRole('/license', 'org_admin')).toBe(false);
+  });
+
+  it('keeps license management platform-admin only', () => {
+    const itemKeys = flattenItemKeys(getNavItemsForRole('platform_admin'));
+
+    expect(itemKeys).toContain('/license');
+    expect(isRouteAllowedForRole('/license', 'platform_admin')).toBe(true);
+    expect(isRouteAllowedForRole('/license', 'admin')).toBe(true);
   });
 
   it('matches current backend key permissions in developer console controls', () => {

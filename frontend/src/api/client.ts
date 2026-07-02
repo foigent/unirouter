@@ -198,6 +198,11 @@ export const api = {
   updateSetting: (key: string, value: any) =>
     request(`/settings/${key}`, { method: 'PUT', body: JSON.stringify({ value }) }),
 
+  // License
+  getLicense: () => request('/license'),
+  updateLicense: (license: any) =>
+    request('/license', { method: 'PUT', body: JSON.stringify({ license }) }),
+
   // Channel Keys
   getChannelKeys: (page = 1, pageSize = 20) =>
     request(`/channel-keys?page=${page}&page_size=${pageSize}`),

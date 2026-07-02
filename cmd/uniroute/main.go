@@ -22,6 +22,7 @@ import (
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/filter"
 	"github.com/uniroute/unirouter/internal/gateway"
+	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/migrate"
 	"github.com/uniroute/unirouter/internal/redisx"
@@ -92,6 +93,11 @@ func main() {
 	}()
 
 	adminHandler := admin.NewHandlerWithAPIKeyHashSecret(postgres.Pool, cfg.JWTSecret, cfg.APIKeyHashSecret, encKey, sensitiveFilter)
+	licenseVerifier, err := licensing.NewVerifierFromPublicKey(cfg.LicensePublicKey, cfg.LicenseExpiryWarningDays)
+	if err != nil {
+		log.Fatalf("Invalid license configuration: %v", err)
+	}
+	adminHandler.SetLicenseVerifier(licenseVerifier)
 
 	// Load sensitive words from settings and periodically refresh all instances.
 	go startSensitiveWordsReloadLoop(postgres.Pool, sensitiveFilter, time.Minute)
@@ -223,6 +229,8 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">GET</td><td><code>/api/v1/logs</code></td><td>Call logs with filters</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/wallet</code></td><td>Wallet information</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/audit-logs</code></td><td>Audit logs</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/license</code></td><td>License status</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/license</code></td><td>Import offline license</td></tr>
 <tr><td class="method">GET</td><td><code>/v1/models</code></td><td>OpenAI-compatible model list</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/chat/completions</code></td><td>OpenAI-compatible chat completions</td></tr>
 </tbody>
@@ -308,6 +316,8 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 
 	mux.Handle("GET /api/v1/settings", orgAdminRoute(adminHandler.ListSettings))
 	mux.Handle("PUT /api/v1/settings/{key}", orgAdminRoute(adminHandler.UpdateSetting))
+	mux.Handle("GET /api/v1/license", platformRoute(adminHandler.GetLicense))
+	mux.Handle("PUT /api/v1/license", platformRoute(adminHandler.UpdateLicense))
 
 	// Sensitive Words CRUD (PRD F13)
 	mux.Handle("GET /api/v1/sensitive-words", orgAdminRoute(adminHandler.ListSensitiveWords))

@@ -8,7 +8,7 @@
 |------|------|-------|
 | Main server | `cmd/uniroute/main.go` | Loads config, connects Postgres/Redis, runs migrations, wires gateway/admin routes, starts background cleanup and alerts |
 | Main tests | `cmd/uniroute/main_test.go` | Top-level route behavior tests |
-| Config | `internal/config/config.go` | Environment config and validation, including `JWT_SECRET`, `API_KEY_HASH_SECRET`, and `ENCRYPTION_KEY` length |
+| Config | `internal/config/config.go` | Environment config and validation, including `JWT_SECRET`, `API_KEY_HASH_SECRET`, `ENCRYPTION_KEY`, and optional `LICENSE_PUBLIC_KEY` |
 | Database | `internal/db/postgres.go` | pgx pool setup and health |
 | Redis | `internal/redisx/redis.go` | Redis setup, health, wallet cache helpers |
 | Migrations | `migrations/*.sql` | Base schema plus wallet/schema/PRD alignment migrations |
@@ -29,6 +29,7 @@
 | `internal/testutil` | Mock DB and test DB helpers |
 | `internal/tokenutil` | Token estimation and stream counting |
 | `internal/logger` | Logging helpers |
+| `internal/licensing` | Offline license document parsing, Ed25519 signature verification, expiry status, and warning calculation |
 
 ## Main Backend Routes
 
@@ -48,6 +49,7 @@ Defined in `cmd/uniroute/main.go`.
 | Pricing | `GET/POST /api/v1/model-prices`, `PUT/DELETE /api/v1/model-prices/{id}`, `GET /api/v1/model-names`, `GET/POST /api/v1/org-model-prices`, `PUT/DELETE /api/v1/org-model-prices/{id}` |
 | Users/access | User CRUD, grants, audit logs |
 | Settings/filter | Settings CRUD and sensitive-word CRUD |
+| License | `GET/PUT /api/v1/license` |
 | Docs | `GET /docs` simple HTML endpoint |
 
 Contract guard: `cmd/uniroute/route_parity_test.go` checks the frontend admin API routes against registered backend route strings. `PUT /api/v1/me/password` is now registered in `cmd/uniroute/main.go`.

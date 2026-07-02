@@ -1,8 +1,8 @@
-# FIX-SIGNAL.md — PRD2 Batch 14 API Key Hash Secret and Deployment Env Hardening
+# FIX-SIGNAL.md — PRD2 Batch 15 License Foundation
 
 **修复者：** main agent
 **日期：** 文件系统时间戳为准
-**修复轮次：** PRD2 Batch 14
+**修复轮次：** PRD2 Batch 15
 
 ---
 
@@ -10,171 +10,210 @@
 
 | 项目 | 预期状态 | 原因 |
 |------|----------|------|
-| PRD2 Batch 13 | Canary/Sentinel/Atlas completed per User report; PR #44 deployed | User reported all three roles completed and Anthropic stream feature is online |
-| PR #44 deployment incident | Existing 31 API Keys remain invalid unless old hash secret is recovered | Old `JWT_SECRET` was not recoverable; API Key hashes are one-way HMACs |
-| `ENCRYPTION_KEY` | Recovered in production per User report | Upstream channel keys are not expected to be affected |
-| Admin sessions | Must re-login after JWT secret change | JWT signing secret changed |
-| Real Anthropic upstream E2E | Still not claimed by this batch | This batch hardens deployment secrets, not provider credential coverage |
+| PRD2 Batch 14 | Canary/Sentinel/Atlas completed; PR #45 merged at `30e74a3` per current repo/user report | Batch 15 基于 Batch 14 之后的 `main` 继续开发 |
+| P2-F11 Prompt/Response storage policy | 仍不实现 | 用户此前明确下一版再讨论是否需要存储；本轮不抢跑数据留存策略 |
+| License enforcement | 不阻断网关请求 | 本轮是 foundation：导入、验签、状态、审计、Admin Console；不做在线激活、硬件指纹、代理商/市场、请求拦截 |
+| Production license import | 本地未执行 | 需要真实签发公钥和生产 License，由 Atlas/用户环境完成 |
+| Browser smoke against real backend | 本地未执行 | 本轮已做前端单测/构建；真实后端浏览器 smoke 可由 Canary/Atlas 在目标环境补充 |
 
-> Canary 验收时：已失效的 31 个 API Key 不算本轮 FAIL；这是 PR #44 事故影响，不能在没有旧 secret 的情况下反推恢复。本轮验收重点是未来 `JWT_SECRET` 轮换不再牵连 API Key hash，以及部署流程不再删除生产 `.env`。
+> Canary 验收时：上表中的未实现项不是 FAIL。FAIL 范围应限于本轮声明的 foundation 能力、测试/构建、文档一致性和安全边界。
 
 ---
 
-## Fix #1: Config separates API Key hash secret from JWT signing secret
+## Fix #1: Offline license verifier
 
-**文件：** `internal/config/config.go:27-98`, `internal/config/config_test.go`
+**文件：** `internal/licensing/license.go:13-240`, `internal/licensing/license_test.go:38-142`
 
-**原问题：** API Key hash 依赖 `JWT_SECRET`，导致 JWT secret 丢失或轮换会让既有 API Key 全部失效。
+**原问题：** PRD2 P2-F10 需要离线 License 文件、客户/部署/套餐/有效期元数据、签名校验、生命周期状态和临期 warning，但代码库没有统一 verifier。
 
 **当前代码：**
 
 ```go
-JWTSecret        string
-APIKeyHashSecret string
-EncryptionKey    string
+const (
+	StatusMissing  = "missing"
+	StatusActive   = "active"
+	StatusExpiring = "expiring"
+	StatusExpired  = "expired"
+	StatusInvalid  = "invalid"
+)
 
-if c.APIKeyHashSecret == "" {
-	return fmt.Errorf("API_KEY_HASH_SECRET environment variable is required and cannot be empty")
+type Payload struct {
+	Customer     string            `json:"customer"`
+	DeploymentID string            `json:"deployment_id"`
+	Tier         string            `json:"tier"`
+	IssuedAt     string            `json:"issued_at,omitempty"`
+	ExpiresAt    string            `json:"expires_at"`
+	Features     []string          `json:"features,omitempty"`
+	Limits       map[string]int64  `json:"limits,omitempty"`
+	Metadata     map[string]string `json:"metadata,omitempty"`
 }
 
-jwtSecret := getEnvStr("JWT_SECRET", "")
-APIKeyHashSecret: getEnvStr("API_KEY_HASH_SECRET", jwtSecret),
+func (v *Verifier) VerifyBytes(raw []byte) Status {
+	// empty -> missing; missing public key -> invalid with clear error
+	// valid Ed25519 signature + expiry -> active/expiring/expired
+}
 ```
 
 **验证方法：**
 
 ```bash
-go test ./internal/config -run 'TestValidate|TestLoad' -count=1
+go test ./internal/licensing -run 'TestVerifier' -count=1
 ```
 
 重点确认：
-- `API_KEY_HASH_SECRET` 单独设置时覆盖 `JWT_SECRET`。
-- 未设置 `API_KEY_HASH_SECRET` 时回落到 `JWT_SECRET`，不破坏现有部署升级路径。
-- 直接构造空 `APIKeyHashSecret` 的配置会被 `Validate()` 拒绝。
+- `active`、`expiring`、`expired`、`invalid`、`missing public key` 都有覆盖。
+- Ed25519 public key 支持 base64/raw-base64/hex 解析。
+- 签名是对 canonical payload JSON 校验，非签发方私钥签名会失败。
 
 ---
 
-## Fix #2: Admin API Key creation uses the stable hash secret
+## Fix #2: Config and backend route wiring
 
-**文件：** `internal/admin/handlers.go:18-37`, `internal/admin/key_handlers.go:154-160`, `internal/admin/admin_test.go`
+**文件：** `internal/config/config.go:32-108`, `internal/config/config_test.go`, `cmd/uniroute/main.go:95-100`, `cmd/uniroute/main.go:319-320`, `cmd/uniroute/route_parity_test.go:69-70`, `.env.example:29-32`, `docker-compose.yml:53-54`, `docker-compose.canary.yml:55-56`
 
-**原问题：** Admin 创建 API Key 时使用 `JWT_SECRET` 计算 `key_hash`。
+**原问题：** 服务没有 License 公钥配置、临期窗口配置，也没有平台管理员 License API。
 
 **当前代码：**
 
 ```go
-type Handler struct {
-	jwtSecret        string
-	apiKeyHashSecret string
+LicensePublicKey         string
+LicenseExpiryWarningDays int
+
+if c.LicenseExpiryWarningDays < 0 {
+	return fmt.Errorf("LICENSE_EXPIRY_WARNING_DAYS must be >= 0")
 }
 
-func NewHandlerWithAPIKeyHashSecret(db db.DBQuerier, jwtSecret, apiKeyHashSecret string, encKey []byte, sf *filter.DFAFilter) *Handler {
-	if apiKeyHashSecret == "" {
-		apiKeyHashSecret = jwtSecret
+LicensePublicKey:         getEnvStr("LICENSE_PUBLIC_KEY", ""),
+LicenseExpiryWarningDays: getEnvInt("LICENSE_EXPIRY_WARNING_DAYS", 30),
+```
+
+```go
+licenseVerifier, err := licensing.NewVerifierFromPublicKey(cfg.LicensePublicKey, cfg.LicenseExpiryWarningDays)
+if err != nil {
+	log.Fatalf("Invalid license configuration: %v", err)
+}
+adminHandler.SetLicenseVerifier(licenseVerifier)
+
+mux.Handle("GET /api/v1/license", platformRoute(adminHandler.GetLicense))
+mux.Handle("PUT /api/v1/license", platformRoute(adminHandler.UpdateLicense))
+```
+
+**验证方法：**
+
+```bash
+go test ./internal/config ./cmd/uniroute -run 'TestValidate|TestLoad|TestAdminRoutesRegisteredForFrontendClient' -count=1
+rg -n 'LICENSE_PUBLIC_KEY|LICENSE_EXPIRY_WARNING_DAYS|/api/v1/license' .env.example docker-compose.yml docker-compose.canary.yml cmd internal
+```
+
+重点确认：
+- `LICENSE_EXPIRY_WARNING_DAYS < 0` 会被拒绝。
+- `LICENSE_PUBLIC_KEY` 缺失时服务可启动，但导入 License 会失败并返回清晰错误。
+- License API 走 `platformRoute`，仅 `admin` / `platform_admin`。
+
+---
+
+## Fix #3: Settings-backed license storage and audit
+
+**文件：** `internal/admin/handlers.go:18-44`, `internal/admin/license_handlers.go:13-137`, `internal/admin/license_handlers_test.go:51-161`
+
+**原问题：** PRD2 要求 License 元数据对平台管理员可见，License 变更需要审计，非法 License 要给清晰错误；代码库没有存储和审计入口。
+
+**当前代码：**
+
+```go
+const licenseSettingKey = "license.offline"
+
+func (h *Handler) UpdateLicense(w http.ResponseWriter, r *http.Request) {
+	status := verifier.VerifyBytes(raw)
+	if status.Status == licensing.StatusInvalid {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": status.Error, "status": status})
+		return
 	}
-	return &Handler{db: db, jwtSecret: jwtSecret, apiKeyHashSecret: apiKeyHashSecret, encKey: encKey, sensitiveFilter: sf}
-}
 
-keyHash := auth.HashAPIKey(rawKey, h.apiKeyHashSecret)
+	_, err = h.db.Exec(r.Context(),
+		`INSERT INTO settings (key, value, description, updated_at)
+		 VALUES ($1, $2::jsonb, 'Offline UniRouter license document', NOW())
+		 ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, description = EXCLUDED.description, updated_at = NOW()`,
+		licenseSettingKey, string(normalized))
+
+	h.recordAuditFromRequest(r, "license.update", "license", licenseResourceID(status), map[string]interface{}{
+		"before": licenseAuditSummary(beforeStatus),
+		"after":  licenseAuditSummary(status),
+	})
+}
 ```
 
 **验证方法：**
 
 ```bash
-go test ./internal/admin -run 'TestNewHandler|TestCreateAPIKey' -count=1
+go test ./internal/admin -run 'TestGetLicense|TestUpdateLicense' -count=1
 ```
+
+重点确认：
+- `GET /api/v1/license` 无存储时返回 `missing`。
+- 有效 License 会保存到 `settings` 的 `license.offline`。
+- 非法签名返回 400，且不会写数据库。
+- `license.update` 审计只写 before/after summary，不写原始 `signature`。
 
 ---
 
-## Fix #3: Gateway API Key authentication uses the stable hash secret
+## Fix #4: Admin Console License page and platform-only frontend access
 
-**文件：** `internal/middleware/auth.go:204-222`, `cmd/uniroute/main.go:94-149`, `internal/middleware/auth_test_mock_test.go`
+**文件：** `frontend/src/api/client.ts:201-204`, `frontend/src/navigation.tsx:55-200`, `frontend/src/main.tsx:16-98`, `frontend/src/pages/LicensePage.tsx:74-218`, `frontend/src/pages/__tests__/LicensePage.test.tsx`, `frontend/src/__tests__/navigation.test.tsx`, `frontend/src/api/__tests__/client.test.ts`
 
-**原问题：** Gateway 校验 API Key 时同样用 `JWT_SECRET` 计算 HMAC，导致 Admin JWT secret 轮换会影响 `/v1/*` 客户端调用。
+**原问题：** 平台管理员没有 License 自助查看/导入页面；前端导航和 route guard 没有 License 权限边界。
 
 **当前代码：**
 
-```go
-func GatewayAuth(q db.DBQuerier, jwtSecret string) func(http.Handler) http.Handler {
-	return GatewayAuthWithAPIKeyHashSecret(q, jwtSecret)
-}
+```ts
+// License
+getLicense: () => request('/license'),
+updateLicense: (license: any) =>
+  request('/license', { method: 'PUT', body: JSON.stringify({ license }) }),
+```
 
-func GatewayAuthWithAPIKeyHashSecret(q db.DBQuerier, apiKeyHashSecret string) func(http.Handler) http.Handler {
-	keyHash := hashKey(rawKey, apiKeyHashSecret)
-	// ...
-}
+```ts
+{ itemKey: '/license', text: 'License', icon: <IconShield /> }
 
-adminHandler := admin.NewHandlerWithAPIKeyHashSecret(postgres.Pool, cfg.JWTSecret, cfg.APIKeyHashSecret, encKey, sensitiveFilter)
-gatewayAuth := middleware.GatewayAuthWithAPIKeyHashSecret(postgres.Pool, cfg.APIKeyHashSecret)
+if (route === '/license') return isPlatformAdminRole(role);
+```
+
+```tsx
+<Route path="license" element={<RoleRoute><LicensePage /></RoleRoute>} />
 ```
 
 **验证方法：**
 
 ```bash
-go test ./internal/middleware ./cmd/uniroute -run 'TestGatewayAuth|TestHashKey|TestAdminRoutesRegisteredForFrontendClient' -count=1
+npm --prefix frontend test -- LicensePage client navigation
+npm --prefix frontend test
+npm --prefix frontend run build
 ```
 
-重点确认 `TestGatewayAuthWithAPIKeyHashSecret_UsesSeparateSecret` 捕获到的 SQL hash 使用 `api-key-secret`，而不是 `jwt-secret`。
+重点确认：
+- License page 能展示状态/元数据/限制。
+- 粘贴 JSON 后调用 `api.updateLicense()`。
+- `org_admin`、billing、project roles 看不到/进不了 `/license`。
+- `admin`、`platform_admin` 可访问 `/license`。
 
 ---
 
-## Fix #4: Env, compose, and canary docs expose `API_KEY_HASH_SECRET`
+## Fix #5: Docs, tech-ref, and acceptance matrix
 
-**文件：** `.env.example`, `docker-compose.yml`, `docker-compose.canary.yml`, `README.md`, `docs/ops/canary-testing.md`
+**文件：** `docs/tech-ref/16-license-foundation.md:1-86`, `docs/tech-ref/README.md`, `docs/CODEBASE-MAP.md`, `docs/ops/deployment-runbook.md`, `docs/ops/canary-testing.md`, `docs/ops/CURRENT-STATUS.md`, `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`, `frontend/src/pages/ApiDocsPage.tsx:44-45`, `cmd/uniroute/main.go:232-233`
 
-**原问题：** 生产和 canary 环境只显式要求 `JWT_SECRET`/`ENCRYPTION_KEY`，部署人员容易遗漏 API Key hash 的稳定密钥。
+**原问题：** 新的 License foundation 如果只改代码，后续 agent/部署人员无法知道格式、配置、公钥缺失行为、非目标范围和验收缺口。
 
 **当前实现：**
-- `.env.example` 新增 `API_KEY_HASH_SECRET`，并说明既有部署应先设置为当前 `JWT_SECRET`。
-- backend compose env 新增 `API_KEY_HASH_SECRET: ${API_KEY_HASH_SECRET:-}`。
-- canary 文档要求 stable/canary 使用相同 `API_KEY_HASH_SECRET`，否则 stable 创建的 API Key 在 canary 会失败。
-- README 首次配置提示包含 `JWT_SECRET`、`API_KEY_HASH_SECRET`、`ENCRYPTION_KEY`。
+- `docs/tech-ref/16-license-foundation.md` 记录 License JSON 格式、Ed25519 签名规则、API、状态、审计字段、非目标。
+- `.env.example`、compose、runbook、canary-testing 记录 `LICENSE_PUBLIC_KEY` 和 `LICENSE_EXPIRY_WARNING_DAYS`。
+- `CURRENT-STATUS.md` 和 `PRD2-ACCEPTANCE-MATRIX.md` 只标记本地验证通过，未 overclaim Canary/Sentinel/Atlas。
+- API docs 列出 `GET /api/v1/license` 和 `PUT /api/v1/license`。
 
 **验证方法：**
 
 ```bash
-rg -n 'API_KEY_HASH_SECRET|JWT_SECRET|ENCRYPTION_KEY' .env.example docker-compose.yml docker-compose.canary.yml README.md docs/ops/canary-testing.md
-```
-
----
-
-## Fix #5: Deployment runbook protects `.env` and documents PR #44 incident handling
-
-**文件：** `docs/ops/deployment-runbook.md:24-66`, `docs/ops/deployment-runbook.md:117-146`
-
-**原问题：** `rsync --delete` 可删除不在仓库中的生产 `.env`，本次 PR #44 部署已实际触发，并导致旧 `JWT_SECRET` 无法恢复。
-
-**当前实现：**
-- Runbook v1.4 明确三类密钥职责：`JWT_SECRET`、`API_KEY_HASH_SECRET`、`ENCRYPTION_KEY`。
-- 现有部署升级步骤要求先把 `API_KEY_HASH_SECRET` 设置为当前 `JWT_SECRET`，验证既有 API Key 后再考虑轮换 JWT。
-- `.env` 被定义为生产状态文件，并建议保留 `.env.production` 备份。
-- `rsync --delete` 示例加入 `--exclude='.env'`、`--exclude='.env.production'`、`--exclude='backups/'`、`--exclude='data/'`。
-- `.env` 丢失应优先从备份恢复；只有 `API_KEY_HASH_SECRET` 丢失才需要重新生成 API Key；仅 `JWT_SECRET` 丢失只影响管理员登录。
-
-**验证方法：**
-
-```bash
-rg -n 'PR #44|rsync|\\.env.production|API_KEY_HASH_SECRET|JWT_SECRET|ENCRYPTION_KEY' docs/ops/deployment-runbook.md
-```
-
----
-
-## Fix #6: Status, matrix, and issue tracker reflect the incident without overclaim
-
-**文件：** `docs/ops/CURRENT-STATUS.md`, `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`, `docs/issues/OPEN-ISSUES.md`, `docs/CODEBASE-MAP.md`
-
-**原问题：** 部署事故如果只口头记录，后续 agent 可能继续把 Batch 13 当作无风险部署完成，或不知道 `API_KEY_HASH_SECRET` 是新边界。
-
-**当前实现：**
-- `CURRENT-STATUS.md` 记录 PR #44 部署成功、Anthropic stream feature online、`.env` 删除事故和 Batch 14 本地修复状态。
-- `PRD2-ACCEPTANCE-MATRIX.md` 更新 Batch 13 外部流程状态，并新增“Deployment secret persistence and API key hash secret separation”验收行，状态为 `Implemented not accepted`。
-- `OPEN-ISSUES.md` 新增 `PRD2-DEPLOY-001`，Severity `High`，Status `Fixed awaiting Canary`。
-- `CODEBASE-MAP.md` 记录 API Key hash 当前由 `API_KEY_HASH_SECRET` 负责，未设置时才回落到 `JWT_SECRET`。
-
-**验证方法：**
-
-```bash
-rg -n 'Batch 14|PRD2-DEPLOY-001|API_KEY_HASH_SECRET|rsync|PR #44|\\.env.production' docs/ops/CURRENT-STATUS.md docs/ops/PRD2-ACCEPTANCE-MATRIX.md docs/issues/OPEN-ISSUES.md docs/CODEBASE-MAP.md
+rg -n 'Batch 15|License foundation|LICENSE_PUBLIC_KEY|LICENSE_EXPIRY_WARNING_DAYS|/api/v1/license|license.update|internal/licensing|P2-F10' docs README.md .env.example docker-compose.yml docker-compose.canary.yml internal cmd frontend/src
 ```
 
 ---
@@ -182,10 +221,14 @@ rg -n 'Batch 14|PRD2-DEPLOY-001|API_KEY_HASH_SECRET|rsync|PR #44|\\.env.producti
 ## 本地已执行并通过
 
 ```bash
-go test ./internal/config ./internal/admin ./internal/middleware ./cmd/uniroute -run 'TestValidate|TestLoad|TestNewHandler|TestCreateAPIKey|TestGatewayAuth|TestHashKey|TestAdminRoutesRegisteredForFrontendClient' -count=1
+go test ./internal/licensing ./internal/config ./internal/admin ./cmd/uniroute -run 'TestVerifier|TestValidate|TestLoad|TestGetLicense|TestUpdateLicense|TestAdminRoutesRegisteredForFrontendClient' -count=1
+npm --prefix frontend test -- LicensePage client navigation
 go test ./... -count=1
 npm --prefix frontend test
 npm --prefix frontend run build
+rg -n 'Batch 15|License foundation|LICENSE_PUBLIC_KEY|LICENSE_EXPIRY_WARNING_DAYS|/api/v1/license|license.update|internal/licensing|P2-F10' docs README.md .env.example docker-compose.yml docker-compose.canary.yml internal cmd frontend/src
+git diff --check
+git diff --check -- $(git ls-files --others --exclude-standard)
 ```
 
 `npm --prefix frontend test` 仍显示既有 React Router/Semi UI/jsdom warning；测试退出码为 0。`npm --prefix frontend run build` 仍显示既有 Vite large chunk warning；构建退出码为 0。
@@ -197,28 +240,23 @@ npm --prefix frontend run build
 请从仓库根目录执行：
 
 ```bash
-go test ./internal/config -run 'TestValidate|TestLoad' -count=1
-go test ./internal/admin -run 'TestNewHandler|TestCreateAPIKey' -count=1
-go test ./internal/middleware ./cmd/uniroute -run 'TestGatewayAuth|TestHashKey|TestAdminRoutesRegisteredForFrontendClient' -count=1
-go test ./internal/config ./internal/admin ./internal/middleware ./cmd/uniroute -run 'TestValidate|TestLoad|TestNewHandler|TestCreateAPIKey|TestGatewayAuth|TestHashKey|TestAdminRoutesRegisteredForFrontendClient' -count=1
+go test ./internal/licensing -run 'TestVerifier' -count=1
+go test ./internal/config ./cmd/uniroute -run 'TestValidate|TestLoad|TestAdminRoutesRegisteredForFrontendClient' -count=1
+go test ./internal/admin -run 'TestGetLicense|TestUpdateLicense' -count=1
+go test ./internal/licensing ./internal/config ./internal/admin ./cmd/uniroute -run 'TestVerifier|TestValidate|TestLoad|TestGetLicense|TestUpdateLicense|TestAdminRoutesRegisteredForFrontendClient' -count=1
+npm --prefix frontend test -- LicensePage client navigation
 go test ./... -count=1
 npm --prefix frontend test
 npm --prefix frontend run build
-rg -n 'Batch 14|PRD2-DEPLOY-001|API_KEY_HASH_SECRET|rsync|PR #44|\\.env.production' docs README.md .env.example docker-compose.yml docker-compose.canary.yml internal cmd
+rg -n 'Batch 15|License foundation|LICENSE_PUBLIC_KEY|LICENSE_EXPIRY_WARNING_DAYS|/api/v1/license|license.update|internal/licensing|P2-F10' docs README.md .env.example docker-compose.yml docker-compose.canary.yml internal cmd frontend/src
 git diff --check
 git diff --check -- $(git ls-files --others --exclude-standard)
 ```
 
-Deployment smoke recommended for Atlas after Canary/Sentinel:
-
-```bash
-test -s .env
-test -s .env.production
-grep -E '^(JWT_SECRET|API_KEY_HASH_SECRET|ENCRYPTION_KEY)=' .env
-docker compose config >/tmp/uniroute-compose-check.yml
-```
-
-Operational note: for an existing deployment whose API Keys were created before Batch 14, set `API_KEY_HASH_SECRET` to the old API-key hash secret value. If the old value is unrecoverable, already-created API Keys cannot be verified and must be recreated.
+Optional manual/browser checks if Canary has a running backend/frontend:
+- `admin` / `platform_admin` can open `/license`; `org_admin` redirects away.
+- Missing `LICENSE_PUBLIC_KEY` returns a clear import error and does not save.
+- With a valid Ed25519 public key/license pair, import succeeds, status shows `active` or `expiring`, and audit contains `license.update` without raw `signature`.
 
 ---
 
@@ -227,11 +265,11 @@ Operational note: for an existing deployment whose API Keys were created before 
 请覆盖写入 `docs/agent-workflows/VERIFY-RESULT.md`：
 
 ```markdown
-# VERIFY-RESULT.md — PRD2 Batch 14 验收结果
+# VERIFY-RESULT.md — PRD2 Batch 15 验收结果
 
 **验收者：** OpenClaw Canary
 **日期：** 2026-07-02
-**对应轮次：** PRD2 Batch 14 API Key Hash Secret and Deployment Env Hardening
+**对应轮次：** PRD2 Batch 15 License Foundation
 
 ## 逐条结果
 
@@ -240,34 +278,31 @@ Operational note: for an existing deployment whose API Keys were created before 
 - Fix #3: PASS/FAIL — evidence
 - Fix #4: PASS/FAIL — evidence
 - Fix #5: PASS/FAIL — evidence
-- Fix #6: PASS/FAIL — evidence
 
 ## 命令结果
 
 | 命令 | 结果 | 备注 |
 |------|------|------|
-| `go test ./internal/config -run 'TestValidate|TestLoad' -count=1` | PASS/FAIL | |
-| `go test ./internal/admin -run 'TestNewHandler|TestCreateAPIKey' -count=1` | PASS/FAIL | |
-| `go test ./internal/middleware ./cmd/uniroute -run 'TestGatewayAuth|TestHashKey|TestAdminRoutesRegisteredForFrontendClient' -count=1` | PASS/FAIL | |
-| `go test ./internal/config ./internal/admin ./internal/middleware ./cmd/uniroute -run 'TestValidate|TestLoad|TestNewHandler|TestCreateAPIKey|TestGatewayAuth|TestHashKey|TestAdminRoutesRegisteredForFrontendClient' -count=1` | PASS/FAIL | |
+| `go test ./internal/licensing -run 'TestVerifier' -count=1` | PASS/FAIL | |
+| `go test ./internal/config ./cmd/uniroute -run 'TestValidate|TestLoad|TestAdminRoutesRegisteredForFrontendClient' -count=1` | PASS/FAIL | |
+| `go test ./internal/admin -run 'TestGetLicense|TestUpdateLicense' -count=1` | PASS/FAIL | |
+| targeted combined backend command | PASS/FAIL | |
+| `npm --prefix frontend test -- LicensePage client navigation` | PASS/FAIL | |
 | `go test ./... -count=1` | PASS/FAIL | |
 | `npm --prefix frontend test` | PASS/FAIL | note existing warnings if present |
 | `npm --prefix frontend run build` | PASS/FAIL | note large chunk warning if present |
 | docs grep command | PASS/FAIL | |
 | `git diff --check` | PASS/FAIL | |
-| `git diff --check -- $(git ls-files --others --exclude-standard)` | PASS/FAIL | |
+| untracked diff check | PASS/FAIL | |
 
-## 部署事故复核
+## 边界复核
 
-- PASS/FAIL — `PRD2-DEPLOY-001` 是否准确描述 PR #44 事故、影响和后续动作。
-- PASS/FAIL — `deployment-runbook.md` 是否足够防止 `rsync --delete` 再次删除 `.env`。
-- PASS/FAIL/SKIP — 如有 Atlas 环境权限，确认 `.env` 和 `.env.production` 均存在且三类密钥可被 compose 读取。
-
-## 新发现
-
-- None / list issue paths.
+- P2-F11 prompt/response storage 是否仍未实现: PASS/FAIL
+- License online activation/hardware fingerprint/reseller/marketplace 是否未被引入: PASS/FAIL
+- Gateway request blocking 是否未被提前引入: PASS/FAIL
+- License audit 是否未写 raw signature: PASS/FAIL
 
 ## 结论
 
-PASS/FAIL. 明确说明 Batch 14 是否可交给 Sentinel，以及是否存在 Batch 15 blocker。
+PASS/FAIL. 明确说明 Batch 15 是否可交给 Sentinel，以及是否存在 Batch 16 blocker。
 ```

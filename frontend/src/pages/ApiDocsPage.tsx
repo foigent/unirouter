@@ -41,6 +41,8 @@ const endpointGroups = [
       ['GET', '/api/v1/wallet', '钱包信息'],
       ['GET', '/api/v1/audit-logs', '审计日志'],
       ['GET', '/api/v1/settings', '系统设置'],
+      ['GET', '/api/v1/license', 'License 状态'],
+      ['PUT', '/api/v1/license', '导入离线 License'],
     ],
   },
 ];
