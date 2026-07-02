@@ -181,6 +181,94 @@ func TestFreeze_ConcurrentDuplicateRequestAcrossInstances_Integration(t *testing
 	require.Equal(t, 10000-freezeAmount, balance, "wallet balance should be deducted once")
 }
 
+func TestEventService_CheckProjectBudgetPeriodBoundaries_Integration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+
+	cases := []struct {
+		name                string
+		period              string
+		now                 time.Time
+		currentPeriodLogAt  time.Time
+		previousPeriodLogAt time.Time
+		expectedPeriodStart string
+	}{
+		{
+			name:                "daily budget ignores previous day spend",
+			period:              "daily",
+			now:                 time.Date(2026, 7, 15, 10, 30, 0, 0, time.UTC),
+			currentPeriodLogAt:  time.Date(2026, 7, 15, 1, 15, 0, 0, time.UTC),
+			previousPeriodLogAt: time.Date(2026, 7, 14, 23, 59, 0, 0, time.UTC),
+			expectedPeriodStart: "2026-07-15T00:00:00Z",
+		},
+		{
+			name:                "monthly budget ignores previous month spend",
+			period:              "monthly",
+			now:                 time.Date(2026, 7, 15, 10, 30, 0, 0, time.UTC),
+			currentPeriodLogAt:  time.Date(2026, 7, 2, 1, 15, 0, 0, time.UTC),
+			previousPeriodLogAt: time.Date(2026, 6, 30, 23, 59, 0, 0, time.UTC),
+			expectedPeriodStart: "2026-07-01T00:00:00Z",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			testutil.TruncateAll(t, pool)
+
+			var orgID int64
+			err := pool.QueryRow(ctx,
+				`INSERT INTO orgs (name, status, org_type)
+				 VALUES ($1, 'active', 'customer')
+				 RETURNING id`,
+				fmt.Sprintf("budget-boundary-%s-%d", tc.period, time.Now().UnixNano()),
+			).Scan(&orgID)
+			require.NoError(t, err)
+
+			var projectID int64
+			err = pool.QueryRow(ctx,
+				`INSERT INTO projects (org_id, name, slug, description, status, budget_cents, budget_period, created_at, updated_at)
+				 VALUES ($1, $2, $3, 'period boundary fixture', 'active', 1000, $4, NOW(), NOW())
+				 RETURNING id`,
+				orgID, "Budget Boundary Project", fmt.Sprintf("budget-boundary-%s", tc.period), tc.period,
+			).Scan(&projectID)
+			require.NoError(t, err)
+
+			_, err = pool.Exec(ctx,
+				`INSERT INTO call_logs (request_id, org_id, project_id, model, cost_cents, status_code, created_at)
+				 VALUES
+				   ($1, $2, $3, 'budget-boundary-model', 1100, 200, $4),
+				   ($5, $2, $3, 'budget-boundary-model', 5000, 200, $6)`,
+				fmt.Sprintf("budget-current-%s-%d", tc.period, time.Now().UnixNano()), orgID, projectID, tc.currentPeriodLogAt,
+				fmt.Sprintf("budget-previous-%s-%d", tc.period, time.Now().UnixNano()), tc.previousPeriodLogAt,
+			)
+			require.NoError(t, err)
+
+			svc := NewEventService(pool)
+			svc.now = func() time.Time { return tc.now }
+			result, err := svc.CheckProjectBudget(ctx, orgID, projectID)
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.True(t, result.Created)
+			require.Equal(t, DeliveryStateNotConfigured, result.DeliveryState)
+
+			var periodStart string
+			var spentCents, usagePercent int
+			err = pool.QueryRow(ctx,
+				`SELECT payload->>'period_start',
+				        (payload->>'spent_cents')::int,
+				        (payload->>'usage_percent')::int
+				 FROM notification_events
+				 WHERE id = $1`,
+				result.EventID,
+			).Scan(&periodStart, &spentCents, &usagePercent)
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedPeriodStart, periodStart)
+			require.Equal(t, 1100, spentCents, "previous-period spend must not count toward the current budget threshold")
+			require.Equal(t, 110, usagePercent)
+		})
+	}
+}
+
 func TestFreeze_MinAmount_Integration(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)

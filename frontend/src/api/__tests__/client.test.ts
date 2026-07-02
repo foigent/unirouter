@@ -265,6 +265,37 @@ describe('API Client', () => {
     })
   })
 
+  describe('notification APIs', () => {
+    it('loads notification events with filters', async () => {
+      mockJsonResponse({ data: [], total: 0 })
+
+      await api.getNotificationEvents(2, 50, {
+        event_type: 'project_budget.threshold',
+        severity: 'critical',
+        delivery_state: 'failed',
+        project_id: 9,
+      })
+      const url = mockFetch.mock.calls[0][0]
+      expect(url).toBe('/api/v1/notification-events?page=2&page_size=50&event_type=project_budget.threshold&severity=critical&delivery_state=failed&project_id=9')
+    })
+
+    it('loads delivery state and writes webhook routes', async () => {
+      mockJsonResponse({ data: [], total: 0 })
+      await api.getNotificationDeliveries(1, 20, { status: 'failed', event_id: 7 })
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/notification-deliveries?page=1&page_size=20&status=failed&event_id=7')
+
+      mockJsonResponse({ id: 3 })
+      await api.createNotificationWebhook({ name: 'Ops', url: 'https://ops.example/hook', event_types: ['project_budget.threshold'] })
+      expect(mockFetch.mock.calls[1][0]).toBe('/api/v1/notification-webhooks')
+      expect(mockFetch.mock.calls[1][1]).toEqual(expect.objectContaining({ method: 'POST' }))
+
+      mockJsonResponse({ success: true })
+      await api.updateNotificationWebhook(3, { enabled: false })
+      expect(mockFetch.mock.calls[2][0]).toBe('/api/v1/notification-webhooks/3')
+      expect(mockFetch.mock.calls[2][1]).toEqual(expect.objectContaining({ method: 'PUT' }))
+    })
+  })
+
   describe('error handling', () => {
     it('throws ApiError for non-2xx responses', async () => {
       mockJsonResponse({ error: { message: 'invalid amount' } }, 400)

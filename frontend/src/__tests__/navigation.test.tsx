@@ -38,11 +38,20 @@ describe('navigation role boundaries', () => {
 
     expect(itemKeys).toContain('/channels');
     expect(itemKeys).toContain('/model-governance');
+    expect(itemKeys).toContain('/notifications');
     expect(itemKeys).toContain('/model-prices');
     expect(itemKeys).not.toContain('/license');
     expect(isRouteAllowedForRole('/model-governance', 'org_admin')).toBe(true);
+    expect(isRouteAllowedForRole('/notifications', 'org_admin')).toBe(true);
     expect(isRouteAllowedForRole('/settings', 'org_admin')).toBe(true);
     expect(isRouteAllowedForRole('/license', 'org_admin')).toBe(false);
+  });
+
+  it('allows billing admins to inspect notification delivery state', () => {
+    const itemKeys = flattenItemKeys(getNavItemsForRole('billing_admin'));
+
+    expect(itemKeys).toContain('/notifications');
+    expect(isRouteAllowedForRole('/notifications', 'billing_admin')).toBe(true);
   });
 
   it('keeps license management platform-admin only', () => {

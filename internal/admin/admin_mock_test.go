@@ -3358,6 +3358,16 @@ func TestCreateChannel_DBError(t *testing.T) {
 
 func TestDisableAPIKey_Success(t *testing.T) {
 	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int64) = 1
+				*dest[1].(*int64) = 2
+				*dest[2].(*string) = "Project key"
+				*dest[3].(*string) = "uk_test"
+				*dest[4].(*string) = "active"
+				return nil
+			}}
+		},
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.NewCommandTag("UPDATE 1"), nil
 		},
@@ -3391,8 +3401,10 @@ func TestDisableAPIKey_InvalidID(t *testing.T) {
 
 func TestDisableAPIKey_NotFound(t *testing.T) {
 	db := &testutil.MockDB{
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			return pgconn.CommandTag{}, nil // RowsAffected=0
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				return pgx.ErrNoRows
+			}}
 		},
 	}
 	h := newTestHandler(db)
@@ -3405,6 +3417,61 @@ func TestDisableAPIKey_NotFound(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestDisableAPIKey_EmitsNotificationEvent(t *testing.T) {
+	var insertedPayload []byte
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			switch {
+			case strings.Contains(sql, "SELECT org_id, COALESCE(project_id, 0), name, key_prefix, status FROM api_keys"):
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*int64) = 3
+					*dest[1].(*int64) = 9
+					*dest[2].(*string) = "Batch19 project key"
+					*dest[3].(*string) = "uk_batch19"
+					*dest[4].(*string) = "active"
+					return nil
+				}}
+			case strings.Contains(sql, "INSERT INTO notification_events"):
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					if args[2] != billing.EventAPIKeyDisabled {
+						t.Fatalf("expected api key disabled event, got %v", args[2])
+					}
+					insertedPayload = args[8].([]byte)
+					*dest[0].(*int64) = 72
+					return nil
+				}}
+			default:
+				t.Fatalf("unexpected QueryRow: %s", sql)
+				return &testutil.MockRow{}
+			}
+		},
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			if !strings.Contains(sql, "FROM notification_webhooks") {
+				t.Fatalf("unexpected Query: %s", sql)
+			}
+			return &testutil.MockRows{}, nil
+		},
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			return pgconn.NewCommandTag("UPDATE 1"), nil
+		},
+	}
+	h := newTestHandler(db)
+	h.SetEventService(billing.NewEventService(db))
+
+	req := httptest.NewRequest("POST", "/keys/1/disable", nil)
+	req.SetPathValue("id", "1")
+	rec := httptest.NewRecorder()
+
+	h.DisableAPIKey(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(insertedPayload) == 0 || !strings.Contains(string(insertedPayload), "uk_batch19") {
+		t.Fatalf("expected safe key prefix in notification payload, got %s", string(insertedPayload))
 	}
 }
 

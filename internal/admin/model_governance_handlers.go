@@ -250,14 +250,16 @@ func (h *Handler) UpdateModelRegistry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	beforeState := map[string]interface{}{"id": id}
+	var beforeOrgID int64
 	var beforeModelName, beforeLifecycle, beforeMigrationRecommendation string
 	var beforeApprovedCatalog bool
 	if err := h.db.QueryRow(r.Context(),
-		`SELECT model_name, lifecycle, approved_catalog, migration_recommendation FROM model_registry WHERE id = $1`,
+		`SELECT org_id, model_name, lifecycle, approved_catalog, migration_recommendation FROM model_registry WHERE id = $1`,
 		id,
-	).Scan(&beforeModelName, &beforeLifecycle, &beforeApprovedCatalog, &beforeMigrationRecommendation); err == nil {
+	).Scan(&beforeOrgID, &beforeModelName, &beforeLifecycle, &beforeApprovedCatalog, &beforeMigrationRecommendation); err == nil {
 		beforeState = map[string]interface{}{
 			"id":                       id,
+			"org_id":                   beforeOrgID,
 			"model_name":               beforeModelName,
 			"lifecycle":                beforeLifecycle,
 			"approved_catalog":         beforeApprovedCatalog,
@@ -294,6 +296,20 @@ func (h *Handler) UpdateModelRegistry(w http.ResponseWriter, r *http.Request) {
 		"before": beforeState,
 		"after":  afterState,
 	})
+	if req.Lifecycle != nil {
+		lifecycle := strings.TrimSpace(*req.Lifecycle)
+		modelName := beforeModelName
+		if req.ModelName != nil {
+			modelName = strings.TrimSpace(*req.ModelName)
+		}
+		recommendation := beforeMigrationRecommendation
+		if req.MigrationRecommendation != nil {
+			recommendation = strings.TrimSpace(*req.MigrationRecommendation)
+		}
+		if beforeOrgID > 0 && lifecycle != beforeLifecycle {
+			h.emitModelLifecycleEvent(r.Context(), beforeOrgID, id, modelName, lifecycle, recommendation)
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 }
 

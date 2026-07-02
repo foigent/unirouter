@@ -110,6 +110,7 @@ func main() {
 
 	// Start budget alert goroutine — checks every 5 minutes
 	go startBudgetAlertLoop(alertSvc, postgres.Pool)
+	go startNotificationRetryLoop(eventSvc)
 
 	// Build HTTP mux
 	mux := http.NewServeMux()
@@ -480,6 +481,26 @@ func loadAlertConfig(ctx context.Context, pool *pgxpool.Pool) (string, int) {
 		fmt.Sscanf(budgetStr, "%d", &budgetCents)
 	}
 	return webhookURL, budgetCents
+}
+
+// startNotificationRetryLoop periodically retries failed notification webhook deliveries.
+func startNotificationRetryLoop(eventSvc *billing.EventService) {
+	if eventSvc == nil {
+		return
+	}
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		retried, err := eventSvc.RetryDueDeliveries(ctx, 50)
+		cancel()
+		if err != nil {
+			log.Printf("Notification retry worker error: %v", err)
+		} else if retried > 0 {
+			log.Printf("Notification retry worker retried %d failed webhook deliveries", retried)
+		}
+		<-ticker.C
+	}
 }
 
 // startBudgetAlertLoop periodically checks wallet balance and sends webhook alerts.

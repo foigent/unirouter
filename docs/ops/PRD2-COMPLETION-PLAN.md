@@ -178,7 +178,8 @@ Status update on 2026-07-02:
 
 - Current shell environment does not expose `OPENROUTER_API_KEY` or `ANTHROPIC_API_KEY`.
 - Local `.env.production` currently has `API_KEY_HASH_SECRET` but no OpenRouter or Anthropic upstream credential variables.
-- Batch 18 can proceed with credential-gated smoke tooling and mock syntax checks, but real upstream acceptance cannot be marked complete until keys/model slugs are provided.
+- User explicitly deferred Batch 18 on 2026-07-02. It remains an unfinished later-plan item and should not block Batch 19+ execution.
+- Batch 18 can proceed later with credential-gated smoke tooling and mock syntax checks, but real upstream acceptance cannot be marked complete until keys/model slugs are provided.
 - Required inputs:
   - `OPENROUTER_API_KEY` plus an OpenRouter Claude model slug for Batch 18A.
   - `ANTHROPIC_API_KEY` plus a direct Anthropic model slug for Batch 18B.
@@ -201,6 +202,45 @@ Target rows:
 - P2-F08 Notification/event foundation.
 - Project budget alerts.
 - License warning event dependency for P2-F10.
+
+Status update on 2026-07-02:
+
+- Codex implemented Batch 19 locally:
+  - frontend Notification Center at `/notifications` with event, delivery, and webhook-route tabs;
+  - notification API client methods and navigation/topbar entry;
+  - webhook create/edit UI for route configuration;
+  - background retry loop in `cmd/uniroute/main.go` plus `EventService.RetryDueDeliveries`;
+  - retry state aggregation so an event is marked delivered only when all deliveries for that event are delivered;
+  - emitters for `api_key.disabled`, `model.deprecated`, `model.retired`, `provider.channel.failure`, and `license.warning`;
+  - project budget daily/monthly period-boundary integration test;
+  - Batch 19 real-backend smoke scripts:
+    - `scripts/prd2-batch19-notifications-budget-smoke.sh`
+    - `scripts/prd2_batch19_notifications_budget_seed.go`
+    - `scripts/prd2_batch19_notifications_budget_smoke.mjs`
+- Codex local validation passed:
+
+```bash
+go test ./internal/billing
+go test -tags=integration ./internal/billing -run TestEventService_CheckProjectBudgetPeriodBoundaries_Integration -count=1 -v
+go test ./...
+npm --prefix frontend test -- --run
+npm --prefix frontend run build
+git diff --check
+```
+
+- Local real-backend smoke command passed:
+
+```bash
+UNIROUTE_SMOKE_BACKEND_URL=http://localhost:18080 \
+UNIROUTE_SMOKE_FRONTEND_URL=http://localhost:3000 \
+UNIROUTE_SMOKE_DB_DSN='postgres://uniroute:password@localhost:5432/uniroute?sslmode=disable' \
+UNIROUTE_SMOKE_SKIP_BROWSER_INSTALL=true \
+scripts/prd2-batch19-notifications-budget-smoke.sh
+```
+
+- Actual result: `status=PASS`, `project_id=34`, `event_id=10`, `webhook_id=5`, `webhook_receipts=1`, `budget_cents=1000`, `spent_cents=1200`, screenshot `output/playwright/prd2-batch19-notifications-budget.png`.
+- Current protocol state: fixed locally by Codex and awaiting Canary verification through `docs/agent-workflows/FIX-SIGNAL.md`.
+- Remaining acceptance boundary: production webhook delivery evidence is still not claimed; this batch provides local production-like receiver evidence only.
 
 ### Batch 20: Audit Completion And PRD2 Hardening Issues
 

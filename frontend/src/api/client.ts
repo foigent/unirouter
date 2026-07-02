@@ -257,6 +257,38 @@ export const api = {
     return request(url);
   },
 
+  // Notifications
+  getNotificationEvents: (page = 1, pageSize = 20, filters?: {
+    event_type?: string; severity?: string; status?: string; delivery_state?: string; project_id?: number;
+  }) => request(appendParams('/notification-events', {
+    page,
+    page_size: pageSize,
+    event_type: filters?.event_type,
+    severity: filters?.severity,
+    status: filters?.status,
+    delivery_state: filters?.delivery_state,
+    project_id: filters?.project_id,
+  })),
+  getNotificationDeliveries: (page = 1, pageSize = 20, filters?: { status?: string; event_id?: number; project_id?: number }) =>
+    request(appendParams('/notification-deliveries', {
+      page,
+      page_size: pageSize,
+      status: filters?.status,
+      event_id: filters?.event_id,
+      project_id: filters?.project_id,
+    })),
+  getNotificationWebhooks: (page = 1, pageSize = 20, filters?: { enabled?: boolean; project_id?: number }) =>
+    request(appendParams('/notification-webhooks', {
+      page,
+      page_size: pageSize,
+      enabled: filters?.enabled === undefined ? undefined : String(filters.enabled),
+      project_id: filters?.project_id,
+    })),
+  createNotificationWebhook: (data: any) =>
+    request('/notification-webhooks', { method: 'POST', body: JSON.stringify(data) }),
+  updateNotificationWebhook: (id: number, data: any) =>
+    request(`/notification-webhooks/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+
   // Generic request
   request,
 };

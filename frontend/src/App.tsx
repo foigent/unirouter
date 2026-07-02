@@ -87,7 +87,7 @@ export default function App() {
           />
           <div className="ur-topbar-actions">
             <Tag className="ur-env-pill" color="green">生产环境</Tag>
-            <Button icon={<IconBell />} theme="borderless" className="ur-icon-button" aria-label="通知" />
+            <Button icon={<IconBell />} theme="borderless" className="ur-icon-button" aria-label="通知" onClick={() => navigate('/notifications')} />
             <div className="ur-user-chip">
               <Avatar size="small" color="purple">{(user?.username || 'U').slice(0, 1).toUpperCase()}</Avatar>
               <div className="ur-user-copy">
