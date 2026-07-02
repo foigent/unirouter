@@ -27,6 +27,9 @@ PRD2 is not complete when implementation batches merely pass local or unit tests
 | Project budget | PRD2 first release remains alert-only; hard-blocking budget enforcement is a later item | `PRD2-BUDGET-001` |
 | HA validation | Staging/docker-compose two-instance validation first; production HA remains not fully implemented until target evidence exists | `PRD2-HA-001` |
 | Claude via OpenRouter | Valid for `openai_compatible` Claude E2E, not a substitute for direct `anthropic_native` protocol E2E | P2-F05/native adapter proof |
+| Extension/plugin boundary | PRD2 uses core product features plus static code/config extension points; it does not include a runtime plugin platform | `PRD3-PLUGIN-001` |
+| OIDC boundary | OIDC first SSO should be implemented as core authentication infrastructure, not as an arbitrary third-party plugin | Batch 24 / `PRD2-AUTH-001` |
+| PRD3 deferrals | Runtime plugins, plugin marketplace/third-party installation, enterprise IaC packaging, and full engineering governance are later unfinished items | `PRD3-PLUGIN-001`, `PRD3-DEPLOY-001`, `PRD3-ENG-001` |
 
 ## Why Cache Is Research-Only In PRD2
 
@@ -53,6 +56,18 @@ UniRouter routes potentially sensitive enterprise prompts and responses. Storing
 - redaction guidance before exposing content to support or admin users.
 
 Until this policy is approved, request troubleshooting must use metadata only: request id, project, key prefix, model/alias, status, tokens, cost, latency, provider family, channel display name where allowed, normalized error, and docs link.
+
+## Architecture Decisions To Finalize Before Continuing
+
+These decisions should be settled now because they affect Batch 20-24 implementation boundaries, but they should not expand PRD2 into a runtime plugin platform:
+
+1. OIDC first SSO is a core auth feature for PRD2. Batch 24 should implement provider config, login/callback, claim-to-user/org/role mapping, provisioning policy, RBAC tests, audit behavior, and operator docs. LDAP/SAML and arbitrary auth plugins remain out of scope unless the user expands scope later.
+2. PRD2 extension points stay static and controlled: Go interfaces plus database/config-driven selection for provider adapters, notification/event routes, exporters, and documentation/status connectors. There is no PRD2 runtime loading of third-party code.
+3. Plugin-suitable candidates for PRD3 are provider adapters, notification sinks, audit/SIEM exporters, usage/report exporters, model-catalog sync, status connectors, and error-doc connectors.
+4. Security/accounting boundaries stay core, not generic plugins: OIDC/SSO, RBAC, API-key hashing, wallet/billing settlement, license verification, prompt/response storage policy, and runtime cache policy.
+5. Cache remains P2-F15 research only in PRD2. No default runtime cache is enabled until privacy, tenant isolation, invalidation, billing, and audit semantics are approved.
+6. Deployment docs remain Docker Compose/self-hosted plus two-instance validation for PRD2. Kubernetes, Helm, Terraform, and managed-HA references are PRD3/later.
+7. Documentation closeout must update current status, acceptance matrix, open issues, and handoff docs before final PRD2 closure.
 
 ## Remaining Execution Batches
 
@@ -239,7 +254,7 @@ scripts/prd2-batch19-notifications-budget-smoke.sh
 ```
 
 - Actual result: `status=PASS`, `project_id=34`, `event_id=10`, `webhook_id=5`, `webhook_receipts=1`, `budget_cents=1000`, `spent_cents=1200`, screenshot `output/playwright/prd2-batch19-notifications-budget.png`.
-- Current protocol state: fixed locally by Codex and awaiting Canary verification through `docs/agent-workflows/FIX-SIGNAL.md`.
+- Current protocol state: `docs/agent-workflows/VERIFY-RESULT.md` reports Batch 19 PASS 5/5 with one real-backend smoke SKIP because Canary had no running backend. User reported Canary, Sentinel, and Atlas completed; `main`/`origin/main` includes PR #51 at `5bbbf07`.
 - Remaining acceptance boundary: production webhook delivery evidence is still not claimed; this batch provides local production-like receiver evidence only.
 
 ### Batch 20: Audit Completion And PRD2 Hardening Issues
@@ -372,6 +387,17 @@ Required work:
 - Run final Canary verification.
 - Sentinel merges final closeout PR.
 - Atlas deploys and records final target-environment evidence.
+
+## PRD3 / Later Unimplemented Items
+
+These items are intentionally not part of the PRD2 closeout implementation unless the user later changes scope. They are tracked as active unfinished work in `docs/issues/OPEN-ISSUES.md`:
+
+| Item | Tracking | PRD2 Boundary |
+|------|----------|---------------|
+| Runtime plugin platform | `PRD3-PLUGIN-001` | PRD2 may define extension boundaries, but does not add plugin manifests, dynamic loading, sandboxing, plugin permissions, lifecycle management, or third-party plugin installation |
+| Plugin marketplace / third-party install path | `PRD3-PLUGIN-001` | PRD2 remains local-deploy enterprise product, not an app marketplace |
+| Enterprise deployment packaging and IaC | `PRD3-DEPLOY-001` | PRD2 keeps Docker Compose/self-hosted runbooks and two-instance validation; Kubernetes, Helm, Terraform, and managed-HA references are PRD3/later |
+| Full engineering handbook and release governance | `PRD3-ENG-001` | PRD2 uses existing `CONTRIBUTING.md`, agent protocol, runbooks, and acceptance matrix; ADR policy, API versioning, migration policy, release checklist, incident response, and deprecation policy are PRD3/later |
 
 ## External Inputs Needed Later
 
