@@ -1,32 +1,28 @@
-# VERIFY-RESULT.md — PRD2 Batch 17 验收结果
+# VERIFY-RESULT.md — PRD2 Batch 17 Status Sync / Batch 18 Credential Gate 验收结果
 
 **验收者：** OpenClaw Canary
 **日期：** 2026-07-02
-**对应轮次：** PRD2 Batch 17 Model Governance And Usage/Metering
+**对应轮次：** PRD2 Batch 17 post-merge status sync
 
 ## 逐条结果
 
-- Fix #1: **PASS** — `ListReconciliation` 实现 full-query summary 聚合（`estimated_tokens`/`upstream_tokens`/`variance_ratio`/`estimated_ratio` 等），scope 标记为 `filtered_query`。超阈值时通过 notification event service 发射 `token_metering.estimated_ratio.high`（含 dedupe key）。admin handler 通过 `cmd/uniroute/main.go` 接入 shared event service。
-- Fix #2: **PASS** — API client `getReconciliation()` 和 `getLogs()` 支持 `usage_source` 过滤。Reconciliation page 使用 API client（非 raw request），渲染 source filter + source-confidence/variance 列 + full-query metric cards。Logs page 新增 `usage_source` filter 和列。前端 73 tests 通过。
-- Fix #3: **PASS** — `DeveloperConsolePage.tsx` 对 `deprecated` lifecycle 模型渲染 `migration_recommendation`。fixture 验证 `Migrate to gpt-4.1-mini` 渲染。既有测试无回归。
-- Fix #4: **PASS (code-verified, smoke-SKIP)** — `prd2-batch17-modelgov-usage-smoke.sh`、seed Go 脚本、Playwright smoke 脚本存在且结构完整。seed 创建隔离 Batch17 org/project/GA/deprecated/unapproved/retired 模型/reconciliation logs。smoke 覆盖 Model Registry CRUD、project model-set assignment、approved catalog 过滤、deprecated migration 可见、retired 403、reconciliation full-query aggregate、notification event 持久化。Codex 本地 `status=PASS`、`estimated_ratio=0.8`、`estimated_ratio_scope=filtered_query`。当前环境无运行中 backend，无法独立执行。
-- Fix #5: **PASS** — `CURRENT-STATUS.md` 标记 Batch 17 "fixed locally; awaiting Canary"，Batch 16 已更新为 Canary/Sentinel/Atlas completed。`PRD2-ACCEPTANCE-MATRIX.md` 相关行更新（Model Registry、Approved Catalog、Deprecated migration、Retired 403、Token Metering、Estimated-vs-upstream variance、Notification）。`PRD2-COMPLETION-PLAN.md` 记录 Batch 17 完成状态。P2-F13/F14/F15 仍 Planned，OIDC/budget hard-block/production HA 仍 Open。
+- Fix #1: **PASS** — `CURRENT-STATUS.md` Last verified 行记录 Batch 17 "completed Canary/Sentinel/Atlas per User report"，PR #49 at `f6bafb5`。Phase row 标记 Batch 18 "Provider Adapter real-upstream acceptance is next and credential-gated"。Batch 17 不再 "awaiting Canary"。
+- Fix #2: **PASS** — `PRD2-ACCEPTANCE-MATRIX.md` P2-F04 Model Registry、Approved Catalog、Deprecated migration、Estimated-vs-upstream variance 四行推进为 `E2E accepted`。P2-F06 Token Metering 保持 `Implemented not accepted`（real upstream E2E 仍 Batch 18）。P2-F08 Notification 保持 `Unit tested`（notification center/retry worker/production webhook 仍 Batch 19）。P2-F12 Acceptance discipline 明确记录 Batch 17 未 overclaim。
+- Fix #3: **PASS** — `OPEN-ISSUES.md` `PRD2-B17-001` 状态为 `Canary passed`。新增 `PRD2-B18-001`（High, Open），记录需要 `OPENROUTER_API_KEY` + OpenRouter Claude model slug + `ANTHROPIC_API_KEY` + direct Anthropic model slug。
+- Fix #4: **PASS** — `PRD2-COMPLETION-PLAN.md` Batch 17 记录 Canary 5/5 PASS + Sentinel/Atlas completed + PR #49 at `f6bafb5`。Batch 18 记录 credential gate：当前 shell 不暴露 `OPENROUTER_API_KEY` 或 `ANTHROPIC_API_KEY`，real upstream acceptance 不能标 complete。
 
 ## 命令结果
 
 | 命令 | 结果 | 备注 |
 |------|------|------|
-| `go test ./...` | ✅ PASS | 20 packages, 0 FAIL |
-| `npm --prefix frontend test -- --run` | ✅ PASS | 11 files, 73 tests |
-| `npm --prefix frontend run build` | ✅ PASS | large chunk warning（既有） |
-| `node --check scripts/prd2_batch17_modelgov_usage_smoke.mjs` | ✅ PASS | exit 0 |
-| `scripts/prd2-batch17-modelgov-usage-smoke.sh` | **SKIP** | 当前环境无运行中 backend。Codex 本地 PASS 已记录 |
+| `git log --oneline -3 --decorate` | ✅ PASS | `f6bafb5` (HEAD -> main) 在最近 3 条 |
+| docs grep（Batch 17/18/f6bafb5/OPENROUTER/ANTHROPIC） | ✅ PASS | 所有引用一致 |
 | `git diff --check` | ✅ PASS | exit 0 |
 
 ## 新发现
 
-- 无新发现。代码和文档验证通过。
+- 无新发现。文档一致性验证通过。
 
 ## 结论
 
-**PASS (5/5, 1 项 smoke SKIP)**。Batch 17 可交给 Sentinel 进行 commit/push/PR 操作。下一轮应进入 Batch 18（OpenRouter Claude and Direct Anthropic Native Separation）。
+**PASS (4/4)**。状态同步可交给 Sentinel。Batch 18 需要真实 OpenRouter/Anthropic 凭据才能推进 real upstream acceptance。

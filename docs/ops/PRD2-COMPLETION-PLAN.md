@@ -150,7 +150,7 @@ scripts/prd2-batch17-modelgov-usage-smoke.sh
   - Retired model gateway call returns 403 with `model_retired`.
   - Reconciliation full-query aggregate remains correct with paginated data.
   - High estimated-ratio notification event is persisted and queryable.
-- Current protocol state: fixed locally by Codex and awaiting Canary verification.
+- Current protocol state: `docs/agent-workflows/VERIFY-RESULT.md` reports 5/5 PASS with independent smoke SKIP only because Canary had no running backend; User reported Sentinel and Atlas completed; `main`/`origin/main` includes PR #49 at `f6bafb5`.
 
 ### Batch 18: Provider Adapter Real Upstream Acceptance
 
@@ -173,6 +173,15 @@ Target rows:
 - P2-F05 Provider Adapter Framework.
 - Native adapter proof.
 - P2-F06 real upstream usage evidence.
+
+Status update on 2026-07-02:
+
+- Current shell environment does not expose `OPENROUTER_API_KEY` or `ANTHROPIC_API_KEY`.
+- Local `.env.production` currently has `API_KEY_HASH_SECRET` but no OpenRouter or Anthropic upstream credential variables.
+- Batch 18 can proceed with credential-gated smoke tooling and mock syntax checks, but real upstream acceptance cannot be marked complete until keys/model slugs are provided.
+- Required inputs:
+  - `OPENROUTER_API_KEY` plus an OpenRouter Claude model slug for Batch 18A.
+  - `ANTHROPIC_API_KEY` plus a direct Anthropic model slug for Batch 18B.
 
 ### Batch 19: Notification/Event And Project Budget Completion
 
