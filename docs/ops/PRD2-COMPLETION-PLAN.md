@@ -75,6 +75,29 @@ Target rows:
 - P2-F03 Developer Console MVP.
 - Request troubleshooting restricted-data behavior.
 
+Status update on 2026-07-02:
+
+- Codex implemented the Batch 16 real-backend browser smoke and supporting seed command:
+  - `scripts/prd2-developer-console-smoke.sh`
+  - `scripts/prd2_developer_console_seed.go`
+  - `scripts/prd2_developer_console_smoke.mjs`
+- Local environment used for evidence: current-code backend on `http://localhost:18080`, existing Vite frontend on `http://localhost:3000`, local PostgreSQL/Redis, Playwright Chromium, and a script-owned mock OpenAI-compatible upstream.
+- Local command passed:
+
+```bash
+set -a; source .env.production; set +a; \
+UNIROUTE_SMOKE_BACKEND_URL='http://localhost:18080' \
+UNIROUTE_SMOKE_FRONTEND_URL='http://localhost:3000' \
+UNIROUTE_SMOKE_SKIP_BROWSER_INSTALL=true \
+scripts/prd2-developer-console-smoke.sh
+```
+
+- Actual result: `status=PASS`, `request_id=batch16-browser-1782957796339`, `model_alias=company-chat`, `upstream_calls=1`, screenshot `output/playwright/prd2-batch16-developer-console.png`.
+- Defects found and fixed during this batch:
+  - Developer Console crashed on array `capability_tags`/`aliases` from the model catalog; fixed by accepting array or CSV values.
+  - Request Lookup failed on successful logs with NULL `upstream_error`; fixed by making `GetLogDetail` use `COALESCE(upstream_error, '')` and adding `TestGetLogDetail_NullSafeUpstreamError`.
+- Current protocol state: fixed locally by Codex and awaiting Canary verification.
+
 ### Batch 17: Model Governance And Usage/Metering Completion
 
 Goal: make model governance and usage evidence usable through the product UI.

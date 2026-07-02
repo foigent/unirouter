@@ -50,11 +50,11 @@ interface CatalogModel {
   lifecycle: string;
   context_length?: number;
   output_limit?: number;
-  capability_tags?: string;
+  capability_tags?: string | string[];
   data_residency?: string;
   pricing_model_name?: string;
   migration_recommendation?: string;
-  aliases?: string;
+  aliases?: string | string[];
 }
 
 interface CallLog {
@@ -79,8 +79,13 @@ interface CallLog {
   created_at: string;
 }
 
-function splitCSV(value?: string) {
-  return (value || '')
+function splitCSV(value?: string | string[] | null) {
+  if (Array.isArray(value)) {
+    return value
+      .map(item => String(item).trim())
+      .filter(Boolean);
+  }
+  return String(value || '')
     .split(',')
     .map(item => item.trim())
     .filter(Boolean);
@@ -131,12 +136,14 @@ export default function DeveloperConsolePage() {
   const selectedProject = projects.find(project => project.id === selectedProjectId);
 
   const modelOptions = useMemo(() => {
-    const values = new Set<string>();
+    const aliases = new Set<string>();
+    const modelNames = new Set<string>();
     models.forEach(model => {
-      splitCSV(model.aliases).forEach(alias => values.add(alias));
-      if (model.model_name) values.add(model.model_name);
+      splitCSV(model.aliases).forEach(alias => aliases.add(alias));
+      if (model.model_name) modelNames.add(model.model_name);
     });
-    return Array.from(values).sort();
+    const values = [...Array.from(aliases).sort(), ...Array.from(modelNames).sort()];
+    return values.filter((value, index) => values.indexOf(value) === index);
   }, [models]);
 
   const sampleModel = modelOptions[0] || 'company-chat';
