@@ -39,7 +39,7 @@ const KEYS = {
 
 const MODELS = {
   data: [
-    { id: 21, model_name: 'gpt-4o', display_name: 'Company Chat', provider_family: 'openai', lifecycle: 'ga', aliases: 'company-chat', context_length: 128000, capability_tags: 'chat,vision', data_residency: 'us' },
+    { id: 21, model_name: 'gpt-4o', display_name: 'Company Chat', provider_family: 'openai', lifecycle: 'deprecated', aliases: 'company-chat', context_length: 128000, capability_tags: 'chat,vision', data_residency: 'us', migration_recommendation: 'Migrate to gpt-4.1-mini' },
   ],
   total: 1,
 };
@@ -91,6 +91,7 @@ describe('DeveloperConsolePage', () => {
 
     expect(await screen.findByText('Core Project')).toBeTruthy();
     expect(screen.getByText('Company Chat')).toBeTruthy();
+    expect(screen.getByText('Migrate to gpt-4.1-mini')).toBeTruthy();
     expect(screen.getByText('req-001')).toBeTruthy();
   });
 

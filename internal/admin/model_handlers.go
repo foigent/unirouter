@@ -9,9 +9,26 @@ import (
 	"strings"
 	"time"
 
+	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/metering"
+	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/models"
 )
+
+type reconciliationSummary struct {
+	EstimatedTokens          int64   `json:"estimated_tokens"`
+	UpstreamTokens           int64   `json:"upstream_tokens"`
+	PreflightEstimatedTokens int64   `json:"preflight_estimated_tokens"`
+	ActualTokens             int64   `json:"actual_tokens"`
+	VarianceTokens           int64   `json:"variance_tokens"`
+	VarianceRatio            float64 `json:"variance_ratio"`
+	AverageSourceConfidence  float64 `json:"average_source_confidence"`
+	EstimatedRatio           float64 `json:"estimated_ratio"`
+	AlertThreshold           float64 `json:"estimated_ratio_alert_threshold"`
+	EstimatedUsageAlert      bool    `json:"estimated_usage_alert"`
+	ThresholdSetting         string  `json:"estimated_ratio_alert_threshold_setting"`
+	RatioScope               string  `json:"estimated_ratio_scope"`
+}
 
 func (h *Handler) ListReconciliation(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePagination(r)
@@ -47,10 +64,17 @@ func (h *Handler) ListReconciliation(w http.ResponseWriter, r *http.Request) {
 	if len(conditions) > 0 {
 		where = "WHERE " + strings.Join(conditions, " AND ")
 	}
+	filterArgs := append([]interface{}(nil), args...)
 
 	var total int
-	if err := h.db.QueryRow(r.Context(), fmt.Sprintf(`SELECT COUNT(*) FROM call_logs %s`, where), args...).Scan(&total); err != nil {
+	if err := h.db.QueryRow(r.Context(), fmt.Sprintf(`SELECT COUNT(*) FROM call_logs %s`, where), filterArgs...).Scan(&total); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Count failed"})
+		return
+	}
+
+	summary, err := h.reconciliationSummary(r.Context(), where, filterArgs)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Summary failed"})
 		return
 	}
 
@@ -86,8 +110,6 @@ func (h *Handler) ListReconciliation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	records := make([]ReconRecord, 0)
-	var estimatedTokenTotal int
-	var upstreamTokenTotal int
 	for rows.Next() {
 		var id int64
 		var requestID, model, usageSource string
@@ -103,13 +125,6 @@ func (h *Handler) ListReconciliation(w http.ResponseWriter, r *http.Request) {
 		status := "reconciled"
 		if statusCode >= 400 {
 			status = "error"
-		}
-		if statusCode < 400 {
-			if metering.IsNonUpstreamUsage(usageSource) {
-				estimatedTokenTotal += totalTokens
-			} else if usageSource == metering.UsageSourceUpstream {
-				upstreamTokenTotal += totalTokens
-			}
 		}
 		variance := metering.VarianceTokens(estimatedTokens, totalTokens)
 
@@ -134,17 +149,98 @@ func (h *Handler) ListReconciliation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	threshold := h.meteringEstimatedRatioThreshold(r.Context())
-	estimatedRatio := metering.EstimatedTokenRatio(estimatedTokenTotal, upstreamTokenTotal)
+	summary.AlertThreshold = threshold
+	summary.EstimatedRatio = metering.EstimatedTokenRatio(int(summary.EstimatedTokens), int(summary.UpstreamTokens))
+	summary.EstimatedUsageAlert = summary.EstimatedRatio > threshold
+	summary.ThresholdSetting = "token_metering.estimated_ratio_alert_threshold"
+	summary.RatioScope = "filtered_query"
+	if summary.EstimatedUsageAlert {
+		h.emitEstimatedUsageRatioEvent(r, summary, map[string]string{
+			"model":        modelFilter,
+			"status":       statusFilter,
+			"usage_source": metering.NormalizeUsageSource(usageSourceFilter),
+		})
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": records, "total": total, "page": page, "page_size": pageSize,
-		"summary": map[string]interface{}{
-			"estimated_tokens":                        estimatedTokenTotal,
-			"upstream_tokens":                         upstreamTokenTotal,
-			"estimated_ratio":                         estimatedRatio,
-			"estimated_ratio_alert_threshold":         threshold,
-			"estimated_usage_alert":                   estimatedRatio > threshold,
-			"estimated_ratio_alert_threshold_setting": "token_metering.estimated_ratio_alert_threshold",
-			"estimated_ratio_scope":                   "current_page",
+		"summary": summary,
+	})
+}
+
+func (h *Handler) reconciliationSummary(ctx context.Context, where string, args []interface{}) (reconciliationSummary, error) {
+	query := fmt.Sprintf(
+		`SELECT
+		    COALESCE(SUM(CASE WHEN status_code < 400 AND usage_source IN ('estimated', 'adapter_estimated', 'counter_v2') THEN total_tokens ELSE 0 END), 0),
+		    COALESCE(SUM(CASE WHEN status_code < 400 AND usage_source IN ('upstream', 'api', '') THEN total_tokens ELSE 0 END), 0),
+		    COALESCE(SUM(CASE WHEN status_code < 400 THEN COALESCE(NULLIF(estimated_tokens, 0), prompt_tokens + completion_tokens) ELSE 0 END), 0),
+		    COALESCE(SUM(CASE WHEN status_code < 400 THEN total_tokens ELSE 0 END), 0),
+		    COALESCE(AVG(CASE WHEN status_code < 400 THEN usage_confidence END), 0)::float8
+		 FROM call_logs %s`,
+		where,
+	)
+
+	var summary reconciliationSummary
+	if err := h.db.QueryRow(ctx, query, args...).Scan(
+		&summary.EstimatedTokens,
+		&summary.UpstreamTokens,
+		&summary.PreflightEstimatedTokens,
+		&summary.ActualTokens,
+		&summary.AverageSourceConfidence,
+	); err != nil {
+		return summary, err
+	}
+	summary.VarianceTokens = summary.ActualTokens - summary.PreflightEstimatedTokens
+	summary.VarianceRatio = metering.VarianceRatio(int(summary.PreflightEstimatedTokens), int(summary.ActualTokens))
+	return summary, nil
+}
+
+func (h *Handler) emitEstimatedUsageRatioEvent(r *http.Request, summary reconciliationSummary, filters map[string]string) {
+	if h.eventService == nil {
+		return
+	}
+	orgID := middleware.GetOrgIDFromContext(r.Context())
+	if orgID <= 0 {
+		return
+	}
+	for k, v := range filters {
+		if v == "" || (k == "usage_source" && v == metering.UsageSourceUpstream && r.URL.Query().Get("usage_source") == "") {
+			delete(filters, k)
+		}
+	}
+	dedupeKey := fmt.Sprintf("token_metering.estimated_ratio.high:%d:%s:%s:%s:%s",
+		orgID,
+		filters["model"],
+		filters["status"],
+		filters["usage_source"],
+		time.Now().UTC().Format("20060102"),
+	)
+	_, _ = h.eventService.Emit(r.Context(), billing.EventInput{
+		OrgID:     orgID,
+		EventType: billing.EventTokenMeteringEstimatedRatioHigh,
+		Severity:  billing.NotificationSeverityWarning,
+		Title:     "High estimated usage ratio",
+		Message: fmt.Sprintf(
+			"Estimated usage ratio %.1f%% exceeds threshold %.1f%% for reconciliation filters",
+			summary.EstimatedRatio*100,
+			summary.AlertThreshold*100,
+		),
+		Resource:   "token_metering",
+		ResourceID: "estimated_ratio",
+		DedupeKey:  dedupeKey,
+		Payload: map[string]interface{}{
+			"org_id":                            orgID,
+			"estimated_tokens":                  summary.EstimatedTokens,
+			"upstream_tokens":                   summary.UpstreamTokens,
+			"preflight_estimated_tokens":        summary.PreflightEstimatedTokens,
+			"actual_tokens":                     summary.ActualTokens,
+			"variance_tokens":                   summary.VarianceTokens,
+			"variance_ratio":                    summary.VarianceRatio,
+			"average_source_confidence":         summary.AverageSourceConfidence,
+			"estimated_ratio":                   summary.EstimatedRatio,
+			"estimated_ratio_alert_threshold":   summary.AlertThreshold,
+			"estimated_ratio_scope":             summary.RatioScope,
+			"estimated_ratio_threshold_setting": summary.ThresholdSetting,
+			"filters":                           filters,
 		},
 	})
 }

@@ -136,6 +136,15 @@ describe('LogsPage', () => {
     expect(labels.indexOf('渠道 / Provider')).toBeLessThan(labels.indexOf('模型'));
   });
 
+  it('renders usage source filter for metering drilldown', async () => {
+    const { container } = renderLogs();
+    await waitFor(() => {
+      expect(mockGetLogs).toHaveBeenCalled();
+    });
+    const labels = Array.from(container.querySelectorAll('.ur-filter-label')).map(el => el.textContent || '');
+    expect(labels).toContain('Usage Source');
+  });
+
   it('renders request id copy buttons', async () => {
     const { container } = renderLogs();
     await waitFor(() => {

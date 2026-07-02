@@ -96,7 +96,7 @@ scripts/prd2-developer-console-smoke.sh
 - Defects found and fixed during this batch:
   - Developer Console crashed on array `capability_tags`/`aliases` from the model catalog; fixed by accepting array or CSV values.
   - Request Lookup failed on successful logs with NULL `upstream_error`; fixed by making `GetLogDetail` use `COALESCE(upstream_error, '')` and adding `TestGetLogDetail_NullSafeUpstreamError`.
-- Current protocol state: fixed locally by Codex and awaiting Canary verification.
+- Current protocol state: User reported Canary, Sentinel, and Atlas completed; `main`/`origin/main` includes PR #48 at `6876746`.
 
 ### Batch 17: Model Governance And Usage/Metering Completion
 
@@ -117,6 +117,40 @@ Target rows:
 - P2-F04 Model Governance.
 - P2-F06 Token Metering V2.
 - P2-F12 acceptance discipline for matrix upgrades.
+
+Status update on 2026-07-02:
+
+- Codex implemented Batch 17 locally:
+  - Reconciliation summary now aggregates the full filtered query, not the current page.
+  - Reconciliation API summary includes preflight estimated tokens, actual tokens, variance, source confidence, estimated ratio, alert threshold, and `estimated_ratio_scope=filtered_query`.
+  - High estimated-ratio signal emits `token_metering.estimated_ratio.high` notification events through the existing event service.
+  - Logs and Reconciliation frontend surfaces include `usage_source` filtering.
+  - Developer Console renders deprecated approved-catalog migration recommendations.
+  - Added Batch 17 seed/smoke scripts:
+    - `scripts/prd2-batch17-modelgov-usage-smoke.sh`
+    - `scripts/prd2_batch17_modelgov_usage_seed.go`
+    - `scripts/prd2_batch17_modelgov_usage_smoke.mjs`
+- Local environment used for evidence: current-code backend on `http://localhost:18080`, existing Vite frontend on `http://localhost:3000`, local PostgreSQL/Redis, and Playwright Chromium.
+- Local command passed:
+
+```bash
+UNIROUTE_SMOKE_BACKEND_URL=http://localhost:18080 \
+UNIROUTE_SMOKE_FRONTEND_URL=http://localhost:3000 \
+UNIROUTE_SMOKE_DB_DSN='postgres://uniroute:password@localhost:5432/uniroute?sslmode=disable' \
+UNIROUTE_SMOKE_SKIP_BROWSER_INSTALL=true \
+scripts/prd2-batch17-modelgov-usage-smoke.sh
+```
+
+- Actual result: `status=PASS`, `project_id=27`, `model_set_id=13`, `retired_model=batch17-retired-chat`, `reconciliation_model=batch17-recon-metering`, `estimated_ratio=0.8`, `estimated_ratio_scope=filtered_query`, screenshot `output/playwright/prd2-batch17-modelgov-usage.png`.
+- Smoke coverage:
+  - Model Registry create/edit/list against real backend.
+  - Project model-set assignment via real backend.
+  - Approved Catalog hides unapproved and retired fixtures.
+  - Deprecated migration recommendation visible in Developer Console.
+  - Retired model gateway call returns 403 with `model_retired`.
+  - Reconciliation full-query aggregate remains correct with paginated data.
+  - High estimated-ratio notification event is persisted and queryable.
+- Current protocol state: fixed locally by Codex and awaiting Canary verification.
 
 ### Batch 18: Provider Adapter Real Upstream Acceptance
 

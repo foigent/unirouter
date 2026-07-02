@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/testutil"
 	"golang.org/x/crypto/bcrypt"
@@ -2689,6 +2690,12 @@ func TestListLogs_WithFilters(t *testing.T) {
 			}
 		},
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			if !strings.Contains(sql, "usage_source = $4") {
+				t.Fatalf("expected usage_source filter in query, got %s", sql)
+			}
+			if len(args) < 4 || args[3] != "counter_v2" {
+				t.Fatalf("expected normalized usage_source arg counter_v2, got %#v", args)
+			}
 			return &testutil.MockRows{
 				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
@@ -2718,7 +2725,7 @@ func TestListLogs_WithFilters(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	req := httptest.NewRequest("GET", "/logs?model=gpt-4o&provider=openai&status_code=200", nil)
+	req := httptest.NewRequest("GET", "/logs?model=gpt-4o&provider=openai&status_code=200&usage_source=stream_estimate", nil)
 	rec := httptest.NewRecorder()
 
 	h.ListLogs(rec, req)
@@ -2800,6 +2807,18 @@ func TestListReconciliation_Success(t *testing.T) {
 					},
 				}
 			}
+			if strings.Contains(sql, "AVG(CASE WHEN status_code < 400 THEN usage_confidence END)") {
+				return &testutil.MockRow{
+					ScanFn: func(dest ...any) error {
+						*dest[0].(*int64) = 90
+						*dest[1].(*int64) = 210
+						*dest[2].(*int64) = 340
+						*dest[3].(*int64) = 300
+						*dest[4].(*float64) = 0.82
+						return nil
+					},
+				}
+			}
 			return &testutil.MockRow{
 				ScanFn: func(dest ...any) error {
 					*dest[0].(*int) = 2
@@ -2868,6 +2887,12 @@ func TestListReconciliation_Success(t *testing.T) {
 	if summary["estimated_ratio_alert_threshold"].(float64) != 0.25 {
 		t.Fatalf("expected threshold 0.25, got %v", summary["estimated_ratio_alert_threshold"])
 	}
+	if summary["estimated_tokens"].(float64) != 90 {
+		t.Fatalf("expected full-query estimated_tokens=90, got %v", summary["estimated_tokens"])
+	}
+	if summary["estimated_ratio_scope"] != "filtered_query" {
+		t.Fatalf("expected filtered_query scope, got %v", summary["estimated_ratio_scope"])
+	}
 }
 
 func TestListReconciliation_UsageSourceFilterNormalizesLegacyAlias(t *testing.T) {
@@ -2877,6 +2902,16 @@ func TestListReconciliation_UsageSourceFilterNormalizesLegacyAlias(t *testing.T)
 			if strings.Contains(sql, "FROM settings") {
 				return &testutil.MockRow{ScanFn: func(dest ...any) error {
 					*dest[0].(*string) = "0.2"
+					return nil
+				}}
+			}
+			if strings.Contains(sql, "AVG(CASE WHEN status_code < 400 THEN usage_confidence END)") {
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*int64) = 0
+					*dest[1].(*int64) = 0
+					*dest[2].(*int64) = 0
+					*dest[3].(*int64) = 0
+					*dest[4].(*float64) = 0
 					return nil
 				}}
 			}
@@ -2905,6 +2940,89 @@ func TestListReconciliation_UsageSourceFilterNormalizesLegacyAlias(t *testing.T)
 	}
 	if len(capturedCountArgs) != 1 || capturedCountArgs[0] != "counter_v2" {
 		t.Fatalf("expected normalized counter_v2 filter, got %#v", capturedCountArgs)
+	}
+}
+
+func TestListReconciliation_EmitsHighEstimatedRatioEvent(t *testing.T) {
+	var capturedEventArgs []any
+	var deliveryStateUpdated bool
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			switch {
+			case strings.Contains(sql, "FROM settings"):
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*string) = "0.20"
+					return nil
+				}}
+			case strings.Contains(sql, "AVG(CASE WHEN status_code < 400 THEN usage_confidence END)"):
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*int64) = 80
+					*dest[1].(*int64) = 20
+					*dest[2].(*int64) = 95
+					*dest[3].(*int64) = 100
+					*dest[4].(*float64) = 0.62
+					return nil
+				}}
+			case strings.Contains(sql, "INSERT INTO notification_events"):
+				capturedEventArgs = append([]any(nil), args...)
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*int64) = 77
+					return nil
+				}}
+			default:
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*int) = 0
+					return nil
+				}}
+			}
+		},
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{}, nil
+		},
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(sql, "UPDATE notification_events") {
+				deliveryStateUpdated = true
+			}
+			return pgconn.NewCommandTag("UPDATE 1"), nil
+		},
+	}
+	h := newTestHandler(db)
+	h.SetEventService(billing.NewEventService(db))
+
+	req := httptest.NewRequest("GET", "/reconciliation?usage_source=counter_v2", nil)
+	req = req.WithContext(context.WithValue(req.Context(), middleware.CtxOrgID, int64(3)))
+	rec := httptest.NewRecorder()
+
+	h.ListReconciliation(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(capturedEventArgs) == 0 {
+		t.Fatal("expected notification event insert")
+	}
+	if capturedEventArgs[0] != int64(3) {
+		t.Fatalf("expected org_id 3, got %#v", capturedEventArgs[0])
+	}
+	if capturedEventArgs[2] != billing.EventTokenMeteringEstimatedRatioHigh {
+		t.Fatalf("unexpected event type: %#v", capturedEventArgs[2])
+	}
+	if capturedEventArgs[3] != billing.NotificationSeverityWarning {
+		t.Fatalf("unexpected severity: %#v", capturedEventArgs[3])
+	}
+	payload, ok := capturedEventArgs[8].([]byte)
+	if !ok {
+		t.Fatalf("expected payload JSON bytes, got %T", capturedEventArgs[8])
+	}
+	var payloadData map[string]interface{}
+	if err := json.Unmarshal(payload, &payloadData); err != nil {
+		t.Fatalf("payload should be JSON: %v", err)
+	}
+	if payloadData["estimated_ratio"].(float64) != 0.8 {
+		t.Fatalf("expected estimated_ratio 0.8, got %v", payloadData["estimated_ratio"])
+	}
+	if !deliveryStateUpdated {
+		t.Fatal("expected notification event delivery state update")
 	}
 }
 

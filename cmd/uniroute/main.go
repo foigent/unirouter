@@ -98,6 +98,7 @@ func main() {
 		log.Fatalf("Invalid license configuration: %v", err)
 	}
 	adminHandler.SetLicenseVerifier(licenseVerifier)
+	adminHandler.SetEventService(eventSvc)
 
 	// Load sensitive words from settings and periodically refresh all instances.
 	go startSensitiveWordsReloadLoop(postgres.Pool, sensitiveFilter, time.Minute)
