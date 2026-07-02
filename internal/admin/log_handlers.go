@@ -183,7 +183,7 @@ func (h *Handler) GetLogDetail(w http.ResponseWriter, r *http.Request) {
 	var createdAt time.Time
 	err = h.db.QueryRow(r.Context(),
 		`SELECT COALESCE(project_id, 0), request_id, model, provider, channel, prompt_tokens, completion_tokens, total_tokens,
-		        cost_cents, status_code, latency_ms, ttft_ms, upstream_status_code, upstream_error,
+		        cost_cents, status_code, latency_ms, ttft_ms, upstream_status_code, COALESCE(upstream_error, ''),
 		        usage_source, is_stream, ip_address, requested_model, created_at
 		 FROM call_logs WHERE id = $1`, id,
 	).Scan(&projectID, &requestID, &model, &provider, &channel, &promptTokens, &completionTokens, &totalTokens,
