@@ -61,6 +61,18 @@ This proves the instance can reach the shared PostgreSQL and Redis endpoints. It
 
 ## Two-Instance Smoke
 
+Local/staging Docker Compose can start a canary instance with:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.canary.yml up -d
+```
+
+The overlay exposes:
+
+- stable backend direct URL: `http://localhost:8080`
+- canary backend direct URL: `http://localhost:8081`
+- HTTP proxy/load-balancer URL: `http://localhost`
+
 Use:
 
 ```bash
@@ -74,13 +86,25 @@ Optional gateway smoke:
 ```bash
 UNIROUTE_STABLE_URL=http://localhost:8080 \
 UNIROUTE_CANARY_URL=http://localhost:8081 \
+UNIROUTE_PROXY_URL=http://localhost \
 UNIROUTE_RUN_GATEWAY_SMOKE=1 \
 UNIROUTE_API_KEY=sk-... \
 UNIROUTE_MODEL=gpt-4o \
+UNIROUTE_HA_DB_DSN='postgres://uniroute:...@localhost:5432/uniroute?sslmode=disable' \
 scripts/prd2-ha-smoke.sh
 ```
 
-The default smoke is read-only health verification. Gateway smoke sends real requests only when explicitly enabled.
+The default smoke is read-only health verification. Gateway smoke sends real requests only when explicitly enabled. When `UNIROUTE_HA_DB_DSN` is set, the script also checks that a shared request id does not create duplicate freeze idempotency or freeze transaction rows.
+
+Shared rate-limit evidence requires a dedicated low-limit test key:
+
+```bash
+UNIROUTE_RUN_GATEWAY_SMOKE=1 \
+UNIROUTE_RUN_RATE_LIMIT_SMOKE=1 \
+UNIROUTE_RATE_LIMIT_REQUESTS=4 \
+UNIROUTE_API_KEY=sk-low-limit \
+scripts/prd2-ha-smoke.sh
+```
 
 ## Wallet And Idempotency Safety
 
@@ -113,6 +137,19 @@ For a failed canary or secondary instance:
 ```bash
 curl -fsS "$STABLE_URL/health/ready"
 ```
+
+## Backup And Restore Rehearsal
+
+Run restore rehearsal only against an empty non-production database:
+
+```bash
+UNIROUTE_BACKUP_SOURCE_DSN='postgres://uniroute:...@source:5432/uniroute?sslmode=disable' \
+UNIROUTE_RESTORE_REHEARSAL_DSN='postgres://uniroute:...@localhost:5432/uniroute_restore_rehearsal?sslmode=disable' \
+UNIROUTE_BACKUP_RESTORE_CONFIRM=non-production-restore-target \
+scripts/prd2-backup-restore-rehearsal.sh
+```
+
+The script runs `pg_dump`, restores into the rehearsal target, and verifies migration history plus core tables. It does not drop or truncate the target database.
 
 For a failed schema-bearing release:
 

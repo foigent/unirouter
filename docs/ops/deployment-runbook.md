@@ -1,9 +1,9 @@
 # Deployment Runbook（部署运维手册）
 
-> **版本**：v1.4
+> **版本**：v1.5
 > **日期**：2026-07-02
 > **用途**：运维人员部署和维护 UniRoute 的操作手册
-> **变更记录**：v1.4 新增生产 `.env` 保护、`API_KEY_HASH_SECRET`、rsync 安全同步规则和 PR #44 部署事故复盘；v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
+> **变更记录**：v1.5 新增 HTTP-only canary overlay、8081 canary direct smoke、PRD2 HA/backup rehearsal 命令；v1.4 新增生产 `.env` 保护、`API_KEY_HASH_SECRET`、rsync 安全同步规则和 PR #44 部署事故复盘；v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
 
 ---
 
@@ -204,6 +204,25 @@ docker compose cp ./backups/dump.rdb redis:/data/dump.rdb
 docker compose restart redis
 ```
 
+### 4.3 PRD2 备份/恢复演练
+
+PRD2 的恢复演练必须在空的非生产数据库执行。脚本不会清空目标库；如果目标库已有对象，恢复会失败，由运维人员重新准备安全目标库后再跑。
+
+```bash
+UNIROUTE_BACKUP_SOURCE_DSN='postgres://uniroute:...@postgres:5432/uniroute?sslmode=disable' \
+UNIROUTE_RESTORE_REHEARSAL_DSN='postgres://uniroute:...@localhost:5432/uniroute_restore_rehearsal?sslmode=disable' \
+UNIROUTE_BACKUP_RESTORE_CONFIRM=non-production-restore-target \
+scripts/prd2-backup-restore-rehearsal.sh
+```
+
+期望输出：
+
+```text
+PASS backup/restore rehearsal schema_versions=<n> core_tables=6 dump_file=/tmp/...
+```
+
+备份文件默认保留在 `/tmp`，便于事后校验和归档。不要把该脚本指向生产恢复目标。
+
 ---
 
 ## 五、日志管理
@@ -403,22 +422,26 @@ curl http://localhost:8080/health/ready
 
 ### 9.1 前置条件：Nginx 配置
 
-**⚠️ 无 TLS 证书时（如阿里云测试环境），部署前必须修改 `nginx/nginx.conf`：**
-
-1. **HTTP → HTTPS 重定向**：确认 `return 301 https://...` 已注释（默认已注释）
-2. **HTTPS server block**：注释掉整个 `# --- HTTPS 主站 ---` 的 server block（第 443 行起）
-
-原因：无证书时 nginx 启动会失败（找不到 `fullchain.pem` / `privkey.pem`），且 80 端口的 301 重定向会指向不可用的 HTTPS，导致全站不可访问。
+默认 canary overlay 挂载 `nginx/nginx.http-canary.conf`，只监听 HTTP 80，适合本地和 staging smoke，不需要 TLS 证书。
 
 ```bash
-# 快速检查：确认 nginx 配置语法正确
-docker compose exec nginx nginx -t
+docker compose -f docker-compose.yml -f docker-compose.canary.yml config
 ```
 
-启用 HTTPS 后（如部署到生产环境）：
-1. 取消注释 HTTPS server block
-2. 取消注释 HTTP → HTTPS 重定向
-3. 挂载证书到容器（见第十章）
+生产启用 TLS 时，把 `docker-compose.canary.yml` 的 Nginx mount 改为 `./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro`，并挂载证书：
+
+```bash
+# TLS 生产配置示例
+# - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+# - /etc/letsencrypt/live/your-domain/fullchain.pem:/etc/nginx/ssl/fullchain.pem:ro
+# - /etc/letsencrypt/live/your-domain/privkey.pem:/etc/nginx/ssl/privkey.pem:ro
+```
+
+启动后可检查 Nginx 配置语法：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.canary.yml exec nginx nginx -t
+```
 
 ### 9.2 架构说明
 
@@ -447,9 +470,9 @@ curl http://localhost:8080/health/ready  # 必须返回 ok
 # 启动 canary（叠加配置）
 docker compose -f docker-compose.yml -f docker-compose.canary.yml up -d
 
-# 验证 canary 容器
+# 验证 canary 容器；backend-canary 也暴露 http://localhost:8081 用于直连 smoke
 docker compose -f docker-compose.yml -f docker-compose.canary.yml ps
-# 应看到 6 个容器：postgres, redis, backend, frontend, nginx, backend-canary
+# 应看到 8 个服务：postgres, redis, backend, backend-canary, frontend, nginx, prometheus, grafana
 ```
 
 ### 9.4 验证流量分发
@@ -566,14 +589,26 @@ UNIROUTE_PROXY_URL=http://localhost \
 scripts/prd2-ha-smoke.sh
 ```
 
-可选真实 gateway smoke（会真实发起模型请求，必须显式开启）：
+可选真实 gateway smoke（会真实发起模型请求，必须显式开启）。如果提供 `UNIROUTE_HA_DB_DSN`，脚本会额外检查同一 `request_id` 没有产生重复 freeze idempotency/transaction 行：
 
 ```bash
 UNIROUTE_STABLE_URL=http://localhost:8080 \
 UNIROUTE_CANARY_URL=http://localhost:8081 \
+UNIROUTE_PROXY_URL=http://localhost \
 UNIROUTE_RUN_GATEWAY_SMOKE=1 \
 UNIROUTE_API_KEY=sk-... \
 UNIROUTE_MODEL=gpt-4o \
+UNIROUTE_HA_DB_DSN='postgres://uniroute:...@localhost:5432/uniroute?sslmode=disable' \
+scripts/prd2-ha-smoke.sh
+```
+
+可选共享 rate-limit smoke 需要一把低限额测试 API Key。该检查会交替打 stable/canary，直到观察到 HTTP 429：
+
+```bash
+UNIROUTE_RUN_GATEWAY_SMOKE=1 \
+UNIROUTE_RUN_RATE_LIMIT_SMOKE=1 \
+UNIROUTE_RATE_LIMIT_REQUESTS=4 \
+UNIROUTE_API_KEY=sk-low-limit \
 scripts/prd2-ha-smoke.sh
 ```
 
