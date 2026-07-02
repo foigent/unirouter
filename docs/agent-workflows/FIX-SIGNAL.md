@@ -1,8 +1,8 @@
-# FIX-SIGNAL.md — PRD2 Batch 17 Model Governance And Usage/Metering
+# FIX-SIGNAL.md — PRD2 Batch 17 Status Sync And Batch 18 Credential Gate
 
 **修复者：** Codex
 **日期：** 2026-07-02
-**修复轮次：** PRD2 Batch 17
+**修复轮次：** PRD2 Batch 17 post-merge status sync
 
 ---
 
@@ -10,184 +10,146 @@
 
 | 项目 | 预期状态 | 原因 |
 |------|---------|------|
-| Batch 16 | User reported Canary/Sentinel/Atlas completed; `main` includes PR #48 at `6876746` | Batch 17 builds on Developer Console real-backend smoke and catalog/log fixes |
-| Running services | Backend, frontend, PostgreSQL, Redis | Batch 17 includes real-backend browser smoke |
-| Backend under test | Must run current worktree, not stale `./uniroute` binary | Batch 17 validates new notification/reconciliation code |
-| Smoke DB DSN | `UNIROUTE_SMOKE_DB_DSN` may be required | Seed script writes isolated Batch17 fixtures |
+| Batch 17 | Canary/Sentinel/Atlas completed per User report; `main` includes PR #49 at `f6bafb5` | User reported all three downstream roles completed after Batch 17 |
+| `VERIFY-RESULT.md` | Batch 17 reports 5/5 PASS with one smoke SKIP due no running backend | This is the current independent verification result in the repo |
+| Batch 18 | Not complete | Real upstream provider E2E needs OpenRouter and direct Anthropic credentials |
+| Local upstream credentials | Expected missing unless operator sets them outside this shell | Current shell and `.env.production` do not expose `OPENROUTER_API_KEY` or `ANTHROPIC_API_KEY` |
 
 ---
 
-## Fix #1: Full-query reconciliation summary and estimated-ratio event
-
-**Files:**
-
-- `internal/admin/model_handlers.go`
-- `internal/admin/handlers.go`
-- `internal/billing/notifications.go`
-- `cmd/uniroute/main.go`
-- `internal/admin/admin_mock_test.go`
-
-**Implementation:**
-
-- `ListReconciliation` now computes summary metrics over the full filtered query before pagination.
-- Summary includes:
-  - `estimated_tokens`
-  - `upstream_tokens`
-  - `preflight_estimated_tokens`
-  - `actual_tokens`
-  - `variance_tokens`
-  - `variance_ratio`
-  - `average_source_confidence`
-  - `estimated_ratio`
-  - `estimated_ratio_alert_threshold`
-  - `estimated_usage_alert`
-  - `estimated_ratio_scope=filtered_query`
-- When the filtered estimated ratio exceeds the configured threshold, the handler emits `token_metering.estimated_ratio.high` through the existing notification event service.
-- The admin handler now receives the shared event service in `cmd/uniroute/main.go`.
-
-**Expected Canary checks:**
-
-- Unit tests verify full-query summary differs from page row totals.
-- Unit tests verify high estimated-ratio event emission is deduplicated through notification events.
-- Smoke verifies `page_size=2` still returns full-query `estimated_tokens=80`, `upstream_tokens=20`, and `estimated_ratio=0.8`.
-
----
-
-## Fix #2: Usage-source filters in frontend usage surfaces
-
-**Files:**
-
-- `frontend/src/api/client.ts`
-- `frontend/src/api/__tests__/client.test.ts`
-- `frontend/src/pages/ReconciliationPage.tsx`
-- `frontend/src/pages/__tests__/ReconciliationPage.test.tsx`
-- `frontend/src/pages/LogsPage.tsx`
-- `frontend/src/pages/__tests__/LogsPage.test.tsx`
-
-**Implementation:**
-
-- `api.getReconciliation()` now accepts `usage_source`.
-- Reconciliation page uses the API client instead of raw `api.request`.
-- Reconciliation page renders source filter, source-confidence/variance columns, and full-query metric cards.
-- Logs page adds `usage_source` filter and table column.
-
-**Expected Canary checks:**
-
-- Frontend tests pass.
-- Browser smoke can see Reconciliation `来源筛选` and summary cards.
-- API client encodes `usage_source` for logs and reconciliation.
-
----
-
-## Fix #3: Developer Console shows deprecated migration recommendation
-
-**Files:**
-
-- `frontend/src/pages/DeveloperConsolePage.tsx`
-- `frontend/src/pages/__tests__/DeveloperConsolePage.test.tsx`
-- `frontend/src/index.css`
-
-**Implementation:**
-
-- Approved Catalog rows in Developer Console show `migration_recommendation` for `deprecated` models.
-- Unit fixture verifies `Migrate to gpt-4.1-mini` renders.
-- Batch17 smoke verifies a real deprecated fixture renders `Migrate to batch17-ga-chat before the next renewal window`.
-
----
-
-## Fix #4: Batch17 real-backend smoke
-
-**Files:**
-
-- `scripts/prd2-batch17-modelgov-usage-smoke.sh`
-- `scripts/prd2_batch17_modelgov_usage_seed.go`
-- `scripts/prd2_batch17_modelgov_usage_smoke.mjs`
-
-**Implementation:**
-
-- Seed creates isolated Batch17 org, platform admin, developer, project, model set, GA/deprecated/unapproved/retired models, aliases, wallet, reconciliation logs, and estimated-ratio threshold.
-- Smoke verifies:
-  - Model Registry create/edit/list through real backend.
-  - Project model-set assignment through real backend.
-  - Approved Catalog hides unapproved and retired models.
-  - Deprecated migration recommendation is visible in Developer Console.
-  - Retired model gateway call returns 403 with `model_retired`.
-  - Reconciliation full-query aggregate remains correct with paginated data.
-  - High estimated-ratio notification event is persisted and queryable.
-  - Admin Model Governance and Reconciliation browser surfaces render.
-
-**Codex local command and result:**
-
-```bash
-cd /Users/m4/Desktop/projects/UniRouter
-LISTEN_PORT=18080 \
-DB_DSN='postgres://uniroute:password@localhost:5432/uniroute?sslmode=disable' \
-UNIROUTE_SMOKE_DB_DSN='postgres://uniroute:password@localhost:5432/uniroute?sslmode=disable' \
-JWT_SECRET='uniroute-jwt-secret-2024' \
-API_KEY_HASH_SECRET='uniroute-jwt-secret-2024' \
-ENCRYPTION_KEY='0123456789abcdef0123456789abcdef' \
-SKIP_MIGRATION=true \
-go run ./cmd/uniroute
-```
-
-In another shell:
-
-```bash
-cd /Users/m4/Desktop/projects/UniRouter
-UNIROUTE_SMOKE_BACKEND_URL=http://localhost:18080 \
-UNIROUTE_SMOKE_FRONTEND_URL=http://localhost:3000 \
-UNIROUTE_SMOKE_DB_DSN='postgres://uniroute:password@localhost:5432/uniroute?sslmode=disable' \
-UNIROUTE_SMOKE_SKIP_BROWSER_INSTALL=true \
-scripts/prd2-batch17-modelgov-usage-smoke.sh
-```
-
-Actual local result:
-
-```json
-{
-  "status": "PASS",
-  "batch": 17,
-  "backend_url": "http://localhost:18080",
-  "frontend_url": "http://localhost:3000",
-  "project_id": 27,
-  "model_set_id": 13,
-  "retired_model": "batch17-retired-chat",
-  "reconciliation_model": "batch17-recon-metering",
-  "reconciliation_summary": {
-    "estimated_tokens": 80,
-    "upstream_tokens": 20,
-    "preflight_estimated_tokens": 90,
-    "actual_tokens": 100,
-    "variance_tokens": 10,
-    "variance_ratio": 0.1111111111111111,
-    "average_source_confidence": 0.7666666666666667,
-    "estimated_ratio": 0.8,
-    "estimated_ratio_alert_threshold": 0.2,
-    "estimated_usage_alert": true,
-    "estimated_ratio_alert_threshold_setting": "token_metering.estimated_ratio_alert_threshold",
-    "estimated_ratio_scope": "filtered_query"
-  },
-  "screenshot": "/Users/m4/Desktop/projects/unirouter/output/playwright/prd2-batch17-modelgov-usage.png"
-}
-```
-
----
-
-## Documentation Updates
+## Fix #1: Current status now reflects Batch 17 completion
 
 **Files:**
 
 - `docs/ops/CURRENT-STATUS.md`
+
+**Original issue:**
+
+- The file still said Batch 17 was "fixed locally and awaiting Canary" after the user reported Canary, Sentinel, and Atlas completed.
+
+**Current state:**
+
+- `Last verified` records Batch 17 completed per User report and `main`/`origin/main` PR #49 at `f6bafb5`.
+- The PRD2 phase row says Batch 17 is complete and Batch 18 Provider Adapter real-upstream acceptance is next.
+- The Current Verification table records:
+  - `VERIFY-RESULT.md` Batch 17 5/5 PASS.
+  - Smoke SKIP reason: Canary had no running backend.
+  - Sentinel merge commit `f6bafb5` / PR #49.
+  - User-reported Atlas completion.
+
+**Canary verification method:**
+
+```bash
+cd /Users/m4/Desktop/projects/UniRouter
+rg -n "Batch 17|f6bafb5|Batch 18|awaiting Canary" docs/ops/CURRENT-STATUS.md
+git log --oneline -3 --decorate
+```
+
+Expected:
+
+- Batch 17 current PRD2 status is completed, not awaiting Canary.
+- `f6bafb5` appears in the recent git log.
+- Any remaining `awaiting Canary` text is unrelated historical PRD1 status, not PRD2 Batch 17.
+
+---
+
+## Fix #2: Acceptance matrix advances only Batch 17-verified rows
+
+**Files:**
+
 - `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`
-- `docs/ops/PRD2-COMPLETION-PLAN.md`
+
+**Original issue:**
+
+- Several Batch 17 rows still said `Implemented not accepted` and listed Canary verification as the remaining gap.
+
+**Current state:**
+
+- `P2-F04 Model Registry` is `E2E accepted`.
+- `Approved Model Catalog hides unapproved models` is `E2E accepted`.
+- `Deprecated model shows migration recommendation` is `E2E accepted`.
+- `Estimated-vs-upstream variance visible` is `E2E accepted`.
+- `Retired model cannot be called` keeps Batch 17 as secondary accepted evidence.
+- `P2-F06 Token Metering V2` remains `Implemented not accepted` because real upstream usage E2E is still Batch 18.
+- `P2-F08 Notification/event foundation` remains `Unit tested` because notification center, retry worker, production webhook E2E, and remaining emitters are still Batch 19.
+- `P2-F12 Acceptance discipline` explicitly records that Batch 17 did not overclaim broader Token Metering, Notification, or real-upstream gaps.
+
+**Canary verification method:**
+
+```bash
+cd /Users/m4/Desktop/projects/UniRouter
+rg -n "P2-F04 Model Registry|Approved Model Catalog|Deprecated model|Estimated-vs-upstream|P2-F06 Token Metering|P2-F08 Notification|P2-F12 Acceptance" docs/ops/PRD2-ACCEPTANCE-MATRIX.md
+```
+
+Expected:
+
+- Batch 17-specific product rows no longer wait for Canary.
+- Broader Batch 18/19 gaps remain open and are not overclaimed.
+
+---
+
+## Fix #3: Open issue status matches Batch 17 completion
+
+**Files:**
+
 - `docs/issues/OPEN-ISSUES.md`
 
-**Expected status discipline:**
+**Original issue:**
 
-- Batch16 is recorded as completed per User report.
-- Batch17 is recorded as fixed locally and awaiting Canary.
-- P2-F13/P2-F14/P2-F15 remain mandatory and not complete.
-- OIDC-first SSO, project budget hard-blocking, production HA, License production evidence, and real upstream Anthropic E2E remain open/later work.
+- `PRD2-B17-001` still said `Fixed awaiting Canary`.
+
+**Current state:**
+
+- `PRD2-B17-001` is `Canary passed`.
+- Evidence references `VERIFY-RESULT.md` Batch 17 5/5 PASS, local smoke evidence, User-reported Sentinel/Atlas completion, and `main` commit `f6bafb5`.
+- Next step is to keep the Batch 17 smoke as regression evidence and proceed to Batch 18.
+- New blocker `PRD2-B18-001` records that real upstream provider E2E needs `OPENROUTER_API_KEY`, OpenRouter Claude model slug, `ANTHROPIC_API_KEY`, and direct Anthropic model slug.
+
+**Canary verification method:**
+
+```bash
+cd /Users/m4/Desktop/projects/UniRouter
+rg -n "PRD2-B17-001|PRD2-B18-001" docs/issues/OPEN-ISSUES.md
+```
+
+Expected:
+
+- The issue is `Canary passed`, not `Fixed awaiting Canary`.
+- It does not claim Batch 18 is complete.
+- `PRD2-B18-001` is `Open` and lists the missing real-upstream credentials.
+
+---
+
+## Fix #4: Completion plan records Batch 18 as credential-gated
+
+**Files:**
+
+- `docs/ops/PRD2-COMPLETION-PLAN.md`
+
+**Original issue:**
+
+- Batch 17 still said it was awaiting Canary, and Batch 18 had no current local credential readiness note.
+
+**Current state:**
+
+- Batch 17 protocol state records Canary 5/5 PASS, User-reported Sentinel/Atlas completion, and PR #49 at `f6bafb5`.
+- Batch 18 status update records that this shell and `.env.production` do not expose:
+  - `OPENROUTER_API_KEY`
+  - `ANTHROPIC_API_KEY`
+- Batch 18 remains next, but real upstream acceptance cannot be marked complete until credentials and model slugs are provided.
+
+**Canary verification method:**
+
+```bash
+cd /Users/m4/Desktop/projects/UniRouter
+rg -n "Current protocol state|Batch 18|OPENROUTER_API_KEY|ANTHROPIC_API_KEY|f6bafb5" docs/ops/PRD2-COMPLETION-PLAN.md
+```
+
+Expected:
+
+- Batch 17 is complete.
+- Batch 18 is clearly next.
+- Missing real-upstream credentials are recorded as the current execution gate.
 
 ---
 
@@ -195,20 +157,19 @@ Actual local result:
 
 ```bash
 cd /Users/m4/Desktop/projects/UniRouter
-go test ./...
-npm --prefix frontend test -- --run
-npm --prefix frontend run build
-node --check scripts/prd2_batch17_modelgov_usage_smoke.mjs
+git status --short
+git log --oneline -3 --decorate
+rg -n "PRD2-B17-001|PRD2-B18-001|Batch 17|Batch 18|f6bafb5|OPENROUTER_API_KEY|ANTHROPIC_API_KEY" docs/ops/CURRENT-STATUS.md docs/ops/PRD2-ACCEPTANCE-MATRIX.md docs/ops/PRD2-COMPLETION-PLAN.md docs/issues/OPEN-ISSUES.md docs/agent-workflows/FIX-SIGNAL.md docs/agent-workflows/VERIFY-RESULT.md
 git diff --check
 ```
 
-Codex local results:
+Codex local expected result:
 
-- `go test ./...` PASS.
-- `npm --prefix frontend test -- --run` PASS: 11 files, 73 tests.
-- `npm --prefix frontend run build` PASS, with existing Vite large chunk warning.
-- `node --check scripts/prd2_batch17_modelgov_usage_smoke.mjs` PASS.
-- `scripts/prd2-batch17-modelgov-usage-smoke.sh` PASS with current-code backend on `http://localhost:18080`.
+- `git log` includes `f6bafb5` at `main`/`origin/main`.
+- Docs no longer describe PRD2 Batch 17 as awaiting Canary.
+- `PRD2-B18-001` records the current real-upstream credential gate.
+- Batch 18 is not marked complete.
+- `git diff --check` passes.
 
 ---
 
@@ -217,29 +178,26 @@ Codex local results:
 Please overwrite `docs/agent-workflows/VERIFY-RESULT.md` using this structure:
 
 ```markdown
-# VERIFY-RESULT.md — PRD2 Batch 17 Model Governance And Usage/Metering 验收结果
+# VERIFY-RESULT.md — PRD2 Batch 17 Status Sync / Batch 18 Credential Gate 验收结果
 
 **验收者：** OpenClaw Canary
 **日期：** [实际日期]
-**对应轮次：** PRD2 Batch 17
+**对应轮次：** PRD2 Batch 17 post-merge status sync
 
 ## 逐条结果
 
-- Fix #1: PASS/FAIL — full-query reconciliation summary and estimated-ratio event.
-- Fix #2: PASS/FAIL — usage_source filters in frontend usage surfaces.
-- Fix #3: PASS/FAIL — Developer Console migration recommendation visibility.
-- Fix #4: PASS/FAIL — Batch17 real-backend smoke and seed isolation.
-- Fix #5: PASS/FAIL — status/matrix/issues accurately reflect Batch17 without overclaim.
+- Fix #1: PASS/FAIL — `CURRENT-STATUS.md` records Batch 17 completion and Batch 18 next gate.
+- Fix #2: PASS/FAIL — acceptance matrix advances only Batch 17-verified rows and keeps broader gaps open.
+- Fix #3: PASS/FAIL — `PRD2-B17-001` is `Canary passed`, and `PRD2-B18-001` records the real-upstream credential gate.
+- Fix #4: PASS/FAIL — completion plan records Batch 18 credential gate without marking Batch 18 complete.
 
 ## 命令结果
 
 | 命令 | 结果 | 备注 |
 |------|------|------|
-| `go test ./...` | PASS/FAIL | |
-| `npm --prefix frontend test -- --run` | PASS/FAIL | |
-| `npm --prefix frontend run build` | PASS/FAIL | |
-| `node --check scripts/prd2_batch17_modelgov_usage_smoke.mjs` | PASS/FAIL | |
-| `scripts/prd2-batch17-modelgov-usage-smoke.sh` | PASS/FAIL/SKIP | Include backend/frontend URLs and reconciliation model |
+| `git status --short` | PASS/FAIL | |
+| `git log --oneline -3 --decorate` | PASS/FAIL | |
+| `rg -n "PRD2-B17-001|PRD2-B18-001|Batch 17|Batch 18|f6bafb5|OPENROUTER_API_KEY|ANTHROPIC_API_KEY" ...` | PASS/FAIL | |
 | `git diff --check` | PASS/FAIL | |
 
 ## 新发现
@@ -248,5 +206,5 @@ Please overwrite `docs/agent-workflows/VERIFY-RESULT.md` using this structure:
 
 ## 结论
 
-PASS/FAIL. 明确说明 Batch17 是否可交给 Sentinel，以及下一轮是否应进入 Batch18。
+PASS/FAIL. 明确说明状态同步是否可交给 Sentinel，以及 Batch 18 是否仍需真实 OpenRouter/Anthropic 凭据。
 ```
