@@ -325,6 +325,27 @@ Target rows/issues:
 - `PRD2-HA-001`.
 - `PRD2-DEPLOY-001` archive readiness after operator confirmation.
 
+Status update on 2026-07-02:
+
+- Codex implemented Batch 21 local tooling/docs:
+  - `docker-compose.canary.yml` now mounts HTTP-only `nginx/nginx.http-canary.conf` by default, so local/staging canary smoke does not require TLS certificates.
+  - `backend-canary` exposes `http://localhost:8081` for direct HA smoke while proxy traffic still goes through Nginx.
+  - `scripts/prd2-ha-smoke.sh` now checks `/health/live` and `/health/ready` for stable/canary/proxy, supports optional real gateway smoke, optional DB idempotency evidence for a shared request id, and optional shared rate-limit evidence with a low-limit test key.
+  - `scripts/prd2-backup-restore-rehearsal.sh` performs a guarded `pg_dump` plus restore into an explicitly confirmed non-production database and validates migration/core-table presence. It does not drop or truncate the target database.
+  - `docs/ops/deployment-runbook.md` and `docs/tech-ref/15-ha-readiness.md` document the exact compose/smoke/rehearsal flow.
+- Local validation passed:
+
+```bash
+bash -n scripts/prd2-ha-smoke.sh
+bash -n scripts/prd2-backup-restore-rehearsal.sh
+ruby -e 'require "yaml"; YAML.load_file("docker-compose.canary.yml"); YAML.load_file("docker-compose.yml"); puts "yaml ok"'
+go test ./...
+git diff --check
+```
+
+- Local environment limitation: this Codex shell has no `docker` or `nginx` command, so actual compose config/startup, Nginx runtime syntax, two-instance HA smoke, rollback check, and backup/restore rehearsal must be run by Canary/Atlas or another Docker-enabled environment before P2-F09 moves to E2E accepted.
+- Current protocol state: fixed locally by Codex and awaiting Canary verification through `docs/agent-workflows/FIX-SIGNAL.md`.
+
 ### Batch 22: License Production Acceptance
 
 Goal: move License Foundation from unit-tested foundation to real-backend/production accepted.
