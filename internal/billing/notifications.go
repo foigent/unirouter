@@ -18,6 +18,11 @@ import (
 const (
 	EventProjectBudgetThreshold          = "project_budget.threshold"
 	EventTokenMeteringEstimatedRatioHigh = "token_metering.estimated_ratio.high"
+	EventAPIKeyDisabled                  = "api_key.disabled"
+	EventModelDeprecated                 = "model.deprecated"
+	EventModelRetired                    = "model.retired"
+	EventProviderChannelFailure          = "provider.channel.failure"
+	EventLicenseWarning                  = "license.warning"
 
 	NotificationSeverityInfo     = "info"
 	NotificationSeverityWarning  = "warning"
@@ -55,6 +60,15 @@ type EventService struct {
 	client    *http.Client
 	now       func() time.Time
 	retryWait time.Duration
+}
+
+type dueWebhookDelivery struct {
+	DeliveryID int64
+	EventID    int64
+	WebhookID  int64
+	URL        string
+	Input      EventInput
+	Payload    []byte
 }
 
 // NewEventService creates an event service backed by the shared DB interface.
@@ -133,6 +147,70 @@ func (s *EventService) Emit(ctx context.Context, input EventInput) (*EventResult
 		return nil, err
 	}
 	return &EventResult{EventID: eventID, Created: true, DeliveryState: deliveryState}, nil
+}
+
+// RetryDueDeliveries retries failed webhook deliveries whose next_retry_at has passed.
+func (s *EventService) RetryDueDeliveries(ctx context.Context, limit int) (int, error) {
+	if s == nil || s.db == nil {
+		return 0, errors.New("event service is not configured")
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+
+	rows, err := s.db.Query(ctx,
+		`SELECT d.id, d.event_id, COALESCE(d.webhook_id, 0), w.url,
+		        e.org_id, COALESCE(e.project_id, 0), e.event_type, e.severity,
+		        e.title, e.message, e.resource, e.resource_id, e.payload
+		 FROM notification_deliveries d
+		 JOIN notification_events e ON e.id = d.event_id
+		 JOIN notification_webhooks w ON w.id = d.webhook_id
+		 WHERE d.status = 'failed'
+		   AND d.next_retry_at IS NOT NULL
+		   AND d.next_retry_at <= NOW()
+		   AND w.enabled = TRUE
+		 ORDER BY d.next_retry_at ASC, d.id ASC
+		 LIMIT $1`,
+		limit,
+	)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	deliveries := make([]dueWebhookDelivery, 0)
+	for rows.Next() {
+		var delivery dueWebhookDelivery
+		if err := rows.Scan(
+			&delivery.DeliveryID,
+			&delivery.EventID,
+			&delivery.WebhookID,
+			&delivery.URL,
+			&delivery.Input.OrgID,
+			&delivery.Input.ProjectID,
+			&delivery.Input.EventType,
+			&delivery.Input.Severity,
+			&delivery.Input.Title,
+			&delivery.Input.Message,
+			&delivery.Input.Resource,
+			&delivery.Input.ResourceID,
+			&delivery.Payload,
+		); err != nil {
+			return 0, err
+		}
+		deliveries = append(deliveries, delivery)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	retried := 0
+	for _, delivery := range deliveries {
+		if s.retryOneWebhook(ctx, delivery) {
+			retried++
+		}
+	}
+	return retried, nil
 }
 
 // CheckProjectBudget emits a deduplicated budget event when project spending reaches the configured budget.
@@ -285,7 +363,40 @@ func (s *EventService) deliverOneWebhook(ctx context.Context, eventID int64, rou
 		return false
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, route.URL, bytes.NewReader(body))
+	return s.sendWebhookAndUpdateDelivery(ctx, deliveryID, route.URL, body)
+}
+
+func (s *EventService) retryOneWebhook(ctx context.Context, delivery dueWebhookDelivery) bool {
+	body, err := json.Marshal(map[string]interface{}{
+		"event_id":    delivery.EventID,
+		"event_type":  delivery.Input.EventType,
+		"severity":    delivery.Input.Severity,
+		"title":       delivery.Input.Title,
+		"message":     delivery.Input.Message,
+		"org_id":      delivery.Input.OrgID,
+		"project_id":  nullableProjectID(delivery.Input.ProjectID),
+		"resource":    delivery.Input.Resource,
+		"resource_id": delivery.Input.ResourceID,
+		"payload":     json.RawMessage(delivery.Payload),
+		"created_at":  s.now().Format(time.RFC3339),
+	})
+	if err != nil {
+		_ = s.markDeliveryFailed(ctx, delivery.DeliveryID, nil, err.Error())
+		return false
+	}
+	delivered := s.sendWebhookAndUpdateDelivery(ctx, delivery.DeliveryID, delivery.URL, body)
+	if err := s.refreshEventDeliveryStateFromDeliveries(ctx, delivery.EventID); err != nil {
+		if delivered {
+			_ = s.updateEventDeliveryState(ctx, delivery.EventID, DeliveryStateDelivered)
+		} else {
+			_ = s.updateEventDeliveryState(ctx, delivery.EventID, DeliveryStateFailed)
+		}
+	}
+	return delivered
+}
+
+func (s *EventService) sendWebhookAndUpdateDelivery(ctx context.Context, deliveryID int64, webhookURL string, body []byte) bool {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(body))
 	if err != nil {
 		_ = s.markDeliveryFailed(ctx, deliveryID, nil, err.Error())
 		return false
@@ -334,12 +445,32 @@ func (s *EventService) markDeliveryFailed(ctx context.Context, deliveryID int64,
 func (s *EventService) updateEventDeliveryState(ctx context.Context, eventID int64, state string) error {
 	_, err := s.db.Exec(ctx,
 		`UPDATE notification_events
-		 SET delivery_state = $1, last_delivery_at = CASE WHEN $1 IN ('delivered', 'failed') THEN NOW() ELSE last_delivery_at END,
+		 SET delivery_state = $1, last_delivery_at = CASE WHEN $2 THEN NOW() ELSE last_delivery_at END,
 		     updated_at = NOW()
-		 WHERE id = $2`,
-		state, eventID,
+		 WHERE id = $3`,
+		state, state == DeliveryStateDelivered || state == DeliveryStateFailed, eventID,
 	)
 	return err
+}
+
+func (s *EventService) refreshEventDeliveryStateFromDeliveries(ctx context.Context, eventID int64) error {
+	var remaining, delivered int64
+	if err := s.db.QueryRow(ctx,
+		`SELECT
+		    COUNT(*) FILTER (WHERE status <> 'delivered'),
+		    COUNT(*) FILTER (WHERE status = 'delivered')
+		 FROM notification_deliveries
+		 WHERE event_id = $1`,
+		eventID,
+	).Scan(&remaining, &delivered); err != nil {
+		return err
+	}
+
+	state := DeliveryStateFailed
+	if delivered > 0 && remaining == 0 {
+		state = DeliveryStateDelivered
+	}
+	return s.updateEventDeliveryState(ctx, eventID, state)
 }
 
 func budgetPeriodStart(now time.Time, period string) time.Time {

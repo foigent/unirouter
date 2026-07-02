@@ -5,6 +5,7 @@ import {
   IconGift,
   IconGridRectangle,
   IconKey,
+  IconBell,
   IconPriceTag,
   IconSearch,
   IconServer,
@@ -71,6 +72,7 @@ const fullAdminNavItems = [
       { itemKey: '/keys', text: 'API 密钥', icon: <IconKey /> },
       { itemKey: '/model-governance', text: '模型治理', icon: <IconServer /> },
       { itemKey: '/logs', text: '调用日志', icon: <IconFile /> },
+      { itemKey: '/notifications', text: '通知中心', icon: <IconBell /> },
       { itemKey: '/test', text: '渠道测试', icon: <IconBolt /> },
     ],
   },
@@ -124,6 +126,7 @@ const billingNavItems = [
     items: [
       { itemKey: '/wallet', text: '钱包管理', icon: <IconCoinMoney /> },
       { itemKey: '/reconciliation', text: 'Token对账', icon: <IconSearch /> },
+      { itemKey: '/notifications', text: '通知中心', icon: <IconBell /> },
       { itemKey: '/grants', text: '赠送管理', icon: <IconGift /> },
       { itemKey: '/audit-logs', text: '审计日志', icon: <IconSearch /> },
     ],
@@ -190,7 +193,7 @@ export function isRouteAllowedForRole(path: string, role?: string | null) {
   if (isOrgAdminRole(role)) return true;
 
   if (isBillingRole(role)) {
-    return ['/', '/logs', '/wallet', '/reconciliation', '/grants', '/audit-logs'].includes(route);
+    return ['/', '/logs', '/wallet', '/reconciliation', '/notifications', '/grants', '/audit-logs'].includes(route);
   }
 
   if (isProjectConsoleRole(role)) {

@@ -68,6 +68,7 @@ func (h *Handler) UpdateLicense(w http.ResponseWriter, r *http.Request) {
 		"before": licenseAuditSummary(beforeStatus),
 		"after":  licenseAuditSummary(status),
 	})
+	h.emitLicenseWarningEvent(r.Context(), status)
 
 	writeJSON(w, http.StatusOK, status)
 }

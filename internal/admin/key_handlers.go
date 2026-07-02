@@ -340,14 +340,18 @@ func (h *Handler) DisableAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var eventOrgID, eventProjectID int64
+	var eventName, eventKeyPrefix, currentStatus string
+	if err := h.db.QueryRow(r.Context(),
+		`SELECT org_id, COALESCE(project_id, 0), name, key_prefix, status FROM api_keys WHERE id = $1`,
+		id,
+	).Scan(&eventOrgID, &eventProjectID, &eventName, &eventKeyPrefix, &currentStatus); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Key not found"})
+		return
+	}
+
 	if auth.IsProjectScopedRole(actorRole(r.Context())) {
-		var projectID int64
-		err := h.db.QueryRow(r.Context(), `SELECT COALESCE(project_id, 0) FROM api_keys WHERE id = $1`, id).Scan(&projectID)
-		if err != nil {
-			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Key not found"})
-			return
-		}
-		if !h.canWriteProject(r.Context(), projectID) {
+		if !h.canWriteProject(r.Context(), eventProjectID) {
 			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 			return
 		}
@@ -365,6 +369,9 @@ func (h *Handler) DisableAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.recordAudit(r.Context(), "apikey.disable", "apikey", idStr, map[string]interface{}{}, r.RemoteAddr)
+	if currentStatus != "disabled" {
+		h.emitAPIKeyDisabledEvent(r.Context(), eventOrgID, eventProjectID, id, eventName, eventKeyPrefix)
+	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"message": "Key disabled"})
 }

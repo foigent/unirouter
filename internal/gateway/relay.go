@@ -64,6 +64,41 @@ func (relay *Relay) SetEventService(svc *billing.EventService) {
 	relay.eventSvc = svc
 }
 
+func (relay *Relay) emitProviderChannelFailure(ctx context.Context, route RouteResult, requestID, requestedModel string, statusCode int, failureKind, message string) {
+	if relay.eventSvc == nil {
+		return
+	}
+	orgID := middleware.GetOrgIDFromContext(ctx)
+	if orgID <= 0 || route.Channel.ID <= 0 {
+		return
+	}
+	go func() {
+		_, _ = relay.eventSvc.Emit(context.Background(), billing.EventInput{
+			OrgID:      orgID,
+			EventType:  billing.EventProviderChannelFailure,
+			Severity:   billing.NotificationSeverityWarning,
+			Title:      "Provider channel failure",
+			Message:    message,
+			Resource:   "channel",
+			ResourceID: fmt.Sprintf("%d", route.Channel.ID),
+			DedupeKey:  fmt.Sprintf("provider.channel.failure:%d:%d:%s", route.Channel.ID, statusCode, time.Now().UTC().Format("20060102T1504")),
+			Payload: map[string]interface{}{
+				"org_id":          orgID,
+				"channel_id":      route.Channel.ID,
+				"channel":         route.Channel.Name,
+				"provider":        route.Channel.Provider,
+				"adapter_type":    route.Channel.AdapterType,
+				"request_id":      requestID,
+				"requested_model": requestedModel,
+				"mapped_model":    route.MappedModel,
+				"status_code":     statusCode,
+				"failure_kind":    failureKind,
+				"message":         message,
+			},
+		})
+	}()
+}
+
 func upstreamEndpoint(baseURL, endpoint string) string {
 	return adapters.UpstreamEndpoint(baseURL, endpoint)
 }
@@ -284,6 +319,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Upstream request failed: %v", err)
 			relay.router.MarkChannelFail(ctx, route.Channel.ID, 5, 300)
 			relay.router.MarkKeyFail(ctx, route.ChannelKey.ID)
+			relay.emitProviderChannelFailure(ctx, route, requestID, requestedModel, 0, string(adapters.FailureChannel), err.Error())
 			lastErr = err
 			continue
 		}
@@ -297,12 +333,15 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 			case adapters.FailureChannel:
 				relay.router.MarkChannelFail(ctx, route.Channel.ID, 5, 300)
 				relay.router.MarkKeyFail(ctx, route.ChannelKey.ID)
+				relay.emitProviderChannelFailure(ctx, route, requestID, requestedModel, resp.StatusCode, string(classified.FailureKind), classified.Message)
 			case adapters.FailureAuth:
 				// Auth failure — mark key as invalid immediately
 				relay.router.MarkKeyCooldown(ctx, route.ChannelKey.ID, 3600)
+				relay.emitProviderChannelFailure(ctx, route, requestID, requestedModel, resp.StatusCode, string(classified.FailureKind), classified.Message)
 			case adapters.FailureRateLimit:
 				// Rate limited — cooldown key for 60s
 				relay.router.MarkKeyCooldown(ctx, route.ChannelKey.ID, 60)
+				relay.emitProviderChannelFailure(ctx, route, requestID, requestedModel, resp.StatusCode, string(classified.FailureKind), classified.Message)
 			default:
 				// 4xx client errors (400, 404, etc.) — don't mark as failure
 			}
@@ -945,6 +984,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	middleware.RecordUpstreamLatency(route.Channel.Provider, req.Model, upstreamDuration)
 	if err != nil {
 		reqLog.Error("Upstream embeddings request failed: %v", err)
+		relay.emitProviderChannelFailure(ctx, *route, requestID, requestedModel, 0, string(adapters.FailureChannel), err.Error())
 		relay.billing.Cancel(ctx, requestID, orgID)
 		writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_error", "Upstream request failed")
 		return

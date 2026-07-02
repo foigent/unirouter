@@ -21,6 +21,7 @@ import OrgModelPricesPage from './pages/OrgModelPricesPage'
 import GrantsPage from './pages/GrantsPage'
 import AuditLogsPage from './pages/AuditLogsPage'
 import ReconciliationPage from './pages/ReconciliationPage'
+import NotificationCenterPage from './pages/NotificationCenterPage'
 import TestPage from './pages/TestPage'
 import ApiDocsPage from './pages/ApiDocsPage'
 import ErrorBoundary from './components/ErrorBoundary'
@@ -93,6 +94,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="grants" element={<RoleRoute><GrantsPage /></RoleRoute>} />
             <Route path="audit-logs" element={<RoleRoute><AuditLogsPage /></RoleRoute>} />
             <Route path="reconciliation" element={<RoleRoute><ReconciliationPage /></RoleRoute>} />
+            <Route path="notifications" element={<RoleRoute><NotificationCenterPage /></RoleRoute>} />
             <Route path="test" element={<RoleRoute><TestPage /></RoleRoute>} />
             <Route path="settings" element={<RoleRoute><SettingsPage /></RoleRoute>} />
             <Route path="license" element={<RoleRoute><LicensePage /></RoleRoute>} />

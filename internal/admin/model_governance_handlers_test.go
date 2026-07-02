@@ -35,10 +35,11 @@ func TestUpdateModelRegistry_LifecycleAuditBeforeAfter(t *testing.T) {
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			return &testutil.MockRow{ScanFn: func(dest ...any) error {
-				*dest[0].(*string) = "gpt-4o"
-				*dest[1].(*string) = "ga"
-				*dest[2].(*bool) = true
-				*dest[3].(*string) = ""
+				*dest[0].(*int64) = 1
+				*dest[1].(*string) = "gpt-4o"
+				*dest[2].(*string) = "ga"
+				*dest[3].(*bool) = true
+				*dest[4].(*string) = ""
 				return nil
 			}}
 		},

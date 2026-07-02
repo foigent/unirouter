@@ -237,3 +237,135 @@ func TestEventService_CheckProjectBudgetEmitsThresholdEvent(t *testing.T) {
 		t.Fatalf("unexpected budget payload: %#v", payload)
 	}
 }
+
+func TestEventService_RetryDueDeliveries(t *testing.T) {
+	var received map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			t.Fatalf("decode retry body: %v", err)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	var deliveryUpdated bool
+	var eventState string
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, query string, args ...any) (pgx.Rows, error) {
+			if !strings.Contains(query, "FROM notification_deliveries d") || !strings.Contains(query, "next_retry_at <= NOW()") {
+				t.Fatalf("unexpected retry query: %s", query)
+			}
+			return &testutil.MockRows{Rows: []func(dest ...any) error{
+				func(dest ...any) error {
+					*dest[0].(*int64) = 60
+					*dest[1].(*int64) = 50
+					*dest[2].(*int64) = 8
+					*dest[3].(*string) = server.URL
+					*dest[4].(*int64) = 3
+					*dest[5].(*int64) = 9
+					*dest[6].(*string) = EventProjectBudgetThreshold
+					*dest[7].(*string) = NotificationSeverityCritical
+					*dest[8].(*string) = "Budget reached"
+					*dest[9].(*string) = "Project Core reached budget"
+					*dest[10].(*string) = "project"
+					*dest[11].(*string) = "9"
+					*dest[12].(*[]byte) = []byte(`{"spent_cents":1200}`)
+					return nil
+				},
+			}}, nil
+		},
+		QueryRowFn: func(ctx context.Context, query string, args ...any) pgx.Row {
+			if !strings.Contains(query, "COUNT(*) FILTER") {
+				t.Fatalf("unexpected QueryRow: %s", query)
+			}
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int64) = 0
+				*dest[1].(*int64) = 1
+				return nil
+			}}
+		},
+		ExecFn: func(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(query, "UPDATE notification_deliveries") && strings.Contains(query, "delivered") {
+				deliveryUpdated = true
+				if args[1].(int64) != 60 {
+					t.Fatalf("expected retry to update original delivery id 60, got %v", args[1])
+				}
+			}
+			if strings.Contains(query, "UPDATE notification_events") {
+				eventState = args[0].(string)
+			}
+			return pgconn.NewCommandTag("UPDATE 1"), nil
+		},
+	}
+	svc := NewEventService(db)
+
+	retried, err := svc.RetryDueDeliveries(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("retry due deliveries: %v", err)
+	}
+	if retried != 1 || !deliveryUpdated || eventState != DeliveryStateDelivered {
+		t.Fatalf("expected delivered retry, retried=%d delivery=%v event=%s", retried, deliveryUpdated, eventState)
+	}
+	if received["event_id"].(float64) != 50 || received["event_type"] != EventProjectBudgetThreshold {
+		t.Fatalf("unexpected retry body: %#v", received)
+	}
+}
+
+func TestEventService_RetryDueDeliveriesKeepsEventFailedWhenOtherDeliveriesRemain(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	var eventState string
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, query string, args ...any) (pgx.Rows, error) {
+			if !strings.Contains(query, "FROM notification_deliveries d") {
+				t.Fatalf("unexpected retry query: %s", query)
+			}
+			return &testutil.MockRows{Rows: []func(dest ...any) error{
+				func(dest ...any) error {
+					*dest[0].(*int64) = 61
+					*dest[1].(*int64) = 51
+					*dest[2].(*int64) = 9
+					*dest[3].(*string) = server.URL
+					*dest[4].(*int64) = 3
+					*dest[5].(*int64) = 9
+					*dest[6].(*string) = EventProjectBudgetThreshold
+					*dest[7].(*string) = NotificationSeverityCritical
+					*dest[8].(*string) = "Budget reached"
+					*dest[9].(*string) = "Project Core reached budget"
+					*dest[10].(*string) = "project"
+					*dest[11].(*string) = "9"
+					*dest[12].(*[]byte) = []byte(`{"spent_cents":1200}`)
+					return nil
+				},
+			}}, nil
+		},
+		QueryRowFn: func(ctx context.Context, query string, args ...any) pgx.Row {
+			if !strings.Contains(query, "COUNT(*) FILTER") {
+				t.Fatalf("unexpected QueryRow: %s", query)
+			}
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int64) = 1
+				*dest[1].(*int64) = 1
+				return nil
+			}}
+		},
+		ExecFn: func(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(query, "UPDATE notification_events") {
+				eventState = args[0].(string)
+			}
+			return pgconn.NewCommandTag("UPDATE 1"), nil
+		},
+	}
+	svc := NewEventService(db)
+
+	retried, err := svc.RetryDueDeliveries(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("retry due deliveries: %v", err)
+	}
+	if retried != 1 || eventState != DeliveryStateFailed {
+		t.Fatalf("expected event to remain failed while another delivery is not delivered, retried=%d state=%s", retried, eventState)
+	}
+}

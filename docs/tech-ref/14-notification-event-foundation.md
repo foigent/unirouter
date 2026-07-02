@@ -1,18 +1,27 @@
 # Notification And Event Foundation
 
-> Version: v0.1
-> Scope: PRD2 batch 7 backend foundation.
+> Version: v0.2
+> Scope: PRD2 batch 7 backend foundation plus Batch 19 frontend/retry/emitter completion.
 
 ## Goals
 
 The notification/event foundation persists enterprise events, routes matching events to webhooks, and records delivery state so admins can inspect failures and retry timing.
 
-Batch 7 focuses on the backend foundation for P2-F08:
+Batch 7 focused on the backend foundation for P2-F08:
 
 - persistent notification events.
 - webhook route configuration.
 - delivery attempt state.
 - project budget threshold event generation.
+
+Batch 19 adds:
+
+- frontend Notification Center at `/notifications`.
+- webhook route create/edit UI.
+- background retry worker for failed deliveries.
+- delivery-state aggregation after retry.
+- emitters for key disabled, model deprecated/retired, provider/channel failure, license warning, and high estimated-usage ratio.
+- local real-backend project budget browser/API smoke with a local webhook receiver.
 
 ## Event Model
 
@@ -68,7 +77,7 @@ When an event is created, the service delivers to enabled webhooks where:
 - `delivered_at`
 - timestamps
 
-Batch 7 records retry timing for failed delivery but does not run a background retry worker.
+Failed deliveries record `next_retry_at`. Batch 19 runs a background retry worker in the server process. The worker calls `EventService.RetryDueDeliveries` immediately on startup and then once per minute. A retried event is marked `delivered` only when all delivery rows for that event are delivered; otherwise it remains `failed`.
 
 ## Project Budget Threshold
 
@@ -95,7 +104,7 @@ Gateway relay invokes this check after settlement and after the request is recor
 
 ## Admin APIs
 
-Batch 7 adds:
+The admin API exposes:
 
 - `GET /api/v1/notification-events`
 - `GET /api/v1/notification-deliveries`
@@ -105,9 +114,30 @@ Batch 7 adds:
 
 Project-scoped roles must provide a readable project id for event/delivery visibility. Webhook writes require project write permission when scoped to a project.
 
+## Frontend
+
+Batch 19 adds a Notification Center page at `/notifications` for admin/billing users:
+
+- Events tab: event type, severity, delivery state, resource, message, and time.
+- Deliveries tab: webhook name, status, attempts, response status, next retry, error, and update time.
+- Webhook tab: route URL, scoped project, event types, enabled state, and create/edit actions.
+
+The topbar notification button routes to `/notifications`.
+
+## Event Emitters
+
+Currently wired emitters:
+
+- `project_budget.threshold`
+- `token_metering.estimated_ratio.high`
+- `api_key.disabled`
+- `model.deprecated`
+- `model.retired`
+- `provider.channel.failure`
+- `license.warning`
+
 ## Current Limits
 
-- No frontend notification center in batch 7.
-- No email, IM, or background retry worker in batch 7.
-- No production webhook E2E in batch 7.
-- Event emitters for key disabled/revoked, model deprecated/retired, provider/channel failure, license warning, and high estimated-usage ratio are reserved but not fully wired in batch 7.
+- No email or IM channel; webhook delivery is the implemented channel.
+- Production webhook delivery evidence is not yet claimed. Batch 19 adds local production-like webhook receiver smoke only.
+- API key revoke has no separate runtime path beyond disabling in current code; `api_key.disabled` is the wired key lifecycle event.
