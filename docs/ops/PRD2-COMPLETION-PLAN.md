@@ -21,8 +21,8 @@ PRD2 is not complete when implementation batches merely pass local or unit tests
 |----------|-------------------|----------|
 | P2-F13/F14/F15 | All are mandatory for complete PRD2 scope | Batch 23 completed per Canary/Sentinel/Atlas; matrix P2 product rows are now accepted for PRD2 scope |
 | Cache | Complete PRD2 scope means a cache research spike, not default runtime cache | P2-F15 |
-| SSO | OIDC first is mandatory, but later in the remaining plan | `PRD2-AUTH-001` |
-| Prompt/response storage | Default no plaintext storage; optional storage needs formal design and user approval before implementation | P2-F11 |
+| SSO | OIDC first core path completed in Batch 24 per Canary/Sentinel/Atlas; real enterprise IdP browser login remains target-environment evidence | `PRD2-AUTH-001` |
+| Prompt/response storage | Default no plaintext storage; Batch 25 adds the formal P2-F11 policy. Optional storage still needs explicit user approval before implementation | P2-F11 / `docs/tech-ref/19-prompt-response-storage-policy.md` |
 | Developer key creation | `developer` can create and manage permitted project keys by default | P2-F03/P2-F01 |
 | Project budget | PRD2 first release remains alert-only; hard-blocking budget enforcement is a later item | `PRD2-BUDGET-001` |
 | HA validation | Staging/docker-compose two-instance validation first; production HA remains not fully implemented until target evidence exists | `PRD2-HA-001` |
@@ -61,7 +61,7 @@ Until this policy is approved, request troubleshooting must use metadata only: r
 
 These decisions should be settled now because they affect Batch 20-24 implementation boundaries, but they should not expand PRD2 into a runtime plugin platform:
 
-1. OIDC first SSO is a core auth feature for PRD2. Batch 24 should implement provider config, login/callback, claim-to-user/org/role mapping, provisioning policy, RBAC tests, audit behavior, and operator docs. LDAP/SAML and arbitrary auth plugins remain out of scope unless the user expands scope later.
+1. OIDC first SSO is a core auth feature for PRD2. Batch 24 implemented provider config, login/callback, claim-to-user/org/role mapping, provisioning policy, RBAC tests, audit behavior, and operator docs. LDAP/SAML and arbitrary auth plugins remain out of scope unless the user expands scope later.
 2. PRD2 extension points stay static and controlled: Go interfaces plus database/config-driven selection for provider adapters, notification/event routes, exporters, and documentation/status connectors. There is no PRD2 runtime loading of third-party code.
 3. Plugin-suitable candidates for PRD3 are provider adapters, notification sinks, audit/SIEM exporters, usage/report exporters, model-catalog sync, status connectors, and error-doc connectors.
 4. Security/accounting boundaries stay core, not generic plugins: OIDC/SSO, RBAC, API-key hashing, wallet/billing settlement, license verification, prompt/response storage policy, and runtime cache policy.
@@ -558,8 +558,16 @@ npm --prefix frontend test -- --run LoginPage client navigation
 scripts/prd2-batch24-oidc-smoke.sh
 ```
 
-- Current acceptance state: `PRD2-AUTH-001` is `Fixed awaiting Canary`; matrix row `OIDC first SSO integration` is `Implemented not accepted`.
+- Initial Codex handoff state: `PRD2-AUTH-001` was `Fixed awaiting Canary`; matrix row `OIDC first SSO integration` was `Implemented not accepted`.
 - Real enterprise IdP browser login remains target-environment evidence and requires approved issuer/client credentials.
+
+Post-verification update on 2026-07-04:
+
+- `docs/agent-workflows/VERIFY-RESULT.md` reports Batch 24 PASS (6/6).
+- User reported Canary, Sentinel, and Atlas completed.
+- Matrix row `OIDC first SSO integration` advanced to `E2E accepted` for PRD2 core OIDC SSO scope.
+- `PRD2-AUTH-001` advanced to `Canary passed`.
+- Real enterprise IdP browser login was SKIP in Canary because approved issuer/client credentials and target environment were not provided; do not claim Production verified or customer-IdP acceptance from the mock-provider evidence.
 
 ### Batch 25: Final PRD2 Closeout
 
@@ -573,6 +581,20 @@ Required work:
 - Run final Canary verification.
 - Sentinel merges final closeout PR.
 - Atlas deploys and records final target-environment evidence.
+
+Status update on 2026-07-04:
+
+- Codex prepared the Batch 25 local closeout handoff.
+- Added `docs/tech-ref/19-prompt-response-storage-policy.md` for P2-F11. It records the PRD2 decision that prompt/response plaintext storage is disabled by default, request troubleshooting remains metadata-only, and optional future storage requires explicit approval plus controls for enablement, retention, encryption, redaction, RBAC, audit-on-read, customer controls, export, deletion, and incident response.
+- Indexed the P2-F11 policy in `docs/tech-ref/README.md` and `docs/DOC-INVENTORY.md`.
+- Reconciled the PRD2 acceptance matrix so rows are `E2E accepted`, `Production verified`, `Deferred`, or `Out of scope`. No row remains `Planned`, `Implemented not accepted`, or `Unit tested`.
+- P2-F10 License Foundation is now `E2E accepted` from Batch 15/22 local real-backend/browser evidence, but remains not `Production verified` until production or approved-staging import/status evidence exists.
+- Provider real-upstream acceptance remains deferred under `PRD2-B18-001` because OpenRouter and direct Anthropic credentials are still absent by User-approved decision.
+- Project budget hard-block enforcement remains deferred under `PRD2-BUDGET-001`; the accepted PRD2 budget path is alert-only.
+- Production HA/DR remains open as later target evidence under `PRD2-HA-001`; Batch 21 self-hosted/staging readiness stays accepted but not Production verified.
+- Real enterprise IdP browser login remains target-environment evidence after Batch 24; core OIDC is accepted with mock-provider evidence, not Production/customer-IdP evidence.
+- Local closeout validation passed: P2-F11/index grep, matrix non-final status grep returning no matches, `go test ./...`, `npm --prefix frontend test -- --run`, `npm --prefix frontend run build`, `git diff --check`, and current-code browser smoke via `scripts/prd2-batch23-product-smoke.sh` against backend `http://localhost:18084` and frontend `http://localhost:3000`. Evidence is recorded in `docs/ops/evidence/PRD2-B25-final-closeout-local-20260704.md`.
+- Current protocol state: fixed locally by Codex and awaiting Canary verification of Batch 25 closeout docs/status discipline.
 
 ## PRD3 / Later Unimplemented Items
 
@@ -591,10 +613,10 @@ These items are intentionally not part of the PRD2 closeout implementation unles
 |-------|------------|--------------------------|
 | OpenRouter API key and Claude model slug | Batch 18A | Yes, but only mock/OpenAI-compatible local evidence can be recorded |
 | Direct Anthropic API key | Batch 18B | No, direct native E2E remains open without it |
-| Test offline license and public key | Batch 22 | Can generate local/staging sample, but production evidence needs target key/license |
+| Production or approved-staging license import/status evidence | P2-F10 Production verified promotion | Yes for PRD2 E2E closeout; no for `Production verified` claim |
 | Webhook receiver endpoint | Batch 19 | Can use local receiver first; production evidence needs target endpoint |
 | Staging/two-instance target | Batch 21 | Local docker-compose can start first |
-| OIDC provider details | Batch 24 | Can design first, implementation needs provider metadata/client credentials |
+| OIDC provider details | Target-environment OIDC/customer IdP acceptance after Batch 24 | Batch 24 core OIDC implementation can proceed and is accepted with mock-provider evidence; real enterprise IdP browser login still needs approved issuer/client credentials |
 
 ## Agent Loop
 
