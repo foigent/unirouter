@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/db"
+	"github.com/uniroute/unirouter/internal/errdocs"
 	"github.com/uniroute/unirouter/internal/models"
 )
 
@@ -216,7 +218,7 @@ func GatewayAuthWithAPIKeyHashSecret(q db.DBQuerier, apiKeyHashSecret string) fu
 			if err != nil {
 				var authErr *AuthError
 				if errors.As(err, &authErr) {
-					http.Error(w, fmt.Sprintf(`{"error":{"type":"%s","message":"%s"}}`, authErr.Code, authErr.Message), authErr.Status)
+					writeGatewayAuthError(w, authErr.Status, authErr.Code, authErr.Message)
 				}
 				return
 			}
@@ -225,7 +227,7 @@ func GatewayAuthWithAPIKeyHashSecret(q db.DBQuerier, apiKeyHashSecret string) fu
 			keyHash := hashKey(rawKey, apiKeyHashSecret)
 			apiKey, orgStatus, err := resolveAPIKey(r.Context(), q, keyHash)
 			if err != nil {
-				http.Error(w, `{"error":{"type":"auth_error.invalid_api_key","message":"Invalid API key"}}`, http.StatusUnauthorized)
+				writeGatewayAuthError(w, http.StatusUnauthorized, "auth_error.invalid_api_key", "Invalid API key")
 				return
 			}
 
@@ -233,7 +235,7 @@ func GatewayAuthWithAPIKeyHashSecret(q db.DBQuerier, apiKeyHashSecret string) fu
 			if err := validateKeyAndOrgStatus(apiKey, orgStatus); err != nil {
 				var authErr *AuthError
 				if errors.As(err, &authErr) {
-					http.Error(w, fmt.Sprintf(`{"error":{"type":"%s","message":"%s"}}`, authErr.Code, authErr.Message), authErr.Status)
+					writeGatewayAuthError(w, authErr.Status, authErr.Code, authErr.Message)
 				}
 				return
 			}
@@ -241,7 +243,7 @@ func GatewayAuthWithAPIKeyHashSecret(q db.DBQuerier, apiKeyHashSecret string) fu
 			// Check IP whitelist
 			clientIP := getClientIP(r)
 			if !checkIPWhitelist(clientIP, apiKey.IPWhitelist) {
-				http.Error(w, `{"error":{"type":"auth_error.ip_not_allowed","message":"Client IP is not in the API key's allowed list"}}`, http.StatusForbidden)
+				writeGatewayAuthError(w, http.StatusForbidden, "auth_error.ip_not_allowed", "Client IP is not in the API key's allowed list")
 				return
 			}
 
@@ -261,6 +263,24 @@ func GatewayAuthWithAPIKeyHashSecret(q db.DBQuerier, apiKeyHashSecret string) fu
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+func writeGatewayAuthError(w http.ResponseWriter, status int, code, message string) {
+	errType := "authentication_error"
+	if status == http.StatusForbidden {
+		errType = "permission_error"
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"error": map[string]interface{}{
+			"type":    errType,
+			"code":    code,
+			"message": message,
+			"doc_url": errdocs.URLForCode(code),
+			"param":   nil,
+		},
+	})
 }
 
 // AdminAuth returns middleware that authenticates admin JWT tokens.

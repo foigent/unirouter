@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -371,6 +372,26 @@ func TestAuthError_Error(t *testing.T) {
 	err := &AuthError{Code: "test.code", Message: "test message", Status: 400}
 	if err.Error() != "test message" {
 		t.Fatalf("expected 'test message', got %s", err.Error())
+	}
+}
+
+func TestWriteGatewayAuthErrorIncludesDocURL(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writeGatewayAuthError(rec, http.StatusUnauthorized, "auth_error.invalid_api_key", "Invalid API key")
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+	var body map[string]map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	errObj := body["error"]
+	if errObj["code"] != "auth_error.invalid_api_key" {
+		t.Fatalf("expected code, got %#v", errObj["code"])
+	}
+	if errObj["doc_url"] != "/docs#error-auth_error.invalid_api_key" {
+		t.Fatalf("expected doc_url, got %#v", errObj["doc_url"])
 	}
 }
 

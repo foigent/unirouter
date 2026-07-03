@@ -39,6 +39,8 @@ describe('navigation role boundaries', () => {
     expect(itemKeys).toContain('/channels');
     expect(itemKeys).toContain('/model-governance');
     expect(itemKeys).toContain('/notifications');
+    expect(itemKeys).toContain('/usage-analytics');
+    expect(itemKeys).toContain('/status');
     expect(itemKeys).toContain('/model-prices');
     expect(itemKeys).not.toContain('/license');
     expect(isRouteAllowedForRole('/model-governance', 'org_admin')).toBe(true);
@@ -51,7 +53,11 @@ describe('navigation role boundaries', () => {
     const itemKeys = flattenItemKeys(getNavItemsForRole('billing_admin'));
 
     expect(itemKeys).toContain('/notifications');
+    expect(itemKeys).toContain('/usage-analytics');
+    expect(itemKeys).toContain('/status');
     expect(isRouteAllowedForRole('/notifications', 'billing_admin')).toBe(true);
+    expect(isRouteAllowedForRole('/usage-analytics', 'billing_admin')).toBe(true);
+    expect(isRouteAllowedForRole('/status', 'billing_admin')).toBe(true);
   });
 
   it('keeps license management platform-admin only', () => {

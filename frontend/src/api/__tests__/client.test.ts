@@ -313,6 +313,33 @@ describe('API Client', () => {
     })
   })
 
+  describe('PRD2 Batch 23 APIs', () => {
+    it('loads usage analytics with drilldown filters', async () => {
+      mockJsonResponse({ data: [], summary: {} })
+
+      await api.getUsageAnalytics({
+        group_by: 'alias',
+        project_id: 7,
+        model: 'gpt-4o',
+        provider: 'openai',
+        usage_source: 'counter_v2',
+        status: 'success',
+      })
+      const url = mockFetch.mock.calls[0][0]
+      expect(url).toBe('/api/v1/usage/analytics?group_by=alias&project_id=7&model=gpt-4o&provider=openai&status=success&usage_source=counter_v2')
+    })
+
+    it('loads internal status and error docs', async () => {
+      mockJsonResponse({ status: 'operational', incidents: [] })
+      await api.getInternalStatus({ project_id: 7 })
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/internal-status?project_id=7')
+
+      mockJsonResponse({ data: [] })
+      await api.getErrorDocs()
+      expect(mockFetch.mock.calls[1][0]).toBe('/api/v1/error-docs')
+    })
+  })
+
   describe('error handling', () => {
     it('throws ApiError for non-2xx responses', async () => {
       mockJsonResponse({ error: { message: 'invalid amount' } }, 400)

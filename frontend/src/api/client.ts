@@ -142,6 +142,30 @@ export const api = {
   },
   getLogDetail: (id: number) => request(`/logs/${id}`),
 
+  // PRD2 Batch 23 product surfaces
+  getUsageAnalytics: (filters?: {
+    group_by?: string; org_id?: string | number; project_id?: string | number; key_id?: string | number;
+    model?: string; alias?: string; provider?: string; channel?: string; status?: string;
+    usage_source?: string; start_time?: string; end_time?: string; format?: string;
+  }) => request(appendParams('/usage/analytics', {
+    group_by: filters?.group_by,
+    org_id: filters?.org_id,
+    project_id: filters?.project_id,
+    key_id: filters?.key_id,
+    model: filters?.model,
+    alias: filters?.alias,
+    provider: filters?.provider,
+    channel: filters?.channel,
+    status: filters?.status,
+    usage_source: filters?.usage_source,
+    start_time: filters?.start_time,
+    end_time: filters?.end_time,
+    format: filters?.format,
+  })),
+  getInternalStatus: (filters?: { org_id?: string | number; project_id?: string | number }) =>
+    request(appendParams('/internal-status', { org_id: filters?.org_id, project_id: filters?.project_id })),
+  getErrorDocs: () => request('/error-docs'),
+
   // Projects and developer catalog
   getProjects: (page = 1, pageSize = 20, filters?: { status?: string; org_id?: number }) =>
     request(appendParams('/projects', { page, page_size: pageSize, status: filters?.status, org_id: filters?.org_id })),

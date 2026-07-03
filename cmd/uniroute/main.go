@@ -276,6 +276,9 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("GET /api/v1/logs", usageRoute(adminHandler.ListLogs))
 	mux.Handle("GET /api/v1/logs/{id}", usageRoute(adminHandler.GetLogDetail))
 	mux.Handle("GET /api/v1/dashboard/stats", usageRoute(adminHandler.DashboardStats))
+	mux.Handle("GET /api/v1/usage/analytics", usageRoute(adminHandler.UsageAnalytics))
+	mux.Handle("GET /api/v1/internal-status", notificationReadRoute(adminHandler.InternalStatus))
+	mux.Handle("GET /api/v1/error-docs", usageRoute(adminHandler.ListErrorDocs))
 
 	mux.Handle("GET /api/v1/model-prices", orgAdminRoute(adminHandler.ListModelPrices))
 	mux.Handle("GET /api/v1/reconciliation", billingRoute(adminHandler.ListReconciliation))

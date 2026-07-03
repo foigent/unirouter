@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Form, Input, Modal, Select, SideSheet, Space, Table, Toast, Tooltip, Typography } from '@douyinfe/semi-ui';
+import { Button, Form, Input, Modal, Select, SideSheet, Space, Table, TextArea, Toast, Tooltip, Typography } from '@douyinfe/semi-ui';
 import {
   IconAlertTriangle,
+  IconBolt,
   IconCoinMoney,
   IconCopy,
   IconDelete,
@@ -132,6 +133,22 @@ export default function DeveloperConsolePage() {
   const [lookupRequestId, setLookupRequestId] = useState('');
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupResult, setLookupResult] = useState<CallLog | null>(null);
+  const [playgroundKey, setPlaygroundKey] = useState('');
+  const [playgroundModel, setPlaygroundModel] = useState('');
+  const [playgroundPrompt, setPlaygroundPrompt] = useState('Reply with a short health check for this project.');
+  const [playgroundMode, setPlaygroundMode] = useState('non_stream');
+  const [playgroundLoading, setPlaygroundLoading] = useState(false);
+  const [playgroundResult, setPlaygroundResult] = useState<{
+    status: number;
+    content: string;
+    request_id?: string;
+    cost_cents?: number;
+    total_tokens?: number;
+    latency_ms?: number;
+    usage_source?: string;
+    doc_url?: string;
+    error?: string;
+  } | null>(null);
 
   const selectedProject = projects.find(project => project.id === selectedProjectId);
 
@@ -147,6 +164,7 @@ export default function DeveloperConsolePage() {
   }, [models]);
 
   const sampleModel = modelOptions[0] || 'company-chat';
+  const effectivePlaygroundModel = playgroundModel || sampleModel;
   const sampleKey = createdKey?.key || '<YOUR_PROJECT_API_KEY>';
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://your-unirouter.example';
   const quickstartCurl = `curl ${baseUrl}/v1/chat/completions \\
@@ -210,6 +228,9 @@ export default function DeveloperConsolePage() {
 
   useEffect(() => { loadProjects(); }, [loadProjects]);
   useEffect(() => { loadProjectData(); }, [loadProjectData]);
+  useEffect(() => {
+    if (!playgroundModel && modelOptions[0]) setPlaygroundModel(modelOptions[0]);
+  }, [modelOptions, playgroundModel]);
 
   const openCreateKey = () => {
     setShowKeySheet(true);
@@ -241,6 +262,7 @@ export default function DeveloperConsolePage() {
         key_prefix: result.key_prefix,
         name: values.name,
       });
+      setPlaygroundKey(result.key);
       Toast.success('项目 Key 已创建');
       closeCreateKey();
       loadProjectData();
@@ -297,6 +319,105 @@ export default function DeveloperConsolePage() {
       Toast.error(`查询失败${err?.message ? `：${err.message}` : ''}`);
     } finally {
       setLookupLoading(false);
+    }
+  };
+
+  const handlePlaygroundRun = async () => {
+    const key = playgroundKey.trim();
+    const prompt = playgroundPrompt.trim();
+    if (!key || !prompt || !effectivePlaygroundModel) {
+      Toast.warning('请填写项目 API Key、模型和 Prompt');
+      return;
+    }
+    setPlaygroundLoading(true);
+    setPlaygroundResult(null);
+    const started = performance.now();
+    try {
+      const stream = playgroundMode === 'stream';
+      const response = await fetch('/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${key}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: effectivePlaygroundModel,
+          stream,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+      const latency = Math.max(0, Math.round(performance.now() - started));
+
+      if (stream && response.ok && response.body) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let content = '';
+        let finalMeta: any = null;
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data:')) continue;
+            const data = trimmed.slice(5).trim();
+            if (!data || data === '[DONE]') continue;
+            try {
+              const chunk = JSON.parse(data);
+              content += chunk?.choices?.[0]?.delta?.content || '';
+              if (chunk?._uniroute) finalMeta = chunk._uniroute;
+              if (chunk?.usage) finalMeta = { ...(finalMeta || {}), usage: chunk.usage };
+            } catch {
+              // Ignore malformed SSE lines from intermediaries; the gateway error path is handled below.
+            }
+          }
+        }
+        setPlaygroundResult({
+          status: response.status,
+          content: content || '(empty stream)',
+          request_id: finalMeta?.request_id,
+          cost_cents: finalMeta?.cost?.charged,
+          total_tokens: finalMeta?.usage?.total_tokens,
+          latency_ms: latency,
+          usage_source: finalMeta?.usage_source,
+        });
+        return;
+      }
+
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        const error = payload?.error;
+        setPlaygroundResult({
+          status: response.status,
+          content: '',
+          latency_ms: latency,
+          error: error?.message || `HTTP ${response.status}`,
+          doc_url: error?.doc_url,
+        });
+        return;
+      }
+      const uniroute = payload?._uniroute || {};
+      setPlaygroundResult({
+        status: response.status,
+        content: payload?.choices?.[0]?.message?.content || JSON.stringify(payload, null, 2),
+        request_id: uniroute?.request_id || payload?.id,
+        cost_cents: uniroute?.cost?.charged,
+        total_tokens: payload?.usage?.total_tokens,
+        latency_ms: latency,
+        usage_source: uniroute?.usage_source || payload?.usage_source,
+      });
+    } catch (err: any) {
+      setPlaygroundResult({
+        status: 0,
+        content: '',
+        latency_ms: 0,
+        error: err?.message || 'Playground request failed',
+      });
+    } finally {
+      setPlaygroundLoading(false);
     }
   };
 
@@ -462,6 +583,72 @@ export default function DeveloperConsolePage() {
           </div>
         </Surface>
       </div>
+
+      <Surface
+        title="Playground"
+        description="使用项目 API Key 直接调用 OpenAI-compatible gateway；Prompt 和响应仅保留在当前页面，不写入历史。"
+      >
+        <div className="ur-playground-grid">
+          <div className="ur-playground-controls">
+            <div className="ur-inline-controls">
+              <Input
+                value={playgroundKey}
+                onChange={setPlaygroundKey}
+                type="password"
+                placeholder="粘贴项目 API Key"
+                style={{ width: 260 }}
+              />
+              <Select
+                value={effectivePlaygroundModel}
+                optionList={modelOptions.map(model => ({ label: model, value: model }))}
+                onChange={(value) => setPlaygroundModel(String(value || ''))}
+                style={{ width: 220 }}
+                placeholder="选择 approved model / alias"
+              />
+              <Select
+                value={playgroundMode}
+                optionList={[
+                  { label: '非流式', value: 'non_stream' },
+                  { label: '流式', value: 'stream' },
+                ]}
+                onChange={(value) => setPlaygroundMode(String(value || 'non_stream'))}
+                style={{ width: 120 }}
+              />
+              <Button type="primary" icon={<IconBolt />} loading={playgroundLoading} onClick={handlePlaygroundRun}>运行</Button>
+            </div>
+            <TextArea
+              value={playgroundPrompt}
+              onChange={setPlaygroundPrompt}
+              rows={5}
+              placeholder="输入本次测试 Prompt"
+              style={{ width: '100%', marginTop: 12 }}
+            />
+          </div>
+          <div className="ur-playground-result">
+            {playgroundResult ? (
+              <>
+                <div className="ur-chip-row">
+                  <StatusTag status={playgroundResult.status}>{playgroundResult.status || 'network_error'}</StatusTag>
+                  {playgroundResult.request_id && <Text code>{playgroundResult.request_id}</Text>}
+                  {playgroundResult.total_tokens !== undefined && <StatusTag status="tokens">{playgroundResult.total_tokens} tokens</StatusTag>}
+                  {playgroundResult.cost_cents !== undefined && <MoneyText cents={playgroundResult.cost_cents} precision={4} tone="cost" />}
+                  {playgroundResult.latency_ms !== undefined && <Text type="tertiary">{playgroundResult.latency_ms}ms</Text>}
+                </div>
+                {playgroundResult.error ? (
+                  <div className="ur-playground-error">
+                    <Text type="danger">{playgroundResult.error}</Text>
+                    {playgroundResult.doc_url && <a href={playgroundResult.doc_url}>查看错误文档</a>}
+                  </div>
+                ) : (
+                  <pre className="ur-dev-code">{playgroundResult.content}</pre>
+                )}
+              </>
+            ) : (
+              <EmptyState title="等待运行" description="选择 approved model 或 alias，粘贴项目 Key 后运行一次测试。" minHeight={180} />
+            )}
+          </div>
+        </div>
+      </Surface>
 
       <Surface title="Approved Models" description="只展示当前项目可用且进入 approved catalog 的 GA / Deprecated 模型。">
         <div className="ur-table-shell">
