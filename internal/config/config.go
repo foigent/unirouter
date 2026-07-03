@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
+
+	"github.com/uniroute/unirouter/internal/auth"
 )
 
 type Config struct {
@@ -32,6 +35,24 @@ type Config struct {
 	// License
 	LicensePublicKey         string
 	LicenseExpiryWarningDays int
+
+	// OIDC SSO
+	OIDCEnabled            bool
+	OIDCIssuerURL          string
+	OIDCClientID           string
+	OIDCClientSecret       string
+	OIDCRedirectURL        string
+	OIDCProviderName       string
+	OIDCScopes             []string
+	OIDCAllowedEmailDomain string
+	OIDCAutoProvision      bool
+	OIDCDefaultOrgID       int64
+	OIDCDefaultRole        string
+	OIDCDefaultProjectSlug string
+	OIDCUsernameClaim      string
+	OIDCEmailClaim         string
+	OIDCRoleClaim          string
+	OIDCOrgIDClaim         string
 
 	// Billing
 	MinFreezeAmount    int
@@ -80,6 +101,26 @@ func (c *Config) Validate() error {
 	if c.LicenseExpiryWarningDays < 0 {
 		return fmt.Errorf("LICENSE_EXPIRY_WARNING_DAYS must be >= 0")
 	}
+	if c.OIDCEnabled {
+		if c.OIDCIssuerURL == "" {
+			return fmt.Errorf("OIDC_ISSUER_URL is required when OIDC is enabled")
+		}
+		if c.OIDCClientID == "" {
+			return fmt.Errorf("OIDC_CLIENT_ID is required when OIDC is enabled")
+		}
+		if c.OIDCClientSecret == "" {
+			return fmt.Errorf("OIDC_CLIENT_SECRET is required when OIDC is enabled")
+		}
+		if c.OIDCRedirectURL == "" {
+			return fmt.Errorf("OIDC_REDIRECT_URL is required when OIDC is enabled")
+		}
+		if !auth.IsValidRole(c.OIDCDefaultRole) {
+			return fmt.Errorf("OIDC_DEFAULT_ROLE is invalid: %s", c.OIDCDefaultRole)
+		}
+		if c.OIDCAutoProvision && c.OIDCDefaultOrgID <= 0 {
+			return fmt.Errorf("OIDC_DEFAULT_ORG_ID must be set when OIDC auto provisioning is enabled")
+		}
+	}
 	return nil
 }
 
@@ -106,6 +147,23 @@ func Load() (*Config, error) {
 
 		LicensePublicKey:         getEnvStr("LICENSE_PUBLIC_KEY", ""),
 		LicenseExpiryWarningDays: getEnvInt("LICENSE_EXPIRY_WARNING_DAYS", 30),
+
+		OIDCEnabled:            getEnvBool("OIDC_ENABLED", false),
+		OIDCIssuerURL:          strings.TrimRight(getEnvStr("OIDC_ISSUER_URL", ""), "/"),
+		OIDCClientID:           getEnvStr("OIDC_CLIENT_ID", ""),
+		OIDCClientSecret:       getEnvStr("OIDC_CLIENT_SECRET", ""),
+		OIDCRedirectURL:        getEnvStr("OIDC_REDIRECT_URL", ""),
+		OIDCProviderName:       getEnvStr("OIDC_PROVIDER_NAME", "OIDC"),
+		OIDCScopes:             splitCSV(getEnvStr("OIDC_SCOPES", "openid,email,profile")),
+		OIDCAllowedEmailDomain: getEnvStr("OIDC_ALLOWED_EMAIL_DOMAIN", ""),
+		OIDCAutoProvision:      getEnvBool("OIDC_AUTO_PROVISION", false),
+		OIDCDefaultOrgID:       int64(getEnvInt("OIDC_DEFAULT_ORG_ID", 0)),
+		OIDCDefaultRole:        auth.NormalizeRole(getEnvStr("OIDC_DEFAULT_ROLE", auth.RoleViewer)),
+		OIDCDefaultProjectSlug: getEnvStr("OIDC_DEFAULT_PROJECT_SLUG", "default"),
+		OIDCUsernameClaim:      getEnvStr("OIDC_USERNAME_CLAIM", "preferred_username"),
+		OIDCEmailClaim:         getEnvStr("OIDC_EMAIL_CLAIM", "email"),
+		OIDCRoleClaim:          getEnvStr("OIDC_ROLE_CLAIM", "uniroute_role"),
+		OIDCOrgIDClaim:         getEnvStr("OIDC_ORG_ID_CLAIM", "uniroute_org_id"),
 
 		MinFreezeAmount:    getEnvInt("MIN_FREEZE_AMOUNT", 10),
 		FreezeSafetyFactor: getEnvFloat("FREEZE_SAFETY_FACTOR", 1.5),
@@ -137,6 +195,24 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+func splitCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	seen := map[string]bool{}
+	for _, part := range parts {
+		item := strings.TrimSpace(part)
+		if item == "" || seen[item] {
+			continue
+		}
+		seen[item] = true
+		out = append(out, item)
+	}
+	if len(out) == 0 {
+		return []string{"openid", "email", "profile"}
+	}
+	return out
 }
 
 func getEnvStr(key, fallback string) string {

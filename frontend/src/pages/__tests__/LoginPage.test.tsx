@@ -5,9 +5,21 @@ import { MemoryRouter } from 'react-router-dom'
 import LoginPage from '../../pages/LoginPage'
 
 // Mock the auth store
-const mockLogin = vi.fn()
+const mocks = vi.hoisted(() => ({
+  mockLogin: vi.fn(),
+  mockGetOIDCConfig: vi.fn(),
+  mockGetOIDCStartURL: vi.fn(() => '/api/v1/auth/oidc/start?redirect=%2F'),
+}))
+const { mockLogin, mockGetOIDCConfig, mockGetOIDCStartURL } = mocks
 vi.mock('../../store/auth', () => ({
-  useAuthStore: (selector: any) => selector({ login: mockLogin }),
+  useAuthStore: (selector: any) => selector({ login: mocks.mockLogin }),
+}))
+
+vi.mock('../../api/client', () => ({
+  api: {
+    getOIDCConfig: mocks.mockGetOIDCConfig,
+    getOIDCStartURL: mocks.mockGetOIDCStartURL,
+  },
 }))
 
 // Mock react-router-dom navigate
@@ -31,6 +43,10 @@ function renderLoginPage() {
 describe('LoginPage', () => {
   beforeEach(() => {
     mockLogin.mockReset()
+    mockGetOIDCConfig.mockReset()
+    mockGetOIDCStartURL.mockClear()
+    mockGetOIDCStartURL.mockReturnValue('/api/v1/auth/oidc/start?redirect=%2F')
+    mockGetOIDCConfig.mockReturnValue(new Promise(() => {}))
     mockNavigate.mockReset()
   })
 
@@ -120,5 +136,12 @@ describe('LoginPage', () => {
     await waitFor(() => {
       expect(screen.getByText('登录失败')).toBeInTheDocument()
     })
+  })
+
+  it('renders OIDC login button when enabled', async () => {
+    mockGetOIDCConfig.mockResolvedValueOnce({ enabled: true, provider_name: 'Acme IDP' })
+    renderLoginPage()
+
+    expect(await screen.findByRole('button', { name: /Acme IDP/ })).toBeInTheDocument()
   })
 })

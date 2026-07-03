@@ -25,6 +25,7 @@ import (
 	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/migrate"
+	"github.com/uniroute/unirouter/internal/oidc"
 	"github.com/uniroute/unirouter/internal/redisx"
 )
 
@@ -99,6 +100,28 @@ func main() {
 	}
 	adminHandler.SetLicenseVerifier(licenseVerifier)
 	adminHandler.SetEventService(eventSvc)
+	oidcService, err := oidc.NewService(oidc.Config{
+		Enabled:            cfg.OIDCEnabled,
+		IssuerURL:          cfg.OIDCIssuerURL,
+		ClientID:           cfg.OIDCClientID,
+		ClientSecret:       cfg.OIDCClientSecret,
+		RedirectURL:        cfg.OIDCRedirectURL,
+		ProviderName:       cfg.OIDCProviderName,
+		Scopes:             cfg.OIDCScopes,
+		AllowedEmailDomain: cfg.OIDCAllowedEmailDomain,
+		AutoProvision:      cfg.OIDCAutoProvision,
+		DefaultOrgID:       cfg.OIDCDefaultOrgID,
+		DefaultRole:        cfg.OIDCDefaultRole,
+		DefaultProjectSlug: cfg.OIDCDefaultProjectSlug,
+		UsernameClaim:      cfg.OIDCUsernameClaim,
+		EmailClaim:         cfg.OIDCEmailClaim,
+		RoleClaim:          cfg.OIDCRoleClaim,
+		OrgIDClaim:         cfg.OIDCOrgIDClaim,
+	})
+	if err != nil {
+		log.Fatalf("Invalid OIDC configuration: %v", err)
+	}
+	adminHandler.SetOIDCService(oidcService)
 
 	// Load sensitive words from settings and periodically refresh all instances.
 	go startSensitiveWordsReloadLoop(postgres.Pool, sensitiveFilter, time.Minute)
@@ -200,6 +223,9 @@ func main() {
 
 	// Admin endpoints
 	mux.HandleFunc("POST /api/v1/auth/login", adminHandler.Login)
+	mux.HandleFunc("GET /api/v1/auth/oidc/config", adminHandler.OIDCConfig)
+	mux.HandleFunc("GET /api/v1/auth/oidc/start", adminHandler.OIDCStart)
+	mux.HandleFunc("GET /api/v1/auth/oidc/callback", adminHandler.OIDCCallback)
 	mux.Handle("GET /api/v1/me", adminRoute(adminHandler.GetMe))
 	mux.Handle("PUT /api/v1/me/password", adminRoute(adminHandler.ChangePassword))
 	mux.HandleFunc("GET /docs", func(w http.ResponseWriter, r *http.Request) {

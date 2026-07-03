@@ -50,6 +50,18 @@ describe('API Client', () => {
       )
       expect(result.token).toBe('abc')
     })
+
+    it('loads OIDC public config and builds start URL', async () => {
+      mockJsonResponse({ enabled: true, provider_name: 'Acme IDP' })
+
+      const result = await api.getOIDCConfig()
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/v1/auth/oidc/config',
+        expect.objectContaining({ headers: expect.any(Object) })
+      )
+      expect(result.enabled).toBe(true)
+      expect(api.getOIDCStartURL('/developer')).toBe('/api/v1/auth/oidc/start?redirect=%2Fdeveloper')
+    })
   })
 
   describe('getChannels', () => {

@@ -1,9 +1,9 @@
 # Deployment Runbook（部署运维手册）
 
-> **版本**：v1.5
-> **日期**：2026-07-02
+> **版本**：v1.6
+> **日期**：2026-07-04
 > **用途**：运维人员部署和维护 UniRoute 的操作手册
-> **变更记录**：v1.5 新增 HTTP-only canary overlay、8081 canary direct smoke、PRD2 HA/backup rehearsal 命令；v1.4 新增生产 `.env` 保护、`API_KEY_HASH_SECRET`、rsync 安全同步规则和 PR #44 部署事故复盘；v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
+> **变更记录**：v1.6 新增 PRD2 OIDC-first SSO 配置和 mock-provider smoke；v1.5 新增 HTTP-only canary overlay、8081 canary direct smoke、PRD2 HA/backup rehearsal 命令；v1.4 新增生产 `.env` 保护、`API_KEY_HASH_SECRET`、rsync 安全同步规则和 PR #44 部署事故复盘；v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
 
 ---
 
@@ -70,6 +70,35 @@ scripts/prd2-batch22-license-smoke.sh
 
 `UNIROUTE_BATCH22_ALLOW_LICENSE_RESET=non-production-license-reset` 会清空或覆盖全局 `settings.license.offline`，只能在本地、预发或用户明确批准的目标环境使用。
 smoke 默认结束后会清理测试 License；如需人工检查最终导入状态，可临时设置 `UNIROUTE_BATCH22_KEEP_LICENSE=true`。
+
+OIDC SSO 默认关闭。启用前在身份提供商侧创建 Web/OIDC client，并将 callback 配置为：
+
+```text
+https://<console-host>/api/v1/auth/oidc/callback
+```
+
+然后设置：
+
+```bash
+OIDC_ENABLED=true
+OIDC_ISSUER_URL=https://idp.example.com
+OIDC_CLIENT_ID=uniroute
+OIDC_CLIENT_SECRET=...
+OIDC_REDIRECT_URL=https://<console-host>/api/v1/auth/oidc/callback
+OIDC_PROVIDER_NAME='Company SSO'
+OIDC_SCOPES=openid,email,profile
+OIDC_AUTO_PROVISION=false
+```
+
+如果允许首登自动创建用户，必须同时设置 `OIDC_AUTO_PROVISION=true` 和 `OIDC_DEFAULT_ORG_ID=<active org id>`。角色可由 `OIDC_ROLE_CLAIM` 映射，缺失时使用 `OIDC_DEFAULT_ROLE`；项目角色会被加入 `OIDC_DEFAULT_PROJECT_SLUG` 指向的默认项目。配置语义见 `docs/tech-ref/18-oidc-sso.md`。
+
+非生产环境可用 Batch 24 mock-provider smoke 验证 OIDC 协议、用户映射和登录页入口：
+
+```bash
+scripts/prd2-batch24-oidc-smoke.sh
+```
+
+真实企业 IdP 验收仍需要目标环境 issuer/client 配置和浏览器登录证据。
 
 现有部署升级到支持 `API_KEY_HASH_SECRET` 的版本时：
 

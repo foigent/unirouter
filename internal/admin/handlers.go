@@ -15,6 +15,7 @@ import (
 
 	"github.com/uniroute/unirouter/internal/filter"
 	"github.com/uniroute/unirouter/internal/licensing"
+	"github.com/uniroute/unirouter/internal/oidc"
 )
 
 // Handler contains all admin API handlers.
@@ -25,6 +26,7 @@ type Handler struct {
 	apiKeyHashSecret string
 	licenseVerifier  *licensing.Verifier
 	eventService     *billing.EventService
+	oidcService      *oidc.Service
 	encKey           []byte
 }
 
@@ -48,6 +50,10 @@ func (h *Handler) SetLicenseVerifier(verifier *licensing.Verifier) {
 
 func (h *Handler) SetEventService(svc *billing.EventService) {
 	h.eventService = svc
+}
+
+func (h *Handler) SetOIDCService(svc *oidc.Service) {
+	h.oidcService = svc
 }
 
 func (h *Handler) emitAPIKeyDisabledEvent(ctx context.Context, orgID, projectID, keyID int64, name, keyPrefix string) {
