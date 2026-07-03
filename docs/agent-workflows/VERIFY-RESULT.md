@@ -1,33 +1,30 @@
-# VERIFY-RESULT.md — PRD2 Batch 25 验收结果
+# VERIFY-RESULT.md — PRD2 Batch 26 验收结果
 
 **验收者：** OpenClaw Canary
 **日期：** 2026-07-04
-**对应轮次：** PRD2 Batch 25 Final Closeout
+**对应轮次：** PRD2 Batch 26 UI/UX Hardening
 
 ## 逐条结果
 
-- Fix #1: PASS — P2-F11 policy doc exists at `docs/tech-ref/19-prompt-response-storage-policy.md`。明确 plaintext disabled by default、metadata-only troubleshooting、explicit future approval 要求、audit-on-read 和完整控制链。已索引到 tech-ref README 和 DOC-INVENTORY。
-- Fix #2: PASS — 矩阵中无 `Planned`、`Implemented not accepted`、`Unit tested` 行。P2-F10 E2E accepted 但 not Production verified。P2-F11 E2E accepted。Budget hard-block Deferred。Provider real-upstream credential-gated deferred under PRD2-B18-001。所有行均有明确终态。
-- Fix #3: PASS — PRD2-BUDGET-001（later-phase）、PRD2-HA-001（later target evidence）、PRD2-B18-001（credential-gated）、PRD2-B22-001（E2E accepted locally, not Production verified）均有明确用户决策/边界标注。
-- Fix #4: PASS — CURRENT-STATUS.md 记录 Batch 25 fixed locally awaiting Canary。Completion plan Batch 25 增加 status update。Evidence file `docs/ops/evidence/PRD2-B25-final-closeout-local-20260704.md` 存在。外部边界（License Production verified、provider credentials、budget hard-block、production HA/DR、real IdP）保持显式开放。
+- Fix #1: PASS — sidebar hierarchy/scroll/collapse indicators/icons 全部就位。`overflow-y: auto` 在 `.semi-navigation` 上(line 114)，`semi-navigation-sub-title` 独立样式(line 131/137/145)，二级菜单缩进+层级线(line 149/158/169)，`semi-navigation-item-icon-toggle-right` 恢复可见(line 189)，7 个导航图标全部重新分配(IconMonitorStroked/IconSendStroked/IconRoute/IconLockStroked/IconKeyStroked/IconCreditCard)。
+- Fix #2: PASS — 审计日志表格设置 `scroll={{ x: 1570, y: 620 }}`(line 118)，detail 字段 `whiteSpace: 'nowrap'`(line 84)，列名改为中文 `组织`/`项目`(line 70/71)。
+- Fix #3: PASS — 新增 `parseChannelModels`/`firstChannelModel`/`resolveChannelTestModel` 函数，渠道测试优先使用用户选择模型再 fallback 到渠道配置第一个模型，无配置时提示 `渠道未配置测试模型`。`gpt-3.5-turbo` 硬编码已完全移除(grep 确认 0 匹配)。单元测试 3/3 通过。
+- Fix #4: PASS — PRD2 UI 英文标签已中文化：`模型目录`/`企业别名`/`模型集`/`项目分配`/`供应商族`/`目录可见性`/`已批准`/`内部`/`供应商：` 等。对应测试断言已同步更新。
+- Fix #5: PASS — `docs/ops/evidence/PRD2-B26-ui-hardening-local-20260704.md` 存在，`CURRENT-STATUS.md` 包含 Batch 26 awaiting Canary 行，FIX-SIGNAL.md 边界声明一致（不改账务后端、不误称已完成）。
 
 ## 命令结果
 
 | 命令 | 结果 | 备注 |
 |------|------|------|
-| `test -f docs/tech-ref/19-prompt-response-storage-policy.md` | PASS | 文件存在 |
-| `grep "disabled by default\|audit-on-read\|explicit future approval\|metadata-only" docs/tech-ref/19-prompt-response-storage-policy.md` | PASS | 4 个关键短语全部匹配 |
-| `grep "19-prompt-response-storage-policy\|Prompt And Response Storage Policy" docs/tech-ref/README.md docs/DOC-INVENTORY.md` | PASS | 两处均已索引 |
-| `grep "\| Planned \|" docs/ops/PRD2-ACCEPTANCE-MATRIX.md` | PASS | 无匹配（exit 1），无 Planned 行 |
-| `grep "\| Implemented not accepted \|" docs/ops/PRD2-ACCEPTANCE-MATRIX.md` | PASS | 无匹配（exit 1） |
-| `grep "\| Unit tested \|" docs/ops/PRD2-ACCEPTANCE-MATRIX.md` | PASS | 无匹配（exit 1） |
-| `grep "PRD2-BUDGET-001\|PRD2-HA-001\|PRD2-B18-001\|PRD2-B22-001" docs/issues/OPEN-ISSUES.md` | PASS | 4 个 issue 均有明确边界 |
-| `grep "Batch 25\|19-prompt-response-storage-policy\|P2-F11\|Production verified\|credential" docs/ops/CURRENT-STATUS.md docs/ops/PRD2-COMPLETION-PLAN.md` | PASS | 状态和计划均已更新 |
-| `go test ./...` | PASS | 全量后端测试通过 |
-| `npm --prefix frontend test -- --run` | PASS | 15 files, 85 tests |
-| `npm --prefix frontend run build` | PASS | 大块警告已存在，非新增错误 |
-| `git diff --check` | PASS | 无 whitespace 错误 |
-| Current-code browser smoke | SKIP | 无本地 backend 运行环境；Codex evidence 已记录在 `docs/ops/evidence/PRD2-B25-final-closeout-local-20260704.md`，未标记为 production/customer evidence |
+| CSS/nav grep commands | PASS | sidebar 层级、滚动、折叠图标、导航图标全部匹配 |
+| AuditLogs grep command | PASS | scroll/列名/nowrap 全部匹配 |
+| TestPage grep + tests | PASS | 3 函数就位，gpt-3.5-turbo 硬编码已移除，3/3 测试通过 |
+| UI label grep + targeted tests | PASS | 中文标签大量匹配，ModelGovernancePage 5/5 + DashboardPage 11/11 测试通过 |
+| Evidence/status grep commands | PASS | evidence 文件存在，CURRENT-STATUS 包含 Batch 26 行 |
+| `npm --prefix frontend test -- --run` | PASS | 16 文件 / 88 测试 / 0 失败 / 10.43s |
+| `npm --prefix frontend run build` | PASS | 仅现有 large chunk warning，无新错误 |
+| `git diff --check` | PASS | 无 whitespace 问题 |
+| Browser smoke | SKIP | 无本地前端运行中，以 Codex 提交的 Playwright 截图为边界证据 |
 
 ## 新发现
 
@@ -35,4 +32,4 @@
 
 ## 结论
 
-PASS。4/4 全部通过。PRD2 Batch 25 Final Closeout 文档/状态/矩阵/边界全部到位，无 overclaim。Browser smoke SKIP 因无本地运行环境，Codex 已提供 current-code smoke evidence 且边界标注正确。
+PASS。PRD2 Batch 26 UI/UX Hardening 5/5 Fix 全部验收通过，前端测试 88/88 通过，构建成功，无新发现问题。待 Sentinel commit。

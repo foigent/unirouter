@@ -135,7 +135,7 @@ function ChannelHealthCard({ ch }: { ch: NonNullable<DashboardStats['channel_hea
     <div className="ur-channel-card">
       <div style={{ minWidth: 0 }}>
         <Text className="ur-channel-name" title={ch.name}>{ch.name}</Text>
-        {providerLabel && <Text className="ur-channel-provider" title={ch.provider}>Provider: {providerLabel}</Text>}
+        {providerLabel && <Text className="ur-channel-provider" title={ch.provider}>供应商：{providerLabel}</Text>}
         <Progress
           percent={rate}
           showInfo={false}

@@ -67,21 +67,23 @@ export default function AuditLogsPage() {
 
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 60 },
-    { title: 'Org', dataIndex: 'org_id', width: 80 },
-    { title: 'Project', dataIndex: 'project_id', width: 90, render: (v: number | null) => v || '-' },
-    { title: '操作者', dataIndex: 'user_id', render: (v: number) => v ? `User #${v}` : '-' },
+    { title: '组织', dataIndex: 'org_id', width: 80 },
+    { title: '项目', dataIndex: 'project_id', width: 90, render: (v: number | null) => v || '-' },
+    { title: '操作者', dataIndex: 'user_id', width: 110, render: (v: number) => v ? `User #${v}` : '-' },
     {
       title: '动作', dataIndex: 'action',
+      width: 180,
       render: (v: string) => <Tag color={actionColor(v)}>{v}</Tag>,
     },
-    { title: '目标类型', dataIndex: 'resource' },
-    { title: '目标ID', dataIndex: 'resource_id', render: (v: string) => v || '-' },
-    { title: '来源', dataIndex: 'source', render: (v: string) => v ? <Tag>{v}</Tag> : '-' },
+    { title: '目标类型', dataIndex: 'resource', width: 130 },
+    { title: '目标ID', dataIndex: 'resource_id', width: 150, render: (v: string) => v || '-' },
+    { title: '来源', dataIndex: 'source', width: 150, render: (v: string) => v ? <Tag>{v}</Tag> : '-' },
     {
       title: '详情', dataIndex: 'detail',
-      render: (v: any) => v ? <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{JSON.stringify(v)}</span> : '-',
+      width: 440,
+      render: (v: any) => v ? <span style={{ fontFamily: 'monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{JSON.stringify(v)}</span> : '-',
     },
-    { title: '时间', dataIndex: 'created_at', render: (v: string) => formatDateTime(v) },
+    { title: '时间', dataIndex: 'created_at', width: 180, render: (v: string) => formatDateTime(v) },
   ];
 
   return (
@@ -113,6 +115,7 @@ export default function AuditLogsPage() {
       <Surface>
         <div className="ur-table-shell">
           <Table columns={columns} dataSource={logs} loading={loading} rowKey="id"
+            scroll={{ x: 1570, y: 620 }}
             pagination={{ currentPage: page, pageSize, pageSizeOpts: [20, 50, 100], showSizeChanger: true, total, onPageChange: (p) => setPage(p), onPageSizeChange: (s) => { setPageSize(s); setPage(1); } }} />
         </div>
       </Surface>

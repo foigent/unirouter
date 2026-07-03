@@ -36,9 +36,9 @@ const groupOptions = [
   { label: 'Project', value: 'project' },
   { label: 'API Key', value: 'key' },
   { label: 'Model', value: 'model' },
-  { label: 'Alias', value: 'alias' },
-  { label: 'Provider', value: 'provider' },
-  { label: 'Channel', value: 'channel' },
+  { label: '别名', value: 'alias' },
+  { label: '供应商', value: 'provider' },
+  { label: '渠道', value: 'channel' },
   { label: 'Status', value: 'status' },
   { label: 'Usage source', value: 'usage_source' },
 ];
@@ -125,7 +125,7 @@ export default function UsageAnalyticsPage() {
       <PageHeader
         eyebrow="Analytics"
         title="用量分析"
-        description="按项目、Key、模型、Alias、Provider、Channel、状态和 usage_source 钻取调用、Token、费用与估算占比。"
+        description="按项目、Key、模型、别名、供应商、渠道、状态和 usage_source 钻取调用、Token、费用与估算占比。"
         actions={<Button icon={<IconDownload />} onClick={downloadCSV}>导出 CSV</Button>}
       />
 
@@ -151,7 +151,7 @@ export default function UsageAnalyticsPage() {
             style={{ width: 190 }}
           />
           <Input prefix={<IconSearch />} value={model} onChange={setModel} placeholder="模型" showClear style={{ width: 180 }} />
-          <Input prefix={<IconServer />} value={provider} onChange={setProvider} placeholder="Provider" showClear style={{ width: 180 }} />
+          <Input prefix={<IconServer />} value={provider} onChange={setProvider} placeholder="供应商" showClear style={{ width: 180 }} />
           <Button icon={<IconRefresh />} onClick={load} loading={loading}>刷新</Button>
         </div>
       </Surface>

@@ -127,7 +127,7 @@ describe('ModelGovernancePage', () => {
   it('loads aliases when the alias tab is selected', async () => {
     render(<ModelGovernancePage />);
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Aliases' }));
+    fireEvent.click(screen.getByRole('tab', { name: '企业别名' }));
 
     await waitFor(() => {
       expect(mockGetModelAliases).toHaveBeenCalledWith(1, 20);
@@ -138,7 +138,7 @@ describe('ModelGovernancePage', () => {
   it('loads model set items from the model set table', async () => {
     render(<ModelGovernancePage />);
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Model Sets' }));
+    fireEvent.click(screen.getByRole('tab', { name: '模型集' }));
     expect(await screen.findByText('Core Chat Models')).toBeTruthy();
     fireEvent.click(screen.getByText('条目'));
 
@@ -151,7 +151,7 @@ describe('ModelGovernancePage', () => {
   it('saves project model set assignments', async () => {
     render(<ModelGovernancePage />);
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Project Assignment' }));
+    fireEvent.click(screen.getByRole('tab', { name: '项目分配' }));
 
     await waitFor(() => {
       expect(mockGetProjects).toHaveBeenCalledWith(1, 100, { status: 'active' });

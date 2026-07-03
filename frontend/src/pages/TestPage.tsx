@@ -5,7 +5,7 @@ import { LatencyText, PageHeader, StatusTag, Surface } from '../ui';
 
 const { Text } = Typography;
 
-interface Channel {
+export interface Channel {
   id: number;
   name: string;
   provider: string;
@@ -24,11 +24,27 @@ interface TestResult {
   tokens_used?: number;
 }
 
+export function parseChannelModels(models?: string) {
+  return String(models || '')
+    .split(',')
+    .map(model => model.trim())
+    .filter(Boolean);
+}
+
+export function firstChannelModel(channel?: Pick<Channel, 'models'>) {
+  return parseChannelModels(channel?.models)[0] || '';
+}
+
+export function resolveChannelTestModel(channel?: Pick<Channel, 'models'>, selectedModel?: string) {
+  return String(selectedModel || '').trim() || firstChannelModel(channel);
+}
+
 export default function TestPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [testing, setTesting] = useState(false);
   const [results, setResults] = useState<TestResult[]>([]);
   const [selectedChannelId, setSelectedChannelId] = useState<number | null>(null);
+  const [selectedModel, setSelectedModel] = useState('');
   const formApiRef = useRef<any>(null);
 
   useEffect(() => {
@@ -38,9 +54,7 @@ export default function TestPage() {
   }, []);
 
   const selectedChannel = channels.find(c => c.id === selectedChannelId);
-  const modelOptions = selectedChannel?.models
-    ? selectedChannel.models.split(',').map(m => m.trim()).filter(Boolean).map(m => ({ label: m, value: m }))
-    : [];
+  const modelOptions = parseChannelModels(selectedChannel?.models).map(m => ({ label: m, value: m }));
 
   const runTest = async (channelId: number, channelName: string, model: string, prompt: string) => {
     try {
@@ -62,12 +76,18 @@ export default function TestPage() {
   };
 
   const handleTest = async (values: Record<string, any>) => {
+    const channelId = Number(values.channel_id || selectedChannelId);
+    const channel = channels.find(c => c.id === channelId);
+    const model = resolveChannelTestModel(channel, values.model || selectedModel);
+    if (!channel || !model) {
+      Toast.error({ content: '请选择已配置模型的渠道' });
+      return;
+    }
     setTesting(true);
-    const channel = channels.find(c => c.id === Number(values.channel_id));
     const result = await runTest(
-      Number(values.channel_id),
-      channel?.name || 'Unknown',
-      values.model || 'gpt-3.5-turbo',
+      channelId,
+      channel.name,
+      model,
       values.prompt || 'Hello, this is a test message.',
     );
     setResults(prev => [result, ...prev]);
@@ -85,7 +105,19 @@ export default function TestPage() {
     const batchResults: TestResult[] = [];
 
     for (const channel of activeChannels) {
-      const result = await runTest(channel.id, channel.name, 'gpt-3.5-turbo', 'Hello, this is a test message.');
+      const model = firstChannelModel(channel);
+      if (!model) {
+        batchResults.push({
+          success: false,
+          channel_id: channel.id,
+          channel_name: channel.name,
+          latency_ms: 0,
+          status_code: 0,
+          error: '渠道未配置测试模型',
+        });
+        continue;
+      }
+      const result = await runTest(channel.id, channel.name, model, 'Hello, this is a test message.');
       batchResults.push(result);
     }
 
@@ -93,6 +125,14 @@ export default function TestPage() {
     const successCount = batchResults.filter(r => r.success).length;
     Toast.info({ content: `批量测试完成: ${successCount}/${batchResults.length} 成功` });
     setTesting(false);
+  };
+
+  const submitSelectedChannelTest = () => {
+    if (!formApiRef.current) {
+      Toast.error({ content: '测试表单尚未就绪' });
+      return;
+    }
+    handleTest(formApiRef.current.getValues() || {});
   };
 
   const columns = [
@@ -158,8 +198,11 @@ export default function TestPage() {
             }))}
             style={{ width: 300 }}
             onChange={(v) => {
-              setSelectedChannelId(Number(v));
-              formApiRef.current?.setValue('model', undefined as any);
+              const nextChannel = channels.find(c => c.id === Number(v));
+              const nextModel = firstChannelModel(nextChannel);
+              setSelectedChannelId(nextChannel ? Number(v) : null);
+              setSelectedModel(nextModel);
+              formApiRef.current?.setValue('model', (nextModel || undefined) as any);
             }}
           />
           <Form.Select
@@ -168,6 +211,7 @@ export default function TestPage() {
             placeholder="选择模型"
             optionList={modelOptions}
             style={{ width: 200 }}
+            onChange={(v) => setSelectedModel(String(v || ''))}
           />
           <Form.TextArea
             field="prompt"
@@ -177,7 +221,7 @@ export default function TestPage() {
             style={{ width: 400 }}
           />
           <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
-            <Button type="primary" htmlType="submit" loading={testing}>
+            <Button type="primary" onClick={submitSelectedChannelTest} loading={testing}>
               测试选中渠道
             </Button>
             <Button onClick={handleBatchTest} loading={testing}>

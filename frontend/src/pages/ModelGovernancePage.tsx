@@ -19,8 +19,8 @@ const statusOptions = [
 ];
 
 const approvedOptions = [
-  { label: '加入 Approved Catalog', value: 'true' },
-  { label: '不加入 Approved Catalog', value: 'false' },
+  { label: '加入开发者目录', value: 'true' },
+  { label: '仅内部可见', value: 'false' },
 ];
 
 type TabKey = 'registry' | 'aliases' | 'sets' | 'assignments';
@@ -164,10 +164,10 @@ export default function ModelGovernancePage() {
   const [assignmentLoading, setAssignmentLoading] = useState(false);
 
   const tabs = [
-    { key: 'registry' as const, label: 'Model Registry' },
-    { key: 'aliases' as const, label: 'Aliases' },
-    { key: 'sets' as const, label: 'Model Sets' },
-    { key: 'assignments' as const, label: 'Project Assignment' },
+    { key: 'registry' as const, label: '模型目录' },
+    { key: 'aliases' as const, label: '企业别名' },
+    { key: 'sets' as const, label: '模型集' },
+    { key: 'assignments' as const, label: '项目分配' },
   ];
 
   const loadRegistry = useCallback(async (page = registryPage, pageSize = registryPageSize) => {
@@ -194,7 +194,7 @@ export default function ModelGovernancePage() {
       setAliases((data?.data || []) as ModelAlias[]);
       setAliasTotal(Number(data?.total || 0));
     } catch (err: any) {
-      Toast.error(`Alias 加载失败${err?.message ? `：${err.message}` : ''}`);
+      Toast.error(`别名加载失败${err?.message ? `：${err.message}` : ''}`);
     } finally {
       setAliasLoading(false);
     }
@@ -378,10 +378,10 @@ export default function ModelGovernancePage() {
     try {
       if (aliasSheet?.mode === 'edit' && aliasSheet.record) {
         await api.updateModelAlias(aliasSheet.record.id, payload);
-        Toast.success('Alias 已更新');
+        Toast.success('别名已更新');
       } else {
         await api.createModelAlias(payload);
-        Toast.success('Alias 已创建');
+        Toast.success('别名已创建');
       }
       closeAliasSheet();
       loadAliases(aliasPage, aliasPageSize);
@@ -498,9 +498,9 @@ export default function ModelGovernancePage() {
         </div>
       ),
     },
-    { title: 'Provider', dataIndex: 'provider_family', key: 'provider_family', render: (value: string) => value || '-' },
+    { title: '供应商族', dataIndex: 'provider_family', key: 'provider_family', render: (value: string) => value || '-' },
     { title: '生命周期', dataIndex: 'lifecycle', key: 'lifecycle', render: (value: string) => <StatusTag status={value}>{value}</StatusTag> },
-    { title: 'Catalog', dataIndex: 'approved_catalog', key: 'approved_catalog', render: (value: boolean) => <StatusTag status={Boolean(value)}>{value ? 'approved' : 'internal'}</StatusTag> },
+    { title: '目录可见性', dataIndex: 'approved_catalog', key: 'approved_catalog', render: (value: boolean) => <StatusTag status={Boolean(value)}>{value ? '已批准' : '内部'}</StatusTag> },
     { title: '上下文 / 输出', key: 'limits', render: (_: unknown, record: ModelRegistryItem) => `${compactNumber(record.context_length)} / ${compactNumber(record.output_limit)}` },
     { title: '能力', dataIndex: 'capability_tags', key: 'capability_tags', render: (value: string[] | string) => toList(value).slice(0, 4).join(', ') || '-' },
     { title: '数据驻留', dataIndex: 'data_residency', key: 'data_residency', render: (value: string) => value || '-' },
@@ -515,7 +515,7 @@ export default function ModelGovernancePage() {
   ];
 
   const aliasColumns = [
-    { title: 'Alias', dataIndex: 'alias', key: 'alias', render: (value: string) => <Text code>{value}</Text> },
+    { title: '别名', dataIndex: 'alias', key: 'alias', render: (value: string) => <Text code>{value}</Text> },
     { title: '目标模型', dataIndex: 'target_model', key: 'target_model' },
     { title: '名称', dataIndex: 'display_name', key: 'display_name', render: (value: string) => value || '-' },
     { title: '描述', dataIndex: 'description', key: 'description', render: (value: string) => value || '-' },
@@ -525,7 +525,7 @@ export default function ModelGovernancePage() {
       key: 'actions',
       width: 86,
       render: (_: unknown, record: ModelAlias) => (
-        <Button icon={<IconEdit />} size="small" onClick={() => openEditAlias(record)} aria-label="编辑 Alias" />
+        <Button icon={<IconEdit />} size="small" onClick={() => openEditAlias(record)} aria-label="编辑别名" />
       ),
     },
   ];
@@ -560,7 +560,7 @@ export default function ModelGovernancePage() {
       <PageHeader
         eyebrow="PRD2"
         title="模型治理"
-        description="维护企业内部模型目录、生命周期、企业 Alias、模型集和项目可访问模型范围。"
+        description="维护企业内部模型目录、生命周期、企业别名、模型集和项目可访问模型范围。"
         actions={<Button icon={<IconRefresh />} onClick={() => activeTab === 'assignments' ? loadAssignmentBase() : activeTab === 'sets' ? loadModelSets() : activeTab === 'aliases' ? loadAliases() : loadRegistry()}>刷新</Button>}
       />
 
@@ -582,19 +582,19 @@ export default function ModelGovernancePage() {
       {activeTab === 'registry' && (
         <>
           <div className="ur-modelgov-summary">
-            <div><Text type="tertiary">GA</Text><strong>{registryStats.ga}</strong></div>
-            <div><Text type="tertiary">Deprecated</Text><strong>{registryStats.deprecated}</strong></div>
-            <div><Text type="tertiary">Retired</Text><strong>{registryStats.retired}</strong></div>
+            <div><Text type="tertiary">生产可用</Text><strong>{registryStats.ga}</strong></div>
+            <div><Text type="tertiary">已弃用</Text><strong>{registryStats.deprecated}</strong></div>
+            <div><Text type="tertiary">已退役</Text><strong>{registryStats.retired}</strong></div>
           </div>
           <Surface
-            title="Model Registry"
+            title="模型目录"
             description="这里是企业内部目录，不是公开模型市场；只维护企业确实允许评估、发布或逐步退役的模型。"
             actions={<Button icon={<IconPlus />} type="primary" onClick={openCreateRegistry}>新增模型</Button>}
           >
             <div className="ur-modelgov-filters">
-              <Input prefix={<IconServer />} value={registrySearch} onChange={setRegistrySearch} placeholder="搜索模型、显示名或 Provider" showClear />
+              <Input prefix={<IconServer />} value={registrySearch} onChange={setRegistrySearch} placeholder="搜索模型、显示名或供应商族" showClear />
               <Select value={registryLifecycle} onChange={(value) => setRegistryLifecycle(String(value || ''))} optionList={lifecycleOptions} placeholder="生命周期" showClear />
-              <Button type={registryApprovedOnly ? 'primary' : 'tertiary'} onClick={() => setRegistryApprovedOnly(current => !current)}>Approved only</Button>
+              <Button type={registryApprovedOnly ? 'primary' : 'tertiary'} onClick={() => setRegistryApprovedOnly(current => !current)}>仅看已批准</Button>
             </div>
             <div className="ur-table-shell">
               <Table
@@ -602,7 +602,7 @@ export default function ModelGovernancePage() {
                 dataSource={registry}
                 rowKey="id"
                 loading={registryLoading}
-                empty={<EmptyState title="暂无模型" description="新增模型后才能进入 Alias、模型集和项目分配流程。" minHeight={220} />}
+                empty={<EmptyState title="暂无模型" description="新增模型后才能进入别名、模型集和项目分配流程。" minHeight={220} />}
                 pagination={{
                   currentPage: registryPage,
                   pageSize: registryPageSize,
@@ -618,9 +618,9 @@ export default function ModelGovernancePage() {
 
       {activeTab === 'aliases' && (
         <Surface
-          title="Enterprise Aliases"
+          title="企业别名"
           description="把内部稳定名称映射到真实上游模型，方便后续替换模型时减少应用侧改动。"
-          actions={<Button icon={<IconPlus />} type="primary" onClick={openCreateAlias}>新增 Alias</Button>}
+          actions={<Button icon={<IconPlus />} type="primary" onClick={openCreateAlias}>新增别名</Button>}
         >
           <div className="ur-table-shell">
             <Table
@@ -628,7 +628,7 @@ export default function ModelGovernancePage() {
               dataSource={aliases}
               rowKey="id"
               loading={aliasLoading}
-              empty={<EmptyState title="暂无 Alias" description="常见形式如 company-chat -> gpt-4o。" minHeight={220} />}
+              empty={<EmptyState title="暂无别名" description="常见形式如 company-chat -> gpt-4o。" minHeight={220} />}
               pagination={{
                 currentPage: aliasPage,
                 pageSize: aliasPageSize,
@@ -643,8 +643,8 @@ export default function ModelGovernancePage() {
 
       {activeTab === 'sets' && (
         <Surface
-          title="Model Sets"
-          description="把模型或 Alias 组合成可复用集合，再分配给项目。"
+          title="模型集"
+          description="把模型或别名组合成可复用集合，再分配给项目。"
           actions={<Button icon={<IconPlus />} type="primary" onClick={openCreateModelSet}>新增模型集</Button>}
         >
           <div className="ur-table-shell">
@@ -667,7 +667,7 @@ export default function ModelGovernancePage() {
       )}
 
       {activeTab === 'assignments' && (
-        <Surface title="Project Assignment" description="把模型集绑定到项目；项目存在绑定时，网关只允许这些模型或 Alias。">
+        <Surface title="项目分配" description="把模型集绑定到项目；项目存在绑定时，网关只允许这些模型或别名。">
           {projects.length === 0 ? (
             <EmptyState title="暂无可分配项目" description="先创建活跃项目后再绑定模型集。" minHeight={260} />
           ) : (
@@ -715,7 +715,7 @@ export default function ModelGovernancePage() {
         <Form getFormApi={(apiRef: any) => setRegistryFormApi(apiRef)} onSubmit={handleRegistrySubmit}>
           <Form.Input field="model_name" label="模型名称" placeholder="gpt-4o" rules={[{ required: true, message: '请输入模型名称' }]} />
           <Form.Input field="display_name" label="显示名称" placeholder="Company Chat" />
-          <Form.Input field="provider_family" label="Provider Family" placeholder="openai / anthropic / gemini" />
+          <Form.Input field="provider_family" label="供应商族" placeholder="openai / anthropic / gemini" />
           <Form.Select field="lifecycle" label="生命周期" optionList={lifecycleOptions} rules={[{ required: true, message: '请选择生命周期' }]} />
           <div className="ur-modelgov-form-grid">
             <Form.InputNumber field="context_length" label="上下文长度" min={0} style={{ width: '100%' }} />
@@ -724,7 +724,7 @@ export default function ModelGovernancePage() {
           <Form.Input field="capability_tags" label="能力标签" placeholder="chat,vision,json" />
           <Form.Input field="data_residency" label="数据驻留" placeholder="us / eu / cn" />
           <Form.Input field="pricing_model_name" label="计价模型名" placeholder="默认使用模型名称" />
-          <Form.Select field="approved_catalog" label="Approved Catalog" optionList={approvedOptions} />
+          <Form.Select field="approved_catalog" label="开发者目录可见" optionList={approvedOptions} />
           <Form.TextArea field="migration_recommendation" label="迁移建议" placeholder="例如：请迁移至 gpt-4.1-mini" rows={3} />
           <div className="ur-form-actions">
             <Button onClick={closeRegistrySheet}>取消</Button>
@@ -733,9 +733,9 @@ export default function ModelGovernancePage() {
         </Form>
       </SideSheet>
 
-      <SideSheet title={aliasSheet?.mode === 'edit' ? '编辑 Alias' : '新增 Alias'} visible={!!aliasSheet} onCancel={closeAliasSheet} width={520}>
+      <SideSheet title={aliasSheet?.mode === 'edit' ? '编辑别名' : '新增别名'} visible={!!aliasSheet} onCancel={closeAliasSheet} width={520}>
         <Form getFormApi={(apiRef: any) => setAliasFormApi(apiRef)} onSubmit={handleAliasSubmit}>
-          <Form.Input field="alias" label="Alias" placeholder="company-chat" rules={[{ required: true, message: '请输入 Alias' }]} />
+          <Form.Input field="alias" label="别名" placeholder="company-chat" rules={[{ required: true, message: '请输入别名' }]} />
           <Form.Input field="target_model" label="目标模型" placeholder="gpt-4o" rules={[{ required: true, message: '请输入目标模型' }]} />
           <Form.Input field="display_name" label="显示名称" placeholder="Company Chat" />
           <Form.TextArea field="description" label="描述" placeholder="内部稳定聊天模型" rows={3} />
@@ -750,7 +750,7 @@ export default function ModelGovernancePage() {
       <SideSheet title="新增模型集" visible={modelSetSheet} onCancel={closeModelSetSheet} width={540}>
         <Form getFormApi={(apiRef: any) => setModelSetFormApi(apiRef)} onSubmit={handleModelSetSubmit}>
           <Form.Input field="name" label="名称" placeholder="Core Chat Models" rules={[{ required: true, message: '请输入名称' }]} />
-          <Form.Input field="slug" label="Slug" placeholder="core-chat-models" />
+          <Form.Input field="slug" label="标识 Slug" placeholder="core-chat-models" />
           <Form.TextArea field="description" label="描述" placeholder="核心业务应用可用模型集合" rows={2} />
           <Form.Select field="status" label="状态" optionList={statusOptions} />
           <Form.TextArea field="items" label="条目" placeholder={'alias:company-chat\nmodel:gpt-4o-mini'} rows={7} />
