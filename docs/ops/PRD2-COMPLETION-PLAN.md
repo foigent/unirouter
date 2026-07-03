@@ -346,6 +346,15 @@ git diff --check
 - Local environment limitation: this Codex shell has no `docker` or `nginx` command, so actual compose config/startup, Nginx runtime syntax, two-instance HA smoke, rollback check, and backup/restore rehearsal must be run by Canary/Atlas or another Docker-enabled environment before P2-F09 moves to E2E accepted.
 - Current protocol state: fixed locally by Codex and awaiting Canary verification through `docs/agent-workflows/FIX-SIGNAL.md`.
 
+Status update on 2026-07-03:
+
+- User reported Canary, Sentinel, and Atlas completed.
+- Canary result: `docs/agent-workflows/VERIFY-RESULT.md` reports PASS 5/5 with Docker runtime SKIP handed to Atlas.
+- Atlas backup/recovery drill evidence moved from repo root to `docs/ops/evidence/PRD2-B21-backup-recovery-drill-20260703.md`.
+- Backup/recovery drill result: PASS for PostgreSQL backup creation, `pg_restore -l` integrity, isolated drill DB restore, migration/table/core row/FK/index/query checks, cleanup, and WAL archiving in Alibaba Cloud ECS dev/test.
+- Remaining HA/DR gaps explicitly not closed by the drill: backup encryption, NAS sync, cron auto-backup, Feishu backup failure alerts, PITR recovery, remote restore, application-level verification against the drill DB, Patroni/local DB HA, and app DB failover reconnect behavior.
+- Current acceptance state: P2-F09 moves to E2E accepted for PRD2 self-hosted/staging readiness, but not Production verified.
+
 ### Batch 22: License Production Acceptance
 
 Goal: move License Foundation from unit-tested foundation to real-backend/production accepted.
@@ -363,6 +372,47 @@ Target rows:
 
 - P2-F10 License foundation.
 - Notification dependency for license warning.
+
+Status update on 2026-07-03:
+
+- Codex implemented Batch 22 local tooling and smoke coverage:
+  - `scripts/prd2-batch22-license-smoke.sh`
+  - `scripts/prd2_batch22_license_seed.go`
+  - `scripts/prd2_batch22_license_smoke.mjs`
+  - `docs/ops/evidence/PRD2-B22-license-local-smoke-20260703.md`
+- The seed/generator provides a test offline license set and matching `LICENSE_PUBLIC_KEY`; it also has a guarded `UNIROUTE_BATCH22_ALLOW_LICENSE_RESET=non-production-license-reset` path before clearing or overwriting global `settings.license.offline`.
+- Local validation passed:
+
+```bash
+go run ./scripts/prd2_batch22_license_seed.go -action print-public-key
+go test ./internal/licensing ./internal/admin -run 'TestVerifier|Test(GetLicense|UpdateLicense)' -count=1
+npm --prefix frontend test -- --run LicensePage client navigation
+node --check scripts/prd2_batch22_license_smoke.mjs
+bash -n scripts/prd2-batch22-license-smoke.sh
+go test ./...
+npm --prefix frontend run build
+```
+
+- Local real-backend/browser smoke passed against current-code backend `http://localhost:18082`, frontend `http://localhost:3000`, local PostgreSQL/Redis, and generated test public key:
+
+```bash
+UNIROUTE_SMOKE_BACKEND_URL=http://localhost:18082 \
+UNIROUTE_SMOKE_FRONTEND_URL=http://localhost:3000 \
+UNIROUTE_SMOKE_DB_DSN=postgres://uniroute:password@localhost:5432/uniroute?sslmode=disable \
+UNIROUTE_BATCH22_ALLOW_LICENSE_RESET=non-production-license-reset \
+UNIROUTE_SMOKE_SKIP_BROWSER_INSTALL=true \
+scripts/prd2-batch22-license-smoke.sh
+```
+
+- Actual result: `status=PASS`, `org_id=41`, `user_id=27`, `active_deployment_id=prd2-b22-active`, `expiring_deployment_id=prd2-b22-expiring`, `expired_deployment_id=prd2-b22-expired`, `warning_event_id=12`, screenshot `output/playwright/prd2-batch22-license.png`. The smoke default cleanup cleared the local `license.offline` fixture afterward; set `UNIROUTE_BATCH22_KEEP_LICENSE=true` only when an approved target environment should retain the test license for inspection.
+- Smoke coverage:
+  - missing, invalid, active, expiring, and expired license statuses;
+  - invalid license import rejects with HTTP 400;
+  - real-browser `/license` imports active, expiring, and expired licenses;
+  - `license.update` audit rows exist for successful imports and do not include raw signatures;
+  - `license.warning` notification event is emitted for the expiring license.
+- Current protocol state: fixed locally by Codex and awaiting Canary verification through `docs/agent-workflows/FIX-SIGNAL.md`.
+- Remaining acceptance boundary: production or approved-staging license import/status evidence is still required before claiming `Production verified`.
 
 ### Batch 23: P2 Product Features
 

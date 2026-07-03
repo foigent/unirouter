@@ -84,3 +84,23 @@ License management is intentionally platform-admin only. `org_admin`, billing ro
 - features/limits
 
 The raw signature is not written into audit summaries.
+
+## Batch 22 Acceptance Smoke
+
+Batch 22 adds a repeatable non-production smoke for the License path:
+
+- `scripts/prd2-batch22-license-smoke.sh`
+- `scripts/prd2_batch22_license_seed.go`
+- `scripts/prd2_batch22_license_smoke.mjs`
+
+The smoke generates a test Ed25519 keypair and offline licenses for active, expiring, expired, and invalid cases. It verifies:
+
+- missing, invalid, active, expiring, and expired license statuses;
+- browser `/license` imports against a real backend;
+- invalid import rejection;
+- `license.update` audit rows without raw signature leakage;
+- `license.warning` notification event for an expiring license.
+
+The smoke requires `UNIROUTE_BATCH22_ALLOW_LICENSE_RESET=non-production-license-reset` before clearing or overwriting the global `settings.license.offline` fixture. It clears the test license after the run by default; set `UNIROUTE_BATCH22_KEEP_LICENSE=true` only when an approved target environment should retain the test license for inspection. It is intended for local, staging, or explicitly approved target-environment evidence, not blind production execution.
+
+Current local evidence is recorded in `docs/ops/evidence/PRD2-B22-license-local-smoke-20260703.md`.
