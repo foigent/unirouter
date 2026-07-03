@@ -55,6 +55,7 @@
 | `docs/tech-ref/16-license-foundation.md` | PRD2 offline license, audit, warning, and Batch 22 smoke contract |
 | `docs/tech-ref/17-cache-research.md` | PRD2 cache research boundary; exact/semantic risks and no default runtime cache |
 | `docs/tech-ref/18-oidc-sso.md` | PRD2 OIDC first SSO, claim mapping, provisioning, and audit contract |
+| `docs/tech-ref/19-prompt-response-storage-policy.md` | PRD2 P2-F11 prompt/response storage policy: plaintext disabled by default and future opt-in controls |
 
 PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 
