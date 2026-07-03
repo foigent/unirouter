@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Form, Button, Typography, Tag } from '@douyinfe/semi-ui';
 import { IconBolt, IconHistogram, IconShield, IconServer } from '@douyinfe/semi-icons';
+import { api } from '../api/client';
 import { useAuthStore } from '../store/auth';
 import { getDefaultPathForRole } from '../navigation';
 
@@ -11,7 +12,23 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const login = useAuthStore((s) => s.login);
   const [loading, setLoading] = useState(false);
+  const [oidcLoading, setOIDCLoading] = useState(false);
+  const [oidcConfig, setOIDCConfig] = useState<{ enabled?: boolean; provider_name?: string } | null>(null);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    api.getOIDCConfig()
+      .then((config) => {
+        if (!cancelled) setOIDCConfig(config || { enabled: false });
+      })
+      .catch(() => {
+        if (!cancelled) setOIDCConfig({ enabled: false });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleSubmit = async (values: Record<string, any>) => {
     setLoading(true);
@@ -24,6 +41,11 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleOIDCLogin = () => {
+    setOIDCLoading(true);
+    window.location.assign(api.getOIDCStartURL('/'));
   };
 
   return (
@@ -97,6 +119,18 @@ export default function LoginPage() {
             <Form.Input field="password" label="密码" placeholder="请输入密码" mode="password" rules={[{ required: true, message: '请输入密码' }]} />
             <Button htmlType="submit" theme="solid" block loading={loading} className="ur-primary-action">登录</Button>
           </Form>
+          {oidcConfig?.enabled && (
+            <Button
+              theme="light"
+              block
+              loading={oidcLoading}
+              icon={<IconShield />}
+              onClick={handleOIDCLogin}
+              className="ur-secondary-action"
+            >
+              使用 {oidcConfig.provider_name || 'OIDC'} 登录
+            </Button>
+          )}
         </section>
       </div>
     </div>

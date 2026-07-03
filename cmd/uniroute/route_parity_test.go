@@ -15,6 +15,9 @@ func TestAdminRoutesRegisteredForFrontendClient(t *testing.T) {
 
 	routes := []string{
 		"POST /api/v1/auth/login",
+		"GET /api/v1/auth/oidc/config",
+		"GET /api/v1/auth/oidc/start",
+		"GET /api/v1/auth/oidc/callback",
 		"GET /api/v1/me",
 		"PUT /api/v1/me/password",
 		"GET /api/v1/dashboard/stats",

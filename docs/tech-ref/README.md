@@ -23,6 +23,7 @@
 | 15 | [HA Readiness](15-ha-readiness.md) | PRD2 multi-instance, shared-state, smoke, and rollback contract | v0.1 |
 | 16 | [License Foundation](16-license-foundation.md) | PRD2 offline license document, signature verification, status, and audit contract | v0.1 |
 | 17 | [Cache Research](17-cache-research.md) | PRD2 exact/semantic cache research boundary; no runtime cache by default | v0.1 |
+| 18 | [OIDC First SSO](18-oidc-sso.md) | PRD2 OIDC login, claim mapping, provisioning, and audit contract | v0.1 |
 
 ## 关联文档
 - [PRD Phase 1](../PRD-Phase1.md) — 产品需求文档

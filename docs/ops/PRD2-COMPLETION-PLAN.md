@@ -19,7 +19,7 @@ PRD2 is not complete when implementation batches merely pass local or unit tests
 
 | Decision | Current Direction | Tracking |
 |----------|-------------------|----------|
-| P2-F13/F14/F15 | All are mandatory for complete PRD2 scope | Batch 23 moved the P2 product rows to `Implemented not accepted`; Canary/Sentinel are still required before acceptance |
+| P2-F13/F14/F15 | All are mandatory for complete PRD2 scope | Batch 23 completed per Canary/Sentinel/Atlas; matrix P2 product rows are now accepted for PRD2 scope |
 | Cache | Complete PRD2 scope means a cache research spike, not default runtime cache | P2-F15 |
 | SSO | OIDC first is mandatory, but later in the remaining plan | `PRD2-AUTH-001` |
 | Prompt/response storage | Default no plaintext storage; optional storage needs formal design and user approval before implementation | P2-F11 |
@@ -500,7 +500,15 @@ node --check scripts/prd2_batch23_product_smoke.mjs
 }
 ```
 
-- Acceptance state remains `Implemented not accepted` until Canary/Sentinel completes. Batch 18 real-provider upstream evidence and P2-F10 target-environment License evidence remain separate open gaps.
+- At initial Codex handoff, acceptance state remained `Implemented not accepted` until Canary/Sentinel completed. Batch 18 real-provider upstream evidence and P2-F10 target-environment License evidence were kept as separate open gaps.
+
+Post-verification update on 2026-07-04:
+
+- `docs/agent-workflows/VERIFY-RESULT.md` reports Batch 23 PASS (6/6).
+- User reported Canary, Sentinel, and Atlas completed.
+- Matrix P2 product rows were advanced to accepted state for PRD2 scope.
+- Canary noted one non-blocking future hardening item: `internal/errdocs` has no independent unit test file and is currently covered through gateway/middleware integration tests. This does not reopen Batch 23; add direct unit tests if the registry grows.
+- Batch 18 real-provider upstream evidence and P2-F10 target-environment License evidence remain separate open gaps.
 
 ### Batch 24: OIDC First Authentication Integration
 
@@ -523,6 +531,35 @@ Boundary:
 Target issue:
 
 - `PRD2-AUTH-001`.
+
+Status update on 2026-07-04:
+
+- Codex implemented Batch 24 locally and handed it to Canary via `docs/agent-workflows/FIX-SIGNAL.md`.
+- Backend/auth:
+  - added `internal/oidc` with OIDC discovery, authorization URL construction, token exchange, JWKS loading, RS256 `id_token` verification, issuer/audience/expiry/nonce checks, and claim mapping;
+  - added `GET /api/v1/auth/oidc/config`, `GET /api/v1/auth/oidc/start`, and `GET /api/v1/auth/oidc/callback`;
+  - added HMAC-signed HttpOnly SameSite=Lax state/nonce cookie handling;
+  - added callback JWT issuance using the existing UniRouter admin JWT format;
+  - added `login.oidc` audit without raw token/provider-response leakage.
+- Data/config:
+  - added migration `000015_prd2_oidc_sso` for `users.email`, `users.auth_provider`, `users.oidc_issuer`, and `users.oidc_subject`;
+  - added OIDC env/config variables and Docker Compose pass-through;
+  - auto-provision mode requires an active default org and can assign project-scoped roles to the default project.
+- Frontend/docs:
+  - LoginPage reads public OIDC config and shows an SSO button only when enabled;
+  - API client includes OIDC config/start helpers;
+  - added `docs/tech-ref/18-oidc-sso.md`, deployment runbook notes, and local evidence `docs/ops/evidence/PRD2-B24-oidc-local-smoke-20260704.md`;
+  - added `scripts/prd2-batch24-oidc-smoke.sh`.
+- Local verification passed:
+
+```bash
+go test ./internal/oidc ./internal/admin ./internal/config ./cmd/uniroute -count=1
+npm --prefix frontend test -- --run LoginPage client navigation
+scripts/prd2-batch24-oidc-smoke.sh
+```
+
+- Current acceptance state: `PRD2-AUTH-001` is `Fixed awaiting Canary`; matrix row `OIDC first SSO integration` is `Implemented not accepted`.
+- Real enterprise IdP browser login remains target-environment evidence and requires approved issuer/client credentials.
 
 ### Batch 25: Final PRD2 Closeout
 

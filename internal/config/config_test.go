@@ -78,6 +78,60 @@ func TestValidate_NegativeLicenseExpiryWarningDays(t *testing.T) {
 	}
 }
 
+func TestValidate_OIDCEnabledRequiresProviderConfig(t *testing.T) {
+	cfg := &Config{
+		JWTSecret:                "secret",
+		APIKeyHashSecret:         "api-key-secret",
+		EncryptionKey:            "0123456789abcdef0123456789abcdef",
+		LicenseExpiryWarningDays: 30,
+		OIDCEnabled:              true,
+		OIDCDefaultRole:          "viewer",
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for incomplete OIDC config")
+	}
+}
+
+func TestLoad_OIDCEnvOverrides(t *testing.T) {
+	os.Setenv("JWT_SECRET", "jwt-secret")
+	os.Setenv("API_KEY_HASH_SECRET", "api-key-secret")
+	os.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+	os.Setenv("OIDC_ENABLED", "true")
+	os.Setenv("OIDC_ISSUER_URL", "https://idp.example.com/")
+	os.Setenv("OIDC_CLIENT_ID", "uniroute")
+	os.Setenv("OIDC_CLIENT_SECRET", "client-secret")
+	os.Setenv("OIDC_REDIRECT_URL", "https://console.example.com/api/v1/auth/oidc/callback")
+	os.Setenv("OIDC_PROVIDER_NAME", "Example IDP")
+	os.Setenv("OIDC_SCOPES", "openid,email,profile,groups")
+	os.Setenv("OIDC_AUTO_PROVISION", "true")
+	os.Setenv("OIDC_DEFAULT_ORG_ID", "7")
+	os.Setenv("OIDC_DEFAULT_ROLE", "developer")
+	defer func() {
+		for _, key := range []string{
+			"JWT_SECRET", "API_KEY_HASH_SECRET", "ENCRYPTION_KEY", "OIDC_ENABLED", "OIDC_ISSUER_URL",
+			"OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "OIDC_REDIRECT_URL", "OIDC_PROVIDER_NAME", "OIDC_SCOPES",
+			"OIDC_AUTO_PROVISION", "OIDC_DEFAULT_ORG_ID", "OIDC_DEFAULT_ROLE",
+		} {
+			os.Unsetenv(key)
+		}
+	}()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.OIDCEnabled || cfg.OIDCIssuerURL != "https://idp.example.com" || cfg.OIDCProviderName != "Example IDP" {
+		t.Fatalf("unexpected oidc config: %#v", cfg)
+	}
+	if cfg.OIDCDefaultOrgID != 7 || cfg.OIDCDefaultRole != "developer" {
+		t.Fatalf("unexpected oidc defaults: org=%d role=%s", cfg.OIDCDefaultOrgID, cfg.OIDCDefaultRole)
+	}
+	if len(cfg.OIDCScopes) != 4 || cfg.OIDCScopes[3] != "groups" {
+		t.Fatalf("unexpected oidc scopes: %#v", cfg.OIDCScopes)
+	}
+}
+
 func TestLoad_Defaults(t *testing.T) {
 	// Clear all env vars to test defaults
 	envVars := []string{

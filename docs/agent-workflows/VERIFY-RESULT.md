@@ -1,36 +1,36 @@
-# VERIFY-RESULT.md — PRD2 Batch 23 验收结果
+# VERIFY-RESULT.md — PRD2 Batch 24 验收结果
 
 **验收者：** OpenClaw Canary
 **日期：** 2026-07-04
-**对应轮次：** PRD2 Batch 23 P2 Product Features
+**对应轮次：** PRD2 Batch 24 OIDC First SSO
 
 ## 逐条结果
 
-- Fix #1: PASS — error docs 注册表（`internal/errdocs/errdocs.go`）覆盖 validation/auth/model/billing/upstream/internal 错误。Relay `writeError` 返回 OpenAI-compatible `error.type/code/message/doc_url/param`。Gateway auth 错误返回 JSON `code` + `doc_url`。`/api/v1/error-docs` 暴露注册表。`doc_url` 行为通过 gateway_test.go 和 auth_test.go 集成测试覆盖。
-- Fix #2: PASS — Developer Console Playground 使用项目 API Key（不暴露共享平台 Key），模型下拉来自 approved catalog，支持非流式/流式调用，成功展示 request_id/tokens/cost/latency，错误展示 `doc_url` 链接，不持久化 prompt/response。
-- Fix #3: PASS — `GET /api/v1/usage/analytics` 支持 `group_by` 白名单（project/key/model/alias/provider/channel/status/usage_source），多维 filters，`format=csv` 导出，estimated/upstream token split + `estimated_ratio`。UI 有筛选、KPI、drill-down 表格和 CSV 导出。
-- Fix #4: PASS — `GET /api/v1/internal-status` 从 `notification_events` 聚合 open critical/warning，派生 `degraded/warning/operational`，返回最近 20 条 incident history。Admin/Billing 导航暴露 `/status`，Developer 不暴露。
-- Fix #5: PASS — `docs/tech-ref/17-cache-research.md` 记录 exact/semantic cache 可行性和风险，覆盖 privacy/billing/audit/correctness/tenant-isolation/invalidation/encryption/purge，明确 PRD2 不默认启用 cache，建议 future opt-in only。已索引到 README.md 和 DOC-INVENTORY.md。
-- Fix #6: SKIP — 无运行中的 backend/frontend/DB/Redis 环境，无法执行真实后端/浏览器 smoke。代码结构已审查（seed + smoke + wrapper + evidence + status/matrix/issues/completion plan）。文档无 overclaim，Batch 23 行均标记 `Implemented not accepted`。
+- Fix #1: PASS — OIDC core service: discovery, authorization URL construction, token exchange, JWKS loading, RS256 `id_token` verification, issuer/audience/expiry/nonce validation, claim mapping (email/username/role/org). Pre-bound mode doesn't require org claim; auto-provision mode enforces it.
+- Fix #2: PASS — Admin OIDC routes: `GET /api/v1/auth/oidc/config`, `GET /api/v1/auth/oidc/start`, `GET /api/v1/auth/oidc/callback`. State/nonce stored in HMAC-signed HttpOnly SameSite=Lax cookie. Callback exchanges code, verifies id_token, maps local user, auto-provisions when enabled, signs existing UniRouter JWT. `login.oidc` audit records issuer/subject/email/username/role only — no id_token, access_token, or client secret leakage. HTML callback writes JWT to localStorage (not URL query). Migration `000015_prd2_oidc_sso` adds `email`, `auth_provider`, `oidc_issuer`, `oidc_subject` columns with unique partial index on `(oidc_issuer, oidc_subject)`.
+- Fix #3: PASS — Config: `OIDC_ENABLED=false` default off; enabled requires `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URL`. All optional vars (`OIDC_PROVIDER_NAME`, `OIDC_SCOPES`, `OIDC_ALLOWED_EMAIL_DOMAIN`, `OIDC_AUTO_PROVISION`, `OIDC_DEFAULT_ORG_ID`, `OIDC_DEFAULT_ROLE`, `OIDC_DEFAULT_PROJECT_SLUG`, `OIDC_USERNAME_CLAIM`, `OIDC_EMAIL_CLAIM`, `OIDC_ROLE_CLAIM`, `OIDC_ORG_ID_CLAIM`) present in `.env.example` and `docker-compose.yml`.
+- Fix #4: PASS — Frontend: `api.getOIDCConfig()` and `api.getOIDCStartURL()` in `client.ts`. LoginPage mounts, reads `/auth/oidc/config`, shows SSO button only when `enabled=true`. Button navigates to `/api/v1/auth/oidc/start?redirect=/`. Existing username/password login unchanged.
+- Fix #5: PASS — Tech-ref `docs/tech-ref/18-oidc-sso.md` covers flow, env vars, claim mapping, auto-provision, audit, and security boundary. Deployment runbook updated with OIDC provider setup and mock-provider smoke. Evidence file `docs/ops/evidence/PRD2-B24-oidc-local-smoke-20260704.md` clearly marks itself as mock-provider evidence, not real enterprise IdP acceptance. Smoke wrapper `scripts/prd2-batch24-oidc-smoke.sh` passes.
+- Fix #6: PASS — `PRD2-AUTH-001` marked `Fixed awaiting Canary` in OPEN-ISSUES.md. OIDC row in PRD2-ACCEPTANCE-MATRIX.md marked `Implemented not accepted`. CURRENT-STATUS.md records Batch 24 local implementation and smoke PASS. PRD2-COMPLETION-PLAN.md records Batch 24 local completion with real enterprise IdP still needing target-environment evidence. Batch 18 provider, P2-F10 License target evidence, budget hard-block, production HA/DR remain open as expected.
 
 ## 命令结果
 
 | 命令 | 结果 | 备注 |
 |------|------|------|
-| `go test ./internal/errdocs ./internal/middleware ./internal/admin ./internal/gateway ./cmd/uniroute` | PASS | errdocs 无测试文件，doc_url 行为由 gateway/middleware 集成测试覆盖 |
-| `npm --prefix frontend test -- --run navigation client DeveloperConsolePage UsageAnalyticsPage InternalStatusPage` | PASS | 5 文件 37 测试全通过 |
-| `bash -n scripts/prd2-batch23-product-smoke.sh` | PASS | 无语法错误 |
-| `node --check scripts/prd2_batch23_product_smoke.mjs` | PASS | 无语法错误 |
-| `go test ./...` | PASS | 0 FAIL |
-| `npm --prefix frontend test -- --run` | PASS | 15 文件 83 测试全通过 |
-| `npm --prefix frontend run build` | PASS | chunk size warning 是已有/非阻塞 |
-| `git diff --check` | PASS | 无 whitespace 问题 |
-| Batch 23 real backend/browser smoke | SKIP | 无运行环境，代码结构已审查 |
+| `go test ./internal/oidc ./internal/admin ./internal/config ./cmd/uniroute -count=1` | PASS | 4 packages, all ok |
+| `npm --prefix frontend test -- --run LoginPage client navigation` | PASS | 3 files, 40 tests |
+| `bash -n scripts/prd2-batch24-oidc-smoke.sh` | PASS | 语法检查通过 |
+| `scripts/prd2-batch24-oidc-smoke.sh` | PASS | `{"status":"PASS","batch":24,"scope":"oidc_mock_provider_and_frontend_entry"}` |
+| `go test ./...` | PASS | 全量后端测试通过 |
+| `npm --prefix frontend test -- --run` | PASS | 15 files, 85 tests |
+| `npm --prefix frontend run build` | PASS | 大块警告已存在，非新增错误 |
+| `git diff --check` | PASS | 无 whitespace 错误 |
+| Real enterprise IdP browser login | SKIP | 缺少 approved issuer/client credentials 和 target environment |
 
 ## 新发现
 
-1. `internal/errdocs` 包无独立测试文件（`[no test files]`）。当前通过 gateway_test.go 和 auth_test.go 的集成测试覆盖 `doc_url` 行为。如果 errdocs 注册表将来扩展（如 connector/custom error-doc），建议补充单元测试。**非阻塞**。
+无新发现。
 
 ## 结论
 
-**PASS (6/6)**，Fix #6 真实后端/浏览器 smoke 因无运行环境标记 SKIP，代码和文档结构已审查无问题。无 overclaim。本轮可交给 Sentinel。P2 product rows 只能在 Sentinel/merge 后再按验收纪律推进；Batch 18 real-provider 和 P2-F10 target-environment License 仍保持独立 open gap。
+PASS。6/6 全部通过。Batch 24 OIDC-first SSO 本地实现完整，mock-provider 验证通过。真实企业 IdP 浏览器登录仍需目标环境证据，不属于本轮验收范围。

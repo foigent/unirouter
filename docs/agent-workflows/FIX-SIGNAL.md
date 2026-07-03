@@ -1,8 +1,8 @@
-# FIX-SIGNAL.md — PRD2 Batch 23 P2 Product Features
+# FIX-SIGNAL.md — PRD2 Batch 24 OIDC First SSO
 
 **修复者：** main agent
 **日期：** 2026-07-04
-**修复轮次：** PRD2 Batch 23
+**修复轮次：** PRD2 Batch 24
 
 ---
 
@@ -10,154 +10,179 @@
 
 | 项目 | 预期状态 | 原因 |
 |------|---------|------|
-| Batch 18 real upstream provider acceptance | 仍 Open/Deferred | User 已明确延后，Batch 23 使用本地 mock upstream，不替代 OpenRouter/Anthropic 真实上游验收 |
-| P2-F10 License production/approved-staging evidence | 仍 Open | Batch 23 不处理 License target-environment promotion |
-| OIDC first SSO | 仍为后续 Batch 24 | Batch 23 只处理 user-confirmed P2-F13/F14/F15 和 internal status/error docs |
-| Runtime cache | 不得默认启用 | P2-F15 仅为 research spike，PRD2 不启用默认 prompt/response cache |
+| Batch 18 real upstream provider acceptance | 仍 Open/Deferred | User 已明确延后，OIDC 不替代 OpenRouter/Anthropic 真实上游验收 |
+| P2-F10 License production/approved-staging evidence | 仍 Open | Batch 24 不处理 License target-environment promotion |
+| Project budget hard-block enforcement | 仍 Open | Batch 24 只处理 OIDC-first SSO |
+| Production HA/DR | 仍 Open | Batch 24 不处理生产级 HA/DR |
+| Real enterprise IdP acceptance | 仍为目标环境证据 | 本轮提供 mock OIDC provider 的本地可重复验证，真实 IdP 需要 operator issuer/client 配置 |
 
-> Canary 验收时：以上未关闭项不算本轮 FAIL；需要确认文档没有把 Batch 23 本地 smoke 过度标记为 Canary/Sentinel/Production verified。
+> Canary 验收时：以上未关闭项不算本轮 FAIL；需要确认文档没有把 mock-provider evidence 过度标记为 production/target verified。
 
 ---
 
-## Fix #1: Error Docs Registry And Gateway `doc_url`
+## Fix #1: OIDC Core Service
 
-**文件：** `internal/errdocs/errdocs.go`, `internal/gateway/relay.go`, `internal/middleware/auth.go`, `frontend/src/pages/ApiDocsPage.tsx`
+**文件：** `internal/oidc/service.go`, `internal/oidc/service_test.go`
 
-**原问题：** PRD2 P2-F13 要求 Playground 和 gateway 错误能指向错误文档，但旧响应没有统一 `doc_url`，认证中间件错误尤其不会返回可跳转文档。
+**原问题：** PRD2 completion plan 中 Batch 24 要求 OIDC-first SSO，但代码没有 OIDC discovery、login start、callback token exchange、claim validation 或 claim mapping。
 
 **当前代码：**
 
-- 新增 error-doc registry，覆盖 validation/auth/model/billing/upstream/internal 常见错误。
-- Relay `writeError` 返回 OpenAI-compatible `error.type/code/message/doc_url/param`。
-- Gateway API Key auth 错误现在也返回 JSON `code` 和 `doc_url`。
-- `/api/v1/error-docs` 暴露错误文档注册表；API Docs 页面渲染可跳转 anchor。
+- 新增 `internal/oidc` package。
+- 支持 OIDC discovery：`/.well-known/openid-configuration`。
+- 支持 authorization URL 构建：`response_type=code`, `client_id`, `redirect_uri`, `scope`, `state`, `nonce`。
+- 支持 token endpoint code exchange。
+- 支持 RS256 `id_token` JWKS 验证。
+- 校验 issuer、audience、expiry、nonce。
+- 映射 `email`、`preferred_username`、`uniroute_role`、`uniroute_org_id` 等 claims。
+- `OIDC_AUTO_PROVISION=false` 的预绑定模式不强制 org claim；auto-provision 模式强制 org。
 
 **验证方法：**
 
 ```bash
-go test ./internal/errdocs ./internal/middleware ./internal/gateway ./cmd/uniroute
-npm --prefix frontend test -- --run client
+go test ./internal/oidc -count=1
 ```
 
 ---
 
-## Fix #2: P2-F13 Playground Integrated With Approved Catalog
+## Fix #2: Admin OIDC Routes, State Cookie, Provisioning, JWT, Audit
 
-**文件：** `frontend/src/pages/DeveloperConsolePage.tsx`, `frontend/src/pages/__tests__/DeveloperConsolePage.test.tsx`
+**文件：** `internal/admin/oidc_handlers.go`, `internal/admin/handlers.go`, `cmd/uniroute/main.go`, `cmd/uniroute/route_parity_test.go`, `migrations/000015_prd2_oidc_sso.up.sql`, `migrations/000015_prd2_oidc_sso.down.sql`
 
-**原问题：** Developer Console 只有 quickstart 和项目 Key，没有实际 Playground；用户无法在项目范围内用 approved model/alias 做一次 OpenAI-compatible 调用并看到 request id、tokens、cost、latency 或错误文档。
+**原问题：** Admin Console 只有用户名密码登录，无法通过 OIDC provider 登录，也没有本地用户绑定字段或审计行为。
 
 **当前代码：**
 
-- Playground 只接受项目 API Key，不暴露共享平台 Key。
-- 模型下拉来自当前项目 approved catalog 的 model/alias。
-- 支持非流式和流式调用 `/v1/chat/completions`。
-- 成功结果展示 response content、request_id、tokens、cost、latency。
-- 错误结果展示 message 和 `doc_url` 链接。
-- Prompt/response 只保留在当前页面 state，不新增持久化历史。
-- 创建项目 Key 后会自动填入 Playground Key 输入框，仍保留一次性完整 Key 展示规则。
+- 新增 public endpoints:
+  - `GET /api/v1/auth/oidc/config`
+  - `GET /api/v1/auth/oidc/start`
+  - `GET /api/v1/auth/oidc/callback`
+- `start` 生成随机 `state`/`nonce`，写入 HMAC-signed HttpOnly SameSite=Lax cookie。
+- `callback` 校验 state cookie，交换 code，验证 `id_token`，映射本地用户。
+- 新增 users OIDC binding columns：`email`, `auth_provider`, `oidc_issuer`, `oidc_subject`。
+- Auto-provision 时按 claim/default 创建用户；project-scoped role 会写入 default project membership。
+- 登录成功后签发现有 UniRouter admin JWT，复用现有 `AdminAuth`/RBAC。
+- callback 默认返回 same-origin HTML 写入 localStorage 后跳转，不把 JWT 放进 URL query。
+- 写 `login.oidc` audit，不记录 `id_token`、`access_token`、client secret 或 raw provider response。
 
 **验证方法：**
 
 ```bash
-npm --prefix frontend test -- --run DeveloperConsolePage
-npm --prefix frontend run build
+go test ./internal/admin ./cmd/uniroute -count=1
 ```
 
 ---
 
-## Fix #3: P2-F14 Advanced Usage Analytics
+## Fix #3: OIDC Environment Configuration
 
-**文件：** `internal/admin/prd2_product_handlers.go`, `frontend/src/pages/UsageAnalyticsPage.tsx`, `frontend/src/api/client.ts`
+**文件：** `internal/config/config.go`, `internal/config/config_test.go`, `.env.example`, `docker-compose.yml`
 
-**原问题：** PRD2 要求按 org/project/key/model/alias/provider/channel/status/usage_source drill-down，并支持 CSV 导出和 estimated usage ratio 可见。
+**原问题：** 没有 OIDC provider 配置入口，也没有默认关闭/显式开启的部署边界。
+
+**当前代码/配置：**
+
+- 新增 `OIDC_ENABLED=false` 默认关闭。
+- 启用时强校验：
+  - `OIDC_ISSUER_URL`
+  - `OIDC_CLIENT_ID`
+  - `OIDC_CLIENT_SECRET`
+  - `OIDC_REDIRECT_URL`
+- 支持可选项：
+  - `OIDC_PROVIDER_NAME`
+  - `OIDC_SCOPES`
+  - `OIDC_ALLOWED_EMAIL_DOMAIN`
+  - `OIDC_AUTO_PROVISION`
+  - `OIDC_DEFAULT_ORG_ID`
+  - `OIDC_DEFAULT_ROLE`
+  - `OIDC_DEFAULT_PROJECT_SLUG`
+  - `OIDC_USERNAME_CLAIM`
+  - `OIDC_EMAIL_CLAIM`
+  - `OIDC_ROLE_CLAIM`
+  - `OIDC_ORG_ID_CLAIM`
+- `.env.example` 和 `docker-compose.yml` 均透传这些变量。
+
+**验证方法：**
+
+```bash
+go test ./internal/config -count=1
+```
+
+---
+
+## Fix #4: Frontend Login Entry
+
+**文件：** `frontend/src/api/client.ts`, `frontend/src/pages/LoginPage.tsx`, `frontend/src/pages/__tests__/LoginPage.test.tsx`, `frontend/src/api/__tests__/client.test.ts`, `frontend/src/index.css`
+
+**原问题：** 即使后端实现 OIDC，登录页也没有 SSO entry，前端 client 也没有 public config/start route contract。
 
 **当前代码：**
 
-- 新增 `GET /api/v1/usage/analytics`。
-- `group_by` 白名单限制为 `project/key/model/alias/provider/channel/status/usage_source`，避免拼接任意 SQL。
-- 支持 org/project/key/model/alias/provider/channel/status/usage_source/start_time/end_time filters。
-- 项目范围角色必须提供 `project_id`，非平台角色按 JWT org 限制。
-- Summary 返回 requests、success/failed、tokens、cost、avg latency、estimated/upstream tokens、estimated_ratio、CSV scope、prompt/response retention。
-- `format=csv` 返回 filtered-query CSV。
-- UI 提供筛选、KPI、drill-down 表格和 CSV 导出。
+- API client 新增 `getOIDCConfig()` 和 `getOIDCStartURL()`.
+- LoginPage mount 后读取 `/auth/oidc/config`。
+- 只有后端返回 `enabled=true` 时显示 SSO 按钮。
+- SSO 按钮跳转到 `/api/v1/auth/oidc/start?redirect=/`。
+- 现有用户名密码登录和角色跳转保持不变。
 
 **验证方法：**
 
 ```bash
-go test ./internal/admin
-npm --prefix frontend test -- --run UsageAnalyticsPage client navigation
+npm --prefix frontend test -- --run LoginPage client navigation
 ```
 
 ---
 
-## Fix #4: Internal Status Page And Incident History
+## Fix #5: Operator Docs And Local Smoke Evidence
 
-**文件：** `internal/admin/prd2_product_handlers.go`, `frontend/src/pages/InternalStatusPage.tsx`, `frontend/src/navigation.tsx`
+**文件：** `docs/tech-ref/18-oidc-sso.md`, `docs/tech-ref/README.md`, `docs/DOC-INVENTORY.md`, `docs/ops/deployment-runbook.md`, `scripts/prd2-batch24-oidc-smoke.sh`, `docs/ops/evidence/PRD2-B24-oidc-local-smoke-20260704.md`
 
-**原问题：** PRD2 P2 scope 要求 internal status page / incident history，但没有 API/UI。
+**原问题：** OIDC 需要明确部署配置、claim mapping、first-login provisioning、security boundary 和 repeatable verification，否则容易把 mock evidence 误写成真实企业 IdP 验收。
 
-**当前代码：**
+**当前文档/脚本：**
 
-- 新增 `GET /api/v1/internal-status`。
-- 从 `notification_events` 聚合 open critical/warning，派生 `degraded/warning/operational`。
-- 返回最近 20 条 incident history 和 maintenance window 占位。
-- 支持 org/project scoped filtering；项目角色无 `project_id` 时拒绝。
-- Admin/Billing navigation 暴露 `/status`，Developer 不暴露。
-- UI 显示当前状态、critical/warning 数、维护窗口数量和事件历史表。
+- 新增 OIDC tech-ref，记录 flow、env vars、claim mapping、auto-provision、audit 和安全边界。
+- 部署 runbook 增加 OIDC provider setup 和 mock-provider smoke。
+- 新增 Batch 24 smoke wrapper：
+
+```bash
+scripts/prd2-batch24-oidc-smoke.sh
+```
+
+- 新增本地 mock-provider evidence：
+
+```text
+docs/ops/evidence/PRD2-B24-oidc-local-smoke-20260704.md
+```
 
 **验证方法：**
 
 ```bash
-go test ./internal/admin
-npm --prefix frontend test -- --run InternalStatusPage navigation client
+bash -n scripts/prd2-batch24-oidc-smoke.sh
+scripts/prd2-batch24-oidc-smoke.sh
+rg -n "OIDC|Batch 24|18-oidc-sso" docs/tech-ref/18-oidc-sso.md docs/tech-ref/README.md docs/DOC-INVENTORY.md docs/ops/deployment-runbook.md docs/ops/evidence/PRD2-B24-oidc-local-smoke-20260704.md
 ```
 
 ---
 
-## Fix #5: P2-F15 Cache Research Boundary
+## Fix #6: Status, Matrix, Issues, Completion Plan Discipline
 
-**文件：** `docs/tech-ref/17-cache-research.md`, `docs/tech-ref/README.md`, `docs/DOC-INVENTORY.md`
+**文件：** `docs/ops/CURRENT-STATUS.md`, `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`, `docs/issues/OPEN-ISSUES.md`, `docs/ops/PRD2-COMPLETION-PLAN.md`
 
-**原问题：** User 确认 P2-F15 是 PRD2 必做项，但范围是 cache research spike，不是默认 runtime cache。
+**原问题：** Batch 24 本地实现完成后，当前状态需要反映“fixed locally awaiting Canary”，但不能提前写成 Canary/Sentinel/Atlas complete。
 
-**当前文档：**
+**当前文档预期：**
 
-- 记录 exact cache 与 semantic cache 的可行性和风险。
-- 覆盖 privacy、billing、audit、correctness、tenant isolation、invalidation/TTL、encryption、purge controls。
-- 明确 PRD2 不默认启用 prompt/response cache。
-- 建议未来只能做显式 opt-in、metadata-first、audit-on-hit、tenant-scoped 的设计。
-
-**验证方法：**
-
-```bash
-rg -n "P2-F15|Cache Research|no runtime cache|opt-in" docs/tech-ref/17-cache-research.md docs/tech-ref/README.md docs/DOC-INVENTORY.md
-```
-
----
-
-## Fix #6: Batch 23 Smoke, Evidence, Status, Matrix, Issues
-
-**文件：** `scripts/prd2-batch23-product-smoke.sh`, `scripts/prd2_batch23_product_seed.go`, `scripts/prd2_batch23_product_smoke.mjs`, `docs/ops/evidence/PRD2-B23-product-local-smoke-20260704.md`, status/matrix/issues/completion docs
-
-**原问题：** Batch 23 产品面需要可重复真实后端/browser 验证和状态同步，不能只停留在单测或口头计划。
-
-**当前代码/文档：**
-
-- 新增 Batch 23 seed，幂等创建 platform admin、developer、project、approved model alias、mock OpenAI-compatible channel、analytics logs、warning incident。
-- 新增 Batch 23 Playwright/API smoke，验证 error docs、invalid-key `doc_url`、usage analytics/CSV、internal status、Developer Console Playground、Admin product pages。
-- 本地 current-code smoke 已 PASS，证据写入 `docs/ops/evidence/PRD2-B23-product-local-smoke-20260704.md`。
-- 状态、矩阵、completion plan、open issue 需保持 `Implemented not accepted` / `Fixed awaiting Canary`，等待 Canary/Sentinel。
+- `PRD2-AUTH-001` 标为 `Fixed awaiting Canary`。
+- OIDC row 标为 `Implemented not accepted`。
+- Current status 记录 Batch 24 local implementation and smoke PASS。
+- Completion plan 记录 Batch 24 本地完成，真实企业 IdP 仍需目标环境证据。
+- Batch 18 provider、P2-F10 License target evidence、budget hard-block、production HA/DR 仍保持开放。
 
 **验证方法：**
 
 ```bash
-bash -n scripts/prd2-batch23-product-smoke.sh
-node --check scripts/prd2_batch23_product_smoke.mjs
-go run ./scripts/prd2_batch23_product_seed.go
+rg -n "Batch 24|OIDC|PRD2-AUTH-001|Implemented not accepted|Fixed awaiting Canary" docs/ops/CURRENT-STATUS.md docs/ops/PRD2-ACCEPTANCE-MATRIX.md docs/issues/OPEN-ISSUES.md docs/ops/PRD2-COMPLETION-PLAN.md
+git diff --check
 ```
-
-`go run` seed 需要可连接 DB，且必须设置 `UNIROUTE_SMOKE_UPSTREAM_URL` 与运行中 backend 一致的 32-byte `ENCRYPTION_KEY` / `UNIROUTE_SMOKE_ENCRYPTION_KEY`。
 
 ---
 
@@ -165,92 +190,49 @@ go run ./scripts/prd2_batch23_product_seed.go
 
 ```bash
 cd /Users/m4/Desktop/projects/UniRouter
-go test ./internal/errdocs ./internal/middleware ./internal/admin ./internal/gateway ./cmd/uniroute
-npm --prefix frontend test -- --run navigation client DeveloperConsolePage UsageAnalyticsPage InternalStatusPage
-bash -n scripts/prd2-batch23-product-smoke.sh
-node --check scripts/prd2_batch23_product_smoke.mjs
+go test ./internal/oidc ./internal/admin ./internal/config ./cmd/uniroute -count=1
+npm --prefix frontend test -- --run LoginPage client navigation
+bash -n scripts/prd2-batch24-oidc-smoke.sh
+scripts/prd2-batch24-oidc-smoke.sh
 go test ./...
 npm --prefix frontend test -- --run
 npm --prefix frontend run build
 git diff --check
 ```
 
-### 可选真实后端/浏览器 smoke
-
-在本地或用户批准的预发/目标环境启动 current-code backend/frontend 后运行：
-
-```bash
-set -a
-source .env.production
-set +a
-UNIROUTE_SMOKE_BACKEND_URL=http://localhost:18083 \
-UNIROUTE_SMOKE_FRONTEND_URL=http://localhost:3000 \
-scripts/prd2-batch23-product-smoke.sh
-```
-
-Codex 本地实际输出：
-
-```json
-{
-  "status": "PASS",
-  "batch": 23,
-  "backend_url": "http://localhost:18083",
-  "frontend_url": "http://localhost:3000",
-  "org_id": 43,
-  "project_id": 35,
-  "model_alias": "batch23-company-chat",
-  "provider": "batch23-mock",
-  "upstream_calls": 1,
-  "analytics_summary": {
-    "total_requests": 4,
-    "success_requests": 3,
-    "failed_requests": 1,
-    "total_tokens": 77,
-    "cost_cents": 7,
-    "estimated_tokens": 20,
-    "upstream_tokens": 57,
-    "estimated_ratio": 0.2597402597402597
-  },
-  "internal_status": "warning",
-  "screenshot": "/Users/m4/Desktop/projects/unirouter/output/playwright/prd2-batch23-product.png"
-}
-```
-
----
-
 ## 期望输出格式
 
 请 OpenClaw Canary 覆盖写入 `docs/agent-workflows/VERIFY-RESULT.md`：
 
 ```markdown
-# VERIFY-RESULT.md — PRD2 Batch 23 验收结果
+# VERIFY-RESULT.md — PRD2 Batch 24 验收结果
 
 **验收者：** OpenClaw Canary
 **日期：** [实际日期]
-**对应轮次：** PRD2 Batch 23 P2 Product Features
+**对应轮次：** PRD2 Batch 24 OIDC First SSO
 
 ## 逐条结果
 
-- Fix #1: PASS/FAIL — [error docs and doc_url result]
-- Fix #2: PASS/FAIL — [Playground result]
-- Fix #3: PASS/FAIL — [usage analytics result]
-- Fix #4: PASS/FAIL — [internal status result]
-- Fix #5: PASS/FAIL — [cache research boundary result]
-- Fix #6: PASS/FAIL/SKIP — [smoke/evidence/status/matrix/issues result]
+- Fix #1: PASS/FAIL — [OIDC core service/discovery/JWKS/id_token validation]
+- Fix #2: PASS/FAIL — [admin OIDC routes/state/callback/provision/JWT/audit]
+- Fix #3: PASS/FAIL — [config/env/compose]
+- Fix #4: PASS/FAIL — [frontend login entry and client route contract]
+- Fix #5: PASS/FAIL — [docs/smoke/evidence boundary]
+- Fix #6: PASS/FAIL — [status/matrix/issues/completion discipline]
 
 ## 命令结果
 
 | 命令 | 结果 | 备注 |
 |------|------|------|
-| `go test ./internal/errdocs ./internal/middleware ./internal/admin ./internal/gateway ./cmd/uniroute` | PASS/FAIL | |
-| `npm --prefix frontend test -- --run navigation client DeveloperConsolePage UsageAnalyticsPage InternalStatusPage` | PASS/FAIL | |
-| `bash -n scripts/prd2-batch23-product-smoke.sh` | PASS/FAIL | |
-| `node --check scripts/prd2_batch23_product_smoke.mjs` | PASS/FAIL | |
+| `go test ./internal/oidc ./internal/admin ./internal/config ./cmd/uniroute -count=1` | PASS/FAIL | |
+| `npm --prefix frontend test -- --run LoginPage client navigation` | PASS/FAIL | |
+| `bash -n scripts/prd2-batch24-oidc-smoke.sh` | PASS/FAIL | |
+| `scripts/prd2-batch24-oidc-smoke.sh` | PASS/FAIL | |
 | `go test ./...` | PASS/FAIL | |
 | `npm --prefix frontend test -- --run` | PASS/FAIL | |
 | `npm --prefix frontend run build` | PASS/FAIL | large chunk warning is existing/non-blocking unless new errors appear |
 | `git diff --check` | PASS/FAIL | |
-| Batch 23 real backend/browser smoke | PASS/FAIL/SKIP | 如果 SKIP，写明缺少 backend/frontend/DB/Redis/Playwright 哪一项 |
+| Real enterprise IdP browser login | PASS/FAIL/SKIP | 如果 SKIP，写明缺少 approved issuer/client credentials 或 target environment |
 
 ## 新发现
 
@@ -258,5 +240,5 @@ Codex 本地实际输出：
 
 ## 结论
 
-PASS/FAIL。若 PASS 但未运行真实后端/browser smoke，请明确说明：本轮可交给 Sentinel，但 P2 product rows 只能在 Sentinel/merge 后再按验收纪律推进；Batch 18 real-provider 和 P2-F10 target-environment License 仍保持独立 open gap。
+PASS/FAIL。
 ```

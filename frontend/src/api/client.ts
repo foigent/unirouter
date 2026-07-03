@@ -79,6 +79,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     }),
+  getOIDCConfig: () => request('/auth/oidc/config'),
+  getOIDCStartURL: (redirect = '/') =>
+    `${BASE_URL}/auth/oidc/start?redirect=${encodeURIComponent(redirect)}`,
 
   // Dashboard
   getDashboardStats: (startTime?: string, endTime?: string) => {
