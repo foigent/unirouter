@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import { Typography, Table, Tag } from '@douyinfe/semi-ui';
+import { api } from '../api/client';
 import { PageHeader, Surface } from '../ui';
 
 const { Text } = Typography;
@@ -29,6 +31,15 @@ const endpointGroups = [
       ['GET', '/api/v1/model-catalog?project_id={id}', '项目可用模型目录'],
       ['GET', '/api/v1/logs?project_id={id}', '项目调用日志'],
       ['GET', '/api/v1/logs?project_id={id}&request_id={rid}', '按 Request ID 查询项目请求'],
+      ['POST', '/v1/chat/completions', 'Playground 直接使用项目 API Key 调用'],
+    ],
+  },
+  {
+    area: 'PRD2 Product',
+    endpoints: [
+      ['GET', '/api/v1/usage/analytics', '用量钻取聚合与 CSV 导出'],
+      ['GET', '/api/v1/internal-status', '内部状态与事件历史'],
+      ['GET', '/api/v1/error-docs', '错误码文档和 doc_url 注册表'],
     ],
   },
   {
@@ -54,6 +65,21 @@ const columns = [
 ];
 
 export default function ApiDocsPage() {
+  const [errorDocs, setErrorDocs] = useState<any[]>([]);
+
+  useEffect(() => {
+    api.getErrorDocs()
+      .then((data: any) => setErrorDocs(data?.data || []))
+      .catch(() => setErrorDocs([]));
+  }, []);
+
+  const errorColumns = [
+    { title: 'Code', dataIndex: 'code', width: 250, render: (value: string) => <Text id={`error-${value}`} code>{value}</Text> },
+    { title: 'HTTP', dataIndex: 'http_status', width: 90 },
+    { title: '说明', dataIndex: 'summary' },
+    { title: '处理建议', dataIndex: 'resolution' },
+  ];
+
   return (
     <div className="ur-page">
       <PageHeader
@@ -75,6 +101,17 @@ export default function ApiDocsPage() {
             </div>
           </Surface>
         ))}
+        <Surface title="Error Docs" description="Gateway 错误响应中的 doc_url 指向本表锚点。">
+          <div className="ur-table-shell">
+            <Table
+              columns={errorColumns}
+              dataSource={errorDocs}
+              pagination={false}
+              rowKey="code"
+              size="small"
+            />
+          </div>
+        </Surface>
       </div>
     </div>
   );

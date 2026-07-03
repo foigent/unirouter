@@ -93,6 +93,8 @@ describe('DeveloperConsolePage', () => {
     expect(screen.getByText('Company Chat')).toBeTruthy();
     expect(screen.getByText('Migrate to gpt-4.1-mini')).toBeTruthy();
     expect(screen.getByText('req-001')).toBeTruthy();
+    expect(screen.getByText('Playground')).toBeTruthy();
+    expect(screen.getByPlaceholderText('粘贴项目 API Key')).toBeTruthy();
   });
 
   it('looks up request detail inside the selected project', async () => {

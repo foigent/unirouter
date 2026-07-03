@@ -29,6 +29,9 @@ func TestWriteError(t *testing.T) {
 	if errObj["message"] != "model is required" {
 		t.Fatalf("expected message 'model is required', got %v", errObj["message"])
 	}
+	if errObj["doc_url"] != "/docs#error-validation_error.invalid_request" {
+		t.Fatalf("expected doc_url for validation error, got %v", errObj["doc_url"])
+	}
 }
 
 func TestChatCompletionRequest_Parse(t *testing.T) {

@@ -19,7 +19,7 @@ PRD2 is not complete when implementation batches merely pass local or unit tests
 
 | Decision | Current Direction | Tracking |
 |----------|-------------------|----------|
-| P2-F13/F14/F15 | All are mandatory for complete PRD2 scope | Matrix P2 rows remain `Planned` until implemented/accepted |
+| P2-F13/F14/F15 | All are mandatory for complete PRD2 scope | Batch 23 moved the P2 product rows to `Implemented not accepted`; Canary/Sentinel are still required before acceptance |
 | Cache | Complete PRD2 scope means a cache research spike, not default runtime cache | P2-F15 |
 | SSO | OIDC first is mandatory, but later in the remaining plan | `PRD2-AUTH-001` |
 | Prompt/response storage | Default no plaintext storage; optional storage needs formal design and user approval before implementation | P2-F11 |
@@ -305,7 +305,7 @@ npm --prefix frontend run build
 git diff --check
 ```
 
-- Current protocol state: fixed locally by Codex and awaiting Canary verification through `docs/agent-workflows/FIX-SIGNAL.md`.
+- Current protocol state: Batch 20 passed Canary 7/7 and Sentinel merged PR #53 at `6b1f5cc`; current status and matrix now treat the Batch 20 audit/migration/governance rows as accepted within their documented scope.
 
 ### Batch 21: HA And Deployment Validation
 
@@ -344,7 +344,7 @@ git diff --check
 ```
 
 - Local environment limitation: this Codex shell has no `docker` or `nginx` command, so actual compose config/startup, Nginx runtime syntax, two-instance HA smoke, rollback check, and backup/restore rehearsal must be run by Canary/Atlas or another Docker-enabled environment before P2-F09 moves to E2E accepted.
-- Current protocol state: fixed locally by Codex and awaiting Canary verification through `docs/agent-workflows/FIX-SIGNAL.md`.
+- Initial protocol state on 2026-07-02: fixed locally by Codex. This was superseded by the 2026-07-03 update below: User reported Canary, Sentinel, and Atlas completed, and the backup/recovery drill evidence was recorded.
 
 Status update on 2026-07-03:
 
@@ -411,8 +411,9 @@ scripts/prd2-batch22-license-smoke.sh
   - real-browser `/license` imports active, expiring, and expired licenses;
   - `license.update` audit rows exist for successful imports and do not include raw signatures;
   - `license.warning` notification event is emitted for the expiring license.
-- Current protocol state: fixed locally by Codex and awaiting Canary verification through `docs/agent-workflows/FIX-SIGNAL.md`.
-- Remaining acceptance boundary: production or approved-staging license import/status evidence is still required before claiming `Production verified`.
+- Current protocol state: Batch 22 passed Canary 5/5 in `docs/agent-workflows/VERIFY-RESULT.md`; real backend/browser smoke was SKIP only because Canary had no running environment. User reported Canary and Sentinel completed.
+- Atlas/deployment state: User reported Atlas reviewed the 16-file Batch 22 change set as docs plus smoke scripts only, with no application code changes; therefore no application deployment is required for this batch.
+- Remaining acceptance boundary: production or approved-staging license import/status evidence is still required before claiming `Production verified`. Atlas/runtime smoke is required only if the goal is to promote P2-F10 to target-environment acceptance, and the guarded reset smoke must not be run blindly against production.
 
 ### Batch 23: P2 Product Features
 
@@ -451,6 +452,55 @@ Target rows:
 - Internal status page / incident history.
 - P2-F14.
 - P2-F15.
+
+Status update on 2026-07-04:
+
+- Codex implemented Batch 23 locally and handed it to Canary via `docs/agent-workflows/FIX-SIGNAL.md`.
+- Backend/API:
+  - added `internal/errdocs/errdocs.go`;
+  - added Batch 23 product handlers in `internal/admin/prd2_product_handlers.go`;
+  - registered `GET /api/v1/usage/analytics`, `GET /api/v1/internal-status`, and `GET /api/v1/error-docs`;
+  - added route parity and targeted handler tests;
+  - extended GatewayAuth and Relay errors with `doc_url`.
+- Frontend:
+  - added `/usage-analytics` and `/status` pages;
+  - added Developer Console Playground using project API keys and approved model/alias selection;
+  - added API Docs error registry rendering;
+  - updated role-aware navigation and frontend API client/tests.
+- Docs/research:
+  - added `docs/tech-ref/17-cache-research.md`;
+  - indexed the cache research doc in `docs/tech-ref/README.md` and `docs/DOC-INVENTORY.md`;
+  - recorded local smoke evidence in `docs/ops/evidence/PRD2-B23-product-local-smoke-20260704.md`.
+- Smoke tooling:
+  - `scripts/prd2-batch23-product-smoke.sh`;
+  - `scripts/prd2_batch23_product_seed.go`;
+  - `scripts/prd2_batch23_product_smoke.mjs`.
+- Local verification passed:
+
+```bash
+go test ./internal/errdocs ./internal/middleware ./internal/admin ./internal/gateway ./cmd/uniroute
+npm --prefix frontend test -- --run navigation client DeveloperConsolePage UsageAnalyticsPage InternalStatusPage
+bash -n scripts/prd2-batch23-product-smoke.sh
+node --check scripts/prd2_batch23_product_smoke.mjs
+```
+
+- Local current-code real backend/browser smoke passed against backend `http://localhost:18083`, frontend `http://localhost:3000`, local PostgreSQL/Redis, and mock upstream:
+
+```json
+{
+  "status": "PASS",
+  "batch": 23,
+  "project_id": 35,
+  "model_alias": "batch23-company-chat",
+  "provider": "batch23-mock",
+  "upstream_calls": 1,
+  "estimated_ratio": 0.2597402597402597,
+  "internal_status": "warning",
+  "screenshot": "/Users/m4/Desktop/projects/unirouter/output/playwright/prd2-batch23-product.png"
+}
+```
+
+- Acceptance state remains `Implemented not accepted` until Canary/Sentinel completes. Batch 18 real-provider upstream evidence and P2-F10 target-environment License evidence remain separate open gaps.
 
 ### Batch 24: OIDC First Authentication Integration
 

@@ -16,6 +16,7 @@ import (
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/db"
+	"github.com/uniroute/unirouter/internal/errdocs"
 	"github.com/uniroute/unirouter/internal/filter"
 	"github.com/uniroute/unirouter/internal/logger"
 	"github.com/uniroute/unirouter/internal/metering"
@@ -858,6 +859,7 @@ func writeError(w http.ResponseWriter, statusCode int, errType, code, message st
 			"type":    errType,
 			"code":    code,
 			"message": message,
+			"doc_url": errdocs.URLForCode(code),
 			"param":   nil,
 		},
 	})

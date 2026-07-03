@@ -925,6 +925,34 @@ body {
   grid-column: 1 / -1;
 }
 
+.ur-inline-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ur-playground-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.8fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.ur-playground-controls,
+.ur-playground-result {
+  min-width: 0;
+}
+
+.ur-playground-error {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(220, 38, 38, 0.22);
+  border-radius: 14px;
+  background: rgba(254, 242, 242, 0.82);
+  padding: 14px;
+}
+
 .ur-modelgov-tabs {
   display: flex;
   align-items: center;
@@ -1502,11 +1530,12 @@ body {
     display: flex;
     align-items: stretch;
   }
-  .ur-kpi-grid,
-  .ur-split-grid,
-  .ur-dev-main-grid,
-  .ur-dev-lookup-grid,
-  .ur-modelgov-summary,
+	  .ur-kpi-grid,
+	  .ur-split-grid,
+	  .ur-dev-main-grid,
+	  .ur-dev-lookup-grid,
+	  .ur-playground-grid,
+	  .ur-modelgov-summary,
   .ur-modelgov-filters,
   .ur-modelgov-form-grid,
   .ur-modelgov-assignment,

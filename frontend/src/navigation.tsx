@@ -72,6 +72,7 @@ const fullAdminNavItems = [
       { itemKey: '/keys', text: 'API 密钥', icon: <IconKey /> },
       { itemKey: '/model-governance', text: '模型治理', icon: <IconServer /> },
       { itemKey: '/logs', text: '调用日志', icon: <IconFile /> },
+      { itemKey: '/usage-analytics', text: '用量分析', icon: <IconSearch /> },
       { itemKey: '/notifications', text: '通知中心', icon: <IconBell /> },
       { itemKey: '/test', text: '渠道测试', icon: <IconBolt /> },
     ],
@@ -103,6 +104,7 @@ const fullAdminNavItems = [
     icon: <IconSetting />,
     items: [
       { itemKey: '/license', text: 'License', icon: <IconShield /> },
+      { itemKey: '/status', text: '内部状态', icon: <IconServer /> },
       { itemKey: '/settings', text: '系统设置', icon: <IconSetting /> },
       { itemKey: '/docs', text: 'API 文档', icon: <IconFile /> },
     ],
@@ -126,6 +128,7 @@ const billingNavItems = [
     items: [
       { itemKey: '/wallet', text: '钱包管理', icon: <IconCoinMoney /> },
       { itemKey: '/reconciliation', text: 'Token对账', icon: <IconSearch /> },
+      { itemKey: '/usage-analytics', text: '用量分析', icon: <IconSearch /> },
       { itemKey: '/notifications', text: '通知中心', icon: <IconBell /> },
       { itemKey: '/grants', text: '赠送管理', icon: <IconGift /> },
       { itemKey: '/audit-logs', text: '审计日志', icon: <IconSearch /> },
@@ -136,6 +139,7 @@ const billingNavItems = [
     text: '系统',
     icon: <IconSetting />,
     items: [
+      { itemKey: '/status', text: '内部状态', icon: <IconServer /> },
       { itemKey: '/docs', text: 'API 文档', icon: <IconFile /> },
     ],
   },
@@ -193,7 +197,7 @@ export function isRouteAllowedForRole(path: string, role?: string | null) {
   if (isOrgAdminRole(role)) return true;
 
   if (isBillingRole(role)) {
-    return ['/', '/logs', '/wallet', '/reconciliation', '/notifications', '/grants', '/audit-logs'].includes(route);
+    return ['/', '/logs', '/wallet', '/reconciliation', '/usage-analytics', '/notifications', '/grants', '/audit-logs', '/status'].includes(route);
   }
 
   if (isProjectConsoleRole(role)) {
