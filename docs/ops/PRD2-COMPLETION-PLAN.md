@@ -594,7 +594,11 @@ Status update on 2026-07-04:
 - Production HA/DR remains open as later target evidence under `PRD2-HA-001`; Batch 21 self-hosted/staging readiness stays accepted but not Production verified.
 - Real enterprise IdP browser login remains target-environment evidence after Batch 24; core OIDC is accepted with mock-provider evidence, not Production/customer-IdP evidence.
 - Local closeout validation passed: P2-F11/index grep, matrix non-final status grep returning no matches, `go test ./...`, `npm --prefix frontend test -- --run`, `npm --prefix frontend run build`, `git diff --check`, and current-code browser smoke via `scripts/prd2-batch23-product-smoke.sh` against backend `http://localhost:18084` and frontend `http://localhost:3000`. Evidence is recorded in `docs/ops/evidence/PRD2-B25-final-closeout-local-20260704.md`.
-- Current protocol state: fixed locally by Codex and awaiting Canary verification of Batch 25 closeout docs/status discipline.
+- Current protocol state: `docs/agent-workflows/VERIFY-RESULT.md` reports Batch 25 PASS 4/4, and User reported Sentinel completed. PRD2 E2E closeout is complete within the documented scope; remaining provider credentials, License Production verified promotion, production HA/DR, real enterprise IdP, budget hard-block, and PRD3 items stay explicit later/target gaps.
+
+Post-closeout follow-up on 2026-07-04:
+
+- Batch 26 UI/UX hardening is fixed locally and awaiting Canary. It addresses user-reported sidebar hierarchy/scroll/icons, audit table scroll, channel-test configured-model selection, and visible PRD2 UI label localization. This follow-up does not reopen Batch 25 closeout or change the explicit later/target-evidence gaps above.
 
 ## PRD3 / Later Unimplemented Items
 

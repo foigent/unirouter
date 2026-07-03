@@ -445,7 +445,7 @@ export default function DeveloperConsolePage() {
 
   const modelColumns = [
     {
-      title: '模型 / Alias',
+      title: '模型 / 别名',
       dataIndex: 'model_name',
       key: 'model_name',
       render: (value: string, record: CatalogModel) => (
@@ -466,7 +466,7 @@ export default function DeveloperConsolePage() {
         </div>
       ),
     },
-    { title: 'Provider', dataIndex: 'provider_family', key: 'provider_family', render: (value: string) => value || '-' },
+    { title: '供应商族', dataIndex: 'provider_family', key: 'provider_family', render: (value: string) => value || '-' },
     { title: '生命周期', dataIndex: 'lifecycle', key: 'lifecycle', render: (value: string) => <StatusTag status={value}>{value}</StatusTag> },
     { title: '上下文', dataIndex: 'context_length', key: 'context_length', render: (value: number) => value ? compactNumber(value) : '-' },
     { title: '能力', dataIndex: 'capability_tags', key: 'capability_tags', render: (value: string) => splitCSV(value).slice(0, 4).join(', ') || '-' },
@@ -697,8 +697,8 @@ export default function DeveloperConsolePage() {
                 <div><Text type="tertiary">状态</Text><StatusTag status={lookupResult.status_code}>{lookupResult.status_code}</StatusTag></div>
                 <div><Text type="tertiary">模型</Text><strong>{lookupResult.requested_model || lookupResult.model}</strong></div>
                 <div><Text type="tertiary">Resolved</Text><strong>{lookupResult.model}</strong></div>
-                <div><Text type="tertiary">Provider</Text><strong>{lookupResult.provider || '-'}</strong></div>
-                <div><Text type="tertiary">Channel</Text><strong>{lookupResult.channel || '-'}</strong></div>
+                <div><Text type="tertiary">供应商</Text><strong>{lookupResult.provider || '-'}</strong></div>
+                <div><Text type="tertiary">渠道</Text><strong>{lookupResult.channel || '-'}</strong></div>
                 <div><Text type="tertiary">Tokens</Text><strong>{compactNumber(lookupResult.total_tokens || 0)}</strong></div>
                 <div><Text type="tertiary">费用</Text><MoneyText cents={lookupResult.cost_cents || 0} precision={4} strong tone="cost" /></div>
                 <div><Text type="tertiary">延迟</Text><strong>{lookupResult.latency_ms || 0}ms</strong></div>
@@ -726,7 +726,7 @@ export default function DeveloperConsolePage() {
           <Form.Input field="name" label="Key 名称" placeholder="frontend-prod" rules={[{ required: true, message: '请输入 Key 名称' }]} />
           <Form.Select
             field="allowed_models"
-            label="允许模型 / Alias"
+            label="允许模型 / 别名"
             placeholder="留空表示继承项目模型集"
             multiple
             optionList={modelOptions.map(model => ({ label: model, value: model }))}

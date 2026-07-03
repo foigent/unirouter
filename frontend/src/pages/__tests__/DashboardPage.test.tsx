@@ -149,8 +149,8 @@ describe('DashboardPage', () => {
     });
 
     const html = container.textContent || '';
-    expect(html).toContain('Provider: OpenAI-compatible');
-    expect(html).not.toContain('Provider: deepseek');
+    expect(html).toContain('供应商：OpenAI-compatible');
+    expect(html).not.toContain('供应商：deepseek');
   });
 
   it('renders trend metrics as selectable checkboxes', async () => {

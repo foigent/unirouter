@@ -54,10 +54,14 @@ body {
   width: 252px !important;
   max-width: 252px !important;
   min-width: 252px !important;
+  height: 100vh;
   border-right: 1px solid rgba(255, 255, 255, 0.12);
   background: #11151f !important;
   color: #f8fafc;
   box-shadow: 18px 0 60px rgba(28, 24, 43, 0.12);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .ur-brand {
@@ -65,6 +69,13 @@ body {
   align-items: center;
   gap: 12px;
   padding: 22px 22px 16px;
+}
+
+.ur-sider .semi-layout-sider-children {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .ur-brand-mark {
@@ -98,6 +109,22 @@ body {
 .ur-sider .semi-navigation {
   background: transparent !important;
   color: rgba(255, 255, 255, 0.72);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.28) transparent;
+}
+
+.ur-sider .semi-navigation::-webkit-scrollbar {
+  width: 8px;
+}
+
+.ur-sider .semi-navigation::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255,255,255,0.24);
 }
 
 .ur-sider .semi-navigation-item,
@@ -105,6 +132,42 @@ body {
   border-radius: 12px !important;
   margin: 2px 12px !important;
   color: rgba(255, 255, 255, 0.68) !important;
+}
+
+.ur-sider .semi-navigation-sub-title {
+  margin-top: 8px !important;
+  background: rgba(255,255,255,0.045) !important;
+  color: rgba(255,255,255,0.86) !important;
+  font-size: 12px !important;
+  font-weight: 720 !important;
+}
+
+.ur-sider .semi-navigation-sub-title:hover {
+  background: rgba(255,255,255,0.075) !important;
+}
+
+.ur-sider .semi-navigation-sub .semi-navigation-item {
+  position: relative;
+  margin-left: 28px !important;
+  margin-right: 14px !important;
+  border-radius: 10px !important;
+  color: rgba(255,255,255,0.66) !important;
+  font-size: 13px !important;
+}
+
+.ur-sider .semi-navigation-sub .semi-navigation-item::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: 9px;
+  bottom: 9px;
+  width: 2px;
+  border-radius: 2px;
+  background: rgba(255,255,255,0.14);
+}
+
+.ur-sider .semi-navigation-sub .semi-navigation-item-selected::before {
+  background: rgba(255,255,255,0.72);
 }
 
 .ur-sider .semi-navigation-item:hover {
@@ -124,7 +187,15 @@ body {
 }
 
 .ur-sider .semi-navigation-item-icon-toggle-right {
-  display: none !important;
+  display: inline-flex !important;
+  color: rgba(255,255,255,0.52) !important;
+  opacity: 1 !important;
+}
+
+.ur-sider .semi-navigation-footer {
+  flex: 0 0 auto;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  background: rgba(17,21,31,0.98);
 }
 
 .ur-content {

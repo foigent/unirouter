@@ -1,8 +1,8 @@
-# FIX-SIGNAL.md — PRD2 Batch 25 Final Closeout
+# FIX-SIGNAL.md — PRD2 Batch 26 UI/UX Hardening
 
 **修复者：** main agent
 **日期：** 2026-07-04
-**修复轮次：** PRD2 Batch 25
+**修复轮次：** PRD2 Batch 26
 
 ---
 
@@ -10,111 +10,142 @@
 
 | 项目 | 预期状态 | 原因 |
 |------|---------|------|
-| Batch 18 real upstream provider acceptance | 仍 Open / later-plan | User 已明确延后；当前环境仍没有 OpenRouter/Anthropic 凭据 |
-| P2-F10 License target evidence | 不是 Production verified | Batch 22 提供 local real-backend/browser E2E；Production verified 仍需生产或 approved-staging import/status evidence |
-| Project budget hard-block enforcement | Deferred | User 已确认 PRD2 first release 是 alert-only；hard-block 是 later unfinished work |
-| Production HA/DR | 仍 Open / later target evidence | Batch 21 接受 self-hosted/staging readiness 和备份恢复 drill；未声明 production HA/DR 完整闭环 |
-| Real enterprise IdP browser login | 仍 target-environment evidence | Batch 24 core OIDC 已通过 mock-provider；真实 IdP 需要 approved issuer/client credentials |
-| Runtime plugins / marketplace / enterprise IaC / full engineering handbook | PRD3/later | PRD2 不实现 runtime plugin platform、marketplace、Helm/Terraform 或完整工程治理手册 |
+| PRD2 Batch 25 final closeout | 已通过 Canary/Sentinel per User report | 本轮是用户反馈后的 UI/UX follow-up，不改变 Batch 25 终态结论 |
+| Billing / reconciliation / metering backend | 不应有代码变更 | P2-F06 风险边界是不能重写账务；本轮只做 UI/UX 和渠道测试前端修复 |
+| Production verified evidence | 不新增 | 本轮只有本地前端测试、build 和浏览器 smoke |
 
-> Canary 验收时：以上项目不应作为 Batch 25 FAIL。需要确认它们被明确记录为 deferred、later-plan 或 target-evidence pending，而不是被误标为 Production verified。
+> Canary 验收时：以上项目不应作为 Batch 26 FAIL。请重点核验本轮前端代码、测试、构建、浏览器证据和“不改账务后端”的边界。
 
 ---
 
-## Fix #1: P2-F11 Prompt/Response Storage Policy
+## Fix #1: Sidebar Hierarchy, Scroll, Collapse Indicators, And Icons
 
-**文件：** `docs/tech-ref/19-prompt-response-storage-policy.md`, `docs/tech-ref/README.md`, `docs/DOC-INVENTORY.md`
+**文件：** `frontend/src/index.css:53`, `frontend/src/index.css:74`, `frontend/src/index.css:109`, `frontend/src/index.css:137`, `frontend/src/index.css:149`, `frontend/src/index.css:189`, `frontend/src/navigation.tsx:69`
 
-**原问题：** PRD2 P2-F11 仍是 `Planned`，只在 completion plan 中有原则描述，缺少正式 policy/design 文档。
+**原问题：**
 
-**当前文档：**
+- 一级/二级菜单主要靠 hover 阴影区分。
+- 二级菜单折叠图标不可见。
+- 左侧功能栏缺少可靠纵向滚动，低高度视口下 API 文档可能被遮挡。
+- 多组图标重复，例如概览/仪表盘、AI 流量/渠道管理、上游密钥/API 密钥、账单/钱包。
 
-- 新增 `docs/tech-ref/19-prompt-response-storage-policy.md`。
-- 明确 PRD2 默认不存储 prompt/response plaintext。
-- Request troubleshooting 保持 metadata-only。
-- Optional plaintext storage 必须 future explicit approval 后才能实现。
-- 覆盖 enablement、purpose、retention、encryption、redaction、RBAC、audit-on-read、customer controls、export、deletion、incident response。
-- 说明 cache/analytics 不得绕过该 policy 暗中启用 plaintext retention。
-- 已在 tech-ref index 和 DOC-INVENTORY 中索引。
+**当前代码：**
+
+- `ur-sider` 和 Semi Sider 内层 `.semi-layout-sider-children` 都设置为 full-height flex column。
+- `.ur-sider .semi-navigation` 使用 `flex: 1 1 auto; min-height: 0; overflow-y: auto`。
+- 一级组标题使用独立背景、字重和颜色；二级菜单缩进并加左侧层级线。
+- `.semi-navigation-item-icon-toggle-right` 恢复为可见。
+- 导航图标重新分配：概览用 home、仪表盘用 monitor、AI 流量用 send、渠道管理用 route、上游密钥用 lock、API 密钥用 key、钱包用 credit card。
 
 **验证方法：**
 
 ```bash
-test -f docs/tech-ref/19-prompt-response-storage-policy.md
-rg -n "disabled by default|audit-on-read|explicit future approval|metadata-only" docs/tech-ref/19-prompt-response-storage-policy.md
-rg -n "19-prompt-response-storage-policy|Prompt And Response Storage Policy" docs/tech-ref/README.md docs/DOC-INVENTORY.md
+rg -n "semi-layout-sider-children|overflow-y: auto|semi-navigation-sub-title|semi-navigation-sub \\.semi-navigation-item|semi-navigation-item-icon-toggle-right" frontend/src/index.css
+rg -n "IconSendStroked|IconRoute|IconLockStroked|IconKeyStroked|IconCreditCard|IconMonitorStroked" frontend/src/navigation.tsx
+```
+
+浏览器 smoke 期望：
+
+- 1280x560 视口下侧栏 `navScrollHeight > navClientHeight`。
+- `navOverflowY=auto`。
+- 页面文本包含 `API 文档`。
+- 二级菜单项和折叠 toggle 可见。
+
+---
+
+## Fix #2: Audit Logs Wide Table Scroll
+
+**文件：** `frontend/src/pages/AuditLogsPage.tsx:68`
+
+**原问题：** 审计日志在 50/100 条和宽字段场景下只能依赖页面底部横向滚动，操作不友好。
+
+**当前代码：**
+
+- 审计日志列设置明确宽度。
+- detail 字段保持单行 monospace 展示，避免把表格高度撑乱。
+- Semi Table 设置 `scroll={{ x: 1570, y: 620 }}`，使表格主体内部提供横向/纵向滚动。
+- `Org` / `Project` 列名改为中文 `组织` / `项目`。
+
+**验证方法：**
+
+```bash
+rg -n "scroll=\\{\\{ x: 1570, y: 620 \\}\\}|title: '组织'|title: '项目'|whiteSpace: 'nowrap'" frontend/src/pages/AuditLogsPage.tsx
+```
+
+浏览器 smoke 期望：
+
+- 审计日志页存在横向 scroll container `.semi-table-body`。
+
+---
+
+## Fix #3: Channel Test Uses Configured Channel Models
+
+**文件：** `frontend/src/pages/TestPage.tsx:27`, `frontend/src/pages/TestPage.tsx:78`, `frontend/src/pages/TestPage.tsx:102`, `frontend/src/pages/TestPage.tsx:130`, `frontend/src/pages/TestPage.tsx:190`, `frontend/src/pages/__tests__/TestPage.test.tsx:1`
+
+**原问题：** 渠道测试前端默认写死 `gpt-3.5-turbo`，与当前渠道配置不兼容；浏览器点击也暴露出 Semi Select 显示值和 formApi values 不总是一致。
+
+**当前代码：**
+
+- 新增 `parseChannelModels`、`firstChannelModel`、`resolveChannelTestModel`。
+- 单渠道测试优先使用用户选择模型，否则 fallback 到该渠道配置的第一个模型。
+- 无配置模型时不再硬编码 fallback，提示 `请选择已配置模型的渠道`。
+- 批量测试对每个 active channel 使用自身第一个配置模型，无模型时生成可见失败结果 `渠道未配置测试模型`。
+- 渠道和模型选择同步到 React state，提交按钮显式读取当前表单/state 并调用 `handleTest`。
+- 新增单元测试证明不会发明 `gpt-3.5-turbo` fallback。
+
+**验证方法：**
+
+```bash
+rg -n "parseChannelModels|resolveChannelTestModel|selectedModel|渠道未配置测试模型|gpt-3.5-turbo" frontend/src/pages/TestPage.tsx frontend/src/pages/__tests__/TestPage.test.tsx
+npm --prefix frontend test -- --run TestPage
+```
+
+浏览器 smoke 期望：
+
+- 选择 mock 渠道 `Azure-East (azure)` 后，测试请求 payload 为 `model=gpt-4o-mini`。
+- 页面展示 `测试成功` 和 `gpt-4o-mini`。
+- 页面不展示 `gpt-3.5-turbo`。
+
+---
+
+## Fix #4: PRD2 UI English Label Cleanup
+
+**文件：** `frontend/src/pages/ModelGovernancePage.tsx`, `frontend/src/pages/UsageAnalyticsPage.tsx`, `frontend/src/pages/DeveloperConsolePage.tsx`, `frontend/src/pages/LogsPage.tsx`, `frontend/src/pages/DashboardPage.tsx`, related tests
+
+**原问题：** 多处 PRD2 UI 仍展示英文术语，例如 `Model Registry`、`Aliases`、`Provider`、`Catalog`。
+
+**当前代码：**
+
+- 模型治理页主要可见标签改为中文：`模型目录`、`企业别名`、`模型集`、`项目分配`、`供应商族`、`目录可见性`、`已批准`、`内部` 等。
+- 用量分析、开发者控制台、日志、Dashboard 的 Provider/Alias 文案改为中文语境。
+- 对应页面测试断言同步更新。
+
+**验证方法：**
+
+```bash
+rg -n "模型目录|企业别名|模型集|项目分配|供应商族|目录可见性|供应商：" frontend/src/pages frontend/src/pages/__tests__
+npm --prefix frontend test -- --run ModelGovernancePage UsageAnalyticsPage DeveloperConsolePage LogsPage DashboardPage
 ```
 
 ---
 
-## Fix #2: PRD2 Acceptance Matrix Final Reconciliation
+## Fix #5: Local Evidence And Status Handoff
 
-**文件：** `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`
+**文件：** `docs/ops/evidence/PRD2-B26-ui-hardening-local-20260704.md`, `docs/ops/CURRENT-STATUS.md`, `docs/agent-workflows/FIX-SIGNAL.md`
 
-**原问题：** Batch 25 要求所有 PRD2 matrix rows 进入终态，但当前仍有 `Planned`、`Implemented not accepted`、`Unit tested` 行。
+**原问题：** 用户反馈的 Batch 26 UI/UX hardening 需要独立记录，不能混入 Batch 25 已完成状态，也不能误称 Canary/Sentinel/Atlas 已通过。
 
 **当前文档：**
 
-- P2-F05 Provider Adapter Framework 相关行改为 `E2E accepted`，但 real-upstream OpenRouter/Anthropic evidence 保持 deferred under `PRD2-B18-001`。
-- P2-F06 Token Metering V2 相关行改为 `E2E accepted`，broader real-upstream usage evidence 保持 deferred under Batch 18。
-- P2-F12 Acceptance discipline 改为 `E2E accepted`，记录不 overclaim Production verified 的边界。
-- Project budget hard-block enforcement 改为 `Deferred`。
-- P2-F10 License Foundation 改为 `E2E accepted`，但明确 not `Production verified`。
-- P2-F11 Prompt/Response storage policy 改为 `E2E accepted`，指向新增 policy doc。
-- Native adapter proof 改为 `E2E accepted`，direct Anthropic upstream evidence 保持 credential-gated deferred。
+- 新增 Batch 26 local evidence 文件，记录测试、build、Playwright smoke 断言和截图路径。
+- Current Status 增加 Batch 26 fixed locally awaiting Canary 行。
+- 本文件作为 Canary 验收入口。
 
 **验证方法：**
 
 ```bash
-rg -n '\| (Planned|Implemented not accepted|Unit tested) \|' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
-rg -n "P2-F10 License foundation|P2-F11 Prompt/Response storage policy|Project budget hard-block enforcement|PRD2-B18-001|Production verified" docs/ops/PRD2-ACCEPTANCE-MATRIX.md
-```
-
-期望：第一条 `rg` 无输出并返回 1；第二条能看到 P2-F10/P2-F11/budget/provider boundary。
-
----
-
-## Fix #3: Open Issues Boundary Discipline
-
-**文件：** `docs/issues/OPEN-ISSUES.md`
-
-**原问题：** Batch 25 需要确认 PRD2 open items 都有明确用户决策或 target-evidence 边界，不能留下未分类 blockers。
-
-**当前文档：**
-
-- `PRD2-BUDGET-001` 说明 hard-block 是 user-approved later-phase item，matrix row 为 `Deferred`。
-- `PRD2-HA-001` 说明 production HA/DR 是 later target evidence，不阻断 PRD2 E2E closeout。
-- `PRD2-B18-001` 说明 real upstream provider E2E 是 credential-gated later-plan item。
-- `PRD2-B22-001` 说明 License is E2E accepted locally, while target-environment Production verified evidence remains open。
-
-**验证方法：**
-
-```bash
-rg -n "PRD2-BUDGET-001|PRD2-HA-001|PRD2-B18-001|PRD2-B22-001" docs/issues/OPEN-ISSUES.md
-rg -n "later-phase|later target evidence|credential-gated|not `Production verified`|E2E accepted locally" docs/issues/OPEN-ISSUES.md
-```
-
----
-
-## Fix #4: Current Status And Completion Plan Closeout State
-
-**文件：** `docs/ops/CURRENT-STATUS.md`, `docs/ops/PRD2-COMPLETION-PLAN.md`, `docs/ops/evidence/PRD2-B25-final-closeout-local-20260704.md`
-
-**原问题：** Current status 和 completion plan 还停留在 Batch 24/初始 Batch 25 计划，没有记录 Batch 25 local closeout handoff。
-
-**当前文档：**
-
-- CURRENT-STATUS 记录 Batch 25 fixed locally awaiting Canary。
-- Phase Status 指向新增 P2-F11 policy doc。
-- Current Verification 增加 Batch 25 Final Closeout row。
-- Completion plan Batch 25 增加 2026-07-04 status update。
-- External inputs 更新为 License Production verified promotion 所需 target evidence。
-- Local evidence file 记录 P2-F11/index/matrix checks、全量 Go/前端测试/build、`git diff --check`，以及 current-code browser smoke PASS。
-
-**验证方法：**
-
-```bash
-rg -n "Batch 25|19-prompt-response-storage-policy|P2-F11|Production verified|credential" docs/ops/CURRENT-STATUS.md docs/ops/PRD2-COMPLETION-PLAN.md
+test -f docs/ops/evidence/PRD2-B26-ui-hardening-local-20260704.md
+rg -n "Batch 26|UI/UX hardening|awaiting Canary|prd2-batch26-ux" docs/ops/CURRENT-STATUS.md docs/ops/evidence/PRD2-B26-ui-hardening-local-20260704.md docs/agent-workflows/FIX-SIGNAL.md
 ```
 
 ---
@@ -123,67 +154,56 @@ rg -n "Batch 25|19-prompt-response-storage-policy|P2-F11|Production verified|cre
 
 ```bash
 cd /Users/m4/Desktop/projects/UniRouter
-test -f docs/tech-ref/19-prompt-response-storage-policy.md
-rg -n "disabled by default|audit-on-read|explicit future approval|metadata-only" docs/tech-ref/19-prompt-response-storage-policy.md
-rg -n "19-prompt-response-storage-policy|Prompt And Response Storage Policy" docs/tech-ref/README.md docs/DOC-INVENTORY.md
-! rg -n '\| (Planned|Implemented not accepted|Unit tested) \|' docs/ops/PRD2-ACCEPTANCE-MATRIX.md
-rg -n "P2-F10 License foundation|P2-F11 Prompt/Response storage policy|Project budget hard-block enforcement|PRD2-B18-001|Production verified" docs/ops/PRD2-ACCEPTANCE-MATRIX.md
-rg -n "PRD2-BUDGET-001|PRD2-HA-001|PRD2-B18-001|PRD2-B22-001" docs/issues/OPEN-ISSUES.md
-rg -n "Batch 25|19-prompt-response-storage-policy|P2-F11|Production verified|credential" docs/ops/CURRENT-STATUS.md docs/ops/PRD2-COMPLETION-PLAN.md
-go test ./...
+rg -n "semi-layout-sider-children|overflow-y: auto|semi-navigation-sub-title|semi-navigation-sub \\.semi-navigation-item|semi-navigation-item-icon-toggle-right" frontend/src/index.css
+rg -n "IconSendStroked|IconRoute|IconLockStroked|IconKeyStroked|IconCreditCard|IconMonitorStroked" frontend/src/navigation.tsx
+rg -n "scroll=\\{\\{ x: 1570, y: 620 \\}\\}|title: '组织'|title: '项目'|whiteSpace: 'nowrap'" frontend/src/pages/AuditLogsPage.tsx
+rg -n "parseChannelModels|resolveChannelTestModel|selectedModel|渠道未配置测试模型|gpt-3.5-turbo" frontend/src/pages/TestPage.tsx frontend/src/pages/__tests__/TestPage.test.tsx
+rg -n "模型目录|企业别名|模型集|项目分配|供应商族|目录可见性|供应商：" frontend/src/pages frontend/src/pages/__tests__
+test -f docs/ops/evidence/PRD2-B26-ui-hardening-local-20260704.md
+rg -n "Batch 26|UI/UX hardening|awaiting Canary|prd2-batch26-ux" docs/ops/CURRENT-STATUS.md docs/ops/evidence/PRD2-B26-ui-hardening-local-20260704.md docs/agent-workflows/FIX-SIGNAL.md
 npm --prefix frontend test -- --run
 npm --prefix frontend run build
 git diff --check
 ```
 
-环境具备时，Canary 也可以复跑 current-code browser smoke。该命令需要本地 PostgreSQL/Redis、一个当前源码 backend、以及可访问的 frontend：
+Optional browser smoke for a browser-capable verifier:
 
-```bash
-set -a; source .env.production; set +a; LISTEN_PORT=18084 go run ./cmd/uniroute
-# 另一个 shell:
-set -a; source .env.production; set +a; \
-UNIROUTE_SMOKE_BACKEND_URL=http://localhost:18084 \
-UNIROUTE_SMOKE_FRONTEND_URL=http://localhost:3000 \
-UNIROUTE_SMOKE_SKIP_BROWSER_INSTALL=true \
-scripts/prd2-batch23-product-smoke.sh
-```
-
-若 Canary 没有本地运行环境，可将 browser smoke 标为 SKIP，但需核验 `docs/ops/evidence/PRD2-B25-final-closeout-local-20260704.md` 已记录 Codex current-code smoke PASS，且没有把该本地证据写成 production/customer evidence。
+- Use local frontend `http://localhost:3000`.
+- Mock `/api/v1/me`, `/api/v1/audit-logs`, `/api/v1/channels`, and `/api/v1/channels/{id}/test`.
+- Confirm the assertions recorded in `docs/ops/evidence/PRD2-B26-ui-hardening-local-20260704.md`.
 
 ## 期望输出格式
 
 请 OpenClaw Canary 覆盖写入 `docs/agent-workflows/VERIFY-RESULT.md`：
 
 ```markdown
-# VERIFY-RESULT.md — PRD2 Batch 25 验收结果
+# VERIFY-RESULT.md — PRD2 Batch 26 验收结果
 
 **验收者：** OpenClaw Canary
 **日期：** [实际日期]
-**对应轮次：** PRD2 Batch 25 Final Closeout
+**对应轮次：** PRD2 Batch 26 UI/UX Hardening
 
 ## 逐条结果
 
-- Fix #1: PASS/FAIL — [P2-F11 policy exists, indexed, and keeps plaintext disabled by default]
-- Fix #2: PASS/FAIL — [matrix rows reconciled to final states without overclaiming Production verified]
-- Fix #3: PASS/FAIL — [open PRD2 issues have explicit user decision / target-evidence boundary]
-- Fix #4: PASS/FAIL — [current status and completion plan reflect Batch 25 local closeout handoff]
+- Fix #1: PASS/FAIL — [sidebar hierarchy, scroll, visible collapse indicators, differentiated icons]
+- Fix #2: PASS/FAIL — [audit logs wide table has internal horizontal scroll]
+- Fix #3: PASS/FAIL — [channel test uses configured channel models and no hardcoded gpt-3.5-turbo fallback]
+- Fix #4: PASS/FAIL — [PRD2 UI English labels localized where changed]
+- Fix #5: PASS/FAIL — [local evidence/status/FIX-SIGNAL boundary is consistent]
 
 ## 命令结果
 
 | 命令 | 结果 | 备注 |
 |------|------|------|
-| `test -f docs/tech-ref/19-prompt-response-storage-policy.md` | PASS/FAIL | |
-| `rg -n "disabled by default|audit-on-read|explicit future approval|metadata-only" docs/tech-ref/19-prompt-response-storage-policy.md` | PASS/FAIL | |
-| `rg -n "19-prompt-response-storage-policy|Prompt And Response Storage Policy" docs/tech-ref/README.md docs/DOC-INVENTORY.md` | PASS/FAIL | |
-| `! rg -n '\| (Planned|Implemented not accepted|Unit tested) \|' docs/ops/PRD2-ACCEPTANCE-MATRIX.md` | PASS/FAIL | PASS means no non-final matrix status remains |
-| `rg -n "P2-F10 License foundation|P2-F11 Prompt/Response storage policy|Project budget hard-block enforcement|PRD2-B18-001|Production verified" docs/ops/PRD2-ACCEPTANCE-MATRIX.md` | PASS/FAIL | |
-| `rg -n "PRD2-BUDGET-001|PRD2-HA-001|PRD2-B18-001|PRD2-B22-001" docs/issues/OPEN-ISSUES.md` | PASS/FAIL | |
-| `rg -n "Batch 25|19-prompt-response-storage-policy|P2-F11|Production verified|credential" docs/ops/CURRENT-STATUS.md docs/ops/PRD2-COMPLETION-PLAN.md` | PASS/FAIL | |
-| `go test ./...` | PASS/FAIL | |
+| CSS/nav grep commands | PASS/FAIL | |
+| AuditLogs grep command | PASS/FAIL | |
+| TestPage grep + tests | PASS/FAIL | |
+| UI label grep + targeted tests | PASS/FAIL | |
+| Evidence/status grep commands | PASS/FAIL | |
 | `npm --prefix frontend test -- --run` | PASS/FAIL | |
 | `npm --prefix frontend run build` | PASS/FAIL | large chunk warning is existing/non-blocking unless new errors appear |
 | `git diff --check` | PASS/FAIL | |
-| Current-code browser smoke | PASS/FAIL/SKIP | If SKIP, state that no local backend/frontend environment was available and verify the Batch 25 evidence boundary instead |
+| Browser smoke | PASS/FAIL/SKIP | If SKIP, state no browser/local frontend was available and inspect the recorded evidence boundary |
 
 ## 新发现
 

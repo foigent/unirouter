@@ -364,10 +364,10 @@ export default function LogsPage() {
           <Divider style={{ margin: '12px 0' }} />
 
           <div className="ur-filter-group">
-            <Text className="ur-filter-label">渠道 / Provider</Text>
+            <Text className="ur-filter-label">渠道 / 供应商</Text>
             <Select
               size="small"
-              placeholder="Provider 名称"
+              placeholder="供应商名称"
               value={filters.provider || undefined}
               onChange={(v) => updateFilter('provider', v as string)}
               style={{ width: '100%' }}

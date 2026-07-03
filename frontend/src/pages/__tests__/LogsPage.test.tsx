@@ -131,9 +131,9 @@ describe('LogsPage', () => {
       expect(mockGetChannels).toHaveBeenCalled();
     });
     const labels = Array.from(container.querySelectorAll('.ur-filter-label')).map(el => el.textContent || '');
-    expect(labels.indexOf('渠道 / Provider')).toBeGreaterThanOrEqual(0);
+    expect(labels.indexOf('渠道 / 供应商')).toBeGreaterThanOrEqual(0);
     expect(labels.indexOf('模型')).toBeGreaterThanOrEqual(0);
-    expect(labels.indexOf('渠道 / Provider')).toBeLessThan(labels.indexOf('模型'));
+    expect(labels.indexOf('渠道 / 供应商')).toBeLessThan(labels.indexOf('模型'));
   });
 
   it('renders usage source filter for metering drilldown', async () => {
