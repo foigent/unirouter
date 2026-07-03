@@ -52,6 +52,7 @@
 | `docs/tech-ref/13-audit-schema-upgrade.md` | PRD2 audit source, filter, and before/after contract |
 | `docs/tech-ref/14-notification-event-foundation.md` | PRD2 notification event, webhook routing, and project budget threshold contract |
 | `docs/tech-ref/15-ha-readiness.md` | PRD2 multi-instance, shared-state, smoke, and rollback contract |
+| `docs/tech-ref/16-license-foundation.md` | PRD2 offline license, audit, warning, and Batch 22 smoke contract |
 
 PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 
@@ -63,6 +64,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | `docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md` | Current local evidence and external acceptance queue |
 | `docs/ops/PRD1-STRICT-CLOSEOUT-RUNBOOK.md` | Final strict closeout gate and evidence procedure |
 | `docs/ops/deployment-runbook.md` | Deployment reference |
+| `docs/ops/evidence/` | Current runtime/deployment evidence cited by acceptance matrices and status docs |
 | `docs/ops/canary-testing.md` | Canary deployment/testing reference |
 | `docs/ops/test-plan.md` | Test case catalog |
 | `docs/ops/test-report.md` | Historical test report; contains stale date/status and must not be used as current truth |

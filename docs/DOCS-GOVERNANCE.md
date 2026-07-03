@@ -16,6 +16,7 @@
 | Agent protocol | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required workflow for Codex and OpenClaw Canary |
 | Current verification request | `docs/agent-workflows/FIX-SIGNAL.md` | Overwritten by Codex for each verification round |
 | Current verification result | `docs/agent-workflows/VERIFY-RESULT.md` | Overwritten by OpenClaw Canary for each verification round |
+| Runtime evidence | `docs/ops/evidence/` | Deployment, recovery, and runtime drill reports cited by current status or acceptance matrices |
 | Historical evidence | `docs/testing/archive/`, `docs/archive/`, old reports | Read-only history unless explicitly reconciling |
 
 ## Rules

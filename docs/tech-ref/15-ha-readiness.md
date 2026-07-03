@@ -151,6 +151,13 @@ scripts/prd2-backup-restore-rehearsal.sh
 
 The script runs `pg_dump`, restores into the rehearsal target, and verifies migration history plus core tables. It does not drop or truncate the target database.
 
+2026-07-03 Atlas evidence:
+
+- Report: `docs/ops/evidence/PRD2-B21-backup-recovery-drill-20260703.md`
+- Environment: Alibaba Cloud ECS dev/test, PostgreSQL 16.14 in Docker.
+- Result: PASS for backup creation, custom-format dump integrity, isolated drill restore, migration/table/core row/FK/index/query checks, drill cleanup, and WAL archiving.
+- Not covered: backup encryption, NAS/off-server sync, cron backup automation, failure alerts, PITR recovery, remote restore, app-level recovery verification, Patroni/local DB HA, and app DB failover reconnect behavior.
+
 For a failed schema-bearing release:
 
 1. Stop new canary traffic before rollback.

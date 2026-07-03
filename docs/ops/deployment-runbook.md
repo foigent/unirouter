@@ -54,6 +54,23 @@ openssl rand -base64 24  # 用于 GRAFANA_ADMIN_PASSWORD
 
 License 公钥由 License 签发方提供，支持 base64 或 hex 编码的 32 字节 Ed25519 public key。该值不是 secret，但 stable/canary 应保持一致，避免同一份 license 在不同实例上校验结果不同。
 
+非生产环境可用 Batch 22 smoke 生成测试 License 公钥和离线 License，并验证 `/license` 浏览器导入、状态、审计与 `license.warning` 事件：
+
+```bash
+# 生成 smoke 测试公钥；将输出值写入非生产 backend 的 LICENSE_PUBLIC_KEY 后重启 backend
+scripts/prd2-batch22-license-smoke.sh --print-public-key
+
+UNIROUTE_SMOKE_BACKEND_URL=http://localhost:8080 \
+UNIROUTE_SMOKE_FRONTEND_URL=http://localhost:3000 \
+UNIROUTE_SMOKE_DB_DSN='postgres://uniroute:password@localhost:5432/uniroute?sslmode=disable' \
+UNIROUTE_BATCH22_ALLOW_LICENSE_RESET=non-production-license-reset \
+UNIROUTE_SMOKE_SKIP_BROWSER_INSTALL=true \
+scripts/prd2-batch22-license-smoke.sh
+```
+
+`UNIROUTE_BATCH22_ALLOW_LICENSE_RESET=non-production-license-reset` 会清空或覆盖全局 `settings.license.offline`，只能在本地、预发或用户明确批准的目标环境使用。
+smoke 默认结束后会清理测试 License；如需人工检查最终导入状态，可临时设置 `UNIROUTE_BATCH22_KEEP_LICENSE=true`。
+
 现有部署升级到支持 `API_KEY_HASH_SECRET` 的版本时：
 
 1. 先将 `API_KEY_HASH_SECRET` 设置为当前正在使用的 `JWT_SECRET` 值。
@@ -222,6 +239,10 @@ PASS backup/restore rehearsal schema_versions=<n> core_tables=6 dump_file=/tmp/.
 ```
 
 备份文件默认保留在 `/tmp`，便于事后校验和归档。不要把该脚本指向生产恢复目标。
+
+2026-07-03 Atlas 在 Alibaba Cloud ECS dev/test 环境完成了一次 Docker PostgreSQL 备份恢复演练，证据见 `docs/ops/evidence/PRD2-B21-backup-recovery-drill-20260703.md`。该演练验证了 custom-format dump、`pg_restore -l`、隔离 drill DB 恢复、迁移/表/核心行数/FK/索引/查询校验、drill DB 清理和 WAL 归档。
+
+该演练未覆盖：备份加密、NAS 自动同步、cron 自动备份、飞书失败告警、PITR 恢复、从远程备份恢复、以及应用连接 drill DB 后的端到端恢复验证。
 
 ---
 
