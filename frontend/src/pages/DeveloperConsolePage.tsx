@@ -496,7 +496,7 @@ export default function DeveloperConsolePage() {
     return (
       <div className="ur-page">
         <PageHeader
-          eyebrow="Developer Console"
+          eyebrow="开发者工作台"
           title="项目工作台"
           description="当前账号没有可访问项目。"
         />
@@ -512,7 +512,7 @@ export default function DeveloperConsolePage() {
   return (
     <div className="ur-page ur-page-wide">
       <PageHeader
-        eyebrow="Developer Console"
+        eyebrow="开发者工作台"
         title="项目工作台"
         description="项目成员可在这里创建项目 Key、查看已批准模型、定位请求，并复制 OpenAI-compatible 调用示例。"
         actions={(

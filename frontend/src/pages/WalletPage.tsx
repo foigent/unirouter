@@ -63,7 +63,7 @@ export default function WalletPage() {
           body: JSON.stringify({ target_balance: targetBalance }),
         });
       }
-      Toast.success(modalType === 'recharge' ? '充值成功' : '调整成功');
+      Toast.success(modalType === 'recharge' ? '入账成功' : '调整成功');
       setModalVisible(false);
       setModalAmount('');
       load();
@@ -77,7 +77,7 @@ export default function WalletPage() {
   if (loading) {
     return (
       <div className="ur-page">
-        <EmptyState title="加载钱包信息..." minHeight={360} />
+        <EmptyState title="加载资金账户信息..." minHeight={360} />
       </div>
     );
   }
@@ -85,7 +85,7 @@ export default function WalletPage() {
   if (!wallet) {
     return (
       <div className="ur-page">
-        <EmptyState title="无法加载钱包信息" minHeight={360} />
+        <EmptyState title="无法加载资金账户信息" minHeight={360} />
       </div>
     );
   }
@@ -99,8 +99,8 @@ export default function WalletPage() {
     <div className="ur-page">
       <PageHeader
         eyebrow="Billing"
-        title="钱包管理"
-        description="查看组织余额、赠送额度、冻结金额和低余额告警阈值。管理员可进行充值和额度调整。"
+        title="资金账户"
+        description="查看组织余额、授信额度、冻结金额和低余额告警阈值。管理员可进行入账和额度调整。"
         actions={(
           <Button icon={<IconRefresh />} size="small" onClick={load}>
             刷新
@@ -116,7 +116,7 @@ export default function WalletPage() {
           icon={<IconCoinMoney />}
         />
         <MetricTile
-          label="赠送额度"
+          label="授信额度"
           value={<MoneyText cents={wallet.granted_cents} strong tone="income" />}
           tone="green"
           icon={<IconGift />}
@@ -135,7 +135,7 @@ export default function WalletPage() {
         />
       </div>
 
-      <Surface title="预算使用情况" description="冻结金额会占用当前可用预算，余额不足时应优先充值或调整阈值。">
+      <Surface title="预算使用情况" description="冻结金额会占用当前可用预算，余额不足时应优先入账或调整阈值。">
         <div className="ur-wallet-budget">
           <div>
             <Progress
@@ -153,11 +153,11 @@ export default function WalletPage() {
       {wallet.is_admin && (
         <Surface
           title="管理员操作"
-          description="充值会增加余额；调整额度支持正负数，但调整后余额不能小于 0。"
+          description="入账会增加余额；调整额度支持正负数，但调整后余额不能小于 0。"
           actions={(
             <>
               <Button type="primary" onClick={() => { setModalType('recharge'); setModalVisible(true); }}>
-                充值
+                入账
               </Button>
               <Button type="tertiary" onClick={() => { setModalType('adjust'); setModalVisible(true); }}>
                 调整额度
@@ -165,7 +165,7 @@ export default function WalletPage() {
             </>
           )}
         >
-          <Text type="tertiary">操作完成后会自动刷新钱包数据，并写入后端审计路径。</Text>
+          <Text type="tertiary">操作完成后会自动刷新资金账户数据，并写入后端审计路径。</Text>
         </Surface>
       )}
 
@@ -179,16 +179,16 @@ export default function WalletPage() {
       )}
 
       <Modal
-        title={modalType === 'recharge' ? '充值' : '调整额度'}
+        title={modalType === 'recharge' ? '资金入账' : '调整额度'}
         visible={modalVisible}
         onCancel={() => { setModalVisible(false); setModalAmount(''); }}
         onOk={handleWalletOp}
         confirmLoading={submitting}
-        okText={modalType === 'recharge' ? '确认充值' : '确认调整'}
+        okText={modalType === 'recharge' ? '确认入账' : '确认调整'}
       >
         <div style={{ padding: '8px 0' }}>
           <Text style={{ display: 'block', marginBottom: 8 }}>
-            {modalType === 'recharge' ? '充值金额（元）' : '调整金额（元，正数增加，负数减少）'}
+            {modalType === 'recharge' ? '入账金额（元）' : '调整金额（元，正数增加，负数减少）'}
           </Text>
           <Input
             value={modalAmount}

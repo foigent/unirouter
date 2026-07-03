@@ -142,7 +142,7 @@ describe('LogsPage', () => {
       expect(mockGetLogs).toHaveBeenCalled();
     });
     const labels = Array.from(container.querySelectorAll('.ur-filter-label')).map(el => el.textContent || '');
-    expect(labels).toContain('Usage Source');
+    expect(labels).toContain('计量来源');
   });
 
   it('renders request id copy buttons', async () => {

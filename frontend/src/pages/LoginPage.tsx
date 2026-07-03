@@ -57,8 +57,8 @@ export default function LoginPage() {
               <IconBolt size="large" />
             </div>
             <div>
-              <Title heading={2} className="ur-login-product">UniRoute</Title>
-              <Text className="ur-login-subtitle">OpenAI 中转服务管理平台</Text>
+              <Title heading={2} className="ur-login-product">UniRouter</Title>
+              <Text className="ur-login-subtitle">Enterprise Intelligence Foundation</Text>
             </div>
           </div>
           <div className="ur-login-preview">
@@ -66,23 +66,23 @@ export default function LoginPage() {
               <span />
               <span />
               <span />
-              <Tag color="violet">Live</Tag>
+                <Tag color="violet">运行中</Tag>
             </div>
             <div className="ur-preview-metrics">
               <div>
                 <IconHistogram />
                 <strong>2.24M</strong>
-                <span>Requests</span>
+                <span>请求量</span>
               </div>
               <div>
                 <IconShield />
                 <strong>99.92%</strong>
-                <span>Success</span>
+                <span>成功率</span>
               </div>
               <div>
                 <IconServer />
                 <strong>18</strong>
-                <span>Channels</span>
+                <span>接入通道</span>
               </div>
             </div>
             <div className="ur-preview-chart">
@@ -96,18 +96,18 @@ export default function LoginPage() {
               <span style={{ height: '84%' }} />
             </div>
             <div className="ur-preview-list">
-              <div><span /> deepseek-chat <strong>healthy</strong></div>
-              <div><span /> gpt-4o-mini <strong>active</strong></div>
-              <div><span /> qwen-plus <strong>standby</strong></div>
+              <div><span /> 策略路由 <strong>运行中</strong></div>
+              <div><span /> 用量计量 <strong>已校验</strong></div>
+              <div><span /> 故障切换 <strong>待命</strong></div>
             </div>
           </div>
         </section>
 
         <section className="ur-login-panel">
           <div className="ur-login-brand">
-            <Text className="ur-page-eyebrow">Secure console</Text>
+            <Text className="ur-page-eyebrow">安全控制台</Text>
             <Title heading={3} className="ur-login-title">登录控制台</Title>
-            <Text className="ur-page-description">管理渠道、API keys、钱包、日志和运营监控。</Text>
+            <Text className="ur-page-description">统一治理模型接入、访问凭证、用量成本、审计日志与运行状态。</Text>
           </div>
           {error && (
             <div className="ur-login-error">

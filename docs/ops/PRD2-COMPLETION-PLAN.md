@@ -2,6 +2,7 @@
 
 > Purpose: track the remaining work required before PRD2 can be honestly closed as fully implemented and usable.
 > Scope decision date: 2026-07-02.
+> Current note: PRD2 feature-scope closeout completed in Batch 25 within the documented evidence boundaries. Batch 26 was post-closeout UI/UX hardening and passed Canary 5/5; User reported Sentinel/Atlas completed. Batch 27 is post-closeout copy/navigation polish fixed locally awaiting Canary, not a new PRD2 feature-scope blocker.
 
 ## Completion Standard
 
@@ -598,7 +599,8 @@ Status update on 2026-07-04:
 
 Post-closeout follow-up on 2026-07-04:
 
-- Batch 26 UI/UX hardening is fixed locally and awaiting Canary. It addresses user-reported sidebar hierarchy/scroll/icons, audit table scroll, channel-test configured-model selection, and visible PRD2 UI label localization. This follow-up does not reopen Batch 25 closeout or change the explicit later/target-evidence gaps above.
+- Batch 26 UI/UX hardening passed Canary 5/5, and User reported Sentinel/Atlas completed. It addressed sidebar hierarchy/scroll/icons, audit table scroll, channel-test configured-model selection, and visible PRD2 UI label localization.
+- Batch 27 copy/navigation polish is fixed locally and awaiting Canary. It addresses sidebar API docs/logout separation, request-log detail contrast, enterprise menu/page naming, login positioning copy, channel test latency/token boundary documentation, and API docs row-key cleanup. These follow-ups do not reopen Batch 25 closeout or change the explicit later/target-evidence gaps above.
 
 ## PRD3 / Later Unimplemented Items
 

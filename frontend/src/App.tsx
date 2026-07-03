@@ -53,8 +53,8 @@ export default function App() {
             <IconBolt size="large" />
           </div>
           <div>
-            <h1 className="ur-brand-name">UniRoute</h1>
-            <div className="ur-brand-caption">AI Gateway Console</div>
+            <h1 className="ur-brand-name">UniRouter</h1>
+            <div className="ur-brand-caption">Enterprise Intelligence Foundation</div>
           </div>
         </div>
         <Nav
@@ -63,19 +63,17 @@ export default function App() {
           items={navItems}
           onClick={handleNavClick}
           style={{ border: 'none' }}
-          footer={
-            <div style={{ padding: '12px 24px' }}>
-              <Button
-                icon={<IconExit />}
-                theme="borderless"
-                block
-                onClick={() => { logout(); navigate('/login'); }}
-              >
-                退出登录
-              </Button>
-            </div>
-          }
         />
+        <div className="ur-sider-footer">
+          <Button
+            icon={<IconExit />}
+            theme="borderless"
+            block
+            onClick={() => { logout(); navigate('/login'); }}
+          >
+            退出登录
+          </Button>
+        </div>
       </Sider>
       <Content className="ur-content">
         <div className="ur-topbar">

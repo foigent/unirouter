@@ -23,7 +23,7 @@ const endpointGroups = [
     ],
   },
   {
-    area: 'Developer Console',
+    area: '开发者工作台',
     endpoints: [
       ['GET', '/api/v1/projects', '当前账号可访问项目'],
       ['GET', '/api/v1/keys?project_id={id}', '项目 API Key 列表'],
@@ -46,10 +46,10 @@ const endpointGroups = [
     area: 'Admin',
     endpoints: [
       ['GET', '/api/v1/dashboard/stats', 'Dashboard 聚合数据'],
-      ['GET', '/api/v1/channels', '渠道列表'],
-      ['GET', '/api/v1/keys', 'API Key 列表'],
-      ['GET', '/api/v1/logs', '调用日志查询与筛选'],
-      ['GET', '/api/v1/wallet', '钱包信息'],
+      ['GET', '/api/v1/channels', '上游通道列表'],
+      ['GET', '/api/v1/keys', '访问凭证列表'],
+      ['GET', '/api/v1/logs', '请求日志查询与筛选'],
+      ['GET', '/api/v1/wallet', '资金账户信息'],
       ['GET', '/api/v1/audit-logs', '审计日志'],
       ['GET', '/api/v1/settings', '系统设置'],
       ['GET', '/api/v1/license', 'License 状态'],
@@ -83,9 +83,9 @@ export default function ApiDocsPage() {
   return (
     <div className="ur-page">
       <PageHeader
-        eyebrow="System"
+        eyebrow="系统治理"
         title="API 文档"
-        description="PRD2 当前可用接口索引。Developer Console 使用同一登录会话和项目级 API，不暴露上游 provider key。"
+        description="PRD2 当前可用接口索引。开发者工作台使用同一登录会话和项目级 API，不暴露上游 provider key。"
       />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {endpointGroups.map(group => (
@@ -93,9 +93,14 @@ export default function ApiDocsPage() {
             <div className="ur-table-shell">
               <Table
                 columns={columns}
-                dataSource={group.endpoints.map(([method, path, description]) => ({ method, path, description }))}
+                dataSource={group.endpoints.map(([method, path, description]) => ({
+                  key: `${method}:${path}`,
+                  method,
+                  path,
+                  description,
+                }))}
                 pagination={false}
-                rowKey="path"
+                rowKey="key"
                 size="small"
               />
             </div>
