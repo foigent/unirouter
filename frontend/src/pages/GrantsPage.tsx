@@ -30,11 +30,11 @@ export default function GrantsPage() {
         amount_cents: Math.round(parseFloat(v.amount) * 100),
         reason: v.reason,
       });
-      Toast.success('赠送成功');
+      Toast.success('额度调整已记录');
       setShowDrawer(false);
       formApi?.reset();
       load(1);
-    } catch { Toast.error('赠送失败'); }
+    } catch { Toast.error('额度调整失败'); }
   };
 
   const columns = [
@@ -50,9 +50,9 @@ export default function GrantsPage() {
     <div className="ur-page">
       <PageHeader
         eyebrow="Billing"
-        title="额度赠送"
-        description="记录组织赠送额度和业务原因，辅助财务追踪。"
-        actions={<Button icon={<IconPlus />} type="primary" onClick={() => { formApi?.reset(); setShowDrawer(true); }}>赠送额度</Button>}
+        title="额度调整"
+        description="记录组织授信额度调整和业务原因，辅助财务追踪。"
+        actions={<Button icon={<IconPlus />} type="primary" onClick={() => { formApi?.reset(); setShowDrawer(true); }}>新增调整</Button>}
       />
 
       <Surface>
@@ -72,17 +72,17 @@ export default function GrantsPage() {
       </Surface>
 
       <SideSheet
-        title="赠送额度"
+        title="新增额度调整"
         visible={showDrawer}
         onCancel={() => setShowDrawer(false)}
         width={480}
       >
         <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleCreate}>
           <Form.Input field="amount" label="金额（元）" rules={[{ required: true, message: '必填' }]} placeholder="100.00" />
-          <Form.Input field="reason" label="原因" placeholder="新用户赠送 / 活动奖励" />
+          <Form.Input field="reason" label="原因" placeholder="授信调整 / 商务补偿 / 活动额度" />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
             <Button onClick={() => setShowDrawer(false)}>取消</Button>
-            <Button type="primary" onClick={() => formApi?.submitForm()}>赠送</Button>
+            <Button type="primary" onClick={() => formApi?.submitForm()}>确认调整</Button>
           </div>
         </Form>
       </SideSheet>

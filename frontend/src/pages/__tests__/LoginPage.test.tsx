@@ -52,8 +52,8 @@ describe('LoginPage', () => {
 
   it('renders login form', () => {
     renderLoginPage()
-    expect(screen.getByText('UniRoute')).toBeInTheDocument()
-    expect(screen.getByText('OpenAI 中转服务管理平台')).toBeInTheDocument()
+    expect(screen.getByText('UniRouter')).toBeInTheDocument()
+    expect(screen.getByText('Enterprise Intelligence Foundation')).toBeInTheDocument()
   })
 
   it('shows validation errors for empty fields', async () => {

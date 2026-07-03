@@ -125,7 +125,7 @@ export default function OrgModelPricesPage() {
     <div className="ur-page">
       <PageHeader
         eyebrow="Billing"
-        title="组织模型价格"
+        title="价格策略"
         description="为指定组织配置模型价格覆盖，用于企业级差异化计费。"
         actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增价格覆盖</Button>}
       />

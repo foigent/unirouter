@@ -80,7 +80,7 @@ export default function TestPage() {
     const channel = channels.find(c => c.id === channelId);
     const model = resolveChannelTestModel(channel, values.model || selectedModel);
     if (!channel || !model) {
-      Toast.error({ content: '请选择已配置模型的渠道' });
+      Toast.error({ content: '请选择已配置模型的上游通道' });
       return;
     }
     setTesting(true);
@@ -92,9 +92,9 @@ export default function TestPage() {
     );
     setResults(prev => [result, ...prev]);
     if (result.success) {
-      Toast.success({ content: `测试成功 (${result.latency_ms}ms)` });
+      Toast.success({ content: `检测成功 (${result.latency_ms}ms)` });
     } else {
-      Toast.error({ content: `测试失败: ${result.error}` });
+      Toast.error({ content: `检测失败: ${result.error}` });
     }
     setTesting(false);
   };
@@ -113,7 +113,7 @@ export default function TestPage() {
           channel_name: channel.name,
           latency_ms: 0,
           status_code: 0,
-          error: '渠道未配置测试模型',
+          error: '通道未配置检测模型',
         });
         continue;
       }
@@ -123,13 +123,13 @@ export default function TestPage() {
 
     setResults(prev => [...batchResults, ...prev]);
     const successCount = batchResults.filter(r => r.success).length;
-    Toast.info({ content: `批量测试完成: ${successCount}/${batchResults.length} 成功` });
+    Toast.info({ content: `批量检测完成: ${successCount}/${batchResults.length} 成功` });
     setTesting(false);
   };
 
   const submitSelectedChannelTest = () => {
     if (!formApiRef.current) {
-      Toast.error({ content: '测试表单尚未就绪' });
+      Toast.error({ content: '检测表单尚未就绪' });
       return;
     }
     handleTest(formApiRef.current.getValues() || {});
@@ -180,18 +180,18 @@ export default function TestPage() {
   return (
     <div className="ur-page">
       <PageHeader
-        eyebrow="Traffic"
-        title="渠道测试"
-        description="对单个渠道或全部活跃渠道发起非流式探测，记录延迟、状态码和错误信息。"
+        eyebrow="流量治理"
+        title="连通性检测"
+        description="对单个上游通道或全部活跃通道发起非流式探测，记录延迟、状态码和错误信息。"
       />
 
-      <Surface title="测试请求">
+      <Surface title="检测请求">
         <Form onSubmit={handleTest} getFormApi={(api) => { formApiRef.current = api; }}>
           <Form.Select
             field="channel_id"
-            label="选择渠道"
+            label="选择通道"
             rules={[{ required: true, message: '请选择渠道' }]}
-            placeholder="选择要测试的渠道"
+            placeholder="选择要检测的上游通道"
             optionList={channels.map(c => ({
               label: `${c.name} (${c.provider})`,
               value: c.id,
@@ -207,7 +207,7 @@ export default function TestPage() {
           />
           <Form.Select
             field="model"
-            label="测试模型"
+            label="检测模型"
             placeholder="选择模型"
             optionList={modelOptions}
             style={{ width: 200 }}
@@ -215,23 +215,23 @@ export default function TestPage() {
           />
           <Form.TextArea
             field="prompt"
-            label="测试 Prompt"
+            label="检测 Prompt"
             placeholder="Hello, this is a test message."
             rows={3}
             style={{ width: 400 }}
           />
           <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
             <Button type="primary" onClick={submitSelectedChannelTest} loading={testing}>
-              测试选中渠道
+              检测选中通道
             </Button>
             <Button onClick={handleBatchTest} loading={testing}>
-              批量测试所有活跃渠道
+              批量检测活跃通道
             </Button>
           </div>
         </Form>
       </Surface>
 
-      <Surface title="测试结果" actions={<Button onClick={() => setResults([])}>清空结果</Button>}>
+      <Surface title="检测结果" actions={<Button onClick={() => setResults([])}>清空结果</Button>}>
         <div className="ur-table-shell">
           <Table
             columns={columns}

@@ -123,9 +123,9 @@ export default function ChannelKeysPage() {
     <div className="ur-page">
       <PageHeader
         eyebrow="Traffic"
-        title="渠道密钥管理"
-        description="管理每个上游渠道绑定的 provider API key。"
-        actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增渠道密钥</Button>}
+        title="上游凭证"
+        description="管理每个上游通道绑定的 provider API key。"
+        actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增上游凭证</Button>}
       />
 
       <Surface>
@@ -146,7 +146,7 @@ export default function ChannelKeysPage() {
       </Surface>
 
       <SideSheet
-        title={editing ? '编辑渠道密钥' : '新增渠道密钥'}
+        title={editing ? '编辑上游凭证' : '新增上游凭证'}
         visible={showDrawer}
         onCancel={closeDrawer}
         width={480}

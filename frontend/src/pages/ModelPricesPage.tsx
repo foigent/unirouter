@@ -115,7 +115,7 @@ export default function ModelPricesPage() {
     <div className="ur-page">
       <PageHeader
         eyebrow="Billing"
-        title="模型价格配置"
+        title="模型定价"
         description="维护平台基础模型输入/输出价格，用于预冻结和结算。"
         actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增价格</Button>}
       />

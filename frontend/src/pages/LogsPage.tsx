@@ -302,8 +302,8 @@ export default function LogsPage() {
   return (
     <div className="ur-page ur-page-wide">
       <PageHeader
-        eyebrow="Traffic"
-        title="调用日志"
+        eyebrow="流量治理"
+        title="请求日志"
         description="用于定位失败请求、成本异常、延迟抖动和上游 provider 问题。"
         actions={(
           <>
@@ -408,7 +408,7 @@ export default function LogsPage() {
           </div>
 
           <div className="ur-filter-group">
-            <Text className="ur-filter-label">Usage Source</Text>
+            <Text className="ur-filter-label">计量来源</Text>
             <Select
               size="small"
               placeholder="来源"
@@ -512,7 +512,7 @@ export default function LogsPage() {
           <aside className="ur-explorer-panel ur-explorer-detail">
             <div className="ur-detail-header">
               <div>
-                <Text className="ur-panel-hint">Request inspector</Text>
+                <Text className="ur-panel-hint">请求检查器</Text>
                 <Title heading={5} style={{ margin: 0 }}>请求详情</Title>
               </div>
               <Button type="tertiary" size="small" icon={<IconClose />} onClick={() => setShowDetail(false)} />
@@ -546,7 +546,7 @@ export default function LogsPage() {
                     <div><Text size="small">{selectedLog.channel || '-'}</Text></div>
                   </div>
                   <div>
-                    <Text type="tertiary" size="small">Provider / 协议</Text>
+                    <Text type="tertiary" size="small">供应商 / 协议</Text>
                     <div><Tag size="small" color="blue">{selectedLog.provider || '-'}</Tag></div>
                   </div>
                   <div>

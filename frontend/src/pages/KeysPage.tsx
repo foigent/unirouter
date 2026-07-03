@@ -188,9 +188,9 @@ export default function KeysPage() {
     <div className="ur-page">
       <PageHeader
         eyebrow="Traffic"
-        title="API 密钥"
-        description="管理调用方密钥、允许 IP 和允许模型范围。"
-        actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增密钥</Button>}
+        title="访问凭证"
+        description="管理调用方 API key、允许 IP 和允许模型范围。"
+        actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增访问凭证</Button>}
       />
 
       <Surface>
@@ -211,7 +211,7 @@ export default function KeysPage() {
       </Surface>
 
       <SideSheet
-        title={editing ? '编辑密钥' : '新增密钥'}
+        title={editing ? '编辑访问凭证' : '新增访问凭证'}
         visible={showDrawer}
         onCancel={closeDrawer}
         width={480}

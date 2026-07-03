@@ -173,7 +173,7 @@ export default function ChannelsPage() {
     <div className="ur-page">
       <PageHeader
         eyebrow="Traffic"
-        title="渠道管理"
+        title="上游通道"
         description="配置上游 provider、模型能力、优先级和熔断状态。"
         actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增渠道</Button>}
       />

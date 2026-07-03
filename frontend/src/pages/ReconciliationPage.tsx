@@ -134,8 +134,8 @@ export default function ReconciliationPage() {
     <div className="ur-page">
       <PageHeader
         eyebrow="Billing"
-        title="Token 对账"
-        description="对比估算 Token 和实际 Token，辅助发现计费偏差。"
+        title="用量对账"
+        description="对比估算用量和上游回传用量，辅助发现计量偏差。"
       />
       <Surface title="筛选条件">
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>

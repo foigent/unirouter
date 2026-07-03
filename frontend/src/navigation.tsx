@@ -77,34 +77,34 @@ const fullAdminNavItems = [
   },
   {
     itemKey: 'g-traffic',
-    text: 'AI 流量',
+    text: '流量治理',
     icon: <IconSendStroked />,
     items: [
-      { itemKey: '/channels', text: '渠道管理', icon: <IconRoute /> },
-      { itemKey: '/channel-keys', text: '上游密钥', icon: <IconLockStroked /> },
-      { itemKey: '/keys', text: 'API 密钥', icon: <IconKeyStroked /> },
+      { itemKey: '/channels', text: '上游通道', icon: <IconRoute /> },
+      { itemKey: '/channel-keys', text: '上游凭证', icon: <IconLockStroked /> },
+      { itemKey: '/keys', text: '访问凭证', icon: <IconKeyStroked /> },
       { itemKey: '/model-governance', text: '模型治理', icon: <IconLayers /> },
-      { itemKey: '/logs', text: '调用日志', icon: <IconFile /> },
+      { itemKey: '/logs', text: '请求日志', icon: <IconFile /> },
       { itemKey: '/usage-analytics', text: '用量分析', icon: <IconBarChartVStroked /> },
       { itemKey: '/notifications', text: '通知中心', icon: <IconBell /> },
-      { itemKey: '/test', text: '渠道测试', icon: <IconTestScore /> },
+      { itemKey: '/test', text: '连通性检测', icon: <IconTestScore /> },
     ],
   },
   {
     itemKey: 'g-billing',
-    text: '账单',
+    text: '财务治理',
     icon: <IconCoinMoney />,
     items: [
-      { itemKey: '/wallet', text: '钱包管理', icon: <IconCreditCard /> },
-      { itemKey: '/model-prices', text: '模型价格', icon: <IconPriceTag /> },
-      { itemKey: '/org-model-prices', text: '组织倍率', icon: <IconActivity /> },
-      { itemKey: '/reconciliation', text: 'Token对账', icon: <IconFlowChartStroked /> },
-      { itemKey: '/grants', text: '赠送管理', icon: <IconGift /> },
+      { itemKey: '/wallet', text: '资金账户', icon: <IconCreditCard /> },
+      { itemKey: '/model-prices', text: '模型定价', icon: <IconPriceTag /> },
+      { itemKey: '/org-model-prices', text: '价格策略', icon: <IconActivity /> },
+      { itemKey: '/reconciliation', text: '用量对账', icon: <IconFlowChartStroked /> },
+      { itemKey: '/grants', text: '额度调整', icon: <IconGift /> },
     ],
   },
   {
     itemKey: 'g-access',
-    text: '权限',
+    text: '访问控制',
     icon: <IconShieldStroked />,
     items: [
       { itemKey: '/users', text: '用户管理', icon: <IconUserGroup /> },
@@ -113,7 +113,7 @@ const fullAdminNavItems = [
   },
   {
     itemKey: 'g-system',
-    text: '系统',
+    text: '系统治理',
     icon: <IconSettingStroked />,
     items: [
       { itemKey: '/license', text: 'License', icon: <IconShield /> },
@@ -131,25 +131,25 @@ const billingNavItems = [
     icon: <IconHomeStroked />,
     items: [
       { itemKey: '/', text: '仪表盘', icon: <IconMonitorStroked /> },
-      { itemKey: '/logs', text: '调用日志', icon: <IconFile /> },
+      { itemKey: '/logs', text: '请求日志', icon: <IconFile /> },
     ],
   },
   {
     itemKey: 'g-billing',
-    text: '账单',
+    text: '财务治理',
     icon: <IconCoinMoney />,
     items: [
-      { itemKey: '/wallet', text: '钱包管理', icon: <IconCreditCard /> },
-      { itemKey: '/reconciliation', text: 'Token对账', icon: <IconFlowChartStroked /> },
+      { itemKey: '/wallet', text: '资金账户', icon: <IconCreditCard /> },
+      { itemKey: '/reconciliation', text: '用量对账', icon: <IconFlowChartStroked /> },
       { itemKey: '/usage-analytics', text: '用量分析', icon: <IconBarChartVStroked /> },
       { itemKey: '/notifications', text: '通知中心', icon: <IconBell /> },
-      { itemKey: '/grants', text: '赠送管理', icon: <IconGift /> },
+      { itemKey: '/grants', text: '额度调整', icon: <IconGift /> },
       { itemKey: '/audit-logs', text: '审计日志', icon: <IconChecklistStroked /> },
     ],
   },
   {
     itemKey: 'g-system',
-    text: '系统',
+    text: '系统治理',
     icon: <IconSetting />,
     items: [
       { itemKey: '/status', text: '内部状态', icon: <IconPulse /> },
@@ -161,10 +161,10 @@ const billingNavItems = [
 const developerNavItems = [
   {
     itemKey: 'g-developer',
-    text: 'Developer Console',
+    text: '开发者工作台',
     icon: <IconTerminal />,
     items: [
-      { itemKey: '/developer', text: '项目总览', icon: <IconMonitorStroked /> },
+      { itemKey: '/developer', text: '项目概览', icon: <IconMonitorStroked /> },
       { itemKey: '/docs', text: 'API 文档', icon: <IconBookOpenStroked /> },
     ],
   },
