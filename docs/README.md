@@ -35,6 +35,7 @@
 - [ops/canary-testing.md](ops/canary-testing.md) — 灰度测试操作指南
 - [ops/test-plan.md](ops/test-plan.md) — 测试计划
 - [ops/test-report.md](ops/test-report.md) — 测试报告
+- [ops/evidence/COMPREHENSIVE-TEST-REPORT-20260705.md](ops/evidence/COMPREHENSIVE-TEST-REPORT-20260705.md) — 2026-07-05 Canary 综合测试/安全审计证据；当前问题状态以 `issues/OPEN-ISSUES.md` 为准
 
 ## Agent 协作
 - [agent-workflows/AGENT-PROTOCOL.md](agent-workflows/AGENT-PROTOCOL.md) — Agent 协作协议（Codex/Canary 角色定义）

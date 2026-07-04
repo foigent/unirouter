@@ -52,6 +52,17 @@ describe('App shell', () => {
     });
   });
 
+  it('routes empty topbar search to the logs overview', async () => {
+    renderApp();
+
+    const input = screen.getByPlaceholderText('搜索请求日志：Request ID、模型、供应商、错误');
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', charCode: 13 });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent('/logs');
+    });
+  });
+
   it('does not hard-code production when deployment environment is unset', () => {
     renderApp();
 

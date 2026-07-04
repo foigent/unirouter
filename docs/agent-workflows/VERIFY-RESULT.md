@@ -1,4 +1,4 @@
-# VERIFY-RESULT.md — PRD3 Batch 3 Control Panel Semantics
+# VERIFY-RESULT.md — PRD3 Batch 3 Follow-up: Empty Search Coverage And Evidence Routing
 
 **日期：** 2026-07-05
 **验收人：** Canary
@@ -8,59 +8,57 @@
 
 ## 验收项
 
-### 1. Topbar search — PASS
+### 1. Empty search test — PASS
 
 | 检查 | 结果 | 证据 |
 |------|------|------|
-| 不再使用 inert placeholder | ✅ | `App.tsx:90` — `placeholder="搜索请求日志：Request ID、模型、供应商、错误"` |
-| 非空搜索路由到 `/logs?search=<encoded>` | ✅ | `App.tsx:51` — `` navigate(`/logs?search=${encodeURIComponent(query)}`) `` |
-| 空搜索路由到 `/logs` | ✅ | `App.tsx:48-50` — `if (!query) { navigate('/logs'); return; }` |
-| Placeholder 说明搜索请求日志 | ✅ | "搜索请求日志：Request ID、模型、供应商、错误" |
+| App.test.tsx 包含空搜索测试 | ✅ | `App.test.tsx:52-60` — `routes empty topbar search to the logs overview` |
+| 渲染 App shell | ✅ | 使用 `renderApp()` |
+| 无值时按 Enter | ✅ | `fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', charCode: 13 })` |
+| 断言路由到 `/logs` | ✅ | `expect(screen.getByTestId('location')).toHaveTextContent('/logs')` |
 
-### 2. Environment label — PASS
+测试数量：2 → 3（新增 1 个空搜索测试）
 
-| 检查 | 结果 | 证据 |
-|------|------|------|
-| 不再硬编码 `生产环境` | ✅ | `App.tsx:112` — `getEnvironmentBadge()` 函数 |
-| 读取 `VITE_APP_ENV` / `VITE_DEPLOY_ENV` | ✅ | `App.tsx:131` — `import.meta.env.VITE_APP_ENV \|\| import.meta.env.VITE_DEPLOY_ENV` |
-| 未设置时显示 `环境未配置` | ✅ | `App.tsx:141` — `case '': return { label: '环境未配置', color: 'grey' }` |
-| 映射 prod/staging/canary/dev/local | ✅ | `App.tsx:133-148` — switch 覆盖所有值 |
-
-### 3. App.test.tsx — PASS
+### 2. Evidence file routing — PASS
 
 | 检查 | 结果 | 证据 |
 |------|------|------|
-| 覆盖 topbar search 路由 | ✅ | `App.test.tsx:38-48` — `routes topbar search to existing logs search` |
-| 覆盖环境未设置回退 | ✅ | `App.test.tsx:50-55` — `does not hard-code production when deployment environment is unset` |
+| `docs/ops/evidence/COMPREHENSIVE-TEST-REPORT-20260705.md` 存在 | ✅ | 文件存在，内容完整 |
+| 旧路径 `docs/testing/archive/` 不再用于报告 | ✅ | 旧路径保留为 planning material，报告已提升到 evidence |
 
-**非阻塞建议**：空搜索 → `/logs` 的路由行为未被测试覆盖。代码逻辑正确，建议后续补一个空搜索 Enter 按键用例。
+### 3. Security issues registered — PASS
 
-### 4. Evidence/status docs — PASS
-
-| 文件 | 结果 | 证据 |
+| 检查 | 结果 | 证据 |
 |------|------|------|
-| `docs/ops/evidence/PRD3-B03-control-panel-semantics-local-20260705.md` | ✅ | 存在，记录了变更文件、验证结果、边界说明 |
-| `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` | ✅ | P3-F03 状态为 `Fixed awaiting Canary`，记录 Batch 3 内容 |
-| `docs/issues/OPEN-ISSUES.md` | ✅ | PRD3-UISEM-001 状态 `Fixed awaiting Canary`，记录 Batch 3 |
-| `docs/ops/CURRENT-STATUS.md` | ✅ | Current Verification 区域记录 Batch 3 状态和证据 |
+| SEC-004 注册依赖漏洞 | ✅ | `OPEN-ISSUES.md` — Critical, Open, 记录 pgx/jwt/redis/vite 漏洞 |
+| SEC-005 注册运行时暴露 | ✅ | `OPEN-ISSUES.md` — Medium, Open, 记录 CORS/登录速率限制/metrics |
+| 未复用现有 issue ID | ✅ | SEC-004/SEC-005 为新 ID |
+
+### 4. Status docs lifecycle — PASS
+
+| 检查 | 结果 | 证据 |
+|------|------|------|
+| PRD3 Batch 3 已完成 | ✅ | `CURRENT-STATUS.md` — "Canary/Sentinel/Atlas complete per User report" |
+| Follow-up 状态为 Fixed awaiting Canary | ✅ | `CURRENT-STATUS.md` — "fixed awaiting Canary" |
+| 安全风险为 Open 状态 | ✅ | `OPEN-ISSUES.md` — SEC-004/SEC-005 均为 Open |
 
 ### 5. Commands — PASS
 
 | 命令 | 结果 |
 |------|------|
-| `npm --prefix frontend test -- --run App` | ✅ 1 file / 2 tests PASS |
-| `npm --prefix frontend test -- --run` | ✅ 17 files / 94 tests PASS |
-| `npm --prefix frontend run build` | ✅ PASS（existing Vite large chunk warning only） |
+| `npm --prefix frontend test -- --run App` | ✅ 1 file / 3 tests PASS |
+| `npm --prefix frontend test -- --run` | ✅ 17 files / 95 tests PASS |
+| `npm --prefix frontend run build` | ✅ PASS（existing large chunk warning） |
+| `go test ./... -count=1` | ✅ 全部 PASS |
 | `git diff --check` | ✅ PASS (no output) |
 
 ---
 
 ## 边界确认
 
-- ✅ 未实现新的全局搜索后端、搜索索引或跨资源搜索产品
-- ✅ 未添加运行时部署/环境 API；topbar 环境标签仅使用显式前端构建时变量
-- ✅ 未刷新后端 `/docs`、前端 `/docs` 或 OpenAPI；P3-F04 API Contract Refresh 保持独立
-- ✅ 除 Batch 1 已有的通知访问控制外，未更改角色/导航
+- ✅ 未更改应用运行时行为
+- ✅ 未修复依赖漏洞、CORS、登录速率限制或 metrics 暴露（这些是 SEC-004/SEC-005 的范围）
+- ✅ 安全发现已注册为 open issues，未被静默接受
 
 ---
 
@@ -68,11 +66,8 @@
 
 无新发现的阻塞问题。
 
-非阻塞建议：
-- **空搜索测试覆盖**：建议在 `App.test.tsx` 中补充一个空搜索 Enter 按键的测试用例，验证路由到 `/logs`。
-
 ---
 
 ## 总结
 
-PRD3 Batch 3 控制面板语义验收通过。Topbar 全局搜索已连接到现有请求日志搜索路由，环境标签从硬编码改为读取构建时变量并有合理的回退行为。App shell 测试覆盖了核心路由和环境回退场景。全部前端测试（94 个）通过，构建正常，无 whitespace 问题。
+PRD3 Batch 3 后续验证通过。空搜索测试已添加（App shell 测试从 2 个增加到 3 个），全面测试报告已从历史归档提升到 evidence 目录，安全发现（依赖漏洞 + 运行时暴露）已注册为 SEC-004/SEC-005 open issues。全部前端测试（95 个）通过，Go 测试通过，构建正常。

@@ -76,6 +76,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | `docs/ops/test-plan.md` | Test case catalog |
 | `docs/ops/test-report.md` | Historical test report; contains stale date/status and must not be used as current truth |
 | `docs/ops/MVP-TEST-EXECUTION.md` | Historical E2E evidence plus pending cases; reconcile into acceptance matrix before treating as current |
+| `docs/ops/evidence/COMPREHENSIVE-TEST-REPORT-20260705.md` | Canary comprehensive code/deployment/security regression evidence; active risks are tracked in `docs/issues/OPEN-ISSUES.md` |
 
 ## Agent Workflow Files
 
