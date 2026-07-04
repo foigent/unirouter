@@ -28,6 +28,7 @@
 
 ## 技术参考
 - [tech-ref/](tech-ref/) — 开发团队技术参考索引
+- [tech-ref/20-prd3-product-glossary.md](tech-ref/20-prd3-product-glossary.md) — PRD3 产品术语口径：供应商/上游通道、用量分析、通知状态、角色和 PRD4 边界
 
 ## 运维文档
 - [ops/deployment-runbook.md](ops/deployment-runbook.md) — 部署手册（含 Canary + HTTPS 章节）

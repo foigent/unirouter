@@ -1,28 +1,24 @@
-# VERIFY-RESULT.md — PRD3 Batch 1 验收结果
+# VERIFY-RESULT.md — PRD3 Batch 2 验收结果
 
 **验收者：** OpenClaw Canary
 **日期：** 2026-07-05
-**对应轮次：** PRD3 Batch 1 Role/Navigation/Default Landing And User Management
+**对应轮次：** PRD3 Batch 2 Product Glossary, Usage Analytics Semantics, Internal Status Semantics
 
 ## 逐条结果
 
-- Check #1: PASS — `frontend/src/navigation.tsx` 角色导航对齐。`orgAdminNavItems` 通过 `withoutRoutes` 移除 `/channels`、`/channel-keys`、`/test`、`/wallet`、`/reconciliation`、`/grants`、`/license` (line 156-164)。`org_admin` 仍可访问 `/keys`、`/logs`、`/usage-analytics`、`/notifications`、`/users`、`/audit-logs`、`/status`、`/settings`、`/model-governance`、`/model-prices`、`/org-model-prices`。`org_viewer` 和未知角色 `getDefaultPathForRole` 返回 `/access` (line 258)。
-- Check #2: PASS — `frontend/src/pages/AccessStatePage.tsx` 存在，`main.tsx` line 107 路由 `<Route path="access" element={<RoleRoute><AccessStatePage /></RoleRoute>} />`。
-- Check #3: PASS — `App.tsx` line 30 计算 `canOpenNotifications = isRouteAllowedForRole('/notifications', role)`，line 90 用 `{canOpenNotifications && (...)}` 条件渲染通知按钮。
-- Check #4: PASS — `UsersPage.tsx` line 6 导入 `USER_MANAGEMENT_ROLE_OPTIONS`，line 140 使用 `optionList={USER_MANAGEMENT_ROLE_OPTIONS}`，line 111 描述 "项目角色还需要项目成员关系才会获得项目工作台访问"。
-- Check #5: PASS — evidence 文件存在，`PRD3-ACCEPTANCE-MATRIX.md` P3-F02/P3-F07 标记 Fixed awaiting Canary，`OPEN-ISSUES.md` PRD3-ROLE-001 标记 Fixed awaiting Canary，`CURRENT-STATUS.md` 索引 Batch 1。
-- Check #6: PASS — 前端 16 文件 / 92 测试通过（新增 4 个导航/登录测试），构建成功，`git diff --check` 无问题。
+- Check #1: PASS — 产品 Glossary (`docs/tech-ref/20-prd3-product-glossary.md`) 存在，定义 15+ 术语（provider/vendor/supplier、upstream channel、access credential、upstream credential、model、alias、usage source、audit source、incident、event status、severity、delivery state、internal status、maintenance window、roles）。已索引到 `tech-ref/README.md`(line 28)、`DOC-INVENTORY.md`(line 62)、`README.md`(line 31)。PRD4 边界明确：runtime plugins、maintenance scheduling、SLA/SLO、budget hard-blocking、cache、enterprise IaC、new authority surfaces 均在 PRD4/later (line 65-66)。
+- Check #2: PASS — 后端 `prd2_product_handlers.go` 接受 `group_by=overall`，返回单行聚合标签 `'全部请求'`(line 28-29)。前端默认 `总览（不分组）`(line 61/174)，filter panel 明确定义 "供应商是 provider family 或 adapter 维度；上游通道是一个具体配置实例"(line 137)。现有筛选和 `usage_source` 值保持兼容。
+- Check #3: PASS — `InternalStatusPage.tsx` 说明 "基于通知事件聚合当前服务状态"(line 66)，open critical/warning 计数器明确标注(line 72-73)，事件生命周期标签 `未关闭/已确认/已解决`(displayLabels.ts line 120-122)，webhook 投递状态与事件状态分离(line 77)，维护窗口标记 "未启用" + "调度能力进入 PRD4"(line 74)。
+- Check #4: PASS — evidence 文件存在，`PRD3-ACCEPTANCE-MATRIX.md` P3-F01/P3-F05/P3-F06 标记 Fixed awaiting Canary，`OPEN-ISSUES.md` PRD3-UISEM-001 更新 Batch 2 状态，`CURRENT-STATUS.md` 索引 Batch 2。
+- Check #5: PASS — 所有测试通过（见下方）。
 
 ## 命令结果
 
 | 命令 | 结果 | 备注 |
 |------|------|------|
-| navigation.tsx role/route grep | PASS | org_admin 7 条路由移除，org_viewer 默认 /access |
-| AccessStatePage + main.tsx routing | PASS | 文件存在 + /access 路由 |
-| App.tsx notification conditional | PASS | canOpenNotifications 条件渲染 |
-| UsersPage role options + copy | PASS | USER_MANAGEMENT_ROLE_OPTIONS + 项目成员说明 |
-| Evidence/status grep | PASS | 4 个文件引用匹配 |
+| `go test ./internal/admin -run 'TestUsageAnalyticsGroup\|TestInternalStatusLevel\|TestUsageAnalyticsUpstreamSourceSQLIncludesNull'` | PASS | 3/3 targeted tests |
 | `npm --prefix frontend test -- --run` | PASS | 16 文件 / 92 测试 / 0 失败 |
+| `go test ./... -count=1` | PASS | 全部包通过 |
 | `npm --prefix frontend run build` | PASS | 仅现有 large chunk warning |
 | `git diff --check` | PASS | 无 whitespace 问题 |
 
@@ -32,4 +28,4 @@
 
 ## 结论
 
-PASS。PRD3 Batch 1 Role/Navigation/Default Landing 6/6 检查全部通过，前端测试 92/92（+4），构建成功，无新发现问题。待 Sentinel commit。
+PASS。PRD3 Batch 2 Product Glossary/Usage Analytics/Internal Status Semantics 5/5 检查全部通过，前端 92/92 + Go 全量测试通过，构建成功，无新发现问题。待 Sentinel commit。

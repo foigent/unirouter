@@ -3,7 +3,7 @@ import { Button, Table, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconAlertTriangle, IconBell, IconRefresh, IconServer } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { EmptyState, MetricTile, PageHeader, StatusTag, Surface } from '../ui';
-import { deliveryStateLabel, eventTypeLabel, internalStatusLabel, severityLabel } from '../utils/displayLabels';
+import { deliveryStateLabel, eventStatusLabel, eventTypeLabel, internalStatusLabel, severityLabel } from '../utils/displayLabels';
 
 const { Text } = Typography;
 
@@ -52,7 +52,7 @@ export default function InternalStatusPage() {
     ) },
     { title: '类型', dataIndex: 'event_type', key: 'event_type', render: (value: string) => <Text>{eventTypeLabel(value)}</Text> },
     { title: '级别', dataIndex: 'severity', key: 'severity', render: (value: string) => <StatusTag status={value}>{severityLabel(value)}</StatusTag> },
-    { title: '状态', dataIndex: 'status', key: 'status', render: (value: string) => <StatusTag status={value}>{value === 'open' ? '未关闭' : value}</StatusTag> },
+    { title: '事件状态', dataIndex: 'status', key: 'status', render: (value: string) => <StatusTag status={value}>{eventStatusLabel(value)}</StatusTag> },
     { title: '投递', dataIndex: 'delivery_state', key: 'delivery_state', render: (value: string) => <StatusTag status={value}>{deliveryStateLabel(value)}</StatusTag> },
     { title: '资源', key: 'resource', render: (_: unknown, row: Incident) => row.resource ? `${row.resource}:${row.resource_id || '-'}` : '-' },
     { title: '时间', dataIndex: 'created_at', key: 'created_at', render: (value: string) => value ? new Date(value).toLocaleString() : '-' },
@@ -63,18 +63,18 @@ export default function InternalStatusPage() {
       <PageHeader
         eyebrow="系统治理"
         title="内部状态"
-        description="基于通知事件展示当前服务状态、事件历史和维护窗口占位。"
+        description="基于通知事件聚合当前服务状态；当前状态只由 open 严重/预警事件决定，维护窗口调度仍属于 PRD4。"
         actions={<Button icon={<IconRefresh />} onClick={load} loading={loading}>刷新</Button>}
       />
 
       <div className="ur-kpi-grid">
         <MetricTile label="当前状态" value={<StatusTag status={data?.status || 'operational'}>{internalStatusLabel(data?.status || 'operational')}</StatusTag>} icon={<IconServer />} tone={data?.status === 'degraded' ? 'red' : data?.status === 'warning' ? 'amber' : 'green'} meta="基于通知事件聚合" />
-        <MetricTile label="严重事件" value={data?.open_critical || 0} icon={<IconAlertTriangle />} tone={(data?.open_critical || 0) > 0 ? 'red' : 'slate'} meta="未关闭事件" />
-        <MetricTile label="预警事件" value={data?.open_warning || 0} icon={<IconBell />} tone={(data?.open_warning || 0) > 0 ? 'amber' : 'slate'} meta="未关闭事件" />
-        <MetricTile label="维护窗口" value={data?.maintenance_windows?.length || 0} icon={<IconServer />} tone="blue" meta="预留计划维护入口" />
+        <MetricTile label="Open 严重事件" value={data?.open_critical || 0} icon={<IconAlertTriangle />} tone={(data?.open_critical || 0) > 0 ? 'red' : 'slate'} meta="severity = critical 且 status = open" />
+        <MetricTile label="Open 预警事件" value={data?.open_warning || 0} icon={<IconBell />} tone={(data?.open_warning || 0) > 0 ? 'amber' : 'slate'} meta="severity = warning 且 status = open" />
+        <MetricTile label="维护窗口" value="未启用" icon={<IconServer />} tone="slate" meta="当前接口保留空数组，调度能力进入 PRD4" />
       </div>
 
-      <Surface title="事件历史" description="最近 20 条通知事件按 open 优先、时间倒序展示。">
+      <Surface title="通知事件" description="最近 20 条 notification_events 按 open 优先、时间倒序展示。事件状态：未关闭 / 已确认 / 已解决；投递状态只表示 webhook 投递结果。">
         <div className="ur-table-shell">
           <Table
             columns={columns}

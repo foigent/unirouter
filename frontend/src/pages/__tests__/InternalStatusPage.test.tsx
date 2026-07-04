@@ -44,5 +44,10 @@ describe('InternalStatusPage', () => {
     expect(await screen.findByText('内部状态')).toBeTruthy();
     expect(screen.getByText('Provider channel failure')).toBeTruthy();
     expect(screen.getByText('上游通道故障')).toBeTruthy();
+    expect(screen.getByText('Open 预警事件')).toBeTruthy();
+    expect(screen.getByText('severity = warning 且 status = open')).toBeTruthy();
+    expect(screen.getByText('未启用')).toBeTruthy();
+    expect(screen.getByText(/事件状态：未关闭 \/ 已确认 \/ 已解决/)).toBeTruthy();
+    expect(screen.getByText(/投递状态只表示 webhook 投递结果/)).toBeTruthy();
   });
 });

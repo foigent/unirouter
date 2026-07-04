@@ -58,7 +58,7 @@ function retentionLabel(value?: string) {
 export default function UsageAnalyticsPage() {
   const [rows, setRows] = useState<AnalyticsRow[]>([]);
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
-  const [groupBy, setGroupBy] = useState('project');
+  const [groupBy, setGroupBy] = useState('overall');
   const [status, setStatus] = useState('');
   const [usageSource, setUsageSource] = useState('');
   const [projectId, setProjectId] = useState('');
@@ -128,13 +128,16 @@ export default function UsageAnalyticsPage() {
       <PageHeader
         eyebrow="流量治理"
         title="用量分析"
-        description="按项目、访问凭证、模型、模型别名、供应商、上游通道、请求状态和计量来源钻取请求量、Token、费用与估算占比。"
+          description="按总览、项目、访问凭证、模型、供应商、上游通道、请求状态和计量来源查看当前权限范围内的请求量、Token、费用与估算占比。"
         actions={<Button icon={<IconDownload />} onClick={downloadCSV}>导出 CSV</Button>}
       />
 
-      <Surface title="筛选与分组">
+      <Surface
+        title="筛选与分组"
+        description="未设置筛选表示当前权限范围内全部数据。供应商是 provider family 或 adapter 维度；上游通道是一个具体配置实例，包含 endpoint、凭证、权重/优先级和可用模型。"
+      >
         <div className="ur-inline-controls">
-          <Select value={groupBy} optionList={usageAnalyticsGroupOptions} onChange={(value) => setGroupBy(String(value || 'project'))} style={{ width: 180 }} />
+          <Select value={groupBy} optionList={usageAnalyticsGroupOptions} onChange={(value) => setGroupBy(String(value || 'overall'))} style={{ width: 190 }} />
           <Input prefix={<IconSearch />} value={projectId} onChange={setProjectId} placeholder="项目 ID" showClear style={{ width: 140 }} />
           <Input prefix={<IconSearch />} value={keyId} onChange={setKeyId} placeholder="访问凭证 ID" showClear style={{ width: 160 }} />
           <Select
@@ -165,10 +168,10 @@ export default function UsageAnalyticsPage() {
         <MetricTile label="请求数" value={compact(summary?.total_requests)} icon={<IconSearch />} tone="blue" meta={`成功 ${summary?.success_requests || 0} / 失败 ${summary?.failed_requests || 0}`} />
         <MetricTile label="Token" value={compact(summary?.total_tokens)} icon={<IconServer />} tone="violet" meta={`估算来源 ${compact(summary?.estimated_tokens)} / 上游 ${compact(summary?.upstream_tokens)}`} />
         <MetricTile label="费用" value={<MoneyText cents={summary?.cost_cents || 0} precision={4} strong tone="cost" />} icon={<IconCoinMoney />} tone="green" meta={`平均延迟 ${(summary?.avg_latency_ms || 0).toFixed(0)}ms`} />
-        <MetricTile label="估算占比" value={percent(summary?.estimated_ratio)} icon={<IconSearch />} tone={(summary?.estimated_ratio || 0) > 0.2 ? 'amber' : 'slate'} meta={summary?.csv_export_scope === 'filtered_query' ? '当前筛选口径' : summary?.csv_export_scope || '当前筛选口径'} />
+        <MetricTile label="估算占比" value={percent(summary?.estimated_ratio)} icon={<IconSearch />} tone={(summary?.estimated_ratio || 0) > 0.2 ? 'amber' : 'slate'} meta={summary?.csv_export_scope === 'filtered_query' ? '当前筛选口径 / 总览已包含全部匹配数据' : summary?.csv_export_scope || '当前筛选口径'} />
       </div>
 
-      <Surface title="钻取结果" description={`请求内容：${retentionLabel(summary?.prompt_retention)} / 响应内容：${retentionLabel(summary?.response_retention)}`}>
+      <Surface title="拆解结果" description={`当前分组：${usageAnalyticsGroupOptions.find(option => option.value === groupBy)?.label || '总览（不分组）'}。请求内容：${retentionLabel(summary?.prompt_retention)} / 响应内容：${retentionLabel(summary?.response_retention)}`}>
         <div className="ur-table-shell">
           <Table
             columns={columns}
