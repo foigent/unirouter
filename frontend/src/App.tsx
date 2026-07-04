@@ -16,6 +16,7 @@ const { Text } = Typography;
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState('');
   const toggleSidebar = useCallback(() => setSidebarOpen(prev => !prev), []);
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
 
@@ -28,12 +29,22 @@ export default function App() {
   const defaultOpenKeys = getDefaultOpenKeysForRole(role);
   const roleLabel = ROLE_LABELS[role || ''] || role || '未加载角色';
   const canOpenNotifications = isRouteAllowedForRole('/notifications', role);
+  const envBadge = getEnvironmentBadge();
 
   const handleNavClick = (data: { itemKey?: string | number; domEvent?: MouseEvent; isOpen?: boolean }) => {
     const key = data.itemKey;
     if (typeof key === 'string' && key.startsWith('/')) {
       navigate(key);
     }
+  };
+
+  const submitGlobalSearch = () => {
+    const query = globalSearch.trim();
+    if (!query) {
+      navigate('/logs');
+      return;
+    }
+    navigate(`/logs?search=${encodeURIComponent(query)}`);
   };
 
   return (
@@ -81,11 +92,17 @@ export default function App() {
           <Input
             className="ur-global-search"
             prefix={<IconSearch />}
-            placeholder="搜索 Request ID、模型、密钥"
+            value={globalSearch}
+            onChange={setGlobalSearch}
+            onEnterPress={submitGlobalSearch}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') submitGlobalSearch();
+            }}
+            placeholder="搜索请求日志：Request ID、模型、供应商、错误"
             showClear
           />
           <div className="ur-topbar-actions">
-            <Tag className="ur-env-pill" color="green">生产环境</Tag>
+            <Tag className="ur-env-pill" color={envBadge.color as never}>{envBadge.label}</Tag>
             {canOpenNotifications && (
               <Button icon={<IconBell />} theme="borderless" className="ur-icon-button" aria-label="通知" onClick={() => navigate('/notifications')} />
             )}
@@ -103,4 +120,27 @@ export default function App() {
     </Layout>
     </>
   );
+}
+
+function getEnvironmentBadge() {
+  const raw = String(import.meta.env.VITE_APP_ENV || import.meta.env.VITE_DEPLOY_ENV || '').trim().toLowerCase();
+  switch (raw) {
+  case 'prod':
+  case 'production':
+    return { label: '生产环境', color: 'green' };
+  case 'staging':
+  case 'stage':
+    return { label: '预发环境', color: 'blue' };
+  case 'canary':
+    return { label: '灰度环境', color: 'orange' };
+  case 'dev':
+  case 'development':
+    return { label: '开发环境', color: 'cyan' };
+  case 'local':
+    return { label: '本地环境', color: 'grey' };
+  case '':
+    return { label: '环境未配置', color: 'grey' };
+  default:
+    return { label: raw, color: 'grey' };
+  }
 }
