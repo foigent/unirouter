@@ -28,18 +28,30 @@ import {
 } from '@douyinfe/semi-icons';
 
 export const ROLE_LABELS: Record<string, string> = {
-  admin: '系统管理员',
+  admin: '系统管理员（兼容）',
   platform_admin: '平台管理员',
   org_admin: '组织管理员',
   billing_admin: '账单管理员',
   project_admin: '项目管理员',
   developer: '开发者',
-  viewer: '只读成员',
+  viewer: '项目只读成员',
   org_viewer: '组织只读',
 };
 
+export const USER_MANAGEMENT_ROLE_OPTIONS = [
+  { label: '平台管理员 (platform_admin)', value: 'platform_admin' },
+  { label: '组织管理员 (org_admin)', value: 'org_admin' },
+  { label: '账务管理员 (billing_admin)', value: 'billing_admin' },
+  { label: '项目管理员 (project_admin)', value: 'project_admin' },
+  { label: '开发者 / 项目成员 (developer)', value: 'developer' },
+  { label: '项目只读成员 (viewer)', value: 'viewer' },
+  { label: '组织只读 (org_viewer)', value: 'org_viewer' },
+];
+
 export function normalizeRole(role?: string | null) {
-  return (role || '').trim() || 'viewer';
+  const normalized = (role || '').trim();
+  if (normalized === 'admin') return 'platform_admin';
+  return normalized;
 }
 
 export function isPlatformAdminRole(role?: string | null) {
@@ -54,8 +66,16 @@ export function isBillingRole(role?: string | null) {
   return normalizeRole(role) === 'billing_admin';
 }
 
+export function isOrgViewerRole(role?: string | null) {
+  return normalizeRole(role) === 'org_viewer';
+}
+
 export function isProjectConsoleRole(role?: string | null) {
   return ['project_admin', 'developer', 'viewer'].includes(normalizeRole(role));
+}
+
+export function isProjectAdminRole(role?: string | null) {
+  return normalizeRole(role) === 'project_admin';
 }
 
 export function canCreateProjectKey(role?: string | null) {
@@ -124,6 +144,26 @@ const fullAdminNavItems = [
   },
 ];
 
+function withoutRoutes(items: typeof fullAdminNavItems, routes: string[]) {
+  const blocked = new Set(routes);
+  return items
+    .map(item => ({
+      ...item,
+      items: item.items?.filter(child => !blocked.has(child.itemKey)),
+    }))
+    .filter(item => (item.items?.length || 0) > 0);
+}
+
+const orgAdminNavItems = withoutRoutes(fullAdminNavItems, [
+  '/channels',
+  '/channel-keys',
+  '/test',
+  '/wallet',
+  '/reconciliation',
+  '/grants',
+  '/license',
+]);
+
 const billingNavItems = [
   {
     itemKey: 'g-overview',
@@ -170,28 +210,52 @@ const developerNavItems = [
   },
 ];
 
+const projectAdminNavItems = [
+  {
+    itemKey: 'g-developer',
+    text: '项目工作台',
+    icon: <IconTerminal />,
+    items: [
+      { itemKey: '/developer', text: '项目概览', icon: <IconMonitorStroked /> },
+      { itemKey: '/notifications', text: '通知中心', icon: <IconBell /> },
+      { itemKey: '/status', text: '内部状态', icon: <IconPulse /> },
+      { itemKey: '/docs', text: 'API 文档', icon: <IconBookOpenStroked /> },
+    ],
+  },
+];
+
+const accessStateNavItems = [
+  {
+    itemKey: 'g-access-state',
+    text: '访问状态',
+    icon: <IconShieldStroked />,
+    items: [
+      { itemKey: '/access', text: '访问状态', icon: <IconShieldStroked /> },
+      { itemKey: '/docs', text: 'API 文档', icon: <IconBookOpenStroked /> },
+    ],
+  },
+];
+
 export function getNavItemsForRole(role?: string | null) {
+  if (isProjectAdminRole(role)) return projectAdminNavItems;
   if (isProjectConsoleRole(role)) return developerNavItems;
   if (isBillingRole(role)) return billingNavItems;
-  if (isOrgAdminRole(role)) {
-    if (isPlatformAdminRole(role)) return fullAdminNavItems;
-    return fullAdminNavItems.map(item => item.itemKey === 'g-system'
-      ? { ...item, items: item.items?.filter(child => child.itemKey !== '/license') }
-      : item);
-  }
-  return developerNavItems;
+  if (isPlatformAdminRole(role)) return fullAdminNavItems;
+  if (isOrgAdminRole(role)) return orgAdminNavItems;
+  return accessStateNavItems;
 }
 
 export function getDefaultOpenKeysForRole(role?: string | null) {
   if (isProjectConsoleRole(role)) return ['g-developer'];
   if (isBillingRole(role)) return ['g-overview', 'g-billing', 'g-system'];
-  return ['g-overview', 'g-traffic', 'g-billing', 'g-access', 'g-system'];
+  if (isPlatformAdminRole(role) || isOrgAdminRole(role)) return ['g-overview', 'g-traffic', 'g-billing', 'g-access', 'g-system'];
+  return ['g-access-state'];
 }
 
 export function getDefaultPathForRole(role?: string | null) {
   if (isProjectConsoleRole(role)) return '/developer';
   if (isOrgAdminRole(role) || isBillingRole(role)) return '/';
-  return '/docs';
+  return '/access';
 }
 
 function firstSegmentPath(path: string) {
@@ -204,16 +268,35 @@ function firstSegmentPath(path: string) {
 export function isRouteAllowedForRole(path: string, role?: string | null) {
   const route = firstSegmentPath(path);
   if (route === '/login') return true;
+  if (route === '/access') return true;
   if (route === '/docs') return true;
   if (route === '/license') return isPlatformAdminRole(role);
 
-  if (isOrgAdminRole(role)) return true;
+  if (isPlatformAdminRole(role)) return true;
+
+  if (isOrgAdminRole(role)) {
+    return [
+      '/',
+      '/keys',
+      '/logs',
+      '/usage-analytics',
+      '/notifications',
+      '/users',
+      '/audit-logs',
+      '/status',
+      '/settings',
+      '/model-governance',
+      '/model-prices',
+      '/org-model-prices',
+    ].includes(route);
+  }
 
   if (isBillingRole(role)) {
     return ['/', '/logs', '/wallet', '/reconciliation', '/usage-analytics', '/notifications', '/grants', '/audit-logs', '/status'].includes(route);
   }
 
   if (isProjectConsoleRole(role)) {
+    if (isProjectAdminRole(role)) return ['/developer', '/notifications', '/status'].includes(route);
     return route === '/developer';
   }
 

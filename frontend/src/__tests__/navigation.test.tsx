@@ -5,6 +5,7 @@ import {
   getDefaultPathForRole,
   getNavItemsForRole,
   isRouteAllowedForRole,
+  USER_MANAGEMENT_ROLE_OPTIONS,
 } from '../navigation';
 
 function flattenItemKeys(items: any[]): string[] {
@@ -33,16 +34,35 @@ describe('navigation role boundaries', () => {
     expect(getDefaultPathForRole('developer')).toBe('/developer');
   });
 
-  it('keeps full admin routes available to org admins', () => {
+  it('allows project admins to open backend-supported project status surfaces', () => {
+    const itemKeys = flattenItemKeys(getNavItemsForRole('project_admin'));
+
+    expect(itemKeys).toContain('/developer');
+    expect(itemKeys).toContain('/notifications');
+    expect(itemKeys).toContain('/status');
+    expect(isRouteAllowedForRole('/notifications', 'project_admin')).toBe(true);
+    expect(isRouteAllowedForRole('/status', 'project_admin')).toBe(true);
+    expect(isRouteAllowedForRole('/notifications', 'developer')).toBe(false);
+  });
+
+  it('aligns org admin navigation with backend org-admin routes', () => {
     const itemKeys = flattenItemKeys(getNavItemsForRole('org_admin'));
 
-    expect(itemKeys).toContain('/channels');
+    expect(itemKeys).not.toContain('/channels');
+    expect(itemKeys).not.toContain('/channel-keys');
+    expect(itemKeys).not.toContain('/test');
+    expect(itemKeys).not.toContain('/wallet');
+    expect(itemKeys).not.toContain('/reconciliation');
+    expect(itemKeys).not.toContain('/grants');
     expect(itemKeys).toContain('/model-governance');
     expect(itemKeys).toContain('/notifications');
     expect(itemKeys).toContain('/usage-analytics');
     expect(itemKeys).toContain('/status');
     expect(itemKeys).toContain('/model-prices');
     expect(itemKeys).not.toContain('/license');
+    expect(isRouteAllowedForRole('/channels', 'org_admin')).toBe(false);
+    expect(isRouteAllowedForRole('/wallet', 'org_admin')).toBe(false);
+    expect(isRouteAllowedForRole('/grants', 'org_admin')).toBe(false);
     expect(isRouteAllowedForRole('/model-governance', 'org_admin')).toBe(true);
     expect(isRouteAllowedForRole('/notifications', 'org_admin')).toBe(true);
     expect(isRouteAllowedForRole('/settings', 'org_admin')).toBe(true);
@@ -68,9 +88,35 @@ describe('navigation role boundaries', () => {
     expect(isRouteAllowedForRole('/license', 'admin')).toBe(true);
   });
 
+  it('does not use API docs as the default landing for org viewers or unknown roles', () => {
+    const orgViewerKeys = flattenItemKeys(getNavItemsForRole('org_viewer'));
+    const unknownKeys = flattenItemKeys(getNavItemsForRole('owner'));
+
+    expect(getDefaultPathForRole('org_viewer')).toBe('/access');
+    expect(getDefaultPathForRole('owner')).toBe('/access');
+    expect(orgViewerKeys).toContain('/access');
+    expect(unknownKeys).toContain('/access');
+    expect(isRouteAllowedForRole('/access', 'org_viewer')).toBe(true);
+    expect(isRouteAllowedForRole('/developer', 'org_viewer')).toBe(false);
+  });
+
   it('matches current backend key permissions in developer console controls', () => {
     expect(canCreateProjectKey('developer')).toBe(true);
     expect(canDisableProjectKey('developer')).toBe(false);
     expect(canDisableProjectKey('project_admin')).toBe(true);
+  });
+
+  it('exposes canonical user-management roles without the legacy admin alias', () => {
+    const values = USER_MANAGEMENT_ROLE_OPTIONS.map(option => option.value);
+
+    expect(values).toEqual([
+      'platform_admin',
+      'org_admin',
+      'billing_admin',
+      'project_admin',
+      'developer',
+      'viewer',
+      'org_viewer',
+    ]);
   });
 });

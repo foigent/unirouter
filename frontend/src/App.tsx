@@ -9,7 +9,7 @@ import {
   IconBell,
 } from '@douyinfe/semi-icons';
 import { useAuthStore } from './store/auth';
-import { getDefaultOpenKeysForRole, getNavItemsForRole, ROLE_LABELS } from './navigation';
+import { getDefaultOpenKeysForRole, getNavItemsForRole, isRouteAllowedForRole, ROLE_LABELS } from './navigation';
 
 const { Sider, Content } = Layout;
 const { Text } = Typography;
@@ -27,6 +27,7 @@ export default function App() {
   const navItems = getNavItemsForRole(role);
   const defaultOpenKeys = getDefaultOpenKeysForRole(role);
   const roleLabel = ROLE_LABELS[role || ''] || role || '未加载角色';
+  const canOpenNotifications = isRouteAllowedForRole('/notifications', role);
 
   const handleNavClick = (data: { itemKey?: string | number; domEvent?: MouseEvent; isOpen?: boolean }) => {
     const key = data.itemKey;
@@ -85,7 +86,9 @@ export default function App() {
           />
           <div className="ur-topbar-actions">
             <Tag className="ur-env-pill" color="green">生产环境</Tag>
-            <Button icon={<IconBell />} theme="borderless" className="ur-icon-button" aria-label="通知" onClick={() => navigate('/notifications')} />
+            {canOpenNotifications && (
+              <Button icon={<IconBell />} theme="borderless" className="ur-icon-button" aria-label="通知" onClick={() => navigate('/notifications')} />
+            )}
             <div className="ur-user-chip">
               <Avatar size="small" color="purple">{(user?.username || 'U').slice(0, 1).toUpperCase()}</Avatar>
               <div className="ur-user-copy">

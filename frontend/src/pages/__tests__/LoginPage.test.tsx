@@ -102,6 +102,20 @@ describe('LoginPage', () => {
     })
   })
 
+  it('does not send org viewers to API docs after login', async () => {
+    mockLogin.mockResolvedValueOnce({ id: 3, username: 'readonly', role: 'org_viewer' })
+    const user = userEvent.setup()
+    renderLoginPage()
+
+    await user.type(screen.getByPlaceholderText('请输入用户名'), 'readonly')
+    await user.type(screen.getByPlaceholderText('请输入密码'), '***')
+    await user.click(screen.getByRole('button', { name: /登录/i }))
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/access')
+    })
+  })
+
   it('shows error message on login failure', async () => {
     mockLogin.mockRejectedValueOnce(new Error('Invalid credentials'))
     const user = userEvent.setup()
