@@ -114,7 +114,7 @@ function latencyTone(value: number): 'green' | 'amber' | 'red' {
 function providerDisplayName(provider: string, channelName: string): string | null {
   if (!provider) return null;
   if (provider.toLowerCase() === channelName.toLowerCase()) return null;
-  if (provider === 'openai' && !channelName.toLowerCase().includes('openai')) return 'OpenAI-compatible';
+  if (provider === 'openai' && !channelName.toLowerCase().includes('openai')) return '兼容 OpenAI 协议';
   return provider;
 }
 

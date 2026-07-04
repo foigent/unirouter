@@ -122,9 +122,9 @@ export default function ChannelKeysPage() {
   return (
     <div className="ur-page">
       <PageHeader
-        eyebrow="Traffic"
+        eyebrow="流量治理"
         title="上游凭证"
-        description="管理每个上游通道绑定的 provider API key。"
+        description="管理每个上游通道绑定的供应商访问凭证。"
         actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增上游凭证</Button>}
       />
 
@@ -156,9 +156,9 @@ export default function ChannelKeysPage() {
             optionList={channels} />
           <Form.Input
             field="api_key"
-            label="API Key"
+            label="上游凭证"
             rules={[{ required: true, message: '必填' }]}
-            placeholder={editing ? '输入新的上游 API Key，保存后会重置冷却状态' : 'sk-...'}
+            placeholder={editing ? '输入新的上游凭证，保存后会重置冷却状态' : 'sk-...'}
             extraText={editing ? '出于安全原因，已有密钥不会回显；请输入新的完整密钥。' : undefined}
           />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>

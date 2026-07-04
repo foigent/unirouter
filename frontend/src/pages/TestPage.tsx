@@ -215,7 +215,7 @@ export default function TestPage() {
           />
           <Form.TextArea
             field="prompt"
-            label="检测 Prompt"
+            label="检测提示词"
             placeholder="Hello, this is a test message."
             rows={3}
             style={{ width: 400 }}

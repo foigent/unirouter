@@ -4,6 +4,16 @@ import { IconBell, IconPlus, IconRefresh, IconSetting } from '@douyinfe/semi-ico
 import { api } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
 import { PageHeader, StatusTag, Surface } from '../ui';
+import {
+  deliveryStateLabel,
+  deliveryStateOptions,
+  deliveryStatusOptions,
+  eventTypeLabel,
+  eventTypeListLabel,
+  eventTypeOptions,
+  severityLabel,
+  severityOptions,
+} from '../utils/displayLabels';
 
 const { Text } = Typography;
 const { TabPane } = Tabs;
@@ -50,39 +60,6 @@ interface NotificationWebhook {
   enabled: boolean;
   updated_at: string;
 }
-
-const eventTypeOptions = [
-  { label: '全部事件', value: '' },
-  { label: 'project_budget.threshold', value: 'project_budget.threshold' },
-  { label: 'api_key.disabled', value: 'api_key.disabled' },
-  { label: 'model.deprecated', value: 'model.deprecated' },
-  { label: 'model.retired', value: 'model.retired' },
-  { label: 'provider.channel.failure', value: 'provider.channel.failure' },
-  { label: 'license.warning', value: 'license.warning' },
-  { label: 'token_metering.estimated_ratio.high', value: 'token_metering.estimated_ratio.high' },
-];
-
-const severityOptions = [
-  { label: '全部级别', value: '' },
-  { label: 'info', value: 'info' },
-  { label: 'warning', value: 'warning' },
-  { label: 'critical', value: 'critical' },
-];
-
-const deliveryStateOptions = [
-  { label: '全部投递状态', value: '' },
-  { label: 'not_configured', value: 'not_configured' },
-  { label: 'pending', value: 'pending' },
-  { label: 'delivered', value: 'delivered' },
-  { label: 'failed', value: 'failed' },
-];
-
-const deliveryStatusOptions = [
-  { label: '全部状态', value: '' },
-  { label: 'pending', value: 'pending' },
-  { label: 'delivered', value: 'delivered' },
-  { label: 'failed', value: 'failed' },
-];
 
 function severityColor(severity: string) {
   if (severity === 'critical') return 'red';
@@ -222,20 +199,20 @@ export default function NotificationCenterPage() {
 
   const eventColumns = [
     { title: 'ID', dataIndex: 'id', width: 72 },
-    { title: '事件类型', dataIndex: 'event_type', width: 220, render: (v: string) => <Text code>{v}</Text> },
-    { title: '级别', dataIndex: 'severity', width: 100, render: (v: string) => <Tag color={severityColor(v)}>{v}</Tag> },
+    { title: '事件类型', dataIndex: 'event_type', width: 220, render: (v: string) => <Text>{eventTypeLabel(v)}</Text> },
+    { title: '级别', dataIndex: 'severity', width: 100, render: (v: string) => <Tag color={severityColor(v)}>{severityLabel(v)}</Tag> },
     { title: '标题', dataIndex: 'title', width: 220 },
     { title: '消息', dataIndex: 'message', ellipsis: true },
     { title: '资源', width: 140, render: (_: unknown, row: NotificationEvent) => row.resource ? `${row.resource}:${row.resource_id || '-'}` : '-' },
-    { title: '投递', dataIndex: 'delivery_state', width: 130, render: (v: string) => <StatusTag status={v}>{v}</StatusTag> },
+    { title: '投递', dataIndex: 'delivery_state', width: 130, render: (v: string) => <StatusTag status={v}>{deliveryStateLabel(v)}</StatusTag> },
     { title: '时间', dataIndex: 'created_at', width: 180, render: (v: string) => formatDateTime(v) },
   ];
 
   const deliveryColumns = [
     { title: 'ID', dataIndex: 'id', width: 72 },
-    { title: '事件', dataIndex: 'event_type', width: 220, render: (v: string) => <Text code>{v || '-'}</Text> },
+    { title: '事件', dataIndex: 'event_type', width: 220, render: (v: string) => <Text>{eventTypeLabel(v)}</Text> },
     { title: 'Webhook', dataIndex: 'webhook_name', width: 180, render: (v: string) => v || '-' },
-    { title: '状态', dataIndex: 'status', width: 120, render: (v: string) => <StatusTag status={v}>{v}</StatusTag> },
+    { title: '状态', dataIndex: 'status', width: 120, render: (v: string) => <StatusTag status={v}>{deliveryStateLabel(v)}</StatusTag> },
     { title: '尝试', dataIndex: 'attempts', width: 88 },
     { title: '响应', dataIndex: 'response_status', width: 88, render: (v: number) => v || '-' },
     { title: '下次重试', dataIndex: 'next_retry_at', width: 180, render: (v: string) => v ? formatDateTime(v) : '-' },
@@ -247,8 +224,8 @@ export default function NotificationCenterPage() {
     { title: 'ID', dataIndex: 'id', width: 72 },
     { title: '名称', dataIndex: 'name', width: 180 },
     { title: 'URL', dataIndex: 'url', ellipsis: true },
-    { title: '事件类型', dataIndex: 'event_types', width: 260, render: (v: unknown) => toEventTypeList(v) },
-    { title: '范围', dataIndex: 'project_id', width: 120, render: (v: number) => v ? `Project ${v}` : 'Org' },
+    { title: '事件类型', dataIndex: 'event_types', width: 260, render: (v: unknown) => eventTypeListLabel(v) },
+    { title: '范围', dataIndex: 'project_id', width: 120, render: (v: number) => v ? `项目 #${v}` : '组织级' },
     { title: '启用', dataIndex: 'enabled', width: 92, render: (v: boolean) => <StatusTag status={v ? 'active' : 'disabled'}>{v ? '启用' : '停用'}</StatusTag> },
     { title: '操作', width: 90, render: (_: unknown, row: NotificationWebhook) => <Button size="small" icon={<IconSetting />} onClick={() => openWebhookSheet(row)} /> },
   ];
@@ -256,7 +233,7 @@ export default function NotificationCenterPage() {
   return (
     <div className="ur-page ur-page-wide">
       <PageHeader
-        eyebrow="Operations"
+        eyebrow="系统治理"
         title="通知中心"
         description="查看事件、Webhook 投递状态和项目预算通知路由。"
         actions={<Button icon={<IconRefresh />} onClick={() => { loadEvents(); loadDeliveries(); loadWebhooks(); }}>刷新</Button>}
@@ -338,7 +315,7 @@ export default function NotificationCenterPage() {
         <Form getFormApi={(formApi: any) => setWebhookFormApi(formApi)} onSubmit={saveWebhook}>
           <Form.Input field="name" label="名称" rules={[{ required: true, message: '必填' }]} />
           <Form.Input field="url" label="URL" rules={[{ required: true, message: '必填' }]} placeholder="https://ops.example.com/webhook" />
-          <Form.Input field="project_id" label="Project ID" placeholder="留空为组织级路由" />
+          <Form.Input field="project_id" label="项目 ID" placeholder="留空为组织级路由" />
           <Form.TextArea field="event_types" label="事件类型" placeholder="留空表示全部事件；可用逗号或换行分隔" autosize={{ minRows: 3, maxRows: 6 }} />
           <Form.Select field="enabled" label="状态" initValue="true" optionList={[
             { label: '启用', value: 'true' },

@@ -4,6 +4,7 @@ import { IconSearch, IconRefresh, IconClose, IconCopy } from '@douyinfe/semi-ico
 import { api } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
 import { LatencyText, MoneyText, PageHeader, StatusTag } from '../ui';
+import { usageSourceLabel, usageSourceOptions } from '../utils/displayLabels';
 
 const { Title, Text } = Typography;
 
@@ -58,14 +59,23 @@ function paramsToFilters(): LogFilters {
   return f;
 }
 
-const usageSourceOptions = [
-  { label: 'upstream', value: 'upstream' },
-  { label: 'counter_v2', value: 'counter_v2' },
-  { label: 'adapter_estimated', value: 'adapter_estimated' },
-  { label: 'estimated', value: 'estimated' },
-  { label: 'no_route', value: 'no_route' },
-  { label: 'upstream_failed', value: 'upstream_failed' },
-];
+const filterLabels: Record<keyof LogFilters, string> = {
+  model: '模型',
+  provider: '供应商',
+  status_code: '状态码',
+  usage_source: '计量来源',
+  start_time: '开始时间',
+  end_time: '结束时间',
+  request_id: 'Request ID',
+  latency_min: '最小延迟',
+  latency_max: '最大延迟',
+  search: '搜索',
+};
+
+function filterValueLabel(key: string, value: string | undefined) {
+  if (key === 'usage_source') return usageSourceLabel(value);
+  return value || '-';
+}
 
 function fallbackCopyText(text: string) {
   const textarea = document.createElement('textarea');
@@ -271,7 +281,7 @@ export default function LogsPage() {
       dataIndex: 'usage_source',
       key: 'usage_source',
       width: 122,
-      render: (v: string) => v ? <StatusTag status={v}>{v}</StatusTag> : '-',
+      render: (v: string) => v ? <StatusTag status={v}>{usageSourceLabel(v)}</StatusTag> : '-',
     },
     {
       title: '费用',
@@ -304,7 +314,7 @@ export default function LogsPage() {
       <PageHeader
         eyebrow="流量治理"
         title="请求日志"
-        description="用于定位失败请求、成本异常、延迟抖动和上游 provider 问题。"
+        description="用于定位失败请求、成本异常、延迟抖动和上游供应商问题。"
         actions={(
           <>
             <Tag color="blue">{total} 条</Tag>
@@ -465,7 +475,7 @@ export default function LogsPage() {
                     closable
                     onClose={() => setFilters(prev => { const n = { ...prev }; delete (n as any)[k]; return n; })}
                   >
-                    {k}: {v}
+                    {filterLabels[k as keyof LogFilters] || k}: {filterValueLabel(k, v)}
                   </Tag>
                 ))}
               </div>
@@ -581,11 +591,11 @@ export default function LogsPage() {
                   row
                   size="small"
                   data={[
-                    { key: 'Prompt', value: selectedLog.prompt_tokens.toLocaleString() },
-                    { key: 'Completion', value: selectedLog.completion_tokens.toLocaleString() },
-                    { key: 'Total', value: <Text strong>{selectedLog.total_tokens.toLocaleString()}</Text> },
+                    { key: '提示词', value: selectedLog.prompt_tokens.toLocaleString() },
+                    { key: '生成', value: selectedLog.completion_tokens.toLocaleString() },
+                    { key: '合计', value: <Text strong>{selectedLog.total_tokens.toLocaleString()}</Text> },
                     { key: '费用', value: <MoneyText cents={selectedLog.cost_cents} precision={4} strong tone="cost" /> },
-                    { key: '来源', value: selectedLog.usage_source || '-' },
+                    { key: '来源', value: usageSourceLabel(selectedLog.usage_source) },
                   ]}
                 />
               </div>

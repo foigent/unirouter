@@ -43,6 +43,6 @@ describe('InternalStatusPage', () => {
 
     expect(await screen.findByText('内部状态')).toBeTruthy();
     expect(screen.getByText('Provider channel failure')).toBeTruthy();
-    expect(screen.getByText('provider.channel.failure')).toBeTruthy();
+    expect(screen.getByText('上游通道故障')).toBeTruthy();
   });
 });

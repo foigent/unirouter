@@ -14,7 +14,7 @@ describe('UsageAnalyticsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetUsageAnalytics.mockResolvedValue({
-      group_by: { key: 'project', label: 'Project' },
+      group_by: { key: 'project', label: '项目' },
       summary: {
         total_requests: 12,
         success_requests: 10,
@@ -50,7 +50,7 @@ describe('UsageAnalyticsPage', () => {
     });
 
     expect(await screen.findByText('用量分析')).toBeTruthy();
-    expect(screen.getByText('filtered_query')).toBeTruthy();
-    expect(screen.getByText('not_stored_by_default / not_stored_by_default')).toBeTruthy();
+    expect(screen.getByText('当前筛选口径')).toBeTruthy();
+    expect(screen.getByText('请求内容：默认不存储明文 / 响应内容：默认不存储明文')).toBeTruthy();
   });
 });

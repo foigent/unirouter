@@ -78,8 +78,8 @@ describe('NotificationCenterPage', () => {
     });
 
     await screen.findByText('Budget reached');
-    expect(screen.getAllByText('project_budget.threshold').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('项目预算阈值').length).toBeGreaterThan(0);
     expect(screen.getByText('Budget reached')).toBeTruthy();
-    expect(screen.getAllByText('failed').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('投递失败').length).toBeGreaterThan(0);
   });
 });

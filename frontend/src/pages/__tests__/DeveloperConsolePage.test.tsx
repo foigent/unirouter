@@ -93,8 +93,8 @@ describe('DeveloperConsolePage', () => {
     expect(screen.getByText('Company Chat')).toBeTruthy();
     expect(screen.getByText('Migrate to gpt-4.1-mini')).toBeTruthy();
     expect(screen.getByText('req-001')).toBeTruthy();
-    expect(screen.getByText('Playground')).toBeTruthy();
-    expect(screen.getByPlaceholderText('粘贴项目 API Key')).toBeTruthy();
+    expect(screen.getByText('请求调试台')).toBeTruthy();
+    expect(screen.getByPlaceholderText('粘贴项目访问凭证')).toBeTruthy();
   });
 
   it('looks up request detail inside the selected project', async () => {
@@ -108,14 +108,14 @@ describe('DeveloperConsolePage', () => {
       expect(mockGetLogs).toHaveBeenCalledWith(1, 1, { project_id: 7, request_id: 'req-001' });
       expect(mockGetLogDetail).toHaveBeenCalledWith(31);
     });
-    expect(screen.getByText('Resolved')).toBeTruthy();
+    expect(screen.getByText('路由模型')).toBeTruthy();
   });
 
   it('creates project-scoped keys with the selected project_id', async () => {
     renderPage('project_admin');
 
     await screen.findByText('frontend');
-    fireEvent.click(screen.getByText('创建项目 Key'));
+    fireEvent.click(screen.getByText('创建项目凭证'));
     const nameInput = await screen.findByPlaceholderText('frontend-prod');
     fireEvent.change(nameInput, { target: { value: 'dev-key' } });
     fireEvent.click(screen.getByText(/^创建$/));
