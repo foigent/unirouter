@@ -2,7 +2,7 @@
 
 > Date: 2026-07-05
 > Scope: P3-F03 Control Panel Semantics
-> Status: Codex local validation passed; awaiting Canary.
+> Status: Canary passed 5/5; Sentinel merged PR #65 at `8cb71f6`; User reported Atlas completed. Post-Canary follow-up adds explicit empty-search route test coverage.
 
 ## Summary
 
@@ -37,10 +37,14 @@ git diff --check
 
 Results:
 
-- Targeted App shell tests: PASS, 1 file / 2 tests.
-- Full frontend tests: PASS, 17 files / 94 tests.
+- Targeted App shell tests: PASS, 1 file / 3 tests after the post-Canary empty-search follow-up.
+- Full frontend tests: PASS, 17 files / 95 tests after the post-Canary empty-search follow-up.
 - Frontend build: PASS, with the existing Vite large chunk warning only.
 - `git diff --check`: PASS.
+
+## Post-Canary Follow-up
+
+Canary accepted Batch 3 and noted one non-blocking coverage improvement: empty topbar search already routes to `/logs`, but the original test only covered non-empty search. The follow-up adds an explicit App shell test for empty Enter submission.
 
 ## Boundaries
 
