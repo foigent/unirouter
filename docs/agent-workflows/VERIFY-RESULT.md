@@ -1,31 +1,78 @@
-# VERIFY-RESULT.md — PRD3 Batch 2 验收结果
+# VERIFY-RESULT.md — PRD3 Batch 3 Control Panel Semantics
 
-**验收者：** OpenClaw Canary
 **日期：** 2026-07-05
-**对应轮次：** PRD3 Batch 2 Product Glossary, Usage Analytics Semantics, Internal Status Semantics
+**验收人：** Canary
+**结论：** ✅ **PASS 5/5**
 
-## 逐条结果
+---
 
-- Check #1: PASS — 产品 Glossary (`docs/tech-ref/20-prd3-product-glossary.md`) 存在，定义 15+ 术语（provider/vendor/supplier、upstream channel、access credential、upstream credential、model、alias、usage source、audit source、incident、event status、severity、delivery state、internal status、maintenance window、roles）。已索引到 `tech-ref/README.md`(line 28)、`DOC-INVENTORY.md`(line 62)、`README.md`(line 31)。PRD4 边界明确：runtime plugins、maintenance scheduling、SLA/SLO、budget hard-blocking、cache、enterprise IaC、new authority surfaces 均在 PRD4/later (line 65-66)。
-- Check #2: PASS — 后端 `prd2_product_handlers.go` 接受 `group_by=overall`，返回单行聚合标签 `'全部请求'`(line 28-29)。前端默认 `总览（不分组）`(line 61/174)，filter panel 明确定义 "供应商是 provider family 或 adapter 维度；上游通道是一个具体配置实例"(line 137)。现有筛选和 `usage_source` 值保持兼容。
-- Check #3: PASS — `InternalStatusPage.tsx` 说明 "基于通知事件聚合当前服务状态"(line 66)，open critical/warning 计数器明确标注(line 72-73)，事件生命周期标签 `未关闭/已确认/已解决`(displayLabels.ts line 120-122)，webhook 投递状态与事件状态分离(line 77)，维护窗口标记 "未启用" + "调度能力进入 PRD4"(line 74)。
-- Check #4: PASS — evidence 文件存在，`PRD3-ACCEPTANCE-MATRIX.md` P3-F01/P3-F05/P3-F06 标记 Fixed awaiting Canary，`OPEN-ISSUES.md` PRD3-UISEM-001 更新 Batch 2 状态，`CURRENT-STATUS.md` 索引 Batch 2。
-- Check #5: PASS — 所有测试通过（见下方）。
+## 验收项
 
-## 命令结果
+### 1. Topbar search — PASS
 
-| 命令 | 结果 | 备注 |
+| 检查 | 结果 | 证据 |
 |------|------|------|
-| `go test ./internal/admin -run 'TestUsageAnalyticsGroup\|TestInternalStatusLevel\|TestUsageAnalyticsUpstreamSourceSQLIncludesNull'` | PASS | 3/3 targeted tests |
-| `npm --prefix frontend test -- --run` | PASS | 16 文件 / 92 测试 / 0 失败 |
-| `go test ./... -count=1` | PASS | 全部包通过 |
-| `npm --prefix frontend run build` | PASS | 仅现有 large chunk warning |
-| `git diff --check` | PASS | 无 whitespace 问题 |
+| 不再使用 inert placeholder | ✅ | `App.tsx:90` — `placeholder="搜索请求日志：Request ID、模型、供应商、错误"` |
+| 非空搜索路由到 `/logs?search=<encoded>` | ✅ | `App.tsx:51` — `` navigate(`/logs?search=${encodeURIComponent(query)}`) `` |
+| 空搜索路由到 `/logs` | ✅ | `App.tsx:48-50` — `if (!query) { navigate('/logs'); return; }` |
+| Placeholder 说明搜索请求日志 | ✅ | "搜索请求日志：Request ID、模型、供应商、错误" |
 
-## 新发现
+### 2. Environment label — PASS
 
-无新发现。
+| 检查 | 结果 | 证据 |
+|------|------|------|
+| 不再硬编码 `生产环境` | ✅ | `App.tsx:112` — `getEnvironmentBadge()` 函数 |
+| 读取 `VITE_APP_ENV` / `VITE_DEPLOY_ENV` | ✅ | `App.tsx:131` — `import.meta.env.VITE_APP_ENV \|\| import.meta.env.VITE_DEPLOY_ENV` |
+| 未设置时显示 `环境未配置` | ✅ | `App.tsx:141` — `case '': return { label: '环境未配置', color: 'grey' }` |
+| 映射 prod/staging/canary/dev/local | ✅ | `App.tsx:133-148` — switch 覆盖所有值 |
 
-## 结论
+### 3. App.test.tsx — PASS
 
-PASS。PRD3 Batch 2 Product Glossary/Usage Analytics/Internal Status Semantics 5/5 检查全部通过，前端 92/92 + Go 全量测试通过，构建成功，无新发现问题。待 Sentinel commit。
+| 检查 | 结果 | 证据 |
+|------|------|------|
+| 覆盖 topbar search 路由 | ✅ | `App.test.tsx:38-48` — `routes topbar search to existing logs search` |
+| 覆盖环境未设置回退 | ✅ | `App.test.tsx:50-55` — `does not hard-code production when deployment environment is unset` |
+
+**非阻塞建议**：空搜索 → `/logs` 的路由行为未被测试覆盖。代码逻辑正确，建议后续补一个空搜索 Enter 按键用例。
+
+### 4. Evidence/status docs — PASS
+
+| 文件 | 结果 | 证据 |
+|------|------|------|
+| `docs/ops/evidence/PRD3-B03-control-panel-semantics-local-20260705.md` | ✅ | 存在，记录了变更文件、验证结果、边界说明 |
+| `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` | ✅ | P3-F03 状态为 `Fixed awaiting Canary`，记录 Batch 3 内容 |
+| `docs/issues/OPEN-ISSUES.md` | ✅ | PRD3-UISEM-001 状态 `Fixed awaiting Canary`，记录 Batch 3 |
+| `docs/ops/CURRENT-STATUS.md` | ✅ | Current Verification 区域记录 Batch 3 状态和证据 |
+
+### 5. Commands — PASS
+
+| 命令 | 结果 |
+|------|------|
+| `npm --prefix frontend test -- --run App` | ✅ 1 file / 2 tests PASS |
+| `npm --prefix frontend test -- --run` | ✅ 17 files / 94 tests PASS |
+| `npm --prefix frontend run build` | ✅ PASS（existing Vite large chunk warning only） |
+| `git diff --check` | ✅ PASS (no output) |
+
+---
+
+## 边界确认
+
+- ✅ 未实现新的全局搜索后端、搜索索引或跨资源搜索产品
+- ✅ 未添加运行时部署/环境 API；topbar 环境标签仅使用显式前端构建时变量
+- ✅ 未刷新后端 `/docs`、前端 `/docs` 或 OpenAPI；P3-F04 API Contract Refresh 保持独立
+- ✅ 除 Batch 1 已有的通知访问控制外，未更改角色/导航
+
+---
+
+## 新发现的问题
+
+无新发现的阻塞问题。
+
+非阻塞建议：
+- **空搜索测试覆盖**：建议在 `App.test.tsx` 中补充一个空搜索 Enter 按键的测试用例，验证路由到 `/logs`。
+
+---
+
+## 总结
+
+PRD3 Batch 3 控制面板语义验收通过。Topbar 全局搜索已连接到现有请求日志搜索路由，环境标签从硬编码改为读取构建时变量并有合理的回退行为。App shell 测试覆盖了核心路由和环境回退场景。全部前端测试（94 个）通过，构建正常，无 whitespace 问题。
