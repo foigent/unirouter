@@ -2,8 +2,8 @@
 
 > Purpose: track the remaining work required before PRD2 can be honestly closed as fully implemented and usable.
 > Scope decision date: 2026-07-02.
-> Current note: PRD2 feature-scope closeout completed in Batch 25 within the documented evidence boundaries. Batch 26 was post-closeout UI/UX hardening and passed Canary 5/5; User reported Sentinel/Atlas completed. Batch 27 copy/navigation polish passed Canary 7/7, and User reported Canary/Sentinel/Atlas completed.
-> Batch 28 product consistency/filter parity is fixed locally awaiting Canary, not a new PRD2 feature-scope blocker.
+> Current note: PRD2 feature-scope closeout completed in Batch 25 within the documented evidence boundaries. Batch 26 was post-closeout UI/UX hardening and passed Canary 5/5; User reported Sentinel/Atlas completed. Batch 27 copy/navigation polish passed Canary 7/7, and User reported Canary/Sentinel/Atlas completed. Batch 28 product consistency/filter parity passed Canary 6/6, and User reported Canary/Sentinel/Atlas completed.
+> PRD2 is frozen for new feature work within the documented scope and evidence boundaries. Final freeze evidence is recorded in `docs/ops/evidence/PRD2-final-freeze-20260705.md`. PRD3 should begin with a product/architecture consistency audit across PRD1/PRD2 code, UI, naming, roles, workflows, and operational boundaries.
 
 ## Completion Standard
 
@@ -598,15 +598,18 @@ Status update on 2026-07-04:
 - Local closeout validation passed: P2-F11/index grep, matrix non-final status grep returning no matches, `go test ./...`, `npm --prefix frontend test -- --run`, `npm --prefix frontend run build`, `git diff --check`, and current-code browser smoke via `scripts/prd2-batch23-product-smoke.sh` against backend `http://localhost:18084` and frontend `http://localhost:3000`. Evidence is recorded in `docs/ops/evidence/PRD2-B25-final-closeout-local-20260704.md`.
 - Current protocol state: `docs/agent-workflows/VERIFY-RESULT.md` reports Batch 25 PASS 4/4, and User reported Sentinel completed. PRD2 E2E closeout is complete within the documented scope; remaining provider credentials, License Production verified promotion, production HA/DR, real enterprise IdP, budget hard-block, and PRD3 items stay explicit later/target gaps.
 
-Post-closeout follow-up on 2026-07-04:
+Post-closeout follow-up on 2026-07-04 / 2026-07-05:
 
 - Batch 26 UI/UX hardening passed Canary 5/5, and User reported Sentinel/Atlas completed. It addressed sidebar hierarchy/scroll/icons, audit table scroll, channel-test configured-model selection, and visible PRD2 UI label localization.
 - Batch 27 copy/navigation polish passed Canary 7/7 in `docs/agent-workflows/VERIFY-RESULT.md`, and User reported Canary/Sentinel/Atlas completed. It addressed sidebar API docs/logout separation, request-log detail contrast, enterprise menu/page naming, login positioning copy, channel test latency/token boundary documentation, and API docs row-key cleanup.
-- Batch 28 product consistency/filter parity is fixed locally and awaiting Canary. It adds shared frontend display labels, aligns Usage Analytics filters with backend-supported filter parameters, localizes raw enum/status displays while keeping stable API values such as `usage_source=counter_v2`, and updates local evidence in `docs/ops/evidence/PRD2-B28-product-consistency-local-20260704.md`. This follow-up does not reopen Batch 25 closeout or change the explicit later/target-evidence gaps above.
+- Batch 28 product consistency/filter parity passed Canary 6/6, and User reported Canary/Sentinel/Atlas completed. It adds shared frontend display labels, aligns Usage Analytics filters with backend-supported filter parameters, localizes raw enum/status displays while keeping stable API values such as `usage_source=counter_v2`, and updates local evidence in `docs/ops/evidence/PRD2-B28-product-consistency-local-20260704.md`. This follow-up does not reopen Batch 25 closeout or change the explicit later/target-evidence gaps above.
+- PRD2 is frozen for new feature work; final freeze evidence is recorded in `docs/ops/evidence/PRD2-final-freeze-20260705.md`. PRD3 should start from a product/architecture consistency audit before adding major new features.
 
 ## PRD3 / Later Unimplemented Items
 
 These items are intentionally not part of the PRD2 closeout implementation unless the user later changes scope. They are tracked as active unfinished work in `docs/issues/OPEN-ISSUES.md`:
+
+Recommended PRD3 entrypoint: audit product consistency, module boundaries, role/workflow semantics, naming, frontend information architecture, billing/reconciliation compatibility, deployment/upgrade path, and long-term maintainability across PRD1 through PRD2 before expanding feature scope.
 
 | Item | Tracking | PRD2 Boundary |
 |------|----------|---------------|

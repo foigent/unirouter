@@ -9,6 +9,7 @@
 | `docs/PROJECT-HANDOFF.md` | First-read handoff for agents |
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
 | `docs/ops/PRD2-ACCEPTANCE-MATRIX.md` | PRD2 acceptance planning and future evidence matrix |
+| `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` | PRD3 acceptance planning for cleanup/optimization scope |
 | `docs/ops/PRD2-COMPLETION-PLAN.md` | Current PRD2 remaining-work plan and user-confirmed completion decisions |
 | `docs/ops/PRD-ACCEPTANCE-MATRIX.md` | PRD1 acceptance progress and historical closeout evidence |
 | `docs/ops/PRD1-ACCEPTANCE-TEST-OWNERSHIP.md` | Current map of what Codex can test and required safe credentials/scope |
@@ -26,6 +27,8 @@
 | `docs/PRD-Phase1.pdf` | PRD PDF export | May lag Markdown |
 | `docs/planning/PRD2-DISCOVERY.md` | PRD2 direction and scope discovery | Confirmed planning direction, not formal PRD |
 | `docs/PRD-Phase2.md` | PRD2 formal product requirements | Draft for review |
+| `docs/planning/PRD3-CONSISTENCY-AUDIT.md` | PRD3 consistency audit | Scope confirmed input for PRD3 |
+| `docs/PRD-Phase3.md` | PRD3 formal product requirements | Draft planning baseline; cleanup/optimization only |
 | `docs/design/` | UI design decisions | Current design reference unless contradicted by code |
 | `docs/design/PRD2-DEVELOPER-CONSOLE-SPEC.md` | PRD2 Developer Console design spec | Draft for review |
 | `docs/ui/FRONTEND-UI-ARCHITECTURE-AUDIT.md` | Frontend UI/architecture audit | Current PRD1 closeout and PRD2 frontend architecture guidance |
