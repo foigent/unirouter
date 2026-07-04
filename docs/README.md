@@ -8,12 +8,16 @@
 - [ops/PRD1-CLOSEOUT-PLAN.md](ops/PRD1-CLOSEOUT-PLAN.md) — PRD1 收尾计划（含 UI 收尾范围）
 - [ops/PRD1-REMAINING-ACCEPTANCE-PACK.md](ops/PRD1-REMAINING-ACCEPTANCE-PACK.md) — PRD1 剩余验收证据与外部验收队列
 - [ops/PRD-ACCEPTANCE-MATRIX.md](ops/PRD-ACCEPTANCE-MATRIX.md) — Phase 1 PRD 验收矩阵
+- [ops/PRD3-ACCEPTANCE-MATRIX.md](ops/PRD3-ACCEPTANCE-MATRIX.md) — PRD3 清理/优化验收矩阵
 - [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 当前未关闭问题列表
 - [DOCS-GOVERNANCE.md](DOCS-GOVERNANCE.md) — 文档治理规则
 
 ## 核心文档
 - [PRD-Phase1.md](PRD-Phase1.md) — 产品需求文档（需求和验收标准的 source of truth）
 - [PRD-Phase1.pdf](PRD-Phase1.pdf) — PRD PDF 版本（正式交付用）
+- [PRD-Phase2.md](PRD-Phase2.md) — PRD2 产品需求文档
+- [PRD-Phase3.md](PRD-Phase3.md) — PRD3 一致性、语义、契约和架构清理范围
+- [planning/PRD3-CONSISTENCY-AUDIT.md](planning/PRD3-CONSISTENCY-AUDIT.md) — PRD3 范围审计和 PRD1→PRD2 遗留问题梳理
 
 ## 设计文档
 - [design/README.md](design/README.md) — UI 设计文档索引（人类友好版本）
@@ -23,7 +27,7 @@
 - [ui/FRONTEND-UI-ARCHITECTURE-AUDIT.md](ui/FRONTEND-UI-ARCHITECTURE-AUDIT.md) — 当前前端 UI/架构审计与 PRD1/PRD2 建议
 
 ## 技术参考
-- [tech-ref/](tech-ref/) — 开发团队技术参考（6 份文档）
+- [tech-ref/](tech-ref/) — 开发团队技术参考索引
 
 ## 运维文档
 - [ops/deployment-runbook.md](ops/deployment-runbook.md) — 部署手册（含 Canary + HTTPS 章节）
