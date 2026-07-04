@@ -3,7 +3,15 @@ package admin
 import "testing"
 
 func TestUsageAnalyticsGroup(t *testing.T) {
-	group, expr, ok := usageAnalyticsGroup("alias")
+	group, expr, ok := usageAnalyticsGroup("overall")
+	if !ok {
+		t.Fatal("expected overall group to be valid")
+	}
+	if group.Key != "overall" || group.Label != "总体" || expr != "'全部请求'" {
+		t.Fatalf("unexpected overall group: %#v expr=%q", group, expr)
+	}
+
+	group, expr, ok = usageAnalyticsGroup("alias")
 	if !ok {
 		t.Fatal("expected alias group to be valid")
 	}

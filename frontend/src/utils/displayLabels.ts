@@ -4,6 +4,7 @@ export interface SelectOption {
 }
 
 export const usageAnalyticsGroupOptions: SelectOption[] = [
+  { label: '总览（不分组）', value: 'overall' },
   { label: '项目', value: 'project' },
   { label: '访问凭证', value: 'key' },
   { label: '模型', value: 'model' },
@@ -113,6 +114,16 @@ export const severityOptions: SelectOption[] = [
 
 export function severityLabel(value?: string) {
   return severityLabels[value || ''] || value || '-';
+}
+
+const eventStatusLabels: Record<string, string> = {
+  open: '未关闭',
+  acknowledged: '已确认',
+  resolved: '已解决',
+};
+
+export function eventStatusLabel(value?: string) {
+  return eventStatusLabels[value || ''] || value || '-';
 }
 
 const deliveryStateLabels: Record<string, string> = {

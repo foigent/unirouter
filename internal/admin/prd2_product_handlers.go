@@ -25,6 +25,8 @@ func (h *Handler) ListErrorDocs(w http.ResponseWriter, r *http.Request) {
 
 func usageAnalyticsGroup(groupBy string) (analyticsGroup, string, bool) {
 	switch strings.TrimSpace(groupBy) {
+	case "overall":
+		return analyticsGroup{Key: "overall", Label: "总体"}, "'全部请求'", true
 	case "", "project":
 		return analyticsGroup{Key: "project", Label: "项目"}, "COALESCE(project_id, 0)::text", true
 	case "key":
