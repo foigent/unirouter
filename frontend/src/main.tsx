@@ -26,9 +26,10 @@ import UsageAnalyticsPage from './pages/UsageAnalyticsPage'
 import InternalStatusPage from './pages/InternalStatusPage'
 import TestPage from './pages/TestPage'
 import ApiDocsPage from './pages/ApiDocsPage'
+import AccessStatePage from './pages/AccessStatePage'
 import ErrorBoundary from './components/ErrorBoundary'
 import { useAuthStore } from './store/auth'
-import { getDefaultPathForRole, isProjectConsoleRole, isRouteAllowedForRole } from './navigation'
+import { getDefaultPathForRole, isRouteAllowedForRole } from './navigation'
 
 function RouteLoading() {
   return (
@@ -67,7 +68,8 @@ function RoleRoute({ children }: { children: React.ReactNode }) {
 
 function HomeRoute() {
   const role = useAuthStore((s) => s.user?.role)
-  if (isProjectConsoleRole(role)) return <Navigate to="/developer" replace />
+  const defaultPath = getDefaultPathForRole(role)
+  if (defaultPath !== '/') return <Navigate to={defaultPath} replace />
   return (
     <RoleRoute>
       <DashboardPage />
@@ -102,6 +104,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="test" element={<RoleRoute><TestPage /></RoleRoute>} />
             <Route path="settings" element={<RoleRoute><SettingsPage /></RoleRoute>} />
             <Route path="license" element={<RoleRoute><LicensePage /></RoleRoute>} />
+            <Route path="access" element={<RoleRoute><AccessStatePage /></RoleRoute>} />
             <Route path="docs" element={<ApiDocsPage />} />
           </Route>
         </Routes>

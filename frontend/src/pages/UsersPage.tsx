@@ -3,13 +3,8 @@ import { Button, Table, Modal, Form, Tag, Toast, SideSheet } from '@douyinfe/sem
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
+import { ROLE_LABELS, USER_MANAGEMENT_ROLE_OPTIONS } from '../navigation';
 import { PageHeader, StatusTag, Surface } from '../ui';
-
-const ROLES = [
-  { label: '系统管理员 (admin)', value: 'admin' },
-  { label: '组织管理员 (org_admin)', value: 'org_admin' },
-  { label: '组织查看者 (org_viewer)', value: 'org_viewer' },
-];
 
 export default function UsersPage() {
   const [users, setUsers] = useState<any[]>([]);
@@ -83,15 +78,18 @@ export default function UsersPage() {
   };
 
   const roleColor = (r: string) => {
-    if (r === 'admin') return 'red';
+    if (r === 'admin' || r === 'platform_admin') return 'red';
     if (r === 'org_admin') return 'blue';
+    if (r === 'billing_admin') return 'orange';
+    if (r === 'project_admin') return 'purple';
+    if (r === 'developer') return 'green';
     return 'grey';
   };
 
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 60 },
     { title: '用户名', dataIndex: 'username' },
-    { title: '角色', dataIndex: 'role', render: (v: string) => <Tag color={roleColor(v) as any}>{v}</Tag> },
+    { title: '角色', dataIndex: 'role', render: (v: string) => <Tag color={roleColor(v) as any}>{ROLE_LABELS[v] || v}</Tag> },
     { title: '状态', dataIndex: 'status', render: (v: string) => <StatusTag status={v}>{v}</StatusTag> },
     { title: '创建时间', dataIndex: 'created_at', render: (v: string) => formatDateTime(v) },
     {
@@ -110,7 +108,7 @@ export default function UsersPage() {
       <PageHeader
         eyebrow="访问控制"
         title="用户管理"
-        description="管理系统管理员、组织管理员和组织查看者账号。"
+        description="管理平台、组织、账务、项目和只读账号。项目角色还需要项目成员关系才会获得项目工作台访问。"
         actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增用户</Button>}
       />
 
@@ -139,7 +137,7 @@ export default function UsersPage() {
         <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleSubmit}>
           <Form.Input field="username" label="用户名" rules={[{ required: true, message: '必填' }]} />
           <Form.Input field="password" label={editUser ? '新密码 (留空不修改)' : '密码'} type="password" rules={editUser ? [] : [{ required: true, message: '必填' }]} />
-          <Form.Select field="role" label="角色" optionList={ROLES} rules={[{ required: true, message: '必填' }]} />
+          <Form.Select field="role" label="角色" optionList={USER_MANAGEMENT_ROLE_OPTIONS} rules={[{ required: true, message: '必填' }]} />
           <Form.Select field="status" label="状态" optionList={[{ label: '启用', value: 'active' }, { label: '禁用', value: 'disabled' }]} initValue="active" />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
             <Button onClick={closeDrawer}>取消</Button>
