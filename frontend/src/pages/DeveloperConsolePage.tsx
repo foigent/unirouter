@@ -135,7 +135,7 @@ export default function DeveloperConsolePage() {
   const [lookupResult, setLookupResult] = useState<CallLog | null>(null);
   const [playgroundKey, setPlaygroundKey] = useState('');
   const [playgroundModel, setPlaygroundModel] = useState('');
-  const [playgroundPrompt, setPlaygroundPrompt] = useState('Reply with a short health check for this project.');
+  const [playgroundPrompt, setPlaygroundPrompt] = useState('请用一句话返回当前项目的健康检查结果。');
   const [playgroundMode, setPlaygroundMode] = useState('non_stream');
   const [playgroundLoading, setPlaygroundLoading] = useState(false);
   const [playgroundResult, setPlaygroundResult] = useState<{
@@ -326,7 +326,7 @@ export default function DeveloperConsolePage() {
     const key = playgroundKey.trim();
     const prompt = playgroundPrompt.trim();
     if (!key || !prompt || !effectivePlaygroundModel) {
-      Toast.warning('请填写项目 API Key、模型和 Prompt');
+      Toast.warning('请填写项目访问凭证、模型和提示词');
       return;
     }
     setPlaygroundLoading(true);
@@ -414,7 +414,7 @@ export default function DeveloperConsolePage() {
         status: 0,
         content: '',
         latency_ms: 0,
-        error: err?.message || 'Playground request failed',
+        error: err?.message || '调试请求失败',
       });
     } finally {
       setPlaygroundLoading(false);
@@ -477,7 +477,7 @@ export default function DeveloperConsolePage() {
     { title: 'Request ID', dataIndex: 'request_id', key: 'request_id', render: (value: string) => <Text code copyable={{ content: value }}>{value}</Text> },
     { title: '模型', dataIndex: 'model', key: 'model' },
     { title: '状态', dataIndex: 'status_code', key: 'status_code', render: (value: number) => <StatusTag status={value}>{value}</StatusTag> },
-    { title: 'Tokens', dataIndex: 'total_tokens', key: 'total_tokens', render: (value: number) => compactNumber(value || 0) },
+    { title: 'Token', dataIndex: 'total_tokens', key: 'total_tokens', render: (value: number) => compactNumber(value || 0) },
     { title: '费用', dataIndex: 'cost_cents', key: 'cost_cents', render: (value: number) => <MoneyText cents={value || 0} precision={4} tone="cost" /> },
     { title: '延迟', dataIndex: 'latency_ms', key: 'latency_ms', render: (value: number) => `${value || 0}ms` },
   ];
@@ -514,7 +514,7 @@ export default function DeveloperConsolePage() {
       <PageHeader
         eyebrow="开发者工作台"
         title="项目工作台"
-        description="项目成员可在这里创建项目 Key、查看已批准模型、定位请求，并复制 OpenAI-compatible 调用示例。"
+        description="项目成员可在这里创建项目访问凭证、查看已批准模型、定位请求，并复制兼容 OpenAI 协议的调用示例。"
         actions={(
           <Space>
             <Select
@@ -540,7 +540,7 @@ export default function DeveloperConsolePage() {
         </div>
         <StatusTag status={selectedProject?.status || 'active'}>{selectedProject?.status || 'active'}</StatusTag>
         <StatusTag status={roleLabel}>{roleLabel}</StatusTag>
-        <Text type="tertiary">Project ID: {selectedProject?.id}</Text>
+        <Text type="tertiary">项目 ID：{selectedProject?.id}</Text>
       </section>
 
       <div className="ur-kpi-grid">
@@ -552,9 +552,9 @@ export default function DeveloperConsolePage() {
 
       <div className="ur-dev-main-grid">
         <Surface
-          title="项目 API Keys"
-          description="创建后只显示一次完整 Key；列表仅显示前缀。"
-          actions={mayCreateKey && <Button icon={<IconPlus />} type="primary" onClick={openCreateKey}>创建项目 Key</Button>}
+          title="项目访问凭证"
+          description="创建后只显示一次完整凭证；列表仅显示前缀。"
+          actions={mayCreateKey && <Button icon={<IconPlus />} type="primary" onClick={openCreateKey}>创建项目凭证</Button>}
         >
           <div className="ur-table-shell">
             <Table
@@ -563,13 +563,13 @@ export default function DeveloperConsolePage() {
               rowKey="id"
               loading={dataLoading}
               pagination={false}
-              empty={<EmptyState title="暂无项目 Key" description="创建项目 Key 后即可从内部应用调用网关。" minHeight={180} />}
+              empty={<EmptyState title="暂无项目凭证" description="创建项目凭证后即可从内部应用调用网关。" minHeight={180} />}
               size="small"
             />
           </div>
         </Surface>
 
-        <Surface title="项目 Quickstart" description="示例使用当前项目的已批准模型或 alias。">
+        <Surface title="项目接入示例" description="示例使用当前项目的已批准模型或别名。">
           <div className="ur-dev-docs">
             <div>
               <Text className="ur-filter-label">Base URL</Text>
@@ -585,8 +585,8 @@ export default function DeveloperConsolePage() {
       </div>
 
       <Surface
-        title="Playground"
-        description="使用项目 API Key 直接调用 OpenAI-compatible gateway；Prompt 和响应仅保留在当前页面，不写入历史。"
+        title="请求调试台"
+        description="使用项目访问凭证直接调用兼容 OpenAI 协议的网关；提示词和响应仅保留在当前页面，不写入历史。"
       >
         <div className="ur-playground-grid">
           <div className="ur-playground-controls">
@@ -595,7 +595,7 @@ export default function DeveloperConsolePage() {
                 value={playgroundKey}
                 onChange={setPlaygroundKey}
                 type="password"
-                placeholder="粘贴项目 API Key"
+                placeholder="粘贴项目访问凭证"
                 style={{ width: 260 }}
               />
               <Select
@@ -603,7 +603,7 @@ export default function DeveloperConsolePage() {
                 optionList={modelOptions.map(model => ({ label: model, value: model }))}
                 onChange={(value) => setPlaygroundModel(String(value || ''))}
                 style={{ width: 220 }}
-                placeholder="选择 approved model / alias"
+                placeholder="选择已批准模型或别名"
               />
               <Select
                 value={playgroundMode}
@@ -620,7 +620,7 @@ export default function DeveloperConsolePage() {
               value={playgroundPrompt}
               onChange={setPlaygroundPrompt}
               rows={5}
-              placeholder="输入本次测试 Prompt"
+              placeholder="输入本次测试提示词"
               style={{ width: '100%', marginTop: 12 }}
             />
           </div>
@@ -679,7 +679,7 @@ export default function DeveloperConsolePage() {
           </div>
         </Surface>
 
-        <Surface title="Request Lookup" description="按 Request ID 定位项目内请求，不展示 provider key、完整 API key、prompt 或 response。">
+        <Surface title="请求定位" description="按 Request ID 定位项目内请求，不展示上游凭证、完整访问凭证、提示词或响应。">
           <div className="ur-dev-lookup">
             <Space align="start">
               <Input
@@ -696,10 +696,10 @@ export default function DeveloperConsolePage() {
               <div className="ur-dev-lookup-grid">
                 <div><Text type="tertiary">状态</Text><StatusTag status={lookupResult.status_code}>{lookupResult.status_code}</StatusTag></div>
                 <div><Text type="tertiary">模型</Text><strong>{lookupResult.requested_model || lookupResult.model}</strong></div>
-                <div><Text type="tertiary">Resolved</Text><strong>{lookupResult.model}</strong></div>
+                <div><Text type="tertiary">路由模型</Text><strong>{lookupResult.model}</strong></div>
                 <div><Text type="tertiary">供应商</Text><strong>{lookupResult.provider || '-'}</strong></div>
                 <div><Text type="tertiary">渠道</Text><strong>{lookupResult.channel || '-'}</strong></div>
-                <div><Text type="tertiary">Tokens</Text><strong>{compactNumber(lookupResult.total_tokens || 0)}</strong></div>
+                <div><Text type="tertiary">Token</Text><strong>{compactNumber(lookupResult.total_tokens || 0)}</strong></div>
                 <div><Text type="tertiary">费用</Text><MoneyText cents={lookupResult.cost_cents || 0} precision={4} strong tone="cost" /></div>
                 <div><Text type="tertiary">延迟</Text><strong>{lookupResult.latency_ms || 0}ms</strong></div>
                 {lookupResult.upstream_error && (
@@ -717,13 +717,13 @@ export default function DeveloperConsolePage() {
       </div>
 
       <SideSheet
-        title="创建项目 API Key"
+        title="创建项目访问凭证"
         visible={showKeySheet}
         onCancel={closeCreateKey}
         width={500}
       >
         <Form getFormApi={(apiRef: any) => setFormApi(apiRef)} onSubmit={handleCreateKey} initValues={{ rpm_limit: 60, qps_limit: 10 }}>
-          <Form.Input field="name" label="Key 名称" placeholder="frontend-prod" rules={[{ required: true, message: '请输入 Key 名称' }]} />
+          <Form.Input field="name" label="凭证名称" placeholder="frontend-prod" rules={[{ required: true, message: '请输入凭证名称' }]} />
           <Form.Select
             field="allowed_models"
             label="允许模型 / 别名"

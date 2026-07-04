@@ -39,14 +39,14 @@ describe('AuditLogsPage', () => {
 
     const text = container.textContent || '';
     expect(text).toContain('channel.test');
-    expect(text).toContain('admin_console');
-    expect(container.querySelector('input[placeholder="org_id"]')).toBeTruthy();
-    expect(container.querySelector('input[placeholder="project_id"]')).toBeTruthy();
-    expect(container.querySelector('input[placeholder="actor_id"]')).toBeTruthy();
-    expect(container.querySelector('input[placeholder="action"]')).toBeTruthy();
-    expect(container.querySelector('input[placeholder="resource"]')).toBeTruthy();
-    expect(container.querySelector('input[placeholder="resource_id"]')).toBeTruthy();
-    expect(container.querySelector('input[placeholder="start_time RFC3339"]')).toBeTruthy();
-    expect(container.querySelector('input[placeholder="end_time RFC3339"]')).toBeTruthy();
+    expect(text).toContain('管理控制台');
+    expect(container.querySelector('input[placeholder="组织 ID"]')).toBeTruthy();
+    expect(container.querySelector('input[placeholder="项目 ID"]')).toBeTruthy();
+    expect(container.querySelector('input[placeholder="操作者 ID"]')).toBeTruthy();
+    expect(container.querySelector('input[placeholder="动作"]')).toBeTruthy();
+    expect(container.querySelector('input[placeholder="目标类型"]')).toBeTruthy();
+    expect(container.querySelector('input[placeholder="目标 ID"]')).toBeTruthy();
+    expect(container.querySelector('input[placeholder="开始时间 RFC3339"]')).toBeTruthy();
+    expect(container.querySelector('input[placeholder="结束时间 RFC3339"]')).toBeTruthy();
   });
 });

@@ -64,8 +64,8 @@ describe('ReconciliationPage', () => {
 
     expect(await screen.findByText('req-recon-001')).toBeTruthy();
     expect(screen.getByText('80.0%')).toBeTruthy();
-    expect(screen.getByText(/filtered_query/)).toBeTruthy();
-    expect(screen.getAllByText('counter_v2').length).toBeGreaterThan(0);
+    expect(screen.getByText(/当前筛选口径/)).toBeTruthy();
+    expect(screen.getAllByText('流式计数').length).toBeGreaterThan(0);
   });
 
   it('renders usage source filter', async () => {

@@ -187,9 +187,9 @@ export default function KeysPage() {
   return (
     <div className="ur-page">
       <PageHeader
-        eyebrow="Traffic"
+        eyebrow="流量治理"
         title="访问凭证"
-        description="管理调用方 API key、允许 IP 和允许模型范围。"
+        description="管理调用方访问凭证、允许 IP 和允许模型范围。"
         actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增访问凭证</Button>}
       />
 

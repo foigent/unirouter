@@ -26,21 +26,21 @@ func (h *Handler) ListErrorDocs(w http.ResponseWriter, r *http.Request) {
 func usageAnalyticsGroup(groupBy string) (analyticsGroup, string, bool) {
 	switch strings.TrimSpace(groupBy) {
 	case "", "project":
-		return analyticsGroup{Key: "project", Label: "Project"}, "COALESCE(project_id, 0)::text", true
+		return analyticsGroup{Key: "project", Label: "项目"}, "COALESCE(project_id, 0)::text", true
 	case "key":
-		return analyticsGroup{Key: "key", Label: "API Key"}, "COALESCE(api_key_id, 0)::text", true
+		return analyticsGroup{Key: "key", Label: "访问凭证"}, "COALESCE(api_key_id, 0)::text", true
 	case "model":
-		return analyticsGroup{Key: "model", Label: "Model"}, "COALESCE(NULLIF(model, ''), '(unknown)')", true
+		return analyticsGroup{Key: "model", Label: "模型"}, "COALESCE(NULLIF(model, ''), '(unknown)')", true
 	case "alias":
-		return analyticsGroup{Key: "alias", Label: "Requested model / alias"}, "COALESCE(NULLIF(requested_model, ''), NULLIF(model, ''), '(unknown)')", true
+		return analyticsGroup{Key: "alias", Label: "模型别名"}, "COALESCE(NULLIF(requested_model, ''), NULLIF(model, ''), '(unknown)')", true
 	case "provider":
-		return analyticsGroup{Key: "provider", Label: "Provider"}, "COALESCE(NULLIF(provider, ''), '(unknown)')", true
+		return analyticsGroup{Key: "provider", Label: "供应商"}, "COALESCE(NULLIF(provider, ''), '(unknown)')", true
 	case "channel":
-		return analyticsGroup{Key: "channel", Label: "Channel"}, "COALESCE(NULLIF(channel, ''), '(unknown)')", true
+		return analyticsGroup{Key: "channel", Label: "上游通道"}, "COALESCE(NULLIF(channel, ''), '(unknown)')", true
 	case "status":
-		return analyticsGroup{Key: "status", Label: "Status"}, "CASE WHEN status_code >= 400 OR status_code = 0 THEN 'error' ELSE 'success' END", true
+		return analyticsGroup{Key: "status", Label: "请求状态"}, "CASE WHEN status_code >= 400 OR status_code = 0 THEN 'error' ELSE 'success' END", true
 	case "usage_source":
-		return analyticsGroup{Key: "usage_source", Label: "Usage source"}, "COALESCE(NULLIF(usage_source, ''), 'upstream')", true
+		return analyticsGroup{Key: "usage_source", Label: "计量来源"}, "COALESCE(NULLIF(usage_source, ''), 'upstream')", true
 	default:
 		return analyticsGroup{}, "", false
 	}

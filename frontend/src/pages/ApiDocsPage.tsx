@@ -17,21 +17,21 @@ const endpointGroups = [
   {
     area: 'Gateway',
     endpoints: [
-      ['GET', '/v1/models', 'OpenAI-compatible 模型列表'],
-      ['POST', '/v1/chat/completions', 'OpenAI-compatible Chat Completions'],
-      ['POST', '/v1/embeddings', 'OpenAI-compatible Embeddings'],
+      ['GET', '/v1/models', '兼容 OpenAI 协议的模型列表'],
+      ['POST', '/v1/chat/completions', '兼容 OpenAI 协议的对话补全'],
+      ['POST', '/v1/embeddings', '兼容 OpenAI 协议的向量接口'],
     ],
   },
   {
     area: '开发者工作台',
     endpoints: [
       ['GET', '/api/v1/projects', '当前账号可访问项目'],
-      ['GET', '/api/v1/keys?project_id={id}', '项目 API Key 列表'],
-      ['POST', '/api/v1/keys', '创建项目 API Key'],
+      ['GET', '/api/v1/keys?project_id={id}', '项目访问凭证列表'],
+      ['POST', '/api/v1/keys', '创建项目访问凭证'],
       ['GET', '/api/v1/model-catalog?project_id={id}', '项目可用模型目录'],
       ['GET', '/api/v1/logs?project_id={id}', '项目调用日志'],
       ['GET', '/api/v1/logs?project_id={id}&request_id={rid}', '按 Request ID 查询项目请求'],
-      ['POST', '/v1/chat/completions', 'Playground 直接使用项目 API Key 调用'],
+      ['POST', '/v1/chat/completions', '请求调试台直接使用项目访问凭证调用'],
     ],
   },
   {
@@ -85,7 +85,7 @@ export default function ApiDocsPage() {
       <PageHeader
         eyebrow="系统治理"
         title="API 文档"
-        description="PRD2 当前可用接口索引。开发者工作台使用同一登录会话和项目级 API，不暴露上游 provider key。"
+        description="PRD2 当前可用接口索引。开发者工作台使用同一登录会话和项目级 API，不暴露上游凭证。"
       />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {endpointGroups.map(group => (

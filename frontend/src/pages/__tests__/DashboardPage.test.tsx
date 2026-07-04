@@ -149,7 +149,7 @@ describe('DashboardPage', () => {
     });
 
     const html = container.textContent || '';
-    expect(html).toContain('供应商：OpenAI-compatible');
+    expect(html).toContain('供应商：兼容 OpenAI 协议');
     expect(html).not.toContain('供应商：deepseek');
   });
 

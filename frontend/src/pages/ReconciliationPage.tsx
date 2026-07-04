@@ -3,6 +3,7 @@ import { Button, Table, Select, Toast, Tag } from '@douyinfe/semi-ui';
 import { IconAlertTriangle, IconCoinMoney, IconRefresh, IconServer } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { MetricTile, PageHeader, StatusTag, Surface } from '../ui';
+import { usageSourceLabel, usageSourceOptions } from '../utils/displayLabels';
 
 interface ReconRecord {
   id: number;
@@ -32,16 +33,6 @@ interface ReconSummary {
   estimated_usage_alert: boolean;
   estimated_ratio_scope: string;
 }
-
-const usageSourceOptions = [
-  { label: '全部来源', value: '' },
-  { label: 'upstream', value: 'upstream' },
-  { label: 'counter_v2', value: 'counter_v2' },
-  { label: 'adapter_estimated', value: 'adapter_estimated' },
-  { label: 'estimated', value: 'estimated' },
-  { label: 'no_route', value: 'no_route' },
-  { label: 'upstream_failed', value: 'upstream_failed' },
-];
 
 function formatPercent(value?: number) {
   return `${((value || 0) * 100).toFixed(1)}%`;
@@ -89,7 +80,7 @@ export default function ReconciliationPage() {
       dataIndex: 'usage_source',
       key: 'usage_source',
       width: 132,
-      render: (v: string) => v ? <StatusTag status={v}>{v}</StatusTag> : '-',
+      render: (v: string) => v ? <StatusTag status={v}>{usageSourceLabel(v)}</StatusTag> : '-',
     },
     {
       title: '差值',
@@ -191,7 +182,7 @@ export default function ReconciliationPage() {
           value={(summary?.estimated_tokens || 0).toLocaleString()}
           icon={<IconServer />}
           tone="amber"
-          meta={`口径 ${summary?.estimated_ratio_scope || 'filtered_query'}`}
+          meta={`口径 ${summary?.estimated_ratio_scope === 'filtered_query' ? '当前筛选口径' : summary?.estimated_ratio_scope || '当前筛选口径'}`}
         />
         <MetricTile
           label="上游 Token"

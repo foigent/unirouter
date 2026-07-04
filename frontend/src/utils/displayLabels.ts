@@ -1,0 +1,152 @@
+export interface SelectOption {
+  label: string;
+  value: string;
+}
+
+export const usageAnalyticsGroupOptions: SelectOption[] = [
+  { label: '项目', value: 'project' },
+  { label: '访问凭证', value: 'key' },
+  { label: '模型', value: 'model' },
+  { label: '模型别名', value: 'alias' },
+  { label: '供应商', value: 'provider' },
+  { label: '上游通道', value: 'channel' },
+  { label: '请求状态', value: 'status' },
+  { label: '计量来源', value: 'usage_source' },
+];
+
+export const requestStatusOptions: SelectOption[] = [
+  { label: '全部状态', value: '' },
+  { label: '成功', value: 'success' },
+  { label: '失败', value: 'error' },
+];
+
+const usageSourceLabels: Record<string, string> = {
+  upstream: '上游回传',
+  api: '上游回传',
+  counter_v2: '流式计数',
+  stream_estimate: '流式计数',
+  adapter_estimated: '适配器估算',
+  estimated: '本地估算',
+  no_route: '无可用通道',
+  upstream_failed: '上游失败',
+};
+
+export const usageSourceOptions: SelectOption[] = [
+  { label: '全部来源', value: '' },
+  { label: '上游回传', value: 'upstream' },
+  { label: '流式计数', value: 'counter_v2' },
+  { label: '适配器估算', value: 'adapter_estimated' },
+  { label: '本地估算', value: 'estimated' },
+  { label: '无可用通道', value: 'no_route' },
+  { label: '上游失败', value: 'upstream_failed' },
+];
+
+export function usageSourceLabel(value?: string) {
+  return usageSourceLabels[value || ''] || value || '-';
+}
+
+const auditSourceLabels: Record<string, string> = {
+  admin_console: '管理控制台',
+  developer_console: '开发者工作台',
+  gateway_api: '网关 API',
+  system: '系统任务',
+};
+
+export const auditSourceOptions: SelectOption[] = [
+  { label: '管理控制台', value: 'admin_console' },
+  { label: '开发者工作台', value: 'developer_console' },
+  { label: '网关 API', value: 'gateway_api' },
+  { label: '系统任务', value: 'system' },
+];
+
+export function auditSourceLabel(value?: string) {
+  return auditSourceLabels[value || ''] || value || '-';
+}
+
+const eventTypeLabels: Record<string, string> = {
+  'project_budget.threshold': '项目预算阈值',
+  'api_key.disabled': '访问凭证停用',
+  'model.deprecated': '模型弃用',
+  'model.retired': '模型下线',
+  'provider.channel.failure': '上游通道故障',
+  'license.warning': 'License 预警',
+  'token_metering.estimated_ratio.high': '估算占比过高',
+};
+
+export const eventTypeOptions: SelectOption[] = [
+  { label: '全部事件', value: '' },
+  ...Object.entries(eventTypeLabels).map(([value, label]) => ({ label, value })),
+];
+
+export function eventTypeLabel(value?: string) {
+  return eventTypeLabels[value || ''] || value || '-';
+}
+
+export function eventTypeListLabel(value: unknown) {
+  let values: unknown[] = [];
+  if (Array.isArray(value)) {
+    values = value;
+  } else if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      values = Array.isArray(parsed) ? parsed : value.split(',');
+    } catch {
+      values = value.split(',');
+    }
+  }
+  const labels = values.map(item => eventTypeLabel(String(item).trim())).filter(label => label && label !== '-');
+  return labels.length ? labels.join(', ') : '-';
+}
+
+const severityLabels: Record<string, string> = {
+  info: '信息',
+  warning: '预警',
+  critical: '严重',
+};
+
+export const severityOptions: SelectOption[] = [
+  { label: '全部级别', value: '' },
+  { label: '信息', value: 'info' },
+  { label: '预警', value: 'warning' },
+  { label: '严重', value: 'critical' },
+];
+
+export function severityLabel(value?: string) {
+  return severityLabels[value || ''] || value || '-';
+}
+
+const deliveryStateLabels: Record<string, string> = {
+  not_configured: '未配置',
+  pending: '待投递',
+  delivered: '已投递',
+  failed: '投递失败',
+};
+
+export const deliveryStateOptions: SelectOption[] = [
+  { label: '全部投递状态', value: '' },
+  { label: '未配置', value: 'not_configured' },
+  { label: '待投递', value: 'pending' },
+  { label: '已投递', value: 'delivered' },
+  { label: '投递失败', value: 'failed' },
+];
+
+export const deliveryStatusOptions: SelectOption[] = [
+  { label: '全部状态', value: '' },
+  { label: '待投递', value: 'pending' },
+  { label: '已投递', value: 'delivered' },
+  { label: '投递失败', value: 'failed' },
+];
+
+export function deliveryStateLabel(value?: string) {
+  return deliveryStateLabels[value || ''] || value || '-';
+}
+
+const internalStatusLabels: Record<string, string> = {
+  operational: '正常',
+  warning: '预警',
+  degraded: '降级',
+};
+
+export function internalStatusLabel(value?: string) {
+  return internalStatusLabels[value || ''] || value || '-';
+}

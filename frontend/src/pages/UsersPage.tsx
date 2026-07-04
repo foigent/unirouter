@@ -108,7 +108,7 @@ export default function UsersPage() {
   return (
     <div className="ur-page">
       <PageHeader
-        eyebrow="Access"
+        eyebrow="访问控制"
         title="用户管理"
         description="管理系统管理员、组织管理员和组织查看者账号。"
         actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增用户</Button>}
