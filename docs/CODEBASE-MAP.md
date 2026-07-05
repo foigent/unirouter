@@ -18,18 +18,23 @@
 | Package | Responsibility |
 |---------|----------------|
 | `internal/admin` | Admin REST handlers: auth, channels, channel keys, API keys, wallet, grants, logs, dashboard, prices, users, settings, audit, sensitive words, channel tests |
+| `internal/adapters` | Provider adapter registry and OpenAI-compatible / Anthropic-native request/response conversion |
 | `internal/auth` | JWT generation/validation, API key hashing, upstream key AES-GCM encryption/decryption |
-| `internal/billing` | Cost calculation, freeze/settle/cancel, price provider, budget alert |
+| `internal/billing` | Cost calculation, freeze/settle/cancel, price provider, budget alert, notification event service |
 | `internal/circuitbreaker` | Standalone circuit breaker implementation and tests |
 | `internal/filter` | DFA sensitive-word filter |
+| `internal/errdocs` | Error documentation registry used by gateway `doc_url` responses and API Docs |
 | `internal/gateway` | Model routing, upstream relay, chat completions, embeddings, model listing, request logging |
+| `internal/licensing` | Offline license document parsing, Ed25519 signature verification, expiry status, and warning calculation |
+| `internal/logger` | Logging helpers |
+| `internal/metering` | Usage-source constants and token-metering source classification |
 | `internal/middleware` | Gateway auth, admin auth, rate limit, admission control, CORS, Prometheus metrics |
 | `internal/migrate` | SQL migration runner |
+| `internal/modelgov` | Model governance helpers and access checks |
 | `internal/models` | Shared data model types |
+| `internal/oidc` | OIDC discovery, token exchange, JWKS verification, and identity extraction |
 | `internal/testutil` | Mock DB and test DB helpers |
 | `internal/tokenutil` | Token estimation and stream counting |
-| `internal/logger` | Logging helpers |
-| `internal/licensing` | Offline license document parsing, Ed25519 signature verification, expiry status, and warning calculation |
 
 ## Main Backend Routes
 
@@ -40,7 +45,7 @@ Defined in `cmd/uniroute/main.go`.
 | Health | `GET /`, `GET /health/live`, `GET /health/ready` |
 | Metrics | `GET /metrics` |
 | Gateway | `POST /v1/chat/completions`, `POST /v1/embeddings`, `GET /v1/models` |
-| Auth | `POST /api/v1/auth/login`, `GET /api/v1/me` |
+| Auth | `POST /api/v1/auth/login`, `GET /api/v1/auth/oidc/config`, `GET /api/v1/auth/oidc/start`, `GET /api/v1/auth/oidc/callback`, `GET /api/v1/me`, `PUT /api/v1/me/password` |
 | Channels | `GET/POST /api/v1/channels`, `GET/PUT/DELETE /api/v1/channels/{id}`, `POST /api/v1/channels/{id}/test` |
 | API keys | `GET/POST /api/v1/keys`, `GET/PUT /api/v1/keys/{id}`, `POST /api/v1/keys/{id}/disable` |
 | Channel keys | `GET/POST /api/v1/channel-keys`, `PUT/DELETE /api/v1/channel-keys/{id}` |
@@ -72,7 +77,7 @@ OpenAPI snapshot: `docs/tech-ref/05-openapi-spec.yaml` is the current route-leve
 | Global CSS | `frontend/src/index.css` |
 | Tests | `frontend/src/**/__tests__/*.test.tsx`, `frontend/src/**/__tests__/*.test.ts` |
 
-Frontend route pages currently include dashboard, channels, channel keys, API keys, wallet, logs, users, model prices, org model prices, grants, audit logs, reconciliation, test page, settings, and login.
+Frontend route pages currently include dashboard, channels, channel keys, API keys, developer console, usage analytics, internal status, notification center, model governance, wallet, logs, users, model prices, org model prices, grants, audit logs, reconciliation, license, test page, settings, API docs, access state, and login.
 
 ## Data Model
 
@@ -115,10 +120,11 @@ Admin auth and gateway auth are separate:
 ## Verification Commands
 
 ```bash
-go test ./...
+go test ./... -count=1
 go vet ./...
-cd frontend && npm test -- --run
-cd frontend && npm run build
+npm --prefix frontend test -- --run
+npm --prefix frontend run build
+git diff --check
 ```
 
 Potentially environment-dependent tests use a real database only when configured by test helpers. Read `internal/testutil/testdb.go` before assuming integration tests always run.

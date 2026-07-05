@@ -55,13 +55,16 @@ Docker Compose（6 个容器）：
 - [贡献指南](CONTRIBUTING.md) — 开发流程、代码规范、提交规范
 - [Agent Handoff](docs/PROJECT-HANDOFF.md) — 其他 agent 接手项目的第一入口
 - [当前状态](docs/ops/CURRENT-STATUS.md) — 当前真实进度、测试和缺口
-- [PRD1 收尾计划](docs/ops/PRD1-CLOSEOUT-PLAN.md) — PRD1 到 PRD2 的退出标准和收尾项
-- [PRD1 严格关闭 Runbook](docs/ops/PRD1-STRICT-CLOSEOUT-RUNBOOK.md) — PRD1 全量对齐关闭前的执行门禁
-- [PRD 验收矩阵](docs/ops/PRD-ACCEPTANCE-MATRIX.md) — Phase 1 验收进度
-- [PRD1 UI Redesign](docs/design/PRD1-UI-REDESIGN-SPEC.md) — PRD1 控制台视觉重设计和前端 UI 基础层
+- [PRD3 验收矩阵](docs/ops/PRD3-ACCEPTANCE-MATRIX.md) — 当前 PRD3 清理/优化验收状态
+- [PRD3 产品范围](docs/PRD-Phase3.md) — 当前 PRD3 一致性、语义、契约和架构清理范围
+- [PRD3 一致性审计](docs/planning/PRD3-CONSISTENCY-AUDIT.md) — PRD1→PRD2 遗留问题梳理
+- [PRD4 候选 Backlog](docs/planning/PRD4-BACKLOG.md) — PRD4 候选能力边界
 - [Open Issues](docs/issues/OPEN-ISSUES.md) — 当前未关闭问题
 - [Agent 协议](docs/agent-workflows/AGENT-PROTOCOL.md) — Codex/OpenClaw 协作和验收流程
-- [PRD Phase 1](docs/PRD-Phase1.md) — 产品需求文档（需求和验收标准的 source of truth）
+- [文档目录](docs/README.md) — 当前、冻结、历史和候选文档入口
+- [文档治理](docs/DOCS-GOVERNANCE.md) — 文档状态和更新规则
+- [PRD2 产品需求](docs/PRD-Phase2.md) — PRD2 已冻结需求参考
+- [PRD1 产品需求](docs/PRD-Phase1.md) — PRD1 历史需求参考
 - [技术参考](docs/tech-ref/) — 开发团队技术参考
   - [01 模型能力矩阵](docs/tech-ref/01-provider-capability-matrix.md)
   - [02 计费状态机](docs/tech-ref/02-billing-state-machine.md)
@@ -86,12 +89,17 @@ UniRouter/
 │   ├── circuitbreaker/   # 熔断器
 │   ├── config/           # 配置加载
 │   ├── db/               # 数据库连接
+│   ├── errdocs/          # 错误码文档注册表
 │   ├── filter/           # 请求过滤
 │   ├── gateway/          # 网关路由 & 中继
+│   ├── licensing/        # 离线 License 校验
+│   ├── logger/           # 日志辅助
+│   ├── metering/         # token usage 来源与口径
 │   ├── middleware/        # HTTP 中间件（鉴权、限流、CORS）
 │   ├── migrate/          # 数据库迁移执行器
+│   ├── modelgov/         # 模型治理辅助
 │   ├── models/           # 数据模型
-│   ├── ratelimit/        # 限流实现
+│   ├── oidc/             # OIDC SSO
 │   ├── redisx/           # Redis 封装
 │   ├── testutil/         # 测试工具
 │   └── tokenutil/        # Token 计数工具
@@ -99,7 +107,6 @@ UniRouter/
 │   └── src/
 │       ├── api/          # API 请求
 │       ├── components/   # 通用组件
-│       ├── hooks/        # 自定义 hooks
 │       ├── pages/        # 页面（Dashboard、Channels、Users 等）
 │       ├── store/        # 状态管理
 │       ├── test/         # 前端测试
@@ -115,6 +122,9 @@ UniRouter/
 │   ├── CODEBASE-MAP.md   # 代码结构地图
 │   ├── DOC-INVENTORY.md  # 文档清单和边界
 │   ├── PRD-Phase1.md     # 产品需求文档
+│   ├── PRD-Phase2.md     # PRD2 需求文档（冻结）
+│   ├── PRD-Phase3.md     # PRD3 清理/优化范围
+│   ├── planning/         # PRD2/PRD3/PRD4 规划和候选 backlog
 │   ├── ops/              # 部署 & 测试
 │   ├── tech-ref/         # 技术参考（模型矩阵、计费状态机等）
 │   ├── agent-workflows/  # Agent 工作流
