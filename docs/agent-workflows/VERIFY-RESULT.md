@@ -1,4 +1,4 @@
-# VERIFY-RESULT.md — PRD3 Batch 5 PRD4 Backlog Hygiene
+# VERIFY-RESULT.md — PRD3 Batch 6 API Contract Refresh
 
 **日期：** 2026-07-05
 **验收人：** Canary
@@ -8,63 +8,76 @@
 
 ## 验收项
 
-### 1. PRD4-BACKLOG.md — PASS
+### 1. Backend `/docs` — PASS
 
 | 检查 | 结果 | 证据 |
 |------|------|------|
-| 文件存在 | ✅ | `docs/planning/PRD4-BACKLOG.md` |
-| 包含 `PRD4-INFRA-001` | ✅ | 第 17 行 |
-| Infrastructure Observability Boundary | ✅ | 第 27-31 行 |
-| Runtime Environment / Capacity Health guidance | ✅ | 第 37-39 行 |
-| 角色/访问和敏感基础设施脱敏 guidance | ✅ | 第 43-46 行 |
-| 实现前提条件 | ✅ | 第 49-53 行 |
+| 不再使用 `PRD1 API index` | ✅ | grep 返回空 |
+| 使用 `Current API contract index` | ✅ | `main.go:245` |
+| 包含 OIDC 路由 | ✅ | `/api/v1/auth/oidc/config`, `/start`, `/callback` |
+| 包含 Usage Analytics | ✅ | `/api/v1/usage/analytics` |
+| 包含 Internal Status | ✅ | `/api/v1/internal-status` |
+| 包含 Error Docs | ✅ | `/api/v1/error-docs` |
+| 包含 Model Governance | ✅ | `/api/v1/model-registry`, `/model-aliases`, `/model-sets` |
+| 包含 Notifications | ✅ | `/api/v1/notification-events`, `/notification-webhooks` |
+| 包含 License | ✅ | `/api/v1/license` |
+| 路由总数 | ✅ | 153 个 API 路由 |
 
-### 2. PRD3 docs 路由到 PRD4 — PASS
+### 2. Frontend `/docs` — PASS
+
+| 检查 | 结果 | 证据 |
+|------|------|------|
+| 不再使用 `PRD2 当前可用接口索引` | ✅ | grep 返回空 |
+| 使用 `当前 API 合同索引` | ✅ | `ApiDocsPage.tsx:170` |
+| 渲染 PRD2 Product 路由 | ✅ | Usage Analytics, Internal Status, Error Docs |
+| 渲染 Admin 路由 | ✅ | channels, keys, projects, wallet, logs 等 |
+
+### 3. OpenAPI spec — PASS
+
+| 检查 | 结果 | 证据 |
+|------|------|------|
+| 不再描述为 PRD1 snapshot | ✅ | 描述为 "Current UniRouter API contract snapshot" |
+| 包含路由/方法覆盖 | ✅ | 53 个 `/api/v1/` 路径 |
+
+### 4. Route parity tests — PASS
+
+| 检查 | 结果 | 证据 |
+|------|------|------|
+| TestAdminRoutesRegisteredForFrontendClient | ✅ | PASS |
+| TestOpenAPISpecCoversRegisteredRoutes | ✅ | PASS |
+| TestFrontendDocsPageCoversRegisteredRoutes | ✅ | PASS |
+| TestBackendDocsPageUsesCurrentContractLanguage | ✅ | PASS |
+
+### 5. Status/evidence docs — PASS
 
 | 文件 | 结果 | 证据 |
 |------|------|------|
-| `docs/PRD-Phase3.md` | ✅ | 第 309/315 行 — 明确路由到 PRD4-BACKLOG |
-| `docs/planning/PRD3-CONSISTENCY-AUDIT.md` | ✅ | 第 159/198 行 |
-| `docs/tech-ref/20-prd3-product-glossary.md` | ✅ | 第 44-45/69 行 — Runtime Environment / Capacity Health 定义为 PRD4 |
-| `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` | ✅ | P3-F13 + PRD4 Backlog Boundary |
-| `docs/issues/OPEN-ISSUES.md` | ✅ | PRD4-INFRA-001 注册为 Open |
-
-### 3. Documentation indexes — PASS
-
-| 文件 | 结果 | 证据 |
-|------|------|------|
-| `docs/README.md` | ✅ | 第 21 行 — PRD4-BACKLOG 索引 |
-| `docs/DOC-INVENTORY.md` | ✅ | 第 32 行 |
-| `docs/ops/CURRENT-STATUS.md` | ✅ | 第 23/29/139 行 |
-
-### 4. Batch 4 status advanced — PASS
-
-| 检查 | 结果 | 证据 |
-|------|------|------|
-| CURRENT-STATUS.md: Batch 4 complete | ✅ | "passed Canary 5/5; Sentinel merged PR #67 at `6cbc5b8`; User reported Atlas completed" |
-| PRD3-ACCEPTANCE-MATRIX.md: P3-F03 complete | ✅ | "Canary PASS 5/5; Sentinel merged PR #67" |
-| OPEN-ISSUES.md: PRD3-UISEM-001 updated | ✅ | "Batch 1/2/3, the Batch 3 follow-up, and Batch 4 passed Canary/Sentinel/Atlas" |
-
-### 5. Evidence file — PASS
-
-| 检查 | 结果 | 证据 |
-|------|------|------|
-| `docs/ops/evidence/PRD3-B05-prd4-backlog-hygiene-local-20260705.md` | ✅ | 存在 (2180 bytes) |
+| `docs/ops/evidence/PRD3-B06-api-contract-refresh-local-20260705.md` | ✅ | 存在 (2453 bytes) |
+| `docs/ops/CURRENT-STATUS.md` | ✅ | 记录 Batch 6 为 "fixed awaiting Canary" |
+| `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` | ✅ | P3-F04 和 P3-F11 更新 |
+| `docs/issues/OPEN-ISSUES.md` | ✅ | PRD3-CONTRACT-001 更新为 "Fixed awaiting Canary" |
+| `docs/tech-ref/README.md` | ✅ | OpenAPI 标注为 v1.2 |
+| `docs/DOC-INVENTORY.md` | ✅ | 更新 OpenAPI 描述 |
+| `docs/CODEBASE-MAP.md` | ✅ | 更新 OpenAPI 描述 |
 
 ### 6. Commands — PASS
 
 | 命令 | 结果 |
 |------|------|
-| `grep PRD4-BACKLOG/PRD4-INFRA-001/Infrastructure observability/Runtime Environment/Capacity Health docs` | ✅ 多处匹配，覆盖所有要求的文档 |
-| `git diff --check` | ✅ PASS (no output) |
+| Route parity tests (4 个) | ✅ 全部 PASS |
+| `npm --prefix frontend test -- --run ApiDocsPage client` | ✅ 2 files / 28 tests PASS |
+| `go test ./... -count=1` | ✅ 全部 PASS |
+| `npm --prefix frontend test -- --run` | ✅ 18 files / 97 tests PASS |
+| `npm --prefix frontend run build` | ✅ PASS |
+| `git diff --check` | ✅ PASS |
 
 ---
 
 ## 边界确认
 
-- ✅ 仅添加 PRD4 路由和文档边界
-- ✅ 未更改后端 API、前端 UI、遥测收集、部署发现、指标摄取、角色/权限或 Internal Status 运行时行为
-- ✅ 当前 Internal Status 保持 notification-event-derived
+- ✅ 未更改后端路由、handler、RBAC、前端导航、网关行为、请求体、响应体或遥测行为
+- ✅ OpenAPI 为路由级覆盖，响应 schema 保持通用
+- ✅ 未生成 SDK（SDK 为 PRD4 范围）
 
 ---
 
@@ -76,4 +89,4 @@
 
 ## 总结
 
-PRD3 Batch 5 PRD4 Backlog Hygiene 验收通过。`PRD4-BACKLOG.md` 完整记录了 PRD4-INFRA-001 和其他候选能力边界，PRD3 文档正确路由基础设施可观测性到 PRD4，文档索引已更新，Batch 4 状态已推进为完成。纯文档批次，无代码变更。
+PRD3 Batch 6 API Contract Refresh 验收通过。Backend `/docs`、frontend `/docs`、OpenAPI spec 和 route parity guards 现在在路由/方法级别对齐。4 个路由对齐测试全部通过，前端测试从 96 增加到 97 个。PRD3-CONTRACT-001 从 Open 推进为 Fixed awaiting Canary。

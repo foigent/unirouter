@@ -3,7 +3,7 @@ info:
   title: UniRoute API
   version: 1.0.0
   description: |
-    Current PRD1 API contract snapshot.
+    Current UniRouter API contract snapshot for active backend routes.
 
     Route source: `cmd/uniroute/main.go`.
     Route parity guard: `cmd/uniroute/route_parity_test.go`.
@@ -24,6 +24,26 @@ tags:
   - name: Observability
 
 paths:
+  /:
+    get:
+      tags: [Health]
+      summary: Service metadata
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+
+  /docs:
+    get:
+      tags: [Admin]
+      summary: Backend API documentation index
+      responses:
+        "200":
+          description: HTML API contract index
+          content:
+            text/html:
+              schema:
+                type: string
+
   /health/live:
     get:
       tags: [Health]
@@ -160,6 +180,36 @@ paths:
         "401":
           $ref: "#/components/responses/Error"
 
+  /api/v1/auth/oidc/config:
+    get:
+      tags: [Auth]
+      summary: OIDC public login configuration
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+
+  /api/v1/auth/oidc/start:
+    get:
+      tags: [Auth]
+      summary: Start OIDC login flow
+      responses:
+        "302":
+          description: Redirects to the configured OIDC identity provider
+        "200":
+          $ref: "#/components/responses/JSON"
+
+  /api/v1/auth/oidc/callback:
+    get:
+      tags: [Auth]
+      summary: OIDC callback
+      responses:
+        "302":
+          description: Redirects to the frontend after successful browser login
+        "200":
+          $ref: "#/components/responses/JSON"
+        "400":
+          $ref: "#/components/responses/Error"
+
   /api/v1/me:
     get:
       tags: [Admin]
@@ -248,6 +298,10 @@ paths:
     get: { $ref: "#/components/pathItems/GetById" }
     put: { $ref: "#/components/pathItems/UpdateById" }
 
+  /api/v1/projects/{id}/model-sets:
+    get: { $ref: "#/components/pathItems/ListById" }
+    put: { $ref: "#/components/pathItems/UpdateById" }
+
   /api/v1/channel-keys:
     get: { $ref: "#/components/pathItems/List" }
     post: { $ref: "#/components/pathItems/Create" }
@@ -287,6 +341,47 @@ paths:
   /api/v1/dashboard/stats:
     get: { $ref: "#/components/pathItems/Get" }
 
+  /api/v1/usage/analytics:
+    get:
+      tags: [Admin]
+      summary: Usage analytics aggregation and CSV export
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: group_by
+          in: query
+          schema:
+            type: string
+            enum: [overall, project, key, model, alias, provider, channel, status, usage_source]
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [csv]
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+
+  /api/v1/internal-status:
+    get:
+      tags: [Admin]
+      summary: Event-derived internal status
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+
+  /api/v1/error-docs:
+    get:
+      tags: [Admin]
+      summary: Error documentation registry
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+
   /api/v1/model-prices:
     get: { $ref: "#/components/pathItems/List" }
     post: { $ref: "#/components/pathItems/Create" }
@@ -297,6 +392,31 @@ paths:
 
   /api/v1/model-names:
     get: { $ref: "#/components/pathItems/Get" }
+
+  /api/v1/model-registry:
+    get: { $ref: "#/components/pathItems/List" }
+    post: { $ref: "#/components/pathItems/Create" }
+
+  /api/v1/model-registry/{id}:
+    put: { $ref: "#/components/pathItems/UpdateById" }
+
+  /api/v1/model-catalog:
+    get: { $ref: "#/components/pathItems/List" }
+
+  /api/v1/model-aliases:
+    get: { $ref: "#/components/pathItems/List" }
+    post: { $ref: "#/components/pathItems/Create" }
+
+  /api/v1/model-aliases/{id}:
+    put: { $ref: "#/components/pathItems/UpdateById" }
+
+  /api/v1/model-sets:
+    get: { $ref: "#/components/pathItems/List" }
+    post: { $ref: "#/components/pathItems/Create" }
+
+  /api/v1/model-sets/{id}/items:
+    get: { $ref: "#/components/pathItems/ListById" }
+    put: { $ref: "#/components/pathItems/UpdateById" }
 
   /api/v1/org-model-prices:
     get: { $ref: "#/components/pathItems/List" }
@@ -320,6 +440,19 @@ paths:
   /api/v1/grants:
     get: { $ref: "#/components/pathItems/List" }
     post: { $ref: "#/components/pathItems/Create" }
+
+  /api/v1/notification-events:
+    get: { $ref: "#/components/pathItems/List" }
+
+  /api/v1/notification-deliveries:
+    get: { $ref: "#/components/pathItems/List" }
+
+  /api/v1/notification-webhooks:
+    get: { $ref: "#/components/pathItems/List" }
+    post: { $ref: "#/components/pathItems/Create" }
+
+  /api/v1/notification-webhooks/{id}:
+    put: { $ref: "#/components/pathItems/UpdateById" }
 
   /api/v1/audit-logs:
     get: { $ref: "#/components/pathItems/List" }
@@ -348,6 +481,24 @@ paths:
               properties:
                 value:
                   nullable: true
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+
+  /api/v1/license:
+    get: { $ref: "#/components/pathItems/Get" }
+    put:
+      tags: [Admin]
+      summary: Import offline license
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
       responses:
         "200":
           $ref: "#/components/responses/JSON"
@@ -441,6 +592,18 @@ components:
       security:
         - bearerAuth: []
       parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+    ListById:
+      tags: [Admin]
+      summary: List nested resources by parent ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
       responses:
