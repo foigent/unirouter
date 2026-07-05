@@ -41,6 +41,8 @@ PRD3 must not rewrite settlement, reconciliation, wallet, or `usage_source` acco
 | Delivery State | Webhook delivery state, separate from event status: `not_configured`, `pending`, `delivered`, or `failed`. | `notification_events.delivery_state`, `notification_deliveries.status` |
 | Internal Status | Event-derived service status page. It is `degraded` when open critical events exist, `warning` when open warning events exist, otherwise `operational`. | `GET /api/v1/internal-status` |
 | Maintenance Window | Reserved product term for planned maintenance scheduling. PRD3 does not implement scheduling, SLA/SLO, or upgrade communication workflow. | Current API returns `maintenance_windows: []` only |
+| Runtime Environment / Infrastructure Snapshot | PRD4 candidate term for deployment and instance information such as environment, deployment mode, active instances, version, commit, and telemetry freshness. It is not part of the PRD3 Internal Status API. | Not implemented in PRD3 |
+| Capacity Health | PRD4 candidate term for resource pressure and saturation such as CPU, memory, disk, DB connections, Redis health, throughput, latency, and network error rate. It must not be confused with notification event severity. | Not implemented in PRD3 |
 
 ## Audit Terms
 
@@ -64,4 +66,5 @@ PRD3 must not rewrite settlement, reconciliation, wallet, or `usage_source` acco
 
 - Runtime plugins, marketplace installation, dynamic plugin lifecycle, new persistent authority surfaces, and third-party plugin management remain PRD4/later.
 - Maintenance scheduling, SLA/SLO, upgrade communication, and full incident operations remain PRD4/later.
+- Infrastructure observability, runtime environment visibility, host inventory, cluster topology, and capacity-health telemetry remain PRD4/later.
 - Provider real-upstream production evidence, customer IdP evidence, and production license evidence are verification tracks, not glossary changes.
