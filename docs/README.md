@@ -2,23 +2,23 @@
 
 ## 当前入口
 - [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — Agent 接手项目的第一阅读入口
-- [CODEBASE-MAP.md](CODEBASE-MAP.md) — 代码结构、路由、数据、测试、部署地图
-- [DOC-INVENTORY.md](DOC-INVENTORY.md) — 文档清单与当前/历史边界
 - [ops/CURRENT-STATUS.md](ops/CURRENT-STATUS.md) — 当前项目真实状态（进度、测试、部署、缺口）
-- [ops/PRD1-CLOSEOUT-PLAN.md](ops/PRD1-CLOSEOUT-PLAN.md) — PRD1 收尾计划（含 UI 收尾范围）
-- [ops/PRD1-REMAINING-ACCEPTANCE-PACK.md](ops/PRD1-REMAINING-ACCEPTANCE-PACK.md) — PRD1 剩余验收证据与外部验收队列
-- [ops/PRD-ACCEPTANCE-MATRIX.md](ops/PRD-ACCEPTANCE-MATRIX.md) — Phase 1 PRD 验收矩阵
 - [ops/PRD3-ACCEPTANCE-MATRIX.md](ops/PRD3-ACCEPTANCE-MATRIX.md) — PRD3 清理/优化验收矩阵
-- [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 当前未关闭问题列表
-- [DOCS-GOVERNANCE.md](DOCS-GOVERNANCE.md) — 文档治理规则
-
-## 核心文档
-- [PRD-Phase1.md](PRD-Phase1.md) — 产品需求文档（需求和验收标准的 source of truth）
-- [PRD-Phase1.pdf](PRD-Phase1.pdf) — PRD PDF 版本（正式交付用）
-- [PRD-Phase2.md](PRD-Phase2.md) — PRD2 产品需求文档
 - [PRD-Phase3.md](PRD-Phase3.md) — PRD3 一致性、语义、契约和架构清理范围
 - [planning/PRD3-CONSISTENCY-AUDIT.md](planning/PRD3-CONSISTENCY-AUDIT.md) — PRD3 范围审计和 PRD1→PRD2 遗留问题梳理
 - [planning/PRD4-BACKLOG.md](planning/PRD4-BACKLOG.md) — PRD4 候选能力边界，包括插件、企业部署、infra 可观测、预算硬阻断、维护窗口和新角色
+- [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 当前未关闭问题列表
+- [agent-workflows/FIX-SIGNAL.md](agent-workflows/FIX-SIGNAL.md) — 当前 Codex 修复信号（验收指令）
+- [agent-workflows/VERIFY-RESULT.md](agent-workflows/VERIFY-RESULT.md) — 最新 Canary 验收结果
+- [CODEBASE-MAP.md](CODEBASE-MAP.md) — 代码结构、路由、数据、测试、部署地图
+- [DOC-INVENTORY.md](DOC-INVENTORY.md) — 文档清单与当前/冻结/历史/候选边界
+- [DOCS-GOVERNANCE.md](DOCS-GOVERNANCE.md) — 文档治理规则
+
+## 核心文档
+- [PRD-Phase3.md](PRD-Phase3.md) — 当前 PRD3 清理/优化范围
+- [PRD-Phase2.md](PRD-Phase2.md) — PRD2 已冻结需求参考
+- [PRD-Phase1.md](PRD-Phase1.md) — PRD1 历史需求参考
+- [PRD-Phase1.pdf](PRD-Phase1.pdf) — PRD1 PDF 导出，可能落后于 Markdown
 
 ## 设计文档
 - [design/README.md](design/README.md) — UI 设计文档索引（人类友好版本）
@@ -37,6 +37,12 @@
 - [ops/test-plan.md](ops/test-plan.md) — 测试计划
 - [ops/test-report.md](ops/test-report.md) — 测试报告
 - [ops/evidence/COMPREHENSIVE-TEST-REPORT-20260705.md](ops/evidence/COMPREHENSIVE-TEST-REPORT-20260705.md) — 2026-07-05 Canary 综合测试/安全审计证据；当前问题状态以 `issues/OPEN-ISSUES.md` 为准
+- [ops/PRD2-ACCEPTANCE-MATRIX.md](ops/PRD2-ACCEPTANCE-MATRIX.md) — PRD2 已冻结验收状态
+- [ops/PRD2-COMPLETION-PLAN.md](ops/PRD2-COMPLETION-PLAN.md) — PRD2 收尾决策和历史计划
+- [ops/PRD-ACCEPTANCE-MATRIX.md](ops/PRD-ACCEPTANCE-MATRIX.md) — PRD1 历史验收矩阵
+- [ops/PRD1-CLOSEOUT-PLAN.md](ops/PRD1-CLOSEOUT-PLAN.md) — PRD1 历史收尾计划
+- [ops/PRD1-STRICT-CLOSEOUT-RUNBOOK.md](ops/PRD1-STRICT-CLOSEOUT-RUNBOOK.md) — PRD1 历史严格关闭 Runbook
+- [ops/PRD1-REMAINING-ACCEPTANCE-PACK.md](ops/PRD1-REMAINING-ACCEPTANCE-PACK.md) — PRD1 历史剩余验收包
 
 ## Agent 协作
 - [agent-workflows/AGENT-PROTOCOL.md](agent-workflows/AGENT-PROTOCOL.md) — Agent 协作协议（Codex/Canary 角色定义）

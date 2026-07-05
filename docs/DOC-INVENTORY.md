@@ -8,11 +8,14 @@
 |------|------|
 | `docs/PROJECT-HANDOFF.md` | First-read handoff for agents |
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
-| `docs/ops/PRD2-ACCEPTANCE-MATRIX.md` | PRD2 acceptance planning and future evidence matrix |
-| `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` | PRD3 acceptance planning for cleanup/optimization scope |
-| `docs/ops/PRD2-COMPLETION-PLAN.md` | Current PRD2 remaining-work plan and user-confirmed completion decisions |
-| `docs/ops/PRD-ACCEPTANCE-MATRIX.md` | PRD1 acceptance progress and historical closeout evidence |
-| `docs/ops/PRD1-ACCEPTANCE-TEST-OWNERSHIP.md` | Current map of what Codex can test and required safe credentials/scope |
+| `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` | Active PRD3 cleanup/optimization acceptance state |
+| `docs/PRD-Phase3.md` | Active PRD3 cleanup/optimization scope |
+| `docs/planning/PRD3-CONSISTENCY-AUDIT.md` | PRD3 lineage audit and confirmed cleanup input |
+| `docs/planning/PRD4-BACKLOG.md` | PRD4 candidate backlog; not approved implementation scope |
+| `docs/ops/PRD2-ACCEPTANCE-MATRIX.md` | Frozen PRD2 acceptance/deferred state |
+| `docs/ops/PRD2-COMPLETION-PLAN.md` | Frozen PRD2 closeout decisions and historical plan |
+| `docs/ops/PRD-ACCEPTANCE-MATRIX.md` | PRD1 historical acceptance progress and closeout evidence |
+| `docs/ops/PRD1-ACCEPTANCE-TEST-OWNERSHIP.md` | PRD1 historical test-ownership map |
 | `docs/issues/OPEN-ISSUES.md` | Current unresolved issue queue |
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required Codex/OpenClaw workflow |
@@ -25,10 +28,10 @@
 |----------|------|-------|
 | `docs/PRD-Phase1.md` | Product requirements and acceptance criteria | Requirements source, not current progress source |
 | `docs/PRD-Phase1.pdf` | PRD PDF export | May lag Markdown |
-| `docs/planning/PRD2-DISCOVERY.md` | PRD2 direction and scope discovery | Confirmed planning direction, not formal PRD |
-| `docs/PRD-Phase2.md` | PRD2 formal product requirements | Draft for review |
-| `docs/planning/PRD3-CONSISTENCY-AUDIT.md` | PRD3 consistency audit | Scope confirmed input for PRD3 |
-| `docs/PRD-Phase3.md` | PRD3 formal product requirements | Draft planning baseline; cleanup/optimization only |
+| `docs/planning/PRD2-DISCOVERY.md` | PRD2 direction and scope discovery | Historical planning input for frozen PRD2 |
+| `docs/PRD-Phase2.md` | PRD2 formal product requirements | Frozen for new feature work |
+| `docs/planning/PRD3-CONSISTENCY-AUDIT.md` | PRD3 consistency audit | Confirmed active PRD3 input |
+| `docs/PRD-Phase3.md` | PRD3 formal product requirements | Active cleanup/optimization scope |
 | `docs/planning/PRD4-BACKLOG.md` | PRD4 candidate backlog | Candidate capabilities only; not an approved implementation PRD |
 | `docs/design/` | UI design decisions | Current design reference unless contradicted by code |
 | `docs/design/PRD2-DEVELOPER-CONSOLE-SPEC.md` | PRD2 Developer Console design spec | Draft for review |

@@ -6,33 +6,35 @@
 ## First Read Order
 
 1. `docs/ops/CURRENT-STATUS.md` - current verified project status.
-2. `docs/ops/PRD-ACCEPTANCE-MATRIX.md` - Phase 1 acceptance progress and missing evidence.
-3. `docs/ops/PRD1-CLOSEOUT-PLAN.md` - closeout plan from PRD1 to PRD2, including UI.
-4. `docs/ops/PRD1-STRICT-CLOSEOUT-RUNBOOK.md` - final strict closeout gate before PRD1 can close.
-5. `docs/issues/OPEN-ISSUES.md` - active unresolved issues.
-6. `docs/agent-workflows/AGENT-PROTOCOL.md` - mandatory Codex/OpenClaw/Sentinel/Atlas workflow.
-7. `docs/CODEBASE-MAP.md` - code, route, data, test, and deployment map.
-8. `docs/DOC-INVENTORY.md` - which docs are current, historical, or reference-only.
+2. `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` - active PRD3 cleanup/optimization acceptance state.
+3. `docs/PRD-Phase3.md` - active PRD3 scope.
+4. `docs/planning/PRD3-CONSISTENCY-AUDIT.md` - PRD1 -> PRD2 consistency findings behind PRD3.
+5. `docs/issues/OPEN-ISSUES.md` - active unresolved issues and recently verified fixes.
+6. `docs/agent-workflows/AGENT-PROTOCOL.md` - mandatory Codex/OpenClaw Canary/Sentinel/Atlas workflow.
+7. `docs/agent-workflows/FIX-SIGNAL.md` and `docs/agent-workflows/VERIFY-RESULT.md` - current verification request/result.
+8. `docs/CODEBASE-MAP.md` - code, route, data, test, and deployment map.
+9. `docs/DOC-INVENTORY.md` and `docs/DOCS-GOVERNANCE.md` - which docs are current, frozen, historical, candidate, or reference-only.
 
 ## Current Project Shape
 
-UniRouter is a local-deployable enterprise AI gateway/MaaS platform. The Phase 1 scope is an OpenAI-compatible gateway, admin API, admin frontend, pre-freeze billing, call logs, wallet management, model pricing, rate limiting, circuit breaker/failover, sensitive-word filtering, idempotency, health checks, and monitoring.
+UniRouter is a local-deployable enterprise AI gateway/MaaS platform. PRD1 delivered the core gateway, admin API, admin frontend, billing, logs, wallet, pricing, admission controls, health checks, and monitoring foundation. PRD2 is frozen for new feature work after accepted product expansions such as project/RBAC, model governance, notification events, license foundation, OIDC, usage analytics, internal status, and error docs.
 
-The codebase is already beyond scaffold stage. Most Phase 1 modules exist and local tests/builds pass, but full PRD delivery still needs current end-to-end acceptance evidence.
+The active phase is PRD3. PRD3 is cleanup/optimization only: consistency, semantics, route/API contract, documentation lifecycle, module boundaries, frontend architecture, parity tests, and engineering governance. New capability design belongs in `docs/planning/PRD4-BACKLOG.md` unless the User explicitly reopens scope.
 
 ## What Is Current Truth
 
 | Question | Current Source |
 |----------|----------------|
-| What is the product supposed to do? | `docs/PRD-Phase1.md` |
+| What is the active PRD3 scope? | `docs/PRD-Phase3.md` |
 | What is actually verified now? | `docs/ops/CURRENT-STATUS.md` |
-| Which PRD items are accepted or still pending evidence? | `docs/ops/PRD-ACCEPTANCE-MATRIX.md` |
-| What must close before PRD2? | `docs/ops/PRD1-CLOSEOUT-PLAN.md` |
+| Which PRD3 items are accepted or still pending evidence? | `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` |
+| Which PRD2 items are frozen/accepted/deferred? | `docs/ops/PRD2-ACCEPTANCE-MATRIX.md` |
+| Which capabilities are PRD4 candidates? | `docs/planning/PRD4-BACKLOG.md` |
 | What should be fixed next? | `docs/issues/OPEN-ISSUES.md` |
 | How should Codex and OpenClaw coordinate? | `docs/agent-workflows/AGENT-PROTOCOL.md` |
 | Which old docs may be stale? | `docs/DOC-INVENTORY.md` |
 
-Do not treat files under `docs/testing/archive/` as current status. They are historical evidence unless reconciled into the current-state files above.
+PRD1 and PRD2 documents remain useful requirements/evidence references, but they are not the active planning surface for new work. Do not treat files under `docs/testing/archive/` as current status. They are historical evidence unless reconciled into the current-state files above.
 
 ## Mandatory Agent Workflow
 
@@ -52,25 +54,29 @@ User handoff sentence for OpenClaw:
 
 ## Current Verification Baseline
 
-Verified in the local workspace on 2026-07-01:
+Latest accepted PRD3 route-contract baseline is PRD3 Batch 6 on 2026-07-05:
 
 ```bash
-go test ./...
-cd frontend && npm test -- --run
-cd frontend && npm run build
+go test ./cmd/uniroute -run 'Test(OpenAPISpecCoversRegisteredRoutes|FrontendDocsPageCoversRegisteredRoutes|BackendDocsPageUsesCurrentContractLanguage|AdminRoutesRegisteredForFrontendClient)' -count=1 -v
+npm --prefix frontend test -- --run ApiDocsPage client
+go test ./... -count=1
+npm --prefix frontend test -- --run
+npm --prefix frontend run build
+git diff --check
 ```
 
 Results:
 
+- Route parity target tests: PASS.
 - Go tests: PASS.
-- Frontend tests: PASS, 33 tests.
+- Frontend tests: PASS, 18 files / 97 tests.
 - Frontend build: PASS with Vite large chunk warning.
 
-This does not equal Phase 1 delivery acceptance. E2E provider calls, browser validation, concurrency, failover, interrupted streaming, default-admin remediation deployment, and deployment evidence still need current verification.
+Always check `docs/ops/CURRENT-STATUS.md` and `docs/agent-workflows/VERIFY-RESULT.md` for the latest accepted batch before making new claims.
 
 ## Worktree Warning
 
-The worktree currently contains pre-existing uncommitted changes in business code and historical docs. Do not revert them unless the user explicitly requests it. New agents should run `git status --short` before editing and avoid mixing unrelated cleanup with feature work.
+Always run `git status --short` before editing. The worktree may contain user or agent changes from another round. Do not revert them unless the user explicitly requests it. Avoid mixing unrelated cleanup with the current batch.
 
 ## No Bulk Deletion
 

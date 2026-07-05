@@ -1,80 +1,83 @@
-# FIX-SIGNAL.md - PRD3 Batch 6 API Contract Refresh
+# FIX-SIGNAL.md - PRD3 Batch 7 Document Lifecycle Cleanup
 
 **Date:** 2026-07-05
 **Status:** Fixed awaiting Canary
 
-PRD3 Batch 5 PRD4 backlog hygiene passed Canary 6/6 in
-`docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merged PR #68 at `261787a`.
+PRD3 Batch 6 API contract refresh passed Canary 6/6 in
+`docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merged PR #69 at `1ae60b0`;
+User reported Canary, Sentinel, and Atlas completed.
 
-Codex has completed PRD3 Batch 6 as an API contract cleanup for P3-F04/P3-F11.
-This aligns backend route registration, backend `/docs`, frontend `/docs`,
-OpenAPI route coverage, and route parity guards at the route/method level.
+Codex has completed PRD3 Batch 7 as a documentation lifecycle cleanup for
+P3-F08. This aligns first-read docs with the current lifecycle: PRD3 active,
+PRD2 frozen, PRD1 historical/reference, and PRD4 candidate backlog.
 
 ## Boundaries
 
 - PRD3 remains cleanup/optimization of existing functionality only.
-- This batch changes docs, a docs page route index, OpenAPI, and parity tests.
-- No backend route, handler, RBAC, frontend navigation, gateway behavior, request
-  body, response body, or telemetry behavior changed.
-- OpenAPI is refreshed as current route-level coverage. Detailed response schemas
-  remain generic where no stable typed contract has been confirmed.
-- This does not generate SDKs; SDKs remain PRD4/later after contract maturity.
+- This batch changes documentation only.
+- No runtime code, API route, handler, RBAC, frontend behavior, test code, build
+  config, deployment config, or archive file changed.
+- No files were deleted.
+- This does not close PRD1/PRD2 evidence gaps; it only routes readers to the
+  correct current source of truth.
 
 ## Verification Request
 
 Please verify:
 
-1. Backend `/docs` in `cmd/uniroute/main.go`:
-   - no longer says `PRD1 API index`;
-   - uses `Current API contract index`;
-   - includes current route families such as OIDC, Usage Analytics, Internal
-     Status, Error Docs, Model Governance, Notifications, License, and
-     Sensitive Words.
-2. Frontend `/docs` in `frontend/src/pages/ApiDocsPage.tsx`:
-   - no longer says `PRD2 当前可用接口索引`;
-   - uses `当前 API 合同索引`;
-   - renders current post-PRD1 route families.
-3. `docs/tech-ref/05-openapi-spec.yaml`:
-   - no longer describes itself as a PRD1 snapshot;
-   - includes route/method coverage for all registered backend mux routes.
-4. `cmd/uniroute/route_parity_test.go` now guards:
-   - frontend-client-required routes are registered;
-   - OpenAPI covers registered routes;
-   - frontend API Docs covers registered route paths;
-   - backend docs page does not regress to stale PRD1 wording.
-5. Status/evidence docs are updated:
-   - `docs/ops/evidence/PRD3-B06-api-contract-refresh-local-20260705.md`;
+1. Batch 6 status is advanced from awaiting verification to complete:
+   - `docs/ops/CURRENT-STATUS.md`;
+   - `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`;
+   - `docs/issues/OPEN-ISSUES.md`.
+2. Root `README.md` routes readers to current PRD3 documents first and no longer
+   presents PRD1 closeout as the active first-read path.
+3. `docs/README.md` routes current entry docs to PRD3/current status first, then
+   frozen or historical PRD1/PRD2 material.
+4. `docs/PROJECT-HANDOFF.md` first-read order starts from current status, PRD3
+   matrix, PRD3 scope, PRD3 audit, open issues, agent protocol, current
+   verification request/result, codebase map, and inventory/governance.
+5. `docs/DOCS-GOVERNANCE.md` defines PRD1 historical/frozen, PRD2 frozen, PRD3
+   active, and PRD4 candidate lifecycle states.
+6. `docs/DOC-INVENTORY.md` classifies PRD2 as frozen, PRD3 as active, and PRD4
+   as candidate backlog.
+7. `docs/CODEBASE-MAP.md` includes current backend packages and frontend route
+   page groups.
+8. Status/evidence docs are updated:
+   - `docs/ops/evidence/PRD3-B07-doc-lifecycle-cleanup-local-20260705.md`;
    - `docs/ops/CURRENT-STATUS.md`;
    - `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`;
    - `docs/issues/OPEN-ISSUES.md`;
-   - `docs/tech-ref/README.md`;
+   - `docs/agent-workflows/FIX-SIGNAL.md`;
+   - `README.md`;
+   - `docs/README.md`;
+   - `docs/PROJECT-HANDOFF.md`;
+   - `docs/DOCS-GOVERNANCE.md`;
    - `docs/DOC-INVENTORY.md`;
    - `docs/CODEBASE-MAP.md`.
-6. Run these commands:
+9. Run these commands:
 
 ```bash
-go test ./cmd/uniroute -run 'Test(OpenAPISpecCoversRegisteredRoutes|FrontendDocsPageCoversRegisteredRoutes|BackendDocsPageUsesCurrentContractLanguage|AdminRoutesRegisteredForFrontendClient)' -count=1 -v
-npm --prefix frontend test -- --run ApiDocsPage client
-go test ./... -count=1
-npm --prefix frontend test -- --run
-npm --prefix frontend run build
+rg -n "PRD3 Batch 6 API contract refresh fixed awaiting Canary|PRD3-CONTRACT-001 \\| High \\| Fixed awaiting Canary" docs/ops/CURRENT-STATUS.md docs/ops/PRD3-ACCEPTANCE-MATRIX.md docs/issues/OPEN-ISSUES.md
+rg -n "Frontend tests: PASS, 33 tests|pre-existing uncommitted changes|PRD2 产品需求草案|当前 PRD1 API 路径快照|ratelimit/|hooks/" README.md docs/README.md docs/PROJECT-HANDOFF.md docs/DOCS-GOVERNANCE.md docs/DOC-INVENTORY.md docs/CODEBASE-MAP.md
+rg -n "PRD3|PRD2.*frozen|PRD1.*historical|PRD4.*candidate|PRD4.*候选" README.md docs/README.md docs/PROJECT-HANDOFF.md docs/DOCS-GOVERNANCE.md docs/DOC-INVENTORY.md
 git diff --check
 ```
 
 ## Expected Result
 
 - If all checks pass, update `docs/agent-workflows/VERIFY-RESULT.md` with PRD3
-  Batch 6 PASS.
+  Batch 7 PASS.
 - If any check fails, list the exact file and line-level issue.
 
 ## Verification Pointers
 
-- `cmd/uniroute/main.go`
-- `cmd/uniroute/route_parity_test.go`
-- `docs/tech-ref/05-openapi-spec.yaml`
-- `frontend/src/pages/ApiDocsPage.tsx`
-- `frontend/src/pages/__tests__/ApiDocsPage.test.tsx`
-- `docs/ops/evidence/PRD3-B06-api-contract-refresh-local-20260705.md`
+- `README.md`
+- `docs/README.md`
+- `docs/PROJECT-HANDOFF.md`
+- `docs/DOCS-GOVERNANCE.md`
+- `docs/DOC-INVENTORY.md`
+- `docs/CODEBASE-MAP.md`
+- `docs/ops/evidence/PRD3-B07-doc-lifecycle-cleanup-local-20260705.md`
 - `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`
 - `docs/ops/CURRENT-STATUS.md`
 - `docs/issues/OPEN-ISSUES.md`

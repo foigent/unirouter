@@ -1,83 +1,91 @@
-# VERIFY-RESULT.md — PRD3 Batch 6 API Contract Refresh
+# VERIFY-RESULT.md — PRD3 Batch 7 Document Lifecycle Cleanup
 
 **日期：** 2026-07-05
 **验收人：** Canary
-**结论：** ✅ **PASS 6/6**
+**结论：** ✅ **PASS 9/9**
 
 ---
 
 ## 验收项
 
-### 1. Backend `/docs` — PASS
+### 1. Batch 6 status advanced — PASS
 
 | 检查 | 结果 | 证据 |
 |------|------|------|
-| 不再使用 `PRD1 API index` | ✅ | grep 返回空 |
-| 使用 `Current API contract index` | ✅ | `main.go:245` |
-| 包含 OIDC 路由 | ✅ | `/api/v1/auth/oidc/config`, `/start`, `/callback` |
-| 包含 Usage Analytics | ✅ | `/api/v1/usage/analytics` |
-| 包含 Internal Status | ✅ | `/api/v1/internal-status` |
-| 包含 Error Docs | ✅ | `/api/v1/error-docs` |
-| 包含 Model Governance | ✅ | `/api/v1/model-registry`, `/model-aliases`, `/model-sets` |
-| 包含 Notifications | ✅ | `/api/v1/notification-events`, `/notification-webhooks` |
-| 包含 License | ✅ | `/api/v1/license` |
-| 路由总数 | ✅ | 153 个 API 路由 |
+| CURRENT-STATUS.md: Batch 6 complete | ✅ | "passed Canary 6/6; Sentinel merged PR #69 at `1ae60b0`; User reported Canary, Sentinel, and Atlas completed" |
+| PRD3-ACCEPTANCE-MATRIX.md: P3-F04 complete | ✅ | "Canary PASS 6/6; Sentinel merged PR #69 at `1ae60b0`" |
+| OPEN-ISSUES.md: PRD3-CONTRACT-001 complete | ✅ | "Canary PASS 6/6; Sentinel merged PR #69 at `1ae60b0`" |
 
-### 2. Frontend `/docs` — PASS
+### 2. Root README.md — PASS
 
 | 检查 | 结果 | 证据 |
 |------|------|------|
-| 不再使用 `PRD2 当前可用接口索引` | ✅ | grep 返回空 |
-| 使用 `当前 API 合同索引` | ✅ | `ApiDocsPage.tsx:170` |
-| 渲染 PRD2 Product 路由 | ✅ | Usage Analytics, Internal Status, Error Docs |
-| 渲染 Admin 路由 | ✅ | channels, keys, projects, wallet, logs 等 |
+| 路由到 PRD3/current status 优先 | ✅ | 第 57-64 行 — 当前状态、PRD3 矩阵、PRD3 范围、PRD3 审计、Open Issues |
+| 不再以 PRD1 closeout 为活跃首选路径 | ✅ | PRD1 标注为"历史需求参考"（第 67 行） |
 
-### 3. OpenAPI spec — PASS
+### 3. docs/README.md — PASS
 
 | 检查 | 结果 | 证据 |
 |------|------|------|
-| 不再描述为 PRD1 snapshot | ✅ | 描述为 "Current UniRouter API contract snapshot" |
-| 包含路由/方法覆盖 | ✅ | 53 个 `/api/v1/` 路径 |
+| 当前入口指向 PRD3/current status | ✅ | "当前入口" 部分（第 4-14 行）全部为 PRD3/current |
+| PRD2 标注为 frozen | ✅ | 第 23 行 — "PRD2 已冻结需求参考" |
+| PRD1 标注为 historical | ✅ | 第 24 行 — "PRD1 历史需求参考" |
 
-### 4. Route parity tests — PASS
+### 4. PROJECT-HANDOFF.md — PASS
 
 | 检查 | 结果 | 证据 |
 |------|------|------|
-| TestAdminRoutesRegisteredForFrontendClient | ✅ | PASS |
-| TestOpenAPISpecCoversRegisteredRoutes | ✅ | PASS |
-| TestFrontendDocsPageCoversRegisteredRoutes | ✅ | PASS |
-| TestBackendDocsPageUsesCurrentContractLanguage | ✅ | PASS |
+| First read order 从 current status 开始 | ✅ | 第 1 项: `CURRENT-STATUS.md` |
+| PRD3 矩阵为第 2 项 | ✅ | 第 2 项: `PRD3-ACCEPTANCE-MATRIX.md` |
+| PRD3 范围为第 3 项 | ✅ | 第 3 项: `PRD-Phase3.md` |
+| 包含 agent protocol、verification、codebase map | ✅ | 第 6-8 项 |
 
-### 5. Status/evidence docs — PASS
+### 5. DOCS-GOVERNANCE.md — PASS
 
-| 文件 | 结果 | 证据 |
+| 检查 | 结果 | 证据 |
 |------|------|------|
-| `docs/ops/evidence/PRD3-B06-api-contract-refresh-local-20260705.md` | ✅ | 存在 (2453 bytes) |
-| `docs/ops/CURRENT-STATUS.md` | ✅ | 记录 Batch 6 为 "fixed awaiting Canary" |
-| `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` | ✅ | P3-F04 和 P3-F11 更新 |
-| `docs/issues/OPEN-ISSUES.md` | ✅ | PRD3-CONTRACT-001 更新为 "Fixed awaiting Canary" |
-| `docs/tech-ref/README.md` | ✅ | OpenAPI 标注为 v1.2 |
-| `docs/DOC-INVENTORY.md` | ✅ | 更新 OpenAPI 描述 |
-| `docs/CODEBASE-MAP.md` | ✅ | 更新 OpenAPI 描述 |
+| PRD1: Historical/frozen | ✅ | 第 28 行 |
+| PRD2: Frozen for new feature work | ✅ | 第 29 行 |
+| PRD3: Active cleanup/optimization | ✅ | 第 30 行 |
+| PRD4: Candidate backlog | ✅ | 第 31 行 |
 
-### 6. Commands — PASS
+### 6. DOC-INVENTORY.md — PASS
+
+| 检查 | 结果 | 证据 |
+|------|------|------|
+| PRD2 标注为 frozen | ✅ | 第 15-16 行 — "Frozen PRD2 acceptance/deferred state" |
+| PRD3 标注为 active | ✅ | 第 11-13 行 — "Active PRD3 cleanup/optimization" |
+| PRD4 标注为 candidate | ✅ | 第 14 行 — "PRD4 candidate backlog; not approved implementation scope" |
+
+### 7. CODEBASE-MAP.md — PASS
+
+| 检查 | 结果 | 证据 |
+|------|------|------|
+| 包含当前 backend packages | ✅ | 第 20-34 行 — 15 个 internal 包 |
+| 包含 frontend route page groups | ✅ | 第 71-77 行 — App routes, sidebar, API client, pages 等 |
+
+### 8. Evidence file — PASS
+
+| 检查 | 结果 | 证据 |
+|------|------|------|
+| `docs/ops/evidence/PRD3-B07-doc-lifecycle-cleanup-local-20260705.md` | ✅ | 存在 (2557 bytes) |
+
+### 9. Commands — PASS
 
 | 命令 | 结果 |
 |------|------|
-| Route parity tests (4 个) | ✅ 全部 PASS |
-| `npm --prefix frontend test -- --run ApiDocsPage client` | ✅ 2 files / 28 tests PASS |
-| `go test ./... -count=1` | ✅ 全部 PASS |
-| `npm --prefix frontend test -- --run` | ✅ 18 files / 97 tests PASS |
-| `npm --prefix frontend run build` | ✅ PASS |
-| `git diff --check` | ✅ PASS |
+| Check 1: stale "fixed awaiting Canary" for Batch 6 | ✅ 无匹配（exit 1） |
+| Check 2: stale wording | ✅ 无匹配（exit 1） |
+| Check 3: lifecycle labels (PRD3/PRD2 frozen/PRD1 historical/PRD4 candidate) | ✅ 多处匹配 |
+| `git diff --check` | ✅ PASS (no output) |
 
 ---
 
 ## 边界确认
 
-- ✅ 未更改后端路由、handler、RBAC、前端导航、网关行为、请求体、响应体或遥测行为
-- ✅ OpenAPI 为路由级覆盖，响应 schema 保持通用
-- ✅ 未生成 SDK（SDK 为 PRD4 范围）
+- ✅ 仅更改文档，无运行时代码、API、前端行为、测试、构建或部署配置变更
+- ✅ 未删除文件
+- ✅ 未关闭 PRD1/PRD2 证据缺口，仅路由读者到正确的当前真相来源
 
 ---
 
@@ -89,4 +97,4 @@
 
 ## 总结
 
-PRD3 Batch 6 API Contract Refresh 验收通过。Backend `/docs`、frontend `/docs`、OpenAPI spec 和 route parity guards 现在在路由/方法级别对齐。4 个路由对齐测试全部通过，前端测试从 96 增加到 97 个。PRD3-CONTRACT-001 从 Open 推进为 Fixed awaiting Canary。
+PRD3 Batch 7 Document Lifecycle Cleanup 验收通过。所有 first-read 文档现在正确反映生命周期状态：PRD3 active、PRD2 frozen、PRD1 historical/reference、PRD4 candidate backlog。9 个检查点全部通过，无 stale wording。
