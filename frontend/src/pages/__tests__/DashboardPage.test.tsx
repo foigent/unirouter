@@ -78,6 +78,20 @@ describe('DashboardPage', () => {
     });
   });
 
+  it('uses platform-level dashboard taxonomy in the page header', async () => {
+    const { container } = renderDashboard();
+    await waitFor(() => {
+      expect(mockGetDashboardStats).toHaveBeenCalled();
+    });
+
+    const html = container.textContent || '';
+    expect(html).toContain('Platform Overview');
+    expect(html).toContain('平台总览');
+    expect(html).toContain('统一观察请求量、成功率、延迟、成本和渠道健康状态。');
+    expect(html).not.toContain('Gateway overview');
+    expect(html).not.toContain('AI Gateway 控制台');
+  });
+
   it('passes time range params to API', async () => {
     renderDashboard();
     await waitFor(() => {

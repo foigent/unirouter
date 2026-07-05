@@ -1,4 +1,4 @@
-# VERIFY-RESULT.md — PRD3 Batch 3 Follow-up: Empty Search Coverage And Evidence Routing
+# VERIFY-RESULT.md — PRD3 Batch 4 Dashboard Taxonomy
 
 **日期：** 2026-07-05
 **验收人：** Canary
@@ -8,46 +8,47 @@
 
 ## 验收项
 
-### 1. Empty search test — PASS
+### 1. Dashboard page header — PASS
 
 | 检查 | 结果 | 证据 |
 |------|------|------|
-| App.test.tsx 包含空搜索测试 | ✅ | `App.test.tsx:52-60` — `routes empty topbar search to the logs overview` |
-| 渲染 App shell | ✅ | 使用 `renderApp()` |
-| 无值时按 Enter | ✅ | `fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', charCode: 13 })` |
-| 断言路由到 `/logs` | ✅ | `expect(screen.getByTestId('location')).toHaveTextContent('/logs')` |
+| eyebrow: `Platform Overview` | ✅ | `DashboardPage.tsx:318` — `eyebrow="Platform Overview"` |
+| title: `平台总览` | ✅ | `DashboardPage.tsx:319` — `title="平台总览"` |
+| description: `统一观察请求量、成功率、延迟、成本和渠道健康状态。` | ✅ | `DashboardPage.tsx:320` |
 
-测试数量：2 → 3（新增 1 个空搜索测试）
-
-### 2. Evidence file routing — PASS
+### 2. Old labels removed — PASS
 
 | 检查 | 结果 | 证据 |
 |------|------|------|
-| `docs/ops/evidence/COMPREHENSIVE-TEST-REPORT-20260705.md` 存在 | ✅ | 文件存在，内容完整 |
-| 旧路径 `docs/testing/archive/` 不再用于报告 | ✅ | 旧路径保留为 planning material，报告已提升到 evidence |
+| `Gateway overview` 不在 Dashboard 源码中 | ✅ | grep 返回空 |
+| `AI Gateway 控制台` 不在 Dashboard 源码中 | ✅ | grep 返回空 |
 
-### 3. Security issues registered — PASS
-
-| 检查 | 结果 | 证据 |
-|------|------|------|
-| SEC-004 注册依赖漏洞 | ✅ | `OPEN-ISSUES.md` — Critical, Open, 记录 pgx/jwt/redis/vite 漏洞 |
-| SEC-005 注册运行时暴露 | ✅ | `OPEN-ISSUES.md` — Medium, Open, 记录 CORS/登录速率限制/metrics |
-| 未复用现有 issue ID | ✅ | SEC-004/SEC-005 为新 ID |
-
-### 4. Status docs lifecycle — PASS
+### 3. Regression test — PASS
 
 | 检查 | 结果 | 证据 |
 |------|------|------|
-| PRD3 Batch 3 已完成 | ✅ | `CURRENT-STATUS.md` — "Canary/Sentinel/Atlas complete per User report" |
-| Follow-up 状态为 Fixed awaiting Canary | ✅ | `CURRENT-STATUS.md` — "fixed awaiting Canary" |
-| 安全风险为 Open 状态 | ✅ | `OPEN-ISSUES.md` — SEC-004/SEC-005 均为 Open |
+| 断言 `Platform Overview` | ✅ | `DashboardPage.test.tsx:88` |
+| 断言 `平台总览` | ✅ | `DashboardPage.test.tsx:89` |
+| 断言更新后的 description | ✅ | `DashboardPage.test.tsx:90` |
+| 拒绝旧标签 | ✅ | `DashboardPage.test.tsx:91-92` — `not.toContain('Gateway overview')` + `not.toContain('AI Gateway 控制台')` |
+
+DashboardPage 测试数量：11 → 12（新增 1 个标签回归测试）
+
+### 4. Status/evidence docs — PASS
+
+| 文件 | 结果 | 证据 |
+|------|------|------|
+| `docs/ops/evidence/PRD3-B04-dashboard-taxonomy-local-20260705.md` | ✅ | 存在 |
+| `docs/ops/CURRENT-STATUS.md` | ✅ | 记录 Batch 4 为 "fixed awaiting Canary" |
+| `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` | ✅ | P3-F03 更新记录 Batch 4 |
+| `docs/issues/OPEN-ISSUES.md` | ✅ | PRD3-UISEM-001 更新记录 Batch 4 |
 
 ### 5. Commands — PASS
 
 | 命令 | 结果 |
 |------|------|
-| `npm --prefix frontend test -- --run App` | ✅ 1 file / 3 tests PASS |
-| `npm --prefix frontend test -- --run` | ✅ 17 files / 95 tests PASS |
+| `npm --prefix frontend test -- --run DashboardPage` | ✅ 1 file / 12 tests PASS |
+| `npm --prefix frontend test -- --run` | ✅ 17 files / 96 tests PASS |
 | `npm --prefix frontend run build` | ✅ PASS（existing large chunk warning） |
 | `go test ./... -count=1` | ✅ 全部 PASS |
 | `git diff --check` | ✅ PASS (no output) |
@@ -56,18 +57,18 @@
 
 ## 边界确认
 
-- ✅ 未更改应用运行时行为
-- ✅ 未修复依赖漏洞、CORS、登录速率限制或 metrics 暴露（这些是 SEC-004/SEC-005 的范围）
-- ✅ 安全发现已注册为 open issues，未被静默接受
+- ✅ 仅更改 Dashboard 页面文案和一个回归测试
+- ✅ 未更改后端、API、指标、导航、授权或布局行为
+- ✅ 未声称所有中英文标签漂移项已完成
 
 ---
 
 ## 新发现的问题
 
-无新发现的阻塞问题。
+无新发现的问题。
 
 ---
 
 ## 总结
 
-PRD3 Batch 3 后续验证通过。空搜索测试已添加（App shell 测试从 2 个增加到 3 个），全面测试报告已从历史归档提升到 evidence 目录，安全发现（依赖漏洞 + 运行时暴露）已注册为 SEC-004/SEC-005 open issues。全部前端测试（95 个）通过，Go 测试通过，构建正常。
+PRD3 Batch 4 Dashboard 标签清理验收通过。Dashboard 页头从 `Gateway overview` / `AI Gateway 控制台` 更改为 `Platform Overview` / `平台总览`，旧标签已从源码移除，回归测试覆盖了新旧标签的断言。全部前端测试（96 个）通过，Go 测试通过，构建正常。

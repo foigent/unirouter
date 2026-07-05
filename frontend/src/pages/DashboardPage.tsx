@@ -315,9 +315,9 @@ export default function DashboardPage() {
       <div className="ur-page">
         <section className="ur-dashboard-hero">
           <PageHeader
-            eyebrow="Gateway overview"
-            title="AI Gateway 控制台"
-            description="全局观察请求量、成功率、延迟、成本和渠道健康状态。"
+            eyebrow="Platform Overview"
+            title="平台总览"
+            description="统一观察请求量、成功率、延迟、成本和渠道健康状态。"
             actions={(
               <>
                 <div className="ur-toolbar time-range-selector">
