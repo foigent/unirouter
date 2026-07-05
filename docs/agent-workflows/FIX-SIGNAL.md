@@ -1,57 +1,60 @@
-# FIX-SIGNAL.md - PRD3 Batch 8 Engineering Governance Minimum
+# FIX-SIGNAL.md - PRD3 Batch 9 Frontend Shared Formatting Cleanup
 
 **Date:** 2026-07-05
 **Status:** Fixed awaiting Canary
 
-PRD3 Batch 7 document lifecycle cleanup passed Canary 9/9 in
-`docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merged PR #70 at `8fe5055`;
+PRD3 Batch 8 engineering governance minimum passed Canary 7/7 in
+`docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merged PR #71 at `ca95760`;
 User reported Canary, Sentinel, and Atlas completed.
 
-Codex has completed PRD3 Batch 8 as the P3-F12 engineering governance minimum.
-This closes the PRD3-ENG-001 gap by documenting baseline ADR, API
-compatibility/versioning, migration/rollback, release, incident-response, and
-deprecation rules before PRD4 expansion.
+Codex has completed PRD3 Batch 9 as a narrow P3-F10 frontend architecture
+cleanup subset. This extracts shared number/percentage/latency formatting
+helpers and replaces duplicated page-local formatting in Dashboard, Usage
+Analytics, and Reconciliation.
 
 ## Boundaries
 
 - PRD3 remains cleanup/optimization of existing functionality only.
-- This batch changes documentation only.
-- No runtime code, API route, handler, RBAC, frontend behavior, database
-  migration, test code, build config, deployment config, or archive file changed.
+- This batch changes frontend presentation helpers and docs/status only.
+- No API route, backend handler, RBAC, database migration, build config,
+  deployment config, or archive file changed.
 - No files were deleted.
-- This does not implement plugin runtime, new deployment products, infrastructure
-  observability, runtime capacity health, maintenance-window scheduling, SLA/SLO,
-  or new persistent role authority. Those remain PRD4 unless the User explicitly
-  reopens scope.
+- No accounting, analytics, reconciliation, status, or billing semantics changed.
+- P3-F10 remains broader than this batch; shared filters, table wrappers, form
+  patterns, empty/error/loading states, and backend boundary cleanup remain later
+  PRD3 work.
+- This does not implement any PRD4 feature.
 
 ## Verification Request
 
 Please verify:
 
-1. Batch 7 status is advanced from awaiting verification to complete:
+1. Batch 8 status is advanced from awaiting verification to complete:
    - `docs/ops/CURRENT-STATUS.md`;
    - `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`;
    - `docs/issues/OPEN-ISSUES.md`.
-2. `docs/governance/README.md` exists and covers:
-   - ADR Policy;
-   - API Compatibility And Versioning;
-   - Migration And Rollback Policy;
-   - Release Checklist;
-   - Incident Response Minimum;
-   - Deprecation Policy.
-3. `docs/governance/ADR-TEMPLATE.md` exists and includes Context, Decision,
-   Consequences, Alternatives Considered, Verification, and Rollback Or Exit
-   Criteria sections.
-4. Governance entrypoints are indexed in:
-   - `docs/README.md`;
-   - `docs/DOC-INVENTORY.md`;
-   - `docs/DOCS-GOVERNANCE.md`;
-   - `CONTRIBUTING.md`.
-5. P3-F12 and PRD3-ENG-001 are marked `Fixed awaiting Canary` in:
+2. `frontend/src/utils/formatNumber.ts` exists and exports:
+   - `safeNumber`;
+   - `formatCompactNumber`;
+   - `formatInteger`;
+   - `formatSignedInteger`;
+   - `formatPercent`;
+   - `formatLatencyMs`.
+3. `frontend/src/utils/__tests__/formatNumber.test.ts` covers unsafe values,
+   compact numbers, integer/signed integer formatting, percentage formatting,
+   and latency formatting.
+4. Dashboard, Usage Analytics, and Reconciliation import shared helpers instead
+   of defining duplicate page-local number/percentage formatting:
+   - `frontend/src/pages/DashboardPage.tsx`;
+   - `frontend/src/pages/UsageAnalyticsPage.tsx`;
+   - `frontend/src/pages/ReconciliationPage.tsx`.
+5. P3-F10 is marked `In progress` rather than fully complete, and
+   PRD3-ARCH-001 remains `In progress` because this batch only covers the shared
+   formatting subset:
    - `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`;
    - `docs/issues/OPEN-ISSUES.md`.
 6. Status/evidence docs are updated:
-   - `docs/ops/evidence/PRD3-B08-engineering-governance-local-20260705.md`;
+   - `docs/ops/evidence/PRD3-B09-frontend-formatting-local-20260705.md`;
    - `docs/ops/CURRENT-STATUS.md`;
    - `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`;
    - `docs/issues/OPEN-ISSUES.md`;
@@ -59,26 +62,28 @@ Please verify:
 7. Run these commands:
 
 ```bash
-rg -n "ADR|API Compatibility|Migration And Rollback|Release Checklist|Incident Response|Deprecation" docs/governance docs/README.md docs/DOC-INVENTORY.md docs/DOCS-GOVERNANCE.md CONTRIBUTING.md docs/ops/PRD3-ACCEPTANCE-MATRIX.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md
-rg -n "PRD3 Batch 7 document lifecycle cleanup fixed awaiting Canary|PRD3-DOCS-001 \\| Medium \\| Fixed awaiting Canary" docs/ops/CURRENT-STATUS.md docs/ops/PRD3-ACCEPTANCE-MATRIX.md docs/issues/OPEN-ISSUES.md
+npm --prefix frontend test -- --run formatNumber UsageAnalyticsPage ReconciliationPage DashboardPage
+npm --prefix frontend test -- --run
+npm --prefix frontend run build
+rg -n "function formatNumber|function formatPercent|function compact|function percent" frontend/src/pages/DashboardPage.tsx frontend/src/pages/UsageAnalyticsPage.tsx frontend/src/pages/ReconciliationPage.tsx
+rg -n "PRD3 Batch 8 engineering governance minimum fixed awaiting Canary|PRD3-ENG-001 \\| Low \\| Fixed awaiting Canary|P3-F12 \\| Engineering Governance Minimum \\| Fixed awaiting Canary" docs/ops/CURRENT-STATUS.md docs/ops/PRD3-ACCEPTANCE-MATRIX.md docs/issues/OPEN-ISSUES.md
 git diff --check
 ```
 
 ## Expected Result
 
 - If all checks pass, update `docs/agent-workflows/VERIFY-RESULT.md` with PRD3
-  Batch 8 PASS.
+  Batch 9 PASS.
 - If any check fails, list the exact file and line-level issue.
 
 ## Verification Pointers
 
-- `docs/governance/README.md`
-- `docs/governance/ADR-TEMPLATE.md`
-- `docs/README.md`
-- `docs/DOCS-GOVERNANCE.md`
-- `docs/DOC-INVENTORY.md`
-- `CONTRIBUTING.md`
-- `docs/ops/evidence/PRD3-B08-engineering-governance-local-20260705.md`
+- `frontend/src/utils/formatNumber.ts`
+- `frontend/src/utils/__tests__/formatNumber.test.ts`
+- `frontend/src/pages/DashboardPage.tsx`
+- `frontend/src/pages/UsageAnalyticsPage.tsx`
+- `frontend/src/pages/ReconciliationPage.tsx`
+- `docs/ops/evidence/PRD3-B09-frontend-formatting-local-20260705.md`
 - `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`
 - `docs/ops/CURRENT-STATUS.md`
 - `docs/issues/OPEN-ISSUES.md`

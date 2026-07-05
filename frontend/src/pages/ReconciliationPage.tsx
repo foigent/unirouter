@@ -4,6 +4,7 @@ import { IconAlertTriangle, IconCoinMoney, IconRefresh, IconServer } from '@douy
 import { api } from '../api/client';
 import { MetricTile, PageHeader, StatusTag, Surface } from '../ui';
 import { usageSourceLabel, usageSourceOptions } from '../utils/displayLabels';
+import { formatInteger, formatPercent, formatSignedInteger } from '../utils/formatNumber';
 
 interface ReconRecord {
   id: number;
@@ -32,10 +33,6 @@ interface ReconSummary {
   estimated_ratio_alert_threshold: number;
   estimated_usage_alert: boolean;
   estimated_ratio_scope: string;
-}
-
-function formatPercent(value?: number) {
-  return `${((value || 0) * 100).toFixed(1)}%`;
 }
 
 export default function ReconciliationPage() {
@@ -179,21 +176,21 @@ export default function ReconciliationPage() {
         />
         <MetricTile
           label="估算来源 Token"
-          value={(summary?.estimated_tokens || 0).toLocaleString()}
+          value={formatInteger(summary?.estimated_tokens)}
           icon={<IconServer />}
           tone="amber"
           meta={`口径 ${summary?.estimated_ratio_scope === 'filtered_query' ? '当前筛选口径' : summary?.estimated_ratio_scope || '当前筛选口径'}`}
         />
         <MetricTile
           label="上游 Token"
-          value={(summary?.upstream_tokens || 0).toLocaleString()}
+          value={formatInteger(summary?.upstream_tokens)}
           icon={<IconCoinMoney />}
           tone="blue"
-          meta={`实际合计 ${(summary?.actual_tokens || 0).toLocaleString()}`}
+          meta={`实际合计 ${formatInteger(summary?.actual_tokens)}`}
         />
         <MetricTile
           label="全量偏差"
-          value={`${summary?.variance_tokens && summary.variance_tokens > 0 ? '+' : ''}${(summary?.variance_tokens || 0).toLocaleString()}`}
+          value={formatSignedInteger(summary?.variance_tokens)}
           icon={<IconAlertTriangle />}
           tone={(summary?.variance_tokens || 0) === 0 ? 'slate' : 'violet'}
           meta={`偏差率 ${formatPercent(summary?.variance_ratio)} / 置信度 ${formatPercent(summary?.average_source_confidence)}`}
