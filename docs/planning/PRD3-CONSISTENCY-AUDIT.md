@@ -156,6 +156,7 @@ These are intentionally outside PRD3 unless User reopens scope:
 - Project budget hard-block enforcement.
 - Runtime cache or prompt/response plaintext storage.
 - Maintenance-window scheduling, SLA/SLO, upgrade communication workflow, and incident operations platform beyond current event semantics.
+- Infrastructure observability and runtime environment visibility such as CPU, memory, disk, network, instance inventory, cluster topology, and capacity health.
 - New public SaaS, reseller, payment, invoice, campaign, or marketplace capabilities.
 - Full SDK suite.
 - New persistent roles such as audit viewer, support/operator, service account, or explicit project viewer if they require new permission surfaces.
@@ -194,3 +195,4 @@ User agreed on 2026-07-05 that PRD3 should proceed with these recommendations:
 - split PRD3 into small cleanup batches;
 - update `OPEN-ISSUES.md`, `CURRENT-STATUS.md`, and `FIX-SIGNAL.md` when PRD3 implementation state actually changes;
 - keep PRD4 backlog separate from PRD3 cleanup acceptance.
+- track the detailed PRD4 candidate backlog in `docs/planning/PRD4-BACKLOG.md`.

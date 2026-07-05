@@ -18,6 +18,7 @@
 - [PRD-Phase2.md](PRD-Phase2.md) — PRD2 产品需求文档
 - [PRD-Phase3.md](PRD-Phase3.md) — PRD3 一致性、语义、契约和架构清理范围
 - [planning/PRD3-CONSISTENCY-AUDIT.md](planning/PRD3-CONSISTENCY-AUDIT.md) — PRD3 范围审计和 PRD1→PRD2 遗留问题梳理
+- [planning/PRD4-BACKLOG.md](planning/PRD4-BACKLOG.md) — PRD4 候选能力边界，包括插件、企业部署、infra 可观测、预算硬阻断、维护窗口和新角色
 
 ## 设计文档
 - [design/README.md](design/README.md) — UI 设计文档索引（人类友好版本）

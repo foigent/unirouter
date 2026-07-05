@@ -306,10 +306,13 @@ These items are intentionally outside PRD3 unless User explicitly reopens scope:
 - Project budget hard-block enforcement.
 - Runtime cache or prompt/response plaintext storage.
 - Maintenance-window scheduling, SLA/SLO, upgrade communication workflow, and incident operations platform beyond current event semantics.
+- Infrastructure observability and runtime environment visibility such as CPU, memory, disk, network, instance inventory, cluster topology, and capacity health.
 - Public SaaS, reseller, payment, invoice, coupon, campaign, marketplace, or support-ticket CRM.
 - Full SDK suite.
 - New persistent roles such as audit viewer, support/operator, service account, or explicit project viewer if they require new permission surfaces.
 - Production evidence promotion for real upstream provider, real enterprise IdP, and production license unless handled as separate verification work.
+
+The detailed candidate backlog is tracked in `docs/planning/PRD4-BACKLOG.md`.
 
 ## 7. Compatibility And Evidence Gates
 

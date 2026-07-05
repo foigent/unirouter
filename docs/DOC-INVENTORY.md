@@ -29,6 +29,7 @@
 | `docs/PRD-Phase2.md` | PRD2 formal product requirements | Draft for review |
 | `docs/planning/PRD3-CONSISTENCY-AUDIT.md` | PRD3 consistency audit | Scope confirmed input for PRD3 |
 | `docs/PRD-Phase3.md` | PRD3 formal product requirements | Draft planning baseline; cleanup/optimization only |
+| `docs/planning/PRD4-BACKLOG.md` | PRD4 candidate backlog | Candidate capabilities only; not an approved implementation PRD |
 | `docs/design/` | UI design decisions | Current design reference unless contradicted by code |
 | `docs/design/PRD2-DEVELOPER-CONSOLE-SPEC.md` | PRD2 Developer Console design spec | Draft for review |
 | `docs/ui/FRONTEND-UI-ARCHITECTURE-AUDIT.md` | Frontend UI/architecture audit | Current PRD1 closeout and PRD2 frontend architecture guidance |
