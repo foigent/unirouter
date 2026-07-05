@@ -9,7 +9,8 @@ import {
   IconBell,
 } from '@douyinfe/semi-icons';
 import { useAuthStore } from './store/auth';
-import { getDefaultOpenKeysForRole, getNavItemsForRole, isRouteAllowedForRole, ROLE_LABELS } from './navigation';
+import { getDefaultOpenKeysForRole, getNavItemsForRole, isRouteAllowedForRole } from './navigation';
+import { roleLabel } from './utils/displayLabels';
 
 const { Sider, Content } = Layout;
 const { Text } = Typography;
@@ -27,7 +28,7 @@ export default function App() {
   const role = user?.role;
   const navItems = getNavItemsForRole(role);
   const defaultOpenKeys = getDefaultOpenKeysForRole(role);
-  const roleLabel = ROLE_LABELS[role || ''] || role || '未加载角色';
+  const currentRoleLabel = roleLabel(role, '未加载角色');
   const canOpenNotifications = isRouteAllowedForRole('/notifications', role);
   const envBadge = getEnvironmentBadge();
 
@@ -110,7 +111,7 @@ export default function App() {
               <Avatar size="small" color="purple">{(user?.username || 'U').slice(0, 1).toUpperCase()}</Avatar>
               <div className="ur-user-copy">
                 <Text className="ur-user-name">{user?.username || 'Operator'}</Text>
-                <Text className="ur-user-role">{roleLabel}</Text>
+                <Text className="ur-user-role">{currentRoleLabel}</Text>
               </div>
             </div>
           </div>

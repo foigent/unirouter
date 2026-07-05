@@ -1,9 +1,9 @@
 import { Button, Typography } from '@douyinfe/semi-ui';
 import { IconBookOpenStroked } from '@douyinfe/semi-icons';
 import { useNavigate } from 'react-router-dom';
-import { ROLE_LABELS } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, PageHeader, Surface } from '../ui';
+import { roleLabel } from '../utils/displayLabels';
 
 const { Text } = Typography;
 
@@ -11,7 +11,7 @@ export default function AccessStatePage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const role = user?.role || '';
-  const roleLabel = ROLE_LABELS[role] || role || '未识别角色';
+  const currentRoleLabel = roleLabel(role, '未识别角色');
 
   return (
     <div className="ur-page">
@@ -29,7 +29,7 @@ export default function AccessStatePage() {
           minHeight={260}
         />
         <div style={{ textAlign: 'center', marginTop: -28 }}>
-          <Text type="tertiary">当前角色：{roleLabel}</Text>
+          <Text type="tertiary">当前角色：{currentRoleLabel}</Text>
         </div>
       </Surface>
     </div>

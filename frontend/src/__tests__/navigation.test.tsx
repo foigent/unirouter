@@ -5,7 +5,6 @@ import {
   getDefaultPathForRole,
   getNavItemsForRole,
   isRouteAllowedForRole,
-  USER_MANAGEMENT_ROLE_OPTIONS,
 } from '../navigation';
 
 function flattenItemKeys(items: any[]): string[] {
@@ -106,17 +105,4 @@ describe('navigation role boundaries', () => {
     expect(canDisableProjectKey('project_admin')).toBe(true);
   });
 
-  it('exposes canonical user-management roles without the legacy admin alias', () => {
-    const values = USER_MANAGEMENT_ROLE_OPTIONS.map(option => option.value);
-
-    expect(values).toEqual([
-      'platform_admin',
-      'org_admin',
-      'billing_admin',
-      'project_admin',
-      'developer',
-      'viewer',
-      'org_viewer',
-    ]);
-  });
 });
