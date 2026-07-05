@@ -1,91 +1,80 @@
-# VERIFY-RESULT.md — PRD3 Batch 7 Document Lifecycle Cleanup
+# VERIFY-RESULT.md — PRD3 Batch 8 Engineering Governance Minimum
 
 **日期：** 2026-07-05
 **验收人：** Canary
-**结论：** ✅ **PASS 9/9**
+**结论：** ✅ **PASS 7/7**
 
 ---
 
 ## 验收项
 
-### 1. Batch 6 status advanced — PASS
+### 1. Batch 7 status advanced — PASS
 
 | 检查 | 结果 | 证据 |
 |------|------|------|
-| CURRENT-STATUS.md: Batch 6 complete | ✅ | "passed Canary 6/6; Sentinel merged PR #69 at `1ae60b0`; User reported Canary, Sentinel, and Atlas completed" |
-| PRD3-ACCEPTANCE-MATRIX.md: P3-F04 complete | ✅ | "Canary PASS 6/6; Sentinel merged PR #69 at `1ae60b0`" |
-| OPEN-ISSUES.md: PRD3-CONTRACT-001 complete | ✅ | "Canary PASS 6/6; Sentinel merged PR #69 at `1ae60b0`" |
+| CURRENT-STATUS.md: Batch 7 complete | ✅ | "passed Canary 9/9; Sentinel merged PR #70 at `8fe5055`; User reported Canary, Sentinel, and Atlas completed" |
+| PRD3-ACCEPTANCE-MATRIX.md: P3-F08 complete | ✅ | "Canary PASS 9/9; Sentinel merged PR #70 at `8fe5055`" |
+| OPEN-ISSUES.md: PRD3-DOCS-001 complete | ✅ | "Canary PASS 9/9; Sentinel merged PR #70 at `8fe5055`" |
 
-### 2. Root README.md — PASS
-
-| 检查 | 结果 | 证据 |
-|------|------|------|
-| 路由到 PRD3/current status 优先 | ✅ | 第 57-64 行 — 当前状态、PRD3 矩阵、PRD3 范围、PRD3 审计、Open Issues |
-| 不再以 PRD1 closeout 为活跃首选路径 | ✅ | PRD1 标注为"历史需求参考"（第 67 行） |
-
-### 3. docs/README.md — PASS
+### 2. Governance README — PASS
 
 | 检查 | 结果 | 证据 |
 |------|------|------|
-| 当前入口指向 PRD3/current status | ✅ | "当前入口" 部分（第 4-14 行）全部为 PRD3/current |
-| PRD2 标注为 frozen | ✅ | 第 23 行 — "PRD2 已冻结需求参考" |
-| PRD1 标注为 historical | ✅ | 第 24 行 — "PRD1 历史需求参考" |
+| ADR Policy | ✅ | `governance/README.md:13` |
+| API Compatibility And Versioning | ✅ | `governance/README.md:27` |
+| Migration And Rollback Policy | ✅ | `governance/README.md:47` |
+| Release Checklist | ✅ | `governance/README.md:67` |
+| Incident Response Minimum | ✅ | `governance/README.md:83` |
+| Deprecation Policy | ✅ | `governance/README.md:98` |
 
-### 4. PROJECT-HANDOFF.md — PASS
-
-| 检查 | 结果 | 证据 |
-|------|------|------|
-| First read order 从 current status 开始 | ✅ | 第 1 项: `CURRENT-STATUS.md` |
-| PRD3 矩阵为第 2 项 | ✅ | 第 2 项: `PRD3-ACCEPTANCE-MATRIX.md` |
-| PRD3 范围为第 3 项 | ✅ | 第 3 项: `PRD-Phase3.md` |
-| 包含 agent protocol、verification、codebase map | ✅ | 第 6-8 项 |
-
-### 5. DOCS-GOVERNANCE.md — PASS
+### 3. ADR-TEMPLATE.md — PASS
 
 | 检查 | 结果 | 证据 |
 |------|------|------|
-| PRD1: Historical/frozen | ✅ | 第 28 行 |
-| PRD2: Frozen for new feature work | ✅ | 第 29 行 |
-| PRD3: Active cleanup/optimization | ✅ | 第 30 行 |
-| PRD4: Candidate backlog | ✅ | 第 31 行 |
+| Context | ✅ | `ADR-TEMPLATE.md:8` |
+| Decision | ✅ | `ADR-TEMPLATE.md:13` |
+| Consequences | ✅ | `ADR-TEMPLATE.md:18` |
+| Alternatives Considered | ✅ | `ADR-TEMPLATE.md:23` |
+| Verification | ✅ | `ADR-TEMPLATE.md:27` |
+| Rollback Or Exit Criteria | ✅ | `ADR-TEMPLATE.md:32` |
 
-### 6. DOC-INVENTORY.md — PASS
+### 4. Governance indexed — PASS
+
+| 文件 | 结果 | 证据 |
+|------|------|------|
+| `docs/README.md` | ✅ | 第 35-36 行 |
+| `docs/DOC-INVENTORY.md` | ✅ | 第 21, 68 行 |
+| `docs/DOCS-GOVERNANCE.md` | ✅ | 第 17 行 |
+| `CONTRIBUTING.md` | ✅ | 第 164-165 行 |
+
+### 5. P3-F12 and PRD3-ENG-001 status — PASS
 
 | 检查 | 结果 | 证据 |
 |------|------|------|
-| PRD2 标注为 frozen | ✅ | 第 15-16 行 — "Frozen PRD2 acceptance/deferred state" |
-| PRD3 标注为 active | ✅ | 第 11-13 行 — "Active PRD3 cleanup/optimization" |
-| PRD4 标注为 candidate | ✅ | 第 14 行 — "PRD4 candidate backlog; not approved implementation scope" |
+| P3-F12: Fixed awaiting Canary | ✅ | `PRD3-ACCEPTANCE-MATRIX.md:35` |
+| PRD3-ENG-001: Fixed awaiting Canary | ✅ | `OPEN-ISSUES.md:54` |
 
-### 7. CODEBASE-MAP.md — PASS
-
-| 检查 | 结果 | 证据 |
-|------|------|------|
-| 包含当前 backend packages | ✅ | 第 20-34 行 — 15 个 internal 包 |
-| 包含 frontend route page groups | ✅ | 第 71-77 行 — App routes, sidebar, API client, pages 等 |
-
-### 8. Evidence file — PASS
+### 6. Evidence file — PASS
 
 | 检查 | 结果 | 证据 |
 |------|------|------|
-| `docs/ops/evidence/PRD3-B07-doc-lifecycle-cleanup-local-20260705.md` | ✅ | 存在 (2557 bytes) |
+| `docs/ops/evidence/PRD3-B08-engineering-governance-local-20260705.md` | ✅ | 存在 (3209 bytes) |
 
-### 9. Commands — PASS
+### 7. Commands — PASS
 
 | 命令 | 结果 |
 |------|------|
-| Check 1: stale "fixed awaiting Canary" for Batch 6 | ✅ 无匹配（exit 1） |
-| Check 2: stale wording | ✅ 无匹配（exit 1） |
-| Check 3: lifecycle labels (PRD3/PRD2 frozen/PRD1 historical/PRD4 candidate) | ✅ 多处匹配 |
+| Governance coverage grep | ✅ 6 个主题全部匹配 |
+| Stale Batch 7 wording | ✅ 无匹配（exit 1） |
 | `git diff --check` | ✅ PASS (no output) |
 
 ---
 
 ## 边界确认
 
-- ✅ 仅更改文档，无运行时代码、API、前端行为、测试、构建或部署配置变更
+- ✅ 仅更改文档，无运行时代码、API、前端行为、数据库迁移、测试、构建或部署配置变更
 - ✅ 未删除文件
-- ✅ 未关闭 PRD1/PRD2 证据缺口，仅路由读者到正确的当前真相来源
+- ✅ 未实现 plugin runtime、新部署产品、infra 可观测性、SLA/SLO 或新角色
 
 ---
 
@@ -97,4 +86,4 @@
 
 ## 总结
 
-PRD3 Batch 7 Document Lifecycle Cleanup 验收通过。所有 first-read 文档现在正确反映生命周期状态：PRD3 active、PRD2 frozen、PRD1 historical/reference、PRD4 candidate backlog。9 个检查点全部通过，无 stale wording。
+PRD3 Batch 8 Engineering Governance Minimum 验收通过。`docs/governance/README.md` 覆盖 ADR、API 兼容、migration/rollback、release、incident response 和 deprecation 6 个主题，`ADR-TEMPLATE.md` 包含所有必需章节，治理文档已在 4 个入口点索引。P3-F12 和 PRD3-ENG-001 状态为 Fixed awaiting Canary。

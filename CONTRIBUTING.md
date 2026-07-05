@@ -161,6 +161,8 @@ cd frontend && npm test -- --coverage
 - **API 变更**：更新 `docs/tech-ref/05-openapi-spec.yaml`
 - **新功能**：更新 README.md
 - **Breaking Change**：在 PR 描述中明确标注
+- **架构/兼容/发布治理**：遵守 `docs/governance/README.md`
+- **重大技术决策**：使用 `docs/governance/ADR-TEMPLATE.md` 记录 ADR
 
 ## 问题反馈
 

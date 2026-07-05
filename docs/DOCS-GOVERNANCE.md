@@ -14,6 +14,7 @@
 | Current status | `docs/ops/CURRENT-STATUS.md` | One-page current truth for progress, tests, deployment, and gaps |
 | PRD acceptance | `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`, `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`, `docs/ops/PRD-ACCEPTANCE-MATRIX.md` | Evidence-backed acceptance state for active or frozen PRD checklist items |
 | PRD4 candidates | `docs/planning/PRD4-BACKLOG.md` | Candidate backlog only; not approved implementation scope |
+| Engineering governance | `docs/governance/README.md` | Minimum ADR, API compatibility, migration/rollback, release, incident, and deprecation rules |
 | Active issues | `docs/issues/OPEN-ISSUES.md` | Only active unresolved issues and recently closed items |
 | Agent protocol | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required workflow for Codex and OpenClaw Canary |
 | Current verification request | `docs/agent-workflows/FIX-SIGNAL.md` | Overwritten by Codex for each verification round |
