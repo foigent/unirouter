@@ -31,6 +31,10 @@
 - [tech-ref/](tech-ref/) — 开发团队技术参考索引
 - [tech-ref/20-prd3-product-glossary.md](tech-ref/20-prd3-product-glossary.md) — PRD3 产品术语口径：供应商/上游通道、用量分析、通知状态、角色和 PRD4 边界
 
+## 工程治理
+- [governance/README.md](governance/README.md) — PRD3 最低工程治理：ADR、API 兼容、migration/rollback、release、incident、deprecation
+- [governance/ADR-TEMPLATE.md](governance/ADR-TEMPLATE.md) — Architecture Decision Record 模板
+
 ## 运维文档
 - [ops/deployment-runbook.md](ops/deployment-runbook.md) — 部署手册（含 Canary + HTTPS 章节）
 - [ops/canary-testing.md](ops/canary-testing.md) — 灰度测试操作指南

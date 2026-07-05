@@ -18,6 +18,7 @@
 | `docs/ops/PRD1-ACCEPTANCE-TEST-OWNERSHIP.md` | PRD1 historical test-ownership map |
 | `docs/issues/OPEN-ISSUES.md` | Current unresolved issue queue |
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
+| `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required Codex/OpenClaw workflow |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Current verification request |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Current verification result after OpenClaw runs |
@@ -64,6 +65,7 @@
 | `docs/tech-ref/18-oidc-sso.md` | PRD2 OIDC first SSO, claim mapping, provisioning, and audit contract |
 | `docs/tech-ref/19-prompt-response-storage-policy.md` | PRD2 P2-F11 prompt/response storage policy: plaintext disabled by default and future opt-in controls |
 | `docs/tech-ref/20-prd3-product-glossary.md` | PRD3 canonical terminology for provider/channel, usage analytics, notification status, roles, and PRD4 boundaries |
+| `docs/governance/ADR-TEMPLATE.md` | Architecture Decision Record template |
 
 PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 
