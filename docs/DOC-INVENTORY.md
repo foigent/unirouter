@@ -45,7 +45,7 @@
 | `docs/tech-ref/02-billing-state-machine.md` | Billing state reference |
 | `docs/tech-ref/03-error-handling-matrix.md` | Error handling and retry reference |
 | `docs/tech-ref/04-oneapi-hook-manifest.md` | OneAPI hook analysis |
-| `docs/tech-ref/05-openapi-spec.yaml` | Current PRD1 API path snapshot aligned to backend routes |
+| `docs/tech-ref/05-openapi-spec.yaml` | Current UniRouter API route contract aligned to backend routes and docs parity guards |
 | `docs/tech-ref/06-frontend-spec.md` | Frontend spec reference |
 | `docs/tech-ref/07-structured-logging.md` | Logging plan/reference |
 | `docs/tech-ref/08-prometheus-metrics.md` | Metrics reference |

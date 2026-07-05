@@ -46,15 +46,18 @@ Defined in `cmd/uniroute/main.go`.
 | Channel keys | `GET/POST /api/v1/channel-keys`, `PUT/DELETE /api/v1/channel-keys/{id}` |
 | Wallet | `GET /api/v1/wallet`, `POST /api/v1/wallet/topup`, `POST /api/v1/wallet/adjust`, `GET /api/v1/wallet/transactions`, `GET /api/v1/wallet/transactions/export` |
 | Logs/dashboard | `GET /api/v1/logs`, `GET /api/v1/logs/{id}`, `GET /api/v1/dashboard/stats` |
+| Product status/analytics/docs | `GET /api/v1/usage/analytics`, `GET /api/v1/internal-status`, `GET /api/v1/error-docs` |
+| Projects/model governance | Project CRUD, project model-set bindings, model registry, model aliases, model sets, approved model catalog |
 | Pricing | `GET/POST /api/v1/model-prices`, `PUT/DELETE /api/v1/model-prices/{id}`, `GET /api/v1/model-names`, `GET/POST /api/v1/org-model-prices`, `PUT/DELETE /api/v1/org-model-prices/{id}` |
+| Notifications | Notification events, deliveries, and webhook CRUD |
 | Users/access | User CRUD, grants, audit logs |
 | Settings/filter | Settings CRUD and sensitive-word CRUD |
 | License | `GET/PUT /api/v1/license` |
 | Docs | `GET /docs` simple HTML endpoint |
 
-Contract guard: `cmd/uniroute/route_parity_test.go` checks the frontend admin API routes against registered backend route strings. `PUT /api/v1/me/password` is now registered in `cmd/uniroute/main.go`.
+Contract guard: `cmd/uniroute/route_parity_test.go` checks frontend client-required routes, OpenAPI route coverage, and frontend `/docs` route coverage against registered backend route strings.
 
-OpenAPI snapshot: `docs/tech-ref/05-openapi-spec.yaml` was refreshed during PRD1 closeout to remove stale `/api/v1/admin/*` routes and include current paths such as `PUT /api/v1/me/password`.
+OpenAPI snapshot: `docs/tech-ref/05-openapi-spec.yaml` is the current route-level contract for active UniRouter routes. Schema detail remains intentionally generic where no stable typed response contract has been defined.
 
 ## Frontend Map
 

@@ -242,25 +242,98 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 </head>
 <body>
 <h1>UniRouter API Documentation</h1>
-<p class="muted">PRD1 API index. Admin APIs use JWT Bearer auth. Gateway APIs use UniRouter API keys.</p>
+<p class="muted">Current API contract index. Admin APIs use JWT Bearer auth. Gateway APIs use UniRouter API keys.</p>
 <p>Admin Base URL: <code>/api/v1</code> &nbsp; Gateway Base URL: <code>/v1</code></p>
 <table>
 <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
 <tbody>
+<tr><td class="method">GET</td><td><code>/</code></td><td>Service metadata</td></tr>
+<tr><td class="method">GET</td><td><code>/docs</code></td><td>Backend API contract index</td></tr>
+<tr><td class="method">GET</td><td><code>/health/live</code></td><td>Liveness check</td></tr>
+<tr><td class="method">GET</td><td><code>/health/ready</code></td><td>Readiness check</td></tr>
+<tr><td class="method">GET</td><td><code>/metrics</code></td><td>Prometheus metrics</td></tr>
+<tr><td class="method">GET</td><td><code>/v1/models</code></td><td>OpenAI-compatible model list</td></tr>
+<tr><td class="method">POST</td><td><code>/v1/chat/completions</code></td><td>OpenAI-compatible chat completions</td></tr>
+<tr><td class="method">POST</td><td><code>/v1/embeddings</code></td><td>OpenAI-compatible embeddings</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/auth/login</code></td><td>Admin login</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/auth/oidc/config</code></td><td>OIDC login configuration</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/auth/oidc/start</code></td><td>OIDC login start</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/auth/oidc/callback</code></td><td>OIDC login callback</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/me</code></td><td>Current admin user</td></tr>
 <tr><td class="method">PUT</td><td><code>/api/v1/me/password</code></td><td>Change current password</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/dashboard/stats</code></td><td>Dashboard statistics</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/channels</code></td><td>List channels</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/channels</code></td><td>Create channel</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/channels/{id}</code></td><td>Get channel</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/channels/{id}</code></td><td>Update channel</td></tr>
+<tr><td class="method">DELETE</td><td><code>/api/v1/channels/{id}</code></td><td>Delete channel</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/channels/{id}/test</code></td><td>Test channel</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/channel-keys</code></td><td>List upstream credentials</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/channel-keys</code></td><td>Create upstream credential</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/channel-keys/{id}</code></td><td>Update upstream credential</td></tr>
+<tr><td class="method">DELETE</td><td><code>/api/v1/channel-keys/{id}</code></td><td>Delete upstream credential</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/keys</code></td><td>List API keys</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/keys</code></td><td>Create API key</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/keys/{id}</code></td><td>Get API key</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/keys/{id}</code></td><td>Update API key</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/keys/{id}/disable</code></td><td>Disable API key</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/projects</code></td><td>List projects</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/projects</code></td><td>Create project</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/projects/{id}</code></td><td>Get project</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/projects/{id}</code></td><td>Update project</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/projects/{id}/model-sets</code></td><td>List project model sets</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/projects/{id}/model-sets</code></td><td>Replace project model sets</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/logs</code></td><td>Call logs with filters</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/logs/{id}</code></td><td>Call log detail</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/usage/analytics</code></td><td>Usage analytics and CSV export</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/internal-status</code></td><td>Event-derived internal status</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/error-docs</code></td><td>Error documentation registry</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/wallet</code></td><td>Wallet information</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/wallet/topup</code></td><td>Top up wallet</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/wallet/adjust</code></td><td>Adjust wallet</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/wallet/transactions</code></td><td>Wallet transactions</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/wallet/transactions/export</code></td><td>Export wallet transactions</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/grants</code></td><td>List grants</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/grants</code></td><td>Create grant</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/audit-logs</code></td><td>Audit logs</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/settings</code></td><td>List settings</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/settings/{key}</code></td><td>Update setting</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/license</code></td><td>License status</td></tr>
 <tr><td class="method">PUT</td><td><code>/api/v1/license</code></td><td>Import offline license</td></tr>
-<tr><td class="method">GET</td><td><code>/v1/models</code></td><td>OpenAI-compatible model list</td></tr>
-<tr><td class="method">POST</td><td><code>/v1/chat/completions</code></td><td>OpenAI-compatible chat completions</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/users</code></td><td>List users</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/users</code></td><td>Create user</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/users/{id}</code></td><td>Update user</td></tr>
+<tr><td class="method">DELETE</td><td><code>/api/v1/users/{id}</code></td><td>Delete user</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/model-prices</code></td><td>List model prices</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-prices</code></td><td>Create model price</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/model-prices/{id}</code></td><td>Update model price</td></tr>
+<tr><td class="method">DELETE</td><td><code>/api/v1/model-prices/{id}</code></td><td>Delete model price</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/model-names</code></td><td>List model names</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/model-registry</code></td><td>List model registry</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-registry</code></td><td>Create model registry entry</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/model-registry/{id}</code></td><td>Update model registry entry</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/model-catalog</code></td><td>Approved model catalog</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/model-aliases</code></td><td>List model aliases</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-aliases</code></td><td>Create model alias</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/model-aliases/{id}</code></td><td>Update model alias</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/model-sets</code></td><td>List model sets</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-sets</code></td><td>Create model set</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/model-sets/{id}/items</code></td><td>List model set items</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/model-sets/{id}/items</code></td><td>Replace model set items</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/org-model-prices</code></td><td>List org model prices</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/org-model-prices</code></td><td>Create org model price</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/org-model-prices/{id}</code></td><td>Update org model price</td></tr>
+<tr><td class="method">DELETE</td><td><code>/api/v1/org-model-prices/{id}</code></td><td>Delete org model price</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/reconciliation</code></td><td>Usage reconciliation</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/notification-events</code></td><td>Notification events</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/notification-deliveries</code></td><td>Notification deliveries</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/notification-webhooks</code></td><td>Notification webhooks</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/notification-webhooks</code></td><td>Create notification webhook</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/notification-webhooks/{id}</code></td><td>Update notification webhook</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/sensitive-words</code></td><td>List sensitive words</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/sensitive-words</code></td><td>Add sensitive words</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/sensitive-words</code></td><td>Replace sensitive words</td></tr>
+<tr><td class="method">DELETE</td><td><code>/api/v1/sensitive-words</code></td><td>Delete sensitive words</td></tr>
 </tbody>
 </table>
 <p class="muted">Repository source of truth: <code>docs/tech-ref/05-openapi-spec.yaml</code>.</p>

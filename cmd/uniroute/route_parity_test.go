@@ -2,9 +2,15 @@ package main
 
 import (
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
+
+type routeSpec struct {
+	Method string
+	Path   string
+}
 
 func TestAdminRoutesRegisteredForFrontendClient(t *testing.T) {
 	src, err := os.ReadFile("main.go")
@@ -93,4 +99,109 @@ func TestAdminRoutesRegisteredForFrontendClient(t *testing.T) {
 			t.Fatalf("route required by frontend client is not registered: %s", route)
 		}
 	}
+}
+
+func TestOpenAPISpecCoversRegisteredRoutes(t *testing.T) {
+	routes := registeredMuxRoutes(t)
+	specBytes, err := os.ReadFile("../../docs/tech-ref/05-openapi-spec.yaml")
+	if err != nil {
+		t.Fatalf("read OpenAPI spec: %v", err)
+	}
+	spec := string(specBytes)
+
+	for _, route := range routes {
+		if !openAPIHasOperation(spec, route) {
+			t.Fatalf("OpenAPI spec missing registered route: %s %s", route.Method, route.Path)
+		}
+	}
+}
+
+func TestFrontendDocsPageCoversRegisteredRoutes(t *testing.T) {
+	routes := registeredMuxRoutes(t)
+	srcBytes, err := os.ReadFile("../../frontend/src/pages/ApiDocsPage.tsx")
+	if err != nil {
+		t.Fatalf("read frontend API docs page: %v", err)
+	}
+	src := string(srcBytes)
+
+	for _, route := range routes {
+		if !strings.Contains(src, route.Path) {
+			t.Fatalf("frontend API docs page missing registered route path: %s %s", route.Method, route.Path)
+		}
+	}
+}
+
+func TestBackendDocsPageUsesCurrentContractLanguage(t *testing.T) {
+	srcBytes, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	src := string(srcBytes)
+
+	staleTerms := []string{
+		"PRD1 API index",
+		"Current PRD1 API contract snapshot",
+	}
+	for _, term := range staleTerms {
+		if strings.Contains(src, term) {
+			t.Fatalf("backend docs page still contains stale contract wording: %q", term)
+		}
+	}
+
+	currentMarkers := []string{
+		"Current API contract index",
+		"/api/v1/usage/analytics",
+		"/api/v1/internal-status",
+		"/api/v1/error-docs",
+		"/api/v1/notification-webhooks",
+		"/api/v1/model-registry",
+		"/api/v1/auth/oidc/config",
+	}
+	for _, marker := range currentMarkers {
+		if !strings.Contains(src, marker) {
+			t.Fatalf("backend docs page missing current contract marker: %s", marker)
+		}
+	}
+}
+
+func registeredMuxRoutes(t *testing.T) []routeSpec {
+	t.Helper()
+
+	srcBytes, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	re := regexp.MustCompile(`mux\.Handle(?:Func)?\("([A-Z]+) ([^"]+)"`)
+	matches := re.FindAllStringSubmatch(string(srcBytes), -1)
+	if len(matches) == 0 {
+		t.Fatal("no mux routes found in main.go")
+	}
+
+	seen := map[string]bool{}
+	var routes []routeSpec
+	for _, match := range matches {
+		route := routeSpec{Method: match[1], Path: match[2]}
+		key := route.Method + " " + route.Path
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		routes = append(routes, route)
+	}
+	return routes
+}
+
+func openAPIHasOperation(spec string, route routeSpec) bool {
+	pathLine := "  " + route.Path + ":"
+	idx := strings.Index(spec, pathLine)
+	if idx < 0 {
+		return false
+	}
+
+	block := spec[idx+len(pathLine):]
+	if next := regexp.MustCompile(`\n  /[^:\n]*:`).FindStringIndex(block); next != nil {
+		block = block[:next[0]]
+	}
+	methodLine := "\n    " + strings.ToLower(route.Method) + ":"
+	return strings.Contains(block, methodLine)
 }
