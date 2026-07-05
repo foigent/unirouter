@@ -1,4 +1,4 @@
-# VERIFY-RESULT.md — PRD3 Batch 8 Engineering Governance Minimum
+# VERIFY-RESULT.md — PRD3 Batch 9 Frontend Shared Formatting Cleanup
 
 **日期：** 2026-07-05
 **验收人：** Canary
@@ -8,73 +8,74 @@
 
 ## 验收项
 
-### 1. Batch 7 status advanced — PASS
+### 1. Batch 8 status advanced — PASS
 
 | 检查 | 结果 | 证据 |
 |------|------|------|
-| CURRENT-STATUS.md: Batch 7 complete | ✅ | "passed Canary 9/9; Sentinel merged PR #70 at `8fe5055`; User reported Canary, Sentinel, and Atlas completed" |
-| PRD3-ACCEPTANCE-MATRIX.md: P3-F08 complete | ✅ | "Canary PASS 9/9; Sentinel merged PR #70 at `8fe5055`" |
-| OPEN-ISSUES.md: PRD3-DOCS-001 complete | ✅ | "Canary PASS 9/9; Sentinel merged PR #70 at `8fe5055`" |
+| CURRENT-STATUS.md: Batch 8 complete | ✅ | "passed Canary 7/7; Sentinel merged PR #71 at `ca95760`; User reported Canary, Sentinel, and Atlas completed" |
+| PRD3-ACCEPTANCE-MATRIX.md: P3-F12 complete | ✅ | "Canary PASS 7/7; Sentinel merged PR #71 at `ca95760`" |
+| OPEN-ISSUES.md: PRD3-ENG-001 complete | ✅ | "Canary PASS 7/7; Sentinel merged PR #71 at `ca95760`" |
 
-### 2. Governance README — PASS
-
-| 检查 | 结果 | 证据 |
-|------|------|------|
-| ADR Policy | ✅ | `governance/README.md:13` |
-| API Compatibility And Versioning | ✅ | `governance/README.md:27` |
-| Migration And Rollback Policy | ✅ | `governance/README.md:47` |
-| Release Checklist | ✅ | `governance/README.md:67` |
-| Incident Response Minimum | ✅ | `governance/README.md:83` |
-| Deprecation Policy | ✅ | `governance/README.md:98` |
-
-### 3. ADR-TEMPLATE.md — PASS
+### 2. formatNumber.ts — PASS
 
 | 检查 | 结果 | 证据 |
 |------|------|------|
-| Context | ✅ | `ADR-TEMPLATE.md:8` |
-| Decision | ✅ | `ADR-TEMPLATE.md:13` |
-| Consequences | ✅ | `ADR-TEMPLATE.md:18` |
-| Alternatives Considered | ✅ | `ADR-TEMPLATE.md:23` |
-| Verification | ✅ | `ADR-TEMPLATE.md:27` |
-| Rollback Or Exit Criteria | ✅ | `ADR-TEMPLATE.md:32` |
+| `safeNumber` | ✅ | 第 1 行 |
+| `formatCompactNumber` | ✅ | 第 6 行 |
+| `formatInteger` | ✅ | 第 13 行 |
+| `formatSignedInteger` | ✅ | 第 17 行 |
+| `formatPercent` | ✅ | 第 22 行 |
+| `formatLatencyMs` | ✅ | 第 26 行 |
 
-### 4. Governance indexed — PASS
-
-| 文件 | 结果 | 证据 |
-|------|------|------|
-| `docs/README.md` | ✅ | 第 35-36 行 |
-| `docs/DOC-INVENTORY.md` | ✅ | 第 21, 68 行 |
-| `docs/DOCS-GOVERNANCE.md` | ✅ | 第 17 行 |
-| `CONTRIBUTING.md` | ✅ | 第 164-165 行 |
-
-### 5. P3-F12 and PRD3-ENG-001 status — PASS
+### 3. formatNumber test — PASS
 
 | 检查 | 结果 | 证据 |
 |------|------|------|
-| P3-F12: Fixed awaiting Canary | ✅ | `PRD3-ACCEPTANCE-MATRIX.md:35` |
-| PRD3-ENG-001: Fixed awaiting Canary | ✅ | `OPEN-ISSUES.md:54` |
+| Unsafe values | ✅ | 第 12 行 — `normalizes unsafe values` |
+| Compact numbers | ✅ | 第 18 行 — `formats compact numbers` |
+| Integer/signed integer | ✅ | 第 24 行 |
+| Percentage + latency | ✅ | 第 31 行 — `formats ratio and latency values` |
+
+### 4. Pages use shared helpers — PASS
+
+| 检查 | 结果 | 证据 |
+|------|------|------|
+| DashboardPage imports from formatNumber | ✅ | 第 24 行 — `formatCompactNumber` |
+| UsageAnalyticsPage imports from formatNumber | ✅ | 第 7 行 — `formatCompactNumber, formatLatencyMs, formatPercent` |
+| ReconciliationPage imports from formatNumber | ✅ | 第 7 行 — `formatInteger, formatPercent, formatSignedInteger` |
+| 无重复本地 formatting 函数 | ✅ | grep 无匹配（exit 1） |
+
+### 5. P3-F10 and PRD3-ARCH-001 status — PASS
+
+| 检查 | 结果 | 证据 |
+|------|------|------|
+| P3-F10: In progress | ✅ | `PRD3-ACCEPTANCE-MATRIX.md` — "In progress" |
+| PRD3-ARCH-001: In progress | ✅ | `OPEN-ISSUES.md` — "In progress" |
 
 ### 6. Evidence file — PASS
 
 | 检查 | 结果 | 证据 |
 |------|------|------|
-| `docs/ops/evidence/PRD3-B08-engineering-governance-local-20260705.md` | ✅ | 存在 (3209 bytes) |
+| `docs/ops/evidence/PRD3-B09-frontend-formatting-local-20260705.md` | ✅ | 存在 (3172 bytes) |
 
 ### 7. Commands — PASS
 
 | 命令 | 结果 |
 |------|------|
-| Governance coverage grep | ✅ 6 个主题全部匹配 |
-| Stale Batch 7 wording | ✅ 无匹配（exit 1） |
+| `npm test -- --run formatNumber UsageAnalyticsPage ReconciliationPage DashboardPage` | ✅ 4 files / 19 tests PASS |
+| `npm test -- --run` | ✅ 19 files / 101 tests PASS |
+| `npm run build` | ✅ PASS |
+| Stale Batch 8 wording | ✅ 无匹配（exit 1） |
 | `git diff --check` | ✅ PASS (no output) |
 
 ---
 
 ## 边界确认
 
-- ✅ 仅更改文档，无运行时代码、API、前端行为、数据库迁移、测试、构建或部署配置变更
-- ✅ 未删除文件
-- ✅ 未实现 plugin runtime、新部署产品、infra 可观测性、SLA/SLO 或新角色
+- ✅ 仅更改前端 presentation helpers 和 docs/status
+- ✅ 未更改 API 路由、后端 handler、RBAC、数据库迁移、构建或部署配置
+- ✅ 未更改计费、分析、对账、状态或计费语义
+- ✅ P3-F10 保持 In progress（仅完成 formatting 子集）
 
 ---
 
@@ -86,4 +87,4 @@
 
 ## 总结
 
-PRD3 Batch 8 Engineering Governance Minimum 验收通过。`docs/governance/README.md` 覆盖 ADR、API 兼容、migration/rollback、release、incident response 和 deprecation 6 个主题，`ADR-TEMPLATE.md` 包含所有必需章节，治理文档已在 4 个入口点索引。P3-F12 和 PRD3-ENG-001 状态为 Fixed awaiting Canary。
+PRD3 Batch 9 Frontend Shared Formatting Cleanup 验收通过。`formatNumber.ts` 导出 6 个共享格式化函数，Dashboard/UsageAnalytics/Reconciliation 三个页面已替换为使用共享 helper，无重复本地 formatting。前端测试从 97 增加到 101 个，全部通过。P3-F10 和 PRD3-ARCH-001 保持 In progress。

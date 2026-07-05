@@ -21,6 +21,7 @@ import {
 } from 'recharts';
 import { api } from '../api/client';
 import { EmptyState, LatencyText, MetricTile, MoneyText, PageHeader, StatusTag, Surface, formatMoney } from '../ui';
+import { formatCompactNumber } from '../utils/formatNumber';
 
 const { Text } = Typography;
 
@@ -66,12 +67,6 @@ function getRangeParams(range: TimeRange, customStart?: string, customEnd?: stri
   }
 }
 
-function formatNumber(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toFixed(0);
-}
-
 function formatTrendLabel(value: string): string {
   if (!value) return '';
   const d = new Date(value);
@@ -95,7 +90,7 @@ function DeltaTag({ value, suffix = '', inverse = false }: { value: number; suff
     : (isPositive ? 'green' : 'red');
   if (Math.abs(value) < 0.001) return <Text type="tertiary" size="small">—</Text>;
   const sign = isPositive ? '+' : '';
-  const displayValue = Math.abs(value) < 100 ? value.toFixed(2) : formatNumber(value);
+  const displayValue = Math.abs(value) < 100 ? value.toFixed(2) : formatCompactNumber(value);
   return (
     <Tag size="small" color={color} style={{ marginLeft: 8, fontWeight: 600 }}>
       {sign}{displayValue}{suffix}
@@ -150,11 +145,11 @@ function ChannelHealthCard({ ch }: { ch: NonNullable<DashboardStats['channel_hea
           </div>
           <div className="ur-channel-stat">
             <Text className="ur-channel-stat-label">请求</Text>
-            <Text className="ur-channel-stat-value">{formatNumber(total)}</Text>
+            <Text className="ur-channel-stat-value">{formatCompactNumber(total)}</Text>
           </div>
           <div className="ur-channel-stat">
             <Text className="ur-channel-stat-label">失败</Text>
-            <Text className="ur-channel-stat-value">{formatNumber(ch.fail_count)}</Text>
+            <Text className="ur-channel-stat-value">{formatCompactNumber(ch.fail_count)}</Text>
           </div>
         </div>
       </div>
@@ -204,7 +199,7 @@ function TrendTooltip({ active, payload, label }: any) {
       {payload.map((p: any) => (
         <div key={p.dataKey} style={{ marginTop: 4, fontSize: 13 }}>
           <span style={{ color: p.color, marginRight: 6 }}>●</span>
-          {TREND_METRIC_META[p.dataKey as TrendMetric]?.label || p.name}: <strong>{p.dataKey === 'cost_yuan' ? formatYuan(Number(p.value)) : formatNumber(Number(p.value))}</strong>
+          {TREND_METRIC_META[p.dataKey as TrendMetric]?.label || p.name}: <strong>{p.dataKey === 'cost_yuan' ? formatYuan(Number(p.value)) : formatCompactNumber(Number(p.value))}</strong>
         </div>
       ))}
     </div>
@@ -367,7 +362,7 @@ export default function DashboardPage() {
         <div className="ur-kpi-grid">
           <MetricTile
             label="总请求数"
-            value={formatNumber(stats?.total_requests || 0)}
+            value={formatCompactNumber(stats?.total_requests || 0)}
             tone="blue"
             icon={<IconHistogram />}
             meta={<Text type="tertiary" size="small">当前窗口累计</Text>}
@@ -455,7 +450,7 @@ export default function DashboardPage() {
                     yAxisId="requests"
                     tick={{ fontSize: 12 }}
                     stroke="var(--ur-text-muted)"
-                    tickFormatter={formatNumber}
+                    tickFormatter={formatCompactNumber}
                     allowDecimals={false}
                   />
                   <YAxis
@@ -526,7 +521,7 @@ export default function DashboardPage() {
                     const value = Number(v);
                     const total = (stats?.model_distribution || []).reduce((s, m) => s + m.requests, 0);
                     const pct = total > 0 ? (value / total * 100).toFixed(1) : '0';
-                    return [`${formatNumber(value)} (${pct}%)`, '请求数'];
+                    return [`${formatCompactNumber(value)} (${pct}%)`, '请求数'];
                   }} />
                   <Bar dataKey="requests" radius={[0, 4, 4, 0]} maxBarSize={24} isAnimationActive={false}>
                     {modelData.map((_, i) => (

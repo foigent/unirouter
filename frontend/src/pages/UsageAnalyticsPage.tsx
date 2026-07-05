@@ -4,6 +4,7 @@ import { IconCoinMoney, IconDownload, IconRefresh, IconSearch, IconServer } from
 import { api } from '../api/client';
 import { MetricTile, MoneyText, PageHeader, StatusTag, Surface } from '../ui';
 import { requestStatusOptions, usageAnalyticsGroupOptions, usageSourceOptions } from '../utils/displayLabels';
+import { formatCompactNumber, formatLatencyMs, formatPercent } from '../utils/formatNumber';
 
 const { Text } = Typography;
 
@@ -31,17 +32,6 @@ interface AnalyticsSummary {
   csv_export_scope: string;
   prompt_retention: string;
   response_retention: string;
-}
-
-function percent(value?: number) {
-  return `${((value || 0) * 100).toFixed(1)}%`;
-}
-
-function compact(value?: number) {
-  const n = Number(value || 0);
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toLocaleString();
 }
 
 function toRFC3339(value: string) {
@@ -115,12 +105,12 @@ export default function UsageAnalyticsPage() {
 
   const columns = [
     { title: usageAnalyticsGroupOptions.find(option => option.value === groupBy)?.label || '分组', dataIndex: 'key', key: 'key', render: (value: string) => <Text code>{value}</Text> },
-    { title: '请求数', dataIndex: 'total_requests', key: 'total_requests', render: (value: number) => compact(value) },
+    { title: '请求数', dataIndex: 'total_requests', key: 'total_requests', render: (value: number) => formatCompactNumber(value) },
     { title: '成功 / 失败', key: 'status_mix', render: (_: unknown, row: AnalyticsRow) => `${row.success_requests || 0} / ${row.failed_requests || 0}` },
-    { title: 'Token', dataIndex: 'total_tokens', key: 'total_tokens', render: (value: number) => compact(value) },
+    { title: 'Token', dataIndex: 'total_tokens', key: 'total_tokens', render: (value: number) => formatCompactNumber(value) },
     { title: '费用', dataIndex: 'cost_cents', key: 'cost_cents', render: (value: number) => <MoneyText cents={value || 0} precision={4} tone="cost" /> },
-    { title: '平均延迟', dataIndex: 'avg_latency_ms', key: 'avg_latency_ms', render: (value: number) => `${Number(value || 0).toFixed(0)}ms` },
-    { title: '估算占比', dataIndex: 'estimated_ratio', key: 'estimated_ratio', render: (value: number) => <StatusTag status={(value || 0) > 0.2 ? 'warning' : 'ok'}>{percent(value)}</StatusTag> },
+    { title: '平均延迟', dataIndex: 'avg_latency_ms', key: 'avg_latency_ms', render: (value: number) => formatLatencyMs(value) },
+    { title: '估算占比', dataIndex: 'estimated_ratio', key: 'estimated_ratio', render: (value: number) => <StatusTag status={(value || 0) > 0.2 ? 'warning' : 'ok'}>{formatPercent(value)}</StatusTag> },
   ];
 
   return (
@@ -165,10 +155,10 @@ export default function UsageAnalyticsPage() {
       </Surface>
 
       <div className="ur-kpi-grid">
-        <MetricTile label="请求数" value={compact(summary?.total_requests)} icon={<IconSearch />} tone="blue" meta={`成功 ${summary?.success_requests || 0} / 失败 ${summary?.failed_requests || 0}`} />
-        <MetricTile label="Token" value={compact(summary?.total_tokens)} icon={<IconServer />} tone="violet" meta={`估算来源 ${compact(summary?.estimated_tokens)} / 上游 ${compact(summary?.upstream_tokens)}`} />
-        <MetricTile label="费用" value={<MoneyText cents={summary?.cost_cents || 0} precision={4} strong tone="cost" />} icon={<IconCoinMoney />} tone="green" meta={`平均延迟 ${(summary?.avg_latency_ms || 0).toFixed(0)}ms`} />
-        <MetricTile label="估算占比" value={percent(summary?.estimated_ratio)} icon={<IconSearch />} tone={(summary?.estimated_ratio || 0) > 0.2 ? 'amber' : 'slate'} meta={summary?.csv_export_scope === 'filtered_query' ? '当前筛选口径 / 总览已包含全部匹配数据' : summary?.csv_export_scope || '当前筛选口径'} />
+        <MetricTile label="请求数" value={formatCompactNumber(summary?.total_requests)} icon={<IconSearch />} tone="blue" meta={`成功 ${summary?.success_requests || 0} / 失败 ${summary?.failed_requests || 0}`} />
+        <MetricTile label="Token" value={formatCompactNumber(summary?.total_tokens)} icon={<IconServer />} tone="violet" meta={`估算来源 ${formatCompactNumber(summary?.estimated_tokens)} / 上游 ${formatCompactNumber(summary?.upstream_tokens)}`} />
+        <MetricTile label="费用" value={<MoneyText cents={summary?.cost_cents || 0} precision={4} strong tone="cost" />} icon={<IconCoinMoney />} tone="green" meta={`平均延迟 ${formatLatencyMs(summary?.avg_latency_ms)}`} />
+        <MetricTile label="估算占比" value={formatPercent(summary?.estimated_ratio)} icon={<IconSearch />} tone={(summary?.estimated_ratio || 0) > 0.2 ? 'amber' : 'slate'} meta={summary?.csv_export_scope === 'filtered_query' ? '当前筛选口径 / 总览已包含全部匹配数据' : summary?.csv_export_scope || '当前筛选口径'} />
       </div>
 
       <Surface title="拆解结果" description={`当前分组：${usageAnalyticsGroupOptions.find(option => option.value === groupBy)?.label || '总览（不分组）'}。请求内容：${retentionLabel(summary?.prompt_retention)} / 响应内容：${retentionLabel(summary?.response_retention)}`}>
