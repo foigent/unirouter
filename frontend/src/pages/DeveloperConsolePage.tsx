@@ -14,8 +14,9 @@ import {
 } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { useAuthStore } from '../store/auth';
-import { canCreateProjectKey, canDisableProjectKey, ROLE_LABELS } from '../navigation';
+import { canCreateProjectKey, canDisableProjectKey } from '../navigation';
 import { EmptyState, MetricTile, MoneyText, PageHeader, StatusTag, Surface } from '../ui';
+import { roleLabel as formatRoleLabel } from '../utils/displayLabels';
 
 const { Text } = Typography;
 
@@ -115,7 +116,7 @@ function fallbackCopyText(text: string) {
 
 export default function DeveloperConsolePage() {
   const role = useAuthStore((s) => s.user?.role);
-  const roleLabel = ROLE_LABELS[role || ''] || role || '项目成员';
+  const roleLabel = formatRoleLabel(role, '项目成员');
   const mayCreateKey = canCreateProjectKey(role);
   const mayDisableKey = canDisableProjectKey(role);
 

@@ -27,27 +27,6 @@ import {
   IconUserGroup,
 } from '@douyinfe/semi-icons';
 
-export const ROLE_LABELS: Record<string, string> = {
-  admin: '系统管理员（兼容）',
-  platform_admin: '平台管理员',
-  org_admin: '组织管理员',
-  billing_admin: '账单管理员',
-  project_admin: '项目管理员',
-  developer: '开发者',
-  viewer: '项目只读成员',
-  org_viewer: '组织只读',
-};
-
-export const USER_MANAGEMENT_ROLE_OPTIONS = [
-  { label: '平台管理员 (platform_admin)', value: 'platform_admin' },
-  { label: '组织管理员 (org_admin)', value: 'org_admin' },
-  { label: '账务管理员 (billing_admin)', value: 'billing_admin' },
-  { label: '项目管理员 (project_admin)', value: 'project_admin' },
-  { label: '开发者 / 项目成员 (developer)', value: 'developer' },
-  { label: '项目只读成员 (viewer)', value: 'viewer' },
-  { label: '组织只读 (org_viewer)', value: 'org_viewer' },
-];
-
 export function normalizeRole(role?: string | null) {
   const normalized = (role || '').trim();
   if (normalized === 'admin') return 'platform_admin';
