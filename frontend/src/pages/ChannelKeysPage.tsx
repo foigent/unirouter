@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Button, Table, Modal, Form, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
+import { Button, Modal, Form, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-import { PageHeader, StatusTag, Surface } from '../ui';
+import { PagedTable, PageHeader, StatusTag, Surface } from '../ui';
 
 interface ChannelKey {
   id: number;
@@ -129,20 +129,19 @@ export default function ChannelKeysPage() {
       />
 
       <Surface>
-        <div className="ur-table-shell">
-          <Table
-            dataSource={keys}
-            columns={columns}
-            rowKey="id"
-            loading={loading}
-            pagination={{
-              currentPage: page, pageSize, total,
-              pageSizeOpts: [20, 50, 100], showSizeChanger: true,
-              onPageChange: (p: number) => { setPage(p); load(p, pageSize); },
-              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1, s); },
-            }}
-          />
-        </div>
+        <PagedTable
+          columns={columns}
+          dataSource={keys}
+          loading={loading}
+          rowKey="id"
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          pageSizeOpts={[20, 50, 100]}
+          showSizeChanger
+          onPageChange={(p: number) => { setPage(p); load(p, pageSize); }}
+          onPageSizeChange={(s: number) => { setPageSize(s); setPage(1); load(1, s); }}
+        />
       </Surface>
 
       <SideSheet

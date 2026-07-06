@@ -72,6 +72,7 @@ OpenAPI snapshot: `docs/tech-ref/05-openapi-spec.yaml` is the current route-leve
 | Sidebar/navigation shell | `frontend/src/App.tsx` |
 | API client | `frontend/src/api/client.ts` |
 | Auth store | `frontend/src/store/auth.ts` |
+| Shared UI primitives | `frontend/src/ui/` (`PageHeader`, `Surface`, `EmptyState`, `MoneyText`, `LatencyText`, `StatusTag`, `PagedTable`) |
 | Pages | `frontend/src/pages/*.tsx` |
 | Shared error boundary | `frontend/src/components/ErrorBoundary.tsx` |
 | Global CSS | `frontend/src/index.css` |

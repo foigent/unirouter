@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Button, Table, Form, Toast, SideSheet } from '@douyinfe/semi-ui';
+import { Button, Form, Toast, SideSheet } from '@douyinfe/semi-ui';
 import { IconPlus } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
-import { MoneyText, PageHeader, Surface } from '../ui';
+import { MoneyText, PagedTable, PageHeader, Surface } from '../ui';
 
 export default function GrantsPage() {
   const [grants, setGrants] = useState<any[]>([]);
@@ -14,9 +14,9 @@ export default function GrantsPage() {
   const [showDrawer, setShowDrawer] = useState(false);
   const [formApi, setFormApi] = useState<any>(null);
 
-  const load = (p = page) => {
+  const load = (p = page, size = pageSize) => {
     setLoading(true);
-    api.getGrants(p, 20)
+    api.getGrants(p, size)
       .then((d: any) => { setGrants(d.data || []); setTotal(d.total || 0); })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -56,19 +56,17 @@ export default function GrantsPage() {
       />
 
       <Surface>
-        <div className="ur-table-shell">
-          <Table
-            columns={columns}
-            dataSource={grants}
-            loading={loading}
-            rowKey="id"
-            pagination={{
-              currentPage: page, pageSize, total,
-              onPageChange: (p: number) => { setPage(p); load(p); },
-              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1); },
-            }}
-          />
-        </div>
+        <PagedTable
+          columns={columns}
+          dataSource={grants}
+          loading={loading}
+          rowKey="id"
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={(p: number) => { setPage(p); load(p, pageSize); }}
+          onPageSizeChange={(s: number) => { setPageSize(s); setPage(1); load(1, s); }}
+        />
       </Surface>
 
       <SideSheet
