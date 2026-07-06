@@ -1,89 +1,78 @@
-# FIX-SIGNAL.md - PRD3 Batch 10 Role Display Label Boundary Cleanup
+# FIX-SIGNAL.md - PRD3 Batch 11 Status Reconciliation And Gap Plan
 
-**Date:** 2026-07-05
+**Date:** 2026-07-06
 **Status:** Fixed awaiting Canary
 
-PRD3 Batch 9 frontend shared formatting cleanup passed Canary 7/7 in
-`docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merged PR #72 at `6a440b1`;
+PRD3 Batch 10 role display label boundary cleanup passed Canary 7/7 in
+`docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merged PR #74 at `ecefa1a`;
 User reported Canary, Sentinel, and Atlas completed.
 
-Codex has completed PRD3 Batch 10 as a narrow P3-F10 frontend architecture
-cleanup subset. This moves role display labels, User Management role options,
-and role tag colors from `navigation.tsx` into `displayLabels`, keeping
-navigation focused on route/menu and permission behavior.
+Codex has completed PRD3 Batch 11 as a docs-only status reconciliation and
+remaining-gap planning batch. This updates current status, PRD3 acceptance,
+active issue routing, and evidence so PRD3 can continue from the true current
+state.
 
 ## Boundaries
 
 - PRD3 remains cleanup/optimization of existing functionality only.
-- This batch changes frontend display-label helpers and docs/status only.
-- No API route, backend handler, RBAC rule, database migration, build config,
-  deployment config, or archive file changed.
+- This batch changes docs/status/evidence only.
+- No runtime code, tests, API routes, backend handlers, frontend behavior,
+  RBAC rules, database migrations, build config, deployment config, or archive
+  files changed.
 - No files were deleted.
-- No navigation path/default landing behavior changed.
-- No role enum value changed.
-- P3-F10 remains broader than this batch; shared filters, table wrappers, form
-  patterns, empty/error/loading states, and backend boundary cleanup remain later
-  PRD3 work.
-- This does not implement any PRD4 feature.
+- This does not implement SEC-004, SEC-005, P3-F09, P3-F10, P3-F11, P3-F14
+  final cleanup, or any PRD4 feature; it only makes the remaining plan explicit.
 
 ## Verification Request
 
 Please verify:
 
-1. Batch 9 status is advanced from awaiting verification to complete:
+1. Batch 10 status is advanced from stale `Fixed awaiting Canary` wording to
+   accepted Canary/Sentinel/Atlas-complete wording in:
    - `docs/ops/CURRENT-STATUS.md`;
    - `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`;
    - `docs/issues/OPEN-ISSUES.md`.
-2. `frontend/src/utils/displayLabels.ts` owns role display helpers:
-   - `roleLabels`;
-   - `userManagementRoleOptions`;
-   - `roleLabel`;
-   - `roleTagColor`.
-3. `frontend/src/navigation.tsx` no longer exports role display labels or User
-   Management role options.
-4. App, AccessState, DeveloperConsole, and Users import role display helpers
-   from `displayLabels`, while navigation/RBAC helpers still come from
-   `navigation.tsx`.
-5. `frontend/src/utils/__tests__/displayLabels.test.ts` covers role options,
-   labels, legacy `admin` display text, and tag colors.
-6. P3-F10 is marked `In progress` rather than fully complete, and
-   PRD3-ARCH-001 remains `In progress` because this batch only covers the shared
-   role-display subset:
-   - `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`;
-   - `docs/issues/OPEN-ISSUES.md`.
-7. Status/evidence docs are updated:
-   - `docs/ops/evidence/PRD3-B10-role-display-labels-local-20260705.md`;
-   - `docs/ops/CURRENT-STATUS.md`;
-   - `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`;
-   - `docs/issues/OPEN-ISSUES.md`;
-   - `docs/agent-workflows/FIX-SIGNAL.md`.
-7. Run these commands:
+2. `docs/ops/CURRENT-STATUS.md` shows Batch 11 as the current
+   `Fixed awaiting Canary` item and records the remaining PRD3 work as:
+   - P3-F09 backend boundary cleanup;
+   - P3-F10 continued frontend architecture cleanup;
+   - P3-F11 parity guards;
+   - P3-F14 evidence hygiene;
+   - SEC-004 and SEC-005 decisions.
+3. `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`:
+   - has date `2026-07-06`;
+   - has `Last verified` pointing to PRD3 Batch 10 PASS and commit `ecefa1a`;
+   - keeps P3-F10 `In progress`;
+   - moves P3-F14 to `In progress`;
+   - includes `Remaining PRD3 Completion Plan`.
+4. `docs/issues/OPEN-ISSUES.md`:
+   - no longer asks Canary to verify Batch 10;
+   - keeps `PRD3-ARCH-001` `In progress`;
+   - adds `PRD3-EVIDENCE-001` as `Fixed awaiting Canary` for this batch.
+5. Evidence exists at
+   `docs/ops/evidence/PRD3-B11-status-reconciliation-local-20260706.md` and
+   states that no runtime code changed and no files were deleted.
+6. Run these commands:
 
 ```bash
-rg -n "ROLE_LABELS|USER_MANAGEMENT_ROLE_OPTIONS|roleColor\\(" frontend/src
-npm --prefix frontend test -- --run displayLabels navigation App DeveloperConsolePage
-npm --prefix frontend test -- --run
-npm --prefix frontend run build
-rg -n "PRD3 Batch 9 frontend shared formatting cleanup fixed awaiting Canary|P3-F10 \\| Frontend Architecture Cleanup \\| Fixed awaiting Canary" docs/ops/CURRENT-STATUS.md docs/ops/PRD3-ACCEPTANCE-MATRIX.md docs/issues/OPEN-ISSUES.md
+rg -n "PRD3 Batch 10 role display label boundary cleanup fixed awaiting Canary|Canary verify Batch 10 role display" docs/ops/CURRENT-STATUS.md docs/ops/PRD3-ACCEPTANCE-MATRIX.md docs/issues/OPEN-ISSUES.md
+rg -n "PRD3 Batch 11 Status Reconciliation|PRD3-EVIDENCE-001|Remaining PRD3 Completion Plan|SEC-004|SEC-005" docs/ops/CURRENT-STATUS.md docs/ops/PRD3-ACCEPTANCE-MATRIX.md docs/issues/OPEN-ISSUES.md docs/ops/evidence/PRD3-B11-status-reconciliation-local-20260706.md
 git diff --check
 ```
 
 ## Expected Result
 
+- The stale Batch 10 awaiting-verification grep returns no matches.
+- The Batch 11 evidence grep returns matches in the expected docs.
+- `git diff --check` passes.
 - If all checks pass, update `docs/agent-workflows/VERIFY-RESULT.md` with PRD3
-  Batch 10 PASS.
+  Batch 11 PASS.
 - If any check fails, list the exact file and line-level issue.
 
 ## Verification Pointers
 
-- `frontend/src/utils/displayLabels.ts`
-- `frontend/src/utils/__tests__/displayLabels.test.ts`
-- `frontend/src/navigation.tsx`
-- `frontend/src/App.tsx`
-- `frontend/src/pages/AccessStatePage.tsx`
-- `frontend/src/pages/DeveloperConsolePage.tsx`
-- `frontend/src/pages/UsersPage.tsx`
-- `docs/ops/evidence/PRD3-B10-role-display-labels-local-20260705.md`
-- `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`
 - `docs/ops/CURRENT-STATUS.md`
+- `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`
 - `docs/issues/OPEN-ISSUES.md`
+- `docs/ops/evidence/PRD3-B11-status-reconciliation-local-20260706.md`
+- `docs/agent-workflows/FIX-SIGNAL.md`
