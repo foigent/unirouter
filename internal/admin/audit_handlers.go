@@ -16,7 +16,7 @@ import (
 
 func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePagination(r)
-	offset := (page - 1) * pageSize
+	offset := paginationOffset(page, pageSize)
 
 	var conditions []string
 	var args []interface{}

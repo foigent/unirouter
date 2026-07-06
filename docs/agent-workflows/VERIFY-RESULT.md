@@ -1,42 +1,36 @@
-# VERIFY-RESULT.md — PRD3 Batch 13 Runtime Exposure Hardening
+# VERIFY-RESULT.md — PRD3 Batch 14 Admin Helper Boundary Cleanup
 
 **Date:** 2026-07-06
-**Verdict:** ✅ PASS 7/7
+**Verdict:** ✅ PASS 6/6
 
 ## Verification Summary
 
 | # | Check | Result | Evidence |
 |---|-------|--------|----------|
-| 1 | CORS no longer wildcard | ✅ PASS | `internal/middleware/cors.go`: uses exact-origin allowlist from `ADMIN_CORS_ALLOWED_ORIGINS`; disallowed preflight returns 403; no `*` pattern anywhere |
-| 2 | Login has brute-force limiter | ✅ PASS | `cmd/uniroute/main.go` line 240: `POST /api/v1/auth/login` wrapped with `loginRateLimiter`; config via `LOGIN_RATE_LIMIT_*` env vars; Redis fails open; body restored after bounded inspection |
-| 3 | `/metrics` runtime-configurable | ✅ PASS | `cmd/uniroute/main.go` lines 179-187: `METRICS_ENABLED=false` → 404; `METRICS_ALLOWED_CIDRS` restricts by RemoteAddr; docs warn against public internet exposure |
-| 4 | Status docs self-consistent | ✅ PASS | OPEN-ISSUES: SEC-004 "Canary passed", SEC-005 "Fixed awaiting Canary"; CURRENT-STATUS: Batch 13 "Fixed awaiting Canary"; ACCEPTANCE-MATRIX: SEC-005 "Fixed awaiting Canary in Batch 13", trusted proxy/metrics auth in PRD4 boundary |
-| 5 | Evidence file exists | ✅ PASS | `docs/ops/evidence/PRD3-B13-runtime-exposure-hardening-local-20260706.md` present; documents CORS/login/metrics policy, Go 1.25 boundary, PRD4 deferrals |
-| 6 | All regression commands pass | ✅ PASS | See command table below |
-| 7 | Anti-regression grep clean | ✅ PASS | No wildcard CORS, no stale permissive comment, no unwrapped login, no direct promhttp.Handler() |
+| 1 | Helper files exist with correct responsibilities | ✅ PASS | `event_helpers.go` (event emitters), `http_helpers.go` (writeJSON/parsePagination/paginationOffset/constants), `model_helpers.go` (joinStrings/normalizeModels) |
+| 2 | Duplicate pagination parsing consolidated | ✅ PASS | `grep` for direct `strconv.Atoi` page/page_size and `offset := (page - 1) * pageSize` only matches `http_helpers.go` — centralized parser only |
+| 3 | Regression coverage exists | ✅ PASS | `TestParsePagination` at `admin_test.go:149` — covers default, valid, invalid page, oversized page size, invalid page size, offset behavior |
+| 4 | Admin tests + route parity tests pass | ✅ PASS | `go test ./internal/admin` 14 tests PASS; route/OpenAPI/frontend-doc parity 3/3 PASS |
+| 5 | Status docs self-consistent | ✅ PASS | CURRENT-STATUS: Batch 14 "Fixed awaiting Canary"; ACCEPTANCE-MATRIX: P3-F09 "Fixed awaiting Canary"; OPEN-ISSUES: PRD3-ARCH-001 records Batch 14; CODEBASE-MAP: documents helper files |
+| 6 | Evidence file exists + full tests pass | ✅ PASS | Evidence file present; `go test ./...` 20 packages PASS; `git diff --check` clean |
 
 ## Commands
 
 | Command | Result |
 |---------|--------|
-| `go test ./internal/config ./internal/middleware` | PASS ✅ |
-| `go test ./cmd/uniroute -run 'TestAdminRoutesRegistered...\|TestOpenAPISpec...\|TestFrontendDocs...'` | 3/3 PASS ✅ |
+| `go test ./internal/admin -count=1` | 14 tests PASS ✅ |
+| `go test ./cmd/uniroute -run '...Parity...'` | 3/3 PASS ✅ |
 | `go test ./...` | 20 packages PASS ✅ |
-| `npm --prefix frontend test -- --run` | 20 files / 103 tests PASS ✅ |
-| `npm --prefix frontend run build` | PASS (Vite 6.4.3, existing large chunk warning) ✅ |
-| `govulncheck ./...` | 0 reachable vulnerabilities ✅ |
-| `npm audit --audit-level=moderate` | 0 vulnerabilities ✅ |
-| Env/config/docs grep for `ADMIN_CORS_ALLOWED_ORIGINS`, `LOGIN_RATE_LIMIT_*`, `METRICS_*` | Matches in .env.example, docker-compose.yml, deployment-runbook.md, prometheus-metrics.md, config.go, main.go ✅ |
-| Anti-regression grep (wildcard CORS, unwrapped login, direct promhttp) | No matches ✅ |
-| Status/evidence grep for Batch 13, SEC-005 | Matches in all 4 files ✅ |
+| Pagination duplicate grep | Only `http_helpers.go` matches ✅ |
+| Status/evidence grep | Matches in CURRENT-STATUS, ACCEPTANCE-MATRIX, OPEN-ISSUES, CODEBASE-MAP ✅ |
 | `git diff --check` | PASS (clean) ✅ |
 
 ## Boundaries Verified
 
-- No new API route, UI page, persistent role, RBAC authority, migration, or product module added.
-- `/metrics` remains registered for route parity; can be disabled or CIDR-restricted.
-- Login throttling uses backend `RemoteAddr`; does not trust `X-Forwarded-For`/`X-Real-IP`.
-- Trusted proxy, metrics auth, infra observability, SLA/SLO deferred to PRD4.
+- `internal/admin` remains one package. No new package boundary introduced.
+- No route registration, JSON response field, status code, SQL query, RBAC rule, or migration changed.
+- No billing, audit, notification, login, gateway, CORS, metrics, or deployment behavior changed.
+- P3-F10, P3-F11, P3-F14, and PRD4 features not implemented.
 - No files deleted.
 
 ## New Issues
@@ -45,4 +39,4 @@ None.
 
 ## Conclusion
 
-PRD3 Batch 13 PASS. Wildcard CORS removed, login brute-force limiter added, `/metrics` made runtime-configurable. All tests, security scans, and build pass. SEC-005 closed as existing-surface hardening; PRD4 boundaries preserved.
+PRD3 Batch 14 PASS. Admin helper boundaries cleaned up: event emitters, HTTP/pagination helpers, and model normalization extracted from `handlers.go`. Duplicate pagination parsing consolidated. All tests pass.
