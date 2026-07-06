@@ -177,7 +177,14 @@ Embeddings 请求只有 input token，无 completion token，因此只记录 `"p
 GET /metrics
 ```
 
-返回 Prometheus 文本格式的指标数据，无需认证。
+返回 Prometheus 文本格式的指标数据。PRD3 Batch 13 起，该端点的暴露策略由运行时配置控制：
+
+| 配置 | 默认 | 说明 |
+|------|------|------|
+| `METRICS_ENABLED` | `true` | 为兼容现有 Prometheus 栈默认开启；设置为 `false` 时 `/metrics` 返回 404 |
+| `METRICS_ALLOWED_CIDRS` | 空 | 为空时不做应用层 CIDR 限制；设置后仅允许 `RemoteAddr` 落在这些 CIDR 内的请求访问 `/metrics` |
+
+生产环境不应把 backend `:8080/metrics` 直接暴露到公网。推荐做法是通过安全组、防火墙或反向代理限制到 Prometheus 所在网络；如果部署形态允许，也可以设置 `METRICS_ALLOWED_CIDRS` 或关闭 `METRICS_ENABLED`。
 
 ### 4.2 中间件链顺序
 
@@ -192,8 +199,9 @@ CORS → Metrics → Admission → Router
 ### 4.3 安全考虑
 
 生产环境中 `/metrics` 端点建议：
-- 仅内网访问（通过防火墙或反向代理限制）
-- 或添加 Basic Auth 认证
+- 仅内网访问（通过防火墙、反向代理或 `METRICS_ALLOWED_CIDRS` 限制）
+- 不需要应用内指标时设置 `METRICS_ENABLED=false`
+- 如果需要 Basic Auth 或更复杂的代理认证，应作为部署策略或 PRD4 运维能力设计，不在 PRD3 中临时扩展
 
 ---
 

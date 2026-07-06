@@ -173,8 +173,16 @@ func main() {
 		fmt.Fprintf(w, `{"service":"uniroute","version":"1.0.0","status":"running"}`)
 	})
 
-	// Prometheus metrics endpoint
-	mux.Handle("GET /metrics", promhttp.Handler())
+	// Prometheus metrics endpoint. It remains registered for contract parity, but
+	// can be disabled or CIDR-restricted by runtime exposure policy.
+	metricsEndpoint := promhttp.Handler()
+	if !cfg.MetricsEnabled {
+		metricsEndpoint = http.NotFoundHandler()
+	}
+	if len(cfg.MetricsAllowedCIDRs) > 0 {
+		metricsEndpoint = middleware.MetricsCIDRAllowlist(cfg.MetricsAllowedCIDRs)(metricsEndpoint)
+	}
+	mux.Handle("GET /metrics", metricsEndpoint)
 
 	// Gateway endpoints (with auth + rate limiting)
 	gatewayAuth := middleware.GatewayAuthWithAPIKeyHashSecret(postgres.Pool, cfg.APIKeyHashSecret)
@@ -221,8 +229,15 @@ func main() {
 		return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper)
 	}
 
+	loginRateLimiter := middleware.LoginRateLimit(redisClient.Client, middleware.LoginRateLimitOptions{
+		Enabled:      cfg.LoginRateLimitEnabled,
+		Window:       time.Duration(cfg.LoginRateLimitWindowSec) * time.Second,
+		IPRequests:   cfg.LoginRateLimitIP,
+		UserRequests: cfg.LoginRateLimitUser,
+	})
+
 	// Admin endpoints
-	mux.HandleFunc("POST /api/v1/auth/login", adminHandler.Login)
+	mux.Handle("POST /api/v1/auth/login", loginRateLimiter(http.HandlerFunc(adminHandler.Login)))
 	mux.HandleFunc("GET /api/v1/auth/oidc/config", adminHandler.OIDCConfig)
 	mux.HandleFunc("GET /api/v1/auth/oidc/start", adminHandler.OIDCStart)
 	mux.HandleFunc("GET /api/v1/auth/oidc/callback", adminHandler.OIDCCallback)
@@ -251,7 +266,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">GET</td><td><code>/docs</code></td><td>Backend API contract index</td></tr>
 <tr><td class="method">GET</td><td><code>/health/live</code></td><td>Liveness check</td></tr>
 <tr><td class="method">GET</td><td><code>/health/ready</code></td><td>Readiness check</td></tr>
-<tr><td class="method">GET</td><td><code>/metrics</code></td><td>Prometheus metrics</td></tr>
+<tr><td class="method">GET</td><td><code>/metrics</code></td><td>Prometheus metrics (runtime-configurable)</td></tr>
 <tr><td class="method">GET</td><td><code>/v1/models</code></td><td>OpenAI-compatible model list</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/chat/completions</code></td><td>OpenAI-compatible chat completions</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/embeddings</code></td><td>OpenAI-compatible embeddings</td></tr>
@@ -431,7 +446,9 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("POST /api/v1/channels/{id}/test", platformRoute(adminHandler.TestChannel))
 	mux.Handle("GET /api/v1/wallet/transactions/export", billingRoute(adminHandler.ExportWalletTransactions))
 	metricsHandler := middleware.MetricsMiddleware(mux)
-	corsHandler := middleware.CORS(metricsHandler)
+	corsHandler := middleware.CORSWithOptions(middleware.CORSOptions{
+		AllowedOrigins: cfg.AdminCORSAllowedOrigins,
+	})(metricsHandler)
 
 	// Create server
 	addr := fmt.Sprintf(":%d", cfg.ListenPort)

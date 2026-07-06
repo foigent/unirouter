@@ -24,7 +24,7 @@ const endpointGroups = [
       ['GET', '/docs', '后端 API 合同索引'],
       ['GET', '/health/live', '存活探针'],
       ['GET', '/health/ready', '依赖就绪探针'],
-      ['GET', '/metrics', 'Prometheus 指标'],
+      ['GET', '/metrics', 'Prometheus 指标（运行时可配置）'],
     ],
   },
   {
