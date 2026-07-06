@@ -1,37 +1,40 @@
-# VERIFY-RESULT.md — PRD3 Batch 17 Final Evidence Hygiene And Closeout Status
+# VERIFY-RESULT.md — PRD4 Batch 0 Scope Baseline
 
-**Date:** 2026-07-06
-**Verdict:** ✅ PASS 7/7
+**Date:** 2026-07-07
+**Verdict:** ✅ PASS 5/5
 
 ## Verification Summary
 
 | # | Check | Result | Evidence |
 |---|-------|--------|----------|
-| 1 | Batch 16 accepted consistently | ✅ PASS | CURRENT-STATUS: "Batch 16 navigation parity guard passed Canary 6/6; Sentinel merged PR #80 at `e7f264e`"; ACCEPTANCE-MATRIX: P3-F11 "Canary passed"; OPEN-ISSUES: PRD3-PARITY-001 "Canary passed" |
-| 2 | Batch 17 is current verification request | ✅ PASS | CURRENT-STATUS: Batch 17 "Fixed awaiting Canary"; ACCEPTANCE-MATRIX: P3-F14 "Fixed awaiting Canary"; OPEN-ISSUES: PRD3-EVIDENCE-001 "Fixed awaiting Canary" |
-| 3 | P3-F01 through P3-F13 all accepted | ✅ PASS | ACCEPTANCE-MATRIX: all rows P3-F01 through P3-F13 show "Canary passed"; only P3-F14 is "Fixed awaiting Canary" |
-| 4 | PRD2 target-evidence boundaries explicit | ✅ PASS | CURRENT-STATUS preserves: Batch 18 credential-gated, P2-F10 E2E accepted not Production verified, HA/DR later target, IdP target-environment, budget hard-block deferred |
-| 5 | PRD4 boundaries explicit | ✅ PASS | CURRENT-STATUS and ACCEPTANCE-MATRIX preserve: runtime plugins, deployment/IaC, infra observability, budget hard-block, cache, SLA/SLO, trusted proxy, metrics auth, new persistent roles |
-| 6 | PRD-Phase3.md updated | ✅ PASS | Line 5: "Implemented through Batch 16; final evidence hygiene closeout pending Canary" |
-| 7 | Docs-only, no runtime code changes | ✅ PASS | `git diff --check` clean; evidence file confirms no runtime code |
+| 1 | PRD4 formal scope exists and is routed from current docs | ✅ PASS | `PRD-Phase4.md`: P4-F01 through P4-F13, PlungeIn, API key owner, Status Center. `README.md`, `DOC-INVENTORY.md`, `PROJECT-HANDOFF.md`, `CURRENT-STATUS.md` all link to PRD4 docs. 3 ADRs exist for PlungeIn ports, usage attribution, and Status Center observability. |
+| 2 | PRD5 deferrals are explicit | ✅ PASS | Full Scheduler V2, runtime plugin platform, Logto/IAM rewrite, Budget hard-block, Runtime cache, Full SDK, Public SaaS all explicitly deferred in `PRD-Phase4.md`, `PRD4-ACCEPTANCE-MATRIX.md`, and `PRD5-BACKLOG.md` with reasons and prerequisites. |
+| 3 | PRD2/PRD3 accepted states not reopened | ✅ PASS | CURRENT-STATUS: "PRD2 is frozen for new feature work", "PRD3 is complete for the confirmed scope". PRD4-ACCEPTANCE-MATRIX: "Production verified" preserved with target-environment requirement. PRD-Phase4.md: "target-environment" boundaries preserved. |
+| 4 | Docs-only boundary holds | ✅ PASS | `git diff --check` clean. 12 modified files all docs. 6 new files all docs (`PRD-Phase4.md`, `PRD4-ACCEPTANCE-MATRIX.md`, `PRD5-BACKLOG.md`, 3 ADRs). No Go, TypeScript, migration, or infra config changes. |
 
 ## Commands
 
 | Command | Result |
 |---------|--------|
-| `go test ./...` | 20 packages PASS ✅ |
-| `npm test -- --run` | 21 files / 105 tests PASS ✅ |
-| `npm run build` | PASS (Vite 6.4.3, existing large chunk warning) ✅ |
-| Positive status/evidence grep | Matches in all 6 files ✅ |
-| Negative stale-status grep | No stale Batch 16 "Fixed awaiting Canary" wording found ✅ (note: the regex `Batch 16[^.]*awaits Canary` matched across the long CURRENT-STATUS line due to the Batch 17 entry following Batch 16 text — this is a regex overreach, not a content issue; Batch 16 is correctly recorded as passed) |
+| `grep "P4-F01\|P4-F13\|PRD5\|PlungeIn\|API key owner\|Status Center\|Production verified" docs/PRD-Phase4.md ...` | Matches in all files ✅ |
+| `grep "docs/PRD-Phase4.md\|PRD4-ACCEPTANCE-MATRIX\|PRD5-BACKLOG" docs/README.md docs/DOC-INVENTORY.md docs/PROJECT-HANDOFF.md docs/ops/CURRENT-STATUS.md` | Matches in all 4 files ✅ |
+| `grep "Full Scheduler V2\|runtime plugin platform\|Logto/IAM rewrite\|Budget hard-block\|Runtime cache\|Full SDK\|Public SaaS" ...` | All deferred items found ✅ |
+| `grep "PRD2 is frozen\|PRD3 is complete\|Production verified\|target-environment" ...` | PRD2 frozen + PRD3 complete + boundaries preserved ✅ |
+| `git diff --stat` | 12 files, 201 insertions, 148 deletions — all docs ✅ |
 | `git diff --check` | PASS (clean) ✅ |
 
-## Boundaries Verified
+## New Files (6)
 
-- No runtime code, test behavior, API route, handler, frontend behavior, RBAC rule, migration, or deployment config changed.
-- No PRD2 external target evidence promoted to Production verified.
-- PRD4 backlog boundaries preserved.
-- No files deleted.
+- `docs/PRD-Phase4.md` — formal PRD4 scope
+- `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` — PRD4 acceptance matrix
+- `docs/planning/PRD5-BACKLOG.md` — explicitly deferred PRD5 capabilities
+- `docs/governance/adr/ADR-0001-prd4-plungein-ports.md` — PlungeIn port architecture
+- `docs/governance/adr/ADR-0002-prd4-api-key-owner-usage.md` — API key owner usage
+- `docs/governance/adr/ADR-0003-prd4-status-center-observability.md` — Status Center observability
+
+## Modified Files (12)
+
+All documentation: `DOC-INVENTORY.md`, `PRD-Phase3.md`, `PROJECT-HANDOFF.md`, `README.md`, `FIX-SIGNAL.md`, `VERIFY-RESULT.md`, `governance/README.md`, `OPEN-ISSUES.md`, `CURRENT-STATUS.md`, `PRD3-ACCEPTANCE-MATRIX.md`, evidence file, `PRD4-BACKLOG.md`.
 
 ## New Issues
 
@@ -39,4 +42,4 @@ None.
 
 ## Conclusion
 
-PRD3 Batch 17 PASS. Final evidence hygiene complete: Batch 16 accepted, P3-F01 through P3-F13 all accepted, P3-F14 final verification, PRD2/PRD4 boundaries preserved. PRD3 implementation through Batch 16 is complete; closeout status is pending Canary.
+PRD4 Batch 0 PASS. Formal PRD4 scope (P4-F01 through P4-F13) documented with acceptance matrix, PRD5 backlog, and 3 ADRs. PRD5 deferrals explicit with reasons. PRD2 frozen and PRD3 complete preserved. Docs-only — no runtime code changes.

@@ -1,12 +1,17 @@
 # PRD4 Candidate Backlog
 
 > Date: 2026-07-05
-> Status: Candidate backlog. This is not an approved implementation PRD.
+> Status: Candidate backlog and source record. Formal PRD4 scope now lives in
+> `docs/PRD-Phase4.md`.
 > Source: PRD3 consistency cleanup decisions and User-confirmed PRD4 boundaries.
 
 ## Purpose
 
 PRD3 is limited to cleanup and optimization of already implemented behavior. This document records capabilities that were discussed during PRD3 but require new product models, new data collection, new authority surfaces, or new deployment assumptions. They must not be implemented inside PRD3 unless User explicitly reopens scope.
+
+After PRD4 scope discovery on 2026-07-07, the formal PRD4 implementation draft
+is `docs/PRD-Phase4.md`, and explicitly deferred items are tracked in
+`docs/planning/PRD5-BACKLOG.md`. This file remains the candidate-source record.
 
 ## Candidate Items
 

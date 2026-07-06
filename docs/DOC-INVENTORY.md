@@ -8,10 +8,13 @@
 |------|------|
 | `docs/PROJECT-HANDOFF.md` | First-read handoff for agents |
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
-| `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` | Active PRD3 cleanup/optimization acceptance state |
-| `docs/PRD-Phase3.md` | Active PRD3 cleanup/optimization scope |
-| `docs/planning/PRD3-CONSISTENCY-AUDIT.md` | PRD3 lineage audit and confirmed cleanup input |
-| `docs/planning/PRD4-BACKLOG.md` | PRD4 candidate backlog; not approved implementation scope |
+| `docs/PRD-Phase4.md` | Proposed formal PRD4 scope; no runtime implementation accepted yet |
+| `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` | Proposed PRD4 acceptance matrix and evidence boundaries |
+| `docs/planning/PRD5-BACKLOG.md` | Capabilities explicitly deferred beyond PRD4 |
+| `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` | Completed PRD3 cleanup/optimization acceptance state |
+| `docs/PRD-Phase3.md` | Completed PRD3 cleanup/optimization scope |
+| `docs/planning/PRD3-CONSISTENCY-AUDIT.md` | PRD3 lineage audit and completed cleanup input |
+| `docs/planning/PRD4-BACKLOG.md` | PRD4 candidate backlog source record; formal PRD4 scope is `docs/PRD-Phase4.md` |
 | `docs/ops/PRD2-ACCEPTANCE-MATRIX.md` | Frozen PRD2 acceptance/deferred state |
 | `docs/ops/PRD2-COMPLETION-PLAN.md` | Frozen PRD2 closeout decisions and historical plan |
 | `docs/ops/PRD-ACCEPTANCE-MATRIX.md` | PRD1 historical acceptance progress and closeout evidence |
@@ -20,7 +23,7 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required Codex/OpenClaw workflow |
-| `docs/agent-workflows/FIX-SIGNAL.md` | Current verification request |
+| `docs/agent-workflows/FIX-SIGNAL.md` | Current verification signal; PRD4 Batch 0 scope baseline awaits Canary |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Current verification result after OpenClaw runs |
 
 ## Product And Design References
@@ -31,9 +34,11 @@
 | `docs/PRD-Phase1.pdf` | PRD PDF export | May lag Markdown |
 | `docs/planning/PRD2-DISCOVERY.md` | PRD2 direction and scope discovery | Historical planning input for frozen PRD2 |
 | `docs/PRD-Phase2.md` | PRD2 formal product requirements | Frozen for new feature work |
-| `docs/planning/PRD3-CONSISTENCY-AUDIT.md` | PRD3 consistency audit | Confirmed active PRD3 input |
-| `docs/PRD-Phase3.md` | PRD3 formal product requirements | Active cleanup/optimization scope |
-| `docs/planning/PRD4-BACKLOG.md` | PRD4 candidate backlog | Candidate capabilities only; not an approved implementation PRD |
+| `docs/planning/PRD3-CONSISTENCY-AUDIT.md` | PRD3 consistency audit | Confirmed PRD3 input; completed in Batch 17 closeout |
+| `docs/PRD-Phase3.md` | PRD3 formal product requirements | Completed cleanup/optimization scope |
+| `docs/PRD-Phase4.md` | PRD4 formal product requirements draft | Proposed scope; Batch 0 documentation-only baseline |
+| `docs/planning/PRD4-BACKLOG.md` | PRD4 candidate backlog | Source record for PRD4 scope discovery |
+| `docs/planning/PRD5-BACKLOG.md` | PRD5 backlog | Explicitly deferred capabilities and reopen prerequisites |
 | `docs/design/` | UI design decisions | Current design reference unless contradicted by code |
 | `docs/design/PRD2-DEVELOPER-CONSOLE-SPEC.md` | PRD2 Developer Console design spec | Draft for review |
 | `docs/ui/FRONTEND-UI-ARCHITECTURE-AUDIT.md` | Frontend UI/architecture audit | Current PRD1 closeout and PRD2 frontend architecture guidance |
@@ -66,6 +71,9 @@
 | `docs/tech-ref/19-prompt-response-storage-policy.md` | PRD2 P2-F11 prompt/response storage policy: plaintext disabled by default and future opt-in controls |
 | `docs/tech-ref/20-prd3-product-glossary.md` | PRD3 canonical terminology for provider/channel, usage analytics, notification status, roles, and PRD4 boundaries |
 | `docs/governance/ADR-TEMPLATE.md` | Architecture Decision Record template |
+| `docs/governance/adr/ADR-0001-prd4-plungein-ports.md` | PRD4 PlungeIn ports architecture decision draft |
+| `docs/governance/adr/ADR-0002-prd4-api-key-owner-usage.md` | PRD4 API key owner usage attribution decision draft |
+| `docs/governance/adr/ADR-0003-prd4-status-center-observability.md` | PRD4 Status Center and runtime observability decision draft |
 
 PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 
@@ -75,6 +83,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 |------|--------------|
 | `docs/ops/PRD1-ACCEPTANCE-TEST-OWNERSHIP.md` | Executable ownership map for remaining PRD1 acceptance tests |
 | `docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md` | Current local evidence and external acceptance queue |
+| `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` | PRD4 planned acceptance matrix and evidence rules |
 | `docs/ops/PRD1-STRICT-CLOSEOUT-RUNBOOK.md` | Final strict closeout gate and evidence procedure |
 | `docs/ops/deployment-runbook.md` | Deployment reference |
 | `docs/ops/evidence/` | Current runtime/deployment evidence cited by acceptance matrices and status docs |
