@@ -13,10 +13,11 @@ import (
 
 type Config struct {
 	// Server
-	ListenPort    int
-	LogLevel      string
-	GinMode       string
-	MigrationsDir string
+	ListenPort          int
+	LogLevel            string
+	GinMode             string
+	MigrationsDir       string
+	ShutdownTimeoutSecs int
 
 	// Database
 	DB_DSN           string
@@ -109,6 +110,9 @@ func (c *Config) Validate() error {
 	if len(c.EncryptionKey) != 32 {
 		return fmt.Errorf("ENCRYPTION_KEY must be exactly 32 bytes for AES-256, got %d bytes", len(c.EncryptionKey))
 	}
+	if c.ShutdownTimeoutSecs < 0 {
+		return fmt.Errorf("SHUTDOWN_TIMEOUT_SECONDS must be >= 0")
+	}
 	if c.LicenseExpiryWarningDays < 0 {
 		return fmt.Errorf("LICENSE_EXPIRY_WARNING_DAYS must be >= 0")
 	}
@@ -164,10 +168,11 @@ func (c *Config) Validate() error {
 func Load() (*Config, error) {
 	jwtSecret := getEnvStr("JWT_SECRET", "")
 	cfg := &Config{
-		ListenPort:    getEnvInt("LISTEN_PORT", 8080),
-		LogLevel:      getEnvStr("LOG_LEVEL", "info"),
-		GinMode:       getEnvStr("GIN_MODE", "release"),
-		MigrationsDir: getEnvStr("MIGRATIONS_DIR", ""),
+		ListenPort:          getEnvInt("LISTEN_PORT", 8080),
+		LogLevel:            getEnvStr("LOG_LEVEL", "info"),
+		GinMode:             getEnvStr("GIN_MODE", "release"),
+		MigrationsDir:       getEnvStr("MIGRATIONS_DIR", ""),
+		ShutdownTimeoutSecs: getEnvInt("SHUTDOWN_TIMEOUT_SECONDS", 120),
 
 		DB_DSN:           getEnvStr("DB_DSN", "postgres://uniroute:password@localhost:5432/uniroute?sslmode=disable"),
 		DBMaxConnections: getEnvInt("DB_MAX_CONNECTIONS", 25),

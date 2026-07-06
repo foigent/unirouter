@@ -91,11 +91,7 @@ func (b *Billing) QueryModelPriceForOrg(ctx context.Context, orgID int64, model 
 		LEFT JOIN org_model_prices omp ON omp.org_id = $2 AND omp.model_name = $1
 	`, model, orgID).Scan(&inputCost, &outputCost, &multiplier)
 	if err != nil {
-		// Hard fallback to defaults (model_prices table missing or DB error)
-		log.Printf("QueryModelPriceForOrg: query error for model %s org %d: %v, using defaults", model, orgID, err)
-		inputCost, outputCost = 2, 10
-		err = nil
-		return
+		return 0, 0, fmt.Errorf("query model price for org %d model %s: %w", orgID, model, err)
 	}
 	inputCost = inputCost * multiplier
 	outputCost = outputCost * multiplier

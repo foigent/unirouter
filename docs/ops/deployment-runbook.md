@@ -60,6 +60,7 @@ License 公钥由 License 签发方提供，支持 base64 或 hex 编码的 32 �
 
 | 变量 | 默认 | 建议 |
 |------|------|------|
+| `SHUTDOWN_TIMEOUT_SECONDS` | `120` | graceful shutdown 等待时间；默认与 backend `WriteTimeout` 对齐，避免 30 秒内强制截断较长流式响应 |
 | `ADMIN_CORS_ALLOWED_ORIGINS` | 空 | 为空表示只支持同源/服务端代理访问；需要 Vite 或跨域控制台直连 backend 时填精确 origin，如 `http://localhost:3000,http://localhost:5173`；不支持 `*` |
 | `LOGIN_RATE_LIMIT_ENABLED` | `true` | 保持开启；按 backend `RemoteAddr` 与 `RemoteAddr+username` 计数 |
 | `LOGIN_RATE_LIMIT_WINDOW_SECONDS` | `60` | 登录尝试固定窗口秒数 |

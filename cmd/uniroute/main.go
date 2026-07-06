@@ -474,7 +474,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	<-quit
 	log.Println("Shutting down server...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.ShutdownTimeoutSecs)*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {

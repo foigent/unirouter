@@ -235,7 +235,10 @@ func TestCalculateCost_Success(t *testing.T) {
 		},
 	})
 
-	cost := relay.calculateCost(context.Background(), 1, "gpt-4o", 1000, 500)
+	cost, err := relay.calculateCost(context.Background(), 1, "gpt-4o", 1000, 500)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	// cost = (1000 * 5 + 500 * 15) / 1000 = (5000 + 7500) / 1000 = 12.5 → 12
 	if cost != 12 {
 		t.Fatalf("expected cost=12, got %d", cost)
@@ -249,25 +252,29 @@ func TestCalculateCost_MinimumCost(t *testing.T) {
 		},
 	})
 
-	cost := relay.calculateCost(context.Background(), 1, "gpt-4o", 1, 1)
+	cost, err := relay.calculateCost(context.Background(), 1, "gpt-4o", 1, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	// cost = (1*1 + 1*1) / 1000 = 0.002 → min 1
 	if cost != 1 {
 		t.Fatalf("expected min cost=1, got %d", cost)
 	}
 }
 
-func TestCalculateCost_FallbackOnError(t *testing.T) {
+func TestCalculateCost_ReturnsErrorOnPriceLookupFailure(t *testing.T) {
 	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
 		queryModelPriceFn: func(ctx context.Context, orgID int64, model string) (float64, float64, error) {
 			return 0, 0, fmt.Errorf("db error")
 		},
 	})
 
-	// On error, uses default: input=2, output=10
-	cost := relay.calculateCost(context.Background(), 1, "gpt-4o", 1000, 500)
-	// cost = (1000*2 + 500*10) / 1000 = (2000+5000)/1000 = 7
-	if cost != 7 {
-		t.Fatalf("expected cost=7 (fallback), got %d", cost)
+	cost, err := relay.calculateCost(context.Background(), 1, "gpt-4o", 1000, 500)
+	if err == nil {
+		t.Fatal("expected price lookup error")
+	}
+	if cost != 0 {
+		t.Fatalf("expected cost=0 on error, got %d", cost)
 	}
 }
 

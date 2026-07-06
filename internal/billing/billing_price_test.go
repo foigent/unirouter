@@ -4,7 +4,18 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/require"
 )
+
+func newCanceledQueryPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	pool, err := pgxpool.New(context.Background(), "postgres://invalid:invalid@127.0.0.1:1/invalid?sslmode=disable")
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	return pool
+}
 
 // --- QueryModelPrice unit tests ---
 
@@ -31,6 +42,30 @@ func TestQueryModelPrice_Error(t *testing.T) {
 	if err.Error() != "db timeout" {
 		t.Errorf("expected 'db timeout', got %q", err.Error())
 	}
+}
+
+func TestDBPriceProvider_QueryErrorDoesNotFallback(t *testing.T) {
+	provider := NewDBPriceProvider(newCanceledQueryPool(t))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	input, output, err := provider.QueryModelPrice(ctx, "gpt-4o")
+	require.Error(t, err)
+	require.True(t, errors.Is(err, context.Canceled), "expected wrapped context cancellation, got %v", err)
+	require.Zero(t, input)
+	require.Zero(t, output)
+}
+
+func TestQueryModelPriceForOrg_QueryErrorDoesNotFallback(t *testing.T) {
+	b := NewBilling(newCanceledQueryPool(t), nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	input, output, err := b.QueryModelPriceForOrg(ctx, 1, "gpt-4o")
+	require.Error(t, err)
+	require.True(t, errors.Is(err, context.Canceled), "expected wrapped context cancellation, got %v", err)
+	require.Zero(t, input)
+	require.Zero(t, output)
 }
 
 func TestQueryModelPrice_ZeroPrices(t *testing.T) {
