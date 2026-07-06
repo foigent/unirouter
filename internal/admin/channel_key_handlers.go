@@ -12,16 +12,8 @@ import (
 )
 
 func (h *Handler) ListChannelKeys(w http.ResponseWriter, r *http.Request) {
-	// Pagination
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 {
-		page = 1
-	}
-	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
-	if pageSize < 1 || pageSize > 100 {
-		pageSize = 20
-	}
-	offset := (page - 1) * pageSize
+	page, pageSize := parsePagination(r)
+	offset := paginationOffset(page, pageSize)
 
 	// Count total
 	var total int

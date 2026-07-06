@@ -11,15 +11,8 @@ import (
 )
 
 func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
-	if page < 1 {
-		page = 1
-	}
-	if pageSize < 1 || pageSize > 100 {
-		pageSize = 20
-	}
-	offset := (page - 1) * pageSize
+	page, pageSize := parsePagination(r)
+	offset := paginationOffset(page, pageSize)
 
 	// Parse optional filters
 	modelFilter := r.URL.Query().Get("model")

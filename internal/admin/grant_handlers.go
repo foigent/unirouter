@@ -4,20 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 )
 
 func (h *Handler) ListGrants(w http.ResponseWriter, r *http.Request) {
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
-	if page < 1 {
-		page = 1
-	}
-	if pageSize < 1 || pageSize > 100 {
-		pageSize = 20
-	}
-	offset := (page - 1) * pageSize
+	page, pageSize := parsePagination(r)
+	offset := paginationOffset(page, pageSize)
 
 	var total int
 	h.db.QueryRow(r.Context(), `SELECT COUNT(*) FROM grants`).Scan(&total)

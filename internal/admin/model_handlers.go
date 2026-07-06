@@ -78,7 +78,7 @@ func (h *Handler) ListReconciliation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	offset := (page - 1) * pageSize
+	offset := paginationOffset(page, pageSize)
 	query := fmt.Sprintf(
 		`SELECT id, request_id, model, total_tokens, prompt_tokens, completion_tokens,
 		        COALESCE(NULLIF(estimated_tokens, 0), prompt_tokens + completion_tokens),
@@ -272,7 +272,7 @@ func (h *Handler) ListModelPrices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	offset := (page - 1) * pageSize
+	offset := paginationOffset(page, pageSize)
 	rows, err := h.db.Query(r.Context(),
 		`SELECT id, model_name, input_price_cents::float8, output_price_cents::float8 FROM model_prices ORDER BY model_name LIMIT $1 OFFSET $2`,
 		pageSize, offset)
@@ -426,16 +426,8 @@ func (h *Handler) ListOrgModelPrices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Pagination
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 {
-		page = 1
-	}
-	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
-	if pageSize < 1 || pageSize > 100 {
-		pageSize = 20
-	}
-	offset := (page - 1) * pageSize
+	page, pageSize := parsePagination(r)
+	offset := paginationOffset(page, pageSize)
 
 	// Count total
 	var total int

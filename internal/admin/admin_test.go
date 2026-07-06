@@ -146,6 +146,34 @@ func TestJoinStrings(t *testing.T) {
 	}
 }
 
+func TestParsePagination(t *testing.T) {
+	tests := []struct {
+		name         string
+		query        string
+		expectedPage int
+		expectedSize int
+		expectedOff  int
+	}{
+		{name: "defaults", query: "", expectedPage: 1, expectedSize: 20, expectedOff: 0},
+		{name: "valid", query: "?page=3&page_size=50", expectedPage: 3, expectedSize: 50, expectedOff: 100},
+		{name: "invalid_page", query: "?page=-1&page_size=10", expectedPage: 1, expectedSize: 10, expectedOff: 0},
+		{name: "oversized_page_size", query: "?page=2&page_size=101", expectedPage: 2, expectedSize: 20, expectedOff: 20},
+		{name: "invalid_page_size", query: "?page=2&page_size=0", expectedPage: 2, expectedSize: 20, expectedOff: 20},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/admin/users"+tt.query, nil)
+			page, pageSize := parsePagination(req)
+			if page != tt.expectedPage || pageSize != tt.expectedSize {
+				t.Fatalf("parsePagination() = (%d, %d), want (%d, %d)", page, pageSize, tt.expectedPage, tt.expectedSize)
+			}
+			if got := paginationOffset(page, pageSize); got != tt.expectedOff {
+				t.Fatalf("paginationOffset() = %d, want %d", got, tt.expectedOff)
+			}
+		})
+	}
+}
+
 func TestWriteJSON_StatusCodePriority(t *testing.T) {
 	// Verify that writeJSON writes the status code BEFORE the body
 	rec := httptest.NewRecorder()

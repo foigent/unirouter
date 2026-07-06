@@ -20,7 +20,7 @@ type modelSetItemRequest struct {
 
 func (h *Handler) ListModelRegistry(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePagination(r)
-	offset := (page - 1) * pageSize
+	offset := paginationOffset(page, pageSize)
 	orgID, err := orgIDFromRequest(r)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid org_id"})
@@ -315,7 +315,7 @@ func (h *Handler) UpdateModelRegistry(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) ListApprovedModelCatalog(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePagination(r)
-	offset := (page - 1) * pageSize
+	offset := paginationOffset(page, pageSize)
 	orgID, err := orgIDFromRequest(r)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid org_id"})
@@ -409,7 +409,7 @@ func (h *Handler) ListApprovedModelCatalog(w http.ResponseWriter, r *http.Reques
 
 func (h *Handler) ListModelAliases(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePagination(r)
-	offset := (page - 1) * pageSize
+	offset := paginationOffset(page, pageSize)
 	orgID, err := orgIDFromRequest(r)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid org_id"})
@@ -554,7 +554,7 @@ func (h *Handler) UpdateModelAlias(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) ListModelSets(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePagination(r)
-	offset := (page - 1) * pageSize
+	offset := paginationOffset(page, pageSize)
 	orgID, err := orgIDFromRequest(r)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid org_id"})

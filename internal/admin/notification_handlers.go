@@ -16,7 +16,7 @@ import (
 
 func (h *Handler) ListNotificationEvents(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePagination(r)
-	offset := (page - 1) * pageSize
+	offset := paginationOffset(page, pageSize)
 
 	conditions, args, argIdx, ok := h.notificationEventConditions(w, r)
 	if !ok {
@@ -99,7 +99,7 @@ func (h *Handler) ListNotificationEvents(w http.ResponseWriter, r *http.Request)
 
 func (h *Handler) ListNotificationDeliveries(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePagination(r)
-	offset := (page - 1) * pageSize
+	offset := paginationOffset(page, pageSize)
 
 	conditions, args, argIdx, ok := h.notificationDeliveryConditions(w, r)
 	if !ok {
@@ -190,7 +190,7 @@ func (h *Handler) ListNotificationDeliveries(w http.ResponseWriter, r *http.Requ
 
 func (h *Handler) ListNotificationWebhooks(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePagination(r)
-	offset := (page - 1) * pageSize
+	offset := paginationOffset(page, pageSize)
 
 	conditions, args, argIdx, ok := h.notificationWebhookConditions(w, r, false)
 	if !ok {
