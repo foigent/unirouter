@@ -15,6 +15,32 @@ function flattenItemKeys(items: any[]): string[] {
 }
 
 describe('navigation role boundaries', () => {
+  it('keeps visible navigation routes allowed by the route guard for every current role', () => {
+    const roles = [
+      'admin',
+      'platform_admin',
+      'org_admin',
+      'billing_admin',
+      'project_admin',
+      'developer',
+      'viewer',
+      'org_viewer',
+      'owner',
+    ];
+
+    roles.forEach((role) => {
+      const itemKeys = flattenItemKeys(getNavItemsForRole(role));
+      const routeKeys = itemKeys.filter((key) => key.startsWith('/'));
+      const defaultPath = getDefaultPathForRole(role);
+
+      routeKeys.forEach((route) => {
+        expect(isRouteAllowedForRole(route, role), `${role} nav route ${route}`).toBe(true);
+      });
+      expect(isRouteAllowedForRole(defaultPath, role), `${role} default path ${defaultPath}`).toBe(true);
+      expect(routeKeys, `${role} default path should be visible`).toContain(defaultPath);
+    });
+  });
+
   it('shows developer console navigation for project roles', () => {
     const itemKeys = flattenItemKeys(getNavItemsForRole('developer'));
 
