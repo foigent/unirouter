@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Button, Table, Modal, Form, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
+import { Button, Modal, Form, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-import { MoneyText, PageHeader, Surface } from '../ui';
+import { MoneyText, PagedTable, PageHeader, Surface } from '../ui';
 
 export default function OrgModelPricesPage() {
   const [prices, setPrices] = useState<any[]>([]);
@@ -16,9 +16,9 @@ export default function OrgModelPricesPage() {
   const [orgs, setOrgs] = useState<any[]>([]);
   const [modelNames, setModelNames] = useState<string[]>([]);
 
-  const load = (p = page) => {
+  const load = (p = page, size = pageSize) => {
     setLoading(true);
-    api.getOrgModelPrices(1, p, 20)
+    api.getOrgModelPrices(1, p, size)
       .then((d: any) => { setPrices(d.data || []); setTotal(d.total || 0); })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -131,19 +131,17 @@ export default function OrgModelPricesPage() {
       />
 
       <Surface>
-        <div className="ur-table-shell">
-          <Table
-            columns={columns}
-            dataSource={prices}
-            loading={loading}
-            rowKey="id"
-            pagination={{
-              currentPage: page, pageSize, total,
-              onPageChange: (p: number) => { setPage(p); load(p); },
-              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1); },
-            }}
-          />
-        </div>
+        <PagedTable
+          columns={columns}
+          dataSource={prices}
+          loading={loading}
+          rowKey="id"
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={(p: number) => { setPage(p); load(p, pageSize); }}
+          onPageSizeChange={(s: number) => { setPageSize(s); setPage(1); load(1, s); }}
+        />
       </Surface>
 
       <SideSheet

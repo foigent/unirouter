@@ -1,36 +1,37 @@
-# VERIFY-RESULT.md — PRD3 Batch 14 Admin Helper Boundary Cleanup
+# VERIFY-RESULT.md — PRD3 Batch 15 Frontend Paged Table Cleanup
 
 **Date:** 2026-07-06
-**Verdict:** ✅ PASS 6/6
+**Verdict:** ✅ PASS 7/7
 
 ## Verification Summary
 
 | # | Check | Result | Evidence |
 |---|-------|--------|----------|
-| 1 | Helper files exist with correct responsibilities | ✅ PASS | `event_helpers.go` (event emitters), `http_helpers.go` (writeJSON/parsePagination/paginationOffset/constants), `model_helpers.go` (joinStrings/normalizeModels) |
-| 2 | Duplicate pagination parsing consolidated | ✅ PASS | `grep` for direct `strconv.Atoi` page/page_size and `offset := (page - 1) * pageSize` only matches `http_helpers.go` — centralized parser only |
-| 3 | Regression coverage exists | ✅ PASS | `TestParsePagination` at `admin_test.go:149` — covers default, valid, invalid page, oversized page size, invalid page size, offset behavior |
-| 4 | Admin tests + route parity tests pass | ✅ PASS | `go test ./internal/admin` 14 tests PASS; route/OpenAPI/frontend-doc parity 3/3 PASS |
-| 5 | Status docs self-consistent | ✅ PASS | CURRENT-STATUS: Batch 14 "Fixed awaiting Canary"; ACCEPTANCE-MATRIX: P3-F09 "Fixed awaiting Canary"; OPEN-ISSUES: PRD3-ARCH-001 records Batch 14; CODEBASE-MAP: documents helper files |
-| 6 | Evidence file exists + full tests pass | ✅ PASS | Evidence file present; `go test ./...` 20 packages PASS; `git diff --check` clean |
+| 1 | `PagedTable.tsx` owns shared table shell | ✅ PASS | `frontend/src/ui/data/PagedTable.tsx` exports `PagedTable` with ur-table-shell, empty state, loading, pagination, row key, data-source wiring |
+| 2 | `ui/index.ts` exports `PagedTable` | ✅ PASS | Line 6: `export { default as PagedTable } from './data/PagedTable'` |
+| 3 | Four pages use `PagedTable` | ✅ PASS | ModelPricesPage, OrgModelPricesPage, ChannelKeysPage, GrantsPage all import from `'../ui'` and use `<PagedTable>` |
+| 4 | No local Semi `Table` in touched pages | ✅ PASS | `grep` for `from '@douyinfe/semi-ui'.*Table`, `<Table`, `ur-table-shell` returned no matches (exit 1) |
+| 5 | Page-size drift fixed | ✅ PASS | OrgModelPricesPage line 21: `api.getOrgModelPrices(1, p, size)`; GrantsPage line 19: `api.getGrants(p, size)` — both use dynamic page size |
+| 6 | Status docs self-consistent | ✅ PASS | CURRENT-STATUS: Batch 15 "Fixed awaiting Canary"; ACCEPTANCE-MATRIX: P3-F10 "Fixed awaiting Canary", P3-F09 "Canary passed"; OPEN-ISSUES: PRD3-ARCH-001 "Fixed awaiting Canary"; CODEBASE-MAP: documents `frontend/src/ui/` and `PagedTable` |
+| 7 | Evidence file exists + full tests pass | ✅ PASS | Evidence file present; `go test ./...` 20 packages PASS; `npm test` 21 files / 104 tests PASS; `npm run build` PASS; `git diff --check` clean |
 
 ## Commands
 
 | Command | Result |
 |---------|--------|
-| `go test ./internal/admin -count=1` | 14 tests PASS ✅ |
-| `go test ./cmd/uniroute -run '...Parity...'` | 3/3 PASS ✅ |
+| `npm test -- --run PagedTable ModelPricesPage` | 2/2 PASS ✅ |
+| `npm test -- --run` | 21 files / 104 tests PASS ✅ |
+| `npm run build` | PASS (Vite 6.4.3, existing large chunk warning) ✅ |
 | `go test ./...` | 20 packages PASS ✅ |
-| Pagination duplicate grep | Only `http_helpers.go` matches ✅ |
-| Status/evidence grep | Matches in CURRENT-STATUS, ACCEPTANCE-MATRIX, OPEN-ISSUES, CODEBASE-MAP ✅ |
+| Page anti-regression grep (local Semi Table) | No matches ✅ |
+| Status/evidence grep | Matches in all files ✅ |
 | `git diff --check` | PASS (clean) ✅ |
 
 ## Boundaries Verified
 
-- `internal/admin` remains one package. No new package boundary introduced.
-- No route registration, JSON response field, status code, SQL query, RBAC rule, or migration changed.
-- No billing, audit, notification, login, gateway, CORS, metrics, or deployment behavior changed.
-- P3-F10, P3-F11, P3-F14, and PRD4 features not implemented.
+- No new API route, response field, role, permission, menu item, page, workflow, or product capability added.
+- No backend code, migration, billing, audit, notification, gateway, or deployment behavior changed.
+- Existing page titles, forms, columns, actions, and API client methods unchanged.
 - No files deleted.
 
 ## New Issues
@@ -39,4 +40,4 @@ None.
 
 ## Conclusion
 
-PRD3 Batch 14 PASS. Admin helper boundaries cleaned up: event emitters, HTTP/pagination helpers, and model normalization extracted from `handlers.go`. Duplicate pagination parsing consolidated. All tests pass.
+PRD3 Batch 15 PASS. Shared `PagedTable` component created and adopted by 4 pages. Page-size drift fixed in OrgModelPricesPage and GrantsPage. All tests and build pass.

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Button, Table, Modal, Form, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
+import { Button, Modal, Form, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-import { MoneyText, PageHeader, Surface } from '../ui';
+import { MoneyText, PagedTable, PageHeader, Surface } from '../ui';
 
 export function yuanPerKToCents(value: unknown) {
   const price = Number.parseFloat(String(value));
@@ -121,19 +121,17 @@ export default function ModelPricesPage() {
       />
 
       <Surface>
-        <div className="ur-table-shell">
-          <Table
-            columns={columns}
-            dataSource={prices}
-            loading={loading}
-            rowKey="id"
-            pagination={{
-              currentPage: page, pageSize, total,
-              onPageChange: (p: number) => { setPage(p); load(p, pageSize); },
-              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1, s); },
-            }}
-          />
-        </div>
+        <PagedTable
+          columns={columns}
+          dataSource={prices}
+          loading={loading}
+          rowKey="id"
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={(p: number) => { setPage(p); load(p, pageSize); }}
+          onPageSizeChange={(s: number) => { setPageSize(s); setPage(1); load(1, s); }}
+        />
       </Surface>
 
       <SideSheet
