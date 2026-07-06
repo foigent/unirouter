@@ -5,6 +5,7 @@ import { IconBolt, IconHistogram, IconShield, IconServer } from '@douyinfe/semi-
 import { api } from '../api/client';
 import { useAuthStore } from '../store/auth';
 import { getDefaultPathForRole } from '../navigation';
+import { PasswordField } from '../ui';
 
 const { Title, Text } = Typography;
 
@@ -116,7 +117,7 @@ export default function LoginPage() {
           )}
           <Form onSubmit={handleSubmit} className="ur-login-form">
             <Form.Input field="username" label="用户名" placeholder="请输入用户名" rules={[{ required: true, message: '请输入用户名' }]} />
-            <Form.Input field="password" label="密码" placeholder="请输入密码" mode="password" rules={[{ required: true, message: '请输入密码' }]} />
+            <PasswordField field="password" label="密码" placeholder="请输入密码" rules={[{ required: true, message: '请输入密码' }]} />
             <Button htmlType="submit" theme="solid" block loading={loading} className="ur-primary-action">登录</Button>
           </Form>
           {oidcConfig?.enabled && (
