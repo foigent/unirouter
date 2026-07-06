@@ -547,6 +547,19 @@ func TestQueryModelPriceForOrg_FallbackThenMultiplier_Integration(t *testing.T) 
 	require.InDelta(t, 30.0, outputCost, 0.000001, "10 * 3.0 = 30")
 }
 
+func TestQueryModelPriceForOrg_QueryErrorDoesNotFallback_Integration(t *testing.T) {
+	pool := testutil.SetupTestDB(t)
+	b := NewBilling(pool, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	inputCost, outputCost, err := b.QueryModelPriceForOrg(ctx, 99999, "gpt-4o")
+	require.Error(t, err)
+	require.Zero(t, inputCost)
+	require.Zero(t, outputCost)
+	require.Contains(t, err.Error(), "query model price")
+}
+
 // --- CalculateCost: boundary tests ---
 
 func TestCalculateCost_ExactlyOneCent_Integration(t *testing.T) {

@@ -410,7 +410,15 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 	}
 
 	// Settle billing with actual usage
-	actualCost := relay.calculateCost(ctx, orgID, model, normalized.Usage.PromptTokens, normalized.Usage.CompletionTokens)
+	actualCost, err := relay.calculateCost(ctx, orgID, model, normalized.Usage.PromptTokens, normalized.Usage.CompletionTokens)
+	if err != nil {
+		reqLog.Error("Billing price lookup failed; response withheld: %v", err)
+		if cancelErr := relay.billing.Cancel(ctx, requestID, orgID); cancelErr != nil {
+			reqLog.Error("Billing cancel after price lookup failure failed: %v", cancelErr)
+		}
+		writeError(w, http.StatusInternalServerError, "server_error", "billing_error.settle_failed", "Failed to calculate billing cost")
+		return
+	}
 	_, err = relay.settleBillingWithRetry(billing.SettleRequest{
 		RequestID:        requestID,
 		OrgID:            orgID,
@@ -723,22 +731,35 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		tokenCounter.SetEstimatedInputTokens(tokenutil.EstimateRequestTokens(msgPairs))
 	}
 
-	actualCost := relay.calculateCost(ctx, orgID, model, tokenCounter.InputTokens(), tokenCounter.OutputTokens())
 	usageSource := metering.UsageSourceCounterV2
 	if usedUpstreamUsage {
 		usageSource = metering.UsageSourceUpstream
 	}
-	settleOutcome, settleErr := relay.settleBillingWithRetry(billing.SettleRequest{
-		RequestID:        requestID,
-		OrgID:            orgID,
-		ActualCost:       actualCost,
-		PromptTokens:     tokenCounter.InputTokens(),
-		CompletionTokens: tokenCounter.OutputTokens(),
-		UsageSource:      usageSource,
-	}, reqLog)
-	chargedCost := actualCost
+	actualCost, priceErr := relay.calculateCost(ctx, orgID, model, tokenCounter.InputTokens(), tokenCounter.OutputTokens())
+	settleOutcome := billingSettleOutcome{}
+	var settleErr error
+	chargedCost := 0
 	billingStatus := "settled"
-	if settleErr != nil {
+	if priceErr != nil {
+		reqLog.Error("Billing price lookup failed after stream completed: %v", priceErr)
+		billingStatus = "price_lookup_failed_unresolved"
+		if cancelErr := relay.billing.Cancel(ctx, requestID, orgID); cancelErr != nil {
+			reqLog.Error("Billing cancel after stream price lookup failure failed: %v", cancelErr)
+		} else {
+			billingStatus = "price_lookup_failed_cancelled"
+		}
+	} else {
+		settleOutcome, settleErr = relay.settleBillingWithRetry(billing.SettleRequest{
+			RequestID:        requestID,
+			OrgID:            orgID,
+			ActualCost:       actualCost,
+			PromptTokens:     tokenCounter.InputTokens(),
+			CompletionTokens: tokenCounter.OutputTokens(),
+			UsageSource:      usageSource,
+		}, reqLog)
+		chargedCost = actualCost
+	}
+	if priceErr == nil && settleErr != nil {
 		reqLog.Error("Billing settle failed after stream completed: %v", settleErr)
 		chargedCost = 0
 		billingStatus = "settle_failed_unresolved"
@@ -754,7 +775,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 
 	relay.recordRequest(ctx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, model, requestedModel, clientIP,
 		tokenCounter.InputTokens(), tokenCounter.OutputTokens(), chargedCost, http.StatusOK, elapsedMilliseconds(requestStart), ttftMs, true, usageSource, estimatedTokens)
-	if settleErr == nil {
+	if priceErr == nil && settleErr == nil {
 		relay.checkBudgetAlert(ctx)
 	}
 
@@ -798,20 +819,19 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 }
 
 // calculateCost computes the actual cost in cents using model prices.
-func (relay *Relay) calculateCost(ctx context.Context, orgID int64, model string, promptTokens, completionTokens int) int {
+func (relay *Relay) calculateCost(ctx context.Context, orgID int64, model string, promptTokens, completionTokens int) (int, error) {
 	costLog := logger.New(logger.Fields{OrgID: uint(orgID), Module: "billing"})
 	inputPerToken, outputPerToken, err := relay.billing.QueryModelPriceForOrg(ctx, orgID, model)
 	if err != nil {
-		costLog.Warn("QueryModelPriceForOrg error for %s: %v, using default", model, err)
-		inputPerToken = 2.0
-		outputPerToken = 10.0
+		costLog.Error("QueryModelPriceForOrg error for %s: %v", model, err)
+		return 0, err
 	}
 	cost := float64(promptTokens)*inputPerToken + float64(completionTokens)*outputPerToken
 	result := int(cost / 1000)
 	if result < 1 {
 		result = 1
 	}
-	return result
+	return result, nil
 }
 
 // recordRequest logs the request to the call_logs table.
@@ -1009,7 +1029,15 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	actualCost := relay.calculateCost(ctx, orgID, req.Model, normalized.Usage.PromptTokens, 0)
+	actualCost, err := relay.calculateCost(ctx, orgID, req.Model, normalized.Usage.PromptTokens, 0)
+	if err != nil {
+		reqLog.Error("Billing price lookup failed; embeddings response withheld: %v", err)
+		if cancelErr := relay.billing.Cancel(ctx, requestID, orgID); cancelErr != nil {
+			reqLog.Error("Billing cancel after embeddings price lookup failure failed: %v", cancelErr)
+		}
+		writeError(w, http.StatusInternalServerError, "server_error", "billing_error.settle_failed", "Failed to calculate billing cost")
+		return
+	}
 	if _, err := relay.settleBillingWithRetry(billing.SettleRequest{
 		RequestID:    requestID,
 		OrgID:        orgID,

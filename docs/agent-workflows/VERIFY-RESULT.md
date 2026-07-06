@@ -1,40 +1,37 @@
-# VERIFY-RESULT.md — PRD4 Batch 0 Scope Baseline
+# VERIFY-RESULT.md — PRD4 Preflight Hardening
 
 **Date:** 2026-07-07
-**Verdict:** ✅ PASS 5/5
+**Verdict:** ✅ PASS 6/6
 
 ## Verification Summary
 
 | # | Check | Result | Evidence |
 |---|-------|--------|----------|
-| 1 | PRD4 formal scope exists and is routed from current docs | ✅ PASS | `PRD-Phase4.md`: P4-F01 through P4-F13, PlungeIn, API key owner, Status Center. `README.md`, `DOC-INVENTORY.md`, `PROJECT-HANDOFF.md`, `CURRENT-STATUS.md` all link to PRD4 docs. 3 ADRs exist for PlungeIn ports, usage attribution, and Status Center observability. |
-| 2 | PRD5 deferrals are explicit | ✅ PASS | Full Scheduler V2, runtime plugin platform, Logto/IAM rewrite, Budget hard-block, Runtime cache, Full SDK, Public SaaS all explicitly deferred in `PRD-Phase4.md`, `PRD4-ACCEPTANCE-MATRIX.md`, and `PRD5-BACKLOG.md` with reasons and prerequisites. |
-| 3 | PRD2/PRD3 accepted states not reopened | ✅ PASS | CURRENT-STATUS: "PRD2 is frozen for new feature work", "PRD3 is complete for the confirmed scope". PRD4-ACCEPTANCE-MATRIX: "Production verified" preserved with target-environment requirement. PRD-Phase4.md: "target-environment" boundaries preserved. |
-| 4 | Docs-only boundary holds | ✅ PASS | `git diff --check` clean. 12 modified files all docs. 6 new files all docs (`PRD-Phase4.md`, `PRD4-ACCEPTANCE-MATRIX.md`, `PRD5-BACKLOG.md`, 3 ADRs). No Go, TypeScript, migration, or infra config changes. |
+| 1 | Price lookup query errors don't silently fallback | ✅ PASS | `TestDBPriceProvider_QueryErrorDoesNotFallback` + `TestQueryModelPriceForOrg_QueryErrorDoesNotFallback` pass. `price_provider.go:38` only defaults for unpriced models (`pgx.ErrNoRows`), not query failures. `TestCalculateCost_ReturnsErrorOnPriceLookupFailure` confirms gateway returns error on price lookup failure. |
+| 2 | Stream billing price failures emit correct status | ✅ PASS | `relay.go:745` emits `price_lookup_failed_unresolved`; `relay.go:749` emits `price_lookup_failed_cancelled` when freeze can be canceled. Non-stream/embedding failures cancel freeze and return `billing_error.settle_failed`. |
+| 3 | errdocs registry tested | ✅ PASS | `internal/errdocs/errdocs_test.go` (new): `TestAll_ReturnsCopyWithRequiredFields` verifies defensive copy + required fields; `TestURLForCode_Fallbacks` verifies URL fallback behavior. |
+| 4 | SHUTDOWN_TIMEOUT_SECONDS configured | ✅ PASS | `config.go:175`: defaults to 120; `config.go:114`: validates `>= 0`; `.env.example:12` + `docker-compose.yml:45`: exposed; `deployment-runbook.md:63`: documented. `cmd/uniroute/main.go` uses it for graceful shutdown. |
+| 5 | Package regression tests pass | ✅ PASS | `billing` + `gateway` + `errdocs` + `config` + `cmd/uniroute` all PASS. Full `go test ./...` 22 packages PASS. |
+| 6 | No frontend/migration/route/PRD2/PRD3 changes | ✅ PASS | `git diff --name-only`: 15 files — all backend Go, config, compose, env, docs. No TypeScript, migration, or frontend changes. `git diff --check` clean. |
 
 ## Commands
 
 | Command | Result |
 |---------|--------|
-| `grep "P4-F01\|P4-F13\|PRD5\|PlungeIn\|API key owner\|Status Center\|Production verified" docs/PRD-Phase4.md ...` | Matches in all files ✅ |
-| `grep "docs/PRD-Phase4.md\|PRD4-ACCEPTANCE-MATRIX\|PRD5-BACKLOG" docs/README.md docs/DOC-INVENTORY.md docs/PROJECT-HANDOFF.md docs/ops/CURRENT-STATUS.md` | Matches in all 4 files ✅ |
-| `grep "Full Scheduler V2\|runtime plugin platform\|Logto/IAM rewrite\|Budget hard-block\|Runtime cache\|Full SDK\|Public SaaS" ...` | All deferred items found ✅ |
-| `grep "PRD2 is frozen\|PRD3 is complete\|Production verified\|target-environment" ...` | PRD2 frozen + PRD3 complete + boundaries preserved ✅ |
-| `git diff --stat` | 12 files, 201 insertions, 148 deletions — all docs ✅ |
+| `grep "using default\|fallback to default\|QueryErrorDoesNotFallback\|price_lookup_failed" internal/billing internal/gateway` | Correct: fallback only for unpriced model; QueryError tests + stream status present ✅ |
+| `go test ./internal/billing -run 'TestDBPriceProvider_QueryErrorDoesNotFallback\|...' -v` | 19/19 PASS ✅ |
+| `go test ./internal/gateway -run 'TestCalculateCost' -v` | 3/3 PASS ✅ |
+| `go test ./internal/errdocs -v` | 2/2 PASS ✅ |
+| `go test ./internal/config -v` | 9/9 PASS ✅ |
+| `go test ./internal/billing ./internal/gateway ./internal/errdocs ./internal/config ./cmd/uniroute` | 5 packages PASS ✅ |
+| `go test ./...` | 22 packages PASS ✅ |
 | `git diff --check` | PASS (clean) ✅ |
 
-## New Files (6)
+## Changed Files (15)
 
-- `docs/PRD-Phase4.md` — formal PRD4 scope
-- `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` — PRD4 acceptance matrix
-- `docs/planning/PRD5-BACKLOG.md` — explicitly deferred PRD5 capabilities
-- `docs/governance/adr/ADR-0001-prd4-plungein-ports.md` — PlungeIn port architecture
-- `docs/governance/adr/ADR-0002-prd4-api-key-owner-usage.md` — API key owner usage
-- `docs/governance/adr/ADR-0003-prd4-status-center-observability.md` — Status Center observability
-
-## Modified Files (12)
-
-All documentation: `DOC-INVENTORY.md`, `PRD-Phase3.md`, `PROJECT-HANDOFF.md`, `README.md`, `FIX-SIGNAL.md`, `VERIFY-RESULT.md`, `governance/README.md`, `OPEN-ISSUES.md`, `CURRENT-STATUS.md`, `PRD3-ACCEPTANCE-MATRIX.md`, evidence file, `PRD4-BACKLOG.md`.
+Runtime: `.env.example`, `docker-compose.yml`, `cmd/uniroute/main.go`, `internal/billing/price_provider.go`, `internal/billing/billing.go`, `internal/billing/billing_price_test.go`, `internal/billing/billing_integration_test.go`, `internal/gateway/relay.go`, `internal/gateway/relay_mock_test.go`, `internal/config/config.go`, `internal/config/config_test.go`
+New: `internal/errdocs/errdocs_test.go`
+Docs: `docs/ops/deployment-runbook.md`, `docs/issues/OPEN-ISSUES.md`, `docs/ops/CURRENT-STATUS.md`, `docs/agent-workflows/FIX-SIGNAL.md`
 
 ## New Issues
 
@@ -42,4 +39,4 @@ None.
 
 ## Conclusion
 
-PRD4 Batch 0 PASS. Formal PRD4 scope (P4-F01 through P4-F13) documented with acceptance matrix, PRD5 backlog, and 3 ADRs. PRD5 deferrals explicit with reasons. PRD2 frozen and PRD3 complete preserved. Docs-only — no runtime code changes.
+PRD4 Preflight Hardening PASS. Price lookup query errors no longer silently fallback to default prices — they return errors. errdocs registry has defensive copy and required field coverage. Graceful shutdown uses configurable `SHUTDOWN_TIMEOUT_SECONDS` (default 120s) instead of hardcoded 30s. All tests pass.

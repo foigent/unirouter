@@ -174,6 +174,12 @@ func TestValidate_InvalidRuntimeExposureConfig(t *testing.T) {
 				cfg.LoginRateLimitUser = -1
 			},
 		},
+		{
+			name: "invalid shutdown timeout",
+			mutate: func(cfg *Config) {
+				cfg.ShutdownTimeoutSecs = -1
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -237,6 +243,7 @@ func TestLoad_RuntimeExposureEnvOverrides(t *testing.T) {
 	t.Setenv("LOGIN_RATE_LIMIT_WINDOW_SECONDS", "120")
 	t.Setenv("LOGIN_RATE_LIMIT_IP_REQUESTS", "50")
 	t.Setenv("LOGIN_RATE_LIMIT_USER_REQUESTS", "7")
+	t.Setenv("SHUTDOWN_TIMEOUT_SECONDS", "150")
 
 	cfg, err := Load()
 	if err != nil {
@@ -257,12 +264,15 @@ func TestLoad_RuntimeExposureEnvOverrides(t *testing.T) {
 	if cfg.LoginRateLimitWindowSec != 120 || cfg.LoginRateLimitIP != 50 || cfg.LoginRateLimitUser != 7 {
 		t.Fatalf("unexpected login limits: window=%d ip=%d user=%d", cfg.LoginRateLimitWindowSec, cfg.LoginRateLimitIP, cfg.LoginRateLimitUser)
 	}
+	if cfg.ShutdownTimeoutSecs != 150 {
+		t.Fatalf("expected shutdown timeout 150, got %d", cfg.ShutdownTimeoutSecs)
+	}
 }
 
 func TestLoad_Defaults(t *testing.T) {
 	// Clear all env vars to test defaults
 	envVars := []string{
-		"LISTEN_PORT", "LOG_LEVEL", "GIN_MODE", "DB_DSN", "DB_MAX_CONNECTIONS",
+		"LISTEN_PORT", "LOG_LEVEL", "GIN_MODE", "SHUTDOWN_TIMEOUT_SECONDS", "DB_DSN", "DB_MAX_CONNECTIONS",
 		"REDIS_ADDR", "REDIS_PASSWORD", "REDIS_DB", "JWT_SECRET", "API_KEY_HASH_SECRET", "ENCRYPTION_KEY",
 		"LICENSE_PUBLIC_KEY", "LICENSE_EXPIRY_WARNING_DAYS", "MIN_FREEZE_AMOUNT", "FREEZE_SAFETY_FACTOR", "DEFAULT_KEY_RPM", "DEFAULT_KEY_QPS",
 	}
@@ -273,16 +283,17 @@ func TestLoad_Defaults(t *testing.T) {
 	// Load() will fail because JWT_SECRET is empty and ENCRYPTION_KEY is empty
 	// But we can test that defaults are set before validation
 	cfg := &Config{
-		ListenPort:         getEnvInt("LISTEN_PORT", 8080),
-		LogLevel:           getEnvStr("LOG_LEVEL", "info"),
-		GinMode:            getEnvStr("GIN_MODE", "release"),
-		DB_DSN:             getEnvStr("DB_DSN", "postgres://uniroute:password@localhost:5432/uniroute?sslmode=disable"),
-		DBMaxConnections:   getEnvInt("DB_MAX_CONNECTIONS", 25),
-		RedisAddr:          getEnvStr("REDIS_ADDR", "localhost:6379"),
-		MinFreezeAmount:    getEnvInt("MIN_FREEZE_AMOUNT", 10),
-		FreezeSafetyFactor: getEnvFloat("FREEZE_SAFETY_FACTOR", 1.5),
-		DefaultKeyRPM:      getEnvInt("DEFAULT_KEY_RPM", 60),
-		DefaultKeyQPS:      getEnvInt("DEFAULT_KEY_QPS", 10),
+		ListenPort:          getEnvInt("LISTEN_PORT", 8080),
+		LogLevel:            getEnvStr("LOG_LEVEL", "info"),
+		GinMode:             getEnvStr("GIN_MODE", "release"),
+		ShutdownTimeoutSecs: getEnvInt("SHUTDOWN_TIMEOUT_SECONDS", 120),
+		DB_DSN:              getEnvStr("DB_DSN", "postgres://uniroute:password@localhost:5432/uniroute?sslmode=disable"),
+		DBMaxConnections:    getEnvInt("DB_MAX_CONNECTIONS", 25),
+		RedisAddr:           getEnvStr("REDIS_ADDR", "localhost:6379"),
+		MinFreezeAmount:     getEnvInt("MIN_FREEZE_AMOUNT", 10),
+		FreezeSafetyFactor:  getEnvFloat("FREEZE_SAFETY_FACTOR", 1.5),
+		DefaultKeyRPM:       getEnvInt("DEFAULT_KEY_RPM", 60),
+		DefaultKeyQPS:       getEnvInt("DEFAULT_KEY_QPS", 10),
 	}
 
 	if cfg.ListenPort != 8080 {
@@ -293,6 +304,9 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if cfg.GinMode != "release" {
 		t.Fatalf("expected gin mode 'release', got %s", cfg.GinMode)
+	}
+	if cfg.ShutdownTimeoutSecs != 120 {
+		t.Fatalf("expected shutdown timeout 120, got %d", cfg.ShutdownTimeoutSecs)
 	}
 	if cfg.DBMaxConnections != 25 {
 		t.Fatalf("expected 25 max conns, got %d", cfg.DBMaxConnections)

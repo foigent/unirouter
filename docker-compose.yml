@@ -42,6 +42,7 @@ services:
       - ./migrations:/app/migrations:ro
     environment:
       LISTEN_PORT: 8080
+      SHUTDOWN_TIMEOUT_SECONDS: ${SHUTDOWN_TIMEOUT_SECONDS:-120}
       DB_DSN: postgres://uniroute:uniroute_pass_2024@postgres:5432/uniroute?sslmode=disable
       MIGRATIONS_DIR: /app/migrations
       REDIS_ADDR: redis:6379
