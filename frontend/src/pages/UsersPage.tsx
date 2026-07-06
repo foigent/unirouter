@@ -4,7 +4,7 @@ import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
 import { roleLabel, roleTagColor, userManagementRoleOptions } from '../utils/displayLabels';
-import { PageHeader, StatusTag, Surface } from '../ui';
+import { PageHeader, PasswordField, StatusTag, Surface } from '../ui';
 
 export default function UsersPage() {
   const [users, setUsers] = useState<any[]>([]);
@@ -127,7 +127,12 @@ export default function UsersPage() {
       >
         <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleSubmit}>
           <Form.Input field="username" label="用户名" rules={[{ required: true, message: '必填' }]} />
-          <Form.Input field="password" label={editUser ? '新密码 (留空不修改)' : '密码'} type="password" rules={editUser ? [] : [{ required: true, message: '必填' }]} />
+          <PasswordField
+            field="password"
+            label={editUser ? '新密码 (留空不修改)' : '密码'}
+            rules={editUser ? [] : [{ required: true, message: '必填' }]}
+            visibilityResetKey={`${showDrawer ? 'open' : 'closed'}-${editUser?.id || 'create'}`}
+          />
           <Form.Select field="role" label="角色" optionList={userManagementRoleOptions} rules={[{ required: true, message: '必填' }]} />
           <Form.Select field="status" label="状态" optionList={[{ label: '启用', value: 'active' }, { label: '禁用', value: 'disabled' }]} initValue="active" />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import LoginPage from '../../pages/LoginPage'
@@ -54,6 +54,29 @@ describe('LoginPage', () => {
     renderLoginPage()
     expect(screen.getByText('UniRouter')).toBeInTheDocument()
     expect(screen.getByText('Enterprise Intelligence Foundation')).toBeInTheDocument()
+  })
+
+  it('toggles password visibility without changing the submitted value', async () => {
+    mockLogin.mockResolvedValueOnce({ id: 1, username: 'admin', role: 'admin' })
+    renderLoginPage()
+
+    const usernameInput = screen.getByPlaceholderText('请输入用户名')
+    const passwordInput = screen.getByPlaceholderText('请输入密码')
+    expect(passwordInput).toHaveAttribute('type', 'password')
+
+    fireEvent.change(usernameInput, { target: { value: 'admin' } })
+    fireEvent.change(passwordInput, { target: { value: 'secret123' } })
+    fireEvent.click(screen.getByRole('button', { name: '显示密码' }))
+    expect(passwordInput).toHaveAttribute('type', 'text')
+
+    fireEvent.click(screen.getByRole('button', { name: '隐藏密码' }))
+    expect(passwordInput).toHaveAttribute('type', 'password')
+
+    fireEvent.click(screen.getByRole('button', { name: /登录/i }))
+
+    await waitFor(() => {
+      expect(mockLogin).toHaveBeenCalledWith('admin', 'secret123')
+    })
   })
 
   it('shows validation errors for empty fields', async () => {

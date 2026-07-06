@@ -4,5 +4,6 @@ export { default as MetricTile } from './layout/MetricTile';
 export { default as MoneyText, formatMoney } from './data/MoneyText';
 export { default as PageHeader } from './layout/PageHeader';
 export { default as PagedTable } from './data/PagedTable';
+export { default as PasswordField } from './form/PasswordField';
 export { default as StatusTag } from './data/StatusTag';
 export { default as Surface } from './layout/Surface';

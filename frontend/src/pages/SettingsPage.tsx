@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { Typography, Button, Form, Toast, Tag } from '@douyinfe/semi-ui';
 import { IconSetting, IconLock, IconUser } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-import { EmptyState, PageHeader, Surface } from '../ui';
+import { EmptyState, PageHeader, PasswordField, Surface } from '../ui';
 
 const { Text } = Typography;
 
@@ -76,25 +76,22 @@ export default function SettingsPage() {
 
         <Surface title="修改密码" actions={<IconLock />}>
             <Form getFormApi={(api) => setPasswordApi(api)} onSubmit={handleChangePassword}>
-              <Form.Input
+              <PasswordField
                 field="old_password"
                 label="当前密码"
-                type="password"
                 rules={[{ required: true, message: '必填' }]}
               />
-              <Form.Input
+              <PasswordField
                 field="new_password"
                 label="新密码"
-                type="password"
                 rules={[
                   { required: true, message: '必填' },
                   { min: 6, message: '至少6个字符' },
                 ]}
               />
-              <Form.Input
+              <PasswordField
                 field="confirm_password"
                 label="确认新密码"
-                type="password"
                 rules={[
                   { required: true, message: '必填' },
                   {

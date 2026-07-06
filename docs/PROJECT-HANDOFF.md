@@ -62,19 +62,21 @@ User handoff sentence for OpenClaw:
 
 ## Current Verification Baseline
 
-Latest accepted PRD3 closeout is PRD3 Batch 17 on 2026-07-06:
+Latest accepted PRD4 hardening baseline is PRD4 Preflight Hardening on 2026-07-07:
 
-- `docs/agent-workflows/VERIFY-RESULT.md` reports PASS 7/7.
-- `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` marks P3-F01 through P3-F14 as `Canary passed`.
-- `docs/ops/CURRENT-STATUS.md` marks PRD3 complete for the confirmed scope.
+- `docs/agent-workflows/VERIFY-RESULT.md` reports PASS 6/6.
+- User reported Sentinel/Atlas completed after `e335a9e` / PR #83.
+- PRD4 Batch 0 scope baseline is complete per User report after `e24731d` / PR #82; the Batch 0 `VERIFY-RESULT.md` content has since been overwritten by the Preflight result.
 
-Current active verification signal is PRD4 Batch 0 scope baseline:
+Current active verification signal is PRD4 Batch 1A Auth UX hardening:
 
-- `docs/agent-workflows/FIX-SIGNAL.md` asks Canary to verify the PRD4
-  documentation-only scope baseline.
-- This PRD4 Batch 0 work is not accepted until Canary updates
+- `docs/agent-workflows/FIX-SIGNAL.md` asks Canary to verify shared
+  password show/hide controls for login, change-password, and admin user
+  password fields.
+- This PRD4 Batch 1A work is not accepted until Canary updates
   `docs/agent-workflows/VERIFY-RESULT.md`.
-- No PRD4 runtime implementation is accepted yet.
+- No backend auth, SSO/OIDC, RBAC, password policy, migration, usage/cost,
+  trace, runtime observability, or deployment behavior change is expected.
 
 The latest accepted route-contract baseline remains PRD3 Batch 6 on 2026-07-05:
 
