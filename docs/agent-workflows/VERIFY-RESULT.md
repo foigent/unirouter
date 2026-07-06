@@ -1,89 +1,44 @@
 # VERIFY-RESULT.md — PRD3 Batch 10 Role Display Label Boundary Cleanup
 
-**日期：** 2026-07-05
-**验收人：** Canary
-**结论：** ✅ **PASS 7/7**
+**Date:** 2026-07-06
+**Verdict:** ✅ PASS 7/7
 
----
+## Verification Summary
 
-## 验收项
+| # | Check | Result | Evidence |
+|---|-------|--------|----------|
+| 1 | Batch 9 status advanced to complete | ✅ PASS | `CURRENT-STATUS.md` line 4: "Canary/Sentinel/Atlas complete per User report"; `PRD3-ACCEPTANCE-MATRIX.md` line 5: "PRD3 Batch 9 accepted"; `OPEN-ISSUES.md`: no Batch 9 awaiting-verification marker remains |
+| 2 | `displayLabels.ts` owns role display helpers | ✅ PASS | `roleLabels`, `userManagementRoleOptions`, `roleLabel()`, `roleTagColor()` all present in `frontend/src/utils/displayLabels.ts` |
+| 3 | `navigation.tsx` no longer exports role display labels or role options | ✅ PASS | `grep -rn "roleLabels\|userManagementRoleOptions\|roleLabel\|roleTagColor" frontend/src/navigation.tsx` returned no matches |
+| 4 | Consumers import from `displayLabels`; navigation/RBAC helpers still from `navigation.tsx` | ✅ PASS | App: `roleLabel` from displayLabels, nav helpers from navigation; AccessState: `roleLabel` from displayLabels; DeveloperConsole: `roleLabel` from displayLabels, `canCreateProjectKey`/`canDisableProjectKey` from navigation; Users: `roleLabel`, `roleTagColor`, `userManagementRoleOptions` from displayLabels |
+| 5 | `displayLabels.test.ts` covers role options, labels, legacy admin, tag colors | ✅ PASS | 3 tests: canonical role options, role labels + legacy `admin` display text, role tag colors — all pass |
+| 6 | P3-F10 marked In progress; PRD3-ARCH-001 remains In progress | ✅ PASS | `PRD3-ACCEPTANCE-MATRIX.md` line 33: "P3-F10 \| Frontend Architecture Cleanup \| In progress"; `OPEN-ISSUES.md` line 53: "PRD3-ARCH-001 \| Medium \| In progress" |
+| 7 | Status/evidence docs updated | ✅ PASS | All 5 files present and consistent: `evidence/PRD3-B10-role-display-labels-local-20260705.md`, `CURRENT-STATUS.md`, `PRD3-ACCEPTANCE-MATRIX.md`, `OPEN-ISSUES.md`, `FIX-SIGNAL.md` |
 
-### 1. Batch 9 status advanced — PASS
+## Commands
 
-| 检查 | 结果 | 证据 |
-|------|------|------|
-| CURRENT-STATUS.md: Batch 9 complete | ✅ | "passed Canary 7/7; Sentinel merged PR #72 at `6a440b1`; User reported Canary, Sentinel, and Atlas completed" |
-| PRD3-ACCEPTANCE-MATRIX.md: P3-F10 Batch 9 recorded | ✅ | "Canary PASS 7/7 and Sentinel merged PR #72 at `6a440b1`" |
-| OPEN-ISSUES.md: PRD3-ARCH-001 updated | ✅ | "Batch 9 frontend formatting cleanup passed Canary 7/7 and Sentinel merged PR #72 at `6a440b1`" |
+| Command | Result |
+|---------|--------|
+| `grep -rn "roleLabels\|userManagementRoleOptions\|roleLabel\|roleTagColor" frontend/src/navigation.tsx` | No matches ✅ |
+| `grep -rn "roleColor" frontend/src/` | No matches ✅ |
+| `npm --prefix frontend test -- --run displayLabels` | 3/3 pass ✅ |
+| `npm --prefix frontend test -- --run` | 20 files / 103 tests pass ✅ |
+| `npm --prefix frontend run build` | PASS (existing large chunk warning only) ✅ |
+| `git diff --check` | PASS (clean) ✅ |
 
-### 2. displayLabels.ts — PASS
+## Boundaries Verified
 
-| 检查 | 结果 | 证据 |
-|------|------|------|
-| `roleLabels` | ✅ | 第 6 行 |
-| `userManagementRoleOptions` | ✅ | 第 17 行 |
-| `roleLabel` | ✅ | 第 27 行 |
-| `roleTagColor` | ✅ | 第 31 行 |
+- No backend route, API contract, RBAC rule, or database migration changed.
+- No navigation path or default landing behavior changed.
+- No role enum value changed.
+- No files deleted.
+- Navigation/RBAC helpers (`normalizeRole`, `isPlatformAdminRole`, `getNavItemsForRole`, `isRouteAllowedForRole`, etc.) remain in `navigation.tsx`.
+- P3-F10 remains broader in-progress: shared filters, table wrappers, form patterns, empty/error/loading states, and backend boundary cleanup are later PRD3 work.
 
-### 3. navigation.tsx — PASS
+## New Issues
 
-| 检查 | 结果 | 证据 |
-|------|------|------|
-| 不再导出 role display labels | ✅ | grep 无匹配（exit 1） |
-| 不再导出 User Management role options | ✅ | grep 无匹配（exit 1） |
+None.
 
-### 4. Page imports — PASS
+## Conclusion
 
-| 检查 | 结果 | 证据 |
-|------|------|------|
-| App.tsx 从 displayLabels 导入 roleLabel | ✅ | 第 13 行 |
-| AccessStatePage 从 displayLabels 导入 roleLabel | ✅ | 第 6 行 |
-| DeveloperConsolePage 从 displayLabels 导入 roleLabel | ✅ | 第 19 行 |
-| UsersPage 从 displayLabels 导入 roleLabel/roleTagColor/userManagementRoleOptions | ✅ | 第 6 行 |
-| navigation 仍用于 route/RBAC | ✅ | App.tsx:12, DeveloperConsolePage:17 |
-
-### 5. displayLabels test — PASS
-
-| 检查 | 结果 | 证据 |
-|------|------|------|
-| Role options (不含 legacy admin) | ✅ | 第 5 行 |
-| Labels + legacy admin display text | ✅ | 第 17 行 |
-| Tag colors | ✅ | 第 24 行 |
-
-### 6. P3-F10 and PRD3-ARCH-001 — PASS
-
-| 检查 | 结果 | 证据 |
-|------|------|------|
-| P3-F10: In progress | ✅ | `PRD3-ACCEPTANCE-MATRIX.md` — "In progress" |
-| PRD3-ARCH-001: In progress | ✅ | `OPEN-ISSUES.md` — "In progress" |
-
-### 7. Commands — PASS
-
-| 命令 | 结果 |
-|------|------|
-| `grep ROLE_LABELS/USER_MANAGEMENT_ROLE_OPTIONS/roleColor frontend/src` | ✅ 无匹配（exit 1） |
-| `npm test -- --run displayLabels navigation App DeveloperConsolePage` | ✅ 4 files / 17 tests PASS |
-| `npm test -- --run` | ✅ 20 files / 103 tests PASS |
-| `npm run build` | ✅ PASS |
-| Stale Batch 9 wording | ✅ 无匹配（exit 1） |
-| `git diff --check` | ✅ PASS (no output) |
-
----
-
-## 边界确认
-
-- ✅ 仅更改前端 display-label helpers 和 docs/status
-- ✅ 未更改 API 路由、后端 handler、RBAC 规则、导航路径或角色枚举值
-- ✅ P3-F10 保持 In progress（仅完成 formatting + role display 子集）
-
----
-
-## 新发现的问题
-
-无新发现的问题。
-
----
-
-## 总结
-
-PRD3 Batch 10 Role Display Label Boundary Cleanup 验收通过。`displayLabels.ts` 导出 4 个角色显示 helper，`navigation.tsx` 不再包含角色显示逻辑，4 个页面正确从 displayLabels 导入。前端测试从 101 增加到 103 个，全部通过。
+PRD3 Batch 10 PASS. Role display labels, User Management role options, and role tag colors are correctly extracted from `navigation.tsx` into `displayLabels.ts`. All consumers updated. Tests pass. Build clean. No new issues.
