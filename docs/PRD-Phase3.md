@@ -2,7 +2,7 @@
 
 > Version: Phase 3 Draft
 > Date: 2026-07-05
-> Status: Scope confirmed by User; planning baseline before implementation.
+> Status: Implemented through Batch 16; final evidence hygiene closeout pending Canary.
 > Source: `docs/planning/PRD3-CONSISTENCY-AUDIT.md`, `docs/PRD-Phase1.md`, `docs/PRD-Phase2.md`, PRD1 UI findings, PRD2 freeze evidence, and current source-code review.
 > Purpose: define PRD3 as a consistency, semantics, contract, and architecture cleanup phase for already implemented UniRouter functionality.
 
