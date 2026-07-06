@@ -6,30 +6,38 @@
 ## First Read Order
 
 1. `docs/ops/CURRENT-STATUS.md` - current verified project status.
-2. `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` - active PRD3 cleanup/optimization acceptance state.
-3. `docs/PRD-Phase3.md` - active PRD3 scope.
-4. `docs/planning/PRD3-CONSISTENCY-AUDIT.md` - PRD1 -> PRD2 consistency findings behind PRD3.
-5. `docs/issues/OPEN-ISSUES.md` - active unresolved issues and recently verified fixes.
-6. `docs/agent-workflows/AGENT-PROTOCOL.md` - mandatory Codex/OpenClaw Canary/Sentinel/Atlas workflow.
-7. `docs/agent-workflows/FIX-SIGNAL.md` and `docs/agent-workflows/VERIFY-RESULT.md` - current verification request/result.
-8. `docs/CODEBASE-MAP.md` - code, route, data, test, and deployment map.
-9. `docs/DOC-INVENTORY.md` and `docs/DOCS-GOVERNANCE.md` - which docs are current, frozen, historical, candidate, or reference-only.
+2. `docs/PRD-Phase4.md` - proposed formal PRD4 scope.
+3. `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` - PRD4 acceptance rows and evidence boundaries.
+4. `docs/planning/PRD5-BACKLOG.md` - capabilities intentionally deferred beyond PRD4.
+5. `docs/planning/PRD4-BACKLOG.md` - PRD4 candidate backlog source record.
+6. `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` - completed PRD3 cleanup/optimization acceptance state.
+7. `docs/PRD-Phase3.md` - completed PRD3 scope.
+8. `docs/planning/PRD3-CONSISTENCY-AUDIT.md` - PRD1 -> PRD2 consistency findings behind PRD3.
+9. `docs/issues/OPEN-ISSUES.md` - active unresolved issues and recently verified fixes.
+10. `docs/agent-workflows/AGENT-PROTOCOL.md` - mandatory Codex/OpenClaw Canary/Sentinel/Atlas workflow.
+11. `docs/agent-workflows/FIX-SIGNAL.md` and `docs/agent-workflows/VERIFY-RESULT.md` - current verification request/result.
+12. `docs/CODEBASE-MAP.md` - code, route, data, test, and deployment map.
+13. `docs/DOC-INVENTORY.md` and `docs/DOCS-GOVERNANCE.md` - which docs are current, frozen, historical, candidate, or reference-only.
 
 ## Current Project Shape
 
 UniRouter is a local-deployable enterprise AI gateway/MaaS platform. PRD1 delivered the core gateway, admin API, admin frontend, billing, logs, wallet, pricing, admission controls, health checks, and monitoring foundation. PRD2 is frozen for new feature work after accepted product expansions such as project/RBAC, model governance, notification events, license foundation, OIDC, usage analytics, internal status, and error docs.
 
-The active phase is PRD3. PRD3 is cleanup/optimization only: consistency, semantics, route/API contract, documentation lifecycle, module boundaries, frontend architecture, parity tests, and engineering governance. New capability design belongs in `docs/planning/PRD4-BACKLOG.md` unless the User explicitly reopens scope.
+PRD3 is complete for the confirmed scope. It was cleanup/optimization only: consistency, semantics, route/API contract, documentation lifecycle, module boundaries, frontend architecture, parity tests, and engineering governance.
+
+PRD4 is now proposed as the commercial observability and control foundation phase. Its formal scope draft is `docs/PRD-Phase4.md`: API key owner usage/cost, quota vocabulary, Flow/Event/Trace foundation, PlungeIn observation-first ports, Status Center runtime observability, external monitoring integration, real upstream evidence, real SSO evidence, auth UX hardening, production evidence promotion, and PRD5 backlog consolidation. `docs/planning/PRD4-BACKLOG.md` remains the candidate-source record, not the formal implementation contract.
 
 ## What Is Current Truth
 
 | Question | Current Source |
 |----------|----------------|
-| What is the active PRD3 scope? | `docs/PRD-Phase3.md` |
+| What is the PRD4 formal scope? | `docs/PRD-Phase4.md` |
+| What is the PRD4 acceptance plan? | `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` |
+| Which items are explicitly deferred to PRD5? | `docs/planning/PRD5-BACKLOG.md` |
 | What is actually verified now? | `docs/ops/CURRENT-STATUS.md` |
-| Which PRD3 items are accepted or still pending evidence? | `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` |
+| Which PRD3 items are accepted? | `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` |
 | Which PRD2 items are frozen/accepted/deferred? | `docs/ops/PRD2-ACCEPTANCE-MATRIX.md` |
-| Which capabilities are PRD4 candidates? | `docs/planning/PRD4-BACKLOG.md` |
+| Which capabilities were PRD4 candidates before formal scoping? | `docs/planning/PRD4-BACKLOG.md` |
 | What should be fixed next? | `docs/issues/OPEN-ISSUES.md` |
 | How should Codex and OpenClaw coordinate? | `docs/agent-workflows/AGENT-PROTOCOL.md` |
 | Which old docs may be stale? | `docs/DOC-INVENTORY.md` |
@@ -54,7 +62,21 @@ User handoff sentence for OpenClaw:
 
 ## Current Verification Baseline
 
-Latest accepted PRD3 route-contract baseline is PRD3 Batch 6 on 2026-07-05:
+Latest accepted PRD3 closeout is PRD3 Batch 17 on 2026-07-06:
+
+- `docs/agent-workflows/VERIFY-RESULT.md` reports PASS 7/7.
+- `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` marks P3-F01 through P3-F14 as `Canary passed`.
+- `docs/ops/CURRENT-STATUS.md` marks PRD3 complete for the confirmed scope.
+
+Current active verification signal is PRD4 Batch 0 scope baseline:
+
+- `docs/agent-workflows/FIX-SIGNAL.md` asks Canary to verify the PRD4
+  documentation-only scope baseline.
+- This PRD4 Batch 0 work is not accepted until Canary updates
+  `docs/agent-workflows/VERIFY-RESULT.md`.
+- No PRD4 runtime implementation is accepted yet.
+
+The latest accepted route-contract baseline remains PRD3 Batch 6 on 2026-07-05:
 
 ```bash
 go test ./cmd/uniroute -run 'Test(OpenAPISpecCoversRegisteredRoutes|FrontendDocsPageCoversRegisteredRoutes|BackendDocsPageUsesCurrentContractLanguage|AdminRoutesRegisteredForFrontendClient)' -count=1 -v

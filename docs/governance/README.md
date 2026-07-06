@@ -24,6 +24,12 @@ ADRs live under `docs/governance/adr/` and should use
 accepted ADRs must reference the PR, evidence file, or issue that validates the
 decision.
 
+Current proposed PRD4 ADRs:
+
+- `docs/governance/adr/ADR-0001-prd4-plungein-ports.md`
+- `docs/governance/adr/ADR-0002-prd4-api-key-owner-usage.md`
+- `docs/governance/adr/ADR-0003-prd4-status-center-observability.md`
+
 ## API Compatibility And Versioning
 
 `docs/tech-ref/05-openapi-spec.yaml` is the route-level API contract. Backend
@@ -120,4 +126,3 @@ Governance-only batches should verify:
 rg -n "ADR|API Compatibility|Migration And Rollback|Release Checklist|Incident Response|Deprecation" docs/governance docs/README.md docs/DOC-INVENTORY.md docs/DOCS-GOVERNANCE.md
 git diff --check
 ```
-

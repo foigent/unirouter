@@ -2,32 +2,34 @@
 
 > Date: 2026-07-06
 > Scope: PRD3 P3-F14 evidence hygiene and final closeout-status reconciliation.
-> Result: Fixed awaiting Canary.
+> Result: Canary passed; PRD3 complete for confirmed scope.
 
 ## Inputs
 
 - User reported PRD3 Batch 16 Canary/Sentinel/Atlas completed.
 - `docs/agent-workflows/VERIFY-RESULT.md` reports PRD3 Batch 16 PASS 6/6.
+- `docs/agent-workflows/VERIFY-RESULT.md` reports PRD3 Batch 17 PASS 7/7.
 - Sentinel merged PRD3 Batch 16 as PR #80 at `e7f264e`.
+- User approved final PRD3 status closeout after the Batch 17 PASS result.
 - PRD3 remains limited to cleanup/optimization of already implemented functionality.
 - PRD4 remains the backlog for runtime plugins, deployment/IaC, infrastructure observability, budget hard-blocking, runtime cache, maintenance scheduling/SLA/SLO, new authority surfaces, and production target-evidence promotion work.
 
 ## Changes
 
 - `docs/PRD-Phase3.md`
-  - Marks PRD3 as implemented through Batch 16, with final evidence hygiene closeout pending Canary.
+  - Marks PRD3 as complete for the confirmed scope, with Batch 17 final evidence hygiene passed by Canary.
 - `docs/ops/CURRENT-STATUS.md`
   - Marks Batch 16 as accepted based on Canary PASS 6/6, Sentinel PR #80, and User completion report.
-  - Adds Batch 17 as the current verification request for final evidence hygiene and closeout status.
+  - Marks Batch 17 as passed and PRD3 as complete for the confirmed scope.
 - `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`
   - Marks P3-F11 as `Canary passed`.
-  - Marks P3-F14 as `Fixed awaiting Canary`.
-  - Records that P3-F01 through P3-F13 are accepted, and that after Batch 17 Canary no planned PRD3 implementation work remains unless User reopens scope.
+  - Marks P3-F14 as `Canary passed`.
+  - Records that P3-F01 through P3-F14 are accepted and that no planned PRD3 implementation work remains unless User reopens scope.
 - `docs/issues/OPEN-ISSUES.md`
   - Marks `PRD3-PARITY-001` as `Canary passed`.
-  - Reframes `PRD3-EVIDENCE-001` as the Batch 17 final evidence hygiene and closeout-status verification item.
+  - Marks `PRD3-EVIDENCE-001` as `Canary passed`.
 - `docs/agent-workflows/FIX-SIGNAL.md`
-  - Requests Canary verification for Batch 17 final evidence hygiene and closeout status.
+  - Records that there is no active PRD3 Canary request and that PRD4 should start from the backlog/status evidence set.
 
 ## Explicit Boundaries
 
@@ -68,8 +70,8 @@ Passed locally on 2026-07-06:
 go test ./...
 npm --prefix frontend test -- --run
 npm --prefix frontend run build
-rg -n "PRD3 Batch 17 Final Evidence|P3-F14 \\| Evidence Hygiene \\| Fixed awaiting Canary|PRD3-EVIDENCE-001 \\| Medium \\| Fixed awaiting Canary|PRD3-B17-final-evidence-closeout|Implemented through Batch 16; final evidence hygiene closeout pending Canary" docs/PRD-Phase3.md docs/ops/CURRENT-STATUS.md docs/ops/PRD3-ACCEPTANCE-MATRIX.md docs/issues/OPEN-ISSUES.md docs/ops/evidence/PRD3-B17-final-evidence-closeout-local-20260706.md docs/agent-workflows/FIX-SIGNAL.md
-! rg -n "P3-F11 \\| Test And Parity Guards \\| Fixed awaiting Canary|PRD3-PARITY-001 \\| Medium \\| Fixed awaiting Canary|Current PRD3 Batch 16|Batch 16[^.]*awaits Canary" docs/ops/CURRENT-STATUS.md docs/ops/PRD3-ACCEPTANCE-MATRIX.md docs/issues/OPEN-ISSUES.md
+rg -n "PRD3 Batch 17|P3-F14 \\| Evidence Hygiene \\| Canary passed|PRD3-EVIDENCE-001 \\| Medium \\| Canary passed|Complete for confirmed PRD3 scope|PRD3 complete for confirmed scope|No Active PRD3 Fix Signal|PRD3 is complete for the confirmed scope" docs/PRD-Phase3.md docs/ops/CURRENT-STATUS.md docs/ops/PRD3-ACCEPTANCE-MATRIX.md docs/issues/OPEN-ISSUES.md docs/ops/evidence/PRD3-B17-final-evidence-closeout-local-20260706.md docs/agent-workflows/FIX-SIGNAL.md docs/agent-workflows/VERIFY-RESULT.md
+! rg -n "PRD3.*Fixed awaiting Canar[y]|P3-F14.*Fixed awaiting Canar[y]|PRD3-EVIDENCE-001.*Fixed awaiting Canar[y]|final evidence hygiene closeout pending Canar[y]|Current PRD3 Batch 1[7]|awaits Canar[y]|pending Canar[y]" docs/PRD-Phase3.md docs/ops/CURRENT-STATUS.md docs/ops/PRD3-ACCEPTANCE-MATRIX.md docs/issues/OPEN-ISSUES.md docs/ops/evidence/PRD3-B17-final-evidence-closeout-local-20260706.md docs/agent-workflows/FIX-SIGNAL.md docs/agent-workflows/VERIFY-RESULT.md
 git diff --check
 ```
 
@@ -78,6 +80,21 @@ Results:
 - Go tests passed for all packages.
 - Frontend tests passed: 21 test files, 105 tests.
 - Frontend build passed; existing Vite large-chunk warning remains non-blocking.
-- Positive status/evidence grep found Batch 17, P3-F14, `PRD3-EVIDENCE-001`, the Batch 17 evidence path, and the Phase 3 closeout status.
-- Negative stale-status grep found no stale Batch 16/P3-F11 awaiting-Canary markers in the active status files.
+- Positive status/evidence grep found Batch 17, P3-F14 `Canary passed`, `PRD3-EVIDENCE-001` `Canary passed`, the Batch 17 evidence path, the no-active-fix-signal state, and the Phase 3 complete status.
+- Negative stale-status grep found no stale PRD3 Batch 17 / P3-F14 awaiting-Canary markers in the active status and workflow files.
 - `git diff --check` passed.
+
+## Canary Validation
+
+`docs/agent-workflows/VERIFY-RESULT.md` reports PRD3 Batch 17 PASS 7/7:
+
+- Batch 16 is accepted consistently.
+- Batch 17 final evidence hygiene request was verified.
+- P3-F01 through P3-F13 were accepted before this closeout.
+- PRD2 target-evidence boundaries remain explicit.
+- PRD4 boundaries remain explicit.
+- `docs/PRD-Phase3.md` was updated for closeout.
+- The change set was docs-only with no runtime code changes.
+
+After this final status reconciliation, P3-F14 is also marked `Canary passed`,
+and PRD3 is complete for the confirmed scope.

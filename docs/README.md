@@ -3,19 +3,23 @@
 ## 当前入口
 - [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — Agent 接手项目的第一阅读入口
 - [ops/CURRENT-STATUS.md](ops/CURRENT-STATUS.md) — 当前项目真实状态（进度、测试、部署、缺口）
-- [ops/PRD3-ACCEPTANCE-MATRIX.md](ops/PRD3-ACCEPTANCE-MATRIX.md) — PRD3 清理/优化验收矩阵
-- [PRD-Phase3.md](PRD-Phase3.md) — PRD3 一致性、语义、契约和架构清理范围
+- [PRD-Phase4.md](PRD-Phase4.md) — PRD4 正式范围草案：用量金额、Flow/Event/Trace、Runtime Observability、真实上游和真实 SSO 证据
+- [ops/PRD4-ACCEPTANCE-MATRIX.md](ops/PRD4-ACCEPTANCE-MATRIX.md) — PRD4 验收矩阵和证据边界
+- [planning/PRD5-BACKLOG.md](planning/PRD5-BACKLOG.md) — PRD5 未实现/延后能力清单
+- [planning/PRD4-BACKLOG.md](planning/PRD4-BACKLOG.md) — PRD4 候选能力来源记录；正式范围以 `PRD-Phase4.md` 为准
+- [ops/PRD3-ACCEPTANCE-MATRIX.md](ops/PRD3-ACCEPTANCE-MATRIX.md) — 已完成 PRD3 清理/优化验收矩阵
+- [PRD-Phase3.md](PRD-Phase3.md) — 已完成 PRD3 一致性、语义、契约和架构清理范围
 - [planning/PRD3-CONSISTENCY-AUDIT.md](planning/PRD3-CONSISTENCY-AUDIT.md) — PRD3 范围审计和 PRD1→PRD2 遗留问题梳理
-- [planning/PRD4-BACKLOG.md](planning/PRD4-BACKLOG.md) — PRD4 候选能力边界，包括插件、企业部署、infra 可观测、预算硬阻断、维护窗口和新角色
 - [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 当前未关闭问题列表
-- [agent-workflows/FIX-SIGNAL.md](agent-workflows/FIX-SIGNAL.md) — 当前 Codex 修复信号（验收指令）
+- [agent-workflows/FIX-SIGNAL.md](agent-workflows/FIX-SIGNAL.md) — 当前 Codex 验证信号；PRD4 Batch 0 文档基线待 Canary 验证
 - [agent-workflows/VERIFY-RESULT.md](agent-workflows/VERIFY-RESULT.md) — 最新 Canary 验收结果
 - [CODEBASE-MAP.md](CODEBASE-MAP.md) — 代码结构、路由、数据、测试、部署地图
 - [DOC-INVENTORY.md](DOC-INVENTORY.md) — 文档清单与当前/冻结/历史/候选边界
 - [DOCS-GOVERNANCE.md](DOCS-GOVERNANCE.md) — 文档治理规则
 
 ## 核心文档
-- [PRD-Phase3.md](PRD-Phase3.md) — 当前 PRD3 清理/优化范围
+- [PRD-Phase4.md](PRD-Phase4.md) — PRD4 正式范围草案
+- [PRD-Phase3.md](PRD-Phase3.md) — 已完成 PRD3 清理/优化范围
 - [PRD-Phase2.md](PRD-Phase2.md) — PRD2 已冻结需求参考
 - [PRD-Phase1.md](PRD-Phase1.md) — PRD1 历史需求参考
 - [PRD-Phase1.pdf](PRD-Phase1.pdf) — PRD1 PDF 导出，可能落后于 Markdown
@@ -34,6 +38,9 @@
 ## 工程治理
 - [governance/README.md](governance/README.md) — PRD3 最低工程治理：ADR、API 兼容、migration/rollback、release、incident、deprecation
 - [governance/ADR-TEMPLATE.md](governance/ADR-TEMPLATE.md) — Architecture Decision Record 模板
+- [governance/adr/ADR-0001-prd4-plungein-ports.md](governance/adr/ADR-0001-prd4-plungein-ports.md) — PRD4 PlungeIn ports 架构决策草案
+- [governance/adr/ADR-0002-prd4-api-key-owner-usage.md](governance/adr/ADR-0002-prd4-api-key-owner-usage.md) — PRD4 API key owner 用量归因决策草案
+- [governance/adr/ADR-0003-prd4-status-center-observability.md](governance/adr/ADR-0003-prd4-status-center-observability.md) — PRD4 Status Center / Runtime Observability 决策草案
 
 ## 运维文档
 - [ops/deployment-runbook.md](ops/deployment-runbook.md) — 部署手册（含 Canary + HTTPS 章节）
@@ -42,6 +49,7 @@
 - [ops/test-report.md](ops/test-report.md) — 测试报告
 - [ops/evidence/COMPREHENSIVE-TEST-REPORT-20260705.md](ops/evidence/COMPREHENSIVE-TEST-REPORT-20260705.md) — 2026-07-05 Canary 综合测试/安全审计证据；当前问题状态以 `issues/OPEN-ISSUES.md` 为准
 - [ops/PRD2-ACCEPTANCE-MATRIX.md](ops/PRD2-ACCEPTANCE-MATRIX.md) — PRD2 已冻结验收状态
+- [ops/PRD4-ACCEPTANCE-MATRIX.md](ops/PRD4-ACCEPTANCE-MATRIX.md) — PRD4 planned 验收矩阵
 - [ops/PRD2-COMPLETION-PLAN.md](ops/PRD2-COMPLETION-PLAN.md) — PRD2 收尾决策和历史计划
 - [ops/PRD-ACCEPTANCE-MATRIX.md](ops/PRD-ACCEPTANCE-MATRIX.md) — PRD1 历史验收矩阵
 - [ops/PRD1-CLOSEOUT-PLAN.md](ops/PRD1-CLOSEOUT-PLAN.md) — PRD1 历史收尾计划
