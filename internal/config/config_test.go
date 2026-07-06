@@ -93,6 +93,100 @@ func TestValidate_OIDCEnabledRequiresProviderConfig(t *testing.T) {
 	}
 }
 
+func TestValidate_RuntimeExposureConfig(t *testing.T) {
+	cfg := &Config{
+		JWTSecret:                "secret",
+		APIKeyHashSecret:         "api-key-secret",
+		EncryptionKey:            "0123456789abcdef0123456789abcdef",
+		LicenseExpiryWarningDays: 30,
+		AdminCORSAllowedOrigins:  []string{"https://console.example.com", "http://localhost:3000/"},
+		MetricsAllowedCIDRs:      []string{"10.0.0.0/8"},
+		LoginRateLimitWindowSec:  60,
+		LoginRateLimitIP:         30,
+		LoginRateLimitUser:       10,
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_InvalidRuntimeExposureConfig(t *testing.T) {
+	base := func() *Config {
+		return &Config{
+			JWTSecret:                "secret",
+			APIKeyHashSecret:         "api-key-secret",
+			EncryptionKey:            "0123456789abcdef0123456789abcdef",
+			LicenseExpiryWarningDays: 30,
+			LoginRateLimitEnabled:    true,
+			LoginRateLimitWindowSec:  60,
+		}
+	}
+
+	cases := []struct {
+		name   string
+		mutate func(*Config)
+	}{
+		{
+			name: "invalid origin",
+			mutate: func(cfg *Config) {
+				cfg.AdminCORSAllowedOrigins = []string{"console.example.com"}
+			},
+		},
+		{
+			name: "wildcard origin",
+			mutate: func(cfg *Config) {
+				cfg.AdminCORSAllowedOrigins = []string{"*"}
+			},
+		},
+		{
+			name: "origin with path",
+			mutate: func(cfg *Config) {
+				cfg.AdminCORSAllowedOrigins = []string{"https://console.example.com/admin"}
+			},
+		},
+		{
+			name: "origin with unsupported scheme",
+			mutate: func(cfg *Config) {
+				cfg.AdminCORSAllowedOrigins = []string{"ftp://console.example.com"}
+			},
+		},
+		{
+			name: "invalid metrics cidr",
+			mutate: func(cfg *Config) {
+				cfg.MetricsAllowedCIDRs = []string{"not-a-cidr"}
+			},
+		},
+		{
+			name: "invalid login window",
+			mutate: func(cfg *Config) {
+				cfg.LoginRateLimitWindowSec = 0
+			},
+		},
+		{
+			name: "invalid ip limit",
+			mutate: func(cfg *Config) {
+				cfg.LoginRateLimitIP = -1
+			},
+		},
+		{
+			name: "invalid user limit",
+			mutate: func(cfg *Config) {
+				cfg.LoginRateLimitUser = -1
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := base()
+			tc.mutate(cfg)
+			if err := cfg.Validate(); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+}
+
 func TestLoad_OIDCEnvOverrides(t *testing.T) {
 	os.Setenv("JWT_SECRET", "jwt-secret")
 	os.Setenv("API_KEY_HASH_SECRET", "api-key-secret")
@@ -129,6 +223,39 @@ func TestLoad_OIDCEnvOverrides(t *testing.T) {
 	}
 	if len(cfg.OIDCScopes) != 4 || cfg.OIDCScopes[3] != "groups" {
 		t.Fatalf("unexpected oidc scopes: %#v", cfg.OIDCScopes)
+	}
+}
+
+func TestLoad_RuntimeExposureEnvOverrides(t *testing.T) {
+	t.Setenv("JWT_SECRET", "jwt-secret")
+	t.Setenv("API_KEY_HASH_SECRET", "api-key-secret")
+	t.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+	t.Setenv("ADMIN_CORS_ALLOWED_ORIGINS", "https://console.example.com, http://localhost:3000")
+	t.Setenv("METRICS_ENABLED", "false")
+	t.Setenv("METRICS_ALLOWED_CIDRS", "10.0.0.0/8,127.0.0.1/32")
+	t.Setenv("LOGIN_RATE_LIMIT_ENABLED", "false")
+	t.Setenv("LOGIN_RATE_LIMIT_WINDOW_SECONDS", "120")
+	t.Setenv("LOGIN_RATE_LIMIT_IP_REQUESTS", "50")
+	t.Setenv("LOGIN_RATE_LIMIT_USER_REQUESTS", "7")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := cfg.AdminCORSAllowedOrigins; len(got) != 2 || got[0] != "https://console.example.com" || got[1] != "http://localhost:3000" {
+		t.Fatalf("unexpected CORS origins: %#v", got)
+	}
+	if cfg.MetricsEnabled {
+		t.Fatal("expected metrics to be disabled")
+	}
+	if got := cfg.MetricsAllowedCIDRs; len(got) != 2 || got[0] != "10.0.0.0/8" || got[1] != "127.0.0.1/32" {
+		t.Fatalf("unexpected metrics CIDRs: %#v", got)
+	}
+	if cfg.LoginRateLimitEnabled {
+		t.Fatal("expected login limiter disabled override")
+	}
+	if cfg.LoginRateLimitWindowSec != 120 || cfg.LoginRateLimitIP != 50 || cfg.LoginRateLimitUser != 7 {
+		t.Fatalf("unexpected login limits: window=%d ip=%d user=%d", cfg.LoginRateLimitWindowSec, cfg.LoginRateLimitIP, cfg.LoginRateLimitUser)
 	}
 }
 

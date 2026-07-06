@@ -191,15 +191,16 @@ func TestHashKey_HexLength(t *testing.T) {
 // --- CORS middleware tests ---
 
 func TestCORS_Headers(t *testing.T) {
-	handler := CORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := CORSWithOptions(CORSOptions{AllowedOrigins: []string{"https://console.example.com"}})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	req := httptest.NewRequest("GET", "/test", nil)
+	req.Header.Set("Origin", "https://console.example.com")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	if rec.Header().Get("Access-Control-Allow-Origin") != "*" {
-		t.Fatal("expected * CORS origin")
+	if rec.Header().Get("Access-Control-Allow-Origin") != "https://console.example.com" {
+		t.Fatal("expected configured CORS origin")
 	}
 	if rec.Header().Get("Access-Control-Max-Age") != "86400" {
 		t.Fatal("expected 86400 max age")
@@ -207,10 +208,11 @@ func TestCORS_Headers(t *testing.T) {
 }
 
 func TestCORS_Preflight(t *testing.T) {
-	handler := CORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := CORSWithOptions(CORSOptions{AllowedOrigins: []string{"https://console.example.com"}})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("handler should not be called for OPTIONS")
 	}))
 	req := httptest.NewRequest("OPTIONS", "/test", nil)
+	req.Header.Set("Origin", "https://console.example.com")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -220,10 +222,11 @@ func TestCORS_Preflight(t *testing.T) {
 }
 
 func TestCORS_AllowedMethods(t *testing.T) {
-	handler := CORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := CORSWithOptions(CORSOptions{AllowedOrigins: []string{"https://console.example.com"}})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	req := httptest.NewRequest("POST", "/test", nil)
+	req.Header.Set("Origin", "https://console.example.com")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 

@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -31,6 +33,15 @@ type Config struct {
 	JWTSecret        string
 	APIKeyHashSecret string
 	EncryptionKey    string
+
+	// Runtime exposure hardening
+	AdminCORSAllowedOrigins []string
+	MetricsEnabled          bool
+	MetricsAllowedCIDRs     []string
+	LoginRateLimitEnabled   bool
+	LoginRateLimitWindowSec int
+	LoginRateLimitIP        int
+	LoginRateLimitUser      int
 
 	// License
 	LicensePublicKey         string
@@ -101,6 +112,32 @@ func (c *Config) Validate() error {
 	if c.LicenseExpiryWarningDays < 0 {
 		return fmt.Errorf("LICENSE_EXPIRY_WARNING_DAYS must be >= 0")
 	}
+	for _, origin := range c.AdminCORSAllowedOrigins {
+		parsed, err := url.Parse(origin)
+		if err != nil ||
+			parsed.Scheme == "" ||
+			(parsed.Scheme != "http" && parsed.Scheme != "https") ||
+			parsed.Host == "" ||
+			(parsed.Path != "" && parsed.Path != "/") ||
+			parsed.RawQuery != "" ||
+			parsed.Fragment != "" {
+			return fmt.Errorf("ADMIN_CORS_ALLOWED_ORIGINS contains invalid origin: %s", origin)
+		}
+	}
+	for _, cidr := range c.MetricsAllowedCIDRs {
+		if _, _, err := net.ParseCIDR(cidr); err != nil {
+			return fmt.Errorf("METRICS_ALLOWED_CIDRS contains invalid CIDR: %s", cidr)
+		}
+	}
+	if c.LoginRateLimitEnabled && c.LoginRateLimitWindowSec <= 0 {
+		return fmt.Errorf("LOGIN_RATE_LIMIT_WINDOW_SECONDS must be > 0")
+	}
+	if c.LoginRateLimitIP < 0 {
+		return fmt.Errorf("LOGIN_RATE_LIMIT_IP_REQUESTS must be >= 0")
+	}
+	if c.LoginRateLimitUser < 0 {
+		return fmt.Errorf("LOGIN_RATE_LIMIT_USER_REQUESTS must be >= 0")
+	}
 	if c.OIDCEnabled {
 		if c.OIDCIssuerURL == "" {
 			return fmt.Errorf("OIDC_ISSUER_URL is required when OIDC is enabled")
@@ -144,6 +181,14 @@ func Load() (*Config, error) {
 		JWTSecret:        jwtSecret,
 		APIKeyHashSecret: getEnvStr("API_KEY_HASH_SECRET", jwtSecret),
 		EncryptionKey:    getEnvStr("ENCRYPTION_KEY", ""),
+
+		AdminCORSAllowedOrigins: splitCSVAllowEmpty(getEnvStr("ADMIN_CORS_ALLOWED_ORIGINS", "")),
+		MetricsEnabled:          getEnvBool("METRICS_ENABLED", true),
+		MetricsAllowedCIDRs:     splitCSVAllowEmpty(getEnvStr("METRICS_ALLOWED_CIDRS", "")),
+		LoginRateLimitEnabled:   getEnvBool("LOGIN_RATE_LIMIT_ENABLED", true),
+		LoginRateLimitWindowSec: getEnvInt("LOGIN_RATE_LIMIT_WINDOW_SECONDS", 60),
+		LoginRateLimitIP:        getEnvInt("LOGIN_RATE_LIMIT_IP_REQUESTS", 30),
+		LoginRateLimitUser:      getEnvInt("LOGIN_RATE_LIMIT_USER_REQUESTS", 10),
 
 		LicensePublicKey:         getEnvStr("LICENSE_PUBLIC_KEY", ""),
 		LicenseExpiryWarningDays: getEnvInt("LICENSE_EXPIRY_WARNING_DAYS", 30),
@@ -211,6 +256,21 @@ func splitCSV(value string) []string {
 	}
 	if len(out) == 0 {
 		return []string{"openid", "email", "profile"}
+	}
+	return out
+}
+
+func splitCSVAllowEmpty(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	seen := map[string]bool{}
+	for _, part := range parts {
+		item := strings.TrimSpace(part)
+		if item == "" || seen[item] {
+			continue
+		}
+		seen[item] = true
+		out = append(out, item)
 	}
 	return out
 }

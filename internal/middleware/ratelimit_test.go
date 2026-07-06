@@ -3,8 +3,10 @@ package middleware
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -310,38 +312,207 @@ func TestRateLimit_WindowReset(t *testing.T) {
 	}
 }
 
+func TestLoginRateLimit_UserLimitExceeded(t *testing.T) {
+	_, rdb := setupMiniredis(t)
+	handler := LoginRateLimit(rdb, LoginRateLimitOptions{
+		Enabled:      true,
+		Window:       time.Minute,
+		IPRequests:   10,
+		UserRequests: 1,
+	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if !strings.Contains(string(body), "Admin@Example.com") {
+			t.Fatalf("body was not restored for login handler: %s", string(body))
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"username":"Admin@Example.com","password":"x"}`))
+	req1.RemoteAddr = "203.0.113.10:4567"
+	rec1 := httptest.NewRecorder()
+	handler.ServeHTTP(rec1, req1)
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("first login should pass, got %d", rec1.Code)
+	}
+
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"username":"admin@example.com","password":"x"}`))
+	req2.RemoteAddr = "203.0.113.10:4567"
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusTooManyRequests {
+		t.Fatalf("second login should be rate limited, got %d", rec2.Code)
+	}
+	if rec2.Header().Get("Retry-After") == "" {
+		t.Fatal("expected Retry-After header")
+	}
+}
+
+func TestLoginRateLimit_RestoresOversizedBody(t *testing.T) {
+	_, rdb := setupMiniredis(t)
+	originalBody := `{"username":"` + strings.Repeat("a", 32) + `","password":"x"}`
+	handler := LoginRateLimit(rdb, LoginRateLimitOptions{
+		Enabled:      true,
+		Window:       time.Minute,
+		IPRequests:   0,
+		UserRequests: 10,
+		MaxBodyBytes: 8,
+	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if string(body) != originalBody {
+			t.Fatalf("body was not fully restored after limiter read: %q", string(body))
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(originalBody))
+	req.RemoteAddr = "203.0.113.12:4567"
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("oversized login body should pass through to login handler, got %d", rec.Code)
+	}
+}
+
+func TestLoginRateLimit_IPLimitExceededAcrossUsers(t *testing.T) {
+	_, rdb := setupMiniredis(t)
+	handler := LoginRateLimit(rdb, LoginRateLimitOptions{
+		Enabled:      true,
+		Window:       time.Minute,
+		IPRequests:   1,
+		UserRequests: 10,
+	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	for i, username := range []string{"alice", "bob"} {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"username":"`+username+`","password":"x"}`))
+		req.RemoteAddr = "203.0.113.11:4567"
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if i == 0 && rec.Code != http.StatusOK {
+			t.Fatalf("first login should pass, got %d", rec.Code)
+		}
+		if i == 1 && rec.Code != http.StatusTooManyRequests {
+			t.Fatalf("second login from same IP should be rate limited, got %d", rec.Code)
+		}
+	}
+}
+
+func TestLoginRateLimit_DisabledPassesThrough(t *testing.T) {
+	_, rdb := setupMiniredis(t)
+	handler := LoginRateLimit(rdb, LoginRateLimitOptions{
+		Enabled:      false,
+		Window:       time.Minute,
+		IPRequests:   0,
+		UserRequests: 0,
+	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"username":"admin","password":"x"}`))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("disabled login limiter should pass through, got %d", rec.Code)
+	}
+}
+
+func TestLoginRateLimit_RedisErrorFailOpen(t *testing.T) {
+	rdb := redis.NewClient(&redis.Options{Addr: "localhost:1"})
+	defer rdb.Close()
+	handler := LoginRateLimit(rdb, LoginRateLimitOptions{
+		Enabled:      true,
+		Window:       time.Minute,
+		IPRequests:   1,
+		UserRequests: 1,
+	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"username":"admin","password":"x"}`))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login limiter should fail open on Redis errors, got %d", rec.Code)
+	}
+}
+
 // --- CORS boundary tests ---
 
 func TestCORS_Preflight_NoContent(t *testing.T) {
-	handler := CORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := CORSWithOptions(CORSOptions{AllowedOrigins: []string{"https://console.example.com"}})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
 	req := httptest.NewRequest(http.MethodOptions, "/", nil)
+	req.Header.Set("Origin", "https://console.example.com")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected 204 for OPTIONS, got %d", rec.Code)
 	}
-	if rec.Header().Get("Access-Control-Allow-Origin") != "*" {
+	if rec.Header().Get("Access-Control-Allow-Origin") != "https://console.example.com" {
 		t.Fatal("CORS headers should be set on preflight")
 	}
 }
 
 func TestCORS_NonOptions_PassesThrough(t *testing.T) {
-	handler := CORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := CORSWithOptions(CORSOptions{AllowedOrigins: []string{"https://console.example.com"}})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Origin", "https://console.example.com")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 for GET, got %d", rec.Code)
 	}
-	if rec.Header().Get("Access-Control-Allow-Origin") != "*" {
+	if rec.Header().Get("Access-Control-Allow-Origin") != "https://console.example.com" {
 		t.Fatal("CORS headers should be set on normal requests")
+	}
+}
+
+func TestCORS_DisallowedPreflightForbidden(t *testing.T) {
+	handler := CORSWithOptions(CORSOptions{AllowedOrigins: []string{"https://console.example.com"}})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not be called for a disallowed preflight")
+	}))
+
+	req := httptest.NewRequest(http.MethodOptions, "/", nil)
+	req.Header.Set("Origin", "https://evil.example.com")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for disallowed preflight, got %d", rec.Code)
+	}
+}
+
+func TestMetricsCIDRAllowlist(t *testing.T) {
+	handler := MetricsCIDRAllowlist([]string{"203.0.113.0/24"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	allowedReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	allowedReq.RemoteAddr = "203.0.113.10:12345"
+	allowedRec := httptest.NewRecorder()
+	handler.ServeHTTP(allowedRec, allowedReq)
+	if allowedRec.Code != http.StatusOK {
+		t.Fatalf("expected allowed metrics request, got %d", allowedRec.Code)
+	}
+
+	blockedReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	blockedReq.RemoteAddr = "198.51.100.10:12345"
+	blockedRec := httptest.NewRecorder()
+	handler.ServeHTTP(blockedRec, blockedReq)
+	if blockedRec.Code != http.StatusNotFound {
+		t.Fatalf("expected hidden metrics request to return 404, got %d", blockedRec.Code)
 	}
 }

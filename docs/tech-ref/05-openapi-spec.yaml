@@ -65,7 +65,7 @@ paths:
   /metrics:
     get:
       tags: [Observability]
-      summary: Prometheus metrics
+      summary: Prometheus metrics (runtime-configurable)
       responses:
         "200":
           description: Prometheus metrics text format
@@ -73,6 +73,8 @@ paths:
             text/plain:
               schema:
                 type: string
+        "404":
+          description: Metrics are disabled or hidden by metrics access policy
 
   /v1/chat/completions:
     post:

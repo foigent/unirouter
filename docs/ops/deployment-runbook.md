@@ -1,9 +1,9 @@
 # Deployment Runbook（部署运维手册）
 
-> **版本**：v1.6
-> **日期**：2026-07-04
+> **版本**：v1.7
+> **日期**：2026-07-06
 > **用途**：运维人员部署和维护 UniRoute 的操作手册
-> **变更记录**：v1.6 新增 PRD2 OIDC-first SSO 配置和 mock-provider smoke；v1.5 新增 HTTP-only canary overlay、8081 canary direct smoke、PRD2 HA/backup rehearsal 命令；v1.4 新增生产 `.env` 保护、`API_KEY_HASH_SECRET`、rsync 安全同步规则和 PR #44 部署事故复盘；v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
+> **变更记录**：v1.7 新增 PRD3 SEC-005 运行时暴露策略：CORS 精确 origin、登录限流、metrics 开关/CIDR；v1.6 新增 PRD2 OIDC-first SSO 配置和 mock-provider smoke；v1.5 新增 HTTP-only canary overlay、8081 canary direct smoke、PRD2 HA/backup rehearsal 命令；v1.4 新增生产 `.env` 保护、`API_KEY_HASH_SECRET`、rsync 安全同步规则和 PR #44 部署事故复盘；v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
 
 ---
 
@@ -34,6 +34,8 @@ cp .env.example .env
 # - ENCRYPTION_KEY: 32 字节随机字符串
 # - LICENSE_PUBLIC_KEY: 离线 License Ed25519 公钥（导入 License 前必填）
 # - GRAFANA_ADMIN_PASSWORD: Grafana 管理员强密码
+# - ADMIN_CORS_ALLOWED_ORIGINS: 仅当浏览器会跨域直连 backend 时配置精确 origin
+# - METRICS_ALLOWED_CIDRS: 生产建议限制到 Prometheus 所在网络
 # - MIGRATIONS_DIR: 迁移文件目录（默认 /app/migrations）
 
 # 生成随机密钥
@@ -53,6 +55,20 @@ openssl rand -base64 24  # 用于 GRAFANA_ADMIN_PASSWORD
 | `LICENSE_PUBLIC_KEY` | 离线 License Ed25519 签名校验公钥 | 缺失时可启动服务，但无法导入或验证 License |
 
 License 公钥由 License 签发方提供，支持 base64 或 hex 编码的 32 字节 Ed25519 public key。该值不是 secret，但 stable/canary 应保持一致，避免同一份 license 在不同实例上校验结果不同。
+
+运行时暴露策略：
+
+| 变量 | 默认 | 建议 |
+|------|------|------|
+| `ADMIN_CORS_ALLOWED_ORIGINS` | 空 | 为空表示只支持同源/服务端代理访问；需要 Vite 或跨域控制台直连 backend 时填精确 origin，如 `http://localhost:3000,http://localhost:5173`；不支持 `*` |
+| `LOGIN_RATE_LIMIT_ENABLED` | `true` | 保持开启；按 backend `RemoteAddr` 与 `RemoteAddr+username` 计数 |
+| `LOGIN_RATE_LIMIT_WINDOW_SECONDS` | `60` | 登录尝试固定窗口秒数 |
+| `LOGIN_RATE_LIMIT_IP_REQUESTS` | `30` | 单个 `RemoteAddr` 每窗口最大登录尝试数；经过反向代理时应结合代理或网络层限流 |
+| `LOGIN_RATE_LIMIT_USER_REQUESTS` | `10` | 单个 `RemoteAddr+username` 每窗口最大登录尝试数 |
+| `METRICS_ENABLED` | `true` | 兼容 bundled Prometheus；不需要应用内指标时设为 `false` |
+| `METRICS_ALLOWED_CIDRS` | 空 | 为空表示应用层不限制；生产建议填 Prometheus/内网 CIDR，公网隔离仍应依赖安全组、防火墙或反向代理 |
+
+登录限流只信任 backend 看到的 `RemoteAddr`，不会直接信任客户端可伪造的 `X-Forwarded-For`。如果后续需要按真实客户端 IP 穿透多层代理，需要先定义可信代理链策略，不在 PRD3 临时扩展。
 
 非生产环境可用 Batch 22 smoke 生成测试 License 公钥和离线 License，并验证 `/license` 浏览器导入、状态、审计与 `license.warning` 事件：
 
@@ -332,6 +348,20 @@ curl http://localhost:8080/metrics
 
 # Prometheus 已配置自动抓取 backend:8080/metrics（5s 间隔）
 # Prometheus UI: http://localhost:9090
+```
+
+运行时暴露策略：
+
+```bash
+# 默认开启，兼容 bundled Prometheus。
+METRICS_ENABLED=true
+
+# 可选：只允许指定 CIDR 抓取。为空表示应用层不限制，
+# 仍应依赖安全组/防火墙/反向代理避免公网直连。
+METRICS_ALLOWED_CIDRS=10.0.0.0/8,172.16.0.0/12
+
+# 不需要应用内指标时关闭，/metrics 返回 404。
+METRICS_ENABLED=false
 ```
 
 完整指标清单见 `docs/tech-ref/08-prometheus-metrics.md`。
@@ -719,6 +749,9 @@ docker compose -f docker-compose.yml -f docker-compose.canary.yml up -d
 | HTTPS | Nginx 反向代理 + Let's Encrypt SSL |
 | 防火墙 | 只开放 80/443 端口 |
 | 数据库 | 不暴露外部端口，只通过 Docker 网络访问 |
+| CORS | `ADMIN_CORS_ALLOWED_ORIGINS` 只允许精确 origin；禁止 `*` |
+| 登录限流 | `LOGIN_RATE_LIMIT_*` 默认开启；Redis 错误时 fail-open，避免运维锁死 |
+| Metrics | `/metrics` 默认兼容 Prometheus；生产用 `METRICS_ALLOWED_CIDRS`、防火墙或反向代理限制，或设置 `METRICS_ENABLED=false` |
 | Redis | 设置密码，不暴露外部端口 |
 | 密钥 | `JWT_SECRET` 可按需轮换；`API_KEY_HASH_SECRET` 和 `ENCRYPTION_KEY` 轮换前必须确认会话、API Key、上游渠道密钥的影响；`LICENSE_PUBLIC_KEY` 由签发方管理 |
 | Grafana | 设置 `GRAFANA_ADMIN_PASSWORD`，禁止继续使用 `admin/admin` |
