@@ -80,10 +80,11 @@ func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 		}
 		keys = append(keys, map[string]interface{}{
 			"id": id, "org_id": orgID, "project_id": projectID, "name": name, "key_prefix": keyPrefix,
-			"status": status, "rpm_limit": rpmLimit, "qps_limit": qpsLimit,
+			"status": status, "rpm_limit": rpmLimit, "qps_limit": qpsLimit, "rps_limit": qpsLimit,
 			"budget_limit": budgetLimit, "allowed_ips": allowedIPs, "allowed_models": allowedModels,
 			"created_at": createdAt, "org_name": orgName, "project_name": projectName,
 			"owner_user_id": owner, "owner_username": ownerUsername, "key_type": keyType,
+			"quota": apiKeyQuotaPayload(rpmLimit, qpsLimit, budgetLimit),
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -102,6 +103,7 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		KeyType       string `json:"key_type"`
 		Name          string `json:"name"`
 		RPMLimit      int    `json:"rpm_limit"`
+		RPSLimit      *int   `json:"rps_limit"`
 		QPSLimit      int    `json:"qps_limit"`
 		AllowedIPs    string `json:"allowed_ips"`
 		AllowedModels string `json:"allowed_models"`
@@ -121,9 +123,16 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	if req.RPMLimit == 0 {
 		req.RPMLimit = 60
 	}
-	if req.QPSLimit == 0 {
-		req.QPSLimit = 10
+	if req.RPMLimit < 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "rpm_limit must be >= 0"})
+		return
 	}
+	rpsLimit, err := createRPSLimit(req.RPSLimit, req.QPSLimit)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error()})
+		return
+	}
+	req.QPSLimit = rpsLimit
 
 	existingRows, err := h.db.Query(r.Context(),
 		`SELECT 1 FROM api_keys WHERE org_id = $1 AND name = $2 LIMIT 1`,
@@ -200,13 +209,25 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 				"name":           req.Name,
 				"status":         "active",
 				"rpm_limit":      req.RPMLimit,
+				"rps_limit":      req.QPSLimit,
 				"qps_limit":      req.QPSLimit,
 				"allowed_ips":    req.AllowedIPs,
 				"allowed_models": req.AllowedModels,
 			},
 		})
 
-	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "key": rawKey, "key_prefix": keyPrefix, "project_id": projectID, "owner_user_id": nullableOwnerUserID(ownerUserID), "key_type": keyType})
+	writeJSON(w, http.StatusCreated, map[string]interface{}{
+		"id":            id,
+		"key":           rawKey,
+		"key_prefix":    keyPrefix,
+		"project_id":    projectID,
+		"owner_user_id": nullableOwnerUserID(ownerUserID),
+		"key_type":      keyType,
+		"rpm_limit":     req.RPMLimit,
+		"rps_limit":     req.QPSLimit,
+		"qps_limit":     req.QPSLimit,
+		"quota":         apiKeyQuotaPayload(req.RPMLimit, req.QPSLimit, 0),
+	})
 }
 
 func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
@@ -226,6 +247,7 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		OwnerUserID   *int64  `json:"owner_user_id"`
 		KeyType       *string `json:"key_type"`
 		RPMLimit      *int    `json:"rpm_limit"`
+		RPSLimit      *int    `json:"rps_limit"`
 		QPSLimit      *int    `json:"qps_limit"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -341,13 +363,22 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		argIdx++
 	}
 	if req.RPMLimit != nil {
+		if *req.RPMLimit <= 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "rpm_limit must be > 0"})
+			return
+		}
 		sets = append(sets, fmt.Sprintf("rpm_limit = $%d", argIdx))
 		args = append(args, *req.RPMLimit)
 		argIdx++
 	}
-	if req.QPSLimit != nil {
+	rpsLimit, rpsProvided, err := updateRPSLimit(req.RPSLimit, req.QPSLimit)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error()})
+		return
+	}
+	if rpsProvided {
 		sets = append(sets, fmt.Sprintf("qps_limit = $%d", argIdx))
-		args = append(args, *req.QPSLimit)
+		args = append(args, rpsLimit)
 		argIdx++
 	}
 
@@ -394,6 +425,9 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.RPMLimit != nil {
 		changedFields = append(changedFields, "rpm_limit")
+	}
+	if req.RPSLimit != nil {
+		changedFields = append(changedFields, "rps_limit")
 	}
 	if req.QPSLimit != nil {
 		changedFields = append(changedFields, "qps_limit")
@@ -489,11 +523,65 @@ func (h *Handler) GetAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"id": k.ID, "org_id": k.OrgID, "project_id": k.ProjectID, "name": k.Name, "key_prefix": k.KeyPrefix,
-		"status": k.Status, "rpm_limit": k.RPMLimit, "qps_limit": k.QPSLimit,
+		"status": k.Status, "rpm_limit": k.RPMLimit, "qps_limit": k.QPSLimit, "rps_limit": k.QPSLimit,
 		"budget_limit": k.BudgetLimit, "allowed_ips": k.AllowedIPs, "allowed_models": k.AllowedModels,
 		"created_at": k.CreatedAt, "org_name": k.OrgName, "project_name": k.ProjectName,
 		"owner_user_id": owner, "owner_username": k.OwnerUsername, "key_type": k.KeyType,
+		"quota": apiKeyQuotaPayload(k.RPMLimit, k.QPSLimit, k.BudgetLimit),
 	})
+}
+
+func createRPSLimit(preferredRPS *int, legacyQPS int) (int, error) {
+	if preferredRPS != nil && legacyQPS > 0 && *preferredRPS != legacyQPS {
+		return 0, fmt.Errorf("rps_limit conflicts with qps_limit")
+	}
+	limit := legacyQPS
+	if preferredRPS != nil {
+		limit = *preferredRPS
+	}
+	if limit == 0 {
+		return 10, nil
+	}
+	if limit < 0 {
+		return 0, fmt.Errorf("rps_limit must be >= 0")
+	}
+	return limit, nil
+}
+
+func updateRPSLimit(preferredRPS, legacyQPS *int) (int, bool, error) {
+	if preferredRPS == nil && legacyQPS == nil {
+		return 0, false, nil
+	}
+	if preferredRPS != nil && legacyQPS != nil && *preferredRPS != *legacyQPS {
+		return 0, true, fmt.Errorf("rps_limit conflicts with qps_limit")
+	}
+	limit := 0
+	if preferredRPS != nil {
+		limit = *preferredRPS
+	} else {
+		limit = *legacyQPS
+	}
+	if limit <= 0 {
+		return 0, true, fmt.Errorf("rps_limit must be > 0")
+	}
+	return limit, true, nil
+}
+
+func apiKeyQuotaPayload(rpmLimit, rpsLimit, budgetLimit int) map[string]interface{} {
+	var budget interface{}
+	if budgetLimit > 0 {
+		budget = budgetLimit
+	}
+	return map[string]interface{}{
+		"rpm_limit":          rpmLimit,
+		"rps_limit":          rpsLimit,
+		"qps_compat_limit":   rpsLimit,
+		"tpm_limit":          nil,
+		"tokens_per_second":  nil,
+		"budget_limit_cents": budget,
+		"tpm_source":         "not_configured",
+		"compatibility_note": "qps_limit stores the same value as rps_limit for API compatibility",
+	}
 }
 
 func nullableOwnerUserID(ownerUserID int64) interface{} {

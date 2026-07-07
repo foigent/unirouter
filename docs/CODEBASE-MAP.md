@@ -17,7 +17,7 @@
 
 | Package | Responsibility |
 |---------|----------------|
-| `internal/admin` | Admin REST handlers: auth, channels, channel keys, API keys, wallet, grants, logs, dashboard, prices, users, settings, audit, sensitive words, channel tests. Shared package-local helpers are split into `http_helpers.go`, `event_helpers.go`, and `model_helpers.go` |
+| `internal/admin` | Admin REST handlers: auth, channels, channel keys, API keys, wallet, grants, logs, dashboard, prices, users, settings, audit, sensitive words, channel tests. API key handlers expose PRD4 `rps_limit` / structured `quota` fields while preserving legacy `qps_limit` compatibility. Shared package-local helpers are split into `http_helpers.go`, `event_helpers.go`, and `model_helpers.go` |
 | `internal/adapters` | Provider adapter registry and OpenAI-compatible / Anthropic-native request/response conversion |
 | `internal/auth` | JWT generation/validation, API key hashing, upstream key AES-GCM encryption/decryption |
 | `internal/billing` | Cost calculation, freeze/settle/cancel, price provider, budget alert, notification event service |
@@ -73,6 +73,7 @@ OpenAPI snapshot: `docs/tech-ref/05-openapi-spec.yaml` is the current route-leve
 | API client | `frontend/src/api/client.ts` |
 | Auth store | `frontend/src/store/auth.ts` |
 | Shared UI primitives | `frontend/src/ui/` (`PageHeader`, `Surface`, `EmptyState`, `MoneyText`, `LatencyText`, `StatusTag`, `PagedTable`) |
+| Shared UI utilities | `frontend/src/utils/` (`displayLabels`, `format`, `quota`) |
 | Pages | `frontend/src/pages/*.tsx` |
 | Shared error boundary | `frontend/src/components/ErrorBoundary.tsx` |
 | Global CSS | `frontend/src/index.css` |
@@ -99,6 +100,11 @@ Later migrations add wallet features, org pricing and alert fields, schema gap f
 Request trace lookup is implemented by `internal/admin/log_handlers.go` as `GET /api/v1/logs/{id}/trace`. It loads the call log first, applies existing project usage RBAC, then filters trace events by `request_id`, `org_id`, and `project_id`. Frontend support is in `frontend/src/api/client.ts` (`getLogTrace`) and `frontend/src/pages/LogsPage.tsx` (request path card in the log detail inspector).
 
 Usage analytics is implemented in `internal/admin/prd2_product_handlers.go` and now supports project/key/model/provider/channel/status/source filters plus PRD4 `scope=my`, `owner_user_id`, `key_type`, `group_by=owner`, and `group_by=key_type`.
+
+API key quota visibility keeps `api_keys.qps_limit` as the compatibility
+storage name for per-key RPS. PRD4 Batch 1E API responses also expose preferred
+`rps_limit` and a structured `quota` payload; frontend key pages render
+RPM/RPS/TPM via `frontend/src/utils/quota.ts`.
 
 ## Security Notes
 

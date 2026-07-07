@@ -3,6 +3,7 @@ import { Button, Table, Modal, Form, Toast, Space, SideSheet, Typography } from 
 import { IconPlus, IconDelete, IconEdit, IconCopy, IconRefresh } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { PageHeader, StatusTag, Surface } from '../ui';
+import { keyQuotaText } from '../utils/quota';
 
 const { Text } = Typography;
 
@@ -28,6 +29,15 @@ interface ApiKey {
   allowed_ips: string;
   allowed_models: string;
   status: string;
+  rpm_limit: number;
+  rps_limit?: number;
+  qps_limit?: number;
+  quota?: {
+    rpm_limit?: number | null;
+    rps_limit?: number | null;
+    tpm_limit?: number | null;
+    budget_limit_cents?: number | null;
+  };
   created_at: string;
 }
 
@@ -71,6 +81,9 @@ export default function KeysPage() {
     // Convert allowed_models array to comma-separated string
     if (Array.isArray(values.allowed_models)) {
       values.allowed_models = values.allowed_models.join(',');
+    }
+    if (values.rps_limit !== undefined) {
+      values.rps_limit = Number(values.rps_limit || 10);
     }
     try {
       if (editing) {
@@ -149,6 +162,8 @@ export default function KeysPage() {
         name: record.name,
         allowed_ips: record.allowed_ips,
         allowed_models: record.allowed_models ? record.allowed_models.split(',').map(m => m.trim()).filter(Boolean) : [],
+        rpm_limit: record.rpm_limit || 60,
+        rps_limit: record.rps_limit ?? record.qps_limit ?? 10,
       });
     }, 100);
   };
@@ -165,6 +180,7 @@ export default function KeysPage() {
     { title: 'Key 前缀', dataIndex: 'key_prefix', key: 'prefix', render: (v: string) => <code>{v}***</code> },
     { title: '允许 IP', dataIndex: 'allowed_ips', key: 'ips', render: (v: string) => v || '全部' },
     { title: '允许模型', dataIndex: 'allowed_models', key: 'models', render: (v: string) => v || '全部' },
+    { title: '限额', key: 'quota', render: (_: unknown, record: ApiKey) => keyQuotaText(record) },
     {
       title: '状态', dataIndex: 'status', key: 'status', width: 80,
       render: (v: string) => <StatusTag status={v}>{v}</StatusTag>,
@@ -189,7 +205,7 @@ export default function KeysPage() {
       <PageHeader
         eyebrow="流量治理"
         title="访问凭证"
-        description="管理调用方访问凭证、允许 IP 和允许模型范围。"
+        description="管理调用方访问凭证、允许 IP、允许模型范围和 RPM/RPS/TPM 限额口径。"
         actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增访问凭证</Button>}
       />
 
@@ -216,8 +232,8 @@ export default function KeysPage() {
         onCancel={closeDrawer}
         width={480}
       >
-        <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleSubmit}>
-          <Form.Input field="name" label="密钥名称" rules={[{ required: true, message: '必填' }]} />
+        <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleSubmit} initValues={{ rpm_limit: 60, rps_limit: 10 }}>
+          <Form.Input field="name" label="密钥名称" placeholder="service-prod" rules={[{ required: true, message: '必填' }]} />
           <Form.Input field="allowed_ips" label="允许 IP (逗号分隔，留空=全部)" placeholder="127.0.0.1,10.0.0.0/8" />
           <Form.Select
             field="allowed_models"
@@ -227,6 +243,9 @@ export default function KeysPage() {
             optionList={availableModels.map(m => ({ label: m, value: m }))}
             style={{ width: '100%' }}
           />
+          <Form.InputNumber field="rpm_limit" label="RPM 限速" min={1} style={{ width: '100%' }} />
+          <Form.InputNumber field="rps_limit" label="RPS 限速" min={1} style={{ width: '100%' }} />
+          <Text type="tertiary" size="small">TPM 暂未配置为 Key 级限额；当前仅展示口径，不启用 Scheduler V2。</Text>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
             <Button onClick={closeDrawer}>取消</Button>
             <Button type="primary" onClick={() => formApi?.submitForm()}>{editing ? '更新' : '创建'}</Button>

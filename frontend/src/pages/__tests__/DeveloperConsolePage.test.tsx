@@ -32,7 +32,7 @@ const PROJECTS = {
 
 const KEYS = {
   data: [
-    { id: 11, project_id: 7, name: 'frontend', key_prefix: 'sk-test', status: 'active', allowed_models: 'company-chat', allowed_ips: '', rpm_limit: 60, qps_limit: 10, created_at: '2026-07-02T10:00:00Z' },
+    { id: 11, project_id: 7, name: 'frontend', key_prefix: 'sk-test', status: 'active', allowed_models: 'company-chat', allowed_ips: '', rpm_limit: 60, rps_limit: 10, qps_limit: 10, created_at: '2026-07-02T10:00:00Z' },
   ],
   total: 1,
 };
@@ -91,6 +91,7 @@ describe('DeveloperConsolePage', () => {
 
     expect(await screen.findByText('Core Project')).toBeTruthy();
     expect(screen.getByText('Company Chat')).toBeTruthy();
+    expect(screen.getByText('RPM 60 / RPS 10 / TPM 未配置')).toBeTruthy();
     expect(screen.getByText('Migrate to gpt-4.1-mini')).toBeTruthy();
     expect(screen.getByText('req-001')).toBeTruthy();
     expect(screen.getByText('请求调试台')).toBeTruthy();
@@ -125,6 +126,7 @@ describe('DeveloperConsolePage', () => {
         org_id: 1,
         project_id: 7,
         name: 'dev-key',
+        rps_limit: 10,
       }));
     });
     expect(await screen.findByText('sk-created-secret')).toBeTruthy();

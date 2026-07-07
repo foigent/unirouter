@@ -26,7 +26,7 @@ Shared mutable state must live in PostgreSQL or Redis:
 | billing wallet, transactions, grants, freeze idempotency | PostgreSQL | transactionally updated |
 | request logs, audit logs, notification events | PostgreSQL | canonical evidence |
 | channel circuit/key cooldown state | PostgreSQL | shared by routers |
-| per-key QPS/RPM windows | Redis | shared rate-limit counters |
+| per-key RPM/RPS windows | Redis | shared rate-limit counters; existing storage keeps the legacy `qps_limit` name |
 | sensitive words | PostgreSQL + periodic in-process cache refresh | DB is canonical; cache converges on each instance |
 
 The admission controller is intentionally per-process. Capacity planning should multiply per-instance admission limits by instance count or configure the load balancer accordingly.

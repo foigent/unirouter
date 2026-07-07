@@ -11,7 +11,7 @@
 - [PRD-Phase3.md](PRD-Phase3.md) — 已完成 PRD3 一致性、语义、契约和架构清理范围
 - [planning/PRD3-CONSISTENCY-AUDIT.md](planning/PRD3-CONSISTENCY-AUDIT.md) — PRD3 范围审计和 PRD1→PRD2 遗留问题梳理
 - [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 当前未关闭问题列表
-- [agent-workflows/FIX-SIGNAL.md](agent-workflows/FIX-SIGNAL.md) — 当前 Codex 验证信号；PRD4 Batch 1D Runtime Observability Foundation fixed awaiting Canary
+- [agent-workflows/FIX-SIGNAL.md](agent-workflows/FIX-SIGNAL.md) — 当前 Codex 验证信号；PRD4 Batch 1E Quota Vocabulary And Key Quota Foundation fixed awaiting Canary
 - [agent-workflows/VERIFY-RESULT.md](agent-workflows/VERIFY-RESULT.md) — 最新 Canary 验收结果
 - [CODEBASE-MAP.md](CODEBASE-MAP.md) — 代码结构、路由、数据、测试、部署地图
 - [DOC-INVENTORY.md](DOC-INVENTORY.md) — 文档清单与当前/冻结/历史/候选边界
@@ -34,6 +34,7 @@
 ## 技术参考
 - [tech-ref/](tech-ref/) — 开发团队技术参考索引
 - [tech-ref/20-prd3-product-glossary.md](tech-ref/20-prd3-product-glossary.md) — PRD3 产品术语口径：供应商/上游通道、用量分析、通知状态、角色和 PRD4 边界
+- [tech-ref/21-prd4-quota-vocabulary.md](tech-ref/21-prd4-quota-vocabulary.md) — PRD4 RPM/RPS/TPM/tokens/s 口径和 `qps_limit` 兼容边界
 
 ## 工程治理
 - [governance/README.md](governance/README.md) — PRD3 最低工程治理：ADR、API 兼容、migration/rollback、release、incident、deprecation

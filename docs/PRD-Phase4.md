@@ -171,6 +171,13 @@ Acceptance:
 - Quota usage and limit values are visible by key and time window.
 - Full Scheduler V2 behavior is not implied by PRD4 quota foundation work.
 
+Batch 1E implementation note: the first slice standardizes user-facing
+RPM/RPS/TPM/tokens/s vocabulary, adds preferred `rps_limit` and structured key
+`quota` response data, and documents that existing `qps_limit` storage remains a
+compatibility boundary. Scheduler V2, key-level TPM enforcement, budget
+hard-blocking, quota audit reason/idempotency fields, and schema migration remain
+follow-up work.
+
 ### P4-F04: Flow/Event/Trace Foundation
 
 Requirements:
