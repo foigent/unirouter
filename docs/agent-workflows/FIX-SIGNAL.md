@@ -1,95 +1,88 @@
-# FIX-SIGNAL.md - PRD4 Batch 1E Quota Vocabulary And Key Quota Foundation
+# FIX-SIGNAL.md - PRD4 Batch 1F PlungeIn Port Architecture
 
 **Date:** 2026-07-07
 **Status:** Fixed awaiting Canary
-**Issue:** `PRD4-QUOTA-001`
-**Matrix Row:** `P4-F03`
+**Issue:** `PRD4-PLUNGEIN-001`
+**Matrix Row:** `P4-F05`
 
 ## Verification Request
 
-Please verify PRD4 Batch 1E: Quota Vocabulary And Key Quota Foundation.
+Please verify PRD4 Batch 1F: PlungeIn Port Architecture.
 
-This batch standardizes the human-facing quota vocabulary around RPM, RPS, TPM,
-and tokens/s while preserving the existing `qps_limit` storage/API compatibility
-boundary. It adds key-level quota visibility in API key responses and frontend
-tables/forms without enabling Scheduler V2, token reservation, TPM enforcement,
-or budget hard-blocking.
+This batch is documentation-only. It accepts the PRD4 PlungeIn ADR scope and
+adds a concrete port contract for Observe, Act, limited Enrich, advisory Decide,
+and forbidden Mutate behavior. It does not implement runtime plugin loading,
+manifest handling, sandboxing, marketplace distribution, third-party
+installation, or mutation of core auth/billing/routing/wallet/settlement/provider
+dispatch.
 
 ## Scope To Verify
 
-Backend/API:
+Docs/architecture:
 
-- `GET /api/v1/keys` and `GET /api/v1/keys/{id}` continue returning legacy
-  `qps_limit`, and also expose preferred `rps_limit`.
-- Key responses include a structured `quota` object with `rpm_limit`,
-  `rps_limit`, `qps_compat_limit`, `tpm_limit`, `tokens_per_second`,
-  `budget_limit_cents`, `tpm_source`, and a compatibility note.
-- `POST /api/v1/keys` accepts preferred `rps_limit` and legacy `qps_limit`.
-  Conflicting values are rejected instead of silently choosing one field.
-- `PUT /api/v1/keys/{id}` accepts preferred `rps_limit` and legacy `qps_limit`.
-  Conflicting or non-positive update values are rejected.
-- No migration is added; the existing `api_keys.qps_limit` column remains the
-  compatibility storage for per-key RPS.
+- `docs/governance/adr/ADR-0001-prd4-plungein-ports.md` is accepted for PRD4
+  Batch 1F scope and links to the normative port contract.
+- `docs/tech-ref/22-prd4-plungein-port-contract.md` defines:
+  - Observe as read-only request/trace/status/usage/runtime/monitoring access.
+  - Act as guarded notifications, webhooks, deep links, and evidence exports.
+  - Enrich as limited, non-authoritative labels/classifications/ontology hints.
+  - Decide as advisory-only recommendations in PRD4.
+  - Mutate as forbidden/deferred for auth, authorization, billing, wallet,
+    settlement, routing, provider dispatch, request/response bodies, schema
+    ownership, and secrets.
+- PRD5 backlog boundaries remain explicit for the full runtime plugin platform,
+  plugin marketplace, sandbox, signing, lifecycle, permissions, and third-party
+  installation.
+- Documentation indexes route readers to the new port contract.
 
-Frontend:
+Status:
 
-- Admin API Keys and Developer Console key surfaces display `RPM / RPS / TPM`.
-- Key create/edit forms use `RPS 限速`, not user-facing `QPS 限速`.
-- The frontend sends `rps_limit` for new key creation while remaining able to
-  render legacy records that only contain `qps_limit`.
-- TPM is shown as `未配置` in this batch; no UI implies token quota enforcement.
-
-Docs/status:
-
-- Adds `docs/tech-ref/21-prd4-quota-vocabulary.md`.
-- Updates docs indexes and frontend/deployment terminology from user-facing
-  QPS to RPS where appropriate.
-- Records User-reported Batch 1D Canary/Sentinel completion after `349ac75` /
-  PR #87.
-- Marks `P4-F03` / `PRD4-QUOTA-001` fixed awaiting Canary.
+- Records User-reported Batch 1E Canary/Sentinel completion after `a1acdb6` /
+  PR #88.
+- Marks `P4-F03` / `PRD4-QUOTA-001` Canary passed.
+- Marks `P4-F05` / `PRD4-PLUNGEIN-001` fixed awaiting Canary.
+- Keeps `PRD4-PLUGIN-001` open because full runtime plugin platform remains
+  unimplemented and deferred to PRD5.
 
 ## Non-Scope
 
 Do not expect this batch to implement:
 
-- Scheduler V2, token reservation, capacity-aware dispatch, or tokens/s
-  admission.
-- Key-level TPM enforcement or new TPM persistence.
-- Budget hard-blocking or new billing admission behavior.
-- Quota change audit reason/idempotency fields.
-- New API key schema migration or removal/rename of `qps_limit`.
-- OpenTelemetry, trace retention cleanup, or runtime plugin/PlungeIn execution.
-- Real upstream or real SSO target-environment evidence.
+- Any Go, frontend, migration, API route, OpenAPI, deployment, Docker, or runtime
+  behavior change.
+- Runtime plugin loading, dynamic code loading, package installation, plugin
+  manifest parsing, plugin signing, sandboxing, marketplace distribution, or
+  third-party install/uninstall.
+- Mutating hooks for authentication, authorization, billing, wallet, settlement,
+  routing, provider dispatch, retry behavior, or request/response bodies.
+- Prompt/response plaintext storage or new secret exposure.
+- Scheduler V2, budget hard-blocking, real upstream evidence, or real SSO
+  evidence.
 
 ## Required Verification Commands
 
 ```bash
-rg -n "rps_limit|qps_compat_limit|apiKeyQuotaPayload|createRPSLimit|updateRPSLimit|keyQuotaText|RPM / RPS / TPM|RPS 限速" internal frontend/src docs/tech-ref/21-prd4-quota-vocabulary.md
-rg -n "DEFAULT_KEY_QPS|QPS|qps_limit|TPS" .env.example docker-compose.yml docs/ops/deployment-runbook.md docs/tech-ref docs/PRD-Phase4.md frontend/src
-rg -n "PRD4-QUOTA-001|P4-F03|Batch 1E|Quota Vocabulary|rps_limit|PRD4-RUNTIME-001|Batch 1D" docs/agent-workflows/FIX-SIGNAL.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/PROJECT-HANDOFF.md docs/DOC-INVENTORY.md docs/README.md docs/CODEBASE-MAP.md docs/PRD-Phase4.md
-go test ./internal/admin -run 'Test(CreateRPSLimit|UpdateRPSLimit|APIKeyQuotaPayload)' -count=1
-go test ./internal/admin ./cmd/uniroute -count=1
-go test ./...
-npm --prefix frontend test -- src/utils/__tests__/quota.test.ts src/pages/__tests__/KeysPage.test.tsx src/pages/__tests__/DeveloperConsolePage.test.tsx
-npm --prefix frontend test -- --run
-npm --prefix frontend run build
+rg -n "PlungeIn|Observe|Act|Enrich|Decide|Mutate|PRD4 Batch 1F|PRD4-PLUNGEIN-001|P4-F05" docs/tech-ref/22-prd4-plungein-port-contract.md docs/governance/adr/ADR-0001-prd4-plungein-ports.md docs/PRD-Phase4.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/PROJECT-HANDOFF.md docs/DOC-INVENTORY.md docs/README.md docs/tech-ref/README.md
+rg -n "runtime plugin platform|manifest|dynamic loading|sandbox|marketplace|third-party|Mutate|auth|billing|routing|wallet|settlement|provider dispatch" docs/tech-ref/22-prd4-plungein-port-contract.md docs/governance/adr/ADR-0001-prd4-plungein-ports.md docs/planning/PRD5-BACKLOG.md docs/issues/OPEN-ISSUES.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md
+git status --short
 git diff --check
 ```
 
 ## Acceptance Criteria
 
-1. User-facing quota labels use RPM, RPS, TPM, and tokens/s; ambiguous TPS is not
-   introduced in product UI.
-2. Legacy `qps_limit` compatibility remains intact for existing API clients and
-   DB schema.
-3. Preferred `rps_limit` is accepted, serialized, and used by new frontend
-   key-create flows.
-4. Conflicting `rps_limit`/`qps_limit` values fail explicitly.
-5. Key quota visibility shows TPM as not configured instead of implying
-   enforcement.
-6. No Scheduler V2, TPM enforcement, budget hard-block, or schema migration is
-   introduced.
-7. Backend focused tests, frontend focused tests, full Go/frontend tests,
-   frontend build, terminology grep, and `git diff --check` pass.
-8. Docs consistently show Batch 1D as Canary/Sentinel complete per User report
-   and Batch 1E as fixed awaiting Canary.
+1. ADR 0001 is accepted for PRD4 Batch 1F scope and points to the technical port
+   contract.
+2. The port contract clearly distinguishes Observe, Act, Enrich, Decide, and
+   Mutate.
+3. PRD4 allowed behavior remains observation-first; Act is guarded; Enrich is
+   non-authoritative; Decide is advisory only.
+4. Mutating core auth, authorization, billing, wallet, settlement, routing,
+   provider dispatch, request/response bodies, schema ownership, or secrets is
+   explicitly forbidden/deferred.
+5. Full runtime plugin platform, marketplace, sandbox, manifest, signing,
+   lifecycle, permissions, and third-party installation remain deferred to PRD5.
+6. Docs consistently show Batch 1E as Canary/Sentinel complete per User report
+   and Batch 1F as fixed awaiting Canary.
+7. No runtime code, migration, API route, OpenAPI, deployment config, frontend,
+   or Docker files changed in Batch 1F.
+8. Documentation grep and `git diff --check` pass.

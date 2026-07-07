@@ -2,7 +2,9 @@
 
 > Version: Phase 4 Scope Draft
 > Date: 2026-07-07
-> Status: Proposed PRD4 scope after User confirmation; no runtime implementation yet.
+> Status: Active PRD4 implementation; Batch 1E accepted per User report after
+> `a1acdb6` / PR #88, and Batch 1F PlungeIn Port Architecture is fixed awaiting
+> Canary.
 > Source: `docs/planning/PRD4-BACKLOG.md`, `docs/ops/CURRENT-STATUS.md`,
 > `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`,
 > `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`, current repo/code review, and User
@@ -176,7 +178,8 @@ RPM/RPS/TPM/tokens/s vocabulary, adds preferred `rps_limit` and structured key
 `quota` response data, and documents that existing `qps_limit` storage remains a
 compatibility boundary. Scheduler V2, key-level TPM enforcement, budget
 hard-blocking, quota audit reason/idempotency fields, and schema migration remain
-follow-up work.
+follow-up work. User reported Canary/Sentinel completed after `a1acdb6` / PR
+#88.
 
 ### P4-F04: Flow/Event/Trace Foundation
 
@@ -223,6 +226,12 @@ Acceptance:
 - Trace/observability work can plug into the Observe port without becoming a
   general plugin runtime.
 - Core billing/auth/routing correctness remains owned by UniRouter core code.
+
+Batch 1F implementation note: the accepted ADR now points to
+`docs/tech-ref/22-prd4-plungein-port-contract.md`, which defines concrete
+Observe, Act, limited Enrich, advisory Decide, and forbidden Mutate boundaries.
+This is documentation-only and does not add runtime plugin loading, manifests,
+sandboxing, marketplace installation, or third-party code execution.
 
 ### P4-F06: Status Center And Runtime Observability
 
