@@ -23,8 +23,8 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required Codex/OpenClaw workflow |
-| `docs/agent-workflows/FIX-SIGNAL.md` | Active verification signal: PRD4 Batch 1K Trace Retention And Cleanup awaiting Canary |
-| `docs/agent-workflows/VERIFY-RESULT.md` | Latest OpenClaw verification result: PRD4 Batch 1J Runtime Host Telemetry PASS 8/8 |
+| `docs/agent-workflows/FIX-SIGNAL.md` | Active verification signal: PRD4 Batch 1L Runtime Monitoring URL Redaction awaiting Canary |
+| `docs/agent-workflows/VERIFY-RESULT.md` | Latest OpenClaw verification result: PRD4 Batch 1K Trace Retention And Cleanup PASS 10/10 |
 
 ## Product And Design References
 

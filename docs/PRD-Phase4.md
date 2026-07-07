@@ -2,12 +2,12 @@
 
 > Version: Phase 4 Scope Draft
 > Date: 2026-07-07
-> Status: Active PRD4 implementation; Batch 1J Runtime Host Telemetry passed
-> Canary 8/8 and Sentinel merge is reflected by `8707346` / PR #94. Batch 1K
-> Trace Retention And Cleanup is fixed awaiting Canary. Batch 1H real upstream
-> and Batch 1I real SSO evidence harnesses remain below `E2E accepted` /
-> `Production verified` until approved target credentials and successful
-> target-environment runs exist.
+> Status: Active PRD4 implementation; Batch 1K Trace Retention And Cleanup
+> passed Canary 10/10 and Sentinel merge is reflected by `1d9ea50` / PR #95.
+> Batch 1L Runtime Monitoring URL Redaction is fixed awaiting Canary. Batch 1H
+> real upstream and Batch 1I real SSO evidence harnesses remain below `E2E
+> accepted` / `Production verified` until approved target credentials and
+> successful target-environment runs exist.
 > Source: `docs/planning/PRD4-BACKLOG.md`, `docs/ops/CURRENT-STATUS.md`,
 > `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`,
 > `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`, current repo/code review, and User
@@ -413,6 +413,12 @@ Acceptance:
 - Evidence files do not contain secrets.
 - Missing or redacted fields are represented intentionally, not as empty bugs.
 
+Implementation notes:
+
+- Batch 1L implements the first runtime monitoring redaction slice: runtime
+  status display URLs for Prometheus/Grafana strip URL userinfo, query strings,
+  and fragments while probes continue to use raw configured URLs.
+
 ### P4-F13: PRD5 Backlog Consolidation
 
 Requirements:
@@ -446,8 +452,9 @@ Acceptance:
   P4-F09.
 - The first implementation batch should confirm whether shared/service API keys
   are shown under a separate key type rather than a personal user total.
-- Batch 1K defines the first trace retention/cleanup slice; high-volume
-  production storage still needs partitioning, archival, and capacity policy.
+- Batch 1K passed Canary 10/10 for the first trace retention/cleanup slice;
+  high-volume production storage still needs partitioning, archival, and
+  capacity policy.
 - Status Center implementation must choose telemetry sources: app runtime,
   Prometheus, node exporter, cloud API, deployment manifest, or operator metadata.
 

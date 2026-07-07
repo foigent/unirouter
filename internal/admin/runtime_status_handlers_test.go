@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -237,6 +238,75 @@ func TestRuntimeStatus_ReportsExternalMonitoringProblems(t *testing.T) {
 	}
 }
 
+func TestRuntimeStatus_RedactsMonitoringURLsButUsesRawProbeURL(t *testing.T) {
+	prometheusSecret := "prometheus-secret"
+	grafanaSecret := "grafana-secret"
+	prometheus := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != "ops" || pass != prometheusSecret {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		switch r.URL.Path {
+		case "/-/ready":
+			w.WriteHeader(http.StatusOK)
+		case "/api/v1/query":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success","data":{"result":[{"value":[1783420000,"1"]}]}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer prometheus.Close()
+	grafana := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != "ops" || pass != grafanaSecret {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if r.URL.Path != "/api/health" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"database":"ok","version":"11.0.0"}`))
+	}))
+	defer grafana.Close()
+
+	h := NewHandler(nil, "jwt-secret", []byte("0123456789abcdef01234567"), nil)
+	h.SetRuntimeStatusOptions(RuntimeStatusOptions{
+		PrometheusURL: monitoringURLWithSecret(t, prometheus.URL, "ops", prometheusSecret, "token=prom-token"),
+		GrafanaURL:    monitoringURLWithSecret(t, grafana.URL, "ops", grafanaSecret, "api_key=grafana-token"),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/status", nil)
+	rec := httptest.NewRecorder()
+	h.RuntimeStatus(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp runtimeStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.ObservabilityIntegrations.Prometheus.Status != "connected" {
+		t.Fatalf("expected prometheus probe to use raw credentials, got %#v", resp.ObservabilityIntegrations.Prometheus)
+	}
+	if resp.ObservabilityIntegrations.Grafana.Status != "connected" {
+		t.Fatalf("expected grafana probe to use raw credentials, got %#v", resp.ObservabilityIntegrations.Grafana)
+	}
+	encoded := rec.Body.String()
+	for _, secret := range []string{prometheusSecret, grafanaSecret, "prom-token", "grafana-token", "ops@"} {
+		if strings.Contains(encoded, secret) {
+			t.Fatalf("runtime status response leaked monitoring secret %q: %s", secret, encoded)
+		}
+	}
+	if strings.Contains(resp.ObservabilityIntegrations.Prometheus.URL, "?") || strings.Contains(resp.ObservabilityIntegrations.Prometheus.HealthURL, "?") {
+		t.Fatalf("expected prometheus display URLs without query: %#v", resp.ObservabilityIntegrations.Prometheus)
+	}
+}
+
 func TestRuntimeOverallStatus(t *testing.T) {
 	if got := runtimeOverallStatus(runtimeDependencyStatus{Status: "unavailable"}, runtimeDependencyStatus{Status: "connected"}, runtimeTrafficStatus{Status: "available"}); got != "degraded" {
 		t.Fatalf("database unavailable: got %s", got)
@@ -250,4 +320,15 @@ func TestRuntimeOverallStatus(t *testing.T) {
 	if got := runtimeOverallStatus(runtimeDependencyStatus{Status: "connected"}, runtimeDependencyStatus{Status: "connected"}, runtimeTrafficStatus{Status: "available", Requests: 10, ErrorRate: 0.1}); got != "operational" {
 		t.Fatalf("small sample should stay operational, got %s", got)
 	}
+}
+
+func monitoringURLWithSecret(t *testing.T, rawURL, username, password, rawQuery string) string {
+	t.Helper()
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("parse test URL: %v", err)
+	}
+	parsed.User = url.UserPassword(username, password)
+	parsed.RawQuery = rawQuery
+	return parsed.String()
 }

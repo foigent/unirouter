@@ -490,14 +490,15 @@ func runtimePrometheusIntegration(ctx context.Context, rawURL string) runtimeInt
 	}
 	checkedAt := time.Now().UTC()
 	started := time.Now()
+	healthURL := monitoringURL(rawURL, "/-/ready")
 	status := runtimeIntegrationStatus{
 		Status:    "unknown",
-		URL:       rawURL,
-		HealthURL: monitoringURL(rawURL, "/-/ready"),
+		URL:       monitoringDisplayURL(rawURL),
+		HealthURL: monitoringDisplayURL(healthURL),
 		CheckedAt: &checkedAt,
 	}
 
-	healthResp, err := monitoringGet(ctx, status.HealthURL)
+	healthResp, err := monitoringGet(ctx, healthURL)
 	status.LatencyMS = elapsedMillis(started)
 	if err != nil {
 		status.Status = "unavailable"
@@ -568,13 +569,14 @@ func runtimeGrafanaIntegration(ctx context.Context, rawURL string) runtimeIntegr
 	}
 	checkedAt := time.Now().UTC()
 	started := time.Now()
+	healthURL := monitoringURL(rawURL, "/api/health")
 	status := runtimeIntegrationStatus{
 		Status:    "unknown",
-		URL:       rawURL,
-		HealthURL: monitoringURL(rawURL, "/api/health"),
+		URL:       monitoringDisplayURL(rawURL),
+		HealthURL: monitoringDisplayURL(healthURL),
 		CheckedAt: &checkedAt,
 	}
-	resp, err := monitoringGet(ctx, status.HealthURL)
+	resp, err := monitoringGet(ctx, healthURL)
 	status.LatencyMS = elapsedMillis(started)
 	if err != nil {
 		status.Status = "unavailable"
@@ -615,7 +617,7 @@ func runtimeIntegration(configName, rawURL string) runtimeIntegrationStatus {
 	if rawURL == "" {
 		return runtimeIntegrationStatus{Status: "not_configured", Reason: configName + "_empty"}
 	}
-	return runtimeIntegrationStatus{Status: "configured", URL: rawURL}
+	return runtimeIntegrationStatus{Status: "configured", URL: monitoringDisplayURL(rawURL)}
 }
 
 func monitoringGet(ctx context.Context, targetURL string) (monitoringHTTPResult, error) {
@@ -648,6 +650,17 @@ func monitoringURL(rawURL, path string) string {
 		return rawURL
 	}
 	parsed.Path = path
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
+}
+
+func monitoringDisplayURL(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	parsed.User = nil
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
 	return parsed.String()
