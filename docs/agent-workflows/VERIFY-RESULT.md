@@ -1,58 +1,49 @@
-# VERIFY-RESULT.md - PRD4 Batch 1F PlungeIn Port Architecture
+# VERIFY-RESULT.md - PRD4 Batch 1G External Monitoring Integration
 
 **Date:** 2026-07-07
 **Signal:** `docs/agent-workflows/FIX-SIGNAL.md`
-**Issue:** `PRD4-PLUNGEIN-001`
-**Matrix Row:** `P4-F05`
-**Conclusion: ✅ PASS (8/8)**
+**Issue:** `PRD4-MONITORING-001`
+**Matrix Row:** `P4-F07`
+**Conclusion: ✅ PASS (9/9)**
 
 ## Verification Summary
 
 | # | Acceptance Criteria | Result | Evidence |
 |---|---------------------|--------|----------|
-| 1 | ADR 0001 accepted for PRD4 Batch 1F scope and points to port contract | ✅ PASS | `ADR-0001-prd4-plungein-ports.md:3` — "Status: Accepted for PRD4 Batch 1F scope"; L42-43 references the normative port contract |
-| 2 | Port contract distinguishes Observe, Act, Enrich, Decide, Mutate | ✅ PASS | `22-prd4-plungein-port-contract.md:22-26` — table with all five port classes, each with Allowed/Input/Output/Constraints columns |
-| 3 | PRD4 observation-first; Act guarded; Enrich non-authoritative; Decide advisory | ✅ PASS | `22-prd4-plungein-port-contract.md:22` Observe "Allowed"; L23 Act "Allowed with guardrails"; L24 Enrich "Limited and non-authoritative"; L25 Decide "Advisory only in PRD4" |
-| 4 | Mutating core auth/billing/routing/wallet/settlement/provider dispatch explicitly forbidden | ✅ PASS | `22-prd4-plungein-port-contract.md:26` — "Mutate: Deferred to PRD5 or later"; L61-67 lists forbidden behaviors; `ADR-0001:34,76-77` confirms |
-| 5 | Full runtime plugin platform/marketplace/sandbox/manifest/signing/lifecycle/permissions/third-party deferred to PRD5 | ✅ PASS | `22-prd4-plungein-port-contract.md:103-116` — "Moving from PRD4 PlungeIn ports to a runtime plugin platform requires a separate" decision with prerequisites (manifest, sandbox, signing, permissions); `PRD5-BACKLOG.md:20-21` has PRD5-PLUGIN-001 and PRD5-MARKET-001 |
-| 6 | Docs show Batch 1E Canary/Sentinel complete, Batch 1F fixed awaiting Canary | ✅ PASS | All 10 doc files consistent: CURRENT-STATUS.md records Batch 1E completion after `a1acdb6`/PR#88; OPEN-ISSUES.md, PRD4-ACCEPTANCE-MATRIX.md, PROJECT-HANDOFF.md, DOC-INVENTORY.md, README.md, CODEBASE-MAP.md, PRD-Phase4.md, tech-ref/README.md all show Batch 1F "Fixed awaiting Canary" |
-| 7 | No runtime code, migration, API route, OpenAPI, deployment config, frontend, or Docker changed | ✅ PASS | `git status --short` — only docs files modified (10 modified + 1 new `22-prd4-plungein-port-contract.md`); no `.go`, `.tsx`, `.ts`, `.sql`, `.yml`, `Dockerfile` changes |
-| 8 | Documentation grep and `git diff --check` pass | ✅ PASS | All grep commands returned expected content across 10 doc files; `git diff --check` — clean (no output) |
+| 1 | Runtime Status actively probes Prometheus readiness and `up{job="unirouter"}` scrape state | ✅ PASS | `runtime_status_handlers.go:281-355` — `runtimePrometheusIntegration()` calls `/-/ready` (L303) then `/api/v1/query?query=up{job="unirouter"}` (L319); parses response for scrape status |
+| 2 | Runtime Status actively probes Grafana `/api/health` | ✅ PASS | `runtime_status_handlers.go:359-398` — `runtimeGrafanaIntegration()` calls `/api/health` (L373); parses version and database status |
+| 3 | Prometheus/Grafana failures are integration statuses, not `/runtime/status` failures | ✅ PASS | Both functions return `runtimeIntegrationStatus` with error reason; never panic or propagate to HTTP response. `runtimeObservabilityIntegrations()` (L266-278) uses goroutines with buffered channels, collecting results without blocking |
+| 4 | Response includes status, URL, health_url, checked_at, latency_ms, reason, scrape_status, version | ✅ PASS | `runtime_status_handlers.go:97-111` — struct fields: `status`, `url`, `health_url`, `checked_at`, `latency_ms`, `reason`, `scrape_status` (Prometheus), `version` (Grafana) |
+| 5 | Frontend renders status vocabulary, external links, reasons, scrape status, latency, version | ✅ PASS | `InternalStatusPage.tsx:141-160` — `integrationMeta()` renders scrape_status, version, latency_ms, reason as text; URL as external `<a>` link; L289-299 renders StatusTag + meta for both Prometheus and Grafana |
+| 6 | Status tag colors: connected/configured=green, stale/misconfigured=amber, unavailable=red, not_configured=slate | ✅ PASS | `InternalStatusPage.tsx:125-138` — `integrationTone()` switch: `connected`/`configured` → green, `stale`/`misconfigured`/`unknown` → amber, `unavailable` → red, default → slate |
+| 7 | Docs mark Batch 1F Canary passed/Sentinel merged, Batch 1G fixed awaiting Canary | ✅ PASS | All 10 doc files consistent: CURRENT-STATUS.md records Batch 1F after `87bfc17`/PR#89; OPEN-ISSUES.md, PRD4-ACCEPTANCE-MATRIX.md, PROJECT-HANDOFF.md, DOC-INVENTORY.md, README.md, CODEBASE-MAP.md, PRD-Phase4.md, deployment-runbook.md, .env.example all show Batch 1G "Fixed awaiting Canary" |
+| 8 | No embedded dashboards, datasource validation, host telemetry, OpenTelemetry, generic connectors, runtime plugins, or mutating PlungeIn | ✅ PASS | Only active HTTP probes added (`monitoringGet`); no embedded iframes, no Grafana datasource API calls, no host metrics collection, no OTel, no plugin loading |
+| 9 | Focused backend/frontend tests, broad Go/frontend tests, build, docs grep, git diff --check pass | ✅ PASS | Focused Go: 4/4 PASS; focused frontend: 39/39 PASS; full Go: 22 packages PASS; full frontend: 114 tests (24 files) PASS; build 8.32s; `git diff --check` clean |
 
 ## Detailed Verification
 
-### ADR 0001 (AC1)
-- `ADR-0001-prd4-plungein-ports.md:3`: "Status: Accepted for PRD4 Batch 1F scope"
-- L26-34: defines the five port classes with their PRD4 status
-- L42-43: explicitly references the port contract for normative details
-- L75: confirms "PRD4 trace/status work uses Observe/Act/limited Enrich semantics"
+### Prometheus Probing (AC1)
+- `/-/ready` readiness probe: `runtime_status_handlers.go:303` — `monitoringGet(ctx, status.HealthURL)`
+- `up{job="unirouter"}` scrape probe: L319 — `monitoringGet(ctx, monitoringPrometheusQueryURL(rawURL))`
+- L451: `monitoringPrometheusQueryURL` builds `/api/v1/query?query=up{job="unirouter"}`
+- Status logic: ready OK + query OK + result `1` → "connected"; result `0` → "stale"; no results → "stale" (target missing); query error → "misconfigured"; ready error → "unavailable"
 
-### Port Contract (AC2)
-`22-prd4-plungein-port-contract.md` defines:
-- **Observe** (L22): read-only access to request trace, call logs, audit, runtime status, metrics
-- **Act** (L23): guarded notifications, webhooks, deep links, evidence exports; must be idempotent
-- **Enrich** (L24): non-authoritative labels, tags, classifications, ontology hints
-- **Decide** (L25): advisory-only recommendations in PRD4; not enforced
-- **Mutate** (L26): deferred to PRD5; no PRD4 port may mutate core systems
+### Grafana Probing (AC2)
+- `/api/health` probe: L373 — `monitoringGet(ctx, status.HealthURL)`
+- 401/403 → "misconfigured" with reason "auth_required"
+- Non-2xx → "unavailable"
+- Database not "ok" → "stale"
+- Success → "connected" with version extracted
 
-### Forbidden Mutations (AC4)
-`22-prd4-plungein-port-contract.md:61-67` explicitly forbids:
-- dynamic code loading, package installation, plugin manifests, signing, sandboxing, marketplace
-- arbitrary third-party plugins in gateway process
-- hooks changing authentication, authorization, key validation, wallet balance, billing settlement, channel selection, provider dispatch, retry behavior, request/response bodies
+### Graceful Degradation (AC3)
+- Both probing functions use `monitoringGet` which catches all errors
+- Errors map to status fields (unavailable/misconfigured/stale), never propagate
+- Concurrent execution via goroutines (L268-274) with buffered channels prevents blocking
 
-### PRD5 Deferral (AC5)
-`22-prd4-plungein-port-contract.md:103-116` lists prerequisites for runtime plugin platform:
-- plugin manifest schema
-- security model covering manifest, sandbox, signing, permissions
-- stable core event and data contracts
-- `PRD5-BACKLOG.md:20-21`: PRD5-PLUGIN-001 (runtime plugin platform) and PRD5-MARKET-001 (marketplace)
-
-### Docs-Only (AC7)
-`git status --short` output confirms:
-- 10 modified docs files (no code)
-- 1 new file: `docs/tech-ref/22-prd4-plungein-port-contract.md`
-- Zero `.go`, `.tsx`, `.ts`, `.sql`, `.yml`, `Dockerfile` changes
+### Frontend Rendering (AC5/AC6)
+- `integrationTone()`: color mapping covers all 5 states
+- `integrationMeta()`: renders scrape_status, version, latency_ms, reason; URL as external link
+- Test coverage: `InternalStatusPage.test.tsx:65-66` tests connected Prometheus + misconfigured Grafana; L86 asserts `auth_reason` text visible
 
 ## New Issues Found
 
@@ -60,4 +51,4 @@ None.
 
 ## Verdict
 
-**PASS.** All 8 acceptance criteria verified. This is a documentation-only batch — no runtime code changed. Batch 1F is ready for Sentinel to merge.
+**PASS.** All 9 acceptance criteria verified with code evidence. No new issues found. Batch 1G is ready for Sentinel to merge.

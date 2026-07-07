@@ -68,26 +68,28 @@ Latest accepted PRD4 hardening baseline is PRD4 Preflight Hardening on 2026-07-0
 - User reported Sentinel/Atlas completed after `e335a9e` / PR #83.
 - PRD4 Batch 0 scope baseline is complete per User report after `e24731d` / PR #82; the Batch 0 `VERIFY-RESULT.md` content has since been overwritten by the Preflight result.
 
-Latest accepted PRD4 implementation batch is PRD4 Batch 1E Quota Vocabulary And
-Key Quota Foundation:
+Latest accepted PRD4 implementation batch is PRD4 Batch 1F PlungeIn Port
+Architecture:
 
-- User reported Canary/Sentinel completed after `a1acdb6` / PR #88.
-- Atlas deployment has not been reported for Batch 1E.
-- Batch 1E standardizes user-facing RPM/RPS/TPM/tokens/s vocabulary, exposes
-  preferred `rps_limit` and structured key `quota` response data, and preserves
-  legacy `qps_limit` compatibility.
-- Scheduler V2, key-level TPM enforcement, budget hard-blocking, quota audit
-  reason/idempotency fields, `qps_limit` removal, and schema migration are not
-  in Batch 1E.
-
-Current active verification signal: PRD4 Batch 1F PlungeIn Port Architecture is
-fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
-
+- Canary PASS 8/8 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`.
+- Sentinel merge is reflected by `87bfc17` / PR #89.
+- Atlas deployment has not been reported for Batch 1F.
 - Batch 1F accepts ADR 0001 for PRD4 scope and adds
   `docs/tech-ref/22-prd4-plungein-port-contract.md`.
-- This is documentation-only: no runtime plugin loading, manifest, sandbox,
-  marketplace, third-party installation, or mutation of core auth, billing,
-  routing, wallet, settlement, or provider dispatch.
+- Runtime plugin loading, manifest, sandbox, marketplace, third-party
+  installation, and core auth/billing/routing/wallet/settlement/provider
+  dispatch mutation are not in Batch 1F.
+
+Current active verification signal: PRD4 Batch 1G External Monitoring
+Integration is fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+
+- Batch 1G extends `GET /api/v1/runtime/status` to actively check configured
+  Prometheus and Grafana.
+- Prometheus checks include `/-/ready` and `up{job="unirouter"}`. Grafana checks
+  use `/api/health`.
+- Embedded dashboards, Grafana datasource validation, new metrics auth,
+  OpenTelemetry export, host telemetry collectors, generic monitoring
+  connectors, and runtime plugin platform behavior are not in Batch 1G.
 
 The latest accepted route-contract baseline remains PRD3 Batch 6 on 2026-07-05:
 

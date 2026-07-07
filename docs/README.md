@@ -11,7 +11,7 @@
 - [PRD-Phase3.md](PRD-Phase3.md) — 已完成 PRD3 一致性、语义、契约和架构清理范围
 - [planning/PRD3-CONSISTENCY-AUDIT.md](planning/PRD3-CONSISTENCY-AUDIT.md) — PRD3 范围审计和 PRD1→PRD2 遗留问题梳理
 - [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 当前未关闭问题列表
-- [agent-workflows/FIX-SIGNAL.md](agent-workflows/FIX-SIGNAL.md) — 当前 Codex 验证信号；PRD4 Batch 1F PlungeIn Port Architecture fixed awaiting Canary
+- [agent-workflows/FIX-SIGNAL.md](agent-workflows/FIX-SIGNAL.md) — 当前 Codex 验证信号；PRD4 Batch 1G External Monitoring Integration fixed awaiting Canary
 - [agent-workflows/VERIFY-RESULT.md](agent-workflows/VERIFY-RESULT.md) — 最新 Canary 验收结果
 - [CODEBASE-MAP.md](CODEBASE-MAP.md) — 代码结构、路由、数据、测试、部署地图
 - [DOC-INVENTORY.md](DOC-INVENTORY.md) — 文档清单与当前/冻结/历史/候选边界

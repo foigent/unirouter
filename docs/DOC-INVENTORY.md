@@ -23,7 +23,7 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required Codex/OpenClaw workflow |
-| `docs/agent-workflows/FIX-SIGNAL.md` | Active verification signal: PRD4 Batch 1F PlungeIn Port Architecture fixed awaiting Canary |
+| `docs/agent-workflows/FIX-SIGNAL.md` | Active verification signal: PRD4 Batch 1G External Monitoring Integration fixed awaiting Canary |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Current verification result after OpenClaw runs |
 
 ## Product And Design References

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { Button, Table, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconAlertTriangle, IconBell, IconRefresh, IconServer } from '@douyinfe/semi-icons';
@@ -29,6 +30,17 @@ interface InternalStatus {
   open_warning: number;
   incidents: Incident[];
   maintenance_windows: unknown[];
+}
+
+interface RuntimeIntegration {
+  status: string;
+  url?: string;
+  health_url?: string;
+  checked_at?: string;
+  latency_ms?: number;
+  reason?: string;
+  scrape_status?: string;
+  version?: string;
 }
 
 interface RuntimeStatus {
@@ -68,10 +80,12 @@ interface RuntimeStatus {
     network: { status: string; reason?: string };
   };
   observability_integrations: {
-    prometheus: { status: string; url?: string; reason?: string };
-    grafana: { status: string; url?: string; reason?: string };
+    prometheus: RuntimeIntegration;
+    grafana: RuntimeIntegration;
   };
 }
+
+type MetricTone = 'blue' | 'green' | 'amber' | 'violet' | 'red' | 'slate';
 
 function runtimeStatusLabel(status?: string) {
   switch (status) {
@@ -95,11 +109,50 @@ function componentStatusLabel(status?: string) {
       return '已配置';
     case 'not_configured':
       return '未配置';
+    case 'stale':
+      return '陈旧';
+    case 'misconfigured':
+      return '配置异常';
     case 'unavailable':
       return '不可用';
+    case 'unknown':
+      return '未知';
     default:
       return status || '-';
   }
+}
+
+function integrationTone(status?: string): MetricTone {
+  switch (status) {
+    case 'connected':
+    case 'configured':
+      return 'green';
+    case 'stale':
+    case 'misconfigured':
+    case 'unknown':
+      return 'amber';
+    case 'unavailable':
+      return 'red';
+    default:
+      return 'slate';
+  }
+}
+
+function integrationMeta(integration?: RuntimeIntegration): ReactNode {
+  if (!integration) return '-';
+  const details = [
+    integration.scrape_status ? `scrape ${integration.scrape_status}` : '',
+    integration.version ? `v${integration.version}` : '',
+    integration.latency_ms ? `${integration.latency_ms} ms` : '',
+    integration.reason || '',
+  ].filter(Boolean);
+  if (!integration.url) return details.join(' / ') || '-';
+  return (
+    <span>
+      <a href={integration.url} target="_blank" rel="noreferrer">{integration.url}</a>
+      {details.length > 0 ? ` / ${details.join(' / ')}` : ''}
+    </span>
+  );
 }
 
 function formatBytes(value?: number) {
@@ -125,6 +178,8 @@ export default function InternalStatusPage() {
   const [loading, setLoading] = useState(true);
   const role = useAuthStore((s) => s.user?.role);
   const canViewRuntime = canReadRuntimeStatus(role);
+  const prometheusIntegration = runtimeData?.observability_integrations.prometheus;
+  const grafanaIntegration = runtimeData?.observability_integrations.grafana;
 
   const load = () => {
     setLoading(true);
@@ -171,7 +226,7 @@ export default function InternalStatusPage() {
       <PageHeader
         eyebrow="系统治理"
         title="内部状态"
-        description="事件状态保持 notification_events 聚合语义；运行时观测独立展示应用、依赖和外部监控配置。"
+        description="事件状态保持 notification_events 聚合语义；运行时观测独立展示应用、依赖和外部监控状态。"
         actions={<Button icon={<IconRefresh />} onClick={load} loading={loading}>刷新</Button>}
       />
 
@@ -183,7 +238,7 @@ export default function InternalStatusPage() {
       </div>
 
       {canViewRuntime && (
-        <Surface title="运行时观测" description="应用运行时、依赖健康、近 5 分钟流量和外部监控入口。">
+        <Surface title="运行时观测" description="应用运行时、依赖健康、近 5 分钟流量和外部监控健康。">
           <div className="ur-kpi-grid">
             <MetricTile
               label="运行状态"
@@ -231,17 +286,17 @@ export default function InternalStatusPage() {
             />
             <MetricTile
               label="Prometheus"
-              value={<StatusTag status={runtimeData?.observability_integrations.prometheus.status || 'pending'}>{componentStatusLabel(runtimeData?.observability_integrations.prometheus.status)}</StatusTag>}
+              value={<StatusTag status={prometheusIntegration?.status || 'pending'}>{componentStatusLabel(prometheusIntegration?.status)}</StatusTag>}
               icon={<IconServer />}
-              tone={runtimeData?.observability_integrations.prometheus.status === 'configured' ? 'green' : 'slate'}
-              meta={runtimeData?.observability_integrations.prometheus.url || runtimeData?.observability_integrations.prometheus.reason || '-'}
+              tone={integrationTone(prometheusIntegration?.status)}
+              meta={integrationMeta(prometheusIntegration)}
             />
             <MetricTile
               label="Grafana"
-              value={<StatusTag status={runtimeData?.observability_integrations.grafana.status || 'pending'}>{componentStatusLabel(runtimeData?.observability_integrations.grafana.status)}</StatusTag>}
+              value={<StatusTag status={grafanaIntegration?.status || 'pending'}>{componentStatusLabel(grafanaIntegration?.status)}</StatusTag>}
               icon={<IconServer />}
-              tone={runtimeData?.observability_integrations.grafana.status === 'configured' ? 'green' : 'slate'}
-              meta={runtimeData?.observability_integrations.grafana.url || runtimeData?.observability_integrations.grafana.reason || '-'}
+              tone={integrationTone(grafanaIntegration?.status)}
+              meta={integrationMeta(grafanaIntegration)}
             />
           </div>
         </Surface>

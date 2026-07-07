@@ -314,7 +314,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">GET</td><td><code>/api/v1/logs/{id}/trace</code></td><td>Request trace events</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/usage/analytics</code></td><td>Usage analytics and CSV export</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/internal-status</code></td><td>Event-derived internal status</td></tr>
-<tr><td class="method">GET</td><td><code>/api/v1/runtime/status</code></td><td>Runtime environment and observability status</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/runtime/status</code></td><td>Runtime environment, capacity, and external monitoring status</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/error-docs</code></td><td>Error documentation registry</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/wallet</code></td><td>Wallet information</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/wallet/topup</code></td><td>Top up wallet</td></tr>

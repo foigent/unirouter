@@ -59,7 +59,7 @@ const endpointGroups = [
     endpoints: [
       ['GET', '/api/v1/usage/analytics', '用量钻取聚合与 CSV 导出'],
       ['GET', '/api/v1/internal-status', '内部状态与事件历史'],
-      ['GET', '/api/v1/runtime/status', '运行时与可观测状态'],
+      ['GET', '/api/v1/runtime/status', '运行时、容量与外部监控状态'],
       ['GET', '/api/v1/error-docs', '错误码文档和 doc_url 注册表'],
     ],
   },
