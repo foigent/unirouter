@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
@@ -116,8 +118,14 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	if req.OrgID == 0 {
 		req.OrgID = 1
 	}
-	if req.Name == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "name is required"})
+	name, validationErr := normalizeAPIKeyName(req.Name)
+	if validationErr != "" {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": validationErr})
+		return
+	}
+	req.Name = name
+	if req.ProjectID < 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid project_id"})
 		return
 	}
 	if req.RPMLimit == 0 {
@@ -263,6 +271,12 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 	targetProjectKnown := false
 
 	if req.Name != nil {
+		name, validationErr := normalizeAPIKeyName(*req.Name)
+		if validationErr != "" {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": validationErr})
+			return
+		}
+		*req.Name = name
 		sets = append(sets, fmt.Sprintf("name = $%d", argIdx))
 		args = append(args, *req.Name)
 		argIdx++
@@ -283,6 +297,10 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		argIdx++
 	}
 	if req.ProjectID != nil {
+		if *req.ProjectID < 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid project_id"})
+			return
+		}
 		var orgID int64
 		var currentProjectID int64
 		err := h.db.QueryRow(r.Context(), `SELECT org_id, COALESCE(project_id, 0) FROM api_keys WHERE id = $1`, id).Scan(&orgID, &currentProjectID)
@@ -436,6 +454,27 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		map[string]interface{}{"fields": changedFields}, r.RemoteAddr)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"message": "Key updated"})
+}
+
+const apiKeyNameMaxChars = 255
+
+func normalizeAPIKeyName(name string) (string, string) {
+	normalized := strings.TrimSpace(name)
+	if normalized == "" {
+		return "", "name is required"
+	}
+	if utf8.RuneCountInString(normalized) > apiKeyNameMaxChars {
+		return "", "name must be <= 255 characters"
+	}
+	if strings.Contains(normalized, "--") || strings.ContainsAny(normalized, "<>\"'`;\\") {
+		return "", "name contains unsupported characters"
+	}
+	for _, r := range normalized {
+		if unicode.IsControl(r) {
+			return "", "name contains unsupported characters"
+		}
+	}
+	return normalized, ""
 }
 
 func (h *Handler) DisableAPIKey(w http.ResponseWriter, r *http.Request) {
