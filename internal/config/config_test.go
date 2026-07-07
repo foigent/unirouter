@@ -104,6 +104,8 @@ func TestValidate_RuntimeExposureConfig(t *testing.T) {
 		LoginRateLimitWindowSec:  60,
 		LoginRateLimitIP:         30,
 		LoginRateLimitUser:       10,
+		PrometheusURL:            "http://prometheus:9090",
+		GrafanaURL:               "https://grafana.example.com",
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -186,6 +188,18 @@ func TestValidate_InvalidRuntimeExposureConfig(t *testing.T) {
 				cfg.TraceEventSampleRate = 1.5
 			},
 		},
+		{
+			name: "invalid prometheus url",
+			mutate: func(cfg *Config) {
+				cfg.PrometheusURL = "prometheus:9090"
+			},
+		},
+		{
+			name: "invalid grafana url",
+			mutate: func(cfg *Config) {
+				cfg.GrafanaURL = "https://grafana.example.com/dashboard?orgId=1"
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -252,6 +266,13 @@ func TestLoad_RuntimeExposureEnvOverrides(t *testing.T) {
 	t.Setenv("SHUTDOWN_TIMEOUT_SECONDS", "150")
 	t.Setenv("TRACE_EVENTS_ENABLED", "false")
 	t.Setenv("TRACE_EVENT_SAMPLE_RATE", "0.25")
+	t.Setenv("RUNTIME_ENVIRONMENT", "staging")
+	t.Setenv("RUNTIME_DEPLOYMENT_MODE", "docker-compose")
+	t.Setenv("RUNTIME_DEPLOYMENT_ROLE", "canary")
+	t.Setenv("RUNTIME_VERSION", "2026.07.07")
+	t.Setenv("RUNTIME_COMMIT", "abc1234")
+	t.Setenv("PROMETHEUS_URL", "http://prometheus:9090/")
+	t.Setenv("GRAFANA_URL", "https://grafana.example.com/")
 
 	cfg, err := Load()
 	if err != nil {
@@ -281,6 +302,15 @@ func TestLoad_RuntimeExposureEnvOverrides(t *testing.T) {
 	if cfg.TraceEventSampleRate != 0.25 {
 		t.Fatalf("expected trace sample rate 0.25, got %f", cfg.TraceEventSampleRate)
 	}
+	if cfg.RuntimeEnvironment != "staging" || cfg.RuntimeDeploymentMode != "docker-compose" || cfg.RuntimeDeploymentRole != "canary" {
+		t.Fatalf("unexpected runtime metadata: env=%s mode=%s role=%s", cfg.RuntimeEnvironment, cfg.RuntimeDeploymentMode, cfg.RuntimeDeploymentRole)
+	}
+	if cfg.RuntimeVersion != "2026.07.07" || cfg.RuntimeCommit != "abc1234" {
+		t.Fatalf("unexpected runtime version metadata: version=%s commit=%s", cfg.RuntimeVersion, cfg.RuntimeCommit)
+	}
+	if cfg.PrometheusURL != "http://prometheus:9090" || cfg.GrafanaURL != "https://grafana.example.com" {
+		t.Fatalf("unexpected observability urls: prometheus=%s grafana=%s", cfg.PrometheusURL, cfg.GrafanaURL)
+	}
 }
 
 func TestLoad_Defaults(t *testing.T) {
@@ -288,7 +318,8 @@ func TestLoad_Defaults(t *testing.T) {
 	envVars := []string{
 		"LISTEN_PORT", "LOG_LEVEL", "GIN_MODE", "SHUTDOWN_TIMEOUT_SECONDS", "DB_DSN", "DB_MAX_CONNECTIONS",
 		"REDIS_ADDR", "REDIS_PASSWORD", "REDIS_DB", "JWT_SECRET", "API_KEY_HASH_SECRET", "ENCRYPTION_KEY",
-		"TRACE_EVENTS_ENABLED", "TRACE_EVENT_SAMPLE_RATE",
+		"TRACE_EVENTS_ENABLED", "TRACE_EVENT_SAMPLE_RATE", "RUNTIME_ENVIRONMENT", "RUNTIME_DEPLOYMENT_MODE",
+		"RUNTIME_DEPLOYMENT_ROLE", "RUNTIME_VERSION", "RUNTIME_COMMIT", "PROMETHEUS_URL", "GRAFANA_URL",
 		"LICENSE_PUBLIC_KEY", "LICENSE_EXPIRY_WARNING_DAYS", "MIN_FREEZE_AMOUNT", "FREEZE_SAFETY_FACTOR", "DEFAULT_KEY_RPM", "DEFAULT_KEY_QPS",
 	}
 	for _, v := range envVars {
@@ -298,19 +329,22 @@ func TestLoad_Defaults(t *testing.T) {
 	// Load() will fail because JWT_SECRET is empty and ENCRYPTION_KEY is empty
 	// But we can test that defaults are set before validation
 	cfg := &Config{
-		ListenPort:           getEnvInt("LISTEN_PORT", 8080),
-		LogLevel:             getEnvStr("LOG_LEVEL", "info"),
-		GinMode:              getEnvStr("GIN_MODE", "release"),
-		ShutdownTimeoutSecs:  getEnvInt("SHUTDOWN_TIMEOUT_SECONDS", 120),
-		DB_DSN:               getEnvStr("DB_DSN", "postgres://uniroute:password@localhost:5432/uniroute?sslmode=disable"),
-		DBMaxConnections:     getEnvInt("DB_MAX_CONNECTIONS", 25),
-		RedisAddr:            getEnvStr("REDIS_ADDR", "localhost:6379"),
-		TraceEventsEnabled:   getEnvBool("TRACE_EVENTS_ENABLED", true),
-		TraceEventSampleRate: getEnvFloat("TRACE_EVENT_SAMPLE_RATE", 1),
-		MinFreezeAmount:      getEnvInt("MIN_FREEZE_AMOUNT", 10),
-		FreezeSafetyFactor:   getEnvFloat("FREEZE_SAFETY_FACTOR", 1.5),
-		DefaultKeyRPM:        getEnvInt("DEFAULT_KEY_RPM", 60),
-		DefaultKeyQPS:        getEnvInt("DEFAULT_KEY_QPS", 10),
+		ListenPort:            getEnvInt("LISTEN_PORT", 8080),
+		LogLevel:              getEnvStr("LOG_LEVEL", "info"),
+		GinMode:               getEnvStr("GIN_MODE", "release"),
+		ShutdownTimeoutSecs:   getEnvInt("SHUTDOWN_TIMEOUT_SECONDS", 120),
+		DB_DSN:                getEnvStr("DB_DSN", "postgres://uniroute:password@localhost:5432/uniroute?sslmode=disable"),
+		DBMaxConnections:      getEnvInt("DB_MAX_CONNECTIONS", 25),
+		RedisAddr:             getEnvStr("REDIS_ADDR", "localhost:6379"),
+		TraceEventsEnabled:    getEnvBool("TRACE_EVENTS_ENABLED", true),
+		TraceEventSampleRate:  getEnvFloat("TRACE_EVENT_SAMPLE_RATE", 1),
+		RuntimeEnvironment:    getEnvStr("RUNTIME_ENVIRONMENT", "unspecified"),
+		RuntimeDeploymentMode: getEnvStr("RUNTIME_DEPLOYMENT_MODE", "single-node"),
+		RuntimeDeploymentRole: getEnvStr("RUNTIME_DEPLOYMENT_ROLE", "stable"),
+		MinFreezeAmount:       getEnvInt("MIN_FREEZE_AMOUNT", 10),
+		FreezeSafetyFactor:    getEnvFloat("FREEZE_SAFETY_FACTOR", 1.5),
+		DefaultKeyRPM:         getEnvInt("DEFAULT_KEY_RPM", 60),
+		DefaultKeyQPS:         getEnvInt("DEFAULT_KEY_QPS", 10),
 	}
 
 	if cfg.ListenPort != 8080 {
@@ -342,6 +376,9 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if !cfg.TraceEventsEnabled || cfg.TraceEventSampleRate != 1 {
 		t.Fatalf("expected trace events enabled with sample rate 1, got enabled=%v sample=%f", cfg.TraceEventsEnabled, cfg.TraceEventSampleRate)
+	}
+	if cfg.RuntimeEnvironment != "unspecified" || cfg.RuntimeDeploymentMode != "single-node" || cfg.RuntimeDeploymentRole != "stable" {
+		t.Fatalf("unexpected runtime defaults: env=%s mode=%s role=%s", cfg.RuntimeEnvironment, cfg.RuntimeDeploymentMode, cfg.RuntimeDeploymentRole)
 	}
 }
 

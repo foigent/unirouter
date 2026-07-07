@@ -45,6 +45,13 @@ type Config struct {
 	LoginRateLimitUser      int
 	TraceEventsEnabled      bool
 	TraceEventSampleRate    float64
+	RuntimeEnvironment      string
+	RuntimeDeploymentMode   string
+	RuntimeDeploymentRole   string
+	RuntimeVersion          string
+	RuntimeCommit           string
+	PrometheusURL           string
+	GrafanaURL              string
 
 	// License
 	LicensePublicKey         string
@@ -147,6 +154,12 @@ func (c *Config) Validate() error {
 	if c.TraceEventSampleRate < 0 || c.TraceEventSampleRate > 1 {
 		return fmt.Errorf("TRACE_EVENT_SAMPLE_RATE must be between 0 and 1")
 	}
+	if err := validateOptionalHTTPURL("PROMETHEUS_URL", c.PrometheusURL); err != nil {
+		return err
+	}
+	if err := validateOptionalHTTPURL("GRAFANA_URL", c.GrafanaURL); err != nil {
+		return err
+	}
 	if c.OIDCEnabled {
 		if c.OIDCIssuerURL == "" {
 			return fmt.Errorf("OIDC_ISSUER_URL is required when OIDC is enabled")
@@ -201,6 +214,13 @@ func Load() (*Config, error) {
 		LoginRateLimitUser:      getEnvInt("LOGIN_RATE_LIMIT_USER_REQUESTS", 10),
 		TraceEventsEnabled:      getEnvBool("TRACE_EVENTS_ENABLED", true),
 		TraceEventSampleRate:    getEnvFloat("TRACE_EVENT_SAMPLE_RATE", 1),
+		RuntimeEnvironment:      getEnvStr("RUNTIME_ENVIRONMENT", "unspecified"),
+		RuntimeDeploymentMode:   getEnvStr("RUNTIME_DEPLOYMENT_MODE", "single-node"),
+		RuntimeDeploymentRole:   getEnvStr("RUNTIME_DEPLOYMENT_ROLE", "stable"),
+		RuntimeVersion:          getEnvStr("RUNTIME_VERSION", ""),
+		RuntimeCommit:           getEnvStr("RUNTIME_COMMIT", ""),
+		PrometheusURL:           strings.TrimRight(getEnvStr("PROMETHEUS_URL", ""), "/"),
+		GrafanaURL:              strings.TrimRight(getEnvStr("GRAFANA_URL", ""), "/"),
 
 		LicensePublicKey:         getEnvStr("LICENSE_PUBLIC_KEY", ""),
 		LicenseExpiryWarningDays: getEnvInt("LICENSE_EXPIRY_WARNING_DAYS", 30),
@@ -285,6 +305,23 @@ func splitCSVAllowEmpty(value string) []string {
 		out = append(out, item)
 	}
 	return out
+}
+
+func validateOptionalHTTPURL(name, raw string) error {
+	if raw == "" {
+		return nil
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("%s must be a valid http or https URL", name)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("%s must use http or https", name)
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("%s must not include query string or fragment", name)
+	}
+	return nil
 }
 
 func getEnvStr(key, fallback string) string {

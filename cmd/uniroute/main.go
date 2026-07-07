@@ -101,6 +101,16 @@ func main() {
 	}
 	adminHandler.SetLicenseVerifier(licenseVerifier)
 	adminHandler.SetEventService(eventSvc)
+	adminHandler.SetRedisClient(redisClient.Client)
+	adminHandler.SetRuntimeStatusOptions(admin.RuntimeStatusOptions{
+		Environment:    cfg.RuntimeEnvironment,
+		DeploymentMode: cfg.RuntimeDeploymentMode,
+		DeploymentRole: cfg.RuntimeDeploymentRole,
+		Version:        cfg.RuntimeVersion,
+		Commit:         cfg.RuntimeCommit,
+		PrometheusURL:  cfg.PrometheusURL,
+		GrafanaURL:     cfg.GrafanaURL,
+	})
 	oidcService, err := oidc.NewService(oidc.Config{
 		Enabled:            cfg.OIDCEnabled,
 		IssuerURL:          cfg.OIDCIssuerURL,
@@ -304,6 +314,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">GET</td><td><code>/api/v1/logs/{id}/trace</code></td><td>Request trace events</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/usage/analytics</code></td><td>Usage analytics and CSV export</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/internal-status</code></td><td>Event-derived internal status</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/runtime/status</code></td><td>Runtime environment and observability status</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/error-docs</code></td><td>Error documentation registry</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/wallet</code></td><td>Wallet information</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/wallet/topup</code></td><td>Top up wallet</td></tr>
@@ -395,6 +406,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("GET /api/v1/dashboard/stats", usageRoute(adminHandler.DashboardStats))
 	mux.Handle("GET /api/v1/usage/analytics", usageRoute(adminHandler.UsageAnalytics))
 	mux.Handle("GET /api/v1/internal-status", notificationReadRoute(adminHandler.InternalStatus))
+	mux.Handle("GET /api/v1/runtime/status", roleRoute(adminHandler.RuntimeStatus, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin))
 	mux.Handle("GET /api/v1/error-docs", usageRoute(adminHandler.ListErrorDocs))
 
 	mux.Handle("GET /api/v1/model-prices", orgAdminRoute(adminHandler.ListModelPrices))

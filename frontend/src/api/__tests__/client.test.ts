@@ -356,9 +356,13 @@ describe('API Client', () => {
       await api.getInternalStatus({ project_id: 7 })
       expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/internal-status?project_id=7')
 
+      mockJsonResponse({ status: 'operational' })
+      await api.getRuntimeStatus()
+      expect(mockFetch.mock.calls[1][0]).toBe('/api/v1/runtime/status')
+
       mockJsonResponse({ data: [] })
       await api.getErrorDocs()
-      expect(mockFetch.mock.calls[1][0]).toBe('/api/v1/error-docs')
+      expect(mockFetch.mock.calls[2][0]).toBe('/api/v1/error-docs')
     })
   })
 

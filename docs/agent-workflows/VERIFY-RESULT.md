@@ -1,55 +1,52 @@
-# VERIFY-RESULT.md - PRD4 Batch 1C Flow/Event/Trace Foundation
+# VERIFY-RESULT.md - PRD4 Batch 1D Runtime Observability Foundation
 
 **Date:** 2026-07-07
 **Signal:** `docs/agent-workflows/FIX-SIGNAL.md`
-**Issue:** `PRD4-TRACE-001`
-**Matrix Row:** `P4-F04`
-**Conclusion: ✅ PASS (10/10)**
+**Issue:** `PRD4-RUNTIME-001`
+**Matrix Row:** `P4-F06`
+**Conclusion: ✅ PASS (8/8)**
 
 ## Verification Summary
 
 | # | Acceptance Criteria | Result | Evidence |
 |---|---------------------|--------|----------|
-| 1 | Migration adds and rolls back `request_trace_events` without destructive data operations | ✅ PASS | `migrations/000017_prd4_request_trace_events.up.sql` creates table with CHECK constraints and 3 indexes; `.down.sql` drops indexes then table — no destructive ALTER on existing tables |
-| 2 | Trace recording captures gateway, billing, routing, provider, settle, and call-log milestones for chat and embeddings | ✅ PASS | `internal/gateway/relay.go` records 15+ distinct event types: `gateway.request.accepted`, `billing.freeze.*`, `routing.*`, `provider.*`, `billing.settle.*`, `logging.call_log.recorded` — for both chat (L257-957) and embeddings (L1053-1213) |
-| 3 | Trace inserts are best-effort and cannot fail the gateway request | ✅ PASS | `internal/gateway/trace.go:98-103` — INSERT error is caught and logged with `logger.Warn()`, no error returned to caller; `recordTraceEvent` returns void |
-| 4 | Metadata is allowlisted and does not persist sensitive fields | ✅ PASS | `trace.go:14-31` — `traceMetadataAllowlist` contains only safe metrics (billing_status, tokens, cost, etc.); `sanitizeTraceMetadata()` drops non-allowlisted keys; string values truncated to 256 chars; no API keys, request/response bodies, or auth headers in allowlist |
-| 5 | `GET /api/v1/logs/{id}/trace` applies project usage RBAC and filters by request_id, org_id, project_id | ✅ PASS | `log_handlers.go:226-265` — loads call_log to get request_id/org_id/project_id, calls `canReadProjectUsage()` for RBAC, then queries `request_trace_events WHERE request_id=$1 AND org_id=$2 AND COALESCE(project_id,0)=$3` |
-| 6 | Logs detail UI can load and render trace events | ✅ PASS | `LogsPage.tsx:145-146,223-233,651-660` — `traceEvents` state, `api.getLogTrace(record.id)` call, severity color mapping, event list rendering with stage/severity tags |
-| 7 | Backend route registration, OpenAPI, frontend API Docs, and route parity tests are synchronized | ✅ PASS | `cmd/uniroute/main.go:394` registers `GET /api/v1/logs/{id}/trace`; `docs/tech-ref/05-openapi-spec.yaml:343` documents it; `frontend/src/api/client.ts:147` has `getLogTrace`; route parity tests pass (TestAdminRoutesRegisteredForFrontendClient, TestOpenAPISpecCoversRegisteredRoutes, TestFrontendDocsPageCoversRegisteredRoutes) |
-| 8 | Trace enablement and sample rate are configurable and validated | ✅ PASS | `config.go:202-203` reads `TRACE_EVENTS_ENABLED` (default true) and `TRACE_EVENT_SAMPLE_RATE` (default 1); `config.go:148` validates sample rate 0..1; `config_test.go:253-254` tests env override; `.env.example:70-71` and `docker-compose.yml:57-58` include both vars; `deployment-runbook.md:71-72` documents them |
-| 9 | Full Go/frontend tests, frontend build, and `git diff --check` pass | ✅ PASS | `go test ./...` — 22 packages PASS; `npm --prefix frontend test -- --run` — 22 files / 110 tests PASS; `npm --prefix frontend run build` — built in 9.19s; `git diff --check` — clean |
-| 10 | Docs consistently show Batch 1C as fixed awaiting Canary, not accepted | ✅ PASS | All 8 doc files show "Fixed awaiting Canary" for Batch 1C: OPEN-ISSUES.md, CURRENT-STATUS.md, PRD4-ACCEPTANCE-MATRIX.md, PROJECT-HANDOFF.md, DOC-INVENTORY.md, README.md, CODEBASE-MAP.md, FIX-SIGNAL.md |
+| 1 | `GET /api/v1/runtime/status` registered, documented, route parity, restricted to platform/org/billing | ✅ PASS | `cmd/uniroute/main.go:409` — `roleRoute(adminHandler.RuntimeStatus, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin)`; `route_parity_test.go:58,157`; `05-openapi-spec.yaml:393`; `main.go:317` docs table |
+| 2 | `GET /api/v1/internal-status` remains event-derived, not repurposed | ✅ PASS | `main.go:408` — `notificationReadRoute(adminHandler.InternalStatus)` — separate handler, separate route, no runtime metrics injected |
+| 3 | Runtime response includes environment metadata, uptime, Go runtime, app memory, DB/Redis health, traffic summary, Prometheus/Grafana state | ✅ PASS | `runtime_status_handlers.go:99-128` — `RuntimeStatus()` returns `runtime_environment` (service/env/mode/role/version/goos/goarch/cpu/goroutines/uptime), `capacity_health` (app_memory/database/redis/traffic/cpu/disk/network), `observability_integrations` (prometheus/grafana) |
+| 4 | Missing host telemetry explicit as unavailable; no fabricated CPU/disk/network | ✅ PASS | `runtime_status_handlers.go:114-116` — `CPU: unavailableRuntimeMetric("telemetry_source_not_configured")`, same for Disk and Network |
+| 5 | Frontend `/status` renders runtime for authorized operators, skips restricted endpoint for project-scoped roles | ✅ PASS | `InternalStatusPage.tsx:127` — `canViewRuntime = canReadRuntimeStatus(role)`; `navigation.tsx:60-62` — `canReadRuntimeStatus` returns true only for org_admin or billing roles; L140 — `api.getRuntimeStatus()` called only `if (canViewRuntime)` |
+| 6 | Prometheus/Grafana URLs validated and surfaced as configured/not configured | ✅ PASS | `config.go:157-160` — `validateOptionalHTTPURL("PROMETHEUS_URL", ...)` and `validateOptionalHTTPURL("GRAFANA_URL", ...)`; `runtime_status_handlers.go:269-273` — `runtimeIntegration()` returns `"configured"` with URL or `"not_configured"` with reason |
+| 7 | Backend/frontend tests, build, git diff --check pass | ✅ PASS | `go test ./...` — 22 packages PASS; frontend focused 39 tests PASS; full frontend 110 tests PASS; build 7.80s; `git diff --check` clean |
+| 8 | Docs show Batch 1C Canary/Sentinel complete, Batch 1D fixed awaiting Canary | ✅ PASS | All 8 doc files consistent: CURRENT-STATUS.md records Batch 1C completion after `4f62e34`/PR#86; OPEN-ISSUES.md, PRD4-ACCEPTANCE-MATRIX.md, PROJECT-HANDOFF.md, DOC-INVENTORY.md, README.md, CODEBASE-MAP.md, FIX-SIGNAL.md all show Batch 1D "Fixed awaiting Canary" |
 
 ## Detailed Verification
 
-### Trace Event Coverage (AC2)
-Chat completions relay records:
-- `gateway.request.accepted` (L257)
-- `billing.freeze.failed/rejected/succeeded` (L273-297)
-- `routing.no_route/route_selected` (L306-321)
-- `provider.key_decrypt_failed/adapter_unknown/request_build_failed/request_failed/response_rejected/response_accepted` (L328-409)
-- `billing.settle.failed/succeeded` (L468-493)
-- `logging.call_log.recorded` (L957)
+### RBAC (AC1)
+Backend: `main.go:409` — `roleRoute(..., auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin)` — three admin roles only.
+Frontend: `navigation.tsx:60-62` — `canReadRuntimeStatus` checks `isOrgAdminRole || isBillingRole`. Project-scoped roles never call the endpoint.
 
-Embeddings relay records the same lifecycle (L1053-1213).
+### Internal Status Separation (AC2)
+- `main.go:408`: `GET /api/v1/internal-status` → `notificationReadRoute(adminHandler.InternalStatus)` — event-derived
+- `main.go:409`: `GET /api/v1/runtime/status` → `roleRoute(adminHandler.RuntimeStatus, ...)` — runtime observability
+- Separate handlers, separate routes, no cross-contamination.
 
-### Best-Effort Safety (AC3)
-```go
-// trace.go:98-103
-if _, err := relay.db.Exec(ctx, ...); err != nil {
-    logger.New(...).Warn("Failed to record trace event %s: %v", eventType, err)
-}
+### Runtime Response Structure (AC3)
 ```
-No error propagation. Gateway request continues normally.
+runtime_environment: service, environment, deployment_mode, deployment_role, version, commit, go_version, goos, goarch, num_cpu, goroutines, uptime_seconds
+capacity_health: app_memory (alloc/sys/heap), database (status/latency), redis (status/latency), traffic (requests/errors/tokens/cost/p95/p99), cpu/disk/network (unavailable)
+observability_integrations: prometheus (status/url/reason), grafana (status/url/reason)
+```
 
-### Metadata Sanitization (AC4)
-Allowlist contains only: billing_status, charged_cost_cents, completion_tokens, cost_cents, error_code, estimated_tokens, failure_kind, freeze_amount_cents, is_stream, mapped_model, prompt_tokens, route_count, route_index, settle_cancelled, stream, total_tokens, ttft_ms, usage_confidence, usage_source.
+### Graceful Degradation (AC3/AC4)
+- DB probe fails → `database: {status: "unavailable", reason: "query_failed"}`, overall status = "degraded"
+- Redis probe fails → `redis: {status: "unavailable", reason: "ping_failed"}`, overall status = "warning"
+- Traffic query fails → `traffic: {status: "unavailable", reason: "query_failed"}`, overall status = "warning"
+- CPU/disk/network → always `unavailable` with `telemetry_source_not_configured`
 
-Not in allowlist: API keys, request bodies, response bodies, authorization headers, prompt plaintext, response plaintext.
-
-### Deterministic Sampling (AC8)
-`shouldRecordTraceEvent()` uses FNV-32a hash of `request_id` modulo 1000000, compared against sample rate. Same request_id always gets same sampling decision, ensuring complete event sequences for sampled requests.
+### Config Validation (AC6)
+- `config.go:157`: `validateOptionalHTTPURL("PROMETHEUS_URL", c.PrometheusURL)` — rejects non-HTTP(S) URLs
+- `config.go:160`: `validateOptionalHTTPURL("GRAFANA_URL", c.GrafanaURL)` — same
+- `.env.example`, `docker-compose.yml`, `deployment-runbook.md` all document the new vars
 
 ## New Issues Found
 
@@ -57,4 +54,4 @@ None.
 
 ## Verdict
 
-**PASS.** All 10 acceptance criteria verified with code evidence. No new issues found. Batch 1C is ready for Sentinel to merge.
+**PASS.** All 8 acceptance criteria verified with code evidence. No new issues found. Batch 1D is ready for Sentinel to merge.

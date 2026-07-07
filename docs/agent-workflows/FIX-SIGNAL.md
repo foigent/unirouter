@@ -1,81 +1,78 @@
-# FIX-SIGNAL.md - PRD4 Batch 1C Flow/Event/Trace Foundation
+# FIX-SIGNAL.md - PRD4 Batch 1D Runtime Observability Foundation
 
 **Date:** 2026-07-07
 **Status:** Fixed awaiting Canary
-**Issue:** `PRD4-TRACE-001`
-**Matrix Row:** `P4-F04`
+**Issue:** `PRD4-RUNTIME-001`
+**Matrix Row:** `P4-F06`
 
 ## Verification Request
 
-Please verify PRD4 Batch 1C: Flow/Event/Trace Foundation first slice.
+Please verify PRD4 Batch 1D: Runtime Observability Foundation.
 
-This batch adds a metadata-only request trace/event foundation so a call log can
-be inspected across gateway, billing, routing, provider, and call-log recording
-milestones. It does not store prompt plaintext, response plaintext, upstream
-provider keys, request bodies, response bodies, or authorization headers.
+This batch keeps the existing Internal Status event semantics intact and adds a
+separate runtime observability surface for platform, org, and billing operators.
+It exposes app runtime metadata, process memory, DB/Redis health, recent traffic
+summary, and configured Prometheus/Grafana entry points without fabricating host
+CPU, disk, or network telemetry.
 
 ## Scope To Verify
 
-Data/config:
+Backend/config:
 
-- Adds migration `000017_prd4_request_trace_events` with
-  `request_trace_events`, request/org/project/key/owner/type snapshots, event
-  stage/severity/model/provider/channel/status/latency, JSONB metadata, and
-  request/org/project indexes.
-- Adds `TRACE_EVENTS_ENABLED` and `TRACE_EVENT_SAMPLE_RATE` config, env example,
-  compose, and deployment-runbook entries. Sampling is deterministic by
-  `request_id` so sampled requests keep complete event sequences.
-
-Backend:
-
-- Records gateway accepted, billing freeze, routing, provider response/failure,
-  billing settle, and call-log recorded events for chat completions and
-  embeddings.
-- Trace recording is best-effort: insert failures are logged and do not block
-  the gateway request.
-- Sanitizes trace metadata with an allowlist; sensitive fields such as API keys
-  and request/response bodies are not persisted.
-- Adds `GET /api/v1/logs/{id}/trace`, using the call-log id to load
-  `request_id/org_id/project_id` and reusing project usage RBAC before reading
-  trace events.
+- Adds `GET /api/v1/runtime/status` behind platform/org/billing roles only.
+- Wires Redis into admin runtime status for read-only health checks.
+- Adds runtime metadata config: `RUNTIME_ENVIRONMENT`,
+  `RUNTIME_DEPLOYMENT_MODE`, `RUNTIME_DEPLOYMENT_ROLE`, `RUNTIME_VERSION`,
+  and `RUNTIME_COMMIT`.
+- Adds external monitoring deep-link config: `PROMETHEUS_URL` and
+  `GRAFANA_URL`, validated as optional HTTP(S) URLs.
+- Returns structured `runtime_environment`, `capacity_health`, and
+  `observability_integrations` sections.
+- Returns partial diagnostic status instead of failing the whole endpoint when
+  DB/Redis/traffic checks are unavailable.
+- Marks CPU, disk, and network telemetry as `unavailable` with
+  `telemetry_source_not_configured` until a telemetry source of truth exists.
 
 Frontend/API contract:
 
-- Adds `api.getLogTrace(id)`.
-- Shows request path events in the existing Logs detail inspector.
+- Adds `api.getRuntimeStatus()`.
+- Keeps `/status` as the operator entry point while separating event status
+  cards from runtime observability cards.
+- Project-scoped roles can still view event-derived status, but do not request
+  the restricted runtime endpoint.
 - Updates backend `/docs`, frontend API Docs, OpenAPI, and route parity tests.
 
 Docs/status:
 
-- Marks `P4-F04` / `PRD4-TRACE-001` fixed awaiting Canary.
-- Keeps PRD2 frozen and PRD3 complete.
-- Keeps Batch 1B as Canary/Sentinel complete, with Atlas not reported.
+- Records User-reported Batch 1C Canary/Sentinel completion after `4f62e34` /
+  PR #86.
+- Marks `P4-F06` / `PRD4-RUNTIME-001` fixed awaiting Canary.
+- Keeps `P4-F07` external monitoring integration as planned because this batch
+  adds configuration/deep-link state only, not Prometheus/Grafana active probes
+  or embedded dashboards.
 
 ## Non-Scope
 
 Do not expect this batch to implement:
 
-- OpenTelemetry ingestion/export, distributed span semantics, or third-party
-  tracing backends.
-- Runtime Status Center CPU/memory/network panels.
-- Prometheus/Grafana integration status.
+- Host CPU utilization, disk usage, network throughput, node exporter, cloud
+  API, or cluster inventory collection.
+- Prometheus/Grafana active health probes, datasource validation, screenshots,
+  or embedded dashboards.
+- OpenTelemetry ingestion/export or distributed span semantics.
 - Full PlungeIn runtime plugin framework.
-- Scheduler V2, quota enforcement, or capacity-aware dispatch.
-- Direct global request-id search across all tenants.
-- Trace retention cleanup, archival, or production-scale storage policy.
-- Prompt/response plaintext storage.
-
-Trace retention/sampling hardening remains a follow-up P4-F12/P4-F06 concern.
-This batch provides a basic enable switch and deterministic sample rate only.
+- Metric-alert-to-notification routing.
+- Production-scale trace retention, archival, or partitioning.
+- Scheduler V2 or capacity-aware dispatch.
 
 ## Required Verification Commands
 
 ```bash
-rg -n "request_trace_events|TRACE_EVENTS_ENABLED|TRACE_EVENT_SAMPLE_RATE|GetRequestTrace|getLogTrace|gateway.request.accepted|logging.call_log.recorded" migrations internal cmd frontend/src docs/tech-ref/05-openapi-spec.yaml docs/ops/deployment-runbook.md .env.example docker-compose.yml
-rg -n "PRD4-TRACE-001|P4-F04|Batch 1C|Flow/Event/Trace" docs/agent-workflows/FIX-SIGNAL.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/PROJECT-HANDOFF.md docs/DOC-INVENTORY.md docs/README.md docs/CODEBASE-MAP.md
-go test ./internal/config ./internal/gateway ./internal/admin ./cmd/uniroute -count=1
+rg -n "RuntimeStatus|runtime/status|RUNTIME_ENVIRONMENT|RUNTIME_DEPLOYMENT|PROMETHEUS_URL|GRAFANA_URL|telemetry_source_not_configured" internal cmd frontend/src docs/tech-ref/05-openapi-spec.yaml docs/ops/deployment-runbook.md .env.example docker-compose.yml
+rg -n "PRD4-RUNTIME-001|PRD4-INFRA-001|P4-F06|Batch 1D|Runtime Observability|runtime/status" docs/agent-workflows/FIX-SIGNAL.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/PROJECT-HANDOFF.md docs/DOC-INVENTORY.md docs/README.md docs/CODEBASE-MAP.md
+go test ./internal/config ./internal/admin ./cmd/uniroute -count=1
 go test ./...
-npm --prefix frontend test -- --run LogsPage client ApiDocsPage
+npm --prefix frontend test -- --run InternalStatusPage client ApiDocsPage navigation
 npm --prefix frontend test -- --run
 npm --prefix frontend run build
 git diff --check
@@ -83,18 +80,21 @@ git diff --check
 
 ## Acceptance Criteria
 
-1. Migration adds and rolls back `request_trace_events` without destructive
-   data operations.
-2. Trace recording captures gateway, billing, routing, provider, settle, and
-   call-log milestones for chat and embeddings.
-3. Trace inserts are best-effort and cannot fail the gateway request.
-4. Metadata is allowlisted and does not persist prompt/response plaintext,
-   provider keys, authorization headers, request bodies, or response bodies.
-5. `GET /api/v1/logs/{id}/trace` applies the same project usage RBAC boundary
-   as log detail and filters events by `request_id`, `org_id`, and `project_id`.
-6. Logs detail UI can load and render trace events for the selected call log.
-7. Backend route registration, OpenAPI, frontend API Docs, and route parity
-   tests are synchronized.
-8. Trace enablement and sample rate are configurable and validated.
-9. Full Go/frontend tests, frontend build, and `git diff --check` pass.
-10. Docs consistently show Batch 1C as fixed awaiting Canary, not accepted.
+1. `GET /api/v1/runtime/status` is registered, documented, covered by route
+   parity, and restricted to platform/org/billing operators.
+2. Current `GET /api/v1/internal-status` remains event-derived and is not
+   repurposed for infrastructure metrics.
+3. Runtime response includes environment metadata, uptime, Go runtime summary,
+   app memory, DB/Redis health, recent traffic summary, and Prometheus/Grafana
+   configuration state.
+4. Missing host telemetry is explicit as unavailable; CPU/disk/network values
+   are not fabricated.
+5. The frontend `/status` page renders runtime observability for authorized
+   operators and avoids calling the restricted endpoint for project-scoped
+   roles.
+6. Optional Prometheus/Grafana URLs are validated and surfaced as configured or
+   not configured.
+7. Backend config/admin/cmd tests, frontend focused tests, full Go/frontend
+   tests, frontend build, and `git diff --check` pass.
+8. Docs consistently show Batch 1C as Canary/Sentinel complete per User report
+   and Batch 1D as fixed awaiting Canary.
