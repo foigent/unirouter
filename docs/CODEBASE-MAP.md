@@ -64,6 +64,14 @@ Contract guard: `cmd/uniroute/route_parity_test.go` checks frontend client-requi
 
 OpenAPI snapshot: `docs/tech-ref/05-openapi-spec.yaml` is the current route-level contract for active UniRouter routes. Schema detail remains intentionally generic where no stable typed response contract has been defined.
 
+## Smoke And Evidence Scripts
+
+| Script | Responsibility |
+|--------|----------------|
+| `scripts/prd4-real-upstream-smoke.sh` | PRD4 Batch 1H wrapper for real upstream evidence. `--preflight` is safe without credentials and does not mutate the database or call providers |
+| `scripts/prd4_real_upstream_seed.go` | Guarded target-evidence fixture seed for OpenRouter-compatible and direct Anthropic-native channels, model governance rows, wallet, and API key |
+| `scripts/prd4_real_upstream_smoke.mjs` | Real-provider gateway runner that checks non-stream/stream calls, call logs, billing settlement, trace events, and sanitized JSON evidence |
+
 ## Frontend Map
 
 | Area | Path |

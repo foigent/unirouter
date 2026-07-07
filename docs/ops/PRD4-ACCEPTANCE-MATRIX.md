@@ -1,7 +1,7 @@
 # PRD4 Acceptance Matrix
 
 > Date: 2026-07-07
-> Status: PRD4 Batch 0 scope baseline accepted per User report; PRD4 Preflight Hardening passed Canary 6/6; Batch 1A Auth UX hardening passed Canary 6/6 and User reported Sentinel completed; Batch 1B Usage And Cost Attribution passed Canary and User reported Sentinel completed; Batch 1C Flow/Event/Trace Foundation passed Canary and User reported Sentinel completed; Batch 1D Runtime Observability Foundation passed Canary and User reported Sentinel completed; Batch 1E Quota Vocabulary And Key Quota Foundation passed Canary and User reported Sentinel completed; Batch 1F PlungeIn Port Architecture passed Canary and Sentinel merge is reflected by `87bfc17` / PR #89; Batch 1G External Monitoring Integration is fixed awaiting Canary.
+> Status: PRD4 Batch 0 scope baseline accepted per User report; PRD4 Preflight Hardening passed Canary 6/6; Batch 1A Auth UX hardening passed Canary 6/6 and User reported Sentinel completed; Batch 1B Usage And Cost Attribution passed Canary and User reported Sentinel completed; Batch 1C Flow/Event/Trace Foundation passed Canary and User reported Sentinel completed; Batch 1D Runtime Observability Foundation passed Canary and User reported Sentinel completed; Batch 1E Quota Vocabulary And Key Quota Foundation passed Canary and User reported Sentinel completed; Batch 1F PlungeIn Port Architecture passed Canary and Sentinel merge is reflected by `87bfc17` / PR #89; Batch 1G External Monitoring Integration passed Canary 9/9 and Sentinel merge is reflected by `bb291a4` / PR #90; Batch 1H Real Upstream Evidence Harness is fixed awaiting Canary.
 > Source: `docs/PRD-Phase4.md`, `docs/planning/PRD4-BACKLOG.md`, current
 > PRD2/PRD3 evidence boundaries, and User PRD4 scope decisions.
 
@@ -33,8 +33,8 @@ actual result, and rollback or cleanup note.
 | P4-F04 | Flow/Event/Trace Foundation | Canary passed | One request can be investigated across gateway, billing, routing, provider, call logs, and audit metadata | Request-path E2E by `request_id`, redaction negative checks | Batch 1C adds metadata-only `request_trace_events`, trace sampling config, gateway/billing/routing/provider/call-log events for chat and embeddings, `GET /api/v1/logs/{id}/trace` with project usage RBAC, and Logs detail rendering. User reported Canary/Sentinel completed after `4f62e34` / PR #86. No OpenTelemetry, Runtime Status Center, Prometheus/Grafana integration status, direct global request-id lookup, retention cleanup, or prompt/response plaintext |
 | P4-F05 | PlungeIn Port Architecture | Canary passed | Observe/Act/Enrich/Decide/Mutate ports are documented; PRD4 only allows observation-first ports | ADR review, docs consistency, later port tests if code exists | Batch 1F accepts ADR 0001 for PRD4 scope and adds `docs/tech-ref/22-prd4-plungein-port-contract.md`. It is docs-only: no runtime plugin loading, manifest, sandbox, marketplace, third-party installation, or mutation of auth/billing/routing/wallet/settlement/provider dispatch. Canary PASS 8/8 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge is reflected by `87bfc17` / PR #89 |
 | P4-F06 | Status Center And Runtime Observability | Canary passed | Event Status, Runtime Environment, Capacity Health, and Observability Integrations are separate surfaces; stale/missing telemetry is explicit | Backend/frontend tests, RBAC tests, local runtime smoke | Batch 1D adds `GET /api/v1/runtime/status`, runtime metadata config, app memory, DB/Redis health, recent traffic summary, and same-page Runtime Observability cards while preserving event-derived Internal Status semantics. CPU/disk/network telemetry is explicit unavailable until a source of truth exists. User reported Canary/Sentinel completed after `349ac75` / PR #87; Atlas deployment not reported |
-| P4-F07 | External Monitoring Integration | Fixed awaiting Canary | Prometheus/Grafana state is shown as connected/stale/misconfigured/unavailable/not_configured; deep links remain configurable; monitoring failures do not break the main app | Backend httptest probes, frontend status rendering tests, config/docs grep, broad Go/frontend regression | Batch 1G actively probes configured `PROMETHEUS_URL` and `GRAFANA_URL` from `GET /api/v1/runtime/status`: Prometheus `/-/ready` plus `up{job="unirouter"}`, Grafana `/api/health`, latency, reason, scrape status, version, and external links. It does not embed dashboards, validate Grafana datasources, add metrics auth, or implement a generic monitoring connector framework |
-| P4-F08 | Real Upstream Evidence Track | Planned | OpenRouter-compatible and direct Anthropic-native flows have target evidence for non-stream and stream where supported | Approved credentials, guarded smoke scripts, call log/billing evidence | Credential-gated |
+| P4-F07 | External Monitoring Integration | Canary passed | Prometheus/Grafana state is shown as connected/stale/misconfigured/unavailable/not_configured; deep links remain configurable; monitoring failures do not break the main app | Backend httptest probes, frontend status rendering tests, config/docs grep, broad Go/frontend regression | Batch 1G actively probes configured `PROMETHEUS_URL` and `GRAFANA_URL` from `GET /api/v1/runtime/status`: Prometheus `/-/ready` plus `up{job="unirouter"}`, Grafana `/api/health`, latency, reason, scrape status, version, and external links. Canary PASS 9/9 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge is reflected by `bb291a4` / PR #90. It does not embed dashboards, validate Grafana datasources, add metrics auth, or implement a generic monitoring connector framework |
+| P4-F08 | Real Upstream Evidence Track | Fixed awaiting Canary | OpenRouter-compatible and direct Anthropic-native flows have target evidence for non-stream and stream where supported | Approved credentials, guarded smoke scripts, call log/billing evidence | Batch 1H adds the guarded evidence harness, preflight, seed, runner, and tech reference. It does not claim real upstream E2E acceptance or Production verified status without approved target credentials and a successful real-provider run |
 | P4-F09 | Real SSO Evidence Track | Planned | Real Logto or approved enterprise OIDC browser login passes with claim mapping and audit evidence | Approved IdP client, browser smoke, audit/log redaction check | Logto remains external/optional in PRD4 |
 | P4-F10 | Auth UX Hardening | Canary passed | Password inputs support hidden-by-default visibility toggle with accessible controls | Frontend tests, build, visual smoke if needed | Batch 1A adds shared `PasswordField` for login, change-password, and admin user password fields; no auth semantic changes. Canary PASS 6/6; User reported Sentinel completed after `620794b` / PR #84; Atlas deployment not reported |
 | P4-F11 | Production Evidence Promotion | Planned | License, webhook, upstream, SSO, and selected ops rows only move to Production verified with target evidence | Evidence files under `docs/ops/evidence/`, matrix/status updates | Local-only evidence is not enough |
@@ -202,3 +202,29 @@ No embedded Prometheus/Grafana dashboard, Grafana datasource validation, new
 metrics authentication strategy, OpenTelemetry export, node exporter/cloud host
 telemetry collector, cluster inventory, generic monitoring connector framework,
 or PRD5 runtime plugin platform is expected for Batch 1G.
+
+## Batch 1H Verification
+
+PRD4 Batch 1H verifies the Real Upstream Evidence Harness and its guardrails:
+
+```bash
+rg -n "prd4-real-upstream-smoke|prd4_real_upstream_seed|prd4_real_upstream_smoke|OPENROUTER_MODEL|ANTHROPIC_MODEL|approved-target-real-upstream|PRD4 Batch 1H|P4-F08|PRD4-UPSTREAM-001" scripts docs/tech-ref/23-prd4-real-upstream-evidence.md docs/agent-workflows/FIX-SIGNAL.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/PRD-Phase4.md docs/PROJECT-HANDOFF.md docs/DOC-INVENTORY.md docs/README.md docs/tech-ref/README.md docs/CODEBASE-MAP.md
+scripts/prd4-real-upstream-smoke.sh --preflight
+node --check scripts/prd4_real_upstream_smoke.mjs
+go test ./internal/adapters ./internal/gateway ./internal/admin ./cmd/uniroute -count=1
+go test ./... -count=1
+npm --prefix frontend test -- --run
+npm --prefix frontend run build
+git diff --check
+```
+
+Canary should not run real-provider mode unless the target environment supplies
+approved `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `ANTHROPIC_API_KEY`,
+`ANTHROPIC_MODEL`, matching backend encryption/API-key-hash secrets, and
+`UNIROUTE_PRD4_UPSTREAM_ALLOW_MUTATION=approved-target-real-upstream`.
+
+Batch 1H acceptance is limited to harness correctness, explicit mutation
+guardrails, safe preflight behavior, evidence redaction, and documentation
+consistency. `P4-F08` remains below `E2E accepted` until both OpenRouter-
+compatible and direct Anthropic-native real-provider non-stream/stream checks
+pass in an approved target environment.
