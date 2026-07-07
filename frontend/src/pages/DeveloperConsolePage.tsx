@@ -89,6 +89,27 @@ interface CallLog {
   created_at: string;
 }
 
+interface UsageAnalyticsRow {
+  key: string;
+  total_requests: number;
+  success_requests: number;
+  failed_requests: number;
+  total_tokens: number;
+  cost_cents: number;
+  avg_latency_ms: number;
+  estimated_ratio: number;
+}
+
+interface UsageAnalyticsSummary {
+  total_requests: number;
+  success_requests: number;
+  failed_requests: number;
+  total_tokens: number;
+  cost_cents: number;
+  avg_latency_ms: number;
+  estimated_ratio: number;
+}
+
 function splitCSV(value?: string | string[] | null) {
   if (Array.isArray(value)) {
     return value
@@ -134,6 +155,8 @@ export default function DeveloperConsolePage() {
   const [models, setModels] = useState<CatalogModel[]>([]);
   const [logs, setLogs] = useState<CallLog[]>([]);
   const [logTotal, setLogTotal] = useState(0);
+  const [usageSummary, setUsageSummary] = useState<UsageAnalyticsSummary | null>(null);
+  const [usageByModel, setUsageByModel] = useState<UsageAnalyticsRow[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const [dataLoading, setDataLoading] = useState(false);
   const [showKeySheet, setShowKeySheet] = useState(false);
@@ -182,6 +205,16 @@ export default function DeveloperConsolePage() {
   -d '{"model":"${sampleModel}","messages":[{"role":"user","content":"Hello"}]}'`;
 
   const usageSnapshot = useMemo(() => {
+    if (usageSummary) {
+      return {
+        requestCount: usageSummary.total_requests || 0,
+        totalTokens: usageSummary.total_tokens || 0,
+        totalCost: usageSummary.cost_cents || 0,
+        errorRate: usageSummary.total_requests ? (usageSummary.failed_requests || 0) / usageSummary.total_requests * 100 : 0,
+        avgLatency: usageSummary.avg_latency_ms || 0,
+        sourceLabel: '我的 Key 聚合',
+      };
+    }
     const requestCount = logTotal;
     const totalTokens = logs.reduce((sum, log) => sum + (log.total_tokens || 0), 0);
     const totalCost = logs.reduce((sum, log) => sum + (log.cost_cents || 0), 0);
@@ -195,8 +228,9 @@ export default function DeveloperConsolePage() {
       totalCost,
       errorRate: logs.length ? failed / logs.length * 100 : 0,
       avgLatency,
+      sourceLabel: '最近 20 条合计',
     };
-  }, [logTotal, logs]);
+  }, [logTotal, logs, usageSummary]);
 
   const loadProjects = useCallback(async () => {
     setInitialLoading(true);
@@ -219,15 +253,21 @@ export default function DeveloperConsolePage() {
     if (!selectedProjectId) return;
     setDataLoading(true);
     try {
-      const [keyData, modelData, logData] = await Promise.all([
+      const [keyData, modelData, logData, usageData] = await Promise.all([
         api.getKeys(1, 50, { project_id: selectedProjectId }),
         api.getModelCatalog(1, 100, { project_id: selectedProjectId }),
         api.getLogs(1, 20, { project_id: selectedProjectId }),
+        api.getUsageAnalytics({ project_id: selectedProjectId, scope: 'my', group_by: 'alias' }).catch((err: any) => {
+          Toast.warning(`我的用量加载失败${err?.message ? `：${err.message}` : ''}`);
+          return null;
+        }),
       ]);
       setKeys((keyData?.data || []) as ApiKey[]);
       setModels((modelData?.data || []) as CatalogModel[]);
       setLogs((logData?.data || []) as CallLog[]);
       setLogTotal(Number(logData?.total || 0));
+      setUsageSummary((usageData?.summary || null) as UsageAnalyticsSummary | null);
+      setUsageByModel((usageData?.data || []) as UsageAnalyticsRow[]);
     } catch (err: any) {
       Toast.error(`项目数据加载失败${err?.message ? `：${err.message}` : ''}`);
     } finally {
@@ -491,6 +531,15 @@ export default function DeveloperConsolePage() {
     { title: '延迟', dataIndex: 'latency_ms', key: 'latency_ms', render: (value: number) => `${value || 0}ms` },
   ];
 
+  const usageModelColumns = [
+    { title: '模型 / 别名', dataIndex: 'key', key: 'key', render: (value: string) => <Text code>{value || '(unknown)'}</Text> },
+    { title: '请求数', dataIndex: 'total_requests', key: 'total_requests', render: (value: number) => compactNumber(value || 0) },
+    { title: '成功 / 失败', key: 'status_mix', render: (_: unknown, row: UsageAnalyticsRow) => `${row.success_requests || 0} / ${row.failed_requests || 0}` },
+    { title: 'Token', dataIndex: 'total_tokens', key: 'total_tokens', render: (value: number) => compactNumber(value || 0) },
+    { title: '费用', dataIndex: 'cost_cents', key: 'cost_cents', render: (value: number) => <MoneyText cents={value || 0} precision={4} tone="cost" /> },
+    { title: '平均延迟', dataIndex: 'avg_latency_ms', key: 'avg_latency_ms', render: (value: number) => `${Math.round(value || 0)}ms` },
+  ];
+
   if (initialLoading) {
     return (
       <div className="ur-page">
@@ -553,11 +602,25 @@ export default function DeveloperConsolePage() {
       </section>
 
       <div className="ur-kpi-grid">
-        <MetricTile label="请求数" value={compactNumber(usageSnapshot.requestCount)} icon={<IconFile />} tone="blue" meta="当前筛选项目" />
-        <MetricTile label="Token" value={compactNumber(usageSnapshot.totalTokens)} icon={<IconServer />} tone="violet" meta="最近 20 条合计" />
-        <MetricTile label="费用" value={<MoneyText cents={usageSnapshot.totalCost} precision={4} strong tone="cost" />} icon={<IconCoinMoney />} tone="green" meta="最近 20 条合计" />
+        <MetricTile label="请求数" value={compactNumber(usageSnapshot.requestCount)} icon={<IconFile />} tone="blue" meta={usageSnapshot.sourceLabel} />
+        <MetricTile label="Token" value={compactNumber(usageSnapshot.totalTokens)} icon={<IconServer />} tone="violet" meta={usageSnapshot.sourceLabel} />
+        <MetricTile label="费用" value={<MoneyText cents={usageSnapshot.totalCost} precision={4} strong tone="cost" />} icon={<IconCoinMoney />} tone="green" meta={usageSnapshot.sourceLabel} />
         <MetricTile label="错误率" value={`${usageSnapshot.errorRate.toFixed(1)}%`} icon={<IconAlertTriangle />} tone={usageSnapshot.errorRate > 5 ? 'red' : 'amber'} meta={`平均延迟 ${usageSnapshot.avgLatency.toFixed(0)}ms`} />
       </div>
+
+      <Surface title="我的模型用量" description="按当前账号名下 API Key 聚合当前项目的模型用量和费用；历史未归属 Owner 的调用不会被计入。">
+        <div className="ur-table-shell">
+          <Table
+            columns={usageModelColumns}
+            dataSource={usageByModel}
+            rowKey="key"
+            loading={dataLoading}
+            pagination={false}
+            empty={<EmptyState title="暂无我的用量" description="使用当前账号名下的项目 Key 调用后，会在这里按模型显示请求、Token 和费用。" minHeight={180} />}
+            size="small"
+          />
+        </div>
+      </Surface>
 
       <div className="ur-dev-main-grid">
         <Surface

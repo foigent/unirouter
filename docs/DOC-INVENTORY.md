@@ -23,8 +23,8 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required Codex/OpenClaw workflow |
-| `docs/agent-workflows/FIX-SIGNAL.md` | Latest verification signal: PRD4 Batch 1M Trace Metadata Read-Side Redaction |
-| `docs/agent-workflows/VERIFY-RESULT.md` | Latest OpenClaw verification result: PRD4 Batch 1L Runtime Monitoring URL Redaction PASS 8/8 |
+| `docs/agent-workflows/FIX-SIGNAL.md` | Latest verification signal: PRD4 Batch 1N Developer Console Self Usage And Model Cost |
+| `docs/agent-workflows/VERIFY-RESULT.md` | Latest OpenClaw verification result: PRD4 Batch 1M Trace Metadata Read-Side Redaction PASS 8/8 |
 
 ## Product And Design References
 

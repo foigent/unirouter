@@ -64,32 +64,40 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Current active verification signal is PRD4 Batch 1M Trace Metadata Read-Side
-Redaction:
+Current active verification signal is PRD4 Batch 1N Developer Console Self
+Usage And Model Cost:
 
 - Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
-- Issue/matrix: `PRD4-REDACTION-002` / `P4-F12`.
-- Scope: gateway trace writes and `GET /api/v1/logs/{id}/trace` responses now
-  share one internal metadata sanitizer. The response boundary preserves safe
-  scalar metadata while dropping restricted keys such as `api_key`,
-  `authorization`, `access_token`, `request_body`, and `prompt`.
-- This batch does not change route registration, RBAC, DB schema, trace
-  write-side sampling/storage, frontend layout, billing, routing, auth, SSO,
-  upstream, wallet, or provider dispatch.
+- Issue/matrix: `PRD4-USAGE-002` / `P4-F02`.
+- Scope: Developer Console now uses existing Usage Analytics with `scope=my`,
+  selected `project_id`, and `group_by=alias` to show the current user's own
+  usage, cost, and model/alias breakdown.
+- This batch does not change backend usage analytics SQL, billing/wallet
+  settlement, API key ownership rules, RBAC, routes, migrations, prompt/response
+  storage, trace, runtime status, SSO, upstream, or provider dispatch.
 
-Latest accepted PRD4 implementation batch is PRD4 Batch 1L Runtime Monitoring
-URL Redaction:
+Latest accepted PRD4 implementation batch is PRD4 Batch 1M Trace Metadata
+Read-Side Redaction:
 
 - Canary PASS 8/8 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`.
+- Sentinel merge is reflected by `2f43fca` / PR #97.
+- Batch 1M shares trace metadata sanitization across gateway trace writes and
+  `GET /api/v1/logs/{id}/trace` responses.
+- Restricted trace metadata keys such as `api_key`, `authorization`,
+  `access_token`, `request_body`, and `prompt` are not returned by the trace
+  API even if they exist in historical or manually inserted rows.
+- Batch 1M does not change route registration, RBAC, DB schema, trace
+  sampling/storage semantics, frontend layout, billing, routing, auth, SSO,
+  upstream, wallet, provider dispatch, or Production verified target evidence.
+
+Previous accepted runtime redaction batch is PRD4 Batch 1L:
+
+- Canary PASS 8/8 was recorded before Batch 1M overwrote the current
+  `docs/agent-workflows/VERIFY-RESULT.md`.
 - Sentinel merge is reflected by `4426efd` / PR #96.
 - Batch 1L redacts Prometheus/Grafana `url` and `health_url` response fields in
   `GET /api/v1/runtime/status` by stripping URL userinfo, query strings, and
-  fragments.
-- Raw configured monitoring URLs are still used for probes, so URL-userinfo/basic
-  auth integrations continue to work.
-- Batch 1L does not add monitoring auth config, embedded dashboards,
-  OpenTelemetry, cluster inventory, frontend layout changes, route/RBAC changes,
-  or Production verified target-environment evidence.
+  fragments while raw configured monitoring URLs are still used for probes.
 
 Previous accepted trace retention batch is PRD4 Batch 1K:
 

@@ -8,6 +8,7 @@ const mockGetKeys = vi.fn();
 const mockGetModelCatalog = vi.fn();
 const mockGetLogs = vi.fn();
 const mockGetLogDetail = vi.fn();
+const mockGetUsageAnalytics = vi.fn();
 const mockCreateKey = vi.fn();
 const mockDisableKey = vi.fn();
 
@@ -18,6 +19,7 @@ vi.mock('../../api/client', () => ({
     getModelCatalog: (...args: any[]) => mockGetModelCatalog(...args),
     getLogs: (...args: any[]) => mockGetLogs(...args),
     getLogDetail: (...args: any[]) => mockGetLogDetail(...args),
+    getUsageAnalytics: (...args: any[]) => mockGetUsageAnalytics(...args),
     createKey: (...args: any[]) => mockCreateKey(...args),
     disableKey: (...args: any[]) => mockDisableKey(...args),
   },
@@ -51,6 +53,21 @@ const LOGS = {
   total: 1,
 };
 
+const USAGE_ANALYTICS = {
+  summary: {
+    total_requests: 12,
+    success_requests: 11,
+    failed_requests: 1,
+    total_tokens: 3456,
+    cost_cents: 78,
+    avg_latency_ms: 240,
+    estimated_ratio: 0,
+  },
+  data: [
+    { key: 'company-chat', total_requests: 12, success_requests: 11, failed_requests: 1, total_tokens: 3456, cost_cents: 78, avg_latency_ms: 240, estimated_ratio: 0 },
+  ],
+};
+
 function setupMocks() {
   mockGetProjects.mockResolvedValue(PROJECTS);
   mockGetKeys.mockResolvedValue(KEYS);
@@ -60,6 +77,7 @@ function setupMocks() {
     return Promise.resolve(LOGS);
   });
   mockGetLogDetail.mockResolvedValue(LOGS.data[0]);
+  mockGetUsageAnalytics.mockResolvedValue(USAGE_ANALYTICS);
   mockCreateKey.mockResolvedValue({ id: 41, key: 'sk-created-secret', key_prefix: 'sk-created', project_id: 7 });
   mockDisableKey.mockResolvedValue({ message: 'disabled' });
 }
@@ -87,9 +105,13 @@ describe('DeveloperConsolePage', () => {
       expect(mockGetKeys).toHaveBeenCalledWith(1, 50, { project_id: 7 });
       expect(mockGetModelCatalog).toHaveBeenCalledWith(1, 100, { project_id: 7 });
       expect(mockGetLogs).toHaveBeenCalledWith(1, 20, { project_id: 7 });
+      expect(mockGetUsageAnalytics).toHaveBeenCalledWith({ project_id: 7, scope: 'my', group_by: 'alias' });
     });
 
     expect(await screen.findByText('Core Project')).toBeTruthy();
+    expect(screen.getByText('我的模型用量')).toBeTruthy();
+    expect(screen.getAllByText('我的 Key 聚合').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('3.5K').length).toBeGreaterThan(0);
     expect(screen.getByText('Company Chat')).toBeTruthy();
     expect(screen.getByText('RPM 60 / RPS 10 / TPM 未配置')).toBeTruthy();
     expect(screen.getByText('Migrate to gpt-4.1-mini')).toBeTruthy();
@@ -110,6 +132,24 @@ describe('DeveloperConsolePage', () => {
       expect(mockGetLogDetail).toHaveBeenCalledWith(31);
     });
     expect(screen.getByText('路由模型')).toBeTruthy();
+  });
+
+  it('keeps project data visible when self usage analytics fails', async () => {
+    mockGetUsageAnalytics.mockRejectedValueOnce(new Error('analytics down'));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(mockGetKeys).toHaveBeenCalledWith(1, 50, { project_id: 7 });
+      expect(mockGetModelCatalog).toHaveBeenCalledWith(1, 100, { project_id: 7 });
+      expect(mockGetLogs).toHaveBeenCalledWith(1, 20, { project_id: 7 });
+      expect(mockGetUsageAnalytics).toHaveBeenCalledWith({ project_id: 7, scope: 'my', group_by: 'alias' });
+    });
+
+    expect(await screen.findByText('frontend')).toBeTruthy();
+    expect(screen.getByText('Company Chat')).toBeTruthy();
+    expect(screen.getByText('req-001')).toBeTruthy();
+    expect(screen.getAllByText('最近 20 条合计').length).toBeGreaterThan(0);
   });
 
   it('creates project-scoped keys with the selected project_id', async () => {
