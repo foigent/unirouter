@@ -57,9 +57,9 @@ describe('InternalStatusPage', () => {
         database: { status: 'connected', latency_ms: 2 },
         redis: { status: 'unavailable', reason: 'redis_client_not_configured' },
         traffic: { status: 'available', window_minutes: 5, requests: 40, error_requests: 1, error_rate: 0.025, total_tokens: 1200, cost_cents: 88, p95_latency_ms: 240, p99_latency_ms: 310 },
-        cpu: { status: 'unavailable', reason: 'telemetry_source_not_configured' },
-        disk: { status: 'unavailable', reason: 'telemetry_source_not_configured' },
-        network: { status: 'unavailable', reason: 'telemetry_source_not_configured' },
+        cpu: { status: 'available', usage_ratio: 0.25, logical_cores: 8, sample_millis: 50 },
+        disk: { status: 'available', usage_ratio: 0.7, total_bytes: 10737418240, used_bytes: 7516192768, free_bytes: 3221225472, mount_point: '/' },
+        network: { status: 'available', interface_count: 3, active_interface_count: 2, rx_bytes: 1048576, tx_bytes: 2097152 },
       },
       observability_integrations: {
         prometheus: { status: 'connected', url: 'http://prometheus:9090', latency_ms: 3, scrape_status: 'up' },
@@ -84,7 +84,15 @@ describe('InternalStatusPage', () => {
     expect(screen.getByText(/scrape up \/ 3 ms/)).toBeTruthy();
     expect(screen.getByRole('link', { name: 'http://grafana:3000' })).toBeTruthy();
     expect(screen.getByText(/auth_required/)).toBeTruthy();
-    expect(screen.getByText(/CPU 不可用 \/ 磁盘 不可用 \/ 网络 不可用/)).toBeTruthy();
+    expect(screen.getByText('CPU')).toBeTruthy();
+    expect(screen.getByText('25.0%')).toBeTruthy();
+    expect(screen.getByText(/8 cores \/ sample 50ms/)).toBeTruthy();
+    expect(screen.getByText('磁盘')).toBeTruthy();
+    expect(screen.getByText('70.0%')).toBeTruthy();
+    expect(screen.getByText(/7.0 GB \/ 10.0 GB used @ \//)).toBeTruthy();
+    expect(screen.getByText('网络')).toBeTruthy();
+    expect(screen.getByText('2/3')).toBeTruthy();
+    expect(screen.getByText(/active 2\/3 \/ rx 1.0 MB \/ tx 2.0 MB/)).toBeTruthy();
     expect(screen.getByText('Provider channel failure')).toBeTruthy();
     expect(screen.getByText('上游通道故障')).toBeTruthy();
     expect(screen.getByText('Open 预警事件')).toBeTruthy();

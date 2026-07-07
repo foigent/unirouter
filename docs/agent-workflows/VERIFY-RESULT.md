@@ -1,49 +1,42 @@
-# VERIFY-RESULT.md - Protocol Risk-Gated Workflow Update And Status Reconciliation
+# VERIFY-RESULT.md - PRD4 Batch 1J Runtime Host Telemetry
 
 **Date:** 2026-07-07
 **Signal:** `docs/agent-workflows/FIX-SIGNAL.md`
-**Issue:** Protocol/process documentation gate
-**Conclusion: ✅ PASS (10/10)**
+**Issue:** PRD4 Batch 1J (R2 user-visible Runtime Observability API/UI change)
+**Conclusion: ✅ PASS (8/8)**
 
 ## Verification Summary
 
 | # | Acceptance Criteria | Result | Evidence |
 |---|---------------------|--------|----------|
-| 1 | AGENT-PROTOCOL.md versioned to 1.4 and defines R0/R1/R2/R3/R4 | ✅ PASS | `AGENT-PROTOCOL.md:24-34` — "风险分级与验收门" table defines R0 (local cleanup), R1 (tooling/test/harness), R2 (user-visible features), R3 (core paths), R4 (target-environment/production claims) |
-| 2 | No longer requires fixed FIX-SIGNAL/VERIFY-RESULT for every small change | ✅ PASS | `AGENT-PROTOCOL.md:30` — R0 "不强制写 FIX-SIGNAL.md / VERIFY-RESULT.md"; L31 — R1 "可把多个 R1 小批合并成一个 Canary gate" |
-| 3 | DOCS-GOVERNANCE.md uses risk-tiered verification and lists PRD4 as active scope | ✅ PASS | `DOCS-GOVERNANCE.md:41` — "R2/R3/R4 changes require FIX-SIGNAL.md / VERIFY-RESULT.md; R1 changes may be grouped; R0 does not require signal files"; L28 — "PRD4: Active implementation phase" |
-| 4 | PROJECT-HANDOFF.md and docs/agent-workflows/README.md route agents to risk-gated workflow | ✅ PASS | `PROJECT-HANDOFF.md:51-56` — "R0 local cleanup does not require FIX-SIGNAL.md / VERIFY-RESULT.md"; `AGENT-PROTOCOL.md` reference at L17 |
-| 5 | Root README.md no longer presents PRD3 as current scope; includes PRD4 | ✅ PASS | `README.md` diff: PRD3 links changed from "当前" to "已完成"; PRD4 product scope and acceptance matrix links added; PRD-Phase4.md and planning/ references updated |
-| 6 | Batch 1I stale "Fixed awaiting Canary" wording removed from current PRD4 docs | ✅ PASS | `grep -rn "Batch 1I Real SSO Evidence Harness is fixed awaiting Canary\|PRD4-SSO-001.*Fixed awaiting Canary\|P4-F09.*Fixed awaiting Canary"` returned no matches (exit 1) |
-| 7 | Batch 1I marked Canary/Sentinel complete for harness/guardrail readiness with `2c02430` / PR #92 | ✅ PASS | `CURRENT-STATUS.md:42` — "Canary/Sentinel complete per repo state... Canary PASS 11/11... Sentinel merge is reflected by `2c02430` / PR #92"; `OPEN-ISSUES.md:70` — "Canary passed"; `PRD4-ACCEPTANCE-MATRIX.md:38` — "Canary passed" |
-| 8 | P4-F09 remains below E2E accepted / Production verified | ✅ PASS | `CURRENT-STATUS.md:4` — "P4-F09 remains below E2E accepted / Production verified"; `OPEN-ISSUES.md:70` — "Do not mark P4-F09 E2E accepted or Production verified"; `PRD4-ACCEPTANCE-MATRIX.md:38` — "harness/guardrail acceptance only; it does not claim real SSO E2E acceptance or Production verified status" |
-| 9 | No unrelated product code, migrations, or target-environment evidence claims changed | ✅ PASS | `git diff` shows only docs files modified (README.md, DOCS-GOVERNANCE.md, PROJECT-HANDOFF.md, AGENT-PROTOCOL.md, docs/README.md, CURRENT-STATUS.md, PRD4-ACCEPTANCE-MATRIX.md, OPEN-ISSUES.md, PRD-Phase4.md, DOC-INVENTORY.md, FIX-SIGNAL.md); no `.go`, `.tsx`, `.ts`, `.sql`, `.yml` changes |
-| 10 | git diff --check passes | ✅ PASS | `git diff --check` — clean (exit 0) |
+| 1 | Runtime status includes structured CPU/disk/network fields instead of `telemetry_source_not_configured` | ✅ PASS | `runtime_status_handlers.go:98-108` — struct fields: `usage_ratio`, `logical_cores`, `sample_millis` (CPU); `total_bytes`, `used_bytes`, `free_bytes`, `mount_point` (disk); `interface_count`, `active_interface_count`, `rx_bytes`, `tx_bytes` (network); L221-225 `collectRuntimeHostTelemetry()` populates all three |
+| 2 | CPU telemetry honest across platforms: Linux samples `/proc/stat`; others expose logical cores + reason | ✅ PASS | `runtime_status_handlers.go:229-297` — `runtimeCPUStatus()` reads `/proc/stat` for Linux usage; falls back to `logical_cores` + `reason=usage_sample_not_supported`; `TestLinuxCPUUsageRatio` passes |
+| 3 | Disk reports root filesystem total/used/free bytes and usage ratio | ✅ PASS | `runtime_status_handlers.go:299-327` — `runtimeDiskStatus("/")` uses `syscall.Statfs` for total/used/free; `usage_ratio = used/total` |
+| 4 | Network reports total/active interface counts, Linux byte counters when available | ✅ PASS | `runtime_status_handlers.go:329-367` — `runtimeNetworkStatus()` counts interfaces; Linux reads `/proc/net/dev` for `rx_bytes`/`tx_bytes`; falls back to `reason=byte_counters_not_supported` |
+| 5 | Frontend renders CPU, disk, network as separate cards with concrete values | ✅ PASS | `InternalStatusPage.tsx:340-369` — separate CPU/Disk/Network cards; CPU shows usage % or status+reason; disk shows usage % + used/total + mount; network shows active/total interfaces + rx/tx bytes |
+| 6 | Existing DB/Redis/app memory/traffic/Prometheus/Grafana behavior intact | ✅ PASS | `runtime_status_handlers.go:163-205` — `RuntimeStatus()` unchanged for DB/Redis/traffic/monitoring; host telemetry is additive |
+| 7 | No secrets, private topology, IPs, hostnames, cloud identifiers exposed | ✅ PASS | Only standard system metrics exposed: CPU cores, disk bytes, interface counts, rx/tx bytes. No IPs, hostnames, VPC/subnet/cloud account data |
+| 8 | Focused backend/frontend tests, broad Go/frontend regression, build, git diff --check pass | ✅ PASS | Focused Go: 4/4 PASS (incl. `TestLinuxCPUUsageRatio`); focused frontend: 38/38 PASS; full Go: 22 packages PASS; full frontend: 113/114 PASS (1 flaky LoginPage toggle test — unrelated, passes in isolation 9/9); build 14.21s; `git diff --check` clean |
 
 ## Detailed Verification
 
-### Risk Tier Definitions (AC1)
-`AGENT-PROTOCOL.md:30-34` defines:
-- **R0**: spelling, links, index, non-factual docs cleanup — no FIX-SIGNAL/VERIFY-RESULT required
-- **R1**: tests, scripts, harness, tech-ref not changing prod runtime — can group into one Canary gate
-- **R2**: frontend/API behavior, product semantics, user-visible docs, acceptance matrix changes — requires FIX-SIGNAL + VERIFY-RESULT
-- **R3**: auth, SSO, billing/wallet, routing, DB migration, secret/RBAC, rate limiting — each slice independent Canary gate
-- **R4**: real upstream, real SSO, license, HA/DR, production claims — requires target-environment evidence
+### Backend Host Telemetry (AC1-4)
+- `runtimeHostTelemetry` struct (L111-115): `CPU`, `Disk`, `Network` fields
+- Test-injectable via `runtimeHostTelemetryProvider` (handlers.go:29, runtime_status_handlers.go:215-216)
+- `collectRuntimeHostTelemetry()` (L221-225): calls `runtimeCPUStatus()`, `runtimeDiskStatus("/")`, `runtimeNetworkStatus()`
+- Linux CPU: reads `/proc/stat`, calculates usage over `sample_millis` (L229-297)
+- Disk: `syscall.Statfs` for block counts (L299-327)
+- Network: counts interfaces from `net.Interfaces()`; Linux reads `/proc/net/dev` for byte counters (L329-367)
 
-### Stale Wording Removal (AC6)
-Checked 7 doc files for stale Batch 1I "Fixed awaiting Canary" patterns:
-- `CURRENT-STATUS.md` — shows "Canary/Sentinel complete per repo state"
-- `PROJECT-HANDOFF.md` — shows "Latest accepted PRD4 implementation batch is PRD4 Batch 1I"
-- `OPEN-ISSUES.md` — shows "Canary passed"
-- `PRD4-ACCEPTANCE-MATRIX.md` — shows "Canary passed"
-- `DOC-INVENTORY.md` — shows "Protocol Risk-Gated Workflow Update awaiting Canary"
-- `docs/README.md` — shows "Protocol Risk-Gated Workflow Update awaiting Canary"
-- `PRD-Phase4.md` — shows "passed Canary 11/11 and Sentinel merge is reflected by `2c02430` / PR #92"
+### Frontend Rendering (AC5)
+- `InternalStatusPage.tsx:340-369`: three separate `MetricCard` components for CPU, Disk, Network
+- CPU: `formatMetricPercent(usage_ratio)` when present, else status tag + reason
+- Disk: usage % + `formatBytes(used)` / `formatBytes(total)` + mount point
+- Network: `active_interface_count/interface_count` + rx/tx bytes
+- Color thresholds: ≥90% red, ≥75% amber (L160-161)
 
-No stale "Fixed awaiting Canary" wording for Batch 1I remains.
-
-### Docs-Only (AC9)
-`git diff` confirms only documentation files changed. No Go, frontend, migration, Docker, or deployment files modified.
+### Flaky Test Note
+`LoginPage.test.tsx` "toggles password visibility" failed in full suite run but passes in isolation (9/9). This is a known async timing issue with Semi UI form validation, unrelated to Batch 1J. No InternalStatusPage test failures.
 
 ## New Issues Found
 
@@ -51,4 +44,4 @@ None.
 
 ## Verdict
 
-**PASS.** All 10 acceptance criteria verified. Protocol update is consistent across all docs. Batch 1I status correctly reconciled. No stale wording remains.
+**PASS.** All 8 acceptance criteria verified. Host telemetry replaces `telemetry_source_not_configured` with real system metrics. Platform-honest: Linux gets sampled CPU/network bytes; other OSes get structural data with explicit reasons.

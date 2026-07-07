@@ -15,17 +15,18 @@ import (
 
 // Handler contains all admin API handlers.
 type Handler struct {
-	sensitiveFilter  *filter.DFAFilter
-	db               db.DBQuerier
-	jwtSecret        string
-	apiKeyHashSecret string
-	licenseVerifier  *licensing.Verifier
-	eventService     *billing.EventService
-	oidcService      *oidc.Service
-	encKey           []byte
-	redisClient      *redis.Client
-	startedAt        time.Time
-	runtimeOptions   RuntimeStatusOptions
+	sensitiveFilter              *filter.DFAFilter
+	db                           db.DBQuerier
+	jwtSecret                    string
+	apiKeyHashSecret             string
+	licenseVerifier              *licensing.Verifier
+	eventService                 *billing.EventService
+	oidcService                  *oidc.Service
+	encKey                       []byte
+	redisClient                  *redis.Client
+	startedAt                    time.Time
+	runtimeOptions               RuntimeStatusOptions
+	runtimeHostTelemetryProvider func() runtimeHostTelemetry
 }
 
 // NewHandler creates a new admin Handler.

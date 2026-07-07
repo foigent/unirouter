@@ -87,8 +87,12 @@ Harness:
 - Batch 1I does not mark `P4-F09` E2E accepted or Production verified without a
   successful approved target-IdP browser login and audit evidence.
 
-Current active verification signal: Protocol Risk-Gated Workflow Update is fixed
-awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+Latest workflow verification gate is Protocol Risk-Gated Workflow Update And
+Status Reconciliation:
+
+- Canary PASS 10/10 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`.
+- No runtime code, migrations, PRD4 product behavior, or target-environment
+  evidence changed.
 
 Latest accepted real upstream evidence-harness batch is PRD4 Batch 1H:
 
