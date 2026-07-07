@@ -106,7 +106,7 @@ func TestGetRequestTrace_ProjectScopedAccess(t *testing.T) {
 						*dest[7].(*string) = ""
 						*dest[8].(**int) = nil
 						*dest[9].(*int) = 3
-						*dest[10].(*[]byte) = []byte(`{"estimated_tokens":100}`)
+						*dest[10].(*[]byte) = []byte(`{"estimated_tokens":100,"usage_source":"upstream","api_key":"sk-secret","request_body":"{\"messages\":[{\"content\":\"secret prompt\"}]}","access_token":"idp-token"}`)
 						*dest[11].(*time.Time) = now
 						return nil
 					},
@@ -140,5 +140,50 @@ func TestGetRequestTrace_ProjectScopedAccess(t *testing.T) {
 	}
 	if resp.Events[0]["event_type"] != "gateway.request.accepted" {
 		t.Fatalf("expected event_type in response, got %#v", resp.Events[0])
+	}
+	metadata, ok := resp.Events[0]["metadata"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected metadata object, got %#v", resp.Events[0]["metadata"])
+	}
+	if metadata["estimated_tokens"] != float64(100) || metadata["usage_source"] != "upstream" {
+		t.Fatalf("expected safe trace metadata, got %#v", metadata)
+	}
+	for _, key := range []string{"api_key", "request_body", "access_token"} {
+		if _, ok := metadata[key]; ok {
+			t.Fatalf("metadata leaked %s: %#v", key, metadata)
+		}
+	}
+	for _, secret := range []string{"sk-secret", "secret prompt", "idp-token"} {
+		if strings.Contains(rec.Body.String(), secret) {
+			t.Fatalf("trace response leaked secret %q: %s", secret, rec.Body.String())
+		}
+	}
+}
+
+func TestSanitizeTraceResponseMetadata(t *testing.T) {
+	longUsageSource := strings.Repeat("x", 300)
+
+	metadata := sanitizeTraceResponseMetadata(map[string]interface{}{
+		"estimated_tokens": float64(100),
+		"route_count":      2,
+		"is_stream":        true,
+		"usage_source":     " " + longUsageSource + " ",
+		"api_key":          "sk-secret",
+		"authorization":    "Bearer secret",
+		"prompt":           "secret prompt",
+		"request_body":     map[string]interface{}{"messages": []interface{}{"secret"}},
+		"mapped_model":     map[string]interface{}{"nested": "dropped"},
+	})
+
+	if metadata["estimated_tokens"] != float64(100) || metadata["route_count"] != 2 || metadata["is_stream"] != true {
+		t.Fatalf("expected safe scalar metadata to remain, got %#v", metadata)
+	}
+	if usageSource, ok := metadata["usage_source"].(string); !ok || len(usageSource) != 256 || strings.Contains(usageSource, " ") {
+		t.Fatalf("expected usage_source to be trimmed and truncated, got %#v", metadata["usage_source"])
+	}
+	for _, key := range []string{"api_key", "authorization", "prompt", "request_body", "mapped_model"} {
+		if _, ok := metadata[key]; ok {
+			t.Fatalf("metadata leaked or kept unsupported field %s: %#v", key, metadata)
+		}
 	}
 }

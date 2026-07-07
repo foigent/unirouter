@@ -8,29 +8,8 @@ import (
 
 	"github.com/uniroute/unirouter/internal/logger"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/traceutil"
 )
-
-var traceMetadataAllowlist = map[string]bool{
-	"billing_status":      true,
-	"charged_cost_cents":  true,
-	"completion_tokens":   true,
-	"cost_cents":          true,
-	"error_code":          true,
-	"estimated_tokens":    true,
-	"failure_kind":        true,
-	"freeze_amount_cents": true,
-	"is_stream":           true,
-	"mapped_model":        true,
-	"prompt_tokens":       true,
-	"route_count":         true,
-	"route_index":         true,
-	"settle_cancelled":    true,
-	"stream":              true,
-	"total_tokens":        true,
-	"ttft_ms":             true,
-	"usage_confidence":    true,
-	"usage_source":        true,
-}
 
 func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, stage, severity, model, requestedModel string, route *RouteResult, statusCode, latencyMs int, metadata map[string]interface{}) {
 	if relay == nil || relay.db == nil || strings.TrimSpace(requestID) == "" {
@@ -90,7 +69,7 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 	if latencyMs < 0 {
 		latencyMs = 0
 	}
-	metadataJSON, err := json.Marshal(sanitizeTraceMetadata(metadata))
+	metadataJSON, err := json.Marshal(traceutil.SanitizeMetadata(metadata))
 	if err != nil {
 		metadataJSON = []byte("{}")
 	}
@@ -117,43 +96,4 @@ func (relay *Relay) shouldRecordTraceEvent(requestID string) bool {
 	_, _ = hash.Write([]byte(requestID))
 	bucket := float64(hash.Sum32()%1000000) / 1000000
 	return bucket < relay.traceEventSampleRate
-}
-
-func sanitizeTraceMetadata(input map[string]interface{}) map[string]interface{} {
-	if len(input) == 0 {
-		return map[string]interface{}{}
-	}
-	out := make(map[string]interface{})
-	for key, value := range input {
-		if !traceMetadataAllowlist[key] {
-			continue
-		}
-		switch v := value.(type) {
-		case string:
-			out[key] = truncateTraceString(v)
-		case bool:
-			out[key] = v
-		case int:
-			out[key] = v
-		case int64:
-			out[key] = v
-		case int32:
-			out[key] = v
-		case float64:
-			out[key] = v
-		case float32:
-			out[key] = v
-		default:
-			continue
-		}
-	}
-	return out
-}
-
-func truncateTraceString(value string) string {
-	value = strings.TrimSpace(value)
-	if len(value) <= 256 {
-		return value
-	}
-	return value[:256]
 }

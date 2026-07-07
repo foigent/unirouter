@@ -1,7 +1,7 @@
 # PRD4 Acceptance Matrix
 
 > Date: 2026-07-07
-> Status: PRD4 Batch 0 scope baseline accepted per User report; PRD4 Preflight Hardening passed Canary 6/6; Batch 1A Auth UX hardening passed Canary 6/6 and User reported Sentinel completed; Batch 1B Usage And Cost Attribution passed Canary and User reported Sentinel completed; Batch 1C Flow/Event/Trace Foundation passed Canary and User reported Sentinel completed; Batch 1D Runtime Observability Foundation passed Canary and User reported Sentinel completed; Batch 1E Quota Vocabulary And Key Quota Foundation passed Canary and User reported Sentinel completed; Batch 1F PlungeIn Port Architecture passed Canary and Sentinel merge is reflected by `87bfc17` / PR #89; Batch 1G External Monitoring Integration passed Canary 9/9 and Sentinel merge is reflected by `bb291a4` / PR #90; Batch 1H Real Upstream Evidence Harness passed Canary 11/11 and Sentinel merge is reflected by `d3acfa6` / PR #91; Batch 1I Real SSO Evidence Harness passed Canary 11/11 and Sentinel merge is reflected by `2c02430` / PR #92; Batch 1J Runtime Host Telemetry passed Canary 8/8 and Sentinel merge is reflected by `8707346` / PR #94; Batch 1K Trace Retention And Cleanup passed Canary 10/10 and Sentinel merge is reflected by `1d9ea50` / PR #95; Batch 1L Runtime Monitoring URL Redaction is fixed awaiting Canary.
+> Status: PRD4 Batch 0 scope baseline accepted per User report; PRD4 Preflight Hardening passed Canary 6/6; Batch 1A Auth UX hardening passed Canary 6/6 and User reported Sentinel completed; Batch 1B Usage And Cost Attribution passed Canary and User reported Sentinel completed; Batch 1C Flow/Event/Trace Foundation passed Canary and User reported Sentinel completed; Batch 1D Runtime Observability Foundation passed Canary and User reported Sentinel completed; Batch 1E Quota Vocabulary And Key Quota Foundation passed Canary and User reported Sentinel completed; Batch 1F PlungeIn Port Architecture passed Canary and Sentinel merge is reflected by `87bfc17` / PR #89; Batch 1G External Monitoring Integration passed Canary 9/9 and Sentinel merge is reflected by `bb291a4` / PR #90; Batch 1H Real Upstream Evidence Harness passed Canary 11/11 and Sentinel merge is reflected by `d3acfa6` / PR #91; Batch 1I Real SSO Evidence Harness passed Canary 11/11 and Sentinel merge is reflected by `2c02430` / PR #92; Batch 1J Runtime Host Telemetry passed Canary 8/8 and Sentinel merge is reflected by `8707346` / PR #94; Batch 1K Trace Retention And Cleanup passed Canary 10/10 and Sentinel merge is reflected by `1d9ea50` / PR #95; Batch 1L Runtime Monitoring URL Redaction passed Canary 8/8 and Sentinel merge is reflected by `4426efd` / PR #96; Batch 1M Trace Metadata Read-Side Redaction is fixed awaiting Canary.
 > Source: `docs/PRD-Phase4.md`, `docs/planning/PRD4-BACKLOG.md`, current
 > PRD2/PRD3 evidence boundaries, and User PRD4 scope decisions.
 
@@ -38,7 +38,7 @@ actual result, and rollback or cleanup note.
 | P4-F09 | Real SSO Evidence Track | Canary passed | Real Logto or approved enterprise OIDC browser login passes with claim mapping and audit evidence | Approved IdP client, browser smoke, audit/log redaction check | Batch 1I adds the guarded real SSO evidence harness, browser runner, read-only audit checker, and tech reference. Canary PASS 11/11 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge is reflected by `2c02430` / PR #92. This is harness/guardrail acceptance only; it does not claim real SSO E2E acceptance or Production verified status without approved IdP credentials, a target test user, and a successful real browser login |
 | P4-F10 | Auth UX Hardening | Canary passed | Password inputs support hidden-by-default visibility toggle with accessible controls | Frontend tests, build, visual smoke if needed | Batch 1A adds shared `PasswordField` for login, change-password, and admin user password fields; no auth semantic changes. Canary PASS 6/6; User reported Sentinel completed after `620794b` / PR #84; Atlas deployment not reported |
 | P4-F11 | Production Evidence Promotion | Planned | License, webhook, upstream, SSO, and selected ops rows only move to Production verified with target evidence | Evidence files under `docs/ops/evidence/`, matrix/status updates | Local-only evidence is not enough |
-| P4-F12 | Security, Privacy, And Redaction Guardrails | Fixed awaiting Canary | Usage, trace, runtime, SSO, upstream, and evidence outputs hide restricted fields | RBAC negative tests, evidence grep for secret patterns, docs review | Batch 1L implements the first runtime redaction slice: `GET /api/v1/runtime/status` strips URL userinfo, query strings, and fragments from Prometheus/Grafana `url` and `health_url` response fields while probes continue using the raw configured URL. No prompt/response plaintext, monitoring auth config, dashboard embedding, OpenTelemetry, cluster inventory, route/RBAC, billing, routing, auth, SSO, upstream, wallet, provider-dispatch, or Production verified behavior is included |
+| P4-F12 | Security, Privacy, And Redaction Guardrails | Fixed awaiting Canary | Usage, trace, runtime, SSO, upstream, and evidence outputs hide restricted fields | RBAC negative tests, evidence grep for secret patterns, docs review | Batch 1L implements the accepted runtime redaction slice: `GET /api/v1/runtime/status` strips URL userinfo, query strings, and fragments from Prometheus/Grafana `url` and `health_url` response fields while probes continue using the raw configured URL. Canary PASS 8/8 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge is reflected by `4426efd` / PR #96. Batch 1M is fixed awaiting Canary as `PRD4-REDACTION-002`: gateway trace writes and `GET /api/v1/logs/{id}/trace` responses share one metadata sanitizer; historical/manual trace metadata is re-sanitized at the response boundary and only allowlisted scalar fields are returned. No prompt/response plaintext, monitoring auth config, dashboard embedding, OpenTelemetry, cluster inventory, route/RBAC, billing, routing, auth, SSO, upstream, wallet, provider-dispatch, or Production verified behavior is included |
 | P4-F13 | PRD5 Backlog Consolidation | Planned | Deferred scope is recorded in `docs/planning/PRD5-BACKLOG.md` with reason and prerequisites | Docs review and links from PRD4 | Prevents scope creep |
 
 ## PRD5 Deferred Capabilities
@@ -330,3 +330,35 @@ configured URL. It does not add monitoring auth config, embedded dashboards,
 OpenTelemetry export, node exporter/cloud metadata, cluster inventory, metric
 alerts, frontend layout changes, route/RBAC changes, or Production verified
 target-environment evidence.
+
+Canary PASS 8/8 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`, and
+Sentinel merge is reflected by `4426efd` / PR #96.
+
+## Batch 1M Verification
+
+PRD4 Batch 1M verifies Trace Metadata Read-Side Redaction under
+`PRD4-REDACTION-002` / `P4-F12`:
+
+```bash
+rg -n "traceutil|SanitizeMetadata|sanitizeTraceResponseMetadata|TestSanitizeTraceResponseMetadata|PRD4-REDACTION-002|P4-F12|Batch 1M" internal/admin internal/gateway internal/traceutil docs/agent-workflows/FIX-SIGNAL.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/PROJECT-HANDOFF.md docs/DOC-INVENTORY.md docs/README.md docs/CODEBASE-MAP.md
+go test ./internal/traceutil -count=1
+go test ./internal/admin -run 'TestGetRequestTrace|TestSanitizeTraceResponseMetadata' -count=1
+go test ./internal/gateway -run 'TestRecordTraceEvent_SanitizesMetadataAndSnapshotsOwner' -count=1
+go test ./internal/admin -count=1
+go test ./... -count=1
+git diff --check
+```
+
+Acceptance is limited to shared trace metadata sanitization and the trace API
+response boundary: gateway write-side trace metadata and admin read-side trace
+responses now use the same internal allowlist; historical or manually inserted
+trace metadata is allowlisted after JSON unmarshalling, safe scalar fields
+remain available for request investigation, restricted keys such as `api_key`,
+`authorization`, `access_token`, `request_body`, and `prompt` are dropped,
+unsupported nested values are not returned, and safe strings are
+trimmed/truncated. It does not change trace sampling/storage semantics, schema,
+frontend layout, OpenTelemetry, prompt/response plaintext storage, billing,
+routing, auth, SSO, upstream, wallet, provider dispatch, or Production verified
+target-environment evidence.
+
+Status: fixed awaiting Canary.

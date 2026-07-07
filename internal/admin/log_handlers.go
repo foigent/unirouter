@@ -9,6 +9,7 @@ import (
 
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/metering"
+	"github.com/uniroute/unirouter/internal/traceutil"
 )
 
 func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
@@ -278,6 +279,7 @@ func (h *Handler) GetRequestTrace(w http.ResponseWriter, r *http.Request) {
 		if len(metadataBytes) > 0 {
 			_ = json.Unmarshal(metadataBytes, &metadata)
 		}
+		metadata = sanitizeTraceResponseMetadata(metadata)
 		events = append(events, map[string]interface{}{
 			"id":              eventID,
 			"event_type":      eventType,
@@ -302,4 +304,8 @@ func (h *Handler) GetRequestTrace(w http.ResponseWriter, r *http.Request) {
 		"request_id": requestID,
 		"events":     events,
 	})
+}
+
+func sanitizeTraceResponseMetadata(input map[string]interface{}) map[string]interface{} {
+	return traceutil.SanitizeMetadata(input)
 }
