@@ -144,6 +144,7 @@ export const api = {
     }));
   },
   getLogDetail: (id: number) => request(`/logs/${id}`),
+  getLogTrace: (id: number) => request(`/logs/${id}/trace`),
 
   // PRD2 Batch 23 product surfaces
   getUsageAnalytics: (filters?: {

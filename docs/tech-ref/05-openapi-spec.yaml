@@ -340,6 +340,22 @@ paths:
   /api/v1/logs/{id}:
     get: { $ref: "#/components/pathItems/GetById" }
 
+  /api/v1/logs/{id}/trace:
+    get:
+      tags: [Admin]
+      summary: Request trace events for a call log
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+
   /api/v1/dashboard/stats:
     get: { $ref: "#/components/pathItems/Get" }
 

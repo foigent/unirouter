@@ -1,16 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import LogsPage from '../LogsPage';
 
 const mockGetLogs = vi.fn();
 const mockGetModelNames = vi.fn();
 const mockGetChannels = vi.fn();
+const mockGetLogTrace = vi.fn();
 vi.mock('../../api/client', () => ({
   api: {
     getLogs: (...args: any[]) => mockGetLogs(...args),
     getModelNames: (...args: any[]) => mockGetModelNames(...args),
     getChannels: (...args: any[]) => mockGetChannels(...args),
+    getLogTrace: (...args: any[]) => mockGetLogTrace(...args),
   },
 }));
 
@@ -73,6 +75,26 @@ const MOCK_CHANNELS = {
   ],
 };
 
+const MOCK_TRACE_RESPONSE = {
+  request_id: 'req-001-aaa',
+  events: [
+    {
+      id: 1,
+      event_type: 'gateway.request.accepted',
+      stage: 'gateway',
+      severity: 'info',
+      model: 'gpt-4o',
+      requested_model: 'gpt-4o',
+      provider: '',
+      channel: '',
+      status_code: null,
+      latency_ms: 2,
+      metadata: { estimated_tokens: 700, stream: true },
+      created_at: '2026-06-29T10:00:01Z',
+    },
+  ],
+};
+
 function renderLogs() {
   return render(
     <MemoryRouter>
@@ -87,6 +109,7 @@ describe('LogsPage', () => {
     mockGetLogs.mockResolvedValue(MOCK_LOGS_RESPONSE);
     mockGetModelNames.mockResolvedValue(MOCK_MODEL_NAMES);
     mockGetChannels.mockResolvedValue(MOCK_CHANNELS);
+    mockGetLogTrace.mockResolvedValue(MOCK_TRACE_RESPONSE);
   });
 
   it('fetches logs with default page params', async () => {
@@ -151,6 +174,25 @@ describe('LogsPage', () => {
       expect(mockGetLogs).toHaveBeenCalled();
     });
     expect(container.querySelectorAll('button[aria-label="复制 Request ID"]').length).toBeGreaterThan(0);
+  });
+
+  it('loads request trace events when opening log detail', async () => {
+    const { container } = renderLogs();
+    await waitFor(() => {
+      expect(container.textContent || '').toContain('req-001-aaa');
+    });
+
+    const requestID = await screen.findByText(/req-001-aaa/);
+    const row = requestID.closest('tr');
+    expect(row).toBeTruthy();
+    fireEvent.click(row as HTMLElement);
+
+    await waitFor(() => {
+      expect(mockGetLogTrace).toHaveBeenCalledWith(1);
+    });
+    await waitFor(() => {
+      expect(container.textContent || '').toContain('gateway.request.accepted');
+    });
   });
 
   it('renders search input with correct placeholder', async () => {

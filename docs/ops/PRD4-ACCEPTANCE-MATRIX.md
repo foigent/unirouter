@@ -1,7 +1,7 @@
 # PRD4 Acceptance Matrix
 
 > Date: 2026-07-07
-> Status: PRD4 Batch 0 scope baseline accepted per User report; PRD4 Preflight Hardening passed Canary 6/6; Batch 1A Auth UX hardening passed Canary 6/6 and User reported Sentinel completed; Batch 1B Usage And Cost Attribution is fixed awaiting Canary.
+> Status: PRD4 Batch 0 scope baseline accepted per User report; PRD4 Preflight Hardening passed Canary 6/6; Batch 1A Auth UX hardening passed Canary 6/6 and User reported Sentinel completed; Batch 1B Usage And Cost Attribution passed Canary and User reported Sentinel completed; Batch 1C Flow/Event/Trace Foundation is fixed awaiting Canary.
 > Source: `docs/PRD-Phase4.md`, `docs/planning/PRD4-BACKLOG.md`, current
 > PRD2/PRD3 evidence boundaries, and User PRD4 scope decisions.
 
@@ -28,9 +28,9 @@ actual result, and rollback or cleanup note.
 | ID | Capability | Status | Acceptance Criteria | Required Evidence | Notes |
 |----|------------|--------|---------------------|-------------------|-------|
 | P4-F01 | PRD4 Scope And Evidence Baseline | Canary passed | `docs/PRD-Phase4.md`, this matrix, PRD5 backlog, and ADRs exist; current docs route to them; no runtime code changes | Docs grep, `git diff --check`, Canary doc consistency review | Batch 0 accepted per User report after `e24731d` / PR #82; later `VERIFY-RESULT.md` was overwritten by PRD4 Preflight Hardening |
-| P4-F02 | Usage And Cost Attribution | Fixed awaiting Canary | API key owner usage is visible to the owner; authorized roles see broader scope; totals reconcile by model/key/project/time range | Backend/frontend tests, seeded two-user/two-key E2E, CSV or API evidence | Batch 1B adds owner/type metadata to API keys, owner/type call-log snapshots, `scope=my`, owner/key-type filters and groupings, frontend analytics controls, and personal-key disablement before hard user delete. Historical logs intentionally keep `owner_user_id=NULL` instead of fabricated ownership |
+| P4-F02 | Usage And Cost Attribution | Canary passed | API key owner usage is visible to the owner; authorized roles see broader scope; totals reconcile by model/key/project/time range | Backend/frontend tests, seeded two-user/two-key E2E, CSV or API evidence | Batch 1B adds owner/type metadata to API keys, owner/type call-log snapshots, `scope=my`, owner/key-type filters and groupings, frontend analytics controls, and personal-key disablement before hard user delete. Historical logs intentionally keep `owner_user_id=NULL` instead of fabricated ownership. Canary passed and User reported Sentinel completed after `7dd8aa0` / PR #85; Atlas deployment not reported |
 | P4-F03 | Quota Vocabulary And Key Quota Foundation | Planned | RPM/RPS/TPM/tokens/s terms are stable; key-level quota visibility is present; Scheduler V2 is not implied | Unit/integration tests, docs/UI label checks, migration evidence if schema changes | Avoid ambiguous `TPS` in UI |
-| P4-F04 | Flow/Event/Trace Foundation | Planned | One request can be investigated across gateway, billing, routing, provider, call logs, and audit metadata | Request-path E2E by `request_id`, redaction negative checks | Metadata only; no prompt/response plaintext |
+| P4-F04 | Flow/Event/Trace Foundation | Fixed awaiting Canary | One request can be investigated across gateway, billing, routing, provider, call logs, and audit metadata | Request-path E2E by `request_id`, redaction negative checks | Batch 1C adds metadata-only `request_trace_events`, trace sampling config, gateway/billing/routing/provider/call-log events for chat and embeddings, `GET /api/v1/logs/{id}/trace` with project usage RBAC, and Logs detail rendering. No OpenTelemetry, Runtime Status Center, Prometheus/Grafana integration status, direct global request-id lookup, retention cleanup, or prompt/response plaintext |
 | P4-F05 | PlungeIn Port Architecture | Planned | Observe/Act/Enrich/Decide/Mutate ports are documented; PRD4 only allows observation-first ports | ADR review, docs consistency, later port tests if code exists | No arbitrary runtime plugin in PRD4 |
 | P4-F06 | Status Center And Runtime Observability | Planned | Event Status, Runtime Environment, Capacity Health, and Observability Integrations are separate surfaces; stale/missing telemetry is explicit | Backend/frontend tests, RBAC tests, local runtime smoke | Current Internal Status semantics remain event-derived |
 | P4-F07 | External Monitoring Integration | Planned | Prometheus/Grafana or external platform state is shown as connected/stale/unavailable; deep links are configurable | Config tests, local Prom/Grafana smoke, unavailable-state smoke | Do not duplicate full Grafana UI |
@@ -104,3 +104,23 @@ No Trace UI, Runtime Status Center CPU/memory/network panels, Scheduler V2,
 hard quota enforcement, real upstream target evidence, real SSO evidence,
 OpenTelemetry ingestion, Logto/IAM rewrite, prompt/response plaintext storage,
 or PRD5 runtime plugin marketplace is expected for Batch 1B.
+
+## Batch 1C Verification
+
+PRD4 Batch 1C verifies the Flow/Event/Trace foundation first slice:
+
+```bash
+rg -n "request_trace_events|TRACE_EVENTS_ENABLED|TRACE_EVENT_SAMPLE_RATE|GetRequestTrace|getLogTrace|gateway.request.accepted|logging.call_log.recorded" migrations internal cmd frontend/src docs/tech-ref/05-openapi-spec.yaml docs/ops/deployment-runbook.md .env.example docker-compose.yml
+rg -n "PRD4-TRACE-001|P4-F04|Batch 1C|Flow/Event/Trace" docs/agent-workflows/FIX-SIGNAL.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/PROJECT-HANDOFF.md docs/DOC-INVENTORY.md docs/README.md docs/CODEBASE-MAP.md
+go test ./internal/config ./internal/gateway ./internal/admin ./cmd/uniroute -count=1
+go test ./...
+npm --prefix frontend test -- --run LogsPage client ApiDocsPage
+npm --prefix frontend test -- --run
+npm --prefix frontend run build
+git diff --check
+```
+
+No OpenTelemetry ingestion/export, Runtime Status Center CPU/memory/network
+panels, Prometheus/Grafana integration status, direct global request-id lookup,
+full PlungeIn runtime plugin framework, Scheduler V2, trace retention cleanup,
+or prompt/response plaintext storage is expected for Batch 1C.
