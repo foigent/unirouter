@@ -14,7 +14,7 @@
 7. `docs/PRD-Phase3.md` - completed PRD3 scope.
 8. `docs/planning/PRD3-CONSISTENCY-AUDIT.md` - PRD1 -> PRD2 consistency findings behind PRD3.
 9. `docs/issues/OPEN-ISSUES.md` - active unresolved issues and recently verified fixes.
-10. `docs/agent-workflows/AGENT-PROTOCOL.md` - mandatory Codex/OpenClaw Canary/Sentinel/Atlas workflow.
+10. `docs/agent-workflows/AGENT-PROTOCOL.md` - risk-gated Codex/OpenClaw Canary/Sentinel/Atlas workflow.
 11. `docs/agent-workflows/FIX-SIGNAL.md` and `docs/agent-workflows/VERIFY-RESULT.md` - current verification request/result.
 12. `docs/CODEBASE-MAP.md` - code, route, data, test, and deployment map.
 13. `docs/DOC-INVENTORY.md` and `docs/DOCS-GOVERNANCE.md` - which docs are current, frozen, historical, candidate, or reference-only.
@@ -44,17 +44,19 @@ PRD4 is now proposed as the commercial observability and control foundation phas
 
 PRD1 and PRD2 documents remain useful requirements/evidence references, but they are not the active planning surface for new work. Do not treat files under `docs/testing/archive/` as current status. They are historical evidence unless reconciled into the current-state files above.
 
-## Mandatory Agent Workflow
+## Risk-Gated Agent Workflow
 
-Code changes and acceptance-sensitive documentation changes must use the protocol:
+Use `docs/agent-workflows/AGENT-PROTOCOL.md` to classify each change before deciding the handoff path:
 
-1. Codex implements or edits.
-2. Codex updates `docs/agent-workflows/FIX-SIGNAL.md`.
-3. User asks OpenClaw Canary to verify that file.
-4. OpenClaw writes `docs/agent-workflows/VERIFY-RESULT.md`.
-5. Codex reads the result and either closes the loop or fixes failures.
+1. Codex implements or edits and classifies the change as R0/R1/R2/R3/R4.
+2. R0 local cleanup does not require `FIX-SIGNAL.md` / `VERIFY-RESULT.md`.
+3. R1 tooling/evidence changes may be grouped into one Canary gate.
+4. R2/R3/R4 changes require Codex to update `docs/agent-workflows/FIX-SIGNAL.md`.
+5. User asks OpenClaw Canary to verify that file when a risk gate is triggered.
+6. OpenClaw writes `docs/agent-workflows/VERIFY-RESULT.md`.
+7. Codex reads the result and either closes the loop or fixes failures.
 
-User handoff sentence for OpenClaw:
+User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ```text
 去 /Users/m4/Desktop/projects/UniRouter/docs/agent-workflows/FIX-SIGNAL.md，按里面的验收指令逐条验证，结果写入 VERIFY-RESULT.md。
@@ -68,8 +70,27 @@ Latest accepted PRD4 hardening baseline is PRD4 Preflight Hardening on 2026-07-0
 - User reported Sentinel/Atlas completed after `e335a9e` / PR #83.
 - PRD4 Batch 0 scope baseline is complete per User report after `e24731d` / PR #82; the Batch 0 `VERIFY-RESULT.md` content has since been overwritten by the Preflight result.
 
-Latest accepted PRD4 implementation batch is PRD4 Batch 1H Real Upstream
-Evidence Harness:
+Latest accepted PRD4 implementation batch is PRD4 Batch 1I Real SSO Evidence
+Harness:
+
+- Canary PASS 11/11 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`.
+- Sentinel merge is reflected by `2c02430` / PR #92.
+- Batch 1I adds guarded tooling for `P4-F09` real SSO evidence:
+  `scripts/prd4-real-sso-smoke.sh`, `scripts/prd4_real_sso_smoke.mjs`,
+  `scripts/prd4_real_sso_audit_check.go`, and
+  `docs/tech-ref/24-prd4-real-sso-evidence.md`.
+- Preflight mode is safe without target credentials: it reports `SKIP`, does
+  not drive a browser, does not call an IdP, and does not read the database.
+- Real mode requires approved Logto or enterprise OIDC target access, a test
+  user, console/backend/issuer URLs, DB DSN, and
+  `UNIROUTE_PRD4_SSO_ALLOW_BROWSER=approved-target-real-sso`.
+- Batch 1I does not mark `P4-F09` E2E accepted or Production verified without a
+  successful approved target-IdP browser login and audit evidence.
+
+Current active verification signal: Protocol Risk-Gated Workflow Update is fixed
+awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+
+Latest accepted real upstream evidence-harness batch is PRD4 Batch 1H:
 
 - Canary PASS 11/11 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`.
 - Sentinel merge is reflected by `d3acfa6` / PR #91.
@@ -85,21 +106,6 @@ Evidence Harness:
   `UNIROUTE_PRD4_UPSTREAM_ALLOW_MUTATION=approved-target-real-upstream`.
 - Batch 1H does not mark `P4-F08` E2E accepted or Production verified without a
   successful approved target-provider run.
-
-Current active verification signal: PRD4 Batch 1I Real SSO Evidence
-Harness is fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
-
-- Batch 1I adds guarded tooling for `P4-F09` real SSO evidence:
-  `scripts/prd4-real-sso-smoke.sh`, `scripts/prd4_real_sso_smoke.mjs`,
-  `scripts/prd4_real_sso_audit_check.go`, and
-  `docs/tech-ref/24-prd4-real-sso-evidence.md`.
-- Preflight mode is safe without target credentials: it reports `SKIP`, does
-  not drive a browser, does not call an IdP, and does not read the database.
-- Real mode requires approved Logto or enterprise OIDC target access, a test
-  user, console/backend/issuer URLs, DB DSN, and
-  `UNIROUTE_PRD4_SSO_ALLOW_BROWSER=approved-target-real-sso`.
-- Batch 1I does not mark `P4-F09` E2E accepted or Production verified without a
-  successful approved target-IdP browser login and audit evidence.
 
 The latest accepted route-contract baseline remains PRD3 Batch 6 on 2026-07-05:
 

@@ -55,10 +55,12 @@ Docker Compose（6 个容器）：
 - [贡献指南](CONTRIBUTING.md) — 开发流程、代码规范、提交规范
 - [Agent Handoff](docs/PROJECT-HANDOFF.md) — 其他 agent 接手项目的第一入口
 - [当前状态](docs/ops/CURRENT-STATUS.md) — 当前真实进度、测试和缺口
-- [PRD3 验收矩阵](docs/ops/PRD3-ACCEPTANCE-MATRIX.md) — 当前 PRD3 清理/优化验收状态
-- [PRD3 产品范围](docs/PRD-Phase3.md) — 当前 PRD3 一致性、语义、契约和架构清理范围
+- [PRD4 产品范围](docs/PRD-Phase4.md) — 当前 PRD4 正式范围草案
+- [PRD4 验收矩阵](docs/ops/PRD4-ACCEPTANCE-MATRIX.md) — 当前 PRD4 验收状态和证据边界
+- [PRD3 验收矩阵](docs/ops/PRD3-ACCEPTANCE-MATRIX.md) — 已完成 PRD3 清理/优化验收状态
+- [PRD3 产品范围](docs/PRD-Phase3.md) — 已完成 PRD3 一致性、语义、契约和架构清理范围
 - [PRD3 一致性审计](docs/planning/PRD3-CONSISTENCY-AUDIT.md) — PRD1→PRD2 遗留问题梳理
-- [PRD4 候选 Backlog](docs/planning/PRD4-BACKLOG.md) — PRD4 候选能力边界
+- [PRD4 候选 Backlog](docs/planning/PRD4-BACKLOG.md) — PRD4 候选能力来源记录，正式范围以 PRD4 产品范围为准
 - [Open Issues](docs/issues/OPEN-ISSUES.md) — 当前未关闭问题
 - [Agent 协议](docs/agent-workflows/AGENT-PROTOCOL.md) — Codex/OpenClaw 协作和验收流程
 - [文档目录](docs/README.md) — 当前、冻结、历史和候选文档入口
@@ -123,8 +125,9 @@ UniRouter/
 │   ├── DOC-INVENTORY.md  # 文档清单和边界
 │   ├── PRD-Phase1.md     # 产品需求文档
 │   ├── PRD-Phase2.md     # PRD2 需求文档（冻结）
-│   ├── PRD-Phase3.md     # PRD3 清理/优化范围
-│   ├── planning/         # PRD2/PRD3/PRD4 规划和候选 backlog
+│   ├── PRD-Phase3.md     # PRD3 清理/优化范围（已完成）
+│   ├── PRD-Phase4.md     # PRD4 当前范围
+│   ├── planning/         # PRD2/PRD3/PRD4/PRD5 规划和 backlog
 │   ├── ops/              # 部署 & 测试
 │   ├── tech-ref/         # 技术参考（模型矩阵、计费状态机等）
 │   ├── agent-workflows/  # Agent 工作流
