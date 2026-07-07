@@ -31,6 +31,10 @@ func usageAnalyticsGroup(groupBy string) (analyticsGroup, string, bool) {
 		return analyticsGroup{Key: "project", Label: "项目"}, "COALESCE(project_id, 0)::text", true
 	case "key":
 		return analyticsGroup{Key: "key", Label: "访问凭证"}, "COALESCE(api_key_id, 0)::text", true
+	case "owner":
+		return analyticsGroup{Key: "owner", Label: "Key Owner"}, "COALESCE(owner_user_id, 0)::text", true
+	case "key_type":
+		return analyticsGroup{Key: "key_type", Label: "凭证类型"}, "COALESCE(NULLIF(key_type, ''), 'unknown')", true
 	case "model":
 		return analyticsGroup{Key: "model", Label: "模型"}, "COALESCE(NULLIF(model, ''), '(unknown)')", true
 	case "alias":
@@ -124,6 +128,21 @@ func (h *Handler) analyticsConditions(r *http.Request) ([]string, []interface{},
 		add("org_id = $%d", parsed)
 	}
 
+	currentUserID := middleware.GetUserIDFromContext(r.Context())
+	myScope := false
+	if value := strings.TrimSpace(r.URL.Query().Get("scope")); value != "" {
+		switch value {
+		case "my":
+			if currentUserID <= 0 {
+				return nil, nil, fmt.Errorf("Forbidden")
+			}
+			add("owner_user_id = $%d", currentUserID)
+			myScope = true
+		default:
+			return nil, nil, fmt.Errorf("Invalid scope")
+		}
+	}
+
 	projectValue := r.URL.Query().Get("project_id")
 	if projectValue != "" {
 		projectID, err := strconv.ParseInt(projectValue, 10, 64)
@@ -134,7 +153,7 @@ func (h *Handler) analyticsConditions(r *http.Request) ([]string, []interface{},
 			return nil, nil, fmt.Errorf("Forbidden")
 		}
 		add("project_id = $%d", projectID)
-	} else if auth.IsProjectScopedRole(role) {
+	} else if auth.IsProjectScopedRole(role) && !myScope {
 		return nil, nil, fmt.Errorf("project_id is required")
 	}
 
@@ -156,6 +175,27 @@ func (h *Handler) analyticsConditions(r *http.Request) ([]string, []interface{},
 			return nil, nil, fmt.Errorf("Invalid key_id")
 		}
 		add("api_key_id = $%d", keyID)
+	}
+	if value := strings.TrimSpace(r.URL.Query().Get("owner_user_id")); value != "" {
+		ownerUserID, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || ownerUserID <= 0 {
+			return nil, nil, fmt.Errorf("Invalid owner_user_id")
+		}
+		if myScope && ownerUserID != currentUserID {
+			return nil, nil, fmt.Errorf("owner_user_id conflicts with scope")
+		}
+		if auth.IsProjectScopedRole(role) && ownerUserID != currentUserID {
+			return nil, nil, fmt.Errorf("Forbidden")
+		}
+		if !myScope {
+			add("owner_user_id = $%d", ownerUserID)
+		}
+	}
+	if value := strings.TrimSpace(r.URL.Query().Get("key_type")); value != "" {
+		if value != "unknown" && !validAPIKeyType(value) {
+			return nil, nil, fmt.Errorf("Invalid key_type")
+		}
+		add("key_type = $%d", value)
 	}
 	if value := strings.TrimSpace(r.URL.Query().Get("usage_source")); value != "" {
 		add("usage_source = $%d", metering.NormalizeUsageSource(value))

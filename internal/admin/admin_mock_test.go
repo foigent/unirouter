@@ -1355,20 +1355,23 @@ func TestListAPIKeys_Success(t *testing.T) {
 			return &testutil.MockRows{
 				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
-						*dest[0].(*int64) = 1           // id
-						*dest[1].(*int64) = 1           // org_id
-						*dest[2].(*int64) = 7           // project_id
-						*dest[3].(*string) = "test-key" // name
-						*dest[4].(*string) = "sk-ab12"  // key_prefix
-						*dest[5].(*string) = "active"   // status
-						*dest[6].(*int) = 60            // rpm_limit
-						*dest[7].(*int) = 10            // qps_limit
-						*dest[8].(*int) = 0             // budget_limit
-						*dest[9].(*string) = ""         // allowed_ips
-						*dest[10].(*string) = ""        // allowed_models
-						*dest[11].(*time.Time) = now    // created_at
-						*dest[12].(*string) = "Default" // org_name
-						*dest[13].(*string) = "Core"    // project_name
+						*dest[0].(*int64) = 1            // id
+						*dest[1].(*int64) = 1            // org_id
+						*dest[2].(*int64) = 7            // project_id
+						*dest[3].(*string) = "test-key"  // name
+						*dest[4].(*string) = "sk-ab12"   // key_prefix
+						*dest[5].(*string) = "active"    // status
+						*dest[6].(*int) = 60             // rpm_limit
+						*dest[7].(*int) = 10             // qps_limit
+						*dest[8].(*int) = 0              // budget_limit
+						*dest[9].(*string) = ""          // allowed_ips
+						*dest[10].(*string) = ""         // allowed_models
+						*dest[11].(*time.Time) = now     // created_at
+						*dest[12].(*string) = "Default"  // org_name
+						*dest[13].(*string) = "Core"     // project_name
+						*dest[14].(*int64) = 42          // owner_user_id
+						*dest[15].(*string) = "personal" // key_type
+						*dest[16].(*string) = "alice"    // owner_username
 						return nil
 					},
 				},
@@ -1390,6 +1393,11 @@ func TestListAPIKeys_Success(t *testing.T) {
 	total := resp["total"].(float64)
 	if total != 1 {
 		t.Fatalf("expected total=1, got %v", total)
+	}
+	data := resp["data"].([]interface{})
+	first := data[0].(map[string]interface{})
+	if first["key_type"] != "personal" || first["owner_username"] != "alice" {
+		t.Fatalf("expected owner fields in list response, got %#v", first)
 	}
 }
 
@@ -1510,6 +1518,52 @@ func TestCreateAPIKey_AuditIncludesProjectAndAfterState(t *testing.T) {
 	}
 	if !strings.Contains(auditArgs[12].(string), "project-key") || !strings.Contains(auditArgs[12].(string), "company-chat") {
 		t.Fatalf("expected after state to include key fields, got %v", auditArgs[12])
+	}
+}
+
+func TestCreateAPIKey_PersonalOwnerFields(t *testing.T) {
+	var insertArgs []any
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
+					switch {
+					case strings.Contains(sql, "SELECT id FROM projects"):
+						*dest[0].(*int64) = 9
+					case strings.Contains(sql, "FROM users"):
+						*dest[0].(*int) = 1
+					case strings.Contains(sql, "FROM project_members"):
+						*dest[0].(*int) = 1
+					case strings.Contains(sql, "INSERT INTO api_keys"):
+						insertArgs = append([]any(nil), args...)
+						*dest[0].(*int64) = 42
+					default:
+						*dest[0].(*int64) = 42
+					}
+					return nil
+				},
+			}
+		},
+	}
+	h := newTestHandler(db)
+
+	body := `{"org_id":1,"project_id":9,"owner_user_id":42,"key_type":"personal","name":"alice-key"}`
+	req := httptest.NewRequest("POST", "/keys", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.CreateAPIKey(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(insertArgs) < 4 || insertArgs[2] != int64(42) || insertArgs[3] != "personal" {
+		t.Fatalf("expected owner/key_type insert args, got %#v", insertArgs)
+	}
+	var resp map[string]interface{}
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["owner_user_id"] != float64(42) || resp["key_type"] != "personal" {
+		t.Fatalf("expected owner fields in create response, got %#v", resp)
 	}
 }
 
@@ -1764,9 +1818,18 @@ func TestTestChannel_AnthropicNativeUsesMessagesEndpoint(t *testing.T) {
 // ===================================================================
 
 func TestDeleteUser_Success(t *testing.T) {
+	var updatePersonalKeys bool
 	db := &testutil.MockDB{
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			return pgconn.NewCommandTag("DELETE 1"), nil
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+			return &testutil.MockTx{
+				ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+					if strings.Contains(sql, "UPDATE api_keys") {
+						updatePersonalKeys = true
+						return pgconn.NewCommandTag("UPDATE 1"), nil
+					}
+					return pgconn.NewCommandTag("DELETE 1"), nil
+				},
+			}, nil
 		},
 	}
 	h := newTestHandler(db)
@@ -1779,6 +1842,9 @@ func TestDeleteUser_Success(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !updatePersonalKeys {
+		t.Fatal("expected personal API keys to be disabled before deleting user")
 	}
 }
 
@@ -1798,8 +1864,12 @@ func TestDeleteUser_InvalidID(t *testing.T) {
 
 func TestDeleteUser_DBError(t *testing.T) {
 	db := &testutil.MockDB{
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			return pgconn.CommandTag{}, fmt.Errorf("fk violation")
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+			return &testutil.MockTx{
+				ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+					return pgconn.CommandTag{}, fmt.Errorf("fk violation")
+				},
+			}, nil
 		},
 	}
 	h := newTestHandler(db)
@@ -2198,6 +2268,9 @@ func TestGetAPIKey_Success(t *testing.T) {
 					*dest[11].(*time.Time) = now
 					*dest[12].(*string) = "Default"
 					*dest[13].(*string) = "Core"
+					*dest[14].(*int64) = 42
+					*dest[15].(*string) = "personal"
+					*dest[16].(*string) = "alice"
 					return nil
 				},
 			}
@@ -2213,6 +2286,11 @@ func TestGetAPIKey_Success(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]interface{}
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["key_type"] != "personal" || resp["owner_username"] != "alice" {
+		t.Fatalf("expected owner fields in get response, got %#v", resp)
 	}
 }
 

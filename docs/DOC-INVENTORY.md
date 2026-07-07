@@ -8,7 +8,7 @@
 |------|------|
 | `docs/PROJECT-HANDOFF.md` | First-read handoff for agents |
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
-| `docs/PRD-Phase4.md` | Proposed formal PRD4 scope; no runtime implementation accepted yet |
+| `docs/PRD-Phase4.md` | Formal PRD4 scope and implementation-phase reference |
 | `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` | Proposed PRD4 acceptance matrix and evidence boundaries |
 | `docs/planning/PRD5-BACKLOG.md` | Capabilities explicitly deferred beyond PRD4 |
 | `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` | Completed PRD3 cleanup/optimization acceptance state |
@@ -23,7 +23,7 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required Codex/OpenClaw workflow |
-| `docs/agent-workflows/FIX-SIGNAL.md` | Current verification signal; PRD4 Batch 1A Auth UX hardening awaits Canary |
+| `docs/agent-workflows/FIX-SIGNAL.md` | Current verification signal: PRD4 Batch 1B Usage And Cost Attribution fixed awaiting Canary |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Current verification result after OpenClaw runs |
 
 ## Product And Design References

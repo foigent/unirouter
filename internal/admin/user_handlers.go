@@ -150,13 +150,32 @@ func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid ID"})
 		return
 	}
-	tag, err := h.db.Exec(r.Context(), `DELETE FROM users WHERE id = $1`, id)
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Delete failed"})
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	if _, err := tx.Exec(r.Context(),
+		`UPDATE api_keys
+		 SET status = 'disabled', updated_at = NOW()
+		 WHERE owner_user_id = $1 AND key_type = 'personal'`, id,
+	); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Delete failed"})
+		return
+	}
+	tag, err := tx.Exec(r.Context(), `DELETE FROM users WHERE id = $1`, id)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Delete failed"})
 		return
 	}
 	if tag.RowsAffected() == 0 {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "User not found"})
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Delete failed"})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})

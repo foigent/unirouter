@@ -181,9 +181,11 @@ func resolveAPIKey(ctx context.Context, q db.DBQuerier, keyHash string) (*models
 	var apiKey models.ApiKey
 	var orgStatus string
 	var projectID int64
+	var ownerUserID int64
 	err := q.QueryRow(ctx,
 		`SELECT ak.id, ak.org_id, COALESCE(ak.project_id, 0), ak.status, ak.allowed_ips, ak.allowed_models,
 		        ak.rpm_limit, ak.qps_limit, ak.budget_limit, ak.key_prefix, ak.name,
+		        COALESCE(ak.owner_user_id, 0), COALESCE(NULLIF(ak.key_type, ''), 'shared'),
 		        o.status
 		 FROM api_keys ak
 		 JOIN orgs o ON o.id = ak.org_id
@@ -192,13 +194,16 @@ func resolveAPIKey(ctx context.Context, q db.DBQuerier, keyHash string) (*models
 	).Scan(
 		&apiKey.ID, &apiKey.OrgID, &projectID, &apiKey.Status, &apiKey.IPWhitelist,
 		&apiKey.AllowedModels, &apiKey.RPMLimit, &apiKey.QPSLimit,
-		&apiKey.BudgetLimit, &apiKey.KeyPrefix, &apiKey.Name, &orgStatus,
+		&apiKey.BudgetLimit, &apiKey.KeyPrefix, &apiKey.Name, &ownerUserID, &apiKey.KeyType, &orgStatus,
 	)
 	if err != nil {
 		return nil, "", err
 	}
 	if projectID > 0 {
 		apiKey.ProjectID = &projectID
+	}
+	if ownerUserID > 0 {
+		apiKey.OwnerUserID = &ownerUserID
 	}
 	return &apiKey, orgStatus, nil
 }

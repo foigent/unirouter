@@ -148,6 +148,7 @@ export const api = {
   // PRD2 Batch 23 product surfaces
   getUsageAnalytics: (filters?: {
     group_by?: string; org_id?: string | number; project_id?: string | number; key_id?: string | number;
+    owner_user_id?: string | number; key_type?: string; scope?: string;
     model?: string; alias?: string; provider?: string; channel?: string; status?: string;
     usage_source?: string; start_time?: string; end_time?: string; format?: string;
   }) => request(appendParams('/usage/analytics', {
@@ -155,6 +156,9 @@ export const api = {
     org_id: filters?.org_id,
     project_id: filters?.project_id,
     key_id: filters?.key_id,
+    owner_user_id: filters?.owner_user_id,
+    key_type: filters?.key_type,
+    scope: filters?.scope,
     model: filters?.model,
     alias: filters?.alias,
     provider: filters?.provider,

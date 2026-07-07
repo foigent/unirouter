@@ -68,15 +68,19 @@ Latest accepted PRD4 hardening baseline is PRD4 Preflight Hardening on 2026-07-0
 - User reported Sentinel/Atlas completed after `e335a9e` / PR #83.
 - PRD4 Batch 0 scope baseline is complete per User report after `e24731d` / PR #82; the Batch 0 `VERIFY-RESULT.md` content has since been overwritten by the Preflight result.
 
-Current active verification signal is PRD4 Batch 1A Auth UX hardening:
+Latest accepted PRD4 implementation batch is PRD4 Batch 1A Auth UX hardening:
 
-- `docs/agent-workflows/FIX-SIGNAL.md` asks Canary to verify shared
-  password show/hide controls for login, change-password, and admin user
-  password fields.
-- This PRD4 Batch 1A work is not accepted until Canary updates
-  `docs/agent-workflows/VERIFY-RESULT.md`.
+- `docs/agent-workflows/VERIFY-RESULT.md` reports PASS 6/6.
+- User reported Sentinel completed after `620794b` / PR #84.
+- Atlas deployment has not been reported for Batch 1A.
 - No backend auth, SSO/OIDC, RBAC, password policy, migration, usage/cost,
-  trace, runtime observability, or deployment behavior change is expected.
+  trace, runtime observability, or deployment behavior changed.
+
+Current active verification signal: PRD4 Batch 1B Usage And Cost Attribution
+foundation. `docs/agent-workflows/FIX-SIGNAL.md` asks Canary to verify API key
+owner/type attribution, gateway `call_logs` owner/type snapshots, usage
+analytics `scope=my` and owner/key-type filters/groupings, frontend analytics
+controls, and status docs. Batch 1B is fixed awaiting Canary, not accepted.
 
 The latest accepted route-contract baseline remains PRD3 Batch 6 on 2026-07-05:
 

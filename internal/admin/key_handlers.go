@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/uniroute/unirouter/internal/auth"
@@ -46,10 +47,12 @@ func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(r.Context(),
 		fmt.Sprintf(`SELECT ak.id, ak.org_id, COALESCE(ak.project_id, 0), ak.name, ak.key_prefix, ak.status, ak.rpm_limit, ak.qps_limit,
 		        COALESCE(ak.budget_limit, 0), ak.allowed_ips, ak.allowed_models, ak.created_at,
-		        o.name as org_name, COALESCE(p.name, '') as project_name
+		        o.name as org_name, COALESCE(p.name, '') as project_name,
+		        COALESCE(ak.owner_user_id, 0), COALESCE(NULLIF(ak.key_type, ''), 'shared'), COALESCE(u.username, '')
 		 FROM api_keys ak
 		 JOIN orgs o ON o.id = ak.org_id
 		 LEFT JOIN projects p ON p.id = ak.project_id
+		 LEFT JOIN users u ON u.id = ak.owner_user_id
 		 %s
 		 ORDER BY ak.id ASC`, whereClause),
 		args...,
@@ -62,20 +65,25 @@ func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 
 	keys := make([]map[string]interface{}, 0)
 	for rows.Next() {
-		var id, orgID, projectID int64
-		var name, keyPrefix, status, orgName, projectName string
+		var id, orgID, projectID, ownerUserID int64
+		var name, keyPrefix, status, orgName, projectName, keyType, ownerUsername string
 		var rpmLimit, qpsLimit, budgetLimit int
 		var allowedIPs, allowedModels string
 		var createdAt time.Time
-		if err := rows.Scan(&id, &orgID, &projectID, &name, &keyPrefix, &status, &rpmLimit, &qpsLimit, &budgetLimit, &allowedIPs, &allowedModels, &createdAt, &orgName, &projectName); err != nil {
+		if err := rows.Scan(&id, &orgID, &projectID, &name, &keyPrefix, &status, &rpmLimit, &qpsLimit, &budgetLimit, &allowedIPs, &allowedModels, &createdAt, &orgName, &projectName, &ownerUserID, &keyType, &ownerUsername); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 			return
+		}
+		var owner interface{}
+		if ownerUserID > 0 {
+			owner = ownerUserID
 		}
 		keys = append(keys, map[string]interface{}{
 			"id": id, "org_id": orgID, "project_id": projectID, "name": name, "key_prefix": keyPrefix,
 			"status": status, "rpm_limit": rpmLimit, "qps_limit": qpsLimit,
 			"budget_limit": budgetLimit, "allowed_ips": allowedIPs, "allowed_models": allowedModels,
 			"created_at": createdAt, "org_name": orgName, "project_name": projectName,
+			"owner_user_id": owner, "owner_username": ownerUsername, "key_type": keyType,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -90,6 +98,8 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		OrgID         int64  `json:"org_id"`
 		ProjectID     int64  `json:"project_id"`
+		OwnerUserID   *int64 `json:"owner_user_id"`
+		KeyType       string `json:"key_type"`
 		Name          string `json:"name"`
 		RPMLimit      int    `json:"rpm_limit"`
 		QPSLimit      int    `json:"qps_limit"`
@@ -150,6 +160,11 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 		return
 	}
+	ownerUserID, keyType, err := h.resolveCreateAPIKeyOwnership(r.Context(), req.OrgID, projectID, req.OwnerUserID, req.KeyType)
+	if err != nil {
+		writeAPIKeyOwnershipError(w, err)
+		return
+	}
 
 	rawKey, keyPrefix, err := auth.GenerateAPIKey(req.OrgID)
 	if err != nil {
@@ -161,10 +176,10 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 
 	var id int64
 	err = h.db.QueryRow(r.Context(),
-		`INSERT INTO api_keys (org_id, project_id, name, key_hash, key_prefix, status, rpm_limit, qps_limit, allowed_ips, allowed_models, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, 'active', $6, $7, $8, $9, NOW(), NOW())
+		`INSERT INTO api_keys (org_id, project_id, owner_user_id, key_type, name, key_hash, key_prefix, status, rpm_limit, qps_limit, allowed_ips, allowed_models, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8, $9, $10, $11, NOW(), NOW())
 		 RETURNING id`,
-		req.OrgID, projectID, req.Name, keyHash, keyPrefix, req.RPMLimit, req.QPSLimit, req.AllowedIPs, req.AllowedModels,
+		req.OrgID, projectID, nullableOwnerUserID(ownerUserID), keyType, req.Name, keyHash, keyPrefix, req.RPMLimit, req.QPSLimit, req.AllowedIPs, req.AllowedModels,
 	).Scan(&id)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to create key"})
@@ -175,10 +190,13 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		map[string]interface{}{
 			"org_id":     req.OrgID,
 			"project_id": projectID,
+			"key_type":   keyType,
 			"name":       req.Name,
 			"after": map[string]interface{}{
 				"org_id":         req.OrgID,
 				"project_id":     projectID,
+				"owner_user_id":  nullableOwnerUserID(ownerUserID),
+				"key_type":       keyType,
 				"name":           req.Name,
 				"status":         "active",
 				"rpm_limit":      req.RPMLimit,
@@ -188,7 +206,7 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 			},
 		})
 
-	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "key": rawKey, "key_prefix": keyPrefix, "project_id": projectID})
+	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "key": rawKey, "key_prefix": keyPrefix, "project_id": projectID, "owner_user_id": nullableOwnerUserID(ownerUserID), "key_type": keyType})
 }
 
 func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
@@ -205,6 +223,8 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		AllowedModels *string `json:"allowed_models"`
 		Status        *string `json:"status"`
 		ProjectID     *int64  `json:"project_id"`
+		OwnerUserID   *int64  `json:"owner_user_id"`
+		KeyType       *string `json:"key_type"`
 		RPMLimit      *int    `json:"rpm_limit"`
 		QPSLimit      *int    `json:"qps_limit"`
 	}
@@ -216,6 +236,9 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 	var sets []string
 	var args []interface{}
 	argIdx := 1
+	var targetOrgID int64
+	var targetProjectID int64
+	targetProjectKnown := false
 
 	if req.Name != nil {
 		sets = append(sets, fmt.Sprintf("name = $%d", argIdx))
@@ -258,6 +281,9 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 			return
 		}
+		targetOrgID = orgID
+		targetProjectID = projectID
+		targetProjectKnown = true
 		sets = append(sets, fmt.Sprintf("project_id = $%d", argIdx))
 		args = append(args, projectID)
 		argIdx++
@@ -273,6 +299,46 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 			return
 		}
+	}
+	if req.ProjectID != nil || req.OwnerUserID != nil || req.KeyType != nil {
+		var currentOrgID, currentProjectID, currentOwnerUserID int64
+		var currentKeyType string
+		err := h.db.QueryRow(r.Context(),
+			`SELECT org_id, COALESCE(project_id, 0), COALESCE(owner_user_id, 0), COALESCE(NULLIF(key_type, ''), 'shared')
+			 FROM api_keys WHERE id = $1`, id,
+		).Scan(&currentOrgID, &currentProjectID, &currentOwnerUserID, &currentKeyType)
+		if err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Key not found"})
+			return
+		}
+		if !h.canWriteProject(r.Context(), currentProjectID) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			return
+		}
+		if !targetProjectKnown {
+			targetOrgID = currentOrgID
+			targetProjectID = currentProjectID
+		}
+		ownerUserID := currentOwnerUserID
+		if req.OwnerUserID != nil {
+			ownerUserID = *req.OwnerUserID
+		}
+		keyType := currentKeyType
+		ownerWasExplicit := req.OwnerUserID != nil
+		if req.KeyType != nil {
+			keyType = *req.KeyType
+		}
+		ownerUserID, keyType, err = h.resolveUpdateAPIKeyOwnership(r.Context(), targetOrgID, targetProjectID, ownerUserID, keyType, ownerWasExplicit)
+		if err != nil {
+			writeAPIKeyOwnershipError(w, err)
+			return
+		}
+		sets = append(sets, fmt.Sprintf("owner_user_id = $%d", argIdx))
+		args = append(args, nullableOwnerUserID(ownerUserID))
+		argIdx++
+		sets = append(sets, fmt.Sprintf("key_type = $%d", argIdx))
+		args = append(args, keyType)
+		argIdx++
 	}
 	if req.RPMLimit != nil {
 		sets = append(sets, fmt.Sprintf("rpm_limit = $%d", argIdx))
@@ -319,6 +385,12 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ProjectID != nil {
 		changedFields = append(changedFields, "project_id")
+	}
+	if req.OwnerUserID != nil {
+		changedFields = append(changedFields, "owner_user_id")
+	}
+	if req.KeyType != nil {
+		changedFields = append(changedFields, "key_type")
 	}
 	if req.RPMLimit != nil {
 		changedFields = append(changedFields, "rpm_limit")
@@ -384,22 +456,25 @@ func (h *Handler) GetAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var k struct {
-		ID, OrgID, ProjectID            int64
-		Name, KeyPrefix                 string
-		Status                          string
-		RPMLimit, QPSLimit, BudgetLimit int
-		AllowedIPs, AllowedModels       string
-		OrgName, ProjectName            string
-		CreatedAt                       time.Time
+		ID, OrgID, ProjectID, OwnerUserID int64
+		Name, KeyPrefix                   string
+		KeyType, OwnerUsername            string
+		Status                            string
+		RPMLimit, QPSLimit, BudgetLimit   int
+		AllowedIPs, AllowedModels         string
+		OrgName, ProjectName              string
+		CreatedAt                         time.Time
 	}
 	err = h.db.QueryRow(r.Context(),
 		`SELECT ak.id, ak.org_id, COALESCE(ak.project_id, 0), ak.name, ak.key_prefix, ak.status, ak.rpm_limit, ak.qps_limit,
-		        ak.budget_limit, ak.allowed_ips, ak.allowed_models, ak.created_at, o.name, COALESCE(p.name, '')
+		        ak.budget_limit, ak.allowed_ips, ak.allowed_models, ak.created_at, o.name, COALESCE(p.name, ''),
+		        COALESCE(ak.owner_user_id, 0), COALESCE(NULLIF(ak.key_type, ''), 'shared'), COALESCE(u.username, '')
 		 FROM api_keys ak JOIN orgs o ON o.id = ak.org_id
 		 LEFT JOIN projects p ON p.id = ak.project_id
+		 LEFT JOIN users u ON u.id = ak.owner_user_id
 		 WHERE ak.id = $1`, id).Scan(
 		&k.ID, &k.OrgID, &k.ProjectID, &k.Name, &k.KeyPrefix, &k.Status, &k.RPMLimit, &k.QPSLimit,
-		&k.BudgetLimit, &k.AllowedIPs, &k.AllowedModels, &k.CreatedAt, &k.OrgName, &k.ProjectName)
+		&k.BudgetLimit, &k.AllowedIPs, &k.AllowedModels, &k.CreatedAt, &k.OrgName, &k.ProjectName, &k.OwnerUserID, &k.KeyType, &k.OwnerUsername)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "API key not found"})
 		return
@@ -408,12 +483,133 @@ func (h *Handler) GetAPIKey(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 		return
 	}
+	var owner interface{}
+	if k.OwnerUserID > 0 {
+		owner = k.OwnerUserID
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"id": k.ID, "org_id": k.OrgID, "project_id": k.ProjectID, "name": k.Name, "key_prefix": k.KeyPrefix,
 		"status": k.Status, "rpm_limit": k.RPMLimit, "qps_limit": k.QPSLimit,
 		"budget_limit": k.BudgetLimit, "allowed_ips": k.AllowedIPs, "allowed_models": k.AllowedModels,
 		"created_at": k.CreatedAt, "org_name": k.OrgName, "project_name": k.ProjectName,
+		"owner_user_id": owner, "owner_username": k.OwnerUsername, "key_type": k.KeyType,
 	})
+}
+
+func nullableOwnerUserID(ownerUserID int64) interface{} {
+	if ownerUserID > 0 {
+		return ownerUserID
+	}
+	return nil
+}
+
+func writeAPIKeyOwnershipError(w http.ResponseWriter, err error) {
+	status := http.StatusBadRequest
+	if err.Error() == "Forbidden" {
+		status = http.StatusForbidden
+	}
+	writeJSON(w, status, map[string]interface{}{"error": err.Error()})
+}
+
+func validAPIKeyType(keyType string) bool {
+	switch keyType {
+	case "shared", "personal", "service":
+		return true
+	default:
+		return false
+	}
+}
+
+func (h *Handler) resolveCreateAPIKeyOwnership(ctx context.Context, orgID, projectID int64, ownerReq *int64, keyTypeReq string) (int64, string, error) {
+	role := actorRole(ctx)
+	actorID := middleware.GetUserIDFromContext(ctx)
+	ownerUserID := int64(0)
+	if ownerReq != nil {
+		ownerUserID = *ownerReq
+	}
+	if ownerUserID < 0 {
+		return 0, "", fmt.Errorf("Invalid owner_user_id")
+	}
+
+	keyType := strings.TrimSpace(keyTypeReq)
+	if keyType == "" {
+		switch {
+		case auth.IsProjectScopedRole(role) && actorID > 0:
+			keyType = "personal"
+			if ownerReq == nil || ownerUserID == 0 {
+				ownerUserID = actorID
+			}
+		case ownerUserID > 0:
+			keyType = "personal"
+		default:
+			keyType = "shared"
+		}
+	}
+	return h.resolveAPIKeyOwnership(ctx, orgID, projectID, ownerUserID, keyType, ownerReq != nil)
+}
+
+func (h *Handler) resolveUpdateAPIKeyOwnership(ctx context.Context, orgID, projectID, ownerUserID int64, keyType string, ownerWasExplicit bool) (int64, string, error) {
+	if ownerUserID < 0 {
+		return 0, "", fmt.Errorf("Invalid owner_user_id")
+	}
+	return h.resolveAPIKeyOwnership(ctx, orgID, projectID, ownerUserID, keyType, ownerWasExplicit)
+}
+
+func (h *Handler) resolveAPIKeyOwnership(ctx context.Context, orgID, projectID, ownerUserID int64, keyType string, ownerWasExplicit bool) (int64, string, error) {
+	keyType = strings.TrimSpace(keyType)
+	if !validAPIKeyType(keyType) {
+		return 0, "", fmt.Errorf("Invalid key_type")
+	}
+	role := actorRole(ctx)
+	actorID := middleware.GetUserIDFromContext(ctx)
+
+	switch keyType {
+	case "personal":
+		if ownerUserID == 0 {
+			if actorID > 0 {
+				ownerUserID = actorID
+			} else {
+				return 0, "", fmt.Errorf("owner_user_id is required for personal keys")
+			}
+		}
+	case "shared", "service":
+		if ownerWasExplicit && ownerUserID > 0 {
+			return 0, "", fmt.Errorf("owner_user_id is only valid for personal keys")
+		}
+		ownerUserID = 0
+	}
+
+	if role == auth.RoleDeveloper && ownerUserID != actorID {
+		return 0, "", fmt.Errorf("Forbidden")
+	}
+	if auth.IsProjectScopedRole(role) && keyType == "service" {
+		return 0, "", fmt.Errorf("Forbidden")
+	}
+	if ownerUserID > 0 {
+		if err := h.validateAPIKeyOwnerUser(ctx, orgID, projectID, ownerUserID); err != nil {
+			return 0, "", err
+		}
+	}
+	return ownerUserID, keyType, nil
+}
+
+func (h *Handler) validateAPIKeyOwnerUser(ctx context.Context, orgID, projectID, ownerUserID int64) error {
+	var count int
+	if err := h.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM users WHERE id = $1 AND org_id = $2 AND status = 'active'`,
+		ownerUserID, orgID,
+	).Scan(&count); err != nil || count == 0 {
+		return fmt.Errorf("Invalid owner_user_id")
+	}
+	if projectID > 0 {
+		if err := h.db.QueryRow(ctx,
+			`SELECT COUNT(*) FROM project_members WHERE project_id = $1 AND user_id = $2`,
+			projectID, ownerUserID,
+		).Scan(&count); err != nil || count == 0 {
+			return fmt.Errorf("owner_user_id is not a member of the project")
+		}
+	}
+	return nil
 }
 
 func (h *Handler) resolveAPIKeyProjectID(ctx context.Context, orgID, requestedProjectID int64) (int64, error) {

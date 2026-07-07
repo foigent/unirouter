@@ -332,13 +332,16 @@ describe('API Client', () => {
       await api.getUsageAnalytics({
         group_by: 'alias',
         project_id: 7,
+        owner_user_id: 42,
+        key_type: 'personal',
+        scope: 'my',
         model: 'gpt-4o',
         provider: 'openai',
         usage_source: 'counter_v2',
         status: 'success',
       })
       const url = mockFetch.mock.calls[0][0]
-      expect(url).toBe('/api/v1/usage/analytics?group_by=alias&project_id=7&model=gpt-4o&provider=openai&status=success&usage_source=counter_v2')
+      expect(url).toBe('/api/v1/usage/analytics?group_by=alias&project_id=7&owner_user_id=42&key_type=personal&scope=my&model=gpt-4o&provider=openai&status=success&usage_source=counter_v2')
     })
 
     it('loads internal status and error docs', async () => {
