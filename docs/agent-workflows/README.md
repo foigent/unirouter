@@ -18,10 +18,13 @@
 ## 协作文件
 
 ### 通道 A：Codex → Canary 验收
+
+仅在 `AGENT-PROTOCOL.md` 定义的风险门触发时使用：R2/R3/R4 必须使用，R1 可合并成一个 gate，R0 本地整理不强制使用。
+
 | 文件 | 写入方 | 读取方 | 说明 |
 |------|--------|--------|------|
-| [FIX-SIGNAL.md](FIX-SIGNAL.md) | Codex | Canary | 验收指令（覆盖写入） |
-| [VERIFY-RESULT.md](VERIFY-RESULT.md) | Canary | 用户 | 验收结果（覆盖写入） |
+| [FIX-SIGNAL.md](FIX-SIGNAL.md) | Codex | Canary | 风险门验收指令（触发时覆盖写入） |
+| [VERIFY-RESULT.md](VERIFY-RESULT.md) | Canary | 用户 | 风险门验收结果（触发时覆盖写入） |
 | [CHECKLIST.md](CHECKLIST.md) | Canary | Canary | 验收检查清单 |
 
 ### 通道 B：Canary 发现问题 → Codex 评估实现
@@ -51,12 +54,13 @@
 
 ```
 用户确认 PRD/范围
-→ Codex 开发 + 必要测试 + 更新 FIX-SIGNAL.md
-→ 用户通知 OpenClaw Canary 验收
+→ Codex 开发 + 必要测试 + 判定 R0/R1/R2/R3/R4
+→ R0 本地验证结束；R1 可合并 gate；R2/R3/R4 更新 FIX-SIGNAL.md
+→ 风险门触发时，用户通知 OpenClaw Canary 验收
 → Canary 写 VERIFY-RESULT.md
 → 有 bug 回 Codex 修复；无问题通知 Sentinel
 → Sentinel 创建/合并 PR + 跑 CI
-→ CI 通过后通知 Atlas 云端部署
+→ 需要部署/目标环境证据时通知 Atlas 云端部署
 ```
 
 详见 [AGENT-PROTOCOL.md](AGENT-PROTOCOL.md)。

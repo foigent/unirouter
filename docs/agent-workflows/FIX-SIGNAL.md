@@ -1,118 +1,125 @@
-# FIX-SIGNAL.md - PRD4 Batch 1I Real SSO Evidence Harness
+# FIX-SIGNAL.md - Protocol Risk-Gated Workflow Update And Status Reconciliation
 
-**Date:** 2026-07-07
-**Status:** Fixed awaiting Canary
-**Issue:** `PRD4-SSO-001`
-**Matrix Row:** `P4-F09`
+**Fixer:** main agent
+**Date:** file system timestamp is authoritative
+**Risk level:** R2 process-rule and reader-entrypoint change
+**Scope:** Agent workflow protocol plus stale Batch 1I status reconciliation; no product runtime code changed
 
 ## Verification Request
 
-Please verify PRD4 Batch 1I: Real SSO Evidence Harness.
+Please verify the protocol update that replaces the old "every round updates
+FIX-SIGNAL / Canary overwrites VERIFY-RESULT" behavior with a risk-gated
+workflow, plus the minimal status reconciliation required after Batch 1I was
+verified and merged.
 
-This batch adds a guarded evidence path for PRD4 real SSO target-environment
-proof against Logto or another approved enterprise OIDC provider. It does not
-claim real SSO E2E acceptance in the current workspace, because IdP credentials,
-test-user access, and approved target environment access are not present.
+This is intentionally a focused process/documentation gate:
 
-## Scope To Verify
+- No backend code changed.
+- No frontend code changed.
+- No migrations changed.
+- PRD4 Batch 1I harness status is reconciled from `Fixed awaiting Canary` to
+  Canary/Sentinel complete based on `VERIFY-RESULT.md` PASS 11/11 and commit
+  `2c02430` / PR #92.
+- `P4-F09` remains below `E2E accepted` / `Production verified`; no real IdP
+  browser login evidence is claimed.
 
-Harness files:
+## Files To Verify
 
-- `scripts/prd4-real-sso-smoke.sh`
-- `scripts/prd4_real_sso_smoke.mjs`
-- `scripts/prd4_real_sso_audit_check.go`
-- `docs/tech-ref/24-prd4-real-sso-evidence.md`
+- `docs/agent-workflows/AGENT-PROTOCOL.md`
+- `docs/DOCS-GOVERNANCE.md`
+- `docs/PROJECT-HANDOFF.md`
+- `docs/agent-workflows/README.md`
+- `README.md`
+- `docs/ops/CURRENT-STATUS.md`
+- `docs/ops/PRD4-ACCEPTANCE-MATRIX.md`
+- `docs/issues/OPEN-ISSUES.md`
+- `docs/PRD-Phase4.md`
+- `docs/DOC-INVENTORY.md`
+- `docs/README.md`
+- `docs/agent-workflows/FIX-SIGNAL.md`
 
-Expected behavior:
+## Expected Protocol Semantics
 
-- `scripts/prd4-real-sso-smoke.sh --preflight` is safe without target
-  credentials.
-- Preflight reports `status: SKIP` when required target configuration is
-  missing.
-- Preflight does not drive a browser, call an IdP, or read the database.
-- Real mode is blocked unless
-  `UNIROUTE_PRD4_SSO_ALLOW_BROWSER=approved-target-real-sso`.
-- Real mode requires:
-  - console URL;
-  - backend URL;
-  - Logto or enterprise OIDC issuer URL;
-  - IdP test username and password;
-  - DB DSN for read-only user/audit evidence;
-  - optional expected role/org/email/username mapping assertions.
-- Real mode checks backend `GET /api/v1/auth/oidc/config`.
-- Real mode checks issuer discovery at `/.well-known/openid-configuration`.
-- Real mode uses Playwright to click the UniRouter SSO login button, submit the
-  IdP login form, and wait for a UniRouter JWT in browser `localStorage`.
-- Real mode verifies `GET /api/v1/me` with the issued JWT.
-- Real mode performs a guarded read-only DB check for `users.auth_provider =
-  'oidc'`, expected issuer/claim mapping, and a latest `login.oidc` audit row.
-- Evidence includes provider kind/name, issuer, commit, browser completion,
-  `/me` profile, OIDC mapping metadata, audit row id/source/timestamp, and audit
-  detail keys.
-- Evidence must not include IdP password, OIDC client secret, UniRouter JWT,
-  `id_token`, `access_token`, `refresh_token`, raw profile response, or raw OIDC
-  subject.
+The updated protocol should say:
 
-Docs/status:
+1. Verification is risk-tiered as R0/R1/R2/R3/R4.
+2. R0 local cleanup does not require `FIX-SIGNAL.md` or
+   `VERIFY-RESULT.md`.
+3. R1 tooling/test/harness work can be grouped into one Canary gate.
+4. R2/R3/R4 changes still require `FIX-SIGNAL.md` and `VERIFY-RESULT.md`.
+5. R3 core paths such as auth, SSO, billing, wallet, routing, DB migration,
+   secret handling, RBAC, admission, trace retention, and redaction require
+   focused independent gates.
+6. R4 target-environment or production claims require real target evidence;
+   local/mock/preflight results cannot be promoted to `Production verified`.
+7. Sentinel is not a substitute for Canary product verification.
+8. Atlas is not mandatory for every batch; it is used for deployment, runtime
+   environment, configuration, target evidence, or explicit user request.
+9. Status docs are not batch ledgers and should only change when current facts,
+   acceptance state, phase boundaries, or reader entrypoints change.
+10. PRD alignment gates should run every 2-3 implementation batches or before a
+    new workstream.
 
-- `P4-F08` / `PRD4-UPSTREAM-001` is marked Canary passed after Batch 1H PASS
-  11/11 and Sentinel merge `d3acfa6` / PR #91.
-- `P4-F09` / `PRD4-SSO-001` is marked fixed awaiting Canary for harness
-  verification only.
-- `P4-F09` must not be marked `E2E accepted` or `Production verified` until a
-  real browser login passes against an approved Logto or enterprise OIDC target.
+## Status Reconciliation To Verify
+
+The docs should say:
+
+1. Batch 1I Real SSO Evidence Harness passed Canary 11/11.
+2. Sentinel merge is reflected by `2c02430` / PR #92.
+3. Batch 1I acceptance is limited to harness correctness, guardrails, safe
+   preflight behavior, evidence redaction, and docs consistency.
+4. `P4-F09` is not `E2E accepted` and not `Production verified` until an
+   approved real Logto or enterprise OIDC browser login passes with audit
+   evidence.
+5. The current active Codex signal is this protocol/status reconciliation gate,
+   not the old Batch 1I signal.
 
 ## Non-Scope
 
-Do not expect this batch to implement:
+Do not expect this verification to:
 
-- Real SSO browser evidence without approved IdP credentials.
-- Any browser automation, IdP calls, or DB reads during preflight.
-- Logto or IAM rewrite into UniRouter core.
-- SAML, LDAP, SCIM, MFA policy, social login, or identity lifecycle management.
-- OIDC claim continuous-sync policy changes.
-- New auth/RBAC/session semantics.
-- Runtime plugin loading, manifest parsing, sandboxing, marketplace, third-party
-  installation, or PlungeIn Mutate behavior.
+- implement or test PRD4 product functionality;
+- change SSO, upstream, billing, trace, runtime observability, or quota code;
+- claim real SSO E2E acceptance, real upstream E2E acceptance, Atlas deployment,
+  or production verification status;
+- require full Go/frontend regression tests.
 
 ## Required Verification Commands
 
 ```bash
-rg -n "prd4-real-sso-smoke|prd4_real_sso_smoke|prd4_real_sso_audit_check|approved-target-real-sso|PRD4 Batch 1I|P4-F09|PRD4-SSO-001|Logto|real SSO" scripts docs/tech-ref/24-prd4-real-sso-evidence.md docs/agent-workflows/FIX-SIGNAL.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/PRD-Phase4.md docs/PROJECT-HANDOFF.md docs/DOC-INVENTORY.md docs/README.md docs/tech-ref/README.md docs/CODEBASE-MAP.md
-scripts/prd4-real-sso-smoke.sh --preflight
-node --check scripts/prd4_real_sso_smoke.mjs
-go run ./scripts/prd4_real_sso_audit_check.go
-go test ./internal/oidc ./internal/admin ./internal/config ./cmd/uniroute -count=1
-go test ./... -count=1
-npm --prefix frontend test -- --run LoginPage client navigation
-npm --prefix frontend test -- --run
-npm --prefix frontend run build
+cd /Users/m4/Desktop/projects/UniRouter
+
+rg -n "R0|R1|R2|R3|R4|风险分级|risk-gated|风险门|FIX-SIGNAL|VERIFY-RESULT|Atlas|Sentinel|PRD alignment" docs/agent-workflows/AGENT-PROTOCOL.md docs/DOCS-GOVERNANCE.md docs/PROJECT-HANDOFF.md docs/agent-workflows/README.md README.md docs/agent-workflows/FIX-SIGNAL.md
+
+rg -n "Mandatory Agent Workflow|Code changes and acceptance-sensitive|for each verification round|mandatory for code changes|每轮|每次.*FIX-SIGNAL|Codex 开发 \\+ 必要测试 \\+ 更新 FIX-SIGNAL|实现后写 FIX-SIGNAL|当前 PRD3|Current PRD3 cleanup|PRD4 \\| Candidate backlog|Candidate backlog only|PRD4 candidate items" docs/agent-workflows/AGENT-PROTOCOL.md docs/agent-workflows/README.md docs/DOCS-GOVERNANCE.md docs/PROJECT-HANDOFF.md docs/README.md README.md
+
+rg -n "Batch 1I|PRD4-SSO-001|P4-F09|2c02430|PR #92|Protocol Risk-Gated Workflow|E2E accepted|Production verified" docs/ops/CURRENT-STATUS.md docs/PROJECT-HANDOFF.md docs/README.md docs/DOC-INVENTORY.md docs/issues/OPEN-ISSUES.md docs/PRD-Phase4.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/agent-workflows/FIX-SIGNAL.md
+
+rg -n "Batch 1I Real SSO Evidence Harness is fixed awaiting Canary|Current active Codex signal is PRD4 Batch 1I|Current active verification signal: PRD4 Batch 1I|PRD4-SSO-001.*Fixed awaiting Canary|P4-F09 \\| Real SSO Evidence Track \\| Fixed awaiting Canary|Active verification signal: PRD4 Batch 1I" docs/ops/CURRENT-STATUS.md docs/PROJECT-HANDOFF.md docs/README.md docs/DOC-INVENTORY.md docs/issues/OPEN-ISSUES.md docs/PRD-Phase4.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md
+
+git diff -- README.md docs/DOCS-GOVERNANCE.md docs/PROJECT-HANDOFF.md docs/agent-workflows/AGENT-PROTOCOL.md docs/agent-workflows/README.md docs/agent-workflows/FIX-SIGNAL.md docs/ops/CURRENT-STATUS.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/issues/OPEN-ISSUES.md docs/PRD-Phase4.md docs/DOC-INVENTORY.md docs/README.md
 git diff --check
 ```
 
-The `go run ./scripts/prd4_real_sso_audit_check.go` command is expected to fail
-before reading DB in this workspace unless
-`UNIROUTE_PRD4_SSO_ALLOW_BROWSER=approved-target-real-sso` is set.
+The second and fourth `rg` commands are expected to return no matches.
 
 ## Acceptance Criteria
 
-1. Batch 1H status is reconciled as Canary passed and Sentinel merged in current
-   PRD4 docs.
-2. The Batch 1I harness files exist and are indexed from current docs.
-3. Preflight mode returns safe JSON and does not require IdP credentials.
-4. Preflight mode explicitly reports that it will not drive a browser, call an
-   IdP, or read DB.
-5. Real mode requires the exact browser approval token and required target
-   configuration.
-6. The browser runner validates backend OIDC public config and issuer discovery.
-7. The browser runner can drive UniRouter login to the external IdP using
-   configurable selectors, then verify a UniRouter JWT through `/me`.
-8. The read-only audit checker is guarded before DB access and verifies OIDC user
-   mapping plus `login.oidc` audit evidence.
-9. Evidence output includes commit/timestamp/provider/issuer/browser/profile/
-   mapping/audit metadata and rejects secret/token leakage.
-10. Docs clearly state that Batch 1I verifies harness and guardrails only; no
-    real SSO E2E acceptance or Production verified status is claimed without
-    approved target-IdP evidence.
-11. Focused syntax/preflight/guard checks, broad Go/frontend tests, frontend
-    build, docs grep, and `git diff --check` pass.
+1. `AGENT-PROTOCOL.md` is versioned to 1.4 and defines R0/R1/R2/R3/R4.
+2. `AGENT-PROTOCOL.md` no longer requires fixed `FIX-SIGNAL.md` /
+   `VERIFY-RESULT.md` updates for every small change.
+3. `DOCS-GOVERNANCE.md` uses the same risk-tiered verification rule and lists
+   PRD4 as the active product scope.
+4. `PROJECT-HANDOFF.md` and `docs/agent-workflows/README.md` route future
+   agents to the risk-gated workflow.
+5. Root `README.md` no longer presents PRD3 as the current active scope and
+   includes PRD4 current scope/matrix entries.
+6. Batch 1I stale `Fixed awaiting Canary` wording is removed from current PRD4
+   status, matrix, issue row, handoff, and docs indexes.
+7. Batch 1I is marked Canary/Sentinel complete only for harness/guardrail
+   readiness, with `2c02430` / PR #92 evidence.
+8. `P4-F09` remains below `E2E accepted` / `Production verified` in every
+   current truth document.
+9. No unrelated product code, migrations, or target-environment evidence claims
+   changed.
+10. `git diff --check` passes.

@@ -4,7 +4,9 @@
 > Date: 2026-07-07
 > Status: Active PRD4 implementation; Batch 1H Real Upstream Evidence Harness
 > passed Canary 11/11 and Sentinel merge is reflected by `d3acfa6` / PR #91.
-> Batch 1I Real SSO Evidence Harness is fixed awaiting Canary.
+> Batch 1I Real SSO Evidence Harness passed Canary 11/11 and Sentinel merge is
+> reflected by `2c02430` / PR #92. It remains below `E2E accepted` /
+> `Production verified` until approved real IdP browser login evidence exists.
 > Source: `docs/planning/PRD4-BACKLOG.md`, `docs/ops/CURRENT-STATUS.md`,
 > `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`,
 > `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`, current repo/code review, and User
