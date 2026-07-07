@@ -141,7 +141,7 @@
 - IP 白名单（text，逗号分隔，空表示不限制）
 - 授权模型（multi-select，空表示不限制）
 - RPM 限制（number，默认 60）
-- QPS 限制（number，默认 10）
+- RPS 限制（number，默认 10；后端兼容字段仍为 `qps_limit`）
 - 预算上限（number，分，空表示不限制）
 
 **创建成功弹窗**：

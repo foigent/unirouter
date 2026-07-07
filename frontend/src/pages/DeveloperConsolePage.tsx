@@ -17,6 +17,7 @@ import { useAuthStore } from '../store/auth';
 import { canCreateProjectKey, canDisableProjectKey } from '../navigation';
 import { EmptyState, MetricTile, MoneyText, PageHeader, StatusTag, Surface } from '../ui';
 import { roleLabel as formatRoleLabel } from '../utils/displayLabels';
+import { keyQuotaText } from '../utils/quota';
 
 const { Text } = Typography;
 
@@ -40,7 +41,14 @@ interface ApiKey {
   allowed_ips: string;
   allowed_models: string;
   rpm_limit: number;
+  rps_limit?: number;
   qps_limit: number;
+  quota?: {
+    rpm_limit?: number | null;
+    rps_limit?: number | null;
+    tpm_limit?: number | null;
+    budget_limit_cents?: number | null;
+  };
   created_at: string;
 }
 
@@ -256,7 +264,7 @@ export default function DeveloperConsolePage() {
         allowed_ips: values.allowed_ips || '',
         allowed_models: allowedModels,
         rpm_limit: Number(values.rpm_limit || 60),
-        qps_limit: Number(values.qps_limit || 10),
+        rps_limit: Number(values.rps_limit || 10),
       });
       setCreatedKey({
         key: result.key,
@@ -426,7 +434,7 @@ export default function DeveloperConsolePage() {
     { title: '名称', dataIndex: 'name', key: 'name' },
     { title: 'Key 前缀', dataIndex: 'key_prefix', key: 'key_prefix', render: (value: string) => <Text code>{value}***</Text> },
     { title: '允许模型', dataIndex: 'allowed_models', key: 'allowed_models', render: (value: string) => value || '继承项目模型集' },
-    { title: 'RPM / QPS', key: 'limits', render: (_: unknown, record: ApiKey) => `${record.rpm_limit} / ${record.qps_limit}` },
+    { title: '限额', key: 'limits', render: (_: unknown, record: ApiKey) => keyQuotaText(record) },
     { title: '状态', dataIndex: 'status', key: 'status', render: (value: string) => <StatusTag status={value}>{value}</StatusTag> },
     {
       title: '操作',
@@ -723,7 +731,7 @@ export default function DeveloperConsolePage() {
         onCancel={closeCreateKey}
         width={500}
       >
-        <Form getFormApi={(apiRef: any) => setFormApi(apiRef)} onSubmit={handleCreateKey} initValues={{ rpm_limit: 60, qps_limit: 10 }}>
+        <Form getFormApi={(apiRef: any) => setFormApi(apiRef)} onSubmit={handleCreateKey} initValues={{ rpm_limit: 60, rps_limit: 10 }}>
           <Form.Input field="name" label="凭证名称" placeholder="frontend-prod" rules={[{ required: true, message: '请输入凭证名称' }]} />
           <Form.Select
             field="allowed_models"
@@ -735,7 +743,8 @@ export default function DeveloperConsolePage() {
           />
           <Form.Input field="allowed_ips" label="允许 IP" placeholder="留空表示不限制，多个 IP 用逗号分隔" />
           <Form.InputNumber field="rpm_limit" label="RPM 限速" min={1} style={{ width: '100%' }} />
-          <Form.InputNumber field="qps_limit" label="QPS 限速" min={1} style={{ width: '100%' }} />
+          <Form.InputNumber field="rps_limit" label="RPS 限速" min={1} style={{ width: '100%' }} />
+          <Text type="tertiary" size="small">TPM 暂未配置为 Key 级限额；当前仅展示口径，不启用 Scheduler V2。</Text>
           <div className="ur-form-actions">
             <Button onClick={closeCreateKey}>取消</Button>
             <Button type="primary" onClick={() => formApi?.submitForm()}>创建</Button>

@@ -68,19 +68,11 @@ Latest accepted PRD4 hardening baseline is PRD4 Preflight Hardening on 2026-07-0
 - User reported Sentinel/Atlas completed after `e335a9e` / PR #83.
 - PRD4 Batch 0 scope baseline is complete per User report after `e24731d` / PR #82; the Batch 0 `VERIFY-RESULT.md` content has since been overwritten by the Preflight result.
 
-Latest accepted PRD4 implementation batch is PRD4 Batch 1C Flow/Event/Trace
+Latest accepted PRD4 implementation batch is PRD4 Batch 1D Runtime Observability
 Foundation:
 
-- User reported Canary/Sentinel completed after `4f62e34` / PR #86.
-- Atlas deployment has not been reported for Batch 1C.
-- Batch 1C adds metadata-only `request_trace_events`, deterministic trace
-  sampling config, gateway/billing/routing/provider/call-log events for chat
-  and embeddings, `GET /api/v1/logs/{id}/trace` with project usage RBAC, and
-  Logs detail trace rendering.
-
-Current active verification signal: PRD4 Batch 1D Runtime Observability Foundation
-is fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
-
+- User reported Canary/Sentinel completed after `349ac75` / PR #87.
+- Atlas deployment has not been reported for Batch 1D.
 - Batch 1D adds `GET /api/v1/runtime/status` for platform/org/billing roles,
   runtime metadata config, app memory, DB/Redis health, recent traffic summary,
   Prometheus/Grafana configuration state, and `/status` Runtime Observability
@@ -88,6 +80,16 @@ is fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
 - Host CPU utilization, disk, network, cluster inventory, active
   Prometheus/Grafana probes, embedded dashboards, OpenTelemetry export, and
   metric-alert routing are not in Batch 1D.
+
+Current active verification signal: PRD4 Batch 1E Quota Vocabulary And Key Quota
+Foundation is fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+
+- Batch 1E standardizes user-facing RPM/RPS/TPM/tokens/s vocabulary, exposes
+  preferred `rps_limit` and structured key `quota` response data, and preserves
+  legacy `qps_limit` compatibility.
+- Scheduler V2, key-level TPM enforcement, budget hard-blocking, quota audit
+  reason/idempotency fields, `qps_limit` removal, and schema migration are not
+  in Batch 1E.
 
 The latest accepted route-contract baseline remains PRD3 Batch 6 on 2026-07-05:
 

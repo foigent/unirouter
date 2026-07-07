@@ -1,78 +1,76 @@
-# FIX-SIGNAL.md - PRD4 Batch 1D Runtime Observability Foundation
+# FIX-SIGNAL.md - PRD4 Batch 1E Quota Vocabulary And Key Quota Foundation
 
 **Date:** 2026-07-07
 **Status:** Fixed awaiting Canary
-**Issue:** `PRD4-RUNTIME-001`
-**Matrix Row:** `P4-F06`
+**Issue:** `PRD4-QUOTA-001`
+**Matrix Row:** `P4-F03`
 
 ## Verification Request
 
-Please verify PRD4 Batch 1D: Runtime Observability Foundation.
+Please verify PRD4 Batch 1E: Quota Vocabulary And Key Quota Foundation.
 
-This batch keeps the existing Internal Status event semantics intact and adds a
-separate runtime observability surface for platform, org, and billing operators.
-It exposes app runtime metadata, process memory, DB/Redis health, recent traffic
-summary, and configured Prometheus/Grafana entry points without fabricating host
-CPU, disk, or network telemetry.
+This batch standardizes the human-facing quota vocabulary around RPM, RPS, TPM,
+and tokens/s while preserving the existing `qps_limit` storage/API compatibility
+boundary. It adds key-level quota visibility in API key responses and frontend
+tables/forms without enabling Scheduler V2, token reservation, TPM enforcement,
+or budget hard-blocking.
 
 ## Scope To Verify
 
-Backend/config:
+Backend/API:
 
-- Adds `GET /api/v1/runtime/status` behind platform/org/billing roles only.
-- Wires Redis into admin runtime status for read-only health checks.
-- Adds runtime metadata config: `RUNTIME_ENVIRONMENT`,
-  `RUNTIME_DEPLOYMENT_MODE`, `RUNTIME_DEPLOYMENT_ROLE`, `RUNTIME_VERSION`,
-  and `RUNTIME_COMMIT`.
-- Adds external monitoring deep-link config: `PROMETHEUS_URL` and
-  `GRAFANA_URL`, validated as optional HTTP(S) URLs.
-- Returns structured `runtime_environment`, `capacity_health`, and
-  `observability_integrations` sections.
-- Returns partial diagnostic status instead of failing the whole endpoint when
-  DB/Redis/traffic checks are unavailable.
-- Marks CPU, disk, and network telemetry as `unavailable` with
-  `telemetry_source_not_configured` until a telemetry source of truth exists.
+- `GET /api/v1/keys` and `GET /api/v1/keys/{id}` continue returning legacy
+  `qps_limit`, and also expose preferred `rps_limit`.
+- Key responses include a structured `quota` object with `rpm_limit`,
+  `rps_limit`, `qps_compat_limit`, `tpm_limit`, `tokens_per_second`,
+  `budget_limit_cents`, `tpm_source`, and a compatibility note.
+- `POST /api/v1/keys` accepts preferred `rps_limit` and legacy `qps_limit`.
+  Conflicting values are rejected instead of silently choosing one field.
+- `PUT /api/v1/keys/{id}` accepts preferred `rps_limit` and legacy `qps_limit`.
+  Conflicting or non-positive update values are rejected.
+- No migration is added; the existing `api_keys.qps_limit` column remains the
+  compatibility storage for per-key RPS.
 
-Frontend/API contract:
+Frontend:
 
-- Adds `api.getRuntimeStatus()`.
-- Keeps `/status` as the operator entry point while separating event status
-  cards from runtime observability cards.
-- Project-scoped roles can still view event-derived status, but do not request
-  the restricted runtime endpoint.
-- Updates backend `/docs`, frontend API Docs, OpenAPI, and route parity tests.
+- Admin API Keys and Developer Console key surfaces display `RPM / RPS / TPM`.
+- Key create/edit forms use `RPS 限速`, not user-facing `QPS 限速`.
+- The frontend sends `rps_limit` for new key creation while remaining able to
+  render legacy records that only contain `qps_limit`.
+- TPM is shown as `未配置` in this batch; no UI implies token quota enforcement.
 
 Docs/status:
 
-- Records User-reported Batch 1C Canary/Sentinel completion after `4f62e34` /
-  PR #86.
-- Marks `P4-F06` / `PRD4-RUNTIME-001` fixed awaiting Canary.
-- Keeps `P4-F07` external monitoring integration as planned because this batch
-  adds configuration/deep-link state only, not Prometheus/Grafana active probes
-  or embedded dashboards.
+- Adds `docs/tech-ref/21-prd4-quota-vocabulary.md`.
+- Updates docs indexes and frontend/deployment terminology from user-facing
+  QPS to RPS where appropriate.
+- Records User-reported Batch 1D Canary/Sentinel completion after `349ac75` /
+  PR #87.
+- Marks `P4-F03` / `PRD4-QUOTA-001` fixed awaiting Canary.
 
 ## Non-Scope
 
 Do not expect this batch to implement:
 
-- Host CPU utilization, disk usage, network throughput, node exporter, cloud
-  API, or cluster inventory collection.
-- Prometheus/Grafana active health probes, datasource validation, screenshots,
-  or embedded dashboards.
-- OpenTelemetry ingestion/export or distributed span semantics.
-- Full PlungeIn runtime plugin framework.
-- Metric-alert-to-notification routing.
-- Production-scale trace retention, archival, or partitioning.
-- Scheduler V2 or capacity-aware dispatch.
+- Scheduler V2, token reservation, capacity-aware dispatch, or tokens/s
+  admission.
+- Key-level TPM enforcement or new TPM persistence.
+- Budget hard-blocking or new billing admission behavior.
+- Quota change audit reason/idempotency fields.
+- New API key schema migration or removal/rename of `qps_limit`.
+- OpenTelemetry, trace retention cleanup, or runtime plugin/PlungeIn execution.
+- Real upstream or real SSO target-environment evidence.
 
 ## Required Verification Commands
 
 ```bash
-rg -n "RuntimeStatus|runtime/status|RUNTIME_ENVIRONMENT|RUNTIME_DEPLOYMENT|PROMETHEUS_URL|GRAFANA_URL|telemetry_source_not_configured" internal cmd frontend/src docs/tech-ref/05-openapi-spec.yaml docs/ops/deployment-runbook.md .env.example docker-compose.yml
-rg -n "PRD4-RUNTIME-001|PRD4-INFRA-001|P4-F06|Batch 1D|Runtime Observability|runtime/status" docs/agent-workflows/FIX-SIGNAL.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/PROJECT-HANDOFF.md docs/DOC-INVENTORY.md docs/README.md docs/CODEBASE-MAP.md
-go test ./internal/config ./internal/admin ./cmd/uniroute -count=1
+rg -n "rps_limit|qps_compat_limit|apiKeyQuotaPayload|createRPSLimit|updateRPSLimit|keyQuotaText|RPM / RPS / TPM|RPS 限速" internal frontend/src docs/tech-ref/21-prd4-quota-vocabulary.md
+rg -n "DEFAULT_KEY_QPS|QPS|qps_limit|TPS" .env.example docker-compose.yml docs/ops/deployment-runbook.md docs/tech-ref docs/PRD-Phase4.md frontend/src
+rg -n "PRD4-QUOTA-001|P4-F03|Batch 1E|Quota Vocabulary|rps_limit|PRD4-RUNTIME-001|Batch 1D" docs/agent-workflows/FIX-SIGNAL.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/PROJECT-HANDOFF.md docs/DOC-INVENTORY.md docs/README.md docs/CODEBASE-MAP.md docs/PRD-Phase4.md
+go test ./internal/admin -run 'Test(CreateRPSLimit|UpdateRPSLimit|APIKeyQuotaPayload)' -count=1
+go test ./internal/admin ./cmd/uniroute -count=1
 go test ./...
-npm --prefix frontend test -- --run InternalStatusPage client ApiDocsPage navigation
+npm --prefix frontend test -- src/utils/__tests__/quota.test.ts src/pages/__tests__/KeysPage.test.tsx src/pages/__tests__/DeveloperConsolePage.test.tsx
 npm --prefix frontend test -- --run
 npm --prefix frontend run build
 git diff --check
@@ -80,21 +78,18 @@ git diff --check
 
 ## Acceptance Criteria
 
-1. `GET /api/v1/runtime/status` is registered, documented, covered by route
-   parity, and restricted to platform/org/billing operators.
-2. Current `GET /api/v1/internal-status` remains event-derived and is not
-   repurposed for infrastructure metrics.
-3. Runtime response includes environment metadata, uptime, Go runtime summary,
-   app memory, DB/Redis health, recent traffic summary, and Prometheus/Grafana
-   configuration state.
-4. Missing host telemetry is explicit as unavailable; CPU/disk/network values
-   are not fabricated.
-5. The frontend `/status` page renders runtime observability for authorized
-   operators and avoids calling the restricted endpoint for project-scoped
-   roles.
-6. Optional Prometheus/Grafana URLs are validated and surfaced as configured or
-   not configured.
-7. Backend config/admin/cmd tests, frontend focused tests, full Go/frontend
-   tests, frontend build, and `git diff --check` pass.
-8. Docs consistently show Batch 1C as Canary/Sentinel complete per User report
-   and Batch 1D as fixed awaiting Canary.
+1. User-facing quota labels use RPM, RPS, TPM, and tokens/s; ambiguous TPS is not
+   introduced in product UI.
+2. Legacy `qps_limit` compatibility remains intact for existing API clients and
+   DB schema.
+3. Preferred `rps_limit` is accepted, serialized, and used by new frontend
+   key-create flows.
+4. Conflicting `rps_limit`/`qps_limit` values fail explicitly.
+5. Key quota visibility shows TPM as not configured instead of implying
+   enforcement.
+6. No Scheduler V2, TPM enforcement, budget hard-block, or schema migration is
+   introduced.
+7. Backend focused tests, frontend focused tests, full Go/frontend tests,
+   frontend build, terminology grep, and `git diff --check` pass.
+8. Docs consistently show Batch 1D as Canary/Sentinel complete per User report
+   and Batch 1E as fixed awaiting Canary.
