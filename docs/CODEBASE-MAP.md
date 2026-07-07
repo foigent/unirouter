@@ -32,6 +32,7 @@
 | `internal/migrate` | SQL migration runner |
 | `internal/modelgov` | Model governance helpers and access checks |
 | `internal/models` | Shared data model types |
+| `internal/traceutil` | Shared PRD4 request trace metadata sanitizer used by gateway trace writes and admin trace responses |
 | `internal/oidc` | OIDC discovery, token exchange, JWKS verification, and identity extraction |
 | `internal/testutil` | Mock DB and test DB helpers |
 | `internal/tokenutil` | Token estimation and stream counting |
@@ -108,7 +109,7 @@ Base schema is in `migrations/000001_init_schema.up.sql`. Main tables:
 
 Later migrations add wallet features, org pricing and alert fields, schema gap fixes, and PRD alignment fields like `call_logs.requested_model`, `call_logs.ip_address`, `audit_logs.source`, and `wallets.freeze_expire_at`. PRD4 migration `000016_prd4_key_owner_usage` adds `api_keys.owner_user_id`, `api_keys.key_type`, `call_logs.owner_user_id`, and `call_logs.key_type`; gateway request logging snapshots owner/type at request time so historical usage does not drift when key ownership changes. PRD4 migration `000017_prd4_request_trace_events` adds metadata-only request trace events keyed by `request_id`, with org/project/key/owner snapshots and stage/severity/provider/status/latency metadata.
 
-Request trace lookup is implemented by `internal/admin/log_handlers.go` as `GET /api/v1/logs/{id}/trace`. It loads the call log first, applies existing project usage RBAC, then filters trace events by `request_id`, `org_id`, and `project_id`. Frontend support is in `frontend/src/api/client.ts` (`getLogTrace`) and `frontend/src/pages/LogsPage.tsx` (request path card in the log detail inspector).
+Request trace lookup is implemented by `internal/admin/log_handlers.go` as `GET /api/v1/logs/{id}/trace`. It loads the call log first, applies existing project usage RBAC, filters trace events by `request_id`, `org_id`, and `project_id`, then sanitizes metadata through `internal/traceutil` before returning it. Frontend support is in `frontend/src/api/client.ts` (`getLogTrace`) and `frontend/src/pages/LogsPage.tsx` (request path card in the log detail inspector).
 
 Usage analytics is implemented in `internal/admin/prd2_product_handlers.go` and now supports project/key/model/provider/channel/status/source filters plus PRD4 `scope=my`, `owner_user_id`, `key_type`, `group_by=owner`, and `group_by=key_type`.
 

@@ -64,22 +64,24 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Latest accepted PRD4 implementation batch is PRD4 Batch 1K Trace Retention And
-Cleanup:
+Current active verification signal is PRD4 Batch 1M Trace Metadata Read-Side
+Redaction:
 
-- Canary PASS 10/10 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`.
-- Sentinel merge is reflected by `1d9ea50` / PR #95.
-- Batch 1K adds `TRACE_EVENT_RETENTION_DAYS`, defaults it to
-  `LOG_RETENTION_DAYS`, exposes both retention knobs in env/compose/runbook, and
-  wires existing cleanup to delete expired `request_trace_events`.
-- Batch 1K does not add trace partitioning, archival, OpenTelemetry
-  ingestion/export, prompt/response plaintext storage, runtime cache, or
-  Production verified target-environment evidence.
+- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Issue/matrix: `PRD4-REDACTION-002` / `P4-F12`.
+- Scope: gateway trace writes and `GET /api/v1/logs/{id}/trace` responses now
+  share one internal metadata sanitizer. The response boundary preserves safe
+  scalar metadata while dropping restricted keys such as `api_key`,
+  `authorization`, `access_token`, `request_body`, and `prompt`.
+- This batch does not change route registration, RBAC, DB schema, trace
+  write-side sampling/storage, frontend layout, billing, routing, auth, SSO,
+  upstream, wallet, or provider dispatch.
 
-Current active Codex verification signal is PRD4 Batch 1L Runtime Monitoring
+Latest accepted PRD4 implementation batch is PRD4 Batch 1L Runtime Monitoring
 URL Redaction:
 
-- `docs/agent-workflows/FIX-SIGNAL.md` requests Canary verification.
+- Canary PASS 8/8 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`.
+- Sentinel merge is reflected by `4426efd` / PR #96.
 - Batch 1L redacts Prometheus/Grafana `url` and `health_url` response fields in
   `GET /api/v1/runtime/status` by stripping URL userinfo, query strings, and
   fragments.
@@ -88,6 +90,18 @@ URL Redaction:
 - Batch 1L does not add monitoring auth config, embedded dashboards,
   OpenTelemetry, cluster inventory, frontend layout changes, route/RBAC changes,
   or Production verified target-environment evidence.
+
+Previous accepted trace retention batch is PRD4 Batch 1K:
+
+- Canary PASS 10/10 was recorded before Batch 1L overwrote the current
+  `docs/agent-workflows/VERIFY-RESULT.md`.
+- Sentinel merge is reflected by `1d9ea50` / PR #95.
+- Batch 1K adds `TRACE_EVENT_RETENTION_DAYS`, defaults it to
+  `LOG_RETENTION_DAYS`, exposes both retention knobs in env/compose/runbook, and
+  wires existing cleanup to delete expired `request_trace_events`.
+- Batch 1K does not add trace partitioning, archival, OpenTelemetry
+  ingestion/export, prompt/response plaintext storage, runtime cache, or
+  Production verified target-environment evidence.
 
 Previous accepted runtime telemetry batch is PRD4 Batch 1J:
 

@@ -2,11 +2,13 @@
 
 > Version: Phase 4 Scope Draft
 > Date: 2026-07-07
-> Status: Active PRD4 implementation; Batch 1K Trace Retention And Cleanup
-> passed Canary 10/10 and Sentinel merge is reflected by `1d9ea50` / PR #95.
-> Batch 1L Runtime Monitoring URL Redaction is fixed awaiting Canary. Batch 1H
-> real upstream and Batch 1I real SSO evidence harnesses remain below `E2E
-> accepted` / `Production verified` until approved target credentials and
+> Status: Active PRD4 implementation; Batch 1L Runtime Monitoring URL Redaction
+> passed Canary 8/8 and Sentinel merge is reflected by `4426efd` / PR #96.
+> Batch 1M Trace Metadata Read-Side Redaction is fixed awaiting Canary for
+> `P4-F12` / `PRD4-REDACTION-002`; it shares trace metadata sanitization across
+> gateway writes and admin trace responses.
+> Batch 1H real upstream and Batch 1I real SSO evidence harnesses remain below
+> `E2E accepted` / `Production verified` until approved target credentials and
 > successful target-environment runs exist.
 > Source: `docs/planning/PRD4-BACKLOG.md`, `docs/ops/CURRENT-STATUS.md`,
 > `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`,
@@ -415,9 +417,10 @@ Acceptance:
 
 Implementation notes:
 
-- Batch 1L implements the first runtime monitoring redaction slice: runtime
-  status display URLs for Prometheus/Grafana strip URL userinfo, query strings,
-  and fragments while probes continue to use raw configured URLs.
+- Batch 1L passed Canary 8/8 and Sentinel merge is reflected by `4426efd` / PR
+  #96 for the first runtime monitoring redaction slice: runtime status display
+  URLs for Prometheus/Grafana strip URL userinfo, query strings, and fragments
+  while probes continue to use raw configured URLs.
 
 ### P4-F13: PRD5 Backlog Consolidation
 
