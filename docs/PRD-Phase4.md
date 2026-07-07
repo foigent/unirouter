@@ -242,6 +242,12 @@ Acceptance:
 - Raw host topology and cloud identifiers are hidden unless the role and workflow
   explicitly require them.
 
+Batch 1D implementation note: the first slice adds the separate Runtime
+Observability surface, app memory, DB/Redis health, recent traffic summary, and
+Prometheus/Grafana configuration state. Host CPU utilization, disk usage,
+network throughput, cluster inventory, active monitoring probes, and embedded
+dashboards remain follow-up work.
+
 ### P4-F07: External Monitoring Integration
 
 Requirements:

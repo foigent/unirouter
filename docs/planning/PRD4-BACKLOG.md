@@ -19,7 +19,7 @@ is `docs/PRD-Phase4.md`, and explicitly deferred items are tracked in
 |----|-----------|--------------|----------------|
 | PRD4-PLUGIN-001 | Runtime plugin platform and plugin marketplace | Current code has static provider adapters and configured notification webhooks, but no manifest, runtime loading, sandbox, permission model, lifecycle, signing, or install/uninstall path | Define plugin families, manifest schema, lifecycle, permission boundaries, compatibility, packaging, and audit/accounting invariants |
 | PRD4-DEPLOY-001 | Enterprise deployment packaging and managed HA/IaC | Current assets cover Docker Compose, canary overlay, deployment runbook, and backup/restore evidence. No Helm, Terraform, Kubernetes, managed DB/Redis HA, or tested enterprise reference stack exists | Choose target deployment model, then design Helm/Terraform/Kubernetes or managed-HA reference deployment, upgrade/rollback, PITR, off-server backup, and failover drills |
-| PRD4-INFRA-001 | Infrastructure observability and runtime environment visibility | Current Internal Status is event-derived from `notification_events`. UniRouter does not currently collect host CPU, memory, disk, network, instance inventory, or cluster topology as a product data model | Add a separate Runtime Environment / Infrastructure Snapshot / Capacity Health model, visible to platform/ops roles, without mixing it into event lifecycle semantics |
+| PRD4-INFRA-001 | Infrastructure observability and runtime environment visibility | Current Internal Status is event-derived from `notification_events`. Batch 1D adds a separate Runtime Observability foundation, but UniRouter still does not collect host CPU utilization, disk, network, instance inventory, or cluster topology as a product data model | Continue the separate Runtime Environment / Infrastructure Snapshot / Capacity Health model, visible to platform/ops roles, without mixing it into event lifecycle semantics |
 | PRD4-BUDGET-001 | Project budget hard-block enforcement | PRD2 intentionally accepted alert-only budget behavior first. Blocking admission changes billing, wallet, idempotency, and user-facing error semantics | Define policy controls, admission order, grace behavior, audit rows, and regression tests for wallet/idempotency safety |
 | PRD4-OPS-001 | Maintenance windows, SLA/SLO, upgrade communication, incident operations | PRD3 only labels current status as notification-event-derived and marks maintenance scheduling as not enabled | Define incident lifecycle beyond events, maintenance scheduling, SLA/SLO policy, operator workflow, customer-visible communication, and notification strategy |
 | PRD4-CACHE-001 | Runtime cache or prompt/response plaintext storage | PRD2 explicitly keeps runtime cache research-only and prompt/response plaintext disabled by default | Require tenant isolation, billing correctness, audit-on-read, retention, purge, and opt-in controls before implementation |
@@ -33,7 +33,9 @@ User asked whether UniRouter infrastructure information such as server CPU, memo
 
 - Do not add this to PRD3.
 - Do not mix infrastructure metrics into the current event-derived Internal Status model.
-- Track it as PRD4 candidate `PRD4-INFRA-001`.
+- Track it as PRD4 candidate `PRD4-INFRA-001`; Batch 1D implements the first
+  Runtime Observability surface and keeps host/cluster telemetry source
+  selection as follow-up work.
 
 Recommended future information architecture:
 
@@ -49,6 +51,9 @@ Recommended access boundary:
 - Default visibility should be limited to `platform_admin` and a future ops/support role.
 - `org_admin`, `billing_admin`, `developer`, and project roles should not see raw host or network topology by default.
 - Public/private IPs, VPC/subnet details, security groups, cloud account identifiers, full hostnames, and exact topology should be hidden or redacted unless explicitly required for an operator workflow.
+- Batch 1D allows `org_admin` and `billing_admin` to view runtime summary
+  because it does not expose raw hostnames, IPs, VPC/subnet details, or cluster
+  topology. Future topology or per-host views should revisit this boundary.
 
 Implementation prerequisites for PRD4:
 

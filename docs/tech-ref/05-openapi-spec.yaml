@@ -390,6 +390,16 @@ paths:
         "200":
           $ref: "#/components/responses/JSON"
 
+  /api/v1/runtime/status:
+    get:
+      tags: [Admin]
+      summary: Runtime environment and observability status
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+
   /api/v1/error-docs:
     get:
       tags: [Admin]

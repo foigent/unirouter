@@ -172,6 +172,7 @@ export const api = {
   })),
   getInternalStatus: (filters?: { org_id?: string | number; project_id?: string | number }) =>
     request(appendParams('/internal-status', { org_id: filters?.org_id, project_id: filters?.project_id })),
+  getRuntimeStatus: () => request('/runtime/status'),
   getErrorDocs: () => request('/error-docs'),
 
   // Projects and developer catalog

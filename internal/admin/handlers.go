@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/filter"
@@ -22,6 +23,9 @@ type Handler struct {
 	eventService     *billing.EventService
 	oidcService      *oidc.Service
 	encKey           []byte
+	redisClient      *redis.Client
+	startedAt        time.Time
+	runtimeOptions   RuntimeStatusOptions
 }
 
 // NewHandler creates a new admin Handler.
@@ -35,7 +39,7 @@ func NewHandlerWithAPIKeyHashSecret(db db.DBQuerier, jwtSecret, apiKeyHashSecret
 	if apiKeyHashSecret == "" {
 		apiKeyHashSecret = jwtSecret
 	}
-	return &Handler{db: db, jwtSecret: jwtSecret, apiKeyHashSecret: apiKeyHashSecret, encKey: encKey, sensitiveFilter: sf}
+	return &Handler{db: db, jwtSecret: jwtSecret, apiKeyHashSecret: apiKeyHashSecret, encKey: encKey, sensitiveFilter: sf, startedAt: time.Now()}
 }
 
 func (h *Handler) SetLicenseVerifier(verifier *licensing.Verifier) {
@@ -48,6 +52,14 @@ func (h *Handler) SetEventService(svc *billing.EventService) {
 
 func (h *Handler) SetOIDCService(svc *oidc.Service) {
 	h.oidcService = svc
+}
+
+func (h *Handler) SetRedisClient(client *redis.Client) {
+	h.redisClient = client
+}
+
+func (h *Handler) SetRuntimeStatusOptions(options RuntimeStatusOptions) {
+	h.runtimeOptions = options
 }
 
 func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) {

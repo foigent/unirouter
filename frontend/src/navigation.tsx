@@ -57,6 +57,10 @@ export function isProjectAdminRole(role?: string | null) {
   return normalizeRole(role) === 'project_admin';
 }
 
+export function canReadRuntimeStatus(role?: string | null) {
+  return isOrgAdminRole(role) || isBillingRole(role);
+}
+
 export function canCreateProjectKey(role?: string | null) {
   return ['admin', 'platform_admin', 'org_admin', 'project_admin', 'developer'].includes(normalizeRole(role));
 }
