@@ -64,30 +64,39 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Latest accepted PRD4 implementation batch is PRD4 Batch 1J Runtime Host
-Telemetry:
-
-- Canary PASS 8/8 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`.
-- Sentinel merge is reflected by `8707346` / PR #94.
-- Batch 1J adds host CPU/disk/network summaries to
-  `GET /api/v1/runtime/status` and `/status` Runtime Observability cards.
-- Linux hosts report sampled CPU usage and network byte counters when `/proc`
-  data is available; other hosts expose structural data with explicit reason
-  fields instead of fake utilization.
-- Batch 1J does not add cluster inventory, raw topology, private IP/hostname or
-  cloud identifiers, OpenTelemetry, metric alerts, or Production verified target
-  evidence.
-
-Current active Codex verification signal is PRD4 Batch 1K Trace Retention And
+Latest accepted PRD4 implementation batch is PRD4 Batch 1K Trace Retention And
 Cleanup:
 
-- `docs/agent-workflows/FIX-SIGNAL.md` requests Canary verification.
-- The batch adds `TRACE_EVENT_RETENTION_DAYS`, defaults it to
+- Canary PASS 10/10 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`.
+- Sentinel merge is reflected by `1d9ea50` / PR #95.
+- Batch 1K adds `TRACE_EVENT_RETENTION_DAYS`, defaults it to
   `LOG_RETENTION_DAYS`, exposes both retention knobs in env/compose/runbook, and
   wires existing cleanup to delete expired `request_trace_events`.
-- It does not add trace partitioning, archival, OpenTelemetry ingestion/export,
-  prompt/response plaintext storage, runtime cache, or Production verified
-  target-environment evidence.
+- Batch 1K does not add trace partitioning, archival, OpenTelemetry
+  ingestion/export, prompt/response plaintext storage, runtime cache, or
+  Production verified target-environment evidence.
+
+Current active Codex verification signal is PRD4 Batch 1L Runtime Monitoring
+URL Redaction:
+
+- `docs/agent-workflows/FIX-SIGNAL.md` requests Canary verification.
+- Batch 1L redacts Prometheus/Grafana `url` and `health_url` response fields in
+  `GET /api/v1/runtime/status` by stripping URL userinfo, query strings, and
+  fragments.
+- Raw configured monitoring URLs are still used for probes, so URL-userinfo/basic
+  auth integrations continue to work.
+- Batch 1L does not add monitoring auth config, embedded dashboards,
+  OpenTelemetry, cluster inventory, frontend layout changes, route/RBAC changes,
+  or Production verified target-environment evidence.
+
+Previous accepted runtime telemetry batch is PRD4 Batch 1J:
+
+- Canary PASS 8/8 is recorded in earlier verification history.
+- Sentinel merge is reflected by `8707346` / PR #94.
+- Batch 1J adds host CPU/disk/network summaries to
+  `GET /api/v1/runtime/status` and `/status` Runtime Observability cards without
+  cluster inventory, raw topology, private IP/hostname or cloud identifiers,
+  OpenTelemetry, metric alerts, or Production verified target evidence.
 
 Latest accepted real SSO evidence-harness batch is PRD4 Batch 1I:
 
@@ -109,7 +118,7 @@ Latest workflow verification gate is Protocol Risk-Gated Workflow Update And
 Status Reconciliation:
 
 - Canary PASS 10/10 was recorded in `docs/agent-workflows/VERIFY-RESULT.md`
-  before Batch 1J overwrote the current result file.
+  before later PRD4 product batches overwrote the current result file.
 - No runtime code, migrations, PRD4 product behavior, or target-environment
   evidence changed.
 

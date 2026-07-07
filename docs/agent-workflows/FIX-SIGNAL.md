@@ -1,78 +1,69 @@
-# FIX-SIGNAL.md - PRD4 Batch 1K Trace Retention And Cleanup
+# FIX-SIGNAL.md - PRD4 Batch 1L Runtime Monitoring URL Redaction
 
 **Fixer:** main agent
 **Date:** file system timestamp is authoritative
-**Risk level:** R3 trace retention / cleanup behavior
-**Scope:** metadata-only `request_trace_events` retention configuration and cleanup wiring
+**Risk level:** R3 secret/redaction and runtime status behavior
+**Scope:** P4-F12 runtime observability monitoring URL redaction
 
 ## Verification Request
 
-Please verify PRD4 Batch 1K: Trace Retention And Cleanup.
+Please verify PRD4 Batch 1L: Runtime Monitoring URL Redaction.
 
-This batch closes the first production-safety gap from `PRD4-TRACE-002`:
+This batch closes the first concrete `P4-F12` redaction slice tracked as
+`PRD4-REDACTION-001`:
 
-- adds `TRACE_EVENT_RETENTION_DAYS`;
-- defaults trace-event retention to `LOG_RETENTION_DAYS`;
-- validates trace and log retention values are non-negative;
-- exposes retention knobs in `.env.example`, `docker-compose.yml`, and the
-  deployment runbook;
-- wires the existing cleanup loop to delete expired `request_trace_events`;
-- keeps metadata-only trace schemas, redaction behavior, RBAC, and UI unchanged.
+- redacts Prometheus and Grafana `url` / `health_url` response fields from
+  `GET /api/v1/runtime/status`;
+- strips URL userinfo, query strings, and fragments from displayed monitoring
+  URLs;
+- keeps monitoring probes on the original configured URL so integrations that
+  rely on URL userinfo/basic auth still work;
+- adds an httptest regression proving credentials are used for probes but absent
+  from the API response;
+- leaves runtime status RBAC, route registration, DB/Redis/traffic telemetry,
+  host CPU/disk/network summaries, and frontend rendering structure unchanged.
 
 ## Scope To Verify
 
-Product/config files:
+Product/test files:
 
-- `internal/config/config.go`
-- `internal/config/config_test.go`
-- `internal/admin/audit_handlers.go`
-- `internal/admin/admin_mock_test.go`
-- `cmd/uniroute/main.go`
-- `.env.example`
-- `docker-compose.yml`
-- `docs/ops/deployment-runbook.md`
+- `internal/admin/runtime_status_handlers.go`
+- `internal/admin/runtime_status_handlers_test.go`
 
 Status/docs files:
 
+- `docs/agent-workflows/FIX-SIGNAL.md`
 - `docs/issues/OPEN-ISSUES.md`
 - `docs/ops/CURRENT-STATUS.md`
 - `docs/ops/PRD4-ACCEPTANCE-MATRIX.md`
-- `docs/PRD-Phase4.md`
 - `docs/PROJECT-HANDOFF.md`
 - `docs/DOC-INVENTORY.md`
 - `docs/README.md`
-- `docs/CODEBASE-MAP.md`
-- `docs/planning/PRD4-BACKLOG.md`
-
-Pre-existing status reconciliation in these docs also reflects PRD4 Batch 1J
-Runtime Host Telemetry after PR #94. It should be verified only for consistency;
-it is not a new product change in Batch 1K.
 
 ## Expected Behavior
 
-- `TRACE_EVENT_RETENTION_DAYS` defaults to `LOG_RETENTION_DAYS`.
-- `TRACE_EVENT_RETENTION_DAYS=0` skips trace-event cleanup but does not disable
-  trace writes. Trace writes are still controlled by `TRACE_EVENTS_ENABLED`.
-- Negative `TRACE_EVENT_RETENTION_DAYS` or `LOG_RETENTION_DAYS` fails config
-  validation.
-- `startCleanupLoop` passes log retention and trace-event retention separately.
-- Cleanup deletes expired `request_trace_events` only when trace retention is
-  greater than zero.
-- Existing `CleanupOldData(ctx, retentionDays)` default behavior remains
-  compatible for existing callers and tests.
+- `PROMETHEUS_URL` / `GRAFANA_URL` may contain URL userinfo or query params for
+  deployment-specific monitoring access.
+- The backend must use the original configured URL for probes.
+- The runtime status response must not echo URL userinfo, query-string tokens,
+  fragments, or malformed raw URL strings.
+- `url` and `health_url` in runtime status should remain useful display/deep-link
+  values when a valid monitoring URL is configured.
+- Existing status outcomes such as `connected`, `stale`, `misconfigured`,
+  `unavailable`, and `not_configured` must remain unchanged.
 
 ## Non-Scope
 
 Do not expect this batch to:
 
-- add OpenTelemetry ingestion/export;
-- add trace partitioning, archival, or cold storage;
-- add prompt/response plaintext storage;
-- add runtime cache;
-- add new trace UI or global request-id lookup;
-- change trace event schema, migration, RBAC, redaction allowlist, or sampling
-  hash behavior;
-- change billing, routing, SSO, upstream, auth, wallet, or provider dispatch;
+- add metrics authentication configuration beyond existing URL-based deployment
+  settings;
+- add embedded Grafana dashboards or datasource validation;
+- add OpenTelemetry export, node exporter, cloud metadata, cluster inventory, or
+  metric-alert notification routing;
+- change runtime status RBAC or frontend page layout;
+- change trace metadata redaction, SSO evidence redaction, upstream evidence
+  redaction, billing, routing, auth, wallet, or provider dispatch;
 - claim target-environment `Production verified` evidence.
 
 ## Required Verification Commands
@@ -80,12 +71,10 @@ Do not expect this batch to:
 ```bash
 cd /Users/m4/Desktop/projects/UniRouter
 
-rg -n "TRACE_EVENT_RETENTION_DAYS|CleanupOldDataWithTraceRetention|request_trace_events|LOG_RETENTION_DAYS" internal cmd .env.example docker-compose.yml docs/ops/deployment-runbook.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md
+rg -n "monitoringDisplayURL|RedactsMonitoringURLs|PRD4-REDACTION-001|P4-F12|Batch 1L" internal/admin docs/agent-workflows/FIX-SIGNAL.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/PROJECT-HANDOFF.md docs/DOC-INVENTORY.md docs/README.md
 
-go test ./internal/config -count=1
-go test ./internal/admin -run 'TestCleanupOldData|TestCleanupOldDataWithTraceRetention' -count=1
+go test ./internal/admin -run 'TestRuntimeStatus_RedactsMonitoringURLsButUsesRawProbeURL|TestRuntimeStatus_ReportsExternalMonitoringProblems|TestRuntimeStatus_ReturnsRuntimeHealthAndHostTelemetry' -count=1
 go test ./internal/admin -count=1
-go test ./cmd/uniroute -count=1
 go test ./... -count=1
 
 git diff --check
@@ -93,17 +82,15 @@ git diff --check
 
 ## Acceptance Criteria
 
-1. Config exposes `TraceEventRetentionDays` and loads it from
-   `TRACE_EVENT_RETENTION_DAYS`.
-2. `TRACE_EVENT_RETENTION_DAYS` defaults to `LOG_RETENTION_DAYS`.
-3. Config validation rejects negative trace or log retention values.
-4. The cleanup loop passes log retention and trace-event retention separately.
-5. Cleanup deletes old `request_trace_events` using trace retention when it is
-   greater than zero.
-6. Trace cleanup is skipped when trace retention is zero.
-7. Existing cleanup default behavior remains compatible for existing callers.
-8. Env/compose/runbook docs expose the retention controls and clarify that
-   disabling cleanup is separate from disabling trace writes.
-9. No trace schema, prompt/response storage, RBAC, sampling, billing, routing,
-   auth, SSO, upstream, or Production verified behavior is changed.
-10. Focused tests, broad Go regression, and `git diff --check` pass.
+1. `runtimePrometheusIntegration` and `runtimeGrafanaIntegration` probe the raw
+   configured URL, not the redacted display URL.
+2. Runtime status `url` and `health_url` strip URL userinfo, query strings, and
+   fragments.
+3. Malformed monitoring display URLs are not echoed back to users.
+4. A regression test proves basic-auth URL userinfo is still used for probes.
+5. The same regression test proves monitoring passwords and query tokens are not
+   present in the runtime status response body.
+6. Existing monitoring states and Runtime Observability summaries still pass.
+7. No route, RBAC, frontend layout, DB schema, migration, trace storage, billing,
+   routing, auth, SSO, upstream, wallet, or provider-dispatch behavior changes.
+8. Focused admin tests, broad Go regression, and `git diff --check` pass.
