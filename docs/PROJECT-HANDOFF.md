@@ -68,21 +68,12 @@ Latest accepted PRD4 hardening baseline is PRD4 Preflight Hardening on 2026-07-0
 - User reported Sentinel/Atlas completed after `e335a9e` / PR #83.
 - PRD4 Batch 0 scope baseline is complete per User report after `e24731d` / PR #82; the Batch 0 `VERIFY-RESULT.md` content has since been overwritten by the Preflight result.
 
-Latest accepted PRD4 implementation batch is PRD4 Batch 1F PlungeIn Port
-Architecture:
+Latest accepted PRD4 implementation batch is PRD4 Batch 1G External Monitoring
+Integration:
 
-- Canary PASS 8/8 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`.
-- Sentinel merge is reflected by `87bfc17` / PR #89.
-- Atlas deployment has not been reported for Batch 1F.
-- Batch 1F accepts ADR 0001 for PRD4 scope and adds
-  `docs/tech-ref/22-prd4-plungein-port-contract.md`.
-- Runtime plugin loading, manifest, sandbox, marketplace, third-party
-  installation, and core auth/billing/routing/wallet/settlement/provider
-  dispatch mutation are not in Batch 1F.
-
-Current active verification signal: PRD4 Batch 1G External Monitoring
-Integration is fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
-
+- Canary PASS 9/9 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`.
+- Sentinel merge is reflected by `bb291a4` / PR #90.
+- Atlas deployment has not been reported for Batch 1G.
 - Batch 1G extends `GET /api/v1/runtime/status` to actively check configured
   Prometheus and Grafana.
 - Prometheus checks include `/-/ready` and `up{job="unirouter"}`. Grafana checks
@@ -90,6 +81,21 @@ Integration is fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
 - Embedded dashboards, Grafana datasource validation, new metrics auth,
   OpenTelemetry export, host telemetry collectors, generic monitoring
   connectors, and runtime plugin platform behavior are not in Batch 1G.
+
+Current active verification signal: PRD4 Batch 1H Real Upstream Evidence
+Harness is fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+
+- Batch 1H adds guarded tooling for `P4-F08` real upstream evidence:
+  `scripts/prd4-real-upstream-smoke.sh`, `scripts/prd4_real_upstream_seed.go`,
+  `scripts/prd4_real_upstream_smoke.mjs`, and
+  `docs/tech-ref/23-prd4-real-upstream-evidence.md`.
+- Preflight mode is safe without credentials: it reports `SKIP`, does not
+  mutate the database, and does not call providers.
+- Real mode requires approved OpenRouter and direct Anthropic credentials/model
+  slugs, matching backend secrets, and
+  `UNIROUTE_PRD4_UPSTREAM_ALLOW_MUTATION=approved-target-real-upstream`.
+- Batch 1H does not mark `P4-F08` E2E accepted or Production verified without a
+  successful approved target-provider run.
 
 The latest accepted route-contract baseline remains PRD3 Batch 6 on 2026-07-05:
 
