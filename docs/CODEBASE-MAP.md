@@ -8,7 +8,7 @@
 |------|------|-------|
 | Main server | `cmd/uniroute/main.go` | Loads config, connects Postgres/Redis, runs migrations, wires gateway/admin routes, starts background cleanup and alerts |
 | Main tests | `cmd/uniroute/main_test.go` | Top-level route behavior tests |
-| Config | `internal/config/config.go` | Environment config and validation, including `JWT_SECRET`, `API_KEY_HASH_SECRET`, `ENCRYPTION_KEY`, optional `LICENSE_PUBLIC_KEY`, PRD4 trace event sampling config, and Runtime Status metadata/Prometheus/Grafana URLs |
+| Config | `internal/config/config.go` | Environment config and validation, including `JWT_SECRET`, `API_KEY_HASH_SECRET`, `ENCRYPTION_KEY`, optional `LICENSE_PUBLIC_KEY`, PRD4 trace event sampling/retention config, and Runtime Status metadata/Prometheus/Grafana URLs |
 | Database | `internal/db/postgres.go` | pgx pool setup and health |
 | Redis | `internal/redisx/redis.go` | Redis setup, health, wallet cache helpers |
 | Migrations | `migrations/*.sql` | Base schema plus wallet/schema/PRD alignment migrations, including PRD4 API key owner usage attribution in `000016_prd4_key_owner_usage` and request trace events in `000017_prd4_request_trace_events` |
@@ -17,7 +17,7 @@
 
 | Package | Responsibility |
 |---------|----------------|
-| `internal/admin` | Admin REST handlers: auth, channels, channel keys, API keys, wallet, grants, logs, dashboard, prices, users, settings, audit, sensitive words, channel tests, and Runtime Status. Runtime Status includes PRD4 app/dependency/traffic health plus Prometheus/Grafana active checks. API key handlers expose PRD4 `rps_limit` / structured `quota` fields while preserving legacy `qps_limit` compatibility. Shared package-local helpers are split into `http_helpers.go`, `event_helpers.go`, and `model_helpers.go` |
+| `internal/admin` | Admin REST handlers: auth, channels, channel keys, API keys, wallet, grants, logs, dashboard, prices, users, settings, audit, sensitive words, channel tests, and Runtime Status. Runtime Status includes PRD4 app/dependency/traffic health, host CPU/disk/network summaries, and Prometheus/Grafana active checks. API key handlers expose PRD4 `rps_limit` / structured `quota` fields while preserving legacy `qps_limit` compatibility. Shared package-local helpers are split into `http_helpers.go`, `event_helpers.go`, and `model_helpers.go` |
 | `internal/adapters` | Provider adapter registry and OpenAI-compatible / Anthropic-native request/response conversion |
 | `internal/auth` | JWT generation/validation, API key hashing, upstream key AES-GCM encryption/decryption |
 | `internal/billing` | Cost calculation, freeze/settle/cancel, price provider, budget alert, notification event service |

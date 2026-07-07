@@ -1,131 +1,109 @@
-# FIX-SIGNAL.md - PRD4 Batch 1J Runtime Host Telemetry
+# FIX-SIGNAL.md - PRD4 Batch 1K Trace Retention And Cleanup
 
 **Fixer:** main agent
 **Date:** file system timestamp is authoritative
-**Risk level:** R2 user-visible Runtime Observability API/UI change
-**Scope:** `GET /api/v1/runtime/status` host capacity telemetry and `/status` Runtime Observability UI
+**Risk level:** R3 trace retention / cleanup behavior
+**Scope:** metadata-only `request_trace_events` retention configuration and cleanup wiring
 
 ## Verification Request
 
-Please verify PRD4 Batch 1J: Runtime Host Telemetry.
+Please verify PRD4 Batch 1K: Trace Retention And Cleanup.
 
-This batch moves Runtime Observability beyond the old
-`telemetry_source_not_configured` placeholders for CPU, disk, and network:
+This batch closes the first production-safety gap from `PRD4-TRACE-002`:
 
-- backend `GET /api/v1/runtime/status` now emits host CPU, disk, and network
-  fields under `capacity_health`;
-- frontend `/status` renders CPU, disk, and network as separate capacity cards;
-- tests cover deterministic host telemetry without depending on the machine
-  running Canary.
+- adds `TRACE_EVENT_RETENTION_DAYS`;
+- defaults trace-event retention to `LOG_RETENTION_DAYS`;
+- validates trace and log retention values are non-negative;
+- exposes retention knobs in `.env.example`, `docker-compose.yml`, and the
+  deployment runbook;
+- wires the existing cleanup loop to delete expired `request_trace_events`;
+- keeps metadata-only trace schemas, redaction behavior, RBAC, and UI unchanged.
 
 ## Scope To Verify
 
-Product files:
+Product/config files:
 
-- `internal/admin/handlers.go`
-- `internal/admin/runtime_status_handlers.go`
-- `internal/admin/runtime_status_handlers_test.go`
-- `frontend/src/pages/InternalStatusPage.tsx`
-- `frontend/src/pages/__tests__/InternalStatusPage.test.tsx`
+- `internal/config/config.go`
+- `internal/config/config_test.go`
+- `internal/admin/audit_handlers.go`
+- `internal/admin/admin_mock_test.go`
+- `cmd/uniroute/main.go`
+- `.env.example`
+- `docker-compose.yml`
+- `docs/ops/deployment-runbook.md`
 
-Expected backend behavior:
+Status/docs files:
 
-- `capacity_health.cpu` includes:
-  - `status`;
-  - `logical_cores`;
-  - Linux CPU `usage_ratio` and `sample_millis` when `/proc/stat` is available;
-  - `reason=usage_sample_not_supported` when CPU usage sampling is unavailable
-    on the host OS.
-- `capacity_health.disk` includes:
-  - `status=available`;
-  - `usage_ratio`;
-  - `total_bytes`, `used_bytes`, `free_bytes`;
-  - `mount_point="/"`.
-- `capacity_health.network` includes:
-  - `status`;
-  - `interface_count`;
-  - `active_interface_count`;
-  - Linux `rx_bytes` / `tx_bytes` when `/proc/net/dev` is available;
-  - `reason=byte_counters_not_supported` on hosts where byte counters are not
-    available from `/proc/net/dev`.
-- The handler remains partial-failure tolerant: DB/Redis/traffic/monitoring
-  behavior is not changed.
-- The new host telemetry provider is test-injectable and does not require
-  environment-specific CPU/network state in unit tests.
+- `docs/issues/OPEN-ISSUES.md`
+- `docs/ops/CURRENT-STATUS.md`
+- `docs/ops/PRD4-ACCEPTANCE-MATRIX.md`
+- `docs/PRD-Phase4.md`
+- `docs/PROJECT-HANDOFF.md`
+- `docs/DOC-INVENTORY.md`
+- `docs/README.md`
+- `docs/CODEBASE-MAP.md`
+- `docs/planning/PRD4-BACKLOG.md`
 
-Expected frontend behavior:
+Pre-existing status reconciliation in these docs also reflects PRD4 Batch 1J
+Runtime Host Telemetry after PR #94. It should be verified only for consistency;
+it is not a new product change in Batch 1K.
 
-- Runtime Observability no longer has a single generic `主机遥测` card.
-- It shows separate `CPU`, `磁盘`, and `网络` cards.
-- CPU shows a usage percentage when present, otherwise a status tag and reason.
-- Disk shows usage percentage plus used/total bytes and mount point.
-- Network shows active/total interfaces plus rx/tx bytes when present.
-- Prometheus/Grafana, app memory, DB/Redis, traffic, notification events, RBAC,
-  routing, and API paths are unchanged.
+## Expected Behavior
+
+- `TRACE_EVENT_RETENTION_DAYS` defaults to `LOG_RETENTION_DAYS`.
+- `TRACE_EVENT_RETENTION_DAYS=0` skips trace-event cleanup but does not disable
+  trace writes. Trace writes are still controlled by `TRACE_EVENTS_ENABLED`.
+- Negative `TRACE_EVENT_RETENTION_DAYS` or `LOG_RETENTION_DAYS` fails config
+  validation.
+- `startCleanupLoop` passes log retention and trace-event retention separately.
+- Cleanup deletes expired `request_trace_events` only when trace retention is
+  greater than zero.
+- Existing `CleanupOldData(ctx, retentionDays)` default behavior remains
+  compatible for existing callers and tests.
 
 ## Non-Scope
 
 Do not expect this batch to:
 
-- add node exporter, cloud metadata, Kubernetes node inventory, or cluster
-  topology;
-- expose private IPs, hostnames, VPC/subnet IDs, cloud account identifiers, or
-  security groups;
 - add OpenTelemetry ingestion/export;
-- create metric alert notification events;
-- change Prometheus/Grafana probe behavior;
-- change auth, RBAC, billing, routing, trace retention, SSO, upstream, or
-  deployment behavior;
-- mark any target-environment evidence as `Production verified`.
-
-## Pre-Existing Local Closeout Docs
-
-The worktree may also contain four R0 closeout status-pointer files from the
-previous protocol gate:
-
-- `docs/ops/CURRENT-STATUS.md`
-- `docs/PROJECT-HANDOFF.md`
-- `docs/DOC-INVENTORY.md`
-- `docs/README.md`
-
-Those files only change `Protocol Risk-Gated Workflow Update` from awaiting
-Canary to PASS 10/10 after PR #93. They are not part of Batch 1J product
-acceptance.
+- add trace partitioning, archival, or cold storage;
+- add prompt/response plaintext storage;
+- add runtime cache;
+- add new trace UI or global request-id lookup;
+- change trace event schema, migration, RBAC, redaction allowlist, or sampling
+  hash behavior;
+- change billing, routing, SSO, upstream, auth, wallet, or provider dispatch;
+- claim target-environment `Production verified` evidence.
 
 ## Required Verification Commands
 
 ```bash
 cd /Users/m4/Desktop/projects/UniRouter
 
-rg -n "runtimeHostTelemetry|runtimeCPUStatus|runtimeDiskStatus|runtimeNetworkStatus|usage_ratio|logical_cores|active_interface_count|rx_bytes|tx_bytes" internal/admin frontend/src/pages/InternalStatusPage.tsx frontend/src/pages/__tests__/InternalStatusPage.test.tsx
+rg -n "TRACE_EVENT_RETENTION_DAYS|CleanupOldDataWithTraceRetention|request_trace_events|LOG_RETENTION_DAYS" internal cmd .env.example docker-compose.yml docs/ops/deployment-runbook.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md
 
-go test ./internal/admin -run 'TestRuntimeStatus|TestLinuxCPUUsageRatio' -count=1
+go test ./internal/config -count=1
+go test ./internal/admin -run 'TestCleanupOldData|TestCleanupOldDataWithTraceRetention' -count=1
 go test ./internal/admin -count=1
 go test ./cmd/uniroute -count=1
 go test ./... -count=1
-
-npm --prefix frontend test -- --run InternalStatusPage client navigation
-npm --prefix frontend test -- --run
-npm --prefix frontend run build
 
 git diff --check
 ```
 
 ## Acceptance Criteria
 
-1. Runtime status response includes structured CPU, disk, and network telemetry
-   fields instead of fixed `telemetry_source_not_configured` placeholders.
-2. CPU telemetry is honest across platforms: Linux reports sampled usage when
-   `/proc/stat` is available; other hosts expose logical cores and an explicit
-   sampling reason instead of fake utilization.
-3. Disk telemetry reports root filesystem total/used/free bytes and usage ratio.
-4. Network telemetry reports total and active interface counts, with Linux byte
-   counters when available.
-5. Frontend `/status` renders CPU, disk, and network as separate cards with
-   concrete values.
-6. Existing Runtime Observability behavior for DB, Redis, app memory, traffic,
-   Prometheus, and Grafana remains intact.
-7. No secrets, private topology, private IPs, hostnames, cloud identifiers, or
-   raw infrastructure inventory are exposed.
-8. Focused backend/frontend tests, broad Go/frontend regression, frontend build,
-   and `git diff --check` pass.
+1. Config exposes `TraceEventRetentionDays` and loads it from
+   `TRACE_EVENT_RETENTION_DAYS`.
+2. `TRACE_EVENT_RETENTION_DAYS` defaults to `LOG_RETENTION_DAYS`.
+3. Config validation rejects negative trace or log retention values.
+4. The cleanup loop passes log retention and trace-event retention separately.
+5. Cleanup deletes old `request_trace_events` using trace retention when it is
+   greater than zero.
+6. Trace cleanup is skipped when trace retention is zero.
+7. Existing cleanup default behavior remains compatible for existing callers.
+8. Env/compose/runbook docs expose the retention controls and clarify that
+   disabling cleanup is separate from disabling trace writes.
+9. No trace schema, prompt/response storage, RBAC, sampling, billing, routing,
+   auth, SSO, upstream, or Production verified behavior is changed.
+10. Focused tests, broad Go regression, and `git diff --check` pass.

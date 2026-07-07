@@ -138,8 +138,8 @@ func main() {
 	go startSensitiveWordsReloadLoop(postgres.Pool, sensitiveFilter, time.Minute)
 
 	// Start cleanup goroutine
-	if cfg.LogRetentionDays > 0 {
-		go startCleanupLoop(adminHandler, cfg.LogRetentionDays)
+	if cfg.LogRetentionDays > 0 || cfg.TraceEventRetentionDays > 0 {
+		go startCleanupLoop(adminHandler, cfg.LogRetentionDays, cfg.TraceEventRetentionDays)
 	}
 
 	// Start budget alert goroutine — checks every 5 minutes
@@ -660,20 +660,20 @@ func startBudgetAlertLoop(alertSvc *billing.AlertService, pool *pgxpool.Pool) {
 }
 
 // startCleanupLoop runs the cleanup task periodically.
-func startCleanupLoop(handler *admin.Handler, retentionDays int) {
+func startCleanupLoop(handler *admin.Handler, retentionDays, traceEventRetentionDays int) {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 
 	time.Sleep(5 * time.Minute)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	if err := handler.CleanupOldData(ctx, retentionDays); err != nil {
+	if err := handler.CleanupOldDataWithTraceRetention(ctx, retentionDays, traceEventRetentionDays); err != nil {
 		log.Printf("Cleanup error: %v", err)
 	}
 	cancel()
 
 	for range ticker.C {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		if err := handler.CleanupOldData(ctx, retentionDays); err != nil {
+		if err := handler.CleanupOldDataWithTraceRetention(ctx, retentionDays, traceEventRetentionDays); err != nil {
 			log.Printf("Cleanup error: %v", err)
 		}
 		cancel()

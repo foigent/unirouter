@@ -64,14 +64,32 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Latest accepted PRD4 hardening baseline is PRD4 Preflight Hardening on 2026-07-07:
+Latest accepted PRD4 implementation batch is PRD4 Batch 1J Runtime Host
+Telemetry:
 
-- `docs/agent-workflows/VERIFY-RESULT.md` reports PASS 6/6.
-- User reported Sentinel/Atlas completed after `e335a9e` / PR #83.
-- PRD4 Batch 0 scope baseline is complete per User report after `e24731d` / PR #82; the Batch 0 `VERIFY-RESULT.md` content has since been overwritten by the Preflight result.
+- Canary PASS 8/8 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`.
+- Sentinel merge is reflected by `8707346` / PR #94.
+- Batch 1J adds host CPU/disk/network summaries to
+  `GET /api/v1/runtime/status` and `/status` Runtime Observability cards.
+- Linux hosts report sampled CPU usage and network byte counters when `/proc`
+  data is available; other hosts expose structural data with explicit reason
+  fields instead of fake utilization.
+- Batch 1J does not add cluster inventory, raw topology, private IP/hostname or
+  cloud identifiers, OpenTelemetry, metric alerts, or Production verified target
+  evidence.
 
-Latest accepted PRD4 implementation batch is PRD4 Batch 1I Real SSO Evidence
-Harness:
+Current active Codex verification signal is PRD4 Batch 1K Trace Retention And
+Cleanup:
+
+- `docs/agent-workflows/FIX-SIGNAL.md` requests Canary verification.
+- The batch adds `TRACE_EVENT_RETENTION_DAYS`, defaults it to
+  `LOG_RETENTION_DAYS`, exposes both retention knobs in env/compose/runbook, and
+  wires existing cleanup to delete expired `request_trace_events`.
+- It does not add trace partitioning, archival, OpenTelemetry ingestion/export,
+  prompt/response plaintext storage, runtime cache, or Production verified
+  target-environment evidence.
+
+Latest accepted real SSO evidence-harness batch is PRD4 Batch 1I:
 
 - Canary PASS 11/11 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`.
 - Sentinel merge is reflected by `2c02430` / PR #92.
@@ -90,7 +108,8 @@ Harness:
 Latest workflow verification gate is Protocol Risk-Gated Workflow Update And
 Status Reconciliation:
 
-- Canary PASS 10/10 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`.
+- Canary PASS 10/10 was recorded in `docs/agent-workflows/VERIFY-RESULT.md`
+  before Batch 1J overwrote the current result file.
 - No runtime code, migrations, PRD4 product behavior, or target-environment
   evidence changed.
 

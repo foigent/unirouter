@@ -2,11 +2,12 @@
 
 > Version: Phase 4 Scope Draft
 > Date: 2026-07-07
-> Status: Active PRD4 implementation; Batch 1H Real Upstream Evidence Harness
-> passed Canary 11/11 and Sentinel merge is reflected by `d3acfa6` / PR #91.
-> Batch 1I Real SSO Evidence Harness passed Canary 11/11 and Sentinel merge is
-> reflected by `2c02430` / PR #92. It remains below `E2E accepted` /
-> `Production verified` until approved real IdP browser login evidence exists.
+> Status: Active PRD4 implementation; Batch 1J Runtime Host Telemetry passed
+> Canary 8/8 and Sentinel merge is reflected by `8707346` / PR #94. Batch 1K
+> Trace Retention And Cleanup is fixed awaiting Canary. Batch 1H real upstream
+> and Batch 1I real SSO evidence harnesses remain below `E2E accepted` /
+> `Production verified` until approved target credentials and successful
+> target-environment runs exist.
 > Source: `docs/planning/PRD4-BACKLOG.md`, `docs/ops/CURRENT-STATUS.md`,
 > `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`,
 > `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`, current repo/code review, and User
@@ -260,11 +261,16 @@ Acceptance:
 - Raw host topology and cloud identifiers are hidden unless the role and workflow
   explicitly require them.
 
-Batch 1D implementation note: the first slice adds the separate Runtime
-Observability surface, app memory, DB/Redis health, recent traffic summary, and
-Prometheus/Grafana configuration state. Host CPU utilization, disk usage,
-network throughput, cluster inventory, active monitoring probes, and embedded
-dashboards remain follow-up work.
+Implementation notes:
+
+- Batch 1D adds the separate Runtime Observability surface, app memory,
+  DB/Redis health, recent traffic summary, and Prometheus/Grafana configuration
+  state.
+- Batch 1G adds active Prometheus/Grafana health checks.
+- Batch 1J adds host CPU/disk/network summaries without exposing raw topology,
+  private IPs, hostnames, or cloud identifiers.
+- Cluster inventory, external collector ownership, OpenTelemetry, metric-alert
+  routing, and embedded dashboards remain follow-up work.
 
 ### P4-F07: External Monitoring Integration
 
@@ -440,8 +446,8 @@ Acceptance:
   P4-F09.
 - The first implementation batch should confirm whether shared/service API keys
   are shown under a separate key type rather than a personal user total.
-- The first trace implementation must define retention, sampling, and redaction
-  before high-volume event storage.
+- Batch 1K defines the first trace retention/cleanup slice; high-volume
+  production storage still needs partitioning, archival, and capacity policy.
 - Status Center implementation must choose telemetry sources: app runtime,
   Prometheus, node exporter, cloud API, deployment manifest, or operator metadata.
 

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
 )
@@ -252,30 +253,52 @@ func (h *Handler) CleanupOldData(ctx context.Context, retentionDays int) error {
 	if retentionDays <= 0 {
 		retentionDays = 30
 	}
+	return h.cleanupOldData(ctx, retentionDays, retentionDays)
+}
 
-	result, err := h.db.Exec(ctx,
-		`DELETE FROM call_logs WHERE created_at < NOW() - INTERVAL '1 day' * $1`,
-		retentionDays)
-	if err != nil {
-		return fmt.Errorf("cleanup call_logs: %w", err)
-	}
-	log.Printf("Cleanup: deleted %d old call_logs (older than %d days)", result.RowsAffected(), retentionDays)
+func (h *Handler) CleanupOldDataWithTraceRetention(ctx context.Context, retentionDays, traceRetentionDays int) error {
+	return h.cleanupOldData(ctx, retentionDays, traceRetentionDays)
+}
 
-	result, err = h.db.Exec(ctx,
-		`DELETE FROM audit_logs WHERE created_at < NOW() - INTERVAL '1 day' * $1`,
-		retentionDays*2)
-	if err != nil {
-		return fmt.Errorf("cleanup audit_logs: %w", err)
-	}
-	log.Printf("Cleanup: deleted %d old audit_logs (older than %d days)", result.RowsAffected(), retentionDays*2)
+func (h *Handler) cleanupOldData(ctx context.Context, retentionDays, traceRetentionDays int) error {
+	var result pgconn.CommandTag
+	var err error
 
-	result, err = h.db.Exec(ctx,
-		`DELETE FROM transactions WHERE created_at < NOW() - INTERVAL '1 day' * $1 AND type IN ('settle', 'cancel')`,
-		retentionDays)
-	if err != nil {
-		return fmt.Errorf("cleanup transactions: %w", err)
+	if retentionDays > 0 {
+		result, err = h.db.Exec(ctx,
+			`DELETE FROM call_logs WHERE created_at < NOW() - INTERVAL '1 day' * $1`,
+			retentionDays)
+		if err != nil {
+			return fmt.Errorf("cleanup call_logs: %w", err)
+		}
+		log.Printf("Cleanup: deleted %d old call_logs (older than %d days)", result.RowsAffected(), retentionDays)
+
+		result, err = h.db.Exec(ctx,
+			`DELETE FROM audit_logs WHERE created_at < NOW() - INTERVAL '1 day' * $1`,
+			retentionDays*2)
+		if err != nil {
+			return fmt.Errorf("cleanup audit_logs: %w", err)
+		}
+		log.Printf("Cleanup: deleted %d old audit_logs (older than %d days)", result.RowsAffected(), retentionDays*2)
+
+		result, err = h.db.Exec(ctx,
+			`DELETE FROM transactions WHERE created_at < NOW() - INTERVAL '1 day' * $1 AND type IN ('settle', 'cancel')`,
+			retentionDays)
+		if err != nil {
+			return fmt.Errorf("cleanup transactions: %w", err)
+		}
+		log.Printf("Cleanup: deleted %d old transactions (older than %d days)", result.RowsAffected(), retentionDays)
 	}
-	log.Printf("Cleanup: deleted %d old transactions (older than %d days)", result.RowsAffected(), retentionDays)
+
+	if traceRetentionDays > 0 {
+		result, err = h.db.Exec(ctx,
+			`DELETE FROM request_trace_events WHERE created_at < NOW() - INTERVAL '1 day' * $1`,
+			traceRetentionDays)
+		if err != nil {
+			return fmt.Errorf("cleanup request_trace_events: %w", err)
+		}
+		log.Printf("Cleanup: deleted %d old request_trace_events (older than %d days)", result.RowsAffected(), traceRetentionDays)
+	}
 
 	// Release stale frozen requests before pruning idempotency rows. This prevents
 	// a failed settle from leaving wallet.frozen permanently held after cleanup.

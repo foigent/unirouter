@@ -189,6 +189,18 @@ func TestValidate_InvalidRuntimeExposureConfig(t *testing.T) {
 			},
 		},
 		{
+			name: "invalid trace retention",
+			mutate: func(cfg *Config) {
+				cfg.TraceEventRetentionDays = -1
+			},
+		},
+		{
+			name: "invalid log retention",
+			mutate: func(cfg *Config) {
+				cfg.LogRetentionDays = -1
+			},
+		},
+		{
 			name: "invalid prometheus url",
 			mutate: func(cfg *Config) {
 				cfg.PrometheusURL = "prometheus:9090"
@@ -266,6 +278,8 @@ func TestLoad_RuntimeExposureEnvOverrides(t *testing.T) {
 	t.Setenv("SHUTDOWN_TIMEOUT_SECONDS", "150")
 	t.Setenv("TRACE_EVENTS_ENABLED", "false")
 	t.Setenv("TRACE_EVENT_SAMPLE_RATE", "0.25")
+	t.Setenv("TRACE_EVENT_RETENTION_DAYS", "14")
+	t.Setenv("LOG_RETENTION_DAYS", "60")
 	t.Setenv("RUNTIME_ENVIRONMENT", "staging")
 	t.Setenv("RUNTIME_DEPLOYMENT_MODE", "docker-compose")
 	t.Setenv("RUNTIME_DEPLOYMENT_ROLE", "canary")
@@ -302,6 +316,9 @@ func TestLoad_RuntimeExposureEnvOverrides(t *testing.T) {
 	if cfg.TraceEventSampleRate != 0.25 {
 		t.Fatalf("expected trace sample rate 0.25, got %f", cfg.TraceEventSampleRate)
 	}
+	if cfg.TraceEventRetentionDays != 14 || cfg.LogRetentionDays != 60 {
+		t.Fatalf("unexpected retention days: trace=%d log=%d", cfg.TraceEventRetentionDays, cfg.LogRetentionDays)
+	}
 	if cfg.RuntimeEnvironment != "staging" || cfg.RuntimeDeploymentMode != "docker-compose" || cfg.RuntimeDeploymentRole != "canary" {
 		t.Fatalf("unexpected runtime metadata: env=%s mode=%s role=%s", cfg.RuntimeEnvironment, cfg.RuntimeDeploymentMode, cfg.RuntimeDeploymentRole)
 	}
@@ -318,7 +335,8 @@ func TestLoad_Defaults(t *testing.T) {
 	envVars := []string{
 		"LISTEN_PORT", "LOG_LEVEL", "GIN_MODE", "SHUTDOWN_TIMEOUT_SECONDS", "DB_DSN", "DB_MAX_CONNECTIONS",
 		"REDIS_ADDR", "REDIS_PASSWORD", "REDIS_DB", "JWT_SECRET", "API_KEY_HASH_SECRET", "ENCRYPTION_KEY",
-		"TRACE_EVENTS_ENABLED", "TRACE_EVENT_SAMPLE_RATE", "RUNTIME_ENVIRONMENT", "RUNTIME_DEPLOYMENT_MODE",
+		"TRACE_EVENTS_ENABLED", "TRACE_EVENT_SAMPLE_RATE", "TRACE_EVENT_RETENTION_DAYS", "LOG_RETENTION_DAYS",
+		"RUNTIME_ENVIRONMENT", "RUNTIME_DEPLOYMENT_MODE",
 		"RUNTIME_DEPLOYMENT_ROLE", "RUNTIME_VERSION", "RUNTIME_COMMIT", "PROMETHEUS_URL", "GRAFANA_URL",
 		"LICENSE_PUBLIC_KEY", "LICENSE_EXPIRY_WARNING_DAYS", "MIN_FREEZE_AMOUNT", "FREEZE_SAFETY_FACTOR", "DEFAULT_KEY_RPM", "DEFAULT_KEY_QPS",
 	}
@@ -329,15 +347,20 @@ func TestLoad_Defaults(t *testing.T) {
 	// Load() will fail because JWT_SECRET is empty and ENCRYPTION_KEY is empty
 	// But we can test that defaults are set before validation
 	cfg := &Config{
-		ListenPort:            getEnvInt("LISTEN_PORT", 8080),
-		LogLevel:              getEnvStr("LOG_LEVEL", "info"),
-		GinMode:               getEnvStr("GIN_MODE", "release"),
-		ShutdownTimeoutSecs:   getEnvInt("SHUTDOWN_TIMEOUT_SECONDS", 120),
-		DB_DSN:                getEnvStr("DB_DSN", "postgres://uniroute:password@localhost:5432/uniroute?sslmode=disable"),
-		DBMaxConnections:      getEnvInt("DB_MAX_CONNECTIONS", 25),
-		RedisAddr:             getEnvStr("REDIS_ADDR", "localhost:6379"),
-		TraceEventsEnabled:    getEnvBool("TRACE_EVENTS_ENABLED", true),
-		TraceEventSampleRate:  getEnvFloat("TRACE_EVENT_SAMPLE_RATE", 1),
+		ListenPort:           getEnvInt("LISTEN_PORT", 8080),
+		LogLevel:             getEnvStr("LOG_LEVEL", "info"),
+		GinMode:              getEnvStr("GIN_MODE", "release"),
+		ShutdownTimeoutSecs:  getEnvInt("SHUTDOWN_TIMEOUT_SECONDS", 120),
+		DB_DSN:               getEnvStr("DB_DSN", "postgres://uniroute:password@localhost:5432/uniroute?sslmode=disable"),
+		DBMaxConnections:     getEnvInt("DB_MAX_CONNECTIONS", 25),
+		RedisAddr:            getEnvStr("REDIS_ADDR", "localhost:6379"),
+		TraceEventsEnabled:   getEnvBool("TRACE_EVENTS_ENABLED", true),
+		TraceEventSampleRate: getEnvFloat("TRACE_EVENT_SAMPLE_RATE", 1),
+		LogRetentionDays:     getEnvInt("LOG_RETENTION_DAYS", 30),
+		TraceEventRetentionDays: getEnvInt(
+			"TRACE_EVENT_RETENTION_DAYS",
+			getEnvInt("LOG_RETENTION_DAYS", 30),
+		),
 		RuntimeEnvironment:    getEnvStr("RUNTIME_ENVIRONMENT", "unspecified"),
 		RuntimeDeploymentMode: getEnvStr("RUNTIME_DEPLOYMENT_MODE", "single-node"),
 		RuntimeDeploymentRole: getEnvStr("RUNTIME_DEPLOYMENT_ROLE", "stable"),
@@ -376,6 +399,9 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if !cfg.TraceEventsEnabled || cfg.TraceEventSampleRate != 1 {
 		t.Fatalf("expected trace events enabled with sample rate 1, got enabled=%v sample=%f", cfg.TraceEventsEnabled, cfg.TraceEventSampleRate)
+	}
+	if cfg.LogRetentionDays != 30 || cfg.TraceEventRetentionDays != 30 {
+		t.Fatalf("expected default retention 30/30, got log=%d trace=%d", cfg.LogRetentionDays, cfg.TraceEventRetentionDays)
 	}
 	if cfg.RuntimeEnvironment != "unspecified" || cfg.RuntimeDeploymentMode != "single-node" || cfg.RuntimeDeploymentRole != "stable" {
 		t.Fatalf("unexpected runtime defaults: env=%s mode=%s role=%s", cfg.RuntimeEnvironment, cfg.RuntimeDeploymentMode, cfg.RuntimeDeploymentRole)
