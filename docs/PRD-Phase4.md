@@ -2,9 +2,9 @@
 
 > Version: Phase 4 Scope Draft
 > Date: 2026-07-07
-> Status: Active PRD4 implementation; Batch 1G External Monitoring Integration
-> passed Canary 9/9 and Sentinel merge is reflected by `bb291a4` / PR #90.
-> Batch 1H Real Upstream Evidence Harness is fixed awaiting Canary.
+> Status: Active PRD4 implementation; Batch 1H Real Upstream Evidence Harness
+> passed Canary 11/11 and Sentinel merge is reflected by `d3acfa6` / PR #91.
+> Batch 1I Real SSO Evidence Harness is fixed awaiting Canary.
 > Source: `docs/planning/PRD4-BACKLOG.md`, `docs/ops/CURRENT-STATUS.md`,
 > `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`,
 > `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`, current repo/code review, and User
@@ -340,6 +340,19 @@ Acceptance:
 - Claim mapping behavior is documented and tested for allowed and denied users.
 - No IdP token, client secret, password, or raw profile secret appears in logs,
   audit, frontend state, screenshots, or evidence files.
+
+Batch 1I implementation note: the first slice adds guarded target-evidence
+tooling, not a real-IdP acceptance claim. The harness includes
+`scripts/prd4-real-sso-smoke.sh --preflight`,
+`scripts/prd4_real_sso_smoke.mjs`,
+`scripts/prd4_real_sso_audit_check.go`, and
+`docs/tech-ref/24-prd4-real-sso-evidence.md`. Preflight mode does not drive a
+browser, call the IdP, or read the database. Real mode requires approved Logto
+or enterprise OIDC issuer/test-user access, console/backend URLs, DB DSN, and
+`UNIROUTE_PRD4_SSO_ALLOW_BROWSER=approved-target-real-sso`. `P4-F09` does not
+move to `E2E accepted` or `Production verified` until browser login,
+claim-mapping, and `login.oidc` audit evidence pass in an approved target
+environment.
 
 ### P4-F10: Auth UX Hardening
 

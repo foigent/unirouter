@@ -29,6 +29,7 @@
 | 21 | [PRD4 Quota Vocabulary](21-prd4-quota-vocabulary.md) | PRD4 RPM/RPS/TPM/tokens/s terms, key quota visibility, and `qps_limit` compatibility boundary | v0.1 |
 | 22 | [PRD4 PlungeIn Port Contract](22-prd4-plungein-port-contract.md) | PRD4 Observe/Act/Enrich/Decide/Mutate port boundaries and runtime-plugin deferral contract | v0.1 |
 | 23 | [PRD4 Real Upstream Evidence](23-prd4-real-upstream-evidence.md) | PRD4 real-provider evidence harness, credential guardrails, and target-environment acceptance boundary | v0.1 |
+| 24 | [PRD4 Real SSO Evidence](24-prd4-real-sso-evidence.md) | PRD4 Logto/OIDC browser-login evidence harness, credential guardrails, and target-environment acceptance boundary | v0.1 |
 
 ## 关联文档
 - [PRD Phase 1](../PRD-Phase1.md) — 产品需求文档
