@@ -75,8 +75,8 @@ License 公钥由 License 签发方提供，支持 base64 或 hex 编码的 32 �
 | `RUNTIME_DEPLOYMENT_ROLE` | `stable` | 当前实例角色，如 `stable`、`canary` |
 | `RUNTIME_VERSION` | 空 | 可选版本号；建议由发布流程注入 |
 | `RUNTIME_COMMIT` | 空 | 可选 git commit；建议由发布流程注入 |
-| `PROMETHEUS_URL` | 空 | Runtime Status Center 的 Prometheus 深链；不作为采集源，不嵌入完整 Prometheus UI |
-| `GRAFANA_URL` | 空 | Runtime Status Center 的 Grafana 深链；不作为采集源，不嵌入完整 Grafana UI |
+| `PROMETHEUS_URL` | 空 | Runtime Status Center 的 Prometheus base URL；用于 `/-/ready` 和 `up{job="unirouter"}` 探测，同时作为深链入口；不嵌入完整 Prometheus UI |
+| `GRAFANA_URL` | 空 | Runtime Status Center 的 Grafana base URL；用于 `/api/health` 探测，同时作为深链入口；不嵌入完整 Grafana UI |
 
 登录限流只信任 backend 看到的 `RemoteAddr`，不会直接信任客户端可伪造的 `X-Forwarded-For`。如果后续需要按真实客户端 IP 穿透多层代理，需要先定义可信代理链策略，不在 PRD3 临时扩展。
 
@@ -373,7 +373,7 @@ METRICS_ALLOWED_CIDRS=10.0.0.0/8,172.16.0.0/12
 # 不需要应用内指标时关闭，/metrics 返回 404。
 METRICS_ENABLED=false
 
-# Runtime Status Center 展示元数据和外部监控入口。
+# Runtime Status Center 展示元数据、外部监控健康和入口。
 RUNTIME_ENVIRONMENT=staging
 RUNTIME_DEPLOYMENT_MODE=docker-compose
 RUNTIME_DEPLOYMENT_ROLE=stable

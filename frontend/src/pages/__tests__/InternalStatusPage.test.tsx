@@ -62,8 +62,8 @@ describe('InternalStatusPage', () => {
         network: { status: 'unavailable', reason: 'telemetry_source_not_configured' },
       },
       observability_integrations: {
-        prometheus: { status: 'configured', url: 'http://prometheus:9090' },
-        grafana: { status: 'not_configured', reason: 'GRAFANA_URL_empty' },
+        prometheus: { status: 'connected', url: 'http://prometheus:9090', latency_ms: 3, scrape_status: 'up' },
+        grafana: { status: 'misconfigured', url: 'http://grafana:3000', reason: 'auth_required' },
       },
     });
   });
@@ -80,6 +80,10 @@ describe('InternalStatusPage', () => {
     expect(screen.getByText('运行时观测')).toBeTruthy();
     expect(screen.getByText('数据库')).toBeTruthy();
     expect(screen.getByText('Prometheus')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'http://prometheus:9090' })).toBeTruthy();
+    expect(screen.getByText(/scrape up \/ 3 ms/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'http://grafana:3000' })).toBeTruthy();
+    expect(screen.getByText(/auth_required/)).toBeTruthy();
     expect(screen.getByText(/CPU 不可用 \/ 磁盘 不可用 \/ 网络 不可用/)).toBeTruthy();
     expect(screen.getByText('Provider channel failure')).toBeTruthy();
     expect(screen.getByText('上游通道故障')).toBeTruthy();

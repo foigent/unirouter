@@ -2,9 +2,9 @@
 
 > Version: Phase 4 Scope Draft
 > Date: 2026-07-07
-> Status: Active PRD4 implementation; Batch 1E accepted per User report after
-> `a1acdb6` / PR #88, and Batch 1F PlungeIn Port Architecture is fixed awaiting
-> Canary.
+> Status: Active PRD4 implementation; Batch 1F PlungeIn Port Architecture passed
+> Canary and Sentinel merge is reflected by `87bfc17` / PR #89. Batch 1G
+> External Monitoring Integration is fixed awaiting Canary.
 > Source: `docs/planning/PRD4-BACKLOG.md`, `docs/ops/CURRENT-STATUS.md`,
 > `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`,
 > `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`, current repo/code review, and User
@@ -281,6 +281,14 @@ Acceptance:
   misconfigured, or unavailable.
 - Operators have deep links to their own dashboards when configured.
 - Metrics exposure and monitoring API access follow RBAC and network policy.
+
+Batch 1G implementation note: the first slice keeps UniRouter as the status
+center, not a monitoring replacement. `GET /api/v1/runtime/status` actively
+checks configured Prometheus and Grafana base URLs, reports Prometheus readiness
+and `up{job="unirouter"}` scrape state, reports Grafana `/api/health`, and keeps
+the configured URLs as external deep links. It does not embed dashboards, add
+new metrics authentication, validate Grafana datasources, or implement a
+third-party monitoring connector framework.
 
 ### P4-F08: Real Upstream Evidence Track
 

@@ -393,7 +393,8 @@ paths:
   /api/v1/runtime/status:
     get:
       tags: [Admin]
-      summary: Runtime environment and observability status
+      summary: Runtime environment, capacity, and external monitoring status
+      description: Returns runtime metadata, dependency/capacity health, traffic summary, and Prometheus/Grafana integration states such as connected, stale, misconfigured, unavailable, or not_configured.
       security:
         - bearerAuth: []
       responses:

@@ -1,88 +1,104 @@
-# FIX-SIGNAL.md - PRD4 Batch 1F PlungeIn Port Architecture
+# FIX-SIGNAL.md - PRD4 Batch 1G External Monitoring Integration
 
 **Date:** 2026-07-07
 **Status:** Fixed awaiting Canary
-**Issue:** `PRD4-PLUNGEIN-001`
-**Matrix Row:** `P4-F05`
+**Issue:** `PRD4-MONITORING-001`
+**Matrix Row:** `P4-F07`
 
 ## Verification Request
 
-Please verify PRD4 Batch 1F: PlungeIn Port Architecture.
+Please verify PRD4 Batch 1G: External Monitoring Integration.
 
-This batch is documentation-only. It accepts the PRD4 PlungeIn ADR scope and
-adds a concrete port contract for Observe, Act, limited Enrich, advisory Decide,
-and forbidden Mutate behavior. It does not implement runtime plugin loading,
-manifest handling, sandboxing, marketplace distribution, third-party
-installation, or mutation of core auth/billing/routing/wallet/settlement/provider
-dispatch.
+This batch upgrades the PRD4 Runtime Status Center from static
+Prometheus/Grafana URL display to active external monitoring health checks.
+It keeps UniRouter as a status center and deep-link entrypoint, not as a
+replacement for Prometheus or Grafana.
 
 ## Scope To Verify
 
-Docs/architecture:
+Backend runtime status:
 
-- `docs/governance/adr/ADR-0001-prd4-plungein-ports.md` is accepted for PRD4
-  Batch 1F scope and links to the normative port contract.
-- `docs/tech-ref/22-prd4-plungein-port-contract.md` defines:
-  - Observe as read-only request/trace/status/usage/runtime/monitoring access.
-  - Act as guarded notifications, webhooks, deep links, and evidence exports.
-  - Enrich as limited, non-authoritative labels/classifications/ontology hints.
-  - Decide as advisory-only recommendations in PRD4.
-  - Mutate as forbidden/deferred for auth, authorization, billing, wallet,
-    settlement, routing, provider dispatch, request/response bodies, schema
-    ownership, and secrets.
-- PRD5 backlog boundaries remain explicit for the full runtime plugin platform,
-  plugin marketplace, sandbox, signing, lifecycle, permissions, and third-party
-  installation.
-- Documentation indexes route readers to the new port contract.
+- `GET /api/v1/runtime/status` still returns runtime environment, app memory,
+  DB/Redis health, and recent traffic summary.
+- Configured `PROMETHEUS_URL` is actively checked with:
+  - `/-/ready` readiness probe.
+  - `/api/v1/query?query=up{job="unirouter"}` scrape-state probe.
+- Prometheus integration reports `connected`, `stale`, `misconfigured`,
+  `unavailable`, or `not_configured`, with `health_url`, `checked_at`,
+  `latency_ms`, `reason`, and `scrape_status` where applicable.
+- Configured `GRAFANA_URL` is actively checked with `/api/health`.
+- Grafana integration reports `connected`, `stale`, `misconfigured`,
+  `unavailable`, or `not_configured`, with `health_url`, `checked_at`,
+  `latency_ms`, `reason`, and `version` where applicable.
+- External monitoring failures must not make `/runtime/status` fail; they should
+  be represented as integration status fields.
 
-Status:
+Frontend/runtime UI:
 
-- Records User-reported Batch 1E Canary/Sentinel completion after `a1acdb6` /
-  PR #88.
-- Marks `P4-F03` / `PRD4-QUOTA-001` Canary passed.
-- Marks `P4-F05` / `PRD4-PLUNGEIN-001` fixed awaiting Canary.
-- Keeps `PRD4-PLUGIN-001` open because full runtime plugin platform remains
-  unimplemented and deferred to PRD5.
+- `/status` Runtime Observability cards show Prometheus and Grafana states using
+  the new status vocabulary.
+- Configured URLs remain external links.
+- Scrape status, latency, Grafana version, and reason text are visible when
+  present.
+- `StatusTag` color semantics cover connected/available/configured, stale,
+  misconfigured, unavailable, and not_configured.
+
+Docs/status:
+
+- `P4-F05` / `PRD4-PLUNGEIN-001` is marked Canary passed after Batch 1F PASS and
+  Sentinel merge `87bfc17` / PR #89.
+- `P4-F07` / `PRD4-MONITORING-001` is marked fixed awaiting Canary.
+- Runbook and env example describe `PROMETHEUS_URL` / `GRAFANA_URL` as Runtime
+  Status health/deep-link base URLs.
 
 ## Non-Scope
 
 Do not expect this batch to implement:
 
-- Any Go, frontend, migration, API route, OpenAPI, deployment, Docker, or runtime
-  behavior change.
-- Runtime plugin loading, dynamic code loading, package installation, plugin
-  manifest parsing, plugin signing, sandboxing, marketplace distribution, or
-  third-party install/uninstall.
-- Mutating hooks for authentication, authorization, billing, wallet, settlement,
-  routing, provider dispatch, retry behavior, or request/response bodies.
-- Prompt/response plaintext storage or new secret exposure.
-- Scheduler V2, budget hard-blocking, real upstream evidence, or real SSO
-  evidence.
+- Embedded Prometheus or Grafana dashboards inside UniRouter.
+- Grafana datasource validation, dashboard UID validation, or panel screenshots.
+- New metrics authentication strategy or trusted proxy policy.
+- OpenTelemetry export or ingestion.
+- Node exporter, cloud host telemetry collectors, cluster inventory, CPU
+  utilization, disk usage, or network throughput collection.
+- Metric-alert notification routing.
+- Generic monitoring connector framework.
+- Runtime plugin loading, manifest parsing, sandboxing, marketplace,
+  third-party installation, or PlungeIn Mutate behavior.
+- Real upstream provider evidence or real SSO evidence.
 
 ## Required Verification Commands
 
 ```bash
-rg -n "PlungeIn|Observe|Act|Enrich|Decide|Mutate|PRD4 Batch 1F|PRD4-PLUNGEIN-001|P4-F05" docs/tech-ref/22-prd4-plungein-port-contract.md docs/governance/adr/ADR-0001-prd4-plungein-ports.md docs/PRD-Phase4.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/PROJECT-HANDOFF.md docs/DOC-INVENTORY.md docs/README.md docs/tech-ref/README.md
-rg -n "runtime plugin platform|manifest|dynamic loading|sandbox|marketplace|third-party|Mutate|auth|billing|routing|wallet|settlement|provider dispatch" docs/tech-ref/22-prd4-plungein-port-contract.md docs/governance/adr/ADR-0001-prd4-plungein-ports.md docs/planning/PRD5-BACKLOG.md docs/issues/OPEN-ISSUES.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md
-git status --short
+rg -n "runtimePrometheusIntegration|runtimeGrafanaIntegration|prometheusUniRouterTargetQuery|scrape_status|health_url|auth_required|integrationMeta|integrationTone" internal/admin frontend/src/pages frontend/src/ui
+rg -n 'PRD4-MONITORING-001|P4-F07|Batch 1G|External Monitoring|PROMETHEUS_URL|GRAFANA_URL|up\{job="unirouter"\}|connected|stale|misconfigured|unavailable' docs/agent-workflows/FIX-SIGNAL.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/PRD-Phase4.md docs/PROJECT-HANDOFF.md docs/DOC-INVENTORY.md docs/README.md docs/CODEBASE-MAP.md docs/ops/deployment-runbook.md .env.example
+go test ./internal/admin -run 'TestRuntimeStatus|TestRuntimeOverallStatus' -count=1
+go test ./internal/config ./internal/admin ./cmd/uniroute -count=1
+go test ./... -count=1
+npm --prefix frontend test -- --run InternalStatusPage client ApiDocsPage navigation
+npm --prefix frontend test -- --run
+npm --prefix frontend run build
 git diff --check
 ```
 
 ## Acceptance Criteria
 
-1. ADR 0001 is accepted for PRD4 Batch 1F scope and points to the technical port
-   contract.
-2. The port contract clearly distinguishes Observe, Act, Enrich, Decide, and
-   Mutate.
-3. PRD4 allowed behavior remains observation-first; Act is guarded; Enrich is
-   non-authoritative; Decide is advisory only.
-4. Mutating core auth, authorization, billing, wallet, settlement, routing,
-   provider dispatch, request/response bodies, schema ownership, or secrets is
-   explicitly forbidden/deferred.
-5. Full runtime plugin platform, marketplace, sandbox, manifest, signing,
-   lifecycle, permissions, and third-party installation remain deferred to PRD5.
-6. Docs consistently show Batch 1E as Canary/Sentinel complete per User report
-   and Batch 1F as fixed awaiting Canary.
-7. No runtime code, migration, API route, OpenAPI, deployment config, frontend,
-   or Docker files changed in Batch 1F.
-8. Documentation grep and `git diff --check` pass.
+1. Runtime Status actively probes configured Prometheus readiness and
+   `up{job="unirouter"}` scrape state.
+2. Runtime Status actively probes configured Grafana `/api/health`.
+3. Prometheus and Grafana failures are represented as integration statuses, not
+   as `/runtime/status` request failures.
+4. Response fields include status, configured URL, health URL, checked time,
+   latency, reasons, and Prometheus scrape status or Grafana version where
+   applicable.
+5. Frontend Runtime Observability cards render the new status vocabulary,
+   external links, reasons, scrape status, latency, and version.
+6. Status tag colors are not misleading for connected, stale, misconfigured,
+   unavailable, or not_configured states.
+7. Docs consistently mark Batch 1F as Canary passed/Sentinel merged and Batch 1G
+   as fixed awaiting Canary.
+8. No embedded dashboards, datasource validation, host telemetry collector,
+   OpenTelemetry, generic connector framework, runtime plugin loading, or
+   mutating PlungeIn behavior is introduced.
+9. Focused backend/frontend tests, broad Go/frontend tests, frontend build, docs
+   grep, and `git diff --check` pass.
