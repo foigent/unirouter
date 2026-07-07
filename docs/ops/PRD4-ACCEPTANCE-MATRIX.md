@@ -1,7 +1,7 @@
 # PRD4 Acceptance Matrix
 
 > Date: 2026-07-07
-> Status: PRD4 Batch 0 scope baseline accepted per User report; PRD4 Preflight Hardening passed Canary 6/6; Batch 1A Auth UX hardening passed Canary 6/6 and User reported Sentinel completed; Batch 1B Usage And Cost Attribution passed Canary and User reported Sentinel completed; Batch 1C Flow/Event/Trace Foundation passed Canary and User reported Sentinel completed; Batch 1D Runtime Observability Foundation passed Canary and User reported Sentinel completed; Batch 1E Quota Vocabulary And Key Quota Foundation passed Canary and User reported Sentinel completed; Batch 1F PlungeIn Port Architecture passed Canary and Sentinel merge is reflected by `87bfc17` / PR #89; Batch 1G External Monitoring Integration passed Canary 9/9 and Sentinel merge is reflected by `bb291a4` / PR #90; Batch 1H Real Upstream Evidence Harness is fixed awaiting Canary.
+> Status: PRD4 Batch 0 scope baseline accepted per User report; PRD4 Preflight Hardening passed Canary 6/6; Batch 1A Auth UX hardening passed Canary 6/6 and User reported Sentinel completed; Batch 1B Usage And Cost Attribution passed Canary and User reported Sentinel completed; Batch 1C Flow/Event/Trace Foundation passed Canary and User reported Sentinel completed; Batch 1D Runtime Observability Foundation passed Canary and User reported Sentinel completed; Batch 1E Quota Vocabulary And Key Quota Foundation passed Canary and User reported Sentinel completed; Batch 1F PlungeIn Port Architecture passed Canary and Sentinel merge is reflected by `87bfc17` / PR #89; Batch 1G External Monitoring Integration passed Canary 9/9 and Sentinel merge is reflected by `bb291a4` / PR #90; Batch 1H Real Upstream Evidence Harness passed Canary 11/11 and Sentinel merge is reflected by `d3acfa6` / PR #91; Batch 1I Real SSO Evidence Harness is fixed awaiting Canary.
 > Source: `docs/PRD-Phase4.md`, `docs/planning/PRD4-BACKLOG.md`, current
 > PRD2/PRD3 evidence boundaries, and User PRD4 scope decisions.
 
@@ -34,8 +34,8 @@ actual result, and rollback or cleanup note.
 | P4-F05 | PlungeIn Port Architecture | Canary passed | Observe/Act/Enrich/Decide/Mutate ports are documented; PRD4 only allows observation-first ports | ADR review, docs consistency, later port tests if code exists | Batch 1F accepts ADR 0001 for PRD4 scope and adds `docs/tech-ref/22-prd4-plungein-port-contract.md`. It is docs-only: no runtime plugin loading, manifest, sandbox, marketplace, third-party installation, or mutation of auth/billing/routing/wallet/settlement/provider dispatch. Canary PASS 8/8 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge is reflected by `87bfc17` / PR #89 |
 | P4-F06 | Status Center And Runtime Observability | Canary passed | Event Status, Runtime Environment, Capacity Health, and Observability Integrations are separate surfaces; stale/missing telemetry is explicit | Backend/frontend tests, RBAC tests, local runtime smoke | Batch 1D adds `GET /api/v1/runtime/status`, runtime metadata config, app memory, DB/Redis health, recent traffic summary, and same-page Runtime Observability cards while preserving event-derived Internal Status semantics. CPU/disk/network telemetry is explicit unavailable until a source of truth exists. User reported Canary/Sentinel completed after `349ac75` / PR #87; Atlas deployment not reported |
 | P4-F07 | External Monitoring Integration | Canary passed | Prometheus/Grafana state is shown as connected/stale/misconfigured/unavailable/not_configured; deep links remain configurable; monitoring failures do not break the main app | Backend httptest probes, frontend status rendering tests, config/docs grep, broad Go/frontend regression | Batch 1G actively probes configured `PROMETHEUS_URL` and `GRAFANA_URL` from `GET /api/v1/runtime/status`: Prometheus `/-/ready` plus `up{job="unirouter"}`, Grafana `/api/health`, latency, reason, scrape status, version, and external links. Canary PASS 9/9 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge is reflected by `bb291a4` / PR #90. It does not embed dashboards, validate Grafana datasources, add metrics auth, or implement a generic monitoring connector framework |
-| P4-F08 | Real Upstream Evidence Track | Fixed awaiting Canary | OpenRouter-compatible and direct Anthropic-native flows have target evidence for non-stream and stream where supported | Approved credentials, guarded smoke scripts, call log/billing evidence | Batch 1H adds the guarded evidence harness, preflight, seed, runner, and tech reference. It does not claim real upstream E2E acceptance or Production verified status without approved target credentials and a successful real-provider run |
-| P4-F09 | Real SSO Evidence Track | Planned | Real Logto or approved enterprise OIDC browser login passes with claim mapping and audit evidence | Approved IdP client, browser smoke, audit/log redaction check | Logto remains external/optional in PRD4 |
+| P4-F08 | Real Upstream Evidence Track | Canary passed | OpenRouter-compatible and direct Anthropic-native flows have target evidence for non-stream and stream where supported | Approved credentials, guarded smoke scripts, call log/billing evidence | Batch 1H adds the guarded evidence harness, preflight, seed, runner, and tech reference. Canary PASS 11/11 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge is reflected by `d3acfa6` / PR #91. It does not claim real upstream E2E acceptance or Production verified status without approved target credentials and a successful real-provider run |
+| P4-F09 | Real SSO Evidence Track | Fixed awaiting Canary | Real Logto or approved enterprise OIDC browser login passes with claim mapping and audit evidence | Approved IdP client, browser smoke, audit/log redaction check | Batch 1I adds the guarded real SSO evidence harness, browser runner, read-only audit checker, and tech reference. It does not claim real SSO E2E acceptance or Production verified status without approved IdP credentials, a target test user, and a successful real browser login |
 | P4-F10 | Auth UX Hardening | Canary passed | Password inputs support hidden-by-default visibility toggle with accessible controls | Frontend tests, build, visual smoke if needed | Batch 1A adds shared `PasswordField` for login, change-password, and admin user password fields; no auth semantic changes. Canary PASS 6/6; User reported Sentinel completed after `620794b` / PR #84; Atlas deployment not reported |
 | P4-F11 | Production Evidence Promotion | Planned | License, webhook, upstream, SSO, and selected ops rows only move to Production verified with target evidence | Evidence files under `docs/ops/evidence/`, matrix/status updates | Local-only evidence is not enough |
 | P4-F12 | Security, Privacy, And Redaction Guardrails | Planned | Usage, trace, runtime, SSO, upstream, and evidence outputs hide restricted fields | RBAC negative tests, evidence grep for secret patterns, docs review | Prompt/response plaintext remains disabled |
@@ -228,3 +228,33 @@ guardrails, safe preflight behavior, evidence redaction, and documentation
 consistency. `P4-F08` remains below `E2E accepted` until both OpenRouter-
 compatible and direct Anthropic-native real-provider non-stream/stream checks
 pass in an approved target environment.
+
+## Batch 1I Verification
+
+PRD4 Batch 1I verifies the Real SSO Evidence Harness and its guardrails:
+
+```bash
+rg -n "prd4-real-sso-smoke|prd4_real_sso_smoke|prd4_real_sso_audit_check|approved-target-real-sso|PRD4 Batch 1I|P4-F09|PRD4-SSO-001|Logto|real SSO" scripts docs/tech-ref/24-prd4-real-sso-evidence.md docs/agent-workflows/FIX-SIGNAL.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/PRD-Phase4.md docs/PROJECT-HANDOFF.md docs/DOC-INVENTORY.md docs/README.md docs/tech-ref/README.md docs/CODEBASE-MAP.md
+scripts/prd4-real-sso-smoke.sh --preflight
+node --check scripts/prd4_real_sso_smoke.mjs
+go run ./scripts/prd4_real_sso_audit_check.go
+go test ./internal/oidc ./internal/admin ./internal/config ./cmd/uniroute -count=1
+go test ./... -count=1
+npm --prefix frontend test -- --run LoginPage client navigation
+npm --prefix frontend test -- --run
+npm --prefix frontend run build
+git diff --check
+```
+
+The `go run ./scripts/prd4_real_sso_audit_check.go` command is expected to fail
+in an unconfigured workspace before reading the database, because
+`UNIROUTE_PRD4_SSO_ALLOW_BROWSER=approved-target-real-sso` is absent.
+
+Canary should not run real browser mode unless the target environment supplies
+approved IdP/test-user credentials, console/backend URLs, issuer URL, DB DSN,
+and `UNIROUTE_PRD4_SSO_ALLOW_BROWSER=approved-target-real-sso`.
+
+Batch 1I acceptance is limited to harness correctness, explicit browser/IdP/DB
+guardrails, safe preflight behavior, evidence redaction, and documentation
+consistency. `P4-F09` remains below `E2E accepted` until a real Logto or
+approved enterprise OIDC browser login passes in an approved target environment.

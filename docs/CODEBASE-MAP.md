@@ -71,6 +71,9 @@ OpenAPI snapshot: `docs/tech-ref/05-openapi-spec.yaml` is the current route-leve
 | `scripts/prd4-real-upstream-smoke.sh` | PRD4 Batch 1H wrapper for real upstream evidence. `--preflight` is safe without credentials and does not mutate the database or call providers |
 | `scripts/prd4_real_upstream_seed.go` | Guarded target-evidence fixture seed for OpenRouter-compatible and direct Anthropic-native channels, model governance rows, wallet, and API key |
 | `scripts/prd4_real_upstream_smoke.mjs` | Real-provider gateway runner that checks non-stream/stream calls, call logs, billing settlement, trace events, and sanitized JSON evidence |
+| `scripts/prd4-real-sso-smoke.sh` | PRD4 Batch 1I wrapper for real SSO evidence. `--preflight` is safe without target credentials and does not drive a browser, call an IdP, or read DB |
+| `scripts/prd4_real_sso_smoke.mjs` | Real SSO browser runner for Logto or another enterprise OIDC target; checks OIDC config/discovery, browser login, `/me`, audit mapping, and sanitized JSON evidence |
+| `scripts/prd4_real_sso_audit_check.go` | Guarded read-only DB evidence check for OIDC user mapping and `login.oidc` audit redaction |
 
 ## Frontend Map
 

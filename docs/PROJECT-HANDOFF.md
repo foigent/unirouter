@@ -68,23 +68,12 @@ Latest accepted PRD4 hardening baseline is PRD4 Preflight Hardening on 2026-07-0
 - User reported Sentinel/Atlas completed after `e335a9e` / PR #83.
 - PRD4 Batch 0 scope baseline is complete per User report after `e24731d` / PR #82; the Batch 0 `VERIFY-RESULT.md` content has since been overwritten by the Preflight result.
 
-Latest accepted PRD4 implementation batch is PRD4 Batch 1G External Monitoring
-Integration:
+Latest accepted PRD4 implementation batch is PRD4 Batch 1H Real Upstream
+Evidence Harness:
 
-- Canary PASS 9/9 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`.
-- Sentinel merge is reflected by `bb291a4` / PR #90.
-- Atlas deployment has not been reported for Batch 1G.
-- Batch 1G extends `GET /api/v1/runtime/status` to actively check configured
-  Prometheus and Grafana.
-- Prometheus checks include `/-/ready` and `up{job="unirouter"}`. Grafana checks
-  use `/api/health`.
-- Embedded dashboards, Grafana datasource validation, new metrics auth,
-  OpenTelemetry export, host telemetry collectors, generic monitoring
-  connectors, and runtime plugin platform behavior are not in Batch 1G.
-
-Current active verification signal: PRD4 Batch 1H Real Upstream Evidence
-Harness is fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
-
+- Canary PASS 11/11 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`.
+- Sentinel merge is reflected by `d3acfa6` / PR #91.
+- Atlas deployment has not been reported for Batch 1H.
 - Batch 1H adds guarded tooling for `P4-F08` real upstream evidence:
   `scripts/prd4-real-upstream-smoke.sh`, `scripts/prd4_real_upstream_seed.go`,
   `scripts/prd4_real_upstream_smoke.mjs`, and
@@ -96,6 +85,21 @@ Harness is fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
   `UNIROUTE_PRD4_UPSTREAM_ALLOW_MUTATION=approved-target-real-upstream`.
 - Batch 1H does not mark `P4-F08` E2E accepted or Production verified without a
   successful approved target-provider run.
+
+Current active verification signal: PRD4 Batch 1I Real SSO Evidence
+Harness is fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+
+- Batch 1I adds guarded tooling for `P4-F09` real SSO evidence:
+  `scripts/prd4-real-sso-smoke.sh`, `scripts/prd4_real_sso_smoke.mjs`,
+  `scripts/prd4_real_sso_audit_check.go`, and
+  `docs/tech-ref/24-prd4-real-sso-evidence.md`.
+- Preflight mode is safe without target credentials: it reports `SKIP`, does
+  not drive a browser, does not call an IdP, and does not read the database.
+- Real mode requires approved Logto or enterprise OIDC target access, a test
+  user, console/backend/issuer URLs, DB DSN, and
+  `UNIROUTE_PRD4_SSO_ALLOW_BROWSER=approved-target-real-sso`.
+- Batch 1I does not mark `P4-F09` E2E accepted or Production verified without a
+  successful approved target-IdP browser login and audit evidence.
 
 The latest accepted route-contract baseline remains PRD3 Batch 6 on 2026-07-05:
 
