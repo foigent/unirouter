@@ -173,6 +173,13 @@ describe('API Client', () => {
       const url = mockFetch.mock.calls[0][0]
       expect(url).toContain('usage_source=counter_v2')
     })
+
+    it('loads request trace for a call log', async () => {
+      mockJsonResponse({ request_id: 'req-001', events: [] })
+
+      await api.getLogTrace(31)
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/logs/31/trace')
+    })
   })
 
   describe('getReconciliation with filters', () => {

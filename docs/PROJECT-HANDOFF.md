@@ -68,19 +68,26 @@ Latest accepted PRD4 hardening baseline is PRD4 Preflight Hardening on 2026-07-0
 - User reported Sentinel/Atlas completed after `e335a9e` / PR #83.
 - PRD4 Batch 0 scope baseline is complete per User report after `e24731d` / PR #82; the Batch 0 `VERIFY-RESULT.md` content has since been overwritten by the Preflight result.
 
-Latest accepted PRD4 implementation batch is PRD4 Batch 1A Auth UX hardening:
+Latest accepted PRD4 implementation batch is PRD4 Batch 1B Usage And Cost
+Attribution foundation:
 
-- `docs/agent-workflows/VERIFY-RESULT.md` reports PASS 6/6.
-- User reported Sentinel completed after `620794b` / PR #84.
-- Atlas deployment has not been reported for Batch 1A.
-- No backend auth, SSO/OIDC, RBAC, password policy, migration, usage/cost,
-  trace, runtime observability, or deployment behavior changed.
+- User reported Canary/Sentinel completed after `7dd8aa0` / PR #85.
+- Atlas deployment has not been reported for Batch 1B.
+- Batch 1B adds API key owner/type attribution, gateway `call_logs`
+  owner/type snapshots, `scope=my`, owner/key-type analytics filters and
+  groupings, frontend analytics controls, and personal-key disablement before
+  hard user delete.
 
-Current active verification signal: PRD4 Batch 1B Usage And Cost Attribution
-foundation. `docs/agent-workflows/FIX-SIGNAL.md` asks Canary to verify API key
-owner/type attribution, gateway `call_logs` owner/type snapshots, usage
-analytics `scope=my` and owner/key-type filters/groupings, frontend analytics
-controls, and status docs. Batch 1B is fixed awaiting Canary, not accepted.
+Current active verification signal: PRD4 Batch 1C Flow/Event/Trace Foundation
+is fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+
+- Batch 1C adds metadata-only `request_trace_events`, deterministic trace
+  sampling config, gateway/billing/routing/provider/call-log events for chat
+  and embeddings, `GET /api/v1/logs/{id}/trace` with project usage RBAC, and
+  Logs detail trace rendering.
+- OpenTelemetry, Runtime Status Center CPU/memory/network panels,
+  Prometheus/Grafana integration status, direct global request-id lookup,
+  retention cleanup, and prompt/response plaintext storage are not in Batch 1C.
 
 The latest accepted route-contract baseline remains PRD3 Batch 6 on 2026-07-05:
 

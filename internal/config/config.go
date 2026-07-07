@@ -43,6 +43,8 @@ type Config struct {
 	LoginRateLimitWindowSec int
 	LoginRateLimitIP        int
 	LoginRateLimitUser      int
+	TraceEventsEnabled      bool
+	TraceEventSampleRate    float64
 
 	// License
 	LicensePublicKey         string
@@ -142,6 +144,9 @@ func (c *Config) Validate() error {
 	if c.LoginRateLimitUser < 0 {
 		return fmt.Errorf("LOGIN_RATE_LIMIT_USER_REQUESTS must be >= 0")
 	}
+	if c.TraceEventSampleRate < 0 || c.TraceEventSampleRate > 1 {
+		return fmt.Errorf("TRACE_EVENT_SAMPLE_RATE must be between 0 and 1")
+	}
 	if c.OIDCEnabled {
 		if c.OIDCIssuerURL == "" {
 			return fmt.Errorf("OIDC_ISSUER_URL is required when OIDC is enabled")
@@ -194,6 +199,8 @@ func Load() (*Config, error) {
 		LoginRateLimitWindowSec: getEnvInt("LOGIN_RATE_LIMIT_WINDOW_SECONDS", 60),
 		LoginRateLimitIP:        getEnvInt("LOGIN_RATE_LIMIT_IP_REQUESTS", 30),
 		LoginRateLimitUser:      getEnvInt("LOGIN_RATE_LIMIT_USER_REQUESTS", 10),
+		TraceEventsEnabled:      getEnvBool("TRACE_EVENTS_ENABLED", true),
+		TraceEventSampleRate:    getEnvFloat("TRACE_EVENT_SAMPLE_RATE", 1),
 
 		LicensePublicKey:         getEnvStr("LICENSE_PUBLIC_KEY", ""),
 		LicenseExpiryWarningDays: getEnvInt("LICENSE_EXPIRY_WARNING_DAYS", 30),

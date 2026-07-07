@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -219,5 +220,86 @@ func (h *Handler) GetLogDetail(w http.ResponseWriter, r *http.Request) {
 		"ip_address":           ipAddress,
 		"requested_model":      requestedModel,
 		"created_at":           createdAt,
+	})
+}
+
+func (h *Handler) GetRequestTrace(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "invalid id"})
+		return
+	}
+
+	var projectID, orgID int64
+	var requestID string
+	err = h.db.QueryRow(r.Context(),
+		`SELECT COALESCE(project_id, 0), org_id, request_id
+		 FROM call_logs WHERE id = $1`, id,
+	).Scan(&projectID, &orgID, &requestID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "log not found"})
+		return
+	}
+	if !h.canReadProjectUsage(r.Context(), projectID) {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		return
+	}
+
+	rows, err := h.db.Query(r.Context(),
+		`SELECT id, event_type, stage, severity, model, requested_model, provider, channel,
+		        status_code, latency_ms, metadata, created_at
+		 FROM request_trace_events
+		 WHERE request_id = $1
+		   AND org_id = $2
+		   AND COALESCE(project_id, 0) = $3
+		 ORDER BY created_at ASC, id ASC`,
+		requestID, orgID, projectID,
+	)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Query failed"})
+		return
+	}
+	defer rows.Close()
+
+	events := make([]map[string]interface{}, 0)
+	for rows.Next() {
+		var eventID int64
+		var eventType, stage, severity, model, requestedModel, provider, channel string
+		var statusCode *int
+		var latencyMs int
+		var metadataBytes []byte
+		var createdAt time.Time
+		if err := rows.Scan(&eventID, &eventType, &stage, &severity, &model, &requestedModel, &provider, &channel, &statusCode, &latencyMs, &metadataBytes, &createdAt); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
+			return
+		}
+		metadata := map[string]interface{}{}
+		if len(metadataBytes) > 0 {
+			_ = json.Unmarshal(metadataBytes, &metadata)
+		}
+		events = append(events, map[string]interface{}{
+			"id":              eventID,
+			"event_type":      eventType,
+			"stage":           stage,
+			"severity":        severity,
+			"model":           model,
+			"requested_model": requestedModel,
+			"provider":        provider,
+			"channel":         channel,
+			"status_code":     statusCode,
+			"latency_ms":      latencyMs,
+			"metadata":        metadata,
+			"created_at":      createdAt,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Rows failed"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"request_id": requestID,
+		"events":     events,
 	})
 }

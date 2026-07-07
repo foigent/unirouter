@@ -68,6 +68,8 @@ License 公钥由 License 签发方提供，支持 base64 或 hex 编码的 32 �
 | `LOGIN_RATE_LIMIT_USER_REQUESTS` | `10` | 单个 `RemoteAddr+username` 每窗口最大登录尝试数 |
 | `METRICS_ENABLED` | `true` | 兼容 bundled Prometheus；不需要应用内指标时设为 `false` |
 | `METRICS_ALLOWED_CIDRS` | 空 | 为空表示应用层不限制；生产建议填 Prometheus/内网 CIDR，公网隔离仍应依赖安全组、防火墙或反向代理 |
+| `TRACE_EVENTS_ENABLED` | `true` | 记录 metadata-only 请求路径事件；高流量生产环境可设为 `false` 暂停写入 |
+| `TRACE_EVENT_SAMPLE_RATE` | `1` | 按 `request_id` 确定性采样，范围 `0..1`；例如 `0.1` 约采样 10% 请求并保留同一请求的完整事件段 |
 
 登录限流只信任 backend 看到的 `RemoteAddr`，不会直接信任客户端可伪造的 `X-Forwarded-For`。如果后续需要按真实客户端 IP 穿透多层代理，需要先定义可信代理链策略，不在 PRD3 临时扩展。
 

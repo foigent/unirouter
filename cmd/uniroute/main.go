@@ -79,6 +79,7 @@ func main() {
 	sensitiveFilter := filter.NewDFAFilter([]string{})
 	encKey := []byte(cfg.EncryptionKey)
 	relay := gateway.NewRelay(postgres.Pool, redisClient.Client, router, billingSvc, sensitiveFilter, encKey)
+	relay.SetTraceEvents(cfg.TraceEventsEnabled, cfg.TraceEventSampleRate)
 	alertSvc := billing.NewAlertService(postgres.Pool)
 	eventSvc := billing.NewEventService(postgres.Pool)
 	relay.SetEventService(eventSvc)
@@ -300,6 +301,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">PUT</td><td><code>/api/v1/projects/{id}/model-sets</code></td><td>Replace project model sets</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/logs</code></td><td>Call logs with filters</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/logs/{id}</code></td><td>Call log detail</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/logs/{id}/trace</code></td><td>Request trace events</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/usage/analytics</code></td><td>Usage analytics and CSV export</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/internal-status</code></td><td>Event-derived internal status</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/error-docs</code></td><td>Error documentation registry</td></tr>
@@ -389,6 +391,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 
 	mux.Handle("GET /api/v1/logs", usageRoute(adminHandler.ListLogs))
 	mux.Handle("GET /api/v1/logs/{id}", usageRoute(adminHandler.GetLogDetail))
+	mux.Handle("GET /api/v1/logs/{id}/trace", usageRoute(adminHandler.GetRequestTrace))
 	mux.Handle("GET /api/v1/dashboard/stats", usageRoute(adminHandler.DashboardStats))
 	mux.Handle("GET /api/v1/usage/analytics", usageRoute(adminHandler.UsageAnalytics))
 	mux.Handle("GET /api/v1/internal-status", notificationReadRoute(adminHandler.InternalStatus))

@@ -43,6 +43,21 @@ interface LogFilters {
   search?: string;
 }
 
+interface TraceEvent {
+  id: number;
+  event_type: string;
+  stage: string;
+  severity: 'info' | 'warning' | 'error';
+  model: string;
+  requested_model: string;
+  provider: string;
+  channel: string;
+  status_code: number | null;
+  latency_ms: number;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
 function filtersToParams(filters: LogFilters): string {
   const params = new URLSearchParams();
   Object.entries(filters).forEach(([k, v]) => { if (v) params.set(k, v); });
@@ -105,6 +120,19 @@ async function copyToClipboard(text: string) {
   }
 }
 
+function traceSeverityColor(severity: TraceEvent['severity']) {
+  if (severity === 'error') return 'red';
+  if (severity === 'warning') return 'orange';
+  return 'green';
+}
+
+function formatMetadataValue(value: unknown) {
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'number') return value.toLocaleString();
+  if (typeof value === 'string') return value || '-';
+  return '-';
+}
+
 export default function LogsPage() {
   const [logs, setLogs] = useState<Log[]>([]);
   const [loading, setLoading] = useState(true);
@@ -114,6 +142,8 @@ export default function LogsPage() {
   const [filters, setFilters] = useState<LogFilters>(paramsToFilters);
   const [selectedLog, setSelectedLog] = useState<Log | null>(null);
   const [showDetail, setShowDetail] = useState(false);
+  const [traceEvents, setTraceEvents] = useState<TraceEvent[]>([]);
+  const [traceLoading, setTraceLoading] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const [modelOptions, setModelOptions] = useState<string[]>([]);
@@ -186,6 +216,22 @@ export default function LogsPage() {
     setFilters({});
     setPage(1);
   };
+
+  const openLogDetail = useCallback((record: Log) => {
+    setSelectedLog(record);
+    setShowDetail(true);
+    setTraceEvents([]);
+    setTraceLoading(true);
+    api.getLogTrace(record.id)
+      .then((data: any) => {
+        setTraceEvents(Array.isArray(data?.events) ? data.events : []);
+      })
+      .catch((e) => {
+        console.error('Failed to fetch request trace', e);
+        setTraceEvents([]);
+      })
+      .finally(() => setTraceLoading(false));
+  }, []);
 
   const hasActiveFilters = Object.values(filters).some(v => v);
   const timePresets = [
@@ -499,8 +545,7 @@ export default function LogsPage() {
               onRow={(record) => ({
                 onClick: () => {
                   if (record) {
-                    setSelectedLog(record);
-                    setShowDetail(true);
+                    openLogDetail(record as Log);
                   }
                 },
                 style: { cursor: 'pointer', background: selectedLog?.id === (record as any)?.id ? 'var(--ur-bg-subtle)' : undefined },
@@ -598,6 +643,43 @@ export default function LogsPage() {
                     { key: '来源', value: usageSourceLabel(selectedLog.usage_source) },
                   ]}
                 />
+              </div>
+
+              <div className="ur-detail-card">
+                <div className="ur-panel-title" style={{ marginBottom: 10 }}>
+                  <Text className="ur-detail-card-title">请求路径</Text>
+                  {traceLoading ? <Tag size="small">加载中</Tag> : <Tag size="small" color="blue">{traceEvents.length} 事件</Tag>}
+                </div>
+                {traceLoading ? (
+                  <Text type="tertiary" size="small">加载中</Text>
+                ) : traceEvents.length > 0 ? (
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    {traceEvents.map((event) => (
+                      <div key={event.id} style={{ borderLeft: '2px solid var(--ur-border-strong)', paddingLeft: 10 }}>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <Tag size="small" color={traceSeverityColor(event.severity)}>{event.stage}</Tag>
+                          <Text strong size="small">{event.event_type}</Text>
+                          {event.status_code ? <StatusTag status={event.status_code}>{event.status_code}</StatusTag> : null}
+                        </div>
+                        <div style={{ marginTop: 4, display: 'grid', gap: 3 }}>
+                          <Text type="tertiary" size="small">{formatDateTime(event.created_at)} · {event.latency_ms}ms</Text>
+                          {(event.provider || event.channel) && (
+                            <Text size="small">{event.provider || '-'} / {event.channel || '-'}</Text>
+                          )}
+                          {Object.keys(event.metadata || {}).length > 0 && (
+                            <div className="ur-chip-row">
+                              {Object.entries(event.metadata).slice(0, 8).map(([key, value]) => (
+                                <Tag key={key} size="small">{key}: {formatMetadataValue(value)}</Tag>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <Text type="tertiary" size="small">暂无请求路径事件</Text>
+                )}
               </div>
 
               {selectedLog.upstream_error && (

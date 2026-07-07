@@ -180,6 +180,12 @@ func TestValidate_InvalidRuntimeExposureConfig(t *testing.T) {
 				cfg.ShutdownTimeoutSecs = -1
 			},
 		},
+		{
+			name: "invalid trace sample rate",
+			mutate: func(cfg *Config) {
+				cfg.TraceEventSampleRate = 1.5
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -244,6 +250,8 @@ func TestLoad_RuntimeExposureEnvOverrides(t *testing.T) {
 	t.Setenv("LOGIN_RATE_LIMIT_IP_REQUESTS", "50")
 	t.Setenv("LOGIN_RATE_LIMIT_USER_REQUESTS", "7")
 	t.Setenv("SHUTDOWN_TIMEOUT_SECONDS", "150")
+	t.Setenv("TRACE_EVENTS_ENABLED", "false")
+	t.Setenv("TRACE_EVENT_SAMPLE_RATE", "0.25")
 
 	cfg, err := Load()
 	if err != nil {
@@ -267,6 +275,12 @@ func TestLoad_RuntimeExposureEnvOverrides(t *testing.T) {
 	if cfg.ShutdownTimeoutSecs != 150 {
 		t.Fatalf("expected shutdown timeout 150, got %d", cfg.ShutdownTimeoutSecs)
 	}
+	if cfg.TraceEventsEnabled {
+		t.Fatal("expected trace events disabled override")
+	}
+	if cfg.TraceEventSampleRate != 0.25 {
+		t.Fatalf("expected trace sample rate 0.25, got %f", cfg.TraceEventSampleRate)
+	}
 }
 
 func TestLoad_Defaults(t *testing.T) {
@@ -274,6 +288,7 @@ func TestLoad_Defaults(t *testing.T) {
 	envVars := []string{
 		"LISTEN_PORT", "LOG_LEVEL", "GIN_MODE", "SHUTDOWN_TIMEOUT_SECONDS", "DB_DSN", "DB_MAX_CONNECTIONS",
 		"REDIS_ADDR", "REDIS_PASSWORD", "REDIS_DB", "JWT_SECRET", "API_KEY_HASH_SECRET", "ENCRYPTION_KEY",
+		"TRACE_EVENTS_ENABLED", "TRACE_EVENT_SAMPLE_RATE",
 		"LICENSE_PUBLIC_KEY", "LICENSE_EXPIRY_WARNING_DAYS", "MIN_FREEZE_AMOUNT", "FREEZE_SAFETY_FACTOR", "DEFAULT_KEY_RPM", "DEFAULT_KEY_QPS",
 	}
 	for _, v := range envVars {
@@ -283,17 +298,19 @@ func TestLoad_Defaults(t *testing.T) {
 	// Load() will fail because JWT_SECRET is empty and ENCRYPTION_KEY is empty
 	// But we can test that defaults are set before validation
 	cfg := &Config{
-		ListenPort:          getEnvInt("LISTEN_PORT", 8080),
-		LogLevel:            getEnvStr("LOG_LEVEL", "info"),
-		GinMode:             getEnvStr("GIN_MODE", "release"),
-		ShutdownTimeoutSecs: getEnvInt("SHUTDOWN_TIMEOUT_SECONDS", 120),
-		DB_DSN:              getEnvStr("DB_DSN", "postgres://uniroute:password@localhost:5432/uniroute?sslmode=disable"),
-		DBMaxConnections:    getEnvInt("DB_MAX_CONNECTIONS", 25),
-		RedisAddr:           getEnvStr("REDIS_ADDR", "localhost:6379"),
-		MinFreezeAmount:     getEnvInt("MIN_FREEZE_AMOUNT", 10),
-		FreezeSafetyFactor:  getEnvFloat("FREEZE_SAFETY_FACTOR", 1.5),
-		DefaultKeyRPM:       getEnvInt("DEFAULT_KEY_RPM", 60),
-		DefaultKeyQPS:       getEnvInt("DEFAULT_KEY_QPS", 10),
+		ListenPort:           getEnvInt("LISTEN_PORT", 8080),
+		LogLevel:             getEnvStr("LOG_LEVEL", "info"),
+		GinMode:              getEnvStr("GIN_MODE", "release"),
+		ShutdownTimeoutSecs:  getEnvInt("SHUTDOWN_TIMEOUT_SECONDS", 120),
+		DB_DSN:               getEnvStr("DB_DSN", "postgres://uniroute:password@localhost:5432/uniroute?sslmode=disable"),
+		DBMaxConnections:     getEnvInt("DB_MAX_CONNECTIONS", 25),
+		RedisAddr:            getEnvStr("REDIS_ADDR", "localhost:6379"),
+		TraceEventsEnabled:   getEnvBool("TRACE_EVENTS_ENABLED", true),
+		TraceEventSampleRate: getEnvFloat("TRACE_EVENT_SAMPLE_RATE", 1),
+		MinFreezeAmount:      getEnvInt("MIN_FREEZE_AMOUNT", 10),
+		FreezeSafetyFactor:   getEnvFloat("FREEZE_SAFETY_FACTOR", 1.5),
+		DefaultKeyRPM:        getEnvInt("DEFAULT_KEY_RPM", 60),
+		DefaultKeyQPS:        getEnvInt("DEFAULT_KEY_QPS", 10),
 	}
 
 	if cfg.ListenPort != 8080 {
@@ -322,6 +339,9 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if cfg.DefaultKeyQPS != 10 {
 		t.Fatalf("expected 10 QPS, got %d", cfg.DefaultKeyQPS)
+	}
+	if !cfg.TraceEventsEnabled || cfg.TraceEventSampleRate != 1 {
+		t.Fatalf("expected trace events enabled with sample rate 1, got enabled=%v sample=%f", cfg.TraceEventsEnabled, cfg.TraceEventSampleRate)
 	}
 }
 

@@ -52,6 +52,7 @@ func TestAdminRoutesRegisteredForFrontendClient(t *testing.T) {
 		"GET /api/v1/wallet/transactions",
 		"GET /api/v1/logs",
 		"GET /api/v1/logs/{id}",
+		"GET /api/v1/logs/{id}/trace",
 		"GET /api/v1/usage/analytics",
 		"GET /api/v1/internal-status",
 		"GET /api/v1/error-docs",

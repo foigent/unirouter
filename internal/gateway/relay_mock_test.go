@@ -74,9 +74,11 @@ func (m *mockBilling) Cancel(ctx context.Context, requestID string, orgID int64)
 
 func newTestRelay(db *testutil.MockDB, b *mockBilling) *Relay {
 	return &Relay{
-		db:      db,
-		router:  NewRouter(db),
-		billing: b,
+		db:                   db,
+		router:               NewRouter(db),
+		billing:              b,
+		traceEventsEnabled:   true,
+		traceEventSampleRate: 1,
 	}
 }
 
@@ -285,6 +287,9 @@ func TestRecordRequest_Success(t *testing.T) {
 	var capturedArgs []any
 	db := &testutil.MockDB{
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if !strings.Contains(sql, "INSERT INTO call_logs") {
+				return pgconn.CommandTag{}, nil
+			}
 			execCalled = true
 			capturedArgs = append([]any(nil), args...)
 			return pgconn.CommandTag{}, nil
@@ -323,6 +328,56 @@ func TestRecordRequest_Success(t *testing.T) {
 	}
 }
 
+func TestRecordTraceEvent_SanitizesMetadataAndSnapshotsOwner(t *testing.T) {
+	var capturedArgs []any
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if !strings.Contains(sql, "INSERT INTO request_trace_events") {
+				return pgconn.CommandTag{}, nil
+			}
+			capturedArgs = append([]any(nil), args...)
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	relay := newTestRelay(db, &mockBilling{})
+
+	ownerUserID := int64(42)
+	ctx := context.WithValue(context.Background(), middleware.CtxOrgID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxProjectID, int64(7))
+	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(9))
+	ctx = context.WithValue(ctx, middleware.CtxAPIKey, &models.ApiKey{OwnerUserID: &ownerUserID, KeyType: "personal"})
+	route := &RouteResult{
+		Channel:     models.Channel{Provider: "openai", Name: "primary"},
+		ChannelKey:  models.ChannelKey{ID: 11},
+		MappedModel: "gpt-4o",
+	}
+	relay.recordTraceEvent(ctx, "req-trace", "provider.response_accepted", "provider", "info", "company-chat", "company-chat", route, http.StatusOK, 25, map[string]interface{}{
+		"estimated_tokens": 100,
+		"api_key":          "sk-secret",
+		"request_body":     `{"messages":[{"content":"secret"}]}`,
+	})
+
+	if len(capturedArgs) != 16 {
+		t.Fatalf("expected 16 trace insert args, got %d", len(capturedArgs))
+	}
+	if capturedArgs[2] != int64(7) || capturedArgs[3] != int64(9) || capturedArgs[4] != ownerUserID || capturedArgs[5] != "personal" {
+		t.Fatalf("unexpected project/key/owner args: %#v", capturedArgs[2:6])
+	}
+	var metadata map[string]interface{}
+	if err := json.Unmarshal([]byte(capturedArgs[15].(string)), &metadata); err != nil {
+		t.Fatalf("unmarshal metadata: %v", err)
+	}
+	if metadata["estimated_tokens"] != float64(100) {
+		t.Fatalf("expected estimated_tokens metadata, got %#v", metadata)
+	}
+	if _, ok := metadata["api_key"]; ok {
+		t.Fatalf("metadata leaked api_key: %#v", metadata)
+	}
+	if _, ok := metadata["request_body"]; ok {
+		t.Fatalf("metadata leaked request_body: %#v", metadata)
+	}
+}
+
 func TestRecordRequest_DBError(t *testing.T) {
 	db := &testutil.MockDB{
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
@@ -356,6 +411,31 @@ func TestSetAlertService(t *testing.T) {
 	}
 	if relay.alertThresh != 5000 {
 		t.Fatalf("expected alertThresh=5000, got %d", relay.alertThresh)
+	}
+}
+
+func TestSetTraceEvents(t *testing.T) {
+	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{})
+
+	relay.SetTraceEvents(false, 0.25)
+	if relay.shouldRecordTraceEvent("req-001") {
+		t.Fatal("expected trace recording disabled")
+	}
+
+	relay.SetTraceEvents(true, 1.5)
+	if relay.traceEventSampleRate != 1 {
+		t.Fatalf("expected sample rate capped to 1, got %f", relay.traceEventSampleRate)
+	}
+	if !relay.shouldRecordTraceEvent("req-001") {
+		t.Fatal("expected trace recording enabled at full sample rate")
+	}
+
+	relay.SetTraceEvents(true, -1)
+	if relay.traceEventSampleRate != 0 {
+		t.Fatalf("expected negative sample rate capped to 0, got %f", relay.traceEventSampleRate)
+	}
+	if relay.shouldRecordTraceEvent("req-001") {
+		t.Fatal("expected sample rate 0 to skip recording")
 	}
 }
 

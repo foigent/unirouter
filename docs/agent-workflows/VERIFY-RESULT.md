@@ -1,74 +1,55 @@
-# VERIFY-RESULT.md - PRD4 Batch 1B Usage And Cost Attribution
+# VERIFY-RESULT.md - PRD4 Batch 1C Flow/Event/Trace Foundation
 
 **Date:** 2026-07-07
 **Signal:** `docs/agent-workflows/FIX-SIGNAL.md`
-**Issue:** `PRD4-USAGE-001`
-**Matrix Row:** `P4-F02`
+**Issue:** `PRD4-TRACE-001`
+**Matrix Row:** `P4-F04`
 **Conclusion: ✅ PASS (10/10)**
 
 ## Verification Summary
 
 | # | Acceptance Criteria | Result | Evidence |
 |---|---------------------|--------|----------|
-| 1 | Migration adds owner/type columns and can roll back | ✅ PASS | `migrations/000016_prd4_key_owner_usage.up.sql` adds `owner_user_id` + `key_type` to both `api_keys` and `call_logs` with CHECK constraints and indexes; `.down.sql` drops all in reverse order |
-| 2 | Gateway request logging writes immutable owner/type snapshots into `call_logs` | ✅ PASS | `internal/gateway/relay.go:848-858` reads `apiKey.OwnerUserID` and `apiKey.KeyType` at request time and inserts them into `call_logs` — immutable snapshot, not mutable key state |
-| 3 | API key create/list/get/update expose owner/type and enforce conservative owner rules | ✅ PASS | `internal/admin/key_handlers.go` handles `owner_user_id`/`key_type` in create (L179-209), list (L51-86), get (L471-495), update (L226-393); personal keys require `owner_user_id`; shared/service keys do not carry user owner |
-| 4 | Deleting a user disables their personal API keys before hard-delete | ✅ PASS | `internal/admin/user_handlers.go:162-163` — `UPDATE api_keys SET status='disabled' WHERE owner_user_id=$1 AND key_type='personal'` runs before `DELETE FROM users` in the same transaction |
-| 5 | `scope=my` lets project-scoped user query own usage without project filter | ✅ PASS | `internal/admin/prd2_product_handlers.go:131-139` — `scope=my` adds `owner_user_id = $currentUserID` condition; L166-168 allows project-scoped roles to skip `project_id` requirement when `myScope` is true |
-| 6 | Project-scoped users cannot query another user's owner usage | ✅ PASS | `prd2_product_handlers.go:184-188` — if `myScope && ownerUserID != currentUserID` → error "owner_user_id conflicts with scope"; if `IsProjectScopedRole && ownerUserID != currentUserID` → "Forbidden" |
-| 7 | Usage analytics supports owner/key-type grouping and filters without SQL injection | ✅ PASS | `prd2_product_handlers.go:35-37` defines `group_by=owner` → `COALESCE(owner_user_id, 0)::text` and `group_by=key_type` → `COALESCE(NULLIF(key_type,''),'unknown')`; all filters use parameterized queries (`$%d` placeholders) |
-| 8 | Frontend serializes and renders new filters without breaking existing tests | ✅ PASS | `frontend/src/api/client.ts:151-161` serializes `owner_user_id`, `key_type`, `scope`; `UsageAnalyticsPage.tsx:58-73` manages state and passes to API; all 22 frontend test files pass (108 tests) |
-| 9 | Full Go and frontend tests pass; frontend build passes | ✅ PASS | `go test ./...` — all 22 packages PASS; `npm --prefix frontend test -- --run` — 108/108 PASS; `npm --prefix frontend run build` — built in 9.54s |
-| 10 | Docs consistently show Batch 1B as awaiting Canary, not accepted | ✅ PASS | All 7 doc files show "Fixed awaiting Canary" status; OPEN-ISSUES.md, CURRENT-STATUS.md, PRD4-ACCEPTANCE-MATRIX.md, PROJECT-HANDOFF.md, DOC-INVENTORY.md, README.md, FIX-SIGNAL.md all consistent |
+| 1 | Migration adds and rolls back `request_trace_events` without destructive data operations | ✅ PASS | `migrations/000017_prd4_request_trace_events.up.sql` creates table with CHECK constraints and 3 indexes; `.down.sql` drops indexes then table — no destructive ALTER on existing tables |
+| 2 | Trace recording captures gateway, billing, routing, provider, settle, and call-log milestones for chat and embeddings | ✅ PASS | `internal/gateway/relay.go` records 15+ distinct event types: `gateway.request.accepted`, `billing.freeze.*`, `routing.*`, `provider.*`, `billing.settle.*`, `logging.call_log.recorded` — for both chat (L257-957) and embeddings (L1053-1213) |
+| 3 | Trace inserts are best-effort and cannot fail the gateway request | ✅ PASS | `internal/gateway/trace.go:98-103` — INSERT error is caught and logged with `logger.Warn()`, no error returned to caller; `recordTraceEvent` returns void |
+| 4 | Metadata is allowlisted and does not persist sensitive fields | ✅ PASS | `trace.go:14-31` — `traceMetadataAllowlist` contains only safe metrics (billing_status, tokens, cost, etc.); `sanitizeTraceMetadata()` drops non-allowlisted keys; string values truncated to 256 chars; no API keys, request/response bodies, or auth headers in allowlist |
+| 5 | `GET /api/v1/logs/{id}/trace` applies project usage RBAC and filters by request_id, org_id, project_id | ✅ PASS | `log_handlers.go:226-265` — loads call_log to get request_id/org_id/project_id, calls `canReadProjectUsage()` for RBAC, then queries `request_trace_events WHERE request_id=$1 AND org_id=$2 AND COALESCE(project_id,0)=$3` |
+| 6 | Logs detail UI can load and render trace events | ✅ PASS | `LogsPage.tsx:145-146,223-233,651-660` — `traceEvents` state, `api.getLogTrace(record.id)` call, severity color mapping, event list rendering with stage/severity tags |
+| 7 | Backend route registration, OpenAPI, frontend API Docs, and route parity tests are synchronized | ✅ PASS | `cmd/uniroute/main.go:394` registers `GET /api/v1/logs/{id}/trace`; `docs/tech-ref/05-openapi-spec.yaml:343` documents it; `frontend/src/api/client.ts:147` has `getLogTrace`; route parity tests pass (TestAdminRoutesRegisteredForFrontendClient, TestOpenAPISpecCoversRegisteredRoutes, TestFrontendDocsPageCoversRegisteredRoutes) |
+| 8 | Trace enablement and sample rate are configurable and validated | ✅ PASS | `config.go:202-203` reads `TRACE_EVENTS_ENABLED` (default true) and `TRACE_EVENT_SAMPLE_RATE` (default 1); `config.go:148` validates sample rate 0..1; `config_test.go:253-254` tests env override; `.env.example:70-71` and `docker-compose.yml:57-58` include both vars; `deployment-runbook.md:71-72` documents them |
+| 9 | Full Go/frontend tests, frontend build, and `git diff --check` pass | ✅ PASS | `go test ./...` — 22 packages PASS; `npm --prefix frontend test -- --run` — 22 files / 110 tests PASS; `npm --prefix frontend run build` — built in 9.19s; `git diff --check` — clean |
+| 10 | Docs consistently show Batch 1C as fixed awaiting Canary, not accepted | ✅ PASS | All 8 doc files show "Fixed awaiting Canary" for Batch 1C: OPEN-ISSUES.md, CURRENT-STATUS.md, PRD4-ACCEPTANCE-MATRIX.md, PROJECT-HANDOFF.md, DOC-INVENTORY.md, README.md, CODEBASE-MAP.md, FIX-SIGNAL.md |
 
 ## Detailed Verification
 
-### Migration (AC1)
-- Up migration: adds `owner_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL` and `key_type VARCHAR(20) NOT NULL DEFAULT 'shared'` to `api_keys`; adds `owner_user_id BIGINT` and `key_type VARCHAR(20) NOT NULL DEFAULT 'unknown'` to `call_logs`; backfills `call_logs.key_type` from `api_keys`; creates 4 indexes
-- Down migration: drops indexes, constraints, columns in reverse order — properly paired
-- CHECK constraints: `api_keys.key_type IN ('shared','personal','service')`, `call_logs.key_type IN ('unknown','shared','personal','service')`
+### Trace Event Coverage (AC2)
+Chat completions relay records:
+- `gateway.request.accepted` (L257)
+- `billing.freeze.failed/rejected/succeeded` (L273-297)
+- `routing.no_route/route_selected` (L306-321)
+- `provider.key_decrypt_failed/adapter_unknown/request_build_failed/request_failed/response_rejected/response_accepted` (L328-409)
+- `billing.settle.failed/succeeded` (L468-493)
+- `logging.call_log.recorded` (L957)
 
-### Gateway Snapshot (AC2)
-- `relay.go:848-852`: reads `apiKey.OwnerUserID` and `apiKey.KeyType` from the authenticated API key struct
-- `relay.go:858`: INSERT INTO call_logs includes `owner_user_id` and `key_type` columns — snapshot at request time
+Embeddings relay records the same lifecycle (L1053-1213).
 
-### API Key CRUD (AC3)
-- Create: validates personal keys require `owner_user_id`, validates owner by org/project membership
-- List: joins `users` table to return `owner_username` alongside `owner_user_id`/`key_type`
-- Get: same join pattern as list
-- Update: validates `owner_user_id`/`key_type` changes, checks org/project membership for personal keys
+### Best-Effort Safety (AC3)
+```go
+// trace.go:98-103
+if _, err := relay.db.Exec(ctx, ...); err != nil {
+    logger.New(...).Warn("Failed to record trace event %s: %v", eventType, err)
+}
+```
+No error propagation. Gateway request continues normally.
 
-### User Deletion (AC4)
-- `user_handlers.go:160-163`: within a transaction, first disables personal keys, then hard-deletes user
-- The `ON DELETE SET NULL` foreign key on `api_keys.owner_user_id` provides additional safety for any edge cases
+### Metadata Sanitization (AC4)
+Allowlist contains only: billing_status, charged_cost_cents, completion_tokens, cost_cents, error_code, estimated_tokens, failure_kind, freeze_amount_cents, is_stream, mapped_model, prompt_tokens, route_count, route_index, settle_cancelled, stream, total_tokens, ttft_ms, usage_confidence, usage_source.
 
-### Scope=my (AC5)
-- When `scope=my`, the handler adds `owner_user_id = $currentUserID` to the query conditions
-- Project-scoped users can use `scope=my` without specifying `project_id` (L166-168: `if !myScope` check)
+Not in allowlist: API keys, request bodies, response bodies, authorization headers, prompt plaintext, response plaintext.
 
-### Cross-User Isolation (AC6)
-- Two independent checks: `myScope && ownerUserID != currentUserID` and `IsProjectScopedRole && ownerUserID != currentUserID`
-- Both return appropriate errors before the query executes
-
-### SQL Injection Safety (AC7)
-- All filters use parameterized `$%d` placeholders via `fmt.Sprintf`
-- `group_by` values are mapped through a switch statement (L28-37), never interpolated into SQL directly
-- `key_type` validated against `validAPIKeyType()` function
-
-### Frontend (AC8)
-- `client.ts:151-161`: adds `owner_user_id`, `key_type`, `scope` to query params
-- `UsageAnalyticsPage.tsx:58-73`: state management for all new filters
-- `UsageAnalyticsPage.tsx:95`: triggers reload on filter changes
-- All existing analytics tests pass unchanged
-
-### Tests (AC9)
-- Go: 22 packages, 0 failures
-- Frontend: 22 test files, 108 tests, 0 failures
-- Build: success (9.54s)
-- `git diff --check`: clean (no whitespace errors)
-
-### Docs (AC10)
-- Verified in 7 doc files: all show "Fixed awaiting Canary" for Batch 1B
+### Deterministic Sampling (AC8)
+`shouldRecordTraceEvent()` uses FNV-32a hash of `request_id` modulo 1000000, compared against sample rate. Same request_id always gets same sampling decision, ensuring complete event sequences for sampled requests.
 
 ## New Issues Found
 
@@ -76,4 +57,4 @@ None.
 
 ## Verdict
 
-**PASS.** All 10 acceptance criteria verified with code evidence. No new issues found. Batch 1B is ready for Sentinel to merge.
+**PASS.** All 10 acceptance criteria verified with code evidence. No new issues found. Batch 1C is ready for Sentinel to merge.

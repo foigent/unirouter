@@ -46,11 +46,14 @@ type Relay struct {
 	eventSvc    *billing.EventService
 	webhookURL  string
 	alertThresh int
+
+	traceEventsEnabled   bool
+	traceEventSampleRate float64
 }
 
 // NewRelay creates a new Relay.
 func NewRelay(db db.DBQuerier, rdb *redis.Client, router *Router, b BillingProvider, f *filter.DFAFilter, encKey []byte) *Relay {
-	return &Relay{db: db, rdb: rdb, router: router, billing: b, filter: f, encKey: encKey}
+	return &Relay{db: db, rdb: rdb, router: router, billing: b, filter: f, encKey: encKey, traceEventsEnabled: true, traceEventSampleRate: 1}
 }
 
 // SetAlertService configures the budget alert service for post-settle checks.
@@ -63,6 +66,19 @@ func (relay *Relay) SetAlertService(svc *billing.AlertService, webhookURL string
 // SetEventService configures PRD2 notification events for post-settle project checks.
 func (relay *Relay) SetEventService(svc *billing.EventService) {
 	relay.eventSvc = svc
+}
+
+// SetTraceEvents configures metadata-only request trace recording.
+func (relay *Relay) SetTraceEvents(enabled bool, sampleRate float64) {
+	relay.traceEventsEnabled = enabled
+	switch {
+	case sampleRate < 0:
+		relay.traceEventSampleRate = 0
+	case sampleRate > 1:
+		relay.traceEventSampleRate = 1
+	default:
+		relay.traceEventSampleRate = sampleRate
+	}
 }
 
 func (relay *Relay) emitProviderChannelFailure(ctx context.Context, route RouteResult, requestID, requestedModel string, statusCode int, failureKind, message string) {
@@ -235,12 +251,15 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 
 	// Estimate tokens for billing freeze
 	estimatedTokens := estimateTokens(req.Messages, req.MaxTokens)
-
-	// Freeze balance once (before trying any upstream)
 	orgID := middleware.GetOrgIDFromContext(ctx)
 	keyID := middleware.GetKeyIDFromContext(ctx)
 	reqLog := logger.New(logger.Fields{RequestID: requestID, OrgID: uint(orgID), Module: "chat"})
+	relay.recordTraceEvent(ctx, requestID, "gateway.request.accepted", "gateway", "info", req.Model, requestedModel, nil, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+		"stream":           req.Stream,
+		"estimated_tokens": estimatedTokens,
+	})
 
+	// Freeze balance once (before trying any upstream)
 	freezeResult, err := relay.billing.Freeze(ctx, billing.FreezeRequest{
 		RequestID:       requestID,
 		OrgID:           orgID,
@@ -251,10 +270,16 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	})
 	if err != nil {
 		reqLog.Error("Billing freeze error: %v", err)
+		relay.recordTraceEvent(ctx, requestID, "billing.freeze.failed", "billing", "error", req.Model, requestedModel, nil, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"error_code": "freeze_error",
+		})
 		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to process billing")
 		return
 	}
 	if !freezeResult.Success {
+		relay.recordTraceEvent(ctx, requestID, "billing.freeze.rejected", "billing", "warning", req.Model, requestedModel, nil, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"error_code": freezeResult.ErrorCode,
+		})
 		switch freezeResult.ErrorCode {
 		case "insufficient_balance":
 			middleware.RecordBillingFreeze("error")
@@ -269,12 +294,18 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	middleware.RecordBillingFreeze("success")
+	relay.recordTraceEvent(ctx, requestID, "billing.freeze.succeeded", "billing", "info", req.Model, requestedModel, nil, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+		"freeze_amount_cents": freezeResult.Amount,
+	})
 
 	// Get all available routes for failover
 	routes, err := relay.router.RouteAll(ctx, req.Model)
 	if err != nil {
 		relay.billing.Cancel(ctx, requestID, orgID)
 		writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", fmt.Sprintf("No available channel for model: %s", req.Model))
+		relay.recordTraceEvent(ctx, requestID, "routing.no_route", "routing", "error", req.Model, requestedModel, nil, 503, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"route_count": 0,
+		})
 		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, 503, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceNoRoute, estimatedTokens)
 		return
 	}
@@ -285,16 +316,27 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	// Failover loop: try each route until one succeeds
 	var lastErr error
 	var lastStatusCode int
-	for _, route := range routes {
+	for routeIndex, route := range routes {
+		routeForTrace := route
+		relay.recordTraceEvent(ctx, requestID, "routing.route_selected", "routing", "info", req.Model, requestedModel, &routeForTrace, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"route_count": len(routes),
+			"route_index": routeIndex + 1,
+		})
 		apiKey, err := auth.DecryptKey(route.ChannelKey.KeyEnc, relay.encKey)
 		if err != nil {
 			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Failed to decrypt key: %v", err)
+			relay.recordTraceEvent(ctx, requestID, "provider.key_decrypt_failed", "provider", "error", req.Model, requestedModel, &routeForTrace, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+				"failure_kind": "auth",
+			})
 			continue
 		}
 
 		adapter, err := adapterRegistry.Get(route.Channel.AdapterType)
 		if err != nil {
 			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Unknown adapter_type %q: %v", route.Channel.AdapterType, err)
+			relay.recordTraceEvent(ctx, requestID, "provider.adapter_unknown", "provider", "error", req.Model, requestedModel, &routeForTrace, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+				"failure_kind": "configuration",
+			})
 			lastErr = err
 			continue
 		}
@@ -309,6 +351,9 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		})
 		if err != nil {
 			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Failed to create upstream request: %v", err)
+			relay.recordTraceEvent(ctx, requestID, "provider.request_build_failed", "provider", "error", req.Model, requestedModel, &routeForTrace, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+				"failure_kind": "request_build",
+			})
 			continue
 		}
 
@@ -321,6 +366,9 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 			relay.router.MarkChannelFail(ctx, route.Channel.ID, 5, 300)
 			relay.router.MarkKeyFail(ctx, route.ChannelKey.ID)
 			relay.emitProviderChannelFailure(ctx, route, requestID, requestedModel, 0, string(adapters.FailureChannel), err.Error())
+			relay.recordTraceEvent(ctx, requestID, "provider.request_failed", "provider", "warning", req.Model, requestedModel, &routeForTrace, 0, int(upstreamDuration.Milliseconds()), map[string]interface{}{
+				"failure_kind": string(adapters.FailureChannel),
+			})
 			lastErr = err
 			continue
 		}
@@ -346,6 +394,9 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 			default:
 				// 4xx client errors (400, 404, etc.) — don't mark as failure
 			}
+			relay.recordTraceEvent(ctx, requestID, "provider.response_rejected", "provider", "warning", req.Model, requestedModel, &routeForTrace, resp.StatusCode, int(upstreamDuration.Milliseconds()), map[string]interface{}{
+				"failure_kind": string(classified.FailureKind),
+			})
 			lastStatusCode = resp.StatusCode
 			lastErr = fmt.Errorf("upstream returned %d: %s", resp.StatusCode, classified.Message)
 			resp.Body.Close()
@@ -355,6 +406,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		// Success — mark channel healthy and forward
 		relay.router.MarkChannelSuccess(ctx, route.Channel.ID)
 		relay.router.MarkKeySuccess(ctx, route.ChannelKey.ID)
+		relay.recordTraceEvent(ctx, requestID, "provider.response_accepted", "provider", "info", req.Model, requestedModel, &routeForTrace, resp.StatusCode, int(upstreamDuration.Milliseconds()), map[string]interface{}{})
 
 		if req.Stream {
 			relay.relayStreamRequest(ctx, w, resp, &route, requestID, orgID, keyID, req.Model, requestedModel, r.RemoteAddr, req.Messages, reqLog, requestStart, estimatedTokens, adapter)
@@ -413,6 +465,9 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 	actualCost, err := relay.calculateCost(ctx, orgID, model, normalized.Usage.PromptTokens, normalized.Usage.CompletionTokens)
 	if err != nil {
 		reqLog.Error("Billing price lookup failed; response withheld: %v", err)
+		relay.recordTraceEvent(ctx, requestID, "billing.settle.failed", "billing", "error", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"error_code": "price_lookup_failed",
+		})
 		if cancelErr := relay.billing.Cancel(ctx, requestID, orgID); cancelErr != nil {
 			reqLog.Error("Billing cancel after price lookup failure failed: %v", cancelErr)
 		}
@@ -429,9 +484,21 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 	}, reqLog)
 	if err != nil {
 		reqLog.Error("Billing settle failed; response withheld: %v", err)
+		relay.recordTraceEvent(ctx, requestID, "billing.settle.failed", "billing", "error", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"error_code": "settle_failed",
+		})
 		writeError(w, http.StatusInternalServerError, "server_error", "billing_error.settle_failed", "Failed to settle billing")
 		return
 	}
+	relay.recordTraceEvent(ctx, requestID, "billing.settle.succeeded", "billing", "info", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
+		"prompt_tokens":      normalized.Usage.PromptTokens,
+		"completion_tokens":  normalized.Usage.CompletionTokens,
+		"total_tokens":       normalized.Usage.PromptTokens + normalized.Usage.CompletionTokens,
+		"cost_cents":         actualCost,
+		"usage_source":       normalized.Usage.Source,
+		"usage_confidence":   metering.SourceConfidence(normalized.Usage.Source),
+		"charged_cost_cents": actualCost,
+	})
 	middleware.RecordTokenUsage("prompt", model, normalized.Usage.PromptTokens)
 	middleware.RecordTokenUsage("completion", model, normalized.Usage.CompletionTokens)
 
@@ -767,6 +834,30 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			billingStatus = "settle_failed_cancelled"
 		}
 	}
+	if priceErr != nil {
+		relay.recordTraceEvent(ctx, requestID, "billing.settle.failed", "billing", "error", model, requestedModel, route, http.StatusOK, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"billing_status": billingStatus,
+			"error_code":     "price_lookup_failed",
+		})
+	} else if settleErr != nil {
+		relay.recordTraceEvent(ctx, requestID, "billing.settle.failed", "billing", "error", model, requestedModel, route, http.StatusOK, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"billing_status":   billingStatus,
+			"error_code":       "settle_failed",
+			"settle_cancelled": settleOutcome.Cancelled,
+		})
+	} else {
+		relay.recordTraceEvent(ctx, requestID, "billing.settle.succeeded", "billing", "info", model, requestedModel, route, http.StatusOK, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"prompt_tokens":      tokenCounter.InputTokens(),
+			"completion_tokens":  tokenCounter.OutputTokens(),
+			"total_tokens":       tokenCounter.InputTokens() + tokenCounter.OutputTokens(),
+			"cost_cents":         actualCost,
+			"charged_cost_cents": chargedCost,
+			"usage_source":       usageSource,
+			"usage_confidence":   metering.SourceConfidence(usageSource),
+			"billing_status":     billingStatus,
+			"ttft_ms":            ttftMs,
+		})
+	}
 	middleware.RecordTokenUsage("prompt", model, tokenCounter.InputTokens())
 	middleware.RecordTokenUsage("completion", model, tokenCounter.OutputTokens())
 
@@ -861,7 +952,19 @@ func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, 
 	)
 	if err != nil {
 		reqLog.Error("Failed to record request log: %v", err)
+		return
 	}
+	relay.recordTraceEvent(ctx, requestID, "logging.call_log.recorded", "logging", "info", model, requestedModel, nil, statusCode, latencyMs, map[string]interface{}{
+		"prompt_tokens":     promptTokens,
+		"completion_tokens": completionTokens,
+		"total_tokens":      promptTokens + completionTokens,
+		"cost_cents":        costCents,
+		"estimated_tokens":  estimatedTokens,
+		"is_stream":         isStream,
+		"ttft_ms":           ttftMs,
+		"usage_source":      usageSource,
+		"usage_confidence":  usageConfidence,
+	})
 }
 
 // estimateTokens provides a CJK-aware estimate of tokens needed for the request.
@@ -947,6 +1050,10 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	relay.recordTraceEvent(ctx, requestID, "gateway.request.accepted", "gateway", "info", req.Model, requestedModel, nil, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+		"estimated_tokens": inputTokens,
+		"stream":           false,
+	})
 
 	freezeResult, err := relay.billing.Freeze(ctx, billing.FreezeRequest{
 		RequestID:       requestID,
@@ -958,11 +1065,17 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		reqLog.Error("Billing freeze error: %v", err)
+		relay.recordTraceEvent(ctx, requestID, "billing.freeze.failed", "billing", "error", req.Model, requestedModel, nil, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"error_code": "freeze_error",
+		})
 		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to process billing")
 		return
 	}
 	if !freezeResult.Success {
 		middleware.RecordBillingFreeze("error")
+		relay.recordTraceEvent(ctx, requestID, "billing.freeze.rejected", "billing", "warning", req.Model, requestedModel, nil, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"error_code": freezeResult.ErrorCode,
+		})
 		if freezeResult.ErrorCode == "insufficient_balance" {
 			writeError(w, http.StatusPaymentRequired, "billing_error", "billing_error.insufficient_balance", "Insufficient balance")
 		} else {
@@ -971,19 +1084,32 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	middleware.RecordBillingFreeze("success")
+	relay.recordTraceEvent(ctx, requestID, "billing.freeze.succeeded", "billing", "info", req.Model, requestedModel, nil, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+		"freeze_amount_cents": freezeResult.Amount,
+	})
 
 	// Get route
 	route, err := relay.router.Route(ctx, req.Model)
 	if err != nil {
 		relay.billing.Cancel(ctx, requestID, orgID)
 		writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", fmt.Sprintf("No available channel for model: %s", req.Model))
+		relay.recordTraceEvent(ctx, requestID, "routing.no_route", "routing", "error", req.Model, requestedModel, nil, 503, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"route_count": 0,
+		})
 		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, 503, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceNoRoute, inputTokens)
 		return
 	}
+	relay.recordTraceEvent(ctx, requestID, "routing.route_selected", "routing", "info", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+		"route_count": 1,
+		"route_index": 1,
+	})
 
 	apiKey, err := auth.DecryptKey(route.ChannelKey.KeyEnc, relay.encKey)
 	if err != nil {
 		relay.billing.Cancel(ctx, requestID, orgID)
+		relay.recordTraceEvent(ctx, requestID, "provider.key_decrypt_failed", "provider", "error", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"failure_kind": "auth",
+		})
 		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to decrypt API key")
 		return
 	}
@@ -991,6 +1117,9 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	adapter, err := adapters.DefaultRegistry().Get(route.Channel.AdapterType)
 	if err != nil {
 		relay.billing.Cancel(ctx, requestID, orgID)
+		relay.recordTraceEvent(ctx, requestID, "provider.adapter_unknown", "provider", "error", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"failure_kind": "configuration",
+		})
 		writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_error", fmt.Sprintf("Unknown adapter_type: %s", route.Channel.AdapterType))
 		return
 	}
@@ -1005,6 +1134,9 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		relay.billing.Cancel(ctx, requestID, orgID)
+		relay.recordTraceEvent(ctx, requestID, "provider.request_build_failed", "provider", "error", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"failure_kind": "request_build",
+		})
 		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to create upstream request")
 		return
 	}
@@ -1018,9 +1150,19 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		reqLog.Error("Upstream embeddings request failed: %v", err)
 		relay.emitProviderChannelFailure(ctx, *route, requestID, requestedModel, 0, string(adapters.FailureChannel), err.Error())
 		relay.billing.Cancel(ctx, requestID, orgID)
+		relay.recordTraceEvent(ctx, requestID, "provider.request_failed", "provider", "warning", req.Model, requestedModel, route, 0, int(upstreamDuration.Milliseconds()), map[string]interface{}{
+			"failure_kind": string(adapters.FailureChannel),
+		})
 		writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_error", "Upstream request failed")
 		return
 	}
+	providerEvent := "provider.response_accepted"
+	providerSeverity := "info"
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		providerEvent = "provider.response_rejected"
+		providerSeverity = "warning"
+	}
+	relay.recordTraceEvent(ctx, requestID, providerEvent, "provider", providerSeverity, req.Model, requestedModel, route, resp.StatusCode, int(upstreamDuration.Milliseconds()), map[string]interface{}{})
 	respBody, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 
@@ -1035,6 +1177,9 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		reqLog.Error("Failed to parse adapter response: %v", err)
 		relay.billing.Cancel(ctx, requestID, orgID)
+		relay.recordTraceEvent(ctx, requestID, "provider.response_parse_failed", "provider", "error", req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"failure_kind": "response_parse",
+		})
 		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to parse upstream response")
 		return
 	}
@@ -1042,6 +1187,9 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	actualCost, err := relay.calculateCost(ctx, orgID, req.Model, normalized.Usage.PromptTokens, 0)
 	if err != nil {
 		reqLog.Error("Billing price lookup failed; embeddings response withheld: %v", err)
+		relay.recordTraceEvent(ctx, requestID, "billing.settle.failed", "billing", "error", req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"error_code": "price_lookup_failed",
+		})
 		if cancelErr := relay.billing.Cancel(ctx, requestID, orgID); cancelErr != nil {
 			reqLog.Error("Billing cancel after embeddings price lookup failure failed: %v", cancelErr)
 		}
@@ -1056,9 +1204,21 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		UsageSource:  normalized.Usage.Source,
 	}, reqLog); err != nil {
 		reqLog.Error("Billing settle failed; embeddings response withheld: %v", err)
+		relay.recordTraceEvent(ctx, requestID, "billing.settle.failed", "billing", "error", req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"error_code": "settle_failed",
+		})
 		writeError(w, http.StatusInternalServerError, "server_error", "billing_error.settle_failed", "Failed to settle billing")
 		return
 	}
+	relay.recordTraceEvent(ctx, requestID, "billing.settle.succeeded", "billing", "info", req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
+		"prompt_tokens":      normalized.Usage.PromptTokens,
+		"completion_tokens":  0,
+		"total_tokens":       normalized.Usage.PromptTokens,
+		"cost_cents":         actualCost,
+		"charged_cost_cents": actualCost,
+		"usage_source":       normalized.Usage.Source,
+		"usage_confidence":   metering.SourceConfidence(normalized.Usage.Source),
+	})
 	middleware.RecordTokenUsage("prompt", req.Model, normalized.Usage.PromptTokens)
 
 	relay.recordRequest(ctx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, req.Model, requestedModel, r.RemoteAddr,
