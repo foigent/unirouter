@@ -22,18 +22,20 @@ func TestResolveAPIKey_Success(t *testing.T) {
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			return &testutil.MockRow{
 				ScanFn: func(dest ...any) error {
-					*dest[0].(*int64) = 1           // id
-					*dest[1].(*int64) = 1           // org_id
-					*dest[2].(*int64) = 11          // project_id
-					*dest[3].(*string) = "active"   // status
-					*dest[4].(*string) = ""         // allowed_ips
-					*dest[5].(*string) = ""         // allowed_models
-					*dest[6].(*int) = 60            // rpm_limit
-					*dest[7].(*int) = 10            // qps_limit
-					*dest[8].(**int) = &budgetLimit // budget_limit
-					*dest[9].(*string) = "sk-ab12"  // key_prefix
-					*dest[10].(*string) = "test"    // name
-					*dest[11].(*string) = "active"  // org_status
+					*dest[0].(*int64) = 1            // id
+					*dest[1].(*int64) = 1            // org_id
+					*dest[2].(*int64) = 11           // project_id
+					*dest[3].(*string) = "active"    // status
+					*dest[4].(*string) = ""          // allowed_ips
+					*dest[5].(*string) = ""          // allowed_models
+					*dest[6].(*int) = 60             // rpm_limit
+					*dest[7].(*int) = 10             // qps_limit
+					*dest[8].(**int) = &budgetLimit  // budget_limit
+					*dest[9].(*string) = "sk-ab12"   // key_prefix
+					*dest[10].(*string) = "test"     // name
+					*dest[11].(*int64) = 42          // owner_user_id
+					*dest[12].(*string) = "personal" // key_type
+					*dest[13].(*string) = "active"   // org_status
 					return nil
 				},
 			}
@@ -58,6 +60,12 @@ func TestResolveAPIKey_Success(t *testing.T) {
 	}
 	if apiKey.RPMLimit != 60 {
 		t.Fatalf("expected RPMLimit=60, got %d", apiKey.RPMLimit)
+	}
+	if apiKey.OwnerUserID == nil || *apiKey.OwnerUserID != 42 {
+		t.Fatalf("expected OwnerUserID=42, got %v", apiKey.OwnerUserID)
+	}
+	if apiKey.KeyType != "personal" {
+		t.Fatalf("expected KeyType=personal, got %s", apiKey.KeyType)
 	}
 }
 
@@ -97,7 +105,9 @@ func TestGatewayAuth_Success(t *testing.T) {
 					*dest[8].(**int) = &budgetLimit
 					*dest[9].(*string) = "sk-ab12"
 					*dest[10].(*string) = "test"
-					*dest[11].(*string) = "active"
+					*dest[11].(*int64) = 42
+					*dest[12].(*string) = "personal"
+					*dest[13].(*string) = "active"
 					return nil
 				},
 			}
@@ -158,7 +168,9 @@ func TestGatewayAuthWithAPIKeyHashSecret_UsesSeparateSecret(t *testing.T) {
 					*dest[8].(**int) = &budgetLimit
 					*dest[9].(*string) = "ur-0001"
 					*dest[10].(*string) = "test"
-					*dest[11].(*string) = "active"
+					*dest[11].(*int64) = 0
+					*dest[12].(*string) = "shared"
+					*dest[13].(*string) = "active"
 					return nil
 				},
 			}
@@ -249,7 +261,9 @@ func TestGatewayAuth_DisabledKey(t *testing.T) {
 					*dest[8].(**int) = &budgetLimit
 					*dest[9].(*string) = "sk-ab12"
 					*dest[10].(*string) = "test"
-					*dest[11].(*string) = "active"
+					*dest[11].(*int64) = 0
+					*dest[12].(*string) = "shared"
+					*dest[13].(*string) = "active"
 					return nil
 				},
 			}
@@ -290,7 +304,9 @@ func TestGatewayAuth_DisabledOrg(t *testing.T) {
 					*dest[8].(**int) = &budgetLimit
 					*dest[9].(*string) = "sk-ab12"
 					*dest[10].(*string) = "test"
-					*dest[11].(*string) = "disabled" // org disabled
+					*dest[11].(*int64) = 0
+					*dest[12].(*string) = "shared"
+					*dest[13].(*string) = "disabled" // org disabled
 					return nil
 				},
 			}
@@ -331,7 +347,9 @@ func TestGatewayAuth_IPWhitelist(t *testing.T) {
 					*dest[8].(**int) = &budgetLimit
 					*dest[9].(*string) = "sk-ab12"
 					*dest[10].(*string) = "test"
-					*dest[11].(*string) = "active"
+					*dest[11].(*int64) = 0
+					*dest[12].(*string) = "shared"
+					*dest[13].(*string) = "active"
 					return nil
 				},
 			}

@@ -292,26 +292,34 @@ func TestRecordRequest_Success(t *testing.T) {
 	}
 	relay := newTestRelay(db, &mockBilling{})
 
+	ownerUserID := int64(42)
 	ctx := context.WithValue(context.Background(), middleware.CtxProjectID, int64(7))
+	ctx = context.WithValue(ctx, middleware.CtxAPIKey, &models.ApiKey{OwnerUserID: &ownerUserID, KeyType: "personal"})
 	relay.recordRequest(ctx, "req-001", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, 123, 0, false, metering.UsageSourceUpstream, 180)
 
 	if !execCalled {
 		t.Fatal("expected exec to be called")
 	}
-	if len(capturedArgs) != 20 {
-		t.Fatalf("expected 20 insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != 22 {
+		t.Fatalf("expected 22 insert args, got %d", len(capturedArgs))
 	}
 	if capturedArgs[2] != int64(7) {
 		t.Fatalf("expected project_id arg 7, got %v", capturedArgs[2])
 	}
-	if capturedArgs[13] != 123 {
-		t.Fatalf("expected latency_ms arg 123, got %v", capturedArgs[13])
+	if capturedArgs[4] != ownerUserID {
+		t.Fatalf("expected owner_user_id arg 42, got %v", capturedArgs[4])
 	}
-	if capturedArgs[18] != 180 {
-		t.Fatalf("expected estimated_tokens arg 180, got %v", capturedArgs[18])
+	if capturedArgs[5] != "personal" {
+		t.Fatalf("expected key_type arg personal, got %v", capturedArgs[5])
 	}
-	if capturedArgs[19] != 1.0 {
-		t.Fatalf("expected upstream usage confidence 1.0, got %v", capturedArgs[19])
+	if capturedArgs[15] != 123 {
+		t.Fatalf("expected latency_ms arg 123, got %v", capturedArgs[15])
+	}
+	if capturedArgs[20] != 180 {
+		t.Fatalf("expected estimated_tokens arg 180, got %v", capturedArgs[20])
+	}
+	if capturedArgs[21] != 1.0 {
+		t.Fatalf("expected upstream usage confidence 1.0, got %v", capturedArgs[21])
 	}
 }
 

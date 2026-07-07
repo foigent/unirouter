@@ -3,7 +3,7 @@ import { Button, Input, Select, Table, Toast, Typography } from '@douyinfe/semi-
 import { IconCoinMoney, IconDownload, IconRefresh, IconSearch, IconServer } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { MetricTile, MoneyText, PageHeader, StatusTag, Surface } from '../ui';
-import { requestStatusOptions, usageAnalyticsGroupOptions, usageSourceOptions } from '../utils/displayLabels';
+import { keyTypeOptions, requestStatusOptions, usageAnalyticsGroupOptions, usageScopeOptions, usageSourceOptions } from '../utils/displayLabels';
 import { formatCompactNumber, formatLatencyMs, formatPercent } from '../utils/formatNumber';
 
 const { Text } = Typography;
@@ -53,6 +53,9 @@ export default function UsageAnalyticsPage() {
   const [usageSource, setUsageSource] = useState('');
   const [projectId, setProjectId] = useState('');
   const [keyId, setKeyId] = useState('');
+  const [ownerUserId, setOwnerUserId] = useState('');
+  const [keyType, setKeyType] = useState('');
+  const [scope, setScope] = useState('');
   const [model, setModel] = useState('');
   const [alias, setAlias] = useState('');
   const [provider, setProvider] = useState('');
@@ -65,6 +68,9 @@ export default function UsageAnalyticsPage() {
     group_by: groupBy,
     project_id: projectId,
     key_id: keyId,
+    owner_user_id: ownerUserId,
+    key_type: keyType,
+    scope,
     status,
     usage_source: usageSource,
     model,
@@ -86,7 +92,7 @@ export default function UsageAnalyticsPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, [groupBy, projectId, keyId, status, usageSource, model, alias, provider, channel, startTime, endTime]);
+  useEffect(() => { load(); }, [groupBy, projectId, keyId, ownerUserId, keyType, scope, status, usageSource, model, alias, provider, channel, startTime, endTime]);
 
   const downloadCSV = async () => {
     try {
@@ -118,7 +124,7 @@ export default function UsageAnalyticsPage() {
       <PageHeader
         eyebrow="流量治理"
         title="用量分析"
-          description="按总览、项目、访问凭证、模型、供应商、上游通道、请求状态和计量来源查看当前权限范围内的请求量、Token、费用与估算占比。"
+          description="按总览、项目、访问凭证、Key Owner、凭证类型、模型、供应商、上游通道、请求状态和计量来源查看当前权限范围内的请求量、Token、费用与估算占比。"
         actions={<Button icon={<IconDownload />} onClick={downloadCSV}>导出 CSV</Button>}
       />
 
@@ -128,8 +134,23 @@ export default function UsageAnalyticsPage() {
       >
         <div className="ur-inline-controls">
           <Select value={groupBy} optionList={usageAnalyticsGroupOptions} onChange={(value) => setGroupBy(String(value || 'overall'))} style={{ width: 190 }} />
+          <Select
+            value={scope || undefined}
+            placeholder="用量范围"
+            optionList={usageScopeOptions}
+            onChange={(value) => setScope(String(value || ''))}
+            style={{ width: 160 }}
+          />
           <Input prefix={<IconSearch />} value={projectId} onChange={setProjectId} placeholder="项目 ID" showClear style={{ width: 140 }} />
           <Input prefix={<IconSearch />} value={keyId} onChange={setKeyId} placeholder="访问凭证 ID" showClear style={{ width: 160 }} />
+          <Input prefix={<IconSearch />} value={ownerUserId} onChange={setOwnerUserId} placeholder="Owner 用户 ID" showClear style={{ width: 170 }} />
+          <Select
+            value={keyType || undefined}
+            placeholder="凭证类型"
+            optionList={keyTypeOptions}
+            onChange={(value) => setKeyType(String(value || ''))}
+            style={{ width: 160 }}
+          />
           <Select
             value={status || undefined}
             placeholder="请求状态"

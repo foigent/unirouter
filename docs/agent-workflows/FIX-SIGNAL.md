@@ -1,144 +1,95 @@
-# FIX-SIGNAL.md - PRD4 Batch 1A Auth UX Hardening
+# FIX-SIGNAL.md - PRD4 Batch 1B Usage And Cost Attribution
 
 **Date:** 2026-07-07
 **Status:** Fixed awaiting Canary
+**Issue:** `PRD4-USAGE-001`
+**Matrix Row:** `P4-F02`
 
-## Canary Follow-Up
+## Verification Request
 
-Canary's first Batch 1A verification failed only because
-`LoginPage > toggles password visibility without changing the submitted value`
-timed out at the default 5000ms. The component/page behavior was accepted by
-source inspection. Codex simplified that test to use synchronous
-`fireEvent.change` / `fireEvent.click` instead of slow character-by-character
-`userEvent.type` interactions. No production code changed in this follow-up.
+Please verify PRD4 Batch 1B: Usage And Cost Attribution foundation.
 
-Local follow-up verification now passes:
+This batch implements API key owner/type attribution and exposes it through
+usage analytics so each authenticated user can request their own model-level
+usage/cost view while authorized roles retain broader filtered views.
 
-- `npm --prefix frontend run test -- LoginPage --testNamePattern "toggles password visibility"`
-- `npm --prefix frontend run test -- PasswordField LoginPage`
-- `npm --prefix frontend test`
-- `npm --prefix frontend run build`
-- `git diff --check`
+## Scope To Verify
 
-## Context
+Backend/data:
 
-User approved continuing into PRD4 after Batch 0 scope baseline and Preflight
-Hardening completed. This batch implements the narrow P4-F10 Auth UX hardening
-slice only:
+- Adds migration `000016_prd4_key_owner_usage` with `api_keys.owner_user_id`,
+  `api_keys.key_type`, `call_logs.owner_user_id`, `call_logs.key_type`, checks,
+  and query indexes.
+- Extends gateway API-key resolution to load owner/type into the request API key.
+- Records owner/type snapshots into `call_logs` at request time instead of
+  relying on mutable current key ownership.
+- Extends API key create/list/get/update with `owner_user_id` and `key_type`.
+- Defaults admin-created keys to `shared`; project-scoped user-created keys
+  default to `personal` owned by the current user.
+- Validates personal owners by org and project membership; shared/service keys
+  do not carry a user owner.
+- Disables a deleted user's personal API keys before hard-deleting the user, so
+  personal keys do not remain active without an owner.
+- Extends `/api/v1/usage/analytics` with:
+  - `scope=my`
+  - `owner_user_id`
+  - `key_type`
+  - `group_by=owner`
+  - `group_by=key_type`
 
-1. login password input has an explicit hidden-by-default show/hide control;
-2. current/new/confirm password inputs in Settings share the same control;
-3. admin user create/edit password input shares the same control and resets to
-   hidden when the drawer/user context changes.
+Frontend:
 
-This batch does not change authentication semantics, password policy, session
-handling, JWT/API key behavior, OIDC/SSO, RBAC, backend APIs, migrations,
-pricing/usage, trace/event data, runtime observability, deployment config, or
-any PRD5 deferred capability.
+- Adds usage analytics filter controls for `scope`, owner user ID, and key type.
+- Adds grouping options for Key Owner and key type.
+- Updates API client query serialization for the new filters.
 
-Status reconciliation included:
+Docs/status:
 
-- PRD4 Batch 0 scope baseline is recorded as complete per User report after
-  `e24731d` / PR #82.
-- PRD4 Preflight Hardening is recorded as Canary PASS 6/6 in
-  `docs/agent-workflows/VERIFY-RESULT.md`; User reported Sentinel/Atlas
-  completed after `e335a9e` / PR #83.
-- Current active verification request is now this Batch 1A Auth UX hardening.
+- Marks PRD4 Batch 1B as fixed awaiting Canary, not accepted.
+- Keeps PRD2 frozen and PRD3 complete.
 
-## Files Changed
+## Non-Scope
 
-- `frontend/src/ui/form/PasswordField.tsx`
-- `frontend/src/ui/form/__tests__/PasswordField.test.tsx`
-- `frontend/src/ui/index.ts`
-- `frontend/src/pages/LoginPage.tsx`
-- `frontend/src/pages/SettingsPage.tsx`
-- `frontend/src/pages/UsersPage.tsx`
-- `frontend/src/pages/__tests__/LoginPage.test.tsx`
-- `docs/agent-workflows/FIX-SIGNAL.md`
-- `docs/ops/CURRENT-STATUS.md`
-- `docs/issues/OPEN-ISSUES.md`
-- `docs/ops/PRD4-ACCEPTANCE-MATRIX.md`
-- `docs/PROJECT-HANDOFF.md`
-- `docs/DOC-INVENTORY.md`
-- `docs/README.md`
+Do not expect this batch to implement:
 
-## Required Verification
+- Full Trace/Flow/Event request path UI.
+- OpenTelemetry or external observability ingestion.
+- Runtime Status Center CPU/memory/network panels.
+- RPM/TPM scheduler changes, hard quota enforcement, or Scheduler V2.
+- Logto/IAM rewrite or real SSO target-environment evidence.
+- Real upstream provider target-environment evidence.
+- Prompt/response plaintext storage.
+- PRD5 runtime plugin marketplace.
 
-1. Confirm the shared component and target pages are wired:
+## Required Verification Commands
 
-   ```bash
-   rg -n "PasswordField|显示密码|隐藏密码|visibilityResetKey" frontend/src/ui/form frontend/src/pages/LoginPage.tsx frontend/src/pages/SettingsPage.tsx frontend/src/pages/UsersPage.tsx frontend/src/pages/__tests__/LoginPage.test.tsx
-   ```
+```bash
+rg -n "owner_user_id|key_type|scope=my|group_by=owner|group_by=key_type" migrations internal frontend/src
+rg -n "PRD4-USAGE-001|P4-F02|Batch 1B|Usage And Cost Attribution" docs/agent-workflows/FIX-SIGNAL.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/PROJECT-HANDOFF.md docs/DOC-INVENTORY.md docs/README.md
+go test ./internal/admin ./internal/middleware ./internal/gateway
+go test ./...
+npm --prefix frontend test -- --run src/api/__tests__/client.test.ts src/pages/__tests__/UsageAnalyticsPage.test.tsx
+npm --prefix frontend test -- --run
+npm --prefix frontend run build
+git diff --check
+```
 
-   Expected:
+## Acceptance Criteria
 
-   - `PasswordField` renders `显示密码` / `隐藏密码` accessible controls.
-   - `LoginPage`, `SettingsPage`, and `UsersPage` use `PasswordField`.
-   - `UsersPage` passes `visibilityResetKey` so the drawer field resets to
-     hidden across drawer/user context changes.
+1. Migration adds owner/type columns and can roll back with the paired down migration.
+2. Gateway request logging writes immutable owner/type snapshots into `call_logs`.
+3. API key create/list/get/update expose owner/type and enforce conservative owner rules.
+4. Deleting a user disables their personal API keys before the user row is hard-deleted.
+5. `scope=my` lets a project-scoped user query their own usage without requiring a project filter.
+6. Project-scoped users cannot query another user's owner usage.
+7. Usage analytics supports owner/key-type grouping and filters without SQL injection.
+8. Frontend serializes and renders the new filters without breaking existing analytics tests.
+9. Full Go and frontend tests pass; frontend build passes.
+10. Docs consistently show Batch 1B as awaiting Canary, not accepted.
 
-2. Run focused frontend tests:
+## Notes For Canary
 
-   ```bash
-   npm --prefix frontend run test -- PasswordField LoginPage
-   ```
-
-   Expected: all PasswordField and LoginPage tests pass. The tests must verify
-   default hidden state, show/hide toggling, reset-on-key-change behavior, and
-   that login submission keeps the original password value.
-
-3. Run broad frontend regression:
-
-   ```bash
-   npm --prefix frontend test
-   ```
-
-   Expected: all frontend tests pass. Existing React Router future-flag,
-   Semi `findDOMNode`, and intentional mocked-error console warnings are
-   non-blocking unless a test fails.
-
-4. Run production frontend build:
-
-   ```bash
-   npm --prefix frontend run build
-   ```
-
-   Expected: TypeScript and Vite build pass. Existing Vite large chunk warning
-   is non-blocking unless a new hard error appears.
-
-5. Confirm PRD4 status/docs are aligned:
-
-   ```bash
-   rg -n "PRD4-AUTHUX-001|P4-F10|Batch 1A|Auth UX" docs/agent-workflows/FIX-SIGNAL.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/PROJECT-HANDOFF.md docs/DOC-INVENTORY.md docs/README.md
-   ```
-
-   Expected:
-
-   - `PRD4-AUTHUX-001` is `Fixed awaiting Canary`.
-   - P4-F10 is `Fixed awaiting Canary`.
-   - first-read docs point to Batch 1A as the current verification signal.
-   - prior Batch 0 and Preflight statuses are not left as awaiting Canary.
-
-6. Run diff hygiene:
-
-   ```bash
-   git diff --check
-   git diff --name-only
-   ```
-
-## Expected Result
-
-Canary should mark this batch PASS only if:
-
-- password inputs remain hidden by default;
-- visible/hidden state changes only after explicit user action;
-- icon buttons are accessible by role/name as `显示密码` and `隐藏密码`;
-- login, change-password, and admin user password fields use the shared control;
-- admin user password visibility resets when drawer/user context changes;
-- login submission sends the typed value unchanged after toggling visibility;
-- frontend focused tests, broad tests, and build pass;
-- docs/status accurately mark Batch 0 and Preflight as completed and Batch 1A as
-  fixed awaiting Canary;
-- no backend API, migration, auth policy, SSO/OIDC, RBAC, pricing/usage,
-  trace/event, runtime observability, deployment, PRD2 freeze, or PRD3
-  completion semantics changed.
+Historical `call_logs` may have `owner_user_id=NULL`; this is intentional. The
+batch avoids fabricating historical owner attribution. Existing historical logs
+can still be analyzed by project/key/model, while new gateway requests carry the
+owner/type snapshot from the authenticated API key.

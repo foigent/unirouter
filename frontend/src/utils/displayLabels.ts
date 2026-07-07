@@ -41,12 +41,27 @@ export const usageAnalyticsGroupOptions: SelectOption[] = [
   { label: '总览（不分组）', value: 'overall' },
   { label: '项目', value: 'project' },
   { label: '访问凭证', value: 'key' },
+  { label: 'Key Owner', value: 'owner' },
+  { label: '凭证类型', value: 'key_type' },
   { label: '模型', value: 'model' },
   { label: '模型别名', value: 'alias' },
   { label: '供应商', value: 'provider' },
   { label: '上游通道', value: 'channel' },
   { label: '请求状态', value: 'status' },
   { label: '计量来源', value: 'usage_source' },
+];
+
+export const usageScopeOptions: SelectOption[] = [
+  { label: '当前权限范围', value: '' },
+  { label: '我的用量', value: 'my' },
+];
+
+export const keyTypeOptions: SelectOption[] = [
+  { label: '全部凭证类型', value: '' },
+  { label: '个人 Key', value: 'personal' },
+  { label: '共享 Key', value: 'shared' },
+  { label: '服务 Key', value: 'service' },
+  { label: '未知', value: 'unknown' },
 ];
 
 export const requestStatusOptions: SelectOption[] = [

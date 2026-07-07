@@ -842,12 +842,22 @@ func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, 
 	if projectID > 0 {
 		projectIDArg = projectID
 	}
+	var ownerUserIDArg interface{}
+	keyType := "unknown"
+	if apiKey := middleware.GetAPIKeyFromContext(ctx); apiKey != nil {
+		if apiKey.OwnerUserID != nil && *apiKey.OwnerUserID > 0 {
+			ownerUserIDArg = *apiKey.OwnerUserID
+		}
+		if apiKey.KeyType != "" {
+			keyType = apiKey.KeyType
+		}
+	}
 	usageSource = metering.NormalizeUsageSource(usageSource)
 	usageConfidence := metering.SourceConfidence(usageSource)
 	_, err := relay.db.Exec(ctx,
-		`INSERT INTO call_logs (request_id, org_id, project_id, api_key_id, model, requested_model, provider, channel, prompt_tokens, completion_tokens, total_tokens, cost_cents, status_code, latency_ms, ttft_ms, usage_source, is_stream, ip_address, estimated_tokens, usage_confidence)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
-		requestID, orgID, projectIDArg, keyID, model, requestedModel, provider, channelName, promptTokens, completionTokens, promptTokens+completionTokens, costCents, statusCode, latencyMs, ttftMs, usageSource, isStream, clientIP, estimatedTokens, usageConfidence,
+		`INSERT INTO call_logs (request_id, org_id, project_id, api_key_id, owner_user_id, key_type, model, requested_model, provider, channel, prompt_tokens, completion_tokens, total_tokens, cost_cents, status_code, latency_ms, ttft_ms, usage_source, is_stream, ip_address, estimated_tokens, usage_confidence)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`,
+		requestID, orgID, projectIDArg, keyID, ownerUserIDArg, keyType, model, requestedModel, provider, channelName, promptTokens, completionTokens, promptTokens+completionTokens, costCents, statusCode, latencyMs, ttftMs, usageSource, isStream, clientIP, estimatedTokens, usageConfidence,
 	)
 	if err != nil {
 		reqLog.Error("Failed to record request log: %v", err)
