@@ -18,9 +18,9 @@ import (
 type contextKey string
 
 const (
-	ctxAPIKey  contextKey = "api_key"
-	ctxOrgID   contextKey = "org_id"
-	ctxKeyID   contextKey = "key_id"
+	ctxAPIKey contextKey = "api_key"
+	ctxOrgID  contextKey = "org_id"
+	ctxKeyID  contextKey = "key_id"
 )
 
 // setAPIKeyInContext is a test helper that injects an ApiKey into context,
@@ -36,6 +36,39 @@ func setAPIKeyInContext(ctx context.Context, apiKey *models.ApiKey) context.Cont
 func getAPIKeyFromContextTest(ctx context.Context) *models.ApiKey {
 	v, _ := ctx.Value(ctxAPIKey).(*models.ApiKey)
 	return v
+}
+
+func TestRootHandlerDoesNotExposeHardcodedVersion(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+
+	rootHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, `"version"`) || strings.Contains(body, "1.0.0") {
+		t.Fatalf("root response should not expose a hardcoded version, got %s", body)
+	}
+}
+
+func TestRootHandlerReturnsStandardNotFoundForUnknownPath(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/orgs", nil)
+	rec := httptest.NewRecorder()
+
+	rootHandler(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, `"version"`) || strings.Contains(body, "1.0.0") {
+		t.Fatalf("not found response should not expose a hardcoded version, got %s", body)
+	}
+	if !strings.Contains(body, `"error":"not_found"`) {
+		t.Fatalf("expected standard not_found body, got %s", body)
+	}
 }
 
 // newTestMux builds a minimal mux that replicates the chatHandler wiring

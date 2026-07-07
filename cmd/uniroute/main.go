@@ -179,10 +179,7 @@ func main() {
 	})
 
 	// Root endpoint
-	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"service":"uniroute","version":"1.0.0","status":"running"}`)
-	})
+	mux.HandleFunc("GET /", rootHandler)
 
 	// Prometheus metrics endpoint. It remains registered for contract parity, but
 	// can be disabled or CIDR-restricted by runtime exposure policy.
@@ -464,12 +461,13 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	corsHandler := middleware.CORSWithOptions(middleware.CORSOptions{
 		AllowedOrigins: cfg.AdminCORSAllowedOrigins,
 	})(metricsHandler)
+	securityHandler := middleware.SecurityHeaders(corsHandler)
 
 	// Create server
 	addr := fmt.Sprintf(":%d", cfg.ListenPort)
 	srv := &http.Server{
 		Addr:         addr,
-		Handler:      corsHandler,
+		Handler:      securityHandler,
 		ReadTimeout:  60 * time.Second,
 		WriteTimeout: 120 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -496,6 +494,16 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 		log.Fatalf("Server forced to shutdown: %v", err)
 	}
 	log.Println("Server exited")
+}
+
+func rootHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.URL.Path != "/" {
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprintf(w, `{"error":"not_found"}`)
+		return
+	}
+	fmt.Fprintf(w, `{"service":"uniroute","status":"running"}`)
 }
 
 // findMigrationsDir locates the migrations directory.

@@ -1627,6 +1627,42 @@ func TestCreateAPIKey_EmptyName(t *testing.T) {
 	}
 }
 
+func TestCreateAPIKey_RejectsUnsafeNameAndOversizedName(t *testing.T) {
+	h := newTestHandler(&testutil.MockDB{})
+	cases := []string{
+		`{"org_id":1,"name":"<script>alert(1)</script>"}`,
+		`{"org_id":1,"name":"prod'; DROP TABLE api_keys;--"}`,
+		`{"org_id":1,"name":"` + strings.Repeat("a", 256) + `"}`,
+	}
+
+	for _, body := range cases {
+		req := httptest.NewRequest("POST", "/keys", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+
+		h.CreateAPIKey(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 for body %s, got %d: %s", body, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestCreateAPIKey_RejectsNegativeProjectID(t *testing.T) {
+	h := newTestHandler(&testutil.MockDB{})
+
+	body := `{"org_id":1,"project_id":-1,"name":"negative-project"}`
+	req := httptest.NewRequest("POST", "/keys", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.CreateAPIKey(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestCreateAPIKey_DuplicateName(t *testing.T) {
 	db := &testutil.MockDB{
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
@@ -4168,6 +4204,36 @@ func TestUpdateAPIKey_InvalidJSON(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestUpdateAPIKey_RejectsUnsafeName(t *testing.T) {
+	h := newTestHandler(&testutil.MockDB{})
+
+	req := httptest.NewRequest("PUT", "/keys/1", strings.NewReader(`{"name":"<img src=x onerror=alert(1)>"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", "1")
+	rec := httptest.NewRecorder()
+
+	h.UpdateAPIKey(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdateAPIKey_RejectsNegativeProjectID(t *testing.T) {
+	h := newTestHandler(&testutil.MockDB{})
+
+	req := httptest.NewRequest("PUT", "/keys/1", strings.NewReader(`{"project_id":-1}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", "1")
+	rec := httptest.NewRecorder()
+
+	h.UpdateAPIKey(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

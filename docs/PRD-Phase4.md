@@ -2,10 +2,10 @@
 
 > Version: Phase 4 Scope Draft
 > Date: 2026-07-07
-> Status: Active PRD4 implementation; Batch 1M Trace Metadata Read-Side
-> Redaction passed Canary 8/8 and Sentinel merge is reflected by `2f43fca` /
-> PR #97. Batch 1N Developer Console Self Usage And Model Cost is fixed
-> awaiting Canary for `P4-F02` / `PRD4-USAGE-002`.
+> Status: Active PRD4 implementation; Batch 1N Developer Console Self Usage
+> And Model Cost passed Canary 9/9 and Sentinel merge is reflected by
+> `6194062` / PR #98. Batch 1O API Key Input And Security Header Hardening is
+> fixed awaiting Canary for `P4-F12` / `PRD4-SECURITY-001`.
 > Batch 1H real upstream and Batch 1I real SSO evidence harnesses remain below
 > `E2E accepted` / `Production verified` until approved target credentials and
 > successful target-environment runs exist.

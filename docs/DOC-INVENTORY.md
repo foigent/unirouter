@@ -23,8 +23,8 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required Codex/OpenClaw workflow |
-| `docs/agent-workflows/FIX-SIGNAL.md` | Latest verification signal: PRD4 Batch 1N Developer Console Self Usage And Model Cost |
-| `docs/agent-workflows/VERIFY-RESULT.md` | Latest OpenClaw verification result: PRD4 Batch 1M Trace Metadata Read-Side Redaction PASS 8/8 |
+| `docs/agent-workflows/FIX-SIGNAL.md` | Latest verification signal: PRD4 Batch 1O API Key Input And Security Header Hardening |
+| `docs/agent-workflows/VERIFY-RESULT.md` | Latest OpenClaw verification result: PRD4 Batch 1N Developer Console Self Usage And Model Cost PASS 9/9 |
 
 ## Product And Design References
 
@@ -96,6 +96,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | `docs/ops/test-report.md` | Historical test report; contains stale date/status and must not be used as current truth |
 | `docs/ops/MVP-TEST-EXECUTION.md` | Historical E2E evidence plus pending cases; reconcile into acceptance matrix before treating as current |
 | `docs/ops/evidence/COMPREHENSIVE-TEST-REPORT-20260705.md` | Canary comprehensive code/deployment/security regression evidence; active risks are tracked in `docs/issues/OPEN-ISSUES.md` |
+| `docs/ops/evidence/UNIROUTERS-TEST-REPORT-FINAL-20260708.md` | Target-environment final test report for Alibaba Cloud PRD4 Batch 1N / PR #98; positive evidence and follow-up risks are reconciled into `CURRENT-STATUS.md`, `PRD4-ACCEPTANCE-MATRIX.md`, and `OPEN-ISSUES.md` |
 
 ## Agent Workflow Files
 

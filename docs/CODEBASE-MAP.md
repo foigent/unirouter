@@ -28,7 +28,7 @@
 | `internal/licensing` | Offline license document parsing, Ed25519 signature verification, expiry status, and warning calculation |
 | `internal/logger` | Logging helpers |
 | `internal/metering` | Usage-source constants and token-metering source classification |
-| `internal/middleware` | Gateway auth, admin auth, rate limit, admission control, CORS, Prometheus metrics |
+| `internal/middleware` | Gateway auth, admin auth, rate limit, admission control, CORS, baseline security headers, Prometheus metrics |
 | `internal/migrate` | SQL migration runner |
 | `internal/modelgov` | Model governance helpers and access checks |
 | `internal/models` | Shared data model types |

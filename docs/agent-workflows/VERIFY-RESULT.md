@@ -1,29 +1,56 @@
-# VERIFY-RESULT.md - PRD4 Batch 1N Developer Console Self Usage And Model Cost
+# VERIFY-RESULT.md - PRD4 Batch 1O API Key Input And Security Header Hardening
 
+**Verifier:** Canary
 **Date:** 2026-07-08
 **Signal:** `docs/agent-workflows/FIX-SIGNAL.md`
-**Issue:** `PRD4-USAGE-002`
-**Matrix Row:** `P4-F02`
-**Conclusion: ✅ PASS (9/9)**
+**Result:** ✅ **PASS — 8/8**
 
 ## Verification Summary
 
-| # | Acceptance Criteria | Result | Evidence |
-|---|---------------------|--------|----------|
-| 1 | Developer Console requests usage analytics with `scope=my`, `project_id`, `group_by=alias` | ✅ PASS | `DeveloperConsolePage.tsx:260` — `api.getUsageAnalytics({ project_id: selectedProjectId, scope: 'my', group_by: 'alias' })` |
-| 2 | KPI values use self-owned aggregate when usage analytics returns summary | ✅ PASS | `DeveloperConsolePage.tsx:266` — `setUsageSummary((usageData?.summary \|\| null))`; L605-608 — KPI tiles render from `usageSnapshot.requestCount/totalTokens/totalCost/errorRate/avgLatency` |
-| 3 | New model usage table shows owner-attributed model/alias breakdown with requests, success/failure, tokens, cost, latency | ✅ PASS | `DeveloperConsolePage.tsx:611` — `<Surface title="我的模型用量">` with `usageByModel` data; test L112 asserts `我的模型用量` present |
-| 4 | Self-usage analytics failure does not block existing project data | ✅ PASS | `DeveloperConsolePage.tsx:260-264` — `.catch()` returns `null` with Toast warning; test L143-155 (`keeps project data visible when self usage analytics fails`) confirms keys/models/logs still render |
-| 5 | Existing key/model/playground/log lookup flows still pass | ✅ PASS | test L101-127 — `loads project-scoped keys, approved models, and logs` and `looks up request detail` both PASS |
-| 6 | Usage Analytics client/page regressions pass | ✅ PASS | `UsageAnalyticsPage.test.tsx` 1/1 PASS; `client.test.ts` 28/28 PASS |
-| 7 | Backend `scope=my` conditions reject conflicting owner filters | ✅ PASS | `TestAnalyticsConditionsRejectsConflictingMyScopeOwner` PASS |
-| 8 | No backend route, migration, billing, RBAC, trace, runtime, SSO, upstream changes | ✅ PASS | Only `DeveloperConsolePage.tsx` and its test file changed |
-| 9 | Focused frontend tests, full frontend tests, build, focused backend tests, git diff --check pass | ✅ PASS | DeveloperConsolePage 4/4 PASS; UsageAnalyticsPage+client 29/29 PASS; full frontend 24 files / 115 tests PASS; build 8.77s; backend analytics 2/2 PASS; `git diff --check` clean |
+| # | Criterion | Result | Evidence |
+|---|-----------|--------|----------|
+| 1 | API key create rejects HTML/SQL-like display-name payloads with HTTP 400 | ✅ PASS | `normalizeAPIKeyName` at `key_handlers.go:461` checks `<>\"'`;\\` and `--`; returns 400 before DB mutation |
+| 2 | API key create rejects names > 255 chars with HTTP 400 | ✅ PASS | `utf8.RuneCountInString(normalized) > apiKeyNameMaxChars` (255) at `key_handlers.go:467`; returns "name must be <= 255 characters" |
+| 3 | API key create rejects negative `project_id` with HTTP 400 | ✅ PASS | `if req.ProjectID < 0` at `key_handlers.go:127`; returns "Invalid project_id" |
+| 4 | API key update applies same unsafe-name and negative-project_id rejection | ✅ PASS | `UpdateAPIKey` at `key_handlers.go:274` calls `normalizeAPIKeyName`; `key_handlers.go:299` checks `*req.ProjectID < 0` |
+| 5 | Baseline security headers present on wrapped HTTP responses | ✅ PASS | `security_headers.go` sets `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Permissions-Policy`, CSP `frame-ancestors 'none'; base-uri 'self'; form-action 'self'` |
+| 6 | Root response no longer exposes hardcoded version data | ✅ PASS | `TestRootHandlerDoesNotExposeHardcodedVersion` asserts body lacks `"version"` and `"1.0.0"` |
+| 7 | Unknown GET paths return standard 404 JSON without version data | ✅ PASS | `TestRootHandlerReturnsStandardNotFoundForUnknownPath` asserts 404 + `"error":"not_found"` + no `"version"`/`"1.0.0"` |
+| 8-9 | Focused + broad regression pass | ✅ PASS | Focused 8/8 PASS; `go test ./... -count=1` all packages PASS; `git diff --check` clean |
+| 10 | Runtime/build-chain findings remain tracked separately | ✅ PASS | `docs/issues/OPEN-ISSUES.md` line 78: `PRD4-RUNTIME-002` (Medium, Open) covers Go stdlib vulns, Grafana URL, ldflags, healthcheck, test DB cleanup — not claimed fixed by Batch 1O |
+
+## Focused Test Results
+
+```
+=== RUN   TestCreateAPIKey_RejectsUnsafeNameAndOversizedName      --- PASS
+=== RUN   TestCreateAPIKey_RejectsNegativeProjectID               --- PASS
+=== RUN   TestUpdateAPIKey_RejectsUnsafeName                      --- PASS
+=== RUN   TestUpdateAPIKey_RejectsNegativeProjectID               --- PASS
+=== RUN   TestSecurityHeaders                                     --- PASS
+=== RUN   TestRootHandlerDoesNotExposeHardcodedVersion            --- PASS
+=== RUN   TestRootHandlerReturnsStandardNotFoundForUnknownPath    --- PASS
+```
+
+**8/8 PASS**
+
+## Broad Regression
+
+```
+go test ./... -count=1 → all packages PASS (22 packages)
+git diff --check → clean (no trailing whitespace / conflict markers)
+```
 
 ## New Issues Found
 
-None.
+无新发现的问题。
 
-## Verdict
+## Notes
 
-**PASS.** All 9 acceptance criteria verified. Developer Console now shows self-owned usage, cost, and model/alias breakdown via the existing Usage Analytics API with `scope=my`. Graceful degradation on analytics failure preserves all existing workflows.
+- `normalizeAPIKeyName` 同时处理 trim、空值、长度、特殊字符（HTML/SQL payload）和控制字符，逻辑集中且合理。
+- Security headers middleware 在 `main.go:464` 正确挂载在 CORS 和 metrics 之后、handler 之前。
+- Root handler 和 404 handler 的版本信息移除由 `main_test.go` 的两个测试覆盖。
+- `PRD4-RUNTIME-002`（Go 工具链漏洞、Grafana 配置等）在 `OPEN-ISSUES.md` 中独立跟踪，未被本 batch 标记为已修复。
+
+## Conclusion
+
+**PRD4 Batch 1O: PASS 8/8.** 所有验收标准满足，无新发现问题。可以进入 Sentinel commit 流程。

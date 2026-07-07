@@ -64,22 +64,38 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Current active verification signal is PRD4 Batch 1N Developer Console Self
-Usage And Model Cost:
+Current active verification signal is PRD4 Batch 1O API Key Input And Security
+Header Hardening:
 
 - Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
-- Issue/matrix: `PRD4-USAGE-002` / `P4-F02`.
-- Scope: Developer Console now uses existing Usage Analytics with `scope=my`,
-  selected `project_id`, and `group_by=alias` to show the current user's own
-  usage, cost, and model/alias breakdown.
-- This batch does not change backend usage analytics SQL, billing/wallet
-  settlement, API key ownership rules, RBAC, routes, migrations, prompt/response
-  storage, trace, runtime status, SSO, upstream, or provider dispatch.
+- Issue/matrix: `PRD4-SECURITY-001` / `P4-F12`.
+- Scope: API key create/update now rejects unsafe or overlong display names and
+  negative `project_id`; the HTTP chain adds baseline browser security headers;
+  and unknown GET paths no longer fall through to the root service/version
+  response.
+- This batch does not change billing, routing, RBAC, migrations, trace storage,
+  SSO, upstream, wallet, provider dispatch, frontend behavior, Go toolchain
+  version, Grafana target config, runtime `ldflags`, container healthcheck
+  wiring, target test database cleanup, or Production verified claims.
 
-Latest accepted PRD4 implementation batch is PRD4 Batch 1M Trace Metadata
-Read-Side Redaction:
+Latest accepted PRD4 implementation batch is PRD4 Batch 1N Developer Console
+Self Usage And Model Cost:
 
-- Canary PASS 8/8 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`.
+- Canary PASS 9/9 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`.
+- Sentinel merge is reflected by `6194062` / PR #98.
+- Batch 1N uses existing Usage Analytics with `scope=my`, selected `project_id`,
+  and `group_by=alias` to show the current user's own usage, cost, and
+  model/alias breakdown in Developer Console.
+- Target-environment final test evidence for the deployed PRD4 Batch 1N state is
+  archived at `docs/ops/evidence/UNIROUTERS-TEST-REPORT-FINAL-20260708.md`.
+- The report also records follow-up security/runtime issues; application-code
+  issues are in Batch 1O, while Go toolchain, Grafana/env, version injection,
+  healthcheck, and target DB cleanup remain tracked as `PRD4-RUNTIME-002`.
+
+Previous accepted trace redaction batch is PRD4 Batch 1M:
+
+- Canary PASS 8/8 was recorded before Batch 1N overwrote the current
+  `docs/agent-workflows/VERIFY-RESULT.md`.
 - Sentinel merge is reflected by `2f43fca` / PR #97.
 - Batch 1M shares trace metadata sanitization across gateway trace writes and
   `GET /api/v1/logs/{id}/trace` responses.

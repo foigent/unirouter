@@ -1,37 +1,40 @@
-# FIX-SIGNAL.md - PRD4 Batch 1N Developer Console Self Usage And Model Cost
+# FIX-SIGNAL.md - PRD4 Batch 1O API Key Input And Security Header Hardening
 
 **Fixer:** main agent
 **Date:** file system timestamp is authoritative
-**Risk level:** R2 user-visible frontend/product semantics
-**Scope:** P4-F02 Developer Console self usage and model cost visibility
+**Risk level:** R3 security/API behavior hardening
+**Scope:** P4-F12 security, privacy, and redaction guardrails
 
 ## Verification Request
 
-Please verify PRD4 Batch 1N: Developer Console Self Usage And Model Cost.
+Please verify PRD4 Batch 1O: API Key Input And Security Header Hardening.
 
-This batch extends the accepted `P4-F02` usage/cost attribution foundation with
-the concrete self-service view tracked as `PRD4-USAGE-002`:
+This batch converts application-code findings from
+`docs/ops/evidence/UNIROUTERS-TEST-REPORT-FINAL-20260708.md` into a narrow
+security/API hardening slice tracked as `PRD4-SECURITY-001`:
 
-- Developer Console now loads `GET /api/v1/usage/analytics` with
-  `scope=my`, `project_id`, and `group_by=alias` for the selected project;
-- the top KPI tiles use the current user's owned API-key usage aggregate when
-  available, instead of summing only the latest 20 project log rows;
-- a new "我的模型用量" table shows the current user's model/alias breakdown for
-  requests, success/failure count, tokens, cost, and average latency;
-- the existing project keys, approved models, playground, recent calls, and
-  request lookup workflows remain unchanged;
-- historical rows with no owner attribution remain excluded from `scope=my`
-  instead of being fabricated.
+- API key create/update trims names and rejects empty, over-255-character,
+  control-containing, markup-like, or SQL-like display names;
+- API key create/update rejects negative `project_id` instead of resolving it to
+  a default project or touching the database;
+- all HTTP responses pass through baseline browser security headers;
+- `GET /` no longer exposes hardcoded version data, and unknown GET paths that
+  fall through the root pattern return `404 {"error":"not_found"}`.
 
 ## Scope To Verify
 
 Product/test files:
 
-- `frontend/src/pages/DeveloperConsolePage.tsx`
-- `frontend/src/pages/__tests__/DeveloperConsolePage.test.tsx`
+- `internal/admin/key_handlers.go`
+- `internal/admin/admin_mock_test.go`
+- `internal/middleware/security_headers.go`
+- `internal/middleware/security_headers_test.go`
+- `cmd/uniroute/main.go`
+- `cmd/uniroute/main_test.go`
 
-Status/docs files:
+Evidence/status files:
 
+- `docs/ops/evidence/UNIROUTERS-TEST-REPORT-FINAL-20260708.md`
 - `docs/agent-workflows/FIX-SIGNAL.md`
 - `docs/issues/OPEN-ISSUES.md`
 - `docs/ops/CURRENT-STATUS.md`
@@ -40,65 +43,67 @@ Status/docs files:
 - `docs/DOC-INVENTORY.md`
 - `docs/README.md`
 - `docs/PRD-Phase4.md`
+- `docs/CODEBASE-MAP.md`
 
 ## Expected Behavior
 
-- A developer or project member can see their own current project usage and
-  corresponding cost directly on Developer Console.
-- Model-level cost visibility is grouped by model alias/requested model through
-  the existing Usage Analytics API.
-- KPI totals are owner-attributed when the analytics response is available.
-- If the self-usage analytics request fails, Developer Console should still
-  render project keys, approved models, recent calls, playground, and lookup
-  flows, falling back to the existing recent-log KPI snapshot.
-- The recent-call table remains project-log based and still shows recent request
-  detail for operational debugging.
-- No prompt/response plaintext, full API keys, upstream credentials, or hidden
-  log payloads are added to the page.
+- API key display names that contain HTML tag characters, quote/semicolon-style
+  SQL payload characters, control characters, `--`, or more than 255 characters
+  return HTTP 400 on create/update.
+- Negative `project_id` returns HTTP 400 on API key create/update.
+- Valid API key create/update flows remain unchanged.
+- Responses include `X-Content-Type-Options`, `X-Frame-Options`,
+  `Referrer-Policy`, `Permissions-Policy`, and a frame/base/form
+  `Content-Security-Policy`.
+- `GET /` still returns service running status, but no longer returns a
+  hardcoded `version`.
+- Unknown GET paths such as `/api/v1/orgs` return standard 404 JSON without
+  root service/version data.
 
 ## Non-Scope
 
 Do not expect this batch to:
 
-- change backend usage analytics SQL, owner attribution semantics, billing cost
-  calculation, wallet settlement, API key ownership rules, RBAC, or routes;
-- add CSV export to Developer Console;
-- add budget hard-block enforcement, Scheduler V2, TPM enforcement, new roles,
-  new persistent owner backfill, or prompt/response plaintext storage;
-- change Usage Analytics page behavior outside the existing API call reuse;
-- claim target-environment `Production verified` evidence.
+- change billing, routing, RBAC, migrations, trace storage, SSO, upstream,
+  wallet, provider dispatch, frontend behavior, API key hashing, or secret
+  handling;
+- solve Go standard-library vulnerability findings by changing the local Go
+  toolchain or build image;
+- change target-environment Grafana URL, `RUNTIME_ENVIRONMENT`, runtime
+  version/commit `ldflags`, Docker healthcheck wiring, or target test database
+  cleanup;
+- claim broad target-environment `Production verified` status.
 
 ## Required Verification Commands
 
 ```bash
 cd /Users/m4/Desktop/projects/UniRouter
 
-rg -n "我的模型用量|scope: 'my'|group_by: 'alias'|PRD4-USAGE-002|P4-F02|Batch 1N" frontend/src/pages/DeveloperConsolePage.tsx frontend/src/pages/__tests__/DeveloperConsolePage.test.tsx docs/agent-workflows/FIX-SIGNAL.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/PROJECT-HANDOFF.md docs/DOC-INVENTORY.md docs/README.md docs/PRD-Phase4.md
+rg -n "normalizeAPIKeyName|SecurityHeaders|TestSecurityHeaders|TestRootHandlerDoesNotExposeHardcodedVersion|PRD4-SECURITY-001|Batch 1O|UNIROUTERS-TEST-REPORT-FINAL-20260708" internal/admin internal/middleware cmd/uniroute docs/agent-workflows/FIX-SIGNAL.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/PROJECT-HANDOFF.md docs/DOC-INVENTORY.md docs/README.md docs/PRD-Phase4.md docs/CODEBASE-MAP.md
 
-go test ./internal/admin -run 'TestAnalyticsConditionsMyScope|TestAnalyticsConditionsRejectsConflictingOwnerScope' -count=1
-npm --prefix frontend test -- --run DeveloperConsolePage
-npm --prefix frontend test -- --run UsageAnalyticsPage client
-npm --prefix frontend test -- --run
-npm --prefix frontend run build
+go test ./internal/admin -run 'Test(CreateAPIKey_RejectsUnsafeNameAndOversizedName|CreateAPIKey_RejectsNegativeProjectID|UpdateAPIKey_RejectsUnsafeName|UpdateAPIKey_RejectsNegativeProjectID)$' -count=1
+go test ./internal/middleware -run TestSecurityHeaders -count=1
+go test ./cmd/uniroute -run 'TestRootHandler(DoesNotExposeHardcodedVersion|ReturnsStandardNotFoundForUnknownPath)' -count=1
+go test ./internal/admin ./internal/middleware ./cmd/uniroute -count=1
+go test ./... -count=1
 
 git diff --check
 ```
 
 ## Acceptance Criteria
 
-1. Developer Console requests usage analytics with `scope=my`, selected
-   `project_id`, and `group_by=alias`.
-2. KPI request/token/cost/error-rate values use the self-owned aggregate when
-   usage analytics returns a summary.
-3. The new model usage table displays owner-attributed model/alias breakdown
-   including requests, success/failure, tokens, cost, and latency.
-4. Self-usage analytics failure does not block existing Developer Console
-   project data from rendering.
-5. Existing Developer Console key/model/playground/log lookup flows still pass.
-6. Usage Analytics client/page regressions still pass.
-7. Existing backend `scope=my` conditions still reject conflicting owner filters.
-8. No backend route, migration, billing/wallet settlement, API key ownership,
-   RBAC, prompt/response storage, trace, runtime status, SSO, upstream, or
-   provider-dispatch behavior changes.
-9. Focused frontend tests, full frontend tests, frontend build, focused backend
-   analytics tests, and `git diff --check` pass.
+1. API key create rejects stored HTML-like and SQL-like display-name payloads
+   with HTTP 400 before database mutation.
+2. API key create rejects names longer than 255 characters with HTTP 400, not
+   database-driven HTTP 500.
+3. API key create rejects negative `project_id` with HTTP 400.
+4. API key update applies the same unsafe-name and negative-`project_id`
+   rejection.
+5. Baseline security headers are present on wrapped HTTP responses.
+6. Root response no longer exposes hardcoded version data.
+7. Unknown GET paths that fall through the root pattern return standard 404 JSON
+   without hardcoded version data.
+8. Focused admin, middleware, and cmd tests pass.
+9. Broad Go regression and `git diff --check` pass.
+10. Open runtime/build-chain findings from the final test report remain tracked
+    separately and are not falsely marked fixed by this application-code batch.
