@@ -1330,6 +1330,51 @@ func TestCleanupOldData_DefaultRetention(t *testing.T) {
 	}
 }
 
+func TestCleanupOldDataWithTraceRetention(t *testing.T) {
+	var traceRetentionArg int
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(sql, "DELETE FROM request_trace_events") {
+				if len(args) != 1 {
+					t.Fatalf("expected trace retention arg, got %#v", args)
+				}
+				traceRetentionArg = args[0].(int)
+			}
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	h := newTestHandler(db)
+
+	err := h.CleanupOldDataWithTraceRetention(context.Background(), 30, 7)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if traceRetentionArg != 7 {
+		t.Fatalf("expected trace retention 7, got %d", traceRetentionArg)
+	}
+}
+
+func TestCleanupOldDataWithTraceRetention_SkipsTraceCleanupWhenDisabled(t *testing.T) {
+	sawTraceDelete := false
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(sql, "DELETE FROM request_trace_events") {
+				sawTraceDelete = true
+			}
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	h := newTestHandler(db)
+
+	err := h.CleanupOldDataWithTraceRetention(context.Background(), 30, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sawTraceDelete {
+		t.Fatal("expected trace cleanup to be skipped when retention is 0")
+	}
+}
+
 func TestCleanupOldData_ExecError(t *testing.T) {
 	db := &testutil.MockDB{
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {

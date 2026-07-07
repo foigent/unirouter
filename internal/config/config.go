@@ -45,6 +45,7 @@ type Config struct {
 	LoginRateLimitUser      int
 	TraceEventsEnabled      bool
 	TraceEventSampleRate    float64
+	TraceEventRetentionDays int
 	RuntimeEnvironment      string
 	RuntimeDeploymentMode   string
 	RuntimeDeploymentRole   string
@@ -154,6 +155,12 @@ func (c *Config) Validate() error {
 	if c.TraceEventSampleRate < 0 || c.TraceEventSampleRate > 1 {
 		return fmt.Errorf("TRACE_EVENT_SAMPLE_RATE must be between 0 and 1")
 	}
+	if c.TraceEventRetentionDays < 0 {
+		return fmt.Errorf("TRACE_EVENT_RETENTION_DAYS must be >= 0")
+	}
+	if c.LogRetentionDays < 0 {
+		return fmt.Errorf("LOG_RETENTION_DAYS must be >= 0")
+	}
 	if err := validateOptionalHTTPURL("PROMETHEUS_URL", c.PrometheusURL); err != nil {
 		return err
 	}
@@ -185,6 +192,7 @@ func (c *Config) Validate() error {
 
 func Load() (*Config, error) {
 	jwtSecret := getEnvStr("JWT_SECRET", "")
+	logRetentionDays := getEnvInt("LOG_RETENTION_DAYS", 30)
 	cfg := &Config{
 		ListenPort:          getEnvInt("LISTEN_PORT", 8080),
 		LogLevel:            getEnvStr("LOG_LEVEL", "info"),
@@ -214,6 +222,7 @@ func Load() (*Config, error) {
 		LoginRateLimitUser:      getEnvInt("LOGIN_RATE_LIMIT_USER_REQUESTS", 10),
 		TraceEventsEnabled:      getEnvBool("TRACE_EVENTS_ENABLED", true),
 		TraceEventSampleRate:    getEnvFloat("TRACE_EVENT_SAMPLE_RATE", 1),
+		TraceEventRetentionDays: getEnvInt("TRACE_EVENT_RETENTION_DAYS", logRetentionDays),
 		RuntimeEnvironment:      getEnvStr("RUNTIME_ENVIRONMENT", "unspecified"),
 		RuntimeDeploymentMode:   getEnvStr("RUNTIME_DEPLOYMENT_MODE", "single-node"),
 		RuntimeDeploymentRole:   getEnvStr("RUNTIME_DEPLOYMENT_ROLE", "stable"),
@@ -263,7 +272,7 @@ func Load() (*Config, error) {
 		TokenRatioZH: getEnvFloat("TOKEN_RATIO_ZH", 1.5),
 		TokenRatioEN: getEnvFloat("TOKEN_RATIO_EN", 4),
 
-		LogRetentionDays: getEnvInt("LOG_RETENTION_DAYS", 30),
+		LogRetentionDays: logRetentionDays,
 
 		SkipMigration: getEnvBool("SKIP_MIGRATION", false),
 	}
