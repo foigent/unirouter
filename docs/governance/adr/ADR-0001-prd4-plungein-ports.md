@@ -1,10 +1,11 @@
 # ADR 0001: PRD4 PlungeIn Ports
 
-> Status: Proposed
+> Status: Accepted for PRD4 Batch 1F scope
 > Date: 2026-07-07
 > Owners: User, Codex
 > Related: `docs/PRD-Phase4.md`, `docs/ops/PRD4-ACCEPTANCE-MATRIX.md`,
-> `docs/planning/PRD5-BACKLOG.md`
+> `docs/planning/PRD5-BACKLOG.md`,
+> `docs/tech-ref/22-prd4-plungein-port-contract.md`
 
 ## Context
 
@@ -36,6 +37,11 @@ PRD4 implementation must remain observation-first. Core correctness paths for
 authentication, authorization, billing, wallet, routing, settlement, and provider
 dispatch remain owned by UniRouter core.
 
+The normative PRD4 port contract is
+`docs/tech-ref/22-prd4-plungein-port-contract.md`. That document defines allowed
+Observe/Act/limited-Enrich behavior, advisory-only Decide behavior, forbidden
+Mutate behavior, and the PRD5 reopen prerequisites for a runtime plugin platform.
+
 ## Consequences
 
 Benefits:
@@ -64,6 +70,8 @@ Tradeoffs:
 ## Verification
 
 - PRD4 docs define the port classes and PRD4/PRD5 boundary.
+- `docs/tech-ref/22-prd4-plungein-port-contract.md` defines concrete allowed
+  and forbidden examples for each port class.
 - PRD4 trace/status work uses Observe/Act/limited Enrich semantics.
 - No PRD4 code exposes arbitrary plugin mutation of auth, billing, routing,
   wallet, settlement, or provider dispatch.

@@ -68,28 +68,26 @@ Latest accepted PRD4 hardening baseline is PRD4 Preflight Hardening on 2026-07-0
 - User reported Sentinel/Atlas completed after `e335a9e` / PR #83.
 - PRD4 Batch 0 scope baseline is complete per User report after `e24731d` / PR #82; the Batch 0 `VERIFY-RESULT.md` content has since been overwritten by the Preflight result.
 
-Latest accepted PRD4 implementation batch is PRD4 Batch 1D Runtime Observability
-Foundation:
+Latest accepted PRD4 implementation batch is PRD4 Batch 1E Quota Vocabulary And
+Key Quota Foundation:
 
-- User reported Canary/Sentinel completed after `349ac75` / PR #87.
-- Atlas deployment has not been reported for Batch 1D.
-- Batch 1D adds `GET /api/v1/runtime/status` for platform/org/billing roles,
-  runtime metadata config, app memory, DB/Redis health, recent traffic summary,
-  Prometheus/Grafana configuration state, and `/status` Runtime Observability
-  cards while keeping current Internal Status event-derived.
-- Host CPU utilization, disk, network, cluster inventory, active
-  Prometheus/Grafana probes, embedded dashboards, OpenTelemetry export, and
-  metric-alert routing are not in Batch 1D.
-
-Current active verification signal: PRD4 Batch 1E Quota Vocabulary And Key Quota
-Foundation is fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
-
+- User reported Canary/Sentinel completed after `a1acdb6` / PR #88.
+- Atlas deployment has not been reported for Batch 1E.
 - Batch 1E standardizes user-facing RPM/RPS/TPM/tokens/s vocabulary, exposes
   preferred `rps_limit` and structured key `quota` response data, and preserves
   legacy `qps_limit` compatibility.
 - Scheduler V2, key-level TPM enforcement, budget hard-blocking, quota audit
   reason/idempotency fields, `qps_limit` removal, and schema migration are not
   in Batch 1E.
+
+Current active verification signal: PRD4 Batch 1F PlungeIn Port Architecture is
+fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+
+- Batch 1F accepts ADR 0001 for PRD4 scope and adds
+  `docs/tech-ref/22-prd4-plungein-port-contract.md`.
+- This is documentation-only: no runtime plugin loading, manifest, sandbox,
+  marketplace, third-party installation, or mutation of core auth, billing,
+  routing, wallet, settlement, or provider dispatch.
 
 The latest accepted route-contract baseline remains PRD3 Batch 6 on 2026-07-05:
 

@@ -11,7 +11,7 @@
 - [PRD-Phase3.md](PRD-Phase3.md) — 已完成 PRD3 一致性、语义、契约和架构清理范围
 - [planning/PRD3-CONSISTENCY-AUDIT.md](planning/PRD3-CONSISTENCY-AUDIT.md) — PRD3 范围审计和 PRD1→PRD2 遗留问题梳理
 - [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 当前未关闭问题列表
-- [agent-workflows/FIX-SIGNAL.md](agent-workflows/FIX-SIGNAL.md) — 当前 Codex 验证信号；PRD4 Batch 1E Quota Vocabulary And Key Quota Foundation fixed awaiting Canary
+- [agent-workflows/FIX-SIGNAL.md](agent-workflows/FIX-SIGNAL.md) — 当前 Codex 验证信号；PRD4 Batch 1F PlungeIn Port Architecture fixed awaiting Canary
 - [agent-workflows/VERIFY-RESULT.md](agent-workflows/VERIFY-RESULT.md) — 最新 Canary 验收结果
 - [CODEBASE-MAP.md](CODEBASE-MAP.md) — 代码结构、路由、数据、测试、部署地图
 - [DOC-INVENTORY.md](DOC-INVENTORY.md) — 文档清单与当前/冻结/历史/候选边界
@@ -35,11 +35,12 @@
 - [tech-ref/](tech-ref/) — 开发团队技术参考索引
 - [tech-ref/20-prd3-product-glossary.md](tech-ref/20-prd3-product-glossary.md) — PRD3 产品术语口径：供应商/上游通道、用量分析、通知状态、角色和 PRD4 边界
 - [tech-ref/21-prd4-quota-vocabulary.md](tech-ref/21-prd4-quota-vocabulary.md) — PRD4 RPM/RPS/TPM/tokens/s 口径和 `qps_limit` 兼容边界
+- [tech-ref/22-prd4-plungein-port-contract.md](tech-ref/22-prd4-plungein-port-contract.md) — PRD4 PlungeIn Observe/Act/Enrich/Decide/Mutate 端口边界和 runtime plugin 延后契约
 
 ## 工程治理
 - [governance/README.md](governance/README.md) — PRD3 最低工程治理：ADR、API 兼容、migration/rollback、release、incident、deprecation
 - [governance/ADR-TEMPLATE.md](governance/ADR-TEMPLATE.md) — Architecture Decision Record 模板
-- [governance/adr/ADR-0001-prd4-plungein-ports.md](governance/adr/ADR-0001-prd4-plungein-ports.md) — PRD4 PlungeIn ports 架构决策草案
+- [governance/adr/ADR-0001-prd4-plungein-ports.md](governance/adr/ADR-0001-prd4-plungein-ports.md) — PRD4 PlungeIn ports 架构决策
 - [governance/adr/ADR-0002-prd4-api-key-owner-usage.md](governance/adr/ADR-0002-prd4-api-key-owner-usage.md) — PRD4 API key owner 用量归因决策草案
 - [governance/adr/ADR-0003-prd4-status-center-observability.md](governance/adr/ADR-0003-prd4-status-center-observability.md) — PRD4 Status Center / Runtime Observability 决策草案
 
@@ -50,7 +51,7 @@
 - [ops/test-report.md](ops/test-report.md) — 测试报告
 - [ops/evidence/COMPREHENSIVE-TEST-REPORT-20260705.md](ops/evidence/COMPREHENSIVE-TEST-REPORT-20260705.md) — 2026-07-05 Canary 综合测试/安全审计证据；当前问题状态以 `issues/OPEN-ISSUES.md` 为准
 - [ops/PRD2-ACCEPTANCE-MATRIX.md](ops/PRD2-ACCEPTANCE-MATRIX.md) — PRD2 已冻结验收状态
-- [ops/PRD4-ACCEPTANCE-MATRIX.md](ops/PRD4-ACCEPTANCE-MATRIX.md) — PRD4 planned 验收矩阵
+- [ops/PRD4-ACCEPTANCE-MATRIX.md](ops/PRD4-ACCEPTANCE-MATRIX.md) — PRD4 当前验收矩阵
 - [ops/PRD2-COMPLETION-PLAN.md](ops/PRD2-COMPLETION-PLAN.md) — PRD2 收尾决策和历史计划
 - [ops/PRD-ACCEPTANCE-MATRIX.md](ops/PRD-ACCEPTANCE-MATRIX.md) — PRD1 历史验收矩阵
 - [ops/PRD1-CLOSEOUT-PLAN.md](ops/PRD1-CLOSEOUT-PLAN.md) — PRD1 历史收尾计划

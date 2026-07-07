@@ -27,6 +27,7 @@
 | 19 | [Prompt And Response Storage Policy](19-prompt-response-storage-policy.md) | PRD2 P2-F11 policy: plaintext disabled by default; future opt-in controls | v0.1 |
 | 20 | [PRD3 Product Glossary](20-prd3-product-glossary.md) | PRD3 canonical terminology for provider/channel, usage analytics, notification status, roles, and PRD4 boundaries | v0.1 |
 | 21 | [PRD4 Quota Vocabulary](21-prd4-quota-vocabulary.md) | PRD4 RPM/RPS/TPM/tokens/s terms, key quota visibility, and `qps_limit` compatibility boundary | v0.1 |
+| 22 | [PRD4 PlungeIn Port Contract](22-prd4-plungein-port-contract.md) | PRD4 Observe/Act/Enrich/Decide/Mutate port boundaries and runtime-plugin deferral contract | v0.1 |
 
 ## 关联文档
 - [PRD Phase 1](../PRD-Phase1.md) — 产品需求文档

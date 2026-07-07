@@ -9,7 +9,7 @@
 | `docs/PROJECT-HANDOFF.md` | First-read handoff for agents |
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
 | `docs/PRD-Phase4.md` | Formal PRD4 scope and implementation-phase reference |
-| `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` | Proposed PRD4 acceptance matrix and evidence boundaries |
+| `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` | Active PRD4 acceptance matrix and evidence boundaries |
 | `docs/planning/PRD5-BACKLOG.md` | Capabilities explicitly deferred beyond PRD4 |
 | `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` | Completed PRD3 cleanup/optimization acceptance state |
 | `docs/PRD-Phase3.md` | Completed PRD3 cleanup/optimization scope |
@@ -23,7 +23,7 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required Codex/OpenClaw workflow |
-| `docs/agent-workflows/FIX-SIGNAL.md` | Active verification signal: PRD4 Batch 1E Quota Vocabulary And Key Quota Foundation fixed awaiting Canary |
+| `docs/agent-workflows/FIX-SIGNAL.md` | Active verification signal: PRD4 Batch 1F PlungeIn Port Architecture fixed awaiting Canary |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Current verification result after OpenClaw runs |
 
 ## Product And Design References
@@ -36,7 +36,7 @@
 | `docs/PRD-Phase2.md` | PRD2 formal product requirements | Frozen for new feature work |
 | `docs/planning/PRD3-CONSISTENCY-AUDIT.md` | PRD3 consistency audit | Confirmed PRD3 input; completed in Batch 17 closeout |
 | `docs/PRD-Phase3.md` | PRD3 formal product requirements | Completed cleanup/optimization scope |
-| `docs/PRD-Phase4.md` | PRD4 formal product requirements draft | Proposed scope; Batch 0 documentation-only baseline |
+| `docs/PRD-Phase4.md` | PRD4 formal product requirements | Active PRD4 implementation-phase scope |
 | `docs/planning/PRD4-BACKLOG.md` | PRD4 candidate backlog | Source record for PRD4 scope discovery |
 | `docs/planning/PRD5-BACKLOG.md` | PRD5 backlog | Explicitly deferred capabilities and reopen prerequisites |
 | `docs/design/` | UI design decisions | Current design reference unless contradicted by code |
@@ -71,8 +71,9 @@
 | `docs/tech-ref/19-prompt-response-storage-policy.md` | PRD2 P2-F11 prompt/response storage policy: plaintext disabled by default and future opt-in controls |
 | `docs/tech-ref/20-prd3-product-glossary.md` | PRD3 canonical terminology for provider/channel, usage analytics, notification status, roles, and PRD4 boundaries |
 | `docs/tech-ref/21-prd4-quota-vocabulary.md` | PRD4 RPM/RPS/TPM/tokens/s quota vocabulary and `qps_limit` compatibility boundary |
+| `docs/tech-ref/22-prd4-plungein-port-contract.md` | PRD4 PlungeIn Observe/Act/Enrich/Decide/Mutate port boundaries and runtime-plugin deferral contract |
 | `docs/governance/ADR-TEMPLATE.md` | Architecture Decision Record template |
-| `docs/governance/adr/ADR-0001-prd4-plungein-ports.md` | PRD4 PlungeIn ports architecture decision draft |
+| `docs/governance/adr/ADR-0001-prd4-plungein-ports.md` | PRD4 PlungeIn ports architecture decision |
 | `docs/governance/adr/ADR-0002-prd4-api-key-owner-usage.md` | PRD4 API key owner usage attribution decision draft |
 | `docs/governance/adr/ADR-0003-prd4-status-center-observability.md` | PRD4 Status Center and runtime observability decision draft |
 
@@ -84,7 +85,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 |------|--------------|
 | `docs/ops/PRD1-ACCEPTANCE-TEST-OWNERSHIP.md` | Executable ownership map for remaining PRD1 acceptance tests |
 | `docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md` | Current local evidence and external acceptance queue |
-| `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` | PRD4 planned acceptance matrix and evidence rules |
+| `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` | PRD4 active acceptance matrix and evidence rules |
 | `docs/ops/PRD1-STRICT-CLOSEOUT-RUNBOOK.md` | Final strict closeout gate and evidence procedure |
 | `docs/ops/deployment-runbook.md` | Deployment reference |
 | `docs/ops/evidence/` | Current runtime/deployment evidence cited by acceptance matrices and status docs |
