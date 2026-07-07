@@ -43,6 +43,22 @@ interface RuntimeIntegration {
   version?: string;
 }
 
+interface RuntimeMetric {
+  status: string;
+  reason?: string;
+  usage_ratio?: number;
+  logical_cores?: number;
+  sample_millis?: number;
+  total_bytes?: number;
+  used_bytes?: number;
+  free_bytes?: number;
+  mount_point?: string;
+  interface_count?: number;
+  active_interface_count?: number;
+  rx_bytes?: number;
+  tx_bytes?: number;
+}
+
 interface RuntimeStatus {
   status: string;
   generated_at: string;
@@ -75,9 +91,9 @@ interface RuntimeStatus {
       p99_latency_ms: number;
       reason?: string;
     };
-    cpu: { status: string; reason?: string };
-    disk: { status: string; reason?: string };
-    network: { status: string; reason?: string };
+    cpu: RuntimeMetric;
+    disk: RuntimeMetric;
+    network: RuntimeMetric;
   };
   observability_integrations: {
     prometheus: RuntimeIntegration;
@@ -138,6 +154,15 @@ function integrationTone(status?: string): MetricTone {
   }
 }
 
+function metricTone(metric?: RuntimeMetric): MetricTone {
+  if (!metric) return 'slate';
+  if (metric.status === 'unavailable') return 'red';
+  if (metric.usage_ratio !== undefined && metric.usage_ratio >= 0.9) return 'red';
+  if (metric.usage_ratio !== undefined && metric.usage_ratio >= 0.75) return 'amber';
+  if (metric.status === 'available' || metric.status === 'connected') return 'green';
+  return integrationTone(metric.status);
+}
+
 function integrationMeta(integration?: RuntimeIntegration): ReactNode {
   if (!integration) return '-';
   const details = [
@@ -170,6 +195,46 @@ function formatBytes(value?: number) {
 function formatPercent(value?: number) {
   if (value === undefined || value === null) return '-';
   return `${(value * 100).toFixed(2)}%`;
+}
+
+function formatMetricPercent(value?: number) {
+  if (value === undefined || value === null) return '-';
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function metricValue(metric?: RuntimeMetric): ReactNode {
+  if (!metric) return '-';
+  if (metric.usage_ratio !== undefined) return formatMetricPercent(metric.usage_ratio);
+  return <StatusTag status={metric.status || 'pending'}>{componentStatusLabel(metric.status)}</StatusTag>;
+}
+
+function cpuMeta(metric?: RuntimeMetric) {
+  if (!metric) return '-';
+  const details = [
+    metric.logical_cores ? `${metric.logical_cores} cores` : '',
+    metric.sample_millis ? `sample ${metric.sample_millis}ms` : '',
+    metric.reason || '',
+  ].filter(Boolean);
+  return details.join(' / ') || '-';
+}
+
+function diskMeta(metric?: RuntimeMetric) {
+  if (!metric) return '-';
+  if (metric.total_bytes) {
+    return `${formatBytes(metric.used_bytes)} / ${formatBytes(metric.total_bytes)} used${metric.mount_point ? ` @ ${metric.mount_point}` : ''}`;
+  }
+  return metric.reason || '-';
+}
+
+function networkMeta(metric?: RuntimeMetric) {
+  if (!metric) return '-';
+  const details = [
+    metric.interface_count !== undefined ? `active ${metric.active_interface_count ?? 0}/${metric.interface_count}` : '',
+    metric.rx_bytes ? `rx ${formatBytes(metric.rx_bytes)}` : '',
+    metric.tx_bytes ? `tx ${formatBytes(metric.tx_bytes)}` : '',
+    metric.reason || '',
+  ].filter(Boolean);
+  return details.join(' / ') || '-';
 }
 
 export default function InternalStatusPage() {
@@ -278,11 +343,27 @@ export default function InternalStatusPage() {
               meta={`heap ${formatBytes(runtimeData?.capacity_health.app_memory.heap_alloc_bytes)} / goroutines ${runtimeData?.runtime_environment.goroutines ?? '-'}`}
             />
             <MetricTile
-              label="主机遥测"
-              value={<StatusTag status={runtimeData?.capacity_health.cpu.status || 'pending'}>{componentStatusLabel(runtimeData?.capacity_health.cpu.status)}</StatusTag>}
+              label="CPU"
+              value={metricValue(runtimeData?.capacity_health.cpu)}
               icon={<IconAlertTriangle />}
-              tone="slate"
-              meta={`CPU ${componentStatusLabel(runtimeData?.capacity_health.cpu.status)} / 磁盘 ${componentStatusLabel(runtimeData?.capacity_health.disk.status)} / 网络 ${componentStatusLabel(runtimeData?.capacity_health.network.status)}`}
+              tone={metricTone(runtimeData?.capacity_health.cpu)}
+              meta={cpuMeta(runtimeData?.capacity_health.cpu)}
+            />
+            <MetricTile
+              label="磁盘"
+              value={metricValue(runtimeData?.capacity_health.disk)}
+              icon={<IconServer />}
+              tone={metricTone(runtimeData?.capacity_health.disk)}
+              meta={diskMeta(runtimeData?.capacity_health.disk)}
+            />
+            <MetricTile
+              label="网络"
+              value={runtimeData?.capacity_health.network.active_interface_count !== undefined
+                ? `${runtimeData.capacity_health.network.active_interface_count}/${runtimeData.capacity_health.network.interface_count ?? 0}`
+                : metricValue(runtimeData?.capacity_health.network)}
+              icon={<IconServer />}
+              tone={metricTone(runtimeData?.capacity_health.network)}
+              meta={networkMeta(runtimeData?.capacity_health.network)}
             />
             <MetricTile
               label="Prometheus"

@@ -14,7 +14,7 @@ import (
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
-func TestRuntimeStatus_ReturnsRuntimeHealthAndUnavailableTelemetry(t *testing.T) {
+func TestRuntimeStatus_ReturnsRuntimeHealthAndHostTelemetry(t *testing.T) {
 	prometheus := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/-/ready":
@@ -73,6 +73,33 @@ func TestRuntimeStatus_ReturnsRuntimeHealthAndUnavailableTelemetry(t *testing.T)
 		PrometheusURL:  prometheus.URL,
 		GrafanaURL:     grafana.URL,
 	})
+	cpuUsage := 0.25
+	diskUsage := 0.70
+	h.runtimeHostTelemetryProvider = func() runtimeHostTelemetry {
+		return runtimeHostTelemetry{
+			CPU: runtimeMetricStatus{
+				Status:       "available",
+				UsageRatio:   &cpuUsage,
+				LogicalCores: 8,
+				SampleMillis: 50,
+			},
+			Disk: runtimeMetricStatus{
+				Status:     "available",
+				UsageRatio: &diskUsage,
+				TotalBytes: 1000,
+				UsedBytes:  700,
+				FreeBytes:  300,
+				MountPoint: "/",
+			},
+			Network: runtimeMetricStatus{
+				Status:               "available",
+				InterfaceCount:       3,
+				ActiveInterfaceCount: 2,
+				RxBytes:              1024,
+				TxBytes:              2048,
+			},
+		}
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/status", nil)
 	rec := httptest.NewRecorder()
@@ -101,14 +128,39 @@ func TestRuntimeStatus_ReturnsRuntimeHealthAndUnavailableTelemetry(t *testing.T)
 	if resp.CapacityHealth.Traffic.Requests != 40 || math.Abs(resp.CapacityHealth.Traffic.ErrorRate-0.025) > 0.000001 {
 		t.Fatalf("unexpected traffic status: %#v", resp.CapacityHealth.Traffic)
 	}
-	if resp.CapacityHealth.CPU.Status != "unavailable" || resp.CapacityHealth.Network.Reason != "telemetry_source_not_configured" {
-		t.Fatalf("expected unavailable host telemetry, got cpu=%#v network=%#v", resp.CapacityHealth.CPU, resp.CapacityHealth.Network)
+	if resp.CapacityHealth.CPU.Status != "available" || resp.CapacityHealth.CPU.UsageRatio == nil || math.Abs(*resp.CapacityHealth.CPU.UsageRatio-0.25) > 0.000001 {
+		t.Fatalf("expected available cpu telemetry, got %#v", resp.CapacityHealth.CPU)
+	}
+	if resp.CapacityHealth.Disk.Status != "available" || resp.CapacityHealth.Disk.TotalBytes != 1000 || resp.CapacityHealth.Disk.MountPoint != "/" {
+		t.Fatalf("expected available disk telemetry, got %#v", resp.CapacityHealth.Disk)
+	}
+	if resp.CapacityHealth.Network.Status != "available" || resp.CapacityHealth.Network.ActiveInterfaceCount != 2 || resp.CapacityHealth.Network.RxBytes != 1024 {
+		t.Fatalf("expected available network telemetry, got %#v", resp.CapacityHealth.Network)
 	}
 	if resp.ObservabilityIntegrations.Prometheus.Status != "connected" || resp.ObservabilityIntegrations.Prometheus.ScrapeStatus != "up" {
 		t.Fatalf("unexpected observability integrations: %#v", resp.ObservabilityIntegrations)
 	}
 	if resp.ObservabilityIntegrations.Grafana.Status != "connected" || resp.ObservabilityIntegrations.Grafana.Version != "11.0.0" {
 		t.Fatalf("unexpected grafana integration: %#v", resp.ObservabilityIntegrations.Grafana)
+	}
+}
+
+func TestLinuxCPUUsageRatio(t *testing.T) {
+	usage, ok := linuxCPUUsageRatio(
+		linuxCPUReading{Total: 1000, Idle: 600},
+		linuxCPUReading{Total: 1200, Idle: 700},
+	)
+	if !ok {
+		t.Fatal("expected valid cpu usage sample")
+	}
+	if math.Abs(usage-0.5) > 0.000001 {
+		t.Fatalf("expected 50%% usage, got %f", usage)
+	}
+	if _, ok := linuxCPUUsageRatio(linuxCPUReading{Total: 1000, Idle: 600}, linuxCPUReading{Total: 900, Idle: 650}); ok {
+		t.Fatal("expected invalid sample when total decreases")
+	}
+	if _, ok := linuxCPUUsageRatio(linuxCPUReading{Total: 1000, Idle: 600}, linuxCPUReading{Total: 1100, Idle: 750}); ok {
+		t.Fatal("expected invalid sample when idle delta exceeds total delta")
 	}
 }
 

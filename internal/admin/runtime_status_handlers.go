@@ -1,13 +1,19 @@
 package admin
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
 	goruntime "runtime"
+	"strconv"
+	"strings"
+	"syscall"
 	"time"
 )
 
@@ -87,8 +93,30 @@ type runtimeTrafficStatus struct {
 }
 
 type runtimeMetricStatus struct {
-	Status string `json:"status"`
-	Reason string `json:"reason,omitempty"`
+	Status               string   `json:"status"`
+	Reason               string   `json:"reason,omitempty"`
+	UsageRatio           *float64 `json:"usage_ratio,omitempty"`
+	LogicalCores         int      `json:"logical_cores,omitempty"`
+	SampleMillis         int64    `json:"sample_millis,omitempty"`
+	TotalBytes           uint64   `json:"total_bytes,omitempty"`
+	UsedBytes            uint64   `json:"used_bytes,omitempty"`
+	FreeBytes            uint64   `json:"free_bytes,omitempty"`
+	MountPoint           string   `json:"mount_point,omitempty"`
+	InterfaceCount       int      `json:"interface_count,omitempty"`
+	ActiveInterfaceCount int      `json:"active_interface_count,omitempty"`
+	RxBytes              uint64   `json:"rx_bytes,omitempty"`
+	TxBytes              uint64   `json:"tx_bytes,omitempty"`
+}
+
+type runtimeHostTelemetry struct {
+	CPU     runtimeMetricStatus
+	Disk    runtimeMetricStatus
+	Network runtimeMetricStatus
+}
+
+type linuxCPUReading struct {
+	Total uint64
+	Idle  uint64
 }
 
 type runtimeObservabilityIntegrations struct {
@@ -132,6 +160,7 @@ func (h *Handler) RuntimeStatus(w http.ResponseWriter, r *http.Request) {
 	database := h.runtimeDatabaseHealth(r.Context())
 	redis := h.runtimeRedisHealth(r.Context())
 	traffic := h.runtimeTrafficStatus(r.Context())
+	hostTelemetry := h.runtimeHostTelemetry()
 
 	response := runtimeStatusResponse{
 		Status:               runtimeOverallStatus(database, redis, traffic),
@@ -143,9 +172,9 @@ func (h *Handler) RuntimeStatus(w http.ResponseWriter, r *http.Request) {
 			Database:  database,
 			Redis:     redis,
 			Traffic:   traffic,
-			CPU:       unavailableRuntimeMetric("telemetry_source_not_configured"),
-			Disk:      unavailableRuntimeMetric("telemetry_source_not_configured"),
-			Network:   unavailableRuntimeMetric("telemetry_source_not_configured"),
+			CPU:       hostTelemetry.CPU,
+			Disk:      hostTelemetry.Disk,
+			Network:   hostTelemetry.Network,
 		},
 		ObservabilityIntegrations: h.runtimeObservabilityIntegrations(r.Context()),
 	}
@@ -180,6 +209,183 @@ func (h *Handler) runtimeMemoryStatus() runtimeMemoryStatus {
 		HeapAllocBytes: mem.HeapAlloc,
 		HeapSysBytes:   mem.HeapSys,
 	}
+}
+
+func (h *Handler) runtimeHostTelemetry() runtimeHostTelemetry {
+	if h.runtimeHostTelemetryProvider != nil {
+		return h.runtimeHostTelemetryProvider()
+	}
+	return collectRuntimeHostTelemetry()
+}
+
+func collectRuntimeHostTelemetry() runtimeHostTelemetry {
+	return runtimeHostTelemetry{
+		CPU:     runtimeCPUStatus(),
+		Disk:    runtimeDiskStatus("/"),
+		Network: runtimeNetworkStatus(),
+	}
+}
+
+func runtimeCPUStatus() runtimeMetricStatus {
+	status := runtimeMetricStatus{
+		Status:       "available",
+		LogicalCores: goruntime.NumCPU(),
+	}
+	first, ok := readLinuxCPUReading()
+	if !ok {
+		status.Reason = "usage_sample_not_supported"
+		return status
+	}
+	const sampleWindow = 50 * time.Millisecond
+	time.Sleep(sampleWindow)
+	second, ok := readLinuxCPUReading()
+	if !ok {
+		status.Reason = "usage_sample_unavailable"
+		return status
+	}
+	usage, ok := linuxCPUUsageRatio(first, second)
+	if !ok {
+		status.Reason = "usage_sample_invalid"
+		return status
+	}
+	status.UsageRatio = &usage
+	status.SampleMillis = sampleWindow.Milliseconds()
+	return status
+}
+
+func readLinuxCPUReading() (linuxCPUReading, bool) {
+	data, err := os.ReadFile("/proc/stat")
+	if err != nil {
+		return linuxCPUReading{}, false
+	}
+	line := bytes.SplitN(data, []byte("\n"), 2)[0]
+	fields := strings.Fields(string(line))
+	if len(fields) < 5 || fields[0] != "cpu" {
+		return linuxCPUReading{}, false
+	}
+	var total uint64
+	var idle uint64
+	for i, field := range fields[1:] {
+		value, err := strconv.ParseUint(field, 10, 64)
+		if err != nil {
+			return linuxCPUReading{}, false
+		}
+		total += value
+		if i == 3 || i == 4 {
+			idle += value
+		}
+	}
+	if total == 0 {
+		return linuxCPUReading{}, false
+	}
+	return linuxCPUReading{Total: total, Idle: idle}, true
+}
+
+func linuxCPUUsageRatio(first, second linuxCPUReading) (float64, bool) {
+	if second.Total <= first.Total || second.Idle < first.Idle {
+		return 0, false
+	}
+	totalDelta := second.Total - first.Total
+	if totalDelta == 0 {
+		return 0, false
+	}
+	idleDelta := second.Idle - first.Idle
+	if idleDelta > totalDelta {
+		return 0, false
+	}
+	return float64(totalDelta-idleDelta) / float64(totalDelta), true
+}
+
+func runtimeDiskStatus(mountPoint string) runtimeMetricStatus {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(mountPoint, &stat); err != nil {
+		return unavailableRuntimeMetric("statfs_failed")
+	}
+	blockSize := uint64(stat.Bsize)
+	if blockSize == 0 {
+		return unavailableRuntimeMetric("invalid_block_size")
+	}
+	total := stat.Blocks * blockSize
+	free := stat.Bavail * blockSize
+	used := uint64(0)
+	if total >= free {
+		used = total - free
+	}
+	var usageRatio *float64
+	if total > 0 {
+		ratio := float64(used) / float64(total)
+		usageRatio = &ratio
+	}
+	return runtimeMetricStatus{
+		Status:     "available",
+		UsageRatio: usageRatio,
+		TotalBytes: total,
+		UsedBytes:  used,
+		FreeBytes:  free,
+		MountPoint: mountPoint,
+	}
+}
+
+func runtimeNetworkStatus() runtimeMetricStatus {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return unavailableRuntimeMetric("interfaces_unavailable")
+	}
+	status := runtimeMetricStatus{
+		Status:         "available",
+		InterfaceCount: len(interfaces),
+	}
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagUp != 0 && iface.Flags&net.FlagLoopback == 0 {
+			status.ActiveInterfaceCount++
+		}
+	}
+	rxBytes, txBytes, ok := linuxNetworkBytes()
+	if ok {
+		status.RxBytes = rxBytes
+		status.TxBytes = txBytes
+	} else {
+		status.Reason = "byte_counters_not_supported"
+	}
+	if status.ActiveInterfaceCount == 0 {
+		status.Status = "unavailable"
+		status.Reason = "no_active_network_interfaces"
+	}
+	return status
+}
+
+func linuxNetworkBytes() (uint64, uint64, bool) {
+	data, err := os.ReadFile("/proc/net/dev")
+	if err != nil {
+		return 0, 0, false
+	}
+	var rxTotal uint64
+	var txTotal uint64
+	for _, line := range strings.Split(string(data), "\n") {
+		parts := strings.Split(line, ":")
+		if len(parts) != 2 {
+			continue
+		}
+		name := strings.TrimSpace(parts[0])
+		if name == "" || name == "lo" {
+			continue
+		}
+		fields := strings.Fields(parts[1])
+		if len(fields) < 16 {
+			continue
+		}
+		rx, err := strconv.ParseUint(fields[0], 10, 64)
+		if err != nil {
+			continue
+		}
+		tx, err := strconv.ParseUint(fields[8], 10, 64)
+		if err != nil {
+			continue
+		}
+		rxTotal += rx
+		txTotal += tx
+	}
+	return rxTotal, txTotal, true
 }
 
 func (h *Handler) runtimeDatabaseHealth(ctx context.Context) runtimeDependencyStatus {
