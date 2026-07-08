@@ -80,8 +80,8 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Current active verification signal: PRD5 Batch 1G Trusted Evidence Context Intake
-fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+Current active verification signal: PRD5 Batch 1H Gateway Span Hierarchy fixed
+awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
 
 PRD4 is complete for the confirmed current scope. PRD5 must preserve the PRD4
 deferred-boundary decisions recorded here.
@@ -145,12 +145,25 @@ PRD5 Batch 1G:
 
 - Scope: default-off trusted evidence context intake for internal
   trace/session/actor/delegation propagation.
-- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Status: Canary PASS 11/11 in `docs/agent-workflows/VERIFY-RESULT.md`;
+  Sentinel merge reflected by `c701843` / PR #110.
 - Adds: `EVIDENCE_CONTEXT_TRUST_SECRET`, `X-UniRouter-Evidence-Auth` trust gate,
   bounded `X-UniRouter-*` evidence header parsing, trusted `Traceparent`
   fallback, trace/log structural writes for trusted `trace_id`,
   `parent_span_id`, `session_id`, `actor_*`, and `on_behalf_of`, plus
   source-event hashes that include those fields.
+- Does not add: migration, new route, frontend behavior, exporter/outbox,
+  read-only credential, public inbound header trust by default, raw payload
+  capture, X-Insight runtime dependency, or PRD4 matrix changes.
+
+PRD5 Batch 1H:
+
+- Scope: gateway span hierarchy for UniRouter-emitted request trace events.
+- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Adds: per-request in-memory span state, gateway root span assignment on the
+  first UniRouter trace event, trusted inbound parent preservation for the root
+  span, later UniRouter trace events parented to the gateway root span, and
+  source-event hashes that include the resulting `parent_span_id`.
 - Does not add: migration, new route, frontend behavior, exporter/outbox,
   read-only credential, public inbound header trust by default, raw payload
   capture, X-Insight runtime dependency, or PRD4 matrix changes.

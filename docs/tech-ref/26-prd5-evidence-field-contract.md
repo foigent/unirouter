@@ -2,9 +2,9 @@
 
 > Version: v0.1
 > Date: 2026-07-08
-> Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, and Batch 1F
-> Canary/Sentinel complete. Batch 1G trusted evidence context intake fixed
-> awaiting Canary.
+> Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, and Batch 1G
+> Canary/Sentinel complete. Batch 1H gateway span hierarchy fixed awaiting
+> Canary.
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > X-Insight response
 > `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-08-x-insight-prd5-integration-answers.md`
@@ -178,6 +178,18 @@ Batch 1G trusted evidence context intake:
   unsupported enum values rather than fabricating evidence.
 - Does not trust arbitrary public request headers by default.
 
+Batch 1H gateway span hierarchy:
+
+- Gateway request contexts carry an in-memory UniRouter span state.
+- The first UniRouter-emitted trace event for a request becomes the gateway root
+  span.
+- If a trusted inbound `parent_span_id` exists, it is stored as the parent of
+  that gateway root span.
+- Later UniRouter-emitted trace events in the same request use the gateway root
+  span as their `parent_span_id`.
+- This creates a queryable UniRouter-local request hierarchy without claiming a
+  full cross-system agent graph.
+
 ## Migration Strategy
 
 Batch 1B adds nullable/default fields first.
@@ -226,6 +238,9 @@ Implemented first slice:
   secret matches, gateway trace/log writes can populate `trace_id`,
   `parent_span_id`, `session_id`, `actor_*`, and `on_behalf_of` from sanitized
   internal context headers and include those fields in source-event hashes.
+- Batch 1H adds per-request gateway root span parenting for UniRouter-emitted
+  trace events and includes the resulting `parent_span_id` in trace
+  source-event hashes.
 
 ## Writer Behavior
 
@@ -240,6 +255,9 @@ directly:
 - trusted caller context: include `trace_id`, `parent_span_id`, `session_id`,
   `actor_*`, and `on_behalf_of` only when the configured evidence-context shared
   secret matches;
+- gateway span hierarchy: parent the first UniRouter trace event to a trusted
+  inbound parent when present, then parent later UniRouter trace events to that
+  gateway root span;
 - metadata safety evidence: include `capture_gap='redacted'` when metadata was
   intentionally dropped or truncated by UniRouter;
 - billing freeze/settle/cancel: `billing` plus decision/result where applicable;

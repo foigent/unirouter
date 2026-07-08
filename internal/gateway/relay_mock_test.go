@@ -510,6 +510,44 @@ func TestRecordTraceEvent_UsesTrustedEvidenceContext(t *testing.T) {
 	}
 }
 
+func TestRecordTraceEvent_ParentsEventsToGatewayRootSpan(t *testing.T) {
+	var inserts [][]any
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if !strings.Contains(sql, "INSERT INTO request_trace_events") {
+				return pgconn.CommandTag{}, nil
+			}
+			inserts = append(inserts, append([]any(nil), args...))
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	relay := newTestRelay(db, &mockBilling{})
+	relay.SetEvidenceContextTrustSecret("shared-secret-123456")
+	header := http.Header{}
+	header.Set(traceutil.EvidenceContextAuthHeader, "shared-secret-123456")
+	header.Set(traceutil.EvidenceContextTraceIDHeader, "trace-chain-1")
+	header.Set(traceutil.EvidenceContextParentSpanHeader, "incoming-parent-1")
+	ctx := context.WithValue(context.Background(), middleware.CtxOrgID, int64(1))
+	ctx = relay.contextWithTrustedEvidence(ctx, header)
+
+	relay.recordTraceEvent(ctx, "req-chain", "gateway.request.accepted", "gateway", "info", "company-chat", "company-chat", nil, http.StatusOK, 10, nil)
+	relay.recordTraceEvent(ctx, "req-chain", "routing.route_selected", "routing", "info", "company-chat", "company-chat", nil, http.StatusOK, 20, nil)
+
+	if len(inserts) != 2 {
+		t.Fatalf("expected two trace inserts, got %d", len(inserts))
+	}
+	rootSpanID, ok := inserts[0][17].(string)
+	if !ok || len(rootSpanID) != 16 {
+		t.Fatalf("expected generated root span ID, got %#v", inserts[0][17])
+	}
+	if inserts[0][16] != "trace-chain-1" || inserts[0][18] != "incoming-parent-1" {
+		t.Fatalf("expected first event to preserve trusted trace/parent, got %#v", inserts[0][16:19])
+	}
+	if inserts[1][16] != "trace-chain-1" || inserts[1][18] != rootSpanID {
+		t.Fatalf("expected second event to parent to gateway root span, got %#v root=%s", inserts[1][16:19], rootSpanID)
+	}
+}
+
 func TestRelayContextWithTrustedEvidence(t *testing.T) {
 	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{})
 	relay.SetEvidenceContextTrustSecret("shared-secret-123456")
@@ -520,6 +558,9 @@ func TestRelayContextWithTrustedEvidence(t *testing.T) {
 	ctx := relay.contextWithTrustedEvidence(context.Background(), header)
 	if got := traceutil.EvidenceFromContext(ctx); got.TraceID != "trace-internal-1" {
 		t.Fatalf("expected trusted trace id, got %#v", got)
+	}
+	if state, _ := ctx.Value(evidenceSpanStateKey{}).(*evidenceSpanState); state == nil {
+		t.Fatal("expected evidence span state on request context")
 	}
 }
 

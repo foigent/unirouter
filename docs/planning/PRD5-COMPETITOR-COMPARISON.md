@@ -1,8 +1,8 @@
 # PRD5 Competitor Comparison And Feature Catch-Up
 
 > Date: 2026-07-08
-> Status: Source-grounded PRD5 planning comparison with Batch 1G trusted
-> evidence context intake accepted as the current catch-up slice.
+> Status: Source-grounded PRD5 planning comparison with Batch 1H gateway span
+> hierarchy accepted as the current catch-up slice.
 > Purpose: compare UniRouter against adjacent gateway and observability systems,
 > then decide which gaps belong in UniRouter PRD5 versus X-Insight.
 
@@ -83,7 +83,7 @@ implementation because these projects move quickly.
 ## UniRouter Gaps To Catch Up In PRD5
 
 High priority, now partially accepted through Batch 1A/1B/1C, Batch 1D,
-Batch 1E, Batch 1F, and Batch 1G:
+Batch 1E, Batch 1F, Batch 1G, and Batch 1H:
 
 - explicit `trace_id`, `span_id`, `parent_span_id`, and `session_id` handling;
 - `schema_version`, `source_component`, `capture_mode`, and capture-gap model;
@@ -113,6 +113,12 @@ Accepted in Batch 1G:
 
 - default-off trusted evidence context intake for internal trace/session,
   actor/ref, and delegation propagation, gated by `EVIDENCE_CONTEXT_TRUST_SECRET`.
+
+Accepted in Batch 1H:
+
+- per-request gateway root span parenting for UniRouter-emitted trace events,
+  preserving trusted inbound parents for the root and parenting later UniRouter
+  spans to that root.
 
 Medium priority:
 
