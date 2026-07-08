@@ -1,34 +1,32 @@
-# VERIFY-RESULT.md - PRD5 Batch 1G Trusted Evidence Context Intake
+# VERIFY-RESULT.md - PRD5 Batch 1H Gateway Span Hierarchy
 
 **Verifier:** Canary
 **Date:** 2026-07-09
 **Signal:** `docs/agent-workflows/FIX-SIGNAL.md`
-**Result:** ✅ **PASS — 11/11**
+**Result:** ✅ **PASS — 10/10**
 
 ## Verification Summary
 
 | # | Instruction | Result | Evidence |
 |---|-------------|--------|----------|
-| 1 | VERIFY-RESULT.md records Batch 1F PASS 11/11; repo includes `e9670ad` / PR #109 | ✅ PASS | Previous VERIFY-RESULT.md records 11/11; `PRD5-ACCEPTANCE-MATRIX.md:50` references `e9670ad` / PR #109 |
-| 2 | Matrix: P5-F01–F07 + F13–F15 Canary passed; F08–F11 deferred; F12 planned; P5-F16 Fixed awaiting Canary | ✅ PASS | `PRD5-ACCEPTANCE-MATRIX.md:51` — P5-F16 = "Fixed awaiting Canary"; other rows unchanged |
-| 3 | PRD-Phase5 defines P5-F16; does not reopen PRD4 | ✅ PASS | `PRD-Phase5.md:337` defines P5-F16; PRD4 matrix unchanged (13 rows) |
-| 4 | Implementation plan: UniRouter can proceed independently through Batch 1G; non-goals listed | ✅ PASS | `PRD5-IMPLEMENTATION-PLAN.md:290` — "no blocking condition for Batch 1A through 1G"; Batch 1G non-goals listed |
-| 5 | Evidence field contract documents default-off trust gate and accepted headers | ✅ PASS | `26-prd5-evidence-field-contract.md:167-170` — disabled by default; requires `X-UniRouter-Evidence-Auth` match |
-| 6 | `.env.example`, `docker-compose.yml`, deployment-runbook document `EVIDENCE_CONTEXT_TRUST_SECRET` without instructing secrets in repo | ✅ PASS | `.env.example:80` — empty default; `deployment-runbook.md` — "不要写入 repo 或共享文档" |
-| 7 | `evidence_context.go` ignores inbound context with no secret or mismatched auth | ✅ PASS | `evidence_context.go:49-54` — returns empty if secret is empty OR `subtle.ConstantTimeCompare` fails |
-| 8 | Trusted context accepts sanitized trace/session/actor/delegation fields + `Traceparent` fallback | ✅ PASS | `evidence_context.go` — accepts `X-UniRouter-Trace-Id`, `Session-Id`, `Actor-Type/Ref`, `On-Behalf-Of`; falls back to W3C `Traceparent`; validates printable non-whitespace, max length, enum values |
-| 9 | relay.go and trace.go write trusted context to call-log/trace structural columns + source-event hashes | ✅ PASS | `relay.go` — injects via `ContextWithEvidence`, writes to call-log INSERT; `trace.go` — writes trusted fields to trace INSERT + hash structs |
-| 10 | No migration, new route, frontend, exporter, read-only credential, raw payload, X-Insight runtime dependency, public-header authority, or PRD4 change | ✅ PASS | This batch's diff: `evidence_context.go`, `evidence_context_test.go`, `config.go`, `config_test.go`, `main.go`, `relay.go`, `trace.go`, `relay_mock_test.go`, `.env.example`, `docker-compose.yml`, `deployment-runbook.md` + docs only |
-| 11 | All commands pass | ✅ PASS | See below |
+| 1 | VERIFY-RESULT.md records Batch 1G PASS 11/11; repo includes `c701843` / PR #110 | ✅ PASS | Previous VERIFY-RESULT.md records 11/11; `PRD5-ACCEPTANCE-MATRIX.md:51` references `c701843` / PR #110 |
+| 2 | Matrix: P5-F01–F07 + F13–F16 Canary passed; F08–F11 deferred; F12 planned; P5-F17 Fixed awaiting Canary | ✅ PASS | `PRD5-ACCEPTANCE-MATRIX.md:52` — P5-F17 = "Fixed awaiting Canary"; other rows unchanged |
+| 3 | PRD-Phase5 defines P5-F17; does not reopen PRD4 | ✅ PASS | `PRD-Phase5.md:371` defines P5-F17; PRD4 matrix unchanged (13 rows) |
+| 4 | Implementation plan: UniRouter can proceed independently through Batch 1H; non-goals listed | ✅ PASS | `PRD5-IMPLEMENTATION-PLAN.md:321` — "no blocking condition for Batch 1A through 1H"; Batch 1H non-goals listed |
+| 5 | Evidence field contract documents Batch 1H as UniRouter-local request hierarchy, not full cross-system graph | ✅ PASS | `26-prd5-evidence-field-contract.md:181-189` — "queryable UniRouter-local request hierarchy without claiming a full cross-system agent graph" |
+| 6 | relay.go attaches evidence span state to request contexts | ✅ PASS | `relay.go:125` — `return contextWithEvidenceSpanState(ctx)` called after `ContextWithEvidence` |
+| 7 | trace.go: first event = gateway root, preserves trusted inbound parent, later events parent to root | ✅ PASS | `trace.go:44-57` — `parentSpanForEvent`: if `state.rootSpanID == ""` → set root + return `trustedParentSpanID`; else → return `state.rootSpanID` |
+| 8 | Trace source-event hashes include `parent_span_id` | ✅ PASS | `trace.go:300` — `ParentSpanID` in hash struct |
+| 9 | No migration, new route, frontend, exporter, read-only credential, raw payload, X-Insight dependency, public-header authority, fabricated cross-system chain, or PRD4 change | ✅ PASS | This batch's diff: `trace.go`, `relay.go`, `relay_mock_test.go` + docs only |
+| 10 | All commands pass | ✅ PASS | See below |
 
 ## Command Results
 
 | Command | Result |
 |---------|--------|
-| `go test ... -run 'TestExtractTrustedEvidenceContext\|TestEvidenceContextRoundTrip\|TestValidate_InvalidRuntimeExposureConfig\|TestLoad_...\|TestRecord..._UsesTrustedEvidenceContext\|TestRelayContextWithTrustedEvidence'` | ✅ 10/10 PASS |
-| `go test ./internal/traceutil ./internal/config ./internal/gateway ./cmd/uniroute -count=1` | ✅ 4 packages PASS |
+| `go test ./internal/gateway -run 'TestRecordTraceEvent_...\|TestRelayContext...'` | ✅ 4/4 PASS |
+| `go test ./internal/gateway ./internal/traceutil ./cmd/uniroute -count=1` | ✅ 3 packages PASS |
 | `go test ./... -count=1` | ✅ All packages PASS |
-| `docker compose config` | ⏭️ SKIP (Docker CLI unavailable) |
 | `grep` for key terms | ✅ All expected references found |
 | `git diff --check` | ✅ Clean |
 
@@ -39,20 +37,19 @@
 
 ## Security Check
 
-- Default-off: no inbound evidence context trusted without configured secret ✅
-- `subtle.ConstantTimeCompare` for auth header matching (timing-safe) ✅
-- Secret minimum 16 bytes enforced by config validation ✅
-- No raw prompt/response capture ✅
-- No public headers trusted by default ✅
-- `.env.example` empty default; runbook warns against repo/shared-doc storage ✅
+- No fabricated cross-system agent/tool/business-chain facts ✅
+- No public-header authority by default ✅
+- Trusted inbound `parent_span_id` only accepted via evidence context trust gate (Batch 1G) ✅
+- No raw payload capture ✅
 
 ## Notes
 
-- `ExtractTrustedEvidenceContext` 使用 `crypto/subtle.ConstantTimeCompare` 防止时序攻击。
-- Config validation 要求 secret ≥ 16 bytes，空值时功能完全禁用。
-- 支持 W3C `Traceparent` 作为 fallback trace/parent-span 来源。
-- 所有 header 值经过 printable non-whitespace 验证和长度截断。
+- `evidenceSpanState` 使用 mutex 保护并发安全。
+- 第一个 UniRouter trace event 成为 gateway root span，后续 event 的 `parent_span_id` 指向 root。
+- 如果有 trusted inbound `parent_span_id`，它作为 root span 的 parent（形成链：inbound → root → later events）。
+- 如果没有 trusted parent，root span 的 `parent_span_id` 为 null。
+- 这是 UniRouter-local 的 request hierarchy，不声称是跨系统 agent graph。
 
 ## Conclusion
 
-**PRD5 Batch 1G: PASS 11/11.** PRD4 边界完整，evidence context 默认禁用且仅在 secret 匹配时启用，安全验证正确，无越界变更。可以进入 Sentinel commit 流程。
+**PRD5 Batch 1H: PASS 10/10.** PRD4 边界完整，span hierarchy 逻辑正确（root span + trusted parent + child parenting），source-event hash 包含 `parent_span_id`，无越界变更。可以进入 Sentinel commit 流程。

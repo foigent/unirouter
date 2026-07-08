@@ -2,10 +2,10 @@
 
 > Version: Phase 5 Active Scope Draft
 > Date: 2026-07-08
-> Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, and Batch 1F
-> Canary/Sentinel complete. Batch 1G trusted evidence context intake fixed
-> awaiting Canary. PRD4 remains complete for the confirmed current scope and is
-> not reopened by PRD5.
+> Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, and Batch 1G
+> Canary/Sentinel complete. Batch 1H gateway span hierarchy fixed awaiting
+> Canary. PRD4 remains complete for the confirmed current scope and is not
+> reopened by PRD5.
 > Source: `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, X-Insight shared-folder
 > responses on 2026-07-08, current UniRouter code/schema review, and official
@@ -87,6 +87,7 @@ PRD5 must not:
 | P5-F14 | Event Capture Gap Emission | Mark trace events as redacted when UniRouter drops or truncates trace metadata during safe evidence capture |
 | P5-F15 | Payload Capture Mode Configuration | Expose restricted runtime configuration for metadata-only or disabled payload evidence state without enabling raw capture |
 | P5-F16 | Trusted Evidence Context Intake | Accept trace/session/actor/delegation context only from explicitly trusted internal callers with a shared secret |
+| P5-F17 | Gateway Span Hierarchy | Parent UniRouter-emitted trace events to a per-request gateway root span so execution chains are queryable without X-Insight dependency |
 
 ### P2
 
@@ -210,9 +211,12 @@ restricted runtime setting with only `metadata_only` and `disabled` active.
 Batch 1G adds explicitly trusted evidence context intake for internal callers
 using `EVIDENCE_CONTEXT_TRUST_SECRET`; it can populate trusted `trace_id`,
 `parent_span_id`, `session_id`, `actor_*`, and `on_behalf_of` fields when the
-shared secret matches. The trace API returns the new fields through the existing
-route and RBAC path. Batch 1B/1D/1F/1G do not add raw payload capture,
-exporter/outbox, frontend behavior, or new API routes.
+shared secret matches. Batch 1H makes UniRouter-emitted trace events within the
+same request share a gateway root span: the first recorded UniRouter span
+preserves a trusted inbound parent when present, and later UniRouter spans parent
+to that root. The trace API returns the new fields through the existing route and
+RBAC path. Batch 1B/1D/1F/1G/1H do not add raw payload capture, exporter/outbox,
+frontend behavior, or new API routes.
 
 ### P5-F06: Lightweight Trace UI Boundary
 
@@ -364,6 +368,33 @@ Acceptance:
 - No migration, API route, frontend behavior, exporter/outbox, read-only DB
   access, raw payload capture, or PRD4 matrix change is introduced.
 
+### P5-F17: Gateway Span Hierarchy
+
+Requirements:
+
+- Create a per-request UniRouter span state for gateway-emitted trace events.
+- Treat the first UniRouter-emitted trace event in a request as the gateway root
+  span.
+- If a trusted inbound `parent_span_id` exists, persist it as the parent of the
+  gateway root span.
+- Parent subsequent UniRouter-emitted trace events in the same request to the
+  gateway root span.
+- Preserve the existing `trace_id` behavior: trusted inbound trace ID when
+  present, otherwise the request ID.
+- Include the resulting `parent_span_id` in source-event hashes.
+
+Acceptance:
+
+- A request with a trusted inbound parent records the first UniRouter span under
+  that parent and later UniRouter spans under the gateway root span.
+- A request without trusted inbound context still produces a stable per-request
+  UniRouter span hierarchy.
+- Existing trace/log writes, request handling, routing, billing, provider
+  dispatch, response payloads, API routes, and frontend behavior remain
+  unchanged.
+- No migration, exporter/outbox, read-only DB access, raw payload capture,
+  X-Insight runtime dependency, or PRD4 matrix change is introduced.
+
 ### P5-F09: Cursor Export API Or Outbox
 
 Requirements:
@@ -406,10 +437,11 @@ PRD5 should proceed in independently verifiable batches:
    `metadata_only` and `disabled`.
 7. Batch 1G: trusted evidence context intake for internal
    trace/session/actor/delegation propagation.
-8. Later payload policy metadata and evidence references, with future raw
+8. Batch 1H: gateway span hierarchy for UniRouter-emitted request trace events.
+9. Later payload policy metadata and evidence references, with future raw
    payload modes gated behind enterprise opt-in.
-9. Batch 1H: read-only view/export decision after X-Insight Gate A evidence.
-10. Batch 1I+: target upstream/SSO evidence or larger backlog items only after
+10. Batch 1I: read-only view/export decision after X-Insight Gate A evidence.
+11. Batch 1J+: target upstream/SSO evidence or larger backlog items only after
    their prerequisites are explicitly met.
 
 ## 6. External Source Refresh

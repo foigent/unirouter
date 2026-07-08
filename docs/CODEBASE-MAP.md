@@ -146,6 +146,15 @@ which makes UniRouter ignore inbound evidence context headers. When configured,
 fallback. Trace/log writers persist those fields into existing structural
 columns and include them in source-event hashes.
 
+PRD5 Batch 1H gateway span hierarchy is implemented in
+`internal/gateway/trace.go`, `internal/gateway/relay.go`, and focused gateway
+tests. Gateway request contexts carry an in-memory span state: the first
+UniRouter-emitted trace event becomes the request gateway root span, preserves a
+trusted inbound parent span when present, and later UniRouter trace events parent
+to the gateway root. This uses existing `parent_span_id` fields and does not add
+a migration, route, frontend behavior, exporter/outbox, raw payload capture, or
+X-Insight runtime dependency.
+
 Usage analytics is implemented in `internal/admin/prd2_product_handlers.go` and now supports project/key/model/provider/channel/status/source filters plus PRD4 `scope=my`, `owner_user_id`, `key_type`, `group_by=owner`, and `group_by=key_type`.
 
 API key quota visibility keeps `api_keys.qps_limit` as the compatibility

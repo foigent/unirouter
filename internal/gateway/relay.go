@@ -121,7 +121,8 @@ func (relay *Relay) contextWithTrustedEvidence(ctx context.Context, header http.
 	if relay == nil {
 		return ctx
 	}
-	return traceutil.ContextWithEvidence(ctx, traceutil.ExtractTrustedEvidenceContext(header, relay.evidenceContextTrustSecret))
+	ctx = traceutil.ContextWithEvidence(ctx, traceutil.ExtractTrustedEvidenceContext(header, relay.evidenceContextTrustSecret))
+	return contextWithEvidenceSpanState(ctx)
 }
 
 var upstreamRequestIDHeaderNames = []string{

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/uniroute/unirouter/internal/logger"
@@ -22,6 +23,37 @@ const (
 	evidencePayloadMetadata    = traceutil.PayloadCaptureModeMetadataOnly
 	evidenceTraceRefSourceType = "unirouter"
 )
+
+type evidenceSpanStateKey struct{}
+
+type evidenceSpanState struct {
+	mu         sync.Mutex
+	rootSpanID string
+}
+
+func contextWithEvidenceSpanState(ctx context.Context) context.Context {
+	if ctx == nil {
+		return ctx
+	}
+	if _, ok := ctx.Value(evidenceSpanStateKey{}).(*evidenceSpanState); ok {
+		return ctx
+	}
+	return context.WithValue(ctx, evidenceSpanStateKey{}, &evidenceSpanState{})
+}
+
+func parentSpanForEvent(ctx context.Context, spanID, trustedParentSpanID string) string {
+	state, _ := ctx.Value(evidenceSpanStateKey{}).(*evidenceSpanState)
+	if state == nil {
+		return trustedParentSpanID
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.rootSpanID == "" {
+		state.rootSpanID = spanID
+		return trustedParentSpanID
+	}
+	return state.rootSpanID
+}
 
 func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, stage, severity, model, requestedModel string, route *RouteResult, statusCode, latencyMs int, metadata map[string]interface{}, upstreamRequestIDs ...string) {
 	if relay == nil || relay.db == nil || strings.TrimSpace(requestID) == "" {
@@ -100,7 +132,7 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 		traceID = evidenceContext.TraceID
 	}
 	spanID := newEvidenceID()
-	parentSpanID := evidenceContext.ParentSpanID
+	parentSpanID := parentSpanForEvent(ctx, spanID, evidenceContext.ParentSpanID)
 	sourceComponent := sourceComponentForTraceStage(stage)
 	evidenceRef := fmt.Sprintf("%s:request_trace_events:request_id:%s:span:%s", evidenceTraceRefSourceType, requestID, spanID)
 	upstreamRequestID := ""
