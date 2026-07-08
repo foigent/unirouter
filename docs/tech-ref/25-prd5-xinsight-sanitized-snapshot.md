@@ -1,8 +1,9 @@
 # PRD5 X-Insight Sanitized Snapshot
 
-> Version: v0.1
-> Date: 2026-07-08
-> Status: Batch 1A/1B fixed awaiting Canary
+> Version: v0.2
+> Date: 2026-07-09
+> Status: Batch 1A/1B Canary/Sentinel complete; Batch 1K handoff-note support
+> fixed awaiting Canary
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`
 
@@ -35,10 +36,19 @@ go run scripts/prd5_xinsight_snapshot.go \
   --request-id req-stream-001 \
   --scenario success=req-success-001 \
   --scenario stream=req-stream-001 \
-  --output output/prd5/xinsight/gate-a-snapshot.json
+  --output output/prd5/xinsight/gate-a-snapshot.json \
+  --handoff-note output/prd5/xinsight/gate-a-snapshot-handoff.md
 ```
 
 Use `--overwrite` only when intentionally replacing a local generated artifact.
+
+The optional `--handoff-note` path writes a Markdown note after the snapshot JSON
+is written successfully. It records generated date, source instance, schema
+version, selected request IDs, scenario labels, counts, safety confirmation,
+snapshot output path, and command shape without the DSN.
+
+`--handoff-note -` is rejected so JSON and Markdown output cannot be interleaved
+on stdout.
 
 ## Selection Rule
 
@@ -144,9 +154,20 @@ If a snapshot is placed there, add a short Markdown note with:
 - generation date;
 - source instance label;
 - selected request IDs or scenario labels;
+- top-level counts and safety confirmation;
+- snapshot output path;
 - command shape without DSN;
 - confirmation that raw prompt/response, credentials, raw IPs, and raw upstream
   errors are absent.
+
+Prefer generating this note with:
+
+```bash
+--handoff-note "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/evidence/<snapshot-name>-handoff.md"
+```
+
+Do not paste DSNs, credentials, tokens, raw prompts, raw responses, raw IP
+addresses, or raw upstream errors into the handoff note.
 
 ## Gate Conditions For Later Read-Only Access
 

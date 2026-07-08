@@ -75,7 +75,7 @@ OpenAPI snapshot: `docs/tech-ref/05-openapi-spec.yaml` is the current route-leve
 | `scripts/prd4-real-sso-smoke.sh` | PRD4 Batch 1I wrapper for real SSO evidence harness. `--preflight` is safe without target credentials and does not drive a browser, call an IdP, or read DB; real target execution is deferred to PRD5 |
 | `scripts/prd4_real_sso_smoke.mjs` | Real SSO browser runner for future Logto or another enterprise OIDC target evidence; checks OIDC config/discovery, browser login, `/me`, audit mapping, and sanitized JSON evidence when PRD5 target execution is reopened |
 | `scripts/prd4_real_sso_audit_check.go` | Guarded read-only DB evidence check for OIDC user mapping and `login.oidc` audit redaction |
-| `scripts/prd5_xinsight_snapshot.go` | PRD5 Batch 1A read-only sanitized snapshot generator for explicit `request_id` selections from `call_logs` and `request_trace_events`; no broad table export, raw prompt/response, API key, raw IP, or raw upstream error output |
+| `scripts/prd5_xinsight_snapshot.go` | PRD5 Batch 1A read-only sanitized snapshot generator for explicit `request_id` selections from `call_logs` and `request_trace_events`; Batch 1K adds optional DSN-free Markdown handoff-note output; no broad table export, raw prompt/response, API key, raw IP, raw upstream error, DSN, or credential output |
 
 ## Frontend Map
 
@@ -170,6 +170,14 @@ Provider response trace events now write `capture_gap=provider_not_returned`
 when no sanitized provider-returned `upstream_request_id` is available. Existing
 returned upstream request IDs still populate `upstream_request_id`, and existing
 metadata redaction gaps keep `capture_gap=redacted`.
+
+PRD5 Batch 1K Gate A snapshot handoff-note support is implemented in
+`scripts/prd5_xinsight_snapshot.go`. The snapshot tool can write an optional
+Markdown handoff note with selected request IDs, scenario labels, counts, safety
+confirmation, snapshot output path, and command shape without DSN. It rejects
+stdout for note output, reuses `--overwrite`, and does not change runtime
+request handling, routes, frontend behavior, migrations, read-only credential
+handoff, exporter/outbox, or X-Insight runtime dependency.
 
 Usage analytics is implemented in `internal/admin/prd2_product_handlers.go` and now supports project/key/model/provider/channel/status/source filters plus PRD4 `scope=my`, `owner_user_id`, `key_type`, `group_by=owner`, and `group_by=key_type`.
 

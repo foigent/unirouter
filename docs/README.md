@@ -4,7 +4,7 @@
 - [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — Agent 接手项目的第一阅读入口
 - [ops/CURRENT-STATUS.md](ops/CURRENT-STATUS.md) — 当前项目真实状态（进度、测试、部署、缺口）
 - [PRD-Phase5.md](PRD-Phase5.md) — PRD5 当前正式范围：X-Insight evidence readiness、结构字段、snapshot、payload 边界、轻量 trace UI 和竞品追赶
-- [ops/PRD5-ACCEPTANCE-MATRIX.md](ops/PRD5-ACCEPTANCE-MATRIX.md) — PRD5 验收矩阵；Batch 1A/1B/1C、Batch 1D、Batch 1E、Batch 1F、Batch 1G、Batch 1H 和 Batch 1I Canary/Sentinel complete，Batch 1J fixed awaiting Canary
+- [ops/PRD5-ACCEPTANCE-MATRIX.md](ops/PRD5-ACCEPTANCE-MATRIX.md) — PRD5 验收矩阵；Batch 1A/1B/1C、Batch 1D、Batch 1E、Batch 1F、Batch 1G、Batch 1H、Batch 1I 和 Batch 1J Canary/Sentinel complete，Batch 1K fixed awaiting Canary
 - [planning/PRD5-IMPLEMENTATION-PLAN.md](planning/PRD5-IMPLEMENTATION-PLAN.md) — PRD5 分批实施计划和 UniRouter/X-Insight 并行边界
 - [planning/PRD5-COMPETITOR-COMPARISON.md](planning/PRD5-COMPETITOR-COMPARISON.md) — UniRouter 与 LiteLLM/New API/one-api/Langfuse/Helicone 对比和 PRD5 追赶项
 - [PRD-Phase4.md](PRD-Phase4.md) — PRD4 已按当前确认范围完成；真实上游/真实 SSO target E2E 等延后到 PRD5
@@ -16,7 +16,7 @@
 - [PRD-Phase3.md](PRD-Phase3.md) — 已完成 PRD3 一致性、语义、契约和架构清理范围
 - [planning/PRD3-CONSISTENCY-AUDIT.md](planning/PRD3-CONSISTENCY-AUDIT.md) — PRD3 范围审计和 PRD1→PRD2 遗留问题梳理
 - [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 当前未关闭问题列表
-- [agent-workflows/FIX-SIGNAL.md](agent-workflows/FIX-SIGNAL.md) — 当前 Codex 验证信号：PRD5 Batch 1J Provider Upstream Capture Gap fixed awaiting Canary
+- [agent-workflows/FIX-SIGNAL.md](agent-workflows/FIX-SIGNAL.md) — 当前 Codex 验证信号：PRD5 Batch 1K Gate A Snapshot Handoff Note fixed awaiting Canary
 - [agent-workflows/VERIFY-RESULT.md](agent-workflows/VERIFY-RESULT.md) — 最新 Canary 验收结果；PRD5 Batch 1I PASS 11/11
 - [CODEBASE-MAP.md](CODEBASE-MAP.md) — 代码结构、路由、数据、测试、部署地图
 - [DOC-INVENTORY.md](DOC-INVENTORY.md) — 文档清单与当前/冻结/历史/候选边界
@@ -44,7 +44,7 @@
 - [tech-ref/22-prd4-plungein-port-contract.md](tech-ref/22-prd4-plungein-port-contract.md) — PRD4 PlungeIn Observe/Act/Enrich/Decide/Mutate 端口边界和 runtime plugin 延后契约
 - [tech-ref/23-prd4-real-upstream-evidence.md](tech-ref/23-prd4-real-upstream-evidence.md) — PRD4 真实上游证据 harness、凭证门控和 PRD5 目标环境验收边界
 - [tech-ref/24-prd4-real-sso-evidence.md](tech-ref/24-prd4-real-sso-evidence.md) — PRD4 真实 SSO/Logto/OIDC 证据 harness、凭证门控和 PRD5 目标环境验收边界
-- [tech-ref/25-prd5-xinsight-sanitized-snapshot.md](tech-ref/25-prd5-xinsight-sanitized-snapshot.md) — PRD5 X-Insight Gate A sanitized snapshot 工具、输出合同和只读访问门槛
+- [tech-ref/25-prd5-xinsight-sanitized-snapshot.md](tech-ref/25-prd5-xinsight-sanitized-snapshot.md) — PRD5 X-Insight Gate A sanitized snapshot 工具、handoff note、输出合同和只读访问门槛
 - [tech-ref/26-prd5-evidence-field-contract.md](tech-ref/26-prd5-evidence-field-contract.md) — PRD5 trace/span/source/capture/decision/actor/payload evidence 字段合同
 
 ## 工程治理

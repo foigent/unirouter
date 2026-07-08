@@ -190,6 +190,7 @@ func runPRD5Snapshot(args []string) error {
 	var scenarioFlags repeatedFlag
 	var requestIDsCSV string
 	var outputPath string
+	var handoffNotePath string
 	var dsnEnv string
 	var sourceInstance string
 	var overwrite bool
@@ -198,6 +199,7 @@ func runPRD5Snapshot(args []string) error {
 	fs.StringVar(&requestIDsCSV, "request-ids", "", "comma-separated request_id list")
 	fs.Var(&scenarioFlags, "scenario", "label=request_id scenario marker; repeat for multiple scenarios")
 	fs.StringVar(&outputPath, "output", "-", "output JSON path, or - for stdout")
+	fs.StringVar(&handoffNotePath, "handoff-note", "", "optional Markdown handoff note path; DSN and credentials are never written")
 	fs.StringVar(&dsnEnv, "dsn-env", "UNIROUTE_PRD5_SNAPSHOT_DSN", "environment variable containing the read-only Postgres DSN; falls back to DB_DSN")
 	fs.StringVar(&sourceInstance, "source-instance", "local-controlled", "non-secret source instance label used in source_ref")
 	fs.BoolVar(&overwrite, "overwrite", false, "overwrite output path if it already exists")
@@ -218,6 +220,10 @@ func runPRD5Snapshot(args []string) error {
 	}
 	if err := validateScenarios(requestIDs, scenarios); err != nil {
 		return err
+	}
+	handoffNotePath = strings.TrimSpace(handoffNotePath)
+	if handoffNotePath == "-" {
+		return errors.New("--handoff-note must be a Markdown file path, not stdout")
 	}
 
 	dsn := strings.TrimSpace(os.Getenv(dsnEnv))
@@ -245,7 +251,13 @@ func runPRD5Snapshot(args []string) error {
 		return err
 	}
 
-	return writeSnapshot(outputPath, overwrite, snapshot)
+	if err := writeSnapshot(outputPath, overwrite, snapshot); err != nil {
+		return err
+	}
+	if handoffNotePath != "" {
+		return writeHandoffNote(handoffNotePath, overwrite, outputPath, snapshot)
+	}
+	return nil
 }
 
 func loadSnapshot(ctx context.Context, db *sql.DB, sourceInstance string, requestIDs []string, scenarios []snapshotScenario) (snapshotFile, error) {
@@ -664,6 +676,112 @@ func writeSnapshot(outputPath string, overwrite bool, snapshot snapshotFile) err
 		return err
 	}
 	return nil
+}
+
+func writeHandoffNote(notePath string, overwrite bool, snapshotOutputPath string, snapshot snapshotFile) error {
+	parent := filepath.Dir(notePath)
+	if parent != "." {
+		if err := os.MkdirAll(parent, 0o700); err != nil {
+			return err
+		}
+	}
+	flags := os.O_WRONLY | os.O_CREATE
+	if overwrite {
+		flags |= os.O_TRUNC
+	} else {
+		flags |= os.O_EXCL
+	}
+	f, err := os.OpenFile(notePath, flags, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	_, err = f.WriteString(formatHandoffNote(snapshotOutputPath, notePath, overwrite, snapshot))
+	return err
+}
+
+func formatHandoffNote(snapshotOutputPath string, notePath string, overwrite bool, snapshot snapshotFile) string {
+	var b strings.Builder
+	b.WriteString("# PRD5 X-Insight Snapshot Handoff Note\n\n")
+	b.WriteString("Status: Generated\n")
+	b.WriteString(fmt.Sprintf("Generated At: %s\n", snapshot.GeneratedAt))
+	b.WriteString(fmt.Sprintf("Source: %s\n", snapshot.Source))
+	b.WriteString(fmt.Sprintf("Source Instance: %s\n", snapshot.SourceInstance))
+	b.WriteString(fmt.Sprintf("Schema Version: %s\n", snapshot.SchemaVersion))
+	if snapshotOutputPath == "-" {
+		b.WriteString("Snapshot Output: stdout\n")
+	} else {
+		b.WriteString(fmt.Sprintf("Snapshot Output: %s\n", snapshotOutputPath))
+	}
+	b.WriteString(fmt.Sprintf("Selection Mode: %s\n", snapshot.Safety.SelectionMode))
+	b.WriteString("\n## Counts\n\n")
+	b.WriteString("| Field | Count |\n")
+	b.WriteString("| --- | ---: |\n")
+	b.WriteString(fmt.Sprintf("| requested_request_ids | %d |\n", snapshot.Counts.RequestedRequestIDs))
+	b.WriteString(fmt.Sprintf("| call_logs | %d |\n", snapshot.Counts.CallLogs))
+	b.WriteString(fmt.Sprintf("| request_trace_events | %d |\n", snapshot.Counts.TraceEvents))
+	b.WriteString(fmt.Sprintf("| capture_gaps | %d |\n", snapshot.Counts.CaptureGaps))
+
+	b.WriteString("\n## Selected Request IDs\n\n")
+	for _, requestID := range snapshot.RequestIDs {
+		b.WriteString(fmt.Sprintf("- `%s`\n", requestID))
+	}
+	if len(snapshot.RequestIDs) == 0 {
+		b.WriteString("- none\n")
+	}
+
+	b.WriteString("\n## Scenarios\n\n")
+	if len(snapshot.Scenarios) == 0 {
+		b.WriteString("No scenario labels were provided.\n")
+	} else {
+		b.WriteString("| Label | Request ID |\n")
+		b.WriteString("| --- | --- |\n")
+		for _, scenario := range snapshot.Scenarios {
+			b.WriteString(fmt.Sprintf("| `%s` | `%s` |\n", scenario.Label, scenario.RequestID))
+		}
+	}
+
+	b.WriteString("\n## Safety Confirmation\n\n")
+	b.WriteString(fmt.Sprintf("- Raw prompts included: `%t`\n", snapshot.Safety.RawPromptsIncluded))
+	b.WriteString(fmt.Sprintf("- Raw responses included: `%t`\n", snapshot.Safety.RawResponsesIncluded))
+	b.WriteString(fmt.Sprintf("- API keys included: `%t`\n", snapshot.Safety.APIKeysIncluded))
+	b.WriteString(fmt.Sprintf("- IP handling: %s\n", snapshot.Safety.IPHandling))
+	b.WriteString(fmt.Sprintf("- Error handling: %s\n", snapshot.Safety.ErrorHandling))
+	b.WriteString(fmt.Sprintf("- Metadata handling: %s\n", snapshot.Safety.MetadataHandling))
+	b.WriteString("- DSN, credentials, tokens, raw prompts, raw responses, raw IP addresses, and raw upstream error text are intentionally omitted from this note.\n")
+
+	b.WriteString("\n## Command Shape Without DSN\n\n")
+	b.WriteString("Set `UNIROUTE_PRD5_SNAPSHOT_DSN` out of band. Do not write the DSN to the shared folder.\n\n")
+	b.WriteString("```bash\n")
+	b.WriteString("UNIROUTE_PRD5_SNAPSHOT_DSN=<read-only postgres dsn> \\\n")
+	b.WriteString("go run scripts/prd5_xinsight_snapshot.go \\\n")
+	b.WriteString(fmt.Sprintf("  --source-instance %s \\\n", shellQuote(snapshot.SourceInstance)))
+	for _, requestID := range snapshot.RequestIDs {
+		b.WriteString(fmt.Sprintf("  --request-id %s \\\n", shellQuote(requestID)))
+	}
+	for _, scenario := range snapshot.Scenarios {
+		b.WriteString(fmt.Sprintf("  --scenario %s \\\n", shellQuote(scenario.Label+"="+scenario.RequestID)))
+	}
+	if snapshotOutputPath != "" {
+		b.WriteString(fmt.Sprintf("  --output %s \\\n", shellQuote(snapshotOutputPath)))
+	}
+	b.WriteString(fmt.Sprintf("  --handoff-note %s", shellQuote(notePath)))
+	if overwrite {
+		b.WriteString(" \\\n  --overwrite")
+	}
+	b.WriteString("\n```\n")
+
+	b.WriteString("\n## X-Insight Gate A Use\n\n")
+	b.WriteString("X-Insight should run discovery against the snapshot first, compare the report with the PRD5 snapshot contract, and treat missing `call_logs` or `request_trace_events` joins as capture gaps rather than inferred data.\n")
+	return b.String()
+}
+
+func shellQuote(value string) string {
+	if value == "" {
+		return "''"
+	}
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
 func normalizedRequestIDs(flags repeatedFlag, csv string) []string {
