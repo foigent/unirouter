@@ -2,8 +2,8 @@
 
 > Date: 2026-07-09
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
-> Batch 1I, Batch 1J, and Batch 1K Canary/Sentinel complete. Batch 1L component
-> span refinement fixed awaiting Canary.
+> Batch 1I, Batch 1J, Batch 1K, and Batch 1L Canary/Sentinel complete. Batch
+> 1M provider failure capture gaps fixed awaiting Canary.
 > Scope owner: UniRouter. X-Insight remains a separate project and owns broader
 > observability/governance product surfaces.
 
@@ -369,7 +369,7 @@ Risk: R3 because it changes gateway trace evidence parent-span values and
 source-event hashes, but it does not change routing, billing, provider
 dispatch, response payloads, API routes, frontend behavior, or DB schema.
 
-Status: fixed awaiting Canary.
+Status: Canary/Sentinel complete (`ffebf83` / PR #115).
 
 Implemented in this round:
 
@@ -390,6 +390,42 @@ Non-goals:
 - no raw prompt/response capture;
 - no X-Insight runtime dependency;
 - no cross-system agent/tool/business graph inference;
+- no PRD4 matrix/status change.
+
+### Batch 1M: Provider Failure Capture Gaps
+
+Risk: R3 because it changes gateway trace evidence `capture_gap` values and
+source-event hashes for provider failure events, but it does not change routing,
+billing, provider dispatch, response payloads, API routes, frontend behavior, or
+DB schema.
+
+Status: fixed awaiting Canary.
+
+Implemented in this round:
+
+- add `capture_gap=not_available_from_source` for provider failure trace events
+  that happen before an upstream provider response source exists;
+- keep `capture_gap=provider_not_returned` for provider response accepted or
+  rejected events when a response exists but no usable upstream request ID is
+  returned;
+- preserve `capture_gap=redacted` priority when metadata sanitization already
+  recorded a redaction gap;
+- pass available embeddings upstream request IDs into
+  `provider.response_parse_failed` trace evidence so parse failures do not
+  falsely look source-unavailable when the provider returned an ID;
+- add focused gateway coverage for provider failure gaps and redaction priority;
+- publish a shared X-Insight contract for the provider failure gap semantics.
+
+Non-goals:
+
+- no new migration;
+- no new API route;
+- no frontend behavior change;
+- no exporter/outbox;
+- no read-only DB/view credential handoff;
+- no raw prompt/response capture;
+- no X-Insight runtime dependency;
+- no provider dispatch semantic change;
 - no PRD4 matrix/status change.
 
 ### Later Payload Policy Modes
@@ -448,7 +484,7 @@ Use existing PRD4 harnesses, but record target evidence under PRD5.
 
 ## Current Blocking Conditions
 
-There is no blocking condition for UniRouter Batch 1A through Batch 1L.
+There is no blocking condition for UniRouter Batch 1A through Batch 1M.
 
 These later actions are gated:
 

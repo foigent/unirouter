@@ -1285,7 +1285,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		relay.billing.Cancel(ctx, requestID, orgID)
 		relay.recordTraceEvent(ctx, requestID, "provider.response_parse_failed", "provider", "error", req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
 			"failure_kind": "response_parse",
-		})
+		}, upstreamRequestID)
 		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to parse upstream response")
 		return
 	}
