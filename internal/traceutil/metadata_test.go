@@ -63,3 +63,21 @@ func TestSanitizeMetadataWithGap(t *testing.T) {
 		t.Fatalf("expected unsupported metadata shape to be redacted, got %#v", metadata)
 	}
 }
+
+func TestSanitizeMetadata_PayloadPolicyFields(t *testing.T) {
+	metadata, gap := SanitizeMetadataWithGap(map[string]interface{}{
+		"payload_capture_mode":  "metadata_only",
+		"payload_policy_reason": "payload.metadata_only",
+		"payload_ref_present":   false,
+		"raw_payload_stored":    false,
+	})
+	if gap != "" {
+		t.Fatalf("expected no capture gap for payload policy metadata, got %q", gap)
+	}
+	if metadata["payload_capture_mode"] != "metadata_only" || metadata["payload_policy_reason"] != "payload.metadata_only" {
+		t.Fatalf("expected payload policy metadata to remain, got %#v", metadata)
+	}
+	if metadata["payload_ref_present"] != false || metadata["raw_payload_stored"] != false {
+		t.Fatalf("expected payload policy booleans to remain, got %#v", metadata)
+	}
+}

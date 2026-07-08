@@ -1,17 +1,18 @@
 # PRD5 Acceptance Matrix
 
 > Date: 2026-07-08
-> Status: PRD5 Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, and Batch 1G
-> Canary/Sentinel complete; Batch 1H gateway span hierarchy fixed awaiting
-> Canary. PRD4 remains complete for the confirmed current scope and is not
-> reopened.
+> Status: PRD5 Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G,
+> and Batch 1H Canary/Sentinel complete; Batch 1I payload policy decision
+> evidence fixed awaiting Canary. PRD4 remains complete for the confirmed
+> current scope and is not reopened.
 > Source: `docs/PRD-Phase5.md`, `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, current repo/code review,
 > X-Insight shared-folder responses, PRD5 Batch 1A/1B/1C implementation
 > artifacts, PRD5 Batch 1D upstream request correlation changes, PRD5 Batch 1E
 > event capture-gap emission changes, PRD5 Batch 1F payload capture mode
 > configuration changes, PRD5 Batch 1G trusted evidence context intake changes,
-> and PRD5 Batch 1H gateway span hierarchy changes.
+> PRD5 Batch 1H gateway span hierarchy changes, and PRD5 Batch 1I payload
+> policy decision evidence changes.
 
 ## Status Values
 
@@ -49,7 +50,25 @@ actual result, and rollback or cleanup note.
 | P5-F14 | Event Capture Gap Emission | Canary passed | Trace events record `capture_gap='redacted'` when UniRouter intentionally drops, shape-rejects, or truncates trace metadata during safe evidence capture | Canary PASS 11/11 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `a19830f` / PR #108 | Batch 1E code-only evidence enrichment; no migration, new route, frontend behavior, exporter/outbox, raw payload capture, fabricated session/delegation facts, or PRD4 matrix change |
 | P5-F15 | Payload Capture Mode Configuration | Canary passed | `PAYLOAD_CAPTURE_MODE` defaults to `metadata_only`, allows only `metadata_only` and `disabled`, rejects unsupported modes, and writes the configured mode to trace/log evidence plus source-event hashes | Canary PASS 11/11 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `e9670ad` / PR #109 | Batch 1F restricted runtime config; no migration, new route, frontend behavior, exporter/outbox, raw prompt/response capture, new payload object store, or PRD4 matrix change |
 | P5-F16 | Trusted Evidence Context Intake | Canary passed | Inbound trace/session/actor/delegation context is ignored by default, accepted only when `EVIDENCE_CONTEXT_TRUST_SECRET` is configured and `X-UniRouter-Evidence-Auth` matches, sanitized before persistence, and written to existing trace/log structural fields plus source-event hashes | Canary PASS 11/11 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `c701843` / PR #110 | Batch 1G trusted internal context only; no migration, new route, frontend behavior, exporter/outbox, raw payload capture, X-Insight runtime dependency, or PRD4 matrix change |
-| P5-F17 | Gateway Span Hierarchy | Fixed awaiting Canary | UniRouter-emitted trace events in one request share a gateway root span; the first span preserves a trusted inbound parent when present, and later spans parent to the gateway root | Focused gateway tests, source review, docs grep, `git diff --check` | Batch 1H code-only evidence hierarchy; no migration, new route, frontend behavior, exporter/outbox, raw payload capture, X-Insight runtime dependency, or PRD4 matrix change |
+| P5-F17 | Gateway Span Hierarchy | Canary passed | UniRouter-emitted trace events in one request share a gateway root span; the first span preserves a trusted inbound parent when present, and later spans parent to the gateway root | Canary PASS 10/10 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `61f5610` / PR #111 | Batch 1H code-only evidence hierarchy; no migration, new route, frontend behavior, exporter/outbox, raw payload capture, X-Insight runtime dependency, or PRD4 matrix change |
+| P5-F18 | Payload Policy Decision Evidence | Fixed awaiting Canary | Chat and embeddings traces emit explicit `payload.policy.applied` events with sanitized payload policy metadata and `decision_kind=payload_capture`, while raw prompt/response capture remains off | Focused traceutil/gateway tests, source review, docs/shared-contract grep, `git diff --check` | Batch 1I code-only evidence enrichment; no migration, new route, frontend behavior, exporter/outbox, raw payload capture, X-Insight runtime dependency, or PRD4 matrix change |
+
+## Batch 1I Verification
+
+PRD5 Batch 1I verifies payload policy decision evidence:
+
+```bash
+go test ./internal/traceutil ./internal/gateway -run 'TestSanitizeMetadata_PayloadPolicyFields|TestRecordPayloadPolicyDecision_(DisabledMode|MetadataOnlyMode)|TestRecordTraceEvent_ParentsEventsToGatewayRootSpan' -count=1
+go test ./internal/gateway ./internal/traceutil ./cmd/uniroute -count=1
+go test ./... -count=1
+rg -n "Payload Policy Decision Evidence|P5-F18|Batch 1I|payload.policy.applied|payload_capture|payload_capture_mode|payload_policy_reason|raw_payload_stored|payload_ref_present|61f5610|PR #111" internal/traceutil internal/gateway docs/PRD-Phase5.md docs/ops/PRD5-ACCEPTANCE-MATRIX.md docs/planning/PRD5-IMPLEMENTATION-PLAN.md docs/tech-ref/26-prd5-evidence-field-contract.md docs/agent-workflows/FIX-SIGNAL.md "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/contracts/2026-07-09-unirouter-prd5-payload-policy-decision-evidence.md"
+git diff --check
+```
+
+No new migration, API route, frontend behavior, exporter/outbox, read-only
+credential, raw prompt/response capture, payload object store, X-Insight runtime
+dependency, public-header evidence authority, PRD4 matrix count, or
+`Production verified` claim should change in Batch 1I.
 
 ## Batch 1H Verification
 
@@ -59,7 +78,7 @@ PRD5 Batch 1H verifies gateway span hierarchy:
 go test ./internal/gateway -run 'TestRecordTraceEvent_(SanitizesMetadataAndSnapshotsOwner|UsesTrustedEvidenceContext|ParentsEventsToGatewayRootSpan)|TestRelayContextWithTrustedEvidence' -count=1
 go test ./internal/gateway ./internal/traceutil ./cmd/uniroute -count=1
 go test ./... -count=1
-rg -n "Gateway Span Hierarchy|P5-F17|Batch 1H|parent_span_id|contextWithEvidenceSpanState|parentSpanForEvent|c701843|PR #110" internal/gateway docs/PRD-Phase5.md docs/ops/PRD5-ACCEPTANCE-MATRIX.md docs/planning/PRD5-IMPLEMENTATION-PLAN.md docs/tech-ref/26-prd5-evidence-field-contract.md docs/agent-workflows/FIX-SIGNAL.md
+rg -n "Gateway Span Hierarchy|P5-F17|Batch 1H|parent_span_id|contextWithEvidenceSpanState|parentSpanForEvent|61f5610|PR #111" internal/gateway docs/PRD-Phase5.md docs/ops/PRD5-ACCEPTANCE-MATRIX.md docs/planning/PRD5-IMPLEMENTATION-PLAN.md docs/tech-ref/26-prd5-evidence-field-contract.md docs/agent-workflows/FIX-SIGNAL.md
 git diff --check
 ```
 

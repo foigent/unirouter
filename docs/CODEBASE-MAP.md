@@ -155,6 +155,15 @@ to the gateway root. This uses existing `parent_span_id` fields and does not add
 a migration, route, frontend behavior, exporter/outbox, raw payload capture, or
 X-Insight runtime dependency.
 
+PRD5 Batch 1I payload policy decision evidence is implemented in
+`internal/gateway/trace.go`, `internal/gateway/relay.go`,
+`internal/gateway/relay_mock_test.go`, and `internal/traceutil/metadata.go`.
+Chat and embeddings requests emit a `payload.policy.applied` trace event after
+gateway request acceptance. The event writes sanitized policy metadata,
+`decision_kind=payload_capture`, `raw_payload_stored=false`, and
+`payload_ref_present=false`; it does not inspect, persist, hash, export, or
+reference raw prompt/response bodies.
+
 Usage analytics is implemented in `internal/admin/prd2_product_handlers.go` and now supports project/key/model/provider/channel/status/source filters plus PRD4 `scope=my`, `owner_user_id`, `key_type`, `group_by=owner`, and `group_by=key_type`.
 
 API key quota visibility keeps `api_keys.qps_limit` as the compatibility

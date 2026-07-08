@@ -1,9 +1,9 @@
 # PRD5 Implementation Plan
 
 > Date: 2026-07-08
-> Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, and Batch 1G
-> Canary/Sentinel complete. Batch 1H gateway span hierarchy fixed awaiting
-> Canary.
+> Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, and
+> Batch 1H Canary/Sentinel complete. Batch 1I payload policy decision evidence
+> fixed awaiting Canary.
 > Scope owner: UniRouter. X-Insight remains a separate project and owns broader
 > observability/governance product surfaces.
 
@@ -237,9 +237,9 @@ Risk: R3 because it changes gateway trace evidence write inputs and source-event
 hashes, but it does not change routing, billing, provider dispatch, response
 payloads, API routes, frontend behavior, or DB schema.
 
-Status: fixed awaiting Canary.
+Status: Canary/Sentinel complete (`61f5610` / PR #111).
 
-Implemented in this round:
+Implemented:
 
 - create a per-request in-memory span state on gateway request contexts;
 - treat the first UniRouter-emitted trace event for the request as the gateway
@@ -262,6 +262,40 @@ Non-goals:
 - no public inbound request-header trust by default;
 - no PRD4 matrix/status change.
 
+### Batch 1I: Payload Policy Decision Evidence
+
+Risk: R3 because it changes gateway trace evidence writes and decision metadata,
+but it does not change routing, billing, provider dispatch, response payloads,
+API routes, frontend behavior, or DB schema.
+
+Status: fixed awaiting Canary.
+
+Implemented in this round:
+
+- emit `payload.policy.applied` trace events for chat and embeddings requests
+  after gateway admission and before billing freeze;
+- use `source_component=payload_policy`;
+- retain sanitized scalar metadata for `payload_capture_mode`,
+  `payload_policy_reason`, `raw_payload_stored`, and `payload_ref_present`;
+- map metadata-only mode to `decision_kind=payload_capture` and
+  `decision_result=allowed`;
+- map disabled mode to `decision_kind=payload_capture` and
+  `decision_result=skipped`;
+- keep raw prompt/response capture disabled and uninspected.
+
+Non-goals:
+
+- no raw prompt/response capture;
+- no encrypted payload object store;
+- no redacted/hash/reference active modes yet;
+- no new migration;
+- no new API route;
+- no frontend behavior change;
+- no exporter/outbox;
+- no read-only DB/view credential handoff;
+- no X-Insight runtime dependency;
+- no PRD4 matrix/status change.
+
 ### Later Payload Policy Modes
 
 Risk: R3 if schema/API changes; R4 only if raw payload capture is introduced,
@@ -279,7 +313,7 @@ Planned later:
 - support redacted/hash/reference modes;
 - document enterprise opt-in requirements for raw payload capture.
 
-### Batch 1I: X-Insight Gate A Feedback Incorporation
+### Batch 1J: X-Insight Gate A Feedback Incorporation
 
 Risk: depends on findings.
 
@@ -296,7 +330,7 @@ Possible outcomes:
 - define cursor export API;
 - design non-blocking exporter/outbox.
 
-### Batch 1J: Real Target Evidence
+### Batch 1K: Real Target Evidence
 
 Prerequisites:
 
@@ -318,7 +352,7 @@ Use existing PRD4 harnesses, but record target evidence under PRD5.
 
 ## Current Blocking Conditions
 
-There is no blocking condition for UniRouter Batch 1A through Batch 1H.
+There is no blocking condition for UniRouter Batch 1A through Batch 1I.
 
 These later actions are gated:
 

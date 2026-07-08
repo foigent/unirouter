@@ -2,9 +2,9 @@
 
 > Version: v0.1
 > Date: 2026-07-08
-> Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, and Batch 1G
-> Canary/Sentinel complete. Batch 1H gateway span hierarchy fixed awaiting
-> Canary.
+> Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, and
+> Batch 1H Canary/Sentinel complete. Batch 1I payload policy decision evidence
+> fixed awaiting Canary.
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > X-Insight response
 > `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-08-x-insight-prd5-integration-answers.md`
@@ -40,6 +40,9 @@ evidence." They are not cosmetic UI fields.
 | `actor_ref` | nullable string | trace/log where known | Stable non-secret actor reference |
 | `on_behalf_of` | nullable string | trace/log where known | Delegation target for agent/app/service use cases |
 | `payload_capture_mode` | string | trace/log/export metadata | Payload state. Active Batch 1F values are `metadata_only` and `disabled`; redacted/hash/reference modes remain later gated vocabulary |
+| `payload_policy_reason` | string metadata | payload policy trace events | Stable payload policy reason code such as `payload.metadata_only` or `payload.disabled`; never raw payload content |
+| `payload_ref_present` | boolean metadata | payload policy trace events | Whether an approved external payload reference is present; Batch 1I always emits `false` |
+| `raw_payload_stored` | boolean metadata | payload policy trace events | Whether UniRouter stored raw prompt/response payload content; Batch 1I always emits `false` |
 | `payload_ref` | nullable string | future payload policy | Reference to an approved payload object, not raw content |
 
 ## Recommended Enum Values
@@ -190,6 +193,22 @@ Batch 1H gateway span hierarchy:
 - This creates a queryable UniRouter-local request hierarchy without claiming a
   full cross-system agent graph.
 
+Batch 1I payload policy decision evidence:
+
+- Chat and embeddings requests emit `payload.policy.applied` after
+  `gateway.request.accepted`.
+- The event uses `source_component=payload_policy`.
+- The event maps to `decision_kind=payload_capture`.
+- `metadata_only` maps to `decision_result=allowed` and
+  `decision_reason=payload.metadata_only`.
+- `disabled` maps to `decision_result=skipped` and
+  `decision_reason=payload.disabled`.
+- Metadata is restricted to sanitized scalar policy state:
+  `payload_capture_mode`, `payload_policy_reason`,
+  `payload_ref_present=false`, and `raw_payload_stored=false`.
+- Batch 1I does not inspect, persist, hash, export, or reference raw
+  prompt/response bodies.
+
 ## Migration Strategy
 
 Batch 1B adds nullable/default fields first.
@@ -241,6 +260,9 @@ Implemented first slice:
 - Batch 1H adds per-request gateway root span parenting for UniRouter-emitted
   trace events and includes the resulting `parent_span_id` in trace
   source-event hashes.
+- Batch 1I adds explicit `payload.policy.applied` trace events for chat and
+  embeddings. These events write sanitized payload policy metadata and
+  `decision_kind=payload_capture` while keeping raw payload storage disabled.
 
 ## Writer Behavior
 
@@ -260,6 +282,10 @@ directly:
   gateway root span;
 - metadata safety evidence: include `capture_gap='redacted'` when metadata was
   intentionally dropped or truncated by UniRouter;
+- payload policy decision evidence: emit `payload.policy.applied` with
+  `source_component=payload_policy`, `decision_kind=payload_capture`,
+  a stable decision result/reason, `raw_payload_stored=false`, and
+  `payload_ref_present=false`;
 - billing freeze/settle/cancel: `billing` plus decision/result where applicable;
 - trace sampling: `trace_sampling` decision;
 - payload state: `payload_capture` decision and configured
@@ -271,7 +297,7 @@ Missing upstream facts should not be guessed.
 
 Default mode is `metadata_only`.
 
-Active runtime modes in Batch 1F:
+Active runtime modes in Batch 1F and Batch 1I:
 
 - `metadata_only`
 - `disabled`
@@ -285,6 +311,12 @@ Planned but not active without later approval:
 Raw prompt/response capture requires a separate explicit enterprise opt-in
 decision covering encryption/key management, retention, deletion/export, RBAC,
 audit-on-read, legal hold, and redaction.
+
+Batch 1I only records the policy decision. It deliberately sets
+`raw_payload_stored=false` and `payload_ref_present=false` for every emitted
+payload policy event. Redacted summaries, payload hashes, object-store
+references, raw prompt/response storage, exporter/outbox transport, and
+X-Insight importer behavior remain later gated work.
 
 ## Read-Side Behavior
 
