@@ -142,6 +142,8 @@ Current metadata safety:
 - trace events can mark `capture_gap='redacted'` when UniRouter drops
   restricted metadata, rejects unsupported value shapes, or truncates allowed
   strings;
+- `PAYLOAD_CAPTURE_MODE` can be configured as `metadata_only` or `disabled`;
+  invalid values are rejected and raw prompt/response capture is not enabled;
 - raw prompt/response and secret-like keys are not allowed in trace metadata.
 
 ## Non-Goals
@@ -160,9 +162,10 @@ This coordination does not:
 
 ## Next PRD5 Steps
 
-1. Generate or define a sanitized controlled snapshot process.
-2. Let X-Insight import the snapshot locally and save Gate A evidence.
-3. Use Gate A findings to finalize the structural-field migration plan.
-4. Add nullable structural fields and writer behavior in scoped PRD5 batches.
-5. Revisit read-only views, exporter/outbox, GitHub governance, and shared ECS
+1. Let X-Insight import the sanitized snapshot locally and save Gate A evidence.
+2. Use Gate A findings to prioritize remaining structural-field and payload
+   policy gaps.
+3. Keep UniRouter-owned evidence readiness moving in scoped PRD5 batches that do
+   not depend on X-Insight runtime availability.
+4. Revisit read-only views, exporter/outbox, GitHub governance, and shared ECS
    staging only after the earlier gates pass.

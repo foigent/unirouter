@@ -1,8 +1,8 @@
 # PRD5 Implementation Plan
 
 > Date: 2026-07-08
-> Status: Batch 1A/1B/1C and Batch 1D Canary/Sentinel complete. Batch 1E
-> event capture-gap emission fixed awaiting Canary.
+> Status: Batch 1A/1B/1C, Batch 1D, and Batch 1E Canary/Sentinel complete.
+> Batch 1F payload capture mode configuration fixed awaiting Canary.
 > Scope owner: UniRouter. X-Insight remains a separate project and owns broader
 > observability/governance product surfaces.
 
@@ -141,7 +141,9 @@ Risk: R3 because it touches gateway trace evidence writes, but it does not
 change routing, billing, provider dispatch, response payloads, API routes,
 frontend behavior, or DB schema.
 
-Implemented in this round, awaiting Canary:
+Status: Canary/Sentinel complete (`a19830f` / PR #108).
+
+Implemented:
 
 - preserve existing metadata allowlist behavior;
 - detect when trace metadata is dropped because a key is restricted, a value
@@ -156,6 +158,39 @@ Non-goals:
 - no new API route;
 - no frontend behavior change;
 - no raw prompt/response or nested metadata capture;
+- no exporter/outbox;
+- no read-only DB/view credential handoff;
+- no fabricated session/delegation/business-chain facts;
+- no PRD4 matrix/status change.
+
+### Batch 1F: Payload Capture Mode Configuration
+
+Risk: R3 because it changes runtime configuration validation and gateway
+trace/log evidence writes, but it does not change routing, billing, provider
+dispatch, response payloads, API routes, frontend behavior, or DB schema.
+
+Status: fixed awaiting Canary.
+
+Implemented in this round:
+
+- add `PAYLOAD_CAPTURE_MODE` to config with default `metadata_only`;
+- accept only `metadata_only` and `disabled` in the active implementation;
+- reject unsupported values during config validation, including raw and planned
+  future modes;
+- wire the configured value into gateway relay evidence writes;
+- persist the configured value in `request_trace_events.payload_capture_mode`
+  and `call_logs.payload_capture_mode`;
+- include the configured mode in trace and call-log source-event hashes;
+- document `.env.example`, `docker-compose.yml`, and deployment runbook usage.
+
+Non-goals:
+
+- no raw prompt/response capture;
+- no encrypted payload object store;
+- no redacted/hash/reference active modes yet;
+- no new migration;
+- no new API route;
+- no frontend behavior change;
 - no exporter/outbox;
 - no read-only DB/view credential handoff;
 - no fabricated session/delegation/business-chain facts;
@@ -178,7 +213,7 @@ Planned later:
 - support redacted/hash/reference modes;
 - document enterprise opt-in requirements for raw payload capture.
 
-### Batch 1F: X-Insight Gate A Feedback Incorporation
+### Batch 1G: X-Insight Gate A Feedback Incorporation
 
 Risk: depends on findings.
 
@@ -195,7 +230,7 @@ Possible outcomes:
 - define cursor export API;
 - design non-blocking exporter/outbox.
 
-### Batch 1G: Real Target Evidence
+### Batch 1H: Real Target Evidence
 
 Prerequisites:
 
@@ -217,7 +252,7 @@ Use existing PRD4 harnesses, but record target evidence under PRD5.
 
 ## Current Blocking Conditions
 
-There is no blocking condition for UniRouter Batch 1A through Batch 1E.
+There is no blocking condition for UniRouter Batch 1A through Batch 1F.
 
 These later actions are gated:
 

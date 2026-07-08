@@ -1,7 +1,8 @@
 # PRD5 Competitor Comparison And Feature Catch-Up
 
 > Date: 2026-07-08
-> Status: Initial source-grounded PRD5 planning comparison.
+> Status: Source-grounded PRD5 planning comparison with Batch 1F payload
+> evidence mode configuration accepted as the current catch-up slice.
 > Purpose: compare UniRouter against adjacent gateway and observability systems,
 > then decide which gaps belong in UniRouter PRD5 versus X-Insight.
 
@@ -81,7 +82,8 @@ implementation because these projects move quickly.
 
 ## UniRouter Gaps To Catch Up In PRD5
 
-High priority, now partially accepted through Batch 1A/1B/1C:
+High priority, now partially accepted through Batch 1A/1B/1C, Batch 1D,
+Batch 1E, and Batch 1F:
 
 - explicit `trace_id`, `span_id`, `parent_span_id`, and `session_id` handling;
 - `schema_version`, `source_component`, `capture_mode`, and capture-gap model;
@@ -101,6 +103,11 @@ Accepted in Batch 1E:
 
 - event-level `capture_gap='redacted'` when UniRouter intentionally drops,
   shape-rejects, or truncates trace metadata during safe evidence capture.
+
+Accepted in Batch 1F:
+
+- restricted `PAYLOAD_CAPTURE_MODE` configuration for `metadata_only` and
+  `disabled`, with unsupported payload modes rejected until later approval.
 
 Medium priority:
 

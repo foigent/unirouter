@@ -127,6 +127,15 @@ truncated strings are dropped. Gateway trace writes persist that gap in
 `request_trace_events.capture_gap` and include it in the trace source-event
 hash.
 
+PRD5 Batch 1F payload capture mode configuration is implemented in
+`internal/traceutil/payload.go`, `internal/config/config.go`,
+`cmd/uniroute/main.go`, `internal/gateway/relay.go`, and
+`internal/gateway/trace.go`. `PAYLOAD_CAPTURE_MODE` defaults to `metadata_only`,
+accepts only `metadata_only` and `disabled`, and rejects unsupported values.
+Gateway trace/log writers persist the configured `payload_capture_mode` and
+include it in source-event hashes. This does not enable raw prompt/response
+capture.
+
 Usage analytics is implemented in `internal/admin/prd2_product_handlers.go` and now supports project/key/model/provider/channel/status/source filters plus PRD4 `scope=my`, `owner_user_id`, `key_type`, `group_by=owner`, and `group_by=key_type`.
 
 API key quota visibility keeps `api_keys.qps_limit` as the compatibility
