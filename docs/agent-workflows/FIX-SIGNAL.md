@@ -1,4 +1,4 @@
-# FIX-SIGNAL.md - PRD5 X-Insight Scope Discovery
+# FIX-SIGNAL.md - PRD5 X-Insight Gate A Coordination
 
 **Date:** 2026-07-08
 **Risk level:** R2 acceptance-sensitive documentation change
@@ -10,40 +10,34 @@ PRD4 is complete for the confirmed current scope. This signal must not reopen
 PRD4, change PRD4 acceptance counts, or promote any PRD4 row to
 `Production verified`.
 
-This round starts PRD5 scope discovery for X-Insight integration. It updates the
-PRD5 backlog and creates a shared UniRouter/X-Insight communication workspace:
+This round records User-confirmed PRD5 coordination decisions for X-Insight Gate
+A:
 
-```text
-/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation
-```
-
-The shared workspace is outside the UniRouter git repository and is used only
-for cross-project communication, draft contracts, decisions, and sanitized
-evidence.
+- X-Insight should use a sanitized controlled snapshot first.
+- Restricted read-only DB or read-only views can be considered only after local
+  snapshot import works.
+- Do not create a shared private GitHub organization strategy now.
+- Do not create or update shared ECS staging before local Gate A import works
+  and CI is green.
+- UniRouter PRD5 should prioritize structural evidence fields before native
+  exporter/outbox.
 
 ## Intended Changes
 
 UniRouter repo:
 
-- `docs/planning/PRD5-BACKLOG.md` adds PRD5 discovery items for:
-  - `PRD5-XINSIGHT-001`
-  - `PRD5-EVIDENCE-001`
-  - `PRD5-PAYLOAD-001`
-  - `PRD5-COMPARE-001`
-  - `PRD5-TRACEUI-001`
-- `docs/planning/PRD5-BACKLOG.md` records the shared-folder path and states that
-  UniRouter should emit high-fidelity gateway evidence while X-Insight owns the
-  broader enterprise AI/Agent observability and governance platform unless the
-  User changes that boundary.
+- Add `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`.
+- Update `docs/planning/PRD5-BACKLOG.md` to link the coordination document.
+- Update `docs/DOC-INVENTORY.md` and `docs/README.md` so the coordination
+  document is discoverable.
 
 Shared folder:
 
-- `README.md` defines the communication rules, directory contract, decision
-  rule, and data boundary.
-- `requests/2026-07-08-unirouter-prd5-integration-questions.md` asks
-  X-Insight to answer integration questions before PRD5 implementation starts.
-- `contracts/README.md`, `responses/README.md`, `decisions/README.md`, and
-  `evidence/README.md` define the workspace subdirectories.
+- Add
+  `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-08-unirouter-gate-a-environment-and-prd5-coordination-response.md`.
+- Update
+  `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-08-prd5-structure-fields-before-exporter-proposed.md`
+  from proposed to accepted planning decision.
 
 ## Non-Goals
 
@@ -51,54 +45,45 @@ This round does not:
 
 - modify Go, frontend, migration, OpenAPI, API route, runtime behavior,
   deployment scripts, Docker, or monitoring config;
-- implement X-Insight ingestion;
-- implement LiteLLM/NewAPI integration;
-- add raw prompt/response storage;
+- expose or write any secret, DSN, token, credential, raw prompt, raw response,
+  or customer data;
+- generate the sanitized snapshot yet;
+- create read-only database credentials or views;
+- create a shared GitHub organization strategy;
+- deploy or update shared ECS staging;
+- implement X-Insight importer;
+- implement UniRouter exporter/outbox;
 - change PRD4 acceptance matrix counts;
 - create a `Production verified` claim.
 
-The worktree may already contain PRD4 closeout documentation changes from a
-previous state. Canary should validate this signal's PRD5/X-Insight scope
-changes and report any conflicting pre-existing changes separately.
-
 ## Canary Verification Instructions
 
-1. Re-read the current boundary docs:
-   - `docs/PROJECT-HANDOFF.md`
-   - `docs/ops/CURRENT-STATUS.md`
-   - `docs/ops/evidence/PRD4-final-closeout-20260708.md`
+1. Re-read:
+   - `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`
    - `docs/planning/PRD5-BACKLOG.md`
+   - `docs/DOC-INVENTORY.md`
+   - `docs/README.md`
 2. Verify PRD4 remains closed for the confirmed current scope and is not
-   reopened by this PRD5/X-Insight scope discovery.
-3. Verify `docs/planning/PRD5-BACKLOG.md` contains the five new PRD5 discovery
-   IDs listed above, and that they are framed as prerequisites/discovery items,
-   not accepted implementation.
-4. Verify the shared workspace exists with these files:
-   - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/README.md`
-   - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-08-unirouter-prd5-integration-questions.md`
-   - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/contracts/README.md`
-   - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/README.md`
-   - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/README.md`
-   - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/evidence/README.md`
-5. Verify the shared README forbids production secrets, raw real prompt/response
-   payloads, and authoritative source-code storage.
-6. Verify the X-Insight request asks about:
-   - ingestion path;
-   - trace/span/session/upstream request ownership;
-   - schema versioning;
-   - `source_component`, `capture_mode`, and `capture_gap`;
-   - `evidence_ref`;
-   - decision taxonomy;
-   - actor/delegation modeling;
-   - payload storage boundary;
-   - UI boundary;
-   - competitor research reuse for LiteLLM/NewAPI/one-api and observability
-     references;
-   - PRD5 priority recommendation.
-7. Run:
+   reopened by this Gate A coordination.
+3. Verify `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md` records:
+   - sanitized controlled snapshot first;
+   - restricted read-only DB/view only after local snapshot import works;
+   - no shared GitHub organization strategy now;
+   - no shared ECS staging before local Gate A import and CI pass;
+   - structural fields before exporter/outbox.
+4. Verify `docs/planning/PRD5-BACKLOG.md`, `docs/DOC-INVENTORY.md`, and
+   `docs/README.md` link or mention the new coordination document.
+5. Verify the shared response file exists and answers the X-Insight request
+   without containing secrets or DSNs:
+   - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-08-unirouter-gate-a-environment-and-prd5-coordination-response.md`
+6. Verify the shared decision file is now `Decision accepted` and records the
+   User-confirmed access/environment conditions:
+   - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-08-prd5-structure-fields-before-exporter-proposed.md`
+7. Verify no runtime/code/deployment file changed in this round.
+8. Run:
 
 ```bash
-git diff --check -- docs/planning/PRD5-BACKLOG.md docs/agent-workflows/FIX-SIGNAL.md
+git diff --check -- docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md docs/planning/PRD5-BACKLOG.md docs/DOC-INVENTORY.md docs/README.md docs/agent-workflows/FIX-SIGNAL.md
 ```
 
 ## Expected Result
@@ -107,6 +92,7 @@ Canary should write `docs/agent-workflows/VERIFY-RESULT.md` with:
 
 - PASS/FAIL for each numbered verification instruction;
 - any PRD4 boundary regression as a blocking failure;
-- any shared-folder issue as a documentation/workspace finding;
+- any secret/DSN/raw-payload leakage as a blocking failure;
+- any shared-folder inconsistency as a documentation/workspace finding;
 - a note that no runtime code validation was required for this docs-only R2
-  scope-discovery change.
+  coordination change.

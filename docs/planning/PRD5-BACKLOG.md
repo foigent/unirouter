@@ -77,6 +77,11 @@ implemented:
 - PRD4 Logs trace UI can prepare a lightweight UniRouter-side request view, but
   enterprise-wide AI/Agent observability should stay in X-Insight unless the
   User explicitly changes the product boundary.
+- Current X-Insight Gate A coordination is recorded in
+  `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`: sanitized snapshot
+  first, restricted read-only DB/view after local import passes, no shared
+  GitHub organization strategy now, no shared ECS staging before local Gate A
+  and CI pass, and structural fields before exporter/outbox.
 
 ## Reopen Rule
 
