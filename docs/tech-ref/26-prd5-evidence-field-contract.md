@@ -3,8 +3,8 @@
 > Version: v0.1
 > Date: 2026-07-09
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
-> Batch 1I, Batch 1J, and Batch 1K Canary/Sentinel complete. Batch 1L
-> component span refinement fixed awaiting Canary.
+> Batch 1I, Batch 1J, Batch 1K, and Batch 1L Canary/Sentinel complete. Batch
+> 1M provider failure capture gaps fixed awaiting Canary.
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > X-Insight response
 > `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-08-x-insight-prd5-integration-answers.md`
@@ -204,6 +204,22 @@ Batch 1L component span refinement:
 - This is a request-local UniRouter evidence hierarchy only; it does not infer
   external agent, tool, or business-system spans.
 
+Batch 1M provider failure capture gaps:
+
+- Provider response trace events keep the Batch 1J rule:
+  `capture_gap=provider_not_returned` means an upstream provider response exists
+  but did not expose a usable request ID.
+- Provider-stage failure events that happen before an upstream response source
+  exists use `capture_gap=not_available_from_source` when no sanitized
+  `upstream_request_id` can exist.
+- The initial provider failure set is `provider.key_decrypt_failed`,
+  `provider.adapter_unknown`, `provider.request_build_failed`,
+  `provider.request_failed`, and `provider.response_parse_failed`.
+- If metadata sanitization already recorded `capture_gap=redacted`, that
+  redaction gap takes priority.
+- If a sanitized upstream request ID is available, UniRouter writes it and does
+  not add a missing-source gap.
+
 Batch 1I payload policy decision evidence:
 
 - Chat and embeddings requests emit `payload.policy.applied` after
@@ -281,6 +297,10 @@ Implemented first slice:
 - Batch 1L refines `parent_span_id` for repeated same-component events:
   repeated events from a component parent to that component's first span, while
   first component events still parent to the request gateway root.
+- Batch 1M adds `capture_gap=not_available_from_source` for provider-stage
+  failure events that happen before any upstream response source exists.
+  Provider response accepted/rejected events keep the Batch 1J
+  `provider_not_returned` rule, and redaction gaps keep priority.
 
 ## Writer Behavior
 
@@ -293,6 +313,10 @@ directly:
 - provider response evidence: include sanitized provider-returned
   `upstream_request_id` when available, otherwise mark provider response trace
   events with `capture_gap=provider_not_returned`;
+- provider pre-response failure evidence: when key decryption, adapter lookup,
+  request build, outbound request, or response parse failure events have no
+  sanitized upstream request ID because the source is unavailable, mark
+  `capture_gap=not_available_from_source`;
 - trusted caller context: include `trace_id`, `parent_span_id`, `session_id`,
   `actor_*`, and `on_behalf_of` only when the configured evidence-context shared
   secret matches;

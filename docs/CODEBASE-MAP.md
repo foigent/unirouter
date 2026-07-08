@@ -188,6 +188,13 @@ component's first span. This refines UniRouter-local evidence hierarchy without
 adding schema, route, frontend, exporter/outbox, raw payload, or X-Insight
 runtime dependency.
 
+PRD5 Batch 1M provider failure capture gaps are implemented in
+`internal/gateway/trace.go` and `internal/gateway/relay.go`, with focused
+coverage in `internal/gateway/relay_mock_test.go`. Provider response events keep
+`capture_gap=provider_not_returned` when a response lacks a usable upstream
+request ID; provider-stage failures before a response source exists write
+`capture_gap=not_available_from_source`; metadata redaction gaps keep priority.
+
 Usage analytics is implemented in `internal/admin/prd2_product_handlers.go` and now supports project/key/model/provider/channel/status/source filters plus PRD4 `scope=my`, `owner_user_id`, `key_type`, `group_by=owner`, and `group_by=key_type`.
 
 API key quota visibility keeps `api_keys.qps_limit` as the compatibility

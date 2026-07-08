@@ -3,9 +3,9 @@
 > Version: Phase 5 Active Scope Draft
 > Date: 2026-07-09
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
-> Batch 1I, Batch 1J, and Batch 1K Canary/Sentinel complete. Batch 1L component
-> span refinement fixed awaiting Canary. PRD4 remains complete for the confirmed
-> current scope and is not reopened by PRD5.
+> Batch 1I, Batch 1J, Batch 1K, and Batch 1L Canary/Sentinel complete. Batch 1M
+> provider failure capture gaps fixed awaiting Canary. PRD4 remains complete for
+> the confirmed current scope and is not reopened by PRD5.
 > Source: `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, X-Insight shared-folder
 > responses on 2026-07-08, current UniRouter code/schema review, and official
@@ -92,6 +92,7 @@ PRD5 must not:
 | P5-F19 | Provider Upstream Capture Gap | Mark provider response trace events with `capture_gap=provider_not_returned` when the upstream provider does not return a usable request ID |
 | P5-F20 | Gate A Snapshot Handoff Note | Generate a sanitized Markdown handoff note alongside explicit-request X-Insight snapshots without writing DSNs or credentials |
 | P5-F21 | Component Span Refinement | Parent repeated same-component trace events to the component's first span while preserving the request gateway root |
+| P5-F22 | Provider Failure Capture Gaps | Mark provider failure events that occur before any provider response with `capture_gap=not_available_from_source` when no upstream request ID can exist |
 
 ### P2
 
@@ -510,6 +511,32 @@ Acceptance:
   payload capture, X-Insight runtime dependency, or PRD4 matrix change is
   introduced.
 
+### P5-F22: Provider Failure Capture Gaps
+
+Requirements:
+
+- When provider failure trace events occur before a provider response exists,
+  write `capture_gap=not_available_from_source` if there is no sanitized
+  `upstream_request_id`.
+- Apply this to provider key decryption, adapter selection, request build,
+  outbound request failure, and response parse failure trace events.
+- Keep `provider.response_accepted` and `provider.response_rejected` on the
+  existing `capture_gap=provider_not_returned` rule when a provider response
+  exists but does not return a usable request ID.
+- Preserve `capture_gap=redacted` when metadata sanitization already recorded a
+  redaction gap.
+- Preserve sanitized upstream request IDs when they are available, including
+  response parse failure paths.
+
+Acceptance:
+
+- Provider failure trace events distinguish "the provider did not return an ID"
+  from "no provider response source exists for this event."
+- Existing upstream request ID extraction, routing, billing, provider dispatch,
+  response payloads, API routes, and frontend behavior remain unchanged.
+- No migration, exporter/outbox, read-only DB access, raw payload capture,
+  X-Insight runtime dependency, or PRD4 matrix change is introduced.
+
 ### P5-F09: Cursor Export API Or Outbox
 
 Requirements:
@@ -558,11 +585,13 @@ PRD5 should proceed in independently verifiable batches:
 11. Batch 1K: Gate A snapshot Markdown handoff note for X-Insight discovery.
 12. Batch 1L: component span refinement for repeated same-component trace
     events.
-13. Later payload policy metadata and evidence references, with future raw
+13. Batch 1M: provider failure capture gaps for provider-stage events that
+    occur before any upstream response source exists.
+14. Later payload policy metadata and evidence references, with future raw
    payload modes gated behind enterprise opt-in.
-14. Later Gate A batch: read-only view/export decision after X-Insight Gate A
+15. Later Gate A batch: read-only view/export decision after X-Insight Gate A
    evidence.
-15. Later target/backlog batches: target upstream/SSO evidence or larger
+16. Later target/backlog batches: target upstream/SSO evidence or larger
    backlog items only after their prerequisites are explicitly met.
 
 ## 6. External Source Refresh

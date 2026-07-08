@@ -80,7 +80,7 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Current active verification signal: PRD5 Batch 1L Component Span Refinement
+Current active verification signal: PRD5 Batch 1M Provider Failure Capture Gaps
 fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
 
 PRD4 is complete for the confirmed current scope. PRD5 must preserve the PRD4
@@ -216,7 +216,8 @@ PRD5 Batch 1K:
 PRD5 Batch 1L:
 
 - Scope: request-local component span refinement for UniRouter trace events.
-- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Status: Canary PASS 10/10 in `docs/agent-workflows/VERIFY-RESULT.md`;
+  Sentinel merge reflected by `ffebf83` / PR #115.
 - Adds: per-request component span tracking in `internal/gateway/trace.go` so
   first component events parent to the gateway root and repeated same-component
   events parent to that component's first span; focused gateway coverage in
@@ -226,6 +227,21 @@ PRD5 Batch 1L:
   credential, shared ECS staging, exporter/outbox, raw prompt/response capture,
   X-Insight runtime dependency, cross-system agent/tool/business graph
   inference, or PRD4 matrix changes.
+
+PRD5 Batch 1M:
+
+- Scope: provider failure capture-gap evidence.
+- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Adds: `capture_gap=not_available_from_source` for provider-stage failure
+  events that occur before an upstream provider response source exists; preserves
+  `provider_not_returned` for provider response events that lack a returned
+  upstream request ID; preserves `redacted` priority for sanitized metadata
+  gaps; passes available embeddings upstream request IDs into
+  `provider.response_parse_failed`; and shares the gap contract with X-Insight.
+- Does not add: migration, API route, frontend behavior, read-only DB/view
+  credential, shared ECS staging, exporter/outbox, raw prompt/response capture,
+  X-Insight runtime dependency, provider dispatch semantic change, or PRD4
+  matrix changes.
 
 Latest completed PRD4 verification result is PRD4 Batch 1S Open Issue Boundary
 Closeout:
