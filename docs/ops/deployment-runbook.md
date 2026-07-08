@@ -72,13 +72,13 @@ License 公钥由 License 签发方提供，支持 base64 或 hex 编码的 32 �
 | `TRACE_EVENT_SAMPLE_RATE` | `1` | 按 `request_id` 确定性采样，范围 `0..1`；例如 `0.1` 约采样 10% 请求并保留同一请求的完整事件段 |
 | `TRACE_EVENT_RETENTION_DAYS` | `LOG_RETENTION_DAYS` | `request_trace_events` 自动清理窗口；设为 `0` 时跳过 trace event 清理但不关闭写入，关闭写入仍使用 `TRACE_EVENTS_ENABLED=false` |
 | `LOG_RETENTION_DAYS` | `30` | call logs、settle/cancel transactions 和相关清理的保留窗口；audit logs 保留该值的 2 倍 |
-| `RUNTIME_ENVIRONMENT` | `unspecified` | Runtime Status Center 展示的环境标签，如 `dev`、`staging`、`prod` |
+| `RUNTIME_ENVIRONMENT` | `unspecified`（docker-compose 默认 `local`） | Runtime Status Center 展示的环境标签，如 `dev`、`staging`、`prod` |
 | `RUNTIME_DEPLOYMENT_MODE` | `single-node` | Runtime Status Center 展示的部署形态，如 `docker-compose`、`kubernetes` |
 | `RUNTIME_DEPLOYMENT_ROLE` | `stable` | 当前实例角色，如 `stable`、`canary` |
-| `RUNTIME_VERSION` | 空 | 可选版本号；建议由发布流程注入 |
-| `RUNTIME_COMMIT` | 空 | 可选 git commit；建议由发布流程注入 |
-| `PROMETHEUS_URL` | 空 | Runtime Status Center 的 Prometheus base URL；用于 `/-/ready` 和 `up{job="unirouter"}` 探测，同时作为深链入口；不嵌入完整 Prometheus UI |
-| `GRAFANA_URL` | 空 | Runtime Status Center 的 Grafana base URL；用于 `/api/health` 探测，同时作为深链入口；不嵌入完整 Grafana UI |
+| `RUNTIME_VERSION` | 空 | 可选版本号；为空时使用 Docker build `-ldflags` 注入值 |
+| `RUNTIME_COMMIT` | 空 | 可选 git commit；为空时使用 Docker build `-ldflags` 注入值 |
+| `PROMETHEUS_URL` | 空（docker-compose 默认 `http://prometheus:9090`） | Runtime Status Center 的 Prometheus base URL；用于 `/-/ready` 和 `up{job="unirouter"}` 探测，同时作为深链入口；不嵌入完整 Prometheus UI |
+| `GRAFANA_URL` | 空（docker-compose 默认 `http://grafana:3000`） | Runtime Status Center 的 Grafana base URL；用于 `/api/health` 探测，同时作为深链入口；不嵌入完整 Grafana UI |
 
 登录限流只信任 backend 看到的 `RemoteAddr`，不会直接信任客户端可伪造的 `X-Forwarded-For`。如果后续需要按真实客户端 IP 穿透多层代理，需要先定义可信代理链策略，不在 PRD3 临时扩展。
 
@@ -380,8 +380,12 @@ RUNTIME_ENVIRONMENT=staging
 RUNTIME_DEPLOYMENT_MODE=docker-compose
 RUNTIME_DEPLOYMENT_ROLE=stable
 PROMETHEUS_URL=http://prometheus:9090
-GRAFANA_URL=http://localhost:3001
+GRAFANA_URL=http://grafana:3000
 ```
+
+在 bundled docker-compose 内，`GRAFANA_URL` 应使用容器服务地址
+`http://grafana:3000`，这样 backend 才能探测 `/api/health`。如果需要从浏览器
+打开外部 Grafana，请在部署层使用反向代理或显式覆盖为 backend 可达的外部 URL。
 
 完整指标清单见 `docs/tech-ref/08-prometheus-metrics.md`。
 
@@ -650,6 +654,8 @@ docker compose -f docker-compose.yml -f docker-compose.canary.yml stop backend-c
 docker compose exec postgres pg_dump -U uniroute uniroute > pre_upgrade_$(date +%Y%m%d).sql
 
 # 3. 重建 stable（新代码）
+export RUNTIME_VERSION="$(date +%Y%m%d.%H%M)"
+export RUNTIME_COMMIT="$(git rev-parse --short HEAD)"
 docker compose build backend
 docker compose up -d backend
 

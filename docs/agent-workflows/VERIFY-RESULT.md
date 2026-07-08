@@ -1,22 +1,51 @@
-# VERIFY-RESULT.md - PRD4 Batch 1Q Production Evidence Promotion
+# VERIFY-RESULT.md - PRD4 Batch 1R Runtime Build Chain Follow-up
 
 **Verifier:** Canary
 **Date:** 2026-07-08
 **Signal:** `docs/agent-workflows/FIX-SIGNAL.md`
-**Result:** ✅ **PASS — 8/8**
+**Result:** ✅ **PASS — 9/9**
 
 ## Verification Summary
 
 | # | Criterion | Result | Evidence |
 |---|-----------|--------|----------|
-| 1 | `P4-F11` is `Fixed awaiting Canary` in PRD4 matrix | ✅ PASS | `PRD4-ACCEPTANCE-MATRIX.md:40` — status `Fixed awaiting Canary` |
-| 2 | Batch 1Q evidence file exists and states no PRD4 row is promoted to `Production verified` | ✅ PASS | `PRD4-B1Q-production-evidence-promotion-20260708.md:38` — "No PRD4 matrix row is promoted to `Production verified` in Batch 1Q" |
-| 3 | Final target report classified as target-smoke evidence, not production verification | ✅ PASS | Evidence file lines 50-51: `P4-F02` and `P4-F04` both marked "Target smoke evidence only" |
-| 4 | `PRD4-RUNTIME-002` remains open, not marked resolved by Batch 1Q | ✅ PASS | Evidence file line 61: "PRD4-RUNTIME-002 remains the main blocker for runtime production promotion" |
-| 5 | `P4-F08`/`P4-F09` remain deferred to `PRD5-UPSTREAM-001`/`PRD5-SSO-001` | ✅ PASS | Evidence file lines 73-74: explicit deferral to PRD5 |
-| 6 | Current-status, handoff, README, DOC-INVENTORY, PRD4 docs point to Batch 1Q evidence boundary | ✅ PASS | `CURRENT-STATUS.md:5`, `PROJECT-HANDOFF.md:72`, `README.md:14`, `DOC-INVENTORY.md:100` all reference the evidence file |
-| 7 | Matrix count: 13 total, 10 Canary passed, 2 Deferred to PRD5, 1 Fixed awaiting Canary | ✅ PASS | `awk` output: `total=13, Canary passed=10, Deferred to PRD5=2, Fixed awaiting Canary=1` |
-| 8 | `git diff --check` passes | ✅ PASS | Clean output |
+| 1 | Source/config grep confirms Go toolchain pin, Docker ldflags, runtime metadata fallback, compose Grafana URL, healthcheck, status docs | ✅ PASS | `go.mod:5` toolchain go1.25.12; `Dockerfile:8` `-ldflags -X main.buildVersion -X main.buildCommit`; `main.go:580-581` fallback; `docker-compose.yml:69` GRAFANA_URL=http://grafana:3000; `docker-compose.yml:98` healthcheck /health/ready; all status docs reference PRD4-RUNTIME-002/PRD4-DEPLOY-002 |
+| 2 | Focused Go tests pass | ✅ PASS | `TestApplyBuildRuntimeMetadata` PASS; `TestLoad_RuntimeExposureEnvOverrides` PASS; `TestRuntimeStatus` 4 variants PASS — **6/6 PASS** |
+| 3 | Full Go regression passes | ✅ PASS | `go test ./... -count=1` — all 22 packages PASS |
+| 4 | `go build` with `-ldflags` succeeds | ✅ PASS | `go build -ldflags='-X main.buildVersion=20260708.test -X main.buildCommit=abc1234'` → BUILD OK |
+| 5 | `go env GOVERSION GOTOOLCHAIN` shows go1.25.12 and auto | ✅ PASS | Output: `go1.25.12` / `auto` |
+| 6 | YAML parse passes | ✅ PASS | `ruby -e 'YAML.load_file("docker-compose.yml")...'` → `yaml ok` |
+| 7 | `git diff --check` passes | ✅ PASS | Clean output |
+| 8 | `PRD4-RUNTIME-002` is `Fixed awaiting Canary`; target DB cleanup remains open as `PRD4-DEPLOY-002` | ✅ PASS | `OPEN-ISSUES.md:78` PRD4-RUNTIME-002 = "Fixed awaiting Canary"; `OPEN-ISSUES.md:79` PRD4-DEPLOY-002 = "Open" |
+| 9 | No PRD4 row is promoted to `Production verified` | ✅ PASS | Matrix awk: Canary passed=10, Deferred to PRD5=2, Fixed awaiting Canary=1 — no "Production verified" rows |
+
+## Detailed Evidence
+
+### Dockerfile
+- `FROM golang:1.25.12-alpine AS builder` ✅
+- `ARG RUNTIME_VERSION=local` / `ARG RUNTIME_COMMIT=unknown` ✅
+- `-ldflags="-s -w -X main.buildVersion=${RUNTIME_VERSION} -X main.buildCommit=${RUNTIME_COMMIT}"` ✅
+
+### docker-compose.yml
+- Backend healthcheck: `wget -qO- http://localhost:8080/health/ready` ✅
+- `RUNTIME_ENVIRONMENT: ${RUNTIME_ENVIRONMENT:-local}` ✅
+- `GRAFANA_URL: ${GRAFANA_URL:-http://grafana:3000}` ✅
+- `RUNTIME_VERSION` / `RUNTIME_COMMIT` build args passed ✅
+
+### cmd/uniroute/main.go
+- `buildVersion` / `buildCommit` package vars with `-ldflags` injection ✅
+- `runtimeMetadataValue(cfg.RuntimeVersion, buildVersion)` fallback logic ✅
+
+### .env.example
+- `GRAFANA_URL=http://grafana:3000` ✅
+- `RUNTIME_VERSION=` / `RUNTIME_COMMIT=` (blank, uses build fallback) ✅
+
+### docs/ops/deployment-runbook.md
+- Documents `RUNTIME_VERSION`, `RUNTIME_COMMIT`, `GRAFANA_URL` with correct defaults ✅
+
+## Docker Verification (Optional)
+
+Docker CLI 不在当前测试环境中，`docker compose config` 和 live container health 验证留给 CI/Atlas。FIX-SIGNAL 已标注此为 optional for Canary。
 
 ## New Issues Found
 
@@ -24,11 +53,10 @@
 
 ## Notes
 
-- 纯文档/证据分类变更，不涉及代码修改。
-- 证据文件对 `P4-F02`（Usage）和 `P4-F04`（Trace）标注为 "Target smoke evidence only"，明确不构成全面 production verification。
-- `PRD4-RUNTIME-002` 仍然是 runtime/observability production promotion 的主要阻塞项。
-- Batch 1P 已通过的 `P4-F08`/`P4-F09` deferral 状态保持不变。
+- Go 工具链当前为 `go1.25.12`，`GOTOOLCHAIN=auto`。
+- `PRD4-DEPLOY-002`（target test database cleanup）保持 Open，由 Atlas 负责。
+- 本 batch 不涉及前端、API 路由、migration、billing、routing、SSO、upstream adapters、trace storage 或 RBAC 变更。
 
 ## Conclusion
 
-**PRD4 Batch 1Q: PASS 8/8.** 所有验收标准满足，证据分类合理，边界清晰。可以进入 Sentinel commit 流程。
+**PRD4 Batch 1R: PASS 9/9.** 所有验收标准满足，Go 构建/测试/环境全部正确，compose 配置合理。可以进入 Sentinel commit 流程。

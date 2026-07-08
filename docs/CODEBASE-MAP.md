@@ -131,9 +131,9 @@ Admin auth and gateway auth are separate:
 
 | File | Purpose |
 |------|---------|
-| `Dockerfile` | Builds single Go backend binary |
+| `Dockerfile` | Builds single Go backend binary with release version/commit `ldflags` |
 | `frontend/Dockerfile` | Builds frontend static site served by nginx |
-| `docker-compose.yml` | Postgres, Redis, backend, frontend, Prometheus, Grafana |
+| `docker-compose.yml` | Postgres, Redis, backend, frontend, Prometheus, Grafana; backend has `/health/ready` healthcheck |
 | `docker-compose.canary.yml` | Nginx and canary backend override |
 | `nginx/nginx.conf` | Reverse proxy/canary routing |
 | `infra/prometheus/prometheus.yml` | Prometheus scrape config |
