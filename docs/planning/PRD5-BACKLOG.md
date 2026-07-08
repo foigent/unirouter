@@ -21,6 +21,7 @@ capability is already accepted.
 | PRD5-MARKET-001 | Plugin marketplace / third-party installation | Adds packaging, trust, distribution, update, license, and support obligations | Runtime plugin platform, signing infrastructure, review policy, install/uninstall rollback |
 | PRD5-IAM-001 | Logto/IAM rewrite into UniRouter core | Would make UniRouter responsible for a full identity platform, including SAML/SCIM/MFA/social login/security patching | Clear decision to become an identity platform, license review, migration plan, long-term patch process |
 | PRD5-DEPLOY-001 | Kubernetes/Helm/Terraform managed HA product | Target-stack dependent and requires production-grade DB/Redis HA, PITR, off-server backup, and failover testing | Chosen target stack, cloud assumptions, secret management, backup encryption, restore/failover drills |
+| PRD5-INFRA-001 | Multi-instance infrastructure observability and topology | PRD4 implements single-node Runtime Observability, external Prometheus/Grafana health, and host summaries only; cluster inventory, topology, collectors, and alert routing require a target architecture | PRD4 Status Center baseline, chosen deployment topology, collector access model, RBAC/redaction policy, stale-data behavior, alert ownership |
 | PRD5-BUDGET-001 | Budget hard-block enforcement | Changes admission, wallet, stream settlement, idempotency, reconciliation, and user-facing error behavior | PRD4 policy model, billing trace, concurrency safety tests, refund/cancel/timeout invariants |
 | PRD5-CACHE-001 | Runtime cache / prompt-response plaintext storage | High privacy, tenant-isolation, retention, billing, and correctness risk | Explicit opt-in model, encryption, retention, purge/export/delete, audit-on-read, billing rules |
 | PRD5-SDK-001 | Full official SDK suite | Freezes API details too early if typed response schemas are still evolving | Stable OpenAPI response schemas, semver policy, generated SDK tests, compatibility commitments |
@@ -44,6 +45,8 @@ implemented:
   assets, but real target execution and acceptance are PRD5 backlog items after
   the 2026-07-08 scope decision.
 - PRD4 Status Center can prepare SLA/SLO and full incident operations later.
+- PRD4 Runtime Observability can prepare multi-instance infrastructure inventory,
+  topology, collector integration, and metric-alert routing later.
 - PRD4 API key owner usage can prepare budget hard-blocking later.
 
 ## Reopen Rule

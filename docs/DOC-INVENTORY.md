@@ -23,8 +23,8 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required Codex/OpenClaw workflow |
-| `docs/agent-workflows/FIX-SIGNAL.md` | Latest verification signal: PRD4 Batch 1R Runtime Build Chain Follow-up |
-| `docs/agent-workflows/VERIFY-RESULT.md` | Latest OpenClaw verification result: PRD4 Batch 1Q Production Evidence Promotion PASS 8/8 |
+| `docs/agent-workflows/FIX-SIGNAL.md` | Latest verification signal: PRD4 Batch 1S Open Issue Boundary Closeout |
+| `docs/agent-workflows/VERIFY-RESULT.md` | Latest OpenClaw verification result: PRD4 Batch 1R Runtime Build Chain Follow-up PASS 9/9 |
 
 ## Product And Design References
 
@@ -99,6 +99,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | `docs/ops/evidence/UNIROUTERS-TEST-REPORT-FINAL-20260708.md` | Target-environment final test report for Alibaba Cloud PRD4 Batch 1N / PR #98; positive evidence and follow-up risks are reconciled into `CURRENT-STATUS.md`, `PRD4-ACCEPTANCE-MATRIX.md`, and `OPEN-ISSUES.md` |
 | `docs/ops/evidence/PRD4-B1Q-production-evidence-promotion-20260708.md` | PRD4 Batch 1Q production evidence promotion decision; classifies target-smoke evidence and records that no PRD4 row is promoted to `Production verified` |
 | `docs/ops/evidence/PRD4-B1R-runtime-build-chain-local-20260708.md` | PRD4 Batch 1R local evidence for repo-controllable runtime/build-chain fixes under `PRD4-RUNTIME-002` |
+| `docs/ops/evidence/PRD4-B1S-open-issue-boundary-closeout-20260708.md` | PRD4 Batch 1S open issue boundary evidence; maps remaining plugin/deploy/infra PRD4 open items to PRD5 and leaves target DB cleanup to Atlas |
 
 ## Agent Workflow Files
 
