@@ -3,7 +3,7 @@
 > Date: 2026-07-08
 > Scope: documentation/status-boundary only
 > Risk level: R2 because issue status and PRD4/PRD5 scope boundaries changed
-> Status: fixed awaiting Canary
+> Status: Canary passed; Sentinel merged; target cleanup later closed by Atlas per User report
 
 ## Purpose
 
@@ -28,7 +28,7 @@ Batch 1S closes the remaining PRD4 issue-boundary ambiguity after Batch 1R:
 |------|--------|
 | `docs/issues/OPEN-ISSUES.md` | Adds `Deferred to PRD5` as an explicit issue status value and maps `PRD4-PLUGIN-001`, `PRD4-DEPLOY-001`, and `PRD4-INFRA-001` to PRD5 |
 | `docs/planning/PRD5-BACKLOG.md` | Adds `PRD5-INFRA-001` for multi-instance infrastructure observability and topology |
-| `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` | Records Batch 1S as fixed awaiting Canary and adds a Batch 1S verification section |
+| `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` | Adds a Batch 1S verification section and later records Canary PASS / closeout state |
 | `docs/PRD-Phase4.md` | Clarifies that multi-instance infrastructure inventory/topology/collectors/alerts are not PRD4 implementation targets |
 | Status/index docs | Route the active verification signal to Batch 1S while preserving Batch 1R as the latest completed verification |
 
@@ -47,12 +47,16 @@ Batch 1S does not change:
 - database contents;
 - any `Production verified` claim.
 
-## Expected Current PRD4 Open Set
+## Expected PRD4 Open Set At Batch 1S Verification Time
 
-After Batch 1S, the only PRD4 row that should remain truly `Open` in
+At Batch 1S verification time, the only PRD4 row that should remain truly `Open` in
 `docs/issues/OPEN-ISSUES.md` is:
 
-- `PRD4-DEPLOY-002`: target test database cleanup remains pending Atlas.
+- `PRD4-DEPLOY-002`: target test database cleanup was pending Atlas at the time.
+
+Post-closeout update: User reported on 2026-07-08 that Atlas deleted
+`uniroute_test`, so `PRD4-DEPLOY-002` is closed and PRD4 is complete for the
+confirmed current scope.
 
 The following are no longer active PRD4 implementation gaps:
 

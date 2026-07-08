@@ -6,8 +6,8 @@
 ## First Read Order
 
 1. `docs/ops/CURRENT-STATUS.md` - current verified project status.
-2. `docs/PRD-Phase4.md` - proposed formal PRD4 scope.
-3. `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` - PRD4 acceptance rows and evidence boundaries.
+2. `docs/PRD-Phase4.md` - completed PRD4 scope.
+3. `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` - PRD4 accepted/deferred rows and evidence boundaries.
 4. `docs/planning/PRD5-BACKLOG.md` - capabilities intentionally deferred beyond PRD4.
 5. `docs/planning/PRD4-BACKLOG.md` - PRD4 candidate backlog source record.
 6. `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` - completed PRD3 cleanup/optimization acceptance state.
@@ -15,7 +15,7 @@
 8. `docs/planning/PRD3-CONSISTENCY-AUDIT.md` - PRD1 -> PRD2 consistency findings behind PRD3.
 9. `docs/issues/OPEN-ISSUES.md` - active unresolved issues and recently verified fixes.
 10. `docs/agent-workflows/AGENT-PROTOCOL.md` - risk-gated Codex/OpenClaw Canary/Sentinel/Atlas workflow.
-11. `docs/agent-workflows/FIX-SIGNAL.md` and `docs/agent-workflows/VERIFY-RESULT.md` - current verification request/result.
+11. `docs/agent-workflows/FIX-SIGNAL.md` and `docs/agent-workflows/VERIFY-RESULT.md` - current signal state and latest verification result.
 12. `docs/CODEBASE-MAP.md` - code, route, data, test, and deployment map.
 13. `docs/DOC-INVENTORY.md` and `docs/DOCS-GOVERNANCE.md` - which docs are current, frozen, historical, candidate, or reference-only.
 
@@ -25,7 +25,7 @@ UniRouter is a local-deployable enterprise AI gateway/MaaS platform. PRD1 delive
 
 PRD3 is complete for the confirmed scope. It was cleanup/optimization only: consistency, semantics, route/API contract, documentation lifecycle, module boundaries, frontend architecture, parity tests, and engineering governance.
 
-PRD4 is now proposed as the commercial observability and control foundation phase. Its formal scope draft is `docs/PRD-Phase4.md`: API key owner usage/cost, quota vocabulary, Flow/Event/Trace foundation, PlungeIn observation-first ports, Status Center runtime observability, external monitoring integration, real upstream/SSO harness assets only, auth UX hardening, production evidence promotion for currently available evidence, and PRD5 backlog consolidation. User decision on 2026-07-08 moved real upstream target E2E and real SSO target E2E out of current PRD4 because no approved real environments are available. `docs/planning/PRD4-BACKLOG.md` remains the candidate-source record, not the formal implementation contract.
+PRD4 is complete for the confirmed commercial observability and control foundation scope. Its formal scope is `docs/PRD-Phase4.md`: API key owner usage/cost, quota vocabulary, Flow/Event/Trace foundation, PlungeIn observation-first ports, Status Center runtime observability, external monitoring integration, real upstream/SSO harness assets only, auth UX hardening, production evidence promotion for currently available evidence, and PRD5 backlog consolidation. User decision on 2026-07-08 moved real upstream target E2E and real SSO target E2E out of current PRD4 because no approved real environments are available. `docs/planning/PRD4-BACKLOG.md` remains the candidate-source record, not the formal implementation contract.
 
 ## What Is Current Truth
 
@@ -64,21 +64,27 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Active verification signal: PRD4 Batch 1S Open Issue Boundary Closeout is fixed
-awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+No active verification signal remains. PRD4 is complete for the confirmed current
+scope. Start PRD5 from `docs/planning/PRD5-BACKLOG.md`, while preserving the
+PRD4 deferred-boundary decisions recorded here.
 
+Latest completed PRD4 verification result is PRD4 Batch 1S Open Issue Boundary
+Closeout:
+
+- Status: Canary PASS 7/7 in `docs/agent-workflows/VERIFY-RESULT.md`;
+  Sentinel merge reflected by `5b41b87` / PR #103.
 - Scope: documentation/status-boundary only.
-- Purpose: classify remaining PRD4 open issue rows that are not current PRD4
-  implementation work.
 - Mapping: `PRD4-PLUGIN-001` -> `PRD5-PLUGIN-001` / `PRD5-MARKET-001`,
   `PRD4-DEPLOY-001` -> `PRD5-DEPLOY-001`, and `PRD4-INFRA-001` ->
   `PRD5-INFRA-001`.
-- Still open: `PRD4-DEPLOY-002` remains an Atlas target-environment cleanup task.
+- Target cleanup: User reported Atlas deleted `uniroute_test`, closing
+  `PRD4-DEPLOY-002`.
+- Evidence: `docs/ops/evidence/PRD4-final-closeout-20260708.md`.
 - Boundary: no Go, frontend, migration, API route, runtime behavior, deployment
-  script, target infrastructure mutation, or `Production verified` claim changed.
+  script, or `Production verified` claim changed.
 
-The latest completed verification result is PRD4 Batch 1R Runtime Build Chain
-Follow-up, recorded in `docs/agent-workflows/VERIFY-RESULT.md`:
+Previous completed verification result is PRD4 Batch 1R Runtime Build Chain
+Follow-up:
 
 - Status: Canary PASS 9/9; Sentinel merge reflected by `819846c` / PR #102.
 - Scope: repo-controllable `PRD4-RUNTIME-002` runtime/build-chain gaps.
@@ -92,7 +98,8 @@ Follow-up, recorded in `docs/agent-workflows/VERIFY-RESULT.md`:
   showing `go1.25.12` / `auto`, YAML parse, and `git diff --check`.
 - Boundary: Docker CLI was unavailable to Canary, so live container health still
   needs CI/Atlas before any Production verified runtime claim; target test
-  database cleanup is split to `PRD4-DEPLOY-002`.
+  database cleanup was later closed by User-reported Atlas deletion of
+  `uniroute_test`.
 
 Previous completed verification result is PRD4 Batch 1Q Production Evidence
 Promotion:
@@ -137,8 +144,8 @@ Security Header Hardening:
   version, Grafana target config, runtime `ldflags`, container healthcheck
   wiring, target test database cleanup, or Production verified claims.
 - Runtime/build-chain findings from the 2026-07-08 target report passed Batch 1R
-  Canary verification as `PRD4-RUNTIME-002`; target test database cleanup is
-  split to `PRD4-DEPLOY-002`.
+  Canary verification as `PRD4-RUNTIME-002`; target test database cleanup was
+  later closed by User-reported Atlas deletion of `uniroute_test`.
 
 Previous accepted PRD4 implementation batch is PRD4 Batch 1N Developer Console
 Self Usage And Model Cost:
@@ -152,8 +159,8 @@ Self Usage And Model Cost:
   archived at `docs/ops/evidence/UNIROUTERS-TEST-REPORT-FINAL-20260708.md`.
 - The report also records follow-up security/runtime issues; application-code
   issues are in Batch 1O, repo-controllable runtime/build-chain issues passed
-  Batch 1R Canary verification as `PRD4-RUNTIME-002`, and target DB cleanup is
-  tracked separately as `PRD4-DEPLOY-002`.
+  Batch 1R Canary verification as `PRD4-RUNTIME-002`, and target DB cleanup was
+  later closed by User-reported Atlas deletion of `uniroute_test`.
 
 Previous accepted trace redaction batch is PRD4 Batch 1M:
 

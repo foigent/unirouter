@@ -2,19 +2,10 @@
 
 > Version: Phase 4 Scope Draft
 > Date: 2026-07-07
-> Status: Active PRD4 implementation; Batch 1N Developer Console Self Usage
-> And Model Cost passed Canary 9/9 and Sentinel merge is reflected by
-> `6194062` / PR #98. Batch 1O API Key Input And Security Header Hardening
-> passed Canary 8/8 and Sentinel merge is reflected by `59721d7` / PR #99 for
-> `P4-F12` / `PRD4-SECURITY-001`. Batch 1P Scope Deferral And Closeout
-> Alignment passed Canary 6/6 and Sentinel merge is reflected by `9e2927f` /
-> PR #100 for `P4-F08` / `P4-F09` / `P4-F13`. Batch 1Q Production Evidence
-> Promotion passed Canary 8/8 and Sentinel commit is reflected by `f0d34e1`
-> for `P4-F11`. Batch 1R Runtime Build Chain Follow-up passed Canary 9/9 and
-> Sentinel merge is reflected by `819846c` / PR #102 for repo-controllable
-> `PRD4-RUNTIME-002` gaps. Batch 1S Open Issue Boundary Closeout is fixed
-> awaiting Canary and maps remaining plugin/deploy/infra PRD4 open items to
-> PRD5 while leaving target DB cleanup with Atlas.
+> Status: Complete for the confirmed current PRD4 scope. Batch 1S Open Issue
+> Boundary Closeout passed Canary 7/7, Sentinel merge is reflected by
+> `5b41b87` / PR #103, and User reported Atlas deleted `uniroute_test`, closing
+> `PRD4-DEPLOY-002`. Deferred PRD5 items remain unimplemented by design.
 > User decision on 2026-07-08: because no approved real upstream or real SSO
 > target environment is currently available, `P4-F08` / `P4-F09` real target
 > execution is not part of the current PRD4 closeout. Batch 1H/1I harness assets
@@ -289,7 +280,7 @@ Implementation notes:
 - Batch 1R fixes repo-controllable runtime/build-chain follow-ups: Go patch
   toolchain pin, Docker build metadata injection, compose runtime environment
   default, backend healthcheck, and compose Grafana service URL. Target database
-  cleanup remains an Atlas task.
+  cleanup was completed by Atlas per User report on 2026-07-08.
 - Cluster inventory, external collector ownership, OpenTelemetry, metric-alert
   routing, and embedded dashboards remain follow-up work.
 

@@ -3,7 +3,7 @@
 ## 当前入口
 - [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — Agent 接手项目的第一阅读入口
 - [ops/CURRENT-STATUS.md](ops/CURRENT-STATUS.md) — 当前项目真实状态（进度、测试、部署、缺口）
-- [PRD-Phase4.md](PRD-Phase4.md) — PRD4 正式范围草案：用量金额、Flow/Event/Trace、Runtime Observability、真实上游/真实 SSO harness；真实目标环境 E2E 延后到 PRD5
+- [PRD-Phase4.md](PRD-Phase4.md) — PRD4 已按当前确认范围完成；真实上游/真实 SSO target E2E 等延后到 PRD5
 - [ops/PRD4-ACCEPTANCE-MATRIX.md](ops/PRD4-ACCEPTANCE-MATRIX.md) — PRD4 验收矩阵和证据边界
 - [planning/PRD5-BACKLOG.md](planning/PRD5-BACKLOG.md) — PRD5 未实现/延后能力清单
 - [planning/PRD4-BACKLOG.md](planning/PRD4-BACKLOG.md) — PRD4 候选能力来源记录；正式范围以 `PRD-Phase4.md` 为准
@@ -11,8 +11,8 @@
 - [PRD-Phase3.md](PRD-Phase3.md) — 已完成 PRD3 一致性、语义、契约和架构清理范围
 - [planning/PRD3-CONSISTENCY-AUDIT.md](planning/PRD3-CONSISTENCY-AUDIT.md) — PRD3 范围审计和 PRD1→PRD2 遗留问题梳理
 - [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 当前未关闭问题列表
-- [agent-workflows/FIX-SIGNAL.md](agent-workflows/FIX-SIGNAL.md) — 最新 Codex 验证信号；PRD4 Batch 1S Open Issue Boundary Closeout
-- [agent-workflows/VERIFY-RESULT.md](agent-workflows/VERIFY-RESULT.md) — 最新 Canary 验收结果；PRD4 Batch 1R Runtime Build Chain Follow-up PASS 9/9
+- [agent-workflows/FIX-SIGNAL.md](agent-workflows/FIX-SIGNAL.md) — 当前无 active Codex 验证信号；PRD4 已完成
+- [agent-workflows/VERIFY-RESULT.md](agent-workflows/VERIFY-RESULT.md) — 最新 Canary 验收结果；PRD4 Batch 1S Open Issue Boundary Closeout PASS 7/7
 - [CODEBASE-MAP.md](CODEBASE-MAP.md) — 代码结构、路由、数据、测试、部署地图
 - [DOC-INVENTORY.md](DOC-INVENTORY.md) — 文档清单与当前/冻结/历史/候选边界
 - [DOCS-GOVERNANCE.md](DOCS-GOVERNANCE.md) — 文档治理规则

@@ -1,4 +1,4 @@
-# VERIFY-RESULT.md - PRD4 Batch 1S Open Issue Boundary Closeout
+# VERIFY-RESULT.md - PRD5 X-Insight Scope Discovery
 
 **Verifier:** Canary
 **Date:** 2026-07-08
@@ -7,27 +7,23 @@
 
 ## Verification Summary
 
-| # | Criterion | Result | Evidence |
-|---|-----------|--------|----------|
-| 1 | `OPEN-ISSUES.md` uses `Deferred to PRD5` for `PRD4-PLUGIN-001`, `PRD4-DEPLOY-001`, `PRD4-INFRA-001` | ✅ PASS | `OPEN-ISSUES.md:75` PRD4-PLUGIN-001 = "Deferred to PRD5"; `:76` PRD4-DEPLOY-001 = "Deferred to PRD5"; `:77` PRD4-INFRA-001 = "Deferred to PRD5" |
-| 2 | `PRD4-DEPLOY-002` remains `Open` for Atlas target DB cleanup | ✅ PASS | `OPEN-ISSUES.md:79` — status "Open", "Target test database cleanup remains pending Atlas" |
-| 3 | `PRD5-BACKLOG.md` includes `PRD5-INFRA-001` and already includes plugin/deploy items | ✅ PASS | `PRD5-BACKLOG.md:24` PRD5-INFRA-001; `:20` PRD5-PLUGIN-001; `:21` PRD5-MARKET-001; `:23` PRD5-DEPLOY-001 |
-| 4 | Status/matrix/PRD/handoff/inventory/README/evidence/signal all reference Batch 1S consistently | ✅ PASS | `CURRENT-STATUS.md:5,28,52`; `PROJECT-HANDOFF.md:67-76`; `DOC-INVENTORY.md:26,102`; `README.md:14`; `PRD-Phase4.md:15`; `PRD4-ACCEPTANCE-MATRIX.md:515-535` — all reference Batch 1S |
-| 5 | Matrix count: `total=13`, `Canary passed=11`, `Deferred to PRD5=2` | ✅ PASS | `awk` output: `total=13, Canary passed=11, Deferred to PRD5=2` |
-| 6 | `git diff --check` passes | ✅ PASS | Clean output |
-| 7 | No code/runtime/deployment/target-infrastructure file changed | ✅ PASS | Only docs files modified: OPEN-ISSUES, PRD5-BACKLOG, evidence, CURRENT-STATUS, PRD4-ACCEPTANCE-MATRIX, PROJECT-HANDOFF, DOC-INVENTORY, README, PRD-Phase4 |
-
-## New Issues Found
-
-无新发现的问题。
+| # | Instruction | Result | Evidence |
+|---|-------------|--------|----------|
+| 1 | Re-read boundary docs (PROJECT-HANDOFF, CURRENT-STATUS, PRD4-final-closeout, PRD5-BACKLOG) | ✅ PASS | `CURRENT-STATUS.md:3` — "PRD4 is complete for the confirmed current scope"; `PRD4-final-closeout-20260708.md` exists; `PRD5-BACKLOG.md` updated with X-Insight discovery items |
+| 2 | PRD4 remains closed, not reopened by PRD5/X-Insight scope discovery | ✅ PASS | PRD4 matrix unchanged: 13 rows (11 Canary passed, 2 Deferred to PRD5); `CURRENT-STATUS.md` still says "PRD4 is complete"; no PRD4 row status changed |
+| 3 | `PRD5-BACKLOG.md` contains 5 new discovery IDs as prerequisites/discovery, not accepted implementation | ✅ PASS | `PRD5-BACKLOG.md` contains `PRD5-XINSIGHT-001`, `PRD5-EVIDENCE-001`, `PRD5-PAYLOAD-001`, `PRD5-COMPARE-001`, `PRD5-TRACEUI-001` — all listed as deferred items with prerequisites, not accepted implementation |
+| 4 | Shared workspace exists with all required files | ✅ PASS | `README.md` ✅; `requests/2026-07-08-unirouter-prd5-integration-questions.md` ✅; `contracts/README.md` ✅; `responses/README.md` ✅; `decisions/README.md` ✅; `evidence/README.md` ✅ |
+| 5 | Shared README forbids production secrets, raw real prompt/response payloads, and authoritative source-code storage | ✅ PASS | `README.md` — "Do not use it to store: production secrets or credentials; raw prompt/response payloads from real users; authoritative source code" |
+| 6 | X-Insight request asks about all required topics | ✅ PASS | Ingestion path (Q1) ✅; trace/span/session/upstream ownership (Q2) ✅; schema versioning (Q3) ✅; `source_component`/`capture_mode`/`capture_gap` (Q4) ✅; `evidence_ref` (Q5) ✅; decision taxonomy (Q6) ✅; actor/delegation modeling (Q7) ✅; payload storage boundary (Q8) ✅; UI boundary (Q9) ✅; competitor research reuse (Q10) ✅; PRD5 priority recommendation (Q11) ✅ |
+| 7 | `git diff --check` passes for affected files | ✅ PASS | Clean output |
 
 ## Notes
 
-- 纯文档/状态分类变更，不涉及代码。
-- `PRD4-PLUGIN-001` 映射到 `PRD5-PLUGIN-001` + `PRD5-MARKET-001`；`PRD4-DEPLOY-001` 映射到 `PRD5-DEPLOY-001`；`PRD4-INFRA-001` 映射到新的 `PRD5-INFRA-001`。
-- `PRD4-DEPLOY-002`（target DB cleanup）是唯一保持 Open 的 PRD4 issue，由 Atlas 负责。
-- PRD4 矩阵 13 行状态稳定：11 Canary passed + 2 Deferred to PRD5，无 Production verified。
+- 纯文档/工作区变更，不涉及运行时代码。
+- PRD4 矩阵计数稳定（13行，11 Canary passed, 2 Deferred to PRD5），无 Production verified 新增。
+- 共享工作区 `UniRouter-X-Insight Cooperation/` 在 UniRouter git repo 外部，已包含 X-Insight 的回应文件。
+- `PRD4-final-closeout-20260708.md` 存在，PRD4 关闭状态未被本 batch 重新打开。
 
 ## Conclusion
 
-**PRD4 Batch 1S: PASS 7/7.** 所有验收标准满足，issue 分类清晰，PRD4/PRD5 边界明确。可以进入 Sentinel commit 流程。
+**PRD5 X-Insight Scope Discovery: PASS 7/7.** PRD4 保持关闭状态，PRD5 发现项目已正确记录，共享工作区结构完整且安全约束到位。无需运行时代码验证。可以进入 Sentinel commit 流程。
