@@ -25,7 +25,7 @@ UniRouter is a local-deployable enterprise AI gateway/MaaS platform. PRD1 delive
 
 PRD3 is complete for the confirmed scope. It was cleanup/optimization only: consistency, semantics, route/API contract, documentation lifecycle, module boundaries, frontend architecture, parity tests, and engineering governance.
 
-PRD4 is now proposed as the commercial observability and control foundation phase. Its formal scope draft is `docs/PRD-Phase4.md`: API key owner usage/cost, quota vocabulary, Flow/Event/Trace foundation, PlungeIn observation-first ports, Status Center runtime observability, external monitoring integration, real upstream evidence, real SSO evidence, auth UX hardening, production evidence promotion, and PRD5 backlog consolidation. `docs/planning/PRD4-BACKLOG.md` remains the candidate-source record, not the formal implementation contract.
+PRD4 is now proposed as the commercial observability and control foundation phase. Its formal scope draft is `docs/PRD-Phase4.md`: API key owner usage/cost, quota vocabulary, Flow/Event/Trace foundation, PlungeIn observation-first ports, Status Center runtime observability, external monitoring integration, real upstream/SSO harness assets only, auth UX hardening, production evidence promotion for currently available evidence, and PRD5 backlog consolidation. User decision on 2026-07-08 moved real upstream target E2E and real SSO target E2E out of current PRD4 because no approved real environments are available. `docs/planning/PRD4-BACKLOG.md` remains the candidate-source record, not the formal implementation contract.
 
 ## What Is Current Truth
 
@@ -64,12 +64,27 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Current active verification signal is PRD4 Batch 1O API Key Input And Security
-Header Hardening:
+Current active verification signal is PRD4 Batch 1P Scope Deferral And Closeout
+Alignment in `docs/agent-workflows/FIX-SIGNAL.md`:
 
-- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Status: fixed awaiting Canary.
+- Scope: documentation/status-boundary only. User decision on 2026-07-08 moves
+  `P4-F08` / `P4-F09` real target execution out of current PRD4 because no
+  approved real upstream or real SSO environments are available.
+- Batch 1H/1I harnesses remain accepted reusable assets.
+- `docs/planning/PRD5-BACKLOG.md` now tracks `PRD5-UPSTREAM-001` and
+  `PRD5-SSO-001`.
+- `P4-F13` PRD5 Backlog Consolidation is fixed awaiting Canary.
+- No Go, frontend, migration, API route, runtime behavior, deployment script,
+  evidence harness code, or Production verified claim changes are expected.
+
+Latest accepted PRD4 implementation batch is PRD4 Batch 1O API Key Input And
+Security Header Hardening:
+
+- Canary PASS 8/8 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`.
+- Sentinel merge is reflected by `59721d7` / PR #99.
 - Issue/matrix: `PRD4-SECURITY-001` / `P4-F12`.
-- Scope: API key create/update now rejects unsafe or overlong display names and
+- Scope: API key create/update rejects unsafe or overlong display names and
   negative `project_id`; the HTTP chain adds baseline browser security headers;
   and unknown GET paths no longer fall through to the root service/version
   response.
@@ -77,8 +92,10 @@ Header Hardening:
   SSO, upstream, wallet, provider dispatch, frontend behavior, Go toolchain
   version, Grafana target config, runtime `ldflags`, container healthcheck
   wiring, target test database cleanup, or Production verified claims.
+- Runtime/build-chain findings from the 2026-07-08 target report remain tracked
+  separately as `PRD4-RUNTIME-002`.
 
-Latest accepted PRD4 implementation batch is PRD4 Batch 1N Developer Console
+Previous accepted PRD4 implementation batch is PRD4 Batch 1N Developer Console
 Self Usage And Model Cost:
 
 - Canary PASS 9/9 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`.
@@ -136,7 +153,8 @@ Previous accepted runtime telemetry batch is PRD4 Batch 1J:
   cluster inventory, raw topology, private IP/hostname or cloud identifiers,
   OpenTelemetry, metric alerts, or Production verified target evidence.
 
-Latest accepted real SSO evidence-harness batch is PRD4 Batch 1I:
+Accepted real SSO evidence-harness batch is PRD4 Batch 1I, with real target
+execution deferred to PRD5:
 
 - Canary PASS 11/11 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`.
 - Sentinel merge is reflected by `2c02430` / PR #92.
@@ -149,8 +167,9 @@ Latest accepted real SSO evidence-harness batch is PRD4 Batch 1I:
 - Real mode requires approved Logto or enterprise OIDC target access, a test
   user, console/backend/issuer URLs, DB DSN, and
   `UNIROUTE_PRD4_SSO_ALLOW_BROWSER=approved-target-real-sso`.
-- Batch 1I does not mark `P4-F09` E2E accepted or Production verified without a
-  successful approved target-IdP browser login and audit evidence.
+- User decision on 2026-07-08: because no approved real SSO environment exists,
+  current PRD4 keeps this harness only and defers real target execution to
+  `PRD5-SSO-001`.
 
 Latest workflow verification gate is Protocol Risk-Gated Workflow Update And
 Status Reconciliation:
@@ -160,7 +179,8 @@ Status Reconciliation:
 - No runtime code, migrations, PRD4 product behavior, or target-environment
   evidence changed.
 
-Latest accepted real upstream evidence-harness batch is PRD4 Batch 1H:
+Accepted real upstream evidence-harness batch is PRD4 Batch 1H, with real
+target execution deferred to PRD5:
 
 - Canary PASS 11/11 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`.
 - Sentinel merge is reflected by `d3acfa6` / PR #91.
@@ -174,8 +194,9 @@ Latest accepted real upstream evidence-harness batch is PRD4 Batch 1H:
 - Real mode requires approved OpenRouter and direct Anthropic credentials/model
   slugs, matching backend secrets, and
   `UNIROUTE_PRD4_UPSTREAM_ALLOW_MUTATION=approved-target-real-upstream`.
-- Batch 1H does not mark `P4-F08` E2E accepted or Production verified without a
-  successful approved target-provider run.
+- User decision on 2026-07-08: because no approved real upstream environment
+  exists, current PRD4 keeps this harness only and defers real target execution
+  to `PRD5-UPSTREAM-001`.
 
 The latest accepted route-contract baseline remains PRD3 Batch 6 on 2026-07-05:
 

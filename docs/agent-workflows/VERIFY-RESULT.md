@@ -1,43 +1,31 @@
-# VERIFY-RESULT.md - PRD4 Batch 1O API Key Input And Security Header Hardening
+# VERIFY-RESULT.md - PRD4 Batch 1P Scope Deferral And Closeout Alignment
 
 **Verifier:** Canary
 **Date:** 2026-07-08
 **Signal:** `docs/agent-workflows/FIX-SIGNAL.md`
-**Result:** ✅ **PASS — 8/8**
+**Result:** ✅ **PASS — 6/6**
 
 ## Verification Summary
 
 | # | Criterion | Result | Evidence |
 |---|-----------|--------|----------|
-| 1 | API key create rejects HTML/SQL-like display-name payloads with HTTP 400 | ✅ PASS | `normalizeAPIKeyName` at `key_handlers.go:461` checks `<>\"'`;\\` and `--`; returns 400 before DB mutation |
-| 2 | API key create rejects names > 255 chars with HTTP 400 | ✅ PASS | `utf8.RuneCountInString(normalized) > apiKeyNameMaxChars` (255) at `key_handlers.go:467`; returns "name must be <= 255 characters" |
-| 3 | API key create rejects negative `project_id` with HTTP 400 | ✅ PASS | `if req.ProjectID < 0` at `key_handlers.go:127`; returns "Invalid project_id" |
-| 4 | API key update applies same unsafe-name and negative-project_id rejection | ✅ PASS | `UpdateAPIKey` at `key_handlers.go:274` calls `normalizeAPIKeyName`; `key_handlers.go:299` checks `*req.ProjectID < 0` |
-| 5 | Baseline security headers present on wrapped HTTP responses | ✅ PASS | `security_headers.go` sets `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Permissions-Policy`, CSP `frame-ancestors 'none'; base-uri 'self'; form-action 'self'` |
-| 6 | Root response no longer exposes hardcoded version data | ✅ PASS | `TestRootHandlerDoesNotExposeHardcodedVersion` asserts body lacks `"version"` and `"1.0.0"` |
-| 7 | Unknown GET paths return standard 404 JSON without version data | ✅ PASS | `TestRootHandlerReturnsStandardNotFoundForUnknownPath` asserts 404 + `"error":"not_found"` + no `"version"`/`"1.0.0"` |
-| 8-9 | Focused + broad regression pass | ✅ PASS | Focused 8/8 PASS; `go test ./... -count=1` all packages PASS; `git diff --check` clean |
-| 10 | Runtime/build-chain findings remain tracked separately | ✅ PASS | `docs/issues/OPEN-ISSUES.md` line 78: `PRD4-RUNTIME-002` (Medium, Open) covers Go stdlib vulns, Grafana URL, ldflags, healthcheck, test DB cleanup — not claimed fixed by Batch 1O |
+| 1 | `P4-F08` is `Deferred to PRD5` in PRD4 matrix, points to `PRD5-UPSTREAM-001` | ✅ PASS | `PRD4-ACCEPTANCE-MATRIX.md:37` — status `Deferred to PRD5`, references `PRD5-UPSTREAM-001` |
+| 2 | `P4-F09` is `Deferred to PRD5` in PRD4 matrix, points to `PRD5-SSO-001` | ✅ PASS | `PRD4-ACCEPTANCE-MATRIX.md:38` — status `Deferred to PRD5`, references `PRD5-SSO-001` |
+| 3 | Batch 1H/1I harnesses remain recorded as accepted Canary/Sentinel work | ✅ PASS | Matrix rows show "Canary PASS 11/11" and Sentinel merge refs `d3acfa6`/PR #91, `2c02430`/PR #92 |
+| 4 | `PRD5-BACKLOG.md` contains reopen prerequisites for real upstream/SSO | ✅ PASS | `PRD5-BACKLOG.md:29-30` — `PRD5-UPSTREAM-001` and `PRD5-SSO-001` with explicit prerequisites |
+| 5 | `P4-F11` excludes `P4-F08`/`P4-F09` real target execution from current PRD4 promotion | ✅ PASS | `PRD4-ACCEPTANCE-MATRIX.md:40` — "P4-F08 / P4-F09 are excluded from current PRD4 promotion" |
+| 6 | Current-status/handoff docs state no approved real environments; real target execution out of PRD4 closeout | ✅ PASS | `CURRENT-STATUS.md:5` — "no approved real upstream or real SSO target environment is currently available"; `PROJECT-HANDOFF.md:71-76` — deferral to PRD5 |
+| 7 | README, DOC-INVENTORY, CODEBASE-MAP do not imply current PRD4 real target execution | ✅ PASS | All three docs use "deferred to PRD5" language for real target execution |
+| 8 | Matrix count: 13 total, 9 Canary passed, 2 Deferred to PRD5, 1 Fixed awaiting Canary, 1 Planned | ✅ PASS | `awk` output: `total=13, Canary passed=9, Deferred to PRD5=2, Fixed awaiting Canary=1, Planned=1` |
+| 9 | `git diff --check` passes | ✅ PASS | Clean output |
 
-## Focused Test Results
-
-```
-=== RUN   TestCreateAPIKey_RejectsUnsafeNameAndOversizedName      --- PASS
-=== RUN   TestCreateAPIKey_RejectsNegativeProjectID               --- PASS
-=== RUN   TestUpdateAPIKey_RejectsUnsafeName                      --- PASS
-=== RUN   TestUpdateAPIKey_RejectsNegativeProjectID               --- PASS
-=== RUN   TestSecurityHeaders                                     --- PASS
-=== RUN   TestRootHandlerDoesNotExposeHardcodedVersion            --- PASS
-=== RUN   TestRootHandlerReturnsStandardNotFoundForUnknownPath    --- PASS
-```
-
-**8/8 PASS**
-
-## Broad Regression
+## Broad Verification
 
 ```
-go test ./... -count=1 → all packages PASS (22 packages)
-git diff --check → clean (no trailing whitespace / conflict markers)
+grep -rn "PRD5-UPSTREAM-001|PRD5-SSO-001|P4-F08|P4-F09|Deferred to PRD5|real target execution|2026-07-08"
+  → all 11 expected docs contain the required references
+awk matrix count → total=13, Canary passed=9, Deferred to PRD5=2, Fixed awaiting Canary=1, Planned=1
+git diff --check → clean
 ```
 
 ## New Issues Found
@@ -46,11 +34,10 @@ git diff --check → clean (no trailing whitespace / conflict markers)
 
 ## Notes
 
-- `normalizeAPIKeyName` 同时处理 trim、空值、长度、特殊字符（HTML/SQL payload）和控制字符，逻辑集中且合理。
-- Security headers middleware 在 `main.go:464` 正确挂载在 CORS 和 metrics 之后、handler 之前。
-- Root handler 和 404 handler 的版本信息移除由 `main_test.go` 的两个测试覆盖。
-- `PRD4-RUNTIME-002`（Go 工具链漏洞、Grafana 配置等）在 `OPEN-ISSUES.md` 中独立跟踪，未被本 batch 标记为已修复。
+- 这是纯文档/状态边界变更，不涉及代码修改。
+- `PRD4-RUNTIME-002`、`PRD4-INFRA-001`、`PRD4-DEPLOY-001`、`PRD4-PLUGIN-001` 保持独立跟踪，未被本 batch 影响。
+- Batch 1H/1I 的 harness assets 保留为可复用工具，仅 real target execution 被推迟到 PRD5。
 
 ## Conclusion
 
-**PRD4 Batch 1O: PASS 8/8.** 所有验收标准满足，无新发现问题。可以进入 Sentinel commit 流程。
+**PRD4 Batch 1P: PASS 6/6.** 所有验收标准满足，文档一致性正确，PRD4 矩阵计数符合预期。可以进入 Sentinel commit 流程。
