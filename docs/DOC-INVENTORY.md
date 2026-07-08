@@ -9,7 +9,7 @@
 | `docs/PROJECT-HANDOFF.md` | First-read handoff for agents |
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
 | `docs/PRD-Phase4.md` | Formal PRD4 scope and implementation-phase reference |
-| `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` | Active PRD4 acceptance matrix and evidence boundaries |
+| `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` | Completed PRD4 accepted/deferred matrix and evidence boundaries |
 | `docs/planning/PRD5-BACKLOG.md` | Capabilities explicitly deferred beyond PRD4 |
 | `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` | Completed PRD3 cleanup/optimization acceptance state |
 | `docs/PRD-Phase3.md` | Completed PRD3 cleanup/optimization scope |
@@ -23,8 +23,8 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required Codex/OpenClaw workflow |
-| `docs/agent-workflows/FIX-SIGNAL.md` | Latest verification signal: PRD4 Batch 1S Open Issue Boundary Closeout |
-| `docs/agent-workflows/VERIFY-RESULT.md` | Latest OpenClaw verification result: PRD4 Batch 1R Runtime Build Chain Follow-up PASS 9/9 |
+| `docs/agent-workflows/FIX-SIGNAL.md` | No active verification signal; PRD4 complete for current scope |
+| `docs/agent-workflows/VERIFY-RESULT.md` | Latest OpenClaw verification result: PRD4 Batch 1S Open Issue Boundary Closeout PASS 7/7 |
 
 ## Product And Design References
 
@@ -36,7 +36,7 @@
 | `docs/PRD-Phase2.md` | PRD2 formal product requirements | Frozen for new feature work |
 | `docs/planning/PRD3-CONSISTENCY-AUDIT.md` | PRD3 consistency audit | Confirmed PRD3 input; completed in Batch 17 closeout |
 | `docs/PRD-Phase3.md` | PRD3 formal product requirements | Completed cleanup/optimization scope |
-| `docs/PRD-Phase4.md` | PRD4 formal product requirements | Active PRD4 implementation-phase scope |
+| `docs/PRD-Phase4.md` | PRD4 formal product requirements | Completed current PRD4 scope |
 | `docs/planning/PRD4-BACKLOG.md` | PRD4 candidate backlog | Source record for PRD4 scope discovery |
 | `docs/planning/PRD5-BACKLOG.md` | PRD5 backlog | Explicitly deferred capabilities and reopen prerequisites |
 | `docs/design/` | UI design decisions | Current design reference unless contradicted by code |
@@ -100,6 +100,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | `docs/ops/evidence/PRD4-B1Q-production-evidence-promotion-20260708.md` | PRD4 Batch 1Q production evidence promotion decision; classifies target-smoke evidence and records that no PRD4 row is promoted to `Production verified` |
 | `docs/ops/evidence/PRD4-B1R-runtime-build-chain-local-20260708.md` | PRD4 Batch 1R local evidence for repo-controllable runtime/build-chain fixes under `PRD4-RUNTIME-002` |
 | `docs/ops/evidence/PRD4-B1S-open-issue-boundary-closeout-20260708.md` | PRD4 Batch 1S open issue boundary evidence; maps remaining plugin/deploy/infra PRD4 open items to PRD5 and leaves target DB cleanup to Atlas |
+| `docs/ops/evidence/PRD4-final-closeout-20260708.md` | PRD4 final closeout evidence; records PRD4 complete for current scope and target test DB cleanup completion by User-reported Atlas action |
 
 ## Agent Workflow Files
 
@@ -107,7 +108,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 |------|------|
 | `docs/agent-workflows/README.md` | Agent workflow index |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Current protocol |
-| `docs/agent-workflows/FIX-SIGNAL.md` | Current Codex to OpenClaw verification instruction |
+| `docs/agent-workflows/FIX-SIGNAL.md` | Current Codex to OpenClaw signal state; no active request after PRD4 closeout |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Current OpenClaw/Sentinel/Atlas verification result for the latest completed round |
 | `docs/agent-workflows/CHECKLIST.md` | Canary checklist/reference; may need reconciliation |
 | `docs/agent-workflows/PLAN.md` | Historical/current plan notes; do not treat as canonical without reconciliation |

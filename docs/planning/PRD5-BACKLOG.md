@@ -1,16 +1,34 @@
 # PRD5 Backlog
 
-> Date: 2026-07-07
+> Date: 2026-07-08
 > Status: Deferred backlog for capabilities intentionally not implemented in
 > PRD4 first scope.
-> Source: PRD4 scope confirmation and earlier PRD2/PRD3 deferred boundaries.
+> Source: PRD4 scope confirmation, earlier PRD2/PRD3 deferred boundaries, and
+> 2026-07-08 User direction for X-Insight integration scope discovery.
 
 ## Purpose
 
 This file records important capabilities that remain valuable but are too large,
-high-risk, environment-dependent, or strategically premature for PRD4. Listing an
-item here prevents PRD4 labels or partial implementation from implying that the
-capability is already accepted.
+high-risk, environment-dependent, strategically premature, or still in
+cross-project discovery. Listing an item here prevents PRD4 labels, partial
+implementation, or discussion notes from implying that the capability is already
+accepted.
+
+## Current PRD5 Discovery Direction
+
+The first PRD5 discovery pass should start from the deferred items below and the
+shared UniRouter/X-Insight communication folder:
+
+```text
+/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation
+```
+
+For the X-Insight-related items, UniRouter should focus on high-fidelity
+structured evidence emitted from gateway-native execution points. X-Insight is
+expected to own the broader enterprise AI/Agent observability and governance
+platform. This boundary remains a discovery assumption until the X-Insight team
+answers the open request in the shared folder and the User confirms the final
+split.
 
 ## Deferred Items
 
@@ -29,6 +47,11 @@ capability is already accepted.
 | PRD5-OPS-001 | Full maintenance/SLA/SLO incident operations | Needs incident lifecycle, planned maintenance, communication workflow, SLO policy, and notification governance | PRD4 Status Center baseline, operator roles, notification reliability, customer-visible policy |
 | PRD5-UPSTREAM-001 | Real upstream target-environment E2E | No approved real upstream environment, credentials, and model slugs are available for the current PRD4 closeout; PRD4 keeps only guarded harness assets | Approved OpenRouter and direct Anthropic credentials, target environment owner, cost/risk approval, non-stream/stream run plan, cleanup plan |
 | PRD5-SSO-001 | Real SSO target-environment E2E | No approved Logto or enterprise OIDC target, test user, and browser-login environment are available for the current PRD4 closeout; PRD4 keeps only guarded harness assets | Approved IdP tenant/client, test user, callback URL, target console/backend URLs, DB audit access, redaction review |
+| PRD5-XINSIGHT-001 | X-Insight integration contract and shared working process | X-Insight integration is new PRD5 discovery scope, not part of the PRD4 closeout; the communication folder exists but no binding contract or ingestion path is accepted yet | X-Insight response to shared questions, confirmed ownership split, ingestion mode, schema versioning rule, evidence handoff path, and User approval |
+| PRD5-EVIDENCE-001 | Structured execution-chain evidence fields | PRD4 trace events are a metadata-only foundation but do not yet model multi-agent/multi-tool/multi-business-system chains with explicit structural fields | Confirmed field dictionary for `trace_id`, `span_id`, `parent_span_id`, `schema_version`, `source_component`, `capture_mode`, `capture_gap`, `evidence_ref`, `upstream_request_id`, `decision_kind`, `decision_result`, `decision_reason`, `actor_type`, `actor_ref`, `on_behalf_of`, and `session_id`; migration/backfill plan; redaction policy; X-Insight compatibility review |
+| PRD5-PAYLOAD-001 | Enterprise-configurable prompt/response payload policy | Raw prompt/response storage is privacy-sensitive and should not be silently introduced through trace, cache, or X-Insight integration work | User decision on default-off vs enabled modes, UniRouter/X-Insight ownership split, encryption/key management, retention, deletion/export, audit-on-read, redacted summary, hash, and `evidence_ref` behavior |
+| PRD5-COMPARE-001 | NewAPI/LiteLLM/one-api and observability-platform comparison | Functional, technical, and UI comparison is needed before feature-chase planning; older research snapshots and X-Insight prior research are inputs but must be refreshed before PRD commitments | Current source/docs review for NewAPI, LiteLLM, one-api, Langfuse, Helicone, and any X-Insight-selected references; version/commit/date evidence; feature gap matrix; explicit UniRouter vs X-Insight ownership mapping |
+| PRD5-TRACEUI-001 | Lightweight UniRouter trace UI and X-Insight UI boundary | PRD4 adds request trace display, but X-Insight is expected to own broader observability; UniRouter should not duplicate a full observability product without a confirmed boundary | User and X-Insight decision on whether UniRouter keeps a lightweight request-level trace UI, embeds X-Insight previews, or removes advanced observability UI from UniRouter |
 | PRD5-ONTOLOGY-001 | Ontology-driven governance loop | Requires stable Flow, Trace, Identity, Policy, and Governance entities before ontology can control product behavior | PRD4 trace/event model, identity attribution, policy model, governance evidence model |
 | PRD5-SAAS-001 | Public SaaS, reseller, payment, invoice, coupons, campaigns, support CRM | Shifts product direction away from local-deploy enterprise MaaS | Explicit User product-direction change and separate SaaS/commercial PRD |
 
@@ -38,6 +61,9 @@ PRD4 may design prerequisites for these items, but must not imply that they are
 implemented:
 
 - PRD4 Flow/Event/Trace can feed Scheduler V2 later.
+- PRD4 Flow/Event/Trace can provide a foundation for X-Insight integration, but
+  PRD5 must still define the cross-project schema, ingestion path, and evidence
+  ownership before implementation.
 - PRD4 PlungeIn Observe/Act/Enrich ports can prepare plugin boundaries later.
 - PRD4 external Logto compatibility can prepare an optional identity deployment
   pattern later.
@@ -48,6 +74,9 @@ implemented:
 - PRD4 Runtime Observability can prepare multi-instance infrastructure inventory,
   topology, collector integration, and metric-alert routing later.
 - PRD4 API key owner usage can prepare budget hard-blocking later.
+- PRD4 Logs trace UI can prepare a lightweight UniRouter-side request view, but
+  enterprise-wide AI/Agent observability should stay in X-Insight unless the
+  User explicitly changes the product boundary.
 
 ## Reopen Rule
 
@@ -58,3 +87,11 @@ A PRD5 item can move into active planning only when:
 - prerequisites and blast radius are documented;
 - acceptance evidence is defined before implementation starts;
 - deferred PRD4 boundaries are not silently rewritten.
+
+For X-Insight-related PRD5 items, also require:
+
+- the shared-folder request/response trail is linked;
+- any X-Insight preference is separated from confirmed facts;
+- UniRouter-owned work and X-Insight-owned work are listed separately;
+- payload storage and evidence-reference ownership are decided before raw
+  payload capture is implemented.
