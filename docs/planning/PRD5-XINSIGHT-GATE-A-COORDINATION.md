@@ -139,6 +139,9 @@ Current metadata safety:
 - `request_trace_events.metadata` is allowlist-sanitized on write;
 - admin trace API sanitizes metadata again on read;
 - current metadata sanitizer keeps only scalar allowlisted keys;
+- trace events can mark `capture_gap='redacted'` when UniRouter drops
+  restricted metadata, rejects unsupported value shapes, or truncates allowed
+  strings;
 - raw prompt/response and secret-like keys are not allowed in trace metadata.
 
 ## Non-Goals

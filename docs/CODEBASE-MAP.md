@@ -32,7 +32,7 @@
 | `internal/migrate` | SQL migration runner |
 | `internal/modelgov` | Model governance helpers and access checks |
 | `internal/models` | Shared data model types |
-| `internal/traceutil` | Shared PRD4 request trace metadata sanitizer used by gateway trace writes and admin trace responses |
+| `internal/traceutil` | Shared request trace metadata sanitizer and PRD5 capture-gap helper used by gateway trace writes and admin trace responses |
 | `internal/oidc` | OIDC discovery, token exchange, JWKS verification, and identity extraction |
 | `internal/testutil` | Mock DB and test DB helpers |
 | `internal/tokenutil` | Token estimation and stream counting |
@@ -118,6 +118,14 @@ provider-returned upstream request IDs from a bounded response-header allowlist,
 sanitizes the value, then writes it to provider response trace events and
 `call_logs.upstream_request_id`. It does not trust inbound public request
 headers as evidence authority.
+
+PRD5 Batch 1E event capture-gap emission is implemented in
+`internal/traceutil/metadata.go` and `internal/gateway/trace.go`. The trace
+metadata sanitizer preserves safe scalar allowlisted metadata and returns a
+`redacted` capture gap when restricted keys, unsupported value shapes, or
+truncated strings are dropped. Gateway trace writes persist that gap in
+`request_trace_events.capture_gap` and include it in the trace source-event
+hash.
 
 Usage analytics is implemented in `internal/admin/prd2_product_handlers.go` and now supports project/key/model/provider/channel/status/source filters plus PRD4 `scope=my`, `owner_user_id`, `key_type`, `group_by=owner`, and `group_by=key_type`.
 

@@ -2,9 +2,9 @@
 
 > Version: Phase 5 Active Scope Draft
 > Date: 2026-07-08
-> Status: Batch 1A/1B/1C Canary/Sentinel complete. Batch 1D upstream request
-> correlation fixed awaiting Canary. PRD4 remains complete for the confirmed
-> current scope and is not reopened by PRD5.
+> Status: Batch 1A/1B/1C and Batch 1D Canary/Sentinel complete. Batch 1E
+> event capture-gap emission fixed awaiting Canary. PRD4 remains complete for
+> the confirmed current scope and is not reopened by PRD5.
 > Source: `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, X-Insight shared-folder
 > responses on 2026-07-08, current UniRouter code/schema review, and official
@@ -83,6 +83,7 @@ PRD5 must not:
 | P5-F07 | Competitor-Informed Feature Catch-Up | Add UniRouter-owned gateway feature gaps revealed by LiteLLM/New API/one-api/Helicone/Langfuse comparison |
 | P5-F08 | Read-Only DB/View Gate | Consider restricted read-only views only after X-Insight local snapshot import succeeds |
 | P5-F13 | Upstream Request Correlation | Capture provider-returned upstream request IDs into gateway trace/log evidence without trusting public inbound headers |
+| P5-F14 | Event Capture Gap Emission | Mark trace events as redacted when UniRouter drops or truncates trace metadata during safe evidence capture |
 
 ### P2
 
@@ -280,6 +281,25 @@ Acceptance:
 - No arbitrary inbound public request header becomes evidence authority.
 - Missing provider IDs remain null; UniRouter does not fabricate them.
 
+### P5-F14: Event Capture Gap Emission
+
+Requirements:
+
+- Detect when trace event metadata is intentionally dropped, shape-rejected, or
+  truncated by UniRouter's metadata sanitizer.
+- Store `capture_gap='redacted'` on the affected `request_trace_events` row.
+- Preserve sanitized metadata output and existing trace API/frontend behavior.
+- Include `capture_gap` in the trace source-event hash so persisted evidence
+  integrity reflects the gap state.
+
+Acceptance:
+
+- Gateway trace tests prove restricted or unsupported metadata creates
+  `capture_gap='redacted'`.
+- Metadata that is fully retained keeps `capture_gap` null.
+- No raw prompt/response, secret, nested metadata, new migration, new route,
+  exporter/outbox, frontend behavior, or PRD4 matrix change is introduced.
+
 ### P5-F09: Cursor Export API Or Outbox
 
 Requirements:
@@ -317,10 +337,11 @@ PRD5 should proceed in independently verifiable batches:
 2. Batch 1B: nullable structural field migration and writer/read-side behavior.
 3. Batch 1C: trace UI evidence quality display and API exposure.
 4. Batch 1D: provider upstream request ID capture into trace/log evidence.
-5. Later payload policy metadata and evidence references, with future raw
+5. Batch 1E: event capture-gap emission for metadata redaction/truncation.
+6. Later payload policy metadata and evidence references, with future raw
    payload modes gated behind enterprise opt-in.
-6. Batch 1E: read-only view/export decision after X-Insight Gate A evidence.
-7. Batch 1F+: target upstream/SSO evidence or larger backlog items only after
+7. Batch 1F: read-only view/export decision after X-Insight Gate A evidence.
+8. Batch 1G+: target upstream/SSO evidence or larger backlog items only after
    their prerequisites are explicitly met.
 
 ## 6. External Source Refresh

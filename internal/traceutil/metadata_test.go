@@ -32,3 +32,34 @@ func TestSanitizeMetadata(t *testing.T) {
 		}
 	}
 }
+
+func TestSanitizeMetadataWithGap(t *testing.T) {
+	metadata, gap := SanitizeMetadataWithGap(map[string]interface{}{
+		"estimated_tokens": 100,
+		"usage_source":     "upstream",
+	})
+	if gap != "" {
+		t.Fatalf("expected no capture gap for fully retained safe metadata, got %q", gap)
+	}
+	if metadata["estimated_tokens"] != 100 || metadata["usage_source"] != "upstream" {
+		t.Fatalf("expected safe metadata to remain, got %#v", metadata)
+	}
+
+	metadata, gap = SanitizeMetadataWithGap(map[string]interface{}{
+		"usage_source": " " + strings.Repeat("x", 300) + " ",
+		"api_key":      "sk-secret",
+		"mapped_model": map[string]interface{}{"nested": "dropped"},
+	})
+	if gap != "redacted" {
+		t.Fatalf("expected redacted capture gap, got %q", gap)
+	}
+	if usageSource, ok := metadata["usage_source"].(string); !ok || len(usageSource) != 256 {
+		t.Fatalf("expected truncated usage_source, got %#v", metadata["usage_source"])
+	}
+	if _, ok := metadata["api_key"]; ok {
+		t.Fatalf("expected restricted metadata to be redacted, got %#v", metadata)
+	}
+	if _, ok := metadata["mapped_model"]; ok {
+		t.Fatalf("expected unsupported metadata shape to be redacted, got %#v", metadata)
+	}
+}

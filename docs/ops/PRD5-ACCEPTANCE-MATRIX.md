@@ -1,13 +1,14 @@
 # PRD5 Acceptance Matrix
 
 > Date: 2026-07-08
-> Status: PRD5 Batch 1A/1B/1C Canary/Sentinel complete; Batch 1D upstream request
-> correlation fixed awaiting Canary. PRD4 remains complete for the confirmed
-> current scope and is not reopened.
+> Status: PRD5 Batch 1A/1B/1C and Batch 1D Canary/Sentinel complete; Batch 1E
+> event capture-gap emission fixed awaiting Canary. PRD4 remains complete for
+> the confirmed current scope and is not reopened.
 > Source: `docs/PRD-Phase5.md`, `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, current repo/code review,
 > X-Insight shared-folder responses, PRD5 Batch 1A/1B/1C implementation
-> artifacts, and PRD5 Batch 1D upstream request correlation changes.
+> artifacts, PRD5 Batch 1D upstream request correlation changes, and PRD5 Batch
+> 1E event capture-gap emission changes.
 
 ## Status Values
 
@@ -41,7 +42,24 @@ actual result, and rollback or cleanup note.
 | P5-F10 | Real Upstream Target E2E | Deferred pending prerequisite | PRD4 real-upstream harness runs against approved target credentials and model slugs | Target run evidence, cleanup note | Tracked from `PRD5-UPSTREAM-001` |
 | P5-F11 | Real SSO Target E2E | Deferred pending prerequisite | PRD4 real-SSO harness runs against approved IdP tenant/client/test user | Target browser/audit evidence, cleanup note | Tracked from `PRD5-SSO-001` |
 | P5-F12 | Larger Deferred Backlog Screening | Planned | Scheduler, plugins, managed HA/IaC, runtime cache, SDK, roles, and hard budget blocking are separately screened before implementation | Future scope docs and User approval | Not automatically active merely because PRD5 started |
-| P5-F13 | Upstream Request Correlation | Fixed awaiting Canary | Provider-returned upstream request IDs are captured from a bounded response-header allowlist and written to trace/log evidence without trusting public inbound headers | Gateway focused tests, source review, `git diff --check` | Batch 1D code-only evidence enrichment; no migration, new route, exporter/outbox, raw payload capture, request-path semantic change, or PRD4 matrix change |
+| P5-F13 | Upstream Request Correlation | Canary passed | Provider-returned upstream request IDs are captured from a bounded response-header allowlist and written to trace/log evidence without trusting public inbound headers | Canary PASS 11/11 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `bf435ca` / PR #107 | Batch 1D code-only evidence enrichment; no migration, new route, exporter/outbox, raw payload capture, request-path semantic change, or PRD4 matrix change |
+| P5-F14 | Event Capture Gap Emission | Fixed awaiting Canary | Trace events record `capture_gap='redacted'` when UniRouter intentionally drops, shape-rejects, or truncates trace metadata during safe evidence capture | Traceutil/gateway focused tests, source review, `git diff --check` | Batch 1E code-only evidence enrichment; no migration, new route, frontend behavior, exporter/outbox, raw payload capture, fabricated session/delegation facts, or PRD4 matrix change |
+
+## Batch 1E Verification
+
+PRD5 Batch 1E verifies event capture-gap emission:
+
+```bash
+go test ./internal/traceutil ./internal/gateway -run 'TestSanitizeMetadata|TestRecordTraceEvent|TestRecordRequest|TestUpstreamRequestIDFromHeader' -count=1
+go test ./internal/gateway ./internal/admin ./internal/traceutil -count=1
+rg -n "capture_gap|SanitizeMetadataWithGap|redacted|P5-F14|Batch 1E|bf435ca|PR #107" internal/traceutil internal/gateway docs/PRD-Phase5.md docs/ops/PRD5-ACCEPTANCE-MATRIX.md docs/planning/PRD5-IMPLEMENTATION-PLAN.md docs/tech-ref/26-prd5-evidence-field-contract.md docs/agent-workflows/FIX-SIGNAL.md
+git diff --check
+```
+
+No new migration, API route, frontend behavior, exporter/outbox, read-only
+credential, raw payload capture, fabricated business-chain/session/delegation
+fact, PRD4 matrix count, or `Production verified` claim should change in Batch
+1E.
 
 ## Batch 1D Verification
 

@@ -80,7 +80,7 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Current active verification signal: PRD5 Batch 1D Upstream Request Correlation
+Current active verification signal: PRD5 Batch 1E Event Capture Gap Emission
 fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
 
 PRD4 is complete for the confirmed current scope. PRD5 must preserve the PRD4
@@ -105,12 +105,24 @@ PRD5 Batch 1A/1B/1C:
 PRD5 Batch 1D:
 
 - Scope: provider-returned upstream request ID correlation for gateway evidence.
+- Status: Canary PASS 11/11 in `docs/agent-workflows/VERIFY-RESULT.md`;
+  Sentinel merge reflected by `bf435ca` / PR #107.
 - Adds: bounded response-header allowlist extraction, sanitized
   `upstream_request_id` persistence on provider trace events and call logs, and
   focused gateway tests.
 - Does not add: inbound public-header trust, migration, new route, frontend
   behavior, exporter/outbox, read-only credential, raw payload capture, or PRD4
   matrix changes.
+
+PRD5 Batch 1E:
+
+- Scope: event-level capture-gap emission for trace metadata safety.
+- Adds: `capture_gap='redacted'` when UniRouter drops restricted metadata,
+  rejects unsupported metadata shapes, or truncates allowed metadata strings;
+  focused `traceutil` and gateway tests.
+- Does not add: migration, new route, frontend behavior, exporter/outbox,
+  read-only credential, raw payload capture, fabricated session/delegation
+  facts, or PRD4 matrix changes.
 
 Latest completed PRD4 verification result is PRD4 Batch 1S Open Issue Boundary
 Closeout:

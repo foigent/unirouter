@@ -369,8 +369,8 @@ func TestRecordTraceEvent_SanitizesMetadataAndSnapshotsOwner(t *testing.T) {
 		"request_body":     `{"messages":[{"content":"secret"}]}`,
 	}, "upstream-trace-001")
 
-	if len(capturedArgs) != 30 {
-		t.Fatalf("expected 30 trace insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != 31 {
+		t.Fatalf("expected 31 trace insert args, got %d", len(capturedArgs))
 	}
 	if capturedArgs[2] != int64(7) || capturedArgs[3] != int64(9) || capturedArgs[4] != ownerUserID || capturedArgs[5] != "personal" {
 		t.Fatalf("unexpected project/key/owner args: %#v", capturedArgs[2:6])
@@ -397,17 +397,20 @@ func TestRecordTraceEvent_SanitizesMetadataAndSnapshotsOwner(t *testing.T) {
 	if capturedArgs[18] != evidenceSchemaVersion || capturedArgs[19] != "provider" || capturedArgs[20] != evidenceCaptureModeNative {
 		t.Fatalf("unexpected trace structural args: %#v", capturedArgs[18:21])
 	}
-	if capturedArgs[22] != "upstream-trace-001" {
-		t.Fatalf("expected upstream_request_id, got %#v", capturedArgs[22])
+	if capturedArgs[21] != "redacted" {
+		t.Fatalf("expected redacted capture_gap, got %#v", capturedArgs[21])
 	}
-	if capturedArgs[23] != "provider" || capturedArgs[24] != "selected" || capturedArgs[25] != "provider.response_accepted" {
-		t.Fatalf("unexpected trace decision args: %#v", capturedArgs[23:26])
+	if capturedArgs[23] != "upstream-trace-001" {
+		t.Fatalf("expected upstream_request_id, got %#v", capturedArgs[23])
 	}
-	if capturedArgs[26] != "human" || capturedArgs[27] != "user:42" || capturedArgs[28] != evidencePayloadMetadata {
-		t.Fatalf("unexpected trace actor/payload args: %#v", capturedArgs[26:29])
+	if capturedArgs[24] != "provider" || capturedArgs[25] != "selected" || capturedArgs[26] != "provider.response_accepted" {
+		t.Fatalf("unexpected trace decision args: %#v", capturedArgs[24:27])
 	}
-	if hash, ok := capturedArgs[29].(string); !ok || len(hash) != 64 {
-		t.Fatalf("expected trace source_event_hash, got %#v", capturedArgs[29])
+	if capturedArgs[27] != "human" || capturedArgs[28] != "user:42" || capturedArgs[29] != evidencePayloadMetadata {
+		t.Fatalf("unexpected trace actor/payload args: %#v", capturedArgs[27:30])
+	}
+	if hash, ok := capturedArgs[30].(string); !ok || len(hash) != 64 {
+		t.Fatalf("expected trace source_event_hash, got %#v", capturedArgs[30])
 	}
 }
 
