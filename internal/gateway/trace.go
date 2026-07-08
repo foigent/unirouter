@@ -23,7 +23,7 @@ const (
 	evidenceTraceRefSourceType = "unirouter"
 )
 
-func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, stage, severity, model, requestedModel string, route *RouteResult, statusCode, latencyMs int, metadata map[string]interface{}) {
+func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, stage, severity, model, requestedModel string, route *RouteResult, statusCode, latencyMs int, metadata map[string]interface{}, upstreamRequestIDs ...string) {
 	if relay == nil || relay.db == nil || strings.TrimSpace(requestID) == "" {
 		return
 	}
@@ -93,7 +93,11 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 	spanID := newEvidenceID()
 	sourceComponent := sourceComponentForTraceStage(stage)
 	evidenceRef := fmt.Sprintf("%s:request_trace_events:request_id:%s:span:%s", evidenceTraceRefSourceType, requestID, spanID)
-	sourceEventHash := hashTraceEvent(requestID, eventType, stage, severity, model, requestedModel, provider, channel, statusCodeArg, latencyMs, metadataJSON)
+	upstreamRequestID := ""
+	if len(upstreamRequestIDs) > 0 {
+		upstreamRequestID = sanitizeUpstreamRequestID(upstreamRequestIDs[0])
+	}
+	sourceEventHash := hashTraceEvent(requestID, eventType, stage, severity, model, requestedModel, provider, channel, statusCodeArg, latencyMs, upstreamRequestID, metadataJSON)
 	decisionKind, decisionResult, decisionReason := decisionEvidence(eventType, sanitizedMetadata)
 	if _, err := relay.db.Exec(ctx,
 		`INSERT INTO request_trace_events (
@@ -101,7 +105,7 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 			event_type, stage, severity, model, requested_model, provider, channel,
 			status_code, latency_ms, metadata,
 			trace_id, span_id, schema_version, source_component, capture_mode,
-			evidence_ref, decision_kind, decision_result, decision_reason,
+			evidence_ref, upstream_request_id, decision_kind, decision_result, decision_reason,
 			actor_type, actor_ref, payload_capture_mode, source_event_hash
 		)
 		 VALUES (
@@ -109,14 +113,14 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 			$7, $8, $9, $10, $11, $12, $13,
 			$14, $15, $16,
 			$17, $18, $19, $20, $21,
-			$22, $23, $24, $25,
-			$26, $27, $28, $29
+			$22, $23, $24, $25, $26,
+			$27, $28, $29, $30
 		)`,
 		requestID, orgID, projectIDArg, keyIDArg, ownerUserIDArg, keyType,
 		eventType, stage, severity, model, requestedModel, provider, channel,
 		statusCodeArg, latencyMs, string(metadataJSON),
 		traceID, spanID, evidenceSchemaVersion, sourceComponent, evidenceCaptureModeNative,
-		evidenceRef, nullableString(decisionKind), nullableString(decisionResult), nullableString(decisionReason),
+		evidenceRef, nullableString(upstreamRequestID), nullableString(decisionKind), nullableString(decisionResult), nullableString(decisionReason),
 		actorType, actorRefArg, evidencePayloadMetadata, sourceEventHash,
 	); err != nil {
 		logger.New(logger.Fields{RequestID: requestID, OrgID: uint(orgID), Module: "trace"}).Warn("Failed to record trace event %s: %v", eventType, err)
@@ -246,61 +250,80 @@ func newEvidenceID() string {
 	return hex.EncodeToString(sum[:8])
 }
 
-func hashTraceEvent(requestID, eventType, stage, severity, model, requestedModel, provider, channel string, statusCode interface{}, latencyMs int, metadataJSON []byte) string {
+func hashTraceEvent(requestID, eventType, stage, severity, model, requestedModel, provider, channel string, statusCode interface{}, latencyMs int, upstreamRequestID string, metadataJSON []byte) string {
 	payload := struct {
-		RequestID      string      `json:"request_id"`
-		EventType      string      `json:"event_type"`
-		Stage          string      `json:"stage"`
-		Severity       string      `json:"severity"`
-		Model          string      `json:"model"`
-		RequestedModel string      `json:"requested_model"`
-		Provider       string      `json:"provider"`
-		Channel        string      `json:"channel"`
-		StatusCode     interface{} `json:"status_code"`
-		LatencyMS      int         `json:"latency_ms"`
-		Metadata       string      `json:"metadata"`
+		RequestID         string      `json:"request_id"`
+		EventType         string      `json:"event_type"`
+		Stage             string      `json:"stage"`
+		Severity          string      `json:"severity"`
+		Model             string      `json:"model"`
+		RequestedModel    string      `json:"requested_model"`
+		Provider          string      `json:"provider"`
+		Channel           string      `json:"channel"`
+		StatusCode        interface{} `json:"status_code"`
+		LatencyMS         int         `json:"latency_ms"`
+		UpstreamRequestID string      `json:"upstream_request_id"`
+		Metadata          string      `json:"metadata"`
 	}{
 		RequestID: requestID, EventType: eventType, Stage: stage, Severity: severity,
 		Model: model, RequestedModel: requestedModel, Provider: provider, Channel: channel,
-		StatusCode: statusCode, LatencyMS: latencyMs, Metadata: string(metadataJSON),
+		StatusCode: statusCode, LatencyMS: latencyMs, UpstreamRequestID: upstreamRequestID, Metadata: string(metadataJSON),
 	}
 	encoded, _ := json.Marshal(payload)
 	sum := sha256.Sum256(encoded)
 	return hex.EncodeToString(sum[:])
 }
 
-func hashCallLogEvidence(requestID string, orgID int64, projectID interface{}, keyID int64, ownerUserID interface{}, keyType, model, requestedModel, provider, channel string, promptTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs int, usageSource string, isStream bool, estimatedTokens int, usageConfidence float64) string {
+func hashCallLogEvidence(requestID string, orgID int64, projectID interface{}, keyID int64, ownerUserID interface{}, keyType, model, requestedModel, provider, channel string, promptTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs int, usageSource string, isStream bool, estimatedTokens int, usageConfidence float64, upstreamRequestID string) string {
 	payload := struct {
-		RequestID        string      `json:"request_id"`
-		OrgID            int64       `json:"org_id"`
-		ProjectID        interface{} `json:"project_id"`
-		KeyID            int64       `json:"api_key_id"`
-		OwnerUserID      interface{} `json:"owner_user_id"`
-		KeyType          string      `json:"key_type"`
-		Model            string      `json:"model"`
-		RequestedModel   string      `json:"requested_model"`
-		Provider         string      `json:"provider"`
-		Channel          string      `json:"channel"`
-		PromptTokens     int         `json:"prompt_tokens"`
-		CompletionTokens int         `json:"completion_tokens"`
-		CostCents        int         `json:"cost_cents"`
-		StatusCode       int         `json:"status_code"`
-		LatencyMS        int         `json:"latency_ms"`
-		TTFTMS           int         `json:"ttft_ms"`
-		UsageSource      string      `json:"usage_source"`
-		IsStream         bool        `json:"is_stream"`
-		EstimatedTokens  int         `json:"estimated_tokens"`
-		UsageConfidence  float64     `json:"usage_confidence"`
+		RequestID         string      `json:"request_id"`
+		OrgID             int64       `json:"org_id"`
+		ProjectID         interface{} `json:"project_id"`
+		KeyID             int64       `json:"api_key_id"`
+		OwnerUserID       interface{} `json:"owner_user_id"`
+		KeyType           string      `json:"key_type"`
+		Model             string      `json:"model"`
+		RequestedModel    string      `json:"requested_model"`
+		Provider          string      `json:"provider"`
+		Channel           string      `json:"channel"`
+		PromptTokens      int         `json:"prompt_tokens"`
+		CompletionTokens  int         `json:"completion_tokens"`
+		CostCents         int         `json:"cost_cents"`
+		StatusCode        int         `json:"status_code"`
+		LatencyMS         int         `json:"latency_ms"`
+		TTFTMS            int         `json:"ttft_ms"`
+		UsageSource       string      `json:"usage_source"`
+		IsStream          bool        `json:"is_stream"`
+		EstimatedTokens   int         `json:"estimated_tokens"`
+		UsageConfidence   float64     `json:"usage_confidence"`
+		UpstreamRequestID string      `json:"upstream_request_id"`
 	}{
 		RequestID: requestID, OrgID: orgID, ProjectID: projectID, KeyID: keyID,
 		OwnerUserID: ownerUserID, KeyType: keyType, Model: model, RequestedModel: requestedModel,
 		Provider: provider, Channel: channel, PromptTokens: promptTokens, CompletionTokens: completionTokens,
 		CostCents: costCents, StatusCode: statusCode, LatencyMS: latencyMs, TTFTMS: ttftMs,
 		UsageSource: usageSource, IsStream: isStream, EstimatedTokens: estimatedTokens, UsageConfidence: usageConfidence,
+		UpstreamRequestID: upstreamRequestID,
 	}
 	encoded, _ := json.Marshal(payload)
 	sum := sha256.Sum256(encoded)
 	return hex.EncodeToString(sum[:])
+}
+
+func sanitizeUpstreamRequestID(value string) string {
+	value = strings.Trim(strings.TrimSpace(value), `"`)
+	if value == "" {
+		return ""
+	}
+	for i := 0; i < len(value); i++ {
+		if value[i] < 33 || value[i] > 126 {
+			return ""
+		}
+	}
+	if len(value) > 128 {
+		value = value[:128]
+	}
+	return value
 }
 
 func nullableString(value string) interface{} {
