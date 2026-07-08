@@ -6,18 +6,23 @@
 ## First Read Order
 
 1. `docs/ops/CURRENT-STATUS.md` - current verified project status.
-2. `docs/PRD-Phase4.md` - completed PRD4 scope.
-3. `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` - PRD4 accepted/deferred rows and evidence boundaries.
-4. `docs/planning/PRD5-BACKLOG.md` - capabilities intentionally deferred beyond PRD4.
-5. `docs/planning/PRD4-BACKLOG.md` - PRD4 candidate backlog source record.
-6. `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` - completed PRD3 cleanup/optimization acceptance state.
-7. `docs/PRD-Phase3.md` - completed PRD3 scope.
-8. `docs/planning/PRD3-CONSISTENCY-AUDIT.md` - PRD1 -> PRD2 consistency findings behind PRD3.
-9. `docs/issues/OPEN-ISSUES.md` - active unresolved issues and recently verified fixes.
-10. `docs/agent-workflows/AGENT-PROTOCOL.md` - risk-gated Codex/OpenClaw Canary/Sentinel/Atlas workflow.
-11. `docs/agent-workflows/FIX-SIGNAL.md` and `docs/agent-workflows/VERIFY-RESULT.md` - current signal state and latest verification result.
-12. `docs/CODEBASE-MAP.md` - code, route, data, test, and deployment map.
-13. `docs/DOC-INVENTORY.md` and `docs/DOCS-GOVERNANCE.md` - which docs are current, frozen, historical, candidate, or reference-only.
+2. `docs/PRD-Phase5.md` - active PRD5 scope.
+3. `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` - PRD5 acceptance rows and evidence boundaries.
+4. `docs/planning/PRD5-IMPLEMENTATION-PLAN.md` - PRD5 batch plan and UniRouter/X-Insight ownership split.
+5. `docs/planning/PRD5-COMPETITOR-COMPARISON.md` - competitor comparison and UniRouter-owned PRD5 catch-up items.
+6. `docs/planning/PRD5-BACKLOG.md` - capabilities intentionally deferred beyond PRD4 and PRD5 active scope.
+7. `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md` - X-Insight Gate A sequencing decisions.
+8. `docs/PRD-Phase4.md` - completed PRD4 scope.
+9. `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` - PRD4 accepted/deferred rows and evidence boundaries.
+10. `docs/planning/PRD4-BACKLOG.md` - PRD4 candidate backlog source record.
+11. `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` - completed PRD3 cleanup/optimization acceptance state.
+12. `docs/PRD-Phase3.md` - completed PRD3 scope.
+13. `docs/planning/PRD3-CONSISTENCY-AUDIT.md` - PRD1 -> PRD2 consistency findings behind PRD3.
+14. `docs/issues/OPEN-ISSUES.md` - active unresolved issues and recently verified fixes.
+15. `docs/agent-workflows/AGENT-PROTOCOL.md` - risk-gated Codex/OpenClaw Canary/Sentinel/Atlas workflow.
+16. `docs/agent-workflows/FIX-SIGNAL.md` and `docs/agent-workflows/VERIFY-RESULT.md` - current signal state and latest verification result.
+17. `docs/CODEBASE-MAP.md` - code, route, data, test, and deployment map.
+18. `docs/DOC-INVENTORY.md` and `docs/DOCS-GOVERNANCE.md` - which docs are current, frozen, historical, candidate, or reference-only.
 
 ## Current Project Shape
 
@@ -27,10 +32,21 @@ PRD3 is complete for the confirmed scope. It was cleanup/optimization only: cons
 
 PRD4 is complete for the confirmed commercial observability and control foundation scope. Its formal scope is `docs/PRD-Phase4.md`: API key owner usage/cost, quota vocabulary, Flow/Event/Trace foundation, PlungeIn observation-first ports, Status Center runtime observability, external monitoring integration, real upstream/SSO harness assets only, auth UX hardening, production evidence promotion for currently available evidence, and PRD5 backlog consolidation. User decision on 2026-07-08 moved real upstream target E2E and real SSO target E2E out of current PRD4 because no approved real environments are available. `docs/planning/PRD4-BACKLOG.md` remains the candidate-source record, not the formal implementation contract.
 
+PRD5 is now active for evidence-readiness work. Its current scope is
+`docs/PRD-Phase5.md`: X-Insight Gate A sanitized snapshot, structural evidence
+field contract, payload policy/evidence references, lightweight UniRouter trace
+UI boundary, competitor comparison and UniRouter-owned catch-up items, plus later
+nullable field implementation. X-Insight remains a separate project and owns
+broader cross-system AI/Agent observability and governance surfaces.
+
 ## What Is Current Truth
 
 | Question | Current Source |
 |----------|----------------|
+| What is the PRD5 formal scope? | `docs/PRD-Phase5.md` |
+| What is the PRD5 acceptance plan? | `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` |
+| What is the PRD5 implementation order? | `docs/planning/PRD5-IMPLEMENTATION-PLAN.md` |
+| What competitor gaps feed PRD5? | `docs/planning/PRD5-COMPETITOR-COMPARISON.md` |
 | What is the PRD4 formal scope? | `docs/PRD-Phase4.md` |
 | What is the PRD4 acceptance plan? | `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` |
 | Which items are explicitly deferred to PRD5? | `docs/planning/PRD5-BACKLOG.md` |
@@ -64,9 +80,26 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-No active verification signal remains. PRD4 is complete for the confirmed current
-scope. Start PRD5 from `docs/planning/PRD5-BACKLOG.md`, while preserving the
-PRD4 deferred-boundary decisions recorded here.
+Current active verification signal: PRD5 Batch 1A/1B/1C Scope / Snapshot /
+Structural Evidence / Trace UI
+fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+
+PRD4 is complete for the confirmed current scope. PRD5 must preserve the PRD4
+deferred-boundary decisions recorded here.
+
+PRD5 Batch 1A/1B/1C:
+
+- Scope: planning closure, first snapshot artifact, and nullable structural
+  evidence fields plus lightweight trace UI exposure.
+- Adds: PRD5 formal scope, PRD5 matrix, implementation plan, competitor
+  comparison, sanitized snapshot runbook, structural evidence field contract,
+  `scripts/prd5_xinsight_snapshot.go`, a shared-folder snapshot contract,
+  migration `000018`, gateway trace/log structural writes, and existing trace
+  API read-side structural fields, and Logs detail evidence quality / structural
+  evidence tags.
+- Does not add: new API routes, deployment changes, read-only credentials,
+  exporter/outbox, trusted inbound correlation headers, raw prompt/response
+  capture, X-Insight timeline/graph UI, or PRD4 matrix changes.
 
 Latest completed PRD4 verification result is PRD4 Batch 1S Open Issue Boundary
 Closeout:

@@ -56,6 +56,25 @@ interface TraceEvent {
   latency_ms: number;
   metadata: Record<string, unknown>;
   created_at: string;
+  trace_id?: string | null;
+  span_id?: string | null;
+  parent_span_id?: string | null;
+  schema_version?: string | null;
+  source_component?: string | null;
+  capture_mode?: string | null;
+  capture_gap?: string | null;
+  evidence_ref?: string | null;
+  upstream_request_id?: string | null;
+  decision_kind?: string | null;
+  decision_result?: string | null;
+  decision_reason?: string | null;
+  actor_type?: string | null;
+  actor_ref?: string | null;
+  on_behalf_of?: string | null;
+  session_id?: string | null;
+  payload_capture_mode?: string | null;
+  payload_ref?: string | null;
+  source_event_hash?: string | null;
 }
 
 function filtersToParams(filters: LogFilters): string {
@@ -131,6 +150,44 @@ function formatMetadataValue(value: unknown) {
   if (typeof value === 'number') return value.toLocaleString();
   if (typeof value === 'string') return value || '-';
   return '-';
+}
+
+function compactEvidenceValue(value?: string | null, max = 18) {
+  if (!value) return '';
+  return value.length > max ? `${value.slice(0, max)}...` : value;
+}
+
+function uniqueEvidenceValues(events: TraceEvent[], key: keyof TraceEvent) {
+  return [...new Set(events.map(event => event[key]).filter((value): value is string => typeof value === 'string' && value.length > 0))];
+}
+
+function traceEvidenceTags(event: TraceEvent) {
+  const tags = [
+    { key: 'source', label: 'source', value: event.source_component, color: undefined },
+    { key: 'capture', label: 'capture', value: event.capture_mode, color: 'blue' },
+    { key: 'payload', label: 'payload', value: event.payload_capture_mode, color: 'cyan' },
+    { key: 'schema', label: 'schema', value: event.schema_version, color: undefined },
+    { key: 'gap', label: 'gap', value: event.capture_gap, color: 'orange' },
+    { key: 'trace', label: 'trace', value: event.trace_id, color: undefined },
+    { key: 'span', label: 'span', value: event.span_id, color: undefined },
+    { key: 'parent', label: 'parent', value: event.parent_span_id, color: undefined },
+    { key: 'upstream', label: 'upstream', value: event.upstream_request_id, color: undefined },
+    { key: 'actor', label: 'actor', value: event.actor_ref ? `${event.actor_type || 'unknown'}:${event.actor_ref}` : event.actor_type, color: undefined },
+    { key: 'session', label: 'session', value: event.session_id, color: undefined },
+    { key: 'evidence', label: 'evidence', value: event.evidence_ref, color: undefined },
+    { key: 'hash', label: 'hash', value: event.source_event_hash, color: undefined },
+  ].filter(tag => tag.value);
+
+  if (tags.length === 0) return null;
+  return (
+    <div className="ur-chip-row">
+      {tags.map(tag => (
+        <Tag key={tag.key} size="small" color={tag.color as any}>
+          {tag.label}: {compactEvidenceValue(tag.value)}
+        </Tag>
+      ))}
+    </div>
+  );
 }
 
 export default function LogsPage() {
@@ -354,6 +411,14 @@ export default function LogsPage() {
     .filter(col => ['request_id', 'model', 'provider', 'status_code'].includes(col.key as string))
     .map(col => ({ ...col, width: compactColumnWidths[col.key as string] }));
   const tableColumns = showDetail && selectedLog ? compactColumns : columns;
+  const traceIDs = uniqueEvidenceValues(traceEvents, 'trace_id');
+  const captureModes = uniqueEvidenceValues(traceEvents, 'capture_mode');
+  const payloadModes = uniqueEvidenceValues(traceEvents, 'payload_capture_mode');
+  const sourceComponents = uniqueEvidenceValues(traceEvents, 'source_component');
+  const upstreamRequestIDs = uniqueEvidenceValues(traceEvents, 'upstream_request_id');
+  const actorTypes = uniqueEvidenceValues(traceEvents, 'actor_type');
+  const captureGapCount = traceEvents.filter(event => event.capture_gap).length;
+  const decisionCount = traceEvents.filter(event => event.decision_kind || event.decision_result).length;
 
   return (
     <div className="ur-page ur-page-wide">
@@ -645,6 +710,26 @@ export default function LogsPage() {
                 />
               </div>
 
+              {!traceLoading && traceEvents.length > 0 && (
+                <div className="ur-detail-card">
+                  <Text className="ur-detail-card-title">证据质量</Text>
+                  <Descriptions
+                    row
+                    size="small"
+                    data={[
+                      { key: 'Trace ID', value: traceIDs.length > 0 ? <Text code>{compactEvidenceValue(traceIDs[0], 28)}</Text> : '-' },
+                      { key: '来源组件', value: sourceComponents.length > 0 ? sourceComponents.map(v => <Tag key={v} size="small">{v}</Tag>) : '-' },
+                      { key: '采集模式', value: captureModes.length > 0 ? captureModes.map(v => <Tag key={v} size="small" color="blue">{v}</Tag>) : '-' },
+                      { key: 'Payload', value: payloadModes.length > 0 ? payloadModes.map(v => <Tag key={v} size="small" color="cyan">{v}</Tag>) : '-' },
+                      { key: '上游 ID', value: upstreamRequestIDs.length > 0 ? <Text code>{compactEvidenceValue(upstreamRequestIDs[0], 28)}</Text> : '-' },
+                      { key: '决策事件', value: decisionCount > 0 ? `${decisionCount} 个` : '-' },
+                      { key: 'Actor', value: actorTypes.length > 0 ? actorTypes.map(v => <Tag key={v} size="small">{v}</Tag>) : '-' },
+                      { key: 'Capture gap', value: captureGapCount > 0 ? <Tag size="small" color="orange">{captureGapCount} 个</Tag> : <Tag size="small" color="green">0</Tag> },
+                    ]}
+                  />
+                </div>
+              )}
+
               <div className="ur-detail-card">
                 <div className="ur-panel-title" style={{ marginBottom: 10 }}>
                   <Text className="ur-detail-card-title">请求路径</Text>
@@ -666,6 +751,12 @@ export default function LogsPage() {
                           {(event.provider || event.channel) && (
                             <Text size="small">{event.provider || '-'} / {event.channel || '-'}</Text>
                           )}
+                          {(event.decision_kind || event.decision_result || event.decision_reason) && (
+                            <Text size="small">
+                              decision: {[event.decision_kind, event.decision_result, event.decision_reason].filter(Boolean).join(' / ')}
+                            </Text>
+                          )}
+                          {traceEvidenceTags(event)}
                           {Object.keys(event.metadata || {}).length > 0 && (
                             <div className="ur-chip-row">
                               {Object.entries(event.metadata).slice(0, 8).map(([key, value]) => (

@@ -11,7 +11,7 @@
 | Config | `internal/config/config.go` | Environment config and validation, including `JWT_SECRET`, `API_KEY_HASH_SECRET`, `ENCRYPTION_KEY`, optional `LICENSE_PUBLIC_KEY`, PRD4 trace event sampling/retention config, and Runtime Status metadata/Prometheus/Grafana URLs |
 | Database | `internal/db/postgres.go` | pgx pool setup and health |
 | Redis | `internal/redisx/redis.go` | Redis setup, health, wallet cache helpers |
-| Migrations | `migrations/*.sql` | Base schema plus wallet/schema/PRD alignment migrations, including PRD4 API key owner usage attribution in `000016_prd4_key_owner_usage` and request trace events in `000017_prd4_request_trace_events` |
+| Migrations | `migrations/*.sql` | Base schema plus wallet/schema/PRD alignment migrations, including PRD4 API key owner usage attribution in `000016_prd4_key_owner_usage`, request trace events in `000017_prd4_request_trace_events`, and PRD5 structural evidence fields in `000018_prd5_structural_evidence_fields` |
 
 ## Backend Packages
 
@@ -75,6 +75,7 @@ OpenAPI snapshot: `docs/tech-ref/05-openapi-spec.yaml` is the current route-leve
 | `scripts/prd4-real-sso-smoke.sh` | PRD4 Batch 1I wrapper for real SSO evidence harness. `--preflight` is safe without target credentials and does not drive a browser, call an IdP, or read DB; real target execution is deferred to PRD5 |
 | `scripts/prd4_real_sso_smoke.mjs` | Real SSO browser runner for future Logto or another enterprise OIDC target evidence; checks OIDC config/discovery, browser login, `/me`, audit mapping, and sanitized JSON evidence when PRD5 target execution is reopened |
 | `scripts/prd4_real_sso_audit_check.go` | Guarded read-only DB evidence check for OIDC user mapping and `login.oidc` audit redaction |
+| `scripts/prd5_xinsight_snapshot.go` | PRD5 Batch 1A read-only sanitized snapshot generator for explicit `request_id` selections from `call_logs` and `request_trace_events`; no broad table export, raw prompt/response, API key, raw IP, or raw upstream error output |
 
 ## Frontend Map
 
@@ -107,9 +108,9 @@ Base schema is in `migrations/000001_init_schema.up.sql`. Main tables:
 | Observability | `call_logs`, `request_trace_events`, `audit_logs` |
 | Configuration | `settings` |
 
-Later migrations add wallet features, org pricing and alert fields, schema gap fixes, and PRD alignment fields like `call_logs.requested_model`, `call_logs.ip_address`, `audit_logs.source`, and `wallets.freeze_expire_at`. PRD4 migration `000016_prd4_key_owner_usage` adds `api_keys.owner_user_id`, `api_keys.key_type`, `call_logs.owner_user_id`, and `call_logs.key_type`; gateway request logging snapshots owner/type at request time so historical usage does not drift when key ownership changes. PRD4 migration `000017_prd4_request_trace_events` adds metadata-only request trace events keyed by `request_id`, with org/project/key/owner snapshots and stage/severity/provider/status/latency metadata.
+Later migrations add wallet features, org pricing and alert fields, schema gap fixes, and PRD alignment fields like `call_logs.requested_model`, `call_logs.ip_address`, `audit_logs.source`, and `wallets.freeze_expire_at`. PRD4 migration `000016_prd4_key_owner_usage` adds `api_keys.owner_user_id`, `api_keys.key_type`, `call_logs.owner_user_id`, and `call_logs.key_type`; gateway request logging snapshots owner/type at request time so historical usage does not drift when key ownership changes. PRD4 migration `000017_prd4_request_trace_events` adds metadata-only request trace events keyed by `request_id`, with org/project/key/owner snapshots and stage/severity/provider/status/latency metadata. PRD5 migration `000018_prd5_structural_evidence_fields` adds nullable/default trace/span/source/capture/decision/actor/session/evidence/payload fields to request trace events and selected call-log evidence fields.
 
-Request trace lookup is implemented by `internal/admin/log_handlers.go` as `GET /api/v1/logs/{id}/trace`. It loads the call log first, applies existing project usage RBAC, filters trace events by `request_id`, `org_id`, and `project_id`, then sanitizes metadata through `internal/traceutil` before returning it. Frontend support is in `frontend/src/api/client.ts` (`getLogTrace`) and `frontend/src/pages/LogsPage.tsx` (request path card in the log detail inspector).
+Request trace lookup is implemented by `internal/admin/log_handlers.go` as `GET /api/v1/logs/{id}/trace`. It loads the call log first, applies existing project usage RBAC, filters trace events by `request_id`, `org_id`, and `project_id`, then sanitizes metadata through `internal/traceutil` before returning it. PRD5 Batch 1B/1C extends that existing route with structural evidence fields and renders them in `frontend/src/pages/LogsPage.tsx` as request-level evidence quality plus per-event tags. Frontend support is in `frontend/src/api/client.ts` (`getLogTrace`) and `frontend/src/pages/LogsPage.tsx`.
 
 Usage analytics is implemented in `internal/admin/prd2_product_handlers.go` and now supports project/key/model/provider/channel/status/source filters plus PRD4 `scope=my`, `owner_user_id`, `key_type`, `group_by=owner`, and `group_by=key_type`.
 

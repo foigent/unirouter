@@ -249,7 +249,12 @@ func (h *Handler) GetRequestTrace(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.db.Query(r.Context(),
 		`SELECT id, event_type, stage, severity, model, requested_model, provider, channel,
-		        status_code, latency_ms, metadata, created_at
+		        status_code, latency_ms, metadata, created_at,
+		        trace_id, span_id, parent_span_id, schema_version, source_component, capture_mode,
+		        capture_gap, evidence_ref, upstream_request_id,
+		        decision_kind, decision_result, decision_reason,
+		        actor_type, actor_ref, on_behalf_of, session_id,
+		        payload_capture_mode, payload_ref, source_event_hash
 		 FROM request_trace_events
 		 WHERE request_id = $1
 		   AND org_id = $2
@@ -271,7 +276,19 @@ func (h *Handler) GetRequestTrace(w http.ResponseWriter, r *http.Request) {
 		var latencyMs int
 		var metadataBytes []byte
 		var createdAt time.Time
-		if err := rows.Scan(&eventID, &eventType, &stage, &severity, &model, &requestedModel, &provider, &channel, &statusCode, &latencyMs, &metadataBytes, &createdAt); err != nil {
+		var traceID, spanID, parentSpanID, captureGap, evidenceRef, upstreamRequestID *string
+		var decisionKind, decisionResult, decisionReason, actorType, actorRef, onBehalfOf, sessionID *string
+		var payloadRef, sourceEventHash *string
+		var schemaVersion, sourceComponent, captureMode, payloadCaptureMode string
+		if err := rows.Scan(
+			&eventID, &eventType, &stage, &severity, &model, &requestedModel, &provider, &channel,
+			&statusCode, &latencyMs, &metadataBytes, &createdAt,
+			&traceID, &spanID, &parentSpanID, &schemaVersion, &sourceComponent, &captureMode,
+			&captureGap, &evidenceRef, &upstreamRequestID,
+			&decisionKind, &decisionResult, &decisionReason,
+			&actorType, &actorRef, &onBehalfOf, &sessionID,
+			&payloadCaptureMode, &payloadRef, &sourceEventHash,
+		); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 			return
 		}
@@ -281,18 +298,37 @@ func (h *Handler) GetRequestTrace(w http.ResponseWriter, r *http.Request) {
 		}
 		metadata = sanitizeTraceResponseMetadata(metadata)
 		events = append(events, map[string]interface{}{
-			"id":              eventID,
-			"event_type":      eventType,
-			"stage":           stage,
-			"severity":        severity,
-			"model":           model,
-			"requested_model": requestedModel,
-			"provider":        provider,
-			"channel":         channel,
-			"status_code":     statusCode,
-			"latency_ms":      latencyMs,
-			"metadata":        metadata,
-			"created_at":      createdAt,
+			"id":                   eventID,
+			"event_type":           eventType,
+			"stage":                stage,
+			"severity":             severity,
+			"model":                model,
+			"requested_model":      requestedModel,
+			"provider":             provider,
+			"channel":              channel,
+			"status_code":          statusCode,
+			"latency_ms":           latencyMs,
+			"metadata":             metadata,
+			"created_at":           createdAt,
+			"trace_id":             traceID,
+			"span_id":              spanID,
+			"parent_span_id":       parentSpanID,
+			"schema_version":       schemaVersion,
+			"source_component":     sourceComponent,
+			"capture_mode":         captureMode,
+			"capture_gap":          captureGap,
+			"evidence_ref":         evidenceRef,
+			"upstream_request_id":  upstreamRequestID,
+			"decision_kind":        decisionKind,
+			"decision_result":      decisionResult,
+			"decision_reason":      decisionReason,
+			"actor_type":           actorType,
+			"actor_ref":            actorRef,
+			"on_behalf_of":         onBehalfOf,
+			"session_id":           sessionID,
+			"payload_capture_mode": payloadCaptureMode,
+			"payload_ref":          payloadRef,
+			"source_event_hash":    sourceEventHash,
 		})
 	}
 	if err := rows.Err(); err != nil {
