@@ -9,7 +9,9 @@
 > `P4-F12` / `PRD4-SECURITY-001`. Batch 1P Scope Deferral And Closeout
 > Alignment passed Canary 6/6 and Sentinel merge is reflected by `9e2927f` /
 > PR #100 for `P4-F08` / `P4-F09` / `P4-F13`. Batch 1Q Production Evidence
-> Promotion is fixed awaiting Canary for `P4-F11`.
+> Promotion passed Canary 8/8 and Sentinel commit is reflected by `f0d34e1`
+> for `P4-F11`. Batch 1R Runtime Build Chain Follow-up is fixed awaiting
+> Canary for repo-controllable `PRD4-RUNTIME-002` gaps.
 > User decision on 2026-07-08: because no approved real upstream or real SSO
 > target environment is currently available, `P4-F08` / `P4-F09` real target
 > execution is not part of the current PRD4 closeout. Batch 1H/1I harness assets
@@ -278,6 +280,10 @@ Implementation notes:
 - Batch 1G adds active Prometheus/Grafana health checks.
 - Batch 1J adds host CPU/disk/network summaries without exposing raw topology,
   private IPs, hostnames, or cloud identifiers.
+- Batch 1R fixes repo-controllable runtime/build-chain follow-ups: Go patch
+  toolchain pin, Docker build metadata injection, compose runtime environment
+  default, backend healthcheck, and compose Grafana service URL. Target database
+  cleanup remains an Atlas task.
 - Cluster inventory, external collector ownership, OpenTelemetry, metric-alert
   routing, and embedded dashboards remain follow-up work.
 
@@ -438,6 +444,7 @@ Acceptance:
 - Local-only or mock-only smoke remains E2E accepted or lower.
 
 Batch 1Q implementation note: `docs/ops/evidence/PRD4-B1Q-production-evidence-promotion-20260708.md`
+passed Canary 8/8 and Sentinel commit is reflected by `f0d34e1`.
 classifies the current target evidence without promoting any PRD4 matrix row to
 `Production verified`. The final target report is useful target-smoke evidence
 for selected PRD4 areas, but it covers the Batch 1N target state, Batch 1O fixed

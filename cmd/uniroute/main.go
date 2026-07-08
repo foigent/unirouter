@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -29,12 +30,19 @@ import (
 	"github.com/uniroute/unirouter/internal/redisx"
 )
 
+// buildVersion and buildCommit are set by release builds through -ldflags.
+var (
+	buildVersion string
+	buildCommit  string
+)
+
 func main() {
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+	applyBuildRuntimeMetadata(cfg)
 	if handled, err := runCLI(context.Background(), os.Args[1:], cfg); handled {
 		if err != nil {
 			log.Fatalf("Command failed: %v", err)
@@ -563,6 +571,21 @@ func startSensitiveWordsReloadLoop(pool *pgxpool.Pool, sensitiveFilter *filter.D
 	for range ticker.C {
 		reload()
 	}
+}
+
+func applyBuildRuntimeMetadata(cfg *config.Config) {
+	if cfg == nil {
+		return
+	}
+	cfg.RuntimeVersion = runtimeMetadataValue(cfg.RuntimeVersion, buildVersion)
+	cfg.RuntimeCommit = runtimeMetadataValue(cfg.RuntimeCommit, buildCommit)
+}
+
+func runtimeMetadataValue(configured, injected string) string {
+	if value := strings.TrimSpace(configured); value != "" {
+		return value
+	}
+	return strings.TrimSpace(injected)
 }
 
 // trimQuotes removes surrounding double quotes from a string.

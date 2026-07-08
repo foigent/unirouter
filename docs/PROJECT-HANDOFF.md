@@ -64,10 +64,26 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Current active verification signal is PRD4 Batch 1Q Production Evidence
-Promotion in `docs/agent-workflows/FIX-SIGNAL.md`:
+Current active verification signal is PRD4 Batch 1R Runtime Build Chain
+Follow-up in `docs/agent-workflows/FIX-SIGNAL.md`:
 
 - Status: fixed awaiting Canary.
+- Scope: repo-controllable `PRD4-RUNTIME-002` runtime/build-chain gaps.
+- Evidence: `docs/ops/evidence/PRD4-B1R-runtime-build-chain-local-20260708.md`.
+- Changes: Go toolchain pin to `go1.25.12`, Docker builder patch version,
+  version/commit `ldflags`, runtime metadata fallback, compose
+  `RUNTIME_ENVIRONMENT=local`, compose `GRAFANA_URL=http://grafana:3000`,
+  backend `/health/ready` healthcheck, env/runbook docs.
+- Local verification: focused Go tests, `go test ./... -count=1`, `go env`
+  showing `go1.25.12` / `auto`, YAML parse, and `git diff --check`.
+- Boundary: Docker CLI is unavailable locally, so `docker compose config` and
+  live container health need Canary/CI/Atlas; target test database cleanup is
+  split to `PRD4-DEPLOY-002`.
+
+Latest completed verification result is PRD4 Batch 1Q Production Evidence
+Promotion in `docs/agent-workflows/VERIFY-RESULT.md`:
+
+- Status: Canary PASS 8/8; Sentinel commit reflected by `f0d34e1`.
 - Scope: documentation/evidence-boundary only.
 - Evidence: `docs/ops/evidence/PRD4-B1Q-production-evidence-promotion-20260708.md`.
 - Decision: current target evidence is target-smoke evidence for selected PRD4
@@ -75,7 +91,7 @@ Promotion in `docs/agent-workflows/FIX-SIGNAL.md`:
 - Reason: the final report covers the PRD4 Batch 1N target state, Batch 1O
   fixed later findings, and `PRD4-RUNTIME-002` remains open.
 - No Go, frontend, migration, API route, runtime behavior, deployment script,
-  evidence harness code, or production deployment change is expected.
+  evidence harness code, or production deployment change was made in Batch 1Q.
 
 Latest accepted PRD4 documentation/status-boundary batch is PRD4 Batch 1P Scope
 Deferral And Closeout Alignment:
@@ -106,8 +122,9 @@ Security Header Hardening:
   SSO, upstream, wallet, provider dispatch, frontend behavior, Go toolchain
   version, Grafana target config, runtime `ldflags`, container healthcheck
   wiring, target test database cleanup, or Production verified claims.
-- Runtime/build-chain findings from the 2026-07-08 target report remain tracked
-  separately as `PRD4-RUNTIME-002`.
+- Runtime/build-chain findings from the 2026-07-08 target report are now in
+  active Batch 1R verification as `PRD4-RUNTIME-002`; target test database
+  cleanup is split to `PRD4-DEPLOY-002`.
 
 Previous accepted PRD4 implementation batch is PRD4 Batch 1N Developer Console
 Self Usage And Model Cost:
@@ -120,8 +137,9 @@ Self Usage And Model Cost:
 - Target-environment final test evidence for the deployed PRD4 Batch 1N state is
   archived at `docs/ops/evidence/UNIROUTERS-TEST-REPORT-FINAL-20260708.md`.
 - The report also records follow-up security/runtime issues; application-code
-  issues are in Batch 1O, while Go toolchain, Grafana/env, version injection,
-  healthcheck, and target DB cleanup remain tracked as `PRD4-RUNTIME-002`.
+  issues are in Batch 1O, repo-controllable runtime/build-chain issues are in
+  active Batch 1R verification as `PRD4-RUNTIME-002`, and target DB cleanup is
+  tracked separately as `PRD4-DEPLOY-002`.
 
 Previous accepted trace redaction batch is PRD4 Batch 1M:
 

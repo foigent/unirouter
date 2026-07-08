@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/uniroute/unirouter/internal/config"
 	"github.com/uniroute/unirouter/internal/models"
 )
 
@@ -68,6 +69,27 @@ func TestRootHandlerReturnsStandardNotFoundForUnknownPath(t *testing.T) {
 	}
 	if !strings.Contains(body, `"error":"not_found"`) {
 		t.Fatalf("expected standard not_found body, got %s", body)
+	}
+}
+
+func TestApplyBuildRuntimeMetadata(t *testing.T) {
+	oldVersion, oldCommit := buildVersion, buildCommit
+	t.Cleanup(func() {
+		buildVersion, buildCommit = oldVersion, oldCommit
+	})
+	buildVersion = "2026.07.08"
+	buildCommit = "abc1234"
+
+	cfg := &config.Config{}
+	applyBuildRuntimeMetadata(cfg)
+	if cfg.RuntimeVersion != "2026.07.08" || cfg.RuntimeCommit != "abc1234" {
+		t.Fatalf("expected build metadata fallback, got version=%q commit=%q", cfg.RuntimeVersion, cfg.RuntimeCommit)
+	}
+
+	cfg = &config.Config{RuntimeVersion: "configured-version", RuntimeCommit: "configured-commit"}
+	applyBuildRuntimeMetadata(cfg)
+	if cfg.RuntimeVersion != "configured-version" || cfg.RuntimeCommit != "configured-commit" {
+		t.Fatalf("configured metadata should win, got version=%q commit=%q", cfg.RuntimeVersion, cfg.RuntimeCommit)
 	}
 }
 

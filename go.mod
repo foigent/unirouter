@@ -2,6 +2,8 @@ module github.com/uniroute/unirouter
 
 go 1.25.0
 
+toolchain go1.25.12
+
 require (
 	github.com/alicebob/miniredis/v2 v2.38.0
 	github.com/golang-jwt/jwt/v5 v5.2.2
