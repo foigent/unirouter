@@ -10,8 +10,11 @@
 > Alignment passed Canary 6/6 and Sentinel merge is reflected by `9e2927f` /
 > PR #100 for `P4-F08` / `P4-F09` / `P4-F13`. Batch 1Q Production Evidence
 > Promotion passed Canary 8/8 and Sentinel commit is reflected by `f0d34e1`
-> for `P4-F11`. Batch 1R Runtime Build Chain Follow-up is fixed awaiting
-> Canary for repo-controllable `PRD4-RUNTIME-002` gaps.
+> for `P4-F11`. Batch 1R Runtime Build Chain Follow-up passed Canary 9/9 and
+> Sentinel merge is reflected by `819846c` / PR #102 for repo-controllable
+> `PRD4-RUNTIME-002` gaps. Batch 1S Open Issue Boundary Closeout is fixed
+> awaiting Canary and maps remaining plugin/deploy/infra PRD4 open items to
+> PRD5 while leaving target DB cleanup with Atlas.
 > User decision on 2026-07-08: because no approved real upstream or real SSO
 > target environment is currently available, `P4-F08` / `P4-F09` real target
 > execution is not part of the current PRD4 closeout. Batch 1H/1I harness assets
@@ -76,6 +79,9 @@ PRD4 must not:
   loading, plugin sandbox, or third-party install path;
 - implement full Scheduler V2 with model-family queues, reservations, GPU batch,
   or priority dispatch;
+- implement multi-instance infrastructure inventory, cluster topology, external
+  collectors, or metric-alert routing before a target architecture and
+  RBAC/redaction model are approved;
 - rewrite Logto or another identity platform into UniRouter core;
 - implement public SaaS, reseller, payment, invoice, coupon, campaign, support
   CRM, or marketplace operations;
@@ -447,8 +453,10 @@ Batch 1Q implementation note: `docs/ops/evidence/PRD4-B1Q-production-evidence-pr
 passed Canary 8/8 and Sentinel commit is reflected by `f0d34e1`.
 classifies the current target evidence without promoting any PRD4 matrix row to
 `Production verified`. The final target report is useful target-smoke evidence
-for selected PRD4 areas, but it covers the Batch 1N target state, Batch 1O fixed
-later application-code findings, and `PRD4-RUNTIME-002` remains open.
+for selected PRD4 areas, but it covers the Batch 1N target state and Batch 1O
+fixed later application-code findings. `PRD4-RUNTIME-002` was still open at
+Batch 1Q and the repo-controllable runtime/build-chain items later passed Batch
+1R Canary verification.
 
 ### P4-F12: Security, Privacy, And Redaction Guardrails
 
@@ -508,6 +516,9 @@ Acceptance:
   `PRD5-UPSTREAM-001`; they are no longer PRD4 closeout prerequisites.
 - Approved Logto or enterprise OIDC issuer/client credentials are required to
   reopen `PRD5-SSO-001`; they are no longer PRD4 closeout prerequisites.
+- Multi-instance infrastructure observability, topology, collector access, and
+  metric-alert routing require a target deployment architecture and should
+  reopen through `PRD5-INFRA-001`.
 - The first implementation batch should confirm whether shared/service API keys
   are shown under a separate key type rather than a personal user total.
 - Batch 1K passed Canary 10/10 for the first trace retention/cleanup slice;
@@ -525,6 +536,8 @@ reopens scope:
 - runtime plugin platform and marketplace;
 - Logto/IAM rewrite into UniRouter core;
 - full Kubernetes/Helm/Terraform managed-HA product;
+- multi-instance infrastructure observability, topology, collector integration,
+  and metric-alert routing;
 - project budget hard-block enforcement;
 - runtime cache or prompt/response plaintext storage;
 - full SDK suite;

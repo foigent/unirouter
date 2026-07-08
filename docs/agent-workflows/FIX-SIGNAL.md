@@ -1,119 +1,88 @@
-# FIX-SIGNAL.md - PRD4 Batch 1R Runtime Build Chain Follow-up
+# FIX-SIGNAL.md - PRD4 Batch 1S Open Issue Boundary Closeout
 
 **Fixer:** main agent
 **Date:** file system timestamp is authoritative
-**Risk level:** R2/R4-adjacent runtime configuration and build-chain evidence
-**Scope:** `PRD4-RUNTIME-002` repo-controllable gaps
+**Risk level:** R2 documentation/status-boundary change
+**Scope:** PRD4/PRD5 issue classification only
 
 ## Verification Request
 
-Please verify PRD4 Batch 1R: Runtime Build Chain Follow-up.
+Please verify PRD4 Batch 1S: Open Issue Boundary Closeout.
 
-This batch addresses the repo-controllable findings from
-`docs/ops/evidence/UNIROUTERS-TEST-REPORT-FINAL-20260708.md`:
-
-- Go standard-library vulnerability follow-up through `go1.25.12` toolchain pin;
-- Docker build version/commit injection;
-- runtime metadata fallback when `RUNTIME_VERSION` / `RUNTIME_COMMIT` env vars
-  are blank;
-- compose/env/runbook Grafana service URL correction;
-- compose runtime environment default;
-- backend container healthcheck marker.
-
-Target test database cleanup is not a repo-code fix and remains split to
-`PRD4-DEPLOY-002`.
+This batch does not implement product code. It closes PRD4 closeout ambiguity by
+moving remaining non-current PRD4 implementation gaps to explicit PRD5 backlog
+items and leaving the target database cleanup task with Atlas.
 
 ## Scope To Verify
 
 Files:
 
-- `go.mod`
-- `Dockerfile`
-- `docker-compose.yml`
-- `.env.example`
-- `cmd/uniroute/main.go`
-- `cmd/uniroute/main_test.go`
-- `docs/ops/deployment-runbook.md`
-- `docs/ops/evidence/PRD4-B1R-runtime-build-chain-local-20260708.md`
 - `docs/issues/OPEN-ISSUES.md`
+- `docs/planning/PRD5-BACKLOG.md`
+- `docs/ops/evidence/PRD4-B1S-open-issue-boundary-closeout-20260708.md`
 - `docs/ops/CURRENT-STATUS.md`
 - `docs/ops/PRD4-ACCEPTANCE-MATRIX.md`
 - `docs/PRD-Phase4.md`
 - `docs/PROJECT-HANDOFF.md`
 - `docs/DOC-INVENTORY.md`
 - `docs/README.md`
-- `docs/CODEBASE-MAP.md`
 - `docs/agent-workflows/FIX-SIGNAL.md`
 
 ## Expected Behavior
 
-- `go.mod` declares `toolchain go1.25.12`.
-- `Dockerfile` uses `golang:1.25.12-alpine` and injects
-  `main.buildVersion` / `main.buildCommit` with `-ldflags`.
-- `cmd/uniroute` preserves configured `RUNTIME_VERSION` / `RUNTIME_COMMIT` and
-  falls back to build-injected metadata when those env vars are blank.
-- `docker-compose.yml` passes build args, defaults `RUNTIME_ENVIRONMENT=local`,
-  defaults `GRAFANA_URL=http://grafana:3000`, and adds a backend healthcheck for
-  `/health/ready`.
-- `.env.example` and the deployment runbook reflect the compose-safe Grafana URL
-  and release metadata injection.
-- `PRD4-RUNTIME-002` is `Fixed awaiting Canary`.
-- Target test database cleanup is tracked separately as `PRD4-DEPLOY-002`.
+- `PRD4-PLUGIN-001` is no longer an active PRD4 implementation gap; it is
+  `Deferred to PRD5` and maps to `PRD5-PLUGIN-001` / `PRD5-MARKET-001`.
+- `PRD4-DEPLOY-001` is no longer an active PRD4 implementation gap; it is
+  `Deferred to PRD5` and maps to `PRD5-DEPLOY-001`.
+- `PRD4-INFRA-001` is no longer an active PRD4 implementation gap; it is
+  `Deferred to PRD5` and maps to new `PRD5-INFRA-001`.
+- `PRD4-DEPLOY-002` remains `Open` because target test database cleanup is an
+  Atlas target-environment task.
+- PRD4 matrix totals stay stable: 13 rows, 11 `Canary passed`, 2 `Deferred to
+  PRD5`.
+- Current status and handoff docs show Batch 1S as fixed awaiting Canary while
+  keeping Batch 1R as the latest completed verification.
 
 ## Non-Scope
 
 Do not expect this batch to:
 
-- change frontend behavior, API routes, migrations, billing, routing, SSO,
-  upstream adapters, trace storage, or RBAC;
+- change Go source, frontend source, migrations, API routes, runtime behavior,
+  deployment scripts, or evidence harness code;
 - delete target databases or mutate target infrastructure;
-- claim target deployment, live container health, or `Production verified`;
-- reopen real upstream or real SSO target execution from PRD5.
+- claim `Production verified`;
+- reopen PRD5 real upstream, real SSO, runtime plugin platform, managed HA, or
+  multi-instance infrastructure observability as current PRD4 implementation.
 
 ## Required Verification Commands
 
 ```bash
 cd /Users/m4/Desktop/projects/UniRouter
 
-rg -n "go1.25.12|toolchain go1.25.12|buildVersion|buildCommit|RUNTIME_VERSION|RUNTIME_COMMIT|http://grafana:3000|healthcheck|PRD4-RUNTIME-002|PRD4-DEPLOY-002|PRD4-B1R-runtime-build-chain-local-20260708" go.mod Dockerfile docker-compose.yml .env.example cmd/uniroute/main.go cmd/uniroute/main_test.go docs/ops/deployment-runbook.md docs/issues/OPEN-ISSUES.md docs/ops/evidence/PRD4-B1R-runtime-build-chain-local-20260708.md docs/ops/CURRENT-STATUS.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/PROJECT-HANDOFF.md docs/DOC-INVENTORY.md docs/README.md docs/PRD-Phase4.md docs/CODEBASE-MAP.md docs/agent-workflows/FIX-SIGNAL.md
+rg -n "PRD4-PLUGIN-001|PRD4-DEPLOY-001|PRD4-INFRA-001|PRD4-DEPLOY-002|PRD5-PLUGIN-001|PRD5-MARKET-001|PRD5-DEPLOY-001|PRD5-INFRA-001|Batch 1S|PRD4-B1S-open-issue-boundary-closeout-20260708" docs/issues/OPEN-ISSUES.md docs/planning/PRD5-BACKLOG.md docs/ops/evidence/PRD4-B1S-open-issue-boundary-closeout-20260708.md docs/ops/CURRENT-STATUS.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/PROJECT-HANDOFF.md docs/DOC-INVENTORY.md docs/README.md docs/PRD-Phase4.md docs/agent-workflows/FIX-SIGNAL.md
 
-go test ./cmd/uniroute ./internal/config ./internal/admin -run 'TestApplyBuildRuntimeMetadata|TestLoad_RuntimeExposureEnvOverrides|TestRuntimeStatus' -count=1
-
-go test ./... -count=1
-
-go build -ldflags='-X main.buildVersion=20260708.test -X main.buildCommit=abc1234' -o /tmp/uniroute-prd4-b1r ./cmd/uniroute
-
-rm /tmp/uniroute-prd4-b1r
-
-go env GOVERSION GOTOOLCHAIN
-
-ruby -e 'require "yaml"; YAML.load_file("docker-compose.yml"); YAML.load_file("docker-compose.canary.yml") if File.exist?("docker-compose.canary.yml"); puts "yaml ok"'
+awk -F'|' '/^\| P4-F[0-9]+ / {gsub(/^ +| +$/, "", $4); count[$4]++; total++} END {print "total=" total; for (s in count) print s "=" count[s]}' docs/ops/PRD4-ACCEPTANCE-MATRIX.md
 
 git diff --check
 ```
 
-If Docker is available, additionally run:
+Optional consistency check:
 
 ```bash
-docker compose config
+rg -n "PRD4-PLUGIN-001|PRD4-DEPLOY-001|PRD4-INFRA-001|PRD4-DEPLOY-002" docs/issues/OPEN-ISSUES.md
 ```
-
-If a full target/container environment is available, verify `uniroute-api` moves
-to healthy after dependencies are healthy. That is optional for Canary if Docker
-is unavailable, but should be completed by Sentinel CI or Atlas before any
-Production verified runtime claim.
 
 ## Acceptance Criteria
 
-1. Source/config grep confirms Go toolchain patch pin, Docker `ldflags`,
-   runtime metadata fallback, compose Grafana URL, backend healthcheck, and
-   status docs.
-2. Focused Go tests pass.
-3. Full Go regression passes.
-4. `go build` with the same `-ldflags` variables succeeds.
-5. `go env GOVERSION GOTOOLCHAIN` shows `go1.25.12` and `auto`.
-6. YAML parse passes.
-7. `git diff --check` passes.
-8. `PRD4-RUNTIME-002` is `Fixed awaiting Canary`, while target DB cleanup remains
-   open as `PRD4-DEPLOY-002`.
-9. No PRD4 row is promoted to `Production verified`.
+1. `OPEN-ISSUES.md` allows the `Deferred to PRD5` status and uses it for
+   `PRD4-PLUGIN-001`, `PRD4-DEPLOY-001`, and `PRD4-INFRA-001`.
+2. `OPEN-ISSUES.md` keeps `PRD4-DEPLOY-002` open for Atlas target test database
+   cleanup.
+3. `PRD5-BACKLOG.md` includes `PRD5-INFRA-001` and already includes the mapped
+   plugin/deploy backlog items.
+4. PRD4 status, matrix, PRD, handoff, inventory, README, evidence, and this
+   signal all reference Batch 1S consistently.
+5. The PRD4 acceptance matrix count remains `total=13`, `Canary passed=11`,
+   `Deferred to PRD5=2`.
+6. `git diff --check` passes.
+7. No code/runtime/deployment/target-infrastructure file changed for Batch 1S.
