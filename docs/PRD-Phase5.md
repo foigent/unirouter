@@ -2,10 +2,10 @@
 
 > Version: Phase 5 Active Scope Draft
 > Date: 2026-07-08
-> Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, and Batch 1G
-> Canary/Sentinel complete. Batch 1H gateway span hierarchy fixed awaiting
-> Canary. PRD4 remains complete for the confirmed current scope and is not
-> reopened by PRD5.
+> Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, and
+> Batch 1H Canary/Sentinel complete. Batch 1I payload policy decision evidence
+> fixed awaiting Canary. PRD4 remains complete for the confirmed current scope
+> and is not reopened by PRD5.
 > Source: `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, X-Insight shared-folder
 > responses on 2026-07-08, current UniRouter code/schema review, and official
@@ -88,6 +88,7 @@ PRD5 must not:
 | P5-F15 | Payload Capture Mode Configuration | Expose restricted runtime configuration for metadata-only or disabled payload evidence state without enabling raw capture |
 | P5-F16 | Trusted Evidence Context Intake | Accept trace/session/actor/delegation context only from explicitly trusted internal callers with a shared secret |
 | P5-F17 | Gateway Span Hierarchy | Parent UniRouter-emitted trace events to a per-request gateway root span so execution chains are queryable without X-Insight dependency |
+| P5-F18 | Payload Policy Decision Evidence | Emit explicit payload capture policy decision trace events without storing raw prompt or response payloads |
 
 ### P2
 
@@ -217,6 +218,12 @@ preserves a trusted inbound parent when present, and later UniRouter spans paren
 to that root. The trace API returns the new fields through the existing route and
 RBAC path. Batch 1B/1D/1F/1G/1H do not add raw payload capture, exporter/outbox,
 frontend behavior, or new API routes.
+
+Batch 1I adds explicit `payload.policy.applied` trace events for chat and
+embeddings requests. These events record sanitized payload policy metadata such
+as `payload_capture_mode`, `payload_policy_reason`, `raw_payload_stored=false`,
+and `payload_ref_present=false`, and map to `decision_kind=payload_capture`.
+Batch 1I does not inspect, persist, hash, or export raw prompt/response bodies.
 
 ### P5-F06: Lightweight Trace UI Boundary
 
@@ -395,6 +402,33 @@ Acceptance:
 - No migration, exporter/outbox, read-only DB access, raw payload capture,
   X-Insight runtime dependency, or PRD4 matrix change is introduced.
 
+### P5-F18: Payload Policy Decision Evidence
+
+Requirements:
+
+- Emit an explicit `payload.policy.applied` trace event for chat and embeddings
+  gateway requests after request admission and before billing freeze.
+- Use `source_component=payload_policy`.
+- Populate sanitized metadata for `payload_capture_mode`,
+  `payload_policy_reason`, `raw_payload_stored`, and `payload_ref_present`.
+- Map the event to `decision_kind=payload_capture`.
+- Use `decision_result=allowed` for `metadata_only` and `decision_result=skipped`
+  for `disabled`.
+- Preserve raw prompt/response default-off behavior.
+
+Acceptance:
+
+- New request traces include a payload policy decision event when trace sampling
+  records the request.
+- Payload policy metadata survives trace metadata sanitization without creating
+  a redacted capture gap.
+- Disabled payload mode records a skipped payload capture decision without
+  storing raw prompt or response bodies.
+- Existing request handling, routing, billing, provider dispatch, response
+  payloads, API routes, and frontend behavior remain unchanged.
+- No migration, exporter/outbox, read-only DB access, raw payload capture,
+  X-Insight runtime dependency, or PRD4 matrix change is introduced.
+
 ### P5-F09: Cursor Export API Or Outbox
 
 Requirements:
@@ -438,10 +472,11 @@ PRD5 should proceed in independently verifiable batches:
 7. Batch 1G: trusted evidence context intake for internal
    trace/session/actor/delegation propagation.
 8. Batch 1H: gateway span hierarchy for UniRouter-emitted request trace events.
-9. Later payload policy metadata and evidence references, with future raw
+9. Batch 1I: explicit payload policy decision evidence for chat and embeddings.
+10. Later payload policy metadata and evidence references, with future raw
    payload modes gated behind enterprise opt-in.
-10. Batch 1I: read-only view/export decision after X-Insight Gate A evidence.
-11. Batch 1J+: target upstream/SSO evidence or larger backlog items only after
+11. Batch 1J: read-only view/export decision after X-Insight Gate A evidence.
+12. Batch 1K+: target upstream/SSO evidence or larger backlog items only after
    their prerequisites are explicitly met.
 
 ## 6. External Source Refresh

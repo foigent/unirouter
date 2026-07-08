@@ -170,6 +170,20 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 	}
 }
 
+func (relay *Relay) recordPayloadPolicyDecision(ctx context.Context, requestID, model, requestedModel string, latencyMs int) {
+	mode := relay.currentPayloadCaptureMode()
+	reason := "payload.metadata_only"
+	if mode == traceutil.PayloadCaptureModeDisabled {
+		reason = "payload.disabled"
+	}
+	relay.recordTraceEvent(ctx, requestID, "payload.policy.applied", "payload_policy", "info", model, requestedModel, nil, 0, latencyMs, map[string]interface{}{
+		"payload_capture_mode":  mode,
+		"payload_policy_reason": reason,
+		"payload_ref_present":   false,
+		"raw_payload_stored":    false,
+	})
+}
+
 func (relay *Relay) shouldRecordTraceEvent(requestID string) bool {
 	if relay == nil || !relay.traceEventsEnabled {
 		return false
@@ -244,11 +258,18 @@ func decisionEvidence(eventType string, metadata map[string]interface{}) (string
 		reason = value
 	} else if value, ok := metadata["failure_kind"].(string); ok && strings.TrimSpace(value) != "" {
 		reason = value
+	} else if value, ok := metadata["payload_policy_reason"].(string); ok && strings.TrimSpace(value) != "" {
+		reason = value
 	}
 
 	switch {
 	case eventType == "gateway.request.accepted":
 		return "admission", "allowed", reason
+	case eventType == "payload.policy.applied":
+		if mode, ok := metadata["payload_capture_mode"].(string); ok && mode == traceutil.PayloadCaptureModeDisabled {
+			return "payload_capture", "skipped", reason
+		}
+		return "payload_capture", "allowed", reason
 	case strings.HasPrefix(eventType, "billing.freeze."):
 		switch eventType {
 		case "billing.freeze.succeeded":

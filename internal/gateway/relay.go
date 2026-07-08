@@ -324,6 +324,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		"stream":           req.Stream,
 		"estimated_tokens": estimatedTokens,
 	})
+	relay.recordPayloadPolicyDecision(ctx, requestID, req.Model, requestedModel, elapsedMilliseconds(requestStart))
 
 	// Freeze balance once (before trying any upstream)
 	freezeResult, err := relay.billing.Freeze(ctx, billing.FreezeRequest{
@@ -1157,6 +1158,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		"estimated_tokens": inputTokens,
 		"stream":           false,
 	})
+	relay.recordPayloadPolicyDecision(ctx, requestID, req.Model, requestedModel, elapsedMilliseconds(requestStart))
 
 	freezeResult, err := relay.billing.Freeze(ctx, billing.FreezeRequest{
 		RequestID:       requestID,

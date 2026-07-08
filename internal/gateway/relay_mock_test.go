@@ -548,6 +548,87 @@ func TestRecordTraceEvent_ParentsEventsToGatewayRootSpan(t *testing.T) {
 	}
 }
 
+func TestRecordPayloadPolicyDecision_DisabledMode(t *testing.T) {
+	var capturedArgs []any
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if !strings.Contains(sql, "INSERT INTO request_trace_events") {
+				return pgconn.CommandTag{}, nil
+			}
+			capturedArgs = append([]any(nil), args...)
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	relay := newTestRelay(db, &mockBilling{})
+	relay.SetPayloadCaptureMode(traceutil.PayloadCaptureModeDisabled)
+	ctx := contextWithEvidenceSpanState(context.WithValue(context.Background(), middleware.CtxOrgID, int64(1)))
+
+	relay.recordPayloadPolicyDecision(ctx, "req-payload", "company-chat", "company-chat", 12)
+
+	if len(capturedArgs) != 34 {
+		t.Fatalf("expected 34 trace insert args, got %d", len(capturedArgs))
+	}
+	if capturedArgs[6] != "payload.policy.applied" || capturedArgs[7] != "payload_policy" || capturedArgs[20] != "payload_policy" {
+		t.Fatalf("unexpected payload policy event args: %#v", capturedArgs[6:21])
+	}
+	var metadata map[string]interface{}
+	if err := json.Unmarshal([]byte(capturedArgs[15].(string)), &metadata); err != nil {
+		t.Fatalf("unmarshal metadata: %v", err)
+	}
+	if metadata["payload_capture_mode"] != traceutil.PayloadCaptureModeDisabled || metadata["payload_policy_reason"] != "payload.disabled" {
+		t.Fatalf("expected disabled payload policy metadata, got %#v", metadata)
+	}
+	if metadata["raw_payload_stored"] != false || metadata["payload_ref_present"] != false {
+		t.Fatalf("expected raw/ref payload booleans false, got %#v", metadata)
+	}
+	if capturedArgs[22] != nil {
+		t.Fatalf("expected no capture gap for payload policy metadata, got %#v", capturedArgs[22])
+	}
+	if capturedArgs[25] != "payload_capture" || capturedArgs[26] != "skipped" || capturedArgs[27] != "payload.disabled" {
+		t.Fatalf("unexpected payload policy decision args: %#v", capturedArgs[25:28])
+	}
+	if capturedArgs[32] != traceutil.PayloadCaptureModeDisabled {
+		t.Fatalf("expected disabled payload capture mode column, got %#v", capturedArgs[32])
+	}
+}
+
+func TestRecordPayloadPolicyDecision_MetadataOnlyMode(t *testing.T) {
+	var capturedArgs []any
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if !strings.Contains(sql, "INSERT INTO request_trace_events") {
+				return pgconn.CommandTag{}, nil
+			}
+			capturedArgs = append([]any(nil), args...)
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	relay := newTestRelay(db, &mockBilling{})
+	ctx := contextWithEvidenceSpanState(context.WithValue(context.Background(), middleware.CtxOrgID, int64(1)))
+
+	relay.recordPayloadPolicyDecision(ctx, "req-payload", "company-chat", "company-chat", 12)
+
+	if len(capturedArgs) != 34 {
+		t.Fatalf("expected 34 trace insert args, got %d", len(capturedArgs))
+	}
+	var metadata map[string]interface{}
+	if err := json.Unmarshal([]byte(capturedArgs[15].(string)), &metadata); err != nil {
+		t.Fatalf("unmarshal metadata: %v", err)
+	}
+	if metadata["payload_capture_mode"] != traceutil.PayloadCaptureModeMetadataOnly || metadata["payload_policy_reason"] != "payload.metadata_only" {
+		t.Fatalf("expected metadata-only payload policy metadata, got %#v", metadata)
+	}
+	if metadata["raw_payload_stored"] != false || metadata["payload_ref_present"] != false {
+		t.Fatalf("expected raw/ref payload booleans false, got %#v", metadata)
+	}
+	if capturedArgs[25] != "payload_capture" || capturedArgs[26] != "allowed" || capturedArgs[27] != "payload.metadata_only" {
+		t.Fatalf("unexpected payload policy decision args: %#v", capturedArgs[25:28])
+	}
+	if capturedArgs[32] != traceutil.PayloadCaptureModeMetadataOnly {
+		t.Fatalf("expected metadata-only payload capture mode column, got %#v", capturedArgs[32])
+	}
+}
+
 func TestRelayContextWithTrustedEvidence(t *testing.T) {
 	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{})
 	relay.SetEvidenceContextTrustSecret("shared-secret-123456")

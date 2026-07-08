@@ -80,8 +80,8 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Current active verification signal: PRD5 Batch 1H Gateway Span Hierarchy fixed
-awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+Current active verification signal: PRD5 Batch 1I Payload Policy Decision
+Evidence fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
 
 PRD4 is complete for the confirmed current scope. PRD5 must preserve the PRD4
 deferred-boundary decisions recorded here.
@@ -159,7 +159,8 @@ PRD5 Batch 1G:
 PRD5 Batch 1H:
 
 - Scope: gateway span hierarchy for UniRouter-emitted request trace events.
-- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Status: Canary PASS 10/10 in `docs/agent-workflows/VERIFY-RESULT.md`;
+  Sentinel merge reflected by `61f5610` / PR #111.
 - Adds: per-request in-memory span state, gateway root span assignment on the
   first UniRouter trace event, trusted inbound parent preservation for the root
   span, later UniRouter trace events parented to the gateway root span, and
@@ -167,6 +168,20 @@ PRD5 Batch 1H:
 - Does not add: migration, new route, frontend behavior, exporter/outbox,
   read-only credential, public inbound header trust by default, raw payload
   capture, X-Insight runtime dependency, or PRD4 matrix changes.
+
+PRD5 Batch 1I:
+
+- Scope: explicit payload capture policy decision evidence for chat and
+  embeddings.
+- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Adds: `payload.policy.applied` trace events after gateway request acceptance;
+  sanitized metadata for `payload_capture_mode`, `payload_policy_reason`,
+  `raw_payload_stored=false`, and `payload_ref_present=false`; and
+  `decision_kind=payload_capture` with `allowed` for metadata-only mode or
+  `skipped` for disabled mode.
+- Does not add: migration, new route, frontend behavior, exporter/outbox,
+  read-only credential, raw prompt/response capture, payload hashing, payload
+  object references, X-Insight runtime dependency, or PRD4 matrix changes.
 
 Latest completed PRD4 verification result is PRD4 Batch 1S Open Issue Boundary
 Closeout:
