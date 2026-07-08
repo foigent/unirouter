@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/traceutil"
 )
 
 type Config struct {
@@ -46,6 +47,7 @@ type Config struct {
 	TraceEventsEnabled      bool
 	TraceEventSampleRate    float64
 	TraceEventRetentionDays int
+	PayloadCaptureMode      string
 	RuntimeEnvironment      string
 	RuntimeDeploymentMode   string
 	RuntimeDeploymentRole   string
@@ -158,6 +160,9 @@ func (c *Config) Validate() error {
 	if c.TraceEventRetentionDays < 0 {
 		return fmt.Errorf("TRACE_EVENT_RETENTION_DAYS must be >= 0")
 	}
+	if !traceutil.IsSupportedPayloadCaptureMode(c.PayloadCaptureMode) {
+		return fmt.Errorf("PAYLOAD_CAPTURE_MODE must be one of: %s", traceutil.SupportedPayloadCaptureModes())
+	}
 	if c.LogRetentionDays < 0 {
 		return fmt.Errorf("LOG_RETENTION_DAYS must be >= 0")
 	}
@@ -223,6 +228,7 @@ func Load() (*Config, error) {
 		TraceEventsEnabled:      getEnvBool("TRACE_EVENTS_ENABLED", true),
 		TraceEventSampleRate:    getEnvFloat("TRACE_EVENT_SAMPLE_RATE", 1),
 		TraceEventRetentionDays: getEnvInt("TRACE_EVENT_RETENTION_DAYS", logRetentionDays),
+		PayloadCaptureMode:      traceutil.NormalizePayloadCaptureMode(getEnvStr("PAYLOAD_CAPTURE_MODE", traceutil.PayloadCaptureModeMetadataOnly)),
 		RuntimeEnvironment:      getEnvStr("RUNTIME_ENVIRONMENT", "unspecified"),
 		RuntimeDeploymentMode:   getEnvStr("RUNTIME_DEPLOYMENT_MODE", "single-node"),
 		RuntimeDeploymentRole:   getEnvStr("RUNTIME_DEPLOYMENT_ROLE", "stable"),

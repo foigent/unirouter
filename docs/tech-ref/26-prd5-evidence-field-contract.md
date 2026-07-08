@@ -2,8 +2,8 @@
 
 > Version: v0.1
 > Date: 2026-07-08
-> Status: Batch 1A/1B/1C and Batch 1D Canary/Sentinel complete. Batch 1E
-> event capture-gap emission fixed awaiting Canary.
+> Status: Batch 1A/1B/1C, Batch 1D, and Batch 1E Canary/Sentinel complete.
+> Batch 1F payload capture mode configuration fixed awaiting Canary.
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > X-Insight response
 > `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-08-x-insight-prd5-integration-answers.md`
@@ -38,7 +38,7 @@ evidence." They are not cosmetic UI fields.
 | `actor_type` | nullable string | trace/log where known | Human, service, agent, API key, system, or unknown |
 | `actor_ref` | nullable string | trace/log where known | Stable non-secret actor reference |
 | `on_behalf_of` | nullable string | trace/log where known | Delegation target for agent/app/service use cases |
-| `payload_capture_mode` | string | trace/log/export metadata | Payload state such as metadata-only, redacted, hash-only, reference-only |
+| `payload_capture_mode` | string | trace/log/export metadata | Payload state. Active Batch 1F values are `metadata_only` and `disabled`; redacted/hash/reference modes remain later gated vocabulary |
 | `payload_ref` | nullable string | future payload policy | Reference to an approved payload object, not raw content |
 
 ## Recommended Enum Values
@@ -204,6 +204,9 @@ Implemented first slice:
   metadata sanitizer drops restricted keys, rejects unsupported value shapes, or
   truncates allowed strings. Fully retained safe metadata leaves `capture_gap`
   null.
+- Batch 1F adds `PAYLOAD_CAPTURE_MODE` with active values `metadata_only` and
+  `disabled`. Gateway trace/log writes persist the configured mode and include
+  it in source-event hashes. Unsupported values fail config validation.
 
 ## Writer Behavior
 
@@ -219,21 +222,25 @@ directly:
   intentionally dropped or truncated by UniRouter;
 - billing freeze/settle/cancel: `billing` plus decision/result where applicable;
 - trace sampling: `trace_sampling` decision;
-- payload state: `payload_capture` decision and `payload_capture_mode`.
+- payload state: `payload_capture` decision and configured
+  `payload_capture_mode`.
 
 Missing upstream facts should not be guessed.
 
 ## Payload Boundary
 
-Default mode is metadata-only.
+Default mode is `metadata_only`.
 
-Allowed first modes:
+Active runtime modes in Batch 1F:
 
 - `metadata_only`
+- `disabled`
+
+Planned but not active without later approval:
+
 - `redacted`
 - `hash_only`
 - `reference_only`
-- `disabled`
 
 Raw prompt/response capture requires a separate explicit enterprise opt-in
 decision covering encryption/key management, retention, deletion/export, RBAC,

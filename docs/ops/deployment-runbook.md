@@ -71,6 +71,7 @@ License 公钥由 License 签发方提供，支持 base64 或 hex 编码的 32 �
 | `TRACE_EVENTS_ENABLED` | `true` | 记录 metadata-only 请求路径事件；高流量生产环境可设为 `false` 暂停写入 |
 | `TRACE_EVENT_SAMPLE_RATE` | `1` | 按 `request_id` 确定性采样，范围 `0..1`；例如 `0.1` 约采样 10% 请求并保留同一请求的完整事件段 |
 | `TRACE_EVENT_RETENTION_DAYS` | `LOG_RETENTION_DAYS` | `request_trace_events` 自动清理窗口；设为 `0` 时跳过 trace event 清理但不关闭写入，关闭写入仍使用 `TRACE_EVENTS_ENABLED=false` |
+| `PAYLOAD_CAPTURE_MODE` | `metadata_only` | PRD5 payload evidence 状态；当前仅支持 `metadata_only` 和 `disabled`，不会启用 raw prompt/response 存储 |
 | `LOG_RETENTION_DAYS` | `30` | call logs、settle/cancel transactions 和相关清理的保留窗口；audit logs 保留该值的 2 倍 |
 | `RUNTIME_ENVIRONMENT` | `unspecified`（docker-compose 默认 `local`） | Runtime Status Center 展示的环境标签，如 `dev`、`staging`、`prod` |
 | `RUNTIME_DEPLOYMENT_MODE` | `single-node` | Runtime Status Center 展示的部署形态，如 `docker-compose`、`kubernetes` |

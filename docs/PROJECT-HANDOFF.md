@@ -80,7 +80,7 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Current active verification signal: PRD5 Batch 1E Event Capture Gap Emission
+Current active verification signal: PRD5 Batch 1F Payload Capture Mode Configuration
 fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
 
 PRD4 is complete for the confirmed current scope. PRD5 must preserve the PRD4
@@ -117,11 +117,27 @@ PRD5 Batch 1D:
 PRD5 Batch 1E:
 
 - Scope: event-level capture-gap emission for trace metadata safety.
+- Status: Canary PASS 11/11 in `docs/agent-workflows/VERIFY-RESULT.md`;
+  Sentinel merge reflected by `a19830f` / PR #108.
 - Adds: `capture_gap='redacted'` when UniRouter drops restricted metadata,
   rejects unsupported metadata shapes, or truncates allowed metadata strings;
   focused `traceutil` and gateway tests.
 - Does not add: migration, new route, frontend behavior, exporter/outbox,
   read-only credential, raw payload capture, fabricated session/delegation
+  facts, or PRD4 matrix changes.
+
+PRD5 Batch 1F:
+
+- Scope: restricted payload capture mode configuration.
+- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Adds: `PAYLOAD_CAPTURE_MODE` defaulting to `metadata_only`; active support for
+  `metadata_only` and `disabled` only; config validation that rejects unsupported
+  payload modes; gateway trace/log writes that persist the configured
+  `payload_capture_mode`; source-event hashes that include the configured mode;
+  `.env.example`, `docker-compose.yml`, and deployment-runbook docs.
+- Does not add: migration, new route, frontend behavior, exporter/outbox,
+  read-only credential, raw prompt/response capture, encrypted payload object
+  store, redacted/hash/reference active modes, fabricated session/delegation
   facts, or PRD4 matrix changes.
 
 Latest completed PRD4 verification result is PRD4 Batch 1S Open Issue Boundary

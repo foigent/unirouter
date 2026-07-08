@@ -1,14 +1,15 @@
 # PRD5 Acceptance Matrix
 
 > Date: 2026-07-08
-> Status: PRD5 Batch 1A/1B/1C and Batch 1D Canary/Sentinel complete; Batch 1E
-> event capture-gap emission fixed awaiting Canary. PRD4 remains complete for
-> the confirmed current scope and is not reopened.
+> Status: PRD5 Batch 1A/1B/1C, Batch 1D, and Batch 1E Canary/Sentinel
+> complete; Batch 1F payload capture mode configuration fixed awaiting Canary.
+> PRD4 remains complete for the confirmed current scope and is not reopened.
 > Source: `docs/PRD-Phase5.md`, `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, current repo/code review,
 > X-Insight shared-folder responses, PRD5 Batch 1A/1B/1C implementation
-> artifacts, PRD5 Batch 1D upstream request correlation changes, and PRD5 Batch
-> 1E event capture-gap emission changes.
+> artifacts, PRD5 Batch 1D upstream request correlation changes, PRD5 Batch 1E
+> event capture-gap emission changes, and PRD5 Batch 1F payload capture mode
+> configuration changes.
 
 ## Status Values
 
@@ -43,7 +44,26 @@ actual result, and rollback or cleanup note.
 | P5-F11 | Real SSO Target E2E | Deferred pending prerequisite | PRD4 real-SSO harness runs against approved IdP tenant/client/test user | Target browser/audit evidence, cleanup note | Tracked from `PRD5-SSO-001` |
 | P5-F12 | Larger Deferred Backlog Screening | Planned | Scheduler, plugins, managed HA/IaC, runtime cache, SDK, roles, and hard budget blocking are separately screened before implementation | Future scope docs and User approval | Not automatically active merely because PRD5 started |
 | P5-F13 | Upstream Request Correlation | Canary passed | Provider-returned upstream request IDs are captured from a bounded response-header allowlist and written to trace/log evidence without trusting public inbound headers | Canary PASS 11/11 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `bf435ca` / PR #107 | Batch 1D code-only evidence enrichment; no migration, new route, exporter/outbox, raw payload capture, request-path semantic change, or PRD4 matrix change |
-| P5-F14 | Event Capture Gap Emission | Fixed awaiting Canary | Trace events record `capture_gap='redacted'` when UniRouter intentionally drops, shape-rejects, or truncates trace metadata during safe evidence capture | Traceutil/gateway focused tests, source review, `git diff --check` | Batch 1E code-only evidence enrichment; no migration, new route, frontend behavior, exporter/outbox, raw payload capture, fabricated session/delegation facts, or PRD4 matrix change |
+| P5-F14 | Event Capture Gap Emission | Canary passed | Trace events record `capture_gap='redacted'` when UniRouter intentionally drops, shape-rejects, or truncates trace metadata during safe evidence capture | Canary PASS 11/11 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `a19830f` / PR #108 | Batch 1E code-only evidence enrichment; no migration, new route, frontend behavior, exporter/outbox, raw payload capture, fabricated session/delegation facts, or PRD4 matrix change |
+| P5-F15 | Payload Capture Mode Configuration | Fixed awaiting Canary | `PAYLOAD_CAPTURE_MODE` defaults to `metadata_only`, allows only `metadata_only` and `disabled`, rejects unsupported modes, and writes the configured mode to trace/log evidence plus source-event hashes | Traceutil/config/gateway focused tests, deployment config review, source review, `git diff --check` | Batch 1F restricted runtime config; no migration, new route, frontend behavior, exporter/outbox, raw prompt/response capture, new payload object store, or PRD4 matrix change |
+
+## Batch 1F Verification
+
+PRD5 Batch 1F verifies restricted payload capture mode configuration:
+
+```bash
+go test ./internal/traceutil ./internal/config ./internal/gateway -run 'TestPayloadCaptureMode|TestValidate_InvalidRuntimeExposureConfig|TestLoad_RuntimeExposureEnvOverrides|TestLoad_Defaults|TestRecord(Request|TraceEvent)|TestSetTraceEvents' -count=1
+go test ./internal/traceutil ./internal/config ./internal/gateway ./cmd/uniroute -count=1
+go test ./... -count=1
+docker compose config >/tmp/unirouter-compose-config.yml
+rg -n "PAYLOAD_CAPTURE_MODE|payload_capture_mode|P5-F15|Batch 1F|a19830f|PR #108" internal/traceutil internal/config internal/gateway cmd/uniroute .env.example docker-compose.yml docs/PRD-Phase5.md docs/ops/PRD5-ACCEPTANCE-MATRIX.md docs/planning/PRD5-IMPLEMENTATION-PLAN.md docs/tech-ref/26-prd5-evidence-field-contract.md docs/agent-workflows/FIX-SIGNAL.md
+git diff --check
+```
+
+No new migration, API route, frontend behavior, exporter/outbox, read-only
+credential, raw prompt/response capture, payload object store, X-Insight runtime
+dependency, fabricated business-chain/session/delegation fact, PRD4 matrix
+count, or `Production verified` claim should change in Batch 1F.
 
 ## Batch 1E Verification
 

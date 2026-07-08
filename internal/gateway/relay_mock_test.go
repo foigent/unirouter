@@ -23,6 +23,7 @@ import (
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/testutil"
+	"github.com/uniroute/unirouter/internal/traceutil"
 )
 
 // --- Mock BillingProvider ---
@@ -340,6 +341,30 @@ func TestRecordRequest_Success(t *testing.T) {
 	}
 }
 
+func TestRecordRequest_UsesConfiguredPayloadCaptureMode(t *testing.T) {
+	var capturedArgs []any
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if !strings.Contains(sql, "INSERT INTO call_logs") {
+				return pgconn.CommandTag{}, nil
+			}
+			capturedArgs = append([]any(nil), args...)
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	relay := newTestRelay(db, &mockBilling{})
+	relay.SetPayloadCaptureMode(traceutil.PayloadCaptureModeDisabled)
+
+	relay.recordRequest(context.Background(), "req-disabled", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, 123, 0, false, metering.UsageSourceUpstream, 180, "")
+
+	if len(capturedArgs) != 31 {
+		t.Fatalf("expected 31 insert args, got %d", len(capturedArgs))
+	}
+	if capturedArgs[29] != traceutil.PayloadCaptureModeDisabled {
+		t.Fatalf("expected disabled payload capture mode, got %#v", capturedArgs[29])
+	}
+}
+
 func TestRecordTraceEvent_SanitizesMetadataAndSnapshotsOwner(t *testing.T) {
 	var capturedArgs []any
 	db := &testutil.MockDB{
@@ -352,6 +377,7 @@ func TestRecordTraceEvent_SanitizesMetadataAndSnapshotsOwner(t *testing.T) {
 		},
 	}
 	relay := newTestRelay(db, &mockBilling{})
+	relay.SetPayloadCaptureMode(traceutil.PayloadCaptureModeDisabled)
 
 	ownerUserID := int64(42)
 	ctx := context.WithValue(context.Background(), middleware.CtxOrgID, int64(1))
@@ -406,7 +432,7 @@ func TestRecordTraceEvent_SanitizesMetadataAndSnapshotsOwner(t *testing.T) {
 	if capturedArgs[24] != "provider" || capturedArgs[25] != "selected" || capturedArgs[26] != "provider.response_accepted" {
 		t.Fatalf("unexpected trace decision args: %#v", capturedArgs[24:27])
 	}
-	if capturedArgs[27] != "human" || capturedArgs[28] != "user:42" || capturedArgs[29] != evidencePayloadMetadata {
+	if capturedArgs[27] != "human" || capturedArgs[28] != "user:42" || capturedArgs[29] != traceutil.PayloadCaptureModeDisabled {
 		t.Fatalf("unexpected trace actor/payload args: %#v", capturedArgs[27:30])
 	}
 	if hash, ok := capturedArgs[30].(string); !ok || len(hash) != 64 {

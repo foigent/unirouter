@@ -22,6 +22,7 @@ import (
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/tokenutil"
+	"github.com/uniroute/unirouter/internal/traceutil"
 )
 
 // BillingProvider defines the billing operations that Relay depends on.
@@ -49,11 +50,12 @@ type Relay struct {
 
 	traceEventsEnabled   bool
 	traceEventSampleRate float64
+	payloadCaptureMode   string
 }
 
 // NewRelay creates a new Relay.
 func NewRelay(db db.DBQuerier, rdb *redis.Client, router *Router, b BillingProvider, f *filter.DFAFilter, encKey []byte) *Relay {
-	return &Relay{db: db, rdb: rdb, router: router, billing: b, filter: f, encKey: encKey, traceEventsEnabled: true, traceEventSampleRate: 1}
+	return &Relay{db: db, rdb: rdb, router: router, billing: b, filter: f, encKey: encKey, traceEventsEnabled: true, traceEventSampleRate: 1, payloadCaptureMode: traceutil.PayloadCaptureModeMetadataOnly}
 }
 
 // SetAlertService configures the budget alert service for post-settle checks.
@@ -79,6 +81,30 @@ func (relay *Relay) SetTraceEvents(enabled bool, sampleRate float64) {
 	default:
 		relay.traceEventSampleRate = sampleRate
 	}
+}
+
+// SetPayloadCaptureMode configures payload evidence state. It does not enable
+// raw prompt/response capture.
+func (relay *Relay) SetPayloadCaptureMode(mode string) {
+	if relay == nil {
+		return
+	}
+	mode = traceutil.NormalizePayloadCaptureMode(mode)
+	if !traceutil.IsSupportedPayloadCaptureMode(mode) {
+		mode = traceutil.PayloadCaptureModeMetadataOnly
+	}
+	relay.payloadCaptureMode = mode
+}
+
+func (relay *Relay) currentPayloadCaptureMode() string {
+	if relay == nil {
+		return traceutil.PayloadCaptureModeMetadataOnly
+	}
+	mode := traceutil.NormalizePayloadCaptureMode(relay.payloadCaptureMode)
+	if !traceutil.IsSupportedPayloadCaptureMode(mode) {
+		return traceutil.PayloadCaptureModeMetadataOnly
+	}
+	return mode
 }
 
 var upstreamRequestIDHeaderNames = []string{
@@ -974,7 +1000,8 @@ func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, 
 	usageSource = metering.NormalizeUsageSource(usageSource)
 	usageConfidence := metering.SourceConfidence(usageSource)
 	upstreamRequestID = sanitizeUpstreamRequestID(upstreamRequestID)
-	sourceEventHash := hashCallLogEvidence(requestID, orgID, projectIDArg, keyID, ownerUserIDArg, keyType, model, requestedModel, provider, channelName, promptTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs, usageSource, isStream, estimatedTokens, usageConfidence, upstreamRequestID)
+	payloadCaptureMode := relay.currentPayloadCaptureMode()
+	sourceEventHash := hashCallLogEvidence(requestID, orgID, projectIDArg, keyID, ownerUserIDArg, keyType, model, requestedModel, provider, channelName, promptTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs, usageSource, isStream, estimatedTokens, usageConfidence, upstreamRequestID, payloadCaptureMode)
 	_, err := relay.db.Exec(ctx,
 		`INSERT INTO call_logs (
 			request_id, org_id, project_id, api_key_id, owner_user_id, key_type,
@@ -997,7 +1024,7 @@ func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, 
 		promptTokens+completionTokens, costCents, statusCode, latencyMs, ttftMs, usageSource,
 		isStream, clientIP, estimatedTokens, usageConfidence,
 		requestID, evidenceSchemaVersion, evidenceCaptureModeNative, fmt.Sprintf("%s:call_logs:request_id:%s", evidenceTraceRefSourceType, requestID),
-		nullableString(upstreamRequestID), actorType, actorRefArg, evidencePayloadMetadata, sourceEventHash,
+		nullableString(upstreamRequestID), actorType, actorRefArg, payloadCaptureMode, sourceEventHash,
 	)
 	if err != nil {
 		reqLog.Error("Failed to record request log: %v", err)
