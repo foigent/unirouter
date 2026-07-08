@@ -97,6 +97,11 @@ Accepted in Batch 1D:
 
 - `upstream_request_id` capture where providers return a trusted response header.
 
+Accepted in Batch 1E:
+
+- event-level `capture_gap='redacted'` when UniRouter intentionally drops,
+  shape-rejects, or truncates trace metadata during safe evidence capture.
+
 Medium priority:
 
 - request-id and source-ref search ergonomics in the trace UI;

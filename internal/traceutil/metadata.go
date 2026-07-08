@@ -25,18 +25,29 @@ var metadataAllowlist = map[string]bool{
 }
 
 func SanitizeMetadata(input map[string]interface{}) map[string]interface{} {
+	out, _ := SanitizeMetadataWithGap(input)
+	return out
+}
+
+func SanitizeMetadataWithGap(input map[string]interface{}) (map[string]interface{}, string) {
 	if len(input) == 0 {
-		return map[string]interface{}{}
+		return map[string]interface{}{}, ""
 	}
 
 	out := make(map[string]interface{})
+	captureGap := ""
 	for key, value := range input {
 		if !metadataAllowlist[key] {
+			captureGap = "redacted"
 			continue
 		}
 		switch v := value.(type) {
 		case string:
-			out[key] = truncateString(v)
+			sanitized, truncated := truncateString(v)
+			out[key] = sanitized
+			if truncated {
+				captureGap = "redacted"
+			}
 		case bool:
 			out[key] = v
 		case int:
@@ -50,16 +61,17 @@ func SanitizeMetadata(input map[string]interface{}) map[string]interface{} {
 		case float32:
 			out[key] = v
 		default:
+			captureGap = "redacted"
 			continue
 		}
 	}
-	return out
+	return out, captureGap
 }
 
-func truncateString(value string) string {
+func truncateString(value string) (string, bool) {
 	value = strings.TrimSpace(value)
 	if len(value) <= 256 {
-		return value
+		return value, false
 	}
-	return value[:256]
+	return value[:256], true
 }

@@ -1,4 +1,4 @@
-# VERIFY-RESULT.md - PRD5 Batch 1D Upstream Request Correlation
+# VERIFY-RESULT.md - PRD5 Batch 1E Event Capture Gap Emission
 
 **Verifier:** Canary
 **Date:** 2026-07-08
@@ -9,47 +9,46 @@
 
 | # | Instruction | Result | Evidence |
 |---|-------------|--------|----------|
-| 1 | VERIFY-RESULT.md records Batch 1A/1B/1C PASS 17/17; main includes Sentinel merge `e1e76e3` / PR #106 | ✅ PASS | Previous `VERIFY-RESULT.md` records 17/17 PASS; git log confirms merge |
-| 2 | PRD5 matrix: P5-F01–F07 Canary passed, F08–F11 deferred, F12 planned, P5-F13 Fixed awaiting Canary | ✅ PASS | Grep confirms P5-F13 = "Fixed awaiting Canary"; other rows unchanged |
-| 3 | PRD-Phase5 defines P5-F13; does not reopen PRD4 | ✅ PASS | `PRD-Phase5.md` defines P5-F13 upstream request correlation; PRD4 matrix unchanged (13 rows) |
-| 4 | Implementation plan says UniRouter can proceed independently; lists Batch 1D non-goals | ✅ PASS | `PRD5-IMPLEMENTATION-PLAN.md` — parallel path confirmed; Batch 1D non-goals: no migration, no new route, no frontend, no exporter |
-| 5 | Evidence field contract documents upstream request ID response-header allowlist and sanitizer boundary | ✅ PASS | `26-prd5-evidence-field-contract.md` documents header allowlist (OpenAI-Request-ID, Anthropic-Request-Id, etc.) and sanitizer |
-| 6 | relay.go extracts upstream request IDs only from provider response headers, not inbound public headers | ✅ PASS | `relay.go:84-92` — allowlist: `X-Request-ID`, `X-Amzn-RequestId`, `OpenAI-Request-ID`, `X-OpenAI-Request-ID`, `Anthropic-Request-Id`, `X-Anthropic-Request-Id`; extracted from `resp.Header` only |
-| 7 | trace.go rejects empty, non-printable-ASCII, whitespace, control-char upstream request IDs before persistence | ✅ PASS | `trace.go:313-327` — `sanitizeUpstreamRequestID`: trims, rejects empty, rejects chars <33 or >126, truncates to 128 |
-| 8 | Provider response trace events can receive `upstream_request_id` | ✅ PASS | `trace.go:26` — variadic `upstreamRequestIDs ...string`; `trace.go:96-98` — sanitized and written to DB |
-| 9 | Call-log inserts can receive `upstream_request_id` | ✅ PASS | `relay.go:984` — `upstream_request_id` in INSERT; `relay.go:1000` — `nullableString(upstreamRequestID)` in VALUES |
-| 10 | No migration, new route, frontend behavior, exporter, read-only credential, raw payload, or PRD4 matrix change | ✅ PASS | This batch's diff: only `relay.go`, `trace.go`, `relay_mock_test.go` + docs; no migration (000018 is from Batch 1B), no new route, no frontend, no exporter |
+| 1 | VERIFY-RESULT.md records Batch 1D PASS 11/11; main includes `bf435ca` / PR #107 | ✅ PASS | Previous VERIFY-RESULT.md records 11/11; `PRD5-ACCEPTANCE-MATRIX.md:45` references `bf435ca` / PR #107 |
+| 2 | Matrix: P5-F01–F07 + P5-F13 Canary passed; F08–F11 deferred; F12 planned; P5-F14 Fixed awaiting Canary | ✅ PASS | `PRD5-ACCEPTANCE-MATRIX.md:46` — P5-F14 = "Fixed awaiting Canary"; other rows unchanged |
+| 3 | PRD-Phase5 defines P5-F14; does not reopen PRD4 | ✅ PASS | `PRD-Phase5.md:284` defines P5-F14; PRD4 matrix unchanged (13 rows) |
+| 4 | Implementation plan: UniRouter can proceed independently; Batch 1E non-goals listed | ✅ PASS | `PRD5-IMPLEMENTATION-PLAN.md:220` — "no blocking condition for Batch 1A through 1E"; Batch 1E non-goals: no migration, no new route, no frontend, no exporter |
+| 5 | Evidence field contract documents `capture_gap='redacted'` for metadata redaction/truncation | ✅ PASS | `26-prd5-evidence-field-contract.md:74,84` — `capture_gap` enum includes `redacted`; `:203-205` documents Batch 1E behavior |
+| 6 | `traceutil/metadata.go` keeps `SanitizeMetadata` compatible; adds `SanitizeMetadataWithGap` | ✅ PASS | `metadata.go:28` — `SanitizeMetadata` delegates to `SanitizeMetadataWithGap` (backward compatible); `metadata.go:32` — `SanitizeMetadataWithGap` added |
+| 7 | Safe scalar allowlisted metadata produces no capture gap | ✅ PASS | `metadata_test.go:37-46` — safe metadata returns gap="" |
+| 8 | Restricted keys, unsupported shapes, truncation produce `capture_gap='redacted'` | ✅ PASS | `metadata.go:41,49,64` — all three paths set `captureGap = "redacted"`; `metadata_test.go:48-63` verifies |
+| 9 | `trace.go` writes nullable `capture_gap` to `request_trace_events` and includes in source-event hash | ✅ PASS | `trace.go:87-91` — uses `SanitizeMetadataWithGap`; `trace.go:109` — `capture_gap` in INSERT; `trace.go:267` — `CaptureGap` in hash struct |
+| 10 | No migration, new route, frontend, exporter, read-only credential, raw payload, fabricated session/delegation, or PRD4 change | ✅ PASS | This batch's diff: `metadata.go`, `metadata_test.go`, `trace.go`, `relay_mock_test.go` + docs only |
 | 11 | All commands pass | ✅ PASS | See below |
 
 ## Command Results
 
 | Command | Result |
 |---------|--------|
-| `go test ./internal/gateway -run 'TestRecord...\|TestUpstreamRequestID...\|TestRelay...'` | ✅ 14/14 PASS |
-| `go test ./internal/gateway ./internal/admin -count=1` | ✅ Both packages PASS |
-| `grep` for key terms | ✅ All expected references found in source and docs |
+| `go test ./internal/traceutil ./internal/gateway -run 'TestSanitizeMetadata\|TestRecordTraceEvent\|TestRecordRequest\|TestUpstreamRequestIDFromHeader'` | ✅ 6/6 PASS |
+| `go test ./internal/gateway ./internal/admin ./internal/traceutil -count=1` | ✅ All 3 packages PASS |
+| `grep` for key terms | ✅ All expected references found |
 | `git diff --check` | ✅ Clean |
 
 ## PRD4 Boundary
 
-- PRD4 matrix: 13 rows, 11 Canary passed, 2 Deferred — **unchanged** ✅
+- PRD4 matrix: 13 rows — **unchanged** ✅
 - No PRD4 row promoted to `Production verified` ✅
 
 ## Security Check
 
-- Upstream request ID extracted from provider response headers only (not inbound public headers) ✅
-- Sanitizer rejects non-printable-ASCII, whitespace, control characters ✅
-- Truncated to 128 chars max ✅
-- No raw prompt/response/IP/upstream_error exposure ✅
-- No DSN/secret/token in code or docs ✅
+- No raw prompt/response capture ✅
+- No restricted metadata preservation in trace output ✅
+- No fabricated session/delegation/business-chain facts ✅
+- Capture gap only records that redaction occurred, not what was redacted ✅
 
 ## Notes
 
-- R3 gateway evidence write change — relay.go 和 trace.go 均有变更。
-- `sanitizeUpstreamRequestID` 逻辑合理：trim → 空值检查 → printable ASCII 逐字节校验 → 128 截断。
-- 测试覆盖了 header 提取、trim、非 ASCII 拒绝、超长截断等场景。
-- 不涉及 migration、新路由、前端、exporter/outbox。
+- `SanitizeMetadata` 保持向后兼容，内部委托给 `SanitizeMetadataWithGap`。
+- 三种 redaction 路径均正确产生 `capture_gap='redacted'`：restricted key、unsupported shape、string truncation。
+- Safe metadata 全部保留时 `capture_gap` 为 null。
+- Capture gap 包含在 source-event hash 中，确保证据完整性。
 
 ## Conclusion
 
-**PRD5 Batch 1D: PASS 11/11.** PRD4 边界完整，upstream request ID 仅从 provider response header 提取且经过严格 sanitize，gateway 写入正确，无越界变更。可以进入 Sentinel commit 流程。
+**PRD5 Batch 1E: PASS 11/11.** PRD4 边界完整，capture gap 逻辑正确，metadata sanitizer 向后兼容，无越界变更。可以进入 Sentinel commit 流程。

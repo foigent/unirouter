@@ -84,10 +84,11 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 	if latencyMs < 0 {
 		latencyMs = 0
 	}
-	sanitizedMetadata := traceutil.SanitizeMetadata(metadata)
+	sanitizedMetadata, captureGap := traceutil.SanitizeMetadataWithGap(metadata)
 	metadataJSON, err := json.Marshal(sanitizedMetadata)
 	if err != nil {
 		metadataJSON = []byte("{}")
+		captureGap = "redacted"
 	}
 	traceID := requestID
 	spanID := newEvidenceID()
@@ -97,7 +98,7 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 	if len(upstreamRequestIDs) > 0 {
 		upstreamRequestID = sanitizeUpstreamRequestID(upstreamRequestIDs[0])
 	}
-	sourceEventHash := hashTraceEvent(requestID, eventType, stage, severity, model, requestedModel, provider, channel, statusCodeArg, latencyMs, upstreamRequestID, metadataJSON)
+	sourceEventHash := hashTraceEvent(requestID, eventType, stage, severity, model, requestedModel, provider, channel, statusCodeArg, latencyMs, upstreamRequestID, captureGap, metadataJSON)
 	decisionKind, decisionResult, decisionReason := decisionEvidence(eventType, sanitizedMetadata)
 	if _, err := relay.db.Exec(ctx,
 		`INSERT INTO request_trace_events (
@@ -105,7 +106,7 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 			event_type, stage, severity, model, requested_model, provider, channel,
 			status_code, latency_ms, metadata,
 			trace_id, span_id, schema_version, source_component, capture_mode,
-			evidence_ref, upstream_request_id, decision_kind, decision_result, decision_reason,
+			capture_gap, evidence_ref, upstream_request_id, decision_kind, decision_result, decision_reason,
 			actor_type, actor_ref, payload_capture_mode, source_event_hash
 		)
 		 VALUES (
@@ -113,14 +114,14 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 			$7, $8, $9, $10, $11, $12, $13,
 			$14, $15, $16,
 			$17, $18, $19, $20, $21,
-			$22, $23, $24, $25, $26,
-			$27, $28, $29, $30
+			$22, $23, $24, $25, $26, $27,
+			$28, $29, $30, $31
 		)`,
 		requestID, orgID, projectIDArg, keyIDArg, ownerUserIDArg, keyType,
 		eventType, stage, severity, model, requestedModel, provider, channel,
 		statusCodeArg, latencyMs, string(metadataJSON),
 		traceID, spanID, evidenceSchemaVersion, sourceComponent, evidenceCaptureModeNative,
-		evidenceRef, nullableString(upstreamRequestID), nullableString(decisionKind), nullableString(decisionResult), nullableString(decisionReason),
+		nullableString(captureGap), evidenceRef, nullableString(upstreamRequestID), nullableString(decisionKind), nullableString(decisionResult), nullableString(decisionReason),
 		actorType, actorRefArg, evidencePayloadMetadata, sourceEventHash,
 	); err != nil {
 		logger.New(logger.Fields{RequestID: requestID, OrgID: uint(orgID), Module: "trace"}).Warn("Failed to record trace event %s: %v", eventType, err)
@@ -250,7 +251,7 @@ func newEvidenceID() string {
 	return hex.EncodeToString(sum[:8])
 }
 
-func hashTraceEvent(requestID, eventType, stage, severity, model, requestedModel, provider, channel string, statusCode interface{}, latencyMs int, upstreamRequestID string, metadataJSON []byte) string {
+func hashTraceEvent(requestID, eventType, stage, severity, model, requestedModel, provider, channel string, statusCode interface{}, latencyMs int, upstreamRequestID, captureGap string, metadataJSON []byte) string {
 	payload := struct {
 		RequestID         string      `json:"request_id"`
 		EventType         string      `json:"event_type"`
@@ -263,11 +264,12 @@ func hashTraceEvent(requestID, eventType, stage, severity, model, requestedModel
 		StatusCode        interface{} `json:"status_code"`
 		LatencyMS         int         `json:"latency_ms"`
 		UpstreamRequestID string      `json:"upstream_request_id"`
+		CaptureGap        string      `json:"capture_gap"`
 		Metadata          string      `json:"metadata"`
 	}{
 		RequestID: requestID, EventType: eventType, Stage: stage, Severity: severity,
 		Model: model, RequestedModel: requestedModel, Provider: provider, Channel: channel,
-		StatusCode: statusCode, LatencyMS: latencyMs, UpstreamRequestID: upstreamRequestID, Metadata: string(metadataJSON),
+		StatusCode: statusCode, LatencyMS: latencyMs, UpstreamRequestID: upstreamRequestID, CaptureGap: captureGap, Metadata: string(metadataJSON),
 	}
 	encoded, _ := json.Marshal(payload)
 	sum := sha256.Sum256(encoded)

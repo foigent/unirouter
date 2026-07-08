@@ -2,8 +2,8 @@
 
 > Version: v0.1
 > Date: 2026-07-08
-> Status: Batch 1A/1B/1C Canary/Sentinel complete. Batch 1D upstream request
-> correlation fixed awaiting Canary.
+> Status: Batch 1A/1B/1C and Batch 1D Canary/Sentinel complete. Batch 1E
+> event capture-gap emission fixed awaiting Canary.
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > X-Insight response
 > `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-08-x-insight-prd5-integration-answers.md`
@@ -200,6 +200,10 @@ Implemented first slice:
 - Batch 1D adds provider response-header extraction for `upstream_request_id`.
   The value is written to provider response trace events and request-level call
   logs when present. Missing provider IDs remain null.
+- Batch 1E adds event-level `capture_gap='redacted'` when UniRouter's trace
+  metadata sanitizer drops restricted keys, rejects unsupported value shapes, or
+  truncates allowed strings. Fully retained safe metadata leaves `capture_gap`
+  null.
 
 ## Writer Behavior
 
@@ -211,6 +215,8 @@ directly:
 - routing/provider selection: `routing` / `provider` plus selected/failed reason;
 - provider response evidence: include sanitized provider-returned
   `upstream_request_id` when available;
+- metadata safety evidence: include `capture_gap='redacted'` when metadata was
+  intentionally dropped or truncated by UniRouter;
 - billing freeze/settle/cancel: `billing` plus decision/result where applicable;
 - trace sampling: `trace_sampling` decision;
 - payload state: `payload_capture` decision and `payload_capture_mode`.
