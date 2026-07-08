@@ -80,8 +80,8 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Current active verification signal: PRD5 Batch 1I Payload Policy Decision
-Evidence fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+Current active verification signal: PRD5 Batch 1J Provider Upstream Capture Gap
+fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
 
 PRD4 is complete for the confirmed current scope. PRD5 must preserve the PRD4
 deferred-boundary decisions recorded here.
@@ -173,7 +173,8 @@ PRD5 Batch 1I:
 
 - Scope: explicit payload capture policy decision evidence for chat and
   embeddings.
-- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Status: Canary PASS 11/11 in `docs/agent-workflows/VERIFY-RESULT.md`;
+  Sentinel merge reflected by `1dc20b5` / PR #112.
 - Adds: `payload.policy.applied` trace events after gateway request acceptance;
   sanitized metadata for `payload_capture_mode`, `payload_policy_reason`,
   `raw_payload_stored=false`, and `payload_ref_present=false`; and
@@ -182,6 +183,19 @@ PRD5 Batch 1I:
 - Does not add: migration, new route, frontend behavior, exporter/outbox,
   read-only credential, raw prompt/response capture, payload hashing, payload
   object references, X-Insight runtime dependency, or PRD4 matrix changes.
+
+PRD5 Batch 1J:
+
+- Scope: provider upstream request ID capture-gap evidence.
+- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Adds: `capture_gap=provider_not_returned` on
+  `provider.response_accepted` and `provider.response_rejected` trace events
+  when UniRouter has no sanitized provider-returned `upstream_request_id`.
+  Existing returned upstream IDs and redaction gaps are preserved.
+- Does not add: migration, new route, frontend behavior, exporter/outbox,
+  read-only credential, raw prompt/response capture, X-Insight runtime
+  dependency, public inbound-header trust, provider request/response semantic
+  changes, or PRD4 matrix changes.
 
 Latest completed PRD4 verification result is PRD4 Batch 1S Open Issue Boundary
 Closeout:

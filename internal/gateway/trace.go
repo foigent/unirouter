@@ -20,6 +20,7 @@ import (
 const (
 	evidenceSchemaVersion      = "unirouter.evidence.v1"
 	evidenceCaptureModeNative  = "native"
+	evidenceCaptureGapProvider = "provider_not_returned"
 	evidencePayloadMetadata    = traceutil.PayloadCaptureModeMetadataOnly
 	evidenceTraceRefSourceType = "unirouter"
 )
@@ -138,6 +139,9 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 	upstreamRequestID := ""
 	if len(upstreamRequestIDs) > 0 {
 		upstreamRequestID = sanitizeUpstreamRequestID(upstreamRequestIDs[0])
+	}
+	if upstreamRequestID == "" && captureGap == "" && isProviderResponseEvent(eventType) {
+		captureGap = evidenceCaptureGapProvider
 	}
 	payloadCaptureMode := relay.currentPayloadCaptureMode()
 	sourceEventHash := hashTraceEvent(requestID, traceID, parentSpanID, eventType, stage, severity, model, requestedModel, provider, channel, statusCodeArg, latencyMs, upstreamRequestID, captureGap, actorType, stringFromNullable(actorRefArg), evidenceContext.OnBehalfOf, evidenceContext.SessionID, payloadCaptureMode, metadataJSON)
@@ -303,6 +307,10 @@ func decisionEvidence(eventType string, metadata map[string]interface{}) (string
 	default:
 		return "", "", ""
 	}
+}
+
+func isProviderResponseEvent(eventType string) bool {
+	return eventType == "provider.response_accepted" || eventType == "provider.response_rejected"
 }
 
 func newEvidenceID() string {

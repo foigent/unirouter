@@ -475,6 +475,78 @@ func TestRecordTraceEvent_SanitizesMetadataAndSnapshotsOwner(t *testing.T) {
 	}
 }
 
+func TestRecordTraceEvent_ProviderResponseMissingUpstreamRequestIDCaptureGap(t *testing.T) {
+	var capturedArgs []any
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if !strings.Contains(sql, "INSERT INTO request_trace_events") {
+				return pgconn.CommandTag{}, nil
+			}
+			capturedArgs = append([]any(nil), args...)
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	relay := newTestRelay(db, &mockBilling{})
+	ctx := context.WithValue(context.Background(), middleware.CtxOrgID, int64(1))
+	route := &RouteResult{
+		Channel:     models.Channel{Provider: "openai", Name: "primary"},
+		ChannelKey:  models.ChannelKey{ID: 11},
+		MappedModel: "gpt-4o",
+	}
+
+	relay.recordTraceEvent(ctx, "req-trace", "provider.response_accepted", "provider", "info", "company-chat", "company-chat", route, http.StatusOK, 25, map[string]interface{}{}, "")
+
+	if len(capturedArgs) != 34 {
+		t.Fatalf("expected 34 trace insert args, got %d", len(capturedArgs))
+	}
+	if capturedArgs[22] != evidenceCaptureGapProvider {
+		t.Fatalf("expected provider_not_returned capture_gap, got %#v", capturedArgs[22])
+	}
+	if capturedArgs[24] != nil {
+		t.Fatalf("expected nil upstream_request_id, got %#v", capturedArgs[24])
+	}
+	if capturedArgs[25] != "provider" || capturedArgs[26] != "selected" {
+		t.Fatalf("unexpected provider decision args: %#v", capturedArgs[25:27])
+	}
+	if hash, ok := capturedArgs[33].(string); !ok || len(hash) != 64 {
+		t.Fatalf("expected trace source_event_hash, got %#v", capturedArgs[33])
+	}
+}
+
+func TestRecordTraceEvent_ProviderResponseRedactionGapTakesPriority(t *testing.T) {
+	var capturedArgs []any
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if !strings.Contains(sql, "INSERT INTO request_trace_events") {
+				return pgconn.CommandTag{}, nil
+			}
+			capturedArgs = append([]any(nil), args...)
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	relay := newTestRelay(db, &mockBilling{})
+	ctx := context.WithValue(context.Background(), middleware.CtxOrgID, int64(1))
+	route := &RouteResult{
+		Channel:     models.Channel{Provider: "openai", Name: "primary"},
+		ChannelKey:  models.ChannelKey{ID: 11},
+		MappedModel: "gpt-4o",
+	}
+
+	relay.recordTraceEvent(ctx, "req-trace", "provider.response_accepted", "provider", "info", "company-chat", "company-chat", route, http.StatusOK, 25, map[string]interface{}{
+		"api_key": "sk-secret",
+	}, "")
+
+	if len(capturedArgs) != 34 {
+		t.Fatalf("expected 34 trace insert args, got %d", len(capturedArgs))
+	}
+	if capturedArgs[22] != "redacted" {
+		t.Fatalf("expected redacted capture_gap to take priority, got %#v", capturedArgs[22])
+	}
+	if capturedArgs[24] != nil {
+		t.Fatalf("expected nil upstream_request_id, got %#v", capturedArgs[24])
+	}
+}
+
 func TestRecordTraceEvent_UsesTrustedEvidenceContext(t *testing.T) {
 	var capturedArgs []any
 	db := &testutil.MockDB{

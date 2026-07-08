@@ -1,9 +1,9 @@
 # PRD5 Implementation Plan
 
 > Date: 2026-07-08
-> Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, and
-> Batch 1H Canary/Sentinel complete. Batch 1I payload policy decision evidence
-> fixed awaiting Canary.
+> Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
+> and Batch 1I Canary/Sentinel complete. Batch 1J provider upstream capture-gap
+> evidence fixed awaiting Canary.
 > Scope owner: UniRouter. X-Insight remains a separate project and owns broader
 > observability/governance product surfaces.
 
@@ -268,7 +268,7 @@ Risk: R3 because it changes gateway trace evidence writes and decision metadata,
 but it does not change routing, billing, provider dispatch, response payloads,
 API routes, frontend behavior, or DB schema.
 
-Status: fixed awaiting Canary.
+Status: Canary/Sentinel complete (`1dc20b5` / PR #112).
 
 Implemented in this round:
 
@@ -296,6 +296,39 @@ Non-goals:
 - no X-Insight runtime dependency;
 - no PRD4 matrix/status change.
 
+### Batch 1J: Provider Upstream Capture Gap
+
+Risk: R3 because it changes gateway trace evidence writes and source-event
+hashes, but it does not change routing, billing, provider dispatch, response
+payloads, API routes, frontend behavior, or DB schema.
+
+Status: fixed awaiting Canary.
+
+Implemented in this round:
+
+- when a provider response trace event has no sanitized `upstream_request_id`,
+  write `capture_gap=provider_not_returned`;
+- apply the gap only to `provider.response_accepted` and
+  `provider.response_rejected`;
+- preserve provider-returned upstream request IDs when present;
+- preserve existing `capture_gap=redacted` priority when metadata sanitization
+  already produced a redaction gap;
+- keep request-level `call_logs.upstream_request_id` null when no provider ID is
+  available.
+
+Non-goals:
+
+- no new migration;
+- no new API route;
+- no frontend behavior change;
+- no exporter/outbox;
+- no read-only DB/view credential handoff;
+- no raw prompt/response capture;
+- no X-Insight runtime dependency;
+- no public inbound request-header trust by default;
+- no provider request/response semantic change;
+- no PRD4 matrix/status change.
+
 ### Later Payload Policy Modes
 
 Risk: R3 if schema/API changes; R4 only if raw payload capture is introduced,
@@ -313,7 +346,7 @@ Planned later:
 - support redacted/hash/reference modes;
 - document enterprise opt-in requirements for raw payload capture.
 
-### Batch 1J: X-Insight Gate A Feedback Incorporation
+### Later Gate A Batch: X-Insight Gate A Feedback Incorporation
 
 Risk: depends on findings.
 
@@ -330,7 +363,7 @@ Possible outcomes:
 - define cursor export API;
 - design non-blocking exporter/outbox.
 
-### Batch 1K: Real Target Evidence
+### Later Target Evidence Batch: Real Target Evidence
 
 Prerequisites:
 
@@ -352,7 +385,7 @@ Use existing PRD4 harnesses, but record target evidence under PRD5.
 
 ## Current Blocking Conditions
 
-There is no blocking condition for UniRouter Batch 1A through Batch 1I.
+There is no blocking condition for UniRouter Batch 1A through Batch 1J.
 
 These later actions are gated:
 

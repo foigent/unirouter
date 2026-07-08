@@ -2,9 +2,9 @@
 
 > Version: v0.1
 > Date: 2026-07-08
-> Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, and
-> Batch 1H Canary/Sentinel complete. Batch 1I payload policy decision evidence
-> fixed awaiting Canary.
+> Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
+> and Batch 1I Canary/Sentinel complete. Batch 1J provider upstream capture-gap
+> evidence fixed awaiting Canary.
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > X-Insight response
 > `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-08-x-insight-prd5-integration-answers.md`
@@ -263,6 +263,10 @@ Implemented first slice:
 - Batch 1I adds explicit `payload.policy.applied` trace events for chat and
   embeddings. These events write sanitized payload policy metadata and
   `decision_kind=payload_capture` while keeping raw payload storage disabled.
+- Batch 1J adds `capture_gap=provider_not_returned` to provider response trace
+  events when no sanitized upstream request ID is available. Returned upstream
+  request IDs still populate `upstream_request_id`; existing redaction gaps keep
+  `capture_gap=redacted`.
 
 ## Writer Behavior
 
@@ -273,7 +277,8 @@ directly:
 - quota/budget decisions: `quota` / `budget` plus decision fields;
 - routing/provider selection: `routing` / `provider` plus selected/failed reason;
 - provider response evidence: include sanitized provider-returned
-  `upstream_request_id` when available;
+  `upstream_request_id` when available, otherwise mark provider response trace
+  events with `capture_gap=provider_not_returned`;
 - trusted caller context: include `trace_id`, `parent_span_id`, `session_id`,
   `actor_*`, and `on_behalf_of` only when the configured evidence-context shared
   secret matches;

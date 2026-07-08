@@ -164,6 +164,13 @@ gateway request acceptance. The event writes sanitized policy metadata,
 `payload_ref_present=false`; it does not inspect, persist, hash, export, or
 reference raw prompt/response bodies.
 
+PRD5 Batch 1J provider upstream capture-gap evidence is implemented in
+`internal/gateway/trace.go` and covered by `internal/gateway/relay_mock_test.go`.
+Provider response trace events now write `capture_gap=provider_not_returned`
+when no sanitized provider-returned `upstream_request_id` is available. Existing
+returned upstream request IDs still populate `upstream_request_id`, and existing
+metadata redaction gaps keep `capture_gap=redacted`.
+
 Usage analytics is implemented in `internal/admin/prd2_product_handlers.go` and now supports project/key/model/provider/channel/status/source filters plus PRD4 `scope=my`, `owner_user_id`, `key_type`, `group_by=owner`, and `group_by=key_type`.
 
 API key quota visibility keeps `api_keys.qps_limit` as the compatibility

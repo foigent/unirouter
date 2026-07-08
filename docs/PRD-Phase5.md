@@ -2,10 +2,10 @@
 
 > Version: Phase 5 Active Scope Draft
 > Date: 2026-07-08
-> Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, and
-> Batch 1H Canary/Sentinel complete. Batch 1I payload policy decision evidence
-> fixed awaiting Canary. PRD4 remains complete for the confirmed current scope
-> and is not reopened by PRD5.
+> Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
+> and Batch 1I Canary/Sentinel complete. Batch 1J provider upstream capture-gap
+> evidence fixed awaiting Canary. PRD4 remains complete for the confirmed
+> current scope and is not reopened by PRD5.
 > Source: `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, X-Insight shared-folder
 > responses on 2026-07-08, current UniRouter code/schema review, and official
@@ -89,6 +89,7 @@ PRD5 must not:
 | P5-F16 | Trusted Evidence Context Intake | Accept trace/session/actor/delegation context only from explicitly trusted internal callers with a shared secret |
 | P5-F17 | Gateway Span Hierarchy | Parent UniRouter-emitted trace events to a per-request gateway root span so execution chains are queryable without X-Insight dependency |
 | P5-F18 | Payload Policy Decision Evidence | Emit explicit payload capture policy decision trace events without storing raw prompt or response payloads |
+| P5-F19 | Provider Upstream Capture Gap | Mark provider response trace events with `capture_gap=provider_not_returned` when the upstream provider does not return a usable request ID |
 
 ### P2
 
@@ -224,6 +225,12 @@ embeddings requests. These events record sanitized payload policy metadata such
 as `payload_capture_mode`, `payload_policy_reason`, `raw_payload_stored=false`,
 and `payload_ref_present=false`, and map to `decision_kind=payload_capture`.
 Batch 1I does not inspect, persist, hash, or export raw prompt/response bodies.
+
+Batch 1J adds a concrete provider evidence gap: provider response trace events
+now record `capture_gap=provider_not_returned` when no sanitized
+`upstream_request_id` is available from the upstream response headers. Existing
+provider-returned upstream request IDs still win and call-log
+`upstream_request_id` null behavior is unchanged.
 
 ### P5-F06: Lightweight Trace UI Boundary
 
@@ -429,6 +436,29 @@ Acceptance:
 - No migration, exporter/outbox, read-only DB access, raw payload capture,
   X-Insight runtime dependency, or PRD4 matrix change is introduced.
 
+### P5-F19: Provider Upstream Capture Gap
+
+Requirements:
+
+- When provider response trace events do not have a sanitized
+  `upstream_request_id`, write `capture_gap=provider_not_returned`.
+- Apply this only to `provider.response_accepted` and
+  `provider.response_rejected` trace events.
+- Preserve provider-returned upstream request IDs when present.
+- Preserve `capture_gap=redacted` when the same event already has a redaction
+  gap from metadata sanitization.
+- Keep request-level `call_logs.upstream_request_id` null when no provider ID is
+  available.
+
+Acceptance:
+
+- Provider response trace events distinguish missing provider request IDs from
+  absent instrumentation.
+- Existing upstream request ID extraction, routing, billing, provider dispatch,
+  response payloads, API routes, and frontend behavior remain unchanged.
+- No migration, exporter/outbox, read-only DB access, raw payload capture,
+  X-Insight runtime dependency, or PRD4 matrix change is introduced.
+
 ### P5-F09: Cursor Export API Or Outbox
 
 Requirements:
@@ -473,11 +503,13 @@ PRD5 should proceed in independently verifiable batches:
    trace/session/actor/delegation propagation.
 8. Batch 1H: gateway span hierarchy for UniRouter-emitted request trace events.
 9. Batch 1I: explicit payload policy decision evidence for chat and embeddings.
-10. Later payload policy metadata and evidence references, with future raw
+10. Batch 1J: provider upstream request ID capture gap evidence.
+11. Later payload policy metadata and evidence references, with future raw
    payload modes gated behind enterprise opt-in.
-11. Batch 1J: read-only view/export decision after X-Insight Gate A evidence.
-12. Batch 1K+: target upstream/SSO evidence or larger backlog items only after
-   their prerequisites are explicitly met.
+12. Later Gate A batch: read-only view/export decision after X-Insight Gate A
+   evidence.
+13. Later target/backlog batches: target upstream/SSO evidence or larger
+   backlog items only after their prerequisites are explicitly met.
 
 ## 6. External Source Refresh
 
