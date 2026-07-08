@@ -144,6 +144,9 @@ Current metadata safety:
   strings;
 - `PAYLOAD_CAPTURE_MODE` can be configured as `metadata_only` or `disabled`;
   invalid values are rejected and raw prompt/response capture is not enabled;
+- inbound trace/session/actor/delegation context is ignored unless
+  `EVIDENCE_CONTEXT_TRUST_SECRET` is configured and
+  `X-UniRouter-Evidence-Auth` matches;
 - raw prompt/response and secret-like keys are not allowed in trace metadata.
 
 ## Non-Goals

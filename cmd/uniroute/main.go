@@ -89,6 +89,7 @@ func main() {
 	relay := gateway.NewRelay(postgres.Pool, redisClient.Client, router, billingSvc, sensitiveFilter, encKey)
 	relay.SetTraceEvents(cfg.TraceEventsEnabled, cfg.TraceEventSampleRate)
 	relay.SetPayloadCaptureMode(cfg.PayloadCaptureMode)
+	relay.SetEvidenceContextTrustSecret(cfg.EvidenceContextTrustSecret)
 	alertSvc := billing.NewAlertService(postgres.Pool)
 	eventSvc := billing.NewEventService(postgres.Pool)
 	relay.SetEventService(eventSvc)

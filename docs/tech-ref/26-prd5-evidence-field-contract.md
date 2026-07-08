@@ -2,8 +2,9 @@
 
 > Version: v0.1
 > Date: 2026-07-08
-> Status: Batch 1A/1B/1C, Batch 1D, and Batch 1E Canary/Sentinel complete.
-> Batch 1F payload capture mode configuration fixed awaiting Canary.
+> Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, and Batch 1F
+> Canary/Sentinel complete. Batch 1G trusted evidence context intake fixed
+> awaiting Canary.
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > X-Insight response
 > `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-08-x-insight-prd5-integration-answers.md`
@@ -163,6 +164,20 @@ Values are trimmed, must be printable ASCII, must not contain whitespace or
 control characters, and are bounded to 128 bytes before being written as
 `upstream_request_id`.
 
+Batch 1G trusted evidence context intake:
+
+- Disabled by default when `EVIDENCE_CONTEXT_TRUST_SECRET` is empty.
+- Requires `X-UniRouter-Evidence-Auth` to match the configured secret before
+  reading any inbound evidence context.
+- Accepts `X-UniRouter-Trace-Id`, `X-UniRouter-Parent-Span-Id`,
+  `X-UniRouter-Session-Id`, `X-UniRouter-Actor-Type`,
+  `X-UniRouter-Actor-Ref`, and `X-UniRouter-On-Behalf-Of`.
+- Supports trusted W3C `Traceparent` as a fallback source for `trace_id` and
+  `parent_span_id`.
+- Drops empty, overlong, whitespace-containing, control-character-containing, or
+  unsupported enum values rather than fabricating evidence.
+- Does not trust arbitrary public request headers by default.
+
 ## Migration Strategy
 
 Batch 1B adds nullable/default fields first.
@@ -207,6 +222,10 @@ Implemented first slice:
 - Batch 1F adds `PAYLOAD_CAPTURE_MODE` with active values `metadata_only` and
   `disabled`. Gateway trace/log writes persist the configured mode and include
   it in source-event hashes. Unsupported values fail config validation.
+- Batch 1G adds default-off trusted evidence context intake. When the shared
+  secret matches, gateway trace/log writes can populate `trace_id`,
+  `parent_span_id`, `session_id`, `actor_*`, and `on_behalf_of` from sanitized
+  internal context headers and include those fields in source-event hashes.
 
 ## Writer Behavior
 
@@ -218,6 +237,9 @@ directly:
 - routing/provider selection: `routing` / `provider` plus selected/failed reason;
 - provider response evidence: include sanitized provider-returned
   `upstream_request_id` when available;
+- trusted caller context: include `trace_id`, `parent_span_id`, `session_id`,
+  `actor_*`, and `on_behalf_of` only when the configured evidence-context shared
+  secret matches;
 - metadata safety evidence: include `capture_gap='redacted'` when metadata was
   intentionally dropped or truncated by UniRouter;
 - billing freeze/settle/cancel: `billing` plus decision/result where applicable;

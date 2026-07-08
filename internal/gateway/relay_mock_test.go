@@ -306,8 +306,8 @@ func TestRecordRequest_Success(t *testing.T) {
 	if !execCalled {
 		t.Fatal("expected exec to be called")
 	}
-	if len(capturedArgs) != 31 {
-		t.Fatalf("expected 31 insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != 33 {
+		t.Fatalf("expected 33 insert args, got %d", len(capturedArgs))
 	}
 	if capturedArgs[2] != int64(7) {
 		t.Fatalf("expected project_id arg 7, got %v", capturedArgs[2])
@@ -327,17 +327,17 @@ func TestRecordRequest_Success(t *testing.T) {
 	if capturedArgs[21] != 1.0 {
 		t.Fatalf("expected upstream usage confidence 1.0, got %v", capturedArgs[21])
 	}
-	if capturedArgs[22] != "req-001" || capturedArgs[23] != evidenceSchemaVersion || capturedArgs[24] != evidenceCaptureModeNative {
-		t.Fatalf("unexpected call-log evidence args: %#v", capturedArgs[22:25])
+	if capturedArgs[22] != "req-001" || capturedArgs[23] != nil || capturedArgs[24] != evidenceSchemaVersion || capturedArgs[25] != evidenceCaptureModeNative {
+		t.Fatalf("unexpected call-log evidence args: %#v", capturedArgs[22:26])
 	}
-	if capturedArgs[26] != "upstream-req-001" {
-		t.Fatalf("expected upstream_request_id, got %#v", capturedArgs[26])
+	if capturedArgs[27] != "upstream-req-001" {
+		t.Fatalf("expected upstream_request_id, got %#v", capturedArgs[27])
 	}
-	if capturedArgs[27] != "human" || capturedArgs[28] != "user:42" || capturedArgs[29] != evidencePayloadMetadata {
-		t.Fatalf("unexpected call-log actor/payload args: %#v", capturedArgs[27:30])
+	if capturedArgs[28] != "human" || capturedArgs[29] != "user:42" || capturedArgs[30] != nil || capturedArgs[31] != evidencePayloadMetadata {
+		t.Fatalf("unexpected call-log actor/payload args: %#v", capturedArgs[28:32])
 	}
-	if hash, ok := capturedArgs[30].(string); !ok || len(hash) != 64 {
-		t.Fatalf("expected source_event_hash, got %#v", capturedArgs[30])
+	if hash, ok := capturedArgs[32].(string); !ok || len(hash) != 64 {
+		t.Fatalf("expected source_event_hash, got %#v", capturedArgs[32])
 	}
 }
 
@@ -357,11 +357,46 @@ func TestRecordRequest_UsesConfiguredPayloadCaptureMode(t *testing.T) {
 
 	relay.recordRequest(context.Background(), "req-disabled", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, 123, 0, false, metering.UsageSourceUpstream, 180, "")
 
-	if len(capturedArgs) != 31 {
-		t.Fatalf("expected 31 insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != 33 {
+		t.Fatalf("expected 33 insert args, got %d", len(capturedArgs))
 	}
-	if capturedArgs[29] != traceutil.PayloadCaptureModeDisabled {
-		t.Fatalf("expected disabled payload capture mode, got %#v", capturedArgs[29])
+	if capturedArgs[31] != traceutil.PayloadCaptureModeDisabled {
+		t.Fatalf("expected disabled payload capture mode, got %#v", capturedArgs[31])
+	}
+}
+
+func TestRecordRequest_UsesTrustedEvidenceContext(t *testing.T) {
+	var capturedArgs []any
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if !strings.Contains(sql, "INSERT INTO call_logs") {
+				return pgconn.CommandTag{}, nil
+			}
+			capturedArgs = append([]any(nil), args...)
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	relay := newTestRelay(db, &mockBilling{})
+	ownerUserID := int64(42)
+	ctx := context.WithValue(context.Background(), middleware.CtxAPIKey, &models.ApiKey{OwnerUserID: &ownerUserID, KeyType: "personal"})
+	ctx = traceutil.ContextWithEvidence(ctx, traceutil.EvidenceContext{
+		TraceID:    "trace-internal-1",
+		SessionID:  "session-42",
+		ActorType:  "agent",
+		ActorRef:   "agent:planner",
+		OnBehalfOf: "user:42",
+	})
+
+	relay.recordRequest(ctx, "req-context", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, 123, 0, false, metering.UsageSourceUpstream, 180, "")
+
+	if len(capturedArgs) != 33 {
+		t.Fatalf("expected 33 insert args, got %d", len(capturedArgs))
+	}
+	if capturedArgs[22] != "trace-internal-1" || capturedArgs[23] != "session-42" {
+		t.Fatalf("expected trusted trace/session args, got %#v", capturedArgs[22:24])
+	}
+	if capturedArgs[28] != "agent" || capturedArgs[29] != "agent:planner" || capturedArgs[30] != "user:42" {
+		t.Fatalf("expected trusted actor/delegation args, got %#v", capturedArgs[28:31])
 	}
 }
 
@@ -395,8 +430,8 @@ func TestRecordTraceEvent_SanitizesMetadataAndSnapshotsOwner(t *testing.T) {
 		"request_body":     `{"messages":[{"content":"secret"}]}`,
 	}, "upstream-trace-001")
 
-	if len(capturedArgs) != 31 {
-		t.Fatalf("expected 31 trace insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != 34 {
+		t.Fatalf("expected 34 trace insert args, got %d", len(capturedArgs))
 	}
 	if capturedArgs[2] != int64(7) || capturedArgs[3] != int64(9) || capturedArgs[4] != ownerUserID || capturedArgs[5] != "personal" {
 		t.Fatalf("unexpected project/key/owner args: %#v", capturedArgs[2:6])
@@ -420,23 +455,71 @@ func TestRecordTraceEvent_SanitizesMetadataAndSnapshotsOwner(t *testing.T) {
 	if spanID, ok := capturedArgs[17].(string); !ok || len(spanID) != 16 {
 		t.Fatalf("expected generated span_id, got %#v", capturedArgs[17])
 	}
-	if capturedArgs[18] != evidenceSchemaVersion || capturedArgs[19] != "provider" || capturedArgs[20] != evidenceCaptureModeNative {
-		t.Fatalf("unexpected trace structural args: %#v", capturedArgs[18:21])
+	if capturedArgs[18] != nil || capturedArgs[19] != evidenceSchemaVersion || capturedArgs[20] != "provider" || capturedArgs[21] != evidenceCaptureModeNative {
+		t.Fatalf("unexpected trace structural args: %#v", capturedArgs[18:22])
 	}
-	if capturedArgs[21] != "redacted" {
-		t.Fatalf("expected redacted capture_gap, got %#v", capturedArgs[21])
+	if capturedArgs[22] != "redacted" {
+		t.Fatalf("expected redacted capture_gap, got %#v", capturedArgs[22])
 	}
-	if capturedArgs[23] != "upstream-trace-001" {
-		t.Fatalf("expected upstream_request_id, got %#v", capturedArgs[23])
+	if capturedArgs[24] != "upstream-trace-001" {
+		t.Fatalf("expected upstream_request_id, got %#v", capturedArgs[24])
 	}
-	if capturedArgs[24] != "provider" || capturedArgs[25] != "selected" || capturedArgs[26] != "provider.response_accepted" {
-		t.Fatalf("unexpected trace decision args: %#v", capturedArgs[24:27])
+	if capturedArgs[25] != "provider" || capturedArgs[26] != "selected" || capturedArgs[27] != "provider.response_accepted" {
+		t.Fatalf("unexpected trace decision args: %#v", capturedArgs[25:28])
 	}
-	if capturedArgs[27] != "human" || capturedArgs[28] != "user:42" || capturedArgs[29] != traceutil.PayloadCaptureModeDisabled {
-		t.Fatalf("unexpected trace actor/payload args: %#v", capturedArgs[27:30])
+	if capturedArgs[28] != "human" || capturedArgs[29] != "user:42" || capturedArgs[30] != nil || capturedArgs[31] != nil || capturedArgs[32] != traceutil.PayloadCaptureModeDisabled {
+		t.Fatalf("unexpected trace actor/payload args: %#v", capturedArgs[28:33])
 	}
-	if hash, ok := capturedArgs[30].(string); !ok || len(hash) != 64 {
-		t.Fatalf("expected trace source_event_hash, got %#v", capturedArgs[30])
+	if hash, ok := capturedArgs[33].(string); !ok || len(hash) != 64 {
+		t.Fatalf("expected trace source_event_hash, got %#v", capturedArgs[33])
+	}
+}
+
+func TestRecordTraceEvent_UsesTrustedEvidenceContext(t *testing.T) {
+	var capturedArgs []any
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if !strings.Contains(sql, "INSERT INTO request_trace_events") {
+				return pgconn.CommandTag{}, nil
+			}
+			capturedArgs = append([]any(nil), args...)
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	relay := newTestRelay(db, &mockBilling{})
+	ctx := context.WithValue(context.Background(), middleware.CtxOrgID, int64(1))
+	ctx = traceutil.ContextWithEvidence(ctx, traceutil.EvidenceContext{
+		TraceID:      "trace-internal-1",
+		ParentSpanID: "parent-span-1",
+		SessionID:    "session-42",
+		ActorType:    "agent",
+		ActorRef:     "agent:planner",
+		OnBehalfOf:   "user:42",
+	})
+
+	relay.recordTraceEvent(ctx, "req-trace", "gateway.request.accepted", "gateway", "info", "company-chat", "company-chat", nil, http.StatusOK, 25, nil)
+
+	if len(capturedArgs) != 34 {
+		t.Fatalf("expected 34 trace insert args, got %d", len(capturedArgs))
+	}
+	if capturedArgs[16] != "trace-internal-1" || capturedArgs[18] != "parent-span-1" {
+		t.Fatalf("expected trusted trace/parent span args, got %#v", capturedArgs[16:19])
+	}
+	if capturedArgs[28] != "agent" || capturedArgs[29] != "agent:planner" || capturedArgs[30] != "user:42" || capturedArgs[31] != "session-42" {
+		t.Fatalf("expected trusted actor/delegation/session args, got %#v", capturedArgs[28:32])
+	}
+}
+
+func TestRelayContextWithTrustedEvidence(t *testing.T) {
+	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{})
+	relay.SetEvidenceContextTrustSecret("shared-secret-123456")
+	header := http.Header{}
+	header.Set(traceutil.EvidenceContextAuthHeader, "shared-secret-123456")
+	header.Set(traceutil.EvidenceContextTraceIDHeader, "trace-internal-1")
+
+	ctx := relay.contextWithTrustedEvidence(context.Background(), header)
+	if got := traceutil.EvidenceFromContext(ctx); got.TraceID != "trace-internal-1" {
+		t.Fatalf("expected trusted trace id, got %#v", got)
 	}
 }
 

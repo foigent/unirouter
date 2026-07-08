@@ -136,6 +136,16 @@ Gateway trace/log writers persist the configured `payload_capture_mode` and
 include it in source-event hashes. This does not enable raw prompt/response
 capture.
 
+PRD5 Batch 1G trusted evidence context intake is implemented in
+`internal/traceutil/evidence_context.go`, `internal/config/config.go`,
+`cmd/uniroute/main.go`, `internal/gateway/relay.go`, and
+`internal/gateway/trace.go`. `EVIDENCE_CONTEXT_TRUST_SECRET` defaults empty,
+which makes UniRouter ignore inbound evidence context headers. When configured,
+`X-UniRouter-Evidence-Auth` must match before UniRouter accepts bounded
+`X-UniRouter-*` trace/session/actor/delegation headers or trusted `Traceparent`
+fallback. Trace/log writers persist those fields into existing structural
+columns and include them in source-event hashes.
+
 Usage analytics is implemented in `internal/admin/prd2_product_handlers.go` and now supports project/key/model/provider/channel/status/source filters plus PRD4 `scope=my`, `owner_user_id`, `key_type`, `group_by=owner`, and `group_by=key_type`.
 
 API key quota visibility keeps `api_keys.qps_limit` as the compatibility

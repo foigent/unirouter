@@ -2,9 +2,10 @@
 
 > Version: Phase 5 Active Scope Draft
 > Date: 2026-07-08
-> Status: Batch 1A/1B/1C, Batch 1D, and Batch 1E Canary/Sentinel complete.
-> Batch 1F payload capture mode configuration fixed awaiting Canary. PRD4
-> remains complete for the confirmed current scope and is not reopened by PRD5.
+> Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, and Batch 1F
+> Canary/Sentinel complete. Batch 1G trusted evidence context intake fixed
+> awaiting Canary. PRD4 remains complete for the confirmed current scope and is
+> not reopened by PRD5.
 > Source: `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, X-Insight shared-folder
 > responses on 2026-07-08, current UniRouter code/schema review, and official
@@ -85,6 +86,7 @@ PRD5 must not:
 | P5-F13 | Upstream Request Correlation | Capture provider-returned upstream request IDs into gateway trace/log evidence without trusting public inbound headers |
 | P5-F14 | Event Capture Gap Emission | Mark trace events as redacted when UniRouter drops or truncates trace metadata during safe evidence capture |
 | P5-F15 | Payload Capture Mode Configuration | Expose restricted runtime configuration for metadata-only or disabled payload evidence state without enabling raw capture |
+| P5-F16 | Trusted Evidence Context Intake | Accept trace/session/actor/delegation context only from explicitly trusted internal callers with a shared secret |
 
 ### P2
 
@@ -204,9 +206,12 @@ metadata-only payload mode, evidence refs, and source event hashes. Batch 1D
 extends this by capturing provider-returned upstream request IDs from a bounded
 response-header allowlist and writing them to provider trace events plus call
 logs. Batch 1F makes the existing payload capture state configurable through a
-restricted runtime setting with only `metadata_only` and `disabled` active. The
-trace API returns the new fields through the existing route and RBAC path. Batch
-1B/1D/1F do not add trusted inbound headers, raw payload capture,
+restricted runtime setting with only `metadata_only` and `disabled` active.
+Batch 1G adds explicitly trusted evidence context intake for internal callers
+using `EVIDENCE_CONTEXT_TRUST_SECRET`; it can populate trusted `trace_id`,
+`parent_span_id`, `session_id`, `actor_*`, and `on_behalf_of` fields when the
+shared secret matches. The trace API returns the new fields through the existing
+route and RBAC path. Batch 1B/1D/1F/1G do not add raw payload capture,
 exporter/outbox, frontend behavior, or new API routes.
 
 ### P5-F06: Lightweight Trace UI Boundary
@@ -329,6 +334,36 @@ Acceptance:
 - No migration, API route, frontend behavior, exporter/outbox, read-only DB
   access, raw payload capture, or PRD4 matrix change is introduced.
 
+### P5-F16: Trusted Evidence Context Intake
+
+Requirements:
+
+- Add a default-off trust gate for inbound evidence context headers.
+- Require `EVIDENCE_CONTEXT_TRUST_SECRET` to be configured before any inbound
+  evidence context is accepted.
+- Require callers to send `X-UniRouter-Evidence-Auth` matching that shared
+  secret before reading any `X-UniRouter-*` evidence headers.
+- Accept only bounded printable non-whitespace values for:
+  `X-UniRouter-Trace-Id`, `X-UniRouter-Parent-Span-Id`,
+  `X-UniRouter-Session-Id`, `X-UniRouter-Actor-Type`,
+  `X-UniRouter-Actor-Ref`, and `X-UniRouter-On-Behalf-Of`.
+- Support trusted W3C `Traceparent` as a fallback source for `trace_id` and
+  `parent_span_id`.
+- Persist trusted context to existing `request_trace_events` and `call_logs`
+  structural columns, and include it in source-event hashes.
+
+Acceptance:
+
+- With no configured secret, UniRouter ignores inbound trace/session/actor and
+  delegation headers.
+- With a configured secret but mismatched request auth header, UniRouter ignores
+  inbound evidence context.
+- With a matching secret, UniRouter writes trusted trace/session/delegation
+  context to new evidence rows.
+- No public inbound header becomes evidence authority by default.
+- No migration, API route, frontend behavior, exporter/outbox, read-only DB
+  access, raw payload capture, or PRD4 matrix change is introduced.
+
 ### P5-F09: Cursor Export API Or Outbox
 
 Requirements:
@@ -369,10 +404,12 @@ PRD5 should proceed in independently verifiable batches:
 5. Batch 1E: event capture-gap emission for metadata redaction/truncation.
 6. Batch 1F: restricted payload capture mode configuration for
    `metadata_only` and `disabled`.
-7. Later payload policy metadata and evidence references, with future raw
+7. Batch 1G: trusted evidence context intake for internal
+   trace/session/actor/delegation propagation.
+8. Later payload policy metadata and evidence references, with future raw
    payload modes gated behind enterprise opt-in.
-8. Batch 1G: read-only view/export decision after X-Insight Gate A evidence.
-9. Batch 1H+: target upstream/SSO evidence or larger backlog items only after
+9. Batch 1H: read-only view/export decision after X-Insight Gate A evidence.
+10. Batch 1I+: target upstream/SSO evidence or larger backlog items only after
    their prerequisites are explicitly met.
 
 ## 6. External Source Refresh

@@ -209,6 +209,12 @@ func TestValidate_InvalidRuntimeExposureConfig(t *testing.T) {
 			},
 		},
 		{
+			name: "short evidence context trust secret",
+			mutate: func(cfg *Config) {
+				cfg.EvidenceContextTrustSecret = "short"
+			},
+		},
+		{
 			name: "invalid prometheus url",
 			mutate: func(cfg *Config) {
 				cfg.PrometheusURL = "prometheus:9090"
@@ -288,6 +294,7 @@ func TestLoad_RuntimeExposureEnvOverrides(t *testing.T) {
 	t.Setenv("TRACE_EVENT_SAMPLE_RATE", "0.25")
 	t.Setenv("TRACE_EVENT_RETENTION_DAYS", "14")
 	t.Setenv("PAYLOAD_CAPTURE_MODE", "disabled")
+	t.Setenv("EVIDENCE_CONTEXT_TRUST_SECRET", "shared-secret-123456")
 	t.Setenv("LOG_RETENTION_DAYS", "60")
 	t.Setenv("RUNTIME_ENVIRONMENT", "staging")
 	t.Setenv("RUNTIME_DEPLOYMENT_MODE", "docker-compose")
@@ -331,6 +338,9 @@ func TestLoad_RuntimeExposureEnvOverrides(t *testing.T) {
 	if cfg.PayloadCaptureMode != traceutil.PayloadCaptureModeDisabled {
 		t.Fatalf("expected payload capture mode disabled, got %s", cfg.PayloadCaptureMode)
 	}
+	if cfg.EvidenceContextTrustSecret != "shared-secret-123456" {
+		t.Fatalf("expected evidence context trust secret override, got %s", cfg.EvidenceContextTrustSecret)
+	}
 	if cfg.RuntimeEnvironment != "staging" || cfg.RuntimeDeploymentMode != "docker-compose" || cfg.RuntimeDeploymentRole != "canary" {
 		t.Fatalf("unexpected runtime metadata: env=%s mode=%s role=%s", cfg.RuntimeEnvironment, cfg.RuntimeDeploymentMode, cfg.RuntimeDeploymentRole)
 	}
@@ -348,7 +358,7 @@ func TestLoad_Defaults(t *testing.T) {
 		"LISTEN_PORT", "LOG_LEVEL", "GIN_MODE", "SHUTDOWN_TIMEOUT_SECONDS", "DB_DSN", "DB_MAX_CONNECTIONS",
 		"REDIS_ADDR", "REDIS_PASSWORD", "REDIS_DB", "JWT_SECRET", "API_KEY_HASH_SECRET", "ENCRYPTION_KEY",
 		"TRACE_EVENTS_ENABLED", "TRACE_EVENT_SAMPLE_RATE", "TRACE_EVENT_RETENTION_DAYS", "LOG_RETENTION_DAYS",
-		"PAYLOAD_CAPTURE_MODE",
+		"PAYLOAD_CAPTURE_MODE", "EVIDENCE_CONTEXT_TRUST_SECRET",
 		"RUNTIME_ENVIRONMENT", "RUNTIME_DEPLOYMENT_MODE",
 		"RUNTIME_DEPLOYMENT_ROLE", "RUNTIME_VERSION", "RUNTIME_COMMIT", "PROMETHEUS_URL", "GRAFANA_URL",
 		"LICENSE_PUBLIC_KEY", "LICENSE_EXPIRY_WARNING_DAYS", "MIN_FREEZE_AMOUNT", "FREEZE_SAFETY_FACTOR", "DEFAULT_KEY_RPM", "DEFAULT_KEY_QPS",
@@ -374,14 +384,15 @@ func TestLoad_Defaults(t *testing.T) {
 			"TRACE_EVENT_RETENTION_DAYS",
 			getEnvInt("LOG_RETENTION_DAYS", 30),
 		),
-		PayloadCaptureMode:    traceutil.NormalizePayloadCaptureMode(getEnvStr("PAYLOAD_CAPTURE_MODE", traceutil.PayloadCaptureModeMetadataOnly)),
-		RuntimeEnvironment:    getEnvStr("RUNTIME_ENVIRONMENT", "unspecified"),
-		RuntimeDeploymentMode: getEnvStr("RUNTIME_DEPLOYMENT_MODE", "single-node"),
-		RuntimeDeploymentRole: getEnvStr("RUNTIME_DEPLOYMENT_ROLE", "stable"),
-		MinFreezeAmount:       getEnvInt("MIN_FREEZE_AMOUNT", 10),
-		FreezeSafetyFactor:    getEnvFloat("FREEZE_SAFETY_FACTOR", 1.5),
-		DefaultKeyRPM:         getEnvInt("DEFAULT_KEY_RPM", 60),
-		DefaultKeyQPS:         getEnvInt("DEFAULT_KEY_QPS", 10),
+		PayloadCaptureMode:         traceutil.NormalizePayloadCaptureMode(getEnvStr("PAYLOAD_CAPTURE_MODE", traceutil.PayloadCaptureModeMetadataOnly)),
+		EvidenceContextTrustSecret: getEnvStr("EVIDENCE_CONTEXT_TRUST_SECRET", ""),
+		RuntimeEnvironment:         getEnvStr("RUNTIME_ENVIRONMENT", "unspecified"),
+		RuntimeDeploymentMode:      getEnvStr("RUNTIME_DEPLOYMENT_MODE", "single-node"),
+		RuntimeDeploymentRole:      getEnvStr("RUNTIME_DEPLOYMENT_ROLE", "stable"),
+		MinFreezeAmount:            getEnvInt("MIN_FREEZE_AMOUNT", 10),
+		FreezeSafetyFactor:         getEnvFloat("FREEZE_SAFETY_FACTOR", 1.5),
+		DefaultKeyRPM:              getEnvInt("DEFAULT_KEY_RPM", 60),
+		DefaultKeyQPS:              getEnvInt("DEFAULT_KEY_QPS", 10),
 	}
 
 	if cfg.ListenPort != 8080 {
@@ -419,6 +430,9 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if cfg.PayloadCaptureMode != traceutil.PayloadCaptureModeMetadataOnly {
 		t.Fatalf("expected default payload capture mode metadata_only, got %s", cfg.PayloadCaptureMode)
+	}
+	if cfg.EvidenceContextTrustSecret != "" {
+		t.Fatalf("expected evidence context trust secret disabled by default, got %s", cfg.EvidenceContextTrustSecret)
 	}
 	if cfg.RuntimeEnvironment != "unspecified" || cfg.RuntimeDeploymentMode != "single-node" || cfg.RuntimeDeploymentRole != "stable" {
 		t.Fatalf("unexpected runtime defaults: env=%s mode=%s role=%s", cfg.RuntimeEnvironment, cfg.RuntimeDeploymentMode, cfg.RuntimeDeploymentRole)
