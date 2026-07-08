@@ -1,9 +1,9 @@
 # PRD5 Implementation Plan
 
-> Date: 2026-07-08
+> Date: 2026-07-09
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
-> and Batch 1I Canary/Sentinel complete. Batch 1J provider upstream capture-gap
-> evidence fixed awaiting Canary.
+> Batch 1I, and Batch 1J Canary/Sentinel complete. Batch 1K Gate A snapshot
+> handoff-note support fixed awaiting Canary.
 > Scope owner: UniRouter. X-Insight remains a separate project and owns broader
 > observability/governance product surfaces.
 
@@ -302,7 +302,7 @@ Risk: R3 because it changes gateway trace evidence writes and source-event
 hashes, but it does not change routing, billing, provider dispatch, response
 payloads, API routes, frontend behavior, or DB schema.
 
-Status: fixed awaiting Canary.
+Status: Canary/Sentinel complete (`f5223df` / PR #113).
 
 Implemented in this round:
 
@@ -327,6 +327,40 @@ Non-goals:
 - no X-Insight runtime dependency;
 - no public inbound request-header trust by default;
 - no provider request/response semantic change;
+- no PRD4 matrix/status change.
+
+### Batch 1K: Gate A Snapshot Handoff Note
+
+Risk: R2 because it changes PRD5 evidence tooling and status docs only. It does
+not change runtime request handling, database schema, frontend behavior,
+provider dispatch, billing, or API routes.
+
+Status: fixed awaiting Canary.
+
+Implemented in this round:
+
+- add `--handoff-note <path>` to `scripts/prd5_xinsight_snapshot.go`;
+- write a Markdown note after snapshot JSON write succeeds;
+- include generated date, source instance, schema version, selected request IDs,
+  scenario labels, counts, safety confirmation, snapshot output path, and
+  command shape without DSN;
+- reuse `--overwrite` semantics for the note path;
+- reject `--handoff-note -` so snapshot JSON and Markdown notes are not
+  interleaved on stdout.
+
+Non-goals:
+
+- no real snapshot artifact is generated without approved request IDs and a
+  read-only DSN;
+- no DSN, credential, token, raw prompt, raw response, raw IP, or raw upstream
+  error is written to the note;
+- no new migration;
+- no new API route;
+- no frontend behavior change;
+- no exporter/outbox;
+- no read-only DB/view credential handoff;
+- no shared ECS staging;
+- no X-Insight runtime dependency;
 - no PRD4 matrix/status change.
 
 ### Later Payload Policy Modes
@@ -385,7 +419,7 @@ Use existing PRD4 harnesses, but record target evidence under PRD5.
 
 ## Current Blocking Conditions
 
-There is no blocking condition for UniRouter Batch 1A through Batch 1J.
+There is no blocking condition for UniRouter Batch 1A through Batch 1K.
 
 These later actions are gated:
 

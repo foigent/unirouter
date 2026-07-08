@@ -1,11 +1,11 @@
 # UniRouter Product Requirements Document - Phase 5
 
 > Version: Phase 5 Active Scope Draft
-> Date: 2026-07-08
+> Date: 2026-07-09
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
-> and Batch 1I Canary/Sentinel complete. Batch 1J provider upstream capture-gap
-> evidence fixed awaiting Canary. PRD4 remains complete for the confirmed
-> current scope and is not reopened by PRD5.
+> Batch 1I, and Batch 1J Canary/Sentinel complete. Batch 1K Gate A snapshot
+> handoff-note support fixed awaiting Canary. PRD4 remains complete for the
+> confirmed current scope and is not reopened by PRD5.
 > Source: `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, X-Insight shared-folder
 > responses on 2026-07-08, current UniRouter code/schema review, and official
@@ -90,6 +90,7 @@ PRD5 must not:
 | P5-F17 | Gateway Span Hierarchy | Parent UniRouter-emitted trace events to a per-request gateway root span so execution chains are queryable without X-Insight dependency |
 | P5-F18 | Payload Policy Decision Evidence | Emit explicit payload capture policy decision trace events without storing raw prompt or response payloads |
 | P5-F19 | Provider Upstream Capture Gap | Mark provider response trace events with `capture_gap=provider_not_returned` when the upstream provider does not return a usable request ID |
+| P5-F20 | Gate A Snapshot Handoff Note | Generate a sanitized Markdown handoff note alongside explicit-request X-Insight snapshots without writing DSNs or credentials |
 
 ### P2
 
@@ -459,6 +460,31 @@ Acceptance:
 - No migration, exporter/outbox, read-only DB access, raw payload capture,
   X-Insight runtime dependency, or PRD4 matrix change is introduced.
 
+### P5-F20: Gate A Snapshot Handoff Note
+
+Requirements:
+
+- Add an optional `--handoff-note` flag to the PRD5 X-Insight snapshot tool.
+- Write a Markdown note only after the selected snapshot has been loaded and the
+  JSON output has been written successfully.
+- Include generated date, source instance, schema version, selected request IDs,
+  scenario labels, counts, safety confirmation, snapshot output path, and command
+  shape without DSN.
+- Never write DSNs, credentials, tokens, raw prompts, raw responses, raw IP
+  addresses, or raw upstream error text into the note.
+- Reuse the same `--overwrite` behavior as the snapshot output path and reject
+  stdout for the handoff note path.
+
+Acceptance:
+
+- `go run scripts/prd5_xinsight_snapshot.go -help` documents
+  `--handoff-note`.
+- Handoff notes give X-Insight enough context to run discovery against a shared
+  sanitized snapshot and compare it with the PRD5 snapshot contract.
+- The feature does not create read-only DB/view credentials, shared ECS staging,
+  exporter/outbox behavior, raw payload capture, or an X-Insight runtime
+  dependency.
+
 ### P5-F09: Cursor Export API Or Outbox
 
 Requirements:
@@ -504,11 +530,12 @@ PRD5 should proceed in independently verifiable batches:
 8. Batch 1H: gateway span hierarchy for UniRouter-emitted request trace events.
 9. Batch 1I: explicit payload policy decision evidence for chat and embeddings.
 10. Batch 1J: provider upstream request ID capture gap evidence.
-11. Later payload policy metadata and evidence references, with future raw
+11. Batch 1K: Gate A snapshot Markdown handoff note for X-Insight discovery.
+12. Later payload policy metadata and evidence references, with future raw
    payload modes gated behind enterprise opt-in.
-12. Later Gate A batch: read-only view/export decision after X-Insight Gate A
+13. Later Gate A batch: read-only view/export decision after X-Insight Gate A
    evidence.
-13. Later target/backlog batches: target upstream/SSO evidence or larger
+14. Later target/backlog batches: target upstream/SSO evidence or larger
    backlog items only after their prerequisites are explicitly met.
 
 ## 6. External Source Refresh

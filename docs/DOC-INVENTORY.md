@@ -9,7 +9,7 @@
 | `docs/PROJECT-HANDOFF.md` | First-read handoff for agents |
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
 | `docs/PRD-Phase5.md` | Formal PRD5 active scope and implementation-phase reference |
-| `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` | PRD5 acceptance matrix; Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H, and Batch 1I Canary/Sentinel complete, Batch 1J fixed awaiting Canary |
+| `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` | PRD5 acceptance matrix; Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H, Batch 1I, and Batch 1J Canary/Sentinel complete, Batch 1K fixed awaiting Canary |
 | `docs/planning/PRD5-IMPLEMENTATION-PLAN.md` | PRD5 batch plan and UniRouter/X-Insight ownership split |
 | `docs/planning/PRD5-COMPETITOR-COMPARISON.md` | PRD5 competitor comparison and UniRouter-owned catch-up decisions |
 | `docs/PRD-Phase4.md` | Formal PRD4 scope and implementation-phase reference |
@@ -28,7 +28,7 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required Codex/OpenClaw workflow |
-| `docs/agent-workflows/FIX-SIGNAL.md` | Current PRD5 Batch 1J verification signal |
+| `docs/agent-workflows/FIX-SIGNAL.md` | Current PRD5 Batch 1K verification signal |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Latest OpenClaw verification result: PRD5 Batch 1I PASS 11/11 |
 
 ## Product And Design References
@@ -83,7 +83,7 @@
 | `docs/tech-ref/22-prd4-plungein-port-contract.md` | PRD4 PlungeIn Observe/Act/Enrich/Decide/Mutate port boundaries and runtime-plugin deferral contract |
 | `docs/tech-ref/23-prd4-real-upstream-evidence.md` | PRD4 real upstream evidence harness and credential guardrails; real target execution is deferred to PRD5 |
 | `docs/tech-ref/24-prd4-real-sso-evidence.md` | PRD4 real SSO evidence harness and Logto/OIDC credential guardrails; real target execution is deferred to PRD5 |
-| `docs/tech-ref/25-prd5-xinsight-sanitized-snapshot.md` | PRD5 X-Insight sanitized snapshot tool and handoff contract |
+| `docs/tech-ref/25-prd5-xinsight-sanitized-snapshot.md` | PRD5 X-Insight sanitized snapshot tool, handoff note, and handoff contract |
 | `docs/tech-ref/26-prd5-evidence-field-contract.md` | PRD5 structural evidence field dictionary and migration/writer plan |
 | `docs/governance/ADR-TEMPLATE.md` | Architecture Decision Record template |
 | `docs/governance/adr/ADR-0001-prd4-plungein-ports.md` | PRD4 PlungeIn ports architecture decision |
@@ -120,7 +120,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 |------|------|
 | `docs/agent-workflows/README.md` | Agent workflow index |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Current protocol |
-| `docs/agent-workflows/FIX-SIGNAL.md` | Current Codex to OpenClaw signal state; PRD5 Batch 1J fixed awaiting Canary |
+| `docs/agent-workflows/FIX-SIGNAL.md` | Current Codex to OpenClaw signal state; PRD5 Batch 1K fixed awaiting Canary |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Current OpenClaw verification result: PRD5 Batch 1I PASS 11/11 |
 | `docs/agent-workflows/CHECKLIST.md` | Canary checklist/reference; may need reconciliation |
 | `docs/agent-workflows/PLAN.md` | Historical/current plan notes; do not treat as canonical without reconciliation |
