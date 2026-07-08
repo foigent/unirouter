@@ -80,7 +80,7 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Current active verification signal: PRD5 Batch 1K Gate A Snapshot Handoff Note
+Current active verification signal: PRD5 Batch 1L Component Span Refinement
 fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
 
 PRD4 is complete for the confirmed current scope. PRD5 must preserve the PRD4
@@ -201,7 +201,8 @@ PRD5 Batch 1J:
 PRD5 Batch 1K:
 
 - Scope: Gate A snapshot Markdown handoff-note support for X-Insight discovery.
-- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Status: Canary/Sentinel complete; Sentinel merge reflected by `2db830a` /
+  PR #114.
 - Adds: optional `--handoff-note <path>` support in
   `scripts/prd5_xinsight_snapshot.go`; a generated DSN-free Markdown note with
   generated date, source instance, schema version, snapshot output path,
@@ -211,6 +212,20 @@ PRD5 Batch 1K:
   read-only DSN, read-only DB/view credentials, shared ECS staging,
   exporter/outbox, migration, API route, frontend behavior, raw prompt/response
   capture, X-Insight runtime dependency, or PRD4 matrix changes.
+
+PRD5 Batch 1L:
+
+- Scope: request-local component span refinement for UniRouter trace events.
+- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Adds: per-request component span tracking in `internal/gateway/trace.go` so
+  first component events parent to the gateway root and repeated same-component
+  events parent to that component's first span; focused gateway coverage in
+  `internal/gateway/relay_mock_test.go`; shared X-Insight contract for the
+  request-local hierarchy boundary.
+- Does not add: migration, API route, frontend behavior, read-only DB/view
+  credential, shared ECS staging, exporter/outbox, raw prompt/response capture,
+  X-Insight runtime dependency, cross-system agent/tool/business graph
+  inference, or PRD4 matrix changes.
 
 Latest completed PRD4 verification result is PRD4 Batch 1S Open Issue Boundary
 Closeout:

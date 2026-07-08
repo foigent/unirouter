@@ -179,6 +179,15 @@ stdout for note output, reuses `--overwrite`, and does not change runtime
 request handling, routes, frontend behavior, migrations, read-only credential
 handoff, exporter/outbox, or X-Insight runtime dependency.
 
+PRD5 Batch 1L component span refinement is implemented in
+`internal/gateway/trace.go` and covered by
+`internal/gateway/relay_mock_test.go`. Gateway trace state now keeps the request
+gateway root plus first-span-per-`source_component` entries. First component
+events parent to the gateway root; repeated same-component events parent to that
+component's first span. This refines UniRouter-local evidence hierarchy without
+adding schema, route, frontend, exporter/outbox, raw payload, or X-Insight
+runtime dependency.
+
 Usage analytics is implemented in `internal/admin/prd2_product_handlers.go` and now supports project/key/model/provider/channel/status/source filters plus PRD4 `scope=my`, `owner_user_id`, `key_type`, `group_by=owner`, and `group_by=key_type`.
 
 API key quota visibility keeps `api_keys.qps_limit` as the compatibility

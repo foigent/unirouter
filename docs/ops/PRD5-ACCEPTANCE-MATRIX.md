@@ -2,9 +2,9 @@
 
 > Date: 2026-07-09
 > Status: PRD5 Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G,
-> Batch 1H, Batch 1I, and Batch 1J Canary/Sentinel complete; Batch 1K Gate A
-> snapshot handoff-note support fixed awaiting Canary. PRD4 remains complete for
-> the confirmed current scope and is not reopened.
+> Batch 1H, Batch 1I, Batch 1J, and Batch 1K Canary/Sentinel complete; Batch 1L
+> component span refinement fixed awaiting Canary. PRD4 remains complete for the
+> confirmed current scope and is not reopened.
 > Source: `docs/PRD-Phase5.md`, `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, current repo/code review,
 > X-Insight shared-folder responses, PRD5 Batch 1A/1B/1C implementation
@@ -13,7 +13,8 @@
 > configuration changes, PRD5 Batch 1G trusted evidence context intake changes,
 > PRD5 Batch 1H gateway span hierarchy changes, PRD5 Batch 1I payload policy
 > decision evidence changes, PRD5 Batch 1J provider upstream capture-gap
-> changes, and PRD5 Batch 1K snapshot handoff-note tooling changes.
+> changes, PRD5 Batch 1K snapshot handoff-note tooling changes, and PRD5 Batch
+> 1L component span refinement changes.
 
 ## Status Values
 
@@ -54,7 +55,25 @@ actual result, and rollback or cleanup note.
 | P5-F17 | Gateway Span Hierarchy | Canary passed | UniRouter-emitted trace events in one request share a gateway root span; the first span preserves a trusted inbound parent when present, and later spans parent to the gateway root | Canary PASS 10/10 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `61f5610` / PR #111 | Batch 1H code-only evidence hierarchy; no migration, new route, frontend behavior, exporter/outbox, raw payload capture, X-Insight runtime dependency, or PRD4 matrix change |
 | P5-F18 | Payload Policy Decision Evidence | Canary passed | Chat and embeddings traces emit explicit `payload.policy.applied` events with sanitized payload policy metadata and `decision_kind=payload_capture`, while raw prompt/response capture remains off | Canary PASS 11/11 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `1dc20b5` / PR #112 | Batch 1I code-only evidence enrichment; no migration, new route, frontend behavior, exporter/outbox, raw payload capture, X-Insight runtime dependency, or PRD4 matrix change |
 | P5-F19 | Provider Upstream Capture Gap | Canary passed | Provider response trace events write `capture_gap=provider_not_returned` when no sanitized `upstream_request_id` is available, while preserving returned IDs and redaction gaps | Canary PASS recorded before Batch 1K; Sentinel merge `f5223df` / PR #113 | Batch 1J code-only evidence enrichment; no migration, new route, frontend behavior, exporter/outbox, read-only credential, raw payload capture, X-Insight runtime dependency, or PRD4 matrix change |
-| P5-F20 | Gate A Snapshot Handoff Note | Fixed awaiting Canary | Explicit-request X-Insight snapshot runs can write a companion Markdown handoff note with selected IDs, scenario labels, counts, safety confirmation, and DSN-free command shape | Snapshot tool compile/help check, handoff-note guard check, source/docs/shared-contract grep, `go test ./...`, `git diff --check` | Batch 1K tooling/docs enrichment; no runtime behavior change, migration, new route, frontend behavior, exporter/outbox, read-only credential handoff, shared ECS staging, raw payload capture, X-Insight runtime dependency, or PRD4 matrix change |
+| P5-F20 | Gate A Snapshot Handoff Note | Canary passed | Explicit-request X-Insight snapshot runs can write a companion Markdown handoff note with selected IDs, scenario labels, counts, safety confirmation, and DSN-free command shape | Canary PASS 10/10 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `2db830a` / PR #114 | Batch 1K tooling/docs enrichment; no runtime behavior change, migration, new route, frontend behavior, exporter/outbox, read-only credential handoff, shared ECS staging, raw payload capture, X-Insight runtime dependency, or PRD4 matrix change |
+| P5-F21 | Component Span Refinement | Fixed awaiting Canary | Repeated trace events from the same `source_component` parent to that component's first span while first component events still parent to the request gateway root | Focused gateway tests, source review, docs/shared-contract grep, `go test ./...`, `git diff --check` | Batch 1L code-only evidence hierarchy refinement; no migration, new route, frontend behavior, exporter/outbox, read-only credential, raw payload capture, X-Insight runtime dependency, cross-system graph inference, or PRD4 matrix change |
+
+## Batch 1L Verification
+
+PRD5 Batch 1L verifies component span refinement:
+
+```bash
+go test ./internal/gateway -run 'TestRecordTraceEvent_(ParentsEventsToGatewayRootSpan|UsesTrustedEvidenceContext|ProviderResponseMissingUpstreamRequestIDCaptureGap|ProviderResponseRedactionGapTakesPriority)' -count=1
+go test ./internal/gateway ./internal/traceutil ./cmd/uniroute -count=1
+go test ./... -count=1
+rg -n "Component Span Refinement|P5-F21|Batch 1L|componentSpanIDs|parentSpanForEvent|ParentsEventsToGatewayRootSpan|2db830a|PR #114" internal/gateway docs/PRD-Phase5.md docs/ops/PRD5-ACCEPTANCE-MATRIX.md docs/planning/PRD5-IMPLEMENTATION-PLAN.md docs/tech-ref/26-prd5-evidence-field-contract.md docs/agent-workflows/FIX-SIGNAL.md "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/contracts/2026-07-09-unirouter-prd5-component-span-refinement.md"
+git diff --check
+```
+
+No new migration, API route, frontend behavior, exporter/outbox, read-only
+credential, raw prompt/response capture, payload object store, X-Insight runtime
+dependency, cross-system graph inference, PRD4 matrix count, or
+`Production verified` claim should change in Batch 1L.
 
 ## Batch 1K Verification
 

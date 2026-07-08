@@ -604,19 +604,30 @@ func TestRecordTraceEvent_ParentsEventsToGatewayRootSpan(t *testing.T) {
 
 	relay.recordTraceEvent(ctx, "req-chain", "gateway.request.accepted", "gateway", "info", "company-chat", "company-chat", nil, http.StatusOK, 10, nil)
 	relay.recordTraceEvent(ctx, "req-chain", "routing.route_selected", "routing", "info", "company-chat", "company-chat", nil, http.StatusOK, 20, nil)
+	relay.recordTraceEvent(ctx, "req-chain", "routing.no_route", "routing", "error", "company-chat", "company-chat", nil, http.StatusServiceUnavailable, 30, nil)
 
-	if len(inserts) != 2 {
-		t.Fatalf("expected two trace inserts, got %d", len(inserts))
+	if len(inserts) != 3 {
+		t.Fatalf("expected three trace inserts, got %d", len(inserts))
 	}
 	rootSpanID, ok := inserts[0][17].(string)
 	if !ok || len(rootSpanID) != 16 {
 		t.Fatalf("expected generated root span ID, got %#v", inserts[0][17])
+	}
+	routingSpanID, ok := inserts[1][17].(string)
+	if !ok || len(routingSpanID) != 16 {
+		t.Fatalf("expected generated routing span ID, got %#v", inserts[1][17])
 	}
 	if inserts[0][16] != "trace-chain-1" || inserts[0][18] != "incoming-parent-1" {
 		t.Fatalf("expected first event to preserve trusted trace/parent, got %#v", inserts[0][16:19])
 	}
 	if inserts[1][16] != "trace-chain-1" || inserts[1][18] != rootSpanID {
 		t.Fatalf("expected second event to parent to gateway root span, got %#v root=%s", inserts[1][16:19], rootSpanID)
+	}
+	if inserts[1][20] != "routing" || inserts[2][20] != "routing" {
+		t.Fatalf("expected routing source components, got %#v and %#v", inserts[1][20], inserts[2][20])
+	}
+	if inserts[2][16] != "trace-chain-1" || inserts[2][18] != routingSpanID {
+		t.Fatalf("expected repeated routing event to parent to routing component span, got %#v routing=%s", inserts[2][16:19], routingSpanID)
 	}
 }
 
