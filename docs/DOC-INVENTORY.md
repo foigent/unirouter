@@ -8,6 +8,10 @@
 |------|------|
 | `docs/PROJECT-HANDOFF.md` | First-read handoff for agents |
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
+| `docs/PRD-Phase5.md` | Formal PRD5 active scope and implementation-phase reference |
+| `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` | PRD5 acceptance matrix; Batch 1A/1B/1C fixed awaiting Canary |
+| `docs/planning/PRD5-IMPLEMENTATION-PLAN.md` | PRD5 batch plan and UniRouter/X-Insight ownership split |
+| `docs/planning/PRD5-COMPETITOR-COMPARISON.md` | PRD5 competitor comparison and UniRouter-owned catch-up decisions |
 | `docs/PRD-Phase4.md` | Formal PRD4 scope and implementation-phase reference |
 | `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` | Completed PRD4 accepted/deferred matrix and evidence boundaries |
 | `docs/planning/PRD5-BACKLOG.md` | Capabilities explicitly deferred beyond PRD4 |
@@ -24,7 +28,7 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required Codex/OpenClaw workflow |
-| `docs/agent-workflows/FIX-SIGNAL.md` | No active verification signal; PRD4 complete for current scope |
+| `docs/agent-workflows/FIX-SIGNAL.md` | Current PRD5 Batch 1A/1B/1C verification signal |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Latest OpenClaw verification result: PRD4 Batch 1S Open Issue Boundary Closeout PASS 7/7 |
 
 ## Product And Design References
@@ -37,10 +41,13 @@
 | `docs/PRD-Phase2.md` | PRD2 formal product requirements | Frozen for new feature work |
 | `docs/planning/PRD3-CONSISTENCY-AUDIT.md` | PRD3 consistency audit | Confirmed PRD3 input; completed in Batch 17 closeout |
 | `docs/PRD-Phase3.md` | PRD3 formal product requirements | Completed cleanup/optimization scope |
+| `docs/PRD-Phase5.md` | PRD5 active product requirements | Current scope for X-Insight evidence readiness, structural fields, snapshot, payload boundary, lightweight trace UI, and competitor catch-up |
 | `docs/PRD-Phase4.md` | PRD4 formal product requirements | Completed current PRD4 scope |
 | `docs/planning/PRD4-BACKLOG.md` | PRD4 candidate backlog | Source record for PRD4 scope discovery |
 | `docs/planning/PRD5-BACKLOG.md` | PRD5 backlog | Explicitly deferred capabilities and reopen prerequisites |
 | `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md` | PRD5 X-Insight Gate A coordination | Planning coordination for sanitized snapshot first, read-only DB/view later, structural fields before exporter/outbox, and no shared GitHub/ECS staging yet |
+| `docs/planning/PRD5-IMPLEMENTATION-PLAN.md` | PRD5 implementation plan | Batch order, gates, and ownership split for UniRouter vs X-Insight |
+| `docs/planning/PRD5-COMPETITOR-COMPARISON.md` | PRD5 competitor comparison | Source-grounded comparison against LiteLLM, New API, one-api, Langfuse, and Helicone |
 | `docs/design/` | UI design decisions | Current design reference unless contradicted by code |
 | `docs/design/PRD2-DEVELOPER-CONSOLE-SPEC.md` | PRD2 Developer Console design spec | Draft for review |
 | `docs/ui/FRONTEND-UI-ARCHITECTURE-AUDIT.md` | Frontend UI/architecture audit | Current PRD1 closeout and PRD2 frontend architecture guidance |
@@ -76,6 +83,8 @@
 | `docs/tech-ref/22-prd4-plungein-port-contract.md` | PRD4 PlungeIn Observe/Act/Enrich/Decide/Mutate port boundaries and runtime-plugin deferral contract |
 | `docs/tech-ref/23-prd4-real-upstream-evidence.md` | PRD4 real upstream evidence harness and credential guardrails; real target execution is deferred to PRD5 |
 | `docs/tech-ref/24-prd4-real-sso-evidence.md` | PRD4 real SSO evidence harness and Logto/OIDC credential guardrails; real target execution is deferred to PRD5 |
+| `docs/tech-ref/25-prd5-xinsight-sanitized-snapshot.md` | PRD5 X-Insight sanitized snapshot tool and handoff contract |
+| `docs/tech-ref/26-prd5-evidence-field-contract.md` | PRD5 structural evidence field dictionary and migration/writer plan |
 | `docs/governance/ADR-TEMPLATE.md` | Architecture Decision Record template |
 | `docs/governance/adr/ADR-0001-prd4-plungein-ports.md` | PRD4 PlungeIn ports architecture decision |
 | `docs/governance/adr/ADR-0002-prd4-api-key-owner-usage.md` | PRD4 API key owner usage attribution decision draft |
@@ -90,6 +99,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | `docs/ops/PRD1-ACCEPTANCE-TEST-OWNERSHIP.md` | Executable ownership map for remaining PRD1 acceptance tests |
 | `docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md` | Current local evidence and external acceptance queue |
 | `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` | PRD4 active acceptance matrix and evidence rules |
+| `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` | PRD5 active acceptance matrix and evidence rules |
 | `docs/ops/PRD1-STRICT-CLOSEOUT-RUNBOOK.md` | Final strict closeout gate and evidence procedure |
 | `docs/ops/deployment-runbook.md` | Deployment reference |
 | `docs/ops/evidence/` | Current runtime/deployment evidence cited by acceptance matrices and status docs |
@@ -110,7 +120,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 |------|------|
 | `docs/agent-workflows/README.md` | Agent workflow index |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Current protocol |
-| `docs/agent-workflows/FIX-SIGNAL.md` | Current Codex to OpenClaw signal state; no active request after PRD4 closeout |
+| `docs/agent-workflows/FIX-SIGNAL.md` | Current Codex to OpenClaw signal state; PRD5 Batch 1A/1B/1C fixed awaiting Canary |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Current OpenClaw/Sentinel/Atlas verification result for the latest completed round |
 | `docs/agent-workflows/CHECKLIST.md` | Canary checklist/reference; may need reconciliation |
 | `docs/agent-workflows/PLAN.md` | Historical/current plan notes; do not treat as canonical without reconciliation |

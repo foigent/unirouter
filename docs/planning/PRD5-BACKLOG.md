@@ -30,6 +30,18 @@ platform. This boundary remains a discovery assumption until the X-Insight team
 answers the open request in the shared folder and the User confirms the final
 split.
 
+Current active PRD5 planning and Batch 1A/1B/1C implementation are tracked in:
+
+- `docs/PRD-Phase5.md`
+- `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`
+- `docs/planning/PRD5-IMPLEMENTATION-PLAN.md`
+- `docs/planning/PRD5-COMPETITOR-COMPARISON.md`
+- `docs/tech-ref/25-prd5-xinsight-sanitized-snapshot.md`
+- `docs/tech-ref/26-prd5-evidence-field-contract.md`
+
+This backlog remains the source record for deferred items that are not yet part
+of the active PRD5 implementation train.
+
 ## Deferred Items
 
 | ID | Capability | Why Not PRD4 | Prerequisites To Reopen |

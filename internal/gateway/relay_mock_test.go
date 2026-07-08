@@ -305,8 +305,8 @@ func TestRecordRequest_Success(t *testing.T) {
 	if !execCalled {
 		t.Fatal("expected exec to be called")
 	}
-	if len(capturedArgs) != 22 {
-		t.Fatalf("expected 22 insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != 30 {
+		t.Fatalf("expected 30 insert args, got %d", len(capturedArgs))
 	}
 	if capturedArgs[2] != int64(7) {
 		t.Fatalf("expected project_id arg 7, got %v", capturedArgs[2])
@@ -325,6 +325,15 @@ func TestRecordRequest_Success(t *testing.T) {
 	}
 	if capturedArgs[21] != 1.0 {
 		t.Fatalf("expected upstream usage confidence 1.0, got %v", capturedArgs[21])
+	}
+	if capturedArgs[22] != "req-001" || capturedArgs[23] != evidenceSchemaVersion || capturedArgs[24] != evidenceCaptureModeNative {
+		t.Fatalf("unexpected call-log evidence args: %#v", capturedArgs[22:25])
+	}
+	if capturedArgs[26] != "human" || capturedArgs[27] != "user:42" || capturedArgs[28] != evidencePayloadMetadata {
+		t.Fatalf("unexpected call-log actor/payload args: %#v", capturedArgs[26:29])
+	}
+	if hash, ok := capturedArgs[29].(string); !ok || len(hash) != 64 {
+		t.Fatalf("expected source_event_hash, got %#v", capturedArgs[29])
 	}
 }
 
@@ -357,8 +366,8 @@ func TestRecordTraceEvent_SanitizesMetadataAndSnapshotsOwner(t *testing.T) {
 		"request_body":     `{"messages":[{"content":"secret"}]}`,
 	})
 
-	if len(capturedArgs) != 16 {
-		t.Fatalf("expected 16 trace insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != 29 {
+		t.Fatalf("expected 29 trace insert args, got %d", len(capturedArgs))
 	}
 	if capturedArgs[2] != int64(7) || capturedArgs[3] != int64(9) || capturedArgs[4] != ownerUserID || capturedArgs[5] != "personal" {
 		t.Fatalf("unexpected project/key/owner args: %#v", capturedArgs[2:6])
@@ -375,6 +384,24 @@ func TestRecordTraceEvent_SanitizesMetadataAndSnapshotsOwner(t *testing.T) {
 	}
 	if _, ok := metadata["request_body"]; ok {
 		t.Fatalf("metadata leaked request_body: %#v", metadata)
+	}
+	if capturedArgs[16] != "req-trace" {
+		t.Fatalf("expected trace_id to use request_id, got %#v", capturedArgs[16])
+	}
+	if spanID, ok := capturedArgs[17].(string); !ok || len(spanID) != 16 {
+		t.Fatalf("expected generated span_id, got %#v", capturedArgs[17])
+	}
+	if capturedArgs[18] != evidenceSchemaVersion || capturedArgs[19] != "provider" || capturedArgs[20] != evidenceCaptureModeNative {
+		t.Fatalf("unexpected trace structural args: %#v", capturedArgs[18:21])
+	}
+	if capturedArgs[22] != "provider" || capturedArgs[23] != "selected" || capturedArgs[24] != "provider.response_accepted" {
+		t.Fatalf("unexpected trace decision args: %#v", capturedArgs[22:25])
+	}
+	if capturedArgs[25] != "human" || capturedArgs[26] != "user:42" || capturedArgs[27] != evidencePayloadMetadata {
+		t.Fatalf("unexpected trace actor/payload args: %#v", capturedArgs[25:28])
+	}
+	if hash, ok := capturedArgs[28].(string); !ok || len(hash) != 64 {
+		t.Fatalf("expected trace source_event_hash, got %#v", capturedArgs[28])
 	}
 }
 

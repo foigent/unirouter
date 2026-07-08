@@ -96,6 +96,15 @@ func TestGetRequestTrace_ProjectScopedAccess(t *testing.T) {
 			return &testutil.MockRows{
 				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
+						traceID := "req-trace-001"
+						spanID := "span-001"
+						evidenceRef := "unirouter:request_trace_events:request_id:req-trace-001:span:span-001"
+						decisionKind := "admission"
+						decisionResult := "allowed"
+						decisionReason := "gateway.request.accepted"
+						actorType := "human"
+						actorRef := "user:10"
+						sourceEventHash := strings.Repeat("a", 64)
 						*dest[0].(*int64) = 1
 						*dest[1].(*string) = "gateway.request.accepted"
 						*dest[2].(*string) = "gateway"
@@ -108,6 +117,25 @@ func TestGetRequestTrace_ProjectScopedAccess(t *testing.T) {
 						*dest[9].(*int) = 3
 						*dest[10].(*[]byte) = []byte(`{"estimated_tokens":100,"usage_source":"upstream","api_key":"sk-secret","request_body":"{\"messages\":[{\"content\":\"secret prompt\"}]}","access_token":"idp-token"}`)
 						*dest[11].(*time.Time) = now
+						*dest[12].(**string) = &traceID
+						*dest[13].(**string) = &spanID
+						*dest[14].(**string) = nil
+						*dest[15].(*string) = "unirouter.evidence.v1"
+						*dest[16].(*string) = "gateway"
+						*dest[17].(*string) = "native"
+						*dest[18].(**string) = nil
+						*dest[19].(**string) = &evidenceRef
+						*dest[20].(**string) = nil
+						*dest[21].(**string) = &decisionKind
+						*dest[22].(**string) = &decisionResult
+						*dest[23].(**string) = &decisionReason
+						*dest[24].(**string) = &actorType
+						*dest[25].(**string) = &actorRef
+						*dest[26].(**string) = nil
+						*dest[27].(**string) = nil
+						*dest[28].(*string) = "metadata_only"
+						*dest[29].(**string) = nil
+						*dest[30].(**string) = &sourceEventHash
 						return nil
 					},
 				},
@@ -140,6 +168,21 @@ func TestGetRequestTrace_ProjectScopedAccess(t *testing.T) {
 	}
 	if resp.Events[0]["event_type"] != "gateway.request.accepted" {
 		t.Fatalf("expected event_type in response, got %#v", resp.Events[0])
+	}
+	if resp.Events[0]["trace_id"] != "req-trace-001" || resp.Events[0]["span_id"] != "span-001" {
+		t.Fatalf("expected trace/span ids in response, got %#v", resp.Events[0])
+	}
+	if resp.Events[0]["schema_version"] != "unirouter.evidence.v1" || resp.Events[0]["capture_mode"] != "native" {
+		t.Fatalf("expected schema/capture fields in response, got %#v", resp.Events[0])
+	}
+	if resp.Events[0]["decision_kind"] != "admission" || resp.Events[0]["decision_result"] != "allowed" {
+		t.Fatalf("expected decision fields in response, got %#v", resp.Events[0])
+	}
+	if resp.Events[0]["actor_type"] != "human" || resp.Events[0]["actor_ref"] != "user:10" {
+		t.Fatalf("expected actor fields in response, got %#v", resp.Events[0])
+	}
+	if resp.Events[0]["payload_capture_mode"] != "metadata_only" || resp.Events[0]["source_event_hash"] != strings.Repeat("a", 64) {
+		t.Fatalf("expected payload/hash fields in response, got %#v", resp.Events[0])
 	}
 	metadata, ok := resp.Events[0]["metadata"].(map[string]interface{})
 	if !ok {

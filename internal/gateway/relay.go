@@ -934,21 +934,44 @@ func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, 
 		projectIDArg = projectID
 	}
 	var ownerUserIDArg interface{}
+	var ownerUserID *int64
 	keyType := "unknown"
 	if apiKey := middleware.GetAPIKeyFromContext(ctx); apiKey != nil {
 		if apiKey.OwnerUserID != nil && *apiKey.OwnerUserID > 0 {
 			ownerUserIDArg = *apiKey.OwnerUserID
+			ownerUserID = apiKey.OwnerUserID
 		}
 		if apiKey.KeyType != "" {
 			keyType = apiKey.KeyType
 		}
 	}
+	actorType, actorRefArg := actorEvidence(keyType, keyID, ownerUserID)
 	usageSource = metering.NormalizeUsageSource(usageSource)
 	usageConfidence := metering.SourceConfidence(usageSource)
+	sourceEventHash := hashCallLogEvidence(requestID, orgID, projectIDArg, keyID, ownerUserIDArg, keyType, model, requestedModel, provider, channelName, promptTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs, usageSource, isStream, estimatedTokens, usageConfidence)
 	_, err := relay.db.Exec(ctx,
-		`INSERT INTO call_logs (request_id, org_id, project_id, api_key_id, owner_user_id, key_type, model, requested_model, provider, channel, prompt_tokens, completion_tokens, total_tokens, cost_cents, status_code, latency_ms, ttft_ms, usage_source, is_stream, ip_address, estimated_tokens, usage_confidence)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`,
-		requestID, orgID, projectIDArg, keyID, ownerUserIDArg, keyType, model, requestedModel, provider, channelName, promptTokens, completionTokens, promptTokens+completionTokens, costCents, statusCode, latencyMs, ttftMs, usageSource, isStream, clientIP, estimatedTokens, usageConfidence,
+		`INSERT INTO call_logs (
+			request_id, org_id, project_id, api_key_id, owner_user_id, key_type,
+			model, requested_model, provider, channel, prompt_tokens, completion_tokens,
+			total_tokens, cost_cents, status_code, latency_ms, ttft_ms, usage_source,
+			is_stream, ip_address, estimated_tokens, usage_confidence,
+			trace_id, schema_version, capture_mode, evidence_ref,
+			actor_type, actor_ref, payload_capture_mode, source_event_hash
+		)
+		 VALUES (
+			$1, $2, $3, $4, $5, $6,
+			$7, $8, $9, $10, $11, $12,
+			$13, $14, $15, $16, $17, $18,
+			$19, $20, $21, $22,
+			$23, $24, $25, $26,
+			$27, $28, $29, $30
+		)`,
+		requestID, orgID, projectIDArg, keyID, ownerUserIDArg, keyType,
+		model, requestedModel, provider, channelName, promptTokens, completionTokens,
+		promptTokens+completionTokens, costCents, statusCode, latencyMs, ttftMs, usageSource,
+		isStream, clientIP, estimatedTokens, usageConfidence,
+		requestID, evidenceSchemaVersion, evidenceCaptureModeNative, fmt.Sprintf("%s:call_logs:request_id:%s", evidenceTraceRefSourceType, requestID),
+		actorType, actorRefArg, evidencePayloadMetadata, sourceEventHash,
 	)
 	if err != nil {
 		reqLog.Error("Failed to record request log: %v", err)

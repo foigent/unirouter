@@ -91,6 +91,25 @@ const MOCK_TRACE_RESPONSE = {
       latency_ms: 2,
       metadata: { estimated_tokens: 700, stream: true },
       created_at: '2026-06-29T10:00:01Z',
+      trace_id: 'req-001-aaa',
+      span_id: 'span-001-gateway',
+      parent_span_id: null,
+      schema_version: 'unirouter.evidence.v1',
+      source_component: 'gateway',
+      capture_mode: 'native',
+      capture_gap: null,
+      evidence_ref: 'unirouter:request_trace_events:1',
+      upstream_request_id: 'upstream-001',
+      decision_kind: 'admission',
+      decision_result: 'accepted',
+      decision_reason: 'request accepted',
+      actor_type: 'api_key',
+      actor_ref: 'key_123',
+      on_behalf_of: null,
+      session_id: 'session-001',
+      payload_capture_mode: 'metadata_only',
+      payload_ref: null,
+      source_event_hash: 'hash-001',
     },
   ],
 };
@@ -192,6 +211,28 @@ describe('LogsPage', () => {
     });
     await waitFor(() => {
       expect(container.textContent || '').toContain('gateway.request.accepted');
+    });
+  });
+
+  it('renders PRD5 structural trace evidence fields in detail view', async () => {
+    const { container } = renderLogs();
+    await waitFor(() => {
+      expect(container.textContent || '').toContain('req-001-aaa');
+    });
+
+    const requestID = await screen.findByText(/req-001-aaa/);
+    const row = requestID.closest('tr');
+    expect(row).toBeTruthy();
+    fireEvent.click(row as HTMLElement);
+
+    await waitFor(() => {
+      const html = container.textContent || '';
+      expect(html).toContain('证据质量');
+      expect(html).toContain('capture: native');
+      expect(html).toContain('payload: metadata_only');
+      expect(html).toContain('decision: admission / accepted / request accepted');
+      expect(html).toContain('actor: api_key:key_123');
+      expect(html).toContain('upstream: upstream-001');
     });
   });
 
