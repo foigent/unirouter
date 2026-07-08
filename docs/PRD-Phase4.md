@@ -4,11 +4,13 @@
 > Date: 2026-07-07
 > Status: Active PRD4 implementation; Batch 1N Developer Console Self Usage
 > And Model Cost passed Canary 9/9 and Sentinel merge is reflected by
-> `6194062` / PR #98. Batch 1O API Key Input And Security Header Hardening is
-> fixed awaiting Canary for `P4-F12` / `PRD4-SECURITY-001`.
-> Batch 1H real upstream and Batch 1I real SSO evidence harnesses remain below
-> `E2E accepted` / `Production verified` until approved target credentials and
-> successful target-environment runs exist.
+> `6194062` / PR #98. Batch 1O API Key Input And Security Header Hardening
+> passed Canary 8/8 and Sentinel merge is reflected by `59721d7` / PR #99 for
+> `P4-F12` / `PRD4-SECURITY-001`.
+> User decision on 2026-07-08: because no approved real upstream or real SSO
+> target environment is currently available, `P4-F08` / `P4-F09` real target
+> execution is not part of the current PRD4 closeout. Batch 1H/1I harness assets
+> remain accepted, while real target E2E moves to the unimplemented PRD5 backlog.
 > Source: `docs/planning/PRD4-BACKLOG.md`, `docs/ops/CURRENT-STATUS.md`,
 > `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`,
 > `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`, current repo/code review, and User
@@ -26,9 +28,10 @@ more commercially operable MaaS control plane.
 Core product sentence:
 
 > UniRouter PRD4 adds trustworthy usage/cost visibility, request-flow evidence,
-> runtime observability, and target-environment proof for real upstream and real
-> SSO, while keeping high-risk runtime plugin, scheduler, IAM rewrite, cache, SDK,
-> and full IaC expansion out of the first implementation phase.
+> runtime observability, and guarded evidence harnesses for future real upstream
+> and real SSO target proof, while keeping real target execution and high-risk
+> runtime plugin, scheduler, IAM rewrite, cache, SDK, and full IaC expansion out
+> of the first implementation phase.
 
 PRD4 should make these questions answerable without requiring operators to inspect
 raw database rows or multiple monitoring tools first:
@@ -38,7 +41,8 @@ raw database rows or multiple monitoring tools first:
 - How much did that usage cost by model, key, user, project, and time window?
 - What path did a request take through UniRouter?
 - Which runtime dependency or capacity dimension is currently degraded?
-- Which real upstream and real SSO paths are target-environment verified?
+- Which real upstream and real SSO paths have guarded harnesses ready, and which
+  target-environment runs remain deferred?
 
 ## 2. Scope Principle
 
@@ -55,8 +59,9 @@ PRD4 may:
   health, and observability integrations;
 - display CPU, memory, disk, network, DB, Redis, Prometheus, and Grafana health
   summaries with role-based redaction;
-- add target-environment evidence tracks for real upstream adapters and real
-  enterprise SSO;
+- keep guarded target-environment evidence harnesses for real upstream adapters
+  and real enterprise SSO, while deferring actual real target execution until an
+  approved environment exists;
 - add password visibility toggles to current password inputs;
 - promote PRD5 backlog boundaries for larger deferred capabilities.
 
@@ -96,8 +101,8 @@ PRD4 must not:
 |----|------------|---------|
 | P4-F06 | Status Center And Runtime Observability | Add a unified internal Status Center for event status, runtime environment, capacity health, and observability integrations |
 | P4-F07 | External Monitoring Integration | Integrate with existing customer Prometheus/Grafana setups through summaries, health checks, configuration, and deep links |
-| P4-F08 | Real Upstream Evidence Track | Run target-environment E2E for OpenRouter-compatible and direct Anthropic-native adapter paths when credentials are provided |
-| P4-F09 | Real SSO Evidence Track | Run target-environment browser login evidence against Logto or another approved enterprise OIDC provider |
+| P4-F08 | Real Upstream Evidence Harness | PRD4 keeps the guarded harness only; real OpenRouter-compatible and direct Anthropic-native target E2E is deferred to PRD5 |
+| P4-F09 | Real SSO Evidence Harness | PRD4 keeps the guarded harness only; real Logto or enterprise OIDC browser-login evidence is deferred to PRD5 |
 | P4-F10 | Auth UX Hardening | Add visible/hidden password controls for login, password change, and admin password entry surfaces |
 
 ### P2
@@ -299,23 +304,38 @@ the configured URLs as external deep links. It does not embed dashboards, add
 new metrics authentication, validate Grafana datasources, or implement a
 third-party monitoring connector framework.
 
-### P4-F08: Real Upstream Evidence Track
+### P4-F08: Real Upstream Evidence Harness
 
-Requirements:
+Current PRD4 closeout decision: on 2026-07-08 the User moved real upstream
+target-environment execution out of PRD4 because no approved real environment is
+available. The PRD4 deliverable is the accepted guarded harness from Batch 1H;
+actual real-provider E2E evidence is now tracked as `PRD5-UPSTREAM-001`.
 
-- Run target-environment E2E for OpenRouter-compatible and direct
-  Anthropic-native adapter paths after approved credentials are provided.
-- Cover non-stream and stream flows where provider support allows.
-- Verify request success, error classification, usage source, billing settlement,
-  request log, and no secret leakage.
-- Keep provider cost risk explicit and controlled.
+Harness requirements:
 
-Acceptance:
+The accepted PRD4 scope is the guarded harness, not real target execution:
 
-- Evidence records target environment, commit, config shape, provider/model slug,
-  test timestamp, expected result, actual result, and rollback/cleanup.
+- Provide a safe preflight path for OpenRouter-compatible and direct
+  Anthropic-native adapter checks.
+- Keep real-provider mutation behind an explicit approval environment variable.
+- Define the future PRD5 real-mode evidence shape for non-stream and stream
+  flows where provider support allows.
+- Keep provider cost risk explicit and controlled before any future real run.
+
+PRD4 acceptance:
+
+- Harness evidence records expected future target environment, commit/config
+  requirements, provider/model slug requirements, expected result, actual
+  result shape, and rollback/cleanup expectations.
 - OpenRouter-compatible evidence does not substitute for direct Anthropic-native
   evidence.
+- Missing credentials remain a safe `SKIP`, not a failing product behavior.
+
+PRD5 acceptance after reopening:
+
+- Real target evidence records target environment, commit, config shape,
+  provider/model slug, test timestamp, expected result, actual result, and
+  rollback/cleanup.
 - Failed provider auth or rate limits are classified and documented rather than
   hidden.
 
@@ -332,23 +352,40 @@ does not move to `E2E accepted` or `Production verified` until both adapter
 paths pass real-provider non-stream/stream checks in an approved target
 environment.
 
-### P4-F09: Real SSO Evidence Track
+### P4-F09: Real SSO Evidence Harness
 
-Requirements:
+Current PRD4 closeout decision: on 2026-07-08 the User moved real SSO
+target-environment execution out of PRD4 because no approved IdP/browser-login
+environment is available. The PRD4 deliverable is the accepted guarded harness
+from Batch 1I; actual real-IdP browser evidence is now tracked as
+`PRD5-SSO-001`.
 
-- Use Logto or another approved enterprise OIDC provider as target-environment
-  SSO evidence.
-- Verify discovery/JWKS, signed state/nonce, callback, claim mapping, user
-  provisioning, role/org behavior, audit event, and browser login.
+Harness requirements:
+
+The accepted PRD4 scope is the guarded harness, not real target execution:
+
+- Provide a safe preflight path for Logto or another approved enterprise OIDC
+  provider.
+- Keep browser/IdP/DB access behind an explicit approval environment variable.
+- Define the future PRD5 real-mode evidence shape for discovery/JWKS, signed
+  state/nonce, callback, claim mapping, user provisioning, role/org behavior,
+  audit event, and browser login.
 - Keep Logto as an external or optional deployment component, not a rewritten
   UniRouter core module in PRD4.
 
-Acceptance:
+PRD4 acceptance:
 
-- Browser login passes against the approved real IdP.
-- Claim mapping behavior is documented and tested for allowed and denied users.
+- Missing target config remains a safe `SKIP`, not a failing product behavior.
+- Claim mapping and audit expectations are documented for future real target
+  evidence.
 - No IdP token, client secret, password, or raw profile secret appears in logs,
   audit, frontend state, screenshots, or evidence files.
+
+PRD5 acceptance after reopening:
+
+- Browser login passes against the approved real IdP.
+- Claim mapping behavior is tested for allowed and denied users.
+- `login.oidc` audit evidence is captured without leaking restricted data.
 
 Batch 1I implementation note: the first slice adds guarded target-evidence
 tooling, not a real-IdP acceptance claim. The harness includes
@@ -384,8 +421,10 @@ Acceptance:
 Requirements:
 
 - Treat production or approved-staging evidence as separate from local E2E.
-- Candidate tracks include license import/status, webhook delivery, real upstream,
-  real SSO, and selected HA/DR smoke evidence.
+- Candidate tracks in the current PRD4 closeout exclude `P4-F08` / `P4-F09`
+  real target execution. They may include license import/status, webhook
+  delivery, runtime/build-chain evidence, UI confirmation, and selected HA/DR
+  smoke evidence where target evidence already exists.
 - Each evidence track needs explicit environment, credentials owner, cost/risk
   note, command/manual path, expected result, actual result, and rollback.
 
@@ -443,15 +482,16 @@ Acceptance:
 | PRD4 Batch 1 | API key owner usage/cost MVP, model-level cost, password visibility toggles | Yes | Lowest-risk product value after scope baseline |
 | PRD4 Batch 2 | Flow/Event/Trace foundation and Observe port | Yes | Start with metadata-only request path evidence |
 | PRD4 Batch 3 | Status Center runtime observability summary and external monitoring integration | Yes | Keep event status separate from runtime/capacity health |
-| PRD4 Batch 4 | Real upstream evidence track | Mostly evidence/scripts | Requires approved provider credentials |
-| PRD4 Batch 5 | Real SSO evidence track | Mostly evidence/scripts | Requires approved Logto or enterprise OIDC target |
-| PRD4 Batch 6 | Production evidence promotion and PRD4 closeout | Docs/evidence | Promote only verified target-environment rows |
+| PRD4 Batch 4 | Real upstream evidence harness | Mostly evidence/scripts | Harness accepted in Batch 1H; real provider execution deferred to PRD5 |
+| PRD4 Batch 5 | Real SSO evidence harness | Mostly evidence/scripts | Harness accepted in Batch 1I; real IdP browser execution deferred to PRD5 |
+| PRD4 Batch 6 | Production evidence promotion and PRD4 closeout | Docs/evidence | Promote only verified target-environment rows; do not promote P4-F08/P4-F09 without PRD5 real target runs |
 
 ## 6. Dependencies And Open Decisions
 
-- Approved real upstream credentials and model slugs are required for P4-F08.
-- Approved Logto or enterprise OIDC issuer/client credentials are required for
-  P4-F09.
+- Approved real upstream credentials and model slugs are required to reopen
+  `PRD5-UPSTREAM-001`; they are no longer PRD4 closeout prerequisites.
+- Approved Logto or enterprise OIDC issuer/client credentials are required to
+  reopen `PRD5-SSO-001`; they are no longer PRD4 closeout prerequisites.
 - The first implementation batch should confirm whether shared/service API keys
   are shown under a separate key type rather than a personal user total.
 - Batch 1K passed Canary 10/10 for the first trace retention/cleanup slice;

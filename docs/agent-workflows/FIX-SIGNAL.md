@@ -1,109 +1,95 @@
-# FIX-SIGNAL.md - PRD4 Batch 1O API Key Input And Security Header Hardening
+# FIX-SIGNAL.md - PRD4 Batch 1P Scope Deferral And Closeout Alignment
 
 **Fixer:** main agent
 **Date:** file system timestamp is authoritative
-**Risk level:** R3 security/API behavior hardening
-**Scope:** P4-F12 security, privacy, and redaction guardrails
+**Risk level:** R2 acceptance-boundary documentation
+**Scope:** P4-F08 / P4-F09 deferral, PRD5 backlog alignment, PRD4 closeout planning
 
 ## Verification Request
 
-Please verify PRD4 Batch 1O: API Key Input And Security Header Hardening.
+Please verify PRD4 Batch 1P: Scope Deferral And Closeout Alignment.
 
-This batch converts application-code findings from
-`docs/ops/evidence/UNIROUTERS-TEST-REPORT-FINAL-20260708.md` into a narrow
-security/API hardening slice tracked as `PRD4-SECURITY-001`:
+This is a documentation/status-boundary change only. It implements the User's
+2026-07-08 decision:
 
-- API key create/update trims names and rejects empty, over-255-character,
-  control-containing, markup-like, or SQL-like display names;
-- API key create/update rejects negative `project_id` instead of resolving it to
-  a default project or touching the database;
-- all HTTP responses pass through baseline browser security headers;
-- `GET /` no longer exposes hardcoded version data, and unknown GET paths that
-  fall through the root pattern return `404 {"error":"not_found"}`.
+- no approved real upstream target environment exists now;
+- no approved real SSO target environment exists now;
+- `P4-F08` and `P4-F09` real target execution must not remain current PRD4
+  implementation gaps;
+- PRD4 keeps Batch 1H/1I guarded harness assets only;
+- real upstream target E2E and real SSO target E2E move to PRD5/unimplemented
+  scope.
 
 ## Scope To Verify
 
-Product/test files:
+Docs/status files:
 
-- `internal/admin/key_handlers.go`
-- `internal/admin/admin_mock_test.go`
-- `internal/middleware/security_headers.go`
-- `internal/middleware/security_headers_test.go`
-- `cmd/uniroute/main.go`
-- `cmd/uniroute/main_test.go`
-
-Evidence/status files:
-
-- `docs/ops/evidence/UNIROUTERS-TEST-REPORT-FINAL-20260708.md`
 - `docs/agent-workflows/FIX-SIGNAL.md`
+- `docs/PRD-Phase4.md`
+- `docs/ops/PRD4-ACCEPTANCE-MATRIX.md`
+- `docs/planning/PRD5-BACKLOG.md`
+- `docs/planning/PRD4-BACKLOG.md`
 - `docs/issues/OPEN-ISSUES.md`
 - `docs/ops/CURRENT-STATUS.md`
-- `docs/ops/PRD4-ACCEPTANCE-MATRIX.md`
 - `docs/PROJECT-HANDOFF.md`
 - `docs/DOC-INVENTORY.md`
 - `docs/README.md`
-- `docs/PRD-Phase4.md`
 - `docs/CODEBASE-MAP.md`
 
 ## Expected Behavior
 
-- API key display names that contain HTML tag characters, quote/semicolon-style
-  SQL payload characters, control characters, `--`, or more than 255 characters
-  return HTTP 400 on create/update.
-- Negative `project_id` returns HTTP 400 on API key create/update.
-- Valid API key create/update flows remain unchanged.
-- Responses include `X-Content-Type-Options`, `X-Frame-Options`,
-  `Referrer-Policy`, `Permissions-Policy`, and a frame/base/form
-  `Content-Security-Policy`.
-- `GET /` still returns service running status, but no longer returns a
-  hardcoded `version`.
-- Unknown GET paths such as `/api/v1/orgs` return standard 404 JSON without
-  root service/version data.
+- `P4-F08` and `P4-F09` are no longer represented as current PRD4
+  implementation gaps requiring real target execution.
+- `P4-F08` and `P4-F09` rows in the PRD4 matrix are `Deferred to PRD5`.
+- Batch 1H and Batch 1I remain accurately described as accepted guarded harness
+  assets.
+- `docs/planning/PRD5-BACKLOG.md` has explicit reopenable items for real
+  upstream target E2E and real SSO target E2E.
+- `P4-F11` Production Evidence Promotion excludes `P4-F08` / `P4-F09` real
+  target execution from current PRD4 closeout.
+- Index and handoff docs route future real upstream/SSO target runs to PRD5.
 
 ## Non-Scope
 
 Do not expect this batch to:
 
-- change billing, routing, RBAC, migrations, trace storage, SSO, upstream,
-  wallet, provider dispatch, frontend behavior, API key hashing, or secret
-  handling;
-- solve Go standard-library vulnerability findings by changing the local Go
-  toolchain or build image;
-- change target-environment Grafana URL, `RUNTIME_ENVIRONMENT`, runtime
-  version/commit `ldflags`, Docker healthcheck wiring, or target test database
-  cleanup;
-- claim broad target-environment `Production verified` status.
+- modify Go, frontend, migrations, API routes, runtime behavior, deployment
+  scripts, or evidence harness code;
+- delete Batch 1H/1I harnesses or historical evidence;
+- claim real upstream or real SSO E2E acceptance;
+- claim Production verified status for upstream, SSO, license, webhook, HA/DR,
+  runtime, or UI rows;
+- resolve `PRD4-RUNTIME-002`, `PRD4-INFRA-001`, `PRD4-DEPLOY-001`, or
+  `PRD4-PLUGIN-001`.
 
 ## Required Verification Commands
 
 ```bash
 cd /Users/m4/Desktop/projects/UniRouter
 
-rg -n "normalizeAPIKeyName|SecurityHeaders|TestSecurityHeaders|TestRootHandlerDoesNotExposeHardcodedVersion|PRD4-SECURITY-001|Batch 1O|UNIROUTERS-TEST-REPORT-FINAL-20260708" internal/admin internal/middleware cmd/uniroute docs/agent-workflows/FIX-SIGNAL.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/PROJECT-HANDOFF.md docs/DOC-INVENTORY.md docs/README.md docs/PRD-Phase4.md docs/CODEBASE-MAP.md
+rg -n "PRD5-UPSTREAM-001|PRD5-SSO-001|P4-F08|P4-F09|Deferred to PRD5|real target execution|real upstream/SSO harness|2026-07-08" docs/PRD-Phase4.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/planning/PRD5-BACKLOG.md docs/planning/PRD4-BACKLOG.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/PROJECT-HANDOFF.md docs/DOC-INVENTORY.md docs/README.md docs/CODEBASE-MAP.md docs/agent-workflows/FIX-SIGNAL.md
 
-go test ./internal/admin -run 'Test(CreateAPIKey_RejectsUnsafeNameAndOversizedName|CreateAPIKey_RejectsNegativeProjectID|UpdateAPIKey_RejectsUnsafeName|UpdateAPIKey_RejectsNegativeProjectID)$' -count=1
-go test ./internal/middleware -run TestSecurityHeaders -count=1
-go test ./cmd/uniroute -run 'TestRootHandler(DoesNotExposeHardcodedVersion|ReturnsStandardNotFoundForUnknownPath)' -count=1
-go test ./internal/admin ./internal/middleware ./cmd/uniroute -count=1
-go test ./... -count=1
+awk -F'|' '/^\| P4-F[0-9]+ / {gsub(/^ +| +$/, "", $4); count[$4]++; total++} END {print "total=" total; for (s in count) print s "=" count[s]}' docs/ops/PRD4-ACCEPTANCE-MATRIX.md
 
 git diff --check
 ```
 
 ## Acceptance Criteria
 
-1. API key create rejects stored HTML-like and SQL-like display-name payloads
-   with HTTP 400 before database mutation.
-2. API key create rejects names longer than 255 characters with HTTP 400, not
-   database-driven HTTP 500.
-3. API key create rejects negative `project_id` with HTTP 400.
-4. API key update applies the same unsafe-name and negative-`project_id`
-   rejection.
-5. Baseline security headers are present on wrapped HTTP responses.
-6. Root response no longer exposes hardcoded version data.
-7. Unknown GET paths that fall through the root pattern return standard 404 JSON
-   without hardcoded version data.
-8. Focused admin, middleware, and cmd tests pass.
-9. Broad Go regression and `git diff --check` pass.
-10. Open runtime/build-chain findings from the final test report remain tracked
-    separately and are not falsely marked fixed by this application-code batch.
+1. `P4-F08` is `Deferred to PRD5` in the PRD4 matrix and points to
+   `PRD5-UPSTREAM-001`.
+2. `P4-F09` is `Deferred to PRD5` in the PRD4 matrix and points to
+   `PRD5-SSO-001`.
+3. Batch 1H/1I harnesses remain recorded as accepted Canary/Sentinel work, not
+   deleted or reclassified as failed.
+4. `docs/planning/PRD5-BACKLOG.md` contains reopen prerequisites for real
+   upstream and real SSO target E2E.
+5. `P4-F11` no longer treats upstream/SSO real target execution as current PRD4
+   promotion work.
+6. Current-status and handoff docs state that no approved real environments are
+   currently available and that real target execution is out of PRD4 closeout.
+7. README, DOC-INVENTORY, and CODEBASE-MAP do not imply current PRD4 real
+   target execution.
+8. The PRD4 matrix count is expected to be 13 total rows with 9 `Canary passed`,
+   2 `Deferred to PRD5`, 1 `Fixed awaiting Canary`, and 1 `Planned`.
+9. `git diff --check` passes.

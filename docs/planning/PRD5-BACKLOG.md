@@ -26,6 +26,8 @@ capability is already accepted.
 | PRD5-SDK-001 | Full official SDK suite | Freezes API details too early if typed response schemas are still evolving | Stable OpenAPI response schemas, semver policy, generated SDK tests, compatibility commitments |
 | PRD5-ROLE-001 | New persistent roles and service accounts | Requires authority surfaces beyond current roles and project membership | Role taxonomy, permission matrix, route guard tests, service-account credential model, audit model |
 | PRD5-OPS-001 | Full maintenance/SLA/SLO incident operations | Needs incident lifecycle, planned maintenance, communication workflow, SLO policy, and notification governance | PRD4 Status Center baseline, operator roles, notification reliability, customer-visible policy |
+| PRD5-UPSTREAM-001 | Real upstream target-environment E2E | No approved real upstream environment, credentials, and model slugs are available for the current PRD4 closeout; PRD4 keeps only guarded harness assets | Approved OpenRouter and direct Anthropic credentials, target environment owner, cost/risk approval, non-stream/stream run plan, cleanup plan |
+| PRD5-SSO-001 | Real SSO target-environment E2E | No approved Logto or enterprise OIDC target, test user, and browser-login environment are available for the current PRD4 closeout; PRD4 keeps only guarded harness assets | Approved IdP tenant/client, test user, callback URL, target console/backend URLs, DB audit access, redaction review |
 | PRD5-ONTOLOGY-001 | Ontology-driven governance loop | Requires stable Flow, Trace, Identity, Policy, and Governance entities before ontology can control product behavior | PRD4 trace/event model, identity attribution, policy model, governance evidence model |
 | PRD5-SAAS-001 | Public SaaS, reseller, payment, invoice, coupons, campaigns, support CRM | Shifts product direction away from local-deploy enterprise MaaS | Explicit User product-direction change and separate SaaS/commercial PRD |
 
@@ -38,6 +40,9 @@ implemented:
 - PRD4 PlungeIn Observe/Act/Enrich ports can prepare plugin boundaries later.
 - PRD4 external Logto compatibility can prepare an optional identity deployment
   pattern later.
+- PRD4 real upstream and real SSO harnesses remain reusable future evidence
+  assets, but real target execution and acceptance are PRD5 backlog items after
+  the 2026-07-08 scope decision.
 - PRD4 Status Center can prepare SLA/SLO and full incident operations later.
 - PRD4 API key owner usage can prepare budget hard-blocking later.
 

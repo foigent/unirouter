@@ -23,8 +23,8 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required Codex/OpenClaw workflow |
-| `docs/agent-workflows/FIX-SIGNAL.md` | Latest verification signal: PRD4 Batch 1O API Key Input And Security Header Hardening |
-| `docs/agent-workflows/VERIFY-RESULT.md` | Latest OpenClaw verification result: PRD4 Batch 1N Developer Console Self Usage And Model Cost PASS 9/9 |
+| `docs/agent-workflows/FIX-SIGNAL.md` | Latest verification signal: PRD4 Batch 1P Scope Deferral And Closeout Alignment |
+| `docs/agent-workflows/VERIFY-RESULT.md` | Latest OpenClaw verification result: PRD4 Batch 1O API Key Input And Security Header Hardening PASS 8/8 |
 
 ## Product And Design References
 
@@ -72,8 +72,8 @@
 | `docs/tech-ref/20-prd3-product-glossary.md` | PRD3 canonical terminology for provider/channel, usage analytics, notification status, roles, and PRD4 boundaries |
 | `docs/tech-ref/21-prd4-quota-vocabulary.md` | PRD4 RPM/RPS/TPM/tokens/s quota vocabulary and `qps_limit` compatibility boundary |
 | `docs/tech-ref/22-prd4-plungein-port-contract.md` | PRD4 PlungeIn Observe/Act/Enrich/Decide/Mutate port boundaries and runtime-plugin deferral contract |
-| `docs/tech-ref/23-prd4-real-upstream-evidence.md` | PRD4 real upstream evidence harness, credential guardrails, and target-environment acceptance boundary |
-| `docs/tech-ref/24-prd4-real-sso-evidence.md` | PRD4 real SSO evidence harness, Logto/OIDC credential guardrails, and target-environment acceptance boundary |
+| `docs/tech-ref/23-prd4-real-upstream-evidence.md` | PRD4 real upstream evidence harness and credential guardrails; real target execution is deferred to PRD5 |
+| `docs/tech-ref/24-prd4-real-sso-evidence.md` | PRD4 real SSO evidence harness and Logto/OIDC credential guardrails; real target execution is deferred to PRD5 |
 | `docs/governance/ADR-TEMPLATE.md` | Architecture Decision Record template |
 | `docs/governance/adr/ADR-0001-prd4-plungein-ports.md` | PRD4 PlungeIn ports architecture decision |
 | `docs/governance/adr/ADR-0002-prd4-api-key-owner-usage.md` | PRD4 API key owner usage attribution decision draft |
