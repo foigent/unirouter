@@ -11,6 +11,7 @@
 | `docs/PRD-Phase4.md` | Formal PRD4 scope and implementation-phase reference |
 | `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` | Completed PRD4 accepted/deferred matrix and evidence boundaries |
 | `docs/planning/PRD5-BACKLOG.md` | Capabilities explicitly deferred beyond PRD4 |
+| `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md` | PRD5 X-Insight Gate A coordination decisions and access sequencing |
 | `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` | Completed PRD3 cleanup/optimization acceptance state |
 | `docs/PRD-Phase3.md` | Completed PRD3 cleanup/optimization scope |
 | `docs/planning/PRD3-CONSISTENCY-AUDIT.md` | PRD3 lineage audit and completed cleanup input |
@@ -39,6 +40,7 @@
 | `docs/PRD-Phase4.md` | PRD4 formal product requirements | Completed current PRD4 scope |
 | `docs/planning/PRD4-BACKLOG.md` | PRD4 candidate backlog | Source record for PRD4 scope discovery |
 | `docs/planning/PRD5-BACKLOG.md` | PRD5 backlog | Explicitly deferred capabilities and reopen prerequisites |
+| `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md` | PRD5 X-Insight Gate A coordination | Planning coordination for sanitized snapshot first, read-only DB/view later, structural fields before exporter/outbox, and no shared GitHub/ECS staging yet |
 | `docs/design/` | UI design decisions | Current design reference unless contradicted by code |
 | `docs/design/PRD2-DEVELOPER-CONSOLE-SPEC.md` | PRD2 Developer Console design spec | Draft for review |
 | `docs/ui/FRONTEND-UI-ARCHITECTURE-AUDIT.md` | Frontend UI/architecture audit | Current PRD1 closeout and PRD2 frontend architecture guidance |

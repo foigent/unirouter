@@ -1,29 +1,36 @@
-# VERIFY-RESULT.md - PRD5 X-Insight Scope Discovery
+# VERIFY-RESULT.md - PRD5 X-Insight Gate A Coordination
 
 **Verifier:** Canary
 **Date:** 2026-07-08
 **Signal:** `docs/agent-workflows/FIX-SIGNAL.md`
-**Result:** ✅ **PASS — 7/7**
+**Result:** ✅ **PASS — 8/8**
 
 ## Verification Summary
 
 | # | Instruction | Result | Evidence |
 |---|-------------|--------|----------|
-| 1 | Re-read boundary docs (PROJECT-HANDOFF, CURRENT-STATUS, PRD4-final-closeout, PRD5-BACKLOG) | ✅ PASS | `CURRENT-STATUS.md:3` — "PRD4 is complete for the confirmed current scope"; `PRD4-final-closeout-20260708.md` exists; `PRD5-BACKLOG.md` updated with X-Insight discovery items |
-| 2 | PRD4 remains closed, not reopened by PRD5/X-Insight scope discovery | ✅ PASS | PRD4 matrix unchanged: 13 rows (11 Canary passed, 2 Deferred to PRD5); `CURRENT-STATUS.md` still says "PRD4 is complete"; no PRD4 row status changed |
-| 3 | `PRD5-BACKLOG.md` contains 5 new discovery IDs as prerequisites/discovery, not accepted implementation | ✅ PASS | `PRD5-BACKLOG.md` contains `PRD5-XINSIGHT-001`, `PRD5-EVIDENCE-001`, `PRD5-PAYLOAD-001`, `PRD5-COMPARE-001`, `PRD5-TRACEUI-001` — all listed as deferred items with prerequisites, not accepted implementation |
-| 4 | Shared workspace exists with all required files | ✅ PASS | `README.md` ✅; `requests/2026-07-08-unirouter-prd5-integration-questions.md` ✅; `contracts/README.md` ✅; `responses/README.md` ✅; `decisions/README.md` ✅; `evidence/README.md` ✅ |
-| 5 | Shared README forbids production secrets, raw real prompt/response payloads, and authoritative source-code storage | ✅ PASS | `README.md` — "Do not use it to store: production secrets or credentials; raw prompt/response payloads from real users; authoritative source code" |
-| 6 | X-Insight request asks about all required topics | ✅ PASS | Ingestion path (Q1) ✅; trace/span/session/upstream ownership (Q2) ✅; schema versioning (Q3) ✅; `source_component`/`capture_mode`/`capture_gap` (Q4) ✅; `evidence_ref` (Q5) ✅; decision taxonomy (Q6) ✅; actor/delegation modeling (Q7) ✅; payload storage boundary (Q8) ✅; UI boundary (Q9) ✅; competitor research reuse (Q10) ✅; PRD5 priority recommendation (Q11) ✅ |
-| 7 | `git diff --check` passes for affected files | ✅ PASS | Clean output |
+| 1 | Re-read coordination doc, PRD5-BACKLOG, DOC-INVENTORY, README | ✅ PASS | `PRD5-XINSIGHT-GATE-A-COORDINATION.md` exists and contains all 4 decisions; `PRD5-BACKLOG.md:80-84` links coordination doc; `DOC-INVENTORY.md:14,43` lists it; `README.md:9` links it |
+| 2 | PRD4 remains closed, not reopened by Gate A coordination | ✅ PASS | Coordination doc explicitly states "It does not reopen PRD4"; PRD4 matrix unchanged (13 rows: 11 Canary passed, 2 Deferred to PRD5); no PRD4 row status changed |
+| 3 | Coordination doc records all 5 decisions | ✅ PASS | Sanitized snapshot first (Section 1) ✅; read-only DB/view after local import (Section 1 Step 2) ✅; no shared GitHub org strategy (Section 2) ✅; no shared ECS staging before local Gate A + CI (Section 3) ✅; structural fields before exporter/outbox (Section 4) ✅ |
+| 4 | PRD5-BACKLOG, DOC-INVENTORY, README link/mention coordination doc | ✅ PASS | `PRD5-BACKLOG.md:80-84` ✅; `DOC-INVENTORY.md:14,43` ✅; `README.md:9` ✅ |
+| 5 | Shared response file exists and contains no secrets/DSNs | ✅ PASS | `responses/2026-07-08-unirouter-gate-a-environment-and-prd5-coordination-response.md` exists; explicitly states "No production secrets, DSNs, raw prompts, raw responses, tokens, or customer data should be placed in this shared folder"; no DSN/credential values found in content |
+| 6 | Shared decision file is `Decision accepted` with User-confirmed conditions | ✅ PASS | `decisions/2026-07-08-prd5-structure-fields-before-exporter-proposed.md` — Status: "Decision accepted"; records sanitized snapshot first + read-only DB/view after + no shared GitHub org + no shared ECS staging |
+| 7 | No runtime/code/deployment file changed | ✅ PASS | Only docs files: `PRD5-XINSIGHT-GATE-A-COORDINATION.md`, `PRD5-BACKLOG.md`, `DOC-INVENTORY.md`, `README.md` |
+| 8 | `git diff --check` passes | ✅ PASS | Clean output |
+
+## Security Check
+
+- Response file reviewed for DSN/secret/token/credential leakage: **none found** ✅
+- Coordination doc reviewed for raw prompt/response exposure: **none** ✅
+- Snapshot generation plan keeps data out of source control unless User approves ✅
 
 ## Notes
 
-- 纯文档/工作区变更，不涉及运行时代码。
-- PRD4 矩阵计数稳定（13行，11 Canary passed, 2 Deferred to PRD5），无 Production verified 新增。
-- 共享工作区 `UniRouter-X-Insight Cooperation/` 在 UniRouter git repo 外部，已包含 X-Insight 的回应文件。
-- `PRD4-final-closeout-20260708.md` 存在，PRD4 关闭状态未被本 batch 重新打开。
+- 纯文档/协调变更，不涉及运行时代码。
+- PRD4 矩阵稳定，无 Production verified 新增。
+- 决策文件标题保留 "proposed" 后缀但内容已更新为 "Decision accepted"，与 User 确认一致。
+- 响应文件包含详细的表结构、游标建议和元数据安全边界，内容合理且无敏感数据。
 
 ## Conclusion
 
-**PRD5 X-Insight Scope Discovery: PASS 7/7.** PRD4 保持关闭状态，PRD5 发现项目已正确记录，共享工作区结构完整且安全约束到位。无需运行时代码验证。可以进入 Sentinel commit 流程。
+**PRD5 X-Insight Gate A Coordination: PASS 8/8.** PRD4 保持关闭，协调决策记录完整，共享工作区无泄露风险，索引文档一致。可以进入 Sentinel commit 流程。
