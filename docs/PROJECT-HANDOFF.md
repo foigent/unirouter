@@ -80,7 +80,7 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Current active verification signal: PRD5 Batch 1F Payload Capture Mode Configuration
+Current active verification signal: PRD5 Batch 1G Trusted Evidence Context Intake
 fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
 
 PRD4 is complete for the confirmed current scope. PRD5 must preserve the PRD4
@@ -129,7 +129,8 @@ PRD5 Batch 1E:
 PRD5 Batch 1F:
 
 - Scope: restricted payload capture mode configuration.
-- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Status: Canary PASS 11/11 in `docs/agent-workflows/VERIFY-RESULT.md`;
+  Sentinel merge reflected by `e9670ad` / PR #109.
 - Adds: `PAYLOAD_CAPTURE_MODE` defaulting to `metadata_only`; active support for
   `metadata_only` and `disabled` only; config validation that rejects unsupported
   payload modes; gateway trace/log writes that persist the configured
@@ -139,6 +140,20 @@ PRD5 Batch 1F:
   read-only credential, raw prompt/response capture, encrypted payload object
   store, redacted/hash/reference active modes, fabricated session/delegation
   facts, or PRD4 matrix changes.
+
+PRD5 Batch 1G:
+
+- Scope: default-off trusted evidence context intake for internal
+  trace/session/actor/delegation propagation.
+- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Adds: `EVIDENCE_CONTEXT_TRUST_SECRET`, `X-UniRouter-Evidence-Auth` trust gate,
+  bounded `X-UniRouter-*` evidence header parsing, trusted `Traceparent`
+  fallback, trace/log structural writes for trusted `trace_id`,
+  `parent_span_id`, `session_id`, `actor_*`, and `on_behalf_of`, plus
+  source-event hashes that include those fields.
+- Does not add: migration, new route, frontend behavior, exporter/outbox,
+  read-only credential, public inbound header trust by default, raw payload
+  capture, X-Insight runtime dependency, or PRD4 matrix changes.
 
 Latest completed PRD4 verification result is PRD4 Batch 1S Open Issue Boundary
 Closeout:

@@ -57,6 +57,11 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 		}
 		actorType, actorRefArg = actorEvidence(keyType, keyID, apiKey.OwnerUserID)
 	}
+	evidenceContext := traceutil.EvidenceFromContext(ctx)
+	if evidenceContext.ActorType != "" {
+		actorType = evidenceContext.ActorType
+		actorRefArg = nullableString(evidenceContext.ActorRef)
+	}
 	if severity != "warning" && severity != "error" {
 		severity = "info"
 	}
@@ -91,7 +96,11 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 		captureGap = "redacted"
 	}
 	traceID := requestID
+	if evidenceContext.TraceID != "" {
+		traceID = evidenceContext.TraceID
+	}
 	spanID := newEvidenceID()
+	parentSpanID := evidenceContext.ParentSpanID
 	sourceComponent := sourceComponentForTraceStage(stage)
 	evidenceRef := fmt.Sprintf("%s:request_trace_events:request_id:%s:span:%s", evidenceTraceRefSourceType, requestID, spanID)
 	upstreamRequestID := ""
@@ -99,31 +108,31 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 		upstreamRequestID = sanitizeUpstreamRequestID(upstreamRequestIDs[0])
 	}
 	payloadCaptureMode := relay.currentPayloadCaptureMode()
-	sourceEventHash := hashTraceEvent(requestID, eventType, stage, severity, model, requestedModel, provider, channel, statusCodeArg, latencyMs, upstreamRequestID, captureGap, payloadCaptureMode, metadataJSON)
+	sourceEventHash := hashTraceEvent(requestID, traceID, parentSpanID, eventType, stage, severity, model, requestedModel, provider, channel, statusCodeArg, latencyMs, upstreamRequestID, captureGap, actorType, stringFromNullable(actorRefArg), evidenceContext.OnBehalfOf, evidenceContext.SessionID, payloadCaptureMode, metadataJSON)
 	decisionKind, decisionResult, decisionReason := decisionEvidence(eventType, sanitizedMetadata)
 	if _, err := relay.db.Exec(ctx,
 		`INSERT INTO request_trace_events (
 			request_id, org_id, project_id, api_key_id, owner_user_id, key_type,
 			event_type, stage, severity, model, requested_model, provider, channel,
 			status_code, latency_ms, metadata,
-			trace_id, span_id, schema_version, source_component, capture_mode,
+			trace_id, span_id, parent_span_id, schema_version, source_component, capture_mode,
 			capture_gap, evidence_ref, upstream_request_id, decision_kind, decision_result, decision_reason,
-			actor_type, actor_ref, payload_capture_mode, source_event_hash
+			actor_type, actor_ref, on_behalf_of, session_id, payload_capture_mode, source_event_hash
 		)
 		 VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9, $10, $11, $12, $13,
 			$14, $15, $16,
-			$17, $18, $19, $20, $21,
-			$22, $23, $24, $25, $26, $27,
-			$28, $29, $30, $31
+			$17, $18, $19, $20, $21, $22,
+			$23, $24, $25, $26, $27, $28,
+			$29, $30, $31, $32, $33, $34
 		)`,
 		requestID, orgID, projectIDArg, keyIDArg, ownerUserIDArg, keyType,
 		eventType, stage, severity, model, requestedModel, provider, channel,
 		statusCodeArg, latencyMs, string(metadataJSON),
-		traceID, spanID, evidenceSchemaVersion, sourceComponent, evidenceCaptureModeNative,
+		traceID, spanID, nullableString(parentSpanID), evidenceSchemaVersion, sourceComponent, evidenceCaptureModeNative,
 		nullableString(captureGap), evidenceRef, nullableString(upstreamRequestID), nullableString(decisionKind), nullableString(decisionResult), nullableString(decisionReason),
-		actorType, actorRefArg, payloadCaptureMode, sourceEventHash,
+		actorType, actorRefArg, nullableString(evidenceContext.OnBehalfOf), nullableString(evidenceContext.SessionID), payloadCaptureMode, sourceEventHash,
 	); err != nil {
 		logger.New(logger.Fields{RequestID: requestID, OrgID: uint(orgID), Module: "trace"}).Warn("Failed to record trace event %s: %v", eventType, err)
 	}
@@ -252,9 +261,11 @@ func newEvidenceID() string {
 	return hex.EncodeToString(sum[:8])
 }
 
-func hashTraceEvent(requestID, eventType, stage, severity, model, requestedModel, provider, channel string, statusCode interface{}, latencyMs int, upstreamRequestID, captureGap, payloadCaptureMode string, metadataJSON []byte) string {
+func hashTraceEvent(requestID, traceID, parentSpanID, eventType, stage, severity, model, requestedModel, provider, channel string, statusCode interface{}, latencyMs int, upstreamRequestID, captureGap, actorType, actorRef, onBehalfOf, sessionID, payloadCaptureMode string, metadataJSON []byte) string {
 	payload := struct {
 		RequestID         string      `json:"request_id"`
+		TraceID           string      `json:"trace_id"`
+		ParentSpanID      string      `json:"parent_span_id"`
 		EventType         string      `json:"event_type"`
 		Stage             string      `json:"stage"`
 		Severity          string      `json:"severity"`
@@ -266,21 +277,29 @@ func hashTraceEvent(requestID, eventType, stage, severity, model, requestedModel
 		LatencyMS         int         `json:"latency_ms"`
 		UpstreamRequestID string      `json:"upstream_request_id"`
 		CaptureGap        string      `json:"capture_gap"`
+		ActorType         string      `json:"actor_type"`
+		ActorRef          string      `json:"actor_ref"`
+		OnBehalfOf        string      `json:"on_behalf_of"`
+		SessionID         string      `json:"session_id"`
 		PayloadMode       string      `json:"payload_capture_mode"`
 		Metadata          string      `json:"metadata"`
 	}{
-		RequestID: requestID, EventType: eventType, Stage: stage, Severity: severity,
+		RequestID: requestID, TraceID: traceID, ParentSpanID: parentSpanID, EventType: eventType, Stage: stage, Severity: severity,
 		Model: model, RequestedModel: requestedModel, Provider: provider, Channel: channel,
-		StatusCode: statusCode, LatencyMS: latencyMs, UpstreamRequestID: upstreamRequestID, CaptureGap: captureGap, PayloadMode: payloadCaptureMode, Metadata: string(metadataJSON),
+		StatusCode: statusCode, LatencyMS: latencyMs, UpstreamRequestID: upstreamRequestID, CaptureGap: captureGap,
+		ActorType: actorType, ActorRef: actorRef, OnBehalfOf: onBehalfOf, SessionID: sessionID, PayloadMode: payloadCaptureMode,
+		Metadata: string(metadataJSON),
 	}
 	encoded, _ := json.Marshal(payload)
 	sum := sha256.Sum256(encoded)
 	return hex.EncodeToString(sum[:])
 }
 
-func hashCallLogEvidence(requestID string, orgID int64, projectID interface{}, keyID int64, ownerUserID interface{}, keyType, model, requestedModel, provider, channel string, promptTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs int, usageSource string, isStream bool, estimatedTokens int, usageConfidence float64, upstreamRequestID, payloadCaptureMode string) string {
+func hashCallLogEvidence(requestID string, orgID int64, projectID interface{}, keyID int64, ownerUserID interface{}, keyType, model, requestedModel, provider, channel string, promptTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs int, usageSource string, isStream bool, estimatedTokens int, usageConfidence float64, upstreamRequestID, traceID, sessionID, actorType, actorRef, onBehalfOf, payloadCaptureMode string) string {
 	payload := struct {
 		RequestID         string      `json:"request_id"`
+		TraceID           string      `json:"trace_id"`
+		SessionID         string      `json:"session_id"`
 		OrgID             int64       `json:"org_id"`
 		ProjectID         interface{} `json:"project_id"`
 		KeyID             int64       `json:"api_key_id"`
@@ -301,14 +320,18 @@ func hashCallLogEvidence(requestID string, orgID int64, projectID interface{}, k
 		EstimatedTokens   int         `json:"estimated_tokens"`
 		UsageConfidence   float64     `json:"usage_confidence"`
 		UpstreamRequestID string      `json:"upstream_request_id"`
+		ActorType         string      `json:"actor_type"`
+		ActorRef          string      `json:"actor_ref"`
+		OnBehalfOf        string      `json:"on_behalf_of"`
 		PayloadMode       string      `json:"payload_capture_mode"`
 	}{
-		RequestID: requestID, OrgID: orgID, ProjectID: projectID, KeyID: keyID,
+		RequestID: requestID, TraceID: traceID, SessionID: sessionID, OrgID: orgID, ProjectID: projectID, KeyID: keyID,
 		OwnerUserID: ownerUserID, KeyType: keyType, Model: model, RequestedModel: requestedModel,
 		Provider: provider, Channel: channel, PromptTokens: promptTokens, CompletionTokens: completionTokens,
 		CostCents: costCents, StatusCode: statusCode, LatencyMS: latencyMs, TTFTMS: ttftMs,
 		UsageSource: usageSource, IsStream: isStream, EstimatedTokens: estimatedTokens, UsageConfidence: usageConfidence,
-		UpstreamRequestID: upstreamRequestID, PayloadMode: payloadCaptureMode,
+		UpstreamRequestID: upstreamRequestID, ActorType: actorType, ActorRef: actorRef, OnBehalfOf: onBehalfOf,
+		PayloadMode: payloadCaptureMode,
 	}
 	encoded, _ := json.Marshal(payload)
 	sum := sha256.Sum256(encoded)
@@ -336,4 +359,14 @@ func nullableString(value string) interface{} {
 		return nil
 	}
 	return value
+}
+
+func stringFromNullable(value interface{}) string {
+	if value == nil {
+		return ""
+	}
+	if s, ok := value.(string); ok {
+		return s
+	}
+	return fmt.Sprint(value)
 }

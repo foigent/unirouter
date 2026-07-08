@@ -1,8 +1,9 @@
 # PRD5 Implementation Plan
 
 > Date: 2026-07-08
-> Status: Batch 1A/1B/1C, Batch 1D, and Batch 1E Canary/Sentinel complete.
-> Batch 1F payload capture mode configuration fixed awaiting Canary.
+> Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, and Batch 1F
+> Canary/Sentinel complete. Batch 1G trusted evidence context intake fixed
+> awaiting Canary.
 > Scope owner: UniRouter. X-Insight remains a separate project and owns broader
 > observability/governance product surfaces.
 
@@ -169,9 +170,9 @@ Risk: R3 because it changes runtime configuration validation and gateway
 trace/log evidence writes, but it does not change routing, billing, provider
 dispatch, response payloads, API routes, frontend behavior, or DB schema.
 
-Status: fixed awaiting Canary.
+Status: Canary/Sentinel complete (`e9670ad` / PR #109).
 
-Implemented in this round:
+Implemented:
 
 - add `PAYLOAD_CAPTURE_MODE` to config with default `metadata_only`;
 - accept only `metadata_only` and `disabled` in the active implementation;
@@ -196,6 +197,40 @@ Non-goals:
 - no fabricated session/delegation/business-chain facts;
 - no PRD4 matrix/status change.
 
+### Batch 1G: Trusted Evidence Context Intake
+
+Risk: R3 because it changes gateway evidence write inputs and config validation,
+but it does not change routing, billing, provider dispatch, response payloads,
+API routes, frontend behavior, or DB schema.
+
+Status: fixed awaiting Canary.
+
+Implemented in this round:
+
+- add `EVIDENCE_CONTEXT_TRUST_SECRET` config, default empty/disabled;
+- reject configured trust secrets shorter than 16 bytes;
+- accept inbound evidence context only when `X-UniRouter-Evidence-Auth` matches
+  the configured shared secret;
+- parse bounded printable non-whitespace `X-UniRouter-*` evidence headers for
+  trace ID, parent span ID, session ID, actor type/ref, and `on_behalf_of`;
+- parse trusted W3C `Traceparent` as fallback trace/parent-span source;
+- write trusted context into existing `request_trace_events` and `call_logs`
+  structural fields;
+- include trusted context in source-event hashes;
+- document `.env.example`, `docker-compose.yml`, and deployment runbook usage.
+
+Non-goals:
+
+- no public inbound request-header trust by default;
+- no new migration;
+- no new API route;
+- no frontend behavior change;
+- no exporter/outbox;
+- no read-only DB/view credential handoff;
+- no raw prompt/response capture;
+- no X-Insight runtime dependency;
+- no PRD4 matrix/status change.
+
 ### Later Payload Policy Modes
 
 Risk: R3 if schema/API changes; R4 only if raw payload capture is introduced,
@@ -213,7 +248,7 @@ Planned later:
 - support redacted/hash/reference modes;
 - document enterprise opt-in requirements for raw payload capture.
 
-### Batch 1G: X-Insight Gate A Feedback Incorporation
+### Batch 1H: X-Insight Gate A Feedback Incorporation
 
 Risk: depends on findings.
 
@@ -230,7 +265,7 @@ Possible outcomes:
 - define cursor export API;
 - design non-blocking exporter/outbox.
 
-### Batch 1H: Real Target Evidence
+### Batch 1I: Real Target Evidence
 
 Prerequisites:
 
@@ -252,7 +287,7 @@ Use existing PRD4 harnesses, but record target evidence under PRD5.
 
 ## Current Blocking Conditions
 
-There is no blocking condition for UniRouter Batch 1A through Batch 1F.
+There is no blocking condition for UniRouter Batch 1A through Batch 1G.
 
 These later actions are gated:
 

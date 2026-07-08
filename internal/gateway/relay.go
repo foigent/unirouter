@@ -48,9 +48,10 @@ type Relay struct {
 	webhookURL  string
 	alertThresh int
 
-	traceEventsEnabled   bool
-	traceEventSampleRate float64
-	payloadCaptureMode   string
+	traceEventsEnabled         bool
+	traceEventSampleRate       float64
+	payloadCaptureMode         string
+	evidenceContextTrustSecret string
 }
 
 // NewRelay creates a new Relay.
@@ -105,6 +106,22 @@ func (relay *Relay) currentPayloadCaptureMode() string {
 		return traceutil.PayloadCaptureModeMetadataOnly
 	}
 	return mode
+}
+
+// SetEvidenceContextTrustSecret enables trusted inbound evidence context
+// headers. Empty keeps inbound evidence context disabled.
+func (relay *Relay) SetEvidenceContextTrustSecret(secret string) {
+	if relay == nil {
+		return
+	}
+	relay.evidenceContextTrustSecret = strings.TrimSpace(secret)
+}
+
+func (relay *Relay) contextWithTrustedEvidence(ctx context.Context, header http.Header) context.Context {
+	if relay == nil {
+		return ctx
+	}
+	return traceutil.ContextWithEvidence(ctx, traceutil.ExtractTrustedEvidenceContext(header, relay.evidenceContextTrustSecret))
 }
 
 var upstreamRequestIDHeaderNames = []string{
@@ -241,7 +258,7 @@ type Message struct {
 
 // HandleChatCompletion handles POST /v1/chat/completions.
 func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+	ctx := relay.contextWithTrustedEvidence(r.Context(), r.Header)
 	requestStart := time.Now()
 	requestID := middleware.GetRequestIDFromContext(ctx)
 	w.Header().Set("X-Request-ID", requestID)
@@ -997,34 +1014,43 @@ func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, 
 		}
 	}
 	actorType, actorRefArg := actorEvidence(keyType, keyID, ownerUserID)
+	evidenceContext := traceutil.EvidenceFromContext(ctx)
+	if evidenceContext.ActorType != "" {
+		actorType = evidenceContext.ActorType
+		actorRefArg = nullableString(evidenceContext.ActorRef)
+	}
 	usageSource = metering.NormalizeUsageSource(usageSource)
 	usageConfidence := metering.SourceConfidence(usageSource)
 	upstreamRequestID = sanitizeUpstreamRequestID(upstreamRequestID)
 	payloadCaptureMode := relay.currentPayloadCaptureMode()
-	sourceEventHash := hashCallLogEvidence(requestID, orgID, projectIDArg, keyID, ownerUserIDArg, keyType, model, requestedModel, provider, channelName, promptTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs, usageSource, isStream, estimatedTokens, usageConfidence, upstreamRequestID, payloadCaptureMode)
+	traceID := requestID
+	if evidenceContext.TraceID != "" {
+		traceID = evidenceContext.TraceID
+	}
+	sourceEventHash := hashCallLogEvidence(requestID, orgID, projectIDArg, keyID, ownerUserIDArg, keyType, model, requestedModel, provider, channelName, promptTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs, usageSource, isStream, estimatedTokens, usageConfidence, upstreamRequestID, traceID, evidenceContext.SessionID, actorType, stringFromNullable(actorRefArg), evidenceContext.OnBehalfOf, payloadCaptureMode)
 	_, err := relay.db.Exec(ctx,
 		`INSERT INTO call_logs (
 			request_id, org_id, project_id, api_key_id, owner_user_id, key_type,
 			model, requested_model, provider, channel, prompt_tokens, completion_tokens,
 			total_tokens, cost_cents, status_code, latency_ms, ttft_ms, usage_source,
 			is_stream, ip_address, estimated_tokens, usage_confidence,
-			trace_id, schema_version, capture_mode, evidence_ref, upstream_request_id,
-			actor_type, actor_ref, payload_capture_mode, source_event_hash
+			trace_id, session_id, schema_version, capture_mode, evidence_ref, upstream_request_id,
+			actor_type, actor_ref, on_behalf_of, payload_capture_mode, source_event_hash
 		)
 		 VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9, $10, $11, $12,
 			$13, $14, $15, $16, $17, $18,
 			$19, $20, $21, $22,
-			$23, $24, $25, $26, $27,
-			$28, $29, $30, $31
+			$23, $24, $25, $26, $27, $28,
+			$29, $30, $31, $32, $33
 		)`,
 		requestID, orgID, projectIDArg, keyID, ownerUserIDArg, keyType,
 		model, requestedModel, provider, channelName, promptTokens, completionTokens,
 		promptTokens+completionTokens, costCents, statusCode, latencyMs, ttftMs, usageSource,
 		isStream, clientIP, estimatedTokens, usageConfidence,
-		requestID, evidenceSchemaVersion, evidenceCaptureModeNative, fmt.Sprintf("%s:call_logs:request_id:%s", evidenceTraceRefSourceType, requestID),
-		nullableString(upstreamRequestID), actorType, actorRefArg, payloadCaptureMode, sourceEventHash,
+		traceID, nullableString(evidenceContext.SessionID), evidenceSchemaVersion, evidenceCaptureModeNative, fmt.Sprintf("%s:call_logs:request_id:%s", evidenceTraceRefSourceType, requestID),
+		nullableString(upstreamRequestID), actorType, actorRefArg, nullableString(evidenceContext.OnBehalfOf), payloadCaptureMode, sourceEventHash,
 	)
 	if err != nil {
 		reqLog.Error("Failed to record request log: %v", err)
@@ -1082,7 +1108,7 @@ type EmbeddingsRequest struct {
 
 // HandleEmbeddings handles POST /v1/embeddings.
 func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+	ctx := relay.contextWithTrustedEvidence(r.Context(), r.Header)
 	requestStart := time.Now()
 	requestID := middleware.GetRequestIDFromContext(ctx)
 

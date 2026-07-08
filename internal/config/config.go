@@ -37,24 +37,25 @@ type Config struct {
 	EncryptionKey    string
 
 	// Runtime exposure hardening
-	AdminCORSAllowedOrigins []string
-	MetricsEnabled          bool
-	MetricsAllowedCIDRs     []string
-	LoginRateLimitEnabled   bool
-	LoginRateLimitWindowSec int
-	LoginRateLimitIP        int
-	LoginRateLimitUser      int
-	TraceEventsEnabled      bool
-	TraceEventSampleRate    float64
-	TraceEventRetentionDays int
-	PayloadCaptureMode      string
-	RuntimeEnvironment      string
-	RuntimeDeploymentMode   string
-	RuntimeDeploymentRole   string
-	RuntimeVersion          string
-	RuntimeCommit           string
-	PrometheusURL           string
-	GrafanaURL              string
+	AdminCORSAllowedOrigins    []string
+	MetricsEnabled             bool
+	MetricsAllowedCIDRs        []string
+	LoginRateLimitEnabled      bool
+	LoginRateLimitWindowSec    int
+	LoginRateLimitIP           int
+	LoginRateLimitUser         int
+	TraceEventsEnabled         bool
+	TraceEventSampleRate       float64
+	TraceEventRetentionDays    int
+	PayloadCaptureMode         string
+	EvidenceContextTrustSecret string
+	RuntimeEnvironment         string
+	RuntimeDeploymentMode      string
+	RuntimeDeploymentRole      string
+	RuntimeVersion             string
+	RuntimeCommit              string
+	PrometheusURL              string
+	GrafanaURL                 string
 
 	// License
 	LicensePublicKey         string
@@ -163,6 +164,9 @@ func (c *Config) Validate() error {
 	if !traceutil.IsSupportedPayloadCaptureMode(c.PayloadCaptureMode) {
 		return fmt.Errorf("PAYLOAD_CAPTURE_MODE must be one of: %s", traceutil.SupportedPayloadCaptureModes())
 	}
+	if c.EvidenceContextTrustSecret != "" && len(c.EvidenceContextTrustSecret) < 16 {
+		return fmt.Errorf("EVIDENCE_CONTEXT_TRUST_SECRET must be at least 16 bytes when set")
+	}
 	if c.LogRetentionDays < 0 {
 		return fmt.Errorf("LOG_RETENTION_DAYS must be >= 0")
 	}
@@ -218,24 +222,25 @@ func Load() (*Config, error) {
 		APIKeyHashSecret: getEnvStr("API_KEY_HASH_SECRET", jwtSecret),
 		EncryptionKey:    getEnvStr("ENCRYPTION_KEY", ""),
 
-		AdminCORSAllowedOrigins: splitCSVAllowEmpty(getEnvStr("ADMIN_CORS_ALLOWED_ORIGINS", "")),
-		MetricsEnabled:          getEnvBool("METRICS_ENABLED", true),
-		MetricsAllowedCIDRs:     splitCSVAllowEmpty(getEnvStr("METRICS_ALLOWED_CIDRS", "")),
-		LoginRateLimitEnabled:   getEnvBool("LOGIN_RATE_LIMIT_ENABLED", true),
-		LoginRateLimitWindowSec: getEnvInt("LOGIN_RATE_LIMIT_WINDOW_SECONDS", 60),
-		LoginRateLimitIP:        getEnvInt("LOGIN_RATE_LIMIT_IP_REQUESTS", 30),
-		LoginRateLimitUser:      getEnvInt("LOGIN_RATE_LIMIT_USER_REQUESTS", 10),
-		TraceEventsEnabled:      getEnvBool("TRACE_EVENTS_ENABLED", true),
-		TraceEventSampleRate:    getEnvFloat("TRACE_EVENT_SAMPLE_RATE", 1),
-		TraceEventRetentionDays: getEnvInt("TRACE_EVENT_RETENTION_DAYS", logRetentionDays),
-		PayloadCaptureMode:      traceutil.NormalizePayloadCaptureMode(getEnvStr("PAYLOAD_CAPTURE_MODE", traceutil.PayloadCaptureModeMetadataOnly)),
-		RuntimeEnvironment:      getEnvStr("RUNTIME_ENVIRONMENT", "unspecified"),
-		RuntimeDeploymentMode:   getEnvStr("RUNTIME_DEPLOYMENT_MODE", "single-node"),
-		RuntimeDeploymentRole:   getEnvStr("RUNTIME_DEPLOYMENT_ROLE", "stable"),
-		RuntimeVersion:          getEnvStr("RUNTIME_VERSION", ""),
-		RuntimeCommit:           getEnvStr("RUNTIME_COMMIT", ""),
-		PrometheusURL:           strings.TrimRight(getEnvStr("PROMETHEUS_URL", ""), "/"),
-		GrafanaURL:              strings.TrimRight(getEnvStr("GRAFANA_URL", ""), "/"),
+		AdminCORSAllowedOrigins:    splitCSVAllowEmpty(getEnvStr("ADMIN_CORS_ALLOWED_ORIGINS", "")),
+		MetricsEnabled:             getEnvBool("METRICS_ENABLED", true),
+		MetricsAllowedCIDRs:        splitCSVAllowEmpty(getEnvStr("METRICS_ALLOWED_CIDRS", "")),
+		LoginRateLimitEnabled:      getEnvBool("LOGIN_RATE_LIMIT_ENABLED", true),
+		LoginRateLimitWindowSec:    getEnvInt("LOGIN_RATE_LIMIT_WINDOW_SECONDS", 60),
+		LoginRateLimitIP:           getEnvInt("LOGIN_RATE_LIMIT_IP_REQUESTS", 30),
+		LoginRateLimitUser:         getEnvInt("LOGIN_RATE_LIMIT_USER_REQUESTS", 10),
+		TraceEventsEnabled:         getEnvBool("TRACE_EVENTS_ENABLED", true),
+		TraceEventSampleRate:       getEnvFloat("TRACE_EVENT_SAMPLE_RATE", 1),
+		TraceEventRetentionDays:    getEnvInt("TRACE_EVENT_RETENTION_DAYS", logRetentionDays),
+		PayloadCaptureMode:         traceutil.NormalizePayloadCaptureMode(getEnvStr("PAYLOAD_CAPTURE_MODE", traceutil.PayloadCaptureModeMetadataOnly)),
+		EvidenceContextTrustSecret: getEnvStr("EVIDENCE_CONTEXT_TRUST_SECRET", ""),
+		RuntimeEnvironment:         getEnvStr("RUNTIME_ENVIRONMENT", "unspecified"),
+		RuntimeDeploymentMode:      getEnvStr("RUNTIME_DEPLOYMENT_MODE", "single-node"),
+		RuntimeDeploymentRole:      getEnvStr("RUNTIME_DEPLOYMENT_ROLE", "stable"),
+		RuntimeVersion:             getEnvStr("RUNTIME_VERSION", ""),
+		RuntimeCommit:              getEnvStr("RUNTIME_COMMIT", ""),
+		PrometheusURL:              strings.TrimRight(getEnvStr("PROMETHEUS_URL", ""), "/"),
+		GrafanaURL:                 strings.TrimRight(getEnvStr("GRAFANA_URL", ""), "/"),
 
 		LicensePublicKey:         getEnvStr("LICENSE_PUBLIC_KEY", ""),
 		LicenseExpiryWarningDays: getEnvInt("LICENSE_EXPIRY_WARNING_DAYS", 30),
