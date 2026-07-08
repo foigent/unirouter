@@ -6,7 +6,10 @@
 > And Model Cost passed Canary 9/9 and Sentinel merge is reflected by
 > `6194062` / PR #98. Batch 1O API Key Input And Security Header Hardening
 > passed Canary 8/8 and Sentinel merge is reflected by `59721d7` / PR #99 for
-> `P4-F12` / `PRD4-SECURITY-001`.
+> `P4-F12` / `PRD4-SECURITY-001`. Batch 1P Scope Deferral And Closeout
+> Alignment passed Canary 6/6 and Sentinel merge is reflected by `9e2927f` /
+> PR #100 for `P4-F08` / `P4-F09` / `P4-F13`. Batch 1Q Production Evidence
+> Promotion is fixed awaiting Canary for `P4-F11`.
 > User decision on 2026-07-08: because no approved real upstream or real SSO
 > target environment is currently available, `P4-F08` / `P4-F09` real target
 > execution is not part of the current PRD4 closeout. Batch 1H/1I harness assets
@@ -433,6 +436,12 @@ Acceptance:
 - A matrix row only moves to Production verified when target-environment evidence
   exists.
 - Local-only or mock-only smoke remains E2E accepted or lower.
+
+Batch 1Q implementation note: `docs/ops/evidence/PRD4-B1Q-production-evidence-promotion-20260708.md`
+classifies the current target evidence without promoting any PRD4 matrix row to
+`Production verified`. The final target report is useful target-smoke evidence
+for selected PRD4 areas, but it covers the Batch 1N target state, Batch 1O fixed
+later application-code findings, and `PRD4-RUNTIME-002` remains open.
 
 ### P4-F12: Security, Privacy, And Redaction Guardrails
 

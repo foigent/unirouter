@@ -23,8 +23,8 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required Codex/OpenClaw workflow |
-| `docs/agent-workflows/FIX-SIGNAL.md` | Latest verification signal: PRD4 Batch 1P Scope Deferral And Closeout Alignment |
-| `docs/agent-workflows/VERIFY-RESULT.md` | Latest OpenClaw verification result: PRD4 Batch 1O API Key Input And Security Header Hardening PASS 8/8 |
+| `docs/agent-workflows/FIX-SIGNAL.md` | Latest verification signal: PRD4 Batch 1Q Production Evidence Promotion |
+| `docs/agent-workflows/VERIFY-RESULT.md` | Latest OpenClaw verification result: PRD4 Batch 1P Scope Deferral And Closeout Alignment PASS 6/6 |
 
 ## Product And Design References
 
@@ -97,6 +97,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | `docs/ops/MVP-TEST-EXECUTION.md` | Historical E2E evidence plus pending cases; reconcile into acceptance matrix before treating as current |
 | `docs/ops/evidence/COMPREHENSIVE-TEST-REPORT-20260705.md` | Canary comprehensive code/deployment/security regression evidence; active risks are tracked in `docs/issues/OPEN-ISSUES.md` |
 | `docs/ops/evidence/UNIROUTERS-TEST-REPORT-FINAL-20260708.md` | Target-environment final test report for Alibaba Cloud PRD4 Batch 1N / PR #98; positive evidence and follow-up risks are reconciled into `CURRENT-STATUS.md`, `PRD4-ACCEPTANCE-MATRIX.md`, and `OPEN-ISSUES.md` |
+| `docs/ops/evidence/PRD4-B1Q-production-evidence-promotion-20260708.md` | PRD4 Batch 1Q production evidence promotion decision; classifies target-smoke evidence and records that no PRD4 row is promoted to `Production verified` |
 
 ## Agent Workflow Files
 

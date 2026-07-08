@@ -1,24 +1,26 @@
-# FIX-SIGNAL.md - PRD4 Batch 1P Scope Deferral And Closeout Alignment
+# FIX-SIGNAL.md - PRD4 Batch 1Q Production Evidence Promotion
 
 **Fixer:** main agent
 **Date:** file system timestamp is authoritative
-**Risk level:** R2 acceptance-boundary documentation
-**Scope:** P4-F08 / P4-F09 deferral, PRD5 backlog alignment, PRD4 closeout planning
+**Risk level:** R2 acceptance-boundary documentation/evidence classification
+**Scope:** P4-F11 Production Evidence Promotion
 
 ## Verification Request
 
-Please verify PRD4 Batch 1P: Scope Deferral And Closeout Alignment.
+Please verify PRD4 Batch 1Q: Production Evidence Promotion.
 
-This is a documentation/status-boundary change only. It implements the User's
-2026-07-08 decision:
+This is a documentation/evidence-boundary change only. It classifies the target
+evidence currently available for PRD4 and prevents unsupported `Production
+verified` claims.
 
-- no approved real upstream target environment exists now;
-- no approved real SSO target environment exists now;
-- `P4-F08` and `P4-F09` real target execution must not remain current PRD4
-  implementation gaps;
-- PRD4 keeps Batch 1H/1I guarded harness assets only;
-- real upstream target E2E and real SSO target E2E move to PRD5/unimplemented
-  scope.
+The key decision is:
+
+- `docs/ops/evidence/UNIROUTERS-TEST-REPORT-FINAL-20260708.md` is useful
+  target-smoke evidence for selected PRD4 areas;
+- no PRD4 matrix row is promoted to `Production verified` in Batch 1Q;
+- `PRD4-RUNTIME-002` remains open and blocks runtime/observability production
+  promotion;
+- `P4-F08` / `P4-F09` real target execution remains deferred to PRD5.
 
 ## Scope To Verify
 
@@ -27,27 +29,23 @@ Docs/status files:
 - `docs/agent-workflows/FIX-SIGNAL.md`
 - `docs/PRD-Phase4.md`
 - `docs/ops/PRD4-ACCEPTANCE-MATRIX.md`
-- `docs/planning/PRD5-BACKLOG.md`
-- `docs/planning/PRD4-BACKLOG.md`
-- `docs/issues/OPEN-ISSUES.md`
+- `docs/ops/evidence/PRD4-B1Q-production-evidence-promotion-20260708.md`
 - `docs/ops/CURRENT-STATUS.md`
 - `docs/PROJECT-HANDOFF.md`
 - `docs/DOC-INVENTORY.md`
 - `docs/README.md`
-- `docs/CODEBASE-MAP.md`
 
 ## Expected Behavior
 
-- `P4-F08` and `P4-F09` are no longer represented as current PRD4
-  implementation gaps requiring real target execution.
-- `P4-F08` and `P4-F09` rows in the PRD4 matrix are `Deferred to PRD5`.
-- Batch 1H and Batch 1I remain accurately described as accepted guarded harness
-  assets.
-- `docs/planning/PRD5-BACKLOG.md` has explicit reopenable items for real
-  upstream target E2E and real SSO target E2E.
-- `P4-F11` Production Evidence Promotion excludes `P4-F08` / `P4-F09` real
-  target execution from current PRD4 closeout.
-- Index and handoff docs route future real upstream/SSO target runs to PRD5.
+- `P4-F11` is `Fixed awaiting Canary` in the PRD4 matrix.
+- `docs/ops/evidence/PRD4-B1Q-production-evidence-promotion-20260708.md`
+  exists and records the production-evidence promotion decision.
+- The evidence decision states that no PRD4 row is promoted to `Production
+  verified` in Batch 1Q.
+- The final target report is classified as target-smoke evidence, not a clean
+  production-verification artifact for the current post-1P repo state.
+- `PRD4-RUNTIME-002`, `PRD5-UPSTREAM-001`, and `PRD5-SSO-001` remain explicit
+  boundaries.
 
 ## Non-Scope
 
@@ -55,19 +53,18 @@ Do not expect this batch to:
 
 - modify Go, frontend, migrations, API routes, runtime behavior, deployment
   scripts, or evidence harness code;
-- delete Batch 1H/1I harnesses or historical evidence;
-- claim real upstream or real SSO E2E acceptance;
-- claim Production verified status for upstream, SSO, license, webhook, HA/DR,
-  runtime, or UI rows;
+- mark any PRD4 row `Production verified`;
+- run a target deployment or target smoke;
 - resolve `PRD4-RUNTIME-002`, `PRD4-INFRA-001`, `PRD4-DEPLOY-001`, or
-  `PRD4-PLUGIN-001`.
+  `PRD4-PLUGIN-001`;
+- reopen `P4-F08` or `P4-F09`.
 
 ## Required Verification Commands
 
 ```bash
 cd /Users/m4/Desktop/projects/UniRouter
 
-rg -n "PRD5-UPSTREAM-001|PRD5-SSO-001|P4-F08|P4-F09|Deferred to PRD5|real target execution|real upstream/SSO harness|2026-07-08" docs/PRD-Phase4.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/planning/PRD5-BACKLOG.md docs/planning/PRD4-BACKLOG.md docs/issues/OPEN-ISSUES.md docs/ops/CURRENT-STATUS.md docs/PROJECT-HANDOFF.md docs/DOC-INVENTORY.md docs/README.md docs/CODEBASE-MAP.md docs/agent-workflows/FIX-SIGNAL.md
+rg -n "P4-F11|Production Evidence Promotion|PRD4-B1Q-production-evidence-promotion-20260708|No PRD4 matrix row is promoted|Target smoke evidence only|PRD4-RUNTIME-002|PRD5-UPSTREAM-001|PRD5-SSO-001" docs/ops/evidence/PRD4-B1Q-production-evidence-promotion-20260708.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/ops/CURRENT-STATUS.md docs/PRD-Phase4.md docs/PROJECT-HANDOFF.md docs/DOC-INVENTORY.md docs/README.md docs/agent-workflows/FIX-SIGNAL.md
 
 awk -F'|' '/^\| P4-F[0-9]+ / {gsub(/^ +| +$/, "", $4); count[$4]++; total++} END {print "total=" total; for (s in count) print s "=" count[s]}' docs/ops/PRD4-ACCEPTANCE-MATRIX.md
 
@@ -76,20 +73,16 @@ git diff --check
 
 ## Acceptance Criteria
 
-1. `P4-F08` is `Deferred to PRD5` in the PRD4 matrix and points to
-   `PRD5-UPSTREAM-001`.
-2. `P4-F09` is `Deferred to PRD5` in the PRD4 matrix and points to
+1. `P4-F11` is `Fixed awaiting Canary` in the PRD4 matrix.
+2. The Batch 1Q evidence file exists and states that no PRD4 matrix row is
+   promoted to `Production verified`.
+3. The final target report is classified as target-smoke evidence for selected
+   areas, not as current production verification.
+4. `PRD4-RUNTIME-002` remains open and is not marked resolved by Batch 1Q.
+5. `P4-F08` / `P4-F09` remain deferred to `PRD5-UPSTREAM-001` /
    `PRD5-SSO-001`.
-3. Batch 1H/1I harnesses remain recorded as accepted Canary/Sentinel work, not
-   deleted or reclassified as failed.
-4. `docs/planning/PRD5-BACKLOG.md` contains reopen prerequisites for real
-   upstream and real SSO target E2E.
-5. `P4-F11` no longer treats upstream/SSO real target execution as current PRD4
-   promotion work.
-6. Current-status and handoff docs state that no approved real environments are
-   currently available and that real target execution is out of PRD4 closeout.
-7. README, DOC-INVENTORY, and CODEBASE-MAP do not imply current PRD4 real
-   target execution.
-8. The PRD4 matrix count is expected to be 13 total rows with 9 `Canary passed`,
-   2 `Deferred to PRD5`, 1 `Fixed awaiting Canary`, and 1 `Planned`.
-9. `git diff --check` passes.
+6. Current-status, handoff, README, DOC-INVENTORY, and PRD4 docs point to the
+   Batch 1Q evidence boundary.
+7. The PRD4 matrix count is expected to be 13 total rows with 10
+   `Canary passed`, 2 `Deferred to PRD5`, and 1 `Fixed awaiting Canary`.
+8. `git diff --check` passes.

@@ -64,21 +64,35 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Current active verification signal is PRD4 Batch 1P Scope Deferral And Closeout
-Alignment in `docs/agent-workflows/FIX-SIGNAL.md`:
+Current active verification signal is PRD4 Batch 1Q Production Evidence
+Promotion in `docs/agent-workflows/FIX-SIGNAL.md`:
 
 - Status: fixed awaiting Canary.
+- Scope: documentation/evidence-boundary only.
+- Evidence: `docs/ops/evidence/PRD4-B1Q-production-evidence-promotion-20260708.md`.
+- Decision: current target evidence is target-smoke evidence for selected PRD4
+  areas, but no PRD4 matrix row is promoted to `Production verified`.
+- Reason: the final report covers the PRD4 Batch 1N target state, Batch 1O
+  fixed later findings, and `PRD4-RUNTIME-002` remains open.
+- No Go, frontend, migration, API route, runtime behavior, deployment script,
+  evidence harness code, or production deployment change is expected.
+
+Latest accepted PRD4 documentation/status-boundary batch is PRD4 Batch 1P Scope
+Deferral And Closeout Alignment:
+
+- Canary PASS 6/6 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`.
+- Sentinel merge is reflected by `9e2927f` / PR #100.
 - Scope: documentation/status-boundary only. User decision on 2026-07-08 moves
   `P4-F08` / `P4-F09` real target execution out of current PRD4 because no
   approved real upstream or real SSO environments are available.
 - Batch 1H/1I harnesses remain accepted reusable assets.
 - `docs/planning/PRD5-BACKLOG.md` now tracks `PRD5-UPSTREAM-001` and
   `PRD5-SSO-001`.
-- `P4-F13` PRD5 Backlog Consolidation is fixed awaiting Canary.
+- `P4-F13` PRD5 Backlog Consolidation is accepted.
 - No Go, frontend, migration, API route, runtime behavior, deployment script,
-  evidence harness code, or Production verified claim changes are expected.
+  evidence harness code, or Production verified claim changed.
 
-Latest accepted PRD4 implementation batch is PRD4 Batch 1O API Key Input And
+Latest accepted PRD4 implementation batch remains PRD4 Batch 1O API Key Input And
 Security Header Hardening:
 
 - Canary PASS 8/8 is recorded in `docs/agent-workflows/VERIFY-RESULT.md`.
