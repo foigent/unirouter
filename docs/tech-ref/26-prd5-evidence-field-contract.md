@@ -2,7 +2,8 @@
 
 > Version: v0.1
 > Date: 2026-07-08
-> Status: Batch 1B implemented nullable/default first slice, awaiting Canary
+> Status: Batch 1A/1B/1C Canary/Sentinel complete. Batch 1D upstream request
+> correlation fixed awaiting Canary.
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > X-Insight response
 > `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-08-x-insight-prd5-integration-answers.md`
@@ -145,6 +146,23 @@ Default behavior for new requests:
 Do not trust arbitrary public request headers as evidence-chain authority by
 default.
 
+Batch 1D response-header allowlist:
+
+- `X-Request-Id`
+- `X-Request-ID`
+- `Request-Id`
+- `Request-ID`
+- `OpenAI-Request-ID`
+- `X-OpenAI-Request-ID`
+- `Anthropic-Request-Id`
+- `X-Anthropic-Request-Id`
+- `Apim-Request-Id`
+- `X-MS-Request-ID`
+
+Values are trimmed, must be printable ASCII, must not contain whitespace or
+control characters, and are bounded to 128 bytes before being written as
+`upstream_request_id`.
+
 ## Migration Strategy
 
 Batch 1B adds nullable/default fields first.
@@ -179,6 +197,9 @@ Implemented first slice:
   `source_event_hash`.
 - Existing trace API read-side returns these fields through the current RBAC and
   metadata-redaction path.
+- Batch 1D adds provider response-header extraction for `upstream_request_id`.
+  The value is written to provider response trace events and request-level call
+  logs when present. Missing provider IDs remain null.
 
 ## Writer Behavior
 
@@ -188,6 +209,8 @@ directly:
 - gateway received/auth/admission decisions: `gateway` or `auth` component;
 - quota/budget decisions: `quota` / `budget` plus decision fields;
 - routing/provider selection: `routing` / `provider` plus selected/failed reason;
+- provider response evidence: include sanitized provider-returned
+  `upstream_request_id` when available;
 - billing freeze/settle/cancel: `billing` plus decision/result where applicable;
 - trace sampling: `trace_sampling` decision;
 - payload state: `payload_capture` decision and `payload_capture_mode`.

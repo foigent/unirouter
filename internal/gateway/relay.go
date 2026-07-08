@@ -81,6 +81,28 @@ func (relay *Relay) SetTraceEvents(enabled bool, sampleRate float64) {
 	}
 }
 
+var upstreamRequestIDHeaderNames = []string{
+	"X-Request-Id",
+	"X-Request-ID",
+	"Request-Id",
+	"Request-ID",
+	"OpenAI-Request-ID",
+	"X-OpenAI-Request-ID",
+	"Anthropic-Request-Id",
+	"X-Anthropic-Request-Id",
+	"Apim-Request-Id",
+	"X-MS-Request-ID",
+}
+
+func upstreamRequestIDFromHeader(header http.Header) string {
+	for _, name := range upstreamRequestIDHeaderNames {
+		if requestID := sanitizeUpstreamRequestID(header.Get(name)); requestID != "" {
+			return requestID
+		}
+	}
+	return ""
+}
+
 func (relay *Relay) emitProviderChannelFailure(ctx context.Context, route RouteResult, requestID, requestedModel string, statusCode int, failureKind, message string) {
 	if relay.eventSvc == nil {
 		return
@@ -306,7 +328,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		relay.recordTraceEvent(ctx, requestID, "routing.no_route", "routing", "error", req.Model, requestedModel, nil, 503, elapsedMilliseconds(requestStart), map[string]interface{}{
 			"route_count": 0,
 		})
-		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, 503, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceNoRoute, estimatedTokens)
+		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, 503, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceNoRoute, estimatedTokens, "")
 		return
 	}
 
@@ -316,6 +338,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	// Failover loop: try each route until one succeeds
 	var lastErr error
 	var lastStatusCode int
+	var lastUpstreamRequestID string
 	for routeIndex, route := range routes {
 		routeForTrace := route
 		relay.recordTraceEvent(ctx, requestID, "routing.route_selected", "routing", "info", req.Model, requestedModel, &routeForTrace, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
@@ -372,6 +395,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 			lastErr = err
 			continue
 		}
+		upstreamRequestID := upstreamRequestIDFromHeader(resp.Header)
 		if resp.StatusCode != http.StatusOK {
 			errBody, _ := io.ReadAll(resp.Body)
 			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Upstream returned %d: %s", resp.StatusCode, string(errBody))
@@ -396,8 +420,9 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 			}
 			relay.recordTraceEvent(ctx, requestID, "provider.response_rejected", "provider", "warning", req.Model, requestedModel, &routeForTrace, resp.StatusCode, int(upstreamDuration.Milliseconds()), map[string]interface{}{
 				"failure_kind": string(classified.FailureKind),
-			})
+			}, upstreamRequestID)
 			lastStatusCode = resp.StatusCode
+			lastUpstreamRequestID = upstreamRequestID
 			lastErr = fmt.Errorf("upstream returned %d: %s", resp.StatusCode, classified.Message)
 			resp.Body.Close()
 			continue
@@ -406,12 +431,12 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		// Success — mark channel healthy and forward
 		relay.router.MarkChannelSuccess(ctx, route.Channel.ID)
 		relay.router.MarkKeySuccess(ctx, route.ChannelKey.ID)
-		relay.recordTraceEvent(ctx, requestID, "provider.response_accepted", "provider", "info", req.Model, requestedModel, &routeForTrace, resp.StatusCode, int(upstreamDuration.Milliseconds()), map[string]interface{}{})
+		relay.recordTraceEvent(ctx, requestID, "provider.response_accepted", "provider", "info", req.Model, requestedModel, &routeForTrace, resp.StatusCode, int(upstreamDuration.Milliseconds()), map[string]interface{}{}, upstreamRequestID)
 
 		if req.Stream {
-			relay.relayStreamRequest(ctx, w, resp, &route, requestID, orgID, keyID, req.Model, requestedModel, r.RemoteAddr, req.Messages, reqLog, requestStart, estimatedTokens, adapter)
+			relay.relayStreamRequest(ctx, w, resp, &route, requestID, orgID, keyID, req.Model, requestedModel, r.RemoteAddr, req.Messages, reqLog, requestStart, estimatedTokens, adapter, upstreamRequestID)
 		} else {
-			relay.relayNonStreamRequest(ctx, w, resp, &route, requestID, orgID, keyID, req.Model, requestedModel, r.RemoteAddr, reqLog, requestStart, adapter, estimatedTokens)
+			relay.relayNonStreamRequest(ctx, w, resp, &route, requestID, orgID, keyID, req.Model, requestedModel, r.RemoteAddr, reqLog, requestStart, adapter, estimatedTokens, upstreamRequestID)
 		}
 		return
 	}
@@ -423,7 +448,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	}
 	// Log the failed request
 	if len(routes) > 0 {
-		relay.recordRequest(ctx, requestID, orgID, keyID, routes[0].Channel.ID, routes[0].Channel.Provider, routes[0].Channel.Name, req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, lastStatusCode, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceUpstreamFailed, estimatedTokens)
+		relay.recordRequest(ctx, requestID, orgID, keyID, routes[0].Channel.ID, routes[0].Channel.Provider, routes[0].Channel.Name, req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, lastStatusCode, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceUpstreamFailed, estimatedTokens, lastUpstreamRequestID)
 	}
 	if lastStatusCode > 0 {
 		writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_error", fmt.Sprintf("All upstream channels failed (last status: %d)", lastStatusCode))
@@ -433,7 +458,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 }
 
 // relayNonStreamRequest handles non-streaming responses.
-func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWriter, resp *http.Response, route *RouteResult, requestID string, orgID, keyID int64, model, requestedModel, clientIP string, reqLog *logger.Logger, requestStart time.Time, adapter adapters.Adapter, estimatedTokens int) {
+func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWriter, resp *http.Response, route *RouteResult, requestID string, orgID, keyID int64, model, requestedModel, clientIP string, reqLog *logger.Logger, requestStart time.Time, adapter adapters.Adapter, estimatedTokens int, upstreamRequestID string) {
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -504,7 +529,7 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 
 	// Record request log
 	relay.recordRequest(ctx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, model, requestedModel, clientIP,
-		normalized.Usage.PromptTokens, normalized.Usage.CompletionTokens, actualCost, resp.StatusCode, elapsedMilliseconds(requestStart), 0, false, normalized.Usage.Source, estimatedTokens)
+		normalized.Usage.PromptTokens, normalized.Usage.CompletionTokens, actualCost, resp.StatusCode, elapsedMilliseconds(requestStart), 0, false, normalized.Usage.Source, estimatedTokens, upstreamRequestID)
 	relay.checkBudgetAlert(ctx)
 
 	// Build response with _uniroute extension field
@@ -535,7 +560,7 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 // relayStreamRequest handles streaming SSE responses.
 // Balance check goroutine signals via a channel; the main loop owns all writes
 // and the upstream body lifecycle. No goroutine touches resp.Body directly.
-func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWriter, resp *http.Response, route *RouteResult, requestID string, orgID, keyID int64, model, requestedModel, clientIP string, messages []Message, reqLog *logger.Logger, requestStart time.Time, estimatedTokens int, adapter adapters.Adapter) {
+func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWriter, resp *http.Response, route *RouteResult, requestID string, orgID, keyID int64, model, requestedModel, clientIP string, messages []Message, reqLog *logger.Logger, requestStart time.Time, estimatedTokens int, adapter adapters.Adapter, upstreamRequestID string) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -865,7 +890,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	middleware.RecordUpstreamLatency(route.Channel.Provider, model, streamDuration)
 
 	relay.recordRequest(ctx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, model, requestedModel, clientIP,
-		tokenCounter.InputTokens(), tokenCounter.OutputTokens(), chargedCost, http.StatusOK, elapsedMilliseconds(requestStart), ttftMs, true, usageSource, estimatedTokens)
+		tokenCounter.InputTokens(), tokenCounter.OutputTokens(), chargedCost, http.StatusOK, elapsedMilliseconds(requestStart), ttftMs, true, usageSource, estimatedTokens, upstreamRequestID)
 	if priceErr == nil && settleErr == nil {
 		relay.checkBudgetAlert(ctx)
 	}
@@ -926,7 +951,7 @@ func (relay *Relay) calculateCost(ctx context.Context, orgID int64, model string
 }
 
 // recordRequest logs the request to the call_logs table.
-func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, keyID, channelID int64, provider, channelName, model, requestedModel, clientIP string, promptTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs int, isStream bool, usageSource string, estimatedTokens int) {
+func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, keyID, channelID int64, provider, channelName, model, requestedModel, clientIP string, promptTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs int, isStream bool, usageSource string, estimatedTokens int, upstreamRequestID string) {
 	reqLog := logger.New(logger.Fields{RequestID: requestID, OrgID: uint(orgID), Module: "records"})
 	projectID := middleware.GetProjectIDFromContext(ctx)
 	var projectIDArg interface{}
@@ -948,14 +973,15 @@ func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, 
 	actorType, actorRefArg := actorEvidence(keyType, keyID, ownerUserID)
 	usageSource = metering.NormalizeUsageSource(usageSource)
 	usageConfidence := metering.SourceConfidence(usageSource)
-	sourceEventHash := hashCallLogEvidence(requestID, orgID, projectIDArg, keyID, ownerUserIDArg, keyType, model, requestedModel, provider, channelName, promptTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs, usageSource, isStream, estimatedTokens, usageConfidence)
+	upstreamRequestID = sanitizeUpstreamRequestID(upstreamRequestID)
+	sourceEventHash := hashCallLogEvidence(requestID, orgID, projectIDArg, keyID, ownerUserIDArg, keyType, model, requestedModel, provider, channelName, promptTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs, usageSource, isStream, estimatedTokens, usageConfidence, upstreamRequestID)
 	_, err := relay.db.Exec(ctx,
 		`INSERT INTO call_logs (
 			request_id, org_id, project_id, api_key_id, owner_user_id, key_type,
 			model, requested_model, provider, channel, prompt_tokens, completion_tokens,
 			total_tokens, cost_cents, status_code, latency_ms, ttft_ms, usage_source,
 			is_stream, ip_address, estimated_tokens, usage_confidence,
-			trace_id, schema_version, capture_mode, evidence_ref,
+			trace_id, schema_version, capture_mode, evidence_ref, upstream_request_id,
 			actor_type, actor_ref, payload_capture_mode, source_event_hash
 		)
 		 VALUES (
@@ -963,15 +989,15 @@ func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, 
 			$7, $8, $9, $10, $11, $12,
 			$13, $14, $15, $16, $17, $18,
 			$19, $20, $21, $22,
-			$23, $24, $25, $26,
-			$27, $28, $29, $30
+			$23, $24, $25, $26, $27,
+			$28, $29, $30, $31
 		)`,
 		requestID, orgID, projectIDArg, keyID, ownerUserIDArg, keyType,
 		model, requestedModel, provider, channelName, promptTokens, completionTokens,
 		promptTokens+completionTokens, costCents, statusCode, latencyMs, ttftMs, usageSource,
 		isStream, clientIP, estimatedTokens, usageConfidence,
 		requestID, evidenceSchemaVersion, evidenceCaptureModeNative, fmt.Sprintf("%s:call_logs:request_id:%s", evidenceTraceRefSourceType, requestID),
-		actorType, actorRefArg, evidencePayloadMetadata, sourceEventHash,
+		nullableString(upstreamRequestID), actorType, actorRefArg, evidencePayloadMetadata, sourceEventHash,
 	)
 	if err != nil {
 		reqLog.Error("Failed to record request log: %v", err)
@@ -1119,7 +1145,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		relay.recordTraceEvent(ctx, requestID, "routing.no_route", "routing", "error", req.Model, requestedModel, nil, 503, elapsedMilliseconds(requestStart), map[string]interface{}{
 			"route_count": 0,
 		})
-		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, 503, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceNoRoute, inputTokens)
+		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, 503, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceNoRoute, inputTokens, "")
 		return
 	}
 	relay.recordTraceEvent(ctx, requestID, "routing.route_selected", "routing", "info", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
@@ -1179,13 +1205,14 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_error", "Upstream request failed")
 		return
 	}
+	upstreamRequestID := upstreamRequestIDFromHeader(resp.Header)
 	providerEvent := "provider.response_accepted"
 	providerSeverity := "info"
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		providerEvent = "provider.response_rejected"
 		providerSeverity = "warning"
 	}
-	relay.recordTraceEvent(ctx, requestID, providerEvent, "provider", providerSeverity, req.Model, requestedModel, route, resp.StatusCode, int(upstreamDuration.Milliseconds()), map[string]interface{}{})
+	relay.recordTraceEvent(ctx, requestID, providerEvent, "provider", providerSeverity, req.Model, requestedModel, route, resp.StatusCode, int(upstreamDuration.Milliseconds()), map[string]interface{}{}, upstreamRequestID)
 	respBody, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 
@@ -1245,7 +1272,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	middleware.RecordTokenUsage("prompt", req.Model, normalized.Usage.PromptTokens)
 
 	relay.recordRequest(ctx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, req.Model, requestedModel, r.RemoteAddr,
-		normalized.Usage.PromptTokens, 0, actualCost, resp.StatusCode, elapsedMilliseconds(requestStart), 0, false, normalized.Usage.Source, inputTokens)
+		normalized.Usage.PromptTokens, 0, actualCost, resp.StatusCode, elapsedMilliseconds(requestStart), 0, false, normalized.Usage.Source, inputTokens, upstreamRequestID)
 	relay.checkBudgetAlert(ctx)
 
 	// Build response with _uniroute extension

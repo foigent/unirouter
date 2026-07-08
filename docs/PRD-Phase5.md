@@ -2,8 +2,9 @@
 
 > Version: Phase 5 Active Scope Draft
 > Date: 2026-07-08
-> Status: Active PRD5 planning plus Batch 1A/1B/1C implementation handoff. PRD4
-> remains complete for the confirmed current scope and is not reopened by PRD5.
+> Status: Batch 1A/1B/1C Canary/Sentinel complete. Batch 1D upstream request
+> correlation fixed awaiting Canary. PRD4 remains complete for the confirmed
+> current scope and is not reopened by PRD5.
 > Source: `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, X-Insight shared-folder
 > responses on 2026-07-08, current UniRouter code/schema review, and official
@@ -81,6 +82,7 @@ PRD5 must not:
 | P5-F06 | Lightweight Trace UI Boundary | Keep UniRouter request-level trace investigation and later add X-Insight deep links without duplicating X-Insight UI |
 | P5-F07 | Competitor-Informed Feature Catch-Up | Add UniRouter-owned gateway feature gaps revealed by LiteLLM/New API/one-api/Helicone/Langfuse comparison |
 | P5-F08 | Read-Only DB/View Gate | Consider restricted read-only views only after X-Insight local snapshot import succeeds |
+| P5-F13 | Upstream Request Correlation | Capture provider-returned upstream request IDs into gateway trace/log evidence without trusting public inbound headers |
 
 ### P2
 
@@ -196,10 +198,12 @@ Batch 1B implementation note: migration
 structural evidence fields to `request_trace_events` and `call_logs`. Gateway
 trace/log writes now populate gateway-known `trace_id`, generated `span_id` for
 trace events, schema/capture/source fields, decision fields, actor fields,
-metadata-only payload mode, evidence refs, and source event hashes. The trace API
-returns the new fields through the existing route and RBAC path. Batch 1B does
-not add trusted inbound headers, raw payload capture, exporter/outbox, frontend
-behavior, or new API routes.
+metadata-only payload mode, evidence refs, and source event hashes. Batch 1D
+extends this by capturing provider-returned upstream request IDs from a bounded
+response-header allowlist and writing them to provider trace events plus call
+logs. The trace API returns the new fields through the existing route and RBAC
+path. Batch 1B/1D do not add trusted inbound headers, raw payload capture,
+exporter/outbox, frontend behavior, or new API routes.
 
 ### P5-F06: Lightweight Trace UI Boundary
 
@@ -255,6 +259,27 @@ Acceptance:
 - Gate conditions are documented before any credential handoff.
 - No shared ECS staging update happens before local Gate A and CI pass.
 
+### P5-F13: Upstream Request Correlation
+
+Requirements:
+
+- Extract provider-returned upstream request IDs only from a bounded response
+  header allowlist.
+- Reject empty, non-printable-ASCII, whitespace-containing, or
+  control-character-containing values.
+- Store the value in `request_trace_events.upstream_request_id` for provider
+  response events and in `call_logs.upstream_request_id` for request-level
+  lookup/import.
+- Preserve request-path behavior, provider routing, billing, response payloads,
+  and existing API routes.
+
+Acceptance:
+
+- Gateway tests prove sanitized upstream request IDs are captured in trace and
+  call-log evidence writes.
+- No arbitrary inbound public request header becomes evidence authority.
+- Missing provider IDs remain null; UniRouter does not fabricate them.
+
 ### P5-F09: Cursor Export API Or Outbox
 
 Requirements:
@@ -291,10 +316,11 @@ PRD5 should proceed in independently verifiable batches:
    sanitized snapshot tool, and X-Insight snapshot contract.
 2. Batch 1B: nullable structural field migration and writer/read-side behavior.
 3. Batch 1C: trace UI evidence quality display and API exposure.
-4. Batch 1D: payload policy metadata and evidence references, with future raw
+4. Batch 1D: provider upstream request ID capture into trace/log evidence.
+5. Later payload policy metadata and evidence references, with future raw
    payload modes gated behind enterprise opt-in.
-5. Batch 1E: read-only view/export decision after X-Insight Gate A evidence.
-6. Batch 1F+: target upstream/SSO evidence or larger backlog items only after
+6. Batch 1E: read-only view/export decision after X-Insight Gate A evidence.
+7. Batch 1F+: target upstream/SSO evidence or larger backlog items only after
    their prerequisites are explicitly met.
 
 ## 6. External Source Refresh

@@ -300,13 +300,13 @@ func TestRecordRequest_Success(t *testing.T) {
 	ownerUserID := int64(42)
 	ctx := context.WithValue(context.Background(), middleware.CtxProjectID, int64(7))
 	ctx = context.WithValue(ctx, middleware.CtxAPIKey, &models.ApiKey{OwnerUserID: &ownerUserID, KeyType: "personal"})
-	relay.recordRequest(ctx, "req-001", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, 123, 0, false, metering.UsageSourceUpstream, 180)
+	relay.recordRequest(ctx, "req-001", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, 123, 0, false, metering.UsageSourceUpstream, 180, "upstream-req-001")
 
 	if !execCalled {
 		t.Fatal("expected exec to be called")
 	}
-	if len(capturedArgs) != 30 {
-		t.Fatalf("expected 30 insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != 31 {
+		t.Fatalf("expected 31 insert args, got %d", len(capturedArgs))
 	}
 	if capturedArgs[2] != int64(7) {
 		t.Fatalf("expected project_id arg 7, got %v", capturedArgs[2])
@@ -329,11 +329,14 @@ func TestRecordRequest_Success(t *testing.T) {
 	if capturedArgs[22] != "req-001" || capturedArgs[23] != evidenceSchemaVersion || capturedArgs[24] != evidenceCaptureModeNative {
 		t.Fatalf("unexpected call-log evidence args: %#v", capturedArgs[22:25])
 	}
-	if capturedArgs[26] != "human" || capturedArgs[27] != "user:42" || capturedArgs[28] != evidencePayloadMetadata {
-		t.Fatalf("unexpected call-log actor/payload args: %#v", capturedArgs[26:29])
+	if capturedArgs[26] != "upstream-req-001" {
+		t.Fatalf("expected upstream_request_id, got %#v", capturedArgs[26])
 	}
-	if hash, ok := capturedArgs[29].(string); !ok || len(hash) != 64 {
-		t.Fatalf("expected source_event_hash, got %#v", capturedArgs[29])
+	if capturedArgs[27] != "human" || capturedArgs[28] != "user:42" || capturedArgs[29] != evidencePayloadMetadata {
+		t.Fatalf("unexpected call-log actor/payload args: %#v", capturedArgs[27:30])
+	}
+	if hash, ok := capturedArgs[30].(string); !ok || len(hash) != 64 {
+		t.Fatalf("expected source_event_hash, got %#v", capturedArgs[30])
 	}
 }
 
@@ -364,10 +367,10 @@ func TestRecordTraceEvent_SanitizesMetadataAndSnapshotsOwner(t *testing.T) {
 		"estimated_tokens": 100,
 		"api_key":          "sk-secret",
 		"request_body":     `{"messages":[{"content":"secret"}]}`,
-	})
+	}, "upstream-trace-001")
 
-	if len(capturedArgs) != 29 {
-		t.Fatalf("expected 29 trace insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != 30 {
+		t.Fatalf("expected 30 trace insert args, got %d", len(capturedArgs))
 	}
 	if capturedArgs[2] != int64(7) || capturedArgs[3] != int64(9) || capturedArgs[4] != ownerUserID || capturedArgs[5] != "personal" {
 		t.Fatalf("unexpected project/key/owner args: %#v", capturedArgs[2:6])
@@ -394,14 +397,17 @@ func TestRecordTraceEvent_SanitizesMetadataAndSnapshotsOwner(t *testing.T) {
 	if capturedArgs[18] != evidenceSchemaVersion || capturedArgs[19] != "provider" || capturedArgs[20] != evidenceCaptureModeNative {
 		t.Fatalf("unexpected trace structural args: %#v", capturedArgs[18:21])
 	}
-	if capturedArgs[22] != "provider" || capturedArgs[23] != "selected" || capturedArgs[24] != "provider.response_accepted" {
-		t.Fatalf("unexpected trace decision args: %#v", capturedArgs[22:25])
+	if capturedArgs[22] != "upstream-trace-001" {
+		t.Fatalf("expected upstream_request_id, got %#v", capturedArgs[22])
 	}
-	if capturedArgs[25] != "human" || capturedArgs[26] != "user:42" || capturedArgs[27] != evidencePayloadMetadata {
-		t.Fatalf("unexpected trace actor/payload args: %#v", capturedArgs[25:28])
+	if capturedArgs[23] != "provider" || capturedArgs[24] != "selected" || capturedArgs[25] != "provider.response_accepted" {
+		t.Fatalf("unexpected trace decision args: %#v", capturedArgs[23:26])
 	}
-	if hash, ok := capturedArgs[28].(string); !ok || len(hash) != 64 {
-		t.Fatalf("expected trace source_event_hash, got %#v", capturedArgs[28])
+	if capturedArgs[26] != "human" || capturedArgs[27] != "user:42" || capturedArgs[28] != evidencePayloadMetadata {
+		t.Fatalf("unexpected trace actor/payload args: %#v", capturedArgs[26:29])
+	}
+	if hash, ok := capturedArgs[29].(string); !ok || len(hash) != 64 {
+		t.Fatalf("expected trace source_event_hash, got %#v", capturedArgs[29])
 	}
 }
 
@@ -414,7 +420,7 @@ func TestRecordRequest_DBError(t *testing.T) {
 	relay := newTestRelay(db, &mockBilling{})
 
 	// Should not panic on error (just logs)
-	relay.recordRequest(context.Background(), "req-001", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, 123, 0, false, metering.UsageSourceUpstream, 180)
+	relay.recordRequest(context.Background(), "req-001", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, 123, 0, false, metering.UsageSourceUpstream, 180, "")
 }
 
 // --- checkBudgetAlert tests ---
@@ -463,6 +469,39 @@ func TestSetTraceEvents(t *testing.T) {
 	}
 	if relay.shouldRecordTraceEvent("req-001") {
 		t.Fatal("expected sample rate 0 to skip recording")
+	}
+}
+
+func TestUpstreamRequestIDFromHeader(t *testing.T) {
+	header := http.Header{}
+	header.Set("OpenAI-Request-ID", "  upstream-abc-123  ")
+
+	if got := upstreamRequestIDFromHeader(header); got != "upstream-abc-123" {
+		t.Fatalf("expected upstream request id, got %q", got)
+	}
+
+	header = http.Header{}
+	header.Set("X-Request-Id", "bad value with spaces")
+	if got := upstreamRequestIDFromHeader(header); got != "" {
+		t.Fatalf("expected whitespace-containing request id to be rejected, got %q", got)
+	}
+
+	header = http.Header{}
+	header.Set("Anthropic-Request-Id", "bad\nvalue")
+	if got := upstreamRequestIDFromHeader(header); got != "" {
+		t.Fatalf("expected control-character request id to be rejected, got %q", got)
+	}
+
+	header = http.Header{}
+	header.Set("OpenAI-Request-ID", "上游请求")
+	if got := upstreamRequestIDFromHeader(header); got != "" {
+		t.Fatalf("expected non-ASCII request id to be rejected, got %q", got)
+	}
+
+	header = http.Header{}
+	header.Set("OpenAI-Request-ID", strings.Repeat("a", 129))
+	if got := upstreamRequestIDFromHeader(header); got != strings.Repeat("a", 128) {
+		t.Fatalf("expected request id to be truncated to 128 bytes, got length %d", len(got))
 	}
 }
 
@@ -745,7 +784,7 @@ func TestRelayNonStreamRequest_Success(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-001", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-001", OrgID: 1}), time.Now(), nil, 1200)
+	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-001", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-001", OrgID: 1}), time.Now(), nil, 1200, "")
 
 	if !settleCalled {
 		t.Fatal("expected settle to be called")
@@ -794,7 +833,7 @@ func TestRelayNonStreamRequest_SettleRetrySuccess(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-retry", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-retry", OrgID: 1}), time.Now(), nil, 1200)
+	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-retry", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-retry", OrgID: 1}), time.Now(), nil, 1200, "")
 
 	if settleCalls != billingSettleMaxAttempts {
 		t.Fatalf("expected %d settle attempts, got %d", billingSettleMaxAttempts, settleCalls)
@@ -839,7 +878,7 @@ func TestRelayNonStreamRequest_SettleError(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-002", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-002", OrgID: 1}), time.Now(), nil, 1200)
+	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-002", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-002", OrgID: 1}), time.Now(), nil, 1200, "")
 
 	if settleCalls != billingSettleMaxAttempts {
 		t.Fatalf("expected %d settle attempts, got %d", billingSettleMaxAttempts, settleCalls)
@@ -906,7 +945,7 @@ func TestRelayStreamRequest_NormalFlow(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-1", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", []Message{{Role: "user", Content: "Hi"}}, logger.New(logger.Fields{RequestID: "req-stream-1", OrgID: 1}), time.Now(), 1000, nil)
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-1", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", []Message{{Role: "user", Content: "Hi"}}, logger.New(logger.Fields{RequestID: "req-stream-1", OrgID: 1}), time.Now(), 1000, nil, "")
 
 	if !settleCalled {
 		t.Fatal("expected settle to be called")
@@ -977,7 +1016,7 @@ func TestRelayStreamRequest_NoUpstreamUsage(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-2", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", []Message{{Role: "user", Content: "Hello"}}, logger.New(logger.Fields{RequestID: "req-stream-2", OrgID: 1}), time.Now(), 1000, nil)
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-2", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", []Message{{Role: "user", Content: "Hello"}}, logger.New(logger.Fields{RequestID: "req-stream-2", OrgID: 1}), time.Now(), 1000, nil, "")
 
 	if !settleCalled {
 		t.Fatal("expected settle to be called")
@@ -1029,7 +1068,7 @@ func TestRelayStreamRequest_AnthropicNativeMissingUsageFallsBack(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-ant-missing-usage", 1, 1, "company-chat", "company-chat", "127.0.0.1", []Message{{Role: "user", Content: "Hello"}}, logger.New(logger.Fields{RequestID: "req-ant-missing-usage", OrgID: 1}), time.Now(), 1000, adapters.NewAnthropicNative())
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-ant-missing-usage", 1, 1, "company-chat", "company-chat", "127.0.0.1", []Message{{Role: "user", Content: "Hello"}}, logger.New(logger.Fields{RequestID: "req-ant-missing-usage", OrgID: 1}), time.Now(), 1000, adapters.NewAnthropicNative(), "")
 
 	if !settleCalled {
 		t.Fatal("expected settle to be called")
@@ -1085,7 +1124,7 @@ func TestRelayStreamRequest_SettleError(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-3", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-3", OrgID: 1}), time.Now(), 1000, nil)
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-3", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-3", OrgID: 1}), time.Now(), 1000, nil, "")
 
 	if settleCalls != billingSettleMaxAttempts {
 		t.Fatalf("expected %d settle attempts, got %d", billingSettleMaxAttempts, settleCalls)
@@ -1142,7 +1181,7 @@ func TestRelayStreamRequest_UpstreamUsageSource(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-4", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-4", OrgID: 1}), time.Now(), 1000, nil)
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-4", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-4", OrgID: 1}), time.Now(), 1000, nil, "")
 }
 
 func TestRelayStreamRequest_EmptyStream(t *testing.T) {
@@ -1177,7 +1216,7 @@ func TestRelayStreamRequest_EmptyStream(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-5", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-5", OrgID: 1}), time.Now(), 1000, nil)
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-5", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-5", OrgID: 1}), time.Now(), 1000, nil, "")
 
 	body := rec.Body.String()
 	if !strings.Contains(body, "data: [DONE]") {
@@ -1217,7 +1256,7 @@ func TestRelayStreamRequest_UnirouteExtension(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-6", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-6", OrgID: 1}), time.Now(), 1000, nil)
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-stream-6", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-stream-6", OrgID: 1}), time.Now(), 1000, nil, "")
 
 	body := rec.Body.String()
 	// Extension data (request_id, cost) should be present in output

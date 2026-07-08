@@ -80,8 +80,7 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Current active verification signal: PRD5 Batch 1A/1B/1C Scope / Snapshot /
-Structural Evidence / Trace UI
+Current active verification signal: PRD5 Batch 1D Upstream Request Correlation
 fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
 
 PRD4 is complete for the confirmed current scope. PRD5 must preserve the PRD4
@@ -91,6 +90,8 @@ PRD5 Batch 1A/1B/1C:
 
 - Scope: planning closure, first snapshot artifact, and nullable structural
   evidence fields plus lightweight trace UI exposure.
+- Status: Canary PASS 17/17 in `docs/agent-workflows/VERIFY-RESULT.md`;
+  Sentinel merge reflected by `e1e76e3` / PR #106.
 - Adds: PRD5 formal scope, PRD5 matrix, implementation plan, competitor
   comparison, sanitized snapshot runbook, structural evidence field contract,
   `scripts/prd5_xinsight_snapshot.go`, a shared-folder snapshot contract,
@@ -100,6 +101,16 @@ PRD5 Batch 1A/1B/1C:
 - Does not add: new API routes, deployment changes, read-only credentials,
   exporter/outbox, trusted inbound correlation headers, raw prompt/response
   capture, X-Insight timeline/graph UI, or PRD4 matrix changes.
+
+PRD5 Batch 1D:
+
+- Scope: provider-returned upstream request ID correlation for gateway evidence.
+- Adds: bounded response-header allowlist extraction, sanitized
+  `upstream_request_id` persistence on provider trace events and call logs, and
+  focused gateway tests.
+- Does not add: inbound public-header trust, migration, new route, frontend
+  behavior, exporter/outbox, read-only credential, raw payload capture, or PRD4
+  matrix changes.
 
 Latest completed PRD4 verification result is PRD4 Batch 1S Open Issue Boundary
 Closeout:

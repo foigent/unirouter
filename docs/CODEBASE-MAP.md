@@ -112,6 +112,13 @@ Later migrations add wallet features, org pricing and alert fields, schema gap f
 
 Request trace lookup is implemented by `internal/admin/log_handlers.go` as `GET /api/v1/logs/{id}/trace`. It loads the call log first, applies existing project usage RBAC, filters trace events by `request_id`, `org_id`, and `project_id`, then sanitizes metadata through `internal/traceutil` before returning it. PRD5 Batch 1B/1C extends that existing route with structural evidence fields and renders them in `frontend/src/pages/LogsPage.tsx` as request-level evidence quality plus per-event tags. Frontend support is in `frontend/src/api/client.ts` (`getLogTrace`) and `frontend/src/pages/LogsPage.tsx`.
 
+PRD5 Batch 1D upstream request correlation is implemented in
+`internal/gateway/relay.go` and `internal/gateway/trace.go`. UniRouter extracts
+provider-returned upstream request IDs from a bounded response-header allowlist,
+sanitizes the value, then writes it to provider response trace events and
+`call_logs.upstream_request_id`. It does not trust inbound public request
+headers as evidence authority.
+
 Usage analytics is implemented in `internal/admin/prd2_product_handlers.go` and now supports project/key/model/provider/channel/status/source filters plus PRD4 `scope=my`, `owner_user_id`, `key_type`, `group_by=owner`, and `group_by=key_type`.
 
 API key quota visibility keeps `api_keys.qps_limit` as the compatibility

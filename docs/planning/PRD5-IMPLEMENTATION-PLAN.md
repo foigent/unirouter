@@ -1,7 +1,8 @@
 # PRD5 Implementation Plan
 
 > Date: 2026-07-08
-> Status: Active plan. Batch 1A/1B/1C fixed awaiting Canary.
+> Status: Batch 1A/1B/1C Canary/Sentinel complete. Batch 1D upstream request
+> correlation fixed awaiting Canary.
 > Scope owner: UniRouter. X-Insight remains a separate project and owns broader
 > observability/governance product surfaces.
 
@@ -26,6 +27,8 @@ exporter or synchronous dependency.
 ### Batch 1A: Scope, Contract, Snapshot Tooling
 
 Risk: R2 documentation/product acceptance plus R1 read-only tooling.
+
+Status: Canary/Sentinel complete (`e1e76e3` / PR #106).
 
 Deliverables:
 
@@ -58,7 +61,9 @@ Verification:
 
 Risk: R3 because it touches DB schema and gateway evidence writes.
 
-Implemented in this round, awaiting Canary:
+Status: Canary/Sentinel complete as part of `e1e76e3` / PR #106.
+
+Implemented:
 
 - add nullable fields to `request_trace_events` first;
 - evaluate whether selected fields also belong on `call_logs` for query speed or
@@ -87,7 +92,9 @@ Current Batch 1B boundary:
 
 Risk: R2/R3 depending on API and frontend scope.
 
-Implemented in this round, awaiting Canary:
+Status: Canary/Sentinel complete as part of `e1e76e3` / PR #106.
+
+Implemented:
 
 - expose new fields through the existing `GET /api/v1/logs/{id}/trace` route
   after redaction review;
@@ -100,12 +107,38 @@ Implemented in this round, awaiting Canary:
 - add placeholder support for future X-Insight execution deep links only after
   X-Insight provides stable URL shape.
 
-### Batch 1D: Payload Policy Metadata
+### Batch 1D: Upstream Request Correlation
+
+Risk: R3 because it touches gateway evidence writes and call-log persistence, but
+it does not change routing, billing, provider dispatch, response payloads, API
+routes, or DB schema.
+
+Implemented in this round, awaiting Canary:
+
+- extract provider-returned upstream request IDs from a bounded response-header
+  allowlist;
+- reject empty, non-printable-ASCII, whitespace-containing, or
+  control-character-containing values;
+- write sanitized values to provider response trace events;
+- write sanitized values to `call_logs.upstream_request_id` for request-level
+  lookup and X-Insight import;
+- keep missing provider IDs null rather than fabricating evidence.
+
+Non-goals:
+
+- no inbound public request-header trust;
+- no new migration;
+- no exporter/outbox;
+- no read-only DB/view credential handoff;
+- no raw payload capture;
+- no frontend or API route change.
+
+### Later Payload Policy Modes
 
 Risk: R3 if schema/API changes; R4 only if raw payload capture is introduced,
 which is not planned by default.
 
-Implemented in this round, awaiting Canary:
+Already implemented in Batch 1A/1B/1C:
 
 - keep raw prompt/response off;
 - add metadata-only payload state fields;

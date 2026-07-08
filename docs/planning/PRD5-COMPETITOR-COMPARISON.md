@@ -81,18 +81,21 @@ implementation because these projects move quickly.
 
 ## UniRouter Gaps To Catch Up In PRD5
 
-High priority:
+High priority, now partially accepted through Batch 1A/1B/1C:
 
 - explicit `trace_id`, `span_id`, `parent_span_id`, and `session_id` handling;
 - `schema_version`, `source_component`, `capture_mode`, and capture-gap model;
 - `evidence_ref` / source refs and `source_event_hash`;
-- `upstream_request_id` where providers return it;
 - decision records for admission, auth, quota, budget, routing, provider,
   billing, payload capture, retry/failover, and trace sampling;
 - `actor_type`, `actor_ref`, and `on_behalf_of` for future agent/delegation
   chains;
 - metadata-only payload policy fields and raw-payload default-off controls;
 - controlled snapshot plus later cursor export/read-only views.
+
+Accepted in Batch 1D:
+
+- `upstream_request_id` capture where providers return a trusted response header.
 
 Medium priority:
 
