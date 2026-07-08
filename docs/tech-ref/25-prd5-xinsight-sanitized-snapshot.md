@@ -2,8 +2,7 @@
 
 > Version: v0.2
 > Date: 2026-07-09
-> Status: Batch 1A/1B Canary/Sentinel complete; Batch 1K handoff-note support
-> fixed awaiting Canary
+> Status: Batch 1A/1B and Batch 1K Canary/Sentinel complete
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`
 

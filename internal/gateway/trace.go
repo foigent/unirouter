@@ -28,8 +28,9 @@ const (
 type evidenceSpanStateKey struct{}
 
 type evidenceSpanState struct {
-	mu         sync.Mutex
-	rootSpanID string
+	mu               sync.Mutex
+	rootSpanID       string
+	componentSpanIDs map[string]string
 }
 
 func contextWithEvidenceSpanState(ctx context.Context) context.Context {
@@ -42,17 +43,29 @@ func contextWithEvidenceSpanState(ctx context.Context) context.Context {
 	return context.WithValue(ctx, evidenceSpanStateKey{}, &evidenceSpanState{})
 }
 
-func parentSpanForEvent(ctx context.Context, spanID, trustedParentSpanID string) string {
+func parentSpanForEvent(ctx context.Context, spanID, sourceComponent, trustedParentSpanID string) string {
 	state, _ := ctx.Value(evidenceSpanStateKey{}).(*evidenceSpanState)
 	if state == nil {
 		return trustedParentSpanID
 	}
 	state.mu.Lock()
 	defer state.mu.Unlock()
+	sourceComponent = strings.TrimSpace(sourceComponent)
+	if sourceComponent == "" {
+		sourceComponent = "unknown"
+	}
+	if state.componentSpanIDs == nil {
+		state.componentSpanIDs = map[string]string{}
+	}
 	if state.rootSpanID == "" {
 		state.rootSpanID = spanID
+		state.componentSpanIDs[sourceComponent] = spanID
 		return trustedParentSpanID
 	}
+	if componentSpanID := state.componentSpanIDs[sourceComponent]; componentSpanID != "" {
+		return componentSpanID
+	}
+	state.componentSpanIDs[sourceComponent] = spanID
 	return state.rootSpanID
 }
 
@@ -133,8 +146,8 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 		traceID = evidenceContext.TraceID
 	}
 	spanID := newEvidenceID()
-	parentSpanID := parentSpanForEvent(ctx, spanID, evidenceContext.ParentSpanID)
 	sourceComponent := sourceComponentForTraceStage(stage)
+	parentSpanID := parentSpanForEvent(ctx, spanID, sourceComponent, evidenceContext.ParentSpanID)
 	evidenceRef := fmt.Sprintf("%s:request_trace_events:request_id:%s:span:%s", evidenceTraceRefSourceType, requestID, spanID)
 	upstreamRequestID := ""
 	if len(upstreamRequestIDs) > 0 {

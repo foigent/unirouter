@@ -3,9 +3,9 @@
 > Version: Phase 5 Active Scope Draft
 > Date: 2026-07-09
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
-> Batch 1I, and Batch 1J Canary/Sentinel complete. Batch 1K Gate A snapshot
-> handoff-note support fixed awaiting Canary. PRD4 remains complete for the
-> confirmed current scope and is not reopened by PRD5.
+> Batch 1I, Batch 1J, and Batch 1K Canary/Sentinel complete. Batch 1L component
+> span refinement fixed awaiting Canary. PRD4 remains complete for the confirmed
+> current scope and is not reopened by PRD5.
 > Source: `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, X-Insight shared-folder
 > responses on 2026-07-08, current UniRouter code/schema review, and official
@@ -91,6 +91,7 @@ PRD5 must not:
 | P5-F18 | Payload Policy Decision Evidence | Emit explicit payload capture policy decision trace events without storing raw prompt or response payloads |
 | P5-F19 | Provider Upstream Capture Gap | Mark provider response trace events with `capture_gap=provider_not_returned` when the upstream provider does not return a usable request ID |
 | P5-F20 | Gate A Snapshot Handoff Note | Generate a sanitized Markdown handoff note alongside explicit-request X-Insight snapshots without writing DSNs or credentials |
+| P5-F21 | Component Span Refinement | Parent repeated same-component trace events to the component's first span while preserving the request gateway root |
 
 ### P2
 
@@ -485,6 +486,30 @@ Acceptance:
   exporter/outbox behavior, raw payload capture, or an X-Insight runtime
   dependency.
 
+### P5-F21: Component Span Refinement
+
+Requirements:
+
+- Keep the first UniRouter-emitted trace event as the request gateway root span.
+- Preserve trusted inbound `parent_span_id` only as the gateway root parent.
+- Treat the first event for each `source_component` as that component's local
+  span root.
+- Parent later events from the same `source_component` to that component root
+  span instead of flattening every event directly under the gateway root.
+- Do not claim a cross-system agent graph or infer external tool/business
+  system spans.
+
+Acceptance:
+
+- Focused gateway tests prove gateway-root parenting still works and repeated
+  same-component events parent to the component span root.
+- Existing trusted trace context, provider upstream gaps, redaction gaps,
+  routing, billing, provider dispatch, response payloads, API routes, and
+  frontend behavior remain unchanged.
+- No migration, new route, exporter/outbox, read-only DB/view access, raw
+  payload capture, X-Insight runtime dependency, or PRD4 matrix change is
+  introduced.
+
 ### P5-F09: Cursor Export API Or Outbox
 
 Requirements:
@@ -531,11 +556,13 @@ PRD5 should proceed in independently verifiable batches:
 9. Batch 1I: explicit payload policy decision evidence for chat and embeddings.
 10. Batch 1J: provider upstream request ID capture gap evidence.
 11. Batch 1K: Gate A snapshot Markdown handoff note for X-Insight discovery.
-12. Later payload policy metadata and evidence references, with future raw
+12. Batch 1L: component span refinement for repeated same-component trace
+    events.
+13. Later payload policy metadata and evidence references, with future raw
    payload modes gated behind enterprise opt-in.
-13. Later Gate A batch: read-only view/export decision after X-Insight Gate A
+14. Later Gate A batch: read-only view/export decision after X-Insight Gate A
    evidence.
-14. Later target/backlog batches: target upstream/SSO evidence or larger
+15. Later target/backlog batches: target upstream/SSO evidence or larger
    backlog items only after their prerequisites are explicitly met.
 
 ## 6. External Source Refresh

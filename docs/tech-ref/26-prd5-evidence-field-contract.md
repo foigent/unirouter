@@ -1,10 +1,10 @@
 # PRD5 Evidence Field Contract
 
 > Version: v0.1
-> Date: 2026-07-08
+> Date: 2026-07-09
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
-> and Batch 1I Canary/Sentinel complete. Batch 1J provider upstream capture-gap
-> evidence fixed awaiting Canary.
+> Batch 1I, Batch 1J, and Batch 1K Canary/Sentinel complete. Batch 1L
+> component span refinement fixed awaiting Canary.
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > X-Insight response
 > `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-08-x-insight-prd5-integration-answers.md`
@@ -193,6 +193,17 @@ Batch 1H gateway span hierarchy:
 - This creates a queryable UniRouter-local request hierarchy without claiming a
   full cross-system agent graph.
 
+Batch 1L component span refinement:
+
+- The first UniRouter trace event remains the request gateway root span.
+- The first trace event for each `source_component` becomes that component's
+  local span root.
+- Later trace events from the same `source_component` parent to that component
+  span root.
+- First events for new components still parent to the request gateway root.
+- This is a request-local UniRouter evidence hierarchy only; it does not infer
+  external agent, tool, or business-system spans.
+
 Batch 1I payload policy decision evidence:
 
 - Chat and embeddings requests emit `payload.policy.applied` after
@@ -267,6 +278,9 @@ Implemented first slice:
   events when no sanitized upstream request ID is available. Returned upstream
   request IDs still populate `upstream_request_id`; existing redaction gaps keep
   `capture_gap=redacted`.
+- Batch 1L refines `parent_span_id` for repeated same-component events:
+  repeated events from a component parent to that component's first span, while
+  first component events still parent to the request gateway root.
 
 ## Writer Behavior
 
@@ -283,8 +297,8 @@ directly:
   `actor_*`, and `on_behalf_of` only when the configured evidence-context shared
   secret matches;
 - gateway span hierarchy: parent the first UniRouter trace event to a trusted
-  inbound parent when present, then parent later UniRouter trace events to that
-  gateway root span;
+  inbound parent when present, then parent first component events to the gateway
+  root span and repeated same-component events to that component's first span;
 - metadata safety evidence: include `capture_gap='redacted'` when metadata was
   intentionally dropped or truncated by UniRouter;
 - payload policy decision evidence: emit `payload.policy.applied` with
