@@ -2,11 +2,12 @@
 
 > Version: v0.4
 > Date: 2026-07-10
-> Status: Batch 1A/1B, Batch 1K, Batch 1N, Batch 1O, and Batch 1Q
-> Canary/Sentinel complete; Batch 1R request ID approval runbook fixed awaiting
-> Canary
+> Status: Batch 1A/1B, Batch 1K, Batch 1N, Batch 1O, Batch 1Q, and Batch 1R
+> Canary/Sentinel complete; Batch 1S Data Exchange Control boundary fixed
+> awaiting Canary
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
-> `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`
+> `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`,
+> `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md`
 
 ## Purpose
 

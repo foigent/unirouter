@@ -3,8 +3,8 @@
 > Date: 2026-07-10
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
 > Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, Batch 1O, and
-> Batch 1P and Batch 1Q Canary/Sentinel complete. Batch 1R Gate A Request ID
-> Approval Runbook fixed awaiting Canary.
+> Batch 1P, Batch 1Q, and Batch 1R Canary/Sentinel complete. Batch 1S
+> X-Insight Data Exchange Control Surface fixed awaiting Canary.
 > Scope owner: UniRouter. X-Insight remains a separate project and owns broader
 > observability/governance product surfaces.
 
@@ -588,7 +588,9 @@ Risk: R1 because it changes only PRD5 documentation and shared-folder
 coordination files. It does not change runtime request handling, DB schema, API
 routes, frontend behavior, credentials, or generated snapshot artifacts.
 
-Status: fixed awaiting Canary.
+Status: Canary/Sentinel complete. Canary PASS 6/6 is recorded in
+`docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge is reflected by
+`c15cd7d` / PR #121.
 
 Implemented in this round:
 
@@ -614,6 +616,47 @@ Non-goals:
 - no runtime request-path change;
 - no new API route;
 - no frontend behavior change;
+- no read-only DB/view credential handoff;
+- no shared ECS staging;
+- no exporter/outbox;
+- no X-Insight runtime dependency;
+- no PRD4 matrix/status change.
+
+### Batch 1S: X-Insight Data Exchange Control Surface
+
+Risk: R1 because it changes only PRD5 product/architecture documentation and
+shared-folder coordination. It does not change runtime request handling, DB
+schema, API routes, frontend behavior, credentials, or generated snapshot
+artifacts.
+
+Status: fixed awaiting Canary.
+
+Implemented in this round:
+
+- add `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md`;
+- recommend a future UniRouter UI entry, but as a Data Exchange Control surface
+  rather than a full X-Insight audit console;
+- define UniRouter ownership as outbound approval, export ledger, handoff
+  artifacts, import receipts, and X-Insight deep links;
+- keep X-Insight ownership over importer internals, normalized evidence,
+  read-side audit, investigation timeline/graph, policy simulation, and
+  evidence packs;
+- define staged implementation from current Markdown/manifest flow to later UI
+  readiness design, minimal approval/export ledger UI, receipt reconciliation,
+  and only later exporter/outbox;
+- add a shared-folder review request asking X-Insight which receipt and deep
+  link fields can be echoed back for UniRouter reconciliation.
+
+Non-goals:
+
+- no UI code;
+- no DB migration;
+- no API route;
+- no runtime request-path change;
+- no real snapshot artifact;
+- no approved request IDs are invented or written by Codex;
+- no DSN, credential, token, raw prompt, raw response, raw IP, or raw upstream
+  error is written to the repo or shared folder;
 - no read-only DB/view credential handoff;
 - no shared ECS staging;
 - no exporter/outbox;
@@ -672,14 +715,14 @@ Use existing PRD4 harnesses, but record target evidence under PRD5.
 | Gateway execution facts | Admission, auth, routing, provider, billing, trace, usage, key ownership | Normalized evidence model and cross-source interpretation |
 | Trace/span generation | Gateway-local IDs and trusted inbound preservation | Cross-system trace stitching and capture-gap display |
 | Payload capture decision | Gateway decision point, metadata, hashes/refs when safe | Payload state UI, audit-on-read, retention/delete/export for X-Insight-managed evidence |
-| UI | Lightweight request trace/debug view | Operator investigation console, execution detail, timeline, node detail, policy simulation, evidence packs |
+| UI | Lightweight request trace/debug view plus a future Data Exchange Control surface for outbound approvals, export ledger, import receipts, and deep links | Operator investigation console, execution detail, timeline, node detail, policy simulation, evidence packs, and read-side audit |
 | Import/export | Snapshot, handoff notes, future views/export/outbox if needed | Importer, dedupe, source refs, read APIs, adapters |
 | LiteLLM/New API/one-api | Compare for UniRouter feature catch-up | Public/open-source adapter strategy |
 
 ## Current Blocking Conditions
 
-There is no blocking condition for UniRouter Batch 1A through Batch 1R. Batch
-1R is fixed awaiting Canary verification.
+There is no blocking condition for UniRouter Batch 1A through Batch 1S. Batch
+1S is fixed awaiting Canary verification.
 
 These later actions are gated:
 

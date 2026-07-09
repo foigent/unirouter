@@ -1,9 +1,9 @@
 # PRD5 X-Insight Gate A Coordination
 
 > Date: 2026-07-10
-> Status: planning coordination accepted by User; Batch 1Q Canary/Sentinel
-> complete; Batch 1R request ID approval runbook fixed awaiting Canary; Gate A
-> controlled snapshot evidence not complete
+> Status: planning coordination accepted by User; Batch 1R Canary/Sentinel
+> complete; Batch 1S data exchange control surface fixed awaiting Canary; Gate
+> A controlled snapshot evidence not complete
 > Scope: UniRouter PRD5 coordination with X-Insight Gate A
 
 ## Purpose
@@ -18,6 +18,7 @@ Related shared-folder files:
 - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-08-prd5-structure-fields-before-exporter-proposed.md`
 - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-prd5-controlled-snapshot-handoff-prep.md`
 - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-request-id-approval-worksheet.md`
+- `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-data-exchange-control-surface-review.md`
 
 ## Current Accepted Decisions
 
@@ -77,6 +78,20 @@ Current Batch 1R approval rule:
   exact request; `pending` and `unavailable` rows must not be exported;
 - auto-discovery, read-only DB/view access, and exporter/outbox remain later
   options because they widen access beyond the first Gate A sample set.
+
+Current Batch 1S control-surface rule:
+
+- a future UniRouter UI entry is appropriate only as a Data Exchange Control
+  surface for outbound approval, export ledger, handoff artifacts, import
+  receipts, and X-Insight deep links;
+- UniRouter should not host X-Insight importer internals, normalized evidence
+  store, read-side audit, investigation timeline, graph UI, policy simulation,
+  or evidence packs;
+- the first UI slice, if later approved, should be approval queue plus export
+  ledger only; contextual links from Logs can add candidate request IDs later,
+  but Logs should not become the source of truth for integration control;
+- X-Insight should review stable receipt/deep-link fields before UniRouter adds
+  durable schema or UI for receipt reconciliation.
 
 ### 2. GitHub Strategy
 

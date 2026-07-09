@@ -3,9 +3,9 @@
 > Version: Phase 5 Active Scope Draft
 > Date: 2026-07-10
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
-> Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, Batch 1O, and
-> Batch 1P and Batch 1Q Canary/Sentinel complete. Batch 1R Gate A Request ID
-> Approval Runbook fixed awaiting Canary. PRD4 remains complete for the confirmed current scope
+> Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, Batch 1O,
+> Batch 1P, Batch 1Q, and Batch 1R Canary/Sentinel complete. Batch 1S
+> X-Insight Data Exchange Control Surface fixed awaiting Canary. PRD4 remains complete for the confirmed current scope
 > and is not reopened by PRD5.
 > Source: `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, X-Insight shared-folder
@@ -44,6 +44,8 @@ PRD5 may:
 - encode source refs, capture mode, capture gaps, decision records, actor and
   delegation fields, and payload-policy metadata;
 - keep a lightweight request trace UI focused on UniRouter gateway debugging;
+- define a UniRouter-owned data exchange control surface for outbound approval,
+  export ledger, handoff artifacts, import receipts, and X-Insight deep links;
 - add X-Insight deep-link hooks after X-Insight exposes stable execution URLs;
 - compare LiteLLM, New API, one-api, Langfuse, Helicone, and similar systems to
   decide which gateway features UniRouter should catch up on versus leave to
@@ -62,6 +64,9 @@ PRD5 must not:
 - create shared private GitHub organization policy for UniRouter and X-Insight;
 - create or update shared ECS staging before local X-Insight Gate A import works
   and CI is green;
+- put X-Insight's importer internals, normalized evidence store, read-side audit,
+  investigation timeline, graph UI, policy simulation, or evidence packs inside
+  UniRouter;
 - turn UniRouter into a full LLM observability/evals product, prompt-management
   platform, agent graph UI, or X-Insight clone.
 
@@ -99,6 +104,7 @@ PRD5 must not:
 | P5-F25 | Model Permission Decision Evidence | Emit explicit model-permission denial trace evidence with `capture_gap=permission_denied` and `decision_kind=auth` on existing chat authorization rejects |
 | P5-F26 | Gate A Request Approval Manifest | Add a JSON approval-manifest path for X-Insight Gate A snapshots so only User/UniRouter-approved scenario request IDs can be exported |
 | P5-F27 | Gate A Request ID Approval Runbook | Explain the non-technical request ID approval process and provide a shared worksheet before any real snapshot artifact is generated |
+| P5-F28 | X-Insight Data Exchange Control Surface | Define the future UniRouter UI/control-plane boundary for approval, export ledger, receipts, and deep links without duplicating X-Insight observability |
 
 ### P2
 
@@ -667,6 +673,35 @@ Acceptance:
   access, create shared ECS staging, add exporter/outbox, add X-Insight runtime
   dependency, or change PRD4.
 
+### P5-F28: X-Insight Data Exchange Control Surface
+
+Requirements:
+
+- Decide whether a UniRouter UI entry should exist for X-Insight-related
+  approvals and data exchange.
+- Define the product boundary as UniRouter-owned outbound data exchange control,
+  not a full X-Insight observability or audit console.
+- Split audit ownership: UniRouter records approval/export/handoff ledger facts;
+  X-Insight records import internals, normalized evidence, read-side audit, and
+  investigation activity.
+- Define the staged path: current Markdown/manifest flow, later UI readiness
+  design, minimal UI approval/export ledger, import receipt reconciliation, and
+  only then exporter/outbox if Gate A evidence justifies it.
+- Ask X-Insight to review receipt/deep-link fields before UniRouter implements
+  any durable UI or schema.
+
+Acceptance:
+
+- `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md` records the
+  recommendation, tradeoffs, ownership split, staged implementation, future data
+  concepts, and non-goals.
+- The shared folder contains a review request asking X-Insight what import
+  receipt/deep-link fields can be returned for UniRouter reconciliation.
+- Batch 1S does not implement UI code, add API routes, add migrations, generate
+  a real snapshot artifact, write approved request IDs, add read-only DB/view
+  access, create exporter/outbox, add X-Insight runtime dependency, store raw
+  prompt/response payloads, or change PRD4.
+
 ### P5-F09: Cursor Export API Or Outbox
 
 Requirements:
@@ -727,11 +762,13 @@ PRD5 should proceed in independently verifiable batches:
     selection.
 18. Batch 1R: request ID approval runbook and shared approval worksheet for
     non-technical approval.
-19. Later payload policy metadata and evidence references, with future raw
+19. Batch 1S: X-Insight data exchange control surface boundary and staged UI
+    decision.
+20. Later payload policy metadata and evidence references, with future raw
    payload modes gated behind enterprise opt-in.
-20. Later Gate A batch: read-only view/export decision after X-Insight Gate A
+21. Later Gate A batch: read-only view/export decision after X-Insight Gate A
    evidence.
-21. Later target/backlog batches: target upstream/SSO evidence or larger
+22. Later target/backlog batches: target upstream/SSO evidence or larger
    backlog items only after their prerequisites are explicitly met.
 
 ## 6. External Source Refresh
