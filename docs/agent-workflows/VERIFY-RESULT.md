@@ -1,4 +1,4 @@
-# VERIFY-RESULT.md - PRD5 Batch 1Q Gate A Request Approval Manifest
+# VERIFY-RESULT.md - PRD5 Batch 1R Gate A Request ID Approval Runbook
 
 **Verifier:** Canary
 **Date:** 2026-07-10
@@ -9,48 +9,50 @@
 
 | # | Instruction | Result | Evidence |
 |---|-------------|--------|----------|
-| 1 | Repo includes `61091c` / PR #119; VERIFY-RESULT.md records Batch 1P PASS 6/6 | ✅ PASS | `git log` shows `61091c9 feat: PRD5 Batch 1P — model permission decision evidence (P5-F25) (#119)` at HEAD; VERIFY-RESULT.md title: "PRD5 Batch 1P Model Permission Decision Evidence", result: "PASS — 6/6" |
-| 2 | `prd5_xinsight_snapshot.go -help` documents `--approval-manifest` | ✅ PASS | `go run ... -help 2>&1 | grep -- "-approval-manifest"` → `-approval-manifest string` |
-| 3 | Manifest error boundaries: pending-only fails before DSN; manifest + direct flags rejected; approved placeholder IDs rejected | ✅ PASS | Pending-only: "approval manifest contains no approved request IDs"; approved "TBD": "approved entry must include a concrete request_id"; manifest + `--request-id`: "--approval-manifest cannot be combined with --request-id, --request-ids, or --scenario" |
-| 4 | Docs and shared response state real request IDs must come from User/UniRouter-owner approval, not Codex | ✅ PASS | `PRD-Phase5.md:637` — "request IDs must come from User/UniRouter owner approval"; shared response line 19: "request IDs must come from User or a UniRouter owner"; line 51: "Fill only after User/UniRouter owner approves a controlled request_id" |
-| 5 | No migration, runtime change, API route, frontend, real snapshot artifact, approved ID invention, DSN/credential/raw payload, read-only DB/view, shared ECS staging, exporter/outbox, X-Insight dependency, PRD4 matrix change, or Production verified claim | ✅ PASS | `git diff --name-only` — `scripts/prd5_xinsight_snapshot.go` + 10 docs files only. `git diff --check` — clean. PRD4 matrix: 13 rows, unchanged |
+| 1 | Repo includes `ed8c69d` / PR #120; VERIFY-RESULT.md records Batch 1Q PASS 6/6 | ✅ PASS | `git log` shows `ed8c69d feat: PRD5 Batch 1Q — Gate A request approval manifest (P5-F26) (#120)` at HEAD; VERIFY-RESULT.md title: "PRD5 Batch 1Q Gate A Request Approval Manifest", result: "PASS — 6/6" |
+| 2 | Approval runbook explains: request_id as receipt, what User approves, approved/pending/unavailable, X-Insight scenarios, tradeoffs, example sentence | ✅ PASS | `PRD5-GATE-A-REQUEST-ID-APPROVAL.md:11` — "receipt number for one UniRouter model request"; `:21` — "approval manifest is a whitelist"; `:28-36` — approval status table; `:58-66` — X-Insight scenarios table; `:83-90` — tradeoffs table (auto-discover/read-only DB/exporter); `:95` — "Example User Approval Sentence" section |
+| 3 | Shared worksheet exists; contains only placeholder rows, allowed statuses, and warnings not to paste secrets | ✅ PASS | Worksheet exists (2640 bytes); line 14: "Do not paste raw prompts, raw responses, API keys, tokens"; lines 21-23: approved/pending/unavailable statuses; lines 29-34: all rows are placeholder `TBD` with `pending` status; line 38: "Only rows marked `approved` with a concrete non-placeholder request ID" |
+| 4 | PRD5 status, matrix, implementation plan, backlog, Gate A coordination, handoff, and docs indexes route Batch 1R correctly | ✅ PASS | All 11 files contain Batch 1R/P5-F27 references; `PRD5-ACCEPTANCE-MATRIX.md:70` — P5-F27 = "Fixed awaiting Canary"; `CURRENT-STATUS.md:56` — Batch 1R in active table; `PROJECT-HANDOFF.md:310` — Batch 1R section present |
+| 5 | No code/runtime change, real snapshot artifact, approved ID invention, DSN/credential/raw payload, read-only DB/view, shared ECS staging, exporter/outbox, X-Insight dependency, PRD4 matrix change, or Production verified claim | ✅ PASS | `git diff --name-only` — 12 docs files only, no `.go` files. `git diff --check` — clean. `git diff -- docs/PRD-Phase4.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/ops/evidence/PRD4-final-closeout-20260708.md` — no changes |
 | 6 | All commands pass | ✅ PASS | See below |
 
 ## Command Results
 
 | Command | Result |
 |---------|--------|
-| `go run ... -help 2>&1 \| grep -- "-approval-manifest"` | ✅ Found |
-| Pending-only manifest | ✅ "approval manifest contains no approved request IDs" |
-| Approved placeholder "TBD" | ✅ "approved entry must include a concrete request_id" |
-| Manifest + `--request-id` | ✅ "--approval-manifest cannot be combined" |
-| `go test ./... -count=1` | ✅ All 22 packages PASS (0 FAIL) |
-| `grep` for key terms | ✅ All expected references found across code, docs, and shared response |
-| `git diff --name-only` | ✅ 1 script + 10 docs files |
+| `git log --oneline -3 origin/main \| rg "ed8c69d.*PRD5 Batch 1Q\|#120"` | ✅ Found |
+| `rg` for key terms across 11 docs + shared worksheet | ✅ All expected references found |
+| `rg` for approved/pending/unavailable/secrets warnings in worksheet | ✅ Found |
+| `git diff --name-only` | ✅ 12 docs files only |
+| `git diff -- docs/PRD-Phase4.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/ops/evidence/PRD4-final-closeout-20260708.md` | ✅ No changes |
 | `git diff --check` | ✅ Clean (exit 0) |
 
 ## PRD4 Boundary
 
+- PRD4 files: **no changes** ✅
 - PRD4 matrix: 13 rows — **unchanged** ✅
 - No PRD4 row promoted to `Production verified` ✅
 
-## Code Diff Summary
+## Scope Check
 
-| File | Change |
-|------|--------|
-| `scripts/prd5_xinsight_snapshot.go` | Added `--approval-manifest` flag; manifest schema `unirouter.prd5.xinsight.approval.v1` with `approved`/`pending`/`unavailable` statuses; rejects placeholder IDs (`TBD`, `n/a`, `unavailable`); rejects combining with direct request flags; uses manifest `source_instance`; sets `selection_mode=approved_request_id_manifest`; exports only `approved` rows |
-| docs (10 files) | Status lines updated for Batch 1P complete + Batch 1Q fixed awaiting Canary; P5-F26 added to PRD5, matrix, implementation plan, backlog, snapshot tech-ref, code-map, project handoff, current status, gate-a-coordination |
+- No code/runtime change ✅
+- No real snapshot artifact ✅
+- No approved request ID invention ✅
+- No DSN/credential/token/raw payload ✅
+- No read-only DB/view credential ✅
+- No shared ECS staging ✅
+- No exporter/outbox ✅
+- No X-Insight runtime dependency ✅
+- No `Production verified` claim ✅
 
 ## Notes
 
-- `--approval-manifest` 是互斥模式：不能与 `--request-id`/`--request-ids`/`--scenario` 混合使用。
-- manifest 中 `approval_status=approved` 的条目必须有具体的 `request_id`，不能是 `TBD`/`n/a`/`unavailable`。
-- pending-only manifest 在尝试连接 DSN 之前就失败，避免不必要的数据库连接。
-- `selection_mode=approved_request_id_manifest` 写入 snapshot safety 字段，让 X-Insight 知道选择方式。
-- 共享响应文件明确说明 request ID 来自 User/UniRouter owner approval，Codex 不自行生成。
-- Batch 1Q 不生成真实 snapshot artifact，不填充真实 request ID。
-- Batch 1Q 代码变更尚未 commit（工作树中），等待 Sentinel 执行 commit/push/PR。
+- Batch 1R 是纯文档/协调批次，不涉及任何代码变更或 snapshot 脚本修改。
+- approval runbook 用非技术语言解释了 `request_id` 概念、审批含义、三种状态、X-Insight 所需场景、以及与其他方案（auto-discovery、read-only DB、exporter）的权衡。
+- 共享审批 worksheet 包含 6 个占位场景行，全部为 `pending`/`TBD` 状态，等待 User 填入真实 request ID。
+- PRD4 文件无任何变更（`git diff` 确认）。
+- Batch 1R 文档变更尚未 commit（工作树中），等待 Sentinel 执行 commit/push/PR。
 
 ## Conclusion
 
-**PRD5 Batch 1Q: PASS 6/6.** PRD4 边界完整，approval manifest 工具逻辑正确（pending-only 失败、placeholder 拒绝、互斥检查），文档和共享响应明确 request ID 来源为 User/UniRouter-owner approval，无越界变更。可以进入 Sentinel commit 流程。
+**PRD5 Batch 1R: PASS 6/6.** PRD4 边界完整且无变更，approval runbook 完整覆盖所有要求内容（request_id 概念、审批范围、三种状态、X-Insight 场景、方案权衡、非技术审批示例），共享 worksheet 仅含占位行和安全警告，无越界变更。可以进入 Sentinel commit 流程。

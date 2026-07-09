@@ -1,8 +1,9 @@
 # PRD5 X-Insight Gate A Coordination
 
 > Date: 2026-07-10
-> Status: planning coordination accepted by User; Batch 1O handoff prep fixed
-> awaiting Canary; Gate A controlled snapshot evidence not complete
+> Status: planning coordination accepted by User; Batch 1Q Canary/Sentinel
+> complete; Batch 1R request ID approval runbook fixed awaiting Canary; Gate A
+> controlled snapshot evidence not complete
 > Scope: UniRouter PRD5 coordination with X-Insight Gate A
 
 ## Purpose
@@ -16,6 +17,7 @@ Related shared-folder files:
 - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-08-unirouter-gate-a-environment-and-prd5-coordination-response.md`
 - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-08-prd5-structure-fields-before-exporter-proposed.md`
 - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-prd5-controlled-snapshot-handoff-prep.md`
+- `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-request-id-approval-worksheet.md`
 
 ## Current Accepted Decisions
 
@@ -62,6 +64,19 @@ Current Batch 1Q handoff rule:
   source access before generating a controlled snapshot artifact;
 - no DSN, credential, raw prompt, raw response, raw IP, or raw upstream error
   may be written to the repo or shared folder.
+
+Current Batch 1R approval rule:
+
+- a `request_id` is treated as the receipt number for one UniRouter request;
+- approval is a human data-minimization decision, not a technical broad-export
+  switch;
+- User/UniRouter owner approval should be recorded first in the shared approval
+  worksheet, then converted into the JSON approval manifest used by the snapshot
+  tool;
+- `approved` rows may be exported as sanitized metadata-only evidence for that
+  exact request; `pending` and `unavailable` rows must not be exported;
+- auto-discovery, read-only DB/view access, and exporter/outbox remain later
+  options because they widen access beyond the first Gate A sample set.
 
 ### 2. GitHub Strategy
 

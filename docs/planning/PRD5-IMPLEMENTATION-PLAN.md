@@ -3,8 +3,8 @@
 > Date: 2026-07-10
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
 > Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, Batch 1O, and
-> Batch 1P Canary/Sentinel complete. Batch 1Q Gate A Request Approval Manifest
-> fixed awaiting Canary.
+> Batch 1P and Batch 1Q Canary/Sentinel complete. Batch 1R Gate A Request ID
+> Approval Runbook fixed awaiting Canary.
 > Scope owner: UniRouter. X-Insight remains a separate project and owns broader
 > observability/governance product surfaces.
 
@@ -546,7 +546,9 @@ Risk: R2 because it changes PRD5 snapshot tooling and status/coordination docs
 without changing runtime request handling, DB schema, API routes, frontend
 behavior, credentials, or generated snapshot artifacts.
 
-Status: fixed awaiting Canary.
+Status: Canary/Sentinel complete. Canary PASS 6/6 is recorded in
+`docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge is reflected by
+`ed8c69d` / PR #120.
 
 Implemented in this round:
 
@@ -563,6 +565,44 @@ Implemented in this round:
   manifest-based exports;
 - answer X-Insight's approved request ID request in the shared folder without
   supplying fabricated IDs.
+
+Non-goals:
+
+- no real snapshot artifact is generated;
+- no approved request IDs are invented or written by Codex;
+- no DSN, credential, token, raw prompt, raw response, raw IP, or raw upstream
+  error is written to the repo or shared folder;
+- no DB migration;
+- no runtime request-path change;
+- no new API route;
+- no frontend behavior change;
+- no read-only DB/view credential handoff;
+- no shared ECS staging;
+- no exporter/outbox;
+- no X-Insight runtime dependency;
+- no PRD4 matrix/status change.
+
+### Batch 1R: Gate A Request ID Approval Runbook
+
+Risk: R1 because it changes only PRD5 documentation and shared-folder
+coordination files. It does not change runtime request handling, DB schema, API
+routes, frontend behavior, credentials, or generated snapshot artifacts.
+
+Status: fixed awaiting Canary.
+
+Implemented in this round:
+
+- add `docs/ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md` for non-technical approval
+  explanation;
+- explain that a `request_id` is a single request receipt and that approval
+  authorizes only metadata-only sanitized evidence for that exact request;
+- document the meanings of `approved`, `pending`, and `unavailable`;
+- compare approval manifest, auto-discovery, read-only DB/view, and
+  exporter/outbox tradeoffs;
+- add a shared-folder worksheet:
+  `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-request-id-approval-worksheet.md`;
+- reconcile Batch 1Q completion as `ed8c69d` / PR #120 and make Batch 1R the
+  current Canary signal.
 
 Non-goals:
 
@@ -638,8 +678,8 @@ Use existing PRD4 harnesses, but record target evidence under PRD5.
 
 ## Current Blocking Conditions
 
-There is no blocking condition for UniRouter Batch 1A through Batch 1Q. Batch
-1Q is fixed awaiting Canary verification.
+There is no blocking condition for UniRouter Batch 1A through Batch 1R. Batch
+1R is fixed awaiting Canary verification.
 
 These later actions are gated:
 

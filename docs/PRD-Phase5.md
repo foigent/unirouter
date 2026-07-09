@@ -4,8 +4,8 @@
 > Date: 2026-07-10
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
 > Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, Batch 1O, and
-> Batch 1P Canary/Sentinel complete. Batch 1Q Gate A Request Approval Manifest
-> fixed awaiting Canary. PRD4 remains complete for the confirmed current scope
+> Batch 1P and Batch 1Q Canary/Sentinel complete. Batch 1R Gate A Request ID
+> Approval Runbook fixed awaiting Canary. PRD4 remains complete for the confirmed current scope
 > and is not reopened by PRD5.
 > Source: `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, X-Insight shared-folder
@@ -98,6 +98,7 @@ PRD5 must not:
 | P5-F24 | Gate A Controlled Snapshot Handoff Prep | Reconcile Batch 1N completion and define the approved controlled snapshot handoff prerequisites before any real snapshot or credential work |
 | P5-F25 | Model Permission Decision Evidence | Emit explicit model-permission denial trace evidence with `capture_gap=permission_denied` and `decision_kind=auth` on existing chat authorization rejects |
 | P5-F26 | Gate A Request Approval Manifest | Add a JSON approval-manifest path for X-Insight Gate A snapshots so only User/UniRouter-approved scenario request IDs can be exported |
+| P5-F27 | Gate A Request ID Approval Runbook | Explain the non-technical request ID approval process and provide a shared worksheet before any real snapshot artifact is generated |
 
 ### P2
 
@@ -640,6 +641,32 @@ Acceptance:
   access, create shared ECS staging, add exporter/outbox, add X-Insight runtime
   dependency, or change PRD4.
 
+### P5-F27: Gate A Request ID Approval Runbook
+
+Requirements:
+
+- Explain in plain language that a `request_id` is a single request receipt and
+  that approving it allows only metadata-only sanitized evidence for that one
+  request.
+- Define what the User is approving and what remains explicitly not approved:
+  raw payloads, credentials, broad data discovery, DB/view access, exporter, or
+  X-Insight runtime dependency.
+- Provide a shared approval worksheet for User/UniRouter-owner review before any
+  real Gate A snapshot artifact is generated.
+- Compare the current manifest approach against auto-discovery, read-only
+  DB/view, and exporter/outbox so the approval tradeoff is understandable.
+
+Acceptance:
+
+- `docs/ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md` explains the approval process,
+  status meanings, scenario list, alternatives, and example approval sentence.
+- The shared folder contains a human approval worksheet that does not include
+  secrets, raw payloads, or fabricated request IDs.
+- Batch 1R does not generate a real snapshot artifact, write approved request
+  IDs, include a DSN/credential/token/raw payload, create read-only DB/view
+  access, create shared ECS staging, add exporter/outbox, add X-Insight runtime
+  dependency, or change PRD4.
+
 ### P5-F09: Cursor Export API Or Outbox
 
 Requirements:
@@ -698,11 +725,13 @@ PRD5 should proceed in independently verifiable batches:
     authorization rejects.
 17. Batch 1Q: request approval manifest for X-Insight Gate A controlled snapshot
     selection.
-18. Later payload policy metadata and evidence references, with future raw
+18. Batch 1R: request ID approval runbook and shared approval worksheet for
+    non-technical approval.
+19. Later payload policy metadata and evidence references, with future raw
    payload modes gated behind enterprise opt-in.
-19. Later Gate A batch: read-only view/export decision after X-Insight Gate A
+20. Later Gate A batch: read-only view/export decision after X-Insight Gate A
    evidence.
-20. Later target/backlog batches: target upstream/SSO evidence or larger
+21. Later target/backlog batches: target upstream/SSO evidence or larger
    backlog items only after their prerequisites are explicitly met.
 
 ## 6. External Source Refresh

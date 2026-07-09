@@ -76,6 +76,7 @@ OpenAPI snapshot: `docs/tech-ref/05-openapi-spec.yaml` is the current route-leve
 | `scripts/prd4_real_sso_smoke.mjs` | Real SSO browser runner for future Logto or another enterprise OIDC target evidence; checks OIDC config/discovery, browser login, `/me`, audit mapping, and sanitized JSON evidence when PRD5 target execution is reopened |
 | `scripts/prd4_real_sso_audit_check.go` | Guarded read-only DB evidence check for OIDC user mapping and `login.oidc` audit redaction |
 | `scripts/prd5_xinsight_snapshot.go` | PRD5 Batch 1A read-only sanitized snapshot generator for explicit `request_id` selections from `call_logs` and `request_trace_events`; Batch 1K adds optional DSN-free Markdown handoff-note output; Batch 1N adds `candidate_capture_gaps` and a handoff-note capture-gap table; Batch 1Q adds `--approval-manifest` for User/UniRouter-owner approved scenario request IDs; no broad table export, raw prompt/response, API key, raw IP, raw upstream error, DSN, or credential output |
+| `docs/ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md` | PRD5 Batch 1R non-technical request ID approval runbook for Gate A sanitized snapshot data-minimization decisions |
 
 ## Frontend Map
 
@@ -209,6 +210,14 @@ PRD5 Batch 1Q Gate A request approval manifest support is implemented in
 request IDs are exported, while `pending` and `unavailable` rows are not
 exported. Manifest mode is mutually exclusive with direct `--request-id`,
 `--request-ids`, and `--scenario` flags.
+
+PRD5 Batch 1R Gate A request ID approval runbook is documented in
+`docs/ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md`, with the shared approval
+worksheet at
+`/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-request-id-approval-worksheet.md`.
+It explains request IDs as single-request receipts, the `approved` / `pending` /
+`unavailable` meanings, and why auto-discovery, read-only DB/view, and
+exporter/outbox are deferred beyond the first Gate A sample approval.
 
 PRD5 Batch 1P model permission decision evidence is implemented in
 `internal/gateway/relay.go` and `internal/gateway/trace.go`, with focused
