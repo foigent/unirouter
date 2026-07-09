@@ -2,9 +2,10 @@
 
 > Date: 2026-07-09
 > Status: PRD5 Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G,
-> Batch 1H, Batch 1I, Batch 1J, Batch 1K, and Batch 1L Canary/Sentinel
-> complete; Batch 1M provider failure capture gaps fixed awaiting Canary. PRD4
-> remains complete for the confirmed current scope and is not reopened.
+> Batch 1H, Batch 1I, Batch 1J, Batch 1K, Batch 1L, and Batch 1M
+> Canary/Sentinel complete; Batch 1N snapshot capture-gap candidates fixed
+> awaiting Canary. PRD4 remains complete for the confirmed current scope and is
+> not reopened.
 > Source: `docs/PRD-Phase5.md`, `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, current repo/code review,
 > X-Insight shared-folder responses, PRD5 Batch 1A/1B/1C implementation
@@ -15,7 +16,8 @@
 > decision evidence changes, PRD5 Batch 1J provider upstream capture-gap
 > changes, PRD5 Batch 1K snapshot handoff-note tooling changes, PRD5 Batch 1L
 > component span refinement changes, and PRD5 Batch 1M provider failure
-> capture-gap changes.
+> capture-gap changes, and PRD5 Batch 1N snapshot capture-gap candidate
+> changes.
 
 ## Status Values
 
@@ -58,7 +60,25 @@ actual result, and rollback or cleanup note.
 | P5-F19 | Provider Upstream Capture Gap | Canary passed | Provider response trace events write `capture_gap=provider_not_returned` when no sanitized `upstream_request_id` is available, while preserving returned IDs and redaction gaps | Canary PASS recorded before Batch 1K; Sentinel merge `f5223df` / PR #113 | Batch 1J code-only evidence enrichment; no migration, new route, frontend behavior, exporter/outbox, read-only credential, raw payload capture, X-Insight runtime dependency, or PRD4 matrix change |
 | P5-F20 | Gate A Snapshot Handoff Note | Canary passed | Explicit-request X-Insight snapshot runs can write a companion Markdown handoff note with selected IDs, scenario labels, counts, safety confirmation, and DSN-free command shape | Canary PASS 10/10 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `2db830a` / PR #114 | Batch 1K tooling/docs enrichment; no runtime behavior change, migration, new route, frontend behavior, exporter/outbox, read-only credential handoff, shared ECS staging, raw payload capture, X-Insight runtime dependency, or PRD4 matrix change |
 | P5-F21 | Component Span Refinement | Canary passed | Repeated trace events from the same `source_component` parent to that component's first span while first component events still parent to the request gateway root | Canary PASS 10/10 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `ffebf83` / PR #115 | Batch 1L code-only evidence hierarchy refinement; no migration, new route, frontend behavior, exporter/outbox, read-only credential, raw payload capture, X-Insight runtime dependency, cross-system graph inference, or PRD4 matrix change |
-| P5-F22 | Provider Failure Capture Gaps | Fixed awaiting Canary | Provider failure trace events that occur before a provider response exists write `capture_gap=not_available_from_source` when no sanitized `upstream_request_id` can exist, while response events keep `provider_not_returned` and redaction gaps keep priority | Focused gateway tests, source review, docs/shared-contract grep, `go test ./...`, `git diff --check` | Batch 1M code-only evidence gap refinement; no migration, new route, frontend behavior, exporter/outbox, read-only credential, raw payload capture, X-Insight runtime dependency, provider dispatch semantic change, or PRD4 matrix change |
+| P5-F22 | Provider Failure Capture Gaps | Canary passed | Provider failure trace events that occur before a provider response exists write `capture_gap=not_available_from_source` when no sanitized `upstream_request_id` can exist, while response events keep `provider_not_returned` and redaction gaps keep priority | Canary PASS 10/10 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `4a4e254` / PR #116 | Batch 1M code-only evidence gap refinement; no migration, new route, frontend behavior, exporter/outbox, read-only credential, raw payload capture, X-Insight runtime dependency, provider dispatch semantic change, or PRD4 matrix change |
+| P5-F23 | Snapshot Capture Gap Candidates | Fixed awaiting Canary | Gate A snapshots keep primary missing-row gaps factual while adding `candidate_capture_gaps` for missing trace rows, so X-Insight can distinguish possible sampling, retention, and non-instrumented causes without UniRouter fabricating evidence | `go run` compile checks, source review, docs/shared-contract grep, `go test ./...`, `git diff --check` | Batch 1N snapshot-tooling evidence enrichment; no migration, runtime request-path change, new route, frontend behavior, exporter/outbox, read-only credential, raw payload capture, X-Insight runtime dependency, or PRD4 matrix change |
+
+## Batch 1N Verification
+
+PRD5 Batch 1N verifies Gate A snapshot capture-gap candidates:
+
+```bash
+go run scripts/prd5_xinsight_snapshot.go -help
+go run scripts/prd5_xinsight_snapshot.go --request-id req-example --handoff-note - 2>&1 | rg -- "--handoff-note must be a Markdown file path"
+go test ./... -count=1
+rg -n "Snapshot Capture Gap Candidates|P5-F23|Batch 1N|candidate_capture_gaps|CandidateGaps|sampled_out|retention_expired|not_instrumented|Capture Gaps|4a4e254|PR #116" scripts/prd5_xinsight_snapshot.go docs/PRD-Phase5.md docs/ops/PRD5-ACCEPTANCE-MATRIX.md docs/planning/PRD5-IMPLEMENTATION-PLAN.md docs/tech-ref/25-prd5-xinsight-sanitized-snapshot.md docs/tech-ref/26-prd5-evidence-field-contract.md docs/agent-workflows/FIX-SIGNAL.md "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/contracts/2026-07-09-unirouter-prd5-snapshot-capture-gap-candidates.md"
+git diff --check
+```
+
+No new migration, runtime request-path change, API route, frontend behavior,
+exporter/outbox, read-only credential, raw prompt/response capture, payload
+object store, X-Insight runtime dependency, PRD4 matrix count, or
+`Production verified` claim should change in Batch 1N.
 
 ## Batch 1M Verification
 
@@ -68,7 +88,7 @@ PRD5 Batch 1M verifies provider failure capture-gap evidence:
 go test ./internal/gateway -run 'TestRecordTraceEvent_(ProviderFailureMissingUpstreamRequestIDCaptureGap|ProviderFailureRedactionGapTakesPriority|ProviderResponseMissingUpstreamRequestIDCaptureGap|ProviderResponseRedactionGapTakesPriority)' -count=1
 go test ./internal/gateway ./internal/traceutil ./cmd/uniroute -count=1
 go test ./... -count=1
-rg -n "Provider Failure Capture Gaps|P5-F22|Batch 1M|not_available_from_source|providerMissingUpstreamCaptureGap|ProviderFailureMissingUpstreamRequestIDCaptureGap|ProviderFailureRedactionGapTakesPriority|ffebf83|PR #115" internal/gateway docs/PRD-Phase5.md docs/ops/PRD5-ACCEPTANCE-MATRIX.md docs/planning/PRD5-IMPLEMENTATION-PLAN.md docs/tech-ref/26-prd5-evidence-field-contract.md docs/agent-workflows/FIX-SIGNAL.md "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/contracts/2026-07-09-unirouter-prd5-provider-failure-capture-gaps.md"
+rg -n "Provider Failure Capture Gaps|P5-F22|Batch 1M|not_available_from_source|providerMissingUpstreamCaptureGap|ProviderFailureMissingUpstreamRequestIDCaptureGap|ProviderFailureRedactionGapTakesPriority|4a4e254|PR #116" internal/gateway docs/PRD-Phase5.md docs/ops/PRD5-ACCEPTANCE-MATRIX.md docs/planning/PRD5-IMPLEMENTATION-PLAN.md docs/tech-ref/26-prd5-evidence-field-contract.md docs/agent-workflows/FIX-SIGNAL.md "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/contracts/2026-07-09-unirouter-prd5-provider-failure-capture-gaps.md"
 git diff --check
 ```
 

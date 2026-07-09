@@ -2,8 +2,8 @@
 
 > Date: 2026-07-09
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
-> Batch 1I, Batch 1J, Batch 1K, and Batch 1L Canary/Sentinel complete. Batch
-> 1M provider failure capture gaps fixed awaiting Canary.
+> Batch 1I, Batch 1J, Batch 1K, Batch 1L, and Batch 1M Canary/Sentinel
+> complete. Batch 1N snapshot capture-gap candidates fixed awaiting Canary.
 > Scope owner: UniRouter. X-Insight remains a separate project and owns broader
 > observability/governance product surfaces.
 
@@ -399,7 +399,7 @@ source-event hashes for provider failure events, but it does not change routing,
 billing, provider dispatch, response payloads, API routes, frontend behavior, or
 DB schema.
 
-Status: fixed awaiting Canary.
+Status: Canary/Sentinel complete (`4a4e254` / PR #116).
 
 Implemented in this round:
 
@@ -426,6 +426,41 @@ Non-goals:
 - no raw prompt/response capture;
 - no X-Insight runtime dependency;
 - no provider dispatch semantic change;
+- no PRD4 matrix/status change.
+
+### Batch 1N: Snapshot Capture Gap Candidates
+
+Risk: R2 because it changes explicit-request Gate A snapshot JSON/handoff-note
+tooling only. It does not change runtime request handling, routing, billing,
+provider dispatch, response payloads, API routes, frontend behavior, or DB
+schema.
+
+Status: fixed awaiting Canary.
+
+Implemented in this round:
+
+- add optional `candidate_capture_gaps` to generated snapshot `capture_gaps`;
+- keep the primary generated missing-row `capture_gap` conservative as
+  `not_available_from_source`;
+- for missing `request_trace_events` rows where a `call_logs` row exists, include
+  `sampled_out`, `retention_expired`, and `not_instrumented` as candidate
+  capture-gap categories;
+- for missing `call_logs` rows, keep `not_available_from_source` as the only
+  candidate gap;
+- add a capture-gap table to generated Markdown handoff notes;
+- publish a shared X-Insight contract for interpreting these candidates.
+
+Non-goals:
+
+- no new migration;
+- no runtime request-path change;
+- no new API route;
+- no frontend behavior change;
+- no exporter/outbox;
+- no read-only DB/view credential handoff;
+- no raw prompt/response capture;
+- no X-Insight runtime dependency;
+- no definitive sampling/retention cause assertion;
 - no PRD4 matrix/status change.
 
 ### Later Payload Policy Modes
@@ -484,7 +519,7 @@ Use existing PRD4 harnesses, but record target evidence under PRD5.
 
 ## Current Blocking Conditions
 
-There is no blocking condition for UniRouter Batch 1A through Batch 1M.
+There is no blocking condition for UniRouter Batch 1A through Batch 1N.
 
 These later actions are gated:
 

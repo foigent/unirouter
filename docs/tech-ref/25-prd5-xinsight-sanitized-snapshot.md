@@ -1,8 +1,9 @@
 # PRD5 X-Insight Sanitized Snapshot
 
-> Version: v0.2
+> Version: v0.3
 > Date: 2026-07-09
-> Status: Batch 1A/1B and Batch 1K Canary/Sentinel complete
+> Status: Batch 1A/1B and Batch 1K Canary/Sentinel complete; Batch 1N snapshot
+> capture-gap candidates fixed awaiting Canary
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`
 
@@ -44,7 +45,7 @@ Use `--overwrite` only when intentionally replacing a local generated artifact.
 The optional `--handoff-note` path writes a Markdown note after the snapshot JSON
 is written successfully. It records generated date, source instance, schema
 version, selected request IDs, scenario labels, counts, safety confirmation,
-snapshot output path, and command shape without the DSN.
+snapshot output path, generated capture gaps, and command shape without the DSN.
 
 `--handoff-note -` is rejected so JSON and Markdown output cannot be interleaved
 on stdout.
@@ -80,7 +81,8 @@ The output preserves:
 - sanitized trace metadata;
 - generated source refs;
 - generated source event hashes;
-- capture gaps for selected request IDs with missing rows.
+- capture gaps for selected request IDs with missing rows, including candidate
+  capture-gap categories where UniRouter cannot assert one definitive cause.
 
 ## Safety Behavior
 
@@ -137,6 +139,21 @@ Capture gap values follow the X-Insight-aligned vocabulary where possible. Batch
 1A generated gaps use `not_available_from_source` with a reason string instead
 of inventing missing evidence.
 
+Batch 1N adds an optional `candidate_capture_gaps` array to generated
+`capture_gaps` rows:
+
+- missing `call_logs` rows use
+  `candidate_capture_gaps: ["not_available_from_source"]`;
+- missing `request_trace_events` rows with a matching `call_logs` row use
+  `candidate_capture_gaps: ["sampled_out", "retention_expired",
+  "not_instrumented"]`;
+- missing `request_trace_events` rows without a matching `call_logs` row use
+  `candidate_capture_gaps: ["not_available_from_source"]`.
+
+The primary `capture_gap` remains `not_available_from_source` for generated
+missing-row gaps. Candidate gaps are hints for X-Insight import and review; they
+are not definitive UniRouter runtime claims.
+
 ## Handoff Rule
 
 Generated snapshots should stay out of Git unless the User explicitly approves a
@@ -154,6 +171,7 @@ If a snapshot is placed there, add a short Markdown note with:
 - source instance label;
 - selected request IDs or scenario labels;
 - top-level counts and safety confirmation;
+- generated capture gaps and candidate categories;
 - snapshot output path;
 - command shape without DSN;
 - confirmation that raw prompt/response, credentials, raw IPs, and raw upstream

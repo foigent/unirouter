@@ -1,4 +1,4 @@
-# VERIFY-RESULT.md - PRD5 Batch 1M Provider Failure Capture Gaps
+# VERIFY-RESULT.md - PRD5 Batch 1N Snapshot Capture Gap Candidates
 
 **Verifier:** Canary
 **Date:** 2026-07-09
@@ -9,55 +9,55 @@
 
 | # | Instruction | Result | Evidence |
 |---|-------------|--------|----------|
-| 1 | VERIFY-RESULT.md records Batch 1L PASS 10/10; repo includes `ffebf83` / PR #115 | ✅ PASS | Previous VERIFY-RESULT.md records Batch 1L PASS 10/10; `git log` shows `ffebf83 feat: PRD5 Batch 1L — component span refinement (P5-F21) (#115)` |
-| 2 | Matrix: P5-F01–F07 + F13–F21 Canary passed; F08–F11 deferred; F12 planned; P5-F22 Fixed awaiting Canary | ✅ PASS | `PRD5-ACCEPTANCE-MATRIX.md:61` — P5-F22 = "Fixed awaiting Canary"; P5-F01–F07, F13–F21 = "Canary passed"; F08–F11 = "Deferred pending prerequisite"; F12 = "Planned" |
-| 3 | PRD-Phase5 defines P5-F22; does not reopen PRD4 | ✅ PASS | `PRD-Phase5.md:514` defines P5-F22 "Provider Failure Capture Gaps"; PRD4 matrix unchanged (13 rows: 11 Canary passed, 2 Deferred to PRD5) |
-| 4 | Implementation plan: UniRouter can proceed independently through Batch 1M; non-goals listed | ✅ PASS | `PRD5-IMPLEMENTATION-PLAN.md:487` — "no blocking condition for UniRouter Batch 1A through Batch 1M"; Batch 1M non-goals listed at `:395` |
-| 5 | Evidence field contract documents provider failure capture gaps and `provider_not_returned` / `not_available_from_source` distinction | ✅ PASS | `26-prd5-evidence-field-contract.md:207` — "Batch 1M provider failure capture gaps"; `:213` — `not_available_from_source` for pre-response failures; `:86` — enum value listed |
-| 6 | Shared contract file exists and describes UniRouter/X-Insight provider failure capture-gap boundary | ✅ PASS | `contracts/2026-07-09-unirouter-prd5-provider-failure-capture-gaps.md` exists (2296 bytes); describes `provider_not_returned` vs `not_available_from_source` writer rules and X-Insight import guidance |
-| 7 | `trace.go` maps provider response missing IDs to `provider_not_returned` and provider pre-response failure missing IDs to `not_available_from_source` | ✅ PASS | `trace.go:326` — `providerMissingUpstreamCaptureGap` returns `evidenceCaptureGapProvider` for `response_accepted`/`response_rejected` and `evidenceCaptureGapSource` for `key_decrypt_failed`/`adapter_unknown`/`request_build_failed`/`request_failed`/`response_parse_failed` |
-| 8 | Redaction gaps keep priority; available upstream request IDs preserved for response parse failures | ✅ PASS | `trace.go:154-158` — gap assigned only when `captureGap == ""` (redacted takes priority); `relay.go:1288` — embeddings `response_parse_failed` passes `upstreamRequestID` |
-| 9 | No migration, new route, frontend, exporter/outbox, read-only credential/view, raw payload, X-Insight dependency, public-header authority, provider dispatch semantic change, or PRD4 matrix change | ✅ PASS | Diff: `trace.go` (constant + function rename/expand), `relay.go` (+1 arg to existing call), `relay_mock_test.go` (+2 tests) + docs only. No PRD4 row changes, no new migration, no new route |
+| 1 | VERIFY-RESULT.md records Batch 1M PASS 10/10; repo includes `4a4e254` / PR #116 | ✅ PASS | Previous VERIFY-RESULT.md records Batch 1M PASS 10/10; `git log` shows `4a4e254 feat: PRD5 Batch 1M — provider failure capture gaps (P5-F22) (#116)` |
+| 2 | Matrix: P5-F01–F07 + F13–F22 Canary passed; F08–F11 deferred; F12 planned; P5-F23 Fixed awaiting Canary | ✅ PASS | `PRD5-ACCEPTANCE-MATRIX.md:63` — P5-F22 = "Canary passed"; `:64` — P5-F23 = "Fixed awaiting Canary"; other rows unchanged |
+| 3 | PRD-Phase5 defines P5-F23; does not reopen PRD4 | ✅ PASS | `PRD-Phase5.md:542` defines P5-F23 "Snapshot Capture Gap Candidates"; PRD4 matrix unchanged (13 rows) |
+| 4 | Implementation plan: UniRouter can proceed independently through Batch 1N; non-goals listed | ✅ PASS | `PRD5-IMPLEMENTATION-PLAN.md:522` — "no blocking condition for UniRouter Batch 1A through Batch 1N"; Batch 1N non-goals listed at `:431` |
+| 5 | Snapshot doc documents `candidate_capture_gaps` and handoff-note capture-gap table | ✅ PASS | `25-prd5-xinsight-sanitized-snapshot.md:142` — "Batch 1N adds an optional `candidate_capture_gaps` array"; `:146-151` — three gap rules documented; handoff note includes capture-gap table |
+| 6 | Shared contract file exists and describes UniRouter/X-Insight snapshot capture-gap candidate boundary | ✅ PASS | `contracts/2026-07-09-unirouter-prd5-snapshot-capture-gap-candidates.md` exists (2565 bytes); describes candidate rules, handoff note table, and X-Insight import guidance |
+| 7 | `prd5_xinsight_snapshot.go` adds `candidate_capture_gaps` to generated gap records | ✅ PASS | `:83` — `CandidateGaps []string json:"candidate_capture_gaps,omitempty"`; `:629` — missing call_logs gets `["not_available_from_source"]`; `:638` — missing trace with call_logs gets `["sampled_out","retention_expired","not_instrumented"]` |
+| 8 | Missing trace rows with existing call_logs list `sampled_out`/`retention_expired`/`not_instrumented` only as candidates; primary gap remains `not_available_from_source` | ✅ PASS | `:635-646` — `Gap` field always `"not_available_from_source"`; `candidates` only populated in `CandidateGaps` field; `:638` — three candidates when `seenCallLog[requestID]` is true |
+| 9 | No migration, runtime request-path change, new route, frontend, exporter/outbox, read-only credential/view, raw payload, X-Insight dependency, public-header authority, definitive sampling/retention cause assertion, or PRD4 matrix change | ✅ PASS | Diff: `scripts/prd5_xinsight_snapshot.go` + docs only. No migration, no runtime change, no new route. Candidates are explicitly labeled as hints, not definitive causes |
 | 10 | All commands pass | ✅ PASS | See below |
 
 ## Command Results
 
 | Command | Result |
 |---------|--------|
-| `go test ./internal/gateway -run 'TestRecordTraceEvent_(ProviderFailureMissingUpstreamRequestIDCaptureGap\|ProviderFailureRedactionGapTakesPriority\|ProviderResponseMissingUpstreamRequestIDCaptureGap\|ProviderResponseRedactionGapTakesPriority)' -count=1` | ✅ 4/4 PASS |
-| `go test ./internal/gateway ./internal/traceutil ./cmd/uniroute -count=1` | ✅ 3 packages PASS |
+| `go run scripts/prd5_xinsight_snapshot.go -help` | ✅ Compiles, documents flags |
+| `go run ... --handoff-note -` | ✅ Correctly rejects with "--handoff-note must be a Markdown file path, not stdout" |
 | `go test ./... -count=1` | ✅ All 22 packages PASS (0 FAIL) |
 | `grep` for key terms | ✅ All expected references found across code, docs, and shared contract |
 | `git diff --check` | ✅ Clean (exit 0) |
 
 ## PRD4 Boundary
 
-- PRD4 matrix: 13 rows (11 Canary passed, 2 Deferred to PRD5) — **unchanged** ✅
+- PRD4 matrix: 13 rows — **unchanged** ✅
 - No PRD4 row promoted to `Production verified` ✅
 
 ## Security Check
 
-- No cross-system graph inference ✅
-- No public-header authority by default ✅
 - No raw payload capture ✅
+- No DSN/credential in snapshot output ✅
+- No definitive sampling/retention cause assertion (candidates are hints only) ✅
 - No X-Insight runtime dependency ✅
-- No provider dispatch semantic change ✅
+- No public-header authority by default ✅
 
 ## Code Diff Summary
 
 | File | Change |
 |------|--------|
-| `trace.go` | Added `evidenceCaptureGapSource` constant; replaced `isProviderResponseEvent` with `providerMissingUpstreamCaptureGap` (returns `provider_not_returned` for response events, `not_available_from_source` for pre-response failures, empty for non-provider events); broadened gap assignment from response-only to all provider events |
-| `relay.go` | Embeddings `provider.response_parse_failed` now passes `upstreamRequestID` so parse failures with a known upstream ID do not falsely get `not_available_from_source` |
-| `relay_mock_test.go` | +2 tests: `ProviderFailureMissingUpstreamRequestIDCaptureGap` (verifies `not_available_from_source` on `request_failed`) and `ProviderFailureRedactionGapTakesPriority` (verifies `redacted` wins over `not_available_from_source` on `request_build_failed` with sensitive metadata) |
+| `scripts/prd5_xinsight_snapshot.go` | Added `CandidateGaps` field to `snapshotCaptureGap` struct; added candidate logic: missing call_logs → `["not_available_from_source"]`, missing trace with call_logs → `["sampled_out","retention_expired","not_instrumented"]`, missing trace without call_logs → `["not_available_from_source"]`; added capture-gap table to handoff note Markdown |
+| docs (6 files) | Status lines updated for Batch 1M complete + Batch 1N fixed awaiting Canary; P5-F23 added to PRD5, matrix, implementation plan, snapshot doc, and evidence field contract |
 
 ## Notes
 
-- `providerMissingUpstreamCaptureGap` 函数统一处理所有 provider 阶段的 capture gap 逻辑，比之前的 `isProviderResponseEvent` 更具扩展性。
-- 响应解析失败路径（embeddings）现在正确传递 `upstreamRequestID`，避免在 provider 已返回 ID 时错误标记 `not_available_from_source`。
-- 红色化优先级通过 `captureGap == ""` 条件保证：只有在 sanitizer 未标记 `redacted` 时才分配 provider 缺失 ID 的 gap。
-- Batch 1M 代码变更尚未 commit（工作树中），等待 Sentinel 执行 commit/push/PR。
+- `candidate_capture_gaps` 是 snapshot/import 工具的输出字段，不是新的运行时 DB 列。
+- 候选值是提示（hints），不是确定性断言。X-Insight 不应将其转换为确定性根因。
+- 主 `capture_gap` 始终保持 `not_available_from_source`，保守且事实性。
+- handoff note 新增了 Capture Gaps 表格，包含 request ID、source、primary gap、candidates 和 reason。
+- Batch 1N 代码变更尚未 commit（工作树中），等待 Sentinel 执行 commit/push/PR。
 
 ## Conclusion
 
-**PRD5 Batch 1M: PASS 10/10.** PRD4 边界完整，provider failure capture gap 语义正确（response 事件用 `provider_not_returned`，pre-response 失败用 `not_available_from_source`，redacted 保持优先），embeddings parse failure 路径正确传递 upstream ID，无越界变更。可以进入 Sentinel commit 流程。
+**PRD5 Batch 1N: PASS 10/10.** PRD4 边界完整，snapshot capture-gap candidates 逻辑正确（missing trace + call_logs 存在 → 三候选，missing call_logs → 单候选，primary gap 始终保守），handoff note 包含 gap 表格，候选值明确标注为非确定性提示，无越界变更。可以进入 Sentinel commit 流程。
