@@ -1,9 +1,9 @@
 # PRD5 X-Insight Sanitized Snapshot
 
-> Version: v0.3
-> Date: 2026-07-09
-> Status: Batch 1A/1B and Batch 1K Canary/Sentinel complete; Batch 1N snapshot
-> capture-gap candidates fixed awaiting Canary
+> Version: v0.4
+> Date: 2026-07-10
+> Status: Batch 1A/1B, Batch 1K, and Batch 1N Canary/Sentinel complete; Batch
+> 1O controlled snapshot handoff prep fixed awaiting Canary
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`
 
@@ -200,3 +200,8 @@ Prefer read-only views over direct whole-table privileges.
 
 Queries must use bounded filters/cursors and avoid broad unbounded scans on the
 shared development/test database.
+
+Batch 1O does not generate a real snapshot artifact. It documents the next Gate
+A handoff prerequisites: approved request IDs, scenario labels, a non-secret
+source instance label, an approved data source, and no DSN/credential/raw
+payload material in the repo or shared folder.

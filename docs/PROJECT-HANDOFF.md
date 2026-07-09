@@ -80,8 +80,8 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Current active verification signal: PRD5 Batch 1N Snapshot Capture Gap Candidates
-fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+Current active verification signal: PRD5 Batch 1O Gate A Controlled Snapshot
+Handoff Prep fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
 
 PRD4 is complete for the confirmed current scope. PRD5 must preserve the PRD4
 deferred-boundary decisions recorded here.
@@ -247,7 +247,8 @@ PRD5 Batch 1M:
 PRD5 Batch 1N:
 
 - Scope: snapshot capture-gap candidate categories for Gate A handoff artifacts.
-- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Status: Canary PASS 10/10 in `docs/agent-workflows/VERIFY-RESULT.md`;
+  Sentinel merge reflected by `92cb8ce` / PR #117.
 - Adds: optional `candidate_capture_gaps` in generated snapshot `capture_gaps`;
   candidates `sampled_out`, `retention_expired`, and `not_instrumented` when a
   call log exists but no trace rows are exported; and a capture-gap table in the
@@ -256,6 +257,19 @@ PRD5 Batch 1N:
   behavior, read-only DB/view credential, shared ECS staging, exporter/outbox,
   raw prompt/response capture, X-Insight runtime dependency, definitive
   sampling/retention cause assertion, or PRD4 matrix changes.
+
+PRD5 Batch 1O:
+
+- Scope: status reconciliation and Gate A controlled sanitized snapshot handoff
+  preparation.
+- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Adds: PRD5 status reconciliation for Batch 1N completion, P5-F24 acceptance
+  wording, and a shared-folder request for approved request IDs, scenario
+  labels, source instance naming, and X-Insight import/read confirmation.
+- Does not add: a real snapshot artifact, DSN, credential, raw prompt/response,
+  raw IP, raw upstream error, migration, runtime request-path change, API route,
+  frontend behavior, read-only DB/view credential, shared ECS staging,
+  exporter/outbox, X-Insight runtime dependency, or PRD4 matrix changes.
 
 Latest completed PRD4 verification result is PRD4 Batch 1S Open Issue Boundary
 Closeout:

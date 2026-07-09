@@ -1,7 +1,8 @@
 # PRD5 X-Insight Gate A Coordination
 
-> Date: 2026-07-08
-> Status: planning coordination accepted by User, not implementation complete
+> Date: 2026-07-10
+> Status: planning coordination accepted by User; Batch 1O handoff prep fixed
+> awaiting Canary; Gate A controlled snapshot evidence not complete
 > Scope: UniRouter PRD5 coordination with X-Insight Gate A
 
 ## Purpose
@@ -14,6 +15,7 @@ Related shared-folder files:
 - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-08-x-insight-gate-a-environment-and-prd5-coordination.md`
 - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-08-unirouter-gate-a-environment-and-prd5-coordination-response.md`
 - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-08-prd5-structure-fields-before-exporter-proposed.md`
+- `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-prd5-controlled-snapshot-handoff-prep.md`
 
 ## Current Accepted Decisions
 
@@ -49,6 +51,17 @@ Read-only DB/view conditions:
 - do not place secrets, DSNs, passwords, or access tokens in shared docs;
 - importer queries must use bounded filters/cursors and avoid unbounded scans on
   the shared development/test database.
+
+Current Batch 1O handoff rule:
+
+- X-Insight has discovery/import/persistent import/minimal read API surfaces,
+  but Gate A is not accepted until a real controlled UniRouter snapshot is
+  imported and read back through those APIs;
+- UniRouter must receive approved request IDs, scenario labels, a non-secret
+  source instance label, and approved source access before generating a
+  controlled snapshot artifact;
+- no DSN, credential, raw prompt, raw response, raw IP, or raw upstream error
+  may be written to the repo or shared folder.
 
 ### 2. GitHub Strategy
 
@@ -165,10 +178,12 @@ This coordination does not:
 
 ## Next PRD5 Steps
 
-1. Let X-Insight import the sanitized snapshot locally and save Gate A evidence.
-2. Use Gate A findings to prioritize remaining structural-field and payload
+1. Confirm approved request IDs, scenario labels, source instance naming, and
+   source access for the controlled sanitized snapshot.
+2. Let X-Insight import the sanitized snapshot locally and save Gate A evidence.
+3. Use Gate A findings to prioritize remaining structural-field and payload
    policy gaps.
-3. Keep UniRouter-owned evidence readiness moving in scoped PRD5 batches that do
+4. Keep UniRouter-owned evidence readiness moving in scoped PRD5 batches that do
    not depend on X-Insight runtime availability.
-4. Revisit read-only views, exporter/outbox, GitHub governance, and shared ECS
+5. Revisit read-only views, exporter/outbox, GitHub governance, and shared ECS
    staging only after the earlier gates pass.

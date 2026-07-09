@@ -1,10 +1,11 @@
 # PRD5 Evidence Field Contract
 
 > Version: v0.1
-> Date: 2026-07-09
+> Date: 2026-07-10
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
-> Batch 1I, Batch 1J, Batch 1K, Batch 1L, and Batch 1M Canary/Sentinel
-> complete. Batch 1N snapshot capture-gap candidates fixed awaiting Canary.
+> Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, and Batch 1N
+> Canary/Sentinel complete. Batch 1O controlled snapshot handoff prep fixed
+> awaiting Canary.
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > X-Insight response
 > `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-08-x-insight-prd5-integration-answers.md`
@@ -318,6 +319,9 @@ Implemented first slice:
 - Batch 1N adds snapshot/import `candidate_capture_gaps` for generated
   missing-row gap records so X-Insight can review possible sampling, retention,
   or non-instrumented causes without UniRouter asserting one definitive cause.
+- Batch 1O adds no new evidence field. It reconciles Batch 1N completion and
+  prepares the next controlled snapshot handoff prerequisites before any
+  read-only DB/view, exporter/outbox, or raw payload decision.
 
 ## Writer Behavior
 
