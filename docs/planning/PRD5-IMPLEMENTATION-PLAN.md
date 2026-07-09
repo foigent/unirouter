@@ -1,9 +1,10 @@
 # PRD5 Implementation Plan
 
-> Date: 2026-07-09
+> Date: 2026-07-10
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
-> Batch 1I, Batch 1J, Batch 1K, Batch 1L, and Batch 1M Canary/Sentinel
-> complete. Batch 1N snapshot capture-gap candidates fixed awaiting Canary.
+> Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, and Batch 1N
+> Canary/Sentinel complete. Batch 1O Gate A controlled snapshot handoff prep
+> fixed awaiting Canary.
 > Scope owner: UniRouter. X-Insight remains a separate project and owns broader
 > observability/governance product surfaces.
 
@@ -435,7 +436,7 @@ tooling only. It does not change runtime request handling, routing, billing,
 provider dispatch, response payloads, API routes, frontend behavior, or DB
 schema.
 
-Status: fixed awaiting Canary.
+Status: Canary/Sentinel complete (`92cb8ce` / PR #117).
 
 Implemented in this round:
 
@@ -463,6 +464,40 @@ Non-goals:
 - no definitive sampling/retention cause assertion;
 - no PRD4 matrix/status change.
 
+### Batch 1O: Gate A Controlled Snapshot Handoff Prep
+
+Risk: R2 because it updates PRD5 acceptance/status documents and shared-folder
+coordination only. It does not change runtime request handling, routing,
+billing, provider dispatch, response payloads, API routes, frontend behavior,
+or DB schema.
+
+Status: fixed awaiting Canary.
+
+Implemented in this round:
+
+- reconcile Batch 1N to Canary/Sentinel complete using `92cb8ce` / PR #117;
+- add P5-F24 to the PRD5 scope and acceptance matrix;
+- document the next Gate A controlled sanitized snapshot handoff prerequisites;
+- add a shared-folder request that asks for approved request IDs, scenario
+  labels, source instance naming, and X-Insight import/read confirmation;
+- keep read-only DB/view, shared ECS staging, and exporter/outbox gated behind
+  controlled snapshot import/read evidence and User approval.
+
+Non-goals:
+
+- no real snapshot artifact is generated;
+- no DSN, credential, token, raw prompt, raw response, raw IP, or raw upstream
+  error is written to the repo or shared folder;
+- no new migration;
+- no runtime request-path change;
+- no new API route;
+- no frontend behavior change;
+- no read-only DB/view credential handoff;
+- no shared ECS staging;
+- no exporter/outbox;
+- no X-Insight runtime dependency;
+- no PRD4 matrix/status change.
+
 ### Later Payload Policy Modes
 
 Risk: R3 if schema/API changes; R4 only if raw payload capture is introduced,
@@ -486,6 +521,8 @@ Risk: depends on findings.
 
 Prerequisite:
 
+- UniRouter has approved request IDs, scenario labels, and a non-secret source
+  instance label for a controlled sanitized snapshot;
 - X-Insight imports the sanitized snapshot locally;
 - X-Insight records import, dedupe, source refs, capture gaps, and read API
   evidence.
@@ -514,15 +551,17 @@ Use existing PRD4 harnesses, but record target evidence under PRD5.
 | Trace/span generation | Gateway-local IDs and trusted inbound preservation | Cross-system trace stitching and capture-gap display |
 | Payload capture decision | Gateway decision point, metadata, hashes/refs when safe | Payload state UI, audit-on-read, retention/delete/export for X-Insight-managed evidence |
 | UI | Lightweight request trace/debug view | Operator investigation console, execution detail, timeline, node detail, policy simulation, evidence packs |
-| Import/export | Snapshot, future views/export/outbox if needed | Importer, dedupe, source refs, read APIs, adapters |
+| Import/export | Snapshot, handoff notes, future views/export/outbox if needed | Importer, dedupe, source refs, read APIs, adapters |
 | LiteLLM/New API/one-api | Compare for UniRouter feature catch-up | Public/open-source adapter strategy |
 
 ## Current Blocking Conditions
 
-There is no blocking condition for UniRouter Batch 1A through Batch 1N.
+There is no blocking condition for UniRouter Batch 1A through Batch 1O.
 
 These later actions are gated:
 
+- controlled snapshot artifact generation: blocked until approved request IDs,
+  scenario labels, and source data access are available;
 - read-only DB/view access: blocked until X-Insight local snapshot import passes
   and User approves credential handoff;
 - shared ECS staging: blocked until local Gate A import works and CI is green;

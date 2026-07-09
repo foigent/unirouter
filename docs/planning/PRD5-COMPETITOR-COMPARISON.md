@@ -1,8 +1,9 @@
 # PRD5 Competitor Comparison And Feature Catch-Up
 
-> Date: 2026-07-08
-> Status: Source-grounded PRD5 planning comparison with Batch 1J provider
-> upstream capture-gap evidence accepted as the current catch-up slice.
+> Date: 2026-07-10
+> Status: Source-grounded PRD5 planning comparison with Batch 1J through Batch
+> 1N evidence-readiness catch-up slices accepted and Batch 1O handoff prep fixed
+> awaiting Canary.
 > Purpose: compare UniRouter against adjacent gateway and observability systems,
 > then decide which gaps belong in UniRouter PRD5 versus X-Insight.
 
@@ -83,7 +84,8 @@ implementation because these projects move quickly.
 ## UniRouter Gaps To Catch Up In PRD5
 
 High priority, now partially accepted through Batch 1A/1B/1C, Batch 1D,
-Batch 1E, Batch 1F, Batch 1G, Batch 1H, Batch 1I, and Batch 1J:
+Batch 1E, Batch 1F, Batch 1G, Batch 1H, Batch 1I, Batch 1J, Batch 1K,
+Batch 1L, Batch 1M, and Batch 1N:
 
 - explicit `trace_id`, `span_id`, `parent_span_id`, and `session_id` handling;
 - `schema_version`, `source_component`, `capture_mode`, and capture-gap model;
@@ -131,6 +133,26 @@ Accepted in Batch 1J:
 - provider response trace events now mark `capture_gap=provider_not_returned`
   when no sanitized provider-returned upstream request ID exists, preserving
   returned IDs and redaction gaps.
+
+Accepted in Batch 1K:
+
+- controlled snapshots can be paired with a DSN-free Markdown handoff note for
+  X-Insight import review.
+
+Accepted in Batch 1L:
+
+- repeated same-component trace events parent to the component's first span while
+  preserving the request gateway root.
+
+Accepted in Batch 1M:
+
+- provider-stage failures that occur before an upstream response source exists
+  now use `capture_gap=not_available_from_source`.
+
+Accepted in Batch 1N:
+
+- generated Gate A snapshot gap records can include candidate capture gaps for
+  missing trace rows without asserting one definitive cause.
 
 Medium priority:
 

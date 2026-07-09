@@ -1,11 +1,11 @@
 # PRD5 Acceptance Matrix
 
-> Date: 2026-07-09
+> Date: 2026-07-10
 > Status: PRD5 Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G,
-> Batch 1H, Batch 1I, Batch 1J, Batch 1K, Batch 1L, and Batch 1M
-> Canary/Sentinel complete; Batch 1N snapshot capture-gap candidates fixed
-> awaiting Canary. PRD4 remains complete for the confirmed current scope and is
-> not reopened.
+> Batch 1H, Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, and Batch 1N
+> Canary/Sentinel complete; Batch 1O Gate A controlled snapshot handoff prep
+> fixed awaiting Canary. PRD4 remains complete for the confirmed current scope
+> and is not reopened.
 > Source: `docs/PRD-Phase5.md`, `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, current repo/code review,
 > X-Insight shared-folder responses, PRD5 Batch 1A/1B/1C implementation
@@ -15,9 +15,9 @@
 > PRD5 Batch 1H gateway span hierarchy changes, PRD5 Batch 1I payload policy
 > decision evidence changes, PRD5 Batch 1J provider upstream capture-gap
 > changes, PRD5 Batch 1K snapshot handoff-note tooling changes, PRD5 Batch 1L
-> component span refinement changes, and PRD5 Batch 1M provider failure
-> capture-gap changes, and PRD5 Batch 1N snapshot capture-gap candidate
-> changes.
+> component span refinement changes, PRD5 Batch 1M provider failure
+> capture-gap changes, PRD5 Batch 1N snapshot capture-gap candidate changes,
+> and PRD5 Batch 1O Gate A controlled snapshot handoff preparation.
 
 ## Status Values
 
@@ -61,7 +61,27 @@ actual result, and rollback or cleanup note.
 | P5-F20 | Gate A Snapshot Handoff Note | Canary passed | Explicit-request X-Insight snapshot runs can write a companion Markdown handoff note with selected IDs, scenario labels, counts, safety confirmation, and DSN-free command shape | Canary PASS 10/10 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `2db830a` / PR #114 | Batch 1K tooling/docs enrichment; no runtime behavior change, migration, new route, frontend behavior, exporter/outbox, read-only credential handoff, shared ECS staging, raw payload capture, X-Insight runtime dependency, or PRD4 matrix change |
 | P5-F21 | Component Span Refinement | Canary passed | Repeated trace events from the same `source_component` parent to that component's first span while first component events still parent to the request gateway root | Canary PASS 10/10 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `ffebf83` / PR #115 | Batch 1L code-only evidence hierarchy refinement; no migration, new route, frontend behavior, exporter/outbox, read-only credential, raw payload capture, X-Insight runtime dependency, cross-system graph inference, or PRD4 matrix change |
 | P5-F22 | Provider Failure Capture Gaps | Canary passed | Provider failure trace events that occur before a provider response exists write `capture_gap=not_available_from_source` when no sanitized `upstream_request_id` can exist, while response events keep `provider_not_returned` and redaction gaps keep priority | Canary PASS 10/10 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `4a4e254` / PR #116 | Batch 1M code-only evidence gap refinement; no migration, new route, frontend behavior, exporter/outbox, read-only credential, raw payload capture, X-Insight runtime dependency, provider dispatch semantic change, or PRD4 matrix change |
-| P5-F23 | Snapshot Capture Gap Candidates | Fixed awaiting Canary | Gate A snapshots keep primary missing-row gaps factual while adding `candidate_capture_gaps` for missing trace rows, so X-Insight can distinguish possible sampling, retention, and non-instrumented causes without UniRouter fabricating evidence | `go run` compile checks, source review, docs/shared-contract grep, `go test ./...`, `git diff --check` | Batch 1N snapshot-tooling evidence enrichment; no migration, runtime request-path change, new route, frontend behavior, exporter/outbox, read-only credential, raw payload capture, X-Insight runtime dependency, or PRD4 matrix change |
+| P5-F23 | Snapshot Capture Gap Candidates | Canary passed | Gate A snapshots keep primary missing-row gaps factual while adding `candidate_capture_gaps` for missing trace rows, so X-Insight can distinguish possible sampling, retention, and non-instrumented causes without UniRouter fabricating evidence | Canary PASS 10/10 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `92cb8ce` / PR #117 | Batch 1N snapshot-tooling evidence enrichment; no migration, runtime request-path change, new route, frontend behavior, exporter/outbox, read-only credential, raw payload capture, X-Insight runtime dependency, or PRD4 matrix change |
+| P5-F24 | Gate A Controlled Snapshot Handoff Prep | Fixed awaiting Canary | UniRouter status docs reflect Batch 1N completion and the next Gate A controlled snapshot handoff preconditions are explicit before any real snapshot, DSN, credential, read-only DB/view, shared ECS staging, or exporter/outbox work starts | Docs/shared-folder grep, repo history check, `git diff --check` | Batch 1O docs/shared-folder coordination only; no snapshot artifact, migration, runtime request-path change, new route, frontend behavior, read-only credential/view, shared ECS staging, exporter/outbox, raw prompt/response capture, X-Insight runtime dependency, or PRD4 matrix change |
+
+## Batch 1O Verification
+
+PRD5 Batch 1O verifies status reconciliation and Gate A controlled snapshot
+handoff preparation:
+
+```bash
+git log --oneline -3 origin/main
+rg -n "Gate A Controlled Snapshot Handoff Prep|P5-F24|Batch 1O|92cb8ce|PR #117|controlled sanitized snapshot|approved request IDs|no DSN|no raw prompt/response|read-only DB/view remains gated" docs/PRD-Phase5.md docs/ops/PRD5-ACCEPTANCE-MATRIX.md docs/planning/PRD5-IMPLEMENTATION-PLAN.md docs/planning/PRD5-BACKLOG.md docs/ops/CURRENT-STATUS.md docs/PROJECT-HANDOFF.md docs/agent-workflows/FIX-SIGNAL.md "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-prd5-controlled-snapshot-handoff-prep.md"
+rg -n "P5-F23 \\| Snapshot Capture Gap Candidates \\| Canary passed|92cb8ce|PR #117" docs/ops/PRD5-ACCEPTANCE-MATRIX.md docs/ops/CURRENT-STATUS.md docs/planning/PRD5-IMPLEMENTATION-PLAN.md docs/PROJECT-HANDOFF.md
+git diff --check
+```
+
+No Go/frontend test run is required for Batch 1O because it changes only
+documentation and shared-folder coordination files. Any code, migration, API
+route, frontend behavior, real snapshot artifact, DSN, credential, read-only
+DB/view, shared ECS staging, exporter/outbox, raw prompt/response capture,
+X-Insight runtime dependency, PRD4 matrix count, or `Production verified` claim
+is a scope failure.
 
 ## Batch 1N Verification
 
