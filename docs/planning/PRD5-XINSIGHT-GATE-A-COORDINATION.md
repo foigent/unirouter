@@ -1,10 +1,10 @@
 # PRD5 X-Insight Gate A Coordination
 
 > Date: 2026-07-10
-> Status: planning coordination accepted by User; Batch 1U Canary/Sentinel
-> complete (`b2ba892` / PR #124); Gate A controlled run authorized as
-> `UR-XI-GATE-A-20260710-01` and awaiting Atlas; no controlled snapshot evidence
-> exists yet
+> Status: planning coordination accepted by User; Batch 1V produced controlled
+> exchange `uxchg_f7de31e541516893a0d9b31cc0f3892a` with one explicit
+> denied-scenario gap; X-Insight persistent import/receipt is requested; Batch
+> 1W live-path fix is Local verified with PR/CI pending
 > Scope: UniRouter PRD5 coordination with X-Insight Gate A
 
 ## Purpose
@@ -27,6 +27,20 @@ Related shared-folder files:
 - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-10-gate-a-controlled-run-authorization-recommendation.md`
 - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-atlas-execution.md`
 - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/evidence/2026-07-10-unirouter-gate-a-atlas-run-result.md`
+- `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/evidence/gatea-snapshot-20260710.json`
+- `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-persistent-import-and-receipt.md`
+- `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-execution-owner-and-review-process-update.md`
+
+### Execution Contact And Review Process
+
+- Codex is the UniRouter execution contact under Agent Protocol v2.0.
+- Canary, Sentinel and Atlas are optional independent-review profiles, not
+  mandatory serial gates.
+- This internal workflow change does not grant target credentials, reassign
+  `UR-XI-GATE-A-20260710-01`, or weaken per-action User approval.
+- X-Insight should continue returning import receipts and schema/evidence
+  feedback through the shared folder; P0/P1 findings block or reopen the
+  affected UniRouter batch.
 
 ## Current Accepted Decisions
 
@@ -128,6 +142,17 @@ Current Batch 1V authorization rule:
   reconciliation;
 - the existing UniRouter ECS development/test deployment is not a new shared
   X-Insight staging environment and does not relax the separate staging gate.
+
+Actual Batch 1V result:
+
+- `successful_non_stream` produced one call log and seven trace events;
+- `model_permission_denied` returned 403 but lacked returned-ID correlation and
+  produced no source row because a pre-relay wrapper check bypassed Relay;
+- the immutable snapshot reports two `not_available_from_source` gaps for the
+  denied request and is safe for diagnostic X-Insight import;
+- Batch 1W removes the duplicate pre-relay API-key check locally; the current
+  snapshot remains unchanged and full denied-scenario target evidence still
+  requires a separately authorized post-deploy rerun.
 
 ### 2. GitHub Strategy
 
@@ -244,15 +269,19 @@ This coordination does not:
 
 ## Next PRD5 Steps
 
-1. Atlas attests the approved target is non-production, deploys the required
-   merged version, and records health/rollback evidence.
-2. Atlas runs only the two approved synthetic scenarios, seals their returned
-   request IDs into the approval manifest, and generates the
-   exchange-identified snapshot.
-3. Let X-Insight import the sanitized snapshot and return the sidecar receipt.
-4. Use Gate A findings to prioritize remaining structural-field and payload
+1. X-Insight imports the immutable sanitized snapshot, persists/readbacks both
+   request views, and returns the sidecar receipt plus warning analysis.
+2. Codex completes Batch 1W PR, required CI and merge under Agent Protocol v2.0.
+3. The authorized environment operator disables the two temporary Gate A test
+   keys and records confirmation; Codex may do this only after secure access is
+   available and the action is authorized.
+4. After Batch 1W merge, an available authorized non-production deployment path
+   and a new/amended User authorization are required before a denied-scenario
+   rerun.
+5. Use Gate A receipt findings to prioritize remaining structural-field and payload
    policy gaps.
-5. Keep UniRouter-owned evidence readiness moving in scoped PRD5 batches that do
+6. Keep UniRouter-owned evidence readiness moving in scoped PRD5 batches that do
    not depend on X-Insight runtime availability.
-6. Revisit read-only views, exporter/outbox, GitHub governance, and shared ECS
-   staging only after the earlier gates pass.
+7. Revisit read-only views, exporter/outbox, GitHub governance, and shared ECS
+   staging only after receipt reconciliation; a denied-scenario rerun requires
+   a new or amended User authorization.

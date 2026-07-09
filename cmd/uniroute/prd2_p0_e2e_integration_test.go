@@ -104,6 +104,44 @@ func TestPRD2P0DeveloperProjectKeyGatewayE2E_Integration(t *testing.T) {
 	require.Equal(t, "upstream", usageSource)
 	require.Equal(t, 15, totalTokens)
 
+	deniedRequestID := "batch9-p0-e2e-api-key-model-denied"
+	deniedReq := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader([]byte(`{"model":"company-other","messages":[{"role":"user","content":"hello"}],"stream":false}`)))
+	deniedReq.Header.Set("Authorization", "Bearer "+createResp.Key)
+	deniedReq.Header.Set("Content-Type", "application/json")
+	deniedReq.Header.Set("X-Request-ID", deniedRequestID)
+	deniedRec := httptest.NewRecorder()
+
+	chatHandler.ServeHTTP(deniedRec, deniedReq)
+
+	require.Equal(t, http.StatusForbidden, deniedRec.Code, "body: %s", deniedRec.Body.String())
+	require.Equal(t, deniedRequestID, deniedRec.Header().Get("X-Request-ID"))
+	require.Contains(t, deniedRec.Body.String(), `"code":"auth_error.model_not_allowed"`)
+
+	var deniedEventType, deniedStage, deniedCaptureGap, deniedDecisionKind, deniedDecisionResult, deniedDecisionReason string
+	var deniedStatusCode int
+	err = pool.QueryRow(ctx,
+		`SELECT event_type, stage, status_code, capture_gap, decision_kind, decision_result, decision_reason
+		 FROM request_trace_events
+		 WHERE request_id = $1
+		 ORDER BY id
+		 LIMIT 1`,
+		deniedRequestID,
+	).Scan(&deniedEventType, &deniedStage, &deniedStatusCode, &deniedCaptureGap, &deniedDecisionKind, &deniedDecisionResult, &deniedDecisionReason)
+	require.NoError(t, err)
+	require.Equal(t, "auth.model_not_allowed", deniedEventType)
+	require.Equal(t, "auth", deniedStage)
+	require.Equal(t, http.StatusForbidden, deniedStatusCode)
+	require.Equal(t, "permission_denied", deniedCaptureGap)
+	require.Equal(t, "auth", deniedDecisionKind)
+	require.Equal(t, "rejected", deniedDecisionResult)
+	require.Equal(t, "auth_error.model_not_allowed", deniedDecisionReason)
+
+	var deniedCallLogs, deniedFreezes int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM call_logs WHERE request_id = $1`, deniedRequestID).Scan(&deniedCallLogs))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM freeze_idempotency WHERE request_id = $1`, deniedRequestID).Scan(&deniedFreezes))
+	require.Zero(t, deniedCallLogs)
+	require.Zero(t, deniedFreezes)
+
 	var idemStatus string
 	err = pool.QueryRow(ctx,
 		`SELECT status FROM freeze_idempotency WHERE request_id = $1`,
@@ -353,7 +391,8 @@ func seedPRD2P0ModelGovernance(t *testing.T, pool *pgxpool.Pool, orgID, projectI
 	require.NoError(t, err)
 	_, err = pool.Exec(context.Background(),
 		`INSERT INTO model_aliases (org_id, alias, target_model, display_name, status)
-		 VALUES ($1, 'company-chat', 'gpt-4o', 'Company Chat', 'active')`,
+		 VALUES ($1, 'company-chat', 'gpt-4o', 'Company Chat', 'active'),
+		        ($1, 'company-other', 'gpt-4o', 'Company Other', 'active')`,
 		orgID,
 	)
 	require.NoError(t, err)
@@ -367,7 +406,8 @@ func seedPRD2P0ModelGovernance(t *testing.T, pool *pgxpool.Pool, orgID, projectI
 	require.NoError(t, err)
 	_, err = pool.Exec(context.Background(),
 		`INSERT INTO model_set_items (model_set_id, item_type, item_name)
-		 VALUES ($1, 'alias', 'company-chat')`,
+		 VALUES ($1, 'alias', 'company-chat'),
+		        ($1, 'alias', 'company-other')`,
 		modelSetID,
 	)
 	require.NoError(t, err)

@@ -1,7 +1,8 @@
 # PRD5 Gate A Controlled Run Authorization
 
 > Date: 2026-07-10
-> Status: authorized as `UR-XI-GATE-A-20260710-01`; awaiting Atlas execution
+> Status: executed with one denied-scenario correlation/source-trace exception;
+> awaiting X-Insight receipt and target cleanup confirmation
 > Audience: User, UniRouter owner/operator, X-Insight coordination reviewers
 > Decision record: `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-10-gate-a-controlled-run-authorization-recommendation.md`
 > Atlas handoff: `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-atlas-execution.md`
@@ -124,6 +125,26 @@ call_logs、request_trace_events 和 capture_gaps；临时快照在 X-Insight
 The User accepted the complete recommendation on 2026-07-10. This document now
 authorizes Atlas to create exactly the two listed requests after confirming the
 target is the approved non-production environment and the required merged code
-is deployed. It does not prove that deployment, request execution, snapshot
-generation, X-Insight import, or cleanup has occurred; those facts must be
-recorded in the Atlas result and X-Insight receipt.
+is deployed. The approval alone does not prove deployment, request execution,
+snapshot generation, X-Insight import, or cleanup; those facts must be recorded
+in the Atlas result and X-Insight receipt.
+
+## Execution Update
+
+Atlas executed both authorized requests against `b2ba892` and generated the
+sanitized snapshot. The success scenario passed. The denied scenario returned
+403 but did not return `X-Request-ID` and produced no source trace row because a
+pre-relay wrapper check bypassed Relay. Batch 1W fixes that source path locally.
+The current snapshot remains immutable diagnostic evidence; X-Insight receipt,
+test-key disable confirmation, and any separately authorized rerun remain
+pending.
+
+## Workflow Transition
+
+Agent Protocol v2.0 makes Codex the UniRouter execution owner, but it does not
+retroactively reassign this authorization. `UR-XI-GATE-A-20260710-01` remains
+an executed Atlas-only authorization and cannot be reused for a Batch 1W rerun.
+
+A future controlled run may name Codex or another operator only when the new or
+amended User approval identifies that operator, the non-production environment,
+the scenario/data boundary, and the applicable access and cleanup conditions.

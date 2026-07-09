@@ -1,345 +1,213 @@
-# UniRouter Agent 协作协议
+# UniRouter Agent 执行与复核协议
 
-**版本：** 1.4
-**最后更新：** 本文件修改时间即为最新（见文件系统时间戳）
-
----
-
-## 概述
-
-UniRouter 项目由 User 协调，Codex、OpenClaw Canary、Sentinel、Atlas 分工推进：
-
-| 角色 | 责任 | 明确禁止/边界 |
-|------|------|----------------|
-| **User** | 确认 PRD、控制阶段流转、在 agents 间传话 | 不要求手动整理上下文，文件系统应承载上下文 |
-| **Codex** | 与 User 确认 PRD，开发实现，做必要本地测试，按风险等级维护当前状态和 `FIX-SIGNAL.md` | 不在 Canary 通过后擅自继续改代码，除非收到新问题 |
-| **OpenClaw Canary** | 按风险等级独立测试、审查、验收，写 `VERIFY-RESULT.md` | **不做任何代码修改** |
-| **Sentinel** | 需要仓库集成时，在对应 Canary/用户确认后负责 GitHub PR、合并、CI 等动作 | 不替代 Canary 做产品验收 |
-| **Atlas** | 需要部署、运行时、目标环境证据时，负责云端部署和部署验证 | 不直接绕过 Codex 修代码 |
-
-**核心约束：** agents 无法直接通信，只能通过项目文件系统和用户传话协调。需要跨 agent 验收、仓库集成、部署或验收状态变更时，必须把结果写入约定文件，避免口头状态漂移；低风险本地整理不应制造不必要的固定信号文件。
+**版本：** 2.0
+**生效方式：** User 已确认单一执行负责人流程；本文件修改时间为最新时间
 
 ---
 
-## 风险分级与验收门
+## 1. 目标
 
-协议优先按风险等级决定是否触发 `FIX-SIGNAL.md` / `VERIFY-RESULT.md`，不是按“是否改了文件”机械触发。
+UniRouter 采用一个执行负责人完成计划、实现、验证、仓库集成和已授权环境操作，避免把一个批次拆成多次人工传话。
 
-| 等级 | 范围 | 必要验收 |
+当前执行负责人是 **Codex**。Canary、Sentinel、Atlas 不再是批次继续推进的强制关卡；它们或其他人员/agent 可以按需承担独立复核。
+
+本协议不取消以下边界：
+
+1. 自动化测试和 GitHub 强制 CI 不能被角色判断替代。
+2. 同一执行负责人完成的实现和测试不能标记为“独立复核”。
+3. 生产、高影响数据、凭证和付费外部动作仍需要 User 明确授权。
+4. `Local verified`、`CI verified`、`Target verified`、`Production verified`、`External integration verified` 必须分别记录，不能互相推导。
+
+---
+
+## 2. 责任模型
+
+| 角色 | 责任 | 边界 |
+|------|------|------|
+| **User** | 确认 PRD/范围；批准生产和其他高影响外部动作；决定是否接受剩余风险 | 不需要在 agents 之间搬运常规上下文；不得用一句“都完成了”替代证据 |
+| **Codex / 执行负责人** | 计划、开发、测试、文档、分支、提交、PR、CI、合并、已授权非生产部署、运行时验证、证据和状态维护 | 不绕过强制 CI；不把自测写成独立验收；无访问权限或批准时必须明确标记缺口 |
+| **独立复核者** | 按执行记录复跑测试、代码审查、集成审查、目标环境检查或安全检查 | 默认不阻塞执行；不得覆盖执行记录；P0/P1 发现会阻断或重新打开批次 |
+
+Canary、Sentinel、Atlas 名称保留为历史角色和可选复核画像：
+
+- Canary 画像：功能、回归、产品语义和边界复核。
+- Sentinel 画像：Git diff、PR、分支保护和 CI 复核。
+- Atlas 画像：部署、运行时、目标环境、回滚和清理复核。
+
+任何具备能力的复核者都可以执行这些检查，不再要求由特定名字的 agent 完成。
+
+---
+
+## 3. 风险分级
+
+| 等级 | 范围 | 执行要求 |
 |------|------|----------|
-| **R0 本地整理** | 拼写、链接、索引、非事实源说明、无验收状态变化的文档整理 | Codex 本地核对和 `git diff --check`；不强制写 `FIX-SIGNAL.md` / `VERIFY-RESULT.md` |
-| **R1 工具/测试/证据辅助** | 测试、脚本、harness、tech-ref，且不改生产运行路径、API/DB/权限/计费语义 | Codex 跑聚焦验证；可把多个 R1 小批合并成一个 Canary gate |
-| **R2 用户可见功能** | 前端/API 行为、产品语义、用户可见文档、验收矩阵状态变化 | Codex 写 `FIX-SIGNAL.md`，Canary 写 `VERIFY-RESULT.md` 后再进入 Sentinel |
-| **R3 高风险核心路径** | auth、SSO、billing/wallet/cost、routing/provider dispatch、DB migration、secret/RBAC、限流/ admission、trace retention/redaction | 每个功能切片独立 Canary gate；不得把不相关高风险改动塞进同一批 |
-| **R4 目标环境/生产声明** | real upstream、real SSO、license、HA/DR、云端部署、Production verified 声明 | 需要目标环境证据；mock/local 只能证明 harness 或本地 E2E，不能升级为 Production verified |
+| **R0 本地整理** | 拼写、链接、索引、无事实状态变化的文档整理 | 聚焦核对和 `git diff --check`；无需单独批次证据 |
+| **R1 工具/测试/证据辅助** | 测试、脚本、harness、tech-ref，且不改变生产路径、API/DB/权限/计费语义 | 聚焦测试；进入仓库时必须通过适用 CI |
+| **R2 用户可见或事实源变化** | 前端/API 行为、产品语义、当前状态、验收矩阵、流程规则 | 更新执行记录和相关事实源；通过适用测试和 CI |
+| **R3 高风险核心路径** | auth、SSO、billing/wallet/cost、routing/provider dispatch、DB migration、secret/RBAC、限流、trace retention/redaction | 独立切片；聚焦回归、全量回归、回滚/停止条件、CI 和明确证据 |
+| **R4 目标环境/生产声明** | real upstream、real SSO、license、HA/DR、云端部署、Production verified | 记录环境、版本、命令、实际结果和回滚；生产动作必须单次授权 |
 
-补充规则：
-
-1. 等级不确定时按更高风险处理。
-2. PRD alignment gate 每 2-3 个实现批次或进入新工作流前执行一次，核对当前工作是否仍在 PRD 范围内。
-3. `CURRENT-STATUS.md`、`OPEN-ISSUES.md`、acceptance matrix、handoff/index 文档只在事实源、验收状态、阶段边界或读者入口发生变化时更新。
-4. Atlas 不随每个 batch 固定触发；只有部署、运行时环境、配置、目标环境证据或用户明确要求时触发。
+等级不确定时按更高等级处理。PRD alignment gate 每 2 到 3 个实现批次或进入新工作流前执行一次。
 
 ---
 
-## 协作流程
+## 4. 已授权的默认动作
 
-### 总流程：PRD → Codex → 风险门 → Sentinel → Atlas
+在已确认范围内，执行负责人可以直接执行：
+
+1. 读取和修改 UniRouter 工作区文件。
+2. 运行本地测试、构建、静态检查和浏览器验证。
+3. 创建 `codex/` 分支、提交、推送和创建/更新 PR。
+4. 在 GitHub 强制检查全部通过后合并 PR。
+5. 在访问方式和环境边界已经确认后部署到批准的非生产环境。
+6. 在共享文件夹写入不含秘密的 UniRouter/X-Insight 请求、合同、证据和回执文件。
+7. 在 User 已确认跨项目范围时修改 UniRouter 和 X-Insight 各自仓库，但必须使用独立分支、提交、PR 和发布记录。
+
+以下动作仍需 User 对具体动作明确授权：
+
+1. 每次生产部署、生产回滚或生产流量切换。
+2. 目标数据库破坏性操作、不可逆迁移、目标恢复或数据删除。
+3. 创建、禁用、轮换或暴露凭证、密钥、令牌、DSN。
+4. 扩大已批准的数据导出范围，或启用 raw prompt/response 等敏感数据模式。
+5. 超出既定模型、请求次数或费用上限的真实供应商调用。
+6. 公开发布、开源切换或外部可见权限变更。
+
+无权限、无凭证或无批准不是“角色等待”，而是具体的外部阻塞条件，必须写入执行记录。
+
+---
+
+## 5. 标准执行流程
 
 ```text
-User 确认 PRD/范围
+User 确认范围和默认权限
   ↓
-Codex 开发 + 必要本地测试 + 判定 R0/R1/R2/R3/R4
+Codex 读取当前事实源、工作树和远端状态
   ↓
-  ├─ R0: 本地验证完成，本轮结束或等待下一项
-  ├─ R1: 可合并到一个工具/证据 gate；触发 gate 时写 FIX-SIGNAL.md
-  └─ R2/R3/R4: 更新 FIX-SIGNAL.md
-      ↓
-User 通知 OpenClaw Canary（风险门触发时）
+Codex 划分批次和风险等级
   ↓
-OpenClaw Canary 测试/审查 + 写 VERIFY-RESULT.md
+Codex 实现 + 聚焦测试 + 必要全量测试
   ↓
-  ├─ 有 bug: User 通知 Codex 读取 VERIFY-RESULT.md → Codex 修复 → 更新 FIX-SIGNAL.md → 再验
+Codex 更新 EXECUTION-RECORD.md 和不可变 evidence
   ↓
-  └─ 无问题: User 通知 Sentinel
-          ↓
-      Sentinel 创建/合并 PR + 跑 CI（需要仓库集成时）
-          ↓
-          ├─ CI/PR 发现代码问题: 回到 Codex 修复
-          ↓
-          └─ CI/PR 通过: User 通知 Atlas
-                  ↓
-              Atlas 云端部署 + 部署验证（需要部署/目标环境证据时）
-                  ↓
-                  ├─ 部署发现代码问题: 回到 Codex 修复
-                  └─ 部署通过: 本轮完成
+Codex 创建分支/提交/PR
+  ↓
+GitHub 强制 CI
+  ├─ FAIL：Codex 修复并重新验证
+  └─ PASS：Codex 合并
+       ↓
+  需要目标环境？
+  ├─ 否：更新状态，继续下一批
+  └─ 是：检查访问和批准
+       ├─ 非生产且已授权：Codex 部署、验证、记录
+       ├─ 生产/高影响：User 单次批准后由 Codex 执行
+       └─ 缺访问/批准：记录具体阻塞，不伪造目标结论
 ```
 
-### 通道 A：Codex 修复 → Canary 验收（FIX-SIGNAL / VERIFY-RESULT）
-
-用于 R2/R3/R4 变更，以及合并后的 R1 工具/证据 gate。R0 本地整理不强制使用本通道。
-
-```
-┌─────────┐    一句话     ┌──────────┐    自动读取    ┌─────────┐
-│  用户   │ ──────────→ │  Canary  │ ──────────→ │ FIX-    │
-│         │              │  Agent   │              │ SIGNAL  │
-│         │    一句话     │          │    写入      │   .md   │
-│         │ ←────────── │          │ ──────────→ │         │
-│         │              └──────────┘              └─────────┘
-│         │    一句话          ↑
-│         │ ──────────→  ┌──────────┐    自动读取
-│  用户   │              │  Codex   │ ←────────── VERIFY-
-│         │              │  Agent   │              RESULT
-│         │    写入      │          │    写入      .md
-│         │ ←────────── │          │ ──────────→
-└─────────┘              └──────────┘              ┌─────────┐
-                                                   │ FIX-    │
-                                                   │ SIGNAL  │
-                                                   │   .md   │
-                                                   └─────────┘
-```
-
-### 通道 B：Canary 发现问题 → Codex 评估实现（issues/）
-
-用于 Canary 在测试中发现的非运行时 bug 的结构性/架构性问题（测试壁垒、覆盖率盲区、代码质量问题），需要 Codex 评估和实现。
-
-```
-┌──────────────┐                        ┌──────────────┐
-│   Canary     │  写 docs/issues/xxx.md      │ docs/issues/ │
-│   (测试中    │ ───────────────────→  │   目录       │
-│    发现问题) │                        │              │
-└──────────────┘                        └──────────────┘
-       │                                       │
-       │ 同时写入 VERIFY-RESULT.md             │ Codex 读取
-       │ "新发现的问题" 引用 issue 文件         │ 评估优先级
-       ↓                                       ↓
-┌──────────────┐                        ┌──────────────┐
-│  VERIFY-     │  用户传话              │   Main       │
-│  RESULT.md   │ ←─────────→          │   Agent      │
-│  (引用 issue) │                        │   (实现方案) │
-└──────────────┘                        └──────────────┘
-                                              │
-                                              │ 按风险等级决定是否写 FIX-SIGNAL.md
-                                              ↓
-                                        回到通道 A
-```
-
-**规则：**
-1. Canary **只写问题发现**，不写具体代码方案。内容包括：问题描述、影响、严重性、建议方向（不写实现）
-2. 文件名：`docs/issues/{简短描述}.md`（如 `billing-pure-function-barrier.md`）
-3. Canary 同时在 VERIFY-RESULT.md 的「新发现的问题」中引用该 issue 文件路径
-4. Codex 读取 issues/，评估优先级，选择实现
-5. 实现完成后按风险等级决定是否写 FIX-SIGNAL.md；R2/R3/R4 必须走通道 A 验收
-6. 验收通过后，issue 文件标注「已解决」
-
-### 通道 C：当前状态与文档治理
-
-用于同步项目真实进度、PRD 验收状态、未关闭问题和历史文档归档边界。
-
-| 文件 | 用途 | 规则 |
-|------|------|------|
-| `docs/ops/CURRENT-STATUS.md` | 当前项目状态入口 | 只写当前事实，不写历史流水账 |
-| `docs/ops/PRD-ACCEPTANCE-MATRIX.md` | PRD 验收矩阵 | 每个验收项必须有状态和证据 |
-| `docs/issues/OPEN-ISSUES.md` | 当前未关闭问题 | Issue ID 不复用 |
-| `docs/DOCS-GOVERNANCE.md` | 文档治理规则 | 定义哪些文件是当前事实源 |
-
-文档整理如果只是 R0 本地整理，不应更新 `FIX-SIGNAL.md` / `VERIFY-RESULT.md`。如果文档变更会影响项目判断、验收状态、阶段边界、当前事实源或流程规则，应按 R2 处理；Codex 更新 `FIX-SIGNAL.md`，OpenClaw Canary 验证文档状态是否自洽。
-
-### 通道 D：Canary 通过 → Sentinel PR/CI
-
-用于 OpenClaw Canary 验收通过后的 GitHub 集成阶段。
-
-**进入条件：**
-1. R2/R3/R4 或合并后的 R1 gate 已有 `VERIFY-RESULT.md` 结论为全部通过，或只剩用户明确接受的非阻断项。
-2. 如果本轮使用通道 A，`FIX-SIGNAL.md` 和 `VERIFY-RESULT.md` 必须对应同一轮。
-3. `OPEN-ISSUES.md` 中没有本轮阻断项处于 `Open`。
-
-**Sentinel 职责：**
-1. 创建或更新 GitHub PR。
-2. 确认变更范围和提交内容。
-3. 跑 CI 并记录结果。
-4. 合并或按用户要求等待合并。
-
-**失败回流：**
-- 如果 CI 或 PR 检查发现代码/测试问题，User 通知 Codex，并将 Sentinel 的失败信息作为输入。
-- Codex 修复后重新走通道 A，由 OpenClaw Canary 再验。
-
-### 通道 E：Sentinel 通过 → Atlas 云端部署
-
-用于 GitHub PR/CI 通过后，需要部署、运行时环境验证或目标环境证据的阶段。不是每个 batch 的固定步骤。
-
-**进入条件：**
-1. Sentinel 确认 PR/merge/CI 通过。
-2. 部署版本和提交 SHA 明确。
-
-**Atlas 职责：**
-1. 在云端部署指定版本。
-2. 验证健康检查、关键 API、前端访问和必要运行时配置。
-3. 反馈部署结果。
-
-**失败回流：**
-- 如果部署失败是环境/配置问题，Atlas 记录并处理。
-- 如果部署失败暴露代码 bug，User 通知 Codex，Codex 修复后重新走通道 A。
-
-### 第 1 步：Codex 修复 + 触发验收门时发信号
-
-Codex 完成 R2/R3/R4 修复、合并后的 R1 gate，或 acceptance-sensitive 文档变更后，更新 `FIX-SIGNAL.md`（**覆盖写入**，不留历史内容）。R0 本地整理不写 `FIX-SIGNAL.md`。
-
-`FIX-SIGNAL.md` 内容必须包含：
-
-1. **逐条 fix 清单** — 每条含：文件路径、行号、原问题、当前代码、验证方法
-2. **全局构建/测试命令** — Canary 可直接复制执行
-3. **期望的验收输出格式** — Canary 写入 `VERIFY-RESULT.md` 的模板
-
-Codex 同时告诉用户："请 Canary 验收 docs/agent-workflows/FIX-SIGNAL.md"
-
-### 第 2 步：Canary Agent 验收（风险门触发时）
-
-用户跟 Canary agent 说："去 /Users/m4/Desktop/projects/UniRouter/docs/agent-workflows/FIX-SIGNAL.md，按里面的验收指令逐条验证，结果写入 VERIFY-RESULT.md"
-
-Canary agent 必须：
-1. 读取 `FIX-SIGNAL.md` 中的验收指令
-2. 逐条验证（代码审查 + 运行命令）
-3. 将结果写入 `VERIFY-RESULT.md`（**覆盖写入**）
-4. 如发现新问题，在 `VERIFY-RESULT.md` 末尾的"新发现"区域列出
-
-Canary 同时告诉用户："验收完成，看 VERIFY-RESULT.md"
-
-### 第 3 步：用户传递结果（风险门触发时）
-
-用户跟 Codex 说："看 VERIFY-RESULT.md"
-
-Codex 读取结果：
-- **全部 PASS** → 告知用户验收通过，本轮结束
-- **有 FAIL** → Codex 修复失败项，回到第 1 步，更新 `FIX-SIGNAL.md`
+独立复核可以在本地完成、PR 打开、合并后或部署后异步发生，不作为默认串行关卡。
 
 ---
 
-## 信号文件格式
+## 6. 记录与证据
 
-### FIX-SIGNAL.md 模板
+### 6.1 当前执行记录
 
-```markdown
-# FIX-SIGNAL.md — [简要描述本轮修复内容]
+`docs/agent-workflows/EXECUTION-RECORD.md` 是当前批次的可变执行记录，由执行负责人维护，至少包括：
 
-**修复者：** main agent
-**日期：** [文件系统时间戳为准，不要硬编码日期]
-**修复轮次：** 第 N 轮
+1. 批次、范围、风险等级和状态。
+2. 基线分支/commit、当前分支和预期 PR。
+3. 修改文件和行为变化。
+4. 非目标和边界。
+5. 实际执行的命令、结果和未执行原因。
+6. CI、合并、部署和外部集成状态。
+7. 批准、停止条件、回滚和清理要求。
+8. 已知缺口和下一步。
+9. 可供复核者直接执行的检查清单。
+
+### 6.2 不可变证据
+
+批次达到重要事实节点时，在 `docs/ops/evidence/` 增加带批次和日期的证据文件。已有证据不覆盖、不回写新历史；后续修复通过新文件引用旧证据。
+
+运行时或外部交换证据还应记录适用字段：
+
+- 环境用途和非生产/生产分类；
+- commit、镜像或部署版本；
+- 时间、命令、健康检查和实际结果；
+- request ID、exchange ID、artifact hash 或 receipt ID；
+- 数据最小化、脱敏和保留期；
+- 回滚/停止条件和清理状态。
+
+### 6.3 状态词汇
+
+| 状态 | 允许的事实含义 |
+|------|----------------|
+| `Planned` | 只有已确认范围，无实现证据 |
+| `Implemented` | 代码已修改，尚未完成要求测试 |
+| `Local verified` | 执行负责人完成记录中的本地验证 |
+| `CI verified` | 对应提交通过仓库强制 CI |
+| `Target verified` | 指定非生产/批准目标环境有实际证据 |
+| `Production verified` | 指定生产或明确生产等价环境有实际证据 |
+| `External integration verified` | 外部系统导入/回读/receipt 已完成并可核对 |
+| `Blocked` | 缺少明确的权限、批准、环境、凭证或外部结果 |
+
+可以同时保留多个层级，例如 `CI verified; target pending`。不得因为 CI 通过就写 `Target verified`，也不得因为某个 agent 声称完成就写 `Production verified`。
 
 ---
 
-## 前置条件（本轮预期不变的部分）
+## 7. 独立复核流程
 
-| 项目 | 预期状态 | 原因 |
-|------|---------|------|
-| [例] 集成测试  | 预期仍失败 | 本轮未修改测试代码，旧测试本身有问题 |
-| [例]  警告 | 预期无新增 | 本轮只改业务逻辑，未改签名 |
+复核者首先读取：
 
-> Canary 验收时：前置条件中列出的预期失败不算 FAIL，只需在结论中注明。
+1. `docs/agent-workflows/EXECUTION-RECORD.md`；
+2. 对应 `docs/ops/evidence/` 文件；
+3. PR diff、CI 或目标环境证据。
 
----
+复核结果写入独立文件：
 
-## Fix #N: [标题]
-
-**文件：** `path/to/file.go:行号`
-**原问题：** [一句话]
-**当前代码：** [关键代码片段]
-**验证方法：** [具体步骤]
-
----
-
-## 全局验证命令
-
-```bash
-cd /Users/m4/Desktop/projects/UniRouter
-go build ./...
-go vet ./...
-go test ./...
+```text
+docs/agent-workflows/reviews/<batch-id>-<reviewer>-<YYYYMMDD>.md
 ```
 
-## 期望输出格式
+每个复核文件必须记录：复核者、独立性、范围、基线 commit、执行命令、实际结果、发现级别和结论。不得覆盖其他复核者文件。
 
-验收结果写入 VERIFY-RESULT.md，格式见下方模板。
-```
+发现处理：
 
-### VERIFY-RESULT.md 模板
+| 级别 | 处理 |
+|------|------|
+| **P0/P1** | 立即阻断未合并/未部署动作，或重新打开已完成批次 |
+| **P2** | 执行负责人评估是否当前批修复；未修复必须进入 `OPEN-ISSUES.md` 或 backlog |
+| **P3** | 可记录为非阻断建议，不影响当前事实状态 |
 
-```markdown
-# VERIFY-RESULT.md — 验收结果
-
-**验收者：** canary agent
-**日期：** [文件系统时间戳为准]
-**对应轮次：** 第 N 轮（对应 FIX-SIGNAL.md）
+`docs/agent-workflows/VERIFY-RESULT.md` 保留为协议 v1.x 的最近历史验收结果，不再由多个复核者覆盖写入。
 
 ---
 
-## 逐条结果
+## 8. GitHub 与合并规则
 
-- Fix #1: PASS/FAIL — [原因]
-- Fix #2: PASS/FAIL — [原因]
-- Fix #N: PASS/FAIL — [原因]
-
-## 前置条件核验
-
-- [例] 集成测试：预期失败，实际失败 → 符合预期 ✓
-- [例] go vet：无新增警告 → 符合预期 ✓
-
-## 全局构建
-
-- `go build ./...`: PASS/FAIL
-- `go vet ./...`: PASS/FAIL
-- `go test ./...`: PASS/FAIL（附失败用例）
-
-## 新发现的问题
-
-- [如有，在此列出；没有则写"无"]
-
-## 结论
-
-- [全部通过 / 需要 Codex 修复以下问题：...]
-```
+1. 不直接推送 `main`。
+2. 分支默认使用 `codex/<scope>`。
+3. 提交前检查工作树，不能回退或覆盖不属于当前批次的改动。
+4. PR 必须说明范围、风险、测试、证据、非目标和目标环境状态。
+5. UniRouter 当前强制 CI 至少包括 `Backend Tests`、`Frontend Build`、`Docker Build`；全部通过后才可合并。
+6. 合并后以 `origin/main` 的实际 commit/PR 为准更新状态，不以本地分支 SHA 猜测。
+7. 强制推送、删除远端保护分支或绕过检查不在默认授权内。
 
 ---
 
-## 重要规则
+## 9. 部署、凭证与数据安全
 
-1. **文件是覆盖写入**，不是追加。每次轮次用新内容覆盖，不留历史。
-2. **不要硬编码日期**。日期以文件系统时间戳为准。
-3. **FIX-SIGNAL.md 是风险门指令**，不是每次文件变更的流水账。只有 R2/R3/R4、合并后的 R1 gate、或 acceptance-sensitive 文档变更才应覆盖写入。
-4. **VERIFY-RESULT.md 是给 Main 看的反馈**，写清楚失败原因和修复建议；R0 本地整理不要求 Canary 覆盖它。
-5. **用户每次只需传一句话**，不需要解释上下文——所有上下文都在文件里。
-6. **多轮修复是正常的**。FAIL → 修 → 再发信号 → 再验，直到全部 PASS。
-7. **前置条件必须写明**。Codex 在 FIX-SIGNAL.md 中列出本轮预期不变的部分（如旧测试预期仍失败），Canary 在 VERIFY-RESULT.md 中核验前置条件是否符合预期。
-8. **Canary 不改代码**。OpenClaw Canary 只测试、审查、写结果；任何修复都回到 Codex。
-9. **Canary 通过后不继续扩范围**。进入 Sentinel 前，Codex 不应再做新的非必要代码修改。
-10. **状态文档不是 batch 日志**。`CURRENT-STATUS.md`、handoff、README、inventory 只记录当前事实、入口和边界；不为每个小批次机械更新。
-11. **目标环境声明必须有目标环境证据**。local/mock/preflight 只能证明本地或 harness readiness，不能升级为 `Production verified`。
-12. **PRD 范围优先**。实现批次每 2-3 批必须做一次 PRD alignment gate；发现偏离时先回到 User 确认范围。
+1. 凭证只通过 SSH agent、钥匙串、环境变量或批准的秘密管理方式注入，不写入聊天、Git、共享 Markdown 或 evidence。
+2. 非生产环境必须有明确用途标签；无法确认环境性质时停止部署。
+3. 部署前记录当前版本、健康状态和回滚方式，部署后验证关键健康/API/UI 路径。
+4. 数据导出遵循明确 request ID、批准 manifest、脱敏和最小化原则；不得把 Gate A 扩大为广义数据发现。
+5. UniRouter 和 X-Insight 是独立项目。共享文件夹只承载沟通、合同、最小化数据交换和回执，不替代各自仓库、CI、数据库或发布治理。
 
 ---
 
-## 文件清单
+## 10. 流程迁移
 
-| 文件 | 用途 | 谁写 | 模式 |
-|------|------|------|------|
-| `docs/PROJECT-HANDOFF.md` | Agent 接手第一入口 | Codex/Canary | 更新 |
-| `docs/CODEBASE-MAP.md` | 代码结构地图 | Codex/Canary | 更新 |
-| `docs/DOC-INVENTORY.md` | 文档清单与当前/历史边界 | Codex/Canary | 更新 |
-| `FIX-SIGNAL.md` | R1 gate / R2-R4 验收指令 | Codex | 触发风险门时覆盖写入 |
-| `VERIFY-RESULT.md` | R1 gate / R2-R4 验收结果 + 新发现 | Canary | 触发风险门时覆盖写入 |
-| `docs/issues/OPEN-ISSUES.md` | 当前未关闭问题 | Codex/Canary | 更新 |
-| `issues/*.md` | 问题补充说明 | Codex/Canary | 每个问题一个文件 |
-| `docs/ops/CURRENT-STATUS.md` | 当前项目真实状态 | Codex/Canary | 更新 |
-| `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` | 当前 PRD4 验收状态 | Codex/Canary | 验收状态变化时更新 |
-| `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` | 已完成 PRD3 验收状态 | Codex/Canary | 只在纠偏时更新 |
-| `docs/ops/PRD2-ACCEPTANCE-MATRIX.md` | 已冻结 PRD2 验收状态 | Codex/Canary | 只在纠偏时更新 |
-| `docs/ops/PRD-ACCEPTANCE-MATRIX.md` | PRD1 历史验收状态 | Codex/Canary | 只在纠偏时更新 |
-| `docs/testing/archive/BUG-LOG.md` | 历史运行时 bug 记录 | Canary | 归档参考 |
-| `docs/testing/archive/TEST-STATUS.md` | 历史测试状态 | Canary | 归档参考 |
-| `AGENT-PROTOCOL.md` | 本协议 | 协商 | 更新 |
-
-## 当前状态
-
-当前状态以 `docs/ops/CURRENT-STATUS.md` 为准。
-
-当前未关闭问题以 `docs/issues/OPEN-ISSUES.md` 为准。
+- 协议 v1.x 的 Canary/Sentinel/Atlas 完成记录继续作为历史证据，不重写。
+- `FIX-SIGNAL.md` 保留为旧链接兼容入口，新的当前执行事实写入 `EXECUTION-RECORD.md`。
+- `VERIFY-RESULT.md` 保留最近一次 v1.x 独立验收结果。
+- 新复核统一写入 `docs/agent-workflows/reviews/`。
+- 当前事实以 `CURRENT-STATUS.md`、相应 PRD acceptance matrix、`EXECUTION-RECORD.md` 和不可变 evidence 交叉核对。

@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -57,22 +56,15 @@ func prepareGatewayModelRequest(w http.ResponseWriter, r *http.Request, pool *pg
 	}
 	_ = json.Unmarshal(bodyBytes, &req)
 
-	resolvedModel := ""
 	if req.Model != "" {
 		var ok bool
-		r, bodyBytes, resolvedModel, ok = applyModelGovernance(w, r, pool, apiKey, req.Model, bodyBytes)
+		r, bodyBytes, _, ok = applyModelGovernance(w, r, pool, apiKey, req.Model, bodyBytes)
 		if !ok {
 			return nil, false
 		}
 	}
 
-	if !apiKeyAllowsModel(apiKey.AllowedModels, req.Model, resolvedModel) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusForbidden)
-		fmt.Fprintf(w, `{"error":{"type":"auth_error.model_not_allowed","message":"Model %s is not allowed for this API key","model":"%s"}}`, req.Model, req.Model)
-		return nil, false
-	}
-
+	// Relay owns API-key model denial so correlation and decision evidence are emitted.
 	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 	return r, true
 }
@@ -149,17 +141,4 @@ func recordUnregisteredModelAudit(ctx context.Context, pool *pgxpool.Pool, apiKe
 		 VALUES ($1, 0, 'model.unregistered.call', 'model', $2, $3::jsonb, '', '', $4, 'gateway_api', $5, '{}'::jsonb, $3::jsonb, NOW())`,
 		apiKey.OrgID, resourceID, string(detailJSON), middleware.GetRequestIDFromContext(ctx), projectIDValue,
 	)
-}
-
-func apiKeyAllowsModel(allowedModels, requestedModel, resolvedModel string) bool {
-	if allowedModels == "" || allowedModels == "*" || requestedModel == "" {
-		return true
-	}
-	for _, value := range strings.Split(allowedModels, ",") {
-		model := strings.TrimSpace(value)
-		if model == "*" || model == requestedModel || (resolvedModel != "" && model == resolvedModel) {
-			return true
-		}
-	}
-	return false
 }

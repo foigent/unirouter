@@ -5,8 +5,11 @@
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
 > Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, Batch 1O,
 > Batch 1P, Batch 1Q, Batch 1R, Batch 1S, Batch 1T, and Batch 1U
-> Canary/Sentinel complete. Batch 1V Gate A Authorized Controlled Execution is
-> authorized as `UR-XI-GATE-A-20260710-01` and awaiting Atlas target execution.
+> Historical Canary/Sentinel evidence is complete through Batch 1V (`cc38094` / PR #125). Post-merge
+> Gate A target execution produced a
+> sanitized snapshot with a denied-scenario correlation/evidence gap and now
+> awaits X-Insight import. Batch 1W Pre-Relay Model Permission Evidence Parity
+> is Local verified with PR/CI integration pending under Agent Protocol v2.0.
 > PRD4 remains complete for the confirmed current scope
 > and is not reopened by PRD5.
 > Source: `docs/planning/PRD5-BACKLOG.md`,
@@ -117,6 +120,7 @@ PRD5 must not:
 | P5-F29 | Gate A Exchange Envelope And Controlled Run Authorization | Add exchange identity and exact manifest hashing, then define prior authorization for narrowly generated Gate A scenario requests |
 | P5-F30 | Embeddings Model Permission Parity | Enforce API-key `allowed_models` on Embeddings before billing/routing/provider work and emit the same authorization rejection evidence as Chat |
 | P5-F31 | Gate A Authorized Controlled Execution | Execute exactly two approved synthetic scenarios through Atlas, seal only their verified request IDs, and obtain sanitized X-Insight import/readback evidence |
+| P5-F32 | Pre-Relay Model Permission Evidence Parity | Remove the duplicate live wrapper API-key model check so Relay owns the denial response, correlation header, and trace evidence consistently |
 
 ### P2
 
@@ -805,9 +809,45 @@ Acceptance:
   exactly two request IDs, expected HTTP results, and any rollback.
 - The snapshot/receipt evidence reconciles `(exchange_id, artifact.sha256)` and
   records the cleanup deadline.
-- Until actual Atlas and X-Insight evidence exists, status remains `Authorized
-  awaiting Atlas`; no Gate A import acceptance, read-only DB/view, shared
-  cross-project ECS staging, exporter/outbox, raw payload, or PRD4 claim is made.
+- Until X-Insight receipt/readback exists and the denied scenario is rerun after
+  Batch 1W deployment under a new or amended authorization, no complete Gate A
+  or Batch 1P target acceptance is claimed. Read-only DB/view, shared
+  cross-project ECS staging, exporter/outbox, raw payload, and PRD4 remain out of
+  this result.
+
+Current target result:
+
+- Atlas executed both authorized scenarios against `b2ba892` and generated
+  exchange `uxchg_f7de31e541516893a0d9b31cc0f3892a` with one call log, seven
+  trace events, and two generated capture gaps.
+- `successful_non_stream` passed. `model_permission_denied` returned 403 but
+  failed returned-ID correlation and produced no source trace because the live
+  wrapper rejected it before Relay.
+- The immutable snapshot remains valid for X-Insight diagnostic import and gap
+  validation, but it is not complete Batch 1P target evidence.
+
+### P5-F32: Pre-Relay Model Permission Evidence Parity
+
+Requirements:
+
+- Remove the duplicate API-key `allowed_models` rejection from
+  `prepareGatewayModelRequest` after model-governance alias resolution.
+- Keep project model-governance checks in the wrapper while letting Relay own
+  API-key model restriction semantics for both Chat and Embeddings.
+- Preserve resolved-model and requested-alias matching in Relay.
+- Ensure a live API-key model denial returns `X-Request-ID`, emits
+  `auth.model_not_allowed` with the accepted authorization decision fields, and
+  stops before billing freeze, routing, provider dispatch, or call-log write.
+
+Acceptance:
+
+- The full `newGatewayChatHandler` integration path proves HTTP 403, matching
+  `X-Request-ID`, exact decision trace fields, zero call logs, and zero billing
+  freezes for a project-allowed but API-key-denied alias.
+- Existing wrapper, gateway, and full Go tests pass.
+- Batch 1W does not change project model-governance denial semantics, routes,
+  migrations, frontend behavior, raw payload policy, exporter/outbox,
+  X-Insight runtime dependency, the immutable Gate A snapshot, or PRD4.
 
 ### P5-F09: Cursor Export API Or Outbox
 
@@ -877,11 +917,13 @@ PRD5 should proceed in independently verifiable batches:
     decision evidence parity with Chat.
 22. Batch 1V: activate the approved Gate A controlled run, Atlas execution
     handoff, exact-ID sealing, sanitized snapshot, and X-Insight receipt loop.
-23. Later payload policy metadata and evidence references, with future raw
+23. Batch 1W: remove the pre-relay API-key permission bypass around Relay so
+    live denial correlation and decision evidence match the accepted contract.
+24. Later payload policy metadata and evidence references, with future raw
    payload modes gated behind enterprise opt-in.
-24. Later Gate A batch: read-only view/export decision after X-Insight Gate A
+25. Later Gate A batch: read-only view/export decision after X-Insight Gate A
    evidence.
-25. Later target/backlog batches: target upstream/SSO evidence or larger
+26. Later target/backlog batches: target upstream/SSO evidence or larger
    backlog items only after their prerequisites are explicitly met.
 
 ## 6. External Source Refresh

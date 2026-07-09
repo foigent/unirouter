@@ -1,5 +1,9 @@
 # VERIFY-RESULT.md - PRD5 Batch 1V Gate A Authorized Controlled Execution
 
+> Historical protocol v1.x result. Under Agent Protocol v2.0, new independent
+> reviews are written under `docs/agent-workflows/reviews/` and do not overwrite
+> this file.
+
 **Verifier:** Canary
 **Date:** 2026-07-10
 **Signal:** `docs/agent-workflows/FIX-SIGNAL.md`

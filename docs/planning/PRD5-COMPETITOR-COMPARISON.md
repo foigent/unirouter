@@ -2,8 +2,8 @@
 
 > Date: 2026-07-10
 > Status: Source-grounded PRD5 planning comparison with Batch 1J through Batch
-> 1T accepted and Batch 1U Embeddings model-permission parity fixed awaiting
-> Canary.
+> 1U accepted; Batch 1V produced real Gate A gap evidence and Batch 1W fixes the
+> pre-relay permission-evidence bypass is Local verified with PR/CI pending.
 > Purpose: compare UniRouter against adjacent gateway and observability systems,
 > then decide which gaps belong in UniRouter PRD5 versus X-Insight.
 
@@ -160,11 +160,16 @@ Accepted in Batch 1P:
 - Chat API-key model-permission denials emit explicit gateway-owned auth
   decision evidence before billing, routing, or provider dispatch.
 
-Fixed awaiting Canary in Batch 1U:
+Accepted in Batch 1U:
 
 - Embeddings now enforces the same `allowed_models` semantics as Chat, closing
   an endpoint authorization bypass while preserving the same 403 contract and
   decision evidence shape.
+
+Local verified with PR/CI integration pending in Batch 1W:
+
+- live gateway wrappers no longer reject API-key model restrictions before
+  Relay can emit the correlation header and authorization decision evidence.
 
 Medium priority:
 

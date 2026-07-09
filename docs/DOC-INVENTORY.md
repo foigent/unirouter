@@ -9,7 +9,7 @@
 | `docs/PROJECT-HANDOFF.md` | First-read handoff for agents |
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
 | `docs/PRD-Phase5.md` | Formal PRD5 active scope and implementation-phase reference |
-| `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` | PRD5 acceptance matrix; Batch 1A/1B/1C through Batch 1U Canary/Sentinel complete, Batch 1V authorized awaiting Atlas |
+| `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` | PRD5 acceptance matrix; Batch 1V target evidence has a known gap and Batch 1W is Local verified with PR/CI integration pending |
 | `docs/ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md` | PRD5 Gate A request ID approval runbook for non-technical User/UniRouter-owner approval before controlled X-Insight snapshot generation |
 | `docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md` | PRD5 Gate A prior-authorization and narrow operator runbook for newly generated controlled scenarios |
 | `docs/planning/PRD5-IMPLEMENTATION-PLAN.md` | PRD5 batch plan and UniRouter/X-Insight ownership split |
@@ -30,9 +30,11 @@
 | `docs/issues/OPEN-ISSUES.md` | Current unresolved issue queue |
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
-| `docs/agent-workflows/AGENT-PROTOCOL.md` | Required Codex/OpenClaw workflow |
-| `docs/agent-workflows/FIX-SIGNAL.md` | Current PRD5 Batch 1V authorization/status handoff verification signal |
-| `docs/agent-workflows/VERIFY-RESULT.md` | Latest OpenClaw verification result: PRD5 Batch 1U PASS 7/7 |
+| `docs/agent-workflows/AGENT-PROTOCOL.md` | Required single-owner execution, approval, evidence and optional-review workflow |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD5 Batch 1W execution, verification and integration state |
+| `docs/agent-workflows/reviews/` | Optional immutable independent review results |
+| `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry pointing to the current execution record |
+| `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |
 
 ## Product And Design References
 
@@ -118,16 +120,20 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | `docs/ops/evidence/PRD4-B1R-runtime-build-chain-local-20260708.md` | PRD4 Batch 1R local evidence for repo-controllable runtime/build-chain fixes under `PRD4-RUNTIME-002` |
 | `docs/ops/evidence/PRD4-B1S-open-issue-boundary-closeout-20260708.md` | PRD4 Batch 1S open issue boundary evidence; maps remaining plugin/deploy/infra PRD4 open items to PRD5 and leaves target DB cleanup to Atlas |
 | `docs/ops/evidence/PRD4-final-closeout-20260708.md` | PRD4 final closeout evidence; records PRD4 complete for current scope and target test DB cleanup completion by User-reported Atlas action |
+| `docs/ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md` | User-approved single execution owner, Git/CI, approval and optional-review decision evidence |
+| `docs/ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md` | Batch 1W local root-cause, implementation, regression and target-boundary evidence |
 
 ## Agent Workflow Files
 
 | File | Role |
 |------|------|
 | `docs/agent-workflows/README.md` | Agent workflow index |
-| `docs/agent-workflows/AGENT-PROTOCOL.md` | Current protocol |
-| `docs/agent-workflows/FIX-SIGNAL.md` | Current Codex to OpenClaw signal state; PRD5 Batch 1V authorization/status handoff awaiting Canary |
-| `docs/agent-workflows/VERIFY-RESULT.md` | Current OpenClaw verification result: PRD5 Batch 1U PASS 7/7 |
-| `docs/agent-workflows/CHECKLIST.md` | Canary checklist/reference; may need reconciliation |
+| `docs/agent-workflows/AGENT-PROTOCOL.md` | Current Agent Protocol v2.0 |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current execution-owner record; PRD5 Batch 1W Local verified, PR/CI pending |
+| `docs/agent-workflows/reviews/README.md` | Independent review naming, contents and severity rules |
+| `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry |
+| `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |
+| `docs/agent-workflows/CHECKLIST.md` | Historical Canary checklist/reference; optional review input only |
 | `docs/agent-workflows/PLAN.md` | Historical/current plan notes; do not treat as canonical without reconciliation |
 | `docs/agent-workflows/CONTEXT_HANDOFF.md` | Context transfer notes; reference only |
 
