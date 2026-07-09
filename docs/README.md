@@ -4,8 +4,9 @@
 - [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — Agent 接手项目的第一阅读入口
 - [ops/CURRENT-STATUS.md](ops/CURRENT-STATUS.md) — 当前项目真实状态（进度、测试、部署、缺口）
 - [PRD-Phase5.md](PRD-Phase5.md) — PRD5 当前正式范围：X-Insight evidence readiness、结构字段、snapshot、payload 边界、轻量 trace UI、竞品追赶和 Data Exchange Control 边界
-- [ops/PRD5-ACCEPTANCE-MATRIX.md](ops/PRD5-ACCEPTANCE-MATRIX.md) — PRD5 验收矩阵；Batch 1A/1B/1C through Batch 1R Canary/Sentinel complete，Batch 1S fixed awaiting Canary
+- [ops/PRD5-ACCEPTANCE-MATRIX.md](ops/PRD5-ACCEPTANCE-MATRIX.md) — PRD5 验收矩阵；Batch 1A/1B/1C through Batch 1S Canary/Sentinel complete，Batch 1T fixed awaiting Canary
 - [ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md](ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md) — PRD5 Gate A request ID 非技术审批说明和 X-Insight snapshot 数据最小化边界
+- [ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md](ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md) — 新建 Gate A 场景的环境、操作人、数据类别和保留期授权边界
 - [planning/PRD5-IMPLEMENTATION-PLAN.md](planning/PRD5-IMPLEMENTATION-PLAN.md) — PRD5 分批实施计划和 UniRouter/X-Insight 并行边界
 - [planning/PRD5-COMPETITOR-COMPARISON.md](planning/PRD5-COMPETITOR-COMPARISON.md) — UniRouter 与 LiteLLM/New API/one-api/Langfuse/Helicone 对比和 PRD5 追赶项
 - [PRD-Phase4.md](PRD-Phase4.md) — PRD4 已按当前确认范围完成；真实上游/真实 SSO target E2E 等延后到 PRD5
@@ -18,8 +19,8 @@
 - [PRD-Phase3.md](PRD-Phase3.md) — 已完成 PRD3 一致性、语义、契约和架构清理范围
 - [planning/PRD3-CONSISTENCY-AUDIT.md](planning/PRD3-CONSISTENCY-AUDIT.md) — PRD3 范围审计和 PRD1→PRD2 遗留问题梳理
 - [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 当前未关闭问题列表
-- [agent-workflows/FIX-SIGNAL.md](agent-workflows/FIX-SIGNAL.md) — 当前 Codex 验证信号：PRD5 Batch 1S X-Insight Data Exchange Control Surface fixed awaiting Canary
-- [agent-workflows/VERIFY-RESULT.md](agent-workflows/VERIFY-RESULT.md) — 最新 Canary 验收结果；PRD5 Batch 1R PASS 6/6
+- [agent-workflows/FIX-SIGNAL.md](agent-workflows/FIX-SIGNAL.md) — 当前 Codex 验证信号：PRD5 Batch 1T Gate A Exchange Envelope And Controlled Run Authorization fixed awaiting Canary
+- [agent-workflows/VERIFY-RESULT.md](agent-workflows/VERIFY-RESULT.md) — 最新 Canary 验收结果；PRD5 Batch 1S PASS 6/6
 - [CODEBASE-MAP.md](CODEBASE-MAP.md) — 代码结构、路由、数据、测试、部署地图
 - [DOC-INVENTORY.md](DOC-INVENTORY.md) — 文档清单与当前/冻结/历史/候选边界
 - [DOCS-GOVERNANCE.md](DOCS-GOVERNANCE.md) — 文档治理规则

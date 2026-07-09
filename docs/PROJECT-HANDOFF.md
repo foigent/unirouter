@@ -13,17 +13,18 @@
 6. `docs/planning/PRD5-BACKLOG.md` - capabilities intentionally deferred beyond PRD4 and PRD5 active scope.
 7. `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md` - X-Insight Gate A sequencing decisions.
 8. `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md` - future UniRouter UI/control-plane boundary for X-Insight data exchange.
-9. `docs/PRD-Phase4.md` - completed PRD4 scope.
-10. `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` - PRD4 accepted/deferred rows and evidence boundaries.
-11. `docs/planning/PRD4-BACKLOG.md` - PRD4 candidate backlog source record.
-12. `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` - completed PRD3 cleanup/optimization acceptance state.
-13. `docs/PRD-Phase3.md` - completed PRD3 scope.
-14. `docs/planning/PRD3-CONSISTENCY-AUDIT.md` - PRD1 -> PRD2 consistency findings behind PRD3.
-15. `docs/issues/OPEN-ISSUES.md` - active unresolved issues and recently verified fixes.
-16. `docs/agent-workflows/AGENT-PROTOCOL.md` - risk-gated Codex/OpenClaw Canary/Sentinel/Atlas workflow.
-17. `docs/agent-workflows/FIX-SIGNAL.md` and `docs/agent-workflows/VERIFY-RESULT.md` - current signal state and latest verification result.
-18. `docs/CODEBASE-MAP.md` - code, route, data, test, and deployment map.
-19. `docs/DOC-INVENTORY.md` and `docs/DOCS-GOVERNANCE.md` - which docs are current, frozen, historical, candidate, or reference-only.
+9. `docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md` - approval boundary for newly generated Gate A scenarios.
+10. `docs/PRD-Phase4.md` - completed PRD4 scope.
+11. `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` - PRD4 accepted/deferred rows and evidence boundaries.
+12. `docs/planning/PRD4-BACKLOG.md` - PRD4 candidate backlog source record.
+13. `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` - completed PRD3 cleanup/optimization acceptance state.
+14. `docs/PRD-Phase3.md` - completed PRD3 scope.
+15. `docs/planning/PRD3-CONSISTENCY-AUDIT.md` - PRD1 -> PRD2 consistency findings behind PRD3.
+16. `docs/issues/OPEN-ISSUES.md` - active unresolved issues and recently verified fixes.
+17. `docs/agent-workflows/AGENT-PROTOCOL.md` - risk-gated Codex/OpenClaw Canary/Sentinel/Atlas workflow.
+18. `docs/agent-workflows/FIX-SIGNAL.md` and `docs/agent-workflows/VERIFY-RESULT.md` - current signal state and latest verification result.
+19. `docs/CODEBASE-MAP.md` - code, route, data, test, and deployment map.
+20. `docs/DOC-INVENTORY.md` and `docs/DOCS-GOVERNANCE.md` - which docs are current, frozen, historical, candidate, or reference-only.
 
 ## Current Project Shape
 
@@ -43,6 +44,11 @@ workflow. X-Insight remains a separate project and owns broader cross-system
 AI/Agent observability, read-side audit, investigation timeline/graph, policy
 simulation, and governance surfaces.
 
+Batch 1T adds exchange identity and exact approval-manifest hashing to the
+snapshot handoff. Existing requests still use exact-ID approval. Newly created
+Gate A requests use prior scenario/data/environment/operator/retention approval
+and unique `X-Request-ID` values, without broad request discovery.
+
 ## What Is Current Truth
 
 | Question | Current Source |
@@ -52,6 +58,7 @@ simulation, and governance surfaces.
 | What is the PRD5 implementation order? | `docs/planning/PRD5-IMPLEMENTATION-PLAN.md` |
 | What competitor gaps feed PRD5? | `docs/planning/PRD5-COMPETITOR-COMPARISON.md` |
 | What is the X-Insight data exchange UI/control boundary? | `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md` |
+| How are newly generated Gate A scenarios authorized? | `docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md` |
 | What is the PRD4 formal scope? | `docs/PRD-Phase4.md` |
 | What is the PRD4 acceptance plan? | `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` |
 | Which items are explicitly deferred to PRD5? | `docs/planning/PRD5-BACKLOG.md` |
@@ -85,8 +92,9 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Current active verification signal: PRD5 Batch 1S X-Insight Data Exchange
-Control Surface fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+Current active verification signal: PRD5 Batch 1T Gate A Exchange Envelope And
+Controlled Run Authorization fixed awaiting Canary in
+`docs/agent-workflows/FIX-SIGNAL.md`.
 
 PRD4 is complete for the confirmed current scope. PRD5 must preserve the PRD4
 deferred-boundary decisions recorded here.
@@ -332,7 +340,7 @@ PRD5 Batch 1R:
 PRD5 Batch 1S:
 
 - Scope: X-Insight data exchange control surface product/architecture boundary.
-- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Status: Canary PASS 6/6; Sentinel merge reflected by `c6ae2a7` / PR #122.
 - Adds: `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md`; shared X-Insight
   review request
   `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-data-exchange-control-surface-review.md`;
@@ -345,6 +353,21 @@ PRD5 Batch 1S:
   approved request IDs, DSN, credential, raw prompt/response, raw IP, raw
   upstream error, read-only DB/view, shared ECS staging, exporter/outbox,
   X-Insight runtime dependency, or PRD4 matrix changes.
+
+PRD5 Batch 1T:
+
+- Scope: Gate A exchange envelope, exact approval-manifest hashing, receipt
+  contract reconciliation, and controlled-run authorization.
+- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Adds: snapshot/handoff `exchange_id`; manifest-selected
+  `approval_manifest_sha256`; manifest-preserving handoff commands; focused
+  tests; `docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md`; shared exchange
+  contract, authorization worksheet, and UniRouter response.
+- Still blocked: real request execution needs the User-approved dev/test
+  environment, named operator, and temporary artifact retention.
+- Does not add: real requests or artifacts, approved IDs, secrets, UI, API,
+  migration, runtime path changes, read-only DB/view, shared ECS,
+  exporter/outbox, X-Insight runtime dependency, or PRD4 changes.
 
 Latest completed PRD4 verification result is PRD4 Batch 1S Open Issue Boundary
 Closeout:

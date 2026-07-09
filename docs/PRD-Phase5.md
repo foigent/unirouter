@@ -4,12 +4,13 @@
 > Date: 2026-07-10
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
 > Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, Batch 1O,
-> Batch 1P, Batch 1Q, and Batch 1R Canary/Sentinel complete. Batch 1S
-> X-Insight Data Exchange Control Surface fixed awaiting Canary. PRD4 remains complete for the confirmed current scope
+> Batch 1P, Batch 1Q, Batch 1R, and Batch 1S Canary/Sentinel complete. Batch
+> 1T Gate A Exchange Envelope And Controlled Run Authorization fixed awaiting
+> Canary. PRD4 remains complete for the confirmed current scope
 > and is not reopened by PRD5.
 > Source: `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, X-Insight shared-folder
-> responses on 2026-07-08, current UniRouter code/schema review, and official
+> responses through 2026-07-10, current UniRouter code/schema review, and official
 > source refresh for LiteLLM, New API, one-api, Langfuse, and Helicone on
 > 2026-07-08.
 
@@ -46,6 +47,11 @@ PRD5 may:
 - keep a lightweight request trace UI focused on UniRouter gateway debugging;
 - define a UniRouter-owned data exchange control surface for outbound approval,
   export ledger, handoff artifacts, import receipts, and X-Insight deep links;
+- identify each snapshot exchange with a source-created ID and bind
+  manifest-selected exports to the exact approval manifest hash;
+- authorize newly created Gate A test requests by scenario, data class, source
+  instance, safety profile, retention, and operator before their request IDs are
+  sealed into the export manifest;
 - add X-Insight deep-link hooks after X-Insight exposes stable execution URLs;
 - compare LiteLLM, New API, one-api, Langfuse, Helicone, and similar systems to
   decide which gateway features UniRouter should catch up on versus leave to
@@ -105,6 +111,7 @@ PRD5 must not:
 | P5-F26 | Gate A Request Approval Manifest | Add a JSON approval-manifest path for X-Insight Gate A snapshots so only User/UniRouter-approved scenario request IDs can be exported |
 | P5-F27 | Gate A Request ID Approval Runbook | Explain the non-technical request ID approval process and provide a shared worksheet before any real snapshot artifact is generated |
 | P5-F28 | X-Insight Data Exchange Control Surface | Define the future UniRouter UI/control-plane boundary for approval, export ledger, receipts, and deep links without duplicating X-Insight observability |
+| P5-F29 | Gate A Exchange Envelope And Controlled Run Authorization | Add exchange identity and exact manifest hashing, then define prior authorization for narrowly generated Gate A scenario requests |
 
 ### P2
 
@@ -702,6 +709,42 @@ Acceptance:
   access, create exporter/outbox, add X-Insight runtime dependency, store raw
   prompt/response payloads, or change PRD4.
 
+### P5-F29: Gate A Exchange Envelope And Controlled Run Authorization
+
+Requirements:
+
+- Add an immutable source-created `exchange_id` to each generated snapshot and
+  repeat it in the handoff note.
+- For manifest-selected snapshots, calculate
+  `approval_manifest_sha256=sha256:<lowercase-hex>` from the exact manifest file
+  bytes and repeat it in the handoff note.
+- Keep the snapshot artifact's own hash outside the artifact; X-Insight computes
+  it after receipt and reconciles using `(exchange_id, artifact.sha256)`.
+- Preserve `--approval-manifest` in the generated handoff command instead of
+  widening a manifest-approved run into direct request flags.
+- Require manifest `source_instance` and reject a conflicting command-line
+  override so the manifest hash remains bound to the approved source.
+- Keep exact-ID approval for existing requests and add prior scenario/data/
+  environment/operator/retention authorization for newly created controlled
+  requests.
+- Use unique scenario-marked `X-Request-ID` values for the authorized run so the
+  operator captures returned IDs directly without broad discovery.
+
+Acceptance:
+
+- Focused snapshot-tool tests verify exact-byte manifest hashing, exchange ID
+  format/uniqueness, source-instance binding, trailing JSON rejection, and
+  manifest-mode handoff output.
+- The shared folder contains the exchange contract, UniRouter response, and a
+  controlled-run authorization worksheet with unresolved operator and retention
+  decisions explicit.
+- X-Insight's current `xinsight.import-receipt.v1` fields and ownership boundary
+  are reflected without inventing `import_job_id` or a deep link.
+- Batch 1T does not run real requests, generate a real snapshot artifact, write
+  approved request IDs or credentials, add UI/API/migration/runtime changes,
+  create read-only DB/view access, shared ECS staging, exporter/outbox, raw
+  payload capture, X-Insight runtime dependency, or PRD4 changes.
+
 ### P5-F09: Cursor Export API Or Outbox
 
 Requirements:
@@ -764,11 +807,13 @@ PRD5 should proceed in independently verifiable batches:
     non-technical approval.
 19. Batch 1S: X-Insight data exchange control surface boundary and staged UI
     decision.
-20. Later payload policy metadata and evidence references, with future raw
+20. Batch 1T: Gate A exchange identity, exact approval-manifest hashing, import
+    receipt contract reconciliation, and controlled-run authorization path.
+21. Later payload policy metadata and evidence references, with future raw
    payload modes gated behind enterprise opt-in.
-21. Later Gate A batch: read-only view/export decision after X-Insight Gate A
+22. Later Gate A batch: read-only view/export decision after X-Insight Gate A
    evidence.
-22. Later target/backlog batches: target upstream/SSO evidence or larger
+23. Later target/backlog batches: target upstream/SSO evidence or larger
    backlog items only after their prerequisites are explicitly met.
 
 ## 6. External Source Refresh

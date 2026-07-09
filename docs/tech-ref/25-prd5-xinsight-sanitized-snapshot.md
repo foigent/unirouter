@@ -1,10 +1,10 @@
 # PRD5 X-Insight Sanitized Snapshot
 
-> Version: v0.4
+> Version: v0.5
 > Date: 2026-07-10
-> Status: Batch 1A/1B, Batch 1K, Batch 1N, Batch 1O, Batch 1Q, and Batch 1R
-> Canary/Sentinel complete; Batch 1S Data Exchange Control boundary fixed
-> awaiting Canary
+> Status: Batch 1A/1B, Batch 1K, Batch 1N, Batch 1O, Batch 1Q, Batch 1R, and
+> Batch 1S Canary/Sentinel complete; Batch 1T exchange envelope and controlled
+> run authorization fixed awaiting Canary
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`,
 > `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md`
@@ -59,6 +59,17 @@ go run scripts/prd5_xinsight_snapshot.go \
 `--request-ids`, and `--scenario` flags. Manifest mode sets
 `safety.selection_mode` to `approved_request_id_manifest`.
 
+Each generated snapshot includes a source-created `exchange_id`. Manifest mode
+also includes `approval_manifest_sha256`, calculated from the exact manifest
+file bytes. Re-delivering the same unchanged artifact keeps its embedded
+exchange ID; regenerating creates a new one. X-Insight calculates the artifact
+SHA-256 after receipt and reconciles `(exchange_id, artifact.sha256)`.
+
+Manifest mode requires a non-empty `source_instance`. An explicit
+`--source-instance` must match the manifest value exactly, otherwise the tool
+fails before reading a DSN. This prevents the hashed approval context from being
+reused against a different source environment.
+
 Approval manifest schema:
 
 ```json
@@ -101,6 +112,10 @@ snapshot output path, generated capture gaps, and command shape without the DSN.
 
 `--handoff-note -` is rejected so JSON and Markdown output cannot be interleaved
 on stdout.
+
+When manifest mode is used, the generated handoff command keeps
+`--approval-manifest`; it does not convert the approved selection to direct
+request flags.
 
 ## Selection Rule
 
