@@ -80,8 +80,8 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Current active verification signal: PRD5 Batch 1O Gate A Controlled Snapshot
-Handoff Prep fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+Current active verification signal: PRD5 Batch 1P Model Permission Decision
+Evidence fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
 
 PRD4 is complete for the confirmed current scope. PRD5 must preserve the PRD4
 deferred-boundary decisions recorded here.
@@ -262,7 +262,8 @@ PRD5 Batch 1O:
 
 - Scope: status reconciliation and Gate A controlled sanitized snapshot handoff
   preparation.
-- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Status: Canary PASS 8/8 in `docs/agent-workflows/VERIFY-RESULT.md`;
+  Sentinel merge reflected by `b2eea2e` / PR #118.
 - Adds: PRD5 status reconciliation for Batch 1N completion, P5-F24 acceptance
   wording, and a shared-folder request for approved request IDs, scenario
   labels, source instance naming, and X-Insight import/read confirmation.
@@ -270,6 +271,22 @@ PRD5 Batch 1O:
   raw IP, raw upstream error, migration, runtime request-path change, API route,
   frontend behavior, read-only DB/view credential, shared ECS staging,
   exporter/outbox, X-Insight runtime dependency, or PRD4 matrix changes.
+
+PRD5 Batch 1P:
+
+- Scope: runtime model-permission decision evidence for the existing chat
+  `allowed_models` rejection path.
+- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Adds: `auth.model_not_allowed` trace evidence before the existing 403 response
+  with `source_component=auth`, `capture_gap=permission_denied`,
+  `decision_kind=auth`, `decision_result=rejected`, and
+  `decision_reason=auth_error.model_not_allowed`; focused gateway coverage for
+  the direct trace writer and handler denial path; and shared-folder contract
+  `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/contracts/2026-07-10-unirouter-prd5-model-permission-decision-evidence.md`.
+- Does not add: migration, API route, frontend behavior, read-only DB/view
+  credential, shared ECS staging, exporter/outbox, raw prompt/response capture,
+  X-Insight runtime dependency, Embeddings authorization behavior change,
+  billing/routing/provider dispatch semantic change, or PRD4 matrix changes.
 
 Latest completed PRD4 verification result is PRD4 Batch 1S Open Issue Boundary
 Closeout:

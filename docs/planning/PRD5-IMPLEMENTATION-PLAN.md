@@ -2,9 +2,9 @@
 
 > Date: 2026-07-10
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
-> Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, and Batch 1N
-> Canary/Sentinel complete. Batch 1O Gate A controlled snapshot handoff prep
-> fixed awaiting Canary.
+> Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, and Batch 1O
+> Canary/Sentinel complete. Batch 1P Model Permission Decision Evidence fixed
+> awaiting Canary.
 > Scope owner: UniRouter. X-Insight remains a separate project and owns broader
 > observability/governance product surfaces.
 
@@ -471,7 +471,9 @@ coordination only. It does not change runtime request handling, routing,
 billing, provider dispatch, response payloads, API routes, frontend behavior,
 or DB schema.
 
-Status: fixed awaiting Canary.
+Status: Canary/Sentinel complete. Canary PASS 8/8 is recorded in
+`docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge is reflected by
+`b2eea2e` / PR #118.
 
 Implemented in this round:
 
@@ -496,6 +498,44 @@ Non-goals:
 - no shared ECS staging;
 - no exporter/outbox;
 - no X-Insight runtime dependency;
+- no PRD4 matrix/status change.
+
+### Batch 1P: Model Permission Decision Evidence
+
+Risk: R3 because it touches the auth-denial request path and gateway trace
+evidence. Scope is restricted to the existing chat `allowed_models` rejection
+path and does not change successful request handling, billing, routing, provider
+dispatch, DB schema, API routes, or frontend behavior.
+
+Status: fixed awaiting Canary.
+
+Implemented in this round:
+
+- emit `auth.model_not_allowed` trace evidence before the existing chat
+  `allowed_models` 403 response;
+- write `capture_gap=permission_denied` for this runtime auth decision so later
+  missing billing/routing/provider evidence has a factual denial reason;
+- classify the event as `decision_kind=auth`, `decision_result=rejected`, and
+  `decision_reason=auth_error.model_not_allowed`;
+- preserve the existing behavior that model-permission denial returns before
+  billing freeze, routing, or provider dispatch;
+- add focused gateway tests for both direct trace insertion and the chat handler
+  denial path;
+- publish a shared-folder contract note for X-Insight explaining the import
+  semantics and boundaries.
+
+Non-goals:
+
+- no DB migration;
+- no new API route;
+- no frontend behavior change;
+- no read-only DB/view credential handoff;
+- no shared ECS staging;
+- no exporter/outbox;
+- no raw prompt/response capture;
+- no X-Insight runtime dependency;
+- no Embeddings authorization behavior change;
+- no `decision_not_emitted` backfill or trace-sampling override;
 - no PRD4 matrix/status change.
 
 ### Later Payload Policy Modes
@@ -556,7 +596,8 @@ Use existing PRD4 harnesses, but record target evidence under PRD5.
 
 ## Current Blocking Conditions
 
-There is no blocking condition for UniRouter Batch 1A through Batch 1O.
+There is no blocking condition for UniRouter Batch 1A through Batch 1P. Batch
+1P is fixed awaiting Canary verification.
 
 These later actions are gated:
 

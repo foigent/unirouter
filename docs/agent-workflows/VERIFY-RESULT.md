@@ -1,56 +1,55 @@
-# VERIFY-RESULT.md - PRD5 Batch 1O Gate A Controlled Snapshot Handoff Prep
+# VERIFY-RESULT.md - PRD5 Batch 1P Model Permission Decision Evidence
 
 **Verifier:** Canary
 **Date:** 2026-07-10
 **Signal:** `docs/agent-workflows/FIX-SIGNAL.md`
-**Result:** ✅ **PASS — 8/8**
+**Result:** ✅ **PASS — 6/6**
 
 ## Verification Summary
 
 | # | Instruction | Result | Evidence |
 |---|-------------|--------|----------|
-| 1 | Repo history includes `92cb8ce` / PR #117 for PRD5 Batch 1N | ✅ PASS | `git log --oneline -5 origin/main` shows `92cb8ce feat: PRD5 Batch 1N — snapshot capture gap candidates (P5-F23) (#117)` at HEAD |
-| 2 | VERIFY-RESULT.md records PRD5 Batch 1N PASS 10/10 | ✅ PASS | `VERIFY-RESULT.md` title: "PRD5 Batch 1N Snapshot Capture Gap Candidates"; result: "PASS — 10/10" |
-| 3 | Matrix: P5-F23 Canary passed; P5-F24 Fixed awaiting Canary | ✅ PASS | `PRD5-ACCEPTANCE-MATRIX.md:64` — P5-F23 = "Canary passed"; `:65` — P5-F24 = "Fixed awaiting Canary" |
-| 4 | PRD-Phase5 defines P5-F24; does not reopen PRD4 | ✅ PASS | `PRD-Phase5.md:568` — "P5-F24: Gate A Controlled Snapshot Handoff Prep"; PRD4 matrix unchanged (13 rows) |
-| 5 | Implementation plan: no blocking condition through Batch 1O; controlled snapshot blocked until approved request IDs and source access | ✅ PASS | `PRD5-IMPLEMENTATION-PLAN.md:559` — "no blocking condition for UniRouter Batch 1A through Batch 1O"; `:467` Batch 1O section documents preconditions |
-| 6 | Shared request file exists; no DSNs, credentials, raw prompts, raw responses, raw IPs, or raw upstream errors | ✅ PASS | `requests/2026-07-10-unirouter-prd5-controlled-snapshot-handoff-prep.md` exists (2741 bytes); explicitly states "does not include a snapshot artifact, DSN, credential, token, raw prompt, raw response, raw IP address, or raw upstream error text" |
-| 7 | No runtime code, migration, API route, frontend, real snapshot artifact, read-only credential, shared ECS staging, exporter/outbox, X-Insight dependency, or PRD4 matrix change | ✅ PASS | `git diff --name-only` — 14 files, all docs. `git diff --check` — clean. No `.go` file changes, no migration files |
-| 8 | All grep/check commands produce expected references | ✅ PASS | See below |
+| 1 | Repo includes `b2eea2e` / PR #118; VERIFY-RESULT.md records Batch 1O PASS 8/8 | ✅ PASS | `git log` shows `b2eea2e docs: PRD5 Batch 1O — Gate A controlled snapshot handoff prep (P5-F24) (#118)` at HEAD; VERIFY-RESULT.md title: "PRD5 Batch 1O Gate A Controlled Snapshot Handoff Prep", result: "PASS — 8/8" |
+| 2 | Only runtime behavior change is chat model-permission denial trace event; HTTP 403 preserved; denial before billing/routing/provider | ✅ PASS | `relay.go:312` — `recordTraceEvent` added before existing `writeError` call in `!allowed` block; `relay.go:315` — `writeError(w, StatusForbidden, "permission_error", "auth_error.model_not_allowed", ...)` unchanged; `TestHandleChatCompletion_ModelNotAllowed` asserts `freezeCalled == false` (denial before billing freeze) |
+| 3 | Trace evidence: `event_type=auth.model_not_allowed`, `source_component=auth`, `capture_gap=permission_denied`, `decision_kind=auth`, `decision_result=rejected`, `decision_reason=auth_error.model_not_allowed` | ✅ PASS | `trace.go:292` — `case "auth.model_not_allowed": return "auth", "rejected", reason`; `trace.go:338` — `authDecisionCaptureGap` returns `evidenceCaptureGapAuth` (`permission_denied`); `relay.go:312` — stage=`"auth"`, error_code metadata=`"auth_error.model_not_allowed"` |
+| 4 | Embeddings authorization behavior unchanged | ✅ PASS | `HandleEmbeddings` has no `allowed_models` / `AllowedModels` check (only `HandleChatCompletion` at `:302`); no `.go` diff in embeddings path |
+| 5 | No migration, new route, frontend, snapshot artifact, read-only credential, shared ECS staging, exporter/outbox, raw payload, X-Insight dependency, PRD4 matrix change, or Production verified claim | ✅ PASS | `git diff --name-only` — 3 `.go` files + 9 docs. `git diff --check` — clean. PRD4 matrix: 13 rows (11 Canary passed, 2 Deferred), unchanged |
+| 6 | All commands pass | ✅ PASS | See below |
 
 ## Command Results
 
 | Command | Result |
 |---------|--------|
-| `git log --oneline -5 origin/main` | ✅ `92cb8ce` at HEAD |
-| `rg` for key terms across docs and shared request | ✅ All expected references found |
-| `rg` for P5-F23/92cb8ce/PR #117 across matrix/status/plan/handoff | ✅ All reconciliation references present |
-| `git diff --name-only` | ✅ 14 docs files only, no code |
+| `go test ./internal/gateway -run 'TestRecordTraceEvent_ModelNotAllowedCaptureGapAndDecision\|TestHandleChatCompletion_ModelNotAllowed\|...'` | ✅ 6/6 PASS |
+| `go test ./internal/traceutil` | ✅ PASS |
+| `go test ./... -count=1` | ✅ All 22 packages PASS (0 FAIL) |
+| `grep` for key terms | ✅ All expected references found across code, docs, and shared contract |
+| `git diff --name-only` | ✅ 3 `.go` + 9 docs files |
 | `git diff --check` | ✅ Clean (exit 0) |
 
 ## PRD4 Boundary
 
-- PRD4 matrix: 13 rows — **unchanged** ✅
+- PRD4 matrix: 13 rows (11 Canary passed, 2 Deferred to PRD5) — **unchanged** ✅
 - No PRD4 row promoted to `Production verified` ✅
 
-## Scope Check
+## Code Diff Summary
 
-- No Go/frontend code change ✅
-- No migration ✅
-- No real snapshot artifact generated ✅
-- No DSN/credential/token in repo or shared folder ✅
-- No read-only DB/view credential ✅
-- No shared ECS staging ✅
-- No exporter/outbox ✅
-- No X-Insight runtime dependency ✅
+| File | Change |
+|------|--------|
+| `trace.go` | Added `evidenceCaptureGapAuth = "permission_denied"` constant; added `authDecisionCaptureGap` function; added `auth.model_not_allowed` → `"auth","rejected"` in `decisionEvidence`; added auth capture gap check before provider gap check |
+| `relay.go` | Added `recordTraceEvent` call with `auth.model_not_allowed` event before existing `writeError` in `!allowed` block (3 lines) |
+| `relay_mock_test.go` | Added `TestRecordTraceEvent_ModelNotAllowedCaptureGapAndDecision` (direct trace insertion); expanded `TestHandleChatCompletion_ModelNotAllowed` with freeze-assertion, trace-insertion, capture-gap, and decision-field checks |
+| docs (9 files) | Status lines, P5-F25/Batch 1P added to PRD5, matrix, implementation plan, backlog, evidence field contract, code-map, project handoff, current status |
 
 ## Notes
 
-- Batch 1O 是纯文档/协调批次，不涉及任何代码变更。
-- P5-F24 定义了下一个 Gate A controlled snapshot 的前置条件：approved request IDs、scenario labels、source instance label、data source access。
-- 共享请求文件明确列出了 X-Insight 需要确认的 6 个输入项。
-- 所有状态文档已正确反映 Batch 1N 完成（`92cb8ce` / PR #117）。
+- `auth.model_not_allowed` 事件在 billing freeze 之前发出，确保 auth 拒绝不会触发计费。
+- `capture_gap=permission_denied` 将此 auth 拒绝与其他 provider/trace 缺失区分开。
+- `decisionEvidence` 新增 `auth.` 前缀匹配，支持未来其他 auth 类型事件。
+- Embeddings handler 无 `allowed_models` 检查，行为未变。
+- 共享合同文件明确了 X-Insight 的导入建议和 `decision_not_emitted` 开放问题。
+- Batch 1P 代码变更尚未 commit（工作树中），等待 Sentinel 执行 commit/push/PR。
 
 ## Conclusion
 
-**PRD5 Batch 1O: PASS 8/8.** PRD4 边界完整，状态文档正确反映 Batch 1N 完成，P5-F24 已定义，共享请求文件存在且不含敏感信息，无越界变更。可以进入 Sentinel commit 流程。
+**PRD5 Batch 1P: PASS 6/6.** PRD4 边界完整，chat model-permission 拒绝路径正确添加 `auth.model_not_allowed` trace 事件（event_type/source_component/capture_gap/decision_kind/decision_result/decision_reason 全部正确），HTTP 403 响应不变，拒绝发生在 billing freeze 之前，Embeddings 行为未变，无越界变更。可以进入 Sentinel commit 流程。
