@@ -2,9 +2,11 @@
 
 > Date: 2026-07-10
 > Status: PRD5 Batch 1V generated the first controlled snapshot with one known
-> denied-scenario correlation/source-trace gap; X-Insight import/receipt is
-> pending and Batch 1W live-path fix is CI verified at `931400a` / PR #126;
-> target deployment/rerun remains pending
+> denied-scenario correlation/source-trace gap; X-Insight import/readback is
+> External integration verified and Batch 1W live-path fix is CI verified at
+> `931400a` / PR #126; target deployment/new-authorization rerun, temporary
+> test-key disable confirmation, and X-Insight ECS target verification remain
+> pending
 > Scope: product and architecture decision for UniRouter-owned X-Insight data
 > exchange control UI, audit boundary, and staged implementation
 
@@ -112,14 +114,17 @@ The better boundary is split audit:
 ### Stage 0: Current Gate A
 
 Status: controlled run and immutable snapshot complete with one explicit
-denied-scenario gap; X-Insight receipt reconciliation remains pending.
+denied-scenario source gap; X-Insight receipt is reconciled and persistent
+import/readback is externally verified.
 
 - Use shared worksheet and approval manifest.
 - Use exchange ID and exact approval-manifest hash for generated artifacts.
-- Preserve the current snapshot and manifest unchanged while X-Insight imports
-  them; do not hide the denied request's missing source rows or infer a decision
-  event that UniRouter did not emit.
-- Keep X-Insight import/read evidence in shared handoff files.
+- Preserve the current snapshot and manifest unchanged; X-Insight imported them
+  as 10 accepted events with 10 inserted on first persistence, 10 duplicate/no-op
+  on rerun, and readback of 10 events/3 gaps.
+- Do not hide the denied request's missing source rows or infer a decision event
+  that UniRouter did not emit.
+- Keep the reconciled receipt and import/read evidence in shared handoff files.
 
 ### Stage 1: UI Readiness Design
 

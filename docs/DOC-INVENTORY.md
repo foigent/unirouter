@@ -9,7 +9,7 @@
 | `docs/PROJECT-HANDOFF.md` | First-read handoff for agents |
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
 | `docs/PRD-Phase5.md` | Formal PRD5 active scope and implementation-phase reference |
-| `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` | PRD5 acceptance matrix; Batch 1V target evidence has a known gap and Batch 1W is CI verified at `931400a` / PR #126 with target deployment/rerun pending |
+| `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` | PRD5 acceptance matrix; Gate A external integration is verified with a known source gap and Batch 1W is CI verified at `931400a` / PR #126 with target deployment/rerun pending |
 | `docs/ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md` | PRD5 Gate A request ID approval runbook for non-technical User/UniRouter-owner approval before controlled X-Insight snapshot generation |
 | `docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md` | PRD5 Gate A prior-authorization and narrow operator runbook for newly generated controlled scenarios |
 | `docs/planning/PRD5-IMPLEMENTATION-PLAN.md` | PRD5 batch plan and UniRouter/X-Insight ownership split |
@@ -122,6 +122,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | `docs/ops/evidence/PRD4-final-closeout-20260708.md` | PRD4 final closeout evidence; records PRD4 complete for current scope and target test DB cleanup completion by User-reported Atlas action |
 | `docs/ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md` | User-approved single execution owner, Git/CI, approval and optional-review decision evidence |
 | `docs/ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md` | Batch 1W local root-cause, implementation, regression and target-boundary evidence |
+| `docs/ops/evidence/PRD5-GATE-A-XINSIGHT-external-integration-20260710.md` | Gate A snapshot/manifest/receipt reconciliation, persistent import, idempotency, readback and remaining-boundary evidence |
 
 ## Agent Workflow Files
 

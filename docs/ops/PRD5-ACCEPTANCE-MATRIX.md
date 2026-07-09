@@ -6,10 +6,12 @@
 > Batch 1O, Batch 1P, Batch 1Q, Batch 1R, Batch 1S, Batch 1T, and Batch 1U
 > Historical Canary/Sentinel evidence is complete through Batch 1V (`cc38094` / PR #125). Post-merge
 > target execution produced an immutable
-> sanitized snapshot with one denied-scenario correlation/evidence gap and now
-> awaits X-Insight import. Batch 1W Pre-Relay Model Permission Evidence Parity
+> sanitized snapshot with one denied-scenario correlation/evidence gap.
+> X-Insight persistent import/readback is External integration verified at
+> `4a562a6` / PR #9 and `5f0fa49` / PR #10. Batch 1W Pre-Relay Model Permission Evidence Parity
 > is CI verified at `931400a` / PR #126 under Agent Protocol v2.0; target
-> deployment/rerun remains pending.
+> deployment/new-authorization rerun, temporary test-key disable, and X-Insight
+> ECS target verification remain pending.
 > PRD4 remains complete and is not reopened.
 > Source: `docs/PRD-Phase5.md`, `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, current repo/code review,
@@ -43,6 +45,7 @@
 | Target executed with known gap | Target action produced real evidence, but a recorded gap prevents full target acceptance |
 | E2E accepted | Integrated local, staging, or approved non-production evidence exists |
 | Production verified | Target production or explicitly approved production-like evidence exists |
+| External integration verified | External import/persistence/readback completed and the receipt can be reconciled to the exact artifact |
 | Deferred pending prerequisite | Explicitly not actionable until a named prerequisite exists |
 | Out of scope | Not part of UniRouter's local-deploy enterprise gateway direction unless User changes direction |
 
@@ -84,7 +87,7 @@ actual result, and rollback or cleanup note.
 | P5-F28 | X-Insight Data Exchange Control Surface | Canary passed | Future UI/control-plane boundary is defined as UniRouter-owned outbound approval/export ledger/import receipt control, while downstream observability, read audit, investigation timeline, graph, policy simulation, and evidence packs remain X-Insight-owned | Canary PASS 6/6 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `c6ae2a7` / PR #122 | Batch 1S docs/shared-folder coordination only; no UI code, API route, migration, real snapshot artifact, approved request ID invention, read-only DB/view, shared ECS staging, exporter/outbox, X-Insight runtime dependency, raw payload capture, or PRD4 matrix change |
 | P5-F29 | Gate A Exchange Envelope And Controlled Run Authorization | Canary passed | Snapshots carry exchange identity and exact manifest hash, manifest source cannot be overridden, handoff commands preserve manifest selection, and fresh Gate A requests require prior scenario/data/environment/operator/retention authorization | Canary PASS 7/7 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `fc62e65` / PR #123 | Batch 1T tooling/tests/docs/shared-folder coordination only; no real request, snapshot artifact, approved IDs, secrets, UI, API, migration, runtime path change, read-only DB/view, shared ECS, exporter/outbox, X-Insight runtime dependency, or PRD4 change |
 | P5-F30 | Embeddings Model Permission Parity | Canary passed | Embeddings applies the same API-key `allowed_models` rule as Chat and emits the same auth rejection evidence before billing, routing, or provider work | Canary PASS 7/7 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `b2ba892` / PR #124 | Batch 1U isolated R3 authorization fix; no route, migration, frontend, raw payload, exporter/outbox, X-Insight runtime dependency, real Gate A execution, target claim, or PRD4 change |
-| P5-F31 | Gate A Authorized Controlled Execution | Target executed with known gap | Atlas executes exactly two approved synthetic scenarios in a confirmed non-production UniRouter ECS environment, hands off sanitized metadata, and obtains X-Insight persistent import/readback receipt evidence | Canary/Sentinel `cc38094` / PR #125; authorization `UR-XI-GATE-A-20260710-01`; deployed app `b2ba892`; exchange `uxchg_f7de31e541516893a0d9b31cc0f3892a`; artifact SHA-256 `5b1d52b1e8bd9b47f14de74670eb4404ed8862c32cdf323d86766446cdf438e8`; one call log, seven trace events, two gaps; X-Insight receipt pending | Success scenario passed. Denied scenario returned 403 but lacked returned-ID correlation and source trace because the live wrapper rejected before Relay. Snapshot is diagnostic evidence, not complete Batch 1P target evidence |
+| P5-F31 | Gate A Authorized Controlled Execution | Target executed with known source gap; External integration verified | Atlas executes exactly two approved synthetic scenarios in a confirmed non-production UniRouter ECS environment, hands off sanitized metadata, and obtains X-Insight persistent import/readback receipt evidence | Authorization `UR-XI-GATE-A-20260710-01`; deployed app `b2ba892`; exchange `uxchg_f7de31e541516893a0d9b31cc0f3892a`; snapshot SHA-256 `5b1d52b1e8bd9b47f14de74670eb4404ed8862c32cdf323d86766446cdf438e8`; manifest SHA-256 `d2f51fc61fe84dedb8b1d1556c5a4f135b50711346327cf6fbcdd19d60337d68`; receipt `persisted`; 10 accepted, first persistence 10 inserted, rerun 10 duplicate/no-op, 0 conflict, readback 10 events/3 gaps; X-Insight `4a562a6` / PR #9 and `5f0fa49` / PR #10; `docs/ops/evidence/PRD5-GATE-A-XINSIGHT-external-integration-20260710.md` | External integration is closed for this snapshot. The denied scenario remains diagnostic source-gap evidence, not Batch 1P/1W target proof. Test-key disable, Batch 1W target deployment/new authorization rerun, X-Insight ECS target verification, and scheduled snapshot cleanup remain separate |
 | P5-F32 | Pre-Relay Model Permission Evidence Parity | CI verified; target deployment/rerun pending | Project-allowed requests reach Relay for API-key model restriction so live 403 responses include `X-Request-ID` and the accepted auth decision trace before billing | `931400a` / PR #126 with required Backend/Frontend/Docker checks PASS; `docs/ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md`; full handler integration test for header/trace/no-call-log/no-freeze; wrapper/gateway tests; full Go suite | Batch 1W removes one duplicate pre-relay API-key check; no project model-governance, route, migration, frontend, billing amount, provider, immutable snapshot, X-Insight runtime, or PRD4 change |
 
 ## Batch 1W Verification
@@ -109,17 +112,19 @@ dependency, PRD4 change, or `Production verified` claim is a blocking failure.
 
 ## Batch 1V Verification
 
-PRD5 Batch 1V verifies the actual immutable Atlas artifact and keeps its gap
-explicit while X-Insight import remains pending:
+PRD5 Batch 1V verifies the actual immutable Atlas artifact, reconciled X-Insight
+receipt, persistent import/readback, and the remaining producer-side gap:
 
 ```bash
 shasum -a 256 "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/evidence/gatea-snapshot-20260710.json" "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/gatea-approved-request-ids.json"
+jq '.result' "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/evidence/gatea-snapshot-20260710.receipt.json"
 jq '.counts, .capture_gaps, .safety' "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/evidence/gatea-snapshot-20260710.json"
-rg -n "PARTIAL|correlation/evidence exception|not_available_from_source|awaiting X-Insight|test-key disable" "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/evidence/2026-07-10-unirouter-gate-a-atlas-run-result.md" "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-persistent-import-and-receipt.md"
+rg -n "persisted|10 accepted|10 inserted|10 duplicate|10 events|3 persisted capture gaps|test-key disable" "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-10-x-insight-gate-a-import-result.md" "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/evidence/2026-07-10-unirouter-gate-a-atlas-run-result.md"
 ```
 
-Any claim that the denied scenario is fully correlated, already imported, or
-complete Batch 1P target evidence is a blocking failure.
+Any claim that the denied scenario is fully correlated, that Batch 1W is target
+verified, that temporary keys are disabled, or that X-Insight ECS is target
+verified is a blocking failure.
 
 ## Batch 1U Verification
 

@@ -14,7 +14,7 @@
 7. `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md` - X-Insight Gate A sequencing decisions.
 8. `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md` - future UniRouter UI/control-plane boundary for X-Insight data exchange.
 9. `docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md` - approval boundary for newly generated Gate A scenarios.
-10. `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-atlas-execution.md` and `requests/2026-07-10-unirouter-gate-a-persistent-import-and-receipt.md` in the same shared folder - Atlas result boundary and current X-Insight import handoff.
+10. `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-10-x-insight-gate-a-import-result.md` and `evidence/gatea-snapshot-20260710.receipt.json` in the same shared folder - current Gate A external integration result and reconciled receipt.
 11. `docs/PRD-Phase4.md` - completed PRD4 scope.
 12. `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` - PRD4 accepted/deferred rows and evidence boundaries.
 13. `docs/planning/PRD4-BACKLOG.md` - PRD4 candidate backlog source record.
@@ -93,8 +93,10 @@ Current execution record: PRD5 Batch 1W Pre-Relay Model Permission Evidence
 Parity is CI verified at `931400a` / PR #126 with target deployment/rerun
 pending in `docs/agent-workflows/EXECUTION-RECORD.md`.
 Batch 1V Atlas execution produced an immutable sanitized snapshot with a known
-denied-scenario correlation/source-trace gap; X-Insight import and target
-test-key disable confirmation remain pending.
+denied-scenario correlation/source-trace gap. X-Insight persistent import/readback
+is External integration verified; target test-key disable, Batch 1W target
+deployment/new-authorization rerun, and X-Insight ECS target verification remain
+pending.
 
 PRD4 is complete for the confirmed current scope. PRD5 must preserve the PRD4
 deferred-boundary decisions recorded here.
@@ -388,10 +390,13 @@ PRD5 Batch 1V:
 - Status: Canary PASS 7/7; Sentinel merge reflected by `cc38094` / PR #125.
   Atlas then executed `UR-XI-GATE-A-20260710-01` against deployed app commit
   `b2ba892` and generated exchange `uxchg_f7de31e541516893a0d9b31cc0f3892a`;
-  X-Insight persistent import/receipt remains pending.
+  X-Insight externally verified persistent import/readback in `4a562a6` / PR #9
+  and closed it in `5f0fa49` / PR #10.
 - Adds: one immutable metadata-only snapshot with one call log, seven trace
-  events, two capture gaps, exact manifest binding, and an X-Insight persistent
-  import request.
+  events, two generated capture gaps, exact manifest binding, and a reconciled
+  `persisted` receipt. Import accepted 10/10 events; first persistence inserted
+  10, rerun produced 10 duplicate/no-op with 0 conflict, and readback returned
+  10 events/3 persisted gaps.
 - Known gap: the denied request returned 403 but the live pre-relay wrapper
   omitted `X-Request-ID` and the Batch 1P trace; the artifact is valid diagnostic
   gap evidence, not complete denied-scenario target evidence.
@@ -399,6 +404,9 @@ PRD5 Batch 1V:
   reassignment, raw prompt/response or secrets, broad discovery, X-Insight
   read-only DB/view, shared cross-project ECS staging, exporter/outbox, PRD4
   changes, or `Production verified` claims.
+- Remaining: temporary test-key disable confirmation, snapshot deletion by
+  2026-07-17, Batch 1W target deployment/new-authorization denial rerun, and
+  X-Insight ECS target verification.
 
 PRD5 Batch 1W:
 

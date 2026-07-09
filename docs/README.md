@@ -4,7 +4,7 @@
 - [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — Agent 接手项目的第一阅读入口
 - [ops/CURRENT-STATUS.md](ops/CURRENT-STATUS.md) — 当前项目真实状态（进度、测试、部署、缺口）
 - [PRD-Phase5.md](PRD-Phase5.md) — PRD5 当前正式范围：X-Insight evidence readiness、结构字段、snapshot、payload 边界、轻量 trace UI、竞品追赶和 Data Exchange Control 边界
-- [ops/PRD5-ACCEPTANCE-MATRIX.md](ops/PRD5-ACCEPTANCE-MATRIX.md) — PRD5 验收矩阵；Batch 1V 已产生带已知 gap 的真实快照，Batch 1W 已在 `931400a` / PR #126 通过 CI，等待目标部署/重跑
+- [ops/PRD5-ACCEPTANCE-MATRIX.md](ops/PRD5-ACCEPTANCE-MATRIX.md) — PRD5 验收矩阵；Gate A 外部持久化导入/回读已验证并保留已知 source gap，Batch 1W 已在 `931400a` / PR #126 通过 CI，等待目标部署/重跑
 - [ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md](ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md) — PRD5 Gate A request ID 非技术审批说明和 X-Insight snapshot 数据最小化边界
 - [ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md](ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md) — 新建 Gate A 场景的环境、操作人、数据类别和保留期授权边界
 - [planning/PRD5-IMPLEMENTATION-PLAN.md](planning/PRD5-IMPLEMENTATION-PLAN.md) — PRD5 分批实施计划和 UniRouter/X-Insight 并行边界
@@ -23,6 +23,7 @@
 - [agent-workflows/reviews/README.md](agent-workflows/reviews/README.md) — 可选独立复核记录格式和问题级别规则
 - [ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md](ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md) — 单一执行负责人、Git/CI、高影响授权和复核规则的确认记录
 - [ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md](ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md) — Batch 1W 根因、代码、回归和目标证据边界
+- [ops/evidence/PRD5-GATE-A-XINSIGHT-external-integration-20260710.md](ops/evidence/PRD5-GATE-A-XINSIGHT-external-integration-20260710.md) — Gate A hash/receipt、持久化幂等、readback 和剩余边界对账
 - [agent-workflows/FIX-SIGNAL.md](agent-workflows/FIX-SIGNAL.md) — 协议 v1.x 兼容入口
 - [agent-workflows/VERIFY-RESULT.md](agent-workflows/VERIFY-RESULT.md) — 最近一次协议 v1.x 历史验收结果
 - [CODEBASE-MAP.md](CODEBASE-MAP.md) — 代码结构、路由、数据、测试、部署地图

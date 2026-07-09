@@ -7,10 +7,13 @@
 > Batch 1P, Batch 1Q, Batch 1R, Batch 1S, Batch 1T, and Batch 1U
 > Historical Canary/Sentinel evidence is complete through Batch 1V (`cc38094` / PR #125). Post-merge
 > Gate A target execution produced a
-> sanitized snapshot with a denied-scenario correlation/evidence gap and now
-> awaits X-Insight import. Batch 1W Pre-Relay Model Permission Evidence Parity
+> sanitized snapshot with a denied-scenario correlation/evidence gap. X-Insight
+> persistent import/readback is External integration verified with 10 accepted,
+> 10 inserted on first persistence, 10 duplicate/no-op on rerun, 0 conflict, and
+> 10 events/3 gaps read back. Batch 1W Pre-Relay Model Permission Evidence Parity
 > is CI verified at `931400a` / PR #126 under Agent Protocol v2.0; target
-> deployment/rerun remains pending.
+> deployment/new-authorization rerun, temporary test-key disable, and X-Insight
+> ECS target verification remain pending.
 > PRD4 remains complete for the confirmed current scope
 > and is not reopened by PRD5.
 > Source: `docs/planning/PRD5-BACKLOG.md`,

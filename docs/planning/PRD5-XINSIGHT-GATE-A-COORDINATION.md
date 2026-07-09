@@ -3,7 +3,8 @@
 > Date: 2026-07-10
 > Status: planning coordination accepted by User; Batch 1V produced controlled
 > exchange `uxchg_f7de31e541516893a0d9b31cc0f3892a` with one explicit
-> denied-scenario gap; X-Insight persistent import/receipt is requested; Batch
+> denied-scenario gap; X-Insight persistent import/readback is External
+> integration verified at `4a562a6` / PR #9 and `5f0fa49` / PR #10; Batch
 > 1W live-path fix is CI verified at `931400a` / PR #126; target
 > deployment/rerun remains pending
 > Scope: UniRouter PRD5 coordination with X-Insight Gate A
@@ -31,6 +32,9 @@ Related shared-folder files:
 - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/evidence/gatea-snapshot-20260710.json`
 - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-persistent-import-and-receipt.md`
 - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-execution-owner-and-review-process-update.md`
+- `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-10-x-insight-gate-a-import-result.md`
+- `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-10-x-insight-execution-owner-process-response.md`
+- `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/evidence/gatea-snapshot-20260710.receipt.json`
 
 ### Execution Contact And Review Process
 
@@ -42,6 +46,8 @@ Related shared-folder files:
 - X-Insight should continue returning import receipts and schema/evidence
   feedback through the shared folder; P0/P1 findings block or reopen the
   affected UniRouter batch.
+- X-Insight accepted the same single execution owner and optional independent
+  review controls in its process response.
 
 ## Current Accepted Decisions
 
@@ -80,9 +86,10 @@ Read-only DB/view conditions:
 
 Current Batch 1Q handoff rule:
 
-- X-Insight has discovery/import/persistent import/minimal read API surfaces,
-  but Gate A is not accepted until a real controlled UniRouter snapshot is
-  imported and read back through those APIs;
+- X-Insight imported and persisted the real controlled UniRouter snapshot,
+  returned a reconciled `persisted` receipt, and read back 10 events/3 gaps;
+- this closes External integration verification for the current snapshot but
+  does not close the denied producer-side source gap or authorize wider access;
 - UniRouter must receive a User/UniRouter-owner approval manifest with approved
   request IDs, scenario labels, a non-secret source instance label, and approved
   source access before generating a controlled snapshot artifact;
@@ -271,8 +278,9 @@ This coordination does not:
 
 ## Next PRD5 Steps
 
-1. X-Insight imports the immutable sanitized snapshot, persists/readbacks both
-   request views, and returns the sidecar receipt plus warning analysis.
+1. X-Insight import/persistence/readback and receipt reconciliation are complete:
+   10 accepted, 10 first inserts, 10 rerun duplicate/no-op, 0 conflict, and
+   readback of 10 events/3 gaps.
 2. Batch 1W PR #126, required CI and merge are complete at `931400a` under
    Agent Protocol v2.0.
 3. The authorized environment operator disables the two temporary Gate A test
@@ -285,6 +293,6 @@ This coordination does not:
    policy gaps.
 6. Keep UniRouter-owned evidence readiness moving in scoped PRD5 batches that do
    not depend on X-Insight runtime availability.
-7. Revisit read-only views, exporter/outbox, GitHub governance, and shared ECS
-   staging only after receipt reconciliation; a denied-scenario rerun requires
-   a new or amended User authorization.
+7. Keep read-only views and exporter/outbox deferred for one more controlled
+   snapshot cycle. X-Insight ECS target deployment/runtime remains unverified;
+   no shared ECS staging claim follows from the current receipt.
