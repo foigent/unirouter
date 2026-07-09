@@ -30,7 +30,7 @@
 | 22 | [PRD4 PlungeIn Port Contract](22-prd4-plungein-port-contract.md) | PRD4 Observe/Act/Enrich/Decide/Mutate port boundaries and runtime-plugin deferral contract | v0.1 |
 | 23 | [PRD4 Real Upstream Evidence](23-prd4-real-upstream-evidence.md) | PRD4 real-provider evidence harness, credential guardrails, and target-environment acceptance boundary | v0.1 |
 | 24 | [PRD4 Real SSO Evidence](24-prd4-real-sso-evidence.md) | PRD4 Logto/OIDC browser-login evidence harness, credential guardrails, and target-environment acceptance boundary | v0.1 |
-| 25 | [PRD5 X-Insight Sanitized Snapshot](25-prd5-xinsight-sanitized-snapshot.md) | PRD5 Gate A snapshot tool, handoff note, safety behavior, source refs, and read-only access gate | v0.2 |
+| 25 | [PRD5 X-Insight Sanitized Snapshot](25-prd5-xinsight-sanitized-snapshot.md) | PRD5 Gate A snapshot tool, handoff note, safety behavior, source refs, capture-gap candidates, and read-only access gate | v0.3 |
 | 26 | [PRD5 Evidence Field Contract](26-prd5-evidence-field-contract.md) | PRD5 trace/span/source/capture/decision/actor/payload field dictionary and nullable migration plan | v0.1 |
 
 ## 关联文档

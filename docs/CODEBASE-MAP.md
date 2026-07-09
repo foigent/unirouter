@@ -75,7 +75,7 @@ OpenAPI snapshot: `docs/tech-ref/05-openapi-spec.yaml` is the current route-leve
 | `scripts/prd4-real-sso-smoke.sh` | PRD4 Batch 1I wrapper for real SSO evidence harness. `--preflight` is safe without target credentials and does not drive a browser, call an IdP, or read DB; real target execution is deferred to PRD5 |
 | `scripts/prd4_real_sso_smoke.mjs` | Real SSO browser runner for future Logto or another enterprise OIDC target evidence; checks OIDC config/discovery, browser login, `/me`, audit mapping, and sanitized JSON evidence when PRD5 target execution is reopened |
 | `scripts/prd4_real_sso_audit_check.go` | Guarded read-only DB evidence check for OIDC user mapping and `login.oidc` audit redaction |
-| `scripts/prd5_xinsight_snapshot.go` | PRD5 Batch 1A read-only sanitized snapshot generator for explicit `request_id` selections from `call_logs` and `request_trace_events`; Batch 1K adds optional DSN-free Markdown handoff-note output; no broad table export, raw prompt/response, API key, raw IP, raw upstream error, DSN, or credential output |
+| `scripts/prd5_xinsight_snapshot.go` | PRD5 Batch 1A read-only sanitized snapshot generator for explicit `request_id` selections from `call_logs` and `request_trace_events`; Batch 1K adds optional DSN-free Markdown handoff-note output; Batch 1N adds `candidate_capture_gaps` and a handoff-note capture-gap table; no broad table export, raw prompt/response, API key, raw IP, raw upstream error, DSN, or credential output |
 
 ## Frontend Map
 
@@ -194,6 +194,13 @@ coverage in `internal/gateway/relay_mock_test.go`. Provider response events keep
 `capture_gap=provider_not_returned` when a response lacks a usable upstream
 request ID; provider-stage failures before a response source exists write
 `capture_gap=not_available_from_source`; metadata redaction gaps keep priority.
+
+PRD5 Batch 1N snapshot capture-gap candidates are implemented in
+`scripts/prd5_xinsight_snapshot.go`. Generated Gate A snapshot gap records now
+include optional `candidate_capture_gaps`, and Markdown handoff notes include a
+capture-gap table. Missing trace rows with an existing call log list
+`sampled_out`, `retention_expired`, and `not_instrumented` as candidates without
+asserting one definitive cause.
 
 Usage analytics is implemented in `internal/admin/prd2_product_handlers.go` and now supports project/key/model/provider/channel/status/source filters plus PRD4 `scope=my`, `owner_user_id`, `key_type`, `group_by=owner`, and `group_by=key_type`.
 

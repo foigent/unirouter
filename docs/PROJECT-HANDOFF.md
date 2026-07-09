@@ -80,7 +80,7 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Current active verification signal: PRD5 Batch 1M Provider Failure Capture Gaps
+Current active verification signal: PRD5 Batch 1N Snapshot Capture Gap Candidates
 fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
 
 PRD4 is complete for the confirmed current scope. PRD5 must preserve the PRD4
@@ -231,7 +231,8 @@ PRD5 Batch 1L:
 PRD5 Batch 1M:
 
 - Scope: provider failure capture-gap evidence.
-- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Status: Canary PASS 10/10 in `docs/agent-workflows/VERIFY-RESULT.md`;
+  Sentinel merge reflected by `4a4e254` / PR #116.
 - Adds: `capture_gap=not_available_from_source` for provider-stage failure
   events that occur before an upstream provider response source exists; preserves
   `provider_not_returned` for provider response events that lack a returned
@@ -242,6 +243,19 @@ PRD5 Batch 1M:
   credential, shared ECS staging, exporter/outbox, raw prompt/response capture,
   X-Insight runtime dependency, provider dispatch semantic change, or PRD4
   matrix changes.
+
+PRD5 Batch 1N:
+
+- Scope: snapshot capture-gap candidate categories for Gate A handoff artifacts.
+- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Adds: optional `candidate_capture_gaps` in generated snapshot `capture_gaps`;
+  candidates `sampled_out`, `retention_expired`, and `not_instrumented` when a
+  call log exists but no trace rows are exported; and a capture-gap table in the
+  Markdown handoff note.
+- Does not add: migration, runtime request-path change, API route, frontend
+  behavior, read-only DB/view credential, shared ECS staging, exporter/outbox,
+  raw prompt/response capture, X-Insight runtime dependency, definitive
+  sampling/retention cause assertion, or PRD4 matrix changes.
 
 Latest completed PRD4 verification result is PRD4 Batch 1S Open Issue Boundary
 Closeout:

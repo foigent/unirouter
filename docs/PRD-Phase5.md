@@ -3,9 +3,10 @@
 > Version: Phase 5 Active Scope Draft
 > Date: 2026-07-09
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
-> Batch 1I, Batch 1J, Batch 1K, and Batch 1L Canary/Sentinel complete. Batch 1M
-> provider failure capture gaps fixed awaiting Canary. PRD4 remains complete for
-> the confirmed current scope and is not reopened by PRD5.
+> Batch 1I, Batch 1J, Batch 1K, Batch 1L, and Batch 1M Canary/Sentinel
+> complete. Batch 1N snapshot capture-gap candidates fixed awaiting Canary.
+> PRD4 remains complete for the confirmed current scope and is not reopened by
+> PRD5.
 > Source: `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, X-Insight shared-folder
 > responses on 2026-07-08, current UniRouter code/schema review, and official
@@ -93,6 +94,7 @@ PRD5 must not:
 | P5-F20 | Gate A Snapshot Handoff Note | Generate a sanitized Markdown handoff note alongside explicit-request X-Insight snapshots without writing DSNs or credentials |
 | P5-F21 | Component Span Refinement | Parent repeated same-component trace events to the component's first span while preserving the request gateway root |
 | P5-F22 | Provider Failure Capture Gaps | Mark provider failure events that occur before any provider response with `capture_gap=not_available_from_source` when no upstream request ID can exist |
+| P5-F23 | Snapshot Capture Gap Candidates | Add structured candidate capture-gap categories to Gate A snapshots for missing trace rows without fabricating runtime evidence |
 
 ### P2
 
@@ -537,6 +539,31 @@ Acceptance:
 - No migration, exporter/outbox, read-only DB access, raw payload capture,
   X-Insight runtime dependency, or PRD4 matrix change is introduced.
 
+### P5-F23: Snapshot Capture Gap Candidates
+
+Requirements:
+
+- Extend the explicit-request PRD5 X-Insight snapshot `capture_gaps` output with
+  optional `candidate_capture_gaps`.
+- Keep the primary `capture_gap` value factual and conservative; do not convert
+  unknown missing rows into a single asserted cause.
+- For missing `request_trace_events` rows where `call_logs` exists, include
+  candidate causes such as `sampled_out`, `retention_expired`, and
+  `not_instrumented`.
+- For missing `call_logs` rows, keep `not_available_from_source` as the
+  candidate because the selected request source cannot be found in the snapshot.
+- Include generated capture-gap details in the optional Markdown handoff note so
+  X-Insight can review gap candidates without parsing the JSON first.
+
+Acceptance:
+
+- Snapshot JSON remains explicit-request only and metadata-only.
+- X-Insight gets structured candidate categories for missing trace rows without
+  UniRouter inventing a trace event or a definitive cause.
+- Existing snapshot safety behavior, DSN handling, request selection, runtime
+  request handling, API routes, frontend behavior, exporter/outbox boundaries,
+  and PRD4 status remain unchanged.
+
 ### P5-F09: Cursor Export API Or Outbox
 
 Requirements:
@@ -587,11 +614,13 @@ PRD5 should proceed in independently verifiable batches:
     events.
 13. Batch 1M: provider failure capture gaps for provider-stage events that
     occur before any upstream response source exists.
-14. Later payload policy metadata and evidence references, with future raw
+14. Batch 1N: snapshot capture-gap candidates for missing trace rows in Gate A
+    handoff artifacts.
+15. Later payload policy metadata and evidence references, with future raw
    payload modes gated behind enterprise opt-in.
-15. Later Gate A batch: read-only view/export decision after X-Insight Gate A
+16. Later Gate A batch: read-only view/export decision after X-Insight Gate A
    evidence.
-16. Later target/backlog batches: target upstream/SSO evidence or larger
+17. Later target/backlog batches: target upstream/SSO evidence or larger
    backlog items only after their prerequisites are explicitly met.
 
 ## 6. External Source Refresh

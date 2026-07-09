@@ -77,11 +77,12 @@ type snapshotCounts struct {
 }
 
 type snapshotCaptureGap struct {
-	RequestID string `json:"request_id"`
-	Source    string `json:"source"`
-	Gap       string `json:"capture_gap"`
-	Reason    string `json:"reason"`
-	Generated bool   `json:"generated_by_snapshot_tool"`
+	RequestID     string   `json:"request_id"`
+	Source        string   `json:"source"`
+	Gap           string   `json:"capture_gap"`
+	CandidateGaps []string `json:"candidate_capture_gaps,omitempty"`
+	Reason        string   `json:"reason"`
+	Generated     bool     `json:"generated_by_snapshot_tool"`
 }
 
 type snapshotCallLog struct {
@@ -622,20 +623,28 @@ func buildCaptureGaps(requestIDs []string, callLogs []snapshotCallLog, traceEven
 	for _, requestID := range requestIDs {
 		if !seenCallLog[requestID] {
 			gaps = append(gaps, snapshotCaptureGap{
-				RequestID: requestID,
-				Source:    "call_logs",
-				Gap:       "not_available_from_source",
-				Reason:    "no call_logs row matched this request_id in the selected snapshot",
-				Generated: true,
+				RequestID:     requestID,
+				Source:        "call_logs",
+				Gap:           "not_available_from_source",
+				CandidateGaps: []string{"not_available_from_source"},
+				Reason:        "no call_logs row matched this request_id in the selected snapshot",
+				Generated:     true,
 			})
 		}
 		if !seenTrace[requestID] {
+			candidates := []string{"not_available_from_source"}
+			reason := "no request_trace_events row matched this request_id and no call_logs row is present in the selected snapshot"
+			if seenCallLog[requestID] {
+				candidates = []string{"sampled_out", "retention_expired", "not_instrumented"}
+				reason = "call_logs row exists but no request_trace_events row matched this request_id; possible trace sampling, trace retention cleanup, or non-instrumented path"
+			}
 			gaps = append(gaps, snapshotCaptureGap{
-				RequestID: requestID,
-				Source:    "request_trace_events",
-				Gap:       "not_available_from_source",
-				Reason:    "no request_trace_events row matched this request_id; possible sampling, retention, early failure, or non-instrumented path",
-				Generated: true,
+				RequestID:     requestID,
+				Source:        "request_trace_events",
+				Gap:           "not_available_from_source",
+				CandidateGaps: candidates,
+				Reason:        reason,
+				Generated:     true,
 			})
 		}
 	}
@@ -722,6 +731,23 @@ func formatHandoffNote(snapshotOutputPath string, notePath string, overwrite boo
 	b.WriteString(fmt.Sprintf("| call_logs | %d |\n", snapshot.Counts.CallLogs))
 	b.WriteString(fmt.Sprintf("| request_trace_events | %d |\n", snapshot.Counts.TraceEvents))
 	b.WriteString(fmt.Sprintf("| capture_gaps | %d |\n", snapshot.Counts.CaptureGaps))
+
+	b.WriteString("\n## Capture Gaps\n\n")
+	if len(snapshot.CaptureGaps) == 0 {
+		b.WriteString("No generated capture gaps for the selected request IDs.\n")
+	} else {
+		b.WriteString("| Request ID | Source | Capture Gap | Candidate Gaps | Reason |\n")
+		b.WriteString("| --- | --- | --- | --- | --- |\n")
+		for _, gap := range snapshot.CaptureGaps {
+			b.WriteString(fmt.Sprintf("| `%s` | `%s` | `%s` | `%s` | %s |\n",
+				gap.RequestID,
+				gap.Source,
+				gap.Gap,
+				strings.Join(gap.CandidateGaps, ", "),
+				gap.Reason,
+			))
+		}
+	}
 
 	b.WriteString("\n## Selected Request IDs\n\n")
 	for _, requestID := range snapshot.RequestIDs {

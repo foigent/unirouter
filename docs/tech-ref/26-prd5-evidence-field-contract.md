@@ -3,8 +3,8 @@
 > Version: v0.1
 > Date: 2026-07-09
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
-> Batch 1I, Batch 1J, Batch 1K, and Batch 1L Canary/Sentinel complete. Batch
-> 1M provider failure capture gaps fixed awaiting Canary.
+> Batch 1I, Batch 1J, Batch 1K, Batch 1L, and Batch 1M Canary/Sentinel
+> complete. Batch 1N snapshot capture-gap candidates fixed awaiting Canary.
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > X-Insight response
 > `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-08-x-insight-prd5-integration-answers.md`
@@ -31,6 +31,7 @@ evidence." They are not cosmetic UI fields.
 | `source_component` | string | trace events | UniRouter component emitting the evidence |
 | `capture_mode` | string | trace/log/export metadata | How the evidence was captured |
 | `capture_gap` | nullable string or gap records | trace/export/import | Why evidence is missing, redacted, sampled, or inferred |
+| `candidate_capture_gaps` | array of strings | snapshot/import gap records | Possible gap categories when UniRouter cannot assert one definitive cause |
 | `evidence_ref` | nullable string | trace/log/export metadata | Stable source or evidence object reference, not a payload dump |
 | `source_event_hash` | nullable string | trace/log/export metadata | Hash of sanitized source event for dedupe/integrity |
 | `decision_kind` | nullable string | decision trace events | Type of gateway decision |
@@ -220,6 +221,19 @@ Batch 1M provider failure capture gaps:
 - If a sanitized upstream request ID is available, UniRouter writes it and does
   not add a missing-source gap.
 
+Batch 1N snapshot capture-gap candidates:
+
+- Gate A snapshot-generated gap records can include
+  `candidate_capture_gaps`.
+- Candidate gaps are used when the primary missing-row `capture_gap` must remain
+  conservative but X-Insight needs structured possible causes.
+- Missing trace rows with an existing call log use candidates:
+  `sampled_out`, `retention_expired`, and `not_instrumented`.
+- Missing call-log rows use `not_available_from_source`.
+- This is a snapshot/import aid only. It does not add a new
+  `request_trace_events` or `call_logs` column and does not fabricate runtime
+  trace events.
+
 Batch 1I payload policy decision evidence:
 
 - Chat and embeddings requests emit `payload.policy.applied` after
@@ -301,6 +315,9 @@ Implemented first slice:
   failure events that happen before any upstream response source exists.
   Provider response accepted/rejected events keep the Batch 1J
   `provider_not_returned` rule, and redaction gaps keep priority.
+- Batch 1N adds snapshot/import `candidate_capture_gaps` for generated
+  missing-row gap records so X-Insight can review possible sampling, retention,
+  or non-instrumented causes without UniRouter asserting one definitive cause.
 
 ## Writer Behavior
 
