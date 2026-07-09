@@ -9,7 +9,8 @@
 > Gate A target execution produced a
 > sanitized snapshot with a denied-scenario correlation/evidence gap and now
 > awaits X-Insight import. Batch 1W Pre-Relay Model Permission Evidence Parity
-> is Local verified with PR/CI integration pending under Agent Protocol v2.0.
+> is CI verified at `931400a` / PR #126 under Agent Protocol v2.0; target
+> deployment/rerun remains pending.
 > PRD4 remains complete for the confirmed current scope
 > and is not reopened by PRD5.
 > Source: `docs/planning/PRD5-BACKLOG.md`,

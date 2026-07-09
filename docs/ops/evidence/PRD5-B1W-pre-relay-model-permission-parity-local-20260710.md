@@ -2,7 +2,7 @@
 
 > Date: 2026-07-10
 > Risk: R3 live authorization and evidence path
-> Status: Local verified; PR/CI and target rerun pending
+> Status: CI verified at `931400a` / PR #126; target deployment/rerun pending
 
 ## Trigger
 
@@ -47,6 +47,17 @@ Current execution result before repository integration:
 - migrated-DB integration test through migration `000018`: PASS;
 - full Go test suite: PASS;
 - diff whitespace/error check: PASS.
+
+## Repository Integration
+
+- PR: #126
+- merged commit: `931400a`
+- `Backend Tests`: PASS
+- `Frontend Build`: PASS
+- `Docker Build`: PASS
+
+This promotes Batch 1W to `CI verified`. It does not prove deployment or close
+the target denied-scenario gap.
 
 ## Target Evidence Boundary
 

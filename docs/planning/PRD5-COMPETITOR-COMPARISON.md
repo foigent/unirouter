@@ -3,7 +3,8 @@
 > Date: 2026-07-10
 > Status: Source-grounded PRD5 planning comparison with Batch 1J through Batch
 > 1U accepted; Batch 1V produced real Gate A gap evidence and Batch 1W fixes the
-> pre-relay permission-evidence bypass is Local verified with PR/CI pending.
+> pre-relay permission-evidence bypass is CI verified at `931400a` / PR #126;
+> target deployment/rerun remains pending.
 > Purpose: compare UniRouter against adjacent gateway and observability systems,
 > then decide which gaps belong in UniRouter PRD5 versus X-Insight.
 
@@ -166,7 +167,7 @@ Accepted in Batch 1U:
   an endpoint authorization bypass while preserving the same 403 contract and
   decision evidence shape.
 
-Local verified with PR/CI integration pending in Batch 1W:
+CI verified at `931400a` / PR #126 in Batch 1W:
 
 - live gateway wrappers no longer reject API-key model restrictions before
   Relay can emit the correlation header and authorization decision evidence.
