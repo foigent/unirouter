@@ -80,8 +80,8 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Current active verification signal: PRD5 Batch 1Q Gate A Request Approval
-Manifest fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+Current active verification signal: PRD5 Batch 1R Gate A Request ID Approval
+Runbook fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
 
 PRD4 is complete for the confirmed current scope. PRD5 must preserve the PRD4
 deferred-boundary decisions recorded here.
@@ -293,13 +293,30 @@ PRD5 Batch 1Q:
 
 - Scope: Gate A request approval manifest for X-Insight's scenario data
   requirement.
-- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Status: Canary PASS 6/6 in `docs/agent-workflows/VERIFY-RESULT.md`;
+  Sentinel merge reflected by `ed8c69d` / PR #120.
 - Adds: `--approval-manifest <path>` to
   `scripts/prd5_xinsight_snapshot.go`; manifest schema
   `unirouter.prd5.xinsight.approval.v1`; `approved` / `pending` /
   `unavailable` row handling; rejection for placeholder approved IDs; and a
   UniRouter response to X-Insight at
   `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-10-unirouter-approved-request-ids-response.md`.
+- Does not add: a real snapshot artifact, approved request IDs, DSN,
+  credential, raw prompt/response, raw IP, raw upstream error, migration,
+  runtime request-path change, API route, frontend behavior, read-only DB/view
+  credential, shared ECS staging, exporter/outbox, X-Insight runtime dependency,
+  or PRD4 matrix changes.
+
+PRD5 Batch 1R:
+
+- Scope: human-readable Gate A request ID approval runbook and shared approval
+  worksheet.
+- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Adds: `docs/ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md`; shared worksheet
+  `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-request-id-approval-worksheet.md`;
+  plain-language approval meaning, `approved` / `pending` / `unavailable`
+  definitions, tradeoffs versus auto-discovery/read-only DB/exporter, and an
+  example approval sentence for the User.
 - Does not add: a real snapshot artifact, approved request IDs, DSN,
   credential, raw prompt/response, raw IP, raw upstream error, migration,
   runtime request-path change, API route, frontend behavior, read-only DB/view

@@ -9,7 +9,8 @@
 | `docs/PROJECT-HANDOFF.md` | First-read handoff for agents |
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
 | `docs/PRD-Phase5.md` | Formal PRD5 active scope and implementation-phase reference |
-| `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` | PRD5 acceptance matrix; Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H, Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, and Batch 1N Canary/Sentinel complete, Batch 1O fixed awaiting Canary |
+| `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` | PRD5 acceptance matrix; Batch 1A/1B/1C through Batch 1Q Canary/Sentinel complete, Batch 1R fixed awaiting Canary |
+| `docs/ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md` | PRD5 Gate A request ID approval runbook for non-technical User/UniRouter-owner approval before controlled X-Insight snapshot generation |
 | `docs/planning/PRD5-IMPLEMENTATION-PLAN.md` | PRD5 batch plan and UniRouter/X-Insight ownership split |
 | `docs/planning/PRD5-COMPETITOR-COMPARISON.md` | PRD5 competitor comparison and UniRouter-owned catch-up decisions |
 | `docs/PRD-Phase4.md` | Formal PRD4 scope and implementation-phase reference |
@@ -100,6 +101,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | `docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md` | Current local evidence and external acceptance queue |
 | `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` | PRD4 active acceptance matrix and evidence rules |
 | `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` | PRD5 active acceptance matrix and evidence rules |
+| `docs/ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md` | PRD5 Gate A request ID approval runbook and data-minimization boundary |
 | `docs/ops/PRD1-STRICT-CLOSEOUT-RUNBOOK.md` | Final strict closeout gate and evidence procedure |
 | `docs/ops/deployment-runbook.md` | Deployment reference |
 | `docs/ops/evidence/` | Current runtime/deployment evidence cited by acceptance matrices and status docs |
