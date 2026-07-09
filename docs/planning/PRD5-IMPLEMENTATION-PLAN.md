@@ -3,8 +3,9 @@
 > Date: 2026-07-10
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
 > Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, Batch 1O, and
-> Batch 1P, Batch 1Q, and Batch 1R Canary/Sentinel complete. Batch 1S
-> X-Insight Data Exchange Control Surface fixed awaiting Canary.
+> Batch 1P, Batch 1Q, Batch 1R, and Batch 1S Canary/Sentinel complete. Batch
+> 1T Gate A Exchange Envelope And Controlled Run Authorization fixed awaiting
+> Canary.
 > Scope owner: UniRouter. X-Insight remains a separate project and owns broader
 > observability/governance product surfaces.
 
@@ -629,7 +630,7 @@ shared-folder coordination. It does not change runtime request handling, DB
 schema, API routes, frontend behavior, credentials, or generated snapshot
 artifacts.
 
-Status: fixed awaiting Canary.
+Status: Canary/Sentinel complete (`c6ae2a7` / PR #122).
 
 Implemented in this round:
 
@@ -657,6 +658,46 @@ Non-goals:
 - no approved request IDs are invented or written by Codex;
 - no DSN, credential, token, raw prompt, raw response, raw IP, or raw upstream
   error is written to the repo or shared folder;
+- no read-only DB/view credential handoff;
+- no shared ECS staging;
+- no exporter/outbox;
+- no X-Insight runtime dependency;
+- no PRD4 matrix/status change.
+
+### Batch 1T: Gate A Exchange Envelope And Controlled Run Authorization
+
+Risk: R2 overall because it combines R1 read-only snapshot tooling/tests with
+PRD/status and human authorization contract changes. It does not change
+UniRouter runtime request handling, DB schema, API routes, or frontend behavior.
+
+Status: fixed awaiting Canary.
+
+Implemented in this round:
+
+- add source-created `exchange_id` to every generated Gate A snapshot and
+  handoff note;
+- add exact-byte `approval_manifest_sha256` for manifest-selected snapshots;
+- keep artifact SHA-256 outside the snapshot so X-Insight computes it and
+  reconciles `(exchange_id, artifact.sha256)`;
+- preserve `--approval-manifest` in generated handoff commands;
+- require manifest `source_instance` and reject conflicting CLI overrides;
+- reject approval manifest files containing a second JSON value;
+- add focused unit tests for exchange ID, manifest hash, parser, and handoff
+  command behavior;
+- record X-Insight's implemented `xinsight.import-receipt.v1` statuses and the
+  fact that no durable `import_job_id` or deep link exists yet;
+- add a controlled-run authorization runbook and shared worksheet covering
+  scenarios, data classes, source instance, safety, retention, and operator;
+- define a narrow `X-Request-ID` operator path for newly generated synthetic
+  requests without broad request-ID discovery.
+
+Non-goals:
+
+- no real controlled request is sent;
+- no real snapshot, manifest with approved IDs, or receipt artifact is created;
+- no DSN, credential, token, API key, raw prompt, raw response, raw IP, or raw
+  upstream error is written to the repo/shared folder;
+- no UI, API route, DB migration, or runtime request-path change;
 - no read-only DB/view credential handoff;
 - no shared ECS staging;
 - no exporter/outbox;
@@ -721,14 +762,16 @@ Use existing PRD4 harnesses, but record target evidence under PRD5.
 
 ## Current Blocking Conditions
 
-There is no blocking condition for UniRouter Batch 1A through Batch 1S. Batch
-1S is fixed awaiting Canary verification.
+There is no blocking condition for UniRouter Batch 1A through Batch 1T. Batch
+1T is fixed awaiting Canary verification.
 
 These later actions are gated:
 
-- controlled snapshot artifact generation: blocked until a User/UniRouter-owner
-  approval manifest contains concrete approved request IDs and source data access
-  is available;
+- controlled request execution: blocked until the User approves the exact
+  dev/test environment, named operator, and temporary snapshot retention;
+- controlled snapshot artifact generation: blocked until that authorized run
+  yields concrete approved request IDs and approved source data access is
+  available;
 - read-only DB/view access: blocked until X-Insight local snapshot import passes
   and User approves credential handoff;
 - shared ECS staging: blocked until local Gate A import works and CI is green;

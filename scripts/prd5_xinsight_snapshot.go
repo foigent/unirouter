@@ -3,7 +3,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -41,18 +43,20 @@ func (f *repeatedFlag) Set(value string) error {
 }
 
 type snapshotFile struct {
-	SchemaVersion  string                 `json:"schema_version"`
-	GeneratedAt    string                 `json:"generated_at"`
-	Source         string                 `json:"source"`
-	SourceInstance string                 `json:"source_instance"`
-	RequestIDs     []string               `json:"request_ids"`
-	Scenarios      []snapshotScenario     `json:"scenarios"`
-	Safety         snapshotSafety         `json:"safety"`
-	Counts         snapshotCounts         `json:"counts"`
-	CaptureGaps    []snapshotCaptureGap   `json:"capture_gaps"`
-	CallLogs       []snapshotCallLog      `json:"call_logs"`
-	TraceEvents    []snapshotTraceEvent   `json:"request_trace_events"`
-	Notes          map[string]interface{} `json:"notes"`
+	SchemaVersion          string                 `json:"schema_version"`
+	ExchangeID             string                 `json:"exchange_id"`
+	ApprovalManifestSHA256 string                 `json:"approval_manifest_sha256,omitempty"`
+	GeneratedAt            string                 `json:"generated_at"`
+	Source                 string                 `json:"source"`
+	SourceInstance         string                 `json:"source_instance"`
+	RequestIDs             []string               `json:"request_ids"`
+	Scenarios              []snapshotScenario     `json:"scenarios"`
+	Safety                 snapshotSafety         `json:"safety"`
+	Counts                 snapshotCounts         `json:"counts"`
+	CaptureGaps            []snapshotCaptureGap   `json:"capture_gaps"`
+	CallLogs               []snapshotCallLog      `json:"call_logs"`
+	TraceEvents            []snapshotTraceEvent   `json:"request_trace_events"`
+	Notes                  map[string]interface{} `json:"notes"`
 }
 
 type snapshotScenario struct {
@@ -229,23 +233,30 @@ func runPRD5Snapshot(args []string) error {
 	sourceInstanceFlagSet := flagWasSet(fs, "source-instance")
 	approvalManifestPath = strings.TrimSpace(approvalManifestPath)
 	selectionMode := "explicit_request_id_only"
+	approvalManifestSHA256 := ""
 	var requestIDs []string
 	var scenarios []snapshotScenario
 	if approvalManifestPath != "" {
 		if len(requestIDFlags) > 0 || strings.TrimSpace(requestIDsCSV) != "" || len(scenarioFlags) > 0 {
 			return errors.New("--approval-manifest cannot be combined with --request-id, --request-ids, or --scenario")
 		}
-		manifest, err := loadApprovalManifest(approvalManifestPath)
+		manifest, manifestSHA256, err := loadApprovalManifest(approvalManifestPath)
 		if err != nil {
 			return err
+		}
+		approvalManifestSHA256 = manifestSHA256
+		manifestSourceInstance := strings.TrimSpace(manifest.SourceInstance)
+		if manifestSourceInstance == "" {
+			return errors.New("approval manifest source_instance is required")
+		}
+		if sourceInstanceFlagSet && strings.TrimSpace(sourceInstance) != manifestSourceInstance {
+			return errors.New("--source-instance must match approval manifest source_instance")
 		}
 		requestIDs, scenarios, err = approvedManifestSelection(manifest)
 		if err != nil {
 			return err
 		}
-		if !sourceInstanceFlagSet && strings.TrimSpace(manifest.SourceInstance) != "" {
-			sourceInstance = manifest.SourceInstance
-		}
+		sourceInstance = manifestSourceInstance
 		selectionMode = "approved_request_id_manifest"
 	} else {
 		var err error
@@ -287,7 +298,11 @@ func runPRD5Snapshot(args []string) error {
 		return err
 	}
 
-	snapshot, err := loadSnapshot(ctx, db, sourceInstance, selectionMode, requestIDs, scenarios)
+	exchangeID, err := newExchangeID()
+	if err != nil {
+		return err
+	}
+	snapshot, err := loadSnapshot(ctx, db, sourceInstance, selectionMode, exchangeID, approvalManifestSHA256, requestIDs, scenarios)
 	if err != nil {
 		return err
 	}
@@ -296,12 +311,12 @@ func runPRD5Snapshot(args []string) error {
 		return err
 	}
 	if handoffNotePath != "" {
-		return writeHandoffNote(handoffNotePath, overwrite, outputPath, snapshot)
+		return writeHandoffNote(handoffNotePath, overwrite, outputPath, approvalManifestPath, snapshot)
 	}
 	return nil
 }
 
-func loadSnapshot(ctx context.Context, db *sql.DB, sourceInstance string, selectionMode string, requestIDs []string, scenarios []snapshotScenario) (snapshotFile, error) {
+func loadSnapshot(ctx context.Context, db *sql.DB, sourceInstance string, selectionMode string, exchangeID string, approvalManifestSHA256 string, requestIDs []string, scenarios []snapshotScenario) (snapshotFile, error) {
 	callLogs, err := loadCallLogs(ctx, db, sourceInstance, requestIDs)
 	if err != nil {
 		return snapshotFile{}, err
@@ -313,12 +328,14 @@ func loadSnapshot(ctx context.Context, db *sql.DB, sourceInstance string, select
 
 	gaps := buildCaptureGaps(requestIDs, callLogs, traceEvents)
 	snapshot := snapshotFile{
-		SchemaVersion:  prd5SnapshotSchemaVersion,
-		GeneratedAt:    time.Now().UTC().Format(time.RFC3339Nano),
-		Source:         "unirouter",
-		SourceInstance: sourceInstance,
-		RequestIDs:     requestIDs,
-		Scenarios:      scenarios,
+		SchemaVersion:          prd5SnapshotSchemaVersion,
+		ExchangeID:             exchangeID,
+		ApprovalManifestSHA256: approvalManifestSHA256,
+		GeneratedAt:            time.Now().UTC().Format(time.RFC3339Nano),
+		Source:                 "unirouter",
+		SourceInstance:         sourceInstance,
+		RequestIDs:             requestIDs,
+		Scenarios:              scenarios,
 		Safety: snapshotSafety{
 			SelectionMode:        selectionMode,
 			RawPromptsIncluded:   false,
@@ -727,7 +744,7 @@ func writeSnapshot(outputPath string, overwrite bool, snapshot snapshotFile) err
 	return nil
 }
 
-func writeHandoffNote(notePath string, overwrite bool, snapshotOutputPath string, snapshot snapshotFile) error {
+func writeHandoffNote(notePath string, overwrite bool, snapshotOutputPath string, approvalManifestPath string, snapshot snapshotFile) error {
 	parent := filepath.Dir(notePath)
 	if parent != "." {
 		if err := os.MkdirAll(parent, 0o700); err != nil {
@@ -746,11 +763,11 @@ func writeHandoffNote(notePath string, overwrite bool, snapshotOutputPath string
 	}
 	defer f.Close()
 
-	_, err = f.WriteString(formatHandoffNote(snapshotOutputPath, notePath, overwrite, snapshot))
+	_, err = f.WriteString(formatHandoffNote(snapshotOutputPath, notePath, approvalManifestPath, overwrite, snapshot))
 	return err
 }
 
-func formatHandoffNote(snapshotOutputPath string, notePath string, overwrite bool, snapshot snapshotFile) string {
+func formatHandoffNote(snapshotOutputPath string, notePath string, approvalManifestPath string, overwrite bool, snapshot snapshotFile) string {
 	var b strings.Builder
 	b.WriteString("# PRD5 X-Insight Snapshot Handoff Note\n\n")
 	b.WriteString("Status: Generated\n")
@@ -758,6 +775,12 @@ func formatHandoffNote(snapshotOutputPath string, notePath string, overwrite boo
 	b.WriteString(fmt.Sprintf("Source: %s\n", snapshot.Source))
 	b.WriteString(fmt.Sprintf("Source Instance: %s\n", snapshot.SourceInstance))
 	b.WriteString(fmt.Sprintf("Schema Version: %s\n", snapshot.SchemaVersion))
+	b.WriteString(fmt.Sprintf("Exchange ID: %s\n", snapshot.ExchangeID))
+	if snapshot.ApprovalManifestSHA256 == "" {
+		b.WriteString("Approval Manifest SHA-256: not applicable (direct explicit request IDs)\n")
+	} else {
+		b.WriteString(fmt.Sprintf("Approval Manifest SHA-256: %s\n", snapshot.ApprovalManifestSHA256))
+	}
 	if snapshotOutputPath == "-" {
 		b.WriteString("Snapshot Output: stdout\n")
 	} else {
@@ -823,11 +846,15 @@ func formatHandoffNote(snapshotOutputPath string, notePath string, overwrite boo
 	b.WriteString("UNIROUTE_PRD5_SNAPSHOT_DSN=<read-only postgres dsn> \\\n")
 	b.WriteString("go run scripts/prd5_xinsight_snapshot.go \\\n")
 	b.WriteString(fmt.Sprintf("  --source-instance %s \\\n", shellQuote(snapshot.SourceInstance)))
-	for _, requestID := range snapshot.RequestIDs {
-		b.WriteString(fmt.Sprintf("  --request-id %s \\\n", shellQuote(requestID)))
-	}
-	for _, scenario := range snapshot.Scenarios {
-		b.WriteString(fmt.Sprintf("  --scenario %s \\\n", shellQuote(scenario.Label+"="+scenario.RequestID)))
+	if snapshot.Safety.SelectionMode == "approved_request_id_manifest" && approvalManifestPath != "" {
+		b.WriteString(fmt.Sprintf("  --approval-manifest %s \\\n", shellQuote(approvalManifestPath)))
+	} else {
+		for _, requestID := range snapshot.RequestIDs {
+			b.WriteString(fmt.Sprintf("  --request-id %s \\\n", shellQuote(requestID)))
+		}
+		for _, scenario := range snapshot.Scenarios {
+			b.WriteString(fmt.Sprintf("  --scenario %s \\\n", shellQuote(scenario.Label+"="+scenario.RequestID)))
+		}
 	}
 	if snapshotOutputPath != "" {
 		b.WriteString(fmt.Sprintf("  --output %s \\\n", shellQuote(snapshotOutputPath)))
@@ -839,6 +866,7 @@ func formatHandoffNote(snapshotOutputPath string, notePath string, overwrite boo
 	b.WriteString("\n```\n")
 
 	b.WriteString("\n## X-Insight Gate A Use\n\n")
+	b.WriteString("Re-delivering this unchanged snapshot keeps the embedded exchange ID. Regenerating the snapshot creates a new exchange ID, even if the selected request IDs are unchanged. X-Insight computes the snapshot artifact hash after receipt and reconciles on `(exchange_id, artifact.sha256)`.\n\n")
 	b.WriteString("X-Insight should run discovery against the snapshot first, compare the report with the PRD5 snapshot contract, and treat missing `call_logs` or `request_trace_events` joins as capture gaps rather than inferred data.\n")
 	return b.String()
 }
@@ -881,23 +909,29 @@ func flagWasSet(fs *flag.FlagSet, name string) bool {
 	return wasSet
 }
 
-func loadApprovalManifest(path string) (approvalManifest, error) {
-	f, err := os.Open(path)
+func loadApprovalManifest(path string) (approvalManifest, string, error) {
+	payload, err := os.ReadFile(path)
 	if err != nil {
-		return approvalManifest{}, err
+		return approvalManifest{}, "", err
 	}
-	defer f.Close()
 
-	decoder := json.NewDecoder(f)
+	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.DisallowUnknownFields()
 	var manifest approvalManifest
 	if err := decoder.Decode(&manifest); err != nil {
-		return approvalManifest{}, err
+		return approvalManifest{}, "", err
+	}
+	var trailing interface{}
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return approvalManifest{}, "", errors.New("approval manifest must contain exactly one JSON object")
+		}
+		return approvalManifest{}, "", fmt.Errorf("approval manifest trailing data: %w", err)
 	}
 	if strings.TrimSpace(manifest.SchemaVersion) != prd5ApprovalManifestSchemaVersion {
-		return approvalManifest{}, fmt.Errorf("approval manifest schema_version must be %q", prd5ApprovalManifestSchemaVersion)
+		return approvalManifest{}, "", fmt.Errorf("approval manifest schema_version must be %q", prd5ApprovalManifestSchemaVersion)
 	}
-	return manifest, nil
+	return manifest, sha256Digest(payload), nil
 }
 
 func approvedManifestSelection(manifest approvalManifest) ([]string, []snapshotScenario, error) {
@@ -1035,6 +1069,19 @@ func stableHash(value interface{}) string {
 	}
 	sum := sha256.Sum256(payload)
 	return hex.EncodeToString(sum[:])
+}
+
+func sha256Digest(payload []byte) string {
+	sum := sha256.Sum256(payload)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func newExchangeID() (string, error) {
+	var value [16]byte
+	if _, err := rand.Read(value[:]); err != nil {
+		return "", fmt.Errorf("generate exchange_id: %w", err)
+	}
+	return "uxchg_" + hex.EncodeToString(value[:]), nil
 }
 
 func sourceRef(sourceInstance, table string, id int64) string {

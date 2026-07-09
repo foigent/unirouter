@@ -75,8 +75,10 @@ OpenAPI snapshot: `docs/tech-ref/05-openapi-spec.yaml` is the current route-leve
 | `scripts/prd4-real-sso-smoke.sh` | PRD4 Batch 1I wrapper for real SSO evidence harness. `--preflight` is safe without target credentials and does not drive a browser, call an IdP, or read DB; real target execution is deferred to PRD5 |
 | `scripts/prd4_real_sso_smoke.mjs` | Real SSO browser runner for future Logto or another enterprise OIDC target evidence; checks OIDC config/discovery, browser login, `/me`, audit mapping, and sanitized JSON evidence when PRD5 target execution is reopened |
 | `scripts/prd4_real_sso_audit_check.go` | Guarded read-only DB evidence check for OIDC user mapping and `login.oidc` audit redaction |
-| `scripts/prd5_xinsight_snapshot.go` | PRD5 Batch 1A read-only sanitized snapshot generator for explicit `request_id` selections from `call_logs` and `request_trace_events`; Batch 1K adds optional DSN-free Markdown handoff-note output; Batch 1N adds `candidate_capture_gaps` and a handoff-note capture-gap table; Batch 1Q adds `--approval-manifest` for User/UniRouter-owner approved scenario request IDs; no broad table export, raw prompt/response, API key, raw IP, raw upstream error, DSN, or credential output |
+| `scripts/prd5_xinsight_snapshot.go` | PRD5 Batch 1A read-only sanitized snapshot generator for explicit `request_id` selections from `call_logs` and `request_trace_events`; Batch 1K adds optional DSN-free Markdown handoff-note output; Batch 1N adds `candidate_capture_gaps`; Batch 1Q adds `--approval-manifest`; Batch 1T adds `exchange_id`, exact-byte `approval_manifest_sha256`, and manifest-preserving handoff commands; no broad table export, raw prompt/response, API key, raw IP, raw upstream error, DSN, or credential output |
+| `scripts/prd5_xinsight_snapshot_test.go` | PRD5 Batch 1T focused tests for exchange ID format/uniqueness, snapshot-envelope hash boundary, exact manifest hash, source-instance binding, trailing JSON rejection, and manifest-mode handoff output |
 | `docs/ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md` | PRD5 Batch 1R non-technical request ID approval runbook for Gate A sanitized snapshot data-minimization decisions |
+| `docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md` | PRD5 Batch 1T authorization and narrow operator runbook for newly generated Gate A scenarios using unique `X-Request-ID` values without broad discovery |
 | `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md` | PRD5 Batch 1S product/architecture decision for a future UniRouter-owned Data Exchange Control surface covering outbound approval/export ledger/import receipts and excluding X-Insight read-side audit/investigation UI |
 
 ## Frontend Map
@@ -229,6 +231,15 @@ ledger, handoff artifacts, import receipts, and deep links. It does not add UI
 code, API routes, migrations, snapshot artifacts, read-only DB/view access,
 shared ECS staging, exporter/outbox, X-Insight runtime dependency, or PRD4
 changes.
+
+PRD5 Batch 1T Gate A exchange identity is implemented in
+`scripts/prd5_xinsight_snapshot.go`, with focused explicit-file tests in
+`scripts/prd5_xinsight_snapshot_test.go`. Snapshots carry a random source-created
+`exchange_id`; manifest-selected snapshots carry the SHA-256 of the exact
+approval manifest bytes; and generated handoff commands keep
+`--approval-manifest`. Newly generated scenarios follow
+`docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md`; real execution remains
+blocked on the User-approved environment, operator, and retention.
 
 PRD5 Batch 1P model permission decision evidence is implemented in
 `internal/gateway/relay.go` and `internal/gateway/trace.go`, with focused

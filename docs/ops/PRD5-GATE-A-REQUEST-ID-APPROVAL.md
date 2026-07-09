@@ -1,7 +1,8 @@
 # PRD5 Gate A Request ID Approval Runbook
 
 > Date: 2026-07-10
-> Status: PRD5 Batch 1R fixed awaiting Canary
+> Status: PRD5 Batch 1R Canary/Sentinel complete (`c15cd7d` / PR #121);
+> existing-request approval path remains active
 > Audience: User, UniRouter owner, Codex, X-Insight coordination reviewers
 > Scope: human approval process for the first X-Insight Gate A controlled
 > sanitized snapshot
@@ -20,6 +21,12 @@ only allows UniRouter to export the sanitized evidence for that one receipt:
 
 The approval manifest is a whitelist. If a request is not on the whitelist with
 `approval_status=approved`, the snapshot tool must not export it.
+
+This exact-ID process remains the path for requests that already exist. Newly
+generated Gate A test requests use prior scenario/data/environment/operator/
+retention authorization from
+`docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md`, then seal only the IDs
+returned by that narrow run into the same approval manifest.
 
 ## What The User Is Approving
 
@@ -105,4 +112,3 @@ quota_or_budget_denial 先 pending；
 
 Codex or a UniRouter owner can then translate that sentence into the manifest
 format, and the tool will enforce the boundary.
-

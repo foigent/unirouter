@@ -1,8 +1,9 @@
 # PRD5 X-Insight Gate A Coordination
 
 > Date: 2026-07-10
-> Status: planning coordination accepted by User; Batch 1R Canary/Sentinel
-> complete; Batch 1S data exchange control surface fixed awaiting Canary; Gate
+> Status: planning coordination accepted by User; Batch 1S Canary/Sentinel
+> complete; Batch 1T exchange envelope and controlled-run authorization fixed
+> awaiting Canary; Gate
 > A controlled snapshot evidence not complete
 > Scope: UniRouter PRD5 coordination with X-Insight Gate A
 
@@ -19,6 +20,10 @@ Related shared-folder files:
 - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-prd5-controlled-snapshot-handoff-prep.md`
 - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-request-id-approval-worksheet.md`
 - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-data-exchange-control-surface-review.md`
+- `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-10-x-insight-data-exchange-control-surface-response.md`
+- `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-x-insight-exchange-envelope-and-controlled-run-request.md`
+- `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-controlled-run-authorization.md`
+- `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-10-unirouter-exchange-envelope-and-controlled-run-response.md`
 
 ## Current Accepted Decisions
 
@@ -92,6 +97,20 @@ Current Batch 1S control-surface rule:
   but Logs should not become the source of truth for integration control;
 - X-Insight should review stable receipt/deep-link fields before UniRouter adds
   durable schema or UI for receipt reconciliation.
+
+Current Batch 1T exchange rule:
+
+- each generated snapshot carries a new source-created `exchange_id`;
+- manifest-selected snapshots carry the SHA-256 of the exact approval manifest
+  bytes, while X-Insight computes the separate snapshot artifact SHA-256;
+- Gate A reconciliation uses `(exchange_id, artifact.sha256)`;
+- X-Insight's current receipt statuses are `validated`, `persisted`, and
+  `rejected`; it has no durable `import_job_id` or deep link yet;
+- existing requests retain exact-ID approval;
+- newly created controlled requests require prior approval of scenario set,
+  data classes, source instance, safety profile, retention, and operator;
+- the operator uses unique scenario-marked `X-Request-ID` values and captures
+  returned IDs directly; no broad request discovery is allowed.
 
 ### 2. GitHub Strategy
 
@@ -208,13 +227,14 @@ This coordination does not:
 
 ## Next PRD5 Steps
 
-1. Fill a User/UniRouter-owner approved request ID manifest with scenario labels,
-   source instance naming, and source access for the controlled sanitized
-   snapshot.
-2. Let X-Insight import the sanitized snapshot locally and save Gate A evidence.
-3. Use Gate A findings to prioritize remaining structural-field and payload
+1. Obtain User approval for the controlled dev/test environment, named operator,
+   and temporary snapshot retention.
+2. Run only the approved synthetic scenarios, seal their returned request IDs
+   into the approval manifest, and generate the exchange-identified snapshot.
+3. Let X-Insight import the sanitized snapshot and return the sidecar receipt.
+4. Use Gate A findings to prioritize remaining structural-field and payload
    policy gaps.
-4. Keep UniRouter-owned evidence readiness moving in scoped PRD5 batches that do
+5. Keep UniRouter-owned evidence readiness moving in scoped PRD5 batches that do
    not depend on X-Insight runtime availability.
-5. Revisit read-only views, exporter/outbox, GitHub governance, and shared ECS
+6. Revisit read-only views, exporter/outbox, GitHub governance, and shared ECS
    staging only after the earlier gates pass.

@@ -1,134 +1,109 @@
-# FIX-SIGNAL.md - PRD5 Batch 1S X-Insight Data Exchange Control Surface
+# FIX-SIGNAL.md - PRD5 Batch 1T Gate A Exchange Envelope And Controlled Run Authorization
 
 **Date:** File timestamp is authoritative
-**Risk level:** R1 PRD5/X-Insight planning docs and shared-folder coordination only
+**Risk level:** R2 overall; R1 read-only snapshot tooling/tests plus PRD/status and human authorization contracts
 **Status:** awaiting Canary verification
 
 ## Context
 
-PRD5 Batch 1A/1B/1C passed Canary 17/17 and Sentinel merged it as
-`e1e76e3` / PR #106. PRD5 Batch 1D passed Canary 11/11 and Sentinel merged it
-as `bf435ca` / PR #107. PRD5 Batch 1E passed Canary 11/11 and Sentinel merged
-it as `a19830f` / PR #108. PRD5 Batch 1F passed Canary 11/11 and Sentinel
-merged it as `e9670ad` / PR #109. PRD5 Batch 1G passed Canary 11/11 and
-Sentinel merged it as `c701843` / PR #110. PRD5 Batch 1H passed Canary 10/10
-and Sentinel merged it as `61f5610` / PR #111. PRD5 Batch 1I passed Canary
-11/11 and Sentinel merged it as `1dc20b5` / PR #112. PRD5 Batch 1J passed
-Canary and Sentinel merged it as `f5223df` / PR #113. PRD5 Batch 1K passed
-Canary 10/10 and Sentinel merged it as `2db830a` / PR #114. PRD5 Batch 1L
-passed Canary 10/10 and Sentinel merged it as `ffebf83` / PR #115. PRD5 Batch
-1M passed Canary 10/10 and Sentinel merged it as `4a4e254` / PR #116. PRD5
-Batch 1N passed Canary 10/10 and Sentinel merged it as `92cb8ce` / PR #117.
-PRD5 Batch 1O passed Canary 8/8 and Sentinel merged it as `b2eea2e` / PR #118.
-PRD5 Batch 1P passed Canary 6/6 and Sentinel merged it as `61091c` / PR #119.
-PRD5 Batch 1Q passed Canary 6/6 and Sentinel merged it as `ed8c69d` / PR #120.
-PRD5 Batch 1R passed Canary 6/6 and Sentinel merged it as `c15cd7d` / PR #121.
+PRD5 Batch 1S passed Canary 6/6 and Sentinel merged it as `c6ae2a7` / PR
+#122. PRD4 remains complete for the confirmed current scope and must not be
+reopened by this round.
 
-PRD4 remains complete for the confirmed current scope and must not be reopened
-by this round.
+X-Insight accepted the Batch 1S product boundary and implemented
+`xinsight.import-receipt.v1`. It requested two source-side envelope fields and
+a less technical approval path for fresh controlled requests:
 
-The User asked whether the approval process should become a separate UniRouter
-UI entry and whether X-Insight data-flow audits should be placed inside that
-entry. Batch 1S records the product/architecture answer: a future UI entry is
-reasonable, but it should be a UniRouter-owned Data Exchange Control surface for
-outbound approval, export ledger, handoff artifacts, import receipts, and deep
-links, not a full X-Insight audit or investigation console.
+- `exchange_id` for one outbound exchange;
+- `approval_manifest_sha256` for the exact manifest used;
+- prior authorization of scenario set, data classes, source instance, safety,
+  retention, and operator before a narrow run creates request IDs.
 
-The current X-Insight shared-folder responses support this boundary: X-Insight
-asks for one small approved-request combined snapshot first, says not to create
-read-only DB/view, shared ECS staging, exporter/outbox, or runtime dependency
-before that snapshot loop is proven, and owns normalization, persistence/read
-APIs, capture-gap interpretation, UI/policy simulation, and cross-source
-compatibility.
+X-Insight currently has no durable `import_job_id` or deep link. This batch does
+not invent either field and does not implement the future UI.
 
 ## Intended Changes
 
-- Reconcile Batch 1R completion as `c15cd7d` / PR #121.
-- Add `P5-F28` / Batch 1S to PRD5 scope, matrix, implementation plan, backlog,
-  Gate A coordination, current status, handoff, codebase map, and docs indexes.
-- Add `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md`.
-- Add shared X-Insight review request:
-  `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-data-exchange-control-surface-review.md`
-- Record the product boundary:
-  - UniRouter owns outbound approval, export ledger, handoff artifacts, import
-    receipts, safety summary, and X-Insight deep links when available.
-  - X-Insight owns importer internals, normalized evidence, read-side audit,
-    investigation timeline/graph, node detail, policy simulation, and evidence
-    packs.
-- Record staged implementation: current Markdown/manifest first, then UI
-  readiness spec, then minimal approval/export-ledger UI, then receipt
-  reconciliation, then exporter/outbox only after Gate A proves the need.
+- Add `exchange_id=uxchg_<32-lowercase-hex>` to generated snapshots and handoff
+  notes using 128 bits of local cryptographic randomness.
+- Add `approval_manifest_sha256=sha256:<64-lowercase-hex>` for manifest-selected
+  snapshots, calculated from the exact manifest file bytes.
+- Keep the snapshot artifact's own SHA-256 outside the snapshot; X-Insight
+  computes it and reconciles `(exchange_id, artifact.sha256)`.
+- Preserve `--approval-manifest` in generated handoff commands.
+- Require manifest `source_instance` and reject a conflicting CLI override
+  before DSN access.
+- Reject approval manifests containing a second JSON value.
+- Add focused explicit-file Go tests for exchange ID format/uniqueness,
+  exact-byte manifest hashing, trailing JSON rejection, and handoff output.
+- Add `docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md` and shared-folder
+  exchange contract, authorization worksheet, and UniRouter response.
+- Reconcile Batch 1S completion and route `P5-F29` / Batch 1T through current
+  PRD5 status, matrix, plan, backlog, handoff, tech ref, and indexes.
 
 ## Non-Goals
 
 This round does not:
 
-- implement UI code;
-- add API routes;
-- add DB migrations;
-- change runtime request handling;
-- change snapshot script behavior;
-- generate a real snapshot artifact;
-- invent, approve, or write real request IDs;
-- write a DSN, password, token, credential, raw prompt, raw response, raw IP, or
-  raw upstream error into the repo or shared folder;
-- create read-only DB credentials or views;
-- create shared ECS staging;
-- add exporter/outbox;
-- add X-Insight as a runtime dependency;
-- duplicate X-Insight timeline, graph, policy simulation, evidence packs, or
-  read-side audit in UniRouter;
-- change PRD4 acceptance counts;
-- create a `Production verified` claim.
+- send a real controlled request;
+- generate a real snapshot, approved-ID manifest, handoff artifact, or receipt;
+- invent or approve request IDs;
+- write a DSN, password, token, API key, credential, raw prompt, raw response,
+  raw IP, or raw upstream error into the repo or shared folder;
+- implement UI code, API routes, DB migrations, or runtime request-path changes;
+- create read-only DB credentials/views or shared ECS staging;
+- add exporter/outbox or an X-Insight runtime dependency;
+- claim that Gate A, readback, production, `import_job_id`, or a deep link is
+  complete;
+- change PRD4 acceptance counts or create a `Production verified` claim.
 
 ## Canary Verification Instructions
 
-1. Verify repo history includes `c15cd7d` / PR #121 for PRD5 Batch 1R and that
-   `docs/agent-workflows/VERIFY-RESULT.md` records Batch 1R PASS 6/6.
-2. Verify `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md` states:
-   - a future UI entry is reasonable;
-   - the entry should be Data Exchange Control, not a full X-Insight audit
-     console;
-   - UniRouter owns outbound approval/export ledger/import receipts/deep links;
-   - X-Insight owns downstream observability, read-side audit, investigation
-     timeline/graph, policy simulation, and evidence packs;
-   - staged implementation keeps exporter/outbox deferred.
-3. Verify the shared review request exists and asks X-Insight for receipt/deep
-   link boundary feedback without requesting secrets, raw payloads, or importer
-   internals.
-4. Verify PRD5 status, matrix, implementation plan, backlog, Gate A
-   coordination, handoff, codebase map, and docs indexes route Batch 1S and
-   `P5-F28` correctly.
-5. Verify no UI code, API route, migration, runtime request-path change, snapshot
-   script change, real snapshot artifact, approved request ID invention,
-   DSN/credential/token/raw payload, read-only DB/view credential, shared ECS
-   staging, exporter/outbox, X-Insight runtime dependency, PRD4 matrix change, or
-   `Production verified` claim is included.
-6. Run:
+1. Verify `origin/main` contains Batch 1S as `c6ae2a7` / PR #122 and the prior
+   `VERIFY-RESULT.md` records Batch 1S PASS 6/6.
+2. Verify snapshot tooling:
+   - generates a non-empty `exchange_id` matching
+     `uxchg_<32-lowercase-hex>`;
+   - hashes exact approval-manifest file bytes with the `sha256:` prefix;
+   - emits the manifest hash only in manifest mode;
+   - requires manifest source instance and rejects conflicting CLI override;
+   - rejects a second JSON value in the manifest;
+   - keeps `--approval-manifest` in the generated handoff command;
+   - does not put the snapshot artifact's own hash inside the snapshot.
+3. Verify the focused tests cover ID format/uniqueness, exact-byte hash, trailing
+   JSON, and manifest-mode handoff behavior.
+4. Verify the controlled-run runbook and shared worksheet require prior approval
+   of environment, operator, and retention; use only the two approved synthetic
+   scenarios and unique `X-Request-ID` values; and do not authorize broad
+   discovery or secrets/raw payload handoff.
+5. Verify the shared exchange contract and UniRouter response match X-Insight's
+   current receipt contract: `validated` / `persisted` / `rejected`, no current
+   durable `import_job_id`, no current deep link, and reconciliation by
+   `(exchange_id, artifact.sha256)`.
+6. Verify PRD5 status/matrix/plan/backlog/handoff/tech-ref/index docs route
+   `P5-F29` / Batch 1T and mark Batch 1S complete as `c6ae2a7` / PR #122.
+7. Verify no non-goal or PRD4 boundary regression is present, then run:
 
 ```bash
-git log --oneline -3 origin/main | rg "c15cd7d.*PRD5 Batch 1R|#121"
-rg -n "X-Insight Data Exchange Control Surface|P5-F28|Batch 1S|Data Exchange Control|outbound ledger|read-side audit|Investigation|Receipt Reconciliation|Stage 2: Minimal UniRouter UI|Put all X-Insight audits in UniRouter|Do not do this" docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md docs/PRD-Phase5.md docs/ops/PRD5-ACCEPTANCE-MATRIX.md docs/planning/PRD5-IMPLEMENTATION-PLAN.md docs/planning/PRD5-BACKLOG.md docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md docs/PROJECT-HANDOFF.md docs/ops/CURRENT-STATUS.md docs/agent-workflows/FIX-SIGNAL.md docs/tech-ref/25-prd5-xinsight-sanitized-snapshot.md docs/CODEBASE-MAP.md docs/DOC-INVENTORY.md docs/README.md "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-data-exchange-control-surface-review.md"
-rg -n "import_job_id|exchange_id|deep link|read-side audit|X-Insight owns" "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-data-exchange-control-surface-review.md"
-git status --short
-git diff --name-only
-git diff -- frontend internal cmd scripts
+git log --oneline -3 origin/main | rg "c6ae2a7.*PRD5 Batch 1S|#122"
+go test scripts/prd5_xinsight_snapshot.go scripts/prd5_xinsight_snapshot_test.go -count=1
+go run scripts/prd5_xinsight_snapshot.go -help
+rg -n "P5-F29|Batch 1T|exchange_id|approval_manifest_sha256|xinsight.import-receipt.v1|controlled run|Controlled Run|X-Request-ID|artifact.sha256|seven days|7 天" scripts/prd5_xinsight_snapshot.go scripts/prd5_xinsight_snapshot_test.go docs/PRD-Phase5.md docs/ops/PRD5-ACCEPTANCE-MATRIX.md docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md docs/planning/PRD5-IMPLEMENTATION-PLAN.md docs/planning/PRD5-BACKLOG.md docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md docs/tech-ref/25-prd5-xinsight-sanitized-snapshot.md docs/PROJECT-HANDOFF.md docs/ops/CURRENT-STATUS.md docs/CODEBASE-MAP.md docs/DOC-INVENTORY.md docs/README.md docs/agent-workflows/FIX-SIGNAL.md "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/contracts/2026-07-10-unirouter-prd5-gate-a-exchange-envelope.md" "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-controlled-run-authorization.md" "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-10-unirouter-exchange-envelope-and-controlled-run-response.md"
+go test ./... -count=1
+git diff -- frontend internal cmd migrations
 git diff -- docs/PRD-Phase4.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/ops/evidence/PRD4-final-closeout-20260708.md
+git status --short
 git diff --check
 ```
-
-No Go/frontend test run is required for Batch 1S because it is docs and
-shared-folder coordination only.
 
 ## Expected Output
 
 Canary should write `docs/agent-workflows/VERIFY-RESULT.md` with:
 
 - PASS/FAIL for each numbered instruction;
-- any PRD4 boundary regression as a blocking failure;
-- any UI code, API route, migration, runtime request-path change, snapshot script
-  change, real snapshot artifact, approved request ID invention, secret,
-  read-only DB/view credential, shared ECS staging, exporter/outbox, raw payload
-  capture, X-Insight runtime dependency, or `Production verified` claim as a
-  scope failure;
-- final result for PRD5 Batch 1S.
+- exact command evidence for the focused and full Go tests;
+- any real request/artifact, approved ID invention, secret/raw payload, UI/API/
+  migration/runtime change, read-only DB/view, shared ECS, exporter/outbox,
+  X-Insight runtime dependency, PRD4 change, or overclaim as a blocking scope
+  failure;
+- final result for PRD5 Batch 1T.

@@ -1,66 +1,66 @@
-# VERIFY-RESULT.md - PRD5 Batch 1S X-Insight Data Exchange Control Surface
+# VERIFY-RESULT.md - PRD5 Batch 1T Gate A Exchange Envelope And Controlled Run Authorization
 
-**Verifier:** Sentinel
+**Verifier:** Canary
 **Date:** 2026-07-10
 **Signal:** `docs/agent-workflows/FIX-SIGNAL.md`
-**Result:** ✅ **PASS — 6/6**
+**Result:** ✅ **PASS — 7/7**
 
 ## Verification Summary
 
 | # | Instruction | Result | Evidence |
 |---|-------------|--------|----------|
-| 1 | Repo history includes `c15cd7d` / PR #121 for PRD5 Batch 1R; VERIFY-RESULT.md records Batch 1R PASS 6/6 | ✅ PASS | `git log --oneline -5 origin/main` → HEAD is `c15cd7d docs: PRD5 Batch 1R — Gate A request ID approval runbook (P5-F27) (#121)`; previous VERIFY-RESULT.md title: "PRD5 Batch 1R Gate A Request ID Approval Runbook", result: "PASS — 6/6" |
-| 2 | `PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md` states: future UI entry reasonable; Data Exchange Control not full X-Insight audit console; UniRouter owns outbound approval/export ledger/import receipts/deep links; X-Insight owns downstream observability/read-side audit/investigation timeline/graph/policy simulation/evidence packs; staged implementation defers exporter/outbox | ✅ PASS | Line 3: "future UI entry is reasonable"; Line 5: "do not make it a generic X-Insight observability or audit console"; Lines 6-11: Data Exchange Control surface = outbound approval, export ledger, handoff artifacts, import receipts, deep links; Lines 36-38: X-Insight owns evidence normalization, persistence/read APIs, capture-gap interpretation, UI/policy simulation, cross-source compatibility; Line 110 table: "Do not do this"; Lines 149-153 Stage 4: exporter/outbox only after Gate A proves need |
-| 3 | Shared review request exists; asks X-Insight for receipt/deep link boundary feedback without requesting secrets, raw payloads, or importer internals | ✅ PASS | File exists at `UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-data-exchange-control-surface-review.md`; Lines 41-50: questions about `import_job_id`, `exchange_id`, deep link, read-side audit boundary; Lines 54-55: "This request does not ask X-Insight to expose credentials, raw prompts, raw responses, raw IPs, raw upstream errors, or importer internals" |
-| 4 | PRD5 status, matrix, implementation plan, backlog, Gate A coordination, handoff, codebase map, and docs indexes route Batch 1S and P5-F28 correctly | ✅ PASS | `grep -n "P5-F28\|Batch 1S\|Data Exchange Control"` across 12 docs files — all contain Batch 1S/P5-F28 references: `PRD-Phase5.md` (line 107 P5-F28 row, line 676 section), `PRD5-ACCEPTANCE-MATRIX.md` (line 72 P5-F28 row), `PRD5-IMPLEMENTATION-PLAN.md` (line 625 section), `PRD5-BACKLOG.md` (lines 42, 72, 76), `PRD5-XINSIGHT-GATE-A-COORDINATION.md` (lines 5, 82, 84), `PROJECT-HANDOFF.md` (lines 88, 332-339), `CURRENT-STATUS.md` (lines 5, 30, 56), `CODEBASE-MAP.md` (lines 80, 223), `DOC-INVENTORY.md` (lines 12, 33, 127), `README.md` (lines 6, 7, 15, 21) |
-| 5 | No UI code, API route, migration, runtime request-path change, snapshot script change, real snapshot artifact, approved request ID invention, secret/credential/raw payload, read-only DB/view credential, shared ECS staging, exporter/outbox, X-Insight runtime dependency, PRD4 matrix change, or `Production verified` claim | ✅ PASS | `git diff --name-only` → 12 docs files only (no `.go`, `.tsx`, `.ts`, `.sql` files); `git diff -- frontend internal cmd scripts` → empty (exit 0); `git diff -- docs/PRD-Phase4.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/ops/evidence/PRD4-final-closeout-20260708.md` → empty (exit 0); `git diff --check` → clean (exit 0); `git status --short` → 12 modified docs + 1 new `PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md` (untracked), all docs only |
-| 6 | All commands pass | ✅ PASS | See command results below |
+| 1 | `origin/main` contains Batch 1S as `c6ae2a7` / PR #122; previous VERIFY-RESULT records Batch 1S PASS 6/6 | ✅ PASS | `git log --oneline -5 origin/main` → HEAD `c6ae2a7 docs: PRD5 Batch 1S — X-Insight data exchange control surface (P5-F28) (#122)`; VERIFY-RESULT.md title: "PRD5 Batch 1S X-Insight Data Exchange Control Surface", result: "PASS — 6/6" |
+| 2 | Snapshot tooling: exchange_id, manifest hash, source_instance binding, trailing JSON rejection, handoff preservation, no artifact hash | ✅ PASS | See Snapshot Tooling Evidence below |
+| 3 | Focused tests cover ID format/uniqueness, exact-byte hash, trailing JSON, manifest-mode handoff | ✅ PASS | 7/7 tests PASS (see Command Results) |
+| 4 | Runbook and authorization worksheet require prior approval; only two approved scenarios; unique X-Request-ID; no broad discovery | ✅ PASS | `PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md`: Required Approval Fields table (scenario set, data classes, source instance, safety, retention, operator all "pending"); Operator Preconditions section; Narrow Run Procedure uses only `successful_non_stream` + `model_permission_denied`; unique `X-Request-ID` per request; "no broad request-ID discovery query is allowed"; Authorization request file: "No API key, DSN, password, prompt, response, IP, or upstream error text should be written in this file" |
+| 5 | Exchange contract and UniRouter response match X-Insight receipt contract: `validated`/`persisted`/`rejected`, no `import_job_id`, no deep link, reconciliation by `(exchange_id, artifact.sha256)` | ✅ PASS | Exchange contract: reconciliation key `(exchange_id, artifact.sha256)` (line 36); "X-Insight computes the snapshot artifact hash after receipt" (line 21-22); no `import_job_id` or deep link in contract. UniRouter response: "X-Insight may then return the implemented `xinsight.import-receipt.v1` sidecar" (line 45); no `import_job_id` or deep link. X-Insight data exchange control surface response (section 4): receipt returns `validated`/`persisted`/`rejected`; "The current CLI does not return `import_job_id` or a deep link because it does not yet persist a durable import job" |
+| 6 | PRD5 status/matrix/plan/backlog/handoff/tech-ref/index docs route P5-F29 / Batch 1T; mark Batch 1S complete as `c6ae2a7` / PR #122 | ✅ PASS | All 12 docs contain P5-F29 / Batch 1T references (see grep results); CURRENT-STATUS.md line 5 lists `c6ae2a7` / PR #122 for Batch 1S; ACCEPTANCE-MATRIX.md line 75 has P5-F29 row with "Fixed awaiting Canary"; PRD-Phase5.md line 114 P5-F29 row, line 810 Batch 1T entry |
+| 7 | No non-goal or PRD4 boundary regression | ✅ PASS | See Non-Goal and PRD4 Boundary Evidence below |
+
+## Snapshot Tooling Evidence
+
+| Check | Code Location | Evidence |
+|-------|---------------|----------|
+| `exchange_id` format: `uxchg_<32-lowercase-hex>` | `newExchangeID()` lines 460-465 | 16 bytes crypto/rand → `"uxchg_" + hex.EncodeToString(value[:])` → 32 lowercase hex chars |
+| `exchange_id` uniqueness | `TestNewExchangeIDFormatAndUniqueness` | Generates 128 IDs, regex `^uxchg_[0-9a-f]{32}$`, zero duplicates |
+| Manifest hash: exact bytes + `sha256:` prefix | `sha256Digest()` + `loadApprovalManifest()` | `sha256.Sum256(payload)` → `"sha256:" + hex.EncodeToString(sum[:])`; test `TestLoadApprovalManifestHashesExactBytes` verifies exact expected digest |
+| Manifest hash only in manifest mode | `TestSnapshotEnvelopeJSONOmitsManifestAndArtifactHashesInDirectMode` | Direct-mode JSON omits `approval_manifest_sha256`; `snapshotFile` struct has `omitempty` on that field |
+| Manifest `source_instance` required | `TestRunSnapshotRequiresManifestSourceInstanceBeforeDSN` | Empty `source_instance` → error "approval manifest source_instance is required" before DSN access |
+| Conflicting CLI override rejected | `TestRunSnapshotRejectsManifestSourceInstanceOverrideBeforeDSN` | Mismatched `--source-instance` → error "must match approval manifest source_instance" |
+| Trailing JSON rejected | `TestLoadApprovalManifestRejectsTrailingJSONObject` | Second JSON value → error "exactly one JSON object" |
+| `--approval-manifest` preserved in handoff | `TestFormatHandoffNotePreservesApprovalManifestMode` | Handoff note contains `--approval-manifest 'approval.json'` and no `--request-id`/`--scenario` flags |
+| No artifact hash in snapshot | `snapshotFile` struct | No `artifact_sha256` field; `snapshotFile` contains `ExchangeID` and `ApprovalManifestSHA256` but no self-referential artifact hash |
+
+## Non-Goal and PRD4 Boundary Evidence
+
+| Check | Evidence |
+|-------|----------|
+| No frontend code changes | `git diff -- frontend` → empty (exit 0) |
+| No internal/cmd/migrations changes | `git diff -- internal cmd migrations` → empty (exit 0) |
+| No PRD4 doc changes | `git diff -- docs/PRD-Phase4.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/ops/evidence/PRD4-final-closeout-20260708.md` → empty (exit 0) |
+| No whitespace errors | `git diff --check` → clean (exit 0) |
+| Working tree: docs + scripts only | `git status --short` → 14 modified `.md` files + 2 new files (`PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md`, `prd5_xinsight_snapshot_test.go`); all changes are docs or snapshot tooling/tests |
+| No real request/snapshot/ID/secret/UI/API/migration/runtime | All changes confined to docs and `scripts/prd5_xinsight_snapshot{,_test}.go`; snapshot tool requires DSN env var (not set in repo); no request IDs invented; no credentials written |
 
 ## Command Results
 
 | Command | Result |
 |---------|--------|
-| `git log --oneline -5 origin/main` | ✅ `c15cd7d` at HEAD for PRD5 Batch 1R / #121 |
-| `grep -n "P5-F28\|Batch 1S\|Data Exchange Control"` across 12 docs + shared request | ✅ All expected references found in all 13 files |
-| `grep -n "import_job_id\|exchange_id\|deep link\|read-side audit\|X-Insight owns"` in shared request | ✅ All 5 terms found |
-| `git status --short` | ✅ 12 modified docs + 1 new untracked docs file, all `.md` |
-| `git diff --name-only` | ✅ 12 docs files only |
-| `git diff -- frontend internal cmd scripts` | ✅ Empty (no code changes) |
-| `git diff -- docs/PRD-Phase4.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/ops/evidence/PRD4-final-closeout-20260708.md` | ✅ Empty (no PRD4 changes) |
-| `git diff --check` | ✅ Clean (exit 0) |
+| `git log --oneline -5 origin/main` | ✅ `c6ae2a7` at HEAD for PRD5 Batch 1S / #122 |
+| `go test scripts/prd5_xinsight_snapshot.go scripts/prd5_xinsight_snapshot_test.go -count=1 -v` | ✅ **7/7 PASS** (0.693s): TestLoadApprovalManifestHashesExactBytes, TestLoadApprovalManifestRejectsTrailingJSONObject, TestRunSnapshotRejectsManifestSourceInstanceOverrideBeforeDSN, TestRunSnapshotRequiresManifestSourceInstanceBeforeDSN, TestNewExchangeIDFormatAndUniqueness, TestSnapshotEnvelopeJSONOmitsManifestAndArtifactHashesInDirectMode, TestFormatHandoffNotePreservesApprovalManifestMode |
+| `go run scripts/prd5_xinsight_snapshot.go -help` | ✅ Shows all flags including `--approval-manifest`, `--source-instance`, `--handoff-note` |
+| `go test ./... -count=1` | ✅ All packages PASS, 0 FAIL (18 packages, scripts excluded by `//go:build ignore`) |
+| `git diff -- frontend internal cmd migrations` | ✅ Empty (no code changes) |
+| `git diff -- docs/PRD-Phase4.md ...` | ✅ Empty (no PRD4 changes) |
+| `git status --short` | ✅ 14 modified docs + 2 new files (docs + scripts only) |
+| `git diff --check` | ✅ Clean |
 
-## PRD4 Boundary
+## New Discoveries
 
-- PRD4 files: **no changes** ✅
-- PRD4 matrix: unchanged ✅
-- No PRD4 row promoted to `Production verified` ✅
+No new bugs or scope violations found.
 
-## Scope Check
+## Final Result
 
-- No UI code ✅
-- No API route ✅
-- No DB migration ✅
-- No runtime request-path change ✅
-- No snapshot script change ✅
-- No real snapshot artifact ✅
-- No approved request ID invention ✅
-- No DSN/credential/token/raw payload ✅
-- No read-only DB/view credential ✅
-- No shared ECS staging ✅
-- No exporter/outbox ✅
-- No X-Insight runtime dependency ✅
-- No PRD4 matrix change ✅
-- No `Production verified` claim ✅
+**PRD5 Batch 1T Gate A Exchange Envelope And Controlled Run Authorization: ✅ PASS — 7/7**
 
-## Notes
-
-- Batch 1S 是纯文档/共享文件夹协调批次，不涉及任何代码变更。
-- `PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md` 是新增未跟踪文件（untracked），12 个已有 docs 文件为修改状态。
-- 共享 X-Insight review request 存在，内容为边界确认问题，明确排除了 secrets/raw payloads/importer internals。
-- 全部 12 个 PRD5 文档 + 共享请求文件均正确路由 Batch 1S / P5-F28。
-- PRD4 文件零变更（`git diff` 确认）。
-- 工作树中 13 个 docs 文件待 commit，等待 Sentinel 执行 commit/push/PR 流程。
-
-## Conclusion
-
-**PRD5 Batch 1S: PASS 6/6.** PRD4 边界完整且无变更。`PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md` 正确定义了 UniRouter Data Exchange Control 边界（outbound approval/export ledger/import receipts/deep links），明确排除了 X-Insight 下游职责（importer internals/read-side audit/investigation timeline/policy simulation/evidence packs），staged implementation 将 exporter/outbox 推迟到 Gate A 证明需求后。共享 review request 仅询问边界反馈，不含 secrets/raw payloads。无越界变更。可以进入 Sentinel commit 流程。
+All seven Canary verification instructions pass. The batch adds exchange identity (`exchange_id`), exact manifest hashing (`approval_manifest_sha256`), manifest-preserving handoff commands, focused Go tests (7/7), a controlled-run authorization runbook, and shared exchange contract/authorization/response files. No non-goal, PRD4 boundary regression, or scope violation is present.
