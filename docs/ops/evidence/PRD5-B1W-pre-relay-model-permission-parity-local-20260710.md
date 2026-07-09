@@ -64,7 +64,9 @@ the target denied-scenario gap.
 - The Batch 1V snapshot is not modified or regenerated.
 - Its artifact SHA-256 remains `5b1d52b1e8bd9b47f14de74670eb4404ed8862c32cdf323d86766446cdf438e8`.
 - The existing denied capture gaps remain factual pre-fix diagnostic evidence.
-- X-Insight persistent import/receipt remains pending.
+- At this local-evidence checkpoint, X-Insight persistent import/receipt had not
+  yet been received. The later external state is superseded by
+  `docs/ops/evidence/PRD5-GATE-A-XINSIGHT-external-integration-20260710.md`.
 - A target rerun requires a new or amended authorization and an available non-production deployment path.
 
 ## Rollback

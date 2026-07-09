@@ -3,7 +3,7 @@
 **Batch:** PRD5 Batch 1W - Pre-Relay Model Permission Evidence Parity and workflow v2 transition
 **Owner:** Codex
 **Risk:** R3 request authorization/evidence path; R2 workflow governance
-**Status:** CI verified; target deployment/rerun pending
+**Status:** Batch 1W CI verified; Gate A external integration verified; target deployment/rerun pending
 **Base:** `origin/main` at `cc38094` / PR #125
 **Merged:** `931400a` / PR #126
 
@@ -12,7 +12,7 @@
 1. Remove the duplicate pre-relay API-key `allowed_models` denial from the live Chat wrapper.
 2. Keep project model-governance resolution in the wrapper and let Relay own API-key denial correlation and decision evidence.
 3. Add full-handler integration coverage for response correlation, trace evidence, and pre-billing termination.
-4. Preserve the immutable Gate A snapshot as diagnostic evidence and request X-Insight persistent import/receipt without rewriting target history.
+4. Preserve the immutable Gate A snapshot as diagnostic evidence and reconcile X-Insight persistent import/readback without rewriting target history.
 5. Replace the mandatory Codex -> Canary -> Sentinel -> Atlas chain with one execution owner plus optional independent review.
 
 ## Behavior Change
@@ -27,6 +27,7 @@
 - Code: `cmd/uniroute/gateway_handlers.go`
 - Integration coverage: `cmd/uniroute/prd2_p0_e2e_integration_test.go`
 - Local evidence: `docs/ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md`
+- External integration evidence: `docs/ops/evidence/PRD5-GATE-A-XINSIGHT-external-integration-20260710.md`
 - Workflow decision evidence: `docs/ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md`
 - Gate A artifact remains in the UniRouter/X-Insight shared folder with SHA-256 `5b1d52b1e8bd9b47f14de74670eb4404ed8862c32cdf323d86766446cdf438e8`.
 
@@ -71,10 +72,17 @@ PR #126 results:
 
 ## External State
 
-- X-Insight persistent import/receipt remains pending.
+- X-Insight Gate A persistent import/readback is externally verified: receipt
+  `persisted`, 10 accepted, first persistence 10 inserted, second persistence 10
+  duplicate/no-op, readback 10 events/3 gaps, X-Insight `4a562a6` / PR #9 and
+  `5f0fa49` / PR #10.
+- Temporary Gate A test API key disable confirmation remains pending.
 - A denied-scenario target rerun requires a new or amended User authorization.
+- X-Insight ECS target deployment/runtime verification is not part of the receipt
+  and remains unverified.
 - No ECS SSH alias has been established for Codex in the current environment.
 - `XINSIGHT_POSTGRES_DSN` is not present in the current environment.
+- Temporary snapshot deletion is due 2026-07-17 after receipt reconciliation.
 
 ## Rollback
 

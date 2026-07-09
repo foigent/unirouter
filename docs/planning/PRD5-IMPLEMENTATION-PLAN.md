@@ -6,10 +6,12 @@
 > Batch 1P, Batch 1Q, Batch 1R, Batch 1S, Batch 1T, and Batch 1U
 > Historical Canary/Sentinel evidence is complete through Batch 1V (`cc38094` / PR #125). Batch 1V
 > target execution produced a sanitized
-> snapshot with a denied-scenario correlation/evidence gap and awaits X-Insight
-> import. Batch 1W Pre-Relay Model Permission Evidence Parity is CI verified at
-> `931400a` / PR #126 under Agent Protocol v2.0; target deployment/rerun remains
-> pending.
+> snapshot with a denied-scenario correlation/evidence gap. X-Insight persistent
+> import/readback is External integration verified at `4a562a6` / PR #9 and
+> `5f0fa49` / PR #10. Batch 1W Pre-Relay Model Permission Evidence Parity is CI verified at
+> `931400a` / PR #126 under Agent Protocol v2.0; target deployment/new-authorization
+> rerun, temporary test-key disable confirmation, and X-Insight ECS target
+> verification remain pending.
 > Scope owner: UniRouter. X-Insight remains a separate project and owns broader
 > observability/governance product surfaces.
 
@@ -754,8 +756,8 @@ Status: Canary/Sentinel complete (`cc38094` / PR #125). Atlas executed both
 scenarios against deployed application commit `b2ba892` and generated exchange
 `uxchg_f7de31e541516893a0d9b31cc0f3892a`; success evidence is present, while
 the denied scenario failed returned-ID correlation and has no source trace row.
-X-Insight persistent import/receipt and test-key disable confirmation remain
-pending.
+X-Insight persistent import/readback is externally verified. Test-key disable
+confirmation remains pending.
 
 Authorized work:
 
@@ -787,6 +789,13 @@ Actual evidence boundary:
   `5b1d52b1e8bd9b47f14de74670eb4404ed8862c32cdf323d86766446cdf438e8`;
 - counts are one call log, seven trace events, and two capture gaps;
 - the denied request is retained only for diagnostic missing-source gap import;
+- X-Insight receipt is `persisted`: 10 accepted, first PostgreSQL persistence
+  inserted 10, the rerun produced 10 duplicate/no-op with 0 conflict, and
+  readback returned 10 events/3 gaps;
+- X-Insight merged the detector fix as `4a562a6` / PR #9 and closeout as
+  `5f0fa49` / PR #10;
+- receipt reconciliation date is 2026-07-10 and temporary snapshot deletion is
+  due 2026-07-17;
 - the snapshot and manifest remain immutable; Batch 1W does not rewrite target
   history.
 
@@ -885,14 +894,18 @@ These later actions are gated:
 - controlled request/snapshot execution: completed under
   `UR-XI-GATE-A-20260710-01` with one explicit denied-scenario correlation and
   source-trace gap; no rerun is authorized yet;
-- X-Insight Gate A persistence/receipt: requested against the immutable snapshot
-  and currently pending;
+- X-Insight Gate A persistence/readback: externally verified for the immutable
+  snapshot; this does not prove the missing UniRouter denial source event;
+- temporary Gate A test API key disable confirmation remains pending;
 - denied-scenario target closure: Batch 1W CI/merge is complete; an available
   authorized non-production deployment path and a new or amended User
   authorization are still required for a single-scenario rerun;
-- read-only DB/view access: blocked until X-Insight local snapshot import passes
-  and User approves credential handoff;
-- shared ECS staging: blocked until local Gate A import works and CI is green;
-- exporter/outbox: blocked until Gate A shows concrete field/volume/cursor gaps;
+- read-only DB/view access: the import prerequisite now passes, but access remains
+  unapproved; X-Insight recommends one more controlled snapshot before widening
+  the integration mode;
+- X-Insight ECS target verification remains unperformed; no shared ECS staging
+  or X-Insight target-runtime claim follows from the local/PostgreSQL receipt;
+- exporter/outbox: remains deferred until another controlled cycle proves both
+  producer and consumer fixes and reveals concrete field/volume/cursor gaps;
 - real upstream/SSO target E2E: blocked until approved target environments and
   credentials exist.

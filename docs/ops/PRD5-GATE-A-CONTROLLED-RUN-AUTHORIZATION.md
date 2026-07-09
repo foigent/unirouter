@@ -2,7 +2,7 @@
 
 > Date: 2026-07-10
 > Status: executed with one denied-scenario correlation/source-trace exception;
-> awaiting X-Insight receipt and target cleanup confirmation
+> X-Insight external integration verified; target cleanup/key-disable confirmation pending
 > Audience: User, UniRouter owner/operator, X-Insight coordination reviewers
 > Decision record: `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-10-gate-a-controlled-run-authorization-recommendation.md`
 > Atlas handoff: `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-atlas-execution.md`
@@ -135,9 +135,14 @@ Atlas executed both authorized requests against `b2ba892` and generated the
 sanitized snapshot. The success scenario passed. The denied scenario returned
 403 but did not return `X-Request-ID` and produced no source trace row because a
 pre-relay wrapper check bypassed Relay. Batch 1W fixes that source path locally.
-The current snapshot remains immutable diagnostic evidence; X-Insight receipt,
-test-key disable confirmation, and any separately authorized rerun remain
-pending.
+The current snapshot remains immutable diagnostic evidence. X-Insight receipt
+status is `persisted`: 10 accepted, 10 first inserts, 10 duplicate/no-op on
+rerun, 0 conflict, and readback of 10 events/3 gaps. X-Insight merged the
+consumer detector fix as `4a562a6` / PR #9 and closeout as `5f0fa49` / PR #10.
+Test-key disable confirmation and any separately authorized Batch 1W target
+deployment/denial rerun remain pending. X-Insight ECS target verification is
+not part of the receipt and remains unverified. Temporary snapshot deletion is
+due 2026-07-17.
 
 ## Workflow Transition
 

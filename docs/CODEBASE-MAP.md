@@ -266,7 +266,12 @@ It binds Atlas to the confirmed non-production target, exactly two scenarios,
 verified request-ID sealing, sanitized snapshot/receipt evidence, and a
 seven-day post-reconciliation cleanup deadline. The actual result records one
 successful evidence chain and one denied request with no returned correlation
-header or source trace row.
+header or source trace row. X-Insight externally verified the immutable
+snapshot import with a reconciled `persisted` receipt: 10 accepted, first
+PostgreSQL persistence 10 inserted, rerun 10 duplicate/no-op, 0 conflict, and
+readback of 10 events/3 gaps. X-Insight merged the consumer detector fix as
+`4a562a6` / PR #9 and closeout as `5f0fa49` / PR #10. This does not prove the
+missing denial source event or X-Insight ECS target runtime.
 
 PRD5 Batch 1W fixes that live denial path in
 `cmd/uniroute/gateway_handlers.go`. The wrapper no longer duplicates Relay's
