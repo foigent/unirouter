@@ -7,8 +7,9 @@
 > Historical Canary/Sentinel evidence is complete through Batch 1V (`cc38094` / PR #125). Batch 1V
 > target execution produced a sanitized
 > snapshot with a denied-scenario correlation/evidence gap and awaits X-Insight
-> import. Batch 1W Pre-Relay Model Permission Evidence Parity is Local verified
-> with PR/CI integration pending under Agent Protocol v2.0.
+> import. Batch 1W Pre-Relay Model Permission Evidence Parity is CI verified at
+> `931400a` / PR #126 under Agent Protocol v2.0; target deployment/rerun remains
+> pending.
 > Scope owner: UniRouter. X-Insight remains a separate project and owns broader
 > observability/governance product surfaces.
 
@@ -794,7 +795,7 @@ Actual evidence boundary:
 Risk: R3 because it changes the live API-key model-denial ownership path while
 preserving the existing denial result and pre-billing boundary.
 
-Status: Local verified; PR/CI integration pending.
+Status: CI verified at `931400a` / PR #126; target deployment/rerun pending.
 
 Implemented in this round:
 
@@ -875,9 +876,9 @@ Use existing PRD4 harnesses, but record target evidence under PRD5.
 
 ## Current Blocking Conditions
 
-There is no blocking condition for UniRouter Batch 1A through Batch 1V. All are
-Canary/Sentinel complete through `cc38094` / PR #125. Batch 1W is fixed awaiting
-Canary.
+There is no repository-integration blocker for UniRouter Batch 1A through Batch
+1W. Historical Canary/Sentinel evidence is complete through Batch 1V, and Batch
+1W is CI verified at `931400a` / PR #126 under Agent Protocol v2.0.
 
 These later actions are gated:
 
@@ -886,9 +887,9 @@ These later actions are gated:
   source-trace gap; no rerun is authorized yet;
 - X-Insight Gate A persistence/receipt: requested against the immutable snapshot
   and currently pending;
-- denied-scenario target closure: gated on Batch 1W required CI/merge, an
-  available authorized non-production deployment path, and a new or amended
-  User authorization for a single-scenario rerun;
+- denied-scenario target closure: Batch 1W CI/merge is complete; an available
+  authorized non-production deployment path and a new or amended User
+  authorization are still required for a single-scenario rerun;
 - read-only DB/view access: blocked until X-Insight local snapshot import passes
   and User approves credential handoff;
 - shared ECS staging: blocked until local Gate A import works and CI is green;

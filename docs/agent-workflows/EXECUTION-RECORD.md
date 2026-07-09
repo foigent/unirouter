@@ -3,9 +3,9 @@
 **Batch:** PRD5 Batch 1W - Pre-Relay Model Permission Evidence Parity and workflow v2 transition
 **Owner:** Codex
 **Risk:** R3 request authorization/evidence path; R2 workflow governance
-**Status:** Local verified; PR/CI integration pending
+**Status:** CI verified; target deployment/rerun pending
 **Base:** `origin/main` at `cc38094` / PR #125
-**Branch:** `codex/prd5-batch-1w-single-owner`
+**Merged:** `931400a` / PR #126
 
 ## Scope
 
@@ -53,6 +53,13 @@ Required in GitHub before merge:
 - `Backend Tests`
 - `Frontend Build`
 - `Docker Build`
+
+PR #126 results:
+
+- `Backend Tests`: PASS;
+- `Frontend Build`: PASS;
+- `Docker Build`: PASS;
+- squash merge: `931400a`.
 
 ## Non-Goals
 

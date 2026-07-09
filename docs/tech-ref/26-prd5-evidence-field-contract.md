@@ -5,8 +5,8 @@
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
 > Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, Batch 1O,
 > Batch 1P, Batch 1T, and Batch 1U Canary/Sentinel complete. Batch 1V exposed a
-> live pre-relay decision-evidence gap; Batch 1W fixes it and is Local verified
-> with PR/CI integration pending.
+> live pre-relay decision-evidence gap; Batch 1W fixes it and is CI verified at
+> `931400a` / PR #126. Target deployment/rerun remains pending.
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > X-Insight response
 > `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-08-x-insight-prd5-integration-answers.md`

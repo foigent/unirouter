@@ -90,8 +90,8 @@ Use `docs/agent-workflows/AGENT-PROTOCOL.md` before changing code or status:
 ## Current Verification Baseline
 
 Current execution record: PRD5 Batch 1W Pre-Relay Model Permission Evidence
-Parity is Local verified with PR/CI integration pending in
-`docs/agent-workflows/EXECUTION-RECORD.md`.
+Parity is CI verified at `931400a` / PR #126 with target deployment/rerun
+pending in `docs/agent-workflows/EXECUTION-RECORD.md`.
 Batch 1V Atlas execution produced an immutable sanitized snapshot with a known
 denied-scenario correlation/source-trace gap; X-Insight import and target
 test-key disable confirmation remain pending.
@@ -404,7 +404,8 @@ PRD5 Batch 1W:
 
 - Scope: ensure live API-key `allowed_models` denials reach Relay after project
   model-governance resolution.
-- Status: Local verified; PR/CI integration pending under Agent Protocol v2.0.
+- Status: CI verified at `931400a` / PR #126 under Agent Protocol v2.0;
+  target deployment/rerun pending.
 - Adds: removal of the duplicate pre-relay API-key check; full-handler
   integration coverage for HTTP 403, matching `X-Request-ID`, exact auth
   decision trace fields, zero call-log rows, and zero billing freezes.

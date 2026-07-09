@@ -3,7 +3,8 @@
 > Date: 2026-07-10
 > Status: PRD5 Batch 1V generated the first controlled snapshot with one known
 > denied-scenario correlation/source-trace gap; X-Insight import/receipt is
-> pending and Batch 1W live-path fix is Local verified with PR/CI pending
+> pending and Batch 1W live-path fix is CI verified at `931400a` / PR #126;
+> target deployment/rerun remains pending
 > Scope: product and architecture decision for UniRouter-owned X-Insight data
 > exchange control UI, audit boundary, and staged implementation
 

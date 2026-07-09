@@ -4,7 +4,8 @@
 > Status: planning coordination accepted by User; Batch 1V produced controlled
 > exchange `uxchg_f7de31e541516893a0d9b31cc0f3892a` with one explicit
 > denied-scenario gap; X-Insight persistent import/receipt is requested; Batch
-> 1W live-path fix is Local verified with PR/CI pending
+> 1W live-path fix is CI verified at `931400a` / PR #126; target
+> deployment/rerun remains pending
 > Scope: UniRouter PRD5 coordination with X-Insight Gate A
 
 ## Purpose
@@ -150,7 +151,8 @@ Actual Batch 1V result:
   produced no source row because a pre-relay wrapper check bypassed Relay;
 - the immutable snapshot reports two `not_available_from_source` gaps for the
   denied request and is safe for diagnostic X-Insight import;
-- Batch 1W removes the duplicate pre-relay API-key check locally; the current
+- Batch 1W removes the duplicate pre-relay API-key check and is CI verified at
+  `931400a` / PR #126; the current
   snapshot remains unchanged and full denied-scenario target evidence still
   requires a separately authorized post-deploy rerun.
 
@@ -271,7 +273,8 @@ This coordination does not:
 
 1. X-Insight imports the immutable sanitized snapshot, persists/readbacks both
    request views, and returns the sidecar receipt plus warning analysis.
-2. Codex completes Batch 1W PR, required CI and merge under Agent Protocol v2.0.
+2. Batch 1W PR #126, required CI and merge are complete at `931400a` under
+   Agent Protocol v2.0.
 3. The authorized environment operator disables the two temporary Gate A test
    keys and records confirmation; Codex may do this only after secure access is
    available and the action is authorized.

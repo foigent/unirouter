@@ -8,7 +8,7 @@
 - Batch: PRD5 Batch 1W Pre-Relay Model Permission Evidence Parity
 - Owner: Codex
 - Risk: R3 live authorization/evidence path
-- Status: Local verified; PR/CI integration pending
+- Status: CI verified at `931400a` / PR #126; target deployment/rerun pending
 - Execution record: `docs/agent-workflows/EXECUTION-RECORD.md`
 - Local evidence: `docs/ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md`
 - Workflow decision: `docs/ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md`
