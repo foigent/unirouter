@@ -2,8 +2,8 @@
 
 > Version: v0.4
 > Date: 2026-07-10
-> Status: Batch 1A/1B, Batch 1K, and Batch 1N Canary/Sentinel complete; Batch
-> 1O controlled snapshot handoff prep fixed awaiting Canary
+> Status: Batch 1A/1B, Batch 1K, Batch 1N, and Batch 1O Canary/Sentinel
+> complete; Batch 1Q Gate A request approval manifest fixed awaiting Canary
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`
 
@@ -42,6 +42,56 @@ go run scripts/prd5_xinsight_snapshot.go \
 
 Use `--overwrite` only when intentionally replacing a local generated artifact.
 
+After X-Insight requested approved scenario request IDs, Batch 1Q adds a safer
+manifest-based selection mode:
+
+```bash
+UNIROUTE_PRD5_SNAPSHOT_DSN="<read-only postgres dsn>" \
+go run scripts/prd5_xinsight_snapshot.go \
+  --approval-manifest approved-request-ids.json \
+  --output output/prd5/xinsight/gate-a-snapshot.json \
+  --handoff-note output/prd5/xinsight/gate-a-snapshot-handoff.md
+```
+
+`--approval-manifest` is mutually exclusive with direct `--request-id`,
+`--request-ids`, and `--scenario` flags. Manifest mode sets
+`safety.selection_mode` to `approved_request_id_manifest`.
+
+Approval manifest schema:
+
+```json
+{
+  "schema_version": "unirouter.prd5.xinsight.approval.v1",
+  "source_instance": "unirouter-dev-gate-a-2026-07-10",
+  "requests": [
+    {
+      "scenario_label": "successful_non_stream",
+      "request_id": "req-controlled-001",
+      "approval_status": "approved",
+      "required": true,
+      "notes": "User/UniRouter owner approved this metadata-only export."
+    },
+    {
+      "scenario_label": "provider_or_routing_failure",
+      "request_id": "TBD",
+      "approval_status": "pending",
+      "required": false,
+      "notes": "Not exported until a concrete request_id is approved."
+    },
+    {
+      "scenario_label": "missing_trace_or_call_log_gap",
+      "request_id": "",
+      "approval_status": "unavailable",
+      "required": false,
+      "notes": "Not fabricated for Gate A."
+    }
+  ]
+}
+```
+
+Only rows with `approval_status: "approved"` and a concrete request ID are
+exported. Rows marked `pending` or `unavailable` remain non-exported.
+
 The optional `--handoff-note` path writes a Markdown note after the snapshot JSON
 is written successfully. It records generated date, source instance, schema
 version, selected request IDs, scenario labels, counts, safety confirmation,
@@ -52,7 +102,8 @@ on stdout.
 
 ## Selection Rule
 
-The tool requires explicit `--request-id` or `--request-ids` values.
+The tool requires explicit `--request-id` / `--request-ids` values or an
+`--approval-manifest`.
 
 Broad table snapshots are intentionally unsupported in Batch 1A because X-Insight
 Gate A only needs controlled request scenarios:
@@ -205,3 +256,7 @@ Batch 1O does not generate a real snapshot artifact. It documents the next Gate
 A handoff prerequisites: approved request IDs, scenario labels, a non-secret
 source instance label, an approved data source, and no DSN/credential/raw
 payload material in the repo or shared folder.
+
+Batch 1Q still does not generate a real snapshot artifact or fill request IDs.
+It adds the approval manifest gate so the later real snapshot can be created
+only after User/UniRouter-owner approval of concrete scenario request IDs.

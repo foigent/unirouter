@@ -23,6 +23,7 @@ import (
 )
 
 const prd5SnapshotSchemaVersion = "unirouter.prd5.xinsight.snapshot.v1"
+const prd5ApprovalManifestSchemaVersion = "unirouter.prd5.xinsight.approval.v1"
 
 type repeatedFlag []string
 
@@ -57,6 +58,20 @@ type snapshotFile struct {
 type snapshotScenario struct {
 	Label     string `json:"label"`
 	RequestID string `json:"request_id"`
+}
+
+type approvalManifest struct {
+	SchemaVersion  string                    `json:"schema_version"`
+	SourceInstance string                    `json:"source_instance"`
+	Requests       []approvalManifestRequest `json:"requests"`
+}
+
+type approvalManifestRequest struct {
+	ScenarioLabel  string `json:"scenario_label"`
+	RequestID      string `json:"request_id"`
+	ApprovalStatus string `json:"approval_status"`
+	Required       bool   `json:"required"`
+	Notes          string `json:"notes,omitempty"`
 }
 
 type snapshotSafety struct {
@@ -192,6 +207,7 @@ func runPRD5Snapshot(args []string) error {
 	var requestIDsCSV string
 	var outputPath string
 	var handoffNotePath string
+	var approvalManifestPath string
 	var dsnEnv string
 	var sourceInstance string
 	var overwrite bool
@@ -201,6 +217,7 @@ func runPRD5Snapshot(args []string) error {
 	fs.Var(&scenarioFlags, "scenario", "label=request_id scenario marker; repeat for multiple scenarios")
 	fs.StringVar(&outputPath, "output", "-", "output JSON path, or - for stdout")
 	fs.StringVar(&handoffNotePath, "handoff-note", "", "optional Markdown handoff note path; DSN and credentials are never written")
+	fs.StringVar(&approvalManifestPath, "approval-manifest", "", "optional JSON approval manifest containing approved scenario request IDs")
 	fs.StringVar(&dsnEnv, "dsn-env", "UNIROUTE_PRD5_SNAPSHOT_DSN", "environment variable containing the read-only Postgres DSN; falls back to DB_DSN")
 	fs.StringVar(&sourceInstance, "source-instance", "local-controlled", "non-secret source instance label used in source_ref")
 	fs.BoolVar(&overwrite, "overwrite", false, "overwrite output path if it already exists")
@@ -209,16 +226,39 @@ func runPRD5Snapshot(args []string) error {
 		return err
 	}
 
-	requestIDs := normalizedRequestIDs(requestIDFlags, requestIDsCSV)
-	if len(requestIDs) == 0 {
-		return errors.New("at least one --request-id or --request-ids value is required; broad snapshots are intentionally unsupported")
+	sourceInstanceFlagSet := flagWasSet(fs, "source-instance")
+	approvalManifestPath = strings.TrimSpace(approvalManifestPath)
+	selectionMode := "explicit_request_id_only"
+	var requestIDs []string
+	var scenarios []snapshotScenario
+	if approvalManifestPath != "" {
+		if len(requestIDFlags) > 0 || strings.TrimSpace(requestIDsCSV) != "" || len(scenarioFlags) > 0 {
+			return errors.New("--approval-manifest cannot be combined with --request-id, --request-ids, or --scenario")
+		}
+		manifest, err := loadApprovalManifest(approvalManifestPath)
+		if err != nil {
+			return err
+		}
+		requestIDs, scenarios, err = approvedManifestSelection(manifest)
+		if err != nil {
+			return err
+		}
+		if !sourceInstanceFlagSet && strings.TrimSpace(manifest.SourceInstance) != "" {
+			sourceInstance = manifest.SourceInstance
+		}
+		selectionMode = "approved_request_id_manifest"
+	} else {
+		var err error
+		requestIDs = normalizedRequestIDs(requestIDFlags, requestIDsCSV)
+		if len(requestIDs) == 0 {
+			return errors.New("at least one --request-id, --request-ids, or --approval-manifest value is required; broad snapshots are intentionally unsupported")
+		}
+		scenarios, err = parseScenarios(scenarioFlags)
+		if err != nil {
+			return err
+		}
 	}
-
 	sourceInstance = sanitizeSourceInstance(sourceInstance)
-	scenarios, err := parseScenarios(scenarioFlags)
-	if err != nil {
-		return err
-	}
 	if err := validateScenarios(requestIDs, scenarios); err != nil {
 		return err
 	}
@@ -247,7 +287,7 @@ func runPRD5Snapshot(args []string) error {
 		return err
 	}
 
-	snapshot, err := loadSnapshot(ctx, db, sourceInstance, requestIDs, scenarios)
+	snapshot, err := loadSnapshot(ctx, db, sourceInstance, selectionMode, requestIDs, scenarios)
 	if err != nil {
 		return err
 	}
@@ -261,7 +301,7 @@ func runPRD5Snapshot(args []string) error {
 	return nil
 }
 
-func loadSnapshot(ctx context.Context, db *sql.DB, sourceInstance string, requestIDs []string, scenarios []snapshotScenario) (snapshotFile, error) {
+func loadSnapshot(ctx context.Context, db *sql.DB, sourceInstance string, selectionMode string, requestIDs []string, scenarios []snapshotScenario) (snapshotFile, error) {
 	callLogs, err := loadCallLogs(ctx, db, sourceInstance, requestIDs)
 	if err != nil {
 		return snapshotFile{}, err
@@ -280,7 +320,7 @@ func loadSnapshot(ctx context.Context, db *sql.DB, sourceInstance string, reques
 		RequestIDs:     requestIDs,
 		Scenarios:      scenarios,
 		Safety: snapshotSafety{
-			SelectionMode:        "explicit_request_id_only",
+			SelectionMode:        selectionMode,
 			RawPromptsIncluded:   false,
 			RawResponsesIncluded: false,
 			APIKeysIncluded:      false,
@@ -829,6 +869,86 @@ func normalizedRequestIDs(flags repeatedFlag, csv string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func flagWasSet(fs *flag.FlagSet, name string) bool {
+	wasSet := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			wasSet = true
+		}
+	})
+	return wasSet
+}
+
+func loadApprovalManifest(path string) (approvalManifest, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return approvalManifest{}, err
+	}
+	defer f.Close()
+
+	decoder := json.NewDecoder(f)
+	decoder.DisallowUnknownFields()
+	var manifest approvalManifest
+	if err := decoder.Decode(&manifest); err != nil {
+		return approvalManifest{}, err
+	}
+	if strings.TrimSpace(manifest.SchemaVersion) != prd5ApprovalManifestSchemaVersion {
+		return approvalManifest{}, fmt.Errorf("approval manifest schema_version must be %q", prd5ApprovalManifestSchemaVersion)
+	}
+	return manifest, nil
+}
+
+func approvedManifestSelection(manifest approvalManifest) ([]string, []snapshotScenario, error) {
+	var requestIDFlags repeatedFlag
+	var scenarios []snapshotScenario
+	seenLabels := map[string]bool{}
+	for idx, row := range manifest.Requests {
+		status := strings.ToLower(strings.TrimSpace(row.ApprovalStatus))
+		switch status {
+		case "approved":
+			label := strings.TrimSpace(row.ScenarioLabel)
+			requestID := strings.TrimSpace(row.RequestID)
+			if label == "" {
+				return nil, nil, fmt.Errorf("approval manifest row %d approved entry must include scenario_label", idx+1)
+			}
+			if placeholderRequestID(requestID) {
+				return nil, nil, fmt.Errorf("approval manifest row %d approved entry must include a concrete request_id", idx+1)
+			}
+			if seenLabels[label] {
+				return nil, nil, fmt.Errorf("approval manifest scenario_label %q is duplicated", label)
+			}
+			seenLabels[label] = true
+			requestIDFlags = append(requestIDFlags, requestID)
+			scenarios = append(scenarios, snapshotScenario{Label: label, RequestID: requestID})
+		case "pending", "unavailable":
+			continue
+		default:
+			return nil, nil, fmt.Errorf("approval manifest row %d has unsupported approval_status %q", idx+1, row.ApprovalStatus)
+		}
+	}
+	requestIDs := normalizedRequestIDs(requestIDFlags, "")
+	if len(requestIDs) == 0 {
+		return nil, nil, errors.New("approval manifest contains no approved request IDs")
+	}
+	sort.Slice(scenarios, func(i, j int) bool {
+		if scenarios[i].RequestID == scenarios[j].RequestID {
+			return scenarios[i].Label < scenarios[j].Label
+		}
+		return scenarios[i].RequestID < scenarios[j].RequestID
+	})
+	return requestIDs, scenarios, nil
+}
+
+func placeholderRequestID(value string) bool {
+	value = strings.ToLower(strings.TrimSpace(value))
+	switch value {
+	case "", "tbd", "todo", "n/a", "na", "none", "unavailable":
+		return true
+	default:
+		return false
+	}
 }
 
 func parseScenarios(flags repeatedFlag) ([]snapshotScenario, error) {

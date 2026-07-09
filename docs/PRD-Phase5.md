@@ -3,10 +3,10 @@
 > Version: Phase 5 Active Scope Draft
 > Date: 2026-07-10
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
-> Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, and Batch 1O
-> Canary/Sentinel complete. Batch 1P Model Permission Decision Evidence fixed
-> awaiting Canary. PRD4 remains complete for the confirmed current scope and is
-> not reopened by PRD5.
+> Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, Batch 1O, and
+> Batch 1P Canary/Sentinel complete. Batch 1Q Gate A Request Approval Manifest
+> fixed awaiting Canary. PRD4 remains complete for the confirmed current scope
+> and is not reopened by PRD5.
 > Source: `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, X-Insight shared-folder
 > responses on 2026-07-08, current UniRouter code/schema review, and official
@@ -97,6 +97,7 @@ PRD5 must not:
 | P5-F23 | Snapshot Capture Gap Candidates | Add structured candidate capture-gap categories to Gate A snapshots for missing trace rows without fabricating runtime evidence |
 | P5-F24 | Gate A Controlled Snapshot Handoff Prep | Reconcile Batch 1N completion and define the approved controlled snapshot handoff prerequisites before any real snapshot or credential work |
 | P5-F25 | Model Permission Decision Evidence | Emit explicit model-permission denial trace evidence with `capture_gap=permission_denied` and `decision_kind=auth` on existing chat authorization rejects |
+| P5-F26 | Gate A Request Approval Manifest | Add a JSON approval-manifest path for X-Insight Gate A snapshots so only User/UniRouter-approved scenario request IDs can be exported |
 
 ### P2
 
@@ -612,6 +613,33 @@ Acceptance:
   prompt/response capture, X-Insight runtime dependency, Embeddings authorization
   behavior change, or PRD4 matrix change.
 
+### P5-F26: Gate A Request Approval Manifest
+
+Requirements:
+
+- Accept X-Insight's data requirement for one combined Gate A sanitized snapshot
+  selected by scenario request IDs.
+- Add a JSON approval-manifest input to the snapshot tool so request IDs must be
+  explicitly marked `approved` before export.
+- Treat `pending` and `unavailable` manifest rows as non-exported; never
+  fabricate request IDs for unavailable scenarios.
+- Keep the manifest mutually exclusive with direct `--request-id`,
+  `--request-ids`, and `--scenario` flags so an approval-manifest run cannot be
+  widened from the command line.
+
+Acceptance:
+
+- `go run scripts/prd5_xinsight_snapshot.go -help` documents
+  `--approval-manifest`.
+- Invalid, empty, placeholder-only, or conflicting manifest usage fails before
+  any DSN is required.
+- UniRouter records a shared-folder response to X-Insight explaining that real
+  request IDs must come from User/UniRouter owner approval.
+- Batch 1Q does not generate a real snapshot artifact, write approved request
+  IDs, include a DSN/credential/token/raw payload, create read-only DB/view
+  access, create shared ECS staging, add exporter/outbox, add X-Insight runtime
+  dependency, or change PRD4.
+
 ### P5-F09: Cursor Export API Or Outbox
 
 Requirements:
@@ -668,11 +696,13 @@ PRD5 should proceed in independently verifiable batches:
     prerequisites for the next Gate A evidence exchange.
 16. Batch 1P: model permission decision evidence for existing chat
     authorization rejects.
-17. Later payload policy metadata and evidence references, with future raw
+17. Batch 1Q: request approval manifest for X-Insight Gate A controlled snapshot
+    selection.
+18. Later payload policy metadata and evidence references, with future raw
    payload modes gated behind enterprise opt-in.
-18. Later Gate A batch: read-only view/export decision after X-Insight Gate A
+19. Later Gate A batch: read-only view/export decision after X-Insight Gate A
    evidence.
-19. Later target/backlog batches: target upstream/SSO evidence or larger
+20. Later target/backlog batches: target upstream/SSO evidence or larger
    backlog items only after their prerequisites are explicitly met.
 
 ## 6. External Source Refresh

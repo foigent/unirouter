@@ -52,14 +52,14 @@ Read-only DB/view conditions:
 - importer queries must use bounded filters/cursors and avoid unbounded scans on
   the shared development/test database.
 
-Current Batch 1O handoff rule:
+Current Batch 1Q handoff rule:
 
 - X-Insight has discovery/import/persistent import/minimal read API surfaces,
   but Gate A is not accepted until a real controlled UniRouter snapshot is
   imported and read back through those APIs;
-- UniRouter must receive approved request IDs, scenario labels, a non-secret
-  source instance label, and approved source access before generating a
-  controlled snapshot artifact;
+- UniRouter must receive a User/UniRouter-owner approval manifest with approved
+  request IDs, scenario labels, a non-secret source instance label, and approved
+  source access before generating a controlled snapshot artifact;
 - no DSN, credential, raw prompt, raw response, raw IP, or raw upstream error
   may be written to the repo or shared folder.
 
@@ -178,8 +178,9 @@ This coordination does not:
 
 ## Next PRD5 Steps
 
-1. Confirm approved request IDs, scenario labels, source instance naming, and
-   source access for the controlled sanitized snapshot.
+1. Fill a User/UniRouter-owner approved request ID manifest with scenario labels,
+   source instance naming, and source access for the controlled sanitized
+   snapshot.
 2. Let X-Insight import the sanitized snapshot locally and save Gate A evidence.
 3. Use Gate A findings to prioritize remaining structural-field and payload
    policy gaps.

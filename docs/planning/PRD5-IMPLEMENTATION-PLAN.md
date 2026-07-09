@@ -2,9 +2,9 @@
 
 > Date: 2026-07-10
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
-> Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, and Batch 1O
-> Canary/Sentinel complete. Batch 1P Model Permission Decision Evidence fixed
-> awaiting Canary.
+> Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, Batch 1O, and
+> Batch 1P Canary/Sentinel complete. Batch 1Q Gate A Request Approval Manifest
+> fixed awaiting Canary.
 > Scope owner: UniRouter. X-Insight remains a separate project and owns broader
 > observability/governance product surfaces.
 
@@ -507,7 +507,9 @@ evidence. Scope is restricted to the existing chat `allowed_models` rejection
 path and does not change successful request handling, billing, routing, provider
 dispatch, DB schema, API routes, or frontend behavior.
 
-Status: fixed awaiting Canary.
+Status: Canary/Sentinel complete. Canary PASS 6/6 is recorded in
+`docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge is reflected by
+`61091c` / PR #119.
 
 Implemented in this round:
 
@@ -536,6 +538,46 @@ Non-goals:
 - no X-Insight runtime dependency;
 - no Embeddings authorization behavior change;
 - no `decision_not_emitted` backfill or trace-sampling override;
+- no PRD4 matrix/status change.
+
+### Batch 1Q: Gate A Request Approval Manifest
+
+Risk: R2 because it changes PRD5 snapshot tooling and status/coordination docs
+without changing runtime request handling, DB schema, API routes, frontend
+behavior, credentials, or generated snapshot artifacts.
+
+Status: fixed awaiting Canary.
+
+Implemented in this round:
+
+- add `--approval-manifest <path>` to `scripts/prd5_xinsight_snapshot.go`;
+- define approval manifest schema
+  `unirouter.prd5.xinsight.approval.v1`;
+- allow manifest row statuses `approved`, `pending`, and `unavailable`;
+- export only `approved` rows with concrete request IDs;
+- reject placeholder approved IDs such as `TBD`, `n/a`, or `unavailable`;
+- reject combining `--approval-manifest` with direct `--request-id`,
+  `--request-ids`, or `--scenario` flags;
+- use manifest `source_instance` unless `--source-instance` is explicitly set;
+- mark snapshot safety selection mode as `approved_request_id_manifest` for
+  manifest-based exports;
+- answer X-Insight's approved request ID request in the shared folder without
+  supplying fabricated IDs.
+
+Non-goals:
+
+- no real snapshot artifact is generated;
+- no approved request IDs are invented or written by Codex;
+- no DSN, credential, token, raw prompt, raw response, raw IP, or raw upstream
+  error is written to the repo or shared folder;
+- no DB migration;
+- no runtime request-path change;
+- no new API route;
+- no frontend behavior change;
+- no read-only DB/view credential handoff;
+- no shared ECS staging;
+- no exporter/outbox;
+- no X-Insight runtime dependency;
 - no PRD4 matrix/status change.
 
 ### Later Payload Policy Modes
@@ -596,13 +638,14 @@ Use existing PRD4 harnesses, but record target evidence under PRD5.
 
 ## Current Blocking Conditions
 
-There is no blocking condition for UniRouter Batch 1A through Batch 1P. Batch
-1P is fixed awaiting Canary verification.
+There is no blocking condition for UniRouter Batch 1A through Batch 1Q. Batch
+1Q is fixed awaiting Canary verification.
 
 These later actions are gated:
 
-- controlled snapshot artifact generation: blocked until approved request IDs,
-  scenario labels, and source data access are available;
+- controlled snapshot artifact generation: blocked until a User/UniRouter-owner
+  approval manifest contains concrete approved request IDs and source data access
+  is available;
 - read-only DB/view access: blocked until X-Insight local snapshot import passes
   and User approves credential handoff;
 - shared ECS staging: blocked until local Gate A import works and CI is green;
