@@ -3,8 +3,8 @@
 > Date: 2026-07-10
 > Status: PRD5 Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G,
 > Batch 1H, Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N,
-> Batch 1O, Batch 1P, and Batch 1Q Canary/Sentinel complete; Batch 1R Gate A
-> Request ID Approval Runbook fixed awaiting Canary. PRD4 remains complete for the
+> Batch 1O, Batch 1P, Batch 1Q, and Batch 1R Canary/Sentinel complete; Batch
+> 1S X-Insight Data Exchange Control Surface fixed awaiting Canary. PRD4 remains complete for the
 > confirmed current scope and is not reopened.
 > Source: `docs/PRD-Phase5.md`, `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, current repo/code review,
@@ -19,7 +19,8 @@
 > capture-gap changes, PRD5 Batch 1N snapshot capture-gap candidate changes,
 > PRD5 Batch 1O Gate A controlled snapshot handoff preparation, PRD5 Batch 1P
 > model permission decision evidence changes, PRD5 Batch 1Q request approval
-> manifest changes, and PRD5 Batch 1R approval runbook/worksheet changes.
+> manifest changes, PRD5 Batch 1R approval runbook/worksheet changes, and PRD5
+> Batch 1S data exchange control surface decision changes.
 
 ## Status Values
 
@@ -67,7 +68,30 @@ actual result, and rollback or cleanup note.
 | P5-F24 | Gate A Controlled Snapshot Handoff Prep | Canary passed | UniRouter status docs reflect Batch 1N completion and the next Gate A controlled snapshot handoff preconditions are explicit before any real snapshot, DSN, credential, read-only DB/view, shared ECS staging, or exporter/outbox work starts | Canary PASS 8/8 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `b2eea2e` / PR #118 | Batch 1O docs/shared-folder coordination only; no snapshot artifact, migration, runtime request-path change, new route, frontend behavior, read-only credential/view, shared ECS staging, exporter/outbox, raw prompt/response capture, X-Insight runtime dependency, or PRD4 matrix change |
 | P5-F25 | Model Permission Decision Evidence | Canary passed | Existing chat `allowed_models` rejects emit sanitized `auth.model_not_allowed` trace evidence with `source_component=auth`, `capture_gap=permission_denied`, `decision_kind=auth`, `decision_result=rejected`, and `decision_reason=auth_error.model_not_allowed` before the existing 403 response | Canary PASS 6/6 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `61091c` / PR #119 | Batch 1P auth/trace evidence enrichment only; no migration, new route, frontend behavior, read-only credential/view, shared ECS staging, exporter/outbox, raw prompt/response capture, X-Insight runtime dependency, Embeddings authorization behavior change, or PRD4 matrix change |
 | P5-F26 | Gate A Request Approval Manifest | Canary passed | Snapshot tooling accepts a JSON approval manifest and exports only rows explicitly marked `approved` with concrete request IDs, while `pending`/`unavailable` rows remain non-exported and direct request flags cannot be mixed with manifest mode | Canary PASS 6/6 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `ed8c69d` / PR #120 | Batch 1Q tooling/docs/shared-folder coordination only; no real snapshot artifact, approved request ID invention, migration, runtime request-path change, new route, frontend behavior, read-only credential/view, shared ECS staging, exporter/outbox, raw prompt/response capture, X-Insight runtime dependency, or PRD4 matrix change |
-| P5-F27 | Gate A Request ID Approval Runbook | Fixed awaiting Canary | User-facing runbook and shared worksheet explain how to approve concrete request IDs without requiring the User to edit JSON, touch DB access, or approve broad export | Docs/shared-folder review, status/matrix/handoff routing, PRD4 no-diff check, `git diff --check` | Batch 1R docs/shared-folder coordination only; no real snapshot artifact, approved request ID invention, migration, runtime request-path change, new route, frontend behavior, read-only credential/view, shared ECS staging, exporter/outbox, raw prompt/response capture, X-Insight runtime dependency, or PRD4 matrix change |
+| P5-F27 | Gate A Request ID Approval Runbook | Canary passed | User-facing runbook and shared worksheet explain how to approve concrete request IDs without requiring the User to edit JSON, touch DB access, or approve broad export | Canary PASS 6/6 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `c15cd7d` / PR #121 | Batch 1R docs/shared-folder coordination only; no real snapshot artifact, approved request ID invention, migration, runtime request-path change, new route, frontend behavior, read-only credential/view, shared ECS staging, exporter/outbox, raw prompt/response capture, X-Insight runtime dependency, or PRD4 matrix change |
+| P5-F28 | X-Insight Data Exchange Control Surface | Fixed awaiting Canary | Future UI/control-plane boundary is defined as UniRouter-owned outbound approval/export ledger/import receipt control, while downstream observability, read audit, investigation timeline, graph, policy simulation, and evidence packs remain X-Insight-owned | Control-surface decision doc, shared X-Insight review request, status/matrix/handoff routing, PRD4 no-diff check, `git diff --check` | Batch 1S docs/shared-folder coordination only; no UI code, API route, migration, real snapshot artifact, approved request ID invention, read-only DB/view, shared ECS staging, exporter/outbox, X-Insight runtime dependency, raw payload capture, or PRD4 matrix change |
+
+## Batch 1S Verification
+
+PRD5 Batch 1S verifies the X-Insight data exchange control surface decision:
+
+```bash
+git log --oneline -3 origin/main | rg "c15cd7d.*PRD5 Batch 1R|#121"
+rg -n "X-Insight Data Exchange Control Surface|P5-F28|Batch 1S|Data Exchange Control|outbound ledger|read-side audit|Investigation|Receipt Reconciliation|Stage 2: Minimal UniRouter UI|Put all X-Insight audits in UniRouter|Do not do this" docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md docs/PRD-Phase5.md docs/ops/PRD5-ACCEPTANCE-MATRIX.md docs/planning/PRD5-IMPLEMENTATION-PLAN.md docs/planning/PRD5-BACKLOG.md docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md docs/PROJECT-HANDOFF.md docs/ops/CURRENT-STATUS.md docs/agent-workflows/FIX-SIGNAL.md docs/tech-ref/25-prd5-xinsight-sanitized-snapshot.md docs/CODEBASE-MAP.md docs/DOC-INVENTORY.md docs/README.md "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-data-exchange-control-surface-review.md"
+rg -n "import_job_id|exchange_id|deep link|read-side audit|X-Insight owns" "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-data-exchange-control-surface-review.md"
+git status --short
+git diff --name-only
+git diff -- frontend internal cmd scripts
+git diff -- docs/PRD-Phase4.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/ops/evidence/PRD4-final-closeout-20260708.md
+git diff --check
+```
+
+No Go/frontend test run is required for Batch 1S because it changes only
+documentation and shared-folder coordination files. Any UI code, API route,
+migration, real snapshot artifact, approved request ID invention, DSN/credential
+handoff, raw prompt/response capture, read-only DB/view credential, shared ECS
+staging, exporter/outbox, X-Insight runtime dependency, PRD4 matrix change, or
+`Production verified` claim is a scope failure.
 
 ## Batch 1R Verification
 

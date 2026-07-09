@@ -12,17 +12,18 @@
 5. `docs/planning/PRD5-COMPETITOR-COMPARISON.md` - competitor comparison and UniRouter-owned PRD5 catch-up items.
 6. `docs/planning/PRD5-BACKLOG.md` - capabilities intentionally deferred beyond PRD4 and PRD5 active scope.
 7. `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md` - X-Insight Gate A sequencing decisions.
-8. `docs/PRD-Phase4.md` - completed PRD4 scope.
-9. `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` - PRD4 accepted/deferred rows and evidence boundaries.
-10. `docs/planning/PRD4-BACKLOG.md` - PRD4 candidate backlog source record.
-11. `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` - completed PRD3 cleanup/optimization acceptance state.
-12. `docs/PRD-Phase3.md` - completed PRD3 scope.
-13. `docs/planning/PRD3-CONSISTENCY-AUDIT.md` - PRD1 -> PRD2 consistency findings behind PRD3.
-14. `docs/issues/OPEN-ISSUES.md` - active unresolved issues and recently verified fixes.
-15. `docs/agent-workflows/AGENT-PROTOCOL.md` - risk-gated Codex/OpenClaw Canary/Sentinel/Atlas workflow.
-16. `docs/agent-workflows/FIX-SIGNAL.md` and `docs/agent-workflows/VERIFY-RESULT.md` - current signal state and latest verification result.
-17. `docs/CODEBASE-MAP.md` - code, route, data, test, and deployment map.
-18. `docs/DOC-INVENTORY.md` and `docs/DOCS-GOVERNANCE.md` - which docs are current, frozen, historical, candidate, or reference-only.
+8. `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md` - future UniRouter UI/control-plane boundary for X-Insight data exchange.
+9. `docs/PRD-Phase4.md` - completed PRD4 scope.
+10. `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` - PRD4 accepted/deferred rows and evidence boundaries.
+11. `docs/planning/PRD4-BACKLOG.md` - PRD4 candidate backlog source record.
+12. `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` - completed PRD3 cleanup/optimization acceptance state.
+13. `docs/PRD-Phase3.md` - completed PRD3 scope.
+14. `docs/planning/PRD3-CONSISTENCY-AUDIT.md` - PRD1 -> PRD2 consistency findings behind PRD3.
+15. `docs/issues/OPEN-ISSUES.md` - active unresolved issues and recently verified fixes.
+16. `docs/agent-workflows/AGENT-PROTOCOL.md` - risk-gated Codex/OpenClaw Canary/Sentinel/Atlas workflow.
+17. `docs/agent-workflows/FIX-SIGNAL.md` and `docs/agent-workflows/VERIFY-RESULT.md` - current signal state and latest verification result.
+18. `docs/CODEBASE-MAP.md` - code, route, data, test, and deployment map.
+19. `docs/DOC-INVENTORY.md` and `docs/DOCS-GOVERNANCE.md` - which docs are current, frozen, historical, candidate, or reference-only.
 
 ## Current Project Shape
 
@@ -36,8 +37,11 @@ PRD5 is now active for evidence-readiness work. Its current scope is
 `docs/PRD-Phase5.md`: X-Insight Gate A sanitized snapshot, structural evidence
 field contract, payload policy/evidence references, lightweight UniRouter trace
 UI boundary, competitor comparison and UniRouter-owned catch-up items, plus later
-nullable field implementation. X-Insight remains a separate project and owns
-broader cross-system AI/Agent observability and governance surfaces.
+nullable field implementation. It also defines a future UniRouter Data Exchange
+Control boundary for outbound X-Insight approval/export ledger/import receipt
+workflow. X-Insight remains a separate project and owns broader cross-system
+AI/Agent observability, read-side audit, investigation timeline/graph, policy
+simulation, and governance surfaces.
 
 ## What Is Current Truth
 
@@ -47,6 +51,7 @@ broader cross-system AI/Agent observability and governance surfaces.
 | What is the PRD5 acceptance plan? | `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` |
 | What is the PRD5 implementation order? | `docs/planning/PRD5-IMPLEMENTATION-PLAN.md` |
 | What competitor gaps feed PRD5? | `docs/planning/PRD5-COMPETITOR-COMPARISON.md` |
+| What is the X-Insight data exchange UI/control boundary? | `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md` |
 | What is the PRD4 formal scope? | `docs/PRD-Phase4.md` |
 | What is the PRD4 acceptance plan? | `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` |
 | Which items are explicitly deferred to PRD5? | `docs/planning/PRD5-BACKLOG.md` |
@@ -80,8 +85,8 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Current active verification signal: PRD5 Batch 1R Gate A Request ID Approval
-Runbook fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+Current active verification signal: PRD5 Batch 1S X-Insight Data Exchange
+Control Surface fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
 
 PRD4 is complete for the confirmed current scope. PRD5 must preserve the PRD4
 deferred-boundary decisions recorded here.
@@ -311,7 +316,8 @@ PRD5 Batch 1R:
 
 - Scope: human-readable Gate A request ID approval runbook and shared approval
   worksheet.
-- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Status: Canary PASS 6/6 in `docs/agent-workflows/VERIFY-RESULT.md`;
+  Sentinel merge reflected by `c15cd7d` / PR #121.
 - Adds: `docs/ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md`; shared worksheet
   `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-request-id-approval-worksheet.md`;
   plain-language approval meaning, `approved` / `pending` / `unavailable`
@@ -322,6 +328,23 @@ PRD5 Batch 1R:
   runtime request-path change, API route, frontend behavior, read-only DB/view
   credential, shared ECS staging, exporter/outbox, X-Insight runtime dependency,
   or PRD4 matrix changes.
+
+PRD5 Batch 1S:
+
+- Scope: X-Insight data exchange control surface product/architecture boundary.
+- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Adds: `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md`; shared X-Insight
+  review request
+  `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-data-exchange-control-surface-review.md`;
+  recommendation for a future UniRouter Data Exchange Control entry covering
+  outbound approvals, export ledger, handoff artifacts, import receipts, and
+  deep links; and an explicit boundary that X-Insight owns importer internals,
+  normalized evidence, read-side audit, investigation timeline/graph, policy
+  simulation, and evidence packs.
+- Does not add: UI code, API route, DB migration, real snapshot artifact,
+  approved request IDs, DSN, credential, raw prompt/response, raw IP, raw
+  upstream error, read-only DB/view, shared ECS staging, exporter/outbox,
+  X-Insight runtime dependency, or PRD4 matrix changes.
 
 Latest completed PRD4 verification result is PRD4 Batch 1S Open Issue Boundary
 Closeout:
