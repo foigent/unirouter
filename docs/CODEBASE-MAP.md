@@ -78,7 +78,7 @@ OpenAPI snapshot: `docs/tech-ref/05-openapi-spec.yaml` is the current route-leve
 | `scripts/prd5_xinsight_snapshot.go` | PRD5 Batch 1A read-only sanitized snapshot generator for explicit `request_id` selections from `call_logs` and `request_trace_events`; Batch 1K adds optional DSN-free Markdown handoff-note output; Batch 1N adds `candidate_capture_gaps`; Batch 1Q adds `--approval-manifest`; Batch 1T adds `exchange_id`, exact-byte `approval_manifest_sha256`, and manifest-preserving handoff commands; no broad table export, raw prompt/response, API key, raw IP, raw upstream error, DSN, or credential output |
 | `scripts/prd5_xinsight_snapshot_test.go` | PRD5 Batch 1T focused tests for exchange ID format/uniqueness, snapshot-envelope hash boundary, exact manifest hash, source-instance binding, trailing JSON rejection, and manifest-mode handoff output |
 | `docs/ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md` | PRD5 Batch 1R non-technical request ID approval runbook for Gate A sanitized snapshot data-minimization decisions |
-| `docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md` | PRD5 Batch 1T authorization and narrow operator runbook for newly generated Gate A scenarios using unique `X-Request-ID` values without broad discovery |
+| `docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md` | PRD5 Batch 1T runbook and Batch 1V accepted authorization `UR-XI-GATE-A-20260710-01` for Atlas-only scenario execution using unique `X-Request-ID` values without broad discovery |
 | `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md` | PRD5 Batch 1S product/architecture decision for a future UniRouter-owned Data Exchange Control surface covering outbound approval/export ledger/import receipts and excluding X-Insight read-side audit/investigation UI |
 
 ## Frontend Map
@@ -238,8 +238,9 @@ PRD5 Batch 1T Gate A exchange identity is implemented in
 `exchange_id`; manifest-selected snapshots carry the SHA-256 of the exact
 approval manifest bytes; and generated handoff commands keep
 `--approval-manifest`. Newly generated scenarios follow
-`docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md`; real execution remains
-blocked on the User-approved environment, operator, and retention.
+`docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md`. User authorization
+`UR-XI-GATE-A-20260710-01` is active; Atlas execution and target evidence remain
+pending.
 
 PRD5 Batch 1P model permission decision evidence is implemented in
 `internal/gateway/relay.go` and `internal/gateway/trace.go`, with focused
@@ -257,6 +258,14 @@ API-key `allowed_models` predicate for unrestricted, wildcard, resolved-model,
 and requested-alias cases. Embeddings denial returns the existing 403 and
 `X-Request-ID`, emits the same auth decision evidence as Chat, and stops before
 billing freeze, routing, or provider dispatch.
+
+PRD5 Batch 1V Gate A target execution is coordinated through
+`/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-atlas-execution.md`.
+It binds Atlas to the confirmed non-production target, exactly two scenarios,
+verified request-ID sealing, sanitized snapshot/receipt evidence, and a
+seven-day post-reconciliation cleanup deadline. The companion result template
+remains pending and is not execution evidence until Atlas replaces its required
+pending fields.
 
 Usage analytics is implemented in `internal/admin/prd2_product_handlers.go` and now supports project/key/model/provider/channel/status/source filters plus PRD4 `scope=my`, `owner_user_id`, `key_type`, `group_by=owner`, and `group_by=key_type`.
 

@@ -1,4 +1,4 @@
-# VERIFY-RESULT.md - PRD5 Batch 1U Embeddings Model Permission Parity
+# VERIFY-RESULT.md - PRD5 Batch 1V Gate A Authorized Controlled Execution
 
 **Verifier:** Canary
 **Date:** 2026-07-10
@@ -9,43 +9,55 @@
 
 | # | Instruction | Result | Evidence |
 |---|-------------|--------|----------|
-| 1 | `origin/main` contains Batch 1T as `fc62e65` / PR #123; prior VERIFY-RESULT records Batch 1T PASS 7/7 | ✅ PASS | `git log --oneline -5 origin/main` → HEAD `fc62e65 feat: PRD5 Batch 1T — Gate A exchange envelope and controlled run authorization (P5-F29) (#123)`; VERIFY-RESULT.md title: "PRD5 Batch 1T Gate A Exchange Envelope And Controlled Run Authorization", result: "PASS — 7/7" |
-| 2 | `modelAllowedForAPIKey` preserves prior Chat behavior: unrestricted, wildcard, resolved model, requested alias, rejection | ✅ PASS | `relay.go:261`: nil/empty → true; `*` → true; match resolved → true; match requested → true; no match → false. `TestModelAllowedForAPIKey`: 6 subtests (missing_key_context, empty_restriction, wildcard, resolved_model, requested_alias, not_allowed) all PASS |
-| 3 | Chat and Embeddings both use shared predicate; Embeddings checks after model parsing but before token estimation/billing freeze/route lookup/provider key decryption/adapter selection/dispatch | ✅ PASS | `relay.go:324` Chat: `if !modelAllowedForAPIKey(callerAPIKey, req.Model, requestedModel)` before `estimateTokens`/`Freeze`; `relay.go:1150` Embeddings: `if !modelAllowedForAPIKey(callerAPIKey, req.Model, requestedModel)` before `tokenutil.EstimateTokens`/`Freeze`/route/provider. Both call `rejectModelNotAllowed` on failure |
-| 4 | Unauthorized Embeddings returns 403 + `auth_error.model_not_allowed` + `X-Request-ID`; no billing Freeze; expected auth rejection trace fields | ✅ PASS | `TestHandleEmbeddings_ModelNotAllowed`: asserts `rec.Code == 403`, body contains `"code":"auth_error.model_not_allowed"`, `X-Request-ID == "req-embeddings-denied"`, `freezeCalled == false`, trace args: event_type=`auth.model_not_allowed`, stage=`auth`, source_component=`auth`, capture_gap=`permission_denied`, decision_kind=`auth`, decision_result=`rejected`, decision_reason=`auth_error.model_not_allowed` |
-| 5 | Existing Chat model-denial and trace-decision tests still pass | ✅ PASS | `TestHandleChatCompletion_ModelNotAllowed` PASS; `TestRecordTraceEvent_ModelNotAllowedCaptureGapAndDecision` PASS (verifies event_type, stage, capture_gap, decision_kind, decision_result, decision_reason, source_event_hash) |
-| 6 | PRD5 docs route P5-F30 / Batch 1U, mark Batch 1T complete as `fc62e65` / PR #123, real Gate A execution explicitly awaiting User approval | ✅ PASS | All 12 docs + shared contract contain P5-F30 / Batch 1U references (see grep results); CURRENT-STATUS.md line 4 lists `fc62e65` / PR #123 for Batch 1T; CURRENT-STATUS.md line 49: "real controlled Gate A execution awaits explicit User approval"; shared contract: "requires explicit User approval"; Gate A recommendation: "awaiting explicit User approval", "Real controlled requests: not yet authorized or executed", "This file is a recommendation, not authorization" |
+| 1 | `origin/main` contains Batch 1U as `b2ba892` / PR #124; prior VERIFY-RESULT records Batch 1U PASS 7/7 | ✅ PASS | `git log --oneline -5 origin/main` → HEAD `b2ba892 fix: PRD5 Batch 1U — embeddings model permission parity (P5-F30) (#124)`; VERIFY-RESULT.md title: "PRD5 Batch 1U Embeddings Model Permission Parity", result: "PASS — 7/7" |
+| 2 | Decision and answered request use same authorization ID, environment, Atlas-only operator, two scenarios, safety profile, seven-day retention | ✅ PASS | See Authorization Consistency Evidence below |
+| 3 | Atlas request requires non-production attestation, required merged code, health/rollback evidence, exactly two returned request IDs, stop on mismatch | ✅ PASS | Atlas execution request: "the selected environment is production or cannot be positively identified as development/test" → stop (line 24); "the deployed version does not contain Batch 1P and Batch 1T" → stop (line 27); "health checks fail after deployment" → stop (line 29); "exactly two scenario-marked synthetic requests" (line 45); "No other operator may inherit this authorization. A target or access mismatch requires a new User decision" (line 35) |
+| 4 | Worksheet keeps two authorized IDs pending; every other scenario unavailable | ✅ PASS | Worksheet: `successful_non_stream` → `TBD` / `pending` / approver `TBD`; `model_permission_denied` → `TBD` / `pending` / approver `TBD`; `provider_or_routing_failure` → `unavailable`; `quota_or_budget_denial` → `unavailable`; `streaming_request` → `unavailable`; `missing_trace_or_call_log_gap` → `unavailable`. Delegation rule: "Atlas may replace the first two TBD values and mark those exact IDs approved only after the Atlas result records the expected HTTP status, matching returned X-Request-ID, confirmed source label, and non-production environment" |
+| 5 | Result template is `Awaiting Atlas execution` with all required values `Pending`; no fabricated target result, snapshot, receipt, or cleanup | ✅ PASS | `evidence/2026-07-10-unirouter-gate-a-atlas-run-result.md`: Execution state: "Awaiting Atlas execution" (line 4); all 22 required fields show "Pending" (environment purpose, source label, previous version, deployed commit, deployment time, health, rollback, 2×request scenario rows, 9×handoff fields, boundary checkboxes all unchecked). "Do not mark this result complete until actual values replace every required Pending field" (line 47) |
+| 6 | PRD5 docs route P5-F31 / Batch 1V as `Authorized awaiting Atlas`; Batch 1U Canary/Sentinel complete; PRD4 closed | ✅ PASS | All 14 docs contain P5-F31 / Batch 1V / `UR-XI-GATE-A-20260710-01` references; CURRENT-STATUS.md line 5: Batch 1V "authorized awaiting Atlas"; line 30: Batch 1U `b2ba892` / PR #124 complete; line 49: "PRD4 remains closed and is not reopened"; ACCEPTANCE-MATRIX.md line 80: P5-F31 "Authorized awaiting Atlas"; PRD-Phase5.md line 9: "authorized as `UR-XI-GATE-A-20260710-01` and awaiting Atlas" |
 | 7 | No non-goal or PRD4 boundary regression | ✅ PASS | See Non-Goal and PRD4 Boundary Evidence below |
+
+## Authorization Consistency Evidence
+
+| Field | Decision | Request | Match |
+|-------|----------|---------|-------|
+| Authorization ID | `UR-XI-GATE-A-20260710-01` (line 6) | `UR-XI-GATE-A-20260710-01` (line 6) | ✅ |
+| Environment | Alibaba Cloud ECS shared dev/test (table row 1) | Alibaba Cloud ECS shared dev/test (approved table row 3) | ✅ |
+| Operator | Atlas only; no automatic reassignment (table row 3) | Atlas; approved, no automatic reassignment (approved table row 5) | ✅ |
+| Scenarios | `successful_non_stream`, `model_permission_denied` only (table row 4) | Same two; approved, no additional (approved table row 1) | ✅ |
+| Safety | metadata-only; no credentials/DSN/token/raw prompt/response/raw IP/raw upstream error (table row 6) | Same; approved and mandatory (approved table row 4) | ✅ |
+| Retention | Delete seven days after X-Insight receipt reconciliation (table row 7) | Same; approved (approved table row 5) | ✅ |
 
 ## Non-Goal and PRD4 Boundary Evidence
 
 | Check | Evidence |
 |-------|----------|
-| No frontend/admin/billing/db/migrate changes | `git diff -- frontend internal/admin internal/billing internal/db internal/migrate` → empty (exit 0) |
+| No frontend/cmd/migrations/scripts changes | `git diff -- frontend internal cmd migrations scripts` → empty (exit 0) |
 | No PRD4 doc changes | `git diff -- docs/PRD-Phase4.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/ops/evidence/PRD4-final-closeout-20260708.md` → empty (exit 0) |
 | No whitespace errors | `git diff --check` → clean (exit 0) |
-| Working tree: docs + gateway relay only | `git status --short` → 15 modified docs + 2 modified Go files (`relay.go`, `relay_mock_test.go`); no new routes, migrations, or frontend files |
-| No route/migration/frontend/raw-payload/exporter/X-Insight-runtime/PRD4 change | Code changes limited to `internal/gateway/relay.go` (extract shared predicate + add Embeddings check + X-Request-ID header) and `relay_mock_test.go` (new tests); no billing amount/routing/provider success-path changes |
+| Working tree: docs only | `git status --short` → 14 modified `.md` files, no code, no new files, no scripts |
+| No code/API/migration/runtime/credential/raw-data/overclaim | All changes confined to docs; no Go/JS/SQL/TS files modified; no fabricated request IDs, snapshots, receipts, or cleanup evidence; authorization does not auto-reassign to non-Atlas operator |
 
 ## Command Results
 
 | Command | Result |
 |---------|--------|
-| `git log --oneline -5 origin/main` | ✅ `fc62e65` at HEAD for PRD5 Batch 1T / #123 |
-| `go test ./internal/gateway -run 'TestModelAllowedForAPIKey|TestHandleChatCompletion_ModelNotAllowed|TestHandleEmbeddings_Model|TestRecordTraceEvent_ModelNotAllowedCaptureGapAndDecision' -count=1 -v` | ✅ **8/8 PASS** (0.714s): TestModelAllowedForAPIKey (6 subtests), TestHandleEmbeddings_ModelNotAllowed, TestHandleEmbeddings_ModelAllowedByRequestedAlias, TestHandleChatCompletion_ModelNotAllowed, TestRecordTraceEvent_ModelNotAllowedCaptureGapAndDecision |
-| `go test ./internal/gateway ./internal/middleware ./cmd/uniroute -count=1` | ✅ All 3 packages PASS |
-| `go test ./... -count=1` | ✅ All 23 packages PASS, 0 FAIL |
-| `git diff -- frontend internal/admin internal/billing internal/db internal/migrate` | ✅ Empty (no non-goal code changes) |
+| `git log --oneline -5 origin/main` | ✅ `b2ba892` at HEAD for PRD5 Batch 1U / #124 |
+| `rg -n "PASS.*7/7\|PRD5 Batch 1U" docs/agent-workflows/VERIFY-RESULT.md` | ✅ "PASS — 7/7" and "PRD5 Batch 1U" found |
+| `rg -n "UR-XI-GATE-A-20260710-01\|Authorized awaiting Atlas\|Atlas only\|not yet executed\|exactly two\|successful_non_stream\|model_permission_denied\|seven days\|not production"` across 14 docs + 5 shared files | ✅ All expected references found in all 19 files |
+| `rg -n "Awaiting Atlas execution\|Pending"` in result template | ✅ "Awaiting Atlas execution" (line 4); 22 "Pending" entries |
+| `git diff -- frontend internal cmd migrations scripts` | ✅ Empty (no code changes) |
 | `git diff -- docs/PRD-Phase4.md ...` | ✅ Empty (no PRD4 changes) |
-| `git status --short` | ✅ 15 modified docs + 2 modified Go files |
+| `git status --short` | ✅ 14 modified docs only |
 | `git diff --check` | ✅ Clean |
+| `go test ./... -count=1` | ✅ All 23 packages PASS, 0 FAIL |
 
 ## New Discoveries
 
-No new bugs or scope violations found.
+No new bugs, scope violations, or overclaims found.
 
 ## Final Result
 
-**PRD5 Batch 1U Embeddings Model Permission Parity: ✅ PASS — 7/7**
+**PRD5 Batch 1V Gate A Authorized Controlled Execution: ✅ PASS — 7/7**
 
-All seven Canary verification instructions pass. The batch extracts `modelAllowedForAPIKey` as a shared Chat/Embeddings predicate, enforces `allowed_models` on Embeddings before billing freeze/route/provider dispatch, returns 403 + `X-Request-ID` + auth trace evidence on denial, and adds focused tests (helper, Chat regression, Embeddings pre-billing rejection, trace fields). No non-goal, PRD4 boundary regression, or scope violation is present.
+All seven Canary verification instructions pass. The batch records Batch 1U completion as `b2ba892` / PR #124, promotes the Gate A recommendation to accepted authorization `UR-XI-GATE-A-20260710-01` with Atlas-only execution, binds non-production attestation and stop conditions, keeps worksheet IDs pending with other scenarios unavailable, provides a result template with all `Pending` values, and routes P5-F31 through all PRD5 docs. No fabricated results, secrets, scope widening, operator reassignment, PRD4 regression, or other non-goal is present. The authorization gate is passed; Atlas target execution is a separate outcome.

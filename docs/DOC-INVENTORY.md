@@ -9,7 +9,7 @@
 | `docs/PROJECT-HANDOFF.md` | First-read handoff for agents |
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
 | `docs/PRD-Phase5.md` | Formal PRD5 active scope and implementation-phase reference |
-| `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` | PRD5 acceptance matrix; Batch 1A/1B/1C through Batch 1T Canary/Sentinel complete, Batch 1U fixed awaiting Canary |
+| `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` | PRD5 acceptance matrix; Batch 1A/1B/1C through Batch 1U Canary/Sentinel complete, Batch 1V authorized awaiting Atlas |
 | `docs/ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md` | PRD5 Gate A request ID approval runbook for non-technical User/UniRouter-owner approval before controlled X-Insight snapshot generation |
 | `docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md` | PRD5 Gate A prior-authorization and narrow operator runbook for newly generated controlled scenarios |
 | `docs/planning/PRD5-IMPLEMENTATION-PLAN.md` | PRD5 batch plan and UniRouter/X-Insight ownership split |
@@ -31,8 +31,8 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required Codex/OpenClaw workflow |
-| `docs/agent-workflows/FIX-SIGNAL.md` | Current PRD5 Batch 1U verification signal |
-| `docs/agent-workflows/VERIFY-RESULT.md` | Latest OpenClaw verification result: PRD5 Batch 1T PASS 7/7 |
+| `docs/agent-workflows/FIX-SIGNAL.md` | Current PRD5 Batch 1V authorization/status handoff verification signal |
+| `docs/agent-workflows/VERIFY-RESULT.md` | Latest OpenClaw verification result: PRD5 Batch 1U PASS 7/7 |
 
 ## Product And Design References
 
@@ -125,8 +125,8 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 |------|------|
 | `docs/agent-workflows/README.md` | Agent workflow index |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Current protocol |
-| `docs/agent-workflows/FIX-SIGNAL.md` | Current Codex to OpenClaw signal state; PRD5 Batch 1U fixed awaiting Canary |
-| `docs/agent-workflows/VERIFY-RESULT.md` | Current OpenClaw verification result: PRD5 Batch 1T PASS 7/7 |
+| `docs/agent-workflows/FIX-SIGNAL.md` | Current Codex to OpenClaw signal state; PRD5 Batch 1V authorization/status handoff awaiting Canary |
+| `docs/agent-workflows/VERIFY-RESULT.md` | Current OpenClaw verification result: PRD5 Batch 1U PASS 7/7 |
 | `docs/agent-workflows/CHECKLIST.md` | Canary checklist/reference; may need reconciliation |
 | `docs/agent-workflows/PLAN.md` | Historical/current plan notes; do not treat as canonical without reconciliation |
 | `docs/agent-workflows/CONTEXT_HANDOFF.md` | Context transfer notes; reference only |

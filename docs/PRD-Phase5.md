@@ -4,8 +4,9 @@
 > Date: 2026-07-10
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
 > Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, Batch 1O,
-> Batch 1P, Batch 1Q, Batch 1R, Batch 1S, and Batch 1T Canary/Sentinel
-> complete. Batch 1U Embeddings Model Permission Parity fixed awaiting Canary.
+> Batch 1P, Batch 1Q, Batch 1R, Batch 1S, Batch 1T, and Batch 1U
+> Canary/Sentinel complete. Batch 1V Gate A Authorized Controlled Execution is
+> authorized as `UR-XI-GATE-A-20260710-01` and awaiting Atlas target execution.
 > PRD4 remains complete for the confirmed current scope
 > and is not reopened by PRD5.
 > Source: `docs/planning/PRD5-BACKLOG.md`,
@@ -115,6 +116,7 @@ PRD5 must not:
 | P5-F28 | X-Insight Data Exchange Control Surface | Define the future UniRouter UI/control-plane boundary for approval, export ledger, receipts, and deep links without duplicating X-Insight observability |
 | P5-F29 | Gate A Exchange Envelope And Controlled Run Authorization | Add exchange identity and exact manifest hashing, then define prior authorization for narrowly generated Gate A scenario requests |
 | P5-F30 | Embeddings Model Permission Parity | Enforce API-key `allowed_models` on Embeddings before billing/routing/provider work and emit the same authorization rejection evidence as Chat |
+| P5-F31 | Gate A Authorized Controlled Execution | Execute exactly two approved synthetic scenarios through Atlas, seal only their verified request IDs, and obtain sanitized X-Insight import/readback evidence |
 
 ### P2
 
@@ -775,6 +777,38 @@ Acceptance:
   capture, exporter/outbox, X-Insight runtime dependency, real Gate A execution,
   target-environment claims, or PRD4 changes.
 
+### P5-F31: Gate A Authorized Controlled Execution
+
+Requirements:
+
+- Bind execution to authorization `UR-XI-GATE-A-20260710-01` and Atlas as the
+  only authorized operator.
+- Require Atlas to attest that the current Alibaba Cloud ECS target is
+  development/test, not production, before sending requests.
+- Deploy `b2ba892` or a later `origin/main` commit containing Batch 1P, Batch
+  1T, and Batch 1U, and record previous/deployed versions plus health/rollback
+  results.
+- Send exactly `successful_non_stream` and `model_permission_denied` using
+  synthetic content and scenario-marked `X-Request-ID` values; discard response
+  bodies.
+- Seal only verified returned IDs into the approval manifest, export only
+  sanitized metadata, and obtain X-Insight persistent import/readback receipt
+  evidence.
+- Delete the temporary snapshot seven days after receipt reconciliation while
+  retaining the sanitized contract and receipt evidence.
+
+Acceptance:
+
+- The shared decision, Atlas execution request, request-ID worksheet, and result
+  template all reference the same authorization ID and source label.
+- Atlas evidence records non-production attestation, deployed commit, health,
+  exactly two request IDs, expected HTTP results, and any rollback.
+- The snapshot/receipt evidence reconciles `(exchange_id, artifact.sha256)` and
+  records the cleanup deadline.
+- Until actual Atlas and X-Insight evidence exists, status remains `Authorized
+  awaiting Atlas`; no Gate A import acceptance, read-only DB/view, shared
+  cross-project ECS staging, exporter/outbox, raw payload, or PRD4 claim is made.
+
 ### P5-F09: Cursor Export API Or Outbox
 
 Requirements:
@@ -841,11 +875,13 @@ PRD5 should proceed in independently verifiable batches:
     receipt contract reconciliation, and controlled-run authorization path.
 21. Batch 1U: Embeddings `allowed_models` enforcement and model-permission
     decision evidence parity with Chat.
-22. Later payload policy metadata and evidence references, with future raw
+22. Batch 1V: activate the approved Gate A controlled run, Atlas execution
+    handoff, exact-ID sealing, sanitized snapshot, and X-Insight receipt loop.
+23. Later payload policy metadata and evidence references, with future raw
    payload modes gated behind enterprise opt-in.
-23. Later Gate A batch: read-only view/export decision after X-Insight Gate A
+24. Later Gate A batch: read-only view/export decision after X-Insight Gate A
    evidence.
-24. Later target/backlog batches: target upstream/SSO evidence or larger
+25. Later target/backlog batches: target upstream/SSO evidence or larger
    backlog items only after their prerequisites are explicitly met.
 
 ## 6. External Source Refresh
