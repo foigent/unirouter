@@ -1090,6 +1090,31 @@ func TestHandleChatCompletion_FreezeError(t *testing.T) {
 
 // --- HandleEmbeddings basic tests ---
 
+func TestModelAllowedForAPIKey(t *testing.T) {
+	tests := []struct {
+		name           string
+		apiKey         *models.ApiKey
+		model          string
+		requestedModel string
+		want           bool
+	}{
+		{name: "missing key context", want: true},
+		{name: "empty restriction", apiKey: &models.ApiKey{}, model: "resolved", requestedModel: "alias", want: true},
+		{name: "wildcard", apiKey: &models.ApiKey{AllowedModels: "*"}, model: "resolved", requestedModel: "alias", want: true},
+		{name: "resolved model", apiKey: &models.ApiKey{AllowedModels: "other, resolved"}, model: "resolved", requestedModel: "alias", want: true},
+		{name: "requested alias", apiKey: &models.ApiKey{AllowedModels: "other, alias"}, model: "resolved", requestedModel: "alias", want: true},
+		{name: "not allowed", apiKey: &models.ApiKey{AllowedModels: "other"}, model: "resolved", requestedModel: "alias", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := modelAllowedForAPIKey(tt.apiKey, tt.model, tt.requestedModel); got != tt.want {
+				t.Fatalf("modelAllowedForAPIKey()=%t want=%t", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestHandleEmbeddings_NoModel(t *testing.T) {
 	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{})
 
@@ -1124,6 +1149,102 @@ func TestHandleEmbeddings_InvalidJSON(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleEmbeddings_ModelNotAllowed(t *testing.T) {
+	var capturedArgs []any
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(sql, "INSERT INTO request_trace_events") {
+				capturedArgs = append([]any(nil), args...)
+			}
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	freezeCalled := false
+	relay := newTestRelay(db, &mockBilling{
+		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
+			freezeCalled = true
+			return &billing.FreezeResult{Success: true}, nil
+		},
+	})
+
+	body := `{"model":"text-embedding-3-small","input":"hello world"}`
+	req := httptest.NewRequest("POST", "/v1/embeddings", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	ctx := context.WithValue(req.Context(), middleware.CtxOrgID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxRequestID, "req-embeddings-denied")
+	ctx = context.WithValue(ctx, middleware.CtxAPIKey, &models.ApiKey{
+		ID:            1,
+		OrgID:         1,
+		Status:        "active",
+		AllowedModels: "text-embedding-ada-002",
+	})
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	relay.HandleEmbeddings(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"code":"auth_error.model_not_allowed"`) {
+		t.Fatalf("expected model permission error code, got %s", rec.Body.String())
+	}
+	if rec.Header().Get("X-Request-ID") != "req-embeddings-denied" {
+		t.Fatalf("expected response request ID, got %q", rec.Header().Get("X-Request-ID"))
+	}
+	if freezeCalled {
+		t.Fatal("expected model permission denial before billing freeze")
+	}
+	if len(capturedArgs) != 34 {
+		t.Fatalf("expected model denial trace insert, got %d args", len(capturedArgs))
+	}
+	if capturedArgs[6] != "auth.model_not_allowed" || capturedArgs[7] != "auth" || capturedArgs[20] != "auth" {
+		t.Fatalf("unexpected model denial trace args: %#v", capturedArgs[6:21])
+	}
+	if capturedArgs[22] != evidenceCaptureGapAuth {
+		t.Fatalf("expected permission_denied capture_gap, got %#v", capturedArgs[22])
+	}
+	if capturedArgs[25] != "auth" || capturedArgs[26] != "rejected" || capturedArgs[27] != "auth_error.model_not_allowed" {
+		t.Fatalf("unexpected model denial decision args: %#v", capturedArgs[25:28])
+	}
+}
+
+func TestHandleEmbeddings_ModelAllowedByRequestedAlias(t *testing.T) {
+	freezeCalled := false
+	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
+		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
+			freezeCalled = true
+			return &billing.FreezeResult{Success: false, ErrorCode: "insufficient_balance"}, nil
+		},
+	})
+
+	body := `{"model":"text-embedding-3-small","input":"hello world"}`
+	req := httptest.NewRequest("POST", "/v1/embeddings", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	ctx := context.WithValue(req.Context(), middleware.CtxOrgID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxRequestID, "req-embeddings-alias")
+	ctx = context.WithValue(ctx, middleware.CtxModelAlias, "company-embedding")
+	ctx = context.WithValue(ctx, middleware.CtxAPIKey, &models.ApiKey{
+		ID:            1,
+		OrgID:         1,
+		Status:        "active",
+		AllowedModels: "company-embedding",
+	})
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	relay.HandleEmbeddings(rec, req)
+
+	if !freezeCalled {
+		t.Fatal("expected requested alias to pass model permission and reach billing freeze")
+	}
+	if rec.Code != http.StatusPaymentRequired {
+		t.Fatalf("expected existing billing response after alias permission, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

@@ -1,8 +1,8 @@
 # PRD5 X-Insight Data Exchange Control Surface
 
 > Date: 2026-07-10
-> Status: PRD5 Batch 1S Canary/Sentinel complete; Batch 1T receipt contract
-> refinements incorporated
+> Status: PRD5 Batch 1S and Batch 1T Canary/Sentinel complete; receipt contract
+> refinements incorporated; real controlled exchange still awaits User approval
 > Scope: product and architecture decision for UniRouter-owned X-Insight data
 > exchange control UI, audit boundary, and staged implementation
 

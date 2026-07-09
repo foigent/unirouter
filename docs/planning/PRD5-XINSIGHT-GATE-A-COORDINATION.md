@@ -1,10 +1,9 @@
 # PRD5 X-Insight Gate A Coordination
 
 > Date: 2026-07-10
-> Status: planning coordination accepted by User; Batch 1S Canary/Sentinel
-> complete; Batch 1T exchange envelope and controlled-run authorization fixed
-> awaiting Canary; Gate
-> A controlled snapshot evidence not complete
+> Status: planning coordination accepted by User; Batch 1T Canary/Sentinel
+> complete (`fc62e65` / PR #123); Gate A controlled-run recommendation still
+> awaits explicit User authorization and no controlled snapshot evidence exists
 > Scope: UniRouter PRD5 coordination with X-Insight Gate A
 
 ## Purpose

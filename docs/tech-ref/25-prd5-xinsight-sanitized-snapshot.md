@@ -2,9 +2,9 @@
 
 > Version: v0.5
 > Date: 2026-07-10
-> Status: Batch 1A/1B, Batch 1K, Batch 1N, Batch 1O, Batch 1Q, Batch 1R, and
-> Batch 1S Canary/Sentinel complete; Batch 1T exchange envelope and controlled
-> run authorization fixed awaiting Canary
+> Status: Batch 1A/1B, Batch 1K, Batch 1N, Batch 1O, Batch 1Q, Batch 1R,
+> Batch 1S, and Batch 1T Canary/Sentinel complete; real controlled snapshot not
+> generated because environment/operator/retention authorization remains open
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`,
 > `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md`

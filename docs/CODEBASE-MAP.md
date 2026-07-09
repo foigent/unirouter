@@ -250,6 +250,14 @@ the 403 response, using `source_component=auth`,
 `decision_result=rejected`. The denial still happens before billing, routing, or
 provider dispatch.
 
+PRD5 Batch 1U Embeddings model-permission parity is implemented in
+`internal/gateway/relay.go`, with focused coverage in
+`internal/gateway/relay_mock_test.go`. Chat and Embeddings now share the same
+API-key `allowed_models` predicate for unrestricted, wildcard, resolved-model,
+and requested-alias cases. Embeddings denial returns the existing 403 and
+`X-Request-ID`, emits the same auth decision evidence as Chat, and stops before
+billing freeze, routing, or provider dispatch.
+
 Usage analytics is implemented in `internal/admin/prd2_product_handlers.go` and now supports project/key/model/provider/channel/status/source filters plus PRD4 `scope=my`, `owner_user_id`, `key_type`, `group_by=owner`, and `group_by=key_type`.
 
 API key quota visibility keeps `api_keys.qps_limit` as the compatibility

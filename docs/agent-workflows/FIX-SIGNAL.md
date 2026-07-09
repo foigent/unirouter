@@ -1,96 +1,86 @@
-# FIX-SIGNAL.md - PRD5 Batch 1T Gate A Exchange Envelope And Controlled Run Authorization
+# FIX-SIGNAL.md - PRD5 Batch 1U Embeddings Model Permission Parity
 
 **Date:** File timestamp is authoritative
-**Risk level:** R2 overall; R1 read-only snapshot tooling/tests plus PRD/status and human authorization contracts
+**Risk level:** R3 authorization path
 **Status:** awaiting Canary verification
 
 ## Context
 
-PRD5 Batch 1S passed Canary 6/6 and Sentinel merged it as `c6ae2a7` / PR
-#122. PRD4 remains complete for the confirmed current scope and must not be
-reopened by this round.
+PRD5 Batch 1T passed Canary 7/7 and Sentinel merged it as `fc62e65` / PR
+#123. PRD4 remains complete for the confirmed current scope.
 
-X-Insight accepted the Batch 1S product boundary and implemented
-`xinsight.import-receipt.v1`. It requested two source-side envelope fields and
-a less technical approval path for fresh controlled requests:
+Current code enforced `api_keys.allowed_models` on Chat but not on Embeddings.
+An API key restricted to specific models could therefore call an unlisted
+Embeddings model and reach billing, routing, and provider dispatch. This is an
+authorization consistency defect, not only an observability gap.
 
-- `exchange_id` for one outbound exchange;
-- `approval_manifest_sha256` for the exact manifest used;
-- prior authorization of scenario set, data classes, source instance, safety,
-  retention, and operator before a narrow run creates request IDs.
-
-X-Insight currently has no durable `import_job_id` or deep link. This batch does
-not invent either field and does not implement the future UI.
+The separate real Gate A controlled run is still not authorized. The shared
+recommendation names ECS/Atlas/seven-day retention, but its status explicitly
+remains awaiting User approval.
 
 ## Intended Changes
 
-- Add `exchange_id=uxchg_<32-lowercase-hex>` to generated snapshots and handoff
-  notes using 128 bits of local cryptographic randomness.
-- Add `approval_manifest_sha256=sha256:<64-lowercase-hex>` for manifest-selected
-  snapshots, calculated from the exact manifest file bytes.
-- Keep the snapshot artifact's own SHA-256 outside the snapshot; X-Insight
-  computes it and reconciles `(exchange_id, artifact.sha256)`.
-- Preserve `--approval-manifest` in generated handoff commands.
-- Require manifest `source_instance` and reject a conflicting CLI override
-  before DSN access.
-- Reject approval manifests containing a second JSON value.
-- Add focused explicit-file Go tests for exchange ID format/uniqueness,
-  exact-byte manifest hashing, trailing JSON rejection, and handoff output.
-- Add `docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md` and shared-folder
-  exchange contract, authorization worksheet, and UniRouter response.
-- Reconcile Batch 1S completion and route `P5-F29` / Batch 1T through current
-  PRD5 status, matrix, plan, backlog, handoff, tech ref, and indexes.
+- Extract the existing Chat model permission semantics into
+  `modelAllowedForAPIKey`.
+- Preserve unrestricted, `*` wildcard, resolved-model, and requested-alias
+  matching.
+- Use the same predicate in Chat and Embeddings.
+- Reject unauthorized Embeddings models with the existing HTTP 403
+  `auth_error.model_not_allowed` contract before billing freeze, routing, or
+  provider dispatch.
+- Return `X-Request-ID` on Embeddings responses.
+- Reuse the existing `auth.model_not_allowed` trace path so denial evidence has
+  `source_component=auth`, `capture_gap=permission_denied`,
+  `decision_kind=auth`, `decision_result=rejected`, and
+  `decision_reason=auth_error.model_not_allowed`.
+- Add focused helper, Chat regression, Embeddings response/pre-billing, and
+  trace-field tests.
+- Reconcile Batch 1T completion and route `P5-F30` / Batch 1U through PRD5
+  status, matrix, plan, backlog, competitor comparison, field contract, handoff,
+  indexes, and the shared X-Insight contract.
 
 ## Non-Goals
 
 This round does not:
 
-- send a real controlled request;
-- generate a real snapshot, approved-ID manifest, handoff artifact, or receipt;
-- invent or approve request IDs;
-- write a DSN, password, token, API key, credential, raw prompt, raw response,
-  raw IP, or raw upstream error into the repo or shared folder;
-- implement UI code, API routes, DB migrations, or runtime request-path changes;
-- create read-only DB credentials/views or shared ECS staging;
-- add exporter/outbox or an X-Insight runtime dependency;
-- claim that Gate A, readback, production, `import_job_id`, or a deep link is
-  complete;
+- add or change API routes;
+- add a DB migration or frontend behavior;
+- change billing amounts, freeze/settle semantics, routing selection, provider
+  adapters, or allowed request success paths;
+- create a call-log row for a pre-admission auth denial;
+- store raw prompt/response payloads;
+- add exporter/outbox, read-only DB/view, or shared ECS changes;
+- add X-Insight as a runtime dependency;
+- authorize or execute the real Gate A controlled run;
+- deploy to ECS or create target-environment evidence;
 - change PRD4 acceptance counts or create a `Production verified` claim.
 
 ## Canary Verification Instructions
 
-1. Verify `origin/main` contains Batch 1S as `c6ae2a7` / PR #122 and the prior
-   `VERIFY-RESULT.md` records Batch 1S PASS 6/6.
-2. Verify snapshot tooling:
-   - generates a non-empty `exchange_id` matching
-     `uxchg_<32-lowercase-hex>`;
-   - hashes exact approval-manifest file bytes with the `sha256:` prefix;
-   - emits the manifest hash only in manifest mode;
-   - requires manifest source instance and rejects conflicting CLI override;
-   - rejects a second JSON value in the manifest;
-   - keeps `--approval-manifest` in the generated handoff command;
-   - does not put the snapshot artifact's own hash inside the snapshot.
-3. Verify the focused tests cover ID format/uniqueness, exact-byte hash, trailing
-   JSON, and manifest-mode handoff behavior.
-4. Verify the controlled-run runbook and shared worksheet require prior approval
-   of environment, operator, and retention; use only the two approved synthetic
-   scenarios and unique `X-Request-ID` values; and do not authorize broad
-   discovery or secrets/raw payload handoff.
-5. Verify the shared exchange contract and UniRouter response match X-Insight's
-   current receipt contract: `validated` / `persisted` / `rejected`, no current
-   durable `import_job_id`, no current deep link, and reconciliation by
-   `(exchange_id, artifact.sha256)`.
-6. Verify PRD5 status/matrix/plan/backlog/handoff/tech-ref/index docs route
-   `P5-F29` / Batch 1T and mark Batch 1S complete as `c6ae2a7` / PR #122.
-7. Verify no non-goal or PRD4 boundary regression is present, then run:
+1. Verify `origin/main` contains Batch 1T as `fc62e65` / PR #123 and the prior
+   `VERIFY-RESULT.md` records Batch 1T PASS 7/7.
+2. Verify `modelAllowedForAPIKey` preserves the prior Chat behavior for:
+   unrestricted keys, wildcard, resolved model, requested alias, and rejection.
+3. Verify Chat and Embeddings both use the shared predicate, and Embeddings
+   performs the check after model parsing but before token estimation/billing
+   freeze, route lookup, provider key decryption, adapter selection, or dispatch.
+4. Verify an unauthorized Embeddings request returns 403 with
+   `auth_error.model_not_allowed` and `X-Request-ID`, does not call billing
+   Freeze, and writes the expected auth rejection trace fields.
+5. Verify existing Chat model-denial and trace-decision tests still pass.
+6. Verify PRD5 docs and the shared contract route `P5-F30` / Batch 1U, mark
+   Batch 1T complete as `fc62e65` / PR #123, and keep real Gate A execution
+   explicitly awaiting User approval.
+7. Verify no non-goal or PRD4 boundary regression, then run:
 
 ```bash
-git log --oneline -3 origin/main | rg "c6ae2a7.*PRD5 Batch 1S|#122"
-go test scripts/prd5_xinsight_snapshot.go scripts/prd5_xinsight_snapshot_test.go -count=1
-go run scripts/prd5_xinsight_snapshot.go -help
-rg -n "P5-F29|Batch 1T|exchange_id|approval_manifest_sha256|xinsight.import-receipt.v1|controlled run|Controlled Run|X-Request-ID|artifact.sha256|seven days|7 天" scripts/prd5_xinsight_snapshot.go scripts/prd5_xinsight_snapshot_test.go docs/PRD-Phase5.md docs/ops/PRD5-ACCEPTANCE-MATRIX.md docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md docs/planning/PRD5-IMPLEMENTATION-PLAN.md docs/planning/PRD5-BACKLOG.md docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md docs/tech-ref/25-prd5-xinsight-sanitized-snapshot.md docs/PROJECT-HANDOFF.md docs/ops/CURRENT-STATUS.md docs/CODEBASE-MAP.md docs/DOC-INVENTORY.md docs/README.md docs/agent-workflows/FIX-SIGNAL.md "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/contracts/2026-07-10-unirouter-prd5-gate-a-exchange-envelope.md" "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-controlled-run-authorization.md" "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-10-unirouter-exchange-envelope-and-controlled-run-response.md"
+git log --oneline -3 origin/main | rg "fc62e65.*PRD5 Batch 1T|#123"
+go test ./internal/gateway -run 'TestModelAllowedForAPIKey|TestHandleChatCompletion_ModelNotAllowed|TestHandleEmbeddings_Model|TestRecordTraceEvent_ModelNotAllowedCaptureGapAndDecision' -count=1 -v
+go test ./internal/gateway ./internal/middleware ./cmd/uniroute -count=1
 go test ./... -count=1
-git diff -- frontend internal cmd migrations
+rg -n "P5-F30|Batch 1U|Embeddings Model Permission Parity|modelAllowedForAPIKey|rejectModelNotAllowed|TestHandleEmbeddings_ModelNotAllowed|auth.model_not_allowed|permission_denied|fc62e65|PR #123" internal/gateway docs/PRD-Phase5.md docs/ops/PRD5-ACCEPTANCE-MATRIX.md docs/planning/PRD5-IMPLEMENTATION-PLAN.md docs/planning/PRD5-BACKLOG.md docs/planning/PRD5-COMPETITOR-COMPARISON.md docs/tech-ref/26-prd5-evidence-field-contract.md docs/PROJECT-HANDOFF.md docs/ops/CURRENT-STATUS.md docs/CODEBASE-MAP.md docs/DOC-INVENTORY.md docs/README.md docs/agent-workflows/FIX-SIGNAL.md "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/contracts/2026-07-10-unirouter-prd5-embeddings-model-permission-parity.md"
+rg -n "awaiting explicit User approval|Real controlled requests: not yet authorized or executed|This file is a recommendation, not authorization" "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-10-gate-a-controlled-run-authorization-recommendation.md"
+git diff -- frontend internal/admin internal/billing internal/db internal/migrate
 git diff -- docs/PRD-Phase4.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/ops/evidence/PRD4-final-closeout-20260708.md
 git status --short
 git diff --check
@@ -101,9 +91,8 @@ git diff --check
 Canary should write `docs/agent-workflows/VERIFY-RESULT.md` with:
 
 - PASS/FAIL for each numbered instruction;
-- exact command evidence for the focused and full Go tests;
-- any real request/artifact, approved ID invention, secret/raw payload, UI/API/
-  migration/runtime change, read-only DB/view, shared ECS, exporter/outbox,
-  X-Insight runtime dependency, PRD4 change, or overclaim as a blocking scope
-  failure;
-- final result for PRD5 Batch 1T.
+- focused test evidence proving pre-billing rejection and exact trace fields;
+- any billing/routing/provider success-path change, route/migration/frontend
+  change, real Gate A execution, target claim, PRD4 regression, or other
+  non-goal as a blocking failure;
+- final result for PRD5 Batch 1U.

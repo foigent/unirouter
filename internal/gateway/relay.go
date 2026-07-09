@@ -21,6 +21,7 @@ import (
 	"github.com/uniroute/unirouter/internal/logger"
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/tokenutil"
 	"github.com/uniroute/unirouter/internal/traceutil"
 )
@@ -257,6 +258,27 @@ type Message struct {
 	Content string `json:"content"`
 }
 
+func modelAllowedForAPIKey(apiKey *models.ApiKey, model, requestedModel string) bool {
+	if apiKey == nil || apiKey.AllowedModels == "" {
+		return true
+	}
+	for _, allowedModel := range strings.Split(apiKey.AllowedModels, ",") {
+		allowedModel = strings.TrimSpace(allowedModel)
+		if allowedModel == "*" || allowedModel == model || allowedModel == requestedModel {
+			return true
+		}
+	}
+	return false
+}
+
+func (relay *Relay) rejectModelNotAllowed(w http.ResponseWriter, ctx context.Context, requestID, model, requestedModel string, requestStart time.Time) {
+	relay.recordTraceEvent(ctx, requestID, "auth.model_not_allowed", "auth", "warning", model, requestedModel, nil, http.StatusForbidden, elapsedMilliseconds(requestStart), map[string]interface{}{
+		"error_code": "auth_error.model_not_allowed",
+	})
+	writeError(w, http.StatusForbidden, "permission_error", "auth_error.model_not_allowed",
+		fmt.Sprintf("Model '%s' is not allowed for this API key", model))
+}
+
 // HandleChatCompletion handles POST /v1/chat/completions.
 func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request) {
 	ctx := relay.contextWithTrustedEvidence(r.Context(), r.Header)
@@ -298,24 +320,10 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Check model permission before billing
-	apiKey := middleware.GetAPIKeyFromContext(ctx)
-	if apiKey != nil && apiKey.AllowedModels != "" {
-		allowed := false
-		for _, m := range strings.Split(apiKey.AllowedModels, ",") {
-			model := strings.TrimSpace(m)
-			if model == "*" || model == req.Model || model == requestedModel {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
-			relay.recordTraceEvent(ctx, requestID, "auth.model_not_allowed", "auth", "warning", req.Model, requestedModel, nil, http.StatusForbidden, elapsedMilliseconds(requestStart), map[string]interface{}{
-				"error_code": "auth_error.model_not_allowed",
-			})
-			writeError(w, http.StatusForbidden, "permission_error", "auth_error.model_not_allowed",
-				fmt.Sprintf("Model '%s' is not allowed for this API key", req.Model))
-			return
-		}
+	callerAPIKey := middleware.GetAPIKeyFromContext(ctx)
+	if !modelAllowedForAPIKey(callerAPIKey, req.Model, requestedModel) {
+		relay.rejectModelNotAllowed(w, ctx, requestID, req.Model, requestedModel, requestStart)
+		return
 	}
 
 	// Estimate tokens for billing freeze
@@ -1116,6 +1124,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	ctx := relay.contextWithTrustedEvidence(r.Context(), r.Header)
 	requestStart := time.Now()
 	requestID := middleware.GetRequestIDFromContext(ctx)
+	w.Header().Set("X-Request-ID", requestID)
 
 	var req EmbeddingsRequest
 	body, err := io.ReadAll(r.Body)
@@ -1136,6 +1145,11 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	requestedModel := middleware.GetModelAliasFromContext(ctx)
 	if requestedModel == "" {
 		requestedModel = req.Model
+	}
+	callerAPIKey := middleware.GetAPIKeyFromContext(ctx)
+	if !modelAllowedForAPIKey(callerAPIKey, req.Model, requestedModel) {
+		relay.rejectModelNotAllowed(w, ctx, requestID, req.Model, requestedModel, requestStart)
+		return
 	}
 
 	orgID := middleware.GetOrgIDFromContext(ctx)
