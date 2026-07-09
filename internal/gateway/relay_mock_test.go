@@ -625,6 +625,41 @@ func TestRecordTraceEvent_ProviderFailureRedactionGapTakesPriority(t *testing.T)
 	}
 }
 
+func TestRecordTraceEvent_ModelNotAllowedCaptureGapAndDecision(t *testing.T) {
+	var capturedArgs []any
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if !strings.Contains(sql, "INSERT INTO request_trace_events") {
+				return pgconn.CommandTag{}, nil
+			}
+			capturedArgs = append([]any(nil), args...)
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	relay := newTestRelay(db, &mockBilling{})
+	ctx := context.WithValue(context.Background(), middleware.CtxOrgID, int64(1))
+
+	relay.recordTraceEvent(ctx, "req-auth", "auth.model_not_allowed", "auth", "warning", "gpt-4o", "company-chat", nil, http.StatusForbidden, 7, map[string]interface{}{
+		"error_code": "auth_error.model_not_allowed",
+	})
+
+	if len(capturedArgs) != 34 {
+		t.Fatalf("expected 34 trace insert args, got %d", len(capturedArgs))
+	}
+	if capturedArgs[6] != "auth.model_not_allowed" || capturedArgs[7] != "auth" || capturedArgs[20] != "auth" {
+		t.Fatalf("unexpected auth event args: %#v", capturedArgs[6:21])
+	}
+	if capturedArgs[22] != evidenceCaptureGapAuth {
+		t.Fatalf("expected permission_denied capture_gap, got %#v", capturedArgs[22])
+	}
+	if capturedArgs[25] != "auth" || capturedArgs[26] != "rejected" || capturedArgs[27] != "auth_error.model_not_allowed" {
+		t.Fatalf("unexpected auth decision args: %#v", capturedArgs[25:28])
+	}
+	if hash, ok := capturedArgs[33].(string); !ok || len(hash) != 64 {
+		t.Fatalf("expected trace source_event_hash, got %#v", capturedArgs[33])
+	}
+}
+
 func TestRecordTraceEvent_UsesTrustedEvidenceContext(t *testing.T) {
 	var capturedArgs []any
 	db := &testutil.MockDB{
@@ -2201,15 +2236,25 @@ func TestHandleChatCompletion_UpstreamError_AllFail(t *testing.T) {
 }
 
 func TestHandleChatCompletion_ModelNotAllowed(t *testing.T) {
-	encKey := []byte("0123456789abcdef01234567")
-	db := &testutil.MockDB{}
+	var capturedArgs []any
+	db := &testutil.MockDB{
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if !strings.Contains(sql, "INSERT INTO request_trace_events") {
+				return pgconn.CommandTag{}, nil
+			}
+			capturedArgs = append([]any(nil), args...)
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	freezeCalled := false
 	b := &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
+			freezeCalled = true
 			return &billing.FreezeResult{FreezeID: 1, Amount: 100, Success: true}, nil
 		},
 	}
 
-	relay := &Relay{db: db, router: NewRouter(db), billing: b, encKey: encKey}
+	relay := newTestRelay(db, b)
 
 	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}]}`
 	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(body))
@@ -2227,6 +2272,21 @@ func TestHandleChatCompletion_ModelNotAllowed(t *testing.T) {
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if freezeCalled {
+		t.Fatal("expected model permission denial to return before billing freeze")
+	}
+	if len(capturedArgs) != 34 {
+		t.Fatalf("expected model denial trace insert, got %d args", len(capturedArgs))
+	}
+	if capturedArgs[6] != "auth.model_not_allowed" || capturedArgs[7] != "auth" || capturedArgs[20] != "auth" {
+		t.Fatalf("unexpected model denial trace args: %#v", capturedArgs[6:21])
+	}
+	if capturedArgs[22] != evidenceCaptureGapAuth {
+		t.Fatalf("expected permission_denied capture_gap, got %#v", capturedArgs[22])
+	}
+	if capturedArgs[25] != "auth" || capturedArgs[26] != "rejected" || capturedArgs[27] != "auth_error.model_not_allowed" {
+		t.Fatalf("unexpected model denial decision args: %#v", capturedArgs[25:28])
 	}
 }
 

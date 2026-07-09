@@ -3,10 +3,10 @@
 > Version: Phase 5 Active Scope Draft
 > Date: 2026-07-10
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
-> Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, and Batch 1N
-> Canary/Sentinel complete. Batch 1O Gate A controlled snapshot handoff prep
-> fixed awaiting Canary. PRD4 remains complete for the confirmed current scope
-> and is not reopened by PRD5.
+> Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, and Batch 1O
+> Canary/Sentinel complete. Batch 1P Model Permission Decision Evidence fixed
+> awaiting Canary. PRD4 remains complete for the confirmed current scope and is
+> not reopened by PRD5.
 > Source: `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, X-Insight shared-folder
 > responses on 2026-07-08, current UniRouter code/schema review, and official
@@ -96,6 +96,7 @@ PRD5 must not:
 | P5-F22 | Provider Failure Capture Gaps | Mark provider failure events that occur before any provider response with `capture_gap=not_available_from_source` when no upstream request ID can exist |
 | P5-F23 | Snapshot Capture Gap Candidates | Add structured candidate capture-gap categories to Gate A snapshots for missing trace rows without fabricating runtime evidence |
 | P5-F24 | Gate A Controlled Snapshot Handoff Prep | Reconcile Batch 1N completion and define the approved controlled snapshot handoff prerequisites before any real snapshot or credential work |
+| P5-F25 | Model Permission Decision Evidence | Emit explicit model-permission denial trace evidence with `capture_gap=permission_denied` and `decision_kind=auth` on existing chat authorization rejects |
 
 ### P2
 
@@ -590,6 +591,27 @@ Acceptance:
   ECS staging, exporter/outbox behavior, X-Insight runtime dependency, or PRD4
   matrix change.
 
+### P5-F25: Model Permission Decision Evidence
+
+Requirements:
+
+- When the existing chat `allowed_models` guard rejects a request, emit a
+  sanitized trace event before returning the existing 403 response.
+- Record the event as `auth.model_not_allowed` with `source_component=auth`,
+  `capture_gap=permission_denied`, `decision_kind=auth`,
+  `decision_result=rejected`, and `decision_reason=auth_error.model_not_allowed`.
+- Preserve the existing request semantics: denial still happens before billing,
+  routing, provider dispatch, or response-shape changes.
+
+Acceptance:
+
+- Focused gateway tests prove the direct trace writer and chat handler denial
+  path write the expected structural decision fields.
+- Batch 1P does not add a migration, new API route, frontend behavior,
+  read-only DB/view credential, shared ECS staging, exporter/outbox, raw
+  prompt/response capture, X-Insight runtime dependency, Embeddings authorization
+  behavior change, or PRD4 matrix change.
+
 ### P5-F09: Cursor Export API Or Outbox
 
 Requirements:
@@ -644,11 +666,13 @@ PRD5 should proceed in independently verifiable batches:
     handoff artifacts.
 15. Batch 1O: status reconciliation and controlled snapshot handoff
     prerequisites for the next Gate A evidence exchange.
-16. Later payload policy metadata and evidence references, with future raw
+16. Batch 1P: model permission decision evidence for existing chat
+    authorization rejects.
+17. Later payload policy metadata and evidence references, with future raw
    payload modes gated behind enterprise opt-in.
-17. Later Gate A batch: read-only view/export decision after X-Insight Gate A
+18. Later Gate A batch: read-only view/export decision after X-Insight Gate A
    evidence.
-18. Later target/backlog batches: target upstream/SSO evidence or larger
+19. Later target/backlog batches: target upstream/SSO evidence or larger
    backlog items only after their prerequisites are explicitly met.
 
 ## 6. External Source Refresh

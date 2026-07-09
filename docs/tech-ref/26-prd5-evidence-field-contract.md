@@ -3,8 +3,8 @@
 > Version: v0.1
 > Date: 2026-07-10
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
-> Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, and Batch 1N
-> Canary/Sentinel complete. Batch 1O controlled snapshot handoff prep fixed
+> Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, and Batch 1O
+> Canary/Sentinel complete. Batch 1P Model Permission Decision Evidence fixed
 > awaiting Canary.
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > X-Insight response
@@ -322,6 +322,12 @@ Implemented first slice:
 - Batch 1O adds no new evidence field. It reconciles Batch 1N completion and
   prepares the next controlled snapshot handoff prerequisites before any
   read-only DB/view, exporter/outbox, or raw payload decision.
+- Batch 1P adds runtime model-permission denial evidence for the existing chat
+  `allowed_models` rejection path. The trace event uses
+  `auth.model_not_allowed`, `source_component=auth`,
+  `capture_gap=permission_denied`, `decision_kind=auth`,
+  `decision_result=rejected`, and
+  `decision_reason=auth_error.model_not_allowed`.
 
 ## Writer Behavior
 
@@ -350,6 +356,9 @@ directly:
   `source_component=payload_policy`, `decision_kind=payload_capture`,
   a stable decision result/reason, `raw_payload_stored=false`, and
   `payload_ref_present=false`;
+- model-permission denial evidence: emit `auth.model_not_allowed` for existing
+  chat authorization rejects with `capture_gap=permission_denied` and
+  `decision_kind=auth`;
 - billing freeze/settle/cancel: `billing` plus decision/result where applicable;
 - trace sampling: `trace_sampling` decision;
 - payload state: `payload_capture` decision and configured

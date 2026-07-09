@@ -309,6 +309,9 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 			}
 		}
 		if !allowed {
+			relay.recordTraceEvent(ctx, requestID, "auth.model_not_allowed", "auth", "warning", req.Model, requestedModel, nil, http.StatusForbidden, elapsedMilliseconds(requestStart), map[string]interface{}{
+				"error_code": "auth_error.model_not_allowed",
+			})
 			writeError(w, http.StatusForbidden, "permission_error", "auth_error.model_not_allowed",
 				fmt.Sprintf("Model '%s' is not allowed for this API key", req.Model))
 			return

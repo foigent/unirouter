@@ -2,8 +2,8 @@
 
 > Date: 2026-07-10
 > Status: PRD5 Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G,
-> Batch 1H, Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, and Batch 1N
-> Canary/Sentinel complete; Batch 1O Gate A controlled snapshot handoff prep
+> Batch 1H, Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, and
+> Batch 1O Canary/Sentinel complete; Batch 1P Model Permission Decision Evidence
 > fixed awaiting Canary. PRD4 remains complete for the confirmed current scope
 > and is not reopened.
 > Source: `docs/PRD-Phase5.md`, `docs/planning/PRD5-BACKLOG.md`,
@@ -17,7 +17,8 @@
 > changes, PRD5 Batch 1K snapshot handoff-note tooling changes, PRD5 Batch 1L
 > component span refinement changes, PRD5 Batch 1M provider failure
 > capture-gap changes, PRD5 Batch 1N snapshot capture-gap candidate changes,
-> and PRD5 Batch 1O Gate A controlled snapshot handoff preparation.
+> PRD5 Batch 1O Gate A controlled snapshot handoff preparation, and PRD5 Batch
+> 1P model permission decision evidence changes.
 
 ## Status Values
 
@@ -62,7 +63,25 @@ actual result, and rollback or cleanup note.
 | P5-F21 | Component Span Refinement | Canary passed | Repeated trace events from the same `source_component` parent to that component's first span while first component events still parent to the request gateway root | Canary PASS 10/10 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `ffebf83` / PR #115 | Batch 1L code-only evidence hierarchy refinement; no migration, new route, frontend behavior, exporter/outbox, read-only credential, raw payload capture, X-Insight runtime dependency, cross-system graph inference, or PRD4 matrix change |
 | P5-F22 | Provider Failure Capture Gaps | Canary passed | Provider failure trace events that occur before a provider response exists write `capture_gap=not_available_from_source` when no sanitized `upstream_request_id` can exist, while response events keep `provider_not_returned` and redaction gaps keep priority | Canary PASS 10/10 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `4a4e254` / PR #116 | Batch 1M code-only evidence gap refinement; no migration, new route, frontend behavior, exporter/outbox, read-only credential, raw payload capture, X-Insight runtime dependency, provider dispatch semantic change, or PRD4 matrix change |
 | P5-F23 | Snapshot Capture Gap Candidates | Canary passed | Gate A snapshots keep primary missing-row gaps factual while adding `candidate_capture_gaps` for missing trace rows, so X-Insight can distinguish possible sampling, retention, and non-instrumented causes without UniRouter fabricating evidence | Canary PASS 10/10 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `92cb8ce` / PR #117 | Batch 1N snapshot-tooling evidence enrichment; no migration, runtime request-path change, new route, frontend behavior, exporter/outbox, read-only credential, raw payload capture, X-Insight runtime dependency, or PRD4 matrix change |
-| P5-F24 | Gate A Controlled Snapshot Handoff Prep | Fixed awaiting Canary | UniRouter status docs reflect Batch 1N completion and the next Gate A controlled snapshot handoff preconditions are explicit before any real snapshot, DSN, credential, read-only DB/view, shared ECS staging, or exporter/outbox work starts | Docs/shared-folder grep, repo history check, `git diff --check` | Batch 1O docs/shared-folder coordination only; no snapshot artifact, migration, runtime request-path change, new route, frontend behavior, read-only credential/view, shared ECS staging, exporter/outbox, raw prompt/response capture, X-Insight runtime dependency, or PRD4 matrix change |
+| P5-F24 | Gate A Controlled Snapshot Handoff Prep | Canary passed | UniRouter status docs reflect Batch 1N completion and the next Gate A controlled snapshot handoff preconditions are explicit before any real snapshot, DSN, credential, read-only DB/view, shared ECS staging, or exporter/outbox work starts | Canary PASS 8/8 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `b2eea2e` / PR #118 | Batch 1O docs/shared-folder coordination only; no snapshot artifact, migration, runtime request-path change, new route, frontend behavior, read-only credential/view, shared ECS staging, exporter/outbox, raw prompt/response capture, X-Insight runtime dependency, or PRD4 matrix change |
+| P5-F25 | Model Permission Decision Evidence | Fixed awaiting Canary | Existing chat `allowed_models` rejects emit sanitized `auth.model_not_allowed` trace evidence with `source_component=auth`, `capture_gap=permission_denied`, `decision_kind=auth`, `decision_result=rejected`, and `decision_reason=auth_error.model_not_allowed` before the existing 403 response | Focused gateway tests, field-contract/code grep, `go test ./internal/gateway`, `go test ./internal/traceutil`, `git diff --check` | Batch 1P auth/trace evidence enrichment only; no migration, new route, frontend behavior, read-only credential/view, shared ECS staging, exporter/outbox, raw prompt/response capture, X-Insight runtime dependency, Embeddings authorization behavior change, or PRD4 matrix change |
+
+## Batch 1P Verification
+
+PRD5 Batch 1P verifies runtime model-permission decision evidence:
+
+```bash
+go test ./internal/gateway -run 'TestRecordTraceEvent_ModelNotAllowedCaptureGapAndDecision|TestHandleChatCompletion_ModelNotAllowed|TestRecordTraceEvent_ProviderResponseMissingUpstreamRequestIDCaptureGap|TestRecordTraceEvent_ProviderFailureMissingUpstreamRequestIDCaptureGap|TestRecordPayloadPolicyDecision'
+go test ./internal/traceutil
+go test ./...
+rg -n "Model Permission Decision Evidence|P5-F25|Batch 1P|auth.model_not_allowed|permission_denied|decision_kind=auth|auth_error.model_not_allowed|Embeddings authorization behavior change|b2eea2e|PR #118" internal/gateway docs/PRD-Phase5.md docs/ops/PRD5-ACCEPTANCE-MATRIX.md docs/planning/PRD5-IMPLEMENTATION-PLAN.md docs/planning/PRD5-BACKLOG.md docs/tech-ref/26-prd5-evidence-field-contract.md docs/CODEBASE-MAP.md docs/PROJECT-HANDOFF.md docs/ops/CURRENT-STATUS.md docs/agent-workflows/FIX-SIGNAL.md "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/contracts/2026-07-10-unirouter-prd5-model-permission-decision-evidence.md"
+git diff --check
+```
+
+Any migration, new API route, frontend behavior, read-only DB/view credential,
+shared ECS staging, exporter/outbox, raw prompt/response capture, X-Insight
+runtime dependency, Embeddings authorization behavior change, PRD4 matrix change,
+or `Production verified` claim is a scope failure.
 
 ## Batch 1O Verification
 

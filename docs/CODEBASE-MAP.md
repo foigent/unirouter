@@ -202,6 +202,15 @@ capture-gap table. Missing trace rows with an existing call log list
 `sampled_out`, `retention_expired`, and `not_instrumented` as candidates without
 asserting one definitive cause.
 
+PRD5 Batch 1P model permission decision evidence is implemented in
+`internal/gateway/relay.go` and `internal/gateway/trace.go`, with focused
+coverage in `internal/gateway/relay_mock_test.go`. Existing chat
+`allowed_models` rejects now emit `auth.model_not_allowed` trace evidence before
+the 403 response, using `source_component=auth`,
+`capture_gap=permission_denied`, `decision_kind=auth`, and
+`decision_result=rejected`. The denial still happens before billing, routing, or
+provider dispatch.
+
 Usage analytics is implemented in `internal/admin/prd2_product_handlers.go` and now supports project/key/model/provider/channel/status/source filters plus PRD4 `scope=my`, `owner_user_id`, `key_type`, `group_by=owner`, and `group_by=key_type`.
 
 API key quota visibility keeps `api_keys.qps_limit` as the compatibility

@@ -22,6 +22,7 @@ const (
 	evidenceCaptureModeNative  = "native"
 	evidenceCaptureGapProvider = "provider_not_returned"
 	evidenceCaptureGapSource   = "not_available_from_source"
+	evidenceCaptureGapAuth     = "permission_denied"
 	evidencePayloadMetadata    = traceutil.PayloadCaptureModeMetadataOnly
 	evidenceTraceRefSourceType = "unirouter"
 )
@@ -154,6 +155,9 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 	if len(upstreamRequestIDs) > 0 {
 		upstreamRequestID = sanitizeUpstreamRequestID(upstreamRequestIDs[0])
 	}
+	if captureGap == "" {
+		captureGap = authDecisionCaptureGap(eventType)
+	}
 	if upstreamRequestID == "" && captureGap == "" {
 		captureGap = providerMissingUpstreamCaptureGap(eventType)
 	}
@@ -283,6 +287,13 @@ func decisionEvidence(eventType string, metadata map[string]interface{}) (string
 	switch {
 	case eventType == "gateway.request.accepted":
 		return "admission", "allowed", reason
+	case strings.HasPrefix(eventType, "auth."):
+		switch eventType {
+		case "auth.model_not_allowed":
+			return "auth", "rejected", reason
+		default:
+			return "auth", "unknown", reason
+		}
 	case eventType == "payload.policy.applied":
 		if mode, ok := metadata["payload_capture_mode"].(string); ok && mode == traceutil.PayloadCaptureModeDisabled {
 			return "payload_capture", "skipped", reason
@@ -321,6 +332,13 @@ func decisionEvidence(eventType string, metadata map[string]interface{}) (string
 	default:
 		return "", "", ""
 	}
+}
+
+func authDecisionCaptureGap(eventType string) string {
+	if eventType == "auth.model_not_allowed" {
+		return evidenceCaptureGapAuth
+	}
+	return ""
 }
 
 func providerMissingUpstreamCaptureGap(eventType string) string {
