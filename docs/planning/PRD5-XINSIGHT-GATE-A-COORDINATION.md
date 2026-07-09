@@ -1,9 +1,10 @@
 # PRD5 X-Insight Gate A Coordination
 
 > Date: 2026-07-10
-> Status: planning coordination accepted by User; Batch 1T Canary/Sentinel
-> complete (`fc62e65` / PR #123); Gate A controlled-run recommendation still
-> awaits explicit User authorization and no controlled snapshot evidence exists
+> Status: planning coordination accepted by User; Batch 1U Canary/Sentinel
+> complete (`b2ba892` / PR #124); Gate A controlled run authorized as
+> `UR-XI-GATE-A-20260710-01` and awaiting Atlas; no controlled snapshot evidence
+> exists yet
 > Scope: UniRouter PRD5 coordination with X-Insight Gate A
 
 ## Purpose
@@ -23,6 +24,9 @@ Related shared-folder files:
 - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-x-insight-exchange-envelope-and-controlled-run-request.md`
 - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-controlled-run-authorization.md`
 - `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-10-unirouter-exchange-envelope-and-controlled-run-response.md`
+- `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-10-gate-a-controlled-run-authorization-recommendation.md`
+- `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-atlas-execution.md`
+- `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/evidence/2026-07-10-unirouter-gate-a-atlas-run-result.md`
 
 ## Current Accepted Decisions
 
@@ -110,6 +114,20 @@ Current Batch 1T exchange rule:
   data classes, source instance, safety profile, retention, and operator;
 - the operator uses unique scenario-marked `X-Request-ID` values and captures
   returned IDs directly; no broad request discovery is allowed.
+
+Current Batch 1V authorization rule:
+
+- User accepted `UR-XI-GATE-A-20260710-01` on 2026-07-10;
+- Atlas is the only authorized operator and must stop if the target is
+  production, the environment cannot be attested, or Atlas lacks access;
+- the approved scenario set is exactly `successful_non_stream` and
+  `model_permission_denied` with synthetic content and discarded response
+  bodies;
+- only the two returned and verified request IDs may be marked `approved`;
+- temporary snapshot retention is seven days after X-Insight receipt
+  reconciliation;
+- the existing UniRouter ECS development/test deployment is not a new shared
+  X-Insight staging environment and does not relax the separate staging gate.
 
 ### 2. GitHub Strategy
 
@@ -226,10 +244,11 @@ This coordination does not:
 
 ## Next PRD5 Steps
 
-1. Obtain User approval for the controlled dev/test environment, named operator,
-   and temporary snapshot retention.
-2. Run only the approved synthetic scenarios, seal their returned request IDs
-   into the approval manifest, and generate the exchange-identified snapshot.
+1. Atlas attests the approved target is non-production, deploys the required
+   merged version, and records health/rollback evidence.
+2. Atlas runs only the two approved synthetic scenarios, seals their returned
+   request IDs into the approval manifest, and generates the
+   exchange-identified snapshot.
 3. Let X-Insight import the sanitized snapshot and return the sidecar receipt.
 4. Use Gate A findings to prioritize remaining structural-field and payload
    policy gaps.

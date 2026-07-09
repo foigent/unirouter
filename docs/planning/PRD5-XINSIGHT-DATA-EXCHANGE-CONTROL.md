@@ -1,8 +1,9 @@
 # PRD5 X-Insight Data Exchange Control Surface
 
 > Date: 2026-07-10
-> Status: PRD5 Batch 1S and Batch 1T Canary/Sentinel complete; receipt contract
-> refinements incorporated; real controlled exchange still awaits User approval
+> Status: PRD5 Batch 1S through Batch 1U Canary/Sentinel complete; receipt
+> contract refinements incorporated; Batch 1V authorized as
+> `UR-XI-GATE-A-20260710-01` and awaiting Atlas execution
 > Scope: product and architecture decision for UniRouter-owned X-Insight data
 > exchange control UI, audit boundary, and staged implementation
 
@@ -38,9 +39,10 @@ This decision uses the current shared-folder X-Insight responses:
 - X-Insight confirmed it owns evidence normalization, persistence/read APIs,
   capture-gap interpretation, UI and policy simulation, and cross-source
   compatibility with LiteLLM/new-api/one-api/OTel/MCP/business systems.
-- The remaining real Gate A execution blocker is User approval of the exact
-  dev/test environment, named operator, and temporary artifact retention; it is
-  not a UniRouter UI implementation.
+- The User approved the exact dev/test environment boundary, Atlas-only
+  operator, two scenarios, and temporary artifact retention as
+  `UR-XI-GATE-A-20260710-01`; the remaining step is Atlas target execution and
+  evidence, not a UniRouter UI implementation.
 - X-Insight has implemented `xinsight.import-receipt.v1` with source/exchange,
   artifact hash, result counts, readback counts, and warning codes.
 - X-Insight intentionally does not expose `import_job_id` or a deep link yet
@@ -109,13 +111,16 @@ The better boundary is split audit:
 
 ### Stage 0: Current Gate A
 
-Status: tooling and authorization boundary in place through Batch 1T; real
-controlled run and receipt reconciliation remain pending.
+Status: tooling and authorization boundary in place through Batch 1U; Batch 1V
+authorized and handed to Atlas; real controlled run and receipt reconciliation
+remain pending.
 
 - Use shared worksheet and approval manifest.
 - Use exchange ID and exact approval-manifest hash for generated artifacts.
-- Generate no real artifact until the controlled environment, operator,
-  retention, request IDs, and source access are approved.
+- Generate no real artifact until Atlas produces the two verified request IDs
+  and the UniRouter operator has approved source access; environment, operator,
+  scenarios, safety, and retention are already approved by
+  `UR-XI-GATE-A-20260710-01`.
 - Keep X-Insight import/read evidence in shared handoff files.
 
 ### Stage 1: UI Readiness Design

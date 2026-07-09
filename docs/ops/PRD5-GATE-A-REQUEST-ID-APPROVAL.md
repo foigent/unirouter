@@ -71,6 +71,15 @@ The approval does not mean:
 6. The snapshot tool exports only approved rows and rejects placeholder IDs such
    as `TBD`, `n/a`, or `unavailable`.
 
+For controlled run authorization `UR-XI-GATE-A-20260710-01`, the User already
+approved the scenario/data/environment/operator/retention boundary before the
+IDs exist. Atlas therefore may complete steps 1-4 only for the two newly
+generated authorized requests and mark their exact returned IDs `approved`
+after verifying the expected HTTP status, matching response `X-Request-ID`,
+source label, and non-production environment. The User does not need to review
+opaque IDs a second time. This delegation does not apply to existing requests,
+other scenarios, another environment, or another operator.
+
 ## Required Gate A Scenarios
 
 X-Insight requested a small scenario set for the first combined sanitized

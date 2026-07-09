@@ -1,8 +1,10 @@
 # PRD5 Gate A Controlled Run Authorization
 
 > Date: 2026-07-10
-> Status: proposed authorization path; real controlled run not yet authorized
+> Status: authorized as `UR-XI-GATE-A-20260710-01`; awaiting Atlas execution
 > Audience: User, UniRouter owner/operator, X-Insight coordination reviewers
+> Decision record: `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-10-gate-a-controlled-run-authorization-recommendation.md`
+> Atlas handoff: `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-atlas-execution.md`
 
 ## Plain-Language Decision
 
@@ -26,12 +28,12 @@ shared ECS staging, or an exporter/outbox.
 | --- | --- | --- |
 | Scenario set | Which test outcomes may be created | Required: `successful_non_stream`, `model_permission_denied`; other scenarios remain unavailable unless separately approved |
 | Data classes | What may leave UniRouter | Matching sanitized `call_logs`, `request_trace_events`, generated `capture_gaps`, approval manifest, handoff note, and X-Insight receipt |
-| Source instance | Which non-production source may be used | Proposed: `unirouter-dev-gate-a-2026-07-10`; operator must confirm the actual environment before execution |
+| Source instance | Which non-production source may be used | Approved: `unirouter-dev-gate-a-2026-07-10`; Atlas must confirm the actual environment before execution |
 | Safety profile | What must never be exported | No credentials, DSN, tokens, raw prompt/response, raw IP, or raw upstream error text |
-| Retention | How long temporary shared artifacts remain | Pending User decision; proposed default is delete the temporary Gate A snapshot seven days after receipt reconciliation, while retaining the sanitized contract and receipt evidence |
-| Authorized operator | Who may use the environment and API keys | Pending User assignment; must be a UniRouter owner/operator with approved dev/test access |
+| Retention | How long temporary shared artifacts remain | Approved: delete the temporary Gate A snapshot seven days after receipt reconciliation, while retaining the sanitized contract and receipt evidence |
+| Authorized operator | Who may use the environment and API keys | Approved: Atlas only; no automatic reassignment if Atlas lacks access |
 
-The proposed seven-day artifact retention favors data minimization because the
+The approved seven-day artifact retention favors data minimization because the
 snapshot is a temporary integration test input, not either product's system of
 record. A longer period makes troubleshooting easier but increases the time an
 otherwise unnecessary copy remains in the shared folder.
@@ -119,5 +121,9 @@ call_logs、request_trace_events 和 capture_gaps；临时快照在 X-Insight
 和 raw upstream error。
 ```
 
-Until the environment, operator, and retention are approved, this document is
-an executable runbook but not authorization to create real requests.
+The User accepted the complete recommendation on 2026-07-10. This document now
+authorizes Atlas to create exactly the two listed requests after confirming the
+target is the approved non-production environment and the required merged code
+is deployed. It does not prove that deployment, request execution, snapshot
+generation, X-Insight import, or cleanup has occurred; those facts must be
+recorded in the Atlas result and X-Insight receipt.

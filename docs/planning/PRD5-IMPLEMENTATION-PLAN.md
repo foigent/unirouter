@@ -3,8 +3,9 @@
 > Date: 2026-07-10
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
 > Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, Batch 1O, and
-> Batch 1P, Batch 1Q, Batch 1R, Batch 1S, and Batch 1T Canary/Sentinel
-> complete. Batch 1U Embeddings Model Permission Parity fixed awaiting Canary.
+> Batch 1P, Batch 1Q, Batch 1R, Batch 1S, Batch 1T, and Batch 1U
+> Canary/Sentinel complete. Batch 1V Gate A Authorized Controlled Execution is
+> authorized as `UR-XI-GATE-A-20260710-01` and awaiting Atlas target execution.
 > Scope owner: UniRouter. X-Insight remains a separate project and owns broader
 > observability/governance product surfaces.
 
@@ -710,7 +711,7 @@ request path. The slice is isolated from billing amounts, routing selection,
 provider adapters, DB schema, API routes, frontend behavior, and X-Insight
 runtime availability.
 
-Status: fixed awaiting Canary.
+Status: Canary PASS 7/7; Sentinel merge reflected by `b2ba892` / PR #124.
 
 Implemented in this round:
 
@@ -738,6 +739,40 @@ Non-goals:
 - no X-Insight runtime dependency;
 - no real Gate A controlled request or target-environment claim;
 - no PRD4 matrix/status change.
+
+### Batch 1V: Gate A Authorized Controlled Execution
+
+Risk: R2 for authorization/status documentation and R4 for Atlas target
+deployment, controlled request execution, sanitized target-data handling, and
+X-Insight persistent import/readback evidence.
+
+Status: User authorization accepted as `UR-XI-GATE-A-20260710-01`; Atlas
+execution handoff ready; no real request, snapshot, receipt, or cleanup evidence
+exists yet.
+
+Authorized work:
+
+- use the current UniRouter Alibaba Cloud ECS shared development/test
+  environment only after Atlas confirms it is not production;
+- deploy `b2ba892` or a later `origin/main` commit containing Batch 1P/1T/1U;
+- run exactly `successful_non_stream` and `model_permission_denied` with
+  synthetic non-sensitive content and discarded response bodies;
+- let Atlas mark only the two verified returned request IDs approved;
+- generate a manifest-selected sanitized snapshot and handoff note using a DSN
+  supplied out of band;
+- obtain X-Insight persistent import/readback and
+  `xinsight.import-receipt.v1` evidence;
+- delete the temporary snapshot seven days after receipt reconciliation.
+
+Non-goals:
+
+- no production traffic or automatic operator reassignment;
+- no additional scenario or broad request discovery;
+- no credentials, DSN, token, raw prompt/response, raw IP, raw upstream error,
+  or broad query output in repo/shared files;
+- no X-Insight read-only DB/view, shared cross-project ECS staging, or
+  exporter/outbox;
+- no PRD4 reopen or `Production verified` promotion.
 
 ### Later Payload Policy Modes
 
@@ -797,16 +832,17 @@ Use existing PRD4 harnesses, but record target evidence under PRD5.
 
 ## Current Blocking Conditions
 
-There is no blocking condition for UniRouter Batch 1A through Batch 1U. Batch
-1U is fixed awaiting Canary verification.
+There is no blocking condition for UniRouter Batch 1A through Batch 1U. All are
+Canary/Sentinel complete through `b2ba892` / PR #124.
 
 These later actions are gated:
 
-- controlled request execution: blocked until the User approves the exact
-  dev/test environment, named operator, and temporary snapshot retention;
-- controlled snapshot artifact generation: blocked until that authorized run
-  yields concrete approved request IDs and approved source data access is
-  available;
+- controlled request execution: authorized for Atlas under
+  `UR-XI-GATE-A-20260710-01`, but not yet executed; Atlas must first attest the
+  target is non-production and deploy the required merged version;
+- controlled snapshot artifact generation: authorized in scope but still gated
+  on that Atlas run yielding exactly two verified request IDs and on approved
+  source data access being available to the UniRouter operator;
 - read-only DB/view access: blocked until X-Insight local snapshot import passes
   and User approves credential handoff;
 - shared ECS staging: blocked until local Gate A import works and CI is green;
