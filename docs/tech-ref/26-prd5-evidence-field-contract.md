@@ -3,9 +3,9 @@
 > Version: v0.1
 > Date: 2026-07-10
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
-> Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, and Batch 1O
-> Canary/Sentinel complete. Batch 1P Model Permission Decision Evidence fixed
-> awaiting Canary.
+> Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, Batch 1O,
+> Batch 1P, and Batch 1T Canary/Sentinel complete. Batch 1U Embeddings Model
+> Permission Parity fixed awaiting Canary.
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > X-Insight response
 > `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-08-x-insight-prd5-integration-answers.md`
@@ -356,9 +356,9 @@ directly:
   `source_component=payload_policy`, `decision_kind=payload_capture`,
   a stable decision result/reason, `raw_payload_stored=false`, and
   `payload_ref_present=false`;
-- model-permission denial evidence: emit `auth.model_not_allowed` for existing
-  chat authorization rejects with `capture_gap=permission_denied` and
-  `decision_kind=auth`;
+- model-permission denial evidence: emit `auth.model_not_allowed` for Chat and
+  Embeddings `allowed_models` rejects with `capture_gap=permission_denied` and
+  `decision_kind=auth` before billing/routing/provider work;
 - billing freeze/settle/cancel: `billing` plus decision/result where applicable;
 - trace sampling: `trace_sampling` decision;
 - payload state: `payload_capture` decision and configured

@@ -2,8 +2,8 @@
 
 > Date: 2026-07-10
 > Status: Source-grounded PRD5 planning comparison with Batch 1J through Batch
-> 1N evidence-readiness catch-up slices accepted and Batch 1O handoff prep fixed
-> awaiting Canary.
+> 1T accepted and Batch 1U Embeddings model-permission parity fixed awaiting
+> Canary.
 > Purpose: compare UniRouter against adjacent gateway and observability systems,
 > then decide which gaps belong in UniRouter PRD5 versus X-Insight.
 
@@ -85,7 +85,8 @@ implementation because these projects move quickly.
 
 High priority, now partially accepted through Batch 1A/1B/1C, Batch 1D,
 Batch 1E, Batch 1F, Batch 1G, Batch 1H, Batch 1I, Batch 1J, Batch 1K,
-Batch 1L, Batch 1M, and Batch 1N:
+Batch 1L, Batch 1M, Batch 1N, Batch 1P, Batch 1Q, Batch 1R, Batch 1S, and
+Batch 1T:
 
 - explicit `trace_id`, `span_id`, `parent_span_id`, and `session_id` handling;
 - `schema_version`, `source_component`, `capture_mode`, and capture-gap model;
@@ -153,6 +154,17 @@ Accepted in Batch 1N:
 
 - generated Gate A snapshot gap records can include candidate capture gaps for
   missing trace rows without asserting one definitive cause.
+
+Accepted in Batch 1P:
+
+- Chat API-key model-permission denials emit explicit gateway-owned auth
+  decision evidence before billing, routing, or provider dispatch.
+
+Fixed awaiting Canary in Batch 1U:
+
+- Embeddings now enforces the same `allowed_models` semantics as Chat, closing
+  an endpoint authorization bypass while preserving the same 403 contract and
+  decision evidence shape.
 
 Medium priority:
 

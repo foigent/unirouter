@@ -92,8 +92,8 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Current active verification signal: PRD5 Batch 1T Gate A Exchange Envelope And
-Controlled Run Authorization fixed awaiting Canary in
+Current active verification signal: PRD5 Batch 1U Embeddings Model Permission
+Parity fixed awaiting Canary in
 `docs/agent-workflows/FIX-SIGNAL.md`.
 
 PRD4 is complete for the confirmed current scope. PRD5 must preserve the PRD4
@@ -358,7 +358,7 @@ PRD5 Batch 1T:
 
 - Scope: Gate A exchange envelope, exact approval-manifest hashing, receipt
   contract reconciliation, and controlled-run authorization.
-- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Status: Canary PASS 7/7; Sentinel merge reflected by `fc62e65` / PR #123.
 - Adds: snapshot/handoff `exchange_id`; manifest-selected
   `approval_manifest_sha256`; manifest-preserving handoff commands; focused
   tests; `docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md`; shared exchange
@@ -368,6 +368,18 @@ PRD5 Batch 1T:
 - Does not add: real requests or artifacts, approved IDs, secrets, UI, API,
   migration, runtime path changes, read-only DB/view, shared ECS,
   exporter/outbox, X-Insight runtime dependency, or PRD4 changes.
+
+PRD5 Batch 1U:
+
+- Scope: Embeddings API-key model-permission parity with Chat.
+- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Adds: shared `allowed_models` predicate; Embeddings pre-billing 403;
+  `X-Request-ID`; identical `auth.model_not_allowed`, `permission_denied`, and
+  auth decision evidence; focused helper/Chat/Embeddings tests; shared X-Insight
+  contract.
+- Does not add: route, migration, frontend, billing amount, routing/provider
+  success-path, raw payload, exporter/outbox, X-Insight runtime dependency, real
+  Gate A execution, target claim, or PRD4 changes.
 
 Latest completed PRD4 verification result is PRD4 Batch 1S Open Issue Boundary
 Closeout:

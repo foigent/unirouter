@@ -3,9 +3,9 @@
 > Date: 2026-07-10
 > Status: PRD5 Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G,
 > Batch 1H, Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N,
-> Batch 1O, Batch 1P, Batch 1Q, Batch 1R, and Batch 1S Canary/Sentinel
-> complete; Batch 1T Gate A Exchange Envelope And Controlled Run Authorization
-> fixed awaiting Canary. PRD4 remains complete for the
+> Batch 1O, Batch 1P, Batch 1Q, Batch 1R, Batch 1S, and Batch 1T
+> Canary/Sentinel complete; Batch 1U Embeddings Model Permission Parity fixed
+> awaiting Canary. PRD4 remains complete for the
 > confirmed current scope and is not reopened.
 > Source: `docs/PRD-Phase5.md`, `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, current repo/code review,
@@ -21,8 +21,9 @@
 > PRD5 Batch 1O Gate A controlled snapshot handoff preparation, PRD5 Batch 1P
 > model permission decision evidence changes, PRD5 Batch 1Q request approval
 > manifest changes, PRD5 Batch 1R approval runbook/worksheet changes, PRD5
-> Batch 1S data exchange control surface decision changes, and PRD5 Batch 1T
-> exchange envelope/controlled-run authorization changes.
+> Batch 1S data exchange control surface decision changes, PRD5 Batch 1T
+> exchange envelope/controlled-run authorization changes, and PRD5 Batch 1U
+> Embeddings model-permission parity changes.
 
 ## Status Values
 
@@ -72,7 +73,30 @@ actual result, and rollback or cleanup note.
 | P5-F26 | Gate A Request Approval Manifest | Canary passed | Snapshot tooling accepts a JSON approval manifest and exports only rows explicitly marked `approved` with concrete request IDs, while `pending`/`unavailable` rows remain non-exported and direct request flags cannot be mixed with manifest mode | Canary PASS 6/6 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `ed8c69d` / PR #120 | Batch 1Q tooling/docs/shared-folder coordination only; no real snapshot artifact, approved request ID invention, migration, runtime request-path change, new route, frontend behavior, read-only credential/view, shared ECS staging, exporter/outbox, raw prompt/response capture, X-Insight runtime dependency, or PRD4 matrix change |
 | P5-F27 | Gate A Request ID Approval Runbook | Canary passed | User-facing runbook and shared worksheet explain how to approve concrete request IDs without requiring the User to edit JSON, touch DB access, or approve broad export | Canary PASS 6/6 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `c15cd7d` / PR #121 | Batch 1R docs/shared-folder coordination only; no real snapshot artifact, approved request ID invention, migration, runtime request-path change, new route, frontend behavior, read-only credential/view, shared ECS staging, exporter/outbox, raw prompt/response capture, X-Insight runtime dependency, or PRD4 matrix change |
 | P5-F28 | X-Insight Data Exchange Control Surface | Canary passed | Future UI/control-plane boundary is defined as UniRouter-owned outbound approval/export ledger/import receipt control, while downstream observability, read audit, investigation timeline, graph, policy simulation, and evidence packs remain X-Insight-owned | Canary PASS 6/6 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `c6ae2a7` / PR #122 | Batch 1S docs/shared-folder coordination only; no UI code, API route, migration, real snapshot artifact, approved request ID invention, read-only DB/view, shared ECS staging, exporter/outbox, X-Insight runtime dependency, raw payload capture, or PRD4 matrix change |
-| P5-F29 | Gate A Exchange Envelope And Controlled Run Authorization | Fixed awaiting Canary | Snapshots carry exchange identity and exact manifest hash, manifest source cannot be overridden, handoff commands preserve manifest selection, and fresh Gate A requests require prior scenario/data/environment/operator/retention authorization | Focused snapshot-tool tests, controlled-run runbook, shared exchange contract/authorization/response, X-Insight receipt contract reconciliation | Batch 1T tooling/tests/docs/shared-folder coordination only; no real request, snapshot artifact, approved IDs, secrets, UI, API, migration, runtime path change, read-only DB/view, shared ECS, exporter/outbox, X-Insight runtime dependency, or PRD4 change |
+| P5-F29 | Gate A Exchange Envelope And Controlled Run Authorization | Canary passed | Snapshots carry exchange identity and exact manifest hash, manifest source cannot be overridden, handoff commands preserve manifest selection, and fresh Gate A requests require prior scenario/data/environment/operator/retention authorization | Canary PASS 7/7 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `fc62e65` / PR #123 | Batch 1T tooling/tests/docs/shared-folder coordination only; no real request, snapshot artifact, approved IDs, secrets, UI, API, migration, runtime path change, read-only DB/view, shared ECS, exporter/outbox, X-Insight runtime dependency, or PRD4 change |
+| P5-F30 | Embeddings Model Permission Parity | Fixed awaiting Canary | Embeddings applies the same API-key `allowed_models` rule as Chat and emits the same auth rejection evidence before billing, routing, or provider work | Shared predicate tests, Chat regression, Embeddings 403/request-ID/pre-billing/trace-field test, full Go suite, shared X-Insight contract | Batch 1U isolated R3 authorization fix; no route, migration, frontend, raw payload, exporter/outbox, X-Insight runtime dependency, real Gate A execution, target claim, or PRD4 change |
+
+## Batch 1U Verification
+
+PRD5 Batch 1U verifies Embeddings model-permission parity:
+
+```bash
+git log --oneline -3 origin/main | rg "fc62e65.*PRD5 Batch 1T|#123"
+go test ./internal/gateway -run 'TestModelAllowedForAPIKey|TestHandleChatCompletion_ModelNotAllowed|TestHandleEmbeddings_Model|TestRecordTraceEvent_ModelNotAllowedCaptureGapAndDecision' -count=1 -v
+go test ./internal/gateway ./internal/middleware ./cmd/uniroute -count=1
+go test ./... -count=1
+rg -n "P5-F30|Batch 1U|Embeddings Model Permission Parity|modelAllowedForAPIKey|rejectModelNotAllowed|TestHandleEmbeddings_ModelNotAllowed|auth.model_not_allowed|permission_denied|fc62e65|PR #123" internal/gateway docs/PRD-Phase5.md docs/ops/PRD5-ACCEPTANCE-MATRIX.md docs/planning/PRD5-IMPLEMENTATION-PLAN.md docs/planning/PRD5-BACKLOG.md docs/planning/PRD5-COMPETITOR-COMPARISON.md docs/tech-ref/26-prd5-evidence-field-contract.md docs/PROJECT-HANDOFF.md docs/ops/CURRENT-STATUS.md docs/CODEBASE-MAP.md docs/DOC-INVENTORY.md docs/README.md docs/agent-workflows/FIX-SIGNAL.md "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/contracts/2026-07-10-unirouter-prd5-embeddings-model-permission-parity.md"
+git diff -- frontend internal/admin internal/billing internal/db internal/migrate
+git diff -- docs/PRD-Phase4.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/ops/evidence/PRD4-final-closeout-20260708.md
+git status --short
+git diff --check
+```
+
+Any billing amount/freeze semantic change beyond pre-billing denial, routing or
+provider success-path change, route/migration/frontend change, raw payload,
+exporter/outbox, X-Insight runtime dependency, real Gate A execution, target
+environment claim, PRD4 change, or `Production verified` claim is a scope
+failure.
 
 ## Batch 1T Verification
 

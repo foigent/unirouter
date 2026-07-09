@@ -4,9 +4,9 @@
 > Date: 2026-07-10
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
 > Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, Batch 1O,
-> Batch 1P, Batch 1Q, Batch 1R, and Batch 1S Canary/Sentinel complete. Batch
-> 1T Gate A Exchange Envelope And Controlled Run Authorization fixed awaiting
-> Canary. PRD4 remains complete for the confirmed current scope
+> Batch 1P, Batch 1Q, Batch 1R, Batch 1S, and Batch 1T Canary/Sentinel
+> complete. Batch 1U Embeddings Model Permission Parity fixed awaiting Canary.
+> PRD4 remains complete for the confirmed current scope
 > and is not reopened by PRD5.
 > Source: `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, X-Insight shared-folder
@@ -52,6 +52,8 @@ PRD5 may:
 - authorize newly created Gate A test requests by scenario, data class, source
   instance, safety profile, retention, and operator before their request IDs are
   sealed into the export manifest;
+- enforce API-key model restrictions consistently across Chat and Embeddings and
+  emit the same gateway-owned authorization decision evidence on rejection;
 - add X-Insight deep-link hooks after X-Insight exposes stable execution URLs;
 - compare LiteLLM, New API, one-api, Langfuse, Helicone, and similar systems to
   decide which gateway features UniRouter should catch up on versus leave to
@@ -112,6 +114,7 @@ PRD5 must not:
 | P5-F27 | Gate A Request ID Approval Runbook | Explain the non-technical request ID approval process and provide a shared worksheet before any real snapshot artifact is generated |
 | P5-F28 | X-Insight Data Exchange Control Surface | Define the future UniRouter UI/control-plane boundary for approval, export ledger, receipts, and deep links without duplicating X-Insight observability |
 | P5-F29 | Gate A Exchange Envelope And Controlled Run Authorization | Add exchange identity and exact manifest hashing, then define prior authorization for narrowly generated Gate A scenario requests |
+| P5-F30 | Embeddings Model Permission Parity | Enforce API-key `allowed_models` on Embeddings before billing/routing/provider work and emit the same authorization rejection evidence as Chat |
 
 ### P2
 
@@ -745,6 +748,33 @@ Acceptance:
   create read-only DB/view access, shared ECS staging, exporter/outbox, raw
   payload capture, X-Insight runtime dependency, or PRD4 changes.
 
+### P5-F30: Embeddings Model Permission Parity
+
+Requirements:
+
+- Use one model-permission predicate for Chat and Embeddings, preserving exact
+  resolved-model, requested-alias, and `*` wildcard behavior.
+- Apply the check after request/model parsing but before billing freeze, route
+  lookup, provider key decryption, or upstream dispatch.
+- Return the existing OpenAI-compatible 403
+  `auth_error.model_not_allowed` response and `X-Request-ID` correlation header.
+- Emit `auth.model_not_allowed` with `source_component=auth`,
+  `capture_gap=permission_denied`, `decision_kind=auth`,
+  `decision_result=rejected`, and
+  `decision_reason=auth_error.model_not_allowed`.
+- Preserve Chat behavior while closing the Embeddings authorization bypass.
+
+Acceptance:
+
+- Focused tests cover nil/unrestricted keys, wildcard, resolved model, requested
+  alias, rejection, Chat regression, Embeddings 403, request ID response,
+  pre-billing rejection, and decision evidence fields.
+- No billing freeze, routing, provider dispatch, or call-log write occurs for an
+  Embeddings model-permission denial.
+- Batch 1U does not add routes, migrations, frontend behavior, raw payload
+  capture, exporter/outbox, X-Insight runtime dependency, real Gate A execution,
+  target-environment claims, or PRD4 changes.
+
 ### P5-F09: Cursor Export API Or Outbox
 
 Requirements:
@@ -809,11 +839,13 @@ PRD5 should proceed in independently verifiable batches:
     decision.
 20. Batch 1T: Gate A exchange identity, exact approval-manifest hashing, import
     receipt contract reconciliation, and controlled-run authorization path.
-21. Later payload policy metadata and evidence references, with future raw
+21. Batch 1U: Embeddings `allowed_models` enforcement and model-permission
+    decision evidence parity with Chat.
+22. Later payload policy metadata and evidence references, with future raw
    payload modes gated behind enterprise opt-in.
-22. Later Gate A batch: read-only view/export decision after X-Insight Gate A
+23. Later Gate A batch: read-only view/export decision after X-Insight Gate A
    evidence.
-23. Later target/backlog batches: target upstream/SSO evidence or larger
+24. Later target/backlog batches: target upstream/SSO evidence or larger
    backlog items only after their prerequisites are explicitly met.
 
 ## 6. External Source Refresh
