@@ -1,6 +1,6 @@
 # UniRouter Agent Handoff
 
-> Purpose: fast onboarding for Codex, OpenClaw Canary, or any other agent taking over this repository.
+> Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
 
 ## First Read Order
@@ -14,7 +14,7 @@
 7. `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md` - X-Insight Gate A sequencing decisions.
 8. `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md` - future UniRouter UI/control-plane boundary for X-Insight data exchange.
 9. `docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md` - approval boundary for newly generated Gate A scenarios.
-10. `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-atlas-execution.md` - authorized Atlas Gate A execution handoff.
+10. `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-atlas-execution.md` and `requests/2026-07-10-unirouter-gate-a-persistent-import-and-receipt.md` in the same shared folder - Atlas result boundary and current X-Insight import handoff.
 11. `docs/PRD-Phase4.md` - completed PRD4 scope.
 12. `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` - PRD4 accepted/deferred rows and evidence boundaries.
 13. `docs/planning/PRD4-BACKLOG.md` - PRD4 candidate backlog source record.
@@ -22,10 +22,11 @@
 15. `docs/PRD-Phase3.md` - completed PRD3 scope.
 16. `docs/planning/PRD3-CONSISTENCY-AUDIT.md` - PRD1 -> PRD2 consistency findings behind PRD3.
 17. `docs/issues/OPEN-ISSUES.md` - active unresolved issues and recently verified fixes.
-18. `docs/agent-workflows/AGENT-PROTOCOL.md` - risk-gated Codex/OpenClaw Canary/Sentinel/Atlas workflow.
-19. `docs/agent-workflows/FIX-SIGNAL.md` and `docs/agent-workflows/VERIFY-RESULT.md` - current signal state and latest verification result.
-20. `docs/CODEBASE-MAP.md` - code, route, data, test, and deployment map.
-21. `docs/DOC-INVENTORY.md` and `docs/DOCS-GOVERNANCE.md` - which docs are current, frozen, historical, candidate, or reference-only.
+18. `docs/agent-workflows/AGENT-PROTOCOL.md` - single execution owner, approval, evidence and optional independent-review workflow.
+19. `docs/agent-workflows/EXECUTION-RECORD.md` and `docs/agent-workflows/reviews/` - current batch execution state and optional immutable review results.
+20. `docs/agent-workflows/FIX-SIGNAL.md` and `docs/agent-workflows/VERIFY-RESULT.md` - protocol v1.x compatibility entry and latest historical verification result.
+21. `docs/CODEBASE-MAP.md` - code, route, data, test, and deployment map.
+22. `docs/DOC-INVENTORY.md` and `docs/DOCS-GOVERNANCE.md` - which docs are current, frozen, historical, candidate, or reference-only.
 
 ## Current Project Shape
 
@@ -68,36 +69,32 @@ and unique `X-Request-ID` values, without broad request discovery.
 | Which PRD2 items are frozen/accepted/deferred? | `docs/ops/PRD2-ACCEPTANCE-MATRIX.md` |
 | Which capabilities were PRD4 candidates before formal scoping? | `docs/planning/PRD4-BACKLOG.md` |
 | What should be fixed next? | `docs/issues/OPEN-ISSUES.md` |
-| How should Codex and OpenClaw coordinate? | `docs/agent-workflows/AGENT-PROTOCOL.md` |
+| How does execution, approval and optional review work? | `docs/agent-workflows/AGENT-PROTOCOL.md` |
 | Which old docs may be stale? | `docs/DOC-INVENTORY.md` |
 
 PRD1 and PRD2 documents remain useful requirements/evidence references, but they are not the active planning surface for new work. Do not treat files under `docs/testing/archive/` as current status. They are historical evidence unless reconciled into the current-state files above.
 
-## Risk-Gated Agent Workflow
+## Risk-Gated Execution Workflow
 
-Use `docs/agent-workflows/AGENT-PROTOCOL.md` to classify each change before deciding the handoff path:
+Use `docs/agent-workflows/AGENT-PROTOCOL.md` before changing code or status:
 
-1. Codex implements or edits and classifies the change as R0/R1/R2/R3/R4.
-2. R0 local cleanup does not require `FIX-SIGNAL.md` / `VERIFY-RESULT.md`.
-3. R1 tooling/evidence changes may be grouped into one Canary gate.
-4. R2/R3/R4 changes require Codex to update `docs/agent-workflows/FIX-SIGNAL.md`.
-5. User asks OpenClaw Canary to verify that file when a risk gate is triggered.
-6. OpenClaw writes `docs/agent-workflows/VERIFY-RESULT.md`.
-7. Codex reads the result and either closes the loop or fixes failures.
-
-User handoff sentence for OpenClaw when a risk gate is triggered:
-
-```text
-去 /Users/m4/Desktop/projects/UniRouter/docs/agent-workflows/FIX-SIGNAL.md，按里面的验收指令逐条验证，结果写入 VERIFY-RESULT.md。
-```
+1. Codex is the single execution owner for planning, implementation, tests, repository integration and authorized environment work.
+2. R2/R3/R4 batches update `docs/agent-workflows/EXECUTION-RECORD.md` and applicable immutable evidence.
+3. Codex creates a `codex/` branch and PR; required GitHub CI must pass before merge. Direct push to `main` is prohibited.
+4. Authorized non-production deployment may proceed without a separate Atlas gate after secure access exists.
+5. Production, destructive target data, credential, expanded export, excess-cost provider and public-release actions require specific User approval.
+6. Canary, Sentinel, Atlas or other capable reviewers may independently review without becoming a default serial gate.
+7. Independent results go under `docs/agent-workflows/reviews/`; P0/P1 findings block or reopen a batch.
+8. Local, CI, target, production and external-integration evidence remain separate status levels.
 
 ## Current Verification Baseline
 
-Current active verification signal: PRD5 Batch 1V Gate A Authorized Controlled
-Execution status/authorization handoff in `docs/agent-workflows/FIX-SIGNAL.md`.
-Authorization `UR-XI-GATE-A-20260710-01` is active and Atlas can execute in
-parallel with the documentation verification; no real request, snapshot,
-receipt, or cleanup result exists yet.
+Current execution record: PRD5 Batch 1W Pre-Relay Model Permission Evidence
+Parity is Local verified with PR/CI integration pending in
+`docs/agent-workflows/EXECUTION-RECORD.md`.
+Batch 1V Atlas execution produced an immutable sanitized snapshot with a known
+denied-scenario correlation/source-trace gap; X-Insight import and target
+test-key disable confirmation remain pending.
 
 PRD4 is complete for the confirmed current scope. PRD5 must preserve the PRD4
 deferred-boundary decisions recorded here.
@@ -367,7 +364,7 @@ PRD5 Batch 1T:
   tests; `docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md`; shared exchange
   contract, authorization worksheet, and UniRouter response.
 - Post-Batch decision: User approved the environment/operator/retention
-  recommendation as `UR-XI-GATE-A-20260710-01`; execution remains pending Atlas.
+  recommendation as `UR-XI-GATE-A-20260710-01`; Atlas executed it in Batch 1V.
 - Does not add: real requests or artifacts, approved IDs, secrets, UI, API,
   migration, runtime path changes, read-only DB/view, shared ECS,
   exporter/outbox, X-Insight runtime dependency, or PRD4 changes.
@@ -388,16 +385,34 @@ PRD5 Batch 1V:
 
 - Scope: activate the User-approved Gate A controlled run and hand target
   deployment/execution to Atlas without widening data access.
-- Status: authorized as `UR-XI-GATE-A-20260710-01`; Atlas execution request and
-  result template are ready; no target result is claimed.
-- Adds: accepted shared decision; answered authorization request; Atlas-only
-  stop conditions and execution phases; exactly two authorized scenarios;
-  delegated exact-ID approval after result checks; metadata-only snapshot and
-  receipt boundary; seven-day post-reconciliation temporary snapshot cleanup.
+- Status: Canary PASS 7/7; Sentinel merge reflected by `cc38094` / PR #125.
+  Atlas then executed `UR-XI-GATE-A-20260710-01` against deployed app commit
+  `b2ba892` and generated exchange `uxchg_f7de31e541516893a0d9b31cc0f3892a`;
+  X-Insight persistent import/receipt remains pending.
+- Adds: one immutable metadata-only snapshot with one call log, seven trace
+  events, two capture gaps, exact manifest binding, and an X-Insight persistent
+  import request.
+- Known gap: the denied request returned 403 but the live pre-relay wrapper
+  omitted `X-Request-ID` and the Batch 1P trace; the artifact is valid diagnostic
+  gap evidence, not complete denied-scenario target evidence.
 - Does not add: fabricated request IDs, production traffic, automatic operator
   reassignment, raw prompt/response or secrets, broad discovery, X-Insight
   read-only DB/view, shared cross-project ECS staging, exporter/outbox, PRD4
   changes, or `Production verified` claims.
+
+PRD5 Batch 1W:
+
+- Scope: ensure live API-key `allowed_models` denials reach Relay after project
+  model-governance resolution.
+- Status: Local verified; PR/CI integration pending under Agent Protocol v2.0.
+- Adds: removal of the duplicate pre-relay API-key check; full-handler
+  integration coverage for HTTP 403, matching `X-Request-ID`, exact auth
+  decision trace fields, zero call-log rows, and zero billing freezes.
+- Local verification: targeted `cmd/uniroute` and `internal/gateway` tests,
+  migrated-DB integration test, and full `go test ./... -count=1` passed.
+- Does not add: project model-governance semantic changes, route, migration,
+  frontend, raw payload, target rerun, X-Insight runtime dependency,
+  exporter/outbox, PRD4 changes, or production claims.
 
 Latest completed PRD4 verification result is PRD4 Batch 1S Open Issue Boundary
 Closeout:
@@ -600,7 +615,9 @@ Results:
 - Frontend tests: PASS, 18 files / 97 tests.
 - Frontend build: PASS with Vite large chunk warning.
 
-Always check `docs/ops/CURRENT-STATUS.md` and `docs/agent-workflows/VERIFY-RESULT.md` for the latest accepted batch before making new claims.
+Always check `docs/ops/CURRENT-STATUS.md`, the active acceptance matrix,
+`docs/agent-workflows/EXECUTION-RECORD.md`, and applicable immutable evidence
+before making new claims. `VERIFY-RESULT.md` is protocol v1.x history.
 
 ## Worktree Warning
 

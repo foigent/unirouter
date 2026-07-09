@@ -239,8 +239,9 @@ PRD5 Batch 1T Gate A exchange identity is implemented in
 approval manifest bytes; and generated handoff commands keep
 `--approval-manifest`. Newly generated scenarios follow
 `docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md`. User authorization
-`UR-XI-GATE-A-20260710-01` is active; Atlas execution and target evidence remain
-pending.
+`UR-XI-GATE-A-20260710-01` produced immutable target exchange
+`uxchg_f7de31e541516893a0d9b31cc0f3892a`; X-Insight import remains pending and
+the denied scenario has an explicit correlation/source-trace gap.
 
 PRD5 Batch 1P model permission decision evidence is implemented in
 `internal/gateway/relay.go` and `internal/gateway/trace.go`, with focused
@@ -263,9 +264,16 @@ PRD5 Batch 1V Gate A target execution is coordinated through
 `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-atlas-execution.md`.
 It binds Atlas to the confirmed non-production target, exactly two scenarios,
 verified request-ID sealing, sanitized snapshot/receipt evidence, and a
-seven-day post-reconciliation cleanup deadline. The companion result template
-remains pending and is not execution evidence until Atlas replaces its required
-pending fields.
+seven-day post-reconciliation cleanup deadline. The actual result records one
+successful evidence chain and one denied request with no returned correlation
+header or source trace row.
+
+PRD5 Batch 1W fixes that live denial path in
+`cmd/uniroute/gateway_handlers.go`. The wrapper no longer duplicates Relay's
+API-key `allowed_models` check after model-governance resolution. Coverage in
+`cmd/uniroute/prd2_p0_e2e_integration_test.go` proves the full handler now
+returns `X-Request-ID`, persists the accepted auth decision trace, and performs
+no call-log write or billing freeze for the denial.
 
 Usage analytics is implemented in `internal/admin/prd2_product_handlers.go` and now supports project/key/model/provider/channel/status/source filters plus PRD4 `scope=my`, `owner_user_id`, `key_type`, `group_by=owner`, and `group_by=key_type`.
 

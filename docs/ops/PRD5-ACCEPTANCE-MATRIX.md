@@ -4,9 +4,12 @@
 > Status: PRD5 Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G,
 > Batch 1H, Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N,
 > Batch 1O, Batch 1P, Batch 1Q, Batch 1R, Batch 1S, Batch 1T, and Batch 1U
-> Canary/Sentinel complete; Batch 1V Gate A Authorized Controlled Execution is
-> authorized as `UR-XI-GATE-A-20260710-01` and awaiting Atlas. PRD4 remains
-> complete for the confirmed current scope and is not reopened.
+> Historical Canary/Sentinel evidence is complete through Batch 1V (`cc38094` / PR #125). Post-merge
+> target execution produced an immutable
+> sanitized snapshot with one denied-scenario correlation/evidence gap and now
+> awaits X-Insight import. Batch 1W Pre-Relay Model Permission Evidence Parity
+> is Local verified with PR/CI integration pending under Agent Protocol v2.0.
+> PRD4 remains complete and is not reopened.
 > Source: `docs/PRD-Phase5.md`, `docs/planning/PRD5-BACKLOG.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`, current repo/code review,
 > X-Insight shared-folder responses, PRD5 Batch 1A/1B/1C implementation
@@ -23,8 +26,8 @@
 > manifest changes, PRD5 Batch 1R approval runbook/worksheet changes, PRD5
 > Batch 1S data exchange control surface decision changes, PRD5 Batch 1T
 > exchange envelope/controlled-run authorization changes, PRD5 Batch 1U
-> Embeddings model-permission parity changes, and the User-approved Batch 1V
-> Atlas execution handoff.
+> Embeddings model-permission parity changes, Batch 1V Atlas artifact evidence,
+> and Batch 1W pre-relay permission ownership changes.
 
 ## Status Values
 
@@ -33,7 +36,10 @@
 | Planned | Accepted into PRD5 plan but not yet implemented |
 | Fixed awaiting Canary | Codex completed scoped changes and requested independent verification |
 | Canary passed | Canary verified the requested evidence |
+| Local verified | The execution owner completed the recorded local checks; this is not an independent review or target claim |
+| CI verified | The corresponding commit passed the repository's required CI checks |
 | Authorized awaiting Atlas | User-approved target action is bounded and handed off, but no target execution or result is claimed yet |
+| Target executed with known gap | Target action produced real evidence, but a recorded gap prevents full target acceptance |
 | E2E accepted | Integrated local, staging, or approved non-production evidence exists |
 | Production verified | Target production or explicitly approved production-like evidence exists |
 | Deferred pending prerequisite | Explicitly not actionable until a named prerequisite exists |
@@ -77,27 +83,42 @@ actual result, and rollback or cleanup note.
 | P5-F28 | X-Insight Data Exchange Control Surface | Canary passed | Future UI/control-plane boundary is defined as UniRouter-owned outbound approval/export ledger/import receipt control, while downstream observability, read audit, investigation timeline, graph, policy simulation, and evidence packs remain X-Insight-owned | Canary PASS 6/6 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `c6ae2a7` / PR #122 | Batch 1S docs/shared-folder coordination only; no UI code, API route, migration, real snapshot artifact, approved request ID invention, read-only DB/view, shared ECS staging, exporter/outbox, X-Insight runtime dependency, raw payload capture, or PRD4 matrix change |
 | P5-F29 | Gate A Exchange Envelope And Controlled Run Authorization | Canary passed | Snapshots carry exchange identity and exact manifest hash, manifest source cannot be overridden, handoff commands preserve manifest selection, and fresh Gate A requests require prior scenario/data/environment/operator/retention authorization | Canary PASS 7/7 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `fc62e65` / PR #123 | Batch 1T tooling/tests/docs/shared-folder coordination only; no real request, snapshot artifact, approved IDs, secrets, UI, API, migration, runtime path change, read-only DB/view, shared ECS, exporter/outbox, X-Insight runtime dependency, or PRD4 change |
 | P5-F30 | Embeddings Model Permission Parity | Canary passed | Embeddings applies the same API-key `allowed_models` rule as Chat and emits the same auth rejection evidence before billing, routing, or provider work | Canary PASS 7/7 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `b2ba892` / PR #124 | Batch 1U isolated R3 authorization fix; no route, migration, frontend, raw payload, exporter/outbox, X-Insight runtime dependency, real Gate A execution, target claim, or PRD4 change |
-| P5-F31 | Gate A Authorized Controlled Execution | Authorized awaiting Atlas | Atlas executes exactly two approved synthetic scenarios in a confirmed non-production UniRouter ECS environment, seals only verified returned IDs, hands off sanitized metadata, and obtains X-Insight persistent import/readback receipt evidence | Authorization `UR-XI-GATE-A-20260710-01`; Atlas request/result template; future actual environment/commit/health/request-ID/snapshot/receipt/cleanup evidence | Authorization is not execution. No Gate A acceptance, read-only DB/view, shared cross-project ECS staging, exporter/outbox, raw payload, or PRD4 claim until actual evidence exists |
+| P5-F31 | Gate A Authorized Controlled Execution | Target executed with known gap | Atlas executes exactly two approved synthetic scenarios in a confirmed non-production UniRouter ECS environment, hands off sanitized metadata, and obtains X-Insight persistent import/readback receipt evidence | Canary/Sentinel `cc38094` / PR #125; authorization `UR-XI-GATE-A-20260710-01`; deployed app `b2ba892`; exchange `uxchg_f7de31e541516893a0d9b31cc0f3892a`; artifact SHA-256 `5b1d52b1e8bd9b47f14de74670eb4404ed8862c32cdf323d86766446cdf438e8`; one call log, seven trace events, two gaps; X-Insight receipt pending | Success scenario passed. Denied scenario returned 403 but lacked returned-ID correlation and source trace because the live wrapper rejected before Relay. Snapshot is diagnostic evidence, not complete Batch 1P target evidence |
+| P5-F32 | Pre-Relay Model Permission Evidence Parity | Local verified; PR/CI integration pending | Project-allowed requests reach Relay for API-key model restriction so live 403 responses include `X-Request-ID` and the accepted auth decision trace before billing | `docs/ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md`; full handler integration test for header/trace/no-call-log/no-freeze; wrapper/gateway tests; full Go suite | Batch 1W removes one duplicate pre-relay API-key check; no project model-governance, route, migration, frontend, billing amount, provider, immutable snapshot, X-Insight runtime, or PRD4 change |
 
-## Batch 1V Verification
+## Batch 1W Verification
 
-PRD5 Batch 1V verifies the accepted authorization boundary and executable Atlas
-handoff without claiming target execution:
+PRD5 Batch 1W verifies that live API-key model denials reach Relay and preserve
+the accepted correlation/evidence contract:
 
 ```bash
-git log --oneline -3 origin/main | rg "b2ba892.*PRD5 Batch 1U|#124"
-rg -n "UR-XI-GATE-A-20260710-01|Authorized awaiting Atlas|Atlas only|not yet executed|exactly two|successful_non_stream|model_permission_denied|seven days|not production" docs/PRD-Phase5.md docs/ops/PRD5-ACCEPTANCE-MATRIX.md docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md docs/ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md docs/planning/PRD5-IMPLEMENTATION-PLAN.md docs/planning/PRD5-BACKLOG.md docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md docs/PROJECT-HANDOFF.md docs/ops/CURRENT-STATUS.md docs/CODEBASE-MAP.md docs/DOC-INVENTORY.md docs/README.md docs/agent-workflows/FIX-SIGNAL.md "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-10-gate-a-controlled-run-authorization-recommendation.md" "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-controlled-run-authorization.md" "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-atlas-execution.md" "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-request-id-approval-worksheet.md" "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/evidence/2026-07-10-unirouter-gate-a-atlas-run-result.md"
-rg -n "Awaiting Atlas execution|Pending" "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/evidence/2026-07-10-unirouter-gate-a-atlas-run-result.md"
-git diff -- frontend internal cmd migrations scripts
+go test ./cmd/uniroute ./internal/gateway -count=1
+go test -tags=integration ./cmd/uniroute -run TestPRD2P0DeveloperProjectKeyGatewayE2E_Integration -count=1 -v
+go test ./... -count=1
+rg -n "P5-F32|Batch 1W|PRD5-EVIDENCE-002|Pre-Relay Model Permission Evidence Parity|company-other|auth.model_not_allowed|permission_denied|X-Request-ID" cmd/uniroute docs/PRD-Phase5.md docs/ops/PRD5-ACCEPTANCE-MATRIX.md docs/issues/OPEN-ISSUES.md docs/planning/PRD5-IMPLEMENTATION-PLAN.md docs/planning/PRD5-BACKLOG.md docs/planning/PRD5-COMPETITOR-COMPARISON.md docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md docs/tech-ref/26-prd5-evidence-field-contract.md docs/PROJECT-HANDOFF.md docs/ops/CURRENT-STATUS.md docs/CODEBASE-MAP.md docs/DOC-INVENTORY.md docs/README.md docs/agent-workflows/FIX-SIGNAL.md
+git diff -- frontend internal/admin internal/billing internal/db internal/migrate migrations
 git diff -- docs/PRD-Phase4.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/ops/evidence/PRD4-final-closeout-20260708.md
-git status --short
 git diff --check
 ```
 
-Any fabricated request ID, actual-execution claim without Atlas evidence,
-secret/raw payload, broad discovery, automatic operator reassignment, read-only
-X-Insight DB/view, shared cross-project ECS staging, exporter/outbox, PRD4
-change, or `Production verified` claim is a blocking failure.
+Any remaining pre-relay API-key `allowed_models` denial, missing correlation
+header/decision trace, billing freeze/call-log write, project model-governance
+semantic change, target-history rewrite, raw payload, X-Insight runtime
+dependency, PRD4 change, or `Production verified` claim is a blocking failure.
+
+## Batch 1V Verification
+
+PRD5 Batch 1V verifies the actual immutable Atlas artifact and keeps its gap
+explicit while X-Insight import remains pending:
+
+```bash
+shasum -a 256 "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/evidence/gatea-snapshot-20260710.json" "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/gatea-approved-request-ids.json"
+jq '.counts, .capture_gaps, .safety' "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/evidence/gatea-snapshot-20260710.json"
+rg -n "PARTIAL|correlation/evidence exception|not_available_from_source|awaiting X-Insight|test-key disable" "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/evidence/2026-07-10-unirouter-gate-a-atlas-run-result.md" "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-gate-a-persistent-import-and-receipt.md"
+```
+
+Any claim that the denied scenario is fully correlated, already imported, or
+complete Batch 1P target evidence is a blocking failure.
 
 ## Batch 1U Verification
 
@@ -108,7 +129,7 @@ git log --oneline -3 origin/main | rg "b2ba892.*PRD5 Batch 1U|#124"
 go test ./internal/gateway -run 'TestModelAllowedForAPIKey|TestHandleChatCompletion_ModelNotAllowed|TestHandleEmbeddings_Model|TestRecordTraceEvent_ModelNotAllowedCaptureGapAndDecision' -count=1 -v
 go test ./internal/gateway ./internal/middleware ./cmd/uniroute -count=1
 go test ./... -count=1
-rg -n "P5-F30|Batch 1U|Embeddings Model Permission Parity|modelAllowedForAPIKey|rejectModelNotAllowed|TestHandleEmbeddings_ModelNotAllowed|auth.model_not_allowed|permission_denied|fc62e65|PR #123" internal/gateway docs/PRD-Phase5.md docs/ops/PRD5-ACCEPTANCE-MATRIX.md docs/planning/PRD5-IMPLEMENTATION-PLAN.md docs/planning/PRD5-BACKLOG.md docs/planning/PRD5-COMPETITOR-COMPARISON.md docs/tech-ref/26-prd5-evidence-field-contract.md docs/PROJECT-HANDOFF.md docs/ops/CURRENT-STATUS.md docs/CODEBASE-MAP.md docs/DOC-INVENTORY.md docs/README.md docs/agent-workflows/FIX-SIGNAL.md "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/contracts/2026-07-10-unirouter-prd5-embeddings-model-permission-parity.md"
+rg -n "P5-F30|Batch 1U|Embeddings Model Permission Parity|modelAllowedForAPIKey|rejectModelNotAllowed|TestHandleEmbeddings_ModelNotAllowed|auth.model_not_allowed|permission_denied|b2ba892|PR #124" internal/gateway docs/PRD-Phase5.md docs/ops/PRD5-ACCEPTANCE-MATRIX.md docs/planning/PRD5-IMPLEMENTATION-PLAN.md docs/planning/PRD5-BACKLOG.md docs/planning/PRD5-COMPETITOR-COMPARISON.md docs/tech-ref/26-prd5-evidence-field-contract.md docs/PROJECT-HANDOFF.md docs/ops/CURRENT-STATUS.md docs/CODEBASE-MAP.md docs/DOC-INVENTORY.md docs/README.md docs/agent-workflows/FIX-SIGNAL.md "/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/contracts/2026-07-10-unirouter-prd5-embeddings-model-permission-parity.md"
 git diff -- frontend internal/admin internal/billing internal/db internal/migrate
 git diff -- docs/PRD-Phase4.md docs/ops/PRD4-ACCEPTANCE-MATRIX.md docs/ops/evidence/PRD4-final-closeout-20260708.md
 git status --short

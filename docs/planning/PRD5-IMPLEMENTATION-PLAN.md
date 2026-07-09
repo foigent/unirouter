@@ -4,8 +4,11 @@
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
 > Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, Batch 1O, and
 > Batch 1P, Batch 1Q, Batch 1R, Batch 1S, Batch 1T, and Batch 1U
-> Canary/Sentinel complete. Batch 1V Gate A Authorized Controlled Execution is
-> authorized as `UR-XI-GATE-A-20260710-01` and awaiting Atlas target execution.
+> Historical Canary/Sentinel evidence is complete through Batch 1V (`cc38094` / PR #125). Batch 1V
+> target execution produced a sanitized
+> snapshot with a denied-scenario correlation/evidence gap and awaits X-Insight
+> import. Batch 1W Pre-Relay Model Permission Evidence Parity is Local verified
+> with PR/CI integration pending under Agent Protocol v2.0.
 > Scope owner: UniRouter. X-Insight remains a separate project and owns broader
 > observability/governance product surfaces.
 
@@ -746,9 +749,12 @@ Risk: R2 for authorization/status documentation and R4 for Atlas target
 deployment, controlled request execution, sanitized target-data handling, and
 X-Insight persistent import/readback evidence.
 
-Status: User authorization accepted as `UR-XI-GATE-A-20260710-01`; Atlas
-execution handoff ready; no real request, snapshot, receipt, or cleanup evidence
-exists yet.
+Status: Canary/Sentinel complete (`cc38094` / PR #125). Atlas executed both
+scenarios against deployed application commit `b2ba892` and generated exchange
+`uxchg_f7de31e541516893a0d9b31cc0f3892a`; success evidence is present, while
+the denied scenario failed returned-ID correlation and has no source trace row.
+X-Insight persistent import/receipt and test-key disable confirmation remain
+pending.
 
 Authorized work:
 
@@ -773,6 +779,43 @@ Non-goals:
 - no X-Insight read-only DB/view, shared cross-project ECS staging, or
   exporter/outbox;
 - no PRD4 reopen or `Production verified` promotion.
+
+Actual evidence boundary:
+
+- artifact SHA-256 is
+  `5b1d52b1e8bd9b47f14de74670eb4404ed8862c32cdf323d86766446cdf438e8`;
+- counts are one call log, seven trace events, and two capture gaps;
+- the denied request is retained only for diagnostic missing-source gap import;
+- the snapshot and manifest remain immutable; Batch 1W does not rewrite target
+  history.
+
+### Batch 1W: Pre-Relay Model Permission Evidence Parity
+
+Risk: R3 because it changes the live API-key model-denial ownership path while
+preserving the existing denial result and pre-billing boundary.
+
+Status: Local verified; PR/CI integration pending.
+
+Implemented in this round:
+
+- remove the duplicate `apiKeyAllowsModel` rejection from
+  `cmd/uniroute/gateway_handlers.go`;
+- keep model-governance alias resolution and project policy in the wrapper;
+- pass project-allowed requests to Relay so its shared Chat/Embeddings predicate
+  owns API-key `allowed_models` rejection;
+- add full handler integration coverage for HTTP 403, matching
+  `X-Request-ID`, `auth.model_not_allowed` decision trace fields, zero call-log
+  rows, and zero billing freezes;
+- preserve the immutable Gate A snapshot as evidence of the pre-fix gap.
+
+Non-goals:
+
+- no change to project model-set/retired-model denial behavior;
+- no route, migration, frontend, billing amount, routing success path, provider
+  adapter, or raw payload change;
+- no target rerun under the existing two-request authorization;
+- no read-only X-Insight DB/view, shared staging, or exporter/outbox;
+- no PRD4 change or production verification claim.
 
 ### Later Payload Policy Modes
 
@@ -832,17 +875,20 @@ Use existing PRD4 harnesses, but record target evidence under PRD5.
 
 ## Current Blocking Conditions
 
-There is no blocking condition for UniRouter Batch 1A through Batch 1U. All are
-Canary/Sentinel complete through `b2ba892` / PR #124.
+There is no blocking condition for UniRouter Batch 1A through Batch 1V. All are
+Canary/Sentinel complete through `cc38094` / PR #125. Batch 1W is fixed awaiting
+Canary.
 
 These later actions are gated:
 
-- controlled request execution: authorized for Atlas under
-  `UR-XI-GATE-A-20260710-01`, but not yet executed; Atlas must first attest the
-  target is non-production and deploy the required merged version;
-- controlled snapshot artifact generation: authorized in scope but still gated
-  on that Atlas run yielding exactly two verified request IDs and on approved
-  source data access being available to the UniRouter operator;
+- controlled request/snapshot execution: completed under
+  `UR-XI-GATE-A-20260710-01` with one explicit denied-scenario correlation and
+  source-trace gap; no rerun is authorized yet;
+- X-Insight Gate A persistence/receipt: requested against the immutable snapshot
+  and currently pending;
+- denied-scenario target closure: gated on Batch 1W required CI/merge, an
+  available authorized non-production deployment path, and a new or amended
+  User authorization for a single-scenario rerun;
 - read-only DB/view access: blocked until X-Insight local snapshot import passes
   and User approves credential handoff;
 - shared ECS staging: blocked until local Gate A import works and CI is green;

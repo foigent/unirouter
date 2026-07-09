@@ -4,8 +4,9 @@
 > Date: 2026-07-10
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
 > Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, Batch 1O,
-> Batch 1P, and Batch 1T Canary/Sentinel complete. Batch 1U Embeddings Model
-> Permission Parity fixed awaiting Canary.
+> Batch 1P, Batch 1T, and Batch 1U Canary/Sentinel complete. Batch 1V exposed a
+> live pre-relay decision-evidence gap; Batch 1W fixes it and is Local verified
+> with PR/CI integration pending.
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > X-Insight response
 > `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-08-x-insight-prd5-integration-answers.md`
@@ -328,6 +329,12 @@ Implemented first slice:
   `capture_gap=permission_denied`, `decision_kind=auth`,
   `decision_result=rejected`, and
   `decision_reason=auth_error.model_not_allowed`.
+- Batch 1U applies the same API-key model-permission evidence contract to
+  Embeddings.
+- Batch 1V target evidence showed the live Chat wrapper could reject before
+  Relay and therefore emit no source event. Batch 1W removes that duplicate
+  wrapper check so the existing writer contract is reachable in the full
+  handler path. The historical snapshot remains a factual missing-source gap.
 
 ## Writer Behavior
 

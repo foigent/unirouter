@@ -62,7 +62,7 @@ Docker Compose（6 个容器）：
 - [PRD3 一致性审计](docs/planning/PRD3-CONSISTENCY-AUDIT.md) — PRD1→PRD2 遗留问题梳理
 - [PRD4 候选 Backlog](docs/planning/PRD4-BACKLOG.md) — PRD4 候选能力来源记录，正式范围以 PRD4 产品范围为准
 - [Open Issues](docs/issues/OPEN-ISSUES.md) — 当前未关闭问题
-- [Agent 协议](docs/agent-workflows/AGENT-PROTOCOL.md) — Codex/OpenClaw 协作和验收流程
+- [Agent 协议](docs/agent-workflows/AGENT-PROTOCOL.md) — 单一执行负责人、授权、证据和可选独立复核流程
 - [文档目录](docs/README.md) — 当前、冻结、历史和候选文档入口
 - [文档治理](docs/DOCS-GOVERNANCE.md) — 文档状态和更新规则
 - [PRD2 产品需求](docs/PRD-Phase2.md) — PRD2 已冻结需求参考

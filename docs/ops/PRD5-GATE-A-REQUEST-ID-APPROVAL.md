@@ -80,6 +80,12 @@ source label, and non-production environment. The User does not need to review
 opaque IDs a second time. This delegation does not apply to existing requests,
 other scenarios, another environment, or another operator.
 
+Batch 1V execution exception: Atlas sealed the denied request ID even though
+the response did not return `X-Request-ID`. The immutable manifest/snapshot are
+preserved for X-Insight diagnostic gap import, but this does not satisfy the
+delegated correlation check and must not be used as approval precedent. A
+post-fix denied-scenario rerun requires a new or amended User authorization.
+
 ## Required Gate A Scenarios
 
 X-Insight requested a small scenario set for the first combined sanitized
