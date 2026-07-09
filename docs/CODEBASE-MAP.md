@@ -75,7 +75,7 @@ OpenAPI snapshot: `docs/tech-ref/05-openapi-spec.yaml` is the current route-leve
 | `scripts/prd4-real-sso-smoke.sh` | PRD4 Batch 1I wrapper for real SSO evidence harness. `--preflight` is safe without target credentials and does not drive a browser, call an IdP, or read DB; real target execution is deferred to PRD5 |
 | `scripts/prd4_real_sso_smoke.mjs` | Real SSO browser runner for future Logto or another enterprise OIDC target evidence; checks OIDC config/discovery, browser login, `/me`, audit mapping, and sanitized JSON evidence when PRD5 target execution is reopened |
 | `scripts/prd4_real_sso_audit_check.go` | Guarded read-only DB evidence check for OIDC user mapping and `login.oidc` audit redaction |
-| `scripts/prd5_xinsight_snapshot.go` | PRD5 Batch 1A read-only sanitized snapshot generator for explicit `request_id` selections from `call_logs` and `request_trace_events`; Batch 1K adds optional DSN-free Markdown handoff-note output; Batch 1N adds `candidate_capture_gaps` and a handoff-note capture-gap table; no broad table export, raw prompt/response, API key, raw IP, raw upstream error, DSN, or credential output |
+| `scripts/prd5_xinsight_snapshot.go` | PRD5 Batch 1A read-only sanitized snapshot generator for explicit `request_id` selections from `call_logs` and `request_trace_events`; Batch 1K adds optional DSN-free Markdown handoff-note output; Batch 1N adds `candidate_capture_gaps` and a handoff-note capture-gap table; Batch 1Q adds `--approval-manifest` for User/UniRouter-owner approved scenario request IDs; no broad table export, raw prompt/response, API key, raw IP, raw upstream error, DSN, or credential output |
 
 ## Frontend Map
 
@@ -201,6 +201,14 @@ include optional `candidate_capture_gaps`, and Markdown handoff notes include a
 capture-gap table. Missing trace rows with an existing call log list
 `sampled_out`, `retention_expired`, and `not_instrumented` as candidates without
 asserting one definitive cause.
+
+PRD5 Batch 1Q Gate A request approval manifest support is implemented in
+`scripts/prd5_xinsight_snapshot.go`. The snapshot tool can use
+`--approval-manifest <path>` with schema
+`unirouter.prd5.xinsight.approval.v1`; only rows marked `approved` with concrete
+request IDs are exported, while `pending` and `unavailable` rows are not
+exported. Manifest mode is mutually exclusive with direct `--request-id`,
+`--request-ids`, and `--scenario` flags.
 
 PRD5 Batch 1P model permission decision evidence is implemented in
 `internal/gateway/relay.go` and `internal/gateway/trace.go`, with focused

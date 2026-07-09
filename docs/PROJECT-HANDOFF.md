@@ -80,8 +80,8 @@ User handoff sentence for OpenClaw when a risk gate is triggered:
 
 ## Current Verification Baseline
 
-Current active verification signal: PRD5 Batch 1P Model Permission Decision
-Evidence fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+Current active verification signal: PRD5 Batch 1Q Gate A Request Approval
+Manifest fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
 
 PRD4 is complete for the confirmed current scope. PRD5 must preserve the PRD4
 deferred-boundary decisions recorded here.
@@ -276,7 +276,8 @@ PRD5 Batch 1P:
 
 - Scope: runtime model-permission decision evidence for the existing chat
   `allowed_models` rejection path.
-- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Status: Canary PASS 6/6 in `docs/agent-workflows/VERIFY-RESULT.md`;
+  Sentinel merge reflected by `61091c` / PR #119.
 - Adds: `auth.model_not_allowed` trace evidence before the existing 403 response
   with `source_component=auth`, `capture_gap=permission_denied`,
   `decision_kind=auth`, `decision_result=rejected`, and
@@ -287,6 +288,23 @@ PRD5 Batch 1P:
   credential, shared ECS staging, exporter/outbox, raw prompt/response capture,
   X-Insight runtime dependency, Embeddings authorization behavior change,
   billing/routing/provider dispatch semantic change, or PRD4 matrix changes.
+
+PRD5 Batch 1Q:
+
+- Scope: Gate A request approval manifest for X-Insight's scenario data
+  requirement.
+- Status: fixed awaiting Canary in `docs/agent-workflows/FIX-SIGNAL.md`.
+- Adds: `--approval-manifest <path>` to
+  `scripts/prd5_xinsight_snapshot.go`; manifest schema
+  `unirouter.prd5.xinsight.approval.v1`; `approved` / `pending` /
+  `unavailable` row handling; rejection for placeholder approved IDs; and a
+  UniRouter response to X-Insight at
+  `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-10-unirouter-approved-request-ids-response.md`.
+- Does not add: a real snapshot artifact, approved request IDs, DSN,
+  credential, raw prompt/response, raw IP, raw upstream error, migration,
+  runtime request-path change, API route, frontend behavior, read-only DB/view
+  credential, shared ECS staging, exporter/outbox, X-Insight runtime dependency,
+  or PRD4 matrix changes.
 
 Latest completed PRD4 verification result is PRD4 Batch 1S Open Issue Boundary
 Closeout:
