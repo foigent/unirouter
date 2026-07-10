@@ -2,6 +2,8 @@ FROM golang:1.25.12-alpine AS builder
 WORKDIR /app
 ARG RUNTIME_VERSION=local
 ARG RUNTIME_COMMIT=unknown
+ARG GOPROXY=https://proxy.golang.org,direct
+ENV GOPROXY=${GOPROXY}
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .

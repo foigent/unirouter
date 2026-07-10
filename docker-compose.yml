@@ -38,6 +38,7 @@ services:
       args:
         RUNTIME_VERSION: ${RUNTIME_VERSION:-local}
         RUNTIME_COMMIT: ${RUNTIME_COMMIT:-unknown}
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
     container_name: uniroute-api
     ports:
       - "8080:8080"

@@ -518,6 +518,14 @@ docker compose up -d
 curl http://localhost:8080/health/ready
 ```
 
+如果目标构建网络无法访问默认的 `proxy.golang.org`，可在构建时显式选择经审批且可达的 Go module proxy；默认值仍保持官方代理：
+
+```bash
+GOPROXY=https://goproxy.cn,direct docker compose build backend
+```
+
+该变量只影响构建阶段的模块下载，不应设置 `GONOSUMDB=*`、`GOSUMDB=off` 或跳过现有 `go.sum` 校验。
+
 ---
 
 
