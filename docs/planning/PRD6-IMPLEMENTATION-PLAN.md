@@ -32,7 +32,8 @@ required CI. No scope decision grants target/deployment/data/cost authorization.
 
 **Risk:** R2 documentation/research.
 **Status:** competitor baseline, Batch 0A and the scalability/anti-pattern audit
-are CI verified by Draft PR #139 through final evidence head `6c8c192`.
+were CI verified by PR #139 through final evidence head `6c8c192`; PR #139 was
+squash-merged as `62f161e`.
 
 Deliverables:
 
@@ -48,7 +49,7 @@ No deployment or external mutation is allowed.
 ### Batch 0A — Circuit And Atomic Limiter Correctness
 
 **Risk:** R3 request-path correctness change.
-**Status:** CI verified by Draft PR #139; no deployment claimed.
+**Status:** merged and CI verified by PR #139; no deployment claimed.
 
 Deliverables:
 
@@ -69,12 +70,15 @@ Verification:
 ### Batch 0B — Tenant And Financial Identity Integrity
 
 **Risk:** R4 multi-tenant authorization and financial-state behavior.
-**Status:** accepted and active; begin with P6-F16 in its own R4 security PR.
+**Status:** P6-F16 is CI verified by PR #140; later Batch 0B rows remain ordered
+and independently gated.
 
 Split into independently reviewable security/financial PRs:
 
-1. enforce actor-organization predicates on every key/user/project operation,
-   with platform-admin as the only explicit cross-tenant exception;
+1. enforce actor-organization predicates on every key/user/project operation
+   and project-owned model-set assignment/runtime check, with platform-admin
+   (including normalized legacy `admin`) as the only explicit cross-tenant
+   exception;
 2. introduce an unoverrideable server operation ID and separate client
    idempotency, trace/span, workflow and Agent identities;
 3. migrate idempotency to a tenant/key/payload-bound namespace;
@@ -87,6 +91,12 @@ Split into independently reviewable security/financial PRs:
 Verification must include cross-tenant negative integration tests, migration
 up/down, pool-size barriers, 100-way terminal races, process-kill recovery, and
 wallet/ledger invariants. No production exploit or target mutation is required.
+
+The follow-up administrator-surface audit confirmed P6-F32 through P6-F36.
+These are urgent inputs, not part of the original D6-01 grant. If accepted, keep
+notification, finance, pricing authority, global control-plane authority and
+organization-level model governance in separate reviewable PRs rather than
+expanding P6-F16 after review.
 
 ### Batch 0C — Retry, Endpoint Parity, Config And Billing Truth
 

@@ -732,7 +732,8 @@ func (h *Handler) ListProjectModelSets(w http.ResponseWriter, r *http.Request) {
 		`SELECT ms.id, ms.org_id, ms.name, ms.slug, ms.description, ms.status,
 		        COUNT(msi.item_name), ms.created_at, ms.updated_at
 		 FROM project_model_sets pms
-		 JOIN model_sets ms ON ms.id = pms.model_set_id
+		 JOIN projects p ON p.id = pms.project_id
+		 JOIN model_sets ms ON ms.id = pms.model_set_id AND ms.org_id = p.org_id
 		 LEFT JOIN model_set_items msi ON msi.model_set_id = ms.id
 		 WHERE pms.project_id = $1
 		 GROUP BY ms.id
@@ -772,22 +773,61 @@ func (h *Handler) ReplaceProjectModelSets(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
 		return
 	}
-	if _, err := h.db.Exec(r.Context(), `DELETE FROM project_model_sets WHERE project_id = $1`, projectID); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Clear assignment failed"})
-		return
-	}
 	seen := make(map[int64]bool)
+	modelSetIDs := make([]int64, 0, len(req.ModelSetIDs))
 	for _, modelSetID := range req.ModelSetIDs {
-		if modelSetID <= 0 || seen[modelSetID] {
+		if modelSetID <= 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid model_set_id"})
+			return
+		}
+		if seen[modelSetID] {
 			continue
 		}
 		seen[modelSetID] = true
-		if _, err := h.db.Exec(r.Context(),
+		modelSetIDs = append(modelSetIDs, modelSetID)
+	}
+
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Replace assignment failed"})
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	var projectOrgID int64
+	if err := tx.QueryRow(r.Context(), `SELECT org_id FROM projects WHERE id = $1 FOR UPDATE`, projectID).Scan(&projectOrgID); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Project not found"})
+		return
+	}
+	if !actorCanAccessOrg(r.Context(), projectOrgID) {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		return
+	}
+
+	for _, modelSetID := range modelSetIDs {
+		var validatedID int64
+		if err := tx.QueryRow(r.Context(),
+			`SELECT id FROM model_sets WHERE id = $1 AND org_id = $2 AND status = 'active'`,
+			modelSetID, projectOrgID,
+		).Scan(&validatedID); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid model_set_id"})
+			return
+		}
+	}
+
+	if _, err := tx.Exec(r.Context(),
+		`DELETE FROM project_model_sets pms
+		 USING projects p
+		 WHERE pms.project_id = $1 AND p.id = pms.project_id AND p.org_id = $2`,
+		projectID, projectOrgID,
+	); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Clear assignment failed"})
+		return
+	}
+	for _, modelSetID := range modelSetIDs {
+		if _, err := tx.Exec(r.Context(),
 			`INSERT INTO project_model_sets (project_id, model_set_id, created_at)
-			 SELECT $1, ms.id, NOW()
-			 FROM model_sets ms
-			 JOIN projects p ON p.id = $1 AND p.org_id = ms.org_id
-			 WHERE ms.id = $2 AND ms.status = 'active'
+			 VALUES ($1, $2, NOW())
 			 ON CONFLICT DO NOTHING`,
 			projectID, modelSetID,
 		); err != nil {
@@ -795,8 +835,12 @@ func (h *Handler) ReplaceProjectModelSets(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Replace assignment failed"})
+		return
+	}
 	h.recordAuditForProject(r.Context(), "project.model_sets.replace", "project", strconv.FormatInt(projectID, 10), projectID,
-		map[string]interface{}{"model_set_ids": req.ModelSetIDs}, r.RemoteAddr)
+		map[string]interface{}{"model_set_ids": modelSetIDs}, r.RemoteAddr)
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 }
 

@@ -148,6 +148,7 @@ func TestGetRequestTrace_ProjectScopedAccess(t *testing.T) {
 	req.SetPathValue("id", "31")
 	ctx := context.WithValue(req.Context(), middleware.CtxUserRole, auth.RoleDeveloper)
 	ctx = context.WithValue(ctx, middleware.CtxUserID, int64(10))
+	ctx = context.WithValue(ctx, middleware.CtxOrgID, int64(1))
 	req = req.WithContext(ctx)
 	rec := httptest.NewRecorder()
 

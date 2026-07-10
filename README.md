@@ -59,6 +59,8 @@ Docker Compose（6 个容器）：
 - [PRD6 产品范围](docs/PRD-Phase6.md) — PRD6 范围提案、安全边界和所有权
 - [PRD6 验收矩阵](docs/ops/PRD6-ACCEPTANCE-MATRIX.md) — 已接受、待确认、外部和目标证据边界
 - [PRD6 竞品与四象限](docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md) — 固定版本竞品核验和优先级
+- [PRD6 P6-F16 本地证据](docs/ops/evidence/PRD6-B0B-P6F16-tenant-isolation-local-20260711.md) — key/user/project/project-policy 租户边界修复与回归
+- [PRD6 管理面租户审计](docs/ops/evidence/PRD6-B0B-admin-tenant-surface-audit-20260711.md) — 财务、通知、价格、全局设置和模型治理的后续 confirmed findings
 - [PRD5 产品范围](docs/PRD-Phase5.md) — Accepted Scope Complete 历史事实
 - [PRD5 验收矩阵](docs/ops/PRD5-ACCEPTANCE-MATRIX.md) — PRD5 关闭证据和明确决策
 - [PRD3 验收矩阵](docs/ops/PRD3-ACCEPTANCE-MATRIX.md) — 已完成 PRD3 清理/优化验收状态

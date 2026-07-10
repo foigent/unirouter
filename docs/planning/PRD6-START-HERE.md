@@ -1,9 +1,9 @@
 # PRD6 Start Here
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02 accepted; Batch 0B implementation active
+> Status: D6-01/D6-02 accepted; P6-F16 CI verified by PR #140
 > Owner: Codex
-> Base commit: `deacae2d4164b98c5241cf72844f09f53ca7510d`
+> Current implementation base: `62f161e2866a3a4c699abb9a647feef48bded1b2`
 
 ## Current Decision State
 
@@ -25,16 +25,18 @@ recommended MVP boundary and policy-specific failure posture on 2026-07-11:
 1. `docs/ops/CURRENT-STATUS.md`
 2. `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md`
 3. `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md`
-4. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
-5. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
-6. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
-7. `docs/PRD-Phase6.md`
-8. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
-9. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
-10. `docs/planning/PRD6-BACKLOG.md`
-11. `docs/issues/OPEN-ISSUES.md`
-12. `docs/agent-workflows/AGENT-PROTOCOL.md`
-13. `docs/agent-workflows/EXECUTION-RECORD.md`
+4. `docs/ops/evidence/PRD6-B0B-P6F16-tenant-isolation-local-20260711.md`
+5. `docs/ops/evidence/PRD6-B0B-admin-tenant-surface-audit-20260711.md`
+6. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
+7. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
+8. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
+9. `docs/PRD-Phase6.md`
+10. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
+11. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
+12. `docs/planning/PRD6-BACKLOG.md`
+13. `docs/issues/OPEN-ISSUES.md`
+14. `docs/agent-workflows/AGENT-PROTOCOL.md`
+15. `docs/agent-workflows/EXECUTION-RECORD.md`
 
 PRD5 evidence remains under its existing paths. Do not rewrite it as PRD6
 evidence.
@@ -50,7 +52,7 @@ evidence.
   frontend type-check, 25 Vitest files / 125 tests, and frontend build.
 - PR #139 verified the PRD6 Batch 0A implementation and Batch 0B audit
   documentation through final evidence head `6c8c192`, with successful `Backend Tests`, `Frontend
-  Build`, and `Docker Build`.
+  Build`, and `Docker Build`; it was squash-merged as `62f161e`.
 - The source and focused-test scalability audit found P0 tenant-isolation,
   operation/idempotency, billing pool re-entry, terminal-state, post-delivery
   settlement, and revocation risks. These are source findings, not production
@@ -70,6 +72,11 @@ evidence.
   evidence remain retained.
 - Document-backed target evidence remains valid for Batch 1Z. This kickoff did
   not deploy, probe or mutate the target environment.
+- P6-F16 is CI verified by PR #140. Backend logs prove the migrated PostgreSQL
+  matrix and all twelve authenticated subtests passed rather than skipped.
+- P6-F32 through P6-F36 are later source-confirmed administrator-surface inputs.
+  They were not known when D6-01 was accepted and require a separate scope and
+  authority decision.
 
 ## PRD5 Closure Guard
 
@@ -108,3 +115,8 @@ first experiment is P6-F24 fixture-only Governance Digital Twin; no answer is
 required to continue the accepted P0/P1 work. D6-01/D6-02 do not authorize
 deployment, target mutation, paid shadow traffic, raw-payload expansion, a new
 X-Insight contract, semantic response cache, video execution, or an IAM rewrite.
+
+A nearer integrity decision now exists as D6-08: accept or revise the proposed
+administrator authority split for P6-F32 through P6-F36. The only materially
+open role choice is whether organization multipliers are own-org self-service
+or platform/billing-authority mutation. This does not block the P6-F16 PR.

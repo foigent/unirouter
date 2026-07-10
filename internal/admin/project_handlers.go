@@ -28,8 +28,20 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid org_id"})
 			return
 		}
+		if !actorCanAccessOrg(r.Context(), orgID) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			return
+		}
 		conditions = append(conditions, fmt.Sprintf("p.org_id = $%d", argIdx))
 		args = append(args, orgID)
+		argIdx++
+	} else if actorOrgID, constrained := actorOrgConstraint(r.Context()); constrained {
+		if actorOrgID <= 0 {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			return
+		}
+		conditions = append(conditions, fmt.Sprintf("p.org_id = $%d", argIdx))
+		args = append(args, actorOrgID)
 		argIdx++
 	} else if orgID := middleware.GetOrgIDFromContext(r.Context()); orgID > 0 {
 		conditions = append(conditions, fmt.Sprintf("p.org_id = $%d", argIdx))
@@ -49,6 +61,7 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 	if auth.IsProjectScopedRole(actorRole(r.Context())) {
 		conditions = append(conditions, fmt.Sprintf(`EXISTS (
 			SELECT 1 FROM project_members pm
+			JOIN users scope_user ON scope_user.id = pm.user_id AND scope_user.org_id = p.org_id
 			WHERE pm.project_id = p.id AND pm.user_id = $%d
 		)`, argIdx))
 		args = append(args, middleware.GetUserIDFromContext(r.Context()))
@@ -72,7 +85,7 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 		        COALESCE(o.name, ''), COUNT(ak.id)
 		 FROM projects p
 		 JOIN orgs o ON o.id = p.org_id
-		 LEFT JOIN api_keys ak ON ak.project_id = p.id
+		 LEFT JOIN api_keys ak ON ak.project_id = p.id AND ak.org_id = p.org_id
 		 %s
 		 GROUP BY p.id, o.name
 		 ORDER BY p.id ASC
@@ -126,6 +139,10 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.OrgID == 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "org_id is required"})
+		return
+	}
+	if !actorCanAccessOrg(r.Context(), req.OrgID) {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 		return
 	}
 	req.Name = strings.TrimSpace(req.Name)
@@ -204,7 +221,7 @@ func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
 		        COALESCE(o.name, ''), COUNT(ak.id)
 		 FROM projects p
 		 JOIN orgs o ON o.id = p.org_id
-		 LEFT JOIN api_keys ak ON ak.project_id = p.id
+		 LEFT JOIN api_keys ak ON ak.project_id = p.id AND ak.org_id = p.org_id
 		 WHERE p.id = $1
 		 GROUP BY p.id, o.name`, id,
 	).Scan(&id, &orgID, &name, &slug, &description, &status, &budgetCents, &budgetPeriod, &createdAt, &updatedAt, &orgName, &keyCount)
@@ -311,8 +328,14 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sets = append(sets, "updated_at = NOW()")
+	idArg := argIdx
 	args = append(args, id)
-	query := fmt.Sprintf("UPDATE projects SET %s WHERE id = $%d", strings.Join(sets, ", "), argIdx)
+	whereClause := fmt.Sprintf("id = $%d", idArg)
+	if actorOrgID, constrained := actorOrgConstraint(r.Context()); constrained {
+		whereClause += fmt.Sprintf(" AND org_id = $%d", idArg+1)
+		args = append(args, actorOrgID)
+	}
+	query := fmt.Sprintf("UPDATE projects SET %s WHERE %s", strings.Join(sets, ", "), whereClause)
 	tag, err := h.db.Exec(r.Context(), query, args...)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {

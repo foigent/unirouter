@@ -14,14 +14,32 @@ import (
 func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePagination(r)
 	offset := paginationOffset(page, pageSize)
+	whereClause := ""
+	args := []interface{}{}
+	argIdx := 1
+	if actorOrgID, constrained := actorOrgConstraint(r.Context()); constrained {
+		if actorOrgID <= 0 {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			return
+		}
+		whereClause = " WHERE u.org_id = $1"
+		args = append(args, actorOrgID)
+		argIdx++
+	}
 
 	var total int
-	h.db.QueryRow(r.Context(), `SELECT COUNT(*) FROM users`).Scan(&total)
+	if err := h.db.QueryRow(r.Context(), `SELECT COUNT(*) FROM users u`+whereClause, args...).Scan(&total); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Count failed"})
+		return
+	}
 
-	rows, err := h.db.Query(r.Context(),
+	query := fmt.Sprintf(
 		`SELECT u.id, u.org_id, o.name AS org_name, u.username, u.role, u.status, u.created_at, u.updated_at
 		 FROM users u LEFT JOIN orgs o ON o.id = u.org_id
-		 ORDER BY u.id DESC LIMIT $1 OFFSET $2`, pageSize, offset)
+		 %s
+		 ORDER BY u.id DESC LIMIT $%d OFFSET $%d`, whereClause, argIdx, argIdx+1)
+	args = append(args, pageSize, offset)
+	rows, err := h.db.Query(r.Context(), query, args...)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Query failed"})
 		return
@@ -71,7 +89,19 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.OrgId == 0 {
-		h.db.QueryRow(r.Context(), `SELECT id FROM orgs LIMIT 1`).Scan(&req.OrgId)
+		if actorOrgID, constrained := actorOrgConstraint(r.Context()); constrained {
+			req.OrgId = actorOrgID
+		} else {
+			h.db.QueryRow(r.Context(), `SELECT id FROM orgs LIMIT 1`).Scan(&req.OrgId)
+		}
+	}
+	if !actorCanAccessOrg(r.Context(), req.OrgId) {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		return
+	}
+	if _, constrained := actorOrgConstraint(r.Context()); constrained && auth.IsPlatformAdmin(req.Role) {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		return
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
@@ -115,6 +145,10 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid role"})
 			return
 		}
+		if _, constrained := actorOrgConstraint(r.Context()); constrained && auth.IsPlatformAdmin(*req.Role) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			return
+		}
 		sets = append(sets, fmt.Sprintf("role = $%d", argIdx))
 		args = append(args, *req.Role)
 		argIdx++
@@ -128,9 +162,32 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "No fields to update"})
 		return
 	}
+	var targetOrgID int64
+	var targetRole string
+	if !isUnauthenticatedUnitContext(r.Context()) {
+		if err := h.db.QueryRow(r.Context(), `SELECT org_id, role FROM users WHERE id = $1`, id).Scan(&targetOrgID, &targetRole); err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "User not found"})
+			return
+		}
+		if !actorCanAccessOrg(r.Context(), targetOrgID) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			return
+		}
+		if _, constrained := actorOrgConstraint(r.Context()); constrained && auth.IsPlatformAdmin(targetRole) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			return
+		}
+	}
 	sets = append(sets, "updated_at = NOW()")
+	idArg := argIdx
 	args = append(args, id)
-	query := fmt.Sprintf("UPDATE users SET %s WHERE id = $%d", joinStrings(sets, ", "), argIdx)
+	whereClause := fmt.Sprintf("id = $%d", idArg)
+	if actorOrgID, constrained := actorOrgConstraint(r.Context()); constrained {
+		whereClause += fmt.Sprintf(" AND org_id = $%d", idArg+1)
+		args = append(args, actorOrgID)
+		whereClause += " AND role NOT IN ('admin', 'platform_admin')"
+	}
+	query := fmt.Sprintf("UPDATE users SET %s WHERE %s", joinStrings(sets, ", "), whereClause)
 	tag, err := h.db.Exec(r.Context(), query, args...)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
@@ -156,16 +213,32 @@ func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
+	var targetOrgID int64
+	var targetRole string
+	if err := tx.QueryRow(r.Context(), `SELECT org_id, role FROM users WHERE id = $1 FOR UPDATE`, id).Scan(&targetOrgID, &targetRole); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "User not found"})
+		return
+	}
+	if !isUnauthenticatedUnitContext(r.Context()) {
+		if !actorCanAccessOrg(r.Context(), targetOrgID) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			return
+		}
+		if _, constrained := actorOrgConstraint(r.Context()); constrained && auth.IsPlatformAdmin(targetRole) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			return
+		}
+	}
 
 	if _, err := tx.Exec(r.Context(),
 		`UPDATE api_keys
 		 SET status = 'disabled', updated_at = NOW()
-		 WHERE owner_user_id = $1 AND key_type = 'personal'`, id,
+		 WHERE owner_user_id = $1 AND org_id = $2 AND key_type = 'personal'`, id, targetOrgID,
 	); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Delete failed"})
 		return
 	}
-	tag, err := tx.Exec(r.Context(), `DELETE FROM users WHERE id = $1`, id)
+	tag, err := tx.Exec(r.Context(), `DELETE FROM users WHERE id = $1 AND org_id = $2`, id, targetOrgID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Delete failed"})
 		return

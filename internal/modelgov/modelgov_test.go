@@ -96,6 +96,37 @@ func TestCheckAccess_ResolvesAliasAllowedByProjectSet(t *testing.T) {
 	}
 }
 
+func TestCheckAccess_ProjectModelSetsBindProjectAndSetOrganization(t *testing.T) {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				switch {
+				case strings.Contains(sql, "FROM model_aliases"):
+					return pgx.ErrNoRows
+				case strings.Contains(sql, "FROM model_registry"):
+					return pgx.ErrNoRows
+				case strings.Contains(sql, "FROM project_model_sets"):
+					if !strings.Contains(sql, "JOIN projects") || !strings.Contains(sql, "ms.org_id = p.org_id") || !strings.Contains(sql, "p.org_id = $2") {
+						t.Fatalf("project model-set query is not organization bound: %s", sql)
+					}
+					*dest[0].(*int) = 0
+				default:
+					t.Fatalf("unexpected query: %s", sql)
+				}
+				return nil
+			}}
+		},
+	}
+
+	result, err := CheckAccess(context.Background(), db, 7, 42, "gpt-4o")
+	if err != nil {
+		t.Fatalf("expected unconfigured project to preserve default allow, got %v", err)
+	}
+	if !result.Allowed {
+		t.Fatalf("expected allowed result, got %+v", result)
+	}
+}
+
 func TestNormalizeCSV(t *testing.T) {
 	if got := NormalizeCSV(" chat ， vision,chat ,,tools "); got != "chat,vision,tools" {
 		t.Fatalf("unexpected normalized csv: %q", got)

@@ -172,12 +172,12 @@ func CheckAccess(ctx context.Context, q db.DBQuerier, orgID, projectID int64, re
 	}
 
 	if projectID > 0 {
-		hasSets, err := projectHasModelSets(ctx, q, projectID)
+		hasSets, err := projectHasModelSets(ctx, q, orgID, projectID)
 		if err != nil {
 			return result, err
 		}
 		if hasSets {
-			allowed, err := projectAllowsModel(ctx, q, projectID, requestedModel, result.ResolvedModel)
+			allowed, err := projectAllowsModel(ctx, q, orgID, projectID, requestedModel, result.ResolvedModel)
 			if err != nil {
 				return result, err
 			}
@@ -225,13 +225,15 @@ func modelLifecycle(ctx context.Context, q db.DBQuerier, orgID int64, modelName 
 	return lifecycle, nil
 }
 
-func projectHasModelSets(ctx context.Context, q db.DBQuerier, projectID int64) (bool, error) {
+func projectHasModelSets(ctx context.Context, q db.DBQuerier, orgID, projectID int64) (bool, error) {
 	var count int
 	err := q.QueryRow(ctx,
 		`SELECT COUNT(*)
-		 FROM project_model_sets
-		 WHERE project_id = $1`,
-		projectID,
+		 FROM project_model_sets pms
+		 JOIN projects p ON p.id = pms.project_id
+		 JOIN model_sets ms ON ms.id = pms.model_set_id AND ms.org_id = p.org_id
+		 WHERE pms.project_id = $1 AND p.org_id = $2`,
+		projectID, orgID,
 	).Scan(&count)
 	if err != nil {
 		return false, fmt.Errorf("query project model sets: %w", err)
@@ -239,19 +241,20 @@ func projectHasModelSets(ctx context.Context, q db.DBQuerier, projectID int64) (
 	return count > 0, nil
 }
 
-func projectAllowsModel(ctx context.Context, q db.DBQuerier, projectID int64, requestedModel, resolvedModel string) (bool, error) {
+func projectAllowsModel(ctx context.Context, q db.DBQuerier, orgID, projectID int64, requestedModel, resolvedModel string) (bool, error) {
 	var count int
 	err := q.QueryRow(ctx,
 		`SELECT COUNT(*)
 		 FROM project_model_sets pms
-		 JOIN model_sets ms ON ms.id = pms.model_set_id AND ms.status = 'active'
+		 JOIN projects p ON p.id = pms.project_id
+		 JOIN model_sets ms ON ms.id = pms.model_set_id AND ms.status = 'active' AND ms.org_id = p.org_id
 		 JOIN model_set_items msi ON msi.model_set_id = ms.id
-		 WHERE pms.project_id = $1
+		 WHERE pms.project_id = $1 AND p.org_id = $2
 		   AND (
-		     (msi.item_type = 'model' AND (msi.item_name = $2 OR msi.item_name = $3))
-		     OR (msi.item_type = 'alias' AND msi.item_name = $4)
+		     (msi.item_type = 'model' AND (msi.item_name = $3 OR msi.item_name = $4))
+		     OR (msi.item_type = 'alias' AND msi.item_name = $5)
 		   )`,
-		projectID, requestedModel, resolvedModel, requestedModel,
+		projectID, orgID, requestedModel, resolvedModel, requestedModel,
 	).Scan(&count)
 	if err != nil {
 		return false, fmt.Errorf("query project model set items: %w", err)

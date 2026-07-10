@@ -11,6 +11,8 @@
 | `docs/planning/PRD6-START-HERE.md` | PRD6 decision state, closure guard, baseline and read order |
 | `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md` | PRD6 Git/CI/test/X-Insight/code-finding baseline evidence |
 | `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md` | PRD6 source-backed 100x, Agent fan-out, billing, routing, streaming and multimodal anti-pattern evidence |
+| `docs/ops/evidence/PRD6-B0B-P6F16-tenant-isolation-local-20260711.md` | P6-F16 patch contract, regression-before-fix and local migrated-database evidence |
+| `docs/ops/evidence/PRD6-B0B-admin-tenant-surface-audit-20260711.md` | Confirmed finance, notification, pricing, global-control and model-governance tenant gaps outside P6-F16 |
 | `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md` | Version-fixed competitor audit, Four Quadrants and priority matrix |
 | `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md` | Third-round Four Quadrants, CARTA/shadow/collusion ownership, Killer Features and candidate acceptance rows |
 | `docs/planning/prd6-adaptive-trust-hardening/` | Evidence-bound adaptive-trust structural proposal, JSON, diagrams and option comparison; no implementation plan until selection |

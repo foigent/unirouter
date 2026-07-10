@@ -9,13 +9,15 @@
 2. `docs/planning/PRD6-START-HERE.md` - PRD6 decision state and reading map.
 3. `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md` - clean-base, test, X-Insight and current-code evidence.
 4. `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md` - source-backed 100x, Agent fan-out, billing, routing, streaming and multimodal audit.
-5. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md` - version-fixed competitor audit and Four Quadrants.
-6. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md` - third-round boundary, CARTA/shadow/collusion analysis and Killer Features.
-7. `docs/planning/prd6-adaptive-trust-hardening/hardening.md` - adaptive-trust structural option portfolio and recommendation.
-8. `docs/PRD-Phase6.md` - accepted MVP, proposed innovation and ownership.
-9. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` - accepted, proposed, external and target-evidence rows.
-10. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md` - batch order and gates.
-11. `docs/planning/PRD6-BACKLOG.md` - classified backlog and decision register.
+5. `docs/ops/evidence/PRD6-B0B-P6F16-tenant-isolation-local-20260711.md` - P6-F16 patch contract, red/green regression and local migrated-database evidence.
+6. `docs/ops/evidence/PRD6-B0B-admin-tenant-surface-audit-20260711.md` - confirmed follow-up finance/notification/pricing/settings/model-governance tenant findings.
+7. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md` - version-fixed competitor audit and Four Quadrants.
+8. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md` - third-round boundary, CARTA/shadow/collusion analysis and Killer Features.
+9. `docs/planning/prd6-adaptive-trust-hardening/hardening.md` - adaptive-trust structural option portfolio and recommendation.
+10. `docs/PRD-Phase6.md` - accepted MVP, proposed innovation and ownership.
+11. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` - accepted, proposed, external and target-evidence rows.
+12. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md` - batch order and gates.
+13. `docs/planning/PRD6-BACKLOG.md` - classified backlog and decision register.
 12. `docs/PRD-Phase5.md` - completed accepted PRD5 scope and explicit remaining boundaries.
 13. `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` - PRD5's closed 36-row evidence ledger.
 14. `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md` - accepted X-Insight v1 boundary and PRD5 completion classification.
@@ -42,13 +44,16 @@ redacted topology history remains under the existing PRD5 paths. PRD6 must not
 reinterpret target-evidence debt or X-Insight-owned work as unfinished PRD5
 source scope.
 
-PRD6 is active with D6-01/D6-02 accepted. Batch 0A is CI verified. The second
+PRD6 is active with D6-01/D6-02 accepted. Batch 0A is merged/CI verified. The second
 audit adds open P0 tenant,
 operation/idempotency, reservation/terminal-state and revocation findings, plus
 P1 Agent/100x blind spots. The accepted MVP covers those integrity
 prerequisites, Agent capability/distributed policy, Routing Policy V1, durable
 cache-aware billing, and guardrail/stream foundations. Batch 0B begins with the
-P6-F16 tenant-integrity security boundary. The adaptive-trust, Digital Twin,
+P6-F16 tenant-integrity security boundary, which is CI verified by PR #140. A
+later audit adds unaccepted P6-F32-P6-F36 finance,
+notification, pricing, global-control and model-governance inputs. The
+adaptive-trust, Digital Twin,
 shadow, collusion, trust-receipt and claim-assurance rows remain proposed and
 are not implied by D6-01.
 
@@ -59,6 +64,8 @@ are not implied by D6-01.
 | What is the PRD6 decision state? | `docs/planning/PRD6-START-HERE.md` |
 | What baseline and findings were verified? | `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md` |
 | What did the 100x/Agent/streaming anti-pattern audit find? | `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md` |
+| What exactly does the local P6-F16 patch prove? | `docs/ops/evidence/PRD6-B0B-P6F16-tenant-isolation-local-20260711.md` |
+| Which administrator tenant surfaces remain confirmed gaps? | `docs/ops/evidence/PRD6-B0B-admin-tenant-surface-audit-20260711.md` |
 | What is the proposed PRD6 scope? | `docs/PRD-Phase6.md` |
 | Which PRD6 rows are accepted versus proposed? | `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` |
 | What is the PRD6 implementation order? | `docs/planning/PRD6-IMPLEMENTATION-PLAN.md` |
@@ -102,13 +109,12 @@ Use `docs/agent-workflows/AGENT-PROTOCOL.md` before changing code or status:
 
 ## Current Verification Baseline
 
-Current execution is PRD6 Batch 0/0A plus accepted Batch 0B preparation on a `codex/` branch based on
-`deacae2d4164b98c5241cf72844f09f53ca7510d`. Fresh full repository checks and
-X-Insight tests passed before implementation; Batch 0A repairs the confirmed
-half-open recovery and atomic Redis limit defects. The new P0/P1 audit findings
-are documentation CI verified through final evidence head `6c8c192`. D6-01/D6-02 are accepted;
-P6-F16 remediation is active while the remaining findings are not remediated or
-target verified. Current details and promotion gates are in
+Current execution is PRD6 Batch 0B on `codex/prd6-b0b-tenant-isolation`, based
+on merged main `62f161e`. Fresh full repository checks and X-Insight tests passed
+before implementation; Batch 0A is merged and CI verified. D6-01/D6-02 are
+accepted; P6-F16 is CI verified by PR #140, while P6-F32-P6-F36 remain
+new unaccepted findings and no item is target verified. Current details and
+promotion gates are in
 `docs/agent-workflows/EXECUTION-RECORD.md`.
 
 PRD5 Batch 1Z Target Deployment And Infrastructure Security remains Target

@@ -20,6 +20,7 @@ func TestListLogs_ProjectScopedRoleRequiresProjectID(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/logs", nil)
 	ctx := context.WithValue(req.Context(), middleware.CtxUserRole, auth.RoleDeveloper)
 	ctx = context.WithValue(ctx, middleware.CtxUserID, int64(10))
+	ctx = context.WithValue(ctx, middleware.CtxOrgID, int64(1))
 	req = req.WithContext(ctx)
 	rec := httptest.NewRecorder()
 
@@ -79,6 +80,7 @@ func TestListLogs_ProjectScopedRoleWithMembership(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/logs?project_id=7", nil)
 	ctx := context.WithValue(req.Context(), middleware.CtxUserRole, auth.RoleDeveloper)
 	ctx = context.WithValue(ctx, middleware.CtxUserID, int64(10))
+	ctx = context.WithValue(ctx, middleware.CtxOrgID, int64(1))
 	req = req.WithContext(ctx)
 	rec := httptest.NewRecorder()
 
@@ -96,6 +98,7 @@ func TestCreateAPIKey_DeveloperRequiresProjectID(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	ctx := context.WithValue(req.Context(), middleware.CtxUserRole, auth.RoleDeveloper)
 	ctx = context.WithValue(ctx, middleware.CtxUserID, int64(10))
+	ctx = context.WithValue(ctx, middleware.CtxOrgID, int64(1))
 	req = req.WithContext(ctx)
 	rec := httptest.NewRecorder()
 
@@ -121,13 +124,13 @@ func TestListAPIKeys_ProjectIDFilterRequiresProjectAccess(t *testing.T) {
 			}}
 		},
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			if !strings.Contains(sql, "ak.project_id = $1") {
+			if !strings.Contains(sql, "ak.org_id = $1") || !strings.Contains(sql, "ak.project_id = $2") {
 				t.Fatalf("expected api key project_id filter, got %s", sql)
 			}
 			if !strings.Contains(sql, "pm.project_id = ak.project_id") {
 				t.Fatalf("expected project-scoped membership filter, got %s", sql)
 			}
-			if args[0] != int64(7) || args[1] != int64(10) {
+			if len(args) != 3 || args[0] != int64(1) || args[1] != int64(7) || args[2] != int64(10) {
 				t.Fatalf("unexpected query args: %#v", args)
 			}
 			return &testutil.MockRows{}, nil
@@ -138,6 +141,7 @@ func TestListAPIKeys_ProjectIDFilterRequiresProjectAccess(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/keys?project_id=7", nil)
 	ctx := context.WithValue(req.Context(), middleware.CtxUserRole, auth.RoleDeveloper)
 	ctx = context.WithValue(ctx, middleware.CtxUserID, int64(10))
+	ctx = context.WithValue(ctx, middleware.CtxOrgID, int64(1))
 	req = req.WithContext(ctx)
 	rec := httptest.NewRecorder()
 
@@ -167,6 +171,7 @@ func TestListAPIKeys_ProjectIDFilterRejectsUnauthorizedProject(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/keys?project_id=8", nil)
 	ctx := context.WithValue(req.Context(), middleware.CtxUserRole, auth.RoleDeveloper)
 	ctx = context.WithValue(ctx, middleware.CtxUserID, int64(10))
+	ctx = context.WithValue(ctx, middleware.CtxOrgID, int64(1))
 	req = req.WithContext(ctx)
 	rec := httptest.NewRecorder()
 
