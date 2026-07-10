@@ -3,6 +3,7 @@
 ## 当前入口
 - [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — Agent 接手项目的第一阅读入口
 - [ops/CURRENT-STATUS.md](ops/CURRENT-STATUS.md) — 当前项目真实状态（进度、测试、部署、缺口）
+- [planning/PRD5-CURRENT-GAP-AUDIT-20260710.md](planning/PRD5-CURRENT-GAP-AUDIT-20260710.md) — PRD5 当前完成度、UniRouter 自身未实现功能、X-Insight 协作缺口及新窗口架构/功能审计计划
 - [PRD-Phase5.md](PRD-Phase5.md) — PRD5 当前正式范围：X-Insight evidence readiness、结构字段、snapshot、payload 边界、轻量 trace UI、竞品追赶和 Data Exchange Control 边界
 - [ops/PRD5-ACCEPTANCE-MATRIX.md](ops/PRD5-ACCEPTANCE-MATRIX.md) — PRD5 验收矩阵；Batch 1W 拒绝路径已完成目标验证，两个 Gate A 快照均完成 X-Insight 持久化、幂等重跑和回读
 - [ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md](ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md) — PRD5 Gate A request ID 非技术审批说明和 X-Insight snapshot 数据最小化边界

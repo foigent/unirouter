@@ -8,7 +8,10 @@
 1. Issue IDs are stable and must not be reused.
 2. Current status values: `Open`, `In progress`, `Implemented`, `Local verified`, `CI verified`, `Target verified`, `Production verified`, `External integration verified`, `Blocked`, `Deferred to PRD5`, `Closed`, `Won't fix`. Historical rows may retain protocol v1.x values such as `Fixed awaiting Canary` or `Canary passed`.
 3. `Closed` issues should stay here only until the next documentation cleanup pass, then may be copied to an archive file.
-4. Runtime fixes still require the Codex/OpenClaw protocol: Codex updates `FIX-SIGNAL.md`, OpenClaw writes `VERIFY-RESULT.md`.
+4. New work follows `docs/agent-workflows/AGENT-PROTOCOL.md`: Codex is the single
+   execution owner and records scoped evidence; Canary, Sentinel, Atlas, or other
+   capable reviewers are optional independent checks. `FIX-SIGNAL.md` and
+   `VERIFY-RESULT.md` remain protocol v1.x historical compatibility files.
 
 ## Active Issues
 
