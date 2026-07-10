@@ -1,17 +1,21 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
-> Current execution is PRD6 Batch 0/0A on `codex/prd6-kickoff`, based on clean
+> Current execution is PRD6 Batch 0/0A and accepted Batch 0B preparation on
+> `codex/prd6-kickoff`, based on clean
 > `main == origin/main == deacae2d4164b98c5241cf72844f09f53ca7510d`.
-> PRD6 is formally active in discovery/scope-gate state. Only the verified
-> half-open recovery and Redis atomic-limit corrections are accepted before the
-> User decides the broader MVP and enforcement failure mode.
+> D6-01 and D6-02 were accepted by the User on 2026-07-11. Batch 0B begins with
+> P6-F16; advanced innovation rows P6-F23 through P6-F31 remain proposed.
 
 ## PRD6 Current Window
 
 - Baseline evidence: `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md`.
 - Scalability/anti-pattern evidence:
   `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md`.
+- Adaptive-trust/innovation audit:
+  `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`.
+- Adaptive-trust structural options and signed split-plane recommendation:
+  `docs/planning/prd6-adaptive-trust-hardening/hardening.md`.
 - Scope entry: `docs/planning/PRD6-START-HERE.md`.
 - Proposed PRD: `docs/PRD-Phase6.md`; accepted/proposed state is authoritative
   in `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`.
@@ -22,7 +26,7 @@
   gateway/middleware/circuitbreaker race suites. This is source/local evidence,
   not a multi-instance or 100x result.
 - PR #136, #137 and #138 are merged with all three required checks successful.
-- Draft PR #139 is CI verified through audit commit `b21b689`: `Backend Tests`,
+- Draft PR #139 is CI verified through final evidence head `6c8c192`: `Backend Tests`,
   `Frontend Build`, and `Docker Build` passed for Batch 0/0A and the Batch 0B
   scalability/anti-pattern documentation. It is not merged or deployed.
 - No deployment, target probe/mutation, real or paid request, credential change,
@@ -33,8 +37,19 @@ request/financial idempotency identity, Freeze pool re-entry, Settle/Cancel
 terminal-state concurrency, post-delivery settlement handling, and revocation.
 It also confirmed P1 synchronous-request-path, process-local admission, route/
 breaker, Redis hot-key, streaming, evidence-write and retention blind spots.
-They are open findings awaiting the updated MVP/failure-policy decisions; no
-audit row is presented as a production incident or implemented remediation.
+The User accepted the updated MVP and policy-specific failure posture. P6-F16
+is now the first active remediation; the other findings remain unremediated
+until their ordered batches. No audit row is presented as a production incident,
+100x proof, or implemented remediation before its exact evidence exists.
+
+The third PRD6 research round confirmed that UniRouter currently owns model
+request enforcement, not arbitrary MCP/tool/data/export side effects. X-Insight
+currently owns controlled evidence import/readback and may later own cross-event
+analysis, but must not become a synchronous UniRouter request dependency. The
+proposed post-MVP design separates source facts, X-Insight risk inference,
+policy authority, and local enforcement at UniRouter or the actual action owner.
+No new runtime contract or P6-F23-P6-F31 implementation is accepted by that
+research.
 
 PRD5 remains `Accepted Scope Complete`. Batch 1Z target evidence remains valid;
 the deployed stable/canary backend recorded by that evidence remains `95d1da9`

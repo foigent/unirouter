@@ -1,9 +1,9 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 0 / 0A Baseline, Existing Correctness, And Batch 0B Scope Audit
+**Batch:** PRD6 Batch 0 / 0A Closeout, D6-01/D6-02 Acceptance, And Batch 0B Start
 **Owner:** Codex
-**Risk:** R2 planning/audit plus R3 gateway/limiter request-path corrections
-**Status:** Batch 0A and the scalability audit documentation are CI verified by Draft PR #139 through `b21b689`; no deployment claimed
+**Risk:** R2 planning/audit plus R3 gateway/limiter corrections; P6-F16 is the first R4 Batch 0B boundary
+**Status:** Batch 0A and the scalability audit are CI verified by Draft PR #139; D6-01/D6-02 accepted; innovation rows remain proposed; P6-F16 implementation is next
 **Base:** `deacae2d4164b98c5241cf72844f09f53ca7510d`
 **Branch:** `codex/prd6-kickoff`
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
@@ -19,8 +19,11 @@
    Four-Quadrant competitor audit and current-state routing.
 5. Audit 100x/Agent fan-out, tenant/auth, billing, routing/Redis,
    streaming/multimodal, evidence, and retention anti-patterns against source.
-6. Stop remediation and broader implementation at the updated MVP/failure-mode
-   User scope gate.
+6. Record the User's D6-01/D6-02 acceptance and start the highest-priority safe
+   Batch 0B remediation.
+7. Audit adaptive-trust, shadow evaluation and semantic-collusion ownership,
+   preserving the distinction between UniRouter enforcement, X-Insight analysis,
+   actual action-owner enforcement and external model lifecycle.
 
 ## Behavior Change
 
@@ -30,8 +33,9 @@
   exactly N requests are admitted and N+1 is rejected.
 - Redis server time avoids per-instance wall-clock divergence, and canceled
   request context prevents an orphan limiter write.
-- Redis command/script failure still fails open. Changing hard-quota failure
-  behavior remains an explicit PRD6 decision.
+- Redis command/script failure in Batch 0A still preserves its pre-existing
+  behavior. D6-02 now requires the later distributed-policy implementation to
+  replace unlimited hard-quota fail-open with the accepted bounded posture.
 - No new X-Insight runtime field or dependency is introduced.
 - The Batch 0B audit changes no runtime behavior. Its P0/P1 rows are source/local
   findings and proposed acceptance evidence, not implemented fixes, incidents,
@@ -45,6 +49,10 @@
   `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`.
 - Scalability/anti-pattern evidence:
   `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md`.
+- Adaptive-trust innovation evidence:
+  `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`.
+- Structural hardening portfolio:
+  `docs/planning/prd6-adaptive-trust-hardening/hardening.md`.
 - Truth chain: `docs/planning/PRD6-START-HERE.md`, `docs/PRD-Phase6.md`,
   `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`,
   `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`, and
@@ -102,7 +110,7 @@ PR #139 required checks for implementation commit `000ea64`:
 - `Frontend Build`: PASS;
 - `Docker Build`: PASS.
 
-PR #139 required checks for scalability audit commit `b21b689`:
+PR #139 required checks for final scalability-audit evidence head `6c8c192`:
 
 - `Backend Tests`: PASS;
 - `Frontend Build`: PASS;

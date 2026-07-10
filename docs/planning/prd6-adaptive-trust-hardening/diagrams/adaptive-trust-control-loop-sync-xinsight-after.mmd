@@ -1,0 +1,30 @@
+flowchart LR
+    subgraph Caller["Caller / Agent trust boundary"]
+        A["Agent and untrusted data"]
+    end
+    subgraph UR["UniRouter hot path"]
+        AUTH["Identity and local baseline"]
+        REMOTE["Synchronous remote policy query"]
+        RELAY["Provider relay"]
+    end
+    subgraph XI["Central X-Insight decision service"]
+        GRAPH["Evidence graph and detectors"]
+        PDP["Central policy decision"]
+    end
+    subgraph Provider["Provider boundary"]
+        P["Model provider"]
+    end
+    subgraph SideEffects["Separate action owners"]
+        TOOL["MCP / tools / data / export"]
+    end
+
+    A --> AUTH --> REMOTE
+    REMOTE == "new mandatory network hop" ==> PDP
+    GRAPH --> PDP
+    PDP == "allow / deny" ==> REMOTE --> RELAY --> P
+    A -. "still requires separate mediation" .-> TOOL
+
+    classDef changed fill:#fef3c7,stroke:#92400e,color:#451a03
+    classDef danger fill:#fee2e2,stroke:#991b1b,color:#450a0a
+    class REMOTE,PDP changed
+    class TOOL danger

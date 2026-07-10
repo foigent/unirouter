@@ -1,0 +1,32 @@
+flowchart LR
+    subgraph Caller["Caller / Agent trust boundary"]
+        A["Agent with API key"]
+        UDATA["Untrusted prompt, RAG, or peer-Agent data"]
+    end
+    subgraph UR["UniRouter current boundary"]
+        AUTH["API-key auth"]
+        POLICY["Current model and text checks"]
+        RELAY["Provider routing and relay"]
+        TRACE["Gateway trace and billing facts"]
+    end
+    subgraph Provider["Provider boundary"]
+        P["Model provider"]
+    end
+    subgraph SideEffects["Side-effect systems not owned by UniRouter"]
+        TOOL["MCP / tools / data / export"]
+    end
+    subgraph XI["X-Insight Phase 1 boundary"]
+        IMPORT["Operator-mediated snapshot import"]
+        STORE["Evidence persistence and request readback"]
+    end
+
+    UDATA --> A
+    A --> AUTH --> POLICY --> RELAY --> P
+    RELAY --> TRACE
+    A -. "actions may bypass UniRouter" .-> TOOL
+    TRACE -. "controlled snapshot later" .-> IMPORT --> STORE
+
+    classDef danger fill:#fee2e2,stroke:#991b1b,color:#450a0a
+    classDef control fill:#dcfce7,stroke:#166534,color:#052e16
+    class UDATA,TOOL danger
+    class AUTH,POLICY,RELAY control

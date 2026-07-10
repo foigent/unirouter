@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-11
-> Status: executable plan with a scope gate after Batch 0A
+> Status: D6-01/D6-02 accepted; Batch 0B active
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -9,7 +9,7 @@
 ```text
 Batch 0 baseline and scope evidence
   -> Batch 0A existing correctness repairs
-  -> User MVP and failure-mode decisions
+  -> D6-01/D6-02 accepted
   -> Batch 0B tenant and financial identity integrity
   -> Batch 0C remaining correctness/config truth
   -> Batch 1 Agent Capability and Distributed Policy V1
@@ -21,11 +21,10 @@ Batch 0 baseline and scope evidence
   -> Batch 7 authorized target evidence
 ```
 
-Batch 0A was safe to execute before the scope gate. The new Batch 0B findings are
-urgent confirmed source risks, but this audit does not authorize their behavior
-changes. Batch 0C addresses the previously identified correctness/parity risks.
-Batches 0B through 5 require the applicable User scope/failure decisions and
-independently reviewable PRs.
+Batch 0A was safe to execute before the scope gate. D6-01 and D6-02 are now
+accepted, so Batches 0B through 5 are authorized repository scope subject to
+their prerequisites, independently reviewable PRs, local verification and
+required CI. No scope decision grants target/deployment/data/cost authorization.
 
 ## 2. Batch Specifications
 
@@ -33,7 +32,7 @@ independently reviewable PRs.
 
 **Risk:** R2 documentation/research.
 **Status:** competitor baseline, Batch 0A and the scalability/anti-pattern audit
-are CI verified by Draft PR #139 through `b21b689`.
+are CI verified by Draft PR #139 through final evidence head `6c8c192`.
 
 Deliverables:
 
@@ -70,7 +69,7 @@ Verification:
 ### Batch 0B — Tenant And Financial Identity Integrity
 
 **Risk:** R4 multi-tenant authorization and financial-state behavior.
-**Status:** source-confirmed findings; User remediation decision pending.
+**Status:** accepted and active; begin with P6-F16 in its own R4 security PR.
 
 Split into independently reviewable security/financial PRs:
 
@@ -92,7 +91,7 @@ wallet/ledger invariants. No production exploit or target mutation is required.
 ### Batch 0C — Retry, Endpoint Parity, Config And Billing Truth
 
 **Risk:** R3 request/billing behavior.
-**Status:** proposed; separate branch/PR.
+**Status:** accepted by D6-01; not started; deliver through a separate branch/PR.
 
 Order within the batch:
 
@@ -112,7 +111,8 @@ reviewable.
 ### Batch 1 — Agent Capability And Distributed Policy V1
 
 **Risk:** R3/R4 shared admission behavior.
-**Gate:** User accepts MVP and quota failure mode.
+**Gate:** D6-01/D6-02 accepted; Batch 0B identity/tenant prerequisites and the
+selected policy contract must be complete.
 
 Design first:
 
@@ -203,6 +203,10 @@ Only one separately accepted advanced capability should enter at a time:
 - policy simulation/BYO guardrails;
 - selected adapter/SDK work.
 - asynchronous object-reference image/video job plane.
+- attenuation-only adaptive-risk assertions;
+- offline Governance Digital Twin or explicitly authorized live shadowing;
+- semantic lineage/collusion analysis, verifiable trust receipts, or
+  domain-bounded claim assurance.
 
 Each needs its own threat model, acceptance rows and rollback plan.
 

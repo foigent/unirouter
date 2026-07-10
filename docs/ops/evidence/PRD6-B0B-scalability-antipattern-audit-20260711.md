@@ -3,7 +3,7 @@
 > Date: 2026-07-11
 > Repository baseline: `d5a5249cc0337330f8ee9c547cdf3913b1efa29b`
 > Evidence level: source verified, focused-test verified, and documentation CI
-> verified by Draft PR #139 at `b21b689`; no remediation, 100x, target, or
+> verified by Draft PR #139 through final evidence head `6c8c192`; no remediation, 100x, target, or
 > production capacity claim
 > Scope: UniRouter only. External observability products are boundary consumers,
 > not PRD6 feature owners or request-path dependencies.

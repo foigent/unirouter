@@ -7,7 +7,9 @@
 - [ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md](ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md) — Git/CI/测试/X-Insight/代码事实基线
 - [ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md](ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md) — 100x、Agent 扇出、鉴权、计费、路由、流式和多模态反模式审计
 - [planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md](planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md) — LiteLLM/New API/One API 固定版本核验、四象限和优先级矩阵
-- [PRD-Phase6.md](PRD-Phase6.md) — PRD6 proposed MVP、advanced/long-tail、所有权和安全边界
+- [planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md](planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md) — CARTA、影子评测、反串谋、四象限、三平面边界和 Killer Features
+- [planning/prd6-adaptive-trust-hardening/hardening.md](planning/prd6-adaptive-trust-hardening/hardening.md) — adaptive-trust 三种结构方案、安全权衡和 signed local enforcement 推荐
+- [PRD-Phase6.md](PRD-Phase6.md) — PRD6 accepted MVP、proposed advanced/long-tail、所有权和安全边界
 - [ops/PRD6-ACCEPTANCE-MATRIX.md](ops/PRD6-ACCEPTANCE-MATRIX.md) — PRD6 accepted/proposed/external/target-evidence 验收矩阵
 - [planning/PRD6-IMPLEMENTATION-PLAN.md](planning/PRD6-IMPLEMENTATION-PLAN.md) — PRD6 可执行 batches、风险和 gates
 - [planning/PRD6-BACKLOG.md](planning/PRD6-BACKLOG.md) — PRD6 分类 backlog 和决策登记
@@ -33,7 +35,7 @@
 - [PRD-Phase3.md](PRD-Phase3.md) — 已完成 PRD3 一致性、语义、契约和架构清理范围
 - [planning/PRD3-CONSISTENCY-AUDIT.md](planning/PRD3-CONSISTENCY-AUDIT.md) — PRD3 范围审计和 PRD1→PRD2 遗留问题梳理
 - [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 当前未关闭问题列表
-- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前执行记录：PRD6 Batch 0/0A 与 Batch 0B 范围审计
+- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前执行记录：PRD6 Batch 0/0A、已接受的 D6-01/D6-02 与 Batch 0B
 - [agent-workflows/reviews/README.md](agent-workflows/reviews/README.md) — 可选独立复核记录格式和问题级别规则
 - [ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md](ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md) — 单一执行负责人、Git/CI、高影响授权和复核规则的确认记录
 - [ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md](ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md) — Batch 1W 根因、代码、回归和目标证据边界
@@ -50,7 +52,7 @@
 - [DOCS-GOVERNANCE.md](DOCS-GOVERNANCE.md) — 文档治理规则
 
 ## 核心文档
-- [PRD-Phase6.md](PRD-Phase6.md) — PRD6 当前范围提案；仅 Batch 0A 已在 scope gate 前接受
+- [PRD-Phase6.md](PRD-Phase6.md) — PRD6 D6-01/D6-02 已接受范围；P6-F23-P6-F31 仍需单独决定
 - [PRD-Phase5.md](PRD-Phase5.md) — PRD5 Accepted Scope Complete 历史事实
 - [PRD-Phase4.md](PRD-Phase4.md) — PRD4 已完成范围历史
 - [PRD-Phase3.md](PRD-Phase3.md) — 已完成 PRD3 清理/优化范围

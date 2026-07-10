@@ -1,10 +1,10 @@
 # UniRouter PRD6: Reliable MaaS Policy And Safety Plane
 
-> Version: 0.2
+> Version: 0.3
 > Date: 2026-07-11
-> Status: Scope Proposal; PRD6 discovery formally active
-> Accepted implementation now: Batch 0A verified correctness fixes only
-> Product-scope gate: User decision pending
+> Status: D6-01/D6-02 accepted; Batch 0B execution active
+> Accepted implementation scope: P6-F03 through P6-F11 and P6-F16 through P6-F21
+> Innovation gate: P6-F23 through P6-F31 remain proposed/deferred
 
 ## 1. Outcome
 
@@ -34,20 +34,23 @@ version-fixed competitor audit.
 
 ## 3. Scope Model
 
-### 3.1 Accepted Before Scope Gate
+### 3.1 Accepted And Verified Batch 0A
 
-Batch 0A may repair confirmed existing correctness defects:
+Batch 0A repaired and CI verified the confirmed existing correctness defects:
 
 - expired half-open channels must regain bounded probe eligibility;
 - API-key Redis RPM/RPS checks must enforce the exact boundary atomically and
   use the request context;
-- current Redis-unavailable fail-open behavior is preserved until the broader
-  failure-mode decision is accepted.
+- the Batch 0A patch preserved the prior Redis-unavailable fail-open behavior;
+  accepted D6-02 governs its later replacement in Distributed Policy V1.
 
-### 3.2 Recommended MVP Scope
+### 3.2 Accepted MVP Scope
 
-The following become accepted only after the User accepts or edits the MVP
-boundary.
+The User accepted D6-01 and D6-02 on 2026-07-11. The following is authorized
+repository implementation scope subject to the batch, review, safety and
+evidence gates in this PRD. Acceptance does not authorize deployment, target
+mutation, real or paid calls, credential changes, raw-payload expansion, or a
+new cross-project runtime contract.
 
 #### P6-MVP-00 Tenant And Financial Integrity Foundation
 
@@ -132,6 +135,13 @@ boundary.
 - selected provider adapters backed by conformance suites.
 - an asynchronous image/video job plane with tenant-scoped object references,
   modality queues, leases, status/cancel, retention, and final settlement.
+- a signed, expiring, attenuation-only adaptive-risk assertion and local policy
+  snapshot;
+- an offline Governance Digital Twin, failure-to-evaluation manifests and an
+  explicitly authorized live-shadow mode;
+- semantic data-lineage passports, collusion/cascade risk analysis and
+  risk-adjusted routing;
+- verifiable MaaS trust receipts and domain-bounded claim assurance.
 
 These require separate acceptance rows and cannot begin merely because the MVP
 is accepted.
@@ -184,26 +194,35 @@ These do not become UniRouter source-code gaps without new evidence.
 |----|-------------|----------|-------------|
 | P6-F01 | Recover expired half-open channels into bounded probe eligibility | P0 | Accepted Batch 0A |
 | P6-F02 | Atomically enforce the exact Redis RPM/RPS boundary | P0 | Accepted Batch 0A |
-| P6-F16 | Enforce organization ownership for every non-platform-admin key/user/project operation | P0 | Proposed urgent Batch 0B |
-| P6-F17 | Separate operation, idempotency, trace/span, workflow and Agent identities | P0 | Proposed urgent Batch 0B |
-| P6-F18 | Make reservation/finalization single-terminal, pool-safe and durable after billable output | P0 | Proposed urgent Batch 0B |
-| P6-F03 | Honor retryable/non-retryable error classification and preserve safe response semantics | P0 | Proposed Batch 0C |
-| P6-F04 | Give Embeddings Chat-equivalent routing/failover behavior | P0 | Proposed Batch 0C |
-| P6-F05 | Make effective retry/circuit/cooldown configuration observable and remove hard-coded divergence | P0 | Proposed Batch 0C |
-| P6-F06 | Correct freeze/settlement behavior when organization multipliers increase actual cost | P0 | Proposed Batch 0C |
-| P6-F07 | Enforce shared RPM/RPS/TPM/concurrency policies with explicit selectors and failure modes | P1 | Proposed MVP |
-| P6-F08 | Implement Routing Policy V1 with explainable candidates, exclusions, retry and failover | P1 | Proposed MVP |
-| P6-F09 | Normalize and bill provider cache-read/cache-create tokens | P1 | Proposed MVP |
-| P6-F10 | Add versioned input/non-stream-output Guardrail Kernel | P1 | Proposed MVP |
-| P6-F11 | Add safe streaming interception, cancellation and settlement semantics | P1 | Proposed MVP |
-| P6-F19 | Add short Agent capability, monotonic delegation, ancestor budgets and versioned revocation | P1 | Proposed MVP |
-| P6-F20 | Add durable minimal usage/finalization outbox and bounded evidence/notification workers | P1 | Proposed MVP |
-| P6-F21 | Admit weighted workload classes without replica-multiplied quotas or long-stream starvation | P1 | Proposed MVP |
+| P6-F16 | Enforce organization ownership for every non-platform-admin key/user/project operation | P0 | Accepted urgent Batch 0B |
+| P6-F17 | Separate operation, idempotency, trace/span, workflow and Agent identities | P0 | Accepted urgent Batch 0B |
+| P6-F18 | Make reservation/finalization single-terminal, pool-safe and durable after billable output | P0 | Accepted urgent Batch 0B |
+| P6-F03 | Honor retryable/non-retryable error classification and preserve safe response semantics | P0 | Accepted Batch 0C |
+| P6-F04 | Give Embeddings Chat-equivalent routing/failover behavior | P0 | Accepted Batch 0C |
+| P6-F05 | Make effective retry/circuit/cooldown configuration observable and remove hard-coded divergence | P0 | Accepted Batch 0C |
+| P6-F06 | Correct freeze/settlement behavior when organization multipliers increase actual cost | P0 | Accepted Batch 0C |
+| P6-F07 | Enforce shared RPM/RPS/TPM/concurrency policies with explicit selectors and failure modes | P1 | Accepted MVP |
+| P6-F08 | Implement Routing Policy V1 with explainable candidates, exclusions, retry and failover | P1 | Accepted MVP |
+| P6-F09 | Normalize and bill provider cache-read/cache-create tokens | P1 | Accepted MVP |
+| P6-F10 | Add versioned input/non-stream-output Guardrail Kernel | P1 | Accepted MVP |
+| P6-F11 | Add safe streaming interception, cancellation and settlement semantics | P1 | Accepted MVP |
+| P6-F19 | Add short Agent capability, monotonic delegation, ancestor budgets and versioned revocation | P1 | Accepted MVP |
+| P6-F20 | Add durable minimal usage/finalization outbox and bounded evidence/notification workers | P1 | Accepted MVP |
+| P6-F21 | Admit weighted workload classes without replica-multiplied quotas or long-stream starvation | P1 | Accepted MVP |
 | P6-F12 | Add external secret references/versioning/rotation for selected backends | P2 | Advanced candidate |
 | P6-F13 | Add opt-in isolated exact/semantic response cache | P2 | Advanced candidate |
 | P6-F14 | Add adaptive and canary routing policies | P2 | Advanced candidate |
 | P6-F15 | Add policy simulation/BYO guardrails/config rollback | P2 | Advanced candidate |
 | P6-F22 | Add an asynchronous object-reference media job plane | P2 | Advanced candidate; only if separately accepted |
+| P6-F23 | Add signed, expiring, attenuation-only adaptive-risk assertions and local enforcement snapshots | P2 | Advanced candidate; separately accepted only |
+| P6-F24 | Add an offline Governance Digital Twin and failure-to-evaluation manifest | P2 | Advanced candidate; separately accepted only |
+| P6-F25 | Add explicitly authorized live shadow routing | P2 | Advanced candidate; separately accepted only |
+| P6-F26 | Add authenticated data-lineage passports and sink-bound enforcement | P2 | Advanced candidate; separately accepted only |
+| P6-F27 | Add a verifiable MaaS trust receipt | P2 | Advanced candidate; separately accepted only |
+| P6-F28 | Add domain-bounded claim assurance and risk-adjusted routing | P2 | Advanced candidate; separately accepted only |
+| P6-F29 | Feed approved failure cases to an external model-lifecycle workflow | P3 | Deferred; no automatic raw-case training or promotion |
+| P6-F30 | Add a multimodal provenance passport | P3 | Deferred pending media-roadmap decision |
+| P6-F31 | Add semantic collusion/cascade risk analysis | P3 | Research candidate; shadow only until separately accepted |
 
 ## 6. Safety And Authorization Boundaries
 
@@ -233,15 +252,17 @@ Every accepted functional row must define:
 - local verification, PR review and all required GitHub CI;
 - a separate target-evidence row if target behavior is required.
 
-## 8. Scope Gate
+## 8. Scope Decision Record
 
-The User must accept or modify:
+The User accepted on 2026-07-11:
 
-1. the updated MVP: P6-F16 through P6-F18, the existing Batch 0C correctness
-   rows, P6-F07 through P6-F11, and P6-F19 through P6-F21; and
-2. the policy-specific fail-open/fail-closed/bounded-last-known-safe posture.
+1. D6-01: P6-F16 through P6-F18, the existing Batch 0C correctness rows,
+   P6-F07 through P6-F11, and P6-F19 through P6-F21; and
+2. D6-02: identity, tenant, mandatory safety and hard budget fail closed;
+   advisory analysis may continue only with durable degraded evidence; capacity
+   may use a small time/amount-bounded last-known-safe lease and then reject.
 
-Batch 0A does not prejudge those choices. The P0 Batch 0B findings are confirmed
-source risks but remain audit-only until the User authorizes remediation. Batch
-0C is existing correctness/parity work and may be accepted separately. P6-F22 is
-not implied by accepting the MVP.
+Batch 0B is therefore authorized for repository implementation and begins with
+P6-F16. Each R4 security/financial boundary remains an independently reviewable
+PR with local, race/integration where applicable, and required CI evidence.
+P6-F22 through P6-F31 are not implied by D6-01 and remain separate decisions.
