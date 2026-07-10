@@ -125,6 +125,8 @@ export const api = {
     model?: string; provider?: string; status_code?: string;
     start_time?: string; end_time?: string; request_id?: string;
     latency_min?: string; latency_max?: string; search?: string;
+    trace_id?: string; upstream_request_id?: string;
+    evidence_ref?: string; source_event_hash?: string;
     project_id?: number; usage_source?: string;
   }) => {
     return request(appendParams('/logs', {
@@ -136,6 +138,10 @@ export const api = {
       start_time: filters?.start_time,
       end_time: filters?.end_time,
       request_id: filters?.request_id,
+      trace_id: filters?.trace_id,
+      upstream_request_id: filters?.upstream_request_id,
+      evidence_ref: filters?.evidence_ref,
+      source_event_hash: filters?.source_event_hash,
       latency_min: filters?.latency_min,
       latency_max: filters?.latency_max,
       search: filters?.search,
@@ -145,6 +151,26 @@ export const api = {
   },
   getLogDetail: (id: number) => request(`/logs/${id}`),
   getLogTrace: (id: number) => request(`/logs/${id}/trace`),
+
+  // PRD5 Data Exchange Control (platform admin only)
+  getDataExchangeItems: (page = 1, pageSize = 20, status?: string) =>
+    request(appendParams('/data-exchange/items', { page, page_size: pageSize, status })),
+  createDataExchangeItem: (data: any) =>
+    request('/data-exchange/items', { method: 'POST', body: JSON.stringify(data) }),
+  updateDataExchangeItem: (id: number, data: any) =>
+    request(`/data-exchange/items/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  getDataExchanges: (page = 1, pageSize = 20) =>
+    request(appendParams('/data-exchange/exchanges', { page, page_size: pageSize })),
+  createDataExchange: (data: any) =>
+    request('/data-exchange/exchanges', { method: 'POST', body: JSON.stringify(data) }),
+  getDataExchangeActivity: (id: number) =>
+    request(`/data-exchange/exchanges/${id}/activity`),
+  createDataExchangeDelivery: (id: number, data: any) =>
+    request(`/data-exchange/exchanges/${id}/deliveries`, { method: 'POST', body: JSON.stringify(data) }),
+  createDataExchangeReceipt: (id: number, data: any) =>
+    request(`/data-exchange/exchanges/${id}/receipts`, { method: 'POST', body: JSON.stringify(data) }),
+  markDataExchangeArtifactDeleted: (id: number) =>
+    request(`/data-exchange/exchanges/${id}/artifact-delete`, { method: 'POST' }),
 
   // PRD2 Batch 23 product surfaces
   getUsageAnalytics: (filters?: {

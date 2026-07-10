@@ -113,6 +113,16 @@ describe('navigation role boundaries', () => {
     expect(isRouteAllowedForRole('/license', 'admin')).toBe(true);
   });
 
+  it('keeps data exchange control platform-admin only', () => {
+    const platformKeys = flattenItemKeys(getNavItemsForRole('platform_admin'));
+    const orgKeys = flattenItemKeys(getNavItemsForRole('org_admin'));
+
+    expect(platformKeys).toContain('/data-exchange');
+    expect(orgKeys).not.toContain('/data-exchange');
+    expect(isRouteAllowedForRole('/data-exchange', 'platform_admin')).toBe(true);
+    expect(isRouteAllowedForRole('/data-exchange', 'org_admin')).toBe(false);
+  });
+
   it('does not use API docs as the default landing for org viewers or unknown roles', () => {
     const orgViewerKeys = flattenItemKeys(getNavItemsForRole('org_viewer'));
     const unknownKeys = flattenItemKeys(getNavItemsForRole('owner'));

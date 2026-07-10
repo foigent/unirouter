@@ -5,12 +5,12 @@
 
 ## Current Batch
 
-- Batch: PRD5 Batch 1W Pre-Relay Model Permission Evidence Parity
+- Batch: PRD5 Batch 1Y UniRouter-Owned Accepted Scope Completion
 - Owner: Codex
-- Risk: R3 live authorization/evidence path
-- Status: Batch 1W CI verified at `931400a` / PR #126; Gate A external integration verified; target deployment/rerun pending
+- Risk: R3 migration/control-plane API/RBAC/UI; R2 trace/runtime read-side and docs synchronization
+- Status: Local verified in workspace with full local checks passed; PR CI not yet run for this batch
 - Execution record: `docs/agent-workflows/EXECUTION-RECORD.md`
-- Local evidence: `docs/ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md`
+- Local evidence: `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md`
 - Workflow decision: `docs/ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md`
 
 ## Reviewer Entry

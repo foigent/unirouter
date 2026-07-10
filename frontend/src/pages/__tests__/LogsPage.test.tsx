@@ -111,6 +111,22 @@ const MOCK_TRACE_RESPONSE = {
       payload_ref: null,
       source_event_hash: 'hash-001',
     },
+    {
+      id: 2, event_type: 'routing.route_selected', stage: 'routing', severity: 'info', model: 'gpt-4o', requested_model: 'gpt-4o',
+      provider: 'openai', channel: 'primary', status_code: null, latency_ms: 3, metadata: { mapped_model: 'gpt-4o' }, created_at: '2026-06-29T10:00:02Z',
+    },
+    {
+      id: 3, event_type: 'provider.request_failed', stage: 'provider', severity: 'warning', model: 'gpt-4o', requested_model: 'gpt-4o',
+      provider: 'openai', channel: 'primary', status_code: null, latency_ms: 100, metadata: {}, created_at: '2026-06-29T10:00:03Z',
+    },
+    {
+      id: 4, event_type: 'routing.route_selected', stage: 'routing', severity: 'info', model: 'gpt-4o', requested_model: 'gpt-4o',
+      provider: 'azure', channel: 'secondary', status_code: null, latency_ms: 104, metadata: { mapped_model: 'gpt-4o' }, created_at: '2026-06-29T10:00:04Z',
+    },
+    {
+      id: 5, event_type: 'provider.response_accepted', stage: 'provider', severity: 'info', model: 'gpt-4o', requested_model: 'gpt-4o',
+      provider: 'azure', channel: 'secondary', status_code: 200, latency_ms: 220, metadata: {}, created_at: '2026-06-29T10:00:05Z',
+    },
   ],
 };
 
@@ -187,6 +203,18 @@ describe('LogsPage', () => {
     expect(labels).toContain('计量来源');
   });
 
+  it('renders exact structural evidence filters', async () => {
+    const { container } = renderLogs();
+    await waitFor(() => {
+      expect(mockGetLogs).toHaveBeenCalled();
+    });
+    const labels = Array.from(container.querySelectorAll('.ur-filter-label')).map(el => el.textContent || '');
+    expect(labels).toContain('证据标识');
+    for (const placeholder of ['Trace ID（精确匹配）', '上游 Request ID（精确匹配）', 'Evidence Ref（精确匹配）', 'Source Event Hash（精确匹配）']) {
+      expect(container.querySelector(`input[placeholder="${placeholder}"]`)).toBeTruthy();
+    }
+  });
+
   it('renders request id copy buttons', async () => {
     const { container } = renderLogs();
     await waitFor(() => {
@@ -233,6 +261,23 @@ describe('LogsPage', () => {
       expect(html).toContain('decision: admission / accepted / request accepted');
       expect(html).toContain('actor: api_key:key_123');
       expect(html).toContain('upstream: upstream-001');
+    });
+  });
+
+  it('summarizes route attempts and failover without changing routing semantics', async () => {
+    const { container } = renderLogs();
+    await waitFor(() => expect(container.textContent || '').toContain('req-001-aaa'));
+    const requestID = await screen.findByText(/req-001-aaa/);
+    fireEvent.click(requestID.closest('tr') as HTMLElement);
+
+    await waitFor(() => {
+      const html = container.textContent || '';
+      expect(html).toContain('路由与故障切换');
+      expect(html).toContain('路由尝试2 次');
+      expect(html).toContain('故障切换1 次');
+      expect(html).toContain('openai / primary');
+      expect(html).toContain('azure / secondary');
+      expect(html).toContain('上游接受');
     });
   });
 

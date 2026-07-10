@@ -136,7 +136,7 @@ PRD5 must not:
 | P5-F09 | Cursor Export API Or Outbox | Design non-blocking exporter/outbox only after Gate A import reveals real capture gaps and volume needs |
 | P5-F10 | Real Upstream Target E2E | Run PRD4 real-upstream harness in an approved target environment when credentials/model slugs exist |
 | P5-F11 | Real SSO Target E2E | Run PRD4 real-SSO harness against an approved IdP/browser target when tenant/test user exists |
-| P5-F12 | Larger Deferred Backlog Screening | Keep scheduler, plugin marketplace, managed HA/IaC, full SDK, hard budget block, runtime cache, and new roles behind separate explicit reopen decisions |
+| P5-F12 | Larger Deferred Backlog Screening | Screening is complete in `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md`; keep scheduler, plugin marketplace, IAM rewrite, managed HA/IaC, full SDK, hard budget block, runtime cache, new roles/service accounts, and SLA operations behind separate explicit reopen decisions |
 
 ## 4. Functional Requirements
 
@@ -884,6 +884,64 @@ Acceptance:
 - Target evidence includes date, environment, commit/artifact, credential
   boundary, commands/manual path, expected result, actual result, and cleanup.
 
+### P5-F33: Structural Evidence Search
+
+Requirements:
+
+- Support exact log lookup by trace ID, upstream request ID, evidence reference,
+  and source-event hash.
+- Include the same identities in global log search and URL-persisted UI filters.
+
+Acceptance:
+
+- Backend SQL/filter tests and frontend API/page tests pass.
+- No raw payload field or broader export is introduced.
+
+### P5-F34: Data Exchange Control MVP
+
+Requirements:
+
+- Implement platform-admin-only exact-request and controlled-scenario approval,
+  request-ID sealing, exchange ledger, delivery/re-delivery, retention metadata,
+  readable member/delivery/receipt history, ledger-only artifact deletion,
+  audit, and X-Insight receipt reconciliation.
+- Keep UniRouter source workflow state separate from downstream receipt state.
+- Require approved/sealed request IDs and reconcile receipt identity/hash fields.
+- Do not add automatic discovery, artifact download, exporter/outbox, or an
+  X-Insight runtime dependency.
+
+Acceptance:
+
+- Migration, API, route/OpenAPI parity, RBAC navigation, audit, backend, API
+  client, and page tests pass.
+- Current `xinsight.import-receipt.v1` counts are preserved; hash mismatch is
+  shown as `receipt_outdated`; durable import job/deep link fields remain empty
+  until X-Insight supplies a real contract.
+
+### P5-F35: Route And Failover Visibility
+
+Requirements:
+
+- Derive route attempts, provider outcomes, failover count, and final outcome
+  from existing request trace events.
+- Do not change scheduler, retry, billing, settlement, or streaming behavior.
+
+Acceptance:
+
+- Logs detail UI test proves two attempts, one failover, and final acceptance.
+
+### P5-F36: Redacted Runtime Topology
+
+Requirements:
+
+- Return and render only the current logical UniRouter/PostgreSQL/Redis topology.
+- Redact host/address identifiers and state that network exposure and
+  multi-instance inventory are not observed.
+
+Acceptance:
+
+- Backend and frontend tests prove topology structure and redaction boundary.
+
 ## 5. Batch Strategy
 
 PRD5 should proceed in independently verifiable batches:
@@ -926,11 +984,16 @@ PRD5 should proceed in independently verifiable batches:
     handoff, exact-ID sealing, sanitized snapshot, and X-Insight receipt loop.
 23. Batch 1W: remove the pre-relay API-key permission bypass around Relay so
     live denial correlation and decision evidence match the accepted contract.
-24. Later payload policy metadata and evidence references, with future raw
+24. Batch 1X: repository-wide audit, P5-F12 screening, Logs status-class fix,
+    and enforceable frontend type checking.
+25. Batch 1Y: structural evidence search, route/failover visibility, Data
+    Exchange Control MVP, redacted runtime topology, and deferred-control
+    implementation designs.
+26. Later payload policy metadata and evidence references, with future raw
    payload modes gated behind enterprise opt-in.
-25. Later Gate A batch: read-only view/export decision after X-Insight Gate A
+27. Later Gate A batch: read-only view/export decision after X-Insight Gate A
    evidence.
-26. Later target/backlog batches: target upstream/SSO evidence or larger
+28. Later target/backlog batches: target upstream/SSO evidence or larger
    backlog items only after their prerequisites are explicitly met.
 
 ## 6. External Source Refresh

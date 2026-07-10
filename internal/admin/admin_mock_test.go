@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -2885,6 +2886,117 @@ func TestListLogs_WithFilters(t *testing.T) {
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest("GET", "/logs?model=gpt-4o&provider=openai&status_code=200&usage_source=stream_estimate", nil)
+	rec := httptest.NewRecorder()
+
+	h.ListLogs(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestListLogs_StatusClassFilter(t *testing.T) {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			if !strings.Contains(sql, "status_code >= $1 AND status_code < $2") {
+				t.Fatalf("expected status class filter in count query, got %s", sql)
+			}
+			if len(args) != 2 || args[0] != 400 || args[1] != 500 {
+				t.Fatalf("expected 4xx count args, got %#v", args)
+			}
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
+					*dest[0].(*int) = 0
+					return nil
+				},
+			}
+		},
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			if !strings.Contains(sql, "status_code >= $1 AND status_code < $2") {
+				t.Fatalf("expected status class filter in list query, got %s", sql)
+			}
+			if len(args) < 2 || args[0] != 400 || args[1] != 500 {
+				t.Fatalf("expected 4xx query args, got %#v", args)
+			}
+			return &testutil.MockRows{}, nil
+		},
+	}
+	h := newTestHandler(db)
+
+	req := httptest.NewRequest("GET", "/logs?status_code=4xx", nil)
+	rec := httptest.NewRecorder()
+
+	h.ListLogs(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestListLogs_StructuralEvidenceFilters(t *testing.T) {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			for _, condition := range []string{
+				"trace_id = $1",
+				"upstream_request_id = $2",
+				"evidence_ref = $3",
+				"source_event_hash = $4",
+			} {
+				if !strings.Contains(sql, condition) {
+					t.Fatalf("expected %s in count query, got %s", condition, sql)
+				}
+			}
+			expected := []any{"trace-001", "upstream-001", "evidence-001", "hash-001"}
+			if !reflect.DeepEqual(args, expected) {
+				t.Fatalf("expected structural filter args %#v, got %#v", expected, args)
+			}
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int) = 0
+				return nil
+			}}
+		},
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			if !strings.Contains(sql, "source_event_hash = $4") {
+				t.Fatalf("expected structural filters in list query, got %s", sql)
+			}
+			return &testutil.MockRows{}, nil
+		},
+	}
+	h := newTestHandler(db)
+
+	req := httptest.NewRequest("GET", "/logs?trace_id=trace-001&upstream_request_id=upstream-001&evidence_ref=evidence-001&source_event_hash=hash-001", nil)
+	rec := httptest.NewRecorder()
+
+	h.ListLogs(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestListLogs_SearchesStructuralEvidenceFields(t *testing.T) {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			for _, column := range []string{"trace_id ILIKE $1", "upstream_request_id ILIKE $1", "evidence_ref ILIKE $1", "source_event_hash ILIKE $1"} {
+				if !strings.Contains(sql, column) {
+					t.Fatalf("expected %s in search query, got %s", column, sql)
+				}
+			}
+			if len(args) != 1 || args[0] != "%evidence-001%" {
+				t.Fatalf("expected structural search arg, got %#v", args)
+			}
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int) = 0
+				return nil
+			}}
+		},
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{}, nil
+		},
+	}
+	h := newTestHandler(db)
+
+	req := httptest.NewRequest("GET", "/logs?search=evidence-001", nil)
 	rec := httptest.NewRecorder()
 
 	h.ListLogs(rec, req)

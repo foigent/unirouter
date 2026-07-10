@@ -12,8 +12,14 @@
 > target verified under `UR-XI-GATE-A-20260710-02` on target
 > `e823abc293f996264763c6c1aca19d3d4d6e705f`, containing `931400a` / PR
 > #126. Keys 36/37 are disabled and the second X-Insight snapshot passed
-> persistence, idempotent rerun, and readback. X-Insight ECS target verification
-> and real upstream provider E2E remain pending.
+> persistence, idempotent rerun, and readback. Batch 1X repository-wide audit,
+> P5-F12 screening, Logs status-class filter, and frontend type-check gate
+> hardening are Local verified in
+> `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md`. Batch 1Y
+> accepted UniRouter-owned completion is Local verified in
+> `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md`.
+> X-Insight ECS
+> target verification and real upstream provider E2E remain pending.
 > Scope owner: UniRouter. X-Insight remains a separate project and owns broader
 > observability/governance product surfaces.
 
@@ -831,6 +837,44 @@ Non-goals:
 - no read-only X-Insight DB/view, shared staging, or exporter/outbox;
 - no PRD4 change or production verification claim.
 
+### Batch 1X: Repository Audit, P5-F12 Screening, Logs/CI Hygiene
+
+Risk: R2 for docs/status/matrix synchronization and R1 for the scoped Logs/CI
+fixes.
+
+Status: Local verified in
+`docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md`.
+
+Implemented in this round:
+
+- repository-wide architecture, function, UI/UX, data, deployment, and security
+  audit with confirmed findings separated from hypotheses;
+- P5-F12 accept/defer/reject screening for Scheduler V2, plugins/marketplace,
+  IAM rewrite, managed HA/IaC, infrastructure topology, hard budget blocking,
+  runtime cache, SDK, roles/service accounts, and SLA operations;
+- P0-P3 batch sequencing with INFRA-SEC-001 plan/evidence design only;
+- Logs `2xx`/`4xx`/`5xx` status-class backend filtering to match existing UI;
+- frontend `type-check` script and CI enforcement.
+
+Non-goals:
+
+- no ECS mutation, deployment, real upstream request, credential change, broad
+  export, X-Insight runtime dependency, raw payload capture, or PRD4 reopen;
+- no implementation of full Scheduler V2, runtime plugin platform, marketplace,
+  IAM rewrite, full managed HA/IaC product, budget hard-blocking, runtime
+  cache, full SDK suite, persistent service accounts, or customer-facing SLA
+  product.
+
+Verification:
+
+- `go test ./internal/admin -count=1`;
+- `go test ./... -count=1`;
+- `go vet ./...`;
+- `npm --prefix frontend run type-check`;
+- `npm --prefix frontend test -- --run`;
+- `npm --prefix frontend run build`;
+- `git diff --check`.
+
 ### Later Payload Policy Modes
 
 Risk: R3 if schema/API changes; R4 only if raw payload capture is introduced,
@@ -883,16 +927,43 @@ Use existing PRD4 harnesses, but record target evidence under PRD5.
 | Gateway execution facts | Admission, auth, routing, provider, billing, trace, usage, key ownership | Normalized evidence model and cross-source interpretation |
 | Trace/span generation | Gateway-local IDs and trusted inbound preservation | Cross-system trace stitching and capture-gap display |
 | Payload capture decision | Gateway decision point, metadata, hashes/refs when safe | Payload state UI, audit-on-read, retention/delete/export for X-Insight-managed evidence |
-| UI | Lightweight request trace/debug view plus a future Data Exchange Control surface for outbound approvals, export ledger, import receipts, and deep links | Operator investigation console, execution detail, timeline, node detail, policy simulation, evidence packs, and read-side audit |
+| UI | Lightweight request trace/debug view plus implemented Data Exchange Control for outbound approvals, export/delivery ledger, and receipt reconciliation | Operator investigation console, durable import-job/deep-link, execution detail, timeline, node detail, policy simulation, evidence packs, and read-side audit |
 | Import/export | Snapshot, handoff notes, future views/export/outbox if needed | Importer, dedupe, source refs, read APIs, adapters |
 | LiteLLM/New API/one-api | Compare for UniRouter feature catch-up | Public/open-source adapter strategy |
 
 ## Current Blocking Conditions
 
 There is no repository-integration or denied-path target blocker for UniRouter
-Batch 1A through Batch 1W. Historical Canary/Sentinel evidence is complete
-through Batch 1V, and Batch 1W is target verified under
-`UR-XI-GATE-A-20260710-02` on a target containing `931400a` / PR #126.
+Batch 1A through Batch 1Y. Historical Canary/Sentinel evidence is complete
+through Batch 1V, Batch 1W is target verified under
+`UR-XI-GATE-A-20260710-02` on a target containing `931400a` / PR #126, and
+Batch 1X and Batch 1Y are Local verified only.
+
+### Batch 1Y: UniRouter-Owned Accepted Scope Completion
+
+Status: Local verified in
+`docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md`.
+
+Implemented:
+
+- structural evidence exact/global log search and URL-persisted controls;
+- route-attempt/failover summary from existing trace events;
+- platform-admin Data Exchange Control migration/API/UI/audit for approval,
+  request sealing, exchange/delivery/re-delivery/delete ledger, and receipt
+  reconciliation;
+- redacted current-process topology in Runtime Status;
+- implementation-ready budget hard-block, service-account, and incident/SLO
+  designs while preserving their deferred runtime status;
+- consolidated X-Insight required-information request in the shared workspace.
+
+Non-goals:
+
+- no deployment, real request, target migration, credential, exporter/outbox,
+  raw payload, broad export, X-Insight runtime dependency, ECS mutation, or PRD4
+  reopen;
+- no full Scheduler V2, plugins/marketplace, IAM rewrite, managed HA/IaC,
+  budget hard-block runtime, plaintext cache, SDK suite, service-account runtime,
+  or customer SLA product.
 
 These later actions are gated:
 

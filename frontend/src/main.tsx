@@ -28,6 +28,7 @@ import TestPage from './pages/TestPage'
 import ApiDocsPage from './pages/ApiDocsPage'
 import AccessStatePage from './pages/AccessStatePage'
 import ErrorBoundary from './components/ErrorBoundary'
+import DataExchangePage from './pages/DataExchangePage'
 import { useAuthStore } from './store/auth'
 import { getDefaultPathForRole, isRouteAllowedForRole } from './navigation'
 
@@ -97,6 +98,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="org-model-prices" element={<RoleRoute><OrgModelPricesPage /></RoleRoute>} />
             <Route path="grants" element={<RoleRoute><GrantsPage /></RoleRoute>} />
             <Route path="audit-logs" element={<RoleRoute><AuditLogsPage /></RoleRoute>} />
+            <Route path="data-exchange" element={<RoleRoute><DataExchangePage /></RoleRoute>} />
             <Route path="reconciliation" element={<RoleRoute><ReconciliationPage /></RoleRoute>} />
             <Route path="usage-analytics" element={<RoleRoute><UsageAnalyticsPage /></RoleRoute>} />
             <Route path="notifications" element={<RoleRoute><NotificationCenterPage /></RoleRoute>} />

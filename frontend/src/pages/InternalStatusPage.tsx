@@ -99,6 +99,15 @@ interface RuntimeStatus {
     prometheus: RuntimeIntegration;
     grafana: RuntimeIntegration;
   };
+  topology?: {
+    scope: string;
+    visibility: string;
+    network_exposure: string;
+    multi_instance_state: string;
+    nodes: Array<{ id: string; kind: string; role: string; status: string }>;
+    edges: Array<{ from: string; to: string; kind: string; status: string }>;
+    limitations: string[];
+  };
 }
 
 type MetricTone = 'blue' | 'green' | 'amber' | 'violet' | 'red' | 'slate';
@@ -383,6 +392,30 @@ export default function InternalStatusPage() {
         </Surface>
       )}
 
+      {canViewRuntime && runtimeData?.topology && (
+        <Surface title="受限拓扑" description="当前进程与逻辑依赖关系；地址、主机标识和网络暴露状态不在应用内推断。">
+          <div className="ur-chip-row" style={{ marginBottom: 12 }}>
+            <TagStatus label="可见性" value={runtimeData.topology.visibility} />
+            <TagStatus label="网络暴露" value={runtimeData.topology.network_exposure} />
+            <TagStatus label="多实例" value={runtimeData.topology.multi_instance_state} />
+          </div>
+          <div className="ur-table-shell">
+            <Table
+              rowKey="id"
+              size="small"
+              pagination={false}
+              dataSource={runtimeData.topology.nodes}
+              columns={[
+                { title: '逻辑节点', dataIndex: 'id', render: (value: string) => <Text code>{value}</Text> },
+                { title: '类型', dataIndex: 'kind', width: 140 },
+                { title: '角色', dataIndex: 'role', width: 180 },
+                { title: '状态', dataIndex: 'status', width: 140, render: (value: string) => <StatusTag status={value}>{componentStatusLabel(value)}</StatusTag> },
+              ]}
+            />
+          </div>
+        </Surface>
+      )}
+
       <Surface title="通知事件" description="最近 20 条 notification_events 按 open 优先、时间倒序展示。事件状态：未关闭 / 已确认 / 已解决；投递状态只表示 webhook 投递结果。">
         <div className="ur-table-shell">
           <Table
@@ -398,4 +431,8 @@ export default function InternalStatusPage() {
       </Surface>
     </div>
   );
+}
+
+function TagStatus({ label, value }: { label: string; value: string }) {
+  return <StatusTag status={value}>{label}: {componentStatusLabel(value)}</StatusTag>;
 }

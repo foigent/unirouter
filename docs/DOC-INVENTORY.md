@@ -8,8 +8,10 @@
 |------|------|
 | `docs/PROJECT-HANDOFF.md` | First-read handoff for agents |
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
+| `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md` | PRD5 repository-wide audit, P5-F12 screening, P0-P3 batches, and INFRA-SEC-001 evidence design |
+| `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md` | PRD5 accepted UniRouter-owned completion evidence for trace search, Data Exchange Control, route/failover, redacted topology, and remaining boundaries |
 | `docs/PRD-Phase5.md` | Formal PRD5 active scope and implementation-phase reference |
-| `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` | PRD5 acceptance matrix; Batch 1W denied-path target verification and both Gate A external persistence/readback cycles are recorded |
+| `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` | PRD5 acceptance matrix; Batch 1W denied-path target verification, both Gate A external persistence/readback cycles, and P5-F12 Local verified screening are recorded |
 | `docs/ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md` | PRD5 Gate A request ID approval runbook for non-technical User/UniRouter-owner approval before controlled X-Insight snapshot generation |
 | `docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md` | PRD5 Gate A prior-authorization and narrow operator runbook for newly generated controlled scenarios |
 | `docs/planning/PRD5-IMPLEMENTATION-PLAN.md` | PRD5 batch plan and UniRouter/X-Insight ownership split |
@@ -19,6 +21,7 @@
 | `docs/planning/PRD5-BACKLOG.md` | Capabilities explicitly deferred beyond PRD4 |
 | `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md` | PRD5 X-Insight Gate A coordination decisions and access sequencing |
 | `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md` | PRD5 X-Insight data exchange control surface boundary and staged UI decision |
+| `docs/planning/PRD5-DEFERRED-CONTROL-DESIGNS-20260710.md` | Implementation-ready budget hard-block, service-account, and incident/SLO designs whose runtime remains deferred |
 | `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` | Completed PRD3 cleanup/optimization acceptance state |
 | `docs/PRD-Phase3.md` | Completed PRD3 cleanup/optimization scope |
 | `docs/planning/PRD3-CONSISTENCY-AUDIT.md` | PRD3 lineage audit and completed cleanup input |
@@ -31,7 +34,7 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required single-owner execution, approval, evidence and optional-review workflow |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD5 Batch 1W execution, verification and integration state |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD5 Batch 1Y execution, verification and boundary state |
 | `docs/agent-workflows/reviews/` | Optional immutable independent review results |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry pointing to the current execution record |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |
@@ -51,7 +54,7 @@
 | `docs/planning/PRD4-BACKLOG.md` | PRD4 candidate backlog | Source record for PRD4 scope discovery |
 | `docs/planning/PRD5-BACKLOG.md` | PRD5 backlog | Explicitly deferred capabilities and reopen prerequisites |
 | `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md` | PRD5 X-Insight Gate A coordination | Planning coordination for sanitized snapshot first, Batch 1O controlled snapshot handoff prep, read-only DB/view later, structural fields before exporter/outbox, and no shared GitHub/ECS staging yet |
-| `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md` | PRD5 X-Insight data exchange control | Product/architecture decision for a future UniRouter-owned outbound approval/export ledger/import receipt surface without duplicating X-Insight audit/investigation UI |
+| `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md` | PRD5 X-Insight data exchange control | Implemented UniRouter-owned outbound approval/export/delivery/receipt surface and remaining X-Insight contract without duplicating downstream audit/investigation UI |
 | `docs/planning/PRD5-IMPLEMENTATION-PLAN.md` | PRD5 implementation plan | Batch order, gates, and ownership split for UniRouter vs X-Insight |
 | `docs/planning/PRD5-COMPETITOR-COMPARISON.md` | PRD5 competitor comparison | Source-grounded comparison against LiteLLM, New API, one-api, Langfuse, and Helicone |
 | `docs/design/` | UI design decisions | Current design reference unless contradicted by code |
@@ -107,6 +110,8 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` | PRD4 active acceptance matrix and evidence rules |
 | `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` | PRD5 active acceptance matrix and evidence rules |
 | `docs/planning/PRD5-CURRENT-GAP-AUDIT-20260710.md` | Current PRD5 accounting, UniRouter implementation gaps, X-Insight coordination gaps, and next-window architecture/product audit plan |
+| `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md` | PRD5 Batch 1X local repository audit, P5-F12 screening decisions, safe local Logs/CI fixes, and INFRA-SEC-001 plan |
+| `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md` | PRD5 Batch 1Y accepted UniRouter-owned implementation and local full verification |
 | `docs/ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md` | PRD5 Gate A request ID approval runbook and data-minimization boundary |
 | `docs/ops/PRD1-STRICT-CLOSEOUT-RUNBOOK.md` | Final strict closeout gate and evidence procedure |
 | `docs/ops/deployment-runbook.md` | Deployment reference |
@@ -124,6 +129,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | `docs/ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md` | User-approved single execution owner, Git/CI, approval and optional-review decision evidence |
 | `docs/ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md` | Batch 1W local root-cause, implementation, regression and target-boundary evidence |
 | `docs/ops/evidence/PRD5-B1W-target-rerun-20260710.md` | Batch 1W target deployment/rerun, temporary-key cleanup, second X-Insight receipt, runtime boundary and infrastructure findings |
+| `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md` | Batch 1X local audit, P5-F12 screening, Logs/CI fixes, and INFRA-SEC-001 remediation evidence design |
 | `docs/ops/evidence/PRD5-GATE-A-XINSIGHT-external-integration-20260710.md` | Gate A snapshot/manifest/receipt reconciliation, persistent import, idempotency, readback and remaining-boundary evidence |
 
 ## Agent Workflow Files
@@ -132,7 +138,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 |------|------|
 | `docs/agent-workflows/README.md` | Agent workflow index |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Current Agent Protocol v2.0 |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current execution-owner record; PRD5 Batch 1W target verified and second X-Insight receipt reconciled |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current execution-owner record; PRD5 Batch 1Y local completion continues from Batch 1X audit and Batch 1W target verification |
 | `docs/agent-workflows/reviews/README.md` | Independent review naming, contents and severity rules |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |

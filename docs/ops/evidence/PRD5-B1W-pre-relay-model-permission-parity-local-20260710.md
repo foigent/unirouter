@@ -2,7 +2,9 @@
 
 > Date: 2026-07-10
 > Risk: R3 live authorization and evidence path
-> Status: CI verified at `931400a` / PR #126; target deployment/rerun pending
+> Status: CI verified at `931400a` / PR #126. Later target deployment/rerun
+> completed under `UR-XI-GATE-A-20260710-02`; see
+> `docs/ops/evidence/PRD5-B1W-target-rerun-20260710.md`.
 
 ## Trigger
 

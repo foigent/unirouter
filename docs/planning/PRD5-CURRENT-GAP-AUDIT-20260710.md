@@ -1,7 +1,7 @@
 # PRD5 Current Gap Audit And Next-Window Plan
 
 > Date: 2026-07-10
-> UniRouter audited baseline: `81c97cb` / PR #129 on `main`
+> UniRouter audited baseline: `935e64e` / PR #130 on `main`
 > X-Insight audited baseline: `9172633` / PR #12 on `main`
 > Purpose: separate completed PRD5 acceptance, UniRouter-owned implementation
 > gaps, X-Insight coordination gaps, and target-evidence prerequisites before a
@@ -21,7 +21,7 @@
 
 ## Matrix Accounting
 
-The current PRD5 acceptance matrix contains 32 rows:
+The current PRD5 acceptance matrix contains 36 rows:
 
 | Classification | Count | IDs |
 |---|---:|---|
@@ -29,10 +29,12 @@ The current PRD5 acceptance matrix contains 32 rows:
 | Target/external integration verified | 2 | P5-F31-F32 |
 | Deferred pending User/architecture decision | 2 | P5-F08-F09 |
 | Deferred pending target prerequisite | 2 | P5-F10-F11 |
-| Planned, screening not complete | 1 | P5-F12 |
+| Local verified screening complete | 1 | P5-F12 |
+| Local verified UniRouter-owned functionality | 4 | P5-F33-F36 |
 
-This means 27 rows have passed the acceptance boundary defined for those rows.
-It does **not** mean 27 product features have complete runtime implementations.
+This means 32 rows have passed the acceptance boundary defined for those rows,
+including P5-F12 screening and four Batch 1Y local rows.
+It does **not** mean 32 product features have complete runtime implementations.
 Several accepted rows intentionally delivered contracts, runbooks, or product
 boundaries only.
 
@@ -76,7 +78,7 @@ runtime deployment.
 |---|---|---|
 | P5-F08 read-only DB/views | Two controlled imports prove compatibility, but no read-only access is approved | Requires view scope, least-privilege role, network path, audit, retention, revocation, outage behavior, and User approval |
 | P5-F09 cursor exporter/outbox | No exporter exists; two low-volume snapshots do not establish scale or availability requirements | Requires observed throughput/latency needs, cursor and retry semantics, dedupe, redaction, backpressure, producer availability, and operating owner |
-| P5-F12 larger deferred backlog screening | Screening has not been completed | Scheduler V2, runtime plugins/marketplace, managed HA/IaC, infrastructure topology, hard budget blocking, runtime cache, SDKs, roles/service accounts, and SLA operations require separate product/architecture decisions |
+| P5-F12 larger deferred backlog screening | Screening is local verified in `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md` | Full Scheduler V2, runtime plugins/marketplace, managed HA/IaC, hard budget blocking, runtime cache, SDKs, roles/service accounts, and SLA operations remain separate scoped follow-ups |
 
 ### Target Evidence And Operations, Not Missing Local Features
 
@@ -104,36 +106,39 @@ runtime deployment.
 | Ongoing ingestion mechanism | Controlled snapshots pass twice; read-only views and exporter/outbox remain unapproved | Joint architecture decision only if snapshot cadence, scale, or operational needs prove it necessary |
 | Artifact retention | First snapshot deletion is due 2026-07-17; the second snapshot retention period is not recorded | Joint operational reconciliation; no data-scope expansion follows from it |
 
-UniRouter does not need to wait for X-Insight. It can continue P5-F12 screening,
-the architecture/product audit, Data Exchange Control MVP design, trace search,
-and route/failover evidence work independently. Only deep links, receipt API
-automation, and any continuous ingestion mechanism require a cross-project
-contract.
+UniRouter does not need to wait for X-Insight. P5-F12 screening and the
+repository-wide audit are now Local verified in
+`docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md`. UniRouter can
+now also treat Data Exchange Control MVP, trace search, route/failover
+visibility, and redacted current-process topology as Local verified in
+`docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md`.
+Only durable deep links/jobs, receipt API automation/authenticity, downstream
+retention/deletion, public adapters, and continuous ingestion require a
+cross-project contract.
 
 ## Recommended Priority
 
-1. **P0 architecture/security plan:** audit deployment architecture and prepare
-   the `INFRA-SEC-001` cutover design. Actual ECS mutation remains separately
+1. **P0 architecture/security plan:** `INFRA-SEC-001` cutover design is recorded
+   in the Batch 1X evidence file. Actual ECS mutation remains separately
    authorized.
-2. **P1 repository-wide architecture and product audit:** map backend composition,
-   gateway request/evidence flow, admin API ownership, data model/migrations,
-   frontend information architecture, and deployment/release design. Separate
-   confirmed defects from refactoring hypotheses.
-3. **P1 P5-F12 screening:** make an explicit accept/defer/reject decision for each
-   large backlog item, with product value, dependency, risk, and acceptance evidence.
-4. **P1 product implementation choice:** decide the smallest useful Data Exchange
-   Control MVP and whether trace search or route/failover visibility should precede
-   it. Do not implement all three before the audit establishes user workflows and
-   existing API/index support.
+2. **P1 repository-wide architecture and product audit:** completed in
+   `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md`; confirmed
+   findings and hypotheses are separated there.
+3. **P1 P5-F12 screening:** Local verified in the same evidence file. Full large
+   backlog items remain behind separate scoped decisions.
+4. **P1 UniRouter product implementation:** Local verified in Batch 1Y for Data
+   Exchange Control MVP, trace search, route/failover visibility, and redacted
+   topology. PR CI, migration apply/rollback, and target browser checks remain.
 5. **P2 prerequisite evidence:** run real upstream and SSO E2E only after the
    required environments and credentials are explicitly approved.
-6. **P2 cross-project evolution:** add deep links or continuous ingestion only
-   after X-Insight publishes stable contracts and observed demand justifies them.
+6. **P2 cross-project evolution:** answer the consolidated shared-folder runtime
+   contract request before deep links, automated receipts, or continuous ingestion.
 
-## New-Window Architecture Audit Plan
+## Architecture Audit Plan Status
 
-The next window should start from repository facts and produce an implementation-
-ready report before broad refactoring:
+The architecture audit plan below was executed in Batch 1X and produced
+`docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md`. Keep it here as
+the checklist for any follow-up audit or independent review:
 
 1. **Truth and dependency map:** reconcile current docs, module boundaries,
    routes, schemas, frontend pages, tests, CI, and deployment topology.
@@ -161,16 +166,19 @@ the active issue/backlog system rather than silently reopening PRD1-PRD4 scope.
 1. `docs/PROJECT-HANDOFF.md`
 2. `docs/ops/CURRENT-STATUS.md`
 3. `docs/planning/PRD5-CURRENT-GAP-AUDIT-20260710.md`
-4. `docs/PRD-Phase5.md`
-5. `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`
-6. `docs/planning/PRD5-IMPLEMENTATION-PLAN.md`
-7. `docs/planning/PRD5-BACKLOG.md`
-8. `docs/planning/PRD5-COMPETITOR-COMPARISON.md`
-9. `docs/issues/OPEN-ISSUES.md`
-10. `docs/agent-workflows/AGENT-PROTOCOL.md`
-11. `docs/ops/evidence/PRD5-B1W-target-rerun-20260710.md`
-12. X-Insight `README.md` at audited baseline `9172633`
+4. `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md`
+5. `docs/PRD-Phase5.md`
+6. `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`
+7. `docs/planning/PRD5-IMPLEMENTATION-PLAN.md`
+8. `docs/planning/PRD5-BACKLOG.md`
+9. `docs/planning/PRD5-COMPETITOR-COMPARISON.md`
+10. `docs/issues/OPEN-ISSUES.md`
+11. `docs/agent-workflows/AGENT-PROTOCOL.md`
+12. `docs/ops/evidence/PRD5-B1W-target-rerun-20260710.md`
+13. X-Insight `README.md` at audited baseline `9172633`
 
-Start the new window with the architecture/product audit and P5-F12 screening.
+Continue from Batch 1Y local completion: obtain PR CI/Docker, migration
+apply/rollback, and target browser evidence when authorized; keep X-Insight and
+target-environment items separate and keep deferred P5-F12 subitems scoped.
 Do not deploy, rerun controlled requests, change credentials, expand export scope,
 or mutate target infrastructure without the applicable explicit authorization.

@@ -144,6 +144,14 @@ func TestRuntimeStatus_ReturnsRuntimeHealthAndHostTelemetry(t *testing.T) {
 	if resp.ObservabilityIntegrations.Grafana.Status != "connected" || resp.ObservabilityIntegrations.Grafana.Version != "11.0.0" {
 		t.Fatalf("unexpected grafana integration: %#v", resp.ObservabilityIntegrations.Grafana)
 	}
+	if resp.Topology.Visibility != "redacted" || resp.Topology.NetworkExposure != "not_observed" || len(resp.Topology.Nodes) != 3 {
+		t.Fatalf("unexpected redacted topology: %#v", resp.Topology)
+	}
+	for _, node := range resp.Topology.Nodes {
+		if strings.Contains(node.ID, "127.0.0.1") || strings.Contains(node.ID, "localhost") {
+			t.Fatalf("topology must not expose host identifiers: %#v", resp.Topology)
+		}
+	}
 }
 
 func TestLinuxCPUUsageRatio(t *testing.T) {

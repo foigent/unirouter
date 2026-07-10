@@ -99,7 +99,7 @@ export default function App() {
             onKeyDown={(event) => {
               if (event.key === 'Enter') submitGlobalSearch();
             }}
-            placeholder="搜索请求日志：Request ID、模型、供应商、错误"
+            placeholder="搜索请求日志：请求、模型、供应商、错误或证据标识"
             showClear
           />
           <div className="ur-topbar-actions">

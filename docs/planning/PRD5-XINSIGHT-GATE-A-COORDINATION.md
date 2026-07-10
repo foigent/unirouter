@@ -1,5 +1,10 @@
 # PRD5 X-Insight Gate A Coordination
 
+> Batch 1Y update: UniRouter Data Exchange Control is Local verified. Remaining
+> X-Insight runtime information is consolidated in shared request
+> `requests/2026-07-10-unirouter-prd5-runtime-contract-required-information.md`;
+> UniRouter does not wait on that response for unrelated repository-owned work.
+
 > Date: 2026-07-10
 > Status: planning coordination accepted by User; Batch 1V produced controlled
 > exchange `uxchg_f7de31e541516893a0d9b31cc0f3892a` with one explicit

@@ -174,11 +174,48 @@ describe('API Client', () => {
       expect(url).toContain('usage_source=counter_v2')
     })
 
+    it('encodes structural evidence filters', async () => {
+      mockJsonResponse({ data: [], total: 0 })
+
+      await api.getLogs(1, 20, {
+        trace_id: 'trace-001',
+        upstream_request_id: 'upstream-001',
+        evidence_ref: 'unirouter:event:1',
+        source_event_hash: 'hash-001',
+      })
+      const url = mockFetch.mock.calls[0][0]
+      expect(url).toContain('trace_id=trace-001')
+      expect(url).toContain('upstream_request_id=upstream-001')
+      expect(url).toContain('evidence_ref=unirouter%3Aevent%3A1')
+      expect(url).toContain('source_event_hash=hash-001')
+    })
+
     it('loads request trace for a call log', async () => {
       mockJsonResponse({ request_id: 'req-001', events: [] })
 
       await api.getLogTrace(31)
       expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/logs/31/trace')
+    })
+  })
+
+  describe('PRD5 data exchange control', () => {
+    it('uses the approval and exchange ledger routes', async () => {
+      mockJsonResponse({ data: [], total: 0 })
+      await api.getDataExchangeItems(2, 50, 'approved')
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/data-exchange/items?page=2&page_size=50&status=approved')
+
+      mockJsonResponse({ id: 9 })
+      await api.createDataExchangeReceipt(9, { exchange_id: 'uxchg_test_001' })
+      expect(mockFetch.mock.calls[1][0]).toBe('/api/v1/data-exchange/exchanges/9/receipts')
+      expect(mockFetch.mock.calls[1][1]).toEqual(expect.objectContaining({ method: 'POST' }))
+
+      mockJsonResponse({ members: [], deliveries: [], receipts: [] })
+      await api.getDataExchangeActivity(9)
+      expect(mockFetch.mock.calls[2][0]).toBe('/api/v1/data-exchange/exchanges/9/activity')
+
+      mockJsonResponse({ id: 9 })
+      await api.markDataExchangeArtifactDeleted(9)
+      expect(mockFetch.mock.calls[3][0]).toBe('/api/v1/data-exchange/exchanges/9/artifact-delete')
     })
   })
 

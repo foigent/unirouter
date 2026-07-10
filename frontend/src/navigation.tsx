@@ -3,6 +3,7 @@ import {
   IconBarChartVStroked,
   IconBookOpenStroked,
   IconChecklistStroked,
+  IconConnectionPoint1,
   IconCoinMoney,
   IconCreditCard,
   IconFile,
@@ -112,6 +113,7 @@ const fullAdminNavItems = [
     items: [
       { itemKey: '/users', text: '用户管理', icon: <IconUserGroup /> },
       { itemKey: '/audit-logs', text: '审计日志', icon: <IconChecklistStroked /> },
+      { itemKey: '/data-exchange', text: '数据交换', icon: <IconConnectionPoint1 /> },
     ],
   },
   {
@@ -145,6 +147,7 @@ const orgAdminNavItems = withoutRoutes(fullAdminNavItems, [
   '/reconciliation',
   '/grants',
   '/license',
+  '/data-exchange',
 ]);
 
 const billingNavItems = [
