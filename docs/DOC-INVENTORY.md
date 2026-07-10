@@ -8,10 +8,11 @@
 |------|------|
 | `docs/PROJECT-HANDOFF.md` | First-read handoff for agents |
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
+| `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md` | Answered X-Insight runtime request, accepted v1 sidecar boundary, UniRouter contract lock, and PRD5 completion classification |
 | `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md` | PRD5 repository-wide audit, P5-F12 screening, P0-P3 batches, and INFRA-SEC-001 evidence design |
 | `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md` | PRD5 accepted UniRouter-owned completion evidence for trace search, Data Exchange Control, route/failover, redacted topology, and remaining boundaries |
 | `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md` | PRD5 final target deployment, migration, browser, canary runtime parity, cleanup, and INFRA-SEC-001 cutover evidence |
-| `docs/PRD-Phase5.md` | Formal PRD5 active scope and implementation-phase reference |
+| `docs/PRD-Phase5.md` | Formal completed accepted PRD5 scope and explicit deferred/external/evidence boundaries |
 | `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` | PRD5 acceptance matrix; Batch 1W external/denied-path evidence, Batch 1Z target deployment/security evidence, and remaining Local/CI/target boundaries are recorded |
 | `docs/ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md` | PRD5 Gate A request ID approval runbook for non-technical User/UniRouter-owner approval before controlled X-Insight snapshot generation |
 | `docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md` | PRD5 Gate A prior-authorization and narrow operator runbook for newly generated controlled scenarios |
@@ -114,6 +115,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md` | PRD5 Batch 1X local repository audit, P5-F12 screening decisions, safe local Logs/CI fixes, and INFRA-SEC-001 plan |
 | `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md` | PRD5 Batch 1Y accepted UniRouter-owned implementation and local full verification |
 | `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md` | PRD5 Batch 1Z target deployment, migration, browser, canary parity, cleanup, and security-group cutover |
+| `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md` | X-Insight runtime response facts, synthetic-only target evidence, unimplemented capabilities, and UniRouter v1 contract lock |
 | `docs/ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md` | PRD5 Gate A request ID approval runbook and data-minimization boundary |
 | `docs/ops/PRD1-STRICT-CLOSEOUT-RUNBOOK.md` | Final strict closeout gate and evidence procedure |
 | `docs/ops/deployment-runbook.md` | Deployment reference |

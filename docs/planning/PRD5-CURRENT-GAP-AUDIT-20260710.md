@@ -2,7 +2,7 @@
 
 > Date: 2026-07-10
 > UniRouter audited baseline: `95d1da9` / PR #133 on `main`
-> X-Insight audited baseline: `9172633` / PR #12 on `main`
+> X-Insight re-audited baseline: `97d58e7` on `main` (2026-07-11)
 > Purpose: separate completed PRD5 acceptance, UniRouter-owned implementation
 > gaps, X-Insight coordination gaps, and target-evidence prerequisites before a
 > repository-wide architecture and product optimization pass.
@@ -69,7 +69,7 @@ runtime deployment.
 
 | Gap | Current fact | Decision/implementation needed |
 |---|---|---|
-| Data Exchange Control surface | Migration/API/UI/RBAC/audit and target browser evidence are complete in Batch 1Y/1Z | Migration down remains unexecuted; X-Insight durable job/deep-link/receipt contracts remain external |
+| Data Exchange Control surface | Migration/API/UI/RBAC/audit and target browser evidence are complete in Batch 1Y/1Z; the answered X-Insight v1 contract is reconciled | Migration down remains unexecuted; unimplemented durable job/deep-link/automated receipt contracts remain external and are locked off |
 | Trace search ergonomics | Exact/global structural search and target Logs filter evidence are complete | Keep regression coverage; no broader export follows automatically |
 | Route/failover decision visibility | UI summary and CI regression are complete | Open a concrete target request detail before promotion from CI verified to Target verified |
 | X-Insight deep links | Placeholder boundary exists; no stable X-Insight import-job ID or URL contract exists | Keep blocked until X-Insight exposes durable import-job/execution IDs and stable URLs |
@@ -102,7 +102,7 @@ runtime deployment.
 
 | Gap | Verified current fact | Ownership/boundary |
 |---|---|---|
-| X-Insight ECS runtime | X-Insight `README.md` says first ECS deployment is in progress; network isolation, data disk, and PostgreSQL preparation are reported, but source transfer is blocked and no target-runtime claim exists | X-Insight owns deployment. This does not block independent UniRouter product work |
+| X-Insight ECS runtime | X-Insight's final source-backed report verifies exact release artifact `b9e5811`, health/readiness, migrations 000001-000009, synthetic insert/idempotent rerun/readback, restart preservation, and loopback isolation | Target verified for the named fixture/synthetic-only non-production host; not Production verified and not a public API claim |
 | Durable receipt/import-job API | Current X-Insight receipt is a sanitized sidecar artifact; no durable `import_job_id` or deep link is emitted | X-Insight owns the import-job/API model. UniRouter may later reconcile receipts but must not fabricate IDs |
 | LiteLLM/NewAPI/one-api adapters | Current X-Insight source contains a dedicated UniRouter adapter only. Fixture/schema support is not equivalent to a production adapter | X-Insight owns the public/open-source adapter strategy. It is not a UniRouter PRD5 blocker |
 | Stable execution URL contract | No stable ID/URL contract is available for UniRouter UI links | Joint contract after X-Insight implements durable execution/import identity |
@@ -136,6 +136,9 @@ cross-project contract.
    required environments and credentials are explicitly approved.
 6. **P2 cross-project evolution:** answer the consolidated shared-folder runtime
    contract request before deep links, automated receipts, or continuous ingestion.
+   The request is now Answered with explicit not-implemented values; those
+   capabilities remain disabled until a later implemented versioned contract is
+   accepted.
 
 ## Architecture Audit Plan Status
 
@@ -178,10 +181,11 @@ the active issue/backlog system rather than silently reopening PRD1-PRD4 scope.
 10. `docs/issues/OPEN-ISSUES.md`
 11. `docs/agent-workflows/AGENT-PROTOCOL.md`
 12. `docs/ops/evidence/PRD5-B1W-target-rerun-20260710.md`
-13. X-Insight `README.md` at audited baseline `9172633`
+13. X-Insight `docs/architecture/runtime-contract-capability-status.md` at
+    re-audited baseline `97d58e7`
 
-Continue from Batch 1Y local completion: obtain PR CI/Docker, migration
-apply/rollback, and target browser evidence when authorized; keep X-Insight and
-target-environment items separate and keep deferred P5-F12 subitems scoped.
+Continue from the runtime-contract reconciliation: obtain required repository
+CI; keep migration rollback, concrete route-detail, X-Insight future contracts,
+target-environment items, and deferred P5-F12 subitems separate.
 Do not deploy, rerun controlled requests, change credentials, expand export scope,
 or mutate target infrastructure without the applicable explicit authorization.

@@ -17,7 +17,7 @@
 
 | Package | Responsibility |
 |---------|----------------|
-| `internal/admin` | Admin REST handlers including Logs/trace, Data Exchange Control, audit, and Runtime Status. Runtime Status includes app/dependency/traffic/host telemetry, external monitoring checks, and a redacted current-process logical topology. Data Exchange Control is platform-admin-only and records source-side approvals/exchanges/deliveries/receipts without automatic export or X-Insight runtime dependency |
+| `internal/admin` | Admin REST handlers including Logs/trace, Data Exchange Control, audit, and Runtime Status. Runtime Status includes app/dependency/traffic/host telemetry, external monitoring checks, and a redacted current-process logical topology. Data Exchange Control is platform-admin-only and records source-side approvals/exchanges/deliveries/receipts without automatic export or X-Insight runtime dependency; receipt writes accept only the canonical v1 warning registry and reject unimplemented durable job/deep-link fields |
 | `internal/adapters` | Provider adapter registry and OpenAI-compatible / Anthropic-native request/response conversion |
 | `internal/auth` | JWT generation/validation, API key hashing, upstream key AES-GCM encryption/decryption |
 | `internal/billing` | Cost calculation, freeze/settle/cancel, price provider, budget alert, notification event service |

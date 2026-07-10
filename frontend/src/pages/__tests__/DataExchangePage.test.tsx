@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import DataExchangePage from '../DataExchangePage';
+import DataExchangePage, { receiptPayload } from '../DataExchangePage';
 
 const getItems = vi.fn();
 const getExchanges = vi.fn();
@@ -98,5 +98,11 @@ describe('DataExchangePage', () => {
     expect(screen.getByText('回执历史')).toBeTruthy();
     expect(screen.getByText('evidence/handoff.md')).toBeTruthy();
     expect(screen.getByText('2 / 2 / 2 / 0')).toBeTruthy();
+  });
+
+  it('rejects unimplemented X-Insight durable job fields in a pasted receipt', () => {
+    expect(() => receiptPayload(JSON.stringify({
+      import_job_id: '',
+    }))).toThrow('X-Insight 尚未提供 durable import job 或 deep link 合同');
   });
 });

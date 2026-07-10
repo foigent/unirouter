@@ -1,6 +1,10 @@
 # PRD5 Implementation Plan
 
-> Date: 2026-07-10
+> Date: 2026-07-11
+> Completion: accepted UniRouter-owned planning and repository functionality are
+> complete subject to the current runtime-contract lock CI gate. Deferred,
+> rejected, prerequisite-gated, X-Insight-owned, and target-evidence-only items
+> remain separate.
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
 > Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, Batch 1O, and
 > Batch 1P, Batch 1Q, Batch 1R, Batch 1S, Batch 1T, and Batch 1U
@@ -18,8 +22,9 @@
 > `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md`. Batch 1Y
 > accepted UniRouter-owned completion is Local verified in
 > `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md`.
-> X-Insight ECS
-> target verification and real upstream provider E2E remain pending.
+> X-Insight's fixture/synthetic-only non-production target is Target verified at
+> release artifact `b9e5811`. Real upstream provider E2E and the unimplemented
+> durable runtime contracts remain separate.
 > Scope owner: UniRouter. X-Insight remains a separate project and owns broader
 > observability/governance product surfaces.
 
@@ -979,8 +984,9 @@ These later actions are gated:
 - read-only DB/view access: the import/persistence/readback prerequisite now
   passes across two controlled cycles, but access remains unapproved pending
   network, privilege, audit, retention, and failure-mode design;
-- X-Insight ECS target verification remains unperformed; no shared ECS staging
-  or X-Insight target-runtime claim follows from the local/PostgreSQL receipt;
+- X-Insight's fixture/synthetic-only non-production target is Target verified at
+  exact release artifact `b9e5811`; this is not a Production verified or public
+  API claim and does not authorize shared staging;
 - exporter/outbox: remains deferred pending an explicit architecture decision;
   two low-volume controlled cycles prove compatibility and idempotency but do
   not establish throughput, cursor, backpressure, or availability requirements;
@@ -1007,5 +1013,25 @@ Completed:
 Still gated:
 
 - migration down, TLS 443 behavior, and concrete target route/failover detail;
-- real upstream/SSO and X-Insight-owned runtime contracts;
+- real upstream/SSO and unimplemented X-Insight-owned durable runtime contracts;
 - full deferred P5-F12 products.
+
+### X-Insight Runtime Contract Reconciliation
+
+Status: repository reconciliation implemented; required CI is the merge gate.
+Evidence:
+`docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md`.
+
+Completed:
+
+- accepted X-Insight's source-backed answer and synthetic-only target result;
+- kept controlled `xinsight.import-receipt.v1` sidecar reconciliation as the
+  only enabled cross-project runtime boundary;
+- locked reserved durable job/deep-link fields off at UniRouter's frontend and
+  receipt API;
+- enforced the four-code canonical v1 warning registry;
+- recorded every future X-Insight prerequisite in the shared accepted decision
+  and UniRouter issue/backlog/status entrypoints.
+
+No deployment, real request, credential change, target mutation, exporter,
+outbox, or expanded data exchange is included.
