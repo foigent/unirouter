@@ -50,8 +50,8 @@ operation/idempotency, reservation/terminal-state and revocation findings, plus
 P1 Agent/100x blind spots. The accepted MVP covers those integrity
 prerequisites, Agent capability/distributed policy, Routing Policy V1, durable
 cache-aware billing, and guardrail/stream foundations. Batch 0B begins with the
-P6-F16 tenant-integrity security boundary, which is CI verified by PR #140. A
-later audit adds unaccepted P6-F32-P6-F36 finance,
+P6-F16 tenant-integrity security boundary, which is CI verified and merged by
+PR #140 as `f244f669`. A later audit adds unaccepted P6-F32-P6-F36 finance,
 notification, pricing, global-control and model-governance inputs. The
 adaptive-trust, Digital Twin,
 shadow, collusion, trust-receipt and claim-assurance rows remain proposed and
@@ -109,12 +109,12 @@ Use `docs/agent-workflows/AGENT-PROTOCOL.md` before changing code or status:
 
 ## Current Verification Baseline
 
-Current execution is PRD6 Batch 0B on `codex/prd6-b0b-tenant-isolation`, based
-on merged main `62f161e`. Fresh full repository checks and X-Insight tests passed
-before implementation; Batch 0A is merged and CI verified. D6-01/D6-02 are
-accepted; P6-F16 is CI verified by PR #140, while P6-F32-P6-F36 remain
-new unaccepted findings and no item is target verified. Current details and
-promotion gates are in
+Current execution has completed PRD6 Batch 0B P6-F16 through PR #140 /
+`f244f669`; its post-merge `main` CI is green. Fresh full repository checks and
+X-Insight tests passed before implementation; Batch 0A is merged and CI
+verified. D6-01/D6-02 are accepted; P6-F16 is CI verified and merged, while
+P6-F32-P6-F36 remain new unaccepted findings and no item is target verified.
+Current details and promotion gates are in
 `docs/agent-workflows/EXECUTION-RECORD.md`.
 
 PRD5 Batch 1Z Target Deployment And Infrastructure Security remains Target

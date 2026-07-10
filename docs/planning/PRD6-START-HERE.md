@@ -3,7 +3,7 @@
 > Date: 2026-07-11
 > Status: D6-01/D6-02 accepted; P6-F16 CI verified by PR #140
 > Owner: Codex
-> Current implementation base: `62f161e2866a3a4c699abb9a647feef48bded1b2`
+> P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
 ## Current Decision State
 
@@ -72,8 +72,9 @@ evidence.
   evidence remain retained.
 - Document-backed target evidence remains valid for Batch 1Z. This kickoff did
   not deploy, probe or mutate the target environment.
-- P6-F16 is CI verified by PR #140. Backend logs prove the migrated PostgreSQL
-  matrix and all twelve authenticated subtests passed rather than skipped.
+- P6-F16 is CI verified and squash-merged by PR #140 as `f244f669`. Backend
+  logs prove the migrated PostgreSQL matrix and all twelve authenticated
+  subtests passed rather than skipped; post-merge `main` CI also passed.
 - P6-F32 through P6-F36 are later source-confirmed administrator-surface inputs.
   They were not known when D6-01 was accepted and require a separate scope and
   authority decision.

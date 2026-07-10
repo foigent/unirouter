@@ -1,11 +1,10 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 0B P6-F16 Tenant Isolation
+**Batch:** PRD6 Batch 0B P6-F16 Tenant Isolation Closeout
 **Owner:** Codex
 **Risk:** R4 multi-tenant authorization and project policy enforcement
-**Status:** P6-F16 CI verified by PR #140; P6-F32-P6-F36 are separately confirmed unaccepted inputs
-**Base:** `62f161e2866a3a4c699abb9a647feef48bded1b2`
-**Branch:** `codex/prd6-b0b-tenant-isolation`
+**Status:** P6-F16 CI verified and merged by PR #140; P6-F32-P6-F36 are separately confirmed unaccepted inputs
+**Integration:** PR #140 / `f244f669c529fec8767f85fff209882b333d8ed2`; post-merge main CI passed
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Scope
@@ -113,8 +112,10 @@ Focused P6-F16 results on `codex/prd6-b0b-tenant-isolation`:
   `Backend Tests`, `Frontend Build`, and `Docker Build` PASS;
 - Backend CI log: migrated P6-F16 integration and all twelve subtests PASS,
   not SKIP; injected partial-write rollback regression PASS;
-- final status/evidence head must pass the same three required checks before
-  merge.
+- PR #140 final head `fd1ab56db8b308ecb5c9e4165ed5a8e13dda9aea`:
+  the same three required checks PASS;
+- squash merge `f244f669c529fec8767f85fff209882b333d8ed2`:
+  post-merge `main` run `29129070253` Backend, Frontend and Docker jobs PASS.
 
 Full Batch 0A/kickoff repository results:
 

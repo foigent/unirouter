@@ -1,10 +1,10 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
-> Current execution is PRD6 Batch 0B P6-F16 on
-> `codex/prd6-b0b-tenant-isolation`, based on merged
-> `main == origin/main == 62f161e2866a3a4c699abb9a647feef48bded1b2`.
-> D6-01 and D6-02 were accepted by the User on 2026-07-11. Batch 0B begins with
+> PRD6 Batch 0B P6-F16 was squash-merged by PR #140 as
+> `f244f669c529fec8767f85fff209882b333d8ed2`; its PR and post-merge `main`
+> required CI are green. The next implementation batch is not yet selected.
+> D6-01 and D6-02 were accepted by the User on 2026-07-11. Batch 0B began with
 > P6-F16; advanced innovation rows P6-F23 through P6-F31 remain proposed.
 
 ## PRD6 Current Window
@@ -33,9 +33,10 @@
 - PR #139 was squash-merged as `62f161e2866a3a4c699abb9a647feef48bded1b2`;
   `Backend Tests`, `Frontend Build`, and `Docker Build` passed for its final
   exact head. It was not deployed.
-- PR #140 P6-F16 implementation head passed `Backend Tests`, `Frontend Build`,
-  and `Docker Build`; Backend logs prove the migrated twelve-case matrix ran and
-  did not skip. Its final status/evidence head is subject to the same merge gate.
+- PR #140 final head `fd1ab56` passed `Backend Tests`, `Frontend Build`, and
+  `Docker Build`; Backend logs prove the migrated twelve-case matrix ran and did
+  not skip. It was squash-merged as `f244f669`; post-merge `main` run
+  `29129070253` passed the same three jobs.
 - No deployment, target probe/mutation, real or paid request, credential change,
   data-scope expansion, exporter/outbox or continuous ingestion occurred.
 
@@ -49,8 +50,8 @@ is CI verified by PR #140 with a migrated two-tenant PostgreSQL/JWT matrix; the
 Backend log shows all twelve authenticated subtests PASS rather than SKIP. A
 later read-only audit found P6-F32 through P6-F36 across finance, notifications,
 pricing, global settings and organization model governance. Those are
-source-confirmed new inputs, not silently included
-in the earlier D6-01 decision. No audit row is presented as a production
+source-confirmed new inputs, not silently included in the earlier D6-01
+decision. No audit row is presented as a production
 incident, 100x proof, or implemented remediation before its exact evidence
 exists.
 

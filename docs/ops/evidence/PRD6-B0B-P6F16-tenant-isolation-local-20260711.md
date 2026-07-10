@@ -167,9 +167,12 @@ The Backend log explicitly shows `TestP6F16TenantIsolationIntegration` plus all
 twelve authenticated subtests as `PASS` in 5.13 seconds and contains no P6-F16
 skip. It also shows
 `TestP6F16ProjectModelSetReplaceRollsBackAfterPartialWriteError` as `PASS`.
-The final evidence/status commit is subject to the same exact-head required
-checks before merge; PR #140 must not merge while any required check is pending
-or failed.
+PR #140 final head `fd1ab56db8b308ecb5c9e4165ed5a8e13dda9aea`
+passed the same three required checks and was squash-merged as
+`f244f669c529fec8767f85fff209882b333d8ed2`. Post-merge `main` workflow
+`29129070253` also passed Backend Tests, Frontend Build and Docker Build. Its
+non-blocking annotations were the existing Node action runtime deprecation and
+cache-restore warning; the jobs themselves completed successfully.
 
 The legacy `-tags=integration` admin suite uses a shared non-migrated database
 schema and currently emits missing-table/column failures independent of this
