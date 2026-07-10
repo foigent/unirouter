@@ -6,27 +6,30 @@
 ## First Read Order
 
 1. `docs/ops/CURRENT-STATUS.md` - current verified project status.
-2. `docs/PRD-Phase5.md` - active PRD5 scope.
-3. `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` - PRD5 acceptance rows and evidence boundaries.
-4. `docs/planning/PRD5-IMPLEMENTATION-PLAN.md` - PRD5 batch plan and UniRouter/X-Insight ownership split.
-5. `docs/planning/PRD5-COMPETITOR-COMPARISON.md` - competitor comparison and UniRouter-owned PRD5 catch-up items.
-6. `docs/planning/PRD5-BACKLOG.md` - capabilities intentionally deferred beyond PRD4 and PRD5 active scope.
-7. `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md` - X-Insight Gate A sequencing decisions.
-8. `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md` - future UniRouter UI/control-plane boundary for X-Insight data exchange.
-9. `docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md` - approval boundary for newly generated Gate A scenarios.
-10. `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-10-x-insight-gate-a-import-result.md` and `evidence/gatea-snapshot-20260710.receipt.json` in the same shared folder - current Gate A external integration result and reconciled receipt.
-11. `docs/PRD-Phase4.md` - completed PRD4 scope.
-12. `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` - PRD4 accepted/deferred rows and evidence boundaries.
-13. `docs/planning/PRD4-BACKLOG.md` - PRD4 candidate backlog source record.
-14. `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` - completed PRD3 cleanup/optimization acceptance state.
-15. `docs/PRD-Phase3.md` - completed PRD3 scope.
-16. `docs/planning/PRD3-CONSISTENCY-AUDIT.md` - PRD1 -> PRD2 consistency findings behind PRD3.
-17. `docs/issues/OPEN-ISSUES.md` - active unresolved issues and recently verified fixes.
-18. `docs/agent-workflows/AGENT-PROTOCOL.md` - single execution owner, approval, evidence and optional independent-review workflow.
-19. `docs/agent-workflows/EXECUTION-RECORD.md` and `docs/agent-workflows/reviews/` - current batch execution state and optional immutable review results.
-20. `docs/agent-workflows/FIX-SIGNAL.md` and `docs/agent-workflows/VERIFY-RESULT.md` - protocol v1.x compatibility entry and latest historical verification result.
-21. `docs/CODEBASE-MAP.md` - code, route, data, test, and deployment map.
-22. `docs/DOC-INVENTORY.md` and `docs/DOCS-GOVERNANCE.md` - which docs are current, frozen, historical, candidate, or reference-only.
+2. `docs/planning/PRD5-CURRENT-GAP-AUDIT-20260710.md` - current PRD5
+   accounting, UniRouter-owned implementation gaps, X-Insight dependencies, and
+   the next-window architecture/product audit plan.
+3. `docs/PRD-Phase5.md` - active PRD5 scope.
+4. `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` - PRD5 acceptance rows and evidence boundaries.
+5. `docs/planning/PRD5-IMPLEMENTATION-PLAN.md` - PRD5 batch plan and UniRouter/X-Insight ownership split.
+6. `docs/planning/PRD5-COMPETITOR-COMPARISON.md` - competitor comparison and UniRouter-owned PRD5 catch-up items.
+7. `docs/planning/PRD5-BACKLOG.md` - capabilities intentionally deferred beyond PRD4 and PRD5 active scope.
+8. `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md` - X-Insight Gate A sequencing decisions.
+9. `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md` - future UniRouter UI/control-plane boundary for X-Insight data exchange.
+10. `docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md` - approval boundary for newly generated Gate A scenarios.
+11. `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-10-x-insight-gate-a-import-result.md` and `evidence/gatea-snapshot-20260710.receipt.json` in the same shared folder - current Gate A external integration result and reconciled receipt.
+12. `docs/PRD-Phase4.md` - completed PRD4 scope.
+13. `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` - PRD4 accepted/deferred rows and evidence boundaries.
+14. `docs/planning/PRD4-BACKLOG.md` - PRD4 candidate backlog source record.
+15. `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` - completed PRD3 cleanup/optimization acceptance state.
+16. `docs/PRD-Phase3.md` - completed PRD3 scope.
+17. `docs/planning/PRD3-CONSISTENCY-AUDIT.md` - PRD1 -> PRD2 consistency findings behind PRD3.
+18. `docs/issues/OPEN-ISSUES.md` - active unresolved issues and recently verified fixes.
+19. `docs/agent-workflows/AGENT-PROTOCOL.md` - single execution owner, approval, evidence and optional independent-review workflow.
+20. `docs/agent-workflows/EXECUTION-RECORD.md` and `docs/agent-workflows/reviews/` - current batch execution state and optional immutable review results.
+21. `docs/agent-workflows/FIX-SIGNAL.md` and `docs/agent-workflows/VERIFY-RESULT.md` - protocol v1.x compatibility entry and latest historical verification result.
+22. `docs/CODEBASE-MAP.md` - code, route, data, test, and deployment map.
+23. `docs/DOC-INVENTORY.md` and `docs/DOCS-GOVERNANCE.md` - which docs are current, frozen, historical, candidate, or reference-only.
 
 ## Current Project Shape
 
@@ -56,6 +59,7 @@ and unique `X-Request-ID` values, without broad request discovery.
 | Question | Current Source |
 |----------|----------------|
 | What is the PRD5 formal scope? | `docs/PRD-Phase5.md` |
+| What PRD5 work is actually incomplete now? | `docs/planning/PRD5-CURRENT-GAP-AUDIT-20260710.md` |
 | What is the PRD5 acceptance plan? | `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` |
 | What is the PRD5 implementation order? | `docs/planning/PRD5-IMPLEMENTATION-PLAN.md` |
 | What competitor gaps feed PRD5? | `docs/planning/PRD5-COMPETITOR-COMPARISON.md` |

@@ -106,6 +106,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | `docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md` | Current local evidence and external acceptance queue |
 | `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` | PRD4 active acceptance matrix and evidence rules |
 | `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` | PRD5 active acceptance matrix and evidence rules |
+| `docs/planning/PRD5-CURRENT-GAP-AUDIT-20260710.md` | Current PRD5 accounting, UniRouter implementation gaps, X-Insight coordination gaps, and next-window architecture/product audit plan |
 | `docs/ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md` | PRD5 Gate A request ID approval runbook and data-minimization boundary |
 | `docs/ops/PRD1-STRICT-CLOSEOUT-RUNBOOK.md` | Final strict closeout gate and evidence procedure |
 | `docs/ops/deployment-runbook.md` | Deployment reference |
