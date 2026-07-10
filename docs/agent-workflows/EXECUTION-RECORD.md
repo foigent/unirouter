@@ -149,13 +149,14 @@ PR #126 results:
 - The first immutable Gate A snapshot remains externally verified: 10 accepted,
   first persistence 10 inserted, rerun 10 duplicate/no-op, and readback 10
   events/3 gaps.
-- X-Insight ECS target deployment/runtime verification is not part of the receipt
-  and remains unverified.
-- The first temporary snapshot deletion is due 2026-07-17. The second
-  authorization did not specify retention for the new snapshot, so deletion is
-  pending a retention decision.
-- Current ECS security exposure and capacity findings are recorded in the target
-  evidence. They require separate authorization and do not alter this result.
+- X-Insight target verification is separate from the receipt and is now Target
+  verified for the fixture/synthetic-only non-production release artifact
+  `b9e5811`; this is not a public API or production claim.
+- Both temporary Gate A snapshot JSON artifacts are due for exact-path deletion
+  by 2026-07-17. Receipts, hashes, sanitized evidence, and persisted normalized
+  evidence remain retained under the accepted decision.
+- UniRouter Batch 1Z completed the approved infrastructure-security remediation;
+  remaining capacity and production-hardening work does not alter this result.
 
 ## Rollback
 

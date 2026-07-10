@@ -429,9 +429,10 @@ PRD5 Batch 1V:
   reassignment, raw prompt/response or secrets, broad discovery, X-Insight
   read-only DB/view, shared cross-project ECS staging, exporter/outbox, PRD4
   changes, or `Production verified` claims.
-- Remaining: first-snapshot deletion by 2026-07-17, a retention decision for the
-  second snapshot, real upstream E2E, and future X-Insight durable runtime
-  contracts. X-Insight's synthetic-only target verification and UniRouter ECS
+- Remaining: exact-path deletion of both temporary snapshot JSON artifacts by
+  2026-07-17, real upstream E2E, and future X-Insight durable runtime contracts.
+  Receipts, hashes, sanitized evidence, and persisted normalized evidence remain
+  retained. X-Insight's synthetic-only target verification and UniRouter ECS
   security remediation are complete.
 
 PRD5 Batch 1W:

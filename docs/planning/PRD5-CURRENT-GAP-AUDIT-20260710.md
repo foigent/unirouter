@@ -107,7 +107,7 @@ runtime deployment.
 | LiteLLM/NewAPI/one-api adapters | Current X-Insight source contains a dedicated UniRouter adapter only. Fixture/schema support is not equivalent to a production adapter | X-Insight owns the public/open-source adapter strategy. It is not a UniRouter PRD5 blocker |
 | Stable execution URL contract | No stable ID/URL contract is available for UniRouter UI links | Joint contract after X-Insight implements durable execution/import identity |
 | Ongoing ingestion mechanism | Controlled snapshots pass twice; read-only views and exporter/outbox remain unapproved | Joint architecture decision only if snapshot cadence, scale, or operational needs prove it necessary |
-| Artifact retention | First snapshot deletion is due 2026-07-17; the second snapshot retention period is not recorded | Joint operational reconciliation; no data-scope expansion follows from it |
+| Artifact retention | Both temporary Gate A snapshot JSON artifacts are due for exact-path deletion by 2026-07-17 | Retain receipts, hashes, sanitized evidence, and persisted normalized evidence; no broader deletion or data-scope expansion follows from this decision |
 
 UniRouter does not need to wait for X-Insight. P5-F12 screening and the
 repository-wide audit are now Local verified in
