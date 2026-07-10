@@ -139,9 +139,12 @@ The current snapshot remains immutable diagnostic evidence. X-Insight receipt
 status is `persisted`: 10 accepted, 10 first inserts, 10 duplicate/no-op on
 rerun, 0 conflict, and readback of 10 events/3 gaps. X-Insight merged the
 consumer detector fix as `4a562a6` / PR #9 and closeout as `5f0fa49` / PR #10.
-Test-key disable confirmation and any separately authorized Batch 1W target
-deployment/denial rerun remain pending. X-Insight ECS target verification is
-not part of the receipt and remains unverified. Temporary snapshot deletion is
+The separately authorized Batch 1W target deployment and denied rerun are
+complete at `931400a` / PR #126, and temporary keys 36/37 are disabled. Its
+second sanitized snapshot passed X-Insight persistence, idempotent rerun, and
+readback. Separately from both receipts, X-Insight's fixture/synthetic-only
+non-production target is Target verified at release artifact `b9e5811`; this is
+not a public API or production claim. Temporary first-snapshot deletion remains
 due 2026-07-17.
 
 ## Workflow Transition
