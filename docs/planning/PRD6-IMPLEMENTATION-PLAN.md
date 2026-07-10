@@ -45,7 +45,7 @@ No deployment or external mutation is allowed.
 ### Batch 0A — Circuit And Atomic Limiter Correctness
 
 **Risk:** R3 request-path correctness change.
-**Status:** Local verified on the PRD6 kickoff branch; PR/CI pending.
+**Status:** CI verified by Draft PR #139; no deployment claimed.
 
 Deliverables:
 

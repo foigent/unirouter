@@ -10,7 +10,7 @@
 PRD6 has started as a separate planning and execution window. Its accepted
 product scope is not yet equal to every item in this document set:
 
-- the verified repository-correctness fixes in Batch 0A may proceed because
+- the CI-verified repository-correctness fixes in Batch 0A may proceed because
   they repair existing behavior without adding a new product surface;
 - the proposed MVP, advanced, and long-tail capabilities remain subject to the
   scope decisions listed below;
@@ -43,6 +43,8 @@ evidence.
   `Docker Build` were successful for all three.
 - Fresh local verification passed: `go test ./... -count=1`, `go vet ./...`,
   frontend type-check, 25 Vitest files / 125 tests, and frontend build.
+- PR #139 verified the PRD6 Batch 0A implementation with successful
+  `Backend Tests`, `Frontend Build`, and `Docker Build`.
 - X-Insight `main` and `origin/main` matched
   `e43add8e0184ba1eb059484053bc5e9d9f4cf6ed`; `go test ./... -count=1`
   passed. Phase 1 remains complete and Phase 2 product priority is the

@@ -3,7 +3,7 @@
 **Batch:** PRD6 Batch 0 / 0A Baseline, Scope And Existing Correctness
 **Owner:** Codex
 **Risk:** R2 planning plus R3 gateway/limiter request-path corrections
-**Status:** Local verified; PR/CI pending
+**Status:** CI verified by Draft PR #139; no deployment claimed
 **Base:** `deacae2d4164b98c5241cf72844f09f53ca7510d`
 **Branch:** `codex/prd6-kickoff`
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
@@ -79,8 +79,14 @@ Full post-change repository results:
   warning;
 - `git diff --check`: PASS.
 
-Required PR CI remains pending. Promote P6-F01/P6-F02 to `CI verified` only
-after all three checks pass.
+PR #139 required checks for implementation commit `000ea64`:
+
+- `Backend Tests`: PASS;
+- `Frontend Build`: PASS;
+- `Docker Build`: PASS.
+
+P6-F01 and P6-F02 are `CI verified`. The evidence-status-only follow-up commit
+is subject to the same three required checks before final handoff.
 
 No deployment, target mutation/probe, real or paid request, credential change,
 exporter/outbox, deletion or expanded data exchange occurred. Migration down,

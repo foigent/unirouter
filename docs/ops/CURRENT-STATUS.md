@@ -16,6 +16,8 @@
 - Fresh pre-change verification passed backend tests/vet, frontend type-check,
   25 files / 125 tests, frontend build, and X-Insight full Go tests.
 - PR #136, #137 and #138 are merged with all three required checks successful.
+- Draft PR #139 is CI verified for PRD6 Batch 0/0A: `Backend Tests`,
+  `Frontend Build`, and `Docker Build` passed. It is not merged or deployed.
 - No deployment, target probe/mutation, real or paid request, credential change,
   data-scope expansion, exporter/outbox or continuous ingestion occurred.
 

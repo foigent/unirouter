@@ -21,8 +21,8 @@
 
 | ID | Requirement | Owner | Priority / tier | Scope state | Acceptance evidence | Current result |
 |----|-------------|-------|-----------------|-------------|---------------------|----------------|
-| P6-F01 | Expired half-open channels regain bounded probe eligibility | UniRouter | P0 / MVP correctness | Accepted Batch 0A | query-semantic regression; router unit and race tests; full backend test; CI | Local verified; CI pending |
-| P6-F02 | Redis API-key RPM/RPS checks are atomic and enforce N allowed / N+1 rejected | UniRouter | P0 / MVP correctness | Accepted Batch 0A | strict QPS/RPM boundary; concurrent exact-admission test; canceled-context test; Redis-error fail-open compatibility; race/full backend/CI | Local verified; CI pending |
+| P6-F01 | Expired half-open channels regain bounded probe eligibility | UniRouter | P0 / MVP correctness | Accepted Batch 0A | query-semantic regression; router unit and race tests; full backend test; CI | CI verified by PR #139 |
+| P6-F02 | Redis API-key RPM/RPS checks are atomic and enforce N allowed / N+1 rejected | UniRouter | P0 / MVP correctness | Accepted Batch 0A | strict QPS/RPM boundary; concurrent exact-admission test; canceled-context test; Redis-error fail-open compatibility; race/full backend/CI | CI verified by PR #139 |
 | P6-F03 | Retry only retryable provider failures and preserve safe client/policy response semantics | UniRouter | P0 / MVP correctness | Proposed Batch 0B | adapter matrix tests; no retry on 4xx/policy errors; bounded retry on classified transient failures; trace and billing invariants | Not started |
 | P6-F04 | Chat and Embeddings have route/failover parity | UniRouter | P0 / MVP correctness | Proposed Batch 0B | multi-route embeddings integration tests; auth/billing/trace parity; all-routes-fail behavior | Not started |
 | P6-F05 | Effective retry/circuit/cooldown configuration is wired, versioned and observable | UniRouter | P0 / MVP correctness | Proposed Batch 0B | config default/override tests; no hidden hard-coded divergence; route-decision config evidence | Not started |

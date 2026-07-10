@@ -26,6 +26,10 @@ successful required checks:
 
 The current base is PR #138's merge result.
 
+PRD6 Draft PR #139 ran the same three required checks for Batch 0/0A. Backend
+Tests, Frontend Build, and Docker Build all passed for commit `000ea64` before
+the evidence-status-only follow-up commit.
+
 ## 2. Fresh Local Verification
 
 Commands executed against the clean base on 2026-07-11:
