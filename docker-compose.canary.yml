@@ -42,6 +42,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        RUNTIME_VERSION: ${RUNTIME_VERSION:-local}
+        RUNTIME_COMMIT: ${RUNTIME_COMMIT:-unknown}
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
     container_name: uniroute-api-canary
     # Expose a direct debug/smoke port. Production deployments may remove this
     # and route canary traffic only through the load balancer.
