@@ -301,8 +301,9 @@ This coordination does not:
    not depend on X-Insight runtime availability.
 7. Decide read-only views versus exporter/outbox from security, availability,
    scale, and operational ownership requirements rather than opening either
-   automatically. X-Insight ECS target deployment/runtime remains unverified;
-   no shared ECS staging claim follows from either receipt.
-8. Remediate the current ECS public exposure under separate authorization and
-   provision X-Insight separately; do not place it on the capacity-constrained
-   UniRouter host.
+   automatically. The accepted v1 runtime boundary remains operator-mediated
+   sidecar reconciliation only.
+8. X-Insight's fixture/synthetic-only non-production target is Target verified
+   at release artifact `b9e5811`; this does not create shared ECS staging,
+   public API, production, or real upstream claims. UniRouter Batch 1Z separately
+   completed its approved infrastructure-security remediation.

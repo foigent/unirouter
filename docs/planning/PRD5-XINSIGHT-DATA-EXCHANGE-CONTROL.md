@@ -5,8 +5,9 @@
 > denied-scenario correlation/source-trace gap; X-Insight import/readback is
 > External integration verified. Batch 1W `931400a` / PR #126 is target
 > verified under `UR-XI-GATE-A-20260710-02`, keys 36/37 are disabled, and the
-> second snapshot passed X-Insight persistence/idempotency/readback. X-Insight
-> ECS target verification and real upstream provider E2E remain pending
+> second snapshot passed X-Insight persistence/idempotency/readback. X-Insight's
+> fixture/synthetic-only non-production target is Target verified at release
+> artifact `b9e5811`; real upstream provider E2E remains pending
 > Scope: product and architecture decision for UniRouter-owned X-Insight data
 > exchange control UI, audit boundary, and staged implementation
 > Batch 1Z update: Stage 1-3 UniRouter-owned MVP is Target verified for migration
