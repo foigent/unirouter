@@ -158,10 +158,13 @@ Actual Batch 1V result:
   produced no source row because a pre-relay wrapper check bypassed Relay;
 - the immutable snapshot reports two `not_available_from_source` gaps for the
   denied request and is safe for diagnostic X-Insight import;
-- Batch 1W removes the duplicate pre-relay API-key check and is CI verified at
-  `931400a` / PR #126; the current
-  snapshot remains unchanged and full denied-scenario target evidence still
-  requires a separately authorized post-deploy rerun.
+- Batch 1W removes the duplicate pre-relay API-key check and passed CI at
+  `931400a` / PR #126; the current snapshot remains unchanged;
+- User accepted follow-up authorization `UR-XI-GATE-A-20260710-02`. Codex
+  deployed target `e823abc293f996264763c6c1aca19d3d4d6e705f`, ran exactly
+  one denied scenario, verified matching response/trace request ID and zero
+  call-log/billing/provider work, disabled keys 36/37, and completed a second
+  X-Insight persistent/idempotent/readback receipt.
 
 ### 2. GitHub Strategy
 
@@ -283,16 +286,18 @@ This coordination does not:
    readback of 10 events/3 gaps.
 2. Batch 1W PR #126, required CI and merge are complete at `931400a` under
    Agent Protocol v2.0.
-3. The authorized environment operator disables the two temporary Gate A test
-   keys and records confirmation; Codex may do this only after secure access is
-   available and the action is authorized.
-4. After Batch 1W merge, an available authorized non-production deployment path
-   and a new/amended User authorization are required before a denied-scenario
-   rerun.
+3. Batch 1W target deployment, the exact authorized denied rerun, and temporary
+   key disable are complete under `UR-XI-GATE-A-20260710-02`.
+4. The second controlled snapshot is persistently imported, idempotently rerun,
+   and read back; this closes the earlier request-correlation producer gap.
 5. Use Gate A receipt findings to prioritize remaining structural-field and payload
    policy gaps.
 6. Keep UniRouter-owned evidence readiness moving in scoped PRD5 batches that do
    not depend on X-Insight runtime availability.
-7. Keep read-only views and exporter/outbox deferred for one more controlled
-   snapshot cycle. X-Insight ECS target deployment/runtime remains unverified;
-   no shared ECS staging claim follows from the current receipt.
+7. Decide read-only views versus exporter/outbox from security, availability,
+   scale, and operational ownership requirements rather than opening either
+   automatically. X-Insight ECS target deployment/runtime remains unverified;
+   no shared ECS staging claim follows from either receipt.
+8. Remediate the current ECS public exposure under separate authorization and
+   provision X-Insight separately; do not place it on the capacity-constrained
+   UniRouter host.

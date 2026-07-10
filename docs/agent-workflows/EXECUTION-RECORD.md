@@ -3,7 +3,7 @@
 **Batch:** PRD5 Batch 1W - Pre-Relay Model Permission Evidence Parity and workflow v2 transition
 **Owner:** Codex
 **Risk:** R3 request authorization/evidence path; R2 workflow governance
-**Status:** Batch 1W CI verified; Gate A external integration verified; target deployment/rerun pending
+**Status:** Batch 1W target verified for the authorized denial scenario; second Gate A external persistence/readback verified
 **Base:** `origin/main` at `cc38094` / PR #125
 **Merged:** `931400a` / PR #126
 
@@ -28,6 +28,7 @@
 - Integration coverage: `cmd/uniroute/prd2_p0_e2e_integration_test.go`
 - Local evidence: `docs/ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md`
 - External integration evidence: `docs/ops/evidence/PRD5-GATE-A-XINSIGHT-external-integration-20260710.md`
+- Target rerun evidence: `docs/ops/evidence/PRD5-B1W-target-rerun-20260710.md`
 - Workflow decision evidence: `docs/ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md`
 - Gate A artifact remains in the UniRouter/X-Insight shared folder with SHA-256 `5b1d52b1e8bd9b47f14de74670eb4404ed8862c32cdf323d86766446cdf438e8`.
 
@@ -70,24 +71,38 @@ PR #126 results:
 - No read-only X-Insight DB/view, shared ECS staging or exporter/outbox.
 - No PRD4 reopen and no production claim.
 
-## External State
+## Target Execution
 
-- X-Insight Gate A persistent import/readback is externally verified: receipt
-  `persisted`, 10 accepted, first persistence 10 inserted, second persistence 10
-  duplicate/no-op, readback 10 events/3 gaps, X-Insight `4a562a6` / PR #9 and
-  `5f0fa49` / PR #10.
-- Temporary Gate A test API key disable confirmation remains pending.
-- A denied-scenario target rerun requires a new or amended User authorization.
+- User authorization `UR-XI-GATE-A-20260710-02` permitted deployment of the
+  CI-passing target and exactly one synthetic denied-scenario rerun.
+- Target source/runtime metadata is
+  `e823abc293f996264763c6c1aca19d3d4d6e705f`, containing Batch 1W
+  `931400a` / PR #126. Stable and canary readiness checks passed.
+- Request `gatea-model-denied-b1w-283194e67a0c3ff9` returned HTTP 403 with a
+  matching `X-Request-ID` and the expected `auth.model_not_allowed` trace.
+- The request created zero call logs, billing freezes, transactions, and
+  provider events. No paid upstream request was sent.
+- Temporary API keys 36 and 37 are disabled.
+- The second snapshot receipt is `persisted`: first persistence inserted two,
+  rerun produced two duplicate/no-op with zero conflict, and readback returned
+  two events/two gaps for exchange
+  `uxchg_8deae233291214154815c336c9278983`.
+- The first immutable Gate A snapshot remains externally verified: 10 accepted,
+  first persistence 10 inserted, rerun 10 duplicate/no-op, and readback 10
+  events/3 gaps.
 - X-Insight ECS target deployment/runtime verification is not part of the receipt
   and remains unverified.
-- No ECS SSH alias has been established for Codex in the current environment.
-- `XINSIGHT_POSTGRES_DSN` is not present in the current environment.
-- Temporary snapshot deletion is due 2026-07-17 after receipt reconciliation.
+- The first temporary snapshot deletion is due 2026-07-17. The second
+  authorization did not specify retention for the new snapshot, so deletion is
+  pending a retention decision.
+- Current ECS security exposure and capacity findings are recorded in the target
+  evidence. They require separate authorization and do not alter this result.
 
 ## Rollback
 
 - Code rollback: revert the Batch 1W commit through a new PR; do not bypass branch protection.
-- Deployment rollback: restore the previously recorded target version using the environment runbook. No deployment is authorized or claimed in this record.
+- Deployment rollback: stable/canary rollback images are retained as
+  `rollback-20260710151314`; no rollback was required.
 - Data rollback: none; Batch 1W has no migration and does not mutate the immutable Gate A artifact.
 
 ## Optional Independent Review
