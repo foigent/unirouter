@@ -10,33 +10,37 @@
 Batch 0 baseline and scope evidence
   -> Batch 0A existing correctness repairs
   -> User MVP and failure-mode decisions
-  -> Batch 0B remaining correctness/config truth
-  -> Batch 1 Distributed Policy V1
+  -> Batch 0B tenant and financial identity integrity
+  -> Batch 0C remaining correctness/config truth
+  -> Batch 1 Agent Capability and Distributed Policy V1
   -> Batch 2 Routing Policy V1
-  -> Batch 3 Cache-aware usage and billing
+  -> Batch 3 durable usage, settlement and cache-aware billing
   -> Batch 4 Guardrail Kernel
   -> Batch 5 Streaming policy and termination
   -> Batch 6 selected advanced capability, if separately accepted
   -> Batch 7 authorized target evidence
 ```
 
-Batch 0A is safe to execute before the scope gate. Batch 0B is recommended next
-because it addresses confirmed correctness/parity risks, but it is kept
-separate from the current PR. Batches 1 through 5 require the MVP boundary and
-failure-mode decisions.
+Batch 0A was safe to execute before the scope gate. The new Batch 0B findings are
+urgent confirmed source risks, but this audit does not authorize their behavior
+changes. Batch 0C addresses the previously identified correctness/parity risks.
+Batches 0B through 5 require the applicable User scope/failure decisions and
+independently reviewable PRs.
 
 ## 2. Batch Specifications
 
 ### Batch 0 — Baseline And Scope Evidence
 
 **Risk:** R2 documentation/research.
-**Status:** complete locally; PR/CI pending.
+**Status:** competitor baseline and Batch 0A are CI verified by Draft PR #139;
+the scalability/anti-pattern audit update is local pending PR refresh/CI.
 
 Deliverables:
 
 - clean-base Git, required CI, fresh local test and X-Insight verification;
 - PRD5 closure and X-Insight v1 contract reconciliation;
 - version-fixed LiteLLM/New API/One API audit with claim corrections;
+- source-backed 100x/Agent/streaming/billing anti-pattern audit;
 - Four Quadrants, ownership, P0-P3, MVP/advanced/long-tail classification;
 - PRD6 entry, PRD, matrix, plan and backlog.
 
@@ -63,7 +67,29 @@ Verification:
 - frontend regression suite/build;
 - required PR CI.
 
-### Batch 0B — Retry, Endpoint Parity, Config And Billing Truth
+### Batch 0B — Tenant And Financial Identity Integrity
+
+**Risk:** R4 multi-tenant authorization and financial-state behavior.
+**Status:** source-confirmed findings; User remediation decision pending.
+
+Split into independently reviewable security/financial PRs:
+
+1. enforce actor-organization predicates on every key/user/project operation,
+   with platform-admin as the only explicit cross-tenant exception;
+2. introduce an unoverrideable server operation ID and separate client
+   idempotency, trace/span, workflow and Agent identities;
+3. migrate idempotency to a tenant/key/payload-bound namespace;
+4. remove Freeze connection-pool re-entry and capture effective price/multiplier
+   version on the reservation;
+5. make `frozen -> settled|cancelled` a single atomic terminal transition and
+   preserve `settlement_pending` after billable output;
+6. define user/project/key/role revocation epochs and an all-replica SLO.
+
+Verification must include cross-tenant negative integration tests, migration
+up/down, pool-size barriers, 100-way terminal races, process-kill recovery, and
+wallet/ledger invariants. No production exploit or target mutation is required.
+
+### Batch 0C — Retry, Endpoint Parity, Config And Billing Truth
 
 **Risk:** R3 request/billing behavior.
 **Status:** proposed; separate branch/PR.
@@ -76,20 +102,26 @@ Order within the batch:
    tests, then wire one effective retry/circuit/cooldown configuration source
    and emit its version/effective values in safe evidence;
 4. repair organization-multiplier freeze/settlement invariants;
-5. handle stream scanner errors and concurrent sensitive-word reload safely.
+5. handle stream Scanner errors, response-body lifetime, single-writer/flush and
+   timeout semantics safely;
+6. make concurrent sensitive-word reload safe.
 
 Each item may be split into its own R3 PR if the diff ceases to be independently
 reviewable.
 
-### Batch 1 — Distributed Policy V1
+### Batch 1 — Agent Capability And Distributed Policy V1
 
 **Risk:** R3/R4 shared admission behavior.
 **Gate:** User accepts MVP and quota failure mode.
 
 Design first:
 
+- capability exchange, claims, signature/key versions, maximum TTL, monotonic
+  delegation, ancestor budgets and refresh jitter/singleflight;
+- auth/policy snapshot invalidation and revocation SLO;
 - canonical selector and precedence model;
 - RPM/RPS/TPM/concurrency reservation and settlement semantics;
+- weighted workload classes and separate short/long-work fairness;
 - Redis key schema, script versioning and cluster compatibility;
 - shadow/enforce/disabled modes;
 - fail-closed, fail-open and last-known-safe behavior by policy class;
@@ -101,7 +133,7 @@ clock/TTL boundary tests, hot-key behavior and rollback compatibility.
 ### Batch 2 — Routing Policy V1
 
 **Risk:** R3 provider selection behavior.
-**Gate:** Batch 0B and Batch 1 policy evidence foundation.
+**Gate:** Batch 0B, Batch 0C and Batch 1 policy evidence foundation.
 
 Deliverables:
 
@@ -114,13 +146,17 @@ Deliverables:
 
 Adaptive latency/cost routing remains advanced scope.
 
-### Batch 3 — Cache-Aware Usage And Billing
+### Batch 3 — Durable Usage, Settlement And Cache-Aware Billing
 
 **Risk:** R3 financial semantics.
 **Gate:** version-fixed provider usage fixtures and price ownership decision.
 
 Deliverables:
 
+- reservation-aware stream consumption and durable `settlement_pending`;
+- minimal decision/usage journal plus a transactional internal outbox;
+- bounded, idempotent trace/log/notification workers and incremental budget
+  threshold events;
 - cache read/create token fields in normalized usage;
 - provider adapter mappings with unknown-field behavior;
 - cache price/ratio source, version and audit;
@@ -166,6 +202,7 @@ Only one separately accepted advanced capability should enter at a time:
 - adaptive/canary routing;
 - policy simulation/BYO guardrails;
 - selected adapter/SDK work.
+- asynchronous object-reference image/video job plane.
 
 Each needs its own threat model, acceptance rows and rollback plan.
 

@@ -22,14 +22,15 @@ product scope is not yet equal to every item in this document set:
 
 1. `docs/ops/CURRENT-STATUS.md`
 2. `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md`
-3. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
-4. `docs/PRD-Phase6.md`
-5. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
-6. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
-7. `docs/planning/PRD6-BACKLOG.md`
-8. `docs/issues/OPEN-ISSUES.md`
-9. `docs/agent-workflows/AGENT-PROTOCOL.md`
-10. `docs/agent-workflows/EXECUTION-RECORD.md`
+3. `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md`
+4. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
+5. `docs/PRD-Phase6.md`
+6. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
+7. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
+8. `docs/planning/PRD6-BACKLOG.md`
+9. `docs/issues/OPEN-ISSUES.md`
+10. `docs/agent-workflows/AGENT-PROTOCOL.md`
+11. `docs/agent-workflows/EXECUTION-RECORD.md`
 
 PRD5 evidence remains under its existing paths. Do not rewrite it as PRD6
 evidence.
@@ -45,10 +46,15 @@ evidence.
   frontend type-check, 25 Vitest files / 125 tests, and frontend build.
 - PR #139 verified the PRD6 Batch 0A implementation with successful
   `Backend Tests`, `Frontend Build`, and `Docker Build`.
+- The source and focused-test scalability audit found P0 tenant-isolation,
+  operation/idempotency, billing pool re-entry, terminal-state, post-delivery
+  settlement, and revocation risks. These are source findings, not production
+  incident or 100x capacity evidence, and no remediation is implemented by the
+  audit document.
 - X-Insight `main` and `origin/main` matched
   `e43add8e0184ba1eb059484053bc5e9d9f4cf6ed`; `go test ./... -count=1`
-  passed. Phase 1 remains complete and Phase 2 product priority is the
-  X-Insight-owned operator investigation UI.
+  passed. Phase 1 remains complete; no X-Insight product functionality is an
+  input to the UniRouter PRD6 scope.
 - The accepted cross-project v1 boundary remains operator-mediated
   `xinsight.import-receipt.v1` sidecar reconciliation. It does not include a
   durable import job, deep link, automated/authenticated receipt transport,
@@ -75,15 +81,25 @@ completion defects and must not be used to reopen PRD5:
 
 ## Minimum User Decisions
 
-1. **MVP boundary:** accept or adjust the recommended PRD6 MVP: existing
-   correctness repairs, Distributed Policy V1, Routing Policy V1,
-   cache-aware token metering/billing, and the guardrail/stream interception
-   foundation. Exact/semantic response cache remains opt-in advanced scope.
-2. **Enforcement failure mode:** accept the proposed policy-specific posture:
-   blocking safety policies fail closed; audit-only policies fail open with an
-   explicit degraded trace; hard quota enforcement fails closed or uses a
-   bounded last-known-safe state instead of the current unconditional Redis
-   fail-open behavior.
+1. **MVP boundary:** accept or adjust the updated recommendation. In plain
+   terms, acceptance authorizes reviewed repository work that first prevents
+   one tenant, Agent retry, or failed settlement from affecting another charge;
+   then adds Agent capability/ancestor budgets, shared weighted admission,
+   Routing Policy V1, durable usage finalization, cache-aware billing, and the
+   guardrail/stream foundation. It does not authorize deployment, every
+   competitor feature, semantic response cache, full video execution, or an IAM
+   rewrite.
+2. **Enforcement failure mode:** accept the policy-specific posture. Identity,
+   tenant boundary, mandatory blocking safety, and hard budget fail closed;
+   optional audit analysis may continue only with durable degraded evidence;
+   rate/capacity may use a very small time/amount-bounded last-known-safe lease
+   and then reject, never unlimited fail-open.
 
-Until these decisions are made, only Batch 0A and documentation/evidence work
-may move to implementation.
+UniRouter owns the request-path and its authoritative authorization, routing,
+usage, billing, and audit facts. Other projects may consume a sanitized,
+versioned contract asynchronously, but no external investigation feature or
+runtime is part of the PRD6 MVP or a prerequisite for request success.
+
+Until these decisions are made, only the already-verified Batch 0A and
+documentation/evidence work may move to implementation. The new P0 findings are
+recorded for urgent decision, not silently changed by this audit.

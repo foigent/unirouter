@@ -6,6 +6,12 @@
 > mutation, paid request, credential change, exporter/outbox enablement, or
 > expanded data access
 
+> Current classification note: the later source-backed audit
+> `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md` adds
+> tenant/financial P0 prerequisites and renames the original proposed Batch 0B
+> correctness group to Batch 0C. The baseline observations below are preserved
+> as first-pass evidence; the later audit controls current priority/scope.
+
 ## 1. Git And CI Baseline
 
 The following was verified after fetching `origin/main`:

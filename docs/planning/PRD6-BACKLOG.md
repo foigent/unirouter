@@ -15,12 +15,19 @@
 
 | ID | Item | Value | Dependency / risk | Priority |
 |----|------|-------|-------------------|----------|
+| P6-TENANT-001 | Enforce organization ownership on admin object operations | prevents cross-tenant key/user/project access | central tenant predicate and complete handler matrix | P0 |
+| P6-IDEM-001 | Separate server operation, client idempotency, trace/span, workflow and Agent identities | prevents cross-tenant/retry/child charge collisions | schema migration and payload fingerprint semantics | P0 |
+| P6-BILL-003 | Pool-safe reservation and single durable terminal state | prevents pool starvation, double terminal transitions and free delivered output | financial state migration, recovery and invariant tests | P0 |
+| P6-AUTH-001 | Versioned user/project/key/role revocation | bounds stale authority across replicas | revocation SLO, cache and outage posture | P0 |
 | P6-ROUTE-002 | Retry classification and response preservation | prevents unsafe/expensive retry and misleading 502 | provider error matrix and billing invariants | P0 |
 | P6-ROUTE-003 | Embeddings failover parity | removes endpoint reliability asymmetry | adapter and billing/trace parity | P0 |
 | P6-CONFIG-001 | Effective routing/circuit config truth | operator control and explainability | migration/default compatibility | P0 |
 | P6-BILL-002 | Multiplier-aware freeze/settle correctness | prevents uncollected cost | wallet/transaction semantics | P0 |
+| P6-CAP-001 | Short, attenuating Agent capability and ancestor budget | avoids shared-secret/per-child-key explosion and quota amplification | claim contract, key rotation, TTL/refresh, revocation | P1 |
 | P6-LIMIT-002 | Shared RPM/RPS/TPM/concurrency policy | enterprise isolation/capacity | failure-mode and output TPM semantics | P1 |
 | P6-ROUTE-004 | Routing Policy V1 | predictable priority/weight/retry/failover | telemetry, policy version and rollback | P1 |
+| P6-DURABLE-001 | Durable minimal usage/finalization and bounded evidence workers | prevents post-delivery revenue loss and evidence self-DDoS | transactional outbox, replay and priority semantics | P1 |
+| P6-WORK-001 | Weighted workload admission | prevents long streams/media starving short work and replica-multiplied quotas | workload envelope, lease/fairness semantics | P1 |
 | P6-BILL-001 | Prompt-cache token usage and billing | accurate provider economics | versioned adapter/price sources | P1 |
 | P6-GUARD-001 | Guardrail Kernel | enterprise safety and PII controls | detector/failure/latency policy | P1 |
 | P6-STREAM-001 | Streaming interception and termination | limits unsafe live disclosure | buffer/latency/protocol contract | P1 |
@@ -36,17 +43,16 @@
 | P6-ROUTE-006 | Canary/shadow traffic policy | explicit paid-request/data boundary and rollback | P2 |
 | P6-GUARD-002 | BYO guardrails and policy simulation | versioned kernel, RBAC and compatibility contract | P2 |
 | P6-ADAPTER-001 | Selected provider/SDK expansion | named customer/provider need and conformance ownership | P2/P3 |
+| P6-BILL-004 | Measured wallet credit/escrow sharding | same-tenant wallet row remains hot after correctness fixes | prove hotspot; lease/refill/reconciliation design | P2 |
+| P6-MEDIA-001 | Asynchronous image/video job plane | isolates large payloads and long work from synchronous chat | explicit media roadmap, object/queue/retention contract | P2 |
+| P6-DATA-001 | Time-partitioned high-volume evidence | avoids unbounded delete/WAL/bloat at 100x retention volume | volume benchmark and migration/rollback plan | P2 |
 
-## 4. Other-Project Ownership
+## 4. External-Project Boundary
 
-| Item | Owner | UniRouter responsibility now |
-|------|-------|------------------------------|
-| X-Insight operator investigation UI | X-Insight Phase 2 | preserve sanitized evidence and v1 receipt compatibility only |
-| Durable import jobs/deep links | X-Insight or future joint contract | do not emit or depend on unimplemented fields |
-| Automated/authenticated receipt transport | future joint contract | keep v1 operator mediated |
-| Retention/delete/audit workflow for imported evidence | X-Insight | retain current accepted artifacts/decisions; no implicit API work |
-| Stable public adapters/continuous ingestion | X-Insight or integration project | no exporter/outbox enablement |
-| Secret backend service | selected Vault/KMS/cloud owner | UniRouter later consumes versioned references after acceptance |
+| Boundary | UniRouter owns | External owner may own | Current disposition |
+|----------|----------------|------------------------|---------------------|
+| Evidence consumption | authoritative request identity, policy/routing decisions, usage/billing truth, sanitized gateway audit creation | independent investigation, aggregation, storage and UI | asynchronous boundary only; no external feature is PRD6 scope or a request dependency |
+| Secret backend | selected versioned references and gateway consumption after acceptance | Vault/KMS/cloud service operation | deferred pending backend decision |
 
 ## 5. Target Evidence Queue
 
@@ -68,21 +74,21 @@ authorization before execution.
 |------|-------------|--------|
 | Full Scheduler V2 | Deferred | Routing V1 correctness and evidence must stabilize first |
 | Plugin/marketplace/runtime installation | Deferred | supply-chain, sandbox and governance surface is disproportionate to current value |
-| IAM rewrite | Deferred | current RBAC/project/OIDC foundation is not proven inadequate for MVP |
+| IAM rewrite | Deferred | fix the confirmed tenant predicates and add a narrow capability layer first; neither requires a wholesale rewrite |
 | Managed HA/IaC/customer SLA operations | Target/commercial prerequisite | requires chosen topology and operating model, not a generic code task |
-| Runtime budget hard-block | Not auto-restored from PRD5 | may be reconsidered inside Distributed Policy V1 only through explicit semantics |
+| Runtime budget hard-block | Not auto-restored from PRD5 | PRD6 proposes explicit ancestor/reservation semantics; it does not silently restore the prior backlog item |
 | Plaintext prompt/response cache | Rejected | conflicts with accepted default-off payload posture |
 | Broad SDK suite | Deferred | provider/customer demand must justify maintenance |
 | Service-account runtime permission | Deferred | requires identity/threat model and explicit authorization |
 | Public payment/recharge/referral/resale features | Rejected by current positioning | UniRouter is scoped as enterprise-local MaaS, not a public token storefront |
-| Exporter/outbox/continuous X-Insight ingestion | External/future contract | not implemented or accepted in v1 |
+| External exporter/continuous ingestion | External/future contract | P6-DURABLE-001's internal outbox does not authorize an external delivery channel |
 
 ## 7. Decision Register
 
 | Decision | Recommended default | Status | Effect |
 |----------|---------------------|--------|--------|
-| D6-01 MVP boundary | P0 correctness + Distributed Policy V1 + Routing Policy V1 + cache-aware billing + guardrail/stream foundation | User decision pending | gates Batches 1-5 |
-| D6-02 Enforcement failure mode | blocking safety fail closed; audit-only fail open with degraded trace; hard quota fail closed or bounded last-known-safe | User decision pending | gates limiter/guardrail design |
+| D6-01 MVP boundary | P0 tenant/financial integrity + existing correctness + Agent capability/distributed policy + Routing V1 + durable/cache-aware billing + guardrail/stream foundation | User decision pending | gates Batches 0B-5 |
+| D6-02 Enforcement failure mode | identity/tenant/mandatory safety/hard budget fail closed; optional audit continues only with durable degraded evidence; capacity gets only a bounded last-known-safe lease | User decision pending | gates auth, limiter, routing, guardrail and finalization design |
 | D6-03 Response cache | keep out of MVP; advanced opt-in only | Proposed | avoids premature privacy/retention expansion |
 | D6-04 Product position | enterprise-local MaaS gateway/control plane | Proposed based on current repository | rejects public-commerce copying by default |
-| D6-05 X-Insight boundary | keep v1 operator-mediated receipt; no synchronous dependency | Already accepted cross-project boundary | prevents contract leakage |
+| D6-05 External-project boundary | external systems may asynchronously consume accepted sanitized facts; no external feature or runtime is a request dependency | Proposed clarification consistent with the accepted PRD5 boundary | prevents ownership and availability coupling |

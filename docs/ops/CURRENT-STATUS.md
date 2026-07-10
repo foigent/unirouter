@@ -10,16 +10,30 @@
 ## PRD6 Current Window
 
 - Baseline evidence: `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md`.
+- Scalability/anti-pattern evidence:
+  `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md`.
 - Scope entry: `docs/planning/PRD6-START-HERE.md`.
 - Proposed PRD: `docs/PRD-Phase6.md`; accepted/proposed state is authoritative
   in `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`.
 - Fresh pre-change verification passed backend tests/vet, frontend type-check,
   25 files / 125 tests, frontend build, and X-Insight full Go tests.
+- Focused read-only audit verification passed auth/middleware/admin/billing and
+  gateway/middleware/billing/circuitbreaker packages, including the applicable
+  gateway/middleware/circuitbreaker race suites. This is source/local evidence,
+  not a multi-instance or 100x result.
 - PR #136, #137 and #138 are merged with all three required checks successful.
 - Draft PR #139 is CI verified for PRD6 Batch 0/0A: `Backend Tests`,
   `Frontend Build`, and `Docker Build` passed. It is not merged or deployed.
 - No deployment, target probe/mutation, real or paid request, credential change,
   data-scope expansion, exporter/outbox or continuous ingestion occurred.
+
+The second PRD6 audit confirmed source-level P0 candidates in tenant isolation,
+request/financial idempotency identity, Freeze pool re-entry, Settle/Cancel
+terminal-state concurrency, post-delivery settlement handling, and revocation.
+It also confirmed P1 synchronous-request-path, process-local admission, route/
+breaker, Redis hot-key, streaming, evidence-write and retention blind spots.
+They are open findings awaiting the updated MVP/failure-policy decisions; no
+audit row is presented as a production incident or implemented remediation.
 
 PRD5 remains `Accepted Scope Complete`. Batch 1Z target evidence remains valid;
 the deployed stable/canary backend recorded by that evidence remains `95d1da9`
@@ -31,10 +45,11 @@ The two temporary Gate A JSON snapshots remain present with accepted hashes and
 are due for exact-path deletion by 2026-07-17. Receipts, hashes, sanitized
 evidence and persisted normalized evidence remain retained.
 
-X-Insight `main == origin/main == e43add8e0184ba1eb059484053bc5e9d9f4cf6ed`
-passed `go test ./... -count=1`. Phase 1 remains complete; Phase 2 investigation
-UI is X-Insight-owned. The cross-project v1 contract remains operator-mediated
-`xinsight.import-receipt.v1` sidecar reconciliation.
+The accepted PRD5 cross-project contract remains operator-mediated
+`xinsight.import-receipt.v1` sidecar reconciliation. PRD6 considers only the
+boundary: UniRouter creates authoritative sanitized gateway facts; an external
+system may consume an accepted versioned contract asynchronously and is never a
+request-path dependency. External product functionality is not PRD6 scope.
 
 ## Historical Accepted Phase Record
 

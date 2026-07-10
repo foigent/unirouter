@@ -7,8 +7,8 @@
 ## 1. Product Positioning Used For Comparison
 
 UniRouter is treated as a locally deployable enterprise MaaS gateway and
-control plane, not as a public token-resale storefront and not as a replacement
-for X-Insight. Competitive value is therefore weighted toward reliable
+control plane, not as a public token-resale storefront or an external
+investigation product. Competitive value is therefore weighted toward reliable
 routing, enforceable tenant policy, explainable billing, private credential
 governance, safety controls, and auditable operation.
 
@@ -134,9 +134,14 @@ Version-fixed official source examples:
 | Streaming interception | SSE relay and metadata; no general output-policy hook | LiteLLM stable source has chunk hooks but non-zero disclosure limits | MVP bounded stream policy hook with explicit partial-disclosure/cancel/billing contract |
 | Credential governance | AES-GCM protected static upstream keys | LiteLLM Enterprise integrates secret managers; competitors otherwise remain mostly stored credentials | Advanced reference/version/rotation design; workload identity later |
 | Billing/governance | Wallet, transactional freeze/settle/cancel, model/org price controls | New API has deep public-selling/catalog mechanics | Preserve enterprise MaaS focus; fix correctness and add cache-aware accounting, not public-commerce scope |
-| Evidence/observability | Strong gateway-native logs, trace decisions, evidence search and X-Insight receipt lane | LiteLLM has broad callbacks; New API has practical dashboards | Keep UniRouter gateway-native evidence advantage; X-Insight owns deep investigation UI |
+| Evidence/observability | Strong gateway-native logs, trace decisions, evidence search and a sanitized external-consumption boundary | LiteLLM has broad callbacks; New API has practical dashboards | Keep UniRouter gateway-native evidence authoritative; external investigation remains asynchronously decoupled |
 
 ## 4. The Four Quadrants
+
+This competitor-oriented quadrant is extended by the source-backed 100x/Agent
+audit in `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md`.
+Where the two differ in detail, the later source audit controls the current P0/P1
+classification.
 
 ### Known Knowns
 
@@ -147,7 +152,7 @@ Verified implemented strengths:
 - priority-based routing, channel/key state, transactional billing, API-key
   model restrictions and Redis API-key RPM/RPS;
 - encrypted stored upstream keys and HMAC-protected downstream keys;
-- operator-mediated X-Insight receipt reconciliation with persistent,
+- an accepted operator-mediated external receipt boundary with persistent,
   idempotent readback evidence.
 
 Verified gaps or defects:
@@ -159,6 +164,8 @@ Verified gaps or defects:
 - input-only global sensitive-word control and no generic output/stream policy
   hook;
 - no general external secret reference/rotation or OTel/OpenInference export.
+- source-confirmed tenant scoping, operation/idempotency, billing terminal-state,
+  revocation and synchronous 100x bottlenecks detailed in the later audit.
 
 ### Known Unknowns
 
@@ -183,8 +190,8 @@ implementation cost:
 - normalized `TextDelta` streaming paths provide a natural interception seam;
 - Redis, trace decisions, structural evidence fields and route/failover UI are
   already present;
-- the X-Insight receipt lane can carry sanitized policy evidence later without
-  making X-Insight a request-path dependency.
+- the accepted external boundary can carry sanitized policy evidence later
+  without making any investigation product a request-path dependency.
 
 These are foundations, not completed features.
 
@@ -208,8 +215,9 @@ PRD6 verification must actively search for:
 | Tier | Capability | Product value | Main risk/dependency | Required acceptance proof |
 |------|------------|---------------|----------------------|---------------------------|
 | MVP / P0 | Batch 0A half-open recovery and atomic exact limiter | Prevents silent outage and over-admission | Accepted existing defects; no new product decision | focused race/concurrency tests, full backend CI, no behavior drift outside defect |
-| MVP / P0 | Batch 0B retry, endpoint parity, config and billing correctness | Prevents misleading failover and financial loss | Proposed; error, routing and settlement semantics must be accepted | adapter/state-machine/billing invariants, fault injection, full backend CI |
-| MVP / P1 | Distributed Policy V1 | Enterprise tenant isolation and predictable capacity | failure-mode decision, Redis topology, output-token semantics | multi-instance atomicity/load/failure tests, per-scope evidence, shadow/enforce modes |
+| MVP / P0 | Batch 0B tenant/operation/reservation integrity | Prevents cross-tenant access, charge identity collision, pool starvation and invalid terminal settlement | Proposed after the source-backed anti-pattern audit; remediation decision pending | tenant-negative tests, idempotency migration, pool barriers, terminal races and restart recovery |
+| MVP / P0 | Batch 0C retry, endpoint parity, config and multiplier correctness | Prevents misleading failover and financial loss | Proposed; error, routing and settlement semantics must be accepted | adapter/state-machine/billing invariants, fault injection, full backend CI |
+| MVP / P1 | Agent Capability And Distributed Policy V1 | Enterprise tenant/ancestor isolation and predictable capacity | failure-mode, capability, revocation, Redis and output-token semantics | delegation attenuation, 100-child aggregate limits, multi-instance atomicity/load/failure tests, shadow/enforce modes |
 | MVP / P1 | Routing Policy V1 | Reliable failover with operator-understandable behavior | retry classifier, health ownership, config migration | Chat/Embeddings parity, deterministic failover/fallback traces, fault injection |
 | MVP / P1 | Prompt-cache usage and billing | Cost accuracy without cache security expansion | provider-specific usage mapping and price ownership | golden adapter fixtures, cache read/write ledger and reconciliation tests |
 | MVP / P1 | Guardrail kernel and non-stream output control | Minimum enterprise safety and PII control | policy ownership and external detector availability | tenant policy tests, redaction/block traces, raw-payload non-retention proof |
@@ -234,5 +242,5 @@ evidence all agree:
 2. cache savings are observable and billable before response caching is added;
 3. stream safety exposes measured residual disclosure instead of claiming
    impossible zero leakage;
-4. gateway-native evidence remains local and sanitized, while X-Insight handles
-   deep cross-system investigation off the request path.
+4. gateway-native evidence remains authoritative and sanitized, while any deep
+   cross-system investigation stays asynchronously off the request path.

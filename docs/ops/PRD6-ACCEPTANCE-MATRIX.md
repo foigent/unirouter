@@ -23,28 +23,32 @@
 |----|-------------|-------|-----------------|-------------|---------------------|----------------|
 | P6-F01 | Expired half-open channels regain bounded probe eligibility | UniRouter | P0 / MVP correctness | Accepted Batch 0A | query-semantic regression; router unit and race tests; full backend test; CI | CI verified by PR #139 |
 | P6-F02 | Redis API-key RPM/RPS checks are atomic and enforce N allowed / N+1 rejected | UniRouter | P0 / MVP correctness | Accepted Batch 0A | strict QPS/RPM boundary; concurrent exact-admission test; canceled-context test; Redis-error fail-open compatibility; race/full backend/CI | CI verified by PR #139 |
-| P6-F03 | Retry only retryable provider failures and preserve safe client/policy response semantics | UniRouter | P0 / MVP correctness | Proposed Batch 0B | adapter matrix tests; no retry on 4xx/policy errors; bounded retry on classified transient failures; trace and billing invariants | Not started |
-| P6-F04 | Chat and Embeddings have route/failover parity | UniRouter | P0 / MVP correctness | Proposed Batch 0B | multi-route embeddings integration tests; auth/billing/trace parity; all-routes-fail behavior | Not started |
-| P6-F05 | Effective retry/circuit/cooldown configuration is wired, versioned and observable | UniRouter | P0 / MVP correctness | Proposed Batch 0B | config default/override tests; no hidden hard-coded divergence; route-decision config evidence | Not started |
-| P6-F06 | Organization multiplier cannot create an uncollected under-freeze settlement | UniRouter | P0 / MVP correctness | Proposed Batch 0B | insufficient-freeze tests; atomic debit/loss rules; cancel/refund and concurrent settlement tests | Not started |
+| P6-F16 | Organization administrators cannot list/read/create/update/disable/delete another tenant's key, user or project object | UniRouter | P0 / MVP integrity | User decision pending; urgent Batch 0B | handler matrix: same tenant succeeds, cross tenant 403, platform-admin exception; SQL ownership predicates; integration tests | Source-confirmed gap; not remediated |
+| P6-F17 | Server operation, client idempotency, trace/span, workflow and Agent identities are separate and tenant scoped | UniRouter | P0 / MVP integrity | User decision pending; urgent Batch 0B | 100-child shared-trace test; same-payload replay; changed-payload 409; cross-org collision negative test; migration up/down | Source-confirmed gap; not remediated |
+| P6-F18 | Reservation is pool-safe and reaches exactly one durable terminal state after billable output | UniRouter | P0 / MVP financial integrity | User decision pending; urgent Batch 0B | pool-size barrier; 100-way Settle/Cancel race; post-chunk DB failure/restart; wallet/ledger invariants; multiplier price version | Source-confirmed gaps; not remediated |
+| P6-F03 | Retry only retryable provider failures and preserve safe client/policy response semantics | UniRouter | P0 / MVP correctness | Proposed Batch 0C | adapter matrix tests; no retry on 4xx/policy errors; bounded retry on classified transient failures; trace and billing invariants | Not started |
+| P6-F04 | Chat and Embeddings have route/failover parity | UniRouter | P0 / MVP correctness | Proposed Batch 0C | multi-route embeddings integration tests; auth/billing/trace parity; all-routes-fail behavior | Not started |
+| P6-F05 | Effective retry/circuit/cooldown configuration is wired, versioned and observable | UniRouter | P0 / MVP correctness | Proposed Batch 0C | config default/override tests; no hidden hard-coded divergence; route-decision config evidence | Not started |
+| P6-F06 | Organization multiplier cannot create an uncollected under-freeze settlement | UniRouter | P0 / MVP correctness | Proposed Batch 0C | insufficient-freeze tests; atomic debit/loss rules; cancel/refund and concurrent settlement tests | Not started |
 | P6-F07 | Shared RPM/RPS/TPM/concurrency policy with explicit selectors and failure semantics | UniRouter | P1 / MVP | User decision pending | multi-instance load/fault tests; shadow/enforce modes; policy-version trace; bounded metrics; fail-mode tests | Not accepted |
 | P6-F08 | Routing Policy V1 provides explainable priority/weight/retry/cooldown/failover | UniRouter | P1 / MVP | User decision pending | deterministic policy fixtures; Chat/Embeddings parity; fault injection; candidate/exclusion/fallback evidence | Not accepted |
 | P6-F09 | Provider cache-read/cache-create usage is normalized, priced and reconciled | UniRouter | P1 / MVP | User decision pending | version-fixed provider fixtures; source/price metadata; ledger/log/UI and reconciliation tests; no fake cache-hit billing | Not accepted |
 | P6-F10 | Versioned Guardrail Kernel covers input and non-stream output | UniRouter | P1 / MVP | User decision pending | per-scope policy tests; redact/block/audit modes; external-detector failure tests; no raw-payload persistence | Not accepted |
 | P6-F11 | Stream policy hook has bounded disclosure, protocol termination, cancel and settlement behavior | UniRouter | P1 / MVP | User decision pending | cross-chunk/oversized/adversarial SSE tests; measured exposure; client disconnect/upstream cancel; exactly-once settlement | Not accepted |
+| P6-F19 | Short Agent capabilities attenuate authority and share ancestor budget/revocation | UniRouter | P1 / MVP | User decision pending | offline verification; depth/fan-out/model/cost/rate/concurrency attenuation; 100-child aggregate cap; refresh jitter/singleflight; all-replica revocation SLO | Not accepted |
+| P6-F20 | Minimal usage/finalization is durable while detailed evidence and notifications use bounded replayable workers | UniRouter | P1 / MVP | User decision pending | process-kill/outbox replay; duplicate/reorder tests; billing/audit priority; bounded memory/goroutines; trace-lag SLO | Not accepted |
+| P6-F21 | Shared admission is workload weighted, replica invariant and fair to short/long work | UniRouter | P1 / MVP | User decision pending | 2/3-replica exact concurrency; lease expiry/crash; Redis latency/outage; workload-class fairness; bounded wait and `Retry-After` | Not accepted |
 | P6-F12 | External secret references, versions, rotation and rollback | UniRouter plus selected secret backend | P2 / Advanced | Deferred pending backend decision | rotation, stale-worker, outage, audit and rollback evidence | Not accepted |
 | P6-F13 | Opt-in exact/semantic response cache is tenant-isolated and purgeable | UniRouter | P2 / Advanced | Deferred pending value/security decision | isolation, auth, TTL, purge, stampede, poisoning, encryption and billing red-team tests | Not accepted |
 | P6-F14 | Latency/cost/rate-aware and canary routing | UniRouter | P2 / Advanced | Deferred until Routing V1 telemetry is trustworthy | shadow comparison, SLO, rollback and route-explainability evidence | Not accepted |
-| P6-F15 | Policy simulation, BYO guardrails and config rollback | UniRouter; X-Insight may consume evidence | P2 / Advanced | Deferred pending policy lifecycle design | version/RBAC/audit, dry-run diff, compatibility and rollback tests | Not accepted |
+| P6-F15 | Policy simulation, BYO guardrails and config rollback | UniRouter; external evidence consumers remain optional | P2 / Advanced | Deferred pending policy lifecycle design | version/RBAC/audit, dry-run diff, compatibility and rollback tests | Not accepted |
+| P6-F22 | Asynchronous object-reference image/video job plane | UniRouter | P2 / Advanced | Deferred pending explicit media roadmap decision | tenant-scoped upload/job/status/cancel; queue lease/retry; idempotent completion; retention; final usage/settlement; load isolation | Not accepted |
 
-## Other-Project Rows
+## External-Project Boundary
 
-| ID | Capability | Owner | PRD6 disposition | Evidence boundary |
-|----|------------|-------|------------------|-------------------|
-| P6-XI-01 | Execution search, execution detail/timeline, node detail, source/provenance and capture gaps | X-Insight | X-Insight Phase 2 accepted priority; not a UniRouter feature row | X-Insight source/tests/UI evidence |
-| P6-XI-02 | Durable import job and deep link | X-Insight or future joint contract | Not implemented; no UniRouter dependency | future versioned contract and X-Insight runtime evidence |
-| P6-XI-03 | Automated/authenticated receipt transport | Joint contract, X-Insight receiver ownership | Not implemented; v1 remains operator mediated | explicit auth/retry/idempotency contract and external integration evidence |
-| P6-XI-04 | Retention/delete/audit workflow, stable public adapters, continuous ingestion | X-Insight or future joint contract | Not implemented; outside current PRD6 proposal | separate X-Insight scope and target evidence |
+| ID | Boundary | UniRouter responsibility | External responsibility | PRD6 disposition |
+|----|----------|--------------------------|-------------------------|------------------|
+| P6-EXT-01 | Sanitized evidence consumption | create authoritative request/authorization/routing/usage/billing/audit facts and expose only an accepted versioned asynchronous contract | independently store, aggregate, investigate or display consumed evidence | boundary only; no external feature is a UniRouter PRD6 row or request-path dependency |
 
 ## Target-Evidence Rows
 
@@ -58,9 +62,12 @@
 ## Explicit Non-Scope Guard
 
 No row in this matrix silently accepts Scheduler V2, a plugin/marketplace,
-IAM rewrite, managed HA/IaC, public commerce, plaintext cache, broad SDK,
-service-account runtime permission, customer SLA operation, exporter/outbox, or
-continuous ingestion.
+IAM rewrite, managed HA/IaC, public commerce, plaintext response cache, broad
+SDK, service-account runtime permission, customer SLA operation, external
+exporter/continuous ingestion, or an asynchronous media job implementation.
+
+P6-F20's internal transactional outbox is a UniRouter durability mechanism. It
+does not authorize an external exporter or continuous delivery contract.
 
 ## Batch 0A Promotion Gates
 

@@ -10,6 +10,7 @@
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
 | `docs/planning/PRD6-START-HERE.md` | PRD6 decision state, closure guard, baseline and read order |
 | `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md` | PRD6 Git/CI/test/X-Insight/code-finding baseline evidence |
+| `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md` | PRD6 source-backed 100x, Agent fan-out, billing, routing, streaming and multimodal anti-pattern evidence |
 | `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md` | Version-fixed competitor audit, Four Quadrants and priority matrix |
 | `docs/PRD-Phase6.md` | PRD6 scope proposal; only Batch 0A is accepted before the User scope gate |
 | `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` | PRD6 accepted/proposed/external/target-evidence truth |
@@ -43,7 +44,7 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required single-owner execution, approval, evidence and optional-review workflow |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD6 Batch 0/0A execution and verification; previous PRD5 evidence remains linked |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD6 Batch 0/0A execution and Batch 0B scope-audit verification; previous PRD5 evidence remains linked |
 | `docs/agent-workflows/reviews/` | Optional immutable independent review results |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry pointing to the current execution record |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |
@@ -121,6 +122,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` | PRD5 completed acceptance matrix and evidence rules |
 | `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` | Current PRD6 accepted/proposed/external/target-evidence truth |
 | `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md` | Current PRD6 local baseline and code-finding evidence |
+| `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md` | Current PRD6 scalability/anti-pattern audit; findings remain source/local, not 100x or target verified |
 | `docs/planning/PRD5-CURRENT-GAP-AUDIT-20260710.md` | PRD5 closeout accounting and historical next-window input |
 | `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md` | PRD5 Batch 1X local repository audit, P5-F12 screening decisions, safe local Logs/CI fixes, and INFRA-SEC-001 plan |
 | `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md` | PRD5 Batch 1Y accepted UniRouter-owned implementation and local full verification |
@@ -152,7 +154,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 |------|------|
 | `docs/agent-workflows/README.md` | Agent workflow index |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Current Agent Protocol v2.0 |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD6 Batch 0/0A execution-owner record; prior PRD5 target/external evidence remains linked |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD6 Batch 0/0A plus Batch 0B scope-audit execution-owner record; prior PRD5 target/external evidence remains linked |
 | `docs/agent-workflows/reviews/README.md` | Independent review naming, contents and severity rules |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |

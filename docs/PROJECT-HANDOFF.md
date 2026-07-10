@@ -8,21 +8,22 @@
 1. `docs/ops/CURRENT-STATUS.md` - current verified project status.
 2. `docs/planning/PRD6-START-HERE.md` - PRD6 decision state and reading map.
 3. `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md` - clean-base, test, X-Insight and current-code evidence.
-4. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md` - version-fixed competitor audit and Four Quadrants.
-5. `docs/PRD-Phase6.md` - proposed PRD6 scope and ownership.
-6. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` - accepted, proposed, external and target-evidence rows.
-7. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md` - batch order and gates.
-8. `docs/planning/PRD6-BACKLOG.md` - classified backlog and decision register.
-9. `docs/PRD-Phase5.md` - completed accepted PRD5 scope and explicit remaining boundaries.
-10. `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` - PRD5's closed 36-row evidence ledger.
-11. `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md` - accepted X-Insight v1 boundary and PRD5 completion classification.
-12. `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md` - final PRD5 target evidence.
-13. `/Users/m4/Desktop/projects/X-Insight/docs/architecture/runtime-contract-capability-status.md` - X-Insight implemented/not-implemented runtime facts.
-14. `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-11-prd5-runtime-contract-v1-boundary.md` - accepted cross-project decision.
-15. `docs/issues/OPEN-ISSUES.md` - active issues and future evidence.
-16. `docs/agent-workflows/AGENT-PROTOCOL.md` - execution, approval, evidence and optional review rules.
-17. `docs/agent-workflows/EXECUTION-RECORD.md` - current branch/batch verification.
-18. `docs/CODEBASE-MAP.md`, `docs/DOC-INVENTORY.md`, and `docs/DOCS-GOVERNANCE.md` - code and documentation lifecycle maps.
+4. `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md` - source-backed 100x, Agent fan-out, billing, routing, streaming and multimodal audit.
+5. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md` - version-fixed competitor audit and Four Quadrants.
+6. `docs/PRD-Phase6.md` - proposed PRD6 scope and ownership.
+7. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` - accepted, proposed, external and target-evidence rows.
+8. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md` - batch order and gates.
+9. `docs/planning/PRD6-BACKLOG.md` - classified backlog and decision register.
+10. `docs/PRD-Phase5.md` - completed accepted PRD5 scope and explicit remaining boundaries.
+11. `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` - PRD5's closed 36-row evidence ledger.
+12. `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md` - accepted X-Insight v1 boundary and PRD5 completion classification.
+13. `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md` - final PRD5 target evidence.
+14. `/Users/m4/Desktop/projects/X-Insight/docs/architecture/runtime-contract-capability-status.md` - X-Insight implemented/not-implemented runtime facts.
+15. `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-11-prd5-runtime-contract-v1-boundary.md` - accepted cross-project decision.
+16. `docs/issues/OPEN-ISSUES.md` - active issues and future evidence.
+17. `docs/agent-workflows/AGENT-PROTOCOL.md` - execution, approval, evidence and optional review rules.
+18. `docs/agent-workflows/EXECUTION-RECORD.md` - current branch/batch verification.
+19. `docs/CODEBASE-MAP.md`, `docs/DOC-INVENTORY.md`, and `docs/DOCS-GOVERNANCE.md` - code and documentation lifecycle maps.
 
 ## Current Project Shape
 
@@ -40,10 +41,13 @@ reinterpret target-evidence debt or X-Insight-owned work as unfinished PRD5
 source scope.
 
 PRD6 is formally active in discovery/scope-gate state. Batch 0A is limited to
-verified existing correctness defects. The broader proposed MVP covers
-distributed policy, Routing Policy V1, cache-aware token billing, and
-guardrail/stream foundations. It requires the minimum User decisions recorded
-in `docs/planning/PRD6-START-HERE.md` before implementation.
+verified existing correctness defects. The second audit adds open P0 tenant,
+operation/idempotency, reservation/terminal-state and revocation findings, plus
+P1 Agent/100x blind spots. The updated proposed MVP covers those integrity
+prerequisites, Agent capability/distributed policy, Routing Policy V1, durable
+cache-aware billing, and guardrail/stream foundations. It requires the minimum
+User decisions recorded in `docs/planning/PRD6-START-HERE.md` before remediation
+or broader implementation.
 
 ## What Is Current Truth
 
@@ -51,6 +55,7 @@ in `docs/planning/PRD6-START-HERE.md` before implementation.
 |----------|----------------|
 | What is the PRD6 decision state? | `docs/planning/PRD6-START-HERE.md` |
 | What baseline and findings were verified? | `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md` |
+| What did the 100x/Agent/streaming anti-pattern audit find? | `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md` |
 | What is the proposed PRD6 scope? | `docs/PRD-Phase6.md` |
 | Which PRD6 rows are accepted versus proposed? | `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` |
 | What is the PRD6 implementation order? | `docs/planning/PRD6-IMPLEMENTATION-PLAN.md` |
@@ -92,11 +97,12 @@ Use `docs/agent-workflows/AGENT-PROTOCOL.md` before changing code or status:
 
 ## Current Verification Baseline
 
-Current execution is PRD6 Batch 0/0A on a `codex/` branch based on
+Current execution is PRD6 Batch 0/0A plus the Batch 0B scope audit on a `codex/` branch based on
 `deacae2d4164b98c5241cf72844f09f53ca7510d`. Fresh full repository checks and
 X-Insight tests passed before implementation; Batch 0A repairs the confirmed
-half-open recovery and atomic Redis limit defects. Current details and promotion
-gates are in `docs/agent-workflows/EXECUTION-RECORD.md`.
+half-open recovery and atomic Redis limit defects. The new P0/P1 audit findings
+are not remediated or target verified. Current details and promotion gates are in
+`docs/agent-workflows/EXECUTION-RECORD.md`.
 
 PRD5 Batch 1Z Target Deployment And Infrastructure Security remains Target
 verified for its explicit evidence. The previous Batch 1W denied path remains target

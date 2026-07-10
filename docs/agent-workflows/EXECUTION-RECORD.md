@@ -1,9 +1,9 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 0 / 0A Baseline, Scope And Existing Correctness
+**Batch:** PRD6 Batch 0 / 0A Baseline, Existing Correctness, And Batch 0B Scope Audit
 **Owner:** Codex
-**Risk:** R2 planning plus R3 gateway/limiter request-path corrections
-**Status:** CI verified by Draft PR #139; no deployment claimed
+**Risk:** R2 planning/audit plus R3 gateway/limiter request-path corrections
+**Status:** Batch 0A CI verified by Draft PR #139; scalability audit update local pending PR refresh/CI; no deployment claimed
 **Base:** `deacae2d4164b98c5241cf72844f09f53ca7510d`
 **Branch:** `codex/prd6-kickoff`
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
@@ -17,7 +17,10 @@
    while preserving the current Redis-error fail-open contract.
 4. Establish independent PRD6 entry, PRD, matrix, implementation plan, backlog,
    Four-Quadrant competitor audit and current-state routing.
-5. Stop broader implementation at the MVP/failure-mode User scope gate.
+5. Audit 100x/Agent fan-out, tenant/auth, billing, routing/Redis,
+   streaming/multimodal, evidence, and retention anti-patterns against source.
+6. Stop remediation and broader implementation at the updated MVP/failure-mode
+   User scope gate.
 
 ## Behavior Change
 
@@ -30,6 +33,9 @@
 - Redis command/script failure still fails open. Changing hard-quota failure
   behavior remains an explicit PRD6 decision.
 - No new X-Insight runtime field or dependency is introduced.
+- The Batch 0B audit changes no runtime behavior. Its P0/P1 rows are source/local
+  findings and proposed acceptance evidence, not implemented fixes, incidents,
+  target verification, or 100x capacity proof.
 
 ## Files And Evidence
 
@@ -37,6 +43,8 @@
   `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md`.
 - Product/competitor evidence:
   `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`.
+- Scalability/anti-pattern evidence:
+  `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md`.
 - Truth chain: `docs/planning/PRD6-START-HERE.md`, `docs/PRD-Phase6.md`,
   `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`,
   `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`, and
@@ -65,6 +73,15 @@ Focused post-change results:
 - strict limiter tests repeated 20 times: PASS;
 - real Redis 8.8.0 script check admitted two and rejected the third: PASS;
 - focused middleware vet and `git diff --check`: PASS.
+
+Focused read-only Batch 0B audit results on baseline `d5a5249`:
+
+- `go test ./internal/auth ./internal/middleware ./internal/admin ./internal/billing -count=1`: PASS;
+- `go test ./internal/gateway ./internal/middleware ./internal/billing ./internal/circuitbreaker -count=1`: PASS;
+- `go test -race ./internal/gateway ./internal/middleware ./internal/circuitbreaker -count=1`: PASS;
+- `git diff --check` and cited-repository-path existence check: PASS;
+- these results do not cover PostgreSQL/Redis multi-instance races or prove a
+  100x workload.
 
 Full post-change repository results:
 

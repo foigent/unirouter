@@ -1,6 +1,6 @@
 # UniRouter PRD6: Reliable MaaS Policy And Safety Plane
 
-> Version: 0.1
+> Version: 0.2
 > Date: 2026-07-11
 > Status: Scope Proposal; PRD6 discovery formally active
 > Accepted implementation now: Batch 0A verified correctness fixes only
@@ -9,9 +9,10 @@
 ## 1. Outcome
 
 PRD6 proposes to turn UniRouter's strong enterprise gateway foundation into a
-coherent MaaS policy and safety plane. Admission, routing, cache-aware cost,
-guardrails, streaming termination and evidence should use explicit,
-versioned, testable semantics across replicas.
+coherent and scalable MaaS policy and safety plane. Tenant identity, financial
+idempotency, admission, routing, cache-aware cost, guardrails, streaming
+termination and evidence should use explicit, versioned, testable semantics
+across replicas and Agent descendants.
 
 This is not a promise to match every LiteLLM or New API feature. It is a
 positioning-led scope proposal based on the verified current repository and the
@@ -48,12 +49,30 @@ Batch 0A may repair confirmed existing correctness defects:
 The following become accepted only after the User accepts or edits the MVP
 boundary.
 
-#### P6-MVP-01 Distributed Policy V1
+#### P6-MVP-00 Tenant And Financial Integrity Foundation
 
+- enforce organization ownership on every non-platform-admin object operation;
+- separate server operation identity, client idempotency, trace, span, workflow,
+  and Agent identities;
+- make reservation terminal transitions atomic and preserve
+  `settlement_pending` after billable output;
+- remove billing connection-pool re-entry and bind reservation to the effective
+  price/multiplier version;
+- define versioned user/project/key/role revocation with a measurable all-replica
+  SLO.
+
+#### P6-MVP-01 Agent Capability And Distributed Policy V1
+
+- exchange supervisor-held long-lived keys for short-lived, attenuating Agent
+  capabilities; children never receive the root secret;
+- enforce ancestor workflow/project/organization cost, token, rate, concurrency,
+  depth, fan-out, model and endpoint limits;
 - atomic RPM/RPS across replicas;
 - TPM policy with explicit input, reserved-output and settled-output semantics;
 - concurrency control moved from process-local defaults to shared policy where
   configured;
+- weighted workload classes for short chat, long stream, embedding, batch and
+  future media work;
 - selectors for API key, organization/project, model and an explicitly defined
   policy label; a channel admin tag is not silently treated as a quota label;
 - shadow, enforce and disabled modes;
@@ -71,8 +90,12 @@ boundary.
 - fallback, route candidate, exclusion reason and config-version evidence;
 - no latency/cost-adaptive scheduler requirement in V1.
 
-#### P6-MVP-03 Cache-Aware Usage And Billing
+#### P6-MVP-03 Durable Usage And Cache-Aware Billing
 
+- preserve a durable minimal usage/decision journal and idempotent finalization;
+- keep billable output in `settlement_pending` until one terminal settlement;
+- isolate detailed trace/log/notification work behind a bounded transactional
+  outbox while financial state remains strongly consistent;
 - normalize provider-reported cache-read and cache-create token classes;
 - support source-owned per-model cache token prices or ratios;
 - show authoritative cache usage and cost in logs, ledger and reconciliation;
@@ -107,6 +130,8 @@ boundary.
 - latency/cost/rate-aware routing, shadowing and canary policies;
 - policy versioning, simulation, BYO guardrails and config rollback;
 - selected provider adapters backed by conformance suites.
+- an asynchronous image/video job plane with tenant-scoped object references,
+  modality queues, leases, status/cancel, retention, and final settlement.
 
 These require separate acceptance rows and cannot begin merely because the MVP
 is accepted.
@@ -134,14 +159,16 @@ Each requires a new product, security, ownership and evidence decision.
 - gateway-local trace, audit and sanitized evidence emission;
 - configuration version, rollback and operator-facing route/policy visibility.
 
-### X-Insight Or Other Projects Own
+### Boundary With External Projects
 
-- X-Insight Phase 2 execution search, detail/timeline, node detail,
-  provenance/source display and capture-gap investigation;
-- cross-source evidence analysis, policy simulation and deep investigation UI;
-- future durable import jobs, deep links, automated/authenticated receipts,
-  retention/delete workflow, stable public adapters and continuous ingestion,
-  unless a later joint contract explicitly assigns work.
+- UniRouter owns creation of authoritative request identity, authorization,
+  routing, usage, billing, and sanitized gateway audit facts.
+- External products own their own investigation, aggregation, storage, and UI.
+- They may consume a versioned sanitized contract asynchronously, but they do not
+  decide UniRouter authorization/routing/billing and cannot be a request-success
+  dependency.
+- No external-project feature is a PRD6 functional requirement. Existing PRD5
+  contracts remain historical boundaries and are not reopened here.
 
 ### Target-Evidence Only
 
@@ -157,19 +184,26 @@ These do not become UniRouter source-code gaps without new evidence.
 |----|-------------|----------|-------------|
 | P6-F01 | Recover expired half-open channels into bounded probe eligibility | P0 | Accepted Batch 0A |
 | P6-F02 | Atomically enforce the exact Redis RPM/RPS boundary | P0 | Accepted Batch 0A |
-| P6-F03 | Honor retryable/non-retryable error classification and preserve safe response semantics | P0 | Proposed Batch 0B |
-| P6-F04 | Give Embeddings Chat-equivalent routing/failover behavior | P0 | Proposed Batch 0B |
-| P6-F05 | Make effective retry/circuit/cooldown configuration observable and remove hard-coded divergence | P0 | Proposed Batch 0B |
-| P6-F06 | Correct freeze/settlement behavior when organization multipliers increase actual cost | P0 | Proposed Batch 0B |
+| P6-F16 | Enforce organization ownership for every non-platform-admin key/user/project operation | P0 | Proposed urgent Batch 0B |
+| P6-F17 | Separate operation, idempotency, trace/span, workflow and Agent identities | P0 | Proposed urgent Batch 0B |
+| P6-F18 | Make reservation/finalization single-terminal, pool-safe and durable after billable output | P0 | Proposed urgent Batch 0B |
+| P6-F03 | Honor retryable/non-retryable error classification and preserve safe response semantics | P0 | Proposed Batch 0C |
+| P6-F04 | Give Embeddings Chat-equivalent routing/failover behavior | P0 | Proposed Batch 0C |
+| P6-F05 | Make effective retry/circuit/cooldown configuration observable and remove hard-coded divergence | P0 | Proposed Batch 0C |
+| P6-F06 | Correct freeze/settlement behavior when organization multipliers increase actual cost | P0 | Proposed Batch 0C |
 | P6-F07 | Enforce shared RPM/RPS/TPM/concurrency policies with explicit selectors and failure modes | P1 | Proposed MVP |
 | P6-F08 | Implement Routing Policy V1 with explainable candidates, exclusions, retry and failover | P1 | Proposed MVP |
 | P6-F09 | Normalize and bill provider cache-read/cache-create tokens | P1 | Proposed MVP |
 | P6-F10 | Add versioned input/non-stream-output Guardrail Kernel | P1 | Proposed MVP |
 | P6-F11 | Add safe streaming interception, cancellation and settlement semantics | P1 | Proposed MVP |
+| P6-F19 | Add short Agent capability, monotonic delegation, ancestor budgets and versioned revocation | P1 | Proposed MVP |
+| P6-F20 | Add durable minimal usage/finalization outbox and bounded evidence/notification workers | P1 | Proposed MVP |
+| P6-F21 | Admit weighted workload classes without replica-multiplied quotas or long-stream starvation | P1 | Proposed MVP |
 | P6-F12 | Add external secret references/versioning/rotation for selected backends | P2 | Advanced candidate |
 | P6-F13 | Add opt-in isolated exact/semantic response cache | P2 | Advanced candidate |
 | P6-F14 | Add adaptive and canary routing policies | P2 | Advanced candidate |
 | P6-F15 | Add policy simulation/BYO guardrails/config rollback | P2 | Advanced candidate |
+| P6-F22 | Add an asynchronous object-reference media job plane | P2 | Advanced candidate; only if separately accepted |
 
 ## 6. Safety And Authorization Boundaries
 
@@ -179,7 +213,8 @@ Without specific applicable User authorization, PRD6 must not:
 - send a real or paid provider request;
 - create, rotate, reveal or change credentials;
 - expand database access, data export, raw-payload capture or retention;
-- enable exporter/outbox, automated X-Insight delivery or continuous ingestion;
+- enable an external exporter/continuous delivery, or enable an internal outbox
+  in any target runtime;
 - delete Gate A files before the accepted date/procedure;
 - claim Production verified from local, CI, synthetic or fixture evidence.
 
@@ -202,8 +237,11 @@ Every accepted functional row must define:
 
 The User must accept or modify:
 
-1. the recommended MVP group P6-F07 through P6-F11; and
-2. the policy-specific fail-open/fail-closed/last-known-safe posture.
+1. the updated MVP: P6-F16 through P6-F18, the existing Batch 0C correctness
+   rows, P6-F07 through P6-F11, and P6-F19 through P6-F21; and
+2. the policy-specific fail-open/fail-closed/bounded-last-known-safe posture.
 
-Batch 0A does not prejudge those choices. Batch 0B may be accepted separately
-because its rows are confirmed existing correctness/parity work.
+Batch 0A does not prejudge those choices. The P0 Batch 0B findings are confirmed
+source risks but remain audit-only until the User authorizes remediation. Batch
+0C is existing correctness/parity work and may be accepted separately. P6-F22 is
+not implied by accepting the MVP.
