@@ -3,14 +3,39 @@ package middleware
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"context"
 	"fmt"
 	"net/http"
-	"strconv"
-	"time"
 
 	"github.com/redis/go-redis/v9"
 )
+
+const (
+	rateLimitQPSExceeded int64 = 1
+	rateLimitRPMExceeded int64 = 2
+)
+
+var rateLimitScript = redis.NewScript(`
+local now = redis.call("TIME")
+local now_nanoseconds = (tonumber(now[1]) * 1000000000) + (tonumber(now[2]) * 1000)
+local qps_window_start = now_nanoseconds - 1000000000
+local rpm_window_start = now_nanoseconds - 60000000000
+
+redis.call("ZREMRANGEBYSCORE", KEYS[1], "-inf", qps_window_start)
+redis.call("ZREMRANGEBYSCORE", KEYS[2], "-inf", rpm_window_start)
+
+if redis.call("ZCARD", KEYS[1]) >= tonumber(ARGV[1]) then
+    return 1
+end
+if redis.call("ZCARD", KEYS[2]) >= tonumber(ARGV[2]) then
+    return 2
+end
+
+redis.call("ZADD", KEYS[1], now_nanoseconds, ARGV[3])
+redis.call("EXPIRE", KEYS[1], 2)
+redis.call("ZADD", KEYS[2], now_nanoseconds, ARGV[3])
+redis.call("EXPIRE", KEYS[2], 120)
+return 0
+`)
 
 // RateLimit returns middleware that enforces per-key RPM and QPS limits
 // using Redis sliding window counters.
@@ -23,7 +48,6 @@ func RateLimit(rdb *redis.Client) func(http.Handler) http.Handler {
 				return
 			}
 
-			ctx := context.Background()
 			keyID := apiKey.ID
 
 			// Use per-key limits from the API key record
@@ -36,30 +60,26 @@ func RateLimit(rdb *redis.Client) func(http.Handler) http.Handler {
 				qpsLimit = 10
 			}
 
-			now := time.Now()
-			nowNano := float64(now.UnixNano())
-
-			// Check QPS (sliding window, 1 second)
+			// Check and record both windows atomically. Redis TIME keeps all
+			// instances on the same clock, while a unique member preserves every
+			// request that shares the same timestamp.
 			qpsKey := "rl:qps:" + fmt.Sprint(keyID)
-			qpsWindowStart := now.Add(-1 * time.Second)
-			qpsWindowStartNano := float64(qpsWindowStart.UnixNano())
-
-			pipe := rdb.Pipeline()
-			qpsCountCmd := pipe.ZCount(ctx, qpsKey,
-				strconv.FormatFloat(qpsWindowStartNano, 'f', 0, 64),
-				strconv.FormatFloat(nowNano, 'f', 0, 64))
-			pipe.ZRemRangeByScore(ctx, qpsKey, "-inf",
-				strconv.FormatFloat(qpsWindowStartNano, 'f', 0, 64))
-			pipe.ZAdd(ctx, qpsKey, redis.Z{Score: nowNano, Member: uniqueMember()})
-			pipe.Expire(ctx, qpsKey, 2*time.Second)
-			_, err := pipe.Exec(ctx)
+			rpmKey := "rl:rpm:" + fmt.Sprint(keyID)
+			result, err := rateLimitScript.Run(
+				r.Context(),
+				rdb,
+				[]string{qpsKey, rpmKey},
+				qpsLimit,
+				rpmLimit,
+				uniqueMember(),
+			).Int64()
 			if err != nil {
 				// On Redis error, allow the request (fail-open)
 				next.ServeHTTP(w, r)
 				return
 			}
 
-			if qpsCountCmd.Val() > int64(qpsLimit) {
+			if result == rateLimitQPSExceeded {
 				w.Header().Set("Content-Type", "application/json")
 				w.Header().Set("Retry-After", "1")
 				w.WriteHeader(http.StatusTooManyRequests)
@@ -67,26 +87,7 @@ func RateLimit(rdb *redis.Client) func(http.Handler) http.Handler {
 				return
 			}
 
-			// Check RPM (sliding window, 60 seconds)
-			rpmKey := "rl:rpm:" + fmt.Sprint(keyID)
-			rpmWindowStart := now.Add(-60 * time.Second)
-			rpmWindowStartNano := float64(rpmWindowStart.UnixNano())
-
-			pipe2 := rdb.Pipeline()
-			rpmCountCmd := pipe2.ZCount(ctx, rpmKey,
-				strconv.FormatFloat(rpmWindowStartNano, 'f', 0, 64),
-				strconv.FormatFloat(nowNano, 'f', 0, 64))
-			pipe2.ZRemRangeByScore(ctx, rpmKey, "-inf",
-				strconv.FormatFloat(rpmWindowStartNano, 'f', 0, 64))
-			pipe2.ZAdd(ctx, rpmKey, redis.Z{Score: nowNano, Member: uniqueMember()})
-			pipe2.Expire(ctx, rpmKey, 120*time.Second)
-			_, err = pipe2.Exec(ctx)
-			if err != nil {
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			if rpmCountCmd.Val() > int64(rpmLimit) {
+			if result == rateLimitRPMExceeded {
 				w.Header().Set("Content-Type", "application/json")
 				w.Header().Set("Retry-After", "60")
 				w.WriteHeader(http.StatusTooManyRequests)

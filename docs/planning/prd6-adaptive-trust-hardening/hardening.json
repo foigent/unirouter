@@ -1,0 +1,488 @@
+{
+  "documentType": "codex-security.hardening-analysis",
+  "schemaVersion": "1.0",
+  "analysisId": "hardening_20260711_unirouter_adaptive_trust",
+  "sourceEvidence": {
+    "kind": "mixed_source_collection",
+    "label": "UniRouter PRD6 and X-Insight adaptive trust boundary evidence",
+    "collectionSha256": "029d40e3c9ff7fb5b89ec534e1aeea42057bf170498be9b6bbafa73a773b8165",
+    "artifactCount": 8,
+    "sourceDrift": "none",
+    "targetRevisions": {
+      "unirouter": "6c8c192d8610662e4c1a4f852ec15d6fb4bb836f",
+      "xinsight": "e43add8e0184ba1eb059484053bc5e9d9f4cf6ed"
+    }
+  },
+  "assessment": {
+    "outcome": "opportunities_identified",
+    "summary": "The evidence supports separating historical adaptive-risk analysis from locally owned, attenuation-only enforcement; the proposal is not implemented."
+  },
+  "constraints": {
+    "profile": "balanced",
+    "changeHorizons": [
+      "incremental",
+      "medium_term",
+      "foundational"
+    ],
+    "nonNegotiables": [
+      "X-Insight is not a synchronous request, settlement, or failover dependency.",
+      "A risk assertion cannot grant authority absent from the subject's baseline entitlement.",
+      "Every irreversible side effect is mediated by the component that owns it.",
+      "Raw prompt and response persistence remains disabled by default.",
+      "No new cross-project runtime contract, deployment, paid shadow traffic, or continuous ingestion is authorized by this analysis."
+    ],
+    "assumptions": [
+      "No production workload latency, memory, event-lag, revocation, or classifier-precision budget was supplied.",
+      "The accepted P6-F16 through P6-F21 prerequisites will be independently implemented and reviewed before adaptive enforcement.",
+      "Metadata-first fixtures are sufficient for the first design experiment."
+    ]
+  },
+  "opportunities": [
+    {
+      "opportunityId": "adaptive-trust-control-loop",
+      "title": "Split adaptive trust analysis from local enforcement",
+      "summary": "Keep cross-request analysis asynchronous while enforcing signed, expiring, attenuation-only decisions at UniRouter and each actual action owner.",
+      "diagnosis": "The current products separate live model dispatch from controlled evidence import, but future adaptive-risk ideas blur fact production, analysis, policy authority, and side-effect enforcement.",
+      "evidence": [
+        {
+          "claimType": "observed",
+          "sourceKind": "source",
+          "evidenceId": "E01",
+          "path": "cmd/uniroute/main.go",
+          "claim": "UniRouter owns the live model authentication, admission, rate-limit, governance, and relay path but exposes no general Tool Gateway route."
+        },
+        {
+          "claimType": "observed",
+          "sourceKind": "source",
+          "evidenceId": "E02",
+          "path": "internal/gateway/relay.go",
+          "claim": "Local policy seams exist, while the OpenAI-compatible streaming fallback can flush before semantic parsing."
+        },
+        {
+          "claimType": "observed",
+          "sourceKind": "source",
+          "evidenceId": "E03",
+          "path": "internal/traceutil/evidence_context.go",
+          "claim": "The trusted evidence context is metadata intake, not an audience-bound, expiring, replay-resistant capability."
+        },
+        {
+          "claimType": "observed",
+          "sourceKind": "document",
+          "evidenceId": "E04",
+          "path": "docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md",
+          "claim": "The accepted v1 cross-project contract is operator-mediated sidecar reconciliation."
+        },
+        {
+          "claimType": "observed",
+          "sourceKind": "document",
+          "evidenceId": "E05",
+          "path": "docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md",
+          "claim": "Tenant, identity, financial terminal-state, stream, revocation, and fan-out risks must precede adaptive enforcement."
+        },
+        {
+          "claimType": "observed",
+          "sourceKind": "document",
+          "evidenceId": "E06",
+          "claim": "X-Insight Phase 1 lacks continuous ingestion, tenant/RBAC, trust scoring, policy publication, and evaluation orchestration."
+        },
+        {
+          "claimType": "observed",
+          "sourceKind": "document",
+          "evidenceId": "E07",
+          "claim": "The current X-Insight integration design keeps settlement, failover, and request success independent of X-Insight availability."
+        },
+        {
+          "claimType": "inferred",
+          "sourceKind": "threat_model",
+          "evidenceId": "E08",
+          "claim": "Historical risk analysis and irreversible-action enforcement require separate ownership because only the action owner can completely mediate the sink."
+        }
+      ],
+      "desiredInvariants": [
+        "UniRouter never requires a synchronous X-Insight call for authentication, routing, settlement, stream termination, or response success.",
+        "Risk can attenuate but never elevate baseline authority.",
+        "Every irreversible action is checked by its provider, Tool Gateway, IAM, data, write, or export owner.",
+        "Observed facts, derived risk, compiled policy, and final enforcement decisions have distinct issuers and versions.",
+        "Invalid, cross-tenant, replayed, rolled-back, or expired assertions cannot become allow decisions.",
+        "Missing evidence is recorded as a gap and cannot be converted into a safe claim."
+      ],
+      "proposalPath": "proposals/adaptive-trust-control-loop.md",
+      "options": [
+        {
+          "optionId": "gateway-monolith",
+          "title": "Gateway monolith",
+          "kind": "baseline",
+          "summary": "Place adaptive analysis, historical state, policy decisions, and model enforcement inside UniRouter.",
+          "diagramPaths": {
+            "before": "diagrams/adaptive-trust-control-loop-before.mmd",
+            "after": "diagrams/adaptive-trust-control-loop-gateway-monolith-after.mmd"
+          },
+          "evidenceCoverage": [
+            {
+              "evidenceId": "E01",
+              "effect": "addresses",
+              "tacticalFixRequired": false,
+              "rationale": "The gateway already owns model dispatch and can add local controls at existing seams."
+            },
+            {
+              "evidenceId": "E02",
+              "effect": "mitigates",
+              "tacticalFixRequired": true,
+              "rationale": "Uniform pre-flush stream normalization remains required before any mandatory stream detector."
+            },
+            {
+              "evidenceId": "E04",
+              "effect": "addresses",
+              "tacticalFixRequired": false,
+              "rationale": "The option avoids a new online X-Insight dependency."
+            },
+            {
+              "evidenceId": "E06",
+              "effect": "unaffected",
+              "tacticalFixRequired": false,
+              "rationale": "It avoids X-Insight gaps by duplicating future analysis inside UniRouter."
+            }
+          ],
+          "tradeoffs": [
+            {
+              "dimension": "security",
+              "direction": "improves",
+              "confidence": "medium",
+              "basis": "source-derived",
+              "assessment": "Model-path checks become local, but analyzer compromise and resource exhaustion share a process with provider dispatch and billing; tool sinks still require separate mediation.",
+              "validationPlan": "Run authorization-bypass, detector-compromise, and resource-exhaustion tests while verifying tool actions remain separately mediated."
+            },
+            {
+              "dimension": "performance",
+              "direction": "regresses",
+              "confidence": "medium",
+              "basis": "source-derived",
+              "assessment": "No network hop is added, but classifier inference, state queries, locks, and cache misses increase request tail latency.",
+              "validationPlan": "Compare p50/p95/p99 latency and CPU for short Chat, long stream, Embeddings, and 100-child workloads with each detector enabled."
+            },
+            {
+              "dimension": "memory",
+              "direction": "regresses",
+              "confidence": "medium",
+              "basis": "source-derived",
+              "assessment": "The gateway must hold models, buffers, risk caches, graph or history state, and extra policy generations.",
+              "validationPlan": "Measure steady and peak RSS, allocations, retained policy generations, and stream-buffer growth under overload."
+            },
+            {
+              "dimension": "reliability",
+              "direction": "regresses",
+              "confidence": "medium",
+              "basis": "source-derived",
+              "assessment": "Analysis faults and capacity contention share the gateway failure domain even though network dependency is avoided.",
+              "validationPlan": "Inject detector stalls, panics, model load failure, state corruption, and CPU pressure while measuring model and settlement availability."
+            },
+            {
+              "dimension": "operability",
+              "direction": "regresses",
+              "confidence": "medium",
+              "basis": "source-derived",
+              "assessment": "One deployable remains, but it gains broader model, index, tuning, rollout, and incident responsibilities.",
+              "validationPlan": "Run policy/model upgrade and rollback drills and inventory the credentials and alerts required by the combined process."
+            },
+            {
+              "dimension": "migration",
+              "direction": "improves",
+              "confidence": "medium",
+              "basis": "source-derived",
+              "assessment": "Deterministic local checks can be feature-flagged at existing seams, although mandatory historical state later makes rollback harder.",
+              "validationPlan": "Enable one deterministic stage in shadow mode, roll it back across mixed versions, and verify the baseline remains complete."
+            }
+          ],
+          "residualRisks": [
+            "Analyzer compromise or overload shares the gateway blast radius.",
+            "Historical state can become stale or corrupt inside the request service.",
+            "Tool, data, and export sinks remain outside UniRouter unless separately integrated."
+          ],
+          "implementationReadiness": {
+            "affectedComponents": [
+              "cmd/uniroute",
+              "internal/gateway",
+              "internal/traceutil"
+            ],
+            "workPackages": [
+              "Complete identity, tenant, billing, capability, and stream prerequisites.",
+              "Add feature-flagged deterministic local policy stages before heavier analysis."
+            ],
+            "acceptanceCriteria": [
+              "No mandatory detector can bypass baseline entitlement or leave a stream unaccounted.",
+              "Measured resource budgets remain within an explicitly accepted threshold."
+            ],
+            "migrationNotes": [
+              "Keep the baseline policy complete so detector modules can be disabled safely."
+            ],
+            "rollback": "Disable the new detector generation and return to the prior reviewed local baseline through a reviewed change."
+          }
+        },
+        {
+          "optionId": "sync-xinsight-decision",
+          "title": "Synchronous central X-Insight decision service",
+          "kind": "isolation",
+          "summary": "Query a central X-Insight policy decision service before each governed action.",
+          "diagramPaths": {
+            "before": "diagrams/adaptive-trust-control-loop-before.mmd",
+            "after": "diagrams/adaptive-trust-control-loop-sync-xinsight-after.mmd"
+          },
+          "evidenceCoverage": [
+            {
+              "evidenceId": "E04",
+              "effect": "unaffected",
+              "tacticalFixRequired": true,
+              "rationale": "The design requires a new contract that conflicts with the currently accepted sidecar-only boundary."
+            },
+            {
+              "evidenceId": "E06",
+              "effect": "unaffected",
+              "tacticalFixRequired": true,
+              "rationale": "Authentication, tenant isolation, policy publication, analysis, and production operations do not currently exist."
+            },
+            {
+              "evidenceId": "E07",
+              "effect": "unaffected",
+              "tacticalFixRequired": true,
+              "rationale": "The option contradicts the current no-request-dependency principle unless explicitly replaced."
+            },
+            {
+              "evidenceId": "E01",
+              "effect": "mitigates",
+              "tacticalFixRequired": false,
+              "rationale": "It can centralize model decisions but cannot mediate tool sinks without additional integrations."
+            }
+          ],
+          "tradeoffs": [
+            {
+              "dimension": "security",
+              "direction": "unknown",
+              "confidence": "medium",
+              "basis": "source-derived",
+              "assessment": "Central state improves consistency, but central compromise or erroneous allow/deny decisions have a broad blast radius unless every sink rechecks baseline entitlement.",
+              "validationPlan": "Threat-model analyzer and policy-service compromise, cross-tenant requests, bad broad policies, and local entitlement rechecks at every audience."
+            },
+            {
+              "dimension": "performance",
+              "direction": "regresses",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "Serialization, network, queueing, graph lookup, and detector work are added to each governed request.",
+              "validationPlan": "Benchmark same-region and partitioned p50/p95/p99 end-to-end latency with realistic decision payloads and detector load."
+            },
+            {
+              "dimension": "memory",
+              "direction": "regresses",
+              "confidence": "medium",
+              "basis": "source-derived",
+              "assessment": "Gateway memory can remain smaller, but the central service needs queues, graph indexes, models, caches, and per-tenant isolation.",
+              "validationPlan": "Measure central service RSS, queue depth, graph-index size, cache eviction, and per-tenant noisy-neighbor behavior."
+            },
+            {
+              "dimension": "reliability",
+              "direction": "regresses",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "A new central service and network partition become correlated request failure paths or create pressure for unsafe unlimited fail-open.",
+              "validationPlan": "Inject timeout, partition, overload, region loss, retry storms, and stale responses while verifying policy-specific failure behavior."
+            },
+            {
+              "dimension": "operability",
+              "direction": "regresses",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "A production tenant-aware authorization service needs regional capacity, SLA, authentication, rotation, incident response, and coordinated rollout.",
+              "validationPlan": "Complete a production-readiness review and operate shadow traffic through deployment, key rotation, and disaster-recovery drills."
+            },
+            {
+              "dimension": "migration",
+              "direction": "regresses",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "The option changes the accepted availability contract and requires every action owner to adopt the remote protocol.",
+              "validationPlan": "Run unsigned and signed shadow comparison first, then prove mixed-version fallback and full rollback without losing local baseline enforcement."
+            }
+          ],
+          "residualRisks": [
+            "Central outage or bad policy can affect many tenants and action owners.",
+            "Unsafe fail-open pressure remains during partitions or overload.",
+            "Tool and data systems still require their own complete mediation and local entitlement checks."
+          ],
+          "implementationReadiness": {
+            "affectedComponents": [
+              "UniRouter request path",
+              "X-Insight central service",
+              "Every governed action owner"
+            ],
+            "workPackages": [
+              "Replace the accepted cross-project availability contract through an explicit decision.",
+              "Build and production-harden a tenant-aware authenticated policy decision service."
+            ],
+            "acceptanceCriteria": [
+              "The central service meets an explicitly selected production SLA and every failure mode has a bounded policy outcome.",
+              "Every execution point rechecks baseline entitlement and rejects cross-tenant or replayed decisions."
+            ],
+            "migrationNotes": [
+              "Keep local baseline policy complete throughout shadow and cutover."
+            ],
+            "rollback": "Disable the remote decision dependency and return all audiences to the prior reviewed local baseline."
+          }
+        },
+        {
+          "optionId": "split-signed-policy",
+          "title": "Split plane with signed local enforcement",
+          "kind": "structural",
+          "summary": "Keep analysis asynchronous, compile attenuation-only policy, and enforce audience-specific snapshots at each actual action owner.",
+          "diagramPaths": {
+            "before": "diagrams/adaptive-trust-control-loop-before.mmd",
+            "after": "diagrams/adaptive-trust-control-loop-split-signed-policy-after.mmd"
+          },
+          "evidenceCoverage": [
+            {
+              "evidenceId": "E01",
+              "effect": "addresses",
+              "tacticalFixRequired": false,
+              "rationale": "UniRouter retains local authority for the model actions it owns, while other sinks remain first-class enforcement points."
+            },
+            {
+              "evidenceId": "E02",
+              "effect": "mitigates",
+              "tacticalFixRequired": true,
+              "rationale": "The design needs the accepted normalized pre-flush stream hook before mandatory streaming policy."
+            },
+            {
+              "evidenceId": "E03",
+              "effect": "mitigates",
+              "tacticalFixRequired": true,
+              "rationale": "P6-F19 capability and audience/expiry/epoch/replay semantics must replace any attempt to use evidence metadata as authority."
+            },
+            {
+              "evidenceId": "E04",
+              "effect": "addresses",
+              "tacticalFixRequired": false,
+              "rationale": "X-Insight remains off the request path and the current v1 contract stays unchanged until a separate async contract is accepted."
+            },
+            {
+              "evidenceId": "E05",
+              "effect": "mitigates",
+              "tacticalFixRequired": true,
+              "rationale": "Tenant, identity, financial, revocation, and stream prerequisites remain mandatory tactical protections."
+            },
+            {
+              "evidenceId": "E06",
+              "effect": "mitigates",
+              "tacticalFixRequired": true,
+              "rationale": "X-Insight can evolve its analysis separately, but ingestion, tenant/auth, policy publication, and evaluation capabilities still need their own acceptance."
+            },
+            {
+              "evidenceId": "E07",
+              "effect": "addresses",
+              "tacticalFixRequired": false,
+              "rationale": "The option preserves the no-request, settlement, and failover dependency invariant."
+            },
+            {
+              "evidenceId": "E08",
+              "effect": "mitigates",
+              "tacticalFixRequired": false,
+              "rationale": "The proposed roles encode least privilege, complete mediation, dual-speed control, and explicit uncertainty."
+            }
+          ],
+          "tradeoffs": [
+            {
+              "dimension": "security",
+              "direction": "improves",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "Facts, risk, policy, and enforcement are separated; the analyzer cannot grant authority and each irreversible sink retains complete mediation.",
+              "validationPlan": "Prove privilege non-increase and run cross-tenant, wrong-audience, replay, epoch rollback, key compromise, and action-owner bypass tests."
+            },
+            {
+              "dimension": "performance",
+              "direction": "neutral",
+              "confidence": "low",
+              "basis": "hypothetical",
+              "assessment": "Local signature and cache checks add bounded work while deep analysis leaves the hot path, but no workload measurement exists yet.",
+              "validationPlan": "Compare p50/p95/p99 added latency and CPU with local verification/cache enabled on short Chat, long stream, Embeddings, and 100-child loads."
+            },
+            {
+              "dimension": "memory",
+              "direction": "regresses",
+              "confidence": "medium",
+              "basis": "source-derived",
+              "assessment": "Execution points need bounded policy-generation and replay caches, while X-Insight needs analysis indexes and queues.",
+              "validationPlan": "Measure and cap policy generations, replay IDs, stream buffers, queue depth, graph indexes, and peak RSS under update bursts."
+            },
+            {
+              "dimension": "reliability",
+              "direction": "improves",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "X-Insight and analysis outages do not add a request network dependency; unexpired local policy continues and expiry cannot increase privilege.",
+              "validationPlan": "Inject analysis, publisher, network, cache, key-rotation, clock, and stale-state failures across multiple replicas."
+            },
+            {
+              "dimension": "operability",
+              "direction": "regresses",
+              "confidence": "medium",
+              "basis": "source-derived",
+              "assessment": "Separate issuers, schemas, keys, policy generations, conformance suites, and incident controls add operational work while narrowing failure domains.",
+              "validationPlan": "Run signing-key rotation, generation rollback, broad-bad-risk containment, manual override, and cross-component incident drills."
+            },
+            {
+              "dimension": "migration",
+              "direction": "improves",
+              "confidence": "medium",
+              "basis": "source-derived",
+              "assessment": "Observe, signed shadow, and one-audience downscope stages allow incremental rollout without changing request availability, but P6-F19 and schema compatibility are prerequisites.",
+              "validationPlan": "Exercise mixed policy generations and mixed binary versions through observe, enforce, epoch revocation, and rollback."
+            }
+          ],
+          "residualRisks": [
+            "Forged or incomplete source events can bias risk analysis.",
+            "A compromised policy authority can still cause denial within its bounded scope.",
+            "Stale snapshots leave a bounded revocation window.",
+            "Semantic false positives can disrupt legitimate Agent collaboration.",
+            "Multiple action-owner integrations can drift without conformance tests."
+          ],
+          "implementationReadiness": {
+            "affectedComponents": [
+              "UniRouter identity, policy, gateway, streaming, and evidence components",
+              "X-Insight future ingestion, analysis, and risk-publication components",
+              "Future policy authority",
+              "Tool, IAM, data, and export enforcement owners"
+            ],
+            "workPackages": [
+              "Complete P6-F16 through P6-F21 prerequisites.",
+              "Define fact, risk-assertion, policy-snapshot, and enforcement-decision schemas with canonical signing vectors.",
+              "Build metadata-only fixtures and signed observe-mode conformance.",
+              "Add one bounded UniRouter model-route downscope audience.",
+              "Validate multi-instance outage, rotation, replay, rollback, and blast-radius behavior."
+            ],
+            "acceptanceCriteria": [
+              "No risk assertion can increase authority or cross tenant/audience boundaries.",
+              "UniRouter continues local enforcement while X-Insight is unavailable.",
+              "Rollback is deterministic and does not rewrite evidence.",
+              "The first slice uses no raw content, paid request, external side effect, or target deployment.",
+              "Measured latency, memory, event lag, and revocation behavior meet explicitly accepted thresholds."
+            ],
+            "migrationNotes": [
+              "Begin with metadata-only fixtures and one reversible model-route downscope.",
+              "Preserve last-known-good baseline policy and cross-generation compatibility."
+            ],
+            "rollback": "Stop publishing the affected generation, advance its epoch if needed, and return the audience to the prior reviewed baseline without granting unlimited access."
+          }
+        }
+      ],
+      "recommendedOptionId": "split-signed-policy",
+      "recommendation": "Use the split plane under the current availability, ownership, and privacy constraints; begin only after the accepted identity, tenant, billing, capability, and stream prerequisites."
+    }
+  ],
+  "openQuestions": [
+    "Which first model action may be automatically downscoped?",
+    "What assertion TTL, event-lag, revocation, clock-skew, and last-known-safe limits apply by action class?",
+    "Which broad downscopes require dual approval and rate containment?",
+    "Does the first version remain metadata-only?",
+    "Which component owns the future policy authority and signing keys?",
+    "What evidence proves complete mediation at future Tool, IAM, data, and export sinks?"
+  ]
+}

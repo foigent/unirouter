@@ -40,13 +40,14 @@ const channelQuery = `SELECT c.id, c.name, c.provider, c.base_url, c.models, c.m
  WHERE c.status = 'active'
    AND ck.status = 'active'
    AND (ck.cooldown_until IS NULL OR ck.cooldown_until < NOW())
-   AND (c.circuit_state = 'healthy' OR (c.circuit_state = 'half_open' AND c.half_open_until > NOW()))
+   AND (c.circuit_state = 'healthy' OR (c.circuit_state = 'half_open' AND c.half_open_until <= NOW()))
    AND (',' || c.models || ',' LIKE '%,' || $1 || ',%')
  ORDER BY c.priority ASC, COALESCE(ck.last_used_at, '1970-01-01'::timestamptz) ASC, ck.id ASC`
 
 // Route selects a channel and key for the requested model.
 // Logic: find active channels that support the model, ordered by priority.
-// Half-open channels are filtered to allow only ~10% traffic.
+// Half-open channels become eligible after their recovery deadline and are
+// filtered to allow only ~10% probe traffic.
 func (r *Router) Route(ctx context.Context, modelName string) (*RouteResult, error) {
 	rows, err := r.db.Query(ctx, channelQuery, modelName)
 	if err != nil {
@@ -89,7 +90,8 @@ func (r *Router) Route(ctx context.Context, modelName string) (*RouteResult, err
 
 // RouteAll returns all available routes for a model, ordered by priority.
 // Used for failover: if the first channel fails, the relay can try the next.
-// Half-open channels are filtered to allow only ~10% traffic.
+// Half-open channels become eligible after their recovery deadline and are
+// filtered to allow only ~10% probe traffic.
 func (r *Router) RouteAll(ctx context.Context, modelName string) ([]RouteResult, error) {
 	rows, err := r.db.Query(ctx, channelQuery, modelName)
 	if err != nil {

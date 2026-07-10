@@ -8,6 +8,16 @@
 |------|------|
 | `docs/PROJECT-HANDOFF.md` | First-read handoff for agents |
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
+| `docs/planning/PRD6-START-HERE.md` | PRD6 decision state, closure guard, baseline and read order |
+| `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md` | PRD6 Git/CI/test/X-Insight/code-finding baseline evidence |
+| `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md` | PRD6 source-backed 100x, Agent fan-out, billing, routing, streaming and multimodal anti-pattern evidence |
+| `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md` | Version-fixed competitor audit, Four Quadrants and priority matrix |
+| `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md` | Third-round Four Quadrants, CARTA/shadow/collusion ownership, Killer Features and candidate acceptance rows |
+| `docs/planning/prd6-adaptive-trust-hardening/` | Evidence-bound adaptive-trust structural proposal, JSON, diagrams and option comparison; no implementation plan until selection |
+| `docs/PRD-Phase6.md` | PRD6 D6-01/D6-02 accepted MVP and separately proposed/deferred P6-F22-P6-F31 rows |
+| `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` | PRD6 accepted/proposed/external/target-evidence truth |
+| `docs/planning/PRD6-IMPLEMENTATION-PLAN.md` | PRD6 batch order, risk gates, verification and rollback |
+| `docs/planning/PRD6-BACKLOG.md` | PRD6 classified candidate queue and decision register |
 | `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md` | Answered X-Insight runtime request, accepted v1 sidecar boundary, UniRouter contract lock, and PRD5 completion classification |
 | `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md` | PRD5 repository-wide audit, P5-F12 screening, P0-P3 batches, and INFRA-SEC-001 evidence design |
 | `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md` | PRD5 accepted UniRouter-owned completion evidence for trace search, Data Exchange Control, route/failover, redacted topology, and remaining boundaries |
@@ -36,7 +46,7 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required single-owner execution, approval, evidence and optional-review workflow |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD5 Batch 1Z target deployment/security verification and boundary state |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD6 Batch 0/0A, accepted scope decisions and Batch 0B execution record; previous PRD5 evidence remains linked |
 | `docs/agent-workflows/reviews/` | Optional immutable independent review results |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry pointing to the current execution record |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |
@@ -51,7 +61,8 @@
 | `docs/PRD-Phase2.md` | PRD2 formal product requirements | Frozen for new feature work |
 | `docs/planning/PRD3-CONSISTENCY-AUDIT.md` | PRD3 consistency audit | Confirmed PRD3 input; completed in Batch 17 closeout |
 | `docs/PRD-Phase3.md` | PRD3 formal product requirements | Completed cleanup/optimization scope |
-| `docs/PRD-Phase5.md` | PRD5 active product requirements | Current scope for X-Insight evidence readiness, structural fields, snapshot, payload boundary, lightweight trace UI, and competitor catch-up |
+| `docs/PRD-Phase6.md` | PRD6 product requirements | D6-01/D6-02 accepted; advanced innovation remains separately gated |
+| `docs/PRD-Phase5.md` | PRD5 completed product requirements | Accepted Scope Complete; preserve as closed phase evidence |
 | `docs/PRD-Phase4.md` | PRD4 formal product requirements | Completed current PRD4 scope |
 | `docs/planning/PRD4-BACKLOG.md` | PRD4 candidate backlog | Source record for PRD4 scope discovery |
 | `docs/planning/PRD5-BACKLOG.md` | PRD5 backlog | Explicitly deferred capabilities and reopen prerequisites |
@@ -109,9 +120,12 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 |------|--------------|
 | `docs/ops/PRD1-ACCEPTANCE-TEST-OWNERSHIP.md` | Executable ownership map for remaining PRD1 acceptance tests |
 | `docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md` | Current local evidence and external acceptance queue |
-| `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` | PRD4 active acceptance matrix and evidence rules |
-| `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` | PRD5 active acceptance matrix and evidence rules |
-| `docs/planning/PRD5-CURRENT-GAP-AUDIT-20260710.md` | Current PRD5 accounting, UniRouter implementation gaps, X-Insight coordination gaps, and next-window architecture/product audit plan |
+| `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` | PRD4 completed acceptance matrix and evidence rules |
+| `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` | PRD5 completed acceptance matrix and evidence rules |
+| `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` | Current PRD6 accepted/proposed/external/target-evidence truth |
+| `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md` | Current PRD6 local baseline and code-finding evidence |
+| `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md` | Current PRD6 scalability/anti-pattern audit; findings remain source/local, not 100x or target verified |
+| `docs/planning/PRD5-CURRENT-GAP-AUDIT-20260710.md` | PRD5 closeout accounting and historical next-window input |
 | `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md` | PRD5 Batch 1X local repository audit, P5-F12 screening decisions, safe local Logs/CI fixes, and INFRA-SEC-001 plan |
 | `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md` | PRD5 Batch 1Y accepted UniRouter-owned implementation and local full verification |
 | `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md` | PRD5 Batch 1Z target deployment, migration, browser, canary parity, cleanup, and security-group cutover |
@@ -142,7 +156,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 |------|------|
 | `docs/agent-workflows/README.md` | Agent workflow index |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Current Agent Protocol v2.0 |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current execution-owner record; PRD5 Batch 1Z target closeout continues from Batch 1Y implementation and Batch 1W external evidence |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD6 Batch 0/0A plus Batch 0B scope-audit execution-owner record; prior PRD5 target/external evidence remains linked |
 | `docs/agent-workflows/reviews/README.md` | Independent review naming, contents and severity rules |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |

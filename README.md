@@ -55,8 +55,12 @@ Docker Compose（6 个容器）：
 - [贡献指南](CONTRIBUTING.md) — 开发流程、代码规范、提交规范
 - [Agent Handoff](docs/PROJECT-HANDOFF.md) — 其他 agent 接手项目的第一入口
 - [当前状态](docs/ops/CURRENT-STATUS.md) — 当前真实进度、测试和缺口
-- [PRD4 产品范围](docs/PRD-Phase4.md) — 当前 PRD4 正式范围草案
-- [PRD4 验收矩阵](docs/ops/PRD4-ACCEPTANCE-MATRIX.md) — 当前 PRD4 验收状态和证据边界
+- [PRD6 启动入口](docs/planning/PRD6-START-HERE.md) — 当前决策状态、基线和阅读顺序
+- [PRD6 产品范围](docs/PRD-Phase6.md) — PRD6 范围提案、安全边界和所有权
+- [PRD6 验收矩阵](docs/ops/PRD6-ACCEPTANCE-MATRIX.md) — 已接受、待确认、外部和目标证据边界
+- [PRD6 竞品与四象限](docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md) — 固定版本竞品核验和优先级
+- [PRD5 产品范围](docs/PRD-Phase5.md) — Accepted Scope Complete 历史事实
+- [PRD5 验收矩阵](docs/ops/PRD5-ACCEPTANCE-MATRIX.md) — PRD5 关闭证据和明确决策
 - [PRD3 验收矩阵](docs/ops/PRD3-ACCEPTANCE-MATRIX.md) — 已完成 PRD3 清理/优化验收状态
 - [PRD3 产品范围](docs/PRD-Phase3.md) — 已完成 PRD3 一致性、语义、契约和架构清理范围
 - [PRD3 一致性审计](docs/planning/PRD3-CONSISTENCY-AUDIT.md) — PRD1→PRD2 遗留问题梳理
@@ -126,8 +130,10 @@ UniRouter/
 │   ├── PRD-Phase1.md     # 产品需求文档
 │   ├── PRD-Phase2.md     # PRD2 需求文档（冻结）
 │   ├── PRD-Phase3.md     # PRD3 清理/优化范围（已完成）
-│   ├── PRD-Phase4.md     # PRD4 当前范围
-│   ├── planning/         # PRD2/PRD3/PRD4/PRD5 规划和 backlog
+│   ├── PRD-Phase4.md     # PRD4 范围（已完成）
+│   ├── PRD-Phase5.md     # PRD5 范围（Accepted Scope Complete）
+│   ├── PRD-Phase6.md     # PRD6 当前范围提案
+│   ├── planning/         # PRD2-PRD6 规划和 backlog
 │   ├── ops/              # 部署 & 测试
 │   ├── tech-ref/         # 技术参考（模型矩阵、计费状态机等）
 │   ├── agent-workflows/  # Agent 工作流

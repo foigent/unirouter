@@ -1,0 +1,27 @@
+flowchart LR
+    subgraph Caller["Caller / Agent trust boundary"]
+        A["Agent and untrusted data"]
+    end
+    subgraph UR["UniRouter expanded synchronous boundary"]
+        AUTH["Identity and capability"]
+        DETECT["All semantic, graph, drift, and collusion detectors"]
+        STATE["Historical risk state"]
+        DECIDE["Allow / deny / degrade"]
+        RELAY["Provider relay"]
+    end
+    subgraph Provider["Provider boundary"]
+        P["Model provider"]
+    end
+    subgraph SideEffects["Separate action owners"]
+        TOOL["MCP / tools / data / export"]
+    end
+
+    A --> AUTH --> DETECT
+    STATE <--> DETECT
+    DETECT --> DECIDE --> RELAY --> P
+    A -. "still requires separate mediation" .-> TOOL
+
+    classDef changed fill:#fef3c7,stroke:#92400e,color:#451a03
+    classDef danger fill:#fee2e2,stroke:#991b1b,color:#450a0a
+    class DETECT,STATE,DECIDE changed
+    class TOOL danger

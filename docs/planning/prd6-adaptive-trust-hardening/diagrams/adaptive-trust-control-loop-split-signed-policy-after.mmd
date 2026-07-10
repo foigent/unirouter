@@ -1,0 +1,39 @@
+flowchart LR
+    subgraph Caller["Caller / Agent trust boundary"]
+        A["Agent and untrusted data"]
+    end
+    subgraph UR["UniRouter real-time enforcement"]
+        AUTH["Identity and attenuating capability"]
+        CACHE["Signed local policy / risk cache"]
+        DECIDE["Local allow / deny / degrade"]
+        RELAY["Provider routing and relay"]
+        FACT["Authoritative gateway facts"]
+    end
+    subgraph Actions["Action-owner enforcement"]
+        TOOL["Tool / IAM / data / export policy point"]
+        AFACT["Authoritative side-effect facts"]
+    end
+    subgraph XI["X-Insight asynchronous analysis"]
+        GRAPH["Evidence graph, drift, eval, collusion"]
+        RISK["Signed attenuation-only risk assertion"]
+    end
+    subgraph Authority["Policy authority"]
+        COMPILE["Validate, apply hysteresis, compile and sign"]
+    end
+    subgraph Provider["Provider boundary"]
+        P["Model provider"]
+    end
+
+    A --> AUTH --> DECIDE --> RELAY --> P
+    CACHE --> DECIDE
+    A --> TOOL
+    CACHE -. "audience-specific snapshot" .-> TOOL
+    RELAY --> FACT -. "bounded async evidence" .-> GRAPH
+    TOOL --> AFACT -. "bounded async evidence" .-> GRAPH
+    GRAPH --> RISK --> COMPILE
+    COMPILE -. "versioned, expiring local update" .-> CACHE
+
+    classDef changed fill:#dcfce7,stroke:#166534,color:#052e16
+    classDef analysis fill:#dbeafe,stroke:#1d4ed8,color:#172554
+    class AUTH,CACHE,DECIDE,TOOL,COMPILE changed
+    class GRAPH,RISK analysis
