@@ -3,7 +3,7 @@
 **Batch:** PRD6 Batch 0B P6-F16 Tenant Isolation
 **Owner:** Codex
 **Risk:** R4 multi-tenant authorization and project policy enforcement
-**Status:** P6-F16 local verified; PR and required CI pending; P6-F32-P6-F36 are separately confirmed unaccepted inputs
+**Status:** P6-F16 CI verified by PR #140; P6-F32-P6-F36 are separately confirmed unaccepted inputs
 **Base:** `62f161e2866a3a4c699abb9a647feef48bded1b2`
 **Branch:** `codex/prd6-b0b-tenant-isolation`
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
@@ -109,7 +109,12 @@ Focused P6-F16 results on `codex/prd6-b0b-tenant-isolation`:
   concurrent with race/vet/build had one five-second Data Exchange test timeout;
 - `git diff --check`: PASS;
 - independent final code/test review: no P6-F16 blocker;
-- required PR CI remains pending for the final exact pushed head.
+- PR #140 implementation head `ee025ec04b677c7ba0371b9a247f0ca70ec9aa0e`:
+  `Backend Tests`, `Frontend Build`, and `Docker Build` PASS;
+- Backend CI log: migrated P6-F16 integration and all twelve subtests PASS,
+  not SKIP; injected partial-write rollback regression PASS;
+- final status/evidence head must pass the same three required checks before
+  merge.
 
 Full Batch 0A/kickoff repository results:
 
@@ -136,8 +141,7 @@ PR #139 required checks for final scalability-audit evidence head `6c8c192`:
 - `Frontend Build`: PASS;
 - `Docker Build`: PASS.
 
-P6-F01 and P6-F02 remain `CI verified`. P6-F16 is `Local verified` only until
-its exact PR head passes required CI. P6-F32-P6-F36 are documentation/source
+P6-F01, P6-F02 and P6-F16 are `CI verified`. P6-F32-P6-F36 are documentation/source
 evidence only and remain unaccepted/unremediated; documentation verification
 does not promote them to implemented or target verified.
 

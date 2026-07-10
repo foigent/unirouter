@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02 accepted; P6-F16 local verified, PR/CI pending
+> Status: D6-01/D6-02 accepted; P6-F16 CI verified by PR #140
 > Owner: Codex
 > Current implementation base: `62f161e2866a3a4c699abb9a647feef48bded1b2`
 
@@ -72,8 +72,8 @@ evidence.
   evidence remain retained.
 - Document-backed target evidence remains valid for Batch 1Z. This kickoff did
   not deploy, probe or mutate the target environment.
-- P6-F16 is locally verified on `codex/prd6-b0b-tenant-isolation`; its exact PR
-  and required CI have not yet promoted it beyond local evidence.
+- P6-F16 is CI verified by PR #140. Backend logs prove the migrated PostgreSQL
+  matrix and all twelve authenticated subtests passed rather than skipped.
 - P6-F32 through P6-F36 are later source-confirmed administrator-surface inputs.
   They were not known when D6-01 was accepted and require a separate scope and
   authority decision.

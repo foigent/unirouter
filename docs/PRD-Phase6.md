@@ -194,7 +194,7 @@ These do not become UniRouter source-code gaps without new evidence.
 |----|-------------|----------|-------------|
 | P6-F01 | Recover expired half-open channels into bounded probe eligibility | P0 | Accepted Batch 0A |
 | P6-F02 | Atomically enforce the exact Redis RPM/RPS boundary | P0 | Accepted Batch 0A |
-| P6-F16 | Enforce organization ownership for every non-platform-admin key/user/project and project-owned model-set operation | P0 | Accepted urgent Batch 0B; local verified, PR pending |
+| P6-F16 | Enforce organization ownership for every non-platform-admin key/user/project and project-owned model-set operation | P0 | Accepted urgent Batch 0B; CI verified by PR #140 |
 | P6-F17 | Separate operation, idempotency, trace/span, workflow and Agent identities | P0 | Accepted urgent Batch 0B |
 | P6-F18 | Make reservation/finalization single-terminal, pool-safe and durable after billable output | P0 | Accepted urgent Batch 0B |
 | P6-F03 | Honor retryable/non-retryable error classification and preserve safe response semantics | P0 | Accepted Batch 0C |

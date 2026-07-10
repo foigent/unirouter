@@ -12,7 +12,7 @@
 - Baseline evidence: `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md`.
 - Scalability/anti-pattern evidence:
   `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md`.
-- P6-F16 local implementation evidence:
+- P6-F16 implementation and CI evidence:
   `docs/ops/evidence/PRD6-B0B-P6F16-tenant-isolation-local-20260711.md`.
 - Follow-up administrator tenant-surface audit:
   `docs/ops/evidence/PRD6-B0B-admin-tenant-surface-audit-20260711.md`.
@@ -33,6 +33,9 @@
 - PR #139 was squash-merged as `62f161e2866a3a4c699abb9a647feef48bded1b2`;
   `Backend Tests`, `Frontend Build`, and `Docker Build` passed for its final
   exact head. It was not deployed.
+- PR #140 P6-F16 implementation head passed `Backend Tests`, `Frontend Build`,
+  and `Docker Build`; Backend logs prove the migrated twelve-case matrix ran and
+  did not skip. Its final status/evidence head is subject to the same merge gate.
 - No deployment, target probe/mutation, real or paid request, credential change,
   data-scope expansion, exporter/outbox or continuous ingestion occurred.
 
@@ -42,10 +45,11 @@ terminal-state concurrency, post-delivery settlement handling, and revocation.
 It also confirmed P1 synchronous-request-path, process-local admission, route/
 breaker, Redis hot-key, streaming, evidence-write and retention blind spots.
 The User accepted the updated MVP and policy-specific failure posture. P6-F16
-is locally verified with a migrated two-tenant PostgreSQL/JWT matrix; its PR and
-required CI are still pending. A later read-only audit found P6-F32 through
-P6-F36 across finance, notifications, pricing, global settings and organization
-model governance. Those are source-confirmed new inputs, not silently included
+is CI verified by PR #140 with a migrated two-tenant PostgreSQL/JWT matrix; the
+Backend log shows all twelve authenticated subtests PASS rather than SKIP. A
+later read-only audit found P6-F32 through P6-F36 across finance, notifications,
+pricing, global settings and organization model governance. Those are
+source-confirmed new inputs, not silently included
 in the earlier D6-01 decision. No audit row is presented as a production
 incident, 100x proof, or implemented remediation before its exact evidence
 exists.

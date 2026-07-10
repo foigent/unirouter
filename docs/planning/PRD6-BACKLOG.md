@@ -10,13 +10,13 @@
 | P6-ROUTE-001 | Half-open recovery deadline correction | Confirmed current-code outage risk; no new product scope | focused/race/full tests and CI |
 | P6-RL-001 | Atomic exact Redis RPM/RPS enforcement | Confirmed over-admission and multi-instance race; no new surface | sequential/concurrent/context/failure tests and CI |
 | P6-DOC-001 | Independent PRD6 truth chain | Required to prevent PRD5 reopening and scope leakage | entry, PRD, matrix, plan, backlog, status/inventory sync |
-| P6-TENANT-001 | Enforce organization ownership and block org-admin platform-role escalation | Accepted D6-01 P0; prevents cross-tenant key/user/project/project-policy control | local migrated-PostgreSQL matrix is green; PR and required CI pending |
+| P6-TENANT-001 | Enforce organization ownership and block org-admin platform-role escalation | Accepted D6-01 P0; prevents cross-tenant key/user/project/project-policy control | migrated-PostgreSQL matrix and PR #140 required CI are green |
 
 ## 2. Accepted MVP — Ordered Work Queue
 
 | ID | Item | Value | Dependency / risk | Priority |
 |----|------|-------|-------------------|----------|
-| P6-TENANT-001 | Enforce organization ownership on key/user/project/project-policy operations | prevents accepted-scope cross-tenant access and malformed policy influence | local verified; PR/CI promotion pending | P0 |
+| P6-TENANT-001 | Enforce organization ownership on key/user/project/project-policy operations | prevents accepted-scope cross-tenant access and malformed policy influence | CI verified by PR #140; preserve regressions | P0 |
 | P6-IDEM-001 | Separate server operation, client idempotency, trace/span, workflow and Agent identities | prevents cross-tenant/retry/child charge collisions | schema migration and payload fingerprint semantics | P0 |
 | P6-BILL-003 | Pool-safe reservation and single durable terminal state | prevents pool starvation, double terminal transitions and free delivered output | financial state migration, recovery and invariant tests | P0 |
 | P6-AUTH-001 | Versioned user/project/key/role revocation | bounds stale authority across replicas | revocation SLO, cache and outage posture | P0 |

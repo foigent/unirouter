@@ -70,8 +70,8 @@ Verification:
 ### Batch 0B — Tenant And Financial Identity Integrity
 
 **Risk:** R4 multi-tenant authorization and financial-state behavior.
-**Status:** accepted and active; P6-F16 is local verified on
-`codex/prd6-b0b-tenant-isolation` and awaits its own R4 security PR/required CI.
+**Status:** P6-F16 is CI verified by PR #140; later Batch 0B rows remain ordered
+and independently gated.
 
 Split into independently reviewable security/financial PRs:
 

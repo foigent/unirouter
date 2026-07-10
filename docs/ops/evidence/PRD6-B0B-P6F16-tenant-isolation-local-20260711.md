@@ -3,7 +3,7 @@
 > Date: 2026-07-11
 > Baseline: `main@62f161e2866a3a4c699abb9a647feef48bded1b2`
 > Branch: `codex/prd6-b0b-tenant-isolation`
-> Evidence level: local verified; PR and required CI pending
+> Evidence level: CI verified by PR #140; no target or production claim
 > Scope: key, user, project, and project-owned model-set assignment/runtime
 > boundary only
 
@@ -151,9 +151,25 @@ Exchange UI test exceeded its five-second timeout. An immediate standalone rerun
 passed all 25 files / 125 tests. Existing React Router, Semi UI,
 `findDOMNode`, macOS `LC_DYSYMTAB`, and large-chunk warnings remain unchanged.
 
-Required PR CI remains a promotion gate and will be recorded only for the exact
-pushed head. CI logs must show the migrated P6-F16 test as `PASS`, not a database
-permission/connectivity `SKIP`.
+## 6. Required CI Evidence
+
+PR #140 implementation head
+`ee025ec04b677c7ba0371b9a247f0ca70ec9aa0e` ran GitHub Actions workflow
+`29128712160`:
+
+```text
+Backend Tests   PASS
+Frontend Build  PASS
+Docker Build    PASS
+```
+
+The Backend log explicitly shows `TestP6F16TenantIsolationIntegration` plus all
+twelve authenticated subtests as `PASS` in 5.13 seconds and contains no P6-F16
+skip. It also shows
+`TestP6F16ProjectModelSetReplaceRollsBackAfterPartialWriteError` as `PASS`.
+The final evidence/status commit is subject to the same exact-head required
+checks before merge; PR #140 must not merge while any required check is pending
+or failed.
 
 The legacy `-tags=integration` admin suite uses a shared non-migrated database
 schema and currently emits missing-table/column failures independent of this
@@ -161,7 +177,7 @@ acceptance harness. P6-F16 therefore uses the untagged isolated migrated test
 that required CI actually executes. This does not promote the legacy harness to
 passing evidence.
 
-## 6. Residual Risk And Evidence Boundary
+## 7. Residual Risk And Evidence Boundary
 
 - No deployment, target request, credential change, paid provider call, data
   export, or external-project mutation occurred.
