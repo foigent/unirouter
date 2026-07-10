@@ -989,11 +989,13 @@ PRD5 should proceed in independently verifiable batches:
 25. Batch 1Y: structural evidence search, route/failover visibility, Data
     Exchange Control MVP, redacted runtime topology, and deferred-control
     implementation designs.
-26. Later payload policy metadata and evidence references, with future raw
+26. Batch 1Z: target migration/deployment/browser evidence, canary runtime
+    parity, and `INFRA-SEC-001` least-privilege cutover.
+27. Later payload policy metadata and evidence references, with future raw
    payload modes gated behind enterprise opt-in.
-27. Later Gate A batch: read-only view/export decision after X-Insight Gate A
+28. Later Gate A batch: read-only view/export decision after X-Insight Gate A
    evidence.
-28. Later target/backlog batches: target upstream/SSO evidence or larger
+29. Later target/backlog batches: target upstream/SSO evidence or larger
    backlog items only after their prerequisites are explicitly met.
 
 ## 6. External Source Refresh

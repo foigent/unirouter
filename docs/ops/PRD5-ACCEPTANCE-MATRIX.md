@@ -15,9 +15,11 @@
 > transaction, or provider event was created; keys 36/37 are disabled. PRD5
 > Batch 1X repository-wide audit and P5-F12 screening are Local verified in
 > `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md`; the scoped
-> Logs status-class filter and frontend type-check gate fixes are local only
-> until PR CI runs. Batch 1Y accepted UniRouter-owned completion is Local
-> verified in `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md`.
+> Logs status-class filter and frontend type-check gate fixes are integrated by
+> PR #131. Batch 1Y accepted UniRouter-owned completion is
+> CI verified by PR #131. Batch 1Z target deployment, migration, browser, canary
+> parity, and infrastructure-security evidence is in
+> `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md`.
 > X-Insight ECS target verification and real upstream provider
 > E2E remain pending.
 > PRD4 remains complete and is not reopened.
@@ -97,10 +99,10 @@ actual result, and rollback or cleanup note.
 | P5-F30 | Embeddings Model Permission Parity | Canary passed | Embeddings applies the same API-key `allowed_models` rule as Chat and emits the same auth rejection evidence before billing, routing, or provider work | Canary PASS 7/7 in `docs/agent-workflows/VERIFY-RESULT.md`; Sentinel merge `b2ba892` / PR #124 | Batch 1U isolated R3 authorization fix; no route, migration, frontend, raw payload, exporter/outbox, X-Insight runtime dependency, real Gate A execution, target claim, or PRD4 change |
 | P5-F31 | Gate A Authorized Controlled Execution | Target executed with known source gap; External integration verified | Atlas executes exactly two approved synthetic scenarios in a confirmed non-production UniRouter ECS environment, hands off sanitized metadata, and obtains X-Insight persistent import/readback receipt evidence | Authorization `UR-XI-GATE-A-20260710-01`; deployed app `b2ba892`; exchange `uxchg_f7de31e541516893a0d9b31cc0f3892a`; snapshot SHA-256 `5b1d52b1e8bd9b47f14de74670eb4404ed8862c32cdf323d86766446cdf438e8`; manifest SHA-256 `d2f51fc61fe84dedb8b1d1556c5a4f135b50711346327cf6fbcdd19d60337d68`; receipt `persisted`; 10 accepted, first persistence 10 inserted, rerun 10 duplicate/no-op, 0 conflict, readback 10 events/3 gaps; `docs/ops/evidence/PRD5-GATE-A-XINSIGHT-external-integration-20260710.md` | The original denied scenario remains immutable pre-fix diagnostic source-gap evidence. Batch 1W now supplies separate target proof. First-snapshot cleanup and X-Insight ECS target verification remain separate |
 | P5-F32 | Pre-Relay Model Permission Evidence Parity | Target verified; External integration verified | Project-allowed requests reach Relay for API-key model restriction so live 403 responses include `X-Request-ID` and the accepted auth decision trace before billing | `931400a` / PR #126 CI; authorization `UR-XI-GATE-A-20260710-02`; target `e823abc293f996264763c6c1aca19d3d4d6e705f`; request `gatea-model-denied-b1w-283194e67a0c3ff9`; zero call logs/freezes/transactions/provider events; keys 36/37 disabled; exchange `uxchg_8deae233291214154815c336c9278983` persisted/idempotently rerun/read back; `docs/ops/evidence/PRD5-B1W-target-rerun-20260710.md` | Target proof is limited to the denied path. No real upstream call, route/migration/frontend/billing amount change, raw payload, X-Insight ECS runtime, exporter/outbox, PRD4 change, or Production verified claim |
-| P5-F33 | Structural Evidence Search | Local verified | Logs support exact trace/upstream/evidence/hash lookup, global search, URL-persisted UI controls, and status-class filters | Backend/admin tests, frontend API/Logs tests, Batch 1Y evidence | No schema change or broader export |
-| P5-F34 | Data Exchange Control MVP | Local verified | Platform-admin-only two-mode approval, request sealing, exchange/delivery/delete ledger, readable activity history, audit, and X-Insight receipt reconciliation are implemented | Migration `000019`; handler/client/page/navigation/route parity tests; Batch 1Y evidence | No auto-discovery, download, exporter/outbox, X-Insight runtime dependency, raw payload, durable job/deep-link fabrication, or target migration claim |
-| P5-F35 | Route And Failover Visibility | Local verified | Request detail derives attempts, failover count, provider outcome, and final result from existing trace events | LogsPage route/failover regression; Batch 1Y evidence | No Scheduler V2, retry, billing, settlement, or stream semantic change |
-| P5-F36 | Redacted Runtime Topology | Local verified | Runtime Status returns/renders logical service/DB/Redis topology with host/address redaction and explicit unknown network/multi-instance state | Runtime backend/frontend tests; Batch 1Y evidence | Not cluster inventory, security-group inspection, HA proof, or Production verified evidence |
+| P5-F33 | Structural Evidence Search | Target verified | Logs support exact trace/upstream/evidence/hash lookup, global search, URL-persisted UI controls, and status-class filters | PR #131 CI plus target `/logs` browser readback in Batch 1Z | No schema change or broader export |
+| P5-F34 | Data Exchange Control MVP | Target verified | Platform-admin-only two-mode approval, request sealing, exchange/delivery/delete ledger, readable activity history, audit, and X-Insight receipt reconciliation are implemented | Migration `000019` forward apply/table readback, PR #131 CI, target platform-admin `/data-exchange` desktop/mobile browser evidence | No auto-discovery, download, exporter/outbox, X-Insight runtime dependency, raw payload, durable job/deep-link fabrication, migration-down claim, or production claim |
+| P5-F35 | Route And Failover Visibility | CI verified | Request detail derives attempts, failover count, provider outcome, and final result from existing trace events | PR #131 CI and LogsPage route/failover regression | No concrete target request detail was opened in Batch 1Z; no Scheduler V2, retry, billing, settlement, or stream semantic change |
+| P5-F36 | Redacted Runtime Topology | Target verified | Runtime Status returns/renders logical service/DB/Redis topology with host/address redaction and explicit unknown network/multi-instance state | PR #131 CI, target `/status` browser evidence, and direct final canary runtime API readback | Not cluster inventory, HA proof, or Production verified evidence; ECS security-group proof remains in separate Batch 1Z infrastructure evidence |
 
 ## Batch 1Y Verification
 
@@ -113,8 +115,21 @@ npm --prefix frontend run build
 git diff --check
 ```
 
-All commands passed locally. PR CI, Docker build, migration apply/rollback, and
-target browser evidence remain required before promotion beyond Local verified.
+All commands passed locally. PR #131 later passed required Backend Tests,
+Frontend Build, and Docker Build. Batch 1Z separately verifies migration forward
+apply and selected target browser surfaces. Migration down and concrete target
+route/failover detail remain unexecuted.
+
+## Batch 1Z Target Verification
+
+- PR #131, PR #132, and PR #133 passed Backend Tests, Frontend Build, and Docker Build.
+- Final target backend commit: `95d1da9f6a169311de6a9f58bba4a4ad1efe138c`.
+- Pre-migration custom PostgreSQL backup passed `pg_restore -l`.
+- Migration `000019` applied in 73 ms and all five Data Exchange tables read back.
+- Stable and canary readiness passed; canary runtime metadata/config parity read back.
+- Target browser checks passed for Data Exchange, structural Logs filters, and redacted topology, including a 390 x 844 Data Exchange layout check.
+- `INFRA-SEC-001` cutover left only the least-privilege group attached; SSH, Cloud Assistant, public HTTP, and internal dependencies passed while internal service protocols had no external response.
+- Evidence: `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md`.
 
 ## Batch 1X Verification
 

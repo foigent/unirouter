@@ -1,30 +1,32 @@
 # Current Execution Record
 
-**Batch:** PRD5 Batch 1Y - UniRouter-Owned Accepted Scope Completion
+**Batch:** PRD5 Batch 1Z - Target Deployment And Infrastructure Security
 **Owner:** Codex
-**Risk:** R3 migration/control-plane API/RBAC/UI; R2 trace/runtime read-side and docs synchronization
-**Status:** Local verified in workspace with full local checks passed; PR CI not yet run for this batch
-**Base:** `origin/main` at `935e64e` / PR #130
-**Previous local batch:** PRD5 Batch 1X audit/screening/Logs/CI hygiene Local verified
+**Risk:** R4 authorized ECS security-group cutover; R3 migration/deployment/canary/runtime/browser verification
+**Status:** Target verified for the recorded Batch 1Z evidence
+**Base:** final deployed `origin/main` at `95d1da9` / PR #133
+**Previous batch:** PRD5 Batch 1Y implementation merged by `88a7354` / PR #131
 
 ## Scope
 
-1. Complete accepted repository-owned structural evidence search and route/failover visibility.
-2. Implement platform-admin Data Exchange Control migration/API/UI/RBAC/audit without automatic export or X-Insight runtime dependency.
-3. Add redacted logical runtime topology without host/IP/cloud discovery.
-4. Complete accepted design-only budget hard-block, service-account, and incident/SLO contracts.
-5. Consolidate required X-Insight runtime information in the shared request location.
+1. Merge and CI-verify Batch 1Y repository-owned functionality.
+2. Back up the target, apply migration `000019`, deploy stable/canary/frontend, and run target browser checks.
+3. Fix target Go-module build-network configurability and stable/canary runtime configuration parity through normal PR/CI flow.
+4. Execute the authorized `INFRA-SEC-001` least-privilege security-group cutover with proven SSH, Cloud Assistant, application, dependency, external-denial, and rollback evidence.
+5. Remove temporary QA users and credentials and synchronize current-state documents.
 
 ## Behavior Change
 
-- Logs support exact/global structural evidence search and route/failover summary.
-- Platform admins can manage approval candidates and source-side exchange,
-  delivery, deletion, and receipt ledger state.
-- Runtime Status exposes only a redacted current-process logical topology.
+- Migration `000019` and the Data Exchange Control surface are active in the development/test target.
+- Stable and canary run the final backend commit with aligned evidence/runtime/monitoring configuration.
+- The target ECS no longer attaches the public all-TCP security group; public internal-service protocol access is denied.
+- Structural Logs filters, Data Exchange, and redacted topology have target browser evidence. Route/failover detail remains CI verified.
 
 ## Files And Evidence
 
-- Completion evidence:
+- Target evidence:
+  `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md`
+- Local implementation evidence:
   `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md`
 - Migration/API: `migrations/000019_prd5_data_exchange_control.*.sql`,
   `internal/admin/data_exchange_handlers.go`, `cmd/uniroute/main.go`
@@ -38,7 +40,7 @@
 
 ## Verification
 
-Current local results on 2026-07-10:
+Repository and target results on 2026-07-10:
 
 - `go test ./internal/admin -count=1`: PASS;
 - `go test ./... -count=1`: PASS;
@@ -47,16 +49,17 @@ Current local results on 2026-07-10:
 - `npm --prefix frontend test -- --run`: PASS, with existing React Router,
   Semi Form, and `findDOMNode` warnings; 25 files / 124 tests;
 - `npm --prefix frontend run build`: PASS, with existing large chunk warning;
-- `git diff --check`: PASS.
+- `git diff --check`: PASS;
+- PR #131, PR #132, PR #133 Backend Tests / Frontend Build / Docker Build: PASS;
+- pre-migration backup plus `pg_restore -l`: PASS;
+- migration `000019` forward apply and table readback: PASS;
+- stable/canary health and final canary runtime API readback: PASS;
+- Data Exchange, Logs structural filters, redacted topology, desktop/mobile browser checks: PASS;
+- `INFRA-SEC-001` cutover, external protocol-denial, SSH, Cloud Assistant, internal health/monitoring: PASS;
+- temporary QA user/credential cleanup: PASS.
 
-Migration `000019` apply/rollback and target browser evidence were not run; they
-remain external verification.
-
-Required in GitHub before merge:
-
-- `Backend Tests`
-- `Frontend Build`
-- `Docker Build`
+Migration down, TLS 443 behavior, and a concrete target route/failover detail
+remain unexecuted. X-Insight runtime contracts remain external.
 
 ## Previous Batch 1W Record
 

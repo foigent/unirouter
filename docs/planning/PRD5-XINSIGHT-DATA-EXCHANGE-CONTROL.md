@@ -9,10 +9,11 @@
 > ECS target verification and real upstream provider E2E remain pending
 > Scope: product and architecture decision for UniRouter-owned X-Insight data
 > exchange control UI, audit boundary, and staged implementation
-> Batch 1Y update: Stage 1-3 UniRouter-owned MVP is Local verified in
-> `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md`;
+> Batch 1Z update: Stage 1-3 UniRouter-owned MVP is Target verified for migration
+> forward apply and the platform-admin UI in
+> `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md`;
 > automatic artifact generation/download, exporter/outbox, and X-Insight runtime
-> dependency remain non-goals
+> dependency remain non-goals. Migration down remains unexecuted
 
 ## Recommendation
 
