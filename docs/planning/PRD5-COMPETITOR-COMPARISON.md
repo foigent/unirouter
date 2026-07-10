@@ -3,8 +3,9 @@
 > Date: 2026-07-10
 > Status: Source-grounded PRD5 planning comparison with Batch 1J through Batch
 > 1U accepted; Batch 1V produced real Gate A gap evidence and Batch 1W fixes the
-> pre-relay permission-evidence bypass is CI verified at `931400a` / PR #126;
-> target deployment/rerun remains pending.
+> pre-relay permission-evidence bypass. Batch 1W `931400a` / PR #126 is target
+> verified under `UR-XI-GATE-A-20260710-02`; its second X-Insight snapshot
+> passed persistence, idempotent rerun, and readback.
 > Purpose: compare UniRouter against adjacent gateway and observability systems,
 > then decide which gaps belong in UniRouter PRD5 versus X-Insight.
 

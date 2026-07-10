@@ -3,10 +3,10 @@
 > Date: 2026-07-10
 > Status: PRD5 Batch 1V generated the first controlled snapshot with one known
 > denied-scenario correlation/source-trace gap; X-Insight import/readback is
-> External integration verified and Batch 1W live-path fix is CI verified at
-> `931400a` / PR #126; target deployment/new-authorization rerun, temporary
-> test-key disable confirmation, and X-Insight ECS target verification remain
-> pending
+> External integration verified. Batch 1W `931400a` / PR #126 is target
+> verified under `UR-XI-GATE-A-20260710-02`, keys 36/37 are disabled, and the
+> second snapshot passed X-Insight persistence/idempotency/readback. X-Insight
+> ECS target verification and real upstream provider E2E remain pending
 > Scope: product and architecture decision for UniRouter-owned X-Insight data
 > exchange control UI, audit boundary, and staged implementation
 

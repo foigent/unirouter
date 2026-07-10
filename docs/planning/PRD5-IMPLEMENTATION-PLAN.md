@@ -8,10 +8,12 @@
 > target execution produced a sanitized
 > snapshot with a denied-scenario correlation/evidence gap. X-Insight persistent
 > import/readback is External integration verified at `4a562a6` / PR #9 and
-> `5f0fa49` / PR #10. Batch 1W Pre-Relay Model Permission Evidence Parity is CI verified at
-> `931400a` / PR #126 under Agent Protocol v2.0; target deployment/new-authorization
-> rerun, temporary test-key disable confirmation, and X-Insight ECS target
-> verification remain pending.
+> `5f0fa49` / PR #10. Batch 1W Pre-Relay Model Permission Evidence Parity is
+> target verified under `UR-XI-GATE-A-20260710-02` on target
+> `e823abc293f996264763c6c1aca19d3d4d6e705f`, containing `931400a` / PR
+> #126. Keys 36/37 are disabled and the second X-Insight snapshot passed
+> persistence, idempotent rerun, and readback. X-Insight ECS target verification
+> and real upstream provider E2E remain pending.
 > Scope owner: UniRouter. X-Insight remains a separate project and owns broader
 > observability/governance product surfaces.
 
@@ -804,7 +806,9 @@ Actual evidence boundary:
 Risk: R3 because it changes the live API-key model-denial ownership path while
 preserving the existing denial result and pre-billing boundary.
 
-Status: CI verified at `931400a` / PR #126; target deployment/rerun pending.
+Status: target verified under `UR-XI-GATE-A-20260710-02` on
+`e823abc293f996264763c6c1aca19d3d4d6e705f`; second X-Insight snapshot
+persistence/idempotency/readback verified.
 
 Implemented in this round:
 
@@ -885,27 +889,30 @@ Use existing PRD4 harnesses, but record target evidence under PRD5.
 
 ## Current Blocking Conditions
 
-There is no repository-integration blocker for UniRouter Batch 1A through Batch
-1W. Historical Canary/Sentinel evidence is complete through Batch 1V, and Batch
-1W is CI verified at `931400a` / PR #126 under Agent Protocol v2.0.
+There is no repository-integration or denied-path target blocker for UniRouter
+Batch 1A through Batch 1W. Historical Canary/Sentinel evidence is complete
+through Batch 1V, and Batch 1W is target verified under
+`UR-XI-GATE-A-20260710-02` on a target containing `931400a` / PR #126.
 
 These later actions are gated:
 
-- controlled request/snapshot execution: completed under
-  `UR-XI-GATE-A-20260710-01` with one explicit denied-scenario correlation and
-  source-trace gap; no rerun is authorized yet;
+- controlled request/snapshot execution: the original two-scenario run completed
+  under `UR-XI-GATE-A-20260710-01`; the exact denied-path follow-up completed
+  under `UR-XI-GATE-A-20260710-02`;
 - X-Insight Gate A persistence/readback: externally verified for the immutable
   snapshot; this does not prove the missing UniRouter denial source event;
-- temporary Gate A test API key disable confirmation remains pending;
-- denied-scenario target closure: Batch 1W CI/merge is complete; an available
-  authorized non-production deployment path and a new or amended User
-  authorization are still required for a single-scenario rerun;
-- read-only DB/view access: the import prerequisite now passes, but access remains
-  unapproved; X-Insight recommends one more controlled snapshot before widening
-  the integration mode;
+- temporary Gate A test API keys 36 and 37 are disabled;
+- denied-scenario target closure is complete: the exact 403 correlation/trace
+  passed with no call log, billing freeze, transaction, or provider event;
+- read-only DB/view access: the import/persistence/readback prerequisite now
+  passes across two controlled cycles, but access remains unapproved pending
+  network, privilege, audit, retention, and failure-mode design;
 - X-Insight ECS target verification remains unperformed; no shared ECS staging
   or X-Insight target-runtime claim follows from the local/PostgreSQL receipt;
-- exporter/outbox: remains deferred until another controlled cycle proves both
-  producer and consumer fixes and reveals concrete field/volume/cursor gaps;
+- exporter/outbox: remains deferred pending an explicit architecture decision;
+  two low-volume controlled cycles prove compatibility and idempotency but do
+  not establish throughput, cursor, backpressure, or availability requirements;
+- current ECS security exposure and insufficient shared-host capacity are
+  tracked separately; X-Insight should not be added to that host;
 - real upstream/SSO target E2E: blocked until approved target environments and
   credentials exist.

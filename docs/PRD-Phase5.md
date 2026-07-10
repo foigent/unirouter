@@ -11,9 +11,12 @@
 > persistent import/readback is External integration verified with 10 accepted,
 > 10 inserted on first persistence, 10 duplicate/no-op on rerun, 0 conflict, and
 > 10 events/3 gaps read back. Batch 1W Pre-Relay Model Permission Evidence Parity
-> is CI verified at `931400a` / PR #126 under Agent Protocol v2.0; target
-> deployment/new-authorization rerun, temporary test-key disable, and X-Insight
-> ECS target verification remain pending.
+> is target verified under `UR-XI-GATE-A-20260710-02` on target
+> `e823abc293f996264763c6c1aca19d3d4d6e705f`, containing `931400a` / PR
+> #126. The separately authorized denied request returned matching correlation
+> and decision evidence before billing/provider work, keys 36/37 are disabled,
+> and a second X-Insight snapshot passed persistence/idempotency/readback.
+> X-Insight ECS target verification and real upstream provider E2E remain pending.
 > PRD4 remains complete for the confirmed current scope
 > and is not reopened by PRD5.
 > Source: `docs/planning/PRD5-BACKLOG.md`,
@@ -813,11 +816,11 @@ Acceptance:
   exactly two request IDs, expected HTTP results, and any rollback.
 - The snapshot/receipt evidence reconciles `(exchange_id, artifact.sha256)` and
   records the cleanup deadline.
-- Until X-Insight receipt/readback exists and the denied scenario is rerun after
-  Batch 1W deployment under a new or amended authorization, no complete Gate A
-  or Batch 1P target acceptance is claimed. Read-only DB/view, shared
-  cross-project ECS staging, exporter/outbox, raw payload, and PRD4 remain out of
-  this result.
+- X-Insight receipt/readback and the separately authorized post-Batch 1W denied
+  rerun now exist, so Batch 1W target acceptance is supported for that denial
+  path. Read-only DB/view, shared cross-project ECS staging, exporter/outbox,
+  raw payload, real upstream success, X-Insight ECS runtime, and PRD4 remain out
+  of this result.
 
 Current target result:
 

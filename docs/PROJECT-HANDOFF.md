@@ -90,13 +90,14 @@ Use `docs/agent-workflows/AGENT-PROTOCOL.md` before changing code or status:
 ## Current Verification Baseline
 
 Current execution record: PRD5 Batch 1W Pre-Relay Model Permission Evidence
-Parity is CI verified at `931400a` / PR #126 with target deployment/rerun
-pending in `docs/agent-workflows/EXECUTION-RECORD.md`.
+Parity is target verified under `UR-XI-GATE-A-20260710-02` on target
+`e823abc293f996264763c6c1aca19d3d4d6e705f`, containing `931400a` / PR
+#126, in `docs/agent-workflows/EXECUTION-RECORD.md`.
 Batch 1V Atlas execution produced an immutable sanitized snapshot with a known
 denied-scenario correlation/source-trace gap. X-Insight persistent import/readback
-is External integration verified; target test-key disable, Batch 1W target
-deployment/new-authorization rerun, and X-Insight ECS target verification remain
-pending.
+is External integration verified. The Batch 1W denied follow-up and key disable
+are complete, and its second snapshot passed X-Insight persistence/idempotency/
+readback. X-Insight ECS target verification and real upstream E2E remain pending.
 
 PRD4 is complete for the confirmed current scope. PRD5 must preserve the PRD4
 deferred-boundary decisions recorded here.
@@ -404,16 +405,17 @@ PRD5 Batch 1V:
   reassignment, raw prompt/response or secrets, broad discovery, X-Insight
   read-only DB/view, shared cross-project ECS staging, exporter/outbox, PRD4
   changes, or `Production verified` claims.
-- Remaining: temporary test-key disable confirmation, snapshot deletion by
-  2026-07-17, Batch 1W target deployment/new-authorization denial rerun, and
-  X-Insight ECS target verification.
+- Remaining: first-snapshot deletion by 2026-07-17, a retention decision for the
+  second snapshot, X-Insight ECS target verification, real upstream E2E, and
+  separately authorized ECS security remediation.
 
 PRD5 Batch 1W:
 
 - Scope: ensure live API-key `allowed_models` denials reach Relay after project
   model-governance resolution.
-- Status: CI verified at `931400a` / PR #126 under Agent Protocol v2.0;
-  target deployment/rerun pending.
+- Status: target verified under `UR-XI-GATE-A-20260710-02` on target
+  `e823abc293f996264763c6c1aca19d3d4d6e705f`; second X-Insight snapshot
+  persistence/idempotency/readback verified.
 - Adds: removal of the duplicate pre-relay API-key check; full-handler
   integration coverage for HTTP 403, matching `X-Request-ID`, exact auth
   decision trace fields, zero call-log rows, and zero billing freezes.
