@@ -94,6 +94,15 @@ func TestAdminRoutesRegisteredForFrontendClient(t *testing.T) {
 		"POST /api/v1/notification-webhooks",
 		"PUT /api/v1/notification-webhooks/{id}",
 		"GET /api/v1/audit-logs",
+		"GET /api/v1/data-exchange/items",
+		"POST /api/v1/data-exchange/items",
+		"PUT /api/v1/data-exchange/items/{id}",
+		"GET /api/v1/data-exchange/exchanges",
+		"POST /api/v1/data-exchange/exchanges",
+		"GET /api/v1/data-exchange/exchanges/{id}/activity",
+		"POST /api/v1/data-exchange/exchanges/{id}/deliveries",
+		"POST /api/v1/data-exchange/exchanges/{id}/receipts",
+		"POST /api/v1/data-exchange/exchanges/{id}/artifact-delete",
 	}
 
 	for _, route := range routes {

@@ -11,13 +11,13 @@
 | Config | `internal/config/config.go` | Environment config and validation, including `JWT_SECRET`, `API_KEY_HASH_SECRET`, `ENCRYPTION_KEY`, optional `LICENSE_PUBLIC_KEY`, PRD4 trace event sampling/retention config, and Runtime Status metadata/Prometheus/Grafana URLs |
 | Database | `internal/db/postgres.go` | pgx pool setup and health |
 | Redis | `internal/redisx/redis.go` | Redis setup, health, wallet cache helpers |
-| Migrations | `migrations/*.sql` | Base schema plus wallet/schema/PRD alignment migrations, including PRD4 API key owner usage attribution in `000016_prd4_key_owner_usage`, request trace events in `000017_prd4_request_trace_events`, and PRD5 structural evidence fields in `000018_prd5_structural_evidence_fields` |
+| Migrations | `migrations/*.sql` | Base schema plus wallet/schema/PRD alignment migrations, including PRD4 API key owner usage attribution in `000016`, request trace events in `000017`, PRD5 structural evidence fields in `000018`, and PRD5 Data Exchange Control ledger in `000019` |
 
 ## Backend Packages
 
 | Package | Responsibility |
 |---------|----------------|
-| `internal/admin` | Admin REST handlers: auth, channels, channel keys, API keys, wallet, grants, logs, dashboard, prices, users, settings, audit, sensitive words, channel tests, and Runtime Status. Runtime Status includes PRD4 app/dependency/traffic health, host CPU/disk/network summaries, and Prometheus/Grafana active checks. API key handlers expose PRD4 `rps_limit` / structured `quota` fields while preserving legacy `qps_limit` compatibility. Shared package-local helpers are split into `http_helpers.go`, `event_helpers.go`, and `model_helpers.go` |
+| `internal/admin` | Admin REST handlers including Logs/trace, Data Exchange Control, audit, and Runtime Status. Runtime Status includes app/dependency/traffic/host telemetry, external monitoring checks, and a redacted current-process logical topology. Data Exchange Control is platform-admin-only and records source-side approvals/exchanges/deliveries/receipts without automatic export or X-Insight runtime dependency |
 | `internal/adapters` | Provider adapter registry and OpenAI-compatible / Anthropic-native request/response conversion |
 | `internal/auth` | JWT generation/validation, API key hashing, upstream key AES-GCM encryption/decryption |
 | `internal/billing` | Cost calculation, freeze/settle/cancel, price provider, budget alert, notification event service |
@@ -59,6 +59,7 @@ Defined in `cmd/uniroute/main.go`.
 | Users/access | User CRUD, grants, audit logs |
 | Settings/filter | Settings CRUD and sensitive-word CRUD |
 | License | `GET/PUT /api/v1/license` |
+| Data exchange | Platform-admin approval candidates and exchange/delivery/receipt/delete ledger under `/api/v1/data-exchange/*` |
 | Docs | `GET /docs` simple HTML endpoint |
 
 Contract guard: `cmd/uniroute/route_parity_test.go` checks frontend client-required routes, OpenAPI route coverage, and frontend `/docs` route coverage against registered backend route strings.
@@ -96,7 +97,7 @@ OpenAPI snapshot: `docs/tech-ref/05-openapi-spec.yaml` is the current route-leve
 | Global CSS | `frontend/src/index.css` |
 | Tests | `frontend/src/**/__tests__/*.test.tsx`, `frontend/src/**/__tests__/*.test.ts` |
 
-Frontend route pages currently include dashboard, channels, channel keys, API keys, developer console, usage analytics, internal status, notification center, model governance, wallet, logs, users, model prices, org model prices, grants, audit logs, reconciliation, license, test page, settings, API docs, access state, and login.
+Frontend route pages currently include dashboard, channels, channel keys, API keys, developer console, usage analytics, internal status, notification center, model governance, wallet, logs, data exchange, users, model prices, org model prices, grants, audit logs, reconciliation, license, test page, settings, API docs, access state, and login.
 
 ## Data Model
 
@@ -109,7 +110,7 @@ Base schema is in `migrations/000001_init_schema.up.sql`. Main tables:
 | Client access | `api_keys` |
 | Pricing | `model_prices`, `org_model_prices` |
 | Billing | `wallets`, `transactions`, `grants`, `freeze_idempotency` |
-| Observability | `call_logs`, `request_trace_events`, `audit_logs` |
+| Observability/control | `call_logs`, `request_trace_events`, `audit_logs`, `integration_exchange_items`, `integration_exchanges`, `integration_exchange_members`, `integration_exchange_deliveries`, `integration_exchange_receipts` |
 | Configuration | `settings` |
 
 Later migrations add wallet features, org pricing and alert fields, schema gap fixes, and PRD alignment fields like `call_logs.requested_model`, `call_logs.ip_address`, `audit_logs.source`, and `wallets.freeze_expire_at`. PRD4 migration `000016_prd4_key_owner_usage` adds `api_keys.owner_user_id`, `api_keys.key_type`, `call_logs.owner_user_id`, and `call_logs.key_type`; gateway request logging snapshots owner/type at request time so historical usage does not drift when key ownership changes. PRD4 migration `000017_prd4_request_trace_events` adds metadata-only request trace events keyed by `request_id`, with org/project/key/owner snapshots and stage/severity/provider/status/latency metadata. PRD5 migration `000018_prd5_structural_evidence_fields` adds nullable/default trace/span/source/capture/decision/actor/session/evidence/payload fields to request trace events and selected call-log evidence fields.
@@ -280,6 +281,14 @@ API-key `allowed_models` check after model-governance resolution. Coverage in
 returns `X-Request-ID`, persists the accepted auth decision trace, and performs
 no call-log write or billing freeze for the denial.
 
+PRD5 Batch 1X repository-wide audit and P5-F12 screening are recorded in
+`docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md`. The repo-local
+code fixes in this batch make `GET /api/v1/logs?status_code=2xx|4xx|5xx`
+apply backend status range filters in `internal/admin/log_handlers.go`, with
+regression coverage in `internal/admin/admin_mock_test.go`, and make frontend
+`npm run type-check` an enforced CI step through `frontend/package.json` and
+`.github/workflows/ci.yml`.
+
 Usage analytics is implemented in `internal/admin/prd2_product_handlers.go` and now supports project/key/model/provider/channel/status/source filters plus PRD4 `scope=my`, `owner_user_id`, `key_type`, `group_by=owner`, and `group_by=key_type`.
 
 API key quota visibility keeps `api_keys.qps_limit` as the compatibility
@@ -314,6 +323,7 @@ Admin auth and gateway auth are separate:
 ```bash
 go test ./... -count=1
 go vet ./...
+npm --prefix frontend run type-check
 npm --prefix frontend test -- --run
 npm --prefix frontend run build
 git diff --check

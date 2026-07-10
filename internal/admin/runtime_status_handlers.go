@@ -38,6 +38,31 @@ type runtimeStatusResponse struct {
 	RuntimeEnvironment        runtimeEnvironmentStatus         `json:"runtime_environment"`
 	CapacityHealth            runtimeCapacityHealth            `json:"capacity_health"`
 	ObservabilityIntegrations runtimeObservabilityIntegrations `json:"observability_integrations"`
+	Topology                  runtimeTopologyStatus            `json:"topology"`
+}
+
+type runtimeTopologyStatus struct {
+	Scope              string                `json:"scope"`
+	Visibility         string                `json:"visibility"`
+	NetworkExposure    string                `json:"network_exposure"`
+	MultiInstanceState string                `json:"multi_instance_state"`
+	Nodes              []runtimeTopologyNode `json:"nodes"`
+	Edges              []runtimeTopologyEdge `json:"edges"`
+	Limitations        []string              `json:"limitations"`
+}
+
+type runtimeTopologyNode struct {
+	ID     string `json:"id"`
+	Kind   string `json:"kind"`
+	Role   string `json:"role"`
+	Status string `json:"status"`
+}
+
+type runtimeTopologyEdge struct {
+	From   string `json:"from"`
+	To     string `json:"to"`
+	Kind   string `json:"kind"`
+	Status string `json:"status"`
 }
 
 type runtimeEnvironmentStatus struct {
@@ -162,8 +187,9 @@ func (h *Handler) RuntimeStatus(w http.ResponseWriter, r *http.Request) {
 	traffic := h.runtimeTrafficStatus(r.Context())
 	hostTelemetry := h.runtimeHostTelemetry()
 
+	overallStatus := runtimeOverallStatus(database, redis, traffic)
 	response := runtimeStatusResponse{
-		Status:               runtimeOverallStatus(database, redis, traffic),
+		Status:               overallStatus,
 		GeneratedAt:          time.Now().UTC(),
 		DataFreshnessSeconds: 0,
 		RuntimeEnvironment:   h.runtimeEnvironmentStatus(),
@@ -177,9 +203,33 @@ func (h *Handler) RuntimeStatus(w http.ResponseWriter, r *http.Request) {
 			Network:   hostTelemetry.Network,
 		},
 		ObservabilityIntegrations: h.runtimeObservabilityIntegrations(r.Context()),
+		Topology:                  h.runtimeTopologyStatus(overallStatus, database, redis),
 	}
 
 	writeJSON(w, http.StatusOK, response)
+}
+
+func (h *Handler) runtimeTopologyStatus(appStatus string, database, redis runtimeDependencyStatus) runtimeTopologyStatus {
+	return runtimeTopologyStatus{
+		Scope:              "current_process",
+		Visibility:         "redacted",
+		NetworkExposure:    "not_observed",
+		MultiInstanceState: "not_configured",
+		Nodes: []runtimeTopologyNode{
+			{ID: "service:uniroute", Kind: "service", Role: defaultRuntimeValue(h.runtimeOptions.DeploymentRole, "stable"), Status: appStatus},
+			{ID: "dependency:database", Kind: "dependency", Role: "postgresql", Status: database.Status},
+			{ID: "dependency:redis", Kind: "dependency", Role: "redis", Status: redis.Status},
+		},
+		Edges: []runtimeTopologyEdge{
+			{From: "service:uniroute", To: "dependency:database", Kind: "runtime_dependency", Status: database.Status},
+			{From: "service:uniroute", To: "dependency:redis", Kind: "runtime_dependency", Status: redis.Status},
+		},
+		Limitations: []string{
+			"network_exposure_not_observed",
+			"multi_instance_inventory_not_configured",
+			"host_and_address_identifiers_redacted",
+		},
+	}
 }
 
 func (h *Handler) runtimeEnvironmentStatus() runtimeEnvironmentStatus {

@@ -43,7 +43,7 @@ describe('App shell', () => {
   it('routes topbar search to existing logs search', async () => {
     renderApp();
 
-    const input = screen.getByPlaceholderText('搜索请求日志：Request ID、模型、供应商、错误');
+    const input = screen.getByPlaceholderText('搜索请求日志：请求、模型、供应商、错误或证据标识');
     fireEvent.change(input, { target: { value: 'req-123' } });
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', charCode: 13 });
 
@@ -55,7 +55,7 @@ describe('App shell', () => {
   it('routes empty topbar search to the logs overview', async () => {
     renderApp();
 
-    const input = screen.getByPlaceholderText('搜索请求日志：Request ID、模型、供应商、错误');
+    const input = screen.getByPlaceholderText('搜索请求日志：请求、模型、供应商、错误或证据标识');
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', charCode: 13 });
 
     await waitFor(() => {

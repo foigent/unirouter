@@ -38,6 +38,10 @@ interface LogFilters {
   start_time?: string;
   end_time?: string;
   request_id?: string;
+  trace_id?: string;
+  upstream_request_id?: string;
+  evidence_ref?: string;
+  source_event_hash?: string;
   latency_min?: string;
   latency_max?: string;
   search?: string;
@@ -86,7 +90,7 @@ function filtersToParams(filters: LogFilters): string {
 function paramsToFilters(): LogFilters {
   const params = new URLSearchParams(window.location.search);
   const f: LogFilters = {};
-  ['model', 'provider', 'status_code', 'usage_source', 'start_time', 'end_time', 'request_id', 'latency_min', 'latency_max', 'search'].forEach(k => {
+  ['model', 'provider', 'status_code', 'usage_source', 'start_time', 'end_time', 'request_id', 'trace_id', 'upstream_request_id', 'evidence_ref', 'source_event_hash', 'latency_min', 'latency_max', 'search'].forEach(k => {
     const v = params.get(k);
     if (v) (f as any)[k] = v;
   });
@@ -101,6 +105,10 @@ const filterLabels: Record<keyof LogFilters, string> = {
   start_time: '开始时间',
   end_time: '结束时间',
   request_id: 'Request ID',
+  trace_id: 'Trace ID',
+  upstream_request_id: '上游 Request ID',
+  evidence_ref: 'Evidence Ref',
+  source_event_hash: 'Source Event Hash',
   latency_min: '最小延迟',
   latency_max: '最大延迟',
   search: '搜索',
@@ -188,6 +196,40 @@ function traceEvidenceTags(event: TraceEvent) {
       ))}
     </div>
   );
+}
+
+interface RouteAttempt {
+  sequence: number;
+  provider: string;
+  channel: string;
+  mappedModel: string;
+  outcome: 'selected' | 'accepted' | 'failed';
+  statusCode: number | null;
+  eventType: string;
+}
+
+function routeAttemptsFromTrace(events: TraceEvent[]): RouteAttempt[] {
+  const attempts: RouteAttempt[] = [];
+  for (const event of events) {
+    if (event.event_type === 'routing.route_selected') {
+      attempts.push({
+        sequence: attempts.length + 1,
+        provider: event.provider || '-',
+        channel: event.channel || '-',
+        mappedModel: typeof event.metadata?.mapped_model === 'string' ? event.metadata.mapped_model : event.model || '-',
+        outcome: 'selected',
+        statusCode: null,
+        eventType: event.event_type,
+      });
+      continue;
+    }
+    if (attempts.length === 0 || !event.event_type.startsWith('provider.')) continue;
+    const attempt = attempts[attempts.length - 1];
+    attempt.eventType = event.event_type;
+    attempt.statusCode = event.status_code;
+    attempt.outcome = event.event_type === 'provider.response_accepted' ? 'accepted' : 'failed';
+  }
+  return attempts;
 }
 
 export default function LogsPage() {
@@ -419,6 +461,8 @@ export default function LogsPage() {
   const actorTypes = uniqueEvidenceValues(traceEvents, 'actor_type');
   const captureGapCount = traceEvents.filter(event => event.capture_gap).length;
   const decisionCount = traceEvents.filter(event => event.decision_kind || event.decision_result).length;
+  const routeAttempts = routeAttemptsFromTrace(traceEvents);
+  const noRoute = traceEvents.some(event => event.event_type === 'routing.no_route');
 
   return (
     <div className="ur-page ur-page-wide">
@@ -450,7 +494,7 @@ export default function LogsPage() {
             <Input
               ref={searchRef as any}
               prefix={<IconSearch />}
-              placeholder="Request ID / 模型 / 渠道"
+              placeholder="请求、模型、供应商或证据标识"
               onChange={(v) => updateFilter('search', v)}
               defaultValue={filters.search || ''}
               showClear
@@ -573,6 +617,18 @@ export default function LogsPage() {
               defaultValue={filters.request_id || ''}
               showClear
             />
+          </div>
+
+          <Divider style={{ margin: '12px 0' }} />
+
+          <div className="ur-filter-group">
+            <Text className="ur-filter-label">证据标识</Text>
+            <div style={{ display: 'grid', gap: 6 }}>
+              <Input size="small" placeholder="Trace ID（精确匹配）" onChange={(v) => updateFilter('trace_id', v)} defaultValue={filters.trace_id || ''} showClear />
+              <Input size="small" placeholder="上游 Request ID（精确匹配）" onChange={(v) => updateFilter('upstream_request_id', v)} defaultValue={filters.upstream_request_id || ''} showClear />
+              <Input size="small" placeholder="Evidence Ref（精确匹配）" onChange={(v) => updateFilter('evidence_ref', v)} defaultValue={filters.evidence_ref || ''} showClear />
+              <Input size="small" placeholder="Source Event Hash（精确匹配）" onChange={(v) => updateFilter('source_event_hash', v)} defaultValue={filters.source_event_hash || ''} showClear />
+            </div>
           </div>
 
           {hasActiveFilters && (
@@ -727,6 +783,35 @@ export default function LogsPage() {
                       { key: 'Capture gap', value: captureGapCount > 0 ? <Tag size="small" color="orange">{captureGapCount} 个</Tag> : <Tag size="small" color="green">0</Tag> },
                     ]}
                   />
+                </div>
+              )}
+
+              {!traceLoading && (routeAttempts.length > 0 || noRoute) && (
+                <div className="ur-detail-card">
+                  <Text className="ur-detail-card-title">路由与故障切换</Text>
+                  <Descriptions
+                    row
+                    size="small"
+                    data={[
+                      { key: '路由尝试', value: `${routeAttempts.length} 次` },
+                      { key: '故障切换', value: routeAttempts.length > 1 ? `${routeAttempts.length - 1} 次` : '0 次' },
+                      { key: '最终结果', value: noRoute ? <StatusTag status="failed">无可用路由</StatusTag> : routeAttempts[routeAttempts.length - 1]?.outcome === 'accepted' ? <StatusTag status="success">上游接受</StatusTag> : <StatusTag status="warning">未确认</StatusTag> },
+                    ]}
+                  />
+                  {routeAttempts.length > 0 && (
+                    <div style={{ display: 'grid', gap: 6, marginTop: 10 }}>
+                      {routeAttempts.map(attempt => (
+                        <div key={`${attempt.sequence}-${attempt.channel}`} style={{ display: 'grid', gridTemplateColumns: '52px minmax(0, 1fr) auto', gap: 8, alignItems: 'center' }}>
+                          <Tag size="small">#{attempt.sequence}</Tag>
+                          <div style={{ minWidth: 0 }}>
+                            <Text size="small">{attempt.provider} / {attempt.channel}</Text>
+                            <div><Text type="tertiary" size="small">{attempt.mappedModel} · {attempt.eventType}</Text></div>
+                          </div>
+                          <StatusTag status={attempt.outcome}>{attempt.statusCode || attempt.outcome}</StatusTag>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 

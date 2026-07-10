@@ -1,11 +1,64 @@
 # Current Execution Record
 
-**Batch:** PRD5 Batch 1W - Pre-Relay Model Permission Evidence Parity and workflow v2 transition
+**Batch:** PRD5 Batch 1Y - UniRouter-Owned Accepted Scope Completion
 **Owner:** Codex
-**Risk:** R3 request authorization/evidence path; R2 workflow governance
-**Status:** Batch 1W target verified for the authorized denial scenario; second Gate A external persistence/readback verified
-**Base:** `origin/main` at `cc38094` / PR #125
-**Merged:** `931400a` / PR #126
+**Risk:** R3 migration/control-plane API/RBAC/UI; R2 trace/runtime read-side and docs synchronization
+**Status:** Local verified in workspace with full local checks passed; PR CI not yet run for this batch
+**Base:** `origin/main` at `935e64e` / PR #130
+**Previous local batch:** PRD5 Batch 1X audit/screening/Logs/CI hygiene Local verified
+
+## Scope
+
+1. Complete accepted repository-owned structural evidence search and route/failover visibility.
+2. Implement platform-admin Data Exchange Control migration/API/UI/RBAC/audit without automatic export or X-Insight runtime dependency.
+3. Add redacted logical runtime topology without host/IP/cloud discovery.
+4. Complete accepted design-only budget hard-block, service-account, and incident/SLO contracts.
+5. Consolidate required X-Insight runtime information in the shared request location.
+
+## Behavior Change
+
+- Logs support exact/global structural evidence search and route/failover summary.
+- Platform admins can manage approval candidates and source-side exchange,
+  delivery, deletion, and receipt ledger state.
+- Runtime Status exposes only a redacted current-process logical topology.
+
+## Files And Evidence
+
+- Completion evidence:
+  `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md`
+- Migration/API: `migrations/000019_prd5_data_exchange_control.*.sql`,
+  `internal/admin/data_exchange_handlers.go`, `cmd/uniroute/main.go`
+- UI: `frontend/src/pages/DataExchangePage.tsx`,
+  `frontend/src/pages/LogsPage.tsx`, `frontend/src/pages/InternalStatusPage.tsx`
+- X-Insight request: shared-folder
+  `requests/2026-07-10-unirouter-prd5-runtime-contract-required-information.md`
+- Status/matrix/backlog/issue synchronization: `docs/ops/CURRENT-STATUS.md`,
+  `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`, `docs/planning/PRD5-BACKLOG.md`,
+  `docs/issues/OPEN-ISSUES.md`
+
+## Verification
+
+Current local results on 2026-07-10:
+
+- `go test ./internal/admin -count=1`: PASS;
+- `go test ./... -count=1`: PASS;
+- `go vet ./...`: PASS;
+- `npm --prefix frontend run type-check`: PASS;
+- `npm --prefix frontend test -- --run`: PASS, with existing React Router,
+  Semi Form, and `findDOMNode` warnings; 25 files / 124 tests;
+- `npm --prefix frontend run build`: PASS, with existing large chunk warning;
+- `git diff --check`: PASS.
+
+Migration `000019` apply/rollback and target browser evidence were not run; they
+remain external verification.
+
+Required in GitHub before merge:
+
+- `Backend Tests`
+- `Frontend Build`
+- `Docker Build`
+
+## Previous Batch 1W Record
 
 ## Scope
 

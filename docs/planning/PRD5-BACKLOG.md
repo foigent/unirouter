@@ -2,7 +2,11 @@
 
 > Date: 2026-07-10
 > Status: Deferred backlog for capabilities intentionally not implemented in
-> PRD4 first scope.
+> PRD4 first scope. P5-F12 screening is Local verified in
+> `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md`; this does not
+> activate the full deferred items automatically.
+> Batch 1Y locally completes the accepted scoped follow-ups; full deferred items
+> remain inactive. Evidence: `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md`.
 > Source: PRD4 scope confirmation, earlier PRD2/PRD3 deferred boundaries, and
 > 2026-07-08 User direction for X-Insight integration scope discovery.
 
@@ -52,9 +56,14 @@ evidence parity are tracked in:
 - `docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md`
 - `docs/tech-ref/25-prd5-xinsight-sanitized-snapshot.md`
 - `docs/tech-ref/26-prd5-evidence-field-contract.md`
+- `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md`
 
 This backlog remains the source record for deferred items that are not yet part
-of the active PRD5 implementation train.
+of the active PRD5 implementation train. P5-F12 screening has now selected only
+scoped follow-ups; full Scheduler V2, runtime plugins/marketplace, IAM rewrite,
+managed HA/IaC product, hard budget blocking implementation, runtime
+prompt/response cache, full SDK suite, new service-account authority, and full
+SLA operations remain separate decisions.
 
 ## Deferred Items
 
@@ -77,9 +86,27 @@ of the active PRD5 implementation train.
 | PRD5-EVIDENCE-001 | Structured execution-chain evidence fields | PRD4 trace events are a metadata-only foundation but do not yet model multi-agent/multi-tool/multi-business-system chains with explicit structural fields | Batch 1A/1B/1C accepted the field contract, nullable migration, gateway-known structural writes, read-side exposure, snapshot output, and lightweight trace UI. Batch 1D adds provider-returned upstream request ID capture. Batch 1E adds event-level redacted capture-gap emission for sanitized trace metadata. Batch 1F adds restricted payload evidence mode configuration. Batch 1G adds default-off trusted evidence context intake for internal trace/session/actor/delegation fields. Batch 1H adds per-request gateway root span parenting for UniRouter-emitted trace events. Batch 1I adds explicit payload policy decision events. Batch 1J adds `provider_not_returned` capture gaps for provider response events without upstream request IDs. Batch 1L refines repeated same-component event parenting. Batch 1M adds `not_available_from_source` capture gaps for provider-stage failures that occur before any upstream response source exists. Batch 1N adds snapshot `candidate_capture_gaps` for missing trace rows. Batch 1P adds `permission_denied` auth decision evidence for Chat model rejects. Batch 1U closes the equivalent Embeddings `allowed_models` bypass. Batch 1V proved the live wrapper still bypassed Chat rejection evidence; Batch 1W removes that duplicate pre-relay check. `decision_not_emitted` remains an observed import/gap condition rather than a fabricated runtime event |
 | PRD5-PAYLOAD-001 | Enterprise-configurable prompt/response payload policy | Raw prompt/response storage is privacy-sensitive and should not be silently introduced through trace, cache, or X-Insight integration work | Batch 1F accepts only `metadata_only` and `disabled` runtime payload evidence modes. Batch 1I emits explicit `payload.policy.applied` decision events while keeping `raw_payload_stored=false` and `payload_ref_present=false`. Remaining prerequisites before redacted/hash/reference/raw modes: User approval, UniRouter/X-Insight ownership split, encryption/key management, retention, deletion/export, audit-on-read, redacted summary, hash, and `evidence_ref` behavior |
 | PRD5-COMPARE-001 | NewAPI/LiteLLM/one-api and observability-platform comparison | Functional, technical, and UI comparison is needed before feature-chase planning; older research snapshots and X-Insight prior research are inputs but must be refreshed before PRD commitments | Batch 1A/1B/1C accepted the initial comparison and UniRouter/X-Insight ownership split. Refresh again before public claims, adapter implementation, pricing claims, or choosing a new catch-up workstream |
-| PRD5-TRACEUI-001 | Lightweight UniRouter trace UI and X-Insight UI boundary | PRD4 adds request trace display, but X-Insight is expected to own broader observability; UniRouter should not duplicate a full observability product without a confirmed boundary | Batch 1C accepted request-level evidence quality and per-event structural tags. Batch 1S accepts a future UniRouter Data Exchange Control surface for outbound approval/export ledger/import receipts only. X-Insight execution search, timeline, node detail, capture-gap panel, policy simulation, evidence packs, and read-side audit remain X-Insight-owned unless User changes boundary |
+| PRD5-TRACEUI-001 | Lightweight UniRouter trace UI and X-Insight UI boundary | PRD4 adds request trace display, but X-Insight is expected to own broader observability; UniRouter should not duplicate a full observability product without a confirmed boundary | Batch 1Y locally verifies structural search, route/failover summary, and UniRouter Data Exchange Control for outbound approval/export/delivery/receipt state. X-Insight execution search, timeline, node detail, capture-gap panel, policy simulation, evidence packs, and read-side audit remain X-Insight-owned unless User changes boundary |
 | PRD5-ONTOLOGY-001 | Ontology-driven governance loop | Requires stable Flow, Trace, Identity, Policy, and Governance entities before ontology can control product behavior | PRD4 trace/event model, identity attribution, policy model, governance evidence model |
 | PRD5-SAAS-001 | Public SaaS, reseller, payment, invoice, coupons, campaigns, support CRM | Shifts product direction away from local-deploy enterprise MaaS | Explicit User product-direction change and separate SaaS/commercial PRD |
+
+## P5-F12 Screening Result
+
+Source: `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md`.
+
+| ID | Screening Decision | Current Priority |
+|----|--------------------|------------------|
+| PRD5-SCHED-001 | Defer full Scheduler V2; route/failover evidence visibility is Local verified in Batch 1Y | P3 for full scheduler |
+| PRD5-PLUGIN-001 | Defer runtime plugin platform | P3 |
+| PRD5-MARKET-001 | Reject for current PRD5 until runtime plugins exist | P3/out of current scope |
+| PRD5-IAM-001 | Reject IAM rewrite into UniRouter core for current PRD5; keep external IdP/OIDC compatibility | P3/out of current scope |
+| PRD5-DEPLOY-001 | Defer full managed HA/IaC product; accept INFRA-SEC remediation design now | P0 for security design, P2 for full IaC |
+| PRD5-INFRA-001 | Redacted current-process topology is Local verified; productized cluster inventory remains deferred | P2 for cluster inventory |
+| PRD5-BUDGET-001 | Hard-block state-machine design is complete; runtime implementation remains deferred | P2/deferred runtime |
+| PRD5-CACHE-001 | Reject plaintext runtime cache for current PRD5; defer only privacy-safe opt-in metadata/ref/hash design | P3/out of current scope |
+| PRD5-SDK-001 | Defer full official SDK suite until typed API schemas and semver policy stabilize | P3 |
+| PRD5-ROLE-001 | Service-account taxonomy/design is complete; runtime authority remains deferred | P2/deferred runtime |
+| PRD5-OPS-001 | Minimal incident/SLO evidence design is complete; customer-facing SLA operations remain deferred | P2/deferred runtime |
 
 ## PRD4 Relationship
 

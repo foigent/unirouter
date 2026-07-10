@@ -23,6 +23,10 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 	startTime := r.URL.Query().Get("start_time")
 	endTime := r.URL.Query().Get("end_time")
 	requestIDFilter := r.URL.Query().Get("request_id")
+	traceIDFilter := r.URL.Query().Get("trace_id")
+	upstreamRequestIDFilter := r.URL.Query().Get("upstream_request_id")
+	evidenceRefFilter := r.URL.Query().Get("evidence_ref")
+	sourceEventHashFilter := r.URL.Query().Get("source_event_hash")
 	projectIDFilter := r.URL.Query().Get("project_id")
 	usageSourceFilter := r.URL.Query().Get("usage_source")
 
@@ -42,10 +46,25 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 		argIdx++
 	}
 	if statusCodeFilter != "" {
-		if sc, err := strconv.Atoi(statusCodeFilter); err == nil {
-			conditions = append(conditions, fmt.Sprintf("status_code = $%d", argIdx))
-			args = append(args, sc)
-			argIdx++
+		switch statusCodeFilter {
+		case "2xx":
+			conditions = append(conditions, fmt.Sprintf("status_code >= $%d AND status_code < $%d", argIdx, argIdx+1))
+			args = append(args, 200, 300)
+			argIdx += 2
+		case "4xx":
+			conditions = append(conditions, fmt.Sprintf("status_code >= $%d AND status_code < $%d", argIdx, argIdx+1))
+			args = append(args, 400, 500)
+			argIdx += 2
+		case "5xx":
+			conditions = append(conditions, fmt.Sprintf("status_code >= $%d AND status_code < $%d", argIdx, argIdx+1))
+			args = append(args, 500, 600)
+			argIdx += 2
+		default:
+			if sc, err := strconv.Atoi(statusCodeFilter); err == nil {
+				conditions = append(conditions, fmt.Sprintf("status_code = $%d", argIdx))
+				args = append(args, sc)
+				argIdx++
+			}
 		}
 	}
 	if startTime != "" {
@@ -61,6 +80,22 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 	if requestIDFilter != "" {
 		conditions = append(conditions, fmt.Sprintf("request_id = $%d", argIdx))
 		args = append(args, requestIDFilter)
+		argIdx++
+	}
+	for _, filter := range []struct {
+		column string
+		value  string
+	}{
+		{column: "trace_id", value: traceIDFilter},
+		{column: "upstream_request_id", value: upstreamRequestIDFilter},
+		{column: "evidence_ref", value: evidenceRefFilter},
+		{column: "source_event_hash", value: sourceEventHashFilter},
+	} {
+		if filter.value == "" {
+			continue
+		}
+		conditions = append(conditions, fmt.Sprintf("%s = $%d", filter.column, argIdx))
+		args = append(args, filter.value)
 		argIdx++
 	}
 	if usageSourceFilter != "" {
@@ -101,10 +136,12 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 			argIdx++
 		}
 	}
-	// Global search: search across request_id, model, provider, upstream_error
+	// Global search covers operator-visible request and structural evidence identities.
 	search := r.URL.Query().Get("search")
 	if search != "" {
-		conditions = append(conditions, fmt.Sprintf("(request_id ILIKE $%d OR model ILIKE $%d OR provider ILIKE $%d OR upstream_error ILIKE $%d)", argIdx, argIdx, argIdx, argIdx))
+		conditions = append(conditions, fmt.Sprintf(`(request_id ILIKE $%[1]d OR model ILIKE $%[1]d OR provider ILIKE $%[1]d
+			OR upstream_error ILIKE $%[1]d OR trace_id ILIKE $%[1]d OR upstream_request_id ILIKE $%[1]d
+			OR evidence_ref ILIKE $%[1]d OR source_event_hash ILIKE $%[1]d)`, argIdx))
 		args = append(args, "%"+search+"%")
 		argIdx++
 	}

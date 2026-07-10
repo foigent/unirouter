@@ -331,6 +331,15 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">GET</td><td><code>/api/v1/grants</code></td><td>List grants</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/grants</code></td><td>Create grant</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/audit-logs</code></td><td>Audit logs</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/data-exchange/items</code></td><td>Data exchange approval candidates</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/data-exchange/items</code></td><td>Create data exchange approval candidate</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/data-exchange/items/{id}</code></td><td>Update data exchange approval status</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/data-exchange/exchanges</code></td><td>Data exchange export ledger</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/data-exchange/exchanges</code></td><td>Register generated exchange artifact</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/data-exchange/exchanges/{id}/activity</code></td><td>Exchange members, delivery history, and receipt history</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/data-exchange/exchanges/{id}/deliveries</code></td><td>Record exchange handoff or re-delivery</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/data-exchange/exchanges/{id}/receipts</code></td><td>Record X-Insight import receipt</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/data-exchange/exchanges/{id}/artifact-delete</code></td><td>Mark exchange artifact deleted in ledger</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/settings</code></td><td>List settings</td></tr>
 <tr><td class="method">PUT</td><td><code>/api/v1/settings/{key}</code></td><td>Update setting</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/license</code></td><td>License status</td></tr>
@@ -454,6 +463,15 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("PUT /api/v1/notification-webhooks/{id}", notificationWriteRoute(adminHandler.UpdateNotificationWebhook))
 
 	mux.Handle("GET /api/v1/audit-logs", roleRoute(adminHandler.ListAuditLogs, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin))
+	mux.Handle("GET /api/v1/data-exchange/items", platformRoute(adminHandler.ListDataExchangeItems))
+	mux.Handle("POST /api/v1/data-exchange/items", platformRoute(adminHandler.CreateDataExchangeItem))
+	mux.Handle("PUT /api/v1/data-exchange/items/{id}", platformRoute(adminHandler.UpdateDataExchangeItem))
+	mux.Handle("GET /api/v1/data-exchange/exchanges", platformRoute(adminHandler.ListDataExchanges))
+	mux.Handle("POST /api/v1/data-exchange/exchanges", platformRoute(adminHandler.CreateDataExchange))
+	mux.Handle("GET /api/v1/data-exchange/exchanges/{id}/activity", platformRoute(adminHandler.GetDataExchangeActivity))
+	mux.Handle("POST /api/v1/data-exchange/exchanges/{id}/deliveries", platformRoute(adminHandler.CreateDataExchangeDelivery))
+	mux.Handle("POST /api/v1/data-exchange/exchanges/{id}/receipts", platformRoute(adminHandler.CreateDataExchangeReceipt))
+	mux.Handle("POST /api/v1/data-exchange/exchanges/{id}/artifact-delete", platformRoute(adminHandler.DeleteDataExchangeArtifact))
 
 	mux.Handle("GET /api/v1/settings", orgAdminRoute(adminHandler.ListSettings))
 	mux.Handle("PUT /api/v1/settings/{key}", orgAdminRoute(adminHandler.UpdateSetting))

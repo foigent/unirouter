@@ -65,6 +65,19 @@ describe('InternalStatusPage', () => {
         prometheus: { status: 'connected', url: 'http://prometheus:9090', latency_ms: 3, scrape_status: 'up' },
         grafana: { status: 'misconfigured', url: 'http://grafana:3000', reason: 'auth_required' },
       },
+      topology: {
+        scope: 'current_process',
+        visibility: 'redacted',
+        network_exposure: 'not_observed',
+        multi_instance_state: 'not_configured',
+        nodes: [
+          { id: 'service:uniroute', kind: 'service', role: 'canary', status: 'warning' },
+          { id: 'dependency:database', kind: 'dependency', role: 'postgresql', status: 'connected' },
+          { id: 'dependency:redis', kind: 'dependency', role: 'redis', status: 'unavailable' },
+        ],
+        edges: [],
+        limitations: ['network_exposure_not_observed'],
+      },
     });
   });
 
@@ -93,6 +106,9 @@ describe('InternalStatusPage', () => {
     expect(screen.getByText('网络')).toBeTruthy();
     expect(screen.getByText('2/3')).toBeTruthy();
     expect(screen.getByText(/active 2\/3 \/ rx 1.0 MB \/ tx 2.0 MB/)).toBeTruthy();
+    expect(screen.getByText('受限拓扑')).toBeTruthy();
+    expect(screen.getByText('service:uniroute')).toBeTruthy();
+    expect(screen.getByText('网络暴露: not_observed')).toBeTruthy();
     expect(screen.getByText('Provider channel failure')).toBeTruthy();
     expect(screen.getByText('上游通道故障')).toBeTruthy();
     expect(screen.getByText('Open 预警事件')).toBeTruthy();

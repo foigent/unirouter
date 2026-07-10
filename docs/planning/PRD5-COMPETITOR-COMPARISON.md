@@ -5,7 +5,8 @@
 > 1U accepted; Batch 1V produced real Gate A gap evidence and Batch 1W fixes the
 > pre-relay permission-evidence bypass. Batch 1W `931400a` / PR #126 is target
 > verified under `UR-XI-GATE-A-20260710-02`; its second X-Insight snapshot
-> passed persistence, idempotent rerun, and readback.
+> passed persistence, idempotent rerun, and readback. P5-F12 screening is Local
+> verified in `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md`.
 > Purpose: compare UniRouter against adjacent gateway and observability systems,
 > then decide which gaps belong in UniRouter PRD5 versus X-Insight.
 
@@ -175,20 +176,20 @@ CI verified at `931400a` / PR #126 in Batch 1W:
 
 Medium priority:
 
-- request-id and source-ref search ergonomics in the trace UI;
+- request-id, trace/upstream/evidence/hash search ergonomics and route/failover
+  visibility are Local verified in Batch 1Y;
 - X-Insight execution deep links once X-Insight has stable IDs/URLs;
 - optional OpenTelemetry/OpenInference bridge after native evidence fields are
   stable;
-- better route/failover decision visibility comparable to gateway-focused
-  competitors.
 
 Low priority or separate scope:
 
 - prompt management, eval datasets, playground workflows, and full trace/eval UI;
 - semantic cache/runtime cache;
 - full public adapter ecosystem in UniRouter itself;
-- full Scheduler V2, plugin marketplace, managed HA/IaC product, and hard budget
-  blocking without separate User approval.
+- full Scheduler V2, plugin marketplace, IAM rewrite, managed HA/IaC product,
+  full SDK suite, persistent service accounts, customer-facing SLA operations,
+  and hard budget blocking without separate User approval.
 
 ## Ownership Decision
 
