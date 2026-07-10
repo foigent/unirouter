@@ -145,7 +145,9 @@ second sanitized snapshot passed X-Insight persistence, idempotent rerun, and
 readback. Separately from both receipts, X-Insight's fixture/synthetic-only
 non-production target is Target verified at release artifact `b9e5811`; this is
 not a public API or production claim. Temporary first-snapshot deletion remains
-due 2026-07-17.
+due 2026-07-17. The User later accepted the same deadline for the second
+temporary snapshot artifact; receipts, hashes, sanitized evidence, and persisted
+normalized evidence remain retained.
 
 ## Workflow Transition
 
