@@ -5,12 +5,12 @@
 
 ## Current Batch
 
-- Batch: PRD5 Batch 1Y UniRouter-Owned Accepted Scope Completion
+- Batch: PRD5 Batch 1Z Target Deployment And Infrastructure Security
 - Owner: Codex
-- Risk: R3 migration/control-plane API/RBAC/UI; R2 trace/runtime read-side and docs synchronization
-- Status: Local verified in workspace with full local checks passed; PR CI not yet run for this batch
+- Risk: R4 authorized ECS security-group cutover; R3 migration/deployment/canary/runtime/browser verification
+- Status: Target verified for the recorded Batch 1Z evidence
 - Execution record: `docs/agent-workflows/EXECUTION-RECORD.md`
-- Local evidence: `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md`
+- Target evidence: `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md`
 - Workflow decision: `docs/ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md`
 
 ## Reviewer Entry

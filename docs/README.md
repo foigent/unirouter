@@ -6,9 +6,10 @@
 - [planning/PRD5-CURRENT-GAP-AUDIT-20260710.md](planning/PRD5-CURRENT-GAP-AUDIT-20260710.md) — PRD5 当前完成度、UniRouter 本地完成项、X-Insight 协作缺口及目标证据边界
 - [ops/evidence/PRD5-P5F12-architecture-audit-20260710.md](ops/evidence/PRD5-P5F12-architecture-audit-20260710.md) — PRD5 repository-wide 架构/功能/UI/数据/部署/安全审计、P5-F12 accept/defer/reject 筛选、P0-P3 batches 和 INFRA-SEC-001 证据设计
 - [ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md](ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md) — PRD5 已接受 UniRouter 自有 trace search、Data Exchange Control、route/failover、redacted topology 和本地验证
+- [ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md](ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md) — PRD5 目标迁移/部署/浏览器、canary 配置对齐和 INFRA-SEC-001 切换证据
 - [planning/PRD5-DEFERRED-CONTROL-DESIGNS-20260710.md](planning/PRD5-DEFERRED-CONTROL-DESIGNS-20260710.md) — budget hard-block、service account 和 incident/SLO 实施级设计；运行时仍 defer
 - [PRD-Phase5.md](PRD-Phase5.md) — PRD5 当前正式范围：X-Insight evidence readiness、结构字段、snapshot、payload 边界、轻量 trace UI、竞品追赶和 Data Exchange Control 边界
-- [ops/PRD5-ACCEPTANCE-MATRIX.md](ops/PRD5-ACCEPTANCE-MATRIX.md) — PRD5 验收矩阵；Batch 1W 拒绝路径已完成目标验证，两个 Gate A 快照均完成 X-Insight 持久化、幂等重跑和回读，P5-F12 screening 为 Local verified
+- [ops/PRD5-ACCEPTANCE-MATRIX.md](ops/PRD5-ACCEPTANCE-MATRIX.md) — PRD5 验收矩阵；Batch 1Z 已记录目标迁移/部署/浏览器/安全证据，P5-F12 screening 保持 Local verified，route/failover 保持 CI verified
 - [ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md](ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md) — PRD5 Gate A request ID 非技术审批说明和 X-Insight snapshot 数据最小化边界
 - [ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md](ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md) — 新建 Gate A 场景的环境、操作人、数据类别和保留期授权边界
 - [planning/PRD5-IMPLEMENTATION-PLAN.md](planning/PRD5-IMPLEMENTATION-PLAN.md) — PRD5 分批实施计划和 UniRouter/X-Insight 并行边界
@@ -23,13 +24,14 @@
 - [PRD-Phase3.md](PRD-Phase3.md) — 已完成 PRD3 一致性、语义、契约和架构清理范围
 - [planning/PRD3-CONSISTENCY-AUDIT.md](planning/PRD3-CONSISTENCY-AUDIT.md) — PRD3 范围审计和 PRD1→PRD2 遗留问题梳理
 - [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 当前未关闭问题列表
-- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前执行记录：PRD5 Batch 1Y UniRouter-Owned Accepted Scope Completion
+- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前执行记录：PRD5 Batch 1Z Target Deployment And Infrastructure Security
 - [agent-workflows/reviews/README.md](agent-workflows/reviews/README.md) — 可选独立复核记录格式和问题级别规则
 - [ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md](ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md) — 单一执行负责人、Git/CI、高影响授权和复核规则的确认记录
 - [ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md](ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md) — Batch 1W 根因、代码、回归和目标证据边界
 - [ops/evidence/PRD5-B1W-target-rerun-20260710.md](ops/evidence/PRD5-B1W-target-rerun-20260710.md) — Batch 1W 目标部署、单次拒绝复测、临时密钥禁用、第二轮 X-Insight 持久化回读和基础设施风险
 - [ops/evidence/PRD5-P5F12-architecture-audit-20260710.md](ops/evidence/PRD5-P5F12-architecture-audit-20260710.md) — Batch 1X 本地审计、P5-F12 screening、Logs/CI 本地修复证据和 INFRA-SEC-001 方案
 - [ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md](ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md) — Batch 1Y UniRouter 自有功能本地完成证据
+- [ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md](ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md) — Batch 1Z 目标部署、迁移、浏览器、canary parity、安全组切换和清理证据
 - [ops/evidence/PRD5-GATE-A-XINSIGHT-external-integration-20260710.md](ops/evidence/PRD5-GATE-A-XINSIGHT-external-integration-20260710.md) — Gate A hash/receipt、持久化幂等、readback 和剩余边界对账
 - [agent-workflows/FIX-SIGNAL.md](agent-workflows/FIX-SIGNAL.md) — 协议 v1.x 兼容入口
 - [agent-workflows/VERIFY-RESULT.md](agent-workflows/VERIFY-RESULT.md) — 最近一次协议 v1.x 历史验收结果

@@ -934,10 +934,11 @@ Use existing PRD4 harnesses, but record target evidence under PRD5.
 ## Current Blocking Conditions
 
 There is no repository-integration or denied-path target blocker for UniRouter
-Batch 1A through Batch 1Y. Historical Canary/Sentinel evidence is complete
+Batch 1A through Batch 1Z. Historical Canary/Sentinel evidence is complete
 through Batch 1V, Batch 1W is target verified under
 `UR-XI-GATE-A-20260710-02` on a target containing `931400a` / PR #126, and
-Batch 1X and Batch 1Y are Local verified only.
+Batch 1X screening remains Local verified, Batch 1Y is CI verified, and Batch
+1Z records the target deployment/security evidence.
 
 ### Batch 1Y: UniRouter-Owned Accepted Scope Completion
 
@@ -983,7 +984,28 @@ These later actions are gated:
 - exporter/outbox: remains deferred pending an explicit architecture decision;
   two low-volume controlled cycles prove compatibility and idempotency but do
   not establish throughput, cursor, backpressure, or availability requirements;
-- current ECS security exposure and insufficient shared-host capacity are
-  tracked separately; X-Insight should not be added to that host;
+- `INFRA-SEC-001` public all-TCP exposure is closed in Batch 1Z; insufficient
+  shared-host capacity still means X-Insight should not be added to that host;
 - real upstream/SSO target E2E: blocked until approved target environments and
   credentials exist.
+
+### Batch 1Z: Target Deployment And Infrastructure Security
+
+Status: Target verified in
+`docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md`.
+
+Completed:
+
+- PR #131, PR #132, and PR #133 passed required GitHub CI;
+- migration `000019` forward apply and table readback;
+- final stable/canary deployment at `95d1da9` with canary runtime parity;
+- target browser checks for Data Exchange, structural Logs filters, redacted
+  topology, and mobile Data Exchange containment;
+- `INFRA-SEC-001` least-privilege group cutover and protocol-denial evidence;
+- temporary QA account and credential cleanup.
+
+Still gated:
+
+- migration down, TLS 443 behavior, and concrete target route/failover detail;
+- real upstream/SSO and X-Insight-owned runtime contracts;
+- full deferred P5-F12 products.

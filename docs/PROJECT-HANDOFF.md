@@ -9,29 +9,30 @@
 2. `docs/planning/PRD5-CURRENT-GAP-AUDIT-20260710.md` - current PRD5
    accounting, UniRouter-owned implementation gaps, X-Insight dependencies, and
    the next-window architecture/product audit plan.
-3. `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md` - repository-wide audit, P5-F12 screening, P0-P3 batches, and INFRA-SEC-001 evidence design.
-4. `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md` - accepted UniRouter-owned PRD5 functionality, tests, and remaining X-Insight/target boundaries.
-5. `docs/PRD-Phase5.md` - active PRD5 scope.
-6. `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` - PRD5 acceptance rows and evidence boundaries.
-7. `docs/planning/PRD5-IMPLEMENTATION-PLAN.md` - PRD5 batch plan and UniRouter/X-Insight ownership split.
-8. `docs/planning/PRD5-COMPETITOR-COMPARISON.md` - competitor comparison and UniRouter-owned PRD5 catch-up items.
-9. `docs/planning/PRD5-BACKLOG.md` - capabilities intentionally deferred beyond PRD4 and PRD5 active scope.
-10. `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md` - X-Insight Gate A sequencing decisions.
-11. `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md` - implemented UniRouter control-plane boundary and remaining X-Insight contract.
-12. `docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md` - approval boundary for newly generated Gate A scenarios.
-13. `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-10-x-insight-gate-a-import-result.md` and `evidence/gatea-snapshot-20260710.receipt.json` in the same shared folder - current Gate A external integration result and reconciled receipt.
-14. `docs/PRD-Phase4.md` - completed PRD4 scope.
-15. `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` - PRD4 accepted/deferred rows and evidence boundaries.
-16. `docs/planning/PRD4-BACKLOG.md` - PRD4 candidate backlog source record.
-17. `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` - completed PRD3 cleanup/optimization acceptance state.
-18. `docs/PRD-Phase3.md` - completed PRD3 scope.
-19. `docs/planning/PRD3-CONSISTENCY-AUDIT.md` - PRD1 -> PRD2 consistency findings behind PRD3.
-19. `docs/issues/OPEN-ISSUES.md` - active unresolved issues and recently verified fixes.
-20. `docs/agent-workflows/AGENT-PROTOCOL.md` - single execution owner, approval, evidence and optional independent-review workflow.
-21. `docs/agent-workflows/EXECUTION-RECORD.md` and `docs/agent-workflows/reviews/` - current batch execution state and optional immutable review results.
-22. `docs/agent-workflows/FIX-SIGNAL.md` and `docs/agent-workflows/VERIFY-RESULT.md` - protocol v1.x compatibility entry and latest historical verification result.
-23. `docs/CODEBASE-MAP.md` - code, route, data, test, and deployment map.
-24. `docs/DOC-INVENTORY.md` and `docs/DOCS-GOVERNANCE.md` - which docs are current, frozen, historical, candidate, or reference-only.
+3. `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md` - final target deployment, migration, browser, canary parity, cleanup, and infrastructure-security evidence.
+4. `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md` - repository-wide audit, P5-F12 screening, P0-P3 batches, and INFRA-SEC-001 evidence design.
+5. `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md` - accepted UniRouter-owned PRD5 implementation and local verification.
+6. `docs/PRD-Phase5.md` - active PRD5 scope.
+7. `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` - PRD5 acceptance rows and evidence boundaries.
+8. `docs/planning/PRD5-IMPLEMENTATION-PLAN.md` - PRD5 batch plan and UniRouter/X-Insight ownership split.
+9. `docs/planning/PRD5-COMPETITOR-COMPARISON.md` - competitor comparison and UniRouter-owned PRD5 catch-up items.
+10. `docs/planning/PRD5-BACKLOG.md` - capabilities intentionally deferred beyond PRD4 and PRD5 active scope.
+11. `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md` - X-Insight Gate A sequencing decisions.
+12. `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md` - implemented UniRouter control-plane boundary and remaining X-Insight contract.
+13. `docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md` - approval boundary for newly generated Gate A scenarios.
+14. `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-10-x-insight-gate-a-import-result.md` and `evidence/gatea-snapshot-20260710.receipt.json` in the same shared folder - current Gate A external integration result and reconciled receipt.
+15. `docs/PRD-Phase4.md` - completed PRD4 scope.
+16. `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` - PRD4 accepted/deferred rows and evidence boundaries.
+17. `docs/planning/PRD4-BACKLOG.md` - PRD4 candidate backlog source record.
+18. `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` - completed PRD3 cleanup/optimization acceptance state.
+19. `docs/PRD-Phase3.md` - completed PRD3 scope.
+20. `docs/planning/PRD3-CONSISTENCY-AUDIT.md` - PRD1 -> PRD2 consistency findings behind PRD3.
+21. `docs/issues/OPEN-ISSUES.md` - active unresolved issues and recently verified fixes.
+22. `docs/agent-workflows/AGENT-PROTOCOL.md` - single execution owner, approval, evidence and optional independent-review workflow.
+23. `docs/agent-workflows/EXECUTION-RECORD.md` and `docs/agent-workflows/reviews/` - current batch execution state and optional immutable review results.
+24. `docs/agent-workflows/FIX-SIGNAL.md` and `docs/agent-workflows/VERIFY-RESULT.md` - protocol v1.x compatibility entry and latest historical verification result.
+25. `docs/CODEBASE-MAP.md` - code, route, data, test, and deployment map.
+26. `docs/DOC-INVENTORY.md` and `docs/DOCS-GOVERNANCE.md` - which docs are current, frozen, historical, candidate, or reference-only.
 
 ## Current Project Shape
 
@@ -64,7 +65,7 @@ and unique `X-Request-ID` values, without broad request discovery.
 | What is the PRD5 formal scope? | `docs/PRD-Phase5.md` |
 | What PRD5 work is actually incomplete now? | `docs/planning/PRD5-CURRENT-GAP-AUDIT-20260710.md` |
 | What did the repository-wide PRD5 audit and P5-F12 screening conclude? | `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md` |
-| Which accepted UniRouter-owned PRD5 functions are locally complete? | `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md` |
+| Which accepted UniRouter-owned PRD5 functions are target/CI verified? | `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md` |
 | What is the PRD5 acceptance plan? | `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` |
 | What is the PRD5 implementation order? | `docs/planning/PRD5-IMPLEMENTATION-PLAN.md` |
 | What competitor gaps feed PRD5? | `docs/planning/PRD5-COMPETITOR-COMPARISON.md` |
@@ -98,8 +99,8 @@ Use `docs/agent-workflows/AGENT-PROTOCOL.md` before changing code or status:
 
 ## Current Verification Baseline
 
-Current execution record: PRD5 Batch 1Y UniRouter-Owned Accepted Scope
-Completion is Local verified. The previous Batch 1W denied path remains target
+Current execution record: PRD5 Batch 1Z Target Deployment And Infrastructure
+Security is Target verified for its explicit evidence. The previous Batch 1W denied path remains target
 verified under `UR-XI-GATE-A-20260710-02` on target
 `e823abc293f996264763c6c1aca19d3d4d6e705f`, containing `931400a` / PR
 #126; both are reconciled in `docs/agent-workflows/EXECUTION-RECORD.md`.
@@ -109,18 +110,13 @@ is External integration verified. The Batch 1W denied follow-up and key disable
 are complete, and its second snapshot passed X-Insight persistence/idempotency/
 readback. X-Insight ECS target verification and real upstream E2E remain pending.
 
-Local continuation after `935e64e` is PRD5 Batch 1X: repository-wide
-architecture/product/security audit, P5-F12 screening, Logs status-class filter
-fix, and frontend type-check CI gate hardening. Evidence is in
-`docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md`. This is local
-workspace evidence only until PR CI runs; it does not authorize
-deployment, target requests, credential changes, expanded exports, or ECS
-mutation.
-
-Batch 1Y continues in the same local workspace and completes the accepted
-UniRouter-owned trace search, route/failover, Data Exchange Control, and redacted
-topology work. Evidence is
-`docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md`.
+Batch 1X and Batch 1Y are integrated through PR #131. Batch 1Z records final
+target commit `95d1da9`, migration `000019` forward apply, stable/canary health,
+target Data Exchange/Logs/topology browser checks, canary runtime parity, and the
+least-privilege ECS cutover. Evidence is
+`docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md`.
+P5-F35 route/failover visibility remains CI verified pending a concrete target
+request-detail check; migration down is also unexecuted.
 X-Insight-required information is consolidated under the shared-folder request
 `requests/2026-07-10-unirouter-prd5-runtime-contract-required-information.md`.
 

@@ -1,7 +1,7 @@
 # PRD5 Current Gap Audit And Next-Window Plan
 
 > Date: 2026-07-10
-> UniRouter audited baseline: `935e64e` / PR #130 on `main`
+> UniRouter audited baseline: `95d1da9` / PR #133 on `main`
 > X-Insight audited baseline: `9172633` / PR #12 on `main`
 > Purpose: separate completed PRD5 acceptance, UniRouter-owned implementation
 > gaps, X-Insight coordination gaps, and target-evidence prerequisites before a
@@ -26,15 +26,15 @@ The current PRD5 acceptance matrix contains 36 rows:
 | Classification | Count | IDs |
 |---|---:|---|
 | Historical accepted scope | 25 | P5-F01-F07 and P5-F13-F30 |
-| Target/external integration verified | 2 | P5-F31-F32 |
+| Target/external integration verified | 5 | P5-F31-F34 and P5-F36 |
 | Deferred pending User/architecture decision | 2 | P5-F08-F09 |
 | Deferred pending target prerequisite | 2 | P5-F10-F11 |
 | Local verified screening complete | 1 | P5-F12 |
-| Local verified UniRouter-owned functionality | 4 | P5-F33-F36 |
+| CI verified UniRouter-owned functionality | 1 | P5-F35 |
 
 This means 32 rows have passed the acceptance boundary defined for those rows,
-including P5-F12 screening and four Batch 1Y local rows.
-It does **not** mean 32 product features have complete runtime implementations.
+including P5-F12 screening, three Batch 1Z target rows, and one CI-verified row.
+It does **not** mean 32 product features have complete production implementations.
 Several accepted rows intentionally delivered contracts, runbooks, or product
 boundaries only.
 
@@ -53,21 +53,25 @@ The following are implemented and have repository evidence:
 - Chat and Embeddings API-key model-permission parity before billing/provider work;
 - two controlled UniRouter to X-Insight snapshot/import/persist/idempotent-readback
   loops, including the corrected denied path;
-- temporary Gate A API keys 36 and 37 disabled.
+- temporary Gate A API keys 36 and 37 disabled;
+- structural Logs search, route/failover summary, Data Exchange Control, and
+  redacted runtime topology implemented and integrated;
+- target migration/deployment, canary runtime parity, selected browser evidence,
+  and `INFRA-SEC-001` cutover recorded in Batch 1Z.
 
 The second controlled cycle is target verified only for the denied path. It does
 not prove a paid upstream provider call, production readiness, or X-Insight ECS
 runtime deployment.
 
-## UniRouter-Owned Functionality Not Implemented
+## UniRouter-Owned Implementation And Remaining Evidence
 
-### Confirmed Design-Only Or Partial Rows
+### Confirmed Implemented Or Gated Rows
 
 | Gap | Current fact | Decision/implementation needed |
 |---|---|---|
-| Data Exchange Control surface | P5-F28 accepted the product boundary only. No UI, API, migration, RBAC, or audit implementation exists | Define an MVP for outbound authorization, artifact ledger, delivery/re-delivery/delete audit, and receipt reconciliation. Do not copy X-Insight investigation UI into UniRouter |
-| Trace search ergonomics | Existing Logs detail shows structural evidence, but PRD5 competitor work still lists request-ID and source-reference search improvements | Audit existing Logs filters/API indexes, then design exact request/source lookup and evidence-ref navigation |
-| Route/failover decision visibility | Structural decision fields exist, but route/retry/failover evidence is not yet presented at competitor-comparable clarity | Audit gateway decision emission and UI read-side coverage before adding events or panels |
+| Data Exchange Control surface | Migration/API/UI/RBAC/audit and target browser evidence are complete in Batch 1Y/1Z | Migration down remains unexecuted; X-Insight durable job/deep-link/receipt contracts remain external |
+| Trace search ergonomics | Exact/global structural search and target Logs filter evidence are complete | Keep regression coverage; no broader export follows automatically |
+| Route/failover decision visibility | UI summary and CI regression are complete | Open a concrete target request detail before promotion from CI verified to Target verified |
 | X-Insight deep links | Placeholder boundary exists; no stable X-Insight import-job ID or URL contract exists | Keep blocked until X-Insight exposes durable import-job/execution IDs and stable URLs |
 | Advanced payload policy modes | Runtime supports only `metadata_only` and `disabled` | Redacted/hash/reference/raw modes require a separate User decision plus encryption, key management, retention, delete/export, and audit-on-read design |
 | Optional OTel/OpenInference bridge | Listed as medium-priority catch-up; no bridge is implemented | Screen only after native evidence behavior and ownership are stable; do not make it a PRD5 commitment by implication |
@@ -86,14 +90,13 @@ runtime deployment.
   model slugs, target owner, cost/risk approval, and cleanup.
 - P5-F11 real enterprise OIDC/SSO browser E2E requires an approved IdP tenant,
   test user, callback, target endpoints, DB audit access, and redaction review.
-- `INFRA-SEC-001` is Critical and Open: the current development/test ECS security
-  group exposes all TCP ports publicly. Remediation needs a separately authorized,
-  rollback-tested access cutover; the in-use group must not be edited ad hoc.
+- `INFRA-SEC-001` is closed by the Batch 1Z rollback-tested least-privilege
+  security-group cutover. Compose host bindings remain a defense-in-depth follow-up.
 - Existing provider load capacity remains unstable under the recorded 20 VU test;
   production HA/DR also remains incomplete. These are project-wide operational
   gaps and should be considered in architecture prioritization.
-- Several frontend fixes are Local verified but still need an authorized target
-  browser check; they are not unimplemented source features.
+- Route/failover detail remains CI verified because no concrete target request
+  detail was opened; this is target evidence debt, not missing source behavior.
 
 ## X-Insight Coordination Work Not Complete
 
@@ -109,26 +112,26 @@ runtime deployment.
 UniRouter does not need to wait for X-Insight. P5-F12 screening and the
 repository-wide audit are now Local verified in
 `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md`. UniRouter can
-now also treat Data Exchange Control MVP, trace search, route/failover
-visibility, and redacted current-process topology as Local verified in
-`docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md`.
+now treats Data Exchange Control MVP, trace search, and redacted current-process
+topology as Target verified; route/failover visibility is CI verified. Evidence
+is `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md`.
 Only durable deep links/jobs, receipt API automation/authenticity, downstream
 retention/deletion, public adapters, and continuous ingestion require a
 cross-project contract.
 
 ## Recommended Priority
 
-1. **P0 architecture/security plan:** `INFRA-SEC-001` cutover design is recorded
-   in the Batch 1X evidence file. Actual ECS mutation remains separately
-   authorized.
+1. **P0 architecture/security:** `INFRA-SEC-001` cutover is Target verified in
+   Batch 1Z. Loopback-only or removed internal host publication remains P2
+   defense-in-depth work.
 2. **P1 repository-wide architecture and product audit:** completed in
    `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md`; confirmed
    findings and hypotheses are separated there.
 3. **P1 P5-F12 screening:** Local verified in the same evidence file. Full large
    backlog items remain behind separate scoped decisions.
-4. **P1 UniRouter product implementation:** Local verified in Batch 1Y for Data
-   Exchange Control MVP, trace search, route/failover visibility, and redacted
-   topology. PR CI, migration apply/rollback, and target browser checks remain.
+4. **P1 UniRouter product implementation:** Data Exchange Control MVP, trace
+   search, and redacted topology are Target verified; route/failover visibility
+   is CI verified. Migration down and concrete target route detail remain.
 5. **P2 prerequisite evidence:** run real upstream and SSO E2E only after the
    required environments and credentials are explicitly approved.
 6. **P2 cross-project evolution:** answer the consolidated shared-folder runtime

@@ -10,8 +10,9 @@
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
 | `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md` | PRD5 repository-wide audit, P5-F12 screening, P0-P3 batches, and INFRA-SEC-001 evidence design |
 | `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md` | PRD5 accepted UniRouter-owned completion evidence for trace search, Data Exchange Control, route/failover, redacted topology, and remaining boundaries |
+| `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md` | PRD5 final target deployment, migration, browser, canary runtime parity, cleanup, and INFRA-SEC-001 cutover evidence |
 | `docs/PRD-Phase5.md` | Formal PRD5 active scope and implementation-phase reference |
-| `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` | PRD5 acceptance matrix; Batch 1W denied-path target verification, both Gate A external persistence/readback cycles, and P5-F12 Local verified screening are recorded |
+| `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` | PRD5 acceptance matrix; Batch 1W external/denied-path evidence, Batch 1Z target deployment/security evidence, and remaining Local/CI/target boundaries are recorded |
 | `docs/ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md` | PRD5 Gate A request ID approval runbook for non-technical User/UniRouter-owner approval before controlled X-Insight snapshot generation |
 | `docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md` | PRD5 Gate A prior-authorization and narrow operator runbook for newly generated controlled scenarios |
 | `docs/planning/PRD5-IMPLEMENTATION-PLAN.md` | PRD5 batch plan and UniRouter/X-Insight ownership split |
@@ -34,7 +35,7 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required single-owner execution, approval, evidence and optional-review workflow |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD5 Batch 1Y execution, verification and boundary state |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD5 Batch 1Z target deployment/security verification and boundary state |
 | `docs/agent-workflows/reviews/` | Optional immutable independent review results |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry pointing to the current execution record |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |
@@ -112,6 +113,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | `docs/planning/PRD5-CURRENT-GAP-AUDIT-20260710.md` | Current PRD5 accounting, UniRouter implementation gaps, X-Insight coordination gaps, and next-window architecture/product audit plan |
 | `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md` | PRD5 Batch 1X local repository audit, P5-F12 screening decisions, safe local Logs/CI fixes, and INFRA-SEC-001 plan |
 | `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md` | PRD5 Batch 1Y accepted UniRouter-owned implementation and local full verification |
+| `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md` | PRD5 Batch 1Z target deployment, migration, browser, canary parity, cleanup, and security-group cutover |
 | `docs/ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md` | PRD5 Gate A request ID approval runbook and data-minimization boundary |
 | `docs/ops/PRD1-STRICT-CLOSEOUT-RUNBOOK.md` | Final strict closeout gate and evidence procedure |
 | `docs/ops/deployment-runbook.md` | Deployment reference |
@@ -138,7 +140,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 |------|------|
 | `docs/agent-workflows/README.md` | Agent workflow index |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Current Agent Protocol v2.0 |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current execution-owner record; PRD5 Batch 1Y local completion continues from Batch 1X audit and Batch 1W target verification |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current execution-owner record; PRD5 Batch 1Z target closeout continues from Batch 1Y implementation and Batch 1W external evidence |
 | `docs/agent-workflows/reviews/README.md` | Independent review naming, contents and severity rules |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |
