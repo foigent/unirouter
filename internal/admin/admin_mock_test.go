@@ -1904,6 +1904,13 @@ func TestDeleteUser_Success(t *testing.T) {
 	db := &testutil.MockDB{
 		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
 			return &testutil.MockTx{
+				QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+					return &testutil.MockRow{ScanFn: func(dest ...any) error {
+						*dest[0].(*int64) = 1
+						*dest[1].(*string) = auth.RoleOrgViewer
+						return nil
+					}}
+				},
 				ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 					if strings.Contains(sql, "UPDATE api_keys") {
 						updatePersonalKeys = true
@@ -1948,6 +1955,13 @@ func TestDeleteUser_DBError(t *testing.T) {
 	db := &testutil.MockDB{
 		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
 			return &testutil.MockTx{
+				QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+					return &testutil.MockRow{ScanFn: func(dest ...any) error {
+						*dest[0].(*int64) = 1
+						*dest[1].(*string) = auth.RoleOrgViewer
+						return nil
+					}}
+				},
 				ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 					return pgconn.CommandTag{}, fmt.Errorf("fk violation")
 				},

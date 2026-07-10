@@ -10,13 +10,13 @@
 | P6-ROUTE-001 | Half-open recovery deadline correction | Confirmed current-code outage risk; no new product scope | focused/race/full tests and CI |
 | P6-RL-001 | Atomic exact Redis RPM/RPS enforcement | Confirmed over-admission and multi-instance race; no new surface | sequential/concurrent/context/failure tests and CI |
 | P6-DOC-001 | Independent PRD6 truth chain | Required to prevent PRD5 reopening and scope leakage | entry, PRD, matrix, plan, backlog, status/inventory sync |
-| P6-TENANT-001 | Enforce organization ownership and block org-admin platform-role escalation | Accepted D6-01 P0; prevents cross-tenant key/user/project control | authenticated handler matrix, SQL predicates, no-side-effect negatives, platform-admin exception and CI |
+| P6-TENANT-001 | Enforce organization ownership and block org-admin platform-role escalation | Accepted D6-01 P0; prevents cross-tenant key/user/project/project-policy control | local migrated-PostgreSQL matrix is green; PR and required CI pending |
 
 ## 2. Accepted MVP — Ordered Work Queue
 
 | ID | Item | Value | Dependency / risk | Priority |
 |----|------|-------|-------------------|----------|
-| P6-TENANT-001 | Enforce organization ownership on admin object operations | prevents cross-tenant key/user/project access | central tenant predicate and complete handler matrix | P0 |
+| P6-TENANT-001 | Enforce organization ownership on key/user/project/project-policy operations | prevents accepted-scope cross-tenant access and malformed policy influence | local verified; PR/CI promotion pending | P0 |
 | P6-IDEM-001 | Separate server operation, client idempotency, trace/span, workflow and Agent identities | prevents cross-tenant/retry/child charge collisions | schema migration and payload fingerprint semantics | P0 |
 | P6-BILL-003 | Pool-safe reservation and single durable terminal state | prevents pool starvation, double terminal transitions and free delivered output | financial state migration, recovery and invariant tests | P0 |
 | P6-AUTH-001 | Versioned user/project/key/role revocation | bounds stale authority across replicas | revocation SLO, cache and outage posture | P0 |
@@ -33,7 +33,20 @@
 | P6-GUARD-001 | Guardrail Kernel | enterprise safety and PII controls | detector/failure/latency policy | P1 |
 | P6-STREAM-001 | Streaming interception and termination | limits unsafe live disclosure | buffer/latency/protocol contract | P1 |
 
-## 3. Advanced Candidates
+## 3. New Confirmed Integrity Inputs — Separate Decision
+
+| ID | Item | Confirmed value/risk | Decision dependency | Priority |
+|----|------|----------------------|---------------------|----------|
+| P6-FIN-TENANT-001 / P6-F32 | Tenant-scope wallet, grant, transaction and reconciliation operations | prevents cross-tenant financial read/write and removes first-wallet behavior | accept exact finance-admin boundary | P0 |
+| P6-NOTIFY-TENANT-001 / P6-F33 | Tenant-scope notification reads and webhook sinks | closes a source-reachable victim-event exfiltration chain | accept exact notification boundary | P0 |
+| P6-PRICE-AUTH-001 / P6-F34 | Separate global base-price and organization-multiplier authority | prevents tenant roles changing platform/victim billing | choose org-multiplier mutation role | P0 |
+| P6-CONTROL-AUTH-001 / P6-F35 | Gate deployment settings, license and global sensitive words | prevents tenant roles changing global runtime controls | accept platform-only default or define new org-scoped schema | P0 |
+| P6-MODELGOV-TENANT-001 / P6-F36 | Tenant-scope registry, alias, catalog and organization model sets | prevents cross-tenant model-policy disclosure/mutation | accept exact model-governance boundary | P1 |
+
+Evidence: `docs/ops/evidence/PRD6-B0B-admin-tenant-surface-audit-20260711.md`.
+These rows do not reopen PRD5 and are not silently accepted by D6-01.
+
+## 4. Advanced Candidates
 
 | ID | Item | Reopen prerequisite | Priority |
 |----|------|---------------------|----------|
@@ -56,14 +69,14 @@
 | P6-CLAIM-001 | Domain-bounded claim assurance and risk-adjusted routing | routes high-stakes claims through evidence/abstention controls | authoritative domain fixtures and non-truth-claim metrics | P2 |
 | P6-TRAIN-001 | Approved failure case to external model-lifecycle workflow | supports improvement without gateway-owned training | data rights, poisoning screen, holdout, human promotion and rollback | P3 |
 
-## 4. External-Project Boundary
+## 5. External-Project Boundary
 
 | Boundary | UniRouter owns | External owner may own | Current disposition |
 |----------|----------------|------------------------|---------------------|
 | Evidence consumption | authoritative request identity, policy/routing decisions, usage/billing truth, sanitized gateway audit creation | independent investigation, aggregation, storage and UI | asynchronous boundary only; no external feature is PRD6 scope or a request dependency |
 | Secret backend | selected versioned references and gateway consumption after acceptance | Vault/KMS/cloud service operation | deferred pending backend decision |
 
-## 5. Target Evidence Queue
+## 6. Target Evidence Queue
 
 These are evidence needs, not automatic source implementation:
 
@@ -77,7 +90,7 @@ These are evidence needs, not automatic source implementation:
 Each needs an exact environment, operator, data, credential, cost and retention
 authorization before execution.
 
-## 6. Deferred Or Rejected By Default
+## 7. Deferred Or Rejected By Default
 
 | Item | Disposition | Reason |
 |------|-------------|--------|
@@ -92,7 +105,7 @@ authorization before execution.
 | Public payment/recharge/referral/resale features | Rejected by current positioning | UniRouter is scoped as enterprise-local MaaS, not a public token storefront |
 | External exporter/continuous ingestion | External/future contract | P6-DURABLE-001's internal outbox does not authorize an external delivery channel |
 
-## 7. Decision Register
+## 8. Decision Register
 
 | Decision | Recommended default | Status | Effect |
 |----------|---------------------|--------|--------|
@@ -103,3 +116,4 @@ authorization before execution.
 | D6-05 External-project boundary | external systems may asynchronously consume accepted sanitized facts; no external feature or runtime is a request dependency | Proposed clarification consistent with the accepted PRD5 boundary | prevents ownership and availability coupling |
 | D6-06 Post-MVP differentiator | adopt Evidence-to-Control Flywheel while accepting each P6-F23-F31 row separately | Proposed; User decision not required for current P0/P1 work | first recommended experiment is fixture-only P6-F24 |
 | D6-07 Innovation data posture | metadata-only by default; content analysis requires tenant opt-in plus purpose/retention/delete/access controls | Proposed | gates semantic analysis, shadow data and training cases |
+| D6-08 Administrator authority split | platform owns global price/settings/license/global sensitive words; tenant roles are confined to their JWT org; choose whether org multipliers are own-org self-service or platform/billing-authority only | Required for P6-F32-P6-F36; proposed default | does not block P6-F16 PR; gates the new administrator-surface rows |

@@ -1,45 +1,42 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 0 / 0A Closeout, D6-01/D6-02 Acceptance, And Batch 0B Start
+**Batch:** PRD6 Batch 0B P6-F16 Tenant Isolation
 **Owner:** Codex
-**Risk:** R2 planning/audit plus R3 gateway/limiter corrections; P6-F16 is the first R4 Batch 0B boundary
-**Status:** Batch 0A and the scalability audit are CI verified by Draft PR #139; D6-01/D6-02 accepted; innovation rows remain proposed; P6-F16 implementation is next
-**Base:** `deacae2d4164b98c5241cf72844f09f53ca7510d`
-**Branch:** `codex/prd6-kickoff`
+**Risk:** R4 multi-tenant authorization and project policy enforcement
+**Status:** P6-F16 local verified; PR and required CI pending; P6-F32-P6-F36 are separately confirmed unaccepted inputs
+**Base:** `62f161e2866a3a4c699abb9a647feef48bded1b2`
+**Branch:** `codex/prd6-b0b-tenant-isolation`
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Scope
 
-1. Revalidate Git, CI, backend/frontend tests, PRD5 closure, X-Insight state,
-   shared retention artifacts and target evidence boundaries.
-2. Fix the confirmed half-open recovery deadline error.
-3. Make API-key Redis RPM/RPS admission atomic and exact, using request context
-   while preserving the current Redis-error fail-open contract.
-4. Establish independent PRD6 entry, PRD, matrix, implementation plan, backlog,
-   Four-Quadrant competitor audit and current-state routing.
-5. Audit 100x/Agent fan-out, tenant/auth, billing, routing/Redis,
-   streaming/multimodal, evidence, and retention anti-patterns against source.
-6. Record the User's D6-01/D6-02 acceptance and start the highest-priority safe
-   Batch 0B remediation.
-7. Audit adaptive-trust, shadow evaluation and semantic-collusion ownership,
-   preserving the distinction between UniRouter enforcement, X-Insight analysis,
-   actual action-owner enforcement and external model lifecycle.
+1. Bind every accepted-scope key/user/project operation to the authenticated
+   non-platform actor organization.
+2. Block organization-admin creation, promotion, mutation or deletion of
+   platform authority, including the final update race.
+3. Bind project membership to JWT org, database user org and project org.
+4. Make project model-set replacement same-org and atomic, and prevent malformed
+   historical cross-org assignments from influencing live model admission.
+5. Prove same-tenant, cross-tenant, platform/legacy exception, org-zero
+   fail-closed and no-side-effect behavior through a migrated PostgreSQL/JWT
+   matrix.
+6. Record later confirmed administrator-surface gaps without expanding P6-F16
+   or reopening PRD5.
 
 ## Behavior Change
 
-- Half-open channels are excluded until their recovery deadline and become
-  eligible for the existing bounded probe behavior after it.
-- QPS and RPM windows are cleaned, checked and recorded by one Redis script;
-  exactly N requests are admitted and N+1 is rejected.
-- Redis server time avoids per-instance wall-clock divergence, and canceled
-  request context prevents an orphan limiter write.
-- Redis command/script failure in Batch 0A still preserves its pre-existing
-  behavior. D6-02 now requires the later distributed-policy implementation to
-  replace unlimited hard-quota fail-open with the accepted bounded posture.
+- Non-platform key/user/project list, read and mutation sinks are constrained to
+  the signed actor organization.
+- Organization admins cannot create/promote platform roles or mutate/delete an
+  existing platform target; the final SQL predicate closes the role-change race.
+- Project-scoped membership requires consistent user/project/JWT organization.
+- Project model-set replacement validates before mutation and commits delete/
+  insert atomically; the execution query ignores cross-org assignments.
+- Same-tenant and platform/legacy-admin behavior remains available.
 - No new X-Insight runtime field or dependency is introduced.
-- The Batch 0B audit changes no runtime behavior. Its P0/P1 rows are source/local
-  findings and proposed acceptance evidence, not implemented fixes, incidents,
-  target verification, or 100x capacity proof.
+- P6-F32-P6-F36 change no runtime behavior in this branch. They remain new
+  source findings and proposed acceptance evidence, not implemented fixes,
+  incidents, target verification, or global tenant-isolation proof.
 
 ## Files And Evidence
 
@@ -49,6 +46,10 @@
   `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`.
 - Scalability/anti-pattern evidence:
   `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md`.
+- P6-F16 local evidence:
+  `docs/ops/evidence/PRD6-B0B-P6F16-tenant-isolation-local-20260711.md`.
+- Follow-up administrator surface audit:
+  `docs/ops/evidence/PRD6-B0B-admin-tenant-surface-audit-20260711.md`.
 - Adaptive-trust innovation evidence:
   `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`.
 - Structural hardening portfolio:
@@ -57,9 +58,10 @@
   `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`,
   `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`, and
   `docs/planning/PRD6-BACKLOG.md`.
-- Code/tests: `internal/gateway/router.go`,
-  `internal/gateway/router_mock_test.go`, `internal/middleware/ratelimit.go`, and
-  `internal/middleware/ratelimit_test.go`.
+- Code/tests: `internal/admin/{key,user,project,rbac_helpers,model_governance}_handlers.go`,
+  `internal/modelgov/modelgov.go`, `internal/admin/tenant_isolation_test.go`,
+  `internal/admin/tenant_isolation_integration_test.go`, and
+  `internal/modelgov/modelgov_test.go`.
 
 ## Verification
 
@@ -74,7 +76,7 @@ Pre-change repository results on 2026-07-11:
 - `git diff --check`: PASS;
 - X-Insight `go test ./... -count=1`: PASS.
 
-Focused post-change results:
+Focused Batch 0A post-change results:
 
 - `go test -race ./internal/gateway -count=1`: PASS;
 - `go test -race ./internal/middleware -count=1`: PASS;
@@ -91,7 +93,25 @@ Focused read-only Batch 0B audit results on baseline `d5a5249`:
 - these results do not cover PostgreSQL/Redis multi-instance races or prove a
   100x workload.
 
-Full post-change repository results:
+Focused P6-F16 results on `codex/prd6-b0b-tenant-isolation`:
+
+- regression-before-fix suite: FAILED on the expected tenant, membership,
+  model-set atomicity/runtime and role-race paths;
+- `go test -race ./internal/admin -run '^TestP6F16' -count=1`: PASS;
+- the authenticated test created a temporary database, applied migrations
+  `000001`-`000019`, and ran twelve subtests without skip;
+- `go test ./internal/admin -count=1`: PASS;
+- `go test ./internal/modelgov -count=1`: PASS;
+- `go test -race ./... -count=1`: PASS, with the existing macOS linker warning;
+- `go vet ./...`: PASS;
+- frontend type-check and build: PASS;
+- frontend standalone rerun: PASS, 25 files / 125 tests; an earlier run
+  concurrent with race/vet/build had one five-second Data Exchange test timeout;
+- `git diff --check`: PASS;
+- independent final code/test review: no P6-F16 blocker;
+- required PR CI remains pending for the final exact pushed head.
+
+Full Batch 0A/kickoff repository results:
 
 - `go test ./... -count=1`: PASS;
 - `go vet ./...`: PASS;
@@ -116,9 +136,10 @@ PR #139 required checks for final scalability-audit evidence head `6c8c192`:
 - `Frontend Build`: PASS;
 - `Docker Build`: PASS.
 
-P6-F01 and P6-F02 remain `CI verified`. The P0/P1 audit findings are
-documentation/source evidence only and remain unremediated; CI verification of
-the audit commit does not promote them to implemented or target verified.
+P6-F01 and P6-F02 remain `CI verified`. P6-F16 is `Local verified` only until
+its exact PR head passes required CI. P6-F32-P6-F36 are documentation/source
+evidence only and remain unaccepted/unremediated; documentation verification
+does not promote them to implemented or target verified.
 
 No deployment, target mutation/probe, real or paid request, credential change,
 exporter/outbox, deletion or expanded data exchange occurred. Migration down,

@@ -1,9 +1,9 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
-> Current execution is PRD6 Batch 0/0A and accepted Batch 0B preparation on
-> `codex/prd6-kickoff`, based on clean
-> `main == origin/main == deacae2d4164b98c5241cf72844f09f53ca7510d`.
+> Current execution is PRD6 Batch 0B P6-F16 on
+> `codex/prd6-b0b-tenant-isolation`, based on merged
+> `main == origin/main == 62f161e2866a3a4c699abb9a647feef48bded1b2`.
 > D6-01 and D6-02 were accepted by the User on 2026-07-11. Batch 0B begins with
 > P6-F16; advanced innovation rows P6-F23 through P6-F31 remain proposed.
 
@@ -12,6 +12,10 @@
 - Baseline evidence: `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md`.
 - Scalability/anti-pattern evidence:
   `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md`.
+- P6-F16 local implementation evidence:
+  `docs/ops/evidence/PRD6-B0B-P6F16-tenant-isolation-local-20260711.md`.
+- Follow-up administrator tenant-surface audit:
+  `docs/ops/evidence/PRD6-B0B-admin-tenant-surface-audit-20260711.md`.
 - Adaptive-trust/innovation audit:
   `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`.
 - Adaptive-trust structural options and signed split-plane recommendation:
@@ -26,9 +30,9 @@
   gateway/middleware/circuitbreaker race suites. This is source/local evidence,
   not a multi-instance or 100x result.
 - PR #136, #137 and #138 are merged with all three required checks successful.
-- Draft PR #139 is CI verified through final evidence head `6c8c192`: `Backend Tests`,
-  `Frontend Build`, and `Docker Build` passed for Batch 0/0A and the Batch 0B
-  scalability/anti-pattern documentation. It is not merged or deployed.
+- PR #139 was squash-merged as `62f161e2866a3a4c699abb9a647feef48bded1b2`;
+  `Backend Tests`, `Frontend Build`, and `Docker Build` passed for its final
+  exact head. It was not deployed.
 - No deployment, target probe/mutation, real or paid request, credential change,
   data-scope expansion, exporter/outbox or continuous ingestion occurred.
 
@@ -38,9 +42,13 @@ terminal-state concurrency, post-delivery settlement handling, and revocation.
 It also confirmed P1 synchronous-request-path, process-local admission, route/
 breaker, Redis hot-key, streaming, evidence-write and retention blind spots.
 The User accepted the updated MVP and policy-specific failure posture. P6-F16
-is now the first active remediation; the other findings remain unremediated
-until their ordered batches. No audit row is presented as a production incident,
-100x proof, or implemented remediation before its exact evidence exists.
+is locally verified with a migrated two-tenant PostgreSQL/JWT matrix; its PR and
+required CI are still pending. A later read-only audit found P6-F32 through
+P6-F36 across finance, notifications, pricing, global settings and organization
+model governance. Those are source-confirmed new inputs, not silently included
+in the earlier D6-01 decision. No audit row is presented as a production
+incident, 100x proof, or implemented remediation before its exact evidence
+exists.
 
 The third PRD6 research round confirmed that UniRouter currently owns model
 request enforcement, not arbitrary MCP/tool/data/export side effects. X-Insight

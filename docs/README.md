@@ -6,6 +6,8 @@
 - [planning/PRD6-START-HERE.md](planning/PRD6-START-HERE.md) — PRD6 正式启动、当前决策状态和最小确认项
 - [ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md](ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md) — Git/CI/测试/X-Insight/代码事实基线
 - [ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md](ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md) — 100x、Agent 扇出、鉴权、计费、路由、流式和多模态反模式审计
+- [ops/evidence/PRD6-B0B-P6F16-tenant-isolation-local-20260711.md](ops/evidence/PRD6-B0B-P6F16-tenant-isolation-local-20260711.md) — P6-F16 key/user/project/project-policy 租户边界本地证据
+- [ops/evidence/PRD6-B0B-admin-tenant-surface-audit-20260711.md](ops/evidence/PRD6-B0B-admin-tenant-surface-audit-20260711.md) — P6-F16 之外财务、通知、价格、全局设置和模型治理租户审计
 - [planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md](planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md) — LiteLLM/New API/One API 固定版本核验、四象限和优先级矩阵
 - [planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md](planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md) — CARTA、影子评测、反串谋、四象限、三平面边界和 Killer Features
 - [planning/prd6-adaptive-trust-hardening/hardening.md](planning/prd6-adaptive-trust-hardening/hardening.md) — adaptive-trust 三种结构方案、安全权衡和 signed local enforcement 推荐

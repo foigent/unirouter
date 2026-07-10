@@ -194,7 +194,7 @@ These do not become UniRouter source-code gaps without new evidence.
 |----|-------------|----------|-------------|
 | P6-F01 | Recover expired half-open channels into bounded probe eligibility | P0 | Accepted Batch 0A |
 | P6-F02 | Atomically enforce the exact Redis RPM/RPS boundary | P0 | Accepted Batch 0A |
-| P6-F16 | Enforce organization ownership for every non-platform-admin key/user/project operation | P0 | Accepted urgent Batch 0B |
+| P6-F16 | Enforce organization ownership for every non-platform-admin key/user/project and project-owned model-set operation | P0 | Accepted urgent Batch 0B; local verified, PR pending |
 | P6-F17 | Separate operation, idempotency, trace/span, workflow and Agent identities | P0 | Accepted urgent Batch 0B |
 | P6-F18 | Make reservation/finalization single-terminal, pool-safe and durable after billable output | P0 | Accepted urgent Batch 0B |
 | P6-F03 | Honor retryable/non-retryable error classification and preserve safe response semantics | P0 | Accepted Batch 0C |
@@ -223,6 +223,11 @@ These do not become UniRouter source-code gaps without new evidence.
 | P6-F29 | Feed approved failure cases to an external model-lifecycle workflow | P3 | Deferred; no automatic raw-case training or promotion |
 | P6-F30 | Add a multimodal provenance passport | P3 | Deferred pending media-roadmap decision |
 | P6-F31 | Add semantic collusion/cascade risk analysis | P3 | Research candidate; shadow only until separately accepted |
+| P6-F32 | Tenant-scope wallet, grant, transaction and reconciliation administration | P0 | New confirmed integrity input; separate decision |
+| P6-F33 | Tenant-scope notification evidence and webhook sinks | P0 | New confirmed integrity input; separate decision |
+| P6-F34 | Establish global-price and organization-multiplier mutation authority | P0 | New confirmed input; role decision required |
+| P6-F35 | Restrict deployment settings, license material and global sensitive words to platform authority | P0 | New confirmed input; role decision required |
+| P6-F36 | Enforce organization ownership across registry, alias, catalog and organization model-set endpoints | P1 | New confirmed security input; separate decision |
 
 ## 6. Safety And Authorization Boundaries
 
@@ -266,3 +271,7 @@ Batch 0B is therefore authorized for repository implementation and begins with
 P6-F16. Each R4 security/financial boundary remains an independently reviewable
 PR with local, race/integration where applicable, and required CI evidence.
 P6-F22 through P6-F31 are not implied by D6-01 and remain separate decisions.
+The later source audit found P6-F32 through P6-F36. They are confirmed integrity
+inputs, but were not known when D6-01 was accepted and therefore are not silently
+added to its implementation authority. P6-F16 may still complete independently
+under its exact key/user/project/project-policy boundary.
