@@ -4,7 +4,7 @@
 **Owner:** Codex
 **Risk:** R4 authorized ECS security-group cutover; R3 migration/deployment/canary/runtime/browser verification
 **Status:** Target verified for the recorded Batch 1Z evidence
-**Base:** final deployed `origin/main` at `95d1da9` / PR #133
+**Repository evidence:** PR #134 merged; **target backend:** `95d1da9` / PR #133
 **Previous batch:** PRD5 Batch 1Y implementation merged by `88a7354` / PR #131
 
 ## Scope

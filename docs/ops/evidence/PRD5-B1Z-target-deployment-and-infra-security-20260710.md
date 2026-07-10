@@ -32,6 +32,7 @@ X-Insight-owned runtime contracts.
 | UniRouter-owned PRD5 controls | `88a7354` / PR #131 | Backend Tests, Frontend Build, Docker Build passed |
 | Configurable target Go proxy | `5b4a5e7` / PR #132 | Backend Tests, Frontend Build, Docker Build passed |
 | Stable/canary runtime parity | `95d1da9` / PR #133 | Backend Tests, Frontend Build, Docker Build passed |
+| Batch 1Z evidence/status closeout | PR #134 | Backend Tests, Frontend Build, Docker Build passed |
 
 The final deployed backend commit is
 `95d1da9f6a169311de6a9f58bba4a4ad1efe138c`.
