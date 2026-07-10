@@ -101,7 +101,8 @@ Current execution is PRD6 Batch 0/0A plus the Batch 0B scope audit on a `codex/`
 `deacae2d4164b98c5241cf72844f09f53ca7510d`. Fresh full repository checks and
 X-Insight tests passed before implementation; Batch 0A repairs the confirmed
 half-open recovery and atomic Redis limit defects. The new P0/P1 audit findings
-are not remediated or target verified. Current details and promotion gates are in
+are documentation CI verified through `b21b689` but are not remediated or target
+verified. Current details and promotion gates are in
 `docs/agent-workflows/EXECUTION-RECORD.md`.
 
 PRD5 Batch 1Z Target Deployment And Infrastructure Security remains Target

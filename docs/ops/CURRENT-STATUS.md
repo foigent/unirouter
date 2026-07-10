@@ -22,8 +22,9 @@
   gateway/middleware/circuitbreaker race suites. This is source/local evidence,
   not a multi-instance or 100x result.
 - PR #136, #137 and #138 are merged with all three required checks successful.
-- Draft PR #139 is CI verified for PRD6 Batch 0/0A: `Backend Tests`,
-  `Frontend Build`, and `Docker Build` passed. It is not merged or deployed.
+- Draft PR #139 is CI verified through audit commit `b21b689`: `Backend Tests`,
+  `Frontend Build`, and `Docker Build` passed for Batch 0/0A and the Batch 0B
+  scalability/anti-pattern documentation. It is not merged or deployed.
 - No deployment, target probe/mutation, real or paid request, credential change,
   data-scope expansion, exporter/outbox or continuous ingestion occurred.
 

@@ -3,7 +3,7 @@
 **Batch:** PRD6 Batch 0 / 0A Baseline, Existing Correctness, And Batch 0B Scope Audit
 **Owner:** Codex
 **Risk:** R2 planning/audit plus R3 gateway/limiter request-path corrections
-**Status:** Batch 0A CI verified by Draft PR #139; scalability audit update local pending PR refresh/CI; no deployment claimed
+**Status:** Batch 0A and the scalability audit documentation are CI verified by Draft PR #139 through `b21b689`; no deployment claimed
 **Base:** `deacae2d4164b98c5241cf72844f09f53ca7510d`
 **Branch:** `codex/prd6-kickoff`
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
@@ -102,8 +102,15 @@ PR #139 required checks for implementation commit `000ea64`:
 - `Frontend Build`: PASS;
 - `Docker Build`: PASS.
 
-P6-F01 and P6-F02 are `CI verified`. The evidence-status-only follow-up commit
-is subject to the same three required checks before final handoff.
+PR #139 required checks for scalability audit commit `b21b689`:
+
+- `Backend Tests`: PASS;
+- `Frontend Build`: PASS;
+- `Docker Build`: PASS.
+
+P6-F01 and P6-F02 remain `CI verified`. The P0/P1 audit findings are
+documentation/source evidence only and remain unremediated; CI verification of
+the audit commit does not promote them to implemented or target verified.
 
 No deployment, target mutation/probe, real or paid request, credential change,
 exporter/outbox, deletion or expanded data exchange occurred. Migration down,

@@ -32,8 +32,8 @@ independently reviewable PRs.
 ### Batch 0 — Baseline And Scope Evidence
 
 **Risk:** R2 documentation/research.
-**Status:** competitor baseline and Batch 0A are CI verified by Draft PR #139;
-the scalability/anti-pattern audit update is local pending PR refresh/CI.
+**Status:** competitor baseline, Batch 0A and the scalability/anti-pattern audit
+are CI verified by Draft PR #139 through `b21b689`.
 
 Deliverables:
 

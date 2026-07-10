@@ -44,8 +44,9 @@ evidence.
   `Docker Build` were successful for all three.
 - Fresh local verification passed: `go test ./... -count=1`, `go vet ./...`,
   frontend type-check, 25 Vitest files / 125 tests, and frontend build.
-- PR #139 verified the PRD6 Batch 0A implementation with successful
-  `Backend Tests`, `Frontend Build`, and `Docker Build`.
+- PR #139 verified the PRD6 Batch 0A implementation and Batch 0B audit
+  documentation through `b21b689`, with successful `Backend Tests`, `Frontend
+  Build`, and `Docker Build`.
 - The source and focused-test scalability audit found P0 tenant-isolation,
   operation/idempotency, billing pool re-entry, terminal-state, post-delivery
   settlement, and revocation risks. These are source findings, not production
