@@ -1,13 +1,40 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
-> Current repository truth includes the PRD5 Batch 1Z evidence closeout merged by PR #134. The X-Insight v1 runtime-contract reconciliation passed required `Backend Tests`, `Frontend Build`, and `Docker Build` in PR #136. The deployed stable/canary backend remains `95d1da9` / PR #133; PR #136 is not deployed and makes no target claim.
-> Current execution: PRD5 Batch 1W Pre-Relay Model Permission Evidence Parity is `Target verified` for the single denied scenario authorized by `UR-XI-GATE-A-20260710-02`. Target `e823abc293f996264763c6c1aca19d3d4d6e705f` contains Batch 1W `931400a` / PR #126; stable/canary health passed, the 403 response returned the matching request ID and auth decision trace, and no call log, billing freeze, transaction, or provider event was created. Temporary API keys 36 and 37 are disabled. The second X-Insight receipt is `persisted`: first persistence inserted two, rerun produced two duplicate/no-op, and readback returned two events/two gaps. The original Gate A receipt remains External integration verified with 10 events/3 gaps. Evidence is in `docs/ops/evidence/PRD5-B1W-target-rerun-20260710.md`. X-Insight's fixture/synthetic-only non-production target is Target verified at exact release artifact `b9e5811`; this is not Production verified or a public API claim. Real paid-provider E2E remains pending. Both temporary Gate A snapshot artifacts are due for exact-path deletion by 2026-07-17 under the accepted retention decision; receipts, hashes, sanitized evidence, and persisted normalized evidence are retained. Historical Batch 1A through Batch 1V Canary/Sentinel records remain valid evidence; they are no longer required serial gates for new work. PRD4 remains complete and closed.
-> Repository continuation: PRD5 Batch 1X audit/P5-F12 screening and Batch 1Y UniRouter-owned implementation are integrated through PR #131. Batch 1Y completes structural evidence search, route/failover visibility, platform-admin Data Exchange Control migration/API/UI/audit, redacted runtime topology, and accepted design-only budget/service-account/incident contracts.
-> Target continuation: PRD5 Batch 1Z is recorded in `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md`. Migration `000019` forward apply, stable/canary deployment, Data Exchange/Logs/topology target browser checks, canary runtime parity, and `INFRA-SEC-001` least-privilege security-group cutover are verified. P5-F33, P5-F34, and P5-F36 are Target verified; P5-F35 is CI verified because a concrete target route/failover detail was not opened. Migration down, TLS 443 behavior, real provider/SSO, unimplemented X-Insight durable runtime contracts, and full deferred P5-F12 products remain separate from the completed accepted UniRouter scope.
-> Batch 25 final closeout remains the latest PRD2 feature-scope closeout: it adds the P2-F11 prompt/response storage policy, reconciles PRD2 matrix rows to accepted/deferred/out-of-scope states, records local evidence in `docs/ops/evidence/PRD2-B25-final-closeout-local-20260704.md`, and preserves external target-evidence boundaries: Batch 18 real upstream provider E2E needs credentials, P2-F10 License is E2E accepted but not Production verified, project budget hard-block is deferred, production HA/DR remains later target evidence, and real enterprise IdP browser login remains target-environment evidence.
-> Post-closeout PRD2 Batch 28 product consistency/filter parity is accepted: shared UI display labels, usage analytics filter parity, stable `usage_source` API values with localized labels, and evidence/status handoff. PRD2 is frozen for new feature work; final freeze evidence is recorded in `docs/ops/evidence/PRD2-final-freeze-20260705.md`. PRD3 is complete for the confirmed scope; PRD4 starts from `docs/planning/PRD4-BACKLOG.md` plus the PRD2/PRD3 evidence boundaries recorded here.
-> PRD4 Batch 0 scope baseline is complete per User report after `e24731d` / PR #82: `docs/PRD-Phase4.md`, `docs/ops/PRD4-ACCEPTANCE-MATRIX.md`, `docs/planning/PRD5-BACKLOG.md`, and PRD4 ADRs define the proposed scope without runtime code changes.
+> Current execution is PRD6 Batch 0/0A on `codex/prd6-kickoff`, based on clean
+> `main == origin/main == deacae2d4164b98c5241cf72844f09f53ca7510d`.
+> PRD6 is formally active in discovery/scope-gate state. Only the verified
+> half-open recovery and Redis atomic-limit corrections are accepted before the
+> User decides the broader MVP and enforcement failure mode.
+
+## PRD6 Current Window
+
+- Baseline evidence: `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md`.
+- Scope entry: `docs/planning/PRD6-START-HERE.md`.
+- Proposed PRD: `docs/PRD-Phase6.md`; accepted/proposed state is authoritative
+  in `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`.
+- Fresh pre-change verification passed backend tests/vet, frontend type-check,
+  25 files / 125 tests, frontend build, and X-Insight full Go tests.
+- PR #136, #137 and #138 are merged with all three required checks successful.
+- No deployment, target probe/mutation, real or paid request, credential change,
+  data-scope expansion, exporter/outbox or continuous ingestion occurred.
+
+PRD5 remains `Accepted Scope Complete`. Batch 1Z target evidence remains valid;
+the deployed stable/canary backend recorded by that evidence remains `95d1da9`
+/ PR #133 and this PRD6 branch makes no target claim. P5-F35 concrete target
+detail, migration down, TLS 443, real provider/SSO and later X-Insight contracts
+remain separate evidence/ownership matters, not reopened PRD5 source gaps.
+
+The two temporary Gate A JSON snapshots remain present with accepted hashes and
+are due for exact-path deletion by 2026-07-17. Receipts, hashes, sanitized
+evidence and persisted normalized evidence remain retained.
+
+X-Insight `main == origin/main == e43add8e0184ba1eb059484053bc5e9d9f4cf6ed`
+passed `go test ./... -count=1`. Phase 1 remains complete; Phase 2 investigation
+UI is X-Insight-owned. The cross-project v1 contract remains operator-mediated
+`xinsight.import-receipt.v1` sidecar reconciliation.
+
+## Historical Accepted Phase Record
 
 > PRD4 preflight hardening passed Canary 6/6 and User reported Sentinel/Atlas completed after `e335a9e` / PR #83: price lookup DB/context/query errors no longer fall back to hardcoded billing prices, `errdocs` has direct unit coverage, and graceful shutdown timeout is configurable with a 120-second default.
 > PRD4 Batch 1A Auth UX hardening passed Canary 6/6 and User reported Sentinel completed after `620794b` / PR #84: login, change-password, and admin user password fields share hidden-by-default visibility controls with accessible show/hide buttons. Atlas deployment has not been reported for Batch 1A.
@@ -32,13 +59,13 @@
 > PRD5 Batch 1A/1B/1C Scope / Snapshot / Structural Evidence / Trace UI passed Canary 17/17 and Sentinel merge is reflected by `e1e76e3` / PR #106. PRD5 Batch 1D Upstream Request Correlation passed Canary 11/11 and Sentinel merge is reflected by `bf435ca` / PR #107: it captures provider-returned upstream request IDs from a bounded response-header allowlist and writes sanitized values to provider trace events plus call logs. PRD5 Batch 1E Event Capture Gap Emission passed Canary 11/11 and Sentinel merge is reflected by `a19830f` / PR #108: it writes `capture_gap='redacted'` when trace metadata is safely dropped, shape-rejected, or truncated. PRD5 Batch 1F Payload Capture Mode Configuration passed Canary 11/11 and Sentinel merge is reflected by `e9670ad` / PR #109: it adds restricted `PAYLOAD_CAPTURE_MODE` config for `metadata_only` and `disabled` evidence state only. PRD5 Batch 1G Trusted Evidence Context Intake passed Canary 11/11 and Sentinel merge is reflected by `c701843` / PR #110: it adds default-off shared-secret-gated inbound trace/session/actor/delegation evidence context. PRD5 Batch 1H Gateway Span Hierarchy passed Canary 10/10 and Sentinel merge is reflected by `61f5610` / PR #111: it parents later UniRouter-emitted trace events to the request gateway root span and preserves trusted inbound parent spans for the root. PRD5 Batch 1I Payload Policy Decision Evidence passed Canary 11/11 and Sentinel merge is reflected by `1dc20b5` / PR #112: it emits explicit `payload.policy.applied` trace events with sanitized policy metadata and `decision_kind=payload_capture`, while raw payload capture remains off. PRD5 Batch 1J Provider Upstream Capture Gap passed Canary and Sentinel merge is reflected by `f5223df` / PR #113: provider response trace events without sanitized provider-returned upstream request IDs write `capture_gap=provider_not_returned`. PRD5 Batch 1K Gate A Snapshot Handoff Note passed Canary 10/10 and Sentinel merge is reflected by `2db830a` / PR #114. PRD5 Batch 1L Component Span Refinement passed Canary 10/10 and Sentinel merge is reflected by `ffebf83` / PR #115. PRD5 Batch 1M Provider Failure Capture Gaps passed Canary 10/10 and Sentinel merge is reflected by `4a4e254` / PR #116. PRD5 Batch 1N Snapshot Capture Gap Candidates passed Canary 10/10 and Sentinel merge is reflected by `92cb8ce` / PR #117. PRD5 Batch 1O Gate A Controlled Snapshot Handoff Prep passed Canary 8/8 and Sentinel merge is reflected by `b2eea2e` / PR #118.
 > PRD5 Batch 1T Gate A Exchange Envelope And Controlled Run Authorization passed Canary 7/7 and Sentinel merge is reflected by `fc62e65` / PR #123. PRD5 Batch 1U Embeddings Model Permission Parity passed Canary 7/7 and Sentinel merge is reflected by `b2ba892` / PR #124. Atlas executed authorization `UR-XI-GATE-A-20260710-01`; the immutable snapshot remains diagnostic evidence for the original gap. Codex executed `UR-XI-GATE-A-20260710-02` against target `e823abc293f996264763c6c1aca19d3d4d6e705f`, closing Batch 1W target verification for the denied path and producing a second externally persisted/read-back X-Insight snapshot.
 
-## PRD5 Current Gap Summary
+## PRD5 Closeout Summary
 
 The fact-audited classification and next-window plan are in
 `docs/planning/PRD5-CURRENT-GAP-AUDIT-20260710.md`; the current P5-F12 screening
 evidence is `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md`. The
-36 matrix rows preserve 25 historical accepted rows, two decision-gated rows,
-and two prerequisite-gated target E2E rows. Batch 1Z promotes structural search,
+36 matrix rows preserve accepted evidence and explicit defer/reject/prerequisite
+decisions. Batch 1Z promotes structural search,
 Data Exchange Control, and redacted topology to Target verified and route/failover
 visibility to CI verified; P5-F12 screening remains Local verified. Stable X-Insight durable-job
 deep links, automated receipt transport, advanced payload modes, and optional
@@ -255,8 +282,13 @@ Historical PRD1 summary: Core backend modules, admin APIs, frontend pages, migra
 | PRD3 product requirements | `docs/PRD-Phase3.md` |
 | PRD4 completed scope | `docs/PRD-Phase4.md` |
 | PRD4 accepted/deferred matrix | `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` |
-| PRD5 active scope | `docs/PRD-Phase5.md` |
-| PRD5 acceptance planning | `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` |
+| PRD6 decision state | `docs/planning/PRD6-START-HERE.md` |
+| PRD6 proposed scope | `docs/PRD-Phase6.md` |
+| PRD6 acceptance truth | `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` |
+| PRD6 implementation order | `docs/planning/PRD6-IMPLEMENTATION-PLAN.md` |
+| PRD6 competitor/Four-Quadrant audit | `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md` |
+| PRD5 completed scope | `docs/PRD-Phase5.md` |
+| PRD5 closeout matrix | `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` |
 | PRD5 implementation plan | `docs/planning/PRD5-IMPLEMENTATION-PLAN.md` |
 | PRD5 competitor comparison | `docs/planning/PRD5-COMPETITOR-COMPARISON.md` |
 | PRD5 deferred backlog | `docs/planning/PRD5-BACKLOG.md` |

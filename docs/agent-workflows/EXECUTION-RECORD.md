@@ -1,46 +1,54 @@
 # Current Execution Record
 
-**Batch:** PRD5 X-Insight Runtime Contract Reconciliation
+**Batch:** PRD6 Batch 0 / 0A Baseline, Scope And Existing Correctness
 **Owner:** Codex
-**Risk:** R2 receipt-contract boundary and governance synchronization
-**Status:** CI verified by PR #136; no deployment claimed
-**Repository evidence:** `92c6c6c` / PR #136; all three required checks passed
-**Previous batch:** PRD5 Batch 1Z target evidence merged by PR #134; target backend remains `95d1da9` / PR #133
+**Risk:** R2 planning plus R3 gateway/limiter request-path corrections
+**Status:** Local verified; PR/CI pending
+**Base:** `deacae2d4164b98c5241cf72844f09f53ca7510d`
+**Branch:** `codex/prd6-kickoff`
+**Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Scope
 
-1. Reconcile X-Insight's answer against the original 13-question request and current source/tests.
-2. Keep v1 sidecar reconciliation enabled while locking unimplemented durable jobs, deep links, automation, deletion, and continuous ingestion off.
-3. Enforce X-Insight's canonical four-code warning registry at the UniRouter receipt API.
-4. Separate completed UniRouter scope, unimplemented X-Insight capabilities, target-evidence debt, and intentionally deferred/rejected products.
-5. Synchronize the shared request/decision and UniRouter PRD/status/matrix/backlog/issues/evidence entrypoints.
+1. Revalidate Git, CI, backend/frontend tests, PRD5 closure, X-Insight state,
+   shared retention artifacts and target evidence boundaries.
+2. Fix the confirmed half-open recovery deadline error.
+3. Make API-key Redis RPM/RPS admission atomic and exact, using request context
+   while preserving the current Redis-error fail-open contract.
+4. Establish independent PRD6 entry, PRD, matrix, implementation plan, backlog,
+   Four-Quadrant competitor audit and current-state routing.
+5. Stop broader implementation at the MVP/failure-mode User scope gate.
 
 ## Behavior Change
 
-- Receipt writes reject `import_job_id`, `deep_link`, unknown warning codes, and duplicate warning codes.
-- The frontend rejects pasted receipts that contain either unimplemented durable field.
-- Reserved nullable database columns remain for future migration compatibility but are not populated.
-- UniRouter request handling remains independent from X-Insight availability.
+- Half-open channels are excluded until their recovery deadline and become
+  eligible for the existing bounded probe behavior after it.
+- QPS and RPM windows are cleaned, checked and recorded by one Redis script;
+  exactly N requests are admitted and N+1 is rejected.
+- Redis server time avoids per-instance wall-clock divergence, and canceled
+  request context prevents an orphan limiter write.
+- Redis command/script failure still fails open. Changing hard-quota failure
+  behavior remains an explicit PRD6 decision.
+- No new X-Insight runtime field or dependency is introduced.
 
 ## Files And Evidence
 
-- Reconciliation evidence:
-  `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md`
-- API: `internal/admin/data_exchange_handlers.go` and focused tests.
-- UI: `frontend/src/pages/DataExchangePage.tsx` and focused tests.
-- Shared request/response/decision:
-  `requests/2026-07-10-unirouter-prd5-runtime-contract-required-information.md`,
-  `responses/2026-07-10-x-insight-prd5-runtime-contract-required-information-response.md`,
-  `decisions/2026-07-11-prd5-runtime-contract-v1-boundary.md`.
-- Status/matrix/backlog/issue synchronization: `docs/ops/CURRENT-STATUS.md`,
-  `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`, `docs/planning/PRD5-BACKLOG.md`,
-  `docs/issues/OPEN-ISSUES.md`
+- Baseline evidence:
+  `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md`.
+- Product/competitor evidence:
+  `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`.
+- Truth chain: `docs/planning/PRD6-START-HERE.md`, `docs/PRD-Phase6.md`,
+  `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`,
+  `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`, and
+  `docs/planning/PRD6-BACKLOG.md`.
+- Code/tests: `internal/gateway/router.go`,
+  `internal/gateway/router_mock_test.go`, `internal/middleware/ratelimit.go`, and
+  `internal/middleware/ratelimit_test.go`.
 
 ## Verification
 
-Repository results on 2026-07-11:
+Pre-change repository results on 2026-07-11:
 
-- `go test ./internal/admin -count=1`: PASS;
 - `go test ./... -count=1`: PASS;
 - `go vet ./...`: PASS;
 - `npm --prefix frontend run type-check`: PASS;
@@ -48,13 +56,36 @@ Repository results on 2026-07-11:
   Semi Form, and `findDOMNode` warnings; 25 files / 125 tests;
 - `npm --prefix frontend run build`: PASS, with existing large chunk warning;
 - `git diff --check`: PASS;
-- X-Insight `go test ./... -count=1`: PASS;
-- PR #136 Backend Tests / Frontend Build / Docker Build: PASS.
+- X-Insight `go test ./... -count=1`: PASS.
 
-No deployment, target mutation, real request, credential change, exporter/outbox,
-or expanded data exchange occurred. Migration down, TLS 443 behavior, and a
-concrete target route/failover detail remain target-evidence debt. Unimplemented
-X-Insight runtime capabilities remain external.
+Focused post-change results:
+
+- `go test -race ./internal/gateway -count=1`: PASS;
+- `go test -race ./internal/middleware -count=1`: PASS;
+- strict limiter tests repeated 20 times: PASS;
+- real Redis 8.8.0 script check admitted two and rejected the third: PASS;
+- focused middleware vet and `git diff --check`: PASS.
+
+Full post-change repository results:
+
+- `go test ./... -count=1`: PASS;
+- `go vet ./...`: PASS;
+- `go test -race ./internal/gateway ./internal/middleware -count=1`: PASS,
+  with the existing macOS linker `LC_DYSYMTAB` warning only;
+- `npm --prefix frontend run type-check`: PASS;
+- `npm --prefix frontend test -- --run`: PASS, 25 files / 125 tests, with the
+  existing framework warnings;
+- `npm --prefix frontend run build`: PASS, with the existing large-chunk
+  warning;
+- `git diff --check`: PASS.
+
+Required PR CI remains pending. Promote P6-F01/P6-F02 to `CI verified` only
+after all three checks pass.
+
+No deployment, target mutation/probe, real or paid request, credential change,
+exporter/outbox, deletion or expanded data exchange occurred. Migration down,
+TLS 443 behavior and concrete target route/failover detail remain target-evidence
+debt. Unimplemented X-Insight runtime capabilities remain external.
 
 ## Previous Batch 1Z Record
 

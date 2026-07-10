@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -103,6 +104,25 @@ func TestRoute_QueryError(t *testing.T) {
 	_, err := r.Route(context.Background(), "gpt-4o")
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestRoute_HalfOpenEligibleAfterRecoveryDeadline(t *testing.T) {
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			if !strings.Contains(sql, "c.half_open_until <= NOW()") {
+				t.Fatalf("half-open channels must become eligible after the recovery deadline; query: %s", sql)
+			}
+			if strings.Contains(sql, "c.half_open_until > NOW()") {
+				t.Fatalf("half-open channels must not be eligible before the recovery deadline; query: %s", sql)
+			}
+			return &testutil.MockRows{}, nil
+		},
+	}
+	r := NewRouter(db)
+	_, err := r.Route(context.Background(), "gpt-4o")
+	if err == nil {
+		t.Fatal("expected no available channel from empty mock rows")
 	}
 }
 

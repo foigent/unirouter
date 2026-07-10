@@ -3,8 +3,15 @@
 ## 当前入口
 - [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — Agent 接手项目的第一阅读入口
 - [ops/CURRENT-STATUS.md](ops/CURRENT-STATUS.md) — 当前项目真实状态（进度、测试、部署、缺口）
+- [planning/PRD6-START-HERE.md](planning/PRD6-START-HERE.md) — PRD6 正式启动、当前决策状态和最小确认项
+- [ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md](ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md) — Git/CI/测试/X-Insight/代码事实基线
+- [planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md](planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md) — LiteLLM/New API/One API 固定版本核验、四象限和优先级矩阵
+- [PRD-Phase6.md](PRD-Phase6.md) — PRD6 proposed MVP、advanced/long-tail、所有权和安全边界
+- [ops/PRD6-ACCEPTANCE-MATRIX.md](ops/PRD6-ACCEPTANCE-MATRIX.md) — PRD6 accepted/proposed/external/target-evidence 验收矩阵
+- [planning/PRD6-IMPLEMENTATION-PLAN.md](planning/PRD6-IMPLEMENTATION-PLAN.md) — PRD6 可执行 batches、风险和 gates
+- [planning/PRD6-BACKLOG.md](planning/PRD6-BACKLOG.md) — PRD6 分类 backlog 和决策登记
 - [ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md](ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md) — X-Insight 已答复 runtime contract、v1 sidecar 边界、UniRouter 合同锁和 PRD5 完成分类
-- [planning/PRD5-CURRENT-GAP-AUDIT-20260710.md](planning/PRD5-CURRENT-GAP-AUDIT-20260710.md) — PRD5 当前完成度、UniRouter 本地完成项、X-Insight 协作缺口及目标证据边界
+- [planning/PRD5-CURRENT-GAP-AUDIT-20260710.md](planning/PRD5-CURRENT-GAP-AUDIT-20260710.md) — PRD5 收口时完成度、所有权和目标证据边界
 - [ops/evidence/PRD5-P5F12-architecture-audit-20260710.md](ops/evidence/PRD5-P5F12-architecture-audit-20260710.md) — PRD5 repository-wide 架构/功能/UI/数据/部署/安全审计、P5-F12 accept/defer/reject 筛选、P0-P3 batches 和 INFRA-SEC-001 证据设计
 - [ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md](ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md) — PRD5 已接受 UniRouter 自有 trace search、Data Exchange Control、route/failover、redacted topology 和本地验证
 - [ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md](ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md) — PRD5 目标迁移/部署/浏览器、canary 配置对齐和 INFRA-SEC-001 切换证据
@@ -25,7 +32,7 @@
 - [PRD-Phase3.md](PRD-Phase3.md) — 已完成 PRD3 一致性、语义、契约和架构清理范围
 - [planning/PRD3-CONSISTENCY-AUDIT.md](planning/PRD3-CONSISTENCY-AUDIT.md) — PRD3 范围审计和 PRD1→PRD2 遗留问题梳理
 - [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 当前未关闭问题列表
-- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前执行记录：PRD5 Batch 1Z Target Deployment And Infrastructure Security
+- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前执行记录：PRD6 Batch 0/0A
 - [agent-workflows/reviews/README.md](agent-workflows/reviews/README.md) — 可选独立复核记录格式和问题级别规则
 - [ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md](ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md) — 单一执行负责人、Git/CI、高影响授权和复核规则的确认记录
 - [ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md](ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md) — Batch 1W 根因、代码、回归和目标证据边界
@@ -42,8 +49,9 @@
 - [DOCS-GOVERNANCE.md](DOCS-GOVERNANCE.md) — 文档治理规则
 
 ## 核心文档
-- [PRD-Phase5.md](PRD-Phase5.md) — PRD5 当前正式范围草案
-- [PRD-Phase4.md](PRD-Phase4.md) — PRD4 正式范围草案
+- [PRD-Phase6.md](PRD-Phase6.md) — PRD6 当前范围提案；仅 Batch 0A 已在 scope gate 前接受
+- [PRD-Phase5.md](PRD-Phase5.md) — PRD5 Accepted Scope Complete 历史事实
+- [PRD-Phase4.md](PRD-Phase4.md) — PRD4 已完成范围历史
 - [PRD-Phase3.md](PRD-Phase3.md) — 已完成 PRD3 清理/优化范围
 - [PRD-Phase2.md](PRD-Phase2.md) — PRD2 已冻结需求参考
 - [PRD-Phase1.md](PRD-Phase1.md) — PRD1 历史需求参考
@@ -80,8 +88,8 @@
 - [ops/test-report.md](ops/test-report.md) — 测试报告
 - [ops/evidence/COMPREHENSIVE-TEST-REPORT-20260705.md](ops/evidence/COMPREHENSIVE-TEST-REPORT-20260705.md) — 2026-07-05 Canary 综合测试/安全审计证据；当前问题状态以 `issues/OPEN-ISSUES.md` 为准
 - [ops/PRD2-ACCEPTANCE-MATRIX.md](ops/PRD2-ACCEPTANCE-MATRIX.md) — PRD2 已冻结验收状态
-- [ops/PRD4-ACCEPTANCE-MATRIX.md](ops/PRD4-ACCEPTANCE-MATRIX.md) — PRD4 当前验收矩阵
-- [ops/PRD5-ACCEPTANCE-MATRIX.md](ops/PRD5-ACCEPTANCE-MATRIX.md) — PRD5 当前验收矩阵
+- [ops/PRD4-ACCEPTANCE-MATRIX.md](ops/PRD4-ACCEPTANCE-MATRIX.md) — PRD4 已完成验收矩阵
+- [ops/PRD5-ACCEPTANCE-MATRIX.md](ops/PRD5-ACCEPTANCE-MATRIX.md) — PRD5 收口验收矩阵
 - [ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md](ops/PRD5-GATE-A-REQUEST-ID-APPROVAL.md) — PRD5 Gate A request ID 审批 runbook
 - [ops/PRD2-COMPLETION-PLAN.md](ops/PRD2-COMPLETION-PLAN.md) — PRD2 收尾决策和历史计划
 - [ops/PRD-ACCEPTANCE-MATRIX.md](ops/PRD-ACCEPTANCE-MATRIX.md) — PRD1 历史验收矩阵

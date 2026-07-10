@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -156,45 +158,105 @@ func TestRateLimit_UnderLimit_Passthrough(t *testing.T) {
 }
 
 func TestRateLimit_QPSExceeded(t *testing.T) {
-	mr, rdb := setupMiniredis(t)
+	_, rdb := setupMiniredis(t)
 
 	apiKey := &models.ApiKey{ID: 2, RPMLimit: 1000, QPSLimit: 2}
 	handler := RateLimit(rdb)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	// miniredis doesn't support ZCount properly, so we test the fail-open path
-	// when sorted set commands have unexpected behavior.
-	// The real rate limiting logic is tested via integration tests.
-	for i := 0; i < 5; i++ {
+	for i := 1; i <= 3; i++ {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		ctx := context.WithValue(req.Context(), CtxAPIKey, apiKey)
 		req = req.WithContext(ctx)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
-		// With miniredis, ZCount returns 0, so count check passes
-		// This verifies the pipeline doesn't crash
+		if i <= apiKey.QPSLimit && rec.Code != http.StatusOK {
+			t.Fatalf("request %d: expected 200, got %d", i, rec.Code)
+		}
+		if i == apiKey.QPSLimit+1 {
+			if rec.Code != http.StatusTooManyRequests {
+				t.Fatalf("request %d: expected 429, got %d", i, rec.Code)
+			}
+			if !strings.Contains(rec.Body.String(), "QPS limit exceeded") {
+				t.Fatalf("request %d: unexpected response body %q", i, rec.Body.String())
+			}
+		}
 	}
-	_ = mr
 }
 
 func TestRateLimit_RPMExceeded(t *testing.T) {
-	mr, rdb := setupMiniredis(t)
+	_, rdb := setupMiniredis(t)
 
 	apiKey := &models.ApiKey{ID: 3, RPMLimit: 3, QPSLimit: 1000}
 	handler := RateLimit(rdb)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	// miniredis doesn't support ZCount, test pipeline stability
-	for i := 0; i < 5; i++ {
+	for i := 1; i <= 4; i++ {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		ctx := context.WithValue(req.Context(), CtxAPIKey, apiKey)
 		req = req.WithContext(ctx)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
+		if i <= apiKey.RPMLimit && rec.Code != http.StatusOK {
+			t.Fatalf("request %d: expected 200, got %d", i, rec.Code)
+		}
+		if i == apiKey.RPMLimit+1 {
+			if rec.Code != http.StatusTooManyRequests {
+				t.Fatalf("request %d: expected 429, got %d", i, rec.Code)
+			}
+			if !strings.Contains(rec.Body.String(), "RPM limit exceeded") {
+				t.Fatalf("request %d: unexpected response body %q", i, rec.Body.String())
+			}
+		}
 	}
-	_ = mr
+}
+
+func TestRateLimit_ConcurrentRequestsDoNotExceedLimit(t *testing.T) {
+	_, rdb := setupMiniredis(t)
+
+	const (
+		requestCount = 40
+		qpsLimit     = 10
+	)
+	apiKey := &models.ApiKey{ID: 7, RPMLimit: requestCount, QPSLimit: qpsLimit}
+	handler := RateLimit(rdb)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	var allowed atomic.Int64
+	var rejected atomic.Int64
+	for i := 0; i < requestCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req = req.WithContext(context.WithValue(req.Context(), CtxAPIKey, apiKey))
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			switch rec.Code {
+			case http.StatusOK:
+				allowed.Add(1)
+			case http.StatusTooManyRequests:
+				rejected.Add(1)
+			default:
+				t.Errorf("unexpected status %d", rec.Code)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	if got := allowed.Load(); got != qpsLimit {
+		t.Fatalf("expected exactly %d allowed requests, got %d", qpsLimit, got)
+	}
+	if got := rejected.Load(); got != requestCount-qpsLimit {
+		t.Fatalf("expected exactly %d rejected requests, got %d", requestCount-qpsLimit, got)
+	}
 }
 
 func TestRateLimit_RedisError_FailOpen(t *testing.T) {
@@ -216,6 +278,30 @@ func TestRateLimit_RedisError_FailOpen(t *testing.T) {
 	// Fail-open: should pass through on Redis error
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 (fail-open), got %d", rec.Code)
+	}
+}
+
+func TestRateLimit_UsesRequestContext(t *testing.T) {
+	_, rdb := setupMiniredis(t)
+
+	apiKey := &models.ApiKey{ID: 8, RPMLimit: 10, QPSLimit: 5}
+	handler := RateLimit(rdb)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	ctx, cancel := context.WithCancel(context.WithValue(req.Context(), CtxAPIKey, apiKey))
+	cancel()
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req.WithContext(ctx))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected canceled Redis operation to fail open, got %d", rec.Code)
+	}
+	if count, err := rdb.Exists(context.Background(), "rl:qps:8", "rl:rpm:8").Result(); err != nil {
+		t.Fatalf("check rate-limit keys: %v", err)
+	} else if count != 0 {
+		t.Fatalf("expected canceled request not to mutate Redis, found %d keys", count)
 	}
 }
 
@@ -270,7 +356,7 @@ func TestRateLimit_DifferentKeys_Independent(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	// Both keys should pass (miniredis ZCount returns 0)
+	// Both keys should pass independently.
 	for _, key := range []*models.ApiKey{apiKey1, apiKey2} {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		ctx := context.WithValue(req.Context(), CtxAPIKey, key)
@@ -292,8 +378,7 @@ func TestRateLimit_WindowReset(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	// miniredis doesn't support ZCount, but we can verify
-	// the pipeline executes without error and FastForward works
+	// Verify that Redis time advances with the window and the old request expires.
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	ctx := context.WithValue(req.Context(), CtxAPIKey, apiKey)
 	req = req.WithContext(ctx)

@@ -6,34 +6,23 @@
 ## First Read Order
 
 1. `docs/ops/CURRENT-STATUS.md` - current verified project status.
-2. `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md` - answered X-Insight runtime request, accepted boundary, UniRouter contract lock, and completion classification.
-3. `docs/planning/PRD5-CURRENT-GAP-AUDIT-20260710.md` - current PRD5
-   accounting, UniRouter-owned implementation gaps, X-Insight dependencies, and
-   the next-window architecture/product audit plan.
-4. `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md` - final target deployment, migration, browser, canary parity, cleanup, and infrastructure-security evidence.
-5. `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md` - repository-wide audit, P5-F12 screening, P0-P3 batches, and INFRA-SEC-001 evidence design.
-6. `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md` - accepted UniRouter-owned PRD5 implementation and local verification.
-7. `docs/PRD-Phase5.md` - completed accepted PRD5 scope and explicit remaining boundaries.
-8. `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` - PRD5 acceptance rows and evidence boundaries.
-9. `docs/planning/PRD5-IMPLEMENTATION-PLAN.md` - PRD5 batch plan and UniRouter/X-Insight ownership split.
-10. `docs/planning/PRD5-COMPETITOR-COMPARISON.md` - competitor comparison and UniRouter-owned PRD5 catch-up items.
-11. `docs/planning/PRD5-BACKLOG.md` - capabilities intentionally deferred beyond PRD4 and PRD5 active scope.
-12. `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md` - X-Insight Gate A sequencing decisions.
-13. `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md` - implemented UniRouter control-plane boundary and remaining X-Insight contract.
-14. `docs/ops/PRD5-GATE-A-CONTROLLED-RUN-AUTHORIZATION.md` - approval boundary for newly generated Gate A scenarios.
-15. `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-10-x-insight-prd5-runtime-contract-required-information-response.md` - X-Insight's current implemented/not-implemented runtime facts.
-16. `docs/PRD-Phase4.md` - completed PRD4 scope.
-17. `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` - PRD4 accepted/deferred rows and evidence boundaries.
-18. `docs/planning/PRD4-BACKLOG.md` - PRD4 candidate backlog source record.
-19. `docs/ops/PRD3-ACCEPTANCE-MATRIX.md` - completed PRD3 cleanup/optimization acceptance state.
-20. `docs/PRD-Phase3.md` - completed PRD3 scope.
-21. `docs/planning/PRD3-CONSISTENCY-AUDIT.md` - PRD1 -> PRD2 consistency findings behind PRD3.
-22. `docs/issues/OPEN-ISSUES.md` - active unresolved issues and recently verified fixes.
-23. `docs/agent-workflows/AGENT-PROTOCOL.md` - single execution owner, approval, evidence and optional independent-review workflow.
-24. `docs/agent-workflows/EXECUTION-RECORD.md` and `docs/agent-workflows/reviews/` - current batch execution state and optional immutable review results.
-24. `docs/agent-workflows/FIX-SIGNAL.md` and `docs/agent-workflows/VERIFY-RESULT.md` - protocol v1.x compatibility entry and latest historical verification result.
-25. `docs/CODEBASE-MAP.md` - code, route, data, test, and deployment map.
-26. `docs/DOC-INVENTORY.md` and `docs/DOCS-GOVERNANCE.md` - which docs are current, frozen, historical, candidate, or reference-only.
+2. `docs/planning/PRD6-START-HERE.md` - PRD6 decision state and reading map.
+3. `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md` - clean-base, test, X-Insight and current-code evidence.
+4. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md` - version-fixed competitor audit and Four Quadrants.
+5. `docs/PRD-Phase6.md` - proposed PRD6 scope and ownership.
+6. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` - accepted, proposed, external and target-evidence rows.
+7. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md` - batch order and gates.
+8. `docs/planning/PRD6-BACKLOG.md` - classified backlog and decision register.
+9. `docs/PRD-Phase5.md` - completed accepted PRD5 scope and explicit remaining boundaries.
+10. `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` - PRD5's closed 36-row evidence ledger.
+11. `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md` - accepted X-Insight v1 boundary and PRD5 completion classification.
+12. `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md` - final PRD5 target evidence.
+13. `/Users/m4/Desktop/projects/X-Insight/docs/architecture/runtime-contract-capability-status.md` - X-Insight implemented/not-implemented runtime facts.
+14. `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-11-prd5-runtime-contract-v1-boundary.md` - accepted cross-project decision.
+15. `docs/issues/OPEN-ISSUES.md` - active issues and future evidence.
+16. `docs/agent-workflows/AGENT-PROTOCOL.md` - execution, approval, evidence and optional review rules.
+17. `docs/agent-workflows/EXECUTION-RECORD.md` - current branch/batch verification.
+18. `docs/CODEBASE-MAP.md`, `docs/DOC-INVENTORY.md`, and `docs/DOCS-GOVERNANCE.md` - code and documentation lifecycle maps.
 
 ## Current Project Shape
 
@@ -43,28 +32,31 @@ PRD3 is complete for the confirmed scope. It was cleanup/optimization only: cons
 
 PRD4 is complete for the confirmed commercial observability and control foundation scope. Its formal scope is `docs/PRD-Phase4.md`: API key owner usage/cost, quota vocabulary, Flow/Event/Trace foundation, PlungeIn observation-first ports, Status Center runtime observability, external monitoring integration, real upstream/SSO harness assets only, auth UX hardening, production evidence promotion for currently available evidence, and PRD5 backlog consolidation. User decision on 2026-07-08 moved real upstream target E2E and real SSO target E2E out of current PRD4 because no approved real environments are available. `docs/planning/PRD4-BACKLOG.md` remains the candidate-source record, not the formal implementation contract.
 
-PRD5 is now active for evidence-readiness work. Its current scope is
-`docs/PRD-Phase5.md`: X-Insight Gate A sanitized snapshot, structural evidence
-field contract, payload policy/evidence references, lightweight UniRouter trace
-UI boundary, competitor comparison and UniRouter-owned catch-up items. Batch 1Y
-implements the accepted UniRouter Data Exchange Control boundary for outbound
-X-Insight approval/export ledger/import receipt workflow, structural evidence
-search, route/failover visibility, and redacted topology. X-Insight remains a
-separate project and owns broader cross-system
-AI/Agent observability, read-side audit, investigation timeline/graph, policy
-simulation, and governance surfaces.
+PRD5 is `Accepted Scope Complete`. Its 36 rows have completion evidence or an
+explicit defer/reject/prerequisite decision. Its X-Insight Gate A, structural
+evidence, trace UI, Data Exchange Control, route/failover visibility and
+redacted topology history remains under the existing PRD5 paths. PRD6 must not
+reinterpret target-evidence debt or X-Insight-owned work as unfinished PRD5
+source scope.
 
-Batch 1T adds exchange identity and exact approval-manifest hashing to the
-snapshot handoff. Existing requests still use exact-ID approval. Newly created
-Gate A requests use prior scenario/data/environment/operator/retention approval
-and unique `X-Request-ID` values, without broad request discovery.
+PRD6 is formally active in discovery/scope-gate state. Batch 0A is limited to
+verified existing correctness defects. The broader proposed MVP covers
+distributed policy, Routing Policy V1, cache-aware token billing, and
+guardrail/stream foundations. It requires the minimum User decisions recorded
+in `docs/planning/PRD6-START-HERE.md` before implementation.
 
 ## What Is Current Truth
 
 | Question | Current Source |
 |----------|----------------|
-| What is the PRD5 formal scope? | `docs/PRD-Phase5.md` |
-| What PRD5 work is actually incomplete now? | `docs/planning/PRD5-CURRENT-GAP-AUDIT-20260710.md` |
+| What is the PRD6 decision state? | `docs/planning/PRD6-START-HERE.md` |
+| What baseline and findings were verified? | `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md` |
+| What is the proposed PRD6 scope? | `docs/PRD-Phase6.md` |
+| Which PRD6 rows are accepted versus proposed? | `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` |
+| What is the PRD6 implementation order? | `docs/planning/PRD6-IMPLEMENTATION-PLAN.md` |
+| What did the competitor/Four-Quadrant audit conclude? | `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md` |
+| What is the completed PRD5 formal scope? | `docs/PRD-Phase5.md` |
+| What PRD5 work was classified at closeout? | `docs/planning/PRD5-CURRENT-GAP-AUDIT-20260710.md` |
 | What did the repository-wide PRD5 audit and P5-F12 screening conclude? | `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md` |
 | Which accepted UniRouter-owned PRD5 functions are target/CI verified? | `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md` |
 | What is the PRD5 acceptance plan? | `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` |
@@ -100,8 +92,14 @@ Use `docs/agent-workflows/AGENT-PROTOCOL.md` before changing code or status:
 
 ## Current Verification Baseline
 
-Current execution record: PRD5 Batch 1Z Target Deployment And Infrastructure
-Security is Target verified for its explicit evidence. The previous Batch 1W denied path remains target
+Current execution is PRD6 Batch 0/0A on a `codex/` branch based on
+`deacae2d4164b98c5241cf72844f09f53ca7510d`. Fresh full repository checks and
+X-Insight tests passed before implementation; Batch 0A repairs the confirmed
+half-open recovery and atomic Redis limit defects. Current details and promotion
+gates are in `docs/agent-workflows/EXECUTION-RECORD.md`.
+
+PRD5 Batch 1Z Target Deployment And Infrastructure Security remains Target
+verified for its explicit evidence. The previous Batch 1W denied path remains target
 verified under `UR-XI-GATE-A-20260710-02` on target
 `e823abc293f996264763c6c1aca19d3d4d6e705f`, containing `931400a` / PR
 #126; both are reconciled in `docs/agent-workflows/EXECUTION-RECORD.md`.
