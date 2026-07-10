@@ -2,7 +2,7 @@
 
 > Date: 2026-07-11
 > Completion: accepted UniRouter-owned planning and repository functionality are
-> complete subject to the current runtime-contract lock CI gate. Deferred,
+> complete; the runtime-contract lock is CI verified by PR #136. Deferred,
 > rejected, prerequisite-gated, X-Insight-owned, and target-evidence-only items
 > remain separate.
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
@@ -1018,7 +1018,7 @@ Still gated:
 
 ### X-Insight Runtime Contract Reconciliation
 
-Status: repository reconciliation implemented; required CI is the merge gate.
+Status: CI verified by PR #136.
 Evidence:
 `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md`.
 

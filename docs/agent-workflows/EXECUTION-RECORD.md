@@ -1,65 +1,68 @@
 # Current Execution Record
 
-**Batch:** PRD5 Batch 1Z - Target Deployment And Infrastructure Security
+**Batch:** PRD5 X-Insight Runtime Contract Reconciliation
 **Owner:** Codex
-**Risk:** R4 authorized ECS security-group cutover; R3 migration/deployment/canary/runtime/browser verification
-**Status:** Target verified for the recorded Batch 1Z evidence
-**Repository evidence:** PR #134 merged; **target backend:** `95d1da9` / PR #133
-**Previous batch:** PRD5 Batch 1Y implementation merged by `88a7354` / PR #131
+**Risk:** R2 receipt-contract boundary and governance synchronization
+**Status:** CI verified by PR #136; no deployment claimed
+**Repository evidence:** `92c6c6c` / PR #136; all three required checks passed
+**Previous batch:** PRD5 Batch 1Z target evidence merged by PR #134; target backend remains `95d1da9` / PR #133
 
 ## Scope
 
-1. Merge and CI-verify Batch 1Y repository-owned functionality.
-2. Back up the target, apply migration `000019`, deploy stable/canary/frontend, and run target browser checks.
-3. Fix target Go-module build-network configurability and stable/canary runtime configuration parity through normal PR/CI flow.
-4. Execute the authorized `INFRA-SEC-001` least-privilege security-group cutover with proven SSH, Cloud Assistant, application, dependency, external-denial, and rollback evidence.
-5. Remove temporary QA users and credentials and synchronize current-state documents.
+1. Reconcile X-Insight's answer against the original 13-question request and current source/tests.
+2. Keep v1 sidecar reconciliation enabled while locking unimplemented durable jobs, deep links, automation, deletion, and continuous ingestion off.
+3. Enforce X-Insight's canonical four-code warning registry at the UniRouter receipt API.
+4. Separate completed UniRouter scope, unimplemented X-Insight capabilities, target-evidence debt, and intentionally deferred/rejected products.
+5. Synchronize the shared request/decision and UniRouter PRD/status/matrix/backlog/issues/evidence entrypoints.
 
 ## Behavior Change
 
-- Migration `000019` and the Data Exchange Control surface are active in the development/test target.
-- Stable and canary run the final backend commit with aligned evidence/runtime/monitoring configuration.
-- The target ECS no longer attaches the public all-TCP security group; public internal-service protocol access is denied.
-- Structural Logs filters, Data Exchange, and redacted topology have target browser evidence. Route/failover detail remains CI verified.
+- Receipt writes reject `import_job_id`, `deep_link`, unknown warning codes, and duplicate warning codes.
+- The frontend rejects pasted receipts that contain either unimplemented durable field.
+- Reserved nullable database columns remain for future migration compatibility but are not populated.
+- UniRouter request handling remains independent from X-Insight availability.
 
 ## Files And Evidence
 
-- Target evidence:
-  `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md`
-- Local implementation evidence:
-  `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md`
-- Migration/API: `migrations/000019_prd5_data_exchange_control.*.sql`,
-  `internal/admin/data_exchange_handlers.go`, `cmd/uniroute/main.go`
-- UI: `frontend/src/pages/DataExchangePage.tsx`,
-  `frontend/src/pages/LogsPage.tsx`, `frontend/src/pages/InternalStatusPage.tsx`
-- X-Insight request: shared-folder
-  `requests/2026-07-10-unirouter-prd5-runtime-contract-required-information.md`
+- Reconciliation evidence:
+  `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md`
+- API: `internal/admin/data_exchange_handlers.go` and focused tests.
+- UI: `frontend/src/pages/DataExchangePage.tsx` and focused tests.
+- Shared request/response/decision:
+  `requests/2026-07-10-unirouter-prd5-runtime-contract-required-information.md`,
+  `responses/2026-07-10-x-insight-prd5-runtime-contract-required-information-response.md`,
+  `decisions/2026-07-11-prd5-runtime-contract-v1-boundary.md`.
 - Status/matrix/backlog/issue synchronization: `docs/ops/CURRENT-STATUS.md`,
   `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`, `docs/planning/PRD5-BACKLOG.md`,
   `docs/issues/OPEN-ISSUES.md`
 
 ## Verification
 
-Repository and target results on 2026-07-10:
+Repository results on 2026-07-11:
 
 - `go test ./internal/admin -count=1`: PASS;
 - `go test ./... -count=1`: PASS;
 - `go vet ./...`: PASS;
 - `npm --prefix frontend run type-check`: PASS;
 - `npm --prefix frontend test -- --run`: PASS, with existing React Router,
-  Semi Form, and `findDOMNode` warnings; 25 files / 124 tests;
+  Semi Form, and `findDOMNode` warnings; 25 files / 125 tests;
 - `npm --prefix frontend run build`: PASS, with existing large chunk warning;
 - `git diff --check`: PASS;
-- PR #131, PR #132, PR #133 Backend Tests / Frontend Build / Docker Build: PASS;
-- pre-migration backup plus `pg_restore -l`: PASS;
-- migration `000019` forward apply and table readback: PASS;
-- stable/canary health and final canary runtime API readback: PASS;
-- Data Exchange, Logs structural filters, redacted topology, desktop/mobile browser checks: PASS;
-- `INFRA-SEC-001` cutover, external protocol-denial, SSH, Cloud Assistant, internal health/monitoring: PASS;
-- temporary QA user/credential cleanup: PASS.
+- X-Insight `go test ./... -count=1`: PASS;
+- PR #136 Backend Tests / Frontend Build / Docker Build: PASS.
 
-Migration down, TLS 443 behavior, and a concrete target route/failover detail
-remain unexecuted. X-Insight runtime contracts remain external.
+No deployment, target mutation, real request, credential change, exporter/outbox,
+or expanded data exchange occurred. Migration down, TLS 443 behavior, and a
+concrete target route/failover detail remain target-evidence debt. Unimplemented
+X-Insight runtime capabilities remain external.
+
+## Previous Batch 1Z Record
+
+PRD5 Batch 1Z remains Target verified in
+`docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md`.
+It records migration `000019` forward apply, stable/canary deployment, selected
+browser evidence, canary parity, cleanup, and the authorized `INFRA-SEC-001`
+least-privilege cutover. The target backend remains `95d1da9` / PR #133.
 
 ## Previous Batch 1W Record
 

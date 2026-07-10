@@ -85,7 +85,7 @@ The reconciliation change:
 | Class | Current conclusion |
 |---|---|
 | UniRouter accepted PRD5 planning | Complete: scope, architecture audit, P5-F12 accept/defer/reject screening, ownership, dependencies, risks, priorities, batches, and evidence gates are documented |
-| UniRouter accepted repository functionality | Complete after this contract-lock change passes required CI; P5-F35 source behavior remains CI verified |
+| UniRouter accepted repository functionality | Complete; this contract lock and P5-F35 source behavior are CI verified |
 | X-Insight collaboration implemented | Two controlled import/persistence/idempotent-readback loops, v1 sidecar receipt, and the fixture/synthetic-only target are verified |
 | X-Insight collaboration not implemented | Durable job/deep link, automated/authenticated receipt, retention/deletion/audit, stable public adapters, continuous ingestion, and compatibility policy |
 | Target evidence only | P5-F35 concrete target detail, migration down, TLS 443 behavior, and prerequisite-gated real upstream/SSO runs |
@@ -111,6 +111,5 @@ npm --prefix frontend run build
 git diff --check
 ```
 
-UniRouter's full frontend suite passed 25 files / 125 tests. The required
-repository CI remains the merge gate for this reconciliation. No target
-deployment is claimed.
+UniRouter's full frontend suite passed 25 files / 125 tests. PR #136 passed
+Backend Tests, Frontend Build, and Docker Build. No target deployment is claimed.

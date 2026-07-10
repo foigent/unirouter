@@ -3,7 +3,7 @@
 > Version: Phase 5 Accepted Scope Complete
 > Date: 2026-07-11
 > Completion: UniRouter-owned accepted planning and repository functionality are
-> complete subject to the current contract-lock CI gate. Deferred, rejected,
+> complete; the X-Insight v1 contract lock is CI verified by PR #136. Deferred, rejected,
 > prerequisite-gated, X-Insight-owned, and target-evidence-only items remain
 > outside this completion claim.
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
