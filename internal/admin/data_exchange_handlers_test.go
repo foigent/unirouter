@@ -114,6 +114,70 @@ func TestCreateDataExchangeReceipt_RejectsMismatchedExchangeID(t *testing.T) {
 	}
 }
 
+func TestCreateDataExchangeReceipt_RejectsUnsupportedRuntimeFields(t *testing.T) {
+	h := newTestHandler(&testutil.MockDB{})
+	for _, tc := range []struct {
+		name  string
+		field string
+	}{
+		{name: "import job id", field: `"import_job_id":"job-123"`},
+		{name: "deep link", field: `"deep_link":"https://x-insight.example/jobs/job-123"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := dataExchangeTestRequest(http.MethodPost, "/data-exchange/exchanges/9/receipts", `{
+				"exchange_id":"uxchg_expected_001",
+				"schema_version":"xinsight.import-receipt.v1",
+				"source_system":"unirouter",
+				"source_instance":"dev-a",
+				"artifact_schema_version":"unirouter.prd5.xinsight.snapshot.v1",
+				"artifact_sha256":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				"result_status":"persisted",
+				"checked_at":"2026-07-10T08:00:00Z",
+				`+tc.field+`
+			}`)
+			req.SetPathValue("id", "9")
+			rec := httptest.NewRecorder()
+
+			h.CreateDataExchangeReceipt(rec, req)
+
+			if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "Invalid JSON") {
+				t.Fatalf("expected unsupported field rejection, got %d %s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestCreateDataExchangeReceipt_RejectsUnknownOrDuplicateWarningCodes(t *testing.T) {
+	h := newTestHandler(&testutil.MockDB{})
+	for _, warnings := range []string{
+		`["future_warning"]`,
+		`["source_capture_gaps_present","source_capture_gaps_present"]`,
+		`[" source_capture_gaps_present"]`,
+	} {
+		t.Run(warnings, func(t *testing.T) {
+			req := dataExchangeTestRequest(http.MethodPost, "/data-exchange/exchanges/9/receipts", `{
+				"exchange_id":"uxchg_expected_001",
+				"schema_version":"xinsight.import-receipt.v1",
+				"source_system":"unirouter",
+				"source_instance":"dev-a",
+				"artifact_schema_version":"unirouter.prd5.xinsight.snapshot.v1",
+				"artifact_sha256":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				"result_status":"persisted",
+				"checked_at":"2026-07-10T08:00:00Z",
+				"warning_codes":`+warnings+`
+			}`)
+			req.SetPathValue("id", "9")
+			rec := httptest.NewRecorder()
+
+			h.CreateDataExchangeReceipt(rec, req)
+
+			if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "Invalid warning code") {
+				t.Fatalf("expected warning registry rejection, got %d %s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestUpdateDataExchangeItem_RejectsUnknownExactRequestID(t *testing.T) {
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {

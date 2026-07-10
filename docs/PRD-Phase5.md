@@ -1,7 +1,11 @@
 # UniRouter Product Requirements Document - Phase 5
 
-> Version: Phase 5 Active Scope Draft
-> Date: 2026-07-10
+> Version: Phase 5 Accepted Scope Complete
+> Date: 2026-07-11
+> Completion: UniRouter-owned accepted planning and repository functionality are
+> complete; the X-Insight v1 contract lock is CI verified by PR #136. Deferred, rejected,
+> prerequisite-gated, X-Insight-owned, and target-evidence-only items remain
+> outside this completion claim.
 > Status: Batch 1A/1B/1C, Batch 1D, Batch 1E, Batch 1F, Batch 1G, Batch 1H,
 > Batch 1I, Batch 1J, Batch 1K, Batch 1L, Batch 1M, Batch 1N, Batch 1O,
 > Batch 1P, Batch 1Q, Batch 1R, Batch 1S, Batch 1T, and Batch 1U
@@ -16,7 +20,9 @@
 > #126. The separately authorized denied request returned matching correlation
 > and decision evidence before billing/provider work, keys 36/37 are disabled,
 > and a second X-Insight snapshot passed persistence/idempotency/readback.
-> X-Insight ECS target verification and real upstream provider E2E remain pending.
+> X-Insight's fixture/synthetic-only non-production target is Target verified at
+> release artifact `b9e5811`; real upstream provider E2E and the unimplemented
+> durable job/transport/retention/public-adapter contracts remain separate.
 > PRD4 remains complete for the confirmed current scope
 > and is not reopened by PRD5.
 > Source: `docs/planning/PRD5-BACKLOG.md`,
@@ -916,7 +922,9 @@ Acceptance:
   client, and page tests pass.
 - Current `xinsight.import-receipt.v1` counts are preserved; hash mismatch is
   shown as `receipt_outdated`; durable import job/deep link fields remain empty
-  until X-Insight supplies a real contract.
+  because X-Insight's answered request confirms no such contract exists. The
+  receipt write API rejects these fields and accepts only the canonical v1
+  warning-code registry.
 
 ### P5-F35: Route And Failover Visibility
 
@@ -991,12 +999,30 @@ PRD5 should proceed in independently verifiable batches:
     implementation designs.
 26. Batch 1Z: target migration/deployment/browser evidence, canary runtime
     parity, and `INFRA-SEC-001` least-privilege cutover.
-27. Later payload policy metadata and evidence references, with future raw
+27. X-Insight runtime-contract reconciliation: accept the file-sidecar-only v1
+    boundary, lock durable job/deep-link fields off, and synchronize project and
+    cross-project status.
+28. Later payload policy metadata and evidence references, with future raw
    payload modes gated behind enterprise opt-in.
-28. Later Gate A batch: read-only view/export decision after X-Insight Gate A
+29. Later Gate A batch: read-only view/export decision after X-Insight Gate A
    evidence.
-29. Later target/backlog batches: target upstream/SSO evidence or larger
+30. Later target/backlog batches: target upstream/SSO evidence or larger
    backlog items only after their prerequisites are explicitly met.
+
+## 7. Completion Boundary
+
+The accepted UniRouter PRD5 plan is complete: all 36 matrix rows have an
+implemented/evidenced status or an explicit decision/prerequisite gate, P5-F12
+has a recorded accept/defer/reject decision for every screened product, and the
+repository-owned P5-F33 through P5-F36 functionality is implemented. P5-F35 is
+CI verified rather than Target verified; that is target evidence debt, not a
+missing source feature.
+
+X-Insight's answer is accepted in
+`docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md`.
+It closes the information request while keeping unimplemented X-Insight
+capabilities and intentionally deferred UniRouter products outside the PRD5
+completion claim.
 
 ## 6. External Source Refresh
 

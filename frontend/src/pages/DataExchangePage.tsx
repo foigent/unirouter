@@ -67,8 +67,11 @@ function optionalISO(value?: string) {
   return parsed.toISOString();
 }
 
-function receiptPayload(raw: string) {
+export function receiptPayload(raw: string) {
   const receipt = JSON.parse(raw);
+  if (Object.prototype.hasOwnProperty.call(receipt, 'import_job_id') || Object.prototype.hasOwnProperty.call(receipt, 'deep_link')) {
+    throw new Error('X-Insight 尚未提供 durable import job 或 deep link 合同');
+  }
   const result = receipt?.result || {};
   return {
     exchange_id: receipt?.exchange_id,
@@ -93,8 +96,6 @@ function receiptPayload(raw: string) {
     readback_events: Number(result.readback_events || 0),
     readback_capture_gaps: Number(result.readback_capture_gaps || 0),
     warning_codes: Array.isArray(receipt?.warning_codes) ? receipt.warning_codes : [],
-    import_job_id: receipt?.import_job_id || '',
-    deep_link: receipt?.deep_link || '',
     checked_at: receipt?.checked_at,
   };
 }

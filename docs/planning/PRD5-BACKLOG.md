@@ -7,6 +7,8 @@
 > activate the full deferred items automatically.
 > Batch 1Y implements the accepted scoped follow-ups. Batch 1Z target evidence is
 > `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md`;
+> the X-Insight runtime response is reconciled in
+> `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md`;
 > full deferred items remain inactive.
 > Source: PRD4 scope confirmation, earlier PRD2/PRD3 deferred boundaries, and
 > 2026-07-08 User direction for X-Insight integration scope discovery.
@@ -29,11 +31,11 @@ shared UniRouter/X-Insight communication folder:
 ```
 
 For the X-Insight-related items, UniRouter should focus on high-fidelity
-structured evidence emitted from gateway-native execution points. X-Insight is
-expected to own the broader enterprise AI/Agent observability and governance
-platform. This boundary remains a discovery assumption until the X-Insight team
-answers the open request in the shared folder and the User confirms the final
-split.
+structured evidence emitted from gateway-native execution points. X-Insight
+owns the broader enterprise AI/Agent observability and governance platform. Its
+answered runtime request confirms the current file-sidecar-only boundary;
+durable jobs/deep links, automated receipts, retention/deletion/audit, public
+adapters, and continuous ingestion remain unimplemented and disabled.
 
 Current active PRD5 planning, Batch 1A/1B/1C completed implementation, Batch 1D
 upstream request correlation, Batch 1E event capture-gap emission, Batch 1F
@@ -60,6 +62,7 @@ closeout are tracked in:
 - `docs/tech-ref/26-prd5-evidence-field-contract.md`
 - `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md`
 - `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md`
+- `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md`
 
 This backlog remains the source record for deferred items that are not yet part
 of the active PRD5 implementation train. P5-F12 screening has now selected only
@@ -85,7 +88,7 @@ SLA operations remain separate decisions.
 | PRD5-OPS-001 | Full maintenance/SLA/SLO incident operations | Needs incident lifecycle, planned maintenance, communication workflow, SLO policy, and notification governance | PRD4 Status Center baseline, operator roles, notification reliability, customer-visible policy |
 | PRD5-UPSTREAM-001 | Real upstream target-environment E2E | No approved real upstream environment, credentials, and model slugs are available for the current PRD4 closeout; PRD4 keeps only guarded harness assets | Approved OpenRouter and direct Anthropic credentials, target environment owner, cost/risk approval, non-stream/stream run plan, cleanup plan |
 | PRD5-SSO-001 | Real SSO target-environment E2E | No approved Logto or enterprise OIDC target, test user, and browser-login environment are available for the current PRD4 closeout; PRD4 keeps only guarded harness assets | Approved IdP tenant/client, test user, callback URL, target console/backend URLs, DB audit access, redaction review |
-| PRD5-XINSIGHT-001 | X-Insight integration contract and shared working process | X-Insight integration is new PRD5 scope, not part of PRD4. The original Gate A snapshot and the separately authorized Batch 1W denied-path snapshot both passed artifact reconciliation, persistence, idempotent rerun, and readback. Batch 1W is target verified under `UR-XI-GATE-A-20260710-02`; keys 36/37 are disabled | Remaining boundaries are first-snapshot deletion by 2026-07-17, retention for the second snapshot, X-Insight ECS target verification, durable job/deep-link/receipt contracts, and real upstream E2E. UniRouter ECS `INFRA-SEC-001` remediation is closed in Batch 1Z. Read-only views/exporter/outbox remain unapproved pending explicit security, availability, scale, and operational-ownership decisions; a third snapshot is not a mechanical prerequisite |
+| PRD5-XINSIGHT-001 | X-Insight integration contract and shared working process | Both controlled snapshots passed artifact reconciliation, persistence, idempotent rerun, and readback; Batch 1W is target verified and keys 36/37 are disabled. X-Insight's fixture/synthetic-only target is Target verified. The runtime request is Answered and the accepted decision keeps v1 sidecar reconciliation only | Remaining boundaries are first-snapshot deletion by 2026-07-17, retention for the second snapshot, unimplemented durable job/deep-link/automated receipt/authenticity/retention/delete/audit/public-adapter contracts, and real upstream E2E. UniRouter ECS `INFRA-SEC-001` remediation is closed in Batch 1Z. Read-only views/exporter/outbox remain unapproved pending explicit security, availability, scale, and operational-ownership decisions; a third snapshot is not a mechanical prerequisite |
 | PRD5-EVIDENCE-001 | Structured execution-chain evidence fields | PRD4 trace events are a metadata-only foundation but do not yet model multi-agent/multi-tool/multi-business-system chains with explicit structural fields | Batch 1A/1B/1C accepted the field contract, nullable migration, gateway-known structural writes, read-side exposure, snapshot output, and lightweight trace UI. Batch 1D adds provider-returned upstream request ID capture. Batch 1E adds event-level redacted capture-gap emission for sanitized trace metadata. Batch 1F adds restricted payload evidence mode configuration. Batch 1G adds default-off trusted evidence context intake for internal trace/session/actor/delegation fields. Batch 1H adds per-request gateway root span parenting for UniRouter-emitted trace events. Batch 1I adds explicit payload policy decision events. Batch 1J adds `provider_not_returned` capture gaps for provider response events without upstream request IDs. Batch 1L refines repeated same-component event parenting. Batch 1M adds `not_available_from_source` capture gaps for provider-stage failures that occur before any upstream response source exists. Batch 1N adds snapshot `candidate_capture_gaps` for missing trace rows. Batch 1P adds `permission_denied` auth decision evidence for Chat model rejects. Batch 1U closes the equivalent Embeddings `allowed_models` bypass. Batch 1V proved the live wrapper still bypassed Chat rejection evidence; Batch 1W removes that duplicate pre-relay check. `decision_not_emitted` remains an observed import/gap condition rather than a fabricated runtime event |
 | PRD5-PAYLOAD-001 | Enterprise-configurable prompt/response payload policy | Raw prompt/response storage is privacy-sensitive and should not be silently introduced through trace, cache, or X-Insight integration work | Batch 1F accepts only `metadata_only` and `disabled` runtime payload evidence modes. Batch 1I emits explicit `payload.policy.applied` decision events while keeping `raw_payload_stored=false` and `payload_ref_present=false`. Remaining prerequisites before redacted/hash/reference/raw modes: User approval, UniRouter/X-Insight ownership split, encryption/key management, retention, deletion/export, audit-on-read, redacted summary, hash, and `evidence_ref` behavior |
 | PRD5-COMPARE-001 | NewAPI/LiteLLM/one-api and observability-platform comparison | Functional, technical, and UI comparison is needed before feature-chase planning; older research snapshots and X-Insight prior research are inputs but must be refreshed before PRD commitments | Batch 1A/1B/1C accepted the initial comparison and UniRouter/X-Insight ownership split. Refresh again before public claims, adapter implementation, pricing claims, or choosing a new catch-up workstream |

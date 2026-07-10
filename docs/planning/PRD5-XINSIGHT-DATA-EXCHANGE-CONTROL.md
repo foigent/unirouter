@@ -202,8 +202,10 @@ Batch 1Y implements these UniRouter-side records in migration `000019`:
   a durable import job ID/deep link when X-Insight implements them.
 
 Batch 1Y also adds exchange membership and delivery/re-delivery tables. Durable
-X-Insight job IDs and deep links remain nullable and must not be populated until
-X-Insight answers the current runtime-contract request.
+X-Insight job IDs and deep links remain nullable. X-Insight's answered request
+confirms they are not implemented, so the receipt write API rejects both fields
+and accepts only the canonical v1 warning-code registry. Reopening requires a
+later implemented versioned contract and explicit acceptance.
 
 ## Decision Boundary
 
@@ -212,7 +214,8 @@ Recommended decision:
 - yes, keep the implemented UniRouter UI entry;
 - make it a Data Exchange Control surface, not a full X-Insight audit console;
 - keep the implementation narrow: approval, export/delivery ledger, and receipt reconciliation;
-- use X-Insight deep links and import receipts for downstream status;
+- use current import receipts for downstream status; add X-Insight deep links
+  only after a later durable-job contract is implemented and accepted;
 - keep downstream investigation and read audit inside X-Insight.
 
 ## Batch 1Y Implementation
@@ -230,8 +233,9 @@ The local implementation now provides:
 - a UniRouter page for approval, exchange registration, delivery, receipt JSON,
   safety summary, and explicit missing durable job/deep-link state.
 
-The consolidated X-Insight information request is
-`/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-10-unirouter-prd5-runtime-contract-required-information.md`.
+The consolidated X-Insight information request is Answered. The accepted
+boundary and source-backed reconciliation are recorded in
+`docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md`.
 
 ## Current Non-Goals
 

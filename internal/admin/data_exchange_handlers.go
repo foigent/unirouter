@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -25,6 +24,13 @@ var dataExchangeClasses = map[string]bool{
 	"request_trace_events": true,
 	"call_logs":            true,
 	"capture_gaps":         true,
+}
+
+var dataExchangeReceiptWarningCodes = map[string]bool{
+	"approval_manifest_hash_missing": true,
+	"persistence_not_requested":      true,
+	"source_capture_gaps_present":    true,
+	"source_exchange_id_missing":     true,
 }
 
 type createExchangeItemRequest struct {
@@ -88,8 +94,6 @@ type createReceiptRequest struct {
 	ReadbackEvents         int       `json:"readback_events"`
 	ReadbackCaptureGaps    int       `json:"readback_capture_gaps"`
 	WarningCodes           []string  `json:"warning_codes"`
-	ImportJobID            string    `json:"import_job_id"`
-	DeepLink               string    `json:"deep_link"`
 	CheckedAt              time.Time `json:"checked_at"`
 }
 
@@ -611,14 +615,14 @@ func (h *Handler) CreateDataExchangeReceipt(w http.ResponseWriter, r *http.Reque
 		 artifact_sha256, approval_manifest_sha256, result_status, request_ids, input_events, accepted,
 		 duplicate_noop, rerun_duplicate_noop, rejected, quarantined, capture_gap_events, persisted_inserted,
 		 persisted_duplicate_noop, persistence_conflicts, readback_events, readback_capture_gaps,
-		 warning_codes, import_job_id, deep_link, checked_at, received_by)
+		 warning_codes, checked_at, received_by)
 		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), $8, $9, $10, $11, $12, $13, $14, $15, $16,
-		 $17, $18, $19, $20, $21, $22::jsonb, NULLIF($23, ''), NULLIF($24, ''), $25, NULLIF($26, 0))
+		 $17, $18, $19, $20, $21, $22::jsonb, $23, NULLIF($24, 0))
 		RETURNING id`, id, req.ReceiptSchemaVersion, req.SourceSystem, req.SourceInstance, req.ArtifactSchemaVersion,
 		req.ArtifactSHA256, req.ApprovalManifestSHA256, req.ResultStatus, req.RequestIDs, req.InputEvents, req.Accepted,
 		req.DuplicateNoop, req.RerunDuplicateNoop, req.Rejected, req.Quarantined, req.CaptureGapEvents, req.PersistedInserted,
 		req.PersistedDuplicateNoop, req.PersistenceConflicts, req.ReadbackEvents, req.ReadbackCaptureGaps,
-		string(warningsJSON), req.ImportJobID, req.DeepLink, req.CheckedAt, middleware.GetUserIDFromContext(r.Context())).Scan(&receiptID)
+		string(warningsJSON), req.CheckedAt, middleware.GetUserIDFromContext(r.Context())).Scan(&receiptID)
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "Receipt already exists or could not be recorded"})
 		return
@@ -741,8 +745,6 @@ func validateReceiptRequest(w http.ResponseWriter, req *createReceiptRequest) bo
 	req.ArtifactSHA256 = strings.TrimSpace(req.ArtifactSHA256)
 	req.ApprovalManifestSHA256 = strings.TrimSpace(req.ApprovalManifestSHA256)
 	req.ResultStatus = strings.TrimSpace(req.ResultStatus)
-	req.ImportJobID = strings.TrimSpace(req.ImportJobID)
-	req.DeepLink = strings.TrimSpace(req.DeepLink)
 	if !dataExchangeIDPattern.MatchString(req.ExchangeID) || req.ReceiptSchemaVersion != "xinsight.import-receipt.v1" || req.SourceSystem == "" || req.SourceInstance == "" || req.ArtifactSchemaVersion == "" || !oneOf(req.ResultStatus, "validated", "persisted", "rejected") || req.CheckedAt.IsZero() {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Invalid receipt identity or status"})
 		return false
@@ -762,24 +764,14 @@ func validateReceiptRequest(w http.ResponseWriter, req *createReceiptRequest) bo
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Too many warning codes"})
 		return false
 	}
+	seenWarnings := map[string]bool{}
 	for i, code := range req.WarningCodes {
-		code = strings.TrimSpace(code)
-		if code == "" || len(code) > 120 {
+		if !dataExchangeReceiptWarningCodes[code] || seenWarnings[code] {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Invalid warning code"})
 			return false
 		}
+		seenWarnings[code] = true
 		req.WarningCodes[i] = code
-	}
-	if (req.ImportJobID == "") != (req.DeepLink == "") {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "import_job_id and deep_link must be supplied together"})
-		return false
-	}
-	if req.DeepLink != "" {
-		u, err := url.Parse(req.DeepLink)
-		if err != nil || u.Scheme != "https" || u.Host == "" || len(req.DeepLink) > 500 || len(req.ImportJobID) > 160 {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "deep_link must be a valid HTTPS URL"})
-			return false
-		}
 	}
 	return true
 }
