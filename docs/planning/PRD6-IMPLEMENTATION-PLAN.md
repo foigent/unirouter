@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; Batch 0B active; P6-F17/P6-F32-P6-F39 merged and CI verified
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F16-P6-F18 and P6-F32-P6-F39 applicable rows merged and CI verified; 12 accepted feature rows remain
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -25,6 +25,20 @@ Batch 0A was safe to execute before the scope gate. D6-01 and D6-02 are now
 accepted, so Batches 0B through 5 are authorized repository scope subject to
 their prerequisites, independently reviewable PRs, local verification and
 required CI. No scope decision grants target/deployment/data/cost authorization.
+
+### Current Accepted-Scope Accounting
+
+- 39 total `P6-F*` rows exist in the acceptance matrix;
+- 25 are accepted implementation scope;
+- 13 are CI verified / closed: P6-F01, P6-F02, P6-F16, P6-F17, P6-F18 and
+  P6-F32 through P6-F39;
+- 12 accepted rows remain not started: P6-F03 through P6-F11 and P6-F19
+  through P6-F21;
+- 14 rows are not accepted: P6-F12 through P6-F15 and P6-F22 through P6-F31;
+- `P6-TEST-DB-001` is a separate accepted engineering-integrity issue outside
+  the feature-row count and remains partially remediated;
+- external-boundary and deferred target-evidence rows are not UniRouter PRD6
+  source implementation work.
 
 ## 2. Batch Specifications
 
@@ -85,8 +99,10 @@ restored and retained. P6-F36 PR #148 final evidence head passed run
 `29140739477`, was squash-merged as `d83dbbc0ac7137bb44d2346adc5a25debde804e1`,
 and post-merge main run `29140850345` passed. P6-F17 Scheme A passed PR #149
 run `29152968280`, was merged as `c9402fa`, and post-merge main run
-`29153106336` passed. Later Batch 0B rows remain ordered and
-independently gated.
+`29153106336` passed. P6-F18A passed PR #151 / run `29154664491`; P6-F18B
+passed PR #153 / run `29155948787`, was merged as `b30bc9d`, and post-merge
+main run `29156096777` passed. P6-F18 is closed at CI evidence level. Remaining
+Batch 0B revocation/capability work stays independently gated.
 
 Split into independently reviewable security/financial PRs:
 
@@ -103,11 +119,13 @@ Split into independently reviewable security/financial PRs:
    preserve `settlement_pending` after billable output;
 6. define user/project/key/role revocation epochs and an all-replica SLO.
 
-P6-F18 is split into two R4 reviews. F18A is CI verified by PR #151 for step 4
+P6-F18 was split into two R4 reviews. F18A is CI verified by PR #151 for step 4
 plus the pre-output/source-preserving and single-terminal foundation of step 5.
-F18B remains responsible for the billable-output
-`settlement_pending` marker, persisted final usage, restart worker and
-post-last-chunk fault evidence. F18A alone must not close P6-F18.
+F18B is CI verified by PR #153 for the billable-output `settlement_pending`
+marker, persisted final usage, leased restart worker and post-last-chunk fault
+evidence. Together they close P6-F18. Missing final-usage rows remain held
+without a guessed charge/refund; per-chunk process-kill journal, guaranteed
+missing-log/audit replay and the general outbox remain P6-F20.
 
 P6-F17 implements steps 2-3 with a server-owned `op_` identity, separate
 client/workflow/Agent/attempt/upstream fields, tenant/API-key/payload-bound HMAC
@@ -163,7 +181,8 @@ Order within the batch:
 3. add real before/after recovery-deadline and success/failure state-transition
    tests, then wire one effective retry/circuit/cooldown configuration source
    and emit its version/effective values in safe evidence;
-4. repair organization-multiplier freeze/settlement invariants;
+4. audit the remaining P6-F06 under-freeze delta against the completed P6-F18
+   price-pin foundation, then implement only the missing invariant;
 5. handle stream Scanner errors, response-body lifetime, single-writer/flush and
    timeout semantics safely;
 6. preserve the P6-F35 strict-version sensitive-word reload regression while
@@ -217,7 +236,8 @@ Adaptive latency/cost routing remains advanced scope.
 
 Deliverables:
 
-- reservation-aware stream consumption and durable `settlement_pending`;
+- build on the CI-verified P6-F18 reservation and `settlement_pending`
+  foundation rather than reimplementing it;
 - minimal decision/usage journal plus a transactional internal outbox;
 - bounded, idempotent trace/log/notification workers and incremental budget
   threshold events;
