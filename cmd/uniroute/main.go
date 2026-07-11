@@ -84,7 +84,16 @@ func main() {
 	router := gateway.NewRouter(postgres.Pool)
 	billingSvc := billing.NewBilling(postgres.Pool, redisClient.Client)
 	admissionCtrl := middleware.NewDefaultAdmissionController()
+	initialFilterCtx, cancelInitialFilterLoad := context.WithTimeout(context.Background(), 10*time.Second)
+	initialSensitiveWords, initialSensitiveVersion, err := loadSensitiveWords(initialFilterCtx, postgres.Pool)
+	cancelInitialFilterLoad()
+	if err != nil {
+		log.Fatalf("Failed to load deployment sensitive-word policy: %v", err)
+	}
 	sensitiveFilter := filter.NewDFAFilter([]string{})
+	if !sensitiveFilter.UpdateWordsVersioned(initialSensitiveWords, initialSensitiveVersion) {
+		log.Fatal("Failed to initialize deployment sensitive-word policy version")
+	}
 	encKey := []byte(cfg.EncryptionKey)
 	relay := gateway.NewRelay(postgres.Pool, redisClient.Client, router, billingSvc, sensitiveFilter, encKey)
 	relay.SetTraceEvents(cfg.TraceEventsEnabled, cfg.TraceEventSampleRate)
@@ -340,10 +349,10 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">POST</td><td><code>/api/v1/data-exchange/exchanges/{id}/deliveries</code></td><td>Record exchange handoff or re-delivery</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/data-exchange/exchanges/{id}/receipts</code></td><td>Record X-Insight import receipt</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/data-exchange/exchanges/{id}/artifact-delete</code></td><td>Mark exchange artifact deleted in ledger</td></tr>
-<tr><td class="method">GET</td><td><code>/api/v1/settings</code></td><td>List settings</td></tr>
-<tr><td class="method">PUT</td><td><code>/api/v1/settings/{key}</code></td><td>Update setting</td></tr>
-<tr><td class="method">GET</td><td><code>/api/v1/license</code></td><td>License status</td></tr>
-<tr><td class="method">PUT</td><td><code>/api/v1/license</code></td><td>Import offline license</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/settings</code></td><td>List deployment settings (platform admin)</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/settings/{key}</code></td><td>Update deployment setting (platform admin)</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/license</code></td><td>License status (platform admin)</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/license</code></td><td>Import offline license (platform admin)</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/users</code></td><td>List users</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/users</code></td><td>Create user</td></tr>
 <tr><td class="method">PUT</td><td><code>/api/v1/users/{id}</code></td><td>Update user</td></tr>
@@ -375,10 +384,10 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">POST</td><td><code>/api/v1/notification-webhooks</code></td><td>Create notification webhook</td></tr>
 <tr><td class="method">PUT</td><td><code>/api/v1/notification-webhooks/{id}</code></td><td>Update notification webhook</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/notification-webhooks/{id}/verify-scope</code></td><td>Verify a quarantined notification webhook scope</td></tr>
-<tr><td class="method">GET</td><td><code>/api/v1/sensitive-words</code></td><td>List sensitive words</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/sensitive-words</code></td><td>Add sensitive words</td></tr>
-<tr><td class="method">PUT</td><td><code>/api/v1/sensitive-words</code></td><td>Replace sensitive words</td></tr>
-<tr><td class="method">DELETE</td><td><code>/api/v1/sensitive-words</code></td><td>Delete sensitive words</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/sensitive-words</code></td><td>List global input blocking words (platform admin)</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/sensitive-words</code></td><td>Add global input blocking words (platform admin)</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/sensitive-words</code></td><td>Replace global input blocking words (platform admin)</td></tr>
+<tr><td class="method">DELETE</td><td><code>/api/v1/sensitive-words</code></td><td>Delete global input blocking words (platform admin)</td></tr>
 </tbody>
 </table>
 <p class="muted">Repository source of truth: <code>docs/tech-ref/05-openapi-spec.yaml</code>.</p>
@@ -466,16 +475,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("POST /api/v1/data-exchange/exchanges/{id}/receipts", platformRoute(adminHandler.CreateDataExchangeReceipt))
 	mux.Handle("POST /api/v1/data-exchange/exchanges/{id}/artifact-delete", platformRoute(adminHandler.DeleteDataExchangeArtifact))
 
-	mux.Handle("GET /api/v1/settings", orgAdminRoute(adminHandler.ListSettings))
-	mux.Handle("PUT /api/v1/settings/{key}", orgAdminRoute(adminHandler.UpdateSetting))
-	mux.Handle("GET /api/v1/license", platformRoute(adminHandler.GetLicense))
-	mux.Handle("PUT /api/v1/license", platformRoute(adminHandler.UpdateLicense))
-
-	// Sensitive Words CRUD (PRD F13)
-	mux.Handle("GET /api/v1/sensitive-words", orgAdminRoute(adminHandler.ListSensitiveWords))
-	mux.Handle("POST /api/v1/sensitive-words", orgAdminRoute(adminHandler.AddSensitiveWords))
-	mux.Handle("PUT /api/v1/sensitive-words", orgAdminRoute(adminHandler.UpdateSensitiveWords))
-	mux.Handle("DELETE /api/v1/sensitive-words", orgAdminRoute(adminHandler.DeleteSensitiveWords))
+	registerGlobalControlRoutes(mux, adminHandler, platformRoute)
 	mux.Handle("POST /api/v1/channels/{id}/test", platformRoute(adminHandler.TestChannel))
 	mux.Handle("GET /api/v1/wallet/transactions/export", billingRoute(adminHandler.ExportWalletTransactions))
 	metricsHandler := middleware.MetricsMiddleware(mux)
@@ -545,22 +545,24 @@ func findMigrationsDir() string {
 	return "./migrations"
 }
 
-// loadSensitiveWords loads sensitive words from the settings table.
-// The value is stored as a JSON array by admin handlers.
-func loadSensitiveWords(ctx context.Context, pool *pgxpool.Pool) []string {
+// loadSensitiveWords loads the versioned deployment-wide input blocking policy.
+func loadSensitiveWords(ctx context.Context, pool *pgxpool.Pool) ([]string, time.Time, error) {
 	var value string
+	var updatedAt time.Time
 	err := pool.QueryRow(ctx,
-		`SELECT value FROM settings WHERE key = 'sensitive_words'`,
-	).Scan(&value)
+		`SELECT value, updated_at FROM settings WHERE key = 'sensitive_words'`,
+	).Scan(&value, &updatedAt)
 	if err != nil {
-		return nil
+		return nil, time.Time{}, fmt.Errorf("read sensitive_words: %w", err)
 	}
 	var words []string
 	if err := json.Unmarshal([]byte(value), &words); err != nil {
-		log.Printf("[filter] failed to parse sensitive_words JSON: %v", err)
-		return nil
+		return nil, time.Time{}, fmt.Errorf("parse sensitive_words: %w", err)
 	}
-	return words
+	if updatedAt.IsZero() {
+		return nil, time.Time{}, fmt.Errorf("sensitive_words has no policy version")
+	}
+	return words, updatedAt, nil
 }
 
 // startSensitiveWordsReloadLoop keeps each gateway instance converged with DB-backed settings.
@@ -571,9 +573,12 @@ func startSensitiveWordsReloadLoop(pool *pgxpool.Pool, sensitiveFilter *filter.D
 	reload := func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		words := loadSensitiveWords(ctx, pool)
-		if words != nil {
-			sensitiveFilter.UpdateWords(words)
+		words, version, err := loadSensitiveWords(ctx, pool)
+		if err != nil {
+			log.Printf("[filter] failed to reload sensitive_words: %v", err)
+			return
+		}
+		if sensitiveFilter.UpdateWordsVersioned(words, version) {
 			log.Printf("Loaded %d sensitive words from settings", len(words))
 		}
 	}

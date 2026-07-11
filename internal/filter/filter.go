@@ -3,6 +3,7 @@ package filter
 import (
 	"strings"
 	"sync"
+	"time"
 )
 
 // DFAFilter implements a deterministic finite automaton for sensitive word filtering.
@@ -10,6 +11,7 @@ type DFAFilter struct {
 	root     *dfaNode
 	mu       sync.RWMutex
 	wordList []string
+	version  time.Time
 }
 
 type dfaNode struct {
@@ -21,7 +23,7 @@ type dfaNode struct {
 func NewDFAFilter(words []string) *DFAFilter {
 	f := &DFAFilter{
 		root:     &dfaNode{children: make(map[rune]*dfaNode)},
-		wordList: words,
+		wordList: append([]string(nil), words...),
 	}
 	for _, w := range words {
 		f.addWord(w)
@@ -81,9 +83,25 @@ func (f *DFAFilter) IsSensitive(text string) (bool, []string) {
 func (f *DFAFilter) UpdateWords(words []string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.replaceWordsLocked(words)
+}
 
+// UpdateWordsVersioned applies a database-backed snapshot only when it is
+// strictly newer than the latest version already installed in this process.
+func (f *DFAFilter) UpdateWordsVersioned(words []string, version time.Time) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if version.IsZero() || (!f.version.IsZero() && !version.After(f.version)) {
+		return false
+	}
+	f.replaceWordsLocked(words)
+	f.version = version
+	return true
+}
+
+func (f *DFAFilter) replaceWordsLocked(words []string) {
 	f.root = &dfaNode{children: make(map[rune]*dfaNode)}
-	f.wordList = words
+	f.wordList = append([]string(nil), words...)
 	for _, w := range words {
 		f.addWord(w)
 	}
@@ -91,5 +109,7 @@ func (f *DFAFilter) UpdateWords(words []string) {
 
 // WordCount returns the number of words in the filter.
 func (f *DFAFilter) WordCount() int {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	return len(f.wordList)
 }

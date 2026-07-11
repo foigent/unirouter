@@ -119,6 +119,16 @@ func TestMainRegistersExtractedPricingRoutes(t *testing.T) {
 	}
 }
 
+func TestMainRegistersExtractedGlobalControlRoutes(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	if !strings.Contains(string(src), "registerGlobalControlRoutes(mux, adminHandler") {
+		t.Fatal("main.go does not call the extracted global-control route registrar")
+	}
+}
+
 func TestOpenAPISpecCoversRegisteredRoutes(t *testing.T) {
 	routes := registeredMuxRoutes(t)
 	specBytes, err := os.ReadFile("../../docs/tech-ref/05-openapi-spec.yaml")

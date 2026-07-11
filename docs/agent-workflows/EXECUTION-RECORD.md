@@ -1,25 +1,43 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 0B P6-F34 Pricing Authority
+**Batch:** PRD6 Batch 0B P6-F35 Global-Control Authority
 **Owner:** Codex
-**Risk:** R4 global and cross-tenant billing integrity
-**Status:** CI verified by PR #146 implementation head; merge pending
-**Integration:** PR #146 / branch `codex/prd6-p6f34-price-authority`; no deployment claimed
+**Risk:** R4 deployment-wide control and tenant-boundary integrity
+**Status:** PR #147 implementation-head CI verified; final docs exact-head CI/merge pending
+**Integration:** PR #147 / branch `codex/prd6-p6f35-global-controls`; no deployment, target or production claim
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Current Scope
 
-1. Restrict global base-price and organization-multiplier mutations to platform
-   authority at route and handler boundaries.
-2. Keep organization-admin reads bound to the JWT organization and preserve
-   explicit platform target selection.
-3. Commit price changes and before/after audit rows atomically, including
-   accurate same-key concurrent upserts and renames.
-4. Align multiplier validation and frontend/API semantics with the database and
-   runtime billing contract.
-5. Preserve P6-F06/P6-F17/P6-F18 and target-evidence boundaries.
+1. Restrict deployment settings, license material and the deployment-wide
+   sensitive-word list to platform authority at production route and handler
+   boundaries.
+2. Block generic-setting bypasses for `license.*` and `sensitive_words`, redact
+   secret/global-control values from generic reads and keep dedicated paths.
+3. Commit each control mutation and sanitized audit evidence in one transaction;
+   roll back the business write when audit fails.
+4. Serialize and strictly version global-word changes, fail startup closed on
+   missing/invalid policy and prevent stale/equal reload rollback.
+5. Preserve P6-F05/P6-F17, target activation and UI boundaries.
 
-## Current P6-F34 Behavior Change
+## Current P6-F35 Behavior Change
+
+- all eight production global-control routes and their handlers require platform
+  authority and fail closed without it;
+- generic settings cannot write `license.*` or `sensitive_words`, and generic
+  reads redact license, words and webhook destinations;
+- settings, license and word mutations use an advisory lock plus same-transaction
+  sanitized audit; injected audit failure rolls the business write back;
+- sensitive-word startup is synchronous/fail-closed, versions are strictly
+  monotonic, and stale/equal reloads cannot replace a newer filter;
+- two independent handlers sharing PostgreSQL preserve the concurrent word union
+  and audit/version chain; separately controlled reload makes both filters
+  converge;
+- local full/race/vet, frontend 27-file/135-test/type-check/build, OpenAPI parse,
+  migrated signed-JWT/PostgreSQL and failure-injection checks pass; independent
+  review reports no remaining blocker/high/medium.
+
+## Previous P6-F34 Behavior Change
 
 - all six pricing mutations are platform-only and fail closed without a role;
 - organization reads default to the JWT organization; foreign and org-zero
@@ -27,11 +45,11 @@
 - writes and audit rows share one transaction; same-key upserts/renames use a
   transaction advisory lock for accurate before-state;
 - multiplier values are limited to `0.001..99.999`;
-- the UI now uses the multiplier contract, removes organization-1 fallback and
+- the UI uses the multiplier contract, removes organization-1 fallback and
   hides mutations from tenant roles;
-- migrated JWT, billing, concurrency, audit rollback, frontend and route-wiring
-  tests pass; PR #146 implementation run `29137361064` passed Backend Tests,
-  Frontend Build and Docker Build.
+- PR #146 final-head run `29137670055` passed all three required jobs, PR #146
+  squash-merged as `517ce45381429781f7e81e492bdd9f38093c21ba`, and post-merge
+  main run `29137781625` passed the same jobs; its historical branch is retained.
 
 ## Previous P6-F32/P6-F39 Behavior Change
 
@@ -108,6 +126,8 @@
   `docs/ops/evidence/PRD6-B0B-P6F32-P6F39-finance-and-usage-tenant-isolation-local-20260711.md`.
 - P6-F34 local evidence:
   `docs/ops/evidence/PRD6-B0B-P6F34-pricing-authority-local-20260711.md`.
+- P6-F35 local evidence:
+  `docs/ops/evidence/PRD6-B0B-P6F35-global-control-authority-local-20260711.md`.
 - Product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
 - PRD7 candidate queue:
@@ -120,14 +140,34 @@
   `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`,
   `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`, and
   `docs/planning/PRD6-BACKLOG.md`.
-- Current code/tests: pricing route registration, platform-authority and
-  actor-organization handler guards, atomic audited price mutation, billing
-  multiplier validation, typed frontend pricing client/pages and migrated
-  signed-JWT `pricing_authority_integration_test.go`.
+- Current code/tests: production global-control route registration, independent
+  handler authority guards, reserved-key/redaction rules, atomic audited
+  settings/license/word mutations, strict word-policy versions, synchronous
+  startup load, stale-reload rejection and migrated signed-JWT/PostgreSQL
+  authority/failure/concurrency matrices.
 
 ## Verification
 
-Current P6-F34 results on `codex/prd6-p6f34-price-authority`:
+Current P6-F35 results on `codex/prd6-p6f35-global-controls`:
+
+- migrated signed-JWT production-route/handler role matrix, reserved-key bypass
+  denial, redaction and denied-no-side-effect tests: PASS;
+- real PostgreSQL audit-failure rollback across settings/license/words and two
+  independent-handler concurrent version/audit/filter convergence: PASS;
+- startup missing/invalid policy fail-closed, stale/equal reload rejection and
+  post-commit event/filter ordering tests: PASS;
+- `go test ./... -count=1`, `go test -race ./... -count=1` and `go vet ./...`:
+  PASS; race linking retains the non-failing macOS warning;
+- frontend type-check, 27 files / 135 tests and production build: PASS; OpenAPI
+  YAML parse and route-role contract checks: PASS;
+- independent review: no remaining blocker/high/medium;
+- PR #147 implementation head `ab05712d62a7790c5fc5e90171b72ece65845e02`,
+  run `29139213794`: Backend Tests PASS in 1m28s, Frontend Build PASS in 3m7s
+  with 27 files / 135 tests, and Docker Build PASS in 58s; Backend logs
+  explicitly show the P6-F35 migrated, production-route and reload tests PASS;
+- final docs exact-head required CI, merge and post-merge main CI: PENDING.
+
+Previous P6-F34 results on `codex/prd6-p6f34-price-authority`:
 
 - migrated two-organization signed-JWT route-role, read-scope, denied
   no-side-effect, billing-math and audit matrix: PASS;
@@ -136,9 +176,11 @@ Current P6-F34 results on `codex/prd6-p6f34-price-authority`:
 - `go test ./...`, `go test -race ./...` and `go vet ./...`: PASS;
 - frontend type-check, 27 files / 135 tests and production build: PASS;
 - independent review: no remaining blocker/high/medium;
-- PR #146 implementation head `0e15dbb`, run `29137361064`: `Backend Tests`,
-  `Frontend Build` and `Docker Build` PASS; final documentation head must pass
-  the same checks before merge.
+- PR #146 implementation head `0e15dbb`, run `29137361064`, and final branch
+  head run `29137670055`: `Backend Tests`, `Frontend Build` and `Docker Build`
+  PASS; PR #146 squash-merged as `517ce45381429781f7e81e492bdd9f38093c21ba`;
+  post-merge main run `29137781625` passed the same three jobs; historical
+  branch retained.
 
 Previous P6-F32/P6-F39 results on `codex/prd6-p6f32-finance-tenant`:
 
@@ -273,10 +315,19 @@ PR #139 required checks for final scalability-audit evidence head `6c8c192`:
 - `Frontend Build`: PASS;
 - `Docker Build`: PASS.
 
-P6-F01, P6-F02, P6-F16, P6-F32, P6-F33, P6-F37, P6-F38 and P6-F39 are merged
-and `CI verified`. D6-08 accepts P6-F32-P6-F36. P6-F34 is `CI verified` by PR
-#146 implementation head with merge pending; P6-F35-P6-F36 remain unremediated. No
-documentation or local test promotes a row to target verified.
+P6-F01, P6-F02, P6-F16, P6-F32, P6-F33, P6-F34, P6-F37, P6-F38 and P6-F39 are
+merged and `CI verified`. D6-08 accepts P6-F32-P6-F36. P6-F35 is `CI verified`
+by PR #147 implementation head/run `29139213794`, with final docs exact-head
+CI/merge pending; P6-F36 remains unremediated. No
+documentation or local test promotes a row to target or production verified.
+
+P6-F35 target activation is deferred by D6-09. A later authorized run must
+drain old control-plane binaries before a non-rolling activation of only the new
+version; old binaries do not provide mixed-version safety. New-version replicas
+converge a committed sensitive-word version through the existing approximately
+one-minute reload. This batch adds no global-settings UI. Typed configuration
+ownership and the budget/alert key, scope and audit truth chain remain P6-F05/
+P6-F17; ambiguous network commit readback/idempotency remains P6-F17.
 
 No deployment, target mutation/probe, real or paid request, credential change,
 exporter/outbox, deletion or expanded data exchange occurred. Migration down,

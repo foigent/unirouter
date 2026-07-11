@@ -41,6 +41,42 @@ func platformPricingRequest(method, target string, body io.Reader) *http.Request
 	return pricingActorRequest(httptest.NewRequest(method, target, body), 1, auth.RolePlatformAdmin)
 }
 
+func platformGlobalControlRequest(req *http.Request) *http.Request {
+	return pricingActorRequest(req, 1, auth.RolePlatformAdmin)
+}
+
+func globalControlTestDB(db *testutil.MockDB) *testutil.MockDB {
+	db.BeginFn = func(ctx context.Context) (pgx.Tx, error) {
+		return &testutil.MockTx{
+			QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+				if strings.Contains(sql, "RETURNING value::text") {
+					return &testutil.MockRow{ScanFn: func(dest ...any) error {
+						*dest[0].(*string) = fmt.Sprint(args[1])
+						return nil
+					}}
+				}
+				if strings.Contains(sql, "RETURNING updated_at") {
+					return &testutil.MockRow{ScanFn: func(dest ...any) error {
+						*dest[0].(*time.Time) = time.Now().UTC()
+						return nil
+					}}
+				}
+				if db.QueryRowFn != nil {
+					return db.QueryRowFn(ctx, sql, args...)
+				}
+				return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
+			},
+			ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+				if db.ExecFn != nil {
+					return db.ExecFn(ctx, sql, args...)
+				}
+				return pgconn.NewCommandTag("UPDATE 1"), nil
+			},
+		}, nil
+	}
+	return db
+}
+
 func modelPriceMockRow(id int64, modelName string, inputPrice, outputPrice float64) pgx.Row {
 	return &testutil.MockRow{ScanFn: func(dest ...any) error {
 		*dest[0].(*int64) = id
@@ -2087,7 +2123,7 @@ func TestListSettings_Success(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	req := httptest.NewRequest("GET", "/settings", nil)
+	req := platformGlobalControlRequest(httptest.NewRequest("GET", "/settings", nil))
 	rec := httptest.NewRecorder()
 
 	h.ListSettings(rec, req)
@@ -2105,7 +2141,7 @@ func TestListSettings_QueryError(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	req := httptest.NewRequest("GET", "/settings", nil)
+	req := platformGlobalControlRequest(httptest.NewRequest("GET", "/settings", nil))
 	rec := httptest.NewRecorder()
 
 	h.ListSettings(rec, req)
@@ -2125,10 +2161,10 @@ func TestUpdateSetting_Success(t *testing.T) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
-	h := newTestHandler(db)
+	h := newTestHandler(globalControlTestDB(db))
 
 	body := `{"value":"new-value"}`
-	req := httptest.NewRequest("PUT", "/settings/site_name", strings.NewReader(body))
+	req := platformGlobalControlRequest(httptest.NewRequest("PUT", "/settings/site_name", strings.NewReader(body)))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("key", "site_name")
 	rec := httptest.NewRecorder()
@@ -2146,10 +2182,10 @@ func TestUpdateSetting_DBError(t *testing.T) {
 			return pgconn.CommandTag{}, fmt.Errorf("db error")
 		},
 	}
-	h := newTestHandler(db)
+	h := newTestHandler(globalControlTestDB(db))
 
 	body := `{"value":"new-value"}`
-	req := httptest.NewRequest("PUT", "/settings/site_name", strings.NewReader(body))
+	req := platformGlobalControlRequest(httptest.NewRequest("PUT", "/settings/site_name", strings.NewReader(body)))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("key", "site_name")
 	rec := httptest.NewRecorder()
@@ -2584,22 +2620,16 @@ func TestListGrants_QueryError(t *testing.T) {
 
 func TestListSensitiveWords_Success(t *testing.T) {
 	db := &testutil.MockDB{
-		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			return &testutil.MockRows{
-				Rows: []func(dest ...any) error{
-					func(dest ...any) error {
-						*dest[0].(*int64) = 1
-						*dest[1].(*string) = "赌博"
-						*dest[2].(*time.Time) = time.Now()
-						return nil
-					},
-				},
-			}, nil
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*string) = `["赌博"]`
+				return nil
+			}}
 		},
 	}
 	h := newTestHandler(db)
 
-	req := httptest.NewRequest("GET", "/sensitive-words", nil)
+	req := platformGlobalControlRequest(httptest.NewRequest("GET", "/sensitive-words", nil))
 	rec := httptest.NewRecorder()
 
 	h.ListSensitiveWords(rec, req)
@@ -2621,20 +2651,13 @@ func TestListSensitiveWords_QueryError(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	req := httptest.NewRequest("GET", "/sensitive-words", nil)
+	req := platformGlobalControlRequest(httptest.NewRequest("GET", "/sensitive-words", nil))
 	rec := httptest.NewRecorder()
 
 	h.ListSensitiveWords(rec, req)
 
-	// ListSensitiveWords returns 200 with empty list on error
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
-	}
-	var resp map[string]interface{}
-	json.Unmarshal(rec.Body.Bytes(), &resp)
-	data := resp["data"].([]interface{})
-	if len(data) != 0 {
-		t.Fatalf("expected empty data, got %d items", len(data))
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", rec.Code)
 	}
 }
 
@@ -4219,10 +4242,10 @@ func TestUpdateSensitiveWords_Success(t *testing.T) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
-	h := newTestHandler(db)
+	h := newTestHandler(globalControlTestDB(db))
 
 	body := `{"words":["赌博","色情","spam"]}`
-	req := httptest.NewRequest("PUT", "/sensitive-words", strings.NewReader(body))
+	req := platformGlobalControlRequest(httptest.NewRequest("PUT", "/sensitive-words", strings.NewReader(body)))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -4236,7 +4259,7 @@ func TestUpdateSensitiveWords_Success(t *testing.T) {
 func TestUpdateSensitiveWords_InvalidJSON(t *testing.T) {
 	h := newTestHandler(&testutil.MockDB{})
 
-	req := httptest.NewRequest("PUT", "/sensitive-words", strings.NewReader("not json"))
+	req := platformGlobalControlRequest(httptest.NewRequest("PUT", "/sensitive-words", strings.NewReader("not json")))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -4253,10 +4276,10 @@ func TestUpdateSensitiveWords_DBError(t *testing.T) {
 			return pgconn.CommandTag{}, fmt.Errorf("db error")
 		},
 	}
-	h := newTestHandler(db)
+	h := newTestHandler(globalControlTestDB(db))
 
 	body := `{"words":["赌博"]}`
-	req := httptest.NewRequest("PUT", "/sensitive-words", strings.NewReader(body))
+	req := platformGlobalControlRequest(httptest.NewRequest("PUT", "/sensitive-words", strings.NewReader(body)))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -4969,10 +4992,10 @@ func TestAddSensitiveWords_Success(t *testing.T) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
-	h := newTestHandler(db)
+	h := newTestHandler(globalControlTestDB(db))
 
 	body := `{"words":["色情","spam"]}`
-	req := httptest.NewRequest("POST", "/sensitive-words/add", strings.NewReader(body))
+	req := platformGlobalControlRequest(httptest.NewRequest("POST", "/sensitive-words/add", strings.NewReader(body)))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -4992,7 +5015,7 @@ func TestAddSensitiveWords_Success(t *testing.T) {
 func TestAddSensitiveWords_InvalidJSON(t *testing.T) {
 	h := newTestHandler(&testutil.MockDB{})
 
-	req := httptest.NewRequest("POST", "/sensitive-words/add", strings.NewReader("not json"))
+	req := platformGlobalControlRequest(httptest.NewRequest("POST", "/sensitive-words/add", strings.NewReader("not json")))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -5004,7 +5027,6 @@ func TestAddSensitiveWords_InvalidJSON(t *testing.T) {
 }
 
 func TestAddSensitiveWords_DBQueryError(t *testing.T) {
-	// When query fails, valueJSON defaults to "[]"
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			return &testutil.MockRow{
@@ -5017,17 +5039,17 @@ func TestAddSensitiveWords_DBQueryError(t *testing.T) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
-	h := newTestHandler(db)
+	h := newTestHandler(globalControlTestDB(db))
 
 	body := `{"words":["新词"]}`
-	req := httptest.NewRequest("POST", "/sensitive-words/add", strings.NewReader(body))
+	req := platformGlobalControlRequest(httptest.NewRequest("POST", "/sensitive-words/add", strings.NewReader(body)))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
 	h.AddSensitiveWords(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -5045,10 +5067,10 @@ func TestAddSensitiveWords_ExecError(t *testing.T) {
 			return pgconn.CommandTag{}, fmt.Errorf("db error")
 		},
 	}
-	h := newTestHandler(db)
+	h := newTestHandler(globalControlTestDB(db))
 
 	body := `{"words":["test"]}`
-	req := httptest.NewRequest("POST", "/sensitive-words/add", strings.NewReader(body))
+	req := platformGlobalControlRequest(httptest.NewRequest("POST", "/sensitive-words/add", strings.NewReader(body)))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -5077,10 +5099,10 @@ func TestDeleteSensitiveWords_Success(t *testing.T) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
-	h := newTestHandler(db)
+	h := newTestHandler(globalControlTestDB(db))
 
 	body := `{"words":["spam"]}`
-	req := httptest.NewRequest("POST", "/sensitive-words/delete", strings.NewReader(body))
+	req := platformGlobalControlRequest(httptest.NewRequest("POST", "/sensitive-words/delete", strings.NewReader(body)))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -5100,7 +5122,7 @@ func TestDeleteSensitiveWords_Success(t *testing.T) {
 func TestDeleteSensitiveWords_InvalidJSON(t *testing.T) {
 	h := newTestHandler(&testutil.MockDB{})
 
-	req := httptest.NewRequest("POST", "/sensitive-words/delete", strings.NewReader("not json"))
+	req := platformGlobalControlRequest(httptest.NewRequest("POST", "/sensitive-words/delete", strings.NewReader("not json")))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -5121,18 +5143,17 @@ func TestDeleteSensitiveWords_QueryError(t *testing.T) {
 			}
 		},
 	}
-	h := newTestHandler(db)
+	h := newTestHandler(globalControlTestDB(db))
 
 	body := `{"words":["test"]}`
-	req := httptest.NewRequest("POST", "/sensitive-words/delete", strings.NewReader(body))
+	req := platformGlobalControlRequest(httptest.NewRequest("POST", "/sensitive-words/delete", strings.NewReader(body)))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
 	h.DeleteSensitiveWords(rec, req)
 
-	// Query error returns 200 with empty list
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", rec.Code)
 	}
 }
 
@@ -5150,10 +5171,10 @@ func TestDeleteSensitiveWords_ExecError(t *testing.T) {
 			return pgconn.CommandTag{}, fmt.Errorf("db error")
 		},
 	}
-	h := newTestHandler(db)
+	h := newTestHandler(globalControlTestDB(db))
 
 	body := `{"words":["赌博"]}`
-	req := httptest.NewRequest("POST", "/sensitive-words/delete", strings.NewReader(body))
+	req := platformGlobalControlRequest(httptest.NewRequest("POST", "/sensitive-words/delete", strings.NewReader(body)))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 

@@ -1,7 +1,9 @@
 package filter
 
 import (
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestDFAFilter_BasicMatch(t *testing.T) {
@@ -131,5 +133,47 @@ func TestDFAFilter_Deduplication(t *testing.T) {
 	}
 	if len(matches) != 1 {
 		t.Fatalf("should deduplicate, got %d matches: %v", len(matches), matches)
+	}
+}
+
+func TestDFAFilterConcurrentUpdateReadAndCount(t *testing.T) {
+	f := NewDFAFilter([]string{"initial"})
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 1000; i++ {
+			f.UpdateWords([]string{"alpha", "beta"})
+			f.UpdateWords([]string{"gamma"})
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 1000; i++ {
+			_ = f.WordCount()
+			_, _ = f.IsSensitive("alpha gamma")
+		}
+	}()
+	wg.Wait()
+}
+
+func TestDFAFilterVersionedUpdateRejectsStaleSnapshot(t *testing.T) {
+	f := NewDFAFilter([]string{"initial"})
+	newer := time.Date(2026, 7, 11, 12, 0, 0, 0, time.UTC)
+	older := newer.Add(-time.Minute)
+	if !f.UpdateWordsVersioned([]string{"newer"}, newer) {
+		t.Fatal("expected newer snapshot to apply")
+	}
+	if f.UpdateWordsVersioned([]string{"older"}, older) {
+		t.Fatal("expected stale snapshot to be rejected")
+	}
+	if f.UpdateWordsVersioned([]string{"equal"}, newer) {
+		t.Fatal("expected equal-version snapshot to be rejected")
+	}
+	newerBlocked, _ := f.IsSensitive("contains newer")
+	olderBlocked, _ := f.IsSensitive("contains older")
+	equalBlocked, _ := f.IsSensitive("contains equal")
+	if !newerBlocked || olderBlocked || equalBlocked {
+		t.Fatalf("stale snapshot changed filter: newer=%v older=%v equal=%v", newerBlocked, olderBlocked, equalBlocked)
 	}
 }

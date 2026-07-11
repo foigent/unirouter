@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; Batch 0B active; P6-F32/P6-F39 merged; P6-F34 CI verified by PR #146 implementation head; merge pending
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; Batch 0B active; P6-F32/P6-F34/P6-F39 merged; P6-F35 PR #147 implementation-head CI verified with final docs exact-head CI/merge pending
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -74,9 +74,14 @@ Verification:
 P6-F37 and P6-F38 required-frontend-test enforcement are merged and CI verified
 by PR #143 / `a1e0ad6`; post-merge run `29133690338` passed. P6-F32 finance and
 adjacent P6-F39 usage-derived tenant reads are merged by PR #145 / `609385f`.
-P6-F34 pricing authority is CI verified by PR #146 implementation head
-`0e15dbb`; merge remains pending. Later Batch 0B rows remain ordered and
-independently gated.
+P6-F34 pricing authority was squash-merged by PR #146 as
+`517ce45381429781f7e81e492bdd9f38093c21ba`; final-head
+run `29137670055` and post-merge main run `29137781625` passed all required
+jobs, and the historical branch is retained. P6-F35 implementation, local
+verification and independent review are complete; PR #147 implementation head
+`ab05712d62a7790c5fc5e90171b72ece65845e02` / run `29139213794` passed all
+required jobs, while final docs exact-head CI/merge remain pending. Later Batch
+0B rows remain ordered and independently gated.
 
 Split into independently reviewable security/financial PRs:
 
@@ -106,9 +111,19 @@ reviewable PRs rather than expanding P6-F16 after review. P6-F33 is CI verified
 by PR #142 / `7173c59`. The separately confirmed audit-log read leak is P6-F37
 and is CI verified. P6-F32 finance/reconciliation and adjacent P6-F39
 usage-derived tenant reads are merged and CI verified by PR #145. P6-F34
-pricing authority is CI verified by PR #146 implementation head, with merge
-still the promotion gate. Global-control and model-governance gaps remain open
-until their own evidence is green.
+pricing authority is merged and CI verified by PR #146 / `517ce453`, including
+post-merge main run `29137781625`. P6-F35 global-control authority is local
+verified, independently reviewed and implementation-head CI verified by PR #147
+/ run `29139213794`, with final docs exact-head CI/merge still the promotion
+gates. P6-F36 model governance remains open.
+
+P6-F35 adds no global-settings UI and makes no target claim. D6-09 keeps target
+activation later; that cutover must drain old control-plane binaries before a
+non-rolling new-version activation because old binaries are not mixed-version
+safe. Other new-version instances converge global-word changes through the
+existing approximately one-minute reload. Typed configuration ownership and
+the budget/alert key, scope and audit truth chain remain P6-F05/P6-F17, as does
+readback/idempotency for an ambiguous network commit outcome.
 
 ### Batch 0C — Retry, Endpoint Parity, Config And Billing Truth
 
@@ -125,7 +140,8 @@ Order within the batch:
 4. repair organization-multiplier freeze/settlement invariants;
 5. handle stream Scanner errors, response-body lifetime, single-writer/flush and
    timeout semantics safely;
-6. make concurrent sensitive-word reload safe.
+6. preserve the P6-F35 strict-version sensitive-word reload regression while
+   completing the remaining typed configuration and budget/alert truth work.
 
 Each item may be split into its own R3 PR if the diff ceases to be independently
 reviewable.
@@ -237,6 +253,9 @@ Each needs its own threat model, acceptance rows and rollback plan.
 Target actions remain authorization-gated. Build an exact runbook and evidence
 manifest before requesting access. Do not combine source implementation,
 credential mutation, data expansion and production claims in one authorization.
+For P6-F35 specifically, the runbook must drain all old control-plane binaries
+before a non-rolling activation of only the new version; ordinary mixed-version
+safety must not be claimed.
 
 ## 3. PR And CI Discipline
 
