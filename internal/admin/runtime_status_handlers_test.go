@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
+	"github.com/uniroute/unirouter/internal/streampolicy"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
@@ -75,7 +76,9 @@ func TestRuntimeStatus_ReturnsRuntimeHealthAndHostTelemetry(t *testing.T) {
 	policy.RateLimitCooldownSeconds = 45
 	policy.AuthFailureCooldownSeconds = 1800
 	policy.KeyFailureThreshold = 6
-	effectiveConfig, err := runtimeconfig.New(policy)
+	streamPolicy := streampolicy.Default()
+	streamPolicy.MaxSSELineBytes = 4 * 1024 * 1024
+	effectiveConfig, err := runtimeconfig.New(policy, streamPolicy)
 	if err != nil {
 		t.Fatalf("build effective config: %v", err)
 	}
@@ -148,6 +151,11 @@ func TestRuntimeStatus_ReturnsRuntimeHealthAndHostTelemetry(t *testing.T) {
 		resp.EffectiveConfiguration.BudgetAlerts.Scope != "project" ||
 		resp.EffectiveConfiguration.BudgetAlerts.LegacyGlobalSettingsActive {
 		t.Fatalf("unexpected effective budget alert policy: %#v", resp.EffectiveConfiguration.BudgetAlerts)
+	}
+	if resp.EffectiveConfiguration.StreamTransport.Version != streampolicy.Version ||
+		resp.EffectiveConfiguration.StreamTransport.MaxSSELineBytes != 4*1024*1024 ||
+		resp.EffectiveConfiguration.StreamTransport.WriteIdleTimeoutSeconds != 30 {
+		t.Fatalf("unexpected effective stream transport policy: %#v", resp.EffectiveConfiguration.StreamTransport)
 	}
 	if resp.CapacityHealth.Database.Status != "connected" {
 		t.Fatalf("expected database connected, got %#v", resp.CapacityHealth.Database)

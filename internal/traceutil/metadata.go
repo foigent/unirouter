@@ -32,6 +32,8 @@ var metadataAllowlist = map[string]bool{
 	"retryable":                         true,
 	"settle_cancelled":                  true,
 	"stream":                            true,
+	"stream_max_sse_line_bytes":         true,
+	"stream_policy_version":             true,
 	"total_tokens":                      true,
 	"ttft_ms":                           true,
 	"usage_confidence":                  true,

@@ -65,6 +65,7 @@ Docker Compose（6 个容器）：
 - [PRD6 P6-F37 本地证据](docs/ops/evidence/PRD6-B0B-P6F37-audit-log-tenant-isolation-local-20260711.md) — 审计日志租户隔离修复与双租户回归
 - [PRD6 P6-F38 本地证据](docs/ops/evidence/PRD6-B0B-P6F38-frontend-test-ci-local-20260711.md) — 现有前端测试纳入 required CI
 - [PRD6 P6-F32/P6-F39 本地证据](docs/ops/evidence/PRD6-B0B-P6F32-P6F39-finance-and-usage-tenant-isolation-local-20260711.md) — 财务、请求日志和用量派生视图的租户隔离
+- [PRD6 流式传输本地证据](docs/ops/evidence/PRD6-B0C-P6STREAM002A-stream-transport-local-20260712.md) — 长流帧、超时、写入串行化、异常结算及剩余边界
 - [PRD6 产品/架构/UX 审计](docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md) — 审计日志、用量核验、链路 ID、UI、扩展性与升级建议
 - [PRD7 候选 Backlog](docs/planning/PRD7-CANDIDATE-BACKLOG.md) — 未来首项方向已选；全部实施后置到 PRD6 闭环后
 - [PRD5 产品范围](docs/PRD-Phase5.md) — Accepted Scope Complete 历史事实

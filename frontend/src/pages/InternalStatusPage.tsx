@@ -113,6 +113,14 @@ interface RuntimeStatus {
       auth_failure_cooldown_seconds: number;
       key_failure_threshold: number;
     };
+    stream_transport: {
+      version: string;
+      source: string;
+      max_sse_line_bytes: number;
+      write_idle_timeout_seconds: number;
+      heartbeat_seconds: number;
+      max_duration_seconds: number;
+    };
     budget_alerts: {
       version: string;
       scope: string;
@@ -283,6 +291,7 @@ export default function InternalStatusPage() {
   const prometheusIntegration = runtimeData?.observability_integrations.prometheus;
   const grafanaIntegration = runtimeData?.observability_integrations.grafana;
   const routingPolicy = runtimeData?.effective_configuration?.routing_policy;
+  const streamTransport = runtimeData?.effective_configuration?.stream_transport;
   const budgetAlerts = runtimeData?.effective_configuration?.budget_alerts;
 
   const load = () => {
@@ -466,6 +475,41 @@ export default function InternalStatusPage() {
               icon={<IconServer />}
               tone="slate"
               meta={routingPolicy.source}
+            />
+          </div>
+        </Surface>
+      )}
+
+      {canViewRuntime && streamTransport && (
+        <Surface title="有效流式传输策略" description="当前实例实际采用的流式帧大小、心跳与连接时限。它保护长回答和大工具结果的传输；动态追加计费冻结属于后续独立能力。">
+          <div className="ur-kpi-grid">
+            <MetricTile
+              label="单帧安全上限"
+              value={formatBytes(streamTransport.max_sse_line_bytes)}
+              icon={<IconServer />}
+              tone="blue"
+              meta={`超过上限会安全终止 / ${streamTransport.version}`}
+            />
+            <MetricTile
+              label="写入空闲超时"
+              value={`${streamTransport.write_idle_timeout_seconds} 秒`}
+              icon={<IconAlertTriangle />}
+              tone="amber"
+              meta="每次成功写入都会重新计时"
+            />
+            <MetricTile
+              label="连接心跳"
+              value={`${streamTransport.heartbeat_seconds} 秒`}
+              icon={<IconBell />}
+              tone="green"
+              meta="长时间无模型内容时保持连接可观测"
+            />
+            <MetricTile
+              label="最长流时长"
+              value={`${Math.round(streamTransport.max_duration_seconds / 60)} 分钟`}
+              icon={<IconRefresh />}
+              tone="slate"
+              meta="本实例启动时生效"
             />
           </div>
         </Surface>

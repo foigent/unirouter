@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/uniroute/unirouter/internal/routingpolicy"
+	"github.com/uniroute/unirouter/internal/streampolicy"
 )
 
 const (
@@ -15,16 +16,23 @@ const (
 // current process. It contains effective values and stable database contracts,
 // never environment dumps, webhook URLs, credentials, or other secret values.
 type Snapshot struct {
-	Version       string            `json:"version"`
-	Source        string            `json:"source"`
-	RoutingPolicy RoutingPolicy     `json:"routing_policy"`
-	BudgetAlerts  BudgetAlertPolicy `json:"budget_alerts"`
+	Version         string                `json:"version"`
+	Source          string                `json:"source"`
+	RoutingPolicy   RoutingPolicy         `json:"routing_policy"`
+	StreamTransport StreamTransportPolicy `json:"stream_transport"`
+	BudgetAlerts    BudgetAlertPolicy     `json:"budget_alerts"`
 }
 
 type RoutingPolicy struct {
 	Version string `json:"version"`
 	Source  string `json:"source"`
 	routingpolicy.Config
+}
+
+type StreamTransportPolicy struct {
+	Version string `json:"version"`
+	Source  string `json:"source"`
+	streampolicy.Config
 }
 
 // BudgetAlertPolicy describes the one active budget-alert contract. Budgets
@@ -45,9 +53,12 @@ type BudgetAlertPolicy struct {
 	RetiredGlobalSettingKeys   []string `json:"retired_global_setting_keys"`
 }
 
-func New(routing routingpolicy.Config) (Snapshot, error) {
+func New(routing routingpolicy.Config, stream streampolicy.Config) (Snapshot, error) {
 	if err := routing.Validate(); err != nil {
 		return Snapshot{}, fmt.Errorf("routing policy: %w", err)
+	}
+	if err := stream.Validate(); err != nil {
+		return Snapshot{}, fmt.Errorf("stream transport policy: %w", err)
 	}
 	return Snapshot{
 		Version: Version,
@@ -56,6 +67,11 @@ func New(routing routingpolicy.Config) (Snapshot, error) {
 			Version: routingpolicy.Version,
 			Source:  "startup_environment",
 			Config:  routing,
+		},
+		StreamTransport: StreamTransportPolicy{
+			Version: streampolicy.Version,
+			Source:  "startup_environment",
+			Config:  stream,
 		},
 		BudgetAlerts: BudgetAlertPolicy{
 			Version:                    BudgetAlertPolicyVersion,
@@ -78,7 +94,7 @@ func New(routing routingpolicy.Config) (Snapshot, error) {
 }
 
 func Default() Snapshot {
-	snapshot, err := New(routingpolicy.Default())
+	snapshot, err := New(routingpolicy.Default(), streampolicy.Default())
 	if err != nil {
 		panic(err)
 	}

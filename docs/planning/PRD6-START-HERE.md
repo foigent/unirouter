@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
-> Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F03-P6-F06 CI verified / closed; P6-F16-P6-F18/P6-F32-P6-F39 applicable rows merged and CI verified
+> Date: 2026-07-12
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F06 CI verified / closed; P6-STREAM-002A local verified / PR pending; P6-F16-P6-F18/P6-F32-P6-F39 applicable rows merged and CI verified
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -19,6 +19,9 @@ recommended MVP boundary and policy-specific failure posture on 2026-07-11:
   organization multipliers are `platform_admin` only;
 - P6-F22 through P6-F31 and other advanced/long-tail capabilities remain
   proposed or deferred and require separate decisions;
+- D6-10 selects reservation-aware long-stream Scheme A, while D6-11 selects
+  explicit supervisor capability exchange with a five-minute token and
+  separate workflow lifetime/budget limits;
 - PRD5 remains `Accepted Scope Complete` and is not reopened by PRD6;
 - a PRD5 backlog or competitor feature is an input, not an automatic PRD6
   commitment.
@@ -45,19 +48,20 @@ recommended MVP boundary and policy-specific failure posture on 2026-07-11:
 18. `docs/ops/evidence/PRD6-B0C-P6F04-embeddings-failover-local-20260711.md`
 19. `docs/ops/evidence/PRD6-B0C-P6F05-routing-config-truth-local-20260711.md`
 20. `docs/ops/evidence/PRD6-B0C-P6F06-multiplier-freeze-local-20260711.md`
-21. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`
-22. `docs/planning/PRD7-CANDIDATE-BACKLOG.md`
-23. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md`
-24. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
-25. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
-26. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
-27. `docs/PRD-Phase6.md`
-28. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
-29. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
-30. `docs/planning/PRD6-BACKLOG.md`
-31. `docs/issues/OPEN-ISSUES.md`
-32. `docs/agent-workflows/AGENT-PROTOCOL.md`
-33. `docs/agent-workflows/EXECUTION-RECORD.md`
+21. `docs/ops/evidence/PRD6-B0C-P6STREAM002A-stream-transport-local-20260712.md`
+22. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`
+23. `docs/planning/PRD7-CANDIDATE-BACKLOG.md`
+24. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md`
+25. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
+26. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
+27. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
+28. `docs/PRD-Phase6.md`
+29. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
+30. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
+31. `docs/planning/PRD6-BACKLOG.md`
+32. `docs/issues/OPEN-ISSUES.md`
+33. `docs/agent-workflows/AGENT-PROTOCOL.md`
+34. `docs/agent-workflows/EXECUTION-RECORD.md`
 
 PRD5 evidence remains under its existing paths. Do not rewrite it as PRD6
 evidence.
@@ -126,6 +130,10 @@ evidence.
   terminal receipt and zero uncovered cost, and full idempotent cancel/refund.
   Required Backend runs the matrix fail-closed; PR #160, merge `15ea8a2` and
   post-merge main run `29161527988` passed all required jobs.
+- P6-STREAM-002A is Local verified on `codex/prd6-stream-transport`. It replaces
+  the hidden 64-KiB scanner and timeout/writer/body-lifecycle defects with
+  `stream-transport.v1`, safe partial failure settlement and focused race/UI
+  gates. PR/required CI and the remaining D6-10/P6-F11 work are pending.
 
 ## PRD5 Closure Guard
 
@@ -161,6 +169,17 @@ completion defects and must not be used to reopen PRD5:
    PRD7 implementation and target-evidence execution are deferred until PRD6
    closeout. Historical branches remain retained; the existing Gate A file
    deadline is unchanged.
+5. **D6-10 long-stream hard budget — accepted as Scheme A.** Extend an
+   existing reservation idempotently before a guard band; on failure stop the
+   upstream and settle only delivered output. The current transport slice is a
+   prerequisite and does not yet implement extension.
+6. **D6-11 child-Agent capability lifecycle — accepted.** Child discovery is
+   explicit supervisor exchange/registration. Capabilities last at most five
+   minutes and normally refresh around minute three with jitter/singleflight;
+   normal expiry blocks new admission without killing admitted work. Active
+   revocation converges across replicas within 30 seconds. Workflow lifetime,
+   depth, fan-out and budget remain separate, and UniRouter grants model-gateway
+   authority only.
 
 UniRouter owns the request-path and its authoritative authorization, routing,
 usage, billing, and audit facts. Other projects may consume a sanitized,

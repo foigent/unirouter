@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,6 +25,7 @@ import (
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
+	"github.com/uniroute/unirouter/internal/streampolicy"
 	"github.com/uniroute/unirouter/internal/tokenutil"
 	"github.com/uniroute/unirouter/internal/traceutil"
 )
@@ -54,11 +56,27 @@ type Relay struct {
 	traceEventSampleRate       float64
 	payloadCaptureMode         string
 	evidenceContextTrustSecret string
+	streamPolicy               streampolicy.Config
 }
 
 // NewRelay creates a new Relay.
 func NewRelay(db db.DBQuerier, rdb *redis.Client, router *Router, b BillingProvider, f *filter.DFAFilter, encKey []byte) *Relay {
-	return &Relay{db: db, rdb: rdb, router: router, billing: b, filter: f, encKey: encKey, traceEventsEnabled: true, traceEventSampleRate: 1, payloadCaptureMode: traceutil.PayloadCaptureModeMetadataOnly}
+	return &Relay{db: db, rdb: rdb, router: router, billing: b, filter: f, encKey: encKey, traceEventsEnabled: true, traceEventSampleRate: 1, payloadCaptureMode: traceutil.PayloadCaptureModeMetadataOnly, streamPolicy: streampolicy.Default()}
+}
+
+func (relay *Relay) SetStreamPolicy(policy streampolicy.Config) error {
+	if err := policy.Validate(); err != nil {
+		return err
+	}
+	relay.streamPolicy = policy
+	return nil
+}
+
+func (relay *Relay) currentStreamPolicy() streampolicy.Config {
+	if relay == nil || relay.streamPolicy.Validate() != nil {
+		return streampolicy.Default()
+	}
+	return relay.streamPolicy
 }
 
 // SetEventService configures PRD2 notification events for post-settle project checks.
@@ -472,7 +490,11 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	client := &http.Client{Timeout: 300 * time.Second}
+	providerTimeout := 300 * time.Second
+	if req.Stream {
+		providerTimeout = relay.currentStreamPolicy().MaxDuration()
+	}
+	client := &http.Client{Timeout: providerTimeout}
 	adapterRegistry := adapters.DefaultRegistry()
 	routingPolicy := relay.router.Policy()
 	providerAttempts := 0
@@ -735,13 +757,23 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 }
 
 // relayStreamRequest handles streaming SSE responses.
-// Balance check goroutine signals via a channel; the main loop owns all writes
-// and the upstream body lifecycle. No goroutine touches resp.Body directly.
+// Background checks signal through channels; one serialized writer owns every
+// downstream Write+Flush pair, and the main goroutine owns resp.Body lifecycle.
 func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWriter, resp *http.Response, route *RouteResult, requestID string, orgID, keyID int64, model, requestedModel, clientIP string, messages []Message, reqLog *logger.Logger, requestStart time.Time, estimatedTokens int, adapter adapters.Adapter, upstreamRequestID string) {
-	flusher, ok := w.(http.Flusher)
+	upstreamClosed := false
+	closeUpstream := func() {
+		if upstreamClosed {
+			return
+		}
+		upstreamClosed = true
+		if err := resp.Body.Close(); err != nil {
+			reqLog.Warn("Failed to close upstream stream body: %v", err)
+		}
+	}
+	defer closeUpstream()
+	_, ok := w.(http.Flusher)
 	if !ok {
 		reqLog.Error("ResponseWriter does not support Flusher")
-		resp.Body.Close()
 		cancelCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := relay.billing.Cancel(cancelCtx, requestID, orgID); err != nil {
@@ -755,13 +787,29 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
+	streamPolicy := relay.currentStreamPolicy()
+	streamWriter := newSSEStreamWriter(w, streamPolicy.WriteIdleTimeout())
+	streamWriteFailures := make(chan error, 1)
+	writeSSE := func(format string, args ...any) bool {
+		if err := streamWriter.WriteAndFlush(format, args...); err != nil {
+			select {
+			case streamWriteFailures <- err:
+			default:
+			}
+			return false
+		}
+		return true
+	}
 
 	// Periodic balance check — signal main loop via channel instead of closing body directly.
 	// This eliminates the race condition where two goroutines both call resp.Body.Close().
 	balanceExhausted := make(chan struct{}, 1)
 	balanceCancelCtx, balanceCancel := context.WithCancel(ctx)
 	defer balanceCancel()
+	var balanceWg sync.WaitGroup
+	balanceWg.Add(1)
 	go func() {
+		defer balanceWg.Done()
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 		for {
@@ -788,8 +836,6 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		}
 	}()
 
-	// SSE write mutex — protect concurrent writes from heartbeat and main loop
-	var writeMu sync.Mutex
 	billableOutputMarked := false
 	preOutputBillingFailure := false
 	markBillableOutput := func() bool {
@@ -814,11 +860,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			reqLog.Error("Failed to cancel reservation after output marker failure: %v", cancelErr)
 		}
 		cancel()
-		writeMu.Lock()
-		fmt.Fprintf(w, "data: {\"error\":{\"type\":\"billing_error\",\"code\":\"billing_error.settle_failed\",\"message\":\"Unable to establish durable billing state\"}}\n\n")
-		flusher.Flush()
-		writeMu.Unlock()
-		resp.Body.Close()
+		writeSSE("data: {\"error\":{\"type\":\"billing_error\",\"code\":\"billing_error.settle_failed\",\"message\":\"Unable to establish durable billing state\"}}\n\n")
 		return false
 	}
 
@@ -829,23 +871,22 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	heartbeatWg.Add(1)
 	go func() {
 		defer heartbeatWg.Done()
-		ticker := time.NewTicker(15 * time.Second)
+		ticker := time.NewTicker(streamPolicy.HeartbeatInterval())
 		defer ticker.Stop()
 		for {
 			select {
 			case <-heartbeatCtx.Done():
 				return
 			case <-ticker.C:
-				writeMu.Lock()
-				fmt.Fprintf(w, ": ping\n\n")
-				flusher.Flush()
-				writeMu.Unlock()
+				if !writeSSE(": ping\n\n") {
+					return
+				}
 			}
 		}
 	}()
 
 	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 0, 64*1024), 64*1024)
+	scanner.Buffer(make([]byte, 0, 64*1024), streamPolicy.MaxSSELineBytes)
 
 	tokenCounter := tokenutil.NewStreamTokenCounter()
 	usedUpstreamUsage := false
@@ -859,6 +900,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	streamState := &adapters.StreamState{}
 
 	done := false
+	streamTerminationCode := ""
 	for !done && scanner.Scan() {
 		line := scanner.Text()
 
@@ -892,9 +934,6 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 				tokenCounter.SetUpstreamUsage(chunk.Usage.PromptTokens, chunk.Usage.CompletionTokens)
 				usedUpstreamUsage = true
 			}
-			if !usedUpstreamUsage && chunk.TextDelta != "" {
-				tokenCounter.AddOutputDelta(chunk.TextDelta)
-			}
 			if !chunk.Skip && len(chunk.Data) > 0 {
 				if !markBillableOutput() {
 					done = true
@@ -904,10 +943,14 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 					firstTokenReceived = true
 					ttftMs = int(time.Since(streamStart).Milliseconds())
 				}
-				writeMu.Lock()
-				fmt.Fprintf(w, "data: %s\n\n", chunk.Data)
-				writeMu.Unlock()
-				flusher.Flush()
+				if !writeSSE("data: %s\n\n", chunk.Data) {
+					streamTerminationCode = "downstream_stream_write_failed"
+					done = true
+				} else if !usedUpstreamUsage && chunk.TextDelta != "" {
+					// Count normalized fallback usage only after the downstream write
+					// succeeds; a rejected/failed chunk is not delivered output.
+					tokenCounter.AddOutputDelta(chunk.TextDelta)
+				}
 			}
 			if chunk.Done {
 				done = true
@@ -919,11 +962,8 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			select {
 			case <-balanceExhausted:
 				reqLog.Warn("Balance exhausted at %d output tokens, sending error", tokenCounter.OutputTokens())
-				writeMu.Lock()
-				fmt.Fprintf(w, "data: {\"error\":{\"type\":\"insufficient_balance\",\"message\":\"Balance exhausted\"}}\n\n")
-				flusher.Flush()
-				writeMu.Unlock()
-				resp.Body.Close()
+				writeSSE("data: {\"error\":{\"type\":\"insufficient_balance\",\"message\":\"Balance exhausted\"}}\n\n")
+				streamTerminationCode = "insufficient_balance"
 				done = true
 			default:
 			}
@@ -935,11 +975,8 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 					`SELECT COALESCE(w.balance + w.granted_balance, 0) FROM wallets w WHERE w.org_id = $1`, orgID).Scan(&balance)
 				if err == nil && balance <= 0 {
 					reqLog.Warn("Balance exhausted at %d output tokens, closing upstream", tokenCounter.OutputTokens())
-					writeMu.Lock()
-					fmt.Fprintf(w, "data: {\"error\":{\"type\":\"insufficient_balance\",\"message\":\"Balance exhausted\"}}\n\n")
-					flusher.Flush()
-					writeMu.Unlock()
-					resp.Body.Close()
+					writeSSE("data: {\"error\":{\"type\":\"insufficient_balance\",\"message\":\"Balance exhausted\"}}\n\n")
+					streamTerminationCode = "insufficient_balance"
 					done = true
 				}
 			}
@@ -967,10 +1004,11 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 
 		// Forward the upstream line as-is, except for [DONE]. UniRouter sends
 		// its final usage/cost extension before the single terminal [DONE].
-		writeMu.Lock()
-		fmt.Fprintf(w, "%s\n", line)
-		writeMu.Unlock()
-		flusher.Flush()
+		if !writeSSE("%s\n", line) {
+			streamTerminationCode = "downstream_stream_write_failed"
+			done = true
+			continue
+		}
 
 		if !strings.HasPrefix(line, "data: ") {
 			continue
@@ -1011,11 +1049,8 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		select {
 		case <-balanceExhausted:
 			reqLog.Warn("Balance exhausted at %d output tokens, sending error", tokenCounter.OutputTokens())
-			writeMu.Lock()
-			fmt.Fprintf(w, "data: {\"error\":{\"type\":\"insufficient_balance\",\"message\":\"Balance exhausted\"}}\n\n")
-			flusher.Flush()
-			writeMu.Unlock()
-			resp.Body.Close()
+			writeSSE("data: {\"error\":{\"type\":\"insufficient_balance\",\"message\":\"Balance exhausted\"}}\n\n")
+			streamTerminationCode = "insufficient_balance"
 			done = true
 		default:
 		}
@@ -1027,26 +1062,39 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 				`SELECT COALESCE(w.balance + w.granted_balance, 0) FROM wallets w WHERE w.org_id = $1`, orgID).Scan(&balance)
 			if err == nil && balance <= 0 {
 				reqLog.Warn("Balance exhausted at %d output tokens, closing upstream", tokenCounter.OutputTokens())
-				writeMu.Lock()
-				fmt.Fprintf(w, "data: {\"error\":{\"type\":\"insufficient_balance\",\"message\":\"Balance exhausted\"}}\n\n")
-				flusher.Flush()
-				writeMu.Unlock()
-				resp.Body.Close()
+				writeSSE("data: {\"error\":{\"type\":\"insufficient_balance\",\"message\":\"Balance exhausted\"}}\n\n")
+				streamTerminationCode = "insufficient_balance"
 				done = true
 			}
 		}
 	}
 
-	// Stop heartbeat
+	// Stop background activity before finalization and release the provider
+	// connection immediately. closeUpstream is idempotent for early returns.
+	balanceCancel()
 	heartbeatCancel()
+	balanceWg.Wait()
 	heartbeatWg.Wait()
+	closeUpstream()
 	if scanErr := scanner.Err(); scanErr != nil && !preOutputBillingFailure {
 		reqLog.Error("Upstream stream ended with a read error: %v", scanErr)
+		if errors.Is(scanErr, bufio.ErrTooLong) {
+			streamTerminationCode = "stream_frame_too_large"
+		} else {
+			streamTerminationCode = "upstream_stream_read_failed"
+		}
+	}
+	select {
+	case writeErr := <-streamWriteFailures:
+		reqLog.Error("Downstream stream write failed: %v", writeErr)
+		streamTerminationCode = "downstream_stream_write_failed"
+	default:
 	}
 	if preOutputBillingFailure {
 		return
 	}
-	recordCtx := context.WithoutCancel(ctx)
+	recordCtx, recordCancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer recordCancel()
 
 	// If upstream didn't provide usage, estimate input tokens from the original messages
 	if !usedUpstreamUsage {
@@ -1099,10 +1147,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			middleware.RecordUpstreamLatency(route.Channel.Provider, model, time.Since(streamStart))
 			relay.recordRequest(recordCtx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, model, requestedModel, clientIP,
 				tokenCounter.InputTokens(), tokenCounter.OutputTokens(), 0, http.StatusOK, elapsedMilliseconds(requestStart), ttftMs, true, usageSource, estimatedTokens, upstreamRequestID)
-			writeMu.Lock()
-			fmt.Fprintf(w, "data: {\"error\":{\"type\":\"billing_error\",\"code\":\"billing_error.settle_failed\",\"message\":\"Usage is pending durable reconciliation\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
-			flusher.Flush()
-			writeMu.Unlock()
+			writeSSE("data: {\"error\":{\"type\":\"billing_error\",\"code\":\"billing_error.settle_failed\",\"message\":\"Usage is pending durable reconciliation\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
 			// Deliberately omit [DONE]: the model output was delivered, but the
 			// terminal billing receipt is not yet durable.
 			return
@@ -1138,10 +1183,34 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	streamDuration := time.Since(streamStart)
 	middleware.RecordUpstreamLatency(route.Channel.Provider, model, streamDuration)
 
+	settledSuccessfully := settleErr == nil && billingStatus == "settled"
+	if settledSuccessfully && streamTerminationCode != "" {
+		billingStatus = "settled_partial_stream"
+	}
 	relay.recordRequest(recordCtx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, model, requestedModel, clientIP,
 		tokenCounter.InputTokens(), tokenCounter.OutputTokens(), chargedCost, http.StatusOK, elapsedMilliseconds(requestStart), ttftMs, true, usageSource, estimatedTokens, upstreamRequestID)
-	if settleErr == nil && billingStatus == "settled" {
+	if settledSuccessfully {
 		relay.checkProjectBudgetAlert(recordCtx)
+	}
+	recordStreamTermination := func(code, terminalBillingStatus string) {
+		relay.recordTraceEvent(recordCtx, requestID, "stream.terminated", "stream", "warning", model, requestedModel, route, http.StatusOK, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"error_code":                code,
+			"billing_status":            terminalBillingStatus,
+			"stream_policy_version":     streampolicy.Version,
+			"stream_max_sse_line_bytes": streamPolicy.MaxSSELineBytes,
+		})
+	}
+	if streamTerminationCode != "" {
+		recordStreamTermination(streamTerminationCode, billingStatus)
+		switch streamTerminationCode {
+		case "upstream_stream_read_failed":
+			writeSSE("data: {\"error\":{\"type\":\"stream_error\",\"code\":\"stream_error.upstream_read_failed\",\"message\":\"Upstream stream ended before a valid terminal event\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
+		case "stream_frame_too_large":
+			writeSSE("data: {\"error\":{\"type\":\"stream_error\",\"code\":\"stream_error.frame_too_large\",\"message\":\"Upstream stream frame exceeded the configured safety limit\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
+		}
+		// A transport/policy failure must not be followed by a success extension or
+		// [DONE]. Already delivered billable output is still finalized above.
+		return
 	}
 
 	// Send usage + _uniroute extension as the final data chunk before [DONE].
@@ -1175,16 +1244,23 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		"_uniroute": unirouteData,
 	}
 	finalJSON, _ := json.Marshal(finalChunk)
-	writeMu.Lock()
-	fmt.Fprintf(w, "data: %s\n\n", finalJSON)
-	writeMu.Unlock()
-	flusher.Flush()
+	if !writeSSE("data: %s\n\n", finalJSON) {
+		terminalBillingStatus := billingStatus
+		if settledSuccessfully {
+			terminalBillingStatus = "settled_partial_stream"
+		}
+		recordStreamTermination("downstream_stream_write_failed", terminalBillingStatus)
+		return
+	}
 
 	// Send [DONE]
-	writeMu.Lock()
-	fmt.Fprintf(w, "data: [DONE]\n\n")
-	writeMu.Unlock()
-	flusher.Flush()
+	if !writeSSE("data: [DONE]\n\n") {
+		terminalBillingStatus := billingStatus
+		if settledSuccessfully {
+			terminalBillingStatus = "settled_partial_stream"
+		}
+		recordStreamTermination("downstream_stream_write_failed", terminalBillingStatus)
+	}
 }
 
 // calculateCost computes the actual cost in cents using model prices.

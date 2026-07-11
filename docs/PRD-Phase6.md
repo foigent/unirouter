@@ -1,8 +1,8 @@
 # UniRouter PRD6: Reliable MaaS Policy And Safety Plane
 
-> Version: 0.6
-> Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; Batch 0C P6-F03-P6-F06 CI verified / closed; P6-F17/P6-F32-P6-F39 merged and CI verified
+> Version: 0.7
+> Date: 2026-07-12
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; Batch 0C P6-F03-P6-F06 CI verified / closed; P6-STREAM-002A local verified / PR pending; P6-F17/P6-F32-P6-F39 merged and CI verified
 > Accepted implementation scope: P6-F03 through P6-F11, P6-F16 through P6-F21, and P6-F32 through P6-F39
 > Innovation gate: P6-F23 through P6-F31 remain proposed/deferred
 
@@ -205,8 +205,8 @@ These do not become UniRouter source-code gaps without new evidence.
 | P6-F08 | Implement Routing Policy V1 with explainable candidates, exclusions, retry and failover | P1 | Accepted MVP |
 | P6-F09 | Normalize and bill provider cache-read/cache-create tokens | P1 | Accepted MVP |
 | P6-F10 | Add versioned input/non-stream-output Guardrail Kernel | P1 | Accepted MVP |
-| P6-F11 | Add safe streaming interception, cancellation and settlement semantics | P1 | Accepted MVP |
-| P6-F19 | Add short Agent capability, monotonic delegation, ancestor budgets and versioned revocation | P1 | Accepted MVP |
+| P6-F11 | Add safe streaming interception, cancellation and settlement semantics | P1 | Accepted MVP; transport prerequisite P6-STREAM-002A local verified / PR pending |
+| P6-F19 | Add short Agent capability, monotonic delegation, ancestor budgets and versioned revocation | P1 | Accepted MVP; D6-11 issuance/refresh contract accepted, implementation not started |
 | P6-F20 | Add durable minimal usage/finalization outbox and bounded evidence/notification workers | P1 | Accepted MVP |
 | P6-F21 | Admit weighted workload classes without replica-multiplied quotas or long-stream starvation | P1 | Accepted MVP |
 | P6-F12 | Add external secret references/versioning/rotation for selected backends | P2 | Advanced candidate |
@@ -299,7 +299,23 @@ The User accepted on 2026-07-11:
    organization; and
 4. D6-09: complete PRD6 repository scope first; defer all PRD7 implementation
    and target-evidence execution until PRD6 closeout, while retaining historical
-   branches. The existing Gate A file deadline is unchanged.
+   branches. The existing Gate A file deadline is unchanged;
+5. D6-10: use hard-budget Scheme A for long streams: reserve first, request an
+   idempotent extension before the remaining reservation crosses a guard band,
+   continue only after durable extension, and otherwise stop upstream, return a
+   safe terminal error and settle only delivered output. The current
+   P6-STREAM-002A slice repairs transport prerequisites but does not yet
+   implement reservation extension; and
+6. D6-11: discover child Agents only through an explicit supervisor capability
+   exchange/registration, never by guessing from traffic. A capability has a
+   maximum five-minute TTL and normally refreshes around minute three with
+   jitter and singleflight. Expiry blocks new admission but does not kill an
+   already admitted request; explicit revocation, hard-budget exhaustion and a
+   mandatory safety stop may terminate it. Workflow lifetime, depth, fan-out
+   and ancestor budgets remain separate from token TTL, and active revocation
+   must converge across replicas within 30 seconds. UniRouter issues only model-
+   gateway authority; Tool, IAM, database and export owners enforce their own
+   capabilities.
 
 Batch 0B is therefore authorized for repository implementation and begins with
 P6-F16. Each R4 security/financial boundary remains an independently reviewable

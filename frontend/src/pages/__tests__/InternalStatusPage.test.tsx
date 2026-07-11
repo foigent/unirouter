@@ -79,6 +79,14 @@ describe('InternalStatusPage', () => {
           auth_failure_cooldown_seconds: 1800,
           key_failure_threshold: 6,
         },
+        stream_transport: {
+          version: 'stream-transport.v1',
+          source: 'startup_environment',
+          max_sse_line_bytes: 2097152,
+          write_idle_timeout_seconds: 30,
+          heartbeat_seconds: 15,
+          max_duration_seconds: 1800,
+        },
         budget_alerts: {
           version: 'project-budget-alert.v1',
           scope: 'project',
@@ -142,6 +150,13 @@ describe('InternalStatusPage', () => {
     expect(screen.getByText('429 密钥冷却')).toBeTruthy();
     expect(screen.getByText('鉴权失败冷却')).toBeTruthy();
     expect(screen.getByText(/startup_environment/)).toBeTruthy();
+    expect(screen.getByText('有效流式传输策略')).toBeTruthy();
+    expect(screen.getByText('单帧安全上限')).toBeTruthy();
+    expect(screen.getByText('2.0 MB')).toBeTruthy();
+    expect(screen.getByText('写入空闲超时')).toBeTruthy();
+    expect(screen.getByText('连接心跳')).toBeTruthy();
+    expect(screen.getByText('最长流时长')).toBeTruthy();
+    expect(screen.getByText('30 分钟')).toBeTruthy();
     expect(screen.getByText('有效预算告警合同')).toBeTruthy();
     expect(screen.getByText('项目级')).toBeTruthy();
     expect(screen.getByText('100%')).toBeTruthy();

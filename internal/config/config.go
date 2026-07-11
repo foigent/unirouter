@@ -10,6 +10,7 @@ import (
 
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
+	"github.com/uniroute/unirouter/internal/streampolicy"
 	"github.com/uniroute/unirouter/internal/traceutil"
 )
 
@@ -99,6 +100,12 @@ type Config struct {
 	AuthFailureCooldownSecs   int
 	ProviderKeyFailThreshold  int
 
+	// Streaming transport
+	StreamMaxSSELineBytes      int
+	StreamWriteIdleTimeoutSecs int
+	StreamHeartbeatSecs        int
+	StreamMaxDurationSecs      int
+
 	// Backup
 	BackupEnabled    bool
 	BackupCron       string
@@ -177,6 +184,12 @@ func (c *Config) Validate() error {
 	if policy != (routingpolicy.Config{}) {
 		if err := policy.Validate(); err != nil {
 			return fmt.Errorf("invalid routing configuration: %w", err)
+		}
+	}
+	streamPolicy := c.StreamPolicyConfig()
+	if streamPolicy != (streampolicy.Config{}) {
+		if err := streamPolicy.Validate(); err != nil {
+			return fmt.Errorf("invalid streaming transport configuration: %w", err)
 		}
 	}
 	if err := validateOptionalHTTPURL("PROMETHEUS_URL", c.PrometheusURL); err != nil {
@@ -287,6 +300,11 @@ func Load() (*Config, error) {
 		AuthFailureCooldownSecs:   getEnvInt("PROVIDER_AUTH_COOLDOWN_SECONDS", 3600),
 		ProviderKeyFailThreshold:  getEnvInt("PROVIDER_KEY_FAILURE_THRESHOLD", 3),
 
+		StreamMaxSSELineBytes:      getEnvInt("STREAM_MAX_SSE_LINE_BYTES", 2*1024*1024),
+		StreamWriteIdleTimeoutSecs: getEnvInt("STREAM_WRITE_IDLE_TIMEOUT_SECONDS", 30),
+		StreamHeartbeatSecs:        getEnvInt("STREAM_HEARTBEAT_SECONDS", 15),
+		StreamMaxDurationSecs:      getEnvInt("STREAM_MAX_DURATION_SECONDS", 30*60),
+
 		BackupEnabled:    getEnvBool("BACKUP_ENABLED", true),
 		BackupCron:       getEnvStr("BACKUP_CRON", "0 2 * * *"),
 		BackupRetainDays: getEnvInt("BACKUP_RETAIN_DAYS", 7),
@@ -314,6 +332,15 @@ func (c Config) RoutingPolicyConfig() routingpolicy.Config {
 		RateLimitCooldownSeconds:     c.RateLimitCooldownSecs,
 		AuthFailureCooldownSeconds:   c.AuthFailureCooldownSecs,
 		KeyFailureThreshold:          c.ProviderKeyFailThreshold,
+	}
+}
+
+func (c Config) StreamPolicyConfig() streampolicy.Config {
+	return streampolicy.Config{
+		MaxSSELineBytes:         c.StreamMaxSSELineBytes,
+		WriteIdleTimeoutSeconds: c.StreamWriteIdleTimeoutSecs,
+		HeartbeatSeconds:        c.StreamHeartbeatSecs,
+		MaxDurationSeconds:      c.StreamMaxDurationSecs,
 	}
 }
 

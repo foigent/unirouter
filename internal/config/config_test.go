@@ -387,6 +387,38 @@ func TestLoad_InvalidRoutingPolicyFailsClosed(t *testing.T) {
 	}
 }
 
+func TestLoad_StreamPolicyEnvOverrides(t *testing.T) {
+	t.Setenv("JWT_SECRET", "jwt-secret")
+	t.Setenv("API_KEY_HASH_SECRET", "api-key-secret")
+	t.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+	t.Setenv("STREAM_MAX_SSE_LINE_BYTES", "4194304")
+	t.Setenv("STREAM_WRITE_IDLE_TIMEOUT_SECONDS", "45")
+	t.Setenv("STREAM_HEARTBEAT_SECONDS", "12")
+	t.Setenv("STREAM_MAX_DURATION_SECONDS", "3600")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load stream override: %v", err)
+	}
+	policy := cfg.StreamPolicyConfig()
+	if policy.MaxSSELineBytes != 4*1024*1024 || policy.WriteIdleTimeoutSeconds != 45 ||
+		policy.HeartbeatSeconds != 12 || policy.MaxDurationSeconds != 3600 {
+		t.Fatalf("unexpected effective stream policy: %#v", policy)
+	}
+}
+
+func TestLoad_InvalidStreamPolicyFailsClosed(t *testing.T) {
+	t.Setenv("JWT_SECRET", "jwt-secret")
+	t.Setenv("API_KEY_HASH_SECRET", "api-key-secret")
+	t.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+	t.Setenv("STREAM_WRITE_IDLE_TIMEOUT_SECONDS", "15")
+	t.Setenv("STREAM_HEARTBEAT_SECONDS", "15")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid stream policy to fail startup validation")
+	}
+}
+
 func TestLoad_Defaults(t *testing.T) {
 	// Clear all env vars to test defaults
 	envVars := []string{
@@ -394,6 +426,7 @@ func TestLoad_Defaults(t *testing.T) {
 		"REDIS_ADDR", "REDIS_PASSWORD", "REDIS_DB", "JWT_SECRET", "API_KEY_HASH_SECRET", "ENCRYPTION_KEY",
 		"TRACE_EVENTS_ENABLED", "TRACE_EVENT_SAMPLE_RATE", "TRACE_EVENT_RETENTION_DAYS", "LOG_RETENTION_DAYS",
 		"PAYLOAD_CAPTURE_MODE", "EVIDENCE_CONTEXT_TRUST_SECRET",
+		"STREAM_MAX_SSE_LINE_BYTES", "STREAM_WRITE_IDLE_TIMEOUT_SECONDS", "STREAM_HEARTBEAT_SECONDS", "STREAM_MAX_DURATION_SECONDS",
 		"RUNTIME_ENVIRONMENT", "RUNTIME_DEPLOYMENT_MODE",
 		"RUNTIME_DEPLOYMENT_ROLE", "RUNTIME_VERSION", "RUNTIME_COMMIT", "PROMETHEUS_URL", "GRAFANA_URL",
 		"LICENSE_PUBLIC_KEY", "LICENSE_EXPIRY_WARNING_DAYS", "MIN_FREEZE_AMOUNT", "FREEZE_SAFETY_FACTOR", "DEFAULT_KEY_RPM", "DEFAULT_KEY_QPS",
@@ -428,6 +461,10 @@ func TestLoad_Defaults(t *testing.T) {
 		FreezeSafetyFactor:         getEnvFloat("FREEZE_SAFETY_FACTOR", 1.5),
 		DefaultKeyRPM:              getEnvInt("DEFAULT_KEY_RPM", 60),
 		DefaultKeyQPS:              getEnvInt("DEFAULT_KEY_QPS", 10),
+		StreamMaxSSELineBytes:      getEnvInt("STREAM_MAX_SSE_LINE_BYTES", 2*1024*1024),
+		StreamWriteIdleTimeoutSecs: getEnvInt("STREAM_WRITE_IDLE_TIMEOUT_SECONDS", 30),
+		StreamHeartbeatSecs:        getEnvInt("STREAM_HEARTBEAT_SECONDS", 15),
+		StreamMaxDurationSecs:      getEnvInt("STREAM_MAX_DURATION_SECONDS", 30*60),
 	}
 
 	if cfg.ListenPort != 8080 {
@@ -456,6 +493,10 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if cfg.DefaultKeyQPS != 10 {
 		t.Fatalf("expected 10 QPS, got %d", cfg.DefaultKeyQPS)
+	}
+	if cfg.StreamMaxSSELineBytes != 2*1024*1024 || cfg.StreamWriteIdleTimeoutSecs != 30 ||
+		cfg.StreamHeartbeatSecs != 15 || cfg.StreamMaxDurationSecs != 30*60 {
+		t.Fatalf("unexpected stream defaults: %#v", cfg.StreamPolicyConfig())
 	}
 	if !cfg.TraceEventsEnabled || cfg.TraceEventSampleRate != 1 {
 		t.Fatalf("expected trace events enabled with sample rate 1, got enabled=%v sample=%f", cfg.TraceEventsEnabled, cfg.TraceEventSampleRate)
