@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F16/P6-F32/P6-F33/P6-F34/P6-F35/P6-F37/P6-F38/P6-F39 merged; P6-F36 local verified and independently reviewed with PR/CI/merge pending
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F16/P6-F32/P6-F33/P6-F34/P6-F35/P6-F37/P6-F38/P6-F39 merged; P6-F36 PR #148 implementation head CI verified with final-evidence-head CI/merge pending
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -97,10 +97,11 @@ evidence.
   `fb77083d0f04f5cdaa20f38e763c93b51b89f4d1` passed run `29139408226`, was
   squash-merged as `c08db96167837ade685708c2ab204861a8ecc0ca`, and post-merge
   main run `29139534691` passed all required jobs; its historical branch is
-  restored and retained. P6-F36 implementation, full local verification and
-  independent review are complete on base `c08db961`, with no remaining
-  blocker/high/medium/functional-low finding; PR, required CI and merge remain
-  pending. Neither row has a target/production claim. P6-F37 and P6-F38
+  restored and retained. P6-F36 PR #148 implementation head `d69c041` passed
+  required CI run `29140520863` after full local verification and independent
+  review, with no remaining blocker/high/medium/functional-low finding; final
+  evidence-head CI and merge remain pending. Neither row has a target/production
+  claim. P6-F37 and P6-F38
   are merged and CI verified by PR #143 / `a1e0ad6`.
 
 ## PRD5 Closure Guard
@@ -153,9 +154,10 @@ X-Insight contract, semantic response cache, video execution, or an IAM rewrite.
 D6-08 authorizes P6-F32 through P6-F36 through separate reviewable PRs. P6-F32,
 P6-F33, P6-F34, P6-F35 and P6-F39 are merged and CI verified. P6-F35 was
 squash-merged by PR #147 as `c08db961`; post-merge main run `29139534691`
-passed all required jobs. P6-F36 is local verified and independently reviewed,
-with no remaining blocker/high/medium/functional-low finding; PR, required CI
-and merge remain pending.
+passed all required jobs. P6-F36 PR #148 implementation head `d69c041` passed
+required CI run `29140520863` after local verification and independent review,
+with no remaining blocker/high/medium/functional-low finding; final
+evidence-head CI and merge remain pending.
 P6-F37/P6-F38 are merged and CI verified by PR #143; post-merge main run
 `29133690338` passed Backend Tests, Frontend Build and Docker Build.
 

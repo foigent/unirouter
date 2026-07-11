@@ -20,10 +20,11 @@
 > CI run `29139408226`, was squash-merged as
 > `c08db96167837ade685708c2ab204861a8ecc0ca`, and post-merge main run
 > `29139534691` passed all three jobs; its historical branch is restored and
-> retained. P6-F36 model-governance tenant isolation is local verified and
-> independently reviewed on base `c08db961`, with no remaining
-> blocker/high/medium/functional-low finding; PR, required CI and merge remain
-> pending. No target or production verification is claimed.
+> retained. P6-F36 model-governance tenant isolation PR #148 implementation head
+> `d69c041` passed required CI run `29140520863` after full local verification
+> and independent review, with no remaining blocker/high/medium/functional-low
+> finding; final evidence-head CI and merge remain pending. No target or
+> production verification is claimed.
 > D6-01, D6-02, D6-08 and D6-09 were accepted by the User on 2026-07-11; advanced
 > innovation rows P6-F23 through P6-F31 remain proposed.
 
@@ -95,11 +96,12 @@ pricing, global settings and organization model governance. D6-08 separately
 accepted those rows with tenant roles confined to their JWT organization and
 platform-only global/multiplier authority. P6-F32/P6-F33/P6-F34/P6-F37/P6-F38/P6-F39
 are merged and CI verified, including P6-F35 by PR #147 / merge `c08db961` and
-post-merge main run `29139534691`. P6-F36 implementation, full local
-verification and independent review are complete with no remaining
-blocker/high/medium/functional-low finding; PR, required CI and merge remain
-pending. No audit row is presented as a production incident, 100x proof, or
-implemented remediation before its exact evidence exists.
+post-merge main run `29139534691`. P6-F36 PR #148 implementation head `d69c041`
+passed required CI run `29140520863` after full local verification and
+independent review, with no remaining blocker/high/medium/functional-low
+finding; final evidence-head CI and merge remain pending. No audit row is
+presented as a production incident, 100x proof, or implemented remediation
+before its exact evidence exists.
 
 P6-F35 local evidence covers the repository boundary only. D6-09 defers its
 target activation; a later authorized cutover must drain old control-plane

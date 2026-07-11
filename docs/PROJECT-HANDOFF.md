@@ -73,9 +73,10 @@ jobs, and its historical branch is retained. P6-F35 PR #147 final head
 `29139534691` passed the same jobs; its historical branch is restored and
 retained. P6-F36 implementation, full local verification and independent review
 are complete on base `c08db961` / branch
-`codex/prd6-p6f36-modelgov-tenant`; no blocker/high/medium/functional-low
-finding remains, while PR, required CI and merge are pending. No target or
-production verification is claimed.
+`codex/prd6-p6f36-modelgov-tenant`; PR #148 implementation head `d69c041`
+passed Backend Tests, Frontend Build and Docker Build in run `29140520863`, with
+no blocker/high/medium/functional-low finding remaining. Final evidence-head CI
+and merge are pending. No target or production verification is claimed.
 P6-F37 audit-log tenant isolation and P6-F38 frontend test
 enforcement are merged and CI verified by PR #143 / `a1e0ad6` under the safe
 remediation rule. The
@@ -155,10 +156,12 @@ post-merge main run `29137781625` also passed all required jobs. P6-F35 PR #147
 final head `fb77083d0f04f5cdaa20f38e763c93b51b89f4d1` passed final required CI in
 run `29139408226`, was squash-merged as `c08db96167837ade685708c2ab204861a8ecc0ca`,
 and post-merge main run `29139534691` passed all required jobs; its historical
-branch is restored and retained. P6-F36 is local verified and independently
-reviewed on base `c08db961`, with no remaining blocker/high/medium/functional-low
-finding; PR, required CI and merge remain pending. PRD7/target evidence are explicitly later; historical
-branches remain retained. No new item is target or production verified. Any
+branch is restored and retained. P6-F36 PR #148 implementation head `d69c041`
+passed required CI run `29140520863` after full local verification and
+independent review, with no remaining blocker/high/medium/functional-low
+finding; final evidence-head CI and merge remain pending. PRD7/target evidence
+are explicitly later; historical branches remain retained. No new item is
+target or production verified. Any
 later P6-F35 target cutover must first drain old control-plane binaries and use
 a non-rolling activation; new-version replicas converge global-word changes
 through the existing approximately one-minute reload path.

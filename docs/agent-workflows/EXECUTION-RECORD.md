@@ -3,7 +3,7 @@
 **Batch:** PRD6 Batch 0B P6-F36 Model-Governance Tenant Isolation
 **Owner:** Codex
 **Risk:** R4 cross-tenant model-policy disclosure and mutation
-**Status:** Local verified and independently reviewed; no remaining blocker/high/medium/functional-low finding; PR, required CI and merge pending
+**Status:** PR #148 implementation head CI verified after local verification and independent review; no remaining blocker/high/medium/functional-low finding; final evidence-head CI and merge pending
 **Integration:** base `c08db96167837ade685708c2ab204861a8ecc0ca` / branch `codex/prd6-p6f36-modelgov-tenant`; no deployment, target or production claim
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
@@ -40,7 +40,12 @@
   diff, migrated signed-JWT/PostgreSQL matrix and audit-trigger rollback checks
   pass; independent review found no remaining blocker/high/medium/functional-low
   finding after both Low observations and the `org_viewer` expectation were
-  corrected and targeted tests passed.
+  corrected and targeted tests passed;
+- PR #148 implementation head `d69c0414d5543167cc4b89de50eaafef74ede5c0`
+  passed Backend Tests, Frontend Build and Docker Build in required CI run
+  `29140520863`; the backend log explicitly ran the P6-F36 integration,
+  production-guard registrar and main-registration tests, while the frontend log
+  reports 27 files / 136 tests and a successful production build.
 
 ## Previous P6-F35 Behavior Change
 
@@ -193,7 +198,8 @@ Current P6-F36 results on `codex/prd6-p6f36-modelgov-tenant`, based on
 - independent review: COMPLETE, with no remaining
   blocker/high/medium/functional-low finding; both Low observations were fixed
   and targeted tests passed;
-- PR, required CI, merge and post-merge main CI: PENDING.
+- PR #148 implementation-head required CI run `29140520863`: PASS;
+- final evidence-head required CI, merge and post-merge main CI: PENDING.
 
 Previous P6-F35 results on `codex/prd6-p6f35-global-controls`:
 
@@ -367,11 +373,12 @@ PR #139 required checks for final scalability-audit evidence head `6c8c192`:
 P6-F01, P6-F02, P6-F16, P6-F32, P6-F33, P6-F34, P6-F35, P6-F37, P6-F38 and
 P6-F39 are merged and `CI verified`. D6-08 accepts P6-F32-P6-F36. P6-F35 was
 squash-merged by PR #147 as `c08db96167837ade685708c2ab204861a8ecc0ca`, and
-post-merge main run `29139534691` passed all required jobs. P6-F36 is locally
-verified and independently reviewed with no remaining
-blocker/high/medium/functional-low finding; PR, required CI and merge remain
-pending. No documentation or local test promotes a row to target or production
-verified.
+post-merge main run `29139534691` passed all required jobs. P6-F36 PR #148
+implementation head `d69c041` passed required CI run `29140520863` after local
+verification and independent review, with no remaining
+blocker/high/medium/functional-low finding; final evidence-head CI and merge
+remain pending. No documentation or local test promotes a row to target or
+production verified.
 
 P6-F35 target activation is deferred by D6-09. A later authorized run must
 drain old control-plane binaries before a non-rolling activation of only the new

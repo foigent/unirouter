@@ -3,9 +3,10 @@
 > Date: 2026-07-11
 > Base: `c08db96167837ade685708c2ab204861a8ecc0ca`
 > Branch: `codex/prd6-p6f36-modelgov-tenant`
-> Evidence level: local implementation, migrated two-tenant verification and
-> independent review complete; PR, required CI, merge and target verification
-> pending; no deployment or production verification is claimed
+> Evidence level: local implementation, migrated two-tenant verification,
+> independent review and PR #148 implementation-head required CI complete; final
+> evidence-head CI, merge and target verification pending; no deployment or
+> production verification is claimed
 
 ## Confirmed Pre-Fix Findings
 
@@ -138,8 +139,13 @@ build retains the existing large-chunk warning, and macOS race linking retains
 the existing non-failing `LC_DYSYMTAB` warning. Independent review found no
 remaining blocker, high, medium or functional low issue after correcting API
 403/404 wording, adding production registrar/guard parity coverage and fixing
-the normalized `org_viewer` test expectation. PR, exact-head required CI and
-merge evidence remain pending.
+the normalized `org_viewer` test expectation. PR #148 implementation head
+`d69c0414d5543167cc4b89de50eaafef74ede5c0` passed Backend Tests (1m36s),
+Frontend Build (3m14s) and Docker Build (1m03s) in required CI run
+`29140520863`. Backend logs explicitly show the P6-F36 migrated integration,
+production registrar/guard and main-registration tests passing; frontend logs
+show 27 files / 136 tests and a successful production build. Final
+evidence-head CI and merge evidence remain pending.
 
 ## Explicit Remaining Boundaries
 

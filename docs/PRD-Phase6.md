@@ -2,7 +2,7 @@
 
 > Version: 0.6
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; Batch 0B active; P6-F32/P6-F34/P6-F35/P6-F39 merged; P6-F36 local verified and independently reviewed with PR/CI/merge pending
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; Batch 0B active; P6-F32/P6-F34/P6-F35/P6-F39 merged; P6-F36 PR #148 implementation head CI verified with final-evidence-head CI/merge pending
 > Accepted implementation scope: P6-F03 through P6-F11, P6-F16 through P6-F21, and P6-F32 through P6-F39
 > Innovation gate: P6-F23 through P6-F31 remain proposed/deferred
 
@@ -227,7 +227,7 @@ These do not become UniRouter source-code gaps without new evidence.
 | P6-F33 | Tenant-scope notification evidence and webhook sinks | P0 | Accepted by D6-08; CI verified by PR #142 |
 | P6-F34 | Restrict global base-price and organization-multiplier mutation to platform authority | P0 | Accepted by D6-08; PR #146 squash-merged as `517ce45381429781f7e81e492bdd9f38093c21ba`; final-head run `29137670055` and post-merge main run `29137781625` passed all required jobs; historical branch retained |
 | P6-F35 | Restrict deployment settings, license material and global sensitive words to platform authority | P0 | Accepted by D6-08; PR #147 final head `fb77083d0f04f5cdaa20f38e763c93b51b89f4d1` passed all required jobs in run `29139408226`, squash-merged as `c08db96167837ade685708c2ab204861a8ecc0ca`, and post-merge main run `29139534691` passed all required jobs; historical branch retained |
-| P6-F36 | Enforce organization ownership across registry, alias, catalog and organization model-set endpoints | P1 | Accepted by D6-08; implementation, full local verification and independent review complete on base `c08db961`; no remaining blocker/high/medium/functional-low finding; PR, required CI and merge pending |
+| P6-F36 | Enforce organization ownership across registry, alias, catalog and organization model-set endpoints | P1 | Accepted by D6-08; implementation head `d69c041` on PR #148 passed required CI run `29140520863` after full local verification and independent review; no remaining blocker/high/medium/functional-low finding; final evidence head CI and merge pending |
 | P6-F37 | Tenant-scope audit-log reads and reject foreign organization/project filters | P0 | Accepted safe remediation under PRD6 work rule 7; CI verified by PR #143 |
 | P6-F38 | Run the existing frontend test suite in required CI with stable, bounded interaction timing | P1 | Accepted safe remediation under PRD6 work rule 7; CI verified by PR #143 |
 | P6-F39 | Tenant-scope request-log list/detail/trace, usage analytics/internal status, dashboard usage-derived aggregates and runtime traffic | P0 | Accepted safe remediation under PRD6 work rule 7; merged and CI verified by PR #145 / `609385f` |
