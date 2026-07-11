@@ -28,7 +28,11 @@ func TestNewBuildsTypedEffectiveConfiguration(t *testing.T) {
 	}
 	if snapshot.AgentCapability.Version != "unirouter.agent-capability.v1" || snapshot.AgentCapability.TokenTTLSeconds != 300 ||
 		snapshot.AgentCapability.RefreshBaseSeconds != 180 || snapshot.AgentCapability.ActiveRevocationSLOSeconds > 30 ||
-		snapshot.AgentCapability.AuthorityScope != "model_gateway_only" || snapshot.AgentCapability.RedisOutageMode != "fail_closed" {
+		snapshot.AgentCapability.AuthorityScope != "model_gateway_only" || snapshot.AgentCapability.RedisOutageMode != "fail_closed" ||
+		snapshot.AgentCapability.RuntimeBudgetMode != "reserve_estimate_on_every_ancestor_settle_actual" ||
+		snapshot.AgentCapability.RuntimeRateMode != "exact_redis_sliding_window_on_every_ancestor" ||
+		snapshot.AgentCapability.RuntimeConcurrencyMode != "expiring_redis_lease_on_every_ancestor" ||
+		snapshot.AgentCapability.MaxInvocationLeaseSeconds != 86400 || snapshot.AgentCapability.FinalizationGraceSeconds != 300 {
 		t.Fatalf("unexpected Agent capability registry: %#v", snapshot.AgentCapability)
 	}
 	if snapshot.BudgetAlerts.Version != BudgetAlertPolicyVersion || snapshot.BudgetAlerts.Scope != "project" ||

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/uniroute/unirouter/internal/capbilling"
 	"github.com/uniroute/unirouter/internal/filter"
 	"github.com/uniroute/unirouter/internal/middleware"
 )
@@ -175,6 +176,45 @@ func TestWriteError_UnicodeMessage(t *testing.T) {
 	errObj := resp["error"].(map[string]interface{})
 	if errObj["message"] != "请求包含禁止内容 🚫" {
 		t.Fatalf("unicode emoji should be preserved, got %v", errObj["message"])
+	}
+}
+
+func TestAgentCapabilityRuntimeRejectionHTTPContract(t *testing.T) {
+	tests := []struct {
+		code       string
+		status     int
+		retryAfter string
+	}{
+		{code: capbilling.ErrorCodeCostBudgetExceeded, status: http.StatusForbidden},
+		{code: capbilling.ErrorCodeTokenBudgetExceeded, status: http.StatusForbidden},
+		{code: capbilling.ErrorCodeRPSLimitExceeded, status: http.StatusTooManyRequests, retryAfter: "1"},
+		{code: capbilling.ErrorCodeRPMLimitExceeded, status: http.StatusTooManyRequests, retryAfter: "60"},
+		{code: capbilling.ErrorCodeConcurrencyExceeded, status: http.StatusTooManyRequests, retryAfter: "1"},
+		{code: capbilling.ErrorCodeStateUnavailable, status: http.StatusServiceUnavailable, retryAfter: "1"},
+		{code: capbilling.ErrorCodeRevoked, status: http.StatusUnauthorized},
+		{code: capbilling.ErrorCodeConflict, status: http.StatusConflict},
+	}
+	for _, test := range tests {
+		t.Run(test.code, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			if !writeAgentCapabilityRuntimeRejection(recorder, test.code) {
+				t.Fatal("typed runtime error was not recognized")
+			}
+			if recorder.Code != test.status || recorder.Header().Get("Retry-After") != test.retryAfter {
+				t.Fatalf("status=%d Retry-After=%q, want %d/%q", recorder.Code, recorder.Header().Get("Retry-After"), test.status, test.retryAfter)
+			}
+			var response map[string]any
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			errorObject := response["error"].(map[string]any)
+			if errorObject["code"] != test.code {
+				t.Fatalf("error code=%v, want %s", errorObject["code"], test.code)
+			}
+		})
+	}
+	if recorder := httptest.NewRecorder(); writeAgentCapabilityRuntimeRejection(recorder, "unknown") {
+		t.Fatal("unknown error code must fall through to the ordinary billing handler")
 	}
 }
 

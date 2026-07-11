@@ -27,19 +27,31 @@ const (
 	MaxAgentDepth        = 16
 	MaxWorkflowAgents    = 10_000
 	MaxAuthorityCacheKey = 10_000
+	// Redis Lua represents numbers as IEEE-754 doubles. Keeping runtime budget
+	// values at or below 2^53-1 makes every comparison and HINCRBY delta exact.
+	MaxExactRuntimeBudget int64 = 1<<53 - 1
+
+	DefaultInvocationLeaseTTL   = 5 * time.Minute
+	MaxInvocationLeaseTTL       = 24 * time.Hour
+	InvocationFinalizationGrace = 5 * time.Minute
 )
 
 var (
-	ErrInvalidRequest   = errors.New("invalid agent capability request")
-	ErrInvalidToken     = errors.New("invalid agent capability token")
-	ErrInactiveRoot     = errors.New("agent capability root authority is inactive")
-	ErrAuthorityChanged = errors.New("agent capability root authority changed")
-	ErrRevoked          = errors.New("agent capability revoked")
-	ErrSuperseded       = errors.New("agent capability token superseded")
-	ErrConflict         = errors.New("agent capability conflict")
-	ErrLimitExceeded    = errors.New("agent capability limit exceeded")
-	ErrRefreshTooEarly  = errors.New("agent capability refresh requested too early")
-	ErrUnavailable      = errors.New("agent capability state unavailable")
+	ErrInvalidRequest      = errors.New("invalid agent capability request")
+	ErrInvalidToken        = errors.New("invalid agent capability token")
+	ErrInactiveRoot        = errors.New("agent capability root authority is inactive")
+	ErrAuthorityChanged    = errors.New("agent capability root authority changed")
+	ErrRevoked             = errors.New("agent capability revoked")
+	ErrSuperseded          = errors.New("agent capability token superseded")
+	ErrConflict            = errors.New("agent capability conflict")
+	ErrLimitExceeded       = errors.New("agent capability limit exceeded")
+	ErrRefreshTooEarly     = errors.New("agent capability refresh requested too early")
+	ErrUnavailable         = errors.New("agent capability state unavailable")
+	ErrCostBudgetExceeded  = errors.New("agent capability cost budget exceeded")
+	ErrTokenBudgetExceeded = errors.New("agent capability token budget exceeded")
+	ErrRPSLimitExceeded    = errors.New("agent capability RPS limit exceeded")
+	ErrRPMLimitExceeded    = errors.New("agent capability RPM limit exceeded")
+	ErrConcurrencyExceeded = errors.New("agent capability concurrency limit exceeded")
 )
 
 // Limits are absolute ceilings carried by a capability. Delegation may only
@@ -158,6 +170,11 @@ func (l Limits) ValidateShape() error {
 	}
 	if l.CostBudgetCents <= 0 || l.TokenBudget <= 0 || l.RPMLimit <= 0 || l.RPSLimit <= 0 || l.ConcurrencyLimit <= 0 {
 		return fmt.Errorf("%w: cost, token, RPM, RPS and concurrency limits must be positive", ErrInvalidRequest)
+	}
+	if l.CostBudgetCents > MaxExactRuntimeBudget || l.TokenBudget > MaxExactRuntimeBudget ||
+		int64(l.RPMLimit) > MaxExactRuntimeBudget || int64(l.RPSLimit) > MaxExactRuntimeBudget ||
+		int64(l.ConcurrencyLimit) > MaxExactRuntimeBudget {
+		return fmt.Errorf("%w: runtime limits exceed the exact shared-counter range", ErrInvalidRequest)
 	}
 	if len(l.AllowedModels) == 0 || len(l.AllowedEndpoints) == 0 {
 		return fmt.Errorf("%w: allowed_models and allowed_endpoints are required", ErrInvalidRequest)

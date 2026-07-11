@@ -21,6 +21,7 @@ import (
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/capapi"
+	"github.com/uniroute/unirouter/internal/capbilling"
 	"github.com/uniroute/unirouter/internal/config"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/filter"
@@ -99,6 +100,7 @@ func main() {
 		log.Fatalf("Invalid effective routing configuration: %v", err)
 	}
 	billingSvc := billing.NewBilling(postgres.Pool, redisClient.Client)
+	agentBudgetBilling := capbilling.New(billingSvc, agentCapabilityService)
 	settlementRecoveryCtx, stopSettlementRecovery := context.WithCancel(context.Background())
 	defer stopSettlementRecovery()
 	go billingSvc.RunSettlementRecoveryLoop(settlementRecoveryCtx, 10*time.Second, 100)
@@ -114,7 +116,7 @@ func main() {
 		log.Fatal("Failed to initialize deployment sensitive-word policy version")
 	}
 	encKey := []byte(cfg.EncryptionKey)
-	relay := gateway.NewRelay(postgres.Pool, redisClient.Client, router, billingSvc, sensitiveFilter, encKey)
+	relay := gateway.NewRelay(postgres.Pool, redisClient.Client, router, agentBudgetBilling, sensitiveFilter, encKey)
 	if err := relay.SetStreamPolicy(effectiveConfig.StreamTransport.Config); err != nil {
 		log.Fatalf("Invalid effective stream transport configuration: %v", err)
 	}
@@ -305,7 +307,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <p class="muted">Current API contract index. Admin APIs use JWT Bearer auth. Gateway model APIs accept UniRouter API keys or endpoint-scoped Agent capabilities.</p>
 <p>Admin Base URL: <code>/api/v1</code> &nbsp; Gateway Base URL: <code>/v1</code></p>
 <p><code>X-Request-ID</code> in every response is a server operation ID. Send caller correlation in <code>X-UniRouter-Client-Request-ID</code>. Chat and Embeddings accept <code>Idempotency-Key</code> for tenant/key/payload-bound metadata-only deduplication; completed model responses are not stored or replayed.</p>
-<p>Agent discovery is explicit: a supervisor exchanges its root API key, then registers each child with an attenuation-only capability. Capabilities last at most five minutes, normally refresh near minute three, grant model-gateway authority only, and never grant Tool, IAM, database or export authority.</p>
+<p>Agent discovery is explicit: a supervisor exchanges its root API key, then registers each child with an attenuation-only capability. Capabilities last at most five minutes, normally refresh near minute three, grant model-gateway authority only, and never grant Tool, IAM, database or export authority. Model calls reserve cost, tokens, rolling rate, and concurrency on every signed ancestor before any upstream dispatch; Redis uncertainty denies new capability admission.</p>
 <table>
 <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
 <tbody>

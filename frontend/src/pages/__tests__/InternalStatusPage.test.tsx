@@ -103,6 +103,12 @@ describe('InternalStatusPage', () => {
           redis_outage_mode: 'fail_closed',
           normal_expiry_mode: 'deny_new_admission_keep_admitted_work',
           refresh_concurrency: 'server_convergent_and_client_singleflight',
+          runtime_budget_mode: 'reserve_estimate_on_every_ancestor_settle_actual',
+          runtime_rate_mode: 'exact_redis_sliding_window_on_every_ancestor',
+          runtime_concurrency_mode: 'expiring_redis_lease_on_every_ancestor',
+          runtime_recovery_mode: 'conservative_ttl_until_p6_f20_durable_terminal_hook',
+          max_invocation_lease_seconds: 86400,
+          finalization_grace_seconds: 300,
         },
         budget_alerts: {
           version: 'project-budget-alert.v1',
@@ -181,6 +187,10 @@ describe('InternalStatusPage', () => {
     expect(screen.getByText('撤销收敛')).toBeTruthy();
     expect(screen.getByText('≤ 15 秒')).toBeTruthy();
     expect(screen.getByText('仅模型网关')).toBeTruthy();
+    expect(screen.getByText('祖先预算')).toBeTruthy();
+    expect(screen.getByText('共享执行')).toBeTruthy();
+    expect(screen.getByText('子树速率 / 并发')).toBeTruthy();
+    expect(screen.getByText('Redis 共享')).toBeTruthy();
     expect(screen.getByText('有效预算告警合同')).toBeTruthy();
     expect(screen.getByText('项目级')).toBeTruthy();
     expect(screen.getByText('100%')).toBeTruthy();
