@@ -1,27 +1,38 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 0B P6-F18 Billing Reservation And Stream Settlement Recovery
+**Batch:** PRD6 Engineering Integrity P6-TEST-DB-001 Admin Integration Isolation
 **Owner:** Codex
-**Risk:** R4 wallet conservation, billable-output refund and ambiguous post-stream settlement
-**Status:** CI verified and merged
-**Integration:** F18A PR #151 / run `29154664491` / merge `7db1efc`; F18B PR #153 / run `29155948787` / merge `b30bc9d`; post-merge main run `29156096777` passed; no deployment, target or production claim
+**Risk:** R1 test harness and required-CI integrity; no production behavior change
+**Status:** Local verified; required PR CI pending
+**Integration:** Branch `codex/prd6-test-db-isolation`; PR pending; no deployment, target or production claim
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Current Scope
 
-1. Keep Freeze pool-safe and persist the effective price/multiplier and exact
-   cash/grant funding source.
-2. Make Settle/Cancel one terminal state transition with source-preserving
-   refunds and one ledger event.
-3. Persist `settlement_pending` before the first billable stream data event and
-   immutable final usage before settlement.
-4. Never cancel delivered output; recover prepared usage with bounded leased
-   multi-replica workers and backoff.
-5. Prove pool-size, exact-funds duplicate, 100-way terminal race, marker/usage
-   failure, post-chunk DB loss/restart, 20-worker exactly-once and migration
-   up/down guard behavior.
-6. Keep per-chunk process-kill journal, missing-log/audit replay, general outbox,
-   target activation, response cache and SaaS deployment outside P6-F18.
+1. Reproduce the legacy admin integration suite against the shared stale schema.
+2. Move every legacy admin database setup to a uniquely named temporary database
+   with the complete current migration chain.
+3. Prove one-pass, repeated, race, vet and normal-suite behavior and verify
+   temporary database cleanup.
+4. Add the complete admin integration suite to Backend required CI.
+5. Keep handler behavior, APIs, migrations, runtime data, deployment, PRD6
+   feature accounting and target evidence unchanged.
+
+## Current P6-TEST-DB-001 Behavior Change
+
+- pre-change `go test -tags=integration ./internal/admin -count=1` failed twelve
+  tests because the shared `uniroute_test` schema lacked current tables/columns;
+- all 48 legacy admin setups now use `SetupMigratedTestDB`, which creates a
+  unique database, applies migrations through `000023` and drops it on cleanup;
+- one complete pass, two consecutive passes, a complete race pass, vet and all
+  normal/race Go packages pass locally;
+- the post-test PostgreSQL query found no remaining `uniroute_it_%` database;
+- Backend required CI now runs the complete tagged admin suite with `-race` and
+  treats unavailable database setup as failure rather than a skipped green;
+- the exact required database/race command passes; an unreachable-database
+  negative proves the required posture fails rather than skips;
+- frontend 27 files / 137 tests, type-check and production build pass;
+- evidence: `docs/ops/evidence/PRD6-ENG-P6TESTDB-admin-integration-isolation-local-20260711.md`.
 
 ## Previous P6-F17 Behavior Change
 
@@ -325,9 +336,9 @@ Previous P6-F32/P6-F39 results on `codex/prd6-p6f32-finance-tenant`:
 - PR #145 implementation head `3ee6a41`, run `29135964946`: `Backend Tests`,
   `Frontend Build` and `Docker Build` PASS; final documentation-only head must
   pass the same checks before merge.
-- the full legacy tagged admin suite still depends on a separately provisioned
-  shared schema and has unrelated stale-schema failures; tracked as
-  `P6-TEST-DB-001`, not represented as green.
+- at that historical point, the full tagged admin suite still depended on a
+  separately provisioned shared schema and was correctly not represented as
+  green; the current `P6-TEST-DB-001` batch removes that dependency.
 
 Focused P6-F33 results on `codex/prd6-b0b-notification-tenant`:
 

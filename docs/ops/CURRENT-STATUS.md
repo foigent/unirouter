@@ -75,6 +75,10 @@
   `docs/ops/evidence/PRD6-B0B-P6F18B-stream-settlement-recovery-local-20260711.md`.
   PR #153 and post-merge main required CI passed; this closes P6-F18 but not
   P6-F20 per-chunk/process-kill journaling or the general outbox.
+- P6-TEST-DB-001 isolated admin integration evidence:
+  `docs/ops/evidence/PRD6-ENG-P6TESTDB-admin-integration-isolation-local-20260711.md`.
+  The 48-test current-schema suite and required-CI workflow change are Local
+  verified; exact PR CI remains pending.
 - Source-backed product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
 - PRD7 candidate-only split (not Accepted Scope):
@@ -90,8 +94,9 @@
   in `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`.
 - Accepted feature accounting after P6-F18 closeout: 25 accepted rows, 13 CI
   verified / closed and 12 not started (`P6-F03`-`P6-F11`, `P6-F19`-`P6-F21`).
-  `P6-TEST-DB-001` is a separate partially remediated engineering-integrity
-  issue outside that 25-row feature count.
+  `P6-TEST-DB-001` is a separate engineering-integrity issue outside that
+  25-row feature count. Its 48-test isolated current-schema admin suite and
+  required-CI gate are Local verified; exact PR CI is pending.
 - Fresh pre-change verification passed backend tests/vet, frontend type-check,
   25 files / 125 tests, frontend build, and X-Insight full Go tests.
 - Focused read-only audit verification passed auth/middleware/admin/billing and

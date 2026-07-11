@@ -19,7 +19,7 @@ import (
 // --- Login handler tests ---
 
 func TestLogin_Success_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 
 	// Create a test user with bcrypt-hashed password
@@ -51,7 +51,7 @@ func TestLogin_Success_Integration(t *testing.T) {
 }
 
 func TestLogin_WrongPassword_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 
 	hash, err := bcrypt.GenerateFromPassword([]byte("testpassword123"), bcrypt.DefaultCost)
@@ -75,7 +75,7 @@ func TestLogin_WrongPassword_Integration(t *testing.T) {
 }
 
 func TestLogin_DisabledUser_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 
 	hash, err := bcrypt.GenerateFromPassword([]byte("testpassword123"), bcrypt.DefaultCost)
@@ -99,7 +99,7 @@ func TestLogin_DisabledUser_Integration(t *testing.T) {
 }
 
 func TestLogin_EmptyCredentials_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
 	body := `{"username":"","password":""}`
@@ -113,7 +113,7 @@ func TestLogin_EmptyCredentials_Integration(t *testing.T) {
 }
 
 func TestLogin_WrongMethod_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/login", nil)
@@ -125,7 +125,7 @@ func TestLogin_WrongMethod_Integration(t *testing.T) {
 }
 
 func TestLogin_UserNotFound_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
 	body := `{"username":"nonexistent","password":"whatever"}`
@@ -139,7 +139,7 @@ func TestLogin_UserNotFound_Integration(t *testing.T) {
 }
 
 func TestLogin_InvalidJSON_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString("not json"))
@@ -154,7 +154,7 @@ func TestLogin_InvalidJSON_Integration(t *testing.T) {
 // --- CreateAPIKey handler tests ---
 
 func TestCreateAPIKey_Success_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
@@ -191,7 +191,7 @@ func TestCreateAPIKey_Success_Integration(t *testing.T) {
 }
 
 func TestCreateAPIKey_NoName_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
@@ -206,7 +206,7 @@ func TestCreateAPIKey_NoName_Integration(t *testing.T) {
 }
 
 func TestCreateAPIKey_DefaultLimits_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
@@ -236,7 +236,7 @@ func TestCreateAPIKey_DefaultLimits_Integration(t *testing.T) {
 }
 
 func TestCreateAPIKey_OrgDefault_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	// Need an org to exist; org_id=0 is hardcoded to 1 in CreateAPIKey.
 	// Create a synthetic org with id=1 via direct insert (bypassing auto-increment).
 	_, err := pool.Exec(t.Context(),
@@ -261,7 +261,7 @@ func TestCreateAPIKey_OrgDefault_Integration(t *testing.T) {
 // --- CreateChannel handler tests ---
 
 func TestCreateChannel_Success_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
@@ -291,7 +291,7 @@ func TestCreateChannel_Success_Integration(t *testing.T) {
 }
 
 func TestCreateChannel_MissingFields_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
@@ -306,7 +306,7 @@ func TestCreateChannel_MissingFields_Integration(t *testing.T) {
 }
 
 func TestCreateChannel_DefaultPriority_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
@@ -334,7 +334,7 @@ func TestCreateChannel_DefaultPriority_Integration(t *testing.T) {
 }
 
 func TestCreateChannel_InvalidJSON_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
@@ -386,7 +386,7 @@ func TestCleanupOldData_ReleasesStaleFrozen_Integration(t *testing.T) {
 // --- TopUp handler tests ---
 
 func TestTopUp_Success_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	testutil.NewTestWallet(t, pool, orgID, 1000)
 
@@ -410,7 +410,7 @@ func TestTopUp_Success_Integration(t *testing.T) {
 }
 
 func TestTopUp_NegativeAmount_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	testutil.NewTestWallet(t, pool, orgID, 1000)
 
@@ -433,7 +433,7 @@ func TestTopUp_NegativeAmount_Integration(t *testing.T) {
 }
 
 func TestTopUp_ZeroAmount_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	testutil.NewTestWallet(t, pool, orgID, 1000)
 
@@ -450,7 +450,7 @@ func TestTopUp_ZeroAmount_Integration(t *testing.T) {
 }
 
 func TestTopUp_Idempotency_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	testutil.NewTestWallet(t, pool, orgID, 1000)
 
@@ -484,7 +484,7 @@ func TestTopUp_Idempotency_Integration(t *testing.T) {
 // --- CreateGrant handler tests ---
 
 func TestCreateGrant_Success_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	testutil.NewTestWallet(t, pool, orgID, 1000)
 
@@ -517,7 +517,7 @@ func TestCreateGrant_Success_Integration(t *testing.T) {
 }
 
 func TestCreateGrant_Idempotency_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	testutil.NewTestWallet(t, pool, orgID, 1000)
 
@@ -554,7 +554,7 @@ func TestCreateGrant_Idempotency_Integration(t *testing.T) {
 }
 
 func TestCreateGrant_ZeroAmount_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	testutil.NewTestWallet(t, pool, orgID, 1000)
 
@@ -577,7 +577,7 @@ func TestCreateGrant_ZeroAmount_Integration(t *testing.T) {
 }
 
 func TestCreateGrant_InvalidJSON_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/grants", bytes.NewBufferString("not json"))
@@ -592,7 +592,7 @@ func TestCreateGrant_InvalidJSON_Integration(t *testing.T) {
 // --- GetWallet handler tests ---
 
 func TestGetWallet_Success_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	testutil.NewTestWallet(t, pool, orgID, 5000)
 
@@ -613,7 +613,7 @@ func TestGetWallet_Success_Integration(t *testing.T) {
 }
 
 func TestGetWallet_NotFound_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	// No wallet created
 
@@ -631,7 +631,7 @@ func TestGetWallet_NotFound_Integration(t *testing.T) {
 // --- BalanceAdjust handler tests ---
 
 func TestBalanceAdjust_Success_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	testutil.NewTestWallet(t, pool, orgID, 1000)
 
@@ -663,7 +663,7 @@ func TestBalanceAdjust_Success_Integration(t *testing.T) {
 }
 
 func TestBalanceAdjust_NegativeTarget_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	testutil.NewTestWallet(t, pool, orgID, 1000)
 
@@ -686,7 +686,7 @@ func TestBalanceAdjust_NegativeTarget_Integration(t *testing.T) {
 }
 
 func TestBalanceAdjust_NoWallet_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	// No wallet created
 
@@ -704,7 +704,7 @@ func TestBalanceAdjust_NoWallet_Integration(t *testing.T) {
 }
 
 func TestBalanceAdjust_WrongMethod_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	testutil.NewTestWallet(t, pool, orgID, 1000)
 
@@ -719,7 +719,7 @@ func TestBalanceAdjust_WrongMethod_Integration(t *testing.T) {
 }
 
 func TestBalanceAdjust_InvalidJSON_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	testutil.NewTestWallet(t, pool, orgID, 1000)
 
@@ -739,7 +739,7 @@ func TestBalanceAdjust_InvalidJSON_Integration(t *testing.T) {
 // --- User management ---
 
 func TestCreateUser_Success_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
@@ -767,7 +767,7 @@ func TestCreateUser_Success_Integration(t *testing.T) {
 }
 
 func TestCreateUser_DuplicateUsername_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
@@ -788,7 +788,7 @@ func TestCreateUser_DuplicateUsername_Integration(t *testing.T) {
 }
 
 func TestCreateUser_MissingFields_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	_ = testutil.NewTestOrg(t, pool)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
@@ -804,7 +804,7 @@ func TestCreateUser_MissingFields_Integration(t *testing.T) {
 }
 
 func TestCreateUser_DefaultRole_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
@@ -828,7 +828,7 @@ func TestCreateUser_DefaultRole_Integration(t *testing.T) {
 }
 
 func TestDeleteUser_Success_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 
 	// Create user directly in DB
@@ -855,7 +855,7 @@ func TestDeleteUser_Success_Integration(t *testing.T) {
 }
 
 func TestDeleteUser_NotFound_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	_ = testutil.NewTestOrg(t, pool)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
@@ -870,7 +870,7 @@ func TestDeleteUser_NotFound_Integration(t *testing.T) {
 }
 
 func TestDeleteUser_InvalidID_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	_ = testutil.NewTestOrg(t, pool)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
@@ -885,7 +885,7 @@ func TestDeleteUser_InvalidID_Integration(t *testing.T) {
 }
 
 func TestUpdateUser_RoleChange_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 
 	var userID int64
@@ -912,7 +912,7 @@ func TestUpdateUser_RoleChange_Integration(t *testing.T) {
 }
 
 func TestUpdateUser_StatusChange_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 
 	var userID int64
@@ -939,7 +939,7 @@ func TestUpdateUser_StatusChange_Integration(t *testing.T) {
 }
 
 func TestUpdateUser_NotFound_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	_ = testutil.NewTestOrg(t, pool)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
@@ -956,7 +956,7 @@ func TestUpdateUser_NotFound_Integration(t *testing.T) {
 }
 
 func TestListUsers_Success_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 
 	// Create 3 users
@@ -984,7 +984,7 @@ func TestListUsers_Success_Integration(t *testing.T) {
 // --- API Key management ---
 
 func TestUpdateAPIKey_Success_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 
 	// Create key first
@@ -1015,7 +1015,7 @@ func TestUpdateAPIKey_Success_Integration(t *testing.T) {
 }
 
 func TestUpdateAPIKey_NotFound_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	_ = testutil.NewTestOrg(t, pool)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
@@ -1032,7 +1032,7 @@ func TestUpdateAPIKey_NotFound_Integration(t *testing.T) {
 }
 
 func TestUpdateAPIKey_NoFields_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 
 	var keyID int64
@@ -1055,7 +1055,7 @@ func TestUpdateAPIKey_NoFields_Integration(t *testing.T) {
 }
 
 func TestDisableAPIKey_Success_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 
 	var keyID int64
@@ -1080,7 +1080,7 @@ func TestDisableAPIKey_Success_Integration(t *testing.T) {
 }
 
 func TestDisableAPIKey_NotFound_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	_ = testutil.NewTestOrg(t, pool)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
@@ -1095,7 +1095,7 @@ func TestDisableAPIKey_NotFound_Integration(t *testing.T) {
 }
 
 func TestListAPIKeys_Success_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
