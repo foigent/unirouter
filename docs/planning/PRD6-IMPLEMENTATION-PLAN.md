@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-12
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F06 and P6-STREAM-002A are CI verified / closed; P6-F11 remains in progress after its transport prerequisite; 7 accepted rows remain not started
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F06 and P6-STREAM-002A are CI verified / closed; P6-F11 and P6-F19 remain in progress; P6-F19A capability kernel is local verified / PR pending; 6 accepted rows remain not started
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -33,8 +33,9 @@ required CI. No scope decision grants target/deployment/data/cost authorization.
 - 17 are CI verified / closed: P6-F01 through P6-F06, P6-F16, P6-F17, P6-F18
   and P6-F32 through P6-F39;
 - 8 accepted rows remain unclosed: P6-F11 is in progress through the
-  P6-STREAM-002A transport prerequisite; P6-F07 through P6-F10 and P6-F19
-  through P6-F21 remain not started;
+  P6-STREAM-002A transport prerequisite; P6-F19 is in progress through the
+  local-verified, PR-pending capability kernel; P6-F07 through P6-F10, P6-F20
+  and P6-F21 remain not started;
 - 14 rows are not accepted: P6-F12 through P6-F15 and P6-F22 through P6-F31;
 - `P6-TEST-DB-001` is a separate accepted engineering-integrity issue outside
   the feature-row count. PR #155, merge `4b18ace` and post-merge main run

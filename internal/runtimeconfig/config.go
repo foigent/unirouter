@@ -3,6 +3,7 @@ package runtimeconfig
 import (
 	"fmt"
 
+	"github.com/uniroute/unirouter/internal/agentcap"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/streampolicy"
 )
@@ -20,6 +21,7 @@ type Snapshot struct {
 	Source          string                `json:"source"`
 	RoutingPolicy   RoutingPolicy         `json:"routing_policy"`
 	StreamTransport StreamTransportPolicy `json:"stream_transport"`
+	AgentCapability AgentCapabilityPolicy `json:"agent_capability"`
 	BudgetAlerts    BudgetAlertPolicy     `json:"budget_alerts"`
 }
 
@@ -33,6 +35,24 @@ type StreamTransportPolicy struct {
 	Version string `json:"version"`
 	Source  string `json:"source"`
 	streampolicy.Config
+}
+
+type AgentCapabilityPolicy struct {
+	Version                    string `json:"version"`
+	Source                     string `json:"source"`
+	DiscoveryMode              string `json:"discovery_mode"`
+	AuthorityScope             string `json:"authority_scope"`
+	TokenTTLSeconds            int    `json:"token_ttl_seconds"`
+	RefreshBaseSeconds         int    `json:"refresh_base_seconds"`
+	RefreshJitterSeconds       int    `json:"refresh_jitter_seconds"`
+	RootAuthorityCacheSeconds  int    `json:"root_authority_cache_seconds"`
+	ActiveRevocationSLOSeconds int    `json:"active_revocation_slo_seconds"`
+	MaxWorkflowTTLSeconds      int    `json:"max_workflow_ttl_seconds"`
+	MaxDepth                   int    `json:"max_depth"`
+	MaxWorkflowAgents          int    `json:"max_workflow_agents"`
+	RedisOutageMode            string `json:"redis_outage_mode"`
+	NormalExpiryMode           string `json:"normal_expiry_mode"`
+	RefreshConcurrency         string `json:"refresh_concurrency"`
 }
 
 // BudgetAlertPolicy describes the one active budget-alert contract. Budgets
@@ -72,6 +92,23 @@ func New(routing routingpolicy.Config, stream streampolicy.Config) (Snapshot, er
 			Version: streampolicy.Version,
 			Source:  "startup_environment",
 			Config:  stream,
+		},
+		AgentCapability: AgentCapabilityPolicy{
+			Version:                    agentcap.SchemaVersion,
+			Source:                     "compiled_security_contract",
+			DiscoveryMode:              "explicit_supervisor_exchange_and_parent_delegation",
+			AuthorityScope:             "model_gateway_only",
+			TokenTTLSeconds:            int(agentcap.TokenTTL.Seconds()),
+			RefreshBaseSeconds:         int(agentcap.RefreshBase.Seconds()),
+			RefreshJitterSeconds:       int(agentcap.RefreshJitter.Seconds()),
+			RootAuthorityCacheSeconds:  int(agentcap.AuthorityCacheTTL.Seconds()),
+			ActiveRevocationSLOSeconds: int(agentcap.AuthorityCacheTTL.Seconds()),
+			MaxWorkflowTTLSeconds:      int(agentcap.MaxWorkflowTTL.Seconds()),
+			MaxDepth:                   agentcap.MaxAgentDepth,
+			MaxWorkflowAgents:          agentcap.MaxWorkflowAgents,
+			RedisOutageMode:            "fail_closed",
+			NormalExpiryMode:           "deny_new_admission_keep_admitted_work",
+			RefreshConcurrency:         "server_convergent_and_client_singleflight",
 		},
 		BudgetAlerts: BudgetAlertPolicy{
 			Version:                    BudgetAlertPolicyVersion,

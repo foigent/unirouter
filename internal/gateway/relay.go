@@ -134,7 +134,38 @@ func (relay *Relay) contextWithTrustedEvidence(ctx context.Context, header http.
 	if relay == nil {
 		return ctx
 	}
-	ctx = traceutil.ContextWithEvidence(ctx, traceutil.ExtractTrustedEvidenceContext(header, relay.evidenceContextTrustSecret))
+	inbound := traceutil.ExtractTrustedEvidenceContext(header, relay.evidenceContextTrustSecret)
+	// Authentication-owned capability identity is stronger than the optional
+	// trusted evidence side channel. A caller that knows the evidence header
+	// secret may add trace/session ancestry, but cannot replace the workflow,
+	// Agent or actor bound to the signed gateway capability.
+	if authenticated := traceutil.EvidenceFromContext(ctx); !authenticated.IsZero() {
+		if inbound.TraceID == "" {
+			inbound.TraceID = authenticated.TraceID
+		}
+		if inbound.ParentSpanID == "" {
+			inbound.ParentSpanID = authenticated.ParentSpanID
+		}
+		if inbound.SessionID == "" {
+			inbound.SessionID = authenticated.SessionID
+		}
+		if authenticated.WorkflowID != "" {
+			inbound.WorkflowID = authenticated.WorkflowID
+		}
+		if authenticated.AgentID != "" {
+			inbound.AgentID = authenticated.AgentID
+		}
+		if authenticated.ActorType != "" {
+			inbound.ActorType = authenticated.ActorType
+		}
+		if authenticated.ActorRef != "" {
+			inbound.ActorRef = authenticated.ActorRef
+		}
+		if authenticated.OnBehalfOf != "" {
+			inbound.OnBehalfOf = authenticated.OnBehalfOf
+		}
+	}
+	ctx = traceutil.ContextWithEvidence(ctx, inbound)
 	return contextWithEvidenceSpanState(ctx)
 }
 
@@ -1754,6 +1785,18 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 func (relay *Relay) HandleModels(w http.ResponseWriter, r *http.Request) {
 	orgID := middleware.GetOrgIDFromContext(r.Context())
 	keyID := middleware.GetKeyIDFromContext(r.Context())
+	if middleware.GetAgentCapabilityFromContext(r.Context()) != nil {
+		if apiKey := middleware.GetAPIKeyFromContext(r.Context()); apiKey != nil {
+			if modelListContainsWildcard(apiKey.AllowedModels) {
+				relay.handleModelsFallback(w, r)
+				return
+			}
+			if apiKey.AllowedModels != "" {
+				writeAllowedModelList(w, apiKey.AllowedModels)
+				return
+			}
+		}
+	}
 
 	// Try per-key model list from api_keys.allowed_models (comma-separated)
 	var allowedModels string
@@ -1761,29 +1804,44 @@ func (relay *Relay) HandleModels(w http.ResponseWriter, r *http.Request) {
 		`SELECT COALESCE(allowed_models, '') FROM api_keys WHERE id = $1 AND org_id = $2 AND status = 'active'`,
 		keyID, orgID).Scan(&allowedModels)
 	if err == nil && allowedModels != "" {
-		var models []map[string]interface{}
-		for _, m := range strings.Split(allowedModels, ",") {
-			m = strings.TrimSpace(m)
-			if m != "" {
-				models = append(models, map[string]interface{}{
-					"id":       m,
-					"object":   "model",
-					"owned_by": "uniroute",
-				})
-			}
-		}
-		if len(models) > 0 {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"object": "list",
-				"data":   models,
-			})
+		if modelListContainsWildcard(allowedModels) {
+			relay.handleModelsFallback(w, r)
 			return
 		}
+		writeAllowedModelList(w, allowedModels)
+		return
 	}
 
 	// Fallback: return all models from model_prices
 	relay.handleModelsFallback(w, r)
+}
+
+func modelListContainsWildcard(allowedModels string) bool {
+	for _, model := range strings.Split(allowedModels, ",") {
+		if strings.TrimSpace(model) == "*" {
+			return true
+		}
+	}
+	return false
+}
+
+func writeAllowedModelList(w http.ResponseWriter, allowedModels string) {
+	var listedModels []map[string]interface{}
+	for _, model := range strings.Split(allowedModels, ",") {
+		model = strings.TrimSpace(model)
+		if model != "" {
+			listedModels = append(listedModels, map[string]interface{}{
+				"id":       model,
+				"object":   "model",
+				"owned_by": "uniroute",
+			})
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"object": "list",
+		"data":   listedModels,
+	})
 }
 
 func (relay *Relay) handleModelsFallback(w http.ResponseWriter, r *http.Request) {

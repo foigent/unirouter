@@ -26,6 +26,11 @@ func TestNewBuildsTypedEffectiveConfiguration(t *testing.T) {
 		snapshot.StreamTransport.MaxSSELineBytes != 4*1024*1024 || snapshot.StreamTransport.WriteIdleTimeoutSeconds != 30 {
 		t.Fatalf("unexpected stream transport registry: %#v", snapshot.StreamTransport)
 	}
+	if snapshot.AgentCapability.Version != "unirouter.agent-capability.v1" || snapshot.AgentCapability.TokenTTLSeconds != 300 ||
+		snapshot.AgentCapability.RefreshBaseSeconds != 180 || snapshot.AgentCapability.ActiveRevocationSLOSeconds > 30 ||
+		snapshot.AgentCapability.AuthorityScope != "model_gateway_only" || snapshot.AgentCapability.RedisOutageMode != "fail_closed" {
+		t.Fatalf("unexpected Agent capability registry: %#v", snapshot.AgentCapability)
+	}
 	if snapshot.BudgetAlerts.Version != BudgetAlertPolicyVersion || snapshot.BudgetAlerts.Scope != "project" ||
 		snapshot.BudgetAlerts.BudgetSource != "projects.budget_cents" || snapshot.BudgetAlerts.PeriodSource != "projects.budget_period" ||
 		snapshot.BudgetAlerts.EventLedger != "notification_events" || snapshot.BudgetAlerts.DeliveryRouteSource != "notification_webhooks" ||

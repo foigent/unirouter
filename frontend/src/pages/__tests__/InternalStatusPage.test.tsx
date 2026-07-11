@@ -87,6 +87,23 @@ describe('InternalStatusPage', () => {
           heartbeat_seconds: 15,
           max_duration_seconds: 1800,
         },
+        agent_capability: {
+          version: 'unirouter.agent-capability.v1',
+          source: 'compiled_security_contract',
+          discovery_mode: 'explicit_supervisor_exchange_and_parent_delegation',
+          authority_scope: 'model_gateway_only',
+          token_ttl_seconds: 300,
+          refresh_base_seconds: 180,
+          refresh_jitter_seconds: 15,
+          root_authority_cache_seconds: 15,
+          active_revocation_slo_seconds: 15,
+          max_workflow_ttl_seconds: 86400,
+          max_depth: 16,
+          max_workflow_agents: 10000,
+          redis_outage_mode: 'fail_closed',
+          normal_expiry_mode: 'deny_new_admission_keep_admitted_work',
+          refresh_concurrency: 'server_convergent_and_client_singleflight',
+        },
         budget_alerts: {
           version: 'project-budget-alert.v1',
           scope: 'project',
@@ -157,6 +174,13 @@ describe('InternalStatusPage', () => {
     expect(screen.getByText('连接心跳')).toBeTruthy();
     expect(screen.getByText('最长流时长')).toBeTruthy();
     expect(screen.getByText('30 分钟')).toBeTruthy();
+    expect(screen.getByText('Agent 能力合同')).toBeTruthy();
+    expect(screen.getByText('能力令牌')).toBeTruthy();
+    expect(screen.getByText('子 Agent 发现')).toBeTruthy();
+    expect(screen.getByText('显式登记')).toBeTruthy();
+    expect(screen.getByText('撤销收敛')).toBeTruthy();
+    expect(screen.getByText('≤ 15 秒')).toBeTruthy();
+    expect(screen.getByText('仅模型网关')).toBeTruthy();
     expect(screen.getByText('有效预算告警合同')).toBeTruthy();
     expect(screen.getByText('项目级')).toBeTruthy();
     expect(screen.getByText('100%')).toBeTruthy();

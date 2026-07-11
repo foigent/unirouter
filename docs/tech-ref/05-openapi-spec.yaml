@@ -9,7 +9,9 @@ info:
     Route parity guard: `cmd/uniroute/route_parity_test.go`.
 
     Authentication:
-    - Gateway: `Authorization: Bearer ur-XXXX-...`
+    - Gateway model calls: `Authorization: Bearer ur-XXXX-...` or a scoped `urc_...` Agent capability.
+    - Agent capability exchange/revoke: root UniRouter API key only.
+    - Agent capability delegate/refresh: authenticated parent/current Agent capability only.
     - Admin: `Authorization: Bearer <JWT>`
 
     Request identity:
@@ -23,6 +25,7 @@ servers:
 
 tags:
   - name: Gateway
+  - name: Agent Capability
   - name: Auth
   - name: Admin
   - name: Health
@@ -185,6 +188,109 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/JSON"
+
+  /v1/agent-capabilities/exchange:
+    post:
+      tags: [Agent Capability]
+      summary: Explicitly register a root Agent workflow and exchange a root API key for a five-minute capability
+      security:
+        - gatewayRootKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentCapabilityExchangeRequest"
+      responses:
+        "201":
+          description: Root Agent capability; response is non-cacheable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentCapabilityTokenResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /v1/agent-capabilities/delegate:
+    post:
+      tags: [Agent Capability]
+      summary: Explicitly register one child Agent with attenuation-only authority
+      security:
+        - agentCapability: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentCapabilityDelegateRequest"
+      responses:
+        "201":
+          description: Child Agent capability; response is non-cacheable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentCapabilityTokenResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /v1/agent-capabilities/refresh:
+    post:
+      tags: [Agent Capability]
+      summary: Refresh a capability near minute three without extending the independent workflow lifetime
+      security:
+        - agentCapability: []
+      responses:
+        "200":
+          description: Refreshed five-minute capability; concurrent refreshes converge on one token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentCapabilityTokenResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /v1/agent-capabilities/revoke:
+    post:
+      tags: [Agent Capability]
+      summary: Revoke a registered Agent workflow for all new admissions
+      security:
+        - gatewayRootKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [workflow_id]
+              properties:
+                workflow_id:
+                  type: string
+                  pattern: '^capwf_[0-9a-f]{32}$'
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
 
   /api/v1/auth/login:
     post:
@@ -771,6 +877,16 @@ components:
     gatewayKey:
       type: http
       scheme: bearer
+      description: UniRouter API key or a signed urc_ Agent capability whose endpoint scope includes the requested model API.
+    gatewayRootKey:
+      type: http
+      scheme: bearer
+      description: Long-lived UniRouter API key; Agent capabilities are rejected.
+    agentCapability:
+      type: http
+      scheme: bearer
+      bearerFormat: urc_JWT
+      description: Five-minute, attenuation-only Agent capability for UniRouter model-gateway authority.
 
   parameters:
     Id:
@@ -977,6 +1093,63 @@ components:
           description: Deleted
 
   schemas:
+    AgentCapabilityLimits:
+      type: object
+      additionalProperties: false
+      required: [max_depth, max_children, max_descendants, cost_budget_cents, token_budget, rpm_limit, rps_limit, concurrency_limit, allowed_models, allowed_endpoints]
+      properties:
+        max_depth: { type: integer, minimum: 0, maximum: 16 }
+        max_children: { type: integer, minimum: 0, maximum: 10000 }
+        max_descendants: { type: integer, minimum: 0, maximum: 10000 }
+        cost_budget_cents: { type: integer, format: int64, minimum: 1 }
+        token_budget: { type: integer, format: int64, minimum: 1 }
+        rpm_limit: { type: integer, minimum: 1 }
+        rps_limit: { type: integer, minimum: 1 }
+        concurrency_limit: { type: integer, minimum: 1 }
+        allowed_models:
+          type: array
+          minItems: 1
+          maxItems: 128
+          uniqueItems: true
+          items: { type: string, maxLength: 128 }
+        allowed_endpoints:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum: [/v1/chat/completions, /v1/embeddings, /v1/models]
+    AgentCapabilityExchangeRequest:
+      type: object
+      additionalProperties: false
+      required: [root_agent_id, workflow_ttl_seconds, limits]
+      properties:
+        root_agent_id: { type: string, minLength: 1, maxLength: 128 }
+        workflow_ttl_seconds: { type: integer, format: int64, minimum: 300, maximum: 86400 }
+        limits: { $ref: "#/components/schemas/AgentCapabilityLimits" }
+    AgentCapabilityDelegateRequest:
+      type: object
+      additionalProperties: false
+      required: [child_agent_id, limits]
+      properties:
+        child_agent_id: { type: string, minLength: 1, maxLength: 128 }
+        limits: { $ref: "#/components/schemas/AgentCapabilityLimits" }
+    AgentCapabilityTokenResponse:
+      type: object
+      required: [schema_version, capability_token, token_type, workflow_id, root_agent_id, agent_id, depth, expires_at, refresh_after, workflow_expires_at, limits]
+      properties:
+        schema_version: { type: string, enum: [unirouter.agent-capability.v1] }
+        capability_token: { type: string, readOnly: true, description: Secret bearer capability beginning with urc_; never log or persist it. }
+        token_type: { type: string, enum: [Bearer] }
+        workflow_id: { type: string, pattern: '^capwf_[0-9a-f]{32}$' }
+        root_agent_id: { type: string }
+        agent_id: { type: string }
+        parent_agent_id: { type: string }
+        depth: { type: integer, minimum: 0, maximum: 16 }
+        expires_at: { type: string, format: date-time }
+        refresh_after: { type: string, format: date-time }
+        workflow_expires_at: { type: string, format: date-time }
+        limits: { $ref: "#/components/schemas/AgentCapabilityLimits" }
     SensitiveWordsMutation:
       type: object
       required: [words]

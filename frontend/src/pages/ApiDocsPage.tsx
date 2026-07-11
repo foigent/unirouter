@@ -33,6 +33,10 @@ const endpointGroups = [
       ['GET', '/v1/models', '兼容 OpenAI 协议的模型列表'],
       ['POST', '/v1/chat/completions', '兼容 OpenAI 协议的对话补全'],
       ['POST', '/v1/embeddings', '兼容 OpenAI 协议的向量接口'],
+      ['POST', '/v1/agent-capabilities/exchange', '根 API Key 显式登记 Supervisor/工作流并换取 5 分钟能力令牌'],
+      ['POST', '/v1/agent-capabilities/delegate', '父 Agent 显式登记一个子 Agent；权限只能缩小'],
+      ['POST', '/v1/agent-capabilities/refresh', '约第 3 分钟刷新；并发刷新收敛为同一个令牌'],
+      ['POST', '/v1/agent-capabilities/revoke', '根 API Key 撤销工作流，阻止所有副本的新准入'],
     ],
   },
   {
@@ -188,6 +192,13 @@ export default function ApiDocsPage() {
             <Text><Text code>X-Request-ID</Text>：UniRouter 每次请求强制生成的操作 ID，用于串联网关、计费、审计和故障切换。</Text>
             <Text><Text code>X-UniRouter-Client-Request-ID</Text>：调用方自己的关联值，只用于查找，不作为全局财务主键。</Text>
             <Text><Text code>Idempotency-Key</Text>：Chat / Embeddings 的 24 小时去重键，按组织、API Key 和请求内容隔离；当前仅返回状态回执，不保存或重放模型回答。</Text>
+          </div>
+        </Surface>
+        <Surface title="Agent 能力边界" description="UniRouter 只授予模型网关调用权，不授予 Tool、IAM、数据库或导出权限。">
+          <div style={{ display: 'grid', gap: 8 }}>
+            <Text>Supervisor 使用根 API Key 显式登记工作流；每个子 Agent 必须由父 Agent 调用委派接口登记，系统不会从普通流量中猜测子 Agent。</Text>
+            <Text>能力令牌最长 <Text code>5 分钟</Text>，通常在第 3 分钟附近带抖动刷新；工作流时长、深度、扇出和预算独立计算。</Text>
+            <Text>委派合同中的模型、接口、成本、Token、RPM、RPS 与并发上限只能保持或缩小；共享预算的运行时扣减由后续分布式策略批次接入。根权限变化最多 15 秒被所有实例重新核对；Redis 状态不可用时能力请求拒绝准入。</Text>
           </div>
         </Surface>
         {endpointGroups.map(group => (

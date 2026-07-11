@@ -17,8 +17,10 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/uniroute/unirouter/internal/admin"
+	"github.com/uniroute/unirouter/internal/agentcap"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/billing"
+	"github.com/uniroute/unirouter/internal/capapi"
 	"github.com/uniroute/unirouter/internal/config"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/filter"
@@ -80,6 +82,11 @@ func main() {
 	}
 	defer redisClient.Close()
 	log.Println("Connected to Redis")
+	agentCapabilityService, err := agentcap.NewService(postgres.Pool, redisClient.Client, cfg.APIKeyHashSecret)
+	if err != nil {
+		log.Fatalf("Failed to initialize Agent capability service: %v", err)
+	}
+	agentCapabilityHandler := capapi.NewHandler(agentCapabilityService)
 
 	// Initialize core components from one typed, read-only effective
 	// configuration registry. Dynamic policy rollout remains a later contract.
@@ -215,7 +222,7 @@ func main() {
 	mux.Handle("GET /metrics", metricsEndpoint)
 
 	// Gateway endpoints (with auth + rate limiting)
-	gatewayAuth := middleware.GatewayAuthWithAPIKeyHashSecret(postgres.Pool, cfg.APIKeyHashSecret)
+	gatewayAuth := middleware.GatewayAuthWithAgentCapabilities(postgres.Pool, cfg.APIKeyHashSecret, agentCapabilityService)
 	rateLimiter := middleware.RateLimit(redisClient.Client)
 	admissionMiddleware := middleware.AdmissionFromContext(admissionCtrl)
 	idempotencyStore := middleware.NewPostgresIdempotencyStore(postgres.Pool)
@@ -229,6 +236,10 @@ func main() {
 	mux.Handle("POST /v1/chat/completions", gatewayAuth(admissionMiddleware(rateLimiter(idempotencyGuard(chatHandler)))))
 	mux.Handle("POST /v1/embeddings", gatewayAuth(admissionMiddleware(rateLimiter(idempotencyGuard(embeddingsHandler)))))
 	mux.Handle("GET /v1/models", gatewayAuth(admissionMiddleware(http.HandlerFunc(relay.HandleModels))))
+	registerAgentCapabilityRoutes(mux, agentCapabilityHandler, agentCapabilityRouteGuards{
+		authenticate: gatewayAuth,
+		rateLimit:    rateLimiter,
+	})
 
 	// Admin auth middleware
 	adminAuth := middleware.AdminAuth(cfg.JWTSecret)
@@ -291,9 +302,10 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 </head>
 <body>
 <h1>UniRouter API Documentation</h1>
-<p class="muted">Current API contract index. Admin APIs use JWT Bearer auth. Gateway APIs use UniRouter API keys.</p>
+<p class="muted">Current API contract index. Admin APIs use JWT Bearer auth. Gateway model APIs accept UniRouter API keys or endpoint-scoped Agent capabilities.</p>
 <p>Admin Base URL: <code>/api/v1</code> &nbsp; Gateway Base URL: <code>/v1</code></p>
 <p><code>X-Request-ID</code> in every response is a server operation ID. Send caller correlation in <code>X-UniRouter-Client-Request-ID</code>. Chat and Embeddings accept <code>Idempotency-Key</code> for tenant/key/payload-bound metadata-only deduplication; completed model responses are not stored or replayed.</p>
+<p>Agent discovery is explicit: a supervisor exchanges its root API key, then registers each child with an attenuation-only capability. Capabilities last at most five minutes, normally refresh near minute three, grant model-gateway authority only, and never grant Tool, IAM, database or export authority.</p>
 <table>
 <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
 <tbody>
@@ -305,6 +317,10 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">GET</td><td><code>/v1/models</code></td><td>OpenAI-compatible model list</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/chat/completions</code></td><td>OpenAI-compatible chat completions</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/embeddings</code></td><td>OpenAI-compatible embeddings</td></tr>
+<tr><td class="method">POST</td><td><code>/v1/agent-capabilities/exchange</code></td><td>Register root Agent workflow using a root API key</td></tr>
+<tr><td class="method">POST</td><td><code>/v1/agent-capabilities/delegate</code></td><td>Register one child Agent with attenuation-only authority</td></tr>
+<tr><td class="method">POST</td><td><code>/v1/agent-capabilities/refresh</code></td><td>Refresh a five-minute Agent capability</td></tr>
+<tr><td class="method">POST</td><td><code>/v1/agent-capabilities/revoke</code></td><td>Revoke a workflow for new admissions</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/auth/login</code></td><td>Admin login</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/auth/oidc/config</code></td><td>OIDC login configuration</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/auth/oidc/start</code></td><td>OIDC login start</td></tr>
