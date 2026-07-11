@@ -1,10 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Button, Modal, Form, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
+import { Button, Modal, Form, Toast, Space, SideSheet, Input } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-import { MoneyText, PagedTable, PageHeader, Surface } from '../ui';
+import { isPlatformAdminRole } from '../navigation';
+import { useAuthStore } from '../store/auth';
+import { PagedTable, PageHeader, Surface } from '../ui';
 
 export default function OrgModelPricesPage() {
+  const user = useAuthStore((s) => s.user);
+  const canMutate = isPlatformAdminRole(user?.role);
   const [prices, setPrices] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -13,46 +17,35 @@ export default function OrgModelPricesPage() {
   const [showDrawer, setShowDrawer] = useState(false);
   const [editPrice, setEditPrice] = useState<any>(null);
   const [formApi, setFormApi] = useState<any>(null);
-  const [orgs, setOrgs] = useState<any[]>([]);
   const [modelNames, setModelNames] = useState<string[]>([]);
+  const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>();
+  const [orgFilter, setOrgFilter] = useState('');
 
-  const load = (p = page, size = pageSize) => {
+  const load = (p = page, size = pageSize, orgID = selectedOrgID) => {
     setLoading(true);
-    api.getOrgModelPrices(1, p, size)
-      .then((d: any) => { setPrices(d.data || []); setTotal(d.total || 0); })
+    api.getOrgModelPrices(p, size, orgID)
+      .then((d: any) => { setPrices(d.data || d.items || []); setTotal(d.total || 0); })
       .catch(console.error)
       .finally(() => setLoading(false));
   };
 
-  const loadOrgs = () => {
-    api.getUsers(1, 100)
-      .then((d: any) => {
-        const orgMap = new Map();
-        (d.data || []).forEach((u: any) => {
-          if (u.org_id && u.org_name && !orgMap.has(u.org_id)) {
-            orgMap.set(u.org_id, { label: u.org_name, value: u.org_id });
-          }
-        });
-        setOrgs(Array.from(orgMap.values()));
-      })
-      .catch(() => {});
-  };
-
-  useEffect(() => { load(1); loadOrgs(); api.getModelNames().then((d: any) => setModelNames(d.data || [])).catch(() => {}); }, []);
+  useEffect(() => { load(1); api.getModelNames().then((d: any) => setModelNames(d.data || [])).catch(() => {}); }, []);
 
   const closeDrawer = () => { setShowDrawer(false); setEditPrice(null); };
 
   const handleCreate = async (v: any) => {
+    const orgID = Number(v.org_id);
     try {
       await api.createOrgModelPrice({
-        org_id: parseInt(v.org_id),
+        org_id: orgID,
         model_name: v.model_name,
-        input_price_cents: Math.round(parseFloat(v.input_price) * 100),
-        output_price_cents: Math.round(parseFloat(v.output_price) * 100),
+        multiplier: Number(v.multiplier),
       });
       Toast.success('创建成功');
       closeDrawer();
-      load(1);
+      setSelectedOrgID(orgID);
+      setOrgFilter(String(orgID));
+      load(1, pageSize, orgID);
     } catch { Toast.error('创建失败'); }
   };
 
@@ -60,9 +53,7 @@ export default function OrgModelPricesPage() {
     if (!editPrice) return;
     try {
       await api.updateOrgModelPrice(editPrice.id, {
-        model_name: v.model_name,
-        input_price_cents: Math.round(parseFloat(v.input_price) * 100),
-        output_price_cents: Math.round(parseFloat(v.output_price) * 100),
+        multiplier: Number(v.multiplier),
       });
       Toast.success('更新成功');
       closeDrawer();
@@ -73,7 +64,7 @@ export default function OrgModelPricesPage() {
   const handleDelete = (id: number) => {
     Modal.confirm({
       title: '确认删除',
-      content: '确定要删除这个价格覆盖吗？',
+      content: '删除后，该组织会恢复使用 1.0 倍基础价格。确定继续吗？',
       onOk: async () => {
         try {
           await api.deleteOrgModelPrice(id);
@@ -88,6 +79,7 @@ export default function OrgModelPricesPage() {
     setEditPrice(null);
     setShowDrawer(true);
     formApi?.reset();
+    setTimeout(() => formApi?.setValue('org_id', selectedOrgID || user?.org_id), 0);
   };
 
   const openEdit = (r: any) => {
@@ -97,20 +89,22 @@ export default function OrgModelPricesPage() {
       formApi?.setValues({
         org_id: r.org_id?.toString(),
         model_name: r.model_name,
-        input_price: (r.input_price_cents / 100).toString(),
-        output_price: (r.output_price_cents / 100).toString(),
+        multiplier: r.multiplier,
       });
     }, 100);
   };
 
-  const columns = [
-    { title: 'ID', dataIndex: 'id', width: 60 },
-    { title: '组织', dataIndex: 'org_name', render: (v: string) => v || '-' },
-    { title: '模型', dataIndex: 'model_name' },
-    { title: '输入价格（元/千token）', dataIndex: 'input_price_cents', render: (v: number) => <MoneyText cents={v} precision={4} /> },
-    { title: '输出价格（元/千token）', dataIndex: 'output_price_cents', render: (v: number) => <MoneyText cents={v} precision={4} /> },
-    { title: '更新时间', dataIndex: 'updated_at', render: (v: string) => v || '-' },
+  const columns: any[] = [
+    { title: '策略 ID', dataIndex: 'id', width: 90 },
     {
+      title: '组织', dataIndex: 'org_name',
+      render: (v: string, record: any) => v ? `${v}（ID ${record.org_id}）` : `组织 ID ${record.org_id}`,
+    },
+    { title: '模型', dataIndex: 'model_name' },
+    { title: '计费倍率', dataIndex: 'multiplier', render: (v: number) => `${Number(v).toFixed(3).replace(/0+$/, '').replace(/\.$/, '')}×` },
+    { title: '更新时间', dataIndex: 'updated_at', render: (v: string) => v || '-' },
+  ];
+  if (canMutate) columns.push({
       title: '操作', width: 120,
       render: (_: any, record: any) => (
         <Space>
@@ -118,19 +112,49 @@ export default function OrgModelPricesPage() {
           <Button icon={<IconDelete />} size="small" type="danger" onClick={() => handleDelete(record.id)} />
         </Space>
       ),
-    },
-  ];
+    });
+
+  const applyOrgFilter = () => {
+    const parsed = Number.parseInt(orgFilter, 10);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      Toast.warning('请输入有效的组织 ID');
+      return;
+    }
+    setSelectedOrgID(parsed);
+    setPage(1);
+    load(1, pageSize, parsed);
+  };
+
+  const resetOrgFilter = () => {
+    setOrgFilter('');
+    setSelectedOrgID(undefined);
+    setPage(1);
+    load(1, pageSize, undefined);
+  };
 
   return (
     <div className="ur-page">
       <PageHeader
         eyebrow="Billing"
-        title="价格策略"
-        description="为指定组织配置模型价格覆盖，用于企业级差异化计费。"
-        actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增价格覆盖</Button>}
+        title="组织计费倍率"
+        description={canMutate
+          ? '按组织设置基础模型价格的乘数；例如 1.2× 表示按基础价格的 1.2 倍计费。'
+          : '只读查看本组织适用的计费倍率；倍率由平台管理员统一维护。'}
+        actions={canMutate ? <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增倍率</Button> : undefined}
       />
 
       <Surface>
+        {canMutate && <Space style={{ marginBottom: 16 }}>
+          <Input
+            aria-label="目标组织 ID"
+            placeholder="输入组织 ID"
+            value={orgFilter}
+            onChange={(value) => setOrgFilter(value)}
+            style={{ width: 180 }}
+          />
+          <Button onClick={applyOrgFilter}>查看目标组织</Button>
+          <Button onClick={resetOrgFilter}>返回我的组织</Button>
+        </Space>}
         <PagedTable
           columns={columns}
           dataSource={prices}
@@ -144,24 +168,23 @@ export default function OrgModelPricesPage() {
         />
       </Surface>
 
-      <SideSheet
-        title={editPrice ? '编辑价格覆盖' : '新增价格覆盖'}
+      {canMutate && <SideSheet
+        title={editPrice ? '编辑组织倍率' : '新增组织倍率'}
         visible={showDrawer}
         onCancel={closeDrawer}
         width={480}
       >
         <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={editPrice ? handleUpdate : handleCreate}>
-          <Form.Select field="org_id" label="组织" rules={[{ required: true, message: '必填' }]}
-            optionList={orgs} disabled={!!editPrice} />
-          <Form.Select field="model_name" label="模型名称" rules={[{ required: true, message: '请选择模型' }]} filter optionList={modelNames.map(m => ({ label: m, value: m }))} placeholder="选择或搜索模型" />
-          <Form.Input field="input_price" label="输入价格（元/千token）" rules={[{ required: true, message: '必填' }]} placeholder="0.01" />
-          <Form.Input field="output_price" label="输出价格（元/千token）" rules={[{ required: true, message: '必填' }]} placeholder="0.03" />
+          <Form.InputNumber field="org_id" label="组织 ID" min={1} rules={[{ required: true, message: '必填' }]}
+            disabled={!!editPrice} style={{ width: '100%' }} />
+          <Form.Select field="model_name" label="模型名称" rules={[{ required: true, message: '请选择模型' }]} filter optionList={modelNames.map(m => ({ label: m, value: m }))} placeholder="选择或搜索模型" disabled={!!editPrice} />
+          <Form.InputNumber field="multiplier" label="计费倍率" min={0.001} max={99.999} precision={3} rules={[{ required: true, message: '必填' }]} placeholder="例如 1.2" style={{ width: '100%' }} />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
             <Button onClick={closeDrawer}>取消</Button>
             <Button type="primary" onClick={() => formApi?.submitForm()}>{editPrice ? '更新' : '创建'}</Button>
           </div>
         </Form>
-      </SideSheet>
+      </SideSheet>}
     </div>
   );
 }

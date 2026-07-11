@@ -13,11 +13,7 @@ type routeSpec struct {
 }
 
 func TestAdminRoutesRegisteredForFrontendClient(t *testing.T) {
-	src, err := os.ReadFile("main.go")
-	if err != nil {
-		t.Fatalf("read main.go: %v", err)
-	}
-	main := string(src)
+	production := productionRouteSource(t)
 
 	routes := []string{
 		"POST /api/v1/auth/login",
@@ -107,9 +103,19 @@ func TestAdminRoutesRegisteredForFrontendClient(t *testing.T) {
 	}
 
 	for _, route := range routes {
-		if !strings.Contains(main, route) {
+		if !strings.Contains(production, route) {
 			t.Fatalf("route required by frontend client is not registered: %s", route)
 		}
+	}
+}
+
+func TestMainRegistersExtractedPricingRoutes(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	if !strings.Contains(string(src), "registerPricingRoutes(mux, adminHandler") {
+		t.Fatal("main.go does not call the extracted pricing route registrar")
 	}
 }
 
@@ -180,14 +186,10 @@ func TestBackendDocsPageUsesCurrentContractLanguage(t *testing.T) {
 func registeredMuxRoutes(t *testing.T) []routeSpec {
 	t.Helper()
 
-	srcBytes, err := os.ReadFile("main.go")
-	if err != nil {
-		t.Fatalf("read main.go: %v", err)
-	}
 	re := regexp.MustCompile(`mux\.Handle(?:Func)?\("([A-Z]+) ([^"]+)"`)
-	matches := re.FindAllStringSubmatch(string(srcBytes), -1)
+	matches := re.FindAllStringSubmatch(productionRouteSource(t), -1)
 	if len(matches) == 0 {
-		t.Fatal("no mux routes found in main.go")
+		t.Fatal("no mux routes found in cmd/uniroute production source")
 	}
 
 	seen := map[string]bool{}
@@ -202,6 +204,28 @@ func registeredMuxRoutes(t *testing.T) []routeSpec {
 		routes = append(routes, route)
 	}
 	return routes
+}
+
+func productionRouteSource(t *testing.T) string {
+	t.Helper()
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read cmd/uniroute: %v", err)
+	}
+	var source strings.Builder
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		contents, readErr := os.ReadFile(name)
+		if readErr != nil {
+			t.Fatalf("read %s: %v", name, readErr)
+		}
+		source.Write(contents)
+		source.WriteByte('\n')
+	}
+	return source.String()
 }
 
 func openAPIHasOperation(spec string, route routeSpec) bool {

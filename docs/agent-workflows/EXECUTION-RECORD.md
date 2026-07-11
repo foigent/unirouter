@@ -1,26 +1,39 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 0B P6-F32/P6-F39 Finance And Usage Tenant Isolation
+**Batch:** PRD6 Batch 0B P6-F34 Pricing Authority
 **Owner:** Codex
-**Risk:** R4 multi-tenant financial integrity and usage confidentiality
-**Status:** CI verified by PR #145 implementation head; merge pending
-**Integration:** PR #145 / branch `codex/prd6-p6f32-finance-tenant`; no deployment claimed
+**Risk:** R4 global and cross-tenant billing integrity
+**Status:** CI verified by PR #146 implementation head; merge pending
+**Integration:** PR #146 / branch `codex/prd6-p6f34-price-authority`; no deployment claimed
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
-## Scope
+## Current Scope
 
-1. Remove first/global-row behavior from wallet, grant, transaction and
-   reconciliation administration and bind it to the signed actor organization.
-2. Apply the same actor-organization predicate to request logs, usage analytics,
-   internal status, dashboard usage-derived activity and runtime traffic.
-3. Reject explicit foreign organization selection and org-zero identities;
-   preserve default-own and explicit-target platform behavior.
-4. Prove denied finance requests have no wallet, grant, transaction, audit or
-   notification side effect, and make foreign/missing log IDs non-enumerating.
-5. Preserve PRD5 history and explicitly defer PRD7 implementation and target
-   evidence until PRD6 closeout without changing the Gate A file deadline.
+1. Restrict global base-price and organization-multiplier mutations to platform
+   authority at route and handler boundaries.
+2. Keep organization-admin reads bound to the JWT organization and preserve
+   explicit platform target selection.
+3. Commit price changes and before/after audit rows atomically, including
+   accurate same-key concurrent upserts and renames.
+4. Align multiplier validation and frontend/API semantics with the database and
+   runtime billing contract.
+5. Preserve P6-F06/P6-F17/P6-F18 and target-evidence boundaries.
 
-## Current P6-F32/P6-F39 Behavior Change
+## Current P6-F34 Behavior Change
+
+- all six pricing mutations are platform-only and fail closed without a role;
+- organization reads default to the JWT organization; foreign and org-zero
+  tenant reads are denied;
+- writes and audit rows share one transaction; same-key upserts/renames use a
+  transaction advisory lock for accurate before-state;
+- multiplier values are limited to `0.001..99.999`;
+- the UI now uses the multiplier contract, removes organization-1 fallback and
+  hides mutations from tenant roles;
+- migrated JWT, billing, concurrency, audit rollback, frontend and route-wiring
+  tests pass; PR #146 implementation run `29137361064` passed Backend Tests,
+  Frontend Build and Docker Build.
+
+## Previous P6-F32/P6-F39 Behavior Change
 
 - one organization resolver binds non-platform actors to the organization in
   their JWT, rejects foreign selection and has no database-order fallback;
@@ -93,6 +106,8 @@
   `docs/ops/evidence/PRD6-B0B-P6F38-frontend-test-ci-local-20260711.md`.
 - P6-F32/P6-F39 local evidence:
   `docs/ops/evidence/PRD6-B0B-P6F32-P6F39-finance-and-usage-tenant-isolation-local-20260711.md`.
+- P6-F34 local evidence:
+  `docs/ops/evidence/PRD6-B0B-P6F34-pricing-authority-local-20260711.md`.
 - Product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
 - PRD7 candidate queue:
@@ -105,14 +120,27 @@
   `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`,
   `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`, and
   `docs/planning/PRD6-BACKLOG.md`.
-- Current code/tests: organization resolution plus finance, logs,
-  reconciliation, analytics/internal status, dashboard/runtime handlers; typed
-  frontend client and WalletPage capability tests; migrated signed-JWT
-  `finance_tenant_isolation_integration_test.go`.
+- Current code/tests: pricing route registration, platform-authority and
+  actor-organization handler guards, atomic audited price mutation, billing
+  multiplier validation, typed frontend pricing client/pages and migrated
+  signed-JWT `pricing_authority_integration_test.go`.
 
 ## Verification
 
-Current P6-F32/P6-F39 results on `codex/prd6-p6f32-finance-tenant`:
+Current P6-F34 results on `codex/prd6-p6f34-price-authority`:
+
+- migrated two-organization signed-JWT route-role, read-scope, denied
+  no-side-effect, billing-math and audit matrix: PASS;
+- same-key global/organization concurrent upsert before-state tests and audit
+  failure rollback: PASS;
+- `go test ./...`, `go test -race ./...` and `go vet ./...`: PASS;
+- frontend type-check, 27 files / 135 tests and production build: PASS;
+- independent review: no remaining blocker/high/medium;
+- PR #146 implementation head `0e15dbb`, run `29137361064`: `Backend Tests`,
+  `Frontend Build` and `Docker Build` PASS; final documentation head must pass
+  the same checks before merge.
+
+Previous P6-F32/P6-F39 results on `codex/prd6-p6f32-finance-tenant`:
 
 - migrated two-organization signed-JWT finance/usage matrix: PASS;
 - focused legacy `-tags=integration` wallet/grant handler cases: PASS after
@@ -245,9 +273,9 @@ PR #139 required checks for final scalability-audit evidence head `6c8c192`:
 - `Frontend Build`: PASS;
 - `Docker Build`: PASS.
 
-P6-F01, P6-F02, P6-F16, P6-F33, P6-F37 and P6-F38 are `CI verified`. D6-08
-accepts P6-F32-P6-F36. P6-F32 and adjacent safe-remediation row P6-F39 are
-`CI verified` by PR #145 with merge pending; P6-F34-P6-F36 remain unremediated. No
+P6-F01, P6-F02, P6-F16, P6-F32, P6-F33, P6-F37, P6-F38 and P6-F39 are merged
+and `CI verified`. D6-08 accepts P6-F32-P6-F36. P6-F34 is `CI verified` by PR
+#146 implementation head with merge pending; P6-F35-P6-F36 remain unremediated. No
 documentation or local test promotes a row to target verified.
 
 No deployment, target mutation/probe, real or paid request, credential change,

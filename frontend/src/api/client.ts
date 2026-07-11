@@ -248,9 +248,9 @@ export const api = {
   getModelPriceList: (page = 1, pageSize = 20) =>
     request(`/model-prices?page=${page}&page_size=${pageSize}`),
   getModelNames: () => request('/model-names'),
-  createModelPrice: (data: any) =>
+  createModelPrice: (data: { model_name: string; input_price_cents: number; output_price_cents: number }) =>
     request('/model-prices', { method: 'POST', body: JSON.stringify(data) }),
-  updateModelPrice: (id: number, data: any) =>
+  updateModelPrice: (id: number, data: { model_name?: string; input_price_cents?: number; output_price_cents?: number }) =>
     request(`/model-prices/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteModelPrice: (id: number) =>
     request(`/model-prices/${id}`, { method: 'DELETE' }),
@@ -310,11 +310,11 @@ export const api = {
   })),
 
   // Org Model Prices
-  getOrgModelPrices: (orgId = 1, page = 1, pageSize = 20) =>
-    request(`/org-model-prices?org_id=${orgId}&page=${page}&page_size=${pageSize}`),
-  createOrgModelPrice: (data: any) =>
+  getOrgModelPrices: (page = 1, pageSize = 20, orgId?: number) =>
+    request(appendParams('/org-model-prices', { page, page_size: pageSize, org_id: orgId })),
+  createOrgModelPrice: (data: { org_id: number; model_name: string; multiplier: number }) =>
     request('/org-model-prices', { method: 'POST', body: JSON.stringify(data) }),
-  updateOrgModelPrice: (id: number, data: any) =>
+  updateOrgModelPrice: (id: number, data: { multiplier: number }) =>
     request(`/org-model-prices/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteOrgModelPrice: (id: number) =>
     request(`/org-model-prices/${id}`, { method: 'DELETE' }),
