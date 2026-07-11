@@ -24,7 +24,7 @@
 17. `docs/ops/evidence/PRD6-ENG-P6TESTDB-admin-integration-isolation-local-20260711.md` - deterministic migrated admin integration and CI-gate evidence.
 18. `docs/ops/evidence/PRD6-B0C-P6F03-retry-classification-local-20260711.md` - CI-verified provider retry classification evidence.
 19. `docs/ops/evidence/PRD6-B0C-P6F04-embeddings-failover-local-20260711.md` - CI-verified Embeddings failover-parity evidence.
-20. `docs/ops/evidence/PRD6-B0C-P6F05-routing-config-truth-local-20260711.md` - local typed routing/budget-alert configuration truth; required CI pending.
+20. `docs/ops/evidence/PRD6-B0C-P6F05-routing-config-truth-local-20260711.md` - CI-verified typed routing/budget-alert configuration truth.
 21. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` - source-backed UI, reconciliation, correlation, architecture and upgrade audit.
 22. `docs/planning/PRD7-CANDIDATE-BACKLOG.md` - future first direction selected; implementation deferred until PRD6 closeout.
 23. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` - accepted future independent Cache Service target, planning bands and SaaS prerequisites; implementation deferred.
@@ -90,9 +90,9 @@ billable-stream recovery behavior; P6-F20 remains separate. These changes add
 no response cache and make no target or production claim.
 P6-F37 audit-log tenant isolation and P6-F38 frontend test
 enforcement are merged and CI verified by PR #143 / `a1e0ad6` under the safe
-remediation rule. P6-TEST-DB-001 and P6-F03/P6-F04 are CI verified / closed by
-PRs #155/#156/#157 and post-merge main CI. P6-F05 is locally verified pending
-required CI: `effective-config.v1` exposes the driving routing configuration and
+remediation rule. P6-TEST-DB-001 and P6-F03/P6-F04/P6-F05 are CI verified /
+closed by PRs #155/#156/#157/#158 and post-merge main CI. For P6-F05,
+`effective-config.v1` exposes the driving routing configuration and
 one project-scoped budget-alert contract, while the broken global first-wallet
 path is removed and its historical keys are marked retired/ineffective. The
 adaptive-trust, Digital Twin,
@@ -124,7 +124,7 @@ no PRD6 response persistence, deployment or semantic cache is accepted.
 | What does P6-F18 prove about wallet invariants and post-stream recovery? | `docs/ops/evidence/PRD6-B0B-P6F18A-billing-reservation-invariants-local-20260711.md`, `docs/ops/evidence/PRD6-B0B-P6F18B-stream-settlement-recovery-local-20260711.md` |
 | What proves the current admin integration gate is deterministic? | `docs/ops/evidence/PRD6-ENG-P6TESTDB-admin-integration-isolation-local-20260711.md` |
 | What do P6-F03/P6-F04 prove about retry and endpoint parity? | `docs/ops/evidence/PRD6-B0C-P6F03-retry-classification-local-20260711.md`, `docs/ops/evidence/PRD6-B0C-P6F04-embeddings-failover-local-20260711.md` |
-| What does local P6-F05 prove about effective routing and budget-alert truth? | `docs/ops/evidence/PRD6-B0C-P6F05-routing-config-truth-local-20260711.md` |
+| What does P6-F05 prove about effective routing and budget-alert truth? | `docs/ops/evidence/PRD6-B0C-P6F05-routing-config-truth-local-20260711.md` |
 | What did the UI/reconciliation/correlation/architecture audit conclude? | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` |
 | Which items are candidates for PRD7 rather than accepted scope? | `docs/planning/PRD7-CANDIDATE-BACKLOG.md` |
 | What is the accepted future Cache Service target and when should it split? | `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` |
@@ -194,8 +194,8 @@ later P6-F35 target cutover must first drain old control-plane binaries and use
 a non-rolling activation; new-version replicas converge global-word changes
 through the existing approximately one-minute reload path.
 No global-settings UI was added. Typed configuration ownership and the
-budget/alert key, scope and audit truth chain are locally reconciled by P6-F05,
-pending required PR and post-merge CI. P6-F17 adds
+budget/alert key, scope and audit truth chain are CI verified / closed by P6-F05.
+P6-F17 adds
 separate operation/client identity and tenant-scoped Audit readback but no
 generic mutation replay or durable audit claim.
 P6-F36 does not reopen P6-F16, add a migration/RLS/foreign-key redesign, change

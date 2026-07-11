@@ -1,10 +1,10 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 0C P6-F05 Effective Configuration And Budget Alert Truth
+**Batch:** PRD6 Batch 0C P6-F05 CI Evidence Closeout
 **Owner:** Codex
 **Risk:** R3 request routing, billing and tenant notification behavior
-**Status:** Local verified; required PR CI pending
-**Integration:** Branch `codex/prd6-p6f05-routing-config-truth`; PR pending; no deployment, target or production claim
+**Status:** CI verified / closed
+**Integration:** PR #158 required run `29160329032`; merge `ca02ecb`; post-merge main run `29160494169`; historical branch retained; no deployment, target or production claim
 **Previous batch:** P6-F04 CI verified / closed by PR #157 and post-merge main run `29159155254`
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
@@ -43,7 +43,8 @@
 - focused race matrices pass ten repetitions; full Go race/vet, admin and
   routing/budget integration, OpenAPI parse, frontend 27 files / 137 tests,
   type-check and production build pass locally;
-- Docker is unavailable locally and remains an explicit required-CI gate;
+- PR #158 exact-head Backend/Frontend/Docker required CI passed, including both
+  P6-F05 PostgreSQL gates; post-merge main CI passed the same jobs;
 - evidence: `docs/ops/evidence/PRD6-B0C-P6F05-routing-config-truth-local-20260711.md`.
 
 ## Previous P6-F04 Behavior Change
@@ -516,8 +517,8 @@ drain old control-plane binaries before a non-rolling activation of only the new
 version; old binaries do not provide mixed-version safety. New-version replicas
 converge a committed sensitive-word version through the existing approximately
 one-minute reload. This batch adds no global-settings UI. Typed configuration
-ownership and the budget/alert key, scope and audit truth chain are locally
-reconciled by P6-F05, pending required PR and post-merge CI.
+ownership and the budget/alert key, scope and audit truth chain are CI verified /
+closed by P6-F05.
 P6-F17 provides metadata-only request replay protection; durable
 ambiguous-commit recovery remains P6-F20.
 

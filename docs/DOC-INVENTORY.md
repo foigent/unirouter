@@ -154,7 +154,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | `docs/ops/evidence/PRD6-ENG-P6TESTDB-admin-integration-isolation-local-20260711.md` | Current P6-TEST-DB-001 isolated migrated admin-suite and required-CI evidence |
 | `docs/ops/evidence/PRD6-B0C-P6F03-retry-classification-local-20260711.md` | Current P6-F03 local and CI retry-classification and billing/trace invariant evidence |
 | `docs/ops/evidence/PRD6-B0C-P6F04-embeddings-failover-local-20260711.md` | Current P6-F04 local and CI Embeddings multi-route/final-attempt evidence |
-| `docs/ops/evidence/PRD6-B0C-P6F05-routing-config-truth-local-20260711.md` | Current P6-F05 local effective configuration, retired global alert keys, project budget scope, API/UI/trace and PostgreSQL evidence; required CI pending |
+| `docs/ops/evidence/PRD6-B0C-P6F05-routing-config-truth-local-20260711.md` | Current P6-F05 local and CI effective configuration, retired global alert keys, project budget scope, API/UI/trace and PostgreSQL evidence |
 | `docs/planning/PRD5-CURRENT-GAP-AUDIT-20260710.md` | PRD5 closeout accounting and historical next-window input |
 | `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md` | PRD5 Batch 1X local repository audit, P5-F12 screening decisions, safe local Logs/CI fixes, and INFRA-SEC-001 plan |
 | `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md` | PRD5 Batch 1Y accepted UniRouter-owned implementation and local full verification |

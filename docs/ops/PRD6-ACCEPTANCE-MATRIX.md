@@ -1,7 +1,7 @@
 # PRD6 Acceptance Matrix
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; Batch 0C active; P6-F03/P6-F04 CI verified and P6-F05 locally verified pending required CI
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; Batch 0C active; P6-F03/P6-F04/P6-F05 CI verified / closed; P6-F06 next
 > Rule: a proposed row is not accepted implementation scope until its scope
 > state changes through an explicit decision. PRD5 evidence is referenced, not
 > rewritten.
@@ -36,7 +36,7 @@
 | P6-F18 | Reservation is pool-safe and reaches exactly one durable terminal state after billable output | UniRouter | P0 / MVP financial integrity | Accepted urgent Batch 0B; CI verified / closed | pool-size barrier; 100-way Settle/Cancel race; post-chunk DB failure/restart; wallet/ledger invariants; multiplier price version | F18A verifies pool-safe Freeze, source-preserving grant/cash holds and refunds, immutable effective price/multiplier, exact-funds duplicate handling and one terminal ledger event. F18B persists `settlement_pending` before the first billable stream data event, persists immutable final usage, forbids post-output cancellation, and uses leased bounded restart recovery. Twenty concurrent workers after a simulated post-chunk DB loss produce one terminal settlement; payload-missing rows remain held without guessed charge/refund. PR #151 / run `29154664491` / merge `7db1efc` and PR #153 / run `29155948787` / merge `b30bc9d` passed; post-merge main runs `29154820102` and `29156096777` passed all required jobs. No target claim; per-chunk journal and general outbox remain P6-F20. Evidence: `docs/ops/evidence/PRD6-B0B-P6F18A-billing-reservation-invariants-local-20260711.md`, `docs/ops/evidence/PRD6-B0B-P6F18B-stream-settlement-recovery-local-20260711.md` |
 | P6-F03 | Retry only retryable provider failures and preserve safe client/policy response semantics | UniRouter | P0 / MVP correctness | Accepted Batch 0C | adapter matrix tests; no retry on 4xx/policy errors; bounded retry on classified transient failures; trace and billing invariants | CI verified / closed by PR #156, merge `f6f075a` and post-merge main run `29158395734`; evidence: `docs/ops/evidence/PRD6-B0C-P6F03-retry-classification-local-20260711.md` |
 | P6-F04 | Chat and Embeddings have route/failover parity | UniRouter | P0 / MVP correctness | Accepted Batch 0C | multi-route embeddings integration tests; auth/billing/trace parity; all-routes-fail behavior | CI verified / closed by PR #157, merge `36f736c` and post-merge main run `29159155254`; evidence: `docs/ops/evidence/PRD6-B0C-P6F04-embeddings-failover-local-20260711.md` |
-| P6-F05 | Effective retry/circuit/cooldown and project budget-alert configuration are wired, versioned and observable | UniRouter | P0 / MVP correctness | Accepted Batch 0C | config default/override tests; no hidden hard-coded divergence; route-decision config evidence; one tenant/project alert ledger with retired ambiguous global keys | Local verified: `effective-config.v1` contains the driving immutable `routing-config.v1` and active `project-budget-alert.v1` contract; route and two-tenant budget state tests, trace, runtime API/UI and retired-global-key behavior pass; required PR CI pending; evidence: `docs/ops/evidence/PRD6-B0C-P6F05-routing-config-truth-local-20260711.md` |
+| P6-F05 | Effective retry/circuit/cooldown and project budget-alert configuration are wired, versioned and observable | UniRouter | P0 / MVP correctness | Accepted Batch 0C | config default/override tests; no hidden hard-coded divergence; route-decision config evidence; one tenant/project alert ledger with retired ambiguous global keys | CI verified / closed: `effective-config.v1` contains the driving immutable `routing-config.v1` and active `project-budget-alert.v1` contract; route and two-tenant budget state tests, trace, runtime API/UI and retired-global-key behavior passed PR #158 run `29160329032`, merge `ca02ecb` and post-merge main run `29160494169`; evidence: `docs/ops/evidence/PRD6-B0C-P6F05-routing-config-truth-local-20260711.md` |
 | P6-F06 | Organization multiplier cannot create an uncollected under-freeze settlement | UniRouter | P0 / MVP correctness | Accepted Batch 0C | insufficient-freeze tests; atomic debit/loss rules; cancel/refund and concurrent settlement tests | Not started |
 | P6-F07 | Shared RPM/RPS/TPM/concurrency policy with explicit selectors and failure semantics | UniRouter | P1 / MVP | Accepted | multi-instance load/fault tests; shadow/enforce modes; policy-version trace; bounded metrics; fail-mode tests | Not started |
 | P6-F08 | Routing Policy V1 provides explainable priority/weight/retry/cooldown/failover | UniRouter | P1 / MVP | Accepted | deterministic policy fixtures; Chat/Embeddings parity; fault injection; candidate/exclusion/fallback evidence | Not started |
@@ -69,8 +69,8 @@ persistence is authorized, and semantic cache still requires a separate later
 decision.
 
 P6-F35 did not close P6-F05. The typed configuration registry and budget-alert
-key/scope/audit truth chain are now locally reconciled under P6-F05, pending
-required PR and post-merge CI. P6-F17 supplies separate
+key/scope/audit truth chain are now CI verified / closed under P6-F05. P6-F17
+supplies separate
 server/client correlation plus tenant-scoped Audit readback for an ambiguous
 control-plane response; it does not silently make every administrator mutation
 replayable or close P6-F20 durability. P6-F35 adds no global-settings UI.

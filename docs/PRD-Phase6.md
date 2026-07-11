@@ -247,7 +247,7 @@ binaries do not provide mixed-version safety. Other new-version instances
 converge to a committed sensitive-word version through the existing reload path
 in approximately one minute; no new global-settings UI is included. The typed
 configuration registry and confirmed budget/alert configuration-truth gaps are
-locally reconciled by P6-F05, pending required PR and post-merge CI. P6-F17 supplies separate operation/client
+CI verified / closed by P6-F05. P6-F17 supplies separate operation/client
 correlation and Audit readback, but does not imply generic mutation replay or
 P6-F20 durability.
 
