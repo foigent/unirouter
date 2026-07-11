@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F03/P6-F04/P6-F05 are CI verified / closed; 9 accepted feature rows remain not started
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F03/P6-F04/P6-F05 are CI verified / closed; P6-F06 is Local verified / CI pending; 8 accepted feature rows remain not started
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -32,7 +32,8 @@ required CI. No scope decision grants target/deployment/data/cost authorization.
 - 25 are accepted implementation scope;
 - 16 are CI verified / closed: P6-F01 through P6-F05, P6-F16, P6-F17, P6-F18
   and P6-F32 through P6-F39;
-- 9 accepted rows remain not started: P6-F06 through P6-F11 and P6-F19
+- 1 accepted row is Local verified / CI pending: P6-F06;
+- 8 accepted rows remain not started: P6-F07 through P6-F11 and P6-F19
   through P6-F21;
 - 14 rows are not accepted: P6-F12 through P6-F15 and P6-F22 through P6-F31;
 - `P6-TEST-DB-001` is a separate accepted engineering-integrity issue outside
@@ -175,8 +176,8 @@ add a migration, RLS/composite/alias foreign keys, change unregistered-model or
 
 **Risk:** R3 request/billing behavior.
 **Status:** accepted by D6-01; items 1-3 P6-F03/P6-F04/P6-F05 are CI verified /
-closed; P6-F06 is next. Deliver each independently reviewable item through its
-own branch/PR.
+closed. P6-F06 source/test evidence is Local verified and its required CI is
+pending. Deliver each independently reviewable item through its own branch/PR.
 
 Order within the batch:
 
@@ -186,7 +187,9 @@ Order within the batch:
    tests, then wire one effective retry/circuit/cooldown configuration source
    and emit its version/effective values in safe evidence;
 4. audit the remaining P6-F06 under-freeze delta against the completed P6-F18
-   price-pin foundation, then implement only the missing invariant;
+   price-pin foundation, then implement only the missing invariant — Local
+   verified: dedicated insufficient-funds, 32-way exact settlement and
+   cancel/refund PostgreSQL tests plus a fail-closed required CI step;
 5. handle stream Scanner errors, response-body lifetime, single-writer/flush and
    timeout semantics safely;
 6. preserve the P6-F35 strict-version sensitive-word reload and P6-F05 typed
