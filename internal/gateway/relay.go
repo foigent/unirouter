@@ -739,7 +739,6 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		markerCancel()
 		if err == nil {
 			billableOutputMarked = true
-			relay.recordTraceEvent(ctx, requestID, "billing.output_marked", "billing", "info", model, requestedModel, route, http.StatusOK, elapsedMilliseconds(requestStart), map[string]interface{}{})
 			return true
 		}
 
