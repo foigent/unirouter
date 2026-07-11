@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F16/P6-F32/P6-F33/P6-F37/P6-F38/P6-F39 CI verified; PR #145 merge pending
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F16/P6-F32/P6-F33/P6-F37/P6-F38/P6-F39 merged; P6-F34 CI verified by PR #146 implementation head; merge pending
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -85,9 +85,10 @@ evidence.
   logs prove the migrated PostgreSQL matrix and all twelve authenticated
   subtests passed rather than skipped; post-merge `main` CI also passed.
 - P6-F32 through P6-F36 are later source-confirmed administrator-surface inputs
-  accepted by D6-08. P6-F33 is CI verified by PR #142 / `7173c59`; P6-F32 and
-  adjacent safe-remediation row P6-F39 are CI verified by PR #145 with merge
-  pending. P6-F34 through P6-F36 remain unremediated. P6-F37
+  accepted by D6-08. P6-F32/P6-F39 are merged and CI verified by PR #145 /
+  `609385f`; P6-F33 is CI verified by PR #142 / `7173c59`; P6-F34 is CI
+  verified by PR #146 implementation head with merge pending. P6-F35/P6-F36
+  remain unremediated. P6-F37
   and P6-F38 are merged and CI verified by PR #143 / `a1e0ad6`.
 
 ## PRD5 Closure Guard
@@ -137,7 +138,8 @@ required to continue the accepted P0/P1 work. D6-01/D6-02 do not authorize
 deployment, target mutation, paid shadow traffic, raw-payload expansion, a new
 X-Insight contract, semantic response cache, video execution, or an IAM rewrite.
 
-D6-08 authorizes P6-F32 through P6-F36 through separate reviewable PRs. P6-F33
-is CI verified. P6-F32/P6-F39 are CI verified by PR #145 with merge pending.
+D6-08 authorizes P6-F32 through P6-F36 through separate reviewable PRs. P6-F32,
+P6-F33 and P6-F39 are merged and CI verified. P6-F34 is CI verified by PR #146
+implementation head with merge pending.
 P6-F37/P6-F38 are merged and CI verified by PR #143; post-merge main run
 `29133690338` passed Backend Tests, Frontend Build and Docker Build.

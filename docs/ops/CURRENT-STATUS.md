@@ -9,7 +9,10 @@
 > squash-merged by PR #143 as `a1e0ad61ed44f02f32317131a1920a6181e43645`;
 > post-merge main CI run `29133690338` passed all three jobs.
 > P6-F32 finance/reconciliation and adjacent P6-F39 usage-derived tenant
-> isolation are CI verified by PR #145 implementation head `3ee6a41`; merge is
+> isolation were squash-merged by PR #145 as
+> `609385f663cee883ad5965facb25ce4185d8b89a`; post-merge main CI run
+> `29136296782` passed all three jobs. P6-F34 pricing authority is CI verified
+> by PR #146 implementation head `0e15dbb` / run `29137361064`; merge is
 > pending and no deployment is claimed.
 > D6-01, D6-02, D6-08 and D6-09 were accepted by the User on 2026-07-11; advanced
 > innovation rows P6-F23 through P6-F31 remain proposed.
@@ -35,6 +38,8 @@
   `docs/ops/evidence/PRD6-B0B-P6F38-frontend-test-ci-local-20260711.md`.
 - P6-F32/P6-F39 finance and usage tenant-isolation local evidence:
   `docs/ops/evidence/PRD6-B0B-P6F32-P6F39-finance-and-usage-tenant-isolation-local-20260711.md`.
+- P6-F34 pricing-authority local evidence:
+  `docs/ops/evidence/PRD6-B0B-P6F34-pricing-authority-local-20260711.md`.
 - Source-backed product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
 - PRD7 candidate-only split (not Accepted Scope):
@@ -74,9 +79,9 @@ Backend log shows all twelve authenticated subtests PASS rather than SKIP. A
 later read-only audit found P6-F32 through P6-F36 across finance, notifications,
 pricing, global settings and organization model governance. D6-08 separately
 accepted those rows with tenant roles confined to their JWT organization and
-platform-only global/multiplier authority. P6-F33/P6-F37/P6-F38 are merged and
-CI verified. P6-F32 and adjacent safe-remediation row P6-F39 are CI verified by
-PR #145 with merge pending; P6-F34-P6-F36 remain unremediated. No audit row is
+platform-only global/multiplier authority. P6-F32/P6-F33/P6-F37/P6-F38/P6-F39
+are merged and CI verified. P6-F34 is CI verified by PR #146 implementation
+head with merge pending; P6-F35-P6-F36 remain unremediated. No audit row is
 presented as a production
 incident, 100x proof, or implemented remediation before its exact evidence
 exists.

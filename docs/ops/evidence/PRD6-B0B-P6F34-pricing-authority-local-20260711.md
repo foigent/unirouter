@@ -3,7 +3,7 @@
 > Date: 2026-07-11
 > Base: `609385f663cee883ad5965facb25ce4185d8b89a`
 > Branch: `codex/prd6-p6f34-price-authority`
-> Evidence level: local verified; PR/required CI/merge pending; no deployment is claimed
+> Evidence level: CI verified by PR #146 implementation head `0e15dbb` / run `29137361064`; final documentation head and merge pending; no deployment is claimed
 
 ## Confirmed Pre-Fix Finding
 
@@ -108,7 +108,11 @@ suite passes 27 files / 135 tests; type-check and production build pass. The
 build retains the existing large-chunk warning. The macOS race link step emits
 the existing non-failing `LC_DYSYMTAB` warning. Independent review found no
 remaining blocker, high or medium finding after the fail-closed, numeric-bound
-and concurrent before-state fixes.
+and concurrent before-state fixes. PR #146 implementation head
+`0e15dbb85418aab99c24189eb99d4ddb05068f49` passed `Backend Tests`, `Frontend
+Build` (including the 135-test suite) and `Docker Build` in required CI run
+`29137361064`. The final documentation head remains subject to the same required
+checks before merge.
 
 ## Explicit Remaining Boundaries
 
