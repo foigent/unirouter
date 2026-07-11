@@ -37,12 +37,12 @@ func SetupTestDB(t *testing.T) *pgxpool.Pool {
 
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
-		t.Skipf("cannot connect to test DB: %v (set TEST_DATABASE_URL or create uniroute_test)", err)
+		testDatabaseUnavailable(t, "cannot connect to test DB: %v (set TEST_DATABASE_URL or create uniroute_test)", err)
 	}
 
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
-		t.Skipf("cannot ping test DB: %v", err)
+		testDatabaseUnavailable(t, "cannot ping test DB: %v", err)
 	}
 
 	// Truncate all business tables in dependency order
@@ -69,29 +69,29 @@ func SetupIsolatedTestDB(t *testing.T) *pgxpool.Pool {
 
 	adminPool, err := pgxpool.New(ctx, adminDSN)
 	if err != nil {
-		t.Skipf("cannot connect to PostgreSQL admin database: %v", err)
+		testDatabaseUnavailable(t, "cannot connect to PostgreSQL admin database: %v", err)
 	}
 	if err := adminPool.Ping(ctx); err != nil {
 		adminPool.Close()
-		t.Skipf("cannot ping PostgreSQL admin database: %v", err)
+		testDatabaseUnavailable(t, "cannot ping PostgreSQL admin database: %v", err)
 	}
 
 	if _, err := adminPool.Exec(ctx, `CREATE DATABASE `+quoteIdent(dbName)); err != nil {
 		adminPool.Close()
-		t.Skipf("cannot create temporary test database %s: %v", dbName, err)
+		testDatabaseUnavailable(t, "cannot create temporary test database %s: %v", dbName, err)
 	}
 
 	pool, err := pgxpool.New(ctx, tempDSN)
 	if err != nil {
 		_, _ = adminPool.Exec(ctx, `DROP DATABASE IF EXISTS `+quoteIdent(dbName))
 		adminPool.Close()
-		t.Skipf("cannot connect to temporary test database %s: %v", dbName, err)
+		testDatabaseUnavailable(t, "cannot connect to temporary test database %s: %v", dbName, err)
 	}
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
 		_, _ = adminPool.Exec(ctx, `DROP DATABASE IF EXISTS `+quoteIdent(dbName))
 		adminPool.Close()
-		t.Skipf("cannot ping temporary test database %s: %v", dbName, err)
+		testDatabaseUnavailable(t, "cannot ping temporary test database %s: %v", dbName, err)
 	}
 
 	t.Cleanup(func() {
@@ -139,6 +139,15 @@ func tempDatabaseDSNs(baseDSN string) (adminDSN, tempDSN, dbName string, err err
 
 func quoteIdent(value string) string {
 	return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
+}
+
+func testDatabaseUnavailable(t *testing.T, format string, args ...any) {
+	t.Helper()
+	required := strings.TrimSpace(os.Getenv("REQUIRE_TEST_DATABASE"))
+	if required == "1" || strings.EqualFold(required, "true") {
+		t.Fatalf(format, args...)
+	}
+	t.Skipf(format, args...)
 }
 
 // TruncateAll truncates all business tables in dependency order.

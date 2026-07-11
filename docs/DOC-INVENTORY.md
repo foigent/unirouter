@@ -20,6 +20,7 @@
 | `docs/ops/evidence/PRD6-B0B-P6F17-operation-idempotency-identity-local-20260711.md` | P6-F17 server/client identity, metadata-only idempotency, attempt ledger, migration and PR #149/post-merge CI evidence |
 | `docs/ops/evidence/PRD6-B0B-P6F18A-billing-reservation-invariants-local-20260711.md` | P6-F18A pool-safe Freeze, price/source snapshot, wallet/grant conservation and single-terminal CI evidence |
 | `docs/ops/evidence/PRD6-B0B-P6F18B-stream-settlement-recovery-local-20260711.md` | P6-F18B pre-output marker, immutable usage, non-cancellation, leased restart recovery and PR #153/post-merge CI evidence |
+| `docs/ops/evidence/PRD6-ENG-P6TESTDB-admin-integration-isolation-local-20260711.md` | P6-TEST-DB-001 stale shared-schema reproduction, isolated migrated admin suite and required-CI gate evidence |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | Source-backed audit/reconciliation/correlation/UI/architecture/upgrade findings, Four Quadrants and PRD6 batches |
 | `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | PRD7 candidate split; first future direction selected, all implementation deferred until PRD6 closeout |
 | `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` | Accepted future Cache Service direction, service boundary, capacity planning triggers, SaaS cell reuse and non-authorization guardrails |
@@ -147,6 +148,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | `docs/ops/evidence/PRD6-B0B-P6F17-operation-idempotency-identity-local-20260711.md` | Current P6-F17 local and CI-verified Scheme A identity/idempotency evidence; target/production claims remain separate |
 | `docs/ops/evidence/PRD6-B0B-P6F18A-billing-reservation-invariants-local-20260711.md` | Current P6-F18A local and CI evidence for wallet/reservation invariants |
 | `docs/ops/evidence/PRD6-B0B-P6F18B-stream-settlement-recovery-local-20260711.md` | Current P6-F18B local and CI evidence; P6-F20 and target/production claims remain separate |
+| `docs/ops/evidence/PRD6-ENG-P6TESTDB-admin-integration-isolation-local-20260711.md` | Current P6-TEST-DB-001 isolated migrated admin-suite and required-CI evidence |
 | `docs/planning/PRD5-CURRENT-GAP-AUDIT-20260710.md` | PRD5 closeout accounting and historical next-window input |
 | `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md` | PRD5 Batch 1X local repository audit, P5-F12 screening decisions, safe local Logs/CI fixes, and INFRA-SEC-001 plan |
 | `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md` | PRD5 Batch 1Y accepted UniRouter-owned implementation and local full verification |

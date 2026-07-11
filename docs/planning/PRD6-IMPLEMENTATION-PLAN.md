@@ -36,7 +36,8 @@ required CI. No scope decision grants target/deployment/data/cost authorization.
   through P6-F21;
 - 14 rows are not accepted: P6-F12 through P6-F15 and P6-F22 through P6-F31;
 - `P6-TEST-DB-001` is a separate accepted engineering-integrity issue outside
-  the feature-row count and remains partially remediated;
+  the feature-row count; its isolated current-schema admin suite and required-CI
+  gate are Local verified with PR CI pending;
 - external-boundary and deferred target-evidence rows are not UniRouter PRD6
   source implementation work.
 

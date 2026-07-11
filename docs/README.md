@@ -15,6 +15,7 @@
 - [ops/evidence/PRD6-B0B-P6F17-operation-idempotency-identity-local-20260711.md](ops/evidence/PRD6-B0B-P6F17-operation-idempotency-identity-local-20260711.md) — P6-F17 服务端操作、客户端幂等和链路身份 CI 证据
 - [ops/evidence/PRD6-B0B-P6F18A-billing-reservation-invariants-local-20260711.md](ops/evidence/PRD6-B0B-P6F18A-billing-reservation-invariants-local-20260711.md) — P6-F18A 钱包/预留/价格快照/单终态 CI 证据
 - [ops/evidence/PRD6-B0B-P6F18B-stream-settlement-recovery-local-20260711.md](ops/evidence/PRD6-B0B-P6F18B-stream-settlement-recovery-local-20260711.md) — P6-F18B 流式输出标记、用量持久化和重启恢复 CI 证据
+- [ops/evidence/PRD6-ENG-P6TESTDB-admin-integration-isolation-local-20260711.md](ops/evidence/PRD6-ENG-P6TESTDB-admin-integration-isolation-local-20260711.md) — P6-TEST-DB-001 管理端集成测试隔离、当前迁移和 required CI 证据
 - [planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md](planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md) — UI、对账、链路身份、架构与 2B 升级审计
 - [planning/PRD7-CANDIDATE-BACKLOG.md](planning/PRD7-CANDIDATE-BACKLOG.md) — 未来首项方向已选；实现后置到 PRD6 闭环后
 - [planning/PRD7-CACHE-SERVICE-CANDIDATE.md](planning/PRD7-CACHE-SERVICE-CANDIDATE.md) — 未来独立 Cache Service、容量拆分触发线和 SaaS cell 复用边界
@@ -47,7 +48,7 @@
 - [PRD-Phase3.md](PRD-Phase3.md) — 已完成 PRD3 一致性、语义、契约和架构清理范围
 - [planning/PRD3-CONSISTENCY-AUDIT.md](planning/PRD3-CONSISTENCY-AUDIT.md) — PRD3 范围审计和 PRD1→PRD2 遗留问题梳理
 - [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 当前未关闭问题列表
-- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前执行记录：PRD6 Batch 0B P6-F18A/F18B
+- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前执行记录：PRD6 P6-TEST-DB-001 集成测试隔离
 - [agent-workflows/reviews/README.md](agent-workflows/reviews/README.md) — 可选独立复核记录格式和问题级别规则
 - [ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md](ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md) — 单一执行负责人、Git/CI、高影响授权和复核规则的确认记录
 - [ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md](ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md) — Batch 1W 根因、代码、回归和目标证据边界
