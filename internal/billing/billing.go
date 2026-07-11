@@ -142,8 +142,8 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 	// Check idempotency
 	var existingAmount int
 	err = tx.QueryRow(ctx,
-		`SELECT frozen_amount FROM freeze_idempotency WHERE request_id = $1 AND status = 'frozen'`,
-		req.RequestID).Scan(&existingAmount)
+		`SELECT frozen_amount FROM freeze_idempotency WHERE request_id = $1 AND org_id = $2 AND status = 'frozen'`,
+		req.RequestID, req.OrgID).Scan(&existingAmount)
 	if err == nil {
 		return &FreezeResult{Amount: existingAmount, Success: true}, nil
 	}
@@ -204,7 +204,7 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 	if err != nil {
 		if isUniqueViolation(err) {
 			_ = tx.Rollback(ctx)
-			existing, lookupErr := b.lookupFrozenAmount(ctx, req.RequestID)
+			existing, lookupErr := b.lookupFrozenAmount(ctx, req.RequestID, req.OrgID)
 			if lookupErr == nil {
 				return &FreezeResult{Amount: existing, Success: true}, nil
 			}
@@ -224,11 +224,11 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 	}, nil
 }
 
-func (b *Billing) lookupFrozenAmount(ctx context.Context, requestID string) (int, error) {
+func (b *Billing) lookupFrozenAmount(ctx context.Context, requestID string, orgID int64) (int, error) {
 	var existingAmount int
 	err := b.db.QueryRow(ctx,
-		`SELECT frozen_amount FROM freeze_idempotency WHERE request_id = $1 AND status = 'frozen'`,
-		requestID).Scan(&existingAmount)
+		`SELECT frozen_amount FROM freeze_idempotency WHERE request_id = $1 AND org_id = $2 AND status = 'frozen'`,
+		requestID, orgID).Scan(&existingAmount)
 	return existingAmount, err
 }
 
@@ -249,8 +249,8 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 	// Get the frozen amount
 	var frozenAmount int
 	err = tx.QueryRow(ctx,
-		`SELECT frozen_amount FROM freeze_idempotency WHERE request_id = $1 AND status = 'frozen'`,
-		req.RequestID).Scan(&frozenAmount)
+		`SELECT frozen_amount FROM freeze_idempotency WHERE request_id = $1 AND org_id = $2 AND status = 'frozen'`,
+		req.RequestID, req.OrgID).Scan(&frozenAmount)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return &SettleResult{Success: false, ErrorCode: "not_found"}, nil
@@ -287,8 +287,8 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 
 	// Update idempotency status
 	_, err = tx.Exec(ctx,
-		`UPDATE freeze_idempotency SET status = 'settled' WHERE request_id = $1`,
-		req.RequestID)
+		`UPDATE freeze_idempotency SET status = 'settled' WHERE request_id = $1 AND org_id = $2`,
+		req.RequestID, req.OrgID)
 	if err != nil {
 		return nil, fmt.Errorf("update idempotency: %w", err)
 	}
@@ -322,8 +322,8 @@ func (b *Billing) Cancel(ctx context.Context, requestID string, orgID int64) err
 
 	var frozenAmount int
 	err = tx.QueryRow(ctx,
-		`SELECT frozen_amount FROM freeze_idempotency WHERE request_id = $1 AND status = 'frozen'`,
-		requestID).Scan(&frozenAmount)
+		`SELECT frozen_amount FROM freeze_idempotency WHERE request_id = $1 AND org_id = $2 AND status = 'frozen'`,
+		requestID, orgID).Scan(&frozenAmount)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil
@@ -340,8 +340,8 @@ func (b *Billing) Cancel(ctx context.Context, requestID string, orgID int64) err
 	}
 
 	_, err = tx.Exec(ctx,
-		`UPDATE freeze_idempotency SET status = 'cancelled' WHERE request_id = $1`,
-		requestID)
+		`UPDATE freeze_idempotency SET status = 'cancelled' WHERE request_id = $1 AND org_id = $2`,
+		requestID, orgID)
 	if err != nil {
 		return fmt.Errorf("update idempotency: %w", err)
 	}

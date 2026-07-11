@@ -143,12 +143,32 @@ SQL 和赋值证据：`/Users/m4/Desktop/projects/UniRouter/internal/admin/model
 | COR-04 | 成功响应元数据中的 `fallback` 固定为 `false`。 | 即使前一个 route 失败、后一个 route 成功，用户仍看不到发生过 failover。证据：`/Users/m4/Desktop/projects/UniRouter/internal/gateway/relay.go:599-608`、`:956-966`。
 | COR-05 | call log 写失败仅记录日志并返回，不会补偿；trace 写失败同样 best effort。 | 高并发或数据库瞬时故障时，响应可能成功但计量/调查证据不完整。证据：`/Users/m4/Desktop/projects/UniRouter/internal/gateway/relay.go:1044-1071`、`/Users/m4/Desktop/projects/UniRouter/internal/gateway/trace.go:167-192`。
 
+### 4.2.1 P6-F17 remediation update
+
+以上表格保留的是审计时基线，不能继续当作当前未修复状态。P6-F17 当前工作分支已
+完成以下 Local verified 修复，PR/required CI 仍待完成：
+
+- COR-01：`X-Request-ID` 现在由 UniRouter 生成不可覆盖的 `op_` 值；旧调用方传入的
+  `X-Request-ID` 只作为兼容 correlation，并持久化为 `client_request_id`。财务冻结键
+  改为 tenant composite，Scheme A idempotency 以 tenant/API key/payload/HMAC 绑定；
+- COR-02：每次 route/failover 都生成独立 `attempt_id`，并可按 operation、client、
+  workflow、Agent、attempt 或 upstream ID 在 Logs/Audit 中回查；
+- COR-03/COR-04：最终 call log 使用真实最终 attempt 的 channel/upstream identity，
+  response metadata 返回真实 `fallback`、`attempt_count`、`route_count` 和 `attempt_id`；
+- COR-05 不由 P6-F17 冒充完成：call log/trace/settlement 的 durable finalization、
+  crash recovery 和 bounded internal outbox 仍是 P6-F20。
+
+为兼容现有 API 和数据库，当前实现把 server-owned operation ID 暴露在旧字段名
+`request_id` 中，不再额外制造第二个 server HTTP ID。`client_request_id`、
+`idempotency_key_hash`、`trace/span`、`workflow_id`、`agent_id`、`attempt_id` 和
+`upstream_request_id` 各自保持独立语义。证据见
+`docs/ops/evidence/PRD6-B0B-P6F17-operation-idempotency-identity-local-20260711.md`。
+
 ### 4.3 推荐 ID 模型（PRD6）
 
 | 字段 | 一句话含义 | 生成者 / 作用域 |
 |---|---|---|
-| `operation_id` | 用户眼中的一次逻辑调用；客户端重试仍可保持不变 | UniRouter 默认生成，也可接受受限的 client correlation；按 org 隔离 |
-| `request_id` | UniRouter 实际收到的一次 HTTP 请求 | UniRouter 强制生成，全局唯一，不直接信任 client 值 |
+| `operation_id` / legacy `request_id` | UniRouter 实际接受的一次服务端操作；当前为同一 server-owned `op_` 值 | UniRouter 强制生成，全局唯一，不直接信任 client 值 |
 | `client_request_id` | 客户端传来的原始关联值 | 客户端提供；只可查询，不作为全局财务主键 |
 | `idempotency_key` | 明确用于有副作用动作去重 | 按 `(org_id, operation_type, idempotency_key)` 唯一 |
 | `trace_id` / `span_id` | 跨组件的分布式 trace 与单个工作单元 | 遵循 [W3C Trace Context](https://www.w3.org/TR/trace-context/) / [OpenTelemetry Trace API](https://opentelemetry.io/docs/specs/otel/trace/api/) |

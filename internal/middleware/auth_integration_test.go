@@ -5,6 +5,7 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -15,7 +16,7 @@ import (
 // GatewayAuth integration tests — verify the API key authentication middleware with a real DB.
 
 func TestGatewayAuth_ValidKey_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 
 	// Generate and store a real API key
@@ -49,7 +50,7 @@ func TestGatewayAuth_ValidKey_Integration(t *testing.T) {
 }
 
 func TestGatewayAuth_MissingHeader_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 
 	handler := GatewayAuth(pool, "test-secret")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("handler should not be called")
@@ -64,7 +65,7 @@ func TestGatewayAuth_MissingHeader_Integration(t *testing.T) {
 }
 
 func TestGatewayAuth_WrongPrefix_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 
 	handler := GatewayAuth(pool, "test-secret")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("handler should not be called")
@@ -80,7 +81,7 @@ func TestGatewayAuth_WrongPrefix_Integration(t *testing.T) {
 }
 
 func TestGatewayAuth_InvalidKey_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 
 	handler := GatewayAuth(pool, "test-secret")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("handler should not be called")
@@ -96,7 +97,7 @@ func TestGatewayAuth_InvalidKey_Integration(t *testing.T) {
 }
 
 func TestGatewayAuth_DisabledKey_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 
 	rawKey, _, err := auth.GenerateAPIKey(orgID)
@@ -125,7 +126,7 @@ func TestGatewayAuth_DisabledKey_Integration(t *testing.T) {
 }
 
 func TestGatewayAuth_DisabledOrg_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 
 	// Create a disabled org
 	disabledOrg := testutil.NewTestOrg(t, pool)
@@ -158,7 +159,7 @@ func TestGatewayAuth_DisabledOrg_Integration(t *testing.T) {
 }
 
 func TestGatewayAuth_IPBlocked_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 
 	rawKey, _, err := auth.GenerateAPIKey(orgID)
@@ -188,7 +189,7 @@ func TestGatewayAuth_IPBlocked_Integration(t *testing.T) {
 }
 
 func TestGatewayAuth_IPAllowed_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 
 	rawKey, _, err := auth.GenerateAPIKey(orgID)
@@ -217,7 +218,7 @@ func TestGatewayAuth_IPAllowed_Integration(t *testing.T) {
 }
 
 func TestGatewayAuth_RequestIDFromHeader_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 
 	rawKey, _, err := auth.GenerateAPIKey(orgID)
@@ -232,8 +233,10 @@ func TestGatewayAuth_RequestIDFromHeader_Integration(t *testing.T) {
 	require.NoError(t, err)
 
 	var capturedReqID string
+	var capturedClientReqID string
 	handler := GatewayAuth(pool, "test-secret")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedReqID = GetRequestIDFromContext(r.Context())
+		capturedClientReqID = GetClientRequestIDFromContext(r.Context())
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -245,11 +248,13 @@ func TestGatewayAuth_RequestIDFromHeader_Integration(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
-	require.Equal(t, "custom-req-12345", capturedReqID, "should use X-Request-ID from header")
+	require.NotEqual(t, "custom-req-12345", capturedReqID, "client correlation must not become the server operation identity")
+	require.True(t, strings.HasPrefix(capturedReqID, "op_"), capturedReqID)
+	require.Equal(t, "custom-req-12345", capturedClientReqID)
 }
 
 func TestGatewayAuth_ContextInjection_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 
 	rawKey, _, err := auth.GenerateAPIKey(orgID)

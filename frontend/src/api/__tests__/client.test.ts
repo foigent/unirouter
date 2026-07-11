@@ -222,12 +222,20 @@ describe('API Client', () => {
 
       await api.getLogs(1, 20, {
         trace_id: 'trace-001',
+        client_request_id: 'client-001',
+        workflow_id: 'workflow-001',
+        agent_id: 'agent-001',
+        attempt_id: 'att-001',
         upstream_request_id: 'upstream-001',
         evidence_ref: 'unirouter:event:1',
         source_event_hash: 'hash-001',
       })
       const url = mockFetch.mock.calls[0][0]
       expect(url).toContain('trace_id=trace-001')
+      expect(url).toContain('client_request_id=client-001')
+      expect(url).toContain('workflow_id=workflow-001')
+      expect(url).toContain('agent_id=agent-001')
+      expect(url).toContain('attempt_id=att-001')
       expect(url).toContain('upstream_request_id=upstream-001')
       expect(url).toContain('evidence_ref=unirouter%3Aevent%3A1')
       expect(url).toContain('source_event_hash=hash-001')
@@ -388,12 +396,14 @@ describe('API Client', () => {
         actor_id: '7',
         action: 'channel.test',
         resource: 'channel',
+        request_id: 'op-001',
+        client_request_id: 'client-001',
         source: 'gateway_api',
         start_time: '2026-07-02T00:00:00Z',
         end_time: '2026-07-02T23:59:59Z',
       })
       const url = mockFetch.mock.calls[0][0]
-      expect(url).toBe('/api/v1/audit-logs?page=3&page_size=50&org_id=1&project_id=9&actor_id=7&action=channel.test&resource=channel&source=gateway_api&start_time=2026-07-02T00%3A00%3A00Z&end_time=2026-07-02T23%3A59%3A59Z')
+      expect(url).toBe('/api/v1/audit-logs?page=3&page_size=50&org_id=1&project_id=9&actor_id=7&action=channel.test&resource=channel&request_id=op-001&client_request_id=client-001&source=gateway_api&start_time=2026-07-02T00%3A00%3A00Z&end_time=2026-07-02T23%3A59%3A59Z')
     })
 
     it('loads notification events with filters', async () => {

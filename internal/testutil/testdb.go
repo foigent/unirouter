@@ -151,6 +151,7 @@ func TruncateAll(t *testing.T, pool *pgxpool.Pool) {
 		"notification_deliveries",
 		"notification_webhooks",
 		"notification_events",
+		"request_idempotency",
 		"call_logs",
 		"freeze_idempotency",
 		"transactions",

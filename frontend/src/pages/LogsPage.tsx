@@ -11,6 +11,10 @@ const { Title, Text } = Typography;
 interface Log {
   id: number;
   request_id: string;
+  client_request_id?: string;
+  workflow_id?: string;
+  agent_id?: string;
+  attempt_id?: string;
   model: string;
   provider: string;
   channel: string;
@@ -38,7 +42,11 @@ interface LogFilters {
   start_time?: string;
   end_time?: string;
   request_id?: string;
+  client_request_id?: string;
   trace_id?: string;
+  workflow_id?: string;
+  agent_id?: string;
+  attempt_id?: string;
   upstream_request_id?: string;
   evidence_ref?: string;
   source_event_hash?: string;
@@ -76,6 +84,10 @@ interface TraceEvent {
   actor_ref?: string | null;
   on_behalf_of?: string | null;
   session_id?: string | null;
+  client_request_id?: string | null;
+  workflow_id?: string | null;
+  agent_id?: string | null;
+  attempt_id?: string | null;
   payload_capture_mode?: string | null;
   payload_ref?: string | null;
   source_event_hash?: string | null;
@@ -90,7 +102,7 @@ function filtersToParams(filters: LogFilters): string {
 function paramsToFilters(): LogFilters {
   const params = new URLSearchParams(window.location.search);
   const f: LogFilters = {};
-  ['model', 'provider', 'status_code', 'usage_source', 'start_time', 'end_time', 'request_id', 'trace_id', 'upstream_request_id', 'evidence_ref', 'source_event_hash', 'latency_min', 'latency_max', 'search'].forEach(k => {
+  ['model', 'provider', 'status_code', 'usage_source', 'start_time', 'end_time', 'request_id', 'client_request_id', 'trace_id', 'workflow_id', 'agent_id', 'attempt_id', 'upstream_request_id', 'evidence_ref', 'source_event_hash', 'latency_min', 'latency_max', 'search'].forEach(k => {
     const v = params.get(k);
     if (v) (f as any)[k] = v;
   });
@@ -104,8 +116,12 @@ const filterLabels: Record<keyof LogFilters, string> = {
   usage_source: '计量来源',
   start_time: '开始时间',
   end_time: '结束时间',
-  request_id: 'Request ID',
+  request_id: '操作 ID',
+  client_request_id: '客户端请求 ID',
   trace_id: 'Trace ID',
+  workflow_id: '工作流 ID',
+  agent_id: 'Agent ID',
+  attempt_id: '尝试 ID',
   upstream_request_id: '上游 Request ID',
   evidence_ref: 'Evidence Ref',
   source_event_hash: 'Source Event Hash',
@@ -179,6 +195,10 @@ function traceEvidenceTags(event: TraceEvent) {
     { key: 'trace', label: 'trace', value: event.trace_id, color: undefined },
     { key: 'span', label: 'span', value: event.span_id, color: undefined },
     { key: 'parent', label: 'parent', value: event.parent_span_id, color: undefined },
+    { key: 'client', label: 'client', value: event.client_request_id, color: undefined },
+    { key: 'workflow', label: 'workflow', value: event.workflow_id, color: undefined },
+    { key: 'agent', label: 'agent', value: event.agent_id, color: undefined },
+    { key: 'attempt', label: 'attempt', value: event.attempt_id, color: undefined },
     { key: 'upstream', label: 'upstream', value: event.upstream_request_id, color: undefined },
     { key: 'actor', label: 'actor', value: event.actor_ref ? `${event.actor_type || 'unknown'}:${event.actor_ref}` : event.actor_type, color: undefined },
     { key: 'session', label: 'session', value: event.session_id, color: undefined },
@@ -200,6 +220,7 @@ function traceEvidenceTags(event: TraceEvent) {
 
 interface RouteAttempt {
   sequence: number;
+  attemptID: string;
   provider: string;
   channel: string;
   mappedModel: string;
@@ -214,6 +235,7 @@ function routeAttemptsFromTrace(events: TraceEvent[]): RouteAttempt[] {
     if (event.event_type === 'routing.route_selected') {
       attempts.push({
         sequence: attempts.length + 1,
+        attemptID: event.attempt_id || '',
         provider: event.provider || '-',
         channel: event.channel || '-',
         mappedModel: typeof event.metadata?.mapped_model === 'string' ? event.metadata.mapped_model : event.model || '-',
@@ -224,7 +246,9 @@ function routeAttemptsFromTrace(events: TraceEvent[]): RouteAttempt[] {
       continue;
     }
     if (attempts.length === 0 || !event.event_type.startsWith('provider.')) continue;
-    const attempt = attempts[attempts.length - 1];
+    const attempt = event.attempt_id
+      ? [...attempts].reverse().find(item => item.attemptID === event.attempt_id) || attempts[attempts.length - 1]
+      : attempts[attempts.length - 1];
     attempt.eventType = event.event_type;
     attempt.statusCode = event.status_code;
     attempt.outcome = event.event_type === 'provider.response_accepted' ? 'accepted' : 'failed';
@@ -609,13 +633,21 @@ export default function LogsPage() {
           </div>
 
           <div className="ur-filter-group">
-            <Text className="ur-filter-label">Request ID</Text>
+            <Text className="ur-filter-label">操作 ID（Request ID）</Text>
             <Input
               size="small"
               placeholder="精确匹配"
               onChange={(v) => updateFilter('request_id', v)}
               defaultValue={filters.request_id || ''}
               showClear
+            />
+            <Input
+              size="small"
+              placeholder="客户端请求 ID（精确匹配）"
+              onChange={(v) => updateFilter('client_request_id', v)}
+              defaultValue={filters.client_request_id || ''}
+              showClear
+              style={{ marginTop: 6 }}
             />
           </div>
 
@@ -625,6 +657,9 @@ export default function LogsPage() {
             <Text className="ur-filter-label">证据标识</Text>
             <div style={{ display: 'grid', gap: 6 }}>
               <Input size="small" placeholder="Trace ID（精确匹配）" onChange={(v) => updateFilter('trace_id', v)} defaultValue={filters.trace_id || ''} showClear />
+              <Input size="small" placeholder="工作流 ID（精确匹配）" onChange={(v) => updateFilter('workflow_id', v)} defaultValue={filters.workflow_id || ''} showClear />
+              <Input size="small" placeholder="Agent ID（精确匹配）" onChange={(v) => updateFilter('agent_id', v)} defaultValue={filters.agent_id || ''} showClear />
+              <Input size="small" placeholder="尝试 ID（精确匹配）" onChange={(v) => updateFilter('attempt_id', v)} defaultValue={filters.attempt_id || ''} showClear />
               <Input size="small" placeholder="上游 Request ID（精确匹配）" onChange={(v) => updateFilter('upstream_request_id', v)} defaultValue={filters.upstream_request_id || ''} showClear />
               <Input size="small" placeholder="Evidence Ref（精确匹配）" onChange={(v) => updateFilter('evidence_ref', v)} defaultValue={filters.evidence_ref || ''} showClear />
               <Input size="small" placeholder="Source Event Hash（精确匹配）" onChange={(v) => updateFilter('source_event_hash', v)} defaultValue={filters.source_event_hash || ''} showClear />
@@ -697,7 +732,7 @@ export default function LogsPage() {
             <div className="ur-detail-stack">
               <div className="ur-detail-hero">
                 <div>
-                  <Text type="tertiary" size="small">Request ID</Text>
+                  <Text type="tertiary" size="small">操作 ID（Request ID）</Text>
                   <div className="ur-request-id-full">
                     <Text code>{selectedLog.request_id}</Text>
                     <Button type="tertiary" size="small" icon={<IconCopy />} onClick={() => copyToClipboard(selectedLog.request_id)} className="ur-copy-button" aria-label="复制 Request ID" />
@@ -732,6 +767,14 @@ export default function LogsPage() {
                   <div>
                     <Text type="tertiary" size="small">时间</Text>
                     <div><Text size="small">{formatDateTime(selectedLog.created_at)}</Text></div>
+                  </div>
+                  <div>
+                    <Text type="tertiary" size="small">客户端请求 ID</Text>
+                    <div><Text code size="small">{selectedLog.client_request_id || '-'}</Text></div>
+                  </div>
+                  <div>
+                    <Text type="tertiary" size="small">工作流 / Agent</Text>
+                    <div><Text code size="small">{selectedLog.workflow_id || '-'} / {selectedLog.agent_id || '-'}</Text></div>
                   </div>
                 </div>
               </div>
@@ -801,11 +844,12 @@ export default function LogsPage() {
                   {routeAttempts.length > 0 && (
                     <div style={{ display: 'grid', gap: 6, marginTop: 10 }}>
                       {routeAttempts.map(attempt => (
-                        <div key={`${attempt.sequence}-${attempt.channel}`} style={{ display: 'grid', gridTemplateColumns: '52px minmax(0, 1fr) auto', gap: 8, alignItems: 'center' }}>
+                        <div key={`${attempt.sequence}-${attempt.attemptID || attempt.channel}`} style={{ display: 'grid', gridTemplateColumns: '52px minmax(0, 1fr) auto', gap: 8, alignItems: 'center' }}>
                           <Tag size="small">#{attempt.sequence}</Tag>
                           <div style={{ minWidth: 0 }}>
                             <Text size="small">{attempt.provider} / {attempt.channel}</Text>
                             <div><Text type="tertiary" size="small">{attempt.mappedModel} · {attempt.eventType}</Text></div>
+                            {attempt.attemptID && <div><Text code type="tertiary" size="small">{compactEvidenceValue(attempt.attemptID, 28)}</Text></div>}
                           </div>
                           <StatusTag status={attempt.outcome}>{attempt.statusCode || attempt.outcome}</StatusTag>
                         </div>

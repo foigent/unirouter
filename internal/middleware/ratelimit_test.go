@@ -20,26 +20,28 @@ import (
 // --- GatewayAuth context injection boundary tests ---
 
 func TestGatewayAuth_RequestIDFromHeader(t *testing.T) {
-	// When X-Request-ID is set, it should be used as-is
+	// X-Request-ID is retained only as client correlation; it cannot become the
+	// authoritative server operation ID.
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("X-Request-ID", "custom-req-id")
-	r.Header.Set("Authorization", "Bearer test-key")
-
-	// We can't fully test GatewayAuth without DB, but we can test the request ID logic
-	// by checking the header value is preserved
-	if r.Header.Get("X-Request-ID") != "custom-req-id" {
-		t.Fatal("X-Request-ID should be preserved")
+	rec := httptest.NewRecorder()
+	var identity RequestIdentity
+	OperationIdentity(http.HandlerFunc(func(_ http.ResponseWriter, identified *http.Request) {
+		identity = GetRequestIdentityFromContext(identified.Context())
+	})).ServeHTTP(rec, r)
+	if identity.OperationID == "custom-req-id" || identity.ClientRequestID != "custom-req-id" {
+		t.Fatalf("identity fields were not separated: %#v", identity)
 	}
 }
 
 func TestGatewayAuth_RequestIDGenerated(t *testing.T) {
-	// When X-Request-ID is empty, generateRequestID should be called
+	// When X-Request-ID is empty, a secure server operation ID is generated.
 	id := generateRequestID()
 	if id == "" {
 		t.Fatal("generated request ID should not be empty")
 	}
-	if len(id) != 20 { // "req_" + 16 hex chars
-		t.Fatalf("expected 20-char ID, got %d: %s", len(id), id)
+	if len(id) != 35 || !strings.HasPrefix(id, "op_") {
+		t.Fatalf("expected op_ plus 32 hex characters, got %q", id)
 	}
 }
 

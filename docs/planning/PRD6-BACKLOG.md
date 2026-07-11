@@ -17,14 +17,15 @@
 | P6-USAGE-TENANT-001 / P6-F39 | Tenant-scope request logs and usage-derived administrator reads | Prevents cross-tenant evidence, incident, token and cost disclosure | Merged and CI verified by PR #145 / `609385f` |
 | P6-TEST-DB-001 | Make legacy tagged admin integration tests deterministic on the current migrated schema | Prevents stale shared-database state from hiding or inventing regressions | focused touched cases pass; full tagged suite must move to isolated migrations or be retired before becoming required CI |
 | P6-CONTROL-AUTH-001 / P6-F35 | Platform-gate deployment settings, license and global sensitive words | Prevents tenant roles mutating deployment-wide controls or bypassing dedicated license/word paths | PR #147 final-head CI run `29139408226`, squash merge `c08db961`, and post-merge main run `29139534691` passed; historical branch retained |
-| P6-MODELGOV-TENANT-001 / P6-F36 | Tenant-scope registry, alias, catalog and organization model sets | Prevents cross-tenant model-policy disclosure/mutation | PR #148 implementation head `d69c041` passed required CI run `29140520863` after local verification and independent review; final evidence-head CI/merge pending |
+| P6-MODELGOV-TENANT-001 / P6-F36 | Tenant-scope registry, alias, catalog and organization model sets | Prevents cross-tenant model-policy disclosure/mutation | PR #148 final run `29140739477`, squash merge `d83dbbc`, and post-merge main run `29140850345` passed |
+| P6-IDEM-001 / P6-F17 | Separate server operation, client idempotency, trace/workflow/Agent/attempt and upstream identities | Prevents client-controlled financial collisions and makes retries/failover/admin evidence traceable | Local verified with Scheme A metadata-only replay, migration/concurrency/cross-tenant/100-child/UI evidence; PR/required CI pending |
 
 ## 2. Accepted MVP — Ordered Work Queue
 
 | ID | Item | Value | Dependency / risk | Priority |
 |----|------|-------|-------------------|----------|
 | P6-TENANT-001 | Enforce organization ownership on key/user/project/project-policy operations | prevents accepted-scope cross-tenant access and malformed policy influence | CI verified by PR #140; preserve regressions | P0 |
-| P6-IDEM-001 | Separate server operation, client idempotency, trace/span, workflow and Agent identities | prevents cross-tenant/retry/child charge collisions | schema migration and payload fingerprint semantics | P0 |
+| P6-IDEM-001 | Separate server operation, client idempotency, trace/span, workflow and Agent identities | prevents cross-tenant/retry/child charge collisions | Local verified; preserve Scheme A, non-rolling migration and required-CI gates | P0 |
 | P6-BILL-003 | Pool-safe reservation and single durable terminal state | prevents pool starvation, double terminal transitions and free delivered output | financial state migration, recovery and invariant tests | P0 |
 | P6-AUTH-001 | Versioned user/project/key/role revocation | bounds stale authority across replicas | revocation SLO, cache and outage posture | P0 |
 | P6-ROUTE-002 | Retry classification and response preservation | prevents unsafe/expensive retry and misleading 502 | provider error matrix and billing invariants | P0 |
@@ -48,7 +49,7 @@
 | P6-NOTIFY-TENANT-001 / P6-F33 | Tenant-scope notification reads and webhook sinks | closes a source-reachable victim-event exfiltration chain | CI verified by PR #142 / `7173c59`; target cutover unexecuted | P0 |
 | P6-PRICE-AUTH-001 / P6-F34 | Platform-only global base-price and organization-multiplier mutation | prevents tenant roles changing platform/victim billing | PR #146 squash-merged as `517ce45381429781f7e81e492bdd9f38093c21ba`; final-head run `29137670055` and post-merge main run `29137781625` passed all required jobs; historical branch retained | P0 |
 | P6-CONTROL-AUTH-001 / P6-F35 | Gate deployment settings, license and global sensitive words | prevents tenant roles changing global runtime controls | PR #147 squash-merged as `c08db961`; final-head run `29139408226` and post-merge main run `29139534691` passed; historical branch restored/retained; no target/production claim | P0 |
-| P6-MODELGOV-TENANT-001 / P6-F36 | Tenant-scope registry, alias, catalog and organization model sets | prevents cross-tenant model-policy disclosure/mutation | PR #148 implementation head `d69c041` passed all required jobs in run `29140520863` after full local verification and independent review; no remaining blocker/high/medium/functional-low finding; final evidence-head CI and merge pending; no target/production claim | P1 |
+| P6-MODELGOV-TENANT-001 / P6-F36 | Tenant-scope registry, alias, catalog and organization model sets | prevents cross-tenant model-policy disclosure/mutation | PR #148 final required run `29140739477` passed, squash merge `d83dbbc`, and post-merge main run `29140850345` passed; no target/production claim | P1 |
 | P6-AUDIT-TENANT-001 / P6-F37 | Tenant-scope audit-log reads | prevents organization/billing roles reading another tenant's control-plane evidence | Merged and CI verified by PR #143 / `a1e0ad6` | P0 |
 | P6-USAGE-TENANT-001 / P6-F39 | Tenant-scope request logs, usage analytics/internal status, dashboard usage-derived aggregates and runtime traffic | prevents cross-tenant request, incident, token and cost disclosure | Merged and CI verified by PR #145 / `609385f` | P0 |
 
@@ -68,8 +69,9 @@ drain old control-plane binaries and be non-rolling because old binaries do not
 provide mixed-version safety. New-version replicas converge global-word changes
 through the existing approximately one-minute reload. A typed configuration
 registry and the confirmed budget/alert key, scope and audit truth gaps remain
-P6-F05/P6-F17; ambiguous network commit outcome/readback is also P6-F17. No
-global-settings UI was added.
+P6-F05. P6-F17 now supplies separate operation/client correlation and
+tenant-scoped Audit readback; generic mutation replay and P6-F20 durability are
+not implied. No global-settings UI was added.
 
 P6-F36 does not reopen P6-F16, add a migration/RLS/foreign-key redesign, change
 unregistered-model compatibility or `/v1/models`, or add a selector UI/target
@@ -80,8 +82,8 @@ cleanup. Those boundaries are not implied by its local tenant-isolation result.
 | ID | Item | Reopen prerequisite | Priority |
 |----|------|---------------------|----------|
 | P6-CRED-001 | Vault/KMS/cloud secret references and versioned rotation | select first backend, threat model and rotation SLO | P2 |
-| P6-CACHE-001 | Exact response cache | measured workload value; tenant/auth/TTL/purge/billing design | P2 |
-| P6-CACHE-002 | Semantic response cache | exact-cache safety first; semantic poisoning/equivalence red team | P2 |
+| P6-CACHE-001 | Exact response cache; future target is independently deployable `D7-CACHE-001` Cache Service | measured workload value; tenant/auth/policy/region/TTL/purge/tombstone/billing design; see `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` | P2 |
+| P6-CACHE-002 | Semantic response cache; separate later `D7-CACHE-002` decision | exact-cache safety/value first; semantic poisoning/equivalence/authorization red team | P3 |
 | P6-ROUTE-005 | Latency/cost/rate-aware routing | trustworthy telemetry and stable Routing V1 | P2 |
 | P6-ROUTE-006 | Canary/shadow traffic policy | explicit paid-request/data boundary and rollback | P2 |
 | P6-GUARD-002 | BYO guardrails and policy simulation | versioned kernel, RBAC and compatibility contract | P2 |

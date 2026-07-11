@@ -152,21 +152,22 @@ func TestHashKey_DifferentFromAuthHashKey(t *testing.T) {
 
 func TestGenerateRequestID_Format(t *testing.T) {
 	id := generateRequestID()
-	if len(id) != 20 { // "req_" + 16 hex chars
-		t.Fatalf("expected 20-char ID, got %d: %s", len(id), id)
+	if len(id) != 35 { // "op_" + 32 hex chars
+		t.Fatalf("expected 35-char operation ID, got %d: %s", len(id), id)
 	}
-	if id[:4] != "req_" {
-		t.Fatalf("expected prefix 'req_', got %s", id[:4])
+	if id[:3] != "op_" {
+		t.Fatalf("expected prefix 'op_', got %s", id[:3])
 	}
 }
 
 func TestGenerateRequestID_Uniqueness(t *testing.T) {
-	// generateRequestID uses UnixNano — should advance between calls
-	// but on fast machines they might be within same ns.
-	// Just verify format and non-empty.
-	id := generateRequestID()
-	if id == "" {
+	first := generateRequestID()
+	second := generateRequestID()
+	if first == "" || second == "" {
 		t.Fatal("generateRequestID should not return empty")
+	}
+	if first == second {
+		t.Fatal("secure operation IDs must be unique")
 	}
 }
 

@@ -68,8 +68,8 @@ func TestUpdateModelRegistry_LifecycleAuditBeforeAfter(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if len(auditArgs) != 13 {
-		t.Fatalf("expected 13 audit args, got %#v", auditArgs)
+	if len(auditArgs) != 14 {
+		t.Fatalf("expected 14 audit args, got %#v", auditArgs)
 	}
 	if auditArgs[1] != int64(7) || auditArgs[9] != "admin_console" {
 		t.Fatalf("expected actor/source in audit args, got %#v", auditArgs)

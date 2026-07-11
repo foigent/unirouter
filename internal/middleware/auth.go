@@ -7,11 +7,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/db"
@@ -252,18 +250,19 @@ func GatewayAuthWithAPIKeyHashSecret(q db.DBQuerier, apiKeyHashSecret string) fu
 				return
 			}
 
-			// Inject into context
-			requestID := r.Header.Get("X-Request-ID")
-			if requestID == "" {
-				requestID = generateRequestID()
+			// Ensure the server-owned operation identity exists even when this
+			// middleware is exercised without the production outer wrapper.
+			identifiedRequest, ok := ensureRequestIdentity(w, r, apiKeyHashSecret)
+			if !ok {
+				return
 			}
+			r = identifiedRequest
 			ctx := context.WithValue(r.Context(), CtxAPIKey, apiKey)
 			ctx = context.WithValue(ctx, CtxOrgID, apiKey.OrgID)
 			if apiKey.ProjectID != nil {
 				ctx = context.WithValue(ctx, CtxProjectID, *apiKey.ProjectID)
 			}
 			ctx = context.WithValue(ctx, CtxKeyID, apiKey.ID)
-			ctx = context.WithValue(ctx, CtxRequestID, requestID)
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
@@ -292,6 +291,12 @@ func writeGatewayAuthError(w http.ResponseWriter, status int, code, message stri
 func AdminAuth(jwtSecret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			identifiedRequest, ok := ensureRequestIdentity(w, r, jwtSecret)
+			if !ok {
+				return
+			}
+			r = identifiedRequest
+
 			// Extract JWT from Authorization header
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
@@ -324,7 +329,13 @@ func hashKey(rawKey, secret string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-// generateRequestID generates a simple request ID.
+// generateRequestID is retained for internal test compatibility. Production
+// requests use OperationIdentity/ensureRequestIdentity and fail closed if secure
+// randomness is unavailable.
 func generateRequestID() string {
-	return fmt.Sprintf("req_%016x", time.Now().UnixNano())
+	requestID, err := newOperationID()
+	if err != nil {
+		return ""
+	}
+	return requestID
 }

@@ -113,7 +113,7 @@ func TestUpdateLicense_ValidStoresAndAudits(t *testing.T) {
 	if !strings.Contains(savedSetting, `"deployment_id":"prod-cn-1"`) {
 		t.Fatalf("expected normalized license saved, got %s", savedSetting)
 	}
-	if len(auditArgs) != 13 {
+	if len(auditArgs) != 14 {
 		t.Fatalf("expected audit args, got %#v", auditArgs)
 	}
 	if auditArgs[2] != "license.update" || auditArgs[3] != "license" || auditArgs[4] != "prod-cn-1" {

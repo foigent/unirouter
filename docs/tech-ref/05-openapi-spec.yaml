@@ -12,6 +12,11 @@ info:
     - Gateway: `Authorization: Bearer ur-XXXX-...`
     - Admin: `Authorization: Bearer <JWT>`
 
+    Request identity:
+    - Response `X-Request-ID` is a server-generated operation ID and cannot be overridden by a caller.
+    - Caller correlation belongs in `X-UniRouter-Client-Request-ID`; inbound `X-Request-ID` remains a legacy alias only.
+    - `Idempotency-Key` enables tenant/API-key/payload-bound metadata-only deduplication for Chat and Embeddings.
+
 servers:
   - url: http://localhost:8080
     description: Local development
@@ -84,6 +89,8 @@ paths:
         - gatewayKey: []
       parameters:
         - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/ClientRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -93,6 +100,11 @@ paths:
       responses:
         "200":
           description: Chat completion or SSE stream
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/OperationId"
+            X-UniRouter-Client-Request-ID:
+              $ref: "#/components/headers/ClientRequestId"
           content:
             application/json:
               schema:
@@ -106,6 +118,8 @@ paths:
           $ref: "#/components/responses/Error"
         "403":
           $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/IdempotencyConflict"
         "429":
           $ref: "#/components/responses/Error"
         "502":
@@ -119,6 +133,8 @@ paths:
         - gatewayKey: []
       parameters:
         - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/ClientRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -140,11 +156,23 @@ paths:
                   enum: [float, base64]
       responses:
         "200":
-          $ref: "#/components/responses/JSON"
+          description: Embedding response
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/OperationId"
+            X-UniRouter-Client-Request-ID:
+              $ref: "#/components/headers/ClientRequestId"
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
         "401":
           $ref: "#/components/responses/Error"
         "402":
           $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/IdempotencyConflict"
         "502":
           $ref: "#/components/responses/Error"
 
@@ -335,7 +363,24 @@ paths:
           description: Export file or JSON payload
 
   /api/v1/logs:
-    get: { $ref: "#/components/pathItems/List" }
+    get:
+      tags: [Admin]
+      summary: Tenant-scoped call logs with operation and correlation filters
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - { name: request_id, in: query, schema: { type: string }, description: Exact server operation ID }
+        - { name: client_request_id, in: query, schema: { type: string }, description: Exact caller correlation ID }
+        - { name: trace_id, in: query, schema: { type: string }, description: Exact trace ID }
+        - { name: workflow_id, in: query, schema: { type: string }, description: Exact trusted workflow ID }
+        - { name: agent_id, in: query, schema: { type: string }, description: Exact trusted Agent ID }
+        - { name: attempt_id, in: query, schema: { type: string }, description: Exact provider-attempt ID }
+        - { name: upstream_request_id, in: query, schema: { type: string }, description: Exact provider request ID }
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
 
   /api/v1/logs/{id}:
     get: { $ref: "#/components/pathItems/GetById" }
@@ -591,7 +636,19 @@ paths:
     post: { $ref: "#/components/pathItems/UpdateById" }
 
   /api/v1/audit-logs:
-    get: { $ref: "#/components/pathItems/List" }
+    get:
+      tags: [Admin]
+      summary: Tenant-scoped control-plane audit log
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - { name: request_id, in: query, schema: { type: string }, description: Exact server operation ID }
+        - { name: client_request_id, in: query, schema: { type: string }, description: Exact caller correlation ID }
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
 
   /api/v1/settings:
     x-unirouter-rbac:
@@ -738,11 +795,41 @@ components:
         maximum: 100
         default: 20
     XRequestId:
-      name: X-Request-Id
+      name: X-Request-ID
       in: header
       required: false
+      description: Legacy caller-correlation alias. UniRouter never uses this caller value as the response operation ID or a global financial key.
       schema:
         type: string
+        maxLength: 128
+    ClientRequestId:
+      name: X-UniRouter-Client-Request-ID
+      in: header
+      required: false
+      description: Caller-owned correlation value recorded in operator logs. Do not place secrets or personal data in it. If both this header and legacy X-Request-ID are supplied, they must match.
+      schema:
+        type: string
+        maxLength: 128
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Enables 24-hour metadata-only deduplication scoped to organization, API key and canonical request payload. Model responses are not stored or replayed.
+      schema:
+        type: string
+        maxLength: 255
+
+  headers:
+    OperationId:
+      description: Server-generated operation identity used across gateway, billing, audit and route attempts.
+      schema:
+        type: string
+        pattern: '^op_[0-9a-f]{32}$'
+    ClientRequestId:
+      description: Echo of the accepted caller correlation value, when supplied.
+      schema:
+        type: string
+        maxLength: 128
 
   responses:
     JSON:
@@ -754,6 +841,21 @@ components:
             additionalProperties: true
     Error:
       description: Error response
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    IdempotencyConflict:
+      description: The key is in progress, completed, failed, or bound to a different request. Scheme A returns metadata only and never replays the model response.
+      headers:
+        X-UniRouter-Original-Request-ID:
+          description: Server operation ID of the original request that owns the idempotency key.
+          schema:
+            type: string
+        Retry-After:
+          description: Present for an in-progress request.
+          schema:
+            type: string
       content:
         application/json:
           schema:

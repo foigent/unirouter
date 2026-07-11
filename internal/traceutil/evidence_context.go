@@ -12,6 +12,8 @@ const (
 	EvidenceContextTraceIDHeader    = "X-UniRouter-Trace-Id"
 	EvidenceContextParentSpanHeader = "X-UniRouter-Parent-Span-Id"
 	EvidenceContextSessionIDHeader  = "X-UniRouter-Session-Id"
+	EvidenceContextWorkflowIDHeader = "X-UniRouter-Workflow-Id"
+	EvidenceContextAgentIDHeader    = "X-UniRouter-Agent-Id"
 	EvidenceContextActorTypeHeader  = "X-UniRouter-Actor-Type"
 	EvidenceContextActorRefHeader   = "X-UniRouter-Actor-Ref"
 	EvidenceContextOnBehalfOfHeader = "X-UniRouter-On-Behalf-Of"
@@ -21,6 +23,8 @@ type EvidenceContext struct {
 	TraceID      string
 	ParentSpanID string
 	SessionID    string
+	WorkflowID   string
+	AgentID      string
 	ActorType    string
 	ActorRef     string
 	OnBehalfOf   string
@@ -45,6 +49,7 @@ func EvidenceFromContext(ctx context.Context) EvidenceContext {
 
 func (e EvidenceContext) IsZero() bool {
 	return e.TraceID == "" && e.ParentSpanID == "" && e.SessionID == "" &&
+		e.WorkflowID == "" && e.AgentID == "" &&
 		e.ActorType == "" && e.ActorRef == "" && e.OnBehalfOf == ""
 }
 
@@ -62,6 +67,8 @@ func ExtractTrustedEvidenceContext(header http.Header, trustSecret string) Evide
 		TraceID:      sanitizeEvidenceField(header.Get(EvidenceContextTraceIDHeader), 64),
 		ParentSpanID: sanitizeEvidenceField(header.Get(EvidenceContextParentSpanHeader), 64),
 		SessionID:    sanitizeEvidenceField(header.Get(EvidenceContextSessionIDHeader), 128),
+		WorkflowID:   sanitizeEvidenceField(header.Get(EvidenceContextWorkflowIDHeader), 128),
+		AgentID:      sanitizeEvidenceField(header.Get(EvidenceContextAgentIDHeader), 128),
 		ActorRef:     sanitizeEvidenceField(header.Get(EvidenceContextActorRefHeader), 128),
 		OnBehalfOf:   sanitizeEvidenceField(header.Get(EvidenceContextOnBehalfOfHeader), 128),
 	}

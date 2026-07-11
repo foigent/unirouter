@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"context"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -13,7 +12,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/auth"
-	"github.com/uniroute/unirouter/internal/middleware"
 )
 
 func (h *Handler) GetWallet(w http.ResponseWriter, r *http.Request) {
@@ -98,12 +96,16 @@ func (h *Handler) TopUp(w http.ResponseWriter, r *http.Request) {
 		writeOrganizationScopeError(w, err)
 		return
 	}
+	r, operationID, ok := ensureOperationIdentityForHandler(w, r)
+	if !ok {
+		return
+	}
 
 	// Idempotency check: if client_request_id is provided, check for existing transaction
 	if req.ClientRequestID != "" {
 		var existingID int64
 		err := h.db.QueryRow(r.Context(),
-			`SELECT id FROM transactions WHERE request_id = $1 AND org_id = $2`,
+			`SELECT id FROM transactions WHERE client_request_id = $1 AND org_id = $2 AND type = 'topup'`,
 			req.ClientRequestID, walletOrgID,
 		).Scan(&existingID)
 		if err == nil {
@@ -142,15 +144,27 @@ func (h *Handler) TopUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	requestID := req.ClientRequestID
-	if requestID == "" {
-		requestID = fmt.Sprintf("topup-%d", time.Now().UnixNano())
-	}
 	_, err = tx.Exec(r.Context(),
-		`INSERT INTO transactions (request_id, org_id, type, status, amount, balance_after, note, created_at)
-		 VALUES ($1, $2, 'topup', 'completed', $3, $4, $5, NOW())`,
-		requestID, walletOrgID, req.AmountCents, balanceAfter, req.Description)
+		`INSERT INTO transactions (request_id, client_request_id, org_id, type, status, amount, balance_after, note, created_at)
+		 VALUES ($1, $2, $3, 'topup', 'completed', $4, $5, $6, NOW())`,
+		operationID, nullableString(req.ClientRequestID), walletOrgID, req.AmountCents, balanceAfter, req.Description)
 	if err != nil {
+		if req.ClientRequestID != "" && isPostgresUniqueViolation(err) {
+			_ = tx.Rollback(r.Context())
+			var existingID int64
+			lookupErr := h.db.QueryRow(r.Context(),
+				`SELECT id FROM transactions WHERE client_request_id = $1 AND org_id = $2 AND type = 'topup'`,
+				req.ClientRequestID, walletOrgID,
+			).Scan(&existingID)
+			if lookupErr == nil {
+				writeJSON(w, http.StatusConflict, map[string]interface{}{
+					"error":             "duplicate_request",
+					"existing_id":       existingID,
+					"client_request_id": req.ClientRequestID,
+				})
+				return
+			}
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to record transaction"})
 		return
 	}
@@ -160,10 +174,10 @@ func (h *Handler) TopUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	r = r.WithContext(context.WithValue(r.Context(), middleware.CtxRequestID, requestID))
 	h.recordAuditForOrgProjectFromRequest(r, walletOrgID, 0, "wallet.topup", "wallet", fmt.Sprintf("%d", walletOrgID), map[string]interface{}{
-		"amount_cents": req.AmountCents,
-		"description":  req.Description,
+		"amount_cents":      req.AmountCents,
+		"description":       req.Description,
+		"client_request_id": req.ClientRequestID,
 		"after": map[string]interface{}{
 			"amount_cents": req.AmountCents,
 			"description":  req.Description,
@@ -207,6 +221,10 @@ func (h *Handler) BalanceAdjust(w http.ResponseWriter, r *http.Request) {
 		writeOrganizationScopeError(w, err)
 		return
 	}
+	r, operationID, ok := ensureOperationIdentityForHandler(w, r)
+	if !ok {
+		return
+	}
 
 	tx, err := h.db.Begin(r.Context())
 	if err != nil {
@@ -237,11 +255,10 @@ func (h *Handler) BalanceAdjust(w http.ResponseWriter, r *http.Request) {
 	}
 
 	adjustAmount := req.TargetBalance - currentBalance
-	requestID := fmt.Sprintf("adjust-%d", time.Now().UnixNano())
 	_, err = tx.Exec(r.Context(),
 		`INSERT INTO transactions (request_id, org_id, type, status, amount, balance_after, note, created_at)
 		 VALUES ($1, $2, 'adjust', 'completed', $3, $4, $5, NOW())`,
-		requestID, walletOrgID, adjustAmount, req.TargetBalance, req.Description)
+		operationID, walletOrgID, adjustAmount, req.TargetBalance, req.Description)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to record transaction"})
 		return
@@ -252,7 +269,6 @@ func (h *Handler) BalanceAdjust(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	r = r.WithContext(context.WithValue(r.Context(), middleware.CtxRequestID, requestID))
 	h.recordAuditForOrgProjectFromRequest(r, walletOrgID, 0, "wallet.adjust", "wallet", fmt.Sprintf("%d", walletOrgID), map[string]interface{}{
 		"from":        currentBalance,
 		"to":          req.TargetBalance,

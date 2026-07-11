@@ -1,7 +1,7 @@
 # PRD6 Acceptance Matrix
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; Batch 0B active; P6-F32/P6-F33/P6-F34/P6-F35/P6-F37/P6-F38/P6-F39 merged; P6-F36 PR #148 implementation head CI verified with final-evidence-head CI/merge pending
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; Batch 0B active; P6-F32-P6-F39 accepted administrator rows merged/CI verified; P6-F17 Local verified with PR/required CI pending
 > Rule: a proposed row is not accepted implementation scope until its scope
 > state changes through an explicit decision. PRD5 evidence is referenced, not
 > rewritten.
@@ -31,8 +31,8 @@
 | P6-F39 | Authenticated request-log list/detail/trace, usage analytics/internal status, dashboard usage-derived aggregates and runtime traffic are actor-tenant scoped; platform cross-tenant selection is explicit | UniRouter | P0 / MVP integrity | Accepted safe remediation under PRD6 work rule 7 | migrated two-tenant signed-JWT matrix; omitted/foreign organization negatives; foreign/missing log non-enumeration; org-zero fail closed; platform default-own/explicit-target behavior; tenant-specific counts/tokens/cost/incidents; full local and required CI | Merged and CI verified by PR #145 / `609385f`; post-merge main run `29136296782` passed; evidence: `docs/ops/evidence/PRD6-B0B-P6F32-P6F39-finance-and-usage-tenant-isolation-local-20260711.md` |
 | P6-F34 | Global base-price and organization-multiplier mutations are platform-authority only | UniRouter | P0 / MVP integrity | Accepted by D6-08 | route-role matrix; own/foreign org multiplier tests; global-price platform gate; billing calculation non-regression; audit/CI | PR #146 squash-merged as `517ce45381429781f7e81e492bdd9f38093c21ba`; final-head run `29137670055` and post-merge main run `29137781625` passed Backend Tests, Frontend Build and Docker Build; historical branch retained; evidence: `docs/ops/evidence/PRD6-B0B-P6F34-pricing-authority-local-20260711.md`; no new global billing role is implied |
 | P6-F35 | Deployment settings, license material and the current global sensitive-word list are not mutable by tenant roles | UniRouter | P0 / MVP integrity | Accepted by D6-08 | production route-registration/handler authority matrix; reserved `license.*`/`sensitive_words` bypass denial; redacted settings reads; atomic business-write/audit rollback; concurrent global-word version ordering and replica convergence; startup fail-closed; full local/race/frontend/API-contract verification; required CI | PR #147 final head `fb77083d0f04f5cdaa20f38e763c93b51b89f4d1` / run `29139408226` passed all required jobs; squash-merged as `c08db96167837ade685708c2ab204861a8ecc0ca`; post-merge main run `29139534691` passed; historical branch restored and retained; no target or production claim; later target activation must be non-rolling after old control-plane drain; other new-version instances converge in approximately one minute; evidence: `docs/ops/evidence/PRD6-B0B-P6F35-global-control-authority-local-20260711.md` |
-| P6-F36 | Organization-level model registry, alias, catalog and model-set endpoints enforce actor ownership | UniRouter | P1 / MVP security prerequisite | Accepted by D6-08 | query/body/global-ID cross-tenant matrix; final SQL org predicates; project catalog same-org rule; platform exception; live model-admission non-regression; atomic model-set/audit rollback; CI | PR #148 implementation head `d69c041` passed Backend Tests, Frontend Build and Docker Build in run `29140520863` after Go normal/race/vet, frontend 27 files / 136 tests/type-check/build, OpenAPI/diff, migrated signed-JWT/PostgreSQL, audit-trigger rollback and independent review; no remaining blocker/high/medium/functional-low finding; final evidence-head CI and merge pending; no target claim; evidence: `docs/ops/evidence/PRD6-B0B-P6F36-model-governance-tenant-isolation-local-20260711.md` |
-| P6-F17 | Server operation, client idempotency, trace/span, workflow and Agent identities are separate and tenant scoped | UniRouter | P0 / MVP integrity | Accepted urgent Batch 0B | 100-child shared-trace test; same-payload replay; changed-payload 409; cross-org collision negative test; migration up/down | Source-confirmed gap; not remediated |
+| P6-F36 | Organization-level model registry, alias, catalog and model-set endpoints enforce actor ownership | UniRouter | P1 / MVP security prerequisite | Accepted by D6-08 | query/body/global-ID cross-tenant matrix; final SQL org predicates; project catalog same-org rule; platform exception; live model-admission non-regression; atomic model-set/audit rollback; CI | PR #148 final evidence head passed required run `29140739477`, squash-merged as `d83dbbc0ac7137bb44d2346adc5a25debde804e1`, and post-merge main run `29140850345` passed; no target claim; evidence: `docs/ops/evidence/PRD6-B0B-P6F36-model-governance-tenant-isolation-local-20260711.md` |
+| P6-F17 | Server operation, client idempotency, trace/span, workflow and Agent identities are separate and tenant scoped | UniRouter | P0 / MVP integrity | Accepted urgent Batch 0B | 100-child shared-trace and 100-settlement test; same-payload metadata replay; changed-payload 409; 100-way claim; cross-org collision negative; final-attempt readback; migration safe up/down/roll-forward | Local verified: caller-unoverrideable `op_` identity, separate client/workflow/Agent/attempt/upstream fields, HMAC metadata-only Scheme A, tenant/key/payload scope, financial composite key and Logs/Audit readback are implemented; full normal/race/vet, migrated integration, frontend 27/136, OpenAPI and diff checks passed; PR/required CI pending; no target claim; evidence: `docs/ops/evidence/PRD6-B0B-P6F17-operation-idempotency-identity-local-20260711.md` |
 | P6-F18 | Reservation is pool-safe and reaches exactly one durable terminal state after billable output | UniRouter | P0 / MVP financial integrity | Accepted urgent Batch 0B | pool-size barrier; 100-way Settle/Cancel race; post-chunk DB failure/restart; wallet/ledger invariants; multiplier price version | Source-confirmed gaps; not remediated |
 | P6-F03 | Retry only retryable provider failures and preserve safe client/policy response semantics | UniRouter | P0 / MVP correctness | Accepted Batch 0C | adapter matrix tests; no retry on 4xx/policy errors; bounded retry on classified transient failures; trace and billing invariants | Not started |
 | P6-F04 | Chat and Embeddings have route/failover parity | UniRouter | P0 / MVP correctness | Accepted Batch 0C | multi-route embeddings integration tests; auth/billing/trace parity; all-routes-fail behavior | Not started |
@@ -61,10 +61,18 @@
 | P6-F30 | Multimodal provenance passport | UniRouter media plane plus selected provenance standard | P3 / Long-tail | Deferred pending media roadmap | signed provenance validation, unknown-provenance semantics, modality conformance, retention and key lifecycle | Not accepted |
 | P6-F31 | Semantic collusion/cascade risk analysis | X-Insight analysis; action owners consume only accepted later policy | P3 / Research | Proposed; shadow only until separately accepted | ground-truthed multi-Agent fixtures; gap/reorder/semantic-rewrite and legitimate-collaboration negatives; precision/recall/abstention; no score-only hard denial | Not accepted |
 
-P6-F35 does not close P6-F05 or P6-F17. A typed configuration registry, the
-budget alert key/scope/audit truth chain, and ambiguous network commit
-readback/idempotency remain their accepted follow-up scope. P6-F35 adds no
-global-settings UI.
+User direction on 2026-07-11 records the future exact-cache end state as an
+independently deployable `D7-CACHE-001` Cache Service, documented in
+`docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md`. This is a future architecture
+and backlog decision only: P6-F13 remains not accepted in PRD6, no response
+persistence is authorized, and semantic cache still requires a separate later
+decision.
+
+P6-F35 does not close P6-F05. A typed configuration registry and the budget
+alert key/scope/audit truth chain remain P6-F05. P6-F17 now supplies separate
+server/client correlation plus tenant-scoped Audit readback for an ambiguous
+control-plane response; it does not silently make every administrator mutation
+replayable or close P6-F20 durability. P6-F35 adds no global-settings UI.
 
 P6-F36 does not reopen P6-F16 or change live admission. It adds no migration,
 RLS/composite/alias foreign key, unregistered-model denial, `/v1/models`

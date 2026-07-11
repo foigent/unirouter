@@ -18,25 +18,27 @@
 11. `docs/ops/evidence/PRD6-B0B-P6F34-pricing-authority-local-20260711.md` - current pricing-authority implementation and CI evidence.
 12. `docs/ops/evidence/PRD6-B0B-P6F35-global-control-authority-local-20260711.md` - merged global-control authority implementation, CI evidence and explicit target boundary.
 13. `docs/ops/evidence/PRD6-B0B-P6F36-model-governance-tenant-isolation-local-20260711.md` - current model-governance tenant-isolation implementation, local verification and explicit unchanged-product boundaries.
-14. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` - source-backed UI, reconciliation, correlation, architecture and upgrade audit.
-15. `docs/planning/PRD7-CANDIDATE-BACKLOG.md` - future first direction selected; implementation deferred until PRD6 closeout.
-16. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md` - version-fixed competitor audit and Four Quadrants.
-17. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md` - third-round boundary, CARTA/shadow/collusion analysis and Killer Features.
-18. `docs/planning/prd6-adaptive-trust-hardening/hardening.md` - adaptive-trust structural option portfolio and recommendation.
-19. `docs/PRD-Phase6.md` - accepted MVP, proposed innovation and ownership.
-20. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` - accepted, proposed, external and target-evidence rows.
-21. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md` - batch order and gates.
-22. `docs/planning/PRD6-BACKLOG.md` - classified backlog and decision register.
-23. `docs/PRD-Phase5.md` - completed accepted PRD5 scope and explicit remaining boundaries.
-24. `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` - PRD5's closed 36-row evidence ledger.
-25. `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md` - accepted X-Insight v1 boundary and PRD5 completion classification.
-26. `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md` - final PRD5 target evidence.
-27. `/Users/m4/Desktop/projects/X-Insight/docs/architecture/runtime-contract-capability-status.md` - X-Insight implemented/not-implemented runtime facts.
-28. `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-11-prd5-runtime-contract-v1-boundary.md` - accepted cross-project decision.
-29. `docs/issues/OPEN-ISSUES.md` - active issues and future evidence.
-30. `docs/agent-workflows/AGENT-PROTOCOL.md` - execution, approval, evidence and optional-review rules.
-31. `docs/agent-workflows/EXECUTION-RECORD.md` - current branch/batch verification.
-32. `docs/CODEBASE-MAP.md`, `docs/DOC-INVENTORY.md`, and `docs/DOCS-GOVERNANCE.md` - code and documentation lifecycle maps.
+14. `docs/ops/evidence/PRD6-B0B-P6F17-operation-idempotency-identity-local-20260711.md` - current server/client/idempotency/attempt implementation, verification and rollout boundary.
+15. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` - source-backed UI, reconciliation, correlation, architecture and upgrade audit.
+16. `docs/planning/PRD7-CANDIDATE-BACKLOG.md` - future first direction selected; implementation deferred until PRD6 closeout.
+17. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` - accepted future independent Cache Service target, planning bands and SaaS prerequisites; implementation deferred.
+18. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md` - version-fixed competitor audit and Four Quadrants.
+19. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md` - third-round boundary, CARTA/shadow/collusion analysis and Killer Features.
+20. `docs/planning/prd6-adaptive-trust-hardening/hardening.md` - adaptive-trust structural option portfolio and recommendation.
+21. `docs/PRD-Phase6.md` - accepted MVP, proposed innovation and ownership.
+22. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` - accepted, proposed, external and target-evidence rows.
+23. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md` - batch order and gates.
+24. `docs/planning/PRD6-BACKLOG.md` - classified backlog and decision register.
+25. `docs/PRD-Phase5.md` - completed accepted PRD5 scope and explicit remaining boundaries.
+26. `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` - PRD5's closed 36-row evidence ledger.
+27. `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md` - accepted X-Insight v1 boundary and PRD5 completion classification.
+28. `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md` - final PRD5 target evidence.
+29. `/Users/m4/Desktop/projects/X-Insight/docs/architecture/runtime-contract-capability-status.md` - X-Insight implemented/not-implemented runtime facts.
+30. `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-11-prd5-runtime-contract-v1-boundary.md` - accepted cross-project decision.
+31. `docs/issues/OPEN-ISSUES.md` - active issues and future evidence.
+32. `docs/agent-workflows/AGENT-PROTOCOL.md` - execution, approval, evidence and optional-review rules.
+33. `docs/agent-workflows/EXECUTION-RECORD.md` - current branch/batch verification.
+34. `docs/CODEBASE-MAP.md`, `docs/DOC-INVENTORY.md`, and `docs/DOCS-GOVERNANCE.md` - code and documentation lifecycle maps.
 
 ## Current Project Shape
 
@@ -71,18 +73,22 @@ jobs, and its historical branch is retained. P6-F35 PR #147 final head
 `29139408226`, was squash-merged as
 `c08db96167837ade685708c2ab204861a8ecc0ca`, and post-merge main run
 `29139534691` passed the same jobs; its historical branch is restored and
-retained. P6-F36 implementation, full local verification and independent review
-are complete on base `c08db961` / branch
-`codex/prd6-p6f36-modelgov-tenant`; PR #148 implementation head `d69c041`
-passed Backend Tests, Frontend Build and Docker Build in run `29140520863`, with
-no blocker/high/medium/functional-low finding remaining. Final evidence-head CI
-and merge are pending. No target or production verification is claimed.
+retained. P6-F36 PR #148 final required run `29140739477` passed, was
+squash-merged as `d83dbbc0ac7137bb44d2346adc5a25debde804e1`, and post-merge
+main run `29140850345` passed. P6-F17 Scheme A is Local verified on
+`codex/prd6-p6f17-idempotency` with PR/required CI pending. It adds no response
+cache and makes no target or production claim.
 P6-F37 audit-log tenant isolation and P6-F38 frontend test
 enforcement are merged and CI verified by PR #143 / `a1e0ad6` under the safe
 remediation rule. The
 adaptive-trust, Digital Twin,
 shadow, collusion, trust-receipt and claim-assurance rows remain proposed and
 are not implied by D6-01.
+
+The User accepted the complete exact-response cache as a future required,
+independently deployable `D7-CACHE-001` Cache Service reusable by private and
+SaaS regional-cell profiles. This is a PRD7 architecture/backlog decision only:
+no PRD6 response persistence, deployment or semantic cache is accepted.
 
 ## What Is Current Truth
 
@@ -100,8 +106,10 @@ are not implied by D6-01.
 | What does the current P6-F34 pricing-authority patch prove? | `docs/ops/evidence/PRD6-B0B-P6F34-pricing-authority-local-20260711.md` |
 | What does the current P6-F35 global-control patch prove, and what remains unverified? | `docs/ops/evidence/PRD6-B0B-P6F35-global-control-authority-local-20260711.md` |
 | What does the current P6-F36 model-governance patch prove, and which product rules remain unchanged? | `docs/ops/evidence/PRD6-B0B-P6F36-model-governance-tenant-isolation-local-20260711.md` |
+| What does P6-F17 prove about server/client identity, replay and failover attempts? | `docs/ops/evidence/PRD6-B0B-P6F17-operation-idempotency-identity-local-20260711.md` |
 | What did the UI/reconciliation/correlation/architecture audit conclude? | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` |
 | Which items are candidates for PRD7 rather than accepted scope? | `docs/planning/PRD7-CANDIDATE-BACKLOG.md` |
+| What is the accepted future Cache Service target and when should it split? | `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` |
 | What is the proposed PRD6 scope? | `docs/PRD-Phase6.md` |
 | Which PRD6 rows are accepted versus proposed? | `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` |
 | What is the PRD6 implementation order? | `docs/planning/PRD6-IMPLEMENTATION-PLAN.md` |
@@ -156,18 +164,19 @@ post-merge main run `29137781625` also passed all required jobs. P6-F35 PR #147
 final head `fb77083d0f04f5cdaa20f38e763c93b51b89f4d1` passed final required CI in
 run `29139408226`, was squash-merged as `c08db96167837ade685708c2ab204861a8ecc0ca`,
 and post-merge main run `29139534691` passed all required jobs; its historical
-branch is restored and retained. P6-F36 PR #148 implementation head `d69c041`
-passed required CI run `29140520863` after full local verification and
-independent review, with no remaining blocker/high/medium/functional-low
-finding; final evidence-head CI and merge remain pending. PRD7/target evidence
-are explicitly later; historical branches remain retained. No new item is
-target or production verified. Any
+branch is restored and retained. P6-F36 PR #148 final required run
+`29140739477`, squash merge `d83dbbc` and post-merge main run `29140850345`
+passed. P6-F17 full local/race/migrated/frontend verification passed; its PR and
+required CI remain pending. PRD7/target evidence are explicitly later;
+historical branches remain retained. No new item is target or production
+verified. Any
 later P6-F35 target cutover must first drain old control-plane binaries and use
 a non-rolling activation; new-version replicas converge global-word changes
 through the existing approximately one-minute reload path.
 No global-settings UI was added. Typed configuration ownership and the
-budget/alert key, scope and audit truth chain remain P6-F05/P6-F17; ambiguous
-network commit readback/idempotency remains P6-F17.
+budget/alert key, scope and audit truth chain remain P6-F05. P6-F17 adds
+separate operation/client identity and tenant-scoped Audit readback but no
+generic mutation replay or durable audit claim.
 P6-F36 does not reopen P6-F16, add a migration/RLS/foreign-key redesign, change
 unregistered-model compatibility or `/v1/models`, or add a selector UI/target
 cleanup.
