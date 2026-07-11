@@ -93,3 +93,7 @@ run `29133309062` then passed Backend Tests, Frontend Build and Docker Build for
 implementation head `132b019`. Independent review reproduced the pre-fix leak
 on `7173c59` and found no P6-F37 bypass candidate. This is `CI verified`, not
 Target or Production verified.
+
+PR #143 was squash-merged as
+`a1e0ad61ed44f02f32317131a1920a6181e43645`. Post-merge main CI run
+`29133690338` passed Backend Tests, Frontend Build and Docker Build.

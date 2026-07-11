@@ -44,7 +44,7 @@
 | P6-PRICE-AUTH-001 / P6-F34 | Platform-only global base-price and organization-multiplier mutation | prevents tenant roles changing platform/victim billing | Accepted; not started | P0 |
 | P6-CONTROL-AUTH-001 / P6-F35 | Gate deployment settings, license and global sensitive words | prevents tenant roles changing global runtime controls | Accepted; not started | P0 |
 | P6-MODELGOV-TENANT-001 / P6-F36 | Tenant-scope registry, alias, catalog and organization model sets | prevents cross-tenant model-policy disclosure/mutation | Accepted; not started | P1 |
-| P6-AUDIT-TENANT-001 / P6-F37 | Tenant-scope audit-log reads | prevents organization/billing roles reading another tenant's control-plane evidence | CI verified by PR #143; merge pending | P0 |
+| P6-AUDIT-TENANT-001 / P6-F37 | Tenant-scope audit-log reads | prevents organization/billing roles reading another tenant's control-plane evidence | Merged and CI verified by PR #143 / `a1e0ad6` | P0 |
 
 Evidence: `docs/ops/evidence/PRD6-B0B-admin-tenant-surface-audit-20260711.md`
 and `docs/ops/evidence/PRD6-B0B-P6F37-audit-log-tenant-isolation-local-20260711.md`.
