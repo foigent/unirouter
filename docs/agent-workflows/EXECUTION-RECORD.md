@@ -1,28 +1,29 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 0B P6-F17 Operation And Idempotency Identity
+**Batch:** PRD6 Batch 0B P6-F18 Billing Reservation And Stream Settlement Recovery
 **Owner:** Codex
-**Risk:** R4 caller-controlled financial identity, duplicate provider dispatch and cross-tenant collision
+**Risk:** R4 wallet conservation, billable-output refund and ambiguous post-stream settlement
 **Status:** CI verified and merged
-**Integration:** PR #149 implementation head `c1db614` passed required run `29152968280`, squash merge `c9402fa`, post-merge main run `29153106336`; no deployment, target or production claim
+**Integration:** F18A PR #151 / run `29154664491` / merge `7db1efc`; F18B PR #153 / run `29155948787` / merge `b30bc9d`; post-merge main run `29156096777` passed; no deployment, target or production claim
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Current Scope
 
-1. Generate a caller-unoverrideable server operation ID and keep caller
-   correlation, idempotency, trace/span, workflow, Agent, route attempt and
-   provider identity separate.
-2. Implement accepted Scheme A for Chat/Embeddings: tenant/API-key/payload-bound
-   HMAC metadata receipts, with no prompt/response storage or model-answer replay.
-3. Tenant-scope financial and administrator client-correlation uniqueness and
-   expose operation/client/attempt readback in Logs and Audit.
-4. Prove 100-child identity separation, 100 at-most-once settlements, 100-way
-   claim concurrency, replay/mismatch/cross-tenant behavior and migration
-   up/down/roll-forward.
-5. Keep P6-F18, P6-F20, response cache, target activation and SaaS deployment
-   outside this batch.
+1. Keep Freeze pool-safe and persist the effective price/multiplier and exact
+   cash/grant funding source.
+2. Make Settle/Cancel one terminal state transition with source-preserving
+   refunds and one ledger event.
+3. Persist `settlement_pending` before the first billable stream data event and
+   immutable final usage before settlement.
+4. Never cancel delivered output; recover prepared usage with bounded leased
+   multi-replica workers and backoff.
+5. Prove pool-size, exact-funds duplicate, 100-way terminal race, marker/usage
+   failure, post-chunk DB loss/restart, 20-worker exactly-once and migration
+   up/down guard behavior.
+6. Keep per-chunk process-kill journal, missing-log/audit replay, general outbox,
+   target activation, response cache and SaaS deployment outside P6-F18.
 
-## Current P6-F17 Behavior Change
+## Previous P6-F17 Behavior Change
 
 - response `X-Request-ID` is a cryptographically random `op_` server operation;
   caller values are retained only as `X-UniRouter-Client-Request-ID`;
@@ -123,7 +124,7 @@
   now closed by PR #149; wallet pool/grant semantics remain P6-F18, and
   project-dashboard granularity remains a separate permission item.
 
-## Current P6-F18A Billing Reservation Foundation
+## Current P6-F18 Billing Reservation And Stream Recovery
 
 - Retained branch `codex/prd6-p6f18a-billing-invariants` removes Freeze pool
   re-entry, snapshots the effective price/multiplier version, preserves grant
@@ -133,9 +134,19 @@
   terminal competition, full 137-test frontend suite, type-check and build.
 - PR #151 head `84f3c4b` passed required run `29154664491`, was squash-merged as
   `7db1efc`, and post-merge main run `29154820102` passed all required jobs.
-  F18B remains a separate R4 batch for durable billable-output
-  `settlement_pending` and restart recovery; no target or production claim is
-  made.
+- F18B persists `settlement_pending` before the first billable stream event,
+  persists immutable final usage, rejects post-output cancellation and starts a
+  leased/backoff recovery loop in every replica.
+- Output-marker failure withholds model content and safely cancels pre-output;
+  final-usage failure never refunds and omits a false `[DONE]` terminal.
+- Simulated post-chunk DB loss plus a new Billing instance and 20 concurrent
+  workers produces one settlement; failed recovery releases its lease, backs
+  off and later settles. Payload-missing rows remain held without guessed
+  charge/refund.
+- PR #153 final head `0ca2bbb` passed required run `29155948787`, was
+  squash-merged as `b30bc9d`, and post-merge main run `29156096777` passed all
+  required jobs. P6-F18 is CI verified / closed. P6-F20 remains open and no
+  target or production claim is made.
 
 ## Previous P6-F37 Behavior Change
 

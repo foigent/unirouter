@@ -30,8 +30,11 @@
 > P6-F18A billing reservation invariants passed PR #151 required run
 > `29154664491`, were squash-merged as
 > `7db1efc9cf7c0c78fd6348446ed8701ecf86e8ee`, and post-merge main run
-> `29154820102` passed Backend Tests, Frontend Build and Docker Build. F18B
-> durable post-output settlement recovery remains open.
+> `29154820102` passed Backend Tests, Frontend Build and Docker Build. P6-F18B
+> stream settlement recovery passed PR #153 required run `29155948787`, was
+> squash-merged as `b30bc9d1cb237703cc9479c3161c9cfa2c28f3f6`, and post-merge main run
+> `29156096777` passed all three jobs. P6-F18 is CI verified / closed; P6-F20
+> remains separate.
 > No target or production verification is claimed.
 > D6-01, D6-02, D6-08 and D6-09 were accepted by the User on 2026-07-11; advanced
 > innovation rows P6-F23 through P6-F31 remain proposed.
@@ -67,8 +70,11 @@
   `docs/ops/evidence/PRD6-B0B-P6F17-operation-idempotency-identity-local-20260711.md`.
 - P6-F18A billing reservation invariant local and CI evidence:
   `docs/ops/evidence/PRD6-B0B-P6F18A-billing-reservation-invariants-local-20260711.md`.
-  PR #151 and post-merge main required CI passed; F18B durable post-output
-  settlement/restart recovery remains open.
+  PR #151 and post-merge main required CI passed.
+- P6-F18B stream settlement recovery local and CI evidence:
+  `docs/ops/evidence/PRD6-B0B-P6F18B-stream-settlement-recovery-local-20260711.md`.
+  PR #153 and post-merge main required CI passed; this closes P6-F18 but not
+  P6-F20 per-chunk/process-kill journaling or the general outbox.
 - Source-backed product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
 - PRD7 candidate-only split (not Accepted Scope):
@@ -82,6 +88,10 @@
 - Scope entry: `docs/planning/PRD6-START-HERE.md`.
 - Proposed PRD: `docs/PRD-Phase6.md`; accepted/proposed state is authoritative
   in `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`.
+- Accepted feature accounting after P6-F18 closeout: 25 accepted rows, 13 CI
+  verified / closed and 12 not started (`P6-F03`-`P6-F11`, `P6-F19`-`P6-F21`).
+  `P6-TEST-DB-001` is a separate partially remediated engineering-integrity
+  issue outside that 25-row feature count.
 - Fresh pre-change verification passed backend tests/vet, frontend type-check,
   25 files / 125 tests, frontend build, and X-Insight full Go tests.
 - Focused read-only audit verification passed auth/middleware/admin/billing and
@@ -132,17 +142,25 @@ P6-F17 repository/CI verification covers server-owned operation IDs, separate cl
 correlation, tenant/API-key/payload-bound metadata-only Chat/Embeddings
 idempotency, distinct workflow/Agent/attempt/upstream identities, tenant-scoped
 financial uniqueness, and Logs/Audit readback. It stores no prompt/answer and
-does not close P6-F18 or P6-F20. Migration `000021` requires old-writer drain;
-its safe partial down is not authorization to restart an old binary.
+does not itself close P6-F20; P6-F18 is separately closed by the F18A/F18B
+delivery. Migration `000021` requires old-writer drain; its safe partial down
+is not authorization to restart an old binary.
 
-P6-F18A is CI verified for the wallet/reservation foundation: price lookup no
+P6-F18 is CI verified for the wallet/reservation and billable-stream foundation:
+price lookup no
 longer re-enters a held pool transaction; the effective price/multiplier
 version is frozen; grant/cash holds and refunds preserve their source; grant
 expiry is atomic; duplicate exact-funds Freeze succeeds from one receipt; and a
 100-way mixed Settle/Cancel race creates one terminal ledger event. PR #151
 required run `29154664491`, squash merge `7db1efc` and post-merge main run
-`29154820102` passed. This does not close P6-F18: post-output
-`settlement_pending`, final-usage persistence and restart recovery remain F18B.
+`29154820102` passed. F18B then adds a durable pre-output
+`settlement_pending` marker, immutable final-usage payload, non-cancellable
+post-output failure posture and leased/backoff recovery. PR #153 required run
+`29155948787`, squash merge `b30bc9d` and post-merge main run `29156096777`
+passed. Simulated post-chunk DB loss plus 20 concurrent workers produces one
+terminal receipt. This closes P6-F18 at CI evidence level only; rows missing
+final usage remain held, and per-chunk journal/general outbox work remains
+P6-F20. No target or production verification is claimed.
 
 P6-F36 local evidence also covers only the repository boundary. It does not
 reopen P6-F16, add a migration/RLS/foreign-key redesign, change the existing

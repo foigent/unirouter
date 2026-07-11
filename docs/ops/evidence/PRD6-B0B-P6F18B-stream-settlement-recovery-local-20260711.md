@@ -2,8 +2,11 @@
 
 > Date: 2026-07-11
 > Scope: UniRouter repository only
-> Evidence level: Local verified; required PR CI pending
+> Evidence level: CI verified
 > Implementation commit: `32bf08e78d2a9904a64b8009ee9923de280730e9`
+> Final PR head: `0ca2bbbd0f3ead2228ed759e77d37126bc95fa7e`
+> PR / required CI: #153 / `29155948787`
+> Squash merge / post-merge main CI: `b30bc9d1cb237703cc9479c3161c9cfa2c28f3f6` / `29156096777`
 > Deployment/target/production claim: none
 
 ## 1. Confirmed pre-fix defect
@@ -85,8 +88,9 @@ passed with the existing bundle-size warning. The Go race run passed with the
 known macOS linker `LC_DYSYMTAB` warnings; no race was reported.
 
 Local Docker verification was not performed because this host has no local
-Docker CLI. Docker Build remains a required CI gate and no substitute claim is
-made here.
+Docker CLI. PR #153 required run `29155948787` passed Backend Tests, Frontend
+Build and Docker Build for final head `0ca2bbb`. It was squash-merged as
+`b30bc9d`, and post-merge main run `29156096777` passed the same three jobs.
 
 ## 5. Migration and release boundary
 
