@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F16-P6-F18/P6-F32-P6-F39 applicable rows merged and CI verified
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F03 locally verified pending CI; P6-F16-P6-F18/P6-F32-P6-F39 applicable rows merged and CI verified
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -38,19 +38,23 @@ recommended MVP boundary and policy-specific failure posture on 2026-07-11:
 11. `docs/ops/evidence/PRD6-B0B-P6F35-global-control-authority-local-20260711.md`
 12. `docs/ops/evidence/PRD6-B0B-P6F36-model-governance-tenant-isolation-local-20260711.md`
 13. `docs/ops/evidence/PRD6-B0B-P6F17-operation-idempotency-identity-local-20260711.md`
-14. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`
-15. `docs/planning/PRD7-CANDIDATE-BACKLOG.md`
-16. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md`
-17. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
-18. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
-19. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
-20. `docs/PRD-Phase6.md`
-21. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
-22. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
-23. `docs/planning/PRD6-BACKLOG.md`
-24. `docs/issues/OPEN-ISSUES.md`
-25. `docs/agent-workflows/AGENT-PROTOCOL.md`
-26. `docs/agent-workflows/EXECUTION-RECORD.md`
+14. `docs/ops/evidence/PRD6-B0B-P6F18A-billing-reservation-invariants-local-20260711.md`
+15. `docs/ops/evidence/PRD6-B0B-P6F18B-stream-settlement-recovery-local-20260711.md`
+16. `docs/ops/evidence/PRD6-ENG-P6TESTDB-admin-integration-isolation-local-20260711.md`
+17. `docs/ops/evidence/PRD6-B0C-P6F03-retry-classification-local-20260711.md`
+18. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`
+19. `docs/planning/PRD7-CANDIDATE-BACKLOG.md`
+20. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md`
+21. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
+22. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
+23. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
+24. `docs/PRD-Phase6.md`
+25. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
+26. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
+27. `docs/planning/PRD6-BACKLOG.md`
+28. `docs/issues/OPEN-ISSUES.md`
+29. `docs/agent-workflows/AGENT-PROTOCOL.md`
+30. `docs/agent-workflows/EXECUTION-RECORD.md`
 
 PRD5 evidence remains under its existing paths. Do not rewrite it as PRD6
 evidence.
@@ -104,6 +108,13 @@ evidence.
   main run `29140850345` passed all required jobs. Neither row has a
   target/production claim. P6-F37 and P6-F38
   are merged and CI verified by PR #143 / `a1e0ad6`.
+- P6-F17 and P6-F18 are CI verified / closed by PRs #149, #151 and #153;
+  their post-merge main required runs passed. P6-TEST-DB-001 is separately CI
+  verified / closed by PR #155, merge `4b18ace` and main run `29157561036`.
+- P6-F03 is Local verified: deterministic client/auth/unknown failures stop,
+  classified transient failures alone fail over, safe response and trace
+  semantics are preserved, and billing has one terminal action. Required PR CI
+  remains pending; P6-F04 Embeddings parity remains separate.
 
 ## PRD5 Closure Guard
 

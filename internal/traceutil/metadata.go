@@ -20,6 +20,8 @@ var metadataAllowlist = map[string]bool{
 	"raw_payload_stored":    true,
 	"route_count":           true,
 	"route_index":           true,
+	"retry_decision":        true,
+	"retryable":             true,
 	"settle_cancelled":      true,
 	"stream":                true,
 	"total_tokens":          true,
