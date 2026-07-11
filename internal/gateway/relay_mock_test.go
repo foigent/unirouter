@@ -32,8 +32,24 @@ type mockBilling struct {
 	queryModelPriceFn func(ctx context.Context, orgID int64, model string) (float64, float64, error)
 	calculateCostFn   func(ctx context.Context, model string, promptTokens, completionTokens int) (int, error)
 	freezeFn          func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error)
+	markOutputFn      func(ctx context.Context, requestID string, orgID int64) error
+	persistUsageFn    func(ctx context.Context, req billing.SettleRequest) error
 	settleFn          func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error)
 	cancelFn          func(ctx context.Context, requestID string, orgID int64) error
+}
+
+func (m *mockBilling) MarkBillableOutput(ctx context.Context, requestID string, orgID int64) error {
+	if m.markOutputFn != nil {
+		return m.markOutputFn(ctx, requestID, orgID)
+	}
+	return nil
+}
+
+func (m *mockBilling) PersistSettlementUsage(ctx context.Context, req billing.SettleRequest) error {
+	if m.persistUsageFn != nil {
+		return m.persistUsageFn(ctx, req)
+	}
+	return nil
 }
 
 func (m *mockBilling) QueryModelPriceForOrg(ctx context.Context, orgID int64, model string) (float64, float64, error) {
@@ -1803,18 +1819,168 @@ func TestRelayStreamRequest_SettleError(t *testing.T) {
 	if settleCalls != billingSettleMaxAttempts {
 		t.Fatalf("expected %d settle attempts, got %d", billingSettleMaxAttempts, settleCalls)
 	}
-	if !cancelCalled {
-		t.Fatal("expected cancel to release frozen amount after stream settle failure")
+	if cancelCalled {
+		t.Fatal("billable stream output must remain pending and must not be cancelled")
 	}
 	body := rec.Body.String()
 	if !strings.Contains(body, "data: [DONE]") {
 		t.Fatal("expected [DONE] even after settle error")
 	}
-	if !strings.Contains(body, `"billing_status":"settle_failed_cancelled"`) {
+	if !strings.Contains(body, `"billing_status":"settlement_pending_recovery"`) {
 		t.Fatalf("expected settle failure billing status, got %s", body)
 	}
 	if !strings.Contains(body, `"charged":0`) {
-		t.Fatalf("expected charged cost to be zero after cancelled settle failure, got %s", body)
+		t.Fatalf("expected charged cost to remain pending until recovery, got %s", body)
+	}
+}
+
+func TestP6F18BRelayStreamMarksOutputAndPersistsUsageBeforeSettlement(t *testing.T) {
+	sequence := make([]string, 0, 3)
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int) = 10000
+				return nil
+			}}
+		},
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	b := &mockBilling{
+		markOutputFn: func(ctx context.Context, requestID string, orgID int64) error {
+			sequence = append(sequence, "mark")
+			return nil
+		},
+		persistUsageFn: func(ctx context.Context, req billing.SettleRequest) error {
+			sequence = append(sequence, "persist")
+			if req.PromptTokens != 12 || req.CompletionTokens != 4 {
+				t.Fatalf("unexpected persisted usage: %+v", req)
+			}
+			return nil
+		},
+		settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
+			sequence = append(sequence, "settle")
+			return &billing.SettleResult{SettleID: 1, ActualCost: 2, ChargedCost: 2, Success: true}, nil
+		},
+	}
+	relay := newTestRelay(db, b)
+	stream := "data: {\"choices\":[{\"delta\":{\"content\":\"billable\"}}]}\n\n" +
+		"data: {\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":4}}\n\n" +
+		"data: [DONE]\n\n"
+	rec := httptest.NewRecorder()
+	resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(stream))}
+	route := &RouteResult{Channel: models.Channel{ID: 1, Name: "openai", Provider: "openai"}}
+
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-p6f18b-order", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-p6f18b-order", OrgID: 1}), time.Now(), 1000, nil, "")
+
+	if got, want := strings.Join(sequence, ","), "mark,persist,settle"; got != want {
+		t.Fatalf("unexpected billing order: got %s want %s", got, want)
+	}
+	if !strings.Contains(rec.Body.String(), "billable") || !strings.Contains(rec.Body.String(), "data: [DONE]") {
+		t.Fatalf("expected completed stream, got %s", rec.Body.String())
+	}
+}
+
+func TestP6F18BRelayStreamWithholdsContentWhenOutputMarkerFails(t *testing.T) {
+	cancelCalls := 0
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int) = 10000
+				return nil
+			}}
+		},
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	b := &mockBilling{
+		markOutputFn: func(ctx context.Context, requestID string, orgID int64) error {
+			return fmt.Errorf("database unavailable")
+		},
+		cancelFn: func(ctx context.Context, requestID string, orgID int64) error {
+			cancelCalls++
+			return nil
+		},
+		persistUsageFn: func(ctx context.Context, req billing.SettleRequest) error {
+			t.Fatal("usage must not be persisted without an output marker")
+			return nil
+		},
+		settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
+			t.Fatal("settlement must not run without an output marker")
+			return nil, nil
+		},
+	}
+	relay := newTestRelay(db, b)
+	rec := httptest.NewRecorder()
+	resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("data: {\"choices\":[{\"delta\":{\"content\":\"must-not-leak\"}}]}\n\ndata: [DONE]\n\n"))}
+	route := &RouteResult{Channel: models.Channel{ID: 1, Name: "openai", Provider: "openai"}}
+
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-p6f18b-marker-fail", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-p6f18b-marker-fail", OrgID: 1}), time.Now(), 1000, nil, "")
+
+	if cancelCalls != 1 {
+		t.Fatalf("expected one safe pre-output cancellation, got %d", cancelCalls)
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "must-not-leak") {
+		t.Fatalf("model content crossed a failed billing marker: %s", body)
+	}
+	if !strings.Contains(body, "Unable to establish durable billing state") {
+		t.Fatalf("expected durable billing error, got %s", body)
+	}
+	if strings.Contains(body, "data: [DONE]") {
+		t.Fatalf("failed stream must not advertise a completed terminal: %s", body)
+	}
+}
+
+func TestP6F18BRelayStreamDoesNotCancelWhenFinalUsagePersistenceFails(t *testing.T) {
+	persistCalls := 0
+	cancelCalls := 0
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int) = 10000
+				return nil
+			}}
+		},
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	b := &mockBilling{
+		persistUsageFn: func(ctx context.Context, req billing.SettleRequest) error {
+			persistCalls++
+			return fmt.Errorf("database unavailable")
+		},
+		cancelFn: func(ctx context.Context, requestID string, orgID int64) error {
+			cancelCalls++
+			return nil
+		},
+		settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
+			t.Fatal("settlement must not run before durable usage persistence")
+			return nil, nil
+		},
+	}
+	relay := newTestRelay(db, b)
+	rec := httptest.NewRecorder()
+	resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("data: {\"choices\":[{\"delta\":{\"content\":\"delivered\"}}]}\n\ndata: [DONE]\n\n"))}
+	route := &RouteResult{Channel: models.Channel{ID: 1, Name: "openai", Provider: "openai"}}
+
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-p6f18b-persist-fail", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-p6f18b-persist-fail", OrgID: 1}), time.Now(), 1000, nil, "")
+
+	if persistCalls != billingSettleMaxAttempts {
+		t.Fatalf("expected %d persistence attempts, got %d", billingSettleMaxAttempts, persistCalls)
+	}
+	if cancelCalls != 0 {
+		t.Fatalf("delivered output must never be cancelled, got %d calls", cancelCalls)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "delivered") || !strings.Contains(body, "settlement_pending_usage_unpersisted") {
+		t.Fatalf("expected delivered content and pending reconciliation error, got %s", body)
+	}
+	if strings.Contains(body, "data: [DONE]") {
+		t.Fatalf("usage persistence failure must not advertise a completed terminal: %s", body)
 	}
 }
 

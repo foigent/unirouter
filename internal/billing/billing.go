@@ -77,6 +77,11 @@ type reservationRecord struct {
 	EffectiveOutputPrice  float64
 	PricingVersion        string
 	Status                string
+	PromptTokens          int
+	CompletionTokens      int
+	UsageSource           string
+	SettlementPayloadAt   sql.NullTime
+	SettlementAttempts    int
 	CalculatedCost        int
 	ChargedCost           int
 	UncoveredCost         int
@@ -86,6 +91,8 @@ type reservationRecord struct {
 }
 
 var ErrSettlementPending = errors.New("billing reservation has billable output pending settlement")
+var ErrSettlementUsageNotReady = errors.New("billing settlement usage is not durably prepared")
+var ErrSettlementUsageConflict = errors.New("billing settlement usage conflicts with the durable payload")
 
 // Billing handles the freeze/settle/cancel state machine.
 type Billing struct {
@@ -453,7 +460,9 @@ func (b *Billing) lookupReservation(ctx context.Context, requestID string, orgID
 	err := b.db.QueryRow(ctx,
 		`SELECT frozen_amount, reserved_balance_amount, reserved_granted_amount,
 		        effective_input_price_cents::float8, effective_output_price_cents::float8,
-		        pricing_version, status, calculated_cost, charged_cost, uncovered_cost,
+		        pricing_version, status, prompt_tokens, completion_tokens, usage_source,
+		        settlement_payload_ready_at, settlement_attempts,
+		        calculated_cost, charged_cost, uncovered_cost,
 		        refund_amount, terminal_transaction_id, balance_after
 		 FROM freeze_idempotency
 		 WHERE request_id = $1 AND org_id = $2`,
@@ -466,6 +475,11 @@ func (b *Billing) lookupReservation(ctx context.Context, requestID string, orgID
 		&record.EffectiveOutputPrice,
 		&record.PricingVersion,
 		&record.Status,
+		&record.PromptTokens,
+		&record.CompletionTokens,
+		&record.UsageSource,
+		&record.SettlementPayloadAt,
+		&record.SettlementAttempts,
 		&record.CalculatedCost,
 		&record.ChargedCost,
 		&record.UncoveredCost,
@@ -503,9 +517,22 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		return settleResultFromRecord(record), nil
 	case "cancelled":
 		return &SettleResult{Success: false, ErrorCode: "already_cancelled"}, nil
-	case "frozen", "settlement_pending":
-		// Continue below. settlement_pending is reserved for P6-F18B recovery
-		// and may only move toward settlement, never cancellation.
+	case "settlement_pending":
+		if !record.SettlementPayloadAt.Valid {
+			return nil, ErrSettlementUsageNotReady
+		}
+		if req.PromptTokens != record.PromptTokens ||
+			req.CompletionTokens != record.CompletionTokens ||
+			req.UsageSource != record.UsageSource {
+			return nil, ErrSettlementUsageConflict
+		}
+		// Only the durable payload may drive recovery of billable output.
+		req.PromptTokens = record.PromptTokens
+		req.CompletionTokens = record.CompletionTokens
+		req.UsageSource = record.UsageSource
+	case "frozen":
+		// Non-stream responses are withheld until this transaction succeeds, so
+		// they can still settle directly from the caller-provided usage.
 	default:
 		return &SettleResult{Success: false, ErrorCode: "invalid_state"}, nil
 	}
@@ -588,6 +615,8 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		     terminal_transaction_id = $11,
 		     balance_after = $12,
 		     terminal_at = NOW(),
+		     settlement_claimed_until = NULL,
+		     settlement_next_attempt_at = NULL,
 		     updated_at = NOW()
 		 WHERE request_id = $1 AND org_id = $2 AND status IN ('frozen', 'settlement_pending')`,
 		req.RequestID, req.OrgID,
@@ -597,6 +626,26 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("update idempotency: %w", err)
+	}
+
+	// A recovered stream may already have a best-effort call log with zero
+	// cost. Converge it to the durable settlement receipt in the same
+	// transaction when that row exists. The normal request path may insert the
+	// log after settlement, in which case this update intentionally affects 0.
+	if record.SettlementAttempts > 0 {
+		if _, err := tx.Exec(ctx,
+			`UPDATE call_logs
+			 SET prompt_tokens = $3,
+			     completion_tokens = $4,
+			     total_tokens = $3::integer + $4::integer,
+			     cost_cents = $5,
+			     usage_source = $6
+			 WHERE request_id = $1 AND org_id = $2`,
+			req.RequestID, req.OrgID, req.PromptTokens, req.CompletionTokens,
+			chargedCost, req.UsageSource,
+		); err != nil {
+			return nil, fmt.Errorf("converge recovered call log: %w", err)
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -660,7 +709,9 @@ func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgI
 	err := tx.QueryRow(ctx,
 		`SELECT frozen_amount, reserved_balance_amount, reserved_granted_amount,
 		        effective_input_price_cents::float8, effective_output_price_cents::float8,
-		        pricing_version, status, calculated_cost, charged_cost, uncovered_cost,
+		        pricing_version, status, prompt_tokens, completion_tokens, usage_source,
+		        settlement_payload_ready_at, settlement_attempts,
+		        calculated_cost, charged_cost, uncovered_cost,
 		        refund_amount, terminal_transaction_id, balance_after
 		 FROM freeze_idempotency
 		 WHERE request_id = $1 AND org_id = $2
@@ -673,6 +724,11 @@ func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgI
 		&record.EffectiveOutputPrice,
 		&record.PricingVersion,
 		&record.Status,
+		&record.PromptTokens,
+		&record.CompletionTokens,
+		&record.UsageSource,
+		&record.SettlementPayloadAt,
+		&record.SettlementAttempts,
 		&record.CalculatedCost,
 		&record.ChargedCost,
 		&record.UncoveredCost,

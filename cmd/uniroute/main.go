@@ -83,6 +83,9 @@ func main() {
 	// Initialize core components
 	router := gateway.NewRouter(postgres.Pool)
 	billingSvc := billing.NewBilling(postgres.Pool, redisClient.Client)
+	settlementRecoveryCtx, stopSettlementRecovery := context.WithCancel(context.Background())
+	defer stopSettlementRecovery()
+	go billingSvc.RunSettlementRecoveryLoop(settlementRecoveryCtx, 10*time.Second, 100)
 	admissionCtrl := middleware.NewDefaultAdmissionController()
 	initialFilterCtx, cancelInitialFilterLoad := context.WithTimeout(context.Background(), 10*time.Second)
 	initialSensitiveWords, initialSensitiveVersion, err := loadSensitiveWords(initialFilterCtx, postgres.Pool)
@@ -506,6 +509,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	log.Println("Shutting down server...")
+	stopSettlementRecovery()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.ShutdownTimeoutSecs)*time.Second)
 	defer cancel()
