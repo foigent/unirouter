@@ -117,16 +117,15 @@ func (h *Handler) analyticsConditions(r *http.Request) ([]string, []interface{},
 	}
 
 	role := actorRole(r.Context())
-	orgID := middleware.GetOrgIDFromContext(r.Context())
-	if orgID > 0 && role != auth.RolePlatformAdmin {
-		add("org_id = $%d", orgID)
-	} else if value := r.URL.Query().Get("org_id"); value != "" {
-		parsed, err := strconv.ParseInt(value, 10, 64)
-		if err != nil || parsed <= 0 {
-			return nil, nil, fmt.Errorf("Invalid org_id")
-		}
-		add("org_id = $%d", parsed)
+	requestedOrgID, err := parseOptionalOrganizationID(r.URL.Query().Get("org_id"))
+	if err != nil {
+		return nil, nil, fmt.Errorf("Invalid org_id")
 	}
+	orgID, err := resolveActorOrganization(r.Context(), requestedOrgID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("Forbidden")
+	}
+	add("org_id = $%d", orgID)
 
 	currentUserID := middleware.GetUserIDFromContext(r.Context())
 	myScope := false
@@ -320,10 +319,10 @@ func (h *Handler) writeUsageAnalyticsCSV(w http.ResponseWriter, group analyticsG
 	w.Header().Set("Content-Type", "text/csv")
 	w.Header().Set("Content-Disposition", "attachment; filename=uniroute-usage-analytics.csv")
 	writer := csv.NewWriter(w)
-	_ = writer.Write([]string{group.Label, "total_requests", "success_requests", "failed_requests", "total_tokens", "cost_cents", "avg_latency_ms", "estimated_ratio"})
+	_ = writer.Write([]string{neutralizeSpreadsheetFormula(group.Label), "total_requests", "success_requests", "failed_requests", "total_tokens", "cost_cents", "avg_latency_ms", "estimated_ratio"})
 	for _, row := range groups {
 		_ = writer.Write([]string{
-			fmt.Sprint(row["key"]),
+			neutralizeSpreadsheetFormula(fmt.Sprint(row["key"])),
 			fmt.Sprint(row["total_requests"]),
 			fmt.Sprint(row["success_requests"]),
 			fmt.Sprint(row["failed_requests"]),
@@ -424,16 +423,15 @@ func (h *Handler) internalStatusConditions(r *http.Request) ([]string, []interfa
 	}
 
 	role := actorRole(r.Context())
-	orgID := middleware.GetOrgIDFromContext(r.Context())
-	if orgID > 0 && role != auth.RolePlatformAdmin {
-		add("org_id = $%d", orgID)
-	} else if value := r.URL.Query().Get("org_id"); value != "" {
-		parsed, err := strconv.ParseInt(value, 10, 64)
-		if err != nil || parsed <= 0 {
-			return nil, nil, fmt.Errorf("Invalid org_id")
-		}
-		add("org_id = $%d", parsed)
+	requestedOrgID, err := parseOptionalOrganizationID(r.URL.Query().Get("org_id"))
+	if err != nil {
+		return nil, nil, fmt.Errorf("Invalid org_id")
 	}
+	orgID, err := resolveActorOrganization(r.Context(), requestedOrgID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("Forbidden")
+	}
+	add("org_id = $%d", orgID)
 	if value := r.URL.Query().Get("project_id"); value != "" {
 		projectID, err := strconv.ParseInt(value, 10, 64)
 		if err != nil || projectID <= 0 {

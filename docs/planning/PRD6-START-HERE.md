@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08 accepted; P6-F16/P6-F33/P6-F37/P6-F38 CI verified
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F32/P6-F39 Local verified pending required CI; P6-F16/P6-F33/P6-F37/P6-F38 CI verified
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -33,18 +33,19 @@ recommended MVP boundary and policy-specific failure posture on 2026-07-11:
 6. `docs/ops/evidence/PRD6-B0B-P6F33-notification-tenant-isolation-local-20260711.md`
 7. `docs/ops/evidence/PRD6-B0B-P6F37-audit-log-tenant-isolation-local-20260711.md`
 8. `docs/ops/evidence/PRD6-B0B-P6F38-frontend-test-ci-local-20260711.md`
-9. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`
-10. `docs/planning/PRD7-CANDIDATE-BACKLOG.md`
-11. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
-12. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
-13. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
-14. `docs/PRD-Phase6.md`
-15. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
-16. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
-17. `docs/planning/PRD6-BACKLOG.md`
-18. `docs/issues/OPEN-ISSUES.md`
-19. `docs/agent-workflows/AGENT-PROTOCOL.md`
-20. `docs/agent-workflows/EXECUTION-RECORD.md`
+9. `docs/ops/evidence/PRD6-B0B-P6F32-P6F39-finance-and-usage-tenant-isolation-local-20260711.md`
+10. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`
+11. `docs/planning/PRD7-CANDIDATE-BACKLOG.md`
+12. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
+13. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
+14. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
+15. `docs/PRD-Phase6.md`
+16. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
+17. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
+18. `docs/planning/PRD6-BACKLOG.md`
+19. `docs/issues/OPEN-ISSUES.md`
+20. `docs/agent-workflows/AGENT-PROTOCOL.md`
+21. `docs/agent-workflows/EXECUTION-RECORD.md`
 
 PRD5 evidence remains under its existing paths. Do not rewrite it as PRD6
 evidence.
@@ -83,11 +84,11 @@ evidence.
 - P6-F16 is CI verified and squash-merged by PR #140 as `f244f669`. Backend
   logs prove the migrated PostgreSQL matrix and all twelve authenticated
   subtests passed rather than skipped; post-merge `main` CI also passed.
-- P6-F32 through P6-F36 are later source-confirmed administrator-surface inputs.
-  They were not known when D6-01 was accepted and were separately accepted by
-  D6-08. P6-F33 is CI verified by PR #142 / `7173c59`; the other D6-08 rows
-  remain unremediated. The separate P6-F37 audit-log tenant fix and P6-F38
-  frontend-test gate are merged and CI verified by PR #143 / `a1e0ad6`.
+- P6-F32 through P6-F36 are later source-confirmed administrator-surface inputs
+  accepted by D6-08. P6-F33 is CI verified by PR #142 / `7173c59`; P6-F32 and
+  adjacent safe-remediation row P6-F39 are Local verified on the current branch
+  with required CI pending. P6-F34 through P6-F36 remain unremediated. P6-F37
+  and P6-F38 are merged and CI verified by PR #143 / `a1e0ad6`.
 
 ## PRD5 Closure Guard
 
@@ -118,6 +119,11 @@ completion defects and must not be used to reopen PRD5:
    roles are confined to their JWT organization. Global prices, settings,
    license, global sensitive words and organization multipliers require
    `platform_admin`; no new global billing role is implied.
+4. **D6-09 closeout sequencing — accepted.** Finish PRD6 repository scope
+   first. D7-UPGRADE-001/002 is the selected future PRD7 direction, but all
+   PRD7 implementation and target-evidence execution are deferred until PRD6
+   closeout. Historical branches remain retained; the existing Gate A file
+   deadline is unchanged.
 
 UniRouter owns the request-path and its authoritative authorization, routing,
 usage, billing, and audit facts. Other projects may consume a sanitized,
@@ -132,5 +138,6 @@ deployment, target mutation, paid shadow traffic, raw-payload expansion, a new
 X-Insight contract, semantic response cache, video execution, or an IAM rewrite.
 
 D6-08 authorizes P6-F32 through P6-F36 through separate reviewable PRs. P6-F33
-is CI verified. P6-F37/P6-F38 are merged and CI verified by PR #143; post-merge
-main run `29133690338` passed Backend Tests, Frontend Build and Docker Build.
+is CI verified. P6-F32/P6-F39 are Local verified pending required CI.
+P6-F37/P6-F38 are merged and CI verified by PR #143; post-merge main run
+`29133690338` passed Backend Tests, Frontend Build and Docker Build.

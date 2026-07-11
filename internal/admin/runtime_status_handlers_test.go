@@ -103,6 +103,7 @@ func TestRuntimeStatus_ReturnsRuntimeHealthAndHostTelemetry(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/status", nil)
+	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 	h.RuntimeStatus(rec, req)
 
@@ -181,6 +182,7 @@ func TestRuntimeStatus_DatabaseFailureReturnsDegradedPartialStatus(t *testing.T)
 	}, "jwt-secret", []byte("0123456789abcdef01234567"), nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/status", nil)
+	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 	h.RuntimeStatus(rec, req)
 
@@ -228,6 +230,7 @@ func TestRuntimeStatus_ReportsExternalMonitoringProblems(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/status", nil)
+	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 	h.RuntimeStatus(rec, req)
 
@@ -288,6 +291,7 @@ func TestRuntimeStatus_RedactsMonitoringURLsButUsesRawProbeURL(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/status", nil)
+	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 	h.RuntimeStatus(rec, req)
 

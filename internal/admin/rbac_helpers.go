@@ -2,10 +2,17 @@ package admin
 
 import (
 	"context"
+	"errors"
+	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
 )
+
+var errActorOrganizationForbidden = errors.New("actor organization is required or does not match the requested organization")
+var errInvalidOrganizationID = errors.New("invalid organization ID")
 
 const (
 	projectMemberAdmin     = "project_admin"
@@ -37,6 +44,63 @@ func actorCanAccessOrg(ctx context.Context, targetOrgID int64) bool {
 		return true
 	}
 	return actorOrgID > 0 && targetOrgID > 0 && actorOrgID == targetOrgID
+}
+
+// resolveActorOrganization returns the organization an authenticated actor may
+// operate on. Platform administrators may explicitly select another
+// organization; without an explicit selection every role is bound to the
+// organization carried by its authenticated identity. This deliberately has no
+// database-order fallback.
+func resolveActorOrganization(ctx context.Context, requestedOrgID int64) (int64, error) {
+	if requestedOrgID < 0 {
+		return 0, errInvalidOrganizationID
+	}
+	actorOrgID := middleware.GetOrgIDFromContext(ctx)
+	if auth.IsPlatformAdmin(actorRole(ctx)) {
+		if requestedOrgID > 0 {
+			return requestedOrgID, nil
+		}
+		if actorOrgID > 0 {
+			return actorOrgID, nil
+		}
+		return 0, errActorOrganizationForbidden
+	}
+
+	if actorOrgID <= 0 {
+		return 0, errActorOrganizationForbidden
+	}
+	if requestedOrgID > 0 && requestedOrgID != actorOrgID {
+		return 0, errActorOrganizationForbidden
+	}
+	return actorOrgID, nil
+}
+
+func parseOptionalOrganizationID(raw string) (int64, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, nil
+	}
+	orgID, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || orgID <= 0 {
+		return 0, errInvalidOrganizationID
+	}
+	return orgID, nil
+}
+
+func resolveRequestOrganization(r *http.Request) (int64, error) {
+	requestedOrgID, err := parseOptionalOrganizationID(r.URL.Query().Get("org_id"))
+	if err != nil {
+		return 0, err
+	}
+	return resolveActorOrganization(r.Context(), requestedOrgID)
+}
+
+func writeOrganizationScopeError(w http.ResponseWriter, err error) {
+	if errors.Is(err, errInvalidOrganizationID) {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid org_id"})
+		return
+	}
+	writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 }
 
 func (h *Handler) projectBelongsToOrg(ctx context.Context, projectID, orgID int64) bool {
@@ -139,6 +203,31 @@ func (h *Handler) canReadProjectUsage(ctx context.Context, projectID int64) bool
 		return h.projectBelongsToActorOrg(ctx, projectID)
 	}
 	if !auth.IsProjectScopedRole(role) {
+		return false
+	}
+	return h.hasProjectMembership(ctx, projectID, projectMemberAdmin, projectMemberDeveloper, projectMemberViewer, auth.RoleDeveloper, auth.RoleViewer)
+}
+
+// canReadUsageRecord authorizes a concrete usage record after both its
+// organization and optional project are known. Organization and billing
+// administrators may read organization-level records; project-scoped roles
+// still require an explicit membership-bearing project.
+func (h *Handler) canReadUsageRecord(ctx context.Context, orgID, projectID int64) bool {
+	if isUnauthenticatedUnitContext(ctx) {
+		return true
+	}
+	if orgID <= 0 || !actorCanAccessOrg(ctx, orgID) {
+		return false
+	}
+
+	role := actorRole(ctx)
+	if role == auth.RolePlatformAdmin {
+		return true
+	}
+	if role == auth.RoleOrgAdmin || role == auth.RoleBillingAdmin {
+		return projectID == 0 || h.projectBelongsToOrg(ctx, projectID, orgID)
+	}
+	if projectID == 0 || !auth.IsProjectScopedRole(role) {
 		return false
 	}
 	return h.hasProjectMembership(ctx, projectID, projectMemberAdmin, projectMemberDeveloper, projectMemberViewer, auth.RoleDeveloper, auth.RoleViewer)

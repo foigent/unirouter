@@ -435,6 +435,7 @@ func TestGetWallet_Success(t *testing.T) {
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest("GET", "/wallet", nil)
+	req = withTestActor(req, 1, 1, auth.RoleViewer)
 	rec := httptest.NewRecorder()
 
 	h.GetWallet(rec, req)
@@ -487,7 +488,7 @@ func TestGetWallet_AdminRole(t *testing.T) {
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest("GET", "/wallet", nil)
-	req = req.WithContext(context.WithValue(req.Context(), middleware.CtxUserRole, "admin"))
+	req = withTestActor(req, 1, 1, auth.RolePlatformAdmin)
 	rec := httptest.NewRecorder()
 
 	h.GetWallet(rec, req)
@@ -511,6 +512,7 @@ func TestGetWallet_NotFound(t *testing.T) {
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest("GET", "/wallet", nil)
+	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 
 	h.GetWallet(rec, req)
@@ -529,6 +531,7 @@ func TestGetWallet_QueryError(t *testing.T) {
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest("GET", "/wallet", nil)
+	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 
 	h.GetWallet(rec, req)
@@ -555,6 +558,12 @@ func TestTopUp_Success(t *testing.T) {
 		},
 		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
 			return &testutil.MockTx{
+				QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+					return &testutil.MockRow{ScanFn: func(dest ...any) error {
+						*dest[0].(*int) = 15000
+						return nil
+					}}
+				},
 				ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 					return pgconn.CommandTag{}, nil
 				},
@@ -572,6 +581,7 @@ func TestTopUp_Success(t *testing.T) {
 
 	body := `{"amount_cents":5000,"description":"Test top-up"}`
 	req := httptest.NewRequest("POST", "/wallet/topup", strings.NewReader(body))
+	req = withTestBillingActor(req)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -630,17 +640,10 @@ func TestTopUp_InvalidJSON(t *testing.T) {
 }
 
 func TestTopUp_Idempotency(t *testing.T) {
-	callCount := 0
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			return &testutil.MockRow{
 				ScanFn: func(dest ...any) error {
-					callCount++
-					if callCount == 1 {
-						*dest[0].(*int64) = 1 // wallet org_id
-						return nil
-					}
-					// Second call: idempotency check finds existing transaction
 					*dest[0].(*int64) = 42 // existing transaction id
 					return nil
 				},
@@ -651,6 +654,7 @@ func TestTopUp_Idempotency(t *testing.T) {
 
 	body := `{"amount_cents":5000,"client_request_id":"req-123"}`
 	req := httptest.NewRequest("POST", "/wallet/topup", strings.NewReader(body))
+	req = withTestBillingActor(req)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -666,20 +670,47 @@ func TestTopUp_Idempotency(t *testing.T) {
 	}
 }
 
-func TestTopUp_WalletNotFound(t *testing.T) {
+func TestTopUp_IdempotencyReadErrorDoesNotBeginFinancialWrite(t *testing.T) {
+	beginCalled := false
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					return fmt.Errorf("no rows")
-				},
-			}
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				return fmt.Errorf("database unavailable")
+			}}
+		},
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+			beginCalled = true
+			return nil, fmt.Errorf("unexpected transaction")
+		},
+	}
+	h := newTestHandler(db)
+	req := httptest.NewRequest(http.MethodPost, "/wallet/topup", strings.NewReader(`{"amount_cents":5000,"client_request_id":"req-db-error"}`))
+	req = withTestBillingActor(req)
+	rec := httptest.NewRecorder()
+
+	h.TopUp(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if beginCalled {
+		t.Fatal("idempotency read failure must not begin a financial transaction")
+	}
+}
+
+func TestTopUp_WalletNotFound(t *testing.T) {
+	db := &testutil.MockDB{
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+			return &testutil.MockTx{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+				return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
+			}}, nil
 		},
 	}
 	h := newTestHandler(db)
 
 	body := `{"amount_cents":5000}`
 	req := httptest.NewRequest("POST", "/wallet/topup", strings.NewReader(body))
+	req = withTestBillingActor(req)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -708,6 +739,7 @@ func TestTopUp_TxBeginFail(t *testing.T) {
 
 	body := `{"amount_cents":5000}`
 	req := httptest.NewRequest("POST", "/wallet/topup", strings.NewReader(body))
+	req = withTestBillingActor(req)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -730,6 +762,9 @@ func TestTopUp_TxExecFail_WalletUpdate(t *testing.T) {
 		},
 		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
 			return &testutil.MockTx{
+				QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+					return &testutil.MockRow{ScanFn: func(dest ...any) error { return fmt.Errorf("deadlock") }}
+				},
 				ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 					if strings.Contains(sql, "UPDATE wallets") {
 						return pgconn.CommandTag{}, fmt.Errorf("deadlock")
@@ -743,6 +778,7 @@ func TestTopUp_TxExecFail_WalletUpdate(t *testing.T) {
 
 	body := `{"amount_cents":5000}`
 	req := httptest.NewRequest("POST", "/wallet/topup", strings.NewReader(body))
+	req = withTestBillingActor(req)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -765,6 +801,12 @@ func TestTopUp_TxCommitFail(t *testing.T) {
 		},
 		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
 			return &testutil.MockTx{
+				QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+					return &testutil.MockRow{ScanFn: func(dest ...any) error {
+						*dest[0].(*int) = 5000
+						return nil
+					}}
+				},
 				ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 					return pgconn.CommandTag{}, nil
 				},
@@ -778,6 +820,7 @@ func TestTopUp_TxCommitFail(t *testing.T) {
 
 	body := `{"amount_cents":5000}`
 	req := httptest.NewRequest("POST", "/wallet/topup", strings.NewReader(body))
+	req = withTestBillingActor(req)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -806,6 +849,12 @@ func TestBalanceAdjust_Success(t *testing.T) {
 		},
 		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
 			return &testutil.MockTx{
+				QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+					return &testutil.MockRow{ScanFn: func(dest ...any) error {
+						*dest[0].(*int) = 5000
+						return nil
+					}}
+				},
 				ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 					return pgconn.CommandTag{}, nil
 				},
@@ -822,6 +871,7 @@ func TestBalanceAdjust_Success(t *testing.T) {
 
 	body := `{"target_balance":10000,"description":"Manual adjustment"}`
 	req := httptest.NewRequest("POST", "/wallet/adjust", strings.NewReader(body))
+	req = withTestBillingActor(req)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -879,18 +929,17 @@ func TestBalanceAdjust_WrongMethod(t *testing.T) {
 
 func TestBalanceAdjust_WalletNotFound(t *testing.T) {
 	db := &testutil.MockDB{
-		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					return fmt.Errorf("no rows")
-				},
-			}
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+			return &testutil.MockTx{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+				return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
+			}}, nil
 		},
 	}
 	h := newTestHandler(db)
 
 	body := `{"target_balance":10000}`
 	req := httptest.NewRequest("POST", "/wallet/adjust", strings.NewReader(body))
+	req = withTestBillingActor(req)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -2203,7 +2252,7 @@ func TestListWalletTransactions_Success(t *testing.T) {
 						*dest[1].(*string) = "topup"
 						*dest[2].(*int) = 5000
 						*dest[3].(*string) = "Admin top-up"
-
+						*dest[4].(*time.Time) = time.Now()
 						return nil
 					},
 					func(dest ...any) error {
@@ -2211,7 +2260,7 @@ func TestListWalletTransactions_Success(t *testing.T) {
 						*dest[1].(*string) = "settle"
 						*dest[2].(*int) = -100
 						*dest[3].(*string) = "Settle for request"
-
+						*dest[4].(*time.Time) = time.Now()
 						return nil
 					},
 				},
@@ -2221,6 +2270,7 @@ func TestListWalletTransactions_Success(t *testing.T) {
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest("GET", "/wallet/transactions", nil)
+	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 
 	h.ListWalletTransactions(rec, req)
@@ -2248,6 +2298,7 @@ func TestListWalletTransactions_QueryError(t *testing.T) {
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest("GET", "/wallet/transactions", nil)
+	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 
 	h.ListWalletTransactions(rec, req)
@@ -2463,6 +2514,7 @@ func TestListGrants_Success(t *testing.T) {
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest("GET", "/grants", nil)
+	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 
 	h.ListGrants(rec, req)
@@ -2484,6 +2536,7 @@ func TestListGrants_QueryError(t *testing.T) {
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest("GET", "/grants", nil)
+	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 
 	h.ListGrants(rec, req)
@@ -2843,6 +2896,7 @@ func TestListLogs_Success(t *testing.T) {
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest("GET", "/logs?page=1&page_size=10", nil)
+	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 
 	h.ListLogs(rec, req)
@@ -2864,10 +2918,10 @@ func TestListLogs_WithFilters(t *testing.T) {
 			}
 		},
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			if !strings.Contains(sql, "usage_source = $4") {
+			if !strings.Contains(sql, "usage_source = $5") {
 				t.Fatalf("expected usage_source filter in query, got %s", sql)
 			}
-			if len(args) < 4 || args[3] != "counter_v2" {
+			if len(args) < 5 || args[4] != "counter_v2" {
 				t.Fatalf("expected normalized usage_source arg counter_v2, got %#v", args)
 			}
 			return &testutil.MockRows{
@@ -2900,6 +2954,7 @@ func TestListLogs_WithFilters(t *testing.T) {
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest("GET", "/logs?model=gpt-4o&provider=openai&status_code=200&usage_source=stream_estimate", nil)
+	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 
 	h.ListLogs(rec, req)
@@ -2912,10 +2967,10 @@ func TestListLogs_WithFilters(t *testing.T) {
 func TestListLogs_StatusClassFilter(t *testing.T) {
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			if !strings.Contains(sql, "status_code >= $1 AND status_code < $2") {
+			if !strings.Contains(sql, "status_code >= $2 AND status_code < $3") {
 				t.Fatalf("expected status class filter in count query, got %s", sql)
 			}
-			if len(args) != 2 || args[0] != 400 || args[1] != 500 {
+			if len(args) != 3 || args[0] != int64(1) || args[1] != 400 || args[2] != 500 {
 				t.Fatalf("expected 4xx count args, got %#v", args)
 			}
 			return &testutil.MockRow{
@@ -2926,10 +2981,10 @@ func TestListLogs_StatusClassFilter(t *testing.T) {
 			}
 		},
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			if !strings.Contains(sql, "status_code >= $1 AND status_code < $2") {
+			if !strings.Contains(sql, "status_code >= $2 AND status_code < $3") {
 				t.Fatalf("expected status class filter in list query, got %s", sql)
 			}
-			if len(args) < 2 || args[0] != 400 || args[1] != 500 {
+			if len(args) < 3 || args[0] != int64(1) || args[1] != 400 || args[2] != 500 {
 				t.Fatalf("expected 4xx query args, got %#v", args)
 			}
 			return &testutil.MockRows{}, nil
@@ -2938,6 +2993,7 @@ func TestListLogs_StatusClassFilter(t *testing.T) {
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest("GET", "/logs?status_code=4xx", nil)
+	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 
 	h.ListLogs(rec, req)
@@ -2951,16 +3007,16 @@ func TestListLogs_StructuralEvidenceFilters(t *testing.T) {
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			for _, condition := range []string{
-				"trace_id = $1",
-				"upstream_request_id = $2",
-				"evidence_ref = $3",
-				"source_event_hash = $4",
+				"trace_id = $2",
+				"upstream_request_id = $3",
+				"evidence_ref = $4",
+				"source_event_hash = $5",
 			} {
 				if !strings.Contains(sql, condition) {
 					t.Fatalf("expected %s in count query, got %s", condition, sql)
 				}
 			}
-			expected := []any{"trace-001", "upstream-001", "evidence-001", "hash-001"}
+			expected := []any{int64(1), "trace-001", "upstream-001", "evidence-001", "hash-001"}
 			if !reflect.DeepEqual(args, expected) {
 				t.Fatalf("expected structural filter args %#v, got %#v", expected, args)
 			}
@@ -2970,7 +3026,7 @@ func TestListLogs_StructuralEvidenceFilters(t *testing.T) {
 			}}
 		},
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			if !strings.Contains(sql, "source_event_hash = $4") {
+			if !strings.Contains(sql, "source_event_hash = $5") {
 				t.Fatalf("expected structural filters in list query, got %s", sql)
 			}
 			return &testutil.MockRows{}, nil
@@ -2979,6 +3035,7 @@ func TestListLogs_StructuralEvidenceFilters(t *testing.T) {
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest("GET", "/logs?trace_id=trace-001&upstream_request_id=upstream-001&evidence_ref=evidence-001&source_event_hash=hash-001", nil)
+	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 
 	h.ListLogs(rec, req)
@@ -2991,12 +3048,12 @@ func TestListLogs_StructuralEvidenceFilters(t *testing.T) {
 func TestListLogs_SearchesStructuralEvidenceFields(t *testing.T) {
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			for _, column := range []string{"trace_id ILIKE $1", "upstream_request_id ILIKE $1", "evidence_ref ILIKE $1", "source_event_hash ILIKE $1"} {
+			for _, column := range []string{"trace_id ILIKE $2", "upstream_request_id ILIKE $2", "evidence_ref ILIKE $2", "source_event_hash ILIKE $2"} {
 				if !strings.Contains(sql, column) {
 					t.Fatalf("expected %s in search query, got %s", column, sql)
 				}
 			}
-			if len(args) != 1 || args[0] != "%evidence-001%" {
+			if len(args) != 2 || args[0] != int64(1) || args[1] != "%evidence-001%" {
 				t.Fatalf("expected structural search arg, got %#v", args)
 			}
 			return &testutil.MockRow{ScanFn: func(dest ...any) error {
@@ -3011,6 +3068,7 @@ func TestListLogs_SearchesStructuralEvidenceFields(t *testing.T) {
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest("GET", "/logs?search=evidence-001", nil)
+	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 
 	h.ListLogs(rec, req)
@@ -3032,6 +3090,7 @@ func TestListLogs_QueryError(t *testing.T) {
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest("GET", "/logs", nil)
+	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 
 	h.ListLogs(rec, req)
@@ -3067,6 +3126,7 @@ func TestListLogs_ScanError(t *testing.T) {
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest("GET", "/logs?page=1&page_size=10", nil)
+	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 
 	h.ListLogs(rec, req)
@@ -3149,6 +3209,7 @@ func TestListReconciliation_Success(t *testing.T) {
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest("GET", "/reconciliation", nil)
+	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 
 	h.ListReconciliation(rec, req)
@@ -3207,7 +3268,7 @@ func TestListReconciliation_UsageSourceFilterNormalizesLegacyAlias(t *testing.T)
 			}}
 		},
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			if !strings.Contains(sql, "usage_source = $1") {
+			if !strings.Contains(sql, "usage_source = $2") {
 				t.Fatalf("expected usage_source filter in query, got %s", sql)
 			}
 			return &testutil.MockRows{}, nil
@@ -3216,6 +3277,7 @@ func TestListReconciliation_UsageSourceFilterNormalizesLegacyAlias(t *testing.T)
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest("GET", "/reconciliation?usage_source=stream_estimate", nil)
+	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 
 	h.ListReconciliation(rec, req)
@@ -3223,7 +3285,7 @@ func TestListReconciliation_UsageSourceFilterNormalizesLegacyAlias(t *testing.T)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if len(capturedCountArgs) != 1 || capturedCountArgs[0] != "counter_v2" {
+	if len(capturedCountArgs) != 2 || capturedCountArgs[0] != int64(1) || capturedCountArgs[1] != "counter_v2" {
 		t.Fatalf("expected normalized counter_v2 filter, got %#v", capturedCountArgs)
 	}
 }
@@ -3275,7 +3337,7 @@ func TestListReconciliation_EmitsHighEstimatedRatioEvent(t *testing.T) {
 	h.SetEventService(billing.NewEventService(db))
 
 	req := httptest.NewRequest("GET", "/reconciliation?usage_source=counter_v2", nil)
-	req = req.WithContext(context.WithValue(req.Context(), middleware.CtxOrgID, int64(3)))
+	req = withTestActor(req, 7, 3, auth.RoleBillingAdmin)
 	rec := httptest.NewRecorder()
 
 	h.ListReconciliation(rec, req)
@@ -3323,6 +3385,7 @@ func TestListReconciliation_QueryError(t *testing.T) {
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest("GET", "/reconciliation", nil)
+	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 
 	h.ListReconciliation(rec, req)
@@ -3444,6 +3507,7 @@ func TestDashboardStats_Success(t *testing.T) {
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest("GET", "/dashboard/stats", nil)
+	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 
 	h.DashboardStats(rec, req)
@@ -5036,10 +5100,11 @@ func TestExportWalletTransactions_Success(t *testing.T) {
 			return &testutil.MockRows{
 				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
+						balanceAfter := 15000
 						*dest[0].(*int64) = 1
 						*dest[1].(*string) = "topup"
 						*dest[2].(*int) = 5000
-						*dest[3].(*int) = 15000
+						*dest[3].(**int) = &balanceAfter
 						*dest[4].(*string) = "Admin top-up"
 						*dest[5].(*string) = "req-001"
 						*dest[6].(*time.Time) = now
@@ -5052,6 +5117,7 @@ func TestExportWalletTransactions_Success(t *testing.T) {
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest("GET", "/wallet/export", nil)
+	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 
 	h.ExportWalletTransactions(rec, req)
@@ -5081,6 +5147,7 @@ func TestExportWalletTransactions_QueryError(t *testing.T) {
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest("GET", "/wallet/export", nil)
+	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 
 	h.ExportWalletTransactions(rec, req)
@@ -5233,15 +5300,9 @@ func TestUpdateChannelKey_KeyResetsCooldown(t *testing.T) {
 func TestCreateGrant_Success(t *testing.T) {
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			callCount := 0
 			return &testutil.MockRow{
 				ScanFn: func(dest ...any) error {
-					callCount++
-					if callCount == 1 {
-						// idempotency check: no existing grant
-						return fmt.Errorf("no rows")
-					}
-					return nil
+					return pgx.ErrNoRows
 				},
 			}
 		},
@@ -5250,7 +5311,11 @@ func TestCreateGrant_Success(t *testing.T) {
 				QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 					return &testutil.MockRow{
 						ScanFn: func(dest ...any) error {
-							*dest[0].(*int64) = 42 // grant id
+							if strings.Contains(sql, "UPDATE wallets") {
+								*dest[0].(*int) = 11000
+							} else {
+								*dest[0].(*int64) = 42 // grant id
+							}
 							return nil
 						},
 					}
@@ -5265,6 +5330,7 @@ func TestCreateGrant_Success(t *testing.T) {
 
 	body := `{"org_id":1,"amount_cents":10000,"reason":"welcome bonus"}`
 	req := httptest.NewRequest("POST", "/grants", strings.NewReader(body))
+	req = withTestBillingActor(req)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -5280,6 +5346,7 @@ func TestCreateGrant_ZeroAmount(t *testing.T) {
 
 	body := `{"org_id":1,"amount_cents":0}`
 	req := httptest.NewRequest("POST", "/grants", strings.NewReader(body))
+	req = withTestBillingActor(req)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -5319,6 +5386,7 @@ func TestCreateGrant_Idempotency(t *testing.T) {
 
 	body := `{"org_id":1,"amount_cents":10000,"client_request_id":"req-123"}`
 	req := httptest.NewRequest("POST", "/grants", strings.NewReader(body))
+	req = withTestBillingActor(req)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -5339,7 +5407,7 @@ func TestCreateGrant_TxBeginFail(t *testing.T) {
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			return &testutil.MockRow{
 				ScanFn: func(dest ...any) error {
-					return fmt.Errorf("no rows")
+					return pgx.ErrNoRows
 				},
 			}
 		},
@@ -5351,6 +5419,7 @@ func TestCreateGrant_TxBeginFail(t *testing.T) {
 
 	body := `{"org_id":1,"amount_cents":10000,"reason":"test"}`
 	req := httptest.NewRequest("POST", "/grants", strings.NewReader(body))
+	req = withTestBillingActor(req)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 

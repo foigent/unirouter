@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/testutil"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -389,6 +390,7 @@ func TestTopUp_Success_Integration(t *testing.T) {
 
 	body := `{"amount_cents":500,"description":"Test top-up"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/recharge", bytes.NewBufferString(body))
+	req = withTestActor(req, 1, orgID, auth.RoleBillingAdmin)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -454,6 +456,7 @@ func TestTopUp_Idempotency_Integration(t *testing.T) {
 
 	// First request
 	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/recharge", bytes.NewBufferString(body))
+	req1 = withTestActor(req1, 1, orgID, auth.RoleBillingAdmin)
 	req1.Header.Set("Content-Type", "application/json")
 	rec1 := httptest.NewRecorder()
 	h.TopUp(rec1, req1)
@@ -461,6 +464,7 @@ func TestTopUp_Idempotency_Integration(t *testing.T) {
 
 	// Second request with same id — should return 409 Conflict
 	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/recharge", bytes.NewBufferString(body))
+	req2 = withTestActor(req2, 1, orgID, auth.RoleBillingAdmin)
 	req2.Header.Set("Content-Type", "application/json")
 	rec2 := httptest.NewRecorder()
 	h.TopUp(rec2, req2)
@@ -484,6 +488,7 @@ func TestCreateGrant_Success_Integration(t *testing.T) {
 
 	body := `{"org_id":0,"amount_cents":500,"reason":"Test grant"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/grants", bytes.NewBufferString(body))
+	req = withTestActor(req, 1, orgID, auth.RoleBillingAdmin)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -514,6 +519,7 @@ func TestCreateGrant_Idempotency_Integration(t *testing.T) {
 
 	// First request
 	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/grants", bytes.NewBufferString(body))
+	req1 = withTestActor(req1, 1, orgID, auth.RoleBillingAdmin)
 	req1.Header.Set("Content-Type", "application/json")
 	rec1 := httptest.NewRecorder()
 	h.CreateGrant(rec1, req1)
@@ -521,6 +527,7 @@ func TestCreateGrant_Idempotency_Integration(t *testing.T) {
 
 	// Second request with same client_request_id — should return existing id
 	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/grants", bytes.NewBufferString(body))
+	req2 = withTestActor(req2, 1, orgID, auth.RoleBillingAdmin)
 	req2.Header.Set("Content-Type", "application/json")
 	rec2 := httptest.NewRecorder()
 	h.CreateGrant(rec2, req2)
@@ -583,6 +590,7 @@ func TestGetWallet_Success_Integration(t *testing.T) {
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/wallet", nil)
+	req = withTestActor(req, 1, orgID, auth.RoleBillingAdmin)
 	rec := httptest.NewRecorder()
 
 	h.GetWallet(rec, req)
@@ -597,11 +605,13 @@ func TestGetWallet_Success_Integration(t *testing.T) {
 
 func TestGetWallet_NotFound_Integration(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
 	// No wallet created
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/wallet", nil)
+	req = withTestActor(req, 1, orgID, auth.RoleBillingAdmin)
 	rec := httptest.NewRecorder()
 
 	h.GetWallet(rec, req)
@@ -620,6 +630,7 @@ func TestBalanceAdjust_Success_Integration(t *testing.T) {
 
 	body := `{"target_balance":500,"description":"Admin adjustment"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/adjust", bytes.NewBufferString(body))
+	req = withTestActor(req, 1, orgID, auth.RoleBillingAdmin)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -667,12 +678,14 @@ func TestBalanceAdjust_NegativeTarget_Integration(t *testing.T) {
 
 func TestBalanceAdjust_NoWallet_Integration(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
 	// No wallet created
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
 	body := `{"target_balance":500}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/adjust", bytes.NewBufferString(body))
+	req = withTestActor(req, 1, orgID, auth.RoleBillingAdmin)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 

@@ -15,6 +15,11 @@ import (
 func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePagination(r)
 	offset := paginationOffset(page, pageSize)
+	orgID, err := resolveRequestOrganization(r)
+	if err != nil {
+		writeOrganizationScopeError(w, err)
+		return
+	}
 
 	// Parse optional filters
 	modelFilter := r.URL.Query().Get("model")
@@ -34,6 +39,9 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 	var conditions []string
 	var args []interface{}
 	argIdx := 1
+	conditions = append(conditions, fmt.Sprintf("org_id = $%d", argIdx))
+	args = append(args, orgID)
+	argIdx++
 
 	if modelFilter != "" {
 		conditions = append(conditions, fmt.Sprintf("model ILIKE $%d", argIdx))
@@ -156,7 +164,10 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 
 	var total int
 	countQuery := "SELECT COUNT(*) FROM call_logs" + whereClause
-	h.db.QueryRow(r.Context(), countQuery, args...).Scan(&total)
+	if err := h.db.QueryRow(r.Context(), countQuery, args...).Scan(&total); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Count failed"})
+		return
+	}
 
 	selectQuery := fmt.Sprintf(
 		`SELECT id, COALESCE(project_id, 0), request_id, model, provider, channel, prompt_tokens, completion_tokens, total_tokens,
@@ -201,7 +212,7 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{"data": logs, "total": total})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": logs, "total": total, "org_id": orgID})
 }
 
 // --- Log Detail ---
@@ -213,32 +224,38 @@ func (h *Handler) GetLogDetail(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "invalid id"})
 		return
 	}
+	orgID, err := resolveRequestOrganization(r)
+	if err != nil {
+		writeOrganizationScopeError(w, err)
+		return
+	}
 	var requestID, model, provider, channel string
-	var projectID int64
+	var recordOrgID, projectID int64
 	var promptTokens, completionTokens, totalTokens, costCents, statusCode, latencyMs, ttftMs int
 	var upstreamStatusCode *int
 	var upstreamError, usageSource, ipAddress, requestedModel string
 	var isStream bool
 	var createdAt time.Time
 	err = h.db.QueryRow(r.Context(),
-		`SELECT COALESCE(project_id, 0), request_id, model, provider, channel, prompt_tokens, completion_tokens, total_tokens,
+		`SELECT org_id, COALESCE(project_id, 0), request_id, model, provider, channel, prompt_tokens, completion_tokens, total_tokens,
 		        cost_cents, status_code, latency_ms, ttft_ms, upstream_status_code, COALESCE(upstream_error, ''),
 		        usage_source, is_stream, ip_address, requested_model, created_at
-		 FROM call_logs WHERE id = $1`, id,
-	).Scan(&projectID, &requestID, &model, &provider, &channel, &promptTokens, &completionTokens, &totalTokens,
+		 FROM call_logs WHERE id = $1 AND org_id = $2`, id, orgID,
+	).Scan(&recordOrgID, &projectID, &requestID, &model, &provider, &channel, &promptTokens, &completionTokens, &totalTokens,
 		&costCents, &statusCode, &latencyMs, &ttftMs, &upstreamStatusCode, &upstreamError,
 		&usageSource, &isStream, &ipAddress, &requestedModel, &createdAt)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "log not found"})
 		return
 	}
-	if !h.canReadProjectUsage(r.Context(), projectID) {
-		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+	if !h.canReadUsageRecord(r.Context(), recordOrgID, projectID) {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "log not found"})
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"id":                   id,
+		"org_id":               recordOrgID,
 		"project_id":           projectID,
 		"request_id":           requestID,
 		"model":                model,
@@ -268,19 +285,24 @@ func (h *Handler) GetRequestTrace(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "invalid id"})
 		return
 	}
+	requestedOrgID, err := resolveRequestOrganization(r)
+	if err != nil {
+		writeOrganizationScopeError(w, err)
+		return
+	}
 
 	var projectID, orgID int64
 	var requestID string
 	err = h.db.QueryRow(r.Context(),
 		`SELECT COALESCE(project_id, 0), org_id, request_id
-		 FROM call_logs WHERE id = $1`, id,
+		 FROM call_logs WHERE id = $1 AND org_id = $2`, id, requestedOrgID,
 	).Scan(&projectID, &orgID, &requestID)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "log not found"})
 		return
 	}
-	if !h.canReadProjectUsage(r.Context(), projectID) {
-		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+	if !h.canReadUsageRecord(r.Context(), orgID, projectID) {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "log not found"})
 		return
 	}
 

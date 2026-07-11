@@ -1,7 +1,7 @@
 # PRD7 Candidate Backlog（候选输入，不是 Accepted Scope）
 
 > Date: 2026-07-11
-> Status: Candidate / Decision Required
+> Status: Candidate / first future direction selected; all implementation deferred until PRD6 closeout
 > Authority: 本文只做 PRD6 收尾后的候选分流、排序和验收设计；不授权实现、部署或外部集成。
 > Source of truth: PRD6 的已接受范围仍以 `docs/PRD-Phase6.md`、
 > `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` 和用户已确认的 D6 决策为准。
@@ -12,9 +12,11 @@ PRD7 不应成为“把 PRD5/PRD6 所有 deferred 项重新装回去”的容器
 PRD6 完成当前正确性、租户隔离、计费、链路身份、分布式策略、Guardrail、流式
 安全与可升级基础，再从本候选池中逐项重新立项。
 
-建议的第一个 PRD7 产品化方向是：**客户本地、人工批准、可验证签名的离线升级包
-与只读优先的 Update Center**。它直接解决 2B 私有化客户打补丁、回滚和证明“装了
-什么版本”的问题，又不要求 UniRouter 变成托管 SaaS 或自动控制客户环境。
+用户已在 2026-07-11 接受 D7-UPGRADE-001/002 作为未来第一个 PRD7 产品化方向：
+**客户本地、人工批准、可验证签名的离线升级包与只读优先的 Update Center**。
+它直接解决 2B 私有化客户打补丁、回滚和证明“装了什么版本”的问题，又不要求
+UniRouter 变成托管 SaaS 或自动控制客户环境。该方向选择不是当前实施授权；全部
+PRD7 实现必须等 PRD6 闭环后再以独立 PRD7、acceptance row、分支、PR 和 CI 启动。
 
 本文中的 `P6-F12`—`P6-F15`、`P6-F22`—`P6-F31` 仅沿用 PRD6 编号便于追溯。
 若其中某项正式进入 PRD7，必须新增 D7 决策和 PRD7 acceptance row，不能把本文的
@@ -36,7 +38,7 @@ PRD6 完成当前正确性、租户隔离、计费、链路身份、分布式策
 
 | 领域 | PRD6 工作 | 价值 | 主要依赖/风险 | 优先级 | 最低验收证据 |
 |------|-----------|------|---------------|--------|--------------|
-| 租户与管理员边界 | 完成 P6-F32—P6-F36，并把已确认的审计日志租户隔离纳入独立 PRD6 row；通知、钱包、价格、设置、模型治理均按 actor org 与平台权限隔离 | 防止跨租户读写、财务影响和证据泄漏 | 历史数据归属、platform exception、迁移回滚 | P0 | 两租户签名 JWT 矩阵；跨租户无副作用；迁移 up/down；CI |
+| 租户与管理员边界 | 完成 P6-F32—P6-F39；当前 F33/F37/F38 已 CI verified，F32/F39 已 Local verified 待 CI，F34—F36 仍待修复 | 防止跨租户读写、财务影响和证据泄漏 | 历史数据归属、platform exception、迁移回滚 | P0 | 两租户签名 JWT 矩阵；跨租户无副作用；迁移 up/down（适用时）；CI |
 | 财务正确性 | P6-F18、P6-F06，以及钱包冻结/可用余额/结算显示语义一致 | 防止重复扣减、漏收、已输出但未结算 | 热钱包行、崩溃恢复、价格/倍率版本 | P0 | 并发单终态、pool-size barrier、故障恢复、账本守恒和 UI/API 一致性 |
 | 链路身份 | P6-F17：拆分 operation、client idempotency、trace/span、workflow、Agent、attempt 和 upstream identity | 同一业务调用可跨 retry/failover/billing/audit 追查，又不把外部 ID 当财务主键 | 兼容旧 request_id、跨租户碰撞、索引迁移 | P0 | replay/409/collision 负例；100 子 Agent；retry/failover attempt 证据；迁移 |
 | 路由正确性 | P6-F03—P6-F05：错误分类、Embeddings parity、有效配置真值 | 避免错误重试、隐藏硬编码和端点可靠性不一致 | provider 差异、响应已开始后的 retry | P0 | provider 错误矩阵；有界 retry；Chat/Embeddings parity；配置版本证据 |
@@ -94,6 +96,11 @@ PRD7 产品化层。
 ## 4. 仅缺目标环境证据
 
 以下事项应保留在 target-evidence queue，不放进 PRD7 源码 backlog：
+
+用户已决定将该队列的执行后置到 PRD6 源码闭环之后。后置不等于删除、关闭、已满足
+或授权执行；每项仍需要原有的 target/operator/凭证/费用/数据/清理授权。Gate A
+临时 snapshot 的 2026-07-17 精确路径删除义务是独立的既有定时决定，不随本队列
+后置而延期。
 
 | 事项 | 为什么不是当前源码缺陷 | 开始证据前的授权/输入 |
 |------|------------------------|-----------------------|
@@ -224,16 +231,14 @@ frontend tests/build、Docker Build、migration review、security negative tests
 - 静默恢复 Scheduler V2、plugin marketplace、IAM rewrite、plaintext cache、
   managed HA/IaC、public commerce、broad SDK 或 service-account permission expansion。
 
-## 10. 最少用户决定
+## 10. 已解决的顺序决定
 
-当前 PRD6 P0/P1 可以继续，不需要等待 PRD7 决策。正式启动 PRD7 前只建议先决定：
+用户在 2026-07-11 已明确：
 
-1. **是否接受 D7-UPGRADE-001/002 作为 PRD7 第一优先方向。推荐接受：先交付客户本地、
-   默认无外联、人工批准、签名可验证的离线升级包；Update Center 第一版以只读检查、
-   本地导入和 preflight 为主，不做自动下载或自动升级。**
-2. **是否另行授权清理已核验 merged 的本地历史分支。** 分支清理是仓库维护，不是
-   PRD6/PRD7 功能；默认不删除。若授权，也必须先 readback 精确分支名和 merge/PR
-   状态，再逐个删除明确路径/分支，不做批量删除。
+1. D7-UPGRADE-001/002 是未来 PRD7 的第一方向，但当前不启动实现；
+2. 所有 PRD7 实施和 target-evidence 队列执行后置到 PRD6 闭环之后，各自原有授权门槛
+   保持不变；
+3. 本地历史分支全部保留，不授权清理或删除。
 
-其余候选无需现在决定。进入相应 batch 时，再用已量化客户需求和依赖证据逐项接受、
-延期或拒绝。
+因此当前没有阻塞 PRD6 的 PRD7 决定。其余候选进入相应 batch 前，再用已量化客户
+需求和依赖证据逐项接受、延期或拒绝。
