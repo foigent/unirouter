@@ -148,6 +148,7 @@ const endpointGroups = [
       ['GET', '/api/v1/notification-webhooks', '通知 Webhook 列表'],
       ['POST', '/api/v1/notification-webhooks', '创建通知 Webhook'],
       ['PUT', '/api/v1/notification-webhooks/{id}', '更新通知 Webhook'],
+      ['POST', '/api/v1/notification-webhooks/{id}/verify-scope', '确认隔离 Webhook 的组织/项目/目标范围'],
     ],
   },
 ];

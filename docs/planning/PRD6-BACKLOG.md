@@ -33,18 +33,19 @@
 | P6-GUARD-001 | Guardrail Kernel | enterprise safety and PII controls | detector/failure/latency policy | P1 |
 | P6-STREAM-001 | Streaming interception and termination | limits unsafe live disclosure | buffer/latency/protocol contract | P1 |
 
-## 3. New Confirmed Integrity Inputs — Separate Decision
+## 3. D6-08 Accepted Administrator Integrity Queue
 
-| ID | Item | Confirmed value/risk | Decision dependency | Priority |
-|----|------|----------------------|---------------------|----------|
-| P6-FIN-TENANT-001 / P6-F32 | Tenant-scope wallet, grant, transaction and reconciliation operations | prevents cross-tenant financial read/write and removes first-wallet behavior | accept exact finance-admin boundary | P0 |
-| P6-NOTIFY-TENANT-001 / P6-F33 | Tenant-scope notification reads and webhook sinks | closes a source-reachable victim-event exfiltration chain | accept exact notification boundary | P0 |
-| P6-PRICE-AUTH-001 / P6-F34 | Separate global base-price and organization-multiplier authority | prevents tenant roles changing platform/victim billing | choose org-multiplier mutation role | P0 |
-| P6-CONTROL-AUTH-001 / P6-F35 | Gate deployment settings, license and global sensitive words | prevents tenant roles changing global runtime controls | accept platform-only default or define new org-scoped schema | P0 |
-| P6-MODELGOV-TENANT-001 / P6-F36 | Tenant-scope registry, alias, catalog and organization model sets | prevents cross-tenant model-policy disclosure/mutation | accept exact model-governance boundary | P1 |
+| ID | Item | Confirmed value/risk | Current state | Priority |
+|----|------|----------------------|---------------|----------|
+| P6-FIN-TENANT-001 / P6-F32 | Tenant-scope wallet, grant, transaction and reconciliation operations | prevents cross-tenant financial read/write and removes first-wallet behavior | Accepted; not started | P0 |
+| P6-NOTIFY-TENANT-001 / P6-F33 | Tenant-scope notification reads and webhook sinks | closes a source-reachable victim-event exfiltration chain | Accepted; Local verified, CI pending | P0 |
+| P6-PRICE-AUTH-001 / P6-F34 | Platform-only global base-price and organization-multiplier mutation | prevents tenant roles changing platform/victim billing | Accepted; not started | P0 |
+| P6-CONTROL-AUTH-001 / P6-F35 | Gate deployment settings, license and global sensitive words | prevents tenant roles changing global runtime controls | Accepted; not started | P0 |
+| P6-MODELGOV-TENANT-001 / P6-F36 | Tenant-scope registry, alias, catalog and organization model sets | prevents cross-tenant model-policy disclosure/mutation | Accepted; not started | P1 |
 
 Evidence: `docs/ops/evidence/PRD6-B0B-admin-tenant-surface-audit-20260711.md`.
-These rows do not reopen PRD5 and are not silently accepted by D6-01.
+These rows were accepted through the separate D6-08 decision; they do not
+reopen PRD5 or retroactively change D6-01.
 
 ## 4. Advanced Candidates
 
@@ -116,4 +117,4 @@ authorization before execution.
 | D6-05 External-project boundary | external systems may asynchronously consume accepted sanitized facts; no external feature or runtime is a request dependency | Proposed clarification consistent with the accepted PRD5 boundary | prevents ownership and availability coupling |
 | D6-06 Post-MVP differentiator | adopt Evidence-to-Control Flywheel while accepting each P6-F23-F31 row separately | Proposed; User decision not required for current P0/P1 work | first recommended experiment is fixture-only P6-F24 |
 | D6-07 Innovation data posture | metadata-only by default; content analysis requires tenant opt-in plus purpose/retention/delete/access controls | Proposed | gates semantic analysis, shadow data and training cases |
-| D6-08 Administrator authority split | platform owns global price/settings/license/global sensitive words; tenant roles are confined to their JWT org; choose whether org multipliers are own-org self-service or platform/billing-authority only | Required for P6-F32-P6-F36; proposed default | does not block P6-F16 PR; gates the new administrator-surface rows |
+| D6-08 Administrator authority split | platform owns global price/settings/license/global sensitive words and organization multipliers; tenant roles are confined to their JWT org | Accepted by User 2026-07-11 with option B | authorizes P6-F32-P6-F36; organization multipliers are `platform_admin` only until a separately accepted global billing-authority role exists |

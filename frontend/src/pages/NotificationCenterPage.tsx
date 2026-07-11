@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Form, Select, SideSheet, Table, Tabs, Tag, Toast, Typography } from '@douyinfe/semi-ui';
+import { Button, Form, Modal, Select, SideSheet, Table, Tabs, Tag, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconBell, IconPlus, IconRefresh, IconSetting } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
@@ -47,17 +47,22 @@ interface NotificationDelivery {
   response_status?: number | null;
   error?: string;
   next_retry_at?: string | null;
+  retry_scope_quarantined?: boolean;
+  scope_quarantine_previous_next_retry_at?: string | null;
   delivered_at?: string | null;
   updated_at: string;
 }
 
 interface NotificationWebhook {
   id: number;
+  org_id: number;
   project_id?: number | null;
   name: string;
   url: string;
   event_types?: string[] | string;
   enabled: boolean;
+  scope_verified: boolean;
+  scope_quarantine_previous_enabled?: boolean | null;
   updated_at: string;
 }
 
@@ -168,7 +173,7 @@ export default function NotificationCenterPage() {
         name: record.name,
         url: record.url,
         event_types: toEventTypeList(record.event_types) === '-' ? '' : toEventTypeList(record.event_types),
-        enabled: record.enabled ? 'true' : 'false',
+        enabled: (record.scope_verified ? record.enabled : record.scope_quarantine_previous_enabled) ? 'true' : 'false',
         project_id: record.project_id || undefined,
       } : { enabled: 'true' });
     }, 0);
@@ -185,7 +190,7 @@ export default function NotificationCenterPage() {
     try {
       if (webhookSheet?.mode === 'edit' && webhookSheet.record) {
         await api.updateNotificationWebhook(webhookSheet.record.id, payload);
-        Toast.success('Webhook 已更新');
+        Toast.warning('Webhook 已更新并隔离，请核对后确认范围');
       } else {
         await api.createNotificationWebhook(payload);
         Toast.success('Webhook 已创建');
@@ -195,6 +200,35 @@ export default function NotificationCenterPage() {
     } catch (err: any) {
       Toast.error(`保存失败${err?.message ? `：${err.message}` : ''}`);
     }
+  };
+
+  const verifyWebhookScope = (record: NotificationWebhook) => {
+    Modal.confirm({
+      title: '确认 Webhook 路由范围',
+      content: (
+        <div>
+          <p>请逐项核对以下不可编辑快照。确认后只影响后续新通知；升级前失败投递不会自动重放。</p>
+          <p><strong>名称：</strong>{record.name}</p>
+          <p><strong>组织：</strong>#{record.org_id}</p>
+          <p><strong>项目：</strong>{record.project_id ? `#${record.project_id}` : '组织级'}</p>
+          <p><strong>目标 URL：</strong><code style={{ wordBreak: 'break-all' }}>{record.url}</code></p>
+          <p><strong>事件类型：</strong>{toEventTypeList(record.event_types)}</p>
+          <p><strong>确认后状态：</strong>{record.scope_quarantine_previous_enabled ? '启用' : '停用'}</p>
+        </div>
+      ),
+      okText: '确认范围',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await api.verifyNotificationWebhookScope(record.id, record.updated_at);
+          Toast.success('Webhook 路由范围已确认');
+          await loadWebhooks(1);
+        } catch (err: any) {
+          Toast.error(`确认失败${err?.message ? `：${err.message}` : ''}`);
+          throw err;
+        }
+      },
+    });
   };
 
   const eventColumns = [
@@ -212,22 +246,47 @@ export default function NotificationCenterPage() {
     { title: 'ID', dataIndex: 'id', width: 72 },
     { title: '事件', dataIndex: 'event_type', width: 220, render: (v: string) => <Text>{eventTypeLabel(v)}</Text> },
     { title: 'Webhook', dataIndex: 'webhook_name', width: 180, render: (v: string) => v || '-' },
-    { title: '状态', dataIndex: 'status', width: 120, render: (v: string) => <StatusTag status={v}>{deliveryStateLabel(v)}</StatusTag> },
+    { title: '状态', dataIndex: 'status', width: 120, render: (v: string, row: NotificationDelivery) => row.retry_scope_quarantined ? <Tag color="orange">安全隔离</Tag> : <StatusTag status={v}>{deliveryStateLabel(v)}</StatusTag> },
     { title: '尝试', dataIndex: 'attempts', width: 88 },
     { title: '响应', dataIndex: 'response_status', width: 88, render: (v: number) => v || '-' },
-    { title: '下次重试', dataIndex: 'next_retry_at', width: 180, render: (v: string) => v ? formatDateTime(v) : '-' },
+    {
+      title: '下次重试',
+      dataIndex: 'next_retry_at',
+      width: 260,
+      render: (v: string, row: NotificationDelivery) => row.retry_scope_quarantined
+        ? `已取消自动重试${row.scope_quarantine_previous_next_retry_at ? `（原 ${formatDateTime(row.scope_quarantine_previous_next_retry_at)}）` : ''}`
+        : (v ? formatDateTime(v) : '-'),
+    },
     { title: '错误', dataIndex: 'error', ellipsis: true, render: (v: string) => v || '-' },
     { title: '更新时间', dataIndex: 'updated_at', width: 180, render: (v: string) => formatDateTime(v) },
   ];
 
   const webhookColumns = [
     { title: 'ID', dataIndex: 'id', width: 72 },
+    { title: '组织', dataIndex: 'org_id', width: 100, render: (v: number) => `#${v}` },
     { title: '名称', dataIndex: 'name', width: 180 },
     { title: 'URL', dataIndex: 'url', ellipsis: true },
     { title: '事件类型', dataIndex: 'event_types', width: 260, render: (v: unknown) => eventTypeListLabel(v) },
     { title: '范围', dataIndex: 'project_id', width: 120, render: (v: number) => v ? `项目 #${v}` : '组织级' },
-    { title: '启用', dataIndex: 'enabled', width: 92, render: (v: boolean) => <StatusTag status={v ? 'active' : 'disabled'}>{v ? '启用' : '停用'}</StatusTag> },
-    { title: '操作', width: 90, render: (_: unknown, row: NotificationWebhook) => <Button size="small" icon={<IconSetting />} onClick={() => openWebhookSheet(row)} /> },
+    {
+      title: '启用',
+      dataIndex: 'enabled',
+      width: 150,
+      render: (v: boolean, row: NotificationWebhook) => row.scope_verified
+        ? <StatusTag status={v ? 'active' : 'disabled'}>{v ? '启用' : '停用'}</StatusTag>
+        : <Tag color="orange">隔离（确认后{row.scope_quarantine_previous_enabled ? '启用' : '停用'}）</Tag>,
+    },
+    { title: '安全确认', dataIndex: 'scope_verified', width: 120, render: (v: boolean) => <Tag color={v ? 'green' : 'orange'}>{v ? '已确认' : '已隔离'}</Tag> },
+    {
+      title: '操作',
+      width: 190,
+      render: (_: unknown, row: NotificationWebhook) => (
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Button size="small" icon={<IconSetting />} onClick={() => openWebhookSheet(row)}>编辑</Button>
+          {!row.scope_verified && <Button size="small" type="primary" onClick={() => verifyWebhookScope(row)}>确认范围</Button>}
+        </div>
+      ),
+    },
   ];
 
   return (

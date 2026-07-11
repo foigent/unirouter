@@ -374,6 +374,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">GET</td><td><code>/api/v1/notification-webhooks</code></td><td>Notification webhooks</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/notification-webhooks</code></td><td>Create notification webhook</td></tr>
 <tr><td class="method">PUT</td><td><code>/api/v1/notification-webhooks/{id}</code></td><td>Update notification webhook</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/notification-webhooks/{id}/verify-scope</code></td><td>Verify a quarantined notification webhook scope</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/sensitive-words</code></td><td>List sensitive words</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/sensitive-words</code></td><td>Add sensitive words</td></tr>
 <tr><td class="method">PUT</td><td><code>/api/v1/sensitive-words</code></td><td>Replace sensitive words</td></tr>
@@ -461,6 +462,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("GET /api/v1/notification-webhooks", notificationReadRoute(adminHandler.ListNotificationWebhooks))
 	mux.Handle("POST /api/v1/notification-webhooks", notificationWriteRoute(adminHandler.CreateNotificationWebhook))
 	mux.Handle("PUT /api/v1/notification-webhooks/{id}", notificationWriteRoute(adminHandler.UpdateNotificationWebhook))
+	mux.Handle("POST /api/v1/notification-webhooks/{id}/verify-scope", notificationWriteRoute(adminHandler.VerifyNotificationWebhookScope))
 
 	mux.Handle("GET /api/v1/audit-logs", roleRoute(adminHandler.ListAuditLogs, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin))
 	mux.Handle("GET /api/v1/data-exchange/items", platformRoute(adminHandler.ListDataExchangeItems))

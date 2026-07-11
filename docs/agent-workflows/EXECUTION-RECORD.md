@@ -1,41 +1,48 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 0B P6-F16 Tenant Isolation Closeout
+**Batch:** PRD6 Batch 0B P6-F33 Notification Tenant Isolation
 **Owner:** Codex
-**Risk:** R4 multi-tenant authorization and project policy enforcement
-**Status:** P6-F16 CI verified and merged by PR #140; P6-F32-P6-F36 are separately confirmed unaccepted inputs
-**Integration:** PR #140 / `f244f669c529fec8767f85fff209882b333d8ed2`; post-merge main CI passed
+**Risk:** R4 multi-tenant notification authorization and outbound sink control
+**Status:** P6-F33 Local verified; required PR CI pending
+**Integration:** Dedicated branch; PR/merge/deployment not yet claimed
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Scope
 
-1. Bind every accepted-scope key/user/project operation to the authenticated
-   non-platform actor organization.
-2. Block organization-admin creation, promotion, mutation or deletion of
-   platform authority, including the final update race.
-3. Bind project membership to JWT org, database user org and project org.
-4. Make project model-set replacement same-org and atomic, and prevent malformed
-   historical cross-org assignments from influencing live model admission.
-5. Prove same-tenant, cross-tenant, platform/legacy exception, org-zero
-   fail-closed and no-side-effect behavior through a migrated PostgreSQL/JWT
-   matrix.
-6. Record later confirmed administrator-surface gaps without expanding P6-F16
-   or reopening PRD5.
+1. Constrain authenticated non-platform notification reads to the JWT org.
+2. Reject explicit foreign organization filters and org-zero identities.
+3. Require Webhook project and organization ownership consistency.
+4. Deny foreign Webhook create/update with no audit, database or delivery side
+   effect while preserving the explicit platform exception.
+5. Retain but quarantine every pre-fix Webhook until an authorized actor
+   explicitly verifies the stored scope and destination.
+6. Record D6-08 acceptance without reopening PRD5 or broadening the X-Insight
+   runtime contract.
 
 ## Behavior Change
 
-- Non-platform key/user/project list, read and mutation sinks are constrained to
-  the signed actor organization.
-- Organization admins cannot create/promote platform roles or mutate/delete an
-  existing platform target; the final SQL predicate closes the role-change race.
-- Project-scoped membership requires consistent user/project/JWT organization.
-- Project model-set replacement validates before mutation and commits delete/
-  insert atomically; the execution query ignores cross-org assignments.
-- Same-tenant and platform/legacy-admin behavior remains available.
+- Non-platform notification list/read conditions are constrained to the signed
+  actor organization even when a foreign `org_id` is supplied.
+- Webhook create/update validates actor org and project/org ownership; update's
+  final SQL retains the authorized org predicate.
+- Delivery display joins cannot resolve a cross-org Webhook name.
+- Migration `000020` marks existing routes unverified without deleting them;
+  both new delivery and retry require explicit verification. New authorized
+  creates are verified, while old routes use an audited confirmation action and
+  visible Notification Center state.
+- New-code edits re-quarantine a route; a monotonic database write generation
+  rejects old-binary create/update. Confirmation uses an expected update time,
+  row lock and atomic audit/state commit.
+- Pre-up failed deliveries retain their old due time only as evidence and never
+  auto-replay after route verification. Down disables all routes, leaves a
+  database lockdown, removes the migration ledger row and supports safe up
+  reconstruction.
+- Foreign and missing Webhook IDs share the same non-platform `404` result.
+- Same-tenant and explicit platform-admin behavior remains available.
 - No new X-Insight runtime field or dependency is introduced.
-- P6-F32-P6-F36 change no runtime behavior in this branch. They remain new
-  source findings and proposed acceptance evidence, not implemented fixes,
-  incidents, target verification, or global tenant-isolation proof.
+- D6-08 accepts P6-F32-P6-F36. Only P6-F33 changes runtime behavior in this
+  branch; the other rows remain unremediated and no target verification is
+  claimed.
 
 ## Files And Evidence
 
@@ -49,6 +56,8 @@
   `docs/ops/evidence/PRD6-B0B-P6F16-tenant-isolation-local-20260711.md`.
 - Follow-up administrator surface audit:
   `docs/ops/evidence/PRD6-B0B-admin-tenant-surface-audit-20260711.md`.
+- P6-F33 local evidence:
+  `docs/ops/evidence/PRD6-B0B-P6F33-notification-tenant-isolation-local-20260711.md`.
 - Adaptive-trust innovation evidence:
   `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`.
 - Structural hardening portfolio:
@@ -57,12 +66,29 @@
   `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`,
   `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`, and
   `docs/planning/PRD6-BACKLOG.md`.
-- Code/tests: `internal/admin/{key,user,project,rbac_helpers,model_governance}_handlers.go`,
-  `internal/modelgov/modelgov.go`, `internal/admin/tenant_isolation_test.go`,
-  `internal/admin/tenant_isolation_integration_test.go`, and
-  `internal/modelgov/modelgov_test.go`.
+- Code/tests: `internal/admin/notification_handlers.go`,
+  `internal/admin/rbac_helpers.go`, `internal/billing/notifications.go`,
+  migration `000020`, the Notification Center/API client, and their focused
+  backend/frontend tests.
 
 ## Verification
+
+Focused P6-F33 results on `codex/prd6-b0b-notification-tenant`:
+
+- regression-before-fix integration matrix: FAILED on foreign read, create,
+  update, org-zero and denied-sink paths after correcting a fixture-only schema
+  assumption;
+- `go test ./internal/admin -run 'TestP6F33NotificationTenantIsolationIntegration|TestListNotification|TestCreateNotificationWebhook' -count=1 -v`: PASS;
+- migrated PostgreSQL/JWT subtests prove same-tenant behavior, foreign denial,
+  project/org consistency, project-admin membership, org-zero fail closed,
+  platform exception, historical quarantine/re-verification, retry exclusion,
+  atomic-audit rollback, ID non-enumeration and zero denied receiver calls;
+- `go test -race ./... -count=1`: PASS, with the existing macOS linker warning;
+- `go vet ./...`: PASS;
+- frontend type-check, 25 files / 126 tests, and production build: PASS, with
+  the existing large-chunk warning;
+- `git diff --check`: PASS;
+- required PR CI remains pending at this record point.
 
 Pre-change repository results on 2026-07-11:
 
@@ -142,9 +168,9 @@ PR #139 required checks for final scalability-audit evidence head `6c8c192`:
 - `Frontend Build`: PASS;
 - `Docker Build`: PASS.
 
-P6-F01, P6-F02 and P6-F16 are `CI verified`. P6-F32-P6-F36 are documentation/source
-evidence only and remain unaccepted/unremediated; documentation verification
-does not promote them to implemented or target verified.
+P6-F01, P6-F02 and P6-F16 are `CI verified`. D6-08 accepts P6-F32-P6-F36;
+P6-F33 is `Local verified`, while P6-F32 and P6-F34-P6-F36 remain
+unremediated. No documentation or local test promotes a row to target verified.
 
 No deployment, target mutation/probe, real or paid request, credential change,
 exporter/outbox, deletion or expanded data exchange occurred. Migration down,

@@ -3,9 +3,10 @@
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
 > PRD6 Batch 0B P6-F16 was squash-merged by PR #140 as
 > `f244f669c529fec8767f85fff209882b333d8ed2`; its PR and post-merge `main`
-> required CI are green. The next implementation batch is not yet selected.
-> D6-01 and D6-02 were accepted by the User on 2026-07-11. Batch 0B began with
-> P6-F16; advanced innovation rows P6-F23 through P6-F31 remain proposed.
+> required CI are green. D6-08 was then accepted with option B. P6-F33 is Local
+> verified on its dedicated branch and required PR CI is pending.
+> D6-01, D6-02 and D6-08 were accepted by the User on 2026-07-11; advanced
+> innovation rows P6-F23 through P6-F31 remain proposed.
 
 ## PRD6 Current Window
 
@@ -16,6 +17,10 @@
   `docs/ops/evidence/PRD6-B0B-P6F16-tenant-isolation-local-20260711.md`.
 - Follow-up administrator tenant-surface audit:
   `docs/ops/evidence/PRD6-B0B-admin-tenant-surface-audit-20260711.md`.
+- P6-F33 notification tenant-isolation local evidence:
+  `docs/ops/evidence/PRD6-B0B-P6F33-notification-tenant-isolation-local-20260711.md`.
+- P6-F33 full local verification passed backend race tests, vet, frontend
+  type-check, 25 files / 126 tests, frontend build and `git diff --check`.
 - Adaptive-trust/innovation audit:
   `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`.
 - Adaptive-trust structural options and signed split-plane recommendation:
@@ -49,9 +54,10 @@ The User accepted the updated MVP and policy-specific failure posture. P6-F16
 is CI verified by PR #140 with a migrated two-tenant PostgreSQL/JWT matrix; the
 Backend log shows all twelve authenticated subtests PASS rather than SKIP. A
 later read-only audit found P6-F32 through P6-F36 across finance, notifications,
-pricing, global settings and organization model governance. Those are
-source-confirmed new inputs, not silently included in the earlier D6-01
-decision. No audit row is presented as a production
+pricing, global settings and organization model governance. D6-08 separately
+accepted those rows with tenant roles confined to their JWT organization and
+platform-only global/multiplier authority. P6-F33 is Local verified; P6-F32 and
+P6-F34-P6-F36 remain unremediated. No audit row is presented as a production
 incident, 100x proof, or implemented remediation before its exact evidence
 exists.
 

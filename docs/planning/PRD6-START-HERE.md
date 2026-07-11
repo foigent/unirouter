@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02 accepted; P6-F16 CI verified by PR #140
+> Status: D6-01/D6-02/D6-08 accepted; P6-F16 CI verified; P6-F33 Local verified
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -14,6 +14,9 @@ recommended MVP boundary and policy-specific failure posture on 2026-07-11:
   they repair existing behavior without adding a new product surface;
 - P6-F03 through P6-F11 and P6-F16 through P6-F21 are accepted implementation
   scope, executed through the batch/PR/CI gates;
+- D6-08 accepts P6-F32 through P6-F36: tenant roles remain confined to their
+  JWT organization; global prices/settings/license/global sensitive words and
+  organization multipliers are `platform_admin` only;
 - P6-F22 through P6-F31 and other advanced/long-tail capabilities remain
   proposed or deferred and require separate decisions;
 - PRD5 remains `Accepted Scope Complete` and is not reopened by PRD6;
@@ -27,16 +30,17 @@ recommended MVP boundary and policy-specific failure posture on 2026-07-11:
 3. `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md`
 4. `docs/ops/evidence/PRD6-B0B-P6F16-tenant-isolation-local-20260711.md`
 5. `docs/ops/evidence/PRD6-B0B-admin-tenant-surface-audit-20260711.md`
-6. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
-7. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
-8. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
-9. `docs/PRD-Phase6.md`
-10. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
-11. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
-12. `docs/planning/PRD6-BACKLOG.md`
-13. `docs/issues/OPEN-ISSUES.md`
-14. `docs/agent-workflows/AGENT-PROTOCOL.md`
-15. `docs/agent-workflows/EXECUTION-RECORD.md`
+6. `docs/ops/evidence/PRD6-B0B-P6F33-notification-tenant-isolation-local-20260711.md`
+7. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
+8. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
+9. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
+10. `docs/PRD-Phase6.md`
+11. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
+12. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
+13. `docs/planning/PRD6-BACKLOG.md`
+14. `docs/issues/OPEN-ISSUES.md`
+15. `docs/agent-workflows/AGENT-PROTOCOL.md`
+16. `docs/agent-workflows/EXECUTION-RECORD.md`
 
 PRD5 evidence remains under its existing paths. Do not rewrite it as PRD6
 evidence.
@@ -76,8 +80,8 @@ evidence.
   logs prove the migrated PostgreSQL matrix and all twelve authenticated
   subtests passed rather than skipped; post-merge `main` CI also passed.
 - P6-F32 through P6-F36 are later source-confirmed administrator-surface inputs.
-  They were not known when D6-01 was accepted and require a separate scope and
-  authority decision.
+  They were not known when D6-01 was accepted and were separately accepted by
+  D6-08. P6-F33 is Local verified; the other rows remain unremediated.
 
 ## PRD5 Closure Guard
 
@@ -104,6 +108,10 @@ completion defects and must not be used to reopen PRD5:
    continues only with durable degraded evidence; rate/capacity gets a very
    small bounded last-known-safe lease and then rejects, never unlimited
    fail-open.
+3. **D6-08 administrator authority split — accepted with option B.** Tenant
+   roles are confined to their JWT organization. Global prices, settings,
+   license, global sensitive words and organization multipliers require
+   `platform_admin`; no new global billing role is implied.
 
 UniRouter owns the request-path and its authoritative authorization, routing,
 usage, billing, and audit facts. Other projects may consume a sanitized,
@@ -117,7 +125,5 @@ required to continue the accepted P0/P1 work. D6-01/D6-02 do not authorize
 deployment, target mutation, paid shadow traffic, raw-payload expansion, a new
 X-Insight contract, semantic response cache, video execution, or an IAM rewrite.
 
-A nearer integrity decision now exists as D6-08: accept or revise the proposed
-administrator authority split for P6-F32 through P6-F36. The only materially
-open role choice is whether organization multipliers are own-org self-service
-or platform/billing-authority mutation. This does not block the P6-F16 PR.
+D6-08 authorizes P6-F32 through P6-F36 through separate reviewable PRs. P6-F33
+is Local verified; required CI is its next evidence gate.

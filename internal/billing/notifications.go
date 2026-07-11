@@ -164,11 +164,13 @@ func (s *EventService) RetryDueDeliveries(ctx context.Context, limit int) (int, 
 		        e.title, e.message, e.resource, e.resource_id, e.payload
 		 FROM notification_deliveries d
 		 JOIN notification_events e ON e.id = d.event_id
-		 JOIN notification_webhooks w ON w.id = d.webhook_id
+		 JOIN notification_webhooks w ON w.id = d.webhook_id AND w.org_id = e.org_id
 		 WHERE d.status = 'failed'
 		   AND d.next_retry_at IS NOT NULL
 		   AND d.next_retry_at <= NOW()
+		   AND d.retry_scope_quarantined = FALSE
 		   AND w.enabled = TRUE
+		   AND w.scope_verified = TRUE
 		 ORDER BY d.next_retry_at ASC, d.id ASC
 		 LIMIT $1`,
 		limit,
@@ -293,6 +295,7 @@ func (s *EventService) deliverWebhooks(ctx context.Context, eventID int64, input
 		 FROM notification_webhooks
 		 WHERE org_id = $1
 		   AND enabled = TRUE
+		   AND scope_verified = TRUE
 		   AND (project_id IS NULL OR project_id = $2)
 		   AND (jsonb_array_length(event_types) = 0 OR event_types ? $3)
 		 ORDER BY project_id NULLS FIRST, id ASC`,

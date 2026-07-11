@@ -49,7 +49,7 @@ func TestEventService_EmitDeliversWebhook(t *testing.T) {
 			}
 		},
 		QueryFn: func(ctx context.Context, query string, args ...any) (pgx.Rows, error) {
-			if !strings.Contains(query, "FROM notification_webhooks") {
+			if !strings.Contains(query, "FROM notification_webhooks") || !strings.Contains(query, "scope_verified = TRUE") {
 				t.Fatalf("unexpected Query: %s", query)
 			}
 			return &testutil.MockRows{
@@ -210,7 +210,7 @@ func TestEventService_CheckProjectBudgetEmitsThresholdEvent(t *testing.T) {
 			}
 		},
 		QueryFn: func(ctx context.Context, query string, args ...any) (pgx.Rows, error) {
-			if !strings.Contains(query, "FROM notification_webhooks") {
+			if !strings.Contains(query, "FROM notification_webhooks") || !strings.Contains(query, "scope_verified = TRUE") {
 				t.Fatalf("unexpected Query: %s", query)
 			}
 			return &testutil.MockRows{}, nil
@@ -252,7 +252,7 @@ func TestEventService_RetryDueDeliveries(t *testing.T) {
 	var eventState string
 	db := &testutil.MockDB{
 		QueryFn: func(ctx context.Context, query string, args ...any) (pgx.Rows, error) {
-			if !strings.Contains(query, "FROM notification_deliveries d") || !strings.Contains(query, "next_retry_at <= NOW()") {
+			if !strings.Contains(query, "FROM notification_deliveries d") || !strings.Contains(query, "next_retry_at <= NOW()") || !strings.Contains(query, "w.scope_verified = TRUE") {
 				t.Fatalf("unexpected retry query: %s", query)
 			}
 			return &testutil.MockRows{Rows: []func(dest ...any) error{
