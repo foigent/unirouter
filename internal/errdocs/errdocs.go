@@ -142,8 +142,8 @@ var docs = []Doc{
 		Type:       "server_error",
 		HTTPStatus: 500,
 		Title:      "Billing settle failed",
-		Summary:    "The provider call completed but billing settlement failed after retry.",
-		Resolution: "Use the request_id in logs and audit evidence to reconcile billing before retrying large traffic.",
+		Summary:    "The provider call completed but immediate billing settlement failed after retry. Billable streaming output remains pending for durable recovery and is never auto-refunded.",
+		Resolution: "Use the request_id to inspect the durable settlement state. Do not replay the operation merely to force billing; the recovery worker retries prepared usage automatically.",
 		DocURL:     "/docs#error-billing_error.settle_failed",
 	},
 	{
