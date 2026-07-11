@@ -9,12 +9,15 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 
+	"github.com/uniroute/unirouter/internal/agentcap"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/errdocs"
 	"github.com/uniroute/unirouter/internal/models"
+	"github.com/uniroute/unirouter/internal/traceutil"
 )
 
 // AuthError represents an authentication error with HTTP status.
@@ -60,14 +63,21 @@ func validateKeyAndOrgStatus(apiKey *models.ApiKey, orgStatus string) error {
 type contextKey string
 
 const (
-	CtxAPIKey     contextKey = "api_key"
-	CtxOrgID      contextKey = "org_id"
-	CtxProjectID  contextKey = "project_id"
-	CtxKeyID      contextKey = "key_id"
-	CtxRequestID  contextKey = "request_id"
-	CtxUserID     contextKey = "user_id"
-	CtxUserRole   contextKey = "user_role"
-	CtxModelAlias contextKey = "model_alias"
+	CtxAPIKey          contextKey = "api_key"
+	CtxOrgID           contextKey = "org_id"
+	CtxProjectID       contextKey = "project_id"
+	CtxKeyID           contextKey = "key_id"
+	CtxRequestID       contextKey = "request_id"
+	CtxUserID          contextKey = "user_id"
+	CtxUserRole        contextKey = "user_role"
+	CtxModelAlias      contextKey = "model_alias"
+	CtxAuthKind        contextKey = "auth_kind"
+	CtxAgentCapability contextKey = "agent_capability"
+)
+
+const (
+	AuthKindAPIKey          = "api_key"
+	AuthKindAgentCapability = "agent_capability"
 )
 
 // GetRequestIDFromContext retrieves the request ID from context.
@@ -115,6 +125,16 @@ func GetUserRoleFromContext(ctx context.Context) string {
 // GetModelAliasFromContext retrieves the original requested model when the gateway resolves an alias.
 func GetModelAliasFromContext(ctx context.Context) string {
 	v, _ := ctx.Value(CtxModelAlias).(string)
+	return v
+}
+
+func GetAuthKindFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(CtxAuthKind).(string)
+	return v
+}
+
+func GetAgentCapabilityFromContext(ctx context.Context) *agentcap.Claims {
+	v, _ := ctx.Value(CtxAgentCapability).(*agentcap.Claims)
 	return v
 }
 
@@ -214,10 +234,18 @@ func GatewayAuth(q db.DBQuerier, jwtSecret string) func(http.Handler) http.Handl
 // GatewayAuthWithAPIKeyHashSecret returns middleware that authenticates API
 // requests via API Key using an API-key-specific HMAC secret.
 func GatewayAuthWithAPIKeyHashSecret(q db.DBQuerier, apiKeyHashSecret string) func(http.Handler) http.Handler {
+	return GatewayAuthWithAgentCapabilities(q, apiKeyHashSecret, nil)
+}
+
+// GatewayAuthWithAgentCapabilities authenticates either a root API key or a
+// short-lived Agent capability. Capability state and root authority are
+// validated by agentcap.Service; the resulting context retains the root key ID
+// so existing aggregate rate and billing boundaries are not multiplied by the
+// number of child Agents.
+func GatewayAuthWithAgentCapabilities(q db.DBQuerier, apiKeyHashSecret string, capabilities *agentcap.Service) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Extract API Key from Authorization header
-			rawKey, err := extractAPIKey(r)
+			rawCredential, err := extractAPIKey(r)
 			if err != nil {
 				var authErr *AuthError
 				if errors.As(err, &authErr) {
@@ -226,21 +254,41 @@ func GatewayAuthWithAPIKeyHashSecret(q db.DBQuerier, apiKeyHashSecret string) fu
 				return
 			}
 
-			// Hash the key and look up in DB
-			keyHash := hashKey(rawKey, apiKeyHashSecret)
-			apiKey, orgStatus, err := resolveAPIKey(r.Context(), q, keyHash)
-			if err != nil {
-				writeGatewayAuthError(w, http.StatusUnauthorized, "auth_error.invalid_api_key", "Invalid API key")
-				return
-			}
-
-			// Check API Key and Org status
-			if err := validateKeyAndOrgStatus(apiKey, orgStatus); err != nil {
-				var authErr *AuthError
-				if errors.As(err, &authErr) {
-					writeGatewayAuthError(w, authErr.Status, authErr.Code, authErr.Message)
+			var apiKey *models.ApiKey
+			var capabilityClaims *agentcap.Claims
+			authKind := AuthKindAPIKey
+			if strings.HasPrefix(rawCredential, agentcap.TokenPrefix) {
+				if capabilities == nil {
+					writeGatewayAuthError(w, http.StatusUnauthorized, "auth_error.invalid_agent_capability", "Invalid Agent capability")
+					return
 				}
-				return
+				authentication, authErr := capabilities.Authenticate(r.Context(), rawCredential)
+				if authErr != nil {
+					writeAgentCapabilityAuthError(w, authErr)
+					return
+				}
+				apiKey = authentication.APIKey
+				capabilityClaims = authentication.Claims
+				authKind = AuthKindAgentCapability
+				if !agentcap.IsControlEndpoint(r.URL.Path) && !capabilityClaims.AllowsEndpoint(r.URL.Path) {
+					writeGatewayAuthError(w, http.StatusForbidden, "auth_error.agent_capability_endpoint_not_allowed", "Agent capability does not allow this model-gateway endpoint")
+					return
+				}
+			} else {
+				keyHash := hashKey(rawCredential, apiKeyHashSecret)
+				var orgStatus string
+				apiKey, orgStatus, err = resolveAPIKey(r.Context(), q, keyHash)
+				if err != nil {
+					writeGatewayAuthError(w, http.StatusUnauthorized, "auth_error.invalid_api_key", "Invalid API key")
+					return
+				}
+				if err := validateKeyAndOrgStatus(apiKey, orgStatus); err != nil {
+					var typed *AuthError
+					if errors.As(err, &typed) {
+						writeGatewayAuthError(w, typed.Status, typed.Code, typed.Message)
+					}
+					return
+				}
 			}
 
 			// Check IP whitelist
@@ -263,9 +311,31 @@ func GatewayAuthWithAPIKeyHashSecret(q db.DBQuerier, apiKeyHashSecret string) fu
 				ctx = context.WithValue(ctx, CtxProjectID, *apiKey.ProjectID)
 			}
 			ctx = context.WithValue(ctx, CtxKeyID, apiKey.ID)
+			ctx = context.WithValue(ctx, CtxAuthKind, authKind)
+			if capabilityClaims != nil {
+				ctx = context.WithValue(ctx, CtxAgentCapability, capabilityClaims)
+				ctx = traceutil.ContextWithEvidence(ctx, traceutil.EvidenceContext{
+					WorkflowID: capabilityClaims.WorkflowID,
+					AgentID:    capabilityClaims.AgentID,
+					ActorType:  "agent",
+					ActorRef:   "agent:" + capabilityClaims.AgentID,
+					OnBehalfOf: "api_key:" + strconv.FormatInt(capabilityClaims.RootKeyID, 10),
+				})
+			}
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
+	}
+}
+
+func writeAgentCapabilityAuthError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, agentcap.ErrUnavailable):
+		writeGatewayAuthError(w, http.StatusServiceUnavailable, "auth_error.agent_capability_state_unavailable", "Agent capability state is temporarily unavailable")
+	case errors.Is(err, agentcap.ErrRevoked), errors.Is(err, agentcap.ErrSuperseded), errors.Is(err, agentcap.ErrAuthorityChanged), errors.Is(err, agentcap.ErrInactiveRoot):
+		writeGatewayAuthError(w, http.StatusUnauthorized, "auth_error.agent_capability_revoked", "Agent capability is expired, superseded, or revoked")
+	default:
+		writeGatewayAuthError(w, http.StatusUnauthorized, "auth_error.invalid_agent_capability", "Invalid Agent capability")
 	}
 }
 
@@ -273,6 +343,8 @@ func writeGatewayAuthError(w http.ResponseWriter, status int, code, message stri
 	errType := "authentication_error"
 	if status == http.StatusForbidden {
 		errType = "permission_error"
+	} else if status >= http.StatusInternalServerError {
+		errType = "server_error"
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

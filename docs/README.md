@@ -21,6 +21,7 @@
 - [ops/evidence/PRD6-B0C-P6F05-routing-config-truth-local-20260711.md](ops/evidence/PRD6-B0C-P6F05-routing-config-truth-local-20260711.md) — P6-F05 有效路由配置、项目预算告警边界、运行时展示和 PostgreSQL 状态/租户证据
 - [ops/evidence/PRD6-B0C-P6F06-multiplier-freeze-local-20260711.md](ops/evidence/PRD6-B0C-P6F06-multiplier-freeze-local-20260711.md) — P6-F06 组织倍率冻结、精确并发结算、零未收金额和取消退款证据
 - [ops/evidence/PRD6-B0C-P6STREAM002A-stream-transport-local-20260712.md](ops/evidence/PRD6-B0C-P6STREAM002A-stream-transport-local-20260712.md) — P6-STREAM-002A 流式帧、超时、写入串行化、部分结算和未完成边界
+- [ops/evidence/PRD6-B1-P6F19A-agent-capability-kernel-local-20260712.md](ops/evidence/PRD6-B1-P6F19A-agent-capability-kernel-local-20260712.md) — P6-F19A 显式 Agent 登记、5 分钟能力、刷新/撤销、100 子 Agent 原子上限和未完成共享预算边界
 - [planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md](planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md) — UI、对账、链路身份、架构与 2B 升级审计
 - [planning/PRD7-CANDIDATE-BACKLOG.md](planning/PRD7-CANDIDATE-BACKLOG.md) — 未来首项方向已选；实现后置到 PRD6 闭环后
 - [planning/PRD7-CACHE-SERVICE-CANDIDATE.md](planning/PRD7-CACHE-SERVICE-CANDIDATE.md) — 未来独立 Cache Service、容量拆分触发线和 SaaS cell 复用边界

@@ -244,4 +244,3 @@ func TestWriteError_SpecialCharsInMessage(t *testing.T) {
 	}
 }
 
-

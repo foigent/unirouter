@@ -12,6 +12,7 @@ require (
 	github.com/redis/go-redis/v9 v9.6.3
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.17.0
+	golang.org/x/sync v0.17.0
 )
 
 require (
@@ -31,7 +32,6 @@ require (
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/yuin/gopher-lua v1.1.1 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
-	golang.org/x/sync v0.17.0 // indirect
 	golang.org/x/sys v0.35.0 // indirect
 	golang.org/x/text v0.29.0 // indirect
 	google.golang.org/protobuf v1.36.8 // indirect

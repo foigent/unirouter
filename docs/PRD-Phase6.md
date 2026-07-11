@@ -206,7 +206,7 @@ These do not become UniRouter source-code gaps without new evidence.
 | P6-F09 | Normalize and bill provider cache-read/cache-create tokens | P1 | Accepted MVP |
 | P6-F10 | Add versioned input/non-stream-output Guardrail Kernel | P1 | Accepted MVP |
 | P6-F11 | Add safe streaming interception, cancellation and settlement semantics | P1 | Accepted MVP; transport prerequisite P6-STREAM-002A CI verified / closed by PR #162; semantic policy remains |
-| P6-F19 | Add short Agent capability, monotonic delegation, ancestor budgets and versioned revocation | P1 | Accepted MVP; D6-11 issuance/refresh contract accepted, implementation not started |
+| P6-F19 | Add short Agent capability, monotonic delegation, ancestor budgets and versioned revocation | P1 | In progress: P6-F19A capability kernel local verified / PR pending; shared runtime cost/token/rate/concurrency enforcement remains |
 | P6-F20 | Add durable minimal usage/finalization outbox and bounded evidence/notification workers | P1 | Accepted MVP |
 | P6-F21 | Admit weighted workload classes without replica-multiplied quotas or long-stream starvation | P1 | Accepted MVP |
 | P6-F12 | Add external secret references/versioning/rotation for selected backends | P2 | Advanced candidate |

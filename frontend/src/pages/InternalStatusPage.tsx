@@ -121,6 +121,23 @@ interface RuntimeStatus {
       heartbeat_seconds: number;
       max_duration_seconds: number;
     };
+    agent_capability: {
+      version: string;
+      source: string;
+      discovery_mode: string;
+      authority_scope: string;
+      token_ttl_seconds: number;
+      refresh_base_seconds: number;
+      refresh_jitter_seconds: number;
+      root_authority_cache_seconds: number;
+      active_revocation_slo_seconds: number;
+      max_workflow_ttl_seconds: number;
+      max_depth: number;
+      max_workflow_agents: number;
+      redis_outage_mode: string;
+      normal_expiry_mode: string;
+      refresh_concurrency: string;
+    };
     budget_alerts: {
       version: string;
       scope: string;
@@ -292,6 +309,7 @@ export default function InternalStatusPage() {
   const grafanaIntegration = runtimeData?.observability_integrations.grafana;
   const routingPolicy = runtimeData?.effective_configuration?.routing_policy;
   const streamTransport = runtimeData?.effective_configuration?.stream_transport;
+  const agentCapability = runtimeData?.effective_configuration?.agent_capability;
   const budgetAlerts = runtimeData?.effective_configuration?.budget_alerts;
 
   const load = () => {
@@ -510,6 +528,41 @@ export default function InternalStatusPage() {
               icon={<IconRefresh />}
               tone="slate"
               meta="本实例启动时生效"
+            />
+          </div>
+        </Surface>
+      )}
+
+      {canViewRuntime && agentCapability && (
+        <Surface title="Agent 能力合同" description="子 Agent 必须显式登记；该能力只覆盖 UniRouter 模型网关，不代表 Tool、IAM、数据库或导出权限。">
+          <div className="ur-kpi-grid">
+            <MetricTile
+              label="能力令牌"
+              value={`${Math.round(agentCapability.token_ttl_seconds / 60)} 分钟`}
+              icon={<IconServer />}
+              tone="violet"
+              meta={`约 ${Math.round(agentCapability.refresh_base_seconds / 60)} 分钟刷新，抖动 ±${agentCapability.refresh_jitter_seconds} 秒`}
+            />
+            <MetricTile
+              label="子 Agent 发现"
+              value="显式登记"
+              icon={<IconServer />}
+              tone="blue"
+              meta="Supervisor 交换 + 父能力委派"
+            />
+            <MetricTile
+              label="撤销收敛"
+              value={`≤ ${agentCapability.active_revocation_slo_seconds} 秒`}
+              icon={<IconAlertTriangle />}
+              tone="green"
+              meta={`Redis 故障：${agentCapability.redis_outage_mode === 'fail_closed' ? '拒绝新准入' : agentCapability.redis_outage_mode}`}
+            />
+            <MetricTile
+              label="边界"
+              value="仅模型网关"
+              icon={<IconServer />}
+              tone="slate"
+              meta={`${agentCapability.version} / 深度 ≤ ${agentCapability.max_depth}`}
             />
           </div>
         </Surface>
