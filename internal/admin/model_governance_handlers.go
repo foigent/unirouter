@@ -3,12 +3,15 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modelgov"
 )
@@ -21,9 +24,9 @@ type modelSetItemRequest struct {
 func (h *Handler) ListModelRegistry(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePagination(r)
 	offset := paginationOffset(page, pageSize)
-	orgID, err := orgIDFromRequest(r)
+	orgID, err := resolveRequestOrganization(r)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid org_id"})
+		writeOrganizationScopeError(w, err)
 		return
 	}
 
@@ -92,7 +95,7 @@ func (h *Handler) ListModelRegistry(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) CreateModelRegistry(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		OrgID                   int64  `json:"org_id"`
+		OrgID                   *int64 `json:"org_id"`
 		ModelName               string `json:"model_name"`
 		DisplayName             string `json:"display_name"`
 		ProviderFamily          string `json:"provider_family"`
@@ -109,11 +112,10 @@ func (h *Handler) CreateModelRegistry(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
 		return
 	}
-	if req.OrgID == 0 {
-		req.OrgID = middleware.GetOrgIDFromContext(r.Context())
-	}
-	if req.OrgID == 0 {
-		req.OrgID = 1
+	orgID, err := resolveModelGovernanceCreateOrganization(r.Context(), req.OrgID)
+	if err != nil {
+		writeOrganizationScopeError(w, err)
+		return
 	}
 	req.ModelName = strings.TrimSpace(req.ModelName)
 	if req.ModelName == "" {
@@ -140,7 +142,7 @@ func (h *Handler) CreateModelRegistry(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var id int64
-	err := h.db.QueryRow(r.Context(),
+	err = h.db.QueryRow(r.Context(),
 		`INSERT INTO model_registry (
 		    org_id, model_name, display_name, provider_family, lifecycle,
 		    context_length, output_limit, capability_tags, data_residency,
@@ -149,7 +151,7 @@ func (h *Handler) CreateModelRegistry(w http.ResponseWriter, r *http.Request) {
 		 )
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
 		 RETURNING id`,
-		req.OrgID, req.ModelName, req.DisplayName, req.ProviderFamily, req.Lifecycle,
+		orgID, req.ModelName, req.DisplayName, req.ProviderFamily, req.Lifecycle,
 		req.ContextLength, req.OutputLimit, req.CapabilityTags, req.DataResidency,
 		req.PricingModelName, req.ApprovedCatalog, req.MigrationRecommendation,
 	).Scan(&id)
@@ -162,15 +164,20 @@ func (h *Handler) CreateModelRegistry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.recordAudit(r.Context(), "model_registry.create", "model_registry", strconv.FormatInt(id, 10),
-		map[string]interface{}{"org_id": req.OrgID, "model_name": req.ModelName, "lifecycle": req.Lifecycle}, r.RemoteAddr)
-	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "org_id": req.OrgID, "model_name": req.ModelName})
+	h.recordAuditForOrgProjectFromRequest(r, orgID, 0, "model_registry.create", "model_registry", strconv.FormatInt(id, 10),
+		map[string]interface{}{"org_id": orgID, "model_name": req.ModelName, "lifecycle": req.Lifecycle})
+	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "org_id": orgID, "model_name": req.ModelName})
 }
 
 func (h *Handler) UpdateModelRegistry(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid ID"})
+		return
+	}
+	scope, err := resolveModelGovernancePathScope(r)
+	if err != nil {
+		writeOrganizationScopeError(w, err)
 		return
 	}
 	var req struct {
@@ -253,22 +260,29 @@ func (h *Handler) UpdateModelRegistry(w http.ResponseWriter, r *http.Request) {
 	var beforeOrgID int64
 	var beforeModelName, beforeLifecycle, beforeMigrationRecommendation string
 	var beforeApprovedCatalog bool
-	if err := h.db.QueryRow(r.Context(),
-		`SELECT org_id, model_name, lifecycle, approved_catalog, migration_recommendation FROM model_registry WHERE id = $1`,
-		id,
-	).Scan(&beforeOrgID, &beforeModelName, &beforeLifecycle, &beforeApprovedCatalog, &beforeMigrationRecommendation); err == nil {
-		beforeState = map[string]interface{}{
-			"id":                       id,
-			"org_id":                   beforeOrgID,
-			"model_name":               beforeModelName,
-			"lifecycle":                beforeLifecycle,
-			"approved_catalog":         beforeApprovedCatalog,
-			"migration_recommendation": beforeMigrationRecommendation,
-		}
+	beforeQuery := `SELECT org_id, model_name, lifecycle, approved_catalog, migration_recommendation FROM model_registry WHERE id = $1`
+	beforeArgs := []interface{}{id}
+	if scope.constrained {
+		beforeQuery += ` AND org_id = $2`
+		beforeArgs = append(beforeArgs, scope.orgID)
+	}
+	if err := h.db.QueryRow(r.Context(), beforeQuery, beforeArgs...).Scan(
+		&beforeOrgID, &beforeModelName, &beforeLifecycle, &beforeApprovedCatalog, &beforeMigrationRecommendation,
+	); err != nil {
+		writeModelGovernanceLookupError(w, err, "Model")
+		return
+	}
+	beforeState = map[string]interface{}{
+		"id":                       id,
+		"org_id":                   beforeOrgID,
+		"model_name":               beforeModelName,
+		"lifecycle":                beforeLifecycle,
+		"approved_catalog":         beforeApprovedCatalog,
+		"migration_recommendation": beforeMigrationRecommendation,
 	}
 	sets = append(sets, "updated_at = NOW()")
-	args = append(args, id)
-	query := fmt.Sprintf("UPDATE model_registry SET %s WHERE id = $%d", strings.Join(sets, ", "), argIdx)
+	args = append(args, id, beforeOrgID)
+	query := fmt.Sprintf("UPDATE model_registry SET %s WHERE id = $%d AND org_id = $%d", strings.Join(sets, ", "), argIdx, argIdx+1)
 	tag, err := h.db.Exec(r.Context(), query, args...)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
@@ -291,7 +305,7 @@ func (h *Handler) UpdateModelRegistry(w http.ResponseWriter, r *http.Request) {
 	if req.MigrationRecommendation != nil {
 		afterState["migration_recommendation"] = strings.TrimSpace(*req.MigrationRecommendation)
 	}
-	h.recordAuditFromRequest(r, "model_registry.update", "model_registry", strconv.FormatInt(id, 10), map[string]interface{}{
+	h.recordAuditForOrgProjectFromRequest(r, beforeOrgID, 0, "model_registry.update", "model_registry", strconv.FormatInt(id, 10), map[string]interface{}{
 		"id":     id,
 		"before": beforeState,
 		"after":  afterState,
@@ -316,13 +330,14 @@ func (h *Handler) UpdateModelRegistry(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ListApprovedModelCatalog(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePagination(r)
 	offset := paginationOffset(page, pageSize)
-	orgID, err := orgIDFromRequest(r)
+	requestedOrgID, err := parseOptionalOrganizationID(r.URL.Query().Get("org_id"))
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid org_id"})
+		writeOrganizationScopeError(w, err)
 		return
 	}
 
 	var projectID int64
+	var orgID int64
 	if projectParam := r.URL.Query().Get("project_id"); projectParam != "" {
 		projectID, err = strconv.ParseInt(projectParam, 10, 64)
 		if err != nil || projectID <= 0 {
@@ -333,13 +348,35 @@ func (h *Handler) ListApprovedModelCatalog(w http.ResponseWriter, r *http.Reques
 			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 			return
 		}
+		if err := h.db.QueryRow(r.Context(), `SELECT org_id FROM projects WHERE id = $1`, projectID).Scan(&orgID); err != nil {
+			writeModelGovernanceLookupError(w, err, "Project")
+			return
+		}
+		if !actorCanAccessOrg(r.Context(), orgID) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			return
+		}
+		if requestedOrgID > 0 && requestedOrgID != orgID {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Project organization mismatch"})
+			return
+		}
+	} else {
+		if auth.IsProjectScopedRole(actorRole(r.Context())) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "project_id is required"})
+			return
+		}
+		orgID, err = resolveActorOrganization(r.Context(), requestedOrgID)
+		if err != nil {
+			writeOrganizationScopeError(w, err)
+			return
+		}
 	}
 
 	conditions := []string{"mr.org_id = $1", "mr.approved_catalog = TRUE", "mr.lifecycle IN ('ga', 'deprecated')"}
 	args := []interface{}{orgID}
 	argIdx := 2
 	if projectID > 0 {
-		hasSets, err := h.projectHasAssignedModelSets(r.Context(), projectID)
+		hasSets, err := h.projectHasAssignedModelSets(r.Context(), projectID, orgID)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Project model set query failed"})
 			return
@@ -348,7 +385,8 @@ func (h *Handler) ListApprovedModelCatalog(w http.ResponseWriter, r *http.Reques
 			conditions = append(conditions, fmt.Sprintf(`EXISTS (
 				SELECT 1
 				FROM project_model_sets pms
-				JOIN model_sets ms ON ms.id = pms.model_set_id AND ms.status = 'active'
+				JOIN projects p ON p.id = pms.project_id AND p.org_id = mr.org_id
+				JOIN model_sets ms ON ms.id = pms.model_set_id AND ms.status = 'active' AND ms.org_id = p.org_id
 				JOIN model_set_items msi ON msi.model_set_id = ms.id
 				LEFT JOIN model_aliases ma2 ON ma2.org_id = mr.org_id AND ma2.target_model = mr.model_name AND ma2.status = 'active'
 				WHERE pms.project_id = $%d
@@ -410,9 +448,9 @@ func (h *Handler) ListApprovedModelCatalog(w http.ResponseWriter, r *http.Reques
 func (h *Handler) ListModelAliases(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePagination(r)
 	offset := paginationOffset(page, pageSize)
-	orgID, err := orgIDFromRequest(r)
+	orgID, err := resolveRequestOrganization(r)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid org_id"})
+		writeOrganizationScopeError(w, err)
 		return
 	}
 	var total int
@@ -438,12 +476,16 @@ func (h *Handler) ListModelAliases(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, item)
 	}
+	if err := rows.Err(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Rows failed"})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"data": items, "total": total, "page": page, "page_size": pageSize})
 }
 
 func (h *Handler) CreateModelAlias(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		OrgID       int64  `json:"org_id"`
+		OrgID       *int64 `json:"org_id"`
 		Alias       string `json:"alias"`
 		TargetModel string `json:"target_model"`
 		DisplayName string `json:"display_name"`
@@ -454,11 +496,10 @@ func (h *Handler) CreateModelAlias(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
 		return
 	}
-	if req.OrgID == 0 {
-		req.OrgID = middleware.GetOrgIDFromContext(r.Context())
-	}
-	if req.OrgID == 0 {
-		req.OrgID = 1
+	orgID, err := resolveModelGovernanceCreateOrganization(r.Context(), req.OrgID)
+	if err != nil {
+		writeOrganizationScopeError(w, err)
+		return
 	}
 	req.Alias = strings.TrimSpace(req.Alias)
 	req.TargetModel = strings.TrimSpace(req.TargetModel)
@@ -474,10 +515,10 @@ func (h *Handler) CreateModelAlias(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var id int64
-	err := h.db.QueryRow(r.Context(),
+	err = h.db.QueryRow(r.Context(),
 		`INSERT INTO model_aliases (org_id, alias, target_model, display_name, description, status, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW()) RETURNING id`,
-		req.OrgID, req.Alias, req.TargetModel, req.DisplayName, req.Description, req.Status,
+		orgID, req.Alias, req.TargetModel, req.DisplayName, req.Description, req.Status,
 	).Scan(&id)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
@@ -487,14 +528,20 @@ func (h *Handler) CreateModelAlias(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Create failed"})
 		return
 	}
-	h.recordAudit(r.Context(), "model_alias.create", "model_alias", strconv.FormatInt(id, 10), map[string]interface{}{"alias": req.Alias, "target_model": req.TargetModel}, r.RemoteAddr)
-	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "alias": req.Alias, "target_model": req.TargetModel})
+	h.recordAuditForOrgProjectFromRequest(r, orgID, 0, "model_alias.create", "model_alias", strconv.FormatInt(id, 10),
+		map[string]interface{}{"org_id": orgID, "alias": req.Alias, "target_model": req.TargetModel})
+	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "org_id": orgID, "alias": req.Alias, "target_model": req.TargetModel})
 }
 
 func (h *Handler) UpdateModelAlias(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid ID"})
+		return
+	}
+	scope, err := resolveModelGovernancePathScope(r)
+	if err != nil {
+		writeOrganizationScopeError(w, err)
 		return
 	}
 	var req struct {
@@ -536,9 +583,23 @@ func (h *Handler) UpdateModelAlias(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "No fields to update"})
 		return
 	}
+	var beforeOrgID int64
+	var beforeAlias, beforeTargetModel, beforeDisplayName, beforeDescription, beforeStatus string
+	beforeQuery := `SELECT org_id, alias, target_model, display_name, description, status FROM model_aliases WHERE id = $1`
+	beforeArgs := []interface{}{id}
+	if scope.constrained {
+		beforeQuery += ` AND org_id = $2`
+		beforeArgs = append(beforeArgs, scope.orgID)
+	}
+	if err := h.db.QueryRow(r.Context(), beforeQuery, beforeArgs...).Scan(
+		&beforeOrgID, &beforeAlias, &beforeTargetModel, &beforeDisplayName, &beforeDescription, &beforeStatus,
+	); err != nil {
+		writeModelGovernanceLookupError(w, err, "Alias")
+		return
+	}
 	sets = append(sets, "updated_at = NOW()")
-	args = append(args, id)
-	query := fmt.Sprintf("UPDATE model_aliases SET %s WHERE id = $%d", strings.Join(sets, ", "), argIdx)
+	args = append(args, id, beforeOrgID)
+	query := fmt.Sprintf("UPDATE model_aliases SET %s WHERE id = $%d AND org_id = $%d", strings.Join(sets, ", "), argIdx, argIdx+1)
 	tag, err := h.db.Exec(r.Context(), query, args...)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
@@ -548,16 +609,42 @@ func (h *Handler) UpdateModelAlias(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Alias not found"})
 		return
 	}
-	h.recordAudit(r.Context(), "model_alias.update", "model_alias", strconv.FormatInt(id, 10), map[string]interface{}{"id": id}, r.RemoteAddr)
+	afterState := map[string]interface{}{
+		"id": id, "org_id": beforeOrgID, "alias": beforeAlias, "target_model": beforeTargetModel,
+		"display_name": beforeDisplayName, "description": beforeDescription, "status": beforeStatus,
+	}
+	if req.Alias != nil {
+		afterState["alias"] = strings.TrimSpace(*req.Alias)
+	}
+	if req.TargetModel != nil {
+		afterState["target_model"] = strings.TrimSpace(*req.TargetModel)
+	}
+	if req.DisplayName != nil {
+		afterState["display_name"] = strings.TrimSpace(*req.DisplayName)
+	}
+	if req.Description != nil {
+		afterState["description"] = strings.TrimSpace(*req.Description)
+	}
+	if req.Status != nil {
+		afterState["status"] = strings.TrimSpace(*req.Status)
+	}
+	h.recordAuditForOrgProjectFromRequest(r, beforeOrgID, 0, "model_alias.update", "model_alias", strconv.FormatInt(id, 10), map[string]interface{}{
+		"id": id,
+		"before": map[string]interface{}{
+			"id": id, "org_id": beforeOrgID, "alias": beforeAlias, "target_model": beforeTargetModel,
+			"display_name": beforeDisplayName, "description": beforeDescription, "status": beforeStatus,
+		},
+		"after": afterState,
+	})
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 }
 
 func (h *Handler) ListModelSets(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePagination(r)
 	offset := paginationOffset(page, pageSize)
-	orgID, err := orgIDFromRequest(r)
+	orgID, err := resolveRequestOrganization(r)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid org_id"})
+		writeOrganizationScopeError(w, err)
 		return
 	}
 	var total int
@@ -589,12 +676,16 @@ func (h *Handler) ListModelSets(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, item)
 	}
+	if err := rows.Err(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Rows failed"})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"data": items, "total": total, "page": page, "page_size": pageSize})
 }
 
 func (h *Handler) CreateModelSet(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		OrgID       int64                 `json:"org_id"`
+		OrgID       *int64                `json:"org_id"`
 		Name        string                `json:"name"`
 		Slug        string                `json:"slug"`
 		Description string                `json:"description"`
@@ -605,11 +696,10 @@ func (h *Handler) CreateModelSet(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
 		return
 	}
-	if req.OrgID == 0 {
-		req.OrgID = middleware.GetOrgIDFromContext(r.Context())
-	}
-	if req.OrgID == 0 {
-		req.OrgID = 1
+	orgID, err := resolveModelGovernanceCreateOrganization(r.Context(), req.OrgID)
+	if err != nil {
+		writeOrganizationScopeError(w, err)
+		return
 	}
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
@@ -632,11 +722,18 @@ func (h *Handler) CreateModelSet(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid model set item"})
 		return
 	}
+	req.Items = normalizeModelSetItems(req.Items)
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Create failed"})
+		return
+	}
+	defer tx.Rollback(r.Context())
 	var id int64
-	err := h.db.QueryRow(r.Context(),
+	err = tx.QueryRow(r.Context(),
 		`INSERT INTO model_sets (org_id, name, slug, description, status, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, $5, NOW(), NOW()) RETURNING id`,
-		req.OrgID, req.Name, req.Slug, req.Description, req.Status,
+		orgID, req.Name, req.Slug, req.Description, req.Status,
 	).Scan(&id)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
@@ -646,18 +743,33 @@ func (h *Handler) CreateModelSet(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Create failed"})
 		return
 	}
-	if err := h.replaceModelSetItems(r.Context(), id, req.Items); err != nil {
+	if err := replaceModelSetItems(r.Context(), tx, id, orgID, req.Items); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Create items failed"})
 		return
 	}
-	h.recordAudit(r.Context(), "model_set.create", "model_set", strconv.FormatInt(id, 10), map[string]interface{}{"name": req.Name, "slug": req.Slug}, r.RemoteAddr)
-	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "org_id": req.OrgID, "name": req.Name, "slug": req.Slug})
+	if err := insertAuditEntry(r.Context(), tx, "model_set.create", "model_set", strconv.FormatInt(id, 10), map[string]interface{}{
+		"org_id": orgID,
+		"after":  map[string]interface{}{"id": id, "org_id": orgID, "name": req.Name, "slug": req.Slug, "status": req.Status, "item_count": len(req.Items)},
+	}, modelGovernanceAuditMeta(r, orgID)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Create failed"})
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "org_id": orgID, "name": req.Name, "slug": req.Slug})
 }
 
 func (h *Handler) ReplaceModelSetItems(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid ID"})
+		return
+	}
+	scope, err := resolveModelGovernancePathScope(r)
+	if err != nil {
+		writeOrganizationScopeError(w, err)
 		return
 	}
 	var req struct {
@@ -671,11 +783,39 @@ func (h *Handler) ReplaceModelSetItems(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid model set item"})
 		return
 	}
-	if err := h.replaceModelSetItems(r.Context(), id, req.Items); err != nil {
+	req.Items = normalizeModelSetItems(req.Items)
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update items failed"})
 		return
 	}
-	h.recordAudit(r.Context(), "model_set.items.replace", "model_set", strconv.FormatInt(id, 10), map[string]interface{}{"item_count": len(req.Items)}, r.RemoteAddr)
+	defer tx.Rollback(r.Context())
+	targetOrgID, err := readModelSetTargetOrg(r.Context(), tx, id, scope, true)
+	if err != nil {
+		writeModelGovernanceLookupError(w, err, "Model set")
+		return
+	}
+	var beforeCount int
+	if err := tx.QueryRow(r.Context(), `SELECT COUNT(*) FROM model_set_items WHERE model_set_id = $1`, id).Scan(&beforeCount); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Read items failed"})
+		return
+	}
+	if err := replaceModelSetItems(r.Context(), tx, id, targetOrgID, req.Items); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update items failed"})
+		return
+	}
+	if err := insertAuditEntry(r.Context(), tx, "model_set.items.replace", "model_set", strconv.FormatInt(id, 10), map[string]interface{}{
+		"org_id": targetOrgID,
+		"before": map[string]interface{}{"item_count": beforeCount},
+		"after":  map[string]interface{}{"item_count": len(req.Items)},
+	}, modelGovernanceAuditMeta(r, targetOrgID)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update items failed"})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 }
 
@@ -685,9 +825,14 @@ func (h *Handler) ListModelSetItems(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid ID"})
 		return
 	}
-	orgID, err := orgIDFromRequest(r)
+	scope, err := resolveModelGovernancePathScope(r)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid org_id"})
+		writeOrganizationScopeError(w, err)
+		return
+	}
+	orgID, err := readModelSetTargetOrg(r.Context(), h.db, id, scope, false)
+	if err != nil {
+		writeModelGovernanceLookupError(w, err, "Model set")
 		return
 	}
 	rows, err := h.db.Query(r.Context(),
@@ -844,18 +989,76 @@ func (h *Handler) ReplaceProjectModelSets(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 }
 
-func orgIDFromRequest(r *http.Request) (int64, error) {
-	if value := r.URL.Query().Get("org_id"); value != "" {
-		orgID, err := strconv.ParseInt(value, 10, 64)
-		if err != nil || orgID <= 0 {
-			return 0, fmt.Errorf("invalid org_id")
-		}
-		return orgID, nil
+type modelGovernanceOrgScope struct {
+	orgID       int64
+	constrained bool
+}
+
+type modelGovernanceQueryRower interface {
+	QueryRow(context.Context, string, ...interface{}) pgx.Row
+}
+
+func resolveModelGovernanceCreateOrganization(ctx context.Context, requestedOrgID *int64) (int64, error) {
+	if requestedOrgID == nil {
+		return resolveActorOrganization(ctx, 0)
 	}
-	if orgID := middleware.GetOrgIDFromContext(r.Context()); orgID > 0 {
-		return orgID, nil
+	if *requestedOrgID <= 0 {
+		return 0, errInvalidOrganizationID
 	}
-	return 1, nil
+	return resolveActorOrganization(ctx, *requestedOrgID)
+}
+
+// resolveModelGovernancePathScope binds tenant callers to their JWT
+// organization. Platform callers may add an explicit org_id; without it, the
+// globally unique path ID itself is treated as their explicit target.
+func resolveModelGovernancePathScope(r *http.Request) (modelGovernanceOrgScope, error) {
+	requestedOrgID, err := parseOptionalOrganizationID(r.URL.Query().Get("org_id"))
+	if err != nil {
+		return modelGovernanceOrgScope{}, err
+	}
+	if auth.IsPlatformAdmin(actorRole(r.Context())) {
+		return modelGovernanceOrgScope{orgID: requestedOrgID, constrained: requestedOrgID > 0}, nil
+	}
+	orgID, err := resolveActorOrganization(r.Context(), requestedOrgID)
+	if err != nil {
+		return modelGovernanceOrgScope{}, err
+	}
+	return modelGovernanceOrgScope{orgID: orgID, constrained: true}, nil
+}
+
+func readModelSetTargetOrg(ctx context.Context, q modelGovernanceQueryRower, modelSetID int64, scope modelGovernanceOrgScope, forUpdate bool) (int64, error) {
+	query := `SELECT org_id FROM model_sets WHERE id = $1`
+	args := []interface{}{modelSetID}
+	if scope.constrained {
+		query += ` AND org_id = $2`
+		args = append(args, scope.orgID)
+	}
+	if forUpdate {
+		query += ` FOR UPDATE`
+	}
+	var orgID int64
+	if err := q.QueryRow(ctx, query, args...).Scan(&orgID); err != nil {
+		return 0, err
+	}
+	return orgID, nil
+}
+
+func writeModelGovernanceLookupError(w http.ResponseWriter, err error, resource string) {
+	if errors.Is(err, pgx.ErrNoRows) || strings.Contains(strings.ToLower(err.Error()), "no rows") {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": resource + " not found"})
+		return
+	}
+	writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": resource + " query failed"})
+}
+
+func modelGovernanceAuditMeta(r *http.Request, orgID int64) auditMeta {
+	return auditMeta{
+		OrgID:     orgID,
+		IP:        normalizeGlobalControlAuditIP(r.RemoteAddr),
+		UserAgent: r.UserAgent(),
+		RequestID: middleware.GetRequestIDFromContext(r.Context()),
+		Source:    auditSourceFromContext(r.Context()),
+	}
 }
 
 type rowScanner func(dest ...any) error
@@ -945,20 +1148,33 @@ func validModelSetItems(items []modelSetItemRequest) bool {
 	return true
 }
 
-func (h *Handler) replaceModelSetItems(ctx context.Context, modelSetID int64, items []modelSetItemRequest) error {
-	if _, err := h.db.Exec(ctx, `DELETE FROM model_set_items WHERE model_set_id = $1`, modelSetID); err != nil {
-		return err
-	}
-	seen := make(map[string]bool)
+func normalizeModelSetItems(items []modelSetItemRequest) []modelSetItemRequest {
+	normalized := make([]modelSetItemRequest, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
 	for _, item := range items {
 		item.ItemType = strings.TrimSpace(item.ItemType)
 		item.ItemName = strings.TrimSpace(item.ItemName)
 		key := item.ItemType + ":" + item.ItemName
-		if seen[key] {
+		if _, ok := seen[key]; ok {
 			continue
 		}
-		seen[key] = true
-		if _, err := h.db.Exec(ctx,
+		seen[key] = struct{}{}
+		normalized = append(normalized, item)
+	}
+	return normalized
+}
+
+func replaceModelSetItems(ctx context.Context, execer auditExecer, modelSetID, orgID int64, items []modelSetItemRequest) error {
+	if _, err := execer.Exec(ctx,
+		`DELETE FROM model_set_items msi
+		 USING model_sets ms
+		 WHERE msi.model_set_id = $1 AND ms.id = msi.model_set_id AND ms.org_id = $2`,
+		modelSetID, orgID,
+	); err != nil {
+		return err
+	}
+	for _, item := range items {
+		if _, err := execer.Exec(ctx,
 			`INSERT INTO model_set_items (model_set_id, item_type, item_name, created_at)
 			 VALUES ($1, $2, $3, NOW())
 			 ON CONFLICT DO NOTHING`,
@@ -970,8 +1186,15 @@ func (h *Handler) replaceModelSetItems(ctx context.Context, modelSetID int64, it
 	return nil
 }
 
-func (h *Handler) projectHasAssignedModelSets(ctx context.Context, projectID int64) (bool, error) {
+func (h *Handler) projectHasAssignedModelSets(ctx context.Context, projectID, orgID int64) (bool, error) {
 	var count int
-	err := h.db.QueryRow(ctx, `SELECT COUNT(*) FROM project_model_sets WHERE project_id = $1`, projectID).Scan(&count)
+	err := h.db.QueryRow(ctx,
+		`SELECT COUNT(*)
+		 FROM project_model_sets pms
+		 JOIN projects p ON p.id = pms.project_id
+		 JOIN model_sets ms ON ms.id = pms.model_set_id AND ms.org_id = p.org_id
+		 WHERE pms.project_id = $1 AND p.org_id = $2`,
+		projectID, orgID,
+	).Scan(&count)
 	return count > 0, err
 }

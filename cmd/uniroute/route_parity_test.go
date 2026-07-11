@@ -129,6 +129,23 @@ func TestMainRegistersExtractedGlobalControlRoutes(t *testing.T) {
 	}
 }
 
+func TestMainRegistersExtractedModelGovernanceRoutes(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	mainSource := string(src)
+	for _, fragment := range []string{
+		"registerModelGovernanceRoutes(mux, adminHandler",
+		"organization: orgAdminRoute",
+		"projectRead:  projectReadRoute",
+	} {
+		if !strings.Contains(mainSource, fragment) {
+			t.Fatalf("main.go model-governance registrar wiring missing %q", fragment)
+		}
+	}
+}
+
 func TestOpenAPISpecCoversRegisteredRoutes(t *testing.T) {
 	routes := registeredMuxRoutes(t)
 	specBytes, err := os.ReadFile("../../docs/tech-ref/05-openapi-spec.yaml")

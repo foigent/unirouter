@@ -436,17 +436,10 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("GET /api/v1/error-docs", usageRoute(adminHandler.ListErrorDocs))
 
 	mux.Handle("GET /api/v1/reconciliation", billingRoute(adminHandler.ListReconciliation))
-	mux.Handle("GET /api/v1/model-registry", orgAdminRoute(adminHandler.ListModelRegistry))
-	mux.Handle("POST /api/v1/model-registry", orgAdminRoute(adminHandler.CreateModelRegistry))
-	mux.Handle("PUT /api/v1/model-registry/{id}", orgAdminRoute(adminHandler.UpdateModelRegistry))
-	mux.Handle("GET /api/v1/model-catalog", projectReadRoute(adminHandler.ListApprovedModelCatalog))
-	mux.Handle("GET /api/v1/model-aliases", orgAdminRoute(adminHandler.ListModelAliases))
-	mux.Handle("POST /api/v1/model-aliases", orgAdminRoute(adminHandler.CreateModelAlias))
-	mux.Handle("PUT /api/v1/model-aliases/{id}", orgAdminRoute(adminHandler.UpdateModelAlias))
-	mux.Handle("GET /api/v1/model-sets", orgAdminRoute(adminHandler.ListModelSets))
-	mux.Handle("POST /api/v1/model-sets", orgAdminRoute(adminHandler.CreateModelSet))
-	mux.Handle("GET /api/v1/model-sets/{id}/items", orgAdminRoute(adminHandler.ListModelSetItems))
-	mux.Handle("PUT /api/v1/model-sets/{id}/items", orgAdminRoute(adminHandler.ReplaceModelSetItems))
+	registerModelGovernanceRoutes(mux, adminHandler, modelGovernanceRouteGuards{
+		organization: orgAdminRoute,
+		projectRead:  projectReadRoute,
+	})
 	registerPricingRoutes(mux, adminHandler, pricingRouteGuards{read: orgAdminRoute, write: platformRoute})
 
 	mux.Handle("GET /api/v1/users", orgAdminRoute(adminHandler.ListUsers))

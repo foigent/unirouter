@@ -52,6 +52,11 @@ describe('ApiDocsPage', () => {
       '部署级设置（仅平台管理员）',
       'License 状态（仅平台管理员）',
       '全局输入阻断词库（仅平台管理员）',
+      '本组织模型注册表；平台管理员可显式选择组织',
+      '组织模型目录；project_id 决定组织，项目角色必须提供 project_id',
+      '更新本组织别名；越权组织参数返回 403，越权或不存在的 ID 返回 404',
+      '原子创建本组织模型集合及其全部初始条目',
+      '原子替换本组织模型集合条目；不会暴露部分结果',
     ].forEach((description) => {
       expect(screen.getByText(description)).toBeTruthy();
     });
