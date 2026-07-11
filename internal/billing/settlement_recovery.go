@@ -142,8 +142,8 @@ func (b *Billing) PersistSettlementUsage(ctx context.Context, req SettleRequest)
 	if req.PromptTokens < 0 || req.CompletionTokens < 0 || strings.TrimSpace(req.UsageSource) == "" {
 		return fmt.Errorf("billing settlement payload requires nonnegative usage and a source")
 	}
-	if len(req.UsageSource) > 32 {
-		return fmt.Errorf("billing settlement usage source exceeds 32 characters")
+	if len(req.UsageSource) > 20 {
+		return fmt.Errorf("billing settlement usage source exceeds 20 characters")
 	}
 
 	tx, err := b.db.Begin(ctx)
