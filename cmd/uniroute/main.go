@@ -348,10 +348,10 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">POST</td><td><code>/api/v1/users</code></td><td>Create user</td></tr>
 <tr><td class="method">PUT</td><td><code>/api/v1/users/{id}</code></td><td>Update user</td></tr>
 <tr><td class="method">DELETE</td><td><code>/api/v1/users/{id}</code></td><td>Delete user</td></tr>
-<tr><td class="method">GET</td><td><code>/api/v1/model-prices</code></td><td>List model prices</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/model-prices</code></td><td>Create model price</td></tr>
-<tr><td class="method">PUT</td><td><code>/api/v1/model-prices/{id}</code></td><td>Update model price</td></tr>
-<tr><td class="method">DELETE</td><td><code>/api/v1/model-prices/{id}</code></td><td>Delete model price</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/model-prices</code></td><td>List model prices (platform or organization admin)</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-prices</code></td><td>Create/upsert model price (platform admin)</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/model-prices/{id}</code></td><td>Update model price (platform admin)</td></tr>
+<tr><td class="method">DELETE</td><td><code>/api/v1/model-prices/{id}</code></td><td>Delete model price (platform admin)</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/model-names</code></td><td>List model names</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/model-registry</code></td><td>List model registry</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/model-registry</code></td><td>Create model registry entry</td></tr>
@@ -364,10 +364,10 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">POST</td><td><code>/api/v1/model-sets</code></td><td>Create model set</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/model-sets/{id}/items</code></td><td>List model set items</td></tr>
 <tr><td class="method">PUT</td><td><code>/api/v1/model-sets/{id}/items</code></td><td>Replace model set items</td></tr>
-<tr><td class="method">GET</td><td><code>/api/v1/org-model-prices</code></td><td>List org model prices</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/org-model-prices</code></td><td>Create org model price</td></tr>
-<tr><td class="method">PUT</td><td><code>/api/v1/org-model-prices/{id}</code></td><td>Update org model price</td></tr>
-<tr><td class="method">DELETE</td><td><code>/api/v1/org-model-prices/{id}</code></td><td>Delete org model price</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/org-model-prices</code></td><td>List own org multipliers; platform may select org</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/org-model-prices</code></td><td>Create/upsert org multiplier (platform admin)</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/org-model-prices/{id}</code></td><td>Update org multiplier (platform admin)</td></tr>
+<tr><td class="method">DELETE</td><td><code>/api/v1/org-model-prices/{id}</code></td><td>Delete org multiplier (platform admin)</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/reconciliation</code></td><td>Usage reconciliation</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/notification-events</code></td><td>Notification events</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/notification-deliveries</code></td><td>Notification deliveries</td></tr>
@@ -426,11 +426,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("GET /api/v1/runtime/status", roleRoute(adminHandler.RuntimeStatus, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin))
 	mux.Handle("GET /api/v1/error-docs", usageRoute(adminHandler.ListErrorDocs))
 
-	mux.Handle("GET /api/v1/model-prices", orgAdminRoute(adminHandler.ListModelPrices))
 	mux.Handle("GET /api/v1/reconciliation", billingRoute(adminHandler.ListReconciliation))
-	mux.Handle("POST /api/v1/model-prices", orgAdminRoute(adminHandler.CreateModelPrice))
-	mux.Handle("PUT /api/v1/model-prices/{id}", orgAdminRoute(adminHandler.UpdateModelPrice))
-	mux.Handle("DELETE /api/v1/model-prices/{id}", orgAdminRoute(adminHandler.DeleteModelPrice))
 	mux.Handle("GET /api/v1/model-registry", orgAdminRoute(adminHandler.ListModelRegistry))
 	mux.Handle("POST /api/v1/model-registry", orgAdminRoute(adminHandler.CreateModelRegistry))
 	mux.Handle("PUT /api/v1/model-registry/{id}", orgAdminRoute(adminHandler.UpdateModelRegistry))
@@ -442,12 +438,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("POST /api/v1/model-sets", orgAdminRoute(adminHandler.CreateModelSet))
 	mux.Handle("GET /api/v1/model-sets/{id}/items", orgAdminRoute(adminHandler.ListModelSetItems))
 	mux.Handle("PUT /api/v1/model-sets/{id}/items", orgAdminRoute(adminHandler.ReplaceModelSetItems))
-	// Org model prices (org-level pricing overrides)
-	mux.Handle("GET /api/v1/model-names", orgAdminRoute(adminHandler.GetModelNames))
-	mux.Handle("GET /api/v1/org-model-prices", orgAdminRoute(adminHandler.ListOrgModelPrices))
-	mux.Handle("POST /api/v1/org-model-prices", orgAdminRoute(adminHandler.CreateOrgModelPrice))
-	mux.Handle("PUT /api/v1/org-model-prices/{id}", orgAdminRoute(adminHandler.UpdateOrgModelPrice))
-	mux.Handle("DELETE /api/v1/org-model-prices/{id}", orgAdminRoute(adminHandler.DeleteOrgModelPrice))
+	registerPricingRoutes(mux, adminHandler, pricingRouteGuards{read: orgAdminRoute, write: platformRoute})
 
 	mux.Handle("GET /api/v1/users", orgAdminRoute(adminHandler.ListUsers))
 	mux.Handle("POST /api/v1/users", orgAdminRoute(adminHandler.CreateUser))

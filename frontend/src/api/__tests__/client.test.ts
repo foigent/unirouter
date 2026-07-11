@@ -118,6 +118,49 @@ describe('API Client', () => {
     })
   })
 
+  describe('organization model prices', () => {
+    it('defaults to the authenticated organization without emitting org_id=1', async () => {
+      mockJsonResponse({ data: [], total: 0 })
+
+      await api.getOrgModelPrices(1, 20)
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/v1/org-model-prices?page=1&page_size=20',
+        expect.any(Object)
+      )
+    })
+
+    it('encodes an explicitly selected organization', async () => {
+      mockJsonResponse({ data: [], total: 0 })
+
+      await api.getOrgModelPrices(2, 50, 9)
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/v1/org-model-prices?page=2&page_size=50&org_id=9',
+        expect.any(Object)
+      )
+    })
+
+    it('uses the multiplier contract for create and update', async () => {
+      mockJsonResponse({ id: 4 })
+      await api.createOrgModelPrice({ org_id: 9, model_name: 'gpt-4o', multiplier: 1.25 })
+      expect(mockFetch).toHaveBeenLastCalledWith(
+        '/api/v1/org-model-prices',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ org_id: 9, model_name: 'gpt-4o', multiplier: 1.25 }),
+        })
+      )
+
+      mockJsonResponse({ success: true })
+      await api.updateOrgModelPrice(4, { multiplier: 1.5 })
+      expect(mockFetch).toHaveBeenLastCalledWith(
+        '/api/v1/org-model-prices/4',
+        expect.objectContaining({ method: 'PUT', body: JSON.stringify({ multiplier: 1.5 }) })
+      )
+    })
+  })
+
   describe('authorization header', () => {
     it('includes token when present', async () => {
       localStorageMock.setItem('token', 'my-token')

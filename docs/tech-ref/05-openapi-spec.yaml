@@ -5,7 +5,7 @@ info:
   description: |
     Current UniRouter API contract snapshot for active backend routes.
 
-    Route source: `cmd/uniroute/main.go`.
+    Route source: `cmd/uniroute/*.go` (including extracted route registrars).
     Route parity guard: `cmd/uniroute/route_parity_test.go`.
 
     Authentication:
@@ -435,10 +435,16 @@ paths:
           $ref: "#/components/responses/JSON"
 
   /api/v1/model-prices:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+      post: [platform_admin]
     get: { $ref: "#/components/pathItems/List" }
     post: { $ref: "#/components/pathItems/Create" }
 
   /api/v1/model-prices/{id}:
+    x-unirouter-rbac:
+      put: [platform_admin]
+      delete: [platform_admin]
     put: { $ref: "#/components/pathItems/UpdateById" }
     delete: { $ref: "#/components/pathItems/DeleteById" }
 
@@ -471,10 +477,17 @@ paths:
     put: { $ref: "#/components/pathItems/UpdateById" }
 
   /api/v1/org-model-prices:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+      post: [platform_admin]
+    description: Organization administrators read only their JWT organization; platform administrators may select an explicit org_id.
     get: { $ref: "#/components/pathItems/List" }
     post: { $ref: "#/components/pathItems/Create" }
 
   /api/v1/org-model-prices/{id}:
+    x-unirouter-rbac:
+      put: [platform_admin]
+      delete: [platform_admin]
     put: { $ref: "#/components/pathItems/UpdateById" }
     delete: { $ref: "#/components/pathItems/DeleteById" }
 

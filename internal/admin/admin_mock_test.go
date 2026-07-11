@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -27,6 +28,37 @@ import (
 // --- Helper to create handler with mock DB ---
 func newTestHandler(db *testutil.MockDB) *Handler {
 	return NewHandler(db, "test-secret", []byte("0123456789abcdef01234567"), nil)
+}
+
+func pricingActorRequest(req *http.Request, orgID int64, role string) *http.Request {
+	ctx := context.WithValue(req.Context(), middleware.CtxOrgID, orgID)
+	ctx = context.WithValue(ctx, middleware.CtxUserRole, role)
+	ctx = context.WithValue(ctx, middleware.CtxUserID, int64(7))
+	return req.WithContext(ctx)
+}
+
+func platformPricingRequest(method, target string, body io.Reader) *http.Request {
+	return pricingActorRequest(httptest.NewRequest(method, target, body), 1, auth.RolePlatformAdmin)
+}
+
+func modelPriceMockRow(id int64, modelName string, inputPrice, outputPrice float64) pgx.Row {
+	return &testutil.MockRow{ScanFn: func(dest ...any) error {
+		*dest[0].(*int64) = id
+		*dest[1].(*string) = modelName
+		*dest[2].(*float64) = inputPrice
+		*dest[3].(*float64) = outputPrice
+		return nil
+	}}
+}
+
+func orgModelPriceMockRow(id, orgID int64, modelName string, multiplier float64) pgx.Row {
+	return &testutil.MockRow{ScanFn: func(dest ...any) error {
+		*dest[0].(*int64) = id
+		*dest[1].(*int64) = orgID
+		*dest[2].(*string) = modelName
+		*dest[3].(*float64) = multiplier
+		return nil
+	}}
 }
 
 // ===================================================================
@@ -3830,13 +3862,15 @@ func TestDisableAPIKey_EmitsNotificationEvent(t *testing.T) {
 
 func TestDeleteModelPrice_Success(t *testing.T) {
 	db := &testutil.MockDB{
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			return pgconn.NewCommandTag("DELETE 1"), nil
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+			return &testutil.MockTx{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+				return modelPriceMockRow(1, "gpt-4o", 5, 15)
+			}}, nil
 		},
 	}
 	h := newTestHandler(db)
 
-	req := httptest.NewRequest("DELETE", "/model-prices/1", nil)
+	req := platformPricingRequest("DELETE", "/model-prices/1", nil)
 	req.SetPathValue("id", "1")
 	rec := httptest.NewRecorder()
 
@@ -3850,7 +3884,7 @@ func TestDeleteModelPrice_Success(t *testing.T) {
 func TestDeleteModelPrice_InvalidID(t *testing.T) {
 	h := newTestHandler(&testutil.MockDB{})
 
-	req := httptest.NewRequest("DELETE", "/model-prices/abc", nil)
+	req := platformPricingRequest("DELETE", "/model-prices/abc", nil)
 	req.SetPathValue("id", "abc")
 	rec := httptest.NewRecorder()
 
@@ -3863,13 +3897,15 @@ func TestDeleteModelPrice_InvalidID(t *testing.T) {
 
 func TestDeleteModelPrice_DBError(t *testing.T) {
 	db := &testutil.MockDB{
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			return pgconn.CommandTag{}, fmt.Errorf("fk violation")
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+			return &testutil.MockTx{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+				return &testutil.MockRow{ScanFn: func(dest ...any) error { return fmt.Errorf("fk violation") }}
+			}}, nil
 		},
 	}
 	h := newTestHandler(db)
 
-	req := httptest.NewRequest("DELETE", "/model-prices/1", nil)
+	req := platformPricingRequest("DELETE", "/model-prices/1", nil)
 	req.SetPathValue("id", "1")
 	rec := httptest.NewRecorder()
 
@@ -3942,19 +3978,19 @@ func TestDeleteChannelKey_DBError(t *testing.T) {
 
 func TestCreateModelPrice_Success(t *testing.T) {
 	db := &testutil.MockDB{
-		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					*dest[0].(*int64) = 42
-					return nil
-				},
-			}
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+			return &testutil.MockTx{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+				if strings.Contains(sql, "SELECT id") {
+					return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
+				}
+				return modelPriceMockRow(42, "gpt-4o", 5, 15)
+			}}, nil
 		},
 	}
 	h := newTestHandler(db)
 
 	body := `{"model_name":"gpt-4o","input_price_cents":5,"output_price_cents":15}`
-	req := httptest.NewRequest("POST", "/model-prices", strings.NewReader(body))
+	req := platformPricingRequest("POST", "/model-prices", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -3968,20 +4004,20 @@ func TestCreateModelPrice_Success(t *testing.T) {
 func TestCreateModelPrice_DecimalCents(t *testing.T) {
 	var capturedArgs []any
 	db := &testutil.MockDB{
-		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			capturedArgs = append([]any(nil), args...)
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					*dest[0].(*int64) = 42
-					return nil
-				},
-			}
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+			return &testutil.MockTx{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+				if strings.Contains(sql, "SELECT id") {
+					return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
+				}
+				capturedArgs = append([]any(nil), args...)
+				return modelPriceMockRow(42, "mimo-v2.5", 0.2, 0.1)
+			}}, nil
 		},
 	}
 	h := newTestHandler(db)
 
 	body := `{"model_name":"mimo-v2.5","input_price_cents":0.2,"output_price_cents":0.1}`
-	req := httptest.NewRequest("POST", "/model-prices", strings.NewReader(body))
+	req := platformPricingRequest("POST", "/model-prices", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -4004,7 +4040,7 @@ func TestCreateModelPrice_DecimalCents(t *testing.T) {
 func TestCreateModelPrice_InvalidJSON(t *testing.T) {
 	h := newTestHandler(&testutil.MockDB{})
 
-	req := httptest.NewRequest("POST", "/model-prices", strings.NewReader("not json"))
+	req := platformPricingRequest("POST", "/model-prices", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -4017,18 +4053,19 @@ func TestCreateModelPrice_InvalidJSON(t *testing.T) {
 
 func TestCreateModelPrice_DBError(t *testing.T) {
 	db := &testutil.MockDB{
-		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					return fmt.Errorf("duplicate key")
-				},
-			}
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+			return &testutil.MockTx{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+				if strings.Contains(sql, "SELECT id") {
+					return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
+				}
+				return &testutil.MockRow{ScanFn: func(dest ...any) error { return fmt.Errorf("duplicate key") }}
+			}}, nil
 		},
 	}
 	h := newTestHandler(db)
 
 	body := `{"model_name":"gpt-4o","input_price_cents":5,"output_price_cents":15}`
-	req := httptest.NewRequest("POST", "/model-prices", strings.NewReader(body))
+	req := platformPricingRequest("POST", "/model-prices", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -4060,9 +4097,11 @@ func TestListOrgModelPrices_Success(t *testing.T) {
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1
 						*dest[1].(*int64) = 1
-						*dest[2].(*string) = "gpt-4o"
-						*dest[3].(*float64) = 1.5
-						*dest[4].(*time.Time) = now
+						*dest[2].(*string) = "Default"
+						*dest[3].(*string) = "gpt-4o"
+						*dest[4].(*float64) = 1.5
+						*dest[5].(*time.Time) = now
+						*dest[6].(*time.Time) = now
 						return nil
 					},
 				},
@@ -4071,7 +4110,7 @@ func TestListOrgModelPrices_Success(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	req := httptest.NewRequest("GET", "/org-model-prices", nil)
+	req := pricingActorRequest(httptest.NewRequest("GET", "/org-model-prices", nil), 1, auth.RoleOrgAdmin)
 	rec := httptest.NewRecorder()
 
 	h.ListOrgModelPrices(rec, req)
@@ -4092,7 +4131,7 @@ func TestListOrgModelPrices_QueryError(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	req := httptest.NewRequest("GET", "/org-model-prices", nil)
+	req := pricingActorRequest(httptest.NewRequest("GET", "/org-model-prices", nil), 1, auth.RoleOrgAdmin)
 	rec := httptest.NewRecorder()
 
 	h.ListOrgModelPrices(rec, req)
@@ -4108,19 +4147,19 @@ func TestListOrgModelPrices_QueryError(t *testing.T) {
 
 func TestCreateOrgModelPrice_Success(t *testing.T) {
 	db := &testutil.MockDB{
-		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					*dest[0].(*int64) = 42
-					return nil
-				},
-			}
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+			return &testutil.MockTx{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+				if strings.Contains(sql, "SELECT id") {
+					return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
+				}
+				return orgModelPriceMockRow(42, 1, "gpt-4o", 1.5)
+			}}, nil
 		},
 	}
 	h := newTestHandler(db)
 
 	body := `{"org_id":1,"model_name":"gpt-4o","multiplier":1.5}`
-	req := httptest.NewRequest("POST", "/org-model-prices", strings.NewReader(body))
+	req := platformPricingRequest("POST", "/org-model-prices", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -4134,7 +4173,7 @@ func TestCreateOrgModelPrice_Success(t *testing.T) {
 func TestCreateOrgModelPrice_InvalidJSON(t *testing.T) {
 	h := newTestHandler(&testutil.MockDB{})
 
-	req := httptest.NewRequest("POST", "/org-model-prices", strings.NewReader("not json"))
+	req := platformPricingRequest("POST", "/org-model-prices", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -4147,18 +4186,19 @@ func TestCreateOrgModelPrice_InvalidJSON(t *testing.T) {
 
 func TestCreateOrgModelPrice_DBError(t *testing.T) {
 	db := &testutil.MockDB{
-		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					return fmt.Errorf("duplicate key")
-				},
-			}
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+			return &testutil.MockTx{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+				if strings.Contains(sql, "SELECT id") {
+					return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
+				}
+				return &testutil.MockRow{ScanFn: func(dest ...any) error { return fmt.Errorf("duplicate key") }}
+			}}, nil
 		},
 	}
 	h := newTestHandler(db)
 
 	body := `{"org_id":1,"model_name":"gpt-4o","multiplier":1.5}`
-	req := httptest.NewRequest("POST", "/org-model-prices", strings.NewReader(body))
+	req := platformPricingRequest("POST", "/org-model-prices", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -4602,13 +4642,15 @@ func TestUpdateUser_NotFound(t *testing.T) {
 
 func TestDeleteOrgModelPrice_Success(t *testing.T) {
 	db := &testutil.MockDB{
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			return pgconn.NewCommandTag("DELETE 1"), nil
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+			return &testutil.MockTx{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+				return orgModelPriceMockRow(1, 1, "gpt-4o", 1.5)
+			}}, nil
 		},
 	}
 	h := newTestHandler(db)
 
-	req := httptest.NewRequest("DELETE", "/org-model-prices/1", nil)
+	req := platformPricingRequest("DELETE", "/org-model-prices/1", nil)
 	req.SetPathValue("id", "1")
 	rec := httptest.NewRecorder()
 
@@ -4622,7 +4664,7 @@ func TestDeleteOrgModelPrice_Success(t *testing.T) {
 func TestDeleteOrgModelPrice_InvalidID(t *testing.T) {
 	h := newTestHandler(&testutil.MockDB{})
 
-	req := httptest.NewRequest("DELETE", "/org-model-prices/abc", nil)
+	req := platformPricingRequest("DELETE", "/org-model-prices/abc", nil)
 	req.SetPathValue("id", "abc")
 	rec := httptest.NewRecorder()
 
@@ -4635,13 +4677,15 @@ func TestDeleteOrgModelPrice_InvalidID(t *testing.T) {
 
 func TestDeleteOrgModelPrice_DBError(t *testing.T) {
 	db := &testutil.MockDB{
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			return pgconn.CommandTag{}, fmt.Errorf("fk violation")
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+			return &testutil.MockTx{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+				return &testutil.MockRow{ScanFn: func(dest ...any) error { return fmt.Errorf("fk violation") }}
+			}}, nil
 		},
 	}
 	h := newTestHandler(db)
 
-	req := httptest.NewRequest("DELETE", "/org-model-prices/1", nil)
+	req := platformPricingRequest("DELETE", "/org-model-prices/1", nil)
 	req.SetPathValue("id", "1")
 	rec := httptest.NewRecorder()
 
@@ -4658,14 +4702,24 @@ func TestDeleteOrgModelPrice_DBError(t *testing.T) {
 
 func TestUpdateModelPrice_Success(t *testing.T) {
 	db := &testutil.MockDB{
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			return pgconn.NewCommandTag("UPDATE 1"), nil
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+			return &testutil.MockTx{
+				QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+					if strings.Contains(sql, "FOR UPDATE") {
+						return modelPriceMockRow(1, "gpt-4o", 5, 15)
+					}
+					return modelPriceMockRow(1, "gpt-4o", 10, 30)
+				},
+				ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+					return pgconn.NewCommandTag("UPDATE 1"), nil
+				},
+			}, nil
 		},
 	}
 	h := newTestHandler(db)
 
 	body := `{"input_price_cents":10,"output_price_cents":30}`
-	req := httptest.NewRequest("PUT", "/model-prices/1", strings.NewReader(body))
+	req := platformPricingRequest("PUT", "/model-prices/1", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "1")
 	rec := httptest.NewRecorder()
@@ -4680,7 +4734,7 @@ func TestUpdateModelPrice_Success(t *testing.T) {
 func TestUpdateModelPrice_InvalidID(t *testing.T) {
 	h := newTestHandler(&testutil.MockDB{})
 
-	req := httptest.NewRequest("PUT", "/model-prices/abc", strings.NewReader(`{}`))
+	req := platformPricingRequest("PUT", "/model-prices/abc", strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "abc")
 	rec := httptest.NewRecorder()
@@ -4695,7 +4749,7 @@ func TestUpdateModelPrice_InvalidID(t *testing.T) {
 func TestUpdateModelPrice_InvalidJSON(t *testing.T) {
 	h := newTestHandler(&testutil.MockDB{})
 
-	req := httptest.NewRequest("PUT", "/model-prices/1", strings.NewReader("not json"))
+	req := platformPricingRequest("PUT", "/model-prices/1", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "1")
 	rec := httptest.NewRecorder()
@@ -4710,7 +4764,7 @@ func TestUpdateModelPrice_InvalidJSON(t *testing.T) {
 func TestUpdateModelPrice_NoFields(t *testing.T) {
 	h := newTestHandler(&testutil.MockDB{})
 
-	req := httptest.NewRequest("PUT", "/model-prices/1", strings.NewReader(`{}`))
+	req := platformPricingRequest("PUT", "/model-prices/1", strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "1")
 	rec := httptest.NewRecorder()
@@ -4724,14 +4778,21 @@ func TestUpdateModelPrice_NoFields(t *testing.T) {
 
 func TestUpdateModelPrice_DBError(t *testing.T) {
 	db := &testutil.MockDB{
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			return pgconn.CommandTag{}, fmt.Errorf("db error")
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+			return &testutil.MockTx{
+				QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+					return modelPriceMockRow(1, "gpt-4o", 5, 15)
+				},
+				ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+					return pgconn.CommandTag{}, fmt.Errorf("db error")
+				},
+			}, nil
 		},
 	}
 	h := newTestHandler(db)
 
 	body := `{"input_price_cents":10}`
-	req := httptest.NewRequest("PUT", "/model-prices/1", strings.NewReader(body))
+	req := platformPricingRequest("PUT", "/model-prices/1", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "1")
 	rec := httptest.NewRecorder()
@@ -4745,14 +4806,16 @@ func TestUpdateModelPrice_DBError(t *testing.T) {
 
 func TestUpdateModelPrice_NotFound(t *testing.T) {
 	db := &testutil.MockDB{
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			return pgconn.CommandTag{}, nil
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+			return &testutil.MockTx{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+				return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
+			}}, nil
 		},
 	}
 	h := newTestHandler(db)
 
 	body := `{"input_price_cents":10}`
-	req := httptest.NewRequest("PUT", "/model-prices/999", strings.NewReader(body))
+	req := platformPricingRequest("PUT", "/model-prices/999", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "999")
 	rec := httptest.NewRecorder()
@@ -4770,14 +4833,19 @@ func TestUpdateModelPrice_NotFound(t *testing.T) {
 
 func TestUpdateOrgModelPrice_Success(t *testing.T) {
 	db := &testutil.MockDB{
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			return pgconn.NewCommandTag("UPDATE 1"), nil
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+			return &testutil.MockTx{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+				if strings.Contains(sql, "SELECT id") {
+					return orgModelPriceMockRow(1, 1, "gpt-4o", 1.5)
+				}
+				return orgModelPriceMockRow(1, 1, "gpt-4o", 2)
+			}}, nil
 		},
 	}
 	h := newTestHandler(db)
 
 	body := `{"multiplier":2.0}`
-	req := httptest.NewRequest("PUT", "/org-model-prices/1", strings.NewReader(body))
+	req := platformPricingRequest("PUT", "/org-model-prices/1", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "1")
 	rec := httptest.NewRecorder()
@@ -4792,7 +4860,7 @@ func TestUpdateOrgModelPrice_Success(t *testing.T) {
 func TestUpdateOrgModelPrice_InvalidID(t *testing.T) {
 	h := newTestHandler(&testutil.MockDB{})
 
-	req := httptest.NewRequest("PUT", "/org-model-prices/abc", strings.NewReader(`{}`))
+	req := platformPricingRequest("PUT", "/org-model-prices/abc", strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "abc")
 	rec := httptest.NewRecorder()
@@ -4807,7 +4875,7 @@ func TestUpdateOrgModelPrice_InvalidID(t *testing.T) {
 func TestUpdateOrgModelPrice_InvalidJSON(t *testing.T) {
 	h := newTestHandler(&testutil.MockDB{})
 
-	req := httptest.NewRequest("PUT", "/org-model-prices/1", strings.NewReader("not json"))
+	req := platformPricingRequest("PUT", "/org-model-prices/1", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "1")
 	rec := httptest.NewRecorder()
@@ -4822,7 +4890,7 @@ func TestUpdateOrgModelPrice_InvalidJSON(t *testing.T) {
 func TestUpdateOrgModelPrice_NoFields(t *testing.T) {
 	h := newTestHandler(&testutil.MockDB{})
 
-	req := httptest.NewRequest("PUT", "/org-model-prices/1", strings.NewReader(`{}`))
+	req := platformPricingRequest("PUT", "/org-model-prices/1", strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "1")
 	rec := httptest.NewRecorder()
@@ -4836,14 +4904,19 @@ func TestUpdateOrgModelPrice_NoFields(t *testing.T) {
 
 func TestUpdateOrgModelPrice_DBError(t *testing.T) {
 	db := &testutil.MockDB{
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			return pgconn.CommandTag{}, fmt.Errorf("db error")
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+			return &testutil.MockTx{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+				if strings.Contains(sql, "SELECT id") {
+					return orgModelPriceMockRow(1, 1, "gpt-4o", 1.5)
+				}
+				return &testutil.MockRow{ScanFn: func(dest ...any) error { return fmt.Errorf("db error") }}
+			}}, nil
 		},
 	}
 	h := newTestHandler(db)
 
 	body := `{"multiplier":2.0}`
-	req := httptest.NewRequest("PUT", "/org-model-prices/1", strings.NewReader(body))
+	req := platformPricingRequest("PUT", "/org-model-prices/1", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "1")
 	rec := httptest.NewRecorder()
@@ -4857,14 +4930,16 @@ func TestUpdateOrgModelPrice_DBError(t *testing.T) {
 
 func TestUpdateOrgModelPrice_NotFound(t *testing.T) {
 	db := &testutil.MockDB{
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			return pgconn.CommandTag{}, nil
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+			return &testutil.MockTx{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+				return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
+			}}, nil
 		},
 	}
 	h := newTestHandler(db)
 
 	body := `{"multiplier":2.0}`
-	req := httptest.NewRequest("PUT", "/org-model-prices/999", strings.NewReader(body))
+	req := platformPricingRequest("PUT", "/org-model-prices/999", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "999")
 	rec := httptest.NewRecorder()

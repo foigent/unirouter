@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Button, Modal, Form, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
+import { isPlatformAdminRole } from '../navigation';
+import { useAuthStore } from '../store/auth';
 import { MoneyText, PagedTable, PageHeader, Surface } from '../ui';
 
 export function yuanPerKToCents(value: unknown) {
@@ -13,6 +15,8 @@ export function yuanPerKToCents(value: unknown) {
 }
 
 export default function ModelPricesPage() {
+  const role = useAuthStore((s) => s.user?.role);
+  const canMutate = isPlatformAdminRole(role);
   const [prices, setPrices] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -94,13 +98,14 @@ export default function ModelPricesPage() {
     }, 100);
   };
 
-  const columns = [
+  const columns: any[] = [
     { title: 'ID', dataIndex: 'id', width: 60 },
     { title: '模型名称', dataIndex: 'model_name' },
     { title: '输入价格（元/千token）', dataIndex: 'input_price_cents', render: (v: number) => <MoneyText cents={v} precision={4} /> },
     { title: '输出价格（元/千token）', dataIndex: 'output_price_cents', render: (v: number) => <MoneyText cents={v} precision={4} /> },
     { title: '更新时间', dataIndex: 'updated_at', render: (v: string) => v || '-' },
-    {
+  ];
+  if (canMutate) columns.push({
       title: '操作', width: 120,
       render: (_: any, record: any) => (
         <Space>
@@ -108,16 +113,17 @@ export default function ModelPricesPage() {
           <Button icon={<IconDelete />} size="small" type="danger" onClick={() => handleDelete(record.id)} />
         </Space>
       ),
-    },
-  ];
+    });
 
   return (
     <div className="ur-page">
       <PageHeader
         eyebrow="Billing"
         title="模型定价"
-        description="维护平台基础模型输入/输出价格，用于预冻结和结算。"
-        actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增价格</Button>}
+        description={canMutate
+          ? '维护全平台基础模型输入/输出价格；变更会影响后续计费。'
+          : '只读查看全平台基础模型价格；价格由平台管理员统一维护。'}
+        actions={canMutate ? <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增价格</Button> : undefined}
       />
 
       <Surface>
@@ -134,7 +140,7 @@ export default function ModelPricesPage() {
         />
       </Surface>
 
-      <SideSheet
+      {canMutate && <SideSheet
         title={editPrice ? '编辑价格' : '新增价格'}
         visible={showDrawer}
         onCancel={closeDrawer}
@@ -149,7 +155,7 @@ export default function ModelPricesPage() {
             <Button type="primary" onClick={() => formApi?.submitForm()}>{editPrice ? '更新' : '创建'}</Button>
           </div>
         </Form>
-      </SideSheet>
+      </SideSheet>}
     </div>
   );
 }
