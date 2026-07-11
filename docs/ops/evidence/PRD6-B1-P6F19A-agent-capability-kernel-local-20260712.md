@@ -2,7 +2,7 @@
 
 > Date: 2026-07-12
 > Scope: repository/local evidence only
-> Status: local verified; PR and required CI pending
+> Status: CI verified prerequisite slice; P6-F19 remains in progress
 > Parent row: P6-F19 remains in progress
 
 ## Accepted contract exercised
@@ -75,6 +75,21 @@ High-risk fixtures include:
 - real migrated PostgreSQL owner/project membership and owner-disable authority
   refresh; and
 - conflicting trusted evidence headers cannot override signed Agent identity.
+
+## Pull request and required CI
+
+- implementation head: `df80a710d9ea5e44cb72a1b83d619566a63fda89`;
+- PR #164 exact-head required run: `29170347267`;
+- required results: Backend Tests, Frontend Build and Docker Build all passed;
+- squash merge: `43b90f85b0d4c655bc833a42829a8b458c581d35`;
+- post-merge `main` run: `29170507588`, with Backend Tests, Frontend Build and
+  Docker Build all passed; and
+- historical branch `codex/prd6-agent-capability-kernel` was restored at the
+  exact implementation head after merge.
+
+The post-merge run emitted non-blocking GitHub Actions Node 20 deprecation and
+Go cache-restore `tar` annotations. The Backend job, including the new migrated
+Agent capability authority integration step, concluded `success`.
 
 ## Explicit non-claims and remaining work
 

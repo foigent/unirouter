@@ -56,10 +56,14 @@
 > `7737f8b2fc5a896e690d5316aa06016d71ee2e18`, and post-merge main run
 > `29168586124` passed all required jobs. Its historical branch is restored.
 > It is a CI-verified prerequisite slice, not P6-F11 completion.
-> P6-F19A Agent capability kernel is local verified / PR pending: explicit
+> P6-F19A Agent capability kernel passed PR #164 exact-head required run
+> `29170347267`, was squash-merged as
+> `43b90f85b0d4c655bc833a42829a8b458c581d35`, and post-merge main run
+> `29170507588` passed Backend Tests, Frontend Build and Docker Build. Its
+> historical branch is restored. The slice implements explicit
 > supervisor exchange, parent delegation, five-minute token, refresh
 > convergence, atomic topology cap, shared workflow revocation, 15-second
-> bounded root-authority refresh and signed evidence identity are implemented.
+> bounded root-authority refresh and signed evidence identity.
 > P6-F19 remains in progress because shared runtime cost/token/child-rate/
 > concurrency enforcement is not yet connected.
 > No target or production verification is claimed.
@@ -155,8 +159,8 @@
   in `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`.
 - Accepted feature accounting after the CI-verified P6-STREAM-002A slice: 25
   accepted rows, 17 CI verified / closed and 8 unclosed. P6-F11 is in progress
-  through its transport prerequisite; P6-F19 is in progress through its local-
-  verified, PR-pending capability kernel; `P6-F07`-`P6-F10`, `P6-F20` and
+  through its transport prerequisite; P6-F19 is in progress through its CI-
+  verified capability kernel; `P6-F07`-`P6-F10`, `P6-F20` and
   `P6-F21` remain not started.
   `P6-TEST-DB-001` is a separate engineering-integrity issue outside that
   25-row feature count; it is CI verified / closed by PR #155 and post-merge
@@ -205,8 +209,8 @@ expiry and all-replica active revocation within 30 seconds. Workflow lifetime,
 depth, fan-out and ancestor budgets are separate. UniRouter grants only model-
 gateway authority; Tool/IAM/database/export action owners remain separate.
 Neither accepted decision is presented as implemented before its exact row
-passes repository and CI evidence. P6-F19A now has local repository evidence,
-but P6-F19 remains open until its shared runtime budgets and required CI close.
+passes repository and CI evidence. P6-F19A now has local and required CI
+evidence, but P6-F19 remains open until its shared runtime budgets close.
 
 P6-F35 local evidence covers the repository boundary only. D6-09 defers its
 target activation; a later authorized cutover must drain old control-plane
