@@ -1,47 +1,53 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 0C P6-F03 Retry Classification And Safe Response Semantics
+**Batch:** PRD6 Batch 0C P6-F04 Embeddings Route/Failover Parity
 **Owner:** Codex
 **Risk:** R3 request routing and billing behavior
 **Status:** Local verified; required PR CI pending
-**Integration:** Branch `codex/prd6-p6f03-retry-classification`; PR pending; no deployment, target or production claim
-**Previous batch:** P6-TEST-DB-001 CI verified / closed by PR #155 and post-merge main run `29157561036`
+**Integration:** Branch `codex/prd6-p6f04-embeddings-failover`; PR pending; no deployment, target or production claim
+**Previous batch:** P6-F03 CI verified / closed by PR #156 and post-merge main run `29158395734`
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Current Scope
 
-1. Lock one OpenAI-compatible/Anthropic HTTP and transport failure matrix.
-2. Make Chat failover execute the adapter `Retryable` decision rather than
-   unconditionally consuming every route.
-3. Preserve safe client status semantics while excluding raw provider error
-   text from downstream responses, notifications and trace metadata.
-4. Prove bounded transient failover, terminal non-retry behavior, one-Freeze /
-   one-terminal billing and truthful attempt evidence.
-5. Preserve policy rejection before billing/routing and keep Embeddings parity,
-   configuration truth, deployment and target evidence outside this PR.
+1. Replace Embeddings single-route selection with the finite ordered candidate
+   set already used by Chat.
+2. Execute P6-F03 HTTP/transport stop/retry semantics without leaking provider
+   errors or implying unsupported adapter capability.
+3. Preserve model authorization before Freeze and exactly one Settle or Cancel.
+4. Prove fallback/exhaustion route, attempt, upstream, trace and call-log truth.
+5. Reject malformed 200 bodies before settlement and keep P6-F05/P6-F06,
+   deployment and target evidence outside this PR.
 
-## Current P6-F03 Behavior Change
+## Current P6-F04 Behavior Change
 
-- shared adapter classification makes 408/429/500/502/503/504 retryable,
-  preserves Anthropic 529, treats all other 4xx as client/auth terminal and
-  treats unknown status classes as non-retryable;
-- transport deadlines and recognized temporary connection failures can fail
-  over; caller cancellation and unknown deterministic transport/configuration
-  failures stop;
-- two-route handler regressions prove 400/401/501 never reach the second
-  channel, while 429/503 reach it once and succeed;
-- terminal client failures preserve a safe 4xx; upstream auth/unknown failures
-  return a safe generic 502; provider diagnostic text does not reach the client
-  or notification payload;
-- every rejected response records `failure_kind`, `retryable` and
-  `retry_decision`, while metadata sanitization continues to exclude payloads;
-- all tested paths use one Freeze and exactly one Settle or Cancel; failed call
-  logs retain the terminal attempt's route/status/upstream identity;
-- existing sensitive-content and API-key model policy still reject before
-  Freeze/routing;
+- Embeddings now uses `RouteAll`, distinct attempt IDs and truthful sequence /
+  candidate totals;
+- unusable adapter/key/build candidates are safely skipped; 400/401 stop, while
+  429/503 and classified transient transport failures consume a later route;
+- a final retryable failure records actual `stop` due exhaustion, while an
+  earlier eligible failure records `retry`; Chat receives the same trace fix;
+- success restores channel/key health and reports the actual fallback route;
+  terminal failures log the terminal attempt only;
+- all paths preserve one Freeze and exactly one Settle or Cancel, and provider
+  error text is not returned;
+- malformed 200 JSON is rejected before Settle and cannot panic during
+  `_uniroute` extension mutation;
 - full Go race/vet, isolated tagged admin integration, focused matrices and
   frontend 27 files / 137 tests, type-check and production build pass locally;
 - Docker is unavailable locally and remains an explicit required-CI gate;
+- evidence: `docs/ops/evidence/PRD6-B0C-P6F04-embeddings-failover-local-20260711.md`.
+
+## Previous P6-F03 Behavior Change
+
+- shared adapters classify safe terminal versus transient HTTP/transport
+  failures; Chat consumes only retryable candidates and preserves safe client,
+  notification, trace and billing semantics;
+- policy rejection remains before Freeze/routing and every terminal attempt has
+  truthful route/upstream identity;
+- PR #156 required run `29158184240`, squash merge
+  `f6f075aa4333f2b81f888f3505c2c2b44e77c449` and post-merge main run
+  `29158395734` passed all three jobs;
 - evidence: `docs/ops/evidence/PRD6-B0C-P6F03-retry-classification-local-20260711.md`.
 
 ## Previous P6-TEST-DB-001 Behavior Change

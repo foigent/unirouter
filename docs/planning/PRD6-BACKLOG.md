@@ -28,8 +28,8 @@
 | P6-IDEM-001 | Separate server operation, client idempotency, trace/span, workflow and Agent identities | prevents cross-tenant/retry/child charge collisions | CI verified / closed; preserve Scheme A and the non-rolling migration boundary | P0 |
 | P6-BILL-003 | Pool-safe reservation and single durable terminal state | prevents pool starvation, double terminal transitions and free delivered output | financial state migration, recovery and invariant tests | P0 |
 | P6-AUTH-001 | Versioned user/project/key/role revocation | bounds stale authority across replicas | revocation SLO, cache and outage posture | P0 |
-| P6-ROUTE-002 | Retry classification and response preservation | prevents unsafe/expensive retry and misleading 502 | Local verified: safe adapter/transport matrix, terminal 4xx/auth/unknown behavior, transient failover and billing/trace invariants; required PR CI pending | P0 |
-| P6-ROUTE-003 | Embeddings failover parity | removes endpoint reliability asymmetry | adapter and billing/trace parity | P0 |
+| P6-ROUTE-002 | Retry classification and response preservation | prevents unsafe/expensive retry and misleading 502 | CI verified / closed by PR #156, merge `f6f075a` and post-merge main run `29158395734` | P0 |
+| P6-ROUTE-003 | Embeddings failover parity | removes endpoint reliability asymmetry | Local verified: bounded multi-route HTTP/transport/config-skip matrix, one-terminal billing, truthful final attempt and malformed-200 safety; required PR CI pending | P0 |
 | P6-CONFIG-001 | Effective routing/circuit config truth | operator control and explainability | migration/default compatibility | P0 |
 | P6-BILL-002 | Multiplier-aware freeze/settle correctness | prevents uncollected cost | wallet/transaction semantics | P0 |
 | P6-CAP-001 | Short, attenuating Agent capability and ancestor budget | avoids shared-secret/per-child-key explosion and quota amplification | claim contract, key rotation, TTL/refresh, revocation | P1 |

@@ -38,8 +38,10 @@
 > P6-TEST-DB-001 passed PR #155 required run `29157383889`, was squash-merged
 > as `4b18ace92df49ad74048acc7197992990f14ca8e`, and post-merge main run
 > `29157561036` passed all three jobs, including the isolated tagged admin
-> integration gate. P6-F03 retry classification is Local verified; required PR
-> CI remains pending.
+> integration gate. P6-F03 passed PR #156 run `29158184240`, was squash-merged
+> as `f6f075aa4333f2b81f888f3505c2c2b44e77c449`, and post-merge main run
+> `29158395734` passed all three jobs. P6-F04 Embeddings failover parity is
+> Local verified; required PR CI remains pending.
 > No target or production verification is claimed.
 > D6-01, D6-02, D6-08 and D6-09 were accepted by the User on 2026-07-11; advanced
 > innovation rows P6-F23 through P6-F31 remain proposed.
@@ -86,10 +88,14 @@
   issue is CI verified / closed.
 - P6-F03 retry classification local evidence:
   `docs/ops/evidence/PRD6-B0C-P6F03-retry-classification-local-20260711.md`.
-  Chat now stops on classified client/auth/unknown failures, retries only
-  classified transient failures, preserves safe response semantics, records
-  sanitized retry decisions and keeps one-Freeze/one-terminal billing. Required
-  PR CI remains pending; Embeddings parity remains P6-F04.
+  PR #156 and post-merge main required CI passed; P6-F03 is CI verified /
+  closed.
+- P6-F04 Embeddings failover local evidence:
+  `docs/ops/evidence/PRD6-B0C-P6F04-embeddings-failover-local-20260711.md`.
+  Embeddings now uses bounded candidate attempts, shares safe retry
+  classification, maintains one-terminal billing, records truthful fallback /
+  exhausted-stop evidence and rejects malformed success bodies before Settle.
+  Required PR CI remains pending.
 - Source-backed product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
 - PRD7 candidate-only split (not Accepted Scope):
@@ -103,9 +109,9 @@
 - Scope entry: `docs/planning/PRD6-START-HERE.md`.
 - Proposed PRD: `docs/PRD-Phase6.md`; accepted/proposed state is authoritative
   in `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`.
-- Accepted feature accounting after P6-F03 local verification: 25 accepted rows,
-  13 CI verified / closed, one Local verified pending CI (`P6-F03`) and 11 not
-  started (`P6-F04`-`P6-F11`, `P6-F19`-`P6-F21`).
+- Accepted feature accounting after P6-F04 local verification: 25 accepted rows,
+  14 CI verified / closed, one Local verified pending CI (`P6-F04`) and 10 not
+  started (`P6-F05`-`P6-F11`, `P6-F19`-`P6-F21`).
   `P6-TEST-DB-001` is a separate engineering-integrity issue outside that
   25-row feature count; it is CI verified / closed by PR #155 and post-merge
   main run `29157561036`.

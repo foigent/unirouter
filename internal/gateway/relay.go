@@ -150,8 +150,8 @@ func upstreamRequestIDFromHeader(header http.Header) string {
 	return ""
 }
 
-func providerRetryDecision(retryable bool) string {
-	if retryable {
+func providerRetryDecision(willRetry bool) string {
+	if willRetry {
 		return "retry"
 	}
 	return "stop"
@@ -528,6 +528,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		middleware.RecordUpstreamLatency(route.Channel.Provider, req.Model, upstreamDuration)
 		if err != nil {
 			classified := adapters.ClassifyTransportError(attemptCtx, err)
+			willRetry := classified.Retryable && routeIndex+1 < len(routes)
 			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Upstream transport failed: kind=%s retryable=%t", classified.FailureKind, classified.Retryable)
 			if classified.Retryable {
 				relay.router.MarkChannelFail(ctx, route.Channel.ID, 5, 300)
@@ -537,7 +538,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 			relay.recordTraceEvent(attemptCtx, requestID, "provider.request_failed", "provider", "warning", req.Model, requestedModel, &routeForTrace, 0, int(upstreamDuration.Milliseconds()), map[string]interface{}{
 				"failure_kind":   string(classified.FailureKind),
 				"retryable":      classified.Retryable,
-				"retry_decision": providerRetryDecision(classified.Retryable),
+				"retry_decision": providerRetryDecision(willRetry),
 			})
 			lastErr = fmt.Errorf("upstream transport failed (%s)", classified.FailureKind)
 			if classified.Retryable {
@@ -558,6 +559,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 			// Per PRD F12: adapters normalize provider-specific HTTP semantics
 			// into routing failure kinds. Client errors are not channel failures.
 			classified := adapter.ClassifyHTTPStatus(resp.StatusCode, errBody)
+			willRetry := classified.Retryable && routeIndex+1 < len(routes)
 			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Upstream rejected response: status=%d kind=%s retryable=%t", resp.StatusCode, classified.FailureKind, classified.Retryable)
 			switch classified.FailureKind {
 			case adapters.FailureChannel:
@@ -578,7 +580,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 			relay.recordTraceEvent(attemptCtx, requestID, "provider.response_rejected", "provider", "warning", req.Model, requestedModel, &routeForTrace, resp.StatusCode, int(upstreamDuration.Milliseconds()), map[string]interface{}{
 				"failure_kind":   string(classified.FailureKind),
 				"retryable":      classified.Retryable,
-				"retry_decision": providerRetryDecision(classified.Retryable),
+				"retry_decision": providerRetryDecision(willRetry),
 			}, upstreamRequestID)
 			lastStatusCode = resp.StatusCode
 			lastUpstreamRequestID = upstreamRequestID
@@ -1404,8 +1406,9 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		"freeze_amount_cents": freezeResult.Amount,
 	})
 
-	// Get route
-	route, err := relay.router.Route(ctx, req.Model)
+	// Get all eligible routes so Embeddings follows the same bounded failover
+	// contract as Chat.
+	routes, err := relay.router.RouteAll(ctx, req.Model)
 	if err != nil {
 		relay.billing.Cancel(ctx, requestID, orgID)
 		writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", fmt.Sprintf("No available channel for model: %s", req.Model))
@@ -1415,148 +1418,239 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, 503, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceNoRoute, inputTokens, "")
 		return
 	}
-	ctx = contextWithAttemptID(ctx, newAttemptID())
-	ctx = contextWithRouteAttempt(ctx, 1, 1)
-	relay.recordTraceEvent(ctx, requestID, "routing.route_selected", "routing", "info", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
-		"route_count": 1,
-		"route_index": 1,
-	})
-
-	apiKey, err := auth.DecryptKey(route.ChannelKey.KeyEnc, relay.encKey)
-	if err != nil {
-		relay.billing.Cancel(ctx, requestID, orgID)
-		relay.recordTraceEvent(ctx, requestID, "provider.key_decrypt_failed", "provider", "error", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
-			"failure_kind": "auth",
-		})
-		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to decrypt API key")
-		return
-	}
-
-	adapter, err := adapters.DefaultRegistry().Get(route.Channel.AdapterType)
-	if err != nil {
-		relay.billing.Cancel(ctx, requestID, orgID)
-		relay.recordTraceEvent(ctx, requestID, "provider.adapter_unknown", "provider", "error", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
-			"failure_kind": "configuration",
-		})
-		writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_error", fmt.Sprintf("Unknown adapter_type: %s", route.Channel.AdapterType))
-		return
-	}
-	upstreamReq, err := adapter.BuildRequest(ctx, adapters.RequestInput{
-		Endpoint:       adapters.EndpointEmbeddings,
-		DownstreamBody: body,
-		RequestedModel: requestedModel,
-		MappedModel:    route.MappedModel,
-		Channel:        route.Channel,
-		APIKey:         apiKey,
-		RequestID:      requestID,
-	})
-	if err != nil {
-		relay.billing.Cancel(ctx, requestID, orgID)
-		relay.recordTraceEvent(ctx, requestID, "provider.request_build_failed", "provider", "error", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
-			"failure_kind": "request_build",
-		})
-		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to create upstream request")
-		return
-	}
-
 	client := &http.Client{Timeout: 120 * time.Second}
-	upstreamStart := time.Now()
-	resp, err := client.Do(upstreamReq)
-	upstreamDuration := time.Since(upstreamStart)
-	middleware.RecordUpstreamLatency(route.Channel.Provider, req.Model, upstreamDuration)
-	if err != nil {
-		reqLog.Error("Upstream embeddings request failed: %v", err)
-		relay.emitProviderChannelFailure(ctx, *route, requestID, requestedModel, 0, string(adapters.FailureChannel), err.Error())
-		relay.billing.Cancel(ctx, requestID, orgID)
-		relay.recordTraceEvent(ctx, requestID, "provider.request_failed", "provider", "warning", req.Model, requestedModel, route, 0, int(upstreamDuration.Milliseconds()), map[string]interface{}{
-			"failure_kind": string(adapters.FailureChannel),
+	adapterRegistry := adapters.DefaultRegistry()
+	var lastErr error
+	var lastStatusCode int
+	var lastUpstreamRequestID string
+	var lastRoute *RouteResult
+	lastAttemptCtx := ctx
+
+	for routeIndex := range routes {
+		route := &routes[routeIndex]
+		attemptCtx := contextWithAttemptID(ctx, newAttemptID())
+		attemptCtx = contextWithRouteAttempt(attemptCtx, routeIndex+1, len(routes))
+		lastAttemptCtx = attemptCtx
+		lastRoute = route
+		lastStatusCode = 0
+		lastUpstreamRequestID = ""
+		relay.recordTraceEvent(attemptCtx, requestID, "routing.route_selected", "routing", "info", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"route_count": len(routes),
+			"route_index": routeIndex + 1,
 		})
-		writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_error", "Upstream request failed")
-		return
-	}
-	upstreamRequestID := upstreamRequestIDFromHeader(resp.Header)
-	providerEvent := "provider.response_accepted"
-	providerSeverity := "info"
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		providerEvent = "provider.response_rejected"
-		providerSeverity = "warning"
-	}
-	relay.recordTraceEvent(ctx, requestID, providerEvent, "provider", providerSeverity, req.Model, requestedModel, route, resp.StatusCode, int(upstreamDuration.Milliseconds()), map[string]interface{}{}, upstreamRequestID)
-	respBody, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
 
-	normalized, err := adapter.ParseResponse(ctx, adapters.ResponseInput{
-		StatusCode:     resp.StatusCode,
-		Header:         resp.Header,
-		Body:           respBody,
-		Channel:        route.Channel,
-		RequestedModel: requestedModel,
-		UpstreamModel:  route.MappedModel,
-	})
-	if err != nil {
-		reqLog.Error("Failed to parse adapter response: %v", err)
-		relay.billing.Cancel(ctx, requestID, orgID)
-		relay.recordTraceEvent(ctx, requestID, "provider.response_parse_failed", "provider", "error", req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
-			"failure_kind": "response_parse",
-		}, upstreamRequestID)
-		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to parse upstream response")
-		return
-	}
+		apiKey, err := auth.DecryptKey(route.ChannelKey.KeyEnc, relay.encKey)
+		if err != nil {
+			relay.recordTraceEvent(attemptCtx, requestID, "provider.key_decrypt_failed", "provider", "error", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+				"failure_kind": "auth",
+			})
+			lastErr = fmt.Errorf("provider key decrypt failed")
+			continue
+		}
 
-	settleOutcome, err := relay.settleBillingWithRetry(billing.SettleRequest{
-		RequestID:    requestID,
-		OrgID:        orgID,
-		PromptTokens: normalized.Usage.PromptTokens,
-		UsageSource:  normalized.Usage.Source,
-	}, reqLog)
-	if err != nil {
-		reqLog.Error("Billing settle failed; embeddings response withheld: %v", err)
-		relay.recordTraceEvent(ctx, requestID, "billing.settle.failed", "billing", "error", req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
-			"error_code": "settle_failed",
+		adapter, err := adapterRegistry.Get(route.Channel.AdapterType)
+		if err != nil {
+			relay.recordTraceEvent(attemptCtx, requestID, "provider.adapter_unknown", "provider", "error", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+				"failure_kind": "configuration",
+			})
+			lastErr = fmt.Errorf("provider adapter unavailable")
+			continue
+		}
+		upstreamReq, err := adapter.BuildRequest(attemptCtx, adapters.RequestInput{
+			Endpoint:       adapters.EndpointEmbeddings,
+			DownstreamBody: body,
+			RequestedModel: requestedModel,
+			MappedModel:    route.MappedModel,
+			Channel:        route.Channel,
+			APIKey:         apiKey,
+			RequestID:      requestID,
 		})
-		writeError(w, http.StatusInternalServerError, "server_error", "billing_error.settle_failed", "Failed to settle billing")
+		if err != nil {
+			relay.recordTraceEvent(attemptCtx, requestID, "provider.request_build_failed", "provider", "error", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+				"failure_kind": "request_build",
+			})
+			lastErr = fmt.Errorf("provider request build failed")
+			continue
+		}
+
+		upstreamStart := time.Now()
+		resp, err := client.Do(upstreamReq)
+		upstreamDuration := time.Since(upstreamStart)
+		middleware.RecordUpstreamLatency(route.Channel.Provider, req.Model, upstreamDuration)
+		if err != nil {
+			classified := adapters.ClassifyTransportError(attemptCtx, err)
+			willRetry := classified.Retryable && routeIndex+1 < len(routes)
+			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Upstream embeddings transport failed: kind=%s retryable=%t", classified.FailureKind, classified.Retryable)
+			if classified.Retryable {
+				relay.router.MarkChannelFail(ctx, route.Channel.ID, 5, 300)
+				relay.router.MarkKeyFail(ctx, route.ChannelKey.ID)
+				relay.emitProviderChannelFailure(attemptCtx, *route, requestID, requestedModel, 0, string(classified.FailureKind), providerFailureEventMessage(0, classified.FailureKind))
+			}
+			relay.recordTraceEvent(attemptCtx, requestID, "provider.request_failed", "provider", "warning", req.Model, requestedModel, route, 0, int(upstreamDuration.Milliseconds()), map[string]interface{}{
+				"failure_kind":   string(classified.FailureKind),
+				"retryable":      classified.Retryable,
+				"retry_decision": providerRetryDecision(willRetry),
+			})
+			lastErr = fmt.Errorf("upstream embeddings transport failed (%s)", classified.FailureKind)
+			if classified.Retryable {
+				continue
+			}
+
+			cleanupCtx := context.WithoutCancel(attemptCtx)
+			relay.billing.Cancel(cleanupCtx, requestID, orgID)
+			relay.recordRequest(cleanupCtx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, 0, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceUpstreamFailed, inputTokens, "")
+			if attemptCtx.Err() == nil {
+				writeNonRetryableProviderError(w, 0, classified.FailureKind)
+			}
+			return
+		}
+		upstreamRequestID := upstreamRequestIDFromHeader(resp.Header)
+		if resp.StatusCode != http.StatusOK {
+			errBody, _ := io.ReadAll(resp.Body)
+			classified := adapter.ClassifyHTTPStatus(resp.StatusCode, errBody)
+			willRetry := classified.Retryable && routeIndex+1 < len(routes)
+			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Upstream embeddings rejected response: status=%d kind=%s retryable=%t", resp.StatusCode, classified.FailureKind, classified.Retryable)
+			switch classified.FailureKind {
+			case adapters.FailureChannel:
+				relay.router.MarkChannelFail(ctx, route.Channel.ID, 5, 300)
+				relay.router.MarkKeyFail(ctx, route.ChannelKey.ID)
+				relay.emitProviderChannelFailure(attemptCtx, *route, requestID, requestedModel, resp.StatusCode, string(classified.FailureKind), providerFailureEventMessage(resp.StatusCode, classified.FailureKind))
+			case adapters.FailureAuth:
+				relay.router.MarkKeyCooldown(ctx, route.ChannelKey.ID, 3600)
+				relay.emitProviderChannelFailure(attemptCtx, *route, requestID, requestedModel, resp.StatusCode, string(classified.FailureKind), providerFailureEventMessage(resp.StatusCode, classified.FailureKind))
+			case adapters.FailureRateLimit:
+				relay.router.MarkKeyCooldown(ctx, route.ChannelKey.ID, 60)
+				relay.emitProviderChannelFailure(attemptCtx, *route, requestID, requestedModel, resp.StatusCode, string(classified.FailureKind), providerFailureEventMessage(resp.StatusCode, classified.FailureKind))
+			}
+			relay.recordTraceEvent(attemptCtx, requestID, "provider.response_rejected", "provider", "warning", req.Model, requestedModel, route, resp.StatusCode, int(upstreamDuration.Milliseconds()), map[string]interface{}{
+				"failure_kind":   string(classified.FailureKind),
+				"retryable":      classified.Retryable,
+				"retry_decision": providerRetryDecision(willRetry),
+			}, upstreamRequestID)
+			lastStatusCode = resp.StatusCode
+			lastUpstreamRequestID = upstreamRequestID
+			lastErr = fmt.Errorf("upstream embeddings returned HTTP %d (%s)", resp.StatusCode, classified.FailureKind)
+			resp.Body.Close()
+			if classified.Retryable {
+				continue
+			}
+
+			relay.billing.Cancel(attemptCtx, requestID, orgID)
+			relay.recordRequest(attemptCtx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, resp.StatusCode, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceUpstreamFailed, inputTokens, upstreamRequestID)
+			writeNonRetryableProviderError(w, resp.StatusCode, classified.FailureKind)
+			return
+		}
+
+		respBody, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			relay.billing.Cancel(attemptCtx, requestID, orgID)
+			relay.recordTraceEvent(attemptCtx, requestID, "provider.response_parse_failed", "provider", "error", req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
+				"failure_kind": "response_read",
+			}, upstreamRequestID)
+			writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to read upstream response")
+			return
+		}
+
+		normalized, err := adapter.ParseResponse(attemptCtx, adapters.ResponseInput{
+			StatusCode:     resp.StatusCode,
+			Header:         resp.Header,
+			Body:           respBody,
+			Channel:        route.Channel,
+			RequestedModel: requestedModel,
+			UpstreamModel:  route.MappedModel,
+		})
+		if err != nil {
+			reqLog.Error("Failed to parse adapter response")
+			relay.billing.Cancel(attemptCtx, requestID, orgID)
+			relay.recordTraceEvent(attemptCtx, requestID, "provider.response_parse_failed", "provider", "error", req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
+				"failure_kind": "response_parse",
+			}, upstreamRequestID)
+			writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to parse upstream response")
+			return
+		}
+
+		// Validate the normalized response before charging or adding the
+		// UniRouter extension. A malformed 200 response must not panic or settle.
+		var responseMap map[string]interface{}
+		if err := json.Unmarshal(normalized.Body, &responseMap); err != nil || responseMap == nil {
+			relay.billing.Cancel(attemptCtx, requestID, orgID)
+			relay.recordTraceEvent(attemptCtx, requestID, "provider.response_parse_failed", "provider", "error", req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
+				"failure_kind": "response_parse",
+			}, upstreamRequestID)
+			writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to parse upstream response")
+			return
+		}
+		relay.router.MarkChannelSuccess(ctx, route.Channel.ID)
+		relay.router.MarkKeySuccess(ctx, route.ChannelKey.ID)
+		relay.recordTraceEvent(attemptCtx, requestID, "provider.response_accepted", "provider", "info", req.Model, requestedModel, route, resp.StatusCode, int(upstreamDuration.Milliseconds()), map[string]interface{}{}, upstreamRequestID)
+
+		settleOutcome, err := relay.settleBillingWithRetry(billing.SettleRequest{
+			RequestID:    requestID,
+			OrgID:        orgID,
+			PromptTokens: normalized.Usage.PromptTokens,
+			UsageSource:  normalized.Usage.Source,
+		}, reqLog)
+		if err != nil {
+			reqLog.Error("Billing settle failed; embeddings response withheld: %v", err)
+			relay.recordTraceEvent(attemptCtx, requestID, "billing.settle.failed", "billing", "error", req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
+				"error_code": "settle_failed",
+			})
+			writeError(w, http.StatusInternalServerError, "server_error", "billing_error.settle_failed", "Failed to settle billing")
+			return
+		}
+		actualCost, chargedCost := settledCosts(settleOutcome.Result)
+		pricingVersion := ""
+		if settleOutcome.Result != nil {
+			pricingVersion = settleOutcome.Result.PricingVersion
+		}
+		relay.recordTraceEvent(attemptCtx, requestID, "billing.settle.succeeded", "billing", "info", req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"prompt_tokens":      normalized.Usage.PromptTokens,
+			"completion_tokens":  0,
+			"total_tokens":       normalized.Usage.PromptTokens,
+			"cost_cents":         actualCost,
+			"charged_cost_cents": chargedCost,
+			"pricing_version":    pricingVersion,
+			"usage_source":       normalized.Usage.Source,
+			"usage_confidence":   metering.SourceConfidence(normalized.Usage.Source),
+		})
+		middleware.RecordTokenUsage("prompt", req.Model, normalized.Usage.PromptTokens)
+
+		relay.recordRequest(attemptCtx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, req.Model, requestedModel, r.RemoteAddr,
+			normalized.Usage.PromptTokens, 0, chargedCost, resp.StatusCode, elapsedMilliseconds(requestStart), 0, false, normalized.Usage.Source, inputTokens, upstreamRequestID)
+		relay.checkBudgetAlert(attemptCtx)
+
+		attempt := routeAttemptFromContext(attemptCtx)
+		responseMap["_uniroute"] = map[string]interface{}{
+			"request_id": requestID,
+			"cost": map[string]interface{}{
+				"actual":    actualCost,
+				"charged":   chargedCost,
+				"cache_hit": false,
+			},
+			"provider":      route.Channel.Provider,
+			"channel":       route.Channel.Name,
+			"cache_hit":     false,
+			"fallback":      attempt.Sequence > 1,
+			"attempt_count": attempt.Sequence,
+			"route_count":   attempt.Total,
+			"attempt_id":    attemptIDFromContext(attemptCtx),
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(resp.StatusCode)
+		_ = json.NewEncoder(w).Encode(responseMap)
 		return
 	}
-	actualCost, chargedCost := settledCosts(settleOutcome.Result)
-	relay.recordTraceEvent(ctx, requestID, "billing.settle.succeeded", "billing", "info", req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
-		"prompt_tokens":      normalized.Usage.PromptTokens,
-		"completion_tokens":  0,
-		"total_tokens":       normalized.Usage.PromptTokens,
-		"cost_cents":         actualCost,
-		"charged_cost_cents": chargedCost,
-		"pricing_version":    settleOutcome.Result.PricingVersion,
-		"usage_source":       normalized.Usage.Source,
-		"usage_confidence":   metering.SourceConfidence(normalized.Usage.Source),
-	})
-	middleware.RecordTokenUsage("prompt", req.Model, normalized.Usage.PromptTokens)
 
-	relay.recordRequest(ctx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, req.Model, requestedModel, r.RemoteAddr,
-		normalized.Usage.PromptTokens, 0, chargedCost, resp.StatusCode, elapsedMilliseconds(requestStart), 0, false, normalized.Usage.Source, inputTokens, upstreamRequestID)
-	relay.checkBudgetAlert(ctx)
-
-	// Build response with _uniroute extension
-	var responseMap map[string]interface{}
-	json.Unmarshal(respBody, &responseMap)
-	attempt := routeAttemptFromContext(ctx)
-	responseMap["_uniroute"] = map[string]interface{}{
-		"request_id": requestID,
-		"cost": map[string]interface{}{
-			"actual":    actualCost,
-			"charged":   chargedCost,
-			"cache_hit": false,
-		},
-		"provider":      route.Channel.Provider,
-		"channel":       route.Channel.Name,
-		"cache_hit":     false,
-		"fallback":      attempt.Sequence > 1,
-		"attempt_count": attempt.Sequence,
-		"route_count":   attempt.Total,
-		"attempt_id":    attemptIDFromContext(ctx),
+	relay.billing.Cancel(ctx, requestID, orgID)
+	if lastErr != nil {
+		reqLog.Error("All upstream embeddings channels failed: %v", lastErr)
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(resp.StatusCode)
-	json.NewEncoder(w).Encode(responseMap)
+	if lastRoute != nil {
+		relay.recordRequest(lastAttemptCtx, requestID, orgID, keyID, lastRoute.Channel.ID, lastRoute.Channel.Provider, lastRoute.Channel.Name, req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, lastStatusCode, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceUpstreamFailed, inputTokens, lastUpstreamRequestID)
+	}
+	writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_error", "All upstream channels failed")
 }
 
 // HandleModels handles GET /v1/models — returns available models for the caller.

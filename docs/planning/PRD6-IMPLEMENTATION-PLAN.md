@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F03 is locally verified pending CI; 11 accepted feature rows remain not started
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F03 is CI verified and P6-F04 is locally verified pending CI; 10 accepted feature rows remain not started
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -30,10 +30,10 @@ required CI. No scope decision grants target/deployment/data/cost authorization.
 
 - 39 total `P6-F*` rows exist in the acceptance matrix;
 - 25 are accepted implementation scope;
-- 13 are CI verified / closed: P6-F01, P6-F02, P6-F16, P6-F17, P6-F18 and
-  P6-F32 through P6-F39;
-- P6-F03 is Local verified pending required PR CI; 11 accepted rows remain not
-  started: P6-F04 through P6-F11 and P6-F19 through P6-F21;
+- 14 are CI verified / closed: P6-F01 through P6-F03, P6-F16, P6-F17, P6-F18
+  and P6-F32 through P6-F39;
+- P6-F04 is Local verified pending required PR CI; 10 accepted rows remain not
+  started: P6-F05 through P6-F11 and P6-F19 through P6-F21;
 - 14 rows are not accepted: P6-F12 through P6-F15 and P6-F22 through P6-F31;
 - `P6-TEST-DB-001` is a separate accepted engineering-integrity issue outside
   the feature-row count. PR #155, merge `4b18ace` and post-merge main run
@@ -173,8 +173,9 @@ add a migration, RLS/composite/alias foreign keys, change unregistered-model or
 ### Batch 0C — Retry, Endpoint Parity, Config And Billing Truth
 
 **Risk:** R3 request/billing behavior.
-**Status:** accepted by D6-01; item 1 P6-F03 is Local verified pending required
-CI; deliver each independently reviewable item through its own branch/PR.
+**Status:** accepted by D6-01; item 1 P6-F03 is CI verified / closed and item 2
+P6-F04 is Local verified pending required CI; deliver each independently
+reviewable item through its own branch/PR.
 
 Order within the batch:
 
