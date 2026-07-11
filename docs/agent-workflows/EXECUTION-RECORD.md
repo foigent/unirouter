@@ -1,25 +1,38 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 0B P6-F33 Notification Tenant Isolation
+**Batch:** PRD6 Batch 0B P6-F37/P6-F38 Audit Isolation And Frontend CI Integrity
 **Owner:** Codex
-**Risk:** R4 multi-tenant notification authorization and outbound sink control
-**Status:** P6-F33 Local verified; required PR CI pending
-**Integration:** Dedicated branch; PR/merge/deployment not yet claimed
+**Risk:** R4 multi-tenant audit confidentiality plus R2 evidence-backed planning
+**Status:** P6-F33/P6-F37/P6-F38 CI verified; PR #143 merge pending
+**Integration:** `codex/prd6-audit-tenant-operability`; deployment not claimed
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Scope
 
-1. Constrain authenticated non-platform notification reads to the JWT org.
-2. Reject explicit foreign organization filters and org-zero identities.
-3. Require Webhook project and organization ownership consistency.
-4. Deny foreign Webhook create/update with no audit, database or delivery side
-   effect while preserving the explicit platform exception.
-5. Retain but quarantine every pre-fix Webhook until an authorized actor
-   explicitly verifies the stored scope and destination.
-6. Record D6-08 acceptance without reopening PRD5 or broadening the X-Insight
-   runtime contract.
+1. Constrain authenticated organization/billing audit-log readers to the JWT
+   organization even when no filter is supplied.
+2. Reject explicit foreign organization/project filters and org-zero identities.
+3. Preserve same-tenant filters and the explicit platform-admin exception.
+4. Prove the fix with a migrated two-tenant signed-JWT regression that includes
+   a victim-only audit-detail marker.
+5. Record the source-backed UI, reconciliation, correlation, architecture and
+   upgrade audit plus a separate PRD7 candidate queue without reopening PRD5.
+6. Run the existing frontend behavior suite in the required Frontend Build job
+   with a measured, bounded interaction timeout and unchanged assertions.
 
-## Behavior Change
+## Current P6-F37 Behavior Change
+
+- Non-platform audit reads always include the signed actor organization in
+  count and row queries.
+- A caller-supplied foreign `org_id` cannot replace that constraint; a foreign
+  or nonexistent project produces the same `403` denial.
+- Organization `0` fails closed and platform administrators retain deliberate
+  cross-tenant query authority.
+- UI/architecture/upgrade findings are documented and classified; this branch
+  does not imply that the still-open wallet, reconciliation/usage, pricing,
+  global-control or model-governance surfaces are remediated.
+
+## Previous P6-F33 Behavior Change
 
 - Non-platform notification list/read conditions are constrained to the signed
   actor organization even when a foreign `org_id` is supplied.
@@ -58,6 +71,14 @@
   `docs/ops/evidence/PRD6-B0B-admin-tenant-surface-audit-20260711.md`.
 - P6-F33 local evidence:
   `docs/ops/evidence/PRD6-B0B-P6F33-notification-tenant-isolation-local-20260711.md`.
+- P6-F37 local evidence:
+  `docs/ops/evidence/PRD6-B0B-P6F37-audit-log-tenant-isolation-local-20260711.md`.
+- P6-F38 local evidence:
+  `docs/ops/evidence/PRD6-B0B-P6F38-frontend-test-ci-local-20260711.md`.
+- Product/architecture/UX audit:
+  `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
+- PRD7 candidate queue:
+  `docs/planning/PRD7-CANDIDATE-BACKLOG.md`.
 - Adaptive-trust innovation evidence:
   `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`.
 - Structural hardening portfolio:
@@ -88,7 +109,26 @@ Focused P6-F33 results on `codex/prd6-b0b-notification-tenant`:
 - frontend type-check, 25 files / 126 tests, and production build: PASS, with
   the existing large-chunk warning;
 - `git diff --check`: PASS;
-- required PR CI remains pending at this record point.
+- PR #142 exact-head `cb8a5ea` passed `Backend Tests`, `Frontend Build` and
+  `Docker Build`; it was squash-merged as `7173c59`, and post-merge main CI run
+  `29132520222` passed.
+
+Focused P6-F37 results on `codex/prd6-audit-tenant-operability`:
+
+- `go test ./internal/admin -run 'TestP6F37AuditLogTenantIsolationIntegration|TestListAuditLogs' -count=1 -v`: PASS;
+- migrated JWT subtests prove omitted-filter tenant scoping, foreign org/project
+  denial, same-tenant filters, org-zero fail closed, platform exception and no
+  victim-marker disclosure;
+- `go test -race ./... -count=1` and `go vet ./...`: PASS;
+- the first frontend suite attempts exposed pre-existing 5-second interaction
+  timeout instability under parallel load; isolated reruns passed, then P6-F38
+  set a bounded 10-second timeout and added the suite to required CI;
+- final frontend type-check, 25 files / 126 tests, and production build: PASS;
+- PR #143 run `29133309062`: Backend Tests PASS, Frontend Build PASS and Docker
+  Build PASS; the required frontend log explicitly reports 25 files / 126 tests.
+- independent review reproduced the P6-F37 pre-fix cross-tenant leak on
+  `7173c59`, found no bypass candidate, and found no P6-F38 gate weakening.
+- merge and post-merge main readback remain the next integration gates.
 
 Pre-change repository results on 2026-07-11:
 
@@ -168,9 +208,10 @@ PR #139 required checks for final scalability-audit evidence head `6c8c192`:
 - `Frontend Build`: PASS;
 - `Docker Build`: PASS.
 
-P6-F01, P6-F02 and P6-F16 are `CI verified`. D6-08 accepts P6-F32-P6-F36;
-P6-F33 is `Local verified`, while P6-F32 and P6-F34-P6-F36 remain
-unremediated. No documentation or local test promotes a row to target verified.
+P6-F01, P6-F02, P6-F16, P6-F33, P6-F37 and P6-F38 are `CI verified`. D6-08 accepts
+P6-F32-P6-F36, while P6-F32 and
+P6-F34-P6-F36 remain unremediated. No documentation or local test promotes a
+row to target verified.
 
 No deployment, target mutation/probe, real or paid request, credential change,
 exporter/outbox, deletion or expanded data exchange occurred. Migration down,

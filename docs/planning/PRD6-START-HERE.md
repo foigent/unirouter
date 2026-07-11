@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08 accepted; P6-F16 CI verified; P6-F33 Local verified
+> Status: D6-01/D6-02/D6-08 accepted; P6-F16/P6-F33/P6-F37/P6-F38 CI verified
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -31,16 +31,20 @@ recommended MVP boundary and policy-specific failure posture on 2026-07-11:
 4. `docs/ops/evidence/PRD6-B0B-P6F16-tenant-isolation-local-20260711.md`
 5. `docs/ops/evidence/PRD6-B0B-admin-tenant-surface-audit-20260711.md`
 6. `docs/ops/evidence/PRD6-B0B-P6F33-notification-tenant-isolation-local-20260711.md`
-7. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
-8. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
-9. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
-10. `docs/PRD-Phase6.md`
-11. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
-12. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
-13. `docs/planning/PRD6-BACKLOG.md`
-14. `docs/issues/OPEN-ISSUES.md`
-15. `docs/agent-workflows/AGENT-PROTOCOL.md`
-16. `docs/agent-workflows/EXECUTION-RECORD.md`
+7. `docs/ops/evidence/PRD6-B0B-P6F37-audit-log-tenant-isolation-local-20260711.md`
+8. `docs/ops/evidence/PRD6-B0B-P6F38-frontend-test-ci-local-20260711.md`
+9. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`
+10. `docs/planning/PRD7-CANDIDATE-BACKLOG.md`
+11. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
+12. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
+13. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
+14. `docs/PRD-Phase6.md`
+15. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
+16. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
+17. `docs/planning/PRD6-BACKLOG.md`
+18. `docs/issues/OPEN-ISSUES.md`
+19. `docs/agent-workflows/AGENT-PROTOCOL.md`
+20. `docs/agent-workflows/EXECUTION-RECORD.md`
 
 PRD5 evidence remains under its existing paths. Do not rewrite it as PRD6
 evidence.
@@ -81,7 +85,9 @@ evidence.
   subtests passed rather than skipped; post-merge `main` CI also passed.
 - P6-F32 through P6-F36 are later source-confirmed administrator-surface inputs.
   They were not known when D6-01 was accepted and were separately accepted by
-  D6-08. P6-F33 is Local verified; the other rows remain unremediated.
+  D6-08. P6-F33 is CI verified by PR #142 / `7173c59`; the other D6-08 rows
+  remain unremediated. The separate P6-F37 audit-log tenant fix and P6-F38
+  frontend-test gate are CI verified by PR #143 with merge pending.
 
 ## PRD5 Closure Guard
 
@@ -126,4 +132,5 @@ deployment, target mutation, paid shadow traffic, raw-payload expansion, a new
 X-Insight contract, semantic response cache, video execution, or an IAM rewrite.
 
 D6-08 authorizes P6-F32 through P6-F36 through separate reviewable PRs. P6-F33
-is Local verified; required CI is its next evidence gate.
+is CI verified. P6-F37/P6-F38 are CI verified by PR #143; merge and post-merge
+main readback are their next evidence gate.

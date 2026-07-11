@@ -70,8 +70,10 @@ Verification:
 ### Batch 0B — Tenant And Financial Identity Integrity
 
 **Risk:** R4 multi-tenant authorization and financial-state behavior.
-**Status:** P6-F16 is CI verified by PR #140; later Batch 0B rows remain ordered
-and independently gated.
+**Status:** P6-F16 and P6-F33 are CI verified by PR #140 and PR #142;
+P6-F37 and P6-F38 required-frontend-test enforcement are CI verified by PR #143;
+merge/post-merge readback remains. Later Batch 0B rows remain ordered and
+independently gated.
 
 Split into independently reviewable security/financial PRs:
 
@@ -97,8 +99,11 @@ D6-08 accepted them with platform-only global authority, tenant roles confined
 to their JWT organization, and organization multipliers restricted to
 `platform_admin`. Keep notification, finance, pricing authority, global
 control-plane authority and organization-level model governance in separate
-reviewable PRs rather than expanding P6-F16 after review. P6-F33 is the first
-such PR and is Local verified; required CI remains its promotion gate.
+reviewable PRs rather than expanding P6-F16 after review. P6-F33 is CI verified
+by PR #142 / `7173c59`. The separately confirmed audit-log read leak is P6-F37;
+its tenant predicate and two-tenant matrix are Local verified, with required CI
+still the promotion gate. Finance/reconciliation/usage, pricing, global-control
+and model-governance gaps remain open until their own evidence is green.
 
 ### Batch 0C — Retry, Endpoint Parity, Config And Billing Truth
 

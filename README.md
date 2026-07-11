@@ -62,6 +62,10 @@ Docker Compose（6 个容器）：
 - [PRD6 P6-F16 本地证据](docs/ops/evidence/PRD6-B0B-P6F16-tenant-isolation-local-20260711.md) — key/user/project/project-policy 租户边界修复与回归
 - [PRD6 管理面租户审计](docs/ops/evidence/PRD6-B0B-admin-tenant-surface-audit-20260711.md) — 财务、通知、价格、全局设置和模型治理的后续 confirmed findings
 - [PRD6 P6-F33 本地证据](docs/ops/evidence/PRD6-B0B-P6F33-notification-tenant-isolation-local-20260711.md) — 通知/Webhook 租户隔离修复与红绿回归
+- [PRD6 P6-F37 本地证据](docs/ops/evidence/PRD6-B0B-P6F37-audit-log-tenant-isolation-local-20260711.md) — 审计日志租户隔离修复与双租户回归
+- [PRD6 P6-F38 本地证据](docs/ops/evidence/PRD6-B0B-P6F38-frontend-test-ci-local-20260711.md) — 现有前端测试纳入 required CI
+- [PRD6 产品/架构/UX 审计](docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md) — 审计日志、用量核验、链路 ID、UI、扩展性与升级建议
+- [PRD7 候选 Backlog](docs/planning/PRD7-CANDIDATE-BACKLOG.md) — PRD7 候选分流；不代表范围已接受
 - [PRD5 产品范围](docs/PRD-Phase5.md) — Accepted Scope Complete 历史事实
 - [PRD5 验收矩阵](docs/ops/PRD5-ACCEPTANCE-MATRIX.md) — PRD5 关闭证据和明确决策
 - [PRD3 验收矩阵](docs/ops/PRD3-ACCEPTANCE-MATRIX.md) — 已完成 PRD3 清理/优化验收状态

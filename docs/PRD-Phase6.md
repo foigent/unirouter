@@ -1,9 +1,9 @@
 # UniRouter PRD6: Reliable MaaS Policy And Safety Plane
 
-> Version: 0.4
+> Version: 0.5
 > Date: 2026-07-11
 > Status: D6-01/D6-02/D6-08 accepted; Batch 0B execution active
-> Accepted implementation scope: P6-F03 through P6-F11, P6-F16 through P6-F21, and P6-F32 through P6-F36
+> Accepted implementation scope: P6-F03 through P6-F11, P6-F16 through P6-F21, and P6-F32 through P6-F38
 > Innovation gate: P6-F23 through P6-F31 remain proposed/deferred
 
 ## 1. Outcome
@@ -224,10 +224,12 @@ These do not become UniRouter source-code gaps without new evidence.
 | P6-F30 | Add a multimodal provenance passport | P3 | Deferred pending media-roadmap decision |
 | P6-F31 | Add semantic collusion/cascade risk analysis | P3 | Research candidate; shadow only until separately accepted |
 | P6-F32 | Tenant-scope wallet, grant, transaction and reconciliation administration | P0 | Accepted by D6-08; not started |
-| P6-F33 | Tenant-scope notification evidence and webhook sinks | P0 | Accepted by D6-08; Local verified, CI pending |
+| P6-F33 | Tenant-scope notification evidence and webhook sinks | P0 | Accepted by D6-08; CI verified by PR #142 |
 | P6-F34 | Restrict global base-price and organization-multiplier mutation to platform authority | P0 | Accepted by D6-08; not started |
 | P6-F35 | Restrict deployment settings, license material and global sensitive words to platform authority | P0 | Accepted by D6-08; not started |
 | P6-F36 | Enforce organization ownership across registry, alias, catalog and organization model-set endpoints | P1 | Accepted by D6-08; not started |
+| P6-F37 | Tenant-scope audit-log reads and reject foreign organization/project filters | P0 | Accepted safe remediation under PRD6 work rule 7; CI verified by PR #143 |
+| P6-F38 | Run the existing frontend test suite in required CI with stable, bounded interaction timing | P1 | Accepted safe remediation under PRD6 work rule 7; CI verified by PR #143 |
 
 ## 6. Safety And Authorization Boundaries
 
