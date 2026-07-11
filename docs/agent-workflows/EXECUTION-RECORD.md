@@ -3,8 +3,8 @@
 **Batch:** PRD6 Batch 0B P6-F35 Global-Control Authority
 **Owner:** Codex
 **Risk:** R4 deployment-wide control and tenant-boundary integrity
-**Status:** implementation, local verification and independent review complete; PR/required CI/merge pending
-**Integration:** branch `codex/prd6-p6f35-global-controls`; no PR, deployment, target or production claim yet
+**Status:** PR #147 implementation-head CI verified; final docs exact-head CI/merge pending
+**Integration:** PR #147 / branch `codex/prd6-p6f35-global-controls`; no deployment, target or production claim
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Current Scope
@@ -161,7 +161,11 @@ Current P6-F35 results on `codex/prd6-p6f35-global-controls`:
 - frontend type-check, 27 files / 135 tests and production build: PASS; OpenAPI
   YAML parse and route-role contract checks: PASS;
 - independent review: no remaining blocker/high/medium;
-- PR, required CI, merge and post-merge main CI: PENDING.
+- PR #147 implementation head `ab05712d62a7790c5fc5e90171b72ece65845e02`,
+  run `29139213794`: Backend Tests PASS in 1m28s, Frontend Build PASS in 3m7s
+  with 27 files / 135 tests, and Docker Build PASS in 58s; Backend logs
+  explicitly show the P6-F35 migrated, production-route and reload tests PASS;
+- final docs exact-head required CI, merge and post-merge main CI: PENDING.
 
 Previous P6-F34 results on `codex/prd6-p6f34-price-authority`:
 
@@ -312,8 +316,9 @@ PR #139 required checks for final scalability-audit evidence head `6c8c192`:
 - `Docker Build`: PASS.
 
 P6-F01, P6-F02, P6-F16, P6-F32, P6-F33, P6-F34, P6-F37, P6-F38 and P6-F39 are
-merged and `CI verified`. D6-08 accepts P6-F32-P6-F36. P6-F35 is `Local
-verified` with PR/required CI/merge pending; P6-F36 remains unremediated. No
+merged and `CI verified`. D6-08 accepts P6-F32-P6-F36. P6-F35 is `CI verified`
+by PR #147 implementation head/run `29139213794`, with final docs exact-head
+CI/merge pending; P6-F36 remains unremediated. No
 documentation or local test promotes a row to target or production verified.
 
 P6-F35 target activation is deferred by D6-09. A later authorized run must

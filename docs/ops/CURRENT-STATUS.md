@@ -16,8 +16,10 @@
 > `517ce45381429781f7e81e492bdd9f38093c21ba`; final-head required CI run
 > `29137670055` and post-merge main run `29137781625` passed all three jobs,
 > and its historical branch is retained. P6-F35 global-control authority is
-> locally verified and independently reviewed; PR/required CI/merge remain
-> pending and no target or production verification is claimed.
+> CI verified by PR #147 implementation head
+> `ab05712d62a7790c5fc5e90171b72ece65845e02` / run `29139213794`; final docs
+> exact-head CI/merge remain pending and no target or production verification
+> is claimed.
 > D6-01, D6-02, D6-08 and D6-09 were accepted by the User on 2026-07-11; advanced
 > innovation rows P6-F23 through P6-F31 remain proposed.
 
@@ -86,8 +88,8 @@ later read-only audit found P6-F32 through P6-F36 across finance, notifications,
 pricing, global settings and organization model governance. D6-08 separately
 accepted those rows with tenant roles confined to their JWT organization and
 platform-only global/multiplier authority. P6-F32/P6-F33/P6-F34/P6-F37/P6-F38/P6-F39
-are merged and CI verified. P6-F35 implementation, local verification and
-independent review are complete with PR/required CI/merge pending; P6-F36
+are merged and CI verified. P6-F35 implementation-head required CI is verified
+by PR #147 / run `29139213794`, with final docs exact-head CI/merge pending; P6-F36
 remains unremediated. No audit row is presented as a production
 incident, 100x proof, or implemented remediation before its exact evidence
 exists.

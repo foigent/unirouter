@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F16/P6-F32/P6-F33/P6-F34/P6-F37/P6-F38/P6-F39 merged; P6-F35 local verified with PR/required CI/merge pending
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F16/P6-F32/P6-F33/P6-F34/P6-F37/P6-F38/P6-F39 merged; P6-F35 PR #147 implementation-head CI verified with final docs exact-head CI/merge pending
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -93,8 +93,10 @@ evidence.
   final-head run `29137670055` and
   post-merge main run `29137781625` passed all required jobs, and its historical
   branch is retained. P6-F35 implementation, local verification and independent
-  review are complete with PR/required CI/merge pending and no target/production
-  claim. P6-F36 remains unremediated. P6-F37
+  review are complete; PR #147 implementation head
+  `ab05712d62a7790c5fc5e90171b72ece65845e02` / run `29139213794` passed all
+  required jobs, with final docs exact-head CI/merge pending and no
+  target/production claim. P6-F36 remains unremediated. P6-F37
   and P6-F38 are merged and CI verified by PR #143 / `a1e0ad6`.
 
 ## PRD5 Closure Guard
@@ -145,8 +147,9 @@ deployment, target mutation, paid shadow traffic, raw-payload expansion, a new
 X-Insight contract, semantic response cache, video execution, or an IAM rewrite.
 
 D6-08 authorizes P6-F32 through P6-F36 through separate reviewable PRs. P6-F32,
-P6-F33, P6-F34 and P6-F39 are merged and CI verified. P6-F35 is local verified
-and independently reviewed with PR/required CI/merge pending.
+P6-F33, P6-F34 and P6-F39 are merged and CI verified. P6-F35 is CI verified by
+PR #147 implementation head/run `29139213794`, with final docs exact-head
+CI/merge pending.
 P6-F37/P6-F38 are merged and CI verified by PR #143; post-merge main run
 `29133690338` passed Backend Tests, Frontend Build and Docker Build.
 

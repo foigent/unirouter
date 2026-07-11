@@ -3,8 +3,9 @@
 > Date: 2026-07-11
 > Base: `517ce45381429781f7e81e492bdd9f38093c21ba`
 > Branch: `codex/prd6-p6f35-global-controls`
-> Evidence level: local implementation and independent review verified; PR,
-> required CI, merge and target verification pending; no deployment is claimed
+> Evidence level: local implementation, independent review and PR #147
+> implementation-head required CI verified; final docs exact-head CI, merge and
+> target verification pending; no deployment or production verification is claimed
 
 ## Confirmed Pre-Fix Findings
 
@@ -136,8 +137,13 @@ and concurrency review found no remaining blocker, high, medium or functional
 low finding after fixes for startup fail-open, stale reload, missing/null
 policy requests, long audit identifiers and IPv6 audit addresses.
 
-PR, exact-head required CI and merge evidence are intentionally pending until
-the branch is published and the required checks complete.
+PR #147 implementation head `ab05712d62a7790c5fc5e90171b72ece65845e02`
+passed required CI in run `29139213794`: Backend Tests passed in 1m28s,
+Frontend Build passed in 3m7s with 27 files / 135 tests, and Docker Build passed
+in 58s. The Backend log explicitly shows the P6-F35 migrated-database,
+production-route and sensitive-word reload tests PASS. Final docs exact-head
+required CI and merge remain pending; this does not promote target or production
+status.
 
 ## Explicit Remaining Boundaries
 

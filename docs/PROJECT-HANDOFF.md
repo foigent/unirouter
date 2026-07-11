@@ -67,7 +67,9 @@ merged and CI verified by PR #145 / `609385f`. P6-F34 was squash-merged by PR
 `29137670055` and post-merge main run `29137781625` passed all three required
 jobs, and its historical branch is retained. P6-F35 implementation, local
 verification and independent review are complete on
-`codex/prd6-p6f35-global-controls`, while PR/required CI/merge remain pending;
+`codex/prd6-p6f35-global-controls`; PR #147 implementation head
+`ab05712d62a7790c5fc5e90171b72ece65845e02` / run `29139213794` passed all
+required jobs, while final docs exact-head CI/merge remain pending;
 P6-F36 remains unremediated. No target or production verification is claimed.
 P6-F37 audit-log tenant isolation and P6-F38 frontend test
 enforcement are merged and CI verified by PR #143 / `a1e0ad6` under the safe
@@ -143,8 +145,9 @@ verified. D6-01/D6-02/D6-08/D6-09 are accepted; P6-F16 and P6-F33 are CI verifie
 and merged. P6-F37/P6-F38 are merged and CI verified by PR #143 / `a1e0ad6`,
 P6-F32/P6-F39 are merged and CI verified by PR #145 / `609385f`; P6-F34 was
 merged by PR #146 as `517ce45381429781f7e81e492bdd9f38093c21ba` after final-head run `29137670055`, and
-post-merge main run `29137781625` also passed all required jobs. P6-F35 is local
-verified and independently reviewed with PR/required CI/merge pending; P6-F36
+post-merge main run `29137781625` also passed all required jobs. P6-F35 is CI
+verified by PR #147 implementation head/run `29139213794`, with final docs
+exact-head CI/merge pending; P6-F36
 remains unremediated. PRD7/target evidence are explicitly later; historical
 branches remain retained. No new item is target or production verified. Any
 later P6-F35 target cutover must first drain old control-plane binaries and use

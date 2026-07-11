@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; Batch 0B active; P6-F32/P6-F34/P6-F39 merged; P6-F35 local verified with PR/required CI/merge pending
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; Batch 0B active; P6-F32/P6-F34/P6-F39 merged; P6-F35 PR #147 implementation-head CI verified with final docs exact-head CI/merge pending
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -78,8 +78,10 @@ P6-F34 pricing authority was squash-merged by PR #146 as
 `517ce45381429781f7e81e492bdd9f38093c21ba`; final-head
 run `29137670055` and post-merge main run `29137781625` passed all required
 jobs, and the historical branch is retained. P6-F35 implementation, local
-verification and independent review are complete; PR/required CI/merge remain
-pending. Later Batch 0B rows remain ordered and independently gated.
+verification and independent review are complete; PR #147 implementation head
+`ab05712d62a7790c5fc5e90171b72ece65845e02` / run `29139213794` passed all
+required jobs, while final docs exact-head CI/merge remain pending. Later Batch
+0B rows remain ordered and independently gated.
 
 Split into independently reviewable security/financial PRs:
 
@@ -111,8 +113,9 @@ and is CI verified. P6-F32 finance/reconciliation and adjacent P6-F39
 usage-derived tenant reads are merged and CI verified by PR #145. P6-F34
 pricing authority is merged and CI verified by PR #146 / `517ce453`, including
 post-merge main run `29137781625`. P6-F35 global-control authority is local
-verified and independently reviewed, with PR/required CI/merge still the
-promotion gates. P6-F36 model governance remains open.
+verified, independently reviewed and implementation-head CI verified by PR #147
+/ run `29139213794`, with final docs exact-head CI/merge still the promotion
+gates. P6-F36 model governance remains open.
 
 P6-F35 adds no global-settings UI and makes no target claim. D6-09 keeps target
 activation later; that cutover must drain old control-plane binaries before a
