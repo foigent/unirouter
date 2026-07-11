@@ -59,8 +59,9 @@ P6-F16 tenant-integrity security boundary, which is CI verified and merged by
 PR #140 as `f244f669`. D6-08 separately accepts the later P6-F32-P6-F36
 finance, notification, pricing, global-control and model-governance inputs;
 P6-F33 is CI verified by PR #142 / `7173c59` and the other D6-08 rows remain
-unremediated. P6-F37 audit-log tenant isolation is Local verified under the
-safe P0 remediation rule. The
+unremediated. P6-F37 audit-log tenant isolation and P6-F38 frontend test
+enforcement are CI verified by PR #143 under the safe remediation rule; merge
+is pending. The
 adaptive-trust, Digital Twin,
 shadow, collusion, trust-receipt and claim-assurance rows remain proposed and
 are not implied by D6-01.
@@ -126,8 +127,8 @@ Current execution has completed PRD6 Batch 0B P6-F16 through PR #140 /
 `f244f669`; its post-merge `main` CI is green. Fresh full repository checks and
 X-Insight tests passed before implementation; Batch 0A is merged and CI
 verified. D6-01/D6-02/D6-08 are accepted; P6-F16 and P6-F33 are CI verified
-and merged, P6-F37 is Local verified, and P6-F32/P6-F34-P6-F36 remain
-unremediated. No new item is target verified.
+and merged. P6-F37/P6-F38 are CI verified by PR #143 with merge pending, and
+P6-F32/P6-F34-P6-F36 remain unremediated. No new item is target verified.
 Current details and promotion gates are in
 `docs/agent-workflows/EXECUTION-RECORD.md`.
 

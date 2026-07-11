@@ -228,8 +228,8 @@ These do not become UniRouter source-code gaps without new evidence.
 | P6-F34 | Restrict global base-price and organization-multiplier mutation to platform authority | P0 | Accepted by D6-08; not started |
 | P6-F35 | Restrict deployment settings, license material and global sensitive words to platform authority | P0 | Accepted by D6-08; not started |
 | P6-F36 | Enforce organization ownership across registry, alias, catalog and organization model-set endpoints | P1 | Accepted by D6-08; not started |
-| P6-F37 | Tenant-scope audit-log reads and reject foreign organization/project filters | P0 | Accepted safe remediation under PRD6 work rule 7; Local verified, CI pending |
-| P6-F38 | Run the existing frontend test suite in required CI with stable, bounded interaction timing | P1 | Accepted safe remediation under PRD6 work rule 7; Local verified, CI pending |
+| P6-F37 | Tenant-scope audit-log reads and reject foreign organization/project filters | P0 | Accepted safe remediation under PRD6 work rule 7; CI verified by PR #143 |
+| P6-F38 | Run the existing frontend test suite in required CI with stable, bounded interaction timing | P1 | Accepted safe remediation under PRD6 work rule 7; CI verified by PR #143 |
 
 ## 6. Safety And Authorization Boundaries
 

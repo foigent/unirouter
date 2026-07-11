@@ -2,7 +2,7 @@
 
 > Date: 2026-07-11
 > Base: `7173c5967a42c112fd0b219938a0901c1a0b9633`
-> Evidence level: Local verified; required CI pending
+> Evidence level: CI verified by PR #143
 
 ## Confirmed Gap
 
@@ -56,9 +56,12 @@ warning and the large frontend chunk warning remain non-failing. The pre-change
 5-second failures and isolated reruns are retained above rather than rewritten
 as a first-pass green result.
 
-The remaining promotion gate is the PR's required `Frontend Build` log visibly
-executing and passing the Vitest step, plus Backend Tests and Docker Build for
-the exact head.
+PR #143 run `29133309062` passed Backend Tests, Frontend Build and Docker Build
+for implementation head `132b019`. The required Frontend Build log explicitly
+shows the `Frontend tests` step and reports `25 passed (25)` / `126 passed
+(126)` before the production build. Independent review confirmed that the
+10-second value changes only the per-test waiting bound and does not skip tests,
+weaken assertions or convert failures to success.
 
 No target deployment, browser credential, external request or data-scope
 change is needed for this engineering gate.

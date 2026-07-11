@@ -3,8 +3,8 @@
 **Batch:** PRD6 Batch 0B P6-F37/P6-F38 Audit Isolation And Frontend CI Integrity
 **Owner:** Codex
 **Risk:** R4 multi-tenant audit confidentiality plus R2 evidence-backed planning
-**Status:** P6-F33 CI verified; P6-F37/P6-F38 Local verified; required PR CI pending
-**Integration:** `codex/prd6-audit-tenant-operability`; PR/merge/deployment not yet claimed for P6-F37
+**Status:** P6-F33/P6-F37/P6-F38 CI verified; PR #143 merge pending
+**Integration:** `codex/prd6-audit-tenant-operability`; deployment not claimed
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Scope
@@ -124,7 +124,11 @@ Focused P6-F37 results on `codex/prd6-audit-tenant-operability`:
   timeout instability under parallel load; isolated reruns passed, then P6-F38
   set a bounded 10-second timeout and added the suite to required CI;
 - final frontend type-check, 25 files / 126 tests, and production build: PASS;
-- required PR CI remains the next promotion gate.
+- PR #143 run `29133309062`: Backend Tests PASS, Frontend Build PASS and Docker
+  Build PASS; the required frontend log explicitly reports 25 files / 126 tests.
+- independent review reproduced the P6-F37 pre-fix cross-tenant leak on
+  `7173c59`, found no bypass candidate, and found no P6-F38 gate weakening.
+- merge and post-merge main readback remain the next integration gates.
 
 Pre-change repository results on 2026-07-11:
 
@@ -204,8 +208,8 @@ PR #139 required checks for final scalability-audit evidence head `6c8c192`:
 - `Frontend Build`: PASS;
 - `Docker Build`: PASS.
 
-P6-F01, P6-F02, P6-F16 and P6-F33 are `CI verified`. D6-08 accepts
-P6-F32-P6-F36; P6-F37 is `Local verified`, while P6-F32 and
+P6-F01, P6-F02, P6-F16, P6-F33, P6-F37 and P6-F38 are `CI verified`. D6-08 accepts
+P6-F32-P6-F36, while P6-F32 and
 P6-F34-P6-F36 remain unremediated. No documentation or local test promotes a
 row to target verified.
 

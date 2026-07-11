@@ -32,7 +32,7 @@
 
 | ID | 发现 | 证据 | 影响 |
 |---|---|---|---|
-| AUD-01 | 基线 `ListAuditLogs` 只按用户传入的 `org_id` 过滤，没有自动绑定 JWT actor org；路由却允许 `org_admin`、`billing_admin` 访问。当前 P6-F37 分支已加入 actor-org 约束并通过迁移后双租户 JWT 回归，状态为 Local verified；required CI 仍是晋级门槛。 | 基线 `/Users/m4/Desktop/projects/UniRouter/internal/admin/audit_handlers.go:18-42`；路由 `/Users/m4/Desktop/projects/UniRouter/cmd/uniroute/main.go:467`；本地证据 `/Users/m4/Desktop/projects/UniRouter/docs/ops/evidence/PRD6-B0B-P6F37-audit-log-tenant-isolation-local-20260711.md` | P0 跨租户审计数据暴露。
+| AUD-01 | 基线 `ListAuditLogs` 只按用户传入的 `org_id` 过滤，没有自动绑定 JWT actor org；路由却允许 `org_admin`、`billing_admin` 访问。P6-F37 已加入 actor-org 约束，通过迁移后双租户 JWT 回归和 PR #143 required CI；merge 尚未完成。 | 基线 `/Users/m4/Desktop/projects/UniRouter/internal/admin/audit_handlers.go:18-42`；路由 `/Users/m4/Desktop/projects/UniRouter/cmd/uniroute/main.go:467`；证据 `/Users/m4/Desktop/projects/UniRouter/docs/ops/evidence/PRD6-B0B-P6F37-audit-log-tenant-isolation-local-20260711.md` | P0 跨租户审计数据暴露。
 | AUD-02 | 后端已经返回 `before`、`after`、IP、User-Agent、`request_id`，但表格只展示通用 `detail`，这些调查字段没有进入 UI。 | `/Users/m4/Desktop/projects/UniRouter/internal/admin/audit_handlers.go:97-131`；`/Users/m4/Desktop/projects/UniRouter/frontend/src/pages/AuditLogsPage.tsx:62-80` | 出事后仍需查库，UI 不能完成闭环。
 | AUD-03 | 操作者显示为 `User #<id>`；组织、项目、目标也主要显示裸 ID；后端查询没有 join 用户名、组织名、项目名或对象快照。 | `/Users/m4/Desktop/projects/UniRouter/frontend/src/pages/AuditLogsPage.tsx:62-74`；`/Users/m4/Desktop/projects/UniRouter/internal/admin/audit_handlers.go:97-130` | 业务用户无法知道 “User #1 是谁”。
 | AUD-04 | 开始/结束时间是手填 RFC3339 文本框；每次输入都会改变 `filters` 并触发 `useEffect` 请求，同时页面仍保留“筛选”按钮。 | `/Users/m4/Desktop/projects/UniRouter/frontend/src/pages/AuditLogsPage.tsx:42-55`、`:91-107` | 非技术用户难用；输入中间态会产生无效请求和错误闪烁。

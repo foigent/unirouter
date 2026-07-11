@@ -2,7 +2,7 @@
 
 > Date: 2026-07-11
 > Base: `7173c5967a42c112fd0b219938a0901c1a0b9633`
-> Evidence level: Local verified; required PR CI and deployment are not claimed
+> Evidence level: CI verified by PR #143; deployment is not claimed
 
 ## Confirmed Pre-Fix Finding
 
@@ -89,4 +89,7 @@ git diff --check
 The backend race/vet checks passed. After P6-F38 addressed the measured
 frontend interaction-timeout instability without changing assertions, all 25
 files / 126 tests, type-check and the production build passed. Required PR
-checks and exact-head CI evidence remain the promotion gate.
+run `29133309062` then passed Backend Tests, Frontend Build and Docker Build for
+implementation head `132b019`. Independent review reproduced the pre-fix leak
+on `7173c59` and found no P6-F37 bypass candidate. This is `CI verified`, not
+Target or Production verified.

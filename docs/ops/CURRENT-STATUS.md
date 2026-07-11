@@ -5,8 +5,8 @@
 > `f244f669c529fec8767f85fff209882b333d8ed2`. P6-F33 was squash-merged by
 > PR #142 as `7173c5967a42c112fd0b219938a0901c1a0b9633`; its PR and post-merge
 > `main` required CI are green. D6-08 is accepted with option B. P6-F37 audit-log
-> tenant isolation and P6-F38 frontend-test required-CI enforcement are Local
-> verified on their dedicated branch; required PR CI is pending.
+> tenant isolation and P6-F38 frontend-test required-CI enforcement are CI
+> verified by PR #143; merge and post-merge main readback remain the next gate.
 > D6-01, D6-02 and D6-08 were accepted by the User on 2026-07-11; advanced
 > innovation rows P6-F23 through P6-F31 remain proposed.
 
@@ -68,8 +68,9 @@ Backend log shows all twelve authenticated subtests PASS rather than SKIP. A
 later read-only audit found P6-F32 through P6-F36 across finance, notifications,
 pricing, global settings and organization model governance. D6-08 separately
 accepted those rows with tenant roles confined to their JWT organization and
-  platform-only global/multiplier authority. P6-F33 is CI verified; P6-F37 is
-  Local verified; P6-F32 and P6-F34-P6-F36 remain unremediated. No audit row is presented as a production
+platform-only global/multiplier authority. P6-F33/P6-F37/P6-F38 are CI
+verified; PR #143 merge remains pending. P6-F32 and P6-F34-P6-F36 remain
+unremediated. No audit row is presented as a production
 incident, 100x proof, or implemented remediation before its exact evidence
 exists.
 

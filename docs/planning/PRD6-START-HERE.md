@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08 accepted; P6-F16/P6-F33 CI verified; P6-F37 Local verified
+> Status: D6-01/D6-02/D6-08 accepted; P6-F16/P6-F33/P6-F37/P6-F38 CI verified
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -86,8 +86,8 @@ evidence.
 - P6-F32 through P6-F36 are later source-confirmed administrator-surface inputs.
   They were not known when D6-01 was accepted and were separately accepted by
   D6-08. P6-F33 is CI verified by PR #142 / `7173c59`; the other D6-08 rows
-  remain unremediated. The separate P6-F37 audit-log tenant leak is Local
-  verified under the safe P0 remediation rule.
+  remain unremediated. The separate P6-F37 audit-log tenant fix and P6-F38
+  frontend-test gate are CI verified by PR #143 with merge pending.
 
 ## PRD5 Closure Guard
 
@@ -132,4 +132,5 @@ deployment, target mutation, paid shadow traffic, raw-payload expansion, a new
 X-Insight contract, semantic response cache, video execution, or an IAM rewrite.
 
 D6-08 authorizes P6-F32 through P6-F36 through separate reviewable PRs. P6-F33
-is CI verified. P6-F37 is Local verified; required CI is its next evidence gate.
+is CI verified. P6-F37/P6-F38 are CI verified by PR #143; merge and post-merge
+main readback are their next evidence gate.
