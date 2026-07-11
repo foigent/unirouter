@@ -1,49 +1,64 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 0C P6-STREAM-002A Typed Stream Transport
+**Batch:** PRD6 Batch 1 P6-F19 Agent Capability And Ancestor Runtime
 **Owner:** Codex
-**Risk:** R3 request-path transport and partial-stream billing finalization
+**Risk:** R4 distributed authorization, hard budget and shared admission
 **Status:** CI verified / closed
-**Integration:** PR #162 exact-head `b02d112` / run `29168427875`; squash merge `7737f8b`; post-merge main run `29168586124`; historical branch restored; no deployment, target or production claim
-**Previous batch:** P6-F06 CI verified / closed by PR #160 and post-merge main run `29161527988`
+**Integration:** P6-F19A PR #164/main run `29170507588`; P6-F19B PR #166 exact-head `a723ac6` / run `29171653038`; squash merge `b491817`; post-merge main run `29171807693`; both historical branches restored; no deployment, target or production claim
+**Previous batch:** P6-STREAM-002A CI verified / closed by PR #162 and post-merge main run `29168586124`; P6-F11 remains in progress
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Current Scope
 
-1. Replace the hidden 64-KiB scanner limit with a validated, observable frame
-   bound and fail safely on over-limit or upstream read errors.
-2. Serialize every SSE write with its flush and preserve the
-   `http.ResponseController` deadline chain through response-writer wrappers.
-3. Give the provider body one lifecycle owner and use a fresh bounded context
-   for settlement/log/trace finalization after request cancellation.
-4. Preserve the P6-F18 billable-output marker and settle only already delivered
-   output after transport failure; never append a false success extension or
-   `[DONE]`.
-5. Expose one typed startup policy in env, Compose, Runtime Status, UI and
-   focused required CI.
-6. Keep D6-10 dynamic reservation extension, P6-F11 semantic interception,
-   P6-F20 outbox/process-kill guarantees, deployment and target evidence out of
-   this PR.
+1. Require explicit supervisor exchange and parent delegation; issue a strict
+   five-minute, model-gateway-only, attenuation-only signed capability.
+2. Enforce depth, direct-child, aggregate-descendant, model and endpoint scope,
+   bounded root-authority refresh and all-replica workflow revocation.
+3. Atomically reserve estimated cost/tokens plus exact rolling RPM/RPS and
+   shared concurrency on the calling Agent and every signed ancestor.
+4. Replace estimates with actual settled cost/tokens, release cancellation and
+   concurrency terminals, and retain ambiguous recovery conservatively.
+5. Use Redis time and one workflow hash slot; prove multi-instance exact limits,
+   application-clock skew, Redis outage and real Redis/PostgreSQL readback.
+6. Keep generic P6-F07 selectors/TPM/modes, P6-F20 durable cross-process
+   terminal hooks, P6-F21 weighted admission, deployment and target evidence
+   out of the closure claim.
 
-## Current P6-STREAM-002A Behavior Change
+## Current P6-F19 Behavior Change
+
+- children never receive or copy the root API key; explicit exchange/delegation
+  creates signed workflow, lineage and Agent identity with a maximum five-
+  minute token and minute-three jittered refresh;
+- atomic topology registration enforces ancestor depth/fan-out and exactly 100
+  of 101 concurrent children under the accepted fixture;
+- shared Redis and a bounded root key/org/project/owner/membership authority
+  cache reject revoked, superseded, changed or unverifiable authority;
+- every capability-authenticated Chat/Embeddings call reserves cost, tokens,
+  rolling rate and concurrency across its complete signed lineage before route
+  selection or upstream dispatch;
+- wallet Freeze denial or runtime-state uncertainty never dispatches; normal
+  settlement writes actual cost/tokens and cancellation releases only budget
+  reservations/concurrency, never RPM/RPS attempts;
+- 20 concurrent admissions across two service instances under a limit of three
+  admit exactly three; Redis time survives a two-hour application-clock skew;
+- PR #164 and #166 exact-head plus post-merge Backend/Frontend/Docker CI passed,
+  including migrated PostgreSQL and Redis 7 authority/runtime integration;
+- P6-F19 is CI verified / closed. P6-F07, P6-F20 and P6-F21 remain separate;
+- evidence:
+  `docs/ops/evidence/PRD6-B1-P6F19A-agent-capability-kernel-local-20260712.md`
+  and
+  `docs/ops/evidence/PRD6-B1-P6F19B-agent-ancestor-budget-local-20260712.md`.
+
+## Previous P6-STREAM-002A Behavior Change
 
 - `stream-transport.v1` validates a 2-MiB maximum SSE line, 30-second
   write-idle deadline, 15-second heartbeat and 30-minute maximum duration;
-- the metrics wrapper now exposes `Unwrap`, allowing per-write deadline renewal
-  to reach the native server connection beyond the aggregate 120-second server
-  timeout while leaving non-stream timeout policy unchanged;
-- a single writer serializes Write+Flush and focused race tests run 100
-  concurrent calls without overlap;
-- 64-KiB-plus-one and 1-MiB frames complete, configured over-limit frames return
-  `stream_error.frame_too_large`, and upstream read failure after partial output
-  settles the delivered usage without `_uniroute` success or `[DONE]`;
-- final downstream write failure retains the durable settlement and records a
-  sanitized termination rather than fabricating success;
-- config default/override/fail-closed tests, Runtime Status API/UI tests,
-  focused gateway/middleware race tests and frontend type-check pass locally;
-- PR #162 exact-head Backend/Frontend/Docker required CI passed, the change was
-  squash-merged as `7737f8b`, and post-merge main run `29168586124` passed the
-  same three jobs; the historical implementation branch is restored;
+- the metrics wrapper exposes `Unwrap`, per-write deadline renewal reaches the
+  native server connection, and one writer serializes Write+Flush;
+- large/over-limit/read-failure fixtures prove bounded frames, partial-output
+  settlement and no fabricated success/`[DONE]`;
+- PR #162 exact-head and post-merge main Backend/Frontend/Docker CI passed;
+- D6-10 dynamic reservation extension and P6-F11 semantic interception remain;
 - evidence: `docs/ops/evidence/PRD6-B0C-P6STREAM002A-stream-transport-local-20260712.md`.
 
 ## Previous P6-F06 Behavior Change

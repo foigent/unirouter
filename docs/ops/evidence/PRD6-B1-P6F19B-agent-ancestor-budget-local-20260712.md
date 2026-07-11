@@ -2,8 +2,8 @@
 
 > Date: 2026-07-12
 > Scope: repository/local evidence only
-> Status: locally verified; pull request and required CI pending
-> Parent row: P6-F19 is ready to close only after exact-head and post-merge CI
+> Status: CI verified / closed
+> Parent row: P6-F19 CI verified / closed
 
 ## Accepted contract exercised
 
@@ -95,8 +95,8 @@ High-risk fixtures include:
 
 ## Explicit non-claims and remaining work
 
-- This slice is sufficient to close P6-F19 only after pull-request and post-
-  merge required CI are green. It does **not** close P6-F07: selector
+- This slice closes P6-F19 together with the earlier P6-F19A kernel. It does
+  **not** close P6-F07: selector
   precedence, disabled/shadow/enforce modes, general API-key TPM and shared
   policy-version evidence remain separate.
 - D6-10 dynamic long-stream reservation extension is not implemented here.
@@ -122,5 +122,17 @@ High-risk fixtures include:
 
 ## Pull request and required CI
 
-Pending. Exact implementation head, PR run, squash merge and post-merge main run
-will be appended only after readback from GitHub.
+- implementation head: `a723ac6b01a45f97a219d19f3b361a7f31ebae98`;
+- PR #166 exact-head required run: `29171653038`;
+- required results: Backend Tests, Frontend Build and Docker Build all passed;
+- the Backend log includes the renamed Agent capability authority and runtime
+  integration step, which passed against migrated PostgreSQL and Redis 7;
+- squash merge: `b491817072384aa29b192e7dd121075d3ae9f867`;
+- post-merge `main` run: `29171807693`, with Backend Tests, Frontend Build and
+  Docker Build all passed; and
+- historical branch `codex/prd6-agent-ancestor-budget` was restored at the
+  exact implementation head after merge.
+
+The exact-head and post-merge runs emitted non-blocking GitHub Actions Node 20
+deprecation and Go cache-restore `tar` annotations. All required jobs and the
+new real runtime integration step concluded `success`.

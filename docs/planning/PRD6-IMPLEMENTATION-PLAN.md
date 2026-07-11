@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-12
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F06 and P6-STREAM-002A are CI verified / closed; P6-F11 and P6-F19 remain in progress; P6-F19A capability kernel is CI verified by PR #164/main run `29170507588`; 6 accepted rows remain not started
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F06, P6-F19 and P6-STREAM-002A are CI verified / closed; P6-F11 remains in progress; P6-F19 closed through PR #166/main run `29171807693`; 6 accepted rows remain not started
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -30,12 +30,11 @@ required CI. No scope decision grants target/deployment/data/cost authorization.
 
 - 39 total `P6-F*` rows exist in the acceptance matrix;
 - 25 are accepted implementation scope;
-- 17 are CI verified / closed: P6-F01 through P6-F06, P6-F16, P6-F17, P6-F18
+- 18 are CI verified / closed: P6-F01 through P6-F06, P6-F16 through P6-F19
   and P6-F32 through P6-F39;
-- 8 accepted rows remain unclosed: P6-F11 is in progress through the
-  P6-STREAM-002A transport prerequisite; P6-F19 is in progress through the
-  CI-verified capability kernel; P6-F07 through P6-F10, P6-F20
-  and P6-F21 remain not started;
+- 7 accepted rows remain unclosed: P6-F11 is in progress through the
+  P6-STREAM-002A transport prerequisite; P6-F07 through P6-F10, P6-F20 and
+  P6-F21 remain not started;
 - 14 rows are not accepted: P6-F12 through P6-F15 and P6-F22 through P6-F31;
 - `P6-TEST-DB-001` is a separate accepted engineering-integrity issue outside
   the feature-row count. PR #155, merge `4b18ace` and post-merge main run
@@ -208,6 +207,11 @@ reviewable.
 **Risk:** R3/R4 shared admission behavior.
 **Gate:** D6-01/D6-02 accepted; Batch 0B identity/tenant prerequisites and the
 selected policy contract must be complete.
+
+**Current state:** P6-F19 is CI verified / closed by the P6-F19A capability
+kernel and P6-F19B ancestor-runtime layer. The remaining Batch 1 work is the
+generic P6-F07 selector/TPM/mode policy and P6-F21 replica-invariant weighted
+global/organization admission; neither is implied by the Agent-only closure.
 
 Design first:
 

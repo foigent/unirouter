@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-12
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F06 and P6-STREAM-002A CI verified / closed; P6-F16-P6-F18/P6-F32-P6-F39 applicable rows merged and CI verified; P6-F19A CI verified by PR #164/main run `29170507588`
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F06, P6-F16-P6-F19, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F19 closed by PR #166/main run `29171807693`
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -50,19 +50,20 @@ recommended MVP boundary and policy-specific failure posture on 2026-07-11:
 20. `docs/ops/evidence/PRD6-B0C-P6F06-multiplier-freeze-local-20260711.md`
 21. `docs/ops/evidence/PRD6-B0C-P6STREAM002A-stream-transport-local-20260712.md`
 22. `docs/ops/evidence/PRD6-B1-P6F19A-agent-capability-kernel-local-20260712.md`
-23. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`
-24. `docs/planning/PRD7-CANDIDATE-BACKLOG.md`
-25. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md`
-26. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
-27. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
-28. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
-29. `docs/PRD-Phase6.md`
-30. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
-31. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
-32. `docs/planning/PRD6-BACKLOG.md`
-33. `docs/issues/OPEN-ISSUES.md`
-34. `docs/agent-workflows/AGENT-PROTOCOL.md`
-35. `docs/agent-workflows/EXECUTION-RECORD.md`
+23. `docs/ops/evidence/PRD6-B1-P6F19B-agent-ancestor-budget-local-20260712.md`
+24. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`
+25. `docs/planning/PRD7-CANDIDATE-BACKLOG.md`
+26. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md`
+27. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
+28. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
+29. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
+30. `docs/PRD-Phase6.md`
+31. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
+32. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
+33. `docs/planning/PRD6-BACKLOG.md`
+34. `docs/issues/OPEN-ISSUES.md`
+35. `docs/agent-workflows/AGENT-PROTOCOL.md`
+36. `docs/agent-workflows/EXECUTION-RECORD.md`
 
 PRD5 evidence remains under its existing paths. Do not rewrite it as PRD6
 evidence.
