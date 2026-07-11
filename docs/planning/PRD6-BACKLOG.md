@@ -11,6 +11,8 @@
 | P6-RL-001 | Atomic exact Redis RPM/RPS enforcement | Confirmed over-admission and multi-instance race; no new surface | sequential/concurrent/context/failure tests and CI |
 | P6-DOC-001 | Independent PRD6 truth chain | Required to prevent PRD5 reopening and scope leakage | entry, PRD, matrix, plan, backlog, status/inventory sync |
 | P6-TENANT-001 | Enforce organization ownership and block org-admin platform-role escalation | Accepted D6-01 P0; prevents cross-tenant key/user/project/project-policy control | migrated-PostgreSQL matrix and PR #140 required CI are green |
+| P6-AUDIT-TENANT-001 | Enforce actor-organization ownership on audit-log reads | Confirmed cross-tenant evidence disclosure; safe P0 remediation under PRD6 work rule 7 | migrated two-tenant JWT matrix, full local checks and required CI |
+| P6-CI-FRONTEND-001 / P6-F38 | Run existing frontend behavior tests in required CI | Prevents type-correct/buildable UI regressions from merging; safe P1 engineering remediation | full 126-test suite and exact required-job log with no skips |
 
 ## 2. Accepted MVP — Ordered Work Queue
 
@@ -38,14 +40,17 @@
 | ID | Item | Confirmed value/risk | Current state | Priority |
 |----|------|----------------------|---------------|----------|
 | P6-FIN-TENANT-001 / P6-F32 | Tenant-scope wallet, grant, transaction and reconciliation operations | prevents cross-tenant financial read/write and removes first-wallet behavior | Accepted; not started | P0 |
-| P6-NOTIFY-TENANT-001 / P6-F33 | Tenant-scope notification reads and webhook sinks | closes a source-reachable victim-event exfiltration chain | Accepted; Local verified, CI pending | P0 |
+| P6-NOTIFY-TENANT-001 / P6-F33 | Tenant-scope notification reads and webhook sinks | closes a source-reachable victim-event exfiltration chain | CI verified by PR #142 / `7173c59`; target cutover unexecuted | P0 |
 | P6-PRICE-AUTH-001 / P6-F34 | Platform-only global base-price and organization-multiplier mutation | prevents tenant roles changing platform/victim billing | Accepted; not started | P0 |
 | P6-CONTROL-AUTH-001 / P6-F35 | Gate deployment settings, license and global sensitive words | prevents tenant roles changing global runtime controls | Accepted; not started | P0 |
 | P6-MODELGOV-TENANT-001 / P6-F36 | Tenant-scope registry, alias, catalog and organization model sets | prevents cross-tenant model-policy disclosure/mutation | Accepted; not started | P1 |
+| P6-AUDIT-TENANT-001 / P6-F37 | Tenant-scope audit-log reads | prevents organization/billing roles reading another tenant's control-plane evidence | Local verified; required CI pending | P0 |
 
-Evidence: `docs/ops/evidence/PRD6-B0B-admin-tenant-surface-audit-20260711.md`.
-These rows were accepted through the separate D6-08 decision; they do not
-reopen PRD5 or retroactively change D6-01.
+Evidence: `docs/ops/evidence/PRD6-B0B-admin-tenant-surface-audit-20260711.md`
+and `docs/ops/evidence/PRD6-B0B-P6F37-audit-log-tenant-isolation-local-20260711.md`.
+P6-F32 through P6-F36 were accepted through D6-08. P6-F37 is a separately
+recorded safe P0 remediation under the PRD6 work rule; none of these rows
+reopens PRD5 or retroactively changes D6-01.
 
 ## 4. Advanced Candidates
 

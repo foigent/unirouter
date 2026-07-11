@@ -2,7 +2,7 @@
 
 > Date: 2026-07-11
 > Base: `d3cf16f2169aeef1899c5e55b3b04a40d0a5c6a7`
-> Evidence level: Local verified; required PR CI and deployment are not claimed
+> Evidence level: CI verified by PR #142; target deployment is not claimed
 
 ## Scope
 
@@ -131,8 +131,13 @@ git diff --check
 Final exact-diff result: frontend 25 files / 126 tests PASS. Backend race, vet,
 route/OpenAPI/docs parity and `git diff --check` also PASS. The build retained the existing
 large-chunk warning and Go race linking retained the existing macOS
-`LC_DYSYMTAB` warning; neither command failed. Required PR checks and exact-head
-evidence remain promotion gates; this file does not pre-claim them.
+`LC_DYSYMTAB` warning; neither command failed.
+
+PR #142 exact-head `cb8a5ea` then passed `Backend Tests`, `Frontend Build` and
+`Docker Build`. It was squash-merged as
+`7173c5967a42c112fd0b219938a0901c1a0b9633`; post-merge main CI run
+`29132520222` passed the same three jobs. This promotes P6-F33 to `CI verified`,
+not Target or Production verified.
 
 Independent final review found no remaining direct old-writer, verification,
 down/roll-forward or retry bypass. It confirmed two separate promotion guards:

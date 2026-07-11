@@ -22,22 +22,66 @@ func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	var conditions []string
 	var args []interface{}
 	argIdx := 1
-	addIntFilter := func(queryKey, column string) bool {
+	actorOrgID, orgConstrained := actorOrgConstraint(r.Context())
+	if orgConstrained && actorOrgID <= 0 {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Organization scope required"})
+		return
+	}
+	addCondition := func(column string, value interface{}) {
+		conditions = append(conditions, fmt.Sprintf("%s = $%d", column, argIdx))
+		args = append(args, value)
+		argIdx++
+	}
+	parsePositiveIntFilter := func(queryKey string) (int64, bool, bool) {
 		raw := strings.TrimSpace(r.URL.Query().Get(queryKey))
 		if raw == "" {
-			return true
+			return 0, false, true
 		}
 		value, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil || value <= 0 {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid " + queryKey})
+			return 0, true, false
+		}
+		return value, true, true
+	}
+
+	requestedOrgID, hasOrgFilter, ok := parsePositiveIntFilter("org_id")
+	if !ok {
+		return
+	}
+	if orgConstrained {
+		if hasOrgFilter && requestedOrgID != actorOrgID {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Cross-organization access denied"})
+			return
+		}
+		addCondition("org_id", actorOrgID)
+	} else if hasOrgFilter {
+		addCondition("org_id", requestedOrgID)
+	}
+
+	requestedProjectID, hasProjectFilter, ok := parsePositiveIntFilter("project_id")
+	if !ok {
+		return
+	}
+	if hasProjectFilter {
+		if orgConstrained && !h.projectBelongsToOrg(r.Context(), requestedProjectID, actorOrgID) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Cross-organization project access denied"})
+			return
+		}
+		addCondition("project_id", requestedProjectID)
+	}
+
+	addIntFilter := func(queryKey, column string) bool {
+		value, present, valid := parsePositiveIntFilter(queryKey)
+		if !valid {
 			return false
 		}
-		conditions = append(conditions, fmt.Sprintf("%s = $%d", column, argIdx))
-		args = append(args, value)
-		argIdx++
+		if present {
+			addCondition(column, value)
+		}
 		return true
 	}
-	if !addIntFilter("org_id", "org_id") || !addIntFilter("project_id", "project_id") || !addIntFilter("actor_id", "user_id") || !addIntFilter("user_id", "user_id") {
+	if !addIntFilter("actor_id", "user_id") || !addIntFilter("user_id", "user_id") {
 		return
 	}
 	addStringFilter := func(queryKey, column string) {
