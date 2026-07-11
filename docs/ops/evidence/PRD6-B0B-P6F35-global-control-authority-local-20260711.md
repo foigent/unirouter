@@ -173,7 +173,7 @@ Neither CI nor merge promotes target or production status.
 - This batch adds no global-settings UI and makes no claim about target or
   production behavior.
 
-Follow-up status: P6-F05 now locally reconciles those configuration-truth
+Follow-up status: P6-F05 reconciles those configuration-truth
 inputs with `effective-config.v1`, retires the ambiguous global keys and removes
-the first-wallet runtime path. Required PR and post-merge CI remain pending;
-this follow-up does not retroactively broaden or change P6-F35 evidence.
+the first-wallet runtime path. PR #158 and post-merge main required CI passed;
+this CI-verified follow-up does not retroactively broaden or change P6-F35 evidence.

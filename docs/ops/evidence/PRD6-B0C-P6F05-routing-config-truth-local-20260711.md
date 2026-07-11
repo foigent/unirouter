@@ -3,7 +3,7 @@
 > Date: 2026-07-11
 > Scope: UniRouter typed effective configuration, routing policy and project-scoped budget-alert contract
 > Risk: R3 request routing, persisted provider-health and tenant financial-notification behavior
-> Evidence level: Local verified; required PR CI pending
+> Evidence level: CI verified / closed
 > Deployment/target/production claim: none
 
 ## 1. Confirmed pre-change divergence
@@ -209,17 +209,30 @@ including the effective-policy UI regression. Existing React/Semi and bundle
 size warnings remain non-failing.
 
 The OpenAPI YAML parses and `git diff --check` passes. Docker is not installed
-in the local shell; required CI remains the Docker evidence source.
+in the local shell; required CI supplies the Docker evidence.
 
-## 7. Acceptance and boundary
+## 7. Required CI, merge and post-merge evidence
 
-P6-F05 is Local verified. It can advance to CI verified / closed only after the
-exact PR head passes Backend Tests (including all three fail-closed integration
-steps), Frontend Build and Docker Build, is merged, and post-merge main CI
-passes.
+PR #158 exact head `ae7055960c62d2205b971e43468ddb5ed05a8543`
+passed required run `29160329032`: Backend Tests passed in 3m51s, Frontend
+Build passed in 3m15s and Docker Build passed in 1m05s. The Backend job
+explicitly passed the isolated admin integration suite, routing-policy
+PostgreSQL transition test and two-tenant budget-alert PostgreSQL test.
+
+PR #158 was squash-merged as
+`ca02ecb39abc24a6ce25d8c4926d72b11b612590`. Post-merge main run
+`29160494169` passed Backend Tests in 3m30s, Frontend Build in 3m12s and Docker
+Build in 57s, including both P6-F05 PostgreSQL gates. The historical branch is
+retained. The non-failing Actions Node-version annotation does not change test
+or build conclusions.
+
+## 8. Acceptance and boundary
+
+P6-F05 is CI verified / closed for the accepted repository scope. Neither CI
+run promotes it to target or production verification.
 
 No deployment, live config change, credential operation, provider call, dynamic
 policy service, migration, historical-setting deletion, target or production
-claim is made. Provider HTTP
-timeouts, stream/server timeouts, billing settlement retry and P6-F06 pricing
+claim is made. Provider HTTP timeouts, stream/server timeouts, billing
+settlement retry and P6-F06 pricing
 correctness remain separate contracts.

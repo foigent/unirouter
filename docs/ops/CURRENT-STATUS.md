@@ -43,8 +43,10 @@
 > `29158395734` passed all three jobs. P6-F04 passed PR #157 run `29158981445`,
 > was squash-merged as `36f736c0ca02f483b408c94350c8e5d1497b759e`, and
 > post-merge main run `29159155254` passed all three jobs. P6-F05 typed
-> routing and project-budget-alert configuration truth is Local verified;
-> required PR CI remains pending.
+> routing and project-budget-alert configuration truth passed PR #158 required
+> run `29160329032`, was squash-merged as `ca02ecb39abc24a6ce25d8c4926d72b11b612590`,
+> and post-merge main run `29160494169` passed all three jobs. P6-F05 is CI
+> verified / closed.
 > No target or production verification is claimed.
 > D6-01, D6-02, D6-08 and D6-09 were accepted by the User on 2026-07-11; advanced
 > innovation rows P6-F23 through P6-F31 remain proposed.
@@ -97,13 +99,14 @@
   `docs/ops/evidence/PRD6-B0C-P6F04-embeddings-failover-local-20260711.md`.
   PR #157 and post-merge main required CI passed; P6-F04 is CI verified /
   closed.
-- P6-F05 typed effective configuration and budget-alert local evidence:
+- P6-F05 typed effective configuration and budget-alert evidence:
   `docs/ops/evidence/PRD6-B0C-P6F05-routing-config-truth-local-20260711.md`.
   `effective-config.v1` contains the driving `routing-config.v1` plus the active
   project-scoped budget-alert contract. Safe trace and runtime API/UI expose
   effective values/sources; routing transitions and a two-tenant budget test
   pass against real PostgreSQL. The broken global first-wallet path is removed
-  and its historical keys are explicitly retired. Required PR CI remains pending.
+  and its historical keys are explicitly retired. PR #158 and post-merge main
+  required CI passed; P6-F05 is CI verified / closed.
 - Source-backed product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
 - PRD7 candidate-only split (not Accepted Scope):
@@ -117,9 +120,9 @@
 - Scope entry: `docs/planning/PRD6-START-HERE.md`.
 - Proposed PRD: `docs/PRD-Phase6.md`; accepted/proposed state is authoritative
   in `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`.
-- Accepted feature accounting after P6-F05 local verification: 25 accepted rows,
-  15 CI verified / closed, one Local verified pending CI (`P6-F05`) and 9 not
-  started (`P6-F06`-`P6-F11`, `P6-F19`-`P6-F21`).
+- Accepted feature accounting after P6-F05 closeout: 25 accepted rows,
+  16 CI verified / closed and 9 not started (`P6-F06`-`P6-F11`,
+  `P6-F19`-`P6-F21`).
   `P6-TEST-DB-001` is a separate engineering-integrity issue outside that
   25-row feature count; it is CI verified / closed by PR #155 and post-merge
   main run `29157561036`.
@@ -164,8 +167,8 @@ binaries and activate only the new version non-rolling because mixed old/new
 binaries are not safe for these endpoints. Other new-version instances learn a
 committed sensitive-word version through the existing approximately one-minute
 reload path. No global-settings UI was added. The typed configuration registry
-and budget/alert key-scope-audit truth are locally reconciled by P6-F05, pending
-required PR and post-merge CI; they are not retroactive P6-F35 claims.
+and budget/alert key-scope-audit truth are CI verified / closed by P6-F05; they
+are not retroactive P6-F35 claims.
 P6-F17 now supplies separate server/client correlation and tenant-scoped Audit
 readback for ambiguous responses; generic mutation replay and durable audit do
 not follow automatically.

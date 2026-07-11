@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F03/P6-F04 CI verified and P6-F05 locally verified pending CI; P6-F16-P6-F18/P6-F32-P6-F39 applicable rows merged and CI verified
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F03/P6-F04/P6-F05 CI verified / closed; P6-F16-P6-F18/P6-F32-P6-F39 applicable rows merged and CI verified
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -113,11 +113,12 @@ evidence.
 - P6-F17 and P6-F18 are CI verified / closed by PRs #149, #151 and #153;
   their post-merge main required runs passed. P6-TEST-DB-001 is separately CI
   verified / closed by PR #155, merge `4b18ace` and main run `29157561036`.
-- P6-F03/P6-F04 are CI verified / closed by PRs #156/#157 and their post-merge
-  main runs. P6-F05 is Local verified: `effective-config.v1` exposes the driving
+- P6-F03/P6-F04/P6-F05 are CI verified / closed by PRs #156/#157/#158 and their post-merge
+  main runs. `effective-config.v1` exposes the driving
   `routing-config.v1` and project-scoped budget-alert contract; routing state
   transitions and two-tenant budget scope pass against real PostgreSQL, and
-  ambiguous global alert keys are retired; required PR CI remains pending.
+  ambiguous global alert keys are retired. PR #158 merged as `ca02ecb`; main
+  run `29160494169` passed all required jobs.
 
 ## PRD5 Closure Guard
 
@@ -192,8 +193,7 @@ authorized activation must drain old control-plane binaries and be non-rolling,
 because mixed old/new binaries are not safe for these endpoints. New-version
 replicas converge committed global-word changes through the existing
 approximately one-minute reload. Typed config ownership plus the budget/alert
-key, scope and audit truth chain are locally reconciled by P6-F05 pending
-required CI; durable ambiguous-commit recovery
+key, scope and audit truth chain are CI verified / closed by P6-F05; durable ambiguous-commit recovery
 remains P6-F20 rather than being claimed by P6-F17 Scheme A.
 
 P6-F36 does not reopen P6-F16. It adds no migration, RLS/foreign-key redesign,

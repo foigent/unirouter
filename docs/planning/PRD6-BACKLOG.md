@@ -30,7 +30,7 @@
 | P6-AUTH-001 | Versioned user/project/key/role revocation | bounds stale authority across replicas | revocation SLO, cache and outage posture | P0 |
 | P6-ROUTE-002 | Retry classification and response preservation | prevents unsafe/expensive retry and misleading 502 | CI verified / closed by PR #156, merge `f6f075a` and post-merge main run `29158395734` | P0 |
 | P6-ROUTE-003 | Embeddings failover parity | removes endpoint reliability asymmetry | CI verified / closed by PR #157, merge `36f736c` and post-merge main run `29159155254` | P0 |
-| P6-CONFIG-001 | Typed effective routing and budget-alert truth | operator control, explainability and tenant-safe alert scope | Local verified: `effective-config.v1`, validated `routing-config.v1`, project-scoped alert contract, retired global keys, exact routing/budget PostgreSQL tests and API/UI readback; required PR CI pending | P0 |
+| P6-CONFIG-001 | Typed effective routing and budget-alert truth | operator control, explainability and tenant-safe alert scope | CI verified / closed by PR #158 / `ca02ecb` and post-merge main run `29160494169`; preserve `effective-config.v1`, routing/budget PostgreSQL gates and retired global-key behavior | P0 |
 | P6-BILL-002 | Multiplier-aware freeze/settle correctness | prevents uncollected cost | wallet/transaction semantics | P0 |
 | P6-CAP-001 | Short, attenuating Agent capability and ancestor budget | avoids shared-secret/per-child-key explosion and quota amplification | claim contract, key rotation, TTL/refresh, revocation | P1 |
 | P6-LIMIT-002 | Shared RPM/RPS/TPM/concurrency policy | enterprise isolation/capacity | failure-mode and output TPM semantics | P1 |
@@ -68,8 +68,8 @@ P6-F35 target execution remains deferred by D6-09. Any later activation must
 drain old control-plane binaries and be non-rolling because old binaries do not
 provide mixed-version safety. New-version replicas converge global-word changes
 through the existing approximately one-minute reload. The typed configuration
-registry and confirmed budget/alert key, scope and audit truth gaps are now
-locally reconciled by P6-F05, pending required PR and post-merge CI. P6-F17
+registry and confirmed budget/alert key, scope and audit truth gaps are CI
+verified / closed by P6-F05. P6-F17
 supplies separate operation/client correlation and
 tenant-scoped Audit readback; generic mutation replay and P6-F20 durability are
 not implied. No global-settings UI was added.
