@@ -226,22 +226,22 @@ export const api = {
     })),
   createModelRegistry: (data: any) =>
     request('/model-registry', { method: 'POST', body: JSON.stringify(data) }),
-  updateModelRegistry: (id: number, data: any) =>
-    request(`/model-registry/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  updateModelRegistry: (id: number, data: any, orgId?: number) =>
+    request(appendParams(`/model-registry/${id}`, { org_id: orgId }), { method: 'PUT', body: JSON.stringify(data) }),
   getModelAliases: (page = 1, pageSize = 20, filters?: { org_id?: number }) =>
     request(appendParams('/model-aliases', { page, page_size: pageSize, org_id: filters?.org_id })),
   createModelAlias: (data: any) =>
     request('/model-aliases', { method: 'POST', body: JSON.stringify(data) }),
-  updateModelAlias: (id: number, data: any) =>
-    request(`/model-aliases/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  updateModelAlias: (id: number, data: any, orgId?: number) =>
+    request(appendParams(`/model-aliases/${id}`, { org_id: orgId }), { method: 'PUT', body: JSON.stringify(data) }),
   getModelSets: (page = 1, pageSize = 20, filters?: { org_id?: number }) =>
     request(appendParams('/model-sets', { page, page_size: pageSize, org_id: filters?.org_id })),
   createModelSet: (data: any) =>
     request('/model-sets', { method: 'POST', body: JSON.stringify(data) }),
   getModelSetItems: (id: number, filters?: { org_id?: number }) =>
     request(appendParams(`/model-sets/${id}/items`, { org_id: filters?.org_id })),
-  replaceModelSetItems: (id: number, data: { items: { item_type: string; item_name: string }[] }) =>
-    request(`/model-sets/${id}/items`, { method: 'PUT', body: JSON.stringify(data) }),
+  replaceModelSetItems: (id: number, data: { items: { item_type: string; item_name: string }[] }, orgId?: number) =>
+    request(appendParams(`/model-sets/${id}/items`, { org_id: orgId }), { method: 'PUT', body: JSON.stringify(data) }),
 
   // Model prices
   getModelPrices: () => request('/model-prices'),

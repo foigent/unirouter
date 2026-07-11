@@ -345,6 +345,20 @@ describe('API Client', () => {
         body: JSON.stringify({ items: [{ item_type: 'alias', item_name: 'company-chat' }] }),
       }))
     })
+
+    it('preserves explicit platform organization selection on global-ID mutations', async () => {
+      mockJsonResponse({ success: true })
+      await api.updateModelRegistry(1, { lifecycle: 'deprecated' }, 9)
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/model-registry/1?org_id=9')
+
+      mockJsonResponse({ success: true })
+      await api.updateModelAlias(2, { status: 'disabled' }, 9)
+      expect(mockFetch.mock.calls[1][0]).toBe('/api/v1/model-aliases/2?org_id=9')
+
+      mockJsonResponse({ success: true })
+      await api.replaceModelSetItems(3, { items: [] }, 9)
+      expect(mockFetch.mock.calls[2][0]).toBe('/api/v1/model-sets/3/items?org_id=9')
+    })
   })
 
   describe('license APIs', () => {

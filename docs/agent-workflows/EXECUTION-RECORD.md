@@ -1,26 +1,53 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 0B P6-F35 Global-Control Authority
+**Batch:** PRD6 Batch 0B P6-F36 Model-Governance Tenant Isolation
 **Owner:** Codex
-**Risk:** R4 deployment-wide control and tenant-boundary integrity
-**Status:** PR #147 implementation-head CI verified; final docs exact-head CI/merge pending
-**Integration:** PR #147 / branch `codex/prd6-p6f35-global-controls`; no deployment, target or production claim
+**Risk:** R4 cross-tenant model-policy disclosure and mutation
+**Status:** PR #148 implementation head CI verified after local verification and independent review; no remaining blocker/high/medium/functional-low finding; final evidence-head CI and merge pending
+**Integration:** base `c08db96167837ade685708c2ab204861a8ecc0ca` / branch `codex/prd6-p6f36-modelgov-tenant`; no deployment, target or production claim
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Current Scope
 
-1. Restrict deployment settings, license material and the deployment-wide
-   sensitive-word list to platform authority at production route and handler
-   boundaries.
-2. Block generic-setting bypasses for `license.*` and `sensitive_words`, redact
-   secret/global-control values from generic reads and keep dedicated paths.
-3. Commit each control mutation and sanitized audit evidence in one transaction;
-   roll back the business write when audit fails.
-4. Serialize and strictly version global-word changes, fail startup closed on
-   missing/invalid policy and prevent stale/equal reload rollback.
-5. Preserve P6-F05/P6-F17, target activation and UI boundaries.
+1. Bind registry, alias and organization model-set list/create/global-ID
+   operations to the signed actor organization, with an explicit platform
+   exception and final SQL organization predicates.
+2. Derive project-catalog organization from the authorized project and ignore
+   malformed cross-organization assignments consistently with live admission.
+3. Commit model-set parent/items and item replacement plus audit atomically;
+   roll back the complete policy when audit fails.
+4. Preserve P6-F16 and existing unregistered-model and `/v1/models` product
+   behavior while making no migration, RLS or foreign-key expansion.
+5. Keep selector UI, target cleanup and all target/production claims outside
+   this repository batch.
 
-## Current P6-F35 Behavior Change
+## Current P6-F36 Behavior Change
+
+- tenant registry, alias and model-set list/create operations derive scope from
+  the signed identity, reject foreign/zero selection and remove organization-1
+  fallback;
+- global-ID mutations use both the resolved organization and row ID in final
+  SQL; implicit foreign/missing IDs are non-enumerating `404`, while explicit
+  foreign organization selection is `403`;
+- project catalog uses the authorized project's organization and ignores
+  malformed cross-organization assignments in catalog/effective-set queries;
+- model-set creation and item replacement are transactional, organization
+  scoped and audit-backed; an injected audit failure restores the complete
+  prior policy;
+- existing live model admission, unregistered-model compatibility and
+  `/v1/models` semantics remain unchanged;
+- full Go normal/race/vet, frontend 27-file/136-test/type-check/build, OpenAPI,
+  diff, migrated signed-JWT/PostgreSQL matrix and audit-trigger rollback checks
+  pass; independent review found no remaining blocker/high/medium/functional-low
+  finding after both Low observations and the `org_viewer` expectation were
+  corrected and targeted tests passed;
+- PR #148 implementation head `d69c0414d5543167cc4b89de50eaafef74ede5c0`
+  passed Backend Tests, Frontend Build and Docker Build in required CI run
+  `29140520863`; the backend log explicitly ran the P6-F36 integration,
+  production-guard registrar and main-registration tests, while the frontend log
+  reports 27 files / 136 tests and a successful production build.
+
+## Previous P6-F35 Behavior Change
 
 - all eight production global-control routes and their handlers require platform
   authority and fail closed without it;
@@ -35,7 +62,12 @@
   converge;
 - local full/race/vet, frontend 27-file/135-test/type-check/build, OpenAPI parse,
   migrated signed-JWT/PostgreSQL and failure-injection checks pass; independent
-  review reports no remaining blocker/high/medium.
+  review reports no remaining blocker/high/medium;
+- PR #147 final head `fb77083d0f04f5cdaa20f38e763c93b51b89f4d1`
+  passed all required jobs in run `29139408226`, was squash-merged as
+  `c08db96167837ade685708c2ab204861a8ecc0ca`, and post-merge main run
+  `29139534691` passed all required jobs; its historical branch is restored and
+  retained.
 
 ## Previous P6-F34 Behavior Change
 
@@ -128,6 +160,8 @@
   `docs/ops/evidence/PRD6-B0B-P6F34-pricing-authority-local-20260711.md`.
 - P6-F35 local evidence:
   `docs/ops/evidence/PRD6-B0B-P6F35-global-control-authority-local-20260711.md`.
+- P6-F36 local evidence:
+  `docs/ops/evidence/PRD6-B0B-P6F36-model-governance-tenant-isolation-local-20260711.md`.
 - Product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
 - PRD7 candidate queue:
@@ -140,15 +174,34 @@
   `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`,
   `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`, and
   `docs/planning/PRD6-BACKLOG.md`.
-- Current code/tests: production global-control route registration, independent
-  handler authority guards, reserved-key/redaction rules, atomic audited
-  settings/license/word mutations, strict word-policy versions, synchronous
-  startup load, stale-reload rejection and migrated signed-JWT/PostgreSQL
-  authority/failure/concurrency matrices.
+- Current code/tests: actor-organization registry/alias/model-set resolution,
+  project-canonical catalog scope, final SQL organization predicates,
+  transactional model-set/item audit rollback, frontend/OpenAPI contract and a
+  migrated signed-JWT/PostgreSQL authority/failure matrix.
 
 ## Verification
 
-Current P6-F35 results on `codex/prd6-p6f35-global-controls`:
+Current P6-F36 results on `codex/prd6-p6f36-modelgov-tenant`, based on
+`c08db96167837ade685708c2ab204861a8ecc0ca`:
+
+- migrated signed-JWT production-wrapper matrix across all eleven registry,
+  catalog, alias and model-set methods: PASS;
+- actor-organization query/body/global-ID negatives, final SQL predicates,
+  project-canonical catalog scope, platform exception and live-admission
+  non-regression: PASS;
+- real PostgreSQL audit-trigger rollback for model-set create and item replace:
+  PASS;
+- `go test ./... -count=1`, `go test -race ./... -count=1` and `go vet ./...`:
+  PASS; race linking retains the existing non-failing macOS warning;
+- frontend type-check, 27 files / 136 tests and production build: PASS; OpenAPI
+  YAML parse and `git diff --check`: PASS;
+- independent review: COMPLETE, with no remaining
+  blocker/high/medium/functional-low finding; both Low observations were fixed
+  and targeted tests passed;
+- PR #148 implementation-head required CI run `29140520863`: PASS;
+- final evidence-head required CI, merge and post-merge main CI: PENDING.
+
+Previous P6-F35 results on `codex/prd6-p6f35-global-controls`:
 
 - migrated signed-JWT production-route/handler role matrix, reserved-key bypass
   denial, redaction and denied-no-side-effect tests: PASS;
@@ -161,11 +214,13 @@ Current P6-F35 results on `codex/prd6-p6f35-global-controls`:
 - frontend type-check, 27 files / 135 tests and production build: PASS; OpenAPI
   YAML parse and route-role contract checks: PASS;
 - independent review: no remaining blocker/high/medium;
-- PR #147 implementation head `ab05712d62a7790c5fc5e90171b72ece65845e02`,
-  run `29139213794`: Backend Tests PASS in 1m28s, Frontend Build PASS in 3m7s
-  with 27 files / 135 tests, and Docker Build PASS in 58s; Backend logs
-  explicitly show the P6-F35 migrated, production-route and reload tests PASS;
-- final docs exact-head required CI, merge and post-merge main CI: PENDING.
+- PR #147 final head `fb77083d0f04f5cdaa20f38e763c93b51b89f4d1`,
+  run `29139408226`: Backend Tests PASS in 1m9s, Frontend Build PASS in 3m14s
+  with 27 files / 135 tests, and Docker Build PASS in 1m4s;
+- PR #147 squash-merged as `c08db96167837ade685708c2ab204861a8ecc0ca`;
+  post-merge main run `29139534691` passed Backend Tests in 1m38s, Frontend
+  Build in 3m10s and Docker Build in 1m1s; historical branch restored and
+  retained.
 
 Previous P6-F34 results on `codex/prd6-p6f34-price-authority`:
 
@@ -315,11 +370,15 @@ PR #139 required checks for final scalability-audit evidence head `6c8c192`:
 - `Frontend Build`: PASS;
 - `Docker Build`: PASS.
 
-P6-F01, P6-F02, P6-F16, P6-F32, P6-F33, P6-F34, P6-F37, P6-F38 and P6-F39 are
-merged and `CI verified`. D6-08 accepts P6-F32-P6-F36. P6-F35 is `CI verified`
-by PR #147 implementation head/run `29139213794`, with final docs exact-head
-CI/merge pending; P6-F36 remains unremediated. No
-documentation or local test promotes a row to target or production verified.
+P6-F01, P6-F02, P6-F16, P6-F32, P6-F33, P6-F34, P6-F35, P6-F37, P6-F38 and
+P6-F39 are merged and `CI verified`. D6-08 accepts P6-F32-P6-F36. P6-F35 was
+squash-merged by PR #147 as `c08db96167837ade685708c2ab204861a8ecc0ca`, and
+post-merge main run `29139534691` passed all required jobs. P6-F36 PR #148
+implementation head `d69c041` passed required CI run `29140520863` after local
+verification and independent review, with no remaining
+blocker/high/medium/functional-low finding; final evidence-head CI and merge
+remain pending. No documentation or local test promotes a row to target or
+production verified.
 
 P6-F35 target activation is deferred by D6-09. A later authorized run must
 drain old control-plane binaries before a non-rolling activation of only the new
@@ -328,6 +387,10 @@ converge a committed sensitive-word version through the existing approximately
 one-minute reload. This batch adds no global-settings UI. Typed configuration
 ownership and the budget/alert key, scope and audit truth chain remain P6-F05/
 P6-F17; ambiguous network commit readback/idempotency remains P6-F17.
+
+P6-F36 preserves P6-F16 and does not add a migration, RLS, composite/alias
+foreign keys, a platform selector UI or target cleanup. Unregistered-model
+compatibility and `/v1/models` semantics are unchanged.
 
 No deployment, target mutation/probe, real or paid request, credential change,
 exporter/outbox, deletion or expanded data exchange occurred. Migration down,

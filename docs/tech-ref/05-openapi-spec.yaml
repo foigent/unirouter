@@ -452,27 +452,95 @@ paths:
     get: { $ref: "#/components/pathItems/Get" }
 
   /api/v1/model-registry:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+      post: [platform_admin, org_admin]
+    description: |
+      Organization-scoped model registry. Organization administrators always use the
+      organization in their JWT; a foreign org_id query or request-body value returns
+      403, and a missing/zero JWT organization fails closed. Platform administrators
+      (including the normalized legacy admin role) may explicitly select a positive
+      org_id; otherwise their positive JWT organization is used. No organization is
+      selected by database order or a hard-coded fallback.
     get: { $ref: "#/components/pathItems/List" }
     post: { $ref: "#/components/pathItems/Create" }
 
   /api/v1/model-registry/{id}:
+    x-unirouter-rbac:
+      put: [platform_admin, org_admin]
+    description: |
+      Organization-scoped global-ID mutation. Organization administrators are bound to
+      their JWT organization; a foreign org_id query returns 403, while a foreign or
+      nonexistent record ID returns 404 without revealing which case occurred. A
+      platform administrator (including normalized legacy admin) may select org_id in
+      the query; when omitted, the existing record supplies the explicit target
+      organization. A missing/zero tenant JWT organization fails closed.
     put: { $ref: "#/components/pathItems/UpdateById" }
 
   /api/v1/model-catalog:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, project_admin, developer, viewer]
+    description: |
+      Organization-scoped approved catalog. Organization administrators are bound to
+      their JWT organization and platform administrators (including normalized legacy
+      admin) may explicitly select org_id. When project_id is present, the project's
+      organization is canonical and any explicit org_id mismatch is rejected. Project-
+      scoped roles must provide project_id and have membership in that project. Foreign
+      organization selection returns 403; missing/zero tenant organization fails closed.
     get: { $ref: "#/components/pathItems/List" }
 
   /api/v1/model-aliases:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+      post: [platform_admin, org_admin]
+    description: |
+      Organization-scoped model aliases. Organization administrators always use their
+      JWT organization; a foreign org_id query or request-body value returns 403, and a
+      missing/zero JWT organization fails closed. Platform administrators (including
+      normalized legacy admin) may explicitly select a positive org_id; otherwise their
+      positive JWT organization is used. No implicit organization fallback is used.
     get: { $ref: "#/components/pathItems/List" }
     post: { $ref: "#/components/pathItems/Create" }
 
   /api/v1/model-aliases/{id}:
+    x-unirouter-rbac:
+      put: [platform_admin, org_admin]
+    description: |
+      Organization-scoped global-ID mutation. Organization administrators are bound to
+      their JWT organization; a foreign org_id query returns 403, while a foreign or
+      nonexistent record ID returns 404 without revealing which case occurred. A
+      platform administrator (including normalized legacy admin) may select org_id in
+      the query; when omitted, the existing record supplies the explicit target
+      organization. A missing/zero tenant JWT organization fails closed.
     put: { $ref: "#/components/pathItems/UpdateById" }
 
   /api/v1/model-sets:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+      post: [platform_admin, org_admin]
+    description: |
+      Organization-scoped model sets. Organization administrators always use their JWT
+      organization; a foreign org_id query or request-body value returns 403, and a
+      missing/zero JWT organization fails closed. Platform administrators (including
+      normalized legacy admin) may explicitly select a positive org_id; otherwise their
+      positive JWT organization is used. Creating a set and all of its initial items is
+      one transaction: either the whole model set is committed or none of it is.
     get: { $ref: "#/components/pathItems/List" }
     post: { $ref: "#/components/pathItems/Create" }
 
   /api/v1/model-sets/{id}/items:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+      put: [platform_admin, org_admin]
+    description: |
+      Organization-scoped global-ID access. Organization administrators are bound to
+      their JWT organization; a foreign org_id query returns 403, while a foreign or
+      nonexistent set ID returns 404 without revealing which case occurred. A platform
+      administrator (including normalized legacy admin) may select org_id in the query;
+      when omitted, the existing model set supplies the explicit target organization.
+      Replacing items is atomic: readers see either the old complete set or the new
+      complete set, never a partial replacement. Missing/zero tenant JWT organization
+      fails closed.
     get: { $ref: "#/components/pathItems/ListById" }
     put: { $ref: "#/components/pathItems/UpdateById" }
 

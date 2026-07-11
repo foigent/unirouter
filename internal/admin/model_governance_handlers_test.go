@@ -21,6 +21,7 @@ func TestCreateModelRegistry_InvalidLifecycle(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/model-registry", strings.NewReader(`{"org_id":1,"model_name":"gpt-4o","lifecycle":"live"}`))
 	req.Header.Set("Content-Type", "application/json")
+	req = platformModelGovernanceRequest(req)
 	rec := httptest.NewRecorder()
 
 	h.CreateModelRegistry(rec, req)
@@ -125,6 +126,7 @@ func TestListApprovedModelCatalog_FiltersApprovedLifecycle(t *testing.T) {
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest(http.MethodGet, "/model-catalog?org_id=1", nil)
+	req = platformModelGovernanceRequest(req)
 	rec := httptest.NewRecorder()
 
 	h.ListApprovedModelCatalog(rec, req)
@@ -164,6 +166,7 @@ func TestCreateModelSet_InvalidItem(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/model-sets", strings.NewReader(`{"org_id":1,"name":"Chat","items":[{"item_type":"provider","item_name":"gpt-4o"}]}`))
 	req.Header.Set("Content-Type", "application/json")
+	req = platformModelGovernanceRequest(req)
 	rec := httptest.NewRecorder()
 
 	h.CreateModelSet(rec, req)
@@ -175,6 +178,12 @@ func TestCreateModelSet_InvalidItem(t *testing.T) {
 
 func TestListModelSetItems_ReturnsOrgScopedItems(t *testing.T) {
 	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int64) = 1
+				return nil
+			}}
+		},
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			if !strings.Contains(sql, "JOIN model_sets ms") || !strings.Contains(sql, "ms.org_id = $2") {
 				t.Fatalf("expected org-scoped model set item query, got %s", sql)
@@ -197,6 +206,7 @@ func TestListModelSetItems_ReturnsOrgScopedItems(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/model-sets/10/items?org_id=1", nil)
 	req.SetPathValue("id", "10")
+	req = platformModelGovernanceRequest(req)
 	rec := httptest.NewRecorder()
 
 	h.ListModelSetItems(rec, req)
@@ -212,4 +222,11 @@ func TestListModelSetItems_ReturnsOrgScopedItems(t *testing.T) {
 	if len(items) != 1 || items[0].(map[string]interface{})["item_name"] != "company-chat" {
 		t.Fatalf("unexpected items: %#v", resp["data"])
 	}
+}
+
+func platformModelGovernanceRequest(req *http.Request) *http.Request {
+	ctx := context.WithValue(req.Context(), middleware.CtxUserID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxOrgID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxUserRole, auth.RolePlatformAdmin)
+	return req.WithContext(ctx)
 }
