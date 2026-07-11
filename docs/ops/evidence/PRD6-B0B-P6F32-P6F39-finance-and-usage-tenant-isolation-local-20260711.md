@@ -3,7 +3,7 @@
 > Date: 2026-07-11
 > Base: `2494bf3b31d8b9c66f74f31e7c0da803ee1cbb3c`
 > Branch: `codex/prd6-p6f32-finance-tenant`
-> Evidence level: Local verified; required CI pending; no deployment is claimed
+> Evidence level: CI verified by PR #145 implementation head `3ee6a41`; merge pending; no deployment is claimed
 
 ## Confirmed Pre-Fix Findings
 
@@ -109,9 +109,11 @@ git diff --check
 Results: the migrated signed-JWT matrix, all backend packages, race detector and
 vet pass; the frontend suite passes 26 files / 128 tests; type-check and the
 production build pass. The build retains the existing chunk-size warning. The
-macOS race link step emits a non-failing `LC_DYSYMTAB` warning. Required
-`Backend Tests`, `Frontend Build` and `Docker Build` remain the promotion gate
-for the exact PR head.
+macOS race link step emits a non-failing `LC_DYSYMTAB` warning. PR #145
+implementation head `3ee6a41048ae143ce887a0c755a8602f6f786a40` passed
+`Backend Tests`, `Frontend Build` (including 26 files / 128 tests) and `Docker
+Build` in required CI run `29135964946`. The final documentation-only head
+remains subject to the same required checks before merge.
 
 The full legacy `-tags=integration` admin suite is not used as green evidence:
 its `SetupTestDB` path depends on a separately pre-provisioned shared schema and
@@ -136,5 +138,5 @@ environment-coupled full-suite defect is tracked separately as
 - project-scoped roles are tenant confined but the dashboard's organization-
   versus project-granularity policy is still a separate permission decision.
 - no migration, target cutover, target evidence, deployment or production
-  verification was performed. This document supports `Local verified` only
-  until required CI passes.
+  verification was performed. PR CI does not promote this row to Target or
+  Production verified.

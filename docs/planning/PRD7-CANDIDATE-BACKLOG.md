@@ -38,7 +38,7 @@ PRD7 实现必须等 PRD6 闭环后再以独立 PRD7、acceptance row、分支�
 
 | 领域 | PRD6 工作 | 价值 | 主要依赖/风险 | 优先级 | 最低验收证据 |
 |------|-----------|------|---------------|--------|--------------|
-| 租户与管理员边界 | 完成 P6-F32—P6-F39；当前 F33/F37/F38 已 CI verified，F32/F39 已 Local verified 待 CI，F34—F36 仍待修复 | 防止跨租户读写、财务影响和证据泄漏 | 历史数据归属、platform exception、迁移回滚 | P0 | 两租户签名 JWT 矩阵；跨租户无副作用；迁移 up/down（适用时）；CI |
+| 租户与管理员边界 | 完成 P6-F32—P6-F39；当前 F32/F33/F37/F38/F39 已 CI verified（F32/F39 待 PR #145 合并），F34—F36 仍待修复 | 防止跨租户读写、财务影响和证据泄漏 | 历史数据归属、platform exception、迁移回滚 | P0 | 两租户签名 JWT 矩阵；跨租户无副作用；迁移 up/down（适用时）；CI |
 | 财务正确性 | P6-F18、P6-F06，以及钱包冻结/可用余额/结算显示语义一致 | 防止重复扣减、漏收、已输出但未结算 | 热钱包行、崩溃恢复、价格/倍率版本 | P0 | 并发单终态、pool-size barrier、故障恢复、账本守恒和 UI/API 一致性 |
 | 链路身份 | P6-F17：拆分 operation、client idempotency、trace/span、workflow、Agent、attempt 和 upstream identity | 同一业务调用可跨 retry/failover/billing/audit 追查，又不把外部 ID 当财务主键 | 兼容旧 request_id、跨租户碰撞、索引迁移 | P0 | replay/409/collision 负例；100 子 Agent；retry/failover attempt 证据；迁移 |
 | 路由正确性 | P6-F03—P6-F05：错误分类、Embeddings parity、有效配置真值 | 避免错误重试、隐藏硬编码和端点可靠性不一致 | provider 差异、响应已开始后的 retry | P0 | provider 错误矩阵；有界 retry；Chat/Embeddings parity；配置版本证据 |

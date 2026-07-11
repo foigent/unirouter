@@ -3,8 +3,8 @@
 **Batch:** PRD6 Batch 0B P6-F32/P6-F39 Finance And Usage Tenant Isolation
 **Owner:** Codex
 **Risk:** R4 multi-tenant financial integrity and usage confidentiality
-**Status:** Local verified; required PR CI pending
-**Integration:** branch `codex/prd6-p6f32-finance-tenant`; no PR or deployment claimed yet
+**Status:** CI verified by PR #145 implementation head; merge pending
+**Integration:** PR #145 / branch `codex/prd6-p6f32-finance-tenant`; no deployment claimed
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Scope
@@ -122,7 +122,9 @@ Current P6-F32/P6-F39 results on `codex/prd6-p6f32-finance-tenant`:
 - frontend type-check, 26 files / 128 tests, and production build: PASS; the
   existing large-chunk warning remains;
 - `git diff --check`: PASS;
-- required PR `Backend Tests`, `Frontend Build` and `Docker Build`: pending.
+- PR #145 implementation head `3ee6a41`, run `29135964946`: `Backend Tests`,
+  `Frontend Build` and `Docker Build` PASS; final documentation-only head must
+  pass the same checks before merge.
 - the full legacy tagged admin suite still depends on a separately provisioned
   shared schema and has unrelated stale-schema failures; tracked as
   `P6-TEST-DB-001`, not represented as green.
@@ -245,7 +247,7 @@ PR #139 required checks for final scalability-audit evidence head `6c8c192`:
 
 P6-F01, P6-F02, P6-F16, P6-F33, P6-F37 and P6-F38 are `CI verified`. D6-08
 accepts P6-F32-P6-F36. P6-F32 and adjacent safe-remediation row P6-F39 are
-`Local verified` pending required CI; P6-F34-P6-F36 remain unremediated. No
+`CI verified` by PR #145 with merge pending; P6-F34-P6-F36 remain unremediated. No
 documentation or local test promotes a row to target verified.
 
 No deployment, target mutation/probe, real or paid request, credential change,

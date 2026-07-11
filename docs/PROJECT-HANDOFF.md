@@ -60,7 +60,7 @@ P6-F16 tenant-integrity security boundary, which is CI verified and merged by
 PR #140 as `f244f669`. D6-08 separately accepts the later P6-F32-P6-F36
 finance, notification, pricing, global-control and model-governance inputs;
 P6-F33 is CI verified by PR #142 / `7173c59`; P6-F32 and adjacent P6-F39 are
-Local verified pending required CI, while P6-F34-P6-F36 remain unremediated.
+CI verified by PR #145 with merge pending, while P6-F34-P6-F36 remain unremediated.
 P6-F37 audit-log tenant isolation and P6-F38 frontend test
 enforcement are merged and CI verified by PR #143 / `a1e0ad6` under the safe
 remediation rule. The
@@ -131,7 +131,7 @@ Current execution has completed PRD6 Batch 0B P6-F16 through PR #140 /
 X-Insight tests passed before implementation; Batch 0A is merged and CI
 verified. D6-01/D6-02/D6-08/D6-09 are accepted; P6-F16 and P6-F33 are CI verified
 and merged. P6-F37/P6-F38 are merged and CI verified by PR #143 / `a1e0ad6`,
-P6-F32/P6-F39 are Local verified pending required CI, and P6-F34-P6-F36 remain
+P6-F32/P6-F39 are CI verified by PR #145 with merge pending, and P6-F34-P6-F36 remain
 unremediated. PRD7/target evidence are explicitly later; historical branches
 remain retained. No new item is target verified.
 Current details and promotion gates are in

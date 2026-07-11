@@ -16,7 +16,7 @@
 | `docs/ops/evidence/PRD6-B0B-P6F33-notification-tenant-isolation-local-20260711.md` | P6-F33 notification/Webhook patch, local regression and CI-promotion evidence; target cutover remains separate |
 | `docs/ops/evidence/PRD6-B0B-P6F37-audit-log-tenant-isolation-local-20260711.md` | P6-F37 audit-log tenant predicate and migrated two-tenant JWT evidence |
 | `docs/ops/evidence/PRD6-B0B-P6F38-frontend-test-ci-local-20260711.md` | P6-F38 frontend test timing and required-CI enforcement evidence |
-| `docs/ops/evidence/PRD6-B0B-P6F32-P6F39-finance-and-usage-tenant-isolation-local-20260711.md` | P6-F32/P6-F39 finance, request-log and usage-derived tenant-isolation evidence; required CI pending |
+| `docs/ops/evidence/PRD6-B0B-P6F32-P6F39-finance-and-usage-tenant-isolation-local-20260711.md` | P6-F32/P6-F39 finance, request-log and usage-derived tenant-isolation evidence; PR #145 CI verified, merge pending |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | Source-backed audit/reconciliation/correlation/UI/architecture/upgrade findings, Four Quadrants and PRD6 batches |
 | `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | PRD7 candidate split; first future direction selected, all implementation deferred until PRD6 closeout |
 | `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md` | Version-fixed competitor audit, Four Quadrants and priority matrix |
@@ -138,7 +138,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | `docs/ops/evidence/PRD6-B0B-P6F33-notification-tenant-isolation-local-20260711.md` | Current P6-F33 local plus PR/post-merge CI evidence; target cutover not executed |
 | `docs/ops/evidence/PRD6-B0B-P6F37-audit-log-tenant-isolation-local-20260711.md` | P6-F37 local and CI evidence; PR #143 and post-merge required CI passed |
 | `docs/ops/evidence/PRD6-B0B-P6F38-frontend-test-ci-local-20260711.md` | P6-F38 local and CI evidence; PR #143 proves Vitest executes in required CI |
-| `docs/ops/evidence/PRD6-B0B-P6F32-P6F39-finance-and-usage-tenant-isolation-local-20260711.md` | Current P6-F32/P6-F39 Local verified evidence; exact-head required CI pending |
+| `docs/ops/evidence/PRD6-B0B-P6F32-P6F39-finance-and-usage-tenant-isolation-local-20260711.md` | Current P6-F32/P6-F39 local plus PR #145 required-CI evidence; merge pending |
 | `docs/planning/PRD5-CURRENT-GAP-AUDIT-20260710.md` | PRD5 closeout accounting and historical next-window input |
 | `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md` | PRD5 Batch 1X local repository audit, P5-F12 screening decisions, safe local Logs/CI fixes, and INFRA-SEC-001 plan |
 | `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md` | PRD5 Batch 1Y accepted UniRouter-owned implementation and local full verification |

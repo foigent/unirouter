@@ -9,8 +9,8 @@
 > squash-merged by PR #143 as `a1e0ad61ed44f02f32317131a1920a6181e43645`;
 > post-merge main CI run `29133690338` passed all three jobs.
 > P6-F32 finance/reconciliation and adjacent P6-F39 usage-derived tenant
-> isolation are Local verified on `codex/prd6-p6f32-finance-tenant`; required
-> CI is pending and no deployment is claimed.
+> isolation are CI verified by PR #145 implementation head `3ee6a41`; merge is
+> pending and no deployment is claimed.
 > D6-01, D6-02, D6-08 and D6-09 were accepted by the User on 2026-07-11; advanced
 > innovation rows P6-F23 through P6-F31 remain proposed.
 
@@ -75,8 +75,8 @@ later read-only audit found P6-F32 through P6-F36 across finance, notifications,
 pricing, global settings and organization model governance. D6-08 separately
 accepted those rows with tenant roles confined to their JWT organization and
 platform-only global/multiplier authority. P6-F33/P6-F37/P6-F38 are merged and
-CI verified. P6-F32 and adjacent safe-remediation row P6-F39 are Local verified
-pending required CI; P6-F34-P6-F36 remain unremediated. No audit row is
+CI verified. P6-F32 and adjacent safe-remediation row P6-F39 are CI verified by
+PR #145 with merge pending; P6-F34-P6-F36 remain unremediated. No audit row is
 presented as a production
 incident, 100x proof, or implemented remediation before its exact evidence
 exists.
