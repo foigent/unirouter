@@ -3,7 +3,7 @@
 > Date: 2026-07-11
 > Scope: UniRouter Chat provider retry/failover correctness
 > Risk: R3 request routing and billing behavior
-> Evidence level: Local verified; required PR CI pending
+> Evidence level: CI verified / closed
 > Deployment/target/production claim: none
 
 ## 1. Confirmed pre-change defect
@@ -114,9 +114,11 @@ reserved for the required `Docker Build` job rather than inferred.
 
 ## 5. Acceptance and remaining boundary
 
-P6-F03 is Local verified. It can advance to CI verified / closed only after the
-exact PR head passes Backend Tests, Frontend Build and Docker Build, is merged,
-and post-merge `main` required CI passes.
+PR #156 implementation head `34e916ee7efb09d98103d86ba36634cfd083f080`
+passed Backend Tests, Frontend Build and Docker Build in required run
+`29158184240`. It was squash-merged as
+`f6f075aa4333f2b81f888f3505c2c2b44e77c449`; post-merge main run
+`29158395734` passed the same three jobs. P6-F03 is CI verified / closed.
 
 This evidence does not close P6-F04 Embeddings failover parity, P6-F05 effective
 configuration truth, P6-F06 multiplier under-freeze delta, any later Batch 0C
