@@ -986,28 +986,14 @@ func TestRecordRequest_DBError(t *testing.T) {
 	relay.recordRequest(context.Background(), "req-001", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, 123, 0, false, metering.UsageSourceUpstream, 180, "")
 }
 
-// --- checkBudgetAlert tests ---
+// --- checkProjectBudgetAlert tests ---
 
-func TestCheckBudgetAlert_NilAlertSvc(t *testing.T) {
+func TestCheckProjectBudgetAlert_NilEventService(t *testing.T) {
 	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{})
-	relay.alertSvc = nil
+	relay.eventSvc = nil
 
 	// Should not panic
-	relay.checkBudgetAlert(context.Background())
-}
-
-// --- SetAlertService tests ---
-
-func TestSetAlertService(t *testing.T) {
-	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{})
-	relay.SetAlertService(nil, "https://webhook.example.com", 5000)
-
-	if relay.webhookURL != "https://webhook.example.com" {
-		t.Fatalf("expected webhookURL, got %s", relay.webhookURL)
-	}
-	if relay.alertThresh != 5000 {
-		t.Fatalf("expected alertThresh=5000, got %d", relay.alertThresh)
-	}
+	relay.checkProjectBudgetAlert(context.Background())
 }
 
 func TestSetTraceEvents(t *testing.T) {

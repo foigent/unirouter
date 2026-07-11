@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F03 is CI verified and P6-F04 is locally verified pending CI; 10 accepted feature rows remain not started
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F03/P6-F04 are CI verified and P6-F05 is locally verified pending CI; 9 accepted feature rows remain not started
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -30,10 +30,10 @@ required CI. No scope decision grants target/deployment/data/cost authorization.
 
 - 39 total `P6-F*` rows exist in the acceptance matrix;
 - 25 are accepted implementation scope;
-- 14 are CI verified / closed: P6-F01 through P6-F03, P6-F16, P6-F17, P6-F18
+- 15 are CI verified / closed: P6-F01 through P6-F04, P6-F16, P6-F17, P6-F18
   and P6-F32 through P6-F39;
-- P6-F04 is Local verified pending required PR CI; 10 accepted rows remain not
-  started: P6-F05 through P6-F11 and P6-F19 through P6-F21;
+- P6-F05 is Local verified pending required PR CI; 9 accepted rows remain not
+  started: P6-F06 through P6-F11 and P6-F19 through P6-F21;
 - 14 rows are not accepted: P6-F12 through P6-F15 and P6-F22 through P6-F31;
 - `P6-TEST-DB-001` is a separate accepted engineering-integrity issue outside
   the feature-row count. PR #155, merge `4b18ace` and post-merge main run
@@ -162,7 +162,8 @@ activation later; that cutover must drain old control-plane binaries before a
 non-rolling new-version activation because old binaries are not mixed-version
 safe. Other new-version instances converge global-word changes through the
 existing approximately one-minute reload. Typed configuration ownership and
-the budget/alert key, scope and audit truth chain remain P6-F05. P6-F17 supplies
+the budget/alert key, scope and audit truth chain are locally reconciled by
+P6-F05, pending required PR and post-merge CI. P6-F17 supplies
 separate operation/client correlation and tenant-scoped Audit readback for an
 ambiguous response, but does not make every mutation replayable or durable.
 
@@ -173,9 +174,9 @@ add a migration, RLS/composite/alias foreign keys, change unregistered-model or
 ### Batch 0C — Retry, Endpoint Parity, Config And Billing Truth
 
 **Risk:** R3 request/billing behavior.
-**Status:** accepted by D6-01; item 1 P6-F03 is CI verified / closed and item 2
-P6-F04 is Local verified pending required CI; deliver each independently
-reviewable item through its own branch/PR.
+**Status:** accepted by D6-01; items 1-2 P6-F03/P6-F04 are CI verified / closed
+and item 3 P6-F05 is Local verified pending required CI; deliver each
+independently reviewable item through its own branch/PR.
 
 Order within the batch:
 
@@ -189,7 +190,8 @@ Order within the batch:
 5. handle stream Scanner errors, response-body lifetime, single-writer/flush and
    timeout semantics safely;
 6. preserve the P6-F35 strict-version sensitive-word reload regression while
-   completing the remaining typed configuration and budget/alert truth work.
+   verifying the locally completed typed configuration and budget/alert truth
+   work in required CI.
 
 Each item may be split into its own R3 PR if the diff ceases to be independently
 reviewable.

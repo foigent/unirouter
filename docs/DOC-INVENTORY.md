@@ -23,6 +23,7 @@
 | `docs/ops/evidence/PRD6-ENG-P6TESTDB-admin-integration-isolation-local-20260711.md` | P6-TEST-DB-001 stale shared-schema reproduction, isolated migrated admin suite and required-CI gate evidence |
 | `docs/ops/evidence/PRD6-B0C-P6F03-retry-classification-local-20260711.md` | P6-F03 retry classification, safe response, failover, billing and trace evidence |
 | `docs/ops/evidence/PRD6-B0C-P6F04-embeddings-failover-local-20260711.md` | P6-F04 Embeddings bounded failover, billing, trace and malformed-response evidence |
+| `docs/ops/evidence/PRD6-B0C-P6F05-routing-config-truth-local-20260711.md` | P6-F05 typed effective routing plus project budget-alert contract and PostgreSQL transition/scope evidence |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | Source-backed audit/reconciliation/correlation/UI/architecture/upgrade findings, Four Quadrants and PRD6 batches |
 | `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | PRD7 candidate split; first future direction selected, all implementation deferred until PRD6 closeout |
 | `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` | Accepted future Cache Service direction, service boundary, capacity planning triggers, SaaS cell reuse and non-authorization guardrails |
@@ -152,7 +153,8 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | `docs/ops/evidence/PRD6-B0B-P6F18B-stream-settlement-recovery-local-20260711.md` | Current P6-F18B local and CI evidence; P6-F20 and target/production claims remain separate |
 | `docs/ops/evidence/PRD6-ENG-P6TESTDB-admin-integration-isolation-local-20260711.md` | Current P6-TEST-DB-001 isolated migrated admin-suite and required-CI evidence |
 | `docs/ops/evidence/PRD6-B0C-P6F03-retry-classification-local-20260711.md` | Current P6-F03 local and CI retry-classification and billing/trace invariant evidence |
-| `docs/ops/evidence/PRD6-B0C-P6F04-embeddings-failover-local-20260711.md` | Current P6-F04 local Embeddings multi-route/final-attempt evidence; required CI pending |
+| `docs/ops/evidence/PRD6-B0C-P6F04-embeddings-failover-local-20260711.md` | Current P6-F04 local and CI Embeddings multi-route/final-attempt evidence |
+| `docs/ops/evidence/PRD6-B0C-P6F05-routing-config-truth-local-20260711.md` | Current P6-F05 local effective configuration, retired global alert keys, project budget scope, API/UI/trace and PostgreSQL evidence; required CI pending |
 | `docs/planning/PRD5-CURRENT-GAP-AUDIT-20260710.md` | PRD5 closeout accounting and historical next-window input |
 | `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md` | PRD5 Batch 1X local repository audit, P5-F12 screening decisions, safe local Logs/CI fixes, and INFRA-SEC-001 plan |
 | `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md` | PRD5 Batch 1Y accepted UniRouter-owned implementation and local full verification |

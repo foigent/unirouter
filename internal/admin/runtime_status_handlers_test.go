@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/uniroute/unirouter/internal/routingpolicy"
+	"github.com/uniroute/unirouter/internal/runtimeconfig"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
@@ -65,14 +67,27 @@ func TestRuntimeStatus_ReturnsRuntimeHealthAndHostTelemetry(t *testing.T) {
 		},
 	}
 	h := NewHandler(db, "jwt-secret", []byte("0123456789abcdef01234567"), nil)
+	policy := routingpolicy.Default()
+	policy.MaxRetryCount = 4
+	policy.CircuitBreakerThreshold = 7
+	policy.CircuitBreakerRecoverSeconds = 90
+	policy.CircuitBreakerHalfOpenPct = 25
+	policy.RateLimitCooldownSeconds = 45
+	policy.AuthFailureCooldownSeconds = 1800
+	policy.KeyFailureThreshold = 6
+	effectiveConfig, err := runtimeconfig.New(policy)
+	if err != nil {
+		t.Fatalf("build effective config: %v", err)
+	}
 	h.SetRuntimeStatusOptions(RuntimeStatusOptions{
-		Environment:    "staging",
-		DeploymentMode: "docker-compose",
-		DeploymentRole: "canary",
-		Version:        "2026.07.07",
-		Commit:         "abc1234",
-		PrometheusURL:  prometheus.URL,
-		GrafanaURL:     grafana.URL,
+		Environment:     "staging",
+		DeploymentMode:  "docker-compose",
+		DeploymentRole:  "canary",
+		Version:         "2026.07.07",
+		Commit:          "abc1234",
+		PrometheusURL:   prometheus.URL,
+		GrafanaURL:      grafana.URL,
+		EffectiveConfig: effectiveConfig,
 	})
 	cpuUsage := 0.25
 	diskUsage := 0.70
@@ -120,6 +135,19 @@ func TestRuntimeStatus_ReturnsRuntimeHealthAndHostTelemetry(t *testing.T) {
 	}
 	if resp.RuntimeEnvironment.Environment != "staging" || resp.RuntimeEnvironment.DeploymentRole != "canary" {
 		t.Fatalf("unexpected runtime environment: %#v", resp.RuntimeEnvironment)
+	}
+	if resp.EffectiveConfiguration.Version != runtimeconfig.Version ||
+		resp.EffectiveConfiguration.RoutingPolicy.Version != routingpolicy.Version || resp.EffectiveConfiguration.RoutingPolicy.Source != "startup_environment" ||
+		resp.EffectiveConfiguration.RoutingPolicy.MaxRetryCount != 4 || resp.EffectiveConfiguration.RoutingPolicy.CircuitBreakerThreshold != 7 ||
+		resp.EffectiveConfiguration.RoutingPolicy.CircuitBreakerRecoverSeconds != 90 || resp.EffectiveConfiguration.RoutingPolicy.CircuitBreakerHalfOpenPct != 25 ||
+		resp.EffectiveConfiguration.RoutingPolicy.RateLimitCooldownSeconds != 45 || resp.EffectiveConfiguration.RoutingPolicy.AuthFailureCooldownSeconds != 1800 ||
+		resp.EffectiveConfiguration.RoutingPolicy.KeyFailureThreshold != 6 {
+		t.Fatalf("unexpected effective routing policy: %#v", resp.EffectiveConfiguration.RoutingPolicy)
+	}
+	if resp.EffectiveConfiguration.BudgetAlerts.Version != runtimeconfig.BudgetAlertPolicyVersion ||
+		resp.EffectiveConfiguration.BudgetAlerts.Scope != "project" ||
+		resp.EffectiveConfiguration.BudgetAlerts.LegacyGlobalSettingsActive {
+		t.Fatalf("unexpected effective budget alert policy: %#v", resp.EffectiveConfiguration.BudgetAlerts)
 	}
 	if resp.CapacityHealth.Database.Status != "connected" {
 		t.Fatalf("expected database connected, got %#v", resp.CapacityHealth.Database)

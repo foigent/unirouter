@@ -3,7 +3,7 @@
 > Date: 2026-07-11
 > Scope: UniRouter Embeddings route/failover, billing and trace parity
 > Risk: R3 request routing and billing behavior
-> Evidence level: Local verified; required PR CI pending
+> Evidence level: CI verified / closed
 > Deployment/target/production claim: none
 
 ## 1. Confirmed pre-change behavior
@@ -123,9 +123,11 @@ in the local shell; required CI remains the Docker evidence source.
 
 ## 5. Acceptance and remaining boundary
 
-P6-F04 is Local verified. It can advance to CI verified / closed only after the
-exact PR head passes Backend Tests, Frontend Build and Docker Build, is merged,
-and post-merge `main` required CI passes.
+PR #157 implementation head `b6564ab2f410099d02f0ed73c3dff3826500b648`
+passed Backend Tests, Frontend Build and Docker Build in required run
+`29158981445`. It was squash-merged as
+`36f736c0ca02f483b408c94350c8e5d1497b759e`; post-merge main run
+`29159155254` passed the same three jobs. P6-F04 is CI verified / closed.
 
 This evidence closes neither P6-F05 nor P6-F06 and makes no target or production
 claim. It also does not claim new Anthropic embeddings support: an

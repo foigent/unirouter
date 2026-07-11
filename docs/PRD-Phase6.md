@@ -199,7 +199,7 @@ These do not become UniRouter source-code gaps without new evidence.
 | P6-F18 | Make reservation/finalization single-terminal, pool-safe and durable after billable output | P0 | Accepted urgent Batch 0B |
 | P6-F03 | Honor retryable/non-retryable error classification and preserve safe response semantics | P0 | Accepted Batch 0C |
 | P6-F04 | Give Embeddings Chat-equivalent routing/failover behavior | P0 | Accepted Batch 0C |
-| P6-F05 | Make effective retry/circuit/cooldown configuration observable and remove hard-coded divergence | P0 | Accepted Batch 0C |
+| P6-F05 | Make effective retry/circuit/cooldown configuration observable, remove hard-coded divergence, and reconcile budget-alert configuration/scope truth | P0 | Accepted Batch 0C |
 | P6-F06 | Correct freeze/settlement behavior when organization multipliers increase actual cost | P0 | Accepted Batch 0C |
 | P6-F07 | Enforce shared RPM/RPS/TPM/concurrency policies with explicit selectors and failure modes | P1 | Accepted MVP |
 | P6-F08 | Implement Routing Policy V1 with explainable candidates, exclusions, retry and failover | P1 | Accepted MVP |
@@ -245,9 +245,9 @@ target cutover must be non-rolling for these control-plane endpoints: drain old
 control-plane binaries before exposing only the new version, because old
 binaries do not provide mixed-version safety. Other new-version instances
 converge to a committed sensitive-word version through the existing reload path
-in approximately one minute; no new global-settings UI is included. A typed
-configuration registry and the confirmed budget/alert configuration-truth gaps
-remain accepted P6-F05 work. P6-F17 supplies separate operation/client
+in approximately one minute; no new global-settings UI is included. The typed
+configuration registry and confirmed budget/alert configuration-truth gaps are
+locally reconciled by P6-F05, pending required PR and post-merge CI. P6-F17 supplies separate operation/client
 correlation and Audit readback, but does not imply generic mutation replay or
 P6-F20 durability.
 

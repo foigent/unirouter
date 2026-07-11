@@ -69,6 +69,16 @@ jobs:
         env:
           REQUIRE_TEST_DATABASE: "1"
         run: go test -tags=integration -race ./internal/admin -count=1
+
+      - name: Run routing policy integration tests
+        env:
+          REQUIRE_TEST_DATABASE: "1"
+        run: go test -tags=integration -race ./internal/gateway -run TestRoutingPolicyPostgresStateTransitions -count=1
+
+      - name: Run budget alert contract integration tests
+        env:
+          REQUIRE_TEST_DATABASE: "1"
+        run: go test -tags=integration -race ./internal/billing -run TestEventService_CheckProjectBudgetTenantScope_Integration -count=1
       
       - name: Upload coverage
         uses: actions/upload-artifact@v4

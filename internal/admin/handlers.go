@@ -11,6 +11,7 @@ import (
 	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/oidc"
+	"github.com/uniroute/unirouter/internal/runtimeconfig"
 )
 
 // Handler contains all admin API handlers.
@@ -40,7 +41,11 @@ func NewHandlerWithAPIKeyHashSecret(db db.DBQuerier, jwtSecret, apiKeyHashSecret
 	if apiKeyHashSecret == "" {
 		apiKeyHashSecret = jwtSecret
 	}
-	return &Handler{db: db, jwtSecret: jwtSecret, apiKeyHashSecret: apiKeyHashSecret, encKey: encKey, sensitiveFilter: sf, startedAt: time.Now()}
+	return &Handler{
+		db: db, jwtSecret: jwtSecret, apiKeyHashSecret: apiKeyHashSecret,
+		encKey: encKey, sensitiveFilter: sf, startedAt: time.Now(),
+		runtimeOptions: RuntimeStatusOptions{EffectiveConfig: runtimeconfig.Default()},
+	}
 }
 
 func (h *Handler) SetLicenseVerifier(verifier *licensing.Verifier) {
@@ -60,6 +65,9 @@ func (h *Handler) SetRedisClient(client *redis.Client) {
 }
 
 func (h *Handler) SetRuntimeStatusOptions(options RuntimeStatusOptions) {
+	if options.EffectiveConfig.Version == "" {
+		options.EffectiveConfig = runtimeconfig.Default()
+	}
 	h.runtimeOptions = options
 }
 

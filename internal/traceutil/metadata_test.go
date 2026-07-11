@@ -95,3 +95,23 @@ func TestSanitizeMetadata_RetryDecisionFields(t *testing.T) {
 		t.Fatalf("expected retry decision metadata to remain, got %#v", metadata)
 	}
 }
+
+func TestSanitizeMetadata_RoutingPolicyFields(t *testing.T) {
+	metadata, gap := SanitizeMetadataWithGap(map[string]interface{}{
+		"effective_config_version":          "effective-config.v1",
+		"routing_config_version":            "routing-config.v1",
+		"max_retry_count":                   2,
+		"circuit_breaker_threshold":         7,
+		"circuit_breaker_recover_seconds":   90,
+		"circuit_breaker_half_open_percent": 25,
+		"rate_limit_cooldown_seconds":       45,
+		"auth_failure_cooldown_seconds":     1800,
+		"provider_key_failure_threshold":    6,
+	})
+	if gap != "" {
+		t.Fatalf("expected effective routing policy metadata to remain, got gap %q", gap)
+	}
+	if len(metadata) != 9 || metadata["effective_config_version"] != "effective-config.v1" || metadata["routing_config_version"] != "routing-config.v1" || metadata["max_retry_count"] != 2 {
+		t.Fatalf("unexpected effective routing policy metadata: %#v", metadata)
+	}
+}

@@ -27,6 +27,31 @@ var redactedGlobalSettingKeys = map[string]struct{}{
 	"budget_alert_webhook_url": {},
 }
 
+type retiredGlobalSetting struct {
+	Replacement string
+	Reason      string
+}
+
+var retiredGlobalSettings = map[string]retiredGlobalSetting{
+	"budget_alert_webhook_url": {
+		Replacement: "/api/v1/notification-webhooks",
+		Reason:      "project_scoped_notification_webhooks_replace_ambiguous_global_alerts",
+	},
+	"budget_alert_threshold_cents": {
+		Replacement: "/api/v1/projects/{id}",
+		Reason:      "projects.budget_cents_and_budget_period_are_authoritative",
+	},
+	"budget_cents": {
+		Replacement: "/api/v1/projects/{id}",
+		Reason:      "projects.budget_cents_and_budget_period_are_authoritative",
+	},
+}
+
+func retiredGlobalSettingContract(key string) (retiredGlobalSetting, bool) {
+	setting, ok := retiredGlobalSettings[key]
+	return setting, ok
+}
+
 type globalSettingQueryRower interface {
 	QueryRow(context.Context, string, ...interface{}) pgx.Row
 }
