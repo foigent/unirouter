@@ -4,13 +4,15 @@ import (
 	"context"
 	"net/http"
 	"time"
-
-	"github.com/uniroute/unirouter/internal/middleware"
 )
 
 func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	orgID := middleware.GetOrgIDFromContext(ctx)
+	orgID, err := resolveRequestOrganization(r)
+	if err != nil {
+		writeOrganizationScopeError(w, err)
+		return
+	}
 
 	// Optional time range params; default to last 24h
 	startTime := r.URL.Query().Get("start_time")
@@ -29,7 +31,7 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 	dailyTrend := h.dashboardDailyTrend(ctx, orgID, startTime, endTime)
 	walletBalance, walletGranted, walletFrozen, walletThreshold := h.dashboardWalletInfo(ctx, orgID)
 	modelDistribution := h.dashboardModelDistribution(ctx, orgID, startTime, endTime)
-	channelHealth := h.dashboardChannelHealth(ctx, startTime, endTime)
+	channelHealth := h.dashboardChannelHealth(ctx, orgID, startTime, endTime)
 	deltaCost, deltaLatency, deltaRate := h.dashboardYesterdayDelta(ctx, orgID, todayCostCents, p95LatencyMs, successRate)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -251,15 +253,15 @@ func (h *Handler) dashboardModelDistribution(ctx context.Context, orgID int64, s
 }
 
 // dashboardChannelHealth returns channel health with success/fail counts and derived status.
-func (h *Handler) dashboardChannelHealth(ctx context.Context, startTime, endTime string) []map[string]interface{} {
+func (h *Handler) dashboardChannelHealth(ctx context.Context, orgID int64, startTime, endTime string) []map[string]interface{} {
 	rows, err := h.db.Query(ctx,
 		`SELECT c.id, c.name, c.provider, c.status,
 		        COALESCE(SUM(CASE WHEN cl.status_code >= 200 AND cl.status_code < 300 THEN 1 ELSE 0 END), 0) as success_count,
 		        COALESCE(SUM(CASE WHEN cl.status_code >= 400 OR cl.status_code = 0 THEN 1 ELSE 0 END), 0) as fail_count
 		 FROM channels c
-		 LEFT JOIN call_logs cl ON cl.channel = c.name AND cl.created_at >= $1 AND cl.created_at <= $2
+		 LEFT JOIN call_logs cl ON cl.channel = c.name AND cl.org_id = $1 AND cl.created_at >= $2 AND cl.created_at <= $3
 		 GROUP BY c.id, c.name, c.provider, c.status
-		 ORDER BY c.id`, startTime, endTime)
+		 ORDER BY c.id`, orgID, startTime, endTime)
 	if err != nil {
 		return nil
 	}

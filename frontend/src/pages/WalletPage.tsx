@@ -58,10 +58,7 @@ export default function WalletPage() {
       if (modalType === 'recharge') {
         await api.topUp({ amount_cents: amountCents });
       } else {
-        await api.request('/wallet/adjust', {
-          method: 'POST',
-          body: JSON.stringify({ target_balance: targetBalance }),
-        });
+        await api.adjustWallet({ target_balance: targetBalance });
       }
       Toast.success(modalType === 'recharge' ? '入账成功' : '调整成功');
       setModalVisible(false);

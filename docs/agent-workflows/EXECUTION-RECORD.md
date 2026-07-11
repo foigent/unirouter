@@ -1,26 +1,42 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 0B P6-F37/P6-F38 Audit Isolation And Frontend CI Integrity
+**Batch:** PRD6 Batch 0B P6-F32/P6-F39 Finance And Usage Tenant Isolation
 **Owner:** Codex
-**Risk:** R4 multi-tenant audit confidentiality plus R2 evidence-backed planning
-**Status:** P6-F33/P6-F37/P6-F38 merged and CI verified
-**Integration:** PR #143 squash merge `a1e0ad6`; deployment not claimed
+**Risk:** R4 multi-tenant financial integrity and usage confidentiality
+**Status:** CI verified by PR #145 implementation head; merge pending
+**Integration:** PR #145 / branch `codex/prd6-p6f32-finance-tenant`; no deployment claimed
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Scope
 
-1. Constrain authenticated organization/billing audit-log readers to the JWT
-   organization even when no filter is supplied.
-2. Reject explicit foreign organization/project filters and org-zero identities.
-3. Preserve same-tenant filters and the explicit platform-admin exception.
-4. Prove the fix with a migrated two-tenant signed-JWT regression that includes
-   a victim-only audit-detail marker.
-5. Record the source-backed UI, reconciliation, correlation, architecture and
-   upgrade audit plus a separate PRD7 candidate queue without reopening PRD5.
-6. Run the existing frontend behavior suite in the required Frontend Build job
-   with a measured, bounded interaction timeout and unchanged assertions.
+1. Remove first/global-row behavior from wallet, grant, transaction and
+   reconciliation administration and bind it to the signed actor organization.
+2. Apply the same actor-organization predicate to request logs, usage analytics,
+   internal status, dashboard usage-derived activity and runtime traffic.
+3. Reject explicit foreign organization selection and org-zero identities;
+   preserve default-own and explicit-target platform behavior.
+4. Prove denied finance requests have no wallet, grant, transaction, audit or
+   notification side effect, and make foreign/missing log IDs non-enumerating.
+5. Preserve PRD5 history and explicitly defer PRD7 implementation and target
+   evidence until PRD6 closeout without changing the Gate A file deadline.
 
-## Current P6-F37 Behavior Change
+## Current P6-F32/P6-F39 Behavior Change
+
+- one organization resolver binds non-platform actors to the organization in
+  their JWT, rejects foreign selection and has no database-order fallback;
+- wallet, top-up, adjustment, transactions, export, grants and reconciliation
+  use that organization in their final SQL and derived event input;
+- request-log list/detail/trace, analytics, internal status, dashboard activity
+  and runtime traffic are tenant scoped; foreign/missing log IDs both return
+  `404`;
+- platform administrators default to their own JWT organization and cross
+  tenants only through an explicit target;
+- CSV escaping/formula-prefix handling and billing-admin UI capability flags
+  are locally verified;
+- global grant-key uniqueness remains P6-F17, wallet pool/grant semantics remain
+  P6-F18, and project-dashboard granularity remains a separate permission item.
+
+## Previous P6-F37 Behavior Change
 
 - Non-platform audit reads always include the signed actor organization in
   count and row queries.
@@ -53,8 +69,8 @@
 - Foreign and missing Webhook IDs share the same non-platform `404` result.
 - Same-tenant and explicit platform-admin behavior remains available.
 - No new X-Insight runtime field or dependency is introduced.
-- D6-08 accepts P6-F32-P6-F36. Only P6-F33 changes runtime behavior in this
-  branch; the other rows remain unremediated and no target verification is
+- D6-08 accepts P6-F32-P6-F36. Only P6-F33 changed runtime behavior in that
+  historical branch; the other rows were unremediated there and no target verification was
   claimed.
 
 ## Files And Evidence
@@ -75,6 +91,8 @@
   `docs/ops/evidence/PRD6-B0B-P6F37-audit-log-tenant-isolation-local-20260711.md`.
 - P6-F38 local evidence:
   `docs/ops/evidence/PRD6-B0B-P6F38-frontend-test-ci-local-20260711.md`.
+- P6-F32/P6-F39 local evidence:
+  `docs/ops/evidence/PRD6-B0B-P6F32-P6F39-finance-and-usage-tenant-isolation-local-20260711.md`.
 - Product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
 - PRD7 candidate queue:
@@ -87,12 +105,29 @@
   `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`,
   `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`, and
   `docs/planning/PRD6-BACKLOG.md`.
-- Code/tests: `internal/admin/notification_handlers.go`,
-  `internal/admin/rbac_helpers.go`, `internal/billing/notifications.go`,
-  migration `000020`, the Notification Center/API client, and their focused
-  backend/frontend tests.
+- Current code/tests: organization resolution plus finance, logs,
+  reconciliation, analytics/internal status, dashboard/runtime handlers; typed
+  frontend client and WalletPage capability tests; migrated signed-JWT
+  `finance_tenant_isolation_integration_test.go`.
 
 ## Verification
+
+Current P6-F32/P6-F39 results on `codex/prd6-p6f32-finance-tenant`:
+
+- migrated two-organization signed-JWT finance/usage matrix: PASS;
+- focused legacy `-tags=integration` wallet/grant handler cases: PASS after
+  supplying their previously absent authenticated actor context;
+- `go test ./internal/admin`, `go test ./...`, `go test -race ./...` and
+  `go vet ./...`: PASS; race linking retains the non-failing macOS warning;
+- frontend type-check, 26 files / 128 tests, and production build: PASS; the
+  existing large-chunk warning remains;
+- `git diff --check`: PASS;
+- PR #145 implementation head `3ee6a41`, run `29135964946`: `Backend Tests`,
+  `Frontend Build` and `Docker Build` PASS; final documentation-only head must
+  pass the same checks before merge.
+- the full legacy tagged admin suite still depends on a separately provisioned
+  shared schema and has unrelated stale-schema failures; tracked as
+  `P6-TEST-DB-001`, not represented as green.
 
 Focused P6-F33 results on `codex/prd6-b0b-notification-tenant`:
 
@@ -210,15 +245,18 @@ PR #139 required checks for final scalability-audit evidence head `6c8c192`:
 - `Frontend Build`: PASS;
 - `Docker Build`: PASS.
 
-P6-F01, P6-F02, P6-F16, P6-F33, P6-F37 and P6-F38 are `CI verified`. D6-08 accepts
-P6-F32-P6-F36, while P6-F32 and
-P6-F34-P6-F36 remain unremediated. No documentation or local test promotes a
-row to target verified.
+P6-F01, P6-F02, P6-F16, P6-F33, P6-F37 and P6-F38 are `CI verified`. D6-08
+accepts P6-F32-P6-F36. P6-F32 and adjacent safe-remediation row P6-F39 are
+`CI verified` by PR #145 with merge pending; P6-F34-P6-F36 remain unremediated. No
+documentation or local test promotes a row to target verified.
 
 No deployment, target mutation/probe, real or paid request, credential change,
 exporter/outbox, deletion or expanded data exchange occurred. Migration down,
 TLS 443 behavior and concrete target route/failover detail remain target-evidence
-debt. Unimplemented X-Insight runtime capabilities remain external.
+debt and, by User decision, are executed only after PRD6 source closeout with
+their existing authorizations. PRD7 implementation is also deferred; historical
+branches remain retained. The 2026-07-17 Gate A exact-path deadline is unchanged.
+Unimplemented X-Insight runtime capabilities remain external.
 
 ## Previous Batch 1Z Record
 

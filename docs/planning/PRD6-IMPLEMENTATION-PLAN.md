@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08 accepted; Batch 0B active
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; Batch 0B active; P6-F32/P6-F39 CI verified by PR #145; merge pending
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -18,7 +18,7 @@ Batch 0 baseline and scope evidence
   -> Batch 4 Guardrail Kernel
   -> Batch 5 Streaming policy and termination
   -> Batch 6 selected advanced capability, if separately accepted
-  -> Batch 7 authorized target evidence
+  -> Batch 7 separately authorized target evidence, explicitly after PRD6 source closeout
 ```
 
 Batch 0A was safe to execute before the scope gate. D6-01 and D6-02 are now
@@ -72,7 +72,9 @@ Verification:
 **Risk:** R4 multi-tenant authorization and financial-state behavior.
 **Status:** P6-F16 and P6-F33 are CI verified by PR #140 and PR #142;
 P6-F37 and P6-F38 required-frontend-test enforcement are merged and CI verified
-by PR #143 / `a1e0ad6`; post-merge run `29133690338` passed. Later Batch 0B rows remain ordered and
+by PR #143 / `a1e0ad6`; post-merge run `29133690338` passed. P6-F32 finance and
+adjacent P6-F39 usage-derived tenant reads are CI verified by PR #145
+implementation head `3ee6a41`; merge remains pending. Later Batch 0B rows remain ordered and
 independently gated.
 
 Split into independently reviewable security/financial PRs:
@@ -100,10 +102,11 @@ to their JWT organization, and organization multipliers restricted to
 `platform_admin`. Keep notification, finance, pricing authority, global
 control-plane authority and organization-level model governance in separate
 reviewable PRs rather than expanding P6-F16 after review. P6-F33 is CI verified
-by PR #142 / `7173c59`. The separately confirmed audit-log read leak is P6-F37;
-its tenant predicate and two-tenant matrix are Local verified, with required CI
-still the promotion gate. Finance/reconciliation/usage, pricing, global-control
-and model-governance gaps remain open until their own evidence is green.
+by PR #142 / `7173c59`. The separately confirmed audit-log read leak is P6-F37
+and is CI verified. P6-F32 finance/reconciliation and adjacent P6-F39
+usage-derived tenant reads are CI verified by PR #145, with merge still the
+promotion gate. Pricing, global-control and model-governance gaps remain open
+until their own evidence is green.
 
 ### Batch 0C — Retry, Endpoint Parity, Config And Billing Truth
 

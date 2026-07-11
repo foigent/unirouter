@@ -13,6 +13,9 @@
 | P6-TENANT-001 | Enforce organization ownership and block org-admin platform-role escalation | Accepted D6-01 P0; prevents cross-tenant key/user/project/project-policy control | migrated-PostgreSQL matrix and PR #140 required CI are green |
 | P6-AUDIT-TENANT-001 | Enforce actor-organization ownership on audit-log reads | Confirmed cross-tenant evidence disclosure; safe P0 remediation under PRD6 work rule 7 | migrated two-tenant JWT matrix, full local checks and required CI |
 | P6-CI-FRONTEND-001 / P6-F38 | Run existing frontend behavior tests in required CI | Prevents type-correct/buildable UI regressions from merging; safe P1 engineering remediation | full 126-test suite and exact required-job log with no skips |
+| P6-FIN-TENANT-001 / P6-F32 | Tenant-scope wallet, grant, transaction and reconciliation operations | Prevents cross-tenant financial read/write and first-row fallback | CI verified by PR #145; merge pending |
+| P6-USAGE-TENANT-001 / P6-F39 | Tenant-scope request logs and usage-derived administrator reads | Prevents cross-tenant evidence, incident, token and cost disclosure | CI verified by PR #145; merge pending |
+| P6-TEST-DB-001 | Make legacy tagged admin integration tests deterministic on the current migrated schema | Prevents stale shared-database state from hiding or inventing regressions | focused touched cases pass; full tagged suite must move to isolated migrations or be retired before becoming required CI |
 
 ## 2. Accepted MVP — Ordered Work Queue
 
@@ -39,17 +42,20 @@
 
 | ID | Item | Confirmed value/risk | Current state | Priority |
 |----|------|----------------------|---------------|----------|
-| P6-FIN-TENANT-001 / P6-F32 | Tenant-scope wallet, grant, transaction and reconciliation operations | prevents cross-tenant financial read/write and removes first-wallet behavior | Accepted; not started | P0 |
+| P6-FIN-TENANT-001 / P6-F32 | Tenant-scope wallet, grant, transaction and reconciliation operations | prevents cross-tenant financial read/write and removes first-wallet behavior | CI verified by PR #145; merge pending | P0 |
 | P6-NOTIFY-TENANT-001 / P6-F33 | Tenant-scope notification reads and webhook sinks | closes a source-reachable victim-event exfiltration chain | CI verified by PR #142 / `7173c59`; target cutover unexecuted | P0 |
 | P6-PRICE-AUTH-001 / P6-F34 | Platform-only global base-price and organization-multiplier mutation | prevents tenant roles changing platform/victim billing | Accepted; not started | P0 |
 | P6-CONTROL-AUTH-001 / P6-F35 | Gate deployment settings, license and global sensitive words | prevents tenant roles changing global runtime controls | Accepted; not started | P0 |
 | P6-MODELGOV-TENANT-001 / P6-F36 | Tenant-scope registry, alias, catalog and organization model sets | prevents cross-tenant model-policy disclosure/mutation | Accepted; not started | P1 |
 | P6-AUDIT-TENANT-001 / P6-F37 | Tenant-scope audit-log reads | prevents organization/billing roles reading another tenant's control-plane evidence | Merged and CI verified by PR #143 / `a1e0ad6` | P0 |
+| P6-USAGE-TENANT-001 / P6-F39 | Tenant-scope request logs, usage analytics/internal status, dashboard usage-derived aggregates and runtime traffic | prevents cross-tenant request, incident, token and cost disclosure | CI verified by PR #145; merge pending | P0 |
 
-Evidence: `docs/ops/evidence/PRD6-B0B-admin-tenant-surface-audit-20260711.md`
-and `docs/ops/evidence/PRD6-B0B-P6F37-audit-log-tenant-isolation-local-20260711.md`.
+Evidence: `docs/ops/evidence/PRD6-B0B-admin-tenant-surface-audit-20260711.md`,
+`docs/ops/evidence/PRD6-B0B-P6F37-audit-log-tenant-isolation-local-20260711.md`
+and `docs/ops/evidence/PRD6-B0B-P6F32-P6F39-finance-and-usage-tenant-isolation-local-20260711.md`.
 P6-F32 through P6-F36 were accepted through D6-08. P6-F37 is a separately
-recorded safe P0 remediation under the PRD6 work rule; none of these rows
+recorded safe P0 remediation under the PRD6 work rule; P6-F39 uses the same safe
+remediation rule for adjacent cross-tenant usage reads. None of these rows
 reopens PRD5 or retroactively changes D6-01.
 
 ## 4. Advanced Candidates
@@ -85,6 +91,11 @@ reopens PRD5 or retroactively changes D6-01.
 ## 6. Target Evidence Queue
 
 These are evidence needs, not automatic source implementation:
+
+The User directed on 2026-07-11 that this queue is executed only after PRD6
+source closeout and with its existing item-specific authorization. The queue is
+retained, not cancelled or satisfied. The previously accepted 2026-07-17 Gate A
+file deadline is not postponed by this sequencing decision.
 
 - P5-F35 concrete target route/failover detail;
 - migration `000019` down path;
@@ -123,3 +134,4 @@ authorization before execution.
 | D6-06 Post-MVP differentiator | adopt Evidence-to-Control Flywheel while accepting each P6-F23-F31 row separately | Proposed; User decision not required for current P0/P1 work | first recommended experiment is fixture-only P6-F24 |
 | D6-07 Innovation data posture | metadata-only by default; content analysis requires tenant opt-in plus purpose/retention/delete/access controls | Proposed | gates semantic analysis, shadow data and training cases |
 | D6-08 Administrator authority split | platform owns global price/settings/license/global sensitive words and organization multipliers; tenant roles are confined to their JWT org | Accepted by User 2026-07-11 with option B | authorizes P6-F32-P6-F36; organization multipliers are `platform_admin` only until a separately accepted global billing-authority role exists |
+| D6-09 Closeout sequencing | complete accepted PRD6 repository scope first; defer all PRD7 implementation and target-evidence execution | Accepted by User 2026-07-11 | preserves both future queues without authorizing target action; historical branches remain retained; the existing Gate A file deadline is unchanged |

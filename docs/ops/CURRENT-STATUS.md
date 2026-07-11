@@ -8,7 +8,10 @@
 > tenant isolation and P6-F38 frontend-test required-CI enforcement were
 > squash-merged by PR #143 as `a1e0ad61ed44f02f32317131a1920a6181e43645`;
 > post-merge main CI run `29133690338` passed all three jobs.
-> D6-01, D6-02 and D6-08 were accepted by the User on 2026-07-11; advanced
+> P6-F32 finance/reconciliation and adjacent P6-F39 usage-derived tenant
+> isolation are CI verified by PR #145 implementation head `3ee6a41`; merge is
+> pending and no deployment is claimed.
+> D6-01, D6-02, D6-08 and D6-09 were accepted by the User on 2026-07-11; advanced
 > innovation rows P6-F23 through P6-F31 remain proposed.
 
 ## PRD6 Current Window
@@ -30,6 +33,8 @@
   `docs/ops/evidence/PRD6-B0B-P6F37-audit-log-tenant-isolation-local-20260711.md`.
 - P6-F38 frontend-test required-CI local evidence:
   `docs/ops/evidence/PRD6-B0B-P6F38-frontend-test-ci-local-20260711.md`.
+- P6-F32/P6-F39 finance and usage tenant-isolation local evidence:
+  `docs/ops/evidence/PRD6-B0B-P6F32-P6F39-finance-and-usage-tenant-isolation-local-20260711.md`.
 - Source-backed product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
 - PRD7 candidate-only split (not Accepted Scope):
@@ -70,10 +75,17 @@ later read-only audit found P6-F32 through P6-F36 across finance, notifications,
 pricing, global settings and organization model governance. D6-08 separately
 accepted those rows with tenant roles confined to their JWT organization and
 platform-only global/multiplier authority. P6-F33/P6-F37/P6-F38 are merged and
-CI verified. P6-F32 and P6-F34-P6-F36 remain
-unremediated. No audit row is presented as a production
+CI verified. P6-F32 and adjacent safe-remediation row P6-F39 are CI verified by
+PR #145 with merge pending; P6-F34-P6-F36 remain unremediated. No audit row is
+presented as a production
 incident, 100x proof, or implemented remediation before its exact evidence
 exists.
+
+The User selected D7-UPGRADE-001/002 as the first future PRD7 direction but
+deferred every PRD7 implementation and target-evidence execution until PRD6
+source closeout. Historical branches remain retained and no cleanup/deletion is
+authorized. This ordering does not postpone the existing 2026-07-17 Gate A
+exact-path file deadline.
 
 The third PRD6 research round confirmed that UniRouter currently owns model
 request enforcement, not arbitrary MCP/tool/data/export side effects. X-Insight

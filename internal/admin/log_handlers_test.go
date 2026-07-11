@@ -23,25 +23,26 @@ func TestGetLogDetail_NullSafeUpstreamError(t *testing.T) {
 			}
 			return &testutil.MockRow{ScanFn: func(dest ...any) error {
 				now := time.Date(2026, 7, 2, 1, 0, 0, 0, time.UTC)
-				*dest[0].(*int64) = 42
-				*dest[1].(*string) = "batch16-request"
-				*dest[2].(*string) = "batch16-smoke-gpt-4o"
-				*dest[3].(*string) = "batch16-mock"
-				*dest[4].(*string) = "prd2-batch16-openai-compatible-mock"
-				*dest[5].(*int) = 10
-				*dest[6].(*int) = 5
-				*dest[7].(*int) = 15
-				*dest[8].(*int) = 1
-				*dest[9].(*int) = http.StatusOK
-				*dest[10].(*int) = 12
-				*dest[11].(*int) = 0
-				*dest[12].(**int) = nil
-				*dest[13].(*string) = ""
-				*dest[14].(*string) = "upstream"
-				*dest[15].(*bool) = false
-				*dest[16].(*string) = "127.0.0.1"
-				*dest[17].(*string) = "company-chat"
-				*dest[18].(*time.Time) = now
+				*dest[0].(*int64) = 1
+				*dest[1].(*int64) = 0
+				*dest[2].(*string) = "batch16-request"
+				*dest[3].(*string) = "batch16-smoke-gpt-4o"
+				*dest[4].(*string) = "batch16-mock"
+				*dest[5].(*string) = "prd2-batch16-openai-compatible-mock"
+				*dest[6].(*int) = 10
+				*dest[7].(*int) = 5
+				*dest[8].(*int) = 15
+				*dest[9].(*int) = 1
+				*dest[10].(*int) = http.StatusOK
+				*dest[11].(*int) = 12
+				*dest[12].(*int) = 0
+				*dest[13].(**int) = nil
+				*dest[14].(*string) = ""
+				*dest[15].(*string) = "upstream"
+				*dest[16].(*bool) = false
+				*dest[17].(*string) = "127.0.0.1"
+				*dest[18].(*string) = "company-chat"
+				*dest[19].(*time.Time) = now
 				return nil
 			}}
 		},
@@ -50,6 +51,7 @@ func TestGetLogDetail_NullSafeUpstreamError(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/logs/7", nil)
 	req.SetPathValue("id", "7")
+	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 
 	h.GetLogDetail(rec, req)

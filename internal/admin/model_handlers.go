@@ -11,7 +11,6 @@ import (
 
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/metering"
-	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/models"
 )
 
@@ -32,6 +31,11 @@ type reconciliationSummary struct {
 
 func (h *Handler) ListReconciliation(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePagination(r)
+	orgID, err := resolveRequestOrganization(r)
+	if err != nil {
+		writeOrganizationScopeError(w, err)
+		return
+	}
 
 	modelFilter := r.URL.Query().Get("model")
 	statusFilter := r.URL.Query().Get("status")
@@ -40,6 +44,9 @@ func (h *Handler) ListReconciliation(w http.ResponseWriter, r *http.Request) {
 	var conditions []string
 	var args []interface{}
 	argIdx := 1
+	conditions = append(conditions, fmt.Sprintf("org_id = $%d", argIdx))
+	args = append(args, orgID)
+	argIdx++
 
 	if modelFilter != "" {
 		conditions = append(conditions, fmt.Sprintf("model = $%d", argIdx))
@@ -155,7 +162,7 @@ func (h *Handler) ListReconciliation(w http.ResponseWriter, r *http.Request) {
 	summary.ThresholdSetting = "token_metering.estimated_ratio_alert_threshold"
 	summary.RatioScope = "filtered_query"
 	if summary.EstimatedUsageAlert {
-		h.emitEstimatedUsageRatioEvent(r, summary, map[string]string{
+		h.emitEstimatedUsageRatioEvent(r, orgID, summary, map[string]string{
 			"model":        modelFilter,
 			"status":       statusFilter,
 			"usage_source": metering.NormalizeUsageSource(usageSourceFilter),
@@ -163,7 +170,7 @@ func (h *Handler) ListReconciliation(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": records, "total": total, "page": page, "page_size": pageSize,
-		"summary": summary,
+		"summary": summary, "org_id": orgID,
 	})
 }
 
@@ -194,11 +201,10 @@ func (h *Handler) reconciliationSummary(ctx context.Context, where string, args 
 	return summary, nil
 }
 
-func (h *Handler) emitEstimatedUsageRatioEvent(r *http.Request, summary reconciliationSummary, filters map[string]string) {
+func (h *Handler) emitEstimatedUsageRatioEvent(r *http.Request, orgID int64, summary reconciliationSummary, filters map[string]string) {
 	if h.eventService == nil {
 		return
 	}
-	orgID := middleware.GetOrgIDFromContext(r.Context())
 	if orgID <= 0 {
 		return
 	}

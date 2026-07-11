@@ -114,11 +114,13 @@ export const api = {
     request(`/keys/${id}/disable`, { method: 'POST' }),
 
   // Wallet
-  getWallet: () => request('/wallet'),
-  getWalletTransactions: (page = 1, pageSize = 20) =>
-    request(`/wallet/transactions?page=${page}&page_size=${pageSize}`),
-  topUp: (data: any) =>
+  getWallet: (orgId?: number) => request(appendParams('/wallet', { org_id: orgId })),
+  getWalletTransactions: (page = 1, pageSize = 20, orgId?: number) =>
+    request(appendParams('/wallet/transactions', { page, page_size: pageSize, org_id: orgId })),
+  topUp: (data: { org_id?: number; amount_cents: number; description?: string; client_request_id?: string }) =>
     request('/wallet/topup', { method: 'POST', body: JSON.stringify(data) }),
+  adjustWallet: (data: { org_id?: number; target_balance: number; description?: string }) =>
+    request('/wallet/adjust', { method: 'POST', body: JSON.stringify(data) }),
 
   // Logs (with optional filters)
   getLogs: (page = 1, pageSize = 20, filters?: {
@@ -127,7 +129,7 @@ export const api = {
     latency_min?: string; latency_max?: string; search?: string;
     trace_id?: string; upstream_request_id?: string;
     evidence_ref?: string; source_event_hash?: string;
-    project_id?: number; usage_source?: string;
+    org_id?: number; project_id?: number; usage_source?: string;
   }) => {
     return request(appendParams('/logs', {
       page,
@@ -145,12 +147,13 @@ export const api = {
       latency_min: filters?.latency_min,
       latency_max: filters?.latency_max,
       search: filters?.search,
+      org_id: filters?.org_id,
       project_id: filters?.project_id,
       usage_source: filters?.usage_source,
     }));
   },
-  getLogDetail: (id: number) => request(`/logs/${id}`),
-  getLogTrace: (id: number) => request(`/logs/${id}/trace`),
+  getLogDetail: (id: number, orgId?: number) => request(appendParams(`/logs/${id}`, { org_id: orgId })),
+  getLogTrace: (id: number, orgId?: number) => request(appendParams(`/logs/${id}/trace`, { org_id: orgId })),
 
   // PRD5 Data Exchange Control (platform admin only)
   getDataExchangeItems: (page = 1, pageSize = 20, status?: string) =>
@@ -198,7 +201,7 @@ export const api = {
   })),
   getInternalStatus: (filters?: { org_id?: string | number; project_id?: string | number }) =>
     request(appendParams('/internal-status', { org_id: filters?.org_id, project_id: filters?.project_id })),
-  getRuntimeStatus: () => request('/runtime/status'),
+  getRuntimeStatus: (orgId?: number) => request(appendParams('/runtime/status', { org_id: orgId })),
   getErrorDocs: () => request('/error-docs'),
 
   // Projects and developer catalog
@@ -283,8 +286,8 @@ export const api = {
     request(`/users/${id}`, { method: 'DELETE' }),
 
   // Grants
-  getGrants: (page = 1, pageSize = 20) =>
-    request(`/grants?page=${page}&page_size=${pageSize}`),
+  getGrants: (page = 1, pageSize = 20, orgId?: number) =>
+    request(appendParams('/grants', { page, page_size: pageSize, org_id: orgId })),
   createGrant: (data: any) =>
     request('/grants', { method: 'POST', body: JSON.stringify(data) }),
 
@@ -322,8 +325,9 @@ export const api = {
     request('/me/password', { method: 'PUT', body: JSON.stringify(data) }),
 
   // Reconciliation
-  getReconciliation: (page = 1, pageSize = 20, filters?: { model?: string; status?: string; usage_source?: string }) => {
+  getReconciliation: (page = 1, pageSize = 20, filters?: { org_id?: number; model?: string; status?: string; usage_source?: string }) => {
     let url = `/reconciliation?page=${page}&page_size=${pageSize}`;
+    if (filters?.org_id) url += `&org_id=${filters.org_id}`;
     if (filters?.model) url += `&model=${encodeURIComponent(filters.model)}`;
     if (filters?.status) url += `&status=${encodeURIComponent(filters.status)}`;
     if (filters?.usage_source) url += `&usage_source=${encodeURIComponent(filters.usage_source)}`;

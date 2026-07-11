@@ -16,8 +16,9 @@
 | `docs/ops/evidence/PRD6-B0B-P6F33-notification-tenant-isolation-local-20260711.md` | P6-F33 notification/Webhook patch, local regression and CI-promotion evidence; target cutover remains separate |
 | `docs/ops/evidence/PRD6-B0B-P6F37-audit-log-tenant-isolation-local-20260711.md` | P6-F37 audit-log tenant predicate and migrated two-tenant JWT evidence |
 | `docs/ops/evidence/PRD6-B0B-P6F38-frontend-test-ci-local-20260711.md` | P6-F38 frontend test timing and required-CI enforcement evidence |
+| `docs/ops/evidence/PRD6-B0B-P6F32-P6F39-finance-and-usage-tenant-isolation-local-20260711.md` | P6-F32/P6-F39 finance, request-log and usage-derived tenant-isolation evidence; PR #145 CI verified, merge pending |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | Source-backed audit/reconciliation/correlation/UI/architecture/upgrade findings, Four Quadrants and PRD6 batches |
-| `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | Candidate-only PRD7 split, ownership and reopen gates; not Accepted Scope |
+| `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | PRD7 candidate split; first future direction selected, all implementation deferred until PRD6 closeout |
 | `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md` | Version-fixed competitor audit, Four Quadrants and priority matrix |
 | `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md` | Third-round Four Quadrants, CARTA/shadow/collusion ownership, Killer Features and candidate acceptance rows |
 | `docs/planning/prd6-adaptive-trust-hardening/` | Evidence-bound adaptive-trust structural proposal, JSON, diagrams and option comparison; no implementation plan until selection |
@@ -70,7 +71,7 @@
 | `docs/PRD-Phase3.md` | PRD3 formal product requirements | Completed cleanup/optimization scope |
 | `docs/PRD-Phase6.md` | PRD6 product requirements | D6-01/D6-02 accepted; advanced innovation remains separately gated |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | PRD6 product/architecture/UX audit | Confirmed findings, hypotheses and user requirements remain separately labeled |
-| `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | PRD7 candidate backlog | Candidate only; every row requires a new D7 acceptance decision |
+| `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | PRD7 candidate backlog | D7-UPGRADE-001/002 selected as future first direction; implementation still deferred and separately gated |
 | `docs/PRD-Phase5.md` | PRD5 completed product requirements | Accepted Scope Complete; preserve as closed phase evidence |
 | `docs/PRD-Phase4.md` | PRD4 formal product requirements | Completed current PRD4 scope |
 | `docs/planning/PRD4-BACKLOG.md` | PRD4 candidate backlog | Source record for PRD4 scope discovery |
@@ -135,8 +136,9 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md` | Current PRD6 local baseline and code-finding evidence |
 | `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md` | Current PRD6 scalability/anti-pattern audit; findings remain source/local, not 100x or target verified |
 | `docs/ops/evidence/PRD6-B0B-P6F33-notification-tenant-isolation-local-20260711.md` | Current P6-F33 local plus PR/post-merge CI evidence; target cutover not executed |
-| `docs/ops/evidence/PRD6-B0B-P6F37-audit-log-tenant-isolation-local-20260711.md` | Current P6-F37 local evidence; required PR CI pending |
-| `docs/ops/evidence/PRD6-B0B-P6F38-frontend-test-ci-local-20260711.md` | Current P6-F38 local evidence; exact-head CI must prove Vitest executes |
+| `docs/ops/evidence/PRD6-B0B-P6F37-audit-log-tenant-isolation-local-20260711.md` | P6-F37 local and CI evidence; PR #143 and post-merge required CI passed |
+| `docs/ops/evidence/PRD6-B0B-P6F38-frontend-test-ci-local-20260711.md` | P6-F38 local and CI evidence; PR #143 proves Vitest executes in required CI |
+| `docs/ops/evidence/PRD6-B0B-P6F32-P6F39-finance-and-usage-tenant-isolation-local-20260711.md` | Current P6-F32/P6-F39 local plus PR #145 required-CI evidence; merge pending |
 | `docs/planning/PRD5-CURRENT-GAP-AUDIT-20260710.md` | PRD5 closeout accounting and historical next-window input |
 | `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md` | PRD5 Batch 1X local repository audit, P5-F12 screening decisions, safe local Logs/CI fixes, and INFRA-SEC-001 plan |
 | `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md` | PRD5 Batch 1Y accepted UniRouter-owned implementation and local full verification |

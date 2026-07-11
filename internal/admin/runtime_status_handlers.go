@@ -182,9 +182,14 @@ type monitoringHTTPResult struct {
 }
 
 func (h *Handler) RuntimeStatus(w http.ResponseWriter, r *http.Request) {
+	orgID, err := resolveRequestOrganization(r)
+	if err != nil {
+		writeOrganizationScopeError(w, err)
+		return
+	}
 	database := h.runtimeDatabaseHealth(r.Context())
 	redis := h.runtimeRedisHealth(r.Context())
-	traffic := h.runtimeTrafficStatus(r.Context())
+	traffic := h.runtimeTrafficStatus(r.Context(), orgID)
 	hostTelemetry := h.runtimeHostTelemetry()
 
 	overallStatus := runtimeOverallStatus(database, redis, traffic)
@@ -465,7 +470,7 @@ func (h *Handler) runtimeRedisHealth(ctx context.Context) runtimeDependencyStatu
 	return runtimeDependencyStatus{Status: "connected", LatencyMS: elapsedMillis(started)}
 }
 
-func (h *Handler) runtimeTrafficStatus(ctx context.Context) runtimeTrafficStatus {
+func (h *Handler) runtimeTrafficStatus(ctx context.Context, orgID int64) runtimeTrafficStatus {
 	status := runtimeTrafficStatus{Status: "available", WindowMinutes: runtimeTrafficWindowMinutes}
 	if h.db == nil {
 		status.Status = "unavailable"
@@ -478,7 +483,8 @@ func (h *Handler) runtimeTrafficStatus(ctx context.Context) runtimeTrafficStatus
 WITH recent AS (
 	SELECT total_tokens, cost_cents, latency_ms, status_code
 	FROM call_logs
-	WHERE created_at >= NOW() - ($1::int * INTERVAL '1 minute')
+	WHERE org_id = $1
+	  AND created_at >= NOW() - ($2::int * INTERVAL '1 minute')
 )
 SELECT
 	COUNT(*),
@@ -487,7 +493,7 @@ SELECT
 	COALESCE(SUM(cost_cents), 0),
 	COALESCE((SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) FROM recent WHERE latency_ms > 0), 0),
 	COALESCE((SELECT percentile_cont(0.99) WITHIN GROUP (ORDER BY latency_ms) FROM recent WHERE latency_ms > 0), 0)
-FROM recent`, runtimeTrafficWindowMinutes).Scan(
+FROM recent`, orgID, runtimeTrafficWindowMinutes).Scan(
 		&status.Requests,
 		&status.ErrorRequests,
 		&status.TotalTokens,
