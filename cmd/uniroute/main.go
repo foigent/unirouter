@@ -83,7 +83,7 @@ func main() {
 
 	// Initialize core components from one typed, read-only effective
 	// configuration registry. Dynamic policy rollout remains a later contract.
-	effectiveConfig, err := runtimeconfig.New(cfg.RoutingPolicyConfig())
+	effectiveConfig, err := runtimeconfig.New(cfg.RoutingPolicyConfig(), cfg.StreamPolicyConfig())
 	if err != nil {
 		log.Fatalf("Invalid effective runtime configuration: %v", err)
 	}
@@ -108,6 +108,9 @@ func main() {
 	}
 	encKey := []byte(cfg.EncryptionKey)
 	relay := gateway.NewRelay(postgres.Pool, redisClient.Client, router, billingSvc, sensitiveFilter, encKey)
+	if err := relay.SetStreamPolicy(effectiveConfig.StreamTransport.Config); err != nil {
+		log.Fatalf("Invalid effective stream transport configuration: %v", err)
+	}
 	relay.SetTraceEvents(cfg.TraceEventsEnabled, cfg.TraceEventSampleRate)
 	relay.SetPayloadCaptureMode(cfg.PayloadCaptureMode)
 	relay.SetEvidenceContextTrustSecret(cfg.EvidenceContextTrustSecret)

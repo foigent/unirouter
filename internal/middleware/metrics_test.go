@@ -2,13 +2,34 @@ package middleware
 
 import (
 	"fmt"
-	"strings"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
+
+type deadlineResponseWriter struct {
+	header        http.Header
+	deadlineCalls int
+}
+
+func (writer *deadlineResponseWriter) Header() http.Header {
+	return writer.header
+}
+
+func (writer *deadlineResponseWriter) Write(payload []byte) (int, error) {
+	return len(payload), nil
+}
+
+func (writer *deadlineResponseWriter) WriteHeader(int) {}
+
+func (writer *deadlineResponseWriter) SetWriteDeadline(time.Time) error {
+	writer.deadlineCalls++
+	return nil
+}
 
 // getMetricValue reads a metric value from the default registry.
 func getMetricValue(name string, labels map[string]string) (float64, error) {
@@ -200,5 +221,20 @@ func TestMetricsMiddleware_FlusherInterface(t *testing.T) {
 	body := rec.Body.String()
 	if !strings.Contains(body, "data: hello") || !strings.Contains(body, "data: world") {
 		t.Errorf("Expected SSE data in response body, got: %s", body)
+	}
+}
+
+func TestMetricsMiddleware_ResponseControllerReachesServerWriter(t *testing.T) {
+	underlying := &deadlineResponseWriter{header: make(http.Header)}
+	handler := MetricsMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(30 * time.Second)); err != nil {
+			t.Fatalf("SetWriteDeadline() through metrics wrapper error = %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	handler.ServeHTTP(underlying, httptest.NewRequest(http.MethodGet, "/deadline", nil))
+	if underlying.deadlineCalls != 1 {
+		t.Fatalf("deadline calls = %d, want 1", underlying.deadlineCalls)
 	}
 }

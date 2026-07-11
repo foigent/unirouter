@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
-> Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F03-P6-F06 are CI verified / closed; 8 accepted feature rows remain not started
+> Date: 2026-07-12
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F06 are CI verified / closed; P6-F11 is in progress through a local-verified transport prerequisite; 7 accepted rows remain not started
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -32,8 +32,9 @@ required CI. No scope decision grants target/deployment/data/cost authorization.
 - 25 are accepted implementation scope;
 - 17 are CI verified / closed: P6-F01 through P6-F06, P6-F16, P6-F17, P6-F18
   and P6-F32 through P6-F39;
-- 8 accepted rows remain not started: P6-F07 through P6-F11 and P6-F19
-  through P6-F21;
+- 8 accepted rows remain unclosed: P6-F11 is in progress through the
+  P6-STREAM-002A transport prerequisite; P6-F07 through P6-F10 and P6-F19
+  through P6-F21 remain not started;
 - 14 rows are not accepted: P6-F12 through P6-F15 and P6-F22 through P6-F31;
 - `P6-TEST-DB-001` is a separate accepted engineering-integrity issue outside
   the feature-row count. PR #155, merge `4b18ace` and post-merge main run
@@ -191,7 +192,9 @@ Order within the batch:
    cancel/refund PostgreSQL tests plus a fail-closed required CI step passed PR
    #160 and post-merge main CI;
 5. handle stream Scanner errors, response-body lifetime, single-writer/flush and
-   timeout semantics safely;
+   timeout semantics safely — P6-STREAM-002A is Local verified / PR pending;
+   reservation-aware extension and the P6-F11 semantic policy hook remain later
+   accepted slices;
 6. preserve the P6-F35 strict-version sensitive-word reload and P6-F05 typed
    configuration/budget-alert regressions.
 
@@ -206,9 +209,17 @@ selected policy contract must be complete.
 
 Design first:
 
-- capability exchange, claims, signature/key versions, maximum TTL, monotonic
-  delegation, ancestor budgets and refresh jitter/singleflight;
-- auth/policy snapshot invalidation and revocation SLO;
+- explicit supervisor capability exchange/registration rather than passive
+  discovery from request traffic; claims, signature/key versions, monotonic
+  delegation and ancestor budgets;
+- five-minute maximum capability TTL, refresh around minute three with jitter
+  and singleflight, and expiry that rejects new admission without killing an
+  already admitted request;
+- active auth/policy revocation convergence across all replicas within 30
+  seconds; hard budget and mandatory safety stops remain immediate;
+- workflow lifetime, depth, fan-out and ancestor budget independent of token
+  TTL; UniRouter capabilities grant model-gateway authority only, never Tool,
+  IAM, database or export authority;
 - canonical selector and precedence model;
 - RPM/RPS/TPM/concurrency reservation and settlement semantics;
 - weighted workload classes and separate short/long-work fairness;

@@ -100,6 +100,13 @@ type responseWriter struct {
 	statusCode int
 }
 
+// Unwrap lets http.ResponseController reach the original server writer. SSE
+// handlers use it to renew per-write deadlines beyond the server's aggregate
+// WriteTimeout without weakening timeout protection for non-stream handlers.
+func (rw *responseWriter) Unwrap() http.ResponseWriter {
+	return rw.ResponseWriter
+}
+
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)

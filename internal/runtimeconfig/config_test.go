@@ -6,18 +6,25 @@ import (
 	"testing"
 
 	"github.com/uniroute/unirouter/internal/routingpolicy"
+	"github.com/uniroute/unirouter/internal/streampolicy"
 )
 
 func TestNewBuildsTypedEffectiveConfiguration(t *testing.T) {
 	routing := routingpolicy.Default()
 	routing.MaxRetryCount = 4
+	stream := streampolicy.Default()
+	stream.MaxSSELineBytes = 4 * 1024 * 1024
 
-	snapshot, err := New(routing)
+	snapshot, err := New(routing, stream)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
 	if snapshot.Version != Version || snapshot.RoutingPolicy.Version != routingpolicy.Version || snapshot.RoutingPolicy.MaxRetryCount != 4 {
 		t.Fatalf("unexpected routing registry: %#v", snapshot)
+	}
+	if snapshot.StreamTransport.Version != streampolicy.Version || snapshot.StreamTransport.Source != "startup_environment" ||
+		snapshot.StreamTransport.MaxSSELineBytes != 4*1024*1024 || snapshot.StreamTransport.WriteIdleTimeoutSeconds != 30 {
+		t.Fatalf("unexpected stream transport registry: %#v", snapshot.StreamTransport)
 	}
 	if snapshot.BudgetAlerts.Version != BudgetAlertPolicyVersion || snapshot.BudgetAlerts.Scope != "project" ||
 		snapshot.BudgetAlerts.BudgetSource != "projects.budget_cents" || snapshot.BudgetAlerts.PeriodSource != "projects.budget_period" ||
@@ -40,7 +47,15 @@ func TestNewBuildsTypedEffectiveConfiguration(t *testing.T) {
 func TestNewRejectsInvalidRoutingPolicy(t *testing.T) {
 	routing := routingpolicy.Default()
 	routing.MaxRetryCount = 11
-	if _, err := New(routing); err == nil {
+	if _, err := New(routing, streampolicy.Default()); err == nil {
 		t.Fatal("expected invalid routing policy to fail")
+	}
+}
+
+func TestNewRejectsInvalidStreamTransportPolicy(t *testing.T) {
+	stream := streampolicy.Default()
+	stream.HeartbeatSeconds = stream.WriteIdleTimeoutSeconds
+	if _, err := New(routingpolicy.Default(), stream); err == nil {
+		t.Fatal("expected invalid stream transport policy to fail")
 	}
 }

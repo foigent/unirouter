@@ -115,3 +115,16 @@ func TestSanitizeMetadata_RoutingPolicyFields(t *testing.T) {
 		t.Fatalf("unexpected effective routing policy metadata: %#v", metadata)
 	}
 }
+
+func TestSanitizeMetadata_StreamPolicyFields(t *testing.T) {
+	metadata, gap := SanitizeMetadataWithGap(map[string]interface{}{
+		"stream_policy_version":     "stream-transport.v1",
+		"stream_max_sse_line_bytes": 2 * 1024 * 1024,
+	})
+	if gap != "" {
+		t.Fatalf("expected stream policy metadata to remain, got gap %q", gap)
+	}
+	if len(metadata) != 2 || metadata["stream_policy_version"] != "stream-transport.v1" || metadata["stream_max_sse_line_bytes"] != 2*1024*1024 {
+		t.Fatalf("unexpected stream policy metadata: %#v", metadata)
+	}
+}

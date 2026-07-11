@@ -8,7 +8,7 @@
 |------|------|-------|
 | Main server | `cmd/uniroute/main.go` | Loads config, connects Postgres/Redis, runs migrations, wires gateway/admin routes, starts background cleanup and alerts |
 | Main tests | `cmd/uniroute/main_test.go` | Top-level route behavior tests |
-| Config | `internal/config/config.go` | Environment config and validation, including `JWT_SECRET`, `API_KEY_HASH_SECRET`, `ENCRYPTION_KEY`, optional `LICENSE_PUBLIC_KEY`, PRD4 trace event sampling/retention config, and Runtime Status metadata/Prometheus/Grafana URLs |
+| Config | `internal/config/config.go` | Environment config and validation, including secrets, optional license, trace/retention, Runtime Status integration metadata and validated stream-transport policy |
 | Database | `internal/db/postgres.go` | pgx pool setup and health |
 | Redis | `internal/redisx/redis.go` | Redis setup, health, wallet cache helpers |
 | Migrations | `migrations/*.sql` | Base schema plus wallet/schema/PRD alignment migrations, including PRD4 API key owner usage attribution in `000016`, request trace events in `000017`, PRD5 structural evidence fields in `000018`, PRD5 Data Exchange Control ledger in `000019`, and PRD6 historical Webhook scope quarantine in `000020` |
@@ -24,7 +24,7 @@
 | `internal/circuitbreaker` | Standalone circuit breaker implementation and tests |
 | `internal/filter` | DFA sensitive-word filter |
 | `internal/errdocs` | Error documentation registry used by gateway `doc_url` responses and API Docs |
-| `internal/gateway` | Model routing, upstream relay, chat completions, embeddings, model listing, request logging, metadata-only request trace events |
+| `internal/gateway` | Model routing, upstream relay, chat completions, embeddings, model listing, request logging, metadata-only request trace events, and serialized bounded SSE transport |
 | `internal/licensing` | Offline license document parsing, Ed25519 signature verification, expiry status, and warning calculation |
 | `internal/logger` | Logging helpers |
 | `internal/metering` | Usage-source constants and token-metering source classification |
@@ -33,7 +33,8 @@
 | `internal/modelgov` | Model governance helpers and access checks |
 | `internal/models` | Shared data model types |
 | `internal/routingpolicy` | Validated immutable retry, circuit/probe, cooldown and provider-key health configuration |
-| `internal/runtimeconfig` | Safe versioned effective-configuration registry for routing values and the active project budget-alert contract |
+| `internal/runtimeconfig` | Safe versioned effective-configuration registry for routing, stream transport and the active project budget-alert contract |
+| `internal/streampolicy` | Immutable validated SSE line, write-idle, heartbeat and maximum-duration policy (`stream-transport.v1`) |
 | `internal/traceutil` | Shared request trace metadata sanitizer and PRD5 capture-gap helper used by gateway trace writes and admin trace responses |
 | `internal/oidc` | OIDC discovery, token exchange, JWKS verification, and identity extraction |
 | `internal/testutil` | Mock DB and test DB helpers |

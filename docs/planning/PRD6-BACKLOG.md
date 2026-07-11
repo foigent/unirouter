@@ -1,6 +1,6 @@
 # PRD6 Backlog And Decision Register
 
-> Date: 2026-07-11
+> Date: 2026-07-12
 > Rule: this is a classified input queue, not an implementation promise.
 
 ## 1. Accepted Active Work
@@ -19,6 +19,7 @@
 | P6-CONTROL-AUTH-001 / P6-F35 | Platform-gate deployment settings, license and global sensitive words | Prevents tenant roles mutating deployment-wide controls or bypassing dedicated license/word paths | PR #147 final-head CI run `29139408226`, squash merge `c08db961`, and post-merge main run `29139534691` passed; historical branch retained |
 | P6-MODELGOV-TENANT-001 / P6-F36 | Tenant-scope registry, alias, catalog and organization model sets | Prevents cross-tenant model-policy disclosure/mutation | PR #148 final run `29140739477`, squash merge `d83dbbc`, and post-merge main run `29140850345` passed |
 | P6-IDEM-001 / P6-F17 | Separate server operation, client idempotency, trace/workflow/Agent/attempt and upstream identities | Prevents client-controlled financial collisions and makes retries/failover/admin evidence traceable | PR #149 implementation and post-merge main required CI passed; merged as `c9402fa`; no target claim |
+| P6-STREAM-002A | Typed long-stream transport safety | Removes confirmed 64-KiB frame, hidden timeout, concurrent write/flush, body-lifecycle and false-success terminal defects without adding semantic guardrails | Local verified / PR pending; evidence: `docs/ops/evidence/PRD6-B0C-P6STREAM002A-stream-transport-local-20260712.md` |
 
 ## 2. Accepted MVP — Ordered Work Queue
 
@@ -32,14 +33,14 @@
 | P6-ROUTE-003 | Embeddings failover parity | removes endpoint reliability asymmetry | CI verified / closed by PR #157, merge `36f736c` and post-merge main run `29159155254` | P0 |
 | P6-CONFIG-001 | Typed effective routing and budget-alert truth | operator control, explainability and tenant-safe alert scope | CI verified / closed by PR #158 / `ca02ecb` and post-merge main run `29160494169`; preserve `effective-config.v1`, routing/budget PostgreSQL gates and retired global-key behavior | P0 |
 | P6-BILL-002 | Multiplier-aware freeze/settle correctness | prevents uncollected cost | CI verified / closed by PR #160 / merge `15ea8a2` / main run `29161527988`: P6-F18A freezes the effective multiplier price; the dedicated PostgreSQL gate proves insufficient rejection without residue, exact 32-way settlement with zero uncovered cost and idempotent cancel/refund | P0 |
-| P6-CAP-001 | Short, attenuating Agent capability and ancestor budget | avoids shared-secret/per-child-key explosion and quota amplification | claim contract, key rotation, TTL/refresh, revocation | P1 |
+| P6-CAP-001 | Short, attenuating Agent capability and ancestor budget | avoids shared-secret/per-child-key explosion and quota amplification | D6-11 accepted: explicit supervisor exchange, five-minute max TTL, minute-three jittered/singleflight refresh, admitted-work continuity, <=30-second active revocation, model-gateway-only authority | P1 |
 | P6-LIMIT-002 | Shared RPM/RPS/TPM/concurrency policy | enterprise isolation/capacity | failure-mode and output TPM semantics | P1 |
 | P6-ROUTE-004 | Routing Policy V1 | predictable priority/weight/retry/failover | telemetry, policy version and rollback | P1 |
 | P6-DURABLE-001 | Durable minimal usage/finalization and bounded evidence workers | prevents post-delivery revenue loss and evidence self-DDoS | transactional outbox, replay and priority semantics | P1 |
 | P6-WORK-001 | Weighted workload admission | prevents long streams/media starving short work and replica-multiplied quotas | workload envelope, lease/fairness semantics | P1 |
 | P6-BILL-001 | Prompt-cache token usage and billing | accurate provider economics | versioned adapter/price sources | P1 |
 | P6-GUARD-001 | Guardrail Kernel | enterprise safety and PII controls | detector/failure/latency policy | P1 |
-| P6-STREAM-001 | Streaming interception and termination | limits unsafe live disclosure | buffer/latency/protocol contract | P1 |
+| P6-STREAM-001 | Streaming interception and termination | limits unsafe live disclosure | P6-STREAM-002A transport prerequisite local verified; D6-10 dynamic reservation extension and buffer/latency/protocol policy contract remain | P1 |
 
 ## 3. D6-08 Accepted Administrator Integrity Queue
 
@@ -155,3 +156,5 @@ authorization before execution.
 | D6-07 Innovation data posture | metadata-only by default; content analysis requires tenant opt-in plus purpose/retention/delete/access controls | Proposed | gates semantic analysis, shadow data and training cases |
 | D6-08 Administrator authority split | platform owns global price/settings/license/global sensitive words and organization multipliers; tenant roles are confined to their JWT org | Accepted by User 2026-07-11 with option B | authorizes P6-F32-P6-F36; organization multipliers are `platform_admin` only until a separately accepted global billing-authority role exists |
 | D6-09 Closeout sequencing | complete accepted PRD6 repository scope first; defer all PRD7 implementation and target-evidence execution | Accepted by User 2026-07-11 | preserves both future queues without authorizing target action; historical branches remain retained; the existing Gate A file deadline is unchanged |
+| D6-10 Long-stream hard budget | reserve first and extend idempotently before a guard band; if extension fails, stop upstream and settle only delivered output | Accepted by User 2026-07-12 as Scheme A | authorizes the future reservation-extension slice; P6-STREAM-002A is only its transport prerequisite and does not claim financial completion |
+| D6-11 Child-Agent capability lifecycle | explicit supervisor exchange; five-minute max token; minute-three jittered/singleflight refresh; expiry blocks new admission, active revocation converges <=30 seconds; workflow limits separate; model-gateway authority only | Accepted by User 2026-07-12 | fixes discovery, long-running Agent and ownership semantics before P6-F19 implementation |

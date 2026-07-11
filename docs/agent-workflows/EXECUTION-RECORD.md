@@ -1,27 +1,49 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 0C P6-F06 CI Evidence Closeout
+**Batch:** PRD6 Batch 0C P6-STREAM-002A Typed Stream Transport
 **Owner:** Codex
-**Risk:** R3 tenant financial correctness
-**Status:** CI verified / closed
-**Integration:** PR #160 required run `29161370623`; merge `15ea8a2`; post-merge main run `29161527988`; historical branch retained; no deployment, target or production claim
-**Previous batch:** P6-F05 CI verified / closed by PR #158 and post-merge main run `29160494169`
+**Risk:** R3 request-path transport and partial-stream billing finalization
+**Status:** Local verified; PR and required CI pending
+**Integration:** branch `codex/prd6-stream-transport`; base `1103f4bd6afef9f55ad7a1fcb4be8bd78031ae44`; no deployment, target or production claim
+**Previous batch:** P6-F06 CI verified / closed by PR #160 and post-merge main run `29161527988`
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Current Scope
 
-1. Reconcile the original multiplier under-freeze finding against the completed
-   P6-F18A effective-price snapshot before changing financial behavior.
-2. Prove that multiplier-adjusted insufficient funds reject atomically without
-   a reservation or ledger residue.
-3. Prove that exact multiplier-adjusted funds produce one terminal receipt and
-   zero uncovered cost under concurrent identical settlement.
-4. Prove that cancellation restores the complete multiplier-adjusted hold once.
-5. Add the migrated PostgreSQL matrix as a fail-closed required Backend step.
-6. Keep the intentional general actual-usage-overrun rule, pricing APIs,
-   migrations, provider calls, deployment and target evidence outside this PR.
+1. Replace the hidden 64-KiB scanner limit with a validated, observable frame
+   bound and fail safely on over-limit or upstream read errors.
+2. Serialize every SSE write with its flush and preserve the
+   `http.ResponseController` deadline chain through response-writer wrappers.
+3. Give the provider body one lifecycle owner and use a fresh bounded context
+   for settlement/log/trace finalization after request cancellation.
+4. Preserve the P6-F18 billable-output marker and settle only already delivered
+   output after transport failure; never append a false success extension or
+   `[DONE]`.
+5. Expose one typed startup policy in env, Compose, Runtime Status, UI and
+   focused required CI.
+6. Keep D6-10 dynamic reservation extension, P6-F11 semantic interception,
+   P6-F20 outbox/process-kill guarantees, deployment and target evidence out of
+   this PR.
 
-## Current P6-F06 Evidence Change
+## Current P6-STREAM-002A Behavior Change
+
+- `stream-transport.v1` validates a 2-MiB maximum SSE line, 30-second
+  write-idle deadline, 15-second heartbeat and 30-minute maximum duration;
+- the metrics wrapper now exposes `Unwrap`, allowing per-write deadline renewal
+  to reach the native server connection beyond the aggregate 120-second server
+  timeout while leaving non-stream timeout policy unchanged;
+- a single writer serializes Write+Flush and focused race tests run 100
+  concurrent calls without overlap;
+- 64-KiB-plus-one and 1-MiB frames complete, configured over-limit frames return
+  `stream_error.frame_too_large`, and upstream read failure after partial output
+  settles the delivered usage without `_uniroute` success or `[DONE]`;
+- final downstream write failure retains the durable settlement and records a
+  sanitized termination rather than fabricating success;
+- config default/override/fail-closed tests, Runtime Status API/UI tests,
+  focused gateway/middleware race tests and frontend type-check pass locally;
+- evidence: `docs/ops/evidence/PRD6-B0C-P6STREAM002A-stream-transport-local-20260712.md`.
+
+## Previous P6-F06 Behavior Change
 
 - P6-F18A already reads and applies the organization multiplier before Freeze,
   persists the effective prices/multiplier/version, and settles from that
