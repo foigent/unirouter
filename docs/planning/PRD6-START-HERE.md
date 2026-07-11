@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F16/P6-F32/P6-F33/P6-F37/P6-F38/P6-F39 merged; P6-F34 CI verified by PR #146 implementation head; merge pending
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F16/P6-F32/P6-F33/P6-F34/P6-F37/P6-F38/P6-F39 merged; P6-F35 local verified with PR/required CI/merge pending
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -34,18 +34,20 @@ recommended MVP boundary and policy-specific failure posture on 2026-07-11:
 7. `docs/ops/evidence/PRD6-B0B-P6F37-audit-log-tenant-isolation-local-20260711.md`
 8. `docs/ops/evidence/PRD6-B0B-P6F38-frontend-test-ci-local-20260711.md`
 9. `docs/ops/evidence/PRD6-B0B-P6F32-P6F39-finance-and-usage-tenant-isolation-local-20260711.md`
-10. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`
-11. `docs/planning/PRD7-CANDIDATE-BACKLOG.md`
-12. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
-13. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
-14. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
-15. `docs/PRD-Phase6.md`
-16. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
-17. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
-18. `docs/planning/PRD6-BACKLOG.md`
-19. `docs/issues/OPEN-ISSUES.md`
-20. `docs/agent-workflows/AGENT-PROTOCOL.md`
-21. `docs/agent-workflows/EXECUTION-RECORD.md`
+10. `docs/ops/evidence/PRD6-B0B-P6F34-pricing-authority-local-20260711.md`
+11. `docs/ops/evidence/PRD6-B0B-P6F35-global-control-authority-local-20260711.md`
+12. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`
+13. `docs/planning/PRD7-CANDIDATE-BACKLOG.md`
+14. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
+15. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
+16. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
+17. `docs/PRD-Phase6.md`
+18. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
+19. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
+20. `docs/planning/PRD6-BACKLOG.md`
+21. `docs/issues/OPEN-ISSUES.md`
+22. `docs/agent-workflows/AGENT-PROTOCOL.md`
+23. `docs/agent-workflows/EXECUTION-RECORD.md`
 
 PRD5 evidence remains under its existing paths. Do not rewrite it as PRD6
 evidence.
@@ -86,9 +88,13 @@ evidence.
   subtests passed rather than skipped; post-merge `main` CI also passed.
 - P6-F32 through P6-F36 are later source-confirmed administrator-surface inputs
   accepted by D6-08. P6-F32/P6-F39 are merged and CI verified by PR #145 /
-  `609385f`; P6-F33 is CI verified by PR #142 / `7173c59`; P6-F34 is CI
-  verified by PR #146 implementation head with merge pending. P6-F35/P6-F36
-  remain unremediated. P6-F37
+  `609385f`; P6-F33 is CI verified by PR #142 / `7173c59`; P6-F34 was
+  squash-merged by PR #146 as `517ce45381429781f7e81e492bdd9f38093c21ba`,
+  final-head run `29137670055` and
+  post-merge main run `29137781625` passed all required jobs, and its historical
+  branch is retained. P6-F35 implementation, local verification and independent
+  review are complete with PR/required CI/merge pending and no target/production
+  claim. P6-F36 remains unremediated. P6-F37
   and P6-F38 are merged and CI verified by PR #143 / `a1e0ad6`.
 
 ## PRD5 Closure Guard
@@ -139,7 +145,15 @@ deployment, target mutation, paid shadow traffic, raw-payload expansion, a new
 X-Insight contract, semantic response cache, video execution, or an IAM rewrite.
 
 D6-08 authorizes P6-F32 through P6-F36 through separate reviewable PRs. P6-F32,
-P6-F33 and P6-F39 are merged and CI verified. P6-F34 is CI verified by PR #146
-implementation head with merge pending.
+P6-F33, P6-F34 and P6-F39 are merged and CI verified. P6-F35 is local verified
+and independently reviewed with PR/required CI/merge pending.
 P6-F37/P6-F38 are merged and CI verified by PR #143; post-merge main run
 `29133690338` passed Backend Tests, Frontend Build and Docker Build.
+
+P6-F35 adds no global-settings UI. D6-09 defers target execution; a later
+authorized activation must drain old control-plane binaries and be non-rolling,
+because mixed old/new binaries are not safe for these endpoints. New-version
+replicas converge committed global-word changes through the existing
+approximately one-minute reload. Typed config ownership plus the budget/alert
+key, scope and audit truth chain remain P6-F05/P6-F17; ambiguous network commit
+readback/idempotency remains P6-F17.

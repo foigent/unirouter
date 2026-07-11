@@ -90,7 +90,7 @@ func TestUpdateLicense_ValidStoresAndAudits(t *testing.T) {
 			return pgconn.NewCommandTag("INSERT 1"), nil
 		},
 	}
-	h := newTestHandler(db)
+	h := newTestHandler(globalControlTestDB(db))
 	h.SetLicenseVerifier(verifier)
 
 	req := httptest.NewRequest("PUT", "/api/v1/license", strings.NewReader(fmt.Sprintf(`{"license":%s}`, licenseJSON))).WithContext(licenseRequestContext())

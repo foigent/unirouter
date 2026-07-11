@@ -11,9 +11,13 @@
 > P6-F32 finance/reconciliation and adjacent P6-F39 usage-derived tenant
 > isolation were squash-merged by PR #145 as
 > `609385f663cee883ad5965facb25ce4185d8b89a`; post-merge main CI run
-> `29136296782` passed all three jobs. P6-F34 pricing authority is CI verified
-> by PR #146 implementation head `0e15dbb` / run `29137361064`; merge is
-> pending and no deployment is claimed.
+> `29136296782` passed all three jobs. P6-F34 pricing authority was
+> squash-merged by PR #146 as
+> `517ce45381429781f7e81e492bdd9f38093c21ba`; final-head required CI run
+> `29137670055` and post-merge main run `29137781625` passed all three jobs,
+> and its historical branch is retained. P6-F35 global-control authority is
+> locally verified and independently reviewed; PR/required CI/merge remain
+> pending and no target or production verification is claimed.
 > D6-01, D6-02, D6-08 and D6-09 were accepted by the User on 2026-07-11; advanced
 > innovation rows P6-F23 through P6-F31 remain proposed.
 
@@ -40,6 +44,8 @@
   `docs/ops/evidence/PRD6-B0B-P6F32-P6F39-finance-and-usage-tenant-isolation-local-20260711.md`.
 - P6-F34 pricing-authority local evidence:
   `docs/ops/evidence/PRD6-B0B-P6F34-pricing-authority-local-20260711.md`.
+- P6-F35 global-control authority local evidence:
+  `docs/ops/evidence/PRD6-B0B-P6F35-global-control-authority-local-20260711.md`.
 - Source-backed product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
 - PRD7 candidate-only split (not Accepted Scope):
@@ -79,12 +85,22 @@ Backend log shows all twelve authenticated subtests PASS rather than SKIP. A
 later read-only audit found P6-F32 through P6-F36 across finance, notifications,
 pricing, global settings and organization model governance. D6-08 separately
 accepted those rows with tenant roles confined to their JWT organization and
-platform-only global/multiplier authority. P6-F32/P6-F33/P6-F37/P6-F38/P6-F39
-are merged and CI verified. P6-F34 is CI verified by PR #146 implementation
-head with merge pending; P6-F35-P6-F36 remain unremediated. No audit row is
-presented as a production
+platform-only global/multiplier authority. P6-F32/P6-F33/P6-F34/P6-F37/P6-F38/P6-F39
+are merged and CI verified. P6-F35 implementation, local verification and
+independent review are complete with PR/required CI/merge pending; P6-F36
+remains unremediated. No audit row is presented as a production
 incident, 100x proof, or implemented remediation before its exact evidence
 exists.
+
+P6-F35 local evidence covers the repository boundary only. D6-09 defers its
+target activation; a later authorized cutover must drain old control-plane
+binaries and activate only the new version non-rolling because mixed old/new
+binaries are not safe for these endpoints. Other new-version instances learn a
+committed sensitive-word version through the existing approximately one-minute
+reload path. No global-settings UI was added. A typed configuration registry,
+budget/alert key-scope-audit truth, and ambiguous network commit readback and
+idempotency remain accepted P6-F05/P6-F17 work rather than P6-F35 completion
+claims.
 
 The User selected D7-UPGRADE-001/002 as the first future PRD7 direction but
 deferred every PRD7 implementation and target-evidence execution until PRD6

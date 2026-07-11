@@ -6,13 +6,15 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/licensing"
 )
 
 const licenseSettingKey = "license.offline"
 
 func (h *Handler) GetLicense(w http.ResponseWriter, r *http.Request) {
+	if !requirePlatformGlobalControl(w, r) {
+		return
+	}
 	raw, err := h.readStoredLicense(r)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to read license"})
@@ -22,6 +24,9 @@ func (h *Handler) GetLicense(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) UpdateLicense(w http.ResponseWriter, r *http.Request) {
+	if !requirePlatformGlobalControl(w, r) {
+		return
+	}
 	var req struct {
 		License json.RawMessage `json:"license"`
 	}
@@ -47,14 +52,24 @@ func (h *Handler) UpdateLicense(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error()})
 		return
 	}
-	beforeRaw, err := h.readStoredLicense(r)
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Transaction failed"})
+		return
+	}
+	defer tx.Rollback(r.Context())
+	if err := lockGlobalControlKey(r.Context(), tx, licenseSettingKey); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Lock failed"})
+		return
+	}
+	beforeRaw, _, err := readGlobalSetting(r.Context(), tx, licenseSettingKey, true)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to read existing license"})
 		return
 	}
 	beforeStatus := verifier.VerifyBytes(beforeRaw)
 
-	_, err = h.db.Exec(r.Context(),
+	_, err = tx.Exec(r.Context(),
 		`INSERT INTO settings (key, value, description, updated_at)
 		 VALUES ($1, $2::jsonb, 'Offline UniRouter license document', NOW())
 		 ON CONFLICT (key) DO UPDATE SET value = $2::jsonb, description = EXCLUDED.description, updated_at = NOW()`,
@@ -64,25 +79,28 @@ func (h *Handler) UpdateLicense(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.recordAuditFromRequest(r, "license.update", "license", licenseResourceID(status), map[string]interface{}{
-		"before": licenseAuditSummary(beforeStatus),
-		"after":  licenseAuditSummary(status),
-	})
+	auditResourceID, resourceIDHashed := globalControlAuditResourceID(licenseResourceID(status))
+	if err := insertAuditEntry(r.Context(), tx, "license.update", "license", auditResourceID, map[string]interface{}{
+		"scope":              "platform_global",
+		"resource_id_hashed": resourceIDHashed,
+		"before":             licenseAuditSummary(beforeStatus),
+		"after":              licenseAuditSummary(status),
+	}, globalControlAuditMeta(r)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Commit failed"})
+		return
+	}
 	h.emitLicenseWarningEvent(r.Context(), status)
 
 	writeJSON(w, http.StatusOK, status)
 }
 
 func (h *Handler) readStoredLicense(r *http.Request) ([]byte, error) {
-	var raw []byte
-	err := h.db.QueryRow(r.Context(), `SELECT value FROM settings WHERE key = $1`, licenseSettingKey).Scan(&raw)
-	if err == nil {
-		return raw, nil
-	}
-	if errors.Is(err, pgx.ErrNoRows) || strings.Contains(err.Error(), "no rows") {
-		return nil, nil
-	}
-	return nil, err
+	raw, _, err := readGlobalSetting(r.Context(), h.db, licenseSettingKey, false)
+	return raw, err
 }
 
 func (h *Handler) licenseVerifierOrDefault() *licensing.Verifier {

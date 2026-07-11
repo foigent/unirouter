@@ -48,7 +48,14 @@ describe('ApiDocsPage', () => {
       expect(screen.getAllByText(path).length).toBeGreaterThan(0);
     });
 
+    [
+      '部署级设置（仅平台管理员）',
+      'License 状态（仅平台管理员）',
+      '全局输入阻断词库（仅平台管理员）',
+    ].forEach((description) => {
+      expect(screen.getByText(description)).toBeTruthy();
+    });
+
     expect(await screen.findByText('auth_error.invalid_api_key')).toBeTruthy();
   });
 });
-

@@ -3,7 +3,9 @@
 > Date: 2026-07-11
 > Base: `609385f663cee883ad5965facb25ce4185d8b89a`
 > Branch: `codex/prd6-p6f34-price-authority`
-> Evidence level: CI verified by PR #146 implementation head `0e15dbb` / run `29137361064`; final documentation head and merge pending; no deployment is claimed
+> Evidence level: PR #146 implementation and final heads CI verified; squash
+> merged as `517ce45381429781f7e81e492bdd9f38093c21ba`; post-merge main CI
+> verified; no deployment is claimed
 
 ## Confirmed Pre-Fix Finding
 
@@ -111,8 +113,10 @@ remaining blocker, high or medium finding after the fail-closed, numeric-bound
 and concurrent before-state fixes. PR #146 implementation head
 `0e15dbb85418aab99c24189eb99d4ddb05068f49` passed `Backend Tests`, `Frontend
 Build` (including the 135-test suite) and `Docker Build` in required CI run
-`29137361064`. The final documentation head remains subject to the same required
-checks before merge.
+`29137361064`. Final branch head `85348bcf7ab3eb963a8ee4315f150db95b19bfd7`
+passed the same required jobs in run `29137670055`. PR #146 then squash-merged
+as `517ce45381429781f7e81e492bdd9f38093c21ba`, and post-merge main run
+`29137781625` passed all three required jobs. The historical branch is retained.
 
 ## Explicit Remaining Boundaries
 

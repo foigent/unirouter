@@ -526,9 +526,15 @@ paths:
     get: { $ref: "#/components/pathItems/List" }
 
   /api/v1/settings:
+    x-unirouter-rbac:
+      get: [platform_admin]
+    description: Deployment-wide settings. Dedicated license and sensitive-word values are redacted from this response.
     get: { $ref: "#/components/pathItems/List" }
 
   /api/v1/settings/{key}:
+    x-unirouter-rbac:
+      put: [platform_admin]
+    description: Deployment-wide setting update. license.* and sensitive_words must use their dedicated endpoints.
     put:
       tags: [Admin]
       summary: Update setting
@@ -546,6 +552,7 @@ paths:
           application/json:
             schema:
               type: object
+              required: [value]
               properties:
                 value:
                   nullable: true
@@ -554,6 +561,9 @@ paths:
           $ref: "#/components/responses/JSON"
 
   /api/v1/license:
+    x-unirouter-rbac:
+      get: [platform_admin]
+      put: [platform_admin]
     get: { $ref: "#/components/pathItems/Get" }
     put:
       tags: [Admin]
@@ -566,19 +576,49 @@ paths:
           application/json:
             schema:
               type: object
-              additionalProperties: true
+              required: [license]
+              properties:
+                license:
+                  oneOf:
+                    - type: object
+                    - type: string
       responses:
         "200":
           $ref: "#/components/responses/JSON"
 
   /api/v1/sensitive-words:
+    x-unirouter-rbac:
+      get: [platform_admin]
+      post: [platform_admin]
+      put: [platform_admin]
+      delete: [platform_admin]
+    description: Deployment-wide input blocking word list. The handling instance reloads after commit; other instances converge through the existing periodic reload.
     get: { $ref: "#/components/pathItems/List" }
-    post: { $ref: "#/components/pathItems/Create" }
+    post:
+      tags: [Admin]
+      summary: Add sensitive words
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SensitiveWordsMutation"
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
     put:
       tags: [Admin]
       summary: Replace sensitive words
       security:
         - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SensitiveWordsMutation"
       responses:
         "200":
           $ref: "#/components/responses/JSON"
@@ -587,6 +627,12 @@ paths:
       summary: Delete sensitive words
       security:
         - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SensitiveWordsMutation"
       responses:
         "200":
           $ref: "#/components/responses/JSON"
@@ -761,6 +807,14 @@ components:
           description: Deleted
 
   schemas:
+    SensitiveWordsMutation:
+      type: object
+      required: [words]
+      properties:
+        words:
+          type: array
+          items:
+            type: string
     ChatCompletionRequest:
       type: object
       required: [model, messages]
