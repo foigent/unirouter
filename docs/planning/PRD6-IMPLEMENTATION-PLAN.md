@@ -103,9 +103,9 @@ Split into independently reviewable security/financial PRs:
    preserve `settlement_pending` after billable output;
 6. define user/project/key/role revocation epochs and an all-replica SLO.
 
-P6-F18 is split into two R4 reviews. F18A is locally verified for step 4 plus
-the pre-output/source-preserving and single-terminal foundation of step 5; its
-required PR CI is pending. F18B remains responsible for the billable-output
+P6-F18 is split into two R4 reviews. F18A is CI verified by PR #151 for step 4
+plus the pre-output/source-preserving and single-terminal foundation of step 5.
+F18B remains responsible for the billable-output
 `settlement_pending` marker, persisted final usage, restart worker and
 post-last-chunk fault evidence. F18A alone must not close P6-F18.
 

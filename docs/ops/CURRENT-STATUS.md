@@ -27,6 +27,11 @@
 > passed required run `29152968280`, was squash-merged as
 > `c9402fad323e8656493ff1bb29367a5dcf118331`, and post-merge main run
 > `29153106336` passed all required jobs.
+> P6-F18A billing reservation invariants passed PR #151 required run
+> `29154664491`, were squash-merged as
+> `7db1efc9cf7c0c78fd6348446ed8701ecf86e8ee`, and post-merge main run
+> `29154820102` passed Backend Tests, Frontend Build and Docker Build. F18B
+> durable post-output settlement recovery remains open.
 > No target or production verification is claimed.
 > D6-01, D6-02, D6-08 and D6-09 were accepted by the User on 2026-07-11; advanced
 > innovation rows P6-F23 through P6-F31 remain proposed.
@@ -60,10 +65,10 @@
   `docs/ops/evidence/PRD6-B0B-P6F36-model-governance-tenant-isolation-local-20260711.md`.
 - P6-F17 operation/idempotency identity local and CI evidence:
   `docs/ops/evidence/PRD6-B0B-P6F17-operation-idempotency-identity-local-20260711.md`.
-- P6-F18A billing reservation invariant local evidence:
+- P6-F18A billing reservation invariant local and CI evidence:
   `docs/ops/evidence/PRD6-B0B-P6F18A-billing-reservation-invariants-local-20260711.md`.
-  F18A is locally verified on its implementation branch; required PR CI is
-  pending and F18B durable post-output settlement/restart recovery remains open.
+  PR #151 and post-merge main required CI passed; F18B durable post-output
+  settlement/restart recovery remains open.
 - Source-backed product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
 - PRD7 candidate-only split (not Accepted Scope):
@@ -130,12 +135,13 @@ financial uniqueness, and Logs/Audit readback. It stores no prompt/answer and
 does not close P6-F18 or P6-F20. Migration `000021` requires old-writer drain;
 its safe partial down is not authorization to restart an old binary.
 
-P6-F18A locally verifies the wallet/reservation foundation: price lookup no
+P6-F18A is CI verified for the wallet/reservation foundation: price lookup no
 longer re-enters a held pool transaction; the effective price/multiplier
 version is frozen; grant/cash holds and refunds preserve their source; grant
 expiry is atomic; duplicate exact-funds Freeze succeeds from one receipt; and a
-100-way mixed Settle/Cancel race creates one terminal ledger event. This is not
-yet required-CI evidence and does not close P6-F18: post-output
+100-way mixed Settle/Cancel race creates one terminal ledger event. PR #151
+required run `29154664491`, squash merge `7db1efc` and post-merge main run
+`29154820102` passed. This does not close P6-F18: post-output
 `settlement_pending`, final-usage persistence and restart recovery remain F18B.
 
 P6-F36 local evidence also covers only the repository boundary. It does not

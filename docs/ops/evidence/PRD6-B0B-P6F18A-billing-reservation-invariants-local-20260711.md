@@ -1,7 +1,7 @@
 # PRD6 Batch 0B — P6-F18A Billing Reservation Invariants
 
 > Date: 2026-07-11
-> Evidence level: Local verified on `codex/prd6-p6f18a-billing-invariants`; required PR CI pending
+> Evidence level: CI verified by PR #151; target/production not verified
 > Target/production status: Not deployed; no target or production verification claimed
 
 ## 1. Accepted Scope Covered Here
@@ -146,8 +146,15 @@ separate recorded `P6-TEST-DB-001` engineering-integrity item.
 
 ## 6. Evidence Boundary And Next Batch
 
-Current result is **Local verified F18A**, not CI, target or production
-verified. P6-F18 remains open until F18B proves:
+Implementation head `84f3c4b0a4b9675503763486c39211fce9f1c88e` passed required
+PR run `29154664491`. Its first Docker attempt failed before build on a Docker
+Hub `alpine:3.19` manifest `502 Bad Gateway`; rerunning only the failed job
+passed without a code change. PR #151 was squash-merged as
+`7db1efc9cf7c0c78fd6348446ed8701ecf86e8ee`, and post-merge main run
+`29154820102` passed Backend Tests, Frontend Build and Docker Build.
+
+Current result is **CI verified F18A**, not target or production verified.
+P6-F18 remains open until F18B proves:
 
 1. a durable billable-output marker before client-visible streaming output;
 2. settlement payload persistence after the last chunk;
