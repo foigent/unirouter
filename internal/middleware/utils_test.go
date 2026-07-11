@@ -205,6 +205,30 @@ func TestCORS_Headers(t *testing.T) {
 	if rec.Header().Get("Access-Control-Max-Age") != "86400" {
 		t.Fatal("expected 86400 max age")
 	}
+	allowedHeaders := splitComma(rec.Header().Get("Access-Control-Allow-Headers"))
+	for _, expected := range []string{"X-Request-ID", "X-UniRouter-Client-Request-ID", "Idempotency-Key"} {
+		found := false
+		for _, allowed := range allowedHeaders {
+			if allowed == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected %s in browser-allowed headers: %#v", expected, allowedHeaders)
+		}
+	}
+	for _, forbidden := range []string{"X-UniRouter-Evidence-Auth", "X-UniRouter-Agent-Id"} {
+		for _, allowed := range allowedHeaders {
+			if allowed == forbidden {
+				t.Fatalf("trusted server evidence header %s must not be browser-enabled", forbidden)
+			}
+		}
+	}
+	exposedHeaders := splitComma(rec.Header().Get("Access-Control-Expose-Headers"))
+	if len(exposedHeaders) != 3 {
+		t.Fatalf("expected the three public identity response headers, got %#v", exposedHeaders)
+	}
 }
 
 func TestCORS_Preflight(t *testing.T) {

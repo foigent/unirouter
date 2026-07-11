@@ -28,7 +28,11 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 	startTime := r.URL.Query().Get("start_time")
 	endTime := r.URL.Query().Get("end_time")
 	requestIDFilter := r.URL.Query().Get("request_id")
+	clientRequestIDFilter := r.URL.Query().Get("client_request_id")
 	traceIDFilter := r.URL.Query().Get("trace_id")
+	workflowIDFilter := r.URL.Query().Get("workflow_id")
+	agentIDFilter := r.URL.Query().Get("agent_id")
+	attemptIDFilter := r.URL.Query().Get("attempt_id")
 	upstreamRequestIDFilter := r.URL.Query().Get("upstream_request_id")
 	evidenceRefFilter := r.URL.Query().Get("evidence_ref")
 	sourceEventHashFilter := r.URL.Query().Get("source_event_hash")
@@ -95,6 +99,9 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 		value  string
 	}{
 		{column: "trace_id", value: traceIDFilter},
+		{column: "client_request_id", value: clientRequestIDFilter},
+		{column: "workflow_id", value: workflowIDFilter},
+		{column: "agent_id", value: agentIDFilter},
 		{column: "upstream_request_id", value: upstreamRequestIDFilter},
 		{column: "evidence_ref", value: evidenceRefFilter},
 		{column: "source_event_hash", value: sourceEventHashFilter},
@@ -104,6 +111,17 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 		}
 		conditions = append(conditions, fmt.Sprintf("%s = $%d", filter.column, argIdx))
 		args = append(args, filter.value)
+		argIdx++
+	}
+	if attemptIDFilter != "" {
+		conditions = append(conditions, fmt.Sprintf(`EXISTS (
+			SELECT 1 FROM request_trace_events identity_event
+			WHERE identity_event.org_id = call_logs.org_id
+			  AND identity_event.request_id = call_logs.request_id
+			  AND COALESCE(identity_event.project_id, 0) = COALESCE(call_logs.project_id, 0)
+			  AND identity_event.attempt_id = $%d
+		)`, argIdx))
+		args = append(args, attemptIDFilter)
 		argIdx++
 	}
 	if usageSourceFilter != "" {
@@ -148,8 +166,16 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 	search := r.URL.Query().Get("search")
 	if search != "" {
 		conditions = append(conditions, fmt.Sprintf(`(request_id ILIKE $%[1]d OR model ILIKE $%[1]d OR provider ILIKE $%[1]d
+			OR client_request_id ILIKE $%[1]d OR workflow_id ILIKE $%[1]d OR agent_id ILIKE $%[1]d OR attempt_id ILIKE $%[1]d
 			OR upstream_error ILIKE $%[1]d OR trace_id ILIKE $%[1]d OR upstream_request_id ILIKE $%[1]d
-			OR evidence_ref ILIKE $%[1]d OR source_event_hash ILIKE $%[1]d)`, argIdx))
+			OR evidence_ref ILIKE $%[1]d OR source_event_hash ILIKE $%[1]d
+			OR EXISTS (
+				SELECT 1 FROM request_trace_events search_event
+				WHERE search_event.org_id = call_logs.org_id
+				  AND search_event.request_id = call_logs.request_id
+				  AND COALESCE(search_event.project_id, 0) = COALESCE(call_logs.project_id, 0)
+				  AND search_event.attempt_id ILIKE $%[1]d
+			))`, argIdx))
 		args = append(args, "%"+search+"%")
 		argIdx++
 	}
@@ -170,7 +196,9 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	selectQuery := fmt.Sprintf(
-		`SELECT id, COALESCE(project_id, 0), request_id, model, provider, channel, prompt_tokens, completion_tokens, total_tokens,
+		`SELECT id, COALESCE(project_id, 0), request_id,
+		        COALESCE(client_request_id, ''), COALESCE(workflow_id, ''), COALESCE(agent_id, ''), COALESCE(attempt_id, ''),
+		        model, provider, channel, prompt_tokens, completion_tokens, total_tokens,
 		        cost_cents, status_code, latency_ms, ttft_ms, upstream_status_code, COALESCE(upstream_error, ''),
 		        usage_source, is_stream, created_at
 		 FROM call_logs%s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`,
@@ -187,20 +215,23 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 	logs := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var id, projectID int64
-		var requestID, model, provider, channel string
+		var requestID, clientRequestID, workflowID, agentID, attemptID, model, provider, channel string
 		var promptTokens, completionTokens, totalTokens, costCents, statusCode, latencyMs, ttftMs int
 		var upstreamStatusCode *int
 		var upstreamError, usageSource string
 		var isStream bool
 		var createdAt time.Time
-		if err := rows.Scan(&id, &projectID, &requestID, &model, &provider, &channel, &promptTokens, &completionTokens, &totalTokens,
+		if err := rows.Scan(&id, &projectID, &requestID, &clientRequestID, &workflowID, &agentID, &attemptID,
+			&model, &provider, &channel, &promptTokens, &completionTokens, &totalTokens,
 			&costCents, &statusCode, &latencyMs, &ttftMs, &upstreamStatusCode, &upstreamError,
 			&usageSource, &isStream, &createdAt); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 			return
 		}
 		logs = append(logs, map[string]interface{}{
-			"id": id, "project_id": projectID, "request_id": requestID, "model": model, "provider": provider, "channel": channel,
+			"id": id, "project_id": projectID, "request_id": requestID, "client_request_id": clientRequestID,
+			"workflow_id": workflowID, "agent_id": agentID, "attempt_id": attemptID,
+			"model": model, "provider": provider, "channel": channel,
 			"prompt_tokens": promptTokens, "completion_tokens": completionTokens, "total_tokens": totalTokens,
 			"cost_cents": costCents, "status_code": statusCode, "latency_ms": latencyMs, "ttft_ms": ttftMs,
 			"upstream_status_code": upstreamStatusCode, "upstream_error": upstreamError,
@@ -229,7 +260,7 @@ func (h *Handler) GetLogDetail(w http.ResponseWriter, r *http.Request) {
 		writeOrganizationScopeError(w, err)
 		return
 	}
-	var requestID, model, provider, channel string
+	var requestID, clientRequestID, workflowID, agentID, attemptID, model, provider, channel string
 	var recordOrgID, projectID int64
 	var promptTokens, completionTokens, totalTokens, costCents, statusCode, latencyMs, ttftMs int
 	var upstreamStatusCode *int
@@ -237,11 +268,14 @@ func (h *Handler) GetLogDetail(w http.ResponseWriter, r *http.Request) {
 	var isStream bool
 	var createdAt time.Time
 	err = h.db.QueryRow(r.Context(),
-		`SELECT org_id, COALESCE(project_id, 0), request_id, model, provider, channel, prompt_tokens, completion_tokens, total_tokens,
+		`SELECT org_id, COALESCE(project_id, 0), request_id,
+		        COALESCE(client_request_id, ''), COALESCE(workflow_id, ''), COALESCE(agent_id, ''), COALESCE(attempt_id, ''),
+		        model, provider, channel, prompt_tokens, completion_tokens, total_tokens,
 		        cost_cents, status_code, latency_ms, ttft_ms, upstream_status_code, COALESCE(upstream_error, ''),
 		        usage_source, is_stream, ip_address, requested_model, created_at
 		 FROM call_logs WHERE id = $1 AND org_id = $2`, id, orgID,
-	).Scan(&recordOrgID, &projectID, &requestID, &model, &provider, &channel, &promptTokens, &completionTokens, &totalTokens,
+	).Scan(&recordOrgID, &projectID, &requestID, &clientRequestID, &workflowID, &agentID, &attemptID,
+		&model, &provider, &channel, &promptTokens, &completionTokens, &totalTokens,
 		&costCents, &statusCode, &latencyMs, &ttftMs, &upstreamStatusCode, &upstreamError,
 		&usageSource, &isStream, &ipAddress, &requestedModel, &createdAt)
 	if err != nil {
@@ -258,6 +292,10 @@ func (h *Handler) GetLogDetail(w http.ResponseWriter, r *http.Request) {
 		"org_id":               recordOrgID,
 		"project_id":           projectID,
 		"request_id":           requestID,
+		"client_request_id":    clientRequestID,
+		"workflow_id":          workflowID,
+		"agent_id":             agentID,
+		"attempt_id":           attemptID,
 		"model":                model,
 		"provider":             provider,
 		"channel":              channel,
@@ -313,6 +351,7 @@ func (h *Handler) GetRequestTrace(w http.ResponseWriter, r *http.Request) {
 		        capture_gap, evidence_ref, upstream_request_id,
 		        decision_kind, decision_result, decision_reason,
 		        actor_type, actor_ref, on_behalf_of, session_id,
+		        COALESCE(client_request_id, ''), COALESCE(workflow_id, ''), COALESCE(agent_id, ''), COALESCE(attempt_id, ''),
 		        payload_capture_mode, payload_ref, source_event_hash
 		 FROM request_trace_events
 		 WHERE request_id = $1
@@ -337,6 +376,7 @@ func (h *Handler) GetRequestTrace(w http.ResponseWriter, r *http.Request) {
 		var createdAt time.Time
 		var traceID, spanID, parentSpanID, captureGap, evidenceRef, upstreamRequestID *string
 		var decisionKind, decisionResult, decisionReason, actorType, actorRef, onBehalfOf, sessionID *string
+		var clientRequestID, workflowID, agentID, attemptID string
 		var payloadRef, sourceEventHash *string
 		var schemaVersion, sourceComponent, captureMode, payloadCaptureMode string
 		if err := rows.Scan(
@@ -346,6 +386,7 @@ func (h *Handler) GetRequestTrace(w http.ResponseWriter, r *http.Request) {
 			&captureGap, &evidenceRef, &upstreamRequestID,
 			&decisionKind, &decisionResult, &decisionReason,
 			&actorType, &actorRef, &onBehalfOf, &sessionID,
+			&clientRequestID, &workflowID, &agentID, &attemptID,
 			&payloadCaptureMode, &payloadRef, &sourceEventHash,
 		); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
@@ -385,6 +426,10 @@ func (h *Handler) GetRequestTrace(w http.ResponseWriter, r *http.Request) {
 			"actor_ref":            actorRef,
 			"on_behalf_of":         onBehalfOf,
 			"session_id":           sessionID,
+			"client_request_id":    clientRequestID,
+			"workflow_id":          workflowID,
+			"agent_id":             agentID,
+			"attempt_id":           attemptID,
 			"payload_capture_mode": payloadCaptureMode,
 			"payload_ref":          payloadRef,
 			"source_event_hash":    sourceEventHash,

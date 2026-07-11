@@ -3,7 +3,7 @@
 > Date: 2026-07-11
 > Base: `2494bf3b31d8b9c66f74f31e7c0da803ee1cbb3c`
 > Branch: `codex/prd6-p6f32-finance-tenant`
-> Evidence level: CI verified by PR #145 implementation head `3ee6a41`; merge pending; no deployment is claimed
+> Evidence level: CI verified and merged by PR #145 as `609385f`; post-merge main CI passed; no deployment is claimed
 
 ## Confirmed Pre-Fix Findings
 
@@ -112,8 +112,9 @@ production build pass. The build retains the existing chunk-size warning. The
 macOS race link step emits a non-failing `LC_DYSYMTAB` warning. PR #145
 implementation head `3ee6a41048ae143ce887a0c755a8602f6f786a40` passed
 `Backend Tests`, `Frontend Build` (including 26 files / 128 tests) and `Docker
-Build` in required CI run `29135964946`. The final documentation-only head
-remains subject to the same required checks before merge.
+Build` in required CI run `29135964946`. PR #145 was squash-merged as
+`609385f663cee883ad5965facb25ce4185d8b89a`; post-merge main CI run
+`29136296782` passed all three required jobs.
 
 The full legacy `-tags=integration` admin suite is not used as green evidence:
 its `SetupTestDB` path depends on a separately pre-provisioned shared schema and

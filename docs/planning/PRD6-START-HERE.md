@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F16/P6-F32/P6-F33/P6-F34/P6-F35/P6-F37/P6-F38/P6-F39 merged; P6-F36 PR #148 implementation head CI verified with final-evidence-head CI/merge pending
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F16/P6-F32-P6-F39 merged and CI verified; P6-F17 Local verified with PR/required CI pending
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -37,18 +37,20 @@ recommended MVP boundary and policy-specific failure posture on 2026-07-11:
 10. `docs/ops/evidence/PRD6-B0B-P6F34-pricing-authority-local-20260711.md`
 11. `docs/ops/evidence/PRD6-B0B-P6F35-global-control-authority-local-20260711.md`
 12. `docs/ops/evidence/PRD6-B0B-P6F36-model-governance-tenant-isolation-local-20260711.md`
-13. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`
-14. `docs/planning/PRD7-CANDIDATE-BACKLOG.md`
-15. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
-16. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
-17. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
-18. `docs/PRD-Phase6.md`
-19. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
-20. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
-21. `docs/planning/PRD6-BACKLOG.md`
-22. `docs/issues/OPEN-ISSUES.md`
-23. `docs/agent-workflows/AGENT-PROTOCOL.md`
-24. `docs/agent-workflows/EXECUTION-RECORD.md`
+13. `docs/ops/evidence/PRD6-B0B-P6F17-operation-idempotency-identity-local-20260711.md`
+14. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`
+15. `docs/planning/PRD7-CANDIDATE-BACKLOG.md`
+16. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md`
+17. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
+18. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
+19. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
+20. `docs/PRD-Phase6.md`
+21. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
+22. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
+23. `docs/planning/PRD6-BACKLOG.md`
+24. `docs/issues/OPEN-ISSUES.md`
+25. `docs/agent-workflows/AGENT-PROTOCOL.md`
+26. `docs/agent-workflows/EXECUTION-RECORD.md`
 
 PRD5 evidence remains under its existing paths. Do not rewrite it as PRD6
 evidence.
@@ -97,11 +99,10 @@ evidence.
   `fb77083d0f04f5cdaa20f38e763c93b51b89f4d1` passed run `29139408226`, was
   squash-merged as `c08db96167837ade685708c2ab204861a8ecc0ca`, and post-merge
   main run `29139534691` passed all required jobs; its historical branch is
-  restored and retained. P6-F36 PR #148 implementation head `d69c041` passed
-  required CI run `29140520863` after full local verification and independent
-  review, with no remaining blocker/high/medium/functional-low finding; final
-  evidence-head CI and merge remain pending. Neither row has a target/production
-  claim. P6-F37 and P6-F38
+  restored and retained. P6-F36 PR #148 final evidence head `75be4f3` passed
+  required CI run `29140739477`, was squash-merged as `d83dbbc`, and post-merge
+  main run `29140850345` passed all required jobs. Neither row has a
+  target/production claim. P6-F37 and P6-F38
   are merged and CI verified by PR #143 / `a1e0ad6`.
 
 ## PRD5 Closure Guard
@@ -151,23 +152,29 @@ required to continue the accepted P0/P1 work. D6-01/D6-02 do not authorize
 deployment, target mutation, paid shadow traffic, raw-payload expansion, a new
 X-Insight contract, semantic response cache, video execution, or an IAM rewrite.
 
-D6-08 authorizes P6-F32 through P6-F36 through separate reviewable PRs. P6-F32,
-P6-F33, P6-F34, P6-F35 and P6-F39 are merged and CI verified. P6-F35 was
+D6-08 authorizes P6-F32 through P6-F36 through separate reviewable PRs.
+P6-F32-P6-F39 are merged and CI verified. P6-F35 was
 squash-merged by PR #147 as `c08db961`; post-merge main run `29139534691`
-passed all required jobs. P6-F36 PR #148 implementation head `d69c041` passed
-required CI run `29140520863` after local verification and independent review,
-with no remaining blocker/high/medium/functional-low finding; final
-evidence-head CI and merge remain pending.
+passed all required jobs. P6-F36 PR #148 final evidence head `75be4f3` passed
+required CI run `29140739477`, was squash-merged as `d83dbbc`, and post-merge
+main run `29140850345` passed all required jobs.
 P6-F37/P6-F38 are merged and CI verified by PR #143; post-merge main run
 `29133690338` passed Backend Tests, Frontend Build and Docker Build.
+
+P6-F17 is Local verified for the accepted metadata-only Scheme A: UniRouter
+generates the server operation ID, keeps client correlation separate, scopes
+idempotency by tenant/API key/payload, and records workflow/Agent/attempt
+identity. Its PR and required CI remain pending; it does not store or replay a
+model answer and does not claim P6-F18/P6-F20. The complete response-cache
+Scheme B is a future required PRD7 Cache Service direction only.
 
 P6-F35 adds no global-settings UI. D6-09 defers target execution; a later
 authorized activation must drain old control-plane binaries and be non-rolling,
 because mixed old/new binaries are not safe for these endpoints. New-version
 replicas converge committed global-word changes through the existing
 approximately one-minute reload. Typed config ownership plus the budget/alert
-key, scope and audit truth chain remain P6-F05/P6-F17; ambiguous network commit
-readback/idempotency remains P6-F17.
+key, scope and audit truth chain remain P6-F05; durable ambiguous-commit recovery
+remains P6-F20 rather than being claimed by P6-F17 Scheme A.
 
 P6-F36 does not reopen P6-F16. It adds no migration, RLS/foreign-key redesign,
 unregistered-model denial, `/v1/models` semantic change, selector UI or target

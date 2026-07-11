@@ -21,6 +21,10 @@ const MOCK_LOGS_RESPONSE = {
     {
       id: 1,
       request_id: 'req-001-aaa',
+      client_request_id: 'client-001',
+      workflow_id: 'workflow-001',
+      agent_id: 'agent-001',
+      attempt_id: 'att-final-001',
       model: 'gpt-4o',
       provider: 'openai',
       channel: 'OpenAI Main',
@@ -107,25 +111,28 @@ const MOCK_TRACE_RESPONSE = {
       actor_ref: 'key_123',
       on_behalf_of: null,
       session_id: 'session-001',
+      client_request_id: 'client-001',
+      workflow_id: 'workflow-001',
+      agent_id: 'agent-001',
       payload_capture_mode: 'metadata_only',
       payload_ref: null,
       source_event_hash: 'hash-001',
     },
     {
       id: 2, event_type: 'routing.route_selected', stage: 'routing', severity: 'info', model: 'gpt-4o', requested_model: 'gpt-4o',
-      provider: 'openai', channel: 'primary', status_code: null, latency_ms: 3, metadata: { mapped_model: 'gpt-4o' }, created_at: '2026-06-29T10:00:02Z',
+      provider: 'openai', channel: 'primary', status_code: null, latency_ms: 3, attempt_id: 'att-primary', metadata: { mapped_model: 'gpt-4o' }, created_at: '2026-06-29T10:00:02Z',
     },
     {
       id: 3, event_type: 'provider.request_failed', stage: 'provider', severity: 'warning', model: 'gpt-4o', requested_model: 'gpt-4o',
-      provider: 'openai', channel: 'primary', status_code: null, latency_ms: 100, metadata: {}, created_at: '2026-06-29T10:00:03Z',
+      provider: 'openai', channel: 'primary', status_code: null, latency_ms: 100, attempt_id: 'att-primary', metadata: {}, created_at: '2026-06-29T10:00:03Z',
     },
     {
       id: 4, event_type: 'routing.route_selected', stage: 'routing', severity: 'info', model: 'gpt-4o', requested_model: 'gpt-4o',
-      provider: 'azure', channel: 'secondary', status_code: null, latency_ms: 104, metadata: { mapped_model: 'gpt-4o' }, created_at: '2026-06-29T10:00:04Z',
+      provider: 'azure', channel: 'secondary', status_code: null, latency_ms: 104, attempt_id: 'att-secondary', metadata: { mapped_model: 'gpt-4o' }, created_at: '2026-06-29T10:00:04Z',
     },
     {
       id: 5, event_type: 'provider.response_accepted', stage: 'provider', severity: 'info', model: 'gpt-4o', requested_model: 'gpt-4o',
-      provider: 'azure', channel: 'secondary', status_code: 200, latency_ms: 220, metadata: {}, created_at: '2026-06-29T10:00:05Z',
+      provider: 'azure', channel: 'secondary', status_code: 200, latency_ms: 220, attempt_id: 'att-secondary', metadata: {}, created_at: '2026-06-29T10:00:05Z',
     },
   ],
 };
@@ -261,6 +268,9 @@ describe('LogsPage', () => {
       expect(html).toContain('decision: admission / accepted / request accepted');
       expect(html).toContain('actor: api_key:key_123');
       expect(html).toContain('upstream: upstream-001');
+      expect(html).toContain('client: client-001');
+      expect(html).toContain('workflow: workflow-001');
+      expect(html).toContain('agent: agent-001');
     });
   });
 
@@ -277,6 +287,8 @@ describe('LogsPage', () => {
       expect(html).toContain('故障切换1 次');
       expect(html).toContain('openai / primary');
       expect(html).toContain('azure / secondary');
+      expect(html).toContain('att-primary');
+      expect(html).toContain('att-secondary');
       expect(html).toContain('上游接受');
     });
   });

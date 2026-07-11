@@ -1,27 +1,51 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 0B P6-F36 Model-Governance Tenant Isolation
+**Batch:** PRD6 Batch 0B P6-F17 Operation And Idempotency Identity
 **Owner:** Codex
-**Risk:** R4 cross-tenant model-policy disclosure and mutation
-**Status:** PR #148 implementation head CI verified after local verification and independent review; no remaining blocker/high/medium/functional-low finding; final evidence-head CI and merge pending
-**Integration:** base `c08db96167837ade685708c2ab204861a8ecc0ca` / branch `codex/prd6-p6f36-modelgov-tenant`; no deployment, target or production claim
+**Risk:** R4 caller-controlled financial identity, duplicate provider dispatch and cross-tenant collision
+**Status:** Local verified; PR and required CI pending
+**Integration:** base `d83dbbc0ac7137bb44d2346adc5a25debde804e1` / branch `codex/prd6-p6f17-idempotency`; no deployment, target or production claim
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Current Scope
 
-1. Bind registry, alias and organization model-set list/create/global-ID
-   operations to the signed actor organization, with an explicit platform
-   exception and final SQL organization predicates.
-2. Derive project-catalog organization from the authorized project and ignore
-   malformed cross-organization assignments consistently with live admission.
-3. Commit model-set parent/items and item replacement plus audit atomically;
-   roll back the complete policy when audit fails.
-4. Preserve P6-F16 and existing unregistered-model and `/v1/models` product
-   behavior while making no migration, RLS or foreign-key expansion.
-5. Keep selector UI, target cleanup and all target/production claims outside
-   this repository batch.
+1. Generate a caller-unoverrideable server operation ID and keep caller
+   correlation, idempotency, trace/span, workflow, Agent, route attempt and
+   provider identity separate.
+2. Implement accepted Scheme A for Chat/Embeddings: tenant/API-key/payload-bound
+   HMAC metadata receipts, with no prompt/response storage or model-answer replay.
+3. Tenant-scope financial and administrator client-correlation uniqueness and
+   expose operation/client/attempt readback in Logs and Audit.
+4. Prove 100-child identity separation, 100 at-most-once settlements, 100-way
+   claim concurrency, replay/mismatch/cross-tenant behavior and migration
+   up/down/roll-forward.
+5. Keep P6-F18, P6-F20, response cache, target activation and SaaS deployment
+   outside this batch.
 
-## Current P6-F36 Behavior Change
+## Current P6-F17 Behavior Change
+
+- response `X-Request-ID` is a cryptographically random `op_` server operation;
+  caller values are retained only as `X-UniRouter-Client-Request-ID`;
+- `Idempotency-Key` uses HMAC-only storage and a canonical request fingerprint;
+  same completed/failed/in-progress operations return a metadata `409`, while a
+  changed payload returns a distinct conflict and never dispatches;
+- migration `000021` adds the metadata receipt, tenant-scoped financial/grant
+  uniqueness and separate call-log/trace/audit identity fields;
+- route attempts receive distinct `att_` identities; successful responses and
+  failure logs report truthful fallback/attempt state; a mixed HTTP/network
+  failure regression proves no prior status/upstream ID leaks into the final
+  attempt record;
+- concurrent top-up/grant calls with the same tenant/client correlation produce
+  one financial effect and a deterministic duplicate receipt, while keeping
+  separate server operation IDs;
+- Logs and Audit expose/filter operation, client, trace, workflow, Agent,
+  attempt and upstream identifiers without widening tenant/project access;
+- full Go normal/race/vet, migrated integration, frontend 27-file/136-test,
+  type-check/build, OpenAPI parse and diff checks pass; PR/CI remain pending;
+- activation must drain old writers before applying `000021`; the safe partial
+  down is not an old-binary rollback and no target claim exists.
+
+## Previous P6-F36 Behavior Change
 
 - tenant registry, alias and model-set list/create operations derive scope from
   the signed identity, reject foreign/zero selection and remove organization-1
@@ -41,11 +65,9 @@
   pass; independent review found no remaining blocker/high/medium/functional-low
   finding after both Low observations and the `org_viewer` expectation were
   corrected and targeted tests passed;
-- PR #148 implementation head `d69c0414d5543167cc4b89de50eaafef74ede5c0`
-  passed Backend Tests, Frontend Build and Docker Build in required CI run
-  `29140520863`; the backend log explicitly ran the P6-F36 integration,
-  production-guard registrar and main-registration tests, while the frontend log
-  reports 27 files / 136 tests and a successful production build.
+- PR #148 final required run `29140739477` passed; it was squash-merged as
+  `d83dbbc0ac7137bb44d2346adc5a25debde804e1`, and post-merge main run
+  `29140850345` passed all required jobs.
 
 ## Previous P6-F35 Behavior Change
 
@@ -162,10 +184,14 @@
   `docs/ops/evidence/PRD6-B0B-P6F35-global-control-authority-local-20260711.md`.
 - P6-F36 local evidence:
   `docs/ops/evidence/PRD6-B0B-P6F36-model-governance-tenant-isolation-local-20260711.md`.
+- P6-F17 local evidence:
+  `docs/ops/evidence/PRD6-B0B-P6F17-operation-idempotency-identity-local-20260711.md`.
 - Product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
 - PRD7 candidate queue:
   `docs/planning/PRD7-CANDIDATE-BACKLOG.md`.
+- Future required Cache Service architecture:
+  `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md`.
 - Adaptive-trust innovation evidence:
   `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`.
 - Structural hardening portfolio:
@@ -174,14 +200,34 @@
   `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`,
   `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`, and
   `docs/planning/PRD6-BACKLOG.md`.
-- Current code/tests: actor-organization registry/alias/model-set resolution,
-  project-canonical catalog scope, final SQL organization predicates,
-  transactional model-set/item audit rollback, frontend/OpenAPI contract and a
-  migrated signed-JWT/PostgreSQL authority/failure matrix.
+- Current code/tests: server/client request identity, HMAC metadata idempotency,
+  tenant-scoped financial and administrator correlation, workflow/Agent/attempt
+  evidence, Logs/Audit UI/API readback, migration, replay/concurrency and
+  migrated PostgreSQL gateway/finance matrices.
 
 ## Verification
 
-Current P6-F36 results on `codex/prd6-p6f36-modelgov-tenant`, based on
+Current P6-F17 results on `codex/prd6-p6f17-idempotency`, based on
+`d83dbbc0ac7137bb44d2346adc5a25debde804e1`:
+
+- 100 child operations share one trace/workflow with distinct server/Agent
+  identity; 100 real reservations settle once each and reject a duplicate:
+  PASS;
+- same-payload metadata replay, changed-payload 409, in-progress overlap,
+  100-way PostgreSQL claim, cross-org collision and expired replacement: PASS;
+- migration `000021` safe up/down/roll-forward and cross-tenant grant/billing
+  uniqueness: PASS;
+- real PostgreSQL Audit operation/client filtering and concurrent top-up/grant
+  one-effect duplicate handling: PASS;
+- migrated gateway E2E performs one provider call and returns no stored answer
+  on replay; migrated finance/usage tenant matrix: PASS;
+- `go test ./... -count=1`, `go test -race ./... -count=1` and `go vet ./...`:
+  PASS; race linking retains the existing non-failing macOS warning;
+- frontend 27 files / 136 tests, type-check and production build: PASS;
+- OpenAPI YAML parse and `git diff --check`: PASS;
+- PR, required CI and post-merge main CI: PENDING.
+
+Previous P6-F36 results on `codex/prd6-p6f36-modelgov-tenant`, based on
 `c08db96167837ade685708c2ab204861a8ecc0ca`:
 
 - migrated signed-JWT production-wrapper matrix across all eleven registry,
@@ -198,8 +244,8 @@ Current P6-F36 results on `codex/prd6-p6f36-modelgov-tenant`, based on
 - independent review: COMPLETE, with no remaining
   blocker/high/medium/functional-low finding; both Low observations were fixed
   and targeted tests passed;
-- PR #148 implementation-head required CI run `29140520863`: PASS;
-- final evidence-head required CI, merge and post-merge main CI: PENDING.
+- PR #148 implementation-head run `29140520863`, final-head run `29140739477`,
+  squash merge `d83dbbc` and post-merge main run `29140850345`: PASS.
 
 Previous P6-F35 results on `codex/prd6-p6f35-global-controls`:
 
@@ -370,23 +416,24 @@ PR #139 required checks for final scalability-audit evidence head `6c8c192`:
 - `Frontend Build`: PASS;
 - `Docker Build`: PASS.
 
-P6-F01, P6-F02, P6-F16, P6-F32, P6-F33, P6-F34, P6-F35, P6-F37, P6-F38 and
-P6-F39 are merged and `CI verified`. D6-08 accepts P6-F32-P6-F36. P6-F35 was
+P6-F01, P6-F02, P6-F16 and P6-F32-P6-F39 are merged and `CI verified`.
+D6-08 accepts P6-F32-P6-F36. P6-F35 was
 squash-merged by PR #147 as `c08db96167837ade685708c2ab204861a8ecc0ca`, and
 post-merge main run `29139534691` passed all required jobs. P6-F36 PR #148
-implementation head `d69c041` passed required CI run `29140520863` after local
-verification and independent review, with no remaining
-blocker/high/medium/functional-low finding; final evidence-head CI and merge
-remain pending. No documentation or local test promotes a row to target or
-production verified.
+final evidence head `75be4f3526aee710a9472e01ac0f5dee4079beaa` passed required
+CI run `29140739477`, was squash-merged as
+`d83dbbc0ac7137bb44d2346adc5a25debde804e1`, and post-merge main run
+`29140850345` passed all required jobs. No documentation or local test promotes
+a row to target or production verified.
 
 P6-F35 target activation is deferred by D6-09. A later authorized run must
 drain old control-plane binaries before a non-rolling activation of only the new
 version; old binaries do not provide mixed-version safety. New-version replicas
 converge a committed sensitive-word version through the existing approximately
 one-minute reload. This batch adds no global-settings UI. Typed configuration
-ownership and the budget/alert key, scope and audit truth chain remain P6-F05/
-P6-F17; ambiguous network commit readback/idempotency remains P6-F17.
+ownership and the budget/alert key, scope and audit truth chain remain P6-F05.
+P6-F17 provides metadata-only request replay protection; durable
+ambiguous-commit recovery remains P6-F20.
 
 P6-F36 preserves P6-F16 and does not add a migration, RLS, composite/alias
 foreign keys, a platform selector UI or target cleanup. Unregistered-model

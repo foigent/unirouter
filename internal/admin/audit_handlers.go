@@ -96,6 +96,8 @@ func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	addStringFilter("action", "action")
 	addStringFilter("resource", "resource")
 	addStringFilter("resource_id", "resource_id")
+	addStringFilter("request_id", "request_id")
+	addStringFilter("client_request_id", "client_request_id")
 	if rawSource := strings.TrimSpace(r.URL.Query().Get("source")); rawSource != "" {
 		source := normalizeAuditSource(rawSource)
 		if !isValidAuditSource(source) {
@@ -141,7 +143,7 @@ func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	query := fmt.Sprintf(
 		`SELECT id, org_id, COALESCE(project_id, 0), user_id, action, resource, resource_id,
 		        detail, COALESCE(before_state, '{}'::jsonb), COALESCE(after_state, '{}'::jsonb),
-		        ip, user_agent, request_id, COALESCE(source, 'admin_console'), created_at
+		        ip, user_agent, request_id, COALESCE(source, 'admin_console'), COALESCE(client_request_id, ''), created_at
 		 FROM audit_logs %s ORDER BY id DESC LIMIT $%d OFFSET $%d`,
 		where, argIdx, argIdx+1,
 	)
@@ -156,10 +158,10 @@ func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	logs := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var id, orgID, projectID, userID int64
-		var action, resource, resourceID, ip, userAgent, requestID, source string
+		var action, resource, resourceID, ip, userAgent, requestID, source, clientRequestID string
 		var detail, beforeState, afterState []byte
 		var createdAt time.Time
-		if err := rows.Scan(&id, &orgID, &projectID, &userID, &action, &resource, &resourceID, &detail, &beforeState, &afterState, &ip, &userAgent, &requestID, &source, &createdAt); err != nil {
+		if err := rows.Scan(&id, &orgID, &projectID, &userID, &action, &resource, &resourceID, &detail, &beforeState, &afterState, &ip, &userAgent, &requestID, &source, &clientRequestID, &createdAt); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 			return
 		}
@@ -171,7 +173,8 @@ func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 			"id": id, "org_id": orgID, "project_id": projectValue, "actor_id": userID, "user_id": userID,
 			"action": action, "resource": resource, "resource_id": resourceID,
 			"detail": json.RawMessage(detail), "before": json.RawMessage(beforeState), "after": json.RawMessage(afterState),
-			"ip": ip, "user_agent": userAgent, "request_id": requestID, "source": normalizeAuditSource(source), "created_at": createdAt,
+			"ip": ip, "user_agent": userAgent, "request_id": requestID, "client_request_id": clientRequestID,
+			"source": normalizeAuditSource(source), "created_at": createdAt,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -190,11 +193,12 @@ func (h *Handler) recordAudit(ctx context.Context, action, resource, resourceID 
 
 func (h *Handler) recordAuditForProject(ctx context.Context, action, resource, resourceID string, projectID int64, detail map[string]interface{}, ip string) {
 	h.recordAuditEntry(ctx, action, resource, resourceID, detail, auditMeta{
-		OrgID:     middleware.GetOrgIDFromContext(ctx),
-		ProjectID: projectID,
-		IP:        ip,
-		RequestID: middleware.GetRequestIDFromContext(ctx),
-		Source:    auditSourceFromContext(ctx),
+		OrgID:           middleware.GetOrgIDFromContext(ctx),
+		ProjectID:       projectID,
+		IP:              ip,
+		RequestID:       middleware.GetRequestIDFromContext(ctx),
+		ClientRequestID: middleware.GetClientRequestIDFromContext(ctx),
+		Source:          auditSourceFromContext(ctx),
 	})
 }
 
@@ -208,22 +212,24 @@ func (h *Handler) recordAuditForProjectFromRequest(r *http.Request, action, reso
 
 func (h *Handler) recordAuditForOrgProjectFromRequest(r *http.Request, orgID, projectID int64, action, resource, resourceID string, detail map[string]interface{}) {
 	h.recordAuditEntry(r.Context(), action, resource, resourceID, detail, auditMeta{
-		OrgID:     orgID,
-		ProjectID: projectID,
-		IP:        r.RemoteAddr,
-		UserAgent: r.UserAgent(),
-		RequestID: middleware.GetRequestIDFromContext(r.Context()),
-		Source:    auditSourceFromContext(r.Context()),
+		OrgID:           orgID,
+		ProjectID:       projectID,
+		IP:              r.RemoteAddr,
+		UserAgent:       r.UserAgent(),
+		RequestID:       middleware.GetRequestIDFromContext(r.Context()),
+		ClientRequestID: middleware.GetClientRequestIDFromContext(r.Context()),
+		Source:          auditSourceFromContext(r.Context()),
 	})
 }
 
 type auditMeta struct {
-	OrgID     int64
-	ProjectID int64
-	IP        string
-	UserAgent string
-	RequestID string
-	Source    string
+	OrgID           int64
+	ProjectID       int64
+	IP              string
+	UserAgent       string
+	RequestID       string
+	ClientRequestID string
+	Source          string
 }
 
 func (h *Handler) recordAuditEntry(ctx context.Context, action, resource, resourceID string, detail map[string]interface{}, meta auditMeta) {
@@ -254,10 +260,14 @@ func insertAuditEntry(ctx context.Context, execer auditExecer, action, resource,
 		projectIDArg = meta.ProjectID
 	}
 	source := normalizeAuditSource(meta.Source)
+	clientRequestID := meta.ClientRequestID
+	if clientRequestID == "" {
+		clientRequestID = middleware.GetClientRequestIDFromContext(ctx)
+	}
 	_, err := execer.Exec(ctx,
-		`INSERT INTO audit_logs (org_id, user_id, action, resource, resource_id, detail, ip, user_agent, request_id, source, project_id, before_state, after_state, created_at)
-		 VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, NOW())`,
-		meta.OrgID, userID, action, resource, resourceID, detailJSON, meta.IP, meta.UserAgent, meta.RequestID, source, projectIDArg, beforeJSON, afterJSON)
+		`INSERT INTO audit_logs (org_id, user_id, action, resource, resource_id, detail, ip, user_agent, request_id, source, project_id, before_state, after_state, client_request_id, created_at)
+		 VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14, NOW())`,
+		meta.OrgID, userID, action, resource, resourceID, detailJSON, meta.IP, meta.UserAgent, meta.RequestID, source, projectIDArg, beforeJSON, afterJSON, nullableString(clientRequestID))
 	return err
 }
 
@@ -386,6 +396,16 @@ func (h *Handler) cleanupOldData(ctx context.Context, retentionDays, traceRetent
 		return fmt.Errorf("cleanup freeze_idempotency: %w", err)
 	}
 	log.Printf("Cleanup: deleted %d expired non-frozen freeze_idempotency records (>30d)", result.RowsAffected())
+
+	// Scheme A stores no response body. Remove the bounded operation receipt
+	// metadata once its replay-protection window has expired.
+	result, err = h.db.Exec(ctx,
+		`DELETE FROM request_idempotency WHERE expires_at < NOW()`,
+	)
+	if err != nil {
+		return fmt.Errorf("cleanup request_idempotency: %w", err)
+	}
+	log.Printf("Cleanup: deleted %d expired request_idempotency receipts", result.RowsAffected())
 
 	// First: deduct expired grants from wallets.granted_balance
 	result, err = h.db.Exec(ctx,

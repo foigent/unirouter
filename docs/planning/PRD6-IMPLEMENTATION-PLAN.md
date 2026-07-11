@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; Batch 0B active; P6-F32/P6-F34/P6-F35/P6-F39 merged; P6-F36 PR #148 implementation head CI verified with final-evidence-head CI/merge pending
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; Batch 0B active; P6-F32-P6-F39 merged and CI verified; P6-F17 local verified with PR/required CI pending
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -81,11 +81,11 @@ jobs, and the historical branch is retained. P6-F35 PR #147 final head
 `fb77083d0f04f5cdaa20f38e763c93b51b89f4d1` passed run `29139408226`, was
 squash-merged as `c08db96167837ade685708c2ab204861a8ecc0ca`, and post-merge
 main run `29139534691` passed all required jobs; its historical branch is
-restored and retained. P6-F36 PR #148 implementation head `d69c041` passed
-required CI run `29140520863` after full local verification and independent
-review, with no remaining blocker/high/medium/functional-low finding; final
-evidence-head CI and merge remain pending. Later Batch 0B rows remain ordered
-and independently gated.
+restored and retained. P6-F36 PR #148 final evidence head passed run
+`29140739477`, was squash-merged as `d83dbbc0ac7137bb44d2346adc5a25debde804e1`,
+and post-merge main run `29140850345` passed. P6-F17 Scheme A is locally
+verified with PR/required CI pending. Later Batch 0B rows remain ordered and
+independently gated.
 
 Split into independently reviewable security/financial PRs:
 
@@ -101,6 +101,14 @@ Split into independently reviewable security/financial PRs:
 5. make `frozen -> settled|cancelled` a single atomic terminal transition and
    preserve `settlement_pending` after billable output;
 6. define user/project/key/role revocation epochs and an all-replica SLO.
+
+P6-F17 implements steps 2-3 with a server-owned `op_` identity, separate
+client/workflow/Agent/attempt/upstream fields, tenant/API-key/payload-bound HMAC
+metadata receipts, tenant-scoped financial uniqueness and Audit/Logs readback.
+It stores no prompt or response and returns a metadata-only `409` for a
+completed duplicate. Migration `000021` requires an old-writer drain and its
+safe partial down is not an old-binary rollback. P6-F18 and P6-F20 remain
+separate.
 
 Verification must include cross-tenant negative integration tests, migration
 up/down, pool-size barriers, 100-way terminal races, process-kill recovery, and
@@ -119,18 +127,18 @@ pricing authority is merged and CI verified by PR #146 / `517ce453`, including
 post-merge main run `29137781625`. P6-F35 global-control authority is merged and
 CI verified by PR #147 / `c08db961`, including final-head run `29139408226` and
 post-merge main run `29139534691`; the historical branch is retained. P6-F36
-model-governance tenant isolation implementation head `d69c041` on PR #148
-passed all required jobs in run `29140520863` after local verification and
-independent review, with no remaining blocker/high/medium/functional-low
-finding; final evidence-head CI and merge remain its promotion gates.
+model-governance tenant isolation passed final required run `29140739477`, was
+squash-merged by PR #148 as `d83dbbc`, and post-merge main run `29140850345`
+passed.
 
 P6-F35 adds no global-settings UI and makes no target claim. D6-09 keeps target
 activation later; that cutover must drain old control-plane binaries before a
 non-rolling new-version activation because old binaries are not mixed-version
 safe. Other new-version instances converge global-word changes through the
 existing approximately one-minute reload. Typed configuration ownership and
-the budget/alert key, scope and audit truth chain remain P6-F05/P6-F17, as does
-readback/idempotency for an ambiguous network commit outcome.
+the budget/alert key, scope and audit truth chain remain P6-F05. P6-F17 supplies
+separate operation/client correlation and tenant-scoped Audit readback for an
+ambiguous response, but does not make every mutation replayable or durable.
 
 P6-F36 preserves P6-F16 and the existing live-admission contract. It does not
 add a migration, RLS/composite/alias foreign keys, change unregistered-model or

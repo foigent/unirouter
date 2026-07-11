@@ -54,21 +54,25 @@ func TestListLogs_ProjectScopedRoleWithMembership(t *testing.T) {
 						*dest[0].(*int64) = 1
 						*dest[1].(*int64) = 7
 						*dest[2].(*string) = "req-001"
-						*dest[3].(*string) = "gpt-4o"
-						*dest[4].(*string) = "openai"
-						*dest[5].(*string) = "test-channel"
-						*dest[6].(*int) = 100
-						*dest[7].(*int) = 50
-						*dest[8].(*int) = 150
-						*dest[9].(*int) = 200
-						*dest[10].(*int) = 200
-						*dest[11].(*int) = 350
-						*dest[12].(*int) = 0
-						dest[13] = (*int)(nil)
-						*dest[14].(*string) = ""
-						*dest[15].(*string) = "api"
-						*dest[16].(*bool) = false
-						*dest[17].(*time.Time) = now
+						*dest[3].(*string) = "client-001"
+						*dest[4].(*string) = "workflow-001"
+						*dest[5].(*string) = "agent-001"
+						*dest[6].(*string) = "att_001"
+						*dest[7].(*string) = "gpt-4o"
+						*dest[8].(*string) = "openai"
+						*dest[9].(*string) = "test-channel"
+						*dest[10].(*int) = 100
+						*dest[11].(*int) = 50
+						*dest[12].(*int) = 150
+						*dest[13].(*int) = 200
+						*dest[14].(*int) = 200
+						*dest[15].(*int) = 350
+						*dest[16].(*int) = 0
+						*dest[17].(**int) = nil
+						*dest[18].(*string) = ""
+						*dest[19].(*string) = "api"
+						*dest[20].(*bool) = false
+						*dest[21].(*time.Time) = now
 						return nil
 					},
 				},

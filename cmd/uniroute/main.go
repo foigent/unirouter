@@ -215,12 +215,16 @@ func main() {
 	gatewayAuth := middleware.GatewayAuthWithAPIKeyHashSecret(postgres.Pool, cfg.APIKeyHashSecret)
 	rateLimiter := middleware.RateLimit(redisClient.Client)
 	admissionMiddleware := middleware.AdmissionFromContext(admissionCtrl)
+	idempotencyStore := middleware.NewPostgresIdempotencyStore(postgres.Pool)
+	idempotencyGuard := func(handler http.Handler) http.Handler {
+		return middleware.IdempotencyGuard(idempotencyStore, cfg.APIKeyHashSecret, handler)
+	}
 
 	chatHandler := newGatewayChatHandler(postgres.Pool, relay)
 	embeddingsHandler := newGatewayEmbeddingsHandler(postgres.Pool, relay)
 
-	mux.Handle("POST /v1/chat/completions", gatewayAuth(admissionMiddleware(rateLimiter(chatHandler))))
-	mux.Handle("POST /v1/embeddings", gatewayAuth(admissionMiddleware(rateLimiter(embeddingsHandler))))
+	mux.Handle("POST /v1/chat/completions", gatewayAuth(admissionMiddleware(rateLimiter(idempotencyGuard(chatHandler)))))
+	mux.Handle("POST /v1/embeddings", gatewayAuth(admissionMiddleware(rateLimiter(idempotencyGuard(embeddingsHandler)))))
 	mux.Handle("GET /v1/models", gatewayAuth(admissionMiddleware(http.HandlerFunc(relay.HandleModels))))
 
 	// Admin auth middleware
@@ -286,6 +290,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <h1>UniRouter API Documentation</h1>
 <p class="muted">Current API contract index. Admin APIs use JWT Bearer auth. Gateway APIs use UniRouter API keys.</p>
 <p>Admin Base URL: <code>/api/v1</code> &nbsp; Gateway Base URL: <code>/v1</code></p>
+<p><code>X-Request-ID</code> in every response is a server operation ID. Send caller correlation in <code>X-UniRouter-Client-Request-ID</code>. Chat and Embeddings accept <code>Idempotency-Key</code> for tenant/key/payload-bound metadata-only deduplication; completed model responses are not stored or replayed.</p>
 <table>
 <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
 <tbody>
@@ -475,7 +480,8 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	corsHandler := middleware.CORSWithOptions(middleware.CORSOptions{
 		AllowedOrigins: cfg.AdminCORSAllowedOrigins,
 	})(metricsHandler)
-	securityHandler := middleware.SecurityHeaders(corsHandler)
+	identityHandler := middleware.OperationIdentityWithSecret(cfg.APIKeyHashSecret)(corsHandler)
+	securityHandler := middleware.SecurityHeaders(identityHandler)
 
 	// Create server
 	addr := fmt.Sprintf(":%d", cfg.ListenPort)

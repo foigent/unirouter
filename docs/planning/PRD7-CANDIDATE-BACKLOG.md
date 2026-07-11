@@ -1,7 +1,7 @@
 # PRD7 Candidate Backlog（候选输入，不是 Accepted Scope）
 
 > Date: 2026-07-11
-> Status: Candidate / first future direction selected; all implementation deferred until PRD6 closeout
+> Status: Candidate / future Upgrade and Cache Service directions recorded; all implementation deferred until PRD6 closeout
 > Authority: 本文只做 PRD6 收尾后的候选分流、排序和验收设计；不授权实现、部署或外部集成。
 > Source of truth: PRD6 的已接受范围仍以 `docs/PRD-Phase6.md`、
 > `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` 和用户已确认的 D6 决策为准。
@@ -17,6 +17,12 @@ PRD6 完成当前正确性、租户隔离、计费、链路身份、分布式策
 它直接解决 2B 私有化客户打补丁、回滚和证明“装了什么版本”的问题，又不要求
 UniRouter 变成托管 SaaS 或自动控制客户环境。该方向选择不是当前实施授权；全部
 PRD7 实现必须等 PRD6 闭环后再以独立 PRD7、acceptance row、分支、PR 和 CI 启动。
+
+用户同日在澄清方案 B 的边界后，接受将完整响应缓存能力列为未来必须补足的能力，
+目标形态为可独立部署、同时可被私有化和 SaaS regional cell 复用的 Cache Service。
+该决定登记为 `D7-CACHE-001` future required capability，不改变 Update Center 的
+首项顺序，不接受当前 PRD6 实现、回答持久化、部署或语义缓存。完整候选设计、容量
+推演和 SaaS 前置条件见 `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md`。
 
 本文中的 `P6-F12`—`P6-F15`、`P6-F22`—`P6-F31` 仅沿用 PRD6 编号便于追溯。
 若其中某项正式进入 PRD7，必须新增 D7 决策和 PRD7 acceptance row，不能把本文的
@@ -38,9 +44,9 @@ PRD7 实现必须等 PRD6 闭环后再以独立 PRD7、acceptance row、分支�
 
 | 领域 | PRD6 工作 | 价值 | 主要依赖/风险 | 优先级 | 最低验收证据 |
 |------|-----------|------|---------------|--------|--------------|
-| 租户与管理员边界 | 完成 P6-F32—P6-F39；当前 F32/F33/F37/F38/F39 已 CI verified（F32/F39 待 PR #145 合并），F34—F36 仍待修复 | 防止跨租户读写、财务影响和证据泄漏 | 历史数据归属、platform exception、迁移回滚 | P0 | 两租户签名 JWT 矩阵；跨租户无副作用；迁移 up/down（适用时）；CI |
+| 租户与管理员边界 | P6-F32—P6-F39 已合并并通过 required CI；保留回归和非目标环境证据边界 | 防止跨租户读写、财务影响和证据泄漏 | 历史数据归属、platform exception、迁移回滚 | P0 | 两租户签名 JWT 矩阵；跨租户无副作用；迁移 up/down（适用时）；CI |
 | 财务正确性 | P6-F18、P6-F06，以及钱包冻结/可用余额/结算显示语义一致 | 防止重复扣减、漏收、已输出但未结算 | 热钱包行、崩溃恢复、价格/倍率版本 | P0 | 并发单终态、pool-size barrier、故障恢复、账本守恒和 UI/API 一致性 |
-| 链路身份 | P6-F17：拆分 operation、client idempotency、trace/span、workflow、Agent、attempt 和 upstream identity | 同一业务调用可跨 retry/failover/billing/audit 追查，又不把外部 ID 当财务主键 | 兼容旧 request_id、跨租户碰撞、索引迁移 | P0 | replay/409/collision 负例；100 子 Agent；retry/failover attempt 证据；迁移 |
+| 链路身份 | P6-F17 已完成 Local verified 的 Scheme A；PR/required CI pending | 同一业务调用可跨 retry/failover/billing/audit 追查，又不把外部 ID 当财务主键 | 非滚动迁移；metadata-only 不提供回答重放或 durable recovery | P0 | replay/409/collision 负例；100 子 Agent；retry/failover attempt 证据；迁移；required CI |
 | 路由正确性 | P6-F03—P6-F05：错误分类、Embeddings parity、有效配置真值 | 避免错误重试、隐藏硬编码和端点可靠性不一致 | provider 差异、响应已开始后的 retry | P0 | provider 错误矩阵；有界 retry；Chat/Embeddings parity；配置版本证据 |
 | Agent 与分布式策略 | P6-F07、P6-F19、P6-F21：短期衰减能力令牌、祖先预算、共享限流和工作负载隔离 | 防止 Agent 爆炸导致鉴权/配额放大与长流饥饿 | Redis 故障策略、令牌刷新、撤销 SLO、基数 | P1 | 多副本并发/故障注入；祖先预算；不提权；公平性和 bounded-cardinality 指标 |
 | Routing Policy V1 | P6-F08 的静态优先级/权重、候选排除和 failover 解释 | 为自适应路由提供可信基础 | 必须先完成身份、错误分类和配置真值 | P1 | 确定性选择；候选/排除/回退原因；版本与回滚证据 |
@@ -65,7 +71,8 @@ PRD7 产品化层。
 | D7-UPGRADE-003 Release channels/lifecycle | 为安全修复、稳定版和 LTS 提供清晰支持窗口 | 版本通道元数据、兼容矩阵、deprecation 和 support bundle | 商业支持政策由产品/运营决定 | 通道碎片、长期维护负担 | P2 | stable/security/LTS 升降级矩阵；EOL 提示；可复现 support bundle；不含秘密 |
 | P6-F12 外部 secret reference/version/rotation | 跨云凭证安全轮换，避免配置文件静态秘密 | 选定 backend 的引用、版本 pin、热切换、回滚和审计 | Vault/KMS/云 secret 服务的可用性与运营 | 旧 worker、失联、权限扩大、供应商耦合 | P1/P2 | stale-worker、轮换、回滚、outage/fail mode、secret 不出日志；先选一个 backend |
 | P6-F15 policy simulation/BYO guardrail/config rollback | 变更前看到影响，支持企业自有 detector，并快速回滚 | policy lifecycle、dry-run、版本/RBAC、adapter contract | BYO detector 的模型/服务由客户或供应方拥有 | 第三方代码/数据泄漏、兼容性、模拟与线上漂移 | P1/P2 | 固定 fixture diff；RBAC/审计；版本兼容；超时/故障隔离；一键回滚但非自动放权 |
-| P6-F13 opt-in exact/semantic response cache | 降低延迟和成本 | tenant/auth-aware cache key、TTL、purge、stampede、计费语义 | 可选 Redis/vector backend | 跨租户泄漏、语义误命中、投毒、删除不彻底 | P2 | 租户/权限隔离；加密；TTL/purge；并发 stampede；billing truth；semantic red team；默认关闭 |
+| D7-CACHE-001 独立 Exact Cache Service（承接 P6-F13 exact 部分） | 降低重复推理延迟和成本，并形成私有化/SaaS 可复用的缓存边界 | tenant/auth/policy/region-aware exact key、独立服务合同、加密、TTL、purge/tombstone、stampede、cache-aware billing | Redis/KV、加密对象存储、KMS、选定 cell/私有化拓扑 | 跨租户泄漏、旧权限/策略命中、删除不彻底、连接/故障域放大 | P2；future required，实施未接受 | 跨租户/权限/版本负例；加密；TTL/purge；并发 stampede；故障 bypass；billing truth；1/2/多副本 load/soak；默认关闭 |
+| D7-CACHE-002 Semantic Cache（承接 P6-F13 semantic 部分） | 在确有高重复语义 workload 时进一步节省成本 | UniRouter 调用独立 Cache Service 的可解释语义接口 | vector backend、ground truth、业务误命中损失 owner | 投毒、越权、语义相似但业务不同、不可撤回旧答案 | P3；需单独决定 | exact cache 价值先成立；semantic poisoning/equivalence red team；precision/abstention；权限/撤回负例 |
 | P6-F14 latency/cost/rate-aware 与 canary routing | 在 SLO、成本和容量间动态选择，支持小流量验证 | 可信 telemetry 上的路由决策、约束、解释与回滚 | provider 指标质量、客户成本授权 | 反馈环振荡、局部指标误导、预算失控 | P2 | 离线 replay；稳定性/迟滞；硬约束不被优化器绕过；解释；canary budget/kill switch |
 | P6-F22 异步图像/视频 job plane | 将长耗时多模态任务与同步 chat 隔离 | tenant-scoped object reference、job/status/cancel、queue lease、最终结算 | object store、media provider、retention owner | 大对象泄漏、长连接耗尽、重复任务和巨额成本 | P2 | 引用而非大 body；幂等 completion；cancel/refund；retention/delete；负载隔离；恢复测试 |
 | P6-F25 显式授权 live shadow routing | 用真实选定流量比较候选模型/策略，不影响主响应 | 独立 shadow request/settlement、paired experiment ID、严格路由边界 | 数据权利、provider、预算和地域授权 | 双倍成本、数据外发、shadow 结果误返回 | P2 | 默认关闭；逐租户/模型/地域/budget gate；永不返回 shadow；独立账本；kill switch |
@@ -193,7 +200,7 @@ PRD7 产品化层。
 | D7-0 Candidate Validation | 确定首个客户问题、支持矩阵、KPI、威胁模型和 owner | PRD6 P0 完成；用户选择首项 | 正式 PRD7、acceptance matrix、安全边界、design partner 输入；仍无部署 |
 | D7-1 Offline Upgrade V1（推荐） | 签名离线包、manifest/SBOM、导入验证、preflight、人工 apply/rollback audit；Update Center 先只读 | PRD6 version/migration/release foundation 通过 | tamper/离线/N-1/backup-restore/权限/失败原子性；独立 PR 和 required CI |
 | D7-2 Policy Lifecycle And Secret V1 | 选择一个 secret backend；policy simulation/rollback；BYO detector 仅走窄 adapter | D7-1 release safety；明确 backend 和 detector owner | rotation/outage/stale-worker；fixture diff；RBAC/audit；兼容与 rollback |
-| D7-3 Cost And Routing Optimization | opt-in exact cache，再决定 semantic cache；adaptive/canary routing | Routing V1、计费真值、telemetry 和价值数据可信 | 隔离/投毒/stampede；离线 replay；约束/预算/稳定性/kill switch |
+| D7-3 Cost And Routing Optimization | 独立 opt-in Exact Cache Service，再单独决定 semantic cache；adaptive/canary routing | Routing V1、计费真值、telemetry 和价值数据可信；`D7-CACHE-0` 通过 | 隔离/权限版本/purge/tombstone/stampede；1/2/多副本 load/soak；离线 replay；约束/预算/稳定性/kill switch |
 | D7-4 Async Media Plane | image/video object-reference job/status/cancel/settlement；provenance 可后置 | 用户接受 media roadmap、object store/queue/retention | 幂等、租约、取消、费用、删除、负载隔离、恢复；不发送真实付费任务 |
 | D7-5 Trust Interface Experiments | 仅选择一个 F23/F24/F26-F31 的窄接口实验 | 数据/owner/合同清晰，fixture-only 优先 | 验签/TTL/不提权/不做同步依赖；precision/abstention；明确非生产证据 |
 | D7-6 Authorized Target Evidence | 在一个明确 target 验证已接受能力 | 独立 operator、凭证、成本、数据和清理授权 | target readback、sanitized evidence、rollback；不从 target 自动晋升 Production verified |

@@ -366,17 +366,21 @@ func TestP6F32FinanceAndUsageTenantIsolationIntegration(t *testing.T) {
 			 WHERE org_id = $1 AND user_id = $2 AND action = 'wallet.grant'
 			 ORDER BY id DESC LIMIT 1`, fx.orgB, billingB,
 		).Scan(&grantAuditRequestID))
-		require.Equal(t, "p6f32-grant-new-b", grantAuditRequestID)
+		require.True(t, strings.HasPrefix(grantAuditRequestID, "op_"), grantAuditRequestID)
 	})
 
-	t.Run("global legacy grant idempotency cannot disclose a foreign grant", func(t *testing.T) {
+	t.Run("tenant-scoped grant idempotency permits the same client value without disclosing a foreign grant", func(t *testing.T) {
 		before := fmt.Sprint(victimGrantID)
 		rec := serve(t, http.MethodPost, "/api/v1/grants",
 			`{"amount_cents":10,"reason":"collision","client_request_id":"p6f32-grant-collision"}`,
 			billingB, fx.orgB, auth.RoleBillingAdmin)
-		require.NotEqual(t, http.StatusOK, rec.Code)
-		require.NotEqual(t, http.StatusCreated, rec.Code)
+		require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 		require.NotContains(t, rec.Body.String(), before)
+		var count int
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT COUNT(*) FROM grants WHERE client_request_id = 'p6f32-grant-collision'`,
+		).Scan(&count))
+		require.Equal(t, 2, count)
 	})
 
 	t.Run("platform administrator can explicitly select a target organization", func(t *testing.T) {

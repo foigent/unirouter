@@ -25,12 +25,15 @@ func TestExtractTrustedEvidenceContext_ExplicitHeaders(t *testing.T) {
 	header.Set(EvidenceContextTraceIDHeader, "trace-abc-123")
 	header.Set(EvidenceContextParentSpanHeader, "span-parent-1")
 	header.Set(EvidenceContextSessionIDHeader, "session-42")
+	header.Set(EvidenceContextWorkflowIDHeader, "workflow-42")
+	header.Set(EvidenceContextAgentIDHeader, "agent-42")
 	header.Set(EvidenceContextActorTypeHeader, "Agent")
 	header.Set(EvidenceContextActorRefHeader, "agent:planner")
 	header.Set(EvidenceContextOnBehalfOfHeader, "user:42")
 
 	got := ExtractTrustedEvidenceContext(header, "shared-secret-123456")
-	if got.TraceID != "trace-abc-123" || got.ParentSpanID != "span-parent-1" || got.SessionID != "session-42" {
+	if got.TraceID != "trace-abc-123" || got.ParentSpanID != "span-parent-1" || got.SessionID != "session-42" ||
+		got.WorkflowID != "workflow-42" || got.AgentID != "agent-42" {
 		t.Fatalf("unexpected trace/session evidence: %#v", got)
 	}
 	if got.ActorType != "agent" || got.ActorRef != "agent:planner" || got.OnBehalfOf != "user:42" {

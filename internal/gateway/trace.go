@@ -28,6 +28,13 @@ const (
 )
 
 type evidenceSpanStateKey struct{}
+type attemptIDContextKey struct{}
+type routeAttemptContextKey struct{}
+
+type routeAttemptContext struct {
+	Sequence int
+	Total    int
+}
 
 type evidenceSpanState struct {
 	mu               sync.Mutex
@@ -43,6 +50,37 @@ func contextWithEvidenceSpanState(ctx context.Context) context.Context {
 		return ctx
 	}
 	return context.WithValue(ctx, evidenceSpanStateKey{}, &evidenceSpanState{})
+}
+
+func contextWithAttemptID(ctx context.Context, attemptID string) context.Context {
+	if ctx == nil || strings.TrimSpace(attemptID) == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, attemptIDContextKey{}, attemptID)
+}
+
+func attemptIDFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	attemptID, _ := ctx.Value(attemptIDContextKey{}).(string)
+	return attemptID
+}
+
+func contextWithRouteAttempt(ctx context.Context, sequence, total int) context.Context {
+	if ctx == nil || sequence <= 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, routeAttemptContextKey{}, routeAttemptContext{Sequence: sequence, Total: total})
+}
+
+func routeAttemptFromContext(ctx context.Context) routeAttemptContext {
+	if ctx != nil {
+		if attempt, ok := ctx.Value(routeAttemptContextKey{}).(routeAttemptContext); ok && attempt.Sequence > 0 {
+			return attempt
+		}
+	}
+	return routeAttemptContext{Sequence: 1, Total: 1}
 }
 
 func parentSpanForEvent(ctx context.Context, spanID, sourceComponent, trustedParentSpanID string) string {
@@ -106,6 +144,8 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 		actorType, actorRefArg = actorEvidence(keyType, keyID, apiKey.OwnerUserID)
 	}
 	evidenceContext := traceutil.EvidenceFromContext(ctx)
+	requestIdentity := middleware.GetRequestIdentityFromContext(ctx)
+	attemptID := attemptIDFromContext(ctx)
 	if evidenceContext.ActorType != "" {
 		actorType = evidenceContext.ActorType
 		actorRefArg = nullableString(evidenceContext.ActorRef)
@@ -162,31 +202,42 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 		captureGap = providerMissingUpstreamCaptureGap(eventType)
 	}
 	payloadCaptureMode := relay.currentPayloadCaptureMode()
-	sourceEventHash := hashTraceEvent(requestID, traceID, parentSpanID, eventType, stage, severity, model, requestedModel, provider, channel, statusCodeArg, latencyMs, upstreamRequestID, captureGap, actorType, stringFromNullable(actorRefArg), evidenceContext.OnBehalfOf, evidenceContext.SessionID, payloadCaptureMode, metadataJSON)
+	sourceEventHash := hashTraceEvent(requestID, requestIdentity.ClientRequestID, requestIdentity.IdempotencyKeyHash,
+		traceID, parentSpanID, evidenceContext.WorkflowID, evidenceContext.AgentID, attemptID,
+		eventType, stage, severity, model, requestedModel, provider, channel, statusCodeArg, latencyMs,
+		upstreamRequestID, captureGap, actorType, stringFromNullable(actorRefArg), evidenceContext.OnBehalfOf,
+		evidenceContext.SessionID, payloadCaptureMode, metadataJSON)
 	decisionKind, decisionResult, decisionReason := decisionEvidence(eventType, sanitizedMetadata)
 	if _, err := relay.db.Exec(ctx,
 		`INSERT INTO request_trace_events (
-			request_id, org_id, project_id, api_key_id, owner_user_id, key_type,
+			request_id, client_request_id, idempotency_key_hash,
+			org_id, project_id, api_key_id, owner_user_id, key_type,
 			event_type, stage, severity, model, requested_model, provider, channel,
 			status_code, latency_ms, metadata,
 			trace_id, span_id, parent_span_id, schema_version, source_component, capture_mode,
 			capture_gap, evidence_ref, upstream_request_id, decision_kind, decision_result, decision_reason,
-			actor_type, actor_ref, on_behalf_of, session_id, payload_capture_mode, source_event_hash
+			actor_type, actor_ref, on_behalf_of, session_id, workflow_id, agent_id, attempt_id,
+			payload_capture_mode, source_event_hash
 		)
 		 VALUES (
-			$1, $2, $3, $4, $5, $6,
-			$7, $8, $9, $10, $11, $12, $13,
-			$14, $15, $16,
-			$17, $18, $19, $20, $21, $22,
-			$23, $24, $25, $26, $27, $28,
-			$29, $30, $31, $32, $33, $34
+			$1, $2, $3,
+			$4, $5, $6, $7, $8,
+			$9, $10, $11, $12, $13, $14, $15,
+			$16, $17, $18,
+			$19, $20, $21, $22, $23, $24,
+			$25, $26, $27, $28, $29, $30,
+			$31, $32, $33, $34, $35, $36, $37,
+			$38, $39
 		)`,
-		requestID, orgID, projectIDArg, keyIDArg, ownerUserIDArg, keyType,
+		requestID, nullableString(requestIdentity.ClientRequestID), nullableString(requestIdentity.IdempotencyKeyHash),
+		orgID, projectIDArg, keyIDArg, ownerUserIDArg, keyType,
 		eventType, stage, severity, model, requestedModel, provider, channel,
 		statusCodeArg, latencyMs, string(metadataJSON),
 		traceID, spanID, nullableString(parentSpanID), evidenceSchemaVersion, sourceComponent, evidenceCaptureModeNative,
 		nullableString(captureGap), evidenceRef, nullableString(upstreamRequestID), nullableString(decisionKind), nullableString(decisionResult), nullableString(decisionReason),
-		actorType, actorRefArg, nullableString(evidenceContext.OnBehalfOf), nullableString(evidenceContext.SessionID), payloadCaptureMode, sourceEventHash,
+		actorType, actorRefArg, nullableString(evidenceContext.OnBehalfOf), nullableString(evidenceContext.SessionID),
+		nullableString(evidenceContext.WorkflowID), nullableString(evidenceContext.AgentID), nullableString(attemptID),
+		payloadCaptureMode, sourceEventHash,
 	); err != nil {
 		logger.New(logger.Fields{RequestID: requestID, OrgID: uint(orgID), Module: "trace"}).Warn("Failed to record trace event %s: %v", eventType, err)
 	}
@@ -361,11 +412,28 @@ func newEvidenceID() string {
 	return hex.EncodeToString(sum[:8])
 }
 
-func hashTraceEvent(requestID, traceID, parentSpanID, eventType, stage, severity, model, requestedModel, provider, channel string, statusCode interface{}, latencyMs int, upstreamRequestID, captureGap, actorType, actorRef, onBehalfOf, sessionID, payloadCaptureMode string, metadataJSON []byte) string {
+func newAttemptID() string {
+	var random [16]byte
+	if _, err := rand.Read(random[:]); err == nil {
+		return "att_" + hex.EncodeToString(random[:])
+	}
+	sum := sha256.Sum256([]byte(fmt.Sprintf("attempt:%d", time.Now().UnixNano())))
+	return "att_" + hex.EncodeToString(sum[:16])
+}
+
+func hashTraceEvent(requestID, clientRequestID, idempotencyKeyHash, traceID, parentSpanID, workflowID, agentID, attemptID,
+	eventType, stage, severity, model, requestedModel, provider, channel string, statusCode interface{}, latencyMs int,
+	upstreamRequestID, captureGap, actorType, actorRef, onBehalfOf, sessionID, payloadCaptureMode string, metadataJSON []byte,
+) string {
 	payload := struct {
 		RequestID         string      `json:"request_id"`
+		ClientRequestID   string      `json:"client_request_id"`
+		IdempotencyHash   string      `json:"idempotency_key_hash"`
 		TraceID           string      `json:"trace_id"`
 		ParentSpanID      string      `json:"parent_span_id"`
+		WorkflowID        string      `json:"workflow_id"`
+		AgentID           string      `json:"agent_id"`
+		AttemptID         string      `json:"attempt_id"`
 		EventType         string      `json:"event_type"`
 		Stage             string      `json:"stage"`
 		Severity          string      `json:"severity"`
@@ -384,7 +452,9 @@ func hashTraceEvent(requestID, traceID, parentSpanID, eventType, stage, severity
 		PayloadMode       string      `json:"payload_capture_mode"`
 		Metadata          string      `json:"metadata"`
 	}{
-		RequestID: requestID, TraceID: traceID, ParentSpanID: parentSpanID, EventType: eventType, Stage: stage, Severity: severity,
+		RequestID: requestID, ClientRequestID: clientRequestID, IdempotencyHash: idempotencyKeyHash,
+		TraceID: traceID, ParentSpanID: parentSpanID, WorkflowID: workflowID, AgentID: agentID, AttemptID: attemptID,
+		EventType: eventType, Stage: stage, Severity: severity,
 		Model: model, RequestedModel: requestedModel, Provider: provider, Channel: channel,
 		StatusCode: statusCode, LatencyMS: latencyMs, UpstreamRequestID: upstreamRequestID, CaptureGap: captureGap,
 		ActorType: actorType, ActorRef: actorRef, OnBehalfOf: onBehalfOf, SessionID: sessionID, PayloadMode: payloadCaptureMode,
@@ -395,11 +465,16 @@ func hashTraceEvent(requestID, traceID, parentSpanID, eventType, stage, severity
 	return hex.EncodeToString(sum[:])
 }
 
-func hashCallLogEvidence(requestID string, orgID int64, projectID interface{}, keyID int64, ownerUserID interface{}, keyType, model, requestedModel, provider, channel string, promptTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs int, usageSource string, isStream bool, estimatedTokens int, usageConfidence float64, upstreamRequestID, traceID, sessionID, actorType, actorRef, onBehalfOf, payloadCaptureMode string) string {
+func hashCallLogEvidence(requestID, clientRequestID, idempotencyKeyHash string, orgID int64, projectID interface{}, keyID int64, ownerUserID interface{}, keyType, model, requestedModel, provider, channel string, promptTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs int, usageSource string, isStream bool, estimatedTokens int, usageConfidence float64, upstreamRequestID, traceID, sessionID, workflowID, agentID, attemptID, actorType, actorRef, onBehalfOf, payloadCaptureMode string) string {
 	payload := struct {
 		RequestID         string      `json:"request_id"`
+		ClientRequestID   string      `json:"client_request_id"`
+		IdempotencyHash   string      `json:"idempotency_key_hash"`
 		TraceID           string      `json:"trace_id"`
 		SessionID         string      `json:"session_id"`
+		WorkflowID        string      `json:"workflow_id"`
+		AgentID           string      `json:"agent_id"`
+		AttemptID         string      `json:"attempt_id"`
 		OrgID             int64       `json:"org_id"`
 		ProjectID         interface{} `json:"project_id"`
 		KeyID             int64       `json:"api_key_id"`
@@ -425,7 +500,9 @@ func hashCallLogEvidence(requestID string, orgID int64, projectID interface{}, k
 		OnBehalfOf        string      `json:"on_behalf_of"`
 		PayloadMode       string      `json:"payload_capture_mode"`
 	}{
-		RequestID: requestID, TraceID: traceID, SessionID: sessionID, OrgID: orgID, ProjectID: projectID, KeyID: keyID,
+		RequestID: requestID, ClientRequestID: clientRequestID, IdempotencyHash: idempotencyKeyHash,
+		TraceID: traceID, SessionID: sessionID, WorkflowID: workflowID, AgentID: agentID, AttemptID: attemptID,
+		OrgID: orgID, ProjectID: projectID, KeyID: keyID,
 		OwnerUserID: ownerUserID, KeyType: keyType, Model: model, RequestedModel: requestedModel,
 		Provider: provider, Channel: channel, PromptTokens: promptTokens, CompletionTokens: completionTokens,
 		CostCents: costCents, StatusCode: statusCode, LatencyMS: latencyMs, TTFTMS: ttftMs,

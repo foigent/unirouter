@@ -959,8 +959,8 @@ func TestBalanceAdjust_Success(t *testing.T) {
 	if resp["adjust_amount"].(float64) != 5000 {
 		t.Fatalf("expected adjust_amount=5000, got %v", resp["adjust_amount"])
 	}
-	if len(auditArgs) != 13 {
-		t.Fatalf("expected 13 audit args, got %#v", auditArgs)
+	if len(auditArgs) != 14 {
+		t.Fatalf("expected 14 audit args, got %#v", auditArgs)
 	}
 	if !strings.Contains(auditArgs[11].(string), `"balance_cents":5000`) || !strings.Contains(auditArgs[12].(string), `"balance_cents":10000`) {
 		t.Fatalf("expected wallet before/after balance audit, got before=%v after=%v", auditArgs[11], auditArgs[12])
@@ -1387,10 +1387,10 @@ func TestCleanupOldData_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Should have 5 exec calls: call_logs, audit_logs, transactions, freeze_idempotency, grants expire
-	// Plus 1 for deducting expired grants from wallets
-	if execCount < 5 {
-		t.Fatalf("expected at least 5 exec calls, got %d", execCount)
+	// Includes call/audit/transaction/trace retention, financial freeze cleanup,
+	// request-idempotency receipt expiry and grant expiry.
+	if execCount < 7 {
+		t.Fatalf("expected at least 7 exec calls, got %d", execCount)
 	}
 }
 
@@ -1673,8 +1673,8 @@ func TestCreateAPIKey_AuditIncludesProjectAndAfterState(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if len(auditArgs) != 13 {
-		t.Fatalf("expected 13 audit args, got %#v", auditArgs)
+	if len(auditArgs) != 14 {
+		t.Fatalf("expected 14 audit args, got %#v", auditArgs)
 	}
 	if auditArgs[10] != int64(9) {
 		t.Fatalf("expected project_id audit arg 9, got %v", auditArgs[10])
@@ -2694,7 +2694,8 @@ func TestListAuditLogs_Success(t *testing.T) {
 						*dest[11].(*string) = "agent"
 						*dest[12].(*string) = "req-1"
 						*dest[13].(*string) = "admin_console"
-						*dest[14].(*time.Time) = now
+						*dest[14].(*string) = "client-1"
+						*dest[15].(*time.Time) = now
 						return nil
 					},
 				},
@@ -2719,7 +2720,7 @@ func TestListAuditLogs_Success(t *testing.T) {
 	if row["actor_id"].(float64) != 7 || row["project_id"].(float64) != 9 {
 		t.Fatalf("expected actor/project fields, got %#v", row)
 	}
-	if row["source"] != "admin_console" || row["request_id"] != "req-1" || row["user_agent"] != "agent" {
+	if row["source"] != "admin_console" || row["request_id"] != "req-1" || row["client_request_id"] != "client-1" || row["user_agent"] != "agent" {
 		t.Fatalf("expected source/request/user_agent fields, got %#v", row)
 	}
 }
@@ -2728,7 +2729,8 @@ func TestListAuditLogs_Filters(t *testing.T) {
 	var capturedArgs []any
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			if !strings.Contains(sql, "org_id = $1") || !strings.Contains(sql, "project_id = $2") || !strings.Contains(sql, "user_id = $3") || !strings.Contains(sql, "source = $6") {
+			if !strings.Contains(sql, "org_id = $1") || !strings.Contains(sql, "project_id = $2") || !strings.Contains(sql, "user_id = $3") ||
+				!strings.Contains(sql, "request_id = $6") || !strings.Contains(sql, "client_request_id = $7") || !strings.Contains(sql, "source = $8") {
 				t.Fatalf("expected filtered count query, got %s", sql)
 			}
 			capturedArgs = append([]any(nil), args...)
@@ -2743,7 +2745,7 @@ func TestListAuditLogs_Filters(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	req := httptest.NewRequest("GET", "/audit-logs?org_id=3&project_id=9&actor_id=7&action=model_registry.update&resource=model_registry&source=admin", nil)
+	req := httptest.NewRequest("GET", "/audit-logs?org_id=3&project_id=9&actor_id=7&action=model_registry.update&resource=model_registry&request_id=op-1&client_request_id=client-1&source=admin", nil)
 	rec := httptest.NewRecorder()
 
 	h.ListAuditLogs(rec, req)
@@ -2751,7 +2753,7 @@ func TestListAuditLogs_Filters(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if len(capturedArgs) != 6 || capturedArgs[5] != "admin_console" {
+	if len(capturedArgs) != 8 || capturedArgs[5] != "op-1" || capturedArgs[6] != "client-1" || capturedArgs[7] != "admin_console" {
 		t.Fatalf("expected normalized admin_console source filter, got %#v", capturedArgs)
 	}
 }
@@ -2927,21 +2929,25 @@ func TestListLogs_Success(t *testing.T) {
 						*dest[0].(*int64) = 1
 						*dest[1].(*int64) = 7
 						*dest[2].(*string) = "req-001"
-						*dest[3].(*string) = "gpt-4o"
-						*dest[4].(*string) = "openai"
-						*dest[5].(*string) = "test-channel"
-						*dest[6].(*int) = 100
-						*dest[7].(*int) = 50
-						*dest[8].(*int) = 150
-						*dest[9].(*int) = 200
-						*dest[10].(*int) = 200
-						*dest[11].(*int) = 350
-						*dest[12].(*int) = 0
-						dest[13] = (*int)(nil)
-						*dest[14].(*string) = ""
-						*dest[15].(*string) = "backend"
-						*dest[16].(*bool) = false
-						*dest[17].(*time.Time) = now
+						*dest[3].(*string) = "client-001"
+						*dest[4].(*string) = "workflow-001"
+						*dest[5].(*string) = "agent-001"
+						*dest[6].(*string) = "att_001"
+						*dest[7].(*string) = "gpt-4o"
+						*dest[8].(*string) = "openai"
+						*dest[9].(*string) = "test-channel"
+						*dest[10].(*int) = 100
+						*dest[11].(*int) = 50
+						*dest[12].(*int) = 150
+						*dest[13].(*int) = 200
+						*dest[14].(*int) = 200
+						*dest[15].(*int) = 350
+						*dest[16].(*int) = 0
+						*dest[17].(**int) = nil
+						*dest[18].(*string) = ""
+						*dest[19].(*string) = "backend"
+						*dest[20].(*bool) = false
+						*dest[21].(*time.Time) = now
 						return nil
 					},
 				},
@@ -2985,21 +2991,25 @@ func TestListLogs_WithFilters(t *testing.T) {
 						*dest[0].(*int64) = 1
 						*dest[1].(*int64) = 7
 						*dest[2].(*string) = "req-002"
-						*dest[3].(*string) = "gpt-4o"
-						*dest[4].(*string) = "openai"
-						*dest[5].(*string) = "test-channel"
-						*dest[6].(*int) = 200
-						*dest[7].(*int) = 100
-						*dest[8].(*int) = 300
-						*dest[9].(*int) = 200
+						*dest[3].(*string) = "client-002"
+						*dest[4].(*string) = "workflow-002"
+						*dest[5].(*string) = "agent-002"
+						*dest[6].(*string) = "att_002"
+						*dest[7].(*string) = "gpt-4o"
+						*dest[8].(*string) = "openai"
+						*dest[9].(*string) = "test-channel"
 						*dest[10].(*int) = 200
-						*dest[11].(*int) = 500
-						*dest[12].(*int) = 0
-						dest[13] = (*int)(nil)
-						*dest[14].(*string) = ""
-						*dest[15].(*string) = "backend"
-						*dest[16].(*bool) = false
-						*dest[17].(*time.Time) = now
+						*dest[11].(*int) = 100
+						*dest[12].(*int) = 300
+						*dest[13].(*int) = 200
+						*dest[14].(*int) = 200
+						*dest[15].(*int) = 500
+						*dest[16].(*int) = 0
+						*dest[17].(**int) = nil
+						*dest[18].(*string) = ""
+						*dest[19].(*string) = "backend"
+						*dest[20].(*bool) = false
+						*dest[21].(*time.Time) = now
 						return nil
 					},
 				},
@@ -3063,15 +3073,19 @@ func TestListLogs_StructuralEvidenceFilters(t *testing.T) {
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			for _, condition := range []string{
 				"trace_id = $2",
-				"upstream_request_id = $3",
-				"evidence_ref = $4",
-				"source_event_hash = $5",
+				"client_request_id = $3",
+				"workflow_id = $4",
+				"agent_id = $5",
+				"upstream_request_id = $6",
+				"evidence_ref = $7",
+				"source_event_hash = $8",
+				"identity_event.attempt_id = $9",
 			} {
 				if !strings.Contains(sql, condition) {
 					t.Fatalf("expected %s in count query, got %s", condition, sql)
 				}
 			}
-			expected := []any{int64(1), "trace-001", "upstream-001", "evidence-001", "hash-001"}
+			expected := []any{int64(1), "trace-001", "client-001", "workflow-001", "agent-001", "upstream-001", "evidence-001", "hash-001", "att-001"}
 			if !reflect.DeepEqual(args, expected) {
 				t.Fatalf("expected structural filter args %#v, got %#v", expected, args)
 			}
@@ -3081,15 +3095,18 @@ func TestListLogs_StructuralEvidenceFilters(t *testing.T) {
 			}}
 		},
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			if !strings.Contains(sql, "source_event_hash = $5") {
+			if !strings.Contains(sql, "source_event_hash = $8") || !strings.Contains(sql, "identity_event.attempt_id = $9") {
 				t.Fatalf("expected structural filters in list query, got %s", sql)
+			}
+			if !strings.Contains(sql, "identity_event.org_id = call_logs.org_id") || !strings.Contains(sql, "identity_event.request_id = call_logs.request_id") {
+				t.Fatalf("attempt lookup must remain tenant and operation scoped, got %s", sql)
 			}
 			return &testutil.MockRows{}, nil
 		},
 	}
 	h := newTestHandler(db)
 
-	req := httptest.NewRequest("GET", "/logs?trace_id=trace-001&upstream_request_id=upstream-001&evidence_ref=evidence-001&source_event_hash=hash-001", nil)
+	req := httptest.NewRequest("GET", "/logs?trace_id=trace-001&client_request_id=client-001&workflow_id=workflow-001&agent_id=agent-001&attempt_id=att-001&upstream_request_id=upstream-001&evidence_ref=evidence-001&source_event_hash=hash-001", nil)
 	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 
@@ -3103,13 +3120,19 @@ func TestListLogs_StructuralEvidenceFilters(t *testing.T) {
 func TestListLogs_SearchesStructuralEvidenceFields(t *testing.T) {
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			for _, column := range []string{"trace_id ILIKE $2", "upstream_request_id ILIKE $2", "evidence_ref ILIKE $2", "source_event_hash ILIKE $2"} {
+			for _, column := range []string{
+				"trace_id ILIKE $2", "client_request_id ILIKE $2", "workflow_id ILIKE $2", "agent_id ILIKE $2", "attempt_id ILIKE $2",
+				"upstream_request_id ILIKE $2", "evidence_ref ILIKE $2", "source_event_hash ILIKE $2",
+			} {
 				if !strings.Contains(sql, column) {
 					t.Fatalf("expected %s in search query, got %s", column, sql)
 				}
 			}
 			if len(args) != 2 || args[0] != int64(1) || args[1] != "%evidence-001%" {
 				t.Fatalf("expected structural search arg, got %#v", args)
+			}
+			if !strings.Contains(sql, "search_event.org_id = call_logs.org_id") || !strings.Contains(sql, "search_event.attempt_id ILIKE $2") {
+				t.Fatalf("attempt search must include tenant-scoped trace events, got %s", sql)
 			}
 			return &testutil.MockRow{ScanFn: func(dest ...any) error {
 				*dest[0].(*int) = 0

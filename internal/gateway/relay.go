@@ -395,31 +395,40 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	var lastErr error
 	var lastStatusCode int
 	var lastUpstreamRequestID string
+	var lastRoute *RouteResult
+	lastAttemptCtx := ctx
 	for routeIndex, route := range routes {
+		attemptCtx := contextWithAttemptID(ctx, newAttemptID())
+		attemptCtx = contextWithRouteAttempt(attemptCtx, routeIndex+1, len(routes))
+		lastAttemptCtx = attemptCtx
+		lastRoute = &route
+		lastStatusCode = 0
+		lastUpstreamRequestID = ""
 		routeForTrace := route
-		relay.recordTraceEvent(ctx, requestID, "routing.route_selected", "routing", "info", req.Model, requestedModel, &routeForTrace, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+		relay.recordTraceEvent(attemptCtx, requestID, "routing.route_selected", "routing", "info", req.Model, requestedModel, &routeForTrace, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
 			"route_count": len(routes),
 			"route_index": routeIndex + 1,
 		})
 		apiKey, err := auth.DecryptKey(route.ChannelKey.KeyEnc, relay.encKey)
 		if err != nil {
 			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Failed to decrypt key: %v", err)
-			relay.recordTraceEvent(ctx, requestID, "provider.key_decrypt_failed", "provider", "error", req.Model, requestedModel, &routeForTrace, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+			relay.recordTraceEvent(attemptCtx, requestID, "provider.key_decrypt_failed", "provider", "error", req.Model, requestedModel, &routeForTrace, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
 				"failure_kind": "auth",
 			})
+			lastErr = err
 			continue
 		}
 
 		adapter, err := adapterRegistry.Get(route.Channel.AdapterType)
 		if err != nil {
 			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Unknown adapter_type %q: %v", route.Channel.AdapterType, err)
-			relay.recordTraceEvent(ctx, requestID, "provider.adapter_unknown", "provider", "error", req.Model, requestedModel, &routeForTrace, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+			relay.recordTraceEvent(attemptCtx, requestID, "provider.adapter_unknown", "provider", "error", req.Model, requestedModel, &routeForTrace, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
 				"failure_kind": "configuration",
 			})
 			lastErr = err
 			continue
 		}
-		upstreamReq, err := adapter.BuildRequest(ctx, adapters.RequestInput{
+		upstreamReq, err := adapter.BuildRequest(attemptCtx, adapters.RequestInput{
 			Endpoint:       adapters.EndpointChatCompletions,
 			DownstreamBody: body,
 			RequestedModel: requestedModel,
@@ -430,9 +439,10 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		})
 		if err != nil {
 			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Failed to create upstream request: %v", err)
-			relay.recordTraceEvent(ctx, requestID, "provider.request_build_failed", "provider", "error", req.Model, requestedModel, &routeForTrace, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+			relay.recordTraceEvent(attemptCtx, requestID, "provider.request_build_failed", "provider", "error", req.Model, requestedModel, &routeForTrace, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
 				"failure_kind": "request_build",
 			})
+			lastErr = err
 			continue
 		}
 
@@ -444,8 +454,8 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Upstream request failed: %v", err)
 			relay.router.MarkChannelFail(ctx, route.Channel.ID, 5, 300)
 			relay.router.MarkKeyFail(ctx, route.ChannelKey.ID)
-			relay.emitProviderChannelFailure(ctx, route, requestID, requestedModel, 0, string(adapters.FailureChannel), err.Error())
-			relay.recordTraceEvent(ctx, requestID, "provider.request_failed", "provider", "warning", req.Model, requestedModel, &routeForTrace, 0, int(upstreamDuration.Milliseconds()), map[string]interface{}{
+			relay.emitProviderChannelFailure(attemptCtx, route, requestID, requestedModel, 0, string(adapters.FailureChannel), err.Error())
+			relay.recordTraceEvent(attemptCtx, requestID, "provider.request_failed", "provider", "warning", req.Model, requestedModel, &routeForTrace, 0, int(upstreamDuration.Milliseconds()), map[string]interface{}{
 				"failure_kind": string(adapters.FailureChannel),
 			})
 			lastErr = err
@@ -462,19 +472,19 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 			case adapters.FailureChannel:
 				relay.router.MarkChannelFail(ctx, route.Channel.ID, 5, 300)
 				relay.router.MarkKeyFail(ctx, route.ChannelKey.ID)
-				relay.emitProviderChannelFailure(ctx, route, requestID, requestedModel, resp.StatusCode, string(classified.FailureKind), classified.Message)
+				relay.emitProviderChannelFailure(attemptCtx, route, requestID, requestedModel, resp.StatusCode, string(classified.FailureKind), classified.Message)
 			case adapters.FailureAuth:
 				// Auth failure — mark key as invalid immediately
 				relay.router.MarkKeyCooldown(ctx, route.ChannelKey.ID, 3600)
-				relay.emitProviderChannelFailure(ctx, route, requestID, requestedModel, resp.StatusCode, string(classified.FailureKind), classified.Message)
+				relay.emitProviderChannelFailure(attemptCtx, route, requestID, requestedModel, resp.StatusCode, string(classified.FailureKind), classified.Message)
 			case adapters.FailureRateLimit:
 				// Rate limited — cooldown key for 60s
 				relay.router.MarkKeyCooldown(ctx, route.ChannelKey.ID, 60)
-				relay.emitProviderChannelFailure(ctx, route, requestID, requestedModel, resp.StatusCode, string(classified.FailureKind), classified.Message)
+				relay.emitProviderChannelFailure(attemptCtx, route, requestID, requestedModel, resp.StatusCode, string(classified.FailureKind), classified.Message)
 			default:
 				// 4xx client errors (400, 404, etc.) — don't mark as failure
 			}
-			relay.recordTraceEvent(ctx, requestID, "provider.response_rejected", "provider", "warning", req.Model, requestedModel, &routeForTrace, resp.StatusCode, int(upstreamDuration.Milliseconds()), map[string]interface{}{
+			relay.recordTraceEvent(attemptCtx, requestID, "provider.response_rejected", "provider", "warning", req.Model, requestedModel, &routeForTrace, resp.StatusCode, int(upstreamDuration.Milliseconds()), map[string]interface{}{
 				"failure_kind": string(classified.FailureKind),
 			}, upstreamRequestID)
 			lastStatusCode = resp.StatusCode
@@ -487,12 +497,12 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		// Success — mark channel healthy and forward
 		relay.router.MarkChannelSuccess(ctx, route.Channel.ID)
 		relay.router.MarkKeySuccess(ctx, route.ChannelKey.ID)
-		relay.recordTraceEvent(ctx, requestID, "provider.response_accepted", "provider", "info", req.Model, requestedModel, &routeForTrace, resp.StatusCode, int(upstreamDuration.Milliseconds()), map[string]interface{}{}, upstreamRequestID)
+		relay.recordTraceEvent(attemptCtx, requestID, "provider.response_accepted", "provider", "info", req.Model, requestedModel, &routeForTrace, resp.StatusCode, int(upstreamDuration.Milliseconds()), map[string]interface{}{}, upstreamRequestID)
 
 		if req.Stream {
-			relay.relayStreamRequest(ctx, w, resp, &route, requestID, orgID, keyID, req.Model, requestedModel, r.RemoteAddr, req.Messages, reqLog, requestStart, estimatedTokens, adapter, upstreamRequestID)
+			relay.relayStreamRequest(attemptCtx, w, resp, &route, requestID, orgID, keyID, req.Model, requestedModel, r.RemoteAddr, req.Messages, reqLog, requestStart, estimatedTokens, adapter, upstreamRequestID)
 		} else {
-			relay.relayNonStreamRequest(ctx, w, resp, &route, requestID, orgID, keyID, req.Model, requestedModel, r.RemoteAddr, reqLog, requestStart, adapter, estimatedTokens, upstreamRequestID)
+			relay.relayNonStreamRequest(attemptCtx, w, resp, &route, requestID, orgID, keyID, req.Model, requestedModel, r.RemoteAddr, reqLog, requestStart, adapter, estimatedTokens, upstreamRequestID)
 		}
 		return
 	}
@@ -503,8 +513,8 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		reqLog.Error("All upstream channels failed, last error: %v", lastErr)
 	}
 	// Log the failed request
-	if len(routes) > 0 {
-		relay.recordRequest(ctx, requestID, orgID, keyID, routes[0].Channel.ID, routes[0].Channel.Provider, routes[0].Channel.Name, req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, lastStatusCode, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceUpstreamFailed, estimatedTokens, lastUpstreamRequestID)
+	if lastRoute != nil {
+		relay.recordRequest(lastAttemptCtx, requestID, orgID, keyID, lastRoute.Channel.ID, lastRoute.Channel.Provider, lastRoute.Channel.Name, req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, lastStatusCode, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceUpstreamFailed, estimatedTokens, lastUpstreamRequestID)
 	}
 	if lastStatusCode > 0 {
 		writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_error", fmt.Sprintf("All upstream channels failed (last status: %d)", lastStatusCode))
@@ -595,6 +605,7 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 		responseBody = body
 	}
 	json.Unmarshal(responseBody, &responseMap)
+	attempt := routeAttemptFromContext(ctx)
 	responseMap["_uniroute"] = map[string]interface{}{
 		"request_id": requestID,
 		"cost": map[string]interface{}{
@@ -602,10 +613,13 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 			"charged":   actualCost,
 			"cache_hit": false,
 		},
-		"provider":  route.Channel.Provider,
-		"channel":   route.Channel.Name,
-		"cache_hit": false,
-		"fallback":  false,
+		"provider":      route.Channel.Provider,
+		"channel":       route.Channel.Name,
+		"cache_hit":     false,
+		"fallback":      attempt.Sequence > 1,
+		"attempt_count": attempt.Sequence,
+		"route_count":   attempt.Total,
+		"attempt_id":    attemptIDFromContext(ctx),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -952,6 +966,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	}
 
 	// Send usage + _uniroute extension as the final data chunk before [DONE].
+	attempt := routeAttemptFromContext(ctx)
 	unirouteData := map[string]interface{}{
 		"request_id": requestID,
 		"cost": map[string]interface{}{
@@ -963,7 +978,10 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		"channel":        route.Channel.Name,
 		"ttft_ms":        ttftMs,
 		"cache_hit":      false,
-		"fallback":       false,
+		"fallback":       attempt.Sequence > 1,
+		"attempt_count":  attempt.Sequence,
+		"route_count":    attempt.Total,
+		"attempt_id":     attemptIDFromContext(ctx),
 		"billing_status": billingStatus,
 	}
 	finalChunk := map[string]interface{}{
@@ -1028,6 +1046,8 @@ func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, 
 	}
 	actorType, actorRefArg := actorEvidence(keyType, keyID, ownerUserID)
 	evidenceContext := traceutil.EvidenceFromContext(ctx)
+	requestIdentity := middleware.GetRequestIdentityFromContext(ctx)
+	attemptID := attemptIDFromContext(ctx)
 	if evidenceContext.ActorType != "" {
 		actorType = evidenceContext.ActorType
 		actorRefArg = nullableString(evidenceContext.ActorRef)
@@ -1040,30 +1060,41 @@ func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, 
 	if evidenceContext.TraceID != "" {
 		traceID = evidenceContext.TraceID
 	}
-	sourceEventHash := hashCallLogEvidence(requestID, orgID, projectIDArg, keyID, ownerUserIDArg, keyType, model, requestedModel, provider, channelName, promptTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs, usageSource, isStream, estimatedTokens, usageConfidence, upstreamRequestID, traceID, evidenceContext.SessionID, actorType, stringFromNullable(actorRefArg), evidenceContext.OnBehalfOf, payloadCaptureMode)
+	sourceEventHash := hashCallLogEvidence(requestID, requestIdentity.ClientRequestID, requestIdentity.IdempotencyKeyHash,
+		orgID, projectIDArg, keyID, ownerUserIDArg, keyType, model, requestedModel, provider, channelName,
+		promptTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs, usageSource, isStream,
+		estimatedTokens, usageConfidence, upstreamRequestID, traceID, evidenceContext.SessionID,
+		evidenceContext.WorkflowID, evidenceContext.AgentID, attemptID, actorType, stringFromNullable(actorRefArg),
+		evidenceContext.OnBehalfOf, payloadCaptureMode)
 	_, err := relay.db.Exec(ctx,
 		`INSERT INTO call_logs (
-			request_id, org_id, project_id, api_key_id, owner_user_id, key_type,
+			request_id, client_request_id, idempotency_key_hash,
+			org_id, project_id, api_key_id, owner_user_id, key_type,
 			model, requested_model, provider, channel, prompt_tokens, completion_tokens,
 			total_tokens, cost_cents, status_code, latency_ms, ttft_ms, usage_source,
 			is_stream, ip_address, estimated_tokens, usage_confidence,
 			trace_id, session_id, schema_version, capture_mode, evidence_ref, upstream_request_id,
+			workflow_id, agent_id, attempt_id,
 			actor_type, actor_ref, on_behalf_of, payload_capture_mode, source_event_hash
 		)
 		 VALUES (
-			$1, $2, $3, $4, $5, $6,
-			$7, $8, $9, $10, $11, $12,
-			$13, $14, $15, $16, $17, $18,
-			$19, $20, $21, $22,
-			$23, $24, $25, $26, $27, $28,
-			$29, $30, $31, $32, $33
+			$1, $2, $3,
+			$4, $5, $6, $7, $8,
+			$9, $10, $11, $12, $13, $14,
+			$15, $16, $17, $18, $19, $20,
+			$21, $22, $23, $24,
+			$25, $26, $27, $28, $29, $30,
+			$31, $32, $33,
+			$34, $35, $36, $37, $38
 		)`,
-		requestID, orgID, projectIDArg, keyID, ownerUserIDArg, keyType,
+		requestID, nullableString(requestIdentity.ClientRequestID), nullableString(requestIdentity.IdempotencyKeyHash),
+		orgID, projectIDArg, keyID, ownerUserIDArg, keyType,
 		model, requestedModel, provider, channelName, promptTokens, completionTokens,
 		promptTokens+completionTokens, costCents, statusCode, latencyMs, ttftMs, usageSource,
 		isStream, clientIP, estimatedTokens, usageConfidence,
 		traceID, nullableString(evidenceContext.SessionID), evidenceSchemaVersion, evidenceCaptureModeNative, fmt.Sprintf("%s:call_logs:request_id:%s", evidenceTraceRefSourceType, requestID),
-		nullableString(upstreamRequestID), actorType, actorRefArg, nullableString(evidenceContext.OnBehalfOf), payloadCaptureMode, sourceEventHash,
+		nullableString(upstreamRequestID), nullableString(evidenceContext.WorkflowID), nullableString(evidenceContext.AgentID), nullableString(attemptID),
+		actorType, actorRefArg, nullableString(evidenceContext.OnBehalfOf), payloadCaptureMode, sourceEventHash,
 	)
 	if err != nil {
 		reqLog.Error("Failed to record request log: %v", err)
@@ -1221,6 +1252,8 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, 503, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceNoRoute, inputTokens, "")
 		return
 	}
+	ctx = contextWithAttemptID(ctx, newAttemptID())
+	ctx = contextWithRouteAttempt(ctx, 1, 1)
 	relay.recordTraceEvent(ctx, requestID, "routing.route_selected", "routing", "info", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
 		"route_count": 1,
 		"route_index": 1,
@@ -1351,6 +1384,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	// Build response with _uniroute extension
 	var responseMap map[string]interface{}
 	json.Unmarshal(respBody, &responseMap)
+	attempt := routeAttemptFromContext(ctx)
 	responseMap["_uniroute"] = map[string]interface{}{
 		"request_id": requestID,
 		"cost": map[string]interface{}{
@@ -1358,10 +1392,13 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 			"charged":   actualCost,
 			"cache_hit": false,
 		},
-		"provider":  route.Channel.Provider,
-		"channel":   route.Channel.Name,
-		"cache_hit": false,
-		"fallback":  false,
+		"provider":      route.Channel.Provider,
+		"channel":       route.Channel.Name,
+		"cache_hit":     false,
+		"fallback":      attempt.Sequence > 1,
+		"attempt_count": attempt.Sequence,
+		"route_count":   attempt.Total,
+		"attempt_id":    attemptIDFromContext(ctx),
 	}
 
 	w.Header().Set("Content-Type", "application/json")

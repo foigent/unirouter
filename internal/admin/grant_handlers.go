@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -87,6 +86,10 @@ func (h *Handler) CreateGrant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.OrgId = orgID
+	r, operationID, ok := ensureOperationIdentityForHandler(w, r)
+	if !ok {
+		return
+	}
 	if req.ClientRequestID == "" {
 		req.ClientRequestID = fmt.Sprintf("grant_%d", time.Now().UnixNano())
 	}
@@ -118,6 +121,17 @@ func (h *Handler) CreateGrant(w http.ResponseWriter, r *http.Request) {
 		 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
 		req.OrgId, req.AmountCents, req.Reason, req.ClientRequestID, createdBy).Scan(&grantId)
 	if err != nil {
+		if isPostgresUniqueViolation(err) {
+			_ = tx.Rollback(r.Context())
+			lookupErr := h.db.QueryRow(r.Context(),
+				`SELECT id FROM grants WHERE org_id = $1 AND client_request_id = $2`,
+				req.OrgId, req.ClientRequestID,
+			).Scan(&existingId)
+			if lookupErr == nil {
+				writeJSON(w, http.StatusOK, map[string]interface{}{"id": existingId, "duplicate": true})
+				return
+			}
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Insert grant failed"})
 		return
 	}
@@ -137,9 +151,9 @@ func (h *Handler) CreateGrant(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err = tx.Exec(r.Context(),
-		`INSERT INTO transactions (org_id, type, amount, balance_after, note, request_id)
-		 VALUES ($1, 'grant', $2, $3, $4, $5)`,
-		req.OrgId, req.AmountCents, balanceAfter, req.Reason, req.ClientRequestID)
+		`INSERT INTO transactions (org_id, type, amount, balance_after, note, request_id, client_request_id)
+		 VALUES ($1, 'grant', $2, $3, $4, $5, $6)`,
+		req.OrgId, req.AmountCents, balanceAfter, req.Reason, operationID, req.ClientRequestID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Insert transaction failed"})
 		return
@@ -149,11 +163,11 @@ func (h *Handler) CreateGrant(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Commit failed"})
 		return
 	}
-	r = r.WithContext(context.WithValue(r.Context(), middleware.CtxRequestID, req.ClientRequestID))
 	h.recordAuditForOrgProjectFromRequest(r, req.OrgId, 0, "wallet.grant", "grant", fmt.Sprintf("%d", grantId), map[string]interface{}{
-		"amount_cents": req.AmountCents,
-		"reason":       req.Reason,
-		"created_by":   createdBy,
+		"amount_cents":      req.AmountCents,
+		"reason":            req.Reason,
+		"created_by":        createdBy,
+		"client_request_id": req.ClientRequestID,
 	})
 	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": grantId, "org_id": req.OrgId})
 }

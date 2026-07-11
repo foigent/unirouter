@@ -50,7 +50,7 @@ const endpointGroups = [
       ['GET', '/api/v1/logs?project_id={id}', '项目调用日志'],
       ['GET', '/api/v1/logs/{id}', '请求日志详情'],
       ['GET', '/api/v1/logs/{id}/trace', '请求路径事件'],
-      ['GET', '/api/v1/logs?project_id={id}&request_id={rid}', '按 Request ID 查询项目请求'],
+      ['GET', '/api/v1/logs?project_id={id}&request_id={rid}', '按服务器操作 ID（Request ID）查询项目请求'],
       ['POST', '/v1/chat/completions', '请求调试台直接使用项目访问凭证调用'],
     ],
   },
@@ -183,6 +183,13 @@ export default function ApiDocsPage() {
         description="当前 API 合同索引。开发者工作台使用同一登录会话和项目级 API，不暴露上游凭证。"
       />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <Surface title="请求身份与幂等" description="这些字段用途不同，不能互相替代。">
+          <div style={{ display: 'grid', gap: 8 }}>
+            <Text><Text code>X-Request-ID</Text>：UniRouter 每次请求强制生成的操作 ID，用于串联网关、计费、审计和故障切换。</Text>
+            <Text><Text code>X-UniRouter-Client-Request-ID</Text>：调用方自己的关联值，只用于查找，不作为全局财务主键。</Text>
+            <Text><Text code>Idempotency-Key</Text>：Chat / Embeddings 的 24 小时去重键，按组织、API Key 和请求内容隔离；当前仅返回状态回执，不保存或重放模型回答。</Text>
+          </div>
+        </Surface>
         {endpointGroups.map(group => (
           <Surface key={group.area} title={group.area}>
             <div className="ur-table-shell">

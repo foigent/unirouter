@@ -22,6 +22,8 @@ describe('AuditLogsPage', () => {
         action: 'channel.test',
         resource: 'channel',
         resource_id: '42',
+        request_id: 'op_001',
+        client_request_id: 'client-001',
         source: 'admin_console',
         detail: { after: { success: false } },
         created_at: '2026-07-02T10:00:00Z',
@@ -40,12 +42,16 @@ describe('AuditLogsPage', () => {
     const text = container.textContent || '';
     expect(text).toContain('channel.test');
     expect(text).toContain('管理控制台');
+    expect(text).toContain('op_001');
+    expect(text).toContain('client-001');
     expect(container.querySelector('input[placeholder="组织 ID"]')).toBeTruthy();
     expect(container.querySelector('input[placeholder="项目 ID"]')).toBeTruthy();
     expect(container.querySelector('input[placeholder="操作者 ID"]')).toBeTruthy();
     expect(container.querySelector('input[placeholder="动作"]')).toBeTruthy();
     expect(container.querySelector('input[placeholder="目标类型"]')).toBeTruthy();
     expect(container.querySelector('input[placeholder="目标 ID"]')).toBeTruthy();
+    expect(container.querySelector('input[placeholder="操作 ID（Request ID）"]')).toBeTruthy();
+    expect(container.querySelector('input[placeholder="客户端请求 ID"]')).toBeTruthy();
     expect(container.querySelector('input[placeholder="开始时间 RFC3339"]')).toBeTruthy();
     expect(container.querySelector('input[placeholder="结束时间 RFC3339"]')).toBeTruthy();
   });

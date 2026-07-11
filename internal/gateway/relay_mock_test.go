@@ -306,38 +306,41 @@ func TestRecordRequest_Success(t *testing.T) {
 	if !execCalled {
 		t.Fatal("expected exec to be called")
 	}
-	if len(capturedArgs) != 33 {
-		t.Fatalf("expected 33 insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != 38 {
+		t.Fatalf("expected 38 insert args, got %d", len(capturedArgs))
 	}
-	if capturedArgs[2] != int64(7) {
-		t.Fatalf("expected project_id arg 7, got %v", capturedArgs[2])
+	if capturedArgs[4] != int64(7) {
+		t.Fatalf("expected project_id arg 7, got %v", capturedArgs[4])
 	}
-	if capturedArgs[4] != ownerUserID {
-		t.Fatalf("expected owner_user_id arg 42, got %v", capturedArgs[4])
+	if capturedArgs[6] != ownerUserID {
+		t.Fatalf("expected owner_user_id arg 42, got %v", capturedArgs[6])
 	}
-	if capturedArgs[5] != "personal" {
-		t.Fatalf("expected key_type arg personal, got %v", capturedArgs[5])
+	if capturedArgs[7] != "personal" {
+		t.Fatalf("expected key_type arg personal, got %v", capturedArgs[7])
 	}
-	if capturedArgs[15] != 123 {
-		t.Fatalf("expected latency_ms arg 123, got %v", capturedArgs[15])
+	if capturedArgs[17] != 123 {
+		t.Fatalf("expected latency_ms arg 123, got %v", capturedArgs[17])
 	}
-	if capturedArgs[20] != 180 {
-		t.Fatalf("expected estimated_tokens arg 180, got %v", capturedArgs[20])
+	if capturedArgs[22] != 180 {
+		t.Fatalf("expected estimated_tokens arg 180, got %v", capturedArgs[22])
 	}
-	if capturedArgs[21] != 1.0 {
-		t.Fatalf("expected upstream usage confidence 1.0, got %v", capturedArgs[21])
+	if capturedArgs[23] != 1.0 {
+		t.Fatalf("expected upstream usage confidence 1.0, got %v", capturedArgs[23])
 	}
-	if capturedArgs[22] != "req-001" || capturedArgs[23] != nil || capturedArgs[24] != evidenceSchemaVersion || capturedArgs[25] != evidenceCaptureModeNative {
-		t.Fatalf("unexpected call-log evidence args: %#v", capturedArgs[22:26])
+	if capturedArgs[24] != "req-001" || capturedArgs[25] != nil || capturedArgs[26] != evidenceSchemaVersion || capturedArgs[27] != evidenceCaptureModeNative {
+		t.Fatalf("unexpected call-log evidence args: %#v", capturedArgs[24:28])
 	}
-	if capturedArgs[27] != "upstream-req-001" {
-		t.Fatalf("expected upstream_request_id, got %#v", capturedArgs[27])
+	if capturedArgs[29] != "upstream-req-001" {
+		t.Fatalf("expected upstream_request_id, got %#v", capturedArgs[29])
 	}
-	if capturedArgs[28] != "human" || capturedArgs[29] != "user:42" || capturedArgs[30] != nil || capturedArgs[31] != evidencePayloadMetadata {
-		t.Fatalf("unexpected call-log actor/payload args: %#v", capturedArgs[28:32])
+	if capturedArgs[30] != nil || capturedArgs[31] != nil || capturedArgs[32] != nil {
+		t.Fatalf("unexpected workflow/agent/attempt args: %#v", capturedArgs[30:33])
 	}
-	if hash, ok := capturedArgs[32].(string); !ok || len(hash) != 64 {
-		t.Fatalf("expected source_event_hash, got %#v", capturedArgs[32])
+	if capturedArgs[33] != "human" || capturedArgs[34] != "user:42" || capturedArgs[35] != nil || capturedArgs[36] != evidencePayloadMetadata {
+		t.Fatalf("unexpected call-log actor/payload args: %#v", capturedArgs[33:37])
+	}
+	if hash, ok := capturedArgs[37].(string); !ok || len(hash) != 64 {
+		t.Fatalf("expected source_event_hash, got %#v", capturedArgs[37])
 	}
 }
 
@@ -357,11 +360,11 @@ func TestRecordRequest_UsesConfiguredPayloadCaptureMode(t *testing.T) {
 
 	relay.recordRequest(context.Background(), "req-disabled", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, 123, 0, false, metering.UsageSourceUpstream, 180, "")
 
-	if len(capturedArgs) != 33 {
-		t.Fatalf("expected 33 insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != 38 {
+		t.Fatalf("expected 38 insert args, got %d", len(capturedArgs))
 	}
-	if capturedArgs[31] != traceutil.PayloadCaptureModeDisabled {
-		t.Fatalf("expected disabled payload capture mode, got %#v", capturedArgs[31])
+	if capturedArgs[36] != traceutil.PayloadCaptureModeDisabled {
+		t.Fatalf("expected disabled payload capture mode, got %#v", capturedArgs[36])
 	}
 }
 
@@ -382,21 +385,27 @@ func TestRecordRequest_UsesTrustedEvidenceContext(t *testing.T) {
 	ctx = traceutil.ContextWithEvidence(ctx, traceutil.EvidenceContext{
 		TraceID:    "trace-internal-1",
 		SessionID:  "session-42",
+		WorkflowID: "workflow-42",
+		AgentID:    "agent-42",
 		ActorType:  "agent",
 		ActorRef:   "agent:planner",
 		OnBehalfOf: "user:42",
 	})
+	ctx = contextWithAttemptID(ctx, "att_test")
 
 	relay.recordRequest(ctx, "req-context", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, 123, 0, false, metering.UsageSourceUpstream, 180, "")
 
-	if len(capturedArgs) != 33 {
-		t.Fatalf("expected 33 insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != 38 {
+		t.Fatalf("expected 38 insert args, got %d", len(capturedArgs))
 	}
-	if capturedArgs[22] != "trace-internal-1" || capturedArgs[23] != "session-42" {
-		t.Fatalf("expected trusted trace/session args, got %#v", capturedArgs[22:24])
+	if capturedArgs[24] != "trace-internal-1" || capturedArgs[25] != "session-42" {
+		t.Fatalf("expected trusted trace/session args, got %#v", capturedArgs[24:26])
 	}
-	if capturedArgs[28] != "agent" || capturedArgs[29] != "agent:planner" || capturedArgs[30] != "user:42" {
-		t.Fatalf("expected trusted actor/delegation args, got %#v", capturedArgs[28:31])
+	if capturedArgs[30] != "workflow-42" || capturedArgs[31] != "agent-42" || capturedArgs[32] != "att_test" {
+		t.Fatalf("expected workflow/agent/attempt args, got %#v", capturedArgs[30:33])
+	}
+	if capturedArgs[33] != "agent" || capturedArgs[34] != "agent:planner" || capturedArgs[35] != "user:42" {
+		t.Fatalf("expected trusted actor/delegation args, got %#v", capturedArgs[33:36])
 	}
 }
 
@@ -430,14 +439,14 @@ func TestRecordTraceEvent_SanitizesMetadataAndSnapshotsOwner(t *testing.T) {
 		"request_body":     `{"messages":[{"content":"secret"}]}`,
 	}, "upstream-trace-001")
 
-	if len(capturedArgs) != 34 {
-		t.Fatalf("expected 34 trace insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != 39 {
+		t.Fatalf("expected 39 trace insert args, got %d", len(capturedArgs))
 	}
-	if capturedArgs[2] != int64(7) || capturedArgs[3] != int64(9) || capturedArgs[4] != ownerUserID || capturedArgs[5] != "personal" {
-		t.Fatalf("unexpected project/key/owner args: %#v", capturedArgs[2:6])
+	if capturedArgs[4] != int64(7) || capturedArgs[5] != int64(9) || capturedArgs[6] != ownerUserID || capturedArgs[7] != "personal" {
+		t.Fatalf("unexpected project/key/owner args: %#v", capturedArgs[4:8])
 	}
 	var metadata map[string]interface{}
-	if err := json.Unmarshal([]byte(capturedArgs[15].(string)), &metadata); err != nil {
+	if err := json.Unmarshal([]byte(capturedArgs[17].(string)), &metadata); err != nil {
 		t.Fatalf("unmarshal metadata: %v", err)
 	}
 	if metadata["estimated_tokens"] != float64(100) {
@@ -449,29 +458,32 @@ func TestRecordTraceEvent_SanitizesMetadataAndSnapshotsOwner(t *testing.T) {
 	if _, ok := metadata["request_body"]; ok {
 		t.Fatalf("metadata leaked request_body: %#v", metadata)
 	}
-	if capturedArgs[16] != "req-trace" {
-		t.Fatalf("expected trace_id to use request_id, got %#v", capturedArgs[16])
+	if capturedArgs[18] != "req-trace" {
+		t.Fatalf("expected trace_id to use request_id, got %#v", capturedArgs[18])
 	}
-	if spanID, ok := capturedArgs[17].(string); !ok || len(spanID) != 16 {
-		t.Fatalf("expected generated span_id, got %#v", capturedArgs[17])
+	if spanID, ok := capturedArgs[19].(string); !ok || len(spanID) != 16 {
+		t.Fatalf("expected generated span_id, got %#v", capturedArgs[19])
 	}
-	if capturedArgs[18] != nil || capturedArgs[19] != evidenceSchemaVersion || capturedArgs[20] != "provider" || capturedArgs[21] != evidenceCaptureModeNative {
-		t.Fatalf("unexpected trace structural args: %#v", capturedArgs[18:22])
+	if capturedArgs[20] != nil || capturedArgs[21] != evidenceSchemaVersion || capturedArgs[22] != "provider" || capturedArgs[23] != evidenceCaptureModeNative {
+		t.Fatalf("unexpected trace structural args: %#v", capturedArgs[20:24])
 	}
-	if capturedArgs[22] != "redacted" {
-		t.Fatalf("expected redacted capture_gap, got %#v", capturedArgs[22])
+	if capturedArgs[24] != "redacted" {
+		t.Fatalf("expected redacted capture_gap, got %#v", capturedArgs[24])
 	}
-	if capturedArgs[24] != "upstream-trace-001" {
-		t.Fatalf("expected upstream_request_id, got %#v", capturedArgs[24])
+	if capturedArgs[26] != "upstream-trace-001" {
+		t.Fatalf("expected upstream_request_id, got %#v", capturedArgs[26])
 	}
-	if capturedArgs[25] != "provider" || capturedArgs[26] != "selected" || capturedArgs[27] != "provider.response_accepted" {
-		t.Fatalf("unexpected trace decision args: %#v", capturedArgs[25:28])
+	if capturedArgs[27] != "provider" || capturedArgs[28] != "selected" || capturedArgs[29] != "provider.response_accepted" {
+		t.Fatalf("unexpected trace decision args: %#v", capturedArgs[27:30])
 	}
-	if capturedArgs[28] != "human" || capturedArgs[29] != "user:42" || capturedArgs[30] != nil || capturedArgs[31] != nil || capturedArgs[32] != traceutil.PayloadCaptureModeDisabled {
-		t.Fatalf("unexpected trace actor/payload args: %#v", capturedArgs[28:33])
+	if capturedArgs[30] != "human" || capturedArgs[31] != "user:42" || capturedArgs[32] != nil || capturedArgs[33] != nil {
+		t.Fatalf("unexpected trace actor/session args: %#v", capturedArgs[30:34])
 	}
-	if hash, ok := capturedArgs[33].(string); !ok || len(hash) != 64 {
-		t.Fatalf("expected trace source_event_hash, got %#v", capturedArgs[33])
+	if capturedArgs[34] != nil || capturedArgs[35] != nil || capturedArgs[36] != nil || capturedArgs[37] != traceutil.PayloadCaptureModeDisabled {
+		t.Fatalf("unexpected trace workflow/agent/attempt/payload args: %#v", capturedArgs[34:38])
+	}
+	if hash, ok := capturedArgs[38].(string); !ok || len(hash) != 64 {
+		t.Fatalf("expected trace source_event_hash, got %#v", capturedArgs[38])
 	}
 }
 
@@ -496,20 +508,20 @@ func TestRecordTraceEvent_ProviderResponseMissingUpstreamRequestIDCaptureGap(t *
 
 	relay.recordTraceEvent(ctx, "req-trace", "provider.response_accepted", "provider", "info", "company-chat", "company-chat", route, http.StatusOK, 25, map[string]interface{}{}, "")
 
-	if len(capturedArgs) != 34 {
-		t.Fatalf("expected 34 trace insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != 39 {
+		t.Fatalf("expected 39 trace insert args, got %d", len(capturedArgs))
 	}
-	if capturedArgs[22] != evidenceCaptureGapProvider {
-		t.Fatalf("expected provider_not_returned capture_gap, got %#v", capturedArgs[22])
+	if capturedArgs[24] != evidenceCaptureGapProvider {
+		t.Fatalf("expected provider_not_returned capture_gap, got %#v", capturedArgs[24])
 	}
-	if capturedArgs[24] != nil {
-		t.Fatalf("expected nil upstream_request_id, got %#v", capturedArgs[24])
+	if capturedArgs[26] != nil {
+		t.Fatalf("expected nil upstream_request_id, got %#v", capturedArgs[26])
 	}
-	if capturedArgs[25] != "provider" || capturedArgs[26] != "selected" {
-		t.Fatalf("unexpected provider decision args: %#v", capturedArgs[25:27])
+	if capturedArgs[27] != "provider" || capturedArgs[28] != "selected" {
+		t.Fatalf("unexpected provider decision args: %#v", capturedArgs[27:29])
 	}
-	if hash, ok := capturedArgs[33].(string); !ok || len(hash) != 64 {
-		t.Fatalf("expected trace source_event_hash, got %#v", capturedArgs[33])
+	if hash, ok := capturedArgs[38].(string); !ok || len(hash) != 64 {
+		t.Fatalf("expected trace source_event_hash, got %#v", capturedArgs[38])
 	}
 }
 
@@ -536,14 +548,14 @@ func TestRecordTraceEvent_ProviderResponseRedactionGapTakesPriority(t *testing.T
 		"api_key": "sk-secret",
 	}, "")
 
-	if len(capturedArgs) != 34 {
-		t.Fatalf("expected 34 trace insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != 39 {
+		t.Fatalf("expected 39 trace insert args, got %d", len(capturedArgs))
 	}
-	if capturedArgs[22] != "redacted" {
-		t.Fatalf("expected redacted capture_gap to take priority, got %#v", capturedArgs[22])
+	if capturedArgs[24] != "redacted" {
+		t.Fatalf("expected redacted capture_gap to take priority, got %#v", capturedArgs[24])
 	}
-	if capturedArgs[24] != nil {
-		t.Fatalf("expected nil upstream_request_id, got %#v", capturedArgs[24])
+	if capturedArgs[26] != nil {
+		t.Fatalf("expected nil upstream_request_id, got %#v", capturedArgs[26])
 	}
 }
 
@@ -570,20 +582,20 @@ func TestRecordTraceEvent_ProviderFailureMissingUpstreamRequestIDCaptureGap(t *t
 		"failure_kind": string(adapters.FailureChannel),
 	})
 
-	if len(capturedArgs) != 34 {
-		t.Fatalf("expected 34 trace insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != 39 {
+		t.Fatalf("expected 39 trace insert args, got %d", len(capturedArgs))
 	}
-	if capturedArgs[22] != evidenceCaptureGapSource {
-		t.Fatalf("expected not_available_from_source capture_gap, got %#v", capturedArgs[22])
+	if capturedArgs[24] != evidenceCaptureGapSource {
+		t.Fatalf("expected not_available_from_source capture_gap, got %#v", capturedArgs[24])
 	}
-	if capturedArgs[24] != nil {
-		t.Fatalf("expected nil upstream_request_id, got %#v", capturedArgs[24])
+	if capturedArgs[26] != nil {
+		t.Fatalf("expected nil upstream_request_id, got %#v", capturedArgs[26])
 	}
-	if capturedArgs[25] != "provider" || capturedArgs[26] != "failed" || capturedArgs[27] != string(adapters.FailureChannel) {
-		t.Fatalf("unexpected provider decision args: %#v", capturedArgs[25:28])
+	if capturedArgs[27] != "provider" || capturedArgs[28] != "failed" || capturedArgs[29] != string(adapters.FailureChannel) {
+		t.Fatalf("unexpected provider decision args: %#v", capturedArgs[27:30])
 	}
-	if hash, ok := capturedArgs[33].(string); !ok || len(hash) != 64 {
-		t.Fatalf("expected trace source_event_hash, got %#v", capturedArgs[33])
+	if hash, ok := capturedArgs[38].(string); !ok || len(hash) != 64 {
+		t.Fatalf("expected trace source_event_hash, got %#v", capturedArgs[38])
 	}
 }
 
@@ -611,17 +623,17 @@ func TestRecordTraceEvent_ProviderFailureRedactionGapTakesPriority(t *testing.T)
 		"api_key":      "sk-secret",
 	})
 
-	if len(capturedArgs) != 34 {
-		t.Fatalf("expected 34 trace insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != 39 {
+		t.Fatalf("expected 39 trace insert args, got %d", len(capturedArgs))
 	}
-	if capturedArgs[22] != "redacted" {
-		t.Fatalf("expected redacted capture_gap to take priority, got %#v", capturedArgs[22])
+	if capturedArgs[24] != "redacted" {
+		t.Fatalf("expected redacted capture_gap to take priority, got %#v", capturedArgs[24])
 	}
-	if capturedArgs[24] != nil {
-		t.Fatalf("expected nil upstream_request_id, got %#v", capturedArgs[24])
+	if capturedArgs[26] != nil {
+		t.Fatalf("expected nil upstream_request_id, got %#v", capturedArgs[26])
 	}
-	if capturedArgs[25] != "provider" || capturedArgs[26] != "failed" || capturedArgs[27] != "request_build" {
-		t.Fatalf("unexpected provider decision args: %#v", capturedArgs[25:28])
+	if capturedArgs[27] != "provider" || capturedArgs[28] != "failed" || capturedArgs[29] != "request_build" {
+		t.Fatalf("unexpected provider decision args: %#v", capturedArgs[27:30])
 	}
 }
 
@@ -643,20 +655,20 @@ func TestRecordTraceEvent_ModelNotAllowedCaptureGapAndDecision(t *testing.T) {
 		"error_code": "auth_error.model_not_allowed",
 	})
 
-	if len(capturedArgs) != 34 {
-		t.Fatalf("expected 34 trace insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != 39 {
+		t.Fatalf("expected 39 trace insert args, got %d", len(capturedArgs))
 	}
-	if capturedArgs[6] != "auth.model_not_allowed" || capturedArgs[7] != "auth" || capturedArgs[20] != "auth" {
-		t.Fatalf("unexpected auth event args: %#v", capturedArgs[6:21])
+	if capturedArgs[8] != "auth.model_not_allowed" || capturedArgs[9] != "auth" || capturedArgs[22] != "auth" {
+		t.Fatalf("unexpected auth event args: %#v", capturedArgs[8:23])
 	}
-	if capturedArgs[22] != evidenceCaptureGapAuth {
-		t.Fatalf("expected permission_denied capture_gap, got %#v", capturedArgs[22])
+	if capturedArgs[24] != evidenceCaptureGapAuth {
+		t.Fatalf("expected permission_denied capture_gap, got %#v", capturedArgs[24])
 	}
-	if capturedArgs[25] != "auth" || capturedArgs[26] != "rejected" || capturedArgs[27] != "auth_error.model_not_allowed" {
-		t.Fatalf("unexpected auth decision args: %#v", capturedArgs[25:28])
+	if capturedArgs[27] != "auth" || capturedArgs[28] != "rejected" || capturedArgs[29] != "auth_error.model_not_allowed" {
+		t.Fatalf("unexpected auth decision args: %#v", capturedArgs[27:30])
 	}
-	if hash, ok := capturedArgs[33].(string); !ok || len(hash) != 64 {
-		t.Fatalf("expected trace source_event_hash, got %#v", capturedArgs[33])
+	if hash, ok := capturedArgs[38].(string); !ok || len(hash) != 64 {
+		t.Fatalf("expected trace source_event_hash, got %#v", capturedArgs[38])
 	}
 }
 
@@ -677,6 +689,8 @@ func TestRecordTraceEvent_UsesTrustedEvidenceContext(t *testing.T) {
 		TraceID:      "trace-internal-1",
 		ParentSpanID: "parent-span-1",
 		SessionID:    "session-42",
+		WorkflowID:   "workflow-42",
+		AgentID:      "agent-42",
 		ActorType:    "agent",
 		ActorRef:     "agent:planner",
 		OnBehalfOf:   "user:42",
@@ -684,14 +698,17 @@ func TestRecordTraceEvent_UsesTrustedEvidenceContext(t *testing.T) {
 
 	relay.recordTraceEvent(ctx, "req-trace", "gateway.request.accepted", "gateway", "info", "company-chat", "company-chat", nil, http.StatusOK, 25, nil)
 
-	if len(capturedArgs) != 34 {
-		t.Fatalf("expected 34 trace insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != 39 {
+		t.Fatalf("expected 39 trace insert args, got %d", len(capturedArgs))
 	}
-	if capturedArgs[16] != "trace-internal-1" || capturedArgs[18] != "parent-span-1" {
-		t.Fatalf("expected trusted trace/parent span args, got %#v", capturedArgs[16:19])
+	if capturedArgs[18] != "trace-internal-1" || capturedArgs[20] != "parent-span-1" {
+		t.Fatalf("expected trusted trace/parent span args, got %#v", capturedArgs[18:21])
 	}
-	if capturedArgs[28] != "agent" || capturedArgs[29] != "agent:planner" || capturedArgs[30] != "user:42" || capturedArgs[31] != "session-42" {
-		t.Fatalf("expected trusted actor/delegation/session args, got %#v", capturedArgs[28:32])
+	if capturedArgs[30] != "agent" || capturedArgs[31] != "agent:planner" || capturedArgs[32] != "user:42" || capturedArgs[33] != "session-42" {
+		t.Fatalf("expected trusted actor/delegation/session args, got %#v", capturedArgs[30:34])
+	}
+	if capturedArgs[34] != "workflow-42" || capturedArgs[35] != "agent-42" {
+		t.Fatalf("expected trusted workflow/agent args, got %#v", capturedArgs[34:36])
 	}
 }
 
@@ -722,25 +739,25 @@ func TestRecordTraceEvent_ParentsEventsToGatewayRootSpan(t *testing.T) {
 	if len(inserts) != 3 {
 		t.Fatalf("expected three trace inserts, got %d", len(inserts))
 	}
-	rootSpanID, ok := inserts[0][17].(string)
+	rootSpanID, ok := inserts[0][19].(string)
 	if !ok || len(rootSpanID) != 16 {
-		t.Fatalf("expected generated root span ID, got %#v", inserts[0][17])
+		t.Fatalf("expected generated root span ID, got %#v", inserts[0][19])
 	}
-	routingSpanID, ok := inserts[1][17].(string)
+	routingSpanID, ok := inserts[1][19].(string)
 	if !ok || len(routingSpanID) != 16 {
-		t.Fatalf("expected generated routing span ID, got %#v", inserts[1][17])
+		t.Fatalf("expected generated routing span ID, got %#v", inserts[1][19])
 	}
-	if inserts[0][16] != "trace-chain-1" || inserts[0][18] != "incoming-parent-1" {
-		t.Fatalf("expected first event to preserve trusted trace/parent, got %#v", inserts[0][16:19])
+	if inserts[0][18] != "trace-chain-1" || inserts[0][20] != "incoming-parent-1" {
+		t.Fatalf("expected first event to preserve trusted trace/parent, got %#v", inserts[0][18:21])
 	}
-	if inserts[1][16] != "trace-chain-1" || inserts[1][18] != rootSpanID {
-		t.Fatalf("expected second event to parent to gateway root span, got %#v root=%s", inserts[1][16:19], rootSpanID)
+	if inserts[1][18] != "trace-chain-1" || inserts[1][20] != rootSpanID {
+		t.Fatalf("expected second event to parent to gateway root span, got %#v root=%s", inserts[1][18:21], rootSpanID)
 	}
-	if inserts[1][20] != "routing" || inserts[2][20] != "routing" {
-		t.Fatalf("expected routing source components, got %#v and %#v", inserts[1][20], inserts[2][20])
+	if inserts[1][22] != "routing" || inserts[2][22] != "routing" {
+		t.Fatalf("expected routing source components, got %#v and %#v", inserts[1][22], inserts[2][22])
 	}
-	if inserts[2][16] != "trace-chain-1" || inserts[2][18] != routingSpanID {
-		t.Fatalf("expected repeated routing event to parent to routing component span, got %#v routing=%s", inserts[2][16:19], routingSpanID)
+	if inserts[2][18] != "trace-chain-1" || inserts[2][20] != routingSpanID {
+		t.Fatalf("expected repeated routing event to parent to routing component span, got %#v routing=%s", inserts[2][18:21], routingSpanID)
 	}
 }
 
@@ -761,14 +778,14 @@ func TestRecordPayloadPolicyDecision_DisabledMode(t *testing.T) {
 
 	relay.recordPayloadPolicyDecision(ctx, "req-payload", "company-chat", "company-chat", 12)
 
-	if len(capturedArgs) != 34 {
-		t.Fatalf("expected 34 trace insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != 39 {
+		t.Fatalf("expected 39 trace insert args, got %d", len(capturedArgs))
 	}
-	if capturedArgs[6] != "payload.policy.applied" || capturedArgs[7] != "payload_policy" || capturedArgs[20] != "payload_policy" {
-		t.Fatalf("unexpected payload policy event args: %#v", capturedArgs[6:21])
+	if capturedArgs[8] != "payload.policy.applied" || capturedArgs[9] != "payload_policy" || capturedArgs[22] != "payload_policy" {
+		t.Fatalf("unexpected payload policy event args: %#v", capturedArgs[8:23])
 	}
 	var metadata map[string]interface{}
-	if err := json.Unmarshal([]byte(capturedArgs[15].(string)), &metadata); err != nil {
+	if err := json.Unmarshal([]byte(capturedArgs[17].(string)), &metadata); err != nil {
 		t.Fatalf("unmarshal metadata: %v", err)
 	}
 	if metadata["payload_capture_mode"] != traceutil.PayloadCaptureModeDisabled || metadata["payload_policy_reason"] != "payload.disabled" {
@@ -777,14 +794,14 @@ func TestRecordPayloadPolicyDecision_DisabledMode(t *testing.T) {
 	if metadata["raw_payload_stored"] != false || metadata["payload_ref_present"] != false {
 		t.Fatalf("expected raw/ref payload booleans false, got %#v", metadata)
 	}
-	if capturedArgs[22] != nil {
-		t.Fatalf("expected no capture gap for payload policy metadata, got %#v", capturedArgs[22])
+	if capturedArgs[24] != nil {
+		t.Fatalf("expected no capture gap for payload policy metadata, got %#v", capturedArgs[24])
 	}
-	if capturedArgs[25] != "payload_capture" || capturedArgs[26] != "skipped" || capturedArgs[27] != "payload.disabled" {
-		t.Fatalf("unexpected payload policy decision args: %#v", capturedArgs[25:28])
+	if capturedArgs[27] != "payload_capture" || capturedArgs[28] != "skipped" || capturedArgs[29] != "payload.disabled" {
+		t.Fatalf("unexpected payload policy decision args: %#v", capturedArgs[27:30])
 	}
-	if capturedArgs[32] != traceutil.PayloadCaptureModeDisabled {
-		t.Fatalf("expected disabled payload capture mode column, got %#v", capturedArgs[32])
+	if capturedArgs[37] != traceutil.PayloadCaptureModeDisabled {
+		t.Fatalf("expected disabled payload capture mode column, got %#v", capturedArgs[37])
 	}
 }
 
@@ -804,11 +821,11 @@ func TestRecordPayloadPolicyDecision_MetadataOnlyMode(t *testing.T) {
 
 	relay.recordPayloadPolicyDecision(ctx, "req-payload", "company-chat", "company-chat", 12)
 
-	if len(capturedArgs) != 34 {
-		t.Fatalf("expected 34 trace insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != 39 {
+		t.Fatalf("expected 39 trace insert args, got %d", len(capturedArgs))
 	}
 	var metadata map[string]interface{}
-	if err := json.Unmarshal([]byte(capturedArgs[15].(string)), &metadata); err != nil {
+	if err := json.Unmarshal([]byte(capturedArgs[17].(string)), &metadata); err != nil {
 		t.Fatalf("unmarshal metadata: %v", err)
 	}
 	if metadata["payload_capture_mode"] != traceutil.PayloadCaptureModeMetadataOnly || metadata["payload_policy_reason"] != "payload.metadata_only" {
@@ -817,11 +834,11 @@ func TestRecordPayloadPolicyDecision_MetadataOnlyMode(t *testing.T) {
 	if metadata["raw_payload_stored"] != false || metadata["payload_ref_present"] != false {
 		t.Fatalf("expected raw/ref payload booleans false, got %#v", metadata)
 	}
-	if capturedArgs[25] != "payload_capture" || capturedArgs[26] != "allowed" || capturedArgs[27] != "payload.metadata_only" {
-		t.Fatalf("unexpected payload policy decision args: %#v", capturedArgs[25:28])
+	if capturedArgs[27] != "payload_capture" || capturedArgs[28] != "allowed" || capturedArgs[29] != "payload.metadata_only" {
+		t.Fatalf("unexpected payload policy decision args: %#v", capturedArgs[27:30])
 	}
-	if capturedArgs[32] != traceutil.PayloadCaptureModeMetadataOnly {
-		t.Fatalf("expected metadata-only payload capture mode column, got %#v", capturedArgs[32])
+	if capturedArgs[37] != traceutil.PayloadCaptureModeMetadataOnly {
+		t.Fatalf("expected metadata-only payload capture mode column, got %#v", capturedArgs[37])
 	}
 }
 
@@ -838,6 +855,87 @@ func TestRelayContextWithTrustedEvidence(t *testing.T) {
 	}
 	if state, _ := ctx.Value(evidenceSpanStateKey{}).(*evidenceSpanState); state == nil {
 		t.Fatal("expected evidence span state on request context")
+	}
+}
+
+func TestP6F17HundredChildOperationsShareTraceWithoutIdentityCollision(t *testing.T) {
+	var inserts [][]any
+	db := &testutil.MockDB{
+		ExecFn: func(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(sql, "INSERT INTO request_trace_events") {
+				inserts = append(inserts, append([]any(nil), args...))
+			}
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	relay := newTestRelay(db, &mockBilling{})
+	operations := map[string]struct{}{}
+	const sharedTraceID = "trace-agent-tree-100"
+	const sharedWorkflowID = "workflow-agent-tree-100"
+
+	for i := 0; i < 100; i++ {
+		operationID, err := middleware.NewOperationID()
+		if err != nil {
+			t.Fatalf("generate operation identity: %v", err)
+		}
+		ctx := context.WithValue(context.Background(), middleware.CtxOrgID, int64(1))
+		ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(11))
+		ctx = context.WithValue(ctx, middleware.CtxRequestID, operationID)
+		ctx = traceutil.ContextWithEvidence(ctx, traceutil.EvidenceContext{
+			TraceID:      sharedTraceID,
+			ParentSpanID: "parent-agent-supervisor",
+			WorkflowID:   sharedWorkflowID,
+			AgentID:      fmt.Sprintf("agent-child-%03d", i),
+			ActorType:    "agent",
+			ActorRef:     fmt.Sprintf("agent:child:%03d", i),
+		})
+		relay.recordTraceEvent(ctx, operationID, "gateway.request.accepted", "gateway", "info", "gpt-4o", "gpt-4o", nil, 0, i, nil)
+	}
+
+	if len(inserts) != 100 {
+		t.Fatalf("expected 100 child trace rows, got %d", len(inserts))
+	}
+	for index, args := range inserts {
+		operationID, _ := args[0].(string)
+		if !strings.HasPrefix(operationID, "op_") {
+			t.Fatalf("child %d missing server operation identity: %#v", index, args[0])
+		}
+		if _, exists := operations[operationID]; exists {
+			t.Fatalf("duplicate child operation identity %q", operationID)
+		}
+		operations[operationID] = struct{}{}
+		if args[18] != sharedTraceID || args[34] != sharedWorkflowID || args[35] != fmt.Sprintf("agent-child-%03d", index) {
+			t.Fatalf("child %d identity chain mismatch: trace=%#v workflow=%#v agent=%#v", index, args[18], args[34], args[35])
+		}
+	}
+}
+
+func TestP6F17ProviderAttemptsKeepOperationAndUseDistinctAttemptIDs(t *testing.T) {
+	var inserts [][]any
+	db := &testutil.MockDB{
+		ExecFn: func(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(sql, "INSERT INTO request_trace_events") {
+				inserts = append(inserts, append([]any(nil), args...))
+			}
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	relay := newTestRelay(db, &mockBilling{})
+	base := context.WithValue(context.Background(), middleware.CtxOrgID, int64(1))
+	base = context.WithValue(base, middleware.CtxRequestID, "op_00000000000000000000000000000001")
+	for i := 0; i < 2; i++ {
+		attemptCtx := contextWithAttemptID(base, newAttemptID())
+		relay.recordTraceEvent(attemptCtx, "op_00000000000000000000000000000001", "provider.request_failed", "provider", "warning", "gpt-4o", "gpt-4o", nil, 0, i, map[string]interface{}{
+			"failure_kind": string(adapters.FailureChannel),
+		})
+	}
+	if len(inserts) != 2 {
+		t.Fatalf("expected two provider attempt events, got %d", len(inserts))
+	}
+	firstAttempt, _ := inserts[0][36].(string)
+	secondAttempt, _ := inserts[1][36].(string)
+	if inserts[0][0] != inserts[1][0] || !strings.HasPrefix(firstAttempt, "att_") || !strings.HasPrefix(secondAttempt, "att_") || firstAttempt == secondAttempt {
+		t.Fatalf("operation/attempt identity mismatch: op1=%#v op2=%#v attempt1=%#v attempt2=%#v", inserts[0][0], inserts[1][0], firstAttempt, secondAttempt)
 	}
 }
 
@@ -1199,17 +1297,17 @@ func TestHandleEmbeddings_ModelNotAllowed(t *testing.T) {
 	if freezeCalled {
 		t.Fatal("expected model permission denial before billing freeze")
 	}
-	if len(capturedArgs) != 34 {
+	if len(capturedArgs) != 39 {
 		t.Fatalf("expected model denial trace insert, got %d args", len(capturedArgs))
 	}
-	if capturedArgs[6] != "auth.model_not_allowed" || capturedArgs[7] != "auth" || capturedArgs[20] != "auth" {
-		t.Fatalf("unexpected model denial trace args: %#v", capturedArgs[6:21])
+	if capturedArgs[8] != "auth.model_not_allowed" || capturedArgs[9] != "auth" || capturedArgs[22] != "auth" {
+		t.Fatalf("unexpected model denial trace args: %#v", capturedArgs[8:23])
 	}
-	if capturedArgs[22] != evidenceCaptureGapAuth {
-		t.Fatalf("expected permission_denied capture_gap, got %#v", capturedArgs[22])
+	if capturedArgs[24] != evidenceCaptureGapAuth {
+		t.Fatalf("expected permission_denied capture_gap, got %#v", capturedArgs[24])
 	}
-	if capturedArgs[25] != "auth" || capturedArgs[26] != "rejected" || capturedArgs[27] != "auth_error.model_not_allowed" {
-		t.Fatalf("unexpected model denial decision args: %#v", capturedArgs[25:28])
+	if capturedArgs[27] != "auth" || capturedArgs[28] != "rejected" || capturedArgs[29] != "auth_error.model_not_allowed" {
+		t.Fatalf("unexpected model denial decision args: %#v", capturedArgs[27:30])
 	}
 }
 
@@ -1335,7 +1433,9 @@ func TestRelayNonStreamRequest_Success(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-001", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-001", OrgID: 1}), time.Now(), nil, 1200, "")
+	requestCtx := contextWithAttemptID(context.Background(), "att_fallback_test")
+	requestCtx = contextWithRouteAttempt(requestCtx, 2, 3)
+	relay.relayNonStreamRequest(requestCtx, rec, resp, route, "req-001", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-001", OrgID: 1}), time.Now(), nil, 1200, "")
 
 	if !settleCalled {
 		t.Fatal("expected settle to be called")
@@ -1346,8 +1446,12 @@ func TestRelayNonStreamRequest_Success(t *testing.T) {
 	// Check _uniroute extension field
 	var resp2 map[string]interface{}
 	json.Unmarshal(rec.Body.Bytes(), &resp2)
-	if _, ok := resp2["_uniroute"]; !ok {
+	uniroute, ok := resp2["_uniroute"].(map[string]interface{})
+	if !ok {
 		t.Fatal("expected _uniroute in response")
+	}
+	if uniroute["fallback"] != true || uniroute["attempt_count"] != float64(2) || uniroute["route_count"] != float64(3) || uniroute["attempt_id"] != "att_fallback_test" {
+		t.Fatalf("expected truthful fallback identity metadata, got %#v", uniroute)
 	}
 }
 
@@ -2273,15 +2377,22 @@ func TestHandleChatCompletion_AnthropicNativeStream(t *testing.T) {
 }
 
 func TestHandleChatCompletion_UpstreamError_AllFail(t *testing.T) {
-	// Mock upstream that returns 500
+	// The first upstream returns an HTTP failure with an upstream request ID.
+	// The final route fails at the network layer so its call log must not retain
+	// the previous route's status or upstream identity.
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Request-ID", "upstream-first-attempt")
 		w.WriteHeader(500)
 		w.Write([]byte("internal error"))
 	}))
 	defer upstream.Close()
+	deadUpstream := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	deadUpstreamURL := deadUpstream.URL
+	deadUpstream.Close()
 
 	encKey := []byte("0123456789abcdef01234567")
 	encryptedKey, _ := auth.EncryptKey([]byte("sk-test-key"), encKey)
+	var capturedCallArgs []any
 
 	db := &testutil.MockDB{
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
@@ -2309,10 +2420,35 @@ func TestHandleChatCompletion_UpstreamError_AllFail(t *testing.T) {
 						*dest[18].(**time.Time) = nil
 						return nil
 					},
+					func(dest ...any) error {
+						*dest[0].(*int64) = 2
+						*dest[1].(*string) = "second-ch"
+						*dest[2].(*string) = "azure"
+						*dest[3].(*string) = deadUpstreamURL
+						*dest[4].(*string) = "gpt-4o"
+						*dest[5].(*json.RawMessage) = json.RawMessage(`{}`)
+						*dest[6].(*string) = "openai_compatible"
+						*dest[7].(*json.RawMessage) = json.RawMessage(`{}`)
+						*dest[8].(*int) = 128000
+						*dest[9].(*int) = 4096
+						*dest[10].(*int) = 90
+						*dest[11].(*string) = "active"
+						*dest[12].(*string) = "healthy"
+						*dest[13].(**time.Time) = nil
+						*dest[14].(*int) = 0
+						*dest[15].(*int64) = 2
+						*dest[16].(*string) = encryptedKey
+						*dest[17].(*string) = "active"
+						*dest[18].(**time.Time) = nil
+						return nil
+					},
 				},
 			}, nil
 		},
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(sql, "INSERT INTO call_logs") {
+				capturedCallArgs = append([]any(nil), args...)
+			}
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -2353,6 +2489,15 @@ func TestHandleChatCompletion_UpstreamError_AllFail(t *testing.T) {
 	}
 	if !cancelCalled {
 		t.Fatal("expected Cancel to be called after all channels failed")
+	}
+	if len(capturedCallArgs) != 38 || capturedCallArgs[10] != "azure" || capturedCallArgs[11] != "second-ch" {
+		t.Fatalf("final failure log mixed the first route with the final attempt: %#v", capturedCallArgs)
+	}
+	if capturedCallArgs[16] != 0 || capturedCallArgs[29] != nil {
+		t.Fatalf("final network failure retained an earlier attempt status/upstream ID: status=%#v upstream=%#v", capturedCallArgs[16], capturedCallArgs[29])
+	}
+	if attemptID, _ := capturedCallArgs[32].(string); !strings.HasPrefix(attemptID, "att_") {
+		t.Fatalf("final failure log lost the final attempt identity: %#v", capturedCallArgs[32])
 	}
 }
 
@@ -2397,17 +2542,17 @@ func TestHandleChatCompletion_ModelNotAllowed(t *testing.T) {
 	if freezeCalled {
 		t.Fatal("expected model permission denial to return before billing freeze")
 	}
-	if len(capturedArgs) != 34 {
+	if len(capturedArgs) != 39 {
 		t.Fatalf("expected model denial trace insert, got %d args", len(capturedArgs))
 	}
-	if capturedArgs[6] != "auth.model_not_allowed" || capturedArgs[7] != "auth" || capturedArgs[20] != "auth" {
-		t.Fatalf("unexpected model denial trace args: %#v", capturedArgs[6:21])
+	if capturedArgs[8] != "auth.model_not_allowed" || capturedArgs[9] != "auth" || capturedArgs[22] != "auth" {
+		t.Fatalf("unexpected model denial trace args: %#v", capturedArgs[8:23])
 	}
-	if capturedArgs[22] != evidenceCaptureGapAuth {
-		t.Fatalf("expected permission_denied capture_gap, got %#v", capturedArgs[22])
+	if capturedArgs[24] != evidenceCaptureGapAuth {
+		t.Fatalf("expected permission_denied capture_gap, got %#v", capturedArgs[24])
 	}
-	if capturedArgs[25] != "auth" || capturedArgs[26] != "rejected" || capturedArgs[27] != "auth_error.model_not_allowed" {
-		t.Fatalf("unexpected model denial decision args: %#v", capturedArgs[25:28])
+	if capturedArgs[27] != "auth" || capturedArgs[28] != "rejected" || capturedArgs[29] != "auth_error.model_not_allowed" {
+		t.Fatalf("unexpected model denial decision args: %#v", capturedArgs[27:30])
 	}
 }
 

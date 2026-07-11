@@ -125,9 +125,9 @@ export const api = {
   // Logs (with optional filters)
   getLogs: (page = 1, pageSize = 20, filters?: {
     model?: string; provider?: string; status_code?: string;
-    start_time?: string; end_time?: string; request_id?: string;
+    start_time?: string; end_time?: string; request_id?: string; client_request_id?: string;
     latency_min?: string; latency_max?: string; search?: string;
-    trace_id?: string; upstream_request_id?: string;
+    trace_id?: string; workflow_id?: string; agent_id?: string; attempt_id?: string; upstream_request_id?: string;
     evidence_ref?: string; source_event_hash?: string;
     org_id?: number; project_id?: number; usage_source?: string;
   }) => {
@@ -140,7 +140,11 @@ export const api = {
       start_time: filters?.start_time,
       end_time: filters?.end_time,
       request_id: filters?.request_id,
+      client_request_id: filters?.client_request_id,
       trace_id: filters?.trace_id,
+      workflow_id: filters?.workflow_id,
+      agent_id: filters?.agent_id,
+      attempt_id: filters?.attempt_id,
       upstream_request_id: filters?.upstream_request_id,
       evidence_ref: filters?.evidence_ref,
       source_event_hash: filters?.source_event_hash,
@@ -294,7 +298,7 @@ export const api = {
   // Audit Logs
   getAuditLogs: (page = 1, pageSize = 20, filters?: {
     org_id?: string; project_id?: string; actor_id?: string; action?: string; resource?: string; resource_id?: string;
-    source?: string; start_time?: string; end_time?: string;
+    request_id?: string; client_request_id?: string; source?: string; start_time?: string; end_time?: string;
   }) => request(appendParams('/audit-logs', {
     page,
     page_size: pageSize,
@@ -304,6 +308,8 @@ export const api = {
     action: filters?.action,
     resource: filters?.resource,
     resource_id: filters?.resource_id,
+    request_id: filters?.request_id,
+    client_request_id: filters?.client_request_id,
     source: filters?.source,
     start_time: filters?.start_time,
     end_time: filters?.end_time,

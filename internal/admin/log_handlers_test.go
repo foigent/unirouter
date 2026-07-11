@@ -26,23 +26,27 @@ func TestGetLogDetail_NullSafeUpstreamError(t *testing.T) {
 				*dest[0].(*int64) = 1
 				*dest[1].(*int64) = 0
 				*dest[2].(*string) = "batch16-request"
-				*dest[3].(*string) = "batch16-smoke-gpt-4o"
-				*dest[4].(*string) = "batch16-mock"
-				*dest[5].(*string) = "prd2-batch16-openai-compatible-mock"
-				*dest[6].(*int) = 10
-				*dest[7].(*int) = 5
-				*dest[8].(*int) = 15
-				*dest[9].(*int) = 1
-				*dest[10].(*int) = http.StatusOK
-				*dest[11].(*int) = 12
-				*dest[12].(*int) = 0
-				*dest[13].(**int) = nil
-				*dest[14].(*string) = ""
-				*dest[15].(*string) = "upstream"
-				*dest[16].(*bool) = false
-				*dest[17].(*string) = "127.0.0.1"
-				*dest[18].(*string) = "company-chat"
-				*dest[19].(*time.Time) = now
+				*dest[3].(*string) = "client-batch16"
+				*dest[4].(*string) = "workflow-batch16"
+				*dest[5].(*string) = "agent-batch16"
+				*dest[6].(*string) = "att_batch16"
+				*dest[7].(*string) = "batch16-smoke-gpt-4o"
+				*dest[8].(*string) = "batch16-mock"
+				*dest[9].(*string) = "prd2-batch16-openai-compatible-mock"
+				*dest[10].(*int) = 10
+				*dest[11].(*int) = 5
+				*dest[12].(*int) = 15
+				*dest[13].(*int) = 1
+				*dest[14].(*int) = http.StatusOK
+				*dest[15].(*int) = 12
+				*dest[16].(*int) = 0
+				*dest[17].(**int) = nil
+				*dest[18].(*string) = ""
+				*dest[19].(*string) = "upstream"
+				*dest[20].(*bool) = false
+				*dest[21].(*string) = "127.0.0.1"
+				*dest[22].(*string) = "company-chat"
+				*dest[23].(*time.Time) = now
 				return nil
 			}}
 		},
@@ -135,9 +139,13 @@ func TestGetRequestTrace_ProjectScopedAccess(t *testing.T) {
 						*dest[25].(**string) = &actorRef
 						*dest[26].(**string) = nil
 						*dest[27].(**string) = nil
-						*dest[28].(*string) = "metadata_only"
-						*dest[29].(**string) = nil
-						*dest[30].(**string) = &sourceEventHash
+						*dest[28].(*string) = "client-request-001"
+						*dest[29].(*string) = "workflow-001"
+						*dest[30].(*string) = "agent-001"
+						*dest[31].(*string) = "att_001"
+						*dest[32].(*string) = "metadata_only"
+						*dest[33].(**string) = nil
+						*dest[34].(**string) = &sourceEventHash
 						return nil
 					},
 				},
@@ -183,6 +191,10 @@ func TestGetRequestTrace_ProjectScopedAccess(t *testing.T) {
 	}
 	if resp.Events[0]["actor_type"] != "human" || resp.Events[0]["actor_ref"] != "user:10" {
 		t.Fatalf("expected actor fields in response, got %#v", resp.Events[0])
+	}
+	if resp.Events[0]["client_request_id"] != "client-request-001" || resp.Events[0]["workflow_id"] != "workflow-001" ||
+		resp.Events[0]["agent_id"] != "agent-001" || resp.Events[0]["attempt_id"] != "att_001" {
+		t.Fatalf("expected operation correlation fields in response, got %#v", resp.Events[0])
 	}
 	if resp.Events[0]["payload_capture_mode"] != "metadata_only" || resp.Events[0]["source_event_hash"] != strings.Repeat("a", 64) {
 		t.Fatalf("expected payload/hash fields in response, got %#v", resp.Events[0])
