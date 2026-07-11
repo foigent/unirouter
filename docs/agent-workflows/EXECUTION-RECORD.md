@@ -1,28 +1,46 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 0C P6-F05 CI Evidence Closeout
+**Batch:** PRD6 Batch 0C P6-F06 Multiplier-Aware Freeze
 **Owner:** Codex
-**Risk:** R3 request routing, billing and tenant notification behavior
-**Status:** CI verified / closed
-**Integration:** PR #158 required run `29160329032`; merge `ca02ecb`; post-merge main run `29160494169`; historical branch retained; no deployment, target or production claim
-**Previous batch:** P6-F04 CI verified / closed by PR #157 and post-merge main run `29159155254`
+**Risk:** R3 tenant financial correctness
+**Status:** Local verified / required CI pending
+**Integration:** branch `codex/prd6-p6f06-multiplier-freeze`; PR/required-CI/merge pending; no deployment, target or production claim
+**Previous batch:** P6-F05 CI verified / closed by PR #158 and post-merge main run `29160494169`
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Current Scope
 
-1. Reconcile declared failover settings against every production runtime use.
-2. Create one validated immutable startup policy and wire it into provider
-   retries, channel breaker/probe and provider-key health transitions.
-3. Emit the same version/effective values in safe route traces, runtime status
-   and operator UI.
-4. Prove real PostgreSQL before/deadline/after recovery and configured cooldown /
-   invalidation behavior in required CI.
-5. Retire the broken global first-wallet alert path, preserve the existing
-   project-scoped event/webhook contract, and expose that scope without secrets.
-6. Keep dynamic Routing Policy V1, unrelated timeouts, P6-F06, deployment and
-   target evidence outside this PR.
+1. Reconcile the original multiplier under-freeze finding against the completed
+   P6-F18A effective-price snapshot before changing financial behavior.
+2. Prove that multiplier-adjusted insufficient funds reject atomically without
+   a reservation or ledger residue.
+3. Prove that exact multiplier-adjusted funds produce one terminal receipt and
+   zero uncovered cost under concurrent identical settlement.
+4. Prove that cancellation restores the complete multiplier-adjusted hold once.
+5. Add the migrated PostgreSQL matrix as a fail-closed required Backend step.
+6. Keep the intentional general actual-usage-overrun rule, pricing APIs,
+   migrations, provider calls, deployment and target evidence outside this PR.
 
-## Current P6-F05 Behavior Change
+## Current P6-F06 Evidence Change
+
+- P6-F18A already reads and applies the organization multiplier before Freeze,
+  persists the effective prices/multiplier/version, and settles from that
+  immutable snapshot; no billing formula rewrite is needed;
+- a 19-cent wallet facing a 20-cent effective hold returns
+  `insufficient_balance` with unchanged cash/frozen state and no reservation or
+  freeze transaction;
+- an exact 20-cent wallet facing 32 concurrent identical Settle calls returns
+  one durable receipt to every caller, charges 20 once and records
+  `uncovered_cost=0`;
+- duplicate cancellation restores the complete 20-cent adjusted hold once and
+  creates exactly one terminal cancel event;
+- the focused migrated PostgreSQL race matrix passed ten repetitions; full Go
+  vet and repository race tests pass;
+- required Backend now runs `TestP6F06` with
+  `REQUIRE_TEST_DATABASE=1`, so PostgreSQL absence cannot become a skipped green;
+- evidence: `docs/ops/evidence/PRD6-B0C-P6F06-multiplier-freeze-local-20260711.md`.
+
+## Previous P6-F05 Behavior Change
 
 - `effective-config.v1` is the typed read-only registry; its
   `routing-config.v1` values are the immutable startup driver for provider retry

@@ -25,26 +25,27 @@
 18. `docs/ops/evidence/PRD6-B0C-P6F03-retry-classification-local-20260711.md` - CI-verified provider retry classification evidence.
 19. `docs/ops/evidence/PRD6-B0C-P6F04-embeddings-failover-local-20260711.md` - CI-verified Embeddings failover-parity evidence.
 20. `docs/ops/evidence/PRD6-B0C-P6F05-routing-config-truth-local-20260711.md` - CI-verified typed routing/budget-alert configuration truth.
-21. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` - source-backed UI, reconciliation, correlation, architecture and upgrade audit.
-22. `docs/planning/PRD7-CANDIDATE-BACKLOG.md` - future first direction selected; implementation deferred until PRD6 closeout.
-23. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` - accepted future independent Cache Service target, planning bands and SaaS prerequisites; implementation deferred.
-24. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md` - version-fixed competitor audit and Four Quadrants.
-25. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md` - third-round boundary, CARTA/shadow/collusion analysis and Killer Features.
-26. `docs/planning/prd6-adaptive-trust-hardening/hardening.md` - adaptive-trust structural option portfolio and recommendation.
-27. `docs/PRD-Phase6.md` - accepted MVP, proposed innovation and ownership.
-28. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` - accepted, proposed, external and target-evidence rows.
-29. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md` - batch order and gates.
-30. `docs/planning/PRD6-BACKLOG.md` - classified backlog and decision register.
-31. `docs/PRD-Phase5.md` - completed accepted PRD5 scope and explicit remaining boundaries.
-32. `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` - PRD5's closed 36-row evidence ledger.
-33. `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md` - accepted X-Insight v1 boundary and PRD5 completion classification.
-34. `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md` - final PRD5 target evidence.
-35. `/Users/m4/Desktop/projects/X-Insight/docs/architecture/runtime-contract-capability-status.md` - X-Insight implemented/not-implemented runtime facts.
-36. `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-11-prd5-runtime-contract-v1-boundary.md` - accepted cross-project decision.
-37. `docs/issues/OPEN-ISSUES.md` - active issues and future evidence.
-38. `docs/agent-workflows/AGENT-PROTOCOL.md` - execution, approval, evidence and optional-review rules.
-39. `docs/agent-workflows/EXECUTION-RECORD.md` - current branch/batch verification.
-40. `docs/CODEBASE-MAP.md`, `docs/DOC-INVENTORY.md`, and `docs/DOCS-GOVERNANCE.md` - code and documentation lifecycle maps.
+21. `docs/ops/evidence/PRD6-B0C-P6F06-multiplier-freeze-local-20260711.md` - Local-verified multiplier reservation/settlement/cancel invariants and required-CI gate.
+22. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` - source-backed UI, reconciliation, correlation, architecture and upgrade audit.
+23. `docs/planning/PRD7-CANDIDATE-BACKLOG.md` - future first direction selected; implementation deferred until PRD6 closeout.
+24. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` - accepted future independent Cache Service target, planning bands and SaaS prerequisites; implementation deferred.
+25. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md` - version-fixed competitor audit and Four Quadrants.
+26. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md` - third-round boundary, CARTA/shadow/collusion analysis and Killer Features.
+27. `docs/planning/prd6-adaptive-trust-hardening/hardening.md` - adaptive-trust structural option portfolio and recommendation.
+28. `docs/PRD-Phase6.md` - accepted MVP, proposed innovation and ownership.
+29. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` - accepted, proposed, external and target-evidence rows.
+30. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md` - batch order and gates.
+31. `docs/planning/PRD6-BACKLOG.md` - classified backlog and decision register.
+32. `docs/PRD-Phase5.md` - completed accepted PRD5 scope and explicit remaining boundaries.
+33. `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` - PRD5's closed 36-row evidence ledger.
+34. `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md` - accepted X-Insight v1 boundary and PRD5 completion classification.
+35. `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md` - final PRD5 target evidence.
+36. `/Users/m4/Desktop/projects/X-Insight/docs/architecture/runtime-contract-capability-status.md` - X-Insight implemented/not-implemented runtime facts.
+37. `/Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-11-prd5-runtime-contract-v1-boundary.md` - accepted cross-project decision.
+38. `docs/issues/OPEN-ISSUES.md` - active issues and future evidence.
+39. `docs/agent-workflows/AGENT-PROTOCOL.md` - execution, approval, evidence and optional-review rules.
+40. `docs/agent-workflows/EXECUTION-RECORD.md` - current branch/batch verification.
+41. `docs/CODEBASE-MAP.md`, `docs/DOC-INVENTORY.md`, and `docs/DOCS-GOVERNANCE.md` - code and documentation lifecycle maps.
 
 ## Current Project Shape
 
@@ -95,6 +96,10 @@ closed by PRs #155/#156/#157/#158 and post-merge main CI. For P6-F05,
 `effective-config.v1` exposes the driving routing configuration and
 one project-scoped budget-alert contract, while the broken global first-wallet
 path is removed and its historical keys are marked retired/ineffective. The
+P6-F06 multiplier-specific PostgreSQL matrix is Local verified / CI pending;
+it proves insufficient rejection without residue, one exact terminal receipt
+with zero uncovered cost under 32 callers, and full idempotent cancel/refund.
+The
 adaptive-trust, Digital Twin,
 shadow, collusion, trust-receipt and claim-assurance rows remain proposed and
 are not implied by D6-01.
@@ -125,6 +130,7 @@ no PRD6 response persistence, deployment or semantic cache is accepted.
 | What proves the current admin integration gate is deterministic? | `docs/ops/evidence/PRD6-ENG-P6TESTDB-admin-integration-isolation-local-20260711.md` |
 | What do P6-F03/P6-F04 prove about retry and endpoint parity? | `docs/ops/evidence/PRD6-B0C-P6F03-retry-classification-local-20260711.md`, `docs/ops/evidence/PRD6-B0C-P6F04-embeddings-failover-local-20260711.md` |
 | What does P6-F05 prove about effective routing and budget-alert truth? | `docs/ops/evidence/PRD6-B0C-P6F05-routing-config-truth-local-20260711.md` |
+| What does P6-F06 prove about multiplier-aware reservation and settlement? | `docs/ops/evidence/PRD6-B0C-P6F06-multiplier-freeze-local-20260711.md` |
 | What did the UI/reconciliation/correlation/architecture audit conclude? | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` |
 | Which items are candidates for PRD7 rather than accepted scope? | `docs/planning/PRD7-CANDIDATE-BACKLOG.md` |
 | What is the accepted future Cache Service target and when should it split? | `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` |

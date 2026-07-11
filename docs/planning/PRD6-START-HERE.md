@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F03/P6-F04/P6-F05 CI verified / closed; P6-F16-P6-F18/P6-F32-P6-F39 applicable rows merged and CI verified
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F03/P6-F04/P6-F05 CI verified / closed; P6-F06 Local verified / CI pending; P6-F16-P6-F18/P6-F32-P6-F39 applicable rows merged and CI verified
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -44,19 +44,20 @@ recommended MVP boundary and policy-specific failure posture on 2026-07-11:
 17. `docs/ops/evidence/PRD6-B0C-P6F03-retry-classification-local-20260711.md`
 18. `docs/ops/evidence/PRD6-B0C-P6F04-embeddings-failover-local-20260711.md`
 19. `docs/ops/evidence/PRD6-B0C-P6F05-routing-config-truth-local-20260711.md`
-20. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`
-21. `docs/planning/PRD7-CANDIDATE-BACKLOG.md`
-22. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md`
-23. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
-24. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
-25. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
-26. `docs/PRD-Phase6.md`
-27. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
-28. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
-29. `docs/planning/PRD6-BACKLOG.md`
-30. `docs/issues/OPEN-ISSUES.md`
-31. `docs/agent-workflows/AGENT-PROTOCOL.md`
-32. `docs/agent-workflows/EXECUTION-RECORD.md`
+20. `docs/ops/evidence/PRD6-B0C-P6F06-multiplier-freeze-local-20260711.md`
+21. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`
+22. `docs/planning/PRD7-CANDIDATE-BACKLOG.md`
+23. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md`
+24. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
+25. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
+26. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
+27. `docs/PRD-Phase6.md`
+28. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
+29. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
+30. `docs/planning/PRD6-BACKLOG.md`
+31. `docs/issues/OPEN-ISSUES.md`
+32. `docs/agent-workflows/AGENT-PROTOCOL.md`
+33. `docs/agent-workflows/EXECUTION-RECORD.md`
 
 PRD5 evidence remains under its existing paths. Do not rewrite it as PRD6
 evidence.
@@ -119,6 +120,11 @@ evidence.
   transitions and two-tenant budget scope pass against real PostgreSQL, and
   ambiguous global alert keys are retired. PR #158 merged as `ca02ecb`; main
   run `29160494169` passed all required jobs.
+- P6-F06 is Local verified / CI pending. P6-F18A already freezes the
+  multiplier-adjusted price; the dedicated isolated PostgreSQL matrix proves
+  insufficient rejection without residue, exact 32-way settlement with one
+  terminal receipt and zero uncovered cost, and full idempotent cancel/refund.
+  Required Backend now runs the matrix fail-closed.
 
 ## PRD5 Closure Guard
 
