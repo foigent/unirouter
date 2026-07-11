@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F03 CI verified and P6-F04 locally verified pending CI; P6-F16-P6-F18/P6-F32-P6-F39 applicable rows merged and CI verified
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F03/P6-F04 CI verified and P6-F05 locally verified pending CI; P6-F16-P6-F18/P6-F32-P6-F39 applicable rows merged and CI verified
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -43,19 +43,20 @@ recommended MVP boundary and policy-specific failure posture on 2026-07-11:
 16. `docs/ops/evidence/PRD6-ENG-P6TESTDB-admin-integration-isolation-local-20260711.md`
 17. `docs/ops/evidence/PRD6-B0C-P6F03-retry-classification-local-20260711.md`
 18. `docs/ops/evidence/PRD6-B0C-P6F04-embeddings-failover-local-20260711.md`
-19. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`
-20. `docs/planning/PRD7-CANDIDATE-BACKLOG.md`
-21. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md`
-22. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
-23. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
-24. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
-25. `docs/PRD-Phase6.md`
-26. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
-27. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
-28. `docs/planning/PRD6-BACKLOG.md`
-29. `docs/issues/OPEN-ISSUES.md`
-30. `docs/agent-workflows/AGENT-PROTOCOL.md`
-31. `docs/agent-workflows/EXECUTION-RECORD.md`
+19. `docs/ops/evidence/PRD6-B0C-P6F05-routing-config-truth-local-20260711.md`
+20. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`
+21. `docs/planning/PRD7-CANDIDATE-BACKLOG.md`
+22. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md`
+23. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
+24. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
+25. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
+26. `docs/PRD-Phase6.md`
+27. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
+28. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
+29. `docs/planning/PRD6-BACKLOG.md`
+30. `docs/issues/OPEN-ISSUES.md`
+31. `docs/agent-workflows/AGENT-PROTOCOL.md`
+32. `docs/agent-workflows/EXECUTION-RECORD.md`
 
 PRD5 evidence remains under its existing paths. Do not rewrite it as PRD6
 evidence.
@@ -112,10 +113,11 @@ evidence.
 - P6-F17 and P6-F18 are CI verified / closed by PRs #149, #151 and #153;
   their post-merge main required runs passed. P6-TEST-DB-001 is separately CI
   verified / closed by PR #155, merge `4b18ace` and main run `29157561036`.
-- P6-F03 is CI verified / closed by PR #156, merge `f6f075a` and post-merge
-  main run `29158395734`. P6-F04 is Local verified: Embeddings now has bounded
-  candidate failover, safe shared classifications, truthful attempts and one
-  terminal billing action; required PR CI remains pending.
+- P6-F03/P6-F04 are CI verified / closed by PRs #156/#157 and their post-merge
+  main runs. P6-F05 is Local verified: `effective-config.v1` exposes the driving
+  `routing-config.v1` and project-scoped budget-alert contract; routing state
+  transitions and two-tenant budget scope pass against real PostgreSQL, and
+  ambiguous global alert keys are retired; required PR CI remains pending.
 
 ## PRD5 Closure Guard
 
@@ -190,7 +192,8 @@ authorized activation must drain old control-plane binaries and be non-rolling,
 because mixed old/new binaries are not safe for these endpoints. New-version
 replicas converge committed global-word changes through the existing
 approximately one-minute reload. Typed config ownership plus the budget/alert
-key, scope and audit truth chain remain P6-F05; durable ambiguous-commit recovery
+key, scope and audit truth chain are locally reconciled by P6-F05 pending
+required CI; durable ambiguous-commit recovery
 remains P6-F20 rather than being claimed by P6-F17 Scheme A.
 
 P6-F36 does not reopen P6-F16. It adds no migration, RLS/foreign-key redesign,

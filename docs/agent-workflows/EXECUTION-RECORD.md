@@ -1,41 +1,59 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 0C P6-F04 Embeddings Route/Failover Parity
+**Batch:** PRD6 Batch 0C P6-F05 Effective Configuration And Budget Alert Truth
 **Owner:** Codex
-**Risk:** R3 request routing and billing behavior
+**Risk:** R3 request routing, billing and tenant notification behavior
 **Status:** Local verified; required PR CI pending
-**Integration:** Branch `codex/prd6-p6f04-embeddings-failover`; PR pending; no deployment, target or production claim
-**Previous batch:** P6-F03 CI verified / closed by PR #156 and post-merge main run `29158395734`
+**Integration:** Branch `codex/prd6-p6f05-routing-config-truth`; PR pending; no deployment, target or production claim
+**Previous batch:** P6-F04 CI verified / closed by PR #157 and post-merge main run `29159155254`
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Current Scope
 
-1. Replace Embeddings single-route selection with the finite ordered candidate
-   set already used by Chat.
-2. Execute P6-F03 HTTP/transport stop/retry semantics without leaking provider
-   errors or implying unsupported adapter capability.
-3. Preserve model authorization before Freeze and exactly one Settle or Cancel.
-4. Prove fallback/exhaustion route, attempt, upstream, trace and call-log truth.
-5. Reject malformed 200 bodies before settlement and keep P6-F05/P6-F06,
-   deployment and target evidence outside this PR.
+1. Reconcile declared failover settings against every production runtime use.
+2. Create one validated immutable startup policy and wire it into provider
+   retries, channel breaker/probe and provider-key health transitions.
+3. Emit the same version/effective values in safe route traces, runtime status
+   and operator UI.
+4. Prove real PostgreSQL before/deadline/after recovery and configured cooldown /
+   invalidation behavior in required CI.
+5. Retire the broken global first-wallet alert path, preserve the existing
+   project-scoped event/webhook contract, and expose that scope without secrets.
+6. Keep dynamic Routing Policy V1, unrelated timeouts, P6-F06, deployment and
+   target evidence outside this PR.
 
-## Current P6-F04 Behavior Change
+## Current P6-F05 Behavior Change
 
-- Embeddings now uses `RouteAll`, distinct attempt IDs and truthful sequence /
-  candidate totals;
-- unusable adapter/key/build candidates are safely skipped; 400/401 stop, while
-  429/503 and classified transient transport failures consume a later route;
-- a final retryable failure records actual `stop` due exhaustion, while an
-  earlier eligible failure records `retry`; Chat receives the same trace fix;
-- success restores channel/key health and reports the actual fallback route;
-  terminal failures log the terminal attempt only;
-- all paths preserve one Freeze and exactly one Settle or Cancel, and provider
-  error text is not returned;
-- malformed 200 JSON is rejected before Settle and cannot panic during
-  `_uniroute` extension mutation;
-- full Go race/vet, isolated tagged admin integration, focused matrices and
-  frontend 27 files / 137 tests, type-check and production build pass locally;
+- `effective-config.v1` is the typed read-only registry; its
+  `routing-config.v1` values are the immutable startup driver for provider retry
+  budget, channel threshold/recovery/probe, rate/auth cooldown and key failure
+  threshold;
+- existing environment names now drive runtime behavior, two previously hidden
+  key controls are declared, and invalid bounds fail startup validation;
+- retry budgets 0/1/2 prove exact provider dispatch counts 1/2/3;
+- route traces and runtime API/UI expose the same safe version and scalar values;
+- `project-budget-alert.v1` declares project budget/period sources,
+  tenant-scoped event/delivery ledgers and the post-settlement trigger; the
+  unsafe global worker/first-wallet/audit path is removed, while historical
+  global keys remain stored but are marked retired/ineffective and reject writes;
+- isolated PostgreSQL evidence proves threshold transition, real recovery
+  deadline exclusion/admission, success reset, configured cooldowns and key
+  invalidation; a second real PostgreSQL matrix proves foreign project denial
+  and exact second-tenant budget-event scope; both are fail-closed Backend steps;
+- focused race matrices pass ten repetitions; full Go race/vet, admin and
+  routing/budget integration, OpenAPI parse, frontend 27 files / 137 tests,
+  type-check and production build pass locally;
 - Docker is unavailable locally and remains an explicit required-CI gate;
+- evidence: `docs/ops/evidence/PRD6-B0C-P6F05-routing-config-truth-local-20260711.md`.
+
+## Previous P6-F04 Behavior Change
+
+- Embeddings uses bounded RouteAll attempts, safe shared HTTP/transport
+  classification, one terminal billing action and truthful final/fallback
+  attempt evidence; malformed 200 responses never settle or panic;
+- PR #157 required run `29158981445`, squash merge
+  `36f736c0ca02f483b408c94350c8e5d1497b759e` and post-merge main run
+  `29159155254` passed all three jobs;
 - evidence: `docs/ops/evidence/PRD6-B0C-P6F04-embeddings-failover-local-20260711.md`.
 
 ## Previous P6-F03 Behavior Change
@@ -498,7 +516,8 @@ drain old control-plane binaries before a non-rolling activation of only the new
 version; old binaries do not provide mixed-version safety. New-version replicas
 converge a committed sensitive-word version through the existing approximately
 one-minute reload. This batch adds no global-settings UI. Typed configuration
-ownership and the budget/alert key, scope and audit truth chain remain P6-F05.
+ownership and the budget/alert key, scope and audit truth chain are locally
+reconciled by P6-F05, pending required PR and post-merge CI.
 P6-F17 provides metadata-only request replay protection; durable
 ambiguous-commit recovery remains P6-F20.
 

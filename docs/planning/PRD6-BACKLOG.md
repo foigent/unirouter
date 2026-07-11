@@ -29,8 +29,8 @@
 | P6-BILL-003 | Pool-safe reservation and single durable terminal state | prevents pool starvation, double terminal transitions and free delivered output | financial state migration, recovery and invariant tests | P0 |
 | P6-AUTH-001 | Versioned user/project/key/role revocation | bounds stale authority across replicas | revocation SLO, cache and outage posture | P0 |
 | P6-ROUTE-002 | Retry classification and response preservation | prevents unsafe/expensive retry and misleading 502 | CI verified / closed by PR #156, merge `f6f075a` and post-merge main run `29158395734` | P0 |
-| P6-ROUTE-003 | Embeddings failover parity | removes endpoint reliability asymmetry | Local verified: bounded multi-route HTTP/transport/config-skip matrix, one-terminal billing, truthful final attempt and malformed-200 safety; required PR CI pending | P0 |
-| P6-CONFIG-001 | Effective routing/circuit config truth | operator control and explainability | migration/default compatibility | P0 |
+| P6-ROUTE-003 | Embeddings failover parity | removes endpoint reliability asymmetry | CI verified / closed by PR #157, merge `36f736c` and post-merge main run `29159155254` | P0 |
+| P6-CONFIG-001 | Typed effective routing and budget-alert truth | operator control, explainability and tenant-safe alert scope | Local verified: `effective-config.v1`, validated `routing-config.v1`, project-scoped alert contract, retired global keys, exact routing/budget PostgreSQL tests and API/UI readback; required PR CI pending | P0 |
 | P6-BILL-002 | Multiplier-aware freeze/settle correctness | prevents uncollected cost | wallet/transaction semantics | P0 |
 | P6-CAP-001 | Short, attenuating Agent capability and ancestor budget | avoids shared-secret/per-child-key explosion and quota amplification | claim contract, key rotation, TTL/refresh, revocation | P1 |
 | P6-LIMIT-002 | Shared RPM/RPS/TPM/concurrency policy | enterprise isolation/capacity | failure-mode and output TPM semantics | P1 |
@@ -67,9 +67,10 @@ reopens PRD5 or retroactively changes D6-01.
 P6-F35 target execution remains deferred by D6-09. Any later activation must
 drain old control-plane binaries and be non-rolling because old binaries do not
 provide mixed-version safety. New-version replicas converge global-word changes
-through the existing approximately one-minute reload. A typed configuration
-registry and the confirmed budget/alert key, scope and audit truth gaps remain
-P6-F05. P6-F17 now supplies separate operation/client correlation and
+through the existing approximately one-minute reload. The typed configuration
+registry and confirmed budget/alert key, scope and audit truth gaps are now
+locally reconciled by P6-F05, pending required PR and post-merge CI. P6-F17
+supplies separate operation/client correlation and
 tenant-scoped Audit readback; generic mutation replay and P6-F20 durability are
 not implied. No global-settings UI was added.
 

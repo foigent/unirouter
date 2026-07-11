@@ -28,6 +28,7 @@ import (
 	"github.com/uniroute/unirouter/internal/migrate"
 	"github.com/uniroute/unirouter/internal/oidc"
 	"github.com/uniroute/unirouter/internal/redisx"
+	"github.com/uniroute/unirouter/internal/runtimeconfig"
 )
 
 // buildVersion and buildCommit are set by release builds through -ldflags.
@@ -80,8 +81,16 @@ func main() {
 	defer redisClient.Close()
 	log.Println("Connected to Redis")
 
-	// Initialize core components
-	router := gateway.NewRouter(postgres.Pool)
+	// Initialize core components from one typed, read-only effective
+	// configuration registry. Dynamic policy rollout remains a later contract.
+	effectiveConfig, err := runtimeconfig.New(cfg.RoutingPolicyConfig())
+	if err != nil {
+		log.Fatalf("Invalid effective runtime configuration: %v", err)
+	}
+	router, err := gateway.NewRouterWithPolicy(postgres.Pool, effectiveConfig.RoutingPolicy.Config)
+	if err != nil {
+		log.Fatalf("Invalid effective routing configuration: %v", err)
+	}
 	billingSvc := billing.NewBilling(postgres.Pool, redisClient.Client)
 	settlementRecoveryCtx, stopSettlementRecovery := context.WithCancel(context.Background())
 	defer stopSettlementRecovery()
@@ -102,19 +111,8 @@ func main() {
 	relay.SetTraceEvents(cfg.TraceEventsEnabled, cfg.TraceEventSampleRate)
 	relay.SetPayloadCaptureMode(cfg.PayloadCaptureMode)
 	relay.SetEvidenceContextTrustSecret(cfg.EvidenceContextTrustSecret)
-	alertSvc := billing.NewAlertService(postgres.Pool)
 	eventSvc := billing.NewEventService(postgres.Pool)
 	relay.SetEventService(eventSvc)
-
-	// Wire alert service into relay for post-settle budget checks
-	go func() {
-		time.Sleep(2 * time.Second)
-		alertCtx := context.Background()
-		webhookURL, budgetCents := loadAlertConfig(alertCtx, postgres.Pool)
-		if webhookURL != "" && budgetCents > 0 {
-			relay.SetAlertService(alertSvc, webhookURL, budgetCents)
-		}
-	}()
 
 	adminHandler := admin.NewHandlerWithAPIKeyHashSecret(postgres.Pool, cfg.JWTSecret, cfg.APIKeyHashSecret, encKey, sensitiveFilter)
 	licenseVerifier, err := licensing.NewVerifierFromPublicKey(cfg.LicensePublicKey, cfg.LicenseExpiryWarningDays)
@@ -125,13 +123,14 @@ func main() {
 	adminHandler.SetEventService(eventSvc)
 	adminHandler.SetRedisClient(redisClient.Client)
 	adminHandler.SetRuntimeStatusOptions(admin.RuntimeStatusOptions{
-		Environment:    cfg.RuntimeEnvironment,
-		DeploymentMode: cfg.RuntimeDeploymentMode,
-		DeploymentRole: cfg.RuntimeDeploymentRole,
-		Version:        cfg.RuntimeVersion,
-		Commit:         cfg.RuntimeCommit,
-		PrometheusURL:  cfg.PrometheusURL,
-		GrafanaURL:     cfg.GrafanaURL,
+		Environment:     cfg.RuntimeEnvironment,
+		DeploymentMode:  cfg.RuntimeDeploymentMode,
+		DeploymentRole:  cfg.RuntimeDeploymentRole,
+		Version:         cfg.RuntimeVersion,
+		Commit:          cfg.RuntimeCommit,
+		PrometheusURL:   cfg.PrometheusURL,
+		GrafanaURL:      cfg.GrafanaURL,
+		EffectiveConfig: effectiveConfig,
 	})
 	oidcService, err := oidc.NewService(oidc.Config{
 		Enabled:            cfg.OIDCEnabled,
@@ -164,8 +163,6 @@ func main() {
 		go startCleanupLoop(adminHandler, cfg.LogRetentionDays, cfg.TraceEventRetentionDays)
 	}
 
-	// Start budget alert goroutine — checks every 5 minutes
-	go startBudgetAlertLoop(alertSvc, postgres.Pool)
 	go startNotificationRetryLoop(eventSvc)
 
 	// Build HTTP mux
@@ -656,19 +653,6 @@ func trimSpace(s string) string {
 	return s[start:end]
 }
 
-// loadAlertConfig loads webhook URL and threshold from the settings table.
-func loadAlertConfig(ctx context.Context, pool *pgxpool.Pool) (string, int) {
-	var webhookURL string
-	var budgetStr string
-	pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'budget_alert_webhook_url'`).Scan(&webhookURL)
-	pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'budget_cents'`).Scan(&budgetStr)
-	budgetCents := 0
-	if budgetStr != "" {
-		fmt.Sscanf(budgetStr, "%d", &budgetCents)
-	}
-	return webhookURL, budgetCents
-}
-
 // startNotificationRetryLoop periodically retries failed notification webhook deliveries.
 func startNotificationRetryLoop(eventSvc *billing.EventService) {
 	if eventSvc == nil {
@@ -686,28 +670,6 @@ func startNotificationRetryLoop(eventSvc *billing.EventService) {
 			log.Printf("Notification retry worker retried %d failed webhook deliveries", retried)
 		}
 		<-ticker.C
-	}
-}
-
-// startBudgetAlertLoop periodically checks wallet balance and sends webhook alerts.
-func startBudgetAlertLoop(alertSvc *billing.AlertService, pool *pgxpool.Pool) {
-	time.Sleep(30 * time.Second)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	webhookURL, budgetCents := loadAlertConfig(ctx, pool)
-	if webhookURL != "" && budgetCents > 0 {
-		alertSvc.CheckAndNotify(ctx, webhookURL, budgetCents)
-	}
-	cancel()
-
-	ticker := time.NewTicker(5 * time.Minute)
-	defer ticker.Stop()
-	for range ticker.C {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		webhookURL, budgetCents := loadAlertConfig(ctx, pool)
-		if webhookURL != "" && budgetCents > 0 {
-			alertSvc.CheckAndNotify(ctx, webhookURL, budgetCents)
-		}
-		cancel()
 	}
 }
 

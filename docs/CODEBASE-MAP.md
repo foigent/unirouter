@@ -17,10 +17,10 @@
 
 | Package | Responsibility |
 |---------|----------------|
-| `internal/admin` | Admin REST handlers including Logs/trace, Data Exchange Control, audit, and Runtime Status. Runtime Status includes app/dependency/traffic/host telemetry, external monitoring checks, and a redacted current-process logical topology. Data Exchange Control is platform-admin-only and records source-side approvals/exchanges/deliveries/receipts without automatic export or X-Insight runtime dependency; receipt writes accept only the canonical v1 warning registry and reject unimplemented durable job/deep-link fields |
+| `internal/admin` | Admin REST handlers including Logs/trace, Data Exchange Control, audit, and Runtime Status. Runtime Status includes app/dependency/traffic/host telemetry, external monitoring checks, typed effective configuration and a redacted current-process logical topology. Data Exchange Control is platform-admin-only and records source-side approvals/exchanges/deliveries/receipts without automatic export or X-Insight runtime dependency; receipt writes accept only the canonical v1 warning registry and reject unimplemented durable job/deep-link fields |
 | `internal/adapters` | Provider adapter registry and OpenAI-compatible / Anthropic-native request/response conversion |
 | `internal/auth` | JWT generation/validation, API key hashing, upstream key AES-GCM encryption/decryption |
-| `internal/billing` | Cost calculation, freeze/settle/cancel, price provider, budget alert, notification event service |
+| `internal/billing` | Cost calculation, freeze/settle/cancel, price provider, project-scoped budget evaluation and tenant-scoped notification event service |
 | `internal/circuitbreaker` | Standalone circuit breaker implementation and tests |
 | `internal/filter` | DFA sensitive-word filter |
 | `internal/errdocs` | Error documentation registry used by gateway `doc_url` responses and API Docs |
@@ -32,6 +32,8 @@
 | `internal/migrate` | SQL migration runner |
 | `internal/modelgov` | Model governance helpers and access checks |
 | `internal/models` | Shared data model types |
+| `internal/routingpolicy` | Validated immutable retry, circuit/probe, cooldown and provider-key health configuration |
+| `internal/runtimeconfig` | Safe versioned effective-configuration registry for routing values and the active project budget-alert contract |
 | `internal/traceutil` | Shared request trace metadata sanitizer and PRD5 capture-gap helper used by gateway trace writes and admin trace responses |
 | `internal/oidc` | OIDC discovery, token exchange, JWKS verification, and identity extraction |
 | `internal/testutil` | Mock DB and test DB helpers |

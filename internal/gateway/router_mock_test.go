@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
@@ -21,6 +22,14 @@ func TestNewRouter_WithMockDB(t *testing.T) {
 	r := NewRouter(db)
 	if r == nil {
 		t.Fatal("NewRouter should not return nil")
+	}
+}
+
+func TestNewRouterWithPolicy_RejectsInvalidPolicy(t *testing.T) {
+	policy := routingpolicy.Default()
+	policy.CircuitBreakerHalfOpenPct = 0
+	if _, err := NewRouterWithPolicy(&testutil.MockDB{}, policy); err == nil {
+		t.Fatal("expected invalid policy to be rejected")
 	}
 }
 
@@ -249,7 +258,7 @@ func TestMarkChannelFail_BelowThreshold(t *testing.T) {
 		},
 	}
 	r := NewRouter(db)
-	err := r.MarkChannelFail(context.Background(), 1, 5, 30)
+	err := r.MarkChannelFail(context.Background(), 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -272,7 +281,7 @@ func TestMarkChannelFail_AtThreshold_TransitionsToHalfOpen(t *testing.T) {
 		},
 	}
 	r := NewRouter(db)
-	err := r.MarkChannelFail(context.Background(), 1, 5, 30)
+	err := r.MarkChannelFail(context.Background(), 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -292,9 +301,39 @@ func TestMarkChannelFail_QueryError(t *testing.T) {
 		},
 	}
 	r := NewRouter(db)
-	err := r.MarkChannelFail(context.Background(), 1, 5, 30)
+	err := r.MarkChannelFail(context.Background(), 1)
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestMarkChannelFail_UsesEffectiveThresholdAndRecovery(t *testing.T) {
+	policy := routingpolicy.Default()
+	policy.CircuitBreakerThreshold = 2
+	policy.CircuitBreakerRecoverSeconds = 17
+	var halfOpenUntil time.Time
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int) = 2
+				return nil
+			}}
+		},
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			halfOpenUntil = args[0].(time.Time)
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	router, err := NewRouterWithPolicy(db, policy)
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	started := time.Now()
+	if err := router.MarkChannelFail(context.Background(), 1); err != nil {
+		t.Fatalf("mark failure: %v", err)
+	}
+	if halfOpenUntil.Before(started.Add(16*time.Second)) || halfOpenUntil.After(started.Add(18*time.Second)) {
+		t.Fatalf("recovery deadline does not use configured 17 seconds: %s", halfOpenUntil)
 	}
 }
 
@@ -310,6 +349,32 @@ func TestMarkKeyCooldown_OK(t *testing.T) {
 	err := r.MarkKeyCooldown(context.Background(), 1, 60)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestKeyCooldownMethodsUseEffectivePolicy(t *testing.T) {
+	policy := routingpolicy.Default()
+	policy.RateLimitCooldownSeconds = 23
+	policy.AuthFailureCooldownSeconds = 47
+	var deadlines []time.Time
+	db := &testutil.MockDB{ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+		deadlines = append(deadlines, args[0].(time.Time))
+		return pgconn.CommandTag{}, nil
+	}}
+	router, err := NewRouterWithPolicy(db, policy)
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	started := time.Now()
+	if err := router.MarkKeyRateLimited(context.Background(), 1); err != nil {
+		t.Fatalf("rate cooldown: %v", err)
+	}
+	if err := router.MarkKeyAuthFailure(context.Background(), 1); err != nil {
+		t.Fatalf("auth cooldown: %v", err)
+	}
+	if len(deadlines) != 2 || deadlines[0].Before(started.Add(22*time.Second)) || deadlines[0].After(started.Add(24*time.Second)) ||
+		deadlines[1].Before(started.Add(46*time.Second)) || deadlines[1].After(started.Add(48*time.Second)) {
+		t.Fatalf("unexpected configured cooldown deadlines: %#v", deadlines)
 	}
 }
 
@@ -356,6 +421,34 @@ func TestMarkKeyFail_AtThreshold_Invalidate(t *testing.T) {
 	}
 	if !execCalled {
 		t.Fatal("expected invalidation exec")
+	}
+}
+
+func TestMarkKeyFail_UsesEffectiveThreshold(t *testing.T) {
+	policy := routingpolicy.Default()
+	policy.KeyFailureThreshold = 4
+	invalidated := false
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int) = 3
+				return nil
+			}}
+		},
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			invalidated = true
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	router, err := NewRouterWithPolicy(db, policy)
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	if err := router.MarkKeyFail(context.Background(), 1); err != nil {
+		t.Fatalf("mark key failure: %v", err)
+	}
+	if invalidated {
+		t.Fatal("key was invalidated below configured threshold")
 	}
 }
 

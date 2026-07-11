@@ -93,6 +93,9 @@ func TestP6F35GlobalControlAuthorityIntegration(t *testing.T) {
 		require.NotContains(t, settings.Body.String(), `"signature"`)
 		require.Contains(t, settings.Body.String(), `"redacted":true`)
 		require.Contains(t, settings.Body.String(), `"dedicated_endpoint":"/api/v1/license"`)
+		require.Contains(t, settings.Body.String(), `"retired":true`)
+		require.Contains(t, settings.Body.String(), `"effective":false`)
+		require.Contains(t, settings.Body.String(), `"replacement":"/api/v1/notification-webhooks"`)
 
 		license := serve(t, http.MethodGet, "/api/v1/license", "", fx.platformA, fx.orgA, auth.RolePlatformAdmin, "")
 		assertStatus(t, license, http.StatusOK)
@@ -133,6 +136,9 @@ func TestP6F35GlobalControlAuthorityIntegration(t *testing.T) {
 			"/api/v1/settings/license.offline",
 			"/api/v1/settings/license.future",
 			"/api/v1/settings/sensitive_words",
+			"/api/v1/settings/budget_alert_webhook_url",
+			"/api/v1/settings/budget_alert_threshold_cents",
+			"/api/v1/settings/budget_cents",
 		} {
 			assertStatus(t, serve(t, http.MethodPut, target, `{"value":{"bypass":true}}`,
 				fx.platformA, fx.orgA, auth.RolePlatformAdmin, "p6f35-reserved"), http.StatusConflict)
@@ -147,8 +153,8 @@ func TestP6F35GlobalControlAuthorityIntegration(t *testing.T) {
 		}
 		assertStatus(t, serve(t, http.MethodPut, "/api/v1/settings/maintenance_mode", `{"value":true}`,
 			fx.platformA, fx.orgA, auth.RolePlatformAdmin, requestIDs[0]), http.StatusOK)
-		assertStatus(t, serve(t, http.MethodPut, "/api/v1/settings/budget_alert_webhook_url",
-			`{"value":"https://p6f35-new-webhook-secret.example/token"}`,
+		assertStatus(t, serve(t, http.MethodPut, "/api/v1/settings/support_contact",
+			`{"value":"support@example.test"}`,
 			fx.platformA, fx.orgA, auth.RolePlatformAdmin, requestIDs[1]), http.StatusOK)
 		assertStatus(t, serve(t, http.MethodPut, "/api/v1/license", fmt.Sprintf(`{"license":%s}`, newLicense),
 			fx.platformA, fx.orgA, auth.RolePlatformAdmin, requestIDs[2]), http.StatusOK)

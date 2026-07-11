@@ -11,16 +11,33 @@ import (
 	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/models"
+	"github.com/uniroute/unirouter/internal/routingpolicy"
 )
 
 // Router selects the best channel and key for a given model.
 type Router struct {
-	db db.DBQuerier
+	db     db.DBQuerier
+	policy routingpolicy.Config
 }
 
 // NewRouter creates a new Router.
 func NewRouter(db db.DBQuerier) *Router {
-	return &Router{db: db}
+	return &Router{db: db, policy: routingpolicy.Default()}
+}
+
+// NewRouterWithPolicy creates a Router with one validated startup policy.
+func NewRouterWithPolicy(db db.DBQuerier, policy routingpolicy.Config) (*Router, error) {
+	if err := policy.Validate(); err != nil {
+		return nil, err
+	}
+	return &Router{db: db, policy: policy}, nil
+}
+
+func (r *Router) Policy() routingpolicy.Config {
+	if r == nil {
+		return routingpolicy.Default()
+	}
+	return r.policy
 }
 
 // RouteResult contains the selected channel, key, and mapped model name.
@@ -69,7 +86,7 @@ func (r *Router) Route(ctx context.Context, modelName string) (*RouteResult, err
 		}
 
 		// Half-open channels: only allow 10% traffic through
-		if ch.CircuitState == "half_open" && rand.Intn(100) >= 10 {
+		if ch.CircuitState == "half_open" && r.policy.CircuitBreakerHalfOpenPct < 100 && rand.Intn(100) >= r.policy.CircuitBreakerHalfOpenPct {
 			continue // skip, try next candidate
 		}
 
@@ -114,7 +131,7 @@ func (r *Router) RouteAll(ctx context.Context, modelName string) ([]RouteResult,
 		}
 
 		// Half-open channels: only allow 10% traffic through
-		if ch.CircuitState == "half_open" && rand.Intn(100) >= 10 {
+		if ch.CircuitState == "half_open" && r.policy.CircuitBreakerHalfOpenPct < 100 && rand.Intn(100) >= r.policy.CircuitBreakerHalfOpenPct {
 			continue
 		}
 
@@ -145,8 +162,8 @@ func (r *Router) MarkChannelSuccess(ctx context.Context, channelID int64) error 
 }
 
 // MarkChannelFail records a failed request for a channel.
-// If failure count exceeds threshold, transitions to half_open.
-func (r *Router) MarkChannelFail(ctx context.Context, channelID int64, threshold int, recoverSecs int) error {
+// If failure count reaches the effective threshold, transitions to half_open.
+func (r *Router) MarkChannelFail(ctx context.Context, channelID int64) error {
 	var failCount int
 	err := r.db.QueryRow(ctx,
 		`UPDATE channels SET fail_count = fail_count + 1
@@ -158,8 +175,8 @@ func (r *Router) MarkChannelFail(ctx context.Context, channelID int64, threshold
 		return err
 	}
 
-	if failCount >= threshold {
-		halfOpenUntil := time.Now().Add(time.Duration(recoverSecs) * time.Second)
+	if failCount >= r.policy.CircuitBreakerThreshold {
+		halfOpenUntil := time.Now().Add(time.Duration(r.policy.CircuitBreakerRecoverSeconds) * time.Second)
 		_, err = r.db.Exec(ctx,
 			`UPDATE channels SET circuit_state = 'half_open', half_open_until = $1
 			 WHERE id = $2`,
@@ -178,6 +195,14 @@ func (r *Router) MarkKeyCooldown(ctx context.Context, keyID int64, cooldownSecs 
 		cooldownUntil, keyID,
 	)
 	return err
+}
+
+func (r *Router) MarkKeyRateLimited(ctx context.Context, keyID int64) error {
+	return r.MarkKeyCooldown(ctx, keyID, r.policy.RateLimitCooldownSeconds)
+}
+
+func (r *Router) MarkKeyAuthFailure(ctx context.Context, keyID int64) error {
+	return r.MarkKeyCooldown(ctx, keyID, r.policy.AuthFailureCooldownSeconds)
 }
 
 // resolveModelMapping applies model alias mapping.
@@ -201,7 +226,7 @@ func resolveModelMapping(requestedModel string, modelMapping json.RawMessage) st
 }
 
 // MarkKeyFail increments fail_count on a channel_key.
-// If fail_count reaches 3, sets status='invalid'.
+// If fail_count reaches the effective threshold, sets status='invalid'.
 func (r *Router) MarkKeyFail(ctx context.Context, keyID int64) error {
 	var failCount int
 	err := r.db.QueryRow(ctx,
@@ -213,7 +238,7 @@ func (r *Router) MarkKeyFail(ctx context.Context, keyID int64) error {
 	if err != nil {
 		return err
 	}
-	if failCount >= 3 {
+	if failCount >= r.policy.KeyFailureThreshold {
 		_, err = r.db.Exec(ctx,
 			`UPDATE channel_keys SET status = 'invalid', updated_at = NOW() WHERE id = $1`,
 			keyID,

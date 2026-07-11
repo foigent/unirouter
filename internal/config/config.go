@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/traceutil"
 )
 
@@ -94,7 +95,9 @@ type Config struct {
 	CircuitBreakerThreshold   int
 	CircuitBreakerRecoverSecs int
 	CircuitBreakerHalfOpenPct int
-	KeyCooldownSecs           int
+	RateLimitCooldownSecs     int
+	AuthFailureCooldownSecs   int
+	ProviderKeyFailThreshold  int
 
 	// Backup
 	BackupEnabled    bool
@@ -169,6 +172,12 @@ func (c *Config) Validate() error {
 	}
 	if c.LogRetentionDays < 0 {
 		return fmt.Errorf("LOG_RETENTION_DAYS must be >= 0")
+	}
+	policy := c.RoutingPolicyConfig()
+	if policy != (routingpolicy.Config{}) {
+		if err := policy.Validate(); err != nil {
+			return fmt.Errorf("invalid routing configuration: %w", err)
+		}
 	}
 	if err := validateOptionalHTTPURL("PROMETHEUS_URL", c.PrometheusURL); err != nil {
 		return err
@@ -274,7 +283,9 @@ func Load() (*Config, error) {
 		CircuitBreakerThreshold:   getEnvInt("CIRCUIT_BREAKER_THRESHOLD", 5),
 		CircuitBreakerRecoverSecs: getEnvInt("CIRCUIT_BREAKER_RECOVER_SECONDS", 300),
 		CircuitBreakerHalfOpenPct: getEnvInt("CIRCUIT_BREAKER_HALF_OPEN_PERCENT", 10),
-		KeyCooldownSecs:           getEnvInt("KEY_COOLDOWN_SECONDS", 60),
+		RateLimitCooldownSecs:     getEnvInt("KEY_COOLDOWN_SECONDS", 60),
+		AuthFailureCooldownSecs:   getEnvInt("PROVIDER_AUTH_COOLDOWN_SECONDS", 3600),
+		ProviderKeyFailThreshold:  getEnvInt("PROVIDER_KEY_FAILURE_THRESHOLD", 3),
 
 		BackupEnabled:    getEnvBool("BACKUP_ENABLED", true),
 		BackupCron:       getEnvStr("BACKUP_CRON", "0 2 * * *"),
@@ -292,6 +303,18 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+func (c Config) RoutingPolicyConfig() routingpolicy.Config {
+	return routingpolicy.Config{
+		MaxRetryCount:                c.MaxRetryCount,
+		CircuitBreakerThreshold:      c.CircuitBreakerThreshold,
+		CircuitBreakerRecoverSeconds: c.CircuitBreakerRecoverSecs,
+		CircuitBreakerHalfOpenPct:    c.CircuitBreakerHalfOpenPct,
+		RateLimitCooldownSeconds:     c.RateLimitCooldownSecs,
+		AuthFailureCooldownSeconds:   c.AuthFailureCooldownSecs,
+		KeyFailureThreshold:          c.ProviderKeyFailThreshold,
+	}
 }
 
 func splitCSV(value string) []string {

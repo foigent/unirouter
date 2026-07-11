@@ -40,8 +40,11 @@
 > `29157561036` passed all three jobs, including the isolated tagged admin
 > integration gate. P6-F03 passed PR #156 run `29158184240`, was squash-merged
 > as `f6f075aa4333f2b81f888f3505c2c2b44e77c449`, and post-merge main run
-> `29158395734` passed all three jobs. P6-F04 Embeddings failover parity is
-> Local verified; required PR CI remains pending.
+> `29158395734` passed all three jobs. P6-F04 passed PR #157 run `29158981445`,
+> was squash-merged as `36f736c0ca02f483b408c94350c8e5d1497b759e`, and
+> post-merge main run `29159155254` passed all three jobs. P6-F05 typed
+> routing and project-budget-alert configuration truth is Local verified;
+> required PR CI remains pending.
 > No target or production verification is claimed.
 > D6-01, D6-02, D6-08 and D6-09 were accepted by the User on 2026-07-11; advanced
 > innovation rows P6-F23 through P6-F31 remain proposed.
@@ -92,10 +95,15 @@
   closed.
 - P6-F04 Embeddings failover local evidence:
   `docs/ops/evidence/PRD6-B0C-P6F04-embeddings-failover-local-20260711.md`.
-  Embeddings now uses bounded candidate attempts, shares safe retry
-  classification, maintains one-terminal billing, records truthful fallback /
-  exhausted-stop evidence and rejects malformed success bodies before Settle.
-  Required PR CI remains pending.
+  PR #157 and post-merge main required CI passed; P6-F04 is CI verified /
+  closed.
+- P6-F05 typed effective configuration and budget-alert local evidence:
+  `docs/ops/evidence/PRD6-B0C-P6F05-routing-config-truth-local-20260711.md`.
+  `effective-config.v1` contains the driving `routing-config.v1` plus the active
+  project-scoped budget-alert contract. Safe trace and runtime API/UI expose
+  effective values/sources; routing transitions and a two-tenant budget test
+  pass against real PostgreSQL. The broken global first-wallet path is removed
+  and its historical keys are explicitly retired. Required PR CI remains pending.
 - Source-backed product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
 - PRD7 candidate-only split (not Accepted Scope):
@@ -109,9 +117,9 @@
 - Scope entry: `docs/planning/PRD6-START-HERE.md`.
 - Proposed PRD: `docs/PRD-Phase6.md`; accepted/proposed state is authoritative
   in `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`.
-- Accepted feature accounting after P6-F04 local verification: 25 accepted rows,
-  14 CI verified / closed, one Local verified pending CI (`P6-F04`) and 10 not
-  started (`P6-F05`-`P6-F11`, `P6-F19`-`P6-F21`).
+- Accepted feature accounting after P6-F05 local verification: 25 accepted rows,
+  15 CI verified / closed, one Local verified pending CI (`P6-F05`) and 9 not
+  started (`P6-F06`-`P6-F11`, `P6-F19`-`P6-F21`).
   `P6-TEST-DB-001` is a separate engineering-integrity issue outside that
   25-row feature count; it is CI verified / closed by PR #155 and post-merge
   main run `29157561036`.
@@ -155,8 +163,9 @@ target activation; a later authorized cutover must drain old control-plane
 binaries and activate only the new version non-rolling because mixed old/new
 binaries are not safe for these endpoints. Other new-version instances learn a
 committed sensitive-word version through the existing approximately one-minute
-reload path. No global-settings UI was added. A typed configuration registry
-and budget/alert key-scope-audit truth remain P6-F05 rather than P6-F35 claims.
+reload path. No global-settings UI was added. The typed configuration registry
+and budget/alert key-scope-audit truth are locally reconciled by P6-F05, pending
+required PR and post-merge CI; they are not retroactive P6-F35 claims.
 P6-F17 now supplies separate server/client correlation and tenant-scoped Audit
 readback for ambiguous responses; generic mutation replay and durable audit do
 not follow automatically.

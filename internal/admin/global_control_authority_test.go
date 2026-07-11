@@ -175,8 +175,11 @@ func TestSensitiveWordsAuditFailureDoesNotUpdateInMemoryFilter(t *testing.T) {
 	require.False(t, newBlocked)
 }
 
-func TestDedicatedGlobalSettingsAreRejectedBeforeTransaction(t *testing.T) {
-	for _, key := range []string{licenseSettingKey, "license.future", sensitiveWordsSettingKey} {
+func TestDedicatedAndRetiredGlobalSettingsAreRejectedBeforeTransaction(t *testing.T) {
+	for _, key := range []string{
+		licenseSettingKey, "license.future", sensitiveWordsSettingKey,
+		"budget_alert_webhook_url", "budget_alert_threshold_cents", "budget_cents",
+	} {
 		beginCalls := 0
 		h := newTestHandler(&testutil.MockDB{BeginFn: func(context.Context) (pgx.Tx, error) {
 			beginCalls++
@@ -191,6 +194,10 @@ func TestDedicatedGlobalSettingsAreRejectedBeforeTransaction(t *testing.T) {
 
 		require.Equal(t, http.StatusConflict, rec.Code)
 		require.Zero(t, beginCalls)
+		if retired, ok := retiredGlobalSettingContract(key); ok {
+			require.Contains(t, rec.Body.String(), retired.Replacement)
+			require.Contains(t, rec.Body.String(), retired.Reason)
+		}
 	}
 }
 

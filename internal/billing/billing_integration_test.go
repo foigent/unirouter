@@ -269,6 +269,79 @@ func TestEventService_CheckProjectBudgetPeriodBoundaries_Integration(t *testing.
 	}
 }
 
+func TestEventService_CheckProjectBudgetTenantScope_Integration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+	testutil.TruncateAll(t, pool)
+
+	insertOrg := func(name string) int64 {
+		t.Helper()
+		var orgID int64
+		require.NoError(t, pool.QueryRow(ctx,
+			`INSERT INTO orgs (name, status, org_type) VALUES ($1, 'active', 'customer') RETURNING id`,
+			name,
+		).Scan(&orgID))
+		return orgID
+	}
+	insertProject := func(orgID int64, slug string) int64 {
+		t.Helper()
+		var projectID int64
+		require.NoError(t, pool.QueryRow(ctx,
+			`INSERT INTO projects (org_id, name, slug, description, status, budget_cents, budget_period, created_at, updated_at)
+			 VALUES ($1, $2, $3, 'tenant scope fixture', 'active', 1000, 'monthly', NOW(), NOW())
+			 RETURNING id`,
+			orgID, "Budget "+slug, slug,
+		).Scan(&projectID))
+		return projectID
+	}
+
+	orgA := insertOrg(fmt.Sprintf("budget-scope-a-%d", time.Now().UnixNano()))
+	orgB := insertOrg(fmt.Sprintf("budget-scope-b-%d", time.Now().UnixNano()))
+	projectA := insertProject(orgA, fmt.Sprintf("budget-scope-a-%d", time.Now().UnixNano()))
+	projectB := insertProject(orgB, fmt.Sprintf("budget-scope-b-%d", time.Now().UnixNano()))
+
+	_, err := pool.Exec(ctx,
+		`INSERT INTO call_logs (request_id, org_id, project_id, model, cost_cents, status_code, created_at)
+		 VALUES ($1, $2, $3, 'scope-model', 9000, 200, NOW()),
+		        ($4, $5, $6, 'scope-model', 1200, 200, NOW())`,
+		fmt.Sprintf("budget-scope-a-%d", time.Now().UnixNano()), orgA, projectA,
+		fmt.Sprintf("budget-scope-b-%d", time.Now().UnixNano()), orgB, projectB,
+	)
+	require.NoError(t, err)
+
+	svc := NewEventService(pool)
+	result, err := svc.CheckProjectBudget(ctx, orgA, projectB)
+	require.NoError(t, err)
+	require.Nil(t, result, "a foreign organization/project pair must not emit an event")
+
+	result, err = svc.CheckProjectBudget(ctx, orgB, projectB)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Created)
+	require.Equal(t, DeliveryStateNotConfigured, result.DeliveryState)
+
+	var eventOrgID, eventProjectID, spentCents, thresholdPercent int64
+	var eventType string
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT org_id, project_id, event_type,
+		        (payload->>'spent_cents')::bigint,
+		        (payload->>'threshold_percent')::bigint
+		 FROM notification_events WHERE id = $1`,
+		result.EventID,
+	).Scan(&eventOrgID, &eventProjectID, &eventType, &spentCents, &thresholdPercent))
+	require.Equal(t, orgB, eventOrgID)
+	require.Equal(t, projectB, eventProjectID)
+	require.Equal(t, EventProjectBudgetThreshold, eventType)
+	require.EqualValues(t, 1200, spentCents)
+	require.EqualValues(t, 100, thresholdPercent)
+
+	var globalAuditRows int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM audit_logs WHERE action LIKE 'budget_alert%'`,
+	).Scan(&globalAuditRows))
+	require.Zero(t, globalAuditRows, "budget occurrences belong to the notification event ledger, not a malformed global admin audit row")
+}
+
 func TestFreeze_MinAmount_Integration(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)

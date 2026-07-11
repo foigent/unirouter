@@ -99,6 +99,34 @@ interface RuntimeStatus {
     prometheus: RuntimeIntegration;
     grafana: RuntimeIntegration;
   };
+  effective_configuration?: {
+    version: string;
+    source: string;
+    routing_policy: {
+      version: string;
+      source: string;
+      max_retry_count: number;
+      circuit_breaker_threshold: number;
+      circuit_breaker_recover_seconds: number;
+      circuit_breaker_half_open_percent: number;
+      rate_limit_cooldown_seconds: number;
+      auth_failure_cooldown_seconds: number;
+      key_failure_threshold: number;
+    };
+    budget_alerts: {
+      version: string;
+      scope: string;
+      budget_source: string;
+      period_source: string;
+      evaluation_trigger: string;
+      event_ledger: string;
+      delivery_route_source: string;
+      event_type: string;
+      threshold_percent: number;
+      legacy_global_settings_active: boolean;
+      retired_global_setting_keys: string[];
+    };
+  };
   topology?: {
     scope: string;
     visibility: string;
@@ -254,6 +282,8 @@ export default function InternalStatusPage() {
   const canViewRuntime = canReadRuntimeStatus(role);
   const prometheusIntegration = runtimeData?.observability_integrations.prometheus;
   const grafanaIntegration = runtimeData?.observability_integrations.grafana;
+  const routingPolicy = runtimeData?.effective_configuration?.routing_policy;
+  const budgetAlerts = runtimeData?.effective_configuration?.budget_alerts;
 
   const load = () => {
     setLoading(true);
@@ -387,6 +417,90 @@ export default function InternalStatusPage() {
               icon={<IconServer />}
               tone={integrationTone(grafanaIntegration?.status)}
               meta={integrationMeta(grafanaIntegration)}
+            />
+          </div>
+        </Surface>
+      )}
+
+      {canViewRuntime && routingPolicy && (
+        <Surface title="有效路由策略" description="当前实例启动时实际采用的重试、熔断、半开探测与密钥冷却参数；版本和值同时写入路由轨迹。">
+          <div className="ur-kpi-grid">
+            <MetricTile
+              label="Provider 重试"
+              value={`${routingPolicy.max_retry_count} 次`}
+              icon={<IconRefresh />}
+              tone="blue"
+              meta={`首次调用之外 / ${routingPolicy.version}`}
+            />
+            <MetricTile
+              label="渠道熔断阈值"
+              value={`${routingPolicy.circuit_breaker_threshold} 次`}
+              icon={<IconAlertTriangle />}
+              tone="amber"
+              meta={`恢复等待 ${routingPolicy.circuit_breaker_recover_seconds} 秒`}
+            />
+            <MetricTile
+              label="半开探测流量"
+              value={`${routingPolicy.circuit_breaker_half_open_percent}%`}
+              icon={<IconServer />}
+              tone="blue"
+              meta="恢复等待结束后的候选流量比例"
+            />
+            <MetricTile
+              label="429 密钥冷却"
+              value={`${routingPolicy.rate_limit_cooldown_seconds} 秒`}
+              icon={<IconBell />}
+              tone="amber"
+              meta="Provider 限流后的暂停时间"
+            />
+            <MetricTile
+              label="鉴权失败冷却"
+              value={`${routingPolicy.auth_failure_cooldown_seconds} 秒`}
+              icon={<IconAlertTriangle />}
+              tone="red"
+              meta="Provider 401/403 后的暂停时间"
+            />
+            <MetricTile
+              label="密钥失效阈值"
+              value={`${routingPolicy.key_failure_threshold} 次`}
+              icon={<IconServer />}
+              tone="slate"
+              meta={routingPolicy.source}
+            />
+          </div>
+        </Surface>
+      )}
+
+      {canViewRuntime && budgetAlerts && (
+        <Surface title="有效预算告警合同" description="预算告警只按当前租户的项目统计；项目预算变更写管理审计，触发结果与投递写通知事件账本。旧的全局第一钱包配置已停用。">
+          <div className="ur-kpi-grid">
+            <MetricTile
+              label="告警范围"
+              value={budgetAlerts.scope === 'project' ? '项目级' : budgetAlerts.scope}
+              icon={<IconServer />}
+              tone="blue"
+              meta={`${budgetAlerts.budget_source} / ${budgetAlerts.period_source}`}
+            />
+            <MetricTile
+              label="触发阈值"
+              value={`${budgetAlerts.threshold_percent}%`}
+              icon={<IconAlertTriangle />}
+              tone="amber"
+              meta="项目当期已结算用量达到预算"
+            />
+            <MetricTile
+              label="事件与投递"
+              value="租户隔离"
+              icon={<IconBell />}
+              tone="green"
+              meta={`${budgetAlerts.event_ledger} / ${budgetAlerts.delivery_route_source}`}
+            />
+            <MetricTile
+              label="旧全局配置"
+              value={budgetAlerts.legacy_global_settings_active ? '仍在生效' : '已停用'}
+              icon={<IconServer />}
+              tone={budgetAlerts.legacy_global_settings_active ? 'red' : 'slate'}
+              meta={`${budgetAlerts.version} / ${budgetAlerts.evaluation_trigger}`}
             />
           </div>
         </Surface>

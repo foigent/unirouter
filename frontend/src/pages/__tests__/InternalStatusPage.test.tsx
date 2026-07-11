@@ -65,6 +65,34 @@ describe('InternalStatusPage', () => {
         prometheus: { status: 'connected', url: 'http://prometheus:9090', latency_ms: 3, scrape_status: 'up' },
         grafana: { status: 'misconfigured', url: 'http://grafana:3000', reason: 'auth_required' },
       },
+      effective_configuration: {
+        version: 'effective-config.v1',
+        source: 'startup_environment_and_schema_contract',
+        routing_policy: {
+          version: 'routing-config.v1',
+          source: 'startup_environment',
+          max_retry_count: 4,
+          circuit_breaker_threshold: 7,
+          circuit_breaker_recover_seconds: 90,
+          circuit_breaker_half_open_percent: 25,
+          rate_limit_cooldown_seconds: 45,
+          auth_failure_cooldown_seconds: 1800,
+          key_failure_threshold: 6,
+        },
+        budget_alerts: {
+          version: 'project-budget-alert.v1',
+          scope: 'project',
+          budget_source: 'projects.budget_cents',
+          period_source: 'projects.budget_period',
+          evaluation_trigger: 'post_settlement',
+          event_ledger: 'notification_events',
+          delivery_route_source: 'notification_webhooks',
+          event_type: 'project_budget.threshold',
+          threshold_percent: 100,
+          legacy_global_settings_active: false,
+          retired_global_setting_keys: ['budget_alert_webhook_url', 'budget_alert_threshold_cents', 'budget_cents'],
+        },
+      },
       topology: {
         scope: 'current_process',
         visibility: 'redacted',
@@ -106,6 +134,19 @@ describe('InternalStatusPage', () => {
     expect(screen.getByText('网络')).toBeTruthy();
     expect(screen.getByText('2/3')).toBeTruthy();
     expect(screen.getByText(/active 2\/3 \/ rx 1.0 MB \/ tx 2.0 MB/)).toBeTruthy();
+    expect(screen.getByText('有效路由策略')).toBeTruthy();
+    expect(screen.getByText('Provider 重试')).toBeTruthy();
+    expect(screen.getByText('4 次')).toBeTruthy();
+    expect(screen.getByText(/恢复等待 90 秒/)).toBeTruthy();
+    expect(screen.getByText('25%')).toBeTruthy();
+    expect(screen.getByText('429 密钥冷却')).toBeTruthy();
+    expect(screen.getByText('鉴权失败冷却')).toBeTruthy();
+    expect(screen.getByText(/startup_environment/)).toBeTruthy();
+    expect(screen.getByText('有效预算告警合同')).toBeTruthy();
+    expect(screen.getByText('项目级')).toBeTruthy();
+    expect(screen.getByText('100%')).toBeTruthy();
+    expect(screen.getByText('租户隔离')).toBeTruthy();
+    expect(screen.getByText('已停用')).toBeTruthy();
     expect(screen.getByText('受限拓扑')).toBeTruthy();
     expect(screen.getByText('service:uniroute')).toBeTruthy();
     expect(screen.getByText('网络暴露: not_observed')).toBeTruthy();

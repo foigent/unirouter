@@ -15,6 +15,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/uniroute/unirouter/internal/runtimeconfig"
 )
 
 const runtimeTrafficWindowMinutes = 5
@@ -22,13 +24,14 @@ const runtimeMonitoringProbeTimeout = 750 * time.Millisecond
 const prometheusUniRouterTargetQuery = `up{job="unirouter"}`
 
 type RuntimeStatusOptions struct {
-	Environment    string
-	DeploymentMode string
-	DeploymentRole string
-	Version        string
-	Commit         string
-	PrometheusURL  string
-	GrafanaURL     string
+	Environment     string
+	DeploymentMode  string
+	DeploymentRole  string
+	Version         string
+	Commit          string
+	PrometheusURL   string
+	GrafanaURL      string
+	EffectiveConfig runtimeconfig.Snapshot
 }
 
 type runtimeStatusResponse struct {
@@ -39,6 +42,7 @@ type runtimeStatusResponse struct {
 	CapacityHealth            runtimeCapacityHealth            `json:"capacity_health"`
 	ObservabilityIntegrations runtimeObservabilityIntegrations `json:"observability_integrations"`
 	Topology                  runtimeTopologyStatus            `json:"topology"`
+	EffectiveConfiguration    runtimeconfig.Snapshot           `json:"effective_configuration"`
 }
 
 type runtimeTopologyStatus struct {
@@ -209,6 +213,7 @@ func (h *Handler) RuntimeStatus(w http.ResponseWriter, r *http.Request) {
 		},
 		ObservabilityIntegrations: h.runtimeObservabilityIntegrations(r.Context()),
 		Topology:                  h.runtimeTopologyStatus(overallStatus, database, redis),
+		EffectiveConfiguration:    h.runtimeOptions.EffectiveConfig,
 	}
 
 	writeJSON(w, http.StatusOK, response)

@@ -31,6 +31,12 @@ func (h *Handler) ListSettings(w http.ResponseWriter, r *http.Request) {
 		item := map[string]interface{}{
 			"key": key, "value": json.RawMessage(value), "description": description, "updated_at": updatedAt,
 		}
+		if retired, ok := retiredGlobalSettingContract(key); ok {
+			item["retired"] = true
+			item["effective"] = false
+			item["replacement"] = retired.Replacement
+			item["retirement_reason"] = retired.Reason
+		}
 		if endpoint, reserved := dedicatedGlobalSettingEndpoint(key); reserved {
 			item["value"] = nil
 			item["redacted"] = true
@@ -60,6 +66,14 @@ func (h *Handler) UpdateSetting(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(key) > 100 {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "key is too long"})
+		return
+	}
+	if retired, ok := retiredGlobalSettingContract(key); ok {
+		writeJSON(w, http.StatusConflict, map[string]interface{}{
+			"error":             "Setting is retired and has no runtime effect",
+			"replacement":       retired.Replacement,
+			"retirement_reason": retired.Reason,
+		})
 		return
 	}
 	if endpoint, reserved := dedicatedGlobalSettingEndpoint(key); reserved {

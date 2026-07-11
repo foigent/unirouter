@@ -352,6 +352,41 @@ func TestLoad_RuntimeExposureEnvOverrides(t *testing.T) {
 	}
 }
 
+func TestLoad_RoutingPolicyEnvOverrides(t *testing.T) {
+	t.Setenv("JWT_SECRET", "jwt-secret")
+	t.Setenv("API_KEY_HASH_SECRET", "api-key-secret")
+	t.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+	t.Setenv("MAX_RETRY_COUNT", "4")
+	t.Setenv("CIRCUIT_BREAKER_THRESHOLD", "7")
+	t.Setenv("CIRCUIT_BREAKER_RECOVER_SECONDS", "90")
+	t.Setenv("CIRCUIT_BREAKER_HALF_OPEN_PERCENT", "25")
+	t.Setenv("KEY_COOLDOWN_SECONDS", "45")
+	t.Setenv("PROVIDER_AUTH_COOLDOWN_SECONDS", "1800")
+	t.Setenv("PROVIDER_KEY_FAILURE_THRESHOLD", "6")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load routing override: %v", err)
+	}
+	policy := cfg.RoutingPolicyConfig()
+	if policy.MaxRetryCount != 4 || policy.CircuitBreakerThreshold != 7 || policy.CircuitBreakerRecoverSeconds != 90 ||
+		policy.CircuitBreakerHalfOpenPct != 25 || policy.RateLimitCooldownSeconds != 45 ||
+		policy.AuthFailureCooldownSeconds != 1800 || policy.KeyFailureThreshold != 6 {
+		t.Fatalf("unexpected effective routing policy: %#v", policy)
+	}
+}
+
+func TestLoad_InvalidRoutingPolicyFailsClosed(t *testing.T) {
+	t.Setenv("JWT_SECRET", "jwt-secret")
+	t.Setenv("API_KEY_HASH_SECRET", "api-key-secret")
+	t.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+	t.Setenv("MAX_RETRY_COUNT", "11")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid routing policy to fail startup validation")
+	}
+}
+
 func TestLoad_Defaults(t *testing.T) {
 	// Clear all env vars to test defaults
 	envVars := []string{

@@ -462,7 +462,7 @@ paths:
     get:
       tags: [Admin]
       summary: Runtime environment, capacity, and external monitoring status
-      description: Returns runtime metadata, dependency/capacity health, traffic summary, and Prometheus/Grafana integration states such as connected, stale, misconfigured, unavailable, or not_configured.
+      description: Returns runtime metadata, dependency/capacity health, traffic summary, Prometheus/Grafana integration states, and effective-config.v1. The typed registry includes the versioned startup routing policy (retry, circuit, half-open probe, cooldown, and provider-key failure thresholds) plus the active project-scoped budget-alert contract. It contains no credential or webhook values; route-decision traces record the same configuration version and routing scalars.
       security:
         - bearerAuth: []
       responses:
@@ -653,13 +653,13 @@ paths:
   /api/v1/settings:
     x-unirouter-rbac:
       get: [platform_admin]
-    description: Deployment-wide settings. Dedicated license and sensitive-word values are redacted from this response.
+    description: Deployment-wide settings. Dedicated license and sensitive-word values are redacted. Retired global budget-alert keys are marked retired/effective=false with their project and notification API replacements; their historical values have no runtime effect.
     get: { $ref: "#/components/pathItems/List" }
 
   /api/v1/settings/{key}:
     x-unirouter-rbac:
       put: [platform_admin]
-    description: Deployment-wide setting update. license.* and sensitive_words must use their dedicated endpoints.
+    description: Deployment-wide setting update. license.* and sensitive_words must use their dedicated endpoints. Retired budget_alert_webhook_url, budget_alert_threshold_cents, and budget_cents keys return 409 and direct callers to project budgets and tenant-scoped notification webhooks.
     put:
       tags: [Admin]
       summary: Update setting
