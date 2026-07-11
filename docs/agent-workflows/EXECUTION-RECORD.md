@@ -3,8 +3,8 @@
 **Batch:** PRD6 Batch 0B P6-F37/P6-F38 Audit Isolation And Frontend CI Integrity
 **Owner:** Codex
 **Risk:** R4 multi-tenant audit confidentiality plus R2 evidence-backed planning
-**Status:** P6-F33/P6-F37/P6-F38 CI verified; PR #143 merge pending
-**Integration:** `codex/prd6-audit-tenant-operability`; deployment not claimed
+**Status:** P6-F33/P6-F37/P6-F38 merged and CI verified
+**Integration:** PR #143 squash merge `a1e0ad6`; deployment not claimed
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Scope
@@ -128,7 +128,9 @@ Focused P6-F37 results on `codex/prd6-audit-tenant-operability`:
   Build PASS; the required frontend log explicitly reports 25 files / 126 tests.
 - independent review reproduced the P6-F37 pre-fix cross-tenant leak on
   `7173c59`, found no bypass candidate, and found no P6-F38 gate weakening.
-- merge and post-merge main readback remain the next integration gates.
+- PR #143 was squash-merged as `a1e0ad6`; post-merge main CI run `29133690338`
+  passed Backend Tests, Frontend Build (including the new test step) and Docker
+  Build.
 
 Pre-change repository results on 2026-07-11:
 

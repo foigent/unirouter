@@ -32,7 +32,7 @@
 
 | ID | 发现 | 证据 | 影响 |
 |---|---|---|---|
-| AUD-01 | 基线 `ListAuditLogs` 只按用户传入的 `org_id` 过滤，没有自动绑定 JWT actor org；路由却允许 `org_admin`、`billing_admin` 访问。P6-F37 已加入 actor-org 约束，通过迁移后双租户 JWT 回归和 PR #143 required CI；merge 尚未完成。 | 基线 `/Users/m4/Desktop/projects/UniRouter/internal/admin/audit_handlers.go:18-42`；路由 `/Users/m4/Desktop/projects/UniRouter/cmd/uniroute/main.go:467`；证据 `/Users/m4/Desktop/projects/UniRouter/docs/ops/evidence/PRD6-B0B-P6F37-audit-log-tenant-isolation-local-20260711.md` | P0 跨租户审计数据暴露。
+| AUD-01 | 基线 `ListAuditLogs` 只按用户传入的 `org_id` 过滤，没有自动绑定 JWT actor org；路由却允许 `org_admin`、`billing_admin` 访问。P6-F37 已加入 actor-org 约束，通过迁移后双租户 JWT 回归、PR #143 required CI 和 post-merge main CI。 | 基线 `/Users/m4/Desktop/projects/UniRouter/internal/admin/audit_handlers.go:18-42`；路由 `/Users/m4/Desktop/projects/UniRouter/cmd/uniroute/main.go:467`；证据 `/Users/m4/Desktop/projects/UniRouter/docs/ops/evidence/PRD6-B0B-P6F37-audit-log-tenant-isolation-local-20260711.md` | P0 跨租户审计数据暴露；已在 `a1e0ad6` 修复。
 | AUD-02 | 后端已经返回 `before`、`after`、IP、User-Agent、`request_id`，但表格只展示通用 `detail`，这些调查字段没有进入 UI。 | `/Users/m4/Desktop/projects/UniRouter/internal/admin/audit_handlers.go:97-131`；`/Users/m4/Desktop/projects/UniRouter/frontend/src/pages/AuditLogsPage.tsx:62-80` | 出事后仍需查库，UI 不能完成闭环。
 | AUD-03 | 操作者显示为 `User #<id>`；组织、项目、目标也主要显示裸 ID；后端查询没有 join 用户名、组织名、项目名或对象快照。 | `/Users/m4/Desktop/projects/UniRouter/frontend/src/pages/AuditLogsPage.tsx:62-74`；`/Users/m4/Desktop/projects/UniRouter/internal/admin/audit_handlers.go:97-130` | 业务用户无法知道 “User #1 是谁”。
 | AUD-04 | 开始/结束时间是手填 RFC3339 文本框；每次输入都会改变 `filters` 并触发 `useEffect` 请求，同时页面仍保留“筛选”按钮。 | `/Users/m4/Desktop/projects/UniRouter/frontend/src/pages/AuditLogsPage.tsx:42-55`、`:91-107` | 非技术用户难用；输入中间态会产生无效请求和错误闪烁。
@@ -303,7 +303,7 @@ internal/gateway
 
 推荐默认处理：
 
-1. 当前 P6-F37/P6-F38 分支在 PR 与 required CI 完成前保留；
+1. P6-F37/P6-F38 已由 PR #143 合并，不需要再次 merge；当前 closeout 分支仅在本次文档 PR 完成前保留；
 2. 历史分支不参与运行时，也不会自动进入 `main`，因此不构成功能风险；
 3. 不用 `git branch --merged` 单独判断 squash-merge 是否完成，因为 squash 后原
    分支 commit 不是 `main` 的祖先；以 GitHub PR `MERGED` 状态和文件树差异为准；

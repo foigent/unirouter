@@ -71,8 +71,8 @@ Verification:
 
 **Risk:** R4 multi-tenant authorization and financial-state behavior.
 **Status:** P6-F16 and P6-F33 are CI verified by PR #140 and PR #142;
-P6-F37 and P6-F38 required-frontend-test enforcement are CI verified by PR #143;
-merge/post-merge readback remains. Later Batch 0B rows remain ordered and
+P6-F37 and P6-F38 required-frontend-test enforcement are merged and CI verified
+by PR #143 / `a1e0ad6`; post-merge run `29133690338` passed. Later Batch 0B rows remain ordered and
 independently gated.
 
 Split into independently reviewable security/financial PRs:

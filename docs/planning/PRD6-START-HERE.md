@@ -87,7 +87,7 @@ evidence.
   They were not known when D6-01 was accepted and were separately accepted by
   D6-08. P6-F33 is CI verified by PR #142 / `7173c59`; the other D6-08 rows
   remain unremediated. The separate P6-F37 audit-log tenant fix and P6-F38
-  frontend-test gate are CI verified by PR #143 with merge pending.
+  frontend-test gate are merged and CI verified by PR #143 / `a1e0ad6`.
 
 ## PRD5 Closure Guard
 
@@ -132,5 +132,5 @@ deployment, target mutation, paid shadow traffic, raw-payload expansion, a new
 X-Insight contract, semantic response cache, video execution, or an IAM rewrite.
 
 D6-08 authorizes P6-F32 through P6-F36 through separate reviewable PRs. P6-F33
-is CI verified. P6-F37/P6-F38 are CI verified by PR #143; merge and post-merge
-main readback are their next evidence gate.
+is CI verified. P6-F37/P6-F38 are merged and CI verified by PR #143; post-merge
+main run `29133690338` passed Backend Tests, Frontend Build and Docker Build.
