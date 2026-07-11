@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; Batch 0B active; P6-F32-P6-F39 merged and CI verified; P6-F17 local verified with PR/required CI pending
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; Batch 0B active; P6-F17/P6-F32-P6-F39 merged and CI verified
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -83,8 +83,9 @@ squash-merged as `c08db96167837ade685708c2ab204861a8ecc0ca`, and post-merge
 main run `29139534691` passed all required jobs; its historical branch is
 restored and retained. P6-F36 PR #148 final evidence head passed run
 `29140739477`, was squash-merged as `d83dbbc0ac7137bb44d2346adc5a25debde804e1`,
-and post-merge main run `29140850345` passed. P6-F17 Scheme A is locally
-verified with PR/required CI pending. Later Batch 0B rows remain ordered and
+and post-merge main run `29140850345` passed. P6-F17 Scheme A passed PR #149
+run `29152968280`, was merged as `c9402fa`, and post-merge main run
+`29153106336` passed. Later Batch 0B rows remain ordered and
 independently gated.
 
 Split into independently reviewable security/financial PRs:

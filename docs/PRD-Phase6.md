@@ -2,7 +2,7 @@
 
 > Version: 0.6
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; Batch 0B active; P6-F32-P6-F39 merged and CI verified; P6-F17 local verified with PR/required CI pending
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; Batch 0B active; P6-F17/P6-F32-P6-F39 merged and CI verified
 > Accepted implementation scope: P6-F03 through P6-F11, P6-F16 through P6-F21, and P6-F32 through P6-F39
 > Innovation gate: P6-F23 through P6-F31 remain proposed/deferred
 
@@ -195,7 +195,7 @@ These do not become UniRouter source-code gaps without new evidence.
 | P6-F01 | Recover expired half-open channels into bounded probe eligibility | P0 | Accepted Batch 0A |
 | P6-F02 | Atomically enforce the exact Redis RPM/RPS boundary | P0 | Accepted Batch 0A |
 | P6-F16 | Enforce organization ownership for every non-platform-admin key/user/project and project-owned model-set operation | P0 | Accepted urgent Batch 0B; CI verified by PR #140 |
-| P6-F17 | Separate operation, idempotency, trace/span, workflow and Agent identities | P0 | Accepted urgent Batch 0B; Local verified, PR/required CI pending |
+| P6-F17 | Separate operation, idempotency, trace/span, workflow and Agent identities | P0 | Accepted urgent Batch 0B; PR #149 merged and CI verified |
 | P6-F18 | Make reservation/finalization single-terminal, pool-safe and durable after billable output | P0 | Accepted urgent Batch 0B |
 | P6-F03 | Honor retryable/non-retryable error classification and preserve safe response semantics | P0 | Accepted Batch 0C |
 | P6-F04 | Give Embeddings Chat-equivalent routing/failover behavior | P0 | Accepted Batch 0C |
@@ -232,7 +232,7 @@ These do not become UniRouter source-code gaps without new evidence.
 | P6-F38 | Run the existing frontend test suite in required CI with stable, bounded interaction timing | P1 | Accepted safe remediation under PRD6 work rule 7; CI verified by PR #143 |
 | P6-F39 | Tenant-scope request-log list/detail/trace, usage analytics/internal status, dashboard usage-derived aggregates and runtime traffic | P0 | Accepted safe remediation under PRD6 work rule 7; merged and CI verified by PR #145 / `609385f` |
 
-P6-F17 local evidence is repository-only Scheme A evidence. `X-Request-ID` is
+P6-F17 repository/CI evidence is Scheme A evidence. `X-Request-ID` is
 now a server operation ID, caller correlation is separate, and Chat/Embeddings
 use a 24-hour tenant/API-key/payload-bound metadata receipt without response
 storage. Audit and Logs support separate client/operation/attempt readback.

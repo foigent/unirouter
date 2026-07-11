@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F16/P6-F32-P6-F39 merged and CI verified; P6-F17 Local verified with PR/required CI pending
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F16/P6-F17/P6-F32-P6-F39 merged and CI verified
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -161,11 +161,11 @@ main run `29140850345` passed all required jobs.
 P6-F37/P6-F38 are merged and CI verified by PR #143; post-merge main run
 `29133690338` passed Backend Tests, Frontend Build and Docker Build.
 
-P6-F17 is Local verified for the accepted metadata-only Scheme A: UniRouter
+P6-F17 is CI verified for the accepted metadata-only Scheme A: UniRouter
 generates the server operation ID, keeps client correlation separate, scopes
 idempotency by tenant/API key/payload, and records workflow/Agent/attempt
-identity. Its PR and required CI remain pending; it does not store or replay a
-model answer and does not claim P6-F18/P6-F20. The complete response-cache
+identity. PR #149 and post-merge main required CI passed; it does not store or
+replay a model answer and does not claim P6-F18/P6-F20. The complete response-cache
 Scheme B is a future required PRD7 Cache Service direction only.
 
 P6-F35 adds no global-settings UI. D6-09 defers target execution; a later

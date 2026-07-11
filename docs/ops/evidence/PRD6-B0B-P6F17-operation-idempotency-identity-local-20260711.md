@@ -1,7 +1,7 @@
-# PRD6 Batch 0B P6-F17 Operation And Idempotency Identity — Local Evidence
+# PRD6 Batch 0B P6-F17 Operation And Idempotency Identity — Local And CI Evidence
 
 > Date: 2026-07-11
-> Status: Local verified; PR and required CI pending
+> Status: CI verified and merged by PR #149 as `c9402fa`; post-merge main CI passed
 > Scope: repository-only P6-F17 implementation and verification
 > Authorization boundary: no deployment, target mutation, real/paid provider
 > request, credential change, response-body persistence, exporter, external
@@ -9,7 +9,7 @@
 
 ## Outcome
 
-P6-F17 is locally implemented for the accepted Scheme A boundary:
+P6-F17 is implemented and CI verified for the accepted Scheme A boundary:
 
 - every HTTP request receives a cryptographically random, caller-unoverrideable
   server operation ID exposed through response `X-Request-ID` and retained in
@@ -141,4 +141,8 @@ running the down script because it removes columns they query.
   to the future independently deployable Cache Service recorded in
   `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md`.
 - No target, production, multi-instance capacity or SaaS claim follows from
-  this local result. Required PR CI must pass before P6-F17 becomes CI verified.
+  this result. PR #149 implementation head
+  `c1db6142bb910e47843dc2282c2ff7e36477d26d` passed all required jobs in run
+  `29152968280`, was squash-merged as
+  `c9402fad323e8656493ff1bb29367a5dcf118331`, and post-merge main run
+  `29153106336` passed Backend Tests, Frontend Build and Docker Build.

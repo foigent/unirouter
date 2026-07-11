@@ -23,8 +23,10 @@
 > retained. P6-F36 PR #148 final evidence head passed required run
 > `29140739477`, was squash-merged as
 > `d83dbbc0ac7137bb44d2346adc5a25debde804e1`, and post-merge main run
-> `29140850345` passed. P6-F17 Scheme A operation/idempotency identity is Local
-> verified on `codex/prd6-p6f17-idempotency`; PR and required CI are pending.
+> `29140850345` passed. P6-F17 Scheme A operation/idempotency identity PR #149
+> passed required run `29152968280`, was squash-merged as
+> `c9402fad323e8656493ff1bb29367a5dcf118331`, and post-merge main run
+> `29153106336` passed all required jobs.
 > No target or production verification is claimed.
 > D6-01, D6-02, D6-08 and D6-09 were accepted by the User on 2026-07-11; advanced
 > innovation rows P6-F23 through P6-F31 remain proposed.
@@ -56,7 +58,7 @@
   `docs/ops/evidence/PRD6-B0B-P6F35-global-control-authority-local-20260711.md`.
 - P6-F36 model-governance tenant-isolation local evidence:
   `docs/ops/evidence/PRD6-B0B-P6F36-model-governance-tenant-isolation-local-20260711.md`.
-- P6-F17 operation/idempotency identity local evidence:
+- P6-F17 operation/idempotency identity local and CI evidence:
   `docs/ops/evidence/PRD6-B0B-P6F17-operation-idempotency-identity-local-20260711.md`.
 - Source-backed product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
@@ -102,7 +104,7 @@ accepted those rows with tenant roles confined to their JWT organization and
 platform-only global/multiplier authority. P6-F32/P6-F33/P6-F34/P6-F35/P6-F36/
 P6-F37/P6-F38/P6-F39 are merged and CI verified. P6-F36 PR #148 final required
 run `29140739477`, merge `d83dbbc` and post-merge run `29140850345` passed.
-P6-F17 is Local verified with PR/CI pending. No audit row is presented as a
+P6-F17 is merged and CI verified. No audit row is presented as a
 production incident, 100x proof, or implemented remediation before its exact
 evidence exists.
 
@@ -117,7 +119,7 @@ P6-F17 now supplies separate server/client correlation and tenant-scoped Audit
 readback for ambiguous responses; generic mutation replay and durable audit do
 not follow automatically.
 
-P6-F17 local verification covers server-owned operation IDs, separate client
+P6-F17 repository/CI verification covers server-owned operation IDs, separate client
 correlation, tenant/API-key/payload-bound metadata-only Chat/Embeddings
 idempotency, distinct workflow/Agent/attempt/upstream identities, tenant-scoped
 financial uniqueness, and Logs/Audit readback. It stores no prompt/answer and

@@ -46,7 +46,7 @@ PRD7 实现必须等 PRD6 闭环后再以独立 PRD7、acceptance row、分支�
 |------|-----------|------|---------------|--------|--------------|
 | 租户与管理员边界 | P6-F32—P6-F39 已合并并通过 required CI；保留回归和非目标环境证据边界 | 防止跨租户读写、财务影响和证据泄漏 | 历史数据归属、platform exception、迁移回滚 | P0 | 两租户签名 JWT 矩阵；跨租户无副作用；迁移 up/down（适用时）；CI |
 | 财务正确性 | P6-F18、P6-F06，以及钱包冻结/可用余额/结算显示语义一致 | 防止重复扣减、漏收、已输出但未结算 | 热钱包行、崩溃恢复、价格/倍率版本 | P0 | 并发单终态、pool-size barrier、故障恢复、账本守恒和 UI/API 一致性 |
-| 链路身份 | P6-F17 已完成 Local verified 的 Scheme A；PR/required CI pending | 同一业务调用可跨 retry/failover/billing/audit 追查，又不把外部 ID 当财务主键 | 非滚动迁移；metadata-only 不提供回答重放或 durable recovery | P0 | replay/409/collision 负例；100 子 Agent；retry/failover attempt 证据；迁移；required CI |
+| 链路身份 | P6-F17 Scheme A 已由 PR #149 合并并通过 implementation/post-merge required CI | 同一业务调用可跨 retry/failover/billing/audit 追查，又不把外部 ID 当财务主键 | 非滚动迁移；metadata-only 不提供回答重放或 durable recovery | P0 | replay/409/collision 负例；100 子 Agent；retry/failover attempt 证据；迁移；required CI |
 | 路由正确性 | P6-F03—P6-F05：错误分类、Embeddings parity、有效配置真值 | 避免错误重试、隐藏硬编码和端点可靠性不一致 | provider 差异、响应已开始后的 retry | P0 | provider 错误矩阵；有界 retry；Chat/Embeddings parity；配置版本证据 |
 | Agent 与分布式策略 | P6-F07、P6-F19、P6-F21：短期衰减能力令牌、祖先预算、共享限流和工作负载隔离 | 防止 Agent 爆炸导致鉴权/配额放大与长流饥饿 | Redis 故障策略、令牌刷新、撤销 SLO、基数 | P1 | 多副本并发/故障注入；祖先预算；不提权；公平性和 bounded-cardinality 指标 |
 | Routing Policy V1 | P6-F08 的静态优先级/权重、候选排除和 failover 解释 | 为自适应路由提供可信基础 | 必须先完成身份、错误分类和配置真值 | P1 | 确定性选择；候选/排除/回退原因；版本与回滚证据 |

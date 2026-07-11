@@ -75,9 +75,10 @@ jobs, and its historical branch is retained. P6-F35 PR #147 final head
 `29139534691` passed the same jobs; its historical branch is restored and
 retained. P6-F36 PR #148 final required run `29140739477` passed, was
 squash-merged as `d83dbbc0ac7137bb44d2346adc5a25debde804e1`, and post-merge
-main run `29140850345` passed. P6-F17 Scheme A is Local verified on
-`codex/prd6-p6f17-idempotency` with PR/required CI pending. It adds no response
-cache and makes no target or production claim.
+main run `29140850345` passed. P6-F17 Scheme A PR #149 passed required run
+`29152968280`, was squash-merged as `c9402fa`, and post-merge main run
+`29153106336` passed. It adds no response cache and makes no target or
+production claim.
 P6-F37 audit-log tenant isolation and P6-F38 frontend test
 enforcement are merged and CI verified by PR #143 / `a1e0ad6` under the safe
 remediation rule. The
@@ -166,8 +167,8 @@ run `29139408226`, was squash-merged as `c08db96167837ade685708c2ab204861a8ecc0c
 and post-merge main run `29139534691` passed all required jobs; its historical
 branch is restored and retained. P6-F36 PR #148 final required run
 `29140739477`, squash merge `d83dbbc` and post-merge main run `29140850345`
-passed. P6-F17 full local/race/migrated/frontend verification passed; its PR and
-required CI remain pending. PRD7/target evidence are explicitly later;
+passed. P6-F17 full local/race/migrated/frontend verification, PR #149 required
+CI, merge and post-merge main CI passed. PRD7/target evidence are explicitly later;
 historical branches remain retained. No new item is target or production
 verified. Any
 later P6-F35 target cutover must first drain old control-plane binaries and use
