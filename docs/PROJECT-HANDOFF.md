@@ -101,8 +101,10 @@ P6-F06 multiplier-specific PostgreSQL matrix is CI verified / closed by PR #160,
 merge `15ea8a2` and post-merge main run `29161527988`;
 it proves insufficient rejection without residue, one exact terminal receipt
 with zero uncovered cost under 32 callers, and full idempotent cancel/refund.
-P6-STREAM-002A is Local verified / PR pending for typed frame and timeout policy,
-serialized write/flush, single body ownership and partial-stream settlement. It
+P6-STREAM-002A is CI verified / closed by PR #162, merge `7737f8b` and
+post-merge main run `29168586124` for typed frame and timeout policy, serialized
+write/flush, single body ownership and partial-stream settlement. Its historical
+branch is restored. It
 does not close D6-10 dynamic reservation extension or P6-F11 semantic policy.
 The
 adaptive-trust, Digital Twin,

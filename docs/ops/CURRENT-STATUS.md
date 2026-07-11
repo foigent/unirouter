@@ -51,9 +51,11 @@
 > `29161370623`, was squash-merged as
 > `15ea8a27a0a514189c5af6f676af1e987f5c6763`, and post-merge main run
 > `29161527988` passed all three jobs. P6-F06 is CI verified / closed.
-> P6-STREAM-002A typed stream transport is Local verified on branch
-> `codex/prd6-stream-transport`; PR and required CI are pending. It is a
-> prerequisite slice, not P6-F11 completion.
+> P6-STREAM-002A typed stream transport passed PR #162 exact-head run
+> `29168427875`, was squash-merged as
+> `7737f8b2fc5a896e690d5316aa06016d71ee2e18`, and post-merge main run
+> `29168586124` passed all required jobs. Its historical branch is restored.
+> It is a CI-verified prerequisite slice, not P6-F11 completion.
 > No target or production verification is claimed.
 > D6-01, D6-02, D6-08 and D6-09 were accepted by the User on 2026-07-11.
 > D6-10 long-stream hard-budget Scheme A and D6-11 explicit five-minute Agent
@@ -129,8 +131,9 @@
   Local tests prove bounded 64-KiB-plus and 1-MiB frames, configured oversize
   rejection, serialized write/flush, ResponseController deadline passthrough,
   exact body close, partial-output settlement and non-success terminals. Runtime
-  Status/UI expose `stream-transport.v1`. PR/required CI, D6-10 dynamic
-  reservation extension and P6-F11 semantic interception remain.
+  Status/UI expose `stream-transport.v1`. PR #162 exact-head and post-merge main
+  Backend/Frontend/Docker CI passed. D6-10 dynamic reservation extension and
+  P6-F11 semantic interception remain.
 - Source-backed product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
 - PRD7 candidate-only split (not Accepted Scope):
@@ -144,7 +147,7 @@
 - Scope entry: `docs/planning/PRD6-START-HERE.md`.
 - Proposed PRD: `docs/PRD-Phase6.md`; accepted/proposed state is authoritative
   in `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`.
-- Accepted feature accounting after the local P6-STREAM-002A slice: 25 accepted
+- Accepted feature accounting after the CI-verified P6-STREAM-002A slice: 25 accepted
   rows, 17 CI verified / closed and 8 unclosed. P6-F11 is in progress through
   its transport prerequisite; `P6-F07`-`P6-F10` and `P6-F19`-`P6-F21` remain
   not started.

@@ -19,7 +19,7 @@
 | P6-CONTROL-AUTH-001 / P6-F35 | Platform-gate deployment settings, license and global sensitive words | Prevents tenant roles mutating deployment-wide controls or bypassing dedicated license/word paths | PR #147 final-head CI run `29139408226`, squash merge `c08db961`, and post-merge main run `29139534691` passed; historical branch retained |
 | P6-MODELGOV-TENANT-001 / P6-F36 | Tenant-scope registry, alias, catalog and organization model sets | Prevents cross-tenant model-policy disclosure/mutation | PR #148 final run `29140739477`, squash merge `d83dbbc`, and post-merge main run `29140850345` passed |
 | P6-IDEM-001 / P6-F17 | Separate server operation, client idempotency, trace/workflow/Agent/attempt and upstream identities | Prevents client-controlled financial collisions and makes retries/failover/admin evidence traceable | PR #149 implementation and post-merge main required CI passed; merged as `c9402fa`; no target claim |
-| P6-STREAM-002A | Typed long-stream transport safety | Removes confirmed 64-KiB frame, hidden timeout, concurrent write/flush, body-lifecycle and false-success terminal defects without adding semantic guardrails | Local verified / PR pending; evidence: `docs/ops/evidence/PRD6-B0C-P6STREAM002A-stream-transport-local-20260712.md` |
+| P6-STREAM-002A | Typed long-stream transport safety | Removes confirmed 64-KiB frame, hidden timeout, concurrent write/flush, body-lifecycle and false-success terminal defects without adding semantic guardrails | CI verified / closed by PR #162, merge `7737f8b` and post-merge main run `29168586124`; evidence: `docs/ops/evidence/PRD6-B0C-P6STREAM002A-stream-transport-local-20260712.md` |
 
 ## 2. Accepted MVP — Ordered Work Queue
 
@@ -40,7 +40,7 @@
 | P6-WORK-001 | Weighted workload admission | prevents long streams/media starving short work and replica-multiplied quotas | workload envelope, lease/fairness semantics | P1 |
 | P6-BILL-001 | Prompt-cache token usage and billing | accurate provider economics | versioned adapter/price sources | P1 |
 | P6-GUARD-001 | Guardrail Kernel | enterprise safety and PII controls | detector/failure/latency policy | P1 |
-| P6-STREAM-001 | Streaming interception and termination | limits unsafe live disclosure | P6-STREAM-002A transport prerequisite local verified; D6-10 dynamic reservation extension and buffer/latency/protocol policy contract remain | P1 |
+| P6-STREAM-001 | Streaming interception and termination | limits unsafe live disclosure | P6-STREAM-002A transport prerequisite CI verified; D6-10 dynamic reservation extension and buffer/latency/protocol policy contract remain | P1 |
 
 ## 3. D6-08 Accepted Administrator Integrity Queue
 

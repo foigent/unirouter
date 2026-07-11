@@ -1,10 +1,23 @@
 # PRD6 Batch 0C P6-STREAM-002A Stream Transport Evidence
 
 > Date: 2026-07-12
-> Evidence level: Local verified; PR and required CI pending
+> Evidence level: CI verified / closed
 > Base: `1103f4bd6afef9f55ad7a1fcb4be8bd78031ae44`
 > Branch: `codex/prd6-stream-transport`
 > Scope: transport prerequisite only; P6-F11 remains open
+
+## Integration Evidence
+
+- exact implementation head: `b02d1121ee7b70c1d246765dc9ff75394a321e3d`;
+- PR #162 required run `29168427875`: `Backend Tests`, `Frontend Build` and
+  `Docker Build` passed, including the dedicated stream transport race step;
+- squash merge: `7737f8b2fc5a896e690d5316aa06016d71ee2e18`;
+- post-merge main run `29168586124`: all three required jobs passed;
+- GitHub automatically deleted the source branch after merge; the historical
+  branch was restored to the exact implementation head.
+
+This promotes only P6-STREAM-002A to CI verified / closed. P6-F11 remains in
+progress and the non-claims below remain unchanged.
 
 ## 1. Confirmed Pre-Change Findings
 
@@ -145,6 +158,5 @@ This slice does not implement or claim:
   long-stream evidence, multi-replica capacity or production verification;
 - any X-Insight runtime dependency or contract change.
 
-P6-STREAM-002 can be promoted from Local to CI verified only after the exact PR
-head passes `Backend Tests`, `Frontend Build` and `Docker Build`. P6-F11 remains
-in progress until its separate policy/interception acceptance evidence closes.
+P6-STREAM-002A is CI verified / closed. P6-F11 remains in progress until its
+separate dynamic-budget and policy/interception acceptance evidence closes.
