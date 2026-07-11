@@ -22,3 +22,20 @@ func TestMainWiresExtractedAgentCapabilityRoutes(t *testing.T) {
 		}
 	}
 }
+
+func TestMainWiresAgentAncestorBudgetAroundGatewayBilling(t *testing.T) {
+	source, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mainSource := string(source)
+	for _, fragment := range []string{
+		"agentBudgetBilling := capbilling.New(billingSvc, agentCapabilityService)",
+		"gateway.NewRelay(postgres.Pool, redisClient.Client, router, agentBudgetBilling",
+		"billingSvc.RunSettlementRecoveryLoop",
+	} {
+		if !strings.Contains(mainSource, fragment) {
+			t.Fatalf("main.go Agent ancestor budget wiring missing %q", fragment)
+		}
+	}
+}

@@ -53,6 +53,12 @@ type AgentCapabilityPolicy struct {
 	RedisOutageMode            string `json:"redis_outage_mode"`
 	NormalExpiryMode           string `json:"normal_expiry_mode"`
 	RefreshConcurrency         string `json:"refresh_concurrency"`
+	RuntimeBudgetMode          string `json:"runtime_budget_mode"`
+	RuntimeRateMode            string `json:"runtime_rate_mode"`
+	RuntimeConcurrencyMode     string `json:"runtime_concurrency_mode"`
+	RuntimeRecoveryMode        string `json:"runtime_recovery_mode"`
+	MaxInvocationLeaseSeconds  int    `json:"max_invocation_lease_seconds"`
+	FinalizationGraceSeconds   int    `json:"finalization_grace_seconds"`
 }
 
 // BudgetAlertPolicy describes the one active budget-alert contract. Budgets
@@ -109,6 +115,12 @@ func New(routing routingpolicy.Config, stream streampolicy.Config) (Snapshot, er
 			RedisOutageMode:            "fail_closed",
 			NormalExpiryMode:           "deny_new_admission_keep_admitted_work",
 			RefreshConcurrency:         "server_convergent_and_client_singleflight",
+			RuntimeBudgetMode:          "reserve_estimate_on_every_ancestor_settle_actual",
+			RuntimeRateMode:            "exact_redis_sliding_window_on_every_ancestor",
+			RuntimeConcurrencyMode:     "expiring_redis_lease_on_every_ancestor",
+			RuntimeRecoveryMode:        "conservative_ttl_until_p6_f20_durable_terminal_hook",
+			MaxInvocationLeaseSeconds:  int(agentcap.MaxInvocationLeaseTTL.Seconds()),
+			FinalizationGraceSeconds:   int(agentcap.InvocationFinalizationGrace.Seconds()),
 		},
 		BudgetAlerts: BudgetAlertPolicy{
 			Version:                    BudgetAlertPolicyVersion,

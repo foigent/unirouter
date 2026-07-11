@@ -14,8 +14,10 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"github.com/uniroute/unirouter/internal/adapters"
+	"github.com/uniroute/unirouter/internal/agentcap"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/billing"
+	"github.com/uniroute/unirouter/internal/capbilling"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/errdocs"
 	"github.com/uniroute/unirouter/internal/filter"
@@ -301,6 +303,34 @@ func settledCosts(result *billing.SettleResult) (actual, charged int) {
 	return actual, charged
 }
 
+func writeAgentCapabilityRuntimeRejection(w http.ResponseWriter, errorCode string) bool {
+	switch errorCode {
+	case capbilling.ErrorCodeCostBudgetExceeded:
+		writeError(w, http.StatusForbidden, "permission_error", errorCode, "Agent workflow cost budget exhausted")
+	case capbilling.ErrorCodeTokenBudgetExceeded:
+		writeError(w, http.StatusForbidden, "permission_error", errorCode, "Agent workflow token budget exhausted")
+	case capbilling.ErrorCodeRPSLimitExceeded:
+		w.Header().Set("Retry-After", "1")
+		writeError(w, http.StatusTooManyRequests, "rate_limit_error", errorCode, "Agent request-per-second limit exceeded")
+	case capbilling.ErrorCodeRPMLimitExceeded:
+		w.Header().Set("Retry-After", "60")
+		writeError(w, http.StatusTooManyRequests, "rate_limit_error", errorCode, "Agent request-per-minute limit exceeded")
+	case capbilling.ErrorCodeConcurrencyExceeded:
+		w.Header().Set("Retry-After", "1")
+		writeError(w, http.StatusTooManyRequests, "rate_limit_error", errorCode, "Agent concurrent request limit exceeded")
+	case capbilling.ErrorCodeStateUnavailable:
+		w.Header().Set("Retry-After", "1")
+		writeError(w, http.StatusServiceUnavailable, "server_error", errorCode, "Agent runtime budget state is temporarily unavailable")
+	case capbilling.ErrorCodeRevoked:
+		writeError(w, http.StatusUnauthorized, "authentication_error", errorCode, "Agent workflow authority is no longer active")
+	case capbilling.ErrorCodeConflict:
+		writeError(w, http.StatusConflict, "agent_capability_error", errorCode, "Agent runtime reservation identity conflict")
+	default:
+		return false
+	}
+	return true
+}
+
 func (relay *Relay) settleBillingAttempts(req billing.SettleRequest, reqLog *logger.Logger) (billingSettleOutcome, error) {
 	var lastErr error
 	settleCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -469,6 +499,11 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		"estimated_tokens": estimatedTokens,
 	})
 	relay.recordPayloadPolicyDecision(ctx, requestID, req.Model, requestedModel, elapsedMilliseconds(requestStart))
+	providerTimeout := 300 * time.Second
+	if req.Stream {
+		providerTimeout = relay.currentStreamPolicy().MaxDuration()
+	}
+	ctx = agentcap.ContextWithInvocationLeaseTTL(ctx, providerTimeout)
 
 	// Freeze balance once (before trying any upstream)
 	freezeResult, err := relay.billing.Freeze(ctx, billing.FreezeRequest{
@@ -491,15 +526,16 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		relay.recordTraceEvent(ctx, requestID, "billing.freeze.rejected", "billing", "warning", req.Model, requestedModel, nil, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
 			"error_code": freezeResult.ErrorCode,
 		})
+		middleware.RecordBillingFreeze("error")
+		if writeAgentCapabilityRuntimeRejection(w, freezeResult.ErrorCode) {
+			return
+		}
 		switch freezeResult.ErrorCode {
 		case "insufficient_balance":
-			middleware.RecordBillingFreeze("error")
 			writeError(w, http.StatusPaymentRequired, "billing_error", "billing_error.insufficient_balance", "Insufficient balance")
 		case "already_frozen":
-			middleware.RecordBillingFreeze("error")
 			writeError(w, http.StatusConflict, "billing_error", "billing_error.idempotent_conflict", "Request already being processed")
 		default:
-			middleware.RecordBillingFreeze("error")
 			writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", freezeResult.ErrorCode)
 		}
 		return
@@ -521,10 +557,6 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	providerTimeout := 300 * time.Second
-	if req.Stream {
-		providerTimeout = relay.currentStreamPolicy().MaxDuration()
-	}
 	client := &http.Client{Timeout: providerTimeout}
 	adapterRegistry := adapters.DefaultRegistry()
 	routingPolicy := relay.router.Policy()
@@ -1493,6 +1525,8 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		"stream":           false,
 	})
 	relay.recordPayloadPolicyDecision(ctx, requestID, req.Model, requestedModel, elapsedMilliseconds(requestStart))
+	const providerTimeout = 120 * time.Second
+	ctx = agentcap.ContextWithInvocationLeaseTTL(ctx, providerTimeout)
 
 	freezeResult, err := relay.billing.Freeze(ctx, billing.FreezeRequest{
 		RequestID:       requestID,
@@ -1515,6 +1549,9 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		relay.recordTraceEvent(ctx, requestID, "billing.freeze.rejected", "billing", "warning", req.Model, requestedModel, nil, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
 			"error_code": freezeResult.ErrorCode,
 		})
+		if writeAgentCapabilityRuntimeRejection(w, freezeResult.ErrorCode) {
+			return
+		}
 		if freezeResult.ErrorCode == "insufficient_balance" {
 			writeError(w, http.StatusPaymentRequired, "billing_error", "billing_error.insufficient_balance", "Insufficient balance")
 		} else {
@@ -1539,7 +1576,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, 503, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceNoRoute, inputTokens, "")
 		return
 	}
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := &http.Client{Timeout: providerTimeout}
 	adapterRegistry := adapters.DefaultRegistry()
 	routingPolicy := relay.router.Policy()
 	providerAttempts := 0

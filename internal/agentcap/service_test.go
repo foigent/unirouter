@@ -198,7 +198,14 @@ func TestExchangeAuthenticateAndTamperResistance(t *testing.T) {
 		t.Fatalf("unexpected authenticated identity: %#v / %#v", authentication.Claims, authentication.APIKey)
 	}
 
-	tampered := response.CapabilityToken[:len(response.CapabilityToken)-1] + "x"
+	tamperIndex := len(TokenPrefix) + (len(response.CapabilityToken)-len(TokenPrefix))/2
+	replacement := byte('A')
+	if response.CapabilityToken[tamperIndex] == replacement {
+		replacement = 'B'
+	}
+	tamperedBytes := []byte(response.CapabilityToken)
+	tamperedBytes[tamperIndex] = replacement
+	tampered := string(tamperedBytes)
 	if _, err := service.Authenticate(context.Background(), tampered); !errors.Is(err, ErrInvalidToken) {
 		t.Fatalf("tampered token error = %v, want ErrInvalidToken", err)
 	}
@@ -409,5 +416,305 @@ func TestRootAuthorityChangeIsRejectedWithinCacheSLO(t *testing.T) {
 	}
 	if fixture.queryCount.Load() < 2 {
 		t.Fatalf("authority was not refreshed after cache SLO; queries=%d", fixture.queryCount.Load())
+	}
+}
+
+func TestInvocationBudgetsAggregateAcrossAncestorsAndSettleActualUsage(t *testing.T) {
+	base := time.Now().UTC().Truncate(time.Second)
+	fixture := defaultAuthorityFixture()
+	service, _, rdb := newTestService(t, fixture, newTestClock(base))
+	limits := rootLimits(1, 2, 2)
+	limits.CostBudgetCents = 100
+	limits.TokenBudget = 1_000
+	limits.RPMLimit = 100
+	limits.RPSLimit = 20
+	limits.ConcurrencyLimit = 10
+	root := exchangeRoot(t, service, fixture, limits)
+	rootAuth, err := service.Authenticate(context.Background(), root.CapabilityToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childLimits := limits
+	childLimits.MaxChildren = 0
+	childLimits.MaxDescendants = 0
+	childLimits.CostBudgetCents = 80
+	childLimits.TokenBudget = 800
+	first, err := service.Delegate(context.Background(), rootAuth.Claims, DelegateRequest{ChildAgentID: "agent:first", Limits: childLimits})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.Delegate(context.Background(), rootAuth.Claims, DelegateRequest{ChildAgentID: "agent:second", Limits: childLimits})
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstAuth, err := service.Authenticate(context.Background(), first.CapabilityToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondAuth, err := service.Authenticate(context.Background(), second.CapabilityToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reservation, err := service.ReserveInvocation(context.Background(), firstAuth.Claims, "req_first", 600, 60, time.Minute)
+	if err != nil {
+		t.Fatalf("reserve first child: %v", err)
+	}
+	if err := service.FinalizeInvocation(context.Background(), reservation, 500, 50); err != nil {
+		t.Fatalf("finalize first child: %v", err)
+	}
+	rootState, err := rdb.HMGet(context.Background(), agentKey(root.WorkflowID, rootAuth.Claims.AgentID),
+		"cost_reserved_cents", "cost_used_cents", "token_reserved", "token_used").Result()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(rootState) != "[0 50 0 500]" {
+		t.Fatalf("unexpected root usage after settlement: %v", rootState)
+	}
+
+	if _, err := service.ReserveInvocation(context.Background(), secondAuth.Claims, "req_cost_denied", 400, 60, time.Minute); !errors.Is(err, ErrCostBudgetExceeded) {
+		t.Fatalf("aggregate cost denial = %v, want ErrCostBudgetExceeded", err)
+	}
+	if _, err := service.ReserveInvocation(context.Background(), secondAuth.Claims, "req_token_denied", 600, 40, time.Minute); !errors.Is(err, ErrTokenBudgetExceeded) {
+		t.Fatalf("aggregate token denial = %v, want ErrTokenBudgetExceeded", err)
+	}
+	secondReservation, err := service.ReserveInvocation(context.Background(), secondAuth.Claims, "req_second", 400, 40, time.Minute)
+	if err != nil {
+		t.Fatalf("reserve remaining ancestor budget: %v", err)
+	}
+	if err := service.CancelInvocation(context.Background(), secondReservation); err != nil {
+		t.Fatalf("cancel second child: %v", err)
+	}
+	rootState, err = rdb.HMGet(context.Background(), agentKey(root.WorkflowID, rootAuth.Claims.AgentID),
+		"cost_reserved_cents", "cost_used_cents", "token_reserved", "token_used").Result()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(rootState) != "[0 50 0 500]" {
+		t.Fatalf("cancel must release reservations without refunding usage: %v", rootState)
+	}
+}
+
+func TestInvocationRateAttemptsAreNotRefundedAndConcurrencyIsReleased(t *testing.T) {
+	base := time.Now().UTC().Truncate(time.Second)
+	fixture := defaultAuthorityFixture()
+	service, mr, _ := newTestService(t, fixture, newTestClock(base))
+	mr.SetTime(base)
+	limits := rootLimits(0, 0, 0)
+	limits.RPMLimit = 100
+	limits.RPSLimit = 1
+	limits.ConcurrencyLimit = 1
+	root := exchangeRoot(t, service, fixture, limits)
+	authenticated, err := service.Authenticate(context.Background(), root.CapabilityToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := service.ReserveInvocation(context.Background(), authenticated.Claims, "req_rate_one", 10, 10, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	duplicate, err := service.ReserveInvocation(context.Background(), authenticated.Claims, "req_rate_one", 10, 10, time.Minute)
+	if err != nil || duplicate.OperationID != first.OperationID {
+		t.Fatalf("idempotent reservation = %#v / %v", duplicate, err)
+	}
+	if err := service.CancelInvocation(context.Background(), first); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ReserveInvocation(context.Background(), authenticated.Claims, "req_rate_two", 10, 10, time.Minute); !errors.Is(err, ErrRPSLimitExceeded) {
+		t.Fatalf("cancelled attempt must still count in RPS: %v", err)
+	}
+	mr.SetTime(base.Add(1100 * time.Millisecond))
+	second, err := service.ReserveInvocation(context.Background(), authenticated.Claims, "req_rate_two", 10, 10, time.Minute)
+	if err != nil {
+		t.Fatalf("reservation after RPS window: %v", err)
+	}
+	mr.SetTime(base.Add(3300 * time.Millisecond))
+	if _, err := service.ReserveInvocation(context.Background(), authenticated.Claims, "req_concurrency_three", 10, 10, time.Minute); !errors.Is(err, ErrConcurrencyExceeded) {
+		t.Fatalf("shared concurrency denial = %v, want ErrConcurrencyExceeded", err)
+	}
+	if err := service.CancelInvocation(context.Background(), second); err != nil {
+		t.Fatal(err)
+	}
+	mr.SetTime(base.Add(4400 * time.Millisecond))
+	if _, err := service.ReserveInvocation(context.Background(), authenticated.Claims, "req_concurrency_three", 10, 10, time.Minute); err != nil {
+		t.Fatalf("released concurrency must admit next request: %v", err)
+	}
+}
+
+func TestInvocationRPMAggregatesAfterRPSWindow(t *testing.T) {
+	base := time.Now().UTC().Truncate(time.Second)
+	fixture := defaultAuthorityFixture()
+	service, mr, _ := newTestService(t, fixture, newTestClock(base))
+	mr.SetTime(base)
+	limits := rootLimits(0, 0, 0)
+	limits.RPMLimit = 1
+	limits.RPSLimit = 20
+	limits.ConcurrencyLimit = 10
+	root := exchangeRoot(t, service, fixture, limits)
+	authenticated, err := service.Authenticate(context.Background(), root.CapabilityToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := service.ReserveInvocation(context.Background(), authenticated.Claims, "req_rpm_one", 10, 10, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.CancelInvocation(context.Background(), first); err != nil {
+		t.Fatal(err)
+	}
+	mr.SetTime(base.Add(2 * time.Second))
+	if _, err := service.ReserveInvocation(context.Background(), authenticated.Claims, "req_rpm_two", 10, 10, time.Minute); !errors.Is(err, ErrRPMLimitExceeded) {
+		t.Fatalf("RPM denial after RPS window = %v, want ErrRPMLimitExceeded", err)
+	}
+	mr.SetTime(base.Add(61 * time.Second))
+	if _, err := service.ReserveInvocation(context.Background(), authenticated.Claims, "req_rpm_two", 10, 10, time.Minute); err != nil {
+		t.Fatalf("reservation after RPM window: %v", err)
+	}
+}
+
+func TestInvocationConcurrencyIsReplicaInvariant(t *testing.T) {
+	base := time.Now().UTC().Truncate(time.Second)
+	fixture := defaultAuthorityFixture()
+	clock := newTestClock(base)
+	firstService, _, rdb := newTestService(t, fixture, clock)
+	secondService, err := NewServiceWithOptions(firstService.db, rdb, "agent-capability-test-root-secret", ServiceOptions{Now: clock.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	limits := rootLimits(0, 0, 0)
+	limits.RPMLimit = 100
+	limits.RPSLimit = 20
+	limits.ConcurrencyLimit = 3
+	root := exchangeRoot(t, firstService, fixture, limits)
+	authenticated, err := firstService.Authenticate(context.Background(), root.CapabilityToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var admitted atomic.Int64
+	var rejected atomic.Int64
+	var unexpected atomic.Value
+	var wait sync.WaitGroup
+	for index := 0; index < 20; index++ {
+		wait.Add(1)
+		go func(index int) {
+			defer wait.Done()
+			service := firstService
+			if index%2 == 1 {
+				service = secondService
+			}
+			_, reserveErr := service.ReserveInvocation(context.Background(), authenticated.Claims, fmt.Sprintf("req_replica_%02d", index), 10, 10, time.Minute)
+			switch {
+			case reserveErr == nil:
+				admitted.Add(1)
+			case errors.Is(reserveErr, ErrConcurrencyExceeded):
+				rejected.Add(1)
+			default:
+				unexpected.Store(reserveErr)
+			}
+		}(index)
+	}
+	wait.Wait()
+	if value := unexpected.Load(); value != nil {
+		t.Fatalf("unexpected replica reservation error: %v", value)
+	}
+	if admitted.Load() != 3 || rejected.Load() != 17 {
+		t.Fatalf("admitted=%d rejected=%d, want 3/17", admitted.Load(), rejected.Load())
+	}
+}
+
+func TestInvocationConcurrencyLeaseUsesRedisClock(t *testing.T) {
+	redisNow := time.Now().UTC().Truncate(time.Second)
+	fixture := defaultAuthorityFixture()
+	serviceClock := newTestClock(redisNow.Add(2 * time.Hour))
+	service, mr, rdb := newTestService(t, fixture, serviceClock)
+	mr.SetTime(redisNow)
+	limits := rootLimits(0, 0, 0)
+	root := exchangeRoot(t, service, fixture, limits)
+	authenticated, err := service.Authenticate(context.Background(), root.CapabilityToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reservation, err := service.ReserveInvocation(context.Background(), authenticated.Claims, "req_redis_clock", 10, 10, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, err := rdb.ZScore(context.Background(), invocationConcurrencyKey(root.WorkflowID, authenticated.Claims.AgentID), invocationOperationDigest(reservation.OperationID)).Result()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := float64(redisNow.Add(time.Minute + InvocationFinalizationGrace).UnixMilli())
+	if score != want {
+		t.Fatalf("concurrency lease score=%.0f want Redis TIME based %.0f", score, want)
+	}
+}
+
+func TestInvocationTerminalStateIsBoundToTheReservedLineage(t *testing.T) {
+	base := time.Now().UTC().Truncate(time.Second)
+	fixture := defaultAuthorityFixture()
+	service, _, _ := newTestService(t, fixture, newTestClock(base))
+	root := exchangeRoot(t, service, fixture, rootLimits(1, 1, 1))
+	rootAuth, err := service.Authenticate(context.Background(), root.CapabilityToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childLimits := rootLimits(1, 0, 0)
+	child, err := service.Delegate(context.Background(), rootAuth.Claims, DelegateRequest{ChildAgentID: "agent:lineage-child", Limits: childLimits})
+	if err != nil {
+		t.Fatal(err)
+	}
+	childAuth, err := service.Authenticate(context.Background(), child.CapabilityToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reservation, err := service.ReserveInvocation(context.Background(), childAuth.Claims, "req_lineage_bound", 10, 10, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tampered := *reservation
+	tampered.Lineage = []string{reservation.AgentID}
+	if err := service.FinalizeInvocation(context.Background(), &tampered, 5, 5); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("tampered lineage finalization = %v, want ErrUnavailable", err)
+	}
+	if err := service.CancelInvocation(context.Background(), reservation); err != nil {
+		t.Fatalf("original lineage cancellation: %v", err)
+	}
+}
+
+func TestInvocationActualOverrunExhaustsFutureAdmissionsAndRedisFailsClosed(t *testing.T) {
+	base := time.Now().UTC().Truncate(time.Second)
+	fixture := defaultAuthorityFixture()
+	service, mr, _ := newTestService(t, fixture, newTestClock(base))
+	limits := rootLimits(0, 0, 0)
+	limits.CostBudgetCents = 100
+	limits.TokenBudget = 1_000
+	limits.RPMLimit = 100
+	limits.RPSLimit = 20
+	limits.ConcurrencyLimit = 10
+	root := exchangeRoot(t, service, fixture, limits)
+	authenticated, err := service.Authenticate(context.Background(), root.CapabilityToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reservation, err := service.ReserveInvocation(context.Background(), authenticated.Claims, "req_overrun", 100, 80, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.FinalizeInvocation(context.Background(), reservation, 100, 120); err != nil {
+		t.Fatalf("finalize actual overrun: %v", err)
+	}
+	if _, err := service.ReserveInvocation(context.Background(), authenticated.Claims, "req_after_overrun", 1, 1, time.Minute); !errors.Is(err, ErrCostBudgetExceeded) {
+		t.Fatalf("future request after actual overrun = %v, want ErrCostBudgetExceeded", err)
+	}
+
+	secondRoot := exchangeRoot(t, service, fixture, limits)
+	secondAuth, err := service.Authenticate(context.Background(), secondRoot.CapabilityToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mr.Close()
+	if _, err := service.ReserveInvocation(context.Background(), secondAuth.Claims, "req_redis_down", 1, 1, time.Minute); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("Redis outage admission = %v, want ErrUnavailable", err)
 	}
 }

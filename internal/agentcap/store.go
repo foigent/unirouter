@@ -41,7 +41,18 @@ redis.call("HSET", KEYS[2],
     "max_children", ARGV[8],
     "max_descendants", ARGV[6],
     "children_count", 0,
-    "descendant_count", 0)
+    "descendant_count", 0,
+    "cost_limit_cents", ARGV[9],
+    "cost_reserved_cents", 0,
+    "cost_used_cents", 0,
+    "cost_exhausted", 0,
+    "token_limit", ARGV[10],
+    "token_reserved", 0,
+    "token_used", 0,
+    "token_exhausted", 0,
+    "rpm_limit", ARGV[11],
+    "rps_limit", ARGV[12],
+    "concurrency_limit", ARGV[13])
 redis.call("EXPIREAT", KEYS[2], ARGV[7])
 return 0
 `)
@@ -94,7 +105,18 @@ redis.call("HSET", child,
     "max_children", ARGV[7],
     "max_descendants", ARGV[8],
     "children_count", 0,
-    "descendant_count", 0)
+    "descendant_count", 0,
+    "cost_limit_cents", ARGV[10],
+    "cost_reserved_cents", 0,
+    "cost_used_cents", 0,
+    "cost_exhausted", 0,
+    "token_limit", ARGV[11],
+    "token_reserved", 0,
+    "token_used", 0,
+    "token_exhausted", 0,
+    "rpm_limit", ARGV[12],
+    "rps_limit", ARGV[13],
+    "concurrency_limit", ARGV[14])
 redis.call("EXPIREAT", child, ARGV[9])
 return 0
 `)
@@ -138,6 +160,11 @@ func (s *Service) registerWorkflow(ctx context.Context, claims *Claims) error {
 		claims.Limits.MaxDescendants,
 		stateExpiresAt,
 		claims.Limits.MaxChildren,
+		claims.Limits.CostBudgetCents,
+		claims.Limits.TokenBudget,
+		claims.Limits.RPMLimit,
+		claims.Limits.RPSLimit,
+		claims.Limits.ConcurrencyLimit,
 	).Int64()
 	if err != nil {
 		return fmt.Errorf("%w: register workflow: %v", ErrUnavailable, err)
@@ -166,6 +193,11 @@ func (s *Service) registerChild(ctx context.Context, parent, child *Claims) erro
 		child.Limits.MaxChildren,
 		child.Limits.MaxDescendants,
 		stateExpiresAt,
+		child.Limits.CostBudgetCents,
+		child.Limits.TokenBudget,
+		child.Limits.RPMLimit,
+		child.Limits.RPSLimit,
+		child.Limits.ConcurrencyLimit,
 	).Int64()
 	if err != nil {
 		return fmt.Errorf("%w: register child Agent: %v", ErrUnavailable, err)

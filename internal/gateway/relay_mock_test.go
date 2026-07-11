@@ -15,8 +15,10 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/uniroute/unirouter/internal/adapters"
+	"github.com/uniroute/unirouter/internal/agentcap"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/billing"
+	"github.com/uniroute/unirouter/internal/capbilling"
 	"github.com/uniroute/unirouter/internal/filter"
 	"github.com/uniroute/unirouter/internal/logger"
 	"github.com/uniroute/unirouter/internal/metering"
@@ -1084,6 +1086,51 @@ func TestHandleChatCompletion_NoModel(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
 	}
+}
+
+func TestGatewayPropagatesTransportLifetimeToAgentConcurrencyLease(t *testing.T) {
+	t.Run("stream chat", func(t *testing.T) {
+		var captured time.Duration
+		relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
+			freezeFn: func(ctx context.Context, _ billing.FreezeRequest) (*billing.FreezeResult, error) {
+				captured = agentcap.InvocationLeaseTTLFromContext(ctx)
+				return &billing.FreezeResult{Success: false, ErrorCode: capbilling.ErrorCodeCostBudgetExceeded}, nil
+			},
+		})
+		policy := relay.currentStreamPolicy()
+		policy.MaxDurationSeconds = 15 * 60
+		if err := relay.SetStreamPolicy(policy); err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}],"stream":true}`))
+		ctx := context.WithValue(req.Context(), middleware.CtxOrgID, int64(1))
+		ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(1))
+		ctx = context.WithValue(ctx, middleware.CtxRequestID, "req-stream-lease")
+		recorder := httptest.NewRecorder()
+		relay.HandleChatCompletion(recorder, req.WithContext(ctx))
+		if recorder.Code != http.StatusForbidden || captured != 15*time.Minute {
+			t.Fatalf("status=%d lease=%s, want 403/15m", recorder.Code, captured)
+		}
+	})
+
+	t.Run("embeddings", func(t *testing.T) {
+		var captured time.Duration
+		relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
+			freezeFn: func(ctx context.Context, _ billing.FreezeRequest) (*billing.FreezeResult, error) {
+				captured = agentcap.InvocationLeaseTTLFromContext(ctx)
+				return &billing.FreezeResult{Success: false, ErrorCode: capbilling.ErrorCodeCostBudgetExceeded}, nil
+			},
+		})
+		req := httptest.NewRequest("POST", "/v1/embeddings", strings.NewReader(`{"model":"text-embedding-3-small","input":"hello"}`))
+		ctx := context.WithValue(req.Context(), middleware.CtxOrgID, int64(1))
+		ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(1))
+		ctx = context.WithValue(ctx, middleware.CtxRequestID, "req-embedding-lease")
+		recorder := httptest.NewRecorder()
+		relay.HandleEmbeddings(recorder, req.WithContext(ctx))
+		if recorder.Code != http.StatusForbidden || captured != 120*time.Second {
+			t.Fatalf("status=%d lease=%s, want 403/120s", recorder.Code, captured)
+		}
+	})
 }
 
 func TestHandleChatCompletion_NoMessages(t *testing.T) {

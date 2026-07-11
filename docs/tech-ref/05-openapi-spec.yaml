@@ -127,6 +127,8 @@ paths:
           $ref: "#/components/responses/Error"
         "502":
           $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
 
   /v1/embeddings:
     post:
@@ -174,9 +176,15 @@ paths:
           $ref: "#/components/responses/Error"
         "402":
           $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
         "409":
           $ref: "#/components/responses/IdempotencyConflict"
+        "429":
+          $ref: "#/components/responses/Error"
         "502":
+          $ref: "#/components/responses/Error"
+        "503":
           $ref: "#/components/responses/Error"
 
   /v1/models:
@@ -877,7 +885,7 @@ components:
     gatewayKey:
       type: http
       scheme: bearer
-      description: UniRouter API key or a signed urc_ Agent capability whose endpoint scope includes the requested model API.
+      description: UniRouter API key or a signed urc_ Agent capability whose endpoint scope includes the requested model API. Capability calls reserve cost, tokens, rolling rate and concurrency on every signed ancestor before upstream dispatch.
     gatewayRootKey:
       type: http
       scheme: bearer
@@ -1101,11 +1109,11 @@ components:
         max_depth: { type: integer, minimum: 0, maximum: 16 }
         max_children: { type: integer, minimum: 0, maximum: 10000 }
         max_descendants: { type: integer, minimum: 0, maximum: 10000 }
-        cost_budget_cents: { type: integer, format: int64, minimum: 1 }
-        token_budget: { type: integer, format: int64, minimum: 1 }
-        rpm_limit: { type: integer, minimum: 1 }
-        rps_limit: { type: integer, minimum: 1 }
-        concurrency_limit: { type: integer, minimum: 1 }
+        cost_budget_cents: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991, description: Shared subtree cost ceiling; estimated cost is reserved on this Agent and every ancestor, then replaced with actual settled cost. }
+        token_budget: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991, description: Shared subtree token ceiling; estimated tokens are reserved on every ancestor and replaced with actual settled tokens. }
+        rpm_limit: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991, description: Exact rolling one-minute aggregate admission limit for this Agent subtree. }
+        rps_limit: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991, description: Exact rolling one-second aggregate admission limit for this Agent subtree. }
+        concurrency_limit: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991, description: Shared in-flight request limit for this Agent subtree, enforced with an expiring Redis lease. }
         allowed_models:
           type: array
           minItems: 1

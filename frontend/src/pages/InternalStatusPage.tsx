@@ -137,6 +137,12 @@ interface RuntimeStatus {
       redis_outage_mode: string;
       normal_expiry_mode: string;
       refresh_concurrency: string;
+      runtime_budget_mode: string;
+      runtime_rate_mode: string;
+      runtime_concurrency_mode: string;
+      runtime_recovery_mode: string;
+      max_invocation_lease_seconds: number;
+      finalization_grace_seconds: number;
     };
     budget_alerts: {
       version: string;
@@ -563,6 +569,20 @@ export default function InternalStatusPage() {
               icon={<IconServer />}
               tone="slate"
               meta={`${agentCapability.version} / 深度 ≤ ${agentCapability.max_depth}`}
+            />
+            <MetricTile
+              label="祖先预算"
+              value="共享执行"
+              icon={<IconServer />}
+              tone="green"
+              meta="每层预留成本与 Token，结算后写入实际用量"
+            />
+            <MetricTile
+              label="子树速率 / 并发"
+              value="Redis 共享"
+              icon={<IconRefresh />}
+              tone="blue"
+              meta={`每层精确窗口 + 到期租约 / 终态缓冲 ${agentCapability.finalization_grace_seconds} 秒`}
             />
           </div>
         </Surface>
