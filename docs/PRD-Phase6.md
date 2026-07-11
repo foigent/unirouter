@@ -1,9 +1,9 @@
 # UniRouter PRD6: Reliable MaaS Policy And Safety Plane
 
-> Version: 0.3
+> Version: 0.4
 > Date: 2026-07-11
-> Status: D6-01/D6-02 accepted; Batch 0B execution active
-> Accepted implementation scope: P6-F03 through P6-F11 and P6-F16 through P6-F21
+> Status: D6-01/D6-02/D6-08 accepted; Batch 0B execution active
+> Accepted implementation scope: P6-F03 through P6-F11, P6-F16 through P6-F21, and P6-F32 through P6-F36
 > Innovation gate: P6-F23 through P6-F31 remain proposed/deferred
 
 ## 1. Outcome
@@ -223,11 +223,11 @@ These do not become UniRouter source-code gaps without new evidence.
 | P6-F29 | Feed approved failure cases to an external model-lifecycle workflow | P3 | Deferred; no automatic raw-case training or promotion |
 | P6-F30 | Add a multimodal provenance passport | P3 | Deferred pending media-roadmap decision |
 | P6-F31 | Add semantic collusion/cascade risk analysis | P3 | Research candidate; shadow only until separately accepted |
-| P6-F32 | Tenant-scope wallet, grant, transaction and reconciliation administration | P0 | New confirmed integrity input; separate decision |
-| P6-F33 | Tenant-scope notification evidence and webhook sinks | P0 | New confirmed integrity input; separate decision |
-| P6-F34 | Establish global-price and organization-multiplier mutation authority | P0 | New confirmed input; role decision required |
-| P6-F35 | Restrict deployment settings, license material and global sensitive words to platform authority | P0 | New confirmed input; role decision required |
-| P6-F36 | Enforce organization ownership across registry, alias, catalog and organization model-set endpoints | P1 | New confirmed security input; separate decision |
+| P6-F32 | Tenant-scope wallet, grant, transaction and reconciliation administration | P0 | Accepted by D6-08; not started |
+| P6-F33 | Tenant-scope notification evidence and webhook sinks | P0 | Accepted by D6-08; Local verified, CI pending |
+| P6-F34 | Restrict global base-price and organization-multiplier mutation to platform authority | P0 | Accepted by D6-08; not started |
+| P6-F35 | Restrict deployment settings, license material and global sensitive words to platform authority | P0 | Accepted by D6-08; not started |
+| P6-F36 | Enforce organization ownership across registry, alias, catalog and organization model-set endpoints | P1 | Accepted by D6-08; not started |
 
 ## 6. Safety And Authorization Boundaries
 

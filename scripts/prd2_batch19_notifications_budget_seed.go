@@ -195,8 +195,8 @@ func createBatch19Project(ctx context.Context, q queryer, orgID, adminID int64) 
 func createBatch19Webhook(ctx context.Context, q queryer, orgID, projectID int64, webhookURL string) (int64, error) {
 	var id int64
 	err := q.QueryRow(ctx,
-		`INSERT INTO notification_webhooks (org_id, project_id, name, url, event_types, enabled, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, '["project_budget.threshold"]'::jsonb, TRUE, NOW(), NOW())
+		`INSERT INTO notification_webhooks (org_id, project_id, name, url, event_types, enabled, scope_verified, scope_write_generation, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, '["project_budget.threshold"]'::jsonb, TRUE, TRUE, 1, NOW(), NOW())
 		 RETURNING id`,
 		orgID, projectID, batch19WebhookName, webhookURL,
 	).Scan(&id)

@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02 accepted; Batch 0B active
+> Status: D6-01/D6-02/D6-08 accepted; Batch 0B active
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -93,10 +93,12 @@ up/down, pool-size barriers, 100-way terminal races, process-kill recovery, and
 wallet/ledger invariants. No production exploit or target mutation is required.
 
 The follow-up administrator-surface audit confirmed P6-F32 through P6-F36.
-These are urgent inputs, not part of the original D6-01 grant. If accepted, keep
-notification, finance, pricing authority, global control-plane authority and
-organization-level model governance in separate reviewable PRs rather than
-expanding P6-F16 after review.
+D6-08 accepted them with platform-only global authority, tenant roles confined
+to their JWT organization, and organization multipliers restricted to
+`platform_admin`. Keep notification, finance, pricing authority, global
+control-plane authority and organization-level model governance in separate
+reviewable PRs rather than expanding P6-F16 after review. P6-F33 is the first
+such PR and is Local verified; required CI remains its promotion gate.
 
 ### Batch 0C — Retry, Endpoint Parity, Config And Billing Truth
 

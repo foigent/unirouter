@@ -11,7 +11,7 @@
 | Config | `internal/config/config.go` | Environment config and validation, including `JWT_SECRET`, `API_KEY_HASH_SECRET`, `ENCRYPTION_KEY`, optional `LICENSE_PUBLIC_KEY`, PRD4 trace event sampling/retention config, and Runtime Status metadata/Prometheus/Grafana URLs |
 | Database | `internal/db/postgres.go` | pgx pool setup and health |
 | Redis | `internal/redisx/redis.go` | Redis setup, health, wallet cache helpers |
-| Migrations | `migrations/*.sql` | Base schema plus wallet/schema/PRD alignment migrations, including PRD4 API key owner usage attribution in `000016`, request trace events in `000017`, PRD5 structural evidence fields in `000018`, and PRD5 Data Exchange Control ledger in `000019` |
+| Migrations | `migrations/*.sql` | Base schema plus wallet/schema/PRD alignment migrations, including PRD4 API key owner usage attribution in `000016`, request trace events in `000017`, PRD5 structural evidence fields in `000018`, PRD5 Data Exchange Control ledger in `000019`, and PRD6 historical Webhook scope quarantine in `000020` |
 
 ## Backend Packages
 

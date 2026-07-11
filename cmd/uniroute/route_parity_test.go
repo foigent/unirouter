@@ -93,6 +93,7 @@ func TestAdminRoutesRegisteredForFrontendClient(t *testing.T) {
 		"GET /api/v1/notification-webhooks",
 		"POST /api/v1/notification-webhooks",
 		"PUT /api/v1/notification-webhooks/{id}",
+		"POST /api/v1/notification-webhooks/{id}/verify-scope",
 		"GET /api/v1/audit-logs",
 		"GET /api/v1/data-exchange/items",
 		"POST /api/v1/data-exchange/items",

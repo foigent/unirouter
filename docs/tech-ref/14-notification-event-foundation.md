@@ -111,8 +111,23 @@ The admin API exposes:
 - `GET /api/v1/notification-webhooks`
 - `POST /api/v1/notification-webhooks`
 - `PUT /api/v1/notification-webhooks/{id}`
+- `POST /api/v1/notification-webhooks/{id}/verify-scope`
 
 Project-scoped roles must provide a readable project id for event/delivery visibility. Webhook writes require project write permission when scoped to a project.
+Rows created before migration `000020` are retained but excluded from new and
+retry delivery until an authorized actor reviews the stored organization,
+project and URL and explicitly verifies the scope. New Webhooks are verified at
+creation after the same ownership checks. Verification is audited and does not
+delete or silently rewrite an existing route. Every edit re-quarantines the
+route; confirmation is bound to the displayed version and commits atomically
+with its audit record. Pre-migration failed deliveries are retained but never
+automatically replayed after route confirmation.
+
+Migration `000020` also rejects Webhook writes from older binaries and makes its
+down path a delivery lockdown. Older read handlers still lack tenant-aware SQL,
+so deployment must drain/block the old notification control plane before the
+new notification UI is exposed; this is not an ordinary mixed-version rolling
+control-plane migration.
 
 ## Frontend
 
@@ -120,7 +135,9 @@ Batch 19 adds a Notification Center page at `/notifications` for admin/billing u
 
 - Events tab: event type, severity, delivery state, resource, message, and time.
 - Deliveries tab: webhook name, status, attempts, response status, next retry, error, and update time.
-- Webhook tab: route URL, scoped project, event types, enabled state, and create/edit actions.
+- Webhook tab: route URL, scoped project, event types, enabled state, scope
+  verification state, create/edit actions, and explicit re-verification for
+  quarantined historical routes.
 
 The topbar notification button routes to `/notifications`.
 

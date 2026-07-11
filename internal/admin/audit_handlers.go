@@ -183,6 +183,16 @@ type auditMeta struct {
 }
 
 func (h *Handler) recordAuditEntry(ctx context.Context, action, resource, resourceID string, detail map[string]interface{}, meta auditMeta) {
+	if err := insertAuditEntry(ctx, h.db, action, resource, resourceID, detail, meta); err != nil {
+		log.Printf("audit log failed: %s %s/%s: %v", action, resource, resourceID, err)
+	}
+}
+
+type auditExecer interface {
+	Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error)
+}
+
+func insertAuditEntry(ctx context.Context, execer auditExecer, action, resource, resourceID string, detail map[string]interface{}, meta auditMeta) error {
 	detailJSON := marshalAuditJSON(detail)
 	beforeJSON := "{}"
 	afterJSON := "{}"
@@ -200,13 +210,11 @@ func (h *Handler) recordAuditEntry(ctx context.Context, action, resource, resour
 		projectIDArg = meta.ProjectID
 	}
 	source := normalizeAuditSource(meta.Source)
-	_, err := h.db.Exec(ctx,
+	_, err := execer.Exec(ctx,
 		`INSERT INTO audit_logs (org_id, user_id, action, resource, resource_id, detail, ip, user_agent, request_id, source, project_id, before_state, after_state, created_at)
 		 VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, NOW())`,
 		meta.OrgID, userID, action, resource, resourceID, detailJSON, meta.IP, meta.UserAgent, meta.RequestID, source, projectIDArg, beforeJSON, afterJSON)
-	if err != nil {
-		log.Printf("audit log failed: %s %s/%s: %v", action, resource, resourceID, err)
-	}
+	return err
 }
 
 func marshalAuditJSON(value interface{}) string {

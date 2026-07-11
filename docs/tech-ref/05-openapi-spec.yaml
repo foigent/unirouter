@@ -506,6 +506,9 @@ paths:
   /api/v1/notification-webhooks/{id}:
     put: { $ref: "#/components/pathItems/UpdateById" }
 
+  /api/v1/notification-webhooks/{id}/verify-scope:
+    post: { $ref: "#/components/pathItems/UpdateById" }
+
   /api/v1/audit-logs:
     get: { $ref: "#/components/pathItems/List" }
 

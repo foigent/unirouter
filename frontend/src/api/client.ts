@@ -361,6 +361,11 @@ export const api = {
     request('/notification-webhooks', { method: 'POST', body: JSON.stringify(data) }),
   updateNotificationWebhook: (id: number, data: any) =>
     request(`/notification-webhooks/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  verifyNotificationWebhookScope: (id: number, expectedUpdatedAt: string) =>
+    request(`/notification-webhooks/${id}/verify-scope`, {
+      method: 'POST',
+      body: JSON.stringify({ expected_updated_at: expectedUpdatedAt }),
+    }),
 
   // Generic request
   request,

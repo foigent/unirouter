@@ -254,6 +254,42 @@ docker compose exec backend ./uniroute migrate up
 
 当前二进制不提供自动 down 回滚命令。回滚必须由运维人员按具体 migration `.down.sql` 和备份恢复方案执行。
 
+### 3.4 PRD6 `000020` Webhook 安全确认
+
+`000020_prd6_notification_webhook_scope_verification` 不删除任何 Webhook，
+但会把升级前已经存在的路由标记为“已隔离”。未重新确认的路由不会接收
+新通知，也不会执行历史失败投递的重试；确认路由后，升级前的失败投递也
+不会自动重放。
+
+该迁移的数据库 trigger 会拒绝旧版本进程继续新增或修改 Webhook，但旧版本
+的读取 handler 不具备新的租户条件。因此这个控制面不能做普通的混合版本
+滚动切换。安全顺序是：
+
+1. 进入维护窗口，先阻断旧版本的通知管理 API 和通知 emit/retry；必要时
+   临时封锁 Webhook egress；
+2. drain/停止全部旧 backend，并至少等待旧 Webhook HTTP 超时窗口，确认没有
+   已读入内存、尚未发出的旧投递；
+3. 备份数据库，应用 `000020` 并启动新版本；
+4. 读回隔离计数，确认没有 pre-P6-F33 实例继续承接通知管理或投递，再恢复
+   通知中心访问和 egress；
+5. 各组织管理员逐条核对并确认路由。
+
+不要在旧、新 backend 同时承接通知读取请求时开放通知中心。此仓库证据只
+验证迁移和代码，不代表上述目标切换已经执行。
+
+升级后由各组织的授权管理员或平台管理员在“通知中心 → Webhook”逐条核对
+组织、项目和目标 URL，再点击“确认范围”。不要用批量 SQL 将
+`scope_verified` 全部改为 `TRUE`，也不要把审计日志是否存在当作路由安全的
+充分证明。新建路由在组织/项目权限校验成功后会自动标记为已确认。
+任何名称、URL、事件类型或启用状态编辑都会重新隔离该路由，要求再次确认。
+
+若必须执行 `000020` down，down SQL 会先停用全部 Webhook，并保留
+`enabled = FALSE` 的数据库 lockdown；额外的只读 trigger 会拒绝全部 Webhook
+新增、修改和删除，同时删除对应 migration ledger 记录，以便随后 roll-forward
+重新应用 `000020`。lockdown 期间必须持续关闭旧版本的
+`notification-webhooks` POST/PUT/verify 路由，直到 roll-forward 完成。回滚到旧
+二进制不会恢复通知投递或配置写入；这是安全停机状态，不是功能完整的旧版本恢复。
+
 ---
 
 ## 四、备份与恢复

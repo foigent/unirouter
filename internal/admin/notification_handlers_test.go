@@ -106,12 +106,14 @@ func TestListNotificationDeliveries_ShowsFailureState(t *testing.T) {
 					*dest[5].(*sql.NullInt64) = sql.NullInt64{Int64: 500, Valid: true}
 					*dest[6].(*string) = "webhook returned status 500"
 					*dest[7].(*sql.NullTime) = sql.NullTime{Time: now.Add(5 * time.Minute), Valid: true}
-					*dest[8].(*sql.NullTime) = sql.NullTime{}
-					*dest[9].(*time.Time) = now
-					*dest[10].(*time.Time) = now
-					*dest[11].(*string) = "project_budget.threshold"
-					*dest[12].(*string) = "Budget reached"
-					*dest[13].(*string) = "Ops webhook"
+					*dest[8].(*bool) = false
+					*dest[9].(*sql.NullTime) = sql.NullTime{}
+					*dest[10].(*sql.NullTime) = sql.NullTime{}
+					*dest[11].(*time.Time) = now
+					*dest[12].(*time.Time) = now
+					*dest[13].(*string) = "project_budget.threshold"
+					*dest[14].(*string) = "Budget reached"
+					*dest[15].(*string) = "Ops webhook"
 					return nil
 				},
 			}}, nil

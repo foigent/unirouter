@@ -39,6 +39,19 @@ func actorCanAccessOrg(ctx context.Context, targetOrgID int64) bool {
 	return actorOrgID > 0 && targetOrgID > 0 && actorOrgID == targetOrgID
 }
 
+func (h *Handler) projectBelongsToOrg(ctx context.Context, projectID, orgID int64) bool {
+	if projectID <= 0 || orgID <= 0 {
+		return false
+	}
+
+	var count int
+	err := h.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM projects WHERE id = $1 AND org_id = $2`,
+		projectID, orgID,
+	).Scan(&count)
+	return err == nil && count > 0
+}
+
 func (h *Handler) projectBelongsToActorOrg(ctx context.Context, projectID int64) bool {
 	actorOrgID, constrained := actorOrgConstraint(ctx)
 	if !constrained {
@@ -48,12 +61,7 @@ func (h *Handler) projectBelongsToActorOrg(ctx context.Context, projectID int64)
 		return false
 	}
 
-	var count int
-	err := h.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM projects WHERE id = $1 AND org_id = $2`,
-		projectID, actorOrgID,
-	).Scan(&count)
-	return err == nil && count > 0
+	return h.projectBelongsToOrg(ctx, projectID, actorOrgID)
 }
 
 func (h *Handler) canReadProject(ctx context.Context, projectID int64) bool {

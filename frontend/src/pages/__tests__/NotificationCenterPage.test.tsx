@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import NotificationCenterPage from '../NotificationCenterPage';
 
 const mockGetNotificationEvents = vi.fn();
@@ -7,6 +7,7 @@ const mockGetNotificationDeliveries = vi.fn();
 const mockGetNotificationWebhooks = vi.fn();
 const mockCreateNotificationWebhook = vi.fn();
 const mockUpdateNotificationWebhook = vi.fn();
+const mockVerifyNotificationWebhookScope = vi.fn();
 
 vi.mock('../../api/client', () => ({
   api: {
@@ -15,6 +16,7 @@ vi.mock('../../api/client', () => ({
     getNotificationWebhooks: (...args: any[]) => mockGetNotificationWebhooks(...args),
     createNotificationWebhook: (...args: any[]) => mockCreateNotificationWebhook(...args),
     updateNotificationWebhook: (...args: any[]) => mockUpdateNotificationWebhook(...args),
+    verifyNotificationWebhookScope: (...args: any[]) => mockVerifyNotificationWebhookScope(...args),
   },
 }));
 
@@ -54,10 +56,13 @@ describe('NotificationCenterPage', () => {
     mockGetNotificationWebhooks.mockResolvedValue({
       data: [{
         id: 3,
+        org_id: 7,
         name: 'Ops webhook',
         url: 'https://ops.example/hook',
         event_types: ['project_budget.threshold'],
-        enabled: true,
+        enabled: false,
+        scope_verified: false,
+        scope_quarantine_previous_enabled: true,
         updated_at: '2026-07-02T10:00:00Z',
       }],
       total: 1,
@@ -81,5 +86,22 @@ describe('NotificationCenterPage', () => {
     expect(screen.getAllByText('项目预算阈值').length).toBeGreaterThan(0);
     expect(screen.getByText('Budget reached')).toBeTruthy();
     expect(screen.getAllByText('投递失败').length).toBeGreaterThan(0);
+  });
+
+  it('shows quarantined historical webhooks and requires explicit scope confirmation', async () => {
+    mockVerifyNotificationWebhookScope.mockResolvedValue({ scope_verified: true });
+    render(<NotificationCenterPage />);
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Webhook' }));
+    expect(await screen.findByText('已隔离')).toBeTruthy();
+    fireEvent.click(screen.getByText('确认范围'));
+    expect(await screen.findByText('确认 Webhook 路由范围')).toBeTruthy();
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('https://ops.example/hook')).toBeTruthy();
+    expect(within(dialog).getByText(/升级前失败投递不会自动重放/)).toBeTruthy();
+    const confirmButtons = screen.getAllByText('确认范围');
+    fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+
+    await waitFor(() => expect(mockVerifyNotificationWebhookScope).toHaveBeenCalledWith(3, '2026-07-02T10:00:00Z'));
   });
 });
