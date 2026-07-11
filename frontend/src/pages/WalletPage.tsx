@@ -87,9 +87,13 @@ export default function WalletPage() {
     );
   }
 
-  const total = wallet.balance_cents + wallet.granted_cents;
-  const used = wallet.frozen_cents;
-  const usagePct = total > 0 ? (used / total) * 100 : 0;
+  // The backend debits cash/grant buckets when a reservation is created.
+  // frozen_cents is therefore a held-funds control total, not a second amount
+  // to subtract from the already-spendable balance.
+  const available = wallet.balance_cents + wallet.granted_cents;
+  const held = wallet.frozen_cents;
+  const managedTotal = available + held;
+  const usagePct = managedTotal > 0 ? (held / managedTotal) * 100 : 0;
   const barColor = usagePct >= 80 ? '#d92d20' : usagePct >= 50 ? '#b76e00' : '#0f8f5f';
 
   return (
@@ -97,7 +101,7 @@ export default function WalletPage() {
       <PageHeader
         eyebrow="Billing"
         title="资金账户"
-        description="查看组织余额、授信额度、冻结金额和低余额告警阈值。管理员可进行入账和额度调整。"
+        description="查看组织可用现金、可用赠送额度、冻结金额和低余额告警阈值。管理员可进行现金入账和额度调整。"
         actions={(
           <Button icon={<IconRefresh />} size="small" onClick={load}>
             刷新
@@ -107,13 +111,13 @@ export default function WalletPage() {
 
       <div className="ur-kpi-grid">
         <MetricTile
-          label="余额"
+          label="可用现金"
           value={<MoneyText cents={wallet.balance_cents} strong tone="income" />}
           tone="blue"
           icon={<IconCoinMoney />}
         />
         <MetricTile
-          label="授信额度"
+          label="可用赠送额度"
           value={<MoneyText cents={wallet.granted_cents} strong tone="income" />}
           tone="green"
           icon={<IconGift />}
@@ -132,7 +136,7 @@ export default function WalletPage() {
         />
       </div>
 
-      <Surface title="预算使用情况" description="冻结金额会占用当前可用预算，余额不足时应优先入账或调整阈值。">
+      <Surface title="资金占用情况" description="可用金额已经扣除了冻结中的请求；冻结金额仅用于展示仍在处理的资金占用，不会再次扣减。">
         <div className="ur-wallet-budget">
           <div>
             <Progress
@@ -142,7 +146,7 @@ export default function WalletPage() {
             />
           </div>
           <Text className="ur-budget-caption">
-            {usagePct.toFixed(1)}% 已使用 / 总预算: {formatMoney(total)} / 已使用: {formatMoney(used)} / 剩余: {formatMoney(total - used)}
+            {usagePct.toFixed(1)}% 冻结中 / 管理资金: {formatMoney(managedTotal)} / 冻结中: {formatMoney(held)} / 当前可用: {formatMoney(available)}
           </Text>
         </div>
       </Surface>

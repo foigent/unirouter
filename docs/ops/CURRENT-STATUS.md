@@ -60,6 +60,10 @@
   `docs/ops/evidence/PRD6-B0B-P6F36-model-governance-tenant-isolation-local-20260711.md`.
 - P6-F17 operation/idempotency identity local and CI evidence:
   `docs/ops/evidence/PRD6-B0B-P6F17-operation-idempotency-identity-local-20260711.md`.
+- P6-F18A billing reservation invariant local evidence:
+  `docs/ops/evidence/PRD6-B0B-P6F18A-billing-reservation-invariants-local-20260711.md`.
+  F18A is locally verified on its implementation branch; required PR CI is
+  pending and F18B durable post-output settlement/restart recovery remains open.
 - Source-backed product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
 - PRD7 candidate-only split (not Accepted Scope):
@@ -125,6 +129,14 @@ idempotency, distinct workflow/Agent/attempt/upstream identities, tenant-scoped
 financial uniqueness, and Logs/Audit readback. It stores no prompt/answer and
 does not close P6-F18 or P6-F20. Migration `000021` requires old-writer drain;
 its safe partial down is not authorization to restart an old binary.
+
+P6-F18A locally verifies the wallet/reservation foundation: price lookup no
+longer re-enters a held pool transaction; the effective price/multiplier
+version is frozen; grant/cash holds and refunds preserve their source; grant
+expiry is atomic; duplicate exact-funds Freeze succeeds from one receipt; and a
+100-way mixed Settle/Cancel race creates one terminal ledger event. This is not
+yet required-CI evidence and does not close P6-F18: post-output
+`settlement_pending`, final-usage persistence and restart recovery remain F18B.
 
 P6-F36 local evidence also covers only the repository boundary. It does not
 reopen P6-F16, add a migration/RLS/foreign-key redesign, change the existing

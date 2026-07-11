@@ -1387,24 +1387,28 @@ func TestCleanupOldData_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Includes call/audit/transaction/trace retention, financial freeze cleanup,
-	// request-idempotency receipt expiry and grant expiry.
-	if execCount < 7 {
-		t.Fatalf("expected at least 7 exec calls, got %d", execCount)
+	// Includes call/audit/transaction/trace retention, freeze-idempotency
+	// retention and request-idempotency receipt expiry. Grant expiry now uses a
+	// bounded transaction through Begin rather than independent Exec calls.
+	if execCount < 6 {
+		t.Fatalf("expected at least 6 exec calls, got %d", execCount)
 	}
 }
 
-func TestCleanupOldData_ReleasesStaleFrozenBeforeDeletingIdempotency(t *testing.T) {
-	sawRelease := false
+func TestCleanupOldData_SelectsStaleFrozenBeforeDeletingIdempotency(t *testing.T) {
+	sawStaleSelection := false
 	sawSafeDelete := false
 	db := &testutil.MockDB{
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			if strings.Contains(sql, "UPDATE freeze_idempotency") && strings.Contains(sql, "status = 'frozen'") && strings.Contains(sql, "INTERVAL '24 hours'") {
-				sawRelease = true
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			if strings.Contains(sql, "FROM freeze_idempotency") && strings.Contains(sql, "status = 'frozen'") && strings.Contains(sql, "INTERVAL '24 hours'") {
+				sawStaleSelection = true
 			}
+			return &testutil.MockRows{}, nil
+		},
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			if strings.Contains(sql, "DELETE FROM freeze_idempotency") {
-				if !strings.Contains(sql, "status <> 'frozen'") {
-					t.Fatalf("freeze_idempotency cleanup must not delete frozen rows directly: %s", sql)
+				if !strings.Contains(sql, "status NOT IN ('frozen', 'settlement_pending')") {
+					t.Fatalf("freeze_idempotency cleanup must retain active and billable pending rows: %s", sql)
 				}
 				sawSafeDelete = true
 			}
@@ -1416,8 +1420,8 @@ func TestCleanupOldData_ReleasesStaleFrozenBeforeDeletingIdempotency(t *testing.
 	if err := h.CleanupOldData(context.Background(), 30); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !sawRelease {
-		t.Fatal("expected cleanup to release stale frozen requests")
+	if !sawStaleSelection {
+		t.Fatal("expected cleanup to select stale frozen requests for state-machine cancellation")
 	}
 	if !sawSafeDelete {
 		t.Fatal("expected cleanup to delete only non-frozen idempotency rows")

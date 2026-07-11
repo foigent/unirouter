@@ -76,8 +76,8 @@ func TestP6F17ConcurrentAdminFinancialClientIDsHaveOneEffect(t *testing.T) {
 	)
 	require.ElementsMatch(t, []int{http.StatusCreated, http.StatusOK}, []int{grantResults[0].Code, grantResults[1].Code})
 
-	var balance, topUpTransactions, grants, grantTransactions int
-	require.NoError(t, pool.QueryRow(ctx, `SELECT balance FROM wallets WHERE org_id = $1`, orgID).Scan(&balance))
+	var balance, grantedBalance, topUpTransactions, grants, grantTransactions int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT balance, granted_balance FROM wallets WHERE org_id = $1`, orgID).Scan(&balance, &grantedBalance))
 	require.NoError(t, pool.QueryRow(ctx,
 		`SELECT COUNT(*) FROM transactions
 		 WHERE org_id = $1 AND type = 'topup' AND client_request_id = 'same-topup-client'`, orgID,
@@ -90,7 +90,8 @@ func TestP6F17ConcurrentAdminFinancialClientIDsHaveOneEffect(t *testing.T) {
 		`SELECT COUNT(*) FROM transactions
 		 WHERE org_id = $1 AND type = 'grant' AND client_request_id = 'same-grant-client'`, orgID,
 	).Scan(&grantTransactions))
-	require.Equal(t, 1150, balance)
+	require.Equal(t, 1100, balance)
+	require.Equal(t, 50, grantedBalance)
 	require.Equal(t, 1, topUpTransactions)
 	require.Equal(t, 1, grants)
 	require.Equal(t, 1, grantTransactions)

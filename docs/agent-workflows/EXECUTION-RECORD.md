@@ -123,6 +123,18 @@
   now closed by PR #149; wallet pool/grant semantics remain P6-F18, and
   project-dashboard granularity remains a separate permission item.
 
+## Current P6-F18A Billing Reservation Foundation
+
+- Local branch `codex/prd6-p6f18a-billing-invariants` removes Freeze pool
+  re-entry, snapshots the effective price/multiplier version, preserves grant
+  and cash source allocations, fixes grant issuance/expiry accounting and
+  enforces one terminal ledger event.
+- Local verification passes full backend, vet, race, migration up/down, 100-way
+  terminal competition, full 137-test frontend suite, type-check and build.
+- Required PR CI is pending. F18B remains a separate R4 batch for durable
+  billable-output `settlement_pending` and restart recovery; no target or
+  production claim is made.
+
 ## Previous P6-F37 Behavior Change
 
 - Non-platform audit reads always include the signed actor organization in
