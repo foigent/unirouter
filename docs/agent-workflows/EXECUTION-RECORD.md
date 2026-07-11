@@ -3,8 +3,8 @@
 **Batch:** PRD6 Batch 0B P6-F17 Operation And Idempotency Identity
 **Owner:** Codex
 **Risk:** R4 caller-controlled financial identity, duplicate provider dispatch and cross-tenant collision
-**Status:** Local verified; PR and required CI pending
-**Integration:** base `d83dbbc0ac7137bb44d2346adc5a25debde804e1` / branch `codex/prd6-p6f17-idempotency`; no deployment, target or production claim
+**Status:** CI verified and merged
+**Integration:** PR #149 implementation head `c1db614` passed required run `29152968280`, squash merge `c9402fa`, post-merge main run `29153106336`; no deployment, target or production claim
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Current Scope
@@ -41,7 +41,8 @@
 - Logs and Audit expose/filter operation, client, trace, workflow, Agent,
   attempt and upstream identifiers without widening tenant/project access;
 - full Go normal/race/vet, migrated integration, frontend 27-file/136-test,
-  type-check/build, OpenAPI parse and diff checks pass; PR/CI remain pending;
+  type-check/build, OpenAPI parse and diff checks pass; PR and post-merge main
+  required CI also pass;
 - activation must drain old writers before applying `000021`; the safe partial
   down is not an old-binary rollback and no target claim exists.
 
@@ -118,8 +119,9 @@
   tenants only through an explicit target;
 - CSV escaping/formula-prefix handling and billing-admin UI capability flags
   are locally verified;
-- global grant-key uniqueness remains P6-F17, wallet pool/grant semantics remain
-  P6-F18, and project-dashboard granularity remains a separate permission item.
+- global grant-key uniqueness remained P6-F17 in that historical branch and is
+  now closed by PR #149; wallet pool/grant semantics remain P6-F18, and
+  project-dashboard granularity remains a separate permission item.
 
 ## Previous P6-F37 Behavior Change
 
@@ -184,7 +186,7 @@
   `docs/ops/evidence/PRD6-B0B-P6F35-global-control-authority-local-20260711.md`.
 - P6-F36 local evidence:
   `docs/ops/evidence/PRD6-B0B-P6F36-model-governance-tenant-isolation-local-20260711.md`.
-- P6-F17 local evidence:
+- P6-F17 local and CI evidence:
   `docs/ops/evidence/PRD6-B0B-P6F17-operation-idempotency-identity-local-20260711.md`.
 - Product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
@@ -225,7 +227,9 @@ Current P6-F17 results on `codex/prd6-p6f17-idempotency`, based on
   PASS; race linking retains the existing non-failing macOS warning;
 - frontend 27 files / 136 tests, type-check and production build: PASS;
 - OpenAPI YAML parse and `git diff --check`: PASS;
-- PR, required CI and post-merge main CI: PENDING.
+- PR #149 required run `29152968280`, squash merge
+  `c9402fad323e8656493ff1bb29367a5dcf118331`, and post-merge main run
+  `29153106336`: PASS.
 
 Previous P6-F36 results on `codex/prd6-p6f36-modelgov-tenant`, based on
 `c08db96167837ade685708c2ab204861a8ecc0ca`:

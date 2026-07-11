@@ -145,8 +145,8 @@ SQL 和赋值证据：`/Users/m4/Desktop/projects/UniRouter/internal/admin/model
 
 ### 4.2.1 P6-F17 remediation update
 
-以上表格保留的是审计时基线，不能继续当作当前未修复状态。P6-F17 当前工作分支已
-完成以下 Local verified 修复，PR/required CI 仍待完成：
+以上表格保留的是审计时基线，不能继续当作当前未修复状态。P6-F17 已由 PR #149
+合并并通过 implementation/post-merge required CI，完成以下修复：
 
 - COR-01：`X-Request-ID` 现在由 UniRouter 生成不可覆盖的 `op_` 值；旧调用方传入的
   `X-Request-ID` 只作为兼容 correlation，并持久化为 `client_request_id`。财务冻结键

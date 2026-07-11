@@ -17,7 +17,7 @@
 | `docs/ops/evidence/PRD6-B0B-P6F37-audit-log-tenant-isolation-local-20260711.md` | P6-F37 audit-log tenant predicate and migrated two-tenant JWT evidence |
 | `docs/ops/evidence/PRD6-B0B-P6F38-frontend-test-ci-local-20260711.md` | P6-F38 frontend test timing and required-CI enforcement evidence |
 | `docs/ops/evidence/PRD6-B0B-P6F32-P6F39-finance-and-usage-tenant-isolation-local-20260711.md` | P6-F32/P6-F39 finance, request-log and usage-derived tenant-isolation evidence; PR #145 merged and CI verified |
-| `docs/ops/evidence/PRD6-B0B-P6F17-operation-idempotency-identity-local-20260711.md` | P6-F17 server/client identity, metadata-only idempotency, attempt ledger, migration and local verification evidence; PR/required CI pending |
+| `docs/ops/evidence/PRD6-B0B-P6F17-operation-idempotency-identity-local-20260711.md` | P6-F17 server/client identity, metadata-only idempotency, attempt ledger, migration and PR #149/post-merge CI evidence |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | Source-backed audit/reconciliation/correlation/UI/architecture/upgrade findings, Four Quadrants and PRD6 batches |
 | `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | PRD7 candidate split; first future direction selected, all implementation deferred until PRD6 closeout |
 | `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` | Accepted future Cache Service direction, service boundary, capacity planning triggers, SaaS cell reuse and non-authorization guardrails |
@@ -142,7 +142,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | `docs/ops/evidence/PRD6-B0B-P6F37-audit-log-tenant-isolation-local-20260711.md` | P6-F37 local and CI evidence; PR #143 and post-merge required CI passed |
 | `docs/ops/evidence/PRD6-B0B-P6F38-frontend-test-ci-local-20260711.md` | P6-F38 local and CI evidence; PR #143 proves Vitest executes in required CI |
 | `docs/ops/evidence/PRD6-B0B-P6F32-P6F39-finance-and-usage-tenant-isolation-local-20260711.md` | Current P6-F32/P6-F39 local, merged PR #145 and required-CI evidence |
-| `docs/ops/evidence/PRD6-B0B-P6F17-operation-idempotency-identity-local-20260711.md` | Current P6-F17 local Scheme A identity/idempotency evidence; target and PR/CI claims remain separate |
+| `docs/ops/evidence/PRD6-B0B-P6F17-operation-idempotency-identity-local-20260711.md` | Current P6-F17 local and CI-verified Scheme A identity/idempotency evidence; target/production claims remain separate |
 | `docs/planning/PRD5-CURRENT-GAP-AUDIT-20260710.md` | PRD5 closeout accounting and historical next-window input |
 | `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md` | PRD5 Batch 1X local repository audit, P5-F12 screening decisions, safe local Logs/CI fixes, and INFRA-SEC-001 plan |
 | `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md` | PRD5 Batch 1Y accepted UniRouter-owned implementation and local full verification |
