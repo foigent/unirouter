@@ -3,8 +3,8 @@
 **Batch:** PRD6 Batch 0C P6-STREAM-002A Typed Stream Transport
 **Owner:** Codex
 **Risk:** R3 request-path transport and partial-stream billing finalization
-**Status:** Local verified; PR and required CI pending
-**Integration:** branch `codex/prd6-stream-transport`; base `1103f4bd6afef9f55ad7a1fcb4be8bd78031ae44`; no deployment, target or production claim
+**Status:** CI verified / closed
+**Integration:** PR #162 exact-head `b02d112` / run `29168427875`; squash merge `7737f8b`; post-merge main run `29168586124`; historical branch restored; no deployment, target or production claim
 **Previous batch:** P6-F06 CI verified / closed by PR #160 and post-merge main run `29161527988`
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
@@ -41,6 +41,9 @@
   sanitized termination rather than fabricating success;
 - config default/override/fail-closed tests, Runtime Status API/UI tests,
   focused gateway/middleware race tests and frontend type-check pass locally;
+- PR #162 exact-head Backend/Frontend/Docker required CI passed, the change was
+  squash-merged as `7737f8b`, and post-merge main run `29168586124` passed the
+  same three jobs; the historical implementation branch is restored;
 - evidence: `docs/ops/evidence/PRD6-B0C-P6STREAM002A-stream-transport-local-20260712.md`.
 
 ## Previous P6-F06 Behavior Change

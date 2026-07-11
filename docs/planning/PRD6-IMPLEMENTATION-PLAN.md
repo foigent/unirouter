@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-12
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F06 are CI verified / closed; P6-F11 is in progress through a local-verified transport prerequisite; 7 accepted rows remain not started
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F06 and P6-STREAM-002A are CI verified / closed; P6-F11 remains in progress after its transport prerequisite; 7 accepted rows remain not started
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -192,7 +192,8 @@ Order within the batch:
    cancel/refund PostgreSQL tests plus a fail-closed required CI step passed PR
    #160 and post-merge main CI;
 5. handle stream Scanner errors, response-body lifetime, single-writer/flush and
-   timeout semantics safely — P6-STREAM-002A is Local verified / PR pending;
+   timeout semantics safely — P6-STREAM-002A is CI verified / closed by PR #162,
+   merge `7737f8b` and post-merge main run `29168586124`;
    reservation-aware extension and the P6-F11 semantic policy hook remain later
    accepted slices;
 6. preserve the P6-F35 strict-version sensitive-word reload and P6-F05 typed

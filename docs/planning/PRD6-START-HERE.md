@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-12
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F06 CI verified / closed; P6-STREAM-002A local verified / PR pending; P6-F16-P6-F18/P6-F32-P6-F39 applicable rows merged and CI verified
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F06 and P6-STREAM-002A CI verified / closed; P6-F16-P6-F18/P6-F32-P6-F39 applicable rows merged and CI verified
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -130,10 +130,11 @@ evidence.
   terminal receipt and zero uncovered cost, and full idempotent cancel/refund.
   Required Backend runs the matrix fail-closed; PR #160, merge `15ea8a2` and
   post-merge main run `29161527988` passed all required jobs.
-- P6-STREAM-002A is Local verified on `codex/prd6-stream-transport`. It replaces
+- P6-STREAM-002A is CI verified / closed by PR #162, merge `7737f8b` and
+  post-merge main run `29168586124`; its historical branch is restored. It replaces
   the hidden 64-KiB scanner and timeout/writer/body-lifecycle defects with
   `stream-transport.v1`, safe partial failure settlement and focused race/UI
-  gates. PR/required CI and the remaining D6-10/P6-F11 work are pending.
+  gates. The remaining D6-10/P6-F11 work is pending.
 
 ## PRD5 Closure Guard
 
