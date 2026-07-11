@@ -47,4 +47,12 @@ describe('WalletPage', () => {
     expect(screen.queryByText('管理员操作')).toBeNull();
     expect(screen.queryByRole('button', { name: '入账' })).toBeNull();
   });
+
+  it('does not subtract frozen funds twice from the spendable wallet buckets', async () => {
+    render(<WalletPage />);
+
+    expect(await screen.findByText(/当前可用: ¥1200.00/)).toBeTruthy();
+    expect(screen.getByText(/管理资金: ¥1250.00/)).toBeTruthy();
+    expect(screen.getByText(/冻结中: ¥50.00/)).toBeTruthy();
+  });
 });

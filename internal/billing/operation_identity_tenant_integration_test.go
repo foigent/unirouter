@@ -98,8 +98,8 @@ func TestP6F17HundredDescendantOperationsSettleAtMostOnceEach(t *testing.T) {
 		require.True(t, settled.Success)
 		duplicate, duplicateErr := b.Settle(ctx, SettleRequest{RequestID: operationID, OrgID: orgID, ActualCost: 1})
 		require.NoError(t, duplicateErr)
-		require.False(t, duplicate.Success, "child %d settled more than once", child)
-		require.Equal(t, "not_found", duplicate.ErrorCode)
+		require.True(t, duplicate.Success, "child %d must receive the durable terminal receipt", child)
+		require.Equal(t, settled.SettleID, duplicate.SettleID)
 	}
 
 	var settledRows, distinctOperations, settleTransactions, frozen, totalSpent int

@@ -358,8 +358,12 @@ func TestCleanupOldData_ReleasesStaleFrozen_Integration(t *testing.T) {
 	)
 	require.NoError(t, err)
 	_, err = pool.Exec(t.Context(),
-		`INSERT INTO freeze_idempotency (request_id, org_id, frozen_amount, status, created_at, updated_at)
-		 VALUES ('stale-settle-cleanup', $1, 100, 'frozen', NOW() - INTERVAL '25 hours', NOW() - INTERVAL '25 hours')`,
+		`INSERT INTO freeze_idempotency (
+			request_id, org_id, frozen_amount, reserved_balance_amount, status, created_at, updated_at
+		 ) VALUES (
+			'stale-settle-cleanup', $1, 100, 100, 'frozen',
+			NOW() - INTERVAL '25 hours', NOW() - INTERVAL '25 hours'
+		 )`,
 		orgID,
 	)
 	require.NoError(t, err)
@@ -501,11 +505,15 @@ func TestCreateGrant_Success_Integration(t *testing.T) {
 	require.NoError(t, err)
 	require.NotZero(t, resp["id"])
 
-	// Verify wallet balance increased
-	var balance int
-	err = pool.QueryRow(t.Context(), `SELECT balance FROM wallets WHERE org_id = $1`, orgID).Scan(&balance)
+	// A grant is expiring credit, not cash.
+	var balance, grantedBalance, grantBalance int
+	err = pool.QueryRow(t.Context(), `SELECT balance, granted_balance FROM wallets WHERE org_id = $1`, orgID).Scan(&balance, &grantedBalance)
 	require.NoError(t, err)
-	require.Equal(t, 1500, balance, "balance should be 1000 + 500")
+	require.Equal(t, 1000, balance)
+	require.Equal(t, 500, grantedBalance)
+	err = pool.QueryRow(t.Context(), `SELECT balance FROM grants WHERE id = $1`, int64(resp["id"].(float64))).Scan(&grantBalance)
+	require.NoError(t, err)
+	require.Equal(t, 500, grantBalance)
 }
 
 func TestCreateGrant_Idempotency_Integration(t *testing.T) {
@@ -537,11 +545,12 @@ func TestCreateGrant_Idempotency_Integration(t *testing.T) {
 	json.Unmarshal(rec2.Body.Bytes(), &resp)
 	require.Equal(t, true, resp["duplicate"])
 
-	// Verify balance only increased once
-	var balance int
-	err := pool.QueryRow(t.Context(), `SELECT balance FROM wallets WHERE org_id = $1`, orgID).Scan(&balance)
+	// Verify grant credit only increased once and cash was not changed.
+	var balance, grantedBalance int
+	err := pool.QueryRow(t.Context(), `SELECT balance, granted_balance FROM wallets WHERE org_id = $1`, orgID).Scan(&balance, &grantedBalance)
 	require.NoError(t, err)
-	require.Equal(t, 1500, balance, "balance should be 1000 + 500, not 2000")
+	require.Equal(t, 1000, balance)
+	require.Equal(t, 500, grantedBalance)
 }
 
 func TestCreateGrant_ZeroAmount_Integration(t *testing.T) {

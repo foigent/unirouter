@@ -76,8 +76,8 @@ func (h *Handler) CreateGrant(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
 		return
 	}
-	if req.AmountCents == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "amount_cents required"})
+	if req.AmountCents <= 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "amount_cents must be positive"})
 		return
 	}
 	orgID, err := resolveActorOrganization(r.Context(), req.OrgId)
@@ -114,11 +114,28 @@ func (h *Handler) CreateGrant(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(r.Context())
 
+	var balanceAfter int
+	err = tx.QueryRow(r.Context(),
+		`UPDATE wallets
+		 SET granted_balance = granted_balance + $1, updated_at = NOW()
+		 WHERE org_id = $2
+		 RETURNING balance + granted_balance`,
+		req.AmountCents, req.OrgId,
+	).Scan(&balanceAfter)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Wallet not found"})
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update wallet failed"})
+		return
+	}
+
 	var grantId int64
 	createdBy := middleware.GetUserIDFromContext(r.Context())
 	err = tx.QueryRow(r.Context(),
-		`INSERT INTO grants (org_id, amount, reason, client_request_id, created_by)
-		 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+		`INSERT INTO grants (org_id, amount, balance, reason, client_request_id, created_by)
+		 VALUES ($1, $2, $2, $3, $4, $5) RETURNING id`,
 		req.OrgId, req.AmountCents, req.Reason, req.ClientRequestID, createdBy).Scan(&grantId)
 	if err != nil {
 		if isPostgresUniqueViolation(err) {
@@ -135,21 +152,6 @@ func (h *Handler) CreateGrant(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Insert grant failed"})
 		return
 	}
-
-	var balanceAfter int
-	err = tx.QueryRow(r.Context(),
-		`UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE org_id = $2 RETURNING balance`,
-		req.AmountCents, req.OrgId,
-	).Scan(&balanceAfter)
-	if errors.Is(err, pgx.ErrNoRows) {
-		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Wallet not found"})
-		return
-	}
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update wallet failed"})
-		return
-	}
-
 	_, err = tx.Exec(r.Context(),
 		`INSERT INTO transactions (org_id, type, amount, balance_after, note, request_id, client_request_id)
 		 VALUES ($1, 'grant', $2, $3, $4, $5, $6)`,

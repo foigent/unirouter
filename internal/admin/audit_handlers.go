@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/middleware"
 )
 
@@ -362,35 +364,55 @@ func (h *Handler) cleanupOldData(ctx context.Context, retentionDays, traceRetent
 		log.Printf("Cleanup: deleted %d old request_trace_events (older than %d days)", result.RowsAffected(), traceRetentionDays)
 	}
 
-	// Release stale frozen requests before pruning idempotency rows. This prevents
-	// a failed settle from leaving wallet.frozen permanently held after cleanup.
-	result, err = h.db.Exec(ctx,
-		`WITH stale AS (
-		     SELECT org_id, SUM(frozen_amount)::integer AS total_frozen
-		     FROM freeze_idempotency
-		     WHERE status = 'frozen' AND updated_at < NOW() - INTERVAL '24 hours'
-		     GROUP BY org_id
-		 ), released AS (
-		     UPDATE wallets w
-		     SET frozen = GREATEST(w.frozen - LEAST(w.frozen, stale.total_frozen), 0),
-		         balance = w.balance + LEAST(w.frozen, stale.total_frozen),
-		         updated_at = NOW()
-		     FROM stale
-		     WHERE w.org_id = stale.org_id
-		     RETURNING w.org_id
-		 )
-		 UPDATE freeze_idempotency
-		 SET status = 'cancelled', updated_at = NOW()
-		 WHERE status = 'frozen' AND updated_at < NOW() - INTERVAL '24 hours'`,
-	)
+	// Release stale pre-output reservations through the same source-preserving,
+	// single-terminal state machine as the request path. A future
+	// settlement_pending row is intentionally excluded and can never be made
+	// free by retention cleanup.
+	staleRows, err := h.db.Query(ctx,
+		`SELECT org_id, request_id
+		 FROM freeze_idempotency
+		 WHERE status = 'frozen' AND updated_at < NOW() - INTERVAL '24 hours'
+		 ORDER BY updated_at ASC
+		 LIMIT 1000`)
 	if err != nil {
-		return fmt.Errorf("release stale frozen requests: %w", err)
+		return fmt.Errorf("query stale frozen requests: %w", err)
 	}
-	log.Printf("Cleanup: released %d stale frozen freeze_idempotency records (>24h)", result.RowsAffected())
+	type staleReservation struct {
+		orgID     int64
+		requestID string
+	}
+	stale := make([]staleReservation, 0)
+	for staleRows.Next() {
+		var reservation staleReservation
+		if err := staleRows.Scan(&reservation.orgID, &reservation.requestID); err != nil {
+			staleRows.Close()
+			return fmt.Errorf("scan stale frozen request: %w", err)
+		}
+		stale = append(stale, reservation)
+	}
+	if err := staleRows.Err(); err != nil {
+		staleRows.Close()
+		return fmt.Errorf("iterate stale frozen requests: %w", err)
+	}
+	staleRows.Close()
+	releasedCount := 0
+	for _, reservation := range stale {
+		if err := billing.CancelReservation(ctx, h.db, reservation.requestID, reservation.orgID); err != nil {
+			if errors.Is(err, billing.ErrSettlementPending) {
+				continue
+			}
+			return fmt.Errorf("release stale frozen request %s: %w", reservation.requestID, err)
+		}
+		releasedCount++
+	}
+	log.Printf("Cleanup: released %d stale frozen freeze_idempotency records (>24h)", releasedCount)
 
-	// Keep active frozen records until they either settle or the stale-release guard above cancels them.
+	// Keep active frozen and billable pending records until their state machines
+	// reach a durable terminal.
 	result, err = h.db.Exec(ctx,
-		`DELETE FROM freeze_idempotency WHERE created_at < NOW() - INTERVAL '30 days' AND status <> 'frozen'`,
+		`DELETE FROM freeze_idempotency
+		 WHERE created_at < NOW() - INTERVAL '30 days'
+		   AND status NOT IN ('frozen', 'settlement_pending')`,
 	)
 	if err != nil {
 		return fmt.Errorf("cleanup freeze_idempotency: %w", err)
@@ -407,34 +429,12 @@ func (h *Handler) cleanupOldData(ctx context.Context, retentionDays, traceRetent
 	}
 	log.Printf("Cleanup: deleted %d expired request_idempotency receipts", result.RowsAffected())
 
-	// First: deduct expired grants from wallets.granted_balance
-	result, err = h.db.Exec(ctx,
-		`UPDATE wallets w
-		 SET granted_balance = granted_balance - COALESCE(sub.total, 0),
-		     updated_at = NOW()
-		 FROM (
-		     SELECT org_id, SUM(balance) AS total
-		     FROM grants
-		     WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at < NOW()
-		     GROUP BY org_id
-		 ) sub
-		 WHERE w.org_id = sub.org_id AND sub.total > 0`)
-	if err != nil {
-		return fmt.Errorf("deduct expired grants from wallets: %w", err)
-	}
-	if result.RowsAffected() > 0 {
-		log.Printf("Cleanup: deducted expired grants from %d wallets", result.RowsAffected())
-	}
-
-	// Second: mark grants as expired
-	result, err = h.db.Exec(ctx,
-		`UPDATE grants SET status = 'expired', updated_at = NOW()
-		 WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at < NOW()`)
+	expiryResult, err := billing.ExpireGrants(ctx, h.db, 1000)
 	if err != nil {
 		return fmt.Errorf("expire grants: %w", err)
 	}
-	if result.RowsAffected() > 0 {
-		log.Printf("Cleanup: expired %d grants past their expiry date", result.RowsAffected())
+	if expiryResult.Grants > 0 {
+		log.Printf("Cleanup: expired %d grants across %d wallets", expiryResult.Grants, expiryResult.Organizations)
 	}
 
 	return nil

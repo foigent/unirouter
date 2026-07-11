@@ -58,10 +58,29 @@ func (m *mockBilling) Freeze(ctx context.Context, req billing.FreezeRequest) (*b
 }
 
 func (m *mockBilling) Settle(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
+	var result *billing.SettleResult
+	var err error
 	if m.settleFn != nil {
-		return m.settleFn(ctx, req)
+		result, err = m.settleFn(ctx, req)
+	} else {
+		result = &billing.SettleResult{SettleID: 1, Refund: 10, NewBalance: 910, Success: true}
 	}
-	return &billing.SettleResult{SettleID: 1, Refund: 10, NewBalance: 910, Success: true}, nil
+	if err != nil || result == nil || !result.Success {
+		return result, err
+	}
+	if result.ActualCost == 0 && (req.PromptTokens > 0 || req.CompletionTokens > 0) {
+		inputPrice, outputPrice, priceErr := m.QueryModelPriceForOrg(ctx, req.OrgID, "")
+		if priceErr == nil {
+			result.ActualCost = int((float64(req.PromptTokens)*inputPrice + float64(req.CompletionTokens)*outputPrice) / 1000)
+			if result.ActualCost < 1 {
+				result.ActualCost = 1
+			}
+		}
+	}
+	if result.ChargedCost == 0 {
+		result.ChargedCost = result.ActualCost
+	}
+	return result, nil
 }
 
 func (m *mockBilling) Cancel(ctx context.Context, requestID string, orgID int64) error {
