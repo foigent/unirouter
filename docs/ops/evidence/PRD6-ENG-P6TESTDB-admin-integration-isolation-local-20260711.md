@@ -3,7 +3,7 @@
 > Date: 2026-07-11
 > Scope: UniRouter repository test and required-CI integrity only
 > Risk: R1 test harness / CI; no production-path behavior change
-> Evidence level: Local verified; required PR CI pending
+> Evidence level: CI verified / closed
 > Deployment/target/production claim: none
 
 ## 1. Confirmed pre-change failure
@@ -97,10 +97,12 @@ rows, proving the observed runs left no temporary database behind.
 
 ## 4. Acceptance and boundary
 
-`P6-TEST-DB-001` can advance to Local verified because the previously failing
-legacy admin suite is now current-schema, isolated, repeatable and included in
-the repository's required CI definition. It must not advance to CI verified
-until the exact PR head passes Backend Tests, Frontend Build and Docker Build.
+PR #155 required run `29157383889` passed Backend Tests, Frontend Build and
+Docker Build. The Backend log includes the required isolated tagged admin suite.
+PR #155 was squash-merged as
+`4b18ace92df49ad74048acc7197992990f14ca8e`; post-merge main run
+`29157561036` passed the same three jobs. `P6-TEST-DB-001` is therefore CI
+verified / closed.
 
 This engineering-integrity issue is outside the 25 accepted PRD6 feature-row
 count. Closing it does not complete P6-F03 through P6-F11 or P6-F19 through

@@ -150,6 +150,28 @@ func upstreamRequestIDFromHeader(header http.Header) string {
 	return ""
 }
 
+func providerRetryDecision(retryable bool) string {
+	if retryable {
+		return "retry"
+	}
+	return "stop"
+}
+
+func providerFailureEventMessage(statusCode int, failureKind adapters.FailureKind) string {
+	if statusCode > 0 {
+		return fmt.Sprintf("Provider request failed with HTTP %d (%s)", statusCode, failureKind)
+	}
+	return fmt.Sprintf("Provider transport failed (%s)", failureKind)
+}
+
+func writeNonRetryableProviderError(w http.ResponseWriter, statusCode int, failureKind adapters.FailureKind) {
+	if failureKind == adapters.FailureClientRequest && statusCode >= 400 && statusCode < 500 {
+		writeError(w, statusCode, "invalid_request_error", "validation_error.invalid_request", "Upstream rejected the request")
+		return
+	}
+	writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_error", "Upstream request failed")
+}
+
 func (relay *Relay) emitProviderChannelFailure(ctx context.Context, route RouteResult, requestID, requestedModel string, statusCode int, failureKind, message string) {
 	if relay.eventSvc == nil {
 		return
@@ -505,47 +527,71 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		upstreamDuration := time.Since(upstreamStart)
 		middleware.RecordUpstreamLatency(route.Channel.Provider, req.Model, upstreamDuration)
 		if err != nil {
-			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Upstream request failed: %v", err)
-			relay.router.MarkChannelFail(ctx, route.Channel.ID, 5, 300)
-			relay.router.MarkKeyFail(ctx, route.ChannelKey.ID)
-			relay.emitProviderChannelFailure(attemptCtx, route, requestID, requestedModel, 0, string(adapters.FailureChannel), err.Error())
+			classified := adapters.ClassifyTransportError(attemptCtx, err)
+			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Upstream transport failed: kind=%s retryable=%t", classified.FailureKind, classified.Retryable)
+			if classified.Retryable {
+				relay.router.MarkChannelFail(ctx, route.Channel.ID, 5, 300)
+				relay.router.MarkKeyFail(ctx, route.ChannelKey.ID)
+				relay.emitProviderChannelFailure(attemptCtx, route, requestID, requestedModel, 0, string(classified.FailureKind), providerFailureEventMessage(0, classified.FailureKind))
+			}
 			relay.recordTraceEvent(attemptCtx, requestID, "provider.request_failed", "provider", "warning", req.Model, requestedModel, &routeForTrace, 0, int(upstreamDuration.Milliseconds()), map[string]interface{}{
-				"failure_kind": string(adapters.FailureChannel),
+				"failure_kind":   string(classified.FailureKind),
+				"retryable":      classified.Retryable,
+				"retry_decision": providerRetryDecision(classified.Retryable),
 			})
-			lastErr = err
-			continue
+			lastErr = fmt.Errorf("upstream transport failed (%s)", classified.FailureKind)
+			if classified.Retryable {
+				continue
+			}
+
+			cleanupCtx := context.WithoutCancel(attemptCtx)
+			relay.billing.Cancel(cleanupCtx, requestID, orgID)
+			relay.recordRequest(cleanupCtx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, 0, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceUpstreamFailed, estimatedTokens, "")
+			if attemptCtx.Err() == nil {
+				writeNonRetryableProviderError(w, 0, classified.FailureKind)
+			}
+			return
 		}
 		upstreamRequestID := upstreamRequestIDFromHeader(resp.Header)
 		if resp.StatusCode != http.StatusOK {
 			errBody, _ := io.ReadAll(resp.Body)
-			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Upstream returned %d: %s", resp.StatusCode, string(errBody))
 			// Per PRD F12: adapters normalize provider-specific HTTP semantics
 			// into routing failure kinds. Client errors are not channel failures.
 			classified := adapter.ClassifyHTTPStatus(resp.StatusCode, errBody)
+			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Upstream rejected response: status=%d kind=%s retryable=%t", resp.StatusCode, classified.FailureKind, classified.Retryable)
 			switch classified.FailureKind {
 			case adapters.FailureChannel:
 				relay.router.MarkChannelFail(ctx, route.Channel.ID, 5, 300)
 				relay.router.MarkKeyFail(ctx, route.ChannelKey.ID)
-				relay.emitProviderChannelFailure(attemptCtx, route, requestID, requestedModel, resp.StatusCode, string(classified.FailureKind), classified.Message)
+				relay.emitProviderChannelFailure(attemptCtx, route, requestID, requestedModel, resp.StatusCode, string(classified.FailureKind), providerFailureEventMessage(resp.StatusCode, classified.FailureKind))
 			case adapters.FailureAuth:
 				// Auth failure — mark key as invalid immediately
 				relay.router.MarkKeyCooldown(ctx, route.ChannelKey.ID, 3600)
-				relay.emitProviderChannelFailure(attemptCtx, route, requestID, requestedModel, resp.StatusCode, string(classified.FailureKind), classified.Message)
+				relay.emitProviderChannelFailure(attemptCtx, route, requestID, requestedModel, resp.StatusCode, string(classified.FailureKind), providerFailureEventMessage(resp.StatusCode, classified.FailureKind))
 			case adapters.FailureRateLimit:
 				// Rate limited — cooldown key for 60s
 				relay.router.MarkKeyCooldown(ctx, route.ChannelKey.ID, 60)
-				relay.emitProviderChannelFailure(attemptCtx, route, requestID, requestedModel, resp.StatusCode, string(classified.FailureKind), classified.Message)
+				relay.emitProviderChannelFailure(attemptCtx, route, requestID, requestedModel, resp.StatusCode, string(classified.FailureKind), providerFailureEventMessage(resp.StatusCode, classified.FailureKind))
 			default:
 				// 4xx client errors (400, 404, etc.) — don't mark as failure
 			}
 			relay.recordTraceEvent(attemptCtx, requestID, "provider.response_rejected", "provider", "warning", req.Model, requestedModel, &routeForTrace, resp.StatusCode, int(upstreamDuration.Milliseconds()), map[string]interface{}{
-				"failure_kind": string(classified.FailureKind),
+				"failure_kind":   string(classified.FailureKind),
+				"retryable":      classified.Retryable,
+				"retry_decision": providerRetryDecision(classified.Retryable),
 			}, upstreamRequestID)
 			lastStatusCode = resp.StatusCode
 			lastUpstreamRequestID = upstreamRequestID
-			lastErr = fmt.Errorf("upstream returned %d: %s", resp.StatusCode, classified.Message)
+			lastErr = fmt.Errorf("upstream returned HTTP %d (%s)", resp.StatusCode, classified.FailureKind)
 			resp.Body.Close()
-			continue
+			if classified.Retryable {
+				continue
+			}
+
+			relay.billing.Cancel(attemptCtx, requestID, orgID)
+			relay.recordRequest(attemptCtx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, resp.StatusCode, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceUpstreamFailed, estimatedTokens, upstreamRequestID)
+			writeNonRetryableProviderError(w, resp.StatusCode, classified.FailureKind)
+			return
 		}
 
 		// Success — mark channel healthy and forward

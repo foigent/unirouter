@@ -2561,6 +2561,165 @@ func TestHandleChatCompletion_AnthropicNativeStream(t *testing.T) {
 	}
 }
 
+func chatCompletionRouteRow(id int64, name, provider, baseURL, encryptedKey string, weight int) func(dest ...any) error {
+	return func(dest ...any) error {
+		*dest[0].(*int64) = id
+		*dest[1].(*string) = name
+		*dest[2].(*string) = provider
+		*dest[3].(*string) = baseURL
+		*dest[4].(*string) = "gpt-4o"
+		*dest[5].(*json.RawMessage) = json.RawMessage(`{}`)
+		*dest[6].(*string) = adapters.TypeOpenAICompatible
+		*dest[7].(*json.RawMessage) = json.RawMessage(`{}`)
+		*dest[8].(*int) = 128000
+		*dest[9].(*int) = 4096
+		*dest[10].(*int) = weight
+		*dest[11].(*string) = "active"
+		*dest[12].(*string) = "healthy"
+		*dest[13].(**time.Time) = nil
+		*dest[14].(*int) = 0
+		*dest[15].(*int64) = id
+		*dest[16].(*string) = encryptedKey
+		*dest[17].(*string) = "active"
+		*dest[18].(**time.Time) = nil
+		return nil
+	}
+}
+
+func TestHandleChatCompletion_RetryClassification(t *testing.T) {
+	tests := []struct {
+		name             string
+		upstreamStatus   int
+		expectedStatus   int
+		expectedRetry    bool
+		expectedDecision string
+	}{
+		{name: "client 400 stops and preserves status", upstreamStatus: http.StatusBadRequest, expectedStatus: http.StatusBadRequest, expectedDecision: "stop"},
+		{name: "provider auth 401 stops with safe gateway error", upstreamStatus: http.StatusUnauthorized, expectedStatus: http.StatusBadGateway, expectedDecision: "stop"},
+		{name: "unknown 501 stops with safe gateway error", upstreamStatus: http.StatusNotImplemented, expectedStatus: http.StatusBadGateway, expectedDecision: "stop"},
+		{name: "rate limit 429 fails over", upstreamStatus: http.StatusTooManyRequests, expectedStatus: http.StatusOK, expectedRetry: true, expectedDecision: "retry"},
+		{name: "transient 503 fails over", upstreamStatus: http.StatusServiceUnavailable, expectedStatus: http.StatusOK, expectedRetry: true, expectedDecision: "retry"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			const secretMarker = "provider-secret-diagnostic"
+			firstCalls := 0
+			firstUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				firstCalls++
+				w.Header().Set("X-Request-ID", "upstream-first")
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(test.upstreamStatus)
+				_, _ = w.Write([]byte(`{"error":{"message":"` + secretMarker + `"}}`))
+			}))
+			defer firstUpstream.Close()
+
+			secondCalls := 0
+			secondUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				secondCalls++
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"id":"chatcmpl-retry","object":"chat.completion","model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
+			}))
+			defer secondUpstream.Close()
+
+			encKey := []byte("0123456789abcdef01234567")
+			encryptedKey, err := auth.EncryptKey([]byte("sk-test-key"), encKey)
+			if err != nil {
+				t.Fatalf("encrypt key: %v", err)
+			}
+
+			var rejectedMetadata map[string]interface{}
+			callLogCount := 0
+			var failedCallArgs []any
+			db := &testutil.MockDB{
+				QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+					return &testutil.MockRows{Rows: []func(dest ...any) error{
+						chatCompletionRouteRow(1, "primary", "openai", firstUpstream.URL, encryptedKey, 100),
+						chatCompletionRouteRow(2, "secondary", "azure", secondUpstream.URL, encryptedKey, 90),
+					}}, nil
+				},
+				ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+					switch {
+					case strings.Contains(sql, "INSERT INTO request_trace_events") && len(args) == 39 && args[8] == "provider.response_rejected":
+						if err := json.Unmarshal([]byte(args[17].(string)), &rejectedMetadata); err != nil {
+							t.Fatalf("decode rejected trace metadata: %v", err)
+						}
+					case strings.Contains(sql, "INSERT INTO call_logs"):
+						callLogCount++
+						if status, _ := args[16].(int); status != http.StatusOK {
+							failedCallArgs = append([]any(nil), args...)
+						}
+					}
+					return pgconn.CommandTag{}, nil
+				},
+			}
+
+			freezeCalls := 0
+			settleCalls := 0
+			cancelCalls := 0
+			b := &mockBilling{
+				freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
+					freezeCalls++
+					return &billing.FreezeResult{FreezeID: 1, Amount: 100, Success: true}, nil
+				},
+				settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
+					settleCalls++
+					return &billing.SettleResult{SettleID: 1, Success: true}, nil
+				},
+				cancelFn: func(ctx context.Context, requestID string, orgID int64) error {
+					cancelCalls++
+					return nil
+				},
+			}
+			relay := NewRelay(db, nil, NewRouter(db), b, nil, encKey)
+
+			body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}]}`
+			req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+			ctx := context.WithValue(req.Context(), middleware.CtxOrgID, int64(1))
+			ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(1))
+			ctx = context.WithValue(ctx, middleware.CtxRequestID, "req-retry-classification")
+			ctx = context.WithValue(ctx, middleware.CtxAPIKey, &models.ApiKey{ID: 1, OrgID: 1, Status: "active"})
+			rec := httptest.NewRecorder()
+
+			relay.HandleChatCompletion(rec, req.WithContext(ctx))
+
+			if rec.Code != test.expectedStatus {
+				t.Fatalf("expected status %d, got %d: %s", test.expectedStatus, rec.Code, rec.Body.String())
+			}
+			if firstCalls != 1 {
+				t.Fatalf("expected one primary attempt, got %d", firstCalls)
+			}
+			if test.expectedRetry && secondCalls != 1 {
+				t.Fatalf("expected one failover attempt, got %d", secondCalls)
+			}
+			if !test.expectedRetry && secondCalls != 0 {
+				t.Fatalf("non-retryable failure reached the second channel %d times", secondCalls)
+			}
+			if freezeCalls != 1 {
+				t.Fatalf("expected one billing freeze, got %d", freezeCalls)
+			}
+			if test.expectedRetry {
+				if settleCalls != 1 || cancelCalls != 0 || callLogCount != 1 {
+					t.Fatalf("retry success billing/log invariant failed: settle=%d cancel=%d call_logs=%d", settleCalls, cancelCalls, callLogCount)
+				}
+			} else {
+				if settleCalls != 0 || cancelCalls != 1 || callLogCount != 1 {
+					t.Fatalf("non-retryable billing/log invariant failed: settle=%d cancel=%d call_logs=%d", settleCalls, cancelCalls, callLogCount)
+				}
+				if len(failedCallArgs) != 38 || failedCallArgs[10] != "openai" || failedCallArgs[16] != test.upstreamStatus {
+					t.Fatalf("unexpected failed attempt log: %#v", failedCallArgs)
+				}
+				if strings.Contains(rec.Body.String(), secretMarker) {
+					t.Fatalf("downstream response leaked provider error body: %s", rec.Body.String())
+				}
+			}
+			if rejectedMetadata["retryable"] != test.expectedRetry || rejectedMetadata["retry_decision"] != test.expectedDecision {
+				t.Fatalf("unexpected retry trace metadata: %#v", rejectedMetadata)
+			}
+		})
+	}
+}
+
 func TestHandleChatCompletion_UpstreamError_AllFail(t *testing.T) {
 	// The first upstream returns an HTTP failure with an upstream request ID.
 	// The final route fails at the network layer so its call log must not retain
@@ -2745,8 +2904,10 @@ func TestHandleChatCompletion_SensitiveContent(t *testing.T) {
 	encKey := []byte("0123456789abcdef01234567")
 	f := filter.NewDFAFilter([]string{"赌博", "色情"})
 	db := &testutil.MockDB{}
+	freezeCalled := false
 	b := &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
+			freezeCalled = true
 			return &billing.FreezeResult{FreezeID: 1, Amount: 100, Success: true}, nil
 		},
 	}
@@ -2767,5 +2928,8 @@ func TestHandleChatCompletion_SensitiveContent(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if freezeCalled {
+		t.Fatal("expected policy rejection to return before billing freeze or routing")
 	}
 }

@@ -81,3 +81,17 @@ func TestSanitizeMetadata_PayloadPolicyFields(t *testing.T) {
 		t.Fatalf("expected payload policy booleans to remain, got %#v", metadata)
 	}
 }
+
+func TestSanitizeMetadata_RetryDecisionFields(t *testing.T) {
+	metadata, gap := SanitizeMetadataWithGap(map[string]interface{}{
+		"failure_kind":   "channel_failure",
+		"retryable":      true,
+		"retry_decision": "retry",
+	})
+	if gap != "" {
+		t.Fatalf("expected no capture gap for retry decision metadata, got %q", gap)
+	}
+	if metadata["failure_kind"] != "channel_failure" || metadata["retryable"] != true || metadata["retry_decision"] != "retry" {
+		t.Fatalf("expected retry decision metadata to remain, got %#v", metadata)
+	}
+}

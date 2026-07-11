@@ -1,37 +1,58 @@
 # Current Execution Record
 
-**Batch:** PRD6 Engineering Integrity P6-TEST-DB-001 Admin Integration Isolation
+**Batch:** PRD6 Batch 0C P6-F03 Retry Classification And Safe Response Semantics
 **Owner:** Codex
-**Risk:** R1 test harness and required-CI integrity; no production behavior change
+**Risk:** R3 request routing and billing behavior
 **Status:** Local verified; required PR CI pending
-**Integration:** Branch `codex/prd6-test-db-isolation`; PR pending; no deployment, target or production claim
+**Integration:** Branch `codex/prd6-p6f03-retry-classification`; PR pending; no deployment, target or production claim
+**Previous batch:** P6-TEST-DB-001 CI verified / closed by PR #155 and post-merge main run `29157561036`
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Current Scope
 
-1. Reproduce the legacy admin integration suite against the shared stale schema.
-2. Move every legacy admin database setup to a uniquely named temporary database
-   with the complete current migration chain.
-3. Prove one-pass, repeated, race, vet and normal-suite behavior and verify
-   temporary database cleanup.
-4. Add the complete admin integration suite to Backend required CI.
-5. Keep handler behavior, APIs, migrations, runtime data, deployment, PRD6
-   feature accounting and target evidence unchanged.
+1. Lock one OpenAI-compatible/Anthropic HTTP and transport failure matrix.
+2. Make Chat failover execute the adapter `Retryable` decision rather than
+   unconditionally consuming every route.
+3. Preserve safe client status semantics while excluding raw provider error
+   text from downstream responses, notifications and trace metadata.
+4. Prove bounded transient failover, terminal non-retry behavior, one-Freeze /
+   one-terminal billing and truthful attempt evidence.
+5. Preserve policy rejection before billing/routing and keep Embeddings parity,
+   configuration truth, deployment and target evidence outside this PR.
 
-## Current P6-TEST-DB-001 Behavior Change
+## Current P6-F03 Behavior Change
+
+- shared adapter classification makes 408/429/500/502/503/504 retryable,
+  preserves Anthropic 529, treats all other 4xx as client/auth terminal and
+  treats unknown status classes as non-retryable;
+- transport deadlines and recognized temporary connection failures can fail
+  over; caller cancellation and unknown deterministic transport/configuration
+  failures stop;
+- two-route handler regressions prove 400/401/501 never reach the second
+  channel, while 429/503 reach it once and succeed;
+- terminal client failures preserve a safe 4xx; upstream auth/unknown failures
+  return a safe generic 502; provider diagnostic text does not reach the client
+  or notification payload;
+- every rejected response records `failure_kind`, `retryable` and
+  `retry_decision`, while metadata sanitization continues to exclude payloads;
+- all tested paths use one Freeze and exactly one Settle or Cancel; failed call
+  logs retain the terminal attempt's route/status/upstream identity;
+- existing sensitive-content and API-key model policy still reject before
+  Freeze/routing;
+- full Go race/vet, isolated tagged admin integration, focused matrices and
+  frontend 27 files / 137 tests, type-check and production build pass locally;
+- Docker is unavailable locally and remains an explicit required-CI gate;
+- evidence: `docs/ops/evidence/PRD6-B0C-P6F03-retry-classification-local-20260711.md`.
+
+## Previous P6-TEST-DB-001 Behavior Change
 
 - pre-change `go test -tags=integration ./internal/admin -count=1` failed twelve
   tests because the shared `uniroute_test` schema lacked current tables/columns;
-- all 48 legacy admin setups now use `SetupMigratedTestDB`, which creates a
-  unique database, applies migrations through `000023` and drops it on cleanup;
-- one complete pass, two consecutive passes, a complete race pass, vet and all
-  normal/race Go packages pass locally;
-- the post-test PostgreSQL query found no remaining `uniroute_it_%` database;
-- Backend required CI now runs the complete tagged admin suite with `-race` and
-  treats unavailable database setup as failure rather than a skipped green;
-- the exact required database/race command passes; an unreachable-database
-  negative proves the required posture fails rather than skips;
+- all 48 legacy admin setups now use isolated migrated databases and required
+  CI fails rather than skips when PostgreSQL is unavailable;
 - frontend 27 files / 137 tests, type-check and production build pass;
+- PR #155 required run `29157383889`, squash merge `4b18ace92df49ad74048acc7197992990f14ca8e`
+  and post-merge main run `29157561036` passed all three required jobs;
 - evidence: `docs/ops/evidence/PRD6-ENG-P6TESTDB-admin-integration-isolation-local-20260711.md`.
 
 ## Previous P6-F17 Behavior Change
@@ -338,7 +359,7 @@ Previous P6-F32/P6-F39 results on `codex/prd6-p6f32-finance-tenant`:
   pass the same checks before merge.
 - at that historical point, the full tagged admin suite still depended on a
   separately provisioned shared schema and was correctly not represented as
-  green; the current `P6-TEST-DB-001` batch removes that dependency.
+  green; later `P6-TEST-DB-001` PR #155 removed that dependency and closed it.
 
 Focused P6-F33 results on `codex/prd6-b0b-notification-tenant`:
 

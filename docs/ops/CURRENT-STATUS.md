@@ -35,6 +35,11 @@
 > squash-merged as `b30bc9d1cb237703cc9479c3161c9cfa2c28f3f6`, and post-merge main run
 > `29156096777` passed all three jobs. P6-F18 is CI verified / closed; P6-F20
 > remains separate.
+> P6-TEST-DB-001 passed PR #155 required run `29157383889`, was squash-merged
+> as `4b18ace92df49ad74048acc7197992990f14ca8e`, and post-merge main run
+> `29157561036` passed all three jobs, including the isolated tagged admin
+> integration gate. P6-F03 retry classification is Local verified; required PR
+> CI remains pending.
 > No target or production verification is claimed.
 > D6-01, D6-02, D6-08 and D6-09 were accepted by the User on 2026-07-11; advanced
 > innovation rows P6-F23 through P6-F31 remain proposed.
@@ -77,8 +82,14 @@
   P6-F20 per-chunk/process-kill journaling or the general outbox.
 - P6-TEST-DB-001 isolated admin integration evidence:
   `docs/ops/evidence/PRD6-ENG-P6TESTDB-admin-integration-isolation-local-20260711.md`.
-  The 48-test current-schema suite and required-CI workflow change are Local
-  verified; exact PR CI remains pending.
+  PR #155 and post-merge main required CI passed; the engineering-integrity
+  issue is CI verified / closed.
+- P6-F03 retry classification local evidence:
+  `docs/ops/evidence/PRD6-B0C-P6F03-retry-classification-local-20260711.md`.
+  Chat now stops on classified client/auth/unknown failures, retries only
+  classified transient failures, preserves safe response semantics, records
+  sanitized retry decisions and keeps one-Freeze/one-terminal billing. Required
+  PR CI remains pending; Embeddings parity remains P6-F04.
 - Source-backed product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
 - PRD7 candidate-only split (not Accepted Scope):
@@ -92,11 +103,12 @@
 - Scope entry: `docs/planning/PRD6-START-HERE.md`.
 - Proposed PRD: `docs/PRD-Phase6.md`; accepted/proposed state is authoritative
   in `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`.
-- Accepted feature accounting after P6-F18 closeout: 25 accepted rows, 13 CI
-  verified / closed and 12 not started (`P6-F03`-`P6-F11`, `P6-F19`-`P6-F21`).
+- Accepted feature accounting after P6-F03 local verification: 25 accepted rows,
+  13 CI verified / closed, one Local verified pending CI (`P6-F03`) and 11 not
+  started (`P6-F04`-`P6-F11`, `P6-F19`-`P6-F21`).
   `P6-TEST-DB-001` is a separate engineering-integrity issue outside that
-  25-row feature count. Its 48-test isolated current-schema admin suite and
-  required-CI gate are Local verified; exact PR CI is pending.
+  25-row feature count; it is CI verified / closed by PR #155 and post-merge
+  main run `29157561036`.
 - Fresh pre-change verification passed backend tests/vet, frontend type-check,
   25 files / 125 tests, frontend build, and X-Insight full Go tests.
 - Focused read-only audit verification passed auth/middleware/admin/billing and

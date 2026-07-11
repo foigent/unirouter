@@ -341,19 +341,10 @@ func (a *AnthropicNative) ClassifyHTTPStatus(statusCode int, body []byte) *Norma
 			err.Message = msg
 		}
 	}
-	switch {
-	case statusCode == 400 || statusCode == 404:
-		err.FailureKind = FailureClientRequest
-	case statusCode == 401 || statusCode == 403:
-		err.FailureKind = FailureAuth
-	case statusCode == 408 || statusCode == 500 || statusCode == 502 || statusCode == 503 || statusCode == 529:
+	err.FailureKind, err.Retryable = classifyHTTPFailure(statusCode)
+	if statusCode == 529 {
 		err.FailureKind = FailureChannel
 		err.Retryable = true
-	case statusCode == 429:
-		err.FailureKind = FailureRateLimit
-		err.Retryable = true
-	default:
-		err.FailureKind = FailureUnknown
 	}
 	return err
 }

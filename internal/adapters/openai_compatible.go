@@ -174,20 +174,7 @@ func (a *OpenAICompatible) ClassifyHTTPStatus(statusCode int, body []byte) *Norm
 	if msg := extractOpenAIErrorMessage(body); msg != "" {
 		err.Message = msg
 	}
-	switch {
-	case statusCode == 400 || statusCode == 404:
-		err.FailureKind = FailureClientRequest
-	case statusCode == 401 || statusCode == 403:
-		err.FailureKind = FailureAuth
-	case statusCode == 408 || statusCode == 500 || statusCode == 502 || statusCode == 503:
-		err.FailureKind = FailureChannel
-		err.Retryable = true
-	case statusCode == 429:
-		err.FailureKind = FailureRateLimit
-		err.Retryable = true
-	default:
-		err.FailureKind = FailureUnknown
-	}
+	err.FailureKind, err.Retryable = classifyHTTPFailure(statusCode)
 	return err
 }
 
