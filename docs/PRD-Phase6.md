@@ -2,7 +2,7 @@
 
 > Version: 0.7
 > Date: 2026-07-12
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; Batch 0C P6-F03-P6-F06 and P6-STREAM-002A CI verified / closed; P6-F17/P6-F32-P6-F39 merged and CI verified
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F06, P6-F16-P6-F19, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F11 remains in progress
 > Accepted implementation scope: P6-F03 through P6-F11, P6-F16 through P6-F21, and P6-F32 through P6-F39
 > Innovation gate: P6-F23 through P6-F31 remain proposed/deferred
 
@@ -206,7 +206,7 @@ These do not become UniRouter source-code gaps without new evidence.
 | P6-F09 | Normalize and bill provider cache-read/cache-create tokens | P1 | Accepted MVP |
 | P6-F10 | Add versioned input/non-stream-output Guardrail Kernel | P1 | Accepted MVP |
 | P6-F11 | Add safe streaming interception, cancellation and settlement semantics | P1 | Accepted MVP; transport prerequisite P6-STREAM-002A CI verified / closed by PR #162; semantic policy remains |
-| P6-F19 | Add short Agent capability, monotonic delegation, ancestor budgets and versioned revocation | P1 | In progress: P6-F19A capability kernel CI verified by PR #164/main run `29170507588`; shared runtime cost/token/rate/concurrency enforcement remains |
+| P6-F19 | Add short Agent capability, monotonic delegation, ancestor budgets and versioned revocation | P1 | CI verified / closed by P6-F19A PR #164/main run `29170507588` plus P6-F19B PR #166/main run `29171807693`; generic P6-F07/P6-F20/P6-F21 remain separate |
 | P6-F20 | Add durable minimal usage/finalization outbox and bounded evidence/notification workers | P1 | Accepted MVP |
 | P6-F21 | Admit weighted workload classes without replica-multiplied quotas or long-stream starvation | P1 | Accepted MVP |
 | P6-F12 | Add external secret references/versioning/rotation for selected backends | P2 | Advanced candidate |

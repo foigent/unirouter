@@ -2,8 +2,8 @@
 
 > Date: 2026-07-12
 > Scope: repository/local evidence only
-> Status: CI verified prerequisite slice; P6-F19 remains in progress
-> Parent row: P6-F19 remains in progress
+> Status: CI verified prerequisite slice; parent P6-F19 later closed by P6-F19B
+> Parent row: P6-F19 CI verified / closed through PR #166 and main run `29171807693`
 
 ## Accepted contract exercised
 
@@ -93,9 +93,9 @@ Agent capability authority integration step, concluded `success`.
 
 ## Explicit non-claims and remaining work
 
-- P6-F19 is **not closed** by this slice. Cost, token, child RPM/RPS and child
-  concurrency values are signed and attenuation-checked, but shared runtime
-  reservation/settlement is not yet connected.
+- This slice alone did **not** close P6-F19. The later P6-F19B implementation
+  connects shared runtime reservation/settlement and closes the parent row;
+  see `docs/ops/evidence/PRD6-B1-P6F19B-agent-ancestor-budget-local-20260712.md`.
 - P6-F07 must provide the Redis-backed RPM/RPS/TPM/concurrency policy and consume
   capability ceilings; P6-F21 must provide shared workload-weighted admission.
 - Capability-authenticated model calls carry durable workflow/Agent evidence in

@@ -21,6 +21,9 @@
 | `internal/adapters` | Provider adapter registry and OpenAI-compatible / Anthropic-native request/response conversion |
 | `internal/auth` | JWT generation/validation, API key hashing, upstream key AES-GCM encryption/decryption |
 | `internal/billing` | Cost calculation, freeze/settle/cancel, price provider, project-scoped budget evaluation and tenant-scoped notification event service |
+| `internal/agentcap` | Signed short Agent capabilities, explicit topology, shared revocation/root-authority checks, and atomic per-ancestor cost/token/rate/concurrency state |
+| `internal/capapi` | Strict exchange/delegate/refresh/revoke HTTP control surface for model-gateway Agent authority |
+| `internal/capbilling` | Joins normal wallet Freeze/Settle/Cancel terminals to Agent ancestor reservation without widening external authority |
 | `internal/circuitbreaker` | Standalone circuit breaker implementation and tests |
 | `internal/filter` | DFA sensitive-word filter |
 | `internal/errdocs` | Error documentation registry used by gateway `doc_url` responses and API Docs |

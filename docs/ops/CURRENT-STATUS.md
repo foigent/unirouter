@@ -64,8 +64,14 @@
 > supervisor exchange, parent delegation, five-minute token, refresh
 > convergence, atomic topology cap, shared workflow revocation, 15-second
 > bounded root-authority refresh and signed evidence identity.
-> P6-F19 remains in progress because shared runtime cost/token/child-rate/
-> concurrency enforcement is not yet connected.
+> P6-F19B Agent ancestor budget passed PR #166 exact-head run `29171653038`,
+> was squash-merged as `b491817072384aa29b192e7dd121075d3ae9f867`,
+> and post-merge main run `29171807693` passed Backend Tests, Frontend Build
+> and Docker Build. Its historical branch is restored. Atomic per-ancestor
+> cost/token reservation and actual settlement, exact rolling RPM/RPS,
+> Redis-time shared concurrency, typed fail-closed denial and real Redis 7 plus
+> migrated-PostgreSQL readback are verified. Together with P6-F19A, P6-F19 is
+> CI verified / closed; P6-F07, P6-F20 and P6-F21 remain separate.
 > No target or production verification is claimed.
 > D6-01, D6-02, D6-08 and D6-09 were accepted by the User on 2026-07-11.
 > D6-10 long-stream hard-budget Scheme A and D6-11 explicit five-minute Agent
@@ -144,6 +150,13 @@
   Status/UI expose `stream-transport.v1`. PR #162 exact-head and post-merge main
   Backend/Frontend/Docker CI passed. D6-10 dynamic reservation extension and
   P6-F11 semantic interception remain.
+- P6-F19 Agent capability and ancestor-budget evidence:
+  `docs/ops/evidence/PRD6-B1-P6F19A-agent-capability-kernel-local-20260712.md`
+  and
+  `docs/ops/evidence/PRD6-B1-P6F19B-agent-ancestor-budget-local-20260712.md`.
+  PR #164/main run `29170507588` verify the capability lifecycle, topology and
+  revocation kernel; PR #166/main run `29171807693` verify shared runtime
+  cost/token/rate/concurrency enforcement. P6-F19 is CI verified / closed.
 - Source-backed product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
 - PRD7 candidate-only split (not Accepted Scope):
@@ -157,11 +170,10 @@
 - Scope entry: `docs/planning/PRD6-START-HERE.md`.
 - Proposed PRD: `docs/PRD-Phase6.md`; accepted/proposed state is authoritative
   in `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`.
-- Accepted feature accounting after the CI-verified P6-STREAM-002A slice: 25
-  accepted rows, 17 CI verified / closed and 8 unclosed. P6-F11 is in progress
-  through its transport prerequisite; P6-F19 is in progress through its CI-
-  verified capability kernel; `P6-F07`-`P6-F10`, `P6-F20` and
-  `P6-F21` remain not started.
+- Accepted feature accounting after the CI-verified P6-F19B slice: 25 accepted
+  rows, 18 CI verified / closed and 7 unclosed. P6-F11 is in progress through
+  its transport prerequisite; `P6-F07`-`P6-F10`, `P6-F20` and `P6-F21`
+  remain not started.
   `P6-TEST-DB-001` is a separate engineering-integrity issue outside that
   25-row feature count; it is CI verified / closed by PR #155 and post-merge
   main run `29157561036`.
@@ -209,8 +221,10 @@ expiry and all-replica active revocation within 30 seconds. Workflow lifetime,
 depth, fan-out and ancestor budgets are separate. UniRouter grants only model-
 gateway authority; Tool/IAM/database/export action owners remain separate.
 Neither accepted decision is presented as implemented before its exact row
-passes repository and CI evidence. P6-F19A now has local and required CI
-evidence, but P6-F19 remains open until its shared runtime budgets close.
+passes repository and CI evidence. P6-F19A and P6-F19B now have local,
+exact-head and post-merge CI evidence, so P6-F19 is CI verified / closed.
+Generic policy selectors/TPM/modes, durable cross-process terminal coupling and
+weighted shared admission remain P6-F07, P6-F20 and P6-F21 respectively.
 
 P6-F35 local evidence covers the repository boundary only. D6-09 defers its
 target activation; a later authorized cutover must drain old control-plane
