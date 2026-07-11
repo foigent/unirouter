@@ -25,7 +25,7 @@
 18. `docs/ops/evidence/PRD6-B0C-P6F03-retry-classification-local-20260711.md` - CI-verified provider retry classification evidence.
 19. `docs/ops/evidence/PRD6-B0C-P6F04-embeddings-failover-local-20260711.md` - CI-verified Embeddings failover-parity evidence.
 20. `docs/ops/evidence/PRD6-B0C-P6F05-routing-config-truth-local-20260711.md` - CI-verified typed routing/budget-alert configuration truth.
-21. `docs/ops/evidence/PRD6-B0C-P6F06-multiplier-freeze-local-20260711.md` - Local-verified multiplier reservation/settlement/cancel invariants and required-CI gate.
+21. `docs/ops/evidence/PRD6-B0C-P6F06-multiplier-freeze-local-20260711.md` - CI-verified multiplier reservation/settlement/cancel invariants and required-CI gate.
 22. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` - source-backed UI, reconciliation, correlation, architecture and upgrade audit.
 23. `docs/planning/PRD7-CANDIDATE-BACKLOG.md` - future first direction selected; implementation deferred until PRD6 closeout.
 24. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` - accepted future independent Cache Service target, planning bands and SaaS prerequisites; implementation deferred.
@@ -96,7 +96,8 @@ closed by PRs #155/#156/#157/#158 and post-merge main CI. For P6-F05,
 `effective-config.v1` exposes the driving routing configuration and
 one project-scoped budget-alert contract, while the broken global first-wallet
 path is removed and its historical keys are marked retired/ineffective. The
-P6-F06 multiplier-specific PostgreSQL matrix is Local verified / CI pending;
+P6-F06 multiplier-specific PostgreSQL matrix is CI verified / closed by PR #160,
+merge `15ea8a2` and post-merge main run `29161527988`;
 it proves insufficient rejection without residue, one exact terminal receipt
 with zero uncovered cost under 32 callers, and full idempotent cancel/refund.
 The

@@ -47,10 +47,10 @@
 > run `29160329032`, was squash-merged as `ca02ecb39abc24a6ce25d8c4926d72b11b612590`,
 > and post-merge main run `29160494169` passed all three jobs. P6-F05 is CI
 > verified / closed.
-> P6-F06 multiplier-aware reservation evidence is Local verified / CI pending:
-> real migrated PostgreSQL tests prove insufficient funds leave no reservation,
-> exact multiplier funds settle once with zero uncovered cost under 32 concurrent
-> callers, and cancellation restores the complete adjusted hold.
+> P6-F06 multiplier-aware reservation passed PR #160 required run
+> `29161370623`, was squash-merged as
+> `15ea8a27a0a514189c5af6f676af1e987f5c6763`, and post-merge main run
+> `29161527988` passed all three jobs. P6-F06 is CI verified / closed.
 > No target or production verification is claimed.
 > D6-01, D6-02, D6-08 and D6-09 were accepted by the User on 2026-07-11; advanced
 > innovation rows P6-F23 through P6-F31 remain proposed.
@@ -116,8 +116,9 @@
   P6-F18A already supplies the effective-price snapshot; the new dedicated
   PostgreSQL matrix proves atomic insufficient rejection, exact-funds 32-way
   settlement with `uncovered_cost=0`, and idempotent full cancellation refund.
-  The focused race matrix passed ten repetitions and required Backend now has a
-  fail-closed P6-F06 step. Exact-head CI is pending.
+  The focused race matrix passed ten repetitions and required Backend has a
+  fail-closed P6-F06 step. PR #160 and post-merge main required CI passed;
+  P6-F06 is CI verified / closed.
 - Source-backed product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
 - PRD7 candidate-only split (not Accepted Scope):
@@ -131,8 +132,8 @@
 - Scope entry: `docs/planning/PRD6-START-HERE.md`.
 - Proposed PRD: `docs/PRD-Phase6.md`; accepted/proposed state is authoritative
   in `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`.
-- Accepted feature accounting during P6-F06: 25 accepted rows, 16 CI verified /
-  closed, 1 Local verified / CI pending (`P6-F06`) and 8 not started
+- Accepted feature accounting after P6-F06 closeout: 25 accepted rows, 17 CI
+  verified / closed and 8 not started
   (`P6-F07`-`P6-F11`, `P6-F19`-`P6-F21`).
   `P6-TEST-DB-001` is a separate engineering-integrity issue outside that
   25-row feature count; it is CI verified / closed by PR #155 and post-merge

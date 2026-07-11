@@ -2,7 +2,7 @@
 
 > Version: 0.6
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; Batch 0C active; P6-F06 Local verified / CI pending; P6-F17/P6-F32-P6-F39 merged and CI verified
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; Batch 0C P6-F03-P6-F06 CI verified / closed; P6-F17/P6-F32-P6-F39 merged and CI verified
 > Accepted implementation scope: P6-F03 through P6-F11, P6-F16 through P6-F21, and P6-F32 through P6-F39
 > Innovation gate: P6-F23 through P6-F31 remain proposed/deferred
 
@@ -200,7 +200,7 @@ These do not become UniRouter source-code gaps without new evidence.
 | P6-F03 | Honor retryable/non-retryable error classification and preserve safe response semantics | P0 | Accepted Batch 0C |
 | P6-F04 | Give Embeddings Chat-equivalent routing/failover behavior | P0 | Accepted Batch 0C |
 | P6-F05 | Make effective retry/circuit/cooldown configuration observable, remove hard-coded divergence, and reconcile budget-alert configuration/scope truth | P0 | Accepted Batch 0C |
-| P6-F06 | Correct freeze/settlement behavior when organization multipliers increase actual cost | P0 | Accepted Batch 0C; Local verified / CI pending |
+| P6-F06 | Correct freeze/settlement behavior when organization multipliers increase actual cost | P0 | Accepted Batch 0C; CI verified / closed by PR #160 |
 | P6-F07 | Enforce shared RPM/RPS/TPM/concurrency policies with explicit selectors and failure modes | P1 | Accepted MVP |
 | P6-F08 | Implement Routing Policy V1 with explainable candidates, exclusions, retry and failover | P1 | Accepted MVP |
 | P6-F09 | Normalize and bill provider cache-read/cache-create tokens | P1 | Accepted MVP |
