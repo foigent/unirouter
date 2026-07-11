@@ -1,10 +1,10 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 0C P6-F06 Multiplier-Aware Freeze
+**Batch:** PRD6 Batch 0C P6-F06 CI Evidence Closeout
 **Owner:** Codex
 **Risk:** R3 tenant financial correctness
-**Status:** Local verified / required CI pending
-**Integration:** branch `codex/prd6-p6f06-multiplier-freeze`; PR/required-CI/merge pending; no deployment, target or production claim
+**Status:** CI verified / closed
+**Integration:** PR #160 required run `29161370623`; merge `15ea8a2`; post-merge main run `29161527988`; historical branch retained; no deployment, target or production claim
 **Previous batch:** P6-F05 CI verified / closed by PR #158 and post-merge main run `29160494169`
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
@@ -38,6 +38,8 @@
   vet and repository race tests pass;
 - required Backend now runs `TestP6F06` with
   `REQUIRE_TEST_DATABASE=1`, so PostgreSQL absence cannot become a skipped green;
+- PR #160 exact-head Backend/Frontend/Docker required CI passed, the change was
+  squash-merged as `15ea8a2`, and post-merge main CI passed the same jobs;
 - evidence: `docs/ops/evidence/PRD6-B0C-P6F06-multiplier-freeze-local-20260711.md`.
 
 ## Previous P6-F05 Behavior Change

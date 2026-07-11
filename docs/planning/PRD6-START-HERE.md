@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-11
-> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F03/P6-F04/P6-F05 CI verified / closed; P6-F06 Local verified / CI pending; P6-F16-P6-F18/P6-F32-P6-F39 applicable rows merged and CI verified
+> Status: D6-01/D6-02/D6-08/D6-09 accepted; P6-F03-P6-F06 CI verified / closed; P6-F16-P6-F18/P6-F32-P6-F39 applicable rows merged and CI verified
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -120,11 +120,12 @@ evidence.
   transitions and two-tenant budget scope pass against real PostgreSQL, and
   ambiguous global alert keys are retired. PR #158 merged as `ca02ecb`; main
   run `29160494169` passed all required jobs.
-- P6-F06 is Local verified / CI pending. P6-F18A already freezes the
+- P6-F06 is CI verified / closed. P6-F18A already freezes the
   multiplier-adjusted price; the dedicated isolated PostgreSQL matrix proves
   insufficient rejection without residue, exact 32-way settlement with one
   terminal receipt and zero uncovered cost, and full idempotent cancel/refund.
-  Required Backend now runs the matrix fail-closed.
+  Required Backend runs the matrix fail-closed; PR #160, merge `15ea8a2` and
+  post-merge main run `29161527988` passed all required jobs.
 
 ## PRD5 Closure Guard
 

@@ -3,7 +3,7 @@
 > Date: 2026-07-11
 > Scope: UniRouter organization-multiplier reservation, settlement and cancellation invariants
 > Risk: R3 tenant financial correctness
-> Evidence level: Local verified; required CI pending
+> Evidence level: CI verified / closed
 > Deployment/target/production claim: none
 
 ## 1. Confirmed finding and repaired foundation
@@ -91,11 +91,23 @@ React/Semi and bundle-size warnings remain non-failing. Frontend source and
 product behavior are unchanged; Docker build remains a required CI gate for the
 exact PR head.
 
-## 5. Acceptance and boundary
+## 5. Required CI, merge and post-merge evidence
 
-The repository evidence is Local verified. Promotion to `CI verified / closed`
-requires Backend Tests, Frontend Build and Docker Build on the exact PR head,
-merge to `main`, and a green post-merge `main` run.
+PR #160 exact head `7873cf24a16d7462bc588f0edd8b91a66a3c48f5`
+passed required run `29161370623`: Backend Tests passed in 3m48s, Frontend
+Build passed in 3m12s and Docker Build passed in 1m01s. Backend explicitly
+passed the full race suite, isolated admin, routing-policy, budget-alert and new
+multiplier-freeze PostgreSQL gates.
+
+PR #160 was squash-merged as
+`15ea8a27a0a514189c5af6f676af1e987f5c6763`. Post-merge main run
+`29161527988` passed Backend Tests in 3m44s, Frontend Build in 3m14s and Docker
+Build in 1m03s, including the P6-F06 PostgreSQL gate. The historical branch is
+retained. The non-failing Node-version and Go-cache-restore annotations do not
+change the successful job conclusions.
+
+P6-F06 is CI verified / closed for the accepted repository scope. Neither run
+promotes it to target or production verification.
 
 This batch adds no pricing API, multiplier mutation, wallet formula, database
 migration, provider call, response cache, deployment or target change. It does
