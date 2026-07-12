@@ -26,7 +26,7 @@
 - [ops/evidence/PRD6-B1-P6F07-distributed-limit-policy-local-20260712.md](ops/evidence/PRD6-B1-P6F07-distributed-limit-policy-local-20260712.md) — P6-F07 跨副本 RPM/RPS/TPM/并发策略、故障语义、控制 UI、迁移与 CI 收口证据
 - [ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md](ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md) — P6-F21 加权跨副本租约、公平队列、故障/混合配置和 PR #170/main required CI 收口证据
 - [ops/evidence/PRD6-B2-P6F08-routing-policy-v1-local-20260712.md](ops/evidence/PRD6-B2-P6F08-routing-policy-v1-local-20260712.md) — P6-F08 确定性同级权重、短时快照、跨副本探针、epoch CAS、预览/证据、安全回滚及 PR #172/main CI 收口证据
-- [ops/evidence/PRD6-B3-P6F09-prompt-cache-billing-local-20260712.md](ops/evidence/PRD6-B3-P6F09-prompt-cache-billing-local-20260712.md) — P6-F09 上游 Prompt Cache 用量归一、冻结价格、结算恢复、日志/对账/UI、迁移回滚及本地验证证据；exact-head CI 待完成
+- [ops/evidence/PRD6-B3-P6F09-prompt-cache-billing-local-20260712.md](ops/evidence/PRD6-B3-P6F09-prompt-cache-billing-local-20260712.md) — P6-F09 上游 Prompt Cache 用量归一、冻结价格、结算恢复、日志/对账/UI、迁移回滚、PR #174/#175 与最终 main CI 收口证据
 - [planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md](planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md) — UI、对账、链路身份、架构与 2B 升级审计
 - [planning/PRD7-CANDIDATE-BACKLOG.md](planning/PRD7-CANDIDATE-BACKLOG.md) — 未来首项方向已选；实现后置到 PRD6 闭环后
 - [planning/PRD7-CACHE-SERVICE-CANDIDATE.md](planning/PRD7-CACHE-SERVICE-CANDIDATE.md) — 未来独立 Cache Service、容量拆分触发线和 SaaS cell 复用边界
@@ -59,7 +59,7 @@
 - [PRD-Phase3.md](PRD-Phase3.md) — 已完成 PRD3 一致性、语义、契约和架构清理范围
 - [planning/PRD3-CONSISTENCY-AUDIT.md](planning/PRD3-CONSISTENCY-AUDIT.md) — PRD3 范围审计和 PRD1→PRD2 遗留问题梳理
 - [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 当前未关闭问题列表
-- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前执行记录：PRD6 Batch 3 P6-F09 本地验证完成、exact-head CI 待执行
+- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前执行记录：PRD6 Batch 3 P6-F09 CI 收口，下一项 P6-F20
 - [agent-workflows/reviews/README.md](agent-workflows/reviews/README.md) — 可选独立复核记录格式和问题级别规则
 - [ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md](ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md) — 单一执行负责人、Git/CI、高影响授权和复核规则的确认记录
 - [ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md](ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md) — Batch 1W 根因、代码、回归和目标证据边界

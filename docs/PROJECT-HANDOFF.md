@@ -32,7 +32,7 @@
 25. `docs/ops/evidence/PRD6-B1-P6F07-distributed-limit-policy-local-20260712.md` - versioned shared selector/rate/token/concurrency, control-plane, migration and CI closure evidence.
 26. `docs/ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md` - CI-verified weighted leases, fair queues, fault/mixed-config, PR #170/main runs and current non-claims.
 27. `docs/ops/evidence/PRD6-B2-P6F08-routing-policy-v1-local-20260712.md` - CI-verified deterministic weighted routing, bounded snapshots, renewable probe ownership, epoch CAS, preview/evidence, guarded migration, PR #172 and post-merge main evidence.
-28. `docs/ops/evidence/PRD6-B3-P6F09-prompt-cache-billing-local-20260712.md` - Local-verified provider Prompt Cache normalization, immutable pricing, settlement/recovery, UI/reconciliation and guarded migration evidence; exact-head CI pending.
+28. `docs/ops/evidence/PRD6-B3-P6F09-prompt-cache-billing-local-20260712.md` - CI-verified provider Prompt Cache normalization, immutable pricing, settlement/recovery, UI/reconciliation, guarded migration, PR #174/#175 and final main evidence.
 29. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` - source-backed UI, reconciliation, correlation, architecture and upgrade audit.
 30. `docs/planning/PRD7-CANDIDATE-BACKLOG.md` - future first direction selected; implementation deferred until PRD6 closeout.
 31. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` - accepted future independent Cache Service target, planning bands and SaaS prerequisites; implementation deferred.
@@ -133,13 +133,15 @@ PostgreSQL probe ownership, routing/circuit/key epoch CAS, per-channel
 thresholds, shared Chat/Embeddings plans, safe preview/trace/UI and guarded
 migration are covered. Its historical branch is retained at the exact head;
 no target or capacity claim exists.
-P6-F09 provider Prompt Cache accounting is Local verified on
-`codex/prd6-prompt-cache-billing`. Version-fixed OpenAI v1/v2, DeepSeek and
-Anthropic usage partitions, `pv2_` immutable ratios/effective prices,
-settlement/recovery, Logs/reconciliation UI and guarded migration pass local
-race plus real PostgreSQL evidence. Exact-head required CI is pending. This is
-not response caching or the future independent Cache Service and makes no
-target or production claim.
+P6-F09 provider Prompt Cache accounting is CI verified / closed. Exact
+implementation head `711e718` passed PR #174 run `29180539621` and was
+squash-merged as `6515b3f`. The first post-merge main run exposed an existing
+P6-F21 miniredis timeout; production-neutral fixture-stability PR #175 passed
+run `29180946857`, merged as `257a9eb`, and final post-fix main run
+`29181137210` passed Backend Tests, Frontend Build and Docker Build. The
+historical implementation branch is retained at its exact head. This is not
+response caching or the future independent Cache Service and makes no target
+or production claim. P6-F20 keeps Batch 3 active.
 The adaptive-trust, Digital Twin,
 shadow, collusion, trust-receipt and claim-assurance rows remain proposed and
 are not implied by D6-01.

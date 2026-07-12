@@ -1,11 +1,11 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 3 P6-F09 Provider Prompt Cache Billing implementation
+**Batch:** PRD6 Batch 3 P6-F09 Provider Prompt Cache Billing closeout
 **Owner:** Codex
 **Risk:** R3 financial truth, provider usage-contract normalization and migration/cutover safety
-**Status:** Local verified; exact-head required CI pending
-**Integration:** branch `codex/prd6-prompt-cache-billing` from post-P6-F08 closeout `main` at `2d09144b1e8a024079fae2931ca5420d489a8067`; no PR or deployment claim yet
-**Next gate:** commit the reviewed local implementation, open its PR, and require exact-head Backend Tests, Frontend Build and Docker Build before closure
+**Status:** CI verified / closed
+**Integration:** implementation head `711e7182c4875ed8324f6e379f73107ebcb30ffb`; PR #174 run `29180539621`; merge `6515b3f3f281da022d7685700ec0754fe8ac3b66`; production-neutral stability head `8a7fefe2a5e42ac8adcd9ac8838bc9ea8cb93fb7`; PR #175 run `29180946857`; merge `257a9ebe14a80f52073ff8b20c21aa9b6ee86931`; final main run `29181137210`
+**Next gate:** implement P6-F20 durable minimal usage/finalization outbox and bounded replayable workers to complete Batch 3
 **Previous batch:** P6-F08 implementation PR #172 plus closeout PR #173; post-closeout main run `29179065645` passed and both historical branches are retained
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
@@ -45,8 +45,9 @@
   writers only before activation and refuses destructive down after a
   non-default ratio, `pv2_` reservation or cache-aware log exists;
 - full backend/race/vet, real PostgreSQL billing and migration, full frontend
-  tests/type-check/build, OpenAPI parse and diff checks pass locally; exact-head
-  required CI and Docker evidence remain pending; and
+  tests/type-check/build, OpenAPI parse and diff checks pass locally; PR #174
+  exact-head CI and final post-fix main run `29181137210` pass Backend Tests,
+  Frontend Build and Docker Build; and
 - evidence:
   `docs/ops/evidence/PRD6-B3-P6F09-prompt-cache-billing-local-20260712.md`.
 

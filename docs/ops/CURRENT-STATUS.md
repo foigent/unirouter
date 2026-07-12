@@ -103,16 +103,19 @@
 > The implementation keeps outer `effective-config.v1` stable and advances its embedded
 > routing startup/snapshot contract additively to `routing-config.v2`.
 > No target or production verification is claimed.
-> P6-F09 provider Prompt Cache accounting is Local verified on branch
-> `codex/prd6-prompt-cache-billing` from post-P6-F08 closeout `main` at
-> `2d09144b1e8a024079fae2931ca5420d489a8067`. Authoritative OpenAI,
+> P6-F09 provider Prompt Cache accounting is CI verified / closed.
+> Implementation branch `codex/prd6-prompt-cache-billing` is retained at exact
+> head `711e7182c4875ed8324f6e379f73107ebcb30ffb`, which passed PR #174 run
+> `29180539621` before squash merge `6515b3f`. Authoritative OpenAI,
 > DeepSeek and Anthropic usage fields now drive an exact ordinary/read/create
 > partition; immutable `pv2_` pricing freezes per-model read/create ratios and
 > organization multiplier; settlement/recovery, request logs, reconciliation
 > and operator UI carry the same evidence; migration `000026` is guarded after
-> activation. Full local backend/race/vet, real PostgreSQL financial/rollback,
-> frontend and OpenAPI verification pass. Exact-head required CI and Docker
-> evidence remain pending, so the row is not closed. This is provider Prompt
+> activation. The first post-merge main run `29180730830` failed only the
+> pre-existing P6-F21 miniredis fixture. Production-neutral stability PR #175
+> passed run `29180946857`, merged as `257a9eb`, and final post-fix main run
+> `29181137210` passed Backend Tests, Frontend Build and Docker Build, including
+> the two explicit P6-F09 PostgreSQL gates. This is provider Prompt
 > Cache billing only: no response Cache Service, deployment, target,
 > production or real/paid-provider claim is made. Evidence:
 > `docs/ops/evidence/PRD6-B3-P6F09-prompt-cache-billing-local-20260712.md`.
@@ -226,8 +229,9 @@
   Provider-contract fixtures, exact price freeze/settlement/recovery, migrated
   PostgreSQL readback, guarded down/roll-forward, tenant-scoped logs and
   reconciliation, UI semantics, full backend race/vet and frontend
-  tests/type-check/build pass locally. The exact implementation head has not
-  yet passed required PR CI, so this remains Local verified, not closed.
+  tests/type-check/build pass. PR #174 exact-head run `29180539621`, PR #175
+  stabilization run `29180946857` and final post-fix main run `29181137210`
+  passed all required jobs; this row is CI verified / closed.
 - Source-backed product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
 - PRD7 candidate-only split (not Accepted Scope):
@@ -241,9 +245,8 @@
 - Scope entry: `docs/planning/PRD6-START-HERE.md`.
 - Proposed PRD: `docs/PRD-Phase6.md`; accepted/proposed state is authoritative
   in `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`.
-- Accepted feature accounting while P6-F09 awaits exact-head CI: 25 accepted
-  rows, 21 CI verified / closed and 4 unclosed. P6-F09 is Local verified;
-  P6-F11 is in progress; P6-F10 and P6-F20 remain not started.
+- Accepted feature accounting: 25 accepted rows, 22 CI verified / closed and
+  3 unclosed. P6-F11 is in progress; P6-F10 and P6-F20 remain not started.
   `P6-TEST-DB-001` is a separate engineering-integrity issue outside that
   25-row feature count; it is CI verified / closed by PR #155 and post-merge
   main run `29157561036`.
