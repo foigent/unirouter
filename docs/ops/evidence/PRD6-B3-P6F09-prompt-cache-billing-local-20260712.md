@@ -203,8 +203,10 @@ The complete integration truth chain is:
    `29181137210` passed Backend Tests 5m28, Frontend Build 3m35 and Docker
    Build 1m02, including full tests and both explicit P6-F09 PostgreSQL gates.
 
-P6-F09 is therefore **CI verified / closed**. Batch 3 remains active because
-P6-F20 is a separate accepted durable-outbox requirement.
+P6-F09 is therefore **CI verified / closed**. Batch 3 remained active at this
+point because P6-F20 was a separate accepted durable-outbox requirement;
+P6-F20 was later closed independently by PR #177 and post-merge main run
+`29194150134`.
 
 ## 8. Explicit Non-Claims
 
@@ -214,7 +216,8 @@ P6-F20 is a separate accepted durable-outbox requirement.
   provider fields.
 - No real or paid provider request; provider compatibility evidence is fixture
   and official-contract based.
-- No P6-F20 general outbox/worker completion, P6-F10 Guardrail completion or
-  P6-F11 semantic streaming-policy completion.
+- This P6-F09 evidence does not prove P6-F20 general outbox/worker completion;
+  that separate row is evidenced by PR #177. It also does not prove P6-F10
+  Guardrail completion or P6-F11 semantic streaming-policy completion.
 - No deployment, ECS/security-group change, credential change, extra database
   access, exporter/outbox activation or X-Insight work.
