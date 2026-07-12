@@ -18,8 +18,15 @@ import (
 func newPolicyTestService(t *testing.T, options Options, policies ...Policy) (*Service, *miniredis.Miniredis) {
 	t.Helper()
 	mr := miniredis.RunT(t)
-	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr(), ContextTimeoutEnabled: true, MaxRetries: -1})
 	t.Cleanup(func() { _ = client.Close() })
+	loadCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	for _, script := range []*redis.Script{reserveScript, terminalScript} {
+		if err := script.Load(loadCtx, client).Err(); err != nil {
+			t.Fatalf("preload limit-policy miniredis script: %v", err)
+		}
+	}
 	service, err := NewService(nil, client, options)
 	if err != nil {
 		t.Fatal(err)
@@ -158,14 +165,22 @@ func TestP6F21WorkloadAdmissionRunsAfterAPIKeyAttemptRate(t *testing.T) {
 	options.OrgConcurrency = 1
 	options.Workload.GlobalShortReserve = 0
 	options.Workload.OrgShortReserve = 0
-	options.Workload.Interactive = workloadadmission.ClassPolicy{Weight: 1, MaxWait: 10 * time.Millisecond}
-	options.Workload.Stream = workloadadmission.ClassPolicy{Weight: 1, MaxWait: 10 * time.Millisecond}
-	options.Workload.Embedding = workloadadmission.ClassPolicy{Weight: 1, MaxWait: 10 * time.Millisecond}
+	// This fixture proves API-key-attempt/workload ordering, not a production
+	// latency SLO. Keep the Go Lua emulator budget separate from real Redis
+	// timing authority so race instrumentation cannot trigger fallback admission.
+	options.Workload.Interactive = workloadadmission.ClassPolicy{Weight: 1, MaxWait: 250 * time.Millisecond}
+	options.Workload.Stream = workloadadmission.ClassPolicy{Weight: 1, MaxWait: 250 * time.Millisecond}
+	options.Workload.Embedding = workloadadmission.ClassPolicy{Weight: 1, MaxWait: 250 * time.Millisecond}
+	options.Workload.StoreTimeout = 500 * time.Millisecond
 	service, _ := newPolicyTestService(t, options)
 	firstRequest := admission("workload-first", 1)
 	firstRequest.Subject.BaseRPSLimit = 1_000
 	firstRequest.Subject.BaseRPMLimit = 2
 	firstRequest.WorkloadClass = workloadadmission.ClassInteractive
+	// Lease expiry is not under test. Keep it well beyond the instrumented
+	// emulator's execution budget so a slow fake Lua VM cannot turn capacity
+	// denial into an unrelated expiry admission.
+	firstRequest.LeaseTTL = 10 * time.Minute
 	first, err := service.Reserve(context.Background(), firstRequest)
 	if err != nil {
 		t.Fatal(err)
