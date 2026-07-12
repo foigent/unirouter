@@ -1,0 +1,260 @@
+package policybilling
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/uniroute/unirouter/internal/billing"
+	"github.com/uniroute/unirouter/internal/limitpolicy"
+	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/models"
+)
+
+type fakeProvider struct {
+	freezeResult *billing.FreezeResult
+	freezeErr    error
+	settleResult *billing.SettleResult
+	settleErr    error
+	freezeCalls  int
+	settleCalls  int
+	cancelCalls  int
+}
+
+func (p *fakeProvider) QueryModelPriceForOrg(context.Context, int64, string) (float64, float64, error) {
+	return 1, 1, nil
+}
+
+func (p *fakeProvider) CalculateCost(context.Context, string, int, int) (int, error) {
+	return 1, nil
+}
+
+func (p *fakeProvider) Freeze(context.Context, billing.FreezeRequest) (*billing.FreezeResult, error) {
+	p.freezeCalls++
+	if p.freezeResult == nil && p.freezeErr == nil {
+		return &billing.FreezeResult{Success: true, Amount: 10}, nil
+	}
+	return p.freezeResult, p.freezeErr
+}
+
+func (p *fakeProvider) MarkBillableOutput(context.Context, string, int64) error { return nil }
+func (p *fakeProvider) PersistSettlementUsage(context.Context, billing.SettleRequest) error {
+	return nil
+}
+
+func (p *fakeProvider) Settle(context.Context, billing.SettleRequest) (*billing.SettleResult, error) {
+	p.settleCalls++
+	if p.settleResult == nil && p.settleErr == nil {
+		return &billing.SettleResult{Success: true, ActualCost: 1}, nil
+	}
+	return p.settleResult, p.settleErr
+}
+
+func (p *fakeProvider) Cancel(context.Context, string, int64) error {
+	p.cancelCalls++
+	return nil
+}
+
+type fakeRuntime struct {
+	reserveErr        error
+	finalizeErr       error
+	cancelErr         error
+	lastRequest       limitpolicy.AdmissionRequest
+	reserveCalls      int
+	finalizeCalls     int
+	cancelCalls       int
+	cancelBeforeCalls int
+	finalizedTokens   int64
+}
+
+func (r *fakeRuntime) Reserve(_ context.Context, request limitpolicy.AdmissionRequest) (*limitpolicy.Reservation, error) {
+	r.reserveCalls++
+	r.lastRequest = request
+	if r.reserveErr != nil {
+		return nil, r.reserveErr
+	}
+	return &limitpolicy.Reservation{OperationID: request.OperationID}, nil
+}
+
+func (r *fakeRuntime) Finalize(_ context.Context, _ *limitpolicy.Reservation, actualTokens int64) error {
+	r.finalizeCalls++
+	r.finalizedTokens = actualTokens
+	return r.finalizeErr
+}
+
+func (r *fakeRuntime) Cancel(context.Context, *limitpolicy.Reservation) error {
+	r.cancelCalls++
+	return r.cancelErr
+}
+
+func (r *fakeRuntime) CancelBeforeDispatch(context.Context, *limitpolicy.Reservation) error {
+	r.cancelBeforeCalls++
+	return nil
+}
+
+func policyContext() context.Context {
+	apiKey := &models.ApiKey{ID: 13, OrgID: 7, QPSLimit: 10, RPMLimit: 60}
+	ctx := context.WithValue(context.Background(), middleware.CtxAPIKey, apiKey)
+	ctx = context.WithValue(ctx, middleware.CtxOrgID, int64(7))
+	ctx = context.WithValue(ctx, middleware.CtxProjectID, int64(11))
+	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(13))
+	return ctx
+}
+
+func TestPolicyDenialHappensBeforeWalletFreeze(t *testing.T) {
+	inner := &fakeProvider{}
+	runtime := &fakeRuntime{reserveErr: limitpolicy.ErrTPMExceeded}
+	service := New(inner, runtime)
+	result, err := service.Freeze(policyContext(), billing.FreezeRequest{
+		RequestID: "operation-denied", OrgID: 7, Model: "company-chat",
+		EstimatedTokens: 100, EstimatedInputTokens: 40, ReservedCompletionTokens: 60,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result == nil || result.Success || result.ErrorCode != ErrorCodeTPMExceeded {
+		t.Fatalf("result = %#v", result)
+	}
+	if inner.freezeCalls != 0 {
+		t.Fatalf("wallet freeze calls = %d, want 0", inner.freezeCalls)
+	}
+}
+
+func TestPolicyLifecycleUsesServerSubjectAndActualUsage(t *testing.T) {
+	inner := &fakeProvider{}
+	runtime := &fakeRuntime{}
+	service := New(inner, runtime)
+	result, err := service.Freeze(policyContext(), billing.FreezeRequest{
+		RequestID: "operation-success", OrgID: 7, Model: "company-chat",
+		EstimatedTokens: 100, EstimatedInputTokens: 40, ReservedCompletionTokens: 60,
+	})
+	if err != nil || result == nil || !result.Success {
+		t.Fatalf("freeze result=%#v err=%v", result, err)
+	}
+	request := runtime.lastRequest
+	if request.Subject.OrgID != 7 || request.Subject.ProjectID != 11 || request.Subject.APIKeyID != 13 ||
+		request.Subject.Model != "company-chat" || request.EstimatedInput != 40 || request.ReservedOutput != 60 {
+		t.Fatalf("admission request = %#v", request)
+	}
+	if request.Subject.BaseRPSLimit != 10 || request.Subject.BaseRPMLimit != 60 {
+		t.Fatalf("API-key base limits not propagated: %#v", request.Subject)
+	}
+	settled, err := service.Settle(context.Background(), billing.SettleRequest{
+		RequestID: "operation-success", OrgID: 7, PromptTokens: 44, CompletionTokens: 22,
+	})
+	if err != nil || settled == nil || !settled.Success {
+		t.Fatalf("settle result=%#v err=%v", settled, err)
+	}
+	if runtime.finalizeCalls != 1 || runtime.finalizedTokens != 66 {
+		t.Fatalf("finalize calls=%d tokens=%d", runtime.finalizeCalls, runtime.finalizedTokens)
+	}
+}
+
+func TestWalletFreezeFailureRollsBackPolicyBeforeDispatch(t *testing.T) {
+	inner := &fakeProvider{freezeResult: &billing.FreezeResult{Success: false, ErrorCode: "insufficient_balance"}}
+	runtime := &fakeRuntime{}
+	service := New(inner, runtime)
+	result, err := service.Freeze(policyContext(), billing.FreezeRequest{
+		RequestID: "operation-wallet-denied", OrgID: 7, Model: "company-chat", EstimatedTokens: 10,
+	})
+	if err != nil || result == nil || result.Success {
+		t.Fatalf("freeze result=%#v err=%v", result, err)
+	}
+	if runtime.cancelBeforeCalls != 1 {
+		t.Fatalf("pre-dispatch policy cancellations = %d", runtime.cancelBeforeCalls)
+	}
+}
+
+func TestOrdinaryCancellationReleasesConcurrency(t *testing.T) {
+	inner := &fakeProvider{}
+	runtime := &fakeRuntime{}
+	service := New(inner, runtime)
+	if _, err := service.Freeze(policyContext(), billing.FreezeRequest{
+		RequestID: "operation-cancel", OrgID: 7, Model: "company-chat", EstimatedTokens: 10,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Cancel(context.Background(), "operation-cancel", 7); err != nil {
+		t.Fatal(err)
+	}
+	if inner.cancelCalls != 1 || runtime.cancelCalls != 1 {
+		t.Fatalf("inner cancels=%d policy cancels=%d", inner.cancelCalls, runtime.cancelCalls)
+	}
+}
+
+func TestAmbiguousSettlementDoesNotReleasePolicyReservation(t *testing.T) {
+	inner := &fakeProvider{settleErr: errors.New("ambiguous database result")}
+	runtime := &fakeRuntime{}
+	service := New(inner, runtime)
+	if _, err := service.Freeze(policyContext(), billing.FreezeRequest{
+		RequestID: "operation-ambiguous", OrgID: 7, Model: "company-chat", EstimatedTokens: 10,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Settle(context.Background(), billing.SettleRequest{RequestID: "operation-ambiguous", OrgID: 7}); err == nil {
+		t.Fatal("expected ambiguous settlement error")
+	}
+	if err := service.Cancel(context.Background(), "operation-ambiguous", 7); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.cancelCalls != 0 {
+		t.Fatalf("ambiguous settlement released policy reservation %d times", runtime.cancelCalls)
+	}
+}
+
+func TestTerminalRuntimeFailuresDoNotLeakInProcessTrackers(t *testing.T) {
+	t.Run("settlement", func(t *testing.T) {
+		inner := &fakeProvider{}
+		runtime := &fakeRuntime{finalizeErr: errors.New("redis unavailable")}
+		service := New(inner, runtime)
+		if _, err := service.Freeze(policyContext(), billing.FreezeRequest{
+			RequestID: "operation-finalize-error", OrgID: 7, Model: "company-chat", EstimatedTokens: 10,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := service.Settle(context.Background(), billing.SettleRequest{
+			RequestID: "operation-finalize-error", OrgID: 7, PromptTokens: 4, CompletionTokens: 2,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, tracked := service.reservations.Load("operation-finalize-error"); tracked {
+			t.Fatal("settled reservation tracker leaked after bounded Redis retention")
+		}
+	})
+
+	t.Run("cancellation", func(t *testing.T) {
+		inner := &fakeProvider{}
+		runtime := &fakeRuntime{cancelErr: errors.New("redis unavailable")}
+		service := New(inner, runtime)
+		if _, err := service.Freeze(policyContext(), billing.FreezeRequest{
+			RequestID: "operation-cancel-error", OrgID: 7, Model: "company-chat", EstimatedTokens: 10,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := service.Cancel(context.Background(), "operation-cancel-error", 7); err != nil {
+			t.Fatal(err)
+		}
+		if _, tracked := service.reservations.Load("operation-cancel-error"); tracked {
+			t.Fatal("cancelled reservation tracker leaked after bounded Redis retention")
+		}
+	})
+}
+
+func TestErrorCodesAreTyped(t *testing.T) {
+	tests := []struct {
+		err  error
+		code string
+	}{
+		{limitpolicy.ErrRPSExceeded, ErrorCodeRPSExceeded},
+		{limitpolicy.ErrRPMExceeded, ErrorCodeRPMExceeded},
+		{limitpolicy.ErrTPMExceeded, ErrorCodeTPMExceeded},
+		{limitpolicy.ErrConcurrencyExceeded, ErrorCodeConcurrencyExceeded},
+		{limitpolicy.ErrConflict, ErrorCodeConflict},
+		{limitpolicy.ErrStateUnavailable, ErrorCodeStateUnavailable},
+	}
+	for _, test := range tests {
+		if got := errorCode(test.err); got != test.code {
+			t.Fatalf("errorCode(%v) = %q, want %q", test.err, got, test.code)
+		}
+	}
+}

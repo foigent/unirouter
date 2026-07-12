@@ -157,6 +157,7 @@ func TruncateAll(t *testing.T, pool *pgxpool.Pool) {
 	ctx := context.Background()
 
 	tables := []string{
+		"distributed_limit_policies",
 		"notification_deliveries",
 		"notification_webhooks",
 		"notification_events",

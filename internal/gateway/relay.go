@@ -489,8 +489,11 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Estimate tokens for billing freeze
-	estimatedTokens := estimateTokens(req.Messages, req.MaxTokens)
+	// Reserve both estimated input and the allowed output ceiling. P6-F07
+	// settles this reservation to actual usage at the same terminal boundary as
+	// billing; P6-F11 will add long-stream incremental extension.
+	estimatedInputTokens, reservedCompletionTokens := estimateTokenReservation(req.Messages, req.MaxTokens)
+	estimatedTokens := estimatedInputTokens + reservedCompletionTokens
 	orgID := middleware.GetOrgIDFromContext(ctx)
 	keyID := middleware.GetKeyIDFromContext(ctx)
 	reqLog := logger.New(logger.Fields{RequestID: requestID, OrgID: uint(orgID), Module: "chat"})
@@ -504,16 +507,20 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		providerTimeout = relay.currentStreamPolicy().MaxDuration()
 	}
 	ctx = agentcap.ContextWithInvocationLeaseTTL(ctx, providerTimeout)
+	ctx, limitPolicyCollector := contextWithLimitPolicyCollector(ctx)
 
 	// Freeze balance once (before trying any upstream)
 	freezeResult, err := relay.billing.Freeze(ctx, billing.FreezeRequest{
-		RequestID:       requestID,
-		OrgID:           orgID,
-		Model:           req.Model,
-		EstimatedTokens: estimatedTokens,
-		SafetyFactor:    1.5,
-		MinFreezeAmount: 10,
+		RequestID:                requestID,
+		OrgID:                    orgID,
+		Model:                    req.Model,
+		EstimatedTokens:          estimatedTokens,
+		EstimatedInputTokens:     estimatedInputTokens,
+		ReservedCompletionTokens: reservedCompletionTokens,
+		SafetyFactor:             1.5,
+		MinFreezeAmount:          10,
 	})
+	relay.recordLimitPolicyAdmission(ctx, w, limitPolicyCollector, requestID, req.Model, requestedModel, elapsedMilliseconds(requestStart))
 	if err != nil {
 		reqLog.Error("Billing freeze error: %v", err)
 		relay.recordTraceEvent(ctx, requestID, "billing.freeze.failed", "billing", "error", req.Model, requestedModel, nil, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
@@ -528,6 +535,9 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		})
 		middleware.RecordBillingFreeze("error")
 		if writeAgentCapabilityRuntimeRejection(w, freezeResult.ErrorCode) {
+			return
+		}
+		if writeLimitPolicyRuntimeRejection(w, freezeResult.ErrorCode) {
 			return
 		}
 		switch freezeResult.ErrorCode {
@@ -1432,17 +1442,22 @@ func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, 
 }
 
 // estimateTokens provides a CJK-aware estimate of tokens needed for the request.
-func estimateTokens(messages []Message, maxTokens *int) int {
-	inputTokens := 0
+func estimateTokenReservation(messages []Message, maxTokens *int) (inputTokens, reservedCompletionTokens int) {
+	inputTokens = 0
 	for _, msg := range messages {
 		inputTokens += tokenutil.EstimateTokens(msg.Content) + 4 // overhead per message
 	}
 	inputTokens += 2 // reply priming
-	outputTokens := 1000
+	reservedCompletionTokens = 1000
 	if maxTokens != nil {
-		outputTokens = *maxTokens
+		reservedCompletionTokens = *maxTokens
 	}
-	return inputTokens + outputTokens
+	return inputTokens, reservedCompletionTokens
+}
+
+func estimateTokens(messages []Message, maxTokens *int) int {
+	inputTokens, reservedCompletionTokens := estimateTokenReservation(messages, maxTokens)
+	return inputTokens + reservedCompletionTokens
 }
 
 // writeError writes an OpenAI-compatible error response with both type and code fields.
@@ -1527,15 +1542,19 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	relay.recordPayloadPolicyDecision(ctx, requestID, req.Model, requestedModel, elapsedMilliseconds(requestStart))
 	const providerTimeout = 120 * time.Second
 	ctx = agentcap.ContextWithInvocationLeaseTTL(ctx, providerTimeout)
+	ctx, limitPolicyCollector := contextWithLimitPolicyCollector(ctx)
 
 	freezeResult, err := relay.billing.Freeze(ctx, billing.FreezeRequest{
-		RequestID:       requestID,
-		OrgID:           orgID,
-		Model:           req.Model,
-		EstimatedTokens: inputTokens,
-		SafetyFactor:    1.5,
-		MinFreezeAmount: 10,
+		RequestID:                requestID,
+		OrgID:                    orgID,
+		Model:                    req.Model,
+		EstimatedTokens:          inputTokens,
+		EstimatedInputTokens:     inputTokens,
+		ReservedCompletionTokens: 0,
+		SafetyFactor:             1.5,
+		MinFreezeAmount:          10,
 	})
+	relay.recordLimitPolicyAdmission(ctx, w, limitPolicyCollector, requestID, req.Model, requestedModel, elapsedMilliseconds(requestStart))
 	if err != nil {
 		reqLog.Error("Billing freeze error: %v", err)
 		relay.recordTraceEvent(ctx, requestID, "billing.freeze.failed", "billing", "error", req.Model, requestedModel, nil, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
@@ -1550,6 +1569,9 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 			"error_code": freezeResult.ErrorCode,
 		})
 		if writeAgentCapabilityRuntimeRejection(w, freezeResult.ErrorCode) {
+			return
+		}
+		if writeLimitPolicyRuntimeRejection(w, freezeResult.ErrorCode) {
 			return
 		}
 		if freezeResult.ErrorCode == "insufficient_balance" {

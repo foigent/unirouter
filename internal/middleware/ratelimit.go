@@ -3,10 +3,12 @@ package middleware
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/uniroute/unirouter/internal/errdocs"
 )
 
 const (
@@ -74,30 +76,37 @@ func RateLimit(rdb *redis.Client) func(http.Handler) http.Handler {
 				uniqueMember(),
 			).Int64()
 			if err != nil {
-				// On Redis error, allow the request (fail-open)
-				next.ServeHTTP(w, r)
+				w.Header().Set("Retry-After", "1")
+				writeGatewayLimitError(w, http.StatusServiceUnavailable, "server_error", "limit_policy.state_unavailable", "Shared API-key rate state is temporarily unavailable")
 				return
 			}
 
 			if result == rateLimitQPSExceeded {
-				w.Header().Set("Content-Type", "application/json")
 				w.Header().Set("Retry-After", "1")
-				w.WriteHeader(http.StatusTooManyRequests)
-				w.Write([]byte(`{"error":{"type":"rate_limit_exceeded","message":"QPS limit exceeded"}}`))
+				writeGatewayLimitError(w, http.StatusTooManyRequests, "rate_limit_error", "limit_policy.rps_exceeded", "RPS limit exceeded")
 				return
 			}
 
 			if result == rateLimitRPMExceeded {
-				w.Header().Set("Content-Type", "application/json")
 				w.Header().Set("Retry-After", "60")
-				w.WriteHeader(http.StatusTooManyRequests)
-				w.Write([]byte(`{"error":{"type":"rate_limit_exceeded","message":"RPM limit exceeded"}}`))
+				writeGatewayLimitError(w, http.StatusTooManyRequests, "rate_limit_error", "limit_policy.rpm_exceeded", "RPM limit exceeded")
 				return
 			}
 
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func writeGatewayLimitError(w http.ResponseWriter, status int, errorType, code, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"error": map[string]interface{}{
+			"type": errorType, "code": code, "message": message,
+			"doc_url": errdocs.URLForCode(code), "param": nil,
+		},
+	})
 }
 
 // uniqueMember generates a unique string for Redis sorted set member to avoid collisions.

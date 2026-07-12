@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -28,6 +29,11 @@ type Handler struct {
 	startedAt                    time.Time
 	runtimeOptions               RuntimeStatusOptions
 	runtimeHostTelemetryProvider func() runtimeHostTelemetry
+	limitPolicyReloader          interface{ Refresh(context.Context) error }
+}
+
+func (h *Handler) SetLimitPolicyReloader(reloader interface{ Refresh(context.Context) error }) {
+	h.limitPolicyReloader = reloader
 }
 
 // NewHandler creates a new admin Handler.

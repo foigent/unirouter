@@ -20,12 +20,14 @@ import (
 
 // FreezeRequest contains the parameters for a freeze operation.
 type FreezeRequest struct {
-	RequestID       string
-	OrgID           int64
-	Model           string
-	EstimatedTokens int
-	SafetyFactor    float64
-	MinFreezeAmount int
+	RequestID                string
+	OrgID                    int64
+	Model                    string
+	EstimatedTokens          int
+	EstimatedInputTokens     int
+	ReservedCompletionTokens int
+	SafetyFactor             float64
+	MinFreezeAmount          int
 }
 
 // FreezeResult contains the result of a freeze operation.

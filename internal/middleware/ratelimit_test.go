@@ -159,7 +159,7 @@ func TestRateLimit_UnderLimit_Passthrough(t *testing.T) {
 	}
 }
 
-func TestRateLimit_QPSExceeded(t *testing.T) {
+func TestRateLimit_RPSExceeded(t *testing.T) {
 	_, rdb := setupMiniredis(t)
 
 	apiKey := &models.ApiKey{ID: 2, RPMLimit: 1000, QPSLimit: 2}
@@ -180,7 +180,7 @@ func TestRateLimit_QPSExceeded(t *testing.T) {
 			if rec.Code != http.StatusTooManyRequests {
 				t.Fatalf("request %d: expected 429, got %d", i, rec.Code)
 			}
-			if !strings.Contains(rec.Body.String(), "QPS limit exceeded") {
+			if !strings.Contains(rec.Body.String(), "RPS limit exceeded") || !strings.Contains(rec.Body.String(), "limit_policy.rps_exceeded") {
 				t.Fatalf("request %d: unexpected response body %q", i, rec.Body.String())
 			}
 		}
@@ -261,7 +261,7 @@ func TestRateLimit_ConcurrentRequestsDoNotExceedLimit(t *testing.T) {
 	}
 }
 
-func TestRateLimit_RedisError_FailOpen(t *testing.T) {
+func TestRateLimit_RedisError_FailsClosed(t *testing.T) {
 	// Create a client pointing to a dead server
 	rdb := redis.NewClient(&redis.Options{Addr: "localhost:1"})
 	defer rdb.Close()
@@ -277,9 +277,9 @@ func TestRateLimit_RedisError_FailOpen(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	// Fail-open: should pass through on Redis error
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200 (fail-open), got %d", rec.Code)
+	if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("Retry-After") != "1" ||
+		!strings.Contains(rec.Body.String(), "limit_policy.state_unavailable") {
+		t.Fatalf("expected typed 503 fail-closed response, got %d %q", rec.Code, rec.Body.String())
 	}
 }
 
@@ -297,8 +297,8 @@ func TestRateLimit_UsesRequestContext(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req.WithContext(ctx))
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected canceled Redis operation to fail open, got %d", rec.Code)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected canceled Redis operation to fail closed, got %d", rec.Code)
 	}
 	if count, err := rdb.Exists(context.Background(), "rl:qps:8", "rl:rpm:8").Result(); err != nil {
 		t.Fatalf("check rate-limit keys: %v", err)

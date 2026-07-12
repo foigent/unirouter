@@ -32,6 +32,7 @@ describe('KeysPage', () => {
         rpm_limit: 60,
         rps_limit: 10,
         qps_limit: 10,
+        policy_labels: ['production'],
         created_at: '2026-07-07T10:00:00Z',
       }],
       total: 1,
@@ -48,6 +49,7 @@ describe('KeysPage', () => {
     expect(await screen.findByText('service-key')).toBeTruthy();
     expect(screen.getByText('RPM 60 / RPS 10 / TPM 未配置')).toBeTruthy();
     expect(screen.getByText(/RPM\/RPS\/TPM/)).toBeTruthy();
+    expect(screen.getByText('production')).toBeTruthy();
   });
 
   it('creates keys with rps_limit rather than visible QPS wording', async () => {

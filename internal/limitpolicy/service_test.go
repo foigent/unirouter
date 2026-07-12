@@ -1,0 +1,506 @@
+package limitpolicy
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/alicebob/miniredis/v2"
+	"github.com/redis/go-redis/v9"
+	"github.com/uniroute/unirouter/internal/testutil"
+)
+
+func newPolicyTestService(t *testing.T, options Options, policies ...Policy) (*Service, *miniredis.Miniredis) {
+	t.Helper()
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	service, err := NewService(nil, client, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index := range policies {
+		if policies[index].Ref == "" {
+			policies[index].Ref = fmt.Sprintf("policy:%d", policies[index].ID)
+		}
+		if policies[index].RuntimeBucket == "" {
+			policies[index].RuntimeBucket = policies[index].Ref
+		}
+		if policies[index].Version == 0 {
+			policies[index].Version = 1
+		}
+		if policies[index].Name == "" {
+			policies[index].Name = policies[index].Ref
+		}
+	}
+	service.snapshot.Store(&policySnapshot{policies: policies})
+	return service, mr
+}
+
+func testOptions() Options {
+	options := DefaultOptions()
+	options.GlobalConcurrency = 1_000
+	options.OrgConcurrency = 1_000
+	return options
+}
+
+func admission(operation string, tokens int64) AdmissionRequest {
+	return AdmissionRequest{
+		OperationID: operation,
+		Subject: Subject{
+			OrgID: 7, ProjectID: 11, APIKeyID: 13, Model: "company-chat",
+			PolicyLabels: []string{"production", "customer-facing"},
+			BaseRPSLimit: 1_000, BaseRPMLimit: 1_000,
+		},
+		EstimatedInput: tokens,
+		ReservedOutput: tokens,
+		LeaseTTL:       time.Minute,
+	}
+}
+
+func TestSharedConcurrencyIsReplicaInvariant(t *testing.T) {
+	options := testOptions()
+	policy := Policy{ID: 1, Ref: "policy:concurrency", Name: "shared", Version: 1, Mode: ModeEnforce, FailureMode: FailureFailClosed, ConcurrencyLimit: 3}
+	first, mr := newPolicyTestService(t, options, policy)
+	secondClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = secondClient.Close() })
+	second, err := NewService(nil, secondClient, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second.snapshot.Store(&policySnapshot{policies: []Policy{policy}})
+
+	var admitted atomic.Int64
+	var denied atomic.Int64
+	var unexpected atomic.Int64
+	var wg sync.WaitGroup
+	for index := 0; index < 20; index++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			service := first
+			if index%2 == 1 {
+				service = second
+			}
+			_, reserveErr := service.Reserve(context.Background(), admission(fmt.Sprintf("op-%02d", index), 1))
+			switch {
+			case reserveErr == nil:
+				admitted.Add(1)
+			case errors.Is(reserveErr, ErrConcurrencyExceeded):
+				denied.Add(1)
+			default:
+				unexpected.Add(1)
+			}
+		}(index)
+	}
+	wg.Wait()
+	if admitted.Load() != 3 || denied.Load() != 17 || unexpected.Load() != 0 {
+		t.Fatalf("admitted=%d denied=%d unexpected=%d", admitted.Load(), denied.Load(), unexpected.Load())
+	}
+}
+
+func TestExactRateAndAllMatchingPolicies(t *testing.T) {
+	orgID := int64(7)
+	keyID := int64(13)
+	otherKey := int64(99)
+	service, _ := newPolicyTestService(t, testOptions(),
+		Policy{ID: 2, Ref: "policy:org-rpm", Name: "org", Version: 1, OrgID: &orgID, Mode: ModeEnforce, FailureMode: FailureFailClosed, RPMLimit: 10},
+		Policy{ID: 3, Ref: "policy:key-rps", Name: "key", Version: 1, OrgID: &orgID, APIKeyID: &keyID, Mode: ModeEnforce, FailureMode: FailureFailClosed, RPSLimit: 2},
+		Policy{ID: 4, Ref: "policy:other", Name: "other", Version: 1, OrgID: &orgID, APIKeyID: &otherKey, Mode: ModeEnforce, FailureMode: FailureFailClosed, RPSLimit: 1},
+	)
+	for index := 0; index < 2; index++ {
+		reservation, err := service.Reserve(context.Background(), admission(fmt.Sprintf("rate-%d", index), 1))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := service.CancelBeforeDispatch(context.Background(), reservation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := service.Reserve(context.Background(), admission("rate-2", 1)); !errors.Is(err, ErrRPSExceeded) {
+		t.Fatalf("third request error = %v, want ErrRPSExceeded", err)
+	}
+}
+
+func TestExplicitPolicyDenialStillConsumesAPIKeyAttemptRate(t *testing.T) {
+	service, _ := newPolicyTestService(t, testOptions(), Policy{
+		ID: 40, Ref: "policy:deny-after-key-rate", Name: "shared", Version: 1,
+		Mode: ModeEnforce, FailureMode: FailureFailClosed, ConcurrencyLimit: 1,
+	})
+	request := admission("key-rate-first", 1)
+	request.Subject.BaseRPSLimit = 2
+	request.Subject.BaseRPMLimit = 1_000
+	first, err := service.Reserve(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.OperationID = "key-rate-second"
+	if _, err := service.Reserve(context.Background(), request); !errors.Is(err, ErrConcurrencyExceeded) {
+		t.Fatalf("second request = %v, want explicit concurrency denial", err)
+	}
+	request.OperationID = "key-rate-third"
+	if _, err := service.Reserve(context.Background(), request); !errors.Is(err, ErrRPSExceeded) {
+		t.Fatalf("third request = %v, want API-key attempt-rate denial", err)
+	}
+	if err := service.CancelBeforeDispatch(context.Background(), first); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTPMReservationSettlementAndActualOverrun(t *testing.T) {
+	service, _ := newPolicyTestService(t, testOptions(), Policy{
+		ID: 5, Ref: "policy:tpm", Name: "tpm", Version: 1, Mode: ModeEnforce,
+		FailureMode: FailureFailClosed, TPMLimit: 100,
+	})
+	first, err := service.Reserve(context.Background(), AdmissionRequest{
+		OperationID: "tpm-first", Subject: admission("x", 1).Subject,
+		EstimatedInput: 20, ReservedOutput: 60, LeaseTTL: time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Reserve(context.Background(), admission("tpm-blocked", 15)); !errors.Is(err, ErrTPMExceeded) {
+		t.Fatalf("reservation above remaining TPM = %v", err)
+	}
+	if err := service.Finalize(context.Background(), first, 30); err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.Reserve(context.Background(), admission("tpm-second", 20))
+	if err != nil {
+		t.Fatalf("settlement should replace 80 reserved tokens with 30 actual: %v", err)
+	}
+	if err := service.Finalize(context.Background(), second, 90); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Reserve(context.Background(), admission("tpm-after-overrun", 1)); !errors.Is(err, ErrTPMExceeded) {
+		t.Fatalf("future request after actual overrun = %v, want ErrTPMExceeded", err)
+	}
+}
+
+func TestCancelBeforeDispatchReleasesTokensButRateAttemptsRemain(t *testing.T) {
+	service, _ := newPolicyTestService(t, testOptions(), Policy{
+		ID: 6, Ref: "policy:cancel", Name: "cancel", Version: 1, Mode: ModeEnforce,
+		FailureMode: FailureFailClosed, RPMLimit: 2, TPMLimit: 10,
+	})
+	first, err := service.Reserve(context.Background(), admission("cancel-first", 5))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.CancelBeforeDispatch(context.Background(), first); err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.Reserve(context.Background(), admission("cancel-second", 5))
+	if err != nil {
+		t.Fatalf("pre-dispatch cancellation should release TPM reservation: %v", err)
+	}
+	if err := service.CancelBeforeDispatch(context.Background(), second); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Reserve(context.Background(), admission("cancel-third", 1)); !errors.Is(err, ErrRPMExceeded) {
+		t.Fatalf("rate attempt should remain after cancellation: %v", err)
+	}
+}
+
+func TestShadowModeRecordsWouldDenyWithoutBlocking(t *testing.T) {
+	service, _ := newPolicyTestService(t, testOptions(), Policy{
+		ID: 7, Ref: "policy:shadow", Name: "shadow", Version: 3, Mode: ModeShadow,
+		FailureMode: FailureFailClosed, ConcurrencyLimit: 1,
+	})
+	first, err := service.Reserve(context.Background(), admission("shadow-first", 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, collector := ContextWithDecisionCollector(context.Background())
+	second, err := service.Reserve(ctx, admission("shadow-second", 1))
+	if err != nil {
+		t.Fatalf("shadow policy must not block: %v", err)
+	}
+	decisions, version := collector.Snapshot()
+	if version == "" {
+		t.Fatal("missing policy-set version")
+	}
+	found := false
+	for _, decision := range decisions {
+		if decision.PolicyRef == "policy:shadow" {
+			found = decision.Decision == DecisionWouldDeny && decision.Reason == ReasonConcurrency && decision.PolicyVersion == 3
+		}
+	}
+	if !found {
+		t.Fatalf("shadow decision not found: %#v", decisions)
+	}
+	_ = service.CancelBeforeDispatch(context.Background(), first)
+	_ = service.CancelBeforeDispatch(context.Background(), second)
+}
+
+func TestLastKnownSafeLeaseIsShortAndAmountBounded(t *testing.T) {
+	options := testOptions()
+	options.FallbackTTL = 2 * time.Second
+	options.FallbackGlobalCap = 5
+	service, mr := newPolicyTestService(t, options, Policy{
+		ID: 8, Ref: "policy:lks", Name: "lks", Version: 1, Mode: ModeEnforce,
+		FailureMode: FailureLastKnownSafe, ConcurrencyLimit: 10,
+	})
+	primed, err := service.Reserve(context.Background(), admission("lks-prime", 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.CancelBeforeDispatch(context.Background(), primed); err != nil {
+		t.Fatal(err)
+	}
+	mr.Close()
+	ctx, collector := ContextWithDecisionCollector(context.Background())
+	fallback, err := service.Reserve(ctx, admission("lks-once", 1))
+	if err != nil {
+		t.Fatalf("one pre-issued emergency admission should be allowed: %v", err)
+	}
+	if fallback == nil {
+		t.Fatal("missing fallback reservation")
+	}
+	decisions, _ := collector.Snapshot()
+	if len(decisions) == 0 || decisions[0].Reason != ReasonLastKnownSafe || !decisions[0].Fallback {
+		t.Fatalf("missing last-known-safe decision: %#v", decisions)
+	}
+	if _, err := service.Reserve(context.Background(), admission("lks-twice", 1)); !errors.Is(err, ErrStateUnavailable) {
+		t.Fatalf("second outage admission = %v, want ErrStateUnavailable", err)
+	}
+}
+
+func TestFallbackLeaseConsumptionAndCleanupAreBounded(t *testing.T) {
+	service, _ := newPolicyTestService(t, testOptions())
+	service.updateFallback("policy:bounded-fallback", time.Second)
+
+	var admitted atomic.Int64
+	var wait sync.WaitGroup
+	for index := 0; index < 100; index++ {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			if service.consumeFallback("policy:bounded-fallback") {
+				admitted.Add(1)
+			}
+		}()
+	}
+	wait.Wait()
+	if admitted.Load() != 1 {
+		t.Fatalf("fallback admissions = %d, want exactly 1", admitted.Load())
+	}
+
+	service.updateFallback("policy:expired-fallback", time.Second)
+	service.pruneFallback(time.Now().Add(2 * time.Second))
+	if _, exists := service.fallback.Load("policy:expired-fallback"); exists {
+		t.Fatal("expired fallback lease was retained in process memory")
+	}
+}
+
+func TestFailClosedWithoutHealthyLease(t *testing.T) {
+	service, mr := newPolicyTestService(t, testOptions(), Policy{
+		ID: 9, Ref: "policy:closed", Name: "closed", Version: 1, Mode: ModeEnforce,
+		FailureMode: FailureFailClosed, ConcurrencyLimit: 10,
+	})
+	mr.Close()
+	if _, err := service.Reserve(context.Background(), admission("closed", 1)); !errors.Is(err, ErrStateUnavailable) {
+		t.Fatalf("Redis outage = %v, want ErrStateUnavailable", err)
+	}
+}
+
+func TestPolicyLabelsAreServerSubjectSelectors(t *testing.T) {
+	orgID := int64(7)
+	service, _ := newPolicyTestService(t, testOptions(), Policy{
+		ID: 10, Ref: "policy:label", Name: "production", Version: 1, OrgID: &orgID,
+		PolicyLabel: "production", Mode: ModeEnforce, FailureMode: FailureFailClosed, RPSLimit: 1,
+	})
+	first, err := service.Reserve(context.Background(), admission("label-first", 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = service.CancelBeforeDispatch(context.Background(), first)
+	if _, err := service.Reserve(context.Background(), admission("label-second", 1)); !errors.Is(err, ErrRPSExceeded) {
+		t.Fatalf("matching label should enforce policy: %v", err)
+	}
+	nonmatching := admission("label-other", 1)
+	nonmatching.Subject.PolicyLabels = []string{"staging"}
+	if _, err := service.Reserve(context.Background(), nonmatching); err != nil {
+		t.Fatalf("nonmatching label should not select policy: %v", err)
+	}
+}
+
+func TestAuthoritativePolicyLabelsAlsoBindOperationIdentity(t *testing.T) {
+	orgID := int64(7)
+	policy := Policy{
+		ID: 12, Ref: "policy:authoritative-label", Name: "production", Version: 1, OrgID: &orgID,
+		PolicyLabel: "production", Mode: ModeEnforce, FailureMode: FailureFailClosed, RPMLimit: 100,
+	}
+	service, _ := newPolicyTestService(t, testOptions())
+	service.snapshot.Store(buildPolicySnapshot(
+		[]Policy{policy}, map[int64][]string{13: {"production"}}, true, time.Now(),
+	))
+	request := admission("authoritative-replay", 1)
+	request.Subject.PolicyLabels = []string{"caller-value-one"}
+	first, err := service.Reserve(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Subject.PolicyLabels = []string{"caller-value-two"}
+	replayed, err := service.Reserve(context.Background(), request)
+	if err != nil {
+		t.Fatalf("caller-supplied labels changed an authoritative operation identity: %v", err)
+	}
+	if !replayed.Idempotent {
+		t.Fatal("authoritative replay was counted as a new admission")
+	}
+	if err := service.CancelBeforeDispatch(context.Background(), first); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOperationIdentityIsIdempotentAndBoundToSubject(t *testing.T) {
+	service, _ := newPolicyTestService(t, testOptions(), Policy{
+		ID: 11, Ref: "policy:identity", Name: "identity", Version: 1, Mode: ModeEnforce,
+		FailureMode: FailureFailClosed, ConcurrencyLimit: 10,
+	})
+	request := admission("same-operation", 1)
+	if _, err := service.Reserve(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Reserve(context.Background(), request); err != nil {
+		t.Fatalf("identical replay should be idempotent: %v", err)
+	}
+	request.Subject.APIKeyID++
+	if _, err := service.Reserve(context.Background(), request); !errors.Is(err, ErrConflict) {
+		t.Fatalf("operation rebound to another key = %v, want ErrConflict", err)
+	}
+}
+
+func TestRuntimeKeysUseOneRedisClusterHashTag(t *testing.T) {
+	keys := operationRuntimeKeys("policy:cluster", "operation:one")
+	if len(keys) != 8 {
+		t.Fatalf("key count = %d", len(keys))
+	}
+	var tag string
+	for _, key := range keys {
+		open := -1
+		close := -1
+		for index, value := range key {
+			if value == '{' {
+				open = index
+			}
+			if value == '}' {
+				close = index
+				break
+			}
+		}
+		if open < 0 || close <= open+1 {
+			t.Fatalf("missing cluster hash tag: %s", key)
+		}
+		current := key[open+1 : close]
+		if tag == "" {
+			tag = current
+		} else if current != tag {
+			t.Fatalf("hash tag mismatch: %s vs %s", tag, current)
+		}
+	}
+}
+
+func TestSnapshotIndexAvoidsScanningUnrelatedTenantPolicies(t *testing.T) {
+	policies := make([]Policy, 0, 1001)
+	for index := int64(1); index <= 1000; index++ {
+		orgID := index + 100
+		policies = append(policies, Policy{
+			ID: index, Ref: fmt.Sprintf("policy:%d", index), Name: "unrelated", Version: 1,
+			OrgID: &orgID, Mode: ModeEnforce, FailureMode: FailureFailClosed, RPMLimit: 10,
+		})
+	}
+	matchingOrg := int64(7)
+	policies = append(policies, Policy{
+		ID: 1001, Ref: "policy:1001", Name: "matching", Version: 1,
+		OrgID: &matchingOrg, Mode: ModeEnforce, FailureMode: FailureFailClosed, RPMLimit: 10,
+	})
+	snapshot := buildPolicySnapshot(policies, nil, false, time.Now())
+	candidates := snapshot.index.candidates(admission("index", 1).Subject)
+	if len(candidates) != 1 || candidates[0].Ref != "policy:1001" {
+		t.Fatalf("indexed candidates = %#v", candidates)
+	}
+}
+
+func TestPolicyChainCardinalityIsBounded(t *testing.T) {
+	options := testOptions()
+	options.MaxMatchingPolicies = 3 // the three built-ins leave no room for configured policies
+	service, _ := newPolicyTestService(t, options,
+		Policy{ID: 20, Ref: "policy:20", Name: "one", Version: 1, Mode: ModeShadow, FailureMode: FailureFailClosed, RPMLimit: 10},
+		Policy{ID: 21, Ref: "policy:21", Name: "two", Version: 1, Mode: ModeShadow, FailureMode: FailureFailClosed, RPMLimit: 10},
+	)
+	ctx, collector := ContextWithDecisionCollector(context.Background())
+	if _, err := service.Reserve(ctx, admission("too-many-policies", 1)); !errors.Is(err, ErrStateUnavailable) {
+		t.Fatalf("oversized policy chain = %v, want ErrStateUnavailable", err)
+	}
+	decisions, _ := collector.Snapshot()
+	if len(decisions) != 1 || decisions[0].Reason != ReasonPolicyChainLarge {
+		t.Fatalf("oversized chain decision = %#v", decisions)
+	}
+}
+
+func TestBuiltinLimitChangesRotatePolicySetVersionWithoutResettingBuckets(t *testing.T) {
+	firstOptions := testOptions()
+	first, _ := newPolicyTestService(t, firstOptions)
+	request := admission("builtin-version", 1)
+	firstPolicies := first.matchingPolicies(request.Subject)
+
+	secondOptions := firstOptions
+	secondOptions.GlobalConcurrency++
+	secondOptions.OrgConcurrency++
+	second, _ := newPolicyTestService(t, secondOptions)
+	secondRequest := request
+	secondRequest.Subject.BaseRPSLimit++
+	secondRequest.Subject.BaseRPMLimit++
+	secondPolicies := second.matchingPolicies(secondRequest.Subject)
+
+	if policySetVersion(firstPolicies) == policySetVersion(secondPolicies) {
+		t.Fatal("built-in limit changes did not rotate the policy-set version")
+	}
+	if len(firstPolicies) != len(secondPolicies) {
+		t.Fatalf("built-in policy count changed: %d vs %d", len(firstPolicies), len(secondPolicies))
+	}
+	for index := range firstPolicies {
+		if firstPolicies[index].RuntimeBucket != secondPolicies[index].RuntimeBucket {
+			t.Fatalf("limit-only change reset runtime bucket %q vs %q", firstPolicies[index].RuntimeBucket, secondPolicies[index].RuntimeBucket)
+		}
+	}
+}
+
+func TestStaleDatabaseSnapshotFailsClosed(t *testing.T) {
+	options := testOptions()
+	options.SnapshotMaxAge = 10 * time.Millisecond
+	service, _ := newPolicyTestService(t, options)
+	service.db = &testutil.MockDB{}
+	service.snapshot.Store(buildPolicySnapshot(nil, nil, true, time.Now().Add(-time.Second)))
+	ctx, collector := ContextWithDecisionCollector(context.Background())
+	if _, err := service.Reserve(ctx, admission("stale-snapshot", 1)); !errors.Is(err, ErrStateUnavailable) {
+		t.Fatalf("stale snapshot = %v, want ErrStateUnavailable", err)
+	}
+	decisions, _ := collector.Snapshot()
+	if len(decisions) != 1 || decisions[0].Reason != ReasonSnapshotStale {
+		t.Fatalf("stale snapshot decision = %#v", decisions)
+	}
+}
+
+func TestSelectorChangesRotateRuntimePopulationButLimitChangesDoNot(t *testing.T) {
+	orgA := int64(7)
+	orgB := int64(8)
+	base := Policy{ID: 30, Ref: "policy:30", Name: "scope", Version: 1, OrgID: &orgA, Mode: ModeEnforce, FailureMode: FailureFailClosed, RPMLimit: 10}
+	limitChanged := base
+	limitChanged.Version = 2
+	limitChanged.RPMLimit = 20
+	scopeChanged := base
+	scopeChanged.Version = 2
+	scopeChanged.OrgID = &orgB
+	if policyRuntimeBucket(base) != policyRuntimeBucket(limitChanged) {
+		t.Fatal("limit-only update reset the rolling policy population")
+	}
+	if policyRuntimeBucket(base) == policyRuntimeBucket(scopeChanged) {
+		t.Fatal("selector change reused a cross-tenant runtime population")
+	}
+}

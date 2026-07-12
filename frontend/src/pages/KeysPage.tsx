@@ -38,6 +38,7 @@ interface ApiKey {
     tpm_limit?: number | null;
     budget_limit_cents?: number | null;
   };
+  policy_labels?: string[];
   created_at: string;
 }
 
@@ -84,6 +85,9 @@ export default function KeysPage() {
     }
     if (values.rps_limit !== undefined) {
       values.rps_limit = Number(values.rps_limit || 10);
+    }
+    if (typeof values.policy_labels === 'string') {
+      values.policy_labels = values.policy_labels.split(',').map((value: string) => value.trim()).filter(Boolean);
     }
     try {
       if (editing) {
@@ -164,6 +168,7 @@ export default function KeysPage() {
         allowed_models: record.allowed_models ? record.allowed_models.split(',').map(m => m.trim()).filter(Boolean) : [],
         rpm_limit: record.rpm_limit || 60,
         rps_limit: record.rps_limit ?? record.qps_limit ?? 10,
+        policy_labels: (record.policy_labels || []).join(', '),
       });
     }, 100);
   };
@@ -180,6 +185,7 @@ export default function KeysPage() {
     { title: 'Key 前缀', dataIndex: 'key_prefix', key: 'prefix', render: (v: string) => <code>{v}***</code> },
     { title: '允许 IP', dataIndex: 'allowed_ips', key: 'ips', render: (v: string) => v || '全部' },
     { title: '允许模型', dataIndex: 'allowed_models', key: 'models', render: (v: string) => v || '全部' },
+    { title: '策略标签', dataIndex: 'policy_labels', key: 'policy_labels', render: (v: string[]) => v?.length ? v.join(', ') : '无' },
     { title: '限额', key: 'quota', render: (_: unknown, record: ApiKey) => keyQuotaText(record) },
     {
       title: '状态', dataIndex: 'status', key: 'status', width: 80,
@@ -245,6 +251,8 @@ export default function KeysPage() {
           />
           <Form.InputNumber field="rpm_limit" label="RPM 限速" min={1} style={{ width: '100%' }} />
           <Form.InputNumber field="rps_limit" label="RPS 限速" min={1} style={{ width: '100%' }} />
+          <Form.Input field="policy_labels" label="共享限额标签（逗号分隔）" placeholder="production, customer-facing" />
+          <Text type="tertiary" size="small">标签由管理员绑定，调用方不能自行声明；匹配标签的共享策略只会进一步收紧额度。</Text>
           <Text type="tertiary" size="small">TPM 暂未配置为 Key 级限额；当前仅展示口径，不启用 Scheduler V2。</Text>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
             <Button onClick={closeDrawer}>取消</Button>

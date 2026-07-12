@@ -82,6 +82,9 @@ const endpointGroups = [
       ['PUT', '/api/v1/channel-keys/{id}', '更新上游凭证'],
       ['DELETE', '/api/v1/channel-keys/{id}', '删除上游凭证'],
       ['GET', '/api/v1/keys', '访问凭证列表'],
+      ['GET', '/api/v1/limit-policies', '查看跨副本 RPM/RPS/TPM/并发策略及其版本'],
+      ['POST', '/api/v1/limit-policies', '创建 disabled/shadow/enforce 共享限额策略'],
+      ['PUT', '/api/v1/limit-policies/{id}', '按当前 version 更新策略；冲突返回 409，成功后版本递增'],
       ['POST', '/api/v1/projects', '创建项目'],
       ['PUT', '/api/v1/projects/{id}', '更新项目'],
       ['PUT', '/api/v1/projects/{id}/model-sets', '更新项目模型集合绑定'],
@@ -191,6 +194,7 @@ export default function ApiDocsPage() {
           <div style={{ display: 'grid', gap: 8 }}>
             <Text><Text code>X-Request-ID</Text>：UniRouter 每次请求强制生成的操作 ID，用于串联网关、计费、审计和故障切换。</Text>
             <Text><Text code>X-UniRouter-Client-Request-ID</Text>：调用方自己的关联值，只用于查找，不作为全局财务主键。</Text>
+            <Text><Text code>X-UniRouter-Limit-Policy-Version</Text>：本次网关准入实际使用的共享限额策略集合指纹，可与请求日志中的策略链一起排障。</Text>
             <Text><Text code>Idempotency-Key</Text>：Chat / Embeddings 的 24 小时去重键，按组织、API Key 和请求内容隔离；当前仅返回状态回执，不保存或重放模型回答。</Text>
           </div>
         </Surface>

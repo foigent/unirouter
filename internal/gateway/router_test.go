@@ -87,6 +87,18 @@ func TestEstimateTokens_WithMaxTokens(t *testing.T) {
 	}
 }
 
+func TestEstimateTokenReservationPreservesInputAndOutputBreakdown(t *testing.T) {
+	maxTokens := 25
+	messages := []Message{{Role: "user", Content: "hello"}}
+	inputTokens, reservedOutput := estimateTokenReservation(messages, &maxTokens)
+	if inputTokens <= 0 || reservedOutput != 25 {
+		t.Fatalf("reservation breakdown = input %d output %d", inputTokens, reservedOutput)
+	}
+	if inputTokens+reservedOutput != estimateTokens(messages, &maxTokens) {
+		t.Fatal("billing total diverged from the TPM reservation breakdown")
+	}
+}
+
 func TestEstimateTokens_CJKContent(t *testing.T) {
 	maxTokens := 100
 	msgs := []Message{{Role: "user", Content: "你好世界"}} // 4 CJK chars
@@ -243,4 +255,3 @@ func TestWriteError_SpecialCharsInMessage(t *testing.T) {
 		t.Fatal("special chars should be preserved")
 	}
 }
-
