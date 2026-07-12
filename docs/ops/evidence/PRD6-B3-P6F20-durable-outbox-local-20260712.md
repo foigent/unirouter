@@ -1,10 +1,13 @@
-# PRD6 Batch 3 P6-F20 Durable Outbox Local Evidence
+# PRD6 Batch 3 P6-F20 Durable Outbox — Repository Evidence
 
 > Date: 2026-07-12
 > Owner: Codex
-> Evidence level: Local implementation candidate; D6-12 accepted and required CI pending
+> Evidence level: CI verified / closed; D6-12 accepted; no target or production claim
 > Base: `bd1692ef7d4f546fde2dbd0d5a35fe2bc92cb148`
-> Branch: `codex/prd6-durable-outbox`
+> Implementation branch: `codex/prd6-durable-outbox`, retained at exact head
+> `1beefee54d7af2cb565faa2894efb5f090eb3279`
+> Integration: PR #177, squash merge
+> `30d1e8f00cfcd45879f9650a3a98f178e844c945`
 
 ## 1. Accepted Scope
 
@@ -152,6 +155,8 @@ REQUIRE_TEST_DATABASE=1 go test -race ./internal/outbox ./internal/billing ./int
 REQUIRE_TEST_DATABASE=1 go test -tags=integration -race ./internal/migrate -run TestP6F20DurableOutboxMigrationUpDownGuardAndRollForward -count=1
 go test ./...
 go vet ./...
+go test -race ./... -count=1
+REQUIRE_TEST_DATABASE=1 go test -tags=integration -race ./internal/admin -count=1
 npm --prefix frontend test -- --run
 npm --prefix frontend run type-check
 npm --prefix frontend run build
@@ -162,7 +167,8 @@ Observed results:
 
 - all nine focused P6-F20 package gates passed under the race detector;
 - the isolated migration up/down/roll-forward gate passed;
-- every Go package passed the full repository suite;
+- every Go package passed both the ordinary and race-enabled full repository
+  suites, and the isolated admin integration suite passed;
 - frontend passed 29 files / 144 tests, type-check and production build;
 - no application frontend source changed; and
 - macOS race-linker `LC_DYSYMTAB` warnings were emitted, but every race binary
@@ -172,14 +178,28 @@ The local tests use isolated PostgreSQL databases, in-process/fake Redis
 terminal executors where fault injection is required, and `httptest` Webhooks.
 They send no provider or paid request and do not access a target environment.
 
-## 6. Promotion Gate And Non-Claims
+## 6. Required CI, Integration And Closure
 
-P6-F20 remains an unclosed Local implementation candidate until its exact
-implementation head passes the required `Backend Tests`, `Frontend Build` and
-`Docker Build` jobs and the post-merge `main` run passes the same jobs.
-`.github/workflows/ci.yml` now makes
-the P6-F20 race and migration gates explicit and fail-closed on missing
-PostgreSQL.
+The complete integration truth chain is:
+
+1. Exact implementation head
+   `1beefee54d7af2cb565faa2894efb5f090eb3279` passed PR #177 required run
+   `29193900584`: Backend Tests 6m40s, Frontend Build 3m43s and Docker Build
+   1m04s. Backend visibly passed the explicit P6-F20 outbox/terminal-recovery
+   race gate and migration rollback gate.
+2. PR #177 was squash-merged as
+   `30d1e8f00cfcd45879f9650a3a98f178e844c945`; the implementation branch is
+   retained at the exact reviewed head.
+3. The merge commit passed post-merge `main` run `29194150134`: Backend Tests
+   6m19s, Frontend Build 3m26s and Docker Build 1m00s, including both explicit
+   P6-F20 PostgreSQL/race gates.
+
+`.github/workflows/ci.yml` makes the P6-F20 race and migration gates explicit
+and fail-closed on missing PostgreSQL. P6-F20 is therefore **CI verified /
+closed**, and Batch 3 is closed. P6-F10 and P6-F11 remain separate accepted
+rows.
+
+## 7. Explicit Non-Claims
 
 Even after CI promotion, this evidence will not prove 100x target capacity,
 production deployment, external-message-broker operation, public exporter

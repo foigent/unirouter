@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-12
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12 accepted; P6-F03-P6-F09, P6-F16-P6-F19, P6-F21, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F20 is a Local implementation candidate with required CI pending; P6-F11 remains in progress
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F11 remains in progress and P6-F10 is not started
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -153,7 +153,8 @@ evidence.
   squash merge `2610e317` and post-merge main run `29174001859`. Shared
   selector RPM/RPS/TPM/concurrency, shadow/enforce, bounded last-known-safe,
   policy evidence, control UI and safe migration rollback passed required CI.
-  P6-F20, D6-10 and target capacity remain unclaimed.
+  This P6-F07 evidence does not claim P6-F20, D6-10 or target capacity;
+  P6-F20 is separately CI verified / closed by PR #177.
 - P6-F21 is CI verified / closed by PR #170. Exact head `a9d8f3e` passed run
   `29176160987`; squash merge `04af91f` and post-merge main run `29176358459`
   passed Backend Tests, Frontend Build and Docker Build. Two/three-replica real
@@ -252,9 +253,10 @@ replay a model answer and does not claim P6-F20. P6-F18 is separately CI
 verified by PR #151 and #153: billable stream output is durably marked before
 delivery, final usage is immutable, and failed immediate settlement is retained
 for leased restart recovery rather than refunded. Its post-merge main run
-`29156096777` passed. The general durable outbox is now a P6-F20 Local candidate
-pending required CI; D6-12 assigns the mid-stream process-kill checkpoint and
-client-recovery contract to P6-F11. The complete response-cache
+`29156096777` passed. The general durable outbox is CI verified / closed by
+P6-F20 PR #177 exact-head run `29193900584`, squash merge `30d1e8f` and
+post-merge main run `29194150134`; D6-12 assigns the mid-stream process-kill
+checkpoint and client-recovery contract to P6-F11. The complete response-cache
 Scheme B is a future required PRD7 Cache Service direction only.
 
 P6-F35 adds no global-settings UI. D6-09 defers target execution; a later

@@ -2,7 +2,7 @@
 
 > Version: 0.9
 > Date: 2026-07-12
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12 accepted; P6-F03-P6-F09, P6-F16-P6-F19, P6-F21, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F20 has a Local implementation candidate with required CI pending; P6-F11 remains in progress
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F11 remains in progress and P6-F10 is not started
 > Accepted implementation scope: P6-F03 through P6-F11, P6-F16 through P6-F21, and P6-F32 through P6-F39
 > Innovation gate: P6-F23 through P6-F31 remain proposed/deferred
 
@@ -206,8 +206,8 @@ These do not become UniRouter source-code gaps without new evidence.
 | P6-F09 | Normalize and bill provider cache-read/cache-create tokens | P1 | CI verified / closed by PR #174 exact-head run `29180539621`, merge `6515b3f`, production-neutral fixture-stability PR #175 and final post-fix main run `29181137210`; historical implementation branch retained at `711e718`; no response-cache claim |
 | P6-F10 | Add versioned input/non-stream-output Guardrail Kernel | P1 | Accepted MVP |
 | P6-F11 | Add safe streaming interception, cancellation and settlement semantics | P1 | Accepted MVP; transport prerequisite P6-STREAM-002A CI verified / closed by PR #162; semantic policy remains |
-| P6-F19 | Add short Agent capability, monotonic delegation, ancestor budgets and versioned revocation | P1 | CI verified / closed by P6-F19A PR #164/main run `29170507588` plus P6-F19B PR #166/main run `29171807693`; P6-F20/P6-F21 remain separate and P6-F07 is independently closed by PR #168 |
-| P6-F20 | Add durable minimal usage/finalization outbox and bounded evidence/notification workers | P1 | Accepted MVP; Local implementation candidate, required CI pending; D6-12 assigns mid-stream crash/checkpoint semantics to P6-F11; evidence `docs/ops/evidence/PRD6-B3-P6F20-durable-outbox-local-20260712.md` |
+| P6-F19 | Add short Agent capability, monotonic delegation, ancestor budgets and versioned revocation | P1 | CI verified / closed by P6-F19A PR #164/main run `29170507588` plus P6-F19B PR #166/main run `29171807693`; P6-F20/P6-F21 were closed separately and P6-F07 is independently closed by PR #168 |
+| P6-F20 | Add durable minimal usage/finalization outbox and bounded evidence/notification workers | P1 | CI verified / closed by PR #177 exact-head run `29193900584`, merge `30d1e8f` and post-merge main run `29194150134`; D6-12 assigns mid-stream crash/checkpoint semantics to P6-F11; evidence `docs/ops/evidence/PRD6-B3-P6F20-durable-outbox-local-20260712.md` |
 | P6-F21 | Admit weighted workload classes without replica-multiplied quotas or long-stream starvation | P1 | CI verified / closed by PR #170, exact-head run `29176160987`, merge `04af91f` and post-merge main run `29176358459`; historical branch restored at `a9d8f3e`; no target-capacity claim |
 | P6-F12 | Add external secret references/versioning/rotation for selected backends | P2 | Advanced candidate |
 | P6-F13 | Add opt-in isolated exact/semantic response cache | P2 | Advanced candidate |

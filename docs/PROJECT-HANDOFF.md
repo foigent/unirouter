@@ -33,7 +33,7 @@
 26. `docs/ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md` - CI-verified weighted leases, fair queues, fault/mixed-config, PR #170/main runs and current non-claims.
 27. `docs/ops/evidence/PRD6-B2-P6F08-routing-policy-v1-local-20260712.md` - CI-verified deterministic weighted routing, bounded snapshots, renewable probe ownership, epoch CAS, preview/evidence, guarded migration, PR #172 and post-merge main evidence.
 28. `docs/ops/evidence/PRD6-B3-P6F09-prompt-cache-billing-local-20260712.md` - CI-verified provider Prompt Cache normalization, immutable pricing, settlement/recovery, UI/reconciliation, guarded migration, PR #174/#175 and final main evidence.
-29. `docs/ops/evidence/PRD6-B3-P6F20-durable-outbox-local-20260712.md` - current durable finalization/outbox candidate, local gates and non-claims.
+29. `docs/ops/evidence/PRD6-B3-P6F20-durable-outbox-local-20260712.md` - CI-verified durable finalization/outbox closure, PR #177/main runs and non-claims.
 30. `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` - official competitor HA patterns, current cluster facts and accepted D6-12 boundary.
 31. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` - source-backed UI, reconciliation, correlation, architecture and upgrade audit.
 32. `docs/planning/PRD7-CANDIDATE-BACKLOG.md` - future first direction selected; implementation deferred until PRD6 closeout.
@@ -96,8 +96,8 @@ main run `29140850345` passed. P6-F17 Scheme A PR #149 passed required run
 `29153106336` passed. P6-F18A PR #151 and F18B PR #153 passed required CI;
 F18B was squash-merged as `b30bc9d` and post-merge main run `29156096777`
 passed. P6-F18 is CI verified / closed for pool-safe, single-terminal and
-billable-stream recovery behavior; P6-F20 remains separate. These changes add
-no response cache and make no target or production claim.
+billable-stream recovery behavior; P6-F20 was closed separately by PR #177.
+These changes add no response cache and make no target or production claim.
 P6-F37 audit-log tenant isolation and P6-F38 frontend test
 enforcement are merged and CI verified by PR #143 / `a1e0ad6` under the safe
 remediation rule. P6-TEST-DB-001 and P6-F03/P6-F04/P6-F05 are CI verified /
@@ -143,10 +143,11 @@ run `29180946857`, merged as `257a9eb`, and final post-fix main run
 `29181137210` passed Backend Tests, Frontend Build and Docker Build. The
 historical implementation branch is retained at its exact head. This is not
 response caching or the future independent Cache Service and makes no target
-or production claim. P6-F20 keeps Batch 3 active as a Local implementation
-candidate with required CI pending. D6-12 assigns exact mid-stream process-crash
-usage/checkpoint and client-recovery semantics to P6-F11; P6-F20 closes at
-final-usage/terminal durability.
+or production claim. P6-F20 closed Batch 3 through PR #177 exact-head run
+`29193900584`, squash merge `30d1e8f` and post-merge main run `29194150134`.
+D6-12 assigns exact mid-stream process-crash usage/checkpoint and
+client-recovery semantics to P6-F11; P6-F20 closes at final-usage/terminal
+durability.
 The adaptive-trust, Digital Twin,
 shadow, collusion, trust-receipt and claim-assurance rows remain proposed and
 are not implied by D6-01.
@@ -184,7 +185,7 @@ no PRD6 response persistence, deployment or semantic cache is accepted.
 | What locally proves weighted cross-replica admission, fairness, crash recovery and bounded Redis failure behavior? | `docs/ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md` |
 | What locally proves Routing Policy V1 deterministic weight, snapshots, probe ownership, epoch safety and operator preview? | `docs/ops/evidence/PRD6-B2-P6F08-routing-policy-v1-local-20260712.md` |
 | What locally proves provider Prompt Cache token normalization, immutable pricing, settlement/recovery and UI/reconciliation semantics? | `docs/ops/evidence/PRD6-B3-P6F09-prompt-cache-billing-local-20260712.md` |
-| What does the P6-F20 local candidate prove and not prove? | `docs/ops/evidence/PRD6-B3-P6F20-durable-outbox-local-20260712.md` |
+| What does the P6-F20 CI-closed repository evidence prove and not prove? | `docs/ops/evidence/PRD6-B3-P6F20-durable-outbox-local-20260712.md` |
 | How do competitors and UniRouter separate HA from stream resume? | `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` |
 | What did the UI/reconciliation/correlation/architecture audit conclude? | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` |
 | Which items are candidates for PRD7 rather than accepted scope? | `docs/planning/PRD7-CANDIDATE-BACKLOG.md` |
@@ -248,7 +249,7 @@ branch is restored and retained. P6-F36 PR #148 final required run
 passed. P6-F17 full local/race/migrated/frontend verification, PR #149 required
 CI, merge and post-merge main CI passed. P6-F18A/F18B full local/race/fault/
 migration verification, PR #151/#153 required CI and post-merge main CI passed;
-P6-F18 is CI verified / closed while P6-F20 remains open. PRD7/target evidence are explicitly later;
+P6-F18 and P6-F20 are independently CI verified / closed. PRD7/target evidence are explicitly later;
 historical branches remain retained. No new item is target or production
 verified. Any
 later P6-F35 target cutover must first drain old control-plane binaries and use

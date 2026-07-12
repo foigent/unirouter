@@ -3,13 +3,13 @@
 **Batch:** PRD6 Batch 3 P6-F20 Durable Internal Outbox
 **Owner:** Codex
 **Risk:** R3/R4 financial finalization, evidence durability, asynchronous delivery and migration/cutover safety
-**Status:** Local implementation candidate; D6-12 accepted, required PR/post-merge CI pending
-**Integration:** base `bd1692ef7d4f546fde2dbd0d5a35fe2bc92cb148`; branch `codex/prd6-durable-outbox`
-**Next gate:** exact-head Backend Tests, Frontend Build and Docker Build; squash merge; post-merge main required CI
+**Status:** CI verified / closed; D6-12 accepted; no target or production claim
+**Integration:** branch `codex/prd6-durable-outbox` retained at `1beefee`; PR #177 exact-head run `29193900584`; squash merge `30d1e8f`; post-merge main run `29194150134`
+**Next gate:** User decision on Batch 4 Guardrail policy categories, external-detector failure posture and latency budget; Batch 5 disclosure/buffering policy remains a separate accepted gate
 **Previous batch:** P6-F09 PR #174 plus production-neutral stability PR #175; final main run `29181137210` passed and the implementation branch is retained
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
-## Current P6-F20 Behavior Change
+## Completed P6-F20 Behavior Change
 
 1. Add a bounded PostgreSQL `internal-outbox.v1` with leased multi-replica
    workers, priority/fairness, retry/dead-letter policy and lag metrics.
@@ -154,8 +154,8 @@
   admit exactly three; Redis time survives a two-hour application-clock skew;
 - PR #164 and #166 exact-head plus post-merge Backend/Frontend/Docker CI passed,
   including migrated PostgreSQL and Redis 7 authority/runtime integration;
-- P6-F19 is CI verified / closed. P6-F20 remains separate; P6-F07 and P6-F21
-  are independently CI verified / closed;
+- P6-F19 is CI verified / closed. P6-F20 was closed separately by PR #177;
+  P6-F07 and P6-F21 are independently CI verified / closed;
 - evidence:
   `docs/ops/evidence/PRD6-B1-P6F19A-agent-capability-kernel-local-20260712.md`
   and
@@ -374,8 +374,9 @@
   charge/refund.
 - PR #153 final head `0ca2bbb` passed required run `29155948787`, was
   squash-merged as `b30bc9d`, and post-merge main run `29156096777` passed all
-  required jobs. P6-F18 is CI verified / closed. P6-F20 remains open and no
-  target or production claim is made.
+  required jobs. P6-F18 is CI verified / closed. P6-F20 was closed separately
+  by PR #177 and post-merge main run `29194150134`; no target or production
+  claim is made.
 
 ## Previous P6-F37 Behavior Change
 
