@@ -45,6 +45,8 @@ export default function ModelPricesPage() {
         model_name: v.model_name,
         input_price_cents: yuanPerKToCents(v.input_price),
         output_price_cents: yuanPerKToCents(v.output_price),
+        cache_read_ratio: Number(v.cache_read_ratio ?? 1),
+        cache_creation_ratio: Number(v.cache_creation_ratio ?? 1),
       });
       Toast.success('价格创建成功');
       closeDrawer();
@@ -59,6 +61,8 @@ export default function ModelPricesPage() {
         model_name: v.model_name,
         input_price_cents: yuanPerKToCents(v.input_price),
         output_price_cents: yuanPerKToCents(v.output_price),
+        cache_read_ratio: Number(v.cache_read_ratio ?? 1),
+        cache_creation_ratio: Number(v.cache_creation_ratio ?? 1),
       });
       Toast.success('更新成功');
       closeDrawer();
@@ -94,6 +98,8 @@ export default function ModelPricesPage() {
         model_name: r.model_name,
         input_price: (r.input_price_cents / 100).toString(),
         output_price: (r.output_price_cents / 100).toString(),
+        cache_read_ratio: Number(r.cache_read_ratio ?? 1),
+        cache_creation_ratio: Number(r.cache_creation_ratio ?? 1),
       });
     }, 100);
   };
@@ -103,6 +109,8 @@ export default function ModelPricesPage() {
     { title: '模型名称', dataIndex: 'model_name' },
     { title: '输入价格（元/千token）', dataIndex: 'input_price_cents', render: (v: number) => <MoneyText cents={v} precision={4} /> },
     { title: '输出价格（元/千token）', dataIndex: 'output_price_cents', render: (v: number) => <MoneyText cents={v} precision={4} /> },
+    { title: '缓存读取倍率', dataIndex: 'cache_read_ratio', width: 120, render: (v: number) => `${Number(v ?? 1).toFixed(3)}×` },
+    { title: '缓存写入倍率', dataIndex: 'cache_creation_ratio', width: 120, render: (v: number) => `${Number(v ?? 1).toFixed(3)}×` },
     { title: '更新时间', dataIndex: 'updated_at', render: (v: string) => v || '-' },
   ];
   if (canMutate) columns.push({
@@ -121,8 +129,8 @@ export default function ModelPricesPage() {
         eyebrow="Billing"
         title="模型定价"
         description={canMutate
-          ? '维护全平台基础模型输入/输出价格；变更会影响后续计费。'
-          : '只读查看全平台基础模型价格；价格由平台管理员统一维护。'}
+          ? '维护基础输入/输出价格和供应商 Prompt Cache 倍率；只影响变更后的请求。'
+          : '只读查看平台统一维护的基础模型价格与供应商 Prompt Cache 倍率。'}
         actions={canMutate ? <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增价格</Button> : undefined}
       />
 
@@ -150,6 +158,11 @@ export default function ModelPricesPage() {
           <Form.Select field="model_name" label="模型名称" rules={[{ required: true, message: '请选择模型' }]} filter optionList={modelNames.map(m => ({ label: m, value: m }))} placeholder="选择或搜索模型" />
           <Form.Input field="input_price" label="输入价格（元/千token）" rules={[{ required: true, message: '必填' }]} placeholder="0.002" />
           <Form.Input field="output_price" label="输出价格（元/千token）" rules={[{ required: true, message: '必填' }]} placeholder="0.001" />
+          <Form.InputNumber field="cache_read_ratio" label="缓存读取倍率" initValue={1} min={0} max={100} precision={6} rules={[{ required: true, message: '必填' }]} placeholder="0.1" style={{ width: '100%' }} />
+          <Form.InputNumber field="cache_creation_ratio" label="缓存写入倍率" initValue={1} min={0} max={100} precision={6} rules={[{ required: true, message: '必填' }]} placeholder="1.25" style={{ width: '100%' }} />
+          <div style={{ marginTop: 8, color: 'var(--semi-color-text-2)', fontSize: 12, lineHeight: 1.7 }}>
+            倍率以普通输入价格为基准：0.1 表示按 10% 计费，1.25 表示按 125% 计费。默认 1 不打折也不加价；仅供应商明确回传的 Prompt Cache Token 使用倍率，不是响应缓存。
+          </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
             <Button onClick={closeDrawer}>取消</Button>
             <Button type="primary" onClick={() => formApi?.submitForm()}>{editPrice ? '更新' : '创建'}</Button>

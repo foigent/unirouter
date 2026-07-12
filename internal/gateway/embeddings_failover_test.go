@@ -165,7 +165,7 @@ func TestHandleEmbeddings_RetryClassificationAndFailover(t *testing.T) {
 				if settleCalls != 1 || cancelCalls != 0 {
 					t.Fatalf("retry-success terminal invariant failed: settle=%d cancel=%d", settleCalls, cancelCalls)
 				}
-				if len(callArgs) != 38 || callArgs[10] != "azure" || callArgs[16] != http.StatusOK {
+				if len(callArgs) != callLogInsertArgCount || callArgs[callLogArgProvider] != "azure" || callArgs[callLogArgStatusCode] != http.StatusOK {
 					t.Fatalf("success log does not identify the fallback route: %#v", callArgs)
 				}
 				var body map[string]interface{}
@@ -180,7 +180,7 @@ func TestHandleEmbeddings_RetryClassificationAndFailover(t *testing.T) {
 				if settleCalls != 0 || cancelCalls != 1 {
 					t.Fatalf("terminal failure invariant failed: settle=%d cancel=%d", settleCalls, cancelCalls)
 				}
-				if len(callArgs) != 38 || callArgs[10] != "openai" || callArgs[16] != test.firstStatus {
+				if len(callArgs) != callLogInsertArgCount || callArgs[callLogArgProvider] != "openai" || callArgs[callLogArgStatusCode] != test.firstStatus {
 					t.Fatalf("terminal failure log is not the first route: %#v", callArgs)
 				}
 				if strings.Contains(rec.Body.String(), secretMarker) {
@@ -259,7 +259,7 @@ func TestHandleEmbeddings_AllRoutesFailBounded(t *testing.T) {
 	if rec.Code != http.StatusBadGateway || calls[0] != 1 || calls[1] != 1 || cancelCalls != 1 {
 		t.Fatalf("bounded exhaustion failed: status=%d calls=%v cancel=%d body=%s", rec.Code, calls, cancelCalls, rec.Body.String())
 	}
-	if len(callArgs) != 38 || callArgs[10] != "azure" || callArgs[16] != http.StatusTooManyRequests || callArgs[29] != "upstream-bounded-2" {
+	if len(callArgs) != callLogInsertArgCount || callArgs[callLogArgProvider] != "azure" || callArgs[callLogArgStatusCode] != http.StatusTooManyRequests || callArgs[callLogArgUpstreamRequestID] != "upstream-bounded-2" {
 		t.Fatalf("final failure log does not identify the final attempt: %#v", callArgs)
 	}
 	if strings.Contains(rec.Body.String(), "bounded-secret") {

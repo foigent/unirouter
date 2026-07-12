@@ -167,15 +167,17 @@ type ApiKey struct {
 
 // ModelPrice represents the model_prices table.
 type ModelPrice struct {
-	ID               int64     `json:"id" db:"id"`
-	ModelName        string    `json:"model_name" db:"model_name"`
-	Provider         string    `json:"provider" db:"provider"`
-	InputPriceCents  float64   `json:"input_price_cents" db:"input_price_cents"`
-	OutputPriceCents float64   `json:"output_price_cents" db:"output_price_cents"`
-	MaxContext       int       `json:"max_context" db:"max_context"`
-	DefaultMaxOutput int       `json:"default_max_output" db:"default_max_output"`
-	CreatedAt        time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at" db:"updated_at"`
+	ID                 int64     `json:"id" db:"id"`
+	ModelName          string    `json:"model_name" db:"model_name"`
+	Provider           string    `json:"provider" db:"provider"`
+	InputPriceCents    float64   `json:"input_price_cents" db:"input_price_cents"`
+	OutputPriceCents   float64   `json:"output_price_cents" db:"output_price_cents"`
+	CacheReadRatio     float64   `json:"cache_read_ratio" db:"cache_read_ratio"`
+	CacheCreationRatio float64   `json:"cache_creation_ratio" db:"cache_creation_ratio"`
+	MaxContext         int       `json:"max_context" db:"max_context"`
+	DefaultMaxOutput   int       `json:"default_max_output" db:"default_max_output"`
+	CreatedAt          time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // OrgModelPrice represents the org_model_prices table.
@@ -266,28 +268,40 @@ type Transaction struct {
 
 // CallLog represents the call_logs table.
 type CallLog struct {
-	ID                 int64          `json:"id" db:"id"`
-	RequestID          string         `json:"request_id" db:"request_id"`
-	OrgID              int64          `json:"org_id" db:"org_id"`
-	ProjectID          *int64         `json:"project_id" db:"project_id"`
-	ApiKeyID           *int64         `json:"api_key_id" db:"api_key_id"`
-	Model              string         `json:"model" db:"model"`
-	Provider           string         `json:"provider" db:"provider"`
-	Channel            string         `json:"channel" db:"channel"`
-	PromptTokens       int            `json:"prompt_tokens" db:"prompt_tokens"`
-	CompletionTokens   int            `json:"completion_tokens" db:"completion_tokens"`
-	TotalTokens        int            `json:"total_tokens" db:"total_tokens"`
-	EstimatedTokens    int            `json:"estimated_tokens" db:"estimated_tokens"`
-	CostCents          int            `json:"cost_cents" db:"cost_cents"`
-	LatencyMs          int            `json:"latency_ms" db:"latency_ms"`
-	TtftMs             int            `json:"ttft_ms" db:"ttft_ms"`
-	StatusCode         int            `json:"status_code" db:"status_code"`
-	UpstreamStatusCode *int           `json:"upstream_status_code" db:"upstream_status_code"`
-	UpstreamError      sql.NullString `json:"upstream_error" db:"upstream_error"`
-	UsageSource        string         `json:"usage_source" db:"usage_source"`
-	UsageConfidence    float64        `json:"usage_confidence" db:"usage_confidence"`
-	IsStream           bool           `json:"is_stream" db:"is_stream"`
-	CreatedAt          time.Time      `json:"created_at" db:"created_at"`
+	ID                               int64          `json:"id" db:"id"`
+	RequestID                        string         `json:"request_id" db:"request_id"`
+	OrgID                            int64          `json:"org_id" db:"org_id"`
+	ProjectID                        *int64         `json:"project_id" db:"project_id"`
+	ApiKeyID                         *int64         `json:"api_key_id" db:"api_key_id"`
+	Model                            string         `json:"model" db:"model"`
+	Provider                         string         `json:"provider" db:"provider"`
+	Channel                          string         `json:"channel" db:"channel"`
+	PromptTokens                     int            `json:"prompt_tokens" db:"prompt_tokens"`
+	UncachedPromptTokens             int            `json:"uncached_prompt_tokens" db:"uncached_prompt_tokens"`
+	CacheReadTokens                  int            `json:"cache_read_tokens" db:"cache_read_tokens"`
+	CacheCreationTokens              int            `json:"cache_creation_tokens" db:"cache_creation_tokens"`
+	CompletionTokens                 int            `json:"completion_tokens" db:"completion_tokens"`
+	TotalTokens                      int            `json:"total_tokens" db:"total_tokens"`
+	EstimatedTokens                  int            `json:"estimated_tokens" db:"estimated_tokens"`
+	CostCents                        int            `json:"cost_cents" db:"cost_cents"`
+	LatencyMs                        int            `json:"latency_ms" db:"latency_ms"`
+	TtftMs                           int            `json:"ttft_ms" db:"ttft_ms"`
+	StatusCode                       int            `json:"status_code" db:"status_code"`
+	UpstreamStatusCode               *int           `json:"upstream_status_code" db:"upstream_status_code"`
+	UpstreamError                    sql.NullString `json:"upstream_error" db:"upstream_error"`
+	UsageSource                      string         `json:"usage_source" db:"usage_source"`
+	CacheUsageSchema                 string         `json:"cache_usage_schema" db:"cache_usage_schema"`
+	CacheUsageStatus                 string         `json:"cache_usage_status" db:"cache_usage_status"`
+	PricingVersion                   string         `json:"pricing_version" db:"pricing_version"`
+	EffectiveInputPriceCents         float64        `json:"effective_input_price_cents" db:"effective_input_price_cents"`
+	EffectiveCacheReadPriceCents     float64        `json:"effective_cache_read_price_cents" db:"effective_cache_read_price_cents"`
+	EffectiveCacheCreationPriceCents float64        `json:"effective_cache_creation_price_cents" db:"effective_cache_creation_price_cents"`
+	EffectiveOutputPriceCents        float64        `json:"effective_output_price_cents" db:"effective_output_price_cents"`
+	CacheReadCostCents               float64        `json:"cache_read_cost_cents" db:"cache_read_cost_cents"`
+	CacheCreationCostCents           float64        `json:"cache_creation_cost_cents" db:"cache_creation_cost_cents"`
+	UsageConfidence                  float64        `json:"usage_confidence" db:"usage_confidence"`
+	IsStream                         bool           `json:"is_stream" db:"is_stream"`
+	CreatedAt                        time.Time      `json:"created_at" db:"created_at"`
 }
 
 // AuditLog represents the audit_logs table.

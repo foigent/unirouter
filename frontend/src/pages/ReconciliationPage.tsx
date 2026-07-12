@@ -17,6 +17,14 @@ interface ReconRecord {
   variance_tokens?: number;
   variance_ratio?: number;
   source_confidence?: number;
+  uncached_prompt_tokens?: number;
+  cache_read_tokens?: number;
+  cache_creation_tokens?: number;
+  cache_usage_schema?: string;
+  cache_usage_status?: string;
+  pricing_version?: string;
+  cache_read_cost_cents?: number;
+  cache_creation_cost_cents?: number;
   status: string;
   created_at: string;
 }
@@ -33,6 +41,12 @@ interface ReconSummary {
   estimated_ratio_alert_threshold: number;
   estimated_usage_alert: boolean;
   estimated_ratio_scope: string;
+  cache_read_tokens: number;
+  cache_creation_tokens: number;
+  cache_read_cost_cents: number;
+  cache_creation_cost_cents: number;
+  authoritative_cache_records: number;
+  unreported_cache_records: number;
 }
 
 export default function ReconciliationPage() {
@@ -80,6 +94,15 @@ export default function ReconciliationPage() {
       render: (v: string) => v ? <StatusTag status={v}>{usageSourceLabel(v)}</StatusTag> : '-',
     },
     {
+      title: '供应商 Prompt Cache',
+      dataIndex: 'cache_usage_status',
+      key: 'cache_usage_status',
+      width: 190,
+      render: (_: string, record: ReconRecord) => record.cache_usage_schema
+        ? <Tag color={(record.cache_read_tokens || 0) > 0 ? 'green' : 'blue'}>读 {formatInteger(record.cache_read_tokens)} / 写 {formatInteger(record.cache_creation_tokens)}</Tag>
+        : <Tag>未回传</Tag>,
+    },
+    {
       title: '差值',
       dataIndex: 'delta',
       key: 'delta',
@@ -123,7 +146,7 @@ export default function ReconciliationPage() {
       <PageHeader
         eyebrow="Billing"
         title="用量对账"
-        description="对比估算用量和上游回传用量，辅助发现计量偏差。"
+        description="对比请求前估算与请求后实际 Token；同时核对供应商明确回传的 Prompt Cache 读写用量和费用。"
       />
       <Surface title="筛选条件">
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -189,11 +212,25 @@ export default function ReconciliationPage() {
           meta={`实际合计 ${formatInteger(summary?.actual_tokens)}`}
         />
         <MetricTile
-          label="全量偏差"
+          label="估算与实际总偏差"
           value={formatSignedInteger(summary?.variance_tokens)}
           icon={<IconAlertTriangle />}
           tone={(summary?.variance_tokens || 0) === 0 ? 'slate' : 'violet'}
-          meta={`偏差率 ${formatPercent(summary?.variance_ratio)} / 置信度 ${formatPercent(summary?.average_source_confidence)}`}
+          meta={`实际合计 − 请求前估算；偏差率 ${formatPercent(summary?.variance_ratio)} / 置信度 ${formatPercent(summary?.average_source_confidence)}`}
+        />
+        <MetricTile
+          label="缓存读取 Token"
+          value={formatInteger(summary?.cache_read_tokens)}
+          icon={<IconCoinMoney />}
+          tone="green"
+          meta={`读取费用 ${(summary?.cache_read_cost_cents || 0).toFixed(6)} 分；权威回传 ${formatInteger(summary?.authoritative_cache_records)} 条`}
+        />
+        <MetricTile
+          label="缓存写入 Token"
+          value={formatInteger(summary?.cache_creation_tokens)}
+          icon={<IconServer />}
+          tone="violet"
+          meta={`写入费用 ${(summary?.cache_creation_cost_cents || 0).toFixed(6)} 分；未回传 ${formatInteger(summary?.unreported_cache_records)} 条`}
         />
       </div>
       <Surface>

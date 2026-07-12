@@ -62,17 +62,28 @@ func TestListLogs_ProjectScopedRoleWithMembership(t *testing.T) {
 						*dest[8].(*string) = "openai"
 						*dest[9].(*string) = "test-channel"
 						*dest[10].(*int) = 100
-						*dest[11].(*int) = 50
-						*dest[12].(*int) = 150
-						*dest[13].(*int) = 200
-						*dest[14].(*int) = 200
-						*dest[15].(*int) = 350
-						*dest[16].(*int) = 0
-						*dest[17].(**int) = nil
-						*dest[18].(*string) = ""
-						*dest[19].(*string) = "api"
-						*dest[20].(*bool) = false
-						*dest[21].(*time.Time) = now
+						*dest[11].(*int) = 100
+						*dest[12].(*int) = 0
+						*dest[13].(*int) = 0
+						*dest[14].(*int) = 50
+						*dest[15].(*int) = 150
+						*dest[16].(*int) = 200
+						*dest[17].(*int) = 200
+						*dest[18].(*int) = 350
+						*dest[19].(*int) = 0
+						*dest[20].(**int) = nil
+						*dest[21].(*string) = ""
+						*dest[22].(*string) = "api"
+						*dest[23].(*string) = ""
+						*dest[24].(*string) = "not_reported"
+						*dest[25].(*string) = ""
+						*dest[26].(*float64) = 1
+						*dest[27].(*float64) = 1
+						for i := 28; i <= 33; i++ {
+							*dest[i].(*float64) = 0
+						}
+						*dest[34].(*bool) = false
+						*dest[35].(*time.Time) = now
 						return nil
 					},
 				},

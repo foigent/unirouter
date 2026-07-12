@@ -1,31 +1,56 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 2 P6-F08 Routing Policy V1 closeout
+**Batch:** PRD6 Batch 3 P6-F09 Provider Prompt Cache Billing implementation
 **Owner:** Codex
-**Risk:** R3 provider selection, cross-replica probe ownership and migration safety
-**Status:** CI verified / closed
-**Integration:** PR #172 exact head `0e374d3` / run `29178419505`; squash merge `54d8833`; post-merge main run `29178588075`; historical branch restored; no deployment, target, capacity or production claim
-**Next batch:** P6-F09 provider prompt-cache usage/billing, already accepted under D6-01; it must not become a response-cache implementation
-**Previous batch:** P6-F21 implementation PR #170 plus closeout PR #171; post-closeout main run `29176814379` passed and both historical branches are restored
+**Risk:** R3 financial truth, provider usage-contract normalization and migration/cutover safety
+**Status:** Local verified; exact-head required CI pending
+**Integration:** branch `codex/prd6-prompt-cache-billing` from post-P6-F08 closeout `main` at `2d09144b1e8a024079fae2931ca5420d489a8067`; no PR or deployment claim yet
+**Next gate:** commit the reviewed local implementation, open its PR, and require exact-head Backend Tests, Frontend Build and Docker Build before closure
+**Previous batch:** P6-F08 implementation PR #172 plus closeout PR #173; post-closeout main run `29179065645` passed and both historical branches are retained
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Completed Scope
 
-1. Define static priority followed by deterministic equal-priority weight from
-   the server-owned operation ID, with one key per channel and bounded failover.
-2. Replace per-request route reads with singleflight one-second immutable
-   snapshots, bounded LKG and fail-closed stale behavior.
-3. Give half-open recovery one renewable PostgreSQL probe owner across replicas
-   and reject late routing/circuit/key results through captured epochs.
-4. Make the existing per-channel breaker threshold effective and preserve
-   classified bounded retry plus Chat/Embeddings parity.
-5. Expose credential-free candidate/exclusion preview, safe trace/config
-   evidence, non-technical channel controls and optimistic operator writes.
-6. Guard migration down after activation; keep adaptive routing, deployment,
-   target capacity, response cache, Guardrail/P6-F11 completion and P6-F20 out
-   of scope.
+1. Normalize only authoritative OpenAI, DeepSeek and Anthropic Prompt Cache
+   token fields into exact ordinary/read/create partitions; reject impossible
+   partitions and never infer a discount from unknown fields.
+2. Add platform-owned per-model read/create ratios defaulting to `1`, include
+   them in a `pv2_` immutable price receipt, and reserve against the most
+   expensive frozen class.
+3. Settle, replay and recover the exact token partition and class costs with
+   one idempotent terminal financial state.
+4. Preserve the provider schema/status, frozen prices and class costs in logs,
+   trace evidence and reconciliation without changing tenant boundaries.
+5. Give operators plain-language price controls and separate provider Prompt
+   Cache evidence from response-cache semantics and preflight variance.
+6. Add guarded migration `000026`, real PostgreSQL financial/rollback tests,
+   fixture-only provider contract tests and explicit required-CI gates; keep
+   response Cache Service, deployment, real provider calls and P6-F20 out of
+   scope.
 
-## Current P6-F08 Behavior Change
+## Current P6-F09 Behavior Change
+
+- OpenAI cached/read and newer cache-write fields, DeepSeek hit/miss fields and
+  Anthropic uncached/read/create fields use versioned source schemas and exact
+  non-negative partitions; unknown cache-like fields remain ordinary input;
+- platform administrators own read/create ratios, both default to `1`, the
+  organization multiplier still applies, and the frozen `pv2_` receipt records
+  all four effective prices before wallet mutation;
+- settlement, durable stream-finalization recovery and replay carry the same
+  partition and reject conflicting evidence while preserving one terminal;
+- request logs, traces, reconciliation and UI distinguish ordinary, cache-read
+  and cache-create tokens/costs and explain that total variance is actual minus
+  preflight estimate;
+- migration `000026` backfills legacy rows as ordinary input, permits old
+  writers only before activation and refuses destructive down after a
+  non-default ratio, `pv2_` reservation or cache-aware log exists;
+- full backend/race/vet, real PostgreSQL billing and migration, full frontend
+  tests/type-check/build, OpenAPI parse and diff checks pass locally; exact-head
+  required CI and Docker evidence remain pending; and
+- evidence:
+  `docs/ops/evidence/PRD6-B3-P6F09-prompt-cache-billing-local-20260712.md`.
+
+## Previous P6-F08 Behavior Change
 
 - equal-priority traffic is distributed by static weight without allowing a
   client routing hint, while lower priority tiers remain failover-only;

@@ -53,21 +53,14 @@ func (a *OpenAICompatible) BuildRequest(ctx context.Context, in RequestInput) (*
 
 func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) (*NormalizedResponse, error) {
 	_ = ctx
-	usage := Usage{Source: metering.UsageSourceUpstream}
+	usage, err := NewUsage(0, 0, 0, metering.UsageSourceUpstream)
+	if err != nil {
+		return nil, err
+	}
 	if in.StatusCode >= 200 && in.StatusCode < 300 {
-		var parsed struct {
-			Usage struct {
-				PromptTokens     int `json:"prompt_tokens"`
-				CompletionTokens int `json:"completion_tokens"`
-				TotalTokens      int `json:"total_tokens"`
-			} `json:"usage"`
-		}
-		_ = json.Unmarshal(in.Body, &parsed)
-		usage.PromptTokens = parsed.Usage.PromptTokens
-		usage.CompletionTokens = parsed.Usage.CompletionTokens
-		usage.TotalTokens = parsed.Usage.TotalTokens
-		if usage.TotalTokens == 0 && usage.PromptTokens+usage.CompletionTokens > 0 {
-			usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+		usage, _, err = ParseOpenAICompatibleUsage(in.Body, metering.UsageSourceUpstream)
+		if err != nil {
+			return nil, err
 		}
 	}
 	normalized := &NormalizedResponse{

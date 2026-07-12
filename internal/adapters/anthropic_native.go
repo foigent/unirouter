@@ -104,6 +104,10 @@ func (a *AnthropicNative) BuildRequest(ctx context.Context, in RequestInput) (*h
 
 func (a *AnthropicNative) ParseResponse(ctx context.Context, in ResponseInput) (*NormalizedResponse, error) {
 	_ = ctx
+	initialUsage, err := NewUsage(0, 0, 0, metering.UsageSourceUpstream)
+	if err != nil {
+		return nil, err
+	}
 	normalized := &NormalizedResponse{
 		StatusCode: in.StatusCode,
 		Header:     in.Header,
@@ -116,7 +120,7 @@ func (a *AnthropicNative) ParseResponse(ctx context.Context, in ResponseInput) (
 			UpstreamModel:  in.UpstreamModel,
 			TTFTMillis:     in.TTFTMillis,
 		},
-		Usage: Usage{Source: metering.UsageSourceUpstream},
+		Usage: initialUsage,
 	}
 
 	if in.StatusCode < 200 || in.StatusCode >= 300 {
@@ -129,9 +133,10 @@ func (a *AnthropicNative) ParseResponse(ctx context.Context, in ResponseInput) (
 	if err := json.Unmarshal(in.Body, &parsed); err != nil {
 		return nil, fmt.Errorf("decode anthropic response: %w", err)
 	}
-	normalized.Usage.PromptTokens = parsed.Usage.InputTokens
-	normalized.Usage.CompletionTokens = parsed.Usage.OutputTokens
-	normalized.Usage.TotalTokens = parsed.Usage.InputTokens + parsed.Usage.OutputTokens
+	normalized.Usage, err = normalizeAnthropicUsage(parsed.Usage, metering.UsageSourceUpstream)
+	if err != nil {
+		return nil, fmt.Errorf("normalize anthropic usage: %w", err)
+	}
 
 	model := strings.TrimSpace(in.RequestedModel)
 	if model == "" {
@@ -191,12 +196,17 @@ func (a *AnthropicNative) NormalizeStreamChunk(ctx context.Context, in StreamChu
 			if model == "" {
 				model = event.Message.Model
 			}
-			if event.Message.Usage.InputTokens > 0 {
-				in.State.PromptTokens = event.Message.Usage.InputTokens
+			usage, err := normalizeAnthropicUsage(event.Message.Usage, metering.UsageSourceUpstream)
+			if err != nil {
+				return nil, fmt.Errorf("normalize anthropic stream usage: %w", err)
 			}
-			if event.Message.Usage.OutputTokens > 0 {
-				in.State.CompletionTokens = event.Message.Usage.OutputTokens
-			}
+			in.State.PromptTokens = usage.PromptTokens
+			in.State.UncachedPromptTokens = usage.UncachedPromptTokens
+			in.State.CacheReadTokens = usage.CacheReadTokens
+			in.State.CacheCreationTokens = usage.CacheCreationTokens
+			in.State.CompletionTokens = usage.CompletionTokens
+			in.State.CacheUsageSchema = usage.CacheUsageSchema
+			in.State.CacheUsageStatus = usage.CacheUsageStatus
 		}
 		result.Data = marshalOpenAIStreamChunk(in.State, model, map[string]interface{}{"role": "assistant"}, nil)
 	case "content_block_start":
@@ -218,12 +228,11 @@ func (a *AnthropicNative) NormalizeStreamChunk(ctx context.Context, in StreamChu
 			in.State.CompletionTokens = event.Usage.OutputTokens
 			if in.State.PromptTokens > 0 {
 				result.HasUsage = true
-				result.Usage = Usage{
-					PromptTokens:     in.State.PromptTokens,
-					CompletionTokens: in.State.CompletionTokens,
-					TotalTokens:      in.State.PromptTokens + in.State.CompletionTokens,
-					Source:           metering.UsageSourceUpstream,
+				usage, err := UsageFromStreamState(in.State, metering.UsageSourceUpstream)
+				if err != nil {
+					return nil, fmt.Errorf("normalize anthropic final stream usage: %w", err)
 				}
+				result.Usage = usage
 			}
 		}
 		if event.Delta == nil || event.Delta.StopReason == "" {
@@ -421,6 +430,58 @@ func openAIContentToText(raw json.RawMessage) string {
 	return ""
 }
 
+type anthropicUsageWire struct {
+	InputTokens              int  `json:"input_tokens"`
+	OutputTokens             int  `json:"output_tokens"`
+	CacheReadInputTokens     *int `json:"cache_read_input_tokens,omitempty"`
+	CacheCreationInputTokens *int `json:"cache_creation_input_tokens,omitempty"`
+	CacheCreation            *struct {
+		Ephemeral5mInputTokens *int `json:"ephemeral_5m_input_tokens,omitempty"`
+		Ephemeral1hInputTokens *int `json:"ephemeral_1h_input_tokens,omitempty"`
+	} `json:"cache_creation,omitempty"`
+}
+
+func normalizeAnthropicUsage(wire anthropicUsageWire, source string) (Usage, error) {
+	readTokens := valueOrZero(wire.CacheReadInputTokens)
+	creationTokens := valueOrZero(wire.CacheCreationInputTokens)
+	readReported := wire.CacheReadInputTokens != nil
+	creationReported := wire.CacheCreationInputTokens != nil || wire.CacheCreation != nil
+	cacheReported := readReported || creationReported
+	if wire.CacheCreation != nil {
+		detailTotal := valueOrZero(wire.CacheCreation.Ephemeral5mInputTokens) + valueOrZero(wire.CacheCreation.Ephemeral1hInputTokens)
+		if wire.CacheCreationInputTokens == nil {
+			creationTokens = detailTotal
+		} else if detailTotal != creationTokens {
+			return Usage{}, fmt.Errorf(
+				"cache_creation_input_tokens=%d does not match 5m+1h detail=%d",
+				creationTokens,
+				detailTotal,
+			)
+		}
+	}
+	if !cacheReported {
+		return NewUsage(wire.InputTokens, wire.OutputTokens, wire.InputTokens+wire.OutputTokens, source)
+	}
+	status := CacheUsageStatusReadWriteReported
+	if readReported && !creationReported {
+		status = CacheUsageStatusReadReported
+	} else if creationReported && !readReported {
+		status = CacheUsageStatusWriteReported
+	}
+	promptTotal := wire.InputTokens + readTokens + creationTokens
+	return NewCacheAwareUsage(
+		promptTotal,
+		wire.InputTokens,
+		readTokens,
+		creationTokens,
+		wire.OutputTokens,
+		promptTotal+wire.OutputTokens,
+		source,
+		CacheUsageSchemaAnthropicV1,
+		status,
+	)
+}
+
 type anthropicMessageResponse struct {
 	ID         string `json:"id"`
 	Model      string `json:"model"`
@@ -429,21 +490,15 @@ type anthropicMessageResponse struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"content"`
-	Usage struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
-	} `json:"usage"`
+	Usage anthropicUsageWire `json:"usage"`
 }
 
 type anthropicStreamEvent struct {
 	Type    string `json:"type"`
 	Message *struct {
-		ID    string `json:"id"`
-		Model string `json:"model"`
-		Usage struct {
-			InputTokens  int `json:"input_tokens"`
-			OutputTokens int `json:"output_tokens"`
-		} `json:"usage"`
+		ID    string             `json:"id"`
+		Model string             `json:"model"`
+		Usage anthropicUsageWire `json:"usage"`
 	} `json:"message,omitempty"`
 	ContentBlock *struct {
 		Type string `json:"type"`
@@ -454,10 +509,7 @@ type anthropicStreamEvent struct {
 		Text       string `json:"text"`
 		StopReason string `json:"stop_reason"`
 	} `json:"delta,omitempty"`
-	Usage *struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
-	} `json:"usage,omitempty"`
+	Usage *anthropicUsageWire `json:"usage,omitempty"`
 	Error struct {
 		Type    string `json:"type"`
 		Message string `json:"message"`

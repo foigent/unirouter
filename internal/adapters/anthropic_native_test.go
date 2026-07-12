@@ -140,6 +140,9 @@ func TestAnthropicNativeParseResponse_ConvertsToOpenAICompatibleBody(t *testing.
 	if resp.Usage.PromptTokens != 7 || resp.Usage.CompletionTokens != 5 || resp.Usage.TotalTokens != 12 {
 		t.Fatalf("unexpected usage: %+v", resp.Usage)
 	}
+	if resp.Usage.UncachedPromptTokens != 7 || resp.Usage.CacheReadTokens != 0 || resp.Usage.CacheUsageStatus != CacheUsageStatusNotReported {
+		t.Fatalf("unexpected uncached usage: %+v", resp.Usage)
+	}
 	if resp.Usage.Source != metering.UsageSourceUpstream {
 		t.Fatalf("expected upstream usage source, got %s", resp.Usage.Source)
 	}
@@ -171,6 +174,95 @@ func TestAnthropicNativeParseResponse_ConvertsToOpenAICompatibleBody(t *testing.
 	}
 	if body.Usage.TotalTokens != 12 {
 		t.Fatalf("unexpected body usage: %+v", body.Usage)
+	}
+}
+
+func TestAnthropicNativeParseResponse_CacheReadCreationUsage(t *testing.T) {
+	adapter := NewAnthropicNative()
+	resp, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		StatusCode: http.StatusOK,
+		Body: []byte(`{
+			"id":"msg_cache",
+			"model":"claude-sonnet",
+			"content":[{"type":"text","text":"ok"}],
+			"stop_reason":"end_turn",
+			"usage":{
+				"input_tokens":20,
+				"cache_read_input_tokens":80,
+				"cache_creation_input_tokens":30,
+				"cache_creation":{"ephemeral_5m_input_tokens":10,"ephemeral_1h_input_tokens":20},
+				"output_tokens":5
+			}
+		}`),
+		Channel: models.Channel{Provider: "anthropic", AdapterType: TypeAnthropicNative},
+	})
+	if err != nil {
+		t.Fatalf("ParseResponse failed: %v", err)
+	}
+	usage := resp.Usage
+	if usage.PromptTokens != 130 || usage.UncachedPromptTokens != 20 ||
+		usage.CacheReadTokens != 80 || usage.CacheCreationTokens != 30 ||
+		usage.CompletionTokens != 5 || usage.TotalTokens != 135 ||
+		usage.CacheUsageSchema != CacheUsageSchemaAnthropicV1 ||
+		usage.CacheUsageStatus != CacheUsageStatusReadWriteReported {
+		t.Fatalf("unexpected cache usage: %+v", usage)
+	}
+	if !usage.HasAuthoritativeCacheHit() {
+		t.Fatal("expected authoritative cache hit")
+	}
+}
+
+func TestAnthropicNativeParseResponse_RejectsContradictoryCreationDetail(t *testing.T) {
+	adapter := NewAnthropicNative()
+	_, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		StatusCode: http.StatusOK,
+		Body: []byte(`{
+			"id":"msg_cache",
+			"content":[],
+			"usage":{
+				"input_tokens":20,
+				"cache_creation_input_tokens":30,
+				"cache_creation":{"ephemeral_5m_input_tokens":10,"ephemeral_1h_input_tokens":19},
+				"output_tokens":0
+			}
+		}`),
+	})
+	if err == nil {
+		t.Fatal("expected contradictory cache creation detail to fail")
+	}
+}
+
+func TestAnthropicNativeParseResponse_CacheUsageStatusReflectsReportedClasses(t *testing.T) {
+	adapter := NewAnthropicNative()
+	tests := []struct {
+		name       string
+		usage      string
+		wantStatus string
+	}{
+		{
+			name:       "read only",
+			usage:      `{"input_tokens":20,"cache_read_input_tokens":80,"output_tokens":1}`,
+			wantStatus: CacheUsageStatusReadReported,
+		},
+		{
+			name:       "creation only",
+			usage:      `{"input_tokens":20,"cache_creation_input_tokens":30,"output_tokens":1}`,
+			wantStatus: CacheUsageStatusWriteReported,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp, err := adapter.ParseResponse(context.Background(), ResponseInput{
+				StatusCode: http.StatusOK,
+				Body:       []byte(`{"id":"msg_cache_status","content":[],"usage":` + tt.usage + `}`),
+			})
+			if err != nil {
+				t.Fatalf("ParseResponse failed: %v", err)
+			}
+			if resp.Usage.CacheUsageStatus != tt.wantStatus {
+				t.Fatalf("expected status %s, got %+v", tt.wantStatus, resp.Usage)
+			}
+		})
 	}
 }
 
@@ -243,6 +335,36 @@ func TestAnthropicNativeNormalizeStreamChunk(t *testing.T) {
 	}
 	if !chunk.Done || !chunk.Skip {
 		t.Fatalf("expected done skip chunk, got %+v", chunk)
+	}
+}
+
+func TestAnthropicNativeNormalizeStreamChunk_CarriesCachePartition(t *testing.T) {
+	adapter := NewAnthropicNative()
+	state := &StreamState{}
+	input := StreamChunkInput{RequestedModel: "company-chat", State: state}
+
+	_, err := adapter.NormalizeStreamChunk(context.Background(), withStreamData(input, `{
+		"type":"message_start",
+		"message":{"id":"msg_stream_cache","usage":{
+			"input_tokens":20,
+			"cache_read_input_tokens":80,
+			"cache_creation_input_tokens":30,
+			"cache_creation":{"ephemeral_5m_input_tokens":30,"ephemeral_1h_input_tokens":0},
+			"output_tokens":0
+		}}
+	}`))
+	if err != nil {
+		t.Fatalf("message_start failed: %v", err)
+	}
+	chunk, err := adapter.NormalizeStreamChunk(context.Background(), withStreamData(input, `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":7}}`))
+	if err != nil {
+		t.Fatalf("message_delta failed: %v", err)
+	}
+	usage := chunk.Usage
+	if !chunk.HasUsage || usage.PromptTokens != 130 || usage.UncachedPromptTokens != 20 ||
+		usage.CacheReadTokens != 80 || usage.CacheCreationTokens != 30 ||
+		usage.CompletionTokens != 7 || usage.CacheUsageSchema != CacheUsageSchemaAnthropicV1 {
+		t.Fatalf("unexpected stream cache usage: %+v", usage)
 	}
 }
 

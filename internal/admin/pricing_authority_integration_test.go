@@ -181,6 +181,43 @@ func TestP6F34PriceAuthorityIntegration(t *testing.T) {
 		require.Equal(t, fx.orgB, orgTargetID)
 	})
 
+	t.Run("legacy price upsert preserves omitted cache ratios", func(t *testing.T) {
+		const model = "p6f09-preserve-cache-ratios"
+		_, err := pool.Exec(ctx,
+			`INSERT INTO model_prices (
+				model_name, input_price_cents, output_price_cents,
+				cache_read_ratio, cache_creation_ratio
+			 ) VALUES ($1, 4, 20, 0.2, 1.4)`, model)
+		require.NoError(t, err)
+
+		legacy := serve(t, http.MethodPost, "/api/v1/model-prices",
+			fmt.Sprintf(`{"model_name":%q,"input_price_cents":6,"output_price_cents":30}`, model),
+			fx.platformA, fx.orgA, auth.RolePlatformAdmin, "p6f09-legacy-price-upsert")
+		assertStatus(t, legacy, http.StatusCreated)
+
+		var inputPrice, outputPrice, readRatio, creationRatio float64
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT input_price_cents::float8, output_price_cents::float8,
+			        cache_read_ratio::float8, cache_creation_ratio::float8
+			 FROM model_prices WHERE model_name = $1`, model,
+		).Scan(&inputPrice, &outputPrice, &readRatio, &creationRatio))
+		require.InDelta(t, 6, inputPrice, 0.000001)
+		require.InDelta(t, 30, outputPrice, 0.000001)
+		require.InDelta(t, 0.2, readRatio, 0.000001)
+		require.InDelta(t, 1.4, creationRatio, 0.000001)
+
+		explicit := serve(t, http.MethodPost, "/api/v1/model-prices",
+			fmt.Sprintf(`{"model_name":%q,"input_price_cents":6,"output_price_cents":30,"cache_read_ratio":0.1,"cache_creation_ratio":1.25}`, model),
+			fx.platformA, fx.orgA, auth.RolePlatformAdmin, "p6f09-explicit-price-upsert")
+		assertStatus(t, explicit, http.StatusCreated)
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT cache_read_ratio::float8, cache_creation_ratio::float8
+			 FROM model_prices WHERE model_name = $1`, model,
+		).Scan(&readRatio, &creationRatio))
+		require.InDelta(t, 0.1, readRatio, 0.000001)
+		require.InDelta(t, 1.25, creationRatio, 0.000001)
+	})
+
 	t.Run("concurrent first upserts serialize before-state capture", func(t *testing.T) {
 		type concurrentWrite struct {
 			requestID string

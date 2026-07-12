@@ -30,6 +30,12 @@ type reconciliationSummary struct {
 	EstimatedUsageAlert      bool    `json:"estimated_usage_alert"`
 	ThresholdSetting         string  `json:"estimated_ratio_alert_threshold_setting"`
 	RatioScope               string  `json:"estimated_ratio_scope"`
+	CacheReadTokens          int64   `json:"cache_read_tokens"`
+	CacheCreationTokens      int64   `json:"cache_creation_tokens"`
+	CacheReadCostCents       float64 `json:"cache_read_cost_cents"`
+	CacheCreationCostCents   float64 `json:"cache_creation_cost_cents"`
+	AuthoritativeCacheRows   int64   `json:"authoritative_cache_records"`
+	UnreportedCacheRows      int64   `json:"unreported_cache_records"`
 }
 
 func (h *Handler) ListReconciliation(w http.ResponseWriter, r *http.Request) {
@@ -92,7 +98,11 @@ func (h *Handler) ListReconciliation(w http.ResponseWriter, r *http.Request) {
 	query := fmt.Sprintf(
 		`SELECT id, request_id, model, total_tokens, prompt_tokens, completion_tokens,
 		        COALESCE(NULLIF(estimated_tokens, 0), prompt_tokens + completion_tokens),
-		        status_code, usage_source, usage_confidence, created_at
+		        status_code, usage_source, usage_confidence,
+		        CASE WHEN cache_usage_schema = '' AND uncached_prompt_tokens = 0 THEN prompt_tokens ELSE uncached_prompt_tokens END,
+		        cache_read_tokens, cache_creation_tokens, cache_usage_schema, cache_usage_status, pricing_version,
+		        cache_read_cost_cents::float8, cache_creation_cost_cents::float8,
+		        created_at
 		 FROM call_logs %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`,
 		where, argIdx, argIdx+1)
 	args = append(args, pageSize, offset)
@@ -105,28 +115,43 @@ func (h *Handler) ListReconciliation(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type ReconRecord struct {
-		ID           int64   `json:"id"`
-		RequestID    string  `json:"request_id"`
-		Model        string  `json:"model"`
-		EstTokens    int     `json:"estimated_tokens"`
-		ActualTokens int     `json:"actual_tokens"`
-		Delta        int     `json:"delta"`
-		UsageSource  string  `json:"usage_source"`
-		Variance     int     `json:"variance_tokens"`
-		VarianceRate float64 `json:"variance_ratio"`
-		Confidence   float64 `json:"source_confidence"`
-		Status       string  `json:"status"`
-		CreatedAt    string  `json:"created_at"`
+		ID                     int64   `json:"id"`
+		RequestID              string  `json:"request_id"`
+		Model                  string  `json:"model"`
+		EstTokens              int     `json:"estimated_tokens"`
+		ActualTokens           int     `json:"actual_tokens"`
+		Delta                  int     `json:"delta"`
+		UsageSource            string  `json:"usage_source"`
+		Variance               int     `json:"variance_tokens"`
+		VarianceRate           float64 `json:"variance_ratio"`
+		Confidence             float64 `json:"source_confidence"`
+		UncachedPromptTokens   int     `json:"uncached_prompt_tokens"`
+		CacheReadTokens        int     `json:"cache_read_tokens"`
+		CacheCreationTokens    int     `json:"cache_creation_tokens"`
+		CacheUsageSchema       string  `json:"cache_usage_schema"`
+		CacheUsageStatus       string  `json:"cache_usage_status"`
+		PricingVersion         string  `json:"pricing_version"`
+		CacheReadCostCents     float64 `json:"cache_read_cost_cents"`
+		CacheCreationCostCents float64 `json:"cache_creation_cost_cents"`
+		Status                 string  `json:"status"`
+		CreatedAt              string  `json:"created_at"`
 	}
 
 	records := make([]ReconRecord, 0)
 	for rows.Next() {
 		var id int64
-		var requestID, model, usageSource string
+		var requestID, model, usageSource, cacheUsageSchema, cacheUsageStatus, pricingVersion string
 		var totalTokens, promptTokens, completionTokens, estimatedTokens, statusCode int
-		var usageConfidence float64
+		var uncachedPromptTokens, cacheReadTokens, cacheCreationTokens int
+		var usageConfidence, cacheReadCost, cacheCreationCost float64
 		var createdAt time.Time
-		if err := rows.Scan(&id, &requestID, &model, &totalTokens, &promptTokens, &completionTokens, &estimatedTokens, &statusCode, &usageSource, &usageConfidence, &createdAt); err != nil {
+		if err := rows.Scan(
+			&id, &requestID, &model, &totalTokens, &promptTokens, &completionTokens,
+			&estimatedTokens, &statusCode, &usageSource, &usageConfidence,
+			&uncachedPromptTokens, &cacheReadTokens, &cacheCreationTokens,
+			&cacheUsageSchema, &cacheUsageStatus, &pricingVersion,
+			&cacheReadCost, &cacheCreationCost, &createdAt,
+		); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 			return
 		}
@@ -139,18 +164,26 @@ func (h *Handler) ListReconciliation(w http.ResponseWriter, r *http.Request) {
 		variance := metering.VarianceTokens(estimatedTokens, totalTokens)
 
 		records = append(records, ReconRecord{
-			ID:           id,
-			RequestID:    requestID,
-			Model:        model,
-			EstTokens:    estimatedTokens,
-			ActualTokens: totalTokens,
-			Delta:        variance,
-			UsageSource:  usageSource,
-			Variance:     variance,
-			VarianceRate: metering.VarianceRatio(estimatedTokens, totalTokens),
-			Confidence:   usageConfidence,
-			Status:       status,
-			CreatedAt:    createdAt.Format(time.RFC3339),
+			ID:                     id,
+			RequestID:              requestID,
+			Model:                  model,
+			EstTokens:              estimatedTokens,
+			ActualTokens:           totalTokens,
+			Delta:                  variance,
+			UsageSource:            usageSource,
+			Variance:               variance,
+			VarianceRate:           metering.VarianceRatio(estimatedTokens, totalTokens),
+			Confidence:             usageConfidence,
+			UncachedPromptTokens:   uncachedPromptTokens,
+			CacheReadTokens:        cacheReadTokens,
+			CacheCreationTokens:    cacheCreationTokens,
+			CacheUsageSchema:       cacheUsageSchema,
+			CacheUsageStatus:       cacheUsageStatus,
+			PricingVersion:         pricingVersion,
+			CacheReadCostCents:     cacheReadCost,
+			CacheCreationCostCents: cacheCreationCost,
+			Status:                 status,
+			CreatedAt:              createdAt.Format(time.RFC3339),
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -184,7 +217,13 @@ func (h *Handler) reconciliationSummary(ctx context.Context, where string, args 
 		    COALESCE(SUM(CASE WHEN status_code < 400 AND usage_source IN ('upstream', 'api', '') THEN total_tokens ELSE 0 END), 0),
 		    COALESCE(SUM(CASE WHEN status_code < 400 THEN COALESCE(NULLIF(estimated_tokens, 0), prompt_tokens + completion_tokens) ELSE 0 END), 0),
 		    COALESCE(SUM(CASE WHEN status_code < 400 THEN total_tokens ELSE 0 END), 0),
-		    COALESCE(AVG(CASE WHEN status_code < 400 THEN usage_confidence END), 0)::float8
+		    COALESCE(AVG(CASE WHEN status_code < 400 THEN usage_confidence END), 0)::float8,
+		    COALESCE(SUM(CASE WHEN status_code < 400 THEN cache_read_tokens ELSE 0 END), 0),
+		    COALESCE(SUM(CASE WHEN status_code < 400 THEN cache_creation_tokens ELSE 0 END), 0),
+		    COALESCE(SUM(CASE WHEN status_code < 400 THEN cache_read_cost_cents ELSE 0 END), 0)::float8,
+		    COALESCE(SUM(CASE WHEN status_code < 400 THEN cache_creation_cost_cents ELSE 0 END), 0)::float8,
+		    COALESCE(SUM(CASE WHEN status_code < 400 AND cache_usage_schema <> '' THEN 1 ELSE 0 END), 0),
+		    COALESCE(SUM(CASE WHEN status_code < 400 AND cache_usage_schema = '' THEN 1 ELSE 0 END), 0)
 		 FROM call_logs %s`,
 		where,
 	)
@@ -196,6 +235,12 @@ func (h *Handler) reconciliationSummary(ctx context.Context, where string, args 
 		&summary.PreflightEstimatedTokens,
 		&summary.ActualTokens,
 		&summary.AverageSourceConfidence,
+		&summary.CacheReadTokens,
+		&summary.CacheCreationTokens,
+		&summary.CacheReadCostCents,
+		&summary.CacheCreationCostCents,
+		&summary.AuthoritativeCacheRows,
+		&summary.UnreportedCacheRows,
 	); err != nil {
 		return summary, err
 	}
@@ -283,7 +328,8 @@ func (h *Handler) ListModelPrices(w http.ResponseWriter, r *http.Request) {
 
 	offset := paginationOffset(page, pageSize)
 	rows, err := h.db.Query(r.Context(),
-		`SELECT id, model_name, input_price_cents::float8, output_price_cents::float8, updated_at
+		`SELECT id, model_name, input_price_cents::float8, output_price_cents::float8,
+		        cache_read_ratio::float8, cache_creation_ratio::float8, updated_at
 		 FROM model_prices ORDER BY model_name LIMIT $1 OFFSET $2`,
 		pageSize, offset)
 	if err != nil {
@@ -296,15 +342,17 @@ func (h *Handler) ListModelPrices(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var id int64
 		var modelName string
-		var inputPrice, outputPrice float64
+		var inputPrice, outputPrice, cacheReadRatio, cacheCreationRatio float64
 		var updatedAt time.Time
-		if err := rows.Scan(&id, &modelName, &inputPrice, &outputPrice, &updatedAt); err != nil {
+		if err := rows.Scan(&id, &modelName, &inputPrice, &outputPrice, &cacheReadRatio, &cacheCreationRatio, &updatedAt); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 			return
 		}
 		prices = append(prices, map[string]interface{}{
 			"id": id, "model_name": modelName, "input_price_cents": inputPrice,
-			"output_price_cents": outputPrice, "currency": "CNY", "updated_at": updatedAt,
+			"output_price_cents": outputPrice,
+			"cache_read_ratio":   cacheReadRatio, "cache_creation_ratio": cacheCreationRatio,
+			"currency": "CNY", "updated_at": updatedAt,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -323,9 +371,11 @@ func (h *Handler) CreateModelPrice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		ModelName        string  `json:"model_name"`
-		InputPriceCents  float64 `json:"input_price_cents"`
-		OutputPriceCents float64 `json:"output_price_cents"`
+		ModelName          string   `json:"model_name"`
+		InputPriceCents    float64  `json:"input_price_cents"`
+		OutputPriceCents   float64  `json:"output_price_cents"`
+		CacheReadRatio     *float64 `json:"cache_read_ratio"`
+		CacheCreationRatio *float64 `json:"cache_creation_ratio"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
@@ -338,6 +388,18 @@ func (h *Handler) CreateModelPrice(w http.ResponseWriter, r *http.Request) {
 	if req.InputPriceCents < 0 || req.OutputPriceCents < 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "price must be >= 0"})
 		return
+	}
+	if (req.CacheReadRatio != nil && !validCachePriceRatio(*req.CacheReadRatio)) ||
+		(req.CacheCreationRatio != nil && !validCachePriceRatio(*req.CacheCreationRatio)) {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "cache ratios must be between 0 and 100"})
+		return
+	}
+	var cacheReadRatio, cacheCreationRatio interface{}
+	if req.CacheReadRatio != nil {
+		cacheReadRatio = *req.CacheReadRatio
+	}
+	if req.CacheCreationRatio != nil {
+		cacheCreationRatio = *req.CacheCreationRatio
 	}
 	tx, err := h.db.Begin(r.Context())
 	if err != nil {
@@ -358,11 +420,20 @@ func (h *Handler) CreateModelPrice(w http.ResponseWriter, r *http.Request) {
 
 	var after modelPriceAuditRecord
 	err = tx.QueryRow(r.Context(),
-		`INSERT INTO model_prices (model_name, input_price_cents, output_price_cents) VALUES ($1, $2, $3)
-		 ON CONFLICT (model_name) DO UPDATE SET input_price_cents = $2, output_price_cents = $3, updated_at = NOW()
-		 RETURNING id, model_name, input_price_cents::float8, output_price_cents::float8`,
-		req.ModelName, req.InputPriceCents, req.OutputPriceCents,
-	).Scan(&after.ID, &after.ModelName, &after.InputPriceCents, &after.OutputPriceCents)
+		`INSERT INTO model_prices (
+			model_name, input_price_cents, output_price_cents,
+			cache_read_ratio, cache_creation_ratio
+		 ) VALUES ($1, $2, $3, COALESCE($4::numeric, 1), COALESCE($5::numeric, 1))
+		 ON CONFLICT (model_name) DO UPDATE SET
+			input_price_cents = $2,
+			output_price_cents = $3,
+			cache_read_ratio = COALESCE($4::numeric, model_prices.cache_read_ratio),
+			cache_creation_ratio = COALESCE($5::numeric, model_prices.cache_creation_ratio),
+			updated_at = NOW()
+		 RETURNING id, model_name, input_price_cents::float8, output_price_cents::float8,
+		           cache_read_ratio::float8, cache_creation_ratio::float8`,
+		req.ModelName, req.InputPriceCents, req.OutputPriceCents, cacheReadRatio, cacheCreationRatio,
+	).Scan(&after.ID, &after.ModelName, &after.InputPriceCents, &after.OutputPriceCents, &after.CacheReadRatio, &after.CacheCreationRatio)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Insert failed"})
 		return
@@ -382,6 +453,7 @@ func (h *Handler) CreateModelPrice(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"id": after.ID, "model_name": after.ModelName,
 		"input_price_cents": after.InputPriceCents, "output_price_cents": after.OutputPriceCents,
+		"cache_read_ratio": after.CacheReadRatio, "cache_creation_ratio": after.CacheCreationRatio,
 	})
 }
 
@@ -396,9 +468,11 @@ func (h *Handler) UpdateModelPrice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		InputPriceCents  *float64 `json:"input_price_cents"`
-		OutputPriceCents *float64 `json:"output_price_cents"`
-		ModelName        *string  `json:"model_name"`
+		InputPriceCents    *float64 `json:"input_price_cents"`
+		OutputPriceCents   *float64 `json:"output_price_cents"`
+		CacheReadRatio     *float64 `json:"cache_read_ratio"`
+		CacheCreationRatio *float64 `json:"cache_creation_ratio"`
+		ModelName          *string  `json:"model_name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
@@ -432,6 +506,24 @@ func (h *Handler) UpdateModelPrice(w http.ResponseWriter, r *http.Request) {
 		}
 		sets = append(sets, fmt.Sprintf("output_price_cents = $%d", argIdx))
 		args = append(args, *req.OutputPriceCents)
+		argIdx++
+	}
+	if req.CacheReadRatio != nil {
+		if !validCachePriceRatio(*req.CacheReadRatio) {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "cache_read_ratio must be between 0 and 100"})
+			return
+		}
+		sets = append(sets, fmt.Sprintf("cache_read_ratio = $%d", argIdx))
+		args = append(args, *req.CacheReadRatio)
+		argIdx++
+	}
+	if req.CacheCreationRatio != nil {
+		if !validCachePriceRatio(*req.CacheCreationRatio) {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "cache_creation_ratio must be between 0 and 100"})
+			return
+		}
+		sets = append(sets, fmt.Sprintf("cache_creation_ratio = $%d", argIdx))
+		args = append(args, *req.CacheCreationRatio)
 		argIdx++
 	}
 	if len(sets) == 0 {
@@ -511,8 +603,9 @@ func (h *Handler) DeleteModelPrice(w http.ResponseWriter, r *http.Request) {
 	var before modelPriceAuditRecord
 	err = tx.QueryRow(r.Context(),
 		`DELETE FROM model_prices WHERE id = $1
-		 RETURNING id, model_name, input_price_cents::float8, output_price_cents::float8`, id,
-	).Scan(&before.ID, &before.ModelName, &before.InputPriceCents, &before.OutputPriceCents)
+		 RETURNING id, model_name, input_price_cents::float8, output_price_cents::float8,
+		           cache_read_ratio::float8, cache_creation_ratio::float8`, id,
+	).Scan(&before.ID, &before.ModelName, &before.InputPriceCents, &before.OutputPriceCents, &before.CacheReadRatio, &before.CacheCreationRatio)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Model price not found"})
 		return
@@ -756,16 +849,19 @@ func (h *Handler) DeleteOrgModelPrice(w http.ResponseWriter, r *http.Request) {
 }
 
 type modelPriceAuditRecord struct {
-	ID               int64
-	ModelName        string
-	InputPriceCents  float64
-	OutputPriceCents float64
+	ID                 int64
+	ModelName          string
+	InputPriceCents    float64
+	OutputPriceCents   float64
+	CacheReadRatio     float64
+	CacheCreationRatio float64
 }
 
 func (p modelPriceAuditRecord) auditState() map[string]interface{} {
 	return map[string]interface{}{
 		"id": p.ID, "model_name": p.ModelName,
 		"input_price_cents": p.InputPriceCents, "output_price_cents": p.OutputPriceCents,
+		"cache_read_ratio": p.CacheReadRatio, "cache_creation_ratio": p.CacheCreationRatio,
 	}
 }
 
@@ -787,12 +883,14 @@ type pricingQueryRower interface {
 }
 
 func loadModelPriceByID(ctx context.Context, q pricingQueryRower, id int64, forUpdate bool) (modelPriceAuditRecord, bool, error) {
-	query := `SELECT id, model_name, input_price_cents::float8, output_price_cents::float8 FROM model_prices WHERE id = $1`
+	query := `SELECT id, model_name, input_price_cents::float8, output_price_cents::float8,
+	                 cache_read_ratio::float8, cache_creation_ratio::float8
+	          FROM model_prices WHERE id = $1`
 	if forUpdate {
 		query += ` FOR UPDATE`
 	}
 	var price modelPriceAuditRecord
-	err := q.QueryRow(ctx, query, id).Scan(&price.ID, &price.ModelName, &price.InputPriceCents, &price.OutputPriceCents)
+	err := q.QueryRow(ctx, query, id).Scan(&price.ID, &price.ModelName, &price.InputPriceCents, &price.OutputPriceCents, &price.CacheReadRatio, &price.CacheCreationRatio)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return modelPriceAuditRecord{}, false, nil
 	}
@@ -800,12 +898,14 @@ func loadModelPriceByID(ctx context.Context, q pricingQueryRower, id int64, forU
 }
 
 func loadModelPriceByName(ctx context.Context, q pricingQueryRower, modelName string, forUpdate bool) (modelPriceAuditRecord, bool, error) {
-	query := `SELECT id, model_name, input_price_cents::float8, output_price_cents::float8 FROM model_prices WHERE model_name = $1`
+	query := `SELECT id, model_name, input_price_cents::float8, output_price_cents::float8,
+	                 cache_read_ratio::float8, cache_creation_ratio::float8
+	          FROM model_prices WHERE model_name = $1`
 	if forUpdate {
 		query += ` FOR UPDATE`
 	}
 	var price modelPriceAuditRecord
-	err := q.QueryRow(ctx, query, modelName).Scan(&price.ID, &price.ModelName, &price.InputPriceCents, &price.OutputPriceCents)
+	err := q.QueryRow(ctx, query, modelName).Scan(&price.ID, &price.ModelName, &price.InputPriceCents, &price.OutputPriceCents, &price.CacheReadRatio, &price.CacheCreationRatio)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return modelPriceAuditRecord{}, false, nil
 	}
@@ -848,6 +948,10 @@ func requirePlatformPriceMutation(w http.ResponseWriter, r *http.Request) bool {
 
 func validOrgModelPriceMultiplier(multiplier float64) bool {
 	return multiplier >= 0.001 && multiplier <= 99.999
+}
+
+func validCachePriceRatio(ratio float64) bool {
+	return ratio >= 0 && ratio <= 100
 }
 
 func lockPriceMutationKey(ctx context.Context, tx pgx.Tx, key string) error {

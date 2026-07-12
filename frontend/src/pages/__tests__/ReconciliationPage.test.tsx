@@ -24,6 +24,14 @@ const RECON_RESPONSE = {
       usage_source: 'counter_v2',
       variance_ratio: 0.1111,
       source_confidence: 0.65,
+      uncached_prompt_tokens: 50,
+      cache_read_tokens: 30,
+      cache_creation_tokens: 10,
+      cache_usage_schema: 'anthropic.prompt_cache.v1',
+      cache_usage_status: 'cache_read_write_reported',
+      pricing_version: 'pv2_test',
+      cache_read_cost_cents: 0.003,
+      cache_creation_cost_cents: 0.025,
       status: 'reconciled',
       created_at: '2026-07-02T10:00:00Z',
     },
@@ -41,6 +49,12 @@ const RECON_RESPONSE = {
     estimated_ratio_alert_threshold: 0.2,
     estimated_usage_alert: true,
     estimated_ratio_scope: 'filtered_query',
+    cache_read_tokens: 30,
+    cache_creation_tokens: 10,
+    cache_read_cost_cents: 0.003,
+    cache_creation_cost_cents: 0.025,
+    authoritative_cache_records: 1,
+    unreported_cache_records: 0,
   },
 };
 
@@ -66,6 +80,9 @@ describe('ReconciliationPage', () => {
     expect(screen.getByText('80.0%')).toBeTruthy();
     expect(screen.getByText(/当前筛选口径/)).toBeTruthy();
     expect(screen.getAllByText('流式计数').length).toBeGreaterThan(0);
+    expect(screen.getByText('缓存读取 Token')).toBeTruthy();
+    expect(screen.getByText('缓存写入 Token')).toBeTruthy();
+    expect(screen.getByText(/读 30.*写 10/)).toBeTruthy();
   });
 
   it('renders usage source filter', async () => {

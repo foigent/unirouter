@@ -34,19 +34,33 @@ func TestGetLogDetail_NullSafeUpstreamError(t *testing.T) {
 				*dest[8].(*string) = "batch16-mock"
 				*dest[9].(*string) = "prd2-batch16-openai-compatible-mock"
 				*dest[10].(*int) = 10
-				*dest[11].(*int) = 5
-				*dest[12].(*int) = 15
+				*dest[11].(*int) = 4
+				*dest[12].(*int) = 5
 				*dest[13].(*int) = 1
-				*dest[14].(*int) = http.StatusOK
-				*dest[15].(*int) = 12
-				*dest[16].(*int) = 0
-				*dest[17].(**int) = nil
-				*dest[18].(*string) = ""
-				*dest[19].(*string) = "upstream"
-				*dest[20].(*bool) = false
-				*dest[21].(*string) = "127.0.0.1"
-				*dest[22].(*string) = "company-chat"
-				*dest[23].(*time.Time) = now
+				*dest[14].(*int) = 5
+				*dest[15].(*int) = 15
+				*dest[16].(*int) = 1
+				*dest[17].(*int) = http.StatusOK
+				*dest[18].(*int) = 12
+				*dest[19].(*int) = 0
+				*dest[20].(**int) = nil
+				*dest[21].(*string) = ""
+				*dest[22].(*string) = "upstream"
+				*dest[23].(*string) = "anthropic.prompt_cache.v1"
+				*dest[24].(*string) = "cache_read_write_reported"
+				*dest[25].(*string) = "pv2_test"
+				*dest[26].(*float64) = 0.1
+				*dest[27].(*float64) = 1.25
+				*dest[28].(*float64) = 2
+				*dest[29].(*float64) = 0.2
+				*dest[30].(*float64) = 2.5
+				*dest[31].(*float64) = 8
+				*dest[32].(*float64) = 0.001
+				*dest[33].(*float64) = 0.0025
+				*dest[34].(*bool) = false
+				*dest[35].(*string) = "127.0.0.1"
+				*dest[36].(*string) = "company-chat"
+				*dest[37].(*time.Time) = now
 				return nil
 			}}
 		},
@@ -65,6 +79,12 @@ func TestGetLogDetail_NullSafeUpstreamError(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"upstream_error":""`) {
 		t.Fatalf("expected empty upstream_error in response, got %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"cache_read_tokens":5`) || !strings.Contains(rec.Body.String(), `"cache_creation_tokens":1`) {
+		t.Fatalf("expected provider prompt-cache evidence in response, got %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"cache_read_ratio":0.1`) || !strings.Contains(rec.Body.String(), `"cache_creation_ratio":1.25`) {
+		t.Fatalf("expected immutable prompt-cache ratios in response, got %s", rec.Body.String())
 	}
 }
 

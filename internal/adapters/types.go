@@ -31,10 +31,15 @@ const (
 )
 
 type Usage struct {
-	PromptTokens     int
-	CompletionTokens int
-	TotalTokens      int
-	Source           string
+	PromptTokens         int
+	UncachedPromptTokens int
+	CacheReadTokens      int
+	CacheCreationTokens  int
+	CompletionTokens     int
+	TotalTokens          int
+	Source               string
+	CacheUsageSchema     string
+	CacheUsageStatus     string
 }
 
 type ProviderMeta struct {
@@ -86,10 +91,15 @@ type NormalizedResponse struct {
 }
 
 type StreamState struct {
-	ID               string
-	Created          int64
-	PromptTokens     int
-	CompletionTokens int
+	ID                   string
+	Created              int64
+	PromptTokens         int
+	UncachedPromptTokens int
+	CacheReadTokens      int
+	CacheCreationTokens  int
+	CompletionTokens     int
+	CacheUsageSchema     string
+	CacheUsageStatus     string
 }
 
 type StreamChunkInput struct {
