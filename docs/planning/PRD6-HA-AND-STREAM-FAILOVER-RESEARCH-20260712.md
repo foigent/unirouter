@@ -123,9 +123,9 @@ requires client acknowledgement and remains dependent on provider semantics.
 - P6-F17 stores operation/idempotency identity in PostgreSQL, but deliberately
   does not persist model responses for replay; a completed duplicate currently
   returns a conflict receipt.
-- The local P6-F20 candidate adds a PostgreSQL leased outbox and durable runtime
-  terminal hooks. It is not a `main`, target or production claim until PR and
-  required CI close.
+- P6-F20 adds a PostgreSQL leased outbox and durable runtime terminal hooks. PR
+  #177 and its post-merge `main` run are CI verified / closed; this remains no
+  target or production claim.
 
 ### 5.2 Current deployment is not machine-level HA
 
@@ -157,7 +157,7 @@ requires client acknowledgement and remains dependent on provider semantics.
 - If the process dies after the marker but before final usage, recovery does not
   guess a charge or refund. The reservation remains conservatively held because
   exact delivered usage is unknown.
-- The local P6-F20 outbox recovers work only after final usage or another terminal
+- The P6-F20 outbox recovers work only after final usage or another terminal
   financial fact is durable. It does not change the mid-stream network/database
   boundary.
 

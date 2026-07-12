@@ -23,7 +23,7 @@ raw prompt/response persistence, a deployment or a target-capacity claim.
 
 D6-12 is accepted: earlier planning text that assigned a "per-chunk process-kill
 journal" to P6-F20 is superseded. D6-10/P6-F11 owns reservation-aware streaming,
-bounded checkpoints, explicit interruption and client recovery. This candidate
+bounded checkpoints, explicit interruption and client recovery. This implementation
 does not guess usage when a process dies mid-stream before final usage is
 persisted; the existing conservative financial hold remains.
 

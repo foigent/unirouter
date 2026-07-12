@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -48,13 +47,12 @@ func request(operation string, orgID int64, class string, ttl time.Duration) Req
 	return Request{OperationID: operation, OrgID: orgID, Class: class, LeaseTTL: ttl}
 }
 
-func TestP6F21ReplicaInvariantWeightedConcurrency(t *testing.T) {
+func TestP6F21ReplicaInvariantWeightedCapacity(t *testing.T) {
 	server := miniredis.RunT(t)
 	options := testOptions()
 	options.GlobalCapacity = 4
 	options.OrgCapacity = 3
 	options.Stream = ClassPolicy{Weight: 3, MaxWait: 100 * time.Millisecond}
-	options.Interactive = ClassPolicy{Weight: 1, MaxWait: 300 * time.Millisecond}
 	options.StoreTimeout = 500 * time.Millisecond
 	options.ActivePollWindow = 50 * time.Millisecond
 	first, _ := newTestService(t, server, options)
@@ -62,38 +60,52 @@ func TestP6F21ReplicaInvariantWeightedConcurrency(t *testing.T) {
 	third, _ := newTestService(t, server, options)
 	services := []*Service{first, second, third}
 
-	var admitted atomic.Int64
-	var denied atomic.Int64
-	var unexpected atomic.Int64
-	reservations := make(chan *Reservation, 20)
-	var wait sync.WaitGroup
-	for index := 0; index < 20; index++ {
-		wait.Add(1)
-		go func(index int) {
-			defer wait.Done()
-			reservation, _, err := services[index%len(services)].Reserve(context.Background(), request(
-				fmt.Sprintf("replica-%02d", index), 7, ClassInteractive, time.Minute,
-			))
-			switch {
-			case err == nil:
-				admitted.Add(1)
-				reservations <- reservation
-			case errors.Is(err, ErrCapacityExceeded):
-				denied.Add(1)
-			default:
-				unexpected.Add(1)
-			}
-		}(index)
-	}
-	wait.Wait()
-	close(reservations)
-	if admitted.Load() != 3 || denied.Load() != 17 || unexpected.Load() != 0 {
-		t.Fatalf("admitted=%d denied=%d unexpected=%d", admitted.Load(), denied.Load(), unexpected.Load())
-	}
-	for reservation := range reservations {
-		if err := first.Release(context.Background(), reservation); err != nil {
-			t.Fatal(err)
+	// Miniredis serializes its Go Lua VM. Under the race detector, using it as a
+	// high-contention load fixture can queue commands until the one-minute test
+	// leases expire. The real-Redis integration test owns the concurrent proof;
+	// this unit test deterministically proves that independent service clients
+	// share admission and release state.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	reservations := make([]*Reservation, 0, options.OrgCapacity)
+	for index := 0; index < int(options.OrgCapacity); index++ {
+		reservation, decision, err := services[index%len(services)].Reserve(ctx, request(
+			fmt.Sprintf("replica-admitted-%02d", index), 7, ClassInteractive, time.Minute,
+		))
+		if err != nil {
+			t.Fatalf("replica %d admission failed: %v", index, err)
 		}
+		if decision.GlobalUsed != int64(index+1) || decision.OrgUsed != int64(index+1) {
+			t.Fatalf("replica %d observed use=%d/%d, want %d/%d", index,
+				decision.GlobalUsed, decision.OrgUsed, index+1, index+1)
+		}
+		reservations = append(reservations, reservation)
+	}
+	for index, service := range services {
+		if reservation, decision, err := service.Reserve(ctx, request(
+			fmt.Sprintf("replica-denied-%02d", index), 7, ClassInteractive, time.Minute,
+		)); !errors.Is(err, ErrCapacityExceeded) || reservation != nil {
+			t.Fatalf("replica %d over-capacity reservation=%#v err=%v decision=%#v", index, reservation, err, decision)
+		}
+	}
+	if err := second.Release(ctx, reservations[0]); err != nil {
+		t.Fatalf("cross-replica release failed: %v", err)
+	}
+	replacement, decision, err := third.Reserve(ctx, request("replica-after-release", 7, ClassInteractive, time.Minute))
+	if err != nil {
+		t.Fatalf("released capacity was not reusable: %v", err)
+	}
+	if decision.GlobalUsed != options.OrgCapacity || decision.OrgUsed != options.OrgCapacity {
+		t.Fatalf("replacement observed use=%d/%d, want %d/%d", decision.GlobalUsed, decision.OrgUsed,
+			options.OrgCapacity, options.OrgCapacity)
+	}
+	for _, reservation := range reservations[1:] {
+		if err := first.Release(ctx, reservation); err != nil {
+			t.Fatalf("final release failed: %v", err)
+		}
+	}
+	if err := first.Release(ctx, replacement); err != nil {
+		t.Fatalf("replacement release failed: %v", err)
 	}
 }
 

@@ -46,7 +46,8 @@ func TestP6F21RedisMultiInstanceLeaseAndFaultIntegration(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
 	if err := clients[0].Ping(ctx).Err(); err != nil {
 		t.Fatalf("real Redis is required: %v", err)
 	}

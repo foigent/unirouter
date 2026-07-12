@@ -2,7 +2,7 @@
 
 > Date: 2026-07-12
 > Scope: repository, local and required-CI evidence; no target/deployment claim
-> Status: CI verified / closed
+> Status: feature CI verified / closed; follow-up test-only stabilization locally verified / PR pending
 > Parent row: P6-F21
 
 ## Accepted contract exercised
@@ -89,8 +89,11 @@ High-risk fixtures prove:
 
 - 30 calls spread over two replicas and then three replicas under global 6 /
   organization 5 admit exactly five and deny 25 against real Redis;
-- a 20-call three-service race under organization capacity three admits
-  exactly three, never a per-replica multiple;
+- three independently constructed service clients observe one organization
+  capacity: three admissions fill it, all three clients deny additional work,
+  and a release through one client is reusable through another. The concurrent
+  replica proof remains the 30-call real-Redis fixture above rather than using
+  miniredis as a load simulator;
 - two weight-four streams consume eight of ten units but cannot take the two
   reserved short units; ordinary Chat and Embeddings can still enter;
 - a long-work waiter receives a fair turn while twelve new short requests
@@ -113,6 +116,53 @@ all admin, routing, budget alert, multiplier, stream transport, Agent
 capability, distributed policy, workload admission and migration rollback
 steps. The local machine does not provide the `docker` command, so the Docker
 image result below is required-CI evidence rather than a local claim.
+
+## Follow-up test-fixture stabilization
+
+Post-merge `main` run `29195355565` for documentation-only PR #179 failed the
+existing miniredis replica-concurrency fixture after about 60 seconds: five
+requests were admitted and fifteen denied instead of three and seventeen. PR
+#179 changed no workload-admission source or test behavior.
+
+Local repetition confirmed the fixture problem rather than hiding it with a CI
+rerun. One race-enabled execution could pass in 7.034 seconds, while a ten-run
+sequence timed out at 45 seconds. The timeout stack showed one miniredis
+`gopher-lua` execution holding its global transaction mutex while other client
+connections waited. With twenty simultaneous clients, that in-memory executor
+can backlog commands until the fixture's one-minute leases expire and then
+admit later arrivals against newly recovered capacity.
+
+The follow-up changes test code only:
+
+- miniredis now deterministically proves shared admission, denial and
+  cross-client release state across three `Service` instances, with one bounded
+  five-second test context;
+- the real-Redis integration fixture remains the concurrency authority with
+  thirty callers spread across two and three instances and exact 5/25
+  admission assertions; it now has a bounded twenty-second context; and
+- no production admission option, Lua transition, Redis key, capacity,
+  fail-open/fail-closed policy or gateway behavior changes.
+
+Fresh local verification passed:
+
+```text
+go test -race ./internal/workloadadmission -run '^TestP6F21ReplicaInvariantWeightedCapacity$' -count=50 -timeout=120s
+go test -race ./internal/workloadadmission -run TestP6F21 -count=10 -timeout=180s
+REDIS_ADDR=127.0.0.1:6391 go test -tags=integration -race ./internal/workloadadmission -run '^TestP6F21RedisMultiInstanceLeaseAndFaultIntegration$' -count=10 -timeout=120s
+REDIS_ADDR=127.0.0.1:6391 go test -tags=integration -race ./internal/workloadadmission -run TestP6F21 -count=1 -timeout=120s
+go test ./...
+go test -race ./... -count=1
+go vet ./...
+npm --prefix frontend test -- --run
+npm --prefix frontend run type-check
+npm --prefix frontend run build
+git diff --check
+```
+
+The Redis commands used an isolated, persistence-disabled local Redis 8.8.0 on
+port 6391 and never connected to or cleared the existing service on port 6379.
+Redis 7, Docker and post-merge `main` remain required-CI evidence, not local
+claims, until this follow-up PR closes.
 
 ## Explicit non-claims and remaining work
 
