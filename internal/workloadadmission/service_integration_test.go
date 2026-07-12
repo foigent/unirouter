@@ -26,7 +26,13 @@ func TestP6F21RedisMultiInstanceLeaseAndFaultIntegration(t *testing.T) {
 	options := testOptions()
 	options.GlobalCapacity = 6
 	options.OrgCapacity = 5
+	// Keep the healthy-Redis invariant test independent from the separately
+	// asserted fault fallback below. Race-enabled CI can spend more than the
+	// unit-test fixture's 50 ms store budget while 30 callers contend.
+	options.Interactive = ClassPolicy{Weight: 1, MaxWait: 500 * time.Millisecond}
 	options.Stream = ClassPolicy{Weight: 3, MaxWait: 100 * time.Millisecond}
+	options.ActivePollWindow = 50 * time.Millisecond
+	options.StoreTimeout = 500 * time.Millisecond
 	options.FallbackTTL = 500 * time.Millisecond
 	for index := range clients {
 		clients[index] = redis.NewClient(&redis.Options{
