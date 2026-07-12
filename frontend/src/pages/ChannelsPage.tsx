@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Button, Table, Modal, Form, Tag, Toast, Space, Tooltip, SideSheet } from '@douyinfe/semi-ui';
+import { Button, Table, Modal, Form, Tag, Toast, Space, Tooltip, SideSheet, Input, Typography } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
 import { PageHeader, StatusTag, Surface } from '../ui';
 
 interface Channel {
@@ -13,12 +13,57 @@ interface Channel {
   adapter_type?: string;
   adapter_config?: Record<string, unknown> | string;
   priority: number;
+  routing_weight: number;
+  routing_epoch: number;
   degradation_threshold: number;
   status: string;
   circuit_state: string;
   fail_count: number;
   created_at: string;
 }
+
+interface RoutingPreviewCandidate {
+  channel_id: number;
+  channel_name: string;
+  provider: string;
+  priority: number;
+  weight: number;
+  order?: number;
+  circuit_state: string;
+  eligible_key_count: number;
+  reason: string;
+  requires_probe: boolean;
+}
+
+interface RoutingPreview {
+  policy_version: string;
+  snapshot_version: string;
+  snapshot_source: string;
+  degraded: boolean;
+  model: string;
+  candidates: RoutingPreviewCandidate[];
+  exclusions: RoutingPreviewCandidate[];
+}
+
+const routingReasonLabel = (reason: string) => ({
+  equal_priority_static_weight: '同优先级内按权重排序',
+  priority_failover: '按优先级故障转移',
+  channel_inactive: '通道未启用',
+  circuit_recovery_pending: '熔断恢复等待中',
+  probe_sample_not_selected: '本次未抽中恢复探测',
+  circuit_unavailable: '熔断状态不可用',
+  no_key: '没有凭证',
+  no_active_key: '没有启用的凭证',
+  key_cooldown: '凭证冷却中',
+  key_model_not_allowed: '凭证不允许此模型',
+  candidate_limit: '超过单次候选上限',
+}[reason] || reason);
+
+const routingSourceLabel = (source: string) => ({
+  live: '刚从数据库刷新',
+  cache: '本机 1 秒内快照',
+  last_known_good: '数据库异常时的短时备用快照',
+}[source] || source);
 
 export default function ChannelsPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -29,6 +74,9 @@ export default function ChannelsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
+  const [previewModel, setPreviewModel] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [preview, setPreview] = useState<RoutingPreview | null>(null);
 
   const load = (p = page) => {
     setLoading(true);
@@ -76,6 +124,7 @@ export default function ChannelsPage() {
       ...values,
       adapter_type: values.adapter_type || 'openai_compatible',
       adapter_config: adapterConfig,
+      ...(editing ? { expected_routing_epoch: editing.routing_epoch } : {}),
     };
     try {
       if (editing) {
@@ -87,8 +136,28 @@ export default function ChannelsPage() {
       }
       closeDrawer();
       load();
+    } catch (error) {
+      if (editing && error instanceof ApiError && error.status === 409) {
+        Toast.error('该通道已被其他管理员修改，请关闭编辑页、刷新后重试');
+      } else {
+        Toast.error(editing ? '更新失败' : '创建失败');
+      }
+    }
+  };
+
+  const handlePreview = async () => {
+    const model = previewModel.trim();
+    if (!model) {
+      Toast.warning('请输入要预览的模型名称');
+      return;
+    }
+    setPreviewLoading(true);
+    try {
+      setPreview(await api.previewRouting(model) as RoutingPreview);
     } catch {
-      Toast.error(editing ? '更新失败' : '创建失败');
+      Toast.error('路由预览失败，请检查模型和通道状态');
+    } finally {
+      setPreviewLoading(false);
     }
   };
 
@@ -120,6 +189,8 @@ export default function ChannelsPage() {
         adapter_type: record.adapter_type || 'openai_compatible',
         adapter_config: formatAdapterConfig(record.adapter_config),
         priority: record.priority,
+        routing_weight: record.routing_weight,
+        degradation_threshold: record.degradation_threshold,
       });
     }, 100);
   };
@@ -139,6 +210,10 @@ export default function ChannelsPage() {
     { title: 'Base URL', dataIndex: 'base_url', key: 'base_url', ellipsis: true },
     { title: '支持模型', dataIndex: 'models', key: 'models', ellipsis: true },
     { title: '优先级', dataIndex: 'priority', key: 'priority', width: 80 },
+    {
+      title: '同级权重', dataIndex: 'routing_weight', key: 'routing_weight', width: 95,
+      render: (v: number) => <Tooltip content="只和相同优先级的通道比较；权重 200 大约获得权重 100 的两倍首选机会">{v}</Tooltip>,
+    },
     { title: '降级阈值', dataIndex: 'degradation_threshold', key: 'degradation_threshold', width: 90 },
     {
       title: '状态',
@@ -162,8 +237,8 @@ export default function ChannelsPage() {
       width: 120,
       render: (_: any, record: Channel) => (
         <Space>
-          <Button icon={<IconEdit />} size="small" onClick={() => openEdit(record)} />
-          <Button icon={<IconDelete />} size="small" type="danger" onClick={() => handleDelete(record.id)} />
+          <Button aria-label={`编辑通道 ${record.name}`} icon={<IconEdit />} size="small" onClick={() => openEdit(record)} />
+          <Button aria-label={`删除通道 ${record.name}`} icon={<IconDelete />} size="small" type="danger" onClick={() => handleDelete(record.id)} />
         </Space>
       ),
     },
@@ -174,9 +249,58 @@ export default function ChannelsPage() {
       <PageHeader
         eyebrow="流量治理"
         title="上游通道"
-        description="配置上游 provider、模型能力、优先级和熔断状态。"
+        description="优先级决定先用哪一组通道；同级权重决定组内流量比例；熔断阈值决定连续失败多少次后暂停通道。"
         actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增渠道</Button>}
       />
+
+      <Surface
+        title="路由预览"
+        description="只读查看可重复的示例顺序和排除原因；真实请求按服务器请求 ID 确定，同一 ID 始终一致。预览不会调用上游，也不会占用半开探针。"
+      >
+        <div className="ur-inline-controls">
+          <Input
+            value={previewModel}
+            onChange={setPreviewModel}
+            onEnterPress={handlePreview}
+            placeholder="模型名称，例如 gpt-4o"
+            style={{ width: 320 }}
+          />
+          <Button type="primary" loading={previewLoading} onClick={handlePreview}>预览路由</Button>
+          {preview?.degraded && <Tag color="orange">数据库刷新失败，正在使用短时最后可用快照</Tag>}
+        </div>
+        {preview && (
+          <div className="ur-routing-preview">
+            <Typography.Text type="tertiary">
+              策略 {preview.policy_version} · 快照 {preview.snapshot_version} · {routingSourceLabel(preview.snapshot_source)}
+            </Typography.Text>
+            <div className="ur-routing-preview-grid">
+              <div>
+                <strong>示例候选顺序</strong>
+                {preview.candidates.length === 0 && <p>没有可用通道</p>}
+                {preview.candidates.map((item) => (
+                  <div className="ur-routing-preview-item" key={`candidate-${item.channel_id}`}>
+                    <Tag color="blue">#{item.order}</Tag>
+                    <span>{item.channel_name}</span>
+                    <span>优先级 {item.priority} / 权重 {item.weight}</span>
+                    <span>{routingReasonLabel(item.reason)}</span>
+                    {item.requires_probe && <Tag color="orange">需取得半开探针</Tag>}
+                  </div>
+                ))}
+              </div>
+              <div>
+                <strong>未入选及原因</strong>
+                {preview.exclusions.length === 0 && <p>没有被排除的通道</p>}
+                {preview.exclusions.map((item) => (
+                  <div className="ur-routing-preview-item" key={`exclusion-${item.channel_id}`}>
+                    <span>{item.channel_name}</span>
+                    <Tag color="grey">{routingReasonLabel(item.reason)}</Tag>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </Surface>
 
       <Surface>
         <div className="ur-table-shell">
@@ -224,7 +348,8 @@ export default function ChannelsPage() {
           />
           <Form.TextArea field="adapter_config" label="Adapter Config (JSON)" placeholder='{"anthropic_version":"2023-06-01"}' rows={4} />
           <Form.InputNumber field="priority" label="优先级 (越小越优先)" initValue={100} />
-          <Form.InputNumber field="degradation_threshold" label="降级阈值 (连续失败次数)" initValue={10} />
+          <Form.InputNumber field="routing_weight" label="同优先级权重 (1-1000)" initValue={100} extraText="只在优先级相同时分配流量；例如 100 与 200 约为 1:2。" />
+          <Form.InputNumber field="degradation_threshold" label="熔断阈值 (连续失败次数)" initValue={10} extraText="达到次数后暂停该通道，恢复窗口到期后只允许一个探针请求。" />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
             <Button onClick={closeDrawer}>取消</Button>
             <Button type="primary" onClick={() => formApi?.submitForm()}>{editing ? '更新' : '创建'}</Button>

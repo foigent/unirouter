@@ -22,6 +22,11 @@ func TestNewBuildsTypedEffectiveConfiguration(t *testing.T) {
 	if snapshot.Version != Version || snapshot.RoutingPolicy.Version != routingpolicy.Version || snapshot.RoutingPolicy.MaxRetryCount != 4 {
 		t.Fatalf("unexpected routing registry: %#v", snapshot)
 	}
+	if snapshot.RoutingPolicy.SelectionVersion != routingpolicy.SelectionVersion ||
+		snapshot.RoutingPolicy.SnapshotFailureMode != "bounded_last_known_good_then_fail_closed" ||
+		snapshot.RoutingPolicy.ProbeOwnership != "postgresql_epoch_cas_single_lease" {
+		t.Fatalf("unexpected routing selection contract: %#v", snapshot.RoutingPolicy)
+	}
 	if snapshot.StreamTransport.Version != streampolicy.Version || snapshot.StreamTransport.Source != "startup_environment" ||
 		snapshot.StreamTransport.MaxSSELineBytes != 4*1024*1024 || snapshot.StreamTransport.WriteIdleTimeoutSeconds != 30 {
 		t.Fatalf("unexpected stream transport registry: %#v", snapshot.StreamTransport)

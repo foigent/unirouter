@@ -12,8 +12,14 @@ import (
 	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/oidc"
+	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
 )
+
+type routingController interface {
+	Preview(context.Context, string) (routingpolicy.Preview, error)
+	Invalidate()
+}
 
 // Handler contains all admin API handlers.
 type Handler struct {
@@ -30,10 +36,21 @@ type Handler struct {
 	runtimeOptions               RuntimeStatusOptions
 	runtimeHostTelemetryProvider func() runtimeHostTelemetry
 	limitPolicyReloader          interface{ Refresh(context.Context) error }
+	routingController            routingController
 }
 
 func (h *Handler) SetLimitPolicyReloader(reloader interface{ Refresh(context.Context) error }) {
 	h.limitPolicyReloader = reloader
+}
+
+func (h *Handler) SetRoutingController(controller routingController) {
+	h.routingController = controller
+}
+
+func (h *Handler) invalidateRoutingSnapshots() {
+	if h != nil && h.routingController != nil {
+		h.routingController.Invalidate()
+	}
 }
 
 // NewHandler creates a new admin Handler.

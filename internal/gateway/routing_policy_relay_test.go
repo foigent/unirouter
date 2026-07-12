@@ -127,7 +127,11 @@ func TestHandleChatCompletion_UsesEffectiveRetryBudgetAndTracePolicy(t *testing.
 					t.Fatalf("attempt %d calls=%d want=%d (all=%v)", index+1, calls[index], test.expectedCalls[index], calls)
 				}
 			}
-			if routeMetadata["effective_config_version"] != runtimeconfig.Version || routeMetadata["routing_config_version"] != routingpolicy.Version || routeMetadata["max_retry_count"] != float64(test.maxRetries) ||
+			if routeMetadata["effective_config_version"] != runtimeconfig.Version || routeMetadata["routing_config_version"] != routingpolicy.Version ||
+				routeMetadata["routing_policy_version"] != routingpolicy.SelectionVersion || routeMetadata["routing_snapshot_source"] != "live" ||
+				routeMetadata["routing_snapshot_version"] == "" || routeMetadata["routing_candidate_count"] != float64(3) || routeMetadata["routing_excluded_count"] != float64(0) ||
+				routeMetadata["routing_priority"] != float64(1) || routeMetadata["routing_weight"] != float64(100) || routeMetadata["routing_selection_reason"] != "priority_failover" ||
+				routeMetadata["max_retry_count"] != float64(test.maxRetries) ||
 				routeMetadata["circuit_breaker_threshold"] != float64(9) || routeMetadata["circuit_breaker_recover_seconds"] != float64(77) ||
 				routeMetadata["circuit_breaker_half_open_percent"] != float64(33) || routeMetadata["rate_limit_cooldown_seconds"] != float64(44) ||
 				routeMetadata["auth_failure_cooldown_seconds"] != float64(88) || routeMetadata["provider_key_failure_threshold"] != float64(6) {

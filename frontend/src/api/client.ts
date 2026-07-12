@@ -102,6 +102,8 @@ export const api = {
     request(`/channels/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteChannel: (id: number) =>
     request(`/channels/${id}`, { method: 'DELETE' }),
+  previewRouting: (model: string) =>
+    request(`/routing/preview?model=${encodeURIComponent(model)}`),
 
   // Keys
   getKeys: (page = 1, pageSize = 20, filters?: { project_id?: number }) =>

@@ -104,25 +104,31 @@ type ProjectMember struct {
 
 // Channel represents the channels table.
 type Channel struct {
-	ID               int64           `json:"id" db:"id"`
-	Name             string          `json:"name" db:"name"`
-	Provider         string          `json:"provider" db:"provider"`
-	BaseURL          string          `json:"base_url" db:"base_url"`
-	Models           string          `json:"models" db:"models"`
-	ModelMapping     json.RawMessage `json:"model_mapping" db:"model_mapping"`
-	AdapterType      string          `json:"adapter_type" db:"adapter_type"`
-	AdapterConfig    json.RawMessage `json:"adapter_config" db:"adapter_config"`
-	MaxContext       int             `json:"max_context" db:"max_context"`
-	DefaultMaxOutput int             `json:"default_max_output" db:"default_max_output"`
-	Priority         int             `json:"priority" db:"priority"`
-	RPMLimit         int             `json:"rpm_limit" db:"rpm_limit"`
-	TPMLimit         int             `json:"tpm_limit" db:"tpm_limit"`
-	Status           string          `json:"status" db:"status"`
-	CircuitState     string          `json:"circuit_state" db:"circuit_state"`
-	HalfOpenUntil    *time.Time      `json:"half_open_until" db:"half_open_until"`
-	FailCount        int             `json:"fail_count" db:"fail_count"`
-	CreatedAt        time.Time       `json:"created_at" db:"created_at"`
-	UpdatedAt        time.Time       `json:"updated_at" db:"updated_at"`
+	ID                   int64           `json:"id" db:"id"`
+	Name                 string          `json:"name" db:"name"`
+	Provider             string          `json:"provider" db:"provider"`
+	BaseURL              string          `json:"base_url" db:"base_url"`
+	Models               string          `json:"models" db:"models"`
+	ModelMapping         json.RawMessage `json:"model_mapping" db:"model_mapping"`
+	AdapterType          string          `json:"adapter_type" db:"adapter_type"`
+	AdapterConfig        json.RawMessage `json:"adapter_config" db:"adapter_config"`
+	MaxContext           int             `json:"max_context" db:"max_context"`
+	DefaultMaxOutput     int             `json:"default_max_output" db:"default_max_output"`
+	Priority             int             `json:"priority" db:"priority"`
+	RoutingWeight        int             `json:"routing_weight" db:"routing_weight"`
+	RoutingEpoch         int64           `json:"routing_epoch" db:"routing_epoch"`
+	RPMLimit             int             `json:"rpm_limit" db:"rpm_limit"`
+	TPMLimit             int             `json:"tpm_limit" db:"tpm_limit"`
+	DegradationThreshold int             `json:"degradation_threshold" db:"degradation_threshold"`
+	Status               string          `json:"status" db:"status"`
+	CircuitState         string          `json:"circuit_state" db:"circuit_state"`
+	CircuitEpoch         int64           `json:"circuit_epoch" db:"circuit_epoch"`
+	HalfOpenUntil        *time.Time      `json:"half_open_until" db:"half_open_until"`
+	HalfOpenProbeUntil   *time.Time      `json:"half_open_probe_until" db:"half_open_probe_until"`
+	HalfOpenProbeToken   string          `json:"-" db:"half_open_probe_token"`
+	FailCount            int             `json:"fail_count" db:"fail_count"`
+	CreatedAt            time.Time       `json:"created_at" db:"created_at"`
+	UpdatedAt            time.Time       `json:"updated_at" db:"updated_at"`
 }
 
 // ChannelKey represents the channel_keys table.
@@ -131,6 +137,7 @@ type ChannelKey struct {
 	ChannelID     int64      `json:"channel_id" db:"channel_id"`
 	KeyEnc        string     `json:"-" db:"key_enc"`
 	Status        string     `json:"status" db:"status"`
+	StateEpoch    int64      `json:"state_epoch" db:"state_epoch"`
 	FailCount     int        `json:"fail_count" db:"fail_count"`
 	LastUsedAt    *time.Time `json:"last_used_at" db:"last_used_at"`
 	CooldownUntil *time.Time `json:"cooldown_until" db:"cooldown_until"`

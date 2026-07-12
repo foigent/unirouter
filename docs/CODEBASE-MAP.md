@@ -11,7 +11,7 @@
 | Config | `internal/config/config.go` | Environment config and validation, including secrets, optional license, trace/retention, Runtime Status integration metadata, stream transport and weighted workload admission |
 | Database | `internal/db/postgres.go` | pgx pool setup and health |
 | Redis | `internal/redisx/redis.go` | Redis setup, health, wallet cache helpers |
-| Migrations | `migrations/*.sql` | Base schema plus wallet/schema/PRD alignment migrations, including PRD4 API key owner usage attribution in `000016`, request trace events in `000017`, PRD5 structural evidence fields in `000018`, PRD5 Data Exchange Control ledger in `000019`, PRD6 historical Webhook scope quarantine in `000020`, operation/billing/stream invariants in `000021`-`000023`, and distributed limit policies in `000024` |
+| Migrations | `migrations/*.sql` | Base schema plus wallet/schema/PRD alignment migrations, including PRD4 API key owner usage attribution in `000016`, request trace events in `000017`, PRD5 structural evidence fields in `000018`, PRD5 Data Exchange Control ledger in `000019`, PRD6 historical Webhook scope quarantine in `000020`, operation/billing/stream invariants in `000021`-`000023`, distributed limit policies in `000024`, and Routing Policy V1 weight/epoch/probe ownership in `000025` |
 
 ## Backend Packages
 
@@ -30,7 +30,7 @@
 | `internal/circuitbreaker` | Standalone circuit breaker implementation and tests |
 | `internal/filter` | DFA sensitive-word filter |
 | `internal/errdocs` | Error documentation registry used by gateway `doc_url` responses and API Docs |
-| `internal/gateway` | Model routing, upstream relay, chat completions, embeddings, model listing, request logging, metadata-only request trace events, distributed policy evidence/errors, and serialized bounded SSE transport |
+| `internal/gateway` | Model routing, immutable weighted route snapshots, cross-replica probe/epoch health, upstream relay, chat completions, embeddings, model listing, request logging, metadata-only request trace events, distributed policy evidence/errors, and serialized bounded SSE transport |
 | `internal/licensing` | Offline license document parsing, Ed25519 signature verification, expiry status, and warning calculation |
 | `internal/logger` | Logging helpers |
 | `internal/metering` | Usage-source constants and token-metering source classification |
@@ -38,7 +38,7 @@
 | `internal/migrate` | SQL migration runner |
 | `internal/modelgov` | Model governance helpers and access checks |
 | `internal/models` | Shared data model types |
-| `internal/routingpolicy` | Validated immutable retry, circuit/probe, cooldown and provider-key health configuration |
+| `internal/routingpolicy` | Validated immutable retry, circuit/probe, cooldown, snapshot/LKG, candidate-bound and provider-key health configuration plus credential-free preview DTOs |
 | `internal/runtimeconfig` | Safe versioned effective-configuration registry for routing, stream transport and the active project budget-alert contract |
 | `internal/streampolicy` | Immutable validated SSE line, write-idle, heartbeat and maximum-duration policy (`stream-transport.v1`) |
 | `internal/traceutil` | Shared request trace metadata sanitizer and PRD5 capture-gap helper used by gateway trace writes and admin trace responses |

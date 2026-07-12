@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { Button, Table, Toast, Typography } from '@douyinfe/semi-ui';
-import { IconAlertTriangle, IconBell, IconRefresh, IconServer } from '@douyinfe/semi-icons';
+import { IconAlertTriangle, IconBell, IconRefresh, IconRoute, IconServer } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { canReadRuntimeStatus } from '../navigation';
 import { useAuthStore } from '../store/auth';
@@ -104,6 +104,7 @@ interface RuntimeStatus {
     source: string;
     routing_policy: {
       version: string;
+      selection_version?: string;
       source: string;
       max_retry_count: number;
       circuit_breaker_threshold: number;
@@ -112,6 +113,11 @@ interface RuntimeStatus {
       rate_limit_cooldown_seconds: number;
       auth_failure_cooldown_seconds: number;
       key_failure_threshold: number;
+      snapshot_refresh_seconds?: number;
+      snapshot_stale_seconds?: number;
+      half_open_probe_lease_seconds?: number;
+      max_candidate_count?: number;
+      max_snapshot_count?: number;
     };
     stream_transport: {
       version: string;
@@ -456,7 +462,7 @@ export default function InternalStatusPage() {
       )}
 
       {canViewRuntime && routingPolicy && (
-        <Surface title="有效路由策略" description="当前实例启动时实际采用的重试、熔断、半开探测与密钥冷却参数；版本和值同时写入路由轨迹。">
+        <Surface title="有效路由策略" description="当前实例实际采用的重试、同级权重快照、熔断、跨副本半开探测与密钥冷却参数；版本和值同时写入路由轨迹。">
           <div className="ur-kpi-grid">
             <MetricTile
               label="Provider 重试"
@@ -466,11 +472,11 @@ export default function InternalStatusPage() {
               meta={`首次调用之外 / ${routingPolicy.version}`}
             />
             <MetricTile
-              label="渠道熔断阈值"
+              label="默认熔断阈值"
               value={`${routingPolicy.circuit_breaker_threshold} 次`}
               icon={<IconAlertTriangle />}
               tone="amber"
-              meta={`恢复等待 ${routingPolicy.circuit_breaker_recover_seconds} 秒`}
+              meta={`各通道可单独设置 / 恢复等待 ${routingPolicy.circuit_breaker_recover_seconds} 秒`}
             />
             <MetricTile
               label="半开探测流量"
@@ -499,6 +505,34 @@ export default function InternalStatusPage() {
               icon={<IconServer />}
               tone="slate"
               meta={routingPolicy.source}
+            />
+            <MetricTile
+              label="路由选择版本"
+              value={routingPolicy.selection_version || '-'}
+              icon={<IconRoute />}
+              tone="blue"
+              meta="优先级后按同级静态权重"
+            />
+            <MetricTile
+              label="路由快照"
+              value={`${routingPolicy.snapshot_refresh_seconds ?? '-'} 秒刷新`}
+              icon={<IconRefresh />}
+              tone="blue"
+              meta={`数据库异常最多沿用 ${routingPolicy.snapshot_stale_seconds ?? '-'} 秒`}
+            />
+            <MetricTile
+              label="半开探针租约"
+              value={`${routingPolicy.half_open_probe_lease_seconds ?? '-'} 秒`}
+              icon={<IconServer />}
+              tone="amber"
+              meta="活动请求会续租；崩溃后到期释放"
+            />
+            <MetricTile
+              label="路由内存边界"
+              value={`${routingPolicy.max_candidate_count ?? '-'} 个候选`}
+              icon={<IconServer />}
+              tone="slate"
+              meta={`每实例最多 ${routingPolicy.max_snapshot_count ?? '-'} 个模型快照`}
             />
           </div>
         </Surface>

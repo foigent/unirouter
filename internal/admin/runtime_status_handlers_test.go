@@ -140,7 +140,8 @@ func TestRuntimeStatus_ReturnsRuntimeHealthAndHostTelemetry(t *testing.T) {
 		t.Fatalf("unexpected runtime environment: %#v", resp.RuntimeEnvironment)
 	}
 	if resp.EffectiveConfiguration.Version != runtimeconfig.Version ||
-		resp.EffectiveConfiguration.RoutingPolicy.Version != routingpolicy.Version || resp.EffectiveConfiguration.RoutingPolicy.Source != "startup_environment" ||
+		resp.EffectiveConfiguration.RoutingPolicy.Version != routingpolicy.Version || resp.EffectiveConfiguration.RoutingPolicy.SelectionVersion != routingpolicy.SelectionVersion ||
+		resp.EffectiveConfiguration.RoutingPolicy.Source != "startup_environment_and_channel_state" ||
 		resp.EffectiveConfiguration.RoutingPolicy.MaxRetryCount != 4 || resp.EffectiveConfiguration.RoutingPolicy.CircuitBreakerThreshold != 7 ||
 		resp.EffectiveConfiguration.RoutingPolicy.CircuitBreakerRecoverSeconds != 90 || resp.EffectiveConfiguration.RoutingPolicy.CircuitBreakerHalfOpenPct != 25 ||
 		resp.EffectiveConfiguration.RoutingPolicy.RateLimitCooldownSeconds != 45 || resp.EffectiveConfiguration.RoutingPolicy.AuthFailureCooldownSeconds != 1800 ||

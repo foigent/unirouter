@@ -77,6 +77,7 @@ const endpointGroups = [
       ['PUT', '/api/v1/channels/{id}', '更新上游通道'],
       ['DELETE', '/api/v1/channels/{id}', '删除上游通道'],
       ['POST', '/api/v1/channels/{id}/test', '测试上游通道'],
+      ['GET', '/api/v1/routing/preview', '只读预览模型的路由候选、排除原因与快照状态'],
       ['GET', '/api/v1/channel-keys', '上游凭证列表'],
       ['POST', '/api/v1/channel-keys', '创建上游凭证'],
       ['PUT', '/api/v1/channel-keys/{id}', '更新上游凭证'],

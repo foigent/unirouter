@@ -73,7 +73,7 @@ jobs:
       - name: Run routing policy integration tests
         env:
           REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/gateway -run TestRoutingPolicyPostgresStateTransitions -count=1
+        run: go test -tags=integration -race ./internal/gateway -run 'Test(RoutingPolicyPostgresStateTransitions|P6F08RoutingPolicyV1)' -count=1
 
       - name: Run budget alert contract integration tests
         env:
@@ -105,6 +105,11 @@ jobs:
         env:
           REQUIRE_TEST_DATABASE: "1"
         run: go test -tags=integration -race ./internal/migrate -run TestP6F07DistributedLimitPolicyMigrationUpDownGuardAndRollForward -count=1
+
+      - name: Run routing-policy migration rollback tests
+        env:
+          REQUIRE_TEST_DATABASE: "1"
+        run: go test -tags=integration -race ./internal/migrate -run TestP6F08RoutingPolicyV1MigrationUpDownGuardAndRollForward -count=1
       
       - name: Upload coverage
         uses: actions/upload-artifact@v4

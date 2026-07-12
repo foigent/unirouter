@@ -26,8 +26,13 @@ type Snapshot struct {
 }
 
 type RoutingPolicy struct {
-	Version string `json:"version"`
-	Source  string `json:"source"`
+	Version             string `json:"version"`
+	SelectionVersion    string `json:"selection_version"`
+	Source              string `json:"source"`
+	PrioritySemantics   string `json:"priority_semantics"`
+	WeightSemantics     string `json:"weight_semantics"`
+	SnapshotFailureMode string `json:"snapshot_failure_mode"`
+	ProbeOwnership      string `json:"probe_ownership"`
 	routingpolicy.Config
 }
 
@@ -90,9 +95,14 @@ func New(routing routingpolicy.Config, stream streampolicy.Config) (Snapshot, er
 		Version: Version,
 		Source:  "startup_environment_and_schema_contract",
 		RoutingPolicy: RoutingPolicy{
-			Version: routingpolicy.Version,
-			Source:  "startup_environment",
-			Config:  routing,
+			Version:             routingpolicy.Version,
+			SelectionVersion:    routingpolicy.SelectionVersion,
+			Source:              "startup_environment_and_channel_state",
+			PrioritySemantics:   "lower_first_then_failover",
+			WeightSemantics:     "deterministic_weighted_order_within_equal_priority",
+			SnapshotFailureMode: "bounded_last_known_good_then_fail_closed",
+			ProbeOwnership:      "postgresql_epoch_cas_single_lease",
+			Config:              routing,
 		},
 		StreamTransport: StreamTransportPolicy{
 			Version: streampolicy.Version,

@@ -89,6 +89,17 @@
 > queues, crash recovery, bounded LKS, mixed-config fail-closed, typed 429/503
 > and UI/OpenAPI evidence are CI verified / closed. P6-F20 durable terminal
 > recovery and D6-10 dynamic long-stream extension remain separate.
+> P6-F08 Routing Policy V1 is Local verified on
+> `codex/prd6-routing-policy-v1` and awaits required PR CI/merge. The branch
+> adds deterministic equal-priority weighting from the server operation ID,
+> one-second singleflight route snapshots, bounded LKG then fail-closed,
+> renewable cross-replica PostgreSQL probe ownership, routing/circuit/key
+> epoch CAS, effective per-channel breaker thresholds, Chat/Embeddings parity,
+> safe preview/UI/trace evidence and guarded migration `000025`. No deployment,
+> target-capacity or adaptive-routing claim is made. Evidence:
+> `docs/ops/evidence/PRD6-B2-P6F08-routing-policy-v1-local-20260712.md`.
+> The branch keeps outer `effective-config.v1` stable and advances its embedded
+> routing startup/snapshot contract additively to `routing-config.v2`.
 > No target or production verification is claimed.
 > D6-01, D6-02, D6-08 and D6-09 were accepted by the User on 2026-07-11.
 > D6-10 long-stream hard-budget Scheme A and D6-11 explicit five-minute Agent
@@ -187,6 +198,13 @@
   merge `04af91f` and post-merge main run `29176358459` passed all required
   jobs; the row and Batch 1 are CI verified / closed. No deployment or
   target-capacity claim is made.
+- P6-F08 Routing Policy V1 local evidence:
+  `docs/ops/evidence/PRD6-B2-P6F08-routing-policy-v1-local-20260712.md`.
+  Unit/race plus real PostgreSQL fixtures prove deterministic static weight,
+  bounded snapshot failure behavior, one renewable cross-replica probe,
+  routing/circuit/key stale-result rejection, per-channel thresholds, safe
+  candidate/exclusion preview and guarded migration rollback. Required PR CI,
+  merge and post-merge main CI remain pending, so the row is Local verified.
 - Source-backed product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
 - PRD7 candidate-only split (not Accepted Scope):
@@ -200,9 +218,10 @@
 - Scope entry: `docs/planning/PRD6-START-HERE.md`.
 - Proposed PRD: `docs/PRD-Phase6.md`; accepted/proposed state is authoritative
   in `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`.
-- Accepted feature accounting after P6-F21 closeout: 25 accepted rows, 20 CI
-  verified / closed and 5 unclosed. P6-F11 is in progress;
-  `P6-F08`-`P6-F10` and `P6-F20` remain not started.
+- Accepted feature accounting during P6-F08 implementation: 25 accepted rows,
+  20 CI verified / closed and 5 unclosed. P6-F08 is Local verified awaiting
+  required CI; P6-F11 is in progress; P6-F09, P6-F10 and P6-F20 remain not
+  started.
   `P6-TEST-DB-001` is a separate engineering-integrity issue outside that
   25-row feature count; it is CI verified / closed by PR #155 and post-merge
   main run `29157561036`.

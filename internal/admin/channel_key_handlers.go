@@ -91,6 +91,7 @@ func (h *Handler) CreateChannelKey(w http.ResponseWriter, r *http.Request) {
 
 	h.recordAudit(r.Context(), "channelkey.create", "channel_key", fmt.Sprintf("%d", id),
 		map[string]interface{}{"channel_id": req.ChannelID}, r.RemoteAddr)
+	h.invalidateRoutingSnapshots()
 
 	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id})
 }
@@ -155,7 +156,7 @@ func (h *Handler) UpdateChannelKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sets = append(sets, "updated_at = NOW()")
+	sets = append(sets, "state_epoch = state_epoch + 1", "updated_at = NOW()")
 	args = append(args, id)
 
 	query := fmt.Sprintf("UPDATE channel_keys SET %s WHERE id = $%d", joinStrings(sets, ", "), argIdx)
@@ -175,6 +176,7 @@ func (h *Handler) UpdateChannelKey(w http.ResponseWriter, r *http.Request) {
 		"status_updated":         req.Status != nil,
 		"allowed_models_updated": req.AllowedModels != nil,
 	}, r.RemoteAddr)
+	h.invalidateRoutingSnapshots()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 }
@@ -198,6 +200,7 @@ func (h *Handler) DeleteChannelKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.recordAudit(r.Context(), "channelkey.delete", "channel_key", idStr, map[string]interface{}{}, r.RemoteAddr)
+	h.invalidateRoutingSnapshots()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 }

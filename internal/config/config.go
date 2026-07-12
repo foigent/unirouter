@@ -106,13 +106,18 @@ type Config struct {
 	WorkloadEmbeddingMaxWaitMS   int
 
 	// Failover
-	MaxRetryCount             int
-	CircuitBreakerThreshold   int
-	CircuitBreakerRecoverSecs int
-	CircuitBreakerHalfOpenPct int
-	RateLimitCooldownSecs     int
-	AuthFailureCooldownSecs   int
-	ProviderKeyFailThreshold  int
+	MaxRetryCount              int
+	CircuitBreakerThreshold    int
+	CircuitBreakerRecoverSecs  int
+	CircuitBreakerHalfOpenPct  int
+	RateLimitCooldownSecs      int
+	AuthFailureCooldownSecs    int
+	ProviderKeyFailThreshold   int
+	RoutingSnapshotRefreshSecs int
+	RoutingSnapshotStaleSecs   int
+	RoutingProbeLeaseSecs      int
+	RoutingMaxCandidates       int
+	RoutingMaxSnapshots        int
 
 	// Streaming transport
 	StreamMaxSSELineBytes      int
@@ -322,13 +327,18 @@ func Load() (*Config, error) {
 		WorkloadStreamMaxWaitMS:      getEnvInt("WORKLOAD_STREAM_MAX_WAIT_MS", 250),
 		WorkloadEmbeddingMaxWaitMS:   getEnvInt("WORKLOAD_EMBEDDING_MAX_WAIT_MS", 50),
 
-		MaxRetryCount:             getEnvInt("MAX_RETRY_COUNT", 1),
-		CircuitBreakerThreshold:   getEnvInt("CIRCUIT_BREAKER_THRESHOLD", 5),
-		CircuitBreakerRecoverSecs: getEnvInt("CIRCUIT_BREAKER_RECOVER_SECONDS", 300),
-		CircuitBreakerHalfOpenPct: getEnvInt("CIRCUIT_BREAKER_HALF_OPEN_PERCENT", 10),
-		RateLimitCooldownSecs:     getEnvInt("KEY_COOLDOWN_SECONDS", 60),
-		AuthFailureCooldownSecs:   getEnvInt("PROVIDER_AUTH_COOLDOWN_SECONDS", 3600),
-		ProviderKeyFailThreshold:  getEnvInt("PROVIDER_KEY_FAILURE_THRESHOLD", 3),
+		MaxRetryCount:              getEnvInt("MAX_RETRY_COUNT", 1),
+		CircuitBreakerThreshold:    getEnvInt("CIRCUIT_BREAKER_THRESHOLD", 5),
+		CircuitBreakerRecoverSecs:  getEnvInt("CIRCUIT_BREAKER_RECOVER_SECONDS", 300),
+		CircuitBreakerHalfOpenPct:  getEnvInt("CIRCUIT_BREAKER_HALF_OPEN_PERCENT", 10),
+		RateLimitCooldownSecs:      getEnvInt("KEY_COOLDOWN_SECONDS", 60),
+		AuthFailureCooldownSecs:    getEnvInt("PROVIDER_AUTH_COOLDOWN_SECONDS", 3600),
+		ProviderKeyFailThreshold:   getEnvInt("PROVIDER_KEY_FAILURE_THRESHOLD", 3),
+		RoutingSnapshotRefreshSecs: getEnvInt("ROUTING_SNAPSHOT_REFRESH_SECONDS", 1),
+		RoutingSnapshotStaleSecs:   getEnvInt("ROUTING_SNAPSHOT_STALE_SECONDS", 30),
+		RoutingProbeLeaseSecs:      getEnvInt("ROUTING_HALF_OPEN_PROBE_LEASE_SECONDS", 15),
+		RoutingMaxCandidates:       getEnvInt("ROUTING_MAX_CANDIDATES", 32),
+		RoutingMaxSnapshots:        getEnvInt("ROUTING_MAX_SNAPSHOTS", 1024),
 
 		StreamMaxSSELineBytes:      getEnvInt("STREAM_MAX_SSE_LINE_BYTES", 2*1024*1024),
 		StreamWriteIdleTimeoutSecs: getEnvInt("STREAM_WRITE_IDLE_TIMEOUT_SECONDS", 30),
@@ -362,6 +372,11 @@ func (c Config) RoutingPolicyConfig() routingpolicy.Config {
 		RateLimitCooldownSeconds:     c.RateLimitCooldownSecs,
 		AuthFailureCooldownSeconds:   c.AuthFailureCooldownSecs,
 		KeyFailureThreshold:          c.ProviderKeyFailThreshold,
+		SnapshotRefreshSeconds:       c.RoutingSnapshotRefreshSecs,
+		SnapshotStaleSeconds:         c.RoutingSnapshotStaleSecs,
+		HalfOpenProbeLeaseSeconds:    c.RoutingProbeLeaseSecs,
+		MaxCandidateCount:            c.RoutingMaxCandidates,
+		MaxSnapshotCount:             c.RoutingMaxSnapshots,
 	}
 }
 

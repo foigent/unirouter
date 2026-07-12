@@ -69,8 +69,9 @@ describe('InternalStatusPage', () => {
         version: 'effective-config.v1',
         source: 'startup_environment_and_schema_contract',
         routing_policy: {
-          version: 'routing-config.v1',
-          source: 'startup_environment',
+          version: 'routing-config.v2',
+          selection_version: 'routing-policy.v1',
+          source: 'startup_environment_and_channel_state',
           max_retry_count: 4,
           circuit_breaker_threshold: 7,
           circuit_breaker_recover_seconds: 90,
@@ -78,6 +79,11 @@ describe('InternalStatusPage', () => {
           rate_limit_cooldown_seconds: 45,
           auth_failure_cooldown_seconds: 1800,
           key_failure_threshold: 6,
+          snapshot_refresh_seconds: 1,
+          snapshot_stale_seconds: 30,
+          half_open_probe_lease_seconds: 15,
+          max_candidate_count: 32,
+          max_snapshot_count: 1024,
         },
         stream_transport: {
           version: 'stream-transport.v1',
@@ -173,6 +179,13 @@ describe('InternalStatusPage', () => {
     expect(screen.getByText('429 密钥冷却')).toBeTruthy();
     expect(screen.getByText('鉴权失败冷却')).toBeTruthy();
     expect(screen.getByText(/startup_environment/)).toBeTruthy();
+    expect(screen.getByText('路由选择版本')).toBeTruthy();
+    expect(screen.getByText('routing-policy.v1')).toBeTruthy();
+    expect(screen.getByText('路由快照')).toBeTruthy();
+    expect(screen.getByText(/数据库异常最多沿用 30 秒/)).toBeTruthy();
+    expect(screen.getByText('半开探针租约')).toBeTruthy();
+    expect(screen.getByText('路由内存边界')).toBeTruthy();
+    expect(screen.getByText(/每实例最多 1024 个模型快照/)).toBeTruthy();
     expect(screen.getByText('有效流式传输策略')).toBeTruthy();
     expect(screen.getByText('单帧安全上限')).toBeTruthy();
     expect(screen.getByText('2.0 MB')).toBeTruthy();

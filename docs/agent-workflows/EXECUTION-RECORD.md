@@ -1,30 +1,53 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 1 P6-F21 Weighted Workload Admission
+**Batch:** PRD6 Batch 2 P6-F08 Routing Policy V1
 **Owner:** Codex
-**Risk:** R4 distributed fairness, capacity leases and mixed-version safety
-**Status:** CI verified / closed
-**Integration:** PR #170; exact head `a9d8f3e`; required run `29176160987`; squash merge `04af91f`; post-merge main run `29176358459`; historical branch restored; no deployment, target or production claim
-**Next batch:** P6-F08 Routing Policy V1, already accepted under D6-01
-**Previous batch:** P6-F07 implementation PR #168 plus closeout PR #169; post-closeout main run `29174500704` passed and both historical branches are restored
+**Risk:** R3 provider selection, cross-replica probe ownership and migration safety
+**Status:** Local verified; required PR CI, merge and post-merge main CI pending
+**Integration:** branch `codex/prd6-routing-policy-v1`; base `7df87ce`; no deployment, target, capacity or production claim
+**Next batch:** after P6-F08 CI closeout, P6-F09 provider prompt-cache usage/billing, already accepted under D6-01
+**Previous batch:** P6-F21 implementation PR #170 plus closeout PR #171; post-closeout main run `29176814379` passed and both historical branches are restored
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Current Scope
 
-1. Classify ordinary Chat, streaming Chat and Embeddings on the server as
-   interactive/stream/embedding with default 1/4/1 weights.
-2. Enforce exact cross-replica global/organization weighted capacity with
-   Redis-time expiring leases and short-request reserve.
-3. Provide bounded virtual-finish fairness, per-org queue caps, cross-tenant
-   head-of-line bypass and typed 429/Retry-After.
-4. Bound Redis latency/outage through context deadlines, one two-second LKS
-   permit, typed 503 and mixed-configuration fail-closed behavior.
-5. Expose safe version/class/wait evidence plus non-technical UI/OpenAPI and
-   validate restart-time `WORKLOAD_*` configuration.
-6. Keep P6-F20 durable cross-process terminal hooks, D6-10/P6-F11 dynamic
-   stream work, deployment, target capacity and media job planes out of scope.
+1. Define static priority followed by deterministic equal-priority weight from
+   the server-owned operation ID, with one key per channel and bounded failover.
+2. Replace per-request route reads with singleflight one-second immutable
+   snapshots, bounded LKG and fail-closed stale behavior.
+3. Give half-open recovery one renewable PostgreSQL probe owner across replicas
+   and reject late routing/circuit/key results through captured epochs.
+4. Make the existing per-channel breaker threshold effective and preserve
+   classified bounded retry plus Chat/Embeddings parity.
+5. Expose credential-free candidate/exclusion preview, safe trace/config
+   evidence, non-technical channel controls and optimistic operator writes.
+6. Guard migration down after activation; keep adaptive routing, deployment,
+   target capacity, response cache, Guardrail/P6-F11 completion and P6-F20 out
+   of scope.
 
-## Current P6-F21 Behavior Change
+## Current P6-F08 Behavior Change
+
+- equal-priority traffic is distributed by static weight without allowing a
+  client routing hint, while lower priority tiers remain failover-only;
+- the same server request ID produces the same ordered plan across replicas;
+- normal successful requests reuse a one-second snapshot instead of querying
+  PostgreSQL, and database refresh failure uses a bounded 30-second LKG before
+  failing closed;
+- half-open dispatch requires one renewable PostgreSQL lease, including when
+  upstream activity exceeds the base lease;
+- routing, circuit and key epochs prevent stale completions from healing newer
+  state, and the configured channel degradation threshold drives transitions;
+- Chat and Embeddings share the plan; valid output rather than HTTP 200 headers
+  confirms non-stream/stream health;
+- platform preview/UI/trace expose safe candidate, exclusion, snapshot,
+  priority and weight evidence without URLs, keys, payloads or probe tokens;
+- unit, race, full backend, real PostgreSQL routing/migration, full frontend
+  tests/type-check/build, vet and diff checks pass locally; required CI is
+  pending; and
+- evidence:
+  `docs/ops/evidence/PRD6-B2-P6F08-routing-policy-v1-local-20260712.md`.
+
+## Previous P6-F21 Behavior Change
 
 - two- and three-replica real Redis fixtures enforce the same global/org
   weighted totals instead of multiplying capacity by replica count;
