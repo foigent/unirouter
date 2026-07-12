@@ -49,6 +49,10 @@ func TestP6F40ProviderCostPendingMigrationUpDownGuardAndRollForward(t *testing.T
 
 	downSQL, err := os.ReadFile(filepath.Join(migrationsDir, "000028_prd6_provider_cost_pending.down.sql"))
 	require.NoError(t, err)
+	providerAttemptDownSQL, err := os.ReadFile(filepath.Join(migrationsDir, "000029_prd6_provider_attempt_ledger.down.sql"))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(providerAttemptDownSQL))
+	require.NoError(t, err, "successor migration must be removed before its dependency")
 	_, err = pool.Exec(ctx, string(downSQL))
 	require.NoError(t, err, "an unused provider-cost schema permits controlled rollback")
 
@@ -70,6 +74,11 @@ func TestP6F40ProviderCostPendingMigrationUpDownGuardAndRollForward(t *testing.T
 
 	require.NoError(t, migrate.Run(ctx, pool, migrationsDir))
 	assertUp()
+	_, err = pool.Exec(ctx, string(downSQL))
+	require.ErrorContains(t, err, "P6-F40 down refused: P6-F40B", "out-of-order rollback must preserve the provider-attempt authority")
+	assertUp()
+	_, err = pool.Exec(ctx, string(providerAttemptDownSQL))
+	require.NoError(t, err)
 	_, err = pool.Exec(ctx,
 		`INSERT INTO freeze_idempotency (
 		    request_id, org_id, frozen_amount, reserved_balance_amount,

@@ -33,6 +33,8 @@ type Provider interface {
 	QueryModelPriceForOrg(ctx context.Context, orgID int64, model string) (float64, float64, error)
 	CalculateCost(ctx context.Context, model string, promptTokens, completionTokens int) (int, error)
 	Freeze(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error)
+	BeginProviderAttempt(ctx context.Context, req billing.ProviderAttemptStart) error
+	CompleteProviderAttempt(ctx context.Context, req billing.ProviderAttemptCompletion) error
 	MarkBillableOutput(ctx context.Context, requestID string, orgID int64) error
 	PersistSettlementUsage(ctx context.Context, req billing.SettleRequest) error
 	Settle(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error)
@@ -147,6 +149,14 @@ func (b *Billing) Freeze(ctx context.Context, req billing.FreezeRequest) (*billi
 		}
 	}
 	return result, nil
+}
+
+func (b *Billing) BeginProviderAttempt(ctx context.Context, req billing.ProviderAttemptStart) error {
+	return b.inner.BeginProviderAttempt(ctx, req)
+}
+
+func (b *Billing) CompleteProviderAttempt(ctx context.Context, req billing.ProviderAttemptCompletion) error {
+	return b.inner.CompleteProviderAttempt(ctx, req)
 }
 
 func (b *Billing) MarkBillableOutput(ctx context.Context, requestID string, orgID int64) error {

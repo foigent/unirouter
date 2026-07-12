@@ -302,7 +302,7 @@ func (b *Billing) claimPendingSettlements(ctx context.Context, limit int) ([]pen
 		    FROM freeze_idempotency
 		    WHERE status = 'settlement_pending'
 		      AND settlement_payload_ready_at IS NOT NULL
-		      AND settlement_pending_reason <> 'insufficient_topup'
+		      AND settlement_pending_reason = 'billable_output'
 		      AND (settlement_claimed_until IS NULL OR settlement_claimed_until <= NOW())
 		      AND (settlement_next_attempt_at IS NULL OR settlement_next_attempt_at <= NOW())
 		    ORDER BY COALESCE(settlement_next_attempt_at, settlement_payload_ready_at),

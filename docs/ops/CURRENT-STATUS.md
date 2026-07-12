@@ -2,9 +2,10 @@
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
 > Current PRD6 batch: D6-13 is accepted. P6-F40A is CI verified by PR #183
-> exact implementation/test head `d1afd97` and run `29207889734`; Backend,
-> Frontend, Docker and both explicit P6-F40 gates passed. P6-F40 remains in progress
-> and P6-F41 is not started. No target or production claim is made.
+> exact implementation/test head `d1afd97` and run `29207889734`. P6-F40B is
+> CI verified by PR #184 exact implementation/test head `ac2bfb5` and required
+> run `29209644118`. P6-F40 remains in progress through P6-F40C and P6-F41 is not
+> started. No target or production claim is made.
 > PRD6 Batch 0B P6-F16 was squash-merged by PR #140 as
 > `f244f669c529fec8767f85fff209882b333d8ed2`. P6-F33 was squash-merged by
 > PR #142 as `7173c5967a42c112fd0b219938a0901c1a0b9633`; its PR and post-merge
@@ -261,8 +262,21 @@
   recovery. Focused billing, 32-way concurrency, gateway no-cancel, guarded
   migration, full backend/frontend, race, vet and contract checks pass locally.
   PR #183 exact implementation/test head `d1afd97` passed required run
-  `29207889734`, including both explicit P6-F40 gates. P6-F40B/P6-F40C remain
-  pending, so P6-F40 is not closed.
+  `29207889734`, including both explicit P6-F40 gates. That Slice A evidence
+  does not claim the later Slice B or Slice C behavior.
+- P6-F40B provider-attempt/retry-cancel authority evidence:
+  `docs/ops/evidence/PRD6-B3H-P6F40B-provider-attempt-ledger-local-20260713.md`.
+  Migration `000029` adds bounded metadata-only attempt evidence before Chat
+  and Embeddings dispatch. Durable HTTP rejection may authorize existing
+  bounded failover; transport ambiguity, accepted-but-unsettled responses and
+  unusable 2xx bodies retain provider liability and cannot ordinarily cancel.
+  Settlement/funding-pending cost is linked atomically to the attempt, and the
+  `policybilling -> capbilling -> billing` production chain preserves the
+  attempt envelope. Focused race, migration, full backend/vet/contracts and
+  frontend 29-file/144-test/build gates pass locally. PR #184 exact
+  implementation/test head `ac2bfb5` passed required run `29209644118`:
+  Backend Tests, Frontend Build, Docker Build and both explicit F40B gates are
+  green. P6-F40C remains open, so P6-F40 is not closed.
 - HA/stream-failover competitor and architecture reference:
   `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md`.
 - Source-backed product/architecture/UX audit:

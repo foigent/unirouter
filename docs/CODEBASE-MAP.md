@@ -20,7 +20,7 @@
 | `internal/admin` | Admin REST handlers including Logs/trace, Data Exchange Control, audit, Runtime Status and tenant-scoped versioned distributed-limit policy control. Runtime Status includes app/dependency/traffic/host telemetry, external monitoring checks, typed effective configuration and a redacted current-process logical topology. Data Exchange Control is platform-admin-only and records source-side approvals/exchanges/deliveries/receipts without automatic export or X-Insight runtime dependency; receipt writes accept only the canonical v1 warning registry and reject unimplemented durable job/deep-link fields |
 | `internal/adapters` | Provider adapter registry and OpenAI-compatible / Anthropic-native request/response conversion |
 | `internal/auth` | JWT generation/validation, API key hashing, upstream key AES-GCM encryption/decryption |
-| `internal/billing` | Cost calculation, freeze/settle/cancel, price provider, project-scoped budget evaluation and tenant-scoped notification event service |
+| `internal/billing` | Cost calculation, freeze/settle/cancel, metadata-only provider-attempt financial authority, price provider, project-scoped budget evaluation and tenant-scoped notification event service |
 | `internal/agentcap` | Signed short Agent capabilities, explicit topology, shared revocation/root-authority checks, and atomic per-ancestor cost/token/rate/concurrency state |
 | `internal/capapi` | Strict exchange/delegate/refresh/revoke HTTP control surface for model-gateway Agent authority |
 | `internal/capbilling` | Joins normal wallet Freeze/Settle/Cancel terminals to Agent ancestor reservation without widening external authority |

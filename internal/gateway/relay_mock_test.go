@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -34,10 +35,26 @@ type mockBilling struct {
 	queryModelPriceFn func(ctx context.Context, orgID int64, model string) (float64, float64, error)
 	calculateCostFn   func(ctx context.Context, model string, promptTokens, completionTokens int) (int, error)
 	freezeFn          func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error)
+	beginAttemptFn    func(ctx context.Context, req billing.ProviderAttemptStart) error
+	completeAttemptFn func(ctx context.Context, req billing.ProviderAttemptCompletion) error
 	markOutputFn      func(ctx context.Context, requestID string, orgID int64) error
 	persistUsageFn    func(ctx context.Context, req billing.SettleRequest) error
 	settleFn          func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error)
 	cancelFn          func(ctx context.Context, requestID string, orgID int64) error
+}
+
+func (m *mockBilling) BeginProviderAttempt(ctx context.Context, req billing.ProviderAttemptStart) error {
+	if m.beginAttemptFn != nil {
+		return m.beginAttemptFn(ctx, req)
+	}
+	return nil
+}
+
+func (m *mockBilling) CompleteProviderAttempt(ctx context.Context, req billing.ProviderAttemptCompletion) error {
+	if m.completeAttemptFn != nil {
+		return m.completeAttemptFn(ctx, req)
+	}
+	return nil
 }
 
 func (m *mockBilling) MarkBillableOutput(ctx context.Context, requestID string, orgID int64) error {
@@ -2189,9 +2206,17 @@ func TestUpstreamEndpoint_DoesNotDoubleAppendV1(t *testing.T) {
 	}
 }
 
-func TestHandleChatCompletion_Success_NonStream(t *testing.T) {
+func TestP6F40BHandleChatCompletionProviderAttemptPrecedesNonStreamDispatch(t *testing.T) {
+	var attemptBegan atomic.Bool
+	var upstreamBeforeLedger atomic.Bool
+	var started billing.ProviderAttemptStart
+	var completed billing.ProviderAttemptCompletion
+	var settleReq billing.SettleRequest
 	// Mock upstream server
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !attemptBegan.Load() {
+			upstreamBeforeLedger.Store(true)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -2257,7 +2282,17 @@ func TestHandleChatCompletion_Success_NonStream(t *testing.T) {
 			return freezeResult, nil
 		},
 		settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
+			settleReq = req
 			return settleResult, nil
+		},
+		beginAttemptFn: func(ctx context.Context, req billing.ProviderAttemptStart) error {
+			started = req
+			attemptBegan.Store(true)
+			return nil
+		},
+		completeAttemptFn: func(ctx context.Context, req billing.ProviderAttemptCompletion) error {
+			completed = req
+			return nil
 		},
 	}
 
@@ -2323,6 +2358,18 @@ func TestHandleChatCompletion_Success_NonStream(t *testing.T) {
 	json.Unmarshal(rec.Body.Bytes(), &resp)
 	if resp["id"] != "chatcmpl-123" {
 		t.Fatalf("expected chatcmpl-123, got %v", resp["id"])
+	}
+	if upstreamBeforeLedger.Load() {
+		t.Fatal("provider dispatch reached the network before the durable attempt boundary")
+	}
+	if started.RequestID != "req-e2e-1" || started.AttemptID == "" || started.Endpoint != string(adapters.EndpointChatCompletions) || started.ChannelKeyID != 1 {
+		t.Fatalf("unexpected provider attempt start: %+v", started)
+	}
+	if completed.AttemptID != started.AttemptID || completed.Outcome != billing.ProviderAttemptOutcomeResponseAccepted || completed.HTTPStatus != http.StatusOK {
+		t.Fatalf("unexpected provider attempt completion: %+v", completed)
+	}
+	if settleReq.AttemptID != started.AttemptID {
+		t.Fatalf("settlement lost provider attempt authority: start=%q settle=%q", started.AttemptID, settleReq.AttemptID)
 	}
 }
 
@@ -2799,7 +2846,7 @@ func TestHandleChatCompletion_RetryClassification(t *testing.T) {
 	}
 }
 
-func TestHandleChatCompletion_UpstreamError_AllFail(t *testing.T) {
+func TestP6F40BHandleChatCompletionRejectedThenAmbiguousTransportStops(t *testing.T) {
 	// The first upstream returns an HTTP failure with an upstream request ID.
 	// The final route fails at the network layer so its call log must not retain
 	// the previous route's status or upstream identity.
@@ -2877,12 +2924,17 @@ func TestHandleChatCompletion_UpstreamError_AllFail(t *testing.T) {
 	}
 
 	cancelCalled := false
+	var completions []billing.ProviderAttemptCompletion
 	b := &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
 			return &billing.FreezeResult{FreezeID: 1, Amount: 100, Success: true}, nil
 		},
 		cancelFn: func(ctx context.Context, requestID string, orgID int64) error {
 			cancelCalled = true
+			return nil
+		},
+		completeAttemptFn: func(ctx context.Context, req billing.ProviderAttemptCompletion) error {
+			completions = append(completions, req)
 			return nil
 		},
 	}
@@ -2910,8 +2962,11 @@ func TestHandleChatCompletion_UpstreamError_AllFail(t *testing.T) {
 	if rec.Code != http.StatusBadGateway {
 		t.Fatalf("expected 502, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if !cancelCalled {
-		t.Fatal("expected Cancel to be called after all channels failed")
+	if cancelCalled {
+		t.Fatal("ambiguous transport outcome must not use ordinary cancellation")
+	}
+	if len(completions) != 2 || completions[0].Outcome != billing.ProviderAttemptOutcomeRejected || completions[1].Outcome != billing.ProviderAttemptOutcomeUnknown {
+		t.Fatalf("expected rejected then financially ambiguous attempts, got %#v", completions)
 	}
 	if len(capturedCallArgs) != callLogInsertArgCount || capturedCallArgs[callLogArgProvider] != "azure" || capturedCallArgs[callLogArgChannel] != "second-ch" {
 		t.Fatalf("final failure log mixed the first route with the final attempt: %#v", capturedCallArgs)
