@@ -116,6 +116,22 @@ func NewService(q db.DBQuerier, rdb *redis.Client, options Options) (*Service, e
 	return service, nil
 }
 
+// TerminalStateTTL returns the exact lifetime of the Redis operation state
+// that a durable terminal hook may need to finalize. It exposes duration only;
+// callers never receive Redis keys or admission authority.
+func (s *Service) TerminalStateTTL(leaseTTL time.Duration) time.Duration {
+	if leaseTTL <= 0 {
+		leaseTTL = 5 * time.Minute
+	}
+	if leaseTTL > maxLeaseTTL {
+		leaseTTL = maxLeaseTTL
+	}
+	if s == nil || s.options.TerminalGrace <= 0 {
+		return leaseTTL + 10*time.Minute
+	}
+	return leaseTTL + s.options.TerminalGrace*2
+}
+
 func (s *Service) Refresh(ctx context.Context) error {
 	if s == nil || s.db == nil {
 		return nil

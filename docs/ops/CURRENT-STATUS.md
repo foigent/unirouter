@@ -123,6 +123,11 @@
 > D6-10 long-stream hard-budget Scheme A and D6-11 explicit five-minute Agent
 > capability lifecycle were accepted on 2026-07-12; advanced innovation rows
 > P6-F23 through P6-F31 remain proposed.
+> D6-12 was accepted on 2026-07-12: P6-F20 closes at final-usage/terminal
+> durability, while P6-F11 owns mid-stream process-crash checkpoints, explicit
+> interruption and client recovery. P6-F20 is a Local implementation candidate
+> with required PR/post-merge CI pending; no managed HA/IaC, target or production
+> claim is made.
 
 ## PRD6 Current Window
 
@@ -158,8 +163,8 @@
   PR #151 and post-merge main required CI passed.
 - P6-F18B stream settlement recovery local and CI evidence:
   `docs/ops/evidence/PRD6-B0B-P6F18B-stream-settlement-recovery-local-20260711.md`.
-  PR #153 and post-merge main required CI passed; this closes P6-F18 but not
-  P6-F20 per-chunk/process-kill journaling or the general outbox.
+  PR #153 and post-merge main required CI passed; this closes P6-F18 but not the
+  P6-F20 durable outbox or P6-F11 mid-stream checkpoint/recovery semantics.
 - P6-TEST-DB-001 isolated admin integration evidence:
   `docs/ops/evidence/PRD6-ENG-P6TESTDB-admin-integration-isolation-local-20260711.md`.
   PR #155 and post-merge main required CI passed; the engineering-integrity
@@ -232,6 +237,12 @@
   tests/type-check/build pass. PR #174 exact-head run `29180539621`, PR #175
   stabilization run `29180946857` and final post-fix main run `29181137210`
   passed all required jobs; this row is CI verified / closed.
+- P6-F20 durable internal outbox local candidate:
+  `docs/ops/evidence/PRD6-B3-P6F20-durable-outbox-local-20260712.md`.
+  Focused race and isolated migration tests pass locally. D6-12 is resolved;
+  required PR/post-merge CI remains before closure.
+- HA/stream-failover competitor and architecture reference:
+  `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md`.
 - Source-backed product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
 - PRD7 candidate-only split (not Accepted Scope):
@@ -246,7 +257,8 @@
 - Proposed PRD: `docs/PRD-Phase6.md`; accepted/proposed state is authoritative
   in `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`.
 - Accepted feature accounting: 25 accepted rows, 22 CI verified / closed and
-  3 unclosed. P6-F11 is in progress; P6-F10 and P6-F20 remain not started.
+  3 unclosed. P6-F20 is a Local implementation candidate with required CI
+  pending; P6-F11 is in progress and P6-F10 is not started.
   `P6-TEST-DB-001` is a separate engineering-integrity issue outside that
   25-row feature count; it is CI verified / closed by PR #155 and post-merge
   main run `29157561036`.
@@ -299,8 +311,9 @@ exact-head and post-merge CI evidence, so P6-F19 is CI verified / closed.
 P6-F07 independently has local, exact-head and post-merge CI evidence for
 generic selectors/TPM/modes and is CI verified / closed. P6-F21 also has local,
 exact-head and post-merge CI evidence and is CI verified / closed by PR #170
-and main run `29176358459`. Durable cross-process terminal coupling and dynamic
-long-stream extension remain P6-F20 and D6-10/P6-F11.
+and main run `29176358459`. Durable cross-process terminal coupling is now the
+P6-F20 Local candidate pending required CI; dynamic long-stream extension and
+mid-stream process-crash recovery remain D6-10/P6-F11.
 
 P6-F35 local evidence covers the repository boundary only. D6-09 defers its
 target activation; a later authorized cutover must drain old control-plane
@@ -335,8 +348,9 @@ post-output failure posture and leased/backoff recovery. PR #153 required run
 `29155948787`, squash merge `b30bc9d` and post-merge main run `29156096777`
 passed. Simulated post-chunk DB loss plus 20 concurrent workers produces one
 terminal receipt. This closes P6-F18 at CI evidence level only; rows missing
-final usage remain held, and per-chunk journal/general outbox work remains
-P6-F20. No target or production verification is claimed.
+final usage remain held. The general outbox is now the P6-F20 Local candidate;
+D6-12 assigns per-chunk/process-crash checkpoints and client recovery to
+P6-F11. No target or production verification is claimed.
 
 P6-F36 local evidence also covers only the repository boundary. It does not
 reopen P6-F16, add a migration/RLS/foreign-key redesign, change the existing

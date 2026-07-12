@@ -32,6 +32,8 @@
 | `docs/ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md` | P6-F21 local plus PR #170/post-merge CI evidence for weighted cross-replica leases and bounded fairness/fault/config/UI behavior |
 | `docs/ops/evidence/PRD6-B2-P6F08-routing-policy-v1-local-20260712.md` | P6-F08 repository and CI evidence: deterministic weighted route snapshots, renewable cross-replica probes, epoch CAS, safe preview/evidence, guarded migration, PR #172 and post-merge main closure |
 | `docs/ops/evidence/PRD6-B3-P6F09-prompt-cache-billing-local-20260712.md` | P6-F09 local plus PR #174/#175 and final main CI evidence: authoritative provider cache usage, immutable class pricing, settlement/recovery, logs/reconciliation/UI and guarded migration |
+| `docs/ops/evidence/PRD6-B3-P6F20-durable-outbox-local-20260712.md` | P6-F20 local candidate for durable finalization/outbox, bounded workers, replay and terminal-hook recovery; required CI pending |
+| `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` | Official competitor HA patterns, current UniRouter cluster facts, Four Quadrants and accepted D6-12 stream/HA boundary |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | Source-backed audit/reconciliation/correlation/UI/architecture/upgrade findings, Four Quadrants and PRD6 batches |
 | `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | PRD7 candidate split; first future direction selected, all implementation deferred until PRD6 closeout |
 | `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` | Accepted future Cache Service direction, service boundary, capacity planning triggers, SaaS cell reuse and non-authorization guardrails |
@@ -87,6 +89,7 @@
 | `docs/PRD-Phase3.md` | PRD3 formal product requirements | Completed cleanup/optimization scope |
 | `docs/PRD-Phase6.md` | PRD6 product requirements | D6-01/D6-02 accepted; advanced innovation remains separately gated |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | PRD6 product/architecture/UX audit | Confirmed findings, hypotheses and user requirements remain separately labeled |
+| `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` | PRD6 HA and stream-failover architecture reference | Official-source competitor facts, explicit inferences and recommendations remain separately labeled; no deployment authorization |
 | `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | PRD7 candidate backlog | D7-UPGRADE-001/002 selected as future first direction; D7-CACHE-001 is a future required direction; implementation remains deferred and separately gated |
 | `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` | Future Cache Service candidate | Exact-cache service boundary and private/SaaS cell profiles accepted as direction only; no implementation authorization |
 | `docs/PRD-Phase5.md` | PRD5 completed product requirements | Accepted Scope Complete; preserve as closed phase evidence |

@@ -10,6 +10,7 @@ import (
 	"github.com/uniroute/unirouter/internal/agentcap"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/terminalhook"
 )
 
 type fakeProvider struct {
@@ -87,6 +88,8 @@ func (r *fakeRuntime) ReserveInvocation(_ context.Context, claims *agentcap.Clai
 		Lineage:            append([]string(nil), claims.Lineage...),
 		ReservedTokens:     tokens,
 		ReservedCostCents:  cost,
+		LeaseExpiresAt:     time.Now().UTC().Add(leaseTTL + agentcap.InvocationFinalizationGrace),
+		StateExpiresAt:     time.Now().UTC().Add(leaseTTL + 2*agentcap.InvocationFinalizationGrace),
 	}, nil
 }
 
@@ -122,6 +125,90 @@ func successfulProvider() *fakeProvider {
 	return &fakeProvider{
 		freeze: &billing.FreezeResult{Success: true, Amount: 25},
 		settle: &billing.SettleResult{Success: true, ActualCost: 17, ChargedCost: 17},
+	}
+}
+
+type fakeTerminalHooks struct {
+	registerErr    error
+	reconcileErr   error
+	registerCalls  int
+	reconcileCalls int
+	hookType       string
+	operationID    string
+	orgID          int64
+	reservation    any
+	expiresAt      time.Time
+}
+
+func (h *fakeTerminalHooks) Register(_ context.Context, hookType, operationID string, orgID int64, reservation any, expiresAt time.Time) error {
+	h.registerCalls++
+	h.hookType = hookType
+	h.operationID = operationID
+	h.orgID = orgID
+	h.reservation = reservation
+	h.expiresAt = expiresAt
+	return h.registerErr
+}
+
+func (h *fakeTerminalHooks) Reconcile(_ context.Context, operationID string, orgID int64) error {
+	h.reconcileCalls++
+	h.operationID = operationID
+	h.orgID = orgID
+	return h.reconcileErr
+}
+
+func TestP6F20DurableHookOwnsAgentTerminalRecovery(t *testing.T) {
+	provider := successfulProvider()
+	runtime := &fakeRuntime{}
+	hooks := &fakeTerminalHooks{}
+	service := New(provider, runtime)
+	service.SetTerminalHooks(hooks)
+	ctx := capabilityContext(30 * time.Minute)
+
+	result, err := service.Freeze(ctx, billing.FreezeRequest{RequestID: "req_p6f20_agent", OrgID: 7, EstimatedTokens: 300})
+	if err != nil || result == nil || !result.Success {
+		t.Fatalf("freeze = %#v / %v", result, err)
+	}
+	if hooks.registerCalls != 1 || hooks.hookType != terminalhook.HookAgentAncestor ||
+		hooks.operationID != "req_p6f20_agent" || hooks.orgID != 7 || hooks.expiresAt.IsZero() {
+		t.Fatalf("unexpected terminal hook registration: %#v", hooks)
+	}
+	if _, ok := hooks.reservation.(*agentcap.InvocationReservation); !ok {
+		t.Fatalf("terminal hook reservation type = %T", hooks.reservation)
+	}
+
+	settled, err := service.Settle(context.Background(), billing.SettleRequest{
+		RequestID: "req_p6f20_agent", OrgID: 7, PromptTokens: 120, CompletionTokens: 80,
+	})
+	if err != nil || settled == nil || !settled.Success {
+		t.Fatalf("settle = %#v / %v", settled, err)
+	}
+	if hooks.reconcileCalls != 1 {
+		t.Fatalf("terminal reconciliations = %d, want 1", hooks.reconcileCalls)
+	}
+	if runtime.finalizeCalls != 1 || runtime.cancelCalls != 0 {
+		t.Fatalf("immediate idempotent fast path did not complement durable recovery: %#v", runtime)
+	}
+	if _, exists := service.reservations.Load("req_p6f20_agent"); exists {
+		t.Fatal("durably owned reservation remained in process memory")
+	}
+}
+
+func TestP6F20AgentHookRegistrationFailureRollsBackAdmissionAndWallet(t *testing.T) {
+	provider := successfulProvider()
+	runtime := &fakeRuntime{}
+	hooks := &fakeTerminalHooks{registerErr: errors.New("database unavailable")}
+	service := New(provider, runtime)
+	service.SetTerminalHooks(hooks)
+
+	result, err := service.Freeze(capabilityContext(time.Minute), billing.FreezeRequest{
+		RequestID: "req_p6f20_hook_failure", OrgID: 7, EstimatedTokens: 10,
+	})
+	if err == nil || result != nil {
+		t.Fatalf("hook registration failure = %#v / %v", result, err)
+	}
+	if runtime.cancelCalls != 1 || provider.cancelCalls != 1 {
+		t.Fatalf("runtime cancels=%d billing cancels=%d", runtime.cancelCalls, provider.cancelCalls)
 	}
 }
 

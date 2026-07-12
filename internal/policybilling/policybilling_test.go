@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
+	"github.com/uniroute/unirouter/internal/agentcap"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/limitpolicy"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/models"
+	"github.com/uniroute/unirouter/internal/terminalhook"
 	"github.com/uniroute/unirouter/internal/workloadadmission"
 )
 
@@ -93,6 +96,38 @@ func (r *fakeRuntime) CancelBeforeDispatch(context.Context, *limitpolicy.Reserva
 	return nil
 }
 
+func (r *fakeRuntime) TerminalStateTTL(leaseTTL time.Duration) time.Duration {
+	return leaseTTL + 7*time.Minute
+}
+
+type fakeTerminalHooks struct {
+	registerErr    error
+	registerCalls  int
+	reconcileCalls int
+	hookType       string
+	operationID    string
+	orgID          int64
+	reservation    any
+	expiresAt      time.Time
+}
+
+func (h *fakeTerminalHooks) Register(_ context.Context, hookType, operationID string, orgID int64, reservation any, expiresAt time.Time) error {
+	h.registerCalls++
+	h.hookType = hookType
+	h.operationID = operationID
+	h.orgID = orgID
+	h.reservation = reservation
+	h.expiresAt = expiresAt
+	return h.registerErr
+}
+
+func (h *fakeTerminalHooks) Reconcile(_ context.Context, operationID string, orgID int64) error {
+	h.reconcileCalls++
+	h.operationID = operationID
+	h.orgID = orgID
+	return nil
+}
+
 func policyContext() context.Context {
 	apiKey := &models.ApiKey{ID: 13, OrgID: 7, QPSLimit: 10, RPMLimit: 60}
 	ctx := context.WithValue(context.Background(), middleware.CtxAPIKey, apiKey)
@@ -152,6 +187,61 @@ func TestPolicyLifecycleUsesServerSubjectAndActualUsage(t *testing.T) {
 	}
 	if runtime.finalizeCalls != 1 || runtime.finalizedTokens != 66 {
 		t.Fatalf("finalize calls=%d tokens=%d", runtime.finalizeCalls, runtime.finalizedTokens)
+	}
+}
+
+func TestP6F20DurableHookOwnsPolicyAndWorkloadTerminalRecovery(t *testing.T) {
+	inner := &fakeProvider{}
+	runtime := &fakeRuntime{}
+	hooks := &fakeTerminalHooks{}
+	service := New(inner, runtime)
+	service.SetTerminalHooks(hooks)
+	ctx := agentcap.ContextWithInvocationLeaseTTL(policyContext(), 30*time.Minute)
+
+	result, err := service.Freeze(ctx, billing.FreezeRequest{
+		RequestID: "operation-p6f20-hook", OrgID: 7, Model: "company-chat", EstimatedTokens: 10,
+	})
+	if err != nil || result == nil || !result.Success {
+		t.Fatalf("freeze result=%#v err=%v", result, err)
+	}
+	if hooks.registerCalls != 1 || hooks.hookType != terminalhook.HookLimitPolicy ||
+		hooks.operationID != "operation-p6f20-hook" || hooks.orgID != 7 {
+		t.Fatalf("unexpected hook registration: %#v", hooks)
+	}
+	if _, ok := hooks.reservation.(*limitpolicy.DurableReservation); !ok {
+		t.Fatalf("terminal hook reservation type = %T", hooks.reservation)
+	}
+	remaining := time.Until(hooks.expiresAt)
+	if remaining < 36*time.Minute || remaining > 38*time.Minute {
+		t.Fatalf("terminal hook lifetime = %s, want exact runtime bound", remaining)
+	}
+
+	settled, err := service.Settle(context.Background(), billing.SettleRequest{
+		RequestID: "operation-p6f20-hook", OrgID: 7, PromptTokens: 4, CompletionTokens: 2,
+	})
+	if err != nil || settled == nil || !settled.Success {
+		t.Fatalf("settle result=%#v err=%v", settled, err)
+	}
+	if hooks.reconcileCalls != 1 || runtime.finalizeCalls != 1 || runtime.cancelCalls != 0 {
+		t.Fatalf("reconcile=%d runtime=%#v", hooks.reconcileCalls, runtime)
+	}
+}
+
+func TestP6F20PolicyHookRegistrationFailureRollsBackAllPriorAdmissions(t *testing.T) {
+	inner := &fakeProvider{}
+	runtime := &fakeRuntime{}
+	hooks := &fakeTerminalHooks{registerErr: errors.New("database unavailable")}
+	service := New(inner, runtime)
+	service.SetTerminalHooks(hooks)
+
+	result, err := service.Freeze(policyContext(), billing.FreezeRequest{
+		RequestID: "operation-p6f20-hook-failure", OrgID: 7, Model: "company-chat", EstimatedTokens: 10,
+	})
+	if err == nil || result != nil {
+		t.Fatalf("hook registration failure = %#v / %v", result, err)
+	}
+	if runtime.cancelBeforeCalls != 1 || inner.cancelCalls != 1 {
+		t.Fatalf("policy cancels=%d billing cancels=%d", runtime.cancelBeforeCalls, inner.cancelCalls)
 	}
 }
 

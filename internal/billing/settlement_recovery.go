@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/uniroute/unirouter/internal/outbox"
 )
 
 const (
@@ -219,6 +220,12 @@ func (b *Billing) PersistSettlementUsage(ctx context.Context, req SettleRequest)
 		costBreakdown.CacheCreationCostCents, costBreakdown.OutputCostCents,
 	); err != nil {
 		return fmt.Errorf("persist settlement payload: %w", err)
+	}
+	if err := enqueueUsageJournalTx(
+		ctx, tx, b.outbox, outbox.EventBillingUsagePrepared, "usage_prepared",
+		record, req, calculatedCost, 0, 0,
+	); err != nil {
+		return fmt.Errorf("enqueue prepared usage journal: %w", err)
 	}
 	return tx.Commit(ctx)
 }

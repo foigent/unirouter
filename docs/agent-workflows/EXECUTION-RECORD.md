@@ -1,15 +1,35 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 3 P6-F09 Provider Prompt Cache Billing closeout
+**Batch:** PRD6 Batch 3 P6-F20 Durable Internal Outbox
 **Owner:** Codex
-**Risk:** R3 financial truth, provider usage-contract normalization and migration/cutover safety
-**Status:** CI verified / closed
-**Integration:** implementation head `711e7182c4875ed8324f6e379f73107ebcb30ffb`; PR #174 run `29180539621`; merge `6515b3f3f281da022d7685700ec0754fe8ac3b66`; production-neutral stability head `8a7fefe2a5e42ac8adcd9ac8838bc9ea8cb93fb7`; PR #175 run `29180946857`; merge `257a9ebe14a80f52073ff8b20c21aa9b6ee86931`; final main run `29181137210`
-**Next gate:** implement P6-F20 durable minimal usage/finalization outbox and bounded replayable workers to complete Batch 3
-**Previous batch:** P6-F08 implementation PR #172 plus closeout PR #173; post-closeout main run `29179065645` passed and both historical branches are retained
+**Risk:** R3/R4 financial finalization, evidence durability, asynchronous delivery and migration/cutover safety
+**Status:** Local implementation candidate; D6-12 accepted, required PR/post-merge CI pending
+**Integration:** base `bd1692ef7d4f546fde2dbd0d5a35fe2bc92cb148`; branch `codex/prd6-durable-outbox`
+**Next gate:** exact-head Backend Tests, Frontend Build and Docker Build; squash merge; post-merge main required CI
+**Previous batch:** P6-F09 PR #174 plus production-neutral stability PR #175; final main run `29181137210` passed and the implementation branch is retained
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
-## Completed Scope
+## Current P6-F20 Behavior Change
+
+1. Add a bounded PostgreSQL `internal-outbox.v1` with leased multi-replica
+   workers, priority/fairness, retry/dead-letter policy and lag metrics.
+2. Enqueue prepared/settled/cancelled minimal usage in the authoritative
+   financial transaction and materialize one retained usage journal plus
+   incremental project-budget truth.
+3. Materialize sanitized call logs, traces, audits and tenant Webhook delivery
+   through destination idempotency keys, retaining direct evidence fallback when
+   enqueue is not accepted.
+4. Reconcile Agent, distributed-policy and weighted-workload terminal state from
+   committed financial truth without storing bearer capability material.
+5. Add guarded migration `000027` and explicit required-CI PostgreSQL/race gates.
+6. D6-12 assigns mid-stream process-crash checkpoints, explicit interruption and
+   client recovery to P6-F11. P6-F20 does not guess exact usage before final
+   persistence and makes no managed-HA, target, exporter or production claim.
+7. Evidence:
+   `docs/ops/evidence/PRD6-B3-P6F20-durable-outbox-local-20260712.md` and
+   `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md`.
+
+## Previous P6-F09 Completed Scope
 
 1. Normalize only authoritative OpenAI, DeepSeek and Anthropic Prompt Cache
    token fields into exact ordinary/read/create partitions; reject impossible

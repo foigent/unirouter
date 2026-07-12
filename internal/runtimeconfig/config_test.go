@@ -46,6 +46,11 @@ func TestNewBuildsTypedEffectiveConfiguration(t *testing.T) {
 		snapshot.BudgetAlerts.LegacyGlobalSettingsActive {
 		t.Fatalf("unexpected budget-alert registry: %#v", snapshot.BudgetAlerts)
 	}
+	if snapshot.InternalOutbox.Version != "internal-outbox.v1" || snapshot.InternalOutbox.Backend != "postgresql_internal" ||
+		snapshot.InternalOutbox.WorkerCount != 2 || snapshot.InternalOutbox.BatchSize != 25 ||
+		snapshot.InternalOutbox.TraceLagSLOSeconds != 30 || snapshot.InternalOutbox.ExternalExporterEnabled {
+		t.Fatalf("unexpected internal-outbox registry: %#v", snapshot.InternalOutbox)
+	}
 
 	encoded, err := json.Marshal(snapshot)
 	if err != nil {

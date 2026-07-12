@@ -13,16 +13,16 @@ type invocationLeaseContextKey struct{}
 // InvocationReservation is a server-owned handle for one admitted model
 // operation. It contains no bearer token or external-system authority.
 type InvocationReservation struct {
-	OperationID        string
-	WorkflowID         string
-	WorkflowGeneration string
-	AgentID            string
-	OrgID              int64
-	Lineage            []string
-	ReservedTokens     int64
-	ReservedCostCents  int64
-	LeaseExpiresAt     time.Time
-	StateExpiresAt     time.Time
+	OperationID        string    `json:"operation_id"`
+	WorkflowID         string    `json:"workflow_id"`
+	WorkflowGeneration string    `json:"workflow_generation"`
+	AgentID            string    `json:"agent_id"`
+	OrgID              int64     `json:"org_id"`
+	Lineage            []string  `json:"lineage"`
+	ReservedTokens     int64     `json:"reserved_tokens"`
+	ReservedCostCents  int64     `json:"reserved_cost_cents"`
+	LeaseExpiresAt     time.Time `json:"lease_expires_at"`
+	StateExpiresAt     time.Time `json:"state_expires_at"`
 }
 
 // ContextWithInvocationLeaseTTL records the transport's maximum expected

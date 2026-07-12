@@ -12,6 +12,7 @@ import (
 	"github.com/uniroute/unirouter/internal/agentcap"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/terminalhook"
 )
 
 const (
@@ -44,12 +45,18 @@ type RuntimeBudget interface {
 	CancelInvocation(ctx context.Context, reservation *agentcap.InvocationReservation) error
 }
 
+type TerminalHooks interface {
+	Register(ctx context.Context, hookType, operationID string, orgID int64, reservation any, expiresAt time.Time) error
+	Reconcile(ctx context.Context, operationID string, orgID int64) error
+}
+
 // Billing joins the durable wallet terminal state to the shared Agent
 // ancestor reservation without changing ordinary root API-key billing.
 type Billing struct {
-	inner        Provider
-	runtime      RuntimeBudget
-	reservations sync.Map
+	inner         Provider
+	runtime       RuntimeBudget
+	terminalHooks TerminalHooks
+	reservations  sync.Map
 }
 
 type trackedReservation struct {
@@ -63,6 +70,10 @@ type trackedReservation struct {
 
 func New(inner Provider, runtime RuntimeBudget) *Billing {
 	return &Billing{inner: inner, runtime: runtime}
+}
+
+func (b *Billing) SetTerminalHooks(hooks TerminalHooks) {
+	b.terminalHooks = hooks
 }
 
 func (b *Billing) QueryModelPriceForOrg(ctx context.Context, orgID int64, model string) (float64, float64, error) {
@@ -103,6 +114,27 @@ func (b *Billing) Freeze(ctx context.Context, req billing.FreezeRequest) (*billi
 		}
 		return runtimeRejectedResult(reserveErr), nil
 	}
+	if b.terminalHooks != nil {
+		if hookErr := b.terminalHooks.Register(
+			ctx,
+			terminalhook.HookAgentAncestor,
+			req.RequestID,
+			req.OrgID,
+			reservation,
+			reservation.StateExpiresAt,
+		); hookErr != nil {
+			cleanupCtx, cancel := runtimeContext(ctx)
+			runtimeErr := b.runtime.CancelInvocation(cleanupCtx, reservation)
+			cancel()
+			billingErr := b.cancelFrozen(ctx, req.RequestID, req.OrgID)
+			return nil, fmt.Errorf(
+				"persist Agent runtime terminal hook: %w; runtime rollback: %v; billing rollback: %v",
+				hookErr,
+				runtimeErr,
+				billingErr,
+			)
+		}
+	}
 
 	tracked := &trackedReservation{reservation: reservation}
 	if existing, loaded := b.reservations.LoadOrStore(req.RequestID, tracked); loaded {
@@ -126,6 +158,39 @@ func (b *Billing) PersistSettlementUsage(ctx context.Context, req billing.Settle
 }
 
 func (b *Billing) Settle(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
+	if b.terminalHooks != nil {
+		value, tracked := b.reservations.Load(req.RequestID)
+		var state *trackedReservation
+		if tracked {
+			var ok bool
+			state, ok = value.(*trackedReservation)
+			if !ok {
+				return nil, fmt.Errorf("invalid Agent runtime reservation tracker")
+			}
+			state.mu.Lock()
+			defer state.mu.Unlock()
+			state.settleAttempted = true
+		}
+		result, err := b.inner.Settle(ctx, req)
+		if err != nil || result == nil || !result.Success {
+			return result, err
+		}
+		if state != nil {
+			state.terminal = "settled"
+			state.actualTokens = int64(req.PromptTokens) + int64(req.CompletionTokens)
+			state.actualCostCents = int64(result.ActualCost)
+			terminalCtx, cancel := runtimeContext(ctx)
+			if err := b.runtime.FinalizeInvocation(terminalCtx, state.reservation, state.actualTokens, state.actualCostCents); err != nil {
+				log.Printf("[agent-capability] operation=%s immediate ancestor finalization failed; durable hook retained: %v", req.RequestID, err)
+			}
+			cancel()
+			b.reservations.Delete(req.RequestID)
+		}
+		if err := b.reconcileTerminal(ctx, req.RequestID, req.OrgID); err != nil {
+			log.Printf("[agent-capability] operation=%s durable terminal hook will be recovered from the financial journal: %v", req.RequestID, err)
+		}
+		return result, nil
+	}
 	value, tracked := b.reservations.Load(req.RequestID)
 	if !tracked {
 		return b.inner.Settle(ctx, req)
@@ -152,6 +217,36 @@ func (b *Billing) Settle(ctx context.Context, req billing.SettleRequest) (*billi
 }
 
 func (b *Billing) Cancel(ctx context.Context, requestID string, orgID int64) error {
+	if b.terminalHooks != nil {
+		value, tracked := b.reservations.Load(requestID)
+		var state *trackedReservation
+		if tracked {
+			var ok bool
+			state, ok = value.(*trackedReservation)
+			if !ok {
+				return fmt.Errorf("invalid Agent runtime reservation tracker")
+			}
+			state.mu.Lock()
+			defer state.mu.Unlock()
+		}
+		if err := b.inner.Cancel(ctx, requestID, orgID); err != nil {
+			return err
+		}
+		if state != nil && !state.settleAttempted {
+			terminalCtx, cancel := runtimeContext(ctx)
+			if err := b.runtime.CancelInvocation(terminalCtx, state.reservation); err != nil {
+				log.Printf("[agent-capability] operation=%s immediate ancestor cancellation failed; durable hook retained: %v", requestID, err)
+			}
+			cancel()
+		}
+		if state != nil {
+			b.reservations.Delete(requestID)
+		}
+		if err := b.reconcileTerminal(ctx, requestID, orgID); err != nil {
+			log.Printf("[agent-capability] operation=%s durable cancellation hook will be recovered from the financial journal: %v", requestID, err)
+		}
+		return nil
+	}
 	value, tracked := b.reservations.Load(requestID)
 	if !tracked {
 		return b.inner.Cancel(ctx, requestID, orgID)
@@ -191,6 +286,12 @@ func (b *Billing) Cancel(ctx context.Context, requestID string, orgID int64) err
 	}
 	b.reservations.Delete(requestID)
 	return nil
+}
+
+func (b *Billing) reconcileTerminal(ctx context.Context, requestID string, orgID int64) error {
+	reconcileCtx, cancel := runtimeContext(ctx)
+	defer cancel()
+	return b.terminalHooks.Reconcile(reconcileCtx, requestID, orgID)
 }
 
 func (b *Billing) finalizeTracked(ctx context.Context, requestID string, state *trackedReservation) error {

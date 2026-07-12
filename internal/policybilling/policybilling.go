@@ -12,6 +12,7 @@ import (
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/limitpolicy"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/terminalhook"
 	"github.com/uniroute/unirouter/internal/workloadadmission"
 )
 
@@ -45,12 +46,18 @@ type Runtime interface {
 	CancelBeforeDispatch(ctx context.Context, reservation *limitpolicy.Reservation) error
 }
 
+type TerminalHooks interface {
+	Register(ctx context.Context, hookType, operationID string, orgID int64, reservation any, expiresAt time.Time) error
+	Reconcile(ctx context.Context, operationID string, orgID int64) error
+}
+
 // Billing joins shared capacity/token admission to the existing durable wallet
 // and Agent-ancestor billing chain. It does not change financial truth.
 type Billing struct {
-	inner        Provider
-	runtime      Runtime
-	reservations sync.Map
+	inner         Provider
+	runtime       Runtime
+	terminalHooks TerminalHooks
+	reservations  sync.Map
 }
 
 type trackedReservation struct {
@@ -63,6 +70,10 @@ type trackedReservation struct {
 
 func New(inner Provider, runtime Runtime) *Billing {
 	return &Billing{inner: inner, runtime: runtime}
+}
+
+func (b *Billing) SetTerminalHooks(hooks TerminalHooks) {
+	b.terminalHooks = hooks
 }
 
 func (b *Billing) QueryModelPriceForOrg(ctx context.Context, orgID int64, model string) (float64, float64, error) {
@@ -118,6 +129,34 @@ func (b *Billing) Freeze(ctx context.Context, req billing.FreezeRequest) (*billi
 		}
 		return result, err
 	}
+	if b.terminalHooks != nil {
+		leaseTTL := agentcap.InvocationLeaseTTLFromContext(ctx)
+		stateTTL := leaseTTL + 2*agentcap.InvocationFinalizationGrace
+		if provider, ok := b.runtime.(interface {
+			TerminalStateTTL(time.Duration) time.Duration
+		}); ok {
+			stateTTL = provider.TerminalStateTTL(leaseTTL)
+		}
+		if hookErr := b.terminalHooks.Register(
+			ctx,
+			terminalhook.HookLimitPolicy,
+			req.RequestID,
+			req.OrgID,
+			reservation.Durable(),
+			time.Now().UTC().Add(stateTTL),
+		); hookErr != nil {
+			cleanupCtx, cancel := detachedCleanupContext(ctx)
+			policyErr := b.runtime.CancelBeforeDispatch(cleanupCtx, reservation)
+			billingErr := b.inner.Cancel(cleanupCtx, req.RequestID, req.OrgID)
+			cancel()
+			return nil, fmt.Errorf(
+				"persist distributed-policy terminal hook: %w; policy rollback: %v; billing rollback: %v",
+				hookErr,
+				policyErr,
+				billingErr,
+			)
+		}
+	}
 
 	tracked := &trackedReservation{reservation: reservation}
 	if existing, loaded := b.reservations.LoadOrStore(req.RequestID, tracked); loaded {
@@ -138,6 +177,38 @@ func (b *Billing) PersistSettlementUsage(ctx context.Context, req billing.Settle
 }
 
 func (b *Billing) Settle(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
+	if b.terminalHooks != nil {
+		value, tracked := b.reservations.Load(req.RequestID)
+		var state *trackedReservation
+		if tracked {
+			var ok bool
+			state, ok = value.(*trackedReservation)
+			if !ok {
+				return nil, fmt.Errorf("invalid distributed policy reservation tracker")
+			}
+			state.mu.Lock()
+			defer state.mu.Unlock()
+			state.settleAttempted = true
+		}
+		result, err := b.inner.Settle(ctx, req)
+		if err != nil || result == nil || !result.Success {
+			return result, err
+		}
+		if state != nil {
+			state.terminal = "settled"
+			state.actualTokens = int64(req.PromptTokens) + int64(req.CompletionTokens)
+			terminalCtx, cancel := detachedTerminalContext(ctx)
+			if err := b.runtime.Finalize(terminalCtx, state.reservation, state.actualTokens); err != nil {
+				log.Printf("[limit-policy] operation=%s immediate terminal finalization failed; durable hook retained: %v", req.RequestID, err)
+			}
+			cancel()
+			b.reservations.Delete(req.RequestID)
+		}
+		if err := b.reconcileTerminal(ctx, req.RequestID, req.OrgID); err != nil {
+			log.Printf("[limit-policy] operation=%s durable terminal hook will be recovered from the financial journal: %v", req.RequestID, err)
+		}
+		return result, nil
+	}
 	value, tracked := b.reservations.Load(req.RequestID)
 	if !tracked {
 		return b.inner.Settle(ctx, req)
@@ -163,6 +234,36 @@ func (b *Billing) Settle(ctx context.Context, req billing.SettleRequest) (*billi
 }
 
 func (b *Billing) Cancel(ctx context.Context, requestID string, orgID int64) error {
+	if b.terminalHooks != nil {
+		value, tracked := b.reservations.Load(requestID)
+		var state *trackedReservation
+		if tracked {
+			var ok bool
+			state, ok = value.(*trackedReservation)
+			if !ok {
+				return fmt.Errorf("invalid distributed policy reservation tracker")
+			}
+			state.mu.Lock()
+			defer state.mu.Unlock()
+		}
+		if err := b.inner.Cancel(ctx, requestID, orgID); err != nil {
+			return err
+		}
+		if state != nil && !state.settleAttempted {
+			terminalCtx, cancel := detachedTerminalContext(ctx)
+			if err := b.runtime.Cancel(terminalCtx, state.reservation); err != nil {
+				log.Printf("[limit-policy] operation=%s immediate cancellation failed; durable hook retained: %v", requestID, err)
+			}
+			cancel()
+		}
+		if state != nil {
+			b.reservations.Delete(requestID)
+		}
+		if err := b.reconcileTerminal(ctx, requestID, orgID); err != nil {
+			log.Printf("[limit-policy] operation=%s durable cancellation hook will be recovered from the financial journal: %v", requestID, err)
+		}
+		return nil
+	}
 	value, tracked := b.reservations.Load(requestID)
 	if !tracked {
 		return b.inner.Cancel(ctx, requestID, orgID)
@@ -201,6 +302,12 @@ func (b *Billing) Cancel(ctx context.Context, requestID string, orgID int64) err
 	}
 	b.reservations.Delete(requestID)
 	return nil
+}
+
+func (b *Billing) reconcileTerminal(ctx context.Context, requestID string, orgID int64) error {
+	reconcileCtx, cancel := detachedTerminalContext(ctx)
+	defer cancel()
+	return b.terminalHooks.Reconcile(reconcileCtx, requestID, orgID)
 }
 
 func (b *Billing) finalizeTracked(ctx context.Context, requestID string, state *trackedReservation) error {
@@ -247,4 +354,12 @@ func detachedTerminalContext(ctx context.Context) (context.Context, context.Canc
 		base = context.WithoutCancel(ctx)
 	}
 	return context.WithTimeout(base, terminalTimeout)
+}
+
+func detachedCleanupContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	base := context.Background()
+	if ctx != nil {
+		base = context.WithoutCancel(ctx)
+	}
+	return context.WithTimeout(base, 10*time.Second)
 }

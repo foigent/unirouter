@@ -12,6 +12,7 @@ import (
 	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/oidc"
+	"github.com/uniroute/unirouter/internal/outbox"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
 )
@@ -37,6 +38,7 @@ type Handler struct {
 	runtimeHostTelemetryProvider func() runtimeHostTelemetry
 	limitPolicyReloader          interface{ Refresh(context.Context) error }
 	routingController            routingController
+	outbox                       *outbox.Service
 }
 
 func (h *Handler) SetLimitPolicyReloader(reloader interface{ Refresh(context.Context) error }) {
@@ -77,6 +79,12 @@ func (h *Handler) SetLicenseVerifier(verifier *licensing.Verifier) {
 
 func (h *Handler) SetEventService(svc *billing.EventService) {
 	h.eventService = svc
+}
+
+func (h *Handler) SetOutbox(service *outbox.Service) {
+	if h != nil {
+		h.outbox = service
+	}
 }
 
 func (h *Handler) SetOIDCService(svc *oidc.Service) {

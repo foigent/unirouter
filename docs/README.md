@@ -27,6 +27,8 @@
 - [ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md](ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md) — P6-F21 加权跨副本租约、公平队列、故障/混合配置和 PR #170/main required CI 收口证据
 - [ops/evidence/PRD6-B2-P6F08-routing-policy-v1-local-20260712.md](ops/evidence/PRD6-B2-P6F08-routing-policy-v1-local-20260712.md) — P6-F08 确定性同级权重、短时快照、跨副本探针、epoch CAS、预览/证据、安全回滚及 PR #172/main CI 收口证据
 - [ops/evidence/PRD6-B3-P6F09-prompt-cache-billing-local-20260712.md](ops/evidence/PRD6-B3-P6F09-prompt-cache-billing-local-20260712.md) — P6-F09 上游 Prompt Cache 用量归一、冻结价格、结算恢复、日志/对账/UI、迁移回滚、PR #174/#175 与最终 main CI 收口证据
+- [ops/evidence/PRD6-B3-P6F20-durable-outbox-local-20260712.md](ops/evidence/PRD6-B3-P6F20-durable-outbox-local-20260712.md) — P6-F20 最终用量/终态持久化、内部 outbox、重放和本地门禁证据
+- [planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md](planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md) — LiteLLM/New API/Portkey/Kong 高可用模式、UniRouter 集群事实和 D6-12 流式边界
 - [planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md](planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md) — UI、对账、链路身份、架构与 2B 升级审计
 - [planning/PRD7-CANDIDATE-BACKLOG.md](planning/PRD7-CANDIDATE-BACKLOG.md) — 未来首项方向已选；实现后置到 PRD6 闭环后
 - [planning/PRD7-CACHE-SERVICE-CANDIDATE.md](planning/PRD7-CACHE-SERVICE-CANDIDATE.md) — 未来独立 Cache Service、容量拆分触发线和 SaaS cell 复用边界

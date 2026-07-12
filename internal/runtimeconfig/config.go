@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/uniroute/unirouter/internal/agentcap"
+	"github.com/uniroute/unirouter/internal/outbox"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/streampolicy"
 )
@@ -23,6 +24,7 @@ type Snapshot struct {
 	StreamTransport StreamTransportPolicy `json:"stream_transport"`
 	AgentCapability AgentCapabilityPolicy `json:"agent_capability"`
 	BudgetAlerts    BudgetAlertPolicy     `json:"budget_alerts"`
+	InternalOutbox  InternalOutboxPolicy  `json:"internal_outbox"`
 }
 
 type RoutingPolicy struct {
@@ -84,6 +86,21 @@ type BudgetAlertPolicy struct {
 	RetiredGlobalSettingKeys   []string `json:"retired_global_setting_keys"`
 }
 
+type InternalOutboxPolicy struct {
+	Version                  string `json:"version"`
+	Backend                  string `json:"backend"`
+	WorkerCount              int    `json:"worker_count"`
+	BatchSize                int    `json:"batch_size"`
+	PollIntervalMilliseconds int    `json:"poll_interval_milliseconds"`
+	LeaseSeconds             int    `json:"lease_seconds"`
+	EvidenceMaxAttempts      int    `json:"evidence_max_attempts"`
+	FinancialRetryMode       string `json:"financial_retry_mode"`
+	TraceLagSLOSeconds       int    `json:"trace_lag_slo_seconds"`
+	PriorityPolicy           string `json:"priority_policy"`
+	LowPriorityReserve       string `json:"low_priority_reserve"`
+	ExternalExporterEnabled  bool   `json:"external_exporter_enabled"`
+}
+
 func New(routing routingpolicy.Config, stream streampolicy.Config) (Snapshot, error) {
 	if err := routing.Validate(); err != nil {
 		return Snapshot{}, fmt.Errorf("routing policy: %w", err)
@@ -91,6 +108,7 @@ func New(routing routingpolicy.Config, stream streampolicy.Config) (Snapshot, er
 	if err := stream.Validate(); err != nil {
 		return Snapshot{}, fmt.Errorf("stream transport policy: %w", err)
 	}
+	outboxOptions := outbox.DefaultOptions()
 	return Snapshot{
 		Version: Version,
 		Source:  "startup_environment_and_schema_contract",
@@ -128,7 +146,7 @@ func New(routing routingpolicy.Config, stream streampolicy.Config) (Snapshot, er
 			RuntimeBudgetMode:          "reserve_estimate_on_every_ancestor_settle_actual",
 			RuntimeRateMode:            "exact_redis_sliding_window_on_every_ancestor",
 			RuntimeConcurrencyMode:     "expiring_redis_lease_on_every_ancestor",
-			RuntimeRecoveryMode:        "conservative_ttl_until_p6_f20_durable_terminal_hook",
+			RuntimeRecoveryMode:        "durable_postgresql_outbox_and_terminal_journal",
 			MaxInvocationLeaseSeconds:  int(agentcap.MaxInvocationLeaseTTL.Seconds()),
 			FinalizationGraceSeconds:   int(agentcap.InvocationFinalizationGrace.Seconds()),
 		},
@@ -137,7 +155,7 @@ func New(routing routingpolicy.Config, stream streampolicy.Config) (Snapshot, er
 			Scope:                      "project",
 			BudgetSource:               "projects.budget_cents",
 			PeriodSource:               "projects.budget_period",
-			EvaluationTrigger:          "post_settlement",
+			EvaluationTrigger:          "incremental_settled_journal_outbox",
 			EventLedger:                "notification_events",
 			DeliveryRouteSource:        "notification_webhooks",
 			EventType:                  "project_budget.threshold",
@@ -148,6 +166,20 @@ func New(routing routingpolicy.Config, stream streampolicy.Config) (Snapshot, er
 				"budget_alert_threshold_cents",
 				"budget_cents",
 			},
+		},
+		InternalOutbox: InternalOutboxPolicy{
+			Version:                  outbox.Version,
+			Backend:                  "postgresql_internal",
+			WorkerCount:              outboxOptions.WorkerCount,
+			BatchSize:                outboxOptions.BatchSize,
+			PollIntervalMilliseconds: int(outboxOptions.PollInterval.Milliseconds()),
+			LeaseSeconds:             int(outboxOptions.LeaseDuration.Seconds()),
+			EvidenceMaxAttempts:      outboxOptions.MaxAttempts,
+			FinancialRetryMode:       "until_success_or_terminal_expiry",
+			TraceLagSLOSeconds:       int(outboxOptions.TraceLagSLO.Seconds()),
+			PriorityPolicy:           "billing_then_audit_then_call_log_then_notification_then_trace",
+			LowPriorityReserve:       "one_quarter_per_claim_batch",
+			ExternalExporterEnabled:  false,
 		},
 	}, nil
 }

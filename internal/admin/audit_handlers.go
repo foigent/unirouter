@@ -235,6 +235,13 @@ type auditMeta struct {
 }
 
 func (h *Handler) recordAuditEntry(ctx context.Context, action, resource, resourceID string, detail map[string]interface{}, meta auditMeta) {
+	if h != nil && h.outbox != nil {
+		if err := h.enqueueAuditEntry(ctx, action, resource, resourceID, detail, meta); err == nil {
+			return
+		} else {
+			log.Printf("audit outbox failed; falling back to direct insert: %s %s/%s: %v", action, resource, resourceID, err)
+		}
+	}
 	if err := insertAuditEntry(ctx, h.db, action, resource, resourceID, detail, meta); err != nil {
 		log.Printf("audit log failed: %s %s/%s: %v", action, resource, resourceID, err)
 	}
@@ -397,11 +404,17 @@ func (h *Handler) cleanupOldData(ctx context.Context, retentionDays, traceRetent
 	staleRows.Close()
 	releasedCount := 0
 	for _, reservation := range stale {
-		if err := billing.CancelReservation(ctx, h.db, reservation.requestID, reservation.orgID); err != nil {
-			if errors.Is(err, billing.ErrSettlementPending) {
+		var cancelErr error
+		if h.outbox != nil {
+			cancelErr = billing.CancelReservationWithOutbox(ctx, h.db, h.outbox, reservation.requestID, reservation.orgID)
+		} else {
+			cancelErr = billing.CancelReservation(ctx, h.db, reservation.requestID, reservation.orgID)
+		}
+		if cancelErr != nil {
+			if errors.Is(cancelErr, billing.ErrSettlementPending) {
 				continue
 			}
-			return fmt.Errorf("release stale frozen request %s: %w", reservation.requestID, err)
+			return fmt.Errorf("release stale frozen request %s: %w", reservation.requestID, cancelErr)
 		}
 		releasedCount++
 	}

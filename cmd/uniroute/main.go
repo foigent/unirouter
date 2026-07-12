@@ -31,6 +31,7 @@ import (
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/migrate"
 	"github.com/uniroute/unirouter/internal/oidc"
+	"github.com/uniroute/unirouter/internal/outbox"
 	"github.com/uniroute/unirouter/internal/policybilling"
 	"github.com/uniroute/unirouter/internal/redisx"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
@@ -119,8 +120,19 @@ func main() {
 		log.Fatalf("Invalid effective routing configuration: %v", err)
 	}
 	billingSvc := billing.NewBilling(postgres.Pool, redisClient.Client)
+	outboxSvc, err := outbox.New(postgres.Pool, outbox.DefaultOptions())
+	if err != nil {
+		log.Fatalf("Failed to initialize internal outbox: %v", err)
+	}
+	billingSvc.SetOutbox(outboxSvc)
+	terminalHookSvc, err := newRuntimeTerminalHooks(postgres.Pool, outboxSvc, agentCapabilityService, limitPolicyService)
+	if err != nil {
+		log.Fatalf("Failed to initialize durable runtime terminal hooks: %v", err)
+	}
 	agentBudgetBilling := capbilling.New(billingSvc, agentCapabilityService)
+	agentBudgetBilling.SetTerminalHooks(terminalHookSvc)
 	sharedPolicyBilling := policybilling.New(agentBudgetBilling, limitPolicyService)
+	sharedPolicyBilling.SetTerminalHooks(terminalHookSvc)
 	settlementRecoveryCtx, stopSettlementRecovery := context.WithCancel(context.Background())
 	defer stopSettlementRecovery()
 	go billingSvc.RunSettlementRecoveryLoop(settlementRecoveryCtx, 10*time.Second, 100)
@@ -137,6 +149,7 @@ func main() {
 	}
 	encKey := []byte(cfg.EncryptionKey)
 	relay := gateway.NewRelay(postgres.Pool, redisClient.Client, router, sharedPolicyBilling, sensitiveFilter, encKey)
+	relay.SetOutbox(outboxSvc)
 	if err := relay.SetStreamPolicy(effectiveConfig.StreamTransport.Config); err != nil {
 		log.Fatalf("Invalid effective stream transport configuration: %v", err)
 	}
@@ -144,9 +157,11 @@ func main() {
 	relay.SetPayloadCaptureMode(cfg.PayloadCaptureMode)
 	relay.SetEvidenceContextTrustSecret(cfg.EvidenceContextTrustSecret)
 	eventSvc := billing.NewEventService(postgres.Pool)
+	eventSvc.SetOutbox(outboxSvc)
 	relay.SetEventService(eventSvc)
 
 	adminHandler := admin.NewHandlerWithAPIKeyHashSecret(postgres.Pool, cfg.JWTSecret, cfg.APIKeyHashSecret, encKey, sensitiveFilter)
+	adminHandler.SetOutbox(outboxSvc)
 	adminHandler.SetRoutingController(router)
 	adminHandler.SetLimitPolicyReloader(limitPolicyService)
 	licenseVerifier, err := licensing.NewVerifierFromPublicKey(cfg.LicensePublicKey, cfg.LicenseExpiryWarningDays)
@@ -166,6 +181,30 @@ func main() {
 		GrafanaURL:      cfg.GrafanaURL,
 		EffectiveConfig: effectiveConfig,
 	})
+	for _, registration := range []struct {
+		eventType string
+		handler   outbox.Handler
+	}{
+		{outbox.EventBillingUsagePrepared, billingSvc.ProcessUsageJournalEvent},
+		{outbox.EventBillingSettled, billingSvc.ProcessUsageJournalEvent},
+		{outbox.EventBillingCancelled, billingSvc.ProcessUsageJournalEvent},
+		{outbox.EventCallLog, relay.ProcessCallLogOutbox},
+		{outbox.EventTrace, relay.ProcessTraceOutbox},
+		{outbox.EventAudit, adminHandler.ProcessAuditOutbox},
+		{outbox.EventBudgetEvaluate, eventSvc.ProcessBudgetEvaluation},
+		{outbox.EventNotificationDelivery, eventSvc.ProcessNotificationDelivery},
+		{outbox.EventRuntimeTerminal, terminalHookSvc.ProcessEvent},
+	} {
+		if err := outboxSvc.RegisterHandler(registration.eventType, registration.handler); err != nil {
+			log.Fatalf("Failed to register internal outbox handler %s: %v", registration.eventType, err)
+		}
+	}
+	outboxCtx, stopOutbox := context.WithCancel(context.Background())
+	outboxDone := make(chan struct{})
+	go func() {
+		defer close(outboxDone)
+		outboxSvc.Run(outboxCtx)
+	}()
 	oidcService, err := oidc.NewService(oidc.Config{
 		Enabled:            cfg.OIDCEnabled,
 		IssuerURL:          cfg.OIDCIssuerURL,
@@ -196,8 +235,6 @@ func main() {
 	if cfg.LogRetentionDays > 0 || cfg.TraceEventRetentionDays > 0 {
 		go startCleanupLoop(adminHandler, cfg.LogRetentionDays, cfg.TraceEventRetentionDays)
 	}
-
-	go startNotificationRetryLoop(eventSvc)
 
 	// Build HTTP mux
 	mux := http.NewServeMux()
@@ -254,8 +291,8 @@ func main() {
 		return middleware.IdempotencyGuard(idempotencyStore, cfg.APIKeyHashSecret, handler)
 	}
 
-	chatHandler := newGatewayChatHandler(postgres.Pool, relay)
-	embeddingsHandler := newGatewayEmbeddingsHandler(postgres.Pool, relay)
+	chatHandler := newGatewayChatHandler(postgres.Pool, relay, outboxSvc)
+	embeddingsHandler := newGatewayEmbeddingsHandler(postgres.Pool, relay, outboxSvc)
 
 	mux.Handle("POST /v1/chat/completions", gatewayAuth(idempotencyGuard(chatHandler)))
 	mux.Handle("POST /v1/embeddings", gatewayAuth(idempotencyGuard(embeddingsHandler)))
@@ -567,6 +604,12 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+	stopOutbox()
+	select {
+	case <-outboxDone:
+	case <-ctx.Done():
+		log.Printf("Internal outbox workers did not stop before shutdown timeout")
 	}
 	log.Println("Server exited")
 }
