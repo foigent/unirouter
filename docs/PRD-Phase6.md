@@ -1,8 +1,8 @@
 # UniRouter PRD6: Reliable MaaS Policy And Safety Plane
 
-> Version: 0.10
+> Version: 0.11
 > Date: 2026-07-13
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F40 is in progress, P6-F11 remains in progress, and P6-F10/P6-F41 are not started
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F40A is CI verified, P6-F40B is local verified / PR CI pending, P6-F40/P6-F11 remain in progress, and P6-F10/P6-F41 are not started
 > Accepted implementation scope: P6-F03 through P6-F11, P6-F16 through P6-F21, P6-F32 through P6-F41
 > Innovation gate: P6-F23 through P6-F31 remain proposed/deferred
 
@@ -231,7 +231,7 @@ These do not become UniRouter source-code gaps without new evidence.
 | P6-F37 | Tenant-scope audit-log reads and reject foreign organization/project filters | P0 | Accepted safe remediation under PRD6 work rule 7; CI verified by PR #143 |
 | P6-F38 | Run the existing frontend test suite in required CI with stable, bounded interaction timing | P1 | Accepted safe remediation under PRD6 work rule 7; CI verified by PR #143 |
 | P6-F39 | Tenant-scope request-log list/detail/trace, usage analytics/internal status, dashboard usage-derived aggregates and runtime traffic | P0 | Accepted safe remediation under PRD6 work rule 7; merged and CI verified by PR #145 / `609385f` |
-| P6-F40 | Add an in-process provider-cost state machine with atomic prepaid top-up, non-terminal funding holds, attempt-level liability, retry/cancel authorization and bounded operator reconciliation | P0 | Accepted by D6-13; implementation in progress, beginning with the COST-009 shortfall slice |
+| P6-F40 | Add an in-process provider-cost state machine with atomic prepaid top-up, non-terminal funding holds, attempt-level liability, retry/cancel authorization and bounded operator reconciliation | P0 | Accepted by D6-13; implementation in progress. Slice A is CI verified; Slice B provider-attempt/retry-cancel authority is local verified with PR CI pending; Slice C key block/operator reconciliation remains open |
 | P6-F41 | Carry explicit usage authority/purpose/finality and bounded delivery outcome metadata through adapters, gateway, billing and idempotency without storing raw responses | P0 | Accepted by D6-13; not started |
 
 P6-F17 repository/CI evidence is Scheme A evidence. `X-Request-ID` is

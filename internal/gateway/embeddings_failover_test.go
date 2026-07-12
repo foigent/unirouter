@@ -270,7 +270,7 @@ func TestHandleEmbeddings_AllRoutesFailBounded(t *testing.T) {
 	}
 }
 
-func TestHandleEmbeddings_SkipsUnsupportedAdapterAndRetriesTransport(t *testing.T) {
+func TestP6F40BHandleEmbeddingsSkipsUnsupportedAdapterButHoldsAmbiguousTransport(t *testing.T) {
 	dead := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	deadURL := dead.URL
 	dead.Close()
@@ -303,6 +303,7 @@ func TestHandleEmbeddings_SkipsUnsupportedAdapterAndRetriesTransport(t *testing.
 		},
 	}
 	settleCalls := 0
+	var completions []billing.ProviderAttemptCompletion
 	b := &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
 			return &billing.FreezeResult{FreezeID: 1, Amount: 100, Success: true}, nil
@@ -311,26 +312,25 @@ func TestHandleEmbeddings_SkipsUnsupportedAdapterAndRetriesTransport(t *testing.
 			settleCalls++
 			return &billing.SettleResult{SettleID: 1, Success: true}, nil
 		},
+		completeAttemptFn: func(ctx context.Context, req billing.ProviderAttemptCompletion) error {
+			completions = append(completions, req)
+			return nil
+		},
 	}
 	relay := NewRelay(db, nil, NewRouter(db), b, nil, encKey)
 	rec := httptest.NewRecorder()
 
 	relay.HandleEmbeddings(rec, embeddingsRequest("req-embeddings-transport"))
 
-	if rec.Code != http.StatusOK || secondCalls != 1 || settleCalls != 1 {
-		t.Fatalf("expected unsupported adapter and transient transport to fall through once: status=%d second=%d settle=%d body=%s", rec.Code, secondCalls, settleCalls, rec.Body.String())
+	if rec.Code != http.StatusBadGateway || secondCalls != 0 || settleCalls != 0 {
+		t.Fatalf("ambiguous transport must stop before a second paid dispatch: status=%d second=%d settle=%d body=%s", rec.Code, secondCalls, settleCalls, rec.Body.String())
 	}
-	var body map[string]interface{}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	extension := body["_uniroute"].(map[string]interface{})
-	if extension["attempt_count"] != float64(3) || extension["route_count"] != float64(3) || extension["fallback"] != true {
-		t.Fatalf("unexpected three-route evidence: %#v", extension)
+	if len(completions) != 1 || completions[0].Outcome != billing.ProviderAttemptOutcomeUnknown || completions[0].RetryAuthorized {
+		t.Fatalf("expected one financially ambiguous terminal attempt, got %#v", completions)
 	}
 }
 
-func TestHandleEmbeddings_MalformedSuccessDoesNotSettleOrPanic(t *testing.T) {
+func TestP6F40BHandleEmbeddingsMalformedSuccessRetainsProviderLiability(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`not-json`))
@@ -351,6 +351,7 @@ func TestHandleEmbeddings_MalformedSuccessDoesNotSettleOrPanic(t *testing.T) {
 	}
 	settleCalls := 0
 	cancelCalls := 0
+	var completions []billing.ProviderAttemptCompletion
 	b := &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
 			return &billing.FreezeResult{FreezeID: 1, Amount: 100, Success: true}, nil
@@ -363,14 +364,21 @@ func TestHandleEmbeddings_MalformedSuccessDoesNotSettleOrPanic(t *testing.T) {
 			cancelCalls++
 			return nil
 		},
+		completeAttemptFn: func(ctx context.Context, req billing.ProviderAttemptCompletion) error {
+			completions = append(completions, req)
+			return nil
+		},
 	}
 	relay := NewRelay(db, nil, NewRouter(db), b, nil, encKey)
 	rec := httptest.NewRecorder()
 
 	relay.HandleEmbeddings(rec, embeddingsRequest("req-embeddings-malformed"))
 
-	if rec.Code != http.StatusInternalServerError || settleCalls != 0 || cancelCalls != 1 {
+	if rec.Code != http.StatusInternalServerError || settleCalls != 0 || cancelCalls != 0 {
 		t.Fatalf("malformed success invariant failed: status=%d settle=%d cancel=%d body=%s", rec.Code, settleCalls, cancelCalls, rec.Body.String())
+	}
+	if len(completions) != 2 || completions[0].Outcome != billing.ProviderAttemptOutcomeResponseAccepted || completions[1].Outcome != billing.ProviderAttemptOutcomeResponseUnusable {
+		t.Fatalf("malformed 200 must retain provider liability, got %#v", completions)
 	}
 }
 

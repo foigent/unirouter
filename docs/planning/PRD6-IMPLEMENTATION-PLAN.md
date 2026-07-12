@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-13
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F39 and P6-STREAM-002A are CI verified / closed; P6-F40/P6-F11 are in progress and P6-F10/P6-F41 are not started
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F39 and P6-STREAM-002A are CI verified / closed; P6-F40A is CI verified, P6-F40B is local verified / PR CI pending, P6-F40/P6-F11 remain in progress, and P6-F10/P6-F41 are not started
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -313,7 +313,8 @@ No response cache is enabled.
 delivery semantics.
 **Gate:** D6-13 is accepted. No negative customer debt, silent platform
 subsidy, separate Cost Control Service or raw response retention is authorized.
-**Status:** P6-F40 is in progress; P6-F41 is not started.
+**Status:** P6-F40A is CI verified; P6-F40B is local verified with required PR
+CI pending; P6-F40 remains in progress through P6-F40C; P6-F41 is not started.
 
 Ordered slices:
 
@@ -324,7 +325,8 @@ Ordered slices:
 2. P6-F40B adds the PostgreSQL provider-attempt ledger before every paid
    dispatch, separates availability retryability from outcome certainty,
    blocks ambiguous duplicate spend and replaces post-200 ordinary
-   cancellation with provider-cost pending.
+   cancellation with provider-cost pending. Repository implementation and
+   local race/migration/full-stack gates pass; required PR CI is pending.
 3. P6-F40C binds pending cost to the API key and adds tenant-safe,
    platform-authorized operator reconciliation for collect/refund/bounded
    subsidy decisions. No silent unblock is allowed.

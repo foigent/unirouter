@@ -5,6 +5,9 @@ BEGIN;
 -- either behavior has been exercised.
 DO $$
 BEGIN
+    IF to_regclass('public.billing_provider_attempts') IS NOT NULL THEN
+        RAISE EXCEPTION 'P6-F40 down refused: P6-F40B provider-attempt schema exists; apply migration 000029 down first';
+    END IF;
     IF EXISTS (
         SELECT 1
         FROM freeze_idempotency

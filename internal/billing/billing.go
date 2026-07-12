@@ -46,6 +46,7 @@ type FreezeResult struct {
 // SettleRequest contains the parameters for a settlement.
 type SettleRequest struct {
 	RequestID            string
+	AttemptID            string
 	OrgID                int64
 	ActualCost           int
 	PromptTokens         int
@@ -594,6 +595,10 @@ func isUniqueViolation(err error) bool {
 }
 
 func normalizeSettlementUsage(req SettleRequest) (SettleRequest, error) {
+	req.AttemptID = strings.TrimSpace(req.AttemptID)
+	if len(req.AttemptID) > 64 {
+		return req, fmt.Errorf("billing attempt_id exceeds 64 characters")
+	}
 	values := map[string]int{
 		"prompt_tokens":          req.PromptTokens,
 		"uncached_prompt_tokens": req.UncachedPromptTokens,
@@ -738,6 +743,9 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		if err := persistFundingPendingTx(ctx, tx, b.outbox, record, req, calculatedCost, topUpAmount, costBreakdown); err != nil {
 			return nil, err
 		}
+		if err := markProviderAttemptFundingPendingTx(ctx, tx, req, calculatedCost); err != nil {
+			return nil, err
+		}
 		if err := tx.Commit(ctx); err != nil {
 			return nil, fmt.Errorf("commit funding-pending settlement: %w", err)
 		}
@@ -840,6 +848,9 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("update idempotency: %w", err)
+	}
+	if err := markProviderAttemptSettledTx(ctx, tx, req, calculatedCost, chargedCost, settleID); err != nil {
+		return nil, err
 	}
 
 	// A recovered stream may already have a best-effort call log with zero
@@ -1255,6 +1266,16 @@ func cancelReservation(ctx context.Context, database internaldb.DBQuerier, servi
 		// Continue below.
 	default:
 		return fmt.Errorf("cannot cancel billing reservation in state %s", record.Status)
+	}
+	providerAttemptHeld, err := holdUnresolvedProviderAttemptTx(ctx, tx, requestID, orgID)
+	if err != nil {
+		return err
+	}
+	if providerAttemptHeld {
+		if err := tx.Commit(ctx); err != nil {
+			return fmt.Errorf("commit provider-attempt hold: %w", err)
+		}
+		return ErrProviderAttemptUnresolved
 	}
 	if err := lockWalletForBilling(ctx, tx, orgID); err != nil {
 		return err

@@ -21,6 +21,8 @@ type fakeProvider struct {
 	settleErr   error
 	cancelErr   error
 	cancelCalls int
+	beginReq    billing.ProviderAttemptStart
+	completeReq billing.ProviderAttemptCompletion
 }
 
 func (p *fakeProvider) QueryModelPriceForOrg(context.Context, int64, string) (float64, float64, error) {
@@ -33,6 +35,38 @@ func (p *fakeProvider) CalculateCost(context.Context, string, int, int) (int, er
 
 func (p *fakeProvider) Freeze(context.Context, billing.FreezeRequest) (*billing.FreezeResult, error) {
 	return p.freeze, p.freezeErr
+}
+
+func (p *fakeProvider) BeginProviderAttempt(_ context.Context, req billing.ProviderAttemptStart) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.beginReq = req
+	return nil
+}
+
+func TestP6F40BProviderAttemptAuthorityPassesThroughCapabilityBilling(t *testing.T) {
+	provider := &fakeProvider{}
+	service := New(provider, nil)
+	start := billing.ProviderAttemptStart{RequestID: "op_cap_attempt", AttemptID: "att_cap_attempt", OrgID: 7}
+	completion := billing.ProviderAttemptCompletion{RequestID: start.RequestID, AttemptID: start.AttemptID, OrgID: 7, Outcome: billing.ProviderAttemptOutcomeUnknown}
+	if err := service.BeginProviderAttempt(t.Context(), start); err != nil {
+		t.Fatalf("begin provider attempt: %v", err)
+	}
+	if err := service.CompleteProviderAttempt(t.Context(), completion); err != nil {
+		t.Fatalf("complete provider attempt: %v", err)
+	}
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+	if provider.beginReq != start || provider.completeReq != completion {
+		t.Fatalf("provider-attempt authority changed across capability billing: begin=%+v complete=%+v", provider.beginReq, provider.completeReq)
+	}
+}
+
+func (p *fakeProvider) CompleteProviderAttempt(_ context.Context, req billing.ProviderAttemptCompletion) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.completeReq = req
+	return nil
 }
 
 func (p *fakeProvider) MarkBillableOutput(context.Context, string, int64) error { return nil }
