@@ -30,7 +30,7 @@
 23. `docs/ops/evidence/PRD6-B1-P6F19A-agent-capability-kernel-local-20260712.md` - explicit Agent registration, five-minute capability, refresh/revocation and topology evidence.
 24. `docs/ops/evidence/PRD6-B1-P6F19B-agent-ancestor-budget-local-20260712.md` - shared per-ancestor cost/token/rate/concurrency implementation and P6-F19 closure evidence.
 25. `docs/ops/evidence/PRD6-B1-P6F07-distributed-limit-policy-local-20260712.md` - versioned shared selector/rate/token/concurrency, control-plane, migration and CI closure evidence.
-26. `docs/ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md` - local-verified weighted leases, fair queues, fault/mixed-config and current non-claims; required CI pending.
+26. `docs/ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md` - CI-verified weighted leases, fair queues, fault/mixed-config, PR #170/main runs and current non-claims.
 27. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` - source-backed UI, reconciliation, correlation, architecture and upgrade audit.
 28. `docs/planning/PRD7-CANDIDATE-BACKLOG.md` - future first direction selected; implementation deferred until PRD6 closeout.
 29. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` - accepted future independent Cache Service target, planning bands and SaaS prerequisites; implementation deferred.
@@ -117,11 +117,12 @@ prove atomic shared cost/token/rate/concurrency enforcement and real Redis 7/
 PostgreSQL readback. P6-F07 is independently CI verified / closed by PR #168,
 merge `2610e317` and main run `29174001859` for versioned selectors, shared
 RPM/RPS/TPM/concurrency, bounded failure behavior, policy evidence, control UI
-and safe migration rollback. P6-F21 weighted admission is local verified on
-`codex/prd6-weighted-workload-admission`, including two/three-replica exact
-capacity, fair bounded queues, crash/fault and mixed-config behavior; required
-CI, merge and post-merge main regression remain. P6-F20 durable terminal
-coupling and D6-10 dynamic long-stream extension remain separate.
+and safe migration rollback. P6-F21 weighted admission is CI verified / closed
+by PR #170 exact-head run `29176160987`, squash merge `04af91f` and post-merge
+main run `29176358459`, including two/three-replica exact capacity, fair bounded
+queues, crash/fault and mixed-config behavior. Its historical branch is
+restored at `a9d8f3e`. P6-F20 durable terminal coupling and D6-10 dynamic
+long-stream extension remain separate.
 The adaptive-trust, Digital Twin,
 shadow, collusion, trust-receipt and claim-assurance rows remain proposed and
 are not implied by D6-01.
@@ -234,10 +235,11 @@ P6-F07 exact-head run `29173848811`, squash merge `2610e317` and post-merge
 main run `29174001859` passed all required jobs, including real Redis/
 PostgreSQL policy and migration rollback gates. Its historical branch is
 restored at `f52a151`; no target capacity or deployment claim is made.
-P6-F21 full local race and two/three-replica real Redis tests pass on
-`codex/prd6-weighted-workload-admission`; required CI/head/merge/main evidence
-is still pending, so the row remains open. Local Docker is unavailable and no
-target/deployment claim is made.
+P6-F21 full local race and two/three-replica real Redis tests pass. PR #170
+exact head `a9d8f3e` passed run `29176160987`, was squash-merged as `04af91f`,
+and post-merge main run `29176358459` passed all required jobs. The row and
+Batch 1 are CI verified / closed; local Docker remains unavailable, and no
+target/deployment or target-capacity claim is made.
 P6-F36 does not reopen P6-F16, add a migration/RLS/foreign-key redesign, change
 unregistered-model compatibility or `/v1/models`, or add a selector UI/target
 cleanup.

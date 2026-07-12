@@ -1,8 +1,8 @@
-# PRD6 Batch 1 P6-F21 Weighted Workload Admission — Local Evidence
+# PRD6 Batch 1 P6-F21 Weighted Workload Admission — Repository And CI Evidence
 
 > Date: 2026-07-12
-> Scope: repository/local evidence only
-> Status: Local verified; required CI pending
+> Scope: repository, local and required-CI evidence; no target/deployment claim
+> Status: CI verified / closed
 > Parent row: P6-F21
 
 ## Accepted contract exercised
@@ -75,7 +75,7 @@ go test -race ./internal/workloadadmission -count=3
 go test -race ./internal/limitpolicy -run TestP6F21WorkloadAdmissionRunsAfterAPIKeyAttemptRate -count=3
 go test -race ./internal/config ./cmd/uniroute ./internal/errdocs ./internal/workloadadmission ./internal/limitpolicy ./internal/policybilling ./internal/gateway ./internal/middleware ./internal/redisx -count=1
 go test -race -coverprofile=coverage.out ./...
-go test -tags=integration -race ./internal/workloadadmission -run TestP6F21 -count=3
+go test -tags=integration -race ./internal/workloadadmission -run TestP6F21 -count=10
 REQUIRE_TEST_DATABASE=1 go test -tags=integration -race ./internal/admin -run TestP6F07LimitPolicyControlPlaneIntegration -count=1
 npm test -- --run src/pages/__tests__/LimitPoliciesPage.test.tsx
 npm run type-check
@@ -112,7 +112,7 @@ The full CI-style PostgreSQL/Redis integration sequence also passed, including
 all admin, routing, budget alert, multiplier, stream transport, Agent
 capability, distributed policy, workload admission and migration rollback
 steps. The local machine does not provide the `docker` command, so the Docker
-image build remains an explicit required-CI gate rather than a local claim.
+image result below is required-CI evidence rather than a local claim.
 
 ## Explicit non-claims and remaining work
 
@@ -140,8 +140,21 @@ image build remains an explicit required-CI gate rather than a local claim.
 
 ## Pull request and required CI
 
-- implementation head: pending;
-- PR and exact-head required run: pending;
-- squash merge and post-merge `main` run: pending; and
-- the historical implementation branch must be restored at its exact head
-  after squash merge.
+- implementation commit `91041a5289b98b7fb13570bd2e5744362c02fe37`
+  and final exact head `a9d8f3ef92e71117865df2c49e40c0806044a2d0`;
+- PR #170 exact-head run `29176160987` passed Backend Tests in 5m26s,
+  Frontend Build in 3m29s and Docker Build in 1m5s;
+- the earlier run `29175888305` failed only in the new real-Redis fixture:
+  race-enabled CI exceeded the unit fixture's 50-ms healthy-store budget and
+  therefore exercised the separately tested emergency fallback. Commit
+  `a9d8f3e` isolated healthy-capacity verification with a 500-ms test-only
+  budget, retained the exact 5 admitted / 25 denied assertion, changed no
+  production defaults and then passed ten consecutive local real-Redis race
+  runs plus the successful required run;
+- PR #170 was squash-merged as
+  `04af91f2d5c829796c394d8f4509678cc674f642`;
+- post-merge `main` run `29176358459` passed Backend Tests in 5m13s, Frontend
+  Build in 3m11s and Docker Build in 1m7s; and
+- GitHub's automatic source-branch deletion was reversed: historical branch
+  `codex/prd6-weighted-workload-admission` is restored at exact head
+  `a9d8f3ef92e71117865df2c49e40c0806044a2d0`.

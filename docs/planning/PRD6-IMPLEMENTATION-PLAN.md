@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-12
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F07, P6-F19 and P6-STREAM-002A are CI verified / closed; P6-F11 remains in progress; P6-F21 is local verified with required CI pending; 4 accepted rows remain not started
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F07, P6-F19, P6-F21 and P6-STREAM-002A are CI verified / closed; P6-F11 remains in progress; 4 accepted rows remain not started
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -30,11 +30,11 @@ required CI. No scope decision grants target/deployment/data/cost authorization.
 
 - 39 total `P6-F*` rows exist in the acceptance matrix;
 - 25 are accepted implementation scope;
-- 19 are CI verified / closed: P6-F01 through P6-F07, P6-F16 through P6-F19
-  and P6-F32 through P6-F39;
-- 6 accepted rows remain unclosed: P6-F11 is in progress through the
-  P6-STREAM-002A transport prerequisite and P6-F21 is local verified with
-  required CI pending; P6-F08 through P6-F10 and P6-F20 remain not started;
+- 20 are CI verified / closed: P6-F01 through P6-F07, P6-F16 through P6-F19,
+  P6-F21 and P6-F32 through P6-F39;
+- 5 accepted rows remain unclosed: P6-F11 is in progress through the
+  P6-STREAM-002A transport prerequisite; P6-F08 through P6-F10 and P6-F20
+  remain not started;
 - 14 rows are not accepted: P6-F12 through P6-F15 and P6-F22 through P6-F31;
 - `P6-TEST-DB-001` is a separate accepted engineering-integrity issue outside
   the feature-row count. PR #155, merge `4b18ace` and post-merge main run
@@ -208,14 +208,14 @@ reviewable.
 **Gate:** D6-01/D6-02 accepted; Batch 0B identity/tenant prerequisites and the
 selected policy contract must be complete.
 
-**Current state:** P6-F19 is CI verified / closed by the P6-F19A capability
-kernel and P6-F19B ancestor-runtime layer. P6-F07 is independently CI verified
-/ closed by PR #168/main run `29174001859` for versioned selectors,
+**Current state:** Batch 1 is CI verified / closed. P6-F19 is closed by the
+P6-F19A capability kernel and P6-F19B ancestor-runtime layer. P6-F07 is
+independently CI verified / closed by PR #168/main run `29174001859` for versioned selectors,
 RPM/RPS/TPM/concurrency, shadow/enforce modes, bounded last-known-safe behavior,
 policy evidence and safe migration rollback. P6-F21 replica-invariant weighted
-global/organization admission, bounded wait and short/long fairness are local
-verified on `codex/prd6-weighted-workload-admission`; required CI, merge and
-post-merge main regression remain before Batch 1 closes. Evidence:
+global/organization admission, bounded wait and short/long fairness passed PR
+#170 exact-head run `29176160987`, squash merge `04af91f` and post-merge main
+run `29176358459`; its historical branch is restored at `a9d8f3e`. Evidence:
 `docs/ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md`.
 
 Design first:

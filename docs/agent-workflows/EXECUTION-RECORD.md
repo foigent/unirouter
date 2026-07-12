@@ -3,8 +3,9 @@
 **Batch:** PRD6 Batch 1 P6-F21 Weighted Workload Admission
 **Owner:** Codex
 **Risk:** R4 distributed fairness, capacity leases and mixed-version safety
-**Status:** Local verified; required CI pending
-**Integration:** branch `codex/prd6-weighted-workload-admission`; PR/head/run pending; no deployment, target or production claim
+**Status:** CI verified / closed
+**Integration:** PR #170; exact head `a9d8f3e`; required run `29176160987`; squash merge `04af91f`; post-merge main run `29176358459`; historical branch restored; no deployment, target or production claim
+**Next batch:** P6-F08 Routing Policy V1, already accepted under D6-01
 **Previous batch:** P6-F07 implementation PR #168 plus closeout PR #169; post-closeout main run `29174500704` passed and both historical branches are restored
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
@@ -36,8 +37,9 @@
   one short pre-issued permit, and cancelled callers cannot consume it;
 - mixed configuration fingerprints return typed 503 until old work drains;
 - full repository race, CI-style PostgreSQL/Redis integration, 28 frontend
-  files / 141 tests, type-check and build passed locally; local Docker CLI is
-  unavailable, so Docker remains a required-CI gate; and
+  files / 141 tests, type-check and build passed locally; PR #170 exact-head
+  Backend/Frontend/Docker CI and post-merge main run `29176358459` passed, while
+  local Docker remains unavailable; and
 - evidence:
   `docs/ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md`.
 
@@ -81,9 +83,8 @@
   admit exactly three; Redis time survives a two-hour application-clock skew;
 - PR #164 and #166 exact-head plus post-merge Backend/Frontend/Docker CI passed,
   including migrated PostgreSQL and Redis 7 authority/runtime integration;
-- P6-F19 is CI verified / closed. P6-F20 remains separate; P6-F07 is
-  independently closed and P6-F21 is independently local verified / CI
-  pending;
+- P6-F19 is CI verified / closed. P6-F20 remains separate; P6-F07 and P6-F21
+  are independently CI verified / closed;
 - evidence:
   `docs/ops/evidence/PRD6-B1-P6F19A-agent-capability-kernel-local-20260712.md`
   and
