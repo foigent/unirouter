@@ -43,6 +43,16 @@ interface KeyOption {
 interface BuiltinLimits {
   global_concurrency?: number;
   organization_concurrency?: number;
+  workload_global_capacity?: number;
+  workload_organization_capacity?: number;
+  workload_global_short_reserve?: number;
+  workload_organization_short_reserve?: number;
+  workload_interactive_weight?: number;
+  workload_stream_weight?: number;
+  workload_embedding_weight?: number;
+  workload_interactive_max_wait_ms?: number;
+  workload_stream_max_wait_ms?: number;
+  workload_embedding_max_wait_ms?: number;
 }
 
 function selectorText(policy: LimitPolicy) {
@@ -213,7 +223,9 @@ export default function LimitPoliciesPage() {
         <Paragraph>RPS 是每秒请求数，RPM 是每分钟请求数，TPM 是每分钟可预留并最终按实际用量结算的 Token；并发是同一时刻正在执行的请求数。</Paragraph>
         <Paragraph><Text strong>推荐先用“影子观察”：</Text>只记录“本来会拦截”的结果，不影响业务；确认阈值后再切到“正式拦截”。所有匹配策略会叠加，较具体的策略只能进一步收紧。</Paragraph>
         <Paragraph>每个访问凭证自身的 RPM/RPS 也是内置共享策略；表格中的组织、项目、模型和标签策略会在它之上继续收紧。</Paragraph>
-        <Paragraph><Text strong>当前内置并发硬上限：</Text>全平台 {builtinLimits.global_concurrency ?? '加载中'}，每个组织 {builtinLimits.organization_concurrency ?? '加载中'}。新增策略只能低于这些上限，不能用更大的数字把它放宽。</Paragraph>
+        <Paragraph><Text strong>当前内置加权容量：</Text>全平台 {builtinLimits.workload_global_capacity ?? builtinLimits.global_concurrency ?? '加载中'} 个容量单位，每个组织 {builtinLimits.workload_organization_capacity ?? builtinLimits.organization_concurrency ?? '加载中'} 个。普通对话和 Embeddings 每次占 {builtinLimits.workload_interactive_weight ?? 1} 个，流式对话占 {builtinLimits.workload_stream_weight ?? 4} 个；平台和组织分别至少为短请求保留 {builtinLimits.workload_global_short_reserve ?? 10} / {builtinLimits.workload_organization_short_reserve ?? 2} 个单位。</Paragraph>
+        <Paragraph><Text strong>公平等待：</Text>普通对话最多等待 {builtinLimits.workload_interactive_max_wait_ms ?? 50} 毫秒，Embeddings 最多等待 {builtinLimits.workload_embedding_max_wait_ms ?? 50} 毫秒，流式对话最多等待 {builtinLimits.workload_stream_max_wait_ms ?? 250} 毫秒。仍无容量时返回 429 和 Retry-After，客户端可以稍后重试；增加 UniRouter 副本不会把这些数字成倍放大。</Paragraph>
+        <Paragraph>表格中的“并发”仍表示匹配策略允许的同时请求数，并且只能进一步收紧内置容量，不能把它放宽。</Paragraph>
         <Paragraph><Text strong>故障策略：</Text>默认在 Redis 无法确认额度时立即返回 503。选择“短暂安全许可”时，也只能使用健康期预先拿到、约 2 秒失效且每个副本最多 1 次的许可，不会无限放行。</Paragraph>
       </Surface>
 

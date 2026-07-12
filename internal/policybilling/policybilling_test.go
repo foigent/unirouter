@@ -9,6 +9,7 @@ import (
 	"github.com/uniroute/unirouter/internal/limitpolicy"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/models"
+	"github.com/uniroute/unirouter/internal/workloadadmission"
 )
 
 type fakeProvider struct {
@@ -124,7 +125,8 @@ func TestPolicyLifecycleUsesServerSubjectAndActualUsage(t *testing.T) {
 	inner := &fakeProvider{}
 	runtime := &fakeRuntime{}
 	service := New(inner, runtime)
-	result, err := service.Freeze(policyContext(), billing.FreezeRequest{
+	ctx := workloadadmission.ContextWithClass(policyContext(), workloadadmission.ClassStream)
+	result, err := service.Freeze(ctx, billing.FreezeRequest{
 		RequestID: "operation-success", OrgID: 7, Model: "company-chat",
 		EstimatedTokens: 100, EstimatedInputTokens: 40, ReservedCompletionTokens: 60,
 	})
@@ -138,6 +140,9 @@ func TestPolicyLifecycleUsesServerSubjectAndActualUsage(t *testing.T) {
 	}
 	if request.Subject.BaseRPSLimit != 10 || request.Subject.BaseRPMLimit != 60 {
 		t.Fatalf("API-key base limits not propagated: %#v", request.Subject)
+	}
+	if request.WorkloadClass != workloadadmission.ClassStream {
+		t.Fatalf("server-derived workload class = %q", request.WorkloadClass)
 	}
 	settled, err := service.Settle(context.Background(), billing.SettleRequest{
 		RequestID: "operation-success", OrgID: 7, PromptTokens: 44, CompletionTokens: 22,
@@ -249,6 +254,8 @@ func TestErrorCodesAreTyped(t *testing.T) {
 		{limitpolicy.ErrRPMExceeded, ErrorCodeRPMExceeded},
 		{limitpolicy.ErrTPMExceeded, ErrorCodeTPMExceeded},
 		{limitpolicy.ErrConcurrencyExceeded, ErrorCodeConcurrencyExceeded},
+		{limitpolicy.ErrWorkloadCapacity, ErrorCodeWorkloadCapacity},
+		{limitpolicy.ErrWorkloadConfig, ErrorCodeWorkloadConfig},
 		{limitpolicy.ErrConflict, ErrorCodeConflict},
 		{limitpolicy.ErrStateUnavailable, ErrorCodeStateUnavailable},
 	}

@@ -8,7 +8,7 @@
 |------|------|-------|
 | Main server | `cmd/uniroute/main.go` | Loads config, connects Postgres/Redis, runs migrations, wires gateway/admin routes, starts background cleanup and alerts |
 | Main tests | `cmd/uniroute/main_test.go` | Top-level route behavior tests |
-| Config | `internal/config/config.go` | Environment config and validation, including secrets, optional license, trace/retention, Runtime Status integration metadata and validated stream-transport policy |
+| Config | `internal/config/config.go` | Environment config and validation, including secrets, optional license, trace/retention, Runtime Status integration metadata, stream transport and weighted workload admission |
 | Database | `internal/db/postgres.go` | pgx pool setup and health |
 | Redis | `internal/redisx/redis.go` | Redis setup, health, wallet cache helpers |
 | Migrations | `migrations/*.sql` | Base schema plus wallet/schema/PRD alignment migrations, including PRD4 API key owner usage attribution in `000016`, request trace events in `000017`, PRD5 structural evidence fields in `000018`, PRD5 Data Exchange Control ledger in `000019`, PRD6 historical Webhook scope quarantine in `000020`, operation/billing/stream invariants in `000021`-`000023`, and distributed limit policies in `000024` |
@@ -24,7 +24,8 @@
 | `internal/agentcap` | Signed short Agent capabilities, explicit topology, shared revocation/root-authority checks, and atomic per-ancestor cost/token/rate/concurrency state |
 | `internal/capapi` | Strict exchange/delegate/refresh/revoke HTTP control surface for model-gateway Agent authority |
 | `internal/capbilling` | Joins normal wallet Freeze/Settle/Cancel terminals to Agent ancestor reservation without widening external authority |
-| `internal/limitpolicy` | Indexed versioned global/org/project/API-key/model/label policy snapshots plus exact Redis RPM/RPS/TPM/concurrency admission, bounded last-known-safe failure state, terminal settlement and low-cardinality evidence metrics |
+| `internal/limitpolicy` | Indexed versioned global/org/project/API-key/model/label policy snapshots plus exact Redis RPM/RPS/TPM/concurrency admission, composed weighted workload admission, bounded last-known-safe failure state, terminal settlement and low-cardinality evidence metrics |
+| `internal/workloadadmission` | Redis-time, cluster-safe, replica-invariant global/org weighted leases and bounded fair queues for interactive, stream and embedding work |
 | `internal/policybilling` | Composes distributed policy admission and terminal usage around the existing Agent-ancestor and durable wallet billing providers |
 | `internal/circuitbreaker` | Standalone circuit breaker implementation and tests |
 | `internal/filter` | DFA sensitive-word filter |

@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-12
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F07, P6-F19 and P6-STREAM-002A are CI verified / closed; P6-F11 remains in progress; P6-F07 closed through PR #168/main run `29174001859`; 5 accepted rows remain not started
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F07, P6-F19 and P6-STREAM-002A are CI verified / closed; P6-F11 remains in progress; P6-F21 is local verified with required CI pending; 4 accepted rows remain not started
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -33,8 +33,8 @@ required CI. No scope decision grants target/deployment/data/cost authorization.
 - 19 are CI verified / closed: P6-F01 through P6-F07, P6-F16 through P6-F19
   and P6-F32 through P6-F39;
 - 6 accepted rows remain unclosed: P6-F11 is in progress through the
-  P6-STREAM-002A transport prerequisite; P6-F08 through P6-F10, P6-F20 and
-  P6-F21 remain not started;
+  P6-STREAM-002A transport prerequisite and P6-F21 is local verified with
+  required CI pending; P6-F08 through P6-F10 and P6-F20 remain not started;
 - 14 rows are not accepted: P6-F12 through P6-F15 and P6-F22 through P6-F31;
 - `P6-TEST-DB-001` is a separate accepted engineering-integrity issue outside
   the feature-row count. PR #155, merge `4b18ace` and post-merge main run
@@ -212,9 +212,11 @@ selected policy contract must be complete.
 kernel and P6-F19B ancestor-runtime layer. P6-F07 is independently CI verified
 / closed by PR #168/main run `29174001859` for versioned selectors,
 RPM/RPS/TPM/concurrency, shadow/enforce modes, bounded last-known-safe behavior,
-policy evidence and safe migration rollback. The remaining Batch 1 work is
-P6-F21 replica-invariant weighted global/organization admission and short/long
-fairness; it is not implied by either closed row.
+policy evidence and safe migration rollback. P6-F21 replica-invariant weighted
+global/organization admission, bounded wait and short/long fairness are local
+verified on `codex/prd6-weighted-workload-admission`; required CI, merge and
+post-merge main regression remain before Batch 1 closes. Evidence:
+`docs/ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md`.
 
 Design first:
 

@@ -230,6 +230,8 @@ func TestLimitPolicyRuntimeRejectionHTTPContract(t *testing.T) {
 		{code: policybilling.ErrorCodeRPMExceeded, status: http.StatusTooManyRequests, retryAfter: "60"},
 		{code: policybilling.ErrorCodeTPMExceeded, status: http.StatusTooManyRequests, retryAfter: "60"},
 		{code: policybilling.ErrorCodeConcurrencyExceeded, status: http.StatusTooManyRequests, retryAfter: "1"},
+		{code: policybilling.ErrorCodeWorkloadCapacity, status: http.StatusTooManyRequests, retryAfter: "1"},
+		{code: policybilling.ErrorCodeWorkloadConfig, status: http.StatusServiceUnavailable, retryAfter: "1"},
 		{code: policybilling.ErrorCodeStateUnavailable, status: http.StatusServiceUnavailable, retryAfter: "1"},
 		{code: policybilling.ErrorCodeConflict, status: http.StatusConflict},
 	}
@@ -283,6 +285,19 @@ func TestLimitPolicyDecisionSummaryPreservesDegradedEvidencePriority(t *testing.
 	result, reason, _, _, _ = summarizeLimitPolicyDecisions(decisions)
 	if result != "rejected" || reason != limitpolicy.ReasonConcurrency {
 		t.Fatalf("denial summary = %s/%s", result, reason)
+	}
+}
+
+func TestWorkloadDecisionSummaryUsesServerDerivedBoundedFields(t *testing.T) {
+	class, weight, waitMS, queueDepth := summarizeWorkloadDecision([]limitpolicy.Decision{
+		{PolicyRef: "policy:ordinary"},
+		{
+			PolicyRef: "builtin:workload-admission-v1", WorkloadClass: "stream",
+			WorkloadWeight: 4, WaitMS: 23, QueueDepth: 7,
+		},
+	})
+	if class != "stream" || weight != 4 || waitMS != 23 || queueDepth != 7 {
+		t.Fatalf("workload summary=%q/%d/%d/%d", class, weight, waitMS, queueDepth)
 	}
 }
 

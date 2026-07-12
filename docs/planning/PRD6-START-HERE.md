@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-12
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F07, P6-F16-P6-F19, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F07 closed by PR #168/main run `29174001859`
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F07, P6-F16-P6-F19, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F21 is local verified with required CI pending
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -52,19 +52,20 @@ recommended MVP boundary and policy-specific failure posture on 2026-07-11:
 22. `docs/ops/evidence/PRD6-B1-P6F19A-agent-capability-kernel-local-20260712.md`
 23. `docs/ops/evidence/PRD6-B1-P6F19B-agent-ancestor-budget-local-20260712.md`
 24. `docs/ops/evidence/PRD6-B1-P6F07-distributed-limit-policy-local-20260712.md`
-25. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`
-26. `docs/planning/PRD7-CANDIDATE-BACKLOG.md`
-27. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md`
-28. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
-29. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
-30. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
-31. `docs/PRD-Phase6.md`
-32. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
-33. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
-34. `docs/planning/PRD6-BACKLOG.md`
-35. `docs/issues/OPEN-ISSUES.md`
-36. `docs/agent-workflows/AGENT-PROTOCOL.md`
-37. `docs/agent-workflows/EXECUTION-RECORD.md`
+25. `docs/ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md`
+26. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`
+27. `docs/planning/PRD7-CANDIDATE-BACKLOG.md`
+28. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md`
+29. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
+30. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
+31. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
+32. `docs/PRD-Phase6.md`
+33. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
+34. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
+35. `docs/planning/PRD6-BACKLOG.md`
+36. `docs/issues/OPEN-ISSUES.md`
+37. `docs/agent-workflows/AGENT-PROTOCOL.md`
+38. `docs/agent-workflows/EXECUTION-RECORD.md`
 
 PRD5 evidence remains under its existing paths. Do not rewrite it as PRD6
 evidence.
@@ -145,7 +146,11 @@ evidence.
   squash merge `2610e317` and post-merge main run `29174001859`. Shared
   selector RPM/RPS/TPM/concurrency, shadow/enforce, bounded last-known-safe,
   policy evidence, control UI and safe migration rollback passed required CI.
-  P6-F20, P6-F21, D6-10 and target capacity remain unclaimed.
+  P6-F20, D6-10 and target capacity remain unclaimed.
+- P6-F21 is local verified on `codex/prd6-weighted-workload-admission` with
+  two/three-replica real Redis, fairness, crash/fault, bounded queue, typed
+  error, UI and OpenAPI evidence. Required CI, merge and post-merge main
+  regression remain pending, so the row is not closed.
 
 ## PRD5 Closure Guard
 
