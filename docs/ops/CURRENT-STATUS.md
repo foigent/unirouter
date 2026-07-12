@@ -71,8 +71,7 @@
 > cost/token reservation and actual settlement, exact rolling RPM/RPS,
 > Redis-time shared concurrency, typed fail-closed denial and real Redis 7 plus
 > migrated-PostgreSQL readback are verified. Together with P6-F19A, P6-F19 is
-> CI verified / closed; P6-F20 remains separate and P6-F21 is now an
-> independently local-verified slice with required CI pending.
+> CI verified / closed; P6-F20 and P6-F21 remain separate rows.
 > P6-F07 distributed limit policy passed PR #168 exact-head run `29173848811`,
 > was squash-merged as `2610e31790d7964d5c9e491cb1a11552f1ac22ea`,
 > and post-merge main run `29174001859` passed Backend Tests, Frontend Build
@@ -81,12 +80,14 @@
 > shadow/enforce modes, bounded last-known-safe failure behavior, sanitized
 > policy evidence, tenant-scoped optimistic control UI/API, real Redis 7 plus
 > migrated PostgreSQL and guarded down→up migration are CI verified / closed.
-> P6-F21 weighted workload admission is local verified on
-> `codex/prd6-weighted-workload-admission`: server-derived 1/4/1 classes,
-> Redis-time global/org leases, short reserve, bounded fair/per-org queues,
-> crash recovery, bounded LKS, mixed-config fail-closed, typed 429/503 and UI/
-> OpenAPI evidence passed full local race plus real Redis tests. Required CI,
-> merge and post-merge main regression remain pending. P6-F20 durable terminal
+> P6-F21 weighted workload admission passed PR #170 exact-head required run
+> `29176160987`, was squash-merged as
+> `04af91f2d5c829796c394d8f4509678cc674f642`, and post-merge main run
+> `29176358459` passed Backend Tests, Frontend Build and Docker Build. Its
+> historical branch is restored at exact head `a9d8f3e`. Server-derived 1/4/1
+> classes, Redis-time global/org leases, short reserve, bounded fair/per-org
+> queues, crash recovery, bounded LKS, mixed-config fail-closed, typed 429/503
+> and UI/OpenAPI evidence are CI verified / closed. P6-F20 durable terminal
 > recovery and D6-10 dynamic long-stream extension remain separate.
 > No target or production verification is claimed.
 > D6-01, D6-02, D6-08 and D6-09 were accepted by the User on 2026-07-11.
@@ -182,8 +183,10 @@
 - P6-F21 weighted workload-admission evidence:
   `docs/ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md`.
   Full local race, two/three-replica real Redis, lease/fault/fairness/config,
-  UI and OpenAPI verification pass. Required CI is pending; the row is not
-  closed and no deployment or target-capacity claim is made.
+  UI and OpenAPI verification pass. PR #170 exact-head run `29176160987`,
+  merge `04af91f` and post-merge main run `29176358459` passed all required
+  jobs; the row and Batch 1 are CI verified / closed. No deployment or
+  target-capacity claim is made.
 - Source-backed product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
 - PRD7 candidate-only split (not Accepted Scope):
@@ -197,9 +200,9 @@
 - Scope entry: `docs/planning/PRD6-START-HERE.md`.
 - Proposed PRD: `docs/PRD-Phase6.md`; accepted/proposed state is authoritative
   in `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`.
-- Accepted feature accounting after the local-verified P6-F21 slice: 25
-  accepted rows, 19 CI verified / closed and 6 unclosed. P6-F11 and P6-F21
-  are in progress; `P6-F08`-`P6-F10` and `P6-F20` remain not started.
+- Accepted feature accounting after P6-F21 closeout: 25 accepted rows, 20 CI
+  verified / closed and 5 unclosed. P6-F11 is in progress;
+  `P6-F08`-`P6-F10` and `P6-F20` remain not started.
   `P6-TEST-DB-001` is a separate engineering-integrity issue outside that
   25-row feature count; it is CI verified / closed by PR #155 and post-merge
   main run `29157561036`.
@@ -250,10 +253,10 @@ Neither accepted decision is presented as implemented before its exact row
 passes repository and CI evidence. P6-F19A and P6-F19B now have local,
 exact-head and post-merge CI evidence, so P6-F19 is CI verified / closed.
 P6-F07 independently has local, exact-head and post-merge CI evidence for
-generic selectors/TPM/modes and is CI verified / closed. P6-F21 has local
-evidence for weighted shared admission but remains open until required CI,
-merge and post-merge main regression pass. Durable cross-process terminal
-coupling and dynamic long-stream extension remain P6-F20 and D6-10/P6-F11.
+generic selectors/TPM/modes and is CI verified / closed. P6-F21 also has local,
+exact-head and post-merge CI evidence and is CI verified / closed by PR #170
+and main run `29176358459`. Durable cross-process terminal coupling and dynamic
+long-stream extension remain P6-F20 and D6-10/P6-F11.
 
 P6-F35 local evidence covers the repository boundary only. D6-09 defers its
 target activation; a later authorized cutover must drain old control-plane

@@ -103,7 +103,9 @@ Client / Agent
   加权容量：默认平台 100 单位、组织 10 单位，普通/Embedding 权重 1、流式权重
   4，并分别保留 10/2 个短请求单位。增加 gateway 副本不会放大额度；旧
   `AdmissionController` 只保留在 `/v1/models` 等轻量本地保护路径，不能再作为模型
-  调用容量证据。源码：`internal/workloadadmission/`、`internal/limitpolicy/service.go`、
+  调用容量证据。源码与跨副本正确性已由 PR #170 exact-head run `29176160987`、
+  merge `04af91f` 和 post-merge main run `29176358459` 验证；实现位于
+  `internal/workloadadmission/`、`internal/limitpolicy/service.go`、
   `cmd/uniroute/main.go`；目标容量仍未验证；
 - 默认 PostgreSQL pool 为每进程 25，Redis pool 为每进程 10；副本增加会按副本累加
   后端连接。证据：`internal/config/config.go:212-219`、`cmd/uniroute/main.go:53-76`；
