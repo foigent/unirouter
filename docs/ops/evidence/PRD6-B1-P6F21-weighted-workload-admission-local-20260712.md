@@ -2,7 +2,7 @@
 
 > Date: 2026-07-12
 > Scope: repository, local and required-CI evidence; no target/deployment claim
-> Status: CI verified / closed
+> Status: feature CI verified / closed; follow-up test-only stabilization exact-head CI verified
 > Parent row: P6-F21
 
 ## Accepted contract exercised
@@ -89,8 +89,8 @@ High-risk fixtures prove:
 
 - 30 calls spread over two replicas and then three replicas under global 6 /
   organization 5 admit exactly five and deny 25 against real Redis;
-- a 20-call three-service race under organization capacity three admits
-  exactly three, never a per-replica multiple;
+- replica invariance is owned by the 30-call real-Redis fixture above rather
+  than duplicating that claim with miniredis as a load simulator;
 - two weight-four streams consume eight of ten units but cannot take the two
   reserved short units; ordinary Chat and Embeddings can still enter;
 - a long-work waiter receives a fair turn while twelve new short requests
@@ -113,6 +113,68 @@ all admin, routing, budget alert, multiplier, stream transport, Agent
 capability, distributed policy, workload admission and migration rollback
 steps. The local machine does not provide the `docker` command, so the Docker
 image result below is required-CI evidence rather than a local claim.
+
+## Follow-up test-fixture stabilization
+
+Post-merge `main` run `29195355565` for documentation-only PR #179 failed the
+existing miniredis replica-concurrency fixture after about 60 seconds: five
+requests were admitted and fifteen denied instead of three and seventeen. PR
+#179 changed no workload-admission source or test behavior.
+
+Local repetition confirmed the fixture problem rather than hiding it with a CI
+rerun. One race-enabled execution could pass in 7.034 seconds, while a ten-run
+sequence timed out at 45 seconds. The timeout stack showed one miniredis
+`gopher-lua` execution holding its global transaction mutex while other client
+connections waited. With twenty simultaneous clients, that in-memory executor
+can backlog commands until the fixture's one-minute leases expire and then
+admit later arrivals against newly recovered capacity.
+
+The follow-up changes test code only:
+
+- the redundant miniredis multi-client load fixture is removed; miniredis
+  remains responsible for deterministic weight, queue, lease, identity and
+  failure-semantic unit tests, not replica-concurrency evidence;
+- the real-Redis integration fixture remains the concurrency authority with
+  thirty callers spread across two and three instances and exact 5/25
+  admission assertions; it now has a bounded twenty-second context; and
+- no production admission option, Lua transition, Redis key, capacity,
+  fail-open/fail-closed policy or gateway behavior changes.
+
+The first draft of PR #180 still kept a sequential three-client miniredis
+replica fixture. Required run `29198145250` showed that even this reduced fake
+replica proof could exceed its first-call Lua budget under full race/coverage
+instrumentation. Restoring the historical 300-ms test budget did not solve the
+underlying mismatch: a fifty-run local coverage sequence later reached the
+five-second caller bound and timed out. The final patch therefore removes that
+redundant fake-replica test instead of increasing timeouts again; real Redis is
+the sole multi-instance concurrency authority.
+
+Fresh local verification passed:
+
+```text
+go test -race -cover ./internal/workloadadmission -run TestP6F21 -count=20 -timeout=180s
+REDIS_ADDR=127.0.0.1:6391 go test -tags=integration -race ./internal/workloadadmission -run TestP6F21 -count=5 -timeout=120s
+go test -v -race -coverprofile=coverage.out ./...
+go test ./...
+go test -race ./... -count=1
+go vet ./...
+npm --prefix frontend test -- --run
+npm --prefix frontend run type-check
+npm --prefix frontend run build
+git diff --check
+```
+
+The Redis commands used an isolated, persistence-disabled local Redis 8.8.0 on
+port 6391 and never connected to or cleared the existing service on port 6379.
+
+Final runtime/test head `2d85c8e2c17e301631b5b183afdfb5275201e477`
+passed PR #180 required run `29198470294`: Backend Tests in 6m44s, Frontend
+Build in 3m31s and Docker Build in 1m03s. Backend visibly passed the full
+race/coverage suite, Redis 7 weighted workload admission, both prompt-cache
+billing gates, both P6-F20 outbox/terminal-recovery gates and all applicable
+migration rollback gates. A later evidence-only commit must still pass the same
+required jobs before merge; post-merge `main` remains a separate readback, not
+a claim in this paragraph.
 
 ## Explicit non-claims and remaining work
 

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -46,55 +45,6 @@ func newTestService(t *testing.T, server *miniredis.Miniredis, options Options) 
 
 func request(operation string, orgID int64, class string, ttl time.Duration) Request {
 	return Request{OperationID: operation, OrgID: orgID, Class: class, LeaseTTL: ttl}
-}
-
-func TestP6F21ReplicaInvariantWeightedConcurrency(t *testing.T) {
-	server := miniredis.RunT(t)
-	options := testOptions()
-	options.GlobalCapacity = 4
-	options.OrgCapacity = 3
-	options.Stream = ClassPolicy{Weight: 3, MaxWait: 100 * time.Millisecond}
-	options.Interactive = ClassPolicy{Weight: 1, MaxWait: 300 * time.Millisecond}
-	options.StoreTimeout = 500 * time.Millisecond
-	options.ActivePollWindow = 50 * time.Millisecond
-	first, _ := newTestService(t, server, options)
-	second, _ := newTestService(t, server, options)
-	third, _ := newTestService(t, server, options)
-	services := []*Service{first, second, third}
-
-	var admitted atomic.Int64
-	var denied atomic.Int64
-	var unexpected atomic.Int64
-	reservations := make(chan *Reservation, 20)
-	var wait sync.WaitGroup
-	for index := 0; index < 20; index++ {
-		wait.Add(1)
-		go func(index int) {
-			defer wait.Done()
-			reservation, _, err := services[index%len(services)].Reserve(context.Background(), request(
-				fmt.Sprintf("replica-%02d", index), 7, ClassInteractive, time.Minute,
-			))
-			switch {
-			case err == nil:
-				admitted.Add(1)
-				reservations <- reservation
-			case errors.Is(err, ErrCapacityExceeded):
-				denied.Add(1)
-			default:
-				unexpected.Add(1)
-			}
-		}(index)
-	}
-	wait.Wait()
-	close(reservations)
-	if admitted.Load() != 3 || denied.Load() != 17 || unexpected.Load() != 0 {
-		t.Fatalf("admitted=%d denied=%d unexpected=%d", admitted.Load(), denied.Load(), unexpected.Load())
-	}
-	for reservation := range reservations {
-		if err := first.Release(context.Background(), reservation); err != nil {
-			t.Fatal(err)
-		}
-	}
 }
 
 func TestP6F21StreamWeightPreservesShortCapacity(t *testing.T) {
