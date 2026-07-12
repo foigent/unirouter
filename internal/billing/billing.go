@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
 	"math"
 	"strings"
 	"time"
@@ -65,6 +64,7 @@ type SettleResult struct {
 	ActualCost                       int
 	ChargedCost                      int
 	UncoveredCost                    int
+	TopUpAmount                      int
 	Refund                           int
 	NewBalance                       int
 	PricingVersion                   string
@@ -120,6 +120,7 @@ type reservationRecord struct {
 	CalculatedCost              int
 	ChargedCost                 int
 	UncoveredCost               int
+	TopUpAmount                 int
 	RefundAmount                int
 	UncachedInputCost           float64
 	CacheReadCost               float64
@@ -132,6 +133,7 @@ type reservationRecord struct {
 var ErrSettlementPending = errors.New("billing reservation has billable output pending settlement")
 var ErrSettlementUsageNotReady = errors.New("billing settlement usage is not durably prepared")
 var ErrSettlementUsageConflict = errors.New("billing settlement usage conflicts with the durable payload")
+var ErrSettlementFundingPending = errors.New("billing settlement requires additional prepaid funds")
 
 const (
 	cacheUsageStatusNotReported = "not_reported"
@@ -541,7 +543,7 @@ func (b *Billing) lookupReservation(ctx context.Context, requestID string, orgID
 		        prompt_tokens, uncached_prompt_tokens, cache_read_tokens, cache_creation_tokens,
 		        completion_tokens, usage_source, cache_usage_schema, cache_usage_status,
 		        settlement_payload_ready_at, settlement_attempts,
-		        calculated_cost, charged_cost, uncovered_cost,
+		        calculated_cost, charged_cost, uncovered_cost, topup_amount,
 		        refund_amount,
 		        uncached_input_cost_cents::float8, cache_read_cost_cents::float8,
 		        cache_creation_cost_cents::float8, output_cost_cents::float8,
@@ -574,6 +576,7 @@ func (b *Billing) lookupReservation(ctx context.Context, requestID string, orgID
 		&record.CalculatedCost,
 		&record.ChargedCost,
 		&record.UncoveredCost,
+		&record.TopUpAmount,
 		&record.RefundAmount,
 		&record.UncachedInputCost,
 		&record.CacheReadCost,
@@ -711,16 +714,42 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 	if err != nil {
 		return nil, err
 	}
-	chargedCost := minInt(calculatedCost, record.FrozenAmount)
-	uncoveredCost := calculatedCost - chargedCost
+	// A reservation is an admission hold, not a terminal charge ceiling. Use
+	// available prepaid cash for an atomic top-up; never close a known positive
+	// shortfall as an implicit platform subsidy.
+	chargedCost := calculatedCost
+	uncoveredCost := 0
 	grantConsumed := minInt(chargedCost, record.ReservedGrantedAmount)
-	cashConsumed := chargedCost - grantConsumed
-	refundCash := record.ReservedBalanceAmount - cashConsumed
+	totalCashConsumed := chargedCost - grantConsumed
+	topUpAmount := totalCashConsumed - record.ReservedBalanceAmount
+	if topUpAmount < 0 {
+		topUpAmount = 0
+	}
+	reservedCashConsumed := totalCashConsumed - topUpAmount
+	refundCash := record.ReservedBalanceAmount - reservedCashConsumed
 	if refundCash < 0 {
 		return nil, fmt.Errorf("reservation cash source invariant violated for %s", req.RequestID)
 	}
-	if err := lockWalletForBilling(ctx, tx, req.OrgID); err != nil {
+	availableCash, err := lockWalletCashForBilling(ctx, tx, req.OrgID)
+	if err != nil {
 		return nil, err
+	}
+	if availableCash < topUpAmount {
+		if err := persistFundingPendingTx(ctx, tx, b.outbox, record, req, calculatedCost, topUpAmount, costBreakdown); err != nil {
+			return nil, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return nil, fmt.Errorf("commit funding-pending settlement: %w", err)
+		}
+		return &SettleResult{
+			ActualCost:     calculatedCost,
+			ChargedCost:    0,
+			UncoveredCost:  topUpAmount,
+			TopUpAmount:    0,
+			PricingVersion: record.PricingVersion,
+			Success:        false,
+			ErrorCode:      "insufficient_topup",
+		}, nil
 	}
 
 	restoredGrant, forfeitedGrant, err := finalizeGrantAllocations(
@@ -742,13 +771,13 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 	err = tx.QueryRow(ctx,
 		`UPDATE wallets
 		 SET frozen = frozen - $1,
-		     balance = balance + $2,
-		     granted_balance = granted_balance + $3,
-		     total_spent = total_spent + $4,
+		     balance = balance + $2 - $3,
+		     granted_balance = granted_balance + $4,
+		     total_spent = total_spent + $5,
 		     updated_at = NOW()
-		 WHERE org_id = $5 AND frozen >= $1
+		 WHERE org_id = $6 AND frozen >= $1 AND balance >= $3
 		 RETURNING balance`,
-		record.FrozenAmount, refundCash, restoredGrant, chargedCost, req.OrgID,
+		record.FrozenAmount, refundCash, topUpAmount, restoredGrant, chargedCost, req.OrgID,
 	).Scan(&newBalance)
 	if err != nil {
 		return nil, fmt.Errorf("settle balance: %w", err)
@@ -764,7 +793,7 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		req.OrgID,
 		chargedCost,
 		newBalance,
-		fmt.Sprintf("Settle for request %s (uncovered=%d)", req.RequestID, uncoveredCost),
+		fmt.Sprintf("Settle for request %s (prepaid_topup=%d)", req.RequestID, topUpAmount),
 	).Scan(&settleID)
 	if err != nil {
 		return nil, fmt.Errorf("record settle: %w", err)
@@ -785,15 +814,18 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		     calculated_cost = $11,
 		     charged_cost = $12,
 		     uncovered_cost = $13,
-		     refund_amount = $14,
-		     forfeited_grant_amount = $15,
-		     uncached_input_cost_cents = $16,
-		     cache_read_cost_cents = $17,
-		     cache_creation_cost_cents = $18,
-		     output_cost_cents = $19,
-		     terminal_transaction_id = $20,
-		     balance_after = $21,
+		     topup_amount = $14,
+		     refund_amount = $15,
+		     forfeited_grant_amount = $16,
+		     uncached_input_cost_cents = $17,
+		     cache_read_cost_cents = $18,
+		     cache_creation_cost_cents = $19,
+		     output_cost_cents = $20,
+		     terminal_transaction_id = $21,
+		     balance_after = $22,
 		     terminal_at = NOW(),
+		     provider_cost_pending_at = NULL,
+		     settlement_pending_reason = '',
 		     settlement_claimed_until = NULL,
 		     settlement_next_attempt_at = NULL,
 		     updated_at = NOW()
@@ -801,7 +833,7 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		req.RequestID, req.OrgID,
 		req.PromptTokens, req.UncachedPromptTokens, req.CacheReadTokens, req.CacheCreationTokens,
 		req.CompletionTokens, req.UsageSource, req.CacheUsageSchema, req.CacheUsageStatus,
-		calculatedCost, chargedCost, uncoveredCost, refund, forfeitedGrant,
+		calculatedCost, chargedCost, uncoveredCost, topUpAmount, refund, forfeitedGrant,
 		costBreakdown.UncachedInputCostCents, costBreakdown.CacheReadCostCents,
 		costBreakdown.CacheCreationCostCents, costBreakdown.OutputCostCents,
 		settleID, newBalance,
@@ -858,16 +890,12 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		return nil, fmt.Errorf("commit: %w", err)
 	}
 
-	if uncoveredCost > 0 {
-		log.Printf("[billing] WARNING: request %s calculated_cost=%d > frozen=%d, uncovered=%d cents",
-			req.RequestID, calculatedCost, record.FrozenAmount, uncoveredCost)
-	}
-
 	return &SettleResult{
 		SettleID:                         settleID,
 		ActualCost:                       calculatedCost,
 		ChargedCost:                      chargedCost,
 		UncoveredCost:                    uncoveredCost,
+		TopUpAmount:                      topUpAmount,
 		Refund:                           refund,
 		NewBalance:                       newBalance,
 		PricingVersion:                   record.PricingVersion,
@@ -883,6 +911,66 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		OutputCostCents:                  costBreakdown.OutputCostCents,
 		Success:                          true,
 	}, nil
+}
+
+func persistFundingPendingTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	service *outbox.Service,
+	record reservationRecord,
+	req SettleRequest,
+	calculatedCost int,
+	shortfall int,
+	costBreakdown reservationCostBreakdown,
+) error {
+	result, err := tx.Exec(ctx,
+		`UPDATE freeze_idempotency
+		 SET status = 'settlement_pending',
+		     provider_cost_pending_at = COALESCE(provider_cost_pending_at, NOW()),
+		     settlement_pending_reason = 'insufficient_topup',
+		     prompt_tokens = $3,
+		     uncached_prompt_tokens = $4,
+		     cache_read_tokens = $5,
+		     cache_creation_tokens = $6,
+		     completion_tokens = $7,
+		     usage_source = $8,
+		     cache_usage_schema = $9,
+		     cache_usage_status = $10,
+		     calculated_cost = $11,
+		     charged_cost = 0,
+		     uncovered_cost = $12,
+		     topup_amount = 0,
+		     uncached_input_cost_cents = $13,
+		     cache_read_cost_cents = $14,
+		     cache_creation_cost_cents = $15,
+		     output_cost_cents = $16,
+		     settlement_payload_ready_at = COALESCE(settlement_payload_ready_at, NOW()),
+		     settlement_claimed_until = NULL,
+		     settlement_next_attempt_at = NULL,
+		     settlement_last_error = 'insufficient prepaid balance for automatic top-up',
+		     updated_at = NOW()
+		 WHERE request_id = $1 AND org_id = $2
+		   AND status IN ('frozen', 'settlement_pending')`,
+		req.RequestID, req.OrgID,
+		req.PromptTokens, req.UncachedPromptTokens, req.CacheReadTokens, req.CacheCreationTokens,
+		req.CompletionTokens, req.UsageSource, req.CacheUsageSchema, req.CacheUsageStatus,
+		calculatedCost, shortfall,
+		costBreakdown.UncachedInputCostCents, costBreakdown.CacheReadCostCents,
+		costBreakdown.CacheCreationCostCents, costBreakdown.OutputCostCents,
+	)
+	if err != nil {
+		return fmt.Errorf("persist funding-pending settlement: %w", err)
+	}
+	if result.RowsAffected() != 1 {
+		return fmt.Errorf("persist funding-pending settlement: reservation state changed")
+	}
+	if err := enqueueUsageJournalTx(
+		ctx, tx, service, outbox.EventBillingUsagePrepared, "funding_pending",
+		record, req, calculatedCost, 0, 0,
+	); err != nil {
+		return fmt.Errorf("enqueue funding-pending usage journal: %w", err)
+	}
+	return nil
 }
 
 func canonicalizeLegacyReservationUsage(record reservationRecord) reservationRecord {
@@ -939,6 +1027,7 @@ func settleResultFromRecord(record reservationRecord) *SettleResult {
 		ActualCost:                       record.CalculatedCost,
 		ChargedCost:                      record.ChargedCost,
 		UncoveredCost:                    record.UncoveredCost,
+		TopUpAmount:                      record.TopUpAmount,
 		Refund:                           record.RefundAmount,
 		PricingVersion:                   record.PricingVersion,
 		EffectiveInputPriceCents:         record.EffectiveInputPrice,
@@ -976,7 +1065,7 @@ func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgI
 		        prompt_tokens, uncached_prompt_tokens, cache_read_tokens, cache_creation_tokens,
 		        completion_tokens, usage_source, cache_usage_schema, cache_usage_status,
 		        settlement_payload_ready_at, settlement_attempts,
-		        calculated_cost, charged_cost, uncovered_cost,
+		        calculated_cost, charged_cost, uncovered_cost, topup_amount,
 		        refund_amount,
 		        uncached_input_cost_cents::float8, cache_read_cost_cents::float8,
 		        cache_creation_cost_cents::float8, output_cost_cents::float8,
@@ -1011,6 +1100,7 @@ func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgI
 		&record.CalculatedCost,
 		&record.ChargedCost,
 		&record.UncoveredCost,
+		&record.TopUpAmount,
 		&record.RefundAmount,
 		&record.UncachedInputCost,
 		&record.CacheReadCost,
@@ -1030,6 +1120,16 @@ func lockWalletForBilling(ctx context.Context, tx pgx.Tx, orgID int64) error {
 		return fmt.Errorf("lock wallet: %w", err)
 	}
 	return nil
+}
+
+func lockWalletCashForBilling(ctx context.Context, tx pgx.Tx, orgID int64) (int, error) {
+	var balance int
+	if err := tx.QueryRow(ctx,
+		`SELECT balance FROM wallets WHERE org_id = $1 FOR UPDATE`, orgID,
+	).Scan(&balance); err != nil {
+		return 0, fmt.Errorf("lock wallet cash: %w", err)
+	}
+	return balance, nil
 }
 
 func finalizeGrantAllocations(ctx context.Context, tx pgx.Tx, orgID int64, requestID string, reservedGrant, grantConsumed int) (restored, forfeited int, err error) {

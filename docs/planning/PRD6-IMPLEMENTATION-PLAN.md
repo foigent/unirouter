@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
-> Date: 2026-07-12
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F39 and P6-STREAM-002A are CI verified / closed; P6-F11 remains in progress and P6-F10 is not started
+> Date: 2026-07-13
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F39 and P6-STREAM-002A are CI verified / closed; P6-F40/P6-F11 are in progress and P6-F10/P6-F41 are not started
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -15,6 +15,7 @@ Batch 0 baseline and scope evidence
   -> Batch 1 Agent Capability and Distributed Policy V1
   -> Batch 2 Routing Policy V1
   -> Batch 3 durable usage, settlement and cache-aware billing
+  -> Batch 3H provider cost and usage/delivery integrity hardening
   -> Batch 4 Guardrail Kernel
   -> Batch 5 Streaming policy and termination
   -> Batch 6 selected advanced capability, if separately accepted
@@ -28,13 +29,14 @@ required CI. No scope decision grants target/deployment/data/cost authorization.
 
 ### Current Accepted-Scope Accounting
 
-- 39 total `P6-F*` rows exist in the acceptance matrix;
-- 25 are accepted implementation scope;
+- 41 total `P6-F*` rows exist in the acceptance matrix;
+- 27 are accepted implementation scope;
 - 23 are CI verified / closed: P6-F01 through P6-F09, P6-F16 through P6-F21
   and P6-F32 through P6-F39;
-- 2 accepted rows remain unclosed: D6-12 assigns mid-stream crash semantics to
+- 4 accepted rows remain unclosed: D6-13 adds P6-F40/P6-F41; P6-F40 is in
+  progress, P6-F41 is not started, D6-12 assigns mid-stream crash semantics to
   P6-F11, which is in progress through the P6-STREAM-002A transport
-  prerequisite; P6-F10 is not started;
+  prerequisite, and P6-F10 is not started;
 - 14 rows are not accepted: P6-F12 through P6-F15 and P6-F22 through P6-F31;
 - `P6-TEST-DB-001` is a separate accepted engineering-integrity issue outside
   the feature-row count. PR #155, merge `4b18ace` and post-merge main run
@@ -304,6 +306,40 @@ Deliverables:
 - UI labels that distinguish upstream prompt-cache use from response cache.
 
 No response cache is enabled.
+
+### Batch 3H — Provider Cost And Usage/Delivery Integrity
+
+**Risk:** R3/R4 provider dispatch, wallet mutation, financial recovery and
+delivery semantics.
+**Gate:** D6-13 is accepted. No negative customer debt, silent platform
+subsidy, separate Cost Control Service or raw response retention is authorized.
+**Status:** P6-F40 is in progress; P6-F41 is not started.
+
+Ordered slices:
+
+1. P6-F40A removes the reservation-as-charge-ceiling defect: use available
+   prepaid cash atomically, keep an unfunded shortfall non-terminal and
+   non-cancellable, exclude it from automatic stream recovery and expose the
+   top-up in response/trace evidence.
+2. P6-F40B adds the PostgreSQL provider-attempt ledger before every paid
+   dispatch, separates availability retryability from outcome certainty,
+   blocks ambiguous duplicate spend and replaces post-200 ordinary
+   cancellation with provider-cost pending.
+3. P6-F40C binds pending cost to the API key and adds tenant-safe,
+   platform-authorized operator reconciliation for collect/refund/bounded
+   subsidy decisions. No silent unblock is allowed.
+4. P6-F41A adds typed usage authority, purpose and finality; provider-reported
+   explicit zero remains valid, while absent usage requires a fully funded,
+   versioned conservative estimate or withheld output.
+5. P6-F41B adds monotonic local delivery outcomes and a bounded metadata-only
+   receipt. It stores no prompt or response body and does not implement the
+   future Cache Service.
+
+Each slice keeps its own pre-fix reproducer, positive compatibility control,
+concurrency/failure tests, guarded migration where applicable, immutable local
+evidence, PR and required CI. P6-F18/P6-F20 historical closure is not rewritten;
+these are newly accepted follow-on controls discovered by the cost-integrity
+audit.
 
 ### Batch 4 — Guardrail Kernel
 

@@ -97,12 +97,13 @@ func TestSanitizeMetadata_PromptCacheBillingFields(t *testing.T) {
 		"cache_read_cost_cents":     0.002,
 		"cache_creation_cost_cents": 0.03125,
 		"pricing_version":           "pv2_fixture",
+		"prepaid_topup_cents":       400,
 	}
 	metadata, gap := SanitizeMetadataWithGap(input)
 	if gap != "" {
 		t.Fatalf("expected safe prompt-cache evidence without a capture gap, got %q", gap)
 	}
-	if len(metadata) != len(input) || metadata["cache_usage_schema"] != "anthropic.prompt_cache.v1" || metadata["cache_read_tokens"] != 20 {
+	if len(metadata) != len(input) || metadata["cache_usage_schema"] != "anthropic.prompt_cache.v1" || metadata["cache_read_tokens"] != 20 || metadata["prepaid_topup_cents"] != 400 {
 		t.Fatalf("unexpected prompt-cache metadata: %#v", metadata)
 	}
 }

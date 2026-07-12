@@ -1,16 +1,77 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 3 P6-F20 Durable Internal Outbox
+**Batch:** PRD6 Batch 3H P6-F40A Provider Cost Shortfall
 **Owner:** Codex
-**Risk:** R3/R4 financial finalization, evidence durability, asynchronous delivery and migration/cutover safety
-**Status:** CI verified / closed; D6-12 accepted; no target or production claim
-**Integration:** branch `codex/prd6-durable-outbox` retained at `1beefee`; PR #177 exact-head run `29193900584`; squash merge `30d1e8f`; post-merge main run `29194150134`
-**Post-closeout CI stability:** test-only PR #180/#181 separated miniredis fixture execution from real-Redis concurrency evidence; PR #181 run `29199377213`, merge `815fb31` and final main run `29199635598` passed all required jobs with no runtime change
-**Next gate:** User decision on Batch 4 Guardrail policy categories, external-detector failure posture and latency budget; Batch 5 disclosure/buffering policy remains a separate accepted gate
-**Previous batch:** P6-F09 PR #174 plus production-neutral stability PR #175; final main run `29181137210` passed and the implementation branch is retained
+**Risk:** R3 billing, wallet, settlement recovery, public receipt and migration safety
+**Status:** P6-F40A CI verified; P6-F40 remains in progress
+**Baseline:** `main` / `origin/main` / `f1e08e6a793cb2ea0580d256fe75bd2d3d798c3f`
+**Branch:** `codex/prd6-cost-shortfall`
+**PR:** #183; exact implementation/test head `d1afd97`; required run `29207889734`
+**Decision:** D6-13 accepted by User on 2026-07-13
+**Next gate:** P6-F40B provider-attempt state
+**Previous batch:** P6-F20 PR #177 and post-closeout fixture-only PR #180/#181 are CI verified / closed
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
-## Completed P6-F20 Behavior Change
+## Current P6-F40A Scope
+
+1. Treat the original freeze as an admission hold rather than a terminal charge
+   ceiling; consume only existing cash balance for an atomic top-up and never
+   overdraft or create debt.
+2. If cash cannot fund the known shortfall, persist the exact usage and cost in
+   a non-terminal/non-cancellable provider-cost-pending state, create no settle
+   or cancel transaction and withhold the response.
+3. Exclude funding-pending rows from automatic stream settlement recovery;
+   P6-F40C will own explicit operator collect/refund/bounded-subsidy actions.
+4. Expose successful top-up in `_uniroute.cost.prepaid_topup` and sanitized
+   settlement trace metadata.
+5. Add guarded migration `000028` and focused migrated-PostgreSQL,
+   concurrency, gateway non-cancel and migration rollback proofs.
+
+## Current Non-Goals
+
+- No provider-attempt ledger, ambiguous-retry policy or API-key block in this
+  slice; those remain P6-F40B/P6-F40C.
+- No P6-F41 usage authority/delivery receipt, P6-F10 Guardrail or P6-F11 stream
+  semantic implementation.
+- No negative customer debt, automatic platform subsidy, raw response storage,
+  Cache Service or separate Cost Control Service.
+- No deployment, target mutation, real/paid request, credential or production
+  data access.
+
+## Current Focused Verification
+
+- Pre-fix `go test ./internal/billing -run '^TestP6F40SettlementShortfall' -count=1 -v`:
+  `FAIL` on both terminal-writeoff branches.
+- Patched P6-F40 billing tests: `PASS`, including 32-way one-terminal top-up.
+- Gateway funding-pending no-cancel test: `PASS`.
+- `000028` integration up/down/refused-down/roll-forward test: `PASS`.
+- `go test ./internal/billing ./internal/gateway -count=1`: `PASS`.
+- `go test ./... -count=1` and `go vet ./...`: `PASS`.
+- P6-F40 race, required migration and command-contract tests: `PASS`.
+- Frontend type-check, 29 files / 144 tests and production build: `PASS`.
+- `git diff --check`: `PASS`.
+- PR #183 exact implementation/test head `d1afd97` required run
+  `29207889734`: Backend Tests, Frontend Build and Docker Build `PASS`,
+  including both explicit P6-F40 PostgreSQL/race gates.
+- Earlier PR runs exposed two pre-existing miniredis execution-budget gaps.
+  The final test-only correction isolates bounded client/preload/lease budgets
+  to the P6-F21 ordering fixture; both opposing fixtures passed 10 race
+  repetitions and the required limit-policy integration step passed on the
+  exact implementation/test head. No runtime behavior changed in that correction.
+- Evidence: `docs/ops/evidence/PRD6-B3H-P6F40A-cost-shortfall-local-20260713.md`.
+
+## Current Stop And Rollback Conditions
+
+- Stop if any terminal row retains positive `uncovered_cost`, any insufficient
+  top-up creates a terminal transaction, any pending row becomes ordinarily
+  cancellable, or normal exact/under-hold settlement changes source buckets.
+- Repository rollback requires a new reviewed PR. Migration down is allowed
+  only before any provider-cost-pending/top-up evidence exists and otherwise
+  refuses destructive rollback.
+- A target rollout must drain old binaries before migration `000028` becomes
+  the active writer contract; mixed-version financial safety is not claimed.
+
+## Previous P6-F20 Behavior Change
 
 1. Add a bounded PostgreSQL `internal-outbox.v1` with leased multi-replica
    workers, priority/fairness, retry/dead-letter policy and lag metrics.

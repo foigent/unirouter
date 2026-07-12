@@ -33,6 +33,7 @@
 | `docs/ops/evidence/PRD6-B2-P6F08-routing-policy-v1-local-20260712.md` | P6-F08 repository and CI evidence: deterministic weighted route snapshots, renewable cross-replica probes, epoch CAS, safe preview/evidence, guarded migration, PR #172 and post-merge main closure |
 | `docs/ops/evidence/PRD6-B3-P6F09-prompt-cache-billing-local-20260712.md` | P6-F09 local plus PR #174/#175 and final main CI evidence: authoritative provider cache usage, immutable class pricing, settlement/recovery, logs/reconciliation/UI and guarded migration |
 | `docs/ops/evidence/PRD6-B3-P6F20-durable-outbox-local-20260712.md` | P6-F20 local, PR #177 exact-head and post-merge main CI closure evidence for durable finalization/outbox, bounded workers, replay and terminal-hook recovery |
+| `docs/ops/evidence/PRD6-B3H-P6F40A-cost-shortfall-local-20260713.md` | D6-13/P6-F40A pre-fix reproduction, atomic prepaid cash top-up, non-terminal funding hold, gateway no-cancel, migration guard and current local/CI boundary |
 | `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` | Official competitor HA patterns, current UniRouter cluster facts, Four Quadrants and accepted D6-12 stream/HA boundary |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | Source-backed audit/reconciliation/correlation/UI/architecture/upgrade findings, Four Quadrants and PRD6 batches |
 | `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | PRD7 candidate split; first future direction selected, all implementation deferred until PRD6 closeout |
