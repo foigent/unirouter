@@ -147,6 +147,13 @@ func TestP6F21FairQueueEventuallyAdmitsLongWorkUnderShortContention(t *testing.T
 	options.Stream = ClassPolicy{Weight: 4, MaxWait: 500 * time.Millisecond}
 	options.Interactive = ClassPolicy{Weight: 1, MaxWait: 500 * time.Millisecond}
 	options.ActivePollWindow = 20 * time.Millisecond
+	// The scenario intentionally runs one long waiter plus twelve short
+	// contenders against miniredis. Under full-repository race instrumentation,
+	// a 50ms fixture timeout can expire while the in-memory Lua executor is
+	// serialized, turning a successful release into an unrelated store outage.
+	// Keep the product defaults unchanged and give this contention fixture the
+	// same 500ms store budget as its bounded fair-wait policy.
+	options.StoreTimeout = 500 * time.Millisecond
 	service, _ := newTestService(t, server, options)
 
 	held := make([]*Reservation, 0, 4)
