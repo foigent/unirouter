@@ -1,8 +1,8 @@
 # UniRouter PRD6: Reliable MaaS Policy And Safety Plane
 
-> Version: 0.8
+> Version: 0.9
 > Date: 2026-07-12
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F07, P6-F16-P6-F19, P6-F21, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F08 is Local verified awaiting required CI; P6-F11 remains in progress
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F08, P6-F16-P6-F19, P6-F21, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F11 remains in progress
 > Accepted implementation scope: P6-F03 through P6-F11, P6-F16 through P6-F21, and P6-F32 through P6-F39
 > Innovation gate: P6-F23 through P6-F31 remain proposed/deferred
 
@@ -202,7 +202,7 @@ These do not become UniRouter source-code gaps without new evidence.
 | P6-F05 | Make effective retry/circuit/cooldown configuration observable, remove hard-coded divergence, and reconcile budget-alert configuration/scope truth | P0 | Accepted Batch 0C |
 | P6-F06 | Correct freeze/settlement behavior when organization multipliers increase actual cost | P0 | Accepted Batch 0C; CI verified / closed by PR #160 |
 | P6-F07 | Enforce shared RPM/RPS/TPM/concurrency policies with explicit selectors and failure modes | P1 | CI verified / closed by PR #168, merge `2610e317` and post-merge main run `29174001859` |
-| P6-F08 | Implement Routing Policy V1 with explainable candidates, exclusions, retry and failover | P1 | Accepted MVP; Local verified on Batch 2 branch, required PR CI/merge pending |
+| P6-F08 | Implement Routing Policy V1 with explainable candidates, exclusions, retry and failover | P1 | CI verified / closed by PR #172, exact-head run `29178419505`, merge `54d8833` and post-merge main run `29178588075`; historical branch retained at `0e374d3`; no target/capacity claim |
 | P6-F09 | Normalize and bill provider cache-read/cache-create tokens | P1 | Accepted MVP |
 | P6-F10 | Add versioned input/non-stream-output Guardrail Kernel | P1 | Accepted MVP |
 | P6-F11 | Add safe streaming interception, cancellation and settlement semantics | P1 | Accepted MVP; transport prerequisite P6-STREAM-002A CI verified / closed by PR #162; semantic policy remains |

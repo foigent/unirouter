@@ -1,10 +1,10 @@
-# PRD6 Batch 2 P6-F08 Routing Policy V1 — Local Evidence
+# PRD6 Batch 2 P6-F08 Routing Policy V1 — Repository And CI Evidence
 
 > Date: 2026-07-12
 > Owner: Codex
 > Branch: `codex/prd6-routing-policy-v1`
 > Base: post-P6-F21 closeout `main` at `7df87ce476a7b56a8dcc1fee48dfb3f0c6b86413`
-> Evidence level: Local verified; required PR CI, merge and post-merge main CI pending
+> Evidence level: CI verified / closed; no target, production or capacity claim
 > Scope: UniRouter repository only; no deployment, target mutation, paid request,
 > credential change, external data access, exporter/outbox or X-Insight runtime work
 
@@ -137,7 +137,7 @@ prevents an older binary/schema from silently discarding ownership generations.
 | UI semantics | `ChannelsPage.test.tsx` verifies weight explanation, safe preview and exclusion labels |
 | rollback | `TestP6F08RoutingPolicyV1MigrationUpDownGuardAndRollForward` verifies safe down/up and refusal after weight or key-epoch activation |
 
-## 5. Local Verification
+## 5. Repository And CI Verification
 
 Passed on 2026-07-12:
 
@@ -156,15 +156,29 @@ frontend: npm run build (pass)
 The local frontend build retains the pre-existing large-chunk warning. The
 local macOS race linker retains its pre-existing malformed `LC_DYSYMTAB`
 warning; the race test exits successfully. These warnings do not change the
-test result. Local Docker verification is unavailable because the machine has
-no `docker` CLI; Docker Build therefore remains an explicit required-CI gate.
+test result. Local Docker verification was unavailable because the machine has
+no `docker` CLI; the successful Docker results below are required-CI evidence.
 
-Required CI gates remain:
+Required-CI closure evidence:
 
-- Backend Tests, including the explicit P6-F08 real-PostgreSQL routing and
-  migration rollback steps;
-- Frontend Build, including required Vitest tests and type-check; and
-- Docker Build.
+- final implementation head
+  `0e374d324708b130d961105b9f3c1155a4d49427` passed PR #172 exact-head run
+  `29178419505`: Backend Tests in 5m32s, Frontend Build in 3m24s and Docker
+  Build in 1m3s;
+- Backend Tests included the explicit P6-F08 real-PostgreSQL routing, admin and
+  guarded migration rollback steps; Frontend Build included required Vitest,
+  type-check and production build;
+- PR #172 was squash-merged as
+  `54d88335126a5e9829cf28c720ed98ad6258fb52`;
+- post-merge `main` run `29178588075` passed Backend Tests in 6m26s, Frontend
+  Build in 3m24s and Docker Build in 1m3s; and
+- GitHub's automatic source-branch deletion was reversed. Historical branch
+  `codex/prd6-routing-policy-v1` is retained at the exact implementation head.
+
+The successful post-merge run emitted non-failing GitHub runner annotations
+about the Node 20 action runtime being forced to Node 24 and one Go cache
+restore `tar` miss. They did not skip or fail a required job and are recorded
+as CI hygiene observations, not P6-F08 acceptance failures.
 
 ## 6. Explicit Non-Claims
 

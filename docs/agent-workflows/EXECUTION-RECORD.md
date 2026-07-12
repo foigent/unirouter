@@ -1,15 +1,15 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 2 P6-F08 Routing Policy V1
+**Batch:** PRD6 Batch 2 P6-F08 Routing Policy V1 closeout
 **Owner:** Codex
 **Risk:** R3 provider selection, cross-replica probe ownership and migration safety
-**Status:** Local verified; required PR CI, merge and post-merge main CI pending
-**Integration:** branch `codex/prd6-routing-policy-v1`; base `7df87ce`; no deployment, target, capacity or production claim
-**Next batch:** after P6-F08 CI closeout, P6-F09 provider prompt-cache usage/billing, already accepted under D6-01
+**Status:** CI verified / closed
+**Integration:** PR #172 exact head `0e374d3` / run `29178419505`; squash merge `54d8833`; post-merge main run `29178588075`; historical branch restored; no deployment, target, capacity or production claim
+**Next batch:** P6-F09 provider prompt-cache usage/billing, already accepted under D6-01; it must not become a response-cache implementation
 **Previous batch:** P6-F21 implementation PR #170 plus closeout PR #171; post-closeout main run `29176814379` passed and both historical branches are restored
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
-## Current Scope
+## Completed Scope
 
 1. Define static priority followed by deterministic equal-priority weight from
    the server-owned operation ID, with one key per channel and bounded failover.
@@ -42,8 +42,10 @@
 - platform preview/UI/trace expose safe candidate, exclusion, snapshot,
   priority and weight evidence without URLs, keys, payloads or probe tokens;
 - unit, race, full backend, real PostgreSQL routing/migration, full frontend
-  tests/type-check/build, vet and diff checks pass locally; required CI is
-  pending; and
+  tests/type-check/build, vet and diff checks pass locally; PR #172 exact-head
+  run `29178419505` and post-merge main run `29178588075` passed Backend Tests,
+  Frontend Build and Docker Build; the historical implementation branch is
+  restored at `0e374d3`; and
 - evidence:
   `docs/ops/evidence/PRD6-B2-P6F08-routing-policy-v1-local-20260712.md`.
 
