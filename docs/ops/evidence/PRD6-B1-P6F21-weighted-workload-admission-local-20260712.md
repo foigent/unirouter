@@ -89,11 +89,8 @@ High-risk fixtures prove:
 
 - 30 calls spread over two replicas and then three replicas under global 6 /
   organization 5 admit exactly five and deny 25 against real Redis;
-- three independently constructed service clients observe one organization
-  capacity: three admissions fill it, all three clients deny additional work,
-  and a release through one client is reusable through another. The concurrent
-  replica proof remains the 30-call real-Redis fixture above rather than using
-  miniredis as a load simulator;
+- replica invariance is owned by the 30-call real-Redis fixture above rather
+  than duplicating that claim with miniredis as a load simulator;
 - two weight-four streams consume eight of ten units but cannot take the two
   reserved short units; ordinary Chat and Embeddings can still enter;
 - a long-work waiter receives a fair turn while twelve new short requests
@@ -134,22 +131,30 @@ admit later arrivals against newly recovered capacity.
 
 The follow-up changes test code only:
 
-- miniredis now deterministically proves shared admission, denial and
-  cross-client release state across three `Service` instances, with one bounded
-  five-second test context;
+- the redundant miniredis multi-client load fixture is removed; miniredis
+  remains responsible for deterministic weight, queue, lease, identity and
+  failure-semantic unit tests, not replica-concurrency evidence;
 - the real-Redis integration fixture remains the concurrency authority with
   thirty callers spread across two and three instances and exact 5/25
   admission assertions; it now has a bounded twenty-second context; and
 - no production admission option, Lua transition, Redis key, capacity,
   fail-open/fail-closed policy or gateway behavior changes.
 
+The first draft of PR #180 still kept a sequential three-client miniredis
+replica fixture. Required run `29198145250` showed that even this reduced fake
+replica proof could exceed its first-call Lua budget under full race/coverage
+instrumentation. Restoring the historical 300-ms test budget did not solve the
+underlying mismatch: a fifty-run local coverage sequence later reached the
+five-second caller bound and timed out. The final patch therefore removes that
+redundant fake-replica test instead of increasing timeouts again; real Redis is
+the sole multi-instance concurrency authority.
+
 Fresh local verification passed:
 
 ```text
-go test -race ./internal/workloadadmission -run '^TestP6F21ReplicaInvariantWeightedCapacity$' -count=50 -timeout=120s
-go test -race ./internal/workloadadmission -run TestP6F21 -count=10 -timeout=180s
-REDIS_ADDR=127.0.0.1:6391 go test -tags=integration -race ./internal/workloadadmission -run '^TestP6F21RedisMultiInstanceLeaseAndFaultIntegration$' -count=10 -timeout=120s
-REDIS_ADDR=127.0.0.1:6391 go test -tags=integration -race ./internal/workloadadmission -run TestP6F21 -count=1 -timeout=120s
+go test -race -cover ./internal/workloadadmission -run TestP6F21 -count=20 -timeout=180s
+REDIS_ADDR=127.0.0.1:6391 go test -tags=integration -race ./internal/workloadadmission -run TestP6F21 -count=5 -timeout=120s
+go test -v -race -coverprofile=coverage.out ./...
 go test ./...
 go test -race ./... -count=1
 go vet ./...
