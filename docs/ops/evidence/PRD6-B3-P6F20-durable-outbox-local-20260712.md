@@ -11,7 +11,7 @@
 
 ## 1. Accepted Scope
 
-The current P6-F20 implementation candidate adds a repository-local PostgreSQL transactional outbox for minimal
+The CI-verified P6-F20 implementation adds a repository-local PostgreSQL transactional outbox for minimal
 usage/finalization, detailed evidence and tenant-scoped notification delivery.
 It also closes the previously recorded cross-process gap between authoritative
 financial terminal state and Redis-backed Agent-ancestor, distributed-policy
