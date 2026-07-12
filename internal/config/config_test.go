@@ -364,6 +364,11 @@ func TestLoad_RoutingPolicyEnvOverrides(t *testing.T) {
 	t.Setenv("KEY_COOLDOWN_SECONDS", "45")
 	t.Setenv("PROVIDER_AUTH_COOLDOWN_SECONDS", "1800")
 	t.Setenv("PROVIDER_KEY_FAILURE_THRESHOLD", "6")
+	t.Setenv("ROUTING_SNAPSHOT_REFRESH_SECONDS", "2")
+	t.Setenv("ROUTING_SNAPSHOT_STALE_SECONDS", "40")
+	t.Setenv("ROUTING_HALF_OPEN_PROBE_LEASE_SECONDS", "12")
+	t.Setenv("ROUTING_MAX_CANDIDATES", "24")
+	t.Setenv("ROUTING_MAX_SNAPSHOTS", "512")
 
 	cfg, err := Load()
 	if err != nil {
@@ -372,7 +377,9 @@ func TestLoad_RoutingPolicyEnvOverrides(t *testing.T) {
 	policy := cfg.RoutingPolicyConfig()
 	if policy.MaxRetryCount != 4 || policy.CircuitBreakerThreshold != 7 || policy.CircuitBreakerRecoverSeconds != 90 ||
 		policy.CircuitBreakerHalfOpenPct != 25 || policy.RateLimitCooldownSeconds != 45 ||
-		policy.AuthFailureCooldownSeconds != 1800 || policy.KeyFailureThreshold != 6 {
+		policy.AuthFailureCooldownSeconds != 1800 || policy.KeyFailureThreshold != 6 ||
+		policy.SnapshotRefreshSeconds != 2 || policy.SnapshotStaleSeconds != 40 ||
+		policy.HalfOpenProbeLeaseSeconds != 12 || policy.MaxCandidateCount != 24 || policy.MaxSnapshotCount != 512 {
 		t.Fatalf("unexpected effective routing policy: %#v", policy)
 	}
 }

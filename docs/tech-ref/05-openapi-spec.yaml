@@ -422,6 +422,27 @@ paths:
         "200":
           $ref: "#/components/responses/JSON"
 
+  /api/v1/routing/preview:
+    get:
+      tags: [Admin]
+      summary: Preview credential-free routing-policy.v1 candidates and exclusions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: model
+          in: query
+          required: true
+          schema:
+            type: string
+            maxLength: 200
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+        "400":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
   /api/v1/keys:
     get: { $ref: "#/components/pathItems/List" }
     post: { $ref: "#/components/pathItems/Create" }

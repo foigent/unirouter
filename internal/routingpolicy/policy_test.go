@@ -7,12 +7,14 @@ func TestDefaultPolicyIsValidAndStable(t *testing.T) {
 	if err := policy.Validate(); err != nil {
 		t.Fatalf("default policy invalid: %v", err)
 	}
-	if Version != "routing-config.v1" {
+	if Version != "routing-config.v2" || SelectionVersion != "routing-policy.v1" {
 		t.Fatalf("unexpected policy version %q", Version)
 	}
 	if policy.MaxRetryCount != 1 || policy.CircuitBreakerThreshold != 5 || policy.CircuitBreakerRecoverSeconds != 300 ||
 		policy.CircuitBreakerHalfOpenPct != 10 || policy.RateLimitCooldownSeconds != 60 ||
-		policy.AuthFailureCooldownSeconds != 3600 || policy.KeyFailureThreshold != 3 {
+		policy.AuthFailureCooldownSeconds != 3600 || policy.KeyFailureThreshold != 3 ||
+		policy.SnapshotRefreshSeconds != 1 || policy.SnapshotStaleSeconds != 30 ||
+		policy.HalfOpenProbeLeaseSeconds != 15 || policy.MaxCandidateCount != 32 || policy.MaxSnapshotCount != 1024 {
 		t.Fatalf("unexpected defaults: %#v", policy)
 	}
 }
@@ -31,6 +33,11 @@ func TestPolicyValidationBounds(t *testing.T) {
 		{name: "zero rate cooldown", mutate: func(config *Config) { config.RateLimitCooldownSeconds = 0 }},
 		{name: "zero auth cooldown", mutate: func(config *Config) { config.AuthFailureCooldownSeconds = 0 }},
 		{name: "zero key threshold", mutate: func(config *Config) { config.KeyFailureThreshold = 0 }},
+		{name: "zero snapshot refresh", mutate: func(config *Config) { config.SnapshotRefreshSeconds = 0 }},
+		{name: "stale before refresh", mutate: func(config *Config) { config.SnapshotStaleSeconds = 0 }},
+		{name: "zero probe lease", mutate: func(config *Config) { config.HalfOpenProbeLeaseSeconds = 0 }},
+		{name: "zero candidate count", mutate: func(config *Config) { config.MaxCandidateCount = 0 }},
+		{name: "excess snapshot count", mutate: func(config *Config) { config.MaxSnapshotCount = 10001 }},
 	}
 
 	for _, test := range tests {

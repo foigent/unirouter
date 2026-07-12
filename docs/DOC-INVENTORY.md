@@ -30,6 +30,7 @@
 | `docs/ops/evidence/PRD6-B1-P6F19B-agent-ancestor-budget-local-20260712.md` | P6-F19B shared ancestor cost/token/rate/concurrency local, PR #166 and post-merge CI evidence; closes P6-F19 while preserving P6-F20/P6-F21 boundaries |
 | `docs/ops/evidence/PRD6-B1-P6F07-distributed-limit-policy-local-20260712.md` | P6-F07 shared selector RPM/RPS/TPM/concurrency, bounded failure, UI/control, migration and PR #168/post-merge CI closure evidence |
 | `docs/ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md` | P6-F21 local plus PR #170/post-merge CI evidence for weighted cross-replica leases and bounded fairness/fault/config/UI behavior |
+| `docs/ops/evidence/PRD6-B2-P6F08-routing-policy-v1-local-20260712.md` | P6-F08 Local-verified deterministic weighted route snapshots, renewable cross-replica probes, epoch CAS, safe preview/evidence and guarded migration; required CI pending |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | Source-backed audit/reconciliation/correlation/UI/architecture/upgrade findings, Four Quadrants and PRD6 batches |
 | `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | PRD7 candidate split; first future direction selected, all implementation deferred until PRD6 closeout |
 | `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` | Accepted future Cache Service direction, service boundary, capacity planning triggers, SaaS cell reuse and non-authorization guardrails |
@@ -68,7 +69,7 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required single-owner execution, approval, evidence and optional-review workflow |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD6 Batch 1 P6-F21 CI closeout, next P6-F08, and prior accepted-scope closeouts; previous PRD5 evidence remains linked |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD6 Batch 2 P6-F08 Local verification/required-CI state and prior accepted-scope closeouts; previous PRD5 evidence remains linked |
 | `docs/agent-workflows/reviews/` | Optional immutable independent review results |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry pointing to the current execution record |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |
@@ -196,7 +197,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 |------|------|
 | `docs/agent-workflows/README.md` | Agent workflow index |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Current Agent Protocol v2.0 |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD6 Batch 0C P6-STREAM-002A execution-owner record with prior closeouts; prior PRD5 target/external evidence remains linked |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD6 Batch 2 P6-F08 execution-owner record with prior closeouts; prior PRD5 target/external evidence remains linked |
 | `docs/agent-workflows/reviews/README.md` | Independent review naming, contents and severity rules |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |

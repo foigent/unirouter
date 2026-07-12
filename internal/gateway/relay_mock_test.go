@@ -2667,8 +2667,8 @@ func TestHandleChatCompletion_RetryClassification(t *testing.T) {
 			db := &testutil.MockDB{
 				QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 					return &testutil.MockRows{Rows: []func(dest ...any) error{
-						chatCompletionRouteRow(1, "primary", "openai", firstUpstream.URL, encryptedKey, 100),
-						chatCompletionRouteRow(2, "secondary", "azure", secondUpstream.URL, encryptedKey, 90),
+						chatCompletionRouteRow(1, "primary", "openai", firstUpstream.URL, encryptedKey, 90),
+						chatCompletionRouteRow(2, "secondary", "azure", secondUpstream.URL, encryptedKey, 100),
 					}}, nil
 				},
 				ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
@@ -2786,7 +2786,7 @@ func TestHandleChatCompletion_UpstreamError_AllFail(t *testing.T) {
 						*dest[7].(*json.RawMessage) = json.RawMessage(`{}`)
 						*dest[8].(*int) = 128000
 						*dest[9].(*int) = 4096
-						*dest[10].(*int) = 100
+						*dest[10].(*int) = 90
 						*dest[11].(*string) = "active"
 						*dest[12].(*string) = "healthy"
 						*dest[13].(**time.Time) = nil
@@ -2808,7 +2808,7 @@ func TestHandleChatCompletion_UpstreamError_AllFail(t *testing.T) {
 						*dest[7].(*json.RawMessage) = json.RawMessage(`{}`)
 						*dest[8].(*int) = 128000
 						*dest[9].(*int) = 4096
-						*dest[10].(*int) = 90
+						*dest[10].(*int) = 100
 						*dest[11].(*string) = "active"
 						*dest[12].(*string) = "healthy"
 						*dest[13].(**time.Time) = nil

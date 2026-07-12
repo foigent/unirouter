@@ -74,6 +74,16 @@ describe('API Client', () => {
         expect.objectContaining({ headers: expect.any(Object) })
       )
     })
+
+    it('encodes the model in the read-only routing preview request', async () => {
+      mockJsonResponse({ policy_version: 'routing-policy.v1', candidates: [], exclusions: [] })
+
+      await api.previewRouting('company/chat v2')
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/v1/routing/preview?model=company%2Fchat%20v2',
+        expect.objectContaining({ headers: expect.any(Object) })
+      )
+    })
   })
 
   describe('getWallet', () => {

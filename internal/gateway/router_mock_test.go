@@ -119,11 +119,11 @@ func TestRoute_QueryError(t *testing.T) {
 func TestRoute_HalfOpenEligibleAfterRecoveryDeadline(t *testing.T) {
 	db := &testutil.MockDB{
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			if !strings.Contains(sql, "c.half_open_until <= NOW()") {
-				t.Fatalf("half-open channels must become eligible after the recovery deadline; query: %s", sql)
+			if !strings.Contains(sql, "route_clock AS (SELECT NOW() AS db_now)") || !strings.Contains(sql, "c.half_open_until") {
+				t.Fatalf("routing snapshot must evaluate half-open deadlines against one PostgreSQL clock: %s", sql)
 			}
-			if strings.Contains(sql, "c.half_open_until > NOW()") {
-				t.Fatalf("half-open channels must not be eligible before the recovery deadline; query: %s", sql)
+			if strings.Contains(sql, "AND (c.circuit_state") {
+				t.Fatalf("snapshot query must retain excluded circuit states for preview evidence: %s", sql)
 			}
 			return &testutil.MockRows{}, nil
 		},
