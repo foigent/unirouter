@@ -30,7 +30,7 @@
 23. `docs/ops/evidence/PRD6-B1-P6F19A-agent-capability-kernel-local-20260712.md` - explicit Agent registration, five-minute capability, refresh/revocation and topology evidence.
 24. `docs/ops/evidence/PRD6-B1-P6F19B-agent-ancestor-budget-local-20260712.md` - shared per-ancestor cost/token/rate/concurrency implementation and P6-F19 closure evidence.
 25. `docs/ops/evidence/PRD6-B1-P6F07-distributed-limit-policy-local-20260712.md` - versioned shared selector/rate/token/concurrency, control-plane, migration and CI closure evidence.
-26. `docs/ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md` - CI-verified weighted leases, fair queues, fault/mixed-config, PR #170/main runs and current non-claims.
+26. `docs/ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md` - CI-verified weighted leases, fair queues, fault/mixed-config, PR #170/#180/#181 truth chain and current non-claims.
 27. `docs/ops/evidence/PRD6-B2-P6F08-routing-policy-v1-local-20260712.md` - CI-verified deterministic weighted routing, bounded snapshots, renewable probe ownership, epoch CAS, preview/evidence, guarded migration, PR #172 and post-merge main evidence.
 28. `docs/ops/evidence/PRD6-B3-P6F09-prompt-cache-billing-local-20260712.md` - CI-verified provider Prompt Cache normalization, immutable pricing, settlement/recovery, UI/reconciliation, guarded migration, PR #174/#175 and final main evidence.
 29. `docs/ops/evidence/PRD6-B3-P6F20-durable-outbox-local-20260712.md` - CI-verified durable finalization/outbox closure, PR #177/main runs and non-claims.
@@ -125,8 +125,11 @@ and safe migration rollback. P6-F21 weighted admission is CI verified / closed
 by PR #170 exact-head run `29176160987`, squash merge `04af91f` and post-merge
 main run `29176358459`, including two/three-replica exact capacity, fair bounded
 queues, crash/fault and mixed-config behavior. Its historical branch is
-restored at `a9d8f3e`. P6-F20 durable terminal coupling and D6-10 dynamic
-long-stream extension remain separate.
+restored at `a9d8f3e`. Post-closeout test-only PR #180 removed the unreliable
+miniredis replica/load claim; PR #181 isolated emulator execution budgets,
+passed run `29199377213`, merged as `815fb31`, and final main run `29199635598`
+passed all required jobs. No runtime behavior changed. P6-F20 durable terminal
+coupling and D6-10 dynamic long-stream extension remain separate.
 P6-F08 Routing Policy V1 is CI verified / closed by PR #172. Exact head
 `0e374d3` passed run `29178419505`, squash merge `54d8833` and post-merge main
 run `29178588075` passed Backend Tests, Frontend Build and Docker Build.
@@ -267,8 +270,10 @@ restored at `f52a151`; no target capacity or deployment claim is made.
 P6-F21 full local race and two/three-replica real Redis tests pass. PR #170
 exact head `a9d8f3e` passed run `29176160987`, was squash-merged as `04af91f`,
 and post-merge main run `29176358459` passed all required jobs. The row and
-Batch 1 are CI verified / closed; local Docker remains unavailable, and no
-target/deployment or target-capacity claim is made.
+Batch 1 are CI verified / closed. Test-only PR #180/#181 later corrected the
+miniredis evidence boundary; PR #181 merge `815fb31` and final main run
+`29199635598` passed all required jobs. Local Docker remains unavailable, and
+no target/deployment or target-capacity claim is made.
 P6-F36 does not reopen P6-F16, add a migration/RLS/foreign-key redesign, change
 unregistered-model compatibility or `/v1/models`, or add a selector UI/target
 cleanup.

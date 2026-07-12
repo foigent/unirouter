@@ -160,7 +160,10 @@ evidence.
   passed Backend Tests, Frontend Build and Docker Build. Two/three-replica real
   Redis, fairness, crash/fault, bounded queue, typed error, UI and OpenAPI
   evidence are covered; the historical branch is restored at its exact head.
-  Batch 1 is closed without a deployment or target-capacity claim.
+  Test-only PR #180/#181 then separated miniredis fixture execution from the
+  real-Redis concurrency authority; PR #181 merged as `815fb31` and final main
+  run `29199635598` passed all required jobs. Batch 1 remains closed without a
+  runtime, deployment or target-capacity change.
 - P6-F08 Routing Policy V1 is CI verified / closed by PR #172. Exact head
   `0e374d3` passed run `29178419505`; squash merge `54d8833` and post-merge
   main run `29178588075` passed Backend Tests, Frontend Build and Docker Build.
