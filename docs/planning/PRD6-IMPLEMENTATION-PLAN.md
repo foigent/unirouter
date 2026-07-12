@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-12
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F08, P6-F16-P6-F19, P6-F21, P6-F32-P6-F39 and P6-STREAM-002A are CI verified / closed; P6-F11 remains in progress; 3 accepted rows remain not started
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F09, P6-F16-P6-F19, P6-F21, P6-F32-P6-F39 and P6-STREAM-002A are CI verified / closed; P6-F11 remains in progress; P6-F10 and P6-F20 remain not started
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -30,11 +30,11 @@ required CI. No scope decision grants target/deployment/data/cost authorization.
 
 - 39 total `P6-F*` rows exist in the acceptance matrix;
 - 25 are accepted implementation scope;
-- 21 are CI verified / closed: P6-F01 through P6-F08, P6-F16 through P6-F19,
+- 22 are CI verified / closed: P6-F01 through P6-F09, P6-F16 through P6-F19,
   P6-F21 and P6-F32 through P6-F39;
-- 4 accepted rows remain unclosed: P6-F09 is Local verified with exact-head
-  required CI pending; P6-F11 is in progress through the P6-STREAM-002A
-  transport prerequisite; P6-F10 and P6-F20 remain not started;
+- 3 accepted rows remain unclosed: P6-F11 is in progress through the
+  P6-STREAM-002A transport prerequisite; P6-F10 and P6-F20 remain not
+  started;
 - 14 rows are not accepted: P6-F12 through P6-F15 and P6-F22 through P6-F31;
 - `P6-TEST-DB-001` is a separate accepted engineering-integrity issue outside
   the feature-row count. PR #155, merge `4b18ace` and post-merge main run
@@ -267,9 +267,11 @@ Adaptive latency/cost routing remains advanced scope.
 
 **Risk:** R3 financial semantics.
 **Gate:** version-fixed provider usage fixtures and price ownership decision.
-**Status:** P6-F09 provider Prompt Cache accounting is Local verified on
-`codex/prd6-prompt-cache-billing`; exact-head required CI remains pending.
-P6-F20 general outbox/workers remain not started, so Batch 3 is not closed.
+**Status:** P6-F09 provider Prompt Cache accounting is CI verified / closed by
+PR #174 exact-head run `29180539621`, merge `6515b3f`, the production-neutral
+P6-F21 test-fixture stabilization in PR #175, and final post-fix main run
+`29181137210`. P6-F20 general outbox/workers remain not started, so Batch 3 is
+not closed.
 Evidence:
 `docs/ops/evidence/PRD6-B3-P6F09-prompt-cache-billing-local-20260712.md`.
 

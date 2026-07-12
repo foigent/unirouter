@@ -2,10 +2,14 @@
 
 > Date: 2026-07-12
 > Owner: Codex
-> Branch: `codex/prd6-prompt-cache-billing`
+> Implementation branch: `codex/prd6-prompt-cache-billing`, restored at exact
+> head `711e7182c4875ed8324f6e379f73107ebcb30ffb`
 > Base: post-P6-F08 closeout `main` at
 > `2d09144b1e8a024079fae2931ca5420d489a8067`
-> Evidence level: Local verified; exact-head required CI still pending
+> Integration: PR #174, squash merge
+> `6515b3f3f281da022d7685700ec0754fe8ac3b66`; stability-only follow-up PR
+> #175, squash merge `257a9ebe14a80f52073ff8b20c21aa9b6ee86931`
+> Evidence level: CI verified / closed
 > Scope: UniRouter repository only; no response cache, Cache Service,
 > deployment, target mutation, real/paid provider request, credential change,
 > extra database access, exporter/outbox or X-Insight runtime work
@@ -168,14 +172,41 @@ OpenAPI YAML parse
 
 The frontend build retains the pre-existing large-chunk warning. The local
 macOS race linker retains its pre-existing malformed `LC_DYSYMTAB` warning;
-the race test exits successfully. Local Docker verification is unavailable on
-this machine and must be supplied by required CI.
+the race test exits successfully. Local Docker verification was unavailable on
+this machine and was supplied by required CI.
 
-## 7. Remaining Closure Gate And Explicit Non-Claims
+## 7. Required CI, Integration And Closure
 
-P6-F09 remains **Local verified**, not closed, until the exact implementation
-head passes required `Backend Tests`, `Frontend Build` and `Docker Build` in a
-PR. Backend CI must visibly run both explicit P6-F09 PostgreSQL steps.
+The complete integration truth chain is:
+
+1. Exact implementation head
+   `711e7182c4875ed8324f6e379f73107ebcb30ffb` passed PR #174 required run
+   `29180539621`: Backend Tests 5m56, Frontend Build 3m12 and Docker Build
+   1m04. Backend visibly passed both explicit P6-F09 PostgreSQL steps.
+2. PR #174 was squash-merged as
+   `6515b3f3f281da022d7685700ec0754fe8ac3b66`.
+3. Its first post-merge main run `29180730830` was not accepted as closure:
+   Frontend passed, Backend failed in the pre-existing P6-F21
+   `TestP6F21FairQueueEventuallyAdmitsLongWorkUnderShortContention` fixture,
+   and Docker was consequently skipped. The failure occurred in the full test
+   step before the explicit P6-F09 gates; the exact P6-F09 implementation head
+   had already passed all required jobs.
+4. The production-neutral follow-up only increased that miniredis race
+   fixture's store timeout from 50ms to the existing 500ms bounded-wait policy.
+   It did not change production workload-admission defaults, Lua, weights or
+   fairness. Exact follow-up head
+   `8a7fefe2a5e42ac8adcd9ac8838bc9ea8cb93fb7` passed PR #175 run
+   `29180946857`: Backend Tests 6m34, Frontend Build 3m38 and Docker Build
+   1m01.
+5. PR #175 was squash-merged as
+   `257a9ebe14a80f52073ff8b20c21aa9b6ee86931`. Final post-fix main run
+   `29181137210` passed Backend Tests 5m28, Frontend Build 3m35 and Docker
+   Build 1m02, including full tests and both explicit P6-F09 PostgreSQL gates.
+
+P6-F09 is therefore **CI verified / closed**. Batch 3 remains active because
+P6-F20 is a separate accepted durable-outbox requirement.
+
+## 8. Explicit Non-Claims
 
 - No target, production, throughput-capacity or 100x verification.
 - No response cache, semantic cache or independent Cache Service.

@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-12
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F08, P6-F16-P6-F19, P6-F21, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F09 is Local verified / exact-head CI pending; P6-F11 remains in progress
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F09, P6-F16-P6-F19, P6-F21, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F11 remains in progress
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -162,11 +162,14 @@ evidence.
   epoch CAS, per-channel thresholds, Chat/Embeddings parity, safe preview/
   trace/UI and guarded migration are covered. The historical branch is
   retained; no target or capacity claim.
-- P6-F09 provider Prompt Cache accounting is Local verified on
-  `codex/prd6-prompt-cache-billing`. OpenAI v1/v2, DeepSeek and Anthropic
-  source contracts, immutable `pv2_` ratios/effective prices, settlement and
-  recovery, logs/reconciliation/UI and guarded migration pass local race plus
-  real PostgreSQL evidence. Exact-head required CI remains pending. It adds no
+- P6-F09 provider Prompt Cache accounting is CI verified / closed. Exact
+  implementation head `711e718` passed PR #174 run `29180539621` and was
+  squash-merged as `6515b3f`. The first main run exposed a pre-existing P6-F21
+  miniredis timeout; production-neutral fixture-stability PR #175 passed run
+  `29180946857`, merged as `257a9eb`, and final main run `29181137210` passed
+  Backend Tests, Frontend Build and Docker Build. OpenAI v1/v2, DeepSeek and
+  Anthropic contracts, immutable `pv2_` pricing, settlement/recovery,
+  logs/reconciliation/UI and guarded migration are covered. It adds no
   response cache or Cache Service and makes no target/production claim.
 
 ## PRD5 Closure Guard
