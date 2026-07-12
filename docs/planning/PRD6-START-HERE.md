@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-13
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F40A is CI verified, P6-F40B is local verified / PR CI pending, P6-F40/P6-F11 remain in progress, and P6-F10/P6-F41 are not started
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F40A/P6-F40B are CI verified, P6-F40/P6-F11 remain in progress, and P6-F10/P6-F41 are not started
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 

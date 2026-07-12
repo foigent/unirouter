@@ -3,10 +3,10 @@
 **Batch:** PRD6 Batch 3H P6-F40B Provider Attempt Ledger
 **Owner:** Codex
 **Risk:** R3 provider dispatch, financial retry/cancel authority, billing decorators and migration safety
-**Status:** P6-F40B local verified; required PR CI pending; P6-F40 remains in progress
+**Status:** P6-F40B CI verified; P6-F40 remains in progress through P6-F40C
 **Baseline:** `main` / `origin/main` / `060a71458f99c5218dbdeb656a30367bb0944a25`
 **Branch:** `codex/prd6-provider-attempt-ledger`
-**PR:** pending
+**PR:** #184; exact implementation/test head `ac2bfb5`; required run `29209644118`
 **Decision:** D6-13 accepted by User on 2026-07-13
 **Next gate:** P6-F40C affected-key block and explicit operator reconciliation
 **Previous batch:** P6-F40A PR #183 is CI verified; P6-F20 PR #177 and post-closeout fixture-only PR #180/#181 are CI verified / closed
@@ -52,7 +52,9 @@
 - `go test ./... -count=1`, `go vet ./...` and command-contract tests: `PASS`.
 - Frontend type-check, 29 files / 144 tests and production build: `PASS`.
 - `git diff --check`: `PASS`.
-- Required PR CI is pending.
+- PR #184 exact implementation/test head `ac2bfb5` required run
+  `29209644118`: Backend Tests, Frontend Build and Docker Build `PASS`,
+  including both explicit P6-F40B PostgreSQL/race gates.
 - Evidence: `docs/ops/evidence/PRD6-B3H-P6F40B-provider-attempt-ledger-local-20260713.md`.
 
 ## Current Stop And Rollback Conditions

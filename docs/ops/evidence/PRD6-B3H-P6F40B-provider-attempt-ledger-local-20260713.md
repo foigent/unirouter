@@ -3,7 +3,7 @@
 > Date: 2026-07-13
 > Baseline: `060a71458f99c5218dbdeb656a30367bb0944a25`
 > Branch: `codex/prd6-provider-attempt-ledger`
-> Evidence level: Local verified; required PR CI is pending
+> Evidence level: CI verified on exact implementation/test head
 > Risk: R3 provider cost, retry/cancel authority, billing decorators and migration safety
 
 ## Accepted Boundary
@@ -136,6 +136,20 @@ git diff --check
 Frontend verification reports 29 files / 144 tests. The build retains the
 existing large-chunk warning and macOS race binaries retain the existing linker
 metadata warning; the commands do not fail.
+
+## Required CI
+
+PR #184 exact implementation/test head `ac2bfb5` passed required run
+`29209644118`:
+
+- `Backend Tests`: `PASS`, including full race tests, every pre-existing
+  PostgreSQL gate and both explicit P6-F40B attempt-ledger gates;
+- `Frontend Build`: `PASS`, including type-check, 29 files / 144 tests and
+  production build; and
+- `Docker Build`: `PASS`, including image verification.
+
+The only annotations are the repository's existing GitHub Actions Node.js
+runtime deprecation notices; no required job failed.
 
 ## Known Boundary And Remaining Work
 
