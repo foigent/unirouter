@@ -24,6 +24,10 @@ func NewRedis(addr, password string, db, maxConns int) (*Redis, error) {
 		DialTimeout:  5 * time.Second,
 		ReadTimeout:  3 * time.Second,
 		WriteTimeout: 3 * time.Second,
+		// Admission, authority and billing callers set tighter operation
+		// deadlines. Respect them instead of allowing the socket defaults to
+		// stretch a bounded failure path into seconds.
+		ContextTimeoutEnabled: true,
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

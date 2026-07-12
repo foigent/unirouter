@@ -30,6 +30,7 @@ import (
 	"github.com/uniroute/unirouter/internal/streampolicy"
 	"github.com/uniroute/unirouter/internal/tokenutil"
 	"github.com/uniroute/unirouter/internal/traceutil"
+	"github.com/uniroute/unirouter/internal/workloadadmission"
 )
 
 // BillingProvider defines the billing operations that Relay depends on.
@@ -507,6 +508,11 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		providerTimeout = relay.currentStreamPolicy().MaxDuration()
 	}
 	ctx = agentcap.ContextWithInvocationLeaseTTL(ctx, providerTimeout)
+	workloadClass := workloadadmission.ClassInteractive
+	if req.Stream {
+		workloadClass = workloadadmission.ClassStream
+	}
+	ctx = workloadadmission.ContextWithClass(ctx, workloadClass)
 	ctx, limitPolicyCollector := contextWithLimitPolicyCollector(ctx)
 
 	// Freeze balance once (before trying any upstream)
@@ -1542,6 +1548,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	relay.recordPayloadPolicyDecision(ctx, requestID, req.Model, requestedModel, elapsedMilliseconds(requestStart))
 	const providerTimeout = 120 * time.Second
 	ctx = agentcap.ContextWithInvocationLeaseTTL(ctx, providerTimeout)
+	ctx = workloadadmission.ContextWithClass(ctx, workloadadmission.ClassEmbedding)
 	ctx, limitPolicyCollector := contextWithLimitPolicyCollector(ctx)
 
 	freezeResult, err := relay.billing.Freeze(ctx, billing.FreezeRequest{

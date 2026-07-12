@@ -227,17 +227,23 @@ func TestCORS_Headers(t *testing.T) {
 	}
 	exposedHeaders := splitComma(rec.Header().Get("Access-Control-Expose-Headers"))
 	versionExposed := false
+	workloadClassExposed := false
 	for _, exposed := range exposedHeaders {
 		if exposed == "X-UniRouter-Limit-Policy-Version" {
 			versionExposed = true
-			break
+		}
+		if exposed == "X-UniRouter-Workload-Class" {
+			workloadClassExposed = true
 		}
 	}
 	if !versionExposed {
 		t.Fatal("limit-policy version response header must be browser-readable")
 	}
-	if len(exposedHeaders) != 4 {
-		t.Fatalf("expected three public identity headers plus the policy-version header, got %#v", exposedHeaders)
+	if !workloadClassExposed {
+		t.Fatal("server-derived workload class response header must be browser-readable")
+	}
+	if len(exposedHeaders) != 5 {
+		t.Fatalf("expected three public identity headers plus policy-version and workload-class headers, got %#v", exposedHeaders)
 	}
 }
 

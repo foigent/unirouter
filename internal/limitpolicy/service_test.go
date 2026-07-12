@@ -12,6 +12,7 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
 	"github.com/uniroute/unirouter/internal/testutil"
+	"github.com/uniroute/unirouter/internal/workloadadmission"
 )
 
 func newPolicyTestService(t *testing.T, options Options, policies ...Policy) (*Service, *miniredis.Miniredis) {
@@ -145,6 +146,50 @@ func TestExplicitPolicyDenialStillConsumesAPIKeyAttemptRate(t *testing.T) {
 	request.OperationID = "key-rate-third"
 	if _, err := service.Reserve(context.Background(), request); !errors.Is(err, ErrRPSExceeded) {
 		t.Fatalf("third request = %v, want API-key attempt-rate denial", err)
+	}
+	if err := service.CancelBeforeDispatch(context.Background(), first); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestP6F21WorkloadAdmissionRunsAfterAPIKeyAttemptRate(t *testing.T) {
+	options := testOptions()
+	options.GlobalConcurrency = 1
+	options.OrgConcurrency = 1
+	options.Workload.GlobalShortReserve = 0
+	options.Workload.OrgShortReserve = 0
+	options.Workload.Interactive = workloadadmission.ClassPolicy{Weight: 1, MaxWait: 10 * time.Millisecond}
+	options.Workload.Stream = workloadadmission.ClassPolicy{Weight: 1, MaxWait: 10 * time.Millisecond}
+	options.Workload.Embedding = workloadadmission.ClassPolicy{Weight: 1, MaxWait: 10 * time.Millisecond}
+	service, _ := newPolicyTestService(t, options)
+	firstRequest := admission("workload-first", 1)
+	firstRequest.Subject.BaseRPSLimit = 1_000
+	firstRequest.Subject.BaseRPMLimit = 2
+	firstRequest.WorkloadClass = workloadadmission.ClassInteractive
+	first, err := service.Reserve(context.Background(), firstRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	secondRequest := firstRequest
+	secondRequest.OperationID = "workload-second"
+	ctx, collector := ContextWithDecisionCollector(context.Background())
+	if _, err := service.Reserve(ctx, secondRequest); !errors.Is(err, ErrWorkloadCapacity) {
+		t.Fatalf("second request=%v, want ErrWorkloadCapacity", err)
+	}
+	decisions, version := collector.Snapshot()
+	if version == "" || len(decisions) < 2 {
+		t.Fatalf("missing composed policy/workload evidence: version=%q decisions=%#v", version, decisions)
+	}
+	workloadDecision := decisions[len(decisions)-1]
+	if workloadDecision.Reason != ReasonWorkloadCapacity || workloadDecision.WorkloadClass != workloadadmission.ClassInteractive || workloadDecision.WorkloadWeight != 1 {
+		t.Fatalf("workload decision=%#v", workloadDecision)
+	}
+
+	thirdRequest := firstRequest
+	thirdRequest.OperationID = "workload-third"
+	if _, err := service.Reserve(context.Background(), thirdRequest); !errors.Is(err, ErrRPMExceeded) {
+		t.Fatalf("workload-denied attempt did not consume API-key RPM: %v", err)
 	}
 	if err := service.CancelBeforeDispatch(context.Background(), first); err != nil {
 		t.Fatal(err)
@@ -428,7 +473,7 @@ func TestSnapshotIndexAvoidsScanningUnrelatedTenantPolicies(t *testing.T) {
 
 func TestPolicyChainCardinalityIsBounded(t *testing.T) {
 	options := testOptions()
-	options.MaxMatchingPolicies = 3 // the three built-ins leave no room for configured policies
+	options.MaxMatchingPolicies = 3 // API-key, workload, and two configured policies exceed the bound
 	service, _ := newPolicyTestService(t, options,
 		Policy{ID: 20, Ref: "policy:20", Name: "one", Version: 1, Mode: ModeShadow, FailureMode: FailureFailClosed, RPMLimit: 10},
 		Policy{ID: 21, Ref: "policy:21", Name: "two", Version: 1, Mode: ModeShadow, FailureMode: FailureFailClosed, RPMLimit: 10},
@@ -454,11 +499,9 @@ func TestBuiltinLimitChangesRotatePolicySetVersionWithoutResettingBuckets(t *tes
 	secondOptions.OrgConcurrency++
 	second, _ := newPolicyTestService(t, secondOptions)
 	secondRequest := request
-	secondRequest.Subject.BaseRPSLimit++
-	secondRequest.Subject.BaseRPMLimit++
 	secondPolicies := second.matchingPolicies(secondRequest.Subject)
 
-	if policySetVersion(firstPolicies) == policySetVersion(secondPolicies) {
+	if runtimePolicySetVersion(firstPolicies, first.workload.Version()) == runtimePolicySetVersion(secondPolicies, second.workload.Version()) {
 		t.Fatal("built-in limit changes did not rotate the policy-set version")
 	}
 	if len(firstPolicies) != len(secondPolicies) {

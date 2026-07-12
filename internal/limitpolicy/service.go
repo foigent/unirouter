@@ -15,11 +15,14 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"github.com/uniroute/unirouter/internal/db"
+	"github.com/uniroute/unirouter/internal/workloadadmission"
 )
 
 const maxLeaseTTL = 24 * time.Hour
 
 type Options struct {
+	// These compatibility names now define weighted workload capacity units.
+	// Explicit database policy concurrency limits continue to count requests.
 	GlobalConcurrency   int64
 	OrgConcurrency      int64
 	RefreshInterval     time.Duration
@@ -28,9 +31,11 @@ type Options struct {
 	FallbackTTL         time.Duration
 	FallbackGlobalCap   int
 	MaxMatchingPolicies int
+	Workload            workloadadmission.Options
 }
 
 func DefaultOptions() Options {
+	workload := workloadadmission.DefaultOptions()
 	return Options{
 		GlobalConcurrency:   100,
 		OrgConcurrency:      10,
@@ -40,6 +45,7 @@ func DefaultOptions() Options {
 		FallbackTTL:         2 * time.Second,
 		FallbackGlobalCap:   5,
 		MaxMatchingPolicies: 32,
+		Workload:            workload,
 	}
 }
 
@@ -73,6 +79,7 @@ type Service struct {
 	snapshot atomic.Pointer[policySnapshot]
 
 	fallback sync.Map
+	workload *workloadadmission.Service
 }
 
 func NewService(q db.DBQuerier, rdb *redis.Client, options Options) (*Service, error) {
@@ -85,12 +92,25 @@ func NewService(q db.DBQuerier, rdb *redis.Client, options Options) (*Service, e
 		options.MaxMatchingPolicies <= 0 || options.MaxMatchingPolicies > 128 {
 		return nil, ErrInvalidPolicy
 	}
+	workloadOptions := options.Workload
+	workloadOptions.GlobalCapacity = options.GlobalConcurrency
+	workloadOptions.OrgCapacity = options.OrgConcurrency
+	if workloadOptions.GlobalShortReserve >= workloadOptions.GlobalCapacity {
+		workloadOptions.GlobalShortReserve = workloadOptions.GlobalCapacity / 10
+	}
+	if workloadOptions.OrgShortReserve >= workloadOptions.OrgCapacity {
+		workloadOptions.OrgShortReserve = workloadOptions.OrgCapacity / 5
+	}
+	workloadService, err := workloadadmission.NewService(rdb, workloadOptions)
+	if err != nil {
+		return nil, fmt.Errorf("%w: workload admission: %v", ErrInvalidPolicy, err)
+	}
 	nodeBytes := make([]byte, 12)
 	if _, err := rand.Read(nodeBytes); err != nil {
 		return nil, fmt.Errorf("generate policy node identity: %w", err)
 	}
 	service := &Service{
-		db: q, rdb: rdb, options: options, nodeID: hex.EncodeToString(nodeBytes),
+		db: q, rdb: rdb, options: options, nodeID: hex.EncodeToString(nodeBytes), workload: workloadService,
 	}
 	service.snapshot.Store(buildPolicySnapshot([]Policy{}, map[int64][]string{}, false, time.Now()))
 	return service, nil
@@ -206,10 +226,24 @@ func (s *Service) BuiltinLimits() map[string]int64 {
 	if s == nil {
 		return map[string]int64{}
 	}
-	return map[string]int64{
+	result := map[string]int64{
 		"global_concurrency":       s.options.GlobalConcurrency,
 		"organization_concurrency": s.options.OrgConcurrency,
 	}
+	if s.workload != nil {
+		options := s.workload.Options()
+		result["workload_global_capacity"] = options.GlobalCapacity
+		result["workload_organization_capacity"] = options.OrgCapacity
+		result["workload_global_short_reserve"] = options.GlobalShortReserve
+		result["workload_organization_short_reserve"] = options.OrgShortReserve
+		result["workload_interactive_weight"] = options.Interactive.Weight
+		result["workload_stream_weight"] = options.Stream.Weight
+		result["workload_embedding_weight"] = options.Embedding.Weight
+		result["workload_interactive_max_wait_ms"] = int64(options.Interactive.MaxWait / time.Millisecond)
+		result["workload_stream_max_wait_ms"] = int64(options.Stream.MaxWait / time.Millisecond)
+		result["workload_embedding_max_wait_ms"] = int64(options.Embedding.MaxWait / time.Millisecond)
+	}
+	return result
 }
 
 func (s *Service) Reserve(ctx context.Context, request AdmissionRequest) (*Reservation, error) {
@@ -239,10 +273,13 @@ func (s *Service) Reserve(ctx context.Context, request AdmissionRequest) (*Reser
 		}
 	}
 	request.Subject = s.authoritativeSubject(request.Subject)
+	if request.WorkloadClass == "" {
+		request.WorkloadClass = workloadadmission.ClassInteractive
+	}
 
 	policies := s.matchingPolicies(request.Subject)
-	version := policySetVersion(policies)
-	if len(policies) > s.options.MaxMatchingPolicies {
+	version := runtimePolicySetVersion(policies, s.workload.Version())
+	if len(policies)+1 > s.options.MaxMatchingPolicies {
 		decision := Decision{
 			PolicyRef: "policy-set", PolicyName: "Distributed policy chain", PolicyVersion: 1,
 			SelectorHash: version, Mode: ModeEnforce, FailureMode: FailureFailClosed,
@@ -309,6 +346,30 @@ func (s *Service) Reserve(ctx context.Context, request AdmissionRequest) (*Reser
 			Fallback:       false, Mode: policy.Mode,
 		})
 	}
+	workloadReservation, workloadDecision, workloadErr := s.workload.Reserve(ctx, workloadadmission.Request{
+		OperationID: request.OperationID, OrgID: request.Subject.OrgID,
+		Class: request.WorkloadClass, LeaseTTL: request.LeaseTTL,
+	})
+	mappedWorkloadDecision := workloadLimitDecision(workloadDecision)
+	RecordSupplementalDecision(ctx, mappedWorkloadDecision)
+	recordDecisionMetric(mappedWorkloadDecision)
+	if workloadErr != nil {
+		s.rollback(ctx, reservation)
+		switch {
+		case errors.Is(workloadErr, workloadadmission.ErrCapacityExceeded):
+			return nil, ErrWorkloadCapacity
+		case errors.Is(workloadErr, workloadadmission.ErrConflict):
+			return nil, ErrConflict
+		case errors.Is(workloadErr, workloadadmission.ErrConfigConflict):
+			return nil, ErrWorkloadConfig
+		default:
+			return nil, ErrStateUnavailable
+		}
+	}
+	reservation.workload = workloadReservation
+	if workloadReservation != nil && !workloadReservation.Idempotent {
+		reservation.Idempotent = false
+	}
 	return reservation, nil
 }
 
@@ -332,6 +393,11 @@ func (s *Service) Finalize(ctx context.Context, reservation *Reservation, actual
 			recordTerminalMetric("settled", "overrun")
 		} else {
 			recordTerminalMetric("settled", "success")
+		}
+	}
+	if reservation.workload != nil {
+		if err := s.workload.Release(ctx, reservation.workload); err != nil {
+			terminalErrors = append(terminalErrors, err)
 		}
 	}
 	return errors.Join(terminalErrors...)
@@ -365,6 +431,11 @@ func (s *Service) cancel(ctx context.Context, reservation *Reservation, beforeDi
 			continue
 		}
 		recordTerminalMetric("cancelled", "success")
+	}
+	if reservation.workload != nil {
+		if err := s.workload.Release(ctx, reservation.workload); err != nil {
+			terminalErrors = append(terminalErrors, err)
+		}
 	}
 	return errors.Join(terminalErrors...)
 }
@@ -431,24 +502,11 @@ func (s *Service) matchingPolicies(subject Subject) []Policy {
 		RPSLimit: baseRPS, RPMLimit: baseRPM, Builtin: true,
 		RuntimeBucket: fmt.Sprintf("builtin:api-key-rate:%d", subject.APIKeyID),
 	}
-	global := Policy{
-		Ref: fmt.Sprintf("builtin:global-concurrency:%d", s.options.GlobalConcurrency), Name: "Built-in global concurrency", Version: 1,
-		Mode: ModeEnforce, FailureMode: FailureLastKnownSafe,
-		ConcurrencyLimit: s.options.GlobalConcurrency, Builtin: true,
-		RuntimeBucket: "builtin:global-concurrency",
-	}
-	orgID := subject.OrgID
-	organization := Policy{
-		Ref: fmt.Sprintf("builtin:organization-concurrency:%d", s.options.OrgConcurrency), Name: "Built-in organization concurrency", Version: 1,
-		OrgID: &orgID, Mode: ModeEnforce, FailureMode: FailureLastKnownSafe,
-		ConcurrencyLimit: s.options.OrgConcurrency, Builtin: true,
-		RuntimeBucket: fmt.Sprintf("builtin:organization-concurrency:%d", subject.OrgID),
-	}
 	// Count every authenticated model-call attempt against its API-key window
 	// before a shared-capacity or more-specific policy can reject it. This both
 	// preserves the historical middleware contract and prevents rejected-work
 	// amplification from bypassing the caller's own rate boundary.
-	policies := []Policy{apiKeyRate, global, organization}
+	policies := []Policy{apiKeyRate}
 	if snapshot == nil {
 		return policies
 	}
@@ -664,6 +722,34 @@ func decisionFromStore(policy Policy, store storeResult) Decision {
 	if store.Code == storeConflict {
 		decision.Decision = DecisionDeny
 		decision.Reason = ReasonConflict
+	}
+	return decision
+}
+
+func workloadLimitDecision(source workloadadmission.Decision) Decision {
+	reason := source.Reason
+	if reason == workloadadmission.ReasonCapacityExceeded {
+		reason = ReasonWorkloadCapacity
+	} else if reason == workloadadmission.ReasonQueueFull {
+		reason = ReasonWorkloadQueueFull
+	} else if reason == workloadadmission.ReasonConflict {
+		reason = ReasonConflict
+	} else if reason == workloadadmission.ReasonLastKnownSafe {
+		reason = ReasonLastKnownSafe
+	} else if reason == workloadadmission.ReasonStateUnavailable {
+		reason = ReasonStateUnavailable
+	}
+	decision := Decision{
+		PolicyRef: "builtin:workload-admission-v1", PolicyName: "Built-in weighted workload admission",
+		PolicyVersion: 1, SelectorHash: "global-org", Mode: ModeEnforce,
+		FailureMode: FailureLastKnownSafe, Decision: DecisionAllow, Reason: reason,
+		Limits:   Limits{Concurrency: source.GlobalCapacity},
+		Observed: Usage{Concurrency: source.GlobalUsed}, Fallback: source.Fallback,
+		WorkloadClass: source.Class, WorkloadWeight: source.Weight,
+		WaitMS: int64(source.Waited / time.Millisecond), QueueDepth: source.QueueDepth,
+	}
+	if source.Decision == "deny" {
+		decision.Decision = DecisionDeny
 	}
 	return decision
 }

@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/uniroute/unirouter/internal/workloadadmission"
 )
 
 const (
@@ -18,16 +20,18 @@ const (
 	FailureFailClosed    = "fail_closed"
 	FailureLastKnownSafe = "last_known_safe"
 
-	ReasonAllowed          = "allowed"
-	ReasonRPSExceeded      = "rps_exceeded"
-	ReasonRPMExceeded      = "rpm_exceeded"
-	ReasonTPMExceeded      = "tpm_exceeded"
-	ReasonConcurrency      = "concurrency_exceeded"
-	ReasonStateUnavailable = "state_unavailable"
-	ReasonLastKnownSafe    = "last_known_safe"
-	ReasonConflict         = "operation_conflict"
-	ReasonPolicyChainLarge = "policy_chain_too_large"
-	ReasonSnapshotStale    = "policy_snapshot_stale"
+	ReasonAllowed           = "allowed"
+	ReasonRPSExceeded       = "rps_exceeded"
+	ReasonRPMExceeded       = "rpm_exceeded"
+	ReasonTPMExceeded       = "tpm_exceeded"
+	ReasonConcurrency       = "concurrency_exceeded"
+	ReasonStateUnavailable  = "state_unavailable"
+	ReasonLastKnownSafe     = "last_known_safe"
+	ReasonConflict          = "operation_conflict"
+	ReasonPolicyChainLarge  = "policy_chain_too_large"
+	ReasonSnapshotStale     = "policy_snapshot_stale"
+	ReasonWorkloadCapacity  = "workload_capacity_exceeded"
+	ReasonWorkloadQueueFull = "workload_queue_full"
 
 	DecisionAllow     = "allow"
 	DecisionDeny      = "deny"
@@ -41,6 +45,8 @@ var (
 	ErrRPMExceeded         = errors.New("distributed policy RPM exceeded")
 	ErrTPMExceeded         = errors.New("distributed policy TPM exceeded")
 	ErrConcurrencyExceeded = errors.New("distributed policy concurrency exceeded")
+	ErrWorkloadCapacity    = errors.New("weighted workload capacity exceeded")
+	ErrWorkloadConfig      = errors.New("weighted workload configuration conflict")
 	ErrStateUnavailable    = errors.New("distributed policy state unavailable")
 	ErrConflict            = errors.New("distributed policy operation conflict")
 )
@@ -84,6 +90,7 @@ type AdmissionRequest struct {
 	EstimatedInput int64
 	ReservedOutput int64
 	LeaseTTL       time.Duration
+	WorkloadClass  string
 }
 
 type Usage struct {
@@ -101,18 +108,22 @@ type Limits struct {
 }
 
 type Decision struct {
-	PolicyID      int64  `json:"policy_id,omitempty"`
-	PolicyRef     string `json:"policy_ref"`
-	PolicyName    string `json:"policy_name"`
-	PolicyVersion int64  `json:"policy_version"`
-	SelectorHash  string `json:"selector_hash"`
-	Mode          string `json:"mode"`
-	FailureMode   string `json:"failure_mode"`
-	Decision      string `json:"decision"`
-	Reason        string `json:"reason"`
-	Limits        Limits `json:"limits"`
-	Observed      Usage  `json:"observed"`
-	Fallback      bool   `json:"fallback"`
+	PolicyID       int64  `json:"policy_id,omitempty"`
+	PolicyRef      string `json:"policy_ref"`
+	PolicyName     string `json:"policy_name"`
+	PolicyVersion  int64  `json:"policy_version"`
+	SelectorHash   string `json:"selector_hash"`
+	Mode           string `json:"mode"`
+	FailureMode    string `json:"failure_mode"`
+	Decision       string `json:"decision"`
+	Reason         string `json:"reason"`
+	Limits         Limits `json:"limits"`
+	Observed       Usage  `json:"observed"`
+	Fallback       bool   `json:"fallback"`
+	WorkloadClass  string `json:"workload_class,omitempty"`
+	WorkloadWeight int64  `json:"workload_weight,omitempty"`
+	WaitMS         int64  `json:"wait_ms,omitempty"`
+	QueueDepth     int64  `json:"queue_depth,omitempty"`
 }
 
 type policyReservation struct {
@@ -133,6 +144,7 @@ type Reservation struct {
 	OperationID string
 	Items       []policyReservation
 	Idempotent  bool
+	workload    *workloadadmission.Reservation
 }
 
 func (p Policy) Validate() error {
@@ -195,6 +207,17 @@ func policySetVersion(policies []Policy) string {
 	for _, policy := range policies {
 		parts = append(parts, fmt.Sprintf("%s:%d", policy.Ref, policy.Version))
 	}
+	sort.Strings(parts)
+	sum := sha256.Sum256([]byte(strings.Join(parts, "|")))
+	return hex.EncodeToString(sum[:8])
+}
+
+func runtimePolicySetVersion(policies []Policy, workloadVersion string) string {
+	parts := make([]string, 0, len(policies)+1)
+	for _, policy := range policies {
+		parts = append(parts, fmt.Sprintf("%s:%d", policy.Ref, policy.Version))
+	}
+	parts = append(parts, "workload:"+workloadVersion)
 	sort.Strings(parts)
 	sum := sha256.Sum256([]byte(strings.Join(parts, "|")))
 	return hex.EncodeToString(sum[:8])

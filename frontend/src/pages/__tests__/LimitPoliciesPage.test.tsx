@@ -36,7 +36,20 @@ describe('LimitPoliciesPage', () => {
         concurrency_limit: 20,
       }],
       total: 1,
-      builtin_limits: { global_concurrency: 100, organization_concurrency: 10 },
+      builtin_limits: {
+        global_concurrency: 100,
+        organization_concurrency: 10,
+        workload_global_capacity: 100,
+        workload_organization_capacity: 10,
+        workload_global_short_reserve: 10,
+        workload_organization_short_reserve: 2,
+        workload_interactive_weight: 1,
+        workload_stream_weight: 4,
+        workload_embedding_weight: 1,
+        workload_interactive_max_wait_ms: 50,
+        workload_stream_max_wait_ms: 250,
+        workload_embedding_max_wait_ms: 50,
+      },
     });
     mocks.getKeys.mockResolvedValue({
       data: [{ id: 15, name: 'frontend-prod', key_prefix: 'ur-prod', org_id: 22, org_name: 'Acme', project_id: 9, project_name: 'Customer API' }],
@@ -54,7 +67,10 @@ describe('LimitPoliciesPage', () => {
     expect(screen.getByText(/RPS 是每秒请求数/)).toBeTruthy();
     expect(screen.getByText(/推荐先用“影子观察”/)).toBeTruthy();
     expect(screen.getByText(/约 2 秒失效且每个副本最多 1 次/)).toBeTruthy();
-    expect(screen.getByText(/全平台 100，每个组织 10/)).toBeTruthy();
+    expect(screen.getByText(/全平台 100 个容量单位，每个组织 10 个/)).toBeTruthy();
+    expect(screen.getByText(/流式对话占 4 个/)).toBeTruthy();
+    expect(screen.getByText(/流式对话最多等待 250 毫秒/)).toBeTruthy();
+    expect(screen.getByText(/返回 429 和 Retry-After/)).toBeTruthy();
     expect(screen.getByText('Acme · Customer API · 凭证 frontend-prod · 模型 company-chat · 标签 production')).toBeTruthy();
     expect(screen.getByText('RPM 600 / TPM 100000 / 并发 20')).toBeTruthy();
 

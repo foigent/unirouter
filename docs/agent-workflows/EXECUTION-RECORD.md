@@ -1,29 +1,47 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 1 P6-F07 Distributed Limit Policy
+**Batch:** PRD6 Batch 1 P6-F21 Weighted Workload Admission
 **Owner:** Codex
-**Risk:** R4 distributed admission, tenant control and migration
-**Status:** CI verified / closed
-**Integration:** PR #168 exact head `f52a151` / run `29173848811`; squash merge `2610e317`; post-merge main run `29174001859`; historical branch restored; no deployment, target or production claim
-**Previous batch:** P6-F19 CI verified / closed by PR #164/#166 and post-merge main runs `29170507588`/`29171807693`
+**Risk:** R4 distributed fairness, capacity leases and mixed-version safety
+**Status:** Local verified; required CI pending
+**Integration:** branch `codex/prd6-weighted-workload-admission`; PR/head/run pending; no deployment, target or production claim
+**Previous batch:** P6-F07 implementation PR #168 plus closeout PR #169; post-closeout main run `29174500704` passed and both historical branches are restored
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Current Scope
 
-1. Enforce exact shared API-key RPS/RPM and every matching global,
-   organization, project, API-key, model and server-owned label policy.
-2. Reserve RPS/RPM/TPM/concurrency before wallet/upstream work, then replace
-   TPM estimates with actual terminal usage and release safe cancellations.
-3. Provide disabled/shadow/enforce, fail-closed and bounded last-known-safe
-   semantics with Redis time, cluster-safe keys and bounded local state.
-4. Add tenant-scoped optimistic control APIs, non-technical UI, version/header/
-   trace evidence and low-cardinality metrics without raw payload persistence.
-5. Prove multi-instance exact concurrency, authoritative labels, TPM terminal
-   behavior and guarded down→up rollback with real Redis 7/PostgreSQL in CI.
-6. Keep P6-F20 durable cross-process terminal hooks, P6-F21 weighted fairness,
-   D6-10 long-stream extension, deployment and target capacity out of closure.
+1. Classify ordinary Chat, streaming Chat and Embeddings on the server as
+   interactive/stream/embedding with default 1/4/1 weights.
+2. Enforce exact cross-replica global/organization weighted capacity with
+   Redis-time expiring leases and short-request reserve.
+3. Provide bounded virtual-finish fairness, per-org queue caps, cross-tenant
+   head-of-line bypass and typed 429/Retry-After.
+4. Bound Redis latency/outage through context deadlines, one two-second LKS
+   permit, typed 503 and mixed-configuration fail-closed behavior.
+5. Expose safe version/class/wait evidence plus non-technical UI/OpenAPI and
+   validate restart-time `WORKLOAD_*` configuration.
+6. Keep P6-F20 durable cross-process terminal hooks, D6-10/P6-F11 dynamic
+   stream work, deployment, target capacity and media job planes out of scope.
 
-## Current P6-F07 Behavior Change
+## Current P6-F21 Behavior Change
+
+- two- and three-replica real Redis fixtures enforce the same global/org
+  weighted totals instead of multiplying capacity by replica count;
+- stream work consumes four units and cannot consume the reserved short-work
+  region, while fair virtual finish eventually coalesces enough free units for
+  long work under continuous short contention;
+- a noisy tenant has a bounded queue and cannot block another tenant's usable
+  capacity or queue space;
+- lease expiry recovers crashed holders, Redis uncertainty consumes at most
+  one short pre-issued permit, and cancelled callers cannot consume it;
+- mixed configuration fingerprints return typed 503 until old work drains;
+- full repository race, CI-style PostgreSQL/Redis integration, 28 frontend
+  files / 141 tests, type-check and build passed locally; local Docker CLI is
+  unavailable, so Docker remains a required-CI gate; and
+- evidence:
+  `docs/ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md`.
+
+## Previous P6-F07 Behavior Change
 
 - Chat and Embeddings count every authenticated call against a shared API-key
   rate window before more-specific policy/capacity denial can be amplified;
@@ -34,8 +52,9 @@
 - shadow decisions, degraded last-known-safe admissions and enforced denials
   emit distinct sanitized evidence under one policy-set fingerprint;
 - platform/org administrators mutate their allowed scope with optimistic
-  versions; billing administrators read only; built-in 100 global/10 org
-  concurrency ceilings are visible rather than hidden;
+  versions; billing administrators read only; the then-current 100 global/10
+  org concurrency ceilings were visible and are superseded for model calls by
+  P6-F21 weighted capacity;
 - migration down succeeds only before configuration exists and otherwise
   refuses destructive policy/label loss; subsequent roll-forward is tested;
 - PR #168 exact-head and post-merge Backend/Frontend/Docker CI passed,
@@ -62,8 +81,9 @@
   admit exactly three; Redis time survives a two-hour application-clock skew;
 - PR #164 and #166 exact-head plus post-merge Backend/Frontend/Docker CI passed,
   including migrated PostgreSQL and Redis 7 authority/runtime integration;
-- P6-F19 is CI verified / closed. P6-F20 and P6-F21 remain separate; P6-F07
-  is independently closed by PR #168;
+- P6-F19 is CI verified / closed. P6-F20 remains separate; P6-F07 is
+  independently closed and P6-F21 is independently local verified / CI
+  pending;
 - evidence:
   `docs/ops/evidence/PRD6-B1-P6F19A-agent-capability-kernel-local-20260712.md`
   and

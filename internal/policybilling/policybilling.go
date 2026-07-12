@@ -12,6 +12,7 @@ import (
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/limitpolicy"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/workloadadmission"
 )
 
 const (
@@ -19,6 +20,8 @@ const (
 	ErrorCodeRPMExceeded         = "limit_policy.rpm_exceeded"
 	ErrorCodeTPMExceeded         = "limit_policy.tpm_exceeded"
 	ErrorCodeConcurrencyExceeded = "limit_policy.concurrency_exceeded"
+	ErrorCodeWorkloadCapacity    = "workload_admission.capacity_exceeded"
+	ErrorCodeWorkloadConfig      = "workload_admission.configuration_conflict"
 	ErrorCodeStateUnavailable    = "limit_policy.state_unavailable"
 	ErrorCodeConflict            = "limit_policy.operation_conflict"
 
@@ -91,7 +94,7 @@ func (b *Billing) Freeze(ctx context.Context, req billing.FreezeRequest) (*billi
 			BaseRPSLimit: int64(apiKey.QPSLimit), BaseRPMLimit: int64(apiKey.RPMLimit),
 		},
 		EstimatedInput: int64(inputTokens), ReservedOutput: int64(reservedOutput),
-		LeaseTTL: agentcap.InvocationLeaseTTLFromContext(ctx),
+		LeaseTTL: agentcap.InvocationLeaseTTLFromContext(ctx), WorkloadClass: workloadadmission.ClassFromContext(ctx),
 	})
 	if reserveErr != nil {
 		return rejectedResult(reserveErr), nil
@@ -227,6 +230,10 @@ func errorCode(err error) string {
 		return ErrorCodeTPMExceeded
 	case errors.Is(err, limitpolicy.ErrConcurrencyExceeded):
 		return ErrorCodeConcurrencyExceeded
+	case errors.Is(err, limitpolicy.ErrWorkloadCapacity):
+		return ErrorCodeWorkloadCapacity
+	case errors.Is(err, limitpolicy.ErrWorkloadConfig):
+		return ErrorCodeWorkloadConfig
 	case errors.Is(err, limitpolicy.ErrConflict):
 		return ErrorCodeConflict
 	default:

@@ -90,7 +90,11 @@ func main() {
 		log.Fatalf("Failed to initialize Agent capability service: %v", err)
 	}
 	agentCapabilityHandler := capapi.NewHandler(agentCapabilityService)
-	limitPolicyService, err := limitpolicy.NewService(postgres.Pool, redisClient.Client, limitpolicy.DefaultOptions())
+	limitPolicyOptions := limitpolicy.DefaultOptions()
+	limitPolicyOptions.Workload = cfg.WorkloadAdmissionOptions()
+	limitPolicyOptions.GlobalConcurrency = int64(cfg.WorkloadGlobalCapacity)
+	limitPolicyOptions.OrgConcurrency = int64(cfg.WorkloadOrgCapacity)
+	limitPolicyService, err := limitpolicy.NewService(postgres.Pool, redisClient.Client, limitPolicyOptions)
 	if err != nil {
 		log.Fatalf("Failed to initialize distributed limit-policy service: %v", err)
 	}

@@ -7,11 +7,13 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/streampolicy"
 	"github.com/uniroute/unirouter/internal/traceutil"
+	"github.com/uniroute/unirouter/internal/workloadadmission"
 )
 
 type Config struct {
@@ -90,6 +92,18 @@ type Config struct {
 	// Rate Limiting
 	DefaultKeyRPM int
 	DefaultKeyQPS int
+
+	// Replica-invariant weighted workload admission
+	WorkloadGlobalCapacity       int
+	WorkloadOrgCapacity          int
+	WorkloadGlobalShortReserve   int
+	WorkloadOrgShortReserve      int
+	WorkloadInteractiveWeight    int
+	WorkloadStreamWeight         int
+	WorkloadEmbeddingWeight      int
+	WorkloadInteractiveMaxWaitMS int
+	WorkloadStreamMaxWaitMS      int
+	WorkloadEmbeddingMaxWaitMS   int
 
 	// Failover
 	MaxRetryCount             int
@@ -192,6 +206,11 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("invalid streaming transport configuration: %w", err)
 		}
 	}
+	if c.WorkloadGlobalCapacity != 0 || c.WorkloadOrgCapacity != 0 {
+		if err := c.WorkloadAdmissionOptions().Validate(); err != nil {
+			return fmt.Errorf("invalid weighted workload admission configuration: %w", err)
+		}
+	}
 	if err := validateOptionalHTTPURL("PROMETHEUS_URL", c.PrometheusURL); err != nil {
 		return err
 	}
@@ -292,6 +311,17 @@ func Load() (*Config, error) {
 		DefaultKeyRPM: getEnvInt("DEFAULT_KEY_RPM", 60),
 		DefaultKeyQPS: getEnvInt("DEFAULT_KEY_QPS", 10),
 
+		WorkloadGlobalCapacity:       getEnvInt("WORKLOAD_GLOBAL_CAPACITY", 100),
+		WorkloadOrgCapacity:          getEnvInt("WORKLOAD_ORG_CAPACITY", 10),
+		WorkloadGlobalShortReserve:   getEnvInt("WORKLOAD_GLOBAL_SHORT_RESERVE", 10),
+		WorkloadOrgShortReserve:      getEnvInt("WORKLOAD_ORG_SHORT_RESERVE", 2),
+		WorkloadInteractiveWeight:    getEnvInt("WORKLOAD_INTERACTIVE_WEIGHT", 1),
+		WorkloadStreamWeight:         getEnvInt("WORKLOAD_STREAM_WEIGHT", 4),
+		WorkloadEmbeddingWeight:      getEnvInt("WORKLOAD_EMBEDDING_WEIGHT", 1),
+		WorkloadInteractiveMaxWaitMS: getEnvInt("WORKLOAD_INTERACTIVE_MAX_WAIT_MS", 50),
+		WorkloadStreamMaxWaitMS:      getEnvInt("WORKLOAD_STREAM_MAX_WAIT_MS", 250),
+		WorkloadEmbeddingMaxWaitMS:   getEnvInt("WORKLOAD_EMBEDDING_MAX_WAIT_MS", 50),
+
 		MaxRetryCount:             getEnvInt("MAX_RETRY_COUNT", 1),
 		CircuitBreakerThreshold:   getEnvInt("CIRCUIT_BREAKER_THRESHOLD", 5),
 		CircuitBreakerRecoverSecs: getEnvInt("CIRCUIT_BREAKER_RECOVER_SECONDS", 300),
@@ -342,6 +372,27 @@ func (c Config) StreamPolicyConfig() streampolicy.Config {
 		HeartbeatSeconds:        c.StreamHeartbeatSecs,
 		MaxDurationSeconds:      c.StreamMaxDurationSecs,
 	}
+}
+
+func (c Config) WorkloadAdmissionOptions() workloadadmission.Options {
+	options := workloadadmission.DefaultOptions()
+	options.GlobalCapacity = int64(c.WorkloadGlobalCapacity)
+	options.OrgCapacity = int64(c.WorkloadOrgCapacity)
+	options.GlobalShortReserve = int64(c.WorkloadGlobalShortReserve)
+	options.OrgShortReserve = int64(c.WorkloadOrgShortReserve)
+	options.Interactive = workloadadmission.ClassPolicy{
+		Weight:  int64(c.WorkloadInteractiveWeight),
+		MaxWait: time.Duration(c.WorkloadInteractiveMaxWaitMS) * time.Millisecond,
+	}
+	options.Stream = workloadadmission.ClassPolicy{
+		Weight:  int64(c.WorkloadStreamWeight),
+		MaxWait: time.Duration(c.WorkloadStreamMaxWaitMS) * time.Millisecond,
+	}
+	options.Embedding = workloadadmission.ClassPolicy{
+		Weight:  int64(c.WorkloadEmbeddingWeight),
+		MaxWait: time.Duration(c.WorkloadEmbeddingMaxWaitMS) * time.Millisecond,
+	}
+	return options
 }
 
 func splitCSV(value string) []string {

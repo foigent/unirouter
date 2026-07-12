@@ -37,7 +37,7 @@
 | P6-LIMIT-002 | Shared RPM/RPS/TPM/concurrency policy | enterprise isolation/capacity | CI verified / closed by PR #168, merge `2610e317` and main run `29174001859`: explicit selectors, exact shared limits, shadow/enforce, bounded failure semantics, version evidence, UI and guarded migration pass; P6-F20/P6-F21/D6-10 remain separate | P1 |
 | P6-ROUTE-004 | Routing Policy V1 | predictable priority/weight/retry/failover | telemetry, policy version and rollback | P1 |
 | P6-DURABLE-001 | Durable minimal usage/finalization and bounded evidence workers | prevents post-delivery revenue loss and evidence self-DDoS | transactional outbox, replay and priority semantics | P1 |
-| P6-WORK-001 | Weighted workload admission | prevents long streams/media starving short work and replica-multiplied quotas | workload envelope, lease/fairness semantics | P1 |
+| P6-WORK-001 | Weighted workload admission | prevents long streams starving short work and replica-multiplied quotas | Local verified on `codex/prd6-weighted-workload-admission`: server-derived classes, exact leases, bounded fair/per-org queues, crash/fault/config behavior, UI/OpenAPI and real Redis pass; required CI pending. Media remains a future async job-plane boundary | P1 |
 | P6-BILL-001 | Prompt-cache token usage and billing | accurate provider economics | versioned adapter/price sources | P1 |
 | P6-GUARD-001 | Guardrail Kernel | enterprise safety and PII controls | detector/failure/latency policy | P1 |
 | P6-STREAM-001 | Streaming interception and termination | limits unsafe live disclosure | P6-STREAM-002A transport prerequisite CI verified; D6-10 dynamic reservation extension and buffer/latency/protocol policy contract remain | P1 |

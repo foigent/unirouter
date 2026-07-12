@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/uniroute/unirouter/internal/traceutil"
 )
@@ -419,6 +420,48 @@ func TestLoad_InvalidStreamPolicyFailsClosed(t *testing.T) {
 	}
 }
 
+func TestLoad_WorkloadAdmissionEnvOverrides(t *testing.T) {
+	t.Setenv("JWT_SECRET", "jwt-secret")
+	t.Setenv("API_KEY_HASH_SECRET", "api-key-secret")
+	t.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+	t.Setenv("WORKLOAD_GLOBAL_CAPACITY", "200")
+	t.Setenv("WORKLOAD_ORG_CAPACITY", "20")
+	t.Setenv("WORKLOAD_GLOBAL_SHORT_RESERVE", "20")
+	t.Setenv("WORKLOAD_ORG_SHORT_RESERVE", "4")
+	t.Setenv("WORKLOAD_INTERACTIVE_WEIGHT", "1")
+	t.Setenv("WORKLOAD_STREAM_WEIGHT", "5")
+	t.Setenv("WORKLOAD_EMBEDDING_WEIGHT", "2")
+	t.Setenv("WORKLOAD_INTERACTIVE_MAX_WAIT_MS", "75")
+	t.Setenv("WORKLOAD_STREAM_MAX_WAIT_MS", "300")
+	t.Setenv("WORKLOAD_EMBEDDING_MAX_WAIT_MS", "80")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load workload override: %v", err)
+	}
+	options := cfg.WorkloadAdmissionOptions()
+	if options.GlobalCapacity != 200 || options.OrgCapacity != 20 ||
+		options.GlobalShortReserve != 20 || options.OrgShortReserve != 4 ||
+		options.Interactive.Weight != 1 || options.Stream.Weight != 5 || options.Embedding.Weight != 2 ||
+		options.Interactive.MaxWait != 75*time.Millisecond || options.Stream.MaxWait != 300*time.Millisecond ||
+		options.Embedding.MaxWait != 80*time.Millisecond {
+		t.Fatalf("unexpected workload options: %#v", options)
+	}
+}
+
+func TestLoad_InvalidWorkloadAdmissionFailsClosed(t *testing.T) {
+	t.Setenv("JWT_SECRET", "jwt-secret")
+	t.Setenv("API_KEY_HASH_SECRET", "api-key-secret")
+	t.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+	t.Setenv("WORKLOAD_ORG_CAPACITY", "5")
+	t.Setenv("WORKLOAD_ORG_SHORT_RESERVE", "2")
+	t.Setenv("WORKLOAD_STREAM_WEIGHT", "4")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid workload admission configuration to fail startup validation")
+	}
+}
+
 func TestLoad_Defaults(t *testing.T) {
 	// Clear all env vars to test defaults
 	envVars := []string{
@@ -427,6 +470,9 @@ func TestLoad_Defaults(t *testing.T) {
 		"TRACE_EVENTS_ENABLED", "TRACE_EVENT_SAMPLE_RATE", "TRACE_EVENT_RETENTION_DAYS", "LOG_RETENTION_DAYS",
 		"PAYLOAD_CAPTURE_MODE", "EVIDENCE_CONTEXT_TRUST_SECRET",
 		"STREAM_MAX_SSE_LINE_BYTES", "STREAM_WRITE_IDLE_TIMEOUT_SECONDS", "STREAM_HEARTBEAT_SECONDS", "STREAM_MAX_DURATION_SECONDS",
+		"WORKLOAD_GLOBAL_CAPACITY", "WORKLOAD_ORG_CAPACITY", "WORKLOAD_GLOBAL_SHORT_RESERVE", "WORKLOAD_ORG_SHORT_RESERVE",
+		"WORKLOAD_INTERACTIVE_WEIGHT", "WORKLOAD_STREAM_WEIGHT", "WORKLOAD_EMBEDDING_WEIGHT",
+		"WORKLOAD_INTERACTIVE_MAX_WAIT_MS", "WORKLOAD_STREAM_MAX_WAIT_MS", "WORKLOAD_EMBEDDING_MAX_WAIT_MS",
 		"RUNTIME_ENVIRONMENT", "RUNTIME_DEPLOYMENT_MODE",
 		"RUNTIME_DEPLOYMENT_ROLE", "RUNTIME_VERSION", "RUNTIME_COMMIT", "PROMETHEUS_URL", "GRAFANA_URL",
 		"LICENSE_PUBLIC_KEY", "LICENSE_EXPIRY_WARNING_DAYS", "MIN_FREEZE_AMOUNT", "FREEZE_SAFETY_FACTOR", "DEFAULT_KEY_RPM", "DEFAULT_KEY_QPS",
@@ -452,19 +498,29 @@ func TestLoad_Defaults(t *testing.T) {
 			"TRACE_EVENT_RETENTION_DAYS",
 			getEnvInt("LOG_RETENTION_DAYS", 30),
 		),
-		PayloadCaptureMode:         traceutil.NormalizePayloadCaptureMode(getEnvStr("PAYLOAD_CAPTURE_MODE", traceutil.PayloadCaptureModeMetadataOnly)),
-		EvidenceContextTrustSecret: getEnvStr("EVIDENCE_CONTEXT_TRUST_SECRET", ""),
-		RuntimeEnvironment:         getEnvStr("RUNTIME_ENVIRONMENT", "unspecified"),
-		RuntimeDeploymentMode:      getEnvStr("RUNTIME_DEPLOYMENT_MODE", "single-node"),
-		RuntimeDeploymentRole:      getEnvStr("RUNTIME_DEPLOYMENT_ROLE", "stable"),
-		MinFreezeAmount:            getEnvInt("MIN_FREEZE_AMOUNT", 10),
-		FreezeSafetyFactor:         getEnvFloat("FREEZE_SAFETY_FACTOR", 1.5),
-		DefaultKeyRPM:              getEnvInt("DEFAULT_KEY_RPM", 60),
-		DefaultKeyQPS:              getEnvInt("DEFAULT_KEY_QPS", 10),
-		StreamMaxSSELineBytes:      getEnvInt("STREAM_MAX_SSE_LINE_BYTES", 2*1024*1024),
-		StreamWriteIdleTimeoutSecs: getEnvInt("STREAM_WRITE_IDLE_TIMEOUT_SECONDS", 30),
-		StreamHeartbeatSecs:        getEnvInt("STREAM_HEARTBEAT_SECONDS", 15),
-		StreamMaxDurationSecs:      getEnvInt("STREAM_MAX_DURATION_SECONDS", 30*60),
+		PayloadCaptureMode:           traceutil.NormalizePayloadCaptureMode(getEnvStr("PAYLOAD_CAPTURE_MODE", traceutil.PayloadCaptureModeMetadataOnly)),
+		EvidenceContextTrustSecret:   getEnvStr("EVIDENCE_CONTEXT_TRUST_SECRET", ""),
+		RuntimeEnvironment:           getEnvStr("RUNTIME_ENVIRONMENT", "unspecified"),
+		RuntimeDeploymentMode:        getEnvStr("RUNTIME_DEPLOYMENT_MODE", "single-node"),
+		RuntimeDeploymentRole:        getEnvStr("RUNTIME_DEPLOYMENT_ROLE", "stable"),
+		MinFreezeAmount:              getEnvInt("MIN_FREEZE_AMOUNT", 10),
+		FreezeSafetyFactor:           getEnvFloat("FREEZE_SAFETY_FACTOR", 1.5),
+		DefaultKeyRPM:                getEnvInt("DEFAULT_KEY_RPM", 60),
+		DefaultKeyQPS:                getEnvInt("DEFAULT_KEY_QPS", 10),
+		StreamMaxSSELineBytes:        getEnvInt("STREAM_MAX_SSE_LINE_BYTES", 2*1024*1024),
+		StreamWriteIdleTimeoutSecs:   getEnvInt("STREAM_WRITE_IDLE_TIMEOUT_SECONDS", 30),
+		StreamHeartbeatSecs:          getEnvInt("STREAM_HEARTBEAT_SECONDS", 15),
+		StreamMaxDurationSecs:        getEnvInt("STREAM_MAX_DURATION_SECONDS", 30*60),
+		WorkloadGlobalCapacity:       getEnvInt("WORKLOAD_GLOBAL_CAPACITY", 100),
+		WorkloadOrgCapacity:          getEnvInt("WORKLOAD_ORG_CAPACITY", 10),
+		WorkloadGlobalShortReserve:   getEnvInt("WORKLOAD_GLOBAL_SHORT_RESERVE", 10),
+		WorkloadOrgShortReserve:      getEnvInt("WORKLOAD_ORG_SHORT_RESERVE", 2),
+		WorkloadInteractiveWeight:    getEnvInt("WORKLOAD_INTERACTIVE_WEIGHT", 1),
+		WorkloadStreamWeight:         getEnvInt("WORKLOAD_STREAM_WEIGHT", 4),
+		WorkloadEmbeddingWeight:      getEnvInt("WORKLOAD_EMBEDDING_WEIGHT", 1),
+		WorkloadInteractiveMaxWaitMS: getEnvInt("WORKLOAD_INTERACTIVE_MAX_WAIT_MS", 50),
+		WorkloadStreamMaxWaitMS:      getEnvInt("WORKLOAD_STREAM_MAX_WAIT_MS", 250),
+		WorkloadEmbeddingMaxWaitMS:   getEnvInt("WORKLOAD_EMBEDDING_MAX_WAIT_MS", 50),
 	}
 
 	if cfg.ListenPort != 8080 {
@@ -497,6 +553,11 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.StreamMaxSSELineBytes != 2*1024*1024 || cfg.StreamWriteIdleTimeoutSecs != 30 ||
 		cfg.StreamHeartbeatSecs != 15 || cfg.StreamMaxDurationSecs != 30*60 {
 		t.Fatalf("unexpected stream defaults: %#v", cfg.StreamPolicyConfig())
+	}
+	workload := cfg.WorkloadAdmissionOptions()
+	if workload.GlobalCapacity != 100 || workload.OrgCapacity != 10 || workload.Stream.Weight != 4 ||
+		workload.GlobalShortReserve != 10 || workload.OrgShortReserve != 2 || workload.Stream.MaxWait != 250*time.Millisecond {
+		t.Fatalf("unexpected workload defaults: %#v", workload)
 	}
 	if !cfg.TraceEventsEnabled || cfg.TraceEventSampleRate != 1 {
 		t.Fatalf("expected trace events enabled with sample rate 1, got enabled=%v sample=%f", cfg.TraceEventsEnabled, cfg.TraceEventSampleRate)

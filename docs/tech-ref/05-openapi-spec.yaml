@@ -108,6 +108,10 @@ paths:
               $ref: "#/components/headers/OperationId"
             X-UniRouter-Client-Request-ID:
               $ref: "#/components/headers/ClientRequestId"
+            X-UniRouter-Limit-Policy-Version:
+              $ref: "#/components/headers/LimitPolicyVersion"
+            X-UniRouter-Workload-Class:
+              $ref: "#/components/headers/WorkloadClass"
           content:
             application/json:
               schema:
@@ -124,7 +128,7 @@ paths:
         "409":
           $ref: "#/components/responses/IdempotencyConflict"
         "429":
-          $ref: "#/components/responses/Error"
+          $ref: "#/components/responses/RateLimited"
         "502":
           $ref: "#/components/responses/Error"
         "503":
@@ -167,6 +171,10 @@ paths:
               $ref: "#/components/headers/OperationId"
             X-UniRouter-Client-Request-ID:
               $ref: "#/components/headers/ClientRequestId"
+            X-UniRouter-Limit-Policy-Version:
+              $ref: "#/components/headers/LimitPolicyVersion"
+            X-UniRouter-Workload-Class:
+              $ref: "#/components/headers/WorkloadClass"
           content:
             application/json:
               schema:
@@ -181,7 +189,7 @@ paths:
         "409":
           $ref: "#/components/responses/IdempotencyConflict"
         "429":
-          $ref: "#/components/responses/Error"
+          $ref: "#/components/responses/RateLimited"
         "502":
           $ref: "#/components/responses/Error"
         "503":
@@ -1009,6 +1017,15 @@ components:
       schema:
         type: string
         maxLength: 128
+    LimitPolicyVersion:
+      description: Sanitized fingerprint of the effective shared limit and workload-admission configuration.
+      schema:
+        type: string
+    WorkloadClass:
+      description: Server-derived admission class for the model invocation.
+      schema:
+        type: string
+        enum: [interactive, stream, embedding]
 
   responses:
     JSON:
@@ -1020,6 +1037,17 @@ components:
             additionalProperties: true
     Error:
       description: Error response
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    RateLimited:
+      description: A request, token, concurrency, or weighted workload limit was reached.
+      headers:
+        Retry-After:
+          description: Whole seconds before the caller should retry.
+          schema:
+            type: string
       content:
         application/json:
           schema:

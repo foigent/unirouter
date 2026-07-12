@@ -1,7 +1,7 @@
 # HA Readiness
 
-> Version: v0.1
-> Scope: PRD2 batch 8 backend and operations foundation.
+> Version: v0.2
+> Scope: PRD2 HA foundation plus PRD6 shared policy/workload admission truth.
 
 ## Goals
 
@@ -14,7 +14,7 @@ This is not a mandatory full HA platform stack. Redis Sentinel, PostgreSQL repli
 Each UniRouter application instance owns:
 
 - HTTP listener.
-- in-process admission controller.
+- lightweight in-process overload state for auxiliary endpoints.
 - in-process sensitive-word DFA cache.
 - in-flight streaming response state.
 
@@ -26,10 +26,16 @@ Shared mutable state must live in PostgreSQL or Redis:
 | billing wallet, transactions, grants, freeze idempotency | PostgreSQL | transactionally updated |
 | request logs, audit logs, notification events | PostgreSQL | canonical evidence |
 | channel circuit/key cooldown state | PostgreSQL | shared by routers |
-| per-key RPM/RPS windows | Redis | shared rate-limit counters; existing storage keeps the legacy `qps_limit` name |
+| per-key RPM/RPS and selector RPM/RPS/TPM/concurrency | Redis | versioned, cluster-tagged shared policy state; database/API fields retain the legacy `qps_limit` name where compatibility requires it |
+| Chat/Streaming/Embeddings weighted global and organization capacity | Redis | atomic lease/fair-queue state with server-derived workload classes, bounded wait and lease expiry |
 | sensitive words | PostgreSQL + periodic in-process cache refresh | DB is canonical; cache converges on each instance |
 
-The admission controller is intentionally per-process. Capacity planning should multiply per-instance admission limits by instance count or configure the load balancer accordingly.
+Chat, Streaming Chat and Embeddings admission is intentionally replica
+invariant: adding instances does not multiply platform or organization capacity.
+The old in-process controller remains only on lightweight auxiliary paths such
+as `/v1/models`; it must not be used to claim model-call capacity or HA.
+Changing shared capacity requires an explicit configuration change and workload
+evidence, not multiplication by instance count.
 
 ## Migration Ownership
 

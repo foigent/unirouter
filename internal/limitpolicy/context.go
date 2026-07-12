@@ -40,6 +40,19 @@ func recordDecision(ctx context.Context, decision Decision, version string) {
 	collector.mu.Unlock()
 }
 
+// RecordSupplementalDecision appends a server-owned runtime decision without
+// replacing the version of the distributed policy snapshot already collected
+// for the request.
+func RecordSupplementalDecision(ctx context.Context, decision Decision) {
+	collector := DecisionCollectorFromContext(ctx)
+	if collector == nil {
+		return
+	}
+	collector.mu.Lock()
+	collector.decisions = append(collector.decisions, decision)
+	collector.mu.Unlock()
+}
+
 func (c *DecisionCollector) Snapshot() ([]Decision, string) {
 	if c == nil {
 		return nil, ""

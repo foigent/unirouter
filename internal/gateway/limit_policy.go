@@ -23,6 +23,10 @@ func (relay *Relay) recordLimitPolicyAdmission(ctx context.Context, w http.Respo
 		w.Header().Set("X-UniRouter-Limit-Policy-Version", policySetVersion)
 	}
 	result, reason, enforceCount, shadowCount, chain := summarizeLimitPolicyDecisions(decisions)
+	workloadClass, workloadWeight, workloadWaitMS, workloadQueueDepth := summarizeWorkloadDecision(decisions)
+	if workloadClass != "" {
+		w.Header().Set("X-UniRouter-Workload-Class", workloadClass)
+	}
 	severity := "info"
 	if result != "allowed" {
 		severity = "warning"
@@ -35,7 +39,24 @@ func (relay *Relay) recordLimitPolicyAdmission(ctx context.Context, w http.Respo
 		"limit_policy_enforce_count":  enforceCount,
 		"limit_policy_shadow_count":   shadowCount,
 		"limit_policy_chain":          strings.Join(chain, ","),
+		"workload_class":              workloadClass,
+		"workload_weight":             workloadWeight,
+		"workload_wait_ms":            workloadWaitMS,
+		"workload_queue_depth":        workloadQueueDepth,
 	})
+}
+
+func summarizeWorkloadDecision(decisions []limitpolicy.Decision) (class string, weight, waitMS, queueDepth int64) {
+	for _, decision := range decisions {
+		if decision.WorkloadClass == "" {
+			continue
+		}
+		class = decision.WorkloadClass
+		weight = decision.WorkloadWeight
+		waitMS = decision.WaitMS
+		queueDepth = decision.QueueDepth
+	}
+	return
 }
 
 func summarizeLimitPolicyDecisions(decisions []limitpolicy.Decision) (result, reason string, enforceCount, shadowCount int, chain []string) {
@@ -77,6 +98,12 @@ func writeLimitPolicyRuntimeRejection(w http.ResponseWriter, errorCode string) b
 	case policybilling.ErrorCodeConcurrencyExceeded:
 		w.Header().Set("Retry-After", "1")
 		writeError(w, http.StatusTooManyRequests, "rate_limit_error", errorCode, "Shared concurrent request limit exceeded")
+	case policybilling.ErrorCodeWorkloadCapacity:
+		w.Header().Set("Retry-After", "1")
+		writeError(w, http.StatusTooManyRequests, "rate_limit_error", errorCode, "Weighted workload capacity is temporarily full")
+	case policybilling.ErrorCodeWorkloadConfig:
+		w.Header().Set("Retry-After", "1")
+		writeError(w, http.StatusServiceUnavailable, "server_error", errorCode, "Workload admission configuration does not match active replicas")
 	case policybilling.ErrorCodeStateUnavailable:
 		w.Header().Set("Retry-After", "1")
 		writeError(w, http.StatusServiceUnavailable, "server_error", errorCode, "Shared limit-policy state is temporarily unavailable")
