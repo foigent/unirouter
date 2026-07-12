@@ -333,6 +333,22 @@ func settledCosts(result *billing.SettleResult) (actual, charged int) {
 	return actual, charged
 }
 
+func settledPrepaidTopUp(result *billing.SettleResult) int {
+	if result == nil {
+		return 0
+	}
+	return result.TopUpAmount
+}
+
+func settlementCostExtension(usage adapters.Usage, result *billing.SettleResult, actualCost, chargedCost int) map[string]interface{} {
+	return map[string]interface{}{
+		"actual":        actualCost,
+		"charged":       chargedCost,
+		"prepaid_topup": settledPrepaidTopUp(result),
+		"cache_hit":     usage.HasAuthoritativeCacheHit(),
+	}
+}
+
 func settleRequestFromUsage(requestID string, orgID int64, usage adapters.Usage) billing.SettleRequest {
 	return billing.SettleRequest{
 		RequestID:            requestID,
@@ -383,6 +399,7 @@ func settlementTraceMetadata(usage adapters.Usage, result *billing.SettleResult,
 	metadata["usage_source"] = usage.Source
 	metadata["usage_confidence"] = metering.SourceConfidence(usage.Source)
 	if result != nil {
+		metadata["prepaid_topup_cents"] = result.TopUpAmount
 		metadata["pricing_version"] = result.PricingVersion
 		metadata["cache_read_ratio"] = result.CacheReadRatio
 		metadata["cache_creation_ratio"] = result.CacheCreationRatio
@@ -433,6 +450,8 @@ func (relay *Relay) settleBillingAttempts(req billing.SettleRequest, reqLog *log
 		if err == nil {
 			if result == nil {
 				err = fmt.Errorf("settle returned nil result")
+			} else if result.ErrorCode == "insufficient_topup" {
+				return billingSettleOutcome{Result: result}, billing.ErrSettlementFundingPending
 			} else {
 				err = fmt.Errorf("settle unsuccessful: %s", result.ErrorCode)
 			}
@@ -456,6 +475,9 @@ func (relay *Relay) settleBillingWithRetry(req billing.SettleRequest, reqLog *lo
 	outcome, settleErr := relay.settleBillingAttempts(req, reqLog)
 	if settleErr == nil {
 		return outcome, nil
+	}
+	if errors.Is(settleErr, billing.ErrSettlementFundingPending) {
+		return outcome, settleErr
 	}
 
 	cancelCtx, cancelCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -924,12 +946,8 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 	// Build response with _uniroute extension field.
 	attempt := routeAttemptFromContext(ctx)
 	responseMap["_uniroute"] = map[string]interface{}{
-		"request_id": requestID,
-		"cost": map[string]interface{}{
-			"actual":    actualCost,
-			"charged":   chargedCost,
-			"cache_hit": normalized.Usage.HasAuthoritativeCacheHit(),
-		},
+		"request_id":            requestID,
+		"cost":                  settlementCostExtension(normalized.Usage, settleOutcome.Result, actualCost, chargedCost),
 		"provider":              route.Channel.Provider,
 		"channel":               route.Channel.Name,
 		"cache_hit":             normalized.Usage.HasAuthoritativeCacheHit(),
@@ -1456,12 +1474,8 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	// Send usage + _uniroute extension as the final data chunk before [DONE].
 	attempt := routeAttemptFromContext(ctx)
 	unirouteData := map[string]interface{}{
-		"request_id": requestID,
-		"cost": map[string]interface{}{
-			"actual":    actualCost,
-			"charged":   chargedCost,
-			"cache_hit": streamUsage.HasAuthoritativeCacheHit(),
-		},
+		"request_id":            requestID,
+		"cost":                  settlementCostExtension(streamUsage, settlementResult, actualCost, chargedCost),
 		"provider":              route.Channel.Provider,
 		"channel":               route.Channel.Name,
 		"ttft_ms":               ttftMs,
@@ -2112,12 +2126,8 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 
 		attempt := routeAttemptFromContext(attemptCtx)
 		responseMap["_uniroute"] = map[string]interface{}{
-			"request_id": requestID,
-			"cost": map[string]interface{}{
-				"actual":    actualCost,
-				"charged":   chargedCost,
-				"cache_hit": normalized.Usage.HasAuthoritativeCacheHit(),
-			},
+			"request_id":            requestID,
+			"cost":                  settlementCostExtension(normalized.Usage, settleOutcome.Result, actualCost, chargedCost),
 			"provider":              route.Channel.Provider,
 			"channel":               route.Channel.Name,
 			"cache_hit":             normalized.Usage.HasAuthoritativeCacheHit(),

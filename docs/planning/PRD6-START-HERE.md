@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
-> Date: 2026-07-12
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F11 remains in progress and P6-F10 is not started
+> Date: 2026-07-13
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F40/P6-F11 are in progress and P6-F10/P6-F41 are not started
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -25,6 +25,11 @@ recommended MVP boundary and policy-specific failure posture on 2026-07-11:
 - D6-12 closes P6-F20 at the final-usage/terminal durability boundary and assigns
   mid-stream crash checkpoints, explicit interruption and client recovery to
   P6-F11; PRD6 does not claim transparent stream migration or managed HA/IaC;
+- D6-13 accepts P6-F40/P6-F41: provider-cost ownership and usage/delivery
+  authority remain inside the current UniRouter modular monolith. Top-up uses
+  existing prepaid cash only; unresolved cost is non-terminal/non-cancellable
+  and later blocks the affected key. There is no overdraft, automatic debt,
+  silent subsidy, raw response retention or separate cost service;
 - PRD5 remains `Accepted Scope Complete` and is not reopened by PRD6;
 - a PRD5 backlog or competitor feature is an input, not an automatic PRD6
   commitment.
@@ -73,6 +78,7 @@ recommended MVP boundary and policy-specific failure posture on 2026-07-11:
 40. `docs/issues/OPEN-ISSUES.md`
 41. `docs/agent-workflows/AGENT-PROTOCOL.md`
 42. `docs/agent-workflows/EXECUTION-RECORD.md`
+43. `docs/ops/evidence/PRD6-B3H-P6F40A-cost-shortfall-local-20260713.md`
 
 PRD5 evidence remains under its existing paths. Do not rewrite it as PRD6
 evidence.

@@ -17,6 +17,7 @@ var metadataAllowlist = map[string]bool{
 	"cache_read_cost_cents":             true,
 	"cache_creation_cost_cents":         true,
 	"pricing_version":                   true,
+	"prepaid_topup_cents":               true,
 	"auth_failure_cooldown_seconds":     true,
 	"circuit_breaker_half_open_percent": true,
 	"circuit_breaker_recover_seconds":   true,

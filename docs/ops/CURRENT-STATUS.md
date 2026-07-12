@@ -1,6 +1,10 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
+> Current unmerged work: D6-13 is accepted. P6-F40A is implemented on
+> `codex/prd6-cost-shortfall`; full local backend/frontend, race, vet,
+> migration and contract gates pass, while required CI remains pending. P6-F40 remains in progress
+> and P6-F41 is not started. No target or production claim is made.
 > PRD6 Batch 0B P6-F16 was squash-merged by PR #140 as
 > `f244f669c529fec8767f85fff209882b333d8ed2`. P6-F33 was squash-merged by
 > PR #142 as `7173c5967a42c112fd0b219938a0901c1a0b9633`; its PR and post-merge
@@ -248,6 +252,15 @@
   Focused race and isolated migration tests pass locally; PR #177 exact-head
   run `29193900584`, merge `30d1e8f` and post-merge main run `29194150134`
   passed all required jobs. D6-12 remains the accepted mid-stream boundary.
+- P6-F40A cost-shortfall implementation evidence:
+  `docs/ops/evidence/PRD6-B3H-P6F40A-cost-shortfall-local-20260713.md`.
+  The pre-fix migrated-PostgreSQL reproducer terminally charged only 100 of a
+  known 500-cent cost. The current branch atomically consumes 400 cents of
+  available cash and records zero terminal uncovered cost; insufficient cash
+  remains non-terminal/non-cancellable and is excluded from automatic stream
+  recovery. Focused billing, 32-way concurrency, gateway no-cancel, guarded
+  migration, full backend/frontend, race, vet and contract checks pass locally.
+  Required CI and P6-F40B/P6-F40C remain pending.
 - HA/stream-failover competitor and architecture reference:
   `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md`.
 - Source-backed product/architecture/UX audit:
@@ -263,8 +276,8 @@
 - Scope entry: `docs/planning/PRD6-START-HERE.md`.
 - Proposed PRD: `docs/PRD-Phase6.md`; accepted/proposed state is authoritative
   in `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`.
-- Accepted feature accounting: 25 accepted rows, 23 CI verified / closed and
-  2 unclosed. P6-F11 is in progress and P6-F10 is not started.
+- Accepted feature accounting: 27 accepted rows, 23 CI verified / closed and
+  4 unclosed. P6-F40/P6-F11 are in progress and P6-F10/P6-F41 are not started.
   `P6-TEST-DB-001` is a separate engineering-integrity issue outside that
   25-row feature count; it is CI verified / closed by PR #155 and post-merge
   main run `29157561036`.
