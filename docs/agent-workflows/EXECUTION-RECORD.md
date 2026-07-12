@@ -1,30 +1,49 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 1 P6-F19 Agent Capability And Ancestor Runtime
+**Batch:** PRD6 Batch 1 P6-F07 Distributed Limit Policy
 **Owner:** Codex
-**Risk:** R4 distributed authorization, hard budget and shared admission
+**Risk:** R4 distributed admission, tenant control and migration
 **Status:** CI verified / closed
-**Integration:** P6-F19A PR #164/main run `29170507588`; P6-F19B PR #166 exact-head `a723ac6` / run `29171653038`; squash merge `b491817`; post-merge main run `29171807693`; both historical branches restored; no deployment, target or production claim
-**Previous batch:** P6-STREAM-002A CI verified / closed by PR #162 and post-merge main run `29168586124`; P6-F11 remains in progress
+**Integration:** PR #168 exact head `f52a151` / run `29173848811`; squash merge `2610e317`; post-merge main run `29174001859`; historical branch restored; no deployment, target or production claim
+**Previous batch:** P6-F19 CI verified / closed by PR #164/#166 and post-merge main runs `29170507588`/`29171807693`
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
 ## Current Scope
 
-1. Require explicit supervisor exchange and parent delegation; issue a strict
-   five-minute, model-gateway-only, attenuation-only signed capability.
-2. Enforce depth, direct-child, aggregate-descendant, model and endpoint scope,
-   bounded root-authority refresh and all-replica workflow revocation.
-3. Atomically reserve estimated cost/tokens plus exact rolling RPM/RPS and
-   shared concurrency on the calling Agent and every signed ancestor.
-4. Replace estimates with actual settled cost/tokens, release cancellation and
-   concurrency terminals, and retain ambiguous recovery conservatively.
-5. Use Redis time and one workflow hash slot; prove multi-instance exact limits,
-   application-clock skew, Redis outage and real Redis/PostgreSQL readback.
-6. Keep generic P6-F07 selectors/TPM/modes, P6-F20 durable cross-process
-   terminal hooks, P6-F21 weighted admission, deployment and target evidence
-   out of the closure claim.
+1. Enforce exact shared API-key RPS/RPM and every matching global,
+   organization, project, API-key, model and server-owned label policy.
+2. Reserve RPS/RPM/TPM/concurrency before wallet/upstream work, then replace
+   TPM estimates with actual terminal usage and release safe cancellations.
+3. Provide disabled/shadow/enforce, fail-closed and bounded last-known-safe
+   semantics with Redis time, cluster-safe keys and bounded local state.
+4. Add tenant-scoped optimistic control APIs, non-technical UI, version/header/
+   trace evidence and low-cardinality metrics without raw payload persistence.
+5. Prove multi-instance exact concurrency, authoritative labels, TPM terminal
+   behavior and guarded down→up rollback with real Redis 7/PostgreSQL in CI.
+6. Keep P6-F20 durable cross-process terminal hooks, P6-F21 weighted fairness,
+   D6-10 long-stream extension, deployment and target capacity out of closure.
 
-## Current P6-F19 Behavior Change
+## Current P6-F07 Behavior Change
+
+- Chat and Embeddings count every authenticated call against a shared API-key
+  rate window before more-specific policy/capacity denial can be amplified;
+- all matching selectors tighten monotonically, with exact rolling RPM/RPS,
+  reserved-then-actual TPM and expiring shared concurrency across replicas;
+- server-owned API-key labels cannot be injected by a request or Agent claim;
+  stale snapshots and overlong policy chains fail closed;
+- shadow decisions, degraded last-known-safe admissions and enforced denials
+  emit distinct sanitized evidence under one policy-set fingerprint;
+- platform/org administrators mutate their allowed scope with optimistic
+  versions; billing administrators read only; built-in 100 global/10 org
+  concurrency ceilings are visible rather than hidden;
+- migration down succeeds only before configuration exists and otherwise
+  refuses destructive policy/label loss; subsequent roll-forward is tested;
+- PR #168 exact-head and post-merge Backend/Frontend/Docker CI passed,
+  including the new real policy and rollback gates; and
+- evidence:
+  `docs/ops/evidence/PRD6-B1-P6F07-distributed-limit-policy-local-20260712.md`.
+
+## Previous P6-F19 Behavior Change
 
 - children never receive or copy the root API key; explicit exchange/delegation
   creates signed workflow, lineage and Agent identity with a maximum five-
@@ -43,7 +62,8 @@
   admit exactly three; Redis time survives a two-hour application-clock skew;
 - PR #164 and #166 exact-head plus post-merge Backend/Frontend/Docker CI passed,
   including migrated PostgreSQL and Redis 7 authority/runtime integration;
-- P6-F19 is CI verified / closed. P6-F07, P6-F20 and P6-F21 remain separate;
+- P6-F19 is CI verified / closed. P6-F20 and P6-F21 remain separate; P6-F07
+  is independently closed by PR #168;
 - evidence:
   `docs/ops/evidence/PRD6-B1-P6F19A-agent-capability-kernel-local-20260712.md`
   and

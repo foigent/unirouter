@@ -2,7 +2,7 @@
 
 > Date: 2026-07-12
 > Scope: repository/local evidence only
-> Status: Local verified; required CI pending
+> Status: CI verified / closed
 > Parent row: P6-F07
 
 ## Accepted contract exercised
@@ -143,8 +143,18 @@ High-risk fixtures prove:
 
 ## Pull request and required CI
 
-- implementation head: pending;
-- PR and exact-head required run: pending;
-- squash merge and post-merge `main` run: pending; and
-- historical implementation branch must be restored at the exact head after
-  squash merge.
+- implementation head: `f52a151da5cf19631efd52a5b0c5190e30fc3261`;
+- PR #168 exact-head required run: `29173848811`;
+- Backend Tests, Frontend Build and Docker Build all passed. Backend includes
+  the real Redis/PostgreSQL policy test and the down→up/refused-destructive-down
+  migration test;
+- squash merge: `2610e31790d7964d5c9e491cb1a11552f1ac22ea`;
+- post-merge `main` run: `29174001859`, with Backend Tests, Frontend Build and
+  Docker Build all successful; and
+- historical branch `codex/prd6-distributed-limit-policy` was restored at the
+  exact implementation head after GitHub deleted it during squash merge.
+
+Both required runs emitted only non-blocking GitHub Actions Node 20 deprecation
+annotations; the post-merge Backend also reported the existing Go-cache restore
+`tar` annotation. Every required job and every new runtime/migration step
+concluded `success`.

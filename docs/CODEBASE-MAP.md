@@ -11,23 +11,25 @@
 | Config | `internal/config/config.go` | Environment config and validation, including secrets, optional license, trace/retention, Runtime Status integration metadata and validated stream-transport policy |
 | Database | `internal/db/postgres.go` | pgx pool setup and health |
 | Redis | `internal/redisx/redis.go` | Redis setup, health, wallet cache helpers |
-| Migrations | `migrations/*.sql` | Base schema plus wallet/schema/PRD alignment migrations, including PRD4 API key owner usage attribution in `000016`, request trace events in `000017`, PRD5 structural evidence fields in `000018`, PRD5 Data Exchange Control ledger in `000019`, and PRD6 historical Webhook scope quarantine in `000020` |
+| Migrations | `migrations/*.sql` | Base schema plus wallet/schema/PRD alignment migrations, including PRD4 API key owner usage attribution in `000016`, request trace events in `000017`, PRD5 structural evidence fields in `000018`, PRD5 Data Exchange Control ledger in `000019`, PRD6 historical Webhook scope quarantine in `000020`, operation/billing/stream invariants in `000021`-`000023`, and distributed limit policies in `000024` |
 
 ## Backend Packages
 
 | Package | Responsibility |
 |---------|----------------|
-| `internal/admin` | Admin REST handlers including Logs/trace, Data Exchange Control, audit, and Runtime Status. Runtime Status includes app/dependency/traffic/host telemetry, external monitoring checks, typed effective configuration and a redacted current-process logical topology. Data Exchange Control is platform-admin-only and records source-side approvals/exchanges/deliveries/receipts without automatic export or X-Insight runtime dependency; receipt writes accept only the canonical v1 warning registry and reject unimplemented durable job/deep-link fields |
+| `internal/admin` | Admin REST handlers including Logs/trace, Data Exchange Control, audit, Runtime Status and tenant-scoped versioned distributed-limit policy control. Runtime Status includes app/dependency/traffic/host telemetry, external monitoring checks, typed effective configuration and a redacted current-process logical topology. Data Exchange Control is platform-admin-only and records source-side approvals/exchanges/deliveries/receipts without automatic export or X-Insight runtime dependency; receipt writes accept only the canonical v1 warning registry and reject unimplemented durable job/deep-link fields |
 | `internal/adapters` | Provider adapter registry and OpenAI-compatible / Anthropic-native request/response conversion |
 | `internal/auth` | JWT generation/validation, API key hashing, upstream key AES-GCM encryption/decryption |
 | `internal/billing` | Cost calculation, freeze/settle/cancel, price provider, project-scoped budget evaluation and tenant-scoped notification event service |
 | `internal/agentcap` | Signed short Agent capabilities, explicit topology, shared revocation/root-authority checks, and atomic per-ancestor cost/token/rate/concurrency state |
 | `internal/capapi` | Strict exchange/delegate/refresh/revoke HTTP control surface for model-gateway Agent authority |
 | `internal/capbilling` | Joins normal wallet Freeze/Settle/Cancel terminals to Agent ancestor reservation without widening external authority |
+| `internal/limitpolicy` | Indexed versioned global/org/project/API-key/model/label policy snapshots plus exact Redis RPM/RPS/TPM/concurrency admission, bounded last-known-safe failure state, terminal settlement and low-cardinality evidence metrics |
+| `internal/policybilling` | Composes distributed policy admission and terminal usage around the existing Agent-ancestor and durable wallet billing providers |
 | `internal/circuitbreaker` | Standalone circuit breaker implementation and tests |
 | `internal/filter` | DFA sensitive-word filter |
 | `internal/errdocs` | Error documentation registry used by gateway `doc_url` responses and API Docs |
-| `internal/gateway` | Model routing, upstream relay, chat completions, embeddings, model listing, request logging, metadata-only request trace events, and serialized bounded SSE transport |
+| `internal/gateway` | Model routing, upstream relay, chat completions, embeddings, model listing, request logging, metadata-only request trace events, distributed policy evidence/errors, and serialized bounded SSE transport |
 | `internal/licensing` | Offline license document parsing, Ed25519 signature verification, expiry status, and warning calculation |
 | `internal/logger` | Logging helpers |
 | `internal/metering` | Usage-source constants and token-metering source classification |
@@ -55,6 +57,7 @@ Defined in `cmd/uniroute/main.go`.
 | Auth | `POST /api/v1/auth/login`, `GET /api/v1/auth/oidc/config`, `GET /api/v1/auth/oidc/start`, `GET /api/v1/auth/oidc/callback`, `GET /api/v1/me`, `PUT /api/v1/me/password` |
 | Channels | `GET/POST /api/v1/channels`, `GET/PUT/DELETE /api/v1/channels/{id}`, `POST /api/v1/channels/{id}/test` |
 | API keys | `GET/POST /api/v1/keys`, `GET/PUT /api/v1/keys/{id}`, `POST /api/v1/keys/{id}/disable` |
+| Shared limit policies | `GET/POST /api/v1/limit-policies`, `PUT /api/v1/limit-policies/{id}` |
 | Channel keys | `GET/POST /api/v1/channel-keys`, `PUT/DELETE /api/v1/channel-keys/{id}` |
 | Wallet | `GET /api/v1/wallet`, `POST /api/v1/wallet/topup`, `POST /api/v1/wallet/adjust`, `GET /api/v1/wallet/transactions`, `GET /api/v1/wallet/transactions/export` |
 | Logs/dashboard | `GET /api/v1/logs`, `GET /api/v1/logs/{id}`, `GET /api/v1/logs/{id}/trace`, `GET /api/v1/dashboard/stats` |

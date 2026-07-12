@@ -71,7 +71,17 @@
 > cost/token reservation and actual settlement, exact rolling RPM/RPS,
 > Redis-time shared concurrency, typed fail-closed denial and real Redis 7 plus
 > migrated-PostgreSQL readback are verified. Together with P6-F19A, P6-F19 is
-> CI verified / closed; P6-F07, P6-F20 and P6-F21 remain separate.
+> CI verified / closed; P6-F20 and P6-F21 remain separate.
+> P6-F07 distributed limit policy passed PR #168 exact-head run `29173848811`,
+> was squash-merged as `2610e31790d7964d5c9e491cb1a11552f1ac22ea`,
+> and post-merge main run `29174001859` passed Backend Tests, Frontend Build
+> and Docker Build. Its historical branch is restored at exact head `f52a151`.
+> Exact shared API-key RPM/RPS, versioned selector RPM/RPS/TPM/concurrency,
+> shadow/enforce modes, bounded last-known-safe failure behavior, sanitized
+> policy evidence, tenant-scoped optimistic control UI/API, real Redis 7 plus
+> migrated PostgreSQL and guarded down→up migration are CI verified / closed.
+> P6-F20 durable terminal recovery, P6-F21 weighted fairness and D6-10 dynamic
+> long-stream extension remain separate.
 > No target or production verification is claimed.
 > D6-01, D6-02, D6-08 and D6-09 were accepted by the User on 2026-07-11.
 > D6-10 long-stream hard-budget Scheme A and D6-11 explicit five-minute Agent
@@ -157,6 +167,12 @@
   PR #164/main run `29170507588` verify the capability lifecycle, topology and
   revocation kernel; PR #166/main run `29171807693` verify shared runtime
   cost/token/rate/concurrency enforcement. P6-F19 is CI verified / closed.
+- P6-F07 distributed limit-policy evidence:
+  `docs/ops/evidence/PRD6-B1-P6F07-distributed-limit-policy-local-20260712.md`.
+  PR #168 exact-head run `29173848811`, merge `2610e317` and post-merge main
+  run `29174001859` passed all required jobs, including real Redis/PostgreSQL
+  multi-instance policy and migration rollback gates. P6-F07 is CI verified /
+  closed without claiming P6-F20, P6-F21, D6-10 or target capacity.
 - Source-backed product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
 - PRD7 candidate-only split (not Accepted Scope):
@@ -170,9 +186,9 @@
 - Scope entry: `docs/planning/PRD6-START-HERE.md`.
 - Proposed PRD: `docs/PRD-Phase6.md`; accepted/proposed state is authoritative
   in `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`.
-- Accepted feature accounting after the CI-verified P6-F19B slice: 25 accepted
-  rows, 18 CI verified / closed and 7 unclosed. P6-F11 is in progress through
-  its transport prerequisite; `P6-F07`-`P6-F10`, `P6-F20` and `P6-F21`
+- Accepted feature accounting after the CI-verified P6-F07 slice: 25 accepted
+  rows, 19 CI verified / closed and 6 unclosed. P6-F11 is in progress through
+  its transport prerequisite; `P6-F08`-`P6-F10`, `P6-F20` and `P6-F21`
   remain not started.
   `P6-TEST-DB-001` is a separate engineering-integrity issue outside that
   25-row feature count; it is CI verified / closed by PR #155 and post-merge
@@ -223,8 +239,10 @@ gateway authority; Tool/IAM/database/export action owners remain separate.
 Neither accepted decision is presented as implemented before its exact row
 passes repository and CI evidence. P6-F19A and P6-F19B now have local,
 exact-head and post-merge CI evidence, so P6-F19 is CI verified / closed.
-Generic policy selectors/TPM/modes, durable cross-process terminal coupling and
-weighted shared admission remain P6-F07, P6-F20 and P6-F21 respectively.
+P6-F07 independently has local, exact-head and post-merge CI evidence for
+generic selectors/TPM/modes and is CI verified / closed. Durable cross-process
+terminal coupling, weighted shared admission and dynamic long-stream extension
+remain P6-F20, P6-F21 and D6-10/P6-F11 respectively.
 
 P6-F35 local evidence covers the repository boundary only. D6-09 defers its
 target activation; a later authorized cutover must drain old control-plane

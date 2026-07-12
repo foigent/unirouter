@@ -27,7 +27,8 @@
 | `docs/ops/evidence/PRD6-B0C-P6F06-multiplier-freeze-local-20260711.md` | P6-F06 multiplier-aware insufficient-funds, concurrent exact-settlement and cancel/refund PostgreSQL evidence |
 | `docs/ops/evidence/PRD6-B0C-P6STREAM002A-stream-transport-local-20260712.md` | P6-STREAM-002A typed frame/timeout/writer/body/finalization evidence; dynamic reservation and semantic interception remain open |
 | `docs/ops/evidence/PRD6-B1-P6F19A-agent-capability-kernel-local-20260712.md` | P6-F19A explicit Agent exchange/delegation, five-minute token, refresh/revocation, bounded authority and 100-child local plus PR #164/post-merge CI evidence |
-| `docs/ops/evidence/PRD6-B1-P6F19B-agent-ancestor-budget-local-20260712.md` | P6-F19B shared ancestor cost/token/rate/concurrency local, PR #166 and post-merge CI evidence; closes P6-F19 while preserving P6-F07/P6-F20/P6-F21 boundaries |
+| `docs/ops/evidence/PRD6-B1-P6F19B-agent-ancestor-budget-local-20260712.md` | P6-F19B shared ancestor cost/token/rate/concurrency local, PR #166 and post-merge CI evidence; closes P6-F19 while preserving P6-F20/P6-F21 boundaries |
+| `docs/ops/evidence/PRD6-B1-P6F07-distributed-limit-policy-local-20260712.md` | P6-F07 shared selector RPM/RPS/TPM/concurrency, bounded failure, UI/control, migration and PR #168/post-merge CI closure evidence |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | Source-backed audit/reconciliation/correlation/UI/architecture/upgrade findings, Four Quadrants and PRD6 batches |
 | `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | PRD7 candidate split; first future direction selected, all implementation deferred until PRD6 closeout |
 | `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` | Accepted future Cache Service direction, service boundary, capacity planning triggers, SaaS cell reuse and non-authorization guardrails |
@@ -66,7 +67,7 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required single-owner execution, approval, evidence and optional-review workflow |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD6 Batch 0C execution record and prior accepted-scope closeouts; previous PRD5 evidence remains linked |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD6 Batch 1 P6-F07 execution record and prior accepted-scope closeouts; previous PRD5 evidence remains linked |
 | `docs/agent-workflows/reviews/` | Optional immutable independent review results |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry pointing to the current execution record |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |
