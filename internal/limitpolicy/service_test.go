@@ -16,15 +16,30 @@ import (
 )
 
 func newPolicyTestService(t *testing.T, options Options, policies ...Policy) (*Service, *miniredis.Miniredis) {
+	return newPolicyTestServiceWithClient(t, options, false, policies...)
+}
+
+func newPolicyBudgetTestService(t *testing.T, options Options, policies ...Policy) (*Service, *miniredis.Miniredis) {
+	return newPolicyTestServiceWithClient(t, options, true, policies...)
+}
+
+func newPolicyTestServiceWithClient(t *testing.T, options Options, boundedClient bool, policies ...Policy) (*Service, *miniredis.Miniredis) {
 	t.Helper()
 	mr := miniredis.RunT(t)
-	client := redis.NewClient(&redis.Options{Addr: mr.Addr(), ContextTimeoutEnabled: true, MaxRetries: -1})
+	clientOptions := &redis.Options{Addr: mr.Addr()}
+	if boundedClient {
+		clientOptions.ContextTimeoutEnabled = true
+		clientOptions.MaxRetries = -1
+	}
+	client := redis.NewClient(clientOptions)
 	t.Cleanup(func() { _ = client.Close() })
-	loadCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	for _, script := range []*redis.Script{reserveScript, terminalScript} {
-		if err := script.Load(loadCtx, client).Err(); err != nil {
-			t.Fatalf("preload limit-policy miniredis script: %v", err)
+	if boundedClient {
+		loadCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		for _, script := range []*redis.Script{reserveScript, terminalScript} {
+			if err := script.Load(loadCtx, client).Err(); err != nil {
+				t.Fatalf("preload limit-policy miniredis script: %v", err)
+			}
 		}
 	}
 	service, err := NewService(nil, client, options)
@@ -172,7 +187,7 @@ func TestP6F21WorkloadAdmissionRunsAfterAPIKeyAttemptRate(t *testing.T) {
 	options.Workload.Stream = workloadadmission.ClassPolicy{Weight: 1, MaxWait: 250 * time.Millisecond}
 	options.Workload.Embedding = workloadadmission.ClassPolicy{Weight: 1, MaxWait: 250 * time.Millisecond}
 	options.Workload.StoreTimeout = 500 * time.Millisecond
-	service, _ := newPolicyTestService(t, options)
+	service, _ := newPolicyBudgetTestService(t, options)
 	firstRequest := admission("workload-first", 1)
 	firstRequest.Subject.BaseRPSLimit = 1_000
 	firstRequest.Subject.BaseRPMLimit = 2
