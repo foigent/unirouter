@@ -2,7 +2,7 @@
 
 > Date: 2026-07-12
 > Scope: repository, local and required-CI evidence; no target/deployment claim
-> Status: feature CI verified / closed; follow-up test-only stabilization locally verified / PR pending
+> Status: feature CI verified / closed; follow-up test-only stabilization exact-head CI verified
 > Parent row: P6-F21
 
 ## Accepted contract exercised
@@ -166,8 +166,15 @@ git diff --check
 
 The Redis commands used an isolated, persistence-disabled local Redis 8.8.0 on
 port 6391 and never connected to or cleared the existing service on port 6379.
-Redis 7, Docker and post-merge `main` remain required-CI evidence, not local
-claims, until this follow-up PR closes.
+
+Final runtime/test head `2d85c8e2c17e301631b5b183afdfb5275201e477`
+passed PR #180 required run `29198470294`: Backend Tests in 6m44s, Frontend
+Build in 3m31s and Docker Build in 1m03s. Backend visibly passed the full
+race/coverage suite, Redis 7 weighted workload admission, both prompt-cache
+billing gates, both P6-F20 outbox/terminal-recovery gates and all applicable
+migration rollback gates. A later evidence-only commit must still pass the same
+required jobs before merge; post-merge `main` remains a separate readback, not
+a claim in this paragraph.
 
 ## Explicit non-claims and remaining work
 
