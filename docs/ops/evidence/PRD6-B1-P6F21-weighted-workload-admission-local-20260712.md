@@ -2,7 +2,7 @@
 
 > Date: 2026-07-12
 > Scope: repository, local and required-CI evidence; no target/deployment claim
-> Status: feature CI verified / closed; follow-up test-only stabilization exact-head CI verified
+> Status: feature CI verified / closed; PR #180 merged; second test-only fixture follow-up locally verified / PR pending
 > Parent row: P6-F21
 
 ## Accepted contract exercised
@@ -175,6 +175,42 @@ billing gates, both P6-F20 outbox/terminal-recovery gates and all applicable
 migration rollback gates. A later evidence-only commit must still pass the same
 required jobs before merge; post-merge `main` remains a separate readback, not
 a claim in this paragraph.
+
+PR #180 final evidence head `2a49a189f081b7dffe26d45c438eab2f21839948`
+then passed required run `29198764853` and squash-merged as
+`9801cbe07076597e14b2df00e570672204f5a475`. Its post-merge `main` run
+`29199001330` exposed the same remaining emulator boundary in
+`TestP6F21StreamWeightPreservesShortCapacity`: the first capacity-free reserve
+occasionally exceeded the fixture's 20-ms miniredis Lua budget under full
+race/coverage instrumentation. It failed before any real-Redis integration
+gate and changed no production behavior.
+
+The second follow-up stabilizes the common miniredis helper rather than adding
+another per-test timeout:
+
+- reserve, release and abandon scripts are preloaded with a two-second
+  test-only setup context, while real Redis continues to exercise the normal
+  `NOSCRIPT` path;
+- functional emulator budgets become 100/250/100 ms for
+  Interactive/Stream/Embedding and 500 ms for the fake store, explicitly not
+  product defaults; and
+- queue-full immediacy is asserted from Redis decision time (`Waited == 0`),
+  not wall-clock runner scheduling.
+
+Fresh verification for this second follow-up passed:
+
+```text
+go test -race -cover ./internal/workloadadmission -run TestP6F21 -count=50 -timeout=180s
+REDIS_ADDR=127.0.0.1:6391 go test -tags=integration -race ./internal/workloadadmission -run TestP6F21 -count=10 -timeout=180s
+go test -v -race -coverprofile=coverage.out ./...
+go vet ./...
+git diff --check
+```
+
+The real-Redis command again used the isolated persistence-disabled port 6391;
+the machine's existing port 6379 was not accessed or cleared. No production
+option, Lua transition, key, capacity, latency contract or gateway behavior is
+changed.
 
 ## Explicit non-claims and remaining work
 

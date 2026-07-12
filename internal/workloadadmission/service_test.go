@@ -18,12 +18,16 @@ func testOptions() Options {
 	options.OrgCapacity = 8
 	options.GlobalShortReserve = 0
 	options.OrgShortReserve = 0
-	options.Interactive = ClassPolicy{Weight: 1, MaxWait: 20 * time.Millisecond}
-	options.Stream = ClassPolicy{Weight: 4, MaxWait: 100 * time.Millisecond}
-	options.Embedding = ClassPolicy{Weight: 1, MaxWait: 20 * time.Millisecond}
+	// These are functional miniredis fixture budgets, not product defaults.
+	// Race/coverage instrumentation makes the emulator's Go Lua VM slower than
+	// Redis; real-Redis integration owns the store/fault and multi-instance
+	// assertions.
+	options.Interactive = ClassPolicy{Weight: 1, MaxWait: 100 * time.Millisecond}
+	options.Stream = ClassPolicy{Weight: 4, MaxWait: 250 * time.Millisecond}
+	options.Embedding = ClassPolicy{Weight: 1, MaxWait: 100 * time.Millisecond}
 	options.PollInterval = time.Millisecond
 	options.ActivePollWindow = 10 * time.Millisecond
-	options.StoreTimeout = 50 * time.Millisecond
+	options.StoreTimeout = 500 * time.Millisecond
 	options.LeaseGrace = 5 * time.Millisecond
 	options.FallbackTTL = 500 * time.Millisecond
 	options.MaxQueueDepth = 128
@@ -35,11 +39,18 @@ func testOptions() Options {
 func newTestService(t *testing.T, server *miniredis.Miniredis, options Options) (*Service, *redis.Client) {
 	t.Helper()
 	client := redis.NewClient(&redis.Options{Addr: server.Addr(), ContextTimeoutEnabled: true, MaxRetries: -1})
+	t.Cleanup(func() { _ = client.Close() })
+	loadCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	for _, script := range []*redis.Script{reserveScript, releaseScript, abandonScript} {
+		if err := script.Load(loadCtx, client).Err(); err != nil {
+			t.Fatalf("preload miniredis script: %v", err)
+		}
+	}
 	service, err := NewService(client, options)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = client.Close() })
 	return service, client
 }
 
@@ -54,7 +65,7 @@ func TestP6F21StreamWeightPreservesShortCapacity(t *testing.T) {
 	options.OrgCapacity = 10
 	options.GlobalShortReserve = 2
 	options.OrgShortReserve = 2
-	options.Stream = ClassPolicy{Weight: 4, MaxWait: 20 * time.Millisecond}
+	options.Stream = ClassPolicy{Weight: 4, MaxWait: 100 * time.Millisecond}
 	service, _ := newTestService(t, server, options)
 
 	first, _, err := service.Reserve(context.Background(), request("stream-one", 7, ClassStream, time.Minute))
@@ -67,7 +78,7 @@ func TestP6F21StreamWeightPreservesShortCapacity(t *testing.T) {
 	}
 	if _, decision, err := service.Reserve(context.Background(), request("stream-three", 7, ClassStream, time.Minute)); !errors.Is(err, ErrCapacityExceeded) {
 		t.Fatalf("third stream error=%v decision=%#v", err, decision)
-	} else if decision.Reason != ReasonCapacityExceeded || decision.RetryAfter <= 0 || decision.Waited > 50*time.Millisecond {
+	} else if decision.Reason != ReasonCapacityExceeded || decision.RetryAfter <= 0 || decision.Waited > 150*time.Millisecond {
 		t.Fatalf("bounded denial decision=%#v", decision)
 	}
 
@@ -224,11 +235,10 @@ func TestP6F21QueueDepthIsBounded(t *testing.T) {
 		}(index)
 	}
 	time.Sleep(20 * time.Millisecond)
-	started := time.Now()
 	if _, decision, err := service.Reserve(context.Background(), request("queue-overflow", 7, ClassInteractive, time.Minute)); !errors.Is(err, ErrCapacityExceeded) || decision.Reason != ReasonQueueFull {
 		t.Fatalf("queue overflow err=%v decision=%#v", err, decision)
-	} else if time.Since(started) > 50*time.Millisecond {
-		t.Fatalf("bounded queue overflow waited too long: %v", time.Since(started))
+	} else if decision.Waited != 0 {
+		t.Fatalf("queue overflow was not immediate in Redis decision time: %#v", decision)
 	}
 	if err := service.Release(context.Background(), held); err != nil {
 		t.Fatal(err)
