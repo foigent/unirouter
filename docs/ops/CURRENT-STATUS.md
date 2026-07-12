@@ -1,9 +1,9 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
-> Current unmerged work: D6-13 is accepted. P6-F40A is implemented on
-> `codex/prd6-cost-shortfall`; full local backend/frontend, race, vet,
-> migration and contract gates pass, while required CI remains pending. P6-F40 remains in progress
+> Current PRD6 batch: D6-13 is accepted. P6-F40A is CI verified by PR #183
+> exact implementation/test head `d1afd97` and run `29207889734`; Backend,
+> Frontend, Docker and both explicit P6-F40 gates passed. P6-F40 remains in progress
 > and P6-F41 is not started. No target or production claim is made.
 > PRD6 Batch 0B P6-F16 was squash-merged by PR #140 as
 > `f244f669c529fec8767f85fff209882b333d8ed2`. P6-F33 was squash-merged by
@@ -260,7 +260,9 @@
   remains non-terminal/non-cancellable and is excluded from automatic stream
   recovery. Focused billing, 32-way concurrency, gateway no-cancel, guarded
   migration, full backend/frontend, race, vet and contract checks pass locally.
-  Required CI and P6-F40B/P6-F40C remain pending.
+  PR #183 exact implementation/test head `d1afd97` passed required run
+  `29207889734`, including both explicit P6-F40 gates. P6-F40B/P6-F40C remain
+  pending, so P6-F40 is not closed.
 - HA/stream-failover competitor and architecture reference:
   `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md`.
 - Source-backed product/architecture/UX audit:

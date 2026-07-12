@@ -3,7 +3,7 @@
 > Date: 2026-07-13
 > Baseline: `f1e08e6a793cb2ea0580d256fe75bd2d3d798c3f`
 > Branch: `codex/prd6-cost-shortfall`
-> Evidence level: Local verified; required CI pending
+> Evidence level: CI verified on exact implementation/test head
 > Risk: R3 billing, wallet, settlement recovery and migration safety
 
 ## Accepted Boundary
@@ -114,10 +114,30 @@ Current result: all commands `PASS`; frontend reports 29 files / 144 tests.
 The build retains its existing large-chunk warning and the macOS race binaries
 emit a linker metadata warning; neither command failed.
 
-## Remaining Gates
+## Required CI
 
-- PR `Backend Tests`, `Frontend Build` and `Docker Build`;
-- P6-F40B/P6-F40C and P6-F41 remain separate unclosed work.
+PR #183 exact implementation/test head `d1afd97` passed required run
+`29207889734`:
+
+- `Backend Tests`: `PASS`, including provider-cost shortfall race tests and
+  `000028` up/down/refused-down/roll-forward;
+- `Frontend Build`: `PASS`, including type-check, 29 files / 144 tests and
+  production build; and
+- `Docker Build`: `PASS`, including image verification.
+
+The first two PR runs exposed existing miniredis execution-budget gaps before
+the new P6-F40 gates ran. Test-only corrections disabled emulator retries and
+preloaded scripts only for the P6-F21 ordering fixture, separated its lease
+from emulator latency, preserved the opposing 20-concurrency fixture, and
+passed both fixtures for ten race repetitions plus the full required
+limit-policy integration step. No runtime or product behavior changed in that
+correction.
+
+## Remaining P6-F40 Work
+
+- P6-F40B provider-attempt identity, ambiguity and retry/cancel ownership;
+- P6-F40C affected-key blocking and explicit operator reconciliation; and
+- P6-F41 typed usage/delivery authority as a separate accepted row.
 
 No target, production, paid-provider, credential or external-integration claim
 is made.

@@ -3,12 +3,12 @@
 **Batch:** PRD6 Batch 3H P6-F40A Provider Cost Shortfall
 **Owner:** Codex
 **Risk:** R3 billing, wallet, settlement recovery, public receipt and migration safety
-**Status:** Local verified; required CI pending; P6-F40 remains in progress
+**Status:** P6-F40A CI verified; P6-F40 remains in progress
 **Baseline:** `main` / `origin/main` / `f1e08e6a793cb2ea0580d256fe75bd2d3d798c3f`
 **Branch:** `codex/prd6-cost-shortfall`
-**Expected PR:** one independently reviewable P6-F40A financial boundary
+**PR:** #183; exact implementation/test head `d1afd97`; required run `29207889734`
 **Decision:** D6-13 accepted by User on 2026-07-13
-**Next gate:** PR and required CI; then P6-F40B provider-attempt state
+**Next gate:** P6-F40B provider-attempt state
 **Previous batch:** P6-F20 PR #177 and post-closeout fixture-only PR #180/#181 are CI verified / closed
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
@@ -50,6 +50,14 @@
 - P6-F40 race, required migration and command-contract tests: `PASS`.
 - Frontend type-check, 29 files / 144 tests and production build: `PASS`.
 - `git diff --check`: `PASS`.
+- PR #183 exact implementation/test head `d1afd97` required run
+  `29207889734`: Backend Tests, Frontend Build and Docker Build `PASS`,
+  including both explicit P6-F40 PostgreSQL/race gates.
+- Earlier PR runs exposed two pre-existing miniredis execution-budget gaps.
+  The final test-only correction isolates bounded client/preload/lease budgets
+  to the P6-F21 ordering fixture; both opposing fixtures passed 10 race
+  repetitions and the required limit-policy integration step passed on the
+  exact implementation/test head. No runtime behavior changed in that correction.
 - Evidence: `docs/ops/evidence/PRD6-B3H-P6F40A-cost-shortfall-local-20260713.md`.
 
 ## Current Stop And Rollback Conditions
