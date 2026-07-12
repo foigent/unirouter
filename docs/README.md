@@ -24,7 +24,7 @@
 - [ops/evidence/PRD6-B1-P6F19A-agent-capability-kernel-local-20260712.md](ops/evidence/PRD6-B1-P6F19A-agent-capability-kernel-local-20260712.md) — P6-F19A 显式 Agent 登记、5 分钟能力、刷新/撤销和 100 子 Agent 原子上限
 - [ops/evidence/PRD6-B1-P6F19B-agent-ancestor-budget-local-20260712.md](ops/evidence/PRD6-B1-P6F19B-agent-ancestor-budget-local-20260712.md) — P6-F19B 祖先成本/Token/速率/并发共享执行与 P6-F19 收口证据
 - [ops/evidence/PRD6-B1-P6F07-distributed-limit-policy-local-20260712.md](ops/evidence/PRD6-B1-P6F07-distributed-limit-policy-local-20260712.md) — P6-F07 跨副本 RPM/RPS/TPM/并发策略、故障语义、控制 UI、迁移与 CI 收口证据
-- [ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md](ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md) — P6-F21 加权跨副本租约、公平队列、故障/混合配置和 PR #170/main required CI 收口证据
+- [ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md](ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md) — P6-F21 加权跨副本租约、公平队列、故障/混合配置及 PR #170/#180/#181 required CI 真值链
 - [ops/evidence/PRD6-B2-P6F08-routing-policy-v1-local-20260712.md](ops/evidence/PRD6-B2-P6F08-routing-policy-v1-local-20260712.md) — P6-F08 确定性同级权重、短时快照、跨副本探针、epoch CAS、预览/证据、安全回滚及 PR #172/main CI 收口证据
 - [ops/evidence/PRD6-B3-P6F09-prompt-cache-billing-local-20260712.md](ops/evidence/PRD6-B3-P6F09-prompt-cache-billing-local-20260712.md) — P6-F09 上游 Prompt Cache 用量归一、冻结价格、结算恢复、日志/对账/UI、迁移回滚、PR #174/#175 与最终 main CI 收口证据
 - [ops/evidence/PRD6-B3-P6F20-durable-outbox-local-20260712.md](ops/evidence/PRD6-B3-P6F20-durable-outbox-local-20260712.md) — P6-F20 最终用量/终态持久化、内部 outbox、重放及 PR #177/main CI 收口证据

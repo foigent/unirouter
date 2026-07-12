@@ -5,6 +5,7 @@
 **Risk:** R3/R4 financial finalization, evidence durability, asynchronous delivery and migration/cutover safety
 **Status:** CI verified / closed; D6-12 accepted; no target or production claim
 **Integration:** branch `codex/prd6-durable-outbox` retained at `1beefee`; PR #177 exact-head run `29193900584`; squash merge `30d1e8f`; post-merge main run `29194150134`
+**Post-closeout CI stability:** test-only PR #180/#181 separated miniredis fixture execution from real-Redis concurrency evidence; PR #181 run `29199377213`, merge `815fb31` and final main run `29199635598` passed all required jobs with no runtime change
 **Next gate:** User decision on Batch 4 Guardrail policy categories, external-detector failure posture and latency budget; Batch 5 disclosure/buffering policy remains a separate accepted gate
 **Previous batch:** P6-F09 PR #174 plus production-neutral stability PR #175; final main run `29181137210` passed and the implementation branch is retained
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133

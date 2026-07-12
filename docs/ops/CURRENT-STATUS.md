@@ -88,7 +88,11 @@
 > classes, Redis-time global/org leases, short reserve, bounded fair/per-org
 > queues, crash recovery, bounded LKS, mixed-config fail-closed, typed 429/503
 > and UI/OpenAPI evidence are CI verified / closed. P6-F20 durable terminal
-> recovery and D6-10 dynamic long-stream extension remain separate.
+> recovery and D6-10 dynamic long-stream extension remain separate. Test-only
+> PR #180 removed the unreliable miniredis replica/load claim; PR #181 isolated
+> emulator execution budgets without changing runtime behavior. PR #181 passed
+> run `29199377213`, merged as `815fb31`, and final main run `29199635598`
+> passed Backend Tests, Frontend Build and Docker Build.
 > P6-F08 Routing Policy V1 passed PR #172 exact-head run `29178419505`, was
 > squash-merged as `54d88335126a5e9829cf28c720ed98ad6258fb52`, and
 > post-merge main run `29178588075` passed Backend Tests, Frontend Build and

@@ -219,6 +219,9 @@ global/organization admission, bounded wait and short/long fairness passed PR
 #170 exact-head run `29176160987`, squash merge `04af91f` and post-merge main
 run `29176358459`; its historical branch is restored at `a9d8f3e`. Evidence:
 `docs/ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md`.
+Post-closeout test-only PR #180/#181 removed miniredis replica/load claims and
+isolated emulator budgets while retaining real Redis as the concurrency/store
+authority; PR #181 merge `815fb31` and final main run `29199635598` are green.
 
 Design first:
 

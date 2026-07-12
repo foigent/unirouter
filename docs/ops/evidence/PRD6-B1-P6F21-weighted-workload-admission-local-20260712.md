@@ -2,7 +2,7 @@
 
 > Date: 2026-07-12
 > Scope: repository, local and required-CI evidence; no target/deployment claim
-> Status: feature CI verified / closed; PR #180 merged; second test-only fixture follow-up locally verified / PR pending
+> Status: feature and test-only fixture follow-ups CI verified / closed; no target/deployment claim
 > Parent row: P6-F21
 
 ## Accepted contract exercised
@@ -172,9 +172,8 @@ passed PR #180 required run `29198470294`: Backend Tests in 6m44s, Frontend
 Build in 3m31s and Docker Build in 1m03s. Backend visibly passed the full
 race/coverage suite, Redis 7 weighted workload admission, both prompt-cache
 billing gates, both P6-F20 outbox/terminal-recovery gates and all applicable
-migration rollback gates. A later evidence-only commit must still pass the same
-required jobs before merge; post-merge `main` remains a separate readback, not
-a claim in this paragraph.
+migration rollback gates. The following paragraphs record the later
+evidence-only head and its post-merge readback.
 
 PR #180 final evidence head `2a49a189f081b7dffe26d45c438eab2f21839948`
 then passed required run `29198764853` and squash-merged as
@@ -211,6 +210,15 @@ The real-Redis command again used the isolated persistence-disabled port 6391;
 the machine's existing port 6379 was not accessed or cleared. No production
 option, Lua transition, key, capacity, latency contract or gateway behavior is
 changed.
+
+Second follow-up exact head `9b235eb87b122e66109814d835e768854a42498a`
+passed PR #181 required run `29199377213`: Backend Tests in 5m49s, Frontend
+Build in 3m34s and Docker Build in 1m05s. PR #181 squash-merged as
+`815fb315a9adfdd2f382ce775d4013c14c0ee2e7`; post-merge `main` run
+`29199635598` passed Backend Tests in 6m08s, Frontend Build in 3m26s and Docker
+Build in 1m02s, including the full race/coverage suite, Redis 7 weighted
+admission, P6-F20 outbox/terminal recovery and migration rollback gates. The
+post-closeout fixture-stability chain is therefore CI verified / closed.
 
 ## Explicit non-claims and remaining work
 
