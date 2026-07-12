@@ -31,7 +31,7 @@
 24. `docs/ops/evidence/PRD6-B1-P6F19B-agent-ancestor-budget-local-20260712.md` - shared per-ancestor cost/token/rate/concurrency implementation and P6-F19 closure evidence.
 25. `docs/ops/evidence/PRD6-B1-P6F07-distributed-limit-policy-local-20260712.md` - versioned shared selector/rate/token/concurrency, control-plane, migration and CI closure evidence.
 26. `docs/ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md` - CI-verified weighted leases, fair queues, fault/mixed-config, PR #170/main runs and current non-claims.
-27. `docs/ops/evidence/PRD6-B2-P6F08-routing-policy-v1-local-20260712.md` - Local-verified deterministic weighted routing, bounded snapshots, renewable probe ownership, epoch CAS, preview/evidence and migration safety; required CI pending.
+27. `docs/ops/evidence/PRD6-B2-P6F08-routing-policy-v1-local-20260712.md` - CI-verified deterministic weighted routing, bounded snapshots, renewable probe ownership, epoch CAS, preview/evidence, guarded migration, PR #172 and post-merge main evidence.
 28. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` - source-backed UI, reconciliation, correlation, architecture and upgrade audit.
 29. `docs/planning/PRD7-CANDIDATE-BACKLOG.md` - future first direction selected; implementation deferred until PRD6 closeout.
 30. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` - accepted future independent Cache Service target, planning bands and SaaS prerequisites; implementation deferred.
@@ -124,12 +124,15 @@ main run `29176358459`, including two/three-replica exact capacity, fair bounded
 queues, crash/fault and mixed-config behavior. Its historical branch is
 restored at `a9d8f3e`. P6-F20 durable terminal coupling and D6-10 dynamic
 long-stream extension remain separate.
-P6-F08 Routing Policy V1 is Local verified on
-`codex/prd6-routing-policy-v1`: deterministic server-ID weighting, bounded
-singleflight snapshots, renewable PostgreSQL probe ownership, routing/circuit/
-key epoch CAS, per-channel thresholds, shared Chat/Embeddings plans, safe
-preview/trace/UI and guarded migration pass locally. Required CI/merge is
-pending; no target or capacity claim exists.
+P6-F08 Routing Policy V1 is CI verified / closed by PR #172. Exact head
+`0e374d3` passed run `29178419505`, squash merge `54d8833` and post-merge main
+run `29178588075` passed Backend Tests, Frontend Build and Docker Build.
+Deterministic server-ID weighting, bounded singleflight snapshots, renewable
+PostgreSQL probe ownership, routing/circuit/key epoch CAS, per-channel
+thresholds, shared Chat/Embeddings plans, safe preview/trace/UI and guarded
+migration are covered. Its historical branch is retained at the exact head;
+no target or capacity claim exists. P6-F09 is the next accepted implementation
+row and remains provider prompt-cache accounting, not response caching.
 The adaptive-trust, Digital Twin,
 shadow, collusion, trust-receipt and claim-assurance rows remain proposed and
 are not implied by D6-01.

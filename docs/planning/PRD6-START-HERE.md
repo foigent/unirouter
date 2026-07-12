@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-12
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F07, P6-F16-P6-F19, P6-F21, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F08 is Local verified awaiting required CI
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F08, P6-F16-P6-F19, P6-F21, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F11 remains in progress
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -154,11 +154,13 @@ evidence.
   Redis, fairness, crash/fault, bounded queue, typed error, UI and OpenAPI
   evidence are covered; the historical branch is restored at its exact head.
   Batch 1 is closed without a deployment or target-capacity claim.
-- P6-F08 Routing Policy V1 is Local verified on
-  `codex/prd6-routing-policy-v1`. Deterministic weight, bounded snapshots,
-  renewable cross-replica probes, epoch CAS, per-channel thresholds,
-  Chat/Embeddings parity, safe preview/trace/UI and guarded migration tests
-  pass locally. Required PR CI/merge is pending; no target or capacity claim.
+- P6-F08 Routing Policy V1 is CI verified / closed by PR #172. Exact head
+  `0e374d3` passed run `29178419505`; squash merge `54d8833` and post-merge
+  main run `29178588075` passed Backend Tests, Frontend Build and Docker Build.
+  Deterministic weight, bounded snapshots, renewable cross-replica probes,
+  epoch CAS, per-channel thresholds, Chat/Embeddings parity, safe preview/
+  trace/UI and guarded migration are covered. The historical branch is
+  retained; no target or capacity claim. P6-F09 is the next accepted row.
 
 ## PRD5 Closure Guard
 

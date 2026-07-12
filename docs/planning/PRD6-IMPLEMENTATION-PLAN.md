@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-12
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F07, P6-F19, P6-F21 and P6-STREAM-002A are CI verified / closed; P6-F08 is Local verified awaiting required CI; P6-F11 remains in progress; 3 accepted rows remain not started
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F08, P6-F16-P6-F19, P6-F21, P6-F32-P6-F39 and P6-STREAM-002A are CI verified / closed; P6-F11 remains in progress; 3 accepted rows remain not started
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -30,10 +30,9 @@ required CI. No scope decision grants target/deployment/data/cost authorization.
 
 - 39 total `P6-F*` rows exist in the acceptance matrix;
 - 25 are accepted implementation scope;
-- 20 are CI verified / closed: P6-F01 through P6-F07, P6-F16 through P6-F19,
+- 21 are CI verified / closed: P6-F01 through P6-F08, P6-F16 through P6-F19,
   P6-F21 and P6-F32 through P6-F39;
-- 5 accepted rows remain unclosed: P6-F08 is Local verified and awaiting its
-  required PR CI/merge evidence; P6-F11 is in progress through the
+- 4 accepted rows remain unclosed: P6-F11 is in progress through the
   P6-STREAM-002A transport prerequisite; P6-F09, P6-F10 and P6-F20 remain not
   started;
 - 14 rows are not accepted: P6-F12 through P6-F15 and P6-F22 through P6-F31;
@@ -247,9 +246,10 @@ clock/TTL boundary tests, hot-key behavior and rollback compatibility.
 
 **Risk:** R3 provider selection behavior.
 **Gate:** Batch 0B, Batch 0C and Batch 1 policy evidence foundation.
-**Status:** implementation Local verified on
-`codex/prd6-routing-policy-v1`; required PR CI, merge and post-merge main CI
-pending. Evidence:
+**Status:** CI verified / closed by PR #172. Exact head `0e374d3` passed run
+`29178419505`; squash merge `54d8833` and post-merge main run `29178588075`
+passed Backend Tests, Frontend Build and Docker Build. The historical branch is
+retained at the exact head. Evidence:
 `docs/ops/evidence/PRD6-B2-P6F08-routing-policy-v1-local-20260712.md`.
 
 Deliverables:
