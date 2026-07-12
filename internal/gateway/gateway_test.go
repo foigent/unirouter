@@ -9,7 +9,9 @@ import (
 
 	"github.com/uniroute/unirouter/internal/capbilling"
 	"github.com/uniroute/unirouter/internal/filter"
+	"github.com/uniroute/unirouter/internal/limitpolicy"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/policybilling"
 )
 
 func TestWriteError(t *testing.T) {
@@ -215,6 +217,72 @@ func TestAgentCapabilityRuntimeRejectionHTTPContract(t *testing.T) {
 	}
 	if recorder := httptest.NewRecorder(); writeAgentCapabilityRuntimeRejection(recorder, "unknown") {
 		t.Fatal("unknown error code must fall through to the ordinary billing handler")
+	}
+}
+
+func TestLimitPolicyRuntimeRejectionHTTPContract(t *testing.T) {
+	tests := []struct {
+		code       string
+		status     int
+		retryAfter string
+	}{
+		{code: policybilling.ErrorCodeRPSExceeded, status: http.StatusTooManyRequests, retryAfter: "1"},
+		{code: policybilling.ErrorCodeRPMExceeded, status: http.StatusTooManyRequests, retryAfter: "60"},
+		{code: policybilling.ErrorCodeTPMExceeded, status: http.StatusTooManyRequests, retryAfter: "60"},
+		{code: policybilling.ErrorCodeConcurrencyExceeded, status: http.StatusTooManyRequests, retryAfter: "1"},
+		{code: policybilling.ErrorCodeStateUnavailable, status: http.StatusServiceUnavailable, retryAfter: "1"},
+		{code: policybilling.ErrorCodeConflict, status: http.StatusConflict},
+	}
+	for _, test := range tests {
+		t.Run(test.code, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			if !writeLimitPolicyRuntimeRejection(recorder, test.code) {
+				t.Fatal("typed limit-policy error was not recognized")
+			}
+			if recorder.Code != test.status || recorder.Header().Get("Retry-After") != test.retryAfter {
+				t.Fatalf("status=%d Retry-After=%q, want %d/%q", recorder.Code, recorder.Header().Get("Retry-After"), test.status, test.retryAfter)
+			}
+			var response map[string]any
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			errorObject := response["error"].(map[string]any)
+			if errorObject["code"] != test.code || errorObject["doc_url"] == "" {
+				t.Fatalf("error object=%#v", errorObject)
+			}
+		})
+	}
+	if recorder := httptest.NewRecorder(); writeLimitPolicyRuntimeRejection(recorder, "unknown") {
+		t.Fatal("unknown error code must fall through to the ordinary billing handler")
+	}
+}
+
+func TestLimitPolicyDecisionSummaryPreservesDegradedEvidencePriority(t *testing.T) {
+	decisions := []limitpolicy.Decision{{
+		PolicyRef: "policy:fallback", PolicyVersion: 1, SelectorHash: "one",
+		Mode: limitpolicy.ModeEnforce, Decision: limitpolicy.DecisionAllow, Reason: limitpolicy.ReasonLastKnownSafe,
+	}}
+	result, reason, enforce, shadow, _ := summarizeLimitPolicyDecisions(decisions)
+	if result != "degraded_allow" || reason != limitpolicy.ReasonLastKnownSafe || enforce != 1 || shadow != 0 {
+		t.Fatalf("fallback summary = %s/%s enforce=%d shadow=%d", result, reason, enforce, shadow)
+	}
+
+	decisions = append(decisions, limitpolicy.Decision{
+		PolicyRef: "policy:shadow", PolicyVersion: 2, SelectorHash: "two",
+		Mode: limitpolicy.ModeShadow, Decision: limitpolicy.DecisionWouldDeny, Reason: limitpolicy.ReasonRPMExceeded,
+	})
+	result, reason, _, _, _ = summarizeLimitPolicyDecisions(decisions)
+	if result != "shadow_would_deny" || reason != limitpolicy.ReasonRPMExceeded {
+		t.Fatalf("shadow summary = %s/%s", result, reason)
+	}
+
+	decisions = append(decisions, limitpolicy.Decision{
+		PolicyRef: "policy:deny", PolicyVersion: 3, SelectorHash: "three",
+		Mode: limitpolicy.ModeEnforce, Decision: limitpolicy.DecisionDeny, Reason: limitpolicy.ReasonConcurrency,
+	})
+	result, reason, _, _, _ = summarizeLimitPolicyDecisions(decisions)
+	if result != "rejected" || reason != limitpolicy.ReasonConcurrency {
+		t.Fatalf("denial summary = %s/%s", result, reason)
 	}
 }
 

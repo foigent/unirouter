@@ -29,6 +29,7 @@ import ApiDocsPage from './pages/ApiDocsPage'
 import AccessStatePage from './pages/AccessStatePage'
 import ErrorBoundary from './components/ErrorBoundary'
 import DataExchangePage from './pages/DataExchangePage'
+import LimitPoliciesPage from './pages/LimitPoliciesPage'
 import { useAuthStore } from './store/auth'
 import { getDefaultPathForRole, isRouteAllowedForRole } from './navigation'
 
@@ -89,6 +90,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="developer" element={<RoleRoute><DeveloperConsolePage /></RoleRoute>} />
             <Route path="channels" element={<RoleRoute><ChannelsPage /></RoleRoute>} />
             <Route path="keys" element={<RoleRoute><KeysPage /></RoleRoute>} />
+            <Route path="limit-policies" element={<RoleRoute><LimitPoliciesPage /></RoleRoute>} />
             <Route path="wallet" element={<RoleRoute><WalletPage /></RoleRoute>} />
             <Route path="channel-keys" element={<RoleRoute><ChannelKeysPage /></RoleRoute>} />
             <Route path="logs" element={<RoleRoute><LogsPage /></RoleRoute>} />

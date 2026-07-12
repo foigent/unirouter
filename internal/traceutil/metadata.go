@@ -39,6 +39,13 @@ var metadataAllowlist = map[string]bool{
 	"usage_confidence":                  true,
 	"usage_source":                      true,
 	"provider_key_failure_threshold":    true,
+	"limit_policy_set_version":          true,
+	"limit_policy_result":               true,
+	"limit_policy_reason":               true,
+	"limit_policy_decision_count":       true,
+	"limit_policy_enforce_count":        true,
+	"limit_policy_shadow_count":         true,
+	"limit_policy_chain":                true,
 }
 
 func SanitizeMetadata(input map[string]interface{}) map[string]interface{} {

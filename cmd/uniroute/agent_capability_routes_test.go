@@ -31,7 +31,8 @@ func TestMainWiresAgentAncestorBudgetAroundGatewayBilling(t *testing.T) {
 	mainSource := string(source)
 	for _, fragment := range []string{
 		"agentBudgetBilling := capbilling.New(billingSvc, agentCapabilityService)",
-		"gateway.NewRelay(postgres.Pool, redisClient.Client, router, agentBudgetBilling",
+		"sharedPolicyBilling := policybilling.New(agentBudgetBilling, limitPolicyService)",
+		"gateway.NewRelay(postgres.Pool, redisClient.Client, router, sharedPolicyBilling",
 		"billingSvc.RunSettlementRecoveryLoop",
 	} {
 		if !strings.Contains(mainSource, fragment) {

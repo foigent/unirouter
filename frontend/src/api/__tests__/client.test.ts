@@ -320,6 +320,24 @@ describe('API Client', () => {
     })
   })
 
+  describe('distributed limit-policy APIs', () => {
+    it('lists and versions shared policies', async () => {
+      mockJsonResponse({ data: [], total: 0 })
+      await api.getLimitPolicies(2, 50, { org_id: 22, mode: 'shadow' })
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/limit-policies?page=2&page_size=50&org_id=22&mode=shadow')
+
+      mockJsonResponse({ id: 7 })
+      await api.createLimitPolicy({ name: 'production', mode: 'shadow', rpm_limit: 60 })
+      expect(mockFetch.mock.calls[1][0]).toBe('/api/v1/limit-policies')
+      expect(mockFetch.mock.calls[1][1]).toEqual(expect.objectContaining({ method: 'POST' }))
+
+      mockJsonResponse({ id: 7, version: 2 })
+      await api.updateLimitPolicy(7, { mode: 'enforce' })
+      expect(mockFetch.mock.calls[2][0]).toBe('/api/v1/limit-policies/7')
+      expect(mockFetch.mock.calls[2][1]).toEqual(expect.objectContaining({ method: 'PUT' }))
+    })
+  })
+
   describe('model governance APIs', () => {
     it('loads model registry with filters', async () => {
       mockJsonResponse({ data: [], total: 0 })

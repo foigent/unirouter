@@ -113,6 +113,14 @@ export const api = {
   disableKey: (id: number) =>
     request(`/keys/${id}/disable`, { method: 'POST' }),
 
+  // Shared RPM/RPS/TPM/concurrency policies
+  getLimitPolicies: (page = 1, pageSize = 20, filters?: { org_id?: number; mode?: string }) =>
+    request(appendParams('/limit-policies', { page, page_size: pageSize, org_id: filters?.org_id, mode: filters?.mode })),
+  createLimitPolicy: (data: any) =>
+    request('/limit-policies', { method: 'POST', body: JSON.stringify(data) }),
+  updateLimitPolicy: (id: number, data: any) =>
+    request(`/limit-policies/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+
   // Wallet
   getWallet: (orgId?: number) => request(appendParams('/wallet', { org_id: orgId })),
   getWalletTransactions: (page = 1, pageSize = 20, orgId?: number) =>

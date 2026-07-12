@@ -359,6 +359,10 @@ func decisionEvidence(eventType string, metadata map[string]interface{}) (string
 		default:
 			return "budget", "failed", reason
 		}
+	case eventType == "limit_policy.admission":
+		result, _ := metadata["limit_policy_result"].(string)
+		reason, _ := metadata["limit_policy_reason"].(string)
+		return "admission", result, reason
 	case strings.HasPrefix(eventType, "routing."):
 		switch eventType {
 		case "routing.route_selected":

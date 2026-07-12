@@ -27,9 +27,11 @@ import (
 	"github.com/uniroute/unirouter/internal/filter"
 	"github.com/uniroute/unirouter/internal/gateway"
 	"github.com/uniroute/unirouter/internal/licensing"
+	"github.com/uniroute/unirouter/internal/limitpolicy"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/migrate"
 	"github.com/uniroute/unirouter/internal/oidc"
+	"github.com/uniroute/unirouter/internal/policybilling"
 	"github.com/uniroute/unirouter/internal/redisx"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
 )
@@ -88,6 +90,19 @@ func main() {
 		log.Fatalf("Failed to initialize Agent capability service: %v", err)
 	}
 	agentCapabilityHandler := capapi.NewHandler(agentCapabilityService)
+	limitPolicyService, err := limitpolicy.NewService(postgres.Pool, redisClient.Client, limitpolicy.DefaultOptions())
+	if err != nil {
+		log.Fatalf("Failed to initialize distributed limit-policy service: %v", err)
+	}
+	initialLimitPolicyCtx, cancelInitialLimitPolicyLoad := context.WithTimeout(context.Background(), 10*time.Second)
+	if err := limitPolicyService.Refresh(initialLimitPolicyCtx); err != nil {
+		cancelInitialLimitPolicyLoad()
+		log.Fatalf("Failed to load distributed limit-policy snapshot: %v", err)
+	}
+	cancelInitialLimitPolicyLoad()
+	limitPolicyRefreshCtx, stopLimitPolicyRefresh := context.WithCancel(context.Background())
+	defer stopLimitPolicyRefresh()
+	go limitPolicyService.RunRefreshLoop(limitPolicyRefreshCtx)
 
 	// Initialize core components from one typed, read-only effective
 	// configuration registry. Dynamic policy rollout remains a later contract.
@@ -101,6 +116,7 @@ func main() {
 	}
 	billingSvc := billing.NewBilling(postgres.Pool, redisClient.Client)
 	agentBudgetBilling := capbilling.New(billingSvc, agentCapabilityService)
+	sharedPolicyBilling := policybilling.New(agentBudgetBilling, limitPolicyService)
 	settlementRecoveryCtx, stopSettlementRecovery := context.WithCancel(context.Background())
 	defer stopSettlementRecovery()
 	go billingSvc.RunSettlementRecoveryLoop(settlementRecoveryCtx, 10*time.Second, 100)
@@ -116,7 +132,7 @@ func main() {
 		log.Fatal("Failed to initialize deployment sensitive-word policy version")
 	}
 	encKey := []byte(cfg.EncryptionKey)
-	relay := gateway.NewRelay(postgres.Pool, redisClient.Client, router, agentBudgetBilling, sensitiveFilter, encKey)
+	relay := gateway.NewRelay(postgres.Pool, redisClient.Client, router, sharedPolicyBilling, sensitiveFilter, encKey)
 	if err := relay.SetStreamPolicy(effectiveConfig.StreamTransport.Config); err != nil {
 		log.Fatalf("Invalid effective stream transport configuration: %v", err)
 	}
@@ -127,6 +143,7 @@ func main() {
 	relay.SetEventService(eventSvc)
 
 	adminHandler := admin.NewHandlerWithAPIKeyHashSecret(postgres.Pool, cfg.JWTSecret, cfg.APIKeyHashSecret, encKey, sensitiveFilter)
+	adminHandler.SetLimitPolicyReloader(limitPolicyService)
 	licenseVerifier, err := licensing.NewVerifierFromPublicKey(cfg.LicensePublicKey, cfg.LicenseExpiryWarningDays)
 	if err != nil {
 		log.Fatalf("Invalid license configuration: %v", err)
@@ -235,8 +252,8 @@ func main() {
 	chatHandler := newGatewayChatHandler(postgres.Pool, relay)
 	embeddingsHandler := newGatewayEmbeddingsHandler(postgres.Pool, relay)
 
-	mux.Handle("POST /v1/chat/completions", gatewayAuth(admissionMiddleware(rateLimiter(idempotencyGuard(chatHandler)))))
-	mux.Handle("POST /v1/embeddings", gatewayAuth(admissionMiddleware(rateLimiter(idempotencyGuard(embeddingsHandler)))))
+	mux.Handle("POST /v1/chat/completions", gatewayAuth(idempotencyGuard(chatHandler)))
+	mux.Handle("POST /v1/embeddings", gatewayAuth(idempotencyGuard(embeddingsHandler)))
 	mux.Handle("GET /v1/models", gatewayAuth(admissionMiddleware(http.HandlerFunc(relay.HandleModels))))
 	registerAgentCapabilityRoutes(mux, agentCapabilityHandler, agentCapabilityRouteGuards{
 		authenticate: gatewayAuth,
@@ -404,6 +421,9 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">PUT</td><td><code>/api/v1/org-model-prices/{id}</code></td><td>Update org multiplier (platform admin)</td></tr>
 <tr><td class="method">DELETE</td><td><code>/api/v1/org-model-prices/{id}</code></td><td>Delete org multiplier (platform admin)</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/reconciliation</code></td><td>Usage reconciliation</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/limit-policies</code></td><td>List versioned shared RPM/RPS/TPM/concurrency policies</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/limit-policies</code></td><td>Create a disabled, shadow or enforced shared limit policy</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/limit-policies/{id}</code></td><td>Update a shared limit policy and increment its version</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/notification-events</code></td><td>Notification events</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/notification-deliveries</code></td><td>Notification deliveries</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/notification-webhooks</code></td><td>Notification webhooks</td></tr>
@@ -467,6 +487,12 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 		projectRead:  projectReadRoute,
 	})
 	registerPricingRoutes(mux, adminHandler, pricingRouteGuards{read: orgAdminRoute, write: platformRoute})
+	registerLimitPolicyRoutes(mux, adminHandler, limitPolicyRouteGuards{
+		read: func(h http.HandlerFunc) http.Handler {
+			return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin)
+		},
+		write: orgAdminRoute,
+	})
 
 	mux.Handle("GET /api/v1/users", orgAdminRoute(adminHandler.ListUsers))
 	mux.Handle("POST /api/v1/users", orgAdminRoute(adminHandler.CreateUser))

@@ -54,3 +54,27 @@ func TestAPIKeyQuotaPayload(t *testing.T) {
 		t.Fatalf("expected not_configured TPM source, got %#v", payload["tpm_source"])
 	}
 }
+
+func TestNormalizePolicyLabelsMatchesRuntimeAndDatabaseContract(t *testing.T) {
+	value, errMessage := normalizePolicyLabels([]string{" production ", "customer-facing", "production"})
+	if errMessage != "" || value != "customer-facing,production" {
+		t.Fatalf("normalized labels = %q, error = %q", value, errMessage)
+	}
+	if _, errMessage := normalizePolicyLabels([]string{"生产"}); errMessage == "" {
+		t.Fatal("non-ASCII policy label must be rejected before snapshot refresh")
+	}
+	if _, errMessage := normalizePolicyLabels([]string{"_internal"}); errMessage == "" {
+		t.Fatal("policy label must start with an ASCII letter or number")
+	}
+}
+
+func TestLimitPolicyLimitsRespectDatabaseColumnWidths(t *testing.T) {
+	tooLargeRPS := int64(2_147_483_648)
+	validTPM := int64(9_000_000_000_000_000)
+	if validLimitPolicyLimits(&limitPolicyRecord{RPSLimit: &tooLargeRPS}) {
+		t.Fatal("RPS above PostgreSQL INTEGER range must be rejected by the API")
+	}
+	if !validLimitPolicyLimits(&limitPolicyRecord{TPMLimit: &validTPM}) {
+		t.Fatal("valid BIGINT-backed TPM limit was rejected")
+	}
+}

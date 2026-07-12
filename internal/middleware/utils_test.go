@@ -226,8 +226,18 @@ func TestCORS_Headers(t *testing.T) {
 		}
 	}
 	exposedHeaders := splitComma(rec.Header().Get("Access-Control-Expose-Headers"))
-	if len(exposedHeaders) != 3 {
-		t.Fatalf("expected the three public identity response headers, got %#v", exposedHeaders)
+	versionExposed := false
+	for _, exposed := range exposedHeaders {
+		if exposed == "X-UniRouter-Limit-Policy-Version" {
+			versionExposed = true
+			break
+		}
+	}
+	if !versionExposed {
+		t.Fatal("limit-policy version response header must be browser-readable")
+	}
+	if len(exposedHeaders) != 4 {
+		t.Fatalf("expected three public identity headers plus the policy-version header, got %#v", exposedHeaders)
 	}
 }
 
