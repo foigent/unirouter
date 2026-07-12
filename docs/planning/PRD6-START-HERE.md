@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-12
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F09, P6-F16-P6-F19, P6-F21, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F11 remains in progress
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12 accepted; P6-F03-P6-F09, P6-F16-P6-F19, P6-F21, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F20 is a Local implementation candidate with required CI pending; P6-F11 remains in progress
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -22,6 +22,9 @@ recommended MVP boundary and policy-specific failure posture on 2026-07-11:
 - D6-10 selects reservation-aware long-stream Scheme A, while D6-11 selects
   explicit supervisor capability exchange with a five-minute token and
   separate workflow lifetime/budget limits;
+- D6-12 closes P6-F20 at the final-usage/terminal durability boundary and assigns
+  mid-stream crash checkpoints, explicit interruption and client recovery to
+  P6-F11; PRD6 does not claim transparent stream migration or managed HA/IaC;
 - PRD5 remains `Accepted Scope Complete` and is not reopened by PRD6;
 - a PRD5 backlog or competitor feature is an input, not an automatic PRD6
   commitment.
@@ -55,19 +58,21 @@ recommended MVP boundary and policy-specific failure posture on 2026-07-11:
 25. `docs/ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md`
 26. `docs/ops/evidence/PRD6-B2-P6F08-routing-policy-v1-local-20260712.md`
 27. `docs/ops/evidence/PRD6-B3-P6F09-prompt-cache-billing-local-20260712.md`
-28. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`
-29. `docs/planning/PRD7-CANDIDATE-BACKLOG.md`
-30. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md`
-31. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
-32. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
-33. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
-34. `docs/PRD-Phase6.md`
-35. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
-36. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
-37. `docs/planning/PRD6-BACKLOG.md`
-38. `docs/issues/OPEN-ISSUES.md`
-39. `docs/agent-workflows/AGENT-PROTOCOL.md`
-40. `docs/agent-workflows/EXECUTION-RECORD.md`
+28. `docs/ops/evidence/PRD6-B3-P6F20-durable-outbox-local-20260712.md`
+29. `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md`
+30. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`
+31. `docs/planning/PRD7-CANDIDATE-BACKLOG.md`
+32. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md`
+33. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
+34. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
+35. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
+36. `docs/PRD-Phase6.md`
+37. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
+38. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
+39. `docs/planning/PRD6-BACKLOG.md`
+40. `docs/issues/OPEN-ISSUES.md`
+41. `docs/agent-workflows/AGENT-PROTOCOL.md`
+42. `docs/agent-workflows/EXECUTION-RECORD.md`
 
 PRD5 evidence remains under its existing paths. Do not rewrite it as PRD6
 evidence.
@@ -247,8 +252,9 @@ replay a model answer and does not claim P6-F20. P6-F18 is separately CI
 verified by PR #151 and #153: billable stream output is durably marked before
 delivery, final usage is immutable, and failed immediate settlement is retained
 for leased restart recovery rather than refunded. Its post-merge main run
-`29156096777` passed; per-chunk process-kill journal and the general outbox
-remain P6-F20. The complete response-cache
+`29156096777` passed. The general durable outbox is now a P6-F20 Local candidate
+pending required CI; D6-12 assigns the mid-stream process-kill checkpoint and
+client-recovery contract to P6-F11. The complete response-cache
 Scheme B is a future required PRD7 Cache Service direction only.
 
 P6-F35 adds no global-settings UI. D6-09 defers target execution; a later
@@ -256,8 +262,9 @@ authorized activation must drain old control-plane binaries and be non-rolling,
 because mixed old/new binaries are not safe for these endpoints. New-version
 replicas converge committed global-word changes through the existing
 approximately one-minute reload. Typed config ownership plus the budget/alert
-key, scope and audit truth chain are CI verified / closed by P6-F05; durable ambiguous-commit recovery
-remains P6-F20 rather than being claimed by P6-F17 Scheme A.
+key, scope and audit truth chain are CI verified / closed by P6-F05; durable
+post-final-usage ambiguous-commit recovery remains P6-F20 rather than being
+claimed by P6-F17 Scheme A.
 
 P6-F36 does not reopen P6-F16. It adds no migration, RLS/foreign-key redesign,
 unregistered-model denial, `/v1/models` semantic change, selector UI or target

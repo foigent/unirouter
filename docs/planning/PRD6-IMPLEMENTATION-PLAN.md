@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-12
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F09, P6-F16-P6-F19, P6-F21, P6-F32-P6-F39 and P6-STREAM-002A are CI verified / closed; P6-F11 remains in progress; P6-F10 and P6-F20 remain not started
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12 accepted; P6-F03-P6-F09, P6-F16-P6-F19, P6-F21, P6-F32-P6-F39 and P6-STREAM-002A are CI verified / closed; P6-F20 has a Local implementation candidate with required CI pending; P6-F11 remains in progress and P6-F10 is not started
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -32,9 +32,10 @@ required CI. No scope decision grants target/deployment/data/cost authorization.
 - 25 are accepted implementation scope;
 - 22 are CI verified / closed: P6-F01 through P6-F09, P6-F16 through P6-F19,
   P6-F21 and P6-F32 through P6-F39;
-- 3 accepted rows remain unclosed: P6-F11 is in progress through the
-  P6-STREAM-002A transport prerequisite; P6-F10 and P6-F20 remain not
-  started;
+- 3 accepted rows remain unclosed: P6-F20 has a Local implementation candidate
+  with required PR/post-merge CI pending; D6-12 assigns mid-stream crash semantics
+  to P6-F11, which is in progress through the P6-STREAM-002A
+  transport prerequisite; P6-F10 is not started;
 - 14 rows are not accepted: P6-F12 through P6-F15 and P6-F22 through P6-F31;
 - `P6-TEST-DB-001` is a separate accepted engineering-integrity issue outside
   the feature-row count. PR #155, merge `4b18ace` and post-merge main run
@@ -126,8 +127,9 @@ plus the pre-output/source-preserving and single-terminal foundation of step 5.
 F18B is CI verified by PR #153 for the billable-output `settlement_pending`
 marker, persisted final usage, leased restart worker and post-last-chunk fault
 evidence. Together they close P6-F18. Missing final-usage rows remain held
-without a guessed charge/refund; per-chunk process-kill journal, guaranteed
-missing-log/audit replay and the general outbox remain P6-F20.
+without a guessed charge/refund. D6-12 assigns mid-stream process-kill
+checkpoints and client recovery to P6-F11; guaranteed missing-log/audit replay
+and the general durable outbox remain P6-F20 and now have a Local candidate.
 
 P6-F17 implements steps 2-3 with a server-owned `op_` identity, separate
 client/workflow/Agent/attempt/upstream fields, tenant/API-key/payload-bound HMAC
@@ -270,10 +272,19 @@ Adaptive latency/cost routing remains advanced scope.
 **Status:** P6-F09 provider Prompt Cache accounting is CI verified / closed by
 PR #174 exact-head run `29180539621`, merge `6515b3f`, the production-neutral
 P6-F21 test-fixture stabilization in PR #175, and final post-fix main run
-`29181137210`. P6-F20 general outbox/workers remain not started, so Batch 3 is
+`29181137210`. P6-F20 has a Local implementation candidate: its PostgreSQL transactional outbox,
+minimal financial journal, incremental budget ledger, bounded evidence/
+notification workers and durable Agent/policy/workload terminal hooks pass the
+focused race, post-final-usage process-replacement, ordering and migration
+gates. D6-12 is accepted and assigns mid-stream process-kill usage checkpoints,
+explicit interruption and client recovery to P6-F11; P6-F20 does not guess exact
+usage before final persistence. Required PR/post-merge CI remain, so Batch 3 is
 not closed.
 Evidence:
-`docs/ops/evidence/PRD6-B3-P6F09-prompt-cache-billing-local-20260712.md`.
+`docs/ops/evidence/PRD6-B3-P6F09-prompt-cache-billing-local-20260712.md` and
+`docs/ops/evidence/PRD6-B3-P6F20-durable-outbox-local-20260712.md`.
+Architecture reference:
+`docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md`.
 
 Deliverables:
 

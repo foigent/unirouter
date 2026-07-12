@@ -131,12 +131,14 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 		keyIDArg = keyID
 	}
 	var ownerUserIDArg interface{}
+	var ownerUserID int64
 	keyType := "unknown"
 	actorType := "unknown"
 	var actorRefArg interface{}
 	if apiKey := middleware.GetAPIKeyFromContext(ctx); apiKey != nil {
 		if apiKey.OwnerUserID != nil && *apiKey.OwnerUserID > 0 {
 			ownerUserIDArg = *apiKey.OwnerUserID
+			ownerUserID = *apiKey.OwnerUserID
 		}
 		if apiKey.KeyType == "shared" || apiKey.KeyType == "personal" || apiKey.KeyType == "service" {
 			keyType = apiKey.KeyType
@@ -208,6 +210,55 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 		upstreamRequestID, captureGap, actorType, stringFromNullable(actorRefArg), evidenceContext.OnBehalfOf,
 		evidenceContext.SessionID, payloadCaptureMode, metadataJSON)
 	decisionKind, decisionResult, decisionReason := decisionEvidence(eventType, sanitizedMetadata)
+	if relay.outbox != nil {
+		payload := traceOutboxPayload{
+			RequestID:          requestID,
+			ClientRequestID:    requestIdentity.ClientRequestID,
+			IdempotencyKeyHash: requestIdentity.IdempotencyKeyHash,
+			OrgID:              orgID,
+			ProjectID:          int64Pointer(projectID),
+			APIKeyID:           int64Pointer(keyID),
+			OwnerUserID:        int64Pointer(ownerUserID),
+			KeyType:            keyType,
+			EventType:          eventType,
+			Stage:              stage,
+			Severity:           severity,
+			Model:              model,
+			RequestedModel:     requestedModel,
+			Provider:           provider,
+			Channel:            channel,
+			StatusCode:         intPointer(statusCode),
+			LatencyMS:          latencyMs,
+			Metadata:           json.RawMessage(metadataJSON),
+			TraceID:            traceID,
+			SpanID:             spanID,
+			ParentSpanID:       parentSpanID,
+			SchemaVersion:      evidenceSchemaVersion,
+			SourceComponent:    sourceComponent,
+			CaptureMode:        evidenceCaptureModeNative,
+			CaptureGap:         captureGap,
+			EvidenceRef:        evidenceRef,
+			UpstreamRequestID:  upstreamRequestID,
+			DecisionKind:       decisionKind,
+			DecisionResult:     decisionResult,
+			DecisionReason:     decisionReason,
+			ActorType:          actorType,
+			ActorRef:           stringFromNullable(actorRefArg),
+			OnBehalfOf:         evidenceContext.OnBehalfOf,
+			SessionID:          evidenceContext.SessionID,
+			WorkflowID:         evidenceContext.WorkflowID,
+			AgentID:            evidenceContext.AgentID,
+			AttemptID:          attemptID,
+			PayloadCaptureMode: payloadCaptureMode,
+			SourceEventHash:    sourceEventHash,
+			OccurredAt:         time.Now().UTC(),
+		}
+		if err := relay.enqueueTraceOutbox(ctx, payload); err == nil {
+			return
+		} else {
+			logger.New(logger.Fields{RequestID: requestID, OrgID: uint(orgID), Module: "trace"}).Warn("Failed to enqueue trace event %s; falling back to synchronous insert: %v", eventType, err)
+		}
+	}
 	if _, err := relay.db.Exec(ctx,
 		`INSERT INTO request_trace_events (
 			request_id, client_request_id, idempotency_key_hash,

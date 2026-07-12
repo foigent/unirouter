@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/db"
+	"github.com/uniroute/unirouter/internal/outbox"
 )
 
 const (
@@ -29,6 +30,7 @@ const (
 	NotificationSeverityCritical = "critical"
 
 	DeliveryStateNotConfigured = "not_configured"
+	DeliveryStatePending       = "pending"
 	DeliveryStateDelivered     = "delivered"
 	DeliveryStateFailed        = "failed"
 )
@@ -60,6 +62,7 @@ type EventService struct {
 	client    *http.Client
 	now       func() time.Time
 	retryWait time.Duration
+	outbox    *outbox.Service
 }
 
 type dueWebhookDelivery struct {
@@ -89,6 +92,12 @@ func (s *EventService) WithHTTPClient(client *http.Client) *EventService {
 	return s
 }
 
+func (s *EventService) SetOutbox(service *outbox.Service) {
+	if s != nil {
+		s.outbox = service
+	}
+}
+
 // Emit records an event and immediately attempts matching webhook delivery.
 func (s *EventService) Emit(ctx context.Context, input EventInput) (*EventResult, error) {
 	if s == nil || s.db == nil {
@@ -109,6 +118,9 @@ func (s *EventService) Emit(ctx context.Context, input EventInput) (*EventResult
 	payloadJSON, err := marshalEventPayload(input.Payload)
 	if err != nil {
 		return nil, err
+	}
+	if s.outbox != nil {
+		return s.emitWithOutbox(ctx, input, payloadJSON)
 	}
 
 	var projectArg interface{}
@@ -405,6 +417,7 @@ func (s *EventService) sendWebhookAndUpdateDelivery(ctx context.Context, deliver
 		return false
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", fmt.Sprintf("unirouter-notification-delivery-%d", deliveryID))
 
 	resp, err := s.client.Do(req)
 	if err != nil {

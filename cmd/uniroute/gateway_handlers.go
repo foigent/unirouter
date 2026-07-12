@@ -10,15 +10,21 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/uniroute/unirouter/internal/admin"
 	"github.com/uniroute/unirouter/internal/gateway"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modelgov"
 	"github.com/uniroute/unirouter/internal/models"
+	"github.com/uniroute/unirouter/internal/outbox"
 )
 
-func newGatewayChatHandler(pool *pgxpool.Pool, relay *gateway.Relay) http.HandlerFunc {
+func newGatewayChatHandler(pool *pgxpool.Pool, relay *gateway.Relay, outboxServices ...*outbox.Service) http.HandlerFunc {
+	var outboxService *outbox.Service
+	if len(outboxServices) > 0 {
+		outboxService = outboxServices[0]
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		governedRequest, ok := prepareGatewayModelRequest(w, r, pool)
+		governedRequest, ok := prepareGatewayModelRequest(w, r, pool, outboxService)
 		if !ok {
 			return
 		}
@@ -26,9 +32,13 @@ func newGatewayChatHandler(pool *pgxpool.Pool, relay *gateway.Relay) http.Handle
 	}
 }
 
-func newGatewayEmbeddingsHandler(pool *pgxpool.Pool, relay *gateway.Relay) http.HandlerFunc {
+func newGatewayEmbeddingsHandler(pool *pgxpool.Pool, relay *gateway.Relay, outboxServices ...*outbox.Service) http.HandlerFunc {
+	var outboxService *outbox.Service
+	if len(outboxServices) > 0 {
+		outboxService = outboxServices[0]
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		governedRequest, ok := prepareGatewayModelRequest(w, r, pool)
+		governedRequest, ok := prepareGatewayModelRequest(w, r, pool, outboxService)
 		if !ok {
 			return
 		}
@@ -36,7 +46,7 @@ func newGatewayEmbeddingsHandler(pool *pgxpool.Pool, relay *gateway.Relay) http.
 	}
 }
 
-func prepareGatewayModelRequest(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool) (*http.Request, bool) {
+func prepareGatewayModelRequest(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, outboxService *outbox.Service) (*http.Request, bool) {
 	apiKey := middleware.GetAPIKeyFromContext(r.Context())
 	if apiKey == nil {
 		http.Error(w, `{"error":{"type":"auth_error.invalid_api_key","message":"No API key"}}`, http.StatusUnauthorized)
@@ -58,7 +68,7 @@ func prepareGatewayModelRequest(w http.ResponseWriter, r *http.Request, pool *pg
 
 	if req.Model != "" {
 		var ok bool
-		r, bodyBytes, _, ok = applyModelGovernance(w, r, pool, apiKey, req.Model, bodyBytes)
+		r, bodyBytes, _, ok = applyModelGovernance(w, r, pool, outboxService, apiKey, req.Model, bodyBytes)
 		if !ok {
 			return nil, false
 		}
@@ -69,7 +79,7 @@ func prepareGatewayModelRequest(w http.ResponseWriter, r *http.Request, pool *pg
 	return r, true
 }
 
-func applyModelGovernance(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, apiKey *models.ApiKey, requestedModel string, bodyBytes []byte) (*http.Request, []byte, string, bool) {
+func applyModelGovernance(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, outboxService *outbox.Service, apiKey *models.ApiKey, requestedModel string, bodyBytes []byte) (*http.Request, []byte, string, bool) {
 	projectID := int64(0)
 	if apiKey.ProjectID != nil {
 		projectID = *apiKey.ProjectID
@@ -93,7 +103,7 @@ func applyModelGovernance(w http.ResponseWriter, r *http.Request, pool *pgxpool.
 		return nil, nil, "", false
 	}
 	if access.Lifecycle == "" {
-		recordUnregisteredModelAudit(r.Context(), pool, apiKey, requestedModel, projectID)
+		recordUnregisteredModelAudit(r.Context(), pool, outboxService, apiKey, requestedModel, projectID)
 	}
 
 	resolvedModel := access.ResolvedModel
@@ -114,7 +124,7 @@ func applyModelGovernance(w http.ResponseWriter, r *http.Request, pool *pgxpool.
 	return r, rewritten, resolvedModel, true
 }
 
-func recordUnregisteredModelAudit(ctx context.Context, pool *pgxpool.Pool, apiKey *models.ApiKey, requestedModel string, projectID int64) {
+func recordUnregisteredModelAudit(ctx context.Context, pool *pgxpool.Pool, outboxService *outbox.Service, apiKey *models.ApiKey, requestedModel string, projectID int64) {
 	if pool == nil || apiKey == nil || apiKey.OrgID <= 0 || strings.TrimSpace(requestedModel) == "" {
 		return
 	}
@@ -135,6 +145,14 @@ func recordUnregisteredModelAudit(ctx context.Context, pool *pgxpool.Pool, apiKe
 	resourceID := requestedModel
 	if len(resourceID) > 64 {
 		resourceID = resourceID[:64]
+	}
+	if outboxService != nil {
+		if err := admin.EnqueueGatewayAudit(
+			ctx, outboxService, apiKey.OrgID, projectID,
+			"model.unregistered.call", "model", resourceID, detail,
+		); err == nil {
+			return
+		}
 	}
 	_, _ = pool.Exec(ctx,
 		`INSERT INTO audit_logs (org_id, user_id, action, resource, resource_id, detail, ip, user_agent, request_id, source, project_id, before_state, after_state, created_at)

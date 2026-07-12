@@ -17,12 +17,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	internaldb "github.com/uniroute/unirouter/internal/db"
+	"github.com/uniroute/unirouter/internal/outbox"
 )
 
 // FreezeRequest contains the parameters for a freeze operation.
 type FreezeRequest struct {
 	RequestID                string
 	OrgID                    int64
+	ProjectID                int64
 	Model                    string
 	EstimatedTokens          int
 	EstimatedInputTokens     int
@@ -92,6 +94,8 @@ type priceQuote struct {
 }
 
 type reservationRecord struct {
+	Model                       string
+	ProjectID                   int64
 	FrozenAmount                int
 	ReservedBalanceAmount       int
 	ReservedGrantedAmount       int
@@ -139,11 +143,21 @@ type Billing struct {
 	db     *pgxpool.Pool
 	rdb    *redis.Client
 	prices PriceProvider
+	outbox *outbox.Service
 }
 
 // NewBilling creates a new Billing instance.
 func NewBilling(db *pgxpool.Pool, rdb *redis.Client) *Billing {
 	return &Billing{db: db, rdb: rdb, prices: NewDBPriceProvider(db)}
+}
+
+// SetOutbox enables the repository-local P6-F20 durable evidence path. The
+// financial transaction fails closed if its transactional envelope cannot be
+// enqueued; callers that do not configure an outbox retain legacy test wiring.
+func (b *Billing) SetOutbox(service *outbox.Service) {
+	if b != nil {
+		b.outbox = service
+	}
 }
 
 // WithPriceProvider overrides the default DB-backed price provider (for testing).
@@ -393,6 +407,7 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 	_, err = tx.Exec(ctx,
 		`INSERT INTO freeze_idempotency (
 			request_id, org_id, frozen_amount, status,
+			project_id,
 			reserved_balance_amount, reserved_granted_amount,
 			model_name, estimated_tokens, safety_factor, min_freeze_amount,
 			effective_input_price_cents, effective_cache_read_price_cents,
@@ -401,10 +416,12 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 			price_multiplier, pricing_version, updated_at
 		 ) VALUES (
 			$1, $2, $3, 'frozen',
-			$4, $5, $6, $7, $8, $9,
-			$10, $11, $12, $13, $14, $15, $16, $17, NOW()
+			$4,
+			$5, $6, $7, $8, $9, $10,
+			$11, $12, $13, $14, $15, $16, $17, $18, NOW()
 		 )`,
 		req.RequestID, req.OrgID, freezeAmount,
+		req.ProjectID,
 		reservedBalance, reservedGranted,
 		req.Model, req.EstimatedTokens, req.SafetyFactor, req.MinFreezeAmount,
 		quote.InputPriceCents, quote.CacheReadPriceCents, quote.CacheCreationPriceCents,
@@ -830,6 +847,13 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		}
 	}
 
+	if err := enqueueUsageJournalTx(
+		ctx, tx, b.outbox, outbox.EventBillingSettled, "settled",
+		record, req, calculatedCost, chargedCost, settleID,
+	); err != nil {
+		return nil, fmt.Errorf("enqueue settled usage journal: %w", err)
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit: %w", err)
 	}
@@ -941,7 +965,8 @@ func settleResultFromRecord(record reservationRecord) *SettleResult {
 func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgID int64) (reservationRecord, error) {
 	var record reservationRecord
 	err := tx.QueryRow(ctx,
-		`SELECT frozen_amount, reserved_balance_amount, reserved_granted_amount,
+		`SELECT model_name, project_id,
+		        frozen_amount, reserved_balance_amount, reserved_granted_amount,
 		        effective_input_price_cents::float8,
 		        effective_cache_read_price_cents::float8,
 		        effective_cache_creation_price_cents::float8,
@@ -960,6 +985,8 @@ func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgI
 		 WHERE request_id = $1 AND org_id = $2
 		 FOR UPDATE`, requestID, orgID,
 	).Scan(
+		&record.Model,
+		&record.ProjectID,
 		&record.FrozenAmount,
 		&record.ReservedBalanceAmount,
 		&record.ReservedGrantedAmount,
@@ -1090,12 +1117,22 @@ func finalizeGrantAllocations(ctx context.Context, tx pgx.Tx, orgID int64, reque
 // source buckets. settlement_pending is deliberately non-cancellable because
 // it represents billable output and must be recovered by settlement.
 func (b *Billing) Cancel(ctx context.Context, requestID string, orgID int64) error {
-	return CancelReservation(ctx, b.db, requestID, orgID)
+	return cancelReservation(ctx, b.db, b.outbox, requestID, orgID)
 }
 
 // CancelReservation exposes the source-preserving terminal transition to
 // bounded cleanup jobs that depend on the DBQuerier interface.
 func CancelReservation(ctx context.Context, database internaldb.DBQuerier, requestID string, orgID int64) error {
+	return cancelReservation(ctx, database, nil, requestID, orgID)
+}
+
+// CancelReservationWithOutbox preserves the same terminal semantics while
+// adding the P6-F20 transactional journal envelope.
+func CancelReservationWithOutbox(ctx context.Context, database internaldb.DBQuerier, service *outbox.Service, requestID string, orgID int64) error {
+	return cancelReservation(ctx, database, service, requestID, orgID)
+}
+
+func cancelReservation(ctx context.Context, database internaldb.DBQuerier, service *outbox.Service, requestID string, orgID int64) error {
 	tx, err := database.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -1171,6 +1208,19 @@ func CancelReservation(ctx context.Context, database internaldb.DBQuerier, reque
 	)
 	if err != nil {
 		return fmt.Errorf("update idempotency: %w", err)
+	}
+	cancelReq := SettleRequest{
+		RequestID:        requestID,
+		OrgID:            orgID,
+		UsageSource:      "",
+		CacheUsageStatus: cacheUsageStatusNotReported,
+		CacheUsageSchema: "",
+	}
+	if err := enqueueUsageJournalTx(
+		ctx, tx, service, outbox.EventBillingCancelled, "cancelled",
+		record, cancelReq, 0, 0, cancelID,
+	); err != nil {
+		return fmt.Errorf("enqueue cancelled usage journal: %w", err)
 	}
 
 	return tx.Commit(ctx)

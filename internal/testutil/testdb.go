@@ -158,6 +158,10 @@ func TruncateAll(t *testing.T, pool *pgxpool.Pool) {
 
 	tables := []string{
 		"distributed_limit_policies",
+		"internal_outbox_events",
+		"usage_finalization_journal",
+		"project_budget_usage",
+		"runtime_terminal_hooks",
 		"notification_deliveries",
 		"notification_webhooks",
 		"notification_events",

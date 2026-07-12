@@ -25,6 +25,7 @@ import (
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/models"
+	"github.com/uniroute/unirouter/internal/outbox"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
 	"github.com/uniroute/unirouter/internal/streampolicy"
@@ -54,6 +55,7 @@ type Relay struct {
 	filter   *filter.DFAFilter
 	encKey   []byte
 	eventSvc *billing.EventService
+	outbox   *outbox.Service
 
 	traceEventsEnabled         bool
 	traceEventSampleRate       float64
@@ -85,6 +87,14 @@ func (relay *Relay) currentStreamPolicy() streampolicy.Config {
 // SetEventService configures PRD2 notification events for post-settle project checks.
 func (relay *Relay) SetEventService(svc *billing.EventService) {
 	relay.eventSvc = svc
+}
+
+// SetOutbox enables bounded, replayable materialization of detailed gateway
+// evidence. Financial terminal state remains owned by billing.
+func (relay *Relay) SetOutbox(service *outbox.Service) {
+	if relay != nil {
+		relay.outbox = service
+	}
 }
 
 // SetTraceEvents configures metadata-only request trace recording.
@@ -254,7 +264,7 @@ func (relay *Relay) emitProviderChannelFailure(ctx context.Context, route RouteR
 	if orgID <= 0 || route.Channel.ID <= 0 {
 		return
 	}
-	go func() {
+	emit := func() {
 		_, _ = relay.eventSvc.Emit(context.Background(), billing.EventInput{
 			OrgID:      orgID,
 			EventType:  billing.EventProviderChannelFailure,
@@ -278,7 +288,12 @@ func (relay *Relay) emitProviderChannelFailure(ctx context.Context, route RouteR
 				"message":         message,
 			},
 		})
-	}()
+	}
+	if relay.outbox != nil {
+		emit()
+		return
+	}
+	go emit()
 }
 
 func upstreamEndpoint(baseURL, endpoint string) string {
@@ -592,6 +607,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	freezeResult, err := relay.billing.Freeze(ctx, billing.FreezeRequest{
 		RequestID:                requestID,
 		OrgID:                    orgID,
+		ProjectID:                middleware.GetProjectIDFromContext(ctx),
 		Model:                    req.Model,
 		EstimatedTokens:          estimatedTokens,
 		EstimatedInputTokens:     estimatedInputTokens,
@@ -1589,6 +1605,73 @@ func (relay *Relay) recordRequestWithUsage(ctx context.Context, requestID string
 		estimatedTokens, usageConfidence, upstreamRequestID, traceID, evidenceContext.SessionID,
 		evidenceContext.WorkflowID, evidenceContext.AgentID, attemptID, actorType, stringFromNullable(actorRefArg),
 		evidenceContext.OnBehalfOf, payloadCaptureMode)
+	if relay.outbox != nil {
+		payload := callLogOutboxPayload{
+			RequestID:                 requestID,
+			ClientRequestID:           requestIdentity.ClientRequestID,
+			IdempotencyKeyHash:        requestIdentity.IdempotencyKeyHash,
+			OrgID:                     orgID,
+			ProjectID:                 int64Pointer(projectID),
+			APIKeyID:                  keyID,
+			OwnerUserID:               ownerUserID,
+			KeyType:                   keyType,
+			Model:                     model,
+			RequestedModel:            requestedModel,
+			Provider:                  provider,
+			Channel:                   channelName,
+			PromptTokens:              usage.PromptTokens,
+			UncachedPromptTokens:      usage.UncachedPromptTokens,
+			CacheReadTokens:           usage.CacheReadTokens,
+			CacheCreationTokens:       usage.CacheCreationTokens,
+			CompletionTokens:          usage.CompletionTokens,
+			CostCents:                 costCents,
+			StatusCode:                statusCode,
+			LatencyMS:                 latencyMs,
+			TTFTMS:                    ttftMs,
+			UsageSource:               usageSource,
+			CacheUsageSchema:          usage.CacheUsageSchema,
+			CacheUsageStatus:          usage.CacheUsageStatus,
+			PricingVersion:            pricingVersion,
+			EffectiveInputPrice:       effectiveInputPrice,
+			EffectiveCacheReadPrice:   effectiveCacheReadPrice,
+			EffectiveCacheCreatePrice: effectiveCacheCreationPrice,
+			EffectiveOutputPrice:      effectiveOutputPrice,
+			CacheReadCost:             cacheReadCost,
+			CacheCreationCost:         cacheCreationCost,
+			IsStream:                  isStream,
+			IPAddress:                 clientIP,
+			EstimatedTokens:           estimatedTokens,
+			UsageConfidence:           usageConfidence,
+			TraceID:                   traceID,
+			SessionID:                 evidenceContext.SessionID,
+			SchemaVersion:             evidenceSchemaVersion,
+			CaptureMode:               evidenceCaptureModeNative,
+			EvidenceRef:               fmt.Sprintf("%s:call_logs:request_id:%s", evidenceTraceRefSourceType, requestID),
+			UpstreamRequestID:         upstreamRequestID,
+			WorkflowID:                evidenceContext.WorkflowID,
+			AgentID:                   evidenceContext.AgentID,
+			AttemptID:                 attemptID,
+			ActorType:                 actorType,
+			ActorRef:                  stringFromNullable(actorRefArg),
+			OnBehalfOf:                evidenceContext.OnBehalfOf,
+			PayloadCaptureMode:        payloadCaptureMode,
+			SourceEventHash:           sourceEventHash,
+			OccurredAt:                time.Now().UTC(),
+		}
+		if err := relay.enqueueCallLogOutbox(ctx, payload); err == nil {
+			relay.recordTraceEvent(ctx, requestID, "logging.call_log.queued", "logging", "info", model, requestedModel, nil, statusCode, latencyMs, map[string]interface{}{
+				"prompt_tokens":           usage.PromptTokens,
+				"completion_tokens":       usage.CompletionTokens,
+				"cost_cents":              costCents,
+				"usage_source":            usageSource,
+				"outbox_version":          outbox.Version,
+				"materialization_pending": true,
+			})
+			return
+		} else {
+			reqLog.Error("Failed to enqueue request log; falling back to synchronous insert: %v", err)
+		}
+	}
 	_, err := relay.db.Exec(ctx,
 		`INSERT INTO call_logs (
 			request_id, client_request_id, idempotency_key_hash,
@@ -1766,6 +1849,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	freezeResult, err := relay.billing.Freeze(ctx, billing.FreezeRequest{
 		RequestID:                requestID,
 		OrgID:                    orgID,
+		ProjectID:                middleware.GetProjectIDFromContext(ctx),
 		Model:                    req.Model,
 		EstimatedTokens:          inputTokens,
 		EstimatedInputTokens:     inputTokens,
@@ -2165,6 +2249,11 @@ func (relay *Relay) handleModelsFallback(w http.ResponseWriter, r *http.Request)
 // contract after settlement. The historical global first-wallet alert path is
 // intentionally retired because it has no safe multi-tenant scope.
 func (relay *Relay) checkProjectBudgetAlert(ctx context.Context) {
+	if relay != nil && relay.outbox != nil {
+		// The settled financial outbox event updates the incremental project
+		// ledger and schedules a bounded evaluation exactly once.
+		return
+	}
 	if relay.eventSvc != nil {
 		orgID := middleware.GetOrgIDFromContext(ctx)
 		projectID := middleware.GetProjectIDFromContext(ctx)
