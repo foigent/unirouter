@@ -318,6 +318,65 @@ func settledCosts(result *billing.SettleResult) (actual, charged int) {
 	return actual, charged
 }
 
+func settleRequestFromUsage(requestID string, orgID int64, usage adapters.Usage) billing.SettleRequest {
+	return billing.SettleRequest{
+		RequestID:            requestID,
+		OrgID:                orgID,
+		PromptTokens:         usage.PromptTokens,
+		UncachedPromptTokens: usage.UncachedPromptTokens,
+		CacheReadTokens:      usage.CacheReadTokens,
+		CacheCreationTokens:  usage.CacheCreationTokens,
+		CompletionTokens:     usage.CompletionTokens,
+		UsageSource:          usage.Source,
+		CacheUsageSchema:     usage.CacheUsageSchema,
+		CacheUsageStatus:     usage.CacheUsageStatus,
+	}
+}
+
+func cacheUsageMetadata(usage adapters.Usage) map[string]interface{} {
+	return map[string]interface{}{
+		"cache_scope":               "provider_prompt",
+		"cache_usage_authoritative": usage.HasAuthoritativeCacheUsage(),
+		"cache_hit":                 usage.HasAuthoritativeCacheHit(),
+		"uncached_prompt_tokens":    usage.UncachedPromptTokens,
+		"cache_read_tokens":         usage.CacheReadTokens,
+		"cache_creation_tokens":     usage.CacheCreationTokens,
+		"cache_usage_schema":        usage.CacheUsageSchema,
+		"cache_usage_status":        usage.CacheUsageStatus,
+	}
+}
+
+func providerPromptCacheExtension(usage adapters.Usage, result *billing.SettleResult) map[string]interface{} {
+	extension := cacheUsageMetadata(usage)
+	if result != nil {
+		extension["cache_read_ratio"] = result.CacheReadRatio
+		extension["cache_creation_ratio"] = result.CacheCreationRatio
+		extension["cache_read_cost_cents"] = result.CacheReadCostCents
+		extension["cache_creation_cost_cents"] = result.CacheCreationCostCents
+		extension["pricing_version"] = result.PricingVersion
+	}
+	return extension
+}
+
+func settlementTraceMetadata(usage adapters.Usage, result *billing.SettleResult, actualCost, chargedCost int) map[string]interface{} {
+	metadata := cacheUsageMetadata(usage)
+	metadata["prompt_tokens"] = usage.PromptTokens
+	metadata["completion_tokens"] = usage.CompletionTokens
+	metadata["total_tokens"] = usage.PromptTokens + usage.CompletionTokens
+	metadata["cost_cents"] = actualCost
+	metadata["charged_cost_cents"] = chargedCost
+	metadata["usage_source"] = usage.Source
+	metadata["usage_confidence"] = metering.SourceConfidence(usage.Source)
+	if result != nil {
+		metadata["pricing_version"] = result.PricingVersion
+		metadata["cache_read_ratio"] = result.CacheReadRatio
+		metadata["cache_creation_ratio"] = result.CacheCreationRatio
+		metadata["cache_read_cost_cents"] = result.CacheReadCostCents
+		metadata["cache_creation_cost_cents"] = result.CacheCreationCostCents
+	}
+	return metadata
+}
+
 func writeAgentCapabilityRuntimeRejection(w http.ResponseWriter, errorCode string) bool {
 	switch errorCode {
 	case capbilling.ErrorCodeCostBudgetExceeded:
@@ -827,13 +886,7 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 	// Settle from the immutable effective price/multiplier snapshot captured by
 	// Freeze. A later catalog edit or lookup outage must not rewrite or block an
 	// already accepted operation.
-	settleOutcome, err := relay.settleBillingWithRetry(billing.SettleRequest{
-		RequestID:        requestID,
-		OrgID:            orgID,
-		PromptTokens:     normalized.Usage.PromptTokens,
-		CompletionTokens: normalized.Usage.CompletionTokens,
-		UsageSource:      normalized.Usage.Source,
-	}, reqLog)
+	settleOutcome, err := relay.settleBillingWithRetry(settleRequestFromUsage(requestID, orgID, normalized.Usage), reqLog)
 	if err != nil {
 		reqLog.Error("Billing settle failed; response withheld: %v", err)
 		relay.recordTraceEvent(ctx, requestID, "billing.settle.failed", "billing", "error", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
@@ -843,22 +896,13 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 		return
 	}
 	actualCost, chargedCost := settledCosts(settleOutcome.Result)
-	relay.recordTraceEvent(ctx, requestID, "billing.settle.succeeded", "billing", "info", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
-		"prompt_tokens":      normalized.Usage.PromptTokens,
-		"completion_tokens":  normalized.Usage.CompletionTokens,
-		"total_tokens":       normalized.Usage.PromptTokens + normalized.Usage.CompletionTokens,
-		"cost_cents":         actualCost,
-		"usage_source":       normalized.Usage.Source,
-		"usage_confidence":   metering.SourceConfidence(normalized.Usage.Source),
-		"charged_cost_cents": chargedCost,
-		"pricing_version":    settleOutcome.Result.PricingVersion,
-	})
+	relay.recordTraceEvent(ctx, requestID, "billing.settle.succeeded", "billing", "info", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), settlementTraceMetadata(normalized.Usage, settleOutcome.Result, actualCost, chargedCost))
 	middleware.RecordTokenUsage("prompt", model, normalized.Usage.PromptTokens)
 	middleware.RecordTokenUsage("completion", model, normalized.Usage.CompletionTokens)
 
 	// Record request log
-	relay.recordRequest(ctx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, model, requestedModel, clientIP,
-		normalized.Usage.PromptTokens, normalized.Usage.CompletionTokens, chargedCost, resp.StatusCode, elapsedMilliseconds(requestStart), 0, false, normalized.Usage.Source, estimatedTokens, upstreamRequestID)
+	relay.recordRequestWithUsage(ctx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, model, requestedModel, clientIP,
+		normalized.Usage, chargedCost, resp.StatusCode, elapsedMilliseconds(requestStart), 0, false, estimatedTokens, upstreamRequestID, settleOutcome.Result)
 	relay.checkProjectBudgetAlert(ctx)
 
 	// Build response with _uniroute extension field.
@@ -868,15 +912,16 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 		"cost": map[string]interface{}{
 			"actual":    actualCost,
 			"charged":   chargedCost,
-			"cache_hit": false,
+			"cache_hit": normalized.Usage.HasAuthoritativeCacheHit(),
 		},
-		"provider":      route.Channel.Provider,
-		"channel":       route.Channel.Name,
-		"cache_hit":     false,
-		"fallback":      attempt.Sequence > 1,
-		"attempt_count": attempt.Sequence,
-		"route_count":   attempt.Total,
-		"attempt_id":    attemptIDFromContext(ctx),
+		"provider":              route.Channel.Provider,
+		"channel":               route.Channel.Name,
+		"cache_hit":             normalized.Usage.HasAuthoritativeCacheHit(),
+		"provider_prompt_cache": providerPromptCacheExtension(normalized.Usage, settleOutcome.Result),
+		"fallback":              attempt.Sequence > 1,
+		"attempt_count":         attempt.Sequence,
+		"route_count":           attempt.Total,
+		"attempt_id":            attemptIDFromContext(ctx),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1023,6 +1068,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 
 	tokenCounter := tokenutil.NewStreamTokenCounter()
 	usedUpstreamUsage := false
+	streamUsage, _ := adapters.NewUsage(0, 0, 0, metering.UsageSourceCounterV2)
 	ttftMs := 0
 	streamStart := time.Now()
 	firstTokenReceived := false
@@ -1087,6 +1133,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			}
 			markRouteHealthy()
 			if chunk.HasUsage {
+				streamUsage = chunk.Usage
 				tokenCounter.SetUpstreamUsage(chunk.Usage.PromptTokens, chunk.Usage.CompletionTokens)
 				usedUpstreamUsage = true
 			}
@@ -1161,6 +1208,19 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 				done = true
 				continue
 			}
+			parsedUsage, hasUsage, usageErr := adapters.ParseOpenAICompatibleUsage([]byte(data), metering.UsageSourceUpstream)
+			if usageErr != nil {
+				reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Failed to normalize final stream usage: %v", usageErr)
+				streamPayloadInvalid = true
+				streamTerminationCode = "upstream_stream_invalid_frame"
+				done = true
+				continue
+			}
+			if hasUsage {
+				streamUsage = parsedUsage
+				tokenCounter.SetUpstreamUsage(parsedUsage.PromptTokens, parsedUsage.CompletionTokens)
+				usedUpstreamUsage = true
+			}
 			markRouteHealthy()
 		}
 
@@ -1185,19 +1245,6 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		}
 
 		data := strings.TrimPrefix(line, "data: ")
-
-		// Try to parse upstream usage (sent in the final chunk when stream_options.include_usage=true)
-		var usageChunk struct {
-			Usage *struct {
-				PromptTokens     int `json:"prompt_tokens"`
-				CompletionTokens int `json:"completion_tokens"`
-			} `json:"usage,omitempty"`
-		}
-		if json.Unmarshal([]byte(data), &usageChunk) == nil && usageChunk.Usage != nil && usageChunk.Usage.PromptTokens > 0 {
-			tokenCounter.SetUpstreamUsage(usageChunk.Usage.PromptTokens, usageChunk.Usage.CompletionTokens)
-			usedUpstreamUsage = true
-			continue
-		}
 
 		// Fallback: estimate output tokens from delta content
 		if !usedUpstreamUsage {
@@ -1287,21 +1334,20 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		tokenCounter.SetEstimatedInputTokens(tokenutil.EstimateRequestTokens(msgPairs))
 	}
 
-	usageSource := metering.UsageSourceCounterV2
-	if usedUpstreamUsage {
-		usageSource = metering.UsageSourceUpstream
+	if !usedUpstreamUsage {
+		streamUsage, _ = adapters.NewUsage(
+			tokenCounter.InputTokens(),
+			tokenCounter.OutputTokens(),
+			tokenCounter.InputTokens()+tokenCounter.OutputTokens(),
+			metering.UsageSourceCounterV2,
+		)
 	}
 	var settleErr error
 	actualCost := 0
 	chargedCost := 0
 	billingStatus := "settled"
-	settleReq := billing.SettleRequest{
-		RequestID:        requestID,
-		OrgID:            orgID,
-		PromptTokens:     tokenCounter.InputTokens(),
-		CompletionTokens: tokenCounter.OutputTokens(),
-		UsageSource:      usageSource,
-	}
+	settleReq := settleRequestFromUsage(requestID, orgID, streamUsage)
+	var settlementResult *billing.SettleResult
 
 	if !billableOutputMarked {
 		cancelCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -1324,11 +1370,11 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 				"billing_status": billingStatus,
 				"error_code":     "settlement_usage_persist_failed",
 			})
-			middleware.RecordTokenUsage("prompt", model, tokenCounter.InputTokens())
-			middleware.RecordTokenUsage("completion", model, tokenCounter.OutputTokens())
+			middleware.RecordTokenUsage("prompt", model, streamUsage.PromptTokens)
+			middleware.RecordTokenUsage("completion", model, streamUsage.CompletionTokens)
 			middleware.RecordUpstreamLatency(route.Channel.Provider, model, time.Since(streamStart))
-			relay.recordRequest(recordCtx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, model, requestedModel, clientIP,
-				tokenCounter.InputTokens(), tokenCounter.OutputTokens(), 0, http.StatusOK, elapsedMilliseconds(requestStart), ttftMs, true, usageSource, estimatedTokens, upstreamRequestID)
+			relay.recordRequestWithUsage(recordCtx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, model, requestedModel, clientIP,
+				streamUsage, 0, http.StatusOK, elapsedMilliseconds(requestStart), ttftMs, true, estimatedTokens, upstreamRequestID, nil)
 			writeSSE("data: {\"error\":{\"type\":\"billing_error\",\"code\":\"billing_error.settle_failed\",\"message\":\"Usage is pending durable reconciliation\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
 			// Deliberately omit [DONE]: the model output was delivered, but the
 			// terminal billing receipt is not yet durable.
@@ -1345,22 +1391,16 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 				"error_code":     "settle_failed",
 			})
 		} else {
-			actualCost, chargedCost = settledCosts(settleOutcome.Result)
-			relay.recordTraceEvent(recordCtx, requestID, "billing.settle.succeeded", "billing", "info", model, requestedModel, route, http.StatusOK, elapsedMilliseconds(requestStart), map[string]interface{}{
-				"prompt_tokens":      tokenCounter.InputTokens(),
-				"completion_tokens":  tokenCounter.OutputTokens(),
-				"total_tokens":       tokenCounter.InputTokens() + tokenCounter.OutputTokens(),
-				"cost_cents":         actualCost,
-				"charged_cost_cents": chargedCost,
-				"usage_source":       usageSource,
-				"usage_confidence":   metering.SourceConfidence(usageSource),
-				"billing_status":     billingStatus,
-				"ttft_ms":            ttftMs,
-			})
+			settlementResult = settleOutcome.Result
+			actualCost, chargedCost = settledCosts(settlementResult)
+			traceMetadata := settlementTraceMetadata(streamUsage, settlementResult, actualCost, chargedCost)
+			traceMetadata["billing_status"] = billingStatus
+			traceMetadata["ttft_ms"] = ttftMs
+			relay.recordTraceEvent(recordCtx, requestID, "billing.settle.succeeded", "billing", "info", model, requestedModel, route, http.StatusOK, elapsedMilliseconds(requestStart), traceMetadata)
 		}
 	}
-	middleware.RecordTokenUsage("prompt", model, tokenCounter.InputTokens())
-	middleware.RecordTokenUsage("completion", model, tokenCounter.OutputTokens())
+	middleware.RecordTokenUsage("prompt", model, streamUsage.PromptTokens)
+	middleware.RecordTokenUsage("completion", model, streamUsage.CompletionTokens)
 
 	streamDuration := time.Since(streamStart)
 	middleware.RecordUpstreamLatency(route.Channel.Provider, model, streamDuration)
@@ -1369,8 +1409,8 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	if settledSuccessfully && streamTerminationCode != "" {
 		billingStatus = "settled_partial_stream"
 	}
-	relay.recordRequest(recordCtx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, model, requestedModel, clientIP,
-		tokenCounter.InputTokens(), tokenCounter.OutputTokens(), chargedCost, http.StatusOK, elapsedMilliseconds(requestStart), ttftMs, true, usageSource, estimatedTokens, upstreamRequestID)
+	relay.recordRequestWithUsage(recordCtx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, model, requestedModel, clientIP,
+		streamUsage, chargedCost, http.StatusOK, elapsedMilliseconds(requestStart), ttftMs, true, estimatedTokens, upstreamRequestID, settlementResult)
 	if settledSuccessfully {
 		relay.checkProjectBudgetAlert(recordCtx)
 	}
@@ -1404,26 +1444,27 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		"cost": map[string]interface{}{
 			"actual":    actualCost,
 			"charged":   chargedCost,
-			"cache_hit": false,
+			"cache_hit": streamUsage.HasAuthoritativeCacheHit(),
 		},
-		"provider":       route.Channel.Provider,
-		"channel":        route.Channel.Name,
-		"ttft_ms":        ttftMs,
-		"cache_hit":      false,
-		"fallback":       attempt.Sequence > 1,
-		"attempt_count":  attempt.Sequence,
-		"route_count":    attempt.Total,
-		"attempt_id":     attemptIDFromContext(ctx),
-		"billing_status": billingStatus,
+		"provider":              route.Channel.Provider,
+		"channel":               route.Channel.Name,
+		"ttft_ms":               ttftMs,
+		"cache_hit":             streamUsage.HasAuthoritativeCacheHit(),
+		"provider_prompt_cache": providerPromptCacheExtension(streamUsage, settlementResult),
+		"fallback":              attempt.Sequence > 1,
+		"attempt_count":         attempt.Sequence,
+		"route_count":           attempt.Total,
+		"attempt_id":            attemptIDFromContext(ctx),
+		"billing_status":        billingStatus,
 	}
 	finalChunk := map[string]interface{}{
 		"object":  "chat.completion.chunk",
 		"model":   model,
 		"choices": []interface{}{},
 		"usage": map[string]int{
-			"prompt_tokens":     tokenCounter.InputTokens(),
-			"completion_tokens": tokenCounter.OutputTokens(),
-			"total_tokens":      tokenCounter.InputTokens() + tokenCounter.OutputTokens(),
+			"prompt_tokens":     streamUsage.PromptTokens,
+			"completion_tokens": streamUsage.CompletionTokens,
+			"total_tokens":      streamUsage.PromptTokens + streamUsage.CompletionTokens,
 		},
 		"_uniroute": unirouteData,
 	}
@@ -1465,6 +1506,35 @@ func (relay *Relay) calculateCost(ctx context.Context, orgID int64, model string
 
 // recordRequest logs the request to the call_logs table.
 func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, keyID, channelID int64, provider, channelName, model, requestedModel, clientIP string, promptTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs int, isStream bool, usageSource string, estimatedTokens int, upstreamRequestID string) {
+	usage, err := adapters.NewUsage(promptTokens, completionTokens, promptTokens+completionTokens, usageSource)
+	if err != nil {
+		logger.New(logger.Fields{RequestID: requestID, OrgID: uint(orgID), Module: "records"}).Error("Invalid request usage: %v", err)
+		return
+	}
+	relay.recordRequestWithUsage(
+		ctx,
+		requestID,
+		orgID,
+		keyID,
+		channelID,
+		provider,
+		channelName,
+		model,
+		requestedModel,
+		clientIP,
+		usage,
+		costCents,
+		statusCode,
+		latencyMs,
+		ttftMs,
+		isStream,
+		estimatedTokens,
+		upstreamRequestID,
+		nil,
+	)
+}
+
+func (relay *Relay) recordRequestWithUsage(ctx context.Context, requestID string, orgID, keyID, channelID int64, provider, channelName, model, requestedModel, clientIP string, usage adapters.Usage, costCents, statusCode, latencyMs, ttftMs int, isStream bool, estimatedTokens int, upstreamRequestID string, settlement *billing.SettleResult) {
 	reqLog := logger.New(logger.Fields{RequestID: requestID, OrgID: uint(orgID), Module: "records"})
 	projectID := middleware.GetProjectIDFromContext(ctx)
 	var projectIDArg interface{}
@@ -1491,7 +1561,7 @@ func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, 
 		actorType = evidenceContext.ActorType
 		actorRefArg = nullableString(evidenceContext.ActorRef)
 	}
-	usageSource = metering.NormalizeUsageSource(usageSource)
+	usageSource := metering.NormalizeUsageSource(usage.Source)
 	usageConfidence := metering.SourceConfidence(usageSource)
 	upstreamRequestID = sanitizeUpstreamRequestID(upstreamRequestID)
 	payloadCaptureMode := relay.currentPayloadCaptureMode()
@@ -1499,9 +1569,23 @@ func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, 
 	if evidenceContext.TraceID != "" {
 		traceID = evidenceContext.TraceID
 	}
+	pricingVersion := ""
+	var effectiveInputPrice, effectiveCacheReadPrice, effectiveCacheCreationPrice, effectiveOutputPrice float64
+	var cacheReadCost, cacheCreationCost float64
+	if settlement != nil {
+		pricingVersion = settlement.PricingVersion
+		effectiveInputPrice = settlement.EffectiveInputPriceCents
+		effectiveCacheReadPrice = settlement.EffectiveCacheReadPriceCents
+		effectiveCacheCreationPrice = settlement.EffectiveCacheCreationPriceCents
+		effectiveOutputPrice = settlement.EffectiveOutputPriceCents
+		cacheReadCost = settlement.CacheReadCostCents
+		cacheCreationCost = settlement.CacheCreationCostCents
+	}
 	sourceEventHash := hashCallLogEvidence(requestID, requestIdentity.ClientRequestID, requestIdentity.IdempotencyKeyHash,
 		orgID, projectIDArg, keyID, ownerUserIDArg, keyType, model, requestedModel, provider, channelName,
-		promptTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs, usageSource, isStream,
+		usage.PromptTokens, usage.UncachedPromptTokens, usage.CacheReadTokens, usage.CacheCreationTokens,
+		usage.CompletionTokens, costCents, statusCode, latencyMs, ttftMs, usageSource,
+		usage.CacheUsageSchema, usage.CacheUsageStatus, pricingVersion, isStream,
 		estimatedTokens, usageConfidence, upstreamRequestID, traceID, evidenceContext.SessionID,
 		evidenceContext.WorkflowID, evidenceContext.AgentID, attemptID, actorType, stringFromNullable(actorRefArg),
 		evidenceContext.OnBehalfOf, payloadCaptureMode)
@@ -1509,8 +1593,13 @@ func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, 
 		`INSERT INTO call_logs (
 			request_id, client_request_id, idempotency_key_hash,
 			org_id, project_id, api_key_id, owner_user_id, key_type,
-			model, requested_model, provider, channel, prompt_tokens, completion_tokens,
-			total_tokens, cost_cents, status_code, latency_ms, ttft_ms, usage_source,
+			model, requested_model, provider, channel,
+			prompt_tokens, uncached_prompt_tokens, cache_read_tokens, cache_creation_tokens,
+			completion_tokens, total_tokens, cost_cents, status_code, latency_ms, ttft_ms, usage_source,
+			cache_usage_schema, cache_usage_status, pricing_version,
+			effective_input_price_cents, effective_cache_read_price_cents,
+			effective_cache_creation_price_cents, effective_output_price_cents,
+			cache_read_cost_cents, cache_creation_cost_cents,
 			is_stream, ip_address, estimated_tokens, usage_confidence,
 			trace_id, session_id, schema_version, capture_mode, evidence_ref, upstream_request_id,
 			workflow_id, agent_id, attempt_id,
@@ -1519,17 +1608,26 @@ func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, 
 		 VALUES (
 			$1, $2, $3,
 			$4, $5, $6, $7, $8,
-			$9, $10, $11, $12, $13, $14,
-			$15, $16, $17, $18, $19, $20,
-			$21, $22, $23, $24,
-			$25, $26, $27, $28, $29, $30,
-			$31, $32, $33,
-			$34, $35, $36, $37, $38
+			$9, $10, $11, $12,
+			$13, $14, $15, $16,
+			$17, $18, $19, $20, $21, $22, $23,
+			$24, $25, $26,
+			$27, $28, $29, $30,
+			$31, $32,
+			$33, $34, $35, $36,
+			$37, $38, $39, $40, $41, $42,
+			$43, $44, $45,
+			$46, $47, $48, $49, $50
 		)`,
 		requestID, nullableString(requestIdentity.ClientRequestID), nullableString(requestIdentity.IdempotencyKeyHash),
 		orgID, projectIDArg, keyID, ownerUserIDArg, keyType,
-		model, requestedModel, provider, channelName, promptTokens, completionTokens,
-		promptTokens+completionTokens, costCents, statusCode, latencyMs, ttftMs, usageSource,
+		model, requestedModel, provider, channelName,
+		usage.PromptTokens, usage.UncachedPromptTokens, usage.CacheReadTokens, usage.CacheCreationTokens,
+		usage.CompletionTokens, usage.PromptTokens+usage.CompletionTokens,
+		costCents, statusCode, latencyMs, ttftMs, usageSource,
+		usage.CacheUsageSchema, usage.CacheUsageStatus, pricingVersion,
+		effectiveInputPrice, effectiveCacheReadPrice, effectiveCacheCreationPrice, effectiveOutputPrice,
+		cacheReadCost, cacheCreationCost,
 		isStream, clientIP, estimatedTokens, usageConfidence,
 		traceID, nullableString(evidenceContext.SessionID), evidenceSchemaVersion, evidenceCaptureModeNative, fmt.Sprintf("%s:call_logs:request_id:%s", evidenceTraceRefSourceType, requestID),
 		nullableString(upstreamRequestID), nullableString(evidenceContext.WorkflowID), nullableString(evidenceContext.AgentID), nullableString(attemptID),
@@ -1540,15 +1638,24 @@ func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, 
 		return
 	}
 	relay.recordTraceEvent(ctx, requestID, "logging.call_log.recorded", "logging", "info", model, requestedModel, nil, statusCode, latencyMs, map[string]interface{}{
-		"prompt_tokens":     promptTokens,
-		"completion_tokens": completionTokens,
-		"total_tokens":      promptTokens + completionTokens,
-		"cost_cents":        costCents,
-		"estimated_tokens":  estimatedTokens,
-		"is_stream":         isStream,
-		"ttft_ms":           ttftMs,
-		"usage_source":      usageSource,
-		"usage_confidence":  usageConfidence,
+		"prompt_tokens":             usage.PromptTokens,
+		"uncached_prompt_tokens":    usage.UncachedPromptTokens,
+		"cache_read_tokens":         usage.CacheReadTokens,
+		"cache_creation_tokens":     usage.CacheCreationTokens,
+		"completion_tokens":         usage.CompletionTokens,
+		"total_tokens":              usage.PromptTokens + usage.CompletionTokens,
+		"cost_cents":                costCents,
+		"estimated_tokens":          estimatedTokens,
+		"is_stream":                 isStream,
+		"ttft_ms":                   ttftMs,
+		"usage_source":              usageSource,
+		"usage_confidence":          usageConfidence,
+		"cache_usage_schema":        usage.CacheUsageSchema,
+		"cache_usage_status":        usage.CacheUsageStatus,
+		"cache_usage_authoritative": usage.HasAuthoritativeCacheUsage(),
+		"pricing_version":           pricingVersion,
+		"cache_read_cost_cents":     cacheReadCost,
+		"cache_creation_cost_cents": cacheCreationCost,
 	})
 }
 
@@ -1901,12 +2008,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		relay.router.MarkRouteSuccess(context.WithoutCancel(attemptCtx), route)
 		relay.recordTraceEvent(attemptCtx, requestID, "provider.response_accepted", "provider", "info", req.Model, requestedModel, route, resp.StatusCode, int(upstreamDuration.Milliseconds()), map[string]interface{}{}, upstreamRequestID)
 
-		settleOutcome, err := relay.settleBillingWithRetry(billing.SettleRequest{
-			RequestID:    requestID,
-			OrgID:        orgID,
-			PromptTokens: normalized.Usage.PromptTokens,
-			UsageSource:  normalized.Usage.Source,
-		}, reqLog)
+		settleOutcome, err := relay.settleBillingWithRetry(settleRequestFromUsage(requestID, orgID, normalized.Usage), reqLog)
 		if err != nil {
 			reqLog.Error("Billing settle failed; embeddings response withheld: %v", err)
 			relay.recordTraceEvent(attemptCtx, requestID, "billing.settle.failed", "billing", "error", req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
@@ -1916,24 +2018,12 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		actualCost, chargedCost := settledCosts(settleOutcome.Result)
-		pricingVersion := ""
-		if settleOutcome.Result != nil {
-			pricingVersion = settleOutcome.Result.PricingVersion
-		}
-		relay.recordTraceEvent(attemptCtx, requestID, "billing.settle.succeeded", "billing", "info", req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
-			"prompt_tokens":      normalized.Usage.PromptTokens,
-			"completion_tokens":  0,
-			"total_tokens":       normalized.Usage.PromptTokens,
-			"cost_cents":         actualCost,
-			"charged_cost_cents": chargedCost,
-			"pricing_version":    pricingVersion,
-			"usage_source":       normalized.Usage.Source,
-			"usage_confidence":   metering.SourceConfidence(normalized.Usage.Source),
-		})
+		traceMetadata := settlementTraceMetadata(normalized.Usage, settleOutcome.Result, actualCost, chargedCost)
+		relay.recordTraceEvent(attemptCtx, requestID, "billing.settle.succeeded", "billing", "info", req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), traceMetadata)
 		middleware.RecordTokenUsage("prompt", req.Model, normalized.Usage.PromptTokens)
 
-		relay.recordRequest(attemptCtx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, req.Model, requestedModel, r.RemoteAddr,
-			normalized.Usage.PromptTokens, 0, chargedCost, resp.StatusCode, elapsedMilliseconds(requestStart), 0, false, normalized.Usage.Source, inputTokens, upstreamRequestID)
+		relay.recordRequestWithUsage(attemptCtx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, req.Model, requestedModel, r.RemoteAddr,
+			normalized.Usage, chargedCost, resp.StatusCode, elapsedMilliseconds(requestStart), 0, false, inputTokens, upstreamRequestID, settleOutcome.Result)
 		relay.checkProjectBudgetAlert(attemptCtx)
 
 		attempt := routeAttemptFromContext(attemptCtx)
@@ -1942,15 +2032,16 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 			"cost": map[string]interface{}{
 				"actual":    actualCost,
 				"charged":   chargedCost,
-				"cache_hit": false,
+				"cache_hit": normalized.Usage.HasAuthoritativeCacheHit(),
 			},
-			"provider":      route.Channel.Provider,
-			"channel":       route.Channel.Name,
-			"cache_hit":     false,
-			"fallback":      attempt.Sequence > 1,
-			"attempt_count": attempt.Sequence,
-			"route_count":   attempt.Total,
-			"attempt_id":    attemptIDFromContext(attemptCtx),
+			"provider":              route.Channel.Provider,
+			"channel":               route.Channel.Name,
+			"cache_hit":             normalized.Usage.HasAuthoritativeCacheHit(),
+			"provider_prompt_cache": providerPromptCacheExtension(normalized.Usage, settleOutcome.Result),
+			"fallback":              attempt.Sequence > 1,
+			"attempt_count":         attempt.Sequence,
+			"route_count":           attempt.Total,
+			"attempt_id":            attemptIDFromContext(attemptCtx),
 		}
 
 		w.Header().Set("Content-Type", "application/json")

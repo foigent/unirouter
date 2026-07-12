@@ -22,6 +22,9 @@ interface Log {
   latency_ms: number;
   ttft_ms: number;
   prompt_tokens: number;
+  uncached_prompt_tokens?: number;
+  cache_read_tokens?: number;
+  cache_creation_tokens?: number;
   completion_tokens: number;
   total_tokens: number;
   cost_cents: number;
@@ -31,6 +34,17 @@ interface Log {
   upstream_status_code: number | null;
   upstream_error: string;
   usage_source: string;
+  cache_usage_schema?: string;
+  cache_usage_status?: string;
+  pricing_version?: string;
+  cache_read_ratio?: number;
+  cache_creation_ratio?: number;
+  effective_input_price_cents?: number;
+  effective_cache_read_price_cents?: number;
+  effective_cache_creation_price_cents?: number;
+  effective_output_price_cents?: number;
+  cache_read_cost_cents?: number;
+  cache_creation_cost_cents?: number;
   created_at: string;
 }
 
@@ -179,6 +193,20 @@ function formatMetadataValue(value: unknown) {
 function compactEvidenceValue(value?: string | null, max = 18) {
   if (!value) return '';
   return value.length > max ? `${value.slice(0, max)}...` : value;
+}
+
+function cacheUsageLabel(status?: string) {
+  if (status === 'cache_read_reported') return '已回传缓存读取';
+  if (status === 'cache_write_reported') return '已回传缓存写入';
+  if (status === 'cache_hit_miss_reported') return '已回传命中/未命中';
+  if (status === 'cache_read_write_reported') return '已回传缓存读/写';
+  return '供应商未回传';
+}
+
+function priceRatio(ratio?: number, cachePrice?: number, inputPrice?: number) {
+  if (ratio !== undefined) return `${ratio.toFixed(3)}×`;
+  if (!inputPrice || inputPrice <= 0 || cachePrice === undefined) return '-';
+  return `${(cachePrice / inputPrice).toFixed(3)}×`;
 }
 
 function uniqueEvidenceValues(events: TraceEvent[], key: keyof TraceEvent) {
@@ -444,6 +472,15 @@ export default function LogsPage() {
       key: 'total_tokens',
       width: 86,
       render: (v: number) => <Text size="small">{v.toLocaleString()}</Text>,
+    },
+    {
+      title: 'Prompt Cache',
+      dataIndex: 'cache_usage_status',
+      key: 'cache_usage_status',
+      width: 132,
+      render: (_: string, record: Log) => record.cache_usage_schema
+        ? <Tag size="small" color={(record.cache_read_tokens || 0) > 0 ? 'green' : 'blue'}>读 {(record.cache_read_tokens || 0).toLocaleString()} / 写 {(record.cache_creation_tokens || 0).toLocaleString()}</Tag>
+        : <Tag size="small">未回传</Tag>,
     },
     {
       title: '来源',
@@ -807,6 +844,27 @@ export default function LogsPage() {
                     { key: '来源', value: usageSourceLabel(selectedLog.usage_source) },
                   ]}
                 />
+              </div>
+
+              <div className="ur-detail-card">
+                <Text className="ur-detail-card-title">供应商 Prompt Cache</Text>
+                <Descriptions
+                  row
+                  size="small"
+                  data={[
+                    { key: '回传状态', value: <StatusTag status={selectedLog.cache_usage_schema ? 'success' : 'pending'}>{cacheUsageLabel(selectedLog.cache_usage_status)}</StatusTag> },
+                    { key: '普通输入', value: (selectedLog.uncached_prompt_tokens ?? selectedLog.prompt_tokens).toLocaleString() },
+                    { key: '缓存读取', value: (selectedLog.cache_read_tokens || 0).toLocaleString() },
+                    { key: '缓存写入', value: (selectedLog.cache_creation_tokens || 0).toLocaleString() },
+                    { key: '读取倍率', value: priceRatio(selectedLog.cache_read_ratio, selectedLog.effective_cache_read_price_cents, selectedLog.effective_input_price_cents) },
+                    { key: '写入倍率', value: priceRatio(selectedLog.cache_creation_ratio, selectedLog.effective_cache_creation_price_cents, selectedLog.effective_input_price_cents) },
+                    { key: '读取费用', value: <MoneyText cents={selectedLog.cache_read_cost_cents || 0} precision={6} /> },
+                    { key: '写入费用', value: <MoneyText cents={selectedLog.cache_creation_cost_cents || 0} precision={6} /> },
+                    { key: '价格版本', value: selectedLog.pricing_version ? <Text code size="small">{compactEvidenceValue(selectedLog.pricing_version, 28)}</Text> : '-' },
+                    { key: '字段合同', value: selectedLog.cache_usage_schema || '-' },
+                  ]}
+                />
+                <Text type="tertiary" size="small">这里仅展示供应商明确回传的 Prompt Cache 用量；“未回传”不会推测命中，也不会获得缓存折扣。</Text>
               </div>
 
               {!traceLoading && traceEvents.length > 0 && (

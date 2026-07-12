@@ -82,6 +82,31 @@ func TestSanitizeMetadata_PayloadPolicyFields(t *testing.T) {
 	}
 }
 
+func TestSanitizeMetadata_PromptCacheBillingFields(t *testing.T) {
+	input := map[string]interface{}{
+		"cache_scope":               "provider_prompt",
+		"cache_usage_authoritative": true,
+		"cache_hit":                 true,
+		"uncached_prompt_tokens":    10,
+		"cache_read_tokens":         20,
+		"cache_creation_tokens":     5,
+		"cache_usage_schema":        "anthropic.prompt_cache.v1",
+		"cache_usage_status":        "cache_read_write_reported",
+		"cache_read_ratio":          0.1,
+		"cache_creation_ratio":      1.25,
+		"cache_read_cost_cents":     0.002,
+		"cache_creation_cost_cents": 0.03125,
+		"pricing_version":           "pv2_fixture",
+	}
+	metadata, gap := SanitizeMetadataWithGap(input)
+	if gap != "" {
+		t.Fatalf("expected safe prompt-cache evidence without a capture gap, got %q", gap)
+	}
+	if len(metadata) != len(input) || metadata["cache_usage_schema"] != "anthropic.prompt_cache.v1" || metadata["cache_read_tokens"] != 20 {
+		t.Fatalf("unexpected prompt-cache metadata: %#v", metadata)
+	}
+}
+
 func TestSanitizeMetadata_RetryDecisionFields(t *testing.T) {
 	metadata, gap := SanitizeMetadataWithGap(map[string]interface{}{
 		"failure_kind":   "channel_failure",

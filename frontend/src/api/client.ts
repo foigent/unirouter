@@ -262,9 +262,9 @@ export const api = {
   getModelPriceList: (page = 1, pageSize = 20) =>
     request(`/model-prices?page=${page}&page_size=${pageSize}`),
   getModelNames: () => request('/model-names'),
-  createModelPrice: (data: { model_name: string; input_price_cents: number; output_price_cents: number }) =>
+  createModelPrice: (data: { model_name: string; input_price_cents: number; output_price_cents: number; cache_read_ratio?: number; cache_creation_ratio?: number }) =>
     request('/model-prices', { method: 'POST', body: JSON.stringify(data) }),
-  updateModelPrice: (id: number, data: { model_name?: string; input_price_cents?: number; output_price_cents?: number }) =>
+  updateModelPrice: (id: number, data: { model_name?: string; input_price_cents?: number; output_price_cents?: number; cache_read_ratio?: number; cache_creation_ratio?: number }) =>
     request(`/model-prices/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteModelPrice: (id: number) =>
     request(`/model-prices/${id}`, { method: 'DELETE' }),

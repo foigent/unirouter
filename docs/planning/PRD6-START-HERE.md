@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-12
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F08, P6-F16-P6-F19, P6-F21, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F11 remains in progress
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11 accepted; P6-F03-P6-F08, P6-F16-P6-F19, P6-F21, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F09 is Local verified / exact-head CI pending; P6-F11 remains in progress
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -54,19 +54,20 @@ recommended MVP boundary and policy-specific failure posture on 2026-07-11:
 24. `docs/ops/evidence/PRD6-B1-P6F07-distributed-limit-policy-local-20260712.md`
 25. `docs/ops/evidence/PRD6-B1-P6F21-weighted-workload-admission-local-20260712.md`
 26. `docs/ops/evidence/PRD6-B2-P6F08-routing-policy-v1-local-20260712.md`
-27. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`
-28. `docs/planning/PRD7-CANDIDATE-BACKLOG.md`
-29. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md`
-30. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
-31. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
-32. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
-33. `docs/PRD-Phase6.md`
-34. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
-35. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
-36. `docs/planning/PRD6-BACKLOG.md`
-37. `docs/issues/OPEN-ISSUES.md`
-38. `docs/agent-workflows/AGENT-PROTOCOL.md`
-39. `docs/agent-workflows/EXECUTION-RECORD.md`
+27. `docs/ops/evidence/PRD6-B3-P6F09-prompt-cache-billing-local-20260712.md`
+28. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`
+29. `docs/planning/PRD7-CANDIDATE-BACKLOG.md`
+30. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md`
+31. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md`
+32. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md`
+33. `docs/planning/prd6-adaptive-trust-hardening/hardening.md`
+34. `docs/PRD-Phase6.md`
+35. `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`
+36. `docs/planning/PRD6-IMPLEMENTATION-PLAN.md`
+37. `docs/planning/PRD6-BACKLOG.md`
+38. `docs/issues/OPEN-ISSUES.md`
+39. `docs/agent-workflows/AGENT-PROTOCOL.md`
+40. `docs/agent-workflows/EXECUTION-RECORD.md`
 
 PRD5 evidence remains under its existing paths. Do not rewrite it as PRD6
 evidence.
@@ -160,7 +161,13 @@ evidence.
   Deterministic weight, bounded snapshots, renewable cross-replica probes,
   epoch CAS, per-channel thresholds, Chat/Embeddings parity, safe preview/
   trace/UI and guarded migration are covered. The historical branch is
-  retained; no target or capacity claim. P6-F09 is the next accepted row.
+  retained; no target or capacity claim.
+- P6-F09 provider Prompt Cache accounting is Local verified on
+  `codex/prd6-prompt-cache-billing`. OpenAI v1/v2, DeepSeek and Anthropic
+  source contracts, immutable `pv2_` ratios/effective prices, settlement and
+  recovery, logs/reconciliation/UI and guarded migration pass local race plus
+  real PostgreSQL evidence. Exact-head required CI remains pending. It adds no
+  response cache or Cache Service and makes no target/production claim.
 
 ## PRD5 Closure Guard
 

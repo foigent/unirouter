@@ -32,6 +32,9 @@ const MOCK_LOGS_RESPONSE = {
       latency_ms: 320,
       ttft_ms: 150,
       prompt_tokens: 500,
+      uncached_prompt_tokens: 350,
+      cache_read_tokens: 100,
+      cache_creation_tokens: 50,
       completion_tokens: 200,
       total_tokens: 700,
       cost_cents: 15,
@@ -41,6 +44,17 @@ const MOCK_LOGS_RESPONSE = {
       upstream_status_code: 200,
       upstream_error: '',
       usage_source: 'api',
+      cache_usage_schema: 'anthropic.prompt_cache.v1',
+      cache_usage_status: 'cache_read_write_reported',
+      pricing_version: 'pv2_test',
+      cache_read_ratio: 0.1,
+      cache_creation_ratio: 1.25,
+      effective_input_price_cents: 5,
+      effective_cache_read_price_cents: 0.5,
+      effective_cache_creation_price_cents: 6.25,
+      effective_output_price_cents: 15,
+      cache_read_cost_cents: 0.05,
+      cache_creation_cost_cents: 0.3125,
       created_at: '2026-06-29T10:00:00Z',
     },
     {
@@ -246,6 +260,25 @@ describe('LogsPage', () => {
     });
     await waitFor(() => {
       expect(container.textContent || '').toContain('gateway.request.accepted');
+    });
+  });
+
+  it('shows authoritative provider prompt-cache usage separately from response caching', async () => {
+    const { container } = renderLogs();
+    await waitFor(() => expect(container.textContent || '').toContain('req-001-aaa'));
+    const requestID = await screen.findByText(/req-001-aaa/);
+    fireEvent.click(requestID.closest('tr') as HTMLElement);
+
+    await waitFor(() => {
+      const html = container.textContent || '';
+      expect(html).toContain('供应商 Prompt Cache');
+      expect(html).toContain('已回传缓存读/写');
+      expect(html).toContain('普通输入350');
+      expect(html).toContain('缓存读取100');
+      expect(html).toContain('缓存写入50');
+      expect(html).toContain('读取倍率0.100×');
+      expect(html).toContain('写入倍率1.250×');
+      expect(html).toContain('未回传”不会推测命中');
     });
   });
 

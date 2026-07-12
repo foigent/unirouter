@@ -28,12 +28,17 @@ type SettlementRecoveryResult struct {
 }
 
 type pendingSettlement struct {
-	RequestID        string
-	OrgID            int64
-	PromptTokens     int
-	CompletionTokens int
-	UsageSource      string
-	Attempt          int
+	RequestID            string
+	OrgID                int64
+	PromptTokens         int
+	UncachedPromptTokens int
+	CacheReadTokens      int
+	CacheCreationTokens  int
+	CompletionTokens     int
+	UsageSource          string
+	CacheUsageSchema     string
+	CacheUsageStatus     string
+	Attempt              int
 }
 
 // RunSettlementRecoveryLoop performs an immediate startup pass and then
@@ -139,7 +144,12 @@ func (b *Billing) PersistSettlementUsage(ctx context.Context, req SettleRequest)
 	if strings.TrimSpace(req.RequestID) == "" || req.OrgID <= 0 {
 		return fmt.Errorf("billing settlement payload requires request_id and org_id")
 	}
-	if req.PromptTokens < 0 || req.CompletionTokens < 0 || strings.TrimSpace(req.UsageSource) == "" {
+	var err error
+	req, err = normalizeSettlementUsage(req)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(req.UsageSource) == "" {
 		return fmt.Errorf("billing settlement payload requires nonnegative usage and a source")
 	}
 	if len(req.UsageSource) > 20 {
@@ -159,6 +169,7 @@ func (b *Billing) PersistSettlementUsage(ctx context.Context, req SettleRequest)
 		}
 		return fmt.Errorf("lock settlement payload: %w", err)
 	}
+	record = canonicalizeLegacyReservationUsage(record)
 
 	if record.Status == "settled" {
 		if settlementUsageMatches(record, req) {
@@ -176,24 +187,36 @@ func (b *Billing) PersistSettlementUsage(ctx context.Context, req SettleRequest)
 		return ErrSettlementUsageConflict
 	}
 
-	calculatedCost, err := calculateReservationCost(record, req)
+	calculatedCost, costBreakdown, err := calculateReservationCost(record, req)
 	if err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx,
 		`UPDATE freeze_idempotency
 		 SET prompt_tokens = $3,
-		     completion_tokens = $4,
-		     usage_source = $5,
-		     calculated_cost = $6,
+		     uncached_prompt_tokens = $4,
+		     cache_read_tokens = $5,
+		     cache_creation_tokens = $6,
+		     completion_tokens = $7,
+		     usage_source = $8,
+		     cache_usage_schema = $9,
+		     cache_usage_status = $10,
+		     calculated_cost = $11,
+		     uncached_input_cost_cents = $12,
+		     cache_read_cost_cents = $13,
+		     cache_creation_cost_cents = $14,
+		     output_cost_cents = $15,
 		     settlement_payload_ready_at = NOW(),
 		     settlement_claimed_until = NULL,
 		     settlement_next_attempt_at = NOW(),
 		     settlement_last_error = '',
 		     updated_at = NOW()
 		 WHERE request_id = $1 AND org_id = $2 AND status = 'settlement_pending'`,
-		req.RequestID, req.OrgID, req.PromptTokens, req.CompletionTokens,
-		req.UsageSource, calculatedCost,
+		req.RequestID, req.OrgID,
+		req.PromptTokens, req.UncachedPromptTokens, req.CacheReadTokens, req.CacheCreationTokens,
+		req.CompletionTokens, req.UsageSource, req.CacheUsageSchema, req.CacheUsageStatus,
+		calculatedCost, costBreakdown.UncachedInputCostCents, costBreakdown.CacheReadCostCents,
+		costBreakdown.CacheCreationCostCents, costBreakdown.OutputCostCents,
 	); err != nil {
 		return fmt.Errorf("persist settlement payload: %w", err)
 	}
@@ -202,8 +225,13 @@ func (b *Billing) PersistSettlementUsage(ctx context.Context, req SettleRequest)
 
 func settlementUsageMatches(record reservationRecord, req SettleRequest) bool {
 	return record.PromptTokens == req.PromptTokens &&
+		record.UncachedPromptTokens == req.UncachedPromptTokens &&
+		record.CacheReadTokens == req.CacheReadTokens &&
+		record.CacheCreationTokens == req.CacheCreationTokens &&
 		record.CompletionTokens == req.CompletionTokens &&
-		record.UsageSource == req.UsageSource
+		record.UsageSource == req.UsageSource &&
+		record.CacheUsageSchema == req.CacheUsageSchema &&
+		record.CacheUsageStatus == req.CacheUsageStatus
 }
 
 // RecoverPendingSettlements claims at most limit ready rows, then settles each
@@ -228,11 +256,16 @@ func (b *Billing) RecoverPendingSettlements(ctx context.Context, limit int) (Set
 	var recoveryErrors []error
 	for _, item := range items {
 		settled, settleErr := b.Settle(ctx, SettleRequest{
-			RequestID:        item.RequestID,
-			OrgID:            item.OrgID,
-			PromptTokens:     item.PromptTokens,
-			CompletionTokens: item.CompletionTokens,
-			UsageSource:      item.UsageSource,
+			RequestID:            item.RequestID,
+			OrgID:                item.OrgID,
+			PromptTokens:         item.PromptTokens,
+			UncachedPromptTokens: item.UncachedPromptTokens,
+			CacheReadTokens:      item.CacheReadTokens,
+			CacheCreationTokens:  item.CacheCreationTokens,
+			CompletionTokens:     item.CompletionTokens,
+			UsageSource:          item.UsageSource,
+			CacheUsageSchema:     item.CacheUsageSchema,
+			CacheUsageStatus:     item.CacheUsageStatus,
 		})
 		if settleErr == nil && settled != nil && settled.Success {
 			result.Settled++
@@ -275,8 +308,12 @@ func (b *Billing) claimPendingSettlements(ctx context.Context, limit int) ([]pen
 		    updated_at = NOW()
 		FROM candidates c
 		WHERE f.org_id = c.org_id AND f.request_id = c.request_id
-		RETURNING f.request_id, f.org_id, f.prompt_tokens, f.completion_tokens,
-		          f.usage_source, f.settlement_attempts`, limit)
+		RETURNING f.request_id, f.org_id,
+		          f.prompt_tokens, f.uncached_prompt_tokens,
+		          f.cache_read_tokens, f.cache_creation_tokens,
+		          f.completion_tokens, f.usage_source,
+		          f.cache_usage_schema, f.cache_usage_status,
+		          f.settlement_attempts`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("claim pending settlements: %w", err)
 	}
@@ -285,8 +322,19 @@ func (b *Billing) claimPendingSettlements(ctx context.Context, limit int) ([]pen
 	items := make([]pendingSettlement, 0, limit)
 	for rows.Next() {
 		var item pendingSettlement
-		if err := rows.Scan(&item.RequestID, &item.OrgID, &item.PromptTokens,
-			&item.CompletionTokens, &item.UsageSource, &item.Attempt); err != nil {
+		if err := rows.Scan(
+			&item.RequestID,
+			&item.OrgID,
+			&item.PromptTokens,
+			&item.UncachedPromptTokens,
+			&item.CacheReadTokens,
+			&item.CacheCreationTokens,
+			&item.CompletionTokens,
+			&item.UsageSource,
+			&item.CacheUsageSchema,
+			&item.CacheUsageStatus,
+			&item.Attempt,
+		); err != nil {
 			return nil, fmt.Errorf("scan pending settlement: %w", err)
 		}
 		items = append(items, item)

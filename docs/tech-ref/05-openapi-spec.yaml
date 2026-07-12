@@ -102,7 +102,7 @@ paths:
               $ref: "#/components/schemas/ChatCompletionRequest"
       responses:
         "200":
-          description: Chat completion or SSE stream
+          description: Chat completion or SSE stream. The final `_uniroute.provider_prompt_cache` object reports only provider-authoritative Prompt Cache token classes, status/schema, and frozen pricing evidence; it is not a UniRouter response-cache signal. Unknown provider fields never receive a cache discount.
           headers:
             X-Request-ID:
               $ref: "#/components/headers/OperationId"
@@ -165,7 +165,7 @@ paths:
                   enum: [float, base64]
       responses:
         "200":
-          description: Embedding response
+          description: Embedding response. When the provider returns an authoritative Prompt Cache usage contract, `_uniroute.provider_prompt_cache` contains the normalized token partition and frozen pricing evidence; otherwise its status is `not_reported` and all prompt tokens remain ordinary input.
           headers:
             X-Request-ID:
               $ref: "#/components/headers/OperationId"
@@ -681,6 +681,7 @@ paths:
     x-unirouter-rbac:
       get: [platform_admin, org_admin]
       post: [platform_admin]
+    description: Platform-owned base input/output prices plus cache_read_ratio and cache_creation_ratio. Ratios default to 1 and apply only to provider-authoritative Prompt Cache token classes for requests frozen after the change.
     get: { $ref: "#/components/pathItems/List" }
     post: { $ref: "#/components/pathItems/Create" }
 
@@ -803,6 +804,7 @@ paths:
     delete: { $ref: "#/components/pathItems/DeleteById" }
 
   /api/v1/reconciliation:
+    description: Organization-scoped comparison of preflight estimates and actual usage, with a separate provider Prompt Cache read/write token and cost breakdown. `cache_usage_schema` distinguishes authoritative provider reports from `not_reported`; no cache hit is inferred.
     get: { $ref: "#/components/pathItems/List" }
 
   /api/v1/users:

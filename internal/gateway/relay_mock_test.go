@@ -343,41 +343,41 @@ func TestRecordRequest_Success(t *testing.T) {
 	if !execCalled {
 		t.Fatal("expected exec to be called")
 	}
-	if len(capturedArgs) != 38 {
-		t.Fatalf("expected 38 insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != callLogInsertArgCount {
+		t.Fatalf("expected %d insert args, got %d", callLogInsertArgCount, len(capturedArgs))
 	}
-	if capturedArgs[4] != int64(7) {
-		t.Fatalf("expected project_id arg 7, got %v", capturedArgs[4])
+	if capturedArgs[callLogArgProjectID] != int64(7) {
+		t.Fatalf("expected project_id arg 7, got %v", capturedArgs[callLogArgProjectID])
 	}
-	if capturedArgs[6] != ownerUserID {
-		t.Fatalf("expected owner_user_id arg 42, got %v", capturedArgs[6])
+	if capturedArgs[callLogArgOwnerUserID] != ownerUserID {
+		t.Fatalf("expected owner_user_id arg 42, got %v", capturedArgs[callLogArgOwnerUserID])
 	}
-	if capturedArgs[7] != "personal" {
-		t.Fatalf("expected key_type arg personal, got %v", capturedArgs[7])
+	if capturedArgs[callLogArgKeyType] != "personal" {
+		t.Fatalf("expected key_type arg personal, got %v", capturedArgs[callLogArgKeyType])
 	}
-	if capturedArgs[17] != 123 {
-		t.Fatalf("expected latency_ms arg 123, got %v", capturedArgs[17])
+	if capturedArgs[callLogArgLatencyMS] != 123 {
+		t.Fatalf("expected latency_ms arg 123, got %v", capturedArgs[callLogArgLatencyMS])
 	}
-	if capturedArgs[22] != 180 {
-		t.Fatalf("expected estimated_tokens arg 180, got %v", capturedArgs[22])
+	if capturedArgs[callLogArgEstimatedTokens] != 180 {
+		t.Fatalf("expected estimated_tokens arg 180, got %v", capturedArgs[callLogArgEstimatedTokens])
 	}
-	if capturedArgs[23] != 1.0 {
-		t.Fatalf("expected upstream usage confidence 1.0, got %v", capturedArgs[23])
+	if capturedArgs[callLogArgUsageConfidence] != 1.0 {
+		t.Fatalf("expected upstream usage confidence 1.0, got %v", capturedArgs[callLogArgUsageConfidence])
 	}
-	if capturedArgs[24] != "req-001" || capturedArgs[25] != nil || capturedArgs[26] != evidenceSchemaVersion || capturedArgs[27] != evidenceCaptureModeNative {
-		t.Fatalf("unexpected call-log evidence args: %#v", capturedArgs[24:28])
+	if capturedArgs[callLogArgTraceID] != "req-001" || capturedArgs[callLogArgSessionID] != nil || capturedArgs[callLogArgSchemaVersion] != evidenceSchemaVersion || capturedArgs[callLogArgCaptureMode] != evidenceCaptureModeNative {
+		t.Fatalf("unexpected call-log evidence args: %#v", capturedArgs[callLogArgTraceID:callLogArgCaptureMode+1])
 	}
-	if capturedArgs[29] != "upstream-req-001" {
-		t.Fatalf("expected upstream_request_id, got %#v", capturedArgs[29])
+	if capturedArgs[callLogArgUpstreamRequestID] != "upstream-req-001" {
+		t.Fatalf("expected upstream_request_id, got %#v", capturedArgs[callLogArgUpstreamRequestID])
 	}
-	if capturedArgs[30] != nil || capturedArgs[31] != nil || capturedArgs[32] != nil {
-		t.Fatalf("unexpected workflow/agent/attempt args: %#v", capturedArgs[30:33])
+	if capturedArgs[callLogArgWorkflowID] != nil || capturedArgs[callLogArgAgentID] != nil || capturedArgs[callLogArgAttemptID] != nil {
+		t.Fatalf("unexpected workflow/agent/attempt args: %#v", capturedArgs[callLogArgWorkflowID:callLogArgAttemptID+1])
 	}
-	if capturedArgs[33] != "human" || capturedArgs[34] != "user:42" || capturedArgs[35] != nil || capturedArgs[36] != evidencePayloadMetadata {
-		t.Fatalf("unexpected call-log actor/payload args: %#v", capturedArgs[33:37])
+	if capturedArgs[callLogArgActorType] != "human" || capturedArgs[callLogArgActorRef] != "user:42" || capturedArgs[callLogArgOnBehalfOf] != nil || capturedArgs[callLogArgPayloadCaptureMode] != evidencePayloadMetadata {
+		t.Fatalf("unexpected call-log actor/payload args: %#v", capturedArgs[callLogArgActorType:callLogArgPayloadCaptureMode+1])
 	}
-	if hash, ok := capturedArgs[37].(string); !ok || len(hash) != 64 {
-		t.Fatalf("expected source_event_hash, got %#v", capturedArgs[37])
+	if hash, ok := capturedArgs[callLogArgSourceEventHash].(string); !ok || len(hash) != 64 {
+		t.Fatalf("expected source_event_hash, got %#v", capturedArgs[callLogArgSourceEventHash])
 	}
 }
 
@@ -397,11 +397,11 @@ func TestRecordRequest_UsesConfiguredPayloadCaptureMode(t *testing.T) {
 
 	relay.recordRequest(context.Background(), "req-disabled", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, 123, 0, false, metering.UsageSourceUpstream, 180, "")
 
-	if len(capturedArgs) != 38 {
-		t.Fatalf("expected 38 insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != callLogInsertArgCount {
+		t.Fatalf("expected %d insert args, got %d", callLogInsertArgCount, len(capturedArgs))
 	}
-	if capturedArgs[36] != traceutil.PayloadCaptureModeDisabled {
-		t.Fatalf("expected disabled payload capture mode, got %#v", capturedArgs[36])
+	if capturedArgs[callLogArgPayloadCaptureMode] != traceutil.PayloadCaptureModeDisabled {
+		t.Fatalf("expected disabled payload capture mode, got %#v", capturedArgs[callLogArgPayloadCaptureMode])
 	}
 }
 
@@ -432,17 +432,17 @@ func TestRecordRequest_UsesTrustedEvidenceContext(t *testing.T) {
 
 	relay.recordRequest(ctx, "req-context", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, 123, 0, false, metering.UsageSourceUpstream, 180, "")
 
-	if len(capturedArgs) != 38 {
-		t.Fatalf("expected 38 insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != callLogInsertArgCount {
+		t.Fatalf("expected %d insert args, got %d", callLogInsertArgCount, len(capturedArgs))
 	}
-	if capturedArgs[24] != "trace-internal-1" || capturedArgs[25] != "session-42" {
-		t.Fatalf("expected trusted trace/session args, got %#v", capturedArgs[24:26])
+	if capturedArgs[callLogArgTraceID] != "trace-internal-1" || capturedArgs[callLogArgSessionID] != "session-42" {
+		t.Fatalf("expected trusted trace/session args, got %#v", capturedArgs[callLogArgTraceID:callLogArgSessionID+1])
 	}
-	if capturedArgs[30] != "workflow-42" || capturedArgs[31] != "agent-42" || capturedArgs[32] != "att_test" {
-		t.Fatalf("expected workflow/agent/attempt args, got %#v", capturedArgs[30:33])
+	if capturedArgs[callLogArgWorkflowID] != "workflow-42" || capturedArgs[callLogArgAgentID] != "agent-42" || capturedArgs[callLogArgAttemptID] != "att_test" {
+		t.Fatalf("expected workflow/agent/attempt args: %#v", capturedArgs[callLogArgWorkflowID:callLogArgAttemptID+1])
 	}
-	if capturedArgs[33] != "agent" || capturedArgs[34] != "agent:planner" || capturedArgs[35] != "user:42" {
-		t.Fatalf("expected trusted actor/delegation args, got %#v", capturedArgs[33:36])
+	if capturedArgs[callLogArgActorType] != "agent" || capturedArgs[callLogArgActorRef] != "agent:planner" || capturedArgs[callLogArgOnBehalfOf] != "user:42" {
+		t.Fatalf("expected trusted actor/delegation args, got %#v", capturedArgs[callLogArgActorType:callLogArgOnBehalfOf+1])
 	}
 }
 
@@ -2357,7 +2357,7 @@ func TestHandleChatCompletion_AnthropicNativeNonStream(t *testing.T) {
 			"model":"claude-3-5-sonnet-20241022",
 			"content":[{"type":"text","text":"Hi from Anthropic"}],
 			"stop_reason":"end_turn",
-			"usage":{"input_tokens":10,"output_tokens":5}
+			"usage":{"input_tokens":10,"cache_read_input_tokens":7,"cache_creation_input_tokens":3,"output_tokens":5}
 		}`))
 	}))
 	defer upstream.Close()
@@ -2368,6 +2368,8 @@ func TestHandleChatCompletion_AnthropicNativeNonStream(t *testing.T) {
 		t.Fatalf("encrypt key: %v", err)
 	}
 	var settleReq billing.SettleRequest
+	var callLogArgs []any
+	var settledTraceMetadata map[string]interface{}
 	db := &testutil.MockDB{
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			return &testutil.MockRows{
@@ -2398,6 +2400,14 @@ func TestHandleChatCompletion_AnthropicNativeNonStream(t *testing.T) {
 			}, nil
 		},
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(sql, "INSERT INTO call_logs") {
+				callLogArgs = append([]any(nil), args...)
+			}
+			if strings.Contains(sql, "INSERT INTO request_trace_events") && len(args) == 39 && args[8] == "billing.settle.succeeded" {
+				if err := json.Unmarshal([]byte(args[17].(string)), &settledTraceMetadata); err != nil {
+					t.Fatalf("decode settled trace metadata: %v", err)
+				}
+			}
 			return pgconn.CommandTag{}, nil
 		},
 	}
@@ -2407,10 +2417,19 @@ func TestHandleChatCompletion_AnthropicNativeNonStream(t *testing.T) {
 		},
 		settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
 			settleReq = req
-			return &billing.SettleResult{SettleID: 1, Refund: 0, NewBalance: 900, Success: true}, nil
+			return &billing.SettleResult{
+				SettleID: 1, Refund: 0, NewBalance: 900, Success: true,
+				PricingVersion: "pv2_test", CacheReadRatio: 0.1, CacheCreationRatio: 1.25,
+				EffectiveInputPriceCents: 2, EffectiveCacheReadPriceCents: 0.2,
+				EffectiveCacheCreationPriceCents: 2.5, EffectiveOutputPriceCents: 10,
+				CacheReadCostCents: 0.0014, CacheCreationCostCents: 0.0075,
+			}, nil
 		},
 	}
-	relay := &Relay{db: db, router: NewRouter(db), billing: b, encKey: encKey}
+	relay := &Relay{
+		db: db, router: NewRouter(db), billing: b, encKey: encKey,
+		traceEventsEnabled: true, traceEventSampleRate: 1,
+	}
 
 	body := `{"model":"company-chat","messages":[{"role":"system","content":"Be direct."},{"role":"user","content":"hello"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
@@ -2439,8 +2458,24 @@ func TestHandleChatCompletion_AnthropicNativeNonStream(t *testing.T) {
 	if upstreamSystem != "Be direct." {
 		t.Fatalf("expected system prompt conversion, got %q", upstreamSystem)
 	}
-	if settleReq.PromptTokens != 10 || settleReq.CompletionTokens != 5 || settleReq.UsageSource != metering.UsageSourceUpstream {
+	if settleReq.PromptTokens != 20 || settleReq.UncachedPromptTokens != 10 || settleReq.CacheReadTokens != 7 || settleReq.CacheCreationTokens != 3 || settleReq.CompletionTokens != 5 || settleReq.UsageSource != metering.UsageSourceUpstream {
 		t.Fatalf("unexpected settle request: %+v", settleReq)
+	}
+	if settleReq.CacheUsageSchema != adapters.CacheUsageSchemaAnthropicV1 || settleReq.CacheUsageStatus != adapters.CacheUsageStatusReadWriteReported {
+		t.Fatalf("unexpected authoritative cache contract: %+v", settleReq)
+	}
+	if len(callLogArgs) != callLogInsertArgCount || callLogArgs[callLogArgPromptTokens] != 20 || callLogArgs[callLogArgUncachedTokens] != 10 || callLogArgs[callLogArgCacheReadTokens] != 7 || callLogArgs[callLogArgCacheCreateTokens] != 3 {
+		t.Fatalf("cache partition was not persisted in call log: %#v", callLogArgs)
+	}
+	if callLogArgs[callLogArgPricingVersion] != "pv2_test" {
+		t.Fatalf("pricing snapshot was not persisted in call log: %#v", callLogArgs)
+	}
+	if settledTraceMetadata["cache_usage_schema"] != adapters.CacheUsageSchemaAnthropicV1 ||
+		settledTraceMetadata["cache_read_tokens"] != float64(7) ||
+		settledTraceMetadata["cache_creation_tokens"] != float64(3) ||
+		settledTraceMetadata["cache_read_ratio"] != 0.1 ||
+		settledTraceMetadata["pricing_version"] != "pv2_test" {
+		t.Fatalf("prompt-cache evidence was not retained in the sanitized settlement trace: %#v", settledTraceMetadata)
 	}
 
 	var resp map[string]interface{}
@@ -2457,6 +2492,14 @@ func TestHandleChatCompletion_AnthropicNativeNonStream(t *testing.T) {
 	}
 	if _, ok := resp["_uniroute"].(map[string]interface{}); !ok {
 		t.Fatalf("expected _uniroute extension, got %v", resp)
+	}
+	extension := resp["_uniroute"].(map[string]interface{})
+	if extension["cache_hit"] != true {
+		t.Fatalf("expected authoritative cache hit, got %v", extension)
+	}
+	providerCache := extension["provider_prompt_cache"].(map[string]interface{})
+	if providerCache["cache_read_tokens"] != float64(7) || providerCache["cache_creation_tokens"] != float64(3) || providerCache["cache_read_ratio"] != 0.1 {
+		t.Fatalf("unexpected provider prompt-cache extension: %#v", providerCache)
 	}
 }
 
@@ -2480,7 +2523,7 @@ func TestHandleChatCompletion_AnthropicNativeStream(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(
 			"event: message_start\n" +
-				"data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_stream\",\"model\":\"claude-3-5-sonnet-20241022\",\"usage\":{\"input_tokens\":11,\"output_tokens\":0}}}\n\n" +
+				"data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_stream\",\"model\":\"claude-3-5-sonnet-20241022\",\"usage\":{\"input_tokens\":11,\"cache_read_input_tokens\":4,\"cache_creation_input_tokens\":2,\"output_tokens\":0}}}\n\n" +
 				"event: content_block_delta\n" +
 				"data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hi\"}}\n\n" +
 				"event: content_block_delta\n" +
@@ -2538,7 +2581,7 @@ func TestHandleChatCompletion_AnthropicNativeStream(t *testing.T) {
 		},
 		settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
 			settleReq = req
-			return &billing.SettleResult{SettleID: 1, Refund: 0, NewBalance: 900, Success: true}, nil
+			return &billing.SettleResult{SettleID: 1, Refund: 0, NewBalance: 900, PricingVersion: "pv2_stream", CacheReadRatio: 0.1, CacheCreationRatio: 1.25, Success: true}, nil
 		},
 	}
 	relay := &Relay{db: db, router: NewRouter(db), billing: b, encKey: encKey}
@@ -2567,7 +2610,7 @@ func TestHandleChatCompletion_AnthropicNativeStream(t *testing.T) {
 	if upstreamAPIKey != "sk-ant-stream" {
 		t.Fatalf("expected x-api-key from decrypted key, got %q", upstreamAPIKey)
 	}
-	if settleReq.PromptTokens != 11 || settleReq.CompletionTokens != 6 || settleReq.UsageSource != metering.UsageSourceUpstream {
+	if settleReq.PromptTokens != 17 || settleReq.UncachedPromptTokens != 11 || settleReq.CacheReadTokens != 4 || settleReq.CacheCreationTokens != 2 || settleReq.CompletionTokens != 6 || settleReq.UsageSource != metering.UsageSourceUpstream {
 		t.Fatalf("unexpected settle request: %+v", settleReq)
 	}
 
@@ -2583,6 +2626,9 @@ func TestHandleChatCompletion_AnthropicNativeStream(t *testing.T) {
 	}
 	if !strings.Contains(responseBody, `"_uniroute"`) {
 		t.Fatalf("expected _uniroute final chunk, got %s", responseBody)
+	}
+	if !strings.Contains(responseBody, `"provider_prompt_cache"`) || !strings.Contains(responseBody, `"cache_read_tokens":4`) || !strings.Contains(responseBody, `"cache_creation_tokens":2`) || !strings.Contains(responseBody, `"cache_hit":true`) {
+		t.Fatalf("expected authoritative prompt-cache evidence in final chunk, got %s", responseBody)
 	}
 	if strings.Count(responseBody, "data: [DONE]") != 1 {
 		t.Fatalf("expected exactly one [DONE], got %d in %s", strings.Count(responseBody, "data: [DONE]"), responseBody)
@@ -2739,7 +2785,7 @@ func TestHandleChatCompletion_RetryClassification(t *testing.T) {
 				if settleCalls != 0 || cancelCalls != 1 || callLogCount != 1 {
 					t.Fatalf("non-retryable billing/log invariant failed: settle=%d cancel=%d call_logs=%d", settleCalls, cancelCalls, callLogCount)
 				}
-				if len(failedCallArgs) != 38 || failedCallArgs[10] != "openai" || failedCallArgs[16] != test.upstreamStatus {
+				if len(failedCallArgs) != callLogInsertArgCount || failedCallArgs[callLogArgProvider] != "openai" || failedCallArgs[callLogArgStatusCode] != test.upstreamStatus {
 					t.Fatalf("unexpected failed attempt log: %#v", failedCallArgs)
 				}
 				if strings.Contains(rec.Body.String(), secretMarker) {
@@ -2867,14 +2913,14 @@ func TestHandleChatCompletion_UpstreamError_AllFail(t *testing.T) {
 	if !cancelCalled {
 		t.Fatal("expected Cancel to be called after all channels failed")
 	}
-	if len(capturedCallArgs) != 38 || capturedCallArgs[10] != "azure" || capturedCallArgs[11] != "second-ch" {
+	if len(capturedCallArgs) != callLogInsertArgCount || capturedCallArgs[callLogArgProvider] != "azure" || capturedCallArgs[callLogArgChannel] != "second-ch" {
 		t.Fatalf("final failure log mixed the first route with the final attempt: %#v", capturedCallArgs)
 	}
-	if capturedCallArgs[16] != 0 || capturedCallArgs[29] != nil {
-		t.Fatalf("final network failure retained an earlier attempt status/upstream ID: status=%#v upstream=%#v", capturedCallArgs[16], capturedCallArgs[29])
+	if capturedCallArgs[callLogArgStatusCode] != 0 || capturedCallArgs[callLogArgUpstreamRequestID] != nil {
+		t.Fatalf("final network failure retained an earlier attempt status/upstream ID: status=%#v upstream=%#v", capturedCallArgs[callLogArgStatusCode], capturedCallArgs[callLogArgUpstreamRequestID])
 	}
-	if attemptID, _ := capturedCallArgs[32].(string); !strings.HasPrefix(attemptID, "att_") {
-		t.Fatalf("final failure log lost the final attempt identity: %#v", capturedCallArgs[32])
+	if attemptID, _ := capturedCallArgs[callLogArgAttemptID].(string); !strings.HasPrefix(attemptID, "att_") {
+		t.Fatalf("final failure log lost the final attempt identity: %#v", capturedCallArgs[callLogArgAttemptID])
 	}
 }
 

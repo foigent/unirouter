@@ -125,9 +125,9 @@ const endpointGroups = [
   {
     area: 'Model Governance',
     endpoints: [
-      ['GET', '/api/v1/model-prices', '查看基础模型价格（平台/组织管理员）'],
-      ['POST', '/api/v1/model-prices', '创建或覆盖基础模型价格（仅平台管理员）'],
-      ['PUT', '/api/v1/model-prices/{id}', '更新基础模型价格（仅平台管理员）'],
+      ['GET', '/api/v1/model-prices', '查看基础模型价格与供应商 Prompt Cache 倍率（平台/组织管理员）'],
+      ['POST', '/api/v1/model-prices', '创建或覆盖基础价格与 Prompt Cache 倍率（仅平台管理员）'],
+      ['PUT', '/api/v1/model-prices/{id}', '更新基础价格与 Prompt Cache 倍率（仅平台管理员）'],
       ['DELETE', '/api/v1/model-prices/{id}', '删除基础模型价格（仅平台管理员）'],
       ['GET', '/api/v1/model-names', '模型名称列表'],
       ['GET', '/api/v1/model-registry', '本组织模型注册表；平台管理员可显式选择组织'],
@@ -145,7 +145,7 @@ const endpointGroups = [
       ['POST', '/api/v1/org-model-prices', '创建或覆盖组织计费倍率（仅平台管理员）'],
       ['PUT', '/api/v1/org-model-prices/{id}', '更新组织计费倍率（仅平台管理员）'],
       ['DELETE', '/api/v1/org-model-prices/{id}', '删除组织计费倍率（仅平台管理员）'],
-      ['GET', '/api/v1/reconciliation', '用量计量对账'],
+      ['GET', '/api/v1/reconciliation', '估算/实际用量及供应商 Prompt Cache 分项对账'],
     ],
   },
   {

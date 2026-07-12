@@ -83,6 +83,10 @@ func modelPriceMockRow(id int64, modelName string, inputPrice, outputPrice float
 		*dest[1].(*string) = modelName
 		*dest[2].(*float64) = inputPrice
 		*dest[3].(*float64) = outputPrice
+		if len(dest) > 4 {
+			*dest[4].(*float64) = 1
+			*dest[5].(*float64) = 1
+		}
 		return nil
 	}}
 }
@@ -2941,17 +2945,31 @@ func TestListLogs_Success(t *testing.T) {
 						*dest[8].(*string) = "openai"
 						*dest[9].(*string) = "test-channel"
 						*dest[10].(*int) = 100
-						*dest[11].(*int) = 50
-						*dest[12].(*int) = 150
-						*dest[13].(*int) = 200
-						*dest[14].(*int) = 200
-						*dest[15].(*int) = 350
-						*dest[16].(*int) = 0
-						*dest[17].(**int) = nil
-						*dest[18].(*string) = ""
-						*dest[19].(*string) = "backend"
-						*dest[20].(*bool) = false
-						*dest[21].(*time.Time) = now
+						*dest[11].(*int) = 70
+						*dest[12].(*int) = 20
+						*dest[13].(*int) = 10
+						*dest[14].(*int) = 50
+						*dest[15].(*int) = 150
+						*dest[16].(*int) = 200
+						*dest[17].(*int) = 200
+						*dest[18].(*int) = 350
+						*dest[19].(*int) = 0
+						*dest[20].(**int) = nil
+						*dest[21].(*string) = ""
+						*dest[22].(*string) = "backend"
+						*dest[23].(*string) = "anthropic.prompt_cache.v1"
+						*dest[24].(*string) = "cache_read_write_reported"
+						*dest[25].(*string) = "pv2_test"
+						*dest[26].(*float64) = 0.1
+						*dest[27].(*float64) = 1.25
+						*dest[28].(*float64) = 2
+						*dest[29].(*float64) = 0.2
+						*dest[30].(*float64) = 2.5
+						*dest[31].(*float64) = 8
+						*dest[32].(*float64) = 0.004
+						*dest[33].(*float64) = 0.025
+						*dest[34].(*bool) = false
+						*dest[35].(*time.Time) = now
 						return nil
 					},
 				},
@@ -3003,17 +3021,28 @@ func TestListLogs_WithFilters(t *testing.T) {
 						*dest[8].(*string) = "openai"
 						*dest[9].(*string) = "test-channel"
 						*dest[10].(*int) = 200
-						*dest[11].(*int) = 100
-						*dest[12].(*int) = 300
-						*dest[13].(*int) = 200
-						*dest[14].(*int) = 200
-						*dest[15].(*int) = 500
-						*dest[16].(*int) = 0
-						*dest[17].(**int) = nil
-						*dest[18].(*string) = ""
-						*dest[19].(*string) = "backend"
-						*dest[20].(*bool) = false
-						*dest[21].(*time.Time) = now
+						*dest[11].(*int) = 200
+						*dest[12].(*int) = 0
+						*dest[13].(*int) = 0
+						*dest[14].(*int) = 100
+						*dest[15].(*int) = 300
+						*dest[16].(*int) = 200
+						*dest[17].(*int) = 200
+						*dest[18].(*int) = 500
+						*dest[19].(*int) = 0
+						*dest[20].(**int) = nil
+						*dest[21].(*string) = ""
+						*dest[22].(*string) = "backend"
+						*dest[23].(*string) = ""
+						*dest[24].(*string) = "not_reported"
+						*dest[25].(*string) = ""
+						*dest[26].(*float64) = 1
+						*dest[27].(*float64) = 1
+						for i := 28; i <= 33; i++ {
+							*dest[i].(*float64) = 0
+						}
+						*dest[34].(*bool) = false
+						*dest[35].(*time.Time) = now
 						return nil
 					},
 				},
@@ -3242,6 +3271,12 @@ func TestListReconciliation_Success(t *testing.T) {
 						*dest[2].(*int64) = 340
 						*dest[3].(*int64) = 300
 						*dest[4].(*float64) = 0.82
+						*dest[5].(*int64) = 40
+						*dest[6].(*int64) = 10
+						*dest[7].(*float64) = 0.008
+						*dest[8].(*float64) = 0.025
+						*dest[9].(*int64) = 1
+						*dest[10].(*int64) = 1
 						return nil
 					},
 				}
@@ -3267,7 +3302,15 @@ func TestListReconciliation_Success(t *testing.T) {
 						*dest[7].(*int) = 200
 						*dest[8].(*string) = "upstream"
 						*dest[9].(*float64) = 1.0
-						*dest[10].(*time.Time) = now
+						*dest[10].(*int) = 90
+						*dest[11].(*int) = 40
+						*dest[12].(*int) = 20
+						*dest[13].(*string) = "anthropic.prompt_cache.v1"
+						*dest[14].(*string) = "cache_read_write_reported"
+						*dest[15].(*string) = "pv2_test"
+						*dest[16].(*float64) = 0.008
+						*dest[17].(*float64) = 0.05
+						*dest[18].(*time.Time) = now
 						return nil
 					},
 					func(dest ...any) error {
@@ -3281,7 +3324,15 @@ func TestListReconciliation_Success(t *testing.T) {
 						*dest[7].(*int) = 200
 						*dest[8].(*string) = "counter_v2"
 						*dest[9].(*float64) = 0.65
-						*dest[10].(*time.Time) = now.Add(time.Minute)
+						*dest[10].(*int) = 12
+						*dest[11].(*int) = 0
+						*dest[12].(*int) = 0
+						*dest[13].(*string) = ""
+						*dest[14].(*string) = "not_reported"
+						*dest[15].(*string) = "pv2_test"
+						*dest[16].(*float64) = 0
+						*dest[17].(*float64) = 0
+						*dest[18].(*time.Time) = now.Add(time.Minute)
 						return nil
 					},
 				},
@@ -3321,6 +3372,9 @@ func TestListReconciliation_Success(t *testing.T) {
 	if summary["estimated_ratio_scope"] != "filtered_query" {
 		t.Fatalf("expected filtered_query scope, got %v", summary["estimated_ratio_scope"])
 	}
+	if summary["cache_read_tokens"].(float64) != 40 || summary["cache_creation_tokens"].(float64) != 10 {
+		t.Fatalf("expected prompt-cache summary, got %#v", summary)
+	}
 }
 
 func TestListReconciliation_UsageSourceFilterNormalizesLegacyAlias(t *testing.T) {
@@ -3340,6 +3394,12 @@ func TestListReconciliation_UsageSourceFilterNormalizesLegacyAlias(t *testing.T)
 					*dest[2].(*int64) = 0
 					*dest[3].(*int64) = 0
 					*dest[4].(*float64) = 0
+					*dest[5].(*int64) = 0
+					*dest[6].(*int64) = 0
+					*dest[7].(*float64) = 0
+					*dest[8].(*float64) = 0
+					*dest[9].(*int64) = 0
+					*dest[10].(*int64) = 0
 					return nil
 				}}
 			}
@@ -3390,6 +3450,12 @@ func TestListReconciliation_EmitsHighEstimatedRatioEvent(t *testing.T) {
 					*dest[2].(*int64) = 95
 					*dest[3].(*int64) = 100
 					*dest[4].(*float64) = 0.62
+					*dest[5].(*int64) = 0
+					*dest[6].(*int64) = 0
+					*dest[7].(*float64) = 0
+					*dest[8].(*float64) = 0
+					*dest[9].(*int64) = 0
+					*dest[10].(*int64) = 1
 					return nil
 				}}
 			case strings.Contains(sql, "INSERT INTO notification_events"):
@@ -4076,14 +4142,41 @@ func TestCreateModelPrice_DecimalCents(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if len(capturedArgs) != 3 {
-		t.Fatalf("expected 3 insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != 5 {
+		t.Fatalf("expected 5 insert args, got %d", len(capturedArgs))
 	}
 	if math.Abs(capturedArgs[1].(float64)-0.2) > 0.000001 {
 		t.Fatalf("expected input_price_cents=0.2, got %v", capturedArgs[1])
 	}
 	if math.Abs(capturedArgs[2].(float64)-0.1) > 0.000001 {
 		t.Fatalf("expected output_price_cents=0.1, got %v", capturedArgs[2])
+	}
+	if capturedArgs[3] != nil || capturedArgs[4] != nil {
+		t.Fatalf("expected omitted cache ratios to use SQL defaults/preserve existing values, got %v/%v", capturedArgs[3], capturedArgs[4])
+	}
+}
+
+func TestCreateModelPrice_CacheRatios(t *testing.T) {
+	var capturedArgs []any
+	db := &testutil.MockDB{BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+		return &testutil.MockTx{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			if strings.Contains(sql, "SELECT id") {
+				return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
+			}
+			capturedArgs = append([]any(nil), args...)
+			return modelPriceMockRow(42, "claude", 4, 20)
+		}}, nil
+	}}
+	h := newTestHandler(db)
+	body := `{"model_name":"claude","input_price_cents":4,"output_price_cents":20,"cache_read_ratio":0.1,"cache_creation_ratio":1.25}`
+	req := platformPricingRequest("POST", "/model-prices", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	h.CreateModelPrice(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(capturedArgs) != 5 || capturedArgs[3].(float64) != 0.1 || capturedArgs[4].(float64) != 1.25 {
+		t.Fatalf("unexpected cache ratio args: %#v", capturedArgs)
 	}
 }
 

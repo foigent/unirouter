@@ -66,6 +66,17 @@ func TestSettleRequest_Fields(t *testing.T) {
 	}
 }
 
+func TestNormalizeSettlementUsageRejectsPersistedIntegerOverflow(t *testing.T) {
+	_, err := normalizeSettlementUsage(SettleRequest{
+		PromptTokens:         maxPersistedTokenCount,
+		UncachedPromptTokens: maxPersistedTokenCount,
+		CompletionTokens:     1,
+	})
+	if err == nil {
+		t.Fatal("expected prompt+completion integer overflow to be rejected")
+	}
+}
+
 func TestSettleResult_Fields(t *testing.T) {
 	result := SettleResult{
 		SettleID:   43,

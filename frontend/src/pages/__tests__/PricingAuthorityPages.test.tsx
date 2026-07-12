@@ -22,7 +22,7 @@ describe('pricing authority pages', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getModelPriceList.mockResolvedValue({
-      data: [{ id: 7, model_name: 'gpt-4o', input_price_cents: 5, output_price_cents: 15, updated_at: '2026-07-11T00:00:00Z' }],
+      data: [{ id: 7, model_name: 'gpt-4o', input_price_cents: 5, output_price_cents: 15, cache_read_ratio: 0.1, cache_creation_ratio: 1.25, updated_at: '2026-07-11T00:00:00Z' }],
       total: 1,
     });
     mocks.getModelNames.mockResolvedValue({ data: ['gpt-4o'] });
@@ -40,7 +40,9 @@ describe('pricing authority pages', () => {
 
     expect(await screen.findByText('模型定价')).toBeTruthy();
     await waitFor(() => expect(mocks.getModelPriceList).toHaveBeenCalledWith(1, 20));
-    expect(screen.getByText('只读查看全平台基础模型价格；价格由平台管理员统一维护。')).toBeTruthy();
+    expect(screen.getByText('只读查看平台统一维护的基础模型价格与供应商 Prompt Cache 倍率。')).toBeTruthy();
+    expect(screen.getByText('0.100×')).toBeTruthy();
+    expect(screen.getByText('1.250×')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /新增价格/ })).toBeNull();
     expect(screen.queryByText('操作')).toBeNull();
   });
