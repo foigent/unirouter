@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,62 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/auth"
 )
+
+const maxWalletIntegerCents = int64(1<<31 - 1)
+
+type walletTransactionRecord struct {
+	ID           int64
+	Amount       int
+	BalanceAfter int
+	Note         string
+}
+
+func decodeWalletMutation(w http.ResponseWriter, r *http.Request, target interface{}) bool {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
+		return false
+	}
+	return true
+}
+
+func normalizeWalletMutationIdentity(clientRequestID, description string) (string, string, error) {
+	clientRequestID = strings.TrimSpace(clientRequestID)
+	description = strings.TrimSpace(description)
+	if clientRequestID == "" {
+		return "", "", errors.New("client_request_id is required")
+	}
+	if len(clientRequestID) > 128 {
+		return "", "", errors.New("client_request_id must not exceed 128 characters")
+	}
+	if description == "" {
+		return "", "", errors.New("description is required")
+	}
+	return clientRequestID, description, nil
+}
+
+func (h *Handler) findWalletTransaction(ctx context.Context, orgID int64, transactionType, clientRequestID string) (walletTransactionRecord, error) {
+	var record walletTransactionRecord
+	err := h.db.QueryRow(ctx,
+		`SELECT id, amount, balance_after, note
+		 FROM transactions
+		 WHERE org_id = $1 AND type = $2 AND client_request_id = $3`,
+		orgID, transactionType, clientRequestID,
+	).Scan(&record.ID, &record.Amount, &record.BalanceAfter, &record.Note)
+	return record, err
+}
+
+func walletTransactionMatches(record walletTransactionRecord, amount int, description string) bool {
+	return record.Amount == amount && record.Note == description
+}
+
+func writeWalletIdempotencyConflict(w http.ResponseWriter, clientRequestID string) {
+	writeJSON(w, http.StatusConflict, map[string]interface{}{
+		"error":             "idempotency_key_reused",
+		"client_request_id": clientRequestID,
+	})
+}
 
 func (h *Handler) GetWallet(w http.ResponseWriter, r *http.Request) {
 	orgID, err := resolveRequestOrganization(r)
@@ -78,8 +135,7 @@ func (h *Handler) TopUp(w http.ResponseWriter, r *http.Request) {
 		Description     string `json:"description"`
 		ClientRequestID string `json:"client_request_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
+	if !decodeWalletMutation(w, r, &req) {
 		return
 	}
 
@@ -87,8 +143,9 @@ func (h *Handler) TopUp(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "amount_cents must be positive"})
 		return
 	}
-	if req.Description == "" {
-		req.Description = "Admin top-up"
+	if int64(req.AmountCents) > maxWalletIntegerCents {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "amount_cents is out of range"})
+		return
 	}
 
 	walletOrgID, err := resolveActorOrganization(r.Context(), req.OrgID)
@@ -96,31 +153,34 @@ func (h *Handler) TopUp(w http.ResponseWriter, r *http.Request) {
 		writeOrganizationScopeError(w, err)
 		return
 	}
+	req.ClientRequestID, req.Description, err = normalizeWalletMutationIdentity(req.ClientRequestID, req.Description)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error()})
+		return
+	}
 	r, operationID, ok := ensureOperationIdentityForHandler(w, r)
 	if !ok {
 		return
 	}
 
-	// Idempotency check: if client_request_id is provided, check for existing transaction
-	if req.ClientRequestID != "" {
-		var existingID int64
-		err := h.db.QueryRow(r.Context(),
-			`SELECT id FROM transactions WHERE client_request_id = $1 AND org_id = $2 AND type = 'topup'`,
-			req.ClientRequestID, walletOrgID,
-		).Scan(&existingID)
-		if err == nil {
-			// Transaction already exists - return conflict
-			writeJSON(w, http.StatusConflict, map[string]interface{}{
-				"error":             "duplicate_request",
-				"existing_id":       existingID,
-				"client_request_id": req.ClientRequestID,
-			})
+	existing, err := h.findWalletTransaction(r.Context(), walletOrgID, "topup", req.ClientRequestID)
+	if err == nil {
+		if !walletTransactionMatches(existing, req.AmountCents, req.Description) {
+			writeWalletIdempotencyConflict(w, req.ClientRequestID)
 			return
 		}
-		if !errors.Is(err, pgx.ErrNoRows) {
-			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Idempotency check failed"})
-			return
-		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"message":           "Top-up successful",
+			"org_id":            walletOrgID,
+			"balance_cents":     existing.BalanceAfter,
+			"client_request_id": req.ClientRequestID,
+			"idempotent_replay": true,
+		})
+		return
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Idempotency check failed"})
+		return
 	}
 
 	tx, err := h.db.Begin(r.Context())
@@ -147,20 +207,22 @@ func (h *Handler) TopUp(w http.ResponseWriter, r *http.Request) {
 	_, err = tx.Exec(r.Context(),
 		`INSERT INTO transactions (request_id, client_request_id, org_id, type, status, amount, balance_after, note, created_at)
 		 VALUES ($1, $2, $3, 'topup', 'completed', $4, $5, $6, NOW())`,
-		operationID, nullableString(req.ClientRequestID), walletOrgID, req.AmountCents, balanceAfter, req.Description)
+		operationID, req.ClientRequestID, walletOrgID, req.AmountCents, balanceAfter, req.Description)
 	if err != nil {
-		if req.ClientRequestID != "" && isPostgresUniqueViolation(err) {
+		if isPostgresUniqueViolation(err) {
 			_ = tx.Rollback(r.Context())
-			var existingID int64
-			lookupErr := h.db.QueryRow(r.Context(),
-				`SELECT id FROM transactions WHERE client_request_id = $1 AND org_id = $2 AND type = 'topup'`,
-				req.ClientRequestID, walletOrgID,
-			).Scan(&existingID)
+			existing, lookupErr := h.findWalletTransaction(r.Context(), walletOrgID, "topup", req.ClientRequestID)
 			if lookupErr == nil {
-				writeJSON(w, http.StatusConflict, map[string]interface{}{
-					"error":             "duplicate_request",
-					"existing_id":       existingID,
+				if !walletTransactionMatches(existing, req.AmountCents, req.Description) {
+					writeWalletIdempotencyConflict(w, req.ClientRequestID)
+					return
+				}
+				writeJSON(w, http.StatusOK, map[string]interface{}{
+					"message":           "Top-up successful",
+					"org_id":            walletOrgID,
+					"balance_cents":     existing.BalanceAfter,
 					"client_request_id": req.ClientRequestID,
+					"idempotent_replay": true,
 				})
 				return
 			}
@@ -185,13 +247,15 @@ func (h *Handler) TopUp(w http.ResponseWriter, r *http.Request) {
 	})
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"message":       "Top-up successful",
-		"org_id":        walletOrgID,
-		"balance_cents": balanceAfter,
+		"message":           "Top-up successful",
+		"org_id":            walletOrgID,
+		"balance_cents":     balanceAfter,
+		"client_request_id": req.ClientRequestID,
+		"idempotent_replay": false,
 	})
 }
 
-// BalanceAdjust sets the wallet balance to a specific amount (admin operation).
+// BalanceAdjust applies a signed delta to the latest locked wallet balance.
 func (h *Handler) BalanceAdjust(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{"error": "Method not allowed"})
@@ -199,21 +263,22 @@ func (h *Handler) BalanceAdjust(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		OrgID         int64  `json:"org_id"`
-		TargetBalance int    `json:"target_balance"`
-		Description   string `json:"description"`
+		OrgID           int64  `json:"org_id"`
+		DeltaCents      int    `json:"delta_cents"`
+		Description     string `json:"description"`
+		ClientRequestID string `json:"client_request_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
+	if !decodeWalletMutation(w, r, &req) {
 		return
 	}
 
-	if req.TargetBalance < 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "target_balance must be >= 0"})
+	if req.DeltaCents == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "delta_cents must not be zero"})
 		return
 	}
-	if req.Description == "" {
-		req.Description = "Admin balance adjustment"
+	if int64(req.DeltaCents) > maxWalletIntegerCents || int64(req.DeltaCents) < -maxWalletIntegerCents {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "delta_cents is out of range"})
+		return
 	}
 
 	walletOrgID, err := resolveActorOrganization(r.Context(), req.OrgID)
@@ -221,8 +286,39 @@ func (h *Handler) BalanceAdjust(w http.ResponseWriter, r *http.Request) {
 		writeOrganizationScopeError(w, err)
 		return
 	}
+	req.ClientRequestID, req.Description, err = normalizeWalletMutationIdentity(req.ClientRequestID, req.Description)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error()})
+		return
+	}
 	r, operationID, ok := ensureOperationIdentityForHandler(w, r)
 	if !ok {
+		return
+	}
+
+	existing, err := h.findWalletTransaction(r.Context(), walletOrgID, "adjust", req.ClientRequestID)
+	if err == nil {
+		if !walletTransactionMatches(existing, req.DeltaCents, req.Description) {
+			writeWalletIdempotencyConflict(w, req.ClientRequestID)
+			return
+		}
+		previousBalance := existing.BalanceAfter - existing.Amount
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success":                true,
+			"org_id":                 walletOrgID,
+			"previous":               previousBalance,
+			"previous_balance_cents": previousBalance,
+			"new_balance":            existing.BalanceAfter,
+			"balance_cents":          existing.BalanceAfter,
+			"adjust_amount":          existing.Amount,
+			"delta_cents":            existing.Amount,
+			"client_request_id":      req.ClientRequestID,
+			"idempotent_replay":      true,
+		})
+		return
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Idempotency check failed"})
 		return
 	}
 
@@ -245,21 +341,57 @@ func (h *Handler) BalanceAdjust(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to read wallet"})
 		return
 	}
+	newBalance64 := int64(currentBalance) + int64(req.DeltaCents)
+	if newBalance64 < 0 {
+		writeJSON(w, http.StatusConflict, map[string]interface{}{
+			"error":                 "insufficient_balance",
+			"current_balance_cents": currentBalance,
+		})
+		return
+	}
+	if newBalance64 > maxWalletIntegerCents {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "resulting balance is out of range"})
+		return
+	}
+	newBalance := int(newBalance64)
 
 	_, err = tx.Exec(r.Context(),
 		`UPDATE wallets SET balance = $1, updated_at = NOW() WHERE org_id = $2`,
-		req.TargetBalance, walletOrgID)
+		newBalance, walletOrgID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to update wallet"})
 		return
 	}
 
-	adjustAmount := req.TargetBalance - currentBalance
 	_, err = tx.Exec(r.Context(),
-		`INSERT INTO transactions (request_id, org_id, type, status, amount, balance_after, note, created_at)
-		 VALUES ($1, $2, 'adjust', 'completed', $3, $4, $5, NOW())`,
-		operationID, walletOrgID, adjustAmount, req.TargetBalance, req.Description)
+		`INSERT INTO transactions (request_id, client_request_id, org_id, type, status, amount, balance_after, note, created_at)
+		 VALUES ($1, $2, $3, 'adjust', 'completed', $4, $5, $6, NOW())`,
+		operationID, req.ClientRequestID, walletOrgID, req.DeltaCents, newBalance, req.Description)
 	if err != nil {
+		if isPostgresUniqueViolation(err) {
+			_ = tx.Rollback(r.Context())
+			existing, lookupErr := h.findWalletTransaction(r.Context(), walletOrgID, "adjust", req.ClientRequestID)
+			if lookupErr == nil {
+				if !walletTransactionMatches(existing, req.DeltaCents, req.Description) {
+					writeWalletIdempotencyConflict(w, req.ClientRequestID)
+					return
+				}
+				previousBalance := existing.BalanceAfter - existing.Amount
+				writeJSON(w, http.StatusOK, map[string]interface{}{
+					"success":                true,
+					"org_id":                 walletOrgID,
+					"previous":               previousBalance,
+					"previous_balance_cents": previousBalance,
+					"new_balance":            existing.BalanceAfter,
+					"balance_cents":          existing.BalanceAfter,
+					"adjust_amount":          existing.Amount,
+					"delta_cents":            existing.Amount,
+					"client_request_id":      req.ClientRequestID,
+					"idempotent_replay":      true,
+				})
+				return
+			}
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to record transaction"})
 		return
 	}
@@ -270,23 +402,30 @@ func (h *Handler) BalanceAdjust(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.recordAuditForOrgProjectFromRequest(r, walletOrgID, 0, "wallet.adjust", "wallet", fmt.Sprintf("%d", walletOrgID), map[string]interface{}{
-		"from":        currentBalance,
-		"to":          req.TargetBalance,
-		"description": req.Description,
+		"from":              currentBalance,
+		"to":                newBalance,
+		"delta_cents":       req.DeltaCents,
+		"description":       req.Description,
+		"client_request_id": req.ClientRequestID,
 		"before": map[string]interface{}{
 			"balance_cents": currentBalance,
 		},
 		"after": map[string]interface{}{
-			"balance_cents": req.TargetBalance,
+			"balance_cents": newBalance,
 		},
 	})
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success":       true,
-		"org_id":        walletOrgID,
-		"previous":      currentBalance,
-		"new_balance":   req.TargetBalance,
-		"adjust_amount": adjustAmount,
+		"success":                true,
+		"org_id":                 walletOrgID,
+		"previous":               currentBalance,
+		"previous_balance_cents": currentBalance,
+		"new_balance":            newBalance,
+		"balance_cents":          newBalance,
+		"adjust_amount":          req.DeltaCents,
+		"delta_cents":            req.DeltaCents,
+		"client_request_id":      req.ClientRequestID,
+		"idempotent_replay":      false,
 	})
 }
 func (h *Handler) ListWalletTransactions(w http.ResponseWriter, r *http.Request) {

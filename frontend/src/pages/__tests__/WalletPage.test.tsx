@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
-import WalletPage from '../WalletPage';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import WalletPage, { parseYuanToCents } from '../WalletPage';
 
 const mockGetWallet = vi.fn();
 const mockTopUp = vi.fn();
@@ -54,5 +54,30 @@ describe('WalletPage', () => {
     expect(await screen.findByText(/当前可用: ¥1200.00/)).toBeTruthy();
     expect(screen.getByText(/管理资金: ¥1250.00/)).toBeTruthy();
     expect(screen.getByText(/冻结中: ¥50.00/)).toBeTruthy();
+  });
+
+  it('submits an atomic delta with a stable idempotency identity and reason', async () => {
+    mockAdjustWallet.mockResolvedValue({ success: true, balance_cents: 90_000 });
+    render(<WalletPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '调整额度' }));
+    fireEvent.change(screen.getByPlaceholderText('请输入金额，例如 100.00'), { target: { value: '-100.00' } });
+    fireEvent.change(screen.getByPlaceholderText('请输入业务原因或工单号'), { target: { value: '  TICKET-001  ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'confirm' }));
+
+    await waitFor(() => expect(mockAdjustWallet).toHaveBeenCalledTimes(1));
+    expect(mockAdjustWallet).toHaveBeenCalledWith(expect.objectContaining({
+      delta_cents: -10_000,
+      description: 'TICKET-001',
+      client_request_id: expect.stringMatching(/^wallet-adjust-/),
+    }));
+    expect(mockAdjustWallet.mock.calls[0][0]).not.toHaveProperty('target_balance');
+  });
+
+  it('parses yuan amounts without floating-point or trailing-character ambiguity', () => {
+    expect(parseYuanToCents('100.01')).toBe(10_001);
+    expect(parseYuanToCents('-0.05')).toBe(-5);
+    expect(parseYuanToCents('1abc')).toBeNull();
+    expect(parseYuanToCents('1.001')).toBeNull();
   });
 });

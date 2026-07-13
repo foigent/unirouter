@@ -102,12 +102,43 @@ describe('API Client', () => {
     it('sends POST to /api/v1/wallet/topup', async () => {
       mockJsonResponse({ message: 'Top-up successful' })
 
-      await api.topUp({ amount_cents: 5000 })
+      await api.topUp({
+        amount_cents: 5000,
+        description: 'Invoice INV-001',
+        client_request_id: 'topup-client-001',
+      })
       expect(mockFetch).toHaveBeenCalledWith(
         '/api/v1/wallet/topup',
         expect.objectContaining({
           method: 'POST',
-          body: JSON.stringify({ amount_cents: 5000 }),
+          body: JSON.stringify({
+            amount_cents: 5000,
+            description: 'Invoice INV-001',
+            client_request_id: 'topup-client-001',
+          }),
+        })
+      )
+    })
+  })
+
+  describe('adjustWallet', () => {
+    it('sends a signed delta and idempotency identity to /api/v1/wallet/adjust', async () => {
+      mockJsonResponse({ success: true, balance_cents: 9500 })
+
+      await api.adjustWallet({
+        delta_cents: -500,
+        description: 'Correction TICKET-001',
+        client_request_id: 'adjust-client-001',
+      })
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/v1/wallet/adjust',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            delta_cents: -500,
+            description: 'Correction TICKET-001',
+            client_request_id: 'adjust-client-001',
+          }),
         })
       )
     })
@@ -520,7 +551,11 @@ describe('API Client', () => {
     it('throws ApiError for non-2xx responses', async () => {
       mockJsonResponse({ error: { message: 'invalid amount' } }, 400)
 
-      await expect(api.topUp({ amount_cents: 0 })).rejects.toMatchObject({
+      await expect(api.topUp({
+        amount_cents: 0,
+        description: 'Invalid amount',
+        client_request_id: 'invalid-topup',
+      })).rejects.toMatchObject({
         name: 'ApiError',
         status: 400,
         message: 'invalid amount',
