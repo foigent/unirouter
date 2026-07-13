@@ -2,6 +2,9 @@
 
 > Date: 2026-07-13
 > Rule: this is a classified input queue, not an implementation promise.
+> Phase state: PRD6 Accepted Scope Complete. The acceptance matrix is
+> authoritative; rows without an accepted matrix entry or closure evidence are
+> retained future inputs, not unfinished PRD6 commitments.
 
 ## 1. Accepted Active Work
 
@@ -33,13 +36,13 @@
 | P6-TENANT-001 | Enforce organization ownership on key/user/project/project-policy operations | prevents accepted-scope cross-tenant access and malformed policy influence | CI verified by PR #140; preserve regressions | P0 |
 | P6-IDEM-001 | Separate server operation, client idempotency, trace/span, workflow and Agent identities | prevents cross-tenant/retry/child charge collisions | CI verified / closed; preserve Scheme A and the non-rolling migration boundary | P0 |
 | P6-BILL-003 | Pool-safe reservation and single durable terminal state | prevents pool starvation, double terminal transitions and free delivered output | financial state migration, recovery and invariant tests | P0 |
-| P6-AUTH-001 | Versioned user/project/key/role revocation | bounds stale authority across replicas | revocation SLO, cache and outage posture | P0 |
+| P6-AUTH-001 | Versioned native user/project/key/role revocation | bounds stale authority across replicas | Not an accepted PRD6 matrix row; Agent capability/root-authority refresh is closed by P6-F19, while native JWT/API-key epoch/outage semantics require a future decision without implying an IAM rewrite | P0 future input |
 | P6-ROUTE-002 | Retry classification and response preservation | prevents unsafe/expensive retry and misleading 502 | CI verified / closed by PR #156, merge `f6f075a` and post-merge main run `29158395734` | P0 |
 | P6-ROUTE-003 | Embeddings failover parity | removes endpoint reliability asymmetry | CI verified / closed by PR #157, merge `36f736c` and post-merge main run `29159155254` | P0 |
 | P6-CONFIG-001 | Typed effective routing and budget-alert truth | operator control, explainability and tenant-safe alert scope | CI verified / closed by PR #158 / `ca02ecb` and post-merge main run `29160494169`; preserve `effective-config.v1`, routing/budget PostgreSQL gates and retired global-key behavior | P0 |
 | P6-BILL-002 | Multiplier-aware freeze/settle correctness | prevents uncollected cost | CI verified / closed by PR #160 / merge `15ea8a2` / main run `29161527988`: P6-F18A freezes the effective multiplier price; the dedicated PostgreSQL gate proves insufficient rejection without residue, exact 32-way settlement with zero uncovered cost and idempotent cancel/refund | P0 |
 | P6-CAP-001 | Short, attenuating Agent capability and ancestor budget | avoids shared-secret/per-child-key explosion and quota amplification | CI verified / closed: P6-F19A PR #164/main run `29170507588` proves lifecycle, topology, revocation and trusted identity; P6-F19B PR #166/main run `29171807693` proves per-ancestor cost/token reservation and actual settlement plus exact RPM/RPS and shared concurrency. P6-F20, P6-F07 and P6-F21 are independently closed | P1 |
-| P6-LIMIT-002 | Shared RPM/RPS/TPM/concurrency policy | enterprise isolation/capacity | CI verified / closed by PR #168, merge `2610e317` and main run `29174001859`: explicit selectors, exact shared limits, shadow/enforce, bounded failure semantics, version evidence, UI and guarded migration pass; P6-F21 and P6-F20 are separately closed, while D6-10/P6-F11 remain separate | P1 |
+| P6-LIMIT-002 | Shared RPM/RPS/TPM/concurrency policy | enterprise isolation/capacity | CI verified / closed by PR #168, merge `2610e317` and main run `29174001859`: explicit selectors, exact shared limits, shadow/enforce, bounded failure semantics, version evidence, UI and guarded migration pass; P6-F21/P6-F20 and D6-10/P6-F11 were closed separately | P1 |
 | P6-ROUTE-004 | Routing Policy V1 | predictable priority/weight/retry/failover | CI verified / closed: deterministic weighted snapshots, renewable probe lease, epoch CAS, preview/evidence and guarded rollback passed PR #172 and post-merge main CI | P1 |
 | P6-DURABLE-001 | Durable minimal usage/finalization and bounded evidence workers | prevents post-delivery revenue loss and evidence self-DDoS | CI verified / closed by PR #177 and post-merge main run `29194150134`; preserve D6-12 boundary | P1 |
 | P6-WORK-001 | Weighted workload admission | prevents long streams starving short work and replica-multiplied quotas | CI verified / closed by PR #170 exact-head run `29176160987`, merge `04af91f` and post-merge main run `29176358459`: server-derived classes, exact leases, bounded fair/per-org queues, crash/fault/config behavior, UI/OpenAPI and real Redis pass. Media remains a future async job-plane boundary | P1 |
@@ -47,7 +50,7 @@
 | P6-COST-001 / P6-F40 | Provider cost state, prepaid top-up and bounded reconciliation | prevents silent subsidy and ambiguous retry/cancel loss | CI verified / closed across PR #183/#184/#186; preserve provider-neutral/no-debt/no-silent-unblock boundary | P0 |
 | P6-USAGE-AUTH-001 / P6-F41 | Typed usage and delivery authority | prevents unknown-as-zero settlement and false delivery/provider-cost equivalence | CI verified / closed by PR #187 / run `29229320432`; preserve no-raw-response and customer/provider-ledger separation | P0 |
 | P6-GUARD-001 | Guardrail Kernel | enterprise safety and PII controls | CI verified / closed by PR #188 exact implementation/test head `76f95ed` / run `29236987646`; preserve D6-15 and the separate P6-F11 streaming boundary | P1 |
-| P6-STREAM-001 | Streaming interception and termination | limits unsafe live disclosure | PR #189 exact implementation/test head `8ed6a83` passed required run `29245696926`: 200 ms/4 KiB enforcement, no accepted-stream retry/failover, monotonic three-layer extension and checkpointed interruption; evidence-update head, merge and post-merge `main` CI pending; P6-STREAM-002A transport prerequisite is CI verified | P1 |
+| P6-STREAM-001 | Streaming interception and termination | limits unsafe live disclosure | CI verified / closed by PR #189: implementation head `8ed6a83` / run `29245696926`, final head `3d4c61b` / run `29246431182`, merge `4c78a5b7` / main run `29246975012`; 200 ms/4 KiB enforcement, no accepted-stream retry/failover, monotonic three-layer extension and checkpointed interruption pass; P6-STREAM-002A transport prerequisite was closed separately | P1 |
 
 ## 3. D6-08 Accepted Administrator Integrity Queue
 
@@ -124,10 +127,11 @@ cleanup. Those boundaries are not implied by its local tenant-isolation result.
 
 These are evidence needs, not automatic source implementation:
 
-The User directed on 2026-07-11 that this queue is executed only after PRD6
-source closeout and with its existing item-specific authorization. The queue is
-retained, not cancelled or satisfied. The previously accepted 2026-07-17 Gate A
-file deadline is not postponed by this sequencing decision.
+The User directed on 2026-07-11 that this queue requires both PRD6 source
+closeout and its existing item-specific authorization. PRD6 is now closed, but
+the User has kept this queue for later; closeout is not execution authorization.
+The queue is retained, not cancelled or satisfied. The previously accepted
+2026-07-17 Gate A file deadline is not postponed by this sequencing decision.
 
 - P5-F35 concrete target route/failover detail;
 - migration `000019` down path;

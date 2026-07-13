@@ -8,7 +8,7 @@
 |------|------|
 | `docs/PROJECT-HANDOFF.md` | First-read handoff for agents |
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
-| `docs/planning/PRD6-START-HERE.md` | PRD6 decision state, closure guard, baseline and read order |
+| `docs/planning/PRD6-START-HERE.md` | PRD6 Accepted Scope Complete state, preserved future boundaries and read order |
 | `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md` | PRD6 Git/CI/test/X-Insight/code-finding baseline evidence |
 | `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md` | PRD6 source-backed 100x, Agent fan-out, billing, routing, streaming and multimodal anti-pattern evidence |
 | `docs/ops/evidence/PRD6-B0B-P6F16-tenant-isolation-local-20260711.md` | P6-F16 patch contract, regression-before-fix and local migrated-database evidence |
@@ -25,7 +25,7 @@
 | `docs/ops/evidence/PRD6-B0C-P6F04-embeddings-failover-local-20260711.md` | P6-F04 Embeddings bounded failover, billing, trace and malformed-response evidence |
 | `docs/ops/evidence/PRD6-B0C-P6F05-routing-config-truth-local-20260711.md` | P6-F05 typed effective routing plus project budget-alert contract and PostgreSQL transition/scope evidence |
 | `docs/ops/evidence/PRD6-B0C-P6F06-multiplier-freeze-local-20260711.md` | P6-F06 multiplier-aware insufficient-funds, concurrent exact-settlement and cancel/refund PostgreSQL evidence |
-| `docs/ops/evidence/PRD6-B0C-P6STREAM002A-stream-transport-local-20260712.md` | P6-STREAM-002A typed frame/timeout/writer/body/finalization evidence; dynamic reservation and semantic interception remain open |
+| `docs/ops/evidence/PRD6-B0C-P6STREAM002A-stream-transport-local-20260712.md` | P6-STREAM-002A typed frame/timeout/writer/body/finalization prerequisite evidence; dynamic reservation and semantic interception were later closed by P6-F11 |
 | `docs/ops/evidence/PRD6-B1-P6F19A-agent-capability-kernel-local-20260712.md` | P6-F19A explicit Agent exchange/delegation, five-minute token, refresh/revocation, bounded authority and 100-child local plus PR #164/post-merge CI evidence |
 | `docs/ops/evidence/PRD6-B1-P6F19B-agent-ancestor-budget-local-20260712.md` | P6-F19B shared ancestor cost/token/rate/concurrency local, PR #166 and post-merge CI evidence; closes P6-F19 while preserving P6-F20/P6-F21 boundaries |
 | `docs/ops/evidence/PRD6-B1-P6F07-distributed-limit-policy-local-20260712.md` | P6-F07 shared selector RPM/RPS/TPM/concurrency, bounded failure, UI/control, migration and PR #168/post-merge CI closure evidence |
@@ -38,16 +38,18 @@
 | `docs/ops/evidence/PRD6-B3H-P6F40C-provider-key-reconciliation-local-20260713.md` | D6-13/D6-14 affected-key paid-admission block, platform-only amount-free reconciliation, tenant/concurrency/crash-gap/migration proof and current local/CI boundary |
 | `docs/ops/evidence/PRD6-B3H-P6F41-usage-delivery-integrity-local-20260713.md` | D6-13/D6-14 typed explicit-zero/missing usage, funded estimates, local-delivery charge gate, interrupted-stream delivered counter, metadata-only receipt and current local/CI boundary |
 | `docs/ops/evidence/PRD6-B4-P6F10-guardrail-kernel-local-20260713.md` | D6-15/P6-F10 immutable policy chain, bounded detectors/payloads, no-delivery cost holds, tenant-safe control/UI, guarded migration and PR #188 exact-head CI closure evidence |
+| `docs/ops/evidence/PRD6-B5-P6F11-stream-policy-termination-local-20260713.md` | D6-16/P6-F11 enforced stream buffering, strict inspection, termination, reservation extension, checkpoint/recovery and PR #189/main CI closure evidence |
+| `docs/ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md` | PRD6 27/27 accepted-row closeout, repository/CI evidence level, non-claims and preserved PRD7/target boundaries |
 | `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` | Official competitor HA patterns, current UniRouter cluster facts, Four Quadrants and accepted D6-12 stream/HA boundary |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | Source-backed audit/reconciliation/correlation/UI/architecture/upgrade findings, Four Quadrants and PRD6 batches |
 | `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md` | Accepted customer-revenue/provider-COGS boundary, competitor and supplier billing evidence, Four Quadrants, PRD6 non-claims and future cost/metering/media candidates |
-| `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | PRD7 candidate split; first future direction selected, all implementation deferred until PRD6 closeout |
+| `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | PRD7 candidate split; first future direction selected, implementation remains later after PRD6 closeout and still requires its own authorization |
 | `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` | Accepted future Cache Service direction, service boundary, capacity planning triggers, SaaS cell reuse and non-authorization guardrails |
 | `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md` | Version-fixed competitor audit, Four Quadrants and priority matrix |
 | `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md` | Third-round Four Quadrants, CARTA/shadow/collusion ownership, Killer Features and candidate acceptance rows |
 | `docs/planning/prd6-adaptive-trust-hardening/` | Evidence-bound adaptive-trust structural proposal, JSON, diagrams and option comparison; no implementation plan until selection |
-| `docs/PRD-Phase6.md` | PRD6 accepted MVP, D6-10 stream budget and D6-11 Agent lifecycle contracts, plus separately proposed/deferred P6-F22-P6-F31 rows |
-| `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` | PRD6 accepted/proposed/external/target-evidence truth |
+| `docs/PRD-Phase6.md` | PRD6 Accepted Scope Complete, D6-10/D6-16 stream and D6-11 Agent lifecycle contracts, plus separately proposed/deferred rows |
+| `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` | PRD6 authoritative 27/27 accepted-row closure plus proposed/external/target-evidence truth |
 | `docs/planning/PRD6-IMPLEMENTATION-PLAN.md` | PRD6 batch order, risk gates, verification and rollback |
 | `docs/planning/PRD6-BACKLOG.md` | PRD6 classified candidate queue and decision register |
 | `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md` | Answered X-Insight runtime request, accepted v1 sidecar boundary, UniRouter contract lock, and PRD5 completion classification |
@@ -159,7 +161,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | `docs/ops/PRD1-REMAINING-ACCEPTANCE-PACK.md` | Current local evidence and external acceptance queue |
 | `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` | PRD4 completed acceptance matrix and evidence rules |
 | `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` | PRD5 completed acceptance matrix and evidence rules |
-| `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` | Current PRD6 accepted/proposed/external/target-evidence truth |
+| `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` | Current PRD6 Accepted Scope Complete and proposed/external/target-evidence truth |
 | `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md` | Current PRD6 local baseline and code-finding evidence |
 | `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md` | Current PRD6 scalability/anti-pattern audit; findings remain source/local, not 100x or target verified |
 | `docs/ops/evidence/PRD6-B0B-P6F33-notification-tenant-isolation-local-20260711.md` | Current P6-F33 local plus PR/post-merge CI evidence; target cutover not executed |

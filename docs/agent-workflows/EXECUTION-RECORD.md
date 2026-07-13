@@ -1,18 +1,18 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 5 P6-F11 Streaming Policy And Termination
+**Batch:** PRD6 Accepted Scope Closeout
 **Owner:** Codex
-**Risk:** R3/R4 live content disclosure, hard budget, customer charging and process-crash recovery
-**Status:** D6-16 contract accepted; exact implementation/test head passed required PR CI, merge pending
-**Baseline:** `main` / `origin/main` / `f9925779f1da7681b07282be5d500773a687d3b9`
-**Branch:** `codex/prd6-stream-policy-termination`
-**PR:** #189
+**Risk:** documentation truth, evidence-level promotion and phase-boundary leakage
+**Status:** Accepted Scope Complete at repository/CI evidence; closeout-doc PR pending
+**Baseline:** `main` / `origin/main` / `4c78a5b7fa24acc2570478aaa61dcf12ba2ed4db`
+**Branch:** `codex/prd6-closeout`
+**PR:** pending
 **Decision:** D6-16 S-A accepted by User on 2026-07-13
-**Next gate:** evidence-update exact-head required CI, merge and post-merge `main` CI
+**Next gate:** closeout-doc required CI, merge and post-merge `main` CI
 **Previous batch:** P6-F41 PR #187 and P6-F40 PR #183/#184/#186 are CI verified / closed; P6-F20 PR #177 and post-closeout fixture-only PR #180/#181 are CI verified / closed
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
-## Current P6-F11 Scope
+## Closed P6-F11 Scope
 
 1. Add a normalized stream-output stage with synchronous 200 ms/4 KiB
    micro-buffering and detector-declared bounded cross-chunk context.
@@ -68,8 +68,8 @@
 - Local Docker was not run because this host has no `docker` executable. PR
   #189 exact implementation/test head `8ed6a83` passed required run
   `29245696926`: Backend Tests, Frontend Build and Docker Build, including both
-  explicit P6-F11 gates. The evidence-update head, merge and post-merge `main`
-  CI remain pending.
+  explicit P6-F11 gates. Final evidence head `3d4c61b` passed run `29246431182`;
+  merge `4c78a5b7` passed post-merge main run `29246975012`.
 - Evidence:
   `docs/ops/evidence/PRD6-B5-P6F11-stream-policy-termination-local-20260713.md`.
 
@@ -280,7 +280,8 @@
 - large/over-limit/read-failure fixtures prove bounded frames, partial-output
   settlement and no fabricated success/`[DONE]`;
 - PR #162 exact-head and post-merge main Backend/Frontend/Docker CI passed;
-- D6-10 dynamic reservation extension and P6-F11 semantic interception remain;
+- D6-10 dynamic reservation extension and P6-F11 semantic interception were
+  later closed by PR #189; this transport slice did not claim them early;
 - evidence: `docs/ops/evidence/PRD6-B0C-P6STREAM002A-stream-transport-local-20260712.md`.
 
 ## Previous P6-F06 Behavior Change
@@ -812,8 +813,9 @@ compatibility and `/v1/models` semantics are unchanged.
 No deployment, target mutation/probe, real or paid request, credential change,
 exporter/outbox, deletion or expanded data exchange occurred. Migration down,
 TLS 443 behavior and concrete target route/failover detail remain target-evidence
-debt and, by User decision, are executed only after PRD6 source closeout with
-their existing authorizations. PRD7 implementation is also deferred; historical
+debt and, by User decision, stay later and require their existing item-specific
+authorizations even though PRD6 source scope is now closed. PRD7 implementation
+is also deferred; historical
 branches remain retained. The 2026-07-17 Gate A exact-path deadline is unchanged.
 Unimplemented X-Insight runtime capabilities remain external.
 

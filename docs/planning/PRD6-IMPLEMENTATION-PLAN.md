@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-13
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14/D6-15/D6-16 accepted; P6-F03-P6-F10, P6-F16-P6-F21, P6-F32-P6-F41 and P6-STREAM-002A are CI verified / closed; P6-F11 remains in progress
+> Status: Accepted Scope Complete; all 27 accepted rows are repository/CI verified or closed
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -19,13 +19,14 @@ Batch 0 baseline and scope evidence
   -> Batch 4 Guardrail Kernel
   -> Batch 5 Streaming policy and termination
   -> Batch 6 selected advanced capability, if separately accepted
-  -> Batch 7 separately authorized target evidence, explicitly after PRD6 source closeout
+  -> Later target evidence only with item-specific User authorization; closeout itself grants none
 ```
 
-Batch 0A was safe to execute before the scope gate. D6-01 and D6-02 are now
-accepted, so Batches 0B through 5 are authorized repository scope subject to
+Batch 0A was safe to execute before the scope gate. D6-01 and D6-02 authorized
+Batches 0B through 5 as repository scope; those batches are now closed through
 their prerequisites, independently reviewable PRs, local verification and
-required CI. No scope decision grants target/deployment/data/cost authorization.
+required CI. No scope decision or phase closeout grants target/deployment/data/
+cost authorization.
 
 ### Current Accepted-Scope Accounting
 
@@ -197,8 +198,8 @@ Order within the batch:
 5. handle stream Scanner errors, response-body lifetime, single-writer/flush and
    timeout semantics safely — P6-STREAM-002A is CI verified / closed by PR #162,
    merge `7737f8b` and post-merge main run `29168586124`;
-   reservation-aware extension and the P6-F11 semantic policy hook passed PR
-   #189 exact implementation/test head required CI and await merge/post-merge;
+   reservation-aware extension and the P6-F11 semantic policy hook closed by
+   PR #189, merge `4c78a5b7` and post-merge main run `29246975012`;
 6. preserve the P6-F35 strict-version sensitive-word reload and P6-F05 typed
    configuration/budget-alert regressions.
 
@@ -400,11 +401,12 @@ retry/failover after an accepted upstream stream, safe-delivery-only customer
 settlement, and explicit checkpointed interruption rather than replay or
 transparent migration.
 
-**Status:** PR #189 exact implementation/test head `8ed6a83` passed required run
-`29245696926`: Backend Tests, Frontend Build and Docker Build, including the
-explicit stream contract and migration rollback gates. Evidence-update
-exact-head CI, merge and post-merge `main` CI remain pending. No target, real
-detector/provider or production claim is made.
+**Status:** CI verified / closed. PR #189 exact implementation/test head
+`8ed6a83` passed required run `29245696926`, final evidence head `3d4c61b`
+passed run `29246431182`, and squash merge `4c78a5b7` passed post-merge main run
+`29246975012`. Backend Tests, Frontend Build and Docker Build, including the
+explicit stream contract and migration rollback gates, are green. No target,
+real detector/provider or production claim is made.
 
 Deliverables:
 
