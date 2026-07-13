@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-13
-> Status: Accepted Scope Complete; all 27 accepted rows are repository/CI verified or closed
+> Status: Accepted Scope Complete; all 27 accepted rows are repository/CI verified or closed; selected ECS deployment/UI evidence is Target verified
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -48,6 +48,14 @@ recommended MVP boundary and policy-specific failure posture on 2026-07-11:
 - PRD5 remains `Accepted Scope Complete` and is not reopened by PRD6;
 - a PRD5 backlog or competitor feature is an input, not an automatic PRD6
   commitment.
+
+After source closeout, the User separately authorized a 2026-07-13 update of
+the existing development/test ECS and authenticated UI inspection. The exact
+deployment, migration reconciliation, P6-E01 request-detail readback, cleanup
+and remaining target non-claims are recorded in
+`docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md`.
+This does not authorize or satisfy migration-down/TLS, real provider/SSO,
+capacity/HA, PRD7 or Production verified evidence.
 
 ## Read Order
 
@@ -101,6 +109,7 @@ recommended MVP boundary and policy-specific failure posture on 2026-07-11:
 48. `docs/ops/evidence/PRD6-B4-P6F10-guardrail-kernel-local-20260713.md`
 49. `docs/ops/evidence/PRD6-B5-P6F11-stream-policy-termination-local-20260713.md`
 50. `docs/ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md`
+51. `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md`
 
 PRD5 evidence remains under its existing paths. Do not rewrite it as PRD6
 evidence.
@@ -215,7 +224,8 @@ PRD5's 36 acceptance rows each have completion evidence or an explicit
 defer/reject/prerequisite decision. The following are not PRD5 source-code
 completion defects and must not be used to reopen PRD5:
 
-- P5-F35 concrete target route/failover detail;
+- P5-F35 concrete target route/failover detail, now separately Target verified
+  for one historical request under P6-E01 without becoming a PRD5 source gap;
 - migration down, TLS 443, real upstream and real SSO target evidence;
 - X-Insight capabilities beyond the accepted v1 receipt sidecar;
 - previously deferred Scheduler V2, plugin/marketplace, IAM rewrite, managed

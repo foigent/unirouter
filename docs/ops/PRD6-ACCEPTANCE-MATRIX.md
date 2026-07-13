@@ -93,15 +93,18 @@ semantic change, platform selector UI or target cleanup.
 ## Target-Evidence Rows
 
 The User directed on 2026-07-11 that P6-E01 through P6-E04 require both PRD6
-source closeout and later, item-specific authorization. PRD6 is now closed, but
-closeout grants no target execution authority and the queue remains later work.
-This sequencing decision does not satisfy, cancel or promote any evidence row. The
-previously accepted 2026-07-17 Gate A file-retention/delete deadline is a
-separate timed obligation and is not moved by this queue decision.
+source closeout and later, item-specific authorization. PRD6 closeout itself
+granted no target execution authority. On 2026-07-13 the User separately
+authorized updating the existing ECS and inspecting the authenticated PRD6 UI.
+That narrow execution satisfied P6-E01 by opening one existing historical
+request's route/failover detail without a new provider call. It did not authorize
+or promote P6-E02 through P6-E04. The previously accepted 2026-07-17 Gate A
+file-retention/delete deadline is a separate timed obligation and is not moved
+by this target execution.
 
 | ID | Matter | Owner | Source-code status | Required evidence |
 |----|--------|-------|--------------------|-------------------|
-| P6-E01 | P5-F35 concrete target route/failover detail | Authorized target operator | PRD5 source scope complete; CI verified | one separately authorized target request detail |
+| P6-E01 | P5-F35 concrete target route/failover detail | Authorized target operator | Target verified for one selected historical request on 2026-07-13 | `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md`; no new paid request or capacity claim |
 | P6-E02 | Migration down and TLS 443 | Authorized target operator | Not a confirmed source defect | rollback/HTTPS run evidence on selected target |
 | P6-E03 | Real upstream and enterprise SSO | User-selected provider/IdP owner | Harness exists; credentials/environment absent | separately authorized real integration evidence |
 | P6-E04 | Multi-instance load, capacity and HA/DR | Target infrastructure owner | Product/target prerequisite not selected | selected topology, load model, fault/restore evidence |

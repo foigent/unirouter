@@ -1,17 +1,40 @@
 # Current Execution Record
 
-**Batch:** PRD6 Accepted Scope Closeout
+**Batch:** PRD6 Target Deployment And Authenticated UI Verification
 **Owner:** Codex
-**Risk:** documentation truth, evidence-level promotion and phase-boundary leakage
-**Status:** Accepted Scope Complete at repository/CI evidence
-**Baseline:** `main` / `origin/main` / `4c78a5b7fa24acc2570478aaa61dcf12ba2ed4db`
-**Branch:** `codex/prd6-closeout`
-**PR:** #190 (closeout-document publication)
-**Decision:** D6-16 S-A accepted by User on 2026-07-13
-**Publication evidence:** exact initial closeout head `87c462a9d17ec1ffc776caeb040435aab8297120` passed required run `29248279987`; any final documentation-only head must also pass required CI before merge
-**Next product gate:** none within accepted PRD6; PRD7 and target evidence require separate authorization
+**Risk:** target migration truth, stable/canary cutover, authenticated UI evidence, temporary-account cleanup and evidence-level leakage
+**Status:** Target verified for selected deployment/UI surfaces; PRD6 remains Accepted Scope Complete
+**Baseline:** `main` / `origin/main` / `f4fe41ddbe10a7f5c6531084bf9aaab9d6299924`
+**Branch:** `codex/prd6-target-evidence-closeout`
+**PR:** Runtime corrections #191 and #192; target-evidence publication PR follows this record
+**Decision:** User separately authorized updating the existing ECS and checking the PRD6 UI on 2026-07-13
+**Publication evidence:** PR #191 exact head `046033a` passed required run `29264998431`, merged as `581e9d7`, and passed main run `29265887632`; PR #192 exact head `ad1b012` passed required run `29270879406`, merged as `f4fe41d`, and passed main run `29271703816`
+**Next product gate:** choose the shared target's frontend label (`开发环境` or `预发环境`); PRD7, P6-E02 through P6-E04 and Production evidence remain later
 **Previous batch:** P6-F41 PR #187 and P6-F40 PR #183/#184/#186 are CI verified / closed; P6-F20 PR #177 and post-closeout fixture-only PR #180/#181 are CI verified / closed
-**Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
+**Previous phase:** PRD5 Accepted Scope Complete; its Batch 1Z historical target backend was `95d1da9` / PR #133 and is now superseded on the same target by this PRD6 deployment
+
+## Current Target Result
+
+1. Backed up the target PostgreSQL database, verified the custom-format catalog
+   and retained prior stable/canary/frontend images under rollback tags.
+2. Applied and reconciled PRD6 migrations `000020` through `000034`; stable and
+   canary now run exact backend commit `ce9307a` and report healthy PostgreSQL
+   and Redis dependencies.
+3. Verified authenticated Dashboard, shared limits, content safety, channels,
+   reconciliation, request trace, status and API docs without creating a policy
+   or sending a new provider/detector request.
+4. Opened one historical request's seven-event request/billing/routing/provider
+   trace and route/failover summary, satisfying P6-E01 without a paid rerun.
+5. PR #191 removed the explicit `/vite.svg` 404 and documented the
+   self-transactional migration rehearsal boundary; PR #192 then removed the
+   browser's implicit `/favicon.ico` 404 with an inline icon. The exact
+   `f4fe41d` frontend cutover and QA cleanup are recorded in
+   `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md`.
+
+Audit taxonomy/name/date UX is target-confirmed but was not one of the 27
+accepted PRD6 rows; it remains in the PRD7 `UI 与可运营性` candidate. The
+target's `环境未配置` badge is also truthful until an explicit frontend
+environment label is selected.
 
 ## Closed P6-F11 Scope
 
@@ -42,8 +65,10 @@
   runtime/conformance packs, live billing connectors, controlled bill import,
   generalized units, async media and managed billing remain future product
   candidates.
-- No deployment, target mutation, real/paid request, credential or production
-  data access.
+- No real/paid request, persistent service/provider credential change,
+  production data access, data-scope expansion or target mutation beyond the
+  explicitly authorized release, migration reconciliation and temporary-QA
+  lifecycle recorded above.
 - No age-based guess for a process that dies while an attempt still appears
   `dispatch_started`/`response_accepted`; a future lease/heartbeat design must
   distinguish failure from a valid hours-long stream.
@@ -811,12 +836,13 @@ P6-F36 preserves P6-F16 and does not add a migration, RLS, composite/alias
 foreign keys, a platform selector UI or target cleanup. Unregistered-model
 compatibility and `/v1/models` semantics are unchanged.
 
-No deployment, target mutation/probe, real or paid request, credential change,
-exporter/outbox, deletion or expanded data exchange occurred. Migration down,
-TLS 443 behavior and concrete target route/failover detail remain target-evidence
-debt and, by User decision, stay later and require their existing item-specific
-authorizations even though PRD6 source scope is now closed. PRD7 implementation
-is also deferred; historical
+At this Accepted Scope Closeout checkpoint, no deployment, target
+mutation/probe, real or paid request, credential change, exporter/outbox,
+deletion or expanded data exchange had occurred. The later separately
+authorized target run satisfied the concrete route/failover detail for one
+historical request under P6-E01; migration down and TLS 443 remain later and
+require their existing item-specific authorizations even though PRD6 source
+scope is closed. PRD7 implementation is also deferred; historical
 branches remain retained. The 2026-07-17 Gate A exact-path deadline is unchanged.
 Unimplemented X-Insight runtime capabilities remain external.
 

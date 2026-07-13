@@ -1,8 +1,8 @@
 # UniRouter PRD6: Reliable MaaS Policy And Safety Plane
 
-> Version: 0.19
+> Version: 0.20
 > Date: 2026-07-13
-> Status: Accepted Scope Complete; all 27 accepted rows are repository/CI verified or closed; proposed/deferred rows remain not accepted
+> Status: Accepted Scope Complete; all 27 accepted rows are repository/CI verified or closed; selected ECS deployment/UI evidence is Target verified; proposed/deferred rows remain not accepted
 > Accepted implementation scope: P6-F03 through P6-F11, P6-F16 through P6-F21, P6-F32 through P6-F41
 > Innovation gate: P6-F23 through P6-F31 remain proposed/deferred
 
@@ -17,6 +17,13 @@ across replicas and Agent descendants.
 This is not a promise to match every LiteLLM or New API feature. It is a
 positioning-led scope proposal based on the verified current repository and the
 version-fixed competitor audit.
+
+The separately authorized 2026-07-13 ECS update verifies the accepted PRD6
+release, authenticated control/UI surfaces and P6-E01 detail for one historical
+request. It does not promote the phase to Production verified or satisfy
+migration-down/TLS, real provider/SSO, capacity/HA or real policy-enforcement
+evidence. See
+`docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md`.
 
 ## 2. Non-Negotiable Starting State
 

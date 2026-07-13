@@ -40,6 +40,7 @@
 | `docs/ops/evidence/PRD6-B4-P6F10-guardrail-kernel-local-20260713.md` | D6-15/P6-F10 immutable policy chain, bounded detectors/payloads, no-delivery cost holds, tenant-safe control/UI, guarded migration and PR #188 exact-head CI closure evidence |
 | `docs/ops/evidence/PRD6-B5-P6F11-stream-policy-termination-local-20260713.md` | D6-16/P6-F11 enforced stream buffering, strict inspection, termination, reservation extension, checkpoint/recovery and PR #189/main CI closure evidence |
 | `docs/ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md` | PRD6 27/27 accepted-row closeout, repository/CI evidence level, non-claims and preserved PRD7/target boundaries |
+| `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md` | Authorized PRD6 ECS migration/deployment, stable/canary runtime, authenticated UI, selected historical route/failover readback, cleanup and remaining target non-claims |
 | `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` | Official competitor HA patterns, current UniRouter cluster facts, Four Quadrants and accepted D6-12 stream/HA boundary |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | Source-backed audit/reconciliation/correlation/UI/architecture/upgrade findings, Four Quadrants and PRD6 batches |
 | `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md` | Accepted customer-revenue/provider-COGS boundary, competitor and supplier billing evidence, Four Quadrants, PRD6 non-claims and future cost/metering/media candidates |
