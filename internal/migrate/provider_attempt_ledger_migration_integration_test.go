@@ -57,6 +57,10 @@ func TestP6F40BProviderAttemptLedgerMigrationUpDownGuardAndRollForward(t *testin
 
 	downSQL, err := os.ReadFile(filepath.Join(migrationsDir, "000029_prd6_provider_attempt_ledger.down.sql"))
 	require.NoError(t, err)
+	providerReconciliationDownSQL, err := os.ReadFile(filepath.Join(migrationsDir, "000030_prd6_provider_cost_reconciliation.down.sql"))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(providerReconciliationDownSQL))
+	require.NoError(t, err, "successor reconciliation schema must be removed before the attempt ledger")
 	_, err = pool.Exec(ctx, string(downSQL))
 	require.NoError(t, err, "an unused provider-attempt ledger permits controlled rollback")
 

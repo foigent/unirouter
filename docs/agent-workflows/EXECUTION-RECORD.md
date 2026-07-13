@@ -1,39 +1,39 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 3H P6-F40B Provider Attempt Ledger
+**Batch:** PRD6 Batch 3H P6-F40C Provider-Key Reconciliation
 **Owner:** Codex
-**Risk:** R3 provider dispatch, financial retry/cancel authority, billing decorators and migration safety
-**Status:** P6-F40B CI verified; P6-F40 remains in progress through P6-F40C
-**Baseline:** `main` / `origin/main` / `060a71458f99c5218dbdeb656a30367bb0944a25`
-**Branch:** `codex/prd6-provider-attempt-ledger`
-**PR:** #184; exact implementation/test head `ac2bfb5`; required run `29209644118`
+**Risk:** R3/R4 paid admission, customer charging, operator authority and migration safety
+**Status:** P6-F40C and P6-F40 CI verified / closed
+**Baseline:** `main` / `origin/main` / `468969df16ee3fb142d04605af17ba615a56b8b7`
+**Branch:** `codex/prd6-provider-key-reconciliation`
+**PR:** #186; exact implementation/test head `49d740d`; required run `29224762127`
 **Decision:** D6-13/D6-14 accepted by User on 2026-07-13
-**Next gate:** P6-F40C affected-key block and explicit operator reconciliation
-**Previous batch:** P6-F40A PR #183 is CI verified; P6-F20 PR #177 and post-closeout fixture-only PR #180/#181 are CI verified / closed
+**Next gate:** P6-F41 typed usage/delivery authority
+**Previous batch:** P6-F40B PR #184 and P6-F40A PR #183 are CI verified; P6-F20 PR #177 and post-closeout fixture-only PR #180/#181 are CI verified / closed
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
-## Current P6-F40B Scope
+## Current P6-F40C Scope
 
-1. Persist a bounded PostgreSQL provider-attempt row before every Chat or
-   Embeddings network dispatch, with no prompt, response, credential or full
-   provider URL.
-2. Separate availability retryability from financial authority: only a durable
-   adapter-classified HTTP rejection may authorize existing bounded failover;
-   transport ambiguity never launches another paid attempt.
-3. Convert ambiguous transport, unusable 2xx and accepted-but-unsettled generic
-   cancellation into provider-cost pending rather than a refund.
-4. Link known settlement/funding cost and the terminal transaction to the
-   matching attempt in the wallet transaction; automatic recovery claims only
-   `billable_output` rows.
-5. Preserve the envelope through the production
-   `policybilling -> capbilling -> billing` decorator chain and add guarded
-   `000029` up/down/reverse-order migration proof.
+1. Block new paid Chat and Embeddings admission for the root key and its Agent
+   descendants only after an attempt durably enters explicit ambiguous,
+   unusable or funding-pending state; fail state reads closed.
+2. Keep ordinary in-flight dispatch/accepted work concurrent rather than
+   serializing an entire key; retain request-scoped duplicate-attempt authority.
+3. Add platform-only bounded pending-list and collect/refund/subsidy APIs. The
+   mutation accepts no amount and stores the authenticated actor, reason and
+   evidence in requested/completed phases.
+4. Allow collect only from stored authoritative upstream usage, immutable
+   customer price and an existing billable-output marker; undelivered or
+   estimated usage cannot create customer debt.
+5. Release only the existing hold for refund/subsidy, require a known bounded
+   cost for subsidy, converge one terminal under concurrency and recover the
+   collect completion crash gap from exact durable evidence.
+6. Add guarded migration `000030` and API/error-documentation/route-authority
+   coverage without storing content, credentials or provider bills.
 
 ## Current Non-Goals
 
-- No affected-key admission block or collect/refund/bounded-subsidy operator
-  action in this slice; those remain P6-F40C.
-- No P6-F41 usage authority/delivery receipt, P6-F10 Guardrail or P6-F11 stream
+- No P6-F41 typed usage authority/delivery receipt, P6-F10 Guardrail or P6-F11 stream
   semantic implementation.
 - No negative customer debt, automatic platform subsidy, raw response storage,
   Cache Service or separate Cost Control Service.
@@ -44,34 +44,51 @@
   candidates.
 - No deployment, target mutation, real/paid request, credential or production
   data access.
+- No age-based guess for a process that dies while an attempt still appears
+  `dispatch_started`/`response_accepted`; a future lease/heartbeat design must
+  distinguish failure from a valid hours-long stream.
+- No dedicated FinOps workflow UI, supersession workflow, provider COGS import
+  or supplier connector; those remain future D7-COST candidates.
 
 ## Current Focused Verification
 
-- P6-F40B billing/gateway/decorator race gate: `PASS`, including
-  durable-before-dispatch ordering, bounded persistence failure, 24-way
-  completion, rejected failover,
-  ambiguous no-retry/no-cancel, unusable 2xx, accepted-response cancel guard,
-  atomic settle/funding evidence and decorator pass-through.
-- `000028`/`000029` integration up/down/refused-down/reverse-order/roll-forward
-  tests: `PASS`.
+- P6-F40C billing/admin/middleware/route race gate: `PASS`, including amount
+  rejection, delivery/usage authority gate, insufficient-funds replay,
+  refund/subsidy, 32-way one-terminal, tenant isolation, root/Agent key block,
+  ordinary in-flight concurrency and collect crash-gap recovery.
+- `000030` integration up/down/refused-down/roll-forward and race test: `PASS`.
 - `go test ./... -count=1`, `go vet ./...` and command-contract tests: `PASS`.
 - Frontend type-check, 29 files / 144 tests and production build: `PASS`.
 - `git diff --check`: `PASS`.
-- PR #184 exact implementation/test head `ac2bfb5` required run
-  `29209644118`: Backend Tests, Frontend Build and Docker Build `PASS`,
-  including both explicit P6-F40B PostgreSQL/race gates.
-- Evidence: `docs/ops/evidence/PRD6-B3H-P6F40B-provider-attempt-ledger-local-20260713.md`.
+- PR #186 exact implementation/test head `49d740d` required run
+  `29224762127`: Backend Tests, Frontend Build and Docker Build `PASS`,
+  including the explicit P6-F40C race/migration gates and predecessor rollback
+  order. The first run's unrelated `limitpolicy` flake passed 30 local repeats
+  and a no-code failed-job rerun; the later predecessor test gap was corrected
+  before the final green run.
+- Evidence: `docs/ops/evidence/PRD6-B3H-P6F40C-provider-key-reconciliation-local-20260713.md`.
 
 ## Current Stop And Rollback Conditions
 
-- Stop if any possible paid dispatch occurs before a durable attempt row, a
-  transport ambiguity launches failover, a non-rejected attempt becomes
-  ordinarily cancellable, or settlement and attempt cost/receipt diverge.
+- Stop if explicit provider-cost pending fails to block the affected key, normal
+  in-flight work serializes the key, a caller-supplied/aggregate amount creates
+  customer debt, an undelivered response can collect, tenant scope widens, or
+  concurrent/crash recovery creates a second terminal effect.
 - Repository rollback requires a new reviewed PR. Migration down is allowed
-  only before provider-attempt evidence exists; `000028` down requires `000029`
-  down first. Evidence-bearing rollback refuses destructive change.
-- A target rollout must drain old binaries before migration `000029` becomes
+  only before reconciliation evidence, reconciled attempts or dependent
+  terminal payloads exist. Evidence-bearing rollback refuses destructive change.
+- A target rollout must drain old binaries before migration `000030` becomes
   the active writer contract; mixed-version financial safety is not claimed.
+
+## Previous P6-F40B Behavior Change
+
+1. Persist bounded provider-attempt identity before paid Chat/Embeddings
+   dispatch and authorize retry only from durable provider rejection.
+2. Keep ambiguous/unusable/accepted-unsettled liability non-cancellable and
+   atomically link known cost plus terminal receipt to the attempt.
+3. PR #184 exact implementation/test head `ac2bfb5` and required run
+   `29209644118` passed all required jobs. Evidence:
+   `docs/ops/evidence/PRD6-B3H-P6F40B-provider-attempt-ledger-local-20260713.md`.
 
 ## Previous P6-F40A Behavior Change
 

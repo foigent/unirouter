@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-13
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F39 and P6-STREAM-002A are CI verified / closed; P6-F40A/P6-F40B are CI verified, P6-F40/P6-F11 remain in progress, and P6-F10/P6-F41 are not started
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F40 and P6-STREAM-002A are CI verified / closed; P6-F11 remains in progress, and P6-F10/P6-F41 are not started
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -31,12 +31,11 @@ required CI. No scope decision grants target/deployment/data/cost authorization.
 
 - 41 total `P6-F*` rows exist in the acceptance matrix;
 - 27 are accepted implementation scope;
-- 23 are CI verified / closed: P6-F01 through P6-F09, P6-F16 through P6-F21
-  and P6-F32 through P6-F39;
-- 4 accepted rows remain unclosed: D6-13 adds P6-F40/P6-F41; P6-F40 is in
-  progress, P6-F41 is not started, D6-12 assigns mid-stream crash semantics to
-  P6-F11, which is in progress through the P6-STREAM-002A transport
-  prerequisite, and P6-F10 is not started;
+- 24 are CI verified / closed: P6-F01 through P6-F09, P6-F16 through P6-F21
+  and P6-F32 through P6-F40;
+- 3 accepted rows remain unclosed: P6-F41 is not started; D6-12 assigns
+  mid-stream crash semantics to P6-F11, which is in progress through the
+  P6-STREAM-002A transport prerequisite; and P6-F10 is not started;
 - 14 rows are not accepted: P6-F12 through P6-F15 and P6-F22 through P6-F31;
 - `P6-TEST-DB-001` is a separate accepted engineering-integrity issue outside
   the feature-row count. PR #155, merge `4b18ace` and post-merge main run
@@ -316,8 +315,8 @@ authoritative usage, local delivery and the frozen customer price; provider COGS
 evidence cannot directly create customer debt. No silent platform subsidy,
 separate Cost Control Service, live billing connector, bill import or raw
 response retention is authorized.
-**Status:** P6-F40A/P6-F40B are CI verified; P6-F40 remains in progress
-through P6-F40C; P6-F41 is not started.
+**Status:** P6-F40A/P6-F40B/P6-F40C are CI verified; P6-F40 is closed. P6-F41
+is not started.
 
 Ordered slices:
 
@@ -330,11 +329,15 @@ Ordered slices:
    blocks ambiguous duplicate spend and replaces post-200 ordinary
    cancellation with provider-cost pending. PR #184 exact implementation/test
    head `ac2bfb5` passed required run `29209644118`.
-3. P6-F40C binds pending cost to the API key and adds tenant-safe,
-   platform-authorized operator reconciliation for collect/refund/bounded
-   subsidy decisions. `collect` is computed from authoritative usage/delivery
-   and the frozen customer price, never an aggregate provider bill or free-form
-   operator amount. No silent unblock is allowed.
+3. P6-F40C binds explicit ambiguous/funding-pending cost to the API key and adds
+   tenant-safe, platform-authorized operator reconciliation for
+   collect/refund/bounded-subsidy decisions. The locally verified API accepts no
+   amount; `collect` replays authoritative upstream usage, the frozen customer
+   price and an existing billable-output marker. Ordinary in-flight work does
+   not serialize a key, while explicit unresolved cost blocks paid admission
+   until one durable terminal decision. PR #186 exact implementation/test head
+   `49d740d` passed required run `29224762127`, including both explicit P6-F40C
+   PostgreSQL/race gates.
 4. P6-F41A adds typed usage authority, purpose and finality; provider-reported
    explicit zero remains valid, while absent usage requires a fully funded,
    versioned conservative estimate or withheld output.

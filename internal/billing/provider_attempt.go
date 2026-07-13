@@ -64,19 +64,23 @@ type ProviderAttemptCompletion struct {
 }
 
 type providerAttemptRecord struct {
-	APIKeyID          int64
-	ChannelID         int64
-	ChannelKeyID      int64
-	RouteSequence     int
-	RouteTotal        int
-	Endpoint          string
-	Provider          string
-	Channel           string
-	State             string
-	RetryAuthorized   bool
-	HTTPStatus        sql.NullInt32
-	FailureKind       sql.NullString
-	UpstreamRequestID sql.NullString
+	APIKeyID              int64
+	ChannelID             int64
+	ChannelKeyID          int64
+	RouteSequence         int
+	RouteTotal            int
+	Endpoint              string
+	Provider              string
+	Channel               string
+	State                 string
+	OutcomeCertainty      string
+	RetryAuthorized       bool
+	HTTPStatus            sql.NullInt32
+	FailureKind           sql.NullString
+	UpstreamRequestID     sql.NullString
+	CalculatedCost        sql.NullInt64
+	ChargedCost           sql.NullInt64
+	TerminalTransactionID sql.NullInt64
 }
 
 func normalizeProviderAttemptStart(req ProviderAttemptStart) (ProviderAttemptStart, error) {
@@ -297,16 +301,18 @@ func providerAttemptForUpdate(ctx context.Context, tx pgx.Tx, orgID int64, reque
 	var record providerAttemptRecord
 	err := tx.QueryRow(ctx,
 		`SELECT api_key_id, channel_id, channel_key_id, route_sequence, route_total,
-		        endpoint, provider, channel_name, state, retry_authorized,
-		        http_status, failure_kind, upstream_request_id
+		        endpoint, provider, channel_name, state, outcome_certainty, retry_authorized,
+		        http_status, failure_kind, upstream_request_id, calculated_cost, charged_cost,
+		        terminal_transaction_id
 		 FROM billing_provider_attempts
 		 WHERE org_id = $1 AND request_id = $2 AND attempt_id = $3
 		 FOR UPDATE`, orgID, requestID, attemptID,
 	).Scan(
 		&record.APIKeyID, &record.ChannelID, &record.ChannelKeyID, &record.RouteSequence, &record.RouteTotal,
-		&record.Endpoint, &record.Provider, &record.Channel, &record.State,
+		&record.Endpoint, &record.Provider, &record.Channel, &record.State, &record.OutcomeCertainty,
 		&record.RetryAuthorized, &record.HTTPStatus, &record.FailureKind,
-		&record.UpstreamRequestID,
+		&record.UpstreamRequestID, &record.CalculatedCost, &record.ChargedCost,
+		&record.TerminalTransactionID,
 	)
 	return record, err
 }

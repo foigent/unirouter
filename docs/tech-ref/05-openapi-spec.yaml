@@ -807,6 +807,18 @@ paths:
     description: Organization-scoped comparison of preflight estimates and actual usage, with a separate provider Prompt Cache read/write token and cost breakdown. `cache_usage_schema` distinguishes authoritative provider reports from `not_reported`; no cache hit is inferred.
     get: { $ref: "#/components/pathItems/List" }
 
+  /api/v1/provider-cost/reconciliations:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    description: Apply one bounded collect/refund/subsidy decision to an unresolved provider attempt. The request contains no amount; collect replays only authoritative stored usage and the frozen customer price. Aggregate provider bills cannot create customer debt.
+    post: { $ref: "#/components/pathItems/Create" }
+
+  /api/v1/provider-cost/pending:
+    x-unirouter-rbac:
+      get: [platform_admin]
+    description: List at most 100 unresolved provider attempts for one required explicit organization. Returns bounded metadata only and never prompt, response, credential, or full provider URL.
+    get: { $ref: "#/components/pathItems/List" }
+
   /api/v1/users:
     get: { $ref: "#/components/pathItems/List" }
     post: { $ref: "#/components/pathItems/Create" }

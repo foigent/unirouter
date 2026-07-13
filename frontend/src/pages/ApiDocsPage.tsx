@@ -146,6 +146,8 @@ const endpointGroups = [
       ['PUT', '/api/v1/org-model-prices/{id}', '更新组织计费倍率（仅平台管理员）'],
       ['DELETE', '/api/v1/org-model-prices/{id}', '删除组织计费倍率（仅平台管理员）'],
       ['GET', '/api/v1/reconciliation', '估算/实际用量及供应商 Prompt Cache 分项对账'],
+      ['POST', '/api/v1/provider-cost/reconciliations', '平台管理员处理未决供应商成本；请求不接受金额，collect 仅重放权威用量与冻结客户价'],
+      ['GET', '/api/v1/provider-cost/pending', '平台管理员按明确组织查看最多 100 条未决供应商成本元数据'],
     ],
   },
   {

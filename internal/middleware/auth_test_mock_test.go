@@ -154,6 +154,12 @@ func TestGatewayAuthWithAPIKeyHashSecret_UsesSeparateSecret(t *testing.T) {
 	budgetLimit := 10000
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			if len(args) == 2 && args[0] == int64(1) && args[1] == int64(1) {
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*bool) = false
+					return nil
+				}}
+			}
 			capturedHash = args[0].(string)
 			return &testutil.MockRow{
 				ScanFn: func(dest ...any) error {

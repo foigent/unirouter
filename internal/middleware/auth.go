@@ -226,6 +226,22 @@ func resolveAPIKey(ctx context.Context, q db.DBQuerier, keyHash string) (*models
 	return &apiKey, orgStatus, nil
 }
 
+func isPaidGatewayEndpoint(path string) bool {
+	return path == "/v1/chat/completions" || path == "/v1/embeddings"
+}
+
+func providerCostAdmissionBlocked(ctx context.Context, q db.DBQuerier, orgID, apiKeyID int64) (bool, error) {
+	var blocked bool
+	err := q.QueryRow(ctx,
+		`SELECT EXISTS (
+		    SELECT 1 FROM billing_provider_attempts
+		    WHERE org_id = $1 AND api_key_id = $2
+		      AND state IN ('outcome_unknown', 'response_unusable', 'funding_pending')
+		)`, orgID, apiKeyID,
+	).Scan(&blocked)
+	return blocked, err
+}
+
 // GatewayAuth returns middleware that authenticates API requests via API Key.
 func GatewayAuth(q db.DBQuerier, jwtSecret string) func(http.Handler) http.Handler {
 	return GatewayAuthWithAPIKeyHashSecret(q, jwtSecret)
@@ -287,6 +303,18 @@ func GatewayAuthWithAgentCapabilities(q db.DBQuerier, apiKeyHashSecret string, c
 					if errors.As(err, &typed) {
 						writeGatewayAuthError(w, typed.Status, typed.Code, typed.Message)
 					}
+					return
+				}
+			}
+
+			if isPaidGatewayEndpoint(r.URL.Path) {
+				blocked, blockErr := providerCostAdmissionBlocked(r.Context(), q, apiKey.OrgID, apiKey.ID)
+				if blockErr != nil {
+					writeGatewayAuthError(w, http.StatusServiceUnavailable, "billing_error.provider_cost_state_unavailable", "Provider cost admission state is temporarily unavailable")
+					return
+				}
+				if blocked {
+					writeGatewayAuthError(w, http.StatusConflict, "billing_error.provider_cost_pending", "This API key has an unresolved provider cost and is temporarily blocked from new paid requests")
 					return
 				}
 			}

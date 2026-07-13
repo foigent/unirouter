@@ -116,6 +116,7 @@ type reservationRecord struct {
 	UsageSource                 string
 	CacheUsageSchema            string
 	CacheUsageStatus            string
+	OutputStartedAt             sql.NullTime
 	SettlementPayloadAt         sql.NullTime
 	SettlementAttempts          int
 	CalculatedCost              int
@@ -543,6 +544,7 @@ func (b *Billing) lookupReservation(ctx context.Context, requestID string, orgID
 		        pricing_version, status,
 		        prompt_tokens, uncached_prompt_tokens, cache_read_tokens, cache_creation_tokens,
 		        completion_tokens, usage_source, cache_usage_schema, cache_usage_status,
+		        output_started_at,
 		        settlement_payload_ready_at, settlement_attempts,
 		        calculated_cost, charged_cost, uncovered_cost, topup_amount,
 		        refund_amount,
@@ -572,6 +574,7 @@ func (b *Billing) lookupReservation(ctx context.Context, requestID string, orgID
 		&record.UsageSource,
 		&record.CacheUsageSchema,
 		&record.CacheUsageStatus,
+		&record.OutputStartedAt,
 		&record.SettlementPayloadAt,
 		&record.SettlementAttempts,
 		&record.CalculatedCost,
@@ -1075,6 +1078,7 @@ func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgI
 		        pricing_version, status,
 		        prompt_tokens, uncached_prompt_tokens, cache_read_tokens, cache_creation_tokens,
 		        completion_tokens, usage_source, cache_usage_schema, cache_usage_status,
+		        output_started_at,
 		        settlement_payload_ready_at, settlement_attempts,
 		        calculated_cost, charged_cost, uncovered_cost, topup_amount,
 		        refund_amount,
@@ -1106,6 +1110,7 @@ func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgI
 		&record.UsageSource,
 		&record.CacheUsageSchema,
 		&record.CacheUsageStatus,
+		&record.OutputStartedAt,
 		&record.SettlementPayloadAt,
 		&record.SettlementAttempts,
 		&record.CalculatedCost,

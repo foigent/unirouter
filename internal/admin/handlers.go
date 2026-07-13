@@ -22,6 +22,10 @@ type routingController interface {
 	Invalidate()
 }
 
+type providerCostReconciler interface {
+	ReconcileProviderAttempt(context.Context, billing.ProviderReconciliationRequest) (*billing.ProviderReconciliationResult, error)
+}
+
 // Handler contains all admin API handlers.
 type Handler struct {
 	sensitiveFilter              *filter.DFAFilter
@@ -39,6 +43,7 @@ type Handler struct {
 	limitPolicyReloader          interface{ Refresh(context.Context) error }
 	routingController            routingController
 	outbox                       *outbox.Service
+	providerCostReconciler       providerCostReconciler
 }
 
 func (h *Handler) SetLimitPolicyReloader(reloader interface{ Refresh(context.Context) error }) {
@@ -47,6 +52,10 @@ func (h *Handler) SetLimitPolicyReloader(reloader interface{ Refresh(context.Con
 
 func (h *Handler) SetRoutingController(controller routingController) {
 	h.routingController = controller
+}
+
+func (h *Handler) SetProviderCostReconciler(reconciler providerCostReconciler) {
+	h.providerCostReconciler = reconciler
 }
 
 func (h *Handler) invalidateRoutingSnapshots() {
