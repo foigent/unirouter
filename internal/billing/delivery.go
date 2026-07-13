@@ -298,9 +298,13 @@ func (b *Billing) RecordDelivery(ctx context.Context, event DeliveryEvent) error
 	if event.HTTPStatus != 0 && (event.HTTPStatus < 100 || event.HTTPStatus > 599) {
 		return fmt.Errorf("delivery HTTP status is invalid")
 	}
-	if (event.Outcome == DeliveryOutcomePartial || event.Outcome == DeliveryOutcomeCompleted || event.Outcome == DeliveryOutcomeInterrupted) &&
+	if (event.Outcome == DeliveryOutcomePartial || event.Outcome == DeliveryOutcomeCompleted) &&
 		(event.DeliveredBytes == 0 || event.DeliveredChunks == 0) {
 		return fmt.Errorf("delivered outcome requires positive bounded counters")
+	}
+	if event.Outcome == DeliveryOutcomeInterrupted &&
+		((event.DeliveredBytes == 0) != (event.DeliveredChunks == 0)) {
+		return fmt.Errorf("interrupted outcome requires both delivery counters to be zero or positive")
 	}
 
 	tx, err := b.db.Begin(ctx)
@@ -391,7 +395,33 @@ func (b *Billing) RecordDelivery(ctx context.Context, event DeliveryEvent) error
 		if err := updateProviderAttemptDeliveryState(ctx, tx, event, "delivery_failed", "known_usage"); err != nil {
 			return err
 		}
-	case DeliveryOutcomePartial, DeliveryOutcomeCompleted, DeliveryOutcomeInterrupted:
+	case DeliveryOutcomeInterrupted:
+		if event.DeliveredBytes == 0 && event.DeliveredChunks == 0 {
+			if _, err := tx.Exec(ctx, `
+				UPDATE freeze_idempotency
+				SET provider_cost_pending_at=COALESCE(provider_cost_pending_at,NOW()),
+				    settlement_pending_reason='provider_attempt_unresolved',
+				    settlement_claimed_until=NULL, settlement_next_attempt_at=NULL,
+				    updated_at=NOW()
+				WHERE org_id=$1 AND request_id=$2 AND status='settlement_pending'`,
+				event.OrgID, event.RequestID); err != nil {
+				return fmt.Errorf("mark zero-delivery stream interruption: %w", err)
+			}
+			if event.AttemptID != "" {
+				if _, err := tx.Exec(ctx, `
+					UPDATE billing_provider_attempts
+					SET state='outcome_unknown', outcome_certainty='unknown',
+					    retry_authorized=FALSE, failure_kind=$4, updated_at=NOW()
+					WHERE org_id=$1 AND request_id=$2 AND attempt_id=$3
+					  AND state IN ('response_accepted','delivery_pending','delivery_failed')`,
+					event.OrgID, event.RequestID, event.AttemptID, event.ErrorCode); err != nil {
+					return fmt.Errorf("mark zero-delivery provider attempt unresolved: %w", err)
+				}
+			}
+			break
+		}
+		fallthrough
+	case DeliveryOutcomePartial, DeliveryOutcomeCompleted:
 		reason := "delivery_prepared"
 		attemptState := "response_accepted"
 		attemptCertainty := "pending"

@@ -86,7 +86,7 @@ const endpointGroups = [
       ['GET', '/api/v1/limit-policies', '查看跨副本 RPM/RPS/TPM/并发策略及其版本'],
       ['POST', '/api/v1/limit-policies', '创建 disabled/shadow/enforce 共享限额策略'],
       ['PUT', '/api/v1/limit-policies/{id}', '按当前 version 更新策略；冲突返回 409，成功后版本递增'],
-      ['GET', '/api/v1/guardrail-policies', '查看输入与非流式输出安全策略、检测器版本及作用范围'],
+      ['GET', '/api/v1/guardrail-policies', '查看输入、非流式和流式输出安全策略、检测器版本与流式能力'],
       ['POST', '/api/v1/guardrail-policies', '创建影子观察、审计、脱敏或阻断策略'],
       ['PUT', '/api/v1/guardrail-policies/{id}', '按当前 version 更新安全策略；平台强制规则只能叠加收紧'],
       ['POST', '/api/v1/projects', '创建项目'],

@@ -127,8 +127,70 @@ redis.call("HSET", operation,
     "lineage_digest", lineage_digest,
     "token_reserved", requested_tokens,
     "cost_reserved_cents", requested_cost,
+	"extension_sequence", 0,
     "lease_expires_at_ms", lease_expires_ms)
 redis.call("EXPIRE", operation, state_ttl)
+return 0
+`)
+
+var extendInvocationScript = redis.NewScript(`
+local operation = KEYS[1]
+local generation = ARGV[1]
+local agent_id = ARGV[2]
+local sequence = tonumber(ARGV[3])
+local additional_tokens = tonumber(ARGV[4])
+local additional_cost = tonumber(ARGV[5])
+local lineage_count = tonumber(ARGV[6])
+local lineage_digest = ARGV[7]
+
+if redis.call("EXISTS", operation) == 0 then return 1 end
+if redis.call("HGET", operation, "generation") ~= generation or
+   redis.call("HGET", operation, "agent_id") ~= agent_id or
+   redis.call("HGET", operation, "lineage_digest") ~= lineage_digest then
+    return 2
+end
+if redis.call("HGET", operation, "status") ~= "reserved" then return 9 end
+local current_sequence = tonumber(redis.call("HGET", operation, "extension_sequence") or "0")
+if sequence == current_sequence then
+    if tonumber(redis.call("HGET", operation, "last_extension_tokens") or "-1") == additional_tokens and
+       tonumber(redis.call("HGET", operation, "last_extension_cost_cents") or "-1") == additional_cost then
+        return 8
+    end
+    return 9
+end
+if sequence ~= current_sequence + 1 then return 9 end
+
+for index = 0, lineage_count - 1 do
+    local agent = KEYS[2 + index]
+    if redis.call("EXISTS", agent) == 0 then return 2 end
+    local cost_limit = tonumber(redis.call("HGET", agent, "cost_limit_cents") or "-1")
+    local cost_reserved = tonumber(redis.call("HGET", agent, "cost_reserved_cents") or "-1")
+    local cost_used = tonumber(redis.call("HGET", agent, "cost_used_cents") or "-1")
+    local token_limit = tonumber(redis.call("HGET", agent, "token_limit") or "-1")
+    local token_reserved = tonumber(redis.call("HGET", agent, "token_reserved") or "-1")
+    local token_used = tonumber(redis.call("HGET", agent, "token_used") or "-1")
+    if cost_limit < 0 or cost_reserved < 0 or cost_used < 0 or token_limit < 0 or token_reserved < 0 or token_used < 0 then
+        return 2
+    end
+    if redis.call("HGET", agent, "cost_exhausted") == "1" or additional_cost > (cost_limit - cost_used - cost_reserved) then
+        return 3
+    end
+    if redis.call("HGET", agent, "token_exhausted") == "1" or additional_tokens > (token_limit - token_used - token_reserved) then
+        return 4
+    end
+end
+
+for index = 0, lineage_count - 1 do
+    local agent = KEYS[2 + index]
+    redis.call("HINCRBY", agent, "cost_reserved_cents", additional_cost)
+    redis.call("HINCRBY", agent, "token_reserved", additional_tokens)
+end
+redis.call("HINCRBY", operation, "token_reserved", additional_tokens)
+redis.call("HINCRBY", operation, "cost_reserved_cents", additional_cost)
+redis.call("HSET", operation,
+    "extension_sequence", sequence,
+    "last_extension_tokens", additional_tokens,
+    "last_extension_cost_cents", additional_cost)
 return 0
 `)
 
@@ -326,6 +388,39 @@ func (s *Service) finalizeInvocation(ctx context.Context, reservation *Invocatio
 		return ErrConflict
 	default:
 		return fmt.Errorf("%w: unknown invocation finalization result", ErrUnavailable)
+	}
+}
+
+func (s *Service) extendInvocation(ctx context.Context, reservation *InvocationReservation, sequence int, additionalTokens, additionalCostCents int64) error {
+	keys := []string{invocationOperationKey(reservation.WorkflowID, reservation.OperationID)}
+	for _, agentID := range reservation.Lineage {
+		keys = append(keys, agentKey(reservation.WorkflowID, agentID))
+	}
+	result, err := extendInvocationScript.Run(ctx, s.rdb, keys,
+		reservation.WorkflowGeneration,
+		reservation.AgentID,
+		sequence,
+		additionalTokens,
+		additionalCostCents,
+		len(reservation.Lineage),
+		invocationLineageDigest(reservation.Lineage),
+	).Int64()
+	if err != nil {
+		return fmt.Errorf("%w: extend invocation: %v", ErrUnavailable, err)
+	}
+	switch result {
+	case 0, 8:
+		return nil
+	case 1, 2:
+		return fmt.Errorf("%w: invocation reservation state missing", ErrUnavailable)
+	case 3:
+		return ErrCostBudgetExceeded
+	case 4:
+		return ErrTokenBudgetExceeded
+	case 9:
+		return ErrConflict
+	default:
+		return fmt.Errorf("%w: unknown invocation extension result", ErrUnavailable)
 	}
 }
 

@@ -17,6 +17,7 @@ import (
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/guardrail"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/streampolicy"
 )
 
 type guardrailPolicyRecord struct {
@@ -74,7 +75,7 @@ func (h *Handler) ListGuardrailPolicies(w http.ResponseWriter, r *http.Request) 
 		argIndex++
 	}
 	if stage := strings.TrimSpace(r.URL.Query().Get("stage")); stage != "" {
-		if stage != guardrail.StageInput && stage != guardrail.StageNonStreamOutput {
+		if stage != guardrail.StageInput && stage != guardrail.StageNonStreamOutput && stage != guardrail.StageStreamOutput {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid stage"})
 			return
 		}
@@ -128,16 +129,25 @@ func (h *Handler) ListGuardrailPolicies(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	detectors := []string{guardrail.DetectorSensitiveWords, guardrail.DetectorPII}
+	streamCapabilities := map[string]guardrail.StreamCapability{
+		guardrail.DetectorSensitiveWords: {Synchronous: true, LookbehindBytes: guardrail.MaxStreamLookbehindBytes},
+		guardrail.DetectorPII:            {Synchronous: true, LookbehindBytes: 512},
+	}
 	localDetectorMaxBytes, externalDetectorMaxBytes, detectorMaxTexts := guardrail.DefaultOptions().LocalDetectorMaxBytes, guardrail.DefaultOptions().ExternalDetectorMaxBytes, guardrail.DefaultOptions().MaxDetectorTexts
 	if h.guardrailController != nil {
 		detectors = h.guardrailController.ApprovedDetectors()
+		streamCapabilities = h.guardrailController.DetectorStreamCapabilities()
 		localDetectorMaxBytes, externalDetectorMaxBytes, detectorMaxTexts = h.guardrailController.DetectorInputLimits()
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": data, "total": total, "approved_detectors": detectors,
 		"external_deadline_ms": 1000, "automatic_detector_retry": false,
 		"local_detector_max_bytes": localDetectorMaxBytes, "external_detector_max_bytes": externalDetectorMaxBytes,
-		"detector_max_texts": detectorMaxTexts,
+		"detector_max_texts":                detectorMaxTexts,
+		"stream_detector_capabilities":      streamCapabilities,
+		"stream_enforce_buffer_max_bytes":   streampolicy.EnforceBufferMaxBytes,
+		"stream_enforce_buffer_max_wait_ms": streampolicy.EnforceBufferMaxWait.Milliseconds(),
+		"stream_checkpoint_interval_ms":     streampolicy.CheckpointInterval.Milliseconds(),
 	})
 }
 

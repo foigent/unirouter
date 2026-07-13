@@ -521,8 +521,8 @@ paths:
   /api/v1/guardrail-policies:
     get:
       tags: [Admin]
-      summary: List versioned input and non-stream output guardrail policies
-      description: Returns only the caller-visible global and tenant policies plus the approved detector registry, one-second/no-retry external-detector contract, and current 256-text / 128 KiB local / 256 KiB external synchronous scan bounds. Detector overrun is indeterminate and follows the policy failure mode; it is never reported as a completed scan.
+      summary: List versioned input, non-stream output, and stream-output guardrail policies
+      description: Returns only the caller-visible global and tenant policies plus the approved detector registry, fixed stream capability metadata, one-second/no-retry external-detector contract, current 256-text / 128 KiB local / 256 KiB external scan bounds, and the 200 ms / 4 KiB enforced-stream normalized model-data JSON micro-buffer ceilings. Text, refusal/reasoning text and function/tool arguments are inspected. A single normalized model-data frame above that enforcement bound, or an unknown model-output shape that cannot be inspected under an enforced policy, is terminated before disclosure; the separate SSE line ceiling is not an enforcement-buffer allowance. Without an enforced stream policy, unknown shapes retain the compatibility pass-through path. Detector overrun is indeterminate and follows the policy failure mode; it is never reported as a completed scan. Stream audit/shadow results may be produced after disclosure and are labeled as such.
       security:
         - bearerAuth: []
       responses:
@@ -531,7 +531,7 @@ paths:
     post:
       tags: [Admin]
       summary: Create an audit, redact, or block guardrail policy
-      description: External detector endpoints and credentials are platform registry configuration and cannot be supplied in tenant policy JSON. Enabling one transmits the selected text to that fixed service and therefore requires separate tenant, residency, retention, and supplier approval. New semantic policies should start in shadow mode; mandatory platform rules are always global, enforced, and fail closed.
+      description: External detector endpoints and credentials are platform registry configuration and cannot be supplied in tenant policy JSON. Enabling one transmits the selected text to that fixed service and therefore requires separate tenant, residency, retention, and supplier approval. New semantic policies should start in shadow mode; mandatory platform rules are always global, enforced, and fail closed. A stream_output policy may block or redact before disclosure only when its fixed-registry detector declares bounded synchronous stream capability; otherwise stream use is limited to shadow/audit. Stream termination cancels the accepted upstream attempt without retry or failover and charges only safely delivered output.
       security:
         - bearerAuth: []
       responses:

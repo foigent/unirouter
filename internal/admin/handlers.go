@@ -30,6 +30,7 @@ type providerCostReconciler interface {
 type guardrailController interface {
 	Refresh(context.Context) error
 	ApprovedDetectors() []string
+	DetectorStreamCapabilities() map[string]guardrail.StreamCapability
 	DetectorInputLimits() (int, int, int)
 	IsDetectorApproved(string) bool
 	ValidatePolicy(guardrail.Policy) error

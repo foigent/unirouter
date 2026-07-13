@@ -17,6 +17,9 @@ type fakeProvider struct {
 	mu          sync.Mutex
 	freeze      *billing.FreezeResult
 	freezeErr   error
+	extend      *billing.ExtendReservationResult
+	extendErr   error
+	extendCalls int
 	settle      *billing.SettleResult
 	settleErr   error
 	cancelErr   error
@@ -35,6 +38,34 @@ func (p *fakeProvider) CalculateCost(context.Context, string, int, int) (int, er
 
 func (p *fakeProvider) Freeze(context.Context, billing.FreezeRequest) (*billing.FreezeResult, error) {
 	return p.freeze, p.freezeErr
+}
+
+func (p *fakeProvider) ExtendReservation(_ context.Context, req billing.ExtendReservationRequest) (*billing.ExtendReservationResult, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.extendCalls++
+	if p.extend != nil || p.extendErr != nil {
+		return p.extend, p.extendErr
+	}
+	return &billing.ExtendReservationResult{
+		Success: true, Sequence: req.Sequence,
+		AddedCompletionTokens:  req.AdditionalCompletionTokens,
+		TargetCompletionTokens: req.TargetCompletionTokens,
+		Amount:                 1,
+	}, nil
+}
+
+func (p *fakeProvider) BeginStreamDelivery(context.Context, billing.StreamDeliveryStart) error {
+	return nil
+}
+func (p *fakeProvider) RenewStreamDelivery(context.Context, billing.StreamDeliveryStart) error {
+	return nil
+}
+func (p *fakeProvider) CheckpointStreamDelivery(context.Context, billing.StreamDeliveryCheckpoint) (*billing.StreamCheckpointResult, error) {
+	return &billing.StreamCheckpointResult{Sequence: 1}, nil
+}
+func (p *fakeProvider) FinishStreamDelivery(context.Context, billing.StreamDeliveryStart, string, string) error {
+	return nil
 }
 
 func (p *fakeProvider) BeginProviderAttempt(_ context.Context, req billing.ProviderAttemptStart) error {
@@ -109,6 +140,10 @@ type fakeRuntime struct {
 	leaseTTL        time.Duration
 	reservedTokens  int64
 	reservedCost    int64
+	extendErr       error
+	extendCalls     int
+	extendedTokens  int64
+	extendedCost    int64
 	finalizedTokens int64
 	finalizedCost   int64
 }
@@ -135,6 +170,47 @@ func (r *fakeRuntime) ReserveInvocation(_ context.Context, claims *agentcap.Clai
 		LeaseExpiresAt:     time.Now().UTC().Add(leaseTTL + agentcap.InvocationFinalizationGrace),
 		StateExpiresAt:     time.Now().UTC().Add(leaseTTL + 2*agentcap.InvocationFinalizationGrace),
 	}, nil
+}
+
+func (r *fakeRuntime) ExtendInvocation(_ context.Context, reservation *agentcap.InvocationReservation, sequence int, tokens, cost int64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.extendCalls++
+	r.extendedTokens += tokens
+	r.extendedCost += cost
+	if r.extendErr != nil {
+		return r.extendErr
+	}
+	reservation.ReservedTokens += tokens
+	reservation.ReservedCostCents += cost
+	reservation.ExtensionSequence = sequence
+	return nil
+}
+
+func TestP6F11AgentAncestorExtensionRunsAfterWalletAndRetainsConservativeFreeze(t *testing.T) {
+	provider := successfulProvider()
+	runtime := &fakeRuntime{}
+	service := New(provider, runtime)
+	requestID := "req_cap_stream_extension"
+	if result, err := service.Freeze(capabilityContext(time.Minute), billing.FreezeRequest{
+		RequestID: requestID, OrgID: 7, EstimatedTokens: 200,
+	}); err != nil || result == nil || !result.Success {
+		t.Fatalf("freeze = %+v / %v", result, err)
+	}
+	runtime.extendErr = agentcap.ErrTokenBudgetExceeded
+	result, err := service.ExtendReservation(t.Context(), billing.ExtendReservationRequest{
+		RequestID: requestID, OrgID: 7, Sequence: 1,
+		AdditionalCompletionTokens: 1_000, TargetCompletionTokens: 1_100,
+	})
+	if err != nil || result == nil || result.Success || result.ErrorCode != ErrorCodeTokenBudgetExceeded {
+		t.Fatalf("ancestor extension denial = %+v / %v", result, err)
+	}
+	provider.mu.Lock()
+	walletCalls := provider.extendCalls
+	provider.mu.Unlock()
+	if walletCalls != 1 || runtime.extendCalls != 1 || runtime.extendedTokens != 1_000 || runtime.extendedCost != 1 {
+		t.Fatalf("wallet/ancestor extension chain missing: wallet=%d runtime=%+v", walletCalls, runtime)
+	}
 }
 
 func (r *fakeRuntime) FinalizeInvocation(_ context.Context, _ *agentcap.InvocationReservation, tokens, cost int64) error {

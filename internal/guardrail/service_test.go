@@ -17,6 +17,13 @@ type detectorFunc struct {
 	detect  func(Context, Text, json.RawMessage) ([]Finding, error)
 }
 
+type streamDetectorFunc struct {
+	detectorFunc
+	capability StreamCapability
+}
+
+func (d streamDetectorFunc) StreamCapability() StreamCapability { return d.capability }
+
 func (d detectorFunc) Version() string { return d.version }
 func (d detectorFunc) Detect(ctx Context, text Text, config json.RawMessage) ([]Finding, error) {
 	return d.detect(ctx, text, config)
@@ -31,6 +38,70 @@ func newGuardrailTestService(t *testing.T, sensitive *filter.DFAFilter) *Service
 		t.Fatal(err)
 	}
 	return service
+}
+
+func TestP6F11StreamCapabilitiesKeepAsyncDetectorsShadowOnly(t *testing.T) {
+	service := newGuardrailTestService(t, filter.NewDFAFilter([]string{"blocked"}))
+	if err := service.RegisterDetector("external:async-fixture", detectorFunc{
+		version: "fixture.v1", detect: func(Context, Text, json.RawMessage) ([]Finding, error) { return nil, nil },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.RegisterDetector("external:sync-fixture", streamDetectorFunc{
+		detectorFunc: detectorFunc{version: "fixture.v1", detect: func(Context, Text, json.RawMessage) ([]Finding, error) { return nil, nil }},
+		capability:   StreamCapability{Synchronous: true, LookbehindBytes: 64},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	capabilities := service.DetectorStreamCapabilities()
+	if capabilities[DetectorPII] != (StreamCapability{Synchronous: true, LookbehindBytes: 512}) ||
+		capabilities["external:async-fixture"].Synchronous ||
+		capabilities["external:sync-fixture"] != (StreamCapability{Synchronous: true, LookbehindBytes: 64}) ||
+		!capabilities[DetectorSensitiveWords].Synchronous {
+		t.Fatalf("unexpected fixed registry capabilities: %+v", capabilities)
+	}
+	policy := Policy{
+		ID: 1, Ref: "guardrail:p6f11", Name: "stream external", Version: 1,
+		Stage: StageStreamOutput, DetectorRef: "external:async-fixture", Action: ActionBlock,
+		Mode: ModeEnforce, FailureMode: FailureFailClosed,
+	}
+	if !errors.Is(service.ValidatePolicy(policy), ErrInvalidPolicy) {
+		t.Fatal("asynchronous detector was accepted for synchronous stream enforcement")
+	}
+	policy.Mode = ModeShadow
+	if err := service.ValidatePolicy(policy); err != nil {
+		t.Fatalf("asynchronous stream shadow policy was rejected: %v", err)
+	}
+	policy.Mode = ModeEnforce
+	policy.Action = ActionAudit
+	if err := service.ValidatePolicy(policy); err != nil {
+		t.Fatalf("post-disclosure stream audit policy was rejected: %v", err)
+	}
+	policy.DetectorRef = "external:sync-fixture"
+	policy.Action = ActionBlock
+	if err := service.ValidatePolicy(policy); err != nil {
+		t.Fatalf("bounded synchronous detector was rejected: %v", err)
+	}
+}
+
+func TestP6F11PinnedStreamFailsClosedWhenSensitiveCapabilityOutgrowsBound(t *testing.T) {
+	sensitive := filter.NewDFAFilter([]string{"short"})
+	service := newGuardrailTestService(t, sensitive)
+	installPolicies(service, Policy{
+		ID: 2, Ref: "guardrail:long-sensitive", Name: "long sensitive", Version: 1,
+		Stage: StageStreamOutput, DetectorRef: DetectorSensitiveWords,
+		Action: ActionBlock, Mode: ModeEnforce, FailureMode: FailureFailClosed,
+	})
+	sensitive.UpdateWords([]string{strings.Repeat("x", MaxStreamLookbehindBytes+2)})
+	pinned := service.Pin(Subject{OrgID: 7, Model: "gpt-4o", Endpoint: "chat"})
+	profile := pinned.StreamProfile()
+	if !profile.Enforced || profile.LookbehindBytes != MaxStreamLookbehindBytes {
+		t.Fatalf("invalid detector capability widened the platform bound: %+v", profile)
+	}
+	result := pinned.EvaluateStreamEnforced(t.Context(), []Text{{Path: "choices[0].content", Content: "safe"}})
+	if result.Decision != DecisionBlock || !result.Degraded || len(result.Receipts) == 0 || result.Receipts[0].Outcome != OutcomeUnavailable {
+		t.Fatalf("runtime capability loss was not failed closed: %+v", result)
+	}
 }
 
 func installPolicies(service *Service, policies ...Policy) {

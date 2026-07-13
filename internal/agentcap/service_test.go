@@ -495,6 +495,78 @@ func TestInvocationBudgetsAggregateAcrossAncestorsAndSettleActualUsage(t *testin
 	}
 }
 
+func TestP6F11InvocationExtensionCoversEveryAncestorAndIsIdempotent(t *testing.T) {
+	base := time.Now().UTC().Truncate(time.Second)
+	fixture := defaultAuthorityFixture()
+	service, _, rdb := newTestService(t, fixture, newTestClock(base))
+	limits := rootLimits(1, 1, 1)
+	limits.CostBudgetCents = 100
+	limits.TokenBudget = 100
+	limits.RPMLimit = 100
+	limits.RPSLimit = 20
+	limits.ConcurrencyLimit = 10
+	root := exchangeRoot(t, service, fixture, limits)
+	rootAuth, err := service.Authenticate(context.Background(), root.CapabilityToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childLimits := limits
+	childLimits.MaxChildren = 0
+	childLimits.MaxDescendants = 0
+	child, err := service.Delegate(context.Background(), rootAuth.Claims, DelegateRequest{
+		ChildAgentID: "agent:p6f11-child", Limits: childLimits,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	childAuth, err := service.Authenticate(context.Background(), child.CapabilityToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reservation, err := service.ReserveInvocation(context.Background(), childAuth.Claims, "req_p6f11_extension", 40, 40, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ExtendInvocation(context.Background(), reservation, 1, 30, 30); err != nil {
+		t.Fatalf("first ancestor extension: %v", err)
+	}
+	if err := service.ExtendInvocation(context.Background(), reservation, 1, 30, 30); err != nil {
+		t.Fatalf("idempotent ancestor extension replay: %v", err)
+	}
+	if reservation.ReservedTokens != 70 || reservation.ReservedCostCents != 70 || reservation.ExtensionSequence != 1 {
+		t.Fatalf("extension was not applied exactly once: %#v", reservation)
+	}
+	for _, agentID := range reservation.Lineage {
+		state, readErr := rdb.HMGet(context.Background(), agentKey(root.WorkflowID, agentID),
+			"cost_reserved_cents", "token_reserved").Result()
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if fmt.Sprint(state) != "[70 70]" {
+			t.Fatalf("ancestor %s did not reserve the extension: %v", agentID, state)
+		}
+	}
+	if err := service.ExtendInvocation(context.Background(), reservation, 2, 40, 40); !errors.Is(err, ErrCostBudgetExceeded) {
+		t.Fatalf("extension beyond ancestor budget = %v, want ErrCostBudgetExceeded", err)
+	}
+	if reservation.ExtensionSequence != 1 || reservation.ReservedTokens != 70 || reservation.ReservedCostCents != 70 {
+		t.Fatalf("denied extension changed local authority: %#v", reservation)
+	}
+	if err := service.FinalizeInvocation(context.Background(), reservation, 50, 50); err != nil {
+		t.Fatal(err)
+	}
+	for _, agentID := range reservation.Lineage {
+		state, readErr := rdb.HMGet(context.Background(), agentKey(root.WorkflowID, agentID),
+			"cost_reserved_cents", "cost_used_cents", "token_reserved", "token_used").Result()
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if fmt.Sprint(state) != "[0 50 0 50]" {
+			t.Fatalf("ancestor %s retained the terminal extension: %v", agentID, state)
+		}
+	}
+}
+
 func TestInvocationRateAttemptsAreNotRefundedAndConcurrencyIsReleased(t *testing.T) {
 	base := time.Now().UTC().Truncate(time.Second)
 	fixture := defaultAuthorityFixture()

@@ -167,6 +167,41 @@ func TestP6F41BIdempotencyMarksDownstreamWriteFailureAsFailed(t *testing.T) {
 	}
 }
 
+func TestP6F11InterruptedStreamReplayReturnsBoundedDeliveryReceipt(t *testing.T) {
+	status := http.StatusOK
+	updatedAt := time.Date(2026, 7, 13, 8, 30, 0, 0, time.UTC)
+	recorder := httptest.NewRecorder()
+	writeIdempotencyConflict(recorder, "same-fingerprint", IdempotencyRecord{
+		RequestFingerprint: "same-fingerprint",
+		OperationID:        "op_p6f11_interrupted_replay",
+		State:              IdempotencyStateFailed,
+		OriginalHTTPStatus: &status,
+		DeliveryMode:       "stream",
+		DeliveryOutcome:    "interrupted",
+		DeliveredBytes:     512,
+		DeliveredChunks:    3,
+		DeliveryUpdatedAt:  &updatedAt,
+		CreatedAt:          updatedAt.Add(-time.Minute),
+	})
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("expected interrupted replay conflict, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	body := recorder.Body.String()
+	for _, expected := range []string{
+		`"code":"idempotency_error.original_failed"`,
+		`"original_request_id":"op_p6f11_interrupted_replay"`,
+		`"original_http_status":200`,
+		`"mode":"stream"`,
+		`"outcome":"interrupted"`,
+		`"delivered_bytes":512`,
+		`"delivered_chunks":3`,
+	} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("interrupted replay omitted %s: %s", expected, body)
+		}
+	}
+}
+
 func TestIdempotencyGuardChangedPayloadReturnsMismatch(t *testing.T) {
 	store := newMemoryIdempotencyStore()
 	dispatches := 0

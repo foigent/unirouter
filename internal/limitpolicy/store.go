@@ -135,6 +135,7 @@ redis.call("HSET", operation,
     "member", member,
     "input_tokens", input_tokens,
     "reserved_tokens", requested_tokens,
+	"extension_sequence", 0,
     "admitted_at_ms", now_ms,
     "lease_expires_at_ms", lease_expires_ms)
 redis.call("EXPIRE", operation, state_ttl)
@@ -151,6 +152,63 @@ end
 
 return {0, reason, rps_count, rpm_count, token_total, concurrency_count,
         now_ms, fallback_expiry, reason > 0 and 1 or 0}
+`)
+
+var extendScript = redis.NewScript(`
+local tpm_events = KEYS[1]
+local tpm_values = KEYS[2]
+local tpm_total_key = KEYS[3]
+local operation = KEYS[4]
+local fingerprint = ARGV[1]
+local sequence = tonumber(ARGV[2])
+local additional_tokens = tonumber(ARGV[3])
+local tpm_limit = tonumber(ARGV[4])
+local mode = ARGV[5]
+
+local now = redis.call("TIME")
+local now_ms = (tonumber(now[1]) * 1000) + math.floor(tonumber(now[2]) / 1000)
+local cutoff = now_ms - 60000
+local total = tonumber(redis.call("GET", tpm_total_key) or "0")
+local expired = redis.call("ZRANGEBYSCORE", tpm_events, "-inf", cutoff)
+for _, expired_member in ipairs(expired) do
+    total = total - tonumber(redis.call("HGET", tpm_values, expired_member) or "0")
+    redis.call("HDEL", tpm_values, expired_member)
+end
+if #expired > 0 then redis.call("ZREMRANGEBYSCORE", tpm_events, "-inf", cutoff) end
+if total < 0 then total = 0 end
+
+if redis.call("EXISTS", operation) == 0 then return {1, total} end
+if redis.call("HGET", operation, "fingerprint") ~= fingerprint or
+   redis.call("HGET", operation, "status") ~= "reserved" then
+    return {9, total}
+end
+local current_sequence = tonumber(redis.call("HGET", operation, "extension_sequence") or "0")
+if sequence == current_sequence then
+    if tonumber(redis.call("HGET", operation, "last_extension_tokens") or "-1") == additional_tokens then
+        return {8, total}
+    end
+    return {9, total}
+end
+if sequence ~= current_sequence + 1 then return {9, total} end
+if tpm_limit > 0 and total + additional_tokens > tpm_limit and mode == "enforce" then
+    return {3, total}
+end
+
+local member = redis.call("HGET", operation, "member")
+if tpm_limit > 0 then
+    local current_tokens = tonumber(redis.call("HGET", tpm_values, member) or "0")
+    redis.call("ZADD", tpm_events, now_ms, member)
+    redis.call("HSET", tpm_values, member, current_tokens + additional_tokens)
+    redis.call("EXPIRE", tpm_events, 120)
+    redis.call("EXPIRE", tpm_values, 120)
+    total = total + additional_tokens
+end
+redis.call("SET", tpm_total_key, total, "EX", 120)
+redis.call("HINCRBY", operation, "reserved_tokens", additional_tokens)
+redis.call("HSET", operation,
+    "extension_sequence", sequence,
+    "last_extension_tokens", additional_tokens)
+return {0, total}
 `)
 
 var terminalScript = redis.NewScript(`
@@ -256,6 +314,34 @@ func (s *Service) terminalStore(ctx context.Context, item policyReservation, ter
 		return false, ErrConflict
 	default:
 		return false, ErrStateUnavailable
+	}
+}
+
+func (s *Service) extendStore(ctx context.Context, item policyReservation, sequence int, additionalTokens int64) error {
+	keys := operationRuntimeKeys(item.RuntimeRef, item.OperationID)
+	result, err := extendScript.Run(ctx, s.rdb, []string{keys[2], keys[3], keys[4], keys[6]},
+		item.Fingerprint, sequence, additionalTokens, item.TPMLimit, item.Mode,
+	).Result()
+	if err != nil {
+		return err
+	}
+	values, ok := result.([]interface{})
+	if !ok || len(values) != 2 {
+		return fmt.Errorf("unexpected extension Redis result %T", result)
+	}
+	code, err := redisInt64(values[0])
+	if err != nil {
+		return err
+	}
+	switch code {
+	case 0, storeIdempotent:
+		return nil
+	case storeTPMExceeded:
+		return ErrTPMExceeded
+	case storeConflict:
+		return ErrConflict
+	default:
+		return ErrStateUnavailable
 	}
 }
 

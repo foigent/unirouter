@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -42,6 +43,11 @@ type BillingProvider interface {
 	QueryModelPriceForOrg(ctx context.Context, orgID int64, model string) (float64, float64, error)
 	CalculateCost(ctx context.Context, model string, promptTokens, completionTokens int) (int, error)
 	Freeze(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error)
+	ExtendReservation(ctx context.Context, req billing.ExtendReservationRequest) (*billing.ExtendReservationResult, error)
+	BeginStreamDelivery(ctx context.Context, start billing.StreamDeliveryStart) error
+	RenewStreamDelivery(ctx context.Context, start billing.StreamDeliveryStart) error
+	CheckpointStreamDelivery(ctx context.Context, checkpoint billing.StreamDeliveryCheckpoint) (*billing.StreamCheckpointResult, error)
+	FinishStreamDelivery(ctx context.Context, start billing.StreamDeliveryStart, state, reason string) error
 	BeginProviderAttempt(ctx context.Context, req billing.ProviderAttemptStart) error
 	CompleteProviderAttempt(ctx context.Context, req billing.ProviderAttemptCompletion) error
 	PrepareNonStreamDelivery(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error)
@@ -684,6 +690,8 @@ type ChatCompletionRequest struct {
 	MaxTokens *int      `json:"max_tokens,omitempty"`
 }
 
+const maxChatCompletionTokens = 1<<31 - 1
+
 // Message represents a chat message.
 type Message struct {
 	Role    string `json:"role"`
@@ -742,6 +750,10 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 
 	if req.Model == "" {
 		writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.invalid_request", "model is required")
+		return
+	}
+	if req.MaxTokens != nil && (*req.MaxTokens < 0 || *req.MaxTokens > maxChatCompletionTokens) {
+		writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.invalid_request", "max_tokens is outside the supported range")
 		return
 	}
 	requestedModel := middleware.GetModelAliasFromContext(ctx)
@@ -812,6 +824,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		workloadClass = workloadadmission.ClassStream
 	}
 	ctx = workloadadmission.ContextWithClass(ctx, workloadClass)
+	ctx = contextWithStreamReservation(ctx, reservedCompletionTokens, req.MaxTokens == nil)
 	ctx, limitPolicyCollector := contextWithLimitPolicyCollector(ctx)
 
 	// Freeze balance once (before trying any upstream)
@@ -1425,91 +1438,56 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		return ok
 	}
 
-	// Periodic balance check — signal main loop via channel instead of closing body directly.
-	// This eliminates the race condition where two goroutines both call resp.Body.Close().
-	balanceExhausted := make(chan struct{}, 1)
-	balanceCancelCtx, balanceCancel := context.WithCancel(ctx)
-	defer balanceCancel()
-	var balanceWg sync.WaitGroup
-	balanceWg.Add(1)
-	go func() {
-		defer balanceWg.Done()
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-balanceCancelCtx.Done():
-				return
-			case <-ticker.C:
-				var balance int
-				err := relay.db.QueryRow(balanceCancelCtx,
-					`SELECT COALESCE(w.balance + w.granted_balance, 0) FROM wallets w WHERE w.org_id = $1`, orgID).Scan(&balance)
-				if err != nil {
-					reqLog.Error("Balance check error: %v", err)
-					continue
-				}
-				if balance <= 0 {
-					reqLog.Warn("Balance exhausted during streaming, signaling main loop")
-					select {
-					case balanceExhausted <- struct{}{}:
-					default:
-					}
-					return
-				}
-			}
+	billableOutputMarked := false
+	var deliveryStarted atomic.Bool
+	preOutputBillingFailure := false
+	leaseStart := billing.StreamDeliveryStart{
+		RequestID: requestID, AttemptID: attemptIDFromContext(ctx), OwnerID: processStreamLeaseOwner,
+		OrgID: orgID, LeaseTTL: streampolicy.CheckpointLeaseDuration,
+	}
+	leaseTerminalState := billing.StreamLeaseStateInterrupted
+	leaseTerminalReason := "stream_ended"
+	leaveLeaseForRecovery := false
+	defer func() {
+		if !deliveryStarted.Load() || leaveLeaseForRecovery {
+			return
+		}
+		finishCtx, finishCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer finishCancel()
+		if err := relay.billing.FinishStreamDelivery(finishCtx, leaseStart, leaseTerminalState, leaseTerminalReason); err != nil {
+			reqLog.Error("Failed to persist stream lease terminal state: %v", err)
 		}
 	}()
-
-	billableOutputMarked := false
-	deliveryStarted := false
-	preOutputBillingFailure := false
 	markBillableOutput := func() bool {
-		if deliveryStarted {
+		if deliveryStarted.Load() {
 			return true
 		}
-		if !billableOutputMarked {
-			markerCtx, markerCancel := context.WithTimeout(context.Background(), 10*time.Second)
-			err := relay.billing.MarkBillableOutput(markerCtx, requestID, orgID)
-			markerCancel()
-			if err != nil {
-				preOutputBillingFailure = true
-				reqLog.Error("Failed to persist billable output marker; stream content withheld: %v", err)
-				relay.recordTraceEvent(ctx, requestID, "billing.output_marker.failed", "billing", "error", model, requestedModel, route, http.StatusOK, elapsedMilliseconds(requestStart), map[string]interface{}{
-					"error_code": "output_marker_failed",
-				})
-				cancelCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				if cancelErr := relay.billing.Cancel(cancelCtx, requestID, orgID); cancelErr != nil {
-					reqLog.Error("Failed to cancel reservation after output marker failure: %v", cancelErr)
-				}
-				cancel()
-				writeSSE("data: {\"error\":{\"type\":\"billing_error\",\"code\":\"billing_error.settle_failed\",\"message\":\"Unable to establish durable billing state\"}}\n\n")
-				return false
-			}
-			billableOutputMarked = true
-		}
 		deliveryCtx, deliveryCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		err := relay.billing.RecordDelivery(deliveryCtx, billing.DeliveryEvent{
-			RequestID: requestID, AttemptID: attemptIDFromContext(ctx), OrgID: orgID,
-			Mode: billing.DeliveryModeStream, Outcome: billing.DeliveryOutcomeWriteStarted,
-			HTTPStatus: http.StatusOK,
-		})
+		err := relay.billing.BeginStreamDelivery(deliveryCtx, leaseStart)
 		deliveryCancel()
 		if err != nil {
 			preOutputBillingFailure = true
-			reqLog.Error("Failed to persist stream delivery start; content withheld and provider liability retained: %v", err)
+			reqLog.Error("Failed to atomically establish stream delivery and process lease; content withheld: %v", err)
 			relay.recordTraceEvent(ctx, requestID, "delivery.receipt.failed", "billing", "error", model, requestedModel, route, http.StatusOK, elapsedMilliseconds(requestStart), map[string]interface{}{
 				"error_code": "delivery_start_unpersisted",
 			})
-			writeSSE("data: {\"error\":{\"type\":\"billing_error\",\"code\":\"billing_error.settle_failed\",\"message\":\"Unable to establish durable delivery state\"}}\n\n")
+			cancelCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			if cancelErr := relay.billing.Cancel(cancelCtx, requestID, orgID); cancelErr != nil {
+				reqLog.Error("Failed to cancel reservation after stream delivery start failure: %v", cancelErr)
+			}
+			cancel()
+			writeSSE("data: {\"error\":{\"type\":\"billing_error\",\"code\":\"billing_error.settle_failed\",\"message\":\"Unable to establish durable billing state\"}}\n\n")
 			return false
 		}
-		deliveryStarted = true
+		billableOutputMarked = true
+		deliveryStarted.Store(true)
 		return true
 	}
 
 	// SSE heartbeat — send ping every 15 seconds to prevent client timeout
 	heartbeatCtx, heartbeatCancel := context.WithCancel(ctx)
 	defer heartbeatCancel()
+	leaseFailures := make(chan error, 1)
 	var heartbeatWg sync.WaitGroup
 	heartbeatWg.Add(1)
 	go func() {
@@ -1521,6 +1499,18 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			case <-heartbeatCtx.Done():
 				return
 			case <-ticker.C:
+				if deliveryStarted.Load() {
+					renewCtx, renewCancel := context.WithTimeout(context.WithoutCancel(heartbeatCtx), 5*time.Second)
+					renewErr := relay.billing.RenewStreamDelivery(renewCtx, leaseStart)
+					renewCancel()
+					if renewErr != nil {
+						select {
+						case leaseFailures <- renewErr:
+						default:
+						}
+						return
+					}
+				}
 				if !writeSSE(": ping\n\n") {
 					return
 				}
@@ -1530,6 +1520,29 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), streamPolicy.MaxSSELineBytes)
+	type streamScanEvent struct {
+		line string
+		err  error
+		done bool
+	}
+	scanEvents := make(chan streamScanEvent)
+	var scannerWg sync.WaitGroup
+	scannerWg.Add(1)
+	go func() {
+		defer scannerWg.Done()
+		defer close(scanEvents)
+		for scanner.Scan() {
+			select {
+			case scanEvents <- streamScanEvent{line: scanner.Text()}:
+			case <-heartbeatCtx.Done():
+				return
+			}
+		}
+		select {
+		case scanEvents <- streamScanEvent{err: scanner.Err(), done: true}:
+		case <-heartbeatCtx.Done():
+		}
+	}()
 
 	deliveredCounter := tokenutil.NewStreamTokenCounter()
 	var msgPairs []struct{ Role, Content string }
@@ -1543,6 +1556,92 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	deliveredChunks := 0
 	deliveryPartialRecorded := false
 	deliveryReceiptFailure := false
+	streamTerminationCode := ""
+	pinnedStreamGuardrail := guardrailPinFromContext(ctx)
+	streamGuardrailProfile := guardrail.StreamProfile{PolicySetVersion: "none"}
+	if pinnedStreamGuardrail != nil {
+		streamGuardrailProfile = pinnedStreamGuardrail.StreamProfile()
+	}
+	streamGuardrailHistory := make(map[string]string)
+	streamAdvisoryHistory := make(map[string]string)
+	reservationState := streamReservationFromContext(ctx)
+	reservationSequence := 0
+	ensureStreamBudgetTokens := func(additionalTokens int) bool {
+		if additionalTokens <= 0 {
+			return true
+		}
+		projected := deliveredCounter.OutputTokens() + additionalTokens
+		if !reservationState.AllowExtension {
+			if projected <= reservationState.ReservedCompletionTokens {
+				return true
+			}
+			streamTerminationCode = "stream_output_limit_exceeded"
+			return false
+		}
+		for projected > reservationState.ReservedCompletionTokens-streampolicy.ReservationGuardTokens {
+			reservationSequence++
+			target := reservationState.ReservedCompletionTokens + streampolicy.ReservationExtensionTokens
+			extensionCtx, extensionCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+			result, err := relay.billing.ExtendReservation(extensionCtx, billing.ExtendReservationRequest{
+				RequestID: requestID, OrgID: orgID, Sequence: reservationSequence,
+				AdditionalCompletionTokens: streampolicy.ReservationExtensionTokens,
+				TargetCompletionTokens:     target,
+			})
+			extensionCancel()
+			if err != nil || result == nil || !result.Success {
+				streamTerminationCode = "stream_budget_extension_denied"
+				errorCode := "extension_error"
+				if result != nil && result.ErrorCode != "" {
+					errorCode = result.ErrorCode
+				}
+				relay.recordTraceEvent(ctx, requestID, "billing.stream_reservation_extension.denied", "billing", "warning", model, requestedModel, route, http.StatusOK, elapsedMilliseconds(requestStart), map[string]interface{}{
+					"error_code": errorCode, "reservation_extension_sequence": reservationSequence,
+					"target_completion_tokens": target,
+				})
+				return false
+			}
+			reservationState.ReservedCompletionTokens = target
+			relay.recordTraceEvent(ctx, requestID, "billing.stream_reservation_extension.succeeded", "billing", "info", model, requestedModel, route, http.StatusOK, elapsedMilliseconds(requestStart), map[string]interface{}{
+				"reservation_extension_sequence": reservationSequence,
+				"target_completion_tokens":       target, "reserved_amount_cents": result.Amount,
+				"pricing_version": result.PricingVersion,
+			})
+		}
+		return true
+	}
+	lastCheckpointAt := time.Now()
+	var checkpointBytes int64
+	checkpointTokens := 0
+	checkpointDelivery := func(force bool) bool {
+		if !deliveryStarted.Load() || deliveredBytes <= 0 || deliveredChunks <= 0 {
+			return true
+		}
+		if !force && time.Since(lastCheckpointAt) < streampolicy.CheckpointInterval &&
+			deliveredBytes-checkpointBytes < streampolicy.CheckpointDeliveredBytes &&
+			deliveredCounter.OutputTokens()-checkpointTokens < streampolicy.CheckpointCompletionTokens {
+			return true
+		}
+		checkpointCtx, checkpointCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		_, err := relay.billing.CheckpointStreamDelivery(checkpointCtx, billing.StreamDeliveryCheckpoint{
+			RequestID: requestID, AttemptID: leaseStart.AttemptID, OwnerID: leaseStart.OwnerID, OrgID: orgID,
+			DeliveredBytes: deliveredBytes, DeliveredChunks: deliveredChunks,
+			PromptTokens: deliveredCounter.InputTokens(), CompletionTokens: deliveredCounter.OutputTokens(),
+			PolicySetVersion: streamGuardrailProfile.PolicySetVersion,
+			LeaseTTL:         streampolicy.CheckpointLeaseDuration,
+		})
+		checkpointCancel()
+		if err != nil {
+			reqLog.Error("Failed to persist stream delivery checkpoint: %v", err)
+			if streamTerminationCode == "" {
+				streamTerminationCode = "stream_checkpoint_unpersisted"
+			}
+			return false
+		}
+		lastCheckpointAt = time.Now()
+		checkpointBytes = deliveredBytes
+		checkpointTokens = deliveredCounter.OutputTokens()
+		return true
+	}
 	ttftMs := 0
 	streamStart := time.Now()
 	firstTokenReceived := false
@@ -1569,7 +1668,6 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	}
 
 	done := false
-	streamTerminationCode := ""
 	skipRawEventSeparator := false
 	recordPartialDelivery := func() bool {
 		if deliveryPartialRecorded {
@@ -1596,8 +1694,180 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		deliveryPartialRecorded = true
 		return true
 	}
-	for !done && scanner.Scan() {
-		line := scanner.Text()
+	type pendingStreamFrame struct {
+		data      []byte
+		doneAfter bool
+	}
+	var pendingFrames []pendingStreamFrame
+	pendingBufferBytes := 0
+	var guardrailBufferTimer *time.Timer
+	var guardrailBufferTimerC <-chan time.Time
+	stopGuardrailBufferTimer := func() {
+		if guardrailBufferTimer == nil {
+			return
+		}
+		if !guardrailBufferTimer.Stop() {
+			select {
+			case <-guardrailBufferTimer.C:
+			default:
+			}
+		}
+		guardrailBufferTimer = nil
+		guardrailBufferTimerC = nil
+	}
+	var flushGuardrailBuffer func() bool
+	flushGuardrailBuffer = func() bool {
+		if len(pendingFrames) == 0 {
+			stopGuardrailBufferTimer()
+			return true
+		}
+		frames := pendingFrames
+		pendingFrames = nil
+		pendingBufferBytes = 0
+		stopGuardrailBufferTimer()
+		data := make([][]byte, len(frames))
+		for index := range frames {
+			data[index] = frames[index].data
+		}
+		inspection, inspectErr := inspectGuardedStreamBatch(ctx, pinnedStreamGuardrail, streamGuardrailProfile, data, streamGuardrailHistory)
+		if len(inspection.Result.Receipts) > 0 {
+			relay.recordGuardrailResult(ctx, requestID, model, requestedModel, guardrail.StageStreamOutput, inspection.Result, route, http.StatusOK, upstreamRequestID)
+		}
+		if inspectErr != nil {
+			streamTerminationCode = "guardrail_stream_invalid_shape"
+			if errors.Is(inspectErr, errStreamGuardrailCrossBoundary) || errors.Is(inspectErr, errStreamGuardrailArguments) {
+				streamTerminationCode = "guardrail_stream_transform_unsafe"
+			}
+			if errors.Is(inspectErr, errStreamGuardrailBufferExceeded) {
+				streamTerminationCode = "guardrail_stream_buffer_exceeded"
+			}
+			return false
+		}
+		if inspection.Result.Decision == guardrail.DecisionBlock {
+			streamTerminationCode = "guardrail_stream_blocked"
+			if guardrailBlockedByUnavailable(inspection.Result) {
+				streamTerminationCode = "guardrail_stream_detector_unavailable"
+			}
+			return false
+		}
+		additionalTokens := 0
+		for _, frame := range inspection.Frames {
+			if frame.Text != "" {
+				additionalTokens += tokenutil.EstimateTokens(frame.Text)
+			}
+		}
+		if !ensureStreamBudgetTokens(additionalTokens) {
+			return false
+		}
+		if !markBillableOutput() {
+			return false
+		}
+		for index, frame := range inspection.Frames {
+			if !firstTokenReceived {
+				firstTokenReceived = true
+				ttftMs = int(time.Since(streamStart).Milliseconds())
+			}
+			payload := fmt.Sprintf("data: %s\n\n", frame.Data)
+			written, writeOK := writeSSECount("%s", payload)
+			if written == len(payload) {
+				deliveredBytes += int64(written)
+				deliveredChunks++
+				if frame.Text != "" {
+					deliveredCounter.AddOutputDelta(frame.Text)
+				}
+				if !checkpointDelivery(!deliveryPartialRecorded) {
+					return false
+				}
+				if !recordPartialDelivery() {
+					streamTerminationCode = "delivery_receipt_unpersisted"
+					return false
+				}
+				if streamGuardrailProfile.Advisory {
+					advisoryTexts := streamAdvisoryTextsWithHistory(frame.AdvisoryTexts, streamAdvisoryHistory)
+					relay.evaluateStreamAdvisoryAfterDisclosure(ctx, pinnedStreamGuardrail, advisoryTexts, requestID, model, requestedModel, route, upstreamRequestID)
+				}
+			} else if written > 0 {
+				deliveredBytes += int64(written)
+			}
+			if !writeOK {
+				streamTerminationCode = "downstream_stream_write_failed"
+				return false
+			}
+			if frames[index].doneAfter {
+				done = true
+			}
+		}
+		return true
+	}
+	enqueueGuardedFrame := func(data []byte, doneAfter bool) bool {
+		_, parseErr := parseGuardedStreamFrame(data)
+		if parseErr != nil && streamGuardrailProfile.Enforced {
+			streamTerminationCode = "guardrail_stream_invalid_shape"
+			return false
+		}
+		frameBufferBytes := len(data)
+		if streamGuardrailProfile.Enforced && frameBufferBytes > streampolicy.EnforceBufferMaxBytes {
+			streamTerminationCode = "guardrail_stream_buffer_exceeded"
+			return false
+		}
+		if streamGuardrailProfile.Enforced && len(pendingFrames) > 0 &&
+			pendingBufferBytes+frameBufferBytes > streampolicy.EnforceBufferMaxBytes {
+			if !flushGuardrailBuffer() {
+				return false
+			}
+		}
+		pendingFrames = append(pendingFrames, pendingStreamFrame{data: append([]byte(nil), data...), doneAfter: doneAfter})
+		pendingBufferBytes += frameBufferBytes
+		if streamGuardrailProfile.Enforced && guardrailBufferTimer == nil {
+			guardrailBufferTimer = time.NewTimer(streampolicy.EnforceBufferMaxWait)
+			guardrailBufferTimerC = guardrailBufferTimer.C
+		}
+		if !streamGuardrailProfile.Enforced || pendingBufferBytes >= streampolicy.EnforceBufferMaxBytes || doneAfter {
+			return flushGuardrailBuffer()
+		}
+		return true
+	}
+	var scanErr error
+streamLoop:
+	for !done {
+		var line string
+		select {
+		case event, open := <-scanEvents:
+			if !open {
+				if !flushGuardrailBuffer() {
+					done = true
+				}
+				break streamLoop
+			}
+			if event.done {
+				scanErr = event.err
+				if !flushGuardrailBuffer() {
+					done = true
+				}
+				break streamLoop
+			}
+			line = event.line
+		case <-guardrailBufferTimerC:
+			if !flushGuardrailBuffer() {
+				done = true
+				break streamLoop
+			}
+			continue
+		case leaseErr := <-leaseFailures:
+			reqLog.Error("Stream delivery lease renewal failed; stopping before another model-data flush: %v", leaseErr)
+			streamTerminationCode = "stream_lease_lost"
+			done = true
+			break streamLoop
+		case writeErr := <-streamWriteFailures:
+			reqLog.Error("Downstream stream write failed: %v", writeErr)
+			streamTerminationCode = "downstream_stream_write_failed"
+			done = true
+			break streamLoop
+		case <-ctx.Done():
+			streamTerminationCode = "downstream_stream_write_failed"
+			done = true
+			break streamLoop
+		}
 
 		if streamNormalizer != nil {
 			if strings.TrimSpace(line) == "" || strings.HasPrefix(line, "event:") || strings.HasPrefix(line, ":") {
@@ -1610,6 +1880,10 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			if data == "[DONE]" {
 				if !streamPayloadInvalid {
 					markRouteHealthy()
+				}
+				if !flushGuardrailBuffer() {
+					done = true
+					continue
 				}
 				done = true
 				continue
@@ -1637,62 +1911,19 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 				usedUpstreamUsage = true
 			}
 			if !chunk.Skip && len(chunk.Data) > 0 {
-				if !markBillableOutput() {
-					done = true
-					continue
-				}
-				if !firstTokenReceived {
-					firstTokenReceived = true
-					ttftMs = int(time.Since(streamStart).Milliseconds())
-				}
-				payload := fmt.Sprintf("data: %s\n\n", chunk.Data)
-				written, writeOK := writeSSECount("%s", payload)
-				if written == len(payload) {
-					deliveredBytes += int64(written)
-					deliveredChunks++
-					if chunk.TextDelta != "" {
-						deliveredCounter.AddOutputDelta(chunk.TextDelta)
-					}
-					if !recordPartialDelivery() {
-						streamTerminationCode = "delivery_receipt_unpersisted"
-						done = true
-					}
-				} else if written > 0 {
-					deliveredBytes += int64(written)
-				}
-				if !writeOK {
-					streamTerminationCode = "downstream_stream_write_failed"
+				if !enqueueGuardedFrame(chunk.Data, chunk.Done) {
 					done = true
 				}
 			}
 			if chunk.Done {
 				markRouteHealthy()
+				if !flushGuardrailBuffer() {
+					done = true
+				}
 				done = true
 			}
 			if done {
 				continue
-			}
-			// Check for balance exhaustion signal from background goroutine
-			select {
-			case <-balanceExhausted:
-				reqLog.Warn("Balance exhausted at %d delivered output tokens, sending error", deliveredCounter.OutputTokens())
-				writeSSE("data: {\"error\":{\"type\":\"insufficient_balance\",\"message\":\"Balance exhausted\"}}\n\n")
-				streamTerminationCode = "insufficient_balance"
-				done = true
-			default:
-			}
-
-			// Token-count-based balance check — every 100 output tokens (inline, no extra goroutine)
-			if !done && deliveredCounter.ShouldCheckBalance() {
-				var balance int
-				err := relay.db.QueryRow(ctx,
-					`SELECT COALESCE(w.balance + w.granted_balance, 0) FROM wallets w WHERE w.org_id = $1`, orgID).Scan(&balance)
-				if err == nil && balance <= 0 {
-					reqLog.Warn("Balance exhausted at %d delivered output tokens, closing upstream", deliveredCounter.OutputTokens())
-					writeSSE("data: {\"error\":{\"type\":\"insufficient_balance\",\"message\":\"Balance exhausted\"}}\n\n")
-					streamTerminationCode = "insufficient_balance"
-					done = true
-				}
 			}
 			continue
 		}
@@ -1705,15 +1936,13 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			skipRawEventSeparator = false
 		}
 
-		// Track TTFT
-		if !firstTokenReceived && strings.HasPrefix(line, "data: ") && line != "data: [DONE]" {
-			firstTokenReceived = true
-			ttftMs = int(time.Since(streamStart).Milliseconds())
-		}
-
 		if line == "data: [DONE]" {
 			if !streamPayloadInvalid {
 				markRouteHealthy()
+			}
+			if !flushGuardrailBuffer() {
+				done = true
+				continue
 			}
 			done = true
 			continue
@@ -1739,92 +1968,57 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 				usedUpstreamUsage = true
 			}
 			markRouteHealthy()
-		}
-
-		// Persist the irreversible billing marker before forwarding the first
-		// upstream data event. Heartbeats and event labels are non-billable and
-		// may be sent earlier, but model data may not cross this barrier.
-		if strings.HasPrefix(line, "data: ") && !markBillableOutput() {
-			done = true
+			skipRawEventSeparator = true
+			if !enqueueGuardedFrame([]byte(data), false) {
+				done = true
+			}
 			continue
 		}
 
-		// Forward the upstream line as-is, except for [DONE]. UniRouter sends
-		// its final usage/cost extension before the single terminal [DONE].
+		// Preserve non-data SSE ordering by closing any pending model-data batch
+		// before forwarding its event label, comment or separator.
+		if !flushGuardrailBuffer() {
+			done = true
+			continue
+		}
 		payload := line + "\n"
-		if strings.HasPrefix(line, "data: ") {
-			// OpenAI-compatible data is one validated JSON line. Write the
-			// complete SSE event, including its separator, as one local unit so
-			// a partial line cannot become chargeable delivery.
-			payload = line + "\n\n"
-			skipRawEventSeparator = true
-		}
-		written, writeOK := writeSSECount("%s", payload)
-		if strings.HasPrefix(line, "data: ") && written == len(payload) {
-			deliveredBytes += int64(written)
-			deliveredChunks++
-			data := strings.TrimPrefix(line, "data: ")
-			var chunk struct {
-				Choices []struct {
-					Delta struct {
-						Content string `json:"content"`
-					} `json:"delta"`
-				} `json:"choices"`
-			}
-			if json.Unmarshal([]byte(data), &chunk) == nil {
-				for _, choice := range chunk.Choices {
-					deliveredCounter.AddOutputDelta(choice.Delta.Content)
-				}
-			}
-			if !recordPartialDelivery() {
-				streamTerminationCode = "delivery_receipt_unpersisted"
-				done = true
-			}
-		} else if strings.HasPrefix(line, "data: ") && written > 0 {
-			deliveredBytes += int64(written)
-		}
+		_, writeOK := writeSSECount("%s", payload)
 		if !writeOK {
 			streamTerminationCode = "downstream_stream_write_failed"
 			done = true
 			continue
 		}
+	}
+	stopGuardrailBufferTimer()
+	pendingFrames = nil
 
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-
-		// Check for balance exhaustion signal from background goroutine
-		select {
-		case <-balanceExhausted:
-			reqLog.Warn("Balance exhausted at %d delivered output tokens, sending error", deliveredCounter.OutputTokens())
-			writeSSE("data: {\"error\":{\"type\":\"insufficient_balance\",\"message\":\"Balance exhausted\"}}\n\n")
-			streamTerminationCode = "insufficient_balance"
-			done = true
-		default:
-		}
-
-		// Token-count-based balance check — every 100 output tokens (inline, no extra goroutine)
-		if !done && deliveredCounter.ShouldCheckBalance() {
-			var balance int
-			err := relay.db.QueryRow(ctx,
-				`SELECT COALESCE(w.balance + w.granted_balance, 0) FROM wallets w WHERE w.org_id = $1`, orgID).Scan(&balance)
-			if err == nil && balance <= 0 {
-				reqLog.Warn("Balance exhausted at %d delivered output tokens, closing upstream", deliveredCounter.OutputTokens())
-				writeSSE("data: {\"error\":{\"type\":\"insufficient_balance\",\"message\":\"Balance exhausted\"}}\n\n")
-				streamTerminationCode = "insufficient_balance"
-				done = true
-			}
+	if deliveryStarted.Load() && deliveredBytes > 0 && deliveredChunks > 0 {
+		_ = checkpointDelivery(true)
+	}
+	// Stop and join the short-TTL heartbeat before granting the longer terminal
+	// lease. Otherwise an in-flight heartbeat can overwrite the finalization
+	// expiry with a shorter lease after this goroutine has already renewed it.
+	heartbeatCancel()
+	heartbeatWg.Wait()
+	finalizationLeaseLost := false
+	if deliveryStarted.Load() {
+		finalizationLease := leaseStart
+		finalizationLease.LeaseTTL = streampolicy.FinalizationLeaseDuration
+		renewCtx, renewCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		renewErr := relay.billing.RenewStreamDelivery(renewCtx, finalizationLease)
+		renewCancel()
+		if renewErr != nil {
+			finalizationLeaseLost = true
+			leaveLeaseForRecovery = true
+			streamTerminationCode = "stream_lease_lost"
+			reqLog.Error("Failed to retain stream lease for terminal billing; handing off to checkpoint recovery: %v", renewErr)
 		}
 	}
 
 	// Stop background activity before finalization and release the provider
 	// connection immediately. closeUpstream is idempotent for early returns.
-	balanceCancel()
-	heartbeatCancel()
-	balanceWg.Wait()
-	heartbeatWg.Wait()
 	closeUpstream()
-	scanErr := scanner.Err()
+	scannerWg.Wait()
 	if scanErr != nil && !preOutputBillingFailure {
 		reqLog.Error("Upstream stream ended with a read error: %v", scanErr)
 		if errors.Is(scanErr, bufio.ErrTooLong) {
@@ -1850,6 +2044,9 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		streamTerminationCode = "downstream_stream_write_failed"
 	default:
 	}
+	if streamTerminationCode != "" {
+		leaseTerminalReason = streamTerminationCode
+	}
 	if preOutputBillingFailure {
 		return
 	}
@@ -1873,6 +2070,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		})
 		deliveryCancel()
 		if err != nil {
+			leaveLeaseForRecovery = true
 			reqLog.Error("Failed to persist terminal stream delivery receipt: %v", err)
 			relay.recordTraceEvent(recordCtx, requestID, "delivery.receipt.failed", "billing", "error", model, requestedModel, route, http.StatusOK, elapsedMilliseconds(requestStart), map[string]interface{}{
 				"error_code":       "delivery_terminal_unpersisted",
@@ -1899,6 +2097,16 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			writeSSE("data: {\"error\":{\"type\":\"stream_error\",\"code\":\"stream_error.frame_too_large\",\"message\":\"Upstream stream frame exceeded the configured safety limit\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
 		case "upstream_stream_invalid_frame":
 			writeSSE("data: {\"error\":{\"type\":\"stream_error\",\"code\":\"stream_error.invalid_frame\",\"message\":\"Upstream returned an invalid stream frame\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
+		case "guardrail_stream_blocked":
+			writeSSE("data: {\"error\":{\"type\":\"guardrail_error\",\"code\":\"guardrail_error.stream_output_blocked\",\"message\":\"Stream output was stopped by content policy\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
+		case "guardrail_stream_detector_unavailable", "guardrail_stream_invalid_shape", "guardrail_stream_transform_unsafe", "guardrail_stream_buffer_exceeded":
+			writeSSE("data: {\"error\":{\"type\":\"guardrail_error\",\"code\":\"guardrail_error.stream_inspection_unavailable\",\"message\":\"Stream output could not be inspected safely\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
+		case "stream_budget_extension_denied":
+			writeSSE("data: {\"error\":{\"type\":\"billing_error\",\"code\":\"billing_error.stream_budget_exhausted\",\"message\":\"Stream budget could not be extended\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
+		case "stream_output_limit_exceeded":
+			writeSSE("data: {\"error\":{\"type\":\"stream_error\",\"code\":\"stream_error.output_limit_exceeded\",\"message\":\"Stream exceeded its explicit output limit\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
+		case "stream_lease_lost", "stream_checkpoint_unpersisted":
+			writeSSE("data: {\"error\":{\"type\":\"stream_error\",\"code\":\"stream_error.delivery_state_unavailable\",\"message\":\"Durable stream delivery state is unavailable\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
 		}
 	}
 
@@ -1919,6 +2127,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	}
 
 	if deliveryReceiptFailure {
+		leaveLeaseForRecovery = true
 		evidenceUsage := adapters.NewMissingUsage()
 		if usedUpstreamUsage {
 			evidenceUsage = providerUsage
@@ -1943,6 +2152,17 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	}
 	if usageErr != nil {
 		reqLog.Error("Final stream customer usage contract is invalid: %v", usageErr)
+		leaveLeaseForRecovery = true
+		streamTerminationCode = "stream_checkpoint_unpersisted"
+		recordStreamMetrics(adapters.NewMissingUsage(), 0, nil)
+		recordStreamTermination(streamTerminationCode, "checkpoint_recovery_pending")
+		writeTerminationFrame(streamTerminationCode, "checkpoint_recovery_pending")
+		return
+	}
+	if finalizationLeaseLost {
+		recordStreamMetrics(customerUsage, 0, nil)
+		recordStreamTermination("stream_lease_lost", "checkpoint_recovery_pending")
+		writeTerminationFrame("stream_lease_lost", "checkpoint_recovery_pending")
 		return
 	}
 
@@ -2007,6 +2227,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 
 	settleReq := settleRequestFromUsage(requestID, attemptIDFromContext(ctx), orgID, customerUsage)
 	if persistErr := relay.persistSettlementUsageWithRetry(settleReq, reqLog); persistErr != nil {
+		leaveLeaseForRecovery = true
 		billingStatus := "settlement_pending_usage_unpersisted"
 		reqLog.Error("Delivered stream usage was not durably persisted; reservation retained: %v", persistErr)
 		relay.recordTraceEvent(recordCtx, requestID, "billing.settlement_usage.failed", "billing", "critical", model, requestedModel, route, http.StatusOK, elapsedMilliseconds(requestStart), map[string]interface{}{
@@ -2050,6 +2271,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		relay.checkProjectBudgetAlert(recordCtx)
 	}
 	if streamTerminationCode != "" {
+		leaseTerminalReason = streamTerminationCode
 		recordStreamTermination(streamTerminationCode, billingStatus)
 		writeTerminationFrame(streamTerminationCode, billingStatus)
 		return
@@ -2075,6 +2297,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	}
 	finalJSON, _ := json.Marshal(finalChunk)
 	if !writeSSE("data: %s\n\n", finalJSON) {
+		leaseTerminalReason = "downstream_stream_write_failed"
 		recordTerminalDelivery(billing.DeliveryOutcomeInterrupted, "downstream_stream_write_failed")
 		terminalBillingStatus := billingStatus
 		if settledSuccessfully {
@@ -2084,6 +2307,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		return
 	}
 	if !writeSSE("data: [DONE]\n\n") {
+		leaseTerminalReason = "downstream_stream_write_failed"
 		recordTerminalDelivery(billing.DeliveryOutcomeInterrupted, "downstream_stream_write_failed")
 		terminalBillingStatus := billingStatus
 		if settledSuccessfully {
@@ -2093,6 +2317,8 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		return
 	}
 	recordTerminalDelivery(billing.DeliveryOutcomeCompleted, "")
+	leaseTerminalState = billing.StreamLeaseStateCompleted
+	leaseTerminalReason = "stream_completed"
 }
 
 // calculateCost computes the actual cost in cents using model prices.

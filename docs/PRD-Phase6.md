@@ -1,8 +1,8 @@
 # UniRouter PRD6: Reliable MaaS Policy And Safety Plane
 
-> Version: 0.17
+> Version: 0.18
 > Date: 2026-07-13
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14/D6-15 accepted; P6-F03-P6-F10, P6-F16-P6-F21, P6-F32-P6-F41 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F11 remains in progress
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14/D6-15/D6-16 accepted; P6-F03-P6-F10, P6-F16-P6-F21, P6-F32-P6-F41 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F11 remains in progress
 > Accepted implementation scope: P6-F03 through P6-F11, P6-F16 through P6-F21, P6-F32 through P6-F41
 > Innovation gate: P6-F23 through P6-F31 remain proposed/deferred
 
@@ -205,7 +205,7 @@ These do not become UniRouter source-code gaps without new evidence.
 | P6-F08 | Implement Routing Policy V1 with explainable candidates, exclusions, retry and failover | P1 | CI verified / closed by PR #172, exact-head run `29178419505`, merge `54d8833` and post-merge main run `29178588075`; historical branch retained at `0e374d3`; no target/capacity claim |
 | P6-F09 | Normalize and bill provider cache-read/cache-create tokens | P1 | CI verified / closed by PR #174 exact-head run `29180539621`, merge `6515b3f`, production-neutral fixture-stability PR #175 and final post-fix main run `29181137210`; historical implementation branch retained at `711e718`; no response-cache claim |
 | P6-F10 | Add versioned input/non-stream-output Guardrail Kernel | P1 | CI verified / closed by PR #188 exact implementation/test head `76f95ed` / run `29236987646`; streaming remains P6-F11 |
-| P6-F11 | Add safe streaming interception, cancellation and settlement semantics | P1 | Accepted MVP; transport prerequisite P6-STREAM-002A CI verified / closed by PR #162; semantic policy remains |
+| P6-F11 | Add safe streaming interception, cancellation and settlement semantics | P1 | Accepted MVP; repository/local verified, PR and required CI pending; transport prerequisite P6-STREAM-002A CI verified / closed by PR #162 |
 | P6-F19 | Add short Agent capability, monotonic delegation, ancestor budgets and versioned revocation | P1 | CI verified / closed by P6-F19A PR #164/main run `29170507588` plus P6-F19B PR #166/main run `29171807693`; P6-F20/P6-F21 were closed separately and P6-F07 is independently closed by PR #168 |
 | P6-F20 | Add durable minimal usage/finalization outbox and bounded evidence/notification workers | P1 | CI verified / closed by PR #177 exact-head run `29193900584`, merge `30d1e8f` and post-merge main run `29194150134`; D6-12 assigns mid-stream crash/checkpoint semantics to P6-F11; evidence `docs/ops/evidence/PRD6-B3-P6F20-durable-outbox-local-20260712.md` |
 | P6-F21 | Admit weighted workload classes without replica-multiplied quotas or long-stream starvation | P1 | CI verified / closed by PR #170, exact-head run `29176160987`, merge `04af91f` and post-merge main run `29176358459`; post-closeout test-only PR #180/#181 separated miniredis fixture execution from real-Redis concurrency evidence, with PR #181 merge `815fb31` and final main run `29199635598` green; no runtime or target-capacity change |
@@ -366,6 +366,33 @@ The User accepted on 2026-07-11:
    retains provider-cost evidence for explicit reconciliation. Streaming
    inspection remains P6-F11 and no real external detector is enabled by this
    decision.
+11. D6-16: use synchronous bounded micro-buffering for enforced stream-output
+   policy. Normalized model text, refusal/reasoning text and function/tool
+   arguments are inspected before downstream flush; the normalized model-data
+   JSON batch closes at 200 milliseconds or 4 KiB,
+   whichever comes first, while each registered detector declares a bounded
+   cross-chunk lookbehind. A single normalized model-data frame above 4 KiB
+   cannot enter this enforcement path and terminates safely before disclosure;
+   the larger SSE transport-line ceiling is not an enforcement-buffer promise.
+   Unknown or otherwise uninspected model-output shapes fail closed when an
+   enforced stream policy is pinned; the compatibility path without such a
+   policy remains pass-through.
+   Built-in sensitive-word and PII/secret detectors may enforce synchronously.
+   External semantic detectors remain shadow/audit by default and may enforce
+   only when the fixed process registry declares bounded synchronous stream
+   capability and the policy is explicitly configured for enforcement. A block,
+   fail-closed detector failure, hard-budget extension refusal or unsafe frame
+   cancels the accepted upstream attempt, never retries or fails over, emits an
+   explicit non-success stream terminal, and settles only safe downstream bytes
+   represented by the gateway counter. Buffered or withheld bytes create no
+   customer charge or delivery claim; provider COGS remains explicit pending or
+   reconciliation evidence under D6-13/D6-14. A monotonic post-write checkpoint
+   is persisted at a bounded byte/token/time cadence with a renewable owner
+   lease. After process death, recovery may charge no more than the latest
+   durable checkpoint, marks the stream interrupted, and makes an idempotent
+   client retry return that receipt rather than replay or transparently migrate
+   the stream. Shadow/audit mode must disclose that output may precede its
+   verdict. PRD6 makes no zero-leakage or real-detector claim.
 
 Batch 0B is therefore authorized for repository implementation and begins with
 P6-F16. Each R4 security/financial boundary remains an independently reviewable

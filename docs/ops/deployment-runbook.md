@@ -315,6 +315,33 @@ docker compose exec backend ./uniroute migrate up
 必须修复并 roll-forward。仓库测试只验证此顺序和拒绝条件；它不代表任何目标环境
 已经执行升级，也不授权配置真实外部检测器、凭证或付费上游请求。
 
+### 3.6 PRD6 `000034` 流式安全与崩溃恢复非滚动启用
+
+`000034_prd6_stream_policy_termination` 增加 `stream_output` 策略阶段、不可变价格的
+流式预算扩容收据、可续租的进程所有权，以及只保存字节数、分片数、Token 计数和
+策略版本的追加式 checkpoint。它不保存模型正文、Prompt 或上游凭证，也不会自动
+创建或启用任何流式策略。
+
+安全启用顺序是：
+
+1. 先完成 `000033` 的非滚动升级，drain 并停止全部旧 gateway/control-plane 副本；
+2. 应用 `000034`，只启动认识扩容序号、lease 和 checkpoint 的新版本；
+3. 验证普通流式请求、显式 `max_tokens`、无流式策略兼容路径，以及过期 lease 的
+   单所有者恢复；确认 200 ms / 4 KiB 标准化模型数据 JSON 微缓冲按先到边界关闭、
+   单帧超限和强制策略无法检查的输出形状在交付前中断，且无 checkpoint 的中断
+   不会形成客户用量；
+4. 先用 `shadow` / `audit` 策略观察，并向租户明确标注其判断可能晚于内容交付；
+5. 只有固定注册表显示 `synchronous=true` 且 lookbehind 在平台上限内的检测器，
+   才可逐条评审为流式 `enforce`。命中后不得把同一已接受流静默切换到其他渠道；
+6. 验证数据库拒绝扩容收据更新、乱序序号和价格漂移，并确认恢复会复用已有完成或
+   中断终态收据，而不会创建冲突的第二终态；
+7. 监控预算扩容拒绝、lease 丢失、checkpoint 失败、部分客户结算与 provider-cost
+   pending/reconciliation；不得把本地 checkpoint 当作客户已实际读取正文的证明。
+
+一旦存在流式策略、预算扩容收据、lease 或 checkpoint，down 会拒绝破坏性回滚。
+必须保留证据并 roll-forward，不能删除记录来迁就旧二进制。此仓库步骤不授权部署、
+真实/付费上游调用、外部检测器启用或凭证变更。
+
 ---
 
 ## 四、备份与恢复

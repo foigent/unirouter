@@ -114,6 +114,24 @@ func (f *DFAFilter) WordCount() int {
 	return len(f.wordList)
 }
 
+// MaxWordBytes returns the largest configured word in UTF-8 bytes without
+// exposing any word content. Streaming guardrails use it to retain enough
+// cross-frame context before a downstream flush.
+func (f *DFAFilter) MaxWordBytes() int {
+	if f == nil {
+		return 0
+	}
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	maxBytes := 0
+	for _, word := range f.wordList {
+		if len(word) > maxBytes {
+			maxBytes = len(word)
+		}
+	}
+	return maxBytes
+}
+
 // Version returns the immutable database snapshot identifier currently used
 // by this process without exposing the sensitive-word list itself.
 func (f *DFAFilter) Version() string {

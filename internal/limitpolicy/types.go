@@ -141,10 +141,12 @@ type policyReservation struct {
 // Reservation is a server-owned terminal handle. It is not a bearer token and
 // grants no model, Tool, IAM, database, or export authority.
 type Reservation struct {
-	OperationID string
-	Items       []policyReservation
-	Idempotent  bool
-	workload    *workloadadmission.Reservation
+	OperationID         string
+	Items               []policyReservation
+	Idempotent          bool
+	ExtensionSequence   int
+	LastExtensionTokens int64
+	workload            *workloadadmission.Reservation
 }
 
 func (p Policy) Validate() error {

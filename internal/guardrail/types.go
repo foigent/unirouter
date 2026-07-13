@@ -11,6 +11,7 @@ import (
 const (
 	StageInput           = "input"
 	StageNonStreamOutput = "nonstream_output"
+	StageStreamOutput    = "stream_output"
 
 	ModeDisabled = "disabled"
 	ModeShadow   = "shadow"
@@ -35,6 +36,11 @@ const (
 
 	DetectorSensitiveWords = "builtin:sensitive_words"
 	DetectorPII            = "builtin:pii_secrets"
+
+	// MaxStreamLookbehindBytes is an application safety bound, not a detector
+	// tuning knob. A detector that needs more context cannot synchronously enforce
+	// a streaming policy under D6-16.
+	MaxStreamLookbehindBytes = 4 * 1024
 )
 
 var (
@@ -67,7 +73,7 @@ func (p Policy) Validate() error {
 	if strings.TrimSpace(p.Ref) == "" || strings.TrimSpace(p.Name) == "" || p.Version <= 0 {
 		return ErrInvalidPolicy
 	}
-	if p.Stage != StageInput && p.Stage != StageNonStreamOutput {
+	if p.Stage != StageInput && p.Stage != StageNonStreamOutput && p.Stage != StageStreamOutput {
 		return ErrInvalidPolicy
 	}
 	if p.Mode != ModeDisabled && p.Mode != ModeShadow && p.Mode != ModeEnforce {
@@ -173,6 +179,27 @@ type Finding struct {
 type Detector interface {
 	Version() string
 	Detect(ctx Context, text Text, config json.RawMessage) ([]Finding, error)
+}
+
+// StreamCapability is declared by the fixed process registry. Tenant policy
+// configuration cannot turn an asynchronous detector into a synchronous one.
+type StreamCapability struct {
+	Synchronous     bool `json:"synchronous"`
+	LookbehindBytes int  `json:"lookbehind_bytes"`
+}
+
+// StreamCapableDetector may be used by an enforced stream-output policy when
+// its capability is synchronous and fits the platform lookbehind bound.
+type StreamCapableDetector interface {
+	Detector
+	StreamCapability() StreamCapability
+}
+
+type StreamProfile struct {
+	PolicySetVersion string `json:"policy_set_version"`
+	Enforced         bool   `json:"enforced"`
+	Advisory         bool   `json:"advisory"`
+	LookbehindBytes  int    `json:"lookbehind_bytes"`
 }
 
 // Context is the small cancellation/deadline surface detectors need. Keeping

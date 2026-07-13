@@ -36,7 +36,7 @@ func newPolicyTestServiceWithClient(t *testing.T, options Options, boundedClient
 	if boundedClient {
 		loadCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		for _, script := range []*redis.Script{reserveScript, terminalScript} {
+		for _, script := range []*redis.Script{reserveScript, extendScript, terminalScript} {
 			if err := script.Load(loadCtx, client).Err(); err != nil {
 				t.Fatalf("preload limit-policy miniredis script: %v", err)
 			}
@@ -253,6 +253,52 @@ func TestTPMReservationSettlementAndActualOverrun(t *testing.T) {
 	}
 	if _, err := service.Reserve(context.Background(), admission("tpm-after-overrun", 1)); !errors.Is(err, ErrTPMExceeded) {
 		t.Fatalf("future request after actual overrun = %v, want ErrTPMExceeded", err)
+	}
+}
+
+func TestP6F11TPMExtensionIsIdempotentAndFailsBeforeDisclosure(t *testing.T) {
+	service, _ := newPolicyTestService(t, testOptions(), Policy{
+		ID: 51, Ref: "policy:p6f11-tpm", Name: "p6f11-tpm", Version: 1, Mode: ModeEnforce,
+		FailureMode: FailureFailClosed, TPMLimit: 100,
+	})
+	reservation, err := service.Reserve(context.Background(), AdmissionRequest{
+		OperationID: "p6f11-extension", Subject: admission("x", 1).Subject,
+		EstimatedInput: 20, ReservedOutput: 20, LeaseTTL: time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Extend(context.Background(), reservation, 1, 30); err != nil {
+		t.Fatalf("first extension: %v", err)
+	}
+	if err := service.Extend(context.Background(), reservation, 1, 30); err != nil {
+		t.Fatalf("idempotent extension replay: %v", err)
+	}
+	if err := service.Extend(context.Background(), reservation, 1, 31); !errors.Is(err, ErrConflict) {
+		t.Fatalf("same extension sequence with a different amount = %v, want ErrConflict", err)
+	}
+	if reservation.ExtensionSequence != 1 || len(reservation.Items) == 0 || reservation.Items[0].ReservedTokens != 70 {
+		t.Fatalf("extension was not applied exactly once: %#v", reservation)
+	}
+
+	competing, err := service.Reserve(context.Background(), AdmissionRequest{
+		OperationID: "p6f11-competing", Subject: admission("x", 1).Subject,
+		EstimatedInput: 10, ReservedOutput: 10, LeaseTTL: time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("reserve remaining TPM: %v", err)
+	}
+	if err := service.Extend(context.Background(), reservation, 2, 20); !errors.Is(err, ErrTPMExceeded) {
+		t.Fatalf("extension over shared TPM = %v, want ErrTPMExceeded", err)
+	}
+	if reservation.ExtensionSequence != 1 || reservation.Items[0].ReservedTokens != 70 {
+		t.Fatalf("denied extension changed local authority: %#v", reservation)
+	}
+	if err := service.Finalize(context.Background(), reservation, 45); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.CancelBeforeDispatch(context.Background(), competing); err != nil {
+		t.Fatal(err)
 	}
 }
 

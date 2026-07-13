@@ -5,7 +5,20 @@ import (
 	"time"
 )
 
-const Version = "stream-transport.v1"
+const Version = "stream-safety.v2"
+
+const (
+	EnforceBufferMaxBytes       = 4 * 1024
+	EnforceBufferMaxWait        = 200 * time.Millisecond
+	CheckpointInterval          = time.Second
+	CheckpointDeliveredBytes    = 64 * 1024
+	CheckpointCompletionTokens  = 128
+	CheckpointLeaseDuration     = 45 * time.Second
+	CheckpointHeartbeatInterval = 15 * time.Second
+	FinalizationLeaseDuration   = 2 * time.Minute
+	ReservationGuardTokens      = 128
+	ReservationExtensionTokens  = 1000
+)
 
 const (
 	minSSELineBytes          = 64 * 1024
@@ -17,9 +30,8 @@ const (
 	maxStreamDurationSeconds = 24 * 60 * 60
 )
 
-// Config is the immutable transport policy used by one gateway process.
-// Financial reservation extension and content guardrails are separate policy
-// layers; this contract only bounds SSE framing and socket lifetime behavior.
+// Config is the immutable transport policy used by one gateway process. D6-16
+// safety constants above are platform invariants rather than tenant knobs.
 type Config struct {
 	MaxSSELineBytes         int `json:"max_sse_line_bytes"`
 	WriteIdleTimeoutSeconds int `json:"write_idle_timeout_seconds"`

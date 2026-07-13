@@ -20,7 +20,7 @@ interface GuardrailPolicy {
   api_key_name?: string;
   api_key_prefix?: string;
   model?: string;
-  stage: 'input' | 'nonstream_output';
+  stage: 'input' | 'nonstream_output' | 'stream_output';
   detector_ref: string;
   action: 'audit' | 'redact' | 'block';
   mode: 'disabled' | 'shadow' | 'enforce';
@@ -38,6 +38,11 @@ interface KeyOption {
   org_name?: string;
   project_id?: number;
   project_name?: string;
+}
+
+interface StreamDetectorCapability {
+  synchronous: boolean;
+  lookbehind_bytes: number;
 }
 
 function selectorText(policy: GuardrailPolicy) {
@@ -64,6 +69,12 @@ const actionLabels: Record<string, string> = {
   audit: '只审计', redact: '脱敏后继续', block: '阻断',
 };
 
+const stageLabels: Record<GuardrailPolicy['stage'], string> = {
+  input: '请求输入',
+  nonstream_output: '非流式输出',
+  stream_output: '流式输出',
+};
+
 export default function GuardrailPoliciesPage() {
   const role = useAuthStore((state) => state.user?.role);
   const userOrgId = useAuthStore((state) => state.user?.org_id);
@@ -73,7 +84,14 @@ export default function GuardrailPoliciesPage() {
   const [keys, setKeys] = useState<KeyOption[]>([]);
   const [models, setModels] = useState<string[]>([]);
   const [detectors, setDetectors] = useState<string[]>(['builtin:sensitive_words', 'builtin:pii_secrets']);
-	const [localDetectorMaxBytes, setLocalDetectorMaxBytes] = useState(128 * 1024);
+  const [streamCapabilities, setStreamCapabilities] = useState<Record<string, StreamDetectorCapability>>({
+    'builtin:sensitive_words': { synchronous: true, lookbehind_bytes: 4 * 1024 },
+    'builtin:pii_secrets': { synchronous: true, lookbehind_bytes: 512 },
+  });
+  const [streamBufferMaxBytes, setStreamBufferMaxBytes] = useState(4 * 1024);
+  const [streamBufferMaxWaitMs, setStreamBufferMaxWaitMs] = useState(200);
+  const [streamCheckpointIntervalMs, setStreamCheckpointIntervalMs] = useState(1000);
+  const [localDetectorMaxBytes, setLocalDetectorMaxBytes] = useState(128 * 1024);
   const [externalDetectorMaxBytes, setExternalDetectorMaxBytes] = useState(256 * 1024);
   const [detectorMaxTexts, setDetectorMaxTexts] = useState(256);
   const [loading, setLoading] = useState(true);
@@ -91,9 +109,16 @@ export default function GuardrailPoliciesPage() {
         setPolicies(data?.data || []);
         setTotal(data?.total || 0);
         setDetectors(data?.approved_detectors || ['builtin:sensitive_words', 'builtin:pii_secrets']);
-		setLocalDetectorMaxBytes(data?.local_detector_max_bytes || 128 * 1024);
-		setExternalDetectorMaxBytes(data?.external_detector_max_bytes || 256 * 1024);
-		setDetectorMaxTexts(data?.detector_max_texts || 256);
+        setStreamCapabilities(data?.stream_detector_capabilities || {
+          'builtin:sensitive_words': { synchronous: true, lookbehind_bytes: 4 * 1024 },
+          'builtin:pii_secrets': { synchronous: true, lookbehind_bytes: 512 },
+        });
+        setStreamBufferMaxBytes(data?.stream_enforce_buffer_max_bytes || 4 * 1024);
+        setStreamBufferMaxWaitMs(data?.stream_enforce_buffer_max_wait_ms || 200);
+        setStreamCheckpointIntervalMs(data?.stream_checkpoint_interval_ms || 1000);
+        setLocalDetectorMaxBytes(data?.local_detector_max_bytes || 128 * 1024);
+        setExternalDetectorMaxBytes(data?.external_detector_max_bytes || 256 * 1024);
+        setDetectorMaxTexts(data?.detector_max_texts || 256);
       })
       .catch((err: any) => Toast.error(err?.message || '安全策略加载失败'))
       .finally(() => setLoading(false));
@@ -152,6 +177,11 @@ export default function GuardrailPoliciesPage() {
 
   const submit = async (values: Record<string, any>) => {
     const mandatory = platform && values.mandatory === 'yes';
+    const streamCapability = streamCapabilities[values.detector_ref];
+    if (values.stage === 'stream_output' && (mandatory || values.mode === 'enforce') && values.action !== 'audit' && !streamCapability?.synchronous) {
+      Toast.error('该检测器不能在流式输出写出前同步完成，只能先使用“影子观察”或“只审计”。');
+      return;
+    }
     const payload: Record<string, any> = {
       name: values.name,
       ...(editing ? { version: editing.version } : {}),
@@ -186,7 +216,7 @@ export default function GuardrailPoliciesPage() {
   const columns = [
     { title: '策略', dataIndex: 'name', render: (value: string, record: GuardrailPolicy) => <div><Text strong>{value}</Text><br /><Text type="tertiary" size="small">版本 v{record.version}{record.mandatory ? ' · 平台强制' : ''}</Text></div> },
     { title: '适用范围', render: (_: unknown, record: GuardrailPolicy) => selectorText(record) },
-    { title: '阶段', dataIndex: 'stage', width: 130, render: (value: string) => value === 'input' ? '请求输入' : '非流式输出' },
+    { title: '阶段', dataIndex: 'stage', width: 130, render: (value: GuardrailPolicy['stage']) => stageLabels[value] || value },
     { title: '检测与动作', render: (_: unknown, record: GuardrailPolicy) => `${detectorLabels[record.detector_ref] || record.detector_ref} · ${actionLabels[record.action] || record.action}` },
     { title: '状态', dataIndex: 'mode', width: 100, render: (value: GuardrailPolicy['mode']) => modeTag(value) },
     { title: '检测器不可用时', dataIndex: 'failure_mode', width: 150, render: (value: string) => value === 'fail_closed' ? '安全拒绝（推荐强制规则）' : '留痕后继续' },
@@ -202,18 +232,20 @@ export default function GuardrailPoliciesPage() {
       <PageHeader
         eyebrow="安全治理"
         title="内容安全策略"
-        description="在请求发往模型前、以及非流式结果交付客户前执行版本固定的审计、脱敏或阻断。"
+        description="在请求发往模型前，以及非流式或流式结果交付客户前，执行版本固定的审计、脱敏或阻断。"
         actions={canManage ? <Button icon={<IconPlus />} type="primary" onClick={() => { setEditing(null); setDrawerVisible(true); }}>新增策略</Button> : undefined}
       />
 
       <Surface title="如何安全使用">
         <Paragraph><Text strong>推荐从影子观察开始：</Text>检测器只报告发现，由 UniRouter 内核统一决定继续、脱敏或阻断；影子模式不会改变客户请求。</Paragraph>
         <Paragraph>平台强制规则对所有租户生效，组织、项目和访问凭证策略只能继续收紧，不能关闭或放宽平台规则。外部检测器必须先由平台注册，不能填写任意网址。</Paragraph>
-		<Paragraph><Text strong>外部检测会传输内容：</Text>启用外部检测策略会把所选文本发送到平台预先登记的固定服务。只有在租户授权、数据驻留、保留与供应商条款均已确认后才能启用；当前默认未登记真实外部检测器。</Paragraph>
+        <Paragraph><Text strong>外部检测会传输内容：</Text>启用外部检测策略会把所选文本发送到平台预先登记的固定服务。只有在租户授权、数据驻留、保留与供应商条款均已确认后才能启用；当前默认未登记真实外部检测器。</Paragraph>
         <Paragraph><Text strong>故障规则：</Text>强制安全检测器不可用时拒绝请求；普通审计可选择“留痕后继续”。外部检测默认最多等待 1 秒且不自动重试，避免同一次请求被重复处理。</Paragraph>
-		<Paragraph><Text strong>同步扫描边界：</Text>每次策略评估最多检查 {detectorMaxTexts} 个文本单元；本地 PII/密钥检测最多处理 {Math.round(localDetectorMaxBytes / 1024)} KiB，外部检测最多处理 {Math.round(externalDetectorMaxBytes / 1024)} KiB。超出时不会假装已检查，而是标记为“无法完整判断”，再按上面的故障规则安全拒绝或留痕后继续。</Paragraph>
-        <Paragraph><Text strong>输出阻断与费用：</Text>被阻断的内容不会交付、不会向客户收费；上游可能已经计费，因此该请求会进入上游成本待处理并暂时阻止该凭证继续产生新费用，直到平台操作员明确退款或承担成本。</Paragraph>
-		<Paragraph>当前策略覆盖 Chat 输入、Embeddings 文本输入，以及 Chat 非流式普通文本、文本分段和函数/工具参数；无法识别的结构化输出不会假装检查通过。流式逐段拦截属于独立的流式安全能力。</Paragraph>
+        <Paragraph><Text strong>同步扫描边界：</Text>每次策略评估最多检查 {detectorMaxTexts} 个文本单元；本地 PII/密钥检测最多处理 {Math.round(localDetectorMaxBytes / 1024)} KiB，外部检测最多处理 {Math.round(externalDetectorMaxBytes / 1024)} KiB。超出时不会假装已检查，而是标记为“无法完整判断”，再按上面的故障规则安全拒绝或留痕后继续。</Paragraph>
+        <Paragraph><Text strong>流式输出不是零泄露承诺：</Text>每个完整的模型数据帧都在写出前同步检查；已标准化的模型数据 JSON 最多聚合 {streamBufferMaxWaitMs} 毫秒或 {Math.round(streamBufferMaxBytes / 1024)} KiB，先到即关闭本批，并只保留检测器申报的有限跨帧上下文。单个标准化模型数据帧超过该上限会在交付前安全中断；更大的 SSE 传输行上限不代表强制检查缓冲也允许同样大小。影子/只审计检测可能在内容写出后才形成结论。</Paragraph>
+        <Paragraph><Text strong>流式中断与恢复：</Text>命中阻断或硬预算无法扩容时立即停止当前上游，不再切换渠道。已安全写出的前缀按实际用量结算；未写出的内容不向客户收费。系统约每 {Math.max(1, Math.round(streamCheckpointIntervalMs / 1000))} 秒保存一次不含正文的计数 checkpoint，实例故障后明确标记中断，不会从中间偷偷重放或迁移。</Paragraph>
+        <Paragraph><Text strong>输出阻断与费用：</Text>未交付的被阻断内容不向客户收费；上游可能已经计费，因此该部分会进入上游成本待处理，直到平台操作员明确退款或承担成本。</Paragraph>
+        <Paragraph>当前策略覆盖 Chat 输入、Embeddings 文本输入，以及 Chat 非流式和流式普通文本、文本分段、函数/工具参数；无法识别的结构化输出不会假装检查通过。</Paragraph>
       </Surface>
 
       <Surface>
@@ -233,8 +265,11 @@ export default function GuardrailPoliciesPage() {
           <Form.Select field="project_id" label="项目（可选）" optionList={projects} showClear filter style={{ width: '100%' }} />
           <Form.Select field="api_key_id" label="访问凭证（可选）" optionList={keys.map((key) => ({ value: key.id, label: `${key.name} · ${key.org_name || `组织 #${key.org_id}`} · ${key.key_prefix}***` }))} showClear filter style={{ width: '100%' }} />
           <Form.Select field="model" label="模型（可选）" optionList={models.map((model) => ({ value: model, label: model }))} showClear filter style={{ width: '100%' }} />
-          <Form.Select field="stage" label="检查阶段" optionList={[{ value: 'input', label: '请求输入（发往上游前）' }, { value: 'nonstream_output', label: '非流式输出（交付客户前）' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
-          <Form.Select field="detector_ref" label="检测器" optionList={detectors.map((value) => ({ value, label: detectorLabels[value] || value }))} rules={[{ required: true }]} style={{ width: '100%' }} />
+          <Form.Select field="stage" label="检查阶段" optionList={[{ value: 'input', label: '请求输入（发往上游前）' }, { value: 'nonstream_output', label: '非流式输出（完整结果交付前）' }, { value: 'stream_output', label: '流式输出（每个模型数据帧写出前）' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
+          <Form.Select field="detector_ref" label="检测器" optionList={detectors.map((value) => ({
+            value,
+            label: `${detectorLabels[value] || value}${streamCapabilities[value]?.synchronous ? '' : '（流式仅影子/审计）'}`,
+          }))} rules={[{ required: true }]} style={{ width: '100%' }} />
           <Form.Select field="entities" label="PII/密钥类别" multiple optionList={[
             { value: 'email', label: '邮箱' }, { value: 'phone', label: '电话号码' },
             { value: 'credit_card', label: '银行卡号（含校验）' }, { value: 'secret', label: 'API Key / Token / Secret' },

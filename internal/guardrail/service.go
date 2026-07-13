@@ -87,6 +87,12 @@ func (s *Service) RegisterDetector(ref string, detector Detector) error {
 	if !validDetectorIdentifier(ref) || detector == nil || !validDetectorVersion(detector.Version()) {
 		return fmt.Errorf("external detector registration is invalid")
 	}
+	if streamDetector, ok := detector.(StreamCapableDetector); ok {
+		capability := streamDetector.StreamCapability()
+		if capability.LookbehindBytes < 0 || capability.LookbehindBytes > MaxStreamLookbehindBytes {
+			return fmt.Errorf("external detector stream lookbehind is invalid")
+		}
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, exists := s.detectors[ref]; exists {
@@ -106,6 +112,34 @@ func (s *Service) ApprovedDetectors() []string {
 	}
 	sort.Strings(refs)
 	return refs
+}
+
+// DetectorStreamCapabilities exposes only fixed-registry capability metadata.
+// It contains no endpoint, credential or tenant-controlled value and lets the
+// control plane explain why a detector is enforcement-capable or shadow-only.
+func (s *Service) DetectorStreamCapabilities() map[string]StreamCapability {
+	capabilities := make(map[string]StreamCapability)
+	if s == nil {
+		return capabilities
+	}
+	s.mu.RLock()
+	for ref, detector := range s.detectors {
+		capability := StreamCapability{}
+		if streamDetector, ok := detector.(StreamCapableDetector); ok {
+			capability = streamDetector.StreamCapability()
+		}
+		capabilities[ref] = capability
+	}
+	s.mu.RUnlock()
+	sensitiveSnapshot, _ := s.sensitive.Snapshot()
+	lookbehind := 0
+	if sensitiveSnapshot != nil && sensitiveSnapshot.MaxWordBytes() > 0 {
+		lookbehind = sensitiveSnapshot.MaxWordBytes() - 1
+	}
+	capabilities[DetectorSensitiveWords] = StreamCapability{
+		Synchronous: lookbehind <= MaxStreamLookbehindBytes, LookbehindBytes: lookbehind,
+	}
+	return capabilities
 }
 
 func (s *Service) DetectorInputLimits() (localBytes, externalBytes, maxTexts int) {
@@ -132,6 +166,17 @@ func (s *Service) ValidatePolicy(policy Policy) error {
 	}
 	if !s.IsDetectorApproved(policy.DetectorRef) {
 		return fmt.Errorf("%w: detector %q is not in the platform registry", ErrInvalidPolicy, policy.DetectorRef)
+	}
+	if policy.Stage == StageStreamOutput && policy.Mode == ModeEnforce && policy.Action != ActionAudit {
+		detector := s.detector(policy.DetectorRef)
+		streamDetector, ok := detector.(StreamCapableDetector)
+		if !ok {
+			return fmt.Errorf("%w: detector %q is shadow-only for streaming", ErrInvalidPolicy, policy.DetectorRef)
+		}
+		capability := streamDetector.StreamCapability()
+		if !capability.Synchronous || capability.LookbehindBytes < 0 || capability.LookbehindBytes > MaxStreamLookbehindBytes {
+			return fmt.Errorf("%w: detector %q lacks bounded synchronous stream capability", ErrInvalidPolicy, policy.DetectorRef)
+		}
 	}
 	if policy.DetectorRef == DetectorSensitiveWords && len(policy.Config) > 0 {
 		var config map[string]json.RawMessage
@@ -230,9 +275,16 @@ func (s *Service) Pin(subject Subject) *Pinned {
 		}
 	}
 	detectors := make(map[string]Detector)
+	s.mu.RLock()
+	for ref, detector := range s.detectors {
+		detectors[ref] = detector
+	}
+	s.mu.RUnlock()
 	sensitiveSnapshot, sensitiveVersion := s.sensitive.Snapshot()
 	if sensitiveSnapshot != nil {
-		detectors[DetectorSensitiveWords] = &sensitiveWordDetector{filter: sensitiveSnapshot, version: sensitiveVersion}
+		detectors[DetectorSensitiveWords] = &sensitiveWordDetector{
+			filter: sensitiveSnapshot, version: sensitiveVersion, maxWordBytes: sensitiveSnapshot.MaxWordBytes(),
+		}
 	}
 	if subject.Endpoint == "chat" && sensitiveSnapshot != nil && sensitiveSnapshot.WordCount() > 0 {
 		policies = append([]Policy{{
@@ -254,23 +306,90 @@ func (s *Service) Pin(subject Subject) *Pinned {
 }
 
 func (p *Pinned) Evaluate(ctx context.Context, stage string, texts []Text) Result {
+	return p.evaluateSelected(ctx, stage, texts, func(Policy) bool { return true }, true)
+}
+
+func (p *Pinned) EvaluateStreamEnforced(ctx context.Context, texts []Text) Result {
+	return p.evaluateSelected(ctx, StageStreamOutput, texts, policyRequiresPreflush, true)
+}
+
+func (p *Pinned) EvaluateStreamAdvisory(ctx context.Context, texts []Text) Result {
+	return p.evaluateSelected(ctx, StageStreamOutput, texts, func(policy Policy) bool {
+		return !policyRequiresPreflush(policy)
+	}, false)
+}
+
+func policyRequiresPreflush(policy Policy) bool {
+	return policy.Stage == StageStreamOutput && policy.Mode == ModeEnforce && policy.Action != ActionAudit
+}
+
+func (p *Pinned) StreamProfile() StreamProfile {
+	profile := StreamProfile{PolicySetVersion: "unavailable"}
+	if p == nil {
+		profile.Enforced = true
+		return profile
+	}
+	if p.version != "" {
+		profile.PolicySetVersion = p.version
+	}
+	if p.service == nil || p.stale {
+		profile.Enforced = true
+		return profile
+	}
+	for _, policy := range p.policies {
+		if policy.Stage != StageStreamOutput {
+			continue
+		}
+		if policy.Mode == ModeDisabled {
+			continue
+		}
+		if !policyRequiresPreflush(policy) {
+			profile.Advisory = true
+			continue
+		}
+		profile.Enforced = true
+		detector := p.detectors[policy.DetectorRef]
+		streamDetector, ok := detector.(StreamCapableDetector)
+		if !ok {
+			profile.LookbehindBytes = MaxStreamLookbehindBytes
+			continue
+		}
+		capability := streamDetector.StreamCapability()
+		if !capability.Synchronous || capability.LookbehindBytes < 0 || capability.LookbehindBytes > MaxStreamLookbehindBytes {
+			profile.LookbehindBytes = MaxStreamLookbehindBytes
+			continue
+		}
+		if capability.LookbehindBytes > profile.LookbehindBytes {
+			profile.LookbehindBytes = capability.LookbehindBytes
+		}
+	}
+	return profile
+}
+
+func (p *Pinned) evaluateSelected(ctx context.Context, stage string, texts []Text, selected func(Policy) bool, failClosedUnavailable bool) Result {
 	version := "unavailable"
 	if p != nil && p.version != "" {
 		version = p.version
 	}
 	result := Result{Decision: DecisionAllow, PolicySetVersion: version, Texts: append([]Text(nil), texts...)}
 	if p == nil || p.service == nil || p.stale {
-		result.Decision = DecisionBlock
+		if failClosedUnavailable {
+			result.Decision = DecisionBlock
+		}
 		result.Degraded = true
-		result.BlockedBy = "guardrail:snapshot"
+		if failClosedUnavailable {
+			result.BlockedBy = "guardrail:snapshot"
+		}
 		result.Receipts = append(result.Receipts, Receipt{
 			PolicyRef: "guardrail:snapshot", PolicyVersion: 1, Stage: stage, DetectorRef: "policy_snapshot",
-			Mode: ModeEnforce, Action: ActionBlock, Outcome: OutcomeUnavailable,
-			FailureMode: FailureFailClosed, Mandatory: true, Degraded: true,
+			Mode:    map[bool]string{true: ModeEnforce, false: ModeShadow}[failClosedUnavailable],
+			Action:  map[bool]string{true: ActionBlock, false: ActionAudit}[failClosedUnavailable],
+			Outcome: OutcomeUnavailable, FailureMode: map[bool]string{true: FailureFailClosed, false: FailureDegradedAllow}[failClosedUnavailable],
+			Mandatory: failClosedUnavailable, Degraded: true,
 		})
 		return result
 	}
-	if stage != StageInput && stage != StageNonStreamOutput {
+	if stage != StageInput && stage != StageNonStreamOutput && stage != StageStreamOutput {
 		result.Decision = DecisionBlock
 		result.BlockedBy = "guardrail:invalid-stage"
 		return result
@@ -279,10 +398,22 @@ func (p *Pinned) Evaluate(ctx context.Context, stage string, texts []Text) Resul
 	externalCtx, cancelExternal := context.WithTimeout(ctx, p.service.options.ExternalDeadline)
 	defer cancelExternal()
 	for _, policy := range p.policies {
-		if policy.Stage != stage {
+		if policy.Stage != stage || (selected != nil && !selected(policy)) {
 			continue
 		}
-		receipt, transformed, blocked := p.service.evaluatePolicy(ctx, externalCtx, policy, result.Texts, p.detectors[policy.DetectorRef], detectionCache)
+		detector := p.detectors[policy.DetectorRef]
+		if stage == StageStreamOutput && policyRequiresPreflush(policy) {
+			streamDetector, ok := detector.(StreamCapableDetector)
+			if !ok {
+				detector = nil
+			} else {
+				capability := streamDetector.StreamCapability()
+				if !capability.Synchronous || capability.LookbehindBytes < 0 || capability.LookbehindBytes > MaxStreamLookbehindBytes {
+					detector = nil
+				}
+			}
+		}
+		receipt, transformed, blocked := p.service.evaluatePolicy(ctx, externalCtx, policy, result.Texts, detector, detectionCache)
 		result.Receipts = append(result.Receipts, receipt)
 		if transformed != nil {
 			result.Texts = transformed
@@ -308,9 +439,6 @@ func (s *Service) evaluatePolicy(ctx, externalCtx context.Context, policy Policy
 		Categories: make(map[string]int),
 	}
 	detector := pinnedDetector
-	if detector == nil {
-		detector = s.detector(policy.DetectorRef)
-	}
 	if detector == nil {
 		receipt.Outcome = OutcomeUnavailable
 		receipt.Degraded = true
@@ -413,7 +541,11 @@ func (s *Service) detector(ref string) Detector {
 		if s.sensitive != nil {
 			version = s.sensitive.Version()
 		}
-		return &sensitiveWordDetector{filter: s.sensitive, version: version}
+		maxWordBytes := 0
+		if s.sensitive != nil {
+			maxWordBytes = s.sensitive.MaxWordBytes()
+		}
+		return &sensitiveWordDetector{filter: s.sensitive, version: version, maxWordBytes: maxWordBytes}
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()

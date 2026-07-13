@@ -21,6 +21,7 @@ type InvocationReservation struct {
 	Lineage            []string  `json:"lineage"`
 	ReservedTokens     int64     `json:"reserved_tokens"`
 	ReservedCostCents  int64     `json:"reserved_cost_cents"`
+	ExtensionSequence  int       `json:"extension_sequence"`
 	LeaseExpiresAt     time.Time `json:"lease_expires_at"`
 	StateExpiresAt     time.Time `json:"state_expires_at"`
 }
@@ -91,6 +92,31 @@ func (s *Service) FinalizeInvocation(ctx context.Context, reservation *Invocatio
 	return s.finalizeInvocation(ctx, reservation, actualTokens, actualCostCents)
 }
 
+// ExtendInvocation grows every Agent ancestor reservation before another
+// stream batch may be disclosed. Sequence makes an ambiguous Redis retry
+// idempotent without turning the reservation handle into external authority.
+func (s *Service) ExtendInvocation(ctx context.Context, reservation *InvocationReservation, sequence int, additionalTokens, additionalCostCents int64) error {
+	if err := validateInvocationReservation(reservation); err != nil || sequence <= 0 ||
+		additionalTokens <= 0 || additionalCostCents < 0 ||
+		additionalTokens > MaxExactRuntimeBudget || additionalCostCents > MaxExactRuntimeBudget ||
+		reservation.ReservedTokens > MaxExactRuntimeBudget-additionalTokens ||
+		reservation.ReservedCostCents > MaxExactRuntimeBudget-additionalCostCents {
+		return ErrInvalidRequest
+	}
+	if reservation.ExtensionSequence > sequence {
+		return ErrConflict
+	}
+	if err := s.extendInvocation(ctx, reservation, sequence, additionalTokens, additionalCostCents); err != nil {
+		return err
+	}
+	if reservation.ExtensionSequence < sequence {
+		reservation.ReservedTokens += additionalTokens
+		reservation.ReservedCostCents += additionalCostCents
+		reservation.ExtensionSequence = sequence
+	}
+	return nil
+}
+
 func (s *Service) CancelInvocation(ctx context.Context, reservation *InvocationReservation) error {
 	if err := validateInvocationReservation(reservation); err != nil {
 		return ErrInvalidRequest
@@ -102,7 +128,7 @@ func validateInvocationReservation(reservation *InvocationReservation) error {
 	if reservation == nil || strings.TrimSpace(reservation.OperationID) == "" || len(reservation.OperationID) > 64 ||
 		!validWorkflowID(reservation.WorkflowID) || reservation.WorkflowGeneration == "" || reservation.AgentID == "" ||
 		reservation.OrgID <= 0 || len(reservation.Lineage) == 0 || reservation.Lineage[len(reservation.Lineage)-1] != reservation.AgentID ||
-		reservation.ReservedTokens <= 0 || reservation.ReservedCostCents <= 0 {
+		reservation.ReservedTokens <= 0 || reservation.ReservedCostCents <= 0 || reservation.ExtensionSequence < 0 {
 		return ErrInvalidRequest
 	}
 	seen := make(map[string]struct{}, len(reservation.Lineage))

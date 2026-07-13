@@ -419,6 +419,37 @@ func (s *Service) Finalize(ctx context.Context, reservation *Reservation, actual
 	return errors.Join(terminalErrors...)
 }
 
+// Extend reserves another bounded output-token step across every matched TPM
+// policy. Successful earlier policy mutations are retained conservatively if a
+// later independent Redis bucket fails; retrying the same sequence is
+// idempotent and terminal settlement releases the retained reservation.
+func (s *Service) Extend(ctx context.Context, reservation *Reservation, sequence int, additionalTokens int64) error {
+	if !validReservation(reservation) || sequence <= 0 || additionalTokens <= 0 ||
+		reservation.ExtensionSequence > sequence {
+		return ErrInvalidRequest
+	}
+	if reservation.ExtensionSequence == sequence {
+		if reservation.LastExtensionTokens == additionalTokens {
+			return nil
+		}
+		return ErrConflict
+	}
+	for _, item := range reservation.Items {
+		if item.Fallback {
+			continue
+		}
+		if err := s.extendStore(ctx, item, sequence, additionalTokens); err != nil {
+			return err
+		}
+	}
+	for index := range reservation.Items {
+		reservation.Items[index].ReservedTokens += additionalTokens
+	}
+	reservation.ExtensionSequence = sequence
+	reservation.LastExtensionTokens = additionalTokens
+	return nil
+}
+
 func (s *Service) Cancel(ctx context.Context, reservation *Reservation) error {
 	return s.cancel(ctx, reservation, false)
 }
@@ -788,7 +819,9 @@ func errorForStoreCode(code int64) error {
 }
 
 func validReservation(reservation *Reservation) bool {
-	if reservation == nil || reservation.OperationID == "" || len(reservation.OperationID) > 64 {
+	if reservation == nil || reservation.OperationID == "" || len(reservation.OperationID) > 64 ||
+		reservation.ExtensionSequence < 0 || reservation.LastExtensionTokens < 0 ||
+		(reservation.ExtensionSequence == 0 && reservation.LastExtensionTokens != 0) {
 		return false
 	}
 	for _, item := range reservation.Items {

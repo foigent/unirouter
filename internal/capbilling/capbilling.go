@@ -33,6 +33,11 @@ type Provider interface {
 	QueryModelPriceForOrg(ctx context.Context, orgID int64, model string) (float64, float64, error)
 	CalculateCost(ctx context.Context, model string, promptTokens, completionTokens int) (int, error)
 	Freeze(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error)
+	ExtendReservation(ctx context.Context, req billing.ExtendReservationRequest) (*billing.ExtendReservationResult, error)
+	BeginStreamDelivery(ctx context.Context, start billing.StreamDeliveryStart) error
+	RenewStreamDelivery(ctx context.Context, start billing.StreamDeliveryStart) error
+	CheckpointStreamDelivery(ctx context.Context, checkpoint billing.StreamDeliveryCheckpoint) (*billing.StreamCheckpointResult, error)
+	FinishStreamDelivery(ctx context.Context, start billing.StreamDeliveryStart, state, reason string) error
 	BeginProviderAttempt(ctx context.Context, req billing.ProviderAttemptStart) error
 	CompleteProviderAttempt(ctx context.Context, req billing.ProviderAttemptCompletion) error
 	PrepareNonStreamDelivery(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error)
@@ -46,6 +51,7 @@ type Provider interface {
 
 type RuntimeBudget interface {
 	ReserveInvocation(ctx context.Context, claims *agentcap.Claims, operationID string, estimatedTokens, reservedCostCents int64, leaseTTL time.Duration) (*agentcap.InvocationReservation, error)
+	ExtendInvocation(ctx context.Context, reservation *agentcap.InvocationReservation, sequence int, additionalTokens, additionalCostCents int64) error
 	FinalizeInvocation(ctx context.Context, reservation *agentcap.InvocationReservation, actualTokens, actualCostCents int64) error
 	CancelInvocation(ctx context.Context, reservation *agentcap.InvocationReservation) error
 }
@@ -156,6 +162,52 @@ func (b *Billing) Freeze(ctx context.Context, req billing.FreezeRequest) (*billi
 
 func (b *Billing) BeginProviderAttempt(ctx context.Context, req billing.ProviderAttemptStart) error {
 	return b.inner.BeginProviderAttempt(ctx, req)
+}
+
+func (b *Billing) ExtendReservation(ctx context.Context, req billing.ExtendReservationRequest) (*billing.ExtendReservationResult, error) {
+	result, err := b.inner.ExtendReservation(ctx, req)
+	if err != nil || result == nil || !result.Success {
+		return result, err
+	}
+	value, tracked := b.reservations.Load(req.RequestID)
+	if !tracked {
+		return result, nil
+	}
+	state, ok := value.(*trackedReservation)
+	if !ok || state.reservation == nil {
+		return nil, fmt.Errorf("invalid Agent runtime reservation tracker")
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.settleAttempted {
+		return nil, fmt.Errorf("Agent runtime reservation already entered terminal settlement")
+	}
+	if err := b.runtime.ExtendInvocation(
+		ctx, state.reservation, req.Sequence,
+		int64(req.AdditionalCompletionTokens), int64(result.Amount),
+	); err != nil {
+		result.Success = false
+		result.ErrorCode = runtimeErrorCode(err)
+		result.ErrorDetail = "Agent ancestor budget extension denied"
+		return result, nil
+	}
+	return result, nil
+}
+
+func (b *Billing) BeginStreamDelivery(ctx context.Context, start billing.StreamDeliveryStart) error {
+	return b.inner.BeginStreamDelivery(ctx, start)
+}
+
+func (b *Billing) RenewStreamDelivery(ctx context.Context, start billing.StreamDeliveryStart) error {
+	return b.inner.RenewStreamDelivery(ctx, start)
+}
+
+func (b *Billing) CheckpointStreamDelivery(ctx context.Context, checkpoint billing.StreamDeliveryCheckpoint) (*billing.StreamCheckpointResult, error) {
+	return b.inner.CheckpointStreamDelivery(ctx, checkpoint)
+}
+
+func (b *Billing) FinishStreamDelivery(ctx context.Context, start billing.StreamDeliveryStart, state, reason string) error {
+	return b.inner.FinishStreamDelivery(ctx, start, state, reason)
 }
 
 func (b *Billing) CompleteProviderAttempt(ctx context.Context, req billing.ProviderAttemptCompletion) error {
