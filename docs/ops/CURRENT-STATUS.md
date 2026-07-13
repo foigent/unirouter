@@ -1,7 +1,7 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
-> Current PRD6 batch: D6-13 is accepted. P6-F40A is CI verified by PR #183
+> Current PRD6 batch: D6-13/D6-14 are accepted. P6-F40A is CI verified by PR #183
 > exact implementation/test head `d1afd97` and run `29207889734`. P6-F40B is
 > CI verified by PR #184 exact implementation/test head `ac2bfb5` and required
 > run `29209644118`. P6-F40 remains in progress through P6-F40C and P6-F41 is not
@@ -277,11 +277,21 @@
   implementation/test head `ac2bfb5` passed required run `29209644118`:
   Backend Tests, Frontend Build, Docker Build and both explicit F40B gates are
   green. P6-F40C remains open, so P6-F40 is not closed.
+- Accepted customer/provider ledger boundary and future supplier coverage
+  reference:
+  `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md`.
+  D6-14 forbids aggregate provider bills, balance deltas or free-form operator
+  amounts from creating customer debt. It records provider-native runtime and
+  conformance packs, live billing connectors, controlled bill import,
+  generalized units, async media and managed billing as future candidates only;
+  no implementation or production claim is made.
 - HA/stream-failover competitor and architecture reference:
   `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md`.
 - Source-backed product/architecture/UX audit:
   `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md`.
-- PRD7 candidate-only split (not Accepted Scope):
+- PRD7 candidate-only split, including future D7-ADAPTER-001/D7-COST-001/
+  D7-COST-002/D7-METER-001/D7-MEDIA-001 and decision-gated D7-BILLING-001
+  (not Accepted Scope):
   `docs/planning/PRD7-CANDIDATE-BACKLOG.md`.
 - Accepted future Cache Service target architecture (implementation still
   deferred): `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md`.

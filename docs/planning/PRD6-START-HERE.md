@@ -1,7 +1,7 @@
 # PRD6 Start Here
 
 > Date: 2026-07-13
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F40A/P6-F40B are CI verified, P6-F40/P6-F11 remain in progress, and P6-F10/P6-F41 are not started
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F40A/P6-F40B are CI verified, P6-F40/P6-F11 remain in progress, and P6-F10/P6-F41 are not started
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
@@ -30,6 +30,13 @@ recommended MVP boundary and policy-specific failure posture on 2026-07-11:
   existing prepaid cash only; unresolved cost is non-terminal/non-cancellable
   and later blocks the affected key. There is no overdraft, automatic debt,
   silent subsidy, raw response retention or separate cost service;
+- D6-14 separates Customer Revenue Ledger authority from Provider COGS
+  evidence. An operator may collect only from authoritative usage/delivery and
+  the frozen customer price; aggregate provider bills, balance deltas and
+  free-form amounts cannot create customer debt. Provider-native runtime and
+  conformance packs, live billing connectors, controlled bill import,
+  generalized units, async media, managed billing and Cost Control Service
+  extraction remain future candidates;
 - PRD5 remains `Accepted Scope Complete` and is not reopened by PRD6;
 - a PRD5 backlog or competitor feature is an input, not an automatic PRD6
   commitment.
@@ -80,6 +87,7 @@ recommended MVP boundary and policy-specific failure posture on 2026-07-11:
 42. `docs/agent-workflows/EXECUTION-RECORD.md`
 43. `docs/ops/evidence/PRD6-B3H-P6F40A-cost-shortfall-local-20260713.md`
 44. `docs/ops/evidence/PRD6-B3H-P6F40B-provider-attempt-ledger-local-20260713.md`
+45. `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md`
 
 PRD5 evidence remains under its existing paths. Do not rewrite it as PRD6
 evidence.
@@ -233,6 +241,17 @@ completion defects and must not be used to reopen PRD5:
    revocation converges across replicas within 30 seconds. Workflow lifetime,
    depth, fan-out and budget remain separate, and UniRouter grants model-gateway
    authority only.
+7. **D6-12 mid-stream crash/HA boundary — accepted.** P6-F20 closes final-usage
+   durability; P6-F11 owns bounded checkpoints and client recovery. Transparent
+   stream migration and managed HA/IaC remain later.
+8. **D6-13 provider-cost integrity — accepted.** Provider-attempt ownership,
+   funded estimates, affected-key blocking and explicit operator resolution stay
+   inside the current modular monolith.
+9. **D6-14 customer/provider ledger boundary — accepted.** Customer collection
+   uses authoritative usage, local delivery and frozen customer price. Provider
+   cost evidence progresses through estimate/observation/aggregate/invoice
+   states and cannot directly create customer debt. The uncovered supplier
+   connectors and multi-unit/media capabilities are future PRD7 candidates.
 
 UniRouter owns the request-path and its authoritative authorization, routing,
 usage, billing, and audit facts. Other projects may consume a sanitized,

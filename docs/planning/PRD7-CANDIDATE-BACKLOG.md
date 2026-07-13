@@ -1,7 +1,7 @@
 # PRD7 Candidate Backlog（候选输入，不是 Accepted Scope）
 
-> Date: 2026-07-11
-> Status: Candidate / future Upgrade and Cache Service directions recorded; all implementation deferred until PRD6 closeout
+> Date: 2026-07-13
+> Status: Candidate / future Upgrade, Cache Service and Provider Cost Reconciliation directions recorded; all implementation deferred until PRD6 closeout
 > Authority: 本文只做 PRD6 收尾后的候选分流、排序和验收设计；不授权实现、部署或外部集成。
 > Source of truth: PRD6 的已接受范围仍以 `docs/PRD-Phase6.md`、
 > `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` 和用户已确认的 D6 决策为准。
@@ -23,6 +23,18 @@ PRD7 实现必须等 PRD6 闭环后再以独立 PRD7、acceptance row、分支�
 该决定登记为 `D7-CACHE-001` future required capability，不改变 Update Center 的
 首项顺序，不接受当前 PRD6 实现、回答持久化、部署或语义缓存。完整候选设计、容量
 推演和 SaaS 前置条件见 `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md`。
+
+用户在 2026-07-13 接受将 PRD6 未覆盖的供应商成本对账能力登记为未来产品待实现
+功能：`D7-ADAPTER-001` provider-native runtime/conformance packs、
+`D7-COST-001` Provider COGS reconciliation control plane、
+`D7-COST-002` provider billing connector packs/controlled bill import、
+`D7-METER-001` generalized usage units and charge triggers、`D7-MEDIA-001`
+async image/video job plane，以及仍需单独产品决定的
+`D7-BILLING-001` managed/unified billing。Customer Revenue Ledger 与 Provider COGS
+Ledger 必须分离，供应商聚合账单或运营手填金额不得直接生成客户扣款。该决定不改变
+D7-UPGRADE-001/002 的首项顺序，也不授权当前连接真实凭证、导入账单、发送付费请求、
+拆分 Cost Control Service 或实现异步媒体。完整研究与厂商覆盖矩阵见
+`docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md`。
 
 本文中的 `P6-F12`—`P6-F15`、`P6-F22`—`P6-F31` 仅沿用 PRD6 编号便于追溯。
 若其中某项正式进入 PRD7，必须新增 D7 决策和 PRD7 acceptance row，不能把本文的
@@ -71,10 +83,15 @@ PRD7 产品化层。
 | D7-UPGRADE-003 Release channels/lifecycle | 为安全修复、稳定版和 LTS 提供清晰支持窗口 | 版本通道元数据、兼容矩阵、deprecation 和 support bundle | 商业支持政策由产品/运营决定 | 通道碎片、长期维护负担 | P2 | stable/security/LTS 升降级矩阵；EOL 提示；可复现 support bundle；不含秘密 |
 | P6-F12 外部 secret reference/version/rotation | 跨云凭证安全轮换，避免配置文件静态秘密 | 选定 backend 的引用、版本 pin、热切换、回滚和审计 | Vault/KMS/云 secret 服务的可用性与运营 | 旧 worker、失联、权限扩大、供应商耦合 | P1/P2 | stale-worker、轮换、回滚、outage/fail mode、secret 不出日志；先选一个 backend |
 | P6-F15 policy simulation/BYO guardrail/config rollback | 变更前看到影响，支持企业自有 detector，并快速回滚 | policy lifecycle、dry-run、版本/RBAC、adapter contract | BYO detector 的模型/服务由客户或供应方拥有 | 第三方代码/数据泄漏、兼容性、模拟与线上漂移 | P1/P2 | 固定 fixture diff；RBAC/审计；版本兼容；超时/故障隔离；一键回滚但非自动放权 |
+| D7-ADAPTER-001 Provider Native Runtime And Conformance Packs | 真正覆盖 Azure OpenAI、AWS Bedrock、Google Vertex，以及验证智谱/MiniMax/Kimi/DeepSeek/Qwen/MiMo/豆包的兼容差异 | Azure API version/custom auth、Bedrock SigV4、Vertex OAuth/project/location；厂商级错误/stream/cache/request-ID/cancel profile | provider credentials、SDK/API lifecycle、区域和 conformance owner | 把协议兼容误称生产覆盖、认证泄漏、厂商漂移、错误重试/计费 | P1/P2；future required | 每厂商 Chat/Embeddings/stream/error/cancel/request-ID/cache fixture；认证轮换；协议漂移；required CI；真实调用仍需独立授权 |
+| D7-COST-001 Provider Cost Reconciliation Control Plane | 把供应商 estimate、response observation、aggregate match、invoice reconciliation 与客户账分开，提供真实毛利和差额调查 | Provider COGS Ledger、证据状态、账单桶匹配、invoice reconciliation、append-only adjustment、RBAC/audit | provider/cloud billing source、财务/FinOps owner、币种/税费/合同 | 聚合误归因、重复/乱序 import、回填、运营滥用、把 COGS 差额转嫁客户 | P1；future required，实施未接受 | 客户账/COGS 双账守恒；聚合账单不得直接扣客户；import 幂等；币种/账期/撤销；差额隔离；RBAC/audit |
+| D7-COST-002 Provider Billing Connector Packs | 覆盖 OpenAI/Anthropic、Azure/AWS/GCP、Qwen/Volcengine 及账单 API 较弱的中国模型厂商 | provider capability profile、API/export adapters、controlled manual import、capture-gap 和 lag 状态 | 各厂商账号、合同、凭证、账单格式、调用成本和 conformance owner | 凭证泄漏、API 漂移、分页缺口、延迟回填、错误币种/折扣、维护成本 | P1/P2，依赖 D7-COST-001 | 厂商 fixture；分页/重复/缺口/限流/认证失败；账单 readback；无 secret/log 泄漏；默认不做逐请求最终扣费声明 |
+| D7-METER-001 Generalized Usage Units And Charge Triggers | 支持 token 之外的字符、音频秒、图片、视频秒/帧和 async task 计费 | versioned unit/quantity/price/rounding、submitted/completed/delivered trigger、账本结算 | 选定媒体 provider 和任务/交付 owner | 单位混淆、重复任务、失败仍收费、部分交付、舍入损耗 | P1/P2，media 前置 | zero/missing 区分；单位/价格版本；取消/失败/部分交付；多币种舍入；并发/恢复账本守恒 |
+| D7-BILLING-001 Managed/Unified Billing | 托管版统一 credits/bill，向客户隐藏多供应商结算复杂度 | BYOK/managed 隔离、统一 credits/bill、信用和退款边界 | merchant/reseller、资金、税务/发票、坏账和供应商预充值 owner | 透支、坏账、汇率、监管/税务、现金流和平台兜底 | P3；需单独产品决定 | 信用/透支/坏账/预充值/汇率/退款/发票闭环；BYOK 不受影响；本候选不得自动接受 |
 | D7-CACHE-001 独立 Exact Cache Service（承接 P6-F13 exact 部分） | 降低重复推理延迟和成本，并形成私有化/SaaS 可复用的缓存边界 | tenant/auth/policy/region-aware exact key、独立服务合同、加密、TTL、purge/tombstone、stampede、cache-aware billing | Redis/KV、加密对象存储、KMS、选定 cell/私有化拓扑 | 跨租户泄漏、旧权限/策略命中、删除不彻底、连接/故障域放大 | P2；future required，实施未接受 | 跨租户/权限/版本负例；加密；TTL/purge；并发 stampede；故障 bypass；billing truth；1/2/多副本 load/soak；默认关闭 |
 | D7-CACHE-002 Semantic Cache（承接 P6-F13 semantic 部分） | 在确有高重复语义 workload 时进一步节省成本 | UniRouter 调用独立 Cache Service 的可解释语义接口 | vector backend、ground truth、业务误命中损失 owner | 投毒、越权、语义相似但业务不同、不可撤回旧答案 | P3；需单独决定 | exact cache 价值先成立；semantic poisoning/equivalence red team；precision/abstention；权限/撤回负例 |
 | P6-F14 latency/cost/rate-aware 与 canary routing | 在 SLO、成本和容量间动态选择，支持小流量验证 | 可信 telemetry 上的路由决策、约束、解释与回滚 | provider 指标质量、客户成本授权 | 反馈环振荡、局部指标误导、预算失控 | P2 | 离线 replay；稳定性/迟滞；硬约束不被优化器绕过；解释；canary budget/kill switch |
-| P6-F22 异步图像/视频 job plane | 将长耗时多模态任务与同步 chat 隔离 | tenant-scoped object reference、job/status/cancel、queue lease、最终结算 | object store、media provider、retention owner | 大对象泄漏、长连接耗尽、重复任务和巨额成本 | P2 | 引用而非大 body；幂等 completion；cancel/refund；retention/delete；负载隔离；恢复测试 |
+| D7-MEDIA-001 异步图像/视频 job plane（承接 P6-F22） | 将长耗时多模态任务与同步 chat 隔离，并覆盖 Seedance 等任务型 provider | tenant-scoped object reference、job/status/cancel、queue lease、task ledger、delivery proof、最终结算 | object store、media provider、retention owner | 大对象泄漏、长连接耗尽、重复任务和巨额成本 | P2；future required，实施未接受 | 引用而非大 body；幂等 completion；cancel/refund；retention/delete；负载隔离；恢复测试 |
 | P6-F25 显式授权 live shadow routing | 用真实选定流量比较候选模型/策略，不影响主响应 | 独立 shadow request/settlement、paired experiment ID、严格路由边界 | 数据权利、provider、预算和地域授权 | 双倍成本、数据外发、shadow 结果误返回 | P2 | 默认关闭；逐租户/模型/地域/budget gate；永不返回 shadow；独立账本；kill switch |
 | P6-F27 verifiable MaaS trust receipt | 客户可验证网关记录的模型、策略和用量声明 | canonical receipt、issuer key/version、签发与验证 | 客户验证工具；不能把声明包装成客观真相 | 隐私、密钥轮换、重放、过度承诺 | P2 | tamper/replay/rotation；最小字段；canonical form；明确 statement-not-truth |
 | P6-F30 multimodal provenance passport | 标记多模态输入/输出来源和处理链 | 在 media plane 传播、验证和记录所选 provenance 标准 | 标准/提供商支持；内容所有者 | 标准不成熟、元数据剥离、假来源 | P3，依赖 F22 | 有/无/无效 provenance fixture；签名生命周期；跨模态兼容；未知状态不伪装可信 |
@@ -200,7 +217,7 @@ PRD7 产品化层。
 | D7-0 Candidate Validation | 确定首个客户问题、支持矩阵、KPI、威胁模型和 owner | PRD6 P0 完成；用户选择首项 | 正式 PRD7、acceptance matrix、安全边界、design partner 输入；仍无部署 |
 | D7-1 Offline Upgrade V1（推荐） | 签名离线包、manifest/SBOM、导入验证、preflight、人工 apply/rollback audit；Update Center 先只读 | PRD6 version/migration/release foundation 通过 | tamper/离线/N-1/backup-restore/权限/失败原子性；独立 PR 和 required CI |
 | D7-2 Policy Lifecycle And Secret V1 | 选择一个 secret backend；policy simulation/rollback；BYO detector 仅走窄 adapter | D7-1 release safety；明确 backend 和 detector owner | rotation/outage/stale-worker；fixture diff；RBAC/audit；兼容与 rollback |
-| D7-3 Cost And Routing Optimization | 独立 opt-in Exact Cache Service，再单独决定 semantic cache；adaptive/canary routing | Routing V1、计费真值、telemetry 和价值数据可信；`D7-CACHE-0` 通过 | 隔离/权限版本/purge/tombstone/stampede；1/2/多副本 load/soak；离线 replay；约束/预算/稳定性/kill switch |
+| D7-3 Cost Reconciliation And Optimization | 先建立 D7-COST-001 Provider COGS 双账/对账内核和首批连接器，再实施独立 opt-in Exact Cache Service；semantic cache 与 managed billing 仍单独决定 | P6-F40/P6-F41 闭环；正式 FinOps/credential/import owner；Routing V1、计费真值、telemetry 和价值数据可信；`D7-CACHE-0` 通过 | 双账守恒、import 幂等/回填/撤销、账单差额隔离、RBAC/audit；缓存隔离/权限版本/purge/tombstone/stampede；离线 replay、预算和 kill switch |
 | D7-4 Async Media Plane | image/video object-reference job/status/cancel/settlement；provenance 可后置 | 用户接受 media roadmap、object store/queue/retention | 幂等、租约、取消、费用、删除、负载隔离、恢复；不发送真实付费任务 |
 | D7-5 Trust Interface Experiments | 仅选择一个 F23/F24/F26-F31 的窄接口实验 | 数据/owner/合同清晰，fixture-only 优先 | 验签/TTL/不提权/不做同步依赖；precision/abstention；明确非生产证据 |
 | D7-6 Authorized Target Evidence | 在一个明确 target 验证已接受能力 | 独立 operator、凭证、成本、数据和清理授权 | target readback、sanitized evidence、rollback；不从 target 自动晋升 Production verified |
@@ -246,6 +263,11 @@ frontend tests/build、Docker Build、migration review、security negative tests
 2. 所有 PRD7 实施和 target-evidence 队列执行后置到 PRD6 闭环之后，各自原有授权门槛
    保持不变；
 3. 本地历史分支全部保留，不授权清理或删除。
+
+用户在 2026-07-13 进一步明确：D7-ADAPTER-001/D7-COST-001/D7-COST-002/
+D7-METER-001/D7-MEDIA-001 作为本方案未覆盖的后续产品能力保留，
+D7-BILLING-001 仍需另行决定；这些登记不改变
+PRD7 后置顺序或当前授权边界。
 
 因此当前没有阻塞 PRD6 的 PRD7 决定。其余候选进入相应 batch 前，再用已量化客户
 需求和依赖证据逐项接受、延期或拒绝。

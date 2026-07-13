@@ -7,7 +7,7 @@
 **Baseline:** `main` / `origin/main` / `060a71458f99c5218dbdeb656a30367bb0944a25`
 **Branch:** `codex/prd6-provider-attempt-ledger`
 **PR:** #184; exact implementation/test head `ac2bfb5`; required run `29209644118`
-**Decision:** D6-13 accepted by User on 2026-07-13
+**Decision:** D6-13/D6-14 accepted by User on 2026-07-13
 **Next gate:** P6-F40C affected-key block and explicit operator reconciliation
 **Previous batch:** P6-F40A PR #183 is CI verified; P6-F20 PR #177 and post-closeout fixture-only PR #180/#181 are CI verified / closed
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
@@ -37,6 +37,11 @@
   semantic implementation.
 - No negative customer debt, automatic platform subsidy, raw response storage,
   Cache Service or separate Cost Control Service.
+- D6-14 additionally forbids aggregate provider bills, balance deltas or
+  free-form operator amounts from creating customer debt. Provider-native
+  runtime/conformance packs, live billing connectors, controlled bill import,
+  generalized units, async media and managed billing remain future product
+  candidates.
 - No deployment, target mutation, real/paid request, credential or production
   data access.
 

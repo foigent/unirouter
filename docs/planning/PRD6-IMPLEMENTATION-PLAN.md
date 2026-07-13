@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-13
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F39 and P6-STREAM-002A are CI verified / closed; P6-F40A/P6-F40B are CI verified, P6-F40/P6-F11 remain in progress, and P6-F10/P6-F41 are not started
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F39 and P6-STREAM-002A are CI verified / closed; P6-F40A/P6-F40B are CI verified, P6-F40/P6-F11 remain in progress, and P6-F10/P6-F41 are not started
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -311,8 +311,11 @@ No response cache is enabled.
 
 **Risk:** R3/R4 provider dispatch, wallet mutation, financial recovery and
 delivery semantics.
-**Gate:** D6-13 is accepted. No negative customer debt, silent platform
-subsidy, separate Cost Control Service or raw response retention is authorized.
+**Gate:** D6-13/D6-14 are accepted. Customer Revenue Ledger collection uses
+authoritative usage, local delivery and the frozen customer price; provider COGS
+evidence cannot directly create customer debt. No silent platform subsidy,
+separate Cost Control Service, live billing connector, bill import or raw
+response retention is authorized.
 **Status:** P6-F40A/P6-F40B are CI verified; P6-F40 remains in progress
 through P6-F40C; P6-F41 is not started.
 
@@ -329,13 +332,21 @@ Ordered slices:
    head `ac2bfb5` passed required run `29209644118`.
 3. P6-F40C binds pending cost to the API key and adds tenant-safe,
    platform-authorized operator reconciliation for collect/refund/bounded
-   subsidy decisions. No silent unblock is allowed.
+   subsidy decisions. `collect` is computed from authoritative usage/delivery
+   and the frozen customer price, never an aggregate provider bill or free-form
+   operator amount. No silent unblock is allowed.
 4. P6-F41A adds typed usage authority, purpose and finality; provider-reported
    explicit zero remains valid, while absent usage requires a fully funded,
    versioned conservative estimate or withheld output.
 5. P6-F41B adds monotonic local delivery outcomes and a bounded metadata-only
    receipt. It stores no prompt or response body and does not implement the
    future Cache Service.
+
+The provider-neutral evidence contract does not claim real-time supplier charge
+confirmation. Provider billing connectors, cloud cost exports, controlled bill
+imports, generalized usage units and asynchronous media tasks remain future
+product candidates documented in
+`docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md`.
 
 Each slice keeps its own pre-fix reproducer, positive compatibility control,
 concurrency/failure tests, guarded migration where applicable, immutable local
