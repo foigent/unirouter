@@ -4,9 +4,9 @@
 > Current PRD6 batch: D6-13/D6-14 are accepted. P6-F40A is CI verified by PR #183
 > exact implementation/test head `d1afd97` and run `29207889734`. P6-F40B is
 > CI verified by PR #184 exact implementation/test head `ac2bfb5` and required
-> run `29209644118`. P6-F40C affected-key block and amount-free operator
-> reconciliation are local verified with required CI pending, so P6-F40 remains
-> in progress; P6-F41 is not started. No target or production claim is made.
+> run `29209644118`. P6-F40C is CI verified by PR #186 exact
+> implementation/test head `49d740d` and required run `29224762127`; P6-F40 is
+> closed. P6-F41 is not started. No target or production claim is made.
 > PRD6 Batch 0B P6-F16 was squash-merged by PR #140 as
 > `f244f669c529fec8767f85fff209882b333d8ed2`. P6-F33 was squash-merged by
 > PR #142 as `7173c5967a42c112fd0b219938a0901c1a0b9633`; its PR and post-merge
@@ -288,7 +288,10 @@
   refund/subsidy release only the existing hold; cross-org, 32-way concurrency,
   collect crash-gap and guarded `000030` proofs pass. Full backend/vet,
   frontend 29-file/144-test/build and focused race/migration race pass locally.
-  Required PR CI remains pending, so P6-F40 is not yet closed.
+  PR #186 exact implementation/test head `49d740d` passed required run
+  `29224762127`: Backend Tests, Frontend Build and Docker Build are green,
+  including both explicit P6-F40C gates and strict successor rollback order.
+  P6-F40 is CI verified / closed.
 - Accepted customer/provider ledger boundary and future supplier coverage
   reference:
   `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md`.
@@ -314,9 +317,8 @@
 - Scope entry: `docs/planning/PRD6-START-HERE.md`.
 - Proposed PRD: `docs/PRD-Phase6.md`; accepted/proposed state is authoritative
   in `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`.
-- Accepted feature accounting: 27 accepted rows, 23 CI verified / closed and
-  4 unclosed. P6-F40C is local verified but P6-F40/P6-F11 remain in progress;
-  P6-F10/P6-F41 are not started.
+- Accepted feature accounting: 27 accepted rows, 24 CI verified / closed and
+  3 unclosed. P6-F11 remains in progress; P6-F10/P6-F41 are not started.
   `P6-TEST-DB-001` is a separate engineering-integrity issue outside that
   25-row feature count; it is CI verified / closed by PR #155 and post-merge
   main run `29157561036`.

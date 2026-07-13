@@ -3,12 +3,12 @@
 **Batch:** PRD6 Batch 3H P6-F40C Provider-Key Reconciliation
 **Owner:** Codex
 **Risk:** R3/R4 paid admission, customer charging, operator authority and migration safety
-**Status:** P6-F40C local verified; required PR CI pending; P6-F40 remains in progress
+**Status:** P6-F40C and P6-F40 CI verified / closed
 **Baseline:** `main` / `origin/main` / `468969df16ee3fb142d04605af17ba615a56b8b7`
 **Branch:** `codex/prd6-provider-key-reconciliation`
-**PR:** pending
+**PR:** #186; exact implementation/test head `49d740d`; required run `29224762127`
 **Decision:** D6-13/D6-14 accepted by User on 2026-07-13
-**Next gate:** required PR CI; then P6-F41 typed usage/delivery authority
+**Next gate:** P6-F41 typed usage/delivery authority
 **Previous batch:** P6-F40B PR #184 and P6-F40A PR #183 are CI verified; P6-F20 PR #177 and post-closeout fixture-only PR #180/#181 are CI verified / closed
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
@@ -60,7 +60,12 @@
 - `go test ./... -count=1`, `go vet ./...` and command-contract tests: `PASS`.
 - Frontend type-check, 29 files / 144 tests and production build: `PASS`.
 - `git diff --check`: `PASS`.
-- Required PR `Backend Tests`, `Frontend Build` and `Docker Build`: pending.
+- PR #186 exact implementation/test head `49d740d` required run
+  `29224762127`: Backend Tests, Frontend Build and Docker Build `PASS`,
+  including the explicit P6-F40C race/migration gates and predecessor rollback
+  order. The first run's unrelated `limitpolicy` flake passed 30 local repeats
+  and a no-code failed-job rerun; the later predecessor test gap was corrected
+  before the final green run.
 - Evidence: `docs/ops/evidence/PRD6-B3H-P6F40C-provider-key-reconciliation-local-20260713.md`.
 
 ## Current Stop And Rollback Conditions

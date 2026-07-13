@@ -3,7 +3,7 @@
 > Date: 2026-07-13
 > Baseline: `468969df16ee3fb142d04605af17ba615a56b8b7`
 > Branch: `codex/prd6-provider-key-reconciliation`
-> Evidence level: Local verified; required PR CI pending
+> Evidence level: CI verified on exact implementation/test head
 > Risk: R3/R4 paid admission, customer charging, operator authority and migration safety
 
 ## Accepted Boundary
@@ -102,8 +102,23 @@ the existing linker metadata warning; neither warning fails its command.
 
 ## Required CI
 
-The branch still requires `Backend Tests`, `Frontend Build` and `Docker Build`
-on the exact final PR head before P6-F40C or P6-F40 can be marked CI verified / closed.
+PR #186 exact implementation/test head `49d740d` passed required run
+`29224762127`:
+
+- `Backend Tests`: `PASS` in 7m43s, including full tests/vet, the explicit
+  P6-F40C billing/middleware/admin/route race gate, the explicit `000030`
+  migration race gate, and the updated `000030 -> 000029 -> 000028` successor
+  rollback tests;
+- `Frontend Build`: `PASS` in 3m26s, including type-check, 29 files / 144 tests
+  and production build; and
+- `Docker Build`: `PASS` in 1m2s.
+
+The first PR run exposed an unrelated existing `limitpolicy` concurrency-test
+flake; the exact test passed 30 local repetitions and the failed job rerun
+passed without product-code change. A later run then exposed the expected
+predecessor-migration test update required by new successor `000030`; the test
+was corrected to remove migrations in strict reverse order before the final
+green run. P6-F40C and P6-F40 are CI verified / closed.
 
 ## Rollout And Non-Claims
 

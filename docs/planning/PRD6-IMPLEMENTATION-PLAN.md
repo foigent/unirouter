@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-13
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F39 and P6-STREAM-002A are CI verified / closed; P6-F40A/P6-F40B are CI verified, P6-F40C is local verified with required CI pending, P6-F40/P6-F11 remain in progress, and P6-F10/P6-F41 are not started
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F40 and P6-STREAM-002A are CI verified / closed; P6-F11 remains in progress, and P6-F10/P6-F41 are not started
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -316,8 +316,8 @@ authoritative usage, local delivery and the frozen customer price; provider COGS
 evidence cannot directly create customer debt. No silent platform subsidy,
 separate Cost Control Service, live billing connector, bill import or raw
 response retention is authorized.
-**Status:** P6-F40A/P6-F40B are CI verified; P6-F40C is local verified with
-required CI pending, so P6-F40 remains in progress; P6-F41 is not started.
+**Status:** P6-F40A/P6-F40B/P6-F40C are CI verified; P6-F40 is closed. P6-F41
+is not started.
 
 Ordered slices:
 
@@ -336,7 +336,9 @@ Ordered slices:
    amount; `collect` replays authoritative upstream usage, the frozen customer
    price and an existing billable-output marker. Ordinary in-flight work does
    not serialize a key, while explicit unresolved cost blocks paid admission
-   until one durable terminal decision. Required PR CI remains pending.
+   until one durable terminal decision. PR #186 exact implementation/test head
+   `49d740d` passed required run `29224762127`, including both explicit P6-F40C
+   PostgreSQL/race gates.
 4. P6-F41A adds typed usage authority, purpose and finality; provider-reported
    explicit zero remains valid, while absent usage requires a fully funded,
    versioned conservative estimate or withheld output.
