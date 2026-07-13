@@ -3,12 +3,13 @@
 **Batch:** PRD6 Accepted Scope Closeout
 **Owner:** Codex
 **Risk:** documentation truth, evidence-level promotion and phase-boundary leakage
-**Status:** Accepted Scope Complete at repository/CI evidence; closeout-doc PR pending
+**Status:** Accepted Scope Complete at repository/CI evidence
 **Baseline:** `main` / `origin/main` / `4c78a5b7fa24acc2570478aaa61dcf12ba2ed4db`
 **Branch:** `codex/prd6-closeout`
-**PR:** pending
+**PR:** #190 (closeout-document publication)
 **Decision:** D6-16 S-A accepted by User on 2026-07-13
-**Next gate:** closeout-doc required CI, merge and post-merge `main` CI
+**Publication evidence:** exact initial closeout head `87c462a9d17ec1ffc776caeb040435aab8297120` passed required run `29248279987`; any final documentation-only head must also pass required CI before merge
+**Next product gate:** none within accepted PRD6; PRD7 and target evidence require separate authorization
 **Previous batch:** P6-F41 PR #187 and P6-F40 PR #183/#184/#186 are CI verified / closed; P6-F20 PR #177 and post-closeout fixture-only PR #180/#181 are CI verified / closed
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 

@@ -315,6 +315,10 @@
   stream-migration claim is made.
 - PRD6 closeout evidence:
   `docs/ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md`.
+  Closeout publication PR #190 exact initial documentation head `87c462a`
+  passed required run `29248279987` (Backend Tests, Frontend Build and Docker
+  Build); any later evidence-only head remains subject to exact-head required
+  CI before merge and does not change product scope.
 - Accepted customer/provider ledger boundary and future supplier coverage
   reference:
   `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md`.

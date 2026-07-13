@@ -24,6 +24,12 @@ row and is now CI verified / closed:
 PRD6 is therefore `Accepted Scope Complete` at repository/CI evidence level.
 This is not Target verified or Production verified.
 
+The closeout publication itself is PR #190. Its exact initial documentation
+head `87c462a9d17ec1ffc776caeb040435aab8297120` passed required run
+`29248279987`: Backend Tests, Frontend Build and Docker Build all passed. A
+later documentation-only evidence head does not change the accepted product
+scope and remains subject to the same exact-head required CI before merge.
+
 ## 2. Final Accepted Boundary
 
 The accepted scope closes the confirmed tenant, financial, routing, billing,
