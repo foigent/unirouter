@@ -35,6 +35,8 @@ type Provider interface {
 	Freeze(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error)
 	BeginProviderAttempt(ctx context.Context, req billing.ProviderAttemptStart) error
 	CompleteProviderAttempt(ctx context.Context, req billing.ProviderAttemptCompletion) error
+	PrepareNonStreamDelivery(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error)
+	RecordDelivery(ctx context.Context, event billing.DeliveryEvent) error
 	MarkBillableOutput(ctx context.Context, requestID string, orgID int64) error
 	PersistSettlementUsage(ctx context.Context, req billing.SettleRequest) error
 	Settle(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error)
@@ -157,6 +159,14 @@ func (b *Billing) BeginProviderAttempt(ctx context.Context, req billing.Provider
 
 func (b *Billing) CompleteProviderAttempt(ctx context.Context, req billing.ProviderAttemptCompletion) error {
 	return b.inner.CompleteProviderAttempt(ctx, req)
+}
+
+func (b *Billing) PrepareNonStreamDelivery(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error) {
+	return b.inner.PrepareNonStreamDelivery(ctx, req)
+}
+
+func (b *Billing) RecordDelivery(ctx context.Context, event billing.DeliveryEvent) error {
+	return b.inner.RecordDelivery(ctx, event)
 }
 
 func (b *Billing) MarkBillableOutput(ctx context.Context, requestID string, orgID int64) error {

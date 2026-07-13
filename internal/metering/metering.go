@@ -7,10 +7,41 @@ const (
 	UsageSourceEstimated        = "estimated"
 	UsageSourceAdapterEstimated = "adapter_estimated"
 	UsageSourceCounterV2        = "counter_v2"
+	UsageSourceMissing          = "missing"
 	UsageSourceNoRoute          = "no_route"
 	UsageSourceUpstreamFailed   = "upstream_failed"
 
 	DefaultEstimatedRatioAlertThreshold = 0.20
+)
+
+type UsageAuthority string
+
+const (
+	UsageAuthorityProviderReported     UsageAuthority = "provider_reported"
+	UsageAuthorityGatewayCounter       UsageAuthority = "gateway_counter"
+	UsageAuthorityConservativeEstimate UsageAuthority = "conservative_estimate"
+	UsageAuthorityNone                 UsageAuthority = "none"
+)
+
+type UsagePurpose string
+
+const (
+	UsagePurposeProviderEvidence UsagePurpose = "provider_evidence"
+	UsagePurposeCustomerCharge   UsagePurpose = "customer_charge"
+)
+
+type UsageFinality string
+
+const (
+	UsageFinalityFinal     UsageFinality = "final"
+	UsageFinalityEstimated UsageFinality = "estimated"
+	UsageFinalityMissing   UsageFinality = "missing"
+)
+
+const (
+	UsageContractVersion            = "unirouter.usage.v1"
+	ConservativeEstimateVersionV1   = "unirouter.token-ceiling.v1"
+	GatewayCounterEstimateVersionV2 = "unirouter.stream-counter.v2"
 )
 
 func NormalizeUsageSource(source string) string {
@@ -19,10 +50,27 @@ func NormalizeUsageSource(source string) string {
 		return UsageSourceUpstream
 	case "stream_estimate":
 		return UsageSourceCounterV2
-	case UsageSourceUpstream, UsageSourceEstimated, UsageSourceAdapterEstimated, UsageSourceCounterV2, UsageSourceNoRoute, UsageSourceUpstreamFailed:
+	case UsageSourceUpstream, UsageSourceEstimated, UsageSourceAdapterEstimated, UsageSourceCounterV2, UsageSourceMissing, UsageSourceNoRoute, UsageSourceUpstreamFailed:
 		return strings.TrimSpace(source)
 	default:
 		return strings.TrimSpace(source)
+	}
+}
+
+func LegacyUsageContract(source string, customerCharge bool) (UsageAuthority, UsagePurpose, UsageFinality, string) {
+	purpose := UsagePurposeProviderEvidence
+	if customerCharge {
+		purpose = UsagePurposeCustomerCharge
+	}
+	switch NormalizeUsageSource(source) {
+	case UsageSourceUpstream:
+		return UsageAuthorityProviderReported, purpose, UsageFinalityFinal, ""
+	case UsageSourceCounterV2:
+		return UsageAuthorityGatewayCounter, purpose, UsageFinalityEstimated, GatewayCounterEstimateVersionV2
+	case UsageSourceEstimated, UsageSourceAdapterEstimated:
+		return UsageAuthorityConservativeEstimate, purpose, UsageFinalityEstimated, ConservativeEstimateVersionV1
+	default:
+		return UsageAuthorityNone, UsagePurposeProviderEvidence, UsageFinalityMissing, ""
 	}
 }
 

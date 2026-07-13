@@ -3,6 +3,9 @@ package adapters
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+
+	"github.com/uniroute/unirouter/internal/metering"
 )
 
 const (
@@ -36,6 +39,34 @@ func NewUsage(promptTokens, completionTokens, totalTokens int, source string) (U
 		"",
 		CacheUsageStatusNotReported,
 	)
+}
+
+func NewMissingUsage() Usage {
+	return Usage{
+		Source:           metering.UsageSourceMissing,
+		Authority:        metering.UsageAuthorityNone,
+		Purpose:          metering.UsagePurposeProviderEvidence,
+		Finality:         metering.UsageFinalityMissing,
+		ContractVersion:  metering.UsageContractVersion,
+		CacheUsageStatus: CacheUsageStatusNotReported,
+	}
+}
+
+func NewConservativeEstimate(promptTokens, completionTokens int) (Usage, error) {
+	usage, err := NewUsage(
+		promptTokens,
+		completionTokens,
+		promptTokens+completionTokens,
+		metering.UsageSourceEstimated,
+	)
+	if err != nil {
+		return Usage{}, err
+	}
+	usage.Authority = metering.UsageAuthorityConservativeEstimate
+	usage.Purpose = metering.UsagePurposeCustomerCharge
+	usage.Finality = metering.UsageFinalityEstimated
+	usage.EstimateVersion = metering.ConservativeEstimateVersionV1
+	return usage, usage.ValidateContract()
 }
 
 // NewCacheAwareUsage validates a provider-reported prompt-cache partition.
@@ -101,7 +132,7 @@ func NewCacheAwareUsage(
 		return Usage{}, fmt.Errorf("cache usage schema requires a reported status")
 	}
 
-	return Usage{
+	usage := Usage{
 		PromptTokens:         promptTokens,
 		UncachedPromptTokens: uncachedPromptTokens,
 		CacheReadTokens:      cacheReadTokens,
@@ -111,7 +142,28 @@ func NewCacheAwareUsage(
 		Source:               source,
 		CacheUsageSchema:     cacheUsageSchema,
 		CacheUsageStatus:     cacheUsageStatus,
-	}, nil
+	}
+	switch metering.NormalizeUsageSource(source) {
+	case metering.UsageSourceUpstream:
+		usage.Authority = metering.UsageAuthorityProviderReported
+		usage.Purpose = metering.UsagePurposeProviderEvidence
+		usage.Finality = metering.UsageFinalityFinal
+	case metering.UsageSourceCounterV2:
+		usage.Authority = metering.UsageAuthorityGatewayCounter
+		usage.Purpose = metering.UsagePurposeCustomerCharge
+		usage.Finality = metering.UsageFinalityEstimated
+		usage.EstimateVersion = metering.GatewayCounterEstimateVersionV2
+	case metering.UsageSourceEstimated, metering.UsageSourceAdapterEstimated:
+		usage.Authority = metering.UsageAuthorityConservativeEstimate
+		usage.Purpose = metering.UsagePurposeCustomerCharge
+		usage.Finality = metering.UsageFinalityEstimated
+	default:
+		usage.Authority = metering.UsageAuthorityNone
+		usage.Purpose = metering.UsagePurposeProviderEvidence
+		usage.Finality = metering.UsageFinalityMissing
+	}
+	usage.ContractVersion = metering.UsageContractVersion
+	return usage, nil
 }
 
 // UsageFromStreamState returns the durable normalized usage partition carried
@@ -141,6 +193,48 @@ func (u Usage) HasAuthoritativeCacheHit() bool {
 	return u.HasAuthoritativeCacheUsage() && u.CacheReadTokens > 0
 }
 
+func (u Usage) IsMissing() bool {
+	return u.Authority == metering.UsageAuthorityNone || u.Finality == metering.UsageFinalityMissing
+}
+
+func (u Usage) ForCustomerCharge() (Usage, error) {
+	if u.IsMissing() {
+		return Usage{}, fmt.Errorf("missing provider usage cannot become customer-charge authority")
+	}
+	u.Purpose = metering.UsagePurposeCustomerCharge
+	return u, u.ValidateContract()
+}
+
+func (u Usage) ValidateContract() error {
+	if strings.TrimSpace(u.ContractVersion) != metering.UsageContractVersion {
+		return fmt.Errorf("unsupported usage contract version %q", u.ContractVersion)
+	}
+	switch u.Authority {
+	case metering.UsageAuthorityProviderReported:
+		if u.Source != metering.UsageSourceUpstream || u.Finality != metering.UsageFinalityFinal || u.EstimateVersion != "" {
+			return fmt.Errorf("provider-reported usage contract is inconsistent")
+		}
+	case metering.UsageAuthorityGatewayCounter:
+		if u.Source != metering.UsageSourceCounterV2 || u.Finality != metering.UsageFinalityEstimated || u.EstimateVersion != metering.GatewayCounterEstimateVersionV2 {
+			return fmt.Errorf("gateway-counter usage contract is inconsistent")
+		}
+	case metering.UsageAuthorityConservativeEstimate:
+		if u.Source != metering.UsageSourceEstimated || u.Finality != metering.UsageFinalityEstimated || strings.TrimSpace(u.EstimateVersion) == "" {
+			return fmt.Errorf("conservative-estimate usage contract is inconsistent")
+		}
+	case metering.UsageAuthorityNone:
+		if u.Source != metering.UsageSourceMissing || u.Finality != metering.UsageFinalityMissing || u.Purpose != metering.UsagePurposeProviderEvidence || u.EstimateVersion != "" {
+			return fmt.Errorf("missing usage contract is inconsistent")
+		}
+	default:
+		return fmt.Errorf("unsupported usage authority %q", u.Authority)
+	}
+	if u.Purpose != metering.UsagePurposeProviderEvidence && u.Purpose != metering.UsagePurposeCustomerCharge {
+		return fmt.Errorf("unsupported usage purpose %q", u.Purpose)
+	}
+	return nil
+}
+
 type openAIUsageWire struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
@@ -164,8 +258,7 @@ func ParseOpenAICompatibleUsage(data []byte, source string) (Usage, bool, error)
 		return Usage{}, false, fmt.Errorf("decode OpenAI-compatible usage: %w", err)
 	}
 	if envelope.Usage == nil {
-		usage, err := NewUsage(0, 0, 0, source)
-		return usage, false, err
+		return NewMissingUsage(), false, nil
 	}
 	wire := envelope.Usage
 

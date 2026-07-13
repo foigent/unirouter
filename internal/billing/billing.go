@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	internaldb "github.com/uniroute/unirouter/internal/db"
+	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/outbox"
 )
 
@@ -55,6 +56,11 @@ type SettleRequest struct {
 	CacheCreationTokens  int
 	CompletionTokens     int
 	UsageSource          string
+	UsageAuthority       metering.UsageAuthority
+	UsagePurpose         metering.UsagePurpose
+	UsageFinality        metering.UsageFinality
+	UsageContractVersion string
+	UsageEstimateVersion string
 	CacheUsageSchema     string
 	CacheUsageStatus     string
 }
@@ -108,12 +114,18 @@ type reservationRecord struct {
 	CacheCreationRatio          float64
 	PricingVersion              string
 	Status                      string
+	SettlementPendingReason     string
 	PromptTokens                int
 	UncachedPromptTokens        int
 	CacheReadTokens             int
 	CacheCreationTokens         int
 	CompletionTokens            int
 	UsageSource                 string
+	UsageAuthority              metering.UsageAuthority
+	UsagePurpose                metering.UsagePurpose
+	UsageFinality               metering.UsageFinality
+	UsageContractVersion        string
+	UsageEstimateVersion        string
 	CacheUsageSchema            string
 	CacheUsageStatus            string
 	OutputStartedAt             sql.NullTime
@@ -541,9 +553,12 @@ func (b *Billing) lookupReservation(ctx context.Context, requestID string, orgID
 		        effective_cache_creation_price_cents::float8,
 		        effective_output_price_cents::float8,
 		        cache_read_ratio::float8, cache_creation_ratio::float8,
-		        pricing_version, status,
+		        pricing_version, status, settlement_pending_reason,
 		        prompt_tokens, uncached_prompt_tokens, cache_read_tokens, cache_creation_tokens,
-		        completion_tokens, usage_source, cache_usage_schema, cache_usage_status,
+		        completion_tokens, usage_source,
+		        usage_authority, usage_purpose, usage_finality,
+		        usage_contract_version, usage_estimate_version,
+		        cache_usage_schema, cache_usage_status,
 		        output_started_at,
 		        settlement_payload_ready_at, settlement_attempts,
 		        calculated_cost, charged_cost, uncovered_cost, topup_amount,
@@ -566,12 +581,18 @@ func (b *Billing) lookupReservation(ctx context.Context, requestID string, orgID
 		&record.CacheCreationRatio,
 		&record.PricingVersion,
 		&record.Status,
+		&record.SettlementPendingReason,
 		&record.PromptTokens,
 		&record.UncachedPromptTokens,
 		&record.CacheReadTokens,
 		&record.CacheCreationTokens,
 		&record.CompletionTokens,
 		&record.UsageSource,
+		&record.UsageAuthority,
+		&record.UsagePurpose,
+		&record.UsageFinality,
+		&record.UsageContractVersion,
+		&record.UsageEstimateVersion,
 		&record.CacheUsageSchema,
 		&record.CacheUsageStatus,
 		&record.OutputStartedAt,
@@ -657,6 +678,62 @@ func normalizeSettlementUsage(req SettleRequest) (SettleRequest, error) {
 	if len(req.CacheUsageStatus) > 40 {
 		return req, fmt.Errorf("billing cache usage status exceeds 40 characters")
 	}
+	req, err := normalizeSettlementUsageContract(req)
+	if err != nil {
+		return req, err
+	}
+	return req, nil
+}
+
+func normalizeSettlementUsageContract(req SettleRequest) (SettleRequest, error) {
+	req.UsageSource = metering.NormalizeUsageSource(req.UsageSource)
+	if req.UsageAuthority == "" && req.UsagePurpose == "" && req.UsageFinality == "" &&
+		strings.TrimSpace(req.UsageContractVersion) == "" && strings.TrimSpace(req.UsageEstimateVersion) == "" {
+		// Compatibility for repository-internal callers that predate P6-F41.
+		// The adapter/gateway path always supplies the explicit contract.
+		req.UsageContractVersion = metering.UsageContractVersion
+		req.UsagePurpose = metering.UsagePurposeCustomerCharge
+		switch req.UsageSource {
+		case metering.UsageSourceUpstream:
+			req.UsageAuthority = metering.UsageAuthorityProviderReported
+			req.UsageFinality = metering.UsageFinalityFinal
+		case metering.UsageSourceCounterV2:
+			req.UsageAuthority = metering.UsageAuthorityGatewayCounter
+			req.UsageFinality = metering.UsageFinalityEstimated
+			req.UsageEstimateVersion = metering.GatewayCounterEstimateVersionV2
+		case metering.UsageSourceEstimated, metering.UsageSourceAdapterEstimated:
+			req.UsageAuthority = metering.UsageAuthorityConservativeEstimate
+			req.UsageFinality = metering.UsageFinalityEstimated
+			req.UsageEstimateVersion = metering.ConservativeEstimateVersionV1
+		}
+	}
+	req.UsageContractVersion = strings.TrimSpace(req.UsageContractVersion)
+	req.UsageEstimateVersion = strings.TrimSpace(req.UsageEstimateVersion)
+	if req.UsageContractVersion != metering.UsageContractVersion {
+		return req, fmt.Errorf("billing usage contract version %q is unsupported", req.UsageContractVersion)
+	}
+	if req.UsagePurpose != metering.UsagePurposeCustomerCharge {
+		return req, fmt.Errorf("billing settlement requires customer-charge usage purpose")
+	}
+	switch req.UsageAuthority {
+	case metering.UsageAuthorityProviderReported:
+		if req.UsageSource != metering.UsageSourceUpstream || req.UsageFinality != metering.UsageFinalityFinal || req.UsageEstimateVersion != "" {
+			return req, fmt.Errorf("billing provider-reported usage contract is inconsistent")
+		}
+	case metering.UsageAuthorityGatewayCounter:
+		if req.UsageSource != metering.UsageSourceCounterV2 || req.UsageFinality != metering.UsageFinalityEstimated || req.UsageEstimateVersion != metering.GatewayCounterEstimateVersionV2 {
+			return req, fmt.Errorf("billing gateway-counter usage contract is inconsistent")
+		}
+	case metering.UsageAuthorityConservativeEstimate:
+		if (req.UsageSource != metering.UsageSourceEstimated && req.UsageSource != metering.UsageSourceAdapterEstimated) || req.UsageFinality != metering.UsageFinalityEstimated || req.UsageEstimateVersion == "" {
+			return req, fmt.Errorf("billing conservative-estimate usage contract is inconsistent")
+		}
+	default:
+		return req, fmt.Errorf("billing settlement rejects usage authority %q", req.UsageAuthority)
+	}
+	if len(req.UsageContractVersion) > 80 || len(req.UsageEstimateVersion) > 80 {
+		return req, fmt.Errorf("billing usage contract metadata exceeds 80 characters")
+	}
 	return req, nil
 }
 
@@ -702,6 +779,9 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		if !settlementUsageMatches(record, req) {
 			return nil, ErrSettlementUsageConflict
 		}
+		if err := requireChargeableDeliveryTx(ctx, tx, record, req); err != nil {
+			return nil, err
+		}
 		// Only the durable payload may drive recovery of billable output.
 		req.PromptTokens = record.PromptTokens
 		req.UncachedPromptTokens = record.UncachedPromptTokens
@@ -709,11 +789,20 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		req.CacheCreationTokens = record.CacheCreationTokens
 		req.CompletionTokens = record.CompletionTokens
 		req.UsageSource = record.UsageSource
+		req.UsageAuthority = record.UsageAuthority
+		req.UsagePurpose = record.UsagePurpose
+		req.UsageFinality = record.UsageFinality
+		req.UsageContractVersion = record.UsageContractVersion
+		req.UsageEstimateVersion = record.UsageEstimateVersion
 		req.CacheUsageSchema = record.CacheUsageSchema
 		req.CacheUsageStatus = record.CacheUsageStatus
 	case "frozen":
-		// Non-stream responses are withheld until this transaction succeeds, so
-		// they can still settle directly from the caller-provided usage.
+		// Legacy/internal reservations without a provider attempt may still settle
+		// directly. Once an upstream attempt exists, P6-F41 requires the caller to
+		// prepare delivery and persist a chargeable local write receipt first.
+		if strings.TrimSpace(req.AttemptID) != "" {
+			return nil, ErrDeliveryNotChargeable
+		}
 	default:
 		return &SettleResult{Success: false, ErrorCode: "invalid_state"}, nil
 	}
@@ -729,11 +818,12 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 	uncoveredCost := 0
 	grantConsumed := minInt(chargedCost, record.ReservedGrantedAmount)
 	totalCashConsumed := chargedCost - grantConsumed
-	topUpAmount := totalCashConsumed - record.ReservedBalanceAmount
-	if topUpAmount < 0 {
-		topUpAmount = 0
+	additionalTopUpAmount := totalCashConsumed - record.ReservedBalanceAmount
+	if additionalTopUpAmount < 0 {
+		additionalTopUpAmount = 0
 	}
-	reservedCashConsumed := totalCashConsumed - topUpAmount
+	totalTopUpAmount := record.TopUpAmount + additionalTopUpAmount
+	reservedCashConsumed := totalCashConsumed - additionalTopUpAmount
 	refundCash := record.ReservedBalanceAmount - reservedCashConsumed
 	if refundCash < 0 {
 		return nil, fmt.Errorf("reservation cash source invariant violated for %s", req.RequestID)
@@ -742,8 +832,8 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 	if err != nil {
 		return nil, err
 	}
-	if availableCash < topUpAmount {
-		if err := persistFundingPendingTx(ctx, tx, b.outbox, record, req, calculatedCost, topUpAmount, costBreakdown); err != nil {
+	if availableCash < additionalTopUpAmount {
+		if err := persistFundingPendingTx(ctx, tx, b.outbox, record, req, calculatedCost, additionalTopUpAmount, costBreakdown); err != nil {
 			return nil, err
 		}
 		if err := markProviderAttemptFundingPendingTx(ctx, tx, req, calculatedCost); err != nil {
@@ -755,7 +845,7 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		return &SettleResult{
 			ActualCost:     calculatedCost,
 			ChargedCost:    0,
-			UncoveredCost:  topUpAmount,
+			UncoveredCost:  additionalTopUpAmount,
 			TopUpAmount:    0,
 			PricingVersion: record.PricingVersion,
 			Success:        false,
@@ -788,7 +878,7 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		     updated_at = NOW()
 		 WHERE org_id = $6 AND frozen >= $1 AND balance >= $3
 		 RETURNING balance`,
-		record.FrozenAmount, refundCash, topUpAmount, restoredGrant, chargedCost, req.OrgID,
+		record.FrozenAmount, refundCash, additionalTopUpAmount, restoredGrant, chargedCost, req.OrgID,
 	).Scan(&newBalance)
 	if err != nil {
 		return nil, fmt.Errorf("settle balance: %w", err)
@@ -804,7 +894,7 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		req.OrgID,
 		chargedCost,
 		newBalance,
-		fmt.Sprintf("Settle for request %s (prepaid_topup=%d)", req.RequestID, topUpAmount),
+		fmt.Sprintf("Settle for request %s (prepaid_topup=%d)", req.RequestID, totalTopUpAmount),
 	).Scan(&settleID)
 	if err != nil {
 		return nil, fmt.Errorf("record settle: %w", err)
@@ -820,20 +910,25 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		     cache_creation_tokens = $6,
 		     completion_tokens = $7,
 		     usage_source = $8,
-		     cache_usage_schema = $9,
-		     cache_usage_status = $10,
-		     calculated_cost = $11,
-		     charged_cost = $12,
-		     uncovered_cost = $13,
-		     topup_amount = $14,
-		     refund_amount = $15,
-		     forfeited_grant_amount = $16,
-		     uncached_input_cost_cents = $17,
-		     cache_read_cost_cents = $18,
-		     cache_creation_cost_cents = $19,
-		     output_cost_cents = $20,
-		     terminal_transaction_id = $21,
-		     balance_after = $22,
+		     usage_authority = $9,
+		     usage_purpose = $10,
+		     usage_finality = $11,
+		     usage_contract_version = $12,
+		     usage_estimate_version = $13,
+		     cache_usage_schema = $14,
+		     cache_usage_status = $15,
+		     calculated_cost = $16,
+		     charged_cost = $17,
+		     uncovered_cost = $18,
+		     topup_amount = $19,
+		     refund_amount = $20,
+		     forfeited_grant_amount = $21,
+		     uncached_input_cost_cents = $22,
+		     cache_read_cost_cents = $23,
+		     cache_creation_cost_cents = $24,
+		     output_cost_cents = $25,
+		     terminal_transaction_id = $26,
+		     balance_after = $27,
 		     terminal_at = NOW(),
 		     provider_cost_pending_at = NULL,
 		     settlement_pending_reason = '',
@@ -843,8 +938,11 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		 WHERE request_id = $1 AND org_id = $2 AND status IN ('frozen', 'settlement_pending')`,
 		req.RequestID, req.OrgID,
 		req.PromptTokens, req.UncachedPromptTokens, req.CacheReadTokens, req.CacheCreationTokens,
-		req.CompletionTokens, req.UsageSource, req.CacheUsageSchema, req.CacheUsageStatus,
-		calculatedCost, chargedCost, uncoveredCost, topUpAmount, refund, forfeitedGrant,
+		req.CompletionTokens, req.UsageSource,
+		req.UsageAuthority, req.UsagePurpose, req.UsageFinality,
+		req.UsageContractVersion, req.UsageEstimateVersion,
+		req.CacheUsageSchema, req.CacheUsageStatus,
+		calculatedCost, chargedCost, uncoveredCost, totalTopUpAmount, refund, forfeitedGrant,
 		costBreakdown.UncachedInputCostCents, costBreakdown.CacheReadCostCents,
 		costBreakdown.CacheCreationCostCents, costBreakdown.OutputCostCents,
 		settleID, newBalance,
@@ -871,19 +969,26 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 			     total_tokens = $3::integer + $7::integer,
 			     cost_cents = $8,
 			     usage_source = $9,
-			     cache_usage_schema = $10,
-			     cache_usage_status = $11,
-			     pricing_version = $12,
-			     effective_input_price_cents = $13,
-			     effective_cache_read_price_cents = $14,
-			     effective_cache_creation_price_cents = $15,
-			     effective_output_price_cents = $16,
-			     cache_read_cost_cents = $17,
-			     cache_creation_cost_cents = $18
+			     usage_authority = $10,
+			     usage_purpose = $11,
+			     usage_finality = $12,
+			     usage_contract_version = $13,
+			     usage_estimate_version = $14,
+			     cache_usage_schema = $15,
+			     cache_usage_status = $16,
+			     pricing_version = $17,
+			     effective_input_price_cents = $18,
+			     effective_cache_read_price_cents = $19,
+			     effective_cache_creation_price_cents = $20,
+			     effective_output_price_cents = $21,
+			     cache_read_cost_cents = $22,
+			     cache_creation_cost_cents = $23
 			 WHERE request_id = $1 AND org_id = $2`,
 			req.RequestID, req.OrgID,
 			req.PromptTokens, req.UncachedPromptTokens, req.CacheReadTokens, req.CacheCreationTokens,
 			req.CompletionTokens, chargedCost, req.UsageSource,
+			req.UsageAuthority, req.UsagePurpose, req.UsageFinality,
+			req.UsageContractVersion, req.UsageEstimateVersion,
 			req.CacheUsageSchema, req.CacheUsageStatus, record.PricingVersion,
 			record.EffectiveInputPrice, record.EffectiveCacheReadPrice,
 			record.EffectiveCacheCreationPrice, record.EffectiveOutputPrice,
@@ -909,7 +1014,7 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		ActualCost:                       calculatedCost,
 		ChargedCost:                      chargedCost,
 		UncoveredCost:                    uncoveredCost,
-		TopUpAmount:                      topUpAmount,
+		TopUpAmount:                      totalTopUpAmount,
 		Refund:                           refund,
 		NewBalance:                       newBalance,
 		PricingVersion:                   record.PricingVersion,
@@ -948,16 +1053,21 @@ func persistFundingPendingTx(
 		     cache_creation_tokens = $6,
 		     completion_tokens = $7,
 		     usage_source = $8,
-		     cache_usage_schema = $9,
-		     cache_usage_status = $10,
-		     calculated_cost = $11,
+		     usage_authority = $9,
+		     usage_purpose = $10,
+		     usage_finality = $11,
+		     usage_contract_version = $12,
+		     usage_estimate_version = $13,
+		     cache_usage_schema = $14,
+		     cache_usage_status = $15,
+		     calculated_cost = $16,
 		     charged_cost = 0,
-		     uncovered_cost = $12,
+		     uncovered_cost = $17,
 		     topup_amount = 0,
-		     uncached_input_cost_cents = $13,
-		     cache_read_cost_cents = $14,
-		     cache_creation_cost_cents = $15,
-		     output_cost_cents = $16,
+		     uncached_input_cost_cents = $18,
+		     cache_read_cost_cents = $19,
+		     cache_creation_cost_cents = $20,
+		     output_cost_cents = $21,
 		     settlement_payload_ready_at = COALESCE(settlement_payload_ready_at, NOW()),
 		     settlement_claimed_until = NULL,
 		     settlement_next_attempt_at = NULL,
@@ -967,7 +1077,10 @@ func persistFundingPendingTx(
 		   AND status IN ('frozen', 'settlement_pending')`,
 		req.RequestID, req.OrgID,
 		req.PromptTokens, req.UncachedPromptTokens, req.CacheReadTokens, req.CacheCreationTokens,
-		req.CompletionTokens, req.UsageSource, req.CacheUsageSchema, req.CacheUsageStatus,
+		req.CompletionTokens, req.UsageSource,
+		req.UsageAuthority, req.UsagePurpose, req.UsageFinality,
+		req.UsageContractVersion, req.UsageEstimateVersion,
+		req.CacheUsageSchema, req.CacheUsageStatus,
 		calculatedCost, shortfall,
 		costBreakdown.UncachedInputCostCents, costBreakdown.CacheReadCostCents,
 		costBreakdown.CacheCreationCostCents, costBreakdown.OutputCostCents,
@@ -979,7 +1092,7 @@ func persistFundingPendingTx(
 		return fmt.Errorf("persist funding-pending settlement: reservation state changed")
 	}
 	if err := enqueueUsageJournalTx(
-		ctx, tx, service, outbox.EventBillingUsagePrepared, "funding_pending",
+		ctx, tx, service, outbox.EventBillingUsagePrepared, "usage_prepared",
 		record, req, calculatedCost, 0, 0,
 	); err != nil {
 		return fmt.Errorf("enqueue funding-pending usage journal: %w", err)
@@ -997,6 +1110,16 @@ func canonicalizeLegacyReservationUsage(record reservationRecord) reservationRec
 	}
 	if strings.TrimSpace(record.CacheUsageStatus) == "" {
 		record.CacheUsageStatus = cacheUsageStatusNotReported
+	}
+	if record.UsageAuthority == "" && strings.TrimSpace(record.UsageContractVersion) == "" && strings.TrimSpace(record.UsageSource) != "" {
+		contract, err := normalizeSettlementUsageContract(SettleRequest{UsageSource: record.UsageSource})
+		if err == nil {
+			record.UsageAuthority = contract.UsageAuthority
+			record.UsagePurpose = contract.UsagePurpose
+			record.UsageFinality = contract.UsageFinality
+			record.UsageContractVersion = contract.UsageContractVersion
+			record.UsageEstimateVersion = contract.UsageEstimateVersion
+		}
 	}
 	return record
 }
@@ -1075,9 +1198,12 @@ func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgI
 		        effective_cache_creation_price_cents::float8,
 		        effective_output_price_cents::float8,
 		        cache_read_ratio::float8, cache_creation_ratio::float8,
-		        pricing_version, status,
+		        pricing_version, status, settlement_pending_reason,
 		        prompt_tokens, uncached_prompt_tokens, cache_read_tokens, cache_creation_tokens,
-		        completion_tokens, usage_source, cache_usage_schema, cache_usage_status,
+		        completion_tokens, usage_source,
+		        usage_authority, usage_purpose, usage_finality,
+		        usage_contract_version, usage_estimate_version,
+		        cache_usage_schema, cache_usage_status,
 		        output_started_at,
 		        settlement_payload_ready_at, settlement_attempts,
 		        calculated_cost, charged_cost, uncovered_cost, topup_amount,
@@ -1102,12 +1228,18 @@ func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgI
 		&record.CacheCreationRatio,
 		&record.PricingVersion,
 		&record.Status,
+		&record.SettlementPendingReason,
 		&record.PromptTokens,
 		&record.UncachedPromptTokens,
 		&record.CacheReadTokens,
 		&record.CacheCreationTokens,
 		&record.CompletionTokens,
 		&record.UsageSource,
+		&record.UsageAuthority,
+		&record.UsagePurpose,
+		&record.UsageFinality,
+		&record.UsageContractVersion,
+		&record.UsageEstimateVersion,
 		&record.CacheUsageSchema,
 		&record.CacheUsageStatus,
 		&record.OutputStartedAt,
@@ -1336,11 +1468,15 @@ func cancelReservation(ctx context.Context, database internaldb.DBQuerier, servi
 		return fmt.Errorf("update idempotency: %w", err)
 	}
 	cancelReq := SettleRequest{
-		RequestID:        requestID,
-		OrgID:            orgID,
-		UsageSource:      "",
-		CacheUsageStatus: cacheUsageStatusNotReported,
-		CacheUsageSchema: "",
+		RequestID:            requestID,
+		OrgID:                orgID,
+		UsageSource:          metering.UsageSourceMissing,
+		UsageAuthority:       metering.UsageAuthorityNone,
+		UsagePurpose:         metering.UsagePurposeProviderEvidence,
+		UsageFinality:        metering.UsageFinalityMissing,
+		UsageContractVersion: metering.UsageContractVersion,
+		CacheUsageStatus:     cacheUsageStatusNotReported,
+		CacheUsageSchema:     "",
 	}
 	if err := enqueueUsageJournalTx(
 		ctx, tx, service, outbox.EventBillingCancelled, "cancelled",

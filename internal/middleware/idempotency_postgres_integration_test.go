@@ -36,6 +36,14 @@ func TestP6F17PostgresIdempotencyScopeReplayMismatchAndConcurrency(t *testing.T)
 	require.True(t, claim.Claimed)
 	require.Equal(t, first.OperationID, claim.Record.OperationID)
 	require.NoError(t, store.Complete(ctx, first.OrgID, first.APIKeyID, first.KeyHash, first.OperationID, IdempotencyStateCompleted, 200))
+	_, err = pool.Exec(ctx, `
+		UPDATE request_idempotency
+		SET usage_authority='provider_reported', usage_purpose='customer_charge',
+		    usage_finality='final', usage_contract_version='unirouter.usage.v1',
+		    delivery_mode='nonstream', delivery_outcome='completed',
+		    delivered_bytes=512, delivered_chunks=1, delivery_updated_at=NOW()
+		WHERE org_id=$1 AND api_key_id=$2 AND key_hash=$3`, first.OrgID, first.APIKeyID, first.KeyHash)
+	require.NoError(t, err)
 
 	replay := first
 	replay.OperationID = "op_00000000000000000000000000000002"
@@ -48,6 +56,12 @@ func TestP6F17PostgresIdempotencyScopeReplayMismatchAndConcurrency(t *testing.T)
 	require.Equal(t, IdempotencyStateCompleted, claim.Record.State)
 	require.NotNil(t, claim.Record.OriginalHTTPStatus)
 	require.Equal(t, 200, *claim.Record.OriginalHTTPStatus)
+	require.Equal(t, "provider_reported", claim.Record.UsageAuthority)
+	require.Equal(t, "customer_charge", claim.Record.UsagePurpose)
+	require.Equal(t, "final", claim.Record.UsageFinality)
+	require.Equal(t, "nonstream", claim.Record.DeliveryMode)
+	require.Equal(t, "completed", claim.Record.DeliveryOutcome)
+	require.EqualValues(t, 512, claim.Record.DeliveredBytes)
 
 	mismatch := replay
 	mismatch.OperationID = "op_00000000000000000000000000000003"

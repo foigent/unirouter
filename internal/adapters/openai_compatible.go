@@ -53,11 +53,9 @@ func (a *OpenAICompatible) BuildRequest(ctx context.Context, in RequestInput) (*
 
 func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) (*NormalizedResponse, error) {
 	_ = ctx
-	usage, err := NewUsage(0, 0, 0, metering.UsageSourceUpstream)
-	if err != nil {
-		return nil, err
-	}
+	usage := NewMissingUsage()
 	if in.StatusCode >= 200 && in.StatusCode < 300 {
+		var err error
 		usage, _, err = ParseOpenAICompatibleUsage(in.Body, metering.UsageSourceUpstream)
 		if err != nil {
 			return nil, err

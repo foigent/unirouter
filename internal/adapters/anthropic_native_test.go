@@ -177,6 +177,31 @@ func TestAnthropicNativeParseResponse_ConvertsToOpenAICompatibleBody(t *testing.
 	}
 }
 
+func TestP6F41AnthropicExplicitZeroAndMissingUsageRemainDistinct(t *testing.T) {
+	adapter := NewAnthropicNative()
+	parse := func(body string) Usage {
+		t.Helper()
+		resp, err := adapter.ParseResponse(context.Background(), ResponseInput{
+			StatusCode: http.StatusOK,
+			Body:       []byte(body),
+			Channel:    models.Channel{Provider: "anthropic", AdapterType: TypeAnthropicNative},
+		})
+		if err != nil {
+			t.Fatalf("ParseResponse failed: %v", err)
+		}
+		return resp.Usage
+	}
+
+	explicitZero := parse(`{"id":"msg_zero","content":[],"usage":{"input_tokens":0,"output_tokens":0}}`)
+	if explicitZero.IsMissing() || explicitZero.Authority != metering.UsageAuthorityProviderReported || explicitZero.Finality != metering.UsageFinalityFinal {
+		t.Fatalf("explicit Anthropic zero lost provider authority: %+v", explicitZero)
+	}
+	missing := parse(`{"id":"msg_missing","content":[]}`)
+	if !missing.IsMissing() || missing.Authority != metering.UsageAuthorityNone || missing.Finality != metering.UsageFinalityMissing {
+		t.Fatalf("missing Anthropic usage became authoritative zero: %+v", missing)
+	}
+}
+
 func TestAnthropicNativeParseResponse_CacheReadCreationUsage(t *testing.T) {
 	adapter := NewAnthropicNative()
 	resp, err := adapter.ParseResponse(context.Background(), ResponseInput{
@@ -386,6 +411,32 @@ func TestAnthropicNativeNormalizeStreamChunk_MissingUsageAllowsFallback(t *testi
 	}
 	if chunk.TextDelta != "fallback text" {
 		t.Fatalf("expected fallback text delta, got %+v", chunk)
+	}
+}
+
+func TestP6F41AnthropicStreamExplicitZeroAndMissingUsageRemainDistinct(t *testing.T) {
+	adapter := NewAnthropicNative()
+	finalUsage := func(messageStart string) *NormalizedStreamChunk {
+		t.Helper()
+		state := &StreamState{}
+		input := StreamChunkInput{RequestedModel: "company-chat", State: state}
+		if _, err := adapter.NormalizeStreamChunk(context.Background(), withStreamData(input, messageStart)); err != nil {
+			t.Fatalf("message_start failed: %v", err)
+		}
+		chunk, err := adapter.NormalizeStreamChunk(context.Background(), withStreamData(input, `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":0}}`))
+		if err != nil {
+			t.Fatalf("message_delta failed: %v", err)
+		}
+		return chunk
+	}
+
+	explicitZero := finalUsage(`{"type":"message_start","message":{"id":"msg_zero","usage":{"input_tokens":0,"output_tokens":0}}}`)
+	if !explicitZero.HasUsage || explicitZero.Usage.IsMissing() || explicitZero.Usage.Authority != metering.UsageAuthorityProviderReported {
+		t.Fatalf("explicit stream zero lost provider authority: %+v", explicitZero)
+	}
+	missing := finalUsage(`{"type":"message_start","message":{"id":"msg_missing"}}`)
+	if missing.HasUsage {
+		t.Fatalf("missing stream usage became authoritative zero: %+v", missing)
 	}
 }
 

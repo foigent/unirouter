@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-13
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F40 and P6-STREAM-002A are CI verified / closed; P6-F11 remains in progress, and P6-F10/P6-F41 are not started
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F41 and P6-STREAM-002A are CI verified / closed; P6-F11 remains in progress, and P6-F10 is not started
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -31,9 +31,9 @@ required CI. No scope decision grants target/deployment/data/cost authorization.
 
 - 41 total `P6-F*` rows exist in the acceptance matrix;
 - 27 are accepted implementation scope;
-- 24 are CI verified / closed: P6-F01 through P6-F09, P6-F16 through P6-F21
-  and P6-F32 through P6-F40;
-- 3 accepted rows remain unclosed: P6-F41 is not started; D6-12 assigns
+- 25 are CI verified / closed: P6-F01 through P6-F09, P6-F16 through P6-F21
+  and P6-F32 through P6-F41;
+- 2 accepted rows remain unclosed: D6-12 assigns
   mid-stream crash semantics to P6-F11, which is in progress through the
   P6-STREAM-002A transport prerequisite; and P6-F10 is not started;
 - 14 rows are not accepted: P6-F12 through P6-F15 and P6-F22 through P6-F31;
@@ -315,8 +315,8 @@ authoritative usage, local delivery and the frozen customer price; provider COGS
 evidence cannot directly create customer debt. No silent platform subsidy,
 separate Cost Control Service, live billing connector, bill import or raw
 response retention is authorized.
-**Status:** P6-F40A/P6-F40B/P6-F40C are CI verified; P6-F40 is closed. P6-F41
-is not started.
+**Status:** P6-F40 and P6-F41 are CI verified / closed. P6-F41 exact
+implementation/test head `6d0e6ba` passed PR #187 required run `29229320432`.
 
 Ordered slices:
 
@@ -344,6 +344,11 @@ Ordered slices:
 5. P6-F41B adds monotonic local delivery outcomes and a bounded metadata-only
    receipt. It stores no prompt or response body and does not implement the
    future Cache Service.
+
+P6-F41 repository and CI evidence is recorded in
+`docs/ops/evidence/PRD6-B3H-P6F41-usage-delivery-integrity-local-20260713.md`.
+PR #187 exact implementation/test head `6d0e6ba` passed Backend Tests, Frontend
+Build and Docker Build in required run `29229320432`.
 
 The provider-neutral evidence contract does not claim real-time supplier charge
 confirmation. Provider billing connectors, cloud cost exports, controlled bill

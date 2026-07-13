@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/outbox"
 )
 
@@ -37,6 +38,11 @@ type pendingSettlement struct {
 	CacheCreationTokens  int
 	CompletionTokens     int
 	UsageSource          string
+	UsageAuthority       metering.UsageAuthority
+	UsagePurpose         metering.UsagePurpose
+	UsageFinality        metering.UsageFinality
+	UsageContractVersion string
+	UsageEstimateVersion string
 	CacheUsageSchema     string
 	CacheUsageStatus     string
 	Attempt              int
@@ -201,13 +207,18 @@ func (b *Billing) PersistSettlementUsage(ctx context.Context, req SettleRequest)
 		     cache_creation_tokens = $6,
 		     completion_tokens = $7,
 		     usage_source = $8,
-		     cache_usage_schema = $9,
-		     cache_usage_status = $10,
-		     calculated_cost = $11,
-		     uncached_input_cost_cents = $12,
-		     cache_read_cost_cents = $13,
-		     cache_creation_cost_cents = $14,
-		     output_cost_cents = $15,
+		     usage_authority = $9,
+		     usage_purpose = $10,
+		     usage_finality = $11,
+		     usage_contract_version = $12,
+		     usage_estimate_version = $13,
+		     cache_usage_schema = $14,
+		     cache_usage_status = $15,
+		     calculated_cost = $16,
+		     uncached_input_cost_cents = $17,
+		     cache_read_cost_cents = $18,
+		     cache_creation_cost_cents = $19,
+		     output_cost_cents = $20,
 		     settlement_payload_ready_at = NOW(),
 		     settlement_claimed_until = NULL,
 		     settlement_next_attempt_at = NOW(),
@@ -216,11 +227,17 @@ func (b *Billing) PersistSettlementUsage(ctx context.Context, req SettleRequest)
 		 WHERE request_id = $1 AND org_id = $2 AND status = 'settlement_pending'`,
 		req.RequestID, req.OrgID,
 		req.PromptTokens, req.UncachedPromptTokens, req.CacheReadTokens, req.CacheCreationTokens,
-		req.CompletionTokens, req.UsageSource, req.CacheUsageSchema, req.CacheUsageStatus,
+		req.CompletionTokens, req.UsageSource,
+		req.UsageAuthority, req.UsagePurpose, req.UsageFinality,
+		req.UsageContractVersion, req.UsageEstimateVersion,
+		req.CacheUsageSchema, req.CacheUsageStatus,
 		calculatedCost, costBreakdown.UncachedInputCostCents, costBreakdown.CacheReadCostCents,
 		costBreakdown.CacheCreationCostCents, costBreakdown.OutputCostCents,
 	); err != nil {
 		return fmt.Errorf("persist settlement payload: %w", err)
+	}
+	if err := updateRequestIdempotencyUsageTx(ctx, tx, req); err != nil {
+		return err
 	}
 	if err := enqueueUsageJournalTx(
 		ctx, tx, b.outbox, outbox.EventBillingUsagePrepared, "usage_prepared",
@@ -238,6 +255,11 @@ func settlementUsageMatches(record reservationRecord, req SettleRequest) bool {
 		record.CacheCreationTokens == req.CacheCreationTokens &&
 		record.CompletionTokens == req.CompletionTokens &&
 		record.UsageSource == req.UsageSource &&
+		record.UsageAuthority == req.UsageAuthority &&
+		record.UsagePurpose == req.UsagePurpose &&
+		record.UsageFinality == req.UsageFinality &&
+		record.UsageContractVersion == req.UsageContractVersion &&
+		record.UsageEstimateVersion == req.UsageEstimateVersion &&
 		record.CacheUsageSchema == req.CacheUsageSchema &&
 		record.CacheUsageStatus == req.CacheUsageStatus
 }
@@ -272,6 +294,11 @@ func (b *Billing) RecoverPendingSettlements(ctx context.Context, limit int) (Set
 			CacheCreationTokens:  item.CacheCreationTokens,
 			CompletionTokens:     item.CompletionTokens,
 			UsageSource:          item.UsageSource,
+			UsageAuthority:       item.UsageAuthority,
+			UsagePurpose:         item.UsagePurpose,
+			UsageFinality:        item.UsageFinality,
+			UsageContractVersion: item.UsageContractVersion,
+			UsageEstimateVersion: item.UsageEstimateVersion,
 			CacheUsageSchema:     item.CacheUsageSchema,
 			CacheUsageStatus:     item.CacheUsageStatus,
 		})
@@ -302,7 +329,7 @@ func (b *Billing) claimPendingSettlements(ctx context.Context, limit int) ([]pen
 		    FROM freeze_idempotency
 		    WHERE status = 'settlement_pending'
 		      AND settlement_payload_ready_at IS NOT NULL
-		      AND settlement_pending_reason = 'billable_output'
+		      AND settlement_pending_reason IN ('billable_output', 'delivery_completed')
 		      AND (settlement_claimed_until IS NULL OR settlement_claimed_until <= NOW())
 		      AND (settlement_next_attempt_at IS NULL OR settlement_next_attempt_at <= NOW())
 		    ORDER BY COALESCE(settlement_next_attempt_at, settlement_payload_ready_at),
@@ -321,6 +348,8 @@ func (b *Billing) claimPendingSettlements(ctx context.Context, limit int) ([]pen
 		          f.prompt_tokens, f.uncached_prompt_tokens,
 		          f.cache_read_tokens, f.cache_creation_tokens,
 		          f.completion_tokens, f.usage_source,
+		          f.usage_authority, f.usage_purpose, f.usage_finality,
+		          f.usage_contract_version, f.usage_estimate_version,
 		          f.cache_usage_schema, f.cache_usage_status,
 		          f.settlement_attempts`, limit)
 	if err != nil {
@@ -340,6 +369,11 @@ func (b *Billing) claimPendingSettlements(ctx context.Context, limit int) ([]pen
 			&item.CacheCreationTokens,
 			&item.CompletionTokens,
 			&item.UsageSource,
+			&item.UsageAuthority,
+			&item.UsagePurpose,
+			&item.UsageFinality,
+			&item.UsageContractVersion,
+			&item.UsageEstimateVersion,
 			&item.CacheUsageSchema,
 			&item.CacheUsageStatus,
 			&item.Attempt,

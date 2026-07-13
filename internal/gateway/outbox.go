@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/outbox"
 )
 
@@ -75,6 +76,11 @@ type callLogOutboxPayload struct {
 	LatencyMS                 int       `json:"latency_ms"`
 	TTFTMS                    int       `json:"ttft_ms"`
 	UsageSource               string    `json:"usage_source"`
+	UsageAuthority            string    `json:"usage_authority"`
+	UsagePurpose              string    `json:"usage_purpose"`
+	UsageFinality             string    `json:"usage_finality"`
+	UsageContractVersion      string    `json:"usage_contract_version"`
+	UsageEstimateVersion      string    `json:"usage_estimate_version,omitempty"`
 	CacheUsageSchema          string    `json:"cache_usage_schema"`
 	CacheUsageStatus          string    `json:"cache_usage_status"`
 	PricingVersion            string    `json:"pricing_version"`
@@ -193,6 +199,14 @@ func (relay *Relay) ProcessCallLogOutbox(ctx context.Context, event outbox.Event
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		return fmt.Errorf("decode call-log outbox payload: %w", err)
 	}
+	if payload.UsageAuthority == "" {
+		authority, purpose, finality, estimateVersion := metering.LegacyUsageContract(payload.UsageSource, true)
+		payload.UsageAuthority = string(authority)
+		payload.UsagePurpose = string(purpose)
+		payload.UsageFinality = string(finality)
+		payload.UsageContractVersion = metering.UsageContractVersion
+		payload.UsageEstimateVersion = estimateVersion
+	}
 	_, err := relay.db.Exec(ctx,
 		`INSERT INTO call_logs (
 			request_id, client_request_id, idempotency_key_hash,
@@ -200,6 +214,7 @@ func (relay *Relay) ProcessCallLogOutbox(ctx context.Context, event outbox.Event
 			model, requested_model, provider, channel,
 			prompt_tokens, uncached_prompt_tokens, cache_read_tokens, cache_creation_tokens,
 			completion_tokens, total_tokens, cost_cents, status_code, latency_ms, ttft_ms, usage_source,
+			usage_authority, usage_purpose, usage_finality, usage_contract_version, usage_estimate_version,
 			cache_usage_schema, cache_usage_status, pricing_version,
 			effective_input_price_cents, effective_cache_read_price_cents,
 			effective_cache_creation_price_cents, effective_output_price_cents,
@@ -216,14 +231,15 @@ func (relay *Relay) ProcessCallLogOutbox(ctx context.Context, event outbox.Event
 			$9, $10, $11, $12,
 			$13, $14, $15, $16,
 			$17, $18, $19, $20, $21, $22, $23,
-			$24, $25, $26,
-			$27, $28, $29, $30,
-			$31, $32,
-			$33, $34, $35, $36,
-			$37, $38, $39, $40, $41, $42,
-			$43, $44, $45,
-			$46, $47, $48, $49, $50,
-			$51, $52
+			$24, $25, $26, $27, $28,
+			$29, $30, $31,
+			$32, $33, $34, $35,
+			$36, $37,
+			$38, $39, $40, $41,
+			$42, $43, $44, $45, $46, $47,
+			$48, $49, $50,
+			$51, $52, $53, $54, $55,
+			$56, $57
 		 WHERE NOT EXISTS (
 			SELECT 1 FROM call_logs
 			 WHERE org_id = $4::bigint AND request_id = $1::varchar(64)
@@ -235,6 +251,8 @@ func (relay *Relay) ProcessCallLogOutbox(ctx context.Context, event outbox.Event
 		payload.PromptTokens, payload.UncachedPromptTokens, payload.CacheReadTokens, payload.CacheCreationTokens,
 		payload.CompletionTokens, payload.PromptTokens+payload.CompletionTokens,
 		payload.CostCents, payload.StatusCode, payload.LatencyMS, payload.TTFTMS, payload.UsageSource,
+		payload.UsageAuthority, payload.UsagePurpose, payload.UsageFinality,
+		payload.UsageContractVersion, payload.UsageEstimateVersion,
 		payload.CacheUsageSchema, payload.CacheUsageStatus, payload.PricingVersion,
 		payload.EffectiveInputPrice, payload.EffectiveCacheReadPrice, payload.EffectiveCacheCreatePrice, payload.EffectiveOutputPrice,
 		payload.CacheReadCost, payload.CacheCreationCost,

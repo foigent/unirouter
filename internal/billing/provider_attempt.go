@@ -20,6 +20,8 @@ const (
 const (
 	providerAttemptStateDispatchStarted    = "dispatch_started"
 	providerAttemptStateFundingPending     = "funding_pending"
+	providerAttemptStateDeliveryPending    = "delivery_pending"
+	providerAttemptStateDeliveryFailed     = "delivery_failed"
 	providerAttemptStateSettled            = "settled"
 	providerAttemptCertaintyPending        = "pending"
 	providerAttemptCertaintyRejected       = "known_rejected"
@@ -192,7 +194,8 @@ func (b *Billing) BeginProviderAttempt(ctx context.Context, request ProviderAtte
 		    WHERE org_id = $1 AND request_id = $2
 		      AND state IN (
 		          'dispatch_started', 'response_accepted', 'outcome_unknown',
-		          'response_unusable', 'funding_pending'
+		          'response_unusable', 'funding_pending',
+		          'delivery_pending', 'delivery_failed'
 		      )
 		)`, req.OrgID, req.RequestID,
 	).Scan(&unresolved); err != nil {
@@ -373,7 +376,8 @@ func updateProviderAttemptFinancialStateTx(
 		   AND ($3::text = '' OR attempt_id = $3::text)
 		   AND state IN (
 		       'dispatch_started', 'response_accepted', 'outcome_unknown',
-		       'response_unusable', 'funding_pending'
+		       'response_unusable', 'funding_pending',
+		       'delivery_pending', 'delivery_failed'
 		   )`,
 		req.OrgID, req.RequestID, req.AttemptID, state, providerAttemptCertaintyKnownUsage,
 		calculatedCost, chargedCost, transactionID,
@@ -402,12 +406,15 @@ func holdUnresolvedProviderAttemptTx(ctx context.Context, tx pgx.Tx, requestID s
 		 WHERE org_id = $1 AND request_id = $2
 		   AND state IN (
 		       'dispatch_started', 'response_accepted', 'outcome_unknown',
-		       'response_unusable', 'funding_pending'
+		       'response_unusable', 'funding_pending',
+		       'delivery_pending', 'delivery_failed'
 		   )
 		 ORDER BY CASE state
 		     WHEN 'outcome_unknown' THEN 1
 		     WHEN 'response_unusable' THEN 2
-		     ELSE 3
+		     WHEN 'delivery_failed' THEN 3
+		     WHEN 'delivery_pending' THEN 4
+		     ELSE 5
 		 END, started_at
 		 LIMIT 1
 		 FOR UPDATE`, orgID, requestID,

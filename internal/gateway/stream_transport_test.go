@@ -16,6 +16,7 @@ import (
 	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/logger"
+	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/streampolicy"
@@ -42,11 +43,12 @@ type readThenError struct {
 }
 
 type failAfterWritesResponseWriter struct {
-	header  http.Header
-	body    strings.Builder
-	writes  int
-	failAt  int
-	flushes int
+	header    http.Header
+	body      strings.Builder
+	writes    int
+	failAt    int
+	partialAt int
+	flushes   int
 }
 
 func (writer *failAfterWritesResponseWriter) Header() http.Header {
@@ -57,6 +59,11 @@ func (writer *failAfterWritesResponseWriter) WriteHeader(int) {}
 
 func (writer *failAfterWritesResponseWriter) Write(payload []byte) (int, error) {
 	writer.writes++
+	if writer.writes == writer.partialAt {
+		written := len(payload) / 2
+		_, _ = writer.body.Write(payload[:written])
+		return written, errors.New("partial downstream write")
+	}
 	if writer.writes == writer.failAt {
 		return 0, errors.New("downstream write failed")
 	}
@@ -189,6 +196,129 @@ func TestP6StreamTransportFinalWriteFailurePreservesSettlementWithoutDone(t *tes
 	}
 	if body.closes.Load() != 1 {
 		t.Fatalf("body close count = %d, want 1", body.closes.Load())
+	}
+}
+
+func TestP6F41BStreamCompleteHasMonotonicDeliveryReceipt(t *testing.T) {
+	var outcomes []string
+	relay := newTestRelay(streamTransportTestDB(), &mockBilling{
+		recordDeliveryFn: func(_ context.Context, event billing.DeliveryEvent) error {
+			outcomes = append(outcomes, event.Outcome)
+			return nil
+		},
+	})
+	body := &countingReadCloser{reader: strings.NewReader("data: {\"choices\":[{\"delta\":{\"content\":\"complete\"}}]}\n\ndata: [DONE]\n\n")}
+	recorder := runStreamTransportTest(t, relay, body, "req-p6f41b-complete")
+	if got, want := strings.Join(outcomes, ","), "write_started,partial,completed"; got != want {
+		t.Fatalf("delivery outcomes = %s, want %s", got, want)
+	}
+	if !strings.Contains(recorder.Body.String(), "data: [DONE]") {
+		t.Fatalf("completed stream lost terminal marker: %s", recorder.Body.String())
+	}
+}
+
+func TestP6F41BInterruptedStreamSeparatesProviderUsageFromCustomerCharge(t *testing.T) {
+	var outcomes []string
+	var persisted, settled billing.SettleRequest
+	relay := newTestRelay(streamTransportTestDB(), &mockBilling{
+		recordDeliveryFn: func(_ context.Context, event billing.DeliveryEvent) error {
+			outcomes = append(outcomes, event.Outcome)
+			return nil
+		},
+		persistUsageFn: func(_ context.Context, req billing.SettleRequest) error {
+			persisted = req
+			return nil
+		},
+		settleFn: func(_ context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
+			settled = req
+			return &billing.SettleResult{SettleID: 1, ActualCost: 1, ChargedCost: 1, Success: true}, nil
+		},
+	})
+	body := &countingReadCloser{reader: &readThenError{payload: []byte(
+		"data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n" +
+			"data: {\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":100,\"total_tokens\":200}}\n\n",
+	)}}
+	recorder := runStreamTransportTest(t, relay, body, "req-p6f41b-separated")
+	if got, want := strings.Join(outcomes, ","), "write_started,partial,interrupted"; got != want {
+		t.Fatalf("delivery outcomes = %s, want %s", got, want)
+	}
+	if persisted.UsageAuthority != metering.UsageAuthorityGatewayCounter ||
+		persisted.UsagePurpose != metering.UsagePurposeCustomerCharge ||
+		persisted.UsageFinality != metering.UsageFinalityEstimated ||
+		persisted.UsageEstimateVersion != metering.GatewayCounterEstimateVersionV2 {
+		t.Fatalf("interrupted stream did not use delivered-counter authority: %+v", persisted)
+	}
+	if persisted.CompletionTokens <= 0 || persisted.CompletionTokens >= 100 {
+		t.Fatalf("customer completion tokens = %d, want delivered subset below provider-reported 100", persisted.CompletionTokens)
+	}
+	if settled != persisted {
+		t.Fatalf("settlement changed the durable delivered usage: persisted=%+v settled=%+v", persisted, settled)
+	}
+	if strings.Contains(recorder.Body.String(), "data: [DONE]") {
+		t.Fatalf("interrupted stream advertised completion: %s", recorder.Body.String())
+	}
+}
+
+func TestP6F41BFirstStreamWriteFailureHasNoCustomerCharge(t *testing.T) {
+	var outcomes []string
+	persistCalls := 0
+	settleCalls := 0
+	relay := newTestRelay(streamTransportTestDB(), &mockBilling{
+		recordDeliveryFn: func(_ context.Context, event billing.DeliveryEvent) error {
+			outcomes = append(outcomes, event.Outcome)
+			return nil
+		},
+		persistUsageFn: func(context.Context, billing.SettleRequest) error {
+			persistCalls++
+			return nil
+		},
+		settleFn: func(context.Context, billing.SettleRequest) (*billing.SettleResult, error) {
+			settleCalls++
+			return &billing.SettleResult{Success: true}, nil
+		},
+	})
+	writer := &failAfterWritesResponseWriter{header: make(http.Header), failAt: 1}
+	response := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("data: {\"choices\":[{\"delta\":{\"content\":\"not delivered\"}}]}\n\ndata: [DONE]\n\n"))}
+	route := &RouteResult{Channel: models.Channel{ID: 1, Name: "openai", Provider: "openai"}}
+	relay.relayStreamRequest(context.Background(), writer, response, route, "req-p6f41b-first-write-fail", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", []Message{{Role: "user", Content: "hello"}}, logger.New(logger.Fields{RequestID: "req-p6f41b-first-write-fail", OrgID: 1}), time.Now(), 1000, nil, "")
+	if got, want := strings.Join(outcomes, ","), "write_started,write_failed"; got != want {
+		t.Fatalf("delivery outcomes = %s, want %s", got, want)
+	}
+	if persistCalls != 0 || settleCalls != 0 {
+		t.Fatalf("undelivered stream persisted=%d settled=%d, want 0/0", persistCalls, settleCalls)
+	}
+}
+
+func TestP6F41BPartialSSEFrameWriteHasNoCustomerCharge(t *testing.T) {
+	var events []billing.DeliveryEvent
+	persistCalls := 0
+	settleCalls := 0
+	relay := newTestRelay(streamTransportTestDB(), &mockBilling{
+		recordDeliveryFn: func(_ context.Context, event billing.DeliveryEvent) error {
+			events = append(events, event)
+			return nil
+		},
+		persistUsageFn: func(context.Context, billing.SettleRequest) error {
+			persistCalls++
+			return nil
+		},
+		settleFn: func(context.Context, billing.SettleRequest) (*billing.SettleResult, error) {
+			settleCalls++
+			return &billing.SettleResult{Success: true}, nil
+		},
+	})
+	writer := &failAfterWritesResponseWriter{header: make(http.Header), partialAt: 1}
+	response := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("data: {\"choices\":[{\"delta\":{\"content\":\"truncated\"}}]}\n\ndata: [DONE]\n\n"))}
+	route := &RouteResult{Channel: models.Channel{ID: 1, Name: "openai", Provider: "openai"}}
+	relay.relayStreamRequest(context.Background(), writer, response, route, "req-p6f41b-partial-frame", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", []Message{{Role: "user", Content: "hello"}}, logger.New(logger.Fields{RequestID: "req-p6f41b-partial-frame", OrgID: 1}), time.Now(), 1000, nil, "")
+	if len(events) != 2 || events[0].Outcome != billing.DeliveryOutcomeWriteStarted || events[1].Outcome != billing.DeliveryOutcomeWriteFailed {
+		t.Fatalf("partial frame outcomes = %+v, want write_started/write_failed", events)
+	}
+	if events[1].DeliveredBytes <= 0 || events[1].DeliveredChunks != 0 {
+		t.Fatalf("partial frame receipt lost bounded non-chargeable bytes: %+v", events[1])
+	}
+	if persistCalls != 0 || settleCalls != 0 {
+		t.Fatalf("partial SSE frame persisted=%d settled=%d, want 0/0", persistCalls, settleCalls)
 	}
 }
 

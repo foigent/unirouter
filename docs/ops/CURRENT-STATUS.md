@@ -6,7 +6,9 @@
 > CI verified by PR #184 exact implementation/test head `ac2bfb5` and required
 > run `29209644118`. P6-F40C is CI verified by PR #186 exact
 > implementation/test head `49d740d` and required run `29224762127`; P6-F40 is
-> closed. P6-F41 is not started. No target or production claim is made.
+> closed. P6-F41 is CI verified / closed by PR #187 exact implementation/test
+> head `6d0e6ba` and required run `29229320432`. No target or production claim
+> is made.
 > PRD6 Batch 0B P6-F16 was squash-merged by PR #140 as
 > `f244f669c529fec8767f85fff209882b333d8ed2`. P6-F33 was squash-merged by
 > PR #142 as `7173c5967a42c112fd0b219938a0901c1a0b9633`; its PR and post-merge
@@ -292,6 +294,20 @@
   `29224762127`: Backend Tests, Frontend Build and Docker Build are green,
   including both explicit P6-F40C gates and strict successor rollback order.
   P6-F40 is CI verified / closed.
+- P6-F41 typed usage/delivery repository and CI evidence:
+  `docs/ops/evidence/PRD6-B3H-P6F41-usage-delivery-integrity-local-20260713.md`.
+  `unirouter.usage.v1` distinguishes provider zero, missing usage and versioned
+  estimates across adapters, billing, logs, recovery and idempotency. Non-stream
+  customer collection now requires a completed local write; interrupted streams
+  charge only the independently counted delivered subset, while provider usage
+  remains separate evidence. Append-only `000032` receipts retain bounded
+  started/partial/completed/interrupted metadata without payloads. Full Go
+  tests/vet, focused PostgreSQL/race and strict migration gates, frontend 29
+  files / 144 tests, type-check and build pass locally. PR #187 exact
+  implementation/test head `6d0e6ba` passed required run `29229320432`:
+  Backend Tests, Frontend Build and Docker Build are green, including both
+  explicit P6-F41 package/migration gates. P6-F41 is CI verified / closed, not
+  target verified or production verified.
 - Accepted customer/provider ledger boundary and future supplier coverage
   reference:
   `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md`.
@@ -317,10 +333,10 @@
 - Scope entry: `docs/planning/PRD6-START-HERE.md`.
 - Proposed PRD: `docs/PRD-Phase6.md`; accepted/proposed state is authoritative
   in `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`.
-- Accepted feature accounting: 27 accepted rows, 24 CI verified / closed and
-  3 unclosed. P6-F11 remains in progress; P6-F10/P6-F41 are not started.
+- Accepted feature accounting: 27 accepted rows, 25 CI verified / closed and
+  2 unclosed. P6-F11 remains in progress, and P6-F10 is not started.
   `P6-TEST-DB-001` is a separate engineering-integrity issue outside that
-  25-row feature count; it is CI verified / closed by PR #155 and post-merge
+  27-row feature count; it is CI verified / closed by PR #155 and post-merge
   main run `29157561036`.
 - Fresh pre-change verification passed backend tests/vet, frontend type-check,
   25 files / 125 tests, frontend build, and X-Insight full Go tests.

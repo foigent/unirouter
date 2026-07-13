@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/models"
 )
 
@@ -67,6 +68,33 @@ func TestOpenAICompatibleParseResponse_Usage(t *testing.T) {
 	}
 	if resp.Meta.RequestedModel != "company-chat" || resp.Meta.UpstreamModel != "gpt-4o" {
 		t.Fatalf("unexpected meta: %+v", resp.Meta)
+	}
+}
+
+func TestP6F41OpenAICompatibleExplicitZeroAndMissingUsageRemainDistinct(t *testing.T) {
+	explicitZero, present, err := ParseOpenAICompatibleUsage(
+		[]byte(`{"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}`),
+		metering.UsageSourceUpstream,
+	)
+	if err != nil || !present {
+		t.Fatalf("explicit zero must remain present: present=%t err=%v", present, err)
+	}
+	if explicitZero.IsMissing() || explicitZero.Authority != metering.UsageAuthorityProviderReported || explicitZero.Finality != metering.UsageFinalityFinal {
+		t.Fatalf("explicit zero lost provider authority: %+v", explicitZero)
+	}
+	if _, err := explicitZero.ForCustomerCharge(); err != nil {
+		t.Fatalf("explicit provider zero must be eligible for the customer-charge contract: %v", err)
+	}
+
+	missing, present, err := ParseOpenAICompatibleUsage([]byte(`{"data":[]}`), metering.UsageSourceUpstream)
+	if err != nil || present {
+		t.Fatalf("absent usage must remain absent: present=%t err=%v", present, err)
+	}
+	if !missing.IsMissing() || missing.Authority != metering.UsageAuthorityNone || missing.Finality != metering.UsageFinalityMissing {
+		t.Fatalf("absent usage became an authoritative zero: %+v", missing)
+	}
+	if _, err := missing.ForCustomerCharge(); err == nil {
+		t.Fatal("missing usage must not be relabelled as a customer charge")
 	}
 }
 

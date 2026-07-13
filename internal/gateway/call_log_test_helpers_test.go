@@ -4,7 +4,7 @@ package gateway
 // the durable evidence schema grows. The production statement is intentionally
 // explicit and ordered; tests should refer to semantic names, not magic numbers.
 const (
-	callLogInsertArgCount        = 50
+	callLogInsertArgCount        = 55
 	callLogArgProjectID          = 4
 	callLogArgOwnerUserID        = 6
 	callLogArgKeyType            = 7
@@ -20,22 +20,27 @@ const (
 	callLogArgStatusCode         = 19
 	callLogArgLatencyMS          = 20
 	callLogArgUsageSource        = 22
-	callLogArgCacheUsageSchema   = 23
-	callLogArgCacheUsageStatus   = 24
-	callLogArgPricingVersion     = 25
-	callLogArgEstimatedTokens    = 34
-	callLogArgUsageConfidence    = 35
-	callLogArgTraceID            = 36
-	callLogArgSessionID          = 37
-	callLogArgSchemaVersion      = 38
-	callLogArgCaptureMode        = 39
-	callLogArgUpstreamRequestID  = 41
-	callLogArgWorkflowID         = 42
-	callLogArgAgentID            = 43
-	callLogArgAttemptID          = 44
-	callLogArgActorType          = 45
-	callLogArgActorRef           = 46
-	callLogArgOnBehalfOf         = 47
-	callLogArgPayloadCaptureMode = 48
-	callLogArgSourceEventHash    = 49
+	callLogArgUsageAuthority     = 23
+	callLogArgUsagePurpose       = 24
+	callLogArgUsageFinality      = 25
+	callLogArgContractVersion    = 26
+	callLogArgEstimateVersion    = 27
+	callLogArgCacheUsageSchema   = 28
+	callLogArgCacheUsageStatus   = 29
+	callLogArgPricingVersion     = 30
+	callLogArgEstimatedTokens    = 39
+	callLogArgUsageConfidence    = 40
+	callLogArgTraceID            = 41
+	callLogArgSessionID          = 42
+	callLogArgSchemaVersion      = 43
+	callLogArgCaptureMode        = 44
+	callLogArgUpstreamRequestID  = 46
+	callLogArgWorkflowID         = 47
+	callLogArgAgentID            = 48
+	callLogArgAttemptID          = 49
+	callLogArgActorType          = 50
+	callLogArgActorRef           = 51
+	callLogArgOnBehalfOf         = 52
+	callLogArgPayloadCaptureMode = 53
+	callLogArgSourceEventHash    = 54
 )

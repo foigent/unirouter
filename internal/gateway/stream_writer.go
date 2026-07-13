@@ -27,20 +27,29 @@ func newSSEStreamWriter(writer http.ResponseWriter, writeTimeout time.Duration) 
 }
 
 func (writer *sseStreamWriter) WriteAndFlush(format string, args ...any) error {
+	_, err := writer.WriteAndFlushCount(format, args...)
+	return err
+}
+
+// WriteAndFlushCount reports bytes accepted by the local ResponseWriter even
+// when the subsequent flush fails. It is local delivery evidence only; it does
+// not claim that the remote client consumed those bytes.
+func (writer *sseStreamWriter) WriteAndFlushCount(format string, args ...any) (int, error) {
 	writer.mu.Lock()
 	defer writer.mu.Unlock()
 
 	if writer.writeTimeout > 0 {
 		err := writer.controller.SetWriteDeadline(time.Now().Add(writer.writeTimeout))
 		if err != nil && !errors.Is(err, http.ErrNotSupported) {
-			return fmt.Errorf("set stream write deadline: %w", err)
+			return 0, fmt.Errorf("set stream write deadline: %w", err)
 		}
 	}
-	if _, err := fmt.Fprintf(writer.writer, format, args...); err != nil {
-		return fmt.Errorf("write stream event: %w", err)
+	written, err := fmt.Fprintf(writer.writer, format, args...)
+	if err != nil {
+		return written, fmt.Errorf("write stream event: %w", err)
 	}
 	if err := writer.controller.Flush(); err != nil {
-		return fmt.Errorf("flush stream event: %w", err)
+		return written, fmt.Errorf("flush stream event: %w", err)
 	}
-	return nil
+	return written, nil
 }

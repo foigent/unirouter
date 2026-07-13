@@ -520,7 +520,7 @@ func hashTraceEvent(requestID, clientRequestID, idempotencyKeyHash, traceID, par
 	return hex.EncodeToString(sum[:])
 }
 
-func hashCallLogEvidence(requestID, clientRequestID, idempotencyKeyHash string, orgID int64, projectID interface{}, keyID int64, ownerUserID interface{}, keyType, model, requestedModel, provider, channel string, promptTokens, uncachedPromptTokens, cacheReadTokens, cacheCreationTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs int, usageSource, cacheUsageSchema, cacheUsageStatus, pricingVersion string, isStream bool, estimatedTokens int, usageConfidence float64, upstreamRequestID, traceID, sessionID, workflowID, agentID, attemptID, actorType, actorRef, onBehalfOf, payloadCaptureMode string) string {
+func hashCallLogEvidence(requestID, clientRequestID, idempotencyKeyHash string, orgID int64, projectID interface{}, keyID int64, ownerUserID interface{}, keyType, model, requestedModel, provider, channel string, promptTokens, uncachedPromptTokens, cacheReadTokens, cacheCreationTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs int, usageSource, usageAuthority, usagePurpose, usageFinality, usageContractVersion, usageEstimateVersion, cacheUsageSchema, cacheUsageStatus, pricingVersion string, isStream bool, estimatedTokens int, usageConfidence float64, upstreamRequestID, traceID, sessionID, workflowID, agentID, attemptID, actorType, actorRef, onBehalfOf, payloadCaptureMode string) string {
 	payload := struct {
 		RequestID            string      `json:"request_id"`
 		ClientRequestID      string      `json:"client_request_id"`
@@ -549,6 +549,11 @@ func hashCallLogEvidence(requestID, clientRequestID, idempotencyKeyHash string, 
 		LatencyMS            int         `json:"latency_ms"`
 		TTFTMS               int         `json:"ttft_ms"`
 		UsageSource          string      `json:"usage_source"`
+		UsageAuthority       string      `json:"usage_authority"`
+		UsagePurpose         string      `json:"usage_purpose"`
+		UsageFinality        string      `json:"usage_finality"`
+		UsageContractVersion string      `json:"usage_contract_version"`
+		UsageEstimateVersion string      `json:"usage_estimate_version"`
 		CacheUsageSchema     string      `json:"cache_usage_schema"`
 		CacheUsageStatus     string      `json:"cache_usage_status"`
 		PricingVersion       string      `json:"pricing_version"`
@@ -569,7 +574,9 @@ func hashCallLogEvidence(requestID, clientRequestID, idempotencyKeyHash string, 
 		UncachedPromptTokens: uncachedPromptTokens, CacheReadTokens: cacheReadTokens,
 		CacheCreationTokens: cacheCreationTokens, CompletionTokens: completionTokens,
 		CostCents: costCents, StatusCode: statusCode, LatencyMS: latencyMs, TTFTMS: ttftMs,
-		UsageSource: usageSource, CacheUsageSchema: cacheUsageSchema, CacheUsageStatus: cacheUsageStatus,
+		UsageSource: usageSource, UsageAuthority: usageAuthority, UsagePurpose: usagePurpose,
+		UsageFinality: usageFinality, UsageContractVersion: usageContractVersion,
+		UsageEstimateVersion: usageEstimateVersion, CacheUsageSchema: cacheUsageSchema, CacheUsageStatus: cacheUsageStatus,
 		PricingVersion: pricingVersion, IsStream: isStream, EstimatedTokens: estimatedTokens, UsageConfidence: usageConfidence,
 		UpstreamRequestID: upstreamRequestID, ActorType: actorType, ActorRef: actorRef, OnBehalfOf: onBehalfOf,
 		PayloadMode: payloadCaptureMode,
