@@ -3,7 +3,7 @@
 **Batch:** PRD6 Batch 3H P6-F41 Usage And Delivery Integrity
 **Owner:** Codex
 **Risk:** R3/R4 usage authority, customer charging, downstream delivery and migration safety
-**Status:** P6-F41 Local verified / required CI pending
+**Status:** P6-F41 CI verified / closed by PR #187 exact implementation/test head `6d0e6ba` / run `29229320432`
 **Baseline:** `main` / `origin/main` / `e1f224dc277ceff0f84f56a0b3f907b42c562747`
 **Branch:** `codex/prd6-usage-delivery-integrity`
 **PR:** pending
@@ -58,10 +58,12 @@
   mutation rejection, evidence-bearing down refusal and strict predecessor
   order: `PASS`.
 - P6-F09/P6-F18B/P6-F40/P6-F41 billing regression gate: `PASS`.
-- `go test ./...`, `go vet ./...` and `git diff --check`: `PASS`.
+- `go test ./...`, `go test -race ./...`, `go vet ./...` and
+  `git diff --check`: `PASS`.
 - Frontend type-check, 29 files / 144 tests and production build: `PASS`.
-- Local Docker was not run because this host has no `docker` executable; it
-  remains a required CI gate.
+- Local Docker was not run because this host has no `docker` executable; PR
+  #187 required run `29229320432` passed Backend Tests, Frontend Build and
+  Docker Build for exact implementation/test head `6d0e6ba`.
 - Evidence: `docs/ops/evidence/PRD6-B3H-P6F41-usage-delivery-integrity-local-20260713.md`.
 
 ## Current Stop And Rollback Conditions

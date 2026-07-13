@@ -1,7 +1,7 @@
 # PRD6 Batch 3H P6-F41 Usage And Delivery Integrity Evidence
 
 > Date: 2026-07-13
-> Evidence level: Local verified; required PR CI pending
+> Evidence level: CI verified / closed by PR #187 exact implementation/test head `6d0e6ba` / run `29229320432`
 > Branch: `codex/prd6-usage-delivery-integrity`
 > Scope: repository-only P6-F41A/P6-F41B; no deployment, real provider call,
 > credential, raw-payload, target or production authorization
@@ -133,11 +133,12 @@ Focused PostgreSQL/race evidence covers:
 
 ## Required-CI And Promotion State
 
-- Required CI workflow now has explicit P6-F41 package and `000031/000032`
+- Required CI workflow has explicit P6-F41 package and `000031/000032`
   migration gates.
-- PR number, exact implementation/test commit and required run are pending.
-- Until required Backend Tests, Frontend Build and Docker Build pass for the PR
-  head, P6-F41 remains `Local verified`, not `CI verified / closed`.
+- PR #187 exact implementation/test head `6d0e6ba` passed required run
+  `29229320432`: Backend Tests, Frontend Build and Docker Build are green.
+- P6-F41 is therefore `CI verified / closed`. This does not promote it to
+  target verified or production verified.
 
 ## Explicit Non-Claims And Future Queue
 
