@@ -31,12 +31,11 @@ required CI. No scope decision grants target/deployment/data/cost authorization.
 
 - 41 total `P6-F*` rows exist in the acceptance matrix;
 - 27 are accepted implementation scope;
-- 23 are CI verified / closed: P6-F01 through P6-F09, P6-F16 through P6-F21
-  and P6-F32 through P6-F39;
-- 4 accepted rows remain unclosed: D6-13 adds P6-F40/P6-F41; P6-F40 is in
-  progress, P6-F41 is not started, D6-12 assigns mid-stream crash semantics to
-  P6-F11, which is in progress through the P6-STREAM-002A transport
-  prerequisite, and P6-F10 is not started;
+- 24 are CI verified / closed: P6-F01 through P6-F09, P6-F16 through P6-F21
+  and P6-F32 through P6-F40;
+- 3 accepted rows remain unclosed: P6-F41 is not started; D6-12 assigns
+  mid-stream crash semantics to P6-F11, which is in progress through the
+  P6-STREAM-002A transport prerequisite; and P6-F10 is not started;
 - 14 rows are not accepted: P6-F12 through P6-F15 and P6-F22 through P6-F31;
 - `P6-TEST-DB-001` is a separate accepted engineering-integrity issue outside
   the feature-row count. PR #155, merge `4b18ace` and post-merge main run
