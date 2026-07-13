@@ -3,12 +3,12 @@
 **Batch:** PRD6 Batch 5 P6-F11 Streaming Policy And Termination
 **Owner:** Codex
 **Risk:** R3/R4 live content disclosure, hard budget, customer charging and process-crash recovery
-**Status:** D6-16 contract accepted; repository/local verification passed, PR pending
+**Status:** D6-16 contract accepted; exact implementation/test head passed required PR CI, merge pending
 **Baseline:** `main` / `origin/main` / `f9925779f1da7681b07282be5d500773a687d3b9`
 **Branch:** `codex/prd6-stream-policy-termination`
-**PR:** pending
+**PR:** #189
 **Decision:** D6-16 S-A accepted by User on 2026-07-13
-**Next gate:** PR, required CI, merge and post-merge `main` CI
+**Next gate:** evidence-update exact-head required CI, merge and post-merge `main` CI
 **Previous batch:** P6-F41 PR #187 and P6-F40 PR #183/#184/#186 are CI verified / closed; P6-F20 PR #177 and post-closeout fixture-only PR #180/#181 are CI verified / closed
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
@@ -65,8 +65,11 @@
 - `go test ./... -count=1`, `go test -race ./... -count=1`, `go vet ./...`,
   OpenAPI YAML parse and `git diff --check`: `PASS`.
 - Frontend type-check, 30 files / 148 tests and production build: `PASS`.
-- Local Docker was not run because this host has no `docker` executable; Docker
-  Build remains a required PR CI gate.
+- Local Docker was not run because this host has no `docker` executable. PR
+  #189 exact implementation/test head `8ed6a83` passed required run
+  `29245696926`: Backend Tests, Frontend Build and Docker Build, including both
+  explicit P6-F11 gates. The evidence-update head, merge and post-merge `main`
+  CI remain pending.
 - Evidence:
   `docs/ops/evidence/PRD6-B5-P6F11-stream-policy-termination-local-20260713.md`.
 

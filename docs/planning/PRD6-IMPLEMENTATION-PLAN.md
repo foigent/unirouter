@@ -197,8 +197,8 @@ Order within the batch:
 5. handle stream Scanner errors, response-body lifetime, single-writer/flush and
    timeout semantics safely — P6-STREAM-002A is CI verified / closed by PR #162,
    merge `7737f8b` and post-merge main run `29168586124`;
-   reservation-aware extension and the P6-F11 semantic policy hook are now
-   repository/local verified in Batch 5 and await PR/CI;
+   reservation-aware extension and the P6-F11 semantic policy hook passed PR
+   #189 exact implementation/test head required CI and await merge/post-merge;
 6. preserve the P6-F35 strict-version sensitive-word reload and P6-F05 typed
    configuration/budget-alert regressions.
 
@@ -400,10 +400,11 @@ retry/failover after an accepted upstream stream, safe-delivery-only customer
 settlement, and explicit checkpointed interruption rather than replay or
 transparent migration.
 
-**Status:** repository implementation and focused local/race/PostgreSQL/UI
-verification pass; PR and required Backend Tests, Frontend Build and Docker
-Build remain pending. No target, real detector/provider or production claim is
-made.
+**Status:** PR #189 exact implementation/test head `8ed6a83` passed required run
+`29245696926`: Backend Tests, Frontend Build and Docker Build, including the
+explicit stream contract and migration rollback gates. Evidence-update
+exact-head CI, merge and post-merge `main` CI remain pending. No target, real
+detector/provider or production claim is made.
 
 Deliverables:
 
