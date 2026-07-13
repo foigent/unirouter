@@ -1,40 +1,38 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 3H P6-F40C Provider-Key Reconciliation
+**Batch:** PRD6 Batch 3H P6-F41 Usage And Delivery Integrity
 **Owner:** Codex
-**Risk:** R3/R4 paid admission, customer charging, operator authority and migration safety
-**Status:** P6-F40C and P6-F40 CI verified / closed
-**Baseline:** `main` / `origin/main` / `468969df16ee3fb142d04605af17ba615a56b8b7`
-**Branch:** `codex/prd6-provider-key-reconciliation`
-**PR:** #186; exact implementation/test head `49d740d`; required run `29224762127`
+**Risk:** R3/R4 usage authority, customer charging, downstream delivery and migration safety
+**Status:** P6-F41 Local verified / required CI pending
+**Baseline:** `main` / `origin/main` / `e1f224dc277ceff0f84f56a0b3f907b42c562747`
+**Branch:** `codex/prd6-usage-delivery-integrity`
+**PR:** pending
 **Decision:** D6-13/D6-14 accepted by User on 2026-07-13
-**Next gate:** P6-F41 typed usage/delivery authority
-**Previous batch:** P6-F40B PR #184 and P6-F40A PR #183 are CI verified; P6-F20 PR #177 and post-closeout fixture-only PR #180/#181 are CI verified / closed
+**Next gate:** exact PR head required Backend Tests, Frontend Build and Docker Build
+**Previous batch:** P6-F40C PR #186, P6-F40B PR #184 and P6-F40A PR #183 are CI verified / closed; P6-F20 PR #177 and post-closeout fixture-only PR #180/#181 are CI verified / closed
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
-## Current P6-F40C Scope
+## Current P6-F41 Scope
 
-1. Block new paid Chat and Embeddings admission for the root key and its Agent
-   descendants only after an attempt durably enters explicit ambiguous,
-   unusable or funding-pending state; fail state reads closed.
-2. Keep ordinary in-flight dispatch/accepted work concurrent rather than
-   serializing an entire key; retain request-scoped duplicate-attempt authority.
-3. Add platform-only bounded pending-list and collect/refund/subsidy APIs. The
-   mutation accepts no amount and stores the authenticated actor, reason and
-   evidence in requested/completed phases.
-4. Allow collect only from stored authoritative upstream usage, immutable
-   customer price and an existing billable-output marker; undelivered or
-   estimated usage cannot create customer debt.
-5. Release only the existing hold for refund/subsidy, require a known bounded
-   cost for subsidy, converge one terminal under concurrency and recover the
-   collect completion crash gap from exact durable evidence.
-6. Add guarded migration `000030` and API/error-documentation/route-authority
-   coverage without storing content, credentials or provider bills.
+1. Preserve `provider_reported`, `gateway_counter`, `conservative_estimate` and
+   `none` authority plus purpose/finality/version through adapters, gateway,
+   billing, journals, logs, recovery and idempotency.
+2. Keep explicit provider zero valid while missing usage remains missing;
+   permit only a fully funded versioned conservative estimate before
+   non-stream output.
+3. Require non-stream `completed` local delivery and stream `partial` or later
+   local delivery before customer settlement. A first writer failure charges
+   zero and retains provider liability for explicit reconciliation.
+4. Separate interrupted-stream customer usage from full provider evidence by
+   charging only the independent delivered counter.
+5. Add append-only tenant-scoped `000032` delivery receipts and typed
+   idempotency readback without retaining response bodies.
+6. Preserve P6-F09/P6-F18B/P6-F40 behavior and strict successor rollback order.
 
 ## Current Non-Goals
 
-- No P6-F41 typed usage authority/delivery receipt, P6-F10 Guardrail or P6-F11 stream
-  semantic implementation.
+- No P6-F10 Guardrail or P6-F11 process-crash checkpoint/client-recovery
+  implementation.
 - No negative customer debt, automatic platform subsidy, raw response storage,
   Cache Service or separate Cost Control Service.
 - D6-14 additionally forbids aggregate provider bills, balance deltas or
@@ -52,33 +50,42 @@
 
 ## Current Focused Verification
 
-- P6-F40C billing/admin/middleware/route race gate: `PASS`, including amount
-  rejection, delivery/usage authority gate, insufficient-funds replay,
-  refund/subsidy, 32-way one-terminal, tenant isolation, root/Agent key block,
-  ordinary in-flight concurrency and collect crash-gap recovery.
-- `000030` integration up/down/refused-down/roll-forward and race test: `PASS`.
-- `go test ./... -count=1`, `go vet ./...` and command-contract tests: `PASS`.
+- P6-F41 adapter/billing/gateway/middleware PostgreSQL/race gate: `PASS`,
+  including explicit zero/missing usage, conservative funding, non-stream
+  delivery charge gate, interrupted-stream delivered counter, first-write
+  failure, idempotency failure state, 32-way replay and tenant isolation.
+- `000031/000032` clean down, roll-forward, invalid transition, append-only
+  mutation rejection, evidence-bearing down refusal and strict predecessor
+  order: `PASS`.
+- P6-F09/P6-F18B/P6-F40/P6-F41 billing regression gate: `PASS`.
+- `go test ./...`, `go vet ./...` and `git diff --check`: `PASS`.
 - Frontend type-check, 29 files / 144 tests and production build: `PASS`.
-- `git diff --check`: `PASS`.
-- PR #186 exact implementation/test head `49d740d` required run
-  `29224762127`: Backend Tests, Frontend Build and Docker Build `PASS`,
-  including the explicit P6-F40C race/migration gates and predecessor rollback
-  order. The first run's unrelated `limitpolicy` flake passed 30 local repeats
-  and a no-code failed-job rerun; the later predecessor test gap was corrected
-  before the final green run.
-- Evidence: `docs/ops/evidence/PRD6-B3H-P6F40C-provider-key-reconciliation-local-20260713.md`.
+- Local Docker was not run because this host has no `docker` executable; it
+  remains a required CI gate.
+- Evidence: `docs/ops/evidence/PRD6-B3H-P6F41-usage-delivery-integrity-local-20260713.md`.
 
 ## Current Stop And Rollback Conditions
 
-- Stop if explicit provider-cost pending fails to block the affected key, normal
-  in-flight work serializes the key, a caller-supplied/aggregate amount creates
-  customer debt, an undelivered response can collect, tenant scope widens, or
-  concurrent/crash recovery creates a second terminal effect.
+- Stop if missing usage becomes provider zero, a hold or `write_started` receipt
+  can charge, full provider usage charges an interrupted partial stream, a
+  first writer failure creates customer spend, receipt scope widens, content is
+  retained, or concurrent recovery creates a second terminal effect.
 - Repository rollback requires a new reviewed PR. Migration down is allowed
-  only before reconciliation evidence, reconciled attempts or dependent
-  terminal payloads exist. Evidence-bearing rollback refuses destructive change.
-- A target rollout must drain old binaries before migration `000030` becomes
-  the active writer contract; mixed-version financial safety is not claimed.
+  only before typed usage/delivery evidence exists. Evidence-bearing rollback
+  refuses destructive change.
+- A target rollout must drain old writers before `000031/000032` becomes the
+  active contract; mixed-version financial safety is not claimed.
+
+## Previous P6-F40C Behavior Change
+
+1. Block the affected API key and Agent descendants for explicit ambiguous,
+   unusable or funding-pending provider cost while ordinary in-flight work
+   remains concurrent.
+2. Provide platform-only amount-free collect/refund/bounded-subsidy
+   reconciliation with tenant, concurrency and crash-gap safety.
+3. PR #186 exact implementation/test head `49d740d` and required run
+   `29224762127` passed all required jobs. Evidence:
+   `docs/ops/evidence/PRD6-B3H-P6F40C-provider-key-reconciliation-local-20260713.md`.
 
 ## Previous P6-F40B Behavior Change
 

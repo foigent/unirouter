@@ -19,6 +19,10 @@ func TestP6F40CProviderCostReconciliationMigrationUpDownGuardAndRollForward(t *t
 	migrationsDir := testutil.MigrationsDir(t)
 	downSQL, err := os.ReadFile(filepath.Join(migrationsDir, "000030_prd6_provider_cost_reconciliation.down.sql"))
 	require.NoError(t, err)
+	usageAuthorityDownSQL, err := os.ReadFile(filepath.Join(migrationsDir, "000031_prd6_usage_authority.down.sql"))
+	require.NoError(t, err)
+	deliveryReceiptDownSQL, err := os.ReadFile(filepath.Join(migrationsDir, "000032_prd6_delivery_receipt.down.sql"))
+	require.NoError(t, err)
 
 	assertUp := func() {
 		t.Helper()
@@ -31,6 +35,10 @@ func TestP6F40CProviderCostReconciliationMigrationUpDownGuardAndRollForward(t *t
 		require.Equal(t, 1, ledger)
 	}
 	assertUp()
+	_, err = pool.Exec(ctx, string(deliveryReceiptDownSQL))
+	require.NoError(t, err, "latest successor delivery-receipt schema must be removed first")
+	_, err = pool.Exec(ctx, string(usageAuthorityDownSQL))
+	require.NoError(t, err, "successor usage-authority schema must be removed first")
 	_, err = pool.Exec(ctx, string(downSQL))
 	require.NoError(t, err)
 	require.NoError(t, migrate.Run(ctx, pool, migrationsDir))

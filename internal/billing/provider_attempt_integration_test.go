@@ -237,12 +237,25 @@ func TestP6F40BAcceptedAttemptSettlesAtomicallyWithReceipt(t *testing.T) {
 		HTTPStatus:        200,
 		UpstreamRequestID: "provider-settled-1",
 	}))
-	result, err := b.Settle(t.Context(), SettleRequest{
+	settlement := SettleRequest{
 		RequestID:  requestID,
 		AttemptID:  attempt.AttemptID,
 		OrgID:      orgID,
 		ActualCost: 100,
-	})
+	}
+	prepared, err := b.PrepareNonStreamDelivery(t.Context(), settlement)
+	require.NoError(t, err)
+	require.True(t, prepared.Funded)
+	require.NoError(t, b.RecordDelivery(t.Context(), DeliveryEvent{
+		RequestID: requestID, AttemptID: attempt.AttemptID, OrgID: orgID,
+		Mode: DeliveryModeNonStream, Outcome: DeliveryOutcomeWriteStarted, HTTPStatus: 200,
+	}))
+	require.NoError(t, b.RecordDelivery(t.Context(), DeliveryEvent{
+		RequestID: requestID, AttemptID: attempt.AttemptID, OrgID: orgID,
+		Mode: DeliveryModeNonStream, Outcome: DeliveryOutcomeCompleted,
+		DeliveredBytes: 100, DeliveredChunks: 1, HTTPStatus: 200,
+	}))
+	result, err := b.Settle(t.Context(), settlement)
 	require.NoError(t, err)
 	require.True(t, result.Success)
 
@@ -278,14 +291,14 @@ func TestP6F40BFundingPendingRetainsAttemptCost(t *testing.T) {
 		Outcome:    ProviderAttemptOutcomeResponseAccepted,
 		HTTPStatus: 200,
 	}))
-	result, err := b.Settle(t.Context(), SettleRequest{
+	result, err := b.PrepareNonStreamDelivery(t.Context(), SettleRequest{
 		RequestID:  requestID,
 		AttemptID:  attempt.AttemptID,
 		OrgID:      orgID,
 		ActualCost: 500,
 	})
 	require.NoError(t, err)
-	require.False(t, result.Success)
+	require.False(t, result.Funded)
 	require.Equal(t, "insufficient_topup", result.ErrorCode)
 
 	var state, certainty string

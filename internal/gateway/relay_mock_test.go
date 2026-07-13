@@ -37,6 +37,8 @@ type mockBilling struct {
 	freezeFn          func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error)
 	beginAttemptFn    func(ctx context.Context, req billing.ProviderAttemptStart) error
 	completeAttemptFn func(ctx context.Context, req billing.ProviderAttemptCompletion) error
+	prepareDeliveryFn func(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error)
+	recordDeliveryFn  func(ctx context.Context, event billing.DeliveryEvent) error
 	markOutputFn      func(ctx context.Context, requestID string, orgID int64) error
 	persistUsageFn    func(ctx context.Context, req billing.SettleRequest) error
 	settleFn          func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error)
@@ -53,6 +55,23 @@ func (m *mockBilling) BeginProviderAttempt(ctx context.Context, req billing.Prov
 func (m *mockBilling) CompleteProviderAttempt(ctx context.Context, req billing.ProviderAttemptCompletion) error {
 	if m.completeAttemptFn != nil {
 		return m.completeAttemptFn(ctx, req)
+	}
+	return nil
+}
+
+func (m *mockBilling) PrepareNonStreamDelivery(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error) {
+	if m.prepareDeliveryFn != nil {
+		return m.prepareDeliveryFn(ctx, req)
+	}
+	return &billing.PrepareDeliveryResult{
+		Funded:  true,
+		Preview: billing.SettleResult{ActualCost: 1, ChargedCost: 1, Success: true},
+	}, nil
+}
+
+func (m *mockBilling) RecordDelivery(ctx context.Context, event billing.DeliveryEvent) error {
+	if m.recordDeliveryFn != nil {
+		return m.recordDeliveryFn(ctx, event)
 	}
 	return nil
 }
@@ -1520,7 +1539,7 @@ func TestRelayNonStreamRequest_Success(t *testing.T) {
 	rec := httptest.NewRecorder()
 	requestCtx := contextWithAttemptID(context.Background(), "att_fallback_test")
 	requestCtx = contextWithRouteAttempt(requestCtx, 2, 3)
-	relay.relayNonStreamRequest(requestCtx, rec, resp, route, "req-001", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-001", OrgID: 1}), time.Now(), nil, 1200, "")
+	relay.relayNonStreamRequest(requestCtx, rec, resp, route, "req-001", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-001", OrgID: 1}), time.Now(), nil, 1200, 0, "")
 
 	if !settleCalled {
 		t.Fatal("expected settle to be called")
@@ -1573,7 +1592,7 @@ func TestRelayNonStreamRequest_SettleRetrySuccess(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-retry", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-retry", OrgID: 1}), time.Now(), nil, 1200, "")
+	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-retry", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-retry", OrgID: 1}), time.Now(), nil, 1200, 0, "")
 
 	if settleCalls != billingSettleMaxAttempts {
 		t.Fatalf("expected %d settle attempts, got %d", billingSettleMaxAttempts, settleCalls)
@@ -1583,7 +1602,7 @@ func TestRelayNonStreamRequest_SettleRetrySuccess(t *testing.T) {
 	}
 }
 
-func TestRelayNonStreamRequest_SettleError(t *testing.T) {
+func TestRelayNonStreamRequest_PostDeliverySettleErrorRetainsRecovery(t *testing.T) {
 	settleCalls := 0
 	cancelCalled := false
 	db := &testutil.MockDB{
@@ -1618,19 +1637,16 @@ func TestRelayNonStreamRequest_SettleError(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-002", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-002", OrgID: 1}), time.Now(), nil, 1200, "")
+	relay.relayNonStreamRequest(context.Background(), rec, resp, route, "req-002", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{RequestID: "req-002", OrgID: 1}), time.Now(), nil, 1200, 0, "")
 
 	if settleCalls != billingSettleMaxAttempts {
 		t.Fatalf("expected %d settle attempts, got %d", billingSettleMaxAttempts, settleCalls)
 	}
-	if !cancelCalled {
-		t.Fatal("expected cancel to release frozen amount after settle failure")
+	if cancelCalled {
+		t.Fatal("delivered output must retain settlement recovery instead of cancelling")
 	}
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), "billing_error.settle_failed") {
-		t.Fatalf("expected settle failure code in response, got %s", rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("local write already completed before transient settle failure: %d: %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -2461,6 +2477,15 @@ func TestHandleChatCompletion_AnthropicNativeNonStream(t *testing.T) {
 	b := &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
 			return &billing.FreezeResult{FreezeID: 1, Amount: 100, NewBalance: 900, Success: true}, nil
+		},
+		prepareDeliveryFn: func(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error) {
+			return &billing.PrepareDeliveryResult{Funded: true, Preview: billing.SettleResult{
+				ActualCost: 1, ChargedCost: 1, Success: true,
+				PricingVersion: "pv2_test", CacheReadRatio: 0.1, CacheCreationRatio: 1.25,
+				EffectiveInputPriceCents: 2, EffectiveCacheReadPriceCents: 0.2,
+				EffectiveCacheCreationPriceCents: 2.5, EffectiveOutputPriceCents: 10,
+				CacheReadCostCents: 0.0014, CacheCreationCostCents: 0.0075,
+			}}, nil
 		},
 		settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
 			settleReq = req

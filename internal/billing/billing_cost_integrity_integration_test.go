@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/uniroute/unirouter/internal/metering"
 )
 
 func TestP6F40SettlementShortfallUsesAvailablePrepaidCash(t *testing.T) {
@@ -146,4 +147,45 @@ func TestP6F40SettlementShortfallWithoutCashStaysNonTerminal(t *testing.T) {
 	recovery, err := b.RecoverPendingSettlements(t.Context(), 10)
 	require.NoError(t, err)
 	require.Zero(t, recovery.Claimed, "automatic stream recovery must not charge an undelivered funding-pending response")
+}
+
+func TestP6F41AConservativeEstimateRequiresFullFundingAndPersistsTypedAuthority(t *testing.T) {
+	pool, orgID, model := newReservationFixture(t, 10, 0)
+	b := NewBilling(pool, nil)
+	requestID := "op_p6f41_estimate_funding_gate"
+	freezeForInvariantTest(t, b, orgID, model, requestID, 10)
+
+	result, err := b.Settle(t.Context(), SettleRequest{
+		RequestID:            requestID,
+		OrgID:                orgID,
+		PromptTokens:         10_000,
+		UncachedPromptTokens: 10_000,
+		UsageSource:          metering.UsageSourceEstimated,
+		UsageAuthority:       metering.UsageAuthorityConservativeEstimate,
+		UsagePurpose:         metering.UsagePurposeCustomerCharge,
+		UsageFinality:        metering.UsageFinalityEstimated,
+		UsageContractVersion: metering.UsageContractVersion,
+		UsageEstimateVersion: metering.ConservativeEstimateVersionV1,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.Success)
+	require.Equal(t, "insufficient_topup", result.ErrorCode)
+	require.Zero(t, result.ChargedCost)
+
+	var status, authority, purpose, finality, contractVersion, estimateVersion string
+	var chargedCost int
+	require.NoError(t, pool.QueryRow(t.Context(), `
+		SELECT status, charged_cost, usage_authority, usage_purpose, usage_finality,
+		       usage_contract_version, usage_estimate_version
+		FROM freeze_idempotency WHERE org_id=$1 AND request_id=$2`, orgID, requestID,
+	).Scan(&status, &chargedCost, &authority, &purpose, &finality, &contractVersion, &estimateVersion))
+	require.Equal(t, "settlement_pending", status)
+	require.Zero(t, chargedCost)
+	require.Equal(t, string(metering.UsageAuthorityConservativeEstimate), authority)
+	require.Equal(t, string(metering.UsagePurposeCustomerCharge), purpose)
+	require.Equal(t, string(metering.UsageFinalityEstimated), finality)
+	require.Equal(t, metering.UsageContractVersion, contractVersion)
+	require.Equal(t, metering.ConservativeEstimateVersionV1, estimateVersion)
+	require.ErrorIs(t, b.Cancel(t.Context(), requestID, orgID), ErrSettlementPending)
 }

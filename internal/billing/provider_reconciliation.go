@@ -115,7 +115,10 @@ func (b *Billing) collectProviderReconciliation(ctx context.Context, req Provide
 		ActualCost: record.CalculatedCost, PromptTokens: record.PromptTokens,
 		UncachedPromptTokens: record.UncachedPromptTokens, CacheReadTokens: record.CacheReadTokens,
 		CacheCreationTokens: record.CacheCreationTokens, CompletionTokens: record.CompletionTokens,
-		UsageSource: record.UsageSource, CacheUsageSchema: record.CacheUsageSchema,
+		UsageSource: record.UsageSource, UsageAuthority: record.UsageAuthority,
+		UsagePurpose: record.UsagePurpose, UsageFinality: record.UsageFinality,
+		UsageContractVersion: record.UsageContractVersion, UsageEstimateVersion: record.UsageEstimateVersion,
+		CacheUsageSchema: record.CacheUsageSchema,
 		CacheUsageStatus: record.CacheUsageStatus,
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -223,7 +226,10 @@ func (b *Billing) releaseProviderReconciliation(ctx context.Context, req Provide
 		PromptTokens: record.PromptTokens, UncachedPromptTokens: record.UncachedPromptTokens,
 		CacheReadTokens: record.CacheReadTokens, CacheCreationTokens: record.CacheCreationTokens,
 		CompletionTokens: record.CompletionTokens, UsageSource: record.UsageSource,
-		CacheUsageSchema: record.CacheUsageSchema, CacheUsageStatus: record.CacheUsageStatus,
+		UsageAuthority: record.UsageAuthority, UsagePurpose: record.UsagePurpose,
+		UsageFinality: record.UsageFinality, UsageContractVersion: record.UsageContractVersion,
+		UsageEstimateVersion: record.UsageEstimateVersion,
+		CacheUsageSchema:     record.CacheUsageSchema, CacheUsageStatus: record.CacheUsageStatus,
 	}
 	if err := enqueueUsageJournalTx(ctx, tx, b.outbox, outbox.EventBillingCancelled, "cancelled", record, cancelReq, 0, 0, transactionID); err != nil {
 		return nil, fmt.Errorf("enqueue reconciled release: %w", err)
@@ -240,7 +246,9 @@ func (b *Billing) releaseProviderReconciliation(ctx context.Context, req Provide
 
 func isProviderAttemptReleasable(action string, attempt providerAttemptRecord) bool {
 	if action == ProviderReconciliationSubsidy {
-		return attempt.State == providerAttemptStateFundingPending &&
+		return (attempt.State == providerAttemptStateFundingPending ||
+			attempt.State == providerAttemptStateDeliveryPending ||
+			attempt.State == providerAttemptStateDeliveryFailed) &&
 			attempt.OutcomeCertainty == providerAttemptCertaintyKnownUsage &&
 			attempt.CalculatedCost.Valid && attempt.CalculatedCost.Int64 > 0
 	}
@@ -249,7 +257,8 @@ func isProviderAttemptReleasable(action string, attempt providerAttemptRecord) b
 	}
 	switch attempt.State {
 	case providerAttemptStateDispatchStarted, ProviderAttemptOutcomeResponseAccepted,
-		ProviderAttemptOutcomeUnknown, ProviderAttemptOutcomeResponseUnusable:
+		ProviderAttemptOutcomeUnknown, ProviderAttemptOutcomeResponseUnusable,
+		providerAttemptStateDeliveryPending, providerAttemptStateDeliveryFailed:
 		return true
 	default:
 		return false

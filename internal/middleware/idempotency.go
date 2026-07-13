@@ -40,17 +40,27 @@ type IdempotencyClaimInput struct {
 }
 
 type IdempotencyRecord struct {
-	OrgID              int64
-	APIKeyID           int64
-	KeyHash            string
-	RequestFingerprint string
-	OperationID        string
-	ClientRequestID    string
-	State              string
-	OriginalHTTPStatus *int
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
-	ExpiresAt          time.Time
+	OrgID                int64
+	APIKeyID             int64
+	KeyHash              string
+	RequestFingerprint   string
+	OperationID          string
+	ClientRequestID      string
+	State                string
+	OriginalHTTPStatus   *int
+	UsageAuthority       string
+	UsagePurpose         string
+	UsageFinality        string
+	UsageContractVersion string
+	UsageEstimateVersion string
+	DeliveryMode         string
+	DeliveryOutcome      string
+	DeliveredBytes       int64
+	DeliveredChunks      int
+	DeliveryUpdatedAt    *time.Time
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	ExpiresAt            time.Time
 }
 
 type IdempotencyClaimResult struct {
@@ -87,6 +97,9 @@ func (s *PostgresIdempotencyStore) Claim(ctx context.Context, in IdempotencyClai
 		ON CONFLICT (org_id, api_key_id, key_hash) DO NOTHING
 		RETURNING org_id, api_key_id, key_hash, request_fingerprint, operation_id,
 		          COALESCE(client_request_id, ''), state, original_http_status,
+		          usage_authority, usage_purpose, usage_finality,
+		          usage_contract_version, usage_estimate_version,
+		          delivery_mode, delivery_outcome, delivered_bytes, delivered_chunks, delivery_updated_at,
 		          created_at, updated_at, expires_at`
 
 	record, err := scanIdempotencyRecord(s.db.QueryRow(ctx, insertQuery,
@@ -115,6 +128,16 @@ func (s *PostgresIdempotencyStore) Claim(ctx context.Context, in IdempotencyClai
 		    client_request_id = $6,
 		    state = 'in_progress',
 		    original_http_status = NULL,
+		    usage_authority = 'none',
+		    usage_purpose = 'provider_evidence',
+		    usage_finality = 'missing',
+		    usage_contract_version = 'unirouter.usage.v1',
+		    usage_estimate_version = '',
+		    delivery_mode = '',
+		    delivery_outcome = '',
+		    delivered_bytes = 0,
+		    delivered_chunks = 0,
+		    delivery_updated_at = NULL,
 		    created_at = $7,
 		    updated_at = $7,
 		    expires_at = $8
@@ -122,6 +145,9 @@ func (s *PostgresIdempotencyStore) Claim(ctx context.Context, in IdempotencyClai
 		  AND expires_at <= $7
 		RETURNING org_id, api_key_id, key_hash, request_fingerprint, operation_id,
 		          COALESCE(client_request_id, ''), state, original_http_status,
+		          usage_authority, usage_purpose, usage_finality,
+		          usage_contract_version, usage_estimate_version,
+		          delivery_mode, delivery_outcome, delivered_bytes, delivered_chunks, delivery_updated_at,
 		          created_at, updated_at, expires_at`
 	record, err = scanIdempotencyRecord(s.db.QueryRow(ctx, replaceExpiredQuery,
 		in.OrgID, in.APIKeyID, in.KeyHash, in.RequestFingerprint, in.OperationID,
@@ -147,6 +173,9 @@ func (s *PostgresIdempotencyStore) lookup(ctx context.Context, orgID, apiKeyID i
 	const query = `
 		SELECT org_id, api_key_id, key_hash, request_fingerprint, operation_id,
 		       COALESCE(client_request_id, ''), state, original_http_status,
+		       usage_authority, usage_purpose, usage_finality,
+		       usage_contract_version, usage_estimate_version,
+		       delivery_mode, delivery_outcome, delivered_bytes, delivered_chunks, delivery_updated_at,
 		       created_at, updated_at, expires_at
 		FROM request_idempotency
 		WHERE org_id = $1 AND api_key_id = $2 AND key_hash = $3`
@@ -192,7 +221,12 @@ func scanIdempotencyRecord(row rowScanner) (IdempotencyRecord, error) {
 	err := row.Scan(
 		&record.OrgID, &record.APIKeyID, &record.KeyHash, &record.RequestFingerprint,
 		&record.OperationID, &record.ClientRequestID, &record.State,
-		&record.OriginalHTTPStatus, &record.CreatedAt, &record.UpdatedAt, &record.ExpiresAt,
+		&record.OriginalHTTPStatus,
+		&record.UsageAuthority, &record.UsagePurpose, &record.UsageFinality,
+		&record.UsageContractVersion, &record.UsageEstimateVersion,
+		&record.DeliveryMode, &record.DeliveryOutcome, &record.DeliveredBytes,
+		&record.DeliveredChunks, &record.DeliveryUpdatedAt,
+		&record.CreatedAt, &record.UpdatedAt, &record.ExpiresAt,
 	)
 	return record, err
 }
@@ -273,7 +307,7 @@ func IdempotencyGuard(store IdempotencyStore, fingerprintSecret string, next htt
 		defer func() {
 			status := capture.Status()
 			state := IdempotencyStateCompleted
-			if panicked || status < 200 || status >= 300 {
+			if panicked || capture.WriteFailed() || status < 200 || status >= 300 {
 				state = IdempotencyStateFailed
 				if panicked && status < 500 {
 					status = http.StatusInternalServerError
@@ -348,6 +382,25 @@ func writeIdempotencyConflict(w http.ResponseWriter, fingerprint string, record 
 	if record.OriginalHTTPStatus != nil {
 		receipt["original_http_status"] = *record.OriginalHTTPStatus
 	}
+	receipt["usage"] = map[string]any{
+		"authority":        record.UsageAuthority,
+		"purpose":          record.UsagePurpose,
+		"finality":         record.UsageFinality,
+		"contract_version": record.UsageContractVersion,
+		"estimate_version": record.UsageEstimateVersion,
+	}
+	if record.DeliveryOutcome != "" {
+		delivery := map[string]any{
+			"mode":             record.DeliveryMode,
+			"outcome":          record.DeliveryOutcome,
+			"delivered_bytes":  record.DeliveredBytes,
+			"delivered_chunks": record.DeliveredChunks,
+		}
+		if record.DeliveryUpdatedAt != nil {
+			delivery["updated_at"] = record.DeliveryUpdatedAt.UTC().Format(time.RFC3339Nano)
+		}
+		receipt["delivery"] = delivery
+	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"error": map[string]any{
 			"type":    "idempotency_error",
@@ -361,7 +414,8 @@ func writeIdempotencyConflict(w http.ResponseWriter, fingerprint string, record 
 }
 
 type responseStatusCapture struct {
-	status int
+	status      int
+	writeFailed bool
 }
 
 func (c *responseStatusCapture) Status() int {
@@ -369,6 +423,10 @@ func (c *responseStatusCapture) Status() int {
 		return http.StatusOK
 	}
 	return c.status
+}
+
+func (c *responseStatusCapture) WriteFailed() bool {
+	return c.writeFailed
 }
 
 type statusResponseWriter struct {
@@ -392,25 +450,36 @@ func (w *statusResponseWriter) Write(body []byte) (int, error) {
 	if w.capture.status == 0 {
 		w.WriteHeader(http.StatusOK)
 	}
-	return w.ResponseWriter.Write(body)
+	written, err := w.ResponseWriter.Write(body)
+	if err != nil || written != len(body) {
+		w.capture.writeFailed = true
+	}
+	return written, err
 }
 
 type flushStatusResponseWriter struct {
 	*statusResponseWriter
-	flusher http.Flusher
 }
 
 func (w *flushStatusResponseWriter) Flush() {
+	_ = w.FlushError()
+}
+
+func (w *flushStatusResponseWriter) FlushError() error {
 	if w.capture.status == 0 {
 		w.WriteHeader(http.StatusOK)
 	}
-	w.flusher.Flush()
+	err := http.NewResponseController(w.ResponseWriter).Flush()
+	if err != nil {
+		w.capture.writeFailed = true
+	}
+	return err
 }
 
 func wrapStatusResponseWriter(w http.ResponseWriter, capture *responseStatusCapture) http.ResponseWriter {
 	base := &statusResponseWriter{ResponseWriter: w, capture: capture}
-	if flusher, ok := w.(http.Flusher); ok {
-		return &flushStatusResponseWriter{statusResponseWriter: base, flusher: flusher}
+	if _, ok := w.(http.Flusher); ok {
+		return &flushStatusResponseWriter{statusResponseWriter: base}
 	}
 	return base
 }

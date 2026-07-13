@@ -52,7 +52,8 @@ func (h *Handler) ListPendingProviderCosts(w http.ResponseWriter, r *http.Reques
 		        upstream_request_id, started_at, updated_at
 		 FROM billing_provider_attempts
 		 WHERE org_id=$1 AND state IN (
-		   'dispatch_started','response_accepted','outcome_unknown','response_unusable','funding_pending'
+		   'dispatch_started','response_accepted','outcome_unknown','response_unusable','funding_pending',
+		   'delivery_pending','delivery_failed'
 		 )
 		 ORDER BY updated_at, request_id, attempt_id LIMIT 100`, orgID)
 	if err != nil {

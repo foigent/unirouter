@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/models"
 )
 
@@ -38,6 +39,11 @@ type Usage struct {
 	CompletionTokens     int
 	TotalTokens          int
 	Source               string
+	Authority            metering.UsageAuthority
+	Purpose              metering.UsagePurpose
+	Finality             metering.UsageFinality
+	ContractVersion      string
+	EstimateVersion      string
 	CacheUsageSchema     string
 	CacheUsageStatus     string
 }
@@ -91,15 +97,16 @@ type NormalizedResponse struct {
 }
 
 type StreamState struct {
-	ID                   string
-	Created              int64
-	PromptTokens         int
-	UncachedPromptTokens int
-	CacheReadTokens      int
-	CacheCreationTokens  int
-	CompletionTokens     int
-	CacheUsageSchema     string
-	CacheUsageStatus     string
+	ID                    string
+	Created               int64
+	ProviderUsageReported bool
+	PromptTokens          int
+	UncachedPromptTokens  int
+	CacheReadTokens       int
+	CacheCreationTokens   int
+	CompletionTokens      int
+	CacheUsageSchema      string
+	CacheUsageStatus      string
 }
 
 type StreamChunkInput struct {

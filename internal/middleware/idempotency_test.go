@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +20,20 @@ type memoryIdempotencyStore struct {
 	mu      sync.Mutex
 	records map[string]IdempotencyRecord
 	claims  []IdempotencyClaimInput
+}
+
+type failingIdempotencyResponseWriter struct {
+	header http.Header
+}
+
+func (w *failingIdempotencyResponseWriter) Header() http.Header {
+	return w.header
+}
+
+func (*failingIdempotencyResponseWriter) WriteHeader(int) {}
+
+func (*failingIdempotencyResponseWriter) Write([]byte) (int, error) {
+	return 0, errors.New("downstream write failed")
 }
 
 func newMemoryIdempotencyStore() *memoryIdempotencyStore {
@@ -134,6 +149,21 @@ func TestIdempotencyGuardCompletedReplayReturnsReceiptWithoutSecondDispatch(t *t
 	}
 	if store.claims[0].ClientRequestID != "client-correlation" {
 		t.Fatalf("client correlation was not retained separately: %#v", store.claims[0])
+	}
+}
+
+func TestP6F41BIdempotencyMarksDownstreamWriteFailureAsFailed(t *testing.T) {
+	store := newMemoryIdempotencyStore()
+	handler := scopedIdempotencyHandler(store, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	first := &failingIdempotencyResponseWriter{header: make(http.Header)}
+	handler.ServeHTTP(first, newIdempotentRequest(`{"model":"gpt-4o"}`, "delivery-write-failure"))
+
+	replay := httptest.NewRecorder()
+	handler.ServeHTTP(replay, newIdempotentRequest(`{"model":"gpt-4o"}`, "delivery-write-failure"))
+	if replay.Code != http.StatusConflict || !strings.Contains(replay.Body.String(), `"code":"idempotency_error.original_failed"`) {
+		t.Fatalf("writer failure was not retained as a failed idempotency receipt: %d %s", replay.Code, replay.Body.String())
 	}
 }
 

@@ -124,11 +124,12 @@ func TestP6F40CCollectRejectsEstimatedOrUnknownUsage(t *testing.T) {
 		RequestID: requestID, AttemptID: attempt.AttemptID, OrgID: orgID,
 		Outcome: ProviderAttemptOutcomeResponseAccepted, HTTPStatus: 200,
 	}))
-	_, err := b.Settle(t.Context(), SettleRequest{
+	prepared, err := b.PrepareNonStreamDelivery(t.Context(), SettleRequest{
 		RequestID: requestID, AttemptID: attempt.AttemptID, OrgID: orgID,
 		ActualCost: 500, UsageSource: "estimated",
 	})
 	require.NoError(t, err)
+	require.False(t, prepared.Funded)
 	_, err = b.ReconcileProviderAttempt(t.Context(), ProviderReconciliationRequest{
 		OrgID: orgID, RequestID: requestID, AttemptID: attempt.AttemptID,
 		Action: ProviderReconciliationCollect, ActorUserID: 9003,
@@ -148,11 +149,12 @@ func TestP6F40CCollectRejectsAuthoritativeUsageWithoutLocalDelivery(t *testing.T
 		RequestID: requestID, AttemptID: attempt.AttemptID, OrgID: orgID,
 		Outcome: ProviderAttemptOutcomeResponseAccepted, HTTPStatus: 200,
 	}))
-	_, err := b.Settle(t.Context(), SettleRequest{
+	prepared, err := b.PrepareNonStreamDelivery(t.Context(), SettleRequest{
 		RequestID: requestID, AttemptID: attempt.AttemptID, OrgID: orgID,
 		ActualCost: 500, UsageSource: "upstream",
 	})
 	require.NoError(t, err)
+	require.False(t, prepared.Funded)
 	_, err = b.ReconcileProviderAttempt(t.Context(), ProviderReconciliationRequest{
 		OrgID: orgID, RequestID: requestID, AttemptID: attempt.AttemptID,
 		Action: ProviderReconciliationCollect, ActorUserID: 9006,
@@ -243,11 +245,12 @@ func TestP6F40CSubsidyRequiresKnownBoundedCost(t *testing.T) {
 		RequestID: requestID, AttemptID: attempt.AttemptID, OrgID: orgID,
 		Outcome: ProviderAttemptOutcomeResponseAccepted, HTTPStatus: 200,
 	}))
-	_, err := b.Settle(t.Context(), SettleRequest{
+	prepared, err := b.PrepareNonStreamDelivery(t.Context(), SettleRequest{
 		RequestID: requestID, AttemptID: attempt.AttemptID, OrgID: orgID,
 		ActualCost: 500, UsageSource: "upstream",
 	})
 	require.NoError(t, err)
+	require.False(t, prepared.Funded)
 	result, err := b.ReconcileProviderAttempt(t.Context(), ProviderReconciliationRequest{
 		OrgID: orgID, RequestID: requestID, AttemptID: attempt.AttemptID,
 		Action: ProviderReconciliationSubsidy, ActorUserID: 9004,

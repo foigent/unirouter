@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/outbox"
 	"github.com/uniroute/unirouter/internal/terminalhook"
 )
@@ -24,6 +25,11 @@ type usageJournalPayload struct {
 	CacheCreationTokens  int       `json:"cache_creation_tokens"`
 	CompletionTokens     int       `json:"completion_tokens"`
 	UsageSource          string    `json:"usage_source"`
+	UsageAuthority       string    `json:"usage_authority"`
+	UsagePurpose         string    `json:"usage_purpose"`
+	UsageFinality        string    `json:"usage_finality"`
+	UsageContractVersion string    `json:"usage_contract_version"`
+	UsageEstimateVersion string    `json:"usage_estimate_version,omitempty"`
 	CacheUsageSchema     string    `json:"cache_usage_schema"`
 	CacheUsageStatus     string    `json:"cache_usage_status"`
 	CalculatedCost       int       `json:"calculated_cost"`
@@ -60,6 +66,11 @@ func enqueueUsageJournalTx(ctx context.Context, tx pgx.Tx, service *outbox.Servi
 		CacheCreationTokens:  req.CacheCreationTokens,
 		CompletionTokens:     req.CompletionTokens,
 		UsageSource:          req.UsageSource,
+		UsageAuthority:       string(req.UsageAuthority),
+		UsagePurpose:         string(req.UsagePurpose),
+		UsageFinality:        string(req.UsageFinality),
+		UsageContractVersion: req.UsageContractVersion,
+		UsageEstimateVersion: req.UsageEstimateVersion,
 		CacheUsageSchema:     req.CacheUsageSchema,
 		CacheUsageStatus:     req.CacheUsageStatus,
 		CalculatedCost:       calculatedCost,
@@ -95,6 +106,17 @@ func (b *Billing) ProcessUsageJournalEvent(ctx context.Context, event outbox.Eve
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		return fmt.Errorf("decode usage journal event: %w", err)
 	}
+	if payload.UsageAuthority == "" {
+		if payload.EventType == "cancelled" && payload.UsageSource == "" {
+			payload.UsageSource = metering.UsageSourceMissing
+		}
+		authority, purpose, finality, estimateVersion := metering.LegacyUsageContract(payload.UsageSource, payload.EventType != "cancelled")
+		payload.UsageAuthority = string(authority)
+		payload.UsagePurpose = string(purpose)
+		payload.UsageFinality = string(finality)
+		payload.UsageContractVersion = metering.UsageContractVersion
+		payload.UsageEstimateVersion = estimateVersion
+	}
 	if payload.OrgID <= 0 || payload.RequestID == "" || payload.EventType == "" {
 		return fmt.Errorf("usage journal event identity is invalid")
 	}
@@ -110,18 +132,23 @@ func (b *Billing) ProcessUsageJournalEvent(ctx context.Context, event outbox.Eve
 			event_key, event_type, request_id, org_id, project_id, model,
 			prompt_tokens, uncached_prompt_tokens, cache_read_tokens,
 			cache_creation_tokens, completion_tokens, usage_source,
+			usage_authority, usage_purpose, usage_finality,
+			usage_contract_version, usage_estimate_version,
 			cache_usage_schema, cache_usage_status, calculated_cost,
 			charged_cost, pricing_version, terminal_transaction_id, occurred_at
 		 ) VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9, $10, $11, $12,
-			$13, $14, $15, $16, $17, $18, $19
+			$13, $14, $15, $16, $17,
+			$18, $19, $20, $21, $22, $23, $24
 		 ) ON CONFLICT (event_key) DO NOTHING`,
 		event.Key, payload.EventType, payload.RequestID, payload.OrgID,
 		payload.ProjectID, payload.Model, payload.PromptTokens,
 		payload.UncachedPromptTokens, payload.CacheReadTokens,
 		payload.CacheCreationTokens, payload.CompletionTokens,
-		payload.UsageSource, payload.CacheUsageSchema, payload.CacheUsageStatus,
+		payload.UsageSource, payload.UsageAuthority, payload.UsagePurpose,
+		payload.UsageFinality, payload.UsageContractVersion, payload.UsageEstimateVersion,
+		payload.CacheUsageSchema, payload.CacheUsageStatus,
 		payload.CalculatedCost, payload.ChargedCost, payload.PricingVersion,
 		nullablePositiveInt64(payload.TerminalTransaction), payload.OccurredAt,
 	)

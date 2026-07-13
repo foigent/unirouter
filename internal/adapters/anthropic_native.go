@@ -104,10 +104,7 @@ func (a *AnthropicNative) BuildRequest(ctx context.Context, in RequestInput) (*h
 
 func (a *AnthropicNative) ParseResponse(ctx context.Context, in ResponseInput) (*NormalizedResponse, error) {
 	_ = ctx
-	initialUsage, err := NewUsage(0, 0, 0, metering.UsageSourceUpstream)
-	if err != nil {
-		return nil, err
-	}
+	initialUsage := NewMissingUsage()
 	normalized := &NormalizedResponse{
 		StatusCode: in.StatusCode,
 		Header:     in.Header,
@@ -133,9 +130,14 @@ func (a *AnthropicNative) ParseResponse(ctx context.Context, in ResponseInput) (
 	if err := json.Unmarshal(in.Body, &parsed); err != nil {
 		return nil, fmt.Errorf("decode anthropic response: %w", err)
 	}
-	normalized.Usage, err = normalizeAnthropicUsage(parsed.Usage, metering.UsageSourceUpstream)
-	if err != nil {
-		return nil, fmt.Errorf("normalize anthropic usage: %w", err)
+	if parsed.Usage == nil {
+		normalized.Usage = NewMissingUsage()
+	} else {
+		usage, err := normalizeAnthropicUsage(*parsed.Usage, metering.UsageSourceUpstream)
+		if err != nil {
+			return nil, fmt.Errorf("normalize anthropic usage: %w", err)
+		}
+		normalized.Usage = usage
 	}
 
 	model := strings.TrimSpace(in.RequestedModel)
@@ -196,17 +198,20 @@ func (a *AnthropicNative) NormalizeStreamChunk(ctx context.Context, in StreamChu
 			if model == "" {
 				model = event.Message.Model
 			}
-			usage, err := normalizeAnthropicUsage(event.Message.Usage, metering.UsageSourceUpstream)
-			if err != nil {
-				return nil, fmt.Errorf("normalize anthropic stream usage: %w", err)
+			if event.Message.Usage != nil {
+				usage, err := normalizeAnthropicUsage(*event.Message.Usage, metering.UsageSourceUpstream)
+				if err != nil {
+					return nil, fmt.Errorf("normalize anthropic stream usage: %w", err)
+				}
+				in.State.ProviderUsageReported = true
+				in.State.PromptTokens = usage.PromptTokens
+				in.State.UncachedPromptTokens = usage.UncachedPromptTokens
+				in.State.CacheReadTokens = usage.CacheReadTokens
+				in.State.CacheCreationTokens = usage.CacheCreationTokens
+				in.State.CompletionTokens = usage.CompletionTokens
+				in.State.CacheUsageSchema = usage.CacheUsageSchema
+				in.State.CacheUsageStatus = usage.CacheUsageStatus
 			}
-			in.State.PromptTokens = usage.PromptTokens
-			in.State.UncachedPromptTokens = usage.UncachedPromptTokens
-			in.State.CacheReadTokens = usage.CacheReadTokens
-			in.State.CacheCreationTokens = usage.CacheCreationTokens
-			in.State.CompletionTokens = usage.CompletionTokens
-			in.State.CacheUsageSchema = usage.CacheUsageSchema
-			in.State.CacheUsageStatus = usage.CacheUsageStatus
 		}
 		result.Data = marshalOpenAIStreamChunk(in.State, model, map[string]interface{}{"role": "assistant"}, nil)
 	case "content_block_start":
@@ -226,7 +231,7 @@ func (a *AnthropicNative) NormalizeStreamChunk(ctx context.Context, in StreamChu
 	case "message_delta":
 		if event.Usage != nil {
 			in.State.CompletionTokens = event.Usage.OutputTokens
-			if in.State.PromptTokens > 0 {
+			if in.State.ProviderUsageReported {
 				result.HasUsage = true
 				usage, err := UsageFromStreamState(in.State, metering.UsageSourceUpstream)
 				if err != nil {
@@ -490,15 +495,15 @@ type anthropicMessageResponse struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"content"`
-	Usage anthropicUsageWire `json:"usage"`
+	Usage *anthropicUsageWire `json:"usage"`
 }
 
 type anthropicStreamEvent struct {
 	Type    string `json:"type"`
 	Message *struct {
-		ID    string             `json:"id"`
-		Model string             `json:"model"`
-		Usage anthropicUsageWire `json:"usage"`
+		ID    string              `json:"id"`
+		Model string              `json:"model"`
+		Usage *anthropicUsageWire `json:"usage"`
 	} `json:"message,omitempty"`
 	ContentBlock *struct {
 		Type string `json:"type"`

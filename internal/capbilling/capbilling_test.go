@@ -69,6 +69,12 @@ func (p *fakeProvider) CompleteProviderAttempt(_ context.Context, req billing.Pr
 	return nil
 }
 
+func (p *fakeProvider) PrepareNonStreamDelivery(context.Context, billing.SettleRequest) (*billing.PrepareDeliveryResult, error) {
+	return &billing.PrepareDeliveryResult{Funded: true, Preview: billing.SettleResult{Success: true}}, nil
+}
+
+func (p *fakeProvider) RecordDelivery(context.Context, billing.DeliveryEvent) error { return nil }
+
 func (p *fakeProvider) MarkBillableOutput(context.Context, string, int64) error { return nil }
 
 func (p *fakeProvider) PersistSettlementUsage(context.Context, billing.SettleRequest) error {

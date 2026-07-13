@@ -7,7 +7,8 @@
 > `ac2bfb5` / run `29209644118` CI verifies P6-F40B
 > provider-attempt/retry-cancel authority. PR #186 exact implementation/test
 > head `49d740d` / run `29224762127` CI verifies P6-F40C; P6-F40 is closed and
-> P6-F41 is not started.
+> P6-F41 is Local verified on `codex/prd6-usage-delivery-integrity`; required PR
+> CI is pending.
 > No target claim exists.
 
 ## First Read Order
@@ -66,6 +67,7 @@
 52. `docs/ops/evidence/PRD6-B3H-P6F40B-provider-attempt-ledger-local-20260713.md` - metadata-only provider-attempt state, financial retry/cancel authority, migration safety and local verification boundary.
 53. `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md` - accepted Customer Revenue Ledger / Provider COGS boundary, competitor/provider coverage research, Four Quadrants and future capability queue.
 54. `docs/ops/evidence/PRD6-B3H-P6F40C-provider-key-reconciliation-local-20260713.md` - affected-key paid-admission block, platform-only amount-free reconciliation, concurrency/crash-gap/migration proof and current local/CI boundary.
+55. `docs/ops/evidence/PRD6-B3H-P6F41-usage-delivery-integrity-local-20260713.md` - typed explicit-zero/missing usage, funded estimates, local-write charge gate, interrupted-stream delivered counter, metadata-only receipt and current local/CI boundary.
 
 ## Current Project Shape
 
@@ -82,7 +84,7 @@ redacted topology history remains under the existing PRD5 paths. PRD6 must not
 reinterpret target-evidence debt or X-Insight-owned work as unfinished PRD5
 source scope.
 
-PRD6 is active with D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14 accepted. D6-13 adds P6-F40/P6-F41 without rewriting the CI-verified P6-F18/P6-F20 history. D6-14 requires Customer Revenue Ledger authority to remain separate from Provider COGS evidence: collection uses authoritative usage, local delivery and frozen customer price; aggregate provider bills, balance deltas and operator-entered amounts cannot create customer debt. Provider-native runtime/conformance packs, live billing connectors, controlled bill import, generalized units, async media, managed billing and Cost Control Service extraction remain future candidates. P6-F40A is CI verified by PR #183 exact implementation/test head `d1afd97` and run `29207889734`: known cost shortfall uses cash-only prepaid top-up, insufficient cash remains non-terminal/non-cancellable, and `000028` distinguishes provider-cost pending from delivered stream output. P6-F40B is CI verified by PR #184 exact implementation/test head `ac2bfb5` / run `29209644118`: `000029` persists bounded provider-attempt evidence before Chat/Embeddings dispatch, only durable HTTP rejection may authorize existing failover, ambiguous/unusable/accepted-unsettled liability cannot ordinarily cancel, and cost/transaction receipts converge atomically through the production billing decorators. P6-F40C is CI verified by PR #186 exact implementation/test head `49d740d` / run `29224762127`: explicit ambiguous/funding states block the affected key, while platform-only amount-free reconciliation converges one customer terminal decision under tenant/concurrency/crash tests and guarded migration `000030`. P6-F40 is closed; P6-F41 typed usage/delivery authority remains not started. Batch 0A is merged/CI verified. The second
+PRD6 is active with D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14 accepted. D6-13 adds P6-F40/P6-F41 without rewriting the CI-verified P6-F18/P6-F20 history. D6-14 requires Customer Revenue Ledger authority to remain separate from Provider COGS evidence: collection uses authoritative usage, local delivery and frozen customer price; aggregate provider bills, balance deltas and operator-entered amounts cannot create customer debt. Provider-native runtime/conformance packs, live billing connectors, controlled bill import, generalized units, async media, managed billing and Cost Control Service extraction remain future candidates. P6-F40A is CI verified by PR #183 exact implementation/test head `d1afd97` and run `29207889734`: known cost shortfall uses cash-only prepaid top-up, insufficient cash remains non-terminal/non-cancellable, and `000028` distinguishes provider-cost pending from delivered stream output. P6-F40B is CI verified by PR #184 exact implementation/test head `ac2bfb5` / run `29209644118`: `000029` persists bounded provider-attempt evidence before Chat/Embeddings dispatch, only durable HTTP rejection may authorize existing failover, ambiguous/unusable/accepted-unsettled liability cannot ordinarily cancel, and cost/transaction receipts converge atomically through the production billing decorators. P6-F40C is CI verified by PR #186 exact implementation/test head `49d740d` / run `29224762127`: explicit ambiguous/funding states block the affected key, while platform-only amount-free reconciliation converges one customer terminal decision under tenant/concurrency/crash tests and guarded migration `000030`. P6-F40 is closed. P6-F41 is Local verified: `000031/000032` distinguish explicit zero from missing usage, require a chargeable local delivery receipt, separate interrupted-stream delivered counters from provider evidence, and keep raw responses non-persistent; required PR CI remains pending. Batch 0A is merged/CI verified. The second
 audit adds open P0 tenant,
 operation/idempotency, reservation/terminal-state and revocation findings, plus
 P1 Agent/100x blind spots. The accepted MVP covers those integrity
@@ -200,6 +202,7 @@ no PRD6 response persistence, deployment or semantic cache is accepted.
 | What locally proves Routing Policy V1 deterministic weight, snapshots, probe ownership, epoch safety and operator preview? | `docs/ops/evidence/PRD6-B2-P6F08-routing-policy-v1-local-20260712.md` |
 | What locally proves provider Prompt Cache token normalization, immutable pricing, settlement/recovery and UI/reconciliation semantics? | `docs/ops/evidence/PRD6-B3-P6F09-prompt-cache-billing-local-20260712.md` |
 | What does the P6-F20 CI-closed repository evidence prove and not prove? | `docs/ops/evidence/PRD6-B3-P6F20-durable-outbox-local-20260712.md` |
+| What locally proves P6-F41 explicit-zero/missing usage, delivery-gated charging and interrupted-stream separation? | `docs/ops/evidence/PRD6-B3H-P6F41-usage-delivery-integrity-local-20260713.md` |
 | How do competitors and UniRouter separate HA from stream resume? | `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` |
 | What did the UI/reconciliation/correlation/architecture audit conclude? | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` |
 | Which items are candidates for PRD7 rather than accepted scope? | `docs/planning/PRD7-CANDIDATE-BACKLOG.md` |
