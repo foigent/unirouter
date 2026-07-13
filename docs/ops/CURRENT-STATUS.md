@@ -1,7 +1,7 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
-> PRD6 is `Accepted Scope Complete` at repository/CI evidence level. All 27
+> PRD6 is formally `Completed (Accepted Scope)` at repository/CI evidence level. All 27
 > accepted rows are verified or closed. The final row, P6-F11, passed PR #189
 > implementation run `29245696926`, final-head run `29246431182`, squash merge
 > `4c78a5b7`, and post-merge main run `29246975012`; Backend Tests, Frontend
@@ -11,6 +11,10 @@
 > missing-favicon/browser-console errors and one selected historical request
 > detail are Target verified. This is not Production,
 > capacity/HA, real-provider/detector, TLS or migration-down evidence.
+> A fresh 2026-07-14 completion audit verified clean/aligned
+> `main`/`origin/main` at `9c73d6f`, successful exact-head main run
+> `29274010760`, and current public ECS readiness with DB/Redis healthy. See
+> `docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md`.
 > PRD6 Batch 0B P6-F16 was squash-merged by PR #140 as
 > `f244f669c529fec8767f85fff209882b333d8ed2`. P6-F33 was squash-merged by
 > PR #142 as `7173c5967a42c112fd0b219938a0901c1a0b9633`; its PR and post-merge
@@ -145,7 +149,7 @@
 > Docker Build, including both explicit P6-F20 gates. P6-F20 and Batch 3 are CI
 > verified / closed; no managed HA/IaC, target or production claim is made.
 
-## PRD6 Current Window
+## PRD6 Completed Window
 
 - Baseline evidence: `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md`.
 - Scalability/anti-pattern evidence:
@@ -557,11 +561,13 @@ Historical PRD1 summary: Core backend modules, admin APIs, frontend pages, migra
 | PRD3 | Complete for confirmed scope. User confirmed PRD3 is not a new-feature implementation phase; it is PRD1->PRD2 consistency, semantics, contract, documentation lifecycle, module boundaries, frontend architecture, parity tests, and engineering governance for existing functionality only. PRD3 Batch 17 final evidence hygiene passed Canary 7/7, consolidates all P3 rows to `Canary passed`, preserves PRD2 E2E accepted versus Production verified boundaries, and keeps PRD4 backlog items separate. No planned PRD3 implementation work remains unless User reopens scope | `docs/planning/PRD3-CONSISTENCY-AUDIT.md`, `docs/PRD-Phase3.md`, `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`, `docs/issues/OPEN-ISSUES.md`, `docs/agent-workflows/VERIFY-RESULT.md` |
 | PRD4 | Complete for the confirmed current scope. Batch 0 through Batch 1S passed the required gates for scoped PRD4 work. Batch 1S Open Issue Boundary Closeout passed Canary 7/7, Sentinel merge is reflected by `5b41b87` / PR #103, and User reported Atlas deleted `uniroute_test`, closing `PRD4-DEPLOY-002`. PRD4 delivered API key owner usage/cost visibility, quota vocabulary, Flow/Event/Trace foundation, PlungeIn observation-first port contract, Runtime Observability and host telemetry, Prometheus/Grafana integration health, real upstream/SSO guarded harness assets only, auth UX hardening, production-evidence boundary classification, runtime/build-chain hardening, security/redaction guardrails, and PRD5 backlog consolidation. No PRD4 matrix row is promoted to `Production verified` without target-environment evidence. Full Scheduler V2, runtime plugin marketplace, Logto/IAM rewrite, managed-HA IaC product, multi-instance infrastructure observability/topology, budget hard-block enforcement, runtime cache, full SDK, new persistent roles, real upstream target E2E, real SSO target E2E, and public SaaS/commercial growth features are deferred to PRD5 unless User reopens scope | `docs/PRD-Phase4.md`, `docs/ops/PRD4-ACCEPTANCE-MATRIX.md`, `docs/planning/PRD5-BACKLOG.md`, `docs/ops/evidence/PRD4-final-closeout-20260708.md`, `docs/issues/OPEN-ISSUES.md`, `docs/agent-workflows/VERIFY-RESULT.md` |
 | PRD5 | Accepted UniRouter scope complete. Historical Batch 1A through Batch 1V evidence remains valid; Batch 1W is target/external-integration verified for the authorized denied scenario. Batch 1X audit/screening is Local verified. Batch 1Y implementation is merged, and Batch 1Z verifies target migration/deployment/browser evidence plus the `INFRA-SEC-001` cutover. Structural search, Data Exchange Control, and redacted topology are Target verified; route/failover visibility is CI verified. X-Insight's synthetic-only target is verified and its runtime request is answered; unimplemented durable-job/deep-link/automated-receipt contracts, migration down, TLS 443 behavior, real upstream/SSO, read-only DB/view, exporter/outbox, and deferred P5-F12 products remain separate. PRD4 remains closed | `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`, `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md`, `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md`, `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md`, `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md`, `docs/planning/PRD5-IMPLEMENTATION-PLAN.md`, `docs/planning/PRD5-BACKLOG.md`, `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md`, `docs/planning/PRD5-DEFERRED-CONTROL-DESIGNS-20260710.md`, `docs/agent-workflows/EXECUTION-RECORD.md` |
+| PRD6 | Completed for Accepted Scope. All 27 accepted feature rows and the separate accepted engineering-integrity issue are repository/required-CI verified or closed. Selected ECS deployment/UI surfaces and P6-E01 are Target verified. Proposed/deferred rows, P6-E02 through P6-E04, PRD7, native IAM revocation, 100x/HA and Production evidence remain later and do not reopen PRD6 | `docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md`, `docs/PRD-Phase6.md`, `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`, `docs/ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md`, `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md` |
 
 ## Current Verification
 
 | Area | Status | Evidence |
 |------|--------|----------|
+| PRD6 Final Completion | Completed (Accepted Scope) | Fresh 2026-07-14 audit: 27/27 accepted rows closed, clean/aligned pre-publication baseline `9c73d6f`, exact-head main run `29274010760` green, public ECS readiness healthy; `docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md`. No Production or future-scope promotion |
 | PRD6 Target Deployment And UI Verification | Target verified for selected surfaces | `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md`; exact PRD6 stable/canary commit `ce9307a`, exact final frontend `f4fe41d`, migrations through `000034`, public/internal readiness, authenticated Dashboard/limits/Guardrails/routing/reconciliation/logs/status/docs, one historical P6-E01 route/failover detail, mobile checks, PR #191 runbook/Vite correction, PR #192 inline favicon correction and zero-row QA cleanup. No Production, policy-enforcement, real-provider/detector, capacity/HA, TLS or migration-down claim |
 | PRD5 X-Insight Runtime Contract Reconciliation | CI verified | PR #136 passed Backend Tests, Frontend Build, and Docker Build. `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md` records the answered request, synthetic-only X-Insight target, disabled unimplemented capabilities, and UniRouter v1 contract lock. No deployment is claimed |
 | PRD4 Final Closeout | Complete for current scope | `docs/ops/evidence/PRD4-final-closeout-20260708.md` records the final closeout. Batch 1S passed Canary 7/7 in `docs/agent-workflows/VERIFY-RESULT.md`, Sentinel merge is reflected by `5b41b87` / PR #103, and User reported Atlas deleted `uniroute_test`, closing `PRD4-DEPLOY-002`. No current PRD4 implementation work remains; PRD5 starts from `docs/planning/PRD5-BACKLOG.md` |

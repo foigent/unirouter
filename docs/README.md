@@ -3,7 +3,7 @@
 ## 当前入口
 - [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — Agent 接手项目的第一阅读入口
 - [ops/CURRENT-STATUS.md](ops/CURRENT-STATUS.md) — 当前项目真实状态（进度、测试、部署、缺口）
-- [planning/PRD6-START-HERE.md](planning/PRD6-START-HERE.md) — PRD6 Accepted Scope Complete、决策边界和证据阅读顺序
+- [planning/PRD6-START-HERE.md](planning/PRD6-START-HERE.md) — PRD6 Completed (Accepted Scope)、决策边界和证据阅读顺序
 - [ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md](ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md) — Git/CI/测试/X-Insight/代码事实基线
 - [ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md](ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md) — 100x、Agent 扇出、鉴权、计费、路由、流式和多模态反模式审计
 - [ops/evidence/PRD6-B0B-P6F16-tenant-isolation-local-20260711.md](ops/evidence/PRD6-B0B-P6F16-tenant-isolation-local-20260711.md) — P6-F16 key/user/project/project-policy 租户边界本地证据
@@ -32,6 +32,7 @@
 - [ops/evidence/PRD6-B5-P6F11-stream-policy-termination-local-20260713.md](ops/evidence/PRD6-B5-P6F11-stream-policy-termination-local-20260713.md) — P6-F11 流式微缓冲、终止、预算扩容、checkpoint/recovery 及 PR #189 CI 收口证据
 - [ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md](ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md) — PRD6 27/27 accepted rows 收口、证据等级和后续边界
 - [ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md](ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md) — PRD6 ECS 迁移/部署、稳定与金丝雀运行时、认证 UI、选定历史请求链路和目标边界证据
+- [ops/evidence/PRD6-FINAL-COMPLETION-20260714.md](ops/evidence/PRD6-FINAL-COMPLETION-20260714.md) — PRD6 最终完成审计、27/27 计数修正、正式阶段状态和后续边界
 - [planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md](planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md) — LiteLLM/New API/Portkey/Kong 高可用模式、UniRouter 集群事实和 D6-12 流式边界
 - [planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md](planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md) — UI、对账、链路身份、架构与 2B 升级审计
 - [planning/PRD7-CANDIDATE-BACKLOG.md](planning/PRD7-CANDIDATE-BACKLOG.md) — 未来首项方向已选；PRD6 已闭环，但实现仍按用户决定后置
@@ -39,7 +40,7 @@
 - [planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md](planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md) — LiteLLM/New API/One API 固定版本核验、四象限和优先级矩阵
 - [planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md](planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md) — CARTA、影子评测、反串谋、四象限、三平面边界和 Killer Features
 - [planning/prd6-adaptive-trust-hardening/hardening.md](planning/prd6-adaptive-trust-hardening/hardening.md) — adaptive-trust 三种结构方案、安全权衡和 signed local enforcement 推荐
-- [PRD-Phase6.md](PRD-Phase6.md) — PRD6 Accepted Scope Complete、proposed advanced/long-tail、所有权和安全边界
+- [PRD-Phase6.md](PRD-Phase6.md) — PRD6 Completed (Accepted Scope)、proposed advanced/long-tail、所有权和安全边界
 - [ops/PRD6-ACCEPTANCE-MATRIX.md](ops/PRD6-ACCEPTANCE-MATRIX.md) — PRD6 accepted/proposed/external/target-evidence 验收矩阵
 - [planning/PRD6-IMPLEMENTATION-PLAN.md](planning/PRD6-IMPLEMENTATION-PLAN.md) — PRD6 可执行 batches、风险和 gates
 - [planning/PRD6-BACKLOG.md](planning/PRD6-BACKLOG.md) — PRD6 分类 backlog 和决策登记
@@ -65,7 +66,7 @@
 - [PRD-Phase3.md](PRD-Phase3.md) — 已完成 PRD3 一致性、语义、契约和架构清理范围
 - [planning/PRD3-CONSISTENCY-AUDIT.md](planning/PRD3-CONSISTENCY-AUDIT.md) — PRD3 范围审计和 PRD1→PRD2 遗留问题梳理
 - [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 当前未关闭问题列表
-- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前执行记录：PRD6 Accepted Scope Closeout 与纯文档 PR 门禁
+- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前执行记录：PRD6 最终完成审计与文档 PR/CI 门禁
 - [agent-workflows/reviews/README.md](agent-workflows/reviews/README.md) — 可选独立复核记录格式和问题级别规则
 - [ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md](ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md) — 单一执行负责人、Git/CI、高影响授权和复核规则的确认记录
 - [ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md](ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md) — Batch 1W 根因、代码、回归和目标证据边界
@@ -82,7 +83,7 @@
 - [DOCS-GOVERNANCE.md](DOCS-GOVERNANCE.md) — 文档治理规则
 
 ## 核心文档
-- [PRD-Phase6.md](PRD-Phase6.md) — PRD6 Accepted Scope Complete；proposed/deferred rows 仍需单独决定
+- [PRD-Phase6.md](PRD-Phase6.md) — PRD6 Completed (Accepted Scope)；proposed/deferred rows 仍需单独决定
 - [PRD-Phase5.md](PRD-Phase5.md) — PRD5 Accepted Scope Complete 历史事实
 - [PRD-Phase4.md](PRD-Phase4.md) — PRD4 已完成范围历史
 - [PRD-Phase3.md](PRD-Phase3.md) — 已完成 PRD3 清理/优化范围

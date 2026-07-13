@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
-> Date: 2026-07-13
-> Status: Accepted Scope Complete; all 27 accepted rows are repository/CI verified or closed
+> Date: 2026-07-14
+> Status: Completed (Accepted Scope); all 27 accepted rows are repository/CI verified or closed
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -18,7 +18,7 @@ Batch 0 baseline and scope evidence
   -> Batch 3H provider cost and usage/delivery integrity hardening
   -> Batch 4 Guardrail Kernel
   -> Batch 5 Streaming policy and termination
-  -> Batch 6 selected advanced capability, if separately accepted
+  -> Batch 6 not activated; advanced capabilities remain future decisions
   -> Later target evidence only with item-specific User authorization; closeout itself grants none
 ```
 
@@ -32,11 +32,11 @@ cost authorization.
 
 - 41 total `P6-F*` rows exist in the acceptance matrix;
 - 27 are accepted implementation scope;
-- 26 are CI verified / closed: P6-F01 through P6-F10, P6-F16 through P6-F21
-  and P6-F32 through P6-F41;
-- 1 accepted row remains unclosed: D6-12 assigns mid-stream crash semantics to
-  P6-F11, which is in progress through the P6-STREAM-002A transport
-  prerequisite;
+- all 27 are CI verified / closed: P6-F01 through P6-F11, P6-F16 through
+  P6-F21 and P6-F32 through P6-F41;
+- zero accepted rows remain unclosed. P6-STREAM-002A was the transport
+  prerequisite, and P6-F11 subsequently closed through PR #189 / merge
+  `4c78a5b7` / post-merge main run `29246975012`;
 - 14 rows are not accepted: P6-F12 through P6-F15 and P6-F22 through P6-F31;
 - `P6-TEST-DB-001` is a separate accepted engineering-integrity issue outside
   the feature-row count. PR #155, merge `4b18ace` and post-merge main run

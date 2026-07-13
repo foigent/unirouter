@@ -1,7 +1,7 @@
 # PRD6 Acceptance Matrix
 
-> Date: 2026-07-13
-> Status: Accepted Scope Complete; all 27 accepted rows are repository/CI verified or closed; target, proposed and deferred rows retain their separate evidence/scope states
+> Date: 2026-07-14
+> Status: Completed (Accepted Scope); all 27 accepted rows are repository/CI verified or closed; target, proposed and deferred rows retain their separate evidence/scope states
 > Rule: a proposed row is not accepted implementation scope until its scope
 > state changes through an explicit decision. PRD5 evidence is referenced, not
 > rewritten.

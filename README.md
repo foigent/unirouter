@@ -55,10 +55,11 @@ Docker Compose（6 个容器）：
 - [贡献指南](CONTRIBUTING.md) — 开发流程、代码规范、提交规范
 - [Agent Handoff](docs/PROJECT-HANDOFF.md) — 其他 agent 接手项目的第一入口
 - [当前状态](docs/ops/CURRENT-STATUS.md) — 当前真实进度、测试和缺口
-- [PRD6 收口入口](docs/planning/PRD6-START-HERE.md) — Accepted Scope Complete、决策边界和阅读顺序
+- [PRD6 收口入口](docs/planning/PRD6-START-HERE.md) — Completed (Accepted Scope)、决策边界和阅读顺序
 - [PRD6 产品范围](docs/PRD-Phase6.md) — 已完成 accepted scope、proposed/deferred、安全边界和所有权
 - [PRD6 验收矩阵](docs/ops/PRD6-ACCEPTANCE-MATRIX.md) — 27/27 accepted rows、外部和目标证据边界
 - [PRD6 收口证据](docs/ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md) — repository/CI 证据等级、非声明与后续队列
+- [PRD6 最终完成证据](docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md) — 新鲜 Git/CI/矩阵/目标健康审计、正式完成状态与后续边界
 - [PRD6 竞品与四象限](docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md) — 固定版本竞品核验和优先级
 - [PRD6 P6-F16 本地证据](docs/ops/evidence/PRD6-B0B-P6F16-tenant-isolation-local-20260711.md) — key/user/project/project-policy 租户边界修复与回归
 - [PRD6 管理面租户审计](docs/ops/evidence/PRD6-B0B-admin-tenant-surface-audit-20260711.md) — 财务、通知、价格、全局设置和模型治理的后续 confirmed findings
@@ -143,7 +144,7 @@ UniRouter/
 │   ├── PRD-Phase3.md     # PRD3 清理/优化范围（已完成）
 │   ├── PRD-Phase4.md     # PRD4 范围（已完成）
 │   ├── PRD-Phase5.md     # PRD5 范围（Accepted Scope Complete）
-│   ├── PRD-Phase6.md     # PRD6 范围（Accepted Scope Complete）
+│   ├── PRD-Phase6.md     # PRD6 范围（Completed / Accepted Scope）
 │   ├── planning/         # PRD2-PRD6 规划和 backlog
 │   ├── ops/              # 部署 & 测试
 │   ├── tech-ref/         # 技术参考（模型矩阵、计费状态机等）
