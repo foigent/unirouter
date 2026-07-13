@@ -348,6 +348,24 @@ describe('API Client', () => {
     })
   })
 
+  describe('guardrail-policy APIs', () => {
+    it('lists, creates, and versions safety policies', async () => {
+      mockJsonResponse({ data: [], total: 0 })
+      await api.getGuardrailPolicies(2, 50, { stage: 'input' })
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/guardrail-policies?page=2&page_size=50&stage=input')
+
+      mockJsonResponse({ id: 8 })
+      await api.createGuardrailPolicy({ name: 'audit', stage: 'input' })
+      expect(mockFetch.mock.calls[1][0]).toBe('/api/v1/guardrail-policies')
+      expect(mockFetch.mock.calls[1][1]).toEqual(expect.objectContaining({ method: 'POST' }))
+
+      mockJsonResponse({ id: 8, version: 2 })
+      await api.updateGuardrailPolicy(8, { version: 1, mode: 'enforce' })
+      expect(mockFetch.mock.calls[2][0]).toBe('/api/v1/guardrail-policies/8')
+      expect(mockFetch.mock.calls[2][1]).toEqual(expect.objectContaining({ method: 'PUT' }))
+    })
+  })
+
   describe('model governance APIs', () => {
     it('loads model registry with filters', async () => {
       mockJsonResponse({ data: [], total: 0 })

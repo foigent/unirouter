@@ -177,3 +177,23 @@ func TestDFAFilterVersionedUpdateRejectsStaleSnapshot(t *testing.T) {
 		t.Fatalf("stale snapshot changed filter: newer=%v older=%v equal=%v", newerBlocked, olderBlocked, equalBlocked)
 	}
 }
+
+func TestDFAFilterSnapshotPinsImmutableRootAcrossUpdate(t *testing.T) {
+	f := NewDFAFilter([]string{"old"})
+	version := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	if !f.UpdateWordsVersioned([]string{"old"}, version) {
+		t.Fatal("expected initial versioned snapshot")
+	}
+	pinned, pinnedVersion := f.Snapshot()
+	if pinned == nil || pinned.root != f.root || pinnedVersion != f.Version() {
+		t.Fatal("snapshot rebuilt or lost the immutable root/version")
+	}
+	f.UpdateWords([]string{"new"})
+	oldPinned, _ := pinned.IsSensitive("old")
+	newPinned, _ := pinned.IsSensitive("new")
+	oldCurrent, _ := f.IsSensitive("old")
+	newCurrent, _ := f.IsSensitive("new")
+	if !oldPinned || newPinned || oldCurrent || !newCurrent {
+		t.Fatalf("snapshot did not remain immutable: pinned(old=%t,new=%t) current(old=%t,new=%t)", oldPinned, newPinned, oldCurrent, newCurrent)
+	}
+}

@@ -1,8 +1,8 @@
 # UniRouter PRD6: Reliable MaaS Policy And Safety Plane
 
-> Version: 0.15
+> Version: 0.17
 > Date: 2026-07-13
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F41 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F11 remains in progress, and P6-F10 is not started
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14/D6-15 accepted; P6-F03-P6-F10, P6-F16-P6-F21, P6-F32-P6-F41 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F11 remains in progress
 > Accepted implementation scope: P6-F03 through P6-F11, P6-F16 through P6-F21, P6-F32 through P6-F41
 > Innovation gate: P6-F23 through P6-F31 remain proposed/deferred
 
@@ -204,7 +204,7 @@ These do not become UniRouter source-code gaps without new evidence.
 | P6-F07 | Enforce shared RPM/RPS/TPM/concurrency policies with explicit selectors and failure modes | P1 | CI verified / closed by PR #168, merge `2610e317` and post-merge main run `29174001859` |
 | P6-F08 | Implement Routing Policy V1 with explainable candidates, exclusions, retry and failover | P1 | CI verified / closed by PR #172, exact-head run `29178419505`, merge `54d8833` and post-merge main run `29178588075`; historical branch retained at `0e374d3`; no target/capacity claim |
 | P6-F09 | Normalize and bill provider cache-read/cache-create tokens | P1 | CI verified / closed by PR #174 exact-head run `29180539621`, merge `6515b3f`, production-neutral fixture-stability PR #175 and final post-fix main run `29181137210`; historical implementation branch retained at `711e718`; no response-cache claim |
-| P6-F10 | Add versioned input/non-stream-output Guardrail Kernel | P1 | Accepted MVP |
+| P6-F10 | Add versioned input/non-stream-output Guardrail Kernel | P1 | CI verified / closed by PR #188 exact implementation/test head `76f95ed` / run `29236987646`; streaming remains P6-F11 |
 | P6-F11 | Add safe streaming interception, cancellation and settlement semantics | P1 | Accepted MVP; transport prerequisite P6-STREAM-002A CI verified / closed by PR #162; semantic policy remains |
 | P6-F19 | Add short Agent capability, monotonic delegation, ancestor budgets and versioned revocation | P1 | CI verified / closed by P6-F19A PR #164/main run `29170507588` plus P6-F19B PR #166/main run `29171807693`; P6-F20/P6-F21 were closed separately and P6-F07 is independently closed by PR #168 |
 | P6-F20 | Add durable minimal usage/finalization outbox and bounded evidence/notification workers | P1 | CI verified / closed by PR #177 exact-head run `29193900584`, merge `30d1e8f` and post-merge main run `29194150134`; D6-12 assigns mid-stream crash/checkpoint semantics to P6-F11; evidence `docs/ops/evidence/PRD6-B3-P6F20-durable-outbox-local-20260712.md` |
@@ -348,6 +348,24 @@ The User accepted on 2026-07-11:
    future candidates in
    `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md`
    and `docs/planning/PRD7-CANDIDATE-BACKLOG.md`.
+10. D6-15: use the G1-R Guardrail Kernel and S1-v2 content-size boundary.
+   Detectors return findings while the UniRouter kernel exclusively owns
+   allow, redact, block and degrade decisions. Platform-mandatory policies are
+   immutable lower bounds; tenant/project/key/model policies can only add
+   restrictions. One request pins one immutable policy snapshot. Built-in
+   sensitive-word behavior remains compatible, local PII/secret detection is
+   deterministic, and external classifiers must be process-registered with a
+   fixed endpoint, one-second total evaluation deadline, isolated concurrency
+   and no automatic retry. Raw content and detector-controlled external category labels do not
+   enter durable evidence. Chat input, Embeddings input and non-stream response
+   limits are 8 MiB, 16 MiB and 16 MiB; 64 MiB is a platform hard maximum, not
+   a tenant knob. Actual bounded reads, per-replica node/organization byte
+   budgets and the final downstream envelope are authoritative. Oversize input
+   returns 413 before provider dispatch. Undeliverable non-stream output is not
+   retried or failed over, creates no customer charge or delivery claim, and
+   retains provider-cost evidence for explicit reconciliation. Streaming
+   inspection remains P6-F11 and no real external detector is enabled by this
+   decision.
 
 Batch 0B is therefore authorized for repository implementation and begins with
 P6-F16. Each R4 security/financial boundary remains an independently reviewable

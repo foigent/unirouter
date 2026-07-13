@@ -369,6 +369,8 @@ func sourceComponentForTraceStage(stage string) string {
 		return "trace"
 	case "payload_policy":
 		return "payload_policy"
+	case "guardrail_input", "guardrail_nonstream_output":
+		return "guardrail"
 	case "admin":
 		return "admin"
 	default:
@@ -414,6 +416,10 @@ func decisionEvidence(eventType string, metadata map[string]interface{}) (string
 		result, _ := metadata["limit_policy_result"].(string)
 		reason, _ := metadata["limit_policy_reason"].(string)
 		return "admission", result, reason
+	case eventType == "guardrail.decision":
+		result, _ := metadata["guardrail_decision"].(string)
+		guardrailReason, _ := metadata["guardrail_outcome"].(string)
+		return "guardrail", result, guardrailReason
 	case strings.HasPrefix(eventType, "routing."):
 		switch eventType {
 		case "routing.route_selected":

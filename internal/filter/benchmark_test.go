@@ -80,3 +80,19 @@ func BenchmarkDFAFilter_UpdateWords(b *testing.B) {
 		f.UpdateWords(newWords)
 	}
 }
+
+func BenchmarkDFAFilter_Snapshot(b *testing.B) {
+	words := make([]string, 5000)
+	for i := range words {
+		words[i] = fmt.Sprintf("word%d", i)
+	}
+	f := NewDFAFilter(words)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		pinned, _ := f.Snapshot()
+		if pinned == nil {
+			b.Fatal("snapshot unavailable")
+		}
+	}
+}

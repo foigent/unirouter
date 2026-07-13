@@ -88,6 +88,7 @@ const fullAdminNavItems = [
       { itemKey: '/channel-keys', text: '上游凭证', icon: <IconLockStroked /> },
       { itemKey: '/keys', text: '访问凭证', icon: <IconKeyStroked /> },
       { itemKey: '/limit-policies', text: '共享限额', icon: <IconPulse /> },
+      { itemKey: '/guardrail-policies', text: '内容安全', icon: <IconShieldStroked /> },
       { itemKey: '/model-governance', text: '模型治理', icon: <IconLayers /> },
       { itemKey: '/logs', text: '请求日志', icon: <IconFile /> },
       { itemKey: '/usage-analytics', text: '用量分析', icon: <IconBarChartVStroked /> },
@@ -160,6 +161,7 @@ const billingNavItems = [
       { itemKey: '/', text: '仪表盘', icon: <IconMonitorStroked /> },
       { itemKey: '/logs', text: '请求日志', icon: <IconFile /> },
       { itemKey: '/limit-policies', text: '共享限额', icon: <IconPulse /> },
+      { itemKey: '/guardrail-policies', text: '内容安全', icon: <IconShieldStroked /> },
     ],
   },
   {
@@ -267,6 +269,7 @@ export function isRouteAllowedForRole(path: string, role?: string | null) {
       '/',
       '/keys',
       '/limit-policies',
+      '/guardrail-policies',
       '/logs',
       '/usage-analytics',
       '/notifications',
@@ -281,7 +284,7 @@ export function isRouteAllowedForRole(path: string, role?: string | null) {
   }
 
   if (isBillingRole(role)) {
-    return ['/', '/logs', '/limit-policies', '/wallet', '/reconciliation', '/usage-analytics', '/notifications', '/grants', '/audit-logs', '/status'].includes(route);
+    return ['/', '/logs', '/limit-policies', '/guardrail-policies', '/wallet', '/reconciliation', '/usage-analytics', '/notifications', '/grants', '/audit-logs', '/status'].includes(route);
   }
 
   if (isProjectConsoleRole(role)) {

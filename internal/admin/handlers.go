@@ -9,6 +9,7 @@ import (
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/filter"
+	"github.com/uniroute/unirouter/internal/guardrail"
 	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/oidc"
@@ -24,6 +25,14 @@ type routingController interface {
 
 type providerCostReconciler interface {
 	ReconcileProviderAttempt(context.Context, billing.ProviderReconciliationRequest) (*billing.ProviderReconciliationResult, error)
+}
+
+type guardrailController interface {
+	Refresh(context.Context) error
+	ApprovedDetectors() []string
+	DetectorInputLimits() (int, int, int)
+	IsDetectorApproved(string) bool
+	ValidatePolicy(guardrail.Policy) error
 }
 
 // Handler contains all admin API handlers.
@@ -44,6 +53,7 @@ type Handler struct {
 	routingController            routingController
 	outbox                       *outbox.Service
 	providerCostReconciler       providerCostReconciler
+	guardrailController          guardrailController
 }
 
 func (h *Handler) SetLimitPolicyReloader(reloader interface{ Refresh(context.Context) error }) {
@@ -56,6 +66,10 @@ func (h *Handler) SetRoutingController(controller routingController) {
 
 func (h *Handler) SetProviderCostReconciler(reconciler providerCostReconciler) {
 	h.providerCostReconciler = reconciler
+}
+
+func (h *Handler) SetGuardrailController(controller guardrailController) {
+	h.guardrailController = controller
 }
 
 func (h *Handler) invalidateRoutingSnapshots() {

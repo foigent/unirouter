@@ -16,6 +16,7 @@ import (
 	"github.com/uniroute/unirouter/internal/modelgov"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/outbox"
+	"github.com/uniroute/unirouter/internal/payloadpolicy"
 )
 
 func newGatewayChatHandler(pool *pgxpool.Pool, relay *gateway.Relay, outboxServices ...*outbox.Service) http.HandlerFunc {
@@ -53,10 +54,22 @@ func prepareGatewayModelRequest(w http.ResponseWriter, r *http.Request, pool *pg
 		return nil, false
 	}
 
-	bodyBytes, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, `{"error":{"type":"server_error","message":"Failed to read request body"}}`, http.StatusBadRequest)
-		return nil, false
+	bodyBytes, cached := payloadpolicy.BodyFromContext(r.Context())
+	if !cached {
+		maxBytes := int64(8 * payloadpolicy.MiB)
+		if r.URL.Path == "/v1/embeddings" {
+			maxBytes = 16 * payloadpolicy.MiB
+		}
+		var err error
+		bodyBytes, err = io.ReadAll(io.LimitReader(r.Body, maxBytes+1))
+		if err != nil {
+			http.Error(w, `{"error":{"type":"server_error","message":"Failed to read request body"}}`, http.StatusBadRequest)
+			return nil, false
+		}
+		if int64(len(bodyBytes)) > maxBytes {
+			http.Error(w, `{"error":{"type":"validation_error.payload_too_large","message":"Request payload exceeds the endpoint safety limit"}}`, http.StatusRequestEntityTooLarge)
+			return nil, false
+		}
 	}
 	r.Body.Close()
 	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
@@ -75,7 +88,12 @@ func prepareGatewayModelRequest(w http.ResponseWriter, r *http.Request, pool *pg
 	}
 
 	// Relay owns API-key model denial so correlation and decision evidence are emitted.
-	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+	var replaceErr error
+	r, replaceErr = payloadpolicy.ReplaceRequestBody(r, bodyBytes)
+	if replaceErr != nil {
+		http.Error(w, `{"error":{"type":"server_error.payload_capacity_exceeded","message":"Payload capacity is temporarily unavailable"}}`, http.StatusServiceUnavailable)
+		return nil, false
+	}
 	return r, true
 }
 

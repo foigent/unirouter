@@ -248,7 +248,8 @@ func isProviderAttemptReleasable(action string, attempt providerAttemptRecord) b
 	if action == ProviderReconciliationSubsidy {
 		return (attempt.State == providerAttemptStateFundingPending ||
 			attempt.State == providerAttemptStateDeliveryPending ||
-			attempt.State == providerAttemptStateDeliveryFailed) &&
+			attempt.State == providerAttemptStateDeliveryFailed ||
+			attempt.State == providerAttemptStateOutputWithheld) &&
 			attempt.OutcomeCertainty == providerAttemptCertaintyKnownUsage &&
 			attempt.CalculatedCost.Valid && attempt.CalculatedCost.Int64 > 0
 	}
@@ -258,7 +259,8 @@ func isProviderAttemptReleasable(action string, attempt providerAttemptRecord) b
 	switch attempt.State {
 	case providerAttemptStateDispatchStarted, ProviderAttemptOutcomeResponseAccepted,
 		ProviderAttemptOutcomeUnknown, ProviderAttemptOutcomeResponseUnusable,
-		providerAttemptStateDeliveryPending, providerAttemptStateDeliveryFailed:
+		providerAttemptStateDeliveryPending, providerAttemptStateDeliveryFailed,
+		providerAttemptStateOutputWithheld:
 		return true
 	default:
 		return false

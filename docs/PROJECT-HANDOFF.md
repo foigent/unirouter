@@ -2,13 +2,14 @@
 
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
-> Current PRD6 batch: D6-13/D6-14 are accepted. PR #183 exact implementation/test
+> Current PRD6 batch: D6-13/D6-14/D6-15 are accepted. PR #183 exact implementation/test
 > head `d1afd97` CI verifies P6-F40A. PR #184 exact implementation/test head
 > `ac2bfb5` / run `29209644118` CI verifies P6-F40B
 > provider-attempt/retry-cancel authority. PR #186 exact implementation/test
 > head `49d740d` / run `29224762127` CI verifies P6-F40C; P6-F40 is closed. PR
 > #187 exact implementation/test head `6d0e6ba` / run `29229320432` CI verifies
-> and closes P6-F41.
+> and closes P6-F41. PR #188 exact implementation/test head `76f95ed` / run
+> `29236987646` CI verifies and closes P6-F10; P6-F11 remains in progress.
 > No target claim exists.
 
 ## First Read Order
@@ -68,6 +69,7 @@
 53. `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md` - accepted Customer Revenue Ledger / Provider COGS boundary, competitor/provider coverage research, Four Quadrants and future capability queue.
 54. `docs/ops/evidence/PRD6-B3H-P6F40C-provider-key-reconciliation-local-20260713.md` - affected-key paid-admission block, platform-only amount-free reconciliation, concurrency/crash-gap/migration proof and current local/CI boundary.
 55. `docs/ops/evidence/PRD6-B3H-P6F41-usage-delivery-integrity-local-20260713.md` - typed explicit-zero/missing usage, funded estimates, local-write charge gate, interrupted-stream delivered counter, metadata-only receipt and current local/CI boundary.
+56. `docs/ops/evidence/PRD6-B4-P6F10-guardrail-kernel-local-20260713.md` - D6-15 immutable policy, bounded detector/payload, output-cost hold, migration and PR #188 exact-head CI closure evidence.
 
 ## Current Project Shape
 
@@ -84,7 +86,7 @@ redacted topology history remains under the existing PRD5 paths. PRD6 must not
 reinterpret target-evidence debt or X-Insight-owned work as unfinished PRD5
 source scope.
 
-PRD6 is active with D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14 accepted. D6-13 adds P6-F40/P6-F41 without rewriting the CI-verified P6-F18/P6-F20 history. D6-14 requires Customer Revenue Ledger authority to remain separate from Provider COGS evidence: collection uses authoritative usage, local delivery and frozen customer price; aggregate provider bills, balance deltas and operator-entered amounts cannot create customer debt. Provider-native runtime/conformance packs, live billing connectors, controlled bill import, generalized units, async media, managed billing and Cost Control Service extraction remain future candidates. P6-F40A is CI verified by PR #183 exact implementation/test head `d1afd97` and run `29207889734`: known cost shortfall uses cash-only prepaid top-up, insufficient cash remains non-terminal/non-cancellable, and `000028` distinguishes provider-cost pending from delivered stream output. P6-F40B is CI verified by PR #184 exact implementation/test head `ac2bfb5` / run `29209644118`: `000029` persists bounded provider-attempt evidence before Chat/Embeddings dispatch, only durable HTTP rejection may authorize existing failover, ambiguous/unusable/accepted-unsettled liability cannot ordinarily cancel, and cost/transaction receipts converge atomically through the production billing decorators. P6-F40C is CI verified by PR #186 exact implementation/test head `49d740d` / run `29224762127`: explicit ambiguous/funding states block the affected key, while platform-only amount-free reconciliation converges one customer terminal decision under tenant/concurrency/crash tests and guarded migration `000030`. P6-F40 is closed. P6-F41 is CI verified / closed by PR #187 exact implementation/test head `6d0e6ba` / run `29229320432`: `000031/000032` distinguish explicit zero from missing usage, require a chargeable local delivery receipt, separate interrupted-stream delivered counters from provider evidence, and keep raw responses non-persistent. Batch 0A is merged/CI verified. The second
+PRD6 is active with D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14/D6-15 accepted. D6-13 adds P6-F40/P6-F41 without rewriting the CI-verified P6-F18/P6-F20 history. D6-14 requires Customer Revenue Ledger authority to remain separate from Provider COGS evidence: collection uses authoritative usage, local delivery and frozen customer price; aggregate provider bills, balance deltas and operator-entered amounts cannot create customer debt. D6-15 fixes the Guardrail Kernel and content-size boundary: immutable stacked policy decisions remain UniRouter-owned; actual 8/16/16 MiB bounded reads/final responses, registered bounded detectors and explicit output-cost holds do not enable raw persistence, a real external detector or streaming interception. Provider-native runtime/conformance packs, live billing connectors, controlled bill import, generalized units, async media, managed billing and Cost Control Service extraction remain future candidates. P6-F40A is CI verified by PR #183 exact implementation/test head `d1afd97` and run `29207889734`: known cost shortfall uses cash-only prepaid top-up, insufficient cash remains non-terminal/non-cancellable, and `000028` distinguishes provider-cost pending from delivered stream output. P6-F40B is CI verified by PR #184 exact implementation/test head `ac2bfb5` / run `29209644118`: `000029` persists bounded provider-attempt evidence before Chat/Embeddings dispatch, only durable HTTP rejection may authorize existing failover, ambiguous/unusable/accepted-unsettled liability cannot ordinarily cancel, and cost/transaction receipts converge atomically through the production billing decorators. P6-F40C is CI verified by PR #186 exact implementation/test head `49d740d` / run `29224762127`: explicit ambiguous/funding states block the affected key, while platform-only amount-free reconciliation converges one customer terminal decision under tenant/concurrency/crash tests and guarded migration `000030`. P6-F40 is closed. P6-F41 is CI verified / closed by PR #187 exact implementation/test head `6d0e6ba` / run `29229320432`: `000031/000032` distinguish explicit zero from missing usage, require a chargeable local delivery receipt, separate interrupted-stream delivered counters from provider evidence, and keep raw responses non-persistent. P6-F10 is CI verified / closed by PR #188 exact implementation/test head `76f95ed` / run `29236987646`; P6-F11 remains in progress. Batch 0A is merged/CI verified. The second
 audit adds open P0 tenant,
 operation/idempotency, reservation/terminal-state and revocation findings, plus
 P1 Agent/100x blind spots. The accepted MVP covers those integrity
@@ -203,6 +205,7 @@ no PRD6 response persistence, deployment or semantic cache is accepted.
 | What locally proves provider Prompt Cache token normalization, immutable pricing, settlement/recovery and UI/reconciliation semantics? | `docs/ops/evidence/PRD6-B3-P6F09-prompt-cache-billing-local-20260712.md` |
 | What does the P6-F20 CI-closed repository evidence prove and not prove? | `docs/ops/evidence/PRD6-B3-P6F20-durable-outbox-local-20260712.md` |
 | What locally proves P6-F41 explicit-zero/missing usage, delivery-gated charging and interrupted-stream separation? | `docs/ops/evidence/PRD6-B3H-P6F41-usage-delivery-integrity-local-20260713.md` |
+| What proves P6-F10 Guardrail policy, bounded payload/detector, no-delivery cost-hold and migration behavior? | `docs/ops/evidence/PRD6-B4-P6F10-guardrail-kernel-local-20260713.md` |
 | How do competitors and UniRouter separate HA from stream resume? | `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` |
 | What did the UI/reconciliation/correlation/architecture audit conclude? | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` |
 | Which items are candidates for PRD7 rather than accepted scope? | `docs/planning/PRD7-CANDIDATE-BACKLOG.md` |
@@ -254,7 +257,7 @@ Use `docs/agent-workflows/AGENT-PROTOCOL.md` before changing code or status:
 Current execution has completed PRD6 Batch 0B P6-F16 through PR #140 /
 `f244f669`; its post-merge `main` CI is green. Fresh full repository checks and
 X-Insight tests passed before implementation; Batch 0A is merged and CI
-verified. D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14 are accepted; P6-F40 is CI verified / closed across PR #183/#184/#186, with P6-F40C exact implementation/test head `49d740d` / run `29224762127`; P6-F41 is CI verified / closed by PR #187 exact implementation/test head `6d0e6ba` / run `29229320432`, while P6-F16 and P6-F33 are CI verified
+verified. D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14/D6-15 are accepted; P6-F40 is CI verified / closed across PR #183/#184/#186, with P6-F40C exact implementation/test head `49d740d` / run `29224762127`; P6-F41 is CI verified / closed by PR #187 exact implementation/test head `6d0e6ba` / run `29229320432`; P6-F10 is CI verified / closed by PR #188 exact implementation/test head `76f95ed` / run `29236987646`, while P6-F16 and P6-F33 are CI verified
 and merged. P6-F37/P6-F38 are merged and CI verified by PR #143 / `a1e0ad6`,
 P6-F32/P6-F39 are merged and CI verified by PR #145 / `609385f`; P6-F34 was
 merged by PR #146 as `517ce45381429781f7e81e492bdd9f38093c21ba` after final-head run `29137670055`, and

@@ -57,6 +57,10 @@ func (p *fakeProvider) PrepareNonStreamDelivery(context.Context, billing.SettleR
 	return &billing.PrepareDeliveryResult{Funded: true, Preview: billing.SettleResult{Success: true}}, nil
 }
 
+func (p *fakeProvider) HoldNonStreamOutput(context.Context, billing.SettleRequest, string) error {
+	return nil
+}
+
 func (p *fakeProvider) RecordDelivery(context.Context, billing.DeliveryEvent) error { return nil }
 
 func TestP6F40BProviderAttemptAuthorityPassesThroughPolicyBilling(t *testing.T) {

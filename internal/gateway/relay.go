@@ -21,11 +21,13 @@ import (
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/errdocs"
 	"github.com/uniroute/unirouter/internal/filter"
+	"github.com/uniroute/unirouter/internal/guardrail"
 	"github.com/uniroute/unirouter/internal/logger"
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/outbox"
+	"github.com/uniroute/unirouter/internal/payloadpolicy"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
 	"github.com/uniroute/unirouter/internal/streampolicy"
@@ -43,6 +45,7 @@ type BillingProvider interface {
 	BeginProviderAttempt(ctx context.Context, req billing.ProviderAttemptStart) error
 	CompleteProviderAttempt(ctx context.Context, req billing.ProviderAttemptCompletion) error
 	PrepareNonStreamDelivery(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error)
+	HoldNonStreamOutput(ctx context.Context, req billing.SettleRequest, reason string) error
 	RecordDelivery(ctx context.Context, event billing.DeliveryEvent) error
 	MarkBillableOutput(ctx context.Context, requestID string, orgID int64) error
 	PersistSettlementUsage(ctx context.Context, req billing.SettleRequest) error
@@ -66,11 +69,32 @@ type Relay struct {
 	payloadCaptureMode         string
 	evidenceContextTrustSecret string
 	streamPolicy               streampolicy.Config
+	payloadBudget              *payloadpolicy.Budget
+	guardrail                  *guardrail.Service
 }
 
 // NewRelay creates a new Relay.
 func NewRelay(db db.DBQuerier, rdb *redis.Client, router *Router, b BillingProvider, f *filter.DFAFilter, encKey []byte) *Relay {
-	return &Relay{db: db, rdb: rdb, router: router, billing: b, filter: f, encKey: encKey, traceEventsEnabled: true, traceEventSampleRate: 1, payloadCaptureMode: traceutil.PayloadCaptureModeMetadataOnly, streamPolicy: streampolicy.Default()}
+	return &Relay{db: db, rdb: rdb, router: router, billing: b, filter: f, encKey: encKey, traceEventsEnabled: true, traceEventSampleRate: 1, payloadCaptureMode: traceutil.PayloadCaptureModeMetadataOnly, streamPolicy: streampolicy.Default(), payloadBudget: payloadpolicy.MustNewBudget(payloadpolicy.DefaultLimits())}
+}
+
+func (relay *Relay) SetPayloadBudget(budget *payloadpolicy.Budget) {
+	if relay != nil && budget != nil {
+		relay.payloadBudget = budget
+	}
+}
+
+func (relay *Relay) SetGuardrail(service *guardrail.Service) {
+	if relay != nil {
+		relay.guardrail = service
+	}
+}
+
+func (relay *Relay) currentPayloadBudget() *payloadpolicy.Budget {
+	if relay == nil || relay.payloadBudget == nil {
+		return payloadpolicy.MustNewBudget(payloadpolicy.DefaultLimits())
+	}
+	return relay.payloadBudget
 }
 
 func (relay *Relay) SetStreamPolicy(policy streampolicy.Config) error {
@@ -460,6 +484,36 @@ func (relay *Relay) completeProviderAttemptWithRetry(req billing.ProviderAttempt
 	return fmt.Errorf("complete provider attempt failed after %d attempts: %w", billingSettleMaxAttempts, lastErr)
 }
 
+func (relay *Relay) prepareNonStreamDeliveryWithTimeout(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error) {
+	prepareCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	return relay.billing.PrepareNonStreamDelivery(prepareCtx, req)
+}
+
+func (relay *Relay) holdNonStreamOutputWithRetry(ctx context.Context, req billing.SettleRequest, reason string, reqLog *logger.Logger) error {
+	holdCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	var lastErr error
+	for attempt := 1; attempt <= billingSettleMaxAttempts; attempt++ {
+		if err := relay.billing.HoldNonStreamOutput(holdCtx, req, reason); err == nil {
+			return nil
+		} else {
+			lastErr = err
+			if reqLog != nil {
+				reqLog.Error("Provider output hold %d/%d failed: %v", attempt, billingSettleMaxAttempts, err)
+			}
+		}
+		if attempt < billingSettleMaxAttempts {
+			select {
+			case <-holdCtx.Done():
+				return fmt.Errorf("hold provider output: %w", holdCtx.Err())
+			case <-time.After(billingSettleRetryDelay):
+			}
+		}
+	}
+	return fmt.Errorf("hold provider output failed after %d attempts: %w", billingSettleMaxAttempts, lastErr)
+}
+
 func cacheUsageMetadata(usage adapters.Usage) map[string]interface{} {
 	return map[string]interface{}{
 		"cache_scope":               "provider_prompt",
@@ -666,11 +720,19 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 
 	// Parse request body
 	var req ChatCompletionRequest
-	body, err := io.ReadAll(r.Body)
+	body, releaseRequestPayload, err := relay.requestPayload(r, payloadpolicy.ProfileChatRequest)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.invalid_request", "Failed to read request body")
+		if errors.Is(err, payloadpolicy.ErrPayloadTooLarge) {
+			writeError(w, http.StatusRequestEntityTooLarge, "invalid_request_error", "validation_error.payload_too_large", "Request payload exceeds the chat safety limit")
+		} else if errors.Is(err, payloadpolicy.ErrBudgetExceeded) {
+			w.Header().Set("Retry-After", "1")
+			writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.payload_capacity_exceeded", "Payload capacity is temporarily unavailable")
+		} else {
+			writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.invalid_request", "Failed to read request body")
+		}
 		return
 	}
+	defer releaseRequestPayload()
 	defer r.Body.Close()
 
 	if err := json.Unmarshal(body, &req); err != nil {
@@ -687,8 +749,31 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		requestedModel = req.Model
 	}
 
-	// Check sensitive words in messages
-	if relay.filter != nil && relay.filter.WordCount() > 0 {
+	// Pin one immutable policy set for both input and non-stream output. Existing
+	// deployments without the P6-F10 service keep the historical sensitive-word
+	// behavior for compatibility in repository tests and staged rollouts.
+	pinnedGuardrail := relay.pinGuardrail(ctx, req.Model, "chat")
+	if pinnedGuardrail != nil {
+		guardrailResult := pinnedGuardrail.Evaluate(ctx, guardrail.StageInput, chatGuardrailTexts(req.Messages))
+		relay.recordGuardrailResult(ctx, requestID, req.Model, requestedModel, normalizedGuardrailStage(guardrail.StageInput), guardrailResult, nil, 0, "")
+		if guardrailResult.Decision == guardrail.DecisionBlock {
+			writeInputGuardrailBlock(w, guardrailBlockedByUnavailable(guardrailResult))
+			return
+		}
+		body, err = applyChatGuardrailTransform(body, &req, guardrailResult)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "server_error", "guardrail_error.transform_failed", "Failed to apply content policy safely")
+			return
+		}
+		if guardrailResult.Transformed {
+			if r, err = payloadpolicy.ReplaceRequestBody(r, body); err != nil {
+				w.Header().Set("Retry-After", "1")
+				writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.payload_capacity_exceeded", "Payload capacity is temporarily unavailable")
+				return
+			}
+		}
+		ctx = contextWithGuardrailPin(ctx, pinnedGuardrail)
+	} else if relay.filter != nil && relay.filter.WordCount() > 0 {
 		for _, msg := range req.Messages {
 			if matched, _ := relay.filter.IsSensitive(msg.Content); matched {
 				writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.sensitive_word_detected", "Request contains prohibited content")
@@ -916,7 +1001,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		upstreamRequestID := upstreamRequestIDFromHeader(resp.Header)
 		if resp.StatusCode != http.StatusOK {
 			stopProbeLease()
-			errBody, _ := io.ReadAll(resp.Body)
+			errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 			// Per PRD F12: adapters normalize provider-specific HTTP semantics
 			// into routing failure kinds. Client errors are not channel failures.
 			classified := adapter.ClassifyHTTPStatus(resp.StatusCode, errBody)
@@ -1023,20 +1108,30 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 	defer stopProbeLease()
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, releaseResponsePayload, err := relay.responsePayload(ctx, resp.Body)
 	if err != nil {
-		reqLog.Error("Failed to read response body: %v", err)
+		status, errorType, errorCode, message, failureKind := payloadReadFailure(err)
+		reqLog.Error("Failed to read bounded response body: %v", err)
 		stopProbeLease()
-		relay.router.MarkRouteFailure(context.WithoutCancel(ctx), *route)
+		if !errors.Is(err, payloadpolicy.ErrPayloadTooLarge) && !errors.Is(err, payloadpolicy.ErrBudgetExceeded) {
+			relay.router.MarkRouteFailure(context.WithoutCancel(ctx), *route)
+		}
 		if ledgerErr := relay.completeProviderAttemptWithRetry(providerAttemptCompletion(
 			ctx, requestID, orgID, billing.ProviderAttemptOutcomeResponseUnusable,
-			false, resp.StatusCode, "response_read", upstreamRequestID,
+			false, resp.StatusCode, failureKind, upstreamRequestID,
 		), reqLog); ledgerErr != nil {
 			reqLog.Error("Failed to retain unusable provider response authority: %v", ledgerErr)
 		}
-		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to read upstream response")
+		relay.recordTraceEvent(ctx, requestID, "provider.response_unusable", "provider", "error", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"failure_kind": failureKind,
+		}, upstreamRequestID)
+		if errors.Is(err, payloadpolicy.ErrBudgetExceeded) {
+			w.Header().Set("Retry-After", "1")
+		}
+		writeError(w, status, errorType, errorCode, message)
 		return
 	}
+	defer releaseResponsePayload()
 
 	if adapter == nil {
 		adapter = adapters.NewOpenAICompatible()
@@ -1101,9 +1196,79 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 	stopProbeLease()
 	relay.router.MarkRouteSuccess(context.WithoutCancel(ctx), route)
 	relay.recordTraceEvent(ctx, requestID, "provider.response_accepted", "provider", "info", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{}, upstreamRequestID)
+	holdUndeliveredOutput := func(status int, reason string) error {
+		holdReq := settleRequestFromUsage(requestID, attemptIDFromContext(ctx), orgID, normalized.Usage)
+		holdReq.UsagePurpose = metering.UsagePurposeProviderEvidence
+		if err := relay.holdNonStreamOutputWithRetry(ctx, holdReq, reason, reqLog); err != nil {
+			return err
+		}
+		evidenceCtx, cancelEvidence := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancelEvidence()
+		evidenceUsage := normalized.Usage
+		evidenceUsage.Purpose = metering.UsagePurposeProviderEvidence
+		relay.recordRequestWithUsage(evidenceCtx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, model, requestedModel, clientIP,
+			evidenceUsage, 0, status, elapsedMilliseconds(requestStart), 0, false, estimatedTokens, upstreamRequestID, nil)
+		return nil
+	}
+	if pinnedGuardrail := guardrailPinFromContext(ctx); pinnedGuardrail != nil {
+		outputTexts, outputRefs := nonStreamOutputTexts(responseMap)
+		guardrailResult := pinnedGuardrail.Evaluate(ctx, guardrail.StageNonStreamOutput, outputTexts)
+		guardrailEvidenceCtx, cancelGuardrailEvidence := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		relay.recordGuardrailResult(guardrailEvidenceCtx, requestID, model, requestedModel, normalizedGuardrailStage(guardrail.StageNonStreamOutput), guardrailResult, route, resp.StatusCode, upstreamRequestID)
+		cancelGuardrailEvidence()
+		if guardrailResult.Decision == guardrail.DecisionBlock {
+			unavailable := guardrailBlockedByUnavailable(guardrailResult)
+			status := http.StatusForbidden
+			if unavailable {
+				status = http.StatusServiceUnavailable
+			}
+			if err := holdUndeliveredOutput(status, "guardrail_withheld"); err != nil {
+				reqLog.Error("Failed to retain guardrail-withheld provider usage: %v", err)
+				relay.recordTraceEvent(ctx, requestID, "billing.guardrail_hold.failed", "billing", "error", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
+					"error_code": "guardrail_output_hold_failed",
+				}, upstreamRequestID)
+				writeError(w, http.StatusInternalServerError, "server_error", "billing_error.provider_attempt_failed", "Failed to retain provider cost authority")
+				return
+			}
+			writeOutputGuardrailBlock(w, unavailable)
+			return
+		}
+		if err := applyOutputGuardrailTransform(guardrailResult, outputRefs); err != nil {
+			if holdErr := holdUndeliveredOutput(http.StatusInternalServerError, "guardrail_withheld"); holdErr != nil {
+				reqLog.Error("Failed to retain transform-failed provider usage: %v", holdErr)
+				relay.recordTraceEvent(ctx, requestID, "billing.guardrail_hold.failed", "billing", "error", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
+					"error_code": "guardrail_transform_hold_failed",
+				}, upstreamRequestID)
+				writeError(w, http.StatusInternalServerError, "server_error", "billing_error.provider_attempt_failed", "Failed to retain provider cost authority")
+				return
+			}
+			relay.recordTraceEvent(ctx, requestID, "guardrail.transform.failed", "guardrail_nonstream_output", "error", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
+				"error_code": "guardrail_transform_failed",
+			}, upstreamRequestID)
+			writeError(w, http.StatusInternalServerError, "server_error", "guardrail_error.transform_failed", "Failed to apply output policy safely")
+			return
+		}
+	}
+	basePayload, responseMaxBytes, err := relay.marshalNonStreamResponseBase(responseMap)
+	if err != nil {
+		if errors.Is(err, payloadpolicy.ErrPayloadTooLarge) {
+			if holdErr := holdUndeliveredOutput(http.StatusBadGateway, "response_too_large"); holdErr != nil {
+				reqLog.Error("Failed to retain oversized provider response usage: %v", holdErr)
+				writeError(w, http.StatusInternalServerError, "server_error", "billing_error.provider_attempt_failed", "Failed to retain provider cost authority")
+				return
+			}
+			relay.recordTraceEvent(ctx, requestID, "provider.response_unusable", "provider", "warning", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
+				"failure_kind": "response_too_large",
+			}, upstreamRequestID)
+			writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_response_too_large", "Upstream response exceeds the non-stream safety limit")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to encode response")
+		return
+	}
 
 	settleReq := settleRequestFromUsage(requestID, attemptIDFromContext(ctx), orgID, normalized.Usage)
-	prepared, err := relay.billing.PrepareNonStreamDelivery(ctx, settleReq)
+	prepared, err := relay.prepareNonStreamDeliveryWithTimeout(ctx, settleReq)
 	if err != nil || prepared == nil || !prepared.Funded {
 		reqLog.Error("Billing delivery preparation failed; response withheld: %v", err)
 		relay.recordTraceEvent(ctx, requestID, "billing.delivery_prepare.failed", "billing", "error", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
@@ -1119,7 +1284,7 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 	// status is deliberately non-terminal; the append-only idempotency receipt
 	// becomes terminal only after the local write and settlement both finish.
 	attempt := routeAttemptFromContext(ctx)
-	responseMap["_uniroute"] = map[string]interface{}{
+	responseExtension := map[string]interface{}{
 		"request_id":            requestID,
 		"cost":                  preparedDeliveryCostExtension(normalized.Usage, preview, previewActual, previewCharged),
 		"provider":              route.Channel.Provider,
@@ -1132,12 +1297,21 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 		"attempt_id":            attemptIDFromContext(ctx),
 		"billing_status":        "delivery_prepared",
 	}
-	payload, err := json.Marshal(responseMap)
+	payload, err := appendNonStreamResponseExtension(basePayload, responseExtension, responseMaxBytes)
 	if err != nil {
+		deliveryCtx, deliveryCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		recordErr := relay.billing.RecordDelivery(deliveryCtx, billing.DeliveryEvent{
+			RequestID: requestID, AttemptID: attemptIDFromContext(ctx), OrgID: orgID,
+			Mode: billing.DeliveryModeNonStream, Outcome: billing.DeliveryOutcomeWriteFailed,
+			HTTPStatus: resp.StatusCode, ErrorCode: "response_encode_failed",
+		})
+		deliveryCancel()
+		if recordErr != nil {
+			reqLog.Error("Failed to retain pre-delivery response encoding failure: %v", recordErr)
+		}
 		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to encode response")
 		return
 	}
-	payload = append(payload, '\n')
 	deliveryEvent := billing.DeliveryEvent{
 		RequestID: requestID, AttemptID: attemptIDFromContext(ctx), OrgID: orgID,
 		Mode: billing.DeliveryModeNonStream, Outcome: billing.DeliveryOutcomeWriteStarted,
@@ -2223,11 +2397,19 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Request-ID", requestID)
 
 	var req EmbeddingsRequest
-	body, err := io.ReadAll(r.Body)
+	body, releaseRequestPayload, err := relay.requestPayload(r, payloadpolicy.ProfileEmbeddingsRequest)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.invalid_request", "Failed to read request body")
+		if errors.Is(err, payloadpolicy.ErrPayloadTooLarge) {
+			writeError(w, http.StatusRequestEntityTooLarge, "invalid_request_error", "validation_error.payload_too_large", "Request payload exceeds the embeddings safety limit")
+		} else if errors.Is(err, payloadpolicy.ErrBudgetExceeded) {
+			w.Header().Set("Retry-After", "1")
+			writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.payload_capacity_exceeded", "Payload capacity is temporarily unavailable")
+		} else {
+			writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.invalid_request", "Failed to read request body")
+		}
 		return
 	}
+	defer releaseRequestPayload()
 	defer r.Body.Close()
 
 	if err := json.Unmarshal(body, &req); err != nil {
@@ -2241,6 +2423,28 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	requestedModel := middleware.GetModelAliasFromContext(ctx)
 	if requestedModel == "" {
 		requestedModel = req.Model
+	}
+	pinnedGuardrail := relay.pinGuardrail(ctx, req.Model, "embeddings")
+	if pinnedGuardrail != nil {
+		guardrailResult := pinnedGuardrail.Evaluate(ctx, guardrail.StageInput, embeddingsGuardrailTexts(req.Input))
+		relay.recordGuardrailResult(ctx, requestID, req.Model, requestedModel, normalizedGuardrailStage(guardrail.StageInput), guardrailResult, nil, 0, "")
+		if guardrailResult.Decision == guardrail.DecisionBlock {
+			writeInputGuardrailBlock(w, guardrailBlockedByUnavailable(guardrailResult))
+			return
+		}
+		body, err = applyEmbeddingsGuardrailTransform(body, &req, guardrailResult)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "server_error", "guardrail_error.transform_failed", "Failed to apply content policy safely")
+			return
+		}
+		if guardrailResult.Transformed {
+			if r, err = payloadpolicy.ReplaceRequestBody(r, body); err != nil {
+				w.Header().Set("Retry-After", "1")
+				writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.payload_capacity_exceeded", "Payload capacity is temporarily unavailable")
+				return
+			}
+		}
+		ctx = contextWithGuardrailPin(ctx, pinnedGuardrail)
 	}
 	callerAPIKey := middleware.GetAPIKeyFromContext(ctx)
 	if !modelAllowedForAPIKey(callerAPIKey, req.Model, requestedModel) {
@@ -2455,7 +2659,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		upstreamRequestID := upstreamRequestIDFromHeader(resp.Header)
 		if resp.StatusCode != http.StatusOK {
 			stopProbeLease()
-			errBody, _ := io.ReadAll(resp.Body)
+			errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 			classified := adapter.ClassifyHTTPStatus(resp.StatusCode, errBody)
 			willRetry := classified.Retryable && providerAttempts <= routingPolicy.MaxRetryCount && routeIndex+1 < len(routes)
 			if err := relay.completeProviderAttemptWithRetry(providerAttemptCompletion(
@@ -2515,23 +2719,30 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		respBody, readErr := io.ReadAll(resp.Body)
+		respBody, releaseResponsePayload, readErr := relay.responsePayload(attemptCtx, resp.Body)
 		resp.Body.Close()
 		if readErr != nil {
+			status, errorType, errorCode, message, failureKind := payloadReadFailure(readErr)
 			stopProbeLease()
-			relay.router.MarkRouteFailure(context.WithoutCancel(attemptCtx), *route)
+			if !errors.Is(readErr, payloadpolicy.ErrPayloadTooLarge) && !errors.Is(readErr, payloadpolicy.ErrBudgetExceeded) {
+				relay.router.MarkRouteFailure(context.WithoutCancel(attemptCtx), *route)
+			}
 			if ledgerErr := relay.completeProviderAttemptWithRetry(providerAttemptCompletion(
 				attemptCtx, requestID, orgID, billing.ProviderAttemptOutcomeResponseUnusable,
-				false, resp.StatusCode, "response_read", upstreamRequestID,
+				false, resp.StatusCode, failureKind, upstreamRequestID,
 			), reqLog); ledgerErr != nil {
 				reqLog.Error("Failed to retain unusable embeddings response authority: %v", ledgerErr)
 			}
 			relay.recordTraceEvent(attemptCtx, requestID, "provider.response_parse_failed", "provider", "error", req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
-				"failure_kind": "response_read",
+				"failure_kind": failureKind,
 			}, upstreamRequestID)
-			writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to read upstream response")
+			if errors.Is(readErr, payloadpolicy.ErrBudgetExceeded) {
+				w.Header().Set("Retry-After", "1")
+			}
+			writeError(w, status, errorType, errorCode, message)
 			return
 		}
+		defer releaseResponsePayload()
 
 		normalized, err := adapter.ParseResponse(attemptCtx, adapters.ResponseInput{
 			StatusCode:     resp.StatusCode,
@@ -2597,9 +2808,35 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		stopProbeLease()
 		relay.router.MarkRouteSuccess(context.WithoutCancel(attemptCtx), route)
 		relay.recordTraceEvent(attemptCtx, requestID, "provider.response_accepted", "provider", "info", req.Model, requestedModel, route, resp.StatusCode, int(upstreamDuration.Milliseconds()), map[string]interface{}{}, upstreamRequestID)
+		basePayload, responseMaxBytes, err := relay.marshalNonStreamResponseBase(responseMap)
+		if err != nil {
+			if errors.Is(err, payloadpolicy.ErrPayloadTooLarge) {
+				holdReq := settleRequestFromUsage(requestID, attemptIDFromContext(attemptCtx), orgID, normalized.Usage)
+				holdReq.UsagePurpose = metering.UsagePurposeProviderEvidence
+				holdErr := relay.holdNonStreamOutputWithRetry(attemptCtx, holdReq, "response_too_large", reqLog)
+				if holdErr != nil {
+					reqLog.Error("Failed to retain oversized embeddings response usage: %v", holdErr)
+					writeError(w, http.StatusInternalServerError, "server_error", "billing_error.provider_attempt_failed", "Failed to retain provider cost authority")
+					return
+				}
+				evidenceUsage := normalized.Usage
+				evidenceUsage.Purpose = metering.UsagePurposeProviderEvidence
+				evidenceCtx, cancelEvidence := context.WithTimeout(context.WithoutCancel(attemptCtx), 10*time.Second)
+				relay.recordRequestWithUsage(evidenceCtx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, req.Model, requestedModel, r.RemoteAddr,
+					evidenceUsage, 0, http.StatusBadGateway, elapsedMilliseconds(requestStart), 0, false, inputTokens, upstreamRequestID, nil)
+				cancelEvidence()
+				relay.recordTraceEvent(attemptCtx, requestID, "provider.response_unusable", "provider", "warning", req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
+					"failure_kind": "response_too_large",
+				}, upstreamRequestID)
+				writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_response_too_large", "Upstream response exceeds the non-stream safety limit")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to encode response")
+			return
+		}
 
 		settleReq := settleRequestFromUsage(requestID, attemptIDFromContext(attemptCtx), orgID, normalized.Usage)
-		deliveryPrepared, err := relay.billing.PrepareNonStreamDelivery(attemptCtx, settleReq)
+		deliveryPrepared, err := relay.prepareNonStreamDeliveryWithTimeout(attemptCtx, settleReq)
 		if err != nil || deliveryPrepared == nil || !deliveryPrepared.Funded {
 			reqLog.Error("Billing delivery preparation failed; embeddings response withheld: %v", err)
 			relay.recordTraceEvent(attemptCtx, requestID, "billing.delivery_prepare.failed", "billing", "error", req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
@@ -2611,7 +2848,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		preview := &deliveryPrepared.Preview
 		previewActual, previewCharged := settledCosts(preview)
 		attempt := routeAttemptFromContext(attemptCtx)
-		responseMap["_uniroute"] = map[string]interface{}{
+		responseExtension := map[string]interface{}{
 			"request_id":            requestID,
 			"cost":                  preparedDeliveryCostExtension(normalized.Usage, preview, previewActual, previewCharged),
 			"provider":              route.Channel.Provider,
@@ -2624,12 +2861,21 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 			"attempt_id":            attemptIDFromContext(attemptCtx),
 			"billing_status":        "delivery_prepared",
 		}
-		payload, err := json.Marshal(responseMap)
+		payload, err := appendNonStreamResponseExtension(basePayload, responseExtension, responseMaxBytes)
 		if err != nil {
+			deliveryCtx, deliveryCancel := context.WithTimeout(context.WithoutCancel(attemptCtx), 10*time.Second)
+			recordErr := relay.billing.RecordDelivery(deliveryCtx, billing.DeliveryEvent{
+				RequestID: requestID, AttemptID: attemptIDFromContext(attemptCtx), OrgID: orgID,
+				Mode: billing.DeliveryModeNonStream, Outcome: billing.DeliveryOutcomeWriteFailed,
+				HTTPStatus: resp.StatusCode, ErrorCode: "response_encode_failed",
+			})
+			deliveryCancel()
+			if recordErr != nil {
+				reqLog.Error("Failed to retain pre-delivery embeddings encoding failure: %v", recordErr)
+			}
 			writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to encode response")
 			return
 		}
-		payload = append(payload, '\n')
 		deliveryEvent := billing.DeliveryEvent{
 			RequestID: requestID, AttemptID: attemptIDFromContext(attemptCtx), OrgID: orgID,
 			Mode: billing.DeliveryModeNonStream, Outcome: billing.DeliveryOutcomeWriteStarted,

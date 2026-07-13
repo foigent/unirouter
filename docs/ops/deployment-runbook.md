@@ -72,6 +72,11 @@ License 公钥由 License 签发方提供，支持 base64 或 hex 编码的 32 �
 | `TRACE_EVENT_SAMPLE_RATE` | `1` | 按 `request_id` 确定性采样，范围 `0..1`；例如 `0.1` 约采样 10% 请求并保留同一请求的完整事件段 |
 | `TRACE_EVENT_RETENTION_DAYS` | `LOG_RETENTION_DAYS` | `request_trace_events` 自动清理窗口；设为 `0` 时跳过 trace event 清理但不关闭写入，关闭写入仍使用 `TRACE_EVENTS_ENABLED=false` |
 | `PAYLOAD_CAPTURE_MODE` | `metadata_only` | PRD5 payload evidence 状态；当前仅支持 `metadata_only` 和 `disabled`，不会启用 raw prompt/response 存储 |
+| `CHAT_REQUEST_MAX_BYTES` | `8388608` | Chat 同步 JSON 请求默认 8 MiB；应用按实际读取字节执行，不信任 `Content-Length` |
+| `EMBEDDINGS_REQUEST_MAX_BYTES` | `16777216` | Embeddings 批量同步请求默认 16 MiB；大媒体不应通过此端点传输 |
+| `NONSTREAM_RESPONSE_MAX_BYTES` | `16777216` | 最终非流式客户响应默认 16 MiB（其中为 UniRouter 元数据预留 64 KiB）；超限返回 502、不 failover、不向客户收费，并保留可能的上游成本待处理状态 |
+| `PAYLOAD_NODE_INFLIGHT_BYTES` | `268435456` | 单个 UniRouter 副本实际保留 payload 的总字节预算；需按堆内存与并发实测调整 |
+| `PAYLOAD_ORG_INFLIGHT_BYTES` | `67108864` | 单组织在单副本的实际保留字节预算；必须小于等于 node budget |
 | `EVIDENCE_CONTEXT_TRUST_SECRET` | 空 | PRD5 受信 evidence context 共享密钥；为空时忽略所有 inbound trace/session/actor/delegation headers。仅在受控内网/上游业务系统可持有密钥时启用，且不要写入 repo 或共享文档 |
 | `LOG_RETENTION_DAYS` | `30` | call logs、settle/cancel transactions 和相关清理的保留窗口；audit logs 保留该值的 2 倍 |
 | `RUNTIME_ENVIRONMENT` | `unspecified`（docker-compose 默认 `local`） | Runtime Status Center 展示的环境标签，如 `dev`、`staging`、`prod` |
@@ -289,6 +294,26 @@ docker compose exec backend ./uniroute migrate up
 重新应用 `000020`。lockdown 期间必须持续关闭旧版本的
 `notification-webhooks` POST/PUT/verify 路由，直到 roll-forward 完成。回滚到旧
 二进制不会恢复通知投递或配置写入；这是安全停机状态，不是功能完整的旧版本恢复。
+
+### 3.5 PRD6 `000033` Guardrail 非滚动启用
+
+`000033_prd6_guardrail_kernel` 新增版本化策略表，以及旧版本不认识的
+`output_withheld` / `guardrail_withheld` / `response_too_large` 财务状态。迁移本身
+不会创建或启用任何 PII、语义或外部检测策略，但一旦开始写入这些状态，就不能让
+旧网关或旧管理端继续处理同一数据库。
+
+安全启用顺序是：
+
+1. 进入维护窗口，备份数据库并 drain/停止全部旧 gateway/control-plane 副本；
+2. 在 `guardrail_policies` 仍为空时应用 `000033`，启动且只启动新版本；
+3. 验证 `/health/ready`、策略列表、Chat/Embeddings 普通兼容请求和财务恢复 worker；
+4. 先创建 `shadow` 策略并读回具体版本，不要在迁移同时直接批量启用强制规则；
+5. 观察无原文证据、`indeterminate`/`unavailable` 比例、延迟和上游成本待处理队列，
+   再逐条评审是否进入 `enforce`。
+
+若策略、`output_withheld` 或对应财务证据已经存在，down 会明确拒绝破坏性回滚，
+必须修复并 roll-forward。仓库测试只验证此顺序和拒绝条件；它不代表任何目标环境
+已经执行升级，也不授权配置真实外部检测器、凭证或付费上游请求。
 
 ---
 

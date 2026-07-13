@@ -32,6 +32,7 @@ import (
 	"github.com/uniroute/unirouter/internal/migrate"
 	"github.com/uniroute/unirouter/internal/oidc"
 	"github.com/uniroute/unirouter/internal/outbox"
+	"github.com/uniroute/unirouter/internal/payloadpolicy"
 	"github.com/uniroute/unirouter/internal/policybilling"
 	"github.com/uniroute/unirouter/internal/redisx"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
@@ -148,7 +149,18 @@ func main() {
 		log.Fatal("Failed to initialize deployment sensitive-word policy version")
 	}
 	encKey := []byte(cfg.EncryptionKey)
+	guardrailService, stopGuardrailRefresh, err := startGuardrailRuntime(postgres.Pool, sensitiveFilter, cfg.APIKeyHashSecret)
+	if err != nil {
+		log.Fatalf("Failed to initialize guardrail kernel: %v", err)
+	}
+	defer stopGuardrailRefresh()
+	payloadBudget, err := payloadpolicy.NewBudget(cfg.PayloadLimits())
+	if err != nil {
+		log.Fatalf("Invalid payload safety configuration: %v", err)
+	}
 	relay := gateway.NewRelay(postgres.Pool, redisClient.Client, router, sharedPolicyBilling, sensitiveFilter, encKey)
+	relay.SetPayloadBudget(payloadBudget)
+	relay.SetGuardrail(guardrailService)
 	relay.SetOutbox(outboxSvc)
 	if err := relay.SetStreamPolicy(effectiveConfig.StreamTransport.Config); err != nil {
 		log.Fatalf("Invalid effective stream transport configuration: %v", err)
@@ -163,6 +175,7 @@ func main() {
 	adminHandler := admin.NewHandlerWithAPIKeyHashSecret(postgres.Pool, cfg.JWTSecret, cfg.APIKeyHashSecret, encKey, sensitiveFilter)
 	adminHandler.SetOutbox(outboxSvc)
 	adminHandler.SetRoutingController(router)
+	adminHandler.SetGuardrailController(guardrailService)
 	adminHandler.SetProviderCostReconciler(billingSvc)
 	adminHandler.SetLimitPolicyReloader(limitPolicyService)
 	licenseVerifier, err := licensing.NewVerifierFromPublicKey(cfg.LicensePublicKey, cfg.LicenseExpiryWarningDays)
@@ -294,9 +307,11 @@ func main() {
 
 	chatHandler := newGatewayChatHandler(postgres.Pool, relay, outboxSvc)
 	embeddingsHandler := newGatewayEmbeddingsHandler(postgres.Pool, relay, outboxSvc)
+	chatPayloadGuard := payloadpolicy.RequestMiddleware(payloadBudget, payloadpolicy.ProfileChatRequest, middleware.GetOrgIDFromContext)
+	embeddingsPayloadGuard := payloadpolicy.RequestMiddleware(payloadBudget, payloadpolicy.ProfileEmbeddingsRequest, middleware.GetOrgIDFromContext)
 
-	mux.Handle("POST /v1/chat/completions", gatewayAuth(idempotencyGuard(chatHandler)))
-	mux.Handle("POST /v1/embeddings", gatewayAuth(idempotencyGuard(embeddingsHandler)))
+	mux.Handle("POST /v1/chat/completions", gatewayAuth(chatPayloadGuard(idempotencyGuard(chatHandler))))
+	mux.Handle("POST /v1/embeddings", gatewayAuth(embeddingsPayloadGuard(idempotencyGuard(embeddingsHandler))))
 	mux.Handle("GET /v1/models", gatewayAuth(admissionMiddleware(http.HandlerFunc(relay.HandleModels))))
 	registerAgentCapabilityRoutes(mux, agentCapabilityHandler, agentCapabilityRouteGuards{
 		authenticate: gatewayAuth,
@@ -470,6 +485,9 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">GET</td><td><code>/api/v1/limit-policies</code></td><td>List versioned shared RPM/RPS/TPM/concurrency policies</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/limit-policies</code></td><td>Create a disabled, shadow or enforced shared limit policy</td></tr>
 <tr><td class="method">PUT</td><td><code>/api/v1/limit-policies/{id}</code></td><td>Update a shared limit policy and increment its version</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/guardrail-policies</code></td><td>List versioned input and non-stream output guardrail policies</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/guardrail-policies</code></td><td>Create an audit, redact, or block guardrail policy</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/guardrail-policies/{id}</code></td><td>Update a guardrail policy with optimistic versioning</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/notification-events</code></td><td>Notification events</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/notification-deliveries</code></td><td>Notification deliveries</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/notification-webhooks</code></td><td>Notification webhooks</td></tr>
@@ -536,6 +554,12 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	})
 	registerPricingRoutes(mux, adminHandler, pricingRouteGuards{read: orgAdminRoute, write: platformRoute})
 	registerLimitPolicyRoutes(mux, adminHandler, limitPolicyRouteGuards{
+		read: func(h http.HandlerFunc) http.Handler {
+			return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin)
+		},
+		write: orgAdminRoute,
+	})
+	registerGuardrailPolicyRoutes(mux, adminHandler, guardrailPolicyRouteGuards{
 		read: func(h http.HandlerFunc) http.Handler {
 			return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin)
 		},
