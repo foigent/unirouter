@@ -8,16 +8,16 @@
 |------|------|-------|
 | Main server | `cmd/uniroute/main.go` | Loads config, connects Postgres/Redis, runs migrations, wires gateway/admin routes, starts background cleanup and alerts |
 | Main tests | `cmd/uniroute/main_test.go` | Top-level route behavior tests |
-| Config | `internal/config/config.go` | Environment config and validation, including secrets, optional license, trace/retention, Runtime Status integration metadata, stream transport and weighted workload admission |
+| Config | `internal/config/config.go` | Environment config and validation, including secrets, optional license, trace/retention, Runtime Status integration metadata, stream transport, weighted workload admission and application-authoritative payload limits |
 | Database | `internal/db/postgres.go` | pgx pool setup and health |
 | Redis | `internal/redisx/redis.go` | Redis setup, health, wallet cache helpers |
-| Migrations | `migrations/*.sql` | Base schema plus wallet/schema/PRD alignment migrations, including PRD4 API key owner usage attribution in `000016`, request trace events in `000017`, PRD5 structural evidence fields in `000018`, PRD5 Data Exchange Control ledger in `000019`, PRD6 historical Webhook scope quarantine in `000020`, operation/billing/stream invariants in `000021`-`000023`, distributed limit policies in `000024`, and Routing Policy V1 weight/epoch/probe ownership in `000025` |
+| Migrations | `migrations/*.sql` | Base schema plus wallet/schema/PRD alignment migrations, including PRD4/PRD5 history through `000020`, PRD6 operation/billing/stream invariants in `000021`-`000023`, distributed limits/routing/cache-aware billing/outbox/provider-cost/usage-delivery integrity in `000024`-`000032`, and Guardrail Kernel policy plus output-withhold authority in `000033` |
 
 ## Backend Packages
 
 | Package | Responsibility |
 |---------|----------------|
-| `internal/admin` | Admin REST handlers including Logs/trace, Data Exchange Control, audit, Runtime Status and tenant-scoped versioned distributed-limit policy control. Runtime Status includes app/dependency/traffic/host telemetry, external monitoring checks, typed effective configuration and a redacted current-process logical topology. Data Exchange Control is platform-admin-only and records source-side approvals/exchanges/deliveries/receipts without automatic export or X-Insight runtime dependency; receipt writes accept only the canonical v1 warning registry and reject unimplemented durable job/deep-link fields |
+| `internal/admin` | Admin REST handlers including Logs/trace, Data Exchange Control, audit, Runtime Status, tenant-scoped versioned distributed-limit policy control and Guardrail policy control. Runtime Status includes app/dependency/traffic/host telemetry, external monitoring checks, typed effective configuration and a redacted current-process logical topology. Data Exchange Control is platform-admin-only and records source-side approvals/exchanges/deliveries/receipts without automatic export or X-Insight runtime dependency; receipt writes accept only the canonical v1 warning registry and reject unimplemented durable job/deep-link fields |
 | `internal/adapters` | Provider adapter registry and OpenAI-compatible / Anthropic-native request/response conversion |
 | `internal/auth` | JWT generation/validation, API key hashing, upstream key AES-GCM encryption/decryption |
 | `internal/billing` | Cost calculation, freeze/settle/cancel, metadata-only provider-attempt financial authority, price provider, project-scoped budget evaluation and tenant-scoped notification event service |
@@ -27,10 +27,12 @@
 | `internal/limitpolicy` | Indexed versioned global/org/project/API-key/model/label policy snapshots plus exact Redis RPM/RPS/TPM/concurrency admission, composed weighted workload admission, bounded last-known-safe failure state, terminal settlement and low-cardinality evidence metrics |
 | `internal/workloadadmission` | Redis-time, cluster-safe, replica-invariant global/org weighted leases and bounded fair queues for interactive, stream and embedding work |
 | `internal/policybilling` | Composes distributed policy admission and terminal usage around the existing Agent-ancestor and durable wallet billing providers |
+| `internal/payloadpolicy` | Actual-read endpoint payload limits plus per-replica node/organization retained-byte budgets and one-request content envelopes |
 | `internal/circuitbreaker` | Standalone circuit breaker implementation and tests |
 | `internal/filter` | DFA sensitive-word filter |
+| `internal/guardrail` | Immutable stacked Guardrail policies, deterministic PII/secret detection, sensitive-word compatibility, fixed-registry bounded external classifiers, fail-closed/degraded decisions and HMAC-only finding evidence |
 | `internal/errdocs` | Error documentation registry used by gateway `doc_url` responses and API Docs |
-| `internal/gateway` | Model routing, immutable weighted route snapshots, cross-replica probe/epoch health, upstream relay, chat completions, embeddings, model listing, request logging, metadata-only request trace events, distributed policy evidence/errors, and serialized bounded SSE transport |
+| `internal/gateway` | Model routing, immutable weighted route snapshots, cross-replica probe/epoch health, upstream relay, chat completions, embeddings, model listing, request logging, metadata-only request trace events, distributed/Guardrail policy evidence and errors, bounded request/non-stream response envelopes, and serialized bounded SSE transport |
 | `internal/licensing` | Offline license document parsing, Ed25519 signature verification, expiry status, and warning calculation |
 | `internal/logger` | Logging helpers |
 | `internal/metering` | Usage-source constants and token-metering source classification |
@@ -59,6 +61,7 @@ Defined in `cmd/uniroute/main.go`.
 | Channels | `GET/POST /api/v1/channels`, `GET/PUT/DELETE /api/v1/channels/{id}`, `POST /api/v1/channels/{id}/test` |
 | API keys | `GET/POST /api/v1/keys`, `GET/PUT /api/v1/keys/{id}`, `POST /api/v1/keys/{id}/disable` |
 | Shared limit policies | `GET/POST /api/v1/limit-policies`, `PUT /api/v1/limit-policies/{id}` |
+| Guardrail policies | `GET/POST /api/v1/guardrail-policies`, `PUT /api/v1/guardrail-policies/{id}` |
 | Channel keys | `GET/POST /api/v1/channel-keys`, `PUT/DELETE /api/v1/channel-keys/{id}` |
 | Wallet | `GET /api/v1/wallet`, `POST /api/v1/wallet/topup`, `POST /api/v1/wallet/adjust`, `GET /api/v1/wallet/transactions`, `GET /api/v1/wallet/transactions/export` |
 | Logs/dashboard | `GET /api/v1/logs`, `GET /api/v1/logs/{id}`, `GET /api/v1/logs/{id}/trace`, `GET /api/v1/dashboard/stats` |
@@ -107,7 +110,7 @@ OpenAPI snapshot: `docs/tech-ref/05-openapi-spec.yaml` is the current route-leve
 | Global CSS | `frontend/src/index.css` |
 | Tests | `frontend/src/**/__tests__/*.test.tsx`, `frontend/src/**/__tests__/*.test.ts` |
 
-Frontend route pages currently include dashboard, channels, channel keys, API keys, developer console, usage analytics, internal status, notification center, model governance, wallet, logs, data exchange, users, model prices, org model prices, grants, audit logs, reconciliation, license, test page, settings, API docs, access state, and login.
+Frontend route pages currently include dashboard, channels, channel keys, API keys, shared limits, content safety/Guardrail policy, developer console, usage analytics, internal status, notification center, model governance, wallet, logs, data exchange, users, model prices, org model prices, grants, audit logs, reconciliation, license, test page, settings, API docs, access state, and login.
 
 ## Data Model
 
@@ -119,9 +122,9 @@ Base schema is in `migrations/000001_init_schema.up.sql`. Main tables:
 | Routing | `channels`, `channel_keys` |
 | Client access | `api_keys` |
 | Pricing | `model_prices`, `org_model_prices` |
-| Billing | `wallets`, `transactions`, `grants`, `freeze_idempotency` |
+| Billing | `wallets`, `transactions`, `grants`, `freeze_idempotency`, `billing_provider_attempts`, `provider_cost_reconciliations`, `request_delivery_receipts` |
 | Observability/control | `call_logs`, `request_trace_events`, `audit_logs`, `integration_exchange_items`, `integration_exchanges`, `integration_exchange_members`, `integration_exchange_deliveries`, `integration_exchange_receipts` |
-| Configuration | `settings` |
+| Configuration | `settings`, `distributed_limit_policies`, `guardrail_policies` |
 
 Later migrations add wallet features, org pricing and alert fields, schema gap fixes, and PRD alignment fields like `call_logs.requested_model`, `call_logs.ip_address`, `audit_logs.source`, and `wallets.freeze_expire_at`. PRD4 migration `000016_prd4_key_owner_usage` adds `api_keys.owner_user_id`, `api_keys.key_type`, `call_logs.owner_user_id`, and `call_logs.key_type`; gateway request logging snapshots owner/type at request time so historical usage does not drift when key ownership changes. PRD4 migration `000017_prd4_request_trace_events` adds metadata-only request trace events keyed by `request_id`, with org/project/key/owner snapshots and stage/severity/provider/status/latency metadata. PRD5 migration `000018_prd5_structural_evidence_fields` adds nullable/default trace/span/source/capture/decision/actor/session/evidence/payload fields to request trace events and selected call-log evidence fields.
 

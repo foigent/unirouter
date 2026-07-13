@@ -71,6 +71,22 @@ var metadataAllowlist = map[string]bool{
 	"limit_policy_enforce_count":        true,
 	"limit_policy_shadow_count":         true,
 	"limit_policy_chain":                true,
+	"guardrail_policy_set_version":      true,
+	"guardrail_policy_ref":              true,
+	"guardrail_policy_version":          true,
+	"guardrail_detector_ref":            true,
+	"guardrail_detector_version":        true,
+	"guardrail_mode":                    true,
+	"guardrail_action":                  true,
+	"guardrail_outcome":                 true,
+	"guardrail_failure_mode":            true,
+	"guardrail_mandatory":               true,
+	"guardrail_match_count":             true,
+	"guardrail_categories":              true,
+	"guardrail_finding_fingerprints":    true,
+	"guardrail_decision":                true,
+	"guardrail_transformed":             true,
+	"guardrail_degraded":                true,
 }
 
 func SanitizeMetadata(input map[string]interface{}) map[string]interface{} {

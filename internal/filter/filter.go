@@ -113,3 +113,30 @@ func (f *DFAFilter) WordCount() int {
 	defer f.mu.RUnlock()
 	return len(f.wordList)
 }
+
+// Version returns the immutable database snapshot identifier currently used
+// by this process without exposing the sensitive-word list itself.
+func (f *DFAFilter) Version() string {
+	if f == nil {
+		return ""
+	}
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	if f.version.IsZero() {
+		return "sensitive-words.unversioned"
+	}
+	return "sensitive-words." + f.version.UTC().Format(time.RFC3339Nano)
+}
+
+// Snapshot pins the current immutable trie root for one request. Updates build
+// and swap a new root under the source lock, so the old root and word slice can
+// be shared without rebuilding the DFA or observing a concurrent refresh.
+func (f *DFAFilter) Snapshot() (*DFAFilter, string) {
+	if f == nil {
+		return nil, ""
+	}
+	f.mu.RLock()
+	copyFilter := &DFAFilter{root: f.root, wordList: f.wordList, version: f.version}
+	f.mu.RUnlock()
+	return copyFilter, copyFilter.Version()
+}

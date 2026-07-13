@@ -518,6 +518,63 @@ paths:
         "409":
           $ref: "#/components/responses/Error"
 
+  /api/v1/guardrail-policies:
+    get:
+      tags: [Admin]
+      summary: List versioned input and non-stream output guardrail policies
+      description: Returns only the caller-visible global and tenant policies plus the approved detector registry, one-second/no-retry external-detector contract, and current 256-text / 128 KiB local / 256 KiB external synchronous scan bounds. Detector overrun is indeterminate and follows the policy failure mode; it is never reported as a completed scan.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+    post:
+      tags: [Admin]
+      summary: Create an audit, redact, or block guardrail policy
+      description: External detector endpoints and credentials are platform registry configuration and cannot be supplied in tenant policy JSON. Enabling one transmits the selected text to that fixed service and therefore requires separate tenant, residency, retention, and supplier approval. New semantic policies should start in shadow mode; mandatory platform rules are always global, enforced, and fail closed.
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          $ref: "#/components/responses/JSON"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/guardrail-policies/{id}:
+    put:
+      tags: [Admin]
+      summary: Optimistically update and version a guardrail policy
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                version:
+                  type: integer
+                  format: int64
+                  minimum: 1
+                  description: Version returned by the latest policy read; stale versions return 409.
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
   /api/v1/projects:
     get: { $ref: "#/components/pathItems/List" }
     post: { $ref: "#/components/pathItems/Create" }

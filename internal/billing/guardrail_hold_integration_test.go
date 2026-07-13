@@ -1,0 +1,100 @@
+//go:build integration
+
+package billing
+
+import (
+	"sync"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+	"github.com/uniroute/unirouter/internal/metering"
+)
+
+func TestP6F10GuardrailWithheldOutputRetainsUsageWithoutCustomerCharge(t *testing.T) {
+	const requestID = "op_p6f10_guardrail_withheld"
+	b, orgID, _, attemptID := newP6F41DeliveryFixture(t, requestID)
+	req := p6f41ProviderUsage(requestID, attemptID, orgID)
+	req.UsagePurpose = metering.UsagePurposeProviderEvidence
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- b.HoldNonStreamOutput(t.Context(), req, "guardrail_withheld")
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	var reservationState, pendingReason, usageAuthority, usagePurpose, attemptState, attemptCertainty string
+	var calculatedCost, totalSpent, settleTransactions, deliveryReceipts int
+	require.NoError(t, b.db.QueryRow(t.Context(), `
+		SELECT status,settlement_pending_reason,usage_authority,usage_purpose,calculated_cost
+		FROM freeze_idempotency WHERE org_id=$1 AND request_id=$2`, orgID, requestID,
+	).Scan(&reservationState, &pendingReason, &usageAuthority, &usagePurpose, &calculatedCost))
+	require.NoError(t, b.db.QueryRow(t.Context(), `
+		SELECT state,outcome_certainty FROM billing_provider_attempts
+		WHERE org_id=$1 AND request_id=$2 AND attempt_id=$3`, orgID, requestID, attemptID,
+	).Scan(&attemptState, &attemptCertainty))
+	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT total_spent FROM wallets WHERE org_id=$1`, orgID).Scan(&totalSpent))
+	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT COUNT(*) FROM transactions WHERE org_id=$1 AND request_id=$2 AND type='settle'`, orgID, requestID).Scan(&settleTransactions))
+	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT COUNT(*) FROM request_delivery_receipts WHERE org_id=$1 AND request_id=$2`, orgID, requestID).Scan(&deliveryReceipts))
+	require.Equal(t, "settlement_pending", reservationState)
+	require.Equal(t, "guardrail_withheld", pendingReason)
+	require.Equal(t, string(metering.UsageAuthorityProviderReported), usageAuthority)
+	require.Equal(t, string(metering.UsagePurposeProviderEvidence), usagePurpose)
+	require.Equal(t, ProviderAttemptStateOutputWithheld, attemptState)
+	require.Equal(t, providerAttemptCertaintyKnownUsage, attemptCertainty)
+	require.Positive(t, calculatedCost)
+	require.Zero(t, totalSpent)
+	require.Zero(t, settleTransactions)
+	require.Zero(t, deliveryReceipts)
+
+	chargeReq := p6f41ProviderUsage(requestID, attemptID, orgID)
+	_, err := b.Settle(t.Context(), chargeReq)
+	require.Error(t, err, "provider evidence without local delivery cannot create customer debt")
+
+	reconciled, err := b.ReconcileProviderAttempt(t.Context(), ProviderReconciliationRequest{
+		OrgID: orgID, RequestID: requestID, AttemptID: attemptID,
+		Action: ProviderReconciliationSubsidy, ActorUserID: 77,
+		Reason:      "platform explicitly absorbs guardrail-withheld provider cost",
+		EvidenceRef: "case://p6f10-guardrail-subsidy",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "reconciled", reconciled.State)
+	require.Zero(t, reconciled.CustomerChargedCost)
+	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT total_spent FROM wallets WHERE org_id=$1`, orgID).Scan(&totalSpent))
+	require.Zero(t, totalSpent, "explicit platform subsidy still cannot charge the customer")
+}
+
+func TestP6F10FinalResponseSizeHoldUsesTheSameNoDeliveryCostBoundary(t *testing.T) {
+	const requestID = "op_p6f10_response_too_large"
+	b, orgID, _, attemptID := newP6F41DeliveryFixture(t, requestID)
+	req := p6f41ProviderUsage(requestID, attemptID, orgID)
+	req.UsagePurpose = metering.UsagePurposeProviderEvidence
+	require.NoError(t, b.HoldNonStreamOutput(t.Context(), req, "response_too_large"))
+
+	var status, pendingReason, usagePurpose, attemptState string
+	var totalSpent, deliveryReceipts int
+	require.NoError(t, b.db.QueryRow(t.Context(), `
+		SELECT status,settlement_pending_reason,usage_purpose
+		FROM freeze_idempotency WHERE org_id=$1 AND request_id=$2`, orgID, requestID,
+	).Scan(&status, &pendingReason, &usagePurpose))
+	require.NoError(t, b.db.QueryRow(t.Context(), `
+		SELECT state FROM billing_provider_attempts
+		WHERE org_id=$1 AND request_id=$2 AND attempt_id=$3`, orgID, requestID, attemptID,
+	).Scan(&attemptState))
+	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT total_spent FROM wallets WHERE org_id=$1`, orgID).Scan(&totalSpent))
+	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT COUNT(*) FROM request_delivery_receipts WHERE org_id=$1 AND request_id=$2`, orgID, requestID).Scan(&deliveryReceipts))
+	require.Equal(t, "settlement_pending", status)
+	require.Equal(t, "response_too_large", pendingReason)
+	require.Equal(t, string(metering.UsagePurposeProviderEvidence), usagePurpose)
+	require.Equal(t, ProviderAttemptStateOutputWithheld, attemptState)
+	require.Zero(t, totalSpent)
+	require.Zero(t, deliveryReceipts)
+}

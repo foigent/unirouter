@@ -22,6 +22,7 @@ const (
 	providerAttemptStateFundingPending     = "funding_pending"
 	providerAttemptStateDeliveryPending    = "delivery_pending"
 	providerAttemptStateDeliveryFailed     = "delivery_failed"
+	providerAttemptStateOutputWithheld     = ProviderAttemptStateOutputWithheld
 	providerAttemptStateSettled            = "settled"
 	providerAttemptCertaintyPending        = "pending"
 	providerAttemptCertaintyRejected       = "known_rejected"
@@ -195,7 +196,7 @@ func (b *Billing) BeginProviderAttempt(ctx context.Context, request ProviderAtte
 		      AND state IN (
 		          'dispatch_started', 'response_accepted', 'outcome_unknown',
 		          'response_unusable', 'funding_pending',
-		          'delivery_pending', 'delivery_failed'
+		          'delivery_pending', 'delivery_failed', 'output_withheld'
 		      )
 		)`, req.OrgID, req.RequestID,
 	).Scan(&unresolved); err != nil {
@@ -377,7 +378,7 @@ func updateProviderAttemptFinancialStateTx(
 		   AND state IN (
 		       'dispatch_started', 'response_accepted', 'outcome_unknown',
 		       'response_unusable', 'funding_pending',
-		       'delivery_pending', 'delivery_failed'
+		       'delivery_pending', 'delivery_failed', 'output_withheld'
 		   )`,
 		req.OrgID, req.RequestID, req.AttemptID, state, providerAttemptCertaintyKnownUsage,
 		calculatedCost, chargedCost, transactionID,
@@ -407,12 +408,13 @@ func holdUnresolvedProviderAttemptTx(ctx context.Context, tx pgx.Tx, requestID s
 		   AND state IN (
 		       'dispatch_started', 'response_accepted', 'outcome_unknown',
 		       'response_unusable', 'funding_pending',
-		       'delivery_pending', 'delivery_failed'
+		       'delivery_pending', 'delivery_failed', 'output_withheld'
 		   )
 		 ORDER BY CASE state
 		     WHEN 'outcome_unknown' THEN 1
 		     WHEN 'response_unusable' THEN 2
 		     WHEN 'delivery_failed' THEN 3
+		     WHEN 'output_withheld' THEN 3
 		     WHEN 'delivery_pending' THEN 4
 		     ELSE 5
 		 END, started_at

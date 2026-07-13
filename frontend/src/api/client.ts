@@ -123,6 +123,14 @@ export const api = {
   updateLimitPolicy: (id: number, data: any) =>
     request(`/limit-policies/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 
+  // Versioned input/non-stream output guardrail policies
+  getGuardrailPolicies: (page = 1, pageSize = 20, filters?: { stage?: string }) =>
+    request(appendParams('/guardrail-policies', { page, page_size: pageSize, stage: filters?.stage })),
+  createGuardrailPolicy: (data: any) =>
+    request('/guardrail-policies', { method: 'POST', body: JSON.stringify(data) }),
+  updateGuardrailPolicy: (id: number, data: any) =>
+    request(`/guardrail-policies/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+
   // Wallet
   getWallet: (orgId?: number) => request(appendParams('/wallet', { org_id: orgId })),
   getWalletTransactions: (page = 1, pageSize = 20, orgId?: number) =>

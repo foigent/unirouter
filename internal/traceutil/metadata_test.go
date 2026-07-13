@@ -154,3 +154,31 @@ func TestSanitizeMetadata_StreamPolicyFields(t *testing.T) {
 		t.Fatalf("unexpected stream policy metadata: %#v", metadata)
 	}
 }
+
+func TestSanitizeMetadata_GuardrailFieldsRemainBoundedScalars(t *testing.T) {
+	input := map[string]interface{}{
+		"guardrail_policy_set_version":   "a1b2c3d4",
+		"guardrail_policy_ref":           "guardrail:7",
+		"guardrail_policy_version":       int64(3),
+		"guardrail_detector_ref":         "builtin:pii_secrets",
+		"guardrail_detector_version":     "unirouter.local-pii-secrets.v1",
+		"guardrail_mode":                 "enforce",
+		"guardrail_action":               "redact",
+		"guardrail_outcome":              "transform",
+		"guardrail_failure_mode":         "degraded_allow",
+		"guardrail_mandatory":            false,
+		"guardrail_match_count":          1,
+		"guardrail_categories":           "email=1",
+		"guardrail_finding_fingerprints": "4c0c9d8baab960610550d32d",
+		"guardrail_decision":             "allow",
+		"guardrail_transformed":          true,
+		"guardrail_degraded":             false,
+	}
+	metadata, gap := SanitizeMetadataWithGap(input)
+	if gap != "" || len(metadata) != len(input) {
+		t.Fatalf("guardrail evidence was dropped: gap=%q metadata=%#v", gap, metadata)
+	}
+	if _, exists := metadata["prompt"]; exists {
+		t.Fatal("raw prompt unexpectedly entered guardrail metadata")
+	}
+}

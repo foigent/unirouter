@@ -1,14 +1,16 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
-> Current PRD6 batch: D6-13/D6-14 are accepted. P6-F40A is CI verified by PR #183
+> Current PRD6 batch: D6-13/D6-14/D6-15 are accepted. P6-F40A is CI verified by PR #183
 > exact implementation/test head `d1afd97` and run `29207889734`. P6-F40B is
 > CI verified by PR #184 exact implementation/test head `ac2bfb5` and required
 > run `29209644118`. P6-F40C is CI verified by PR #186 exact
 > implementation/test head `49d740d` and required run `29224762127`; P6-F40 is
 > closed. P6-F41 is CI verified / closed by PR #187 exact implementation/test
 > head `6d0e6ba` and required run `29229320432`. No target or production claim
-> is made.
+> is made. P6-F10 Guardrail Kernel and S1-v2 content-size safety are locally
+> verified on `codex/prd6-guardrail-kernel`; PR/required CI promotion remains
+> pending and P6-F11 remains the only other unclosed accepted feature.
 > PRD6 Batch 0B P6-F16 was squash-merged by PR #140 as
 > `f244f669c529fec8767f85fff209882b333d8ed2`. P6-F33 was squash-merged by
 > PR #142 as `7173c5967a42c112fd0b219938a0901c1a0b9633`; its PR and post-merge
@@ -334,7 +336,8 @@
 - Proposed PRD: `docs/PRD-Phase6.md`; accepted/proposed state is authoritative
   in `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`.
 - Accepted feature accounting: 27 accepted rows, 25 CI verified / closed and
-  2 unclosed. P6-F11 remains in progress, and P6-F10 is not started.
+  2 unclosed. P6-F10 is locally verified and pending PR/required CI; P6-F11
+  remains in progress.
   `P6-TEST-DB-001` is a separate engineering-integrity issue outside that
   27-row feature count; it is CI verified / closed by PR #155 and post-merge
   main run `29157561036`.

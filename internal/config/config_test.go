@@ -56,6 +56,27 @@ func TestValidate_Exact32ByteKey(t *testing.T) {
 	}
 }
 
+func TestValidatePayloadSafetyProfiles(t *testing.T) {
+	base := Config{
+		JWTSecret: "secret", APIKeyHashSecret: "api-key-secret",
+		EncryptionKey: "0123456789abcdef0123456789abcdef",
+	}
+	limits := base.PayloadLimits()
+	if limits.ChatRequestBytes != 8*1024*1024 || limits.EmbeddingsRequestBytes != 16*1024*1024 || limits.NonStreamResponseBytes != 16*1024*1024 {
+		t.Fatalf("unexpected payload defaults: %+v", limits)
+	}
+	base.ChatRequestMaxBytes = 65 * 1024 * 1024
+	if err := base.Validate(); err == nil {
+		t.Fatal("expected platform hard max validation error")
+	}
+	base.ChatRequestMaxBytes = 8 * 1024 * 1024
+	base.PayloadNodeInFlightBytes = 32 * 1024 * 1024
+	base.PayloadOrgInFlightBytes = 64 * 1024 * 1024
+	if err := base.Validate(); err == nil {
+		t.Fatal("expected organization budget to be bounded by node budget")
+	}
+}
+
 func TestValidate_LongEncryptionKey(t *testing.T) {
 	cfg := &Config{
 		JWTSecret:        "secret",

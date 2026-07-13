@@ -36,6 +36,7 @@ type Provider interface {
 	BeginProviderAttempt(ctx context.Context, req billing.ProviderAttemptStart) error
 	CompleteProviderAttempt(ctx context.Context, req billing.ProviderAttemptCompletion) error
 	PrepareNonStreamDelivery(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error)
+	HoldNonStreamOutput(ctx context.Context, req billing.SettleRequest, reason string) error
 	RecordDelivery(ctx context.Context, event billing.DeliveryEvent) error
 	MarkBillableOutput(ctx context.Context, requestID string, orgID int64) error
 	PersistSettlementUsage(ctx context.Context, req billing.SettleRequest) error
@@ -163,6 +164,10 @@ func (b *Billing) CompleteProviderAttempt(ctx context.Context, req billing.Provi
 
 func (b *Billing) PrepareNonStreamDelivery(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error) {
 	return b.inner.PrepareNonStreamDelivery(ctx, req)
+}
+
+func (b *Billing) HoldNonStreamOutput(ctx context.Context, req billing.SettleRequest, reason string) error {
+	return b.inner.HoldNonStreamOutput(ctx, req, reason)
 }
 
 func (b *Billing) RecordDelivery(ctx context.Context, event billing.DeliveryEvent) error {

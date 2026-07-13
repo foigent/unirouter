@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/payloadpolicy"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/streampolicy"
 	"github.com/uniroute/unirouter/internal/traceutil"
@@ -104,6 +105,13 @@ type Config struct {
 	WorkloadInteractiveMaxWaitMS int
 	WorkloadStreamMaxWaitMS      int
 	WorkloadEmbeddingMaxWaitMS   int
+
+	// Application-authoritative payload and per-replica memory safety.
+	ChatRequestMaxBytes       int
+	EmbeddingsRequestMaxBytes int
+	NonStreamResponseMaxBytes int
+	PayloadNodeInFlightBytes  int
+	PayloadOrgInFlightBytes   int
 
 	// Failover
 	MaxRetryCount              int
@@ -216,6 +224,9 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("invalid weighted workload admission configuration: %w", err)
 		}
 	}
+	if err := c.PayloadLimits().Validate(); err != nil {
+		return fmt.Errorf("invalid payload safety configuration: %w", err)
+	}
 	if err := validateOptionalHTTPURL("PROMETHEUS_URL", c.PrometheusURL); err != nil {
 		return err
 	}
@@ -327,6 +338,12 @@ func Load() (*Config, error) {
 		WorkloadStreamMaxWaitMS:      getEnvInt("WORKLOAD_STREAM_MAX_WAIT_MS", 250),
 		WorkloadEmbeddingMaxWaitMS:   getEnvInt("WORKLOAD_EMBEDDING_MAX_WAIT_MS", 50),
 
+		ChatRequestMaxBytes:       getEnvInt("CHAT_REQUEST_MAX_BYTES", int(8*payloadpolicy.MiB)),
+		EmbeddingsRequestMaxBytes: getEnvInt("EMBEDDINGS_REQUEST_MAX_BYTES", int(16*payloadpolicy.MiB)),
+		NonStreamResponseMaxBytes: getEnvInt("NONSTREAM_RESPONSE_MAX_BYTES", int(16*payloadpolicy.MiB)),
+		PayloadNodeInFlightBytes:  getEnvInt("PAYLOAD_NODE_INFLIGHT_BYTES", int(256*payloadpolicy.MiB)),
+		PayloadOrgInFlightBytes:   getEnvInt("PAYLOAD_ORG_INFLIGHT_BYTES", int(64*payloadpolicy.MiB)),
+
 		MaxRetryCount:              getEnvInt("MAX_RETRY_COUNT", 1),
 		CircuitBreakerThreshold:    getEnvInt("CIRCUIT_BREAKER_THRESHOLD", 5),
 		CircuitBreakerRecoverSecs:  getEnvInt("CIRCUIT_BREAKER_RECOVER_SECONDS", 300),
@@ -408,6 +425,26 @@ func (c Config) WorkloadAdmissionOptions() workloadadmission.Options {
 		MaxWait: time.Duration(c.WorkloadEmbeddingMaxWaitMS) * time.Millisecond,
 	}
 	return options
+}
+
+func (c Config) PayloadLimits() payloadpolicy.Limits {
+	limits := payloadpolicy.DefaultLimits()
+	if c.ChatRequestMaxBytes != 0 {
+		limits.ChatRequestBytes = int64(c.ChatRequestMaxBytes)
+	}
+	if c.EmbeddingsRequestMaxBytes != 0 {
+		limits.EmbeddingsRequestBytes = int64(c.EmbeddingsRequestMaxBytes)
+	}
+	if c.NonStreamResponseMaxBytes != 0 {
+		limits.NonStreamResponseBytes = int64(c.NonStreamResponseMaxBytes)
+	}
+	if c.PayloadNodeInFlightBytes != 0 {
+		limits.NodeInFlightBytes = int64(c.PayloadNodeInFlightBytes)
+	}
+	if c.PayloadOrgInFlightBytes != 0 {
+		limits.OrgInFlightBytes = int64(c.PayloadOrgInFlightBytes)
+	}
+	return limits
 }
 
 func splitCSV(value string) []string {

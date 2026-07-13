@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/errdocs"
+	"github.com/uniroute/unirouter/internal/payloadpolicy"
 )
 
 const DefaultIdempotencyTTL = 24 * time.Hour
@@ -326,12 +327,19 @@ func IdempotencyGuard(store IdempotencyStore, fingerprintSecret string, next htt
 }
 
 func fingerprintRequest(r *http.Request, secret string) (string, error) {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return "", err
+	body, cached := payloadpolicy.BodyFromContext(r.Context())
+	if !cached {
+		var err error
+		body, err = io.ReadAll(io.LimitReader(r.Body, payloadpolicy.PlatformHardMaxBytes+1))
+		if err != nil {
+			return "", err
+		}
+		if int64(len(body)) > payloadpolicy.PlatformHardMaxBytes {
+			return "", payloadpolicy.ErrPayloadTooLarge
+		}
+		_ = r.Body.Close()
+		r.Body = io.NopCloser(bytes.NewReader(body))
 	}
-	_ = r.Body.Close()
-	r.Body = io.NopCloser(bytes.NewReader(body))
 
 	canonicalBody := body
 	if json.Valid(body) {

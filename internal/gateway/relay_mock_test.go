@@ -1,8 +1,10 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,10 +23,12 @@ import (
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/capbilling"
 	"github.com/uniroute/unirouter/internal/filter"
+	"github.com/uniroute/unirouter/internal/guardrail"
 	"github.com/uniroute/unirouter/internal/logger"
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/models"
+	"github.com/uniroute/unirouter/internal/payloadpolicy"
 	"github.com/uniroute/unirouter/internal/testutil"
 	"github.com/uniroute/unirouter/internal/traceutil"
 )
@@ -38,6 +42,7 @@ type mockBilling struct {
 	beginAttemptFn    func(ctx context.Context, req billing.ProviderAttemptStart) error
 	completeAttemptFn func(ctx context.Context, req billing.ProviderAttemptCompletion) error
 	prepareDeliveryFn func(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error)
+	holdOutputFn      func(ctx context.Context, req billing.SettleRequest, reason string) error
 	recordDeliveryFn  func(ctx context.Context, event billing.DeliveryEvent) error
 	markOutputFn      func(ctx context.Context, requestID string, orgID int64) error
 	persistUsageFn    func(ctx context.Context, req billing.SettleRequest) error
@@ -67,6 +72,13 @@ func (m *mockBilling) PrepareNonStreamDelivery(ctx context.Context, req billing.
 		Funded:  true,
 		Preview: billing.SettleResult{ActualCost: 1, ChargedCost: 1, Success: true},
 	}, nil
+}
+
+func (m *mockBilling) HoldNonStreamOutput(ctx context.Context, req billing.SettleRequest, reason string) error {
+	if m.holdOutputFn != nil {
+		return m.holdOutputFn(ctx, req, reason)
+	}
+	return nil
 }
 
 func (m *mockBilling) RecordDelivery(ctx context.Context, event billing.DeliveryEvent) error {
@@ -3090,5 +3102,435 @@ func TestHandleChatCompletion_SensitiveContent(t *testing.T) {
 	}
 	if freezeCalled {
 		t.Fatal("expected policy rejection to return before billing freeze or routing")
+	}
+}
+
+func TestP6F10ChatRequestLimitRejectsBeforeBillingOrRouting(t *testing.T) {
+	limits := payloadpolicy.DefaultLimits()
+	limits.ChatRequestBytes = 64
+	limits.EmbeddingsRequestBytes = 64
+	limits.NonStreamResponseBytes = 64
+	limits.NodeInFlightBytes = 128
+	limits.OrgInFlightBytes = 64
+	budget := payloadpolicy.MustNewBudget(limits)
+	freezeCalled := false
+	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
+		freezeFn: func(context.Context, billing.FreezeRequest) (*billing.FreezeResult, error) {
+			freezeCalled = true
+			return &billing.FreezeResult{Success: true}, nil
+		},
+	})
+	relay.SetPayloadBudget(budget)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[{"role":"user","content":"this body is over sixty-four bytes"}]}`))
+	ctx := context.WithValue(req.Context(), middleware.CtxOrgID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxRequestID, "req-p6f10-input-limit")
+	rec := httptest.NewRecorder()
+	relay.HandleChatCompletion(rec, req.WithContext(ctx))
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected 413, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if freezeCalled {
+		t.Fatal("oversize input reached billing freeze")
+	}
+}
+
+func TestP6F10NonStreamResponseLimitHoldsProviderLiabilityWithoutDelivery(t *testing.T) {
+	limits := payloadpolicy.DefaultLimits()
+	limits.ChatRequestBytes = 64
+	limits.EmbeddingsRequestBytes = 64
+	limits.NonStreamResponseBytes = 64
+	limits.NodeInFlightBytes = 128
+	limits.OrgInFlightBytes = 64
+	budget := payloadpolicy.MustNewBudget(limits)
+	var completion billing.ProviderAttemptCompletion
+	deliveryPrepared := false
+	b := &mockBilling{
+		completeAttemptFn: func(_ context.Context, req billing.ProviderAttemptCompletion) error {
+			completion = req
+			return nil
+		},
+		prepareDeliveryFn: func(context.Context, billing.SettleRequest) (*billing.PrepareDeliveryResult, error) {
+			deliveryPrepared = true
+			return nil, nil
+		},
+	}
+	relay := newTestRelay(&testutil.MockDB{}, b)
+	relay.SetPayloadBudget(budget)
+	route := &RouteResult{Channel: models.Channel{ID: 1, Provider: "test", Name: "test"}, ChannelKey: models.ChannelKey{ID: 1}}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(strings.Repeat("x", 65))),
+	}
+	ctx := context.WithValue(context.Background(), middleware.CtxOrgID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(2))
+	ctx = context.WithValue(ctx, middleware.CtxRequestID, "req-p6f10-output-limit")
+	rec := httptest.NewRecorder()
+	relay.relayNonStreamRequest(ctx, rec, resp, route, "req-p6f10-output-limit", 1, 2, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{}), time.Now(), adapters.NewOpenAICompatible(), 1, 1, "upstream-1")
+
+	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "upstream_response_too_large") {
+		t.Fatalf("expected bounded 502, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if completion.Outcome != billing.ProviderAttemptOutcomeResponseUnusable || completion.FailureKind != "response_too_large" || completion.RetryAuthorized {
+		t.Fatalf("unexpected provider liability completion: %+v", completion)
+	}
+	if deliveryPrepared {
+		t.Fatal("oversize response reached customer delivery preparation")
+	}
+}
+
+func TestP6F10FinalResponseEnvelopeLimitRetainsKnownProviderUsage(t *testing.T) {
+	limits := payloadpolicy.DefaultLimits()
+	limits.ChatRequestBytes = 512
+	limits.EmbeddingsRequestBytes = 512
+	limits.NonStreamResponseBytes = 512
+	limits.NodeInFlightBytes = 1024
+	limits.OrgInFlightBytes = 512
+	var held billing.SettleRequest
+	var holdReason string
+	holdContextActive := false
+	deliveryPrepared := false
+	b := &mockBilling{
+		holdOutputFn: func(holdCtx context.Context, req billing.SettleRequest, reason string) error {
+			holdContextActive = holdCtx.Err() == nil
+			held, holdReason = req, reason
+			return nil
+		},
+		prepareDeliveryFn: func(context.Context, billing.SettleRequest) (*billing.PrepareDeliveryResult, error) {
+			deliveryPrepared = true
+			return nil, nil
+		},
+	}
+	relay := newTestRelay(&testutil.MockDB{}, b)
+	relay.SetPayloadBudget(payloadpolicy.MustNewBudget(limits))
+	route := &RouteResult{Channel: models.Channel{ID: 1, Provider: "test", Name: "test"}, ChannelKey: models.ChannelKey{ID: 1}}
+	body := fmt.Sprintf(`{"id":"chatcmpl-envelope","choices":[{"message":{"role":"assistant","content":%q}}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}`, strings.Repeat("<", 100))
+	resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}
+	requestCtx, cancelRequest := context.WithCancel(context.Background())
+	cancelRequest()
+	ctx := context.WithValue(requestCtx, middleware.CtxOrgID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(2))
+	ctx = context.WithValue(ctx, middleware.CtxRequestID, "req-p6f10-final-envelope")
+	ctx = contextWithRouteAttempt(ctx, 1, 1)
+	ctx = contextWithAttemptID(ctx, "att-final-envelope")
+	rec := httptest.NewRecorder()
+	relay.relayNonStreamRequest(ctx, rec, resp, route, "req-p6f10-final-envelope", 1, 2, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{}), time.Now(), adapters.NewOpenAICompatible(), 2, 3, "upstream-envelope")
+	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "upstream_response_too_large") {
+		t.Fatalf("expected final-envelope 502, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if deliveryPrepared || !holdContextActive || holdReason != "response_too_large" || held.UsagePurpose != metering.UsagePurposeProviderEvidence || held.AttemptID != "att-final-envelope" {
+		t.Fatalf("final-envelope limit lost financial authority: prepared=%t active_ctx=%t reason=%s hold=%+v", deliveryPrepared, holdContextActive, holdReason, held)
+	}
+}
+
+func TestP6F10ResponseExtensionIsBoundedAndServerOwned(t *testing.T) {
+	limits := payloadpolicy.DefaultLimits()
+	limits.ChatRequestBytes = 1024
+	limits.EmbeddingsRequestBytes = 1024
+	limits.NonStreamResponseBytes = 1024
+	limits.NodeInFlightBytes = 2048
+	limits.OrgInFlightBytes = 1024
+	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{})
+	relay.SetPayloadBudget(payloadpolicy.MustNewBudget(limits))
+	response := map[string]interface{}{"id": "ok", "_uniroute": map[string]interface{}{"untrusted": true}}
+	base, maxBytes, err := relay.marshalNonStreamResponseBase(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(base, []byte("_uniroute")) {
+		t.Fatalf("upstream-controlled extension survived base normalization: %s", base)
+	}
+	payload, err := appendNonStreamResponseExtension(base, map[string]interface{}{"request_id": "server-owned"}, maxBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if int64(len(payload)) > maxBytes || !bytes.Contains(payload, []byte(`"request_id":"server-owned"`)) {
+		t.Fatalf("invalid bounded response extension: size=%d max=%d body=%s", len(payload), maxBytes, payload)
+	}
+}
+
+func TestP6F10DeliveryPreparationOutlivesClientCancellation(t *testing.T) {
+	prepareContextActive := false
+	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
+		prepareDeliveryFn: func(ctx context.Context, _ billing.SettleRequest) (*billing.PrepareDeliveryResult, error) {
+			prepareContextActive = ctx.Err() == nil
+			return &billing.PrepareDeliveryResult{Funded: true}, nil
+		},
+	})
+	requestCtx, cancelRequest := context.WithCancel(context.Background())
+	cancelRequest()
+	prepared, err := relay.prepareNonStreamDeliveryWithTimeout(requestCtx, billing.SettleRequest{RequestID: "req-cancelled", OrgID: 1})
+	if err != nil || prepared == nil || !prepared.Funded || !prepareContextActive {
+		t.Fatalf("delivery preparation inherited client cancellation: prepared=%+v active=%t err=%v", prepared, prepareContextActive, err)
+	}
+}
+
+func TestP6F10ProviderOutputHoldRetriesIdempotentlyAfterCancellation(t *testing.T) {
+	calls := 0
+	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
+		holdOutputFn: func(ctx context.Context, _ billing.SettleRequest, _ string) error {
+			if ctx.Err() != nil {
+				t.Fatal("provider output hold inherited client cancellation")
+			}
+			calls++
+			if calls < billingSettleMaxAttempts {
+				return errors.New("transient database error")
+			}
+			return nil
+		},
+	})
+	requestCtx, cancelRequest := context.WithCancel(context.Background())
+	cancelRequest()
+	err := relay.holdNonStreamOutputWithRetry(requestCtx, billing.SettleRequest{RequestID: "req-hold-retry", OrgID: 1}, "guardrail_withheld", nil)
+	if err != nil || calls != billingSettleMaxAttempts {
+		t.Fatalf("idempotent provider output hold did not converge: calls=%d err=%v", calls, err)
+	}
+}
+
+func newP6F10GuardrailService(t *testing.T, policy guardrail.Policy) *guardrail.Service {
+	t.Helper()
+	database := &testutil.MockDB{QueryFn: func(context.Context, string, ...any) (pgx.Rows, error) {
+		return &testutil.MockRows{Rows: []func(...any) error{func(dest ...any) error {
+			*dest[0].(*int64) = policy.ID
+			*dest[1].(**int64) = policy.OrgID
+			*dest[2].(**int64) = policy.ProjectID
+			*dest[3].(**int64) = policy.APIKeyID
+			*dest[4].(*string) = policy.Name
+			*dest[5].(*string) = policy.Model
+			*dest[6].(*string) = policy.Stage
+			*dest[7].(*string) = policy.DetectorRef
+			*dest[8].(*string) = policy.Action
+			*dest[9].(*string) = policy.Mode
+			*dest[10].(*string) = policy.FailureMode
+			*dest[11].(*bool) = policy.Mandatory
+			*dest[12].(*json.RawMessage) = append(json.RawMessage(nil), policy.Config...)
+			*dest[13].(*int64) = policy.Version
+			*dest[14].(*time.Time) = time.Now().UTC()
+			*dest[15].(*time.Time) = time.Now().UTC()
+			return nil
+		}}}, nil
+	}}
+	service, err := guardrail.NewService(database, nil, []byte("0123456789abcdef0123456789abcdef"), guardrail.DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Refresh(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	return service
+}
+
+func TestP6F10InputBlockRunsBeforeBilling(t *testing.T) {
+	service := newP6F10GuardrailService(t, guardrail.Policy{
+		ID: 1, Name: "block secrets", Version: 1, Stage: guardrail.StageInput,
+		DetectorRef: guardrail.DetectorPII, Action: guardrail.ActionBlock,
+		Mode: guardrail.ModeEnforce, FailureMode: guardrail.FailureFailClosed,
+		Mandatory: true, Config: json.RawMessage(`{"entities":["secret"]}`),
+	})
+	freezeCalled := false
+	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{freezeFn: func(context.Context, billing.FreezeRequest) (*billing.FreezeResult, error) {
+		freezeCalled = true
+		return &billing.FreezeResult{Success: true}, nil
+	}})
+	relay.SetGuardrail(service)
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[{"role":"user","content":"token_abcdefghijkl"}]}`))
+	ctx := context.WithValue(req.Context(), middleware.CtxOrgID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxRequestID, "req-p6f10-guardrail-input")
+	rec := httptest.NewRecorder()
+	relay.HandleChatCompletion(rec, req.WithContext(ctx))
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "guardrail_error.input_blocked") {
+		t.Fatalf("expected policy block, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if freezeCalled {
+		t.Fatal("input policy block reached billing")
+	}
+}
+
+func TestP6F10InputRedactionPreservesUnknownEnvelopeFields(t *testing.T) {
+	body := []byte(`{"model":"gpt-4o","temperature":0.25,"vendor_extension":{"keep":true},"messages":[{"role":"user","content":"alice@example.com"}]}`)
+	req := ChatCompletionRequest{Model: "gpt-4o", Messages: []Message{{Role: "user", Content: "alice@example.com"}}}
+	result := guardrail.Result{Transformed: true, Texts: []guardrail.Text{{Path: "messages[0].content", Content: "[REDACTED]"}}}
+	rewritten, err := applyChatGuardrailTransform(body, &req, result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(rewritten, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["temperature"] != 0.25 || payload["vendor_extension"].(map[string]interface{})["keep"] != true || req.Messages[0].Content != "[REDACTED]" {
+		t.Fatalf("content envelope lost fields: %s", rewritten)
+	}
+}
+
+func TestP6F10OutputBlockRetainsProviderEvidenceWithoutDelivery(t *testing.T) {
+	service := newP6F10GuardrailService(t, guardrail.Policy{
+		ID: 2, Name: "block output email", Version: 1, Stage: guardrail.StageNonStreamOutput,
+		DetectorRef: guardrail.DetectorPII, Action: guardrail.ActionBlock,
+		Mode: guardrail.ModeEnforce, FailureMode: guardrail.FailureDegradedAllow,
+		Config: json.RawMessage(`{"entities":["email"]}`),
+	})
+	pinned := service.Pin(guardrail.Subject{OrgID: 1, APIKeyID: 2, Model: "gpt-4o", Endpoint: "chat"})
+	var held billing.SettleRequest
+	var holdReason string
+	deliveryPrepared := false
+	b := &mockBilling{
+		holdOutputFn: func(_ context.Context, req billing.SettleRequest, reason string) error {
+			held, holdReason = req, reason
+			return nil
+		},
+		prepareDeliveryFn: func(context.Context, billing.SettleRequest) (*billing.PrepareDeliveryResult, error) {
+			deliveryPrepared = true
+			return nil, nil
+		},
+	}
+	database := &testutil.MockDB{}
+	relay := newTestRelay(database, b)
+	route := &RouteResult{Channel: models.Channel{ID: 1, Provider: "test", Name: "test"}, ChannelKey: models.ChannelKey{ID: 1}}
+	resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"id":"chatcmpl-1","choices":[{"message":{"role":"assistant","content":"email alice@example.com"}}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}`))}
+	ctx := context.WithValue(context.Background(), middleware.CtxOrgID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(2))
+	ctx = context.WithValue(ctx, middleware.CtxRequestID, "req-p6f10-output-block")
+	ctx = contextWithGuardrailPin(ctx, pinned)
+	ctx = contextWithRouteAttempt(ctx, 1, 1)
+	ctx = contextWithAttemptID(ctx, "att-output-block")
+	rec := httptest.NewRecorder()
+	relay.relayNonStreamRequest(ctx, rec, resp, route, "req-p6f10-output-block", 1, 2, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{}), time.Now(), adapters.NewOpenAICompatible(), 2, 3, "upstream-1")
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "guardrail_error.output_blocked") {
+		t.Fatalf("expected output block, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if deliveryPrepared || holdReason != "guardrail_withheld" || held.UsagePurpose != metering.UsagePurposeProviderEvidence || held.AttemptID != "att-output-block" {
+		t.Fatalf("unsafe output financial path: prepared=%t reason=%s hold=%+v", deliveryPrepared, holdReason, held)
+	}
+}
+
+func TestP6F10OutputRedactionDeliversTransformedContent(t *testing.T) {
+	service := newP6F10GuardrailService(t, guardrail.Policy{
+		ID: 3, Name: "redact output email", Version: 1, Stage: guardrail.StageNonStreamOutput,
+		DetectorRef: guardrail.DetectorPII, Action: guardrail.ActionRedact,
+		Mode: guardrail.ModeEnforce, FailureMode: guardrail.FailureDegradedAllow,
+		Config: json.RawMessage(`{"entities":["email"]}`),
+	})
+	pinned := service.Pin(guardrail.Subject{OrgID: 1, APIKeyID: 2, Model: "gpt-4o", Endpoint: "chat"})
+	held := false
+	b := &mockBilling{holdOutputFn: func(context.Context, billing.SettleRequest, string) error { held = true; return nil }}
+	relay := newTestRelay(&testutil.MockDB{}, b)
+	route := &RouteResult{Channel: models.Channel{ID: 1, Provider: "test", Name: "test"}, ChannelKey: models.ChannelKey{ID: 1}}
+	resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"id":"chatcmpl-2","choices":[{"message":{"role":"assistant","content":"email alice@example.com"}}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}`))}
+	ctx := context.WithValue(context.Background(), middleware.CtxOrgID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(2))
+	ctx = context.WithValue(ctx, middleware.CtxRequestID, "req-p6f10-output-redact")
+	ctx = contextWithGuardrailPin(ctx, pinned)
+	ctx = contextWithRouteAttempt(ctx, 1, 1)
+	ctx = contextWithAttemptID(ctx, "att-output-redact")
+	rec := httptest.NewRecorder()
+	relay.relayNonStreamRequest(ctx, rec, resp, route, "req-p6f10-output-redact", 1, 2, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{}), time.Now(), adapters.NewOpenAICompatible(), 2, 3, "upstream-2")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "[REDACTED]") || strings.Contains(rec.Body.String(), "alice@example.com") {
+		t.Fatalf("expected transformed delivery, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if held {
+		t.Fatal("redacted deliverable output entered cost hold")
+	}
+}
+
+func TestP6F10OutputTransformRejectsChangedContentPath(t *testing.T) {
+	response := map[string]interface{}{
+		"choices": []interface{}{map[string]interface{}{
+			"message": map[string]interface{}{"content": "alice@example.com"},
+		}},
+	}
+	_, refs := nonStreamOutputTexts(response)
+	err := applyOutputGuardrailTransform(guardrail.Result{
+		Transformed: true,
+		Texts:       []guardrail.Text{{Path: "choices[1].message.content", Content: "[REDACTED]"}},
+	}, refs)
+	if err == nil {
+		t.Fatal("changed content path must fail closed before customer delivery")
+	}
+	if got := response["choices"].([]interface{})[0].(map[string]interface{})["message"].(map[string]interface{})["content"]; got != "alice@example.com" {
+		t.Fatalf("unsafe transform modified the response before validation: %#v", got)
+	}
+}
+
+func TestP6F10StructuredOutputTextAndToolArgumentsAreInspectable(t *testing.T) {
+	response := map[string]interface{}{
+		"choices": []interface{}{map[string]interface{}{
+			"message": map[string]interface{}{
+				"content": []interface{}{map[string]interface{}{"type": "text", "text": "alice@example.com"}},
+				"tool_calls": []interface{}{map[string]interface{}{
+					"function": map[string]interface{}{"name": "lookup", "arguments": `{"email":"alice@example.com"}`},
+				}},
+			},
+		}},
+	}
+	texts, refs := nonStreamOutputTexts(response)
+	if len(texts) != 2 || len(refs) != 2 {
+		t.Fatalf("structured output content was skipped: texts=%+v refs=%+v", texts, refs)
+	}
+	result := guardrail.Result{Transformed: true, Texts: []guardrail.Text{
+		{Path: texts[0].Path, Content: "[REDACTED]"},
+		{Path: texts[1].Path, Content: `{"email":"[REDACTED]"}`},
+	}}
+	if err := applyOutputGuardrailTransform(result, refs); err != nil {
+		t.Fatal(err)
+	}
+	message := response["choices"].([]interface{})[0].(map[string]interface{})["message"].(map[string]interface{})
+	if got := message["content"].([]interface{})[0].(map[string]interface{})["text"]; got != "[REDACTED]" {
+		t.Fatalf("structured text was not transformed: %#v", got)
+	}
+	if got := message["tool_calls"].([]interface{})[0].(map[string]interface{})["function"].(map[string]interface{})["arguments"]; got != `{"email":"[REDACTED]"}` {
+		t.Fatalf("tool arguments were not transformed safely: %#v", got)
+	}
+}
+
+func TestP6F10InvalidStructuredTransformIsAtomic(t *testing.T) {
+	response := map[string]interface{}{
+		"choices": []interface{}{map[string]interface{}{
+			"message": map[string]interface{}{
+				"content": "alice@example.com",
+				"tool_calls": []interface{}{map[string]interface{}{
+					"function": map[string]interface{}{"arguments": `{"email":"alice@example.com"}`},
+				}},
+			},
+		}},
+	}
+	texts, refs := nonStreamOutputTexts(response)
+	result := guardrail.Result{Transformed: true, Texts: []guardrail.Text{
+		{Path: texts[0].Path, Content: "[REDACTED]"},
+		{Path: texts[1].Path, Content: `{"email":[REDACTED]}`},
+	}}
+	if err := applyOutputGuardrailTransform(result, refs); err == nil {
+		t.Fatal("invalid structured arguments must fail closed")
+	}
+	message := response["choices"].([]interface{})[0].(map[string]interface{})["message"].(map[string]interface{})
+	if message["content"] != "alice@example.com" {
+		t.Fatalf("partial mutation occurred before structured validation: %#v", message)
+	}
+}
+
+func TestP6F10GuardrailTraceDecisionClassification(t *testing.T) {
+	if got := sourceComponentForTraceStage("guardrail_nonstream_output"); got != "guardrail" {
+		t.Fatalf("unexpected source component %q", got)
+	}
+	kind, result, reason := decisionEvidence("guardrail.decision", map[string]interface{}{
+		"guardrail_decision": "block", "guardrail_outcome": "unavailable",
+	})
+	if kind != "guardrail" || result != "block" || reason != "unavailable" {
+		t.Fatalf("unexpected guardrail decision evidence: %s %s %s", kind, result, reason)
+	}
+}
+
+func TestP6F10IndeterminatePolicyIsNotReportedAsInfrastructureOutage(t *testing.T) {
+	result := guardrail.Result{Decision: guardrail.DecisionBlock, Degraded: true, Receipts: []guardrail.Receipt{{Outcome: guardrail.OutcomeIndeterminate}}}
+	if guardrailBlockedByUnavailable(result) {
+		t.Fatal("deterministic indeterminate policy result was mislabeled as detector infrastructure outage")
+	}
+	result.Receipts[0].Outcome = guardrail.OutcomeUnavailable
+	if !guardrailBlockedByUnavailable(result) {
+		t.Fatal("detector infrastructure outage lost its typed 503 path")
 	}
 }

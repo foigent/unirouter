@@ -238,7 +238,7 @@ func providerCostAdmissionBlocked(ctx context.Context, q db.DBQuerier, orgID, ap
 		    WHERE org_id = $1 AND api_key_id = $2
 		      AND state IN (
 		          'outcome_unknown', 'response_unusable', 'funding_pending',
-		          'delivery_pending', 'delivery_failed'
+		          'delivery_pending', 'delivery_failed', 'output_withheld'
 		      )
 		)`, orgID, apiKeyID,
 	).Scan(&blocked)
