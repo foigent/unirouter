@@ -6,7 +6,7 @@
 **Status:** Target verified for selected deployment/UI surfaces; PRD6 remains Accepted Scope Complete
 **Baseline:** `main` / `origin/main` / `f4fe41ddbe10a7f5c6531084bf9aaab9d6299924`
 **Branch:** `codex/prd6-target-evidence-closeout`
-**PR:** Runtime corrections #191 and #192; target-evidence publication PR follows this record
+**PR:** Runtime corrections #191 and #192; target-evidence publication #193
 **Decision:** User separately authorized updating the existing ECS and checking the PRD6 UI on 2026-07-13
 **Publication evidence:** PR #191 exact head `046033a` passed required run `29264998431`, merged as `581e9d7`, and passed main run `29265887632`; PR #192 exact head `ad1b012` passed required run `29270879406`, merged as `f4fe41d`, and passed main run `29271703816`
 **Next product gate:** choose the shared target's frontend label (`开发环境` or `预发环境`); PRD7, P6-E02 through P6-E04 and Production evidence remain later
