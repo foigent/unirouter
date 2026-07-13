@@ -88,6 +88,10 @@ func agentCapabilityAuthorityDB(t *testing.T) *testutil.MockDB {
 	t.Helper()
 	return &testutil.MockDB{QueryRowFn: func(_ context.Context, _ string, args ...any) pgx.Row {
 		return &testutil.MockRow{ScanFn: func(dest ...any) error {
+			if len(args) == 2 && args[0] == int64(7) && args[1] == int64(42) {
+				*dest[0].(*bool) = false
+				return nil
+			}
 			if len(args) != 1 || args[0] != int64(42) {
 				t.Fatalf("unexpected authority lookup: %v", args)
 			}
