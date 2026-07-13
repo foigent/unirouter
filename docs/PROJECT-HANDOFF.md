@@ -2,7 +2,7 @@
 
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
-> PRD6 is `Accepted Scope Complete` at repository/CI evidence level. All 27
+> PRD6 is formally `Completed (Accepted Scope)` at repository/CI evidence level. All 27
 > accepted rows are verified or closed. P6-F11 closed through PR #189: final
 > evidence head `3d4c61b` passed run `29246431182`, squash merge `4c78a5b7`
 > passed post-merge main run `29246975012`. A separately authorized 2026-07-13
@@ -72,6 +72,7 @@
 57. `docs/ops/evidence/PRD6-B5-P6F11-stream-policy-termination-local-20260713.md` - D6-16 micro-buffer, termination, reservation extension, checkpoint/recovery and PR #189 CI closure evidence.
 58. `docs/ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md` - authoritative 27/27 accepted-row closeout, evidence level and preserved future boundaries.
 59. `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md` - authorized PRD6 ECS migration/deployment, stable/canary runtime, authenticated UI, P6-E01 historical request readback, cleanup and remaining target non-claims.
+60. `docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md` - fresh Git/CI/matrix/target-health audit, formal phase-completion decision, corrected 27/27 accounting and preserved later boundaries.
 
 ## Current Project Shape
 
@@ -88,7 +89,7 @@ redacted topology history remains under the existing PRD5 paths. PRD6 must not
 reinterpret target-evidence debt or X-Insight-owned work as unfinished PRD5
 source scope.
 
-PRD6 is `Accepted Scope Complete` with D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14/D6-15/D6-16 accepted. D6-13 adds P6-F40/P6-F41 without rewriting the CI-verified P6-F18/P6-F20 history. D6-14 requires Customer Revenue Ledger authority to remain separate from Provider COGS evidence: collection uses authoritative usage, local delivery and frozen customer price; aggregate provider bills, balance deltas and operator-entered amounts cannot create customer debt. D6-15 fixes the Guardrail Kernel and content-size boundary: immutable stacked policy decisions remain UniRouter-owned; actual 8/16/16 MiB bounded reads/final responses, registered bounded detectors and explicit output-cost holds do not enable raw persistence or a real external detector. D6-16 closes enforced streaming through PR #189 / merge `4c78a5b7` / main run `29246975012`. Provider-native runtime/conformance packs, live billing connectors, controlled bill import, generalized units, async media, managed billing and Cost Control Service extraction remain future candidates. All 27 accepted rows are repository/CI verified or closed. Batch 0A is merged/CI verified. The second
+PRD6 is formally `Completed (Accepted Scope)` with D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14/D6-15/D6-16 accepted. D6-13 adds P6-F40/P6-F41 without rewriting the CI-verified P6-F18/P6-F20 history. D6-14 requires Customer Revenue Ledger authority to remain separate from Provider COGS evidence: collection uses authoritative usage, local delivery and frozen customer price; aggregate provider bills, balance deltas and operator-entered amounts cannot create customer debt. D6-15 fixes the Guardrail Kernel and content-size boundary: immutable stacked policy decisions remain UniRouter-owned; actual 8/16/16 MiB bounded reads/final responses, registered bounded detectors and explicit output-cost holds do not enable raw persistence or a real external detector. D6-16 closes enforced streaming through PR #189 / merge `4c78a5b7` / main run `29246975012`. Provider-native runtime/conformance packs, live billing connectors, controlled bill import, generalized units, async media, managed billing and Cost Control Service extraction remain future candidates. All 27 accepted rows are repository/CI verified or closed. Batch 0A is merged/CI verified. The second
 audit adds open P0 tenant,
 operation/idempotency, reservation/terminal-state and revocation findings, plus
 P1 Agent/100x blind spots. The accepted MVP covers those integrity
@@ -210,6 +211,7 @@ no PRD6 response persistence, deployment or semantic cache is accepted.
 | What proves P6-F10 Guardrail policy, bounded payload/detector, no-delivery cost-hold and migration behavior? | `docs/ops/evidence/PRD6-B4-P6F10-guardrail-kernel-local-20260713.md` |
 | What proves P6-F11 bounded stream disclosure, termination, extension and process-replacement recovery? | `docs/ops/evidence/PRD6-B5-P6F11-stream-policy-termination-local-20260713.md` |
 | What proves PRD6 Accepted Scope Complete and what remains later? | `docs/ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md` |
+| What proves the fresh audit and formal PRD6 phase-completion decision? | `docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md` |
 | How do competitors and UniRouter separate HA from stream resume? | `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` |
 | What did the UI/reconciliation/correlation/architecture audit conclude? | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` |
 | Which items are candidates for PRD7 rather than accepted scope? | `docs/planning/PRD7-CANDIDATE-BACKLOG.md` |

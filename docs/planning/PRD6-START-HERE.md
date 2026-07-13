@@ -1,14 +1,14 @@
 # PRD6 Start Here
 
-> Date: 2026-07-13
-> Status: Accepted Scope Complete; all 27 accepted rows are repository/CI verified or closed; selected ECS deployment/UI evidence is Target verified
+> Date: 2026-07-14
+> Status: Completed (Accepted Scope); all 27 accepted rows are repository/CI verified or closed; selected ECS deployment/UI evidence is Target verified
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
 ## Current Decision State
 
-PRD6 is a closed planning and execution window at repository/CI evidence
-level. The User accepted the
+PRD6 is a formally completed planning and execution window at its accepted
+repository/CI evidence boundary. The User accepted the
 recommended MVP boundary and policy-specific failure posture on 2026-07-11:
 
 - the CI-verified repository-correctness fixes in Batch 0A may proceed because
@@ -110,6 +110,7 @@ capacity/HA, PRD7 or Production verified evidence.
 49. `docs/ops/evidence/PRD6-B5-P6F11-stream-policy-termination-local-20260713.md`
 50. `docs/ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md`
 51. `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md`
+52. `docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md`
 
 PRD5 evidence remains under its existing paths. Do not rewrite it as PRD6
 evidence.

@@ -1,19 +1,39 @@
 # Current Execution Record
 
-**Batch:** PRD6 Target Deployment And Authenticated UI Verification
+**Batch:** PRD6 Final Completion Publication
 **Owner:** Codex
-**Risk:** target migration truth, stable/canary cutover, authenticated UI evidence, temporary-account cleanup and evidence-level leakage
-**Status:** Target verified for selected deployment/UI surfaces; PRD6 remains Accepted Scope Complete
-**Baseline:** `main` / `origin/main` / `f4fe41ddbe10a7f5c6531084bf9aaab9d6299924`
-**Branch:** `codex/prd6-target-evidence-closeout`
-**PR:** Runtime corrections #191 and #192; target-evidence publication #193
-**Decision:** User separately authorized updating the existing ECS and checking the PRD6 UI on 2026-07-13
-**Publication evidence:** PR #191 exact head `046033a` passed required run `29264998431`, merged as `581e9d7`, and passed main run `29265887632`; PR #192 exact head `ad1b012` passed required run `29270879406`, merged as `f4fe41d`, and passed main run `29271703816`
-**Next product gate:** choose the shared target's frontend label (`开发环境` or `预发环境`); PRD7, P6-E02 through P6-E04 and Production evidence remain later
-**Previous batch:** P6-F41 PR #187 and P6-F40 PR #183/#184/#186 are CI verified / closed; P6-F20 PR #177 and post-closeout fixture-only PR #180/#181 are CI verified / closed
+**Risk:** R2 phase-state truth, acceptance accounting, immutable-evidence preservation and evidence-level leakage
+**Status:** PRD6 formally Completed (Accepted Scope); publication must pass required CI before merge
+**Baseline:** clean/aligned `main` / `origin/main` / `9c73d6fd00fd5e58d126d9a6adc7fe9decf91cdd`
+**Branch:** `codex/prd6-final-completion`
+**PR:** #194; merge only after Backend Tests, Frontend Build and Docker Build pass
+**Decision:** User directed on 2026-07-14 that PRD6 be marked complete if a fresh audit confirmed all PRD6-scoped work was finished; the audit confirmed all 27 accepted rows closed
+**Publication evidence:** `docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md`
+**Next product gate:** post-PRD6 target acceptance issue triage; PRD7, P6-E02 through P6-E04 and Production evidence remain later
+**Previous batch:** PRD6 target deployment/UI publication PR #193 merged as `9c73d6f`; exact-head main run `29274010760` passed all three required jobs
 **Previous phase:** PRD5 Accepted Scope Complete; its Batch 1Z historical target backend was `95d1da9` / PR #133 and is now superseded on the same target by this PRD6 deployment
 
-## Current Target Result
+## Completion Result
+
+1. Re-read the PRD6 PRD, acceptance matrix, closeout evidence, implementation
+   plan, backlog, current status, handoff, open issues and execution protocol.
+2. Fetched `origin/main` and verified clean/aligned pre-publication baseline
+   `9c73d6fd00fd5e58d126d9a6adc7fe9decf91cdd`.
+3. Confirmed 41 feature rows: 27 accepted and closed, 14 explicitly not
+   accepted; the separate P6-TEST-DB-001 engineering gate is also closed.
+4. Read back PR #190/#193 merge/check state and exact-head main run
+   `29274010760`; Backend Tests, Frontend Build and Docker Build passed.
+5. Re-read the development/test ECS public readiness endpoint; application,
+   PostgreSQL and Redis returned healthy without a target mutation.
+6. Corrected the stale implementation-plan body from 26 closed / one in
+   progress to the already-evidenced 27 closed / zero unclosed state.
+7. Marked current truth entrypoints `Completed (Accepted Scope)` while preserving
+   all proposed/deferred/target/production evidence boundaries.
+
+No code/runtime behavior, deployment, credential, database, export, external
+project or file-retention state changes in this completion publication.
+
+## Previous Target Result
 
 1. Backed up the target PostgreSQL database, verified the custom-format catalog
    and retained prior stable/canary/frontend images under rollback tags.

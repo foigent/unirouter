@@ -1,14 +1,14 @@
 # PRD6 Backlog And Decision Register
 
-> Date: 2026-07-13
+> Date: 2026-07-14
 > Rule: this is a classified input queue, not an implementation promise.
-> Phase state: PRD6 Accepted Scope Complete. The acceptance matrix is
+> Phase state: PRD6 Completed (Accepted Scope). The acceptance matrix is
 > authoritative; rows without an accepted matrix entry or closure evidence are
 > retained future inputs, not unfinished PRD6 commitments.
 
-## 1. Accepted Active Work
+## 1. Closed Accepted Work
 
-| ID | Item | Why it is active | Exit evidence |
+| ID | Item | Why it was accepted | Exit evidence |
 |----|------|------------------|---------------|
 | P6-ROUTE-001 | Half-open recovery deadline correction | Confirmed current-code outage risk; no new product scope | focused/race/full tests and CI |
 | P6-RL-001 | Atomic exact Redis RPM/RPS enforcement | Confirmed over-admission and multi-instance race; no new surface | sequential/concurrent/context/failure tests and CI |
@@ -29,7 +29,7 @@
 | P6-COST-001 / P6-F40 | In-process provider-cost state and explicit funding ownership | Prevents terminal write-off, ambiguous duplicate spend and post-dispatch liability erasure without adding a network service | CI verified / closed: P6-F40A PR #183 / run `29207889734`; P6-F40B PR #184 / run `29209644118`; P6-F40C PR #186 exact implementation/test head `49d740d` / run `29224762127` with explicit affected-key, reconciliation and migration gates |
 | P6-USAGE-AUTH-001 / P6-F41 | Explicit usage authority and metadata-only delivery outcome | Prevents missing usage becoming authoritative zero and delivery evidence becoming provider-cost truth | CI verified / closed by PR #187 exact implementation/test head `6d0e6ba` / run `29229320432`; raw response storage and Cache Service remain excluded; evidence: `docs/ops/evidence/PRD6-B3H-P6F41-usage-delivery-integrity-local-20260713.md` |
 
-## 2. Accepted MVP — Ordered Work Queue
+## 2. Accepted MVP — Closed Work Register
 
 | ID | Item | Value | Dependency / risk | Priority |
 |----|------|-------|-------------------|----------|

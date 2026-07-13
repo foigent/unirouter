@@ -8,7 +8,7 @@
 |------|------|
 | `docs/PROJECT-HANDOFF.md` | First-read handoff for agents |
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
-| `docs/planning/PRD6-START-HERE.md` | PRD6 Accepted Scope Complete state, preserved future boundaries and read order |
+| `docs/planning/PRD6-START-HERE.md` | PRD6 Completed (Accepted Scope) state, preserved future boundaries and read order |
 | `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md` | PRD6 Git/CI/test/X-Insight/code-finding baseline evidence |
 | `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md` | PRD6 source-backed 100x, Agent fan-out, billing, routing, streaming and multimodal anti-pattern evidence |
 | `docs/ops/evidence/PRD6-B0B-P6F16-tenant-isolation-local-20260711.md` | P6-F16 patch contract, regression-before-fix and local migrated-database evidence |
@@ -41,6 +41,7 @@
 | `docs/ops/evidence/PRD6-B5-P6F11-stream-policy-termination-local-20260713.md` | D6-16/P6-F11 enforced stream buffering, strict inspection, termination, reservation extension, checkpoint/recovery and PR #189/main CI closure evidence |
 | `docs/ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md` | PRD6 27/27 accepted-row closeout, repository/CI evidence level, non-claims and preserved PRD7/target boundaries |
 | `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md` | Authorized PRD6 ECS migration/deployment, stable/canary runtime, authenticated UI, selected historical route/failover readback, cleanup and remaining target non-claims |
+| `docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md` | Fresh Git/CI/matrix/target-health audit, formal PRD6 phase-completion decision, corrected 27/27 accounting and preserved later boundaries |
 | `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` | Official competitor HA patterns, current UniRouter cluster facts, Four Quadrants and accepted D6-12 stream/HA boundary |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | Source-backed audit/reconciliation/correlation/UI/architecture/upgrade findings, Four Quadrants and PRD6 batches |
 | `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md` | Accepted customer-revenue/provider-COGS boundary, competitor and supplier billing evidence, Four Quadrants, PRD6 non-claims and future cost/metering/media candidates |
@@ -49,7 +50,7 @@
 | `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md` | Version-fixed competitor audit, Four Quadrants and priority matrix |
 | `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md` | Third-round Four Quadrants, CARTA/shadow/collusion ownership, Killer Features and candidate acceptance rows |
 | `docs/planning/prd6-adaptive-trust-hardening/` | Evidence-bound adaptive-trust structural proposal, JSON, diagrams and option comparison; no implementation plan until selection |
-| `docs/PRD-Phase6.md` | PRD6 Accepted Scope Complete, D6-10/D6-16 stream and D6-11 Agent lifecycle contracts, plus separately proposed/deferred rows |
+| `docs/PRD-Phase6.md` | PRD6 Completed (Accepted Scope), D6-10/D6-16 stream and D6-11 Agent lifecycle contracts, plus separately proposed/deferred rows |
 | `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` | PRD6 authoritative 27/27 accepted-row closure plus proposed/external/target-evidence truth |
 | `docs/planning/PRD6-IMPLEMENTATION-PLAN.md` | PRD6 batch order, risk gates, verification and rollback |
 | `docs/planning/PRD6-BACKLOG.md` | PRD6 classified candidate queue and decision register |
@@ -81,7 +82,7 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required single-owner execution, approval, evidence and optional-review workflow |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD6 Batch 4 P6-F10 CI closure through PR #188; previous PRD6/PRD5 evidence remains linked |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD6 final-completion publication audit, branch/CI gate and preserved target/future boundaries; previous PRD6/PRD5 evidence remains linked |
 | `docs/agent-workflows/reviews/` | Optional immutable independent review results |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry pointing to the current execution record |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |
@@ -211,7 +212,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 |------|------|
 | `docs/agent-workflows/README.md` | Agent workflow index |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Current Agent Protocol v2.0 |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD6 Batch 4 P6-F10 CI-verified execution-owner closeout through PR #188 with prior closeouts; prior PRD5 target/external evidence remains linked |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD6 final-completion publication audit, branch/CI gate and preserved target/future boundaries; prior execution evidence remains linked |
 | `docs/agent-workflows/reviews/README.md` | Independent review naming, contents and severity rules |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |
