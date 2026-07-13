@@ -31,6 +31,7 @@
 - [ops/evidence/PRD6-B4-P6F10-guardrail-kernel-local-20260713.md](ops/evidence/PRD6-B4-P6F10-guardrail-kernel-local-20260713.md) — P6-F10 Guardrail、内容上限、成本 hold、迁移及 PR #188 CI 收口证据
 - [ops/evidence/PRD6-B5-P6F11-stream-policy-termination-local-20260713.md](ops/evidence/PRD6-B5-P6F11-stream-policy-termination-local-20260713.md) — P6-F11 流式微缓冲、终止、预算扩容、checkpoint/recovery 及 PR #189 CI 收口证据
 - [ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md](ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md) — PRD6 27/27 accepted rows 收口、证据等级和后续边界
+- [ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md](ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md) — PRD6 ECS 迁移/部署、稳定与金丝雀运行时、认证 UI、选定历史请求链路和目标边界证据
 - [planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md](planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md) — LiteLLM/New API/Portkey/Kong 高可用模式、UniRouter 集群事实和 D6-12 流式边界
 - [planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md](planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md) — UI、对账、链路身份、架构与 2B 升级审计
 - [planning/PRD7-CANDIDATE-BACKLOG.md](planning/PRD7-CANDIDATE-BACKLOG.md) — 未来首项方向已选；PRD6 已闭环，但实现仍按用户决定后置

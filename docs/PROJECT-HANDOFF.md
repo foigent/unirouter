@@ -5,7 +5,11 @@
 > PRD6 is `Accepted Scope Complete` at repository/CI evidence level. All 27
 > accepted rows are verified or closed. P6-F11 closed through PR #189: final
 > evidence head `3d4c61b` passed run `29246431182`, squash merge `4c78a5b7`
-> passed post-merge main run `29246975012`. No target or production claim exists.
+> passed post-merge main run `29246975012`. A separately authorized 2026-07-13
+> ECS update deployed PRD6 stable/canary backend `ce9307a` and final frontend
+> `f4fe41d`, verified selected authenticated UI and closed P6-E01 for one
+> historical request. This is Target verified only, not a
+> Production, capacity/HA, real-provider/detector, TLS or migration-down claim.
 
 ## First Read Order
 
@@ -67,6 +71,7 @@
 56. `docs/ops/evidence/PRD6-B4-P6F10-guardrail-kernel-local-20260713.md` - D6-15 immutable policy, bounded detector/payload, output-cost hold, migration and PR #188 exact-head CI closure evidence.
 57. `docs/ops/evidence/PRD6-B5-P6F11-stream-policy-termination-local-20260713.md` - D6-16 micro-buffer, termination, reservation extension, checkpoint/recovery and PR #189 CI closure evidence.
 58. `docs/ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md` - authoritative 27/27 accepted-row closeout, evidence level and preserved future boundaries.
+59. `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md` - authorized PRD6 ECS migration/deployment, stable/canary runtime, authenticated UI, P6-E01 historical request readback, cleanup and remaining target non-claims.
 
 ## Current Project Shape
 

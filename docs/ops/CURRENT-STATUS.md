@@ -5,7 +5,12 @@
 > accepted rows are verified or closed. The final row, P6-F11, passed PR #189
 > implementation run `29245696926`, final-head run `29246431182`, squash merge
 > `4c78a5b7`, and post-merge main run `29246975012`; Backend Tests, Frontend
-> Build and Docker Build are green. No target or production claim is made.
+> Build and Docker Build are green. A separately authorized 2026-07-13 ECS
+> update deployed exact PRD6 backend commit `ce9307a` to stable/canary and the
+> final PR #192 frontend correction from `f4fe41d`; authenticated UI, zero
+> missing-favicon/browser-console errors and one selected historical request
+> detail are Target verified. This is not Production,
+> capacity/HA, real-provider/detector, TLS or migration-down evidence.
 > PRD6 Batch 0B P6-F16 was squash-merged by PR #140 as
 > `f244f669c529fec8767f85fff209882b333d8ed2`. P6-F33 was squash-merged by
 > PR #142 as `7173c5967a42c112fd0b219938a0901c1a0b9633`; its PR and post-merge
@@ -364,8 +369,11 @@
   `Docker Build`; Backend logs prove the migrated twelve-case matrix ran and did
   not skip. It was squash-merged as `f244f669`; post-merge `main` run
   `29129070253` passed the same three jobs.
-- No deployment, target probe/mutation, real or paid request, credential change,
-  data-scope expansion, exporter/outbox or continuous ingestion occurred.
+- At this initial audit/Batch 0B checkpoint, no deployment, target
+  probe/mutation, real or paid request, credential change, data-scope expansion,
+  exporter/outbox or continuous ingestion had occurred. The later separately
+  authorized target run is recorded at the top of this file and in its dedicated
+  evidence.
 
 The second PRD6 audit confirmed source-level P0 candidates in tenant isolation,
 request/financial idempotency identity, Freeze pool re-entry, Settle/Cancel
@@ -463,11 +471,12 @@ policy authority, and local enforcement at UniRouter or the actual action owner.
 No new runtime contract or P6-F23-P6-F31 implementation is accepted by that
 research.
 
-PRD5 remains `Accepted Scope Complete`. Batch 1Z target evidence remains valid;
-the deployed stable/canary backend recorded by that evidence remains `95d1da9`
-/ PR #133 and this PRD6 branch makes no target claim. P5-F35 concrete target
-detail, migration down, TLS 443, real provider/SSO and later X-Insight contracts
-remain separate evidence/ownership matters, not reopened PRD5 source gaps.
+PRD5 remains `Accepted Scope Complete`, and Batch 1Z evidence remains historical
+truth for that release. The separately authorized PRD6 target update now runs
+stable/canary backend commit `ce9307a`; one selected historical route/failover
+detail satisfies P6-E01. Migration down, TLS 443, real provider/SSO,
+capacity/HA and later X-Insight contracts remain separate evidence/ownership
+matters, not reopened PRD5 source gaps.
 
 The two temporary Gate A JSON snapshots remain present with accepted hashes and
 are due for exact-path deletion by 2026-07-17. Receipts, hashes, sanitized
@@ -553,6 +562,7 @@ Historical PRD1 summary: Core backend modules, admin APIs, frontend pages, migra
 
 | Area | Status | Evidence |
 |------|--------|----------|
+| PRD6 Target Deployment And UI Verification | Target verified for selected surfaces | `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md`; exact PRD6 stable/canary commit `ce9307a`, exact final frontend `f4fe41d`, migrations through `000034`, public/internal readiness, authenticated Dashboard/limits/Guardrails/routing/reconciliation/logs/status/docs, one historical P6-E01 route/failover detail, mobile checks, PR #191 runbook/Vite correction, PR #192 inline favicon correction and zero-row QA cleanup. No Production, policy-enforcement, real-provider/detector, capacity/HA, TLS or migration-down claim |
 | PRD5 X-Insight Runtime Contract Reconciliation | CI verified | PR #136 passed Backend Tests, Frontend Build, and Docker Build. `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md` records the answered request, synthetic-only X-Insight target, disabled unimplemented capabilities, and UniRouter v1 contract lock. No deployment is claimed |
 | PRD4 Final Closeout | Complete for current scope | `docs/ops/evidence/PRD4-final-closeout-20260708.md` records the final closeout. Batch 1S passed Canary 7/7 in `docs/agent-workflows/VERIFY-RESULT.md`, Sentinel merge is reflected by `5b41b87` / PR #103, and User reported Atlas deleted `uniroute_test`, closing `PRD4-DEPLOY-002`. No current PRD4 implementation work remains; PRD5 starts from `docs/planning/PRD5-BACKLOG.md` |
 | PRD5 Batch 1X Repository Architecture Audit, P5-F12 Screening, Logs/CI Hygiene | CI verified | `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md`; integrated by PR #131 with all required CI checks passing. P5-F12 screening itself remains a Local verified scope decision rather than target runtime evidence |
