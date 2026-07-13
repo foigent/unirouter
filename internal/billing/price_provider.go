@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// ErrModelPriceNotConfigured is returned when a routed model has no explicit
+// price authority. Billing must fail closed instead of inventing a default
+// customer price.
+var ErrModelPriceNotConfigured = errors.New("model price is not configured")
 
 // PriceProvider abstracts model price lookup so that billing calculation
 // logic can be unit-tested without a live PostgreSQL connection.
@@ -26,20 +30,15 @@ func NewDBPriceProvider(db *pgxpool.Pool) *DBPriceProvider {
 	return &DBPriceProvider{db: db}
 }
 
-// QueryModelPrice returns per-token cost in cents for a model.
-// Falls back to a default rate ($0.002/1K input, $0.01/1K output) only when
-// the model has no configured price. Query errors are returned to callers.
+// QueryModelPrice returns the internal CNY-cent rate per 1,000 tokens for a
+// model. Missing prices and query failures are both returned to callers.
 func (p *DBPriceProvider) QueryModelPrice(ctx context.Context, model string) (inputCost, outputCost float64, err error) {
 	err = p.db.QueryRow(ctx,
 		`SELECT input_price_cents::float8, output_price_cents::float8 FROM model_prices WHERE model_name = $1`,
 		model).Scan(&inputCost, &outputCost)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			log.Printf("QueryModelPrice: fallback to default for unpriced model %s: %v", model, err)
-			inputCost = 2
-			outputCost = 10
-			err = nil
-			return
+			return 0, 0, fmt.Errorf("%w: %s", ErrModelPriceNotConfigured, model)
 		}
 		return 0, 0, fmt.Errorf("query model price for %s: %w", model, err)
 	}

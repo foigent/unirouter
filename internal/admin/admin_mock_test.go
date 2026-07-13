@@ -4105,7 +4105,7 @@ func TestCreateModelPrice_Success(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"model_name":"gpt-4o","input_price_cents":5,"output_price_cents":15}`
+	body := `{"model_name":"gpt-4o","input_price_cny_per_million_tokens":50,"output_price_cny_per_million_tokens":150}`
 	req := platformPricingRequest("POST", "/model-prices", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -4132,7 +4132,7 @@ func TestCreateModelPrice_DecimalCents(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"model_name":"mimo-v2.5","input_price_cents":0.2,"output_price_cents":0.1}`
+	body := `{"model_name":"mimo-v2.5","input_price_cny_per_million_tokens":2,"output_price_cny_per_million_tokens":1}`
 	req := platformPricingRequest("POST", "/model-prices", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -4168,7 +4168,7 @@ func TestCreateModelPrice_CacheRatios(t *testing.T) {
 		}}, nil
 	}}
 	h := newTestHandler(db)
-	body := `{"model_name":"claude","input_price_cents":4,"output_price_cents":20,"cache_read_ratio":0.1,"cache_creation_ratio":1.25}`
+	body := `{"model_name":"claude","input_price_cny_per_million_tokens":40,"output_price_cny_per_million_tokens":200,"cache_read_ratio":0.1,"cache_creation_ratio":1.25}`
 	req := platformPricingRequest("POST", "/model-prices", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	h.CreateModelPrice(rec, req)
@@ -4207,7 +4207,7 @@ func TestCreateModelPrice_DBError(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"model_name":"gpt-4o","input_price_cents":5,"output_price_cents":15}`
+	body := `{"model_name":"gpt-4o","input_price_cny_per_million_tokens":50,"output_price_cny_per_million_tokens":150}`
 	req := platformPricingRequest("POST", "/model-prices", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -4861,7 +4861,7 @@ func TestUpdateModelPrice_Success(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"input_price_cents":10,"output_price_cents":30}`
+	body := `{"input_price_cny_per_million_tokens":100,"output_price_cny_per_million_tokens":300}`
 	req := platformPricingRequest("PUT", "/model-prices/1", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "1")
@@ -4934,7 +4934,7 @@ func TestUpdateModelPrice_DBError(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"input_price_cents":10}`
+	body := `{"input_price_cny_per_million_tokens":100}`
 	req := platformPricingRequest("PUT", "/model-prices/1", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "1")
@@ -4957,7 +4957,7 @@ func TestUpdateModelPrice_NotFound(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"input_price_cents":10}`
+	body := `{"input_price_cny_per_million_tokens":100}`
 	req := platformPricingRequest("PUT", "/model-prices/999", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "999")

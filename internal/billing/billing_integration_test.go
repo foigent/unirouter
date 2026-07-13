@@ -544,14 +544,14 @@ func TestQueryModelPrice_Found_Integration(t *testing.T) {
 	require.InDelta(t, 15.0, outputCost, 0.000001)
 }
 
-func TestQueryModelPrice_NotFound_Fallback_Integration(t *testing.T) {
+func TestQueryModelPrice_NotFoundFailsClosed_Integration(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 
 	b := NewBilling(pool, nil)
 	inputCost, outputCost, err := b.QueryModelPrice(context.Background(), "nonexistent-model")
-	require.NoError(t, err)
-	require.InDelta(t, 2.0, inputCost, 0.000001, "should fallback to default input cost")
-	require.InDelta(t, 10.0, outputCost, 0.000001, "should fallback to default output cost")
+	require.ErrorIs(t, err, ErrModelPriceNotConfigured)
+	require.Zero(t, inputCost)
+	require.Zero(t, outputCost)
 }
 
 // --- QueryModelPriceForOrg tests ---
@@ -603,10 +603,10 @@ func TestQueryModelPriceForOrg_MultiplierOne_Integration(t *testing.T) {
 	require.InDelta(t, 50.0, outputCost, 0.000001, "50 * 1.0 = 50")
 }
 
-func TestQueryModelPriceForOrg_FallbackThenMultiplier_Integration(t *testing.T) {
+func TestQueryModelPriceForOrg_UnpricedMultiplierFailsClosed_Integration(t *testing.T) {
 	pool := testutil.SetupTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
-	// No model_prices entry → will fallback to default (2, 10)
+	// An orphan multiplier is not a price authority.
 
 	_, err := pool.Exec(context.Background(),
 		`INSERT INTO org_model_prices (org_id, model_name, multiplier) VALUES ($1, $2, $3)`,
@@ -615,9 +615,9 @@ func TestQueryModelPriceForOrg_FallbackThenMultiplier_Integration(t *testing.T) 
 
 	b := NewBilling(pool, nil)
 	inputCost, outputCost, err := b.QueryModelPriceForOrg(context.Background(), orgID, "fallback-model")
-	require.NoError(t, err)
-	require.InDelta(t, 6.0, inputCost, 0.000001, "2 * 3.0 = 6")
-	require.InDelta(t, 30.0, outputCost, 0.000001, "10 * 3.0 = 30")
+	require.ErrorIs(t, err, ErrModelPriceNotConfigured)
+	require.Zero(t, inputCost)
+	require.Zero(t, outputCost)
 }
 
 func TestQueryModelPriceForOrg_QueryErrorDoesNotFallback_Integration(t *testing.T) {
