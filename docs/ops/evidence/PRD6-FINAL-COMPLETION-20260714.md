@@ -6,6 +6,7 @@
 > Evidence level: repository and required CI verified; selected ECS surfaces
 > Target verified
 > Audit baseline: `9c73d6fd00fd5e58d126d9a6adc7fe9decf91cdd`
+> Completion publication: PR #194; required CI governs merge
 > Scope: UniRouter PRD6 only
 
 ## 1. Decision

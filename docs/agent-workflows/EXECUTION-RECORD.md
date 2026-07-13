@@ -6,7 +6,7 @@
 **Status:** PRD6 formally Completed (Accepted Scope); publication must pass required CI before merge
 **Baseline:** clean/aligned `main` / `origin/main` / `9c73d6fd00fd5e58d126d9a6adc7fe9decf91cdd`
 **Branch:** `codex/prd6-final-completion`
-**PR:** final completion publication on this branch; merge only after Backend Tests, Frontend Build and Docker Build pass
+**PR:** #194; merge only after Backend Tests, Frontend Build and Docker Build pass
 **Decision:** User directed on 2026-07-14 that PRD6 be marked complete if a fresh audit confirmed all PRD6-scoped work was finished; the audit confirmed all 27 accepted rows closed
 **Publication evidence:** `docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md`
 **Next product gate:** post-PRD6 target acceptance issue triage; PRD7, P6-E02 through P6-E04 and Production evidence remain later
