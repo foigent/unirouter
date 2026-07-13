@@ -8,9 +8,9 @@
 > implementation/test head `49d740d` and required run `29224762127`; P6-F40 is
 > closed. P6-F41 is CI verified / closed by PR #187 exact implementation/test
 > head `6d0e6ba` and required run `29229320432`. No target or production claim
-> is made. P6-F10 Guardrail Kernel and S1-v2 content-size safety are locally
-> verified on `codex/prd6-guardrail-kernel`; PR/required CI promotion remains
-> pending and P6-F11 remains the only other unclosed accepted feature.
+> is made. P6-F10 Guardrail Kernel and S1-v2 content-size safety are CI
+> verified / closed by PR #188 exact implementation/test head `76f95ed` and
+> required run `29236987646`; P6-F11 is the only unclosed accepted feature.
 > PRD6 Batch 0B P6-F16 was squash-merged by PR #140 as
 > `f244f669c529fec8767f85fff209882b333d8ed2`. P6-F33 was squash-merged by
 > PR #142 as `7173c5967a42c112fd0b219938a0901c1a0b9633`; its PR and post-merge
@@ -335,9 +335,10 @@
 - Scope entry: `docs/planning/PRD6-START-HERE.md`.
 - Proposed PRD: `docs/PRD-Phase6.md`; accepted/proposed state is authoritative
   in `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`.
-- Accepted feature accounting: 27 accepted rows, 25 CI verified / closed and
-  2 unclosed. P6-F10 is locally verified and pending PR/required CI; P6-F11
-  remains in progress.
+- Accepted feature accounting: 27 accepted rows, 26 CI verified / closed and
+  1 unclosed. P6-F10 is CI verified / closed by PR #188 exact
+  implementation/test head `76f95ed` / run `29236987646`; P6-F11 remains in
+  progress.
   `P6-TEST-DB-001` is a separate engineering-integrity issue outside that
   27-row feature count; it is CI verified / closed by PR #155 and post-merge
   main run `29157561036`.

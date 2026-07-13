@@ -5,8 +5,8 @@
 > Branch: `codex/prd6-guardrail-kernel`
 > Base: post-P6-F41 `main` at
 > `fbfde8816a6a6676cd0c65a489659d246c5541fd`
-> Evidence level: full local and focused PostgreSQL/race verified; PR and
-> required CI promotion pending
+> Evidence level: CI verified / closed by PR #188 exact implementation/test
+> head `76f95ed` and required run `29236987646`; no target or production claim
 > Scope: UniRouter repository only; no deployment, target mutation, real or
 > paid provider/detector call, credential change, raw-payload persistence,
 > external exporter/outbox activation, extra database access or X-Insight work
@@ -216,9 +216,11 @@ subsidy release, final-response size holds and affected-key release only after
 reconciliation. Frontend type-check, 30 files / 148 tests and production build
 passed. The build retains the existing large-chunk warning. macOS race linking
 retains the existing malformed `LC_DYSYMTAB` warning while all race commands
-exit successfully. Required GitHub Backend Tests, Frontend Build and Docker
-Build remain promotion gates until their exact-head results are recorded here;
-the local host has no `docker` executable, so no local Docker claim is made.
+exit successfully. PR #188 exact implementation/test head `76f95ed` passed
+required run `29236987646`: Backend Tests, Frontend Build and Docker Build all
+succeeded. The backend job explicitly ran the P6-F10 billing-hold and `000033`
+migration rollback gates added before promotion. The local host has no `docker`
+executable, so Docker evidence remains CI-only.
 
 ## 7. Explicit Non-Claims And Remaining Boundary
 
@@ -234,6 +236,6 @@ the local host has no `docker` executable, so no local Docker claim is made.
 - No deployment, target mutation, credential change, external exporter,
   continuous ingestion, X-Insight runtime dependency or production claim.
 
-P6-F10 can become CI verified / closed only after the exact PR head and
-post-merge `main` pass all three required jobs. Until then this document is
-local repository evidence, not closure evidence.
+P6-F10 is CI verified / closed by PR #188 exact implementation/test head
+`76f95ed` and required run `29236987646`. PR merge and post-merge `main` CI are
+repository-integration evidence, not target or production verification.

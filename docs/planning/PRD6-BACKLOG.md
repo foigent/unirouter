@@ -46,7 +46,7 @@
 | P6-BILL-001 | Prompt-cache token usage and billing | accurate provider economics | CI verified / closed; preserve provider-only/no-response-cache boundary | P1 |
 | P6-COST-001 / P6-F40 | Provider cost state, prepaid top-up and bounded reconciliation | prevents silent subsidy and ambiguous retry/cancel loss | CI verified / closed across PR #183/#184/#186; preserve provider-neutral/no-debt/no-silent-unblock boundary | P0 |
 | P6-USAGE-AUTH-001 / P6-F41 | Typed usage and delivery authority | prevents unknown-as-zero settlement and false delivery/provider-cost equivalence | CI verified / closed by PR #187 / run `29229320432`; preserve no-raw-response and customer/provider-ledger separation | P0 |
-| P6-GUARD-001 | Guardrail Kernel | enterprise safety and PII controls | detector/failure/latency policy | P1 |
+| P6-GUARD-001 | Guardrail Kernel | enterprise safety and PII controls | CI verified / closed by PR #188 exact implementation/test head `76f95ed` / run `29236987646`; preserve D6-15 and the separate P6-F11 streaming boundary | P1 |
 | P6-STREAM-001 | Streaming interception and termination | limits unsafe live disclosure | P6-STREAM-002A transport prerequisite CI verified; D6-10 dynamic reservation extension and buffer/latency/protocol policy contract remain | P1 |
 
 ## 3. D6-08 Accepted Administrator Integrity Queue

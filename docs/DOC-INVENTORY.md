@@ -37,6 +37,7 @@
 | `docs/ops/evidence/PRD6-B3H-P6F40B-provider-attempt-ledger-local-20260713.md` | D6-13/P6-F40B metadata-only durable attempt state, financial retry/cancel authority, production billing-decorator pass-through, migration guard and current local/CI boundary |
 | `docs/ops/evidence/PRD6-B3H-P6F40C-provider-key-reconciliation-local-20260713.md` | D6-13/D6-14 affected-key paid-admission block, platform-only amount-free reconciliation, tenant/concurrency/crash-gap/migration proof and current local/CI boundary |
 | `docs/ops/evidence/PRD6-B3H-P6F41-usage-delivery-integrity-local-20260713.md` | D6-13/D6-14 typed explicit-zero/missing usage, funded estimates, local-delivery charge gate, interrupted-stream delivered counter, metadata-only receipt and current local/CI boundary |
+| `docs/ops/evidence/PRD6-B4-P6F10-guardrail-kernel-local-20260713.md` | D6-15/P6-F10 immutable policy chain, bounded detectors/payloads, no-delivery cost holds, tenant-safe control/UI, guarded migration and PR #188 exact-head CI closure evidence |
 | `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` | Official competitor HA patterns, current UniRouter cluster facts, Four Quadrants and accepted D6-12 stream/HA boundary |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | Source-backed audit/reconciliation/correlation/UI/architecture/upgrade findings, Four Quadrants and PRD6 batches |
 | `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md` | Accepted customer-revenue/provider-COGS boundary, competitor and supplier billing evidence, Four Quadrants, PRD6 non-claims and future cost/metering/media candidates |
@@ -77,7 +78,7 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required single-owner execution, approval, evidence and optional-review workflow |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD6 Batch 3H P6-F41 CI closure through PR #187; previous PRD6/PRD5 evidence remains linked |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD6 Batch 4 P6-F10 CI closure through PR #188; previous PRD6/PRD5 evidence remains linked |
 | `docs/agent-workflows/reviews/` | Optional immutable independent review results |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry pointing to the current execution record |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |
@@ -207,7 +208,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 |------|------|
 | `docs/agent-workflows/README.md` | Agent workflow index |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Current Agent Protocol v2.0 |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD6 Batch 3H P6-F41 CI-verified execution-owner closeout through PR #187 with prior closeouts; prior PRD5 target/external evidence remains linked |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD6 Batch 4 P6-F10 CI-verified execution-owner closeout through PR #188 with prior closeouts; prior PRD5 target/external evidence remains linked |
 | `docs/agent-workflows/reviews/README.md` | Independent review naming, contents and severity rules |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |

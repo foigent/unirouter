@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-13
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14/D6-15 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F41 and P6-STREAM-002A are CI verified / closed; P6-F10 is locally verified and pending PR/required CI, while P6-F11 remains in progress
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14/D6-15 accepted; P6-F03-P6-F10, P6-F16-P6-F21, P6-F32-P6-F41 and P6-STREAM-002A are CI verified / closed; P6-F11 remains in progress
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -31,12 +31,11 @@ required CI. No scope decision grants target/deployment/data/cost authorization.
 
 - 41 total `P6-F*` rows exist in the acceptance matrix;
 - 27 are accepted implementation scope;
-- 25 are CI verified / closed: P6-F01 through P6-F09, P6-F16 through P6-F21
+- 26 are CI verified / closed: P6-F01 through P6-F10, P6-F16 through P6-F21
   and P6-F32 through P6-F41;
-- 2 accepted rows remain unclosed: D6-12 assigns
-  mid-stream crash semantics to P6-F11, which is in progress through the
-  P6-STREAM-002A transport prerequisite; P6-F10 is locally verified and
-  pending PR/required CI;
+- 1 accepted row remains unclosed: D6-12 assigns mid-stream crash semantics to
+  P6-F11, which is in progress through the P6-STREAM-002A transport
+  prerequisite;
 - 14 rows are not accepted: P6-F12 through P6-F15 and P6-F22 through P6-F31;
 - `P6-TEST-DB-001` is a separate accepted engineering-integrity issue outside
   the feature-row count. PR #155, merge `4b18ace` and post-merge main run

@@ -1,38 +1,38 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 3H P6-F41 Usage And Delivery Integrity
+**Batch:** PRD6 Batch 4 P6-F10 Guardrail Kernel
 **Owner:** Codex
-**Risk:** R3/R4 usage authority, customer charging, downstream delivery and migration safety
-**Status:** P6-F41 CI verified / closed by PR #187 exact implementation/test head `6d0e6ba` / run `29229320432`
-**Baseline:** `main` / `origin/main` / `e1f224dc277ceff0f84f56a0b3f907b42c562747`
-**Branch:** `codex/prd6-usage-delivery-integrity`
-**PR:** pending
-**Decision:** D6-13/D6-14 accepted by User on 2026-07-13
-**Next gate:** exact PR head required Backend Tests, Frontend Build and Docker Build
-**Previous batch:** P6-F40C PR #186, P6-F40B PR #184 and P6-F40A PR #183 are CI verified / closed; P6-F20 PR #177 and post-closeout fixture-only PR #180/#181 are CI verified / closed
+**Risk:** R3/R4 mandatory content policy, bounded payload, customer charging and migration safety
+**Status:** P6-F10 CI verified / closed by PR #188 exact implementation/test head `76f95ed` / run `29236987646`
+**Baseline:** `main` / `origin/main` / `fbfde8816a6a6676cd0c65a489659d246c5541fd`
+**Branch:** `codex/prd6-guardrail-kernel`
+**PR:** #188
+**Decision:** D6-15 G1-R/S1-v2 accepted by User on 2026-07-13
+**Next gate:** final documentation-head required CI, squash merge and post-merge `main` CI
+**Previous batch:** P6-F41 PR #187 and P6-F40 PR #183/#184/#186 are CI verified / closed; P6-F20 PR #177 and post-closeout fixture-only PR #180/#181 are CI verified / closed
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
-## Current P6-F41 Scope
+## Current P6-F10 Scope
 
-1. Preserve `provider_reported`, `gateway_counter`, `conservative_estimate` and
-   `none` authority plus purpose/finality/version through adapters, gateway,
-   billing, journals, logs, recovery and idempotency.
-2. Keep explicit provider zero valid while missing usage remains missing;
-   permit only a fully funded versioned conservative estimate before
-   non-stream output.
-3. Require non-stream `completed` local delivery and stream `partial` or later
-   local delivery before customer settlement. A first writer failure charges
-   zero and retains provider liability for explicit reconciliation.
-4. Separate interrupted-stream customer usage from full provider evidence by
-   charging only the independent delivered counter.
-5. Add append-only tenant-scoped `000032` delivery receipts and typed
-   idempotency readback without retaining response bodies.
-6. Preserve P6-F09/P6-F18B/P6-F40 behavior and strict successor rollback order.
+1. Pin one immutable global/organization/project/key/model Guardrail policy
+   chain per request and keep platform mandatory policy attenuation-proof.
+2. Preserve sensitive-word compatibility while adding deterministic local
+   PII/secret detection and a fixed platform registry for bounded external
+   detectors; retain only sanitized receipts and HMAC fingerprints.
+3. Enforce actual-read Chat/Embeddings and final non-stream response limits,
+   shared request-body accounting and bounded node/organization retained bytes.
+4. Withhold blocked or oversized provider output without customer delivery or
+   customer charge while retaining explicit provider-cost evidence for
+   operator reconciliation.
+5. Add tenant-safe versioned control APIs, Content Safety UI, OpenAPI/runbook
+   documentation and guarded migration `000033`.
+6. Preserve P6-F09/P6-F18/P6-F40/P6-F41 financial and delivery invariants;
+   streaming remains the independent P6-F11 boundary.
 
 ## Current Non-Goals
 
-- No P6-F10 Guardrail or P6-F11 process-crash checkpoint/client-recovery
-  implementation.
+- No P6-F11 stream interception, cross-chunk detection, disclosure bound,
+  reservation extension or process-crash checkpoint/client recovery.
 - No negative customer debt, automatic platform subsidy, raw response storage,
   Cache Service or separate Cost Control Service.
 - D6-14 additionally forbids aggregate provider bills, balance deltas or
@@ -45,38 +45,43 @@
 - No age-based guess for a process that dies while an attempt still appears
   `dispatch_started`/`response_accepted`; a future lease/heartbeat design must
   distinguish failure from a valid hours-long stream.
+- No real external detector configuration/call, arbitrary tenant detector URL,
+  detector credential store or automatic PII/semantic blocking on upgrade.
 - No dedicated FinOps workflow UI, supersession workflow, provider COGS import
   or supplier connector; those remain future D7-COST candidates.
 
 ## Current Focused Verification
 
-- P6-F41 adapter/billing/gateway/middleware PostgreSQL/race gate: `PASS`,
-  including explicit zero/missing usage, conservative funding, non-stream
-  delivery charge gate, interrupted-stream delivered counter, first-write
-  failure, idempotency failure state, 32-way replay and tenant isolation.
-- `000031/000032` clean down, roll-forward, invalid transition, append-only
-  mutation rejection, evidence-bearing down refusal and strict predecessor
-  order: `PASS`.
-- P6-F09/P6-F18B/P6-F40/P6-F41 billing regression gate: `PASS`.
+- P6-F10 guardrail/service/gateway/payload-policy/filter tests: `PASS`, including
+  policy precedence, stale/failure modes, external timeout/saturation,
+  structured output, cross-scope authority, byte budgets and exact final bound.
+- Admin, billing and migration PostgreSQL/race gates: `PASS`, including tenant
+  non-enumeration, optimistic versioning, no-delivery/no-customer-charge holds,
+  32-way idempotency, affected-key reconciliation and guarded `000033`
+  down/roll-forward behavior.
+- Local detector and immutable DFA benchmarks are recorded without making a
+  target-capacity or production-quality claim.
 - `go test ./...`, `go test -race ./...`, `go vet ./...` and
   `git diff --check`: `PASS`.
-- Frontend type-check, 29 files / 144 tests and production build: `PASS`.
-- Local Docker was not run because this host has no `docker` executable; PR
-  #187 required run `29229320432` passed Backend Tests, Frontend Build and
-  Docker Build for exact implementation/test head `6d0e6ba`.
-- Evidence: `docs/ops/evidence/PRD6-B3H-P6F41-usage-delivery-integrity-local-20260713.md`.
+- Frontend type-check, 30 files / 148 tests and production build: `PASS`.
+- Local Docker was not run because this host has no `docker` executable. PR
+  #188 required run `29236987646` passed Backend Tests, Frontend Build and
+  Docker Build for exact implementation/test head `76f95ed`, including the two
+  explicit P6-F10 CI gates.
+- Evidence: `docs/ops/evidence/PRD6-B4-P6F10-guardrail-kernel-local-20260713.md`.
 
 ## Current Stop And Rollback Conditions
 
-- Stop if missing usage becomes provider zero, a hold or `write_started` receipt
-  can charge, full provider usage charges an interrupted partial stream, a
-  first writer failure creates customer spend, receipt scope widens, content is
-  retained, or concurrent recovery creates a second terminal effect.
+- Stop if a mandatory platform policy can be weakened, raw content reaches
+  retained evidence, a tenant can register an arbitrary detector/credential,
+  actual-read/final-response bounds are bypassed, withheld output is delivered
+  or customer-charged, or concurrent reconciliation creates a second terminal
+  effect.
 - Repository rollback requires a new reviewed PR. Migration down is allowed
-  only before typed usage/delivery evidence exists. Evidence-bearing rollback
+  only before Guardrail policy/hold evidence exists. Evidence-bearing rollback
   refuses destructive change.
-- A target rollout must drain old writers before `000031/000032` becomes the
-  active contract; mixed-version financial safety is not claimed.
+- A target rollout must drain old data/control-plane binaries before `000033`
+  becomes active; mixed-version policy or financial safety is not claimed.
 
 ## Previous P6-F40C Behavior Change
 
