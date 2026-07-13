@@ -37,6 +37,7 @@
 | `docs/ops/evidence/PRD6-B3H-P6F40B-provider-attempt-ledger-local-20260713.md` | D6-13/P6-F40B metadata-only durable attempt state, financial retry/cancel authority, production billing-decorator pass-through, migration guard and current local/CI boundary |
 | `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` | Official competitor HA patterns, current UniRouter cluster facts, Four Quadrants and accepted D6-12 stream/HA boundary |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | Source-backed audit/reconciliation/correlation/UI/architecture/upgrade findings, Four Quadrants and PRD6 batches |
+| `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md` | Accepted customer-revenue/provider-COGS boundary, competitor and supplier billing evidence, Four Quadrants, PRD6 non-claims and future cost/metering/media candidates |
 | `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | PRD7 candidate split; first future direction selected, all implementation deferred until PRD6 closeout |
 | `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` | Accepted future Cache Service direction, service boundary, capacity planning triggers, SaaS cell reuse and non-authorization guardrails |
 | `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md` | Version-fixed competitor audit, Four Quadrants and priority matrix |
@@ -92,7 +93,8 @@
 | `docs/PRD-Phase6.md` | PRD6 product requirements | D6-01/D6-02 accepted; advanced innovation remains separately gated |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | PRD6 product/architecture/UX audit | Confirmed findings, hypotheses and user requirements remain separately labeled |
 | `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` | PRD6 HA and stream-failover architecture reference | Official-source competitor facts, explicit inferences and recommendations remain separately labeled; no deployment authorization |
-| `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | PRD7 candidate backlog | D7-UPGRADE-001/002 selected as future first direction; D7-CACHE-001 is a future required direction; implementation remains deferred and separately gated |
+| `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md` | PRD6 provider-cost reconciliation reference | D6-14 accepted architecture boundary and future candidate classification; no live connector, bill import, media implementation, service split or production claim |
+| `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | PRD7 candidate backlog | D7-UPGRADE-001/002 remain the future first direction; Cache, native provider runtime, cost reconciliation/connectors, generalized metering and async media future capabilities are recorded; managed billing still needs a decision; implementation remains deferred and separately gated |
 | `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` | Future Cache Service candidate | Exact-cache service boundary and private/SaaS cell profiles accepted as direction only; no implementation authorization |
 | `docs/PRD-Phase5.md` | PRD5 completed product requirements | Accepted Scope Complete; preserve as closed phase evidence |
 | `docs/PRD-Phase4.md` | PRD4 formal product requirements | Completed current PRD4 scope |

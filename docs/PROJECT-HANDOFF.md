@@ -2,7 +2,7 @@
 
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
-> Current PRD6 batch: D6-13 is accepted. PR #183 exact implementation/test
+> Current PRD6 batch: D6-13/D6-14 are accepted. PR #183 exact implementation/test
 > head `d1afd97` CI verifies P6-F40A. PR #184 exact implementation/test head
 > `ac2bfb5` / run `29209644118` CI verifies P6-F40B
 > provider-attempt/retry-cancel authority. P6-F40C and P6-F41 remain pending.
@@ -62,6 +62,7 @@
 50. `docs/CODEBASE-MAP.md`, `docs/DOC-INVENTORY.md`, and `docs/DOCS-GOVERNANCE.md` - code and documentation lifecycle maps.
 51. `docs/ops/evidence/PRD6-B3H-P6F40A-cost-shortfall-local-20260713.md` - current COST-009 shortfall/top-up/pending implementation and verification boundary.
 52. `docs/ops/evidence/PRD6-B3H-P6F40B-provider-attempt-ledger-local-20260713.md` - metadata-only provider-attempt state, financial retry/cancel authority, migration safety and local verification boundary.
+53. `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md` - accepted Customer Revenue Ledger / Provider COGS boundary, competitor/provider coverage research, Four Quadrants and future capability queue.
 
 ## Current Project Shape
 
@@ -78,7 +79,7 @@ redacted topology history remains under the existing PRD5 paths. PRD6 must not
 reinterpret target-evidence debt or X-Insight-owned work as unfinished PRD5
 source scope.
 
-PRD6 is active with D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13 accepted. D6-13 adds P6-F40/P6-F41 without rewriting the CI-verified P6-F18/P6-F20 history. P6-F40A is CI verified by PR #183 exact implementation/test head `d1afd97` and run `29207889734`: known cost shortfall uses cash-only prepaid top-up, insufficient cash remains non-terminal/non-cancellable, and `000028` distinguishes provider-cost pending from delivered stream output. P6-F40B is CI verified by PR #184 exact implementation/test head `ac2bfb5` / run `29209644118`: `000029` persists bounded provider-attempt evidence before Chat/Embeddings dispatch, only durable HTTP rejection may authorize existing failover, ambiguous/unusable/accepted-unsettled liability cannot ordinarily cancel, and cost/transaction receipts converge atomically through the production billing decorators. Affected-key blocking/operator reconciliation and typed usage/delivery authority remain pending. Batch 0A is merged/CI verified. The second
+PRD6 is active with D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14 accepted. D6-13 adds P6-F40/P6-F41 without rewriting the CI-verified P6-F18/P6-F20 history. D6-14 requires Customer Revenue Ledger authority to remain separate from Provider COGS evidence: collection uses authoritative usage, local delivery and frozen customer price; aggregate provider bills, balance deltas and operator-entered amounts cannot create customer debt. Provider-native runtime/conformance packs, live billing connectors, controlled bill import, generalized units, async media, managed billing and Cost Control Service extraction remain future candidates. P6-F40A is CI verified by PR #183 exact implementation/test head `d1afd97` and run `29207889734`: known cost shortfall uses cash-only prepaid top-up, insufficient cash remains non-terminal/non-cancellable, and `000028` distinguishes provider-cost pending from delivered stream output. P6-F40B is CI verified by PR #184 exact implementation/test head `ac2bfb5` / run `29209644118`: `000029` persists bounded provider-attempt evidence before Chat/Embeddings dispatch, only durable HTTP rejection may authorize existing failover, ambiguous/unusable/accepted-unsettled liability cannot ordinarily cancel, and cost/transaction receipts converge atomically through the production billing decorators. Affected-key blocking/operator reconciliation and typed usage/delivery authority remain pending. Batch 0A is merged/CI verified. The second
 audit adds open P0 tenant,
 operation/idempotency, reservation/terminal-state and revocation findings, plus
 P1 Agent/100x blind spots. The accepted MVP covers those integrity
@@ -200,6 +201,7 @@ no PRD6 response persistence, deployment or semantic cache is accepted.
 | What did the UI/reconciliation/correlation/architecture audit conclude? | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` |
 | Which items are candidates for PRD7 rather than accepted scope? | `docs/planning/PRD7-CANDIDATE-BACKLOG.md` |
 | What is the accepted future Cache Service target and when should it split? | `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` |
+| How are customer revenue, provider COGS, competitor practice and supplier coverage separated? | `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md` |
 | What is the proposed PRD6 scope? | `docs/PRD-Phase6.md` |
 | Which PRD6 rows are accepted versus proposed? | `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` |
 | What is the PRD6 implementation order? | `docs/planning/PRD6-IMPLEMENTATION-PLAN.md` |
@@ -246,7 +248,7 @@ Use `docs/agent-workflows/AGENT-PROTOCOL.md` before changing code or status:
 Current execution has completed PRD6 Batch 0B P6-F16 through PR #140 /
 `f244f669`; its post-merge `main` CI is green. Fresh full repository checks and
 X-Insight tests passed before implementation; Batch 0A is merged and CI
-verified. D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13 are accepted; P6-F40A is CI verified by PR #183 exact implementation/test head `d1afd97` and run `29207889734`; P6-F40B is CI verified by PR #184 exact implementation/test head `ac2bfb5` / run `29209644118`, while P6-F16 and P6-F33 are CI verified
+verified. D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14 are accepted; P6-F40A is CI verified by PR #183 exact implementation/test head `d1afd97` and run `29207889734`; P6-F40B is CI verified by PR #184 exact implementation/test head `ac2bfb5` / run `29209644118`, while P6-F16 and P6-F33 are CI verified
 and merged. P6-F37/P6-F38 are merged and CI verified by PR #143 / `a1e0ad6`,
 P6-F32/P6-F39 are merged and CI verified by PR #145 / `609385f`; P6-F34 was
 merged by PR #146 as `517ce45381429781f7e81e492bdd9f38093c21ba` after final-head run `29137670055`, and

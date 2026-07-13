@@ -1,8 +1,8 @@
 # UniRouter PRD6: Reliable MaaS Policy And Safety Plane
 
-> Version: 0.11
+> Version: 0.12
 > Date: 2026-07-13
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F40A/P6-F40B are CI verified, P6-F40/P6-F11 remain in progress, and P6-F10/P6-F41 are not started
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14 accepted; P6-F03-P6-F09, P6-F16-P6-F21, P6-F32-P6-F39 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F40A/P6-F40B are CI verified, P6-F40/P6-F11 remain in progress, and P6-F10/P6-F41 are not started
 > Accepted implementation scope: P6-F03 through P6-F11, P6-F16 through P6-F21, P6-F32 through P6-F41
 > Innovation gate: P6-F23 through P6-F31 remain proposed/deferred
 
@@ -335,6 +335,19 @@ The User accepted on 2026-07-11:
    bounded subsidy before unblocking. P6-F40/P6-F41 implement this boundary;
    a separate Cost Control Service and raw response retention remain later
    decisions.
+9. D6-14: keep Customer Revenue Ledger authority separate from Provider COGS
+   evidence. Customer collection requires authoritative usage, local delivery
+   outcome and the frozen customer price; an aggregate provider bill, balance
+   delta or operator-entered amount cannot create customer debt. Provider cost
+   progresses through estimated, response-observed, aggregate-matched and
+   invoice-reconciled evidence, without a universal `exact_request_charged`
+   claim. P6-F40C/P6-F41 implement only the provider-neutral safety contract.
+   Provider-native runtime/conformance packs, live billing connectors,
+   controlled bill import, generalized usage units, asynchronous media tasks,
+   managed unified billing and any separate Cost Control Service are recorded as
+   future candidates in
+   `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md`
+   and `docs/planning/PRD7-CANDIDATE-BACKLOG.md`.
 
 Batch 0B is therefore authorized for repository implementation and begins with
 P6-F16. Each R4 security/financial boundary remains an independently reviewable
