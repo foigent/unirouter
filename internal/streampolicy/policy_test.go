@@ -1,6 +1,9 @@
 package streampolicy
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestDefaultValid(t *testing.T) {
 	config := Default()
@@ -9,6 +12,13 @@ func TestDefaultValid(t *testing.T) {
 	}
 	if config.MaxSSELineBytes < 1024*1024 {
 		t.Fatalf("default must admit a 1 MiB SSE fixture, got %d", config.MaxSSELineBytes)
+	}
+	if EnforceBufferMaxBytes != 4*1024 || EnforceBufferMaxWait != 200*time.Millisecond ||
+		CheckpointInterval != time.Second || CheckpointDeliveredBytes != 64*1024 ||
+		CheckpointCompletionTokens != 128 || CheckpointLeaseDuration <= CheckpointHeartbeatInterval ||
+		FinalizationLeaseDuration <= CheckpointLeaseDuration ||
+		ReservationGuardTokens >= ReservationExtensionTokens {
+		t.Fatalf("unsafe D6-16 constants")
 	}
 }
 

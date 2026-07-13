@@ -21,10 +21,12 @@ type DurablePolicyReservation struct {
 // DurableReservation is a terminal-only snapshot. It cannot be exchanged for
 // new policy or workload admission.
 type DurableReservation struct {
-	OperationID string                                `json:"operation_id"`
-	Items       []DurablePolicyReservation            `json:"items"`
-	Idempotent  bool                                  `json:"idempotent"`
-	Workload    *workloadadmission.DurableReservation `json:"workload,omitempty"`
+	OperationID         string                                `json:"operation_id"`
+	Items               []DurablePolicyReservation            `json:"items"`
+	Idempotent          bool                                  `json:"idempotent"`
+	ExtensionSequence   int                                   `json:"extension_sequence"`
+	LastExtensionTokens int64                                 `json:"last_extension_tokens"`
+	Workload            *workloadadmission.DurableReservation `json:"workload,omitempty"`
 }
 
 func (r *Reservation) Durable() *DurableReservation {
@@ -41,10 +43,12 @@ func (r *Reservation) Durable() *DurableReservation {
 		})
 	}
 	return &DurableReservation{
-		OperationID: r.OperationID,
-		Items:       items,
-		Idempotent:  r.Idempotent,
-		Workload:    r.workload.Durable(),
+		OperationID:         r.OperationID,
+		Items:               items,
+		Idempotent:          r.Idempotent,
+		ExtensionSequence:   r.ExtensionSequence,
+		LastExtensionTokens: r.LastExtensionTokens,
+		Workload:            r.workload.Durable(),
 	}
 }
 
@@ -66,10 +70,12 @@ func RestoreDurableReservation(snapshot *DurableReservation) (*Reservation, erro
 		return nil, err
 	}
 	reservation := &Reservation{
-		OperationID: snapshot.OperationID,
-		Items:       items,
-		Idempotent:  snapshot.Idempotent,
-		workload:    workload,
+		OperationID:         snapshot.OperationID,
+		Items:               items,
+		Idempotent:          snapshot.Idempotent,
+		ExtensionSequence:   snapshot.ExtensionSequence,
+		LastExtensionTokens: snapshot.LastExtensionTokens,
+		workload:            workload,
 	}
 	if !validReservation(reservation) {
 		return nil, fmt.Errorf("invalid durable policy reservation")

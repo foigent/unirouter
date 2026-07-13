@@ -39,6 +39,11 @@ type mockBilling struct {
 	queryModelPriceFn func(ctx context.Context, orgID int64, model string) (float64, float64, error)
 	calculateCostFn   func(ctx context.Context, model string, promptTokens, completionTokens int) (int, error)
 	freezeFn          func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error)
+	extendFn          func(ctx context.Context, req billing.ExtendReservationRequest) (*billing.ExtendReservationResult, error)
+	beginStreamFn     func(ctx context.Context, start billing.StreamDeliveryStart) error
+	renewStreamFn     func(ctx context.Context, start billing.StreamDeliveryStart) error
+	checkpointFn      func(ctx context.Context, checkpoint billing.StreamDeliveryCheckpoint) (*billing.StreamCheckpointResult, error)
+	finishStreamFn    func(ctx context.Context, start billing.StreamDeliveryStart, state, reason string) error
 	beginAttemptFn    func(ctx context.Context, req billing.ProviderAttemptStart) error
 	completeAttemptFn func(ctx context.Context, req billing.ProviderAttemptCompletion) error
 	prepareDeliveryFn func(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error)
@@ -121,6 +126,60 @@ func (m *mockBilling) Freeze(ctx context.Context, req billing.FreezeRequest) (*b
 		return m.freezeFn(ctx, req)
 	}
 	return &billing.FreezeResult{FreezeID: 1, Amount: 100, NewBalance: 900, Success: true}, nil
+}
+
+func (m *mockBilling) ExtendReservation(ctx context.Context, req billing.ExtendReservationRequest) (*billing.ExtendReservationResult, error) {
+	if m.extendFn != nil {
+		return m.extendFn(ctx, req)
+	}
+	return &billing.ExtendReservationResult{
+		Success: true, Sequence: req.Sequence,
+		AddedCompletionTokens:  req.AdditionalCompletionTokens,
+		TargetCompletionTokens: req.TargetCompletionTokens,
+		Amount:                 1,
+	}, nil
+}
+
+func (m *mockBilling) BeginStreamDelivery(ctx context.Context, start billing.StreamDeliveryStart) error {
+	if m.beginStreamFn != nil {
+		return m.beginStreamFn(ctx, start)
+	}
+	// Preserve the observable sub-events older relay tests asserted while the
+	// production implementation now commits marker, receipt and lease atomically.
+	if m.markOutputFn != nil {
+		if err := m.markOutputFn(ctx, start.RequestID, start.OrgID); err != nil {
+			return err
+		}
+	}
+	if m.recordDeliveryFn != nil {
+		return m.recordDeliveryFn(ctx, billing.DeliveryEvent{
+			RequestID: start.RequestID, AttemptID: start.AttemptID, OrgID: start.OrgID,
+			Mode: billing.DeliveryModeStream, Outcome: billing.DeliveryOutcomeWriteStarted,
+			HTTPStatus: http.StatusOK,
+		})
+	}
+	return nil
+}
+
+func (m *mockBilling) RenewStreamDelivery(ctx context.Context, start billing.StreamDeliveryStart) error {
+	if m.renewStreamFn != nil {
+		return m.renewStreamFn(ctx, start)
+	}
+	return nil
+}
+
+func (m *mockBilling) CheckpointStreamDelivery(ctx context.Context, checkpoint billing.StreamDeliveryCheckpoint) (*billing.StreamCheckpointResult, error) {
+	if m.checkpointFn != nil {
+		return m.checkpointFn(ctx, checkpoint)
+	}
+	return &billing.StreamCheckpointResult{Sequence: 1}, nil
+}
+
+func (m *mockBilling) FinishStreamDelivery(ctx context.Context, start billing.StreamDeliveryStart, state, reason string) error {
+	if m.finishStreamFn != nil {
+		return m.finishStreamFn(ctx, start, state, reason)
+	}
+	return nil
 }
 
 func (m *mockBilling) Settle(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {

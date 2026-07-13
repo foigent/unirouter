@@ -1,7 +1,7 @@
 # PRD6 Implementation Plan
 
 > Date: 2026-07-13
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14/D6-15 accepted; P6-F03-P6-F10, P6-F16-P6-F21, P6-F32-P6-F41 and P6-STREAM-002A are CI verified / closed; P6-F11 remains in progress
+> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14/D6-15/D6-16 accepted; P6-F03-P6-F10, P6-F16-P6-F21, P6-F32-P6-F41 and P6-STREAM-002A are CI verified / closed; P6-F11 remains in progress
 > Execution owner: Codex under `docs/agent-workflows/AGENT-PROTOCOL.md`
 
 ## 1. Sequence
@@ -197,8 +197,8 @@ Order within the batch:
 5. handle stream Scanner errors, response-body lifetime, single-writer/flush and
    timeout semantics safely — P6-STREAM-002A is CI verified / closed by PR #162,
    merge `7737f8b` and post-merge main run `29168586124`;
-   reservation-aware extension and the P6-F11 semantic policy hook remain later
-   accepted slices;
+   reservation-aware extension and the P6-F11 semantic policy hook passed PR
+   #189 exact implementation/test head required CI and await merge/post-merge;
 6. preserve the P6-F35 strict-version sensitive-word reload and P6-F05 typed
    configuration/budget-alert regressions.
 
@@ -369,10 +369,9 @@ audit.
 external detector, latency/content budget and output-cost behavior remain
 required evidence.
 
-**Status:** repository implementation and focused local/race/PostgreSQL/UI
-verification pass. Promotion remains pending PR and required Backend Tests,
-Frontend Build and Docker Build; no target, production, real detector or real
-provider claim is made.
+**Status:** CI verified / closed by PR #188 exact implementation/test head
+`76f95ed` and required run `29236987646`; no target, production, real detector
+or real provider claim is made.
 
 Deliverables:
 
@@ -394,16 +393,32 @@ Deliverables:
 ### Batch 5 — Streaming Policy And Termination
 
 **Risk:** R4 live content disclosure and billing.
-**Gate:** accepted disclosure/buffering/latency and protocol termination contract.
+**Gate:** D6-16 S-A accepted: 200 ms/4 KiB synchronous normalized model-data
+JSON pre-flush micro-buffer, fail-closed single-frame overflow,
+detector-declared bounded lookbehind, external semantic shadow by default, no
+retry/failover after an accepted upstream stream, safe-delivery-only customer
+settlement, and explicit checkpointed interruption rather than replay or
+transparent migration.
+
+**Status:** PR #189 exact implementation/test head `8ed6a83` passed required run
+`29245696926`: Backend Tests, Frontend Build and Docker Build, including the
+explicit stream contract and migration rollback gates. Evidence-update
+exact-head CI, merge and post-merge `main` CI remain pending. No target, real
+detector/provider or production claim is made.
 
 Deliverables:
 
 - normalized pre-flush chunk hook;
+- strict normalized extraction of text, refusal/reasoning text and function/tool
+  arguments, with enforced unknown-output shapes failing closed;
 - cross-chunk sliding window or bounded buffering;
 - oversize/malformed-frame and detector-timeout behavior;
 - OpenAI-compatible and Anthropic termination semantics;
 - upstream cancellation, client disconnect and exactly-once settlement;
 - measured residual disclosure in evidence and documentation.
+- idempotent reservation extension before the D6-10 guard band;
+- monotonic post-write stream checkpoints, renewable process lease, expired-
+  lease recovery and explicit idempotency readback.
 
 ### Batch 6 — Selected Advanced Capability
 

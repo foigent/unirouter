@@ -18,9 +18,12 @@ import (
 type fakeProvider struct {
 	freezeResult *billing.FreezeResult
 	freezeErr    error
+	extendResult *billing.ExtendReservationResult
+	extendErr    error
 	settleResult *billing.SettleResult
 	settleErr    error
 	freezeCalls  int
+	extendCalls  int
 	settleCalls  int
 	cancelCalls  int
 	beginReq     billing.ProviderAttemptStart
@@ -41,6 +44,32 @@ func (p *fakeProvider) Freeze(context.Context, billing.FreezeRequest) (*billing.
 		return &billing.FreezeResult{Success: true, Amount: 10}, nil
 	}
 	return p.freezeResult, p.freezeErr
+}
+
+func (p *fakeProvider) ExtendReservation(_ context.Context, req billing.ExtendReservationRequest) (*billing.ExtendReservationResult, error) {
+	p.extendCalls++
+	if p.extendResult != nil || p.extendErr != nil {
+		return p.extendResult, p.extendErr
+	}
+	return &billing.ExtendReservationResult{
+		Success: true, Sequence: req.Sequence,
+		AddedCompletionTokens:  req.AdditionalCompletionTokens,
+		TargetCompletionTokens: req.TargetCompletionTokens,
+		Amount:                 1,
+	}, nil
+}
+
+func (p *fakeProvider) BeginStreamDelivery(context.Context, billing.StreamDeliveryStart) error {
+	return nil
+}
+func (p *fakeProvider) RenewStreamDelivery(context.Context, billing.StreamDeliveryStart) error {
+	return nil
+}
+func (p *fakeProvider) CheckpointStreamDelivery(context.Context, billing.StreamDeliveryCheckpoint) (*billing.StreamCheckpointResult, error) {
+	return &billing.StreamCheckpointResult{Sequence: 1}, nil
+}
+func (p *fakeProvider) FinishStreamDelivery(context.Context, billing.StreamDeliveryStart, string, string) error {
+	return nil
 }
 
 func (p *fakeProvider) BeginProviderAttempt(_ context.Context, req billing.ProviderAttemptStart) error {
@@ -99,10 +128,13 @@ func (p *fakeProvider) Cancel(context.Context, string, int64) error {
 
 type fakeRuntime struct {
 	reserveErr        error
+	extendErr         error
 	finalizeErr       error
 	cancelErr         error
 	lastRequest       limitpolicy.AdmissionRequest
 	reserveCalls      int
+	extendCalls       int
+	extendedTokens    int64
 	finalizeCalls     int
 	cancelCalls       int
 	cancelBeforeCalls int
@@ -116,6 +148,62 @@ func (r *fakeRuntime) Reserve(_ context.Context, request limitpolicy.AdmissionRe
 		return nil, r.reserveErr
 	}
 	return &limitpolicy.Reservation{OperationID: request.OperationID}, nil
+}
+
+func (r *fakeRuntime) Extend(_ context.Context, reservation *limitpolicy.Reservation, sequence int, tokens int64) error {
+	r.extendCalls++
+	r.extendedTokens += tokens
+	if r.extendErr != nil {
+		return r.extendErr
+	}
+	reservation.ExtensionSequence = sequence
+	return nil
+}
+
+func TestP6F11PolicyExtensionPrecedesWalletAndRetainsConservativeAdmission(t *testing.T) {
+	request := billing.FreezeRequest{
+		RequestID: "operation-stream-extension", OrgID: 7, Model: "company-chat",
+		EstimatedTokens: 200, EstimatedInputTokens: 100, ReservedCompletionTokens: 100,
+	}
+	extension := billing.ExtendReservationRequest{
+		RequestID: request.RequestID, OrgID: request.OrgID, Sequence: 1,
+		AdditionalCompletionTokens: 1_000, TargetCompletionTokens: 1_100,
+	}
+
+	t.Run("shared TPM denial stops before wallet", func(t *testing.T) {
+		inner := &fakeProvider{}
+		runtime := &fakeRuntime{}
+		service := New(inner, runtime)
+		if result, err := service.Freeze(policyContext(), request); err != nil || result == nil || !result.Success {
+			t.Fatalf("freeze = %+v / %v", result, err)
+		}
+		runtime.extendErr = limitpolicy.ErrTPMExceeded
+		result, err := service.ExtendReservation(t.Context(), extension)
+		if err != nil || result == nil || result.Success || result.ErrorCode != ErrorCodeTPMExceeded {
+			t.Fatalf("TPM extension denial = %+v / %v", result, err)
+		}
+		if runtime.extendCalls != 1 || inner.extendCalls != 0 {
+			t.Fatalf("extension order violated: policy=%d wallet=%d", runtime.extendCalls, inner.extendCalls)
+		}
+	})
+
+	t.Run("wallet denial retains earlier TPM reservation", func(t *testing.T) {
+		inner := &fakeProvider{extendResult: &billing.ExtendReservationResult{
+			Success: false, Sequence: 1, ErrorCode: "insufficient_balance",
+		}}
+		runtime := &fakeRuntime{}
+		service := New(inner, runtime)
+		if result, err := service.Freeze(policyContext(), request); err != nil || result == nil || !result.Success {
+			t.Fatalf("freeze = %+v / %v", result, err)
+		}
+		result, err := service.ExtendReservation(t.Context(), extension)
+		if err != nil || result == nil || result.Success || result.ErrorCode != "insufficient_balance" {
+			t.Fatalf("wallet extension denial = %+v / %v", result, err)
+		}
+		if runtime.extendCalls != 1 || runtime.extendedTokens != 1_000 || inner.extendCalls != 1 {
+			t.Fatalf("conservative extension evidence missing: runtime=%+v wallet=%d", runtime, inner.extendCalls)
+		}
+	})
 }
 
 func (r *fakeRuntime) Finalize(_ context.Context, _ *limitpolicy.Reservation, actualTokens int64) error {

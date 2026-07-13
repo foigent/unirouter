@@ -58,6 +58,13 @@ func TestP6F10GuardrailControlPlaneTenantAuthorityAndVersioning(t *testing.T) {
 	require.NoError(t, json.Unmarshal(createOwn.Body.Bytes(), &created))
 	policyID := int64(created["id"].(float64))
 	require.Equal(t, true, created["runtime_snapshot_applied"])
+	streamCreate := serve(t, http.MethodPost, "/api/v1/guardrail-policies", fmt.Sprintf(`{
+		"org_id":%d,"project_id":%d,"api_key_id":%d,"name":"stream-email-block",
+		"model":"company-chat","stage":"stream_output","detector_ref":"builtin:pii_secrets",
+		"action":"block","mode":"enforce","failure_mode":"fail_closed",
+		"config":{"entities":["email"]}
+	}`, fx.orgA, fx.projectA, fx.keyA), fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin)
+	assertStatus(t, streamCreate, http.StatusCreated)
 
 	foreignCreate := serve(t, http.MethodPost, "/api/v1/guardrail-policies", fmt.Sprintf(`{
 		"org_id":%d,"name":"foreign","stage":"input","detector_ref":"builtin:pii_secrets",
@@ -109,6 +116,11 @@ func TestP6F10GuardrailControlPlaneTenantAuthorityAndVersioning(t *testing.T) {
 	require.Contains(t, orgAList.Body.String(), `"local_detector_max_bytes":131072`)
 	require.Contains(t, orgAList.Body.String(), `"external_detector_max_bytes":262144`)
 	require.Contains(t, orgAList.Body.String(), `"detector_max_texts":256`)
+	require.Contains(t, orgAList.Body.String(), `"stream_enforce_buffer_max_bytes":4096`)
+	require.Contains(t, orgAList.Body.String(), `"stream_enforce_buffer_max_wait_ms":200`)
+	require.Contains(t, orgAList.Body.String(), `"stream_checkpoint_interval_ms":1000`)
+	require.Contains(t, orgAList.Body.String(), `"stream_detector_capabilities"`)
+	require.Contains(t, orgAList.Body.String(), `"builtin:pii_secrets":{"synchronous":true,"lookbehind_bytes":512}`)
 	var orgAListPayload struct {
 		Data []map[string]interface{} `json:"data"`
 	}

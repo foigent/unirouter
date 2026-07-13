@@ -180,6 +180,16 @@ jobs:
         env:
           REQUIRE_TEST_DATABASE: "1"
         run: go test -tags=integration -race ./internal/migrate -run TestP6F10GuardrailKernelMigrationUpDownGuardAndRollForward -count=1
+
+      - name: Run stream policy and termination contract tests
+        env:
+          REQUIRE_TEST_DATABASE: "1"
+        run: go test -race ./internal/billing ./internal/gateway ./internal/agentcap ./internal/limitpolicy ./internal/guardrail ./internal/admin ./internal/middleware ./internal/capbilling ./internal/policybilling -run TestP6F11 -count=1
+
+      - name: Run stream policy and termination migration rollback tests
+        env:
+          REQUIRE_TEST_DATABASE: "1"
+        run: go test -tags=integration -race ./internal/migrate -run TestP6F11StreamPolicyTerminationMigrationUpDownGuardAndRollForward -count=1
       
       - name: Upload coverage
         uses: actions/upload-artifact@v4

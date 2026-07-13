@@ -1,38 +1,39 @@
 # Current Execution Record
 
-**Batch:** PRD6 Batch 4 P6-F10 Guardrail Kernel
+**Batch:** PRD6 Batch 5 P6-F11 Streaming Policy And Termination
 **Owner:** Codex
-**Risk:** R3/R4 mandatory content policy, bounded payload, customer charging and migration safety
-**Status:** P6-F10 CI verified / closed by PR #188 exact implementation/test head `76f95ed` / run `29236987646`
-**Baseline:** `main` / `origin/main` / `fbfde8816a6a6676cd0c65a489659d246c5541fd`
-**Branch:** `codex/prd6-guardrail-kernel`
-**PR:** #188
-**Decision:** D6-15 G1-R/S1-v2 accepted by User on 2026-07-13
-**Next gate:** final documentation-head required CI, squash merge and post-merge `main` CI
+**Risk:** R3/R4 live content disclosure, hard budget, customer charging and process-crash recovery
+**Status:** D6-16 contract accepted; exact implementation/test head passed required PR CI, merge pending
+**Baseline:** `main` / `origin/main` / `f9925779f1da7681b07282be5d500773a687d3b9`
+**Branch:** `codex/prd6-stream-policy-termination`
+**PR:** #189
+**Decision:** D6-16 S-A accepted by User on 2026-07-13
+**Next gate:** evidence-update exact-head required CI, merge and post-merge `main` CI
 **Previous batch:** P6-F41 PR #187 and P6-F40 PR #183/#184/#186 are CI verified / closed; P6-F20 PR #177 and post-closeout fixture-only PR #180/#181 are CI verified / closed
 **Previous phase:** PRD5 Accepted Scope Complete; target backend evidence remains `95d1da9` / PR #133
 
-## Current P6-F10 Scope
+## Current P6-F11 Scope
 
-1. Pin one immutable global/organization/project/key/model Guardrail policy
-   chain per request and keep platform mandatory policy attenuation-proof.
-2. Preserve sensitive-word compatibility while adding deterministic local
-   PII/secret detection and a fixed platform registry for bounded external
-   detectors; retain only sanitized receipts and HMAC fingerprints.
-3. Enforce actual-read Chat/Embeddings and final non-stream response limits,
-   shared request-body accounting and bounded node/organization retained bytes.
-4. Withhold blocked or oversized provider output without customer delivery or
-   customer charge while retaining explicit provider-cost evidence for
-   operator reconciliation.
-5. Add tenant-safe versioned control APIs, Content Safety UI, OpenAPI/runbook
-   documentation and guarded migration `000033`.
-6. Preserve P6-F09/P6-F18/P6-F40/P6-F41 financial and delivery invariants;
-   streaming remains the independent P6-F11 boundary.
+1. Add a normalized stream-output stage with synchronous 200 ms/4 KiB
+   micro-buffering and detector-declared bounded cross-chunk context.
+2. Keep external semantic stream inspection shadow/audit by default; permit
+   enforcement only for a fixed-registry detector that declares bounded
+   synchronous capability. Do not auto-enable a policy or real detector.
+3. On policy, detector, frame or hard-budget termination, cancel the accepted
+   upstream attempt, do not retry/fail over, emit an explicit non-success
+   terminal and charge only safe output already accepted downstream.
+4. Extend the frozen reservation idempotently before the D6-10 guard band,
+   retaining the immutable price and original cash/grant funding sources.
+5. Persist monotonic post-write stream checkpoints with a renewable owner lease;
+   expired-lease recovery settles no more than the checkpoint, marks explicit
+   interruption and gives idempotent retries metadata-only readback.
+6. Preserve P6-F09/P6-F18/P6-F20/P6-F40/P6-F41 invariants and add guarded
+   migration, focused/race/PostgreSQL tests, evidence, PR and required CI.
 
 ## Current Non-Goals
 
-- No P6-F11 stream interception, cross-chunk detection, disclosure bound,
-  reservation extension or process-crash checkpoint/client recovery.
+- No transparent stream migration, automatic content replay or zero-leakage
+  claim.
 - No negative customer debt, automatic platform subsidy, raw response storage,
   Cache Service or separate Cost Control Service.
 - D6-14 additionally forbids aggregate provider bills, balance deltas or
@@ -52,35 +53,37 @@
 
 ## Current Focused Verification
 
-- P6-F10 guardrail/service/gateway/payload-policy/filter tests: `PASS`, including
-  policy precedence, stale/failure modes, external timeout/saturation,
-  structured output, cross-scope authority, byte budgets and exact final bound.
-- Admin, billing and migration PostgreSQL/race gates: `PASS`, including tenant
-  non-enumeration, optimistic versioning, no-delivery/no-customer-charge holds,
-  32-way idempotency, affected-key reconciliation and guarded `000033`
-  down/roll-forward behavior.
-- Local detector and immutable DFA benchmarks are recorded without making a
-  target-capacity or production-quality claim.
-- `go test ./...`, `go test -race ./...`, `go vet ./...` and
-  `git diff --check`: `PASS`.
+- P6-F11 guardrail, gateway, billing, Agent-capability, shared-policy,
+  idempotency and control-plane tests: `PASS`, including measured 200 ms / 4
+  KiB buffering, reasoning/unknown-shape handling, cross-frame/lookbehind
+  enforcement and advisory context, explicit termination, three-layer
+  extension ordering, owner-loss handoff and exact retry readback.
+- Real PostgreSQL/race gates: `PASS`, including 32-way wallet extension,
+  multi-replica single recovery, recovery-worker crash/reclaim, zero/latest
+  checkpoint settlement, existing-terminal-receipt recovery, append-only
+  extension receipts and guarded `000034` down/roll-forward/refusal.
+- `go test ./... -count=1`, `go test -race ./... -count=1`, `go vet ./...`,
+  OpenAPI YAML parse and `git diff --check`: `PASS`.
 - Frontend type-check, 30 files / 148 tests and production build: `PASS`.
 - Local Docker was not run because this host has no `docker` executable. PR
-  #188 required run `29236987646` passed Backend Tests, Frontend Build and
-  Docker Build for exact implementation/test head `76f95ed`, including the two
-  explicit P6-F10 CI gates.
-- Evidence: `docs/ops/evidence/PRD6-B4-P6F10-guardrail-kernel-local-20260713.md`.
+  #189 exact implementation/test head `8ed6a83` passed required run
+  `29245696926`: Backend Tests, Frontend Build and Docker Build, including both
+  explicit P6-F11 gates. The evidence-update head, merge and post-merge `main`
+  CI remain pending.
+- Evidence:
+  `docs/ops/evidence/PRD6-B5-P6F11-stream-policy-termination-local-20260713.md`.
 
 ## Current Stop And Rollback Conditions
 
-- Stop if a mandatory platform policy can be weakened, raw content reaches
-  retained evidence, a tenant can register an arbitrary detector/credential,
-  actual-read/final-response bounds are bypassed, withheld output is delivered
-  or customer-charged, or concurrent reconciliation creates a second terminal
-  effect.
+- Stop if an enforced batch can disclose before verdict, accepted-stream
+  termination retries or fails over to another paid channel, unknown text is
+  treated as inspected, hard-budget denial occurs after the next flush,
+  withheld output is customer-charged, checkpoint counters regress, or two
+  owners can finalize one attempt.
 - Repository rollback requires a new reviewed PR. Migration down is allowed
   only before Guardrail policy/hold evidence exists. Evidence-bearing rollback
   refuses destructive change.
-- A target rollout must drain old data/control-plane binaries before `000033`
+- A target rollout must drain old data/control-plane binaries before `000034`
   becomes active; mixed-version policy or financial safety is not claimed.
 
 ## Previous P6-F40C Behavior Change

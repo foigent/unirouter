@@ -12,8 +12,17 @@ import (
 )
 
 type sensitiveWordDetector struct {
-	filter  *filter.DFAFilter
-	version string
+	filter       *filter.DFAFilter
+	version      string
+	maxWordBytes int
+}
+
+func (d *sensitiveWordDetector) StreamCapability() StreamCapability {
+	lookbehind := d.maxWordBytes
+	if lookbehind > 0 {
+		lookbehind--
+	}
+	return StreamCapability{Synchronous: lookbehind <= MaxStreamLookbehindBytes, LookbehindBytes: lookbehind}
 }
 
 func (d *sensitiveWordDetector) Version() string {
@@ -37,6 +46,13 @@ func (d *sensitiveWordDetector) Detect(_ Context, text Text, _ json.RawMessage) 
 type piiSecretsDetector struct{}
 
 func (piiSecretsDetector) Version() string { return "unirouter.local-pii-secrets.v1" }
+
+func (piiSecretsDetector) StreamCapability() StreamCapability {
+	// Local patterns become detectable well inside this retained suffix. Longer
+	// ambiguous email-like text is explicitly bounded rather than advertised as
+	// zero-disclosure detection.
+	return StreamCapability{Synchronous: true, LookbehindBytes: 512}
+}
 
 var localPatterns = map[string]*regexp.Regexp{
 	"email":       regexp.MustCompile(`(?i)[a-z0-9.!#$%&'*+/=?^_` + "`" + `{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+`),

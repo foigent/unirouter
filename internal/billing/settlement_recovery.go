@@ -61,6 +61,15 @@ func (b *Billing) RunSettlementRecoveryLoop(ctx context.Context, interval time.D
 	run := func() {
 		runCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
+		streamResult, streamErr := b.RecoverExpiredStreamDeliveries(runCtx, limit)
+		if streamErr != nil {
+			log.Printf("[billing] expired stream recovery error: %v", streamErr)
+		}
+		if streamResult.Claimed > 0 {
+			log.Printf("[billing] expired stream recovery claimed=%d completed=%d settled=%d provider_cost_held=%d failed=%d",
+				streamResult.Claimed, streamResult.Completed, streamResult.Settled,
+				streamResult.ProviderCostHeld, streamResult.Failed)
+		}
 		result, err := b.RecoverPendingSettlements(runCtx, limit)
 		if err != nil {
 			log.Printf("[billing] settlement recovery error: %v", err)
