@@ -259,6 +259,15 @@ docker compose exec backend ./uniroute migrate up
 
 当前二进制不提供自动 down 回滚命令。回滚必须由运维人员按具体 migration `.down.sql` 和备份恢复方案执行。
 
+迁移文件各自包含 `BEGIN` / `COMMIT`，不要把多个 `.up.sql` 再包在一个外层
+transaction 中当作“dry-run”。PostgreSQL 的内层 `COMMIT` 会结束外层 transaction，
+最后的 `ROLLBACK` 不能撤销已经提交的迁移。需要预演时，必须恢复备份到一个明确的
+隔离数据库，在隔离库运行当前发布二进制的 `migrate up` 并完成 schema/ledger
+读回；不要把生产或共享目标数据库当作 dry-run 目标。如果手工执行 SQL 后发现
+schema 对象已存在但 `schema_migrations` 尚未登记，立即停止自动迁移，逐个核对
+迁移文件、对象和约束，再通过受审计的修复步骤登记准确版本；不得直接重跑或假定
+外层回滚已经生效。
+
 ### 3.4 PRD6 `000020` Webhook 安全确认
 
 `000020_prd6_notification_webhook_scope_verification` 不删除任何 Webhook，
