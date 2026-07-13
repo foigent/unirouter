@@ -1,13 +1,14 @@
 # PRD6 Start Here
 
 > Date: 2026-07-13
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14/D6-15 accepted; P6-F03-P6-F10, P6-F16-P6-F21, P6-F32-P6-F41 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F11 remains in progress
+> Status: Accepted Scope Complete; all 27 accepted rows are repository/CI verified or closed
 > Owner: Codex
 > P6-F16 merge: `f244f669c529fec8767f85fff209882b333d8ed2`
 
 ## Current Decision State
 
-PRD6 is a separate planning and execution window. The User accepted the
+PRD6 is a closed planning and execution window at repository/CI evidence
+level. The User accepted the
 recommended MVP boundary and policy-specific failure posture on 2026-07-11:
 
 - the CI-verified repository-correctness fixes in Batch 0A may proceed because
@@ -42,6 +43,8 @@ recommended MVP boundary and policy-specific failure posture on 2026-07-11:
   no-delivery cost holds preserve the raw-payload, detector-registry and
   streaming boundaries. P6-F10 is CI verified / closed by PR #188 exact
   implementation/test head `76f95ed` / run `29236987646`;
+- D6-16 selects S-A for enforced streams. P6-F11 is CI verified / closed by PR
+  #189, squash merge `4c78a5b7` and post-merge main run `29246975012`;
 - PRD5 remains `Accepted Scope Complete` and is not reopened by PRD6;
 - a PRD5 backlog or competitor feature is an input, not an automatic PRD6
   commitment.
@@ -95,6 +98,9 @@ recommended MVP boundary and policy-specific failure posture on 2026-07-11:
 45. `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md`
 46. `docs/ops/evidence/PRD6-B3H-P6F40C-provider-key-reconciliation-local-20260713.md`
 47. `docs/ops/evidence/PRD6-B3H-P6F41-usage-delivery-integrity-local-20260713.md`
+48. `docs/ops/evidence/PRD6-B4-P6F10-guardrail-kernel-local-20260713.md`
+49. `docs/ops/evidence/PRD6-B5-P6F11-stream-policy-termination-local-20260713.md`
+50. `docs/ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md`
 
 PRD5 evidence remains under its existing paths. Do not rewrite it as PRD6
 evidence.

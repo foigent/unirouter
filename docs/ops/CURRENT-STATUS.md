@@ -1,16 +1,11 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
-> Current PRD6 batch: D6-13/D6-14/D6-15 are accepted. P6-F40A is CI verified by PR #183
-> exact implementation/test head `d1afd97` and run `29207889734`. P6-F40B is
-> CI verified by PR #184 exact implementation/test head `ac2bfb5` and required
-> run `29209644118`. P6-F40C is CI verified by PR #186 exact
-> implementation/test head `49d740d` and required run `29224762127`; P6-F40 is
-> closed. P6-F41 is CI verified / closed by PR #187 exact implementation/test
-> head `6d0e6ba` and required run `29229320432`. No target or production claim
-> is made. P6-F10 Guardrail Kernel and S1-v2 content-size safety are CI
-> verified / closed by PR #188 exact implementation/test head `76f95ed` and
-> required run `29236987646`; P6-F11 is the only unclosed accepted feature.
+> PRD6 is `Accepted Scope Complete` at repository/CI evidence level. All 27
+> accepted rows are verified or closed. The final row, P6-F11, passed PR #189
+> implementation run `29245696926`, final-head run `29246431182`, squash merge
+> `4c78a5b7`, and post-merge main run `29246975012`; Backend Tests, Frontend
+> Build and Docker Build are green. No target or production claim is made.
 > PRD6 Batch 0B P6-F16 was squash-merged by PR #140 as
 > `f244f669c529fec8767f85fff209882b333d8ed2`. P6-F33 was squash-merged by
 > PR #142 as `7173c5967a42c112fd0b219938a0901c1a0b9633`; its PR and post-merge
@@ -310,6 +305,20 @@
   Backend Tests, Frontend Build and Docker Build are green, including both
   explicit P6-F41 package/migration gates. P6-F41 is CI verified / closed, not
   target verified or production verified.
+- P6-F11 stream policy and termination evidence:
+  `docs/ops/evidence/PRD6-B5-P6F11-stream-policy-termination-local-20260713.md`.
+  PR #189 exact implementation/test head `8ed6a83` passed run `29245696926`,
+  final evidence head `3d4c61b` passed run `29246431182`, and squash merge
+  `4c78a5b7` passed post-merge main run `29246975012`, including the explicit
+  stream contract and `000034` rollback gates. P6-F11 is CI verified / closed;
+  no real detector/provider, target, production, zero-leakage or transparent
+  stream-migration claim is made.
+- PRD6 closeout evidence:
+  `docs/ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md`.
+  Closeout publication PR #190 exact initial documentation head `87c462a`
+  passed required run `29248279987` (Backend Tests, Frontend Build and Docker
+  Build); any later evidence-only head remains subject to exact-head required
+  CI before merge and does not change product scope.
 - Accepted customer/provider ledger boundary and future supplier coverage
   reference:
   `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md`.
@@ -333,12 +342,11 @@
 - Adaptive-trust structural options and signed split-plane recommendation:
   `docs/planning/prd6-adaptive-trust-hardening/hardening.md`.
 - Scope entry: `docs/planning/PRD6-START-HERE.md`.
-- Proposed PRD: `docs/PRD-Phase6.md`; accepted/proposed state is authoritative
+- Accepted-scope PRD: `docs/PRD-Phase6.md`; accepted/proposed state is authoritative
   in `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`.
-- Accepted feature accounting: 27 accepted rows, 26 CI verified / closed and
-  1 unclosed. P6-F10 is CI verified / closed by PR #188 exact
-  implementation/test head `76f95ed` / run `29236987646`; P6-F11 remains in
-  progress.
+- Accepted feature accounting: all 27 accepted rows are repository/CI verified
+  or closed. P6-F11 was the final row and closed through PR #189 / merge
+  `4c78a5b7` / post-merge main run `29246975012`.
   `P6-TEST-DB-001` is a separate engineering-integrity issue outside that
   27-row feature count; it is CI verified / closed by PR #155 and post-merge
   main run `29157561036`.
@@ -440,10 +448,11 @@ UI, or perform target malformed-assignment cleanup.
 The User selected D7-UPGRADE-001/002 as the first future PRD7 direction and
 accepted the complete exact-response Cache Service as future required
 `D7-CACHE-001`, but
-deferred every PRD7 implementation and target-evidence execution until PRD6
-source closeout. Historical branches remain retained and no cleanup/deletion is
-authorized. This ordering does not postpone the existing 2026-07-17 Gate A
-exact-path file deadline.
+deferred every PRD7 implementation and target-evidence execution through PRD6
+source closeout. PRD6 is now closed, but those queues remain later work and are
+not authorized by closeout. Historical branches remain retained and no
+cleanup/deletion is authorized. This ordering does not postpone the existing
+2026-07-17 Gate A exact-path file deadline.
 
 The third PRD6 research round confirmed that UniRouter currently owns model
 request enforcement, not arbitrary MCP/tool/data/export side effects. X-Insight

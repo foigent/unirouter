@@ -1,8 +1,8 @@
 # UniRouter PRD6: Reliable MaaS Policy And Safety Plane
 
-> Version: 0.18
+> Version: 0.19
 > Date: 2026-07-13
-> Status: D6-01/D6-02/D6-08/D6-09/D6-10/D6-11/D6-12/D6-13/D6-14/D6-15/D6-16 accepted; P6-F03-P6-F10, P6-F16-P6-F21, P6-F32-P6-F41 and P6-STREAM-002A applicable rows are CI verified / closed; P6-F11 remains in progress
+> Status: Accepted Scope Complete; all 27 accepted rows are repository/CI verified or closed; proposed/deferred rows remain not accepted
 > Accepted implementation scope: P6-F03 through P6-F11, P6-F16 through P6-F21, P6-F32 through P6-F41
 > Innovation gate: P6-F23 through P6-F31 remain proposed/deferred
 
@@ -61,8 +61,9 @@ new cross-project runtime contract.
   `settlement_pending` after billable output;
 - remove billing connection-pool re-entry and bind reservation to the effective
   price/multiplier version;
-- define versioned user/project/key/role revocation with a measurable all-replica
-  SLO.
+- define versioned Agent workflow/root-authority revocation with a measurable
+  all-replica SLO. Native administrator JWT/API-key revocation remains the
+  separately recorded `P6-AUTH-001` future input; no IAM rewrite is implied.
 
 #### P6-MVP-01 Agent Capability And Distributed Policy V1
 
@@ -205,7 +206,7 @@ These do not become UniRouter source-code gaps without new evidence.
 | P6-F08 | Implement Routing Policy V1 with explainable candidates, exclusions, retry and failover | P1 | CI verified / closed by PR #172, exact-head run `29178419505`, merge `54d8833` and post-merge main run `29178588075`; historical branch retained at `0e374d3`; no target/capacity claim |
 | P6-F09 | Normalize and bill provider cache-read/cache-create tokens | P1 | CI verified / closed by PR #174 exact-head run `29180539621`, merge `6515b3f`, production-neutral fixture-stability PR #175 and final post-fix main run `29181137210`; historical implementation branch retained at `711e718`; no response-cache claim |
 | P6-F10 | Add versioned input/non-stream-output Guardrail Kernel | P1 | CI verified / closed by PR #188 exact implementation/test head `76f95ed` / run `29236987646`; streaming remains P6-F11 |
-| P6-F11 | Add safe streaming interception, cancellation and settlement semantics | P1 | Accepted MVP; PR #189 exact implementation/test head `8ed6a83` passed required run `29245696926`; evidence-update head, merge and post-merge `main` CI pending; transport prerequisite P6-STREAM-002A CI verified / closed by PR #162 |
+| P6-F11 | Add safe streaming interception, cancellation and settlement semantics | P1 | CI verified / closed by PR #189: exact implementation/test head `8ed6a83` passed run `29245696926`, final evidence head `3d4c61b` passed run `29246431182`, squash merge `4c78a5b7` passed post-merge main run `29246975012`; transport prerequisite P6-STREAM-002A was closed separately by PR #162 |
 | P6-F19 | Add short Agent capability, monotonic delegation, ancestor budgets and versioned revocation | P1 | CI verified / closed by P6-F19A PR #164/main run `29170507588` plus P6-F19B PR #166/main run `29171807693`; P6-F20/P6-F21 were closed separately and P6-F07 is independently closed by PR #168 |
 | P6-F20 | Add durable minimal usage/finalization outbox and bounded evidence/notification workers | P1 | CI verified / closed by PR #177 exact-head run `29193900584`, merge `30d1e8f` and post-merge main run `29194150134`; D6-12 assigns mid-stream crash/checkpoint semantics to P6-F11; evidence `docs/ops/evidence/PRD6-B3-P6F20-durable-outbox-local-20260712.md` |
 | P6-F21 | Admit weighted workload classes without replica-multiplied quotas or long-stream starvation | P1 | CI verified / closed by PR #170, exact-head run `29176160987`, merge `04af91f` and post-merge main run `29176358459`; post-closeout test-only PR #180/#181 separated miniredis fixture execution from real-Redis concurrency evidence, with PR #181 merge `815fb31` and final main run `29199635598` green; no runtime or target-capacity change |
@@ -301,7 +302,8 @@ The User accepted on 2026-07-11:
    organization; and
 4. D6-09: complete PRD6 repository scope first; defer all PRD7 implementation
    and target-evidence execution until PRD6 closeout, while retaining historical
-   branches. The existing Gate A file deadline is unchanged;
+   branches. PRD6 closeout is now complete, but grants no PRD7 or target
+   execution authority. The existing Gate A file deadline is unchanged;
 5. D6-10: use hard-budget Scheme A for long streams: reserve first, request an
    idempotent extension before the remaining reservation crosses a guard band,
    continue only after durable extension, and otherwise stop upstream, return a

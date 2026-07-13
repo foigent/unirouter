@@ -5,8 +5,7 @@
 > Branch: `codex/prd6-stream-policy-termination`
 > Base: post-P6-F10 `main` at
 > `f9925779f1da7681b07282be5d500773a687d3b9`
-> Evidence level: PR exact implementation/test head CI verified; evidence-update
-> exact-head CI, merge and post-merge evidence are pending
+> Evidence level: repository and required CI verified / closed
 > Scope: UniRouter repository only; no deployment, target mutation, real or
 > paid provider/detector call, credential change, raw-payload persistence,
 > exporter activation, additional database scope or X-Insight runtime work
@@ -256,7 +255,8 @@ migration down/roll-forward/refusal.
   items.
 
 PR #189 exact implementation/test head `8ed6a83` passed required run
-`29245696926`: Backend Tests, Frontend Build and Docker Build, including the
+`29245696926`; final evidence head `3d4c61b` passed required run `29246431182`;
+squash merge `4c78a5b7` passed post-merge main run `29246975012`. Backend Tests,
+Frontend Build and Docker Build passed in every applicable run, including the
 explicit P6-F11 stream contract and `000034` migration rollback gates. P6-F11
-may move to CI-verified closure after this evidence-update head passes required
-PR jobs, is merged, and the merge commit passes post-merge `main` CI.
+is CI verified / closed. No target or production claim is made.
