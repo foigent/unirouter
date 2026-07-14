@@ -1,35 +1,39 @@
 # Current Execution Record
 
-**Batch:** V1 Post-PRD6 CI Efficiency
+**Batch:** V1 Post-PRD6 CI Efficiency Closeout And Micro-Ledger Plan
 **Owner:** Codex
 **Risk:** R2 repository workflow, required-check routing and CI evidence integrity
-**Status:** Implemented; Local verified; required CI pending
-**Baseline:** clean `origin/main` / `f90e7eb79ae23d48c99b882e2d7a3bb568b46c5a`
-**Branch:** `codex/v1-ci-efficiency`
-**PR:** pending; merge only after Backend Tests, Frontend Build and Docker Build pass
+**Status:** CI verified; V1-CI-001 closed; V1-FIN-001 planning accepted
+**Baseline:** clean `origin/main` / `31d87def0e7c689a6bea8f4f1e39cd9583959694`
+**Branch:** `codex/v1-ci-closeout-ledger-plan`
+**PR:** #199; first docs-only run `29300434659` passed, final-head check pending
 **Decision:** User approved CI deduplication, change routing, PR concurrency, single-run optimization, fixed Go patch and evidence-based cache handling on 2026-07-14
-**Evidence:** `docs/ops/evidence/V1-POST-PRD6-CI-EFFICIENCY-LOCAL-20260714.md`
+**Evidence:** `docs/ops/evidence/V1-POST-PRD6-CI-EFFICIENCY-LOCAL-20260714.md`, `docs/ops/evidence/V1-POST-PRD6-CI-EFFICIENCY-CI-20260714.md`
 **Next product gate:** source-preserving micro-precision billing ledger (User selected option B)
 **Previous batch:** V1 pricing authority PR #197; run `29287273675` attempt 4 passed Backend Tests, Frontend Build and Docker Build after the external GitHub billing block was removed; merge remains separate
 **Previous phase:** PRD5 Accepted Scope Complete; its Batch 1Z historical target backend was `95d1da9` / PR #133 and is now superseded on the same target by this PRD6 deployment
 
 ## Current Batch Result
 
-1. Confirmed strict `main` protection requires Backend Tests, Frontend Build and
-   Docker Build against the latest base before merge.
-2. Removed the duplicate automatic full run on post-merge `main`; retained
-   manual full-suite dispatch.
-3. Added fail-closed PR path routing without top-level path filters, preserving
-   all three required check names and failure propagation.
-4. Added per-PR concurrency cancellation, exact Go `1.25.12`, local-only Go
-   toolchain enforcement, PR restore-only caching from one trusted-main key and
-   removed duplicate frontend type checking.
-5. Verified 35 caches / `10,450,365,643` bytes before cleanup. Deleted only two
-   explicit caches for merged PR #165 and #166, one command each; readback is
-   33 caches / `9,865,023,859` bytes.
-6. `actionlint`, YAML structure, real historical-PR route scenarios, invalid-SHA
-   failure, direct Vite production build and `git diff --check` pass locally.
-   GitHub required CI remains pending.
+1. PR #198 exact head `e9d0847` passed Change Routing, Backend Tests, Frontend
+   Build and Docker Build in run `29299202652`, then squash-merged as
+   `31d87def0e7c689a6bea8f4f1e39cd9583959694`.
+2. The merge commit created no automatic `push` CI. Trusted main dispatch
+   `29299765793` then passed the complete suite exactly once.
+3. The trusted run saved shared Go cache `5720112747` under the fixed Go
+   `1.25.12` key. After readback, only obsolete main cache `5576166108` was
+   deleted by exact ID.
+4. Final capacity readback is 32 caches / `9,503,335,891` bytes, including 31
+   Go caches / `9,431,942,142` bytes. No wildcard or bulk deletion occurred.
+5. Docs-only PR #199 first-head run `29300434659` completed successfully:
+   Change Routing passed and Backend/Frontend/Docker each reported explicit
+   `skipped`, with no expensive runner started. `V1-CI-001` is closed.
+6. `V1-FIN-001` is confirmed P0: cent truncation plus a one-cent terminal clamp
+   overcharges sub-cent usage and charges zero-token calculations. User-approved
+   option B is fixed in
+   `docs/planning/V1-MICRO-PRECISION-LEDGER-PLAN-20260714.md`; implementation
+   follows prerequisite PR #196 and #197 and stops before the R3 merge/deploy
+   gate.
 
 No application behavior, target environment, credential, database, production
 or PRD6 accepted-scope state changed.
