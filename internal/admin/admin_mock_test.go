@@ -1051,6 +1051,12 @@ func TestBalanceAdjust_InvalidJSON(t *testing.T) {
 func TestListChannels_Success(t *testing.T) {
 	now := time.Now()
 	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int) = 1
+				return nil
+			}}
+		},
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			return &testutil.MockRows{
 				Rows: []func(dest ...any) error{
@@ -1099,6 +1105,12 @@ func TestListChannels_Success(t *testing.T) {
 
 func TestListChannels_Empty(t *testing.T) {
 	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int) = 0
+				return nil
+			}}
+		},
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			return &testutil.MockRows{}, nil
 		},
@@ -1123,6 +1135,12 @@ func TestListChannels_Empty(t *testing.T) {
 
 func TestListChannels_QueryError(t *testing.T) {
 	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int) = 1
+				return nil
+			}}
+		},
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			return nil, fmt.Errorf("connection refused")
 		},
@@ -2232,14 +2250,16 @@ func TestListUsers_Success(t *testing.T) {
 			return &testutil.MockRows{
 				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
-						*dest[0].(*int64) = 1                   // id
-						*dest[1].(*int64) = 1                   // org_id
-						*dest[2].(**string) = strPtr("Default") // org_name
-						*dest[3].(*string) = "admin"            // username
-						*dest[4].(*string) = "admin"            // role
-						*dest[5].(*string) = "active"           // status
-						*dest[6].(*time.Time) = now             // created_at
-						*dest[7].(*time.Time) = now             // updated_at
+						*dest[0].(*int64) = 1                    // id
+						*dest[1].(*int64) = 1                    // org_id
+						*dest[2].(**string) = strPtr("Default")  // org_name
+						*dest[3].(*string) = "admin"             // username
+						*dest[4].(*string) = "admin"             // role
+						*dest[5].(*string) = "active"            // status
+						*dest[6].(*string) = "admin@example.com" // email
+						*dest[7].(*string) = "local"             // auth_provider
+						*dest[8].(*time.Time) = now              // created_at
+						*dest[9].(*time.Time) = now              // updated_at
 						return nil
 					},
 				},
@@ -2700,18 +2720,21 @@ func TestListAuditLogs_Success(t *testing.T) {
 						*dest[1].(*int64) = 3
 						*dest[2].(*int64) = 9
 						*dest[3].(*int64) = 7
-						*dest[4].(*string) = "channel.create"
-						*dest[5].(*string) = "channel"
-						*dest[6].(*string) = "1"
-						*dest[7].(*[]byte) = []byte(`{"key":"value"}`)
-						*dest[8].(*[]byte) = []byte(`{"status":"old"}`)
-						*dest[9].(*[]byte) = []byte(`{"status":"new"}`)
-						*dest[10].(*string) = "127.0.0.1"
-						*dest[11].(*string) = "agent"
-						*dest[12].(*string) = "req-1"
-						*dest[13].(*string) = "admin_console"
-						*dest[14].(*string) = "client-1"
-						*dest[15].(*time.Time) = now
+						*dest[4].(*string) = "Example Org"
+						*dest[5].(*string) = "Core Project"
+						*dest[6].(*string) = "operator"
+						*dest[7].(*string) = "channel.create"
+						*dest[8].(*string) = "channel"
+						*dest[9].(*string) = "1"
+						*dest[10].(*[]byte) = []byte(`{"key":"value"}`)
+						*dest[11].(*[]byte) = []byte(`{"status":"old"}`)
+						*dest[12].(*[]byte) = []byte(`{"status":"new"}`)
+						*dest[13].(*string) = "127.0.0.1"
+						*dest[14].(*string) = "agent"
+						*dest[15].(*string) = "req-1"
+						*dest[16].(*string) = "admin_console"
+						*dest[17].(*string) = "client-1"
+						*dest[18].(*time.Time) = now
 						return nil
 					},
 				},
@@ -2735,6 +2758,9 @@ func TestListAuditLogs_Success(t *testing.T) {
 	row := resp["data"].([]interface{})[0].(map[string]interface{})
 	if row["actor_id"].(float64) != 7 || row["project_id"].(float64) != 9 {
 		t.Fatalf("expected actor/project fields, got %#v", row)
+	}
+	if row["org_name"] != "Example Org" || row["project_name"] != "Core Project" || row["actor_name"] != "operator" {
+		t.Fatalf("expected readable identity fields, got %#v", row)
 	}
 	if row["source"] != "admin_console" || row["request_id"] != "req-1" || row["client_request_id"] != "client-1" || row["user_agent"] != "agent" {
 		t.Fatalf("expected source/request/user_agent fields, got %#v", row)
@@ -4770,6 +4796,17 @@ func TestUpdateUser_InvalidJSON(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestUpdateUser_InvalidStatus(t *testing.T) {
+	h := newTestHandler(&testutil.MockDB{})
+	req := httptest.NewRequest(http.MethodPut, "/users/1", strings.NewReader(`{"status":"pending"}`))
+	req.SetPathValue("id", "1")
+	rec := httptest.NewRecorder()
+	h.UpdateUser(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

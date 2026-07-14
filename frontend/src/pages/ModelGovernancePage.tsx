@@ -558,7 +558,7 @@ export default function ModelGovernancePage() {
   return (
     <div className="ur-page ur-page-wide">
       <PageHeader
-        eyebrow="PRD2"
+        eyebrow="流量治理"
         title="模型治理"
         description="维护企业内部模型目录、生命周期、企业别名、模型集和项目可访问模型范围。"
         actions={<Button icon={<IconRefresh />} onClick={() => activeTab === 'assignments' ? loadAssignmentBase() : activeTab === 'sets' ? loadModelSets() : activeTab === 'aliases' ? loadAliases() : loadRegistry()}>刷新</Button>}
@@ -700,7 +700,7 @@ export default function ModelGovernancePage() {
               </div>
               <div className="ur-chip-row">
                 {assignedIds.length === 0 ? (
-                  <Text type="tertiary">当前项目未绑定模型集，将保持 PRD1 兼容行为。</Text>
+                  <Text type="tertiary">当前项目未绑定模型集，将使用基础模型目录。</Text>
                 ) : assignedIds.map(id => {
                   const set = assignmentModelSets.find(item => item.id === id);
                   return <StatusTag key={id} status="active">{set?.name || `#${id}`}</StatusTag>;

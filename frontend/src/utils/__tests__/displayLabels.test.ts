@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { roleLabel, roleTagColor, userManagementRoleOptions } from '../displayLabels';
+import {
+  deliveryStateLabel,
+  notificationMessageLabel,
+  notificationResourceLabel,
+  notificationTitleLabel,
+  roleLabel,
+  roleTagColor,
+  userManagementRoleOptions,
+} from '../displayLabels';
 
 describe('role display labels', () => {
   it('keeps canonical user-management roles without the legacy admin alias', () => {
@@ -28,5 +36,14 @@ describe('role display labels', () => {
     expect(roleTagColor('project_admin')).toBe('purple');
     expect(roleTagColor('developer')).toBe('green');
     expect(roleTagColor('viewer')).toBe('grey');
+  });
+});
+
+describe('notification display labels', () => {
+  it('explains persisted events without a webhook route in operator language', () => {
+    expect(deliveryStateLabel('not_configured')).toBe('未配置 Webhook');
+    expect(notificationResourceLabel('api_key', 28)).toBe('访问凭证 #28');
+    expect(notificationTitleLabel('api_key.disabled', 'API key disabled')).toBe('访问凭证已停用');
+    expect(notificationMessageLabel('api_key.disabled', 'API key checkout was disabled')).toBe('访问凭证 checkout 已停用');
   });
 });

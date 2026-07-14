@@ -11,6 +11,9 @@ import {
   eventTypeLabel,
   eventTypeListLabel,
   eventTypeOptions,
+  notificationMessageLabel,
+  notificationResourceLabel,
+  notificationTitleLabel,
   severityLabel,
   severityOptions,
 } from '../utils/displayLabels';
@@ -235,9 +238,9 @@ export default function NotificationCenterPage() {
     { title: 'ID', dataIndex: 'id', width: 72 },
     { title: '事件类型', dataIndex: 'event_type', width: 220, render: (v: string) => <Text>{eventTypeLabel(v)}</Text> },
     { title: '级别', dataIndex: 'severity', width: 100, render: (v: string) => <Tag color={severityColor(v)}>{severityLabel(v)}</Tag> },
-    { title: '标题', dataIndex: 'title', width: 220 },
-    { title: '消息', dataIndex: 'message', ellipsis: true },
-    { title: '资源', width: 140, render: (_: unknown, row: NotificationEvent) => row.resource ? `${row.resource}:${row.resource_id || '-'}` : '-' },
+    { title: '标题', dataIndex: 'title', width: 220, render: (v: string, row: NotificationEvent) => notificationTitleLabel(row.event_type, v) },
+    { title: '消息', dataIndex: 'message', ellipsis: true, render: (v: string, row: NotificationEvent) => notificationMessageLabel(row.event_type, v) },
+    { title: '资源', width: 160, render: (_: unknown, row: NotificationEvent) => notificationResourceLabel(row.resource, row.resource_id) },
     { title: '投递', dataIndex: 'delivery_state', width: 130, render: (v: string) => <StatusTag status={v}>{deliveryStateLabel(v)}</StatusTag> },
     { title: '时间', dataIndex: 'created_at', width: 180, render: (v: string) => formatDateTime(v) },
   ];
@@ -292,9 +295,9 @@ export default function NotificationCenterPage() {
   return (
     <div className="ur-page ur-page-wide">
       <PageHeader
-        eyebrow="系统治理"
+        eyebrow="流量治理"
         title="通知中心"
-        description="查看事件、Webhook 投递状态和项目预算通知路由。"
+        description="查看事件、Webhook 投递状态和项目预算通知路由；“未配置 Webhook”表示事件已入库，但没有匹配的启用投递路由。"
         actions={<Button icon={<IconRefresh />} onClick={() => { loadEvents(); loadDeliveries(); loadWebhooks(); }}>刷新</Button>}
       />
 

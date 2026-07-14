@@ -1,5 +1,55 @@
 # Current Execution Record
 
+## Active Batch — V1 First Release Product Audit And Target Closeout
+
+**Owner:** Codex
+
+**Risk:** R2 UI/API/document corrections; R4 authorized development-target deployment after merge
+
+**Status:** Local verified in focused and full suites; PR/CI, merge and target deployment pending
+
+**Baseline:** clean `main` / `origin/main` at `c051e0abe2a02382cefc8a77b04a9bdcc45828a1`
+
+**Branch:** `codex/v1-release-ui-target-closeout`
+
+**Evidence:** `docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md`
+
+Scope is limited to first-release defects and unreasonable presentation found
+in the User's complete product checklist: contributor/README truth, route and
+upstream-credential operability, caller-key clarity, stale PRD labels,
+notification semantics, audit readability, existing OIDC identity visibility,
+page-size correctness and taxonomy alignment. It adds no vendor discovery,
+directory synchronization, Update Center, new menu hierarchy, paid provider
+call or X-Insight behavior.
+
+The existing development target was audited at exact release `c051e0a`, version
+`1.0.0`, environment `development`, migration `000037`. All 24 authenticated
+admin routes rendered without captured browser errors. Real local-target
+lifecycle checks covered caller credential create/auth/disable, read-only
+routing preview, guardrail policy/runtime snapshot, notification/finance/
+reconciliation/audit readback and a restricted developer session. Existing
+route allowlists do not match the current model catalog; no allowlist or
+supplier secret was changed and no paid upstream request was made.
+
+Local verification passes:
+
+- `go test ./internal/admin ./internal/auth -count=1`;
+- six affected frontend test files, 18 tests;
+- `go test ./... -count=1`, `go vet ./...` and `go build ./...`;
+- required local PostgreSQL admin integration suite; zero temporary databases
+  remained;
+- full frontend suite, 33 files / 167 tests, type-check and production build;
+- `git diff --check`.
+
+Next: review the final diff, create the PR and require exact-head CI. After
+merge, deploy only the merged commit to the already authorized development ECS,
+preserve rollback, re-run API/browser/license/upgrade checks, then clean
+temporary QA/developer credentials and browser state. Never rewrite current
+upstream allowlists or invoke paid providers without separate authorization.
+PRD6 remains closed.
+
+## Previous Batch Record — Commercial License Studio And Signed Upgrade
+
 **Batch:** V1 Commercial License Studio, Embedded Trust And Signed Offline Upgrade Bundle
 **Owner:** Codex
 **Risk:** R3 authorization/signing implementation; any target activation is R4

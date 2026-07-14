@@ -1,6 +1,23 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
+> **2026-07-15 current checkpoint:** `main` / `origin/main` are
+> `c051e0abe2a02382cefc8a77b04a9bdcc45828a1`. The separately authorized
+> development ECS target runs that exact stable/canary/frontend release as
+> version `1.0.0`, environment `development`, migration `000037`, with healthy
+> PostgreSQL/Redis, an enforceable deployment-bound test License, embedded
+> trust roots and verified signed-upgrade apply/readback/replay rejection. A
+> first-release product audit then exercised all 24 authenticated admin routes,
+> a real caller-key lifecycle, route preview, guardrail snapshot, finance/
+> reconciliation reads, audit events and a real restricted developer session
+> without a paid provider call. Its complete issue matrix and Local-verified
+> defect/UX corrections are in
+> `docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md` on branch
+> `codex/v1-release-ui-target-closeout`; exact-head CI, merge and deployment of
+> those corrections are still pending. Existing target route allowlists do not
+> match the current model catalog, and real provider/detector/enterprise-IdP,
+> Production/TLS/capacity and X-Insight v2 evidence remain explicit later
+> gates. PRD6 remains `Completed (Accepted Scope)` and is not reopened.
 > The User-approved Post-PRD6 V1 delivery gate for commercial License
 > enforcement and signed offline upgrades is merged on `main` as
 > `5c1313521870731b0164d4eecfbbb06d7a7f0704` through PR #205. It adds
@@ -19,10 +36,11 @@
 > Docker Build, including the commercial-License/signed-upgrade integration
 > gate and a release image built with separate embedded public rings. Final PR
 > head `f1fdee12499aa399e63f205a00040d772425e7df` passed the same four checks
-> in run `29360683242` before squash merge. No
-> production/customer signing key or License was created, and no ECS embedded
-> trust root, deployment ID, License, migration or image was changed.
-> Production key ceremony and target activation remain separate decisions.
+> in run `29360683242` before squash merge. At that merge checkpoint, no
+> production/customer signing key or License had been created, and no ECS
+> embedded trust root, deployment ID, License, migration or image had changed.
+> The later development-target activation is summarized above; production key
+> ceremony and customer/production activation remain separate decisions.
 > Evidence: `docs/ops/evidence/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-LOCAL-20260715.md`,
 > `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-LOCAL-20260715.md` and
 > `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-CI-20260715.md` and

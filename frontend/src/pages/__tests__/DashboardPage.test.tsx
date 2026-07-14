@@ -87,7 +87,7 @@ describe('DashboardPage', () => {
     });
 
     const html = container.textContent || '';
-    expect(html).toContain('Platform Overview');
+    expect(html).toContain('概览');
     expect(html).toContain('平台总览');
     expect(html).toContain('统一观察请求量、成功率、延迟、成本和渠道健康状态。');
     expect(html).not.toContain('Gateway overview');

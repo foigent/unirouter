@@ -43,12 +43,19 @@ func (h *Handler) ListChannelKeys(w http.ResponseWriter, r *http.Request) {
 		var failCount int
 		var lastUsedAt, cooldownUntil *time.Time
 		var createdAt time.Time
-		rows.Scan(&id, &channelID, &channelName, &keyEnc, &allowedModels, &status, &failCount, &lastUsedAt, &cooldownUntil, &createdAt)
+		if err := rows.Scan(&id, &channelID, &channelName, &keyEnc, &allowedModels, &status, &failCount, &lastUsedAt, &cooldownUntil, &createdAt); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
+			return
+		}
 		keys = append(keys, map[string]interface{}{
 			"id": id, "channel_id": channelID, "channel_name": channelName,
 			"key_prefix": maskKey(keyEnc), "allowed_models": allowedModels, "status": status,
 			"fail_count": failCount, "last_used_at": lastUsedAt, "cooldown_until": cooldownUntil, "created_at": createdAt,
 		})
+	}
+	if err := rows.Err(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Rows failed"})
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"data": keys, "total": total})
@@ -65,10 +72,12 @@ func (h *Handler) CreateChannelKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.ChannelID == 0 || req.Key == "" {
+	if req.ChannelID <= 0 || strings.TrimSpace(req.Key) == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "channel_id and key are required"})
 		return
 	}
+	req.Key = strings.TrimSpace(req.Key)
+	req.AllowedModels = normalizeChannelKeyAllowedModels(req.AllowedModels)
 
 	// Encrypt the key
 	keyEnc, err := auth.EncryptKey([]byte(req.Key), h.encKey)
@@ -114,6 +123,14 @@ func (h *Handler) UpdateChannelKey(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
 		return
 	}
+	if req.ChannelID != nil && *req.ChannelID <= 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "channel_id must be positive"})
+		return
+	}
+	if req.Status != nil && *req.Status != "active" && *req.Status != "disabled" {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "status must be active or disabled"})
+		return
+	}
 
 	var sets []string
 	var args []interface{}
@@ -146,8 +163,9 @@ func (h *Handler) UpdateChannelKey(w http.ResponseWriter, r *http.Request) {
 		argIdx++
 	}
 	if req.AllowedModels != nil {
+		normalized := normalizeChannelKeyAllowedModels(*req.AllowedModels)
 		sets = append(sets, fmt.Sprintf("allowed_models = $%d", argIdx))
-		args = append(args, *req.AllowedModels)
+		args = append(args, normalized)
 		argIdx++
 	}
 
@@ -181,6 +199,26 @@ func (h *Handler) UpdateChannelKey(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 }
 
+func normalizeChannelKeyAllowedModels(value string) string {
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == '，' || r == '\n' || r == '\r'
+	})
+	seen := make(map[string]struct{}, len(parts))
+	normalized := make([]string, 0, len(parts))
+	for _, part := range parts {
+		model := strings.TrimSpace(part)
+		if model == "" {
+			continue
+		}
+		if _, exists := seen[model]; exists {
+			continue
+		}
+		seen[model] = struct{}{}
+		normalized = append(normalized, model)
+	}
+	return strings.Join(normalized, ",")
+}
+
 func (h *Handler) DeleteChannelKey(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
@@ -205,7 +243,8 @@ func (h *Handler) DeleteChannelKey(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 }
 
-// maskKey returns a masked version of an encrypted key, showing only the last 4 hex chars.
+// maskKey returns a record-distinguishing suffix of the ciphertext. It is not a
+// prefix or any other portion of the plaintext supplier credential.
 func (h *Handler) GetModelNames(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(r.Context(),
 		`SELECT DISTINCT model_name FROM model_prices ORDER BY model_name`)

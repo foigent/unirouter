@@ -146,7 +146,7 @@ export default function ModelPricesPage() {
   return (
     <div className="ur-page">
       <PageHeader
-        eyebrow="Billing"
+        eyebrow="财务治理"
         title="模型定价"
         description={canMutate
           ? '按 CNY/百万 tokens 维护明确的基础价格和供应商 Prompt Cache 倍率；未配置价格的模型拒绝计费与路由。'

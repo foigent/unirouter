@@ -4,6 +4,7 @@ import { IconPlus, IconDelete, IconEdit, IconCopy, IconRefresh } from '@douyinfe
 import { api } from '../api/client';
 import { PageHeader, StatusTag, Surface } from '../ui';
 import { keyQuotaText } from '../utils/quota';
+import { formatDateTime } from '../utils/formatDate';
 
 const { Text } = Typography;
 
@@ -54,9 +55,9 @@ export default function KeysPage() {
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [createdKey, setCreatedKey] = useState<{ key: string; key_prefix: string; name: string } | null>(null);
 
-  const load = (p = page) => {
+  const load = (p = page, size = pageSize) => {
     setLoading(true);
-    api.getKeys(p)
+    api.getKeys(p, size)
       .then((data) => {
         setKeys(data.data || []);
         setTotal(data.total || 0);
@@ -65,7 +66,7 @@ export default function KeysPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(1); }, []);
+  useEffect(() => { load(1, pageSize); }, []);
   useEffect(() => {
     api.getModelNames().then((d: any) => {
       const source = Array.isArray(d?.data) ? d.data : d;
@@ -161,23 +162,27 @@ export default function KeysPage() {
   const openEdit = (record: ApiKey) => {
     setEditing(record);
     setShowDrawer(true);
-    setTimeout(() => {
-      formApi?.setValues({
-        name: record.name,
-        allowed_ips: record.allowed_ips,
-        allowed_models: record.allowed_models ? record.allowed_models.split(',').map(m => m.trim()).filter(Boolean) : [],
-        rpm_limit: record.rpm_limit || 60,
-        rps_limit: record.rps_limit ?? record.qps_limit ?? 10,
-        policy_labels: (record.policy_labels || []).join(', '),
-      });
-    }, 100);
   };
 
   const openCreate = () => {
     setEditing(null);
     setShowDrawer(true);
-    formApi?.reset();
   };
+
+  useEffect(() => {
+    if (!showDrawer || !formApi) return;
+    formApi.reset();
+    if (editing) {
+      formApi.setValues({
+        name: editing.name,
+        allowed_ips: editing.allowed_ips,
+        allowed_models: editing.allowed_models ? editing.allowed_models.split(',').map(m => m.trim()).filter(Boolean) : [],
+        rpm_limit: editing.rpm_limit || 60,
+        rps_limit: editing.rps_limit ?? editing.qps_limit ?? 10,
+        policy_labels: (editing.policy_labels || []).join(', '),
+      });
+    }
+  }, [editing, formApi, showDrawer]);
 
   const columns = [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
@@ -189,17 +194,18 @@ export default function KeysPage() {
     { title: '限额', key: 'quota', render: (_: unknown, record: ApiKey) => keyQuotaText(record) },
     {
       title: '状态', dataIndex: 'status', key: 'status', width: 80,
-      render: (v: string) => <StatusTag status={v}>{v}</StatusTag>,
+      render: (v: string) => <StatusTag status={v}>{v === 'active' ? '启用' : v === 'disabled' ? '停用' : v}</StatusTag>,
     },
+    { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 180, render: (v: string) => formatDateTime(v) },
     {
-      title: '操作', key: 'actions', width: 140,
+      title: '操作', key: 'actions', width: 180,
       render: (_: any, record: ApiKey) => (
         <Space>
-          <Button icon={<IconEdit />} size="small" onClick={() => openEdit(record)} />
+          <Button aria-label={`编辑访问凭证 ${record.name}`} icon={<IconEdit />} size="small" onClick={() => openEdit(record)}>编辑</Button>
           {record.status === 'disabled' ? (
-            <Button icon={<IconRefresh />} size="small" type="tertiary" onClick={() => handleEnable(record.id)} />
+            <Button aria-label={`启用访问凭证 ${record.name}`} icon={<IconRefresh />} size="small" type="tertiary" onClick={() => handleEnable(record.id)}>启用</Button>
           ) : (
-            <Button icon={<IconDelete />} size="small" type="danger" onClick={() => handleDisable(record.id)} />
+            <Button aria-label={`停用访问凭证 ${record.name}`} icon={<IconDelete />} size="small" type="danger" onClick={() => handleDisable(record.id)}>停用</Button>
           )}
         </Space>
       ),
@@ -211,7 +217,7 @@ export default function KeysPage() {
       <PageHeader
         eyebrow="流量治理"
         title="访问凭证"
-        description="管理调用方访问凭证、允许 IP、允许模型范围和 RPM/RPS/TPM 限额口径。"
+        description="管理调用方访问凭证、允许 IP、允许模型范围和 RPM/RPS/TPM 限额；完整 Key 仅创建时显示一次，列表前缀只用于安全识别。"
         actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增访问凭证</Button>}
       />
 
@@ -225,8 +231,8 @@ export default function KeysPage() {
             pagination={{
               currentPage: page, pageSize, total,
               pageSizeOpts: [20, 50, 100], showSizeChanger: true,
-              onPageChange: (p: number) => { setPage(p); load(p); },
-              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1); },
+              onPageChange: (p: number) => { setPage(p); load(p, pageSize); },
+              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1, s); },
             }}
           />
         </div>

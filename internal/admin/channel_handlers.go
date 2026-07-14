@@ -12,11 +12,20 @@ import (
 )
 
 func (h *Handler) ListChannels(w http.ResponseWriter, r *http.Request) {
+	page, pageSize := parsePagination(r)
+	offset := paginationOffset(page, pageSize)
+
+	var total int
+	if err := h.db.QueryRow(r.Context(), `SELECT COUNT(*) FROM channels`).Scan(&total); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Count failed"})
+		return
+	}
+
 	rows, err := h.db.Query(r.Context(),
 		`SELECT id, name, provider, base_url, models, COALESCE(adapter_type, 'openai_compatible'), COALESCE(adapter_config, '{}'::jsonb),
 		        priority, degradation_threshold, status, circuit_state, fail_count, created_at,
 		        routing_weight, routing_epoch
-		 FROM channels ORDER BY priority ASC, id ASC`,
+		 FROM channels ORDER BY priority ASC, id ASC LIMIT $1 OFFSET $2`, pageSize, offset,
 	)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Query failed"})
@@ -48,7 +57,7 @@ func (h *Handler) ListChannels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{"data": channels, "total": len(channels)})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": channels, "total": total})
 }
 
 func (h *Handler) CreateChannel(w http.ResponseWriter, r *http.Request) {

@@ -1,4 +1,4 @@
-# UniRoute
+# UniRouter
 
 企业级 AI 模型管控平台 — 统一接入 + 按量计费 + 本地部署
 
@@ -10,7 +10,7 @@ builder cache 或签名私钥。
 
 ```bash
 # 1. 克隆项目
-git clone <repo-url> && cd uniroute
+git clone <repo-url> UniRouter && cd UniRouter
 
 # 2. 配置环境变量
 cp .env.example .env
@@ -88,6 +88,7 @@ Docker Compose（6 个容器）：
 - [PRD6 流式传输本地证据](docs/ops/evidence/PRD6-B0C-P6STREAM002A-stream-transport-local-20260712.md) — 长流帧、超时、写入串行化、异常结算及剩余边界
 - [PRD6 产品/架构/UX 审计](docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md) — 审计日志、用量核验、链路 ID、UI、扩展性与升级建议
 - [V1 商业授权与签名升级合同](docs/planning/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-CONTRACT-20260714.md) — 交付前强制门槛、非声明与目标激活边界
+- [V1 正式第一版产品审计](docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md) — 用户问题完整矩阵、真实 ECS/API/浏览器证据、当前修复与后续环境边界
 - [PRD6 高可用与流式故障研究](docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md) — 竞品集群模式、UniRouter 当前事实和已接受 D6-12 边界
 - [PRD7 候选 Backlog](docs/planning/PRD7-CANDIDATE-BACKLOG.md) — Post-PRD6 最低签名包基础与仍未接受的 Update Center/自动化/N-1 产品化边界
 - [PRD5 产品范围](docs/PRD-Phase5.md) — Accepted Scope Complete 历史事实
@@ -154,11 +155,8 @@ UniRouter/
 │       ├── pages/        # 页面（Dashboard、Channels、Users 等）
 │       ├── store/        # 状态管理
 │       ├── test/         # 前端测试
-│       ├── ui/           # PRD1 UI 基础层（页面头、面板、指标、状态/金额/延迟显示）
+│       ├── ui/           # UI 基础层（页面头、面板、指标、状态/金额/延迟显示）
 │       └── utils/        # 工具函数
-├── web/
-│   ├── admin/            # 管理后台构建产物（CDN 静态资源）
-│   └── console/          # 控制台构建产物
 ├── migrations/           # SQL 迁移脚本
 ├── scripts/              # 验收/运维辅助脚本
 ├── deploy/customer/      # 不含 build/source mount 的客户最终制品 Compose 模板
@@ -172,7 +170,7 @@ UniRouter/
 │   ├── PRD-Phase4.md     # PRD4 范围（已完成）
 │   ├── PRD-Phase5.md     # PRD5 范围（Accepted Scope Complete）
 │   ├── PRD-Phase6.md     # PRD6 范围（Completed / Accepted Scope）
-│   ├── planning/         # PRD2-PRD6 规划和 backlog
+│   ├── planning/         # 各阶段规划、研究和候选 backlog
 │   ├── ops/              # 部署 & 测试
 │   ├── tech-ref/         # 技术参考（模型矩阵、计费状态机等）
 │   ├── agent-workflows/  # Agent 工作流

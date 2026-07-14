@@ -144,7 +144,7 @@ export default function ReconciliationPage() {
   return (
     <div className="ur-page">
       <PageHeader
-        eyebrow="Billing"
+        eyebrow="财务治理"
         title="用量对账"
         description="对比请求前估算与请求后实际 Token；同时核对供应商明确回传的 Prompt Cache 读写用量和费用。"
       />

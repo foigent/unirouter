@@ -34,7 +34,9 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := fmt.Sprintf(
-		`SELECT u.id, u.org_id, o.name AS org_name, u.username, u.role, u.status, u.created_at, u.updated_at
+		`SELECT u.id, u.org_id, o.name AS org_name, u.username, u.role, u.status,
+		        COALESCE(u.email, ''), COALESCE(NULLIF(u.auth_provider, ''), 'local'),
+		        u.created_at, u.updated_at
 		 FROM users u LEFT JOIN orgs o ON o.id = u.org_id
 		 %s
 		 ORDER BY u.id DESC LIMIT $%d OFFSET $%d`, whereClause, argIdx, argIdx+1)
@@ -49,19 +51,26 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	users := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var id, orgId int64
-		var username, role, status string
+		var username, role, status, email, authProvider string
 		var orgName *string
 		var createdAt, updatedAt time.Time
-		rows.Scan(&id, &orgId, &orgName, &username, &role, &status, &createdAt, &updatedAt)
+		if err := rows.Scan(&id, &orgId, &orgName, &username, &role, &status, &email, &authProvider, &createdAt, &updatedAt); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
+			return
+		}
 		oName := ""
 		if orgName != nil {
 			oName = *orgName
 		}
 		users = append(users, map[string]interface{}{
 			"id": id, "org_id": orgId, "org_name": oName,
-			"username": username, "role": role, "status": status,
+			"username": username, "role": role, "status": status, "email": email, "auth_provider": authProvider,
 			"created_at": createdAt, "updated_at": updatedAt,
 		})
+	}
+	if err := rows.Err(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Rows failed"})
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"data": users, "total": total})
 }
@@ -157,6 +166,10 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		argIdx++
 	}
 	if req.Status != nil {
+		if *req.Status != "active" && *req.Status != "disabled" {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid status"})
+			return
+		}
 		sets = append(sets, fmt.Sprintf("status = $%d", argIdx))
 		args = append(args, *req.Status)
 		argIdx++

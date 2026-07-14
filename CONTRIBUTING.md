@@ -4,30 +4,32 @@
 
 ## 项目架构
 
-详见 [AGENTS.md](./AGENTS.md) 和 [AGENT-PROTOCOL.md](./docs/agent-workflows/AGENT-PROTOCOL.md)。
+详见 [Agent 执行与复核协议](./docs/agent-workflows/AGENT-PROTOCOL.md)。执行时还应遵守当前工作区或任务明确提供的更高优先级约束。
 
 ## 开发流程
 
 ### 1. 创建分支
 
 ```bash
-# 从 main 创建功能分支
+# 从最新 main 创建工作分支
 git checkout main
-git pull
-git checkout -b feature/简短描述
-
-# 修复分支
-git checkout -b fix/issue编号-简短描述
+git pull --ff-only
+git checkout -b codex/简短描述
 ```
+
+不得直接推送 `main`。人工开发者可以使用团队约定的命名空间；自动执行负责人默认使用 `codex/`。
 
 ### 2. 开发 + 测试
 
 ```bash
 # 后端测试
-go test ./...
+go test ./... -count=1
+go vet ./...
 
 # 前端测试
-cd frontend && npm test
+cd frontend
+npm test -- --run
+npm run build
 
 # 本地验证
 docker compose up -d
@@ -65,24 +67,28 @@ git commit -m "feat(billing): 添加预冻结机制
 Fixes #45"
 ```
 
-### 4. 验收流程（Agent 协作）
+### 4. 验收流程（单一执行负责人）
 
-本项目使用 Agent 协作开发，流程如下：
+当前流程由一个执行负责人完成实现、验证、PR、CI 和已授权的非生产部署；独立复核按风险选择，不是固定串行关卡：
 
 ```
-Codex 开发 → Canary 验收 → Sentinel 提交 PR → 合并
+范围确认 → 实现与本地验证 → PR → required CI → 合并 → 按授权部署与目标验证
 ```
 
 **详细流程**：
-1. **Codex** 完成开发，更新 `docs/agent-workflows/FIX-SIGNAL.md`
-2. **Canary** 按 `docs/agent-workflows/FIX-SIGNAL.md` 逐条验收，写入 `docs/agent-workflows/VERIFY-RESULT.md`
-3. 验收通过后，**Sentinel** 提交 PR
-4. CI 自动运行（GitHub Actions）
-5. **Nicholas** 确认后，**Sentinel** 合并 PR
+1. 执行负责人确认范围、风险、非目标和授权边界。
+2. 完成聚焦回归及与风险相称的全量验证，更新当前执行记录和必要的不可变 evidence。
+3. 创建 PR；不得绕过分支保护或 required CI。
+4. `Change Routing` 对变更分类；适用的 `Backend Tests`、`Frontend Build`、`Docker Build` 必须成功。纯文档 PR 可以由路由明确跳过昂贵任务。
+5. 合并后，以 `origin/main` 的实际提交为准更新状态；已授权的非生产部署仍需记录版本、健康、回滚和目标证据。
 
 **关键文件**：
-- `docs/agent-workflows/FIX-SIGNAL.md` — Codex 给 Canary 的验收指令（覆盖写入）
-- `docs/agent-workflows/VERIFY-RESULT.md` — Canary 的验收结果（覆盖写入）
+- `docs/agent-workflows/AGENT-PROTOCOL.md` — 当前授权、风险、证据和合并规则
+- `docs/agent-workflows/EXECUTION-RECORD.md` — 当前批次可变执行记录
+- `docs/ops/evidence/` — 重要事实节点的不可变证据
+- `docs/agent-workflows/reviews/` — 可选独立复核结果
+
+`FIX-SIGNAL.md` 和 `VERIFY-RESULT.md` 仅保留协议 v1.x 的历史兼容，不再作为新批次的强制门禁。
 
 ### 5. PR 规范
 
@@ -106,10 +112,11 @@ Codex 开发 → Canary 验收 → Sentinel 提交 PR → 合并
 ## 测试
 - [ ] 本地测试通过
 - [ ] 新增测试用例
-- [ ] Canary 验收通过（附 VERIFY-RESULT.md）
+- [ ] 适用的 required CI 通过
+- [ ] 目标环境状态与非目标已说明
 
 ## 相关文档
-- FIX-SIGNAL.md: [链接或说明]
+- Evidence / execution record: [链接或说明]
 - 相关 Issue: Fixes #123
 ```
 
@@ -119,7 +126,7 @@ Codex 开发 → Canary 验收 → Sentinel 提交 PR → 合并
 
 - 使用 `gofmt` 格式化
 - 命名：camelCase（变量/函数），PascalCase（导出）
-- 错误处理：所有错误必须显式处理，不允许 `_ = err`
+- 错误处理：关键路径必须显式处理；有意忽略的 best-effort 清理必须局部、可解释，并避免掩盖主错误
 - 注释：导出函数必须有 godoc 注释
 
 ### React/TypeScript
@@ -138,7 +145,7 @@ Codex 开发 → Canary 验收 → Sentinel 提交 PR → 合并
 
 - **新功能**：必须有对应测试
 - **Bug 修复**：必须有回归测试
-- **测试覆盖率**：目标 > 70%
+- **测试覆盖率**：关注变更路径的有效回归；覆盖率是观察指标，不替代行为验证，也不是当前统一合并阈值
 
 ```bash
 # 后端测试 + 覆盖率
@@ -146,7 +153,7 @@ go test -coverprofile=coverage.out ./...
 go tool cover -html=coverage.out
 
 # 前端测试
-cd frontend && npm test -- --coverage
+cd frontend && npm test -- --run
 ```
 
 ## 安全规范
@@ -163,6 +170,7 @@ cd frontend && npm test -- --coverage
 - **Breaking Change**：在 PR 描述中明确标注
 - **架构/兼容/发布治理**：遵守 `docs/governance/README.md`
 - **重大技术决策**：使用 `docs/governance/ADR-TEMPLATE.md` 记录 ADR
+- **当前事实变化**：同步更新 `docs/ops/CURRENT-STATUS.md`、`docs/issues/OPEN-ISSUES.md` 或相应 evidence；不得把 Local/CI/Target/Production 状态互相推导
 
 ## 问题反馈
 

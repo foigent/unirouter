@@ -16,22 +16,22 @@ export default function UsersPage() {
   const [editUser, setEditUser] = useState<any>(null);
   const [formApi, setFormApi] = useState<any>(null);
 
-  const load = (p = page) => {
+  const load = (p = page, size = pageSize) => {
     setLoading(true);
-    api.getUsers(p, 20)
+    api.getUsers(p, size)
       .then((d: any) => { setUsers(d.data || []); setTotal(d.total || 0); })
       .catch(console.error)
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(1); }, []);
+  useEffect(() => { load(1, pageSize); }, []);
 
   const closeDrawer = () => { setShowDrawer(false); setEditUser(null); };
 
   const handleSubmit = async (v: any) => {
     try {
       if (editUser) {
-        await api.updateUser(editUser.id, v);
+        await api.updateUser(editUser.id, { role: v.role, status: v.status });
         Toast.success('更新成功');
       } else {
         await api.createUser(v);
@@ -61,34 +61,39 @@ export default function UsersPage() {
   const openCreate = () => {
     setEditUser(null);
     setShowDrawer(true);
-    formApi?.reset();
   };
 
   const openEdit = (u: any) => {
     setEditUser(u);
     setShowDrawer(true);
-    setTimeout(() => {
-      formApi?.setValues({
-        username: u.username,
-        role: u.role,
-        status: u.status,
-        org_id: u.org_id,
-      });
-    }, 100);
   };
+
+  useEffect(() => {
+    if (!showDrawer || !formApi) return;
+    formApi.reset();
+    if (editUser) {
+      formApi.setValues({
+        username: editUser.username,
+        role: editUser.role,
+        status: editUser.status,
+      });
+    }
+  }, [editUser, formApi, showDrawer]);
 
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 60 },
     { title: '用户名', dataIndex: 'username' },
+    { title: '邮箱', dataIndex: 'email', render: (v: string) => v || '-' },
+    { title: '认证来源', dataIndex: 'auth_provider', width: 110, render: (v: string) => v === 'oidc' ? '企业 OIDC' : '本地账号' },
     { title: '角色', dataIndex: 'role', render: (v: string) => <Tag color={roleTagColor(v) as any}>{roleLabel(v)}</Tag> },
-    { title: '状态', dataIndex: 'status', render: (v: string) => <StatusTag status={v}>{v}</StatusTag> },
+    { title: '状态', dataIndex: 'status', render: (v: string) => <StatusTag status={v}>{v === 'active' ? '启用' : v === 'disabled' ? '停用' : v}</StatusTag> },
     { title: '创建时间', dataIndex: 'created_at', render: (v: string) => formatDateTime(v) },
     {
       title: '操作', width: 120,
       render: (_: any, record: any) => (
         <span>
-          <Button icon={<IconEdit />} size="small" style={{ marginRight: 8 }} onClick={() => openEdit(record)} />
-          <Button icon={<IconDelete />} size="small" type="danger" onClick={() => handleDelete(record)} />
+          <Button aria-label={`编辑用户 ${record.username}`} icon={<IconEdit />} size="small" style={{ marginRight: 8 }} onClick={() => openEdit(record)} />
+          <Button aria-label={`删除用户 ${record.username}`} icon={<IconDelete />} size="small" type="danger" onClick={() => handleDelete(record)} />
         </span>
       ),
     },
@@ -99,8 +104,8 @@ export default function UsersPage() {
       <PageHeader
         eyebrow="访问控制"
         title="用户管理"
-        description="管理平台、组织、账务、项目和只读账号。项目角色还需要项目成员关系才会获得项目工作台访问。"
-        actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增用户</Button>}
+        description="管理本地账号及企业 OIDC 映射账号的角色与状态；企业密码和目录资料由身份提供方维护，项目角色还需要项目成员关系。"
+        actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增本地用户</Button>}
       />
 
       <Surface>
@@ -112,27 +117,28 @@ export default function UsersPage() {
             rowKey="id"
             pagination={{
               currentPage: page, pageSize, total,
-              onPageChange: (p: number) => { setPage(p); load(p); },
-              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1); },
+              pageSizeOpts: [20, 50, 100], showSizeChanger: true,
+              onPageChange: (p: number) => { setPage(p); load(p, pageSize); },
+              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1, s); },
             }}
           />
         </div>
       </Surface>
 
       <SideSheet
-        title={editUser ? '编辑用户' : '新增用户'}
+        title={editUser ? '编辑用户权限' : '新增本地用户'}
         visible={showDrawer}
         onCancel={closeDrawer}
         width={480}
       >
         <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleSubmit}>
-          <Form.Input field="username" label="用户名" rules={[{ required: true, message: '必填' }]} />
-          <PasswordField
+          <Form.Input field="username" label="用户名" disabled={!!editUser} rules={[{ required: true, message: '必填' }]} />
+          {!editUser && <PasswordField
             field="password"
-            label={editUser ? '新密码 (留空不修改)' : '密码'}
-            rules={editUser ? [] : [{ required: true, message: '必填' }]}
+            label="初始密码"
+            rules={[{ required: true, message: '必填' }]}
             visibilityResetKey={`${showDrawer ? 'open' : 'closed'}-${editUser?.id || 'create'}`}
-          />
+          />}
           <Form.Select field="role" label="角色" optionList={userManagementRoleOptions} rules={[{ required: true, message: '必填' }]} />
           <Form.Select field="status" label="状态" optionList={[{ label: '启用', value: 'active' }, { label: '禁用', value: 'disabled' }]} initValue="active" />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>

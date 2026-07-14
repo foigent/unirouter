@@ -2,6 +2,19 @@
 
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
+> **Current checkpoint (2026-07-15):** `main` / `origin/main` are
+> `c051e0abe2a02382cefc8a77b04a9bdcc45828a1`; the authorized development ECS
+> target runs that exact stable/canary/frontend release with version `1.0.0`,
+> environment `development`, migration `000037`, healthy dependencies, an
+> enforceable test License and signed-upgrade apply/readback/replay evidence.
+> The active branch `codex/v1-release-ui-target-closeout` contains only
+> first-release defect/UX/document corrections found by a 24-route authenticated
+> audit; its complete matrix is
+> `docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md`.
+> Required CI, merge and deployment of that branch are still pending. Existing
+> target upstream model allowlists remain a configuration gap; real provider,
+> detector, enterprise IdP, Production/TLS/capacity and X-Insight v2 evidence
+> are not claimed. PRD6 stays closed as `Completed (Accepted Scope)`.
 > Post-PRD6 commercial-release hardening is merged on `main` as
 > `5c1313521870731b0164d4eecfbbb06d7a7f0704` through PR #205. A follow-up P0
 > review had found
@@ -13,10 +26,11 @@
 > signing and verification. Focused tests, headed desktop/mobile browser
 > verification and all four required checks in run `29359673125` pass. Final
 > PR head `f1fdee12499aa399e63f205a00040d772425e7df` also passed all four
-> required checks in run `29360683242` before the squash merge. No
-> persistent production/customer key or License exists, and no target was
-> mutated. Production key ceremony and ECS
-> trust-root/License/migration/image activation are separate decisions. This
+> required checks in run `29360683242` before the squash merge. At that merge
+> checkpoint no persistent production/customer key or License existed and no
+> target had been mutated. The later development-target activation is
+> summarized above; production key ceremony and customer/production activation
+> remain separate decisions. This
 > does not reopen PRD6 or accept the PRD7 Update
 > Center/automatic-upgrade product scope.
 > PRD6 is formally `Completed (Accepted Scope)` at repository/CI evidence level. All 27
@@ -43,6 +57,11 @@
 > queue remain separate decision/work gates.
 
 ## First Read Order
+
+Current first-release batch evidence is
+`docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md`; read it
+immediately after `docs/ops/CURRENT-STATUS.md` before using the preserved PRD6
+history below.
 
 1. `docs/ops/CURRENT-STATUS.md` - current verified project status.
 2. `docs/planning/PRD6-START-HERE.md` - PRD6 decision state and reading map.

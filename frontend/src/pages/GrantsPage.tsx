@@ -54,7 +54,7 @@ export default function GrantsPage() {
   return (
     <div className="ur-page">
       <PageHeader
-        eyebrow="Billing"
+        eyebrow="财务治理"
         title="额度调整"
         description="记录组织授信额度调整和业务原因，辅助财务追踪。"
         actions={<Button icon={<IconPlus />} type="primary" onClick={() => { formApi?.reset(); setShowDrawer(true); }}>新增调整</Button>}

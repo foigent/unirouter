@@ -47,9 +47,13 @@ describe('KeysPage', () => {
     render(<KeysPage />);
 
     expect(await screen.findByText('service-key')).toBeTruthy();
+    expect(mockGetKeys).toHaveBeenCalledWith(1, 20);
     expect(screen.getByText('RPM 60 / RPS 10 / TPM 未配置')).toBeTruthy();
     expect(screen.getByText(/RPM\/RPS\/TPM/)).toBeTruthy();
     expect(screen.getByText('production')).toBeTruthy();
+    expect(screen.getByText('启用')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '编辑访问凭证 service-key' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '停用访问凭证 service-key' })).toBeTruthy();
   });
 
   it('creates keys with rps_limit rather than visible QPS wording', async () => {
