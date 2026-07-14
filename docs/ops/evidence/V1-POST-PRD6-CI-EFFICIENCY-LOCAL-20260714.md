@@ -38,8 +38,10 @@
 1. Full required CI runs on `pull_request` only. A manual `workflow_dispatch`
    remains available and deliberately routes to the full suite. The duplicate
    automatic post-merge `main` run is removed.
-2. Workflow-level concurrency is keyed by workflow plus PR number/ref and
-   cancels superseded runs for the same PR.
+2. Workflow-level concurrency is keyed by workflow plus PR number/ref.
+   Superseded pull-request runs are cancellation candidates; manual full-suite
+   dispatches retain their running job rather than being canceled by another
+   dispatch.
 3. A repository-owned change router classifies the complete PR diff:
    - documentation and Markdown-only changes request no expensive job;
    - Go, migration, `cmd` or `internal` changes request Backend plus Docker;
@@ -85,6 +87,20 @@ default-branch npm cache or repository file was deleted.
 
 Required GitHub CI must still validate GitHub expression semantics, full test
 execution and Docker build on this branch before merge.
+
+## Runtime concurrency rollout check
+
+1. Initial run `29298226707` continued after later heads were queued. Runs
+   `29298409039` and `29298666478` did share the same pending slot: the latter
+   canceled the former, but the initial in-progress run did not stop
+   automatically.
+2. To avoid spending more minutes on that superseded head, only exact run
+   `29298226707` was canceled and then force-canceled after the ordinary cancel
+   request did not interrupt its active integration-test step.
+3. Run `29298666478` then started on head `d4c803c`. The commit carrying this
+   section is the controlled same-group update used to verify whether an
+   in-progress run created with the final concurrency contract is canceled.
+   Concurrency acceptance remains pending until that readback is recorded.
 
 ## Rollback and non-goals
 
