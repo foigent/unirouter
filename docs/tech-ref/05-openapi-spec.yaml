@@ -789,7 +789,16 @@ paths:
     x-unirouter-rbac:
       get: [platform_admin, org_admin]
       post: [platform_admin]
-    description: Platform-owned base input/output prices plus cache_read_ratio and cache_creation_ratio. Ratios default to 1 and apply only to provider-authoritative Prompt Cache token classes for requests frozen after the change.
+    description: |
+      Platform-owned base input/output prices plus cache_read_ratio and
+      cache_creation_ratio. The V1 public price contract is CNY per 1,000,000
+      tokens, represented by input_price_cny_per_million_tokens and
+      output_price_cny_per_million_tokens; responses also return currency=CNY
+      and price_basis_tokens=1000000. Legacy input_price_cents and
+      output_price_cents request fields are rejected because their unit is
+      ambiguous. Ratios default to 1 and apply only to provider-authoritative
+      Prompt Cache token classes for requests frozen after the change. A model
+      with no explicit model_prices row fails closed; no default price is used.
     get: { $ref: "#/components/pathItems/List" }
     post: { $ref: "#/components/pathItems/Create" }
 

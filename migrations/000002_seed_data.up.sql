@@ -16,16 +16,7 @@ INSERT INTO settings (key, value, description, updated_at) VALUES
     ('budget_alert_threshold_cents', '1000', 'Threshold in cents to trigger alert', NOW())
 ON CONFLICT (key) DO NOTHING;
 
--- Default model prices (price per 1M tokens in cents)
-INSERT INTO model_prices (model_name, input_price_cents, output_price_cents, max_context, default_max_output) VALUES
-    ('gpt-4o', 250, 1000, 128000, 4096),
-    ('gpt-4o-mini', 15, 60, 128000, 4096),
-    ('gpt-4-turbo', 1000, 3000, 128000, 4096),
-    ('gpt-4', 3000, 6000, 8192, 4096),
-    ('gpt-3.5-turbo', 50, 150, 16385, 4096),
-    ('claude-3-5-sonnet-20241022', 300, 1500, 200000, 8192),
-    ('claude-3-opus-20240229', 1500, 7500, 200000, 4096),
-    ('claude-3-haiku-20240307', 25, 125, 200000, 4096),
-    ('deepseek-chat', 14, 28, 64000, 4096),
-    ('deepseek-reasoner', 55, 219, 64000, 8192)
-ON CONFLICT (model_name) DO NOTHING;
+-- Model prices are intentionally not seeded. Vendor prices, currencies and
+-- effective dates change independently of the binary; an administrator must
+-- configure an explicit CNY-per-million-token authority before a model can be
+-- billed. Existing databases are not changed by this historical seed edit.

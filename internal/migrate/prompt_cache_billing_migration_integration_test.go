@@ -79,6 +79,10 @@ SELECT COUNT(*) FROM information_schema.columns
 	require.NoError(t, migrate.Run(ctx, pool, migrationsDir))
 	assertUp()
 
+	// NewTestOrg truncates business fixtures by contract. Create the tenant
+	// before the price row so this migration test cannot accidentally depend on
+	// the production default-price fallback for a row it deleted itself.
+	orgID := testutil.NewTestOrg(t, pool)
 	model := fmt.Sprintf("p6f09-migration-ratio-%d", time.Now().UnixNano())
 	_, err = pool.Exec(ctx,
 		`INSERT INTO model_prices (
@@ -101,7 +105,6 @@ SELECT COUNT(*) FROM information_schema.columns
 		return updateErr
 	}())
 
-	orgID := testutil.NewTestOrg(t, pool)
 	require.NoError(t, func() error {
 		_, insertErr := pool.Exec(ctx,
 			`INSERT INTO wallets (org_id,balance,granted_balance,frozen,total_spent)
