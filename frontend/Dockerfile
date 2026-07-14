@@ -1,6 +1,8 @@
 # Build stage
 FROM node:20-alpine AS builder
 WORKDIR /app
+ARG VITE_DEPLOY_ENV=
+ENV VITE_DEPLOY_ENV=${VITE_DEPLOY_ENV}
 COPY package.json package-lock.json ./
 RUN npm pkg delete devDependencies.canvas && npm ci
 COPY . .

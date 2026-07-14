@@ -80,6 +80,7 @@ License 公钥由 License 签发方提供，支持 base64 或 hex 编码的 32 �
 | `EVIDENCE_CONTEXT_TRUST_SECRET` | 空 | PRD5 受信 evidence context 共享密钥；为空时忽略所有 inbound trace/session/actor/delegation headers。仅在受控内网/上游业务系统可持有密钥时启用，且不要写入 repo 或共享文档 |
 | `LOG_RETENTION_DAYS` | `30` | call logs、settle/cancel transactions 和相关清理的保留窗口；audit logs 保留该值的 2 倍 |
 | `RUNTIME_ENVIRONMENT` | `unspecified`（docker-compose 默认 `local`） | Runtime Status Center 展示的环境标签，如 `dev`、`staging`、`prod` |
+| `VITE_DEPLOY_ENV` | 空 | 前端镜像构建时写入的环境标签；支持 `development`、`staging`、`canary`、`production` 等值，并应与 `RUNTIME_ENVIRONMENT` 保持一致。修改后必须重建 frontend 镜像，仅重启容器不会生效 |
 | `RUNTIME_DEPLOYMENT_MODE` | `single-node` | Runtime Status Center 展示的部署形态，如 `docker-compose`、`kubernetes` |
 | `RUNTIME_DEPLOYMENT_ROLE` | `stable` | 当前实例角色，如 `stable`、`canary` |
 | `RUNTIME_VERSION` | 空 | 可选版本号；为空时使用 Docker build `-ldflags` 注入值 |
@@ -514,6 +515,8 @@ METRICS_ENABLED=false
 
 # Runtime Status Center 展示元数据、外部监控健康和入口。
 RUNTIME_ENVIRONMENT=staging
+# 前端标签是构建时配置；docker compose build frontend 后才会生效。
+VITE_DEPLOY_ENV=staging
 RUNTIME_DEPLOYMENT_MODE=docker-compose
 RUNTIME_DEPLOYMENT_ROLE=stable
 PROMETHEUS_URL=http://prometheus:9090

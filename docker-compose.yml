@@ -128,6 +128,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        VITE_DEPLOY_ENV: ${VITE_DEPLOY_ENV:-}
     container_name: uniroute-frontend
     ports:
       - "3000:80"
