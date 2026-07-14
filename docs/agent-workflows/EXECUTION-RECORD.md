@@ -1,33 +1,42 @@
 # Current Execution Record
 
-**Batch:** V1 Financial Prerequisites Closeout And Micro-Ledger Preparation
+**Batch:** V1 Micro-Ledger Target Activation And Environment-Label Closeout
 **Owner:** Codex
-**Risk:** R1 documentation closeout; next implementation is R3 financial schema/runtime cutover
-**Status:** PR #196/#197 prerequisites CI verified and merged; V1-FIN-001 implementation next
-**Baseline:** clean `origin/main` / `94c93dccd8dff8543ac4ee1cdc7c9219c384a5d0`
-**Branch:** `codex/v1-prerequisite-closeout`
-**PR:** pending docs-only closeout
-**Decision:** User selected source-preserving micro-precision ledger option B on 2026-07-14; stop before the R3 merge/deploy gate
-**Evidence:** `docs/ops/evidence/V1-POST-PRD6-FINANCIAL-PREREQUISITES-CI-20260714.md`, `docs/planning/V1-MICRO-PRECISION-LEDGER-PLAN-20260714.md`
-**Next product gate:** source-preserving micro-precision billing ledger (User selected option B)
-**Previous batch:** V1 CI efficiency PR #198/#199, CI/main cache/docs-only routing verified and closed
+**Risk:** R1 documentation closeout after a completed User-authorized R3 target cutover
+**Status:** PR #202/#203 merged; development/test ECS Target verified at exact `545e514`; evidence publication is PR #204
+**Baseline:** clean `origin/main` / `545e514ab51937e6589512192141b9359cfcb504`
+**Branch:** `codex/v1-target-evidence-closeout`
+**PR:** #204 docs-only target-evidence publication
+**Decision:** User authorized merge of PR #202 and the non-rolling test-ECS activation; the development environment label is also approved and deployed
+**Evidence:** `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-TARGET-20260714.md`
+**Next product gate:** X-Insight v2 consumer coordination and the remaining separately classified Post-PRD6 product/UI queue
+**Previous batch:** V1 micro-ledger PR #202 and environment-label PR #203 required CI, merge and target activation
 **Previous phase:** PRD5 Accepted Scope Complete; its Batch 1Z historical target backend was `95d1da9` / PR #133 and is now superseded on the same target by this PRD6 deployment
 
 ## Current Batch Result
 
-1. Wallet atomicity PR #196 exact head `2c5e930` passed run `29300560434`
-   and squash-merged as `86a3bd8`; exact retries are idempotent and signed
-   deltas apply to the latest locked balance.
-2. Pricing-contract PR #197 exact head `74ebf62` passed run `29301071299`,
-   including its dedicated PostgreSQL gate, and squash-merged as `94c93dc`.
-3. The public price contract is CNY per million tokens, missing prices fail
-   closed and migration `000035` documents rather than rewrites existing rows.
-4. No automatic post-merge CI was created for either merge, consistent with
-   the closed CI-efficiency contract.
-5. No target price row, wallet, migration, deployment or credential changed.
-   Existing target price provenance remains an explicit pre-deployment review.
-6. `V1-FIN-001` prerequisites are complete. Implementation starts from clean
-   main `94c93dc` and stops before R3 merge or target migration approval.
+1. Micro-ledger PR #202 exact head `1944e31` passed required run
+   `29334221779` and squash-merged as `ec0dde2`.
+2. The User-authorized non-rolling activation created and validated a
+   PostgreSQL backup, proved zero active financial state, applied `000035` then
+   `000036`, and switched the development/test ECS to exact V1 images.
+3. Environment-label PR #203 exact head `b76f253` passed final required run
+   `29339373907`, squash-merged as `545e514`, and the target was rebuilt and
+   switched to that exact stable/canary/frontend release.
+4. One cutover attempt hit an immediate Nginx startup-probe race and
+   automatically restored the old healthy runtime. A bounded readiness retry
+   then completed in approximately 16 seconds; all final containers have
+   restart count zero.
+5. Independent database/API/runtime readback verified migration `000036`, 38
+   micro columns, no active/pending financial state, exact commit/environment,
+   and healthy PostgreSQL/Redis/Prometheus/Grafana connectivity.
+6. Authenticated browser checks verified Dashboard, Internal Status, Model
+   Pricing and Reconciliation with `开发环境`, HTTP 200 business requests and
+   zero console errors/warnings.
+7. This closes the selected V1 financial/deployment issues at Target level on
+   the test ECS. It does not claim Production, real provider/detector,
+   migration down, TLS, capacity/HA or X-Insight v2 consumer acceptance, and it
+   does not reopen PRD6 Accepted Scope.
 
 ## Previous CI Efficiency Result
 
@@ -93,9 +102,10 @@ project or file-retention state changes in this completion publication.
    `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md`.
 
 Audit taxonomy/name/date UX is target-confirmed but was not one of the 27
-accepted PRD6 rows; it remains in the PRD7 `UI 与可运营性` candidate. The
-target's `环境未配置` badge is also truthful until an explicit frontend
-environment label is selected.
+accepted PRD6 rows; it remains in the PRD7 `UI 与可运营性` candidate. At that
+previous PRD6 cut the target's `环境未配置` badge was truthful; the User later
+selected `development`, and PR #203 / final target `545e514` supersedes it with
+the browser-verified `开发环境` label.
 
 ## Closed P6-F11 Scope
 

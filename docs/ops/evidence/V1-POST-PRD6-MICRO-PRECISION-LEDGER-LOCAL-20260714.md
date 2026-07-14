@@ -1,5 +1,12 @@
 # V1 Post-PRD6 Micro-Precision Ledger Local Evidence — 2026-07-14
 
+> Promotion note: this file preserves the pre-activation local/R3 evidence.
+> PR #202 later passed required run `29334221779`, merged as `ec0dde2`, and the
+> User-authorized development/test ECS activation applied `000036`. PR #203
+> then passed run `29339373907`, merged as final target release `545e514`, and
+> corrected the frontend deployment label. Current target evidence is
+> `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-TARGET-20260714.md`.
+
 ## Status and boundary
 
 - Status: Local verified; Draft PR required CI and R3 merge/deployment approval
@@ -163,6 +170,8 @@ Before an authorized target activation:
 10. treat post-activation rollback as roll-forward after any micro evidence is
     written.
 
-Creating the Draft PR and running required CI are authorized. Merging it,
-deploying it, applying `000036` to ECS, draining target writers or changing
-target traffic remains an explicit User decision.
+At the time this local evidence was recorded, creating the Draft PR and running
+required CI were authorized while merge and target activation remained an
+explicit User decision. That later authorization and its completed execution
+are recorded in the target evidence linked at the top; this historical local
+checklist is not the current deployment status.

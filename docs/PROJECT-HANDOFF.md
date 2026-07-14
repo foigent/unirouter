@@ -11,18 +11,19 @@
 > historical request. This is Target verified only, not a
 > Production, capacity/HA, real-provider/detector, TLS or migration-down claim.
 > Post-PRD6 V1 release hardening is separate: CI-efficiency PR #198 passed run
-> `29299202652`, merged as `31d87de`, produced no duplicate automatic main run,
-> and passed trusted main dispatch `29299765793`. Shared Go cache `5720112747`
-> is seeded and final capacity is 32 caches / `9,503,335,891` bytes. The next
-> confirmed release blocker is `V1-FIN-001`, the integer-cent terminal clamp;
-> User selected the micro-CNY ledger option B. Wallet prerequisite PR #196
-> passed run `29300560434` and merged as `86a3bd8`; pricing prerequisite PR
-> #197 passed run `29301071299` and merged as `94c93dc`. The ledger is now
-> Local verified on `codex/v1-micro-precision-ledger`, including `000036`,
-> migrated PostgreSQL, exact API/UI contracts, effective-price overflow/race
-> rejection and isolated browser evidence.
-> Draft PR CI is pending; R3 merge, target drain/migration/deployment and
-> X-Insight v2 consumer acceptance remain explicit decision gates.
+> `29299202652`, merged as `31d87de`, eliminated duplicate automatic main CI,
+> and left 32 caches / `9,503,335,891` bytes after explicit single-ID cleanup.
+> User-selected micro-CNY option B passed PR #202 run `29334221779`, merged as
+> `ec0dde201841b8286f6802cc7e588e79eda40719`, and was activated by an
+> authorized non-rolling ECS migration through `000036`. Environment-label PR
+> #203 passed final run `29339373907`, merged as
+> `545e514ab51937e6589512192141b9359cfcb504`, and is now the exact
+> stable/canary/frontend development-target release. Database, API, runtime and
+> authenticated browser readback passed; the UI displays `开发环境` with zero
+> browser console errors/warnings. This is Target verified, not Production,
+> real-provider/detector, TLS, capacity/HA or migration-down evidence.
+> X-Insight v2 consumer acceptance and the remaining Post-PRD6 product/UI issue
+> queue remain separate decision/work gates.
 
 ## First Read Order
 
@@ -91,6 +92,7 @@
 63. `docs/planning/V1-MICRO-PRECISION-LEDGER-PLAN-20260714.md` - accepted P0 micro-CNY ledger contract, migration boundary and approval gate.
 64. `docs/ops/evidence/V1-POST-PRD6-FINANCIAL-PREREQUISITES-CI-20260714.md` - wallet atomicity and public pricing-unit prerequisite merge/CI evidence.
 65. `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-LOCAL-20260714.md` - option B implementation, full local regression, isolated migration/API/browser evidence, issue classification and R3 cutover checklist.
+66. `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-TARGET-20260714.md` - PR #202/#203 CI/merge truth, authorized non-rolling ECS activation, database/API/runtime/browser readback, environment-label verification and remaining non-claims.
 
 ## Current Project Shape
 

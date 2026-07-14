@@ -20,34 +20,32 @@
 > as `31d87de`, produced no automatic post-merge CI, and passed one trusted main
 > dispatch `29299765793`. Shared Go cache `5720112747` is seeded; final capacity
 > is 32 caches / `9,503,335,891` bytes after four explicit single-ID deletions.
-> `V1-FIN-001` separately confirms the integer-cent terminal clamp as a P0 V1
-> release blocker; User-approved option B is documented in
-> `docs/planning/V1-MICRO-PRECISION-LEDGER-PLAN-20260714.md`. Its wallet
-> atomicity prerequisite PR #196 passed run `29300560434` and merged as
-> `86a3bd8`; pricing-contract prerequisite PR #197 passed run `29301071299`
-> and merged as `94c93dc`. Option B is now Local verified on
-> `codex/v1-micro-precision-ledger`: checked micro-CNY arithmetic, non-rolling
-> `000036`, exact API/UI strings, outbox/Redis v2, migrated PostgreSQL and real
-> local browser flows passed. Price and organization-multiplier mutations also
-> reject exact effective-price overflow atomically and serialize cross-table
-> races by model. The User approved the `V1-PRICE-RENAME-001` V1 compatibility
-> change after source/schema tracing proved that renaming only a base-price row
-> does not migrate independently owned organization, routing or model-governance
-> references. Model identity is now immutable on update: a different name is
-> rejected before price/audit mutation, while the edit UI keeps the identity
-> outside the submitted form. Migrated PostgreSQL and frontend regressions pass.
-> The unused initial `web/admin` bundle was also removed after
-> proving the current release uses the independent Nginx frontend image. Draft
-> PR required CI is pending; merge, ECS
-> drain/migration/deployment and X-Insight v2 consumer acceptance remain gated.
-> Evidence: `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-LOCAL-20260714.md`.
+> User-approved micro-CNY option B passed PR #202 exact-head required run
+> `29334221779` and squash-merged as
+> `ec0dde201841b8286f6802cc7e588e79eda40719`. The authorized non-rolling ECS
+> activation backed up PostgreSQL, proved zero active financial state, applied
+> `000035` then `000036`, and switched stable/canary/frontend to exact V1
+> images. Checked micro-CNY authority, immutable model identity, exact
+> effective-price range validation, migrated sequence repair, BigInt UI money,
+> outbox/Redis v2 and cleanup regressions are CI verified; the selected target
+> schema, API and UI surfaces are Target verified.
+> Deployment-label PR #203 passed exact-head required run `29339373907`, merged
+> as `545e514ab51937e6589512192141b9359cfcb504`, and is the final ECS release.
+> Stable/canary report exact commit `545e514`, version `v1`, environment
+> `development`, healthy DB/Redis and migration `000036`; authenticated browser
+> checks display `开发环境` with zero console errors/warnings. Evidence:
+> `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-TARGET-20260714.md`.
+> This development/test target is not Production, real-provider/detector,
+> TLS, capacity/HA or migration-down evidence. X-Insight v2 consumer acceptance
+> and the broader Post-PRD6 product/UI issue queue remain separate.
 > `V1-BUILD-CONTEXT-001` is CI verified / closed by PR #195:
 > backend and independent frontend Docker contexts exclude local environment,
 > private-key and generated files; the backend performs a post-copy invariant
 > check and required CI uses root, nested and private-key regression markers
 > without repeating the expensive backend build. Exact head `8a082cf` passed
 > run `29333175230`, including the real Docker assertions, and squash-merged as
-> `65a0d07`. No image was deployed to ECS.
+> `65a0d07`. PR #195 itself did not deploy an image; its protections are now
+> included in the later exact V1 target image documented above.
 > PRD6 Batch 0B P6-F16 was squash-merged by PR #140 as
 > `f244f669c529fec8767f85fff209882b333d8ed2`. P6-F33 was squash-merged by
 > PR #142 as `7173c5967a42c112fd0b219938a0901c1a0b9633`; its PR and post-merge
@@ -600,8 +598,8 @@ Historical PRD1 summary: Core backend modules, admin APIs, frontend pages, migra
 
 | Area | Status | Evidence |
 |------|--------|----------|
-| V1 Financial Prerequisites | CI verified; target price review pending | PR #196 exact head `2c5e930` / run `29300560434` / merge `86a3bd8` closes unsafe absolute wallet adjustment. PR #197 exact head `74ebf62` / run `29301071299` / merge `94c93dc` closes the public price-unit/default-price defect and adds `000035` without rewriting existing rows. Evidence: `docs/ops/evidence/V1-POST-PRD6-FINANCIAL-PREREQUISITES-CI-20260714.md`. No target mutation or automatic price conversion |
-| V1 Micro-Precision Ledger | Local verified; Draft PR CI and R3 target activation pending | User-approved option B replaces integer-cent/minimum-charge terminal authority with checked micro-CNY, source-preserving settlement, non-rolling `000036`, explicit string API/UI amounts and outbox/Redis v2. Fresh migration, full local regression, exact effective-price overflow/race rejection and real isolated browser/API flows passed. Evidence: `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-LOCAL-20260714.md`. No target mutation, X-Insight acceptance or deployment claim |
+| V1 Financial Prerequisites | CI verified / closed; exact target rows preserved | PR #196 exact head `2c5e930` / run `29300560434` / merge `86a3bd8` closes unsafe absolute wallet adjustment. PR #197 exact head `74ebf62` / run `29301071299` / merge `94c93dc` closes the public price-unit/default-price defect and adds `000035` without rewriting existing rows. The test target retained every existing price exactly; no automatic conversion or repricing was performed. Evidence: `docs/ops/evidence/V1-POST-PRD6-FINANCIAL-PREREQUISITES-CI-20260714.md` and the V1 target evidence |
+| V1 Micro-Precision Ledger And Environment Label | Target verified / closed for the selected development ECS | PR #202 exact head `1944e31` passed run `29334221779` and merged as `ec0dde2`; the authorized non-rolling activation applied `000035`/`000036`. PR #203 exact head `b76f253` passed run `29339373907`, merged as final release `545e514`, and wired the frontend build-time environment label. Stable/canary/runtime/schema/API and authenticated browser evidence passed; `开发环境` renders with zero console errors/warnings. Evidence: `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-LOCAL-20260714.md`, `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-TARGET-20260714.md`. No Production, real-provider/detector, HA/capacity, TLS, migration-down or X-Insight consumer claim |
 | V1 Post-PRD6 CI Efficiency | CI verified / closed | PR #198 exact head run `29299202652`, squash merge `31d87de`, no automatic merge-commit CI, trusted main run `29299765793`, shared cache `5720112747` and final 32-cache / `9,503,335,891`-byte readback. Docs-only PR #199 run `29300434659` passed with explicit skipped Backend/Frontend/Docker contexts. Evidence: `docs/ops/evidence/V1-POST-PRD6-CI-EFFICIENCY-CI-20260714.md` |
 | PRD6 Final Completion | Completed (Accepted Scope) | Fresh 2026-07-14 audit: 27/27 accepted rows closed, clean/aligned pre-publication baseline `9c73d6f`, exact-head main run `29274010760` green, public ECS readiness healthy; `docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md`. No Production or future-scope promotion |
 | PRD6 Target Deployment And UI Verification | Target verified for selected surfaces | `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md`; exact PRD6 stable/canary commit `ce9307a`, exact final frontend `f4fe41d`, migrations through `000034`, public/internal readiness, authenticated Dashboard/limits/Guardrails/routing/reconciliation/logs/status/docs, one historical P6-E01 route/failover detail, mobile checks, PR #191 runbook/Vite correction, PR #192 inline favicon correction and zero-row QA cleanup. No Production, policy-enforcement, real-provider/detector, capacity/HA, TLS or migration-down claim |
