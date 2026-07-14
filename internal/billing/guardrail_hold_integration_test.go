@@ -32,16 +32,17 @@ func TestP6F10GuardrailWithheldOutputRetainsUsageWithoutCustomerCharge(t *testin
 	}
 
 	var reservationState, pendingReason, usageAuthority, usagePurpose, attemptState, attemptCertainty string
-	var calculatedCost, totalSpent, settleTransactions, deliveryReceipts int
+	var calculatedCostMicros, totalSpentMicros int64
+	var settleTransactions, deliveryReceipts int
 	require.NoError(t, b.db.QueryRow(t.Context(), `
-		SELECT status,settlement_pending_reason,usage_authority,usage_purpose,calculated_cost
+		SELECT status,settlement_pending_reason,usage_authority,usage_purpose,calculated_cost_micros
 		FROM freeze_idempotency WHERE org_id=$1 AND request_id=$2`, orgID, requestID,
-	).Scan(&reservationState, &pendingReason, &usageAuthority, &usagePurpose, &calculatedCost))
+	).Scan(&reservationState, &pendingReason, &usageAuthority, &usagePurpose, &calculatedCostMicros))
 	require.NoError(t, b.db.QueryRow(t.Context(), `
 		SELECT state,outcome_certainty FROM billing_provider_attempts
 		WHERE org_id=$1 AND request_id=$2 AND attempt_id=$3`, orgID, requestID, attemptID,
 	).Scan(&attemptState, &attemptCertainty))
-	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT total_spent FROM wallets WHERE org_id=$1`, orgID).Scan(&totalSpent))
+	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT total_spent_micros FROM wallets WHERE org_id=$1`, orgID).Scan(&totalSpentMicros))
 	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT COUNT(*) FROM transactions WHERE org_id=$1 AND request_id=$2 AND type='settle'`, orgID, requestID).Scan(&settleTransactions))
 	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT COUNT(*) FROM request_delivery_receipts WHERE org_id=$1 AND request_id=$2`, orgID, requestID).Scan(&deliveryReceipts))
 	require.Equal(t, "settlement_pending", reservationState)
@@ -50,8 +51,8 @@ func TestP6F10GuardrailWithheldOutputRetainsUsageWithoutCustomerCharge(t *testin
 	require.Equal(t, string(metering.UsagePurposeProviderEvidence), usagePurpose)
 	require.Equal(t, ProviderAttemptStateOutputWithheld, attemptState)
 	require.Equal(t, providerAttemptCertaintyKnownUsage, attemptCertainty)
-	require.Positive(t, calculatedCost)
-	require.Zero(t, totalSpent)
+	require.Positive(t, calculatedCostMicros)
+	require.Zero(t, totalSpentMicros)
 	require.Zero(t, settleTransactions)
 	require.Zero(t, deliveryReceipts)
 
@@ -67,9 +68,9 @@ func TestP6F10GuardrailWithheldOutputRetainsUsageWithoutCustomerCharge(t *testin
 	})
 	require.NoError(t, err)
 	require.Equal(t, "reconciled", reconciled.State)
-	require.Zero(t, reconciled.CustomerChargedCost)
-	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT total_spent FROM wallets WHERE org_id=$1`, orgID).Scan(&totalSpent))
-	require.Zero(t, totalSpent, "explicit platform subsidy still cannot charge the customer")
+	require.Equal(t, "0", reconciled.CustomerChargedMicros)
+	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT total_spent_micros FROM wallets WHERE org_id=$1`, orgID).Scan(&totalSpentMicros))
+	require.Zero(t, totalSpentMicros, "explicit platform subsidy still cannot charge the customer")
 }
 
 func TestP6F10FinalResponseSizeHoldUsesTheSameNoDeliveryCostBoundary(t *testing.T) {
@@ -80,7 +81,8 @@ func TestP6F10FinalResponseSizeHoldUsesTheSameNoDeliveryCostBoundary(t *testing.
 	require.NoError(t, b.HoldNonStreamOutput(t.Context(), req, "response_too_large"))
 
 	var status, pendingReason, usagePurpose, attemptState string
-	var totalSpent, deliveryReceipts int
+	var totalSpentMicros int64
+	var deliveryReceipts int
 	require.NoError(t, b.db.QueryRow(t.Context(), `
 		SELECT status,settlement_pending_reason,usage_purpose
 		FROM freeze_idempotency WHERE org_id=$1 AND request_id=$2`, orgID, requestID,
@@ -89,12 +91,12 @@ func TestP6F10FinalResponseSizeHoldUsesTheSameNoDeliveryCostBoundary(t *testing.
 		SELECT state FROM billing_provider_attempts
 		WHERE org_id=$1 AND request_id=$2 AND attempt_id=$3`, orgID, requestID, attemptID,
 	).Scan(&attemptState))
-	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT total_spent FROM wallets WHERE org_id=$1`, orgID).Scan(&totalSpent))
+	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT total_spent_micros FROM wallets WHERE org_id=$1`, orgID).Scan(&totalSpentMicros))
 	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT COUNT(*) FROM request_delivery_receipts WHERE org_id=$1 AND request_id=$2`, orgID, requestID).Scan(&deliveryReceipts))
 	require.Equal(t, "settlement_pending", status)
 	require.Equal(t, "response_too_large", pendingReason)
 	require.Equal(t, string(metering.UsagePurposeProviderEvidence), usagePurpose)
 	require.Equal(t, ProviderAttemptStateOutputWithheld, attemptState)
-	require.Zero(t, totalSpent)
+	require.Zero(t, totalSpentMicros)
 	require.Zero(t, deliveryReceipts)
 }

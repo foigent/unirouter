@@ -28,11 +28,11 @@ type fakeProvider struct {
 	completeReq billing.ProviderAttemptCompletion
 }
 
-func (p *fakeProvider) QueryModelPriceForOrg(context.Context, int64, string) (float64, float64, error) {
+func (p *fakeProvider) QueryModelPriceMicrosForOrg(context.Context, int64, string) (int64, int64, error) {
 	return 1, 1, nil
 }
 
-func (p *fakeProvider) CalculateCost(context.Context, string, int, int) (int, error) {
+func (p *fakeProvider) CalculateCostMicrosForOrg(context.Context, int64, string, int, int) (int64, error) {
 	return 1, nil
 }
 
@@ -51,7 +51,7 @@ func (p *fakeProvider) ExtendReservation(_ context.Context, req billing.ExtendRe
 		Success: true, Sequence: req.Sequence,
 		AddedCompletionTokens:  req.AdditionalCompletionTokens,
 		TargetCompletionTokens: req.TargetCompletionTokens,
-		Amount:                 1,
+		AmountMicros:           1,
 	}, nil
 }
 
@@ -166,7 +166,7 @@ func (r *fakeRuntime) ReserveInvocation(_ context.Context, claims *agentcap.Clai
 		OrgID:              claims.OrgID,
 		Lineage:            append([]string(nil), claims.Lineage...),
 		ReservedTokens:     tokens,
-		ReservedCostCents:  cost,
+		ReservedCostMicros: cost,
 		LeaseExpiresAt:     time.Now().UTC().Add(leaseTTL + agentcap.InvocationFinalizationGrace),
 		StateExpiresAt:     time.Now().UTC().Add(leaseTTL + 2*agentcap.InvocationFinalizationGrace),
 	}, nil
@@ -182,7 +182,7 @@ func (r *fakeRuntime) ExtendInvocation(_ context.Context, reservation *agentcap.
 		return r.extendErr
 	}
 	reservation.ReservedTokens += tokens
-	reservation.ReservedCostCents += cost
+	reservation.ReservedCostMicros += cost
 	reservation.ExtensionSequence = sequence
 	return nil
 }
@@ -243,8 +243,8 @@ func capabilityContext(ttl time.Duration) context.Context {
 
 func successfulProvider() *fakeProvider {
 	return &fakeProvider{
-		freeze: &billing.FreezeResult{Success: true, Amount: 25},
-		settle: &billing.SettleResult{Success: true, ActualCost: 17, ChargedCost: 17},
+		freeze: &billing.FreezeResult{Success: true, AmountMicros: 25},
+		settle: &billing.SettleResult{Success: true, ActualCostMicros: 17, ChargedCostMicros: 17},
 	}
 }
 

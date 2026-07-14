@@ -29,8 +29,8 @@ func TestP6F17ConcurrentAdminFinancialClientIDsHaveOneEffect(t *testing.T) {
 		orgID, auth.RoleBillingAdmin,
 	).Scan(&userID))
 	_, err := pool.Exec(ctx,
-		`INSERT INTO wallets (org_id, balance, granted_balance, frozen, total_spent)
-		 VALUES ($1, 1000, 0, 0, 0)`, orgID)
+		`INSERT INTO wallets (org_id, balance_micros, granted_balance_micros, frozen_micros, total_spent_micros)
+		 VALUES ($1, 10000000, 0, 0, 0)`, orgID)
 	require.NoError(t, err)
 
 	h := NewHandler(pool, "finance-jwt-secret", []byte("0123456789abcdef01234567"), nil)
@@ -83,8 +83,9 @@ func TestP6F17ConcurrentAdminFinancialClientIDsHaveOneEffect(t *testing.T) {
 	)
 	require.ElementsMatch(t, []int{http.StatusCreated, http.StatusOK}, []int{grantResults[0].Code, grantResults[1].Code})
 
-	var balance, grantedBalance, topUpTransactions, adjustTransactions, grants, grantTransactions int
-	require.NoError(t, pool.QueryRow(ctx, `SELECT balance, granted_balance FROM wallets WHERE org_id = $1`, orgID).Scan(&balance, &grantedBalance))
+	var balanceMicros, grantedBalanceMicros int64
+	var topUpTransactions, adjustTransactions, grants, grantTransactions int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT balance_micros, granted_balance_micros FROM wallets WHERE org_id = $1`, orgID).Scan(&balanceMicros, &grantedBalanceMicros))
 	require.NoError(t, pool.QueryRow(ctx,
 		`SELECT COUNT(*) FROM transactions
 		 WHERE org_id = $1 AND type = 'topup' AND client_request_id = 'same-topup-client'`, orgID,
@@ -101,8 +102,8 @@ func TestP6F17ConcurrentAdminFinancialClientIDsHaveOneEffect(t *testing.T) {
 		`SELECT COUNT(*) FROM transactions
 		 WHERE org_id = $1 AND type = 'grant' AND client_request_id = 'same-grant-client'`, orgID,
 	).Scan(&grantTransactions))
-	require.Equal(t, 1125, balance)
-	require.Equal(t, 50, grantedBalance)
+	require.Equal(t, int64(11_250_000), balanceMicros)
+	require.Equal(t, int64(500_000), grantedBalanceMicros)
 	require.Equal(t, 1, topUpTransactions)
 	require.Equal(t, 1, adjustTransactions)
 	require.Equal(t, 1, grants)
@@ -123,8 +124,8 @@ func TestWalletConcurrentDistinctDeltasPreserveAllEffects(t *testing.T) {
 		orgID, auth.RoleBillingAdmin,
 	).Scan(&userID))
 	_, err := pool.Exec(ctx,
-		`INSERT INTO wallets (org_id, balance, granted_balance, frozen, total_spent)
-		 VALUES ($1, 1000, 0, 0, 0)`, orgID)
+		`INSERT INTO wallets (org_id, balance_micros, granted_balance_micros, frozen_micros, total_spent_micros)
+		 VALUES ($1, 10000000, 0, 0, 0)`, orgID)
 	require.NoError(t, err)
 
 	h := NewHandler(pool, "finance-jwt-secret", []byte("0123456789abcdef01234567"), nil)
@@ -172,13 +173,14 @@ func TestWalletConcurrentDistinctDeltasPreserveAllEffects(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, recorders[0].Code, recorders[0].Body.String())
 	require.Equal(t, http.StatusOK, recorders[1].Code, recorders[1].Body.String())
-	var balance, transactionCount, transactionDelta int
-	require.NoError(t, pool.QueryRow(ctx, `SELECT balance FROM wallets WHERE org_id = $1`, orgID).Scan(&balance))
+	var balanceMicros, transactionDeltaMicros int64
+	var transactionCount int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT balance_micros FROM wallets WHERE org_id = $1`, orgID).Scan(&balanceMicros))
 	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT COUNT(*), COALESCE(SUM(amount), 0)
+		`SELECT COUNT(*), COALESCE(SUM(amount_micros), 0)
 		 FROM transactions WHERE org_id = $1 AND type IN ('topup', 'adjust')`, orgID,
-	).Scan(&transactionCount, &transactionDelta))
-	require.Equal(t, 900, balance)
+	).Scan(&transactionCount, &transactionDeltaMicros))
+	require.Equal(t, int64(9_000_000), balanceMicros)
 	require.Equal(t, 2, transactionCount)
-	require.Equal(t, -100, transactionDelta)
+	require.Equal(t, int64(-1_000_000), transactionDeltaMicros)
 }

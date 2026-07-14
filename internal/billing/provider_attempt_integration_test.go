@@ -238,10 +238,11 @@ func TestP6F40BAcceptedAttemptSettlesAtomicallyWithReceipt(t *testing.T) {
 		UpstreamRequestID: "provider-settled-1",
 	}))
 	settlement := SettleRequest{
-		RequestID:  requestID,
-		AttemptID:  attempt.AttemptID,
-		OrgID:      orgID,
-		ActualCost: 100,
+		RequestID:    requestID,
+		AttemptID:    attempt.AttemptID,
+		OrgID:        orgID,
+		PromptTokens: 50_000,
+		UsageSource:  "upstream",
 	}
 	prepared, err := b.PrepareNonStreamDelivery(t.Context(), settlement)
 	require.NoError(t, err)
@@ -260,19 +261,19 @@ func TestP6F40BAcceptedAttemptSettlesAtomicallyWithReceipt(t *testing.T) {
 	require.True(t, result.Success)
 
 	var state, certainty string
-	var calculated, charged int
+	var calculatedMicros, chargedMicros int64
 	var transactionID int64
 	var resolved bool
 	require.NoError(t, pool.QueryRow(t.Context(),
-		`SELECT state, outcome_certainty, calculated_cost, charged_cost,
+		`SELECT state, outcome_certainty, calculated_cost_micros, charged_cost_micros,
 		        terminal_transaction_id, financial_resolved_at IS NOT NULL
 		 FROM billing_provider_attempts
 		 WHERE org_id = $1 AND request_id = $2 AND attempt_id = $3`, orgID, requestID, attempt.AttemptID,
-	).Scan(&state, &certainty, &calculated, &charged, &transactionID, &resolved))
+	).Scan(&state, &certainty, &calculatedMicros, &chargedMicros, &transactionID, &resolved))
 	require.Equal(t, providerAttemptStateSettled, state)
 	require.Equal(t, providerAttemptCertaintyKnownUsage, certainty)
-	require.Equal(t, 100, calculated)
-	require.Equal(t, 100, charged)
+	require.Equal(t, testMicros(100), calculatedMicros)
+	require.Equal(t, testMicros(100), chargedMicros)
 	require.Equal(t, result.SettleID, transactionID)
 	require.True(t, resolved)
 }
@@ -292,24 +293,25 @@ func TestP6F40BFundingPendingRetainsAttemptCost(t *testing.T) {
 		HTTPStatus: 200,
 	}))
 	result, err := b.PrepareNonStreamDelivery(t.Context(), SettleRequest{
-		RequestID:  requestID,
-		AttemptID:  attempt.AttemptID,
-		OrgID:      orgID,
-		ActualCost: 500,
+		RequestID:    requestID,
+		AttemptID:    attempt.AttemptID,
+		OrgID:        orgID,
+		PromptTokens: 250_000,
+		UsageSource:  "upstream",
 	})
 	require.NoError(t, err)
 	require.False(t, result.Funded)
 	require.Equal(t, "insufficient_topup", result.ErrorCode)
 
 	var state, certainty string
-	var calculated, charged int
+	var calculatedMicros, chargedMicros int64
 	require.NoError(t, pool.QueryRow(t.Context(),
-		`SELECT state, outcome_certainty, calculated_cost, charged_cost
+		`SELECT state, outcome_certainty, calculated_cost_micros, charged_cost_micros
 		 FROM billing_provider_attempts
 		 WHERE org_id = $1 AND request_id = $2 AND attempt_id = $3`, orgID, requestID, attempt.AttemptID,
-	).Scan(&state, &certainty, &calculated, &charged))
+	).Scan(&state, &certainty, &calculatedMicros, &chargedMicros))
 	require.Equal(t, providerAttemptStateFundingPending, state)
 	require.Equal(t, providerAttemptCertaintyKnownUsage, certainty)
-	require.Equal(t, 500, calculated)
-	require.Zero(t, charged)
+	require.Equal(t, testMicros(500), calculatedMicros)
+	require.Zero(t, chargedMicros)
 }

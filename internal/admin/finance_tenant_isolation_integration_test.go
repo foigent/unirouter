@@ -50,8 +50,8 @@ func TestP6F32FinanceAndUsageTenantIsolationIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = pool.Exec(ctx,
-		`INSERT INTO wallets (org_id, balance, granted_balance, frozen, total_spent)
-		 VALUES ($1, 1100, 100, 0, 11), ($2, 2200, 200, 0, 22)`,
+		`INSERT INTO wallets (org_id, balance_micros, granted_balance_micros, frozen_micros, total_spent_micros)
+		 VALUES ($1, 11000000, 1000000, 0, 110000), ($2, 22000000, 2000000, 0, 220000)`,
 		fx.orgA, fx.orgB,
 	)
 	require.NoError(t, err)
@@ -66,23 +66,23 @@ func TestP6F32FinanceAndUsageTenantIsolationIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = pool.Exec(ctx,
-		`INSERT INTO transactions (request_id, org_id, type, amount, balance_after, note)
+		`INSERT INTO transactions (request_id, org_id, type, amount_micros, balance_after_micros, note)
 		 VALUES
-		 ('p6f32-tx-victim-a', $1, 'topup', 111, 1100, 'victim-a-private'),
-		 ('p6f32-tx-own-b', $2, 'topup', 222, 2200, '=own-b,comma')`,
+		 ('p6f32-tx-victim-a', $1, 'topup', 1110000, 11000000, 'victim-a-private'),
+		 ('p6f32-tx-own-b', $2, 'topup', 2220000, 22000000, '=own-b,comma')`,
 		fx.orgA, fx.orgB,
 	)
 	require.NoError(t, err)
 
 	var victimGrantID int64
 	require.NoError(t, pool.QueryRow(ctx,
-		`INSERT INTO grants (org_id, amount, balance, reason, created_by, client_request_id)
-		 VALUES ($1, 111, 111, 'victim-a-private', $2, 'p6f32-grant-collision') RETURNING id`,
+		`INSERT INTO grants (org_id, amount_micros, balance_micros, reason, created_by, client_request_id)
+		 VALUES ($1, 1110000, 1110000, 'victim-a-private', $2, 'p6f32-grant-collision') RETURNING id`,
 		fx.orgA, billingA,
 	).Scan(&victimGrantID))
 	_, err = pool.Exec(ctx,
-		`INSERT INTO grants (org_id, amount, balance, reason, created_by, client_request_id)
-		 VALUES ($1, 222, 222, 'own-b-grant', $2, 'p6f32-grant-own-b')`,
+		`INSERT INTO grants (org_id, amount_micros, balance_micros, reason, created_by, client_request_id)
+		 VALUES ($1, 2220000, 2220000, 'own-b-grant', $2, 'p6f32-grant-own-b')`,
 		fx.orgB, billingB,
 	)
 	require.NoError(t, err)
@@ -91,22 +91,22 @@ func TestP6F32FinanceAndUsageTenantIsolationIntegration(t *testing.T) {
 	require.NoError(t, pool.QueryRow(ctx,
 		`INSERT INTO call_logs
 		 (request_id, org_id, project_id, model, provider, channel, prompt_tokens, completion_tokens,
-		  total_tokens, estimated_tokens, cost_cents, status_code, usage_source, usage_confidence,
+		  total_tokens, estimated_tokens, cost_micros, status_code, usage_source, usage_confidence,
 		  trace_id, upstream_request_id, requested_model, ip_address)
 		 VALUES
 		 ('p6f32-victim-request-a', $1, $2, 'victim-model-a', 'victim-provider-a', 'victim-channel-a',
-		  900, 100, 1000, 100, 999, 200, 'estimated', 0.20,
+		  900, 100, 1000, 100, 9990000, 200, 'estimated', 0.20,
 		  'p6f32-victim-trace-a', 'p6f32-victim-upstream-a', 'victim-alias-a', '10.0.0.1') RETURNING id`,
 		fx.orgA, fx.projectA,
 	).Scan(&logA))
 	require.NoError(t, pool.QueryRow(ctx,
 		`INSERT INTO call_logs
 		 (request_id, org_id, project_id, model, provider, channel, prompt_tokens, completion_tokens,
-		  total_tokens, estimated_tokens, cost_cents, status_code, usage_source, usage_confidence,
+		  total_tokens, estimated_tokens, cost_micros, status_code, usage_source, usage_confidence,
 		  trace_id, upstream_request_id, requested_model, ip_address)
 		 VALUES
 		 ('p6f32-own-request-b', $1, $2, 'own-model-b', 'own-provider-b', 'own-channel-b',
-		  12, 8, 20, 20, 22, 200, 'upstream', 1.0,
+		  12, 8, 20, 20, 220000, 200, 'upstream', 1.0,
 		  'p6f32-own-trace-b', 'p6f32-own-upstream-b', 'own-alias-b', '10.0.0.2') RETURNING id`,
 		fx.orgB, fx.projectB,
 	).Scan(&logB))
@@ -158,13 +158,13 @@ func TestP6F32FinanceAndUsageTenantIsolationIntegration(t *testing.T) {
 		wallet := serve(t, http.MethodGet, "/api/v1/wallet", "", billingB, fx.orgB, auth.RoleBillingAdmin)
 		assertStatus(t, wallet, http.StatusOK)
 		var walletBody struct {
-			OrgID        int64 `json:"org_id"`
-			BalanceCents int   `json:"balance_cents"`
-			IsAdmin      bool  `json:"is_admin"`
+			OrgID         int64  `json:"org_id"`
+			BalanceMicros string `json:"balance_micros"`
+			IsAdmin       bool   `json:"is_admin"`
 		}
 		require.NoError(t, json.Unmarshal(wallet.Body.Bytes(), &walletBody))
 		require.Equal(t, fx.orgB, walletBody.OrgID)
-		require.Equal(t, 2200, walletBody.BalanceCents)
+		require.Equal(t, "22000000", walletBody.BalanceMicros)
 		require.True(t, walletBody.IsAdmin)
 		for _, target := range []string{
 			"/api/v1/wallet/transactions",
@@ -196,14 +196,14 @@ func TestP6F32FinanceAndUsageTenantIsolationIntegration(t *testing.T) {
 			Summary struct {
 				TotalRequests  int64   `json:"total_requests"`
 				TotalTokens    int64   `json:"total_tokens"`
-				CostCents      int64   `json:"cost_cents"`
+				CostMicros     string  `json:"cost_micros"`
 				EstimatedRatio float64 `json:"estimated_ratio"`
 			} `json:"summary"`
 		}
 		require.NoError(t, json.Unmarshal(usage.Body.Bytes(), &usageBody))
 		require.EqualValues(t, 1, usageBody.Summary.TotalRequests)
 		require.EqualValues(t, 20, usageBody.Summary.TotalTokens)
-		require.EqualValues(t, 22, usageBody.Summary.CostCents)
+		require.Equal(t, "220000", usageBody.Summary.CostMicros)
 		require.Zero(t, usageBody.Summary.EstimatedRatio)
 
 		internalStatus := serve(t, http.MethodGet, "/api/v1/internal-status", "", billingB, fx.orgB, auth.RoleBillingAdmin)
@@ -214,23 +214,23 @@ func TestP6F32FinanceAndUsageTenantIsolationIntegration(t *testing.T) {
 		dashboard := serve(t, http.MethodGet, dashboardTarget, "", billingB, fx.orgB, auth.RoleBillingAdmin)
 		assertStatus(t, dashboard, http.StatusOK)
 		require.Equal(t, "1", extractP6F32JSONNumber(t, dashboard, "total_requests"))
-		require.Equal(t, "22", extractP6F32JSONNumber(t, dashboard, "today_cost_cents"))
+		require.Equal(t, "220000", extractP6F32JSONNumber(t, dashboard, "today_cost_micros"))
 
 		runtime := serve(t, http.MethodGet, "/api/v1/runtime/status", "", billingB, fx.orgB, auth.RoleBillingAdmin)
 		assertStatus(t, runtime, http.StatusOK)
 		var runtimeBody struct {
 			CapacityHealth struct {
 				Traffic struct {
-					Requests    int64 `json:"requests"`
-					TotalTokens int64 `json:"total_tokens"`
-					CostCents   int64 `json:"cost_cents"`
+					Requests    int64  `json:"requests"`
+					TotalTokens int64  `json:"total_tokens"`
+					CostMicros  string `json:"cost_micros"`
 				} `json:"traffic"`
 			} `json:"capacity_health"`
 		}
 		require.NoError(t, json.Unmarshal(runtime.Body.Bytes(), &runtimeBody))
 		require.EqualValues(t, 1, runtimeBody.CapacityHealth.Traffic.Requests)
 		require.EqualValues(t, 20, runtimeBody.CapacityHealth.Traffic.TotalTokens)
-		require.EqualValues(t, 22, runtimeBody.CapacityHealth.Traffic.CostCents)
+		require.Equal(t, "220000", runtimeBody.CapacityHealth.Traffic.CostMicros)
 
 		var notificationCount int
 		require.NoError(t, pool.QueryRow(ctx,
@@ -247,14 +247,14 @@ func TestP6F32FinanceAndUsageTenantIsolationIntegration(t *testing.T) {
 		records, csvErr := csv.NewReader(strings.NewReader(body)).ReadAll()
 		require.NoError(t, csvErr)
 		require.Len(t, records, 2)
-		require.Equal(t, "'=own-b,comma", records[1][4])
+		require.Equal(t, "'=own-b,comma", records[1][6])
 		assertNoVictim(t, rec)
 	})
 
 	t.Run("grant list accepts historical null idempotency keys", func(t *testing.T) {
 		_, err := pool.Exec(ctx,
-			`INSERT INTO grants (org_id, amount, balance, reason, created_by, client_request_id)
-			 VALUES ($1, 1, 1, 'legacy-null-client-request', $2, NULL)`, fx.orgB, billingB)
+			`INSERT INTO grants (org_id, amount_micros, balance_micros, reason, created_by, client_request_id)
+			 VALUES ($1, 10000, 10000, 'legacy-null-client-request', $2, NULL)`, fx.orgB, billingB)
 		require.NoError(t, err)
 		rec := serve(t, http.MethodGet, "/api/v1/grants", "", billingB, fx.orgB, auth.RoleBillingAdmin)
 		assertStatus(t, rec, http.StatusOK)
@@ -263,15 +263,15 @@ func TestP6F32FinanceAndUsageTenantIsolationIntegration(t *testing.T) {
 
 	t.Run("foreign filters and writes fail before any financial or derived side effect", func(t *testing.T) {
 		type snapshot struct {
-			balanceA, balanceB           int
+			balanceA, balanceB           int64
 			transactions, grants, audits int
 			notificationEvents           int
 		}
 		readSnapshot := func(tb testing.TB) snapshot {
 			tb.Helper()
 			var got snapshot
-			require.NoError(tb, pool.QueryRow(ctx, `SELECT balance FROM wallets WHERE org_id = $1`, fx.orgA).Scan(&got.balanceA))
-			require.NoError(tb, pool.QueryRow(ctx, `SELECT balance FROM wallets WHERE org_id = $1`, fx.orgB).Scan(&got.balanceB))
+			require.NoError(tb, pool.QueryRow(ctx, `SELECT balance_micros FROM wallets WHERE org_id = $1`, fx.orgA).Scan(&got.balanceA))
+			require.NoError(tb, pool.QueryRow(ctx, `SELECT balance_micros FROM wallets WHERE org_id = $1`, fx.orgB).Scan(&got.balanceB))
 			require.NoError(tb, pool.QueryRow(ctx, `SELECT COUNT(*) FROM transactions`).Scan(&got.transactions))
 			require.NoError(tb, pool.QueryRow(ctx, `SELECT COUNT(*) FROM grants`).Scan(&got.grants))
 			require.NoError(tb, pool.QueryRow(ctx, `SELECT COUNT(*) FROM audit_logs`).Scan(&got.audits))
@@ -307,8 +307,8 @@ func TestP6F32FinanceAndUsageTenantIsolationIntegration(t *testing.T) {
 	t.Run("foreign and missing log identifiers are non-enumerating", func(t *testing.T) {
 		require.NoError(t, pool.QueryRow(ctx,
 			`INSERT INTO call_logs
-			 (request_id, org_id, project_id, model, provider, channel, total_tokens, cost_cents, status_code, usage_source)
-			 VALUES ('p6f32-same-org-other-project-b', $1, $2, 'other-project-model-b', 'own-provider-b', 'own-channel-b', 3, 4, 200, 'upstream')
+			 (request_id, org_id, project_id, model, provider, channel, total_tokens, cost_micros, status_code, usage_source)
+			 VALUES ('p6f32-same-org-other-project-b', $1, $2, 'other-project-model-b', 'own-provider-b', 'own-channel-b', 3, 40000, 200, 'upstream')
 			 RETURNING id`, fx.orgB, projectB2,
 		).Scan(&logB2))
 		for _, target := range []string{
@@ -338,8 +338,8 @@ func TestP6F32FinanceAndUsageTenantIsolationIntegration(t *testing.T) {
 	})
 
 	t.Run("same-tenant mutations touch only the actor organization", func(t *testing.T) {
-		var originalA int
-		require.NoError(t, pool.QueryRow(ctx, `SELECT balance FROM wallets WHERE org_id = $1`, fx.orgA).Scan(&originalA))
+		var originalA int64
+		require.NoError(t, pool.QueryRow(ctx, `SELECT balance_micros FROM wallets WHERE org_id = $1`, fx.orgA).Scan(&originalA))
 
 		assertStatus(t, serve(t, http.MethodPost, "/api/v1/wallet/topup",
 			`{"amount_cents":100,"description":"own-b-topup","client_request_id":"p6f32-topup-b"}`,
@@ -351,8 +351,8 @@ func TestP6F32FinanceAndUsageTenantIsolationIntegration(t *testing.T) {
 			`{"amount_cents":50,"reason":"own-b-grant-new","client_request_id":"p6f32-grant-new-b"}`,
 			billingB, fx.orgB, auth.RoleBillingAdmin), http.StatusCreated)
 
-		var currentA int
-		require.NoError(t, pool.QueryRow(ctx, `SELECT balance FROM wallets WHERE org_id = $1`, fx.orgA).Scan(&currentA))
+		var currentA int64
+		require.NoError(t, pool.QueryRow(ctx, `SELECT balance_micros FROM wallets WHERE org_id = $1`, fx.orgA).Scan(&currentA))
 		require.Equal(t, originalA, currentA)
 		var bAuditCount int
 		require.NoError(t, pool.QueryRow(ctx,
@@ -370,12 +370,15 @@ func TestP6F32FinanceAndUsageTenantIsolationIntegration(t *testing.T) {
 	})
 
 	t.Run("tenant-scoped grant idempotency permits the same client value without disclosing a foreign grant", func(t *testing.T) {
-		before := fmt.Sprint(victimGrantID)
 		rec := serve(t, http.MethodPost, "/api/v1/grants",
 			`{"amount_cents":10,"reason":"collision","client_request_id":"p6f32-grant-collision"}`,
 			billingB, fx.orgB, auth.RoleBillingAdmin)
 		require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
-		require.NotContains(t, rec.Body.String(), before)
+		var created struct {
+			ID int64 `json:"id"`
+		}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &created))
+		require.NotEqual(t, victimGrantID, created.ID)
 		var count int
 		require.NoError(t, pool.QueryRow(ctx,
 			`SELECT COUNT(*) FROM grants WHERE client_request_id = 'p6f32-grant-collision'`,
@@ -454,6 +457,10 @@ func extractP6F32JSONNumber(t testing.TB, rec *httptest.ResponseRecorder, field 
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	value, ok := body[field]
 	require.True(t, ok, "missing JSON field %q", field)
+	var exactString string
+	if json.Unmarshal(value, &exactString) == nil {
+		return exactString
+	}
 	var number json.Number
 	require.NoError(t, json.Unmarshal(value, &number))
 	return number.String()

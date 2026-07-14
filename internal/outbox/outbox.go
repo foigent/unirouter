@@ -17,17 +17,24 @@ import (
 )
 
 const (
-	Version = "internal-outbox.v1"
+	Version      = "internal-outbox.v1"
+	MoneyVersion = "micro-cny.v1"
 
-	EventBillingUsagePrepared = "billing.usage.prepared.v1"
-	EventBillingSettled       = "billing.settled.v1"
-	EventBillingCancelled     = "billing.cancelled.v1"
-	EventCallLog              = "evidence.call_log.v1"
+	EventBillingUsagePrepared = "billing.usage.prepared.v2"
+	EventBillingSettled       = "billing.settled.v2"
+	EventBillingCancelled     = "billing.cancelled.v2"
+	EventCallLog              = "evidence.call_log.v2"
 	EventTrace                = "evidence.trace.v1"
 	EventAudit                = "evidence.audit.v1"
 	EventBudgetEvaluate       = "notification.budget.evaluate.v1"
 	EventNotificationDelivery = "notification.delivery.v1"
-	EventRuntimeTerminal      = "runtime.terminal.v1"
+	EventRuntimeTerminal      = "runtime.terminal.v2"
+
+	EventBillingUsagePreparedV1 = "billing.usage.prepared.v1"
+	EventBillingSettledV1       = "billing.settled.v1"
+	EventBillingCancelledV1     = "billing.cancelled.v1"
+	EventCallLogV1              = "evidence.call_log.v1"
+	EventRuntimeTerminalV1      = "runtime.terminal.v1"
 
 	PriorityTraceInfo    = 100
 	PriorityTraceWarning = 200

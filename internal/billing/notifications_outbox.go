@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/outbox"
 )
 
@@ -201,9 +203,9 @@ func (s *EventService) ProcessBudgetEvaluation(ctx context.Context, event outbox
 
 	var projectName, budgetPeriod string
 	var budgetCents sql.NullInt64
-	var spentCents int64
+	var spentMicros int64
 	err := s.db.QueryRow(ctx,
-		`SELECT p.name, p.budget_cents, p.budget_period, COALESCE(u.spent_cents, 0)
+		`SELECT p.name, p.budget_cents, p.budget_period, COALESCE(u.spent_micros, 0)
 		 FROM projects p
 		 LEFT JOIN project_budget_usage u
 		   ON u.org_id = p.org_id
@@ -212,18 +214,25 @@ func (s *EventService) ProcessBudgetEvaluation(ctx context.Context, event outbox
 		  AND u.period_start = $4
 		 WHERE p.id = $1 AND p.org_id = $2 AND p.status = 'active'`,
 		payload.ProjectID, payload.OrgID, payload.BudgetPeriod, payload.PeriodStart,
-	).Scan(&projectName, &budgetCents, &budgetPeriod, &spentCents)
+	).Scan(&projectName, &budgetCents, &budgetPeriod, &spentMicros)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	if !budgetCents.Valid || budgetCents.Int64 <= 0 || budgetPeriod != payload.BudgetPeriod || spentCents < budgetCents.Int64 {
+	if !budgetCents.Valid || budgetCents.Int64 <= 0 || budgetPeriod != payload.BudgetPeriod {
+		return nil
+	}
+	budgetMicros, err := money.CentsToMicros(budgetCents.Int64)
+	if err != nil {
+		return fmt.Errorf("project budget is out of range: %w", err)
+	}
+	if spentMicros < budgetMicros {
 		return nil
 	}
 
-	usagePercent := int(spentCents * 100 / budgetCents.Int64)
+	usagePercent := budgetUsagePercent(spentMicros, budgetMicros)
 	dedupeKey := fmt.Sprintf("project_budget.threshold:%d:%s:100", payload.ProjectID, payload.PeriodStart.Format("20060102T150405Z"))
 	_, err = s.Emit(ctx, EventInput{
 		OrgID:      payload.OrgID,
@@ -236,11 +245,13 @@ func (s *EventService) ProcessBudgetEvaluation(ctx context.Context, event outbox
 		ResourceID: fmt.Sprintf("%d", payload.ProjectID),
 		DedupeKey:  dedupeKey,
 		Payload: map[string]interface{}{
-			"org_id":            payload.OrgID,
-			"project_id":        payload.ProjectID,
-			"project_name":      projectName,
-			"budget_cents":      budgetCents.Int64,
-			"spent_cents":       spentCents,
+			"org_id":        payload.OrgID,
+			"project_id":    payload.ProjectID,
+			"project_name":  projectName,
+			"budget_cents":  budgetCents.Int64,
+			"budget_micros": strconv.FormatInt(budgetMicros, 10),
+			"spent_micros":  strconv.FormatInt(spentMicros, 10),
+			"currency":      "CNY", "amount_scale": money.MicrosPerCNY,
 			"budget_period":     budgetPeriod,
 			"period_start":      payload.PeriodStart.Format(time.RFC3339),
 			"threshold_percent": 100,

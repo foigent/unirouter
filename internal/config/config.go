@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/payloadpolicy"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/streampolicy"
@@ -85,8 +86,8 @@ type Config struct {
 	OIDCOrgIDClaim         string
 
 	// Billing
-	MinFreezeAmount    int
-	FreezeSafetyFactor float64
+	MinFreezeCents     int64
+	FreezeSafetyFactor string
 	FreezeTimeoutSecs  int
 	ExchangeRate       float64
 
@@ -207,6 +208,13 @@ func (c *Config) Validate() error {
 	if c.LogRetentionDays < 0 {
 		return fmt.Errorf("LOG_RETENTION_DAYS must be >= 0")
 	}
+	if c.MinFreezeCents < 0 {
+		return fmt.Errorf("MIN_FREEZE_AMOUNT must be >= 0 cents")
+	}
+	safetyFactor, err := money.ParseDecimal(c.FreezeSafetyFactor)
+	if err != nil || safetyFactor.Sign() <= 0 {
+		return fmt.Errorf("FREEZE_SAFETY_FACTOR must be an exact positive decimal")
+	}
 	policy := c.RoutingPolicyConfig()
 	if policy != (routingpolicy.Config{}) {
 		if err := policy.Validate(); err != nil {
@@ -319,8 +327,8 @@ func Load() (*Config, error) {
 		OIDCRoleClaim:          getEnvStr("OIDC_ROLE_CLAIM", "uniroute_role"),
 		OIDCOrgIDClaim:         getEnvStr("OIDC_ORG_ID_CLAIM", "uniroute_org_id"),
 
-		MinFreezeAmount:    getEnvInt("MIN_FREEZE_AMOUNT", 10),
-		FreezeSafetyFactor: getEnvFloat("FREEZE_SAFETY_FACTOR", 1.5),
+		MinFreezeCents:     int64(getEnvInt("MIN_FREEZE_AMOUNT", 10)),
+		FreezeSafetyFactor: getEnvStr("FREEZE_SAFETY_FACTOR", "1.5"),
 		FreezeTimeoutSecs:  getEnvInt("FREEZE_TIMEOUT_SECONDS", 300),
 		ExchangeRate:       getEnvFloat("EXCHANGE_RATE", 7.25),
 

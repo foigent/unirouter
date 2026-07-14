@@ -12,6 +12,7 @@ import (
 	"github.com/uniroute/unirouter/internal/errdocs"
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/money"
 )
 
 type analyticsGroup struct {
@@ -235,7 +236,7 @@ func (h *Handler) usageAnalyticsSummary(r *http.Request, where string, args []in
 			COALESCE(SUM(CASE WHEN status_code > 0 AND status_code < 400 THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN status_code >= 400 OR status_code = 0 THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(total_tokens), 0),
-			COALESCE(SUM(cost_cents), 0),
+			COALESCE(SUM(cost_micros), 0),
 			COALESCE(AVG(NULLIF(latency_ms, 0)), 0)::float8,
 			COALESCE(SUM(CASE WHEN usage_source IN ('estimated', 'adapter_estimated', 'counter_v2') THEN total_tokens ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN %s THEN total_tokens ELSE 0 END), 0)
@@ -243,17 +244,18 @@ func (h *Handler) usageAnalyticsSummary(r *http.Request, where string, args []in
 		usageAnalyticsUpstreamSourceSQL(),
 		where,
 	)
-	var totalRequests, successRequests, failedRequests, totalTokens, costCents, estimatedTokens, upstreamTokens int64
+	var totalRequests, successRequests, failedRequests, totalTokens, costMicros, estimatedTokens, upstreamTokens int64
 	var avgLatency float64
-	if err := h.db.QueryRow(r.Context(), query, args...).Scan(&totalRequests, &successRequests, &failedRequests, &totalTokens, &costCents, &avgLatency, &estimatedTokens, &upstreamTokens); err != nil {
+	if err := h.db.QueryRow(r.Context(), query, args...).Scan(&totalRequests, &successRequests, &failedRequests, &totalTokens, &costMicros, &avgLatency, &estimatedTokens, &upstreamTokens); err != nil {
 		return nil, err
 	}
 	return map[string]interface{}{
-		"total_requests":     totalRequests,
-		"success_requests":   successRequests,
-		"failed_requests":    failedRequests,
-		"total_tokens":       totalTokens,
-		"cost_cents":         costCents,
+		"total_requests":   totalRequests,
+		"success_requests": successRequests,
+		"failed_requests":  failedRequests,
+		"total_tokens":     totalTokens,
+		"cost_micros":      strconv.FormatInt(costMicros, 10),
+		"currency":         "CNY", "amount_scale": money.MicrosPerCNY,
 		"avg_latency_ms":     avgLatency,
 		"estimated_tokens":   estimatedTokens,
 		"upstream_tokens":    upstreamTokens,
@@ -272,7 +274,7 @@ func (h *Handler) usageAnalyticsGroups(r *http.Request, groupExpr, where string,
 			COALESCE(SUM(CASE WHEN status_code > 0 AND status_code < 400 THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN status_code >= 400 OR status_code = 0 THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(total_tokens), 0),
-			COALESCE(SUM(cost_cents), 0),
+			COALESCE(SUM(cost_micros), 0),
 			COALESCE(AVG(NULLIF(latency_ms, 0)), 0)::float8,
 			COALESCE(SUM(CASE WHEN usage_source IN ('estimated', 'adapter_estimated', 'counter_v2') THEN total_tokens ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN %s THEN total_tokens ELSE 0 END), 0)
@@ -291,9 +293,9 @@ func (h *Handler) usageAnalyticsGroups(r *http.Request, groupExpr, where string,
 	groups := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var key string
-		var totalRequests, successRequests, failedRequests, totalTokens, costCents, estimatedTokens, upstreamTokens int64
+		var totalRequests, successRequests, failedRequests, totalTokens, costMicros, estimatedTokens, upstreamTokens int64
 		var avgLatency float64
-		if err := rows.Scan(&key, &totalRequests, &successRequests, &failedRequests, &totalTokens, &costCents, &avgLatency, &estimatedTokens, &upstreamTokens); err != nil {
+		if err := rows.Scan(&key, &totalRequests, &successRequests, &failedRequests, &totalTokens, &costMicros, &avgLatency, &estimatedTokens, &upstreamTokens); err != nil {
 			return nil, err
 		}
 		groups = append(groups, map[string]interface{}{
@@ -302,7 +304,8 @@ func (h *Handler) usageAnalyticsGroups(r *http.Request, groupExpr, where string,
 			"success_requests": successRequests,
 			"failed_requests":  failedRequests,
 			"total_tokens":     totalTokens,
-			"cost_cents":       costCents,
+			"cost_micros":      strconv.FormatInt(costMicros, 10),
+			"currency":         "CNY", "amount_scale": money.MicrosPerCNY,
 			"avg_latency_ms":   avgLatency,
 			"estimated_tokens": estimatedTokens,
 			"upstream_tokens":  upstreamTokens,
@@ -319,7 +322,7 @@ func (h *Handler) writeUsageAnalyticsCSV(w http.ResponseWriter, group analyticsG
 	w.Header().Set("Content-Type", "text/csv")
 	w.Header().Set("Content-Disposition", "attachment; filename=uniroute-usage-analytics.csv")
 	writer := csv.NewWriter(w)
-	_ = writer.Write([]string{neutralizeSpreadsheetFormula(group.Label), "total_requests", "success_requests", "failed_requests", "total_tokens", "cost_cents", "avg_latency_ms", "estimated_ratio"})
+	_ = writer.Write([]string{neutralizeSpreadsheetFormula(group.Label), "total_requests", "success_requests", "failed_requests", "total_tokens", "cost_micros", "currency", "amount_scale", "avg_latency_ms", "estimated_ratio"})
 	for _, row := range groups {
 		_ = writer.Write([]string{
 			neutralizeSpreadsheetFormula(fmt.Sprint(row["key"])),
@@ -327,7 +330,9 @@ func (h *Handler) writeUsageAnalyticsCSV(w http.ResponseWriter, group analyticsG
 			fmt.Sprint(row["success_requests"]),
 			fmt.Sprint(row["failed_requests"]),
 			fmt.Sprint(row["total_tokens"]),
-			fmt.Sprint(row["cost_cents"]),
+			fmt.Sprint(row["cost_micros"]),
+			"CNY",
+			strconv.FormatInt(money.MicrosPerCNY, 10),
 			fmt.Sprintf("%.2f", row["avg_latency_ms"]),
 			fmt.Sprintf("%.4f", row["estimated_ratio"]),
 		})

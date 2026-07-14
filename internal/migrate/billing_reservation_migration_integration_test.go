@@ -30,7 +30,7 @@ func TestP6F18BillingReservationMigrationUpDownAndSafeRollForward(t *testing.T) 
 		 VALUES ('op_p6f18_historical', $1, 25, 'frozen')`, historicalOrgID,
 	)
 	require.NoError(t, err)
-	require.NoError(t, migrate.Run(ctx, pool, migrationsDir))
+	runP6F18Migration(t, pool, migrationsDir)
 
 	var historicalCash, historicalGrant int
 	var historicalVersion string
@@ -97,7 +97,7 @@ func TestP6F18BillingReservationMigrationUpDownAndSafeRollForward(t *testing.T) 
 	).Scan(&ledger))
 	require.Zero(t, ledger)
 
-	require.NoError(t, migrate.Run(ctx, pool, migrationsDir))
+	runP6F18Migration(t, pool, migrationsDir)
 	assertUp()
 
 	orgID := int64(2003)
@@ -142,7 +142,7 @@ func TestP6F18MigrationFailsClosedOnDuplicateTerminalHistory(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	err = migrate.Run(ctx, pool, migrationsDir)
+	err = runP6F18MigrationError(t, pool, migrationsDir)
 	require.ErrorContains(t, err, "duplicate terminal billing transactions exist")
 	var ledgerCount, newColumnCount int
 	require.NoError(t, pool.QueryRow(ctx,
@@ -174,4 +174,19 @@ func runMigrationsBeforeP6F18(t *testing.T, pool *pgxpool.Pool, migrationsDir st
 		require.NoError(t, os.WriteFile(filepath.Join(preP6F18Dir, name), body, 0o600))
 	}
 	require.NoError(t, migrate.Run(context.Background(), pool, preP6F18Dir))
+}
+
+func runP6F18Migration(t *testing.T, pool *pgxpool.Pool, migrationsDir string) {
+	t.Helper()
+	require.NoError(t, runP6F18MigrationError(t, pool, migrationsDir))
+}
+
+func runP6F18MigrationError(t *testing.T, pool *pgxpool.Pool, migrationsDir string) error {
+	t.Helper()
+	p6F18Dir := t.TempDir()
+	const migration = "000022_prd6_billing_reservation_invariants.up.sql"
+	body, err := os.ReadFile(filepath.Join(migrationsDir, migration))
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(p6F18Dir, migration), body, 0o600))
+	return migrate.Run(context.Background(), pool, p6F18Dir)
 }

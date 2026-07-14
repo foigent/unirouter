@@ -67,7 +67,7 @@ func TestListLogs_ProjectScopedRoleWithMembership(t *testing.T) {
 						*dest[13].(*int) = 0
 						*dest[14].(*int) = 50
 						*dest[15].(*int) = 150
-						*dest[16].(*int) = 200
+						*dest[16].(*int64) = 2_000_000
 						*dest[17].(*int) = 200
 						*dest[18].(*int) = 350
 						*dest[19].(*int) = 0
@@ -80,7 +80,7 @@ func TestListLogs_ProjectScopedRoleWithMembership(t *testing.T) {
 						*dest[26].(*float64) = 1
 						*dest[27].(*float64) = 1
 						for i := 28; i <= 33; i++ {
-							*dest[i].(*float64) = 0
+							*dest[i].(*int64) = 0
 						}
 						*dest[34].(*bool) = false
 						*dest[35].(*time.Time) = now

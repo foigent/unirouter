@@ -151,14 +151,14 @@ func TestP6F34PriceAuthorityIntegration(t *testing.T) {
 			fx.platformA, fx.orgA, auth.RolePlatformAdmin, requestIDs[5]), http.StatusOK)
 
 		bill := billing.NewBilling(pool, nil)
-		inputA, outputA, err := bill.QueryModelPriceForOrg(ctx, fx.orgA, "p6f34-main")
+		inputA, outputA, err := bill.QueryModelPriceMicrosForOrg(ctx, fx.orgA, "p6f34-main")
 		require.NoError(t, err)
-		require.InDelta(t, 18, inputA, 0.000001)
-		require.InDelta(t, 90, outputA, 0.000001)
-		inputB, outputB, err := bill.QueryModelPriceForOrg(ctx, fx.orgB, "p6f34-main")
+		require.EqualValues(t, 180_000_000, inputA)
+		require.EqualValues(t, 900_000_000, outputA)
+		inputB, outputB, err := bill.QueryModelPriceMicrosForOrg(ctx, fx.orgB, "p6f34-main")
 		require.NoError(t, err)
-		require.InDelta(t, 30, inputB, 0.000001)
-		require.InDelta(t, 150, outputB, 0.000001)
+		require.EqualValues(t, 300_000_000, inputB)
+		require.EqualValues(t, 1_500_000_000, outputB)
 
 		var auditCount int
 		require.NoError(t, pool.QueryRow(ctx,
@@ -195,27 +195,156 @@ func TestP6F34PriceAuthorityIntegration(t *testing.T) {
 			fx.platformA, fx.orgA, auth.RolePlatformAdmin, "p6f09-legacy-price-upsert")
 		assertStatus(t, legacy, http.StatusCreated)
 
-		var inputPrice, outputPrice, readRatio, creationRatio float64
+		var inputPrice, outputPrice, readRatio, creationRatio string
 		require.NoError(t, pool.QueryRow(ctx,
-			`SELECT input_price_cents::float8, output_price_cents::float8,
-			        cache_read_ratio::float8, cache_creation_ratio::float8
+			`SELECT input_price_cents::text, output_price_cents::text,
+			        cache_read_ratio::text, cache_creation_ratio::text
 			 FROM model_prices WHERE model_name = $1`, model,
 		).Scan(&inputPrice, &outputPrice, &readRatio, &creationRatio))
-		require.InDelta(t, 6, inputPrice, 0.000001)
-		require.InDelta(t, 30, outputPrice, 0.000001)
-		require.InDelta(t, 0.2, readRatio, 0.000001)
-		require.InDelta(t, 1.4, creationRatio, 0.000001)
+		require.Equal(t, "6.000000", inputPrice)
+		require.Equal(t, "30.000000", outputPrice)
+		require.Equal(t, "0.200000", readRatio)
+		require.Equal(t, "1.400000", creationRatio)
 
 		explicit := serve(t, http.MethodPost, "/api/v1/model-prices",
-			fmt.Sprintf(`{"model_name":%q,"input_price_cny_per_million_tokens":60,"output_price_cny_per_million_tokens":300,"cache_read_ratio":0.1,"cache_creation_ratio":1.25}`, model),
+			fmt.Sprintf(`{"model_name":%q,"input_price_cny_per_million_tokens":"60.00000","output_price_cny_per_million_tokens":"300.00000","cache_read_ratio":"0.100000","cache_creation_ratio":"1.250000"}`, model),
 			fx.platformA, fx.orgA, auth.RolePlatformAdmin, "p6f09-explicit-price-upsert")
 		assertStatus(t, explicit, http.StatusCreated)
+		var exactResponse struct {
+			InputPrice         string `json:"input_price_cny_per_million_tokens"`
+			OutputPrice        string `json:"output_price_cny_per_million_tokens"`
+			CacheReadRatio     string `json:"cache_read_ratio"`
+			CacheCreationRatio string `json:"cache_creation_ratio"`
+		}
+		require.NoError(t, json.Unmarshal(explicit.Body.Bytes(), &exactResponse))
+		require.Equal(t, "60", exactResponse.InputPrice)
+		require.Equal(t, "300", exactResponse.OutputPrice)
+		require.Equal(t, "0.1", exactResponse.CacheReadRatio)
+		require.Equal(t, "1.25", exactResponse.CacheCreationRatio)
 		require.NoError(t, pool.QueryRow(ctx,
-			`SELECT cache_read_ratio::float8, cache_creation_ratio::float8
+			`SELECT cache_read_ratio::text, cache_creation_ratio::text
 			 FROM model_prices WHERE model_name = $1`, model,
 		).Scan(&readRatio, &creationRatio))
-		require.InDelta(t, 0.1, readRatio, 0.000001)
-		require.InDelta(t, 1.25, creationRatio, 0.000001)
+		require.Equal(t, "0.100000", readRatio)
+		require.Equal(t, "1.250000", creationRatio)
+	})
+
+	t.Run("effective price overflow is rejected atomically on every mutation path", func(t *testing.T) {
+		const maxPublicPrice = "9223372036854.7758"
+		requestIDs := []string{
+			"v1-overflow-model-create", "v1-overflow-model-update",
+			"v1-overflow-org-create", "v1-overflow-org-update",
+		}
+
+		_, err := pool.Exec(ctx, `
+			INSERT INTO model_prices (model_name, input_price_cents, output_price_cents)
+			VALUES
+				('v1-overflow-model-create', 1, 1),
+				('v1-overflow-model-update', 1, 1),
+				('v1-overflow-org-create', 10000000000, 1),
+				('v1-overflow-org-update', 10000000000, 1)
+		`)
+		require.NoError(t, err)
+		_, err = pool.Exec(ctx, `
+			INSERT INTO org_model_prices (org_id, model_name, multiplier)
+			VALUES
+				($1, 'v1-overflow-model-create', 2),
+				($1, 'v1-overflow-model-update', 2)
+		`, fx.orgA)
+		require.NoError(t, err)
+
+		var updateModelID, updateOrgID int64
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT id FROM model_prices WHERE model_name = 'v1-overflow-model-update'`,
+		).Scan(&updateModelID))
+		require.NoError(t, pool.QueryRow(ctx, `
+			INSERT INTO org_model_prices (org_id, model_name, multiplier)
+			VALUES ($1, 'v1-overflow-org-update', 1) RETURNING id
+		`, fx.orgB).Scan(&updateOrgID))
+
+		responses := []*httptest.ResponseRecorder{
+			serve(t, http.MethodPost, "/api/v1/model-prices",
+				fmt.Sprintf(`{"model_name":"v1-overflow-model-create","input_price_cny_per_million_tokens":%q,"output_price_cny_per_million_tokens":1}`, maxPublicPrice),
+				fx.platformA, fx.orgA, auth.RolePlatformAdmin, requestIDs[0]),
+			serve(t, http.MethodPut, fmt.Sprintf("/api/v1/model-prices/%d", updateModelID),
+				fmt.Sprintf(`{"input_price_cny_per_million_tokens":%q}`, maxPublicPrice),
+				fx.platformA, fx.orgA, auth.RolePlatformAdmin, requestIDs[1]),
+			serve(t, http.MethodPost, "/api/v1/org-model-prices",
+				fmt.Sprintf(`{"org_id":%d,"model_name":"v1-overflow-org-create","multiplier":99.999}`, fx.orgB),
+				fx.platformA, fx.orgA, auth.RolePlatformAdmin, requestIDs[2]),
+			serve(t, http.MethodPut, fmt.Sprintf("/api/v1/org-model-prices/%d", updateOrgID),
+				`{"multiplier":99.999}`,
+				fx.platformA, fx.orgA, auth.RolePlatformAdmin, requestIDs[3]),
+		}
+		for _, response := range responses {
+			assertStatus(t, response, http.StatusBadRequest)
+			require.Contains(t, response.Body.String(), "supported micro-CNY range")
+		}
+
+		var createBase, updateBase, updateMultiplier string
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT input_price_cents::text FROM model_prices WHERE model_name = 'v1-overflow-model-create'`,
+		).Scan(&createBase))
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT input_price_cents::text FROM model_prices WHERE model_name = 'v1-overflow-model-update'`,
+		).Scan(&updateBase))
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT multiplier::text FROM org_model_prices WHERE id = $1`, updateOrgID,
+		).Scan(&updateMultiplier))
+		require.Equal(t, "1.000000", createBase)
+		require.Equal(t, "1.000000", updateBase)
+		require.Equal(t, "1.000", updateMultiplier)
+		var rejectedOrgRows, auditCount int
+		require.NoError(t, pool.QueryRow(ctx, `
+			SELECT COUNT(*) FROM org_model_prices
+			WHERE org_id = $1 AND model_name = 'v1-overflow-org-create'
+		`, fx.orgB).Scan(&rejectedOrgRows))
+		require.Zero(t, rejectedOrgRows)
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT COUNT(*) FROM audit_logs WHERE request_id = ANY($1::text[])`, requestIDs,
+		).Scan(&auditCount))
+		require.Zero(t, auditCount)
+
+		// The rejected organization paths retain a runtime-usable base quote.
+		inputPrice, _, err := billing.NewBilling(pool, nil).QueryModelPriceMicrosForOrg(ctx, fx.orgB, "v1-overflow-org-update")
+		require.NoError(t, err)
+		require.EqualValues(t, 100_000_000_000_000_000, inputPrice)
+	})
+
+	t.Run("concurrent base and organization writes cannot commit an overflowing combination", func(t *testing.T) {
+		const model = "v1-overflow-concurrent"
+		_, err := pool.Exec(ctx, `
+			INSERT INTO model_prices (model_name, input_price_cents, output_price_cents)
+			VALUES ($1, 1, 1)
+		`, model)
+		require.NoError(t, err)
+
+		start := make(chan struct{})
+		responses := make(chan *httptest.ResponseRecorder, 2)
+		go func() {
+			<-start
+			responses <- serve(t, http.MethodPost, "/api/v1/model-prices",
+				fmt.Sprintf(`{"model_name":%q,"input_price_cny_per_million_tokens":"9223372036854.7758","output_price_cny_per_million_tokens":1}`, model),
+				fx.platformA, fx.orgA, auth.RolePlatformAdmin, "v1-overflow-concurrent-base")
+		}()
+		go func() {
+			<-start
+			responses <- serve(t, http.MethodPost, "/api/v1/org-model-prices",
+				fmt.Sprintf(`{"org_id":%d,"model_name":%q,"multiplier":2}`, fx.orgB, model),
+				fx.platformA, fx.orgA, auth.RolePlatformAdmin, "v1-overflow-concurrent-org")
+		}()
+		close(start)
+		statuses := []int{(<-responses).Code, (<-responses).Code}
+		require.ElementsMatch(t, []int{http.StatusCreated, http.StatusBadRequest}, statuses)
+
+		_, _, err = billing.NewBilling(pool, nil).QueryModelPriceMicrosForOrg(ctx, fx.orgB, model)
+		require.NoError(t, err)
+		var auditCount int
+		require.NoError(t, pool.QueryRow(ctx, `
+			SELECT COUNT(*) FROM audit_logs
+			WHERE request_id IN ('v1-overflow-concurrent-base', 'v1-overflow-concurrent-org')
+		`).Scan(&auditCount))
+		require.Equal(t, 1, auditCount)
 	})
 
 	t.Run("concurrent first upserts serialize before-state capture", func(t *testing.T) {
@@ -293,8 +422,8 @@ type p6f34Snapshot struct {
 	ModelCount, OrgPriceCount, AuditCount int
 	BaseInput, BaseOutput                 float64
 	MultiplierA, MultiplierB              float64
-	EffectiveInputA, EffectiveOutputA     float64
-	EffectiveInputB, EffectiveOutputB     float64
+	EffectiveInputA, EffectiveOutputA     int64
+	EffectiveInputB, EffectiveOutputB     int64
 }
 
 func readP6F34Snapshot(t testing.TB, pool *pgxpool.Pool, bill *billing.Billing, orgA, orgB int64) p6f34Snapshot {
@@ -314,9 +443,9 @@ func readP6F34Snapshot(t testing.TB, pool *pgxpool.Pool, bill *billing.Billing, 
 		`SELECT multiplier::float8 FROM org_model_prices WHERE org_id = $1 AND model_name = 'p6f34-main'`, orgB,
 	).Scan(&got.MultiplierB))
 	var err error
-	got.EffectiveInputA, got.EffectiveOutputA, err = bill.QueryModelPriceForOrg(ctx, orgA, "p6f34-main")
+	got.EffectiveInputA, got.EffectiveOutputA, err = bill.QueryModelPriceMicrosForOrg(ctx, orgA, "p6f34-main")
 	require.NoError(t, err)
-	got.EffectiveInputB, got.EffectiveOutputB, err = bill.QueryModelPriceForOrg(ctx, orgB, "p6f34-main")
+	got.EffectiveInputB, got.EffectiveOutputB, err = bill.QueryModelPriceMicrosForOrg(ctx, orgB, "p6f34-main")
 	require.NoError(t, err)
 	return got
 }

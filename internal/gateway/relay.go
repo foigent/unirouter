@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -27,6 +28,7 @@ import (
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/models"
+	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/outbox"
 	"github.com/uniroute/unirouter/internal/payloadpolicy"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
@@ -40,8 +42,8 @@ import (
 // BillingProvider defines the billing operations that Relay depends on.
 // *billing.Billing satisfies this interface.
 type BillingProvider interface {
-	QueryModelPriceForOrg(ctx context.Context, orgID int64, model string) (float64, float64, error)
-	CalculateCost(ctx context.Context, model string, promptTokens, completionTokens int) (int, error)
+	QueryModelPriceMicrosForOrg(ctx context.Context, orgID int64, model string) (int64, int64, error)
+	CalculateCostMicrosForOrg(ctx context.Context, orgID int64, model string, promptTokens, completionTokens int) (int64, error)
 	Freeze(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error)
 	ExtendReservation(ctx context.Context, req billing.ExtendReservationRequest) (*billing.ExtendReservationResult, error)
 	BeginStreamDelivery(ctx context.Context, start billing.StreamDeliveryStart) error
@@ -77,11 +79,25 @@ type Relay struct {
 	streamPolicy               streampolicy.Config
 	payloadBudget              *payloadpolicy.Budget
 	guardrail                  *guardrail.Service
+	freezeSafetyFactor         string
+	minFreezeCents             int64
 }
 
 // NewRelay creates a new Relay.
 func NewRelay(db db.DBQuerier, rdb *redis.Client, router *Router, b BillingProvider, f *filter.DFAFilter, encKey []byte) *Relay {
-	return &Relay{db: db, rdb: rdb, router: router, billing: b, filter: f, encKey: encKey, traceEventsEnabled: true, traceEventSampleRate: 1, payloadCaptureMode: traceutil.PayloadCaptureModeMetadataOnly, streamPolicy: streampolicy.Default(), payloadBudget: payloadpolicy.MustNewBudget(payloadpolicy.DefaultLimits())}
+	return &Relay{db: db, rdb: rdb, router: router, billing: b, filter: f, encKey: encKey, traceEventsEnabled: true, traceEventSampleRate: 1, payloadCaptureMode: traceutil.PayloadCaptureModeMetadataOnly, streamPolicy: streampolicy.Default(), payloadBudget: payloadpolicy.MustNewBudget(payloadpolicy.DefaultLimits()), freezeSafetyFactor: "1.5", minFreezeCents: 10}
+}
+
+// SetBillingFreezePolicy applies the deployment's existing cent-denominated
+// minimum and an exact decimal safety factor without introducing float money.
+func (relay *Relay) SetBillingFreezePolicy(safetyFactor string, minFreezeCents int64) error {
+	parsed, err := money.ParseDecimal(safetyFactor)
+	if err != nil || parsed.Sign() <= 0 || minFreezeCents < 0 {
+		return fmt.Errorf("invalid billing freeze policy")
+	}
+	relay.freezeSafetyFactor = safetyFactor
+	relay.minFreezeCents = minFreezeCents
+	return nil
 }
 
 func (relay *Relay) SetPayloadBudget(budget *payloadpolicy.Budget) {
@@ -353,32 +369,32 @@ type billingSettleOutcome struct {
 	Cancelled bool
 }
 
-func settledCosts(result *billing.SettleResult) (actual, charged int) {
+func settledCosts(result *billing.SettleResult) (actual, charged int64) {
 	if result == nil {
 		return 0, 0
 	}
-	actual = result.ActualCost
-	charged = result.ChargedCost
-	// Compatibility for injected test/provider implementations that predate
-	// the explicit charged-cost receipt.
-	if charged == 0 && actual > 0 {
-		charged = actual
-	}
-	return actual, charged
+	return result.ActualCostMicros, result.ChargedCostMicros
 }
 
-func settledPrepaidTopUp(result *billing.SettleResult) int {
+func settledPrepaidTopUp(result *billing.SettleResult) int64 {
 	if result == nil {
 		return 0
 	}
-	return result.TopUpAmount
+	return result.TopUpAmountMicros
 }
 
-func settlementCostExtension(usage adapters.Usage, result *billing.SettleResult, actualCost, chargedCost int) map[string]interface{} {
+func microsText(value int64) string {
+	return strconv.FormatInt(value, 10)
+}
+
+func settlementCostExtension(usage adapters.Usage, result *billing.SettleResult, actualCost, chargedCost int64) map[string]interface{} {
 	return map[string]interface{}{
-		"actual":                 actualCost,
-		"charged":                chargedCost,
-		"prepaid_topup":          settledPrepaidTopUp(result),
+		"actual_cost_micros":     microsText(actualCost),
+		"charged_cost_micros":    microsText(chargedCost),
+		"prepaid_topup_micros":   microsText(settledPrepaidTopUp(result)),
+		"currency":               "CNY",
+		"amount_scale":           money.MicrosPerCNY,
+		"money_schema":           outbox.MoneyVersion,
 		"cache_hit":              usage.HasAuthoritativeCacheHit(),
 		"usage_authority":        usage.Authority,
 		"usage_purpose":          usage.Purpose,
@@ -388,9 +404,9 @@ func settlementCostExtension(usage adapters.Usage, result *billing.SettleResult,
 	}
 }
 
-func preparedDeliveryCostExtension(usage adapters.Usage, result *billing.SettleResult, actualCost, projectedCharge int) map[string]interface{} {
+func preparedDeliveryCostExtension(usage adapters.Usage, result *billing.SettleResult, actualCost, projectedCharge int64) map[string]interface{} {
 	extension := settlementCostExtension(usage, result, actualCost, 0)
-	extension["projected_charge"] = projectedCharge
+	extension["projected_charge_micros"] = microsText(projectedCharge)
 	extension["charge_finality"] = "pending_local_delivery"
 	return extension
 }
@@ -538,20 +554,23 @@ func providerPromptCacheExtension(usage adapters.Usage, result *billing.SettleRe
 	if result != nil {
 		extension["cache_read_ratio"] = result.CacheReadRatio
 		extension["cache_creation_ratio"] = result.CacheCreationRatio
-		extension["cache_read_cost_cents"] = result.CacheReadCostCents
-		extension["cache_creation_cost_cents"] = result.CacheCreationCostCents
+		extension["cache_read_cost_micros"] = microsText(result.CacheReadCostMicros)
+		extension["cache_creation_cost_micros"] = microsText(result.CacheCreationCostMicros)
 		extension["pricing_version"] = result.PricingVersion
 	}
 	return extension
 }
 
-func settlementTraceMetadata(usage adapters.Usage, result *billing.SettleResult, actualCost, chargedCost int) map[string]interface{} {
+func settlementTraceMetadata(usage adapters.Usage, result *billing.SettleResult, actualCost, chargedCost int64) map[string]interface{} {
 	metadata := cacheUsageMetadata(usage)
 	metadata["prompt_tokens"] = usage.PromptTokens
 	metadata["completion_tokens"] = usage.CompletionTokens
 	metadata["total_tokens"] = usage.PromptTokens + usage.CompletionTokens
-	metadata["cost_cents"] = actualCost
-	metadata["charged_cost_cents"] = chargedCost
+	metadata["actual_cost_micros"] = microsText(actualCost)
+	metadata["charged_cost_micros"] = microsText(chargedCost)
+	metadata["currency"] = "CNY"
+	metadata["amount_scale"] = money.MicrosPerCNY
+	metadata["money_schema"] = outbox.MoneyVersion
 	metadata["usage_source"] = usage.Source
 	metadata["usage_authority"] = usage.Authority
 	metadata["usage_purpose"] = usage.Purpose
@@ -560,12 +579,12 @@ func settlementTraceMetadata(usage adapters.Usage, result *billing.SettleResult,
 	metadata["usage_estimate_version"] = usage.EstimateVersion
 	metadata["usage_confidence"] = metering.SourceConfidence(usage.Source)
 	if result != nil {
-		metadata["prepaid_topup_cents"] = result.TopUpAmount
+		metadata["prepaid_topup_micros"] = microsText(result.TopUpAmountMicros)
 		metadata["pricing_version"] = result.PricingVersion
 		metadata["cache_read_ratio"] = result.CacheReadRatio
 		metadata["cache_creation_ratio"] = result.CacheCreationRatio
-		metadata["cache_read_cost_cents"] = result.CacheReadCostCents
-		metadata["cache_creation_cost_cents"] = result.CacheCreationCostCents
+		metadata["cache_read_cost_micros"] = microsText(result.CacheReadCostMicros)
+		metadata["cache_creation_cost_micros"] = microsText(result.CacheCreationCostMicros)
 	}
 	return metadata
 }
@@ -836,8 +855,8 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		EstimatedTokens:          estimatedTokens,
 		EstimatedInputTokens:     estimatedInputTokens,
 		ReservedCompletionTokens: reservedCompletionTokens,
-		SafetyFactor:             1.5,
-		MinFreezeAmount:          10,
+		SafetyFactor:             relay.freezeSafetyFactor,
+		MinFreezeCents:           relay.minFreezeCents,
 	})
 	relay.recordLimitPolicyAdmission(ctx, w, limitPolicyCollector, requestID, req.Model, requestedModel, elapsedMilliseconds(requestStart))
 	if err != nil {
@@ -871,7 +890,8 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	}
 	middleware.RecordBillingFreeze("success")
 	relay.recordTraceEvent(ctx, requestID, "billing.freeze.succeeded", "billing", "info", req.Model, requestedModel, nil, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
-		"freeze_amount_cents": freezeResult.Amount,
+		"freeze_amount_micros": microsText(freezeResult.AmountMicros),
+		"currency":             "CNY", "amount_scale": money.MicrosPerCNY,
 	})
 
 	// Get all available routes for failover
@@ -1603,7 +1623,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			reservationState.ReservedCompletionTokens = target
 			relay.recordTraceEvent(ctx, requestID, "billing.stream_reservation_extension.succeeded", "billing", "info", model, requestedModel, route, http.StatusOK, elapsedMilliseconds(requestStart), map[string]interface{}{
 				"reservation_extension_sequence": reservationSequence,
-				"target_completion_tokens":       target, "reserved_amount_cents": result.Amount,
+				"target_completion_tokens":       target, "reserved_amount_micros": microsText(result.AmountMicros),
 				"pricing_version": result.PricingVersion,
 			})
 		}
@@ -2082,7 +2102,7 @@ streamLoop:
 		}
 		return true
 	}
-	recordStreamMetrics := func(usage adapters.Usage, chargedCost int, settlementResult *billing.SettleResult) {
+	recordStreamMetrics := func(usage adapters.Usage, chargedCost int64, settlementResult *billing.SettleResult) {
 		middleware.RecordTokenUsage("prompt", model, usage.PromptTokens)
 		middleware.RecordTokenUsage("completion", model, usage.CompletionTokens)
 		middleware.RecordUpstreamLatency(route.Channel.Provider, model, time.Since(streamStart))
@@ -2244,8 +2264,8 @@ streamLoop:
 		recordTerminalDelivery(billing.DeliveryOutcomeInterrupted, streamTerminationCode)
 	}
 	settleOutcome, settleErr := relay.settlePendingBillingWithRetry(settleReq, reqLog)
-	actualCost := 0
-	chargedCost := 0
+	var actualCost int64
+	var chargedCost int64
 	billingStatus := "settled"
 	var settlementResult *billing.SettleResult
 	if settleErr != nil {
@@ -2321,24 +2341,19 @@ streamLoop:
 	leaseTerminalReason = "stream_completed"
 }
 
-// calculateCost computes the actual cost in cents using model prices.
-func (relay *Relay) calculateCost(ctx context.Context, orgID int64, model string, promptTokens, completionTokens int) (int, error) {
+// calculateCost computes the exact terminal estimate in micro-CNY.
+func (relay *Relay) calculateCost(ctx context.Context, orgID int64, model string, promptTokens, completionTokens int) (int64, error) {
 	costLog := logger.New(logger.Fields{OrgID: uint(orgID), Module: "billing"})
-	inputPerToken, outputPerToken, err := relay.billing.QueryModelPriceForOrg(ctx, orgID, model)
+	cost, err := relay.billing.CalculateCostMicrosForOrg(ctx, orgID, model, promptTokens, completionTokens)
 	if err != nil {
-		costLog.Error("QueryModelPriceForOrg error for %s: %v", model, err)
+		costLog.Error("CalculateCostMicrosForOrg error for %s: %v", model, err)
 		return 0, err
 	}
-	cost := float64(promptTokens)*inputPerToken + float64(completionTokens)*outputPerToken
-	result := int(cost / 1000)
-	if result < 1 {
-		result = 1
-	}
-	return result, nil
+	return cost, nil
 }
 
 // recordRequest logs the request to the call_logs table.
-func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, keyID, channelID int64, provider, channelName, model, requestedModel, clientIP string, promptTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs int, isStream bool, usageSource string, estimatedTokens int, upstreamRequestID string) {
+func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, keyID, channelID int64, provider, channelName, model, requestedModel, clientIP string, promptTokens, completionTokens int, costMicros int64, statusCode, latencyMs, ttftMs int, isStream bool, usageSource string, estimatedTokens int, upstreamRequestID string) {
 	usage, err := adapters.NewUsage(promptTokens, completionTokens, promptTokens+completionTokens, usageSource)
 	if err != nil {
 		logger.New(logger.Fields{RequestID: requestID, OrgID: uint(orgID), Module: "records"}).Error("Invalid request usage: %v", err)
@@ -2356,7 +2371,7 @@ func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, 
 		requestedModel,
 		clientIP,
 		usage,
-		costCents,
+		costMicros,
 		statusCode,
 		latencyMs,
 		ttftMs,
@@ -2367,7 +2382,7 @@ func (relay *Relay) recordRequest(ctx context.Context, requestID string, orgID, 
 	)
 }
 
-func (relay *Relay) recordRequestWithUsage(ctx context.Context, requestID string, orgID, keyID, channelID int64, provider, channelName, model, requestedModel, clientIP string, usage adapters.Usage, costCents, statusCode, latencyMs, ttftMs int, isStream bool, estimatedTokens int, upstreamRequestID string, settlement *billing.SettleResult) {
+func (relay *Relay) recordRequestWithUsage(ctx context.Context, requestID string, orgID, keyID, channelID int64, provider, channelName, model, requestedModel, clientIP string, usage adapters.Usage, costMicros int64, statusCode, latencyMs, ttftMs int, isStream bool, estimatedTokens int, upstreamRequestID string, settlement *billing.SettleResult) {
 	reqLog := logger.New(logger.Fields{RequestID: requestID, OrgID: uint(orgID), Module: "records"})
 	projectID := middleware.GetProjectIDFromContext(ctx)
 	var projectIDArg interface{}
@@ -2403,21 +2418,21 @@ func (relay *Relay) recordRequestWithUsage(ctx context.Context, requestID string
 		traceID = evidenceContext.TraceID
 	}
 	pricingVersion := ""
-	var effectiveInputPrice, effectiveCacheReadPrice, effectiveCacheCreationPrice, effectiveOutputPrice float64
-	var cacheReadCost, cacheCreationCost float64
+	var effectiveInputPrice, effectiveCacheReadPrice, effectiveCacheCreationPrice, effectiveOutputPrice int64
+	var cacheReadCost, cacheCreationCost int64
 	if settlement != nil {
 		pricingVersion = settlement.PricingVersion
-		effectiveInputPrice = settlement.EffectiveInputPriceCents
-		effectiveCacheReadPrice = settlement.EffectiveCacheReadPriceCents
-		effectiveCacheCreationPrice = settlement.EffectiveCacheCreationPriceCents
-		effectiveOutputPrice = settlement.EffectiveOutputPriceCents
-		cacheReadCost = settlement.CacheReadCostCents
-		cacheCreationCost = settlement.CacheCreationCostCents
+		effectiveInputPrice = settlement.EffectiveInputPriceMicrosPerMillion
+		effectiveCacheReadPrice = settlement.EffectiveCacheReadPriceMicrosPerMillion
+		effectiveCacheCreationPrice = settlement.EffectiveCacheCreationPriceMicrosPerMillion
+		effectiveOutputPrice = settlement.EffectiveOutputPriceMicrosPerMillion
+		cacheReadCost = settlement.CacheReadCostMicros
+		cacheCreationCost = settlement.CacheCreationCostMicros
 	}
 	sourceEventHash := hashCallLogEvidence(requestID, requestIdentity.ClientRequestID, requestIdentity.IdempotencyKeyHash,
 		orgID, projectIDArg, keyID, ownerUserIDArg, keyType, model, requestedModel, provider, channelName,
 		usage.PromptTokens, usage.UncachedPromptTokens, usage.CacheReadTokens, usage.CacheCreationTokens,
-		usage.CompletionTokens, costCents, statusCode, latencyMs, ttftMs, usageSource,
+		usage.CompletionTokens, costMicros, statusCode, latencyMs, ttftMs, usageSource,
 		string(usage.Authority), string(usage.Purpose), string(usage.Finality), usage.ContractVersion, usage.EstimateVersion,
 		usage.CacheUsageSchema, usage.CacheUsageStatus, pricingVersion, isStream,
 		estimatedTokens, usageConfidence, upstreamRequestID, traceID, evidenceContext.SessionID,
@@ -2425,67 +2440,72 @@ func (relay *Relay) recordRequestWithUsage(ctx context.Context, requestID string
 		evidenceContext.OnBehalfOf, payloadCaptureMode)
 	if relay.outbox != nil {
 		payload := callLogOutboxPayload{
-			RequestID:                 requestID,
-			ClientRequestID:           requestIdentity.ClientRequestID,
-			IdempotencyKeyHash:        requestIdentity.IdempotencyKeyHash,
-			OrgID:                     orgID,
-			ProjectID:                 int64Pointer(projectID),
-			APIKeyID:                  keyID,
-			OwnerUserID:               ownerUserID,
-			KeyType:                   keyType,
-			Model:                     model,
-			RequestedModel:            requestedModel,
-			Provider:                  provider,
-			Channel:                   channelName,
-			PromptTokens:              usage.PromptTokens,
-			UncachedPromptTokens:      usage.UncachedPromptTokens,
-			CacheReadTokens:           usage.CacheReadTokens,
-			CacheCreationTokens:       usage.CacheCreationTokens,
-			CompletionTokens:          usage.CompletionTokens,
-			CostCents:                 costCents,
-			StatusCode:                statusCode,
-			LatencyMS:                 latencyMs,
-			TTFTMS:                    ttftMs,
-			UsageSource:               usageSource,
-			UsageAuthority:            string(usage.Authority),
-			UsagePurpose:              string(usage.Purpose),
-			UsageFinality:             string(usage.Finality),
-			UsageContractVersion:      usage.ContractVersion,
-			UsageEstimateVersion:      usage.EstimateVersion,
-			CacheUsageSchema:          usage.CacheUsageSchema,
-			CacheUsageStatus:          usage.CacheUsageStatus,
-			PricingVersion:            pricingVersion,
-			EffectiveInputPrice:       effectiveInputPrice,
-			EffectiveCacheReadPrice:   effectiveCacheReadPrice,
-			EffectiveCacheCreatePrice: effectiveCacheCreationPrice,
-			EffectiveOutputPrice:      effectiveOutputPrice,
-			CacheReadCost:             cacheReadCost,
-			CacheCreationCost:         cacheCreationCost,
-			IsStream:                  isStream,
-			IPAddress:                 clientIP,
-			EstimatedTokens:           estimatedTokens,
-			UsageConfidence:           usageConfidence,
-			TraceID:                   traceID,
-			SessionID:                 evidenceContext.SessionID,
-			SchemaVersion:             evidenceSchemaVersion,
-			CaptureMode:               evidenceCaptureModeNative,
-			EvidenceRef:               fmt.Sprintf("%s:call_logs:request_id:%s", evidenceTraceRefSourceType, requestID),
-			UpstreamRequestID:         upstreamRequestID,
-			WorkflowID:                evidenceContext.WorkflowID,
-			AgentID:                   evidenceContext.AgentID,
-			AttemptID:                 attemptID,
-			ActorType:                 actorType,
-			ActorRef:                  stringFromNullable(actorRefArg),
-			OnBehalfOf:                evidenceContext.OnBehalfOf,
-			PayloadCaptureMode:        payloadCaptureMode,
-			SourceEventHash:           sourceEventHash,
-			OccurredAt:                time.Now().UTC(),
+			RequestID:                               requestID,
+			ClientRequestID:                         requestIdentity.ClientRequestID,
+			IdempotencyKeyHash:                      requestIdentity.IdempotencyKeyHash,
+			OrgID:                                   orgID,
+			ProjectID:                               int64Pointer(projectID),
+			APIKeyID:                                keyID,
+			OwnerUserID:                             ownerUserID,
+			KeyType:                                 keyType,
+			Model:                                   model,
+			RequestedModel:                          requestedModel,
+			Provider:                                provider,
+			Channel:                                 channelName,
+			PromptTokens:                            usage.PromptTokens,
+			UncachedPromptTokens:                    usage.UncachedPromptTokens,
+			CacheReadTokens:                         usage.CacheReadTokens,
+			CacheCreationTokens:                     usage.CacheCreationTokens,
+			CompletionTokens:                        usage.CompletionTokens,
+			MoneySchema:                             outbox.MoneyVersion,
+			Currency:                                "CNY",
+			AmountScale:                             money.MicrosPerCNY,
+			CostMicros:                              microsText(costMicros),
+			StatusCode:                              statusCode,
+			LatencyMS:                               latencyMs,
+			TTFTMS:                                  ttftMs,
+			UsageSource:                             usageSource,
+			UsageAuthority:                          string(usage.Authority),
+			UsagePurpose:                            string(usage.Purpose),
+			UsageFinality:                           string(usage.Finality),
+			UsageContractVersion:                    usage.ContractVersion,
+			UsageEstimateVersion:                    usage.EstimateVersion,
+			CacheUsageSchema:                        usage.CacheUsageSchema,
+			CacheUsageStatus:                        usage.CacheUsageStatus,
+			PricingVersion:                          pricingVersion,
+			EffectiveInputPriceMicrosPerMillion:     microsText(effectiveInputPrice),
+			EffectiveCacheReadPriceMicrosPerMillion: microsText(effectiveCacheReadPrice),
+			EffectiveCacheCreatePriceMicrosPerMillion: microsText(effectiveCacheCreationPrice),
+			EffectiveOutputPriceMicrosPerMillion:      microsText(effectiveOutputPrice),
+			CacheReadCostMicros:                       microsText(cacheReadCost),
+			CacheCreationCostMicros:                   microsText(cacheCreationCost),
+			IsStream:                                  isStream,
+			IPAddress:                                 clientIP,
+			EstimatedTokens:                           estimatedTokens,
+			UsageConfidence:                           usageConfidence,
+			TraceID:                                   traceID,
+			SessionID:                                 evidenceContext.SessionID,
+			SchemaVersion:                             evidenceSchemaVersion,
+			CaptureMode:                               evidenceCaptureModeNative,
+			EvidenceRef:                               fmt.Sprintf("%s:call_logs:request_id:%s", evidenceTraceRefSourceType, requestID),
+			UpstreamRequestID:                         upstreamRequestID,
+			WorkflowID:                                evidenceContext.WorkflowID,
+			AgentID:                                   evidenceContext.AgentID,
+			AttemptID:                                 attemptID,
+			ActorType:                                 actorType,
+			ActorRef:                                  stringFromNullable(actorRefArg),
+			OnBehalfOf:                                evidenceContext.OnBehalfOf,
+			PayloadCaptureMode:                        payloadCaptureMode,
+			SourceEventHash:                           sourceEventHash,
+			OccurredAt:                                time.Now().UTC(),
 		}
 		if err := relay.enqueueCallLogOutbox(ctx, payload); err == nil {
 			relay.recordTraceEvent(ctx, requestID, "logging.call_log.queued", "logging", "info", model, requestedModel, nil, statusCode, latencyMs, map[string]interface{}{
 				"prompt_tokens":           usage.PromptTokens,
 				"completion_tokens":       usage.CompletionTokens,
-				"cost_cents":              costCents,
+				"cost_micros":             microsText(costMicros),
+				"currency":                "CNY",
+				"amount_scale":            money.MicrosPerCNY,
 				"usage_source":            usageSource,
 				"outbox_version":          outbox.Version,
 				"materialization_pending": true,
@@ -2501,12 +2521,12 @@ func (relay *Relay) recordRequestWithUsage(ctx context.Context, requestID string
 			org_id, project_id, api_key_id, owner_user_id, key_type,
 			model, requested_model, provider, channel,
 			prompt_tokens, uncached_prompt_tokens, cache_read_tokens, cache_creation_tokens,
-			completion_tokens, total_tokens, cost_cents, status_code, latency_ms, ttft_ms, usage_source,
+			completion_tokens, total_tokens, cost_micros, status_code, latency_ms, ttft_ms, usage_source,
 			usage_authority, usage_purpose, usage_finality, usage_contract_version, usage_estimate_version,
 			cache_usage_schema, cache_usage_status, pricing_version,
-			effective_input_price_cents, effective_cache_read_price_cents,
-			effective_cache_creation_price_cents, effective_output_price_cents,
-			cache_read_cost_cents, cache_creation_cost_cents,
+			effective_input_price_micros_per_million, effective_cache_read_price_micros_per_million,
+			effective_cache_creation_price_micros_per_million, effective_output_price_micros_per_million,
+			cache_read_cost_micros, cache_creation_cost_micros,
 			is_stream, ip_address, estimated_tokens, usage_confidence,
 			trace_id, session_id, schema_version, capture_mode, evidence_ref, upstream_request_id,
 			workflow_id, agent_id, attempt_id,
@@ -2532,7 +2552,7 @@ func (relay *Relay) recordRequestWithUsage(ctx context.Context, requestID string
 		model, requestedModel, provider, channelName,
 		usage.PromptTokens, usage.UncachedPromptTokens, usage.CacheReadTokens, usage.CacheCreationTokens,
 		usage.CompletionTokens, usage.PromptTokens+usage.CompletionTokens,
-		costCents, statusCode, latencyMs, ttftMs, usageSource,
+		costMicros, statusCode, latencyMs, ttftMs, usageSource,
 		usage.Authority, usage.Purpose, usage.Finality, usage.ContractVersion, usage.EstimateVersion,
 		usage.CacheUsageSchema, usage.CacheUsageStatus, pricingVersion,
 		effectiveInputPrice, effectiveCacheReadPrice, effectiveCacheCreationPrice, effectiveOutputPrice,
@@ -2547,29 +2567,31 @@ func (relay *Relay) recordRequestWithUsage(ctx context.Context, requestID string
 		return
 	}
 	relay.recordTraceEvent(ctx, requestID, "logging.call_log.recorded", "logging", "info", model, requestedModel, nil, statusCode, latencyMs, map[string]interface{}{
-		"prompt_tokens":             usage.PromptTokens,
-		"uncached_prompt_tokens":    usage.UncachedPromptTokens,
-		"cache_read_tokens":         usage.CacheReadTokens,
-		"cache_creation_tokens":     usage.CacheCreationTokens,
-		"completion_tokens":         usage.CompletionTokens,
-		"total_tokens":              usage.PromptTokens + usage.CompletionTokens,
-		"cost_cents":                costCents,
-		"estimated_tokens":          estimatedTokens,
-		"is_stream":                 isStream,
-		"ttft_ms":                   ttftMs,
-		"usage_source":              usageSource,
-		"usage_authority":           usage.Authority,
-		"usage_purpose":             usage.Purpose,
-		"usage_finality":            usage.Finality,
-		"usage_contract_version":    usage.ContractVersion,
-		"usage_estimate_version":    usage.EstimateVersion,
-		"usage_confidence":          usageConfidence,
-		"cache_usage_schema":        usage.CacheUsageSchema,
-		"cache_usage_status":        usage.CacheUsageStatus,
-		"cache_usage_authoritative": usage.HasAuthoritativeCacheUsage(),
-		"pricing_version":           pricingVersion,
-		"cache_read_cost_cents":     cacheReadCost,
-		"cache_creation_cost_cents": cacheCreationCost,
+		"prompt_tokens":              usage.PromptTokens,
+		"uncached_prompt_tokens":     usage.UncachedPromptTokens,
+		"cache_read_tokens":          usage.CacheReadTokens,
+		"cache_creation_tokens":      usage.CacheCreationTokens,
+		"completion_tokens":          usage.CompletionTokens,
+		"total_tokens":               usage.PromptTokens + usage.CompletionTokens,
+		"cost_micros":                microsText(costMicros),
+		"currency":                   "CNY",
+		"amount_scale":               money.MicrosPerCNY,
+		"estimated_tokens":           estimatedTokens,
+		"is_stream":                  isStream,
+		"ttft_ms":                    ttftMs,
+		"usage_source":               usageSource,
+		"usage_authority":            usage.Authority,
+		"usage_purpose":              usage.Purpose,
+		"usage_finality":             usage.Finality,
+		"usage_contract_version":     usage.ContractVersion,
+		"usage_estimate_version":     usage.EstimateVersion,
+		"usage_confidence":           usageConfidence,
+		"cache_usage_schema":         usage.CacheUsageSchema,
+		"cache_usage_status":         usage.CacheUsageStatus,
+		"cache_usage_authoritative":  usage.HasAuthoritativeCacheUsage(),
+		"pricing_version":            pricingVersion,
+		"cache_read_cost_micros":     microsText(cacheReadCost),
+		"cache_creation_cost_micros": microsText(cacheCreationCost),
 	})
 }
 
@@ -2715,8 +2737,8 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		EstimatedTokens:          inputTokens,
 		EstimatedInputTokens:     inputTokens,
 		ReservedCompletionTokens: 0,
-		SafetyFactor:             1.5,
-		MinFreezeAmount:          10,
+		SafetyFactor:             relay.freezeSafetyFactor,
+		MinFreezeCents:           relay.minFreezeCents,
 	})
 	relay.recordLimitPolicyAdmission(ctx, w, limitPolicyCollector, requestID, req.Model, requestedModel, elapsedMilliseconds(requestStart))
 	if err != nil {
@@ -2747,7 +2769,8 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	}
 	middleware.RecordBillingFreeze("success")
 	relay.recordTraceEvent(ctx, requestID, "billing.freeze.succeeded", "billing", "info", req.Model, requestedModel, nil, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
-		"freeze_amount_cents": freezeResult.Amount,
+		"freeze_amount_micros": microsText(freezeResult.AmountMicros),
+		"currency":             "CNY", "amount_scale": money.MicrosPerCNY,
 	})
 
 	// Get all eligible routes so Embeddings follows the same bounded failover

@@ -26,21 +26,26 @@ export default function GrantsPage() {
 
   const handleCreate = async (v: any) => {
     try {
+      const amount = String(v.amount || '').trim();
+      const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(amount);
+      if (!match) throw new Error('invalid amount');
+      const amountCents = BigInt(match[1]) * 100n + BigInt((match[2] || '').padEnd(2, '0') || '0');
+      if (amountCents <= 0n || amountCents > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('amount out of range');
       await api.createGrant({
-        amount_cents: Math.round(parseFloat(v.amount) * 100),
+        amount_cents: Number(amountCents),
         reason: v.reason,
       });
       Toast.success('额度调整已记录');
       setShowDrawer(false);
       formApi?.reset();
       load(1);
-    } catch { Toast.error('额度调整失败'); }
+    } catch { Toast.error('额度调整失败：请输入最多两位小数的正金额'); }
   };
 
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 60 },
     { title: '组织', dataIndex: 'org_name', render: (v: string) => v || '-' },
-    { title: '金额（元）', dataIndex: 'amount_cents', render: (v: number) => <MoneyText cents={v} tone="income" /> },
+    { title: '金额（元）', dataIndex: 'amount_micros', render: (v: string) => <MoneyText micros={v || '0'} tone="income" /> },
     { title: '原因', dataIndex: 'reason' },
     { title: '请求ID', dataIndex: 'client_request_id', render: (v: string) => <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{v}</span> },
     { title: '时间', dataIndex: 'created_at', render: (v: string) => formatDateTime(v) },

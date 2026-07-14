@@ -10,13 +10,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/migrate"
-	"github.com/uniroute/unirouter/internal/testutil"
 )
 
 func TestP6F40CProviderCostReconciliationMigrationUpDownGuardAndRollForward(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool, migrationsDir := setupMigratedThrough(t, "000032_prd6_delivery_receipt.up.sql")
 	ctx := context.Background()
-	migrationsDir := testutil.MigrationsDir(t)
 	downSQL, err := os.ReadFile(filepath.Join(migrationsDir, "000030_prd6_provider_cost_reconciliation.down.sql"))
 	require.NoError(t, err)
 	usageAuthorityDownSQL, err := os.ReadFile(filepath.Join(migrationsDir, "000031_prd6_usage_authority.down.sql"))

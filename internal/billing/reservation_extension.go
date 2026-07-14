@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/uniroute/unirouter/internal/money"
 )
 
 // ExtendReservationRequest identifies one monotonic, idempotent output-token
@@ -26,9 +26,9 @@ type ExtendReservationResult struct {
 	Sequence               int
 	AddedCompletionTokens  int
 	TargetCompletionTokens int
-	Amount                 int
-	NewFrozenAmount        int
-	NewBalance             int
+	AmountMicros           int64
+	NewFrozenMicros        int64
+	NewBalanceMicros       int64
 	PricingVersion         string
 	ErrorCode              string
 	ErrorDetail            string
@@ -54,18 +54,18 @@ func (b *Billing) ExtendReservation(ctx context.Context, request ExtendReservati
 	}
 	defer tx.Rollback(ctx)
 
-	var frozenAmount, reservedBalance, reservedGranted, reservedCompletion, currentSequence int
-	var balance, grantedBalance int
-	var outputPrice, safetyFactor float64
-	var pricingVersion, status, pendingReason string
+	var frozenAmount, reservedBalance, reservedGranted int64
+	var reservedCompletion, currentSequence int
+	var balance, grantedBalance, outputPrice int64
+	var safetyFactor, pricingVersion, status, pendingReason string
 	var payloadReady bool
 	err = tx.QueryRow(ctx, `
-		SELECT f.frozen_amount, f.reserved_balance_amount, f.reserved_granted_amount,
+		SELECT f.frozen_amount_micros, f.reserved_balance_micros, f.reserved_granted_micros,
 		       f.reserved_completion_tokens, f.reservation_extension_sequence,
-		       f.effective_output_price_cents::float8, f.safety_factor::float8,
+		       f.effective_output_price_micros_per_million, f.safety_factor::text,
 		       f.pricing_version, f.status, f.settlement_pending_reason,
 		       f.settlement_payload_ready_at IS NOT NULL,
-		       w.balance, w.granted_balance
+		       w.balance_micros, w.granted_balance_micros
 		FROM freeze_idempotency f
 		JOIN wallets w ON w.org_id=f.org_id
 		WHERE f.org_id=$1 AND f.request_id=$2
@@ -85,13 +85,13 @@ func (b *Billing) ExtendReservation(ctx context.Context, request ExtendReservati
 	var existingStatus string
 	err = tx.QueryRow(ctx, `
 		SELECT sequence, additional_completion_tokens, target_completion_tokens,
-		       reserved_amount, status, error_code
+		       reserved_micros, status, error_code
 		FROM billing_reservation_extensions
 		WHERE org_id=$1 AND request_id=$2 AND sequence=$3`,
 		request.OrgID, request.RequestID, request.Sequence,
 	).Scan(
 		&existing.Sequence, &existing.AddedCompletionTokens, &existing.TargetCompletionTokens,
-		&existing.Amount, &existingStatus, &existing.ErrorCode,
+		&existing.AmountMicros, &existingStatus, &existing.ErrorCode,
 	)
 	if err == nil {
 		if existing.AddedCompletionTokens != request.AdditionalCompletionTokens ||
@@ -99,8 +99,8 @@ func (b *Billing) ExtendReservation(ctx context.Context, request ExtendReservati
 			return nil, fmt.Errorf("billing reservation extension sequence conflicts with its durable receipt")
 		}
 		existing.Success = existingStatus == "reserved"
-		existing.NewFrozenAmount = frozenAmount
-		existing.NewBalance = balance
+		existing.NewFrozenMicros = frozenAmount
+		existing.NewBalanceMicros = balance
 		existing.PricingVersion = pricingVersion
 		return &existing, tx.Commit(ctx)
 	}
@@ -118,26 +118,25 @@ func (b *Billing) ExtendReservation(ctx context.Context, request ExtendReservati
 			ErrorDetail: "the reservation no longer accepts output-token extensions",
 		}, nil
 	}
-	if safetyFactor <= 0 {
-		return nil, fmt.Errorf("reservation has an invalid safety factor")
-	}
-
-	amount := int(math.Ceil(float64(request.AdditionalCompletionTokens) * outputPrice / 1000.0 * safetyFactor))
-	if amount < 0 {
-		return nil, fmt.Errorf("reservation extension amount overflow")
+	amount, err := money.EstimateHold(int64(request.AdditionalCompletionTokens), outputPrice, safetyFactor, 0)
+	if err != nil {
+		return nil, fmt.Errorf("calculate reservation extension: %w", err)
 	}
 	_, expiredGrantBalance, err := expireGrantRowsInLockedWallet(ctx, tx, request.OrgID)
 	if err != nil {
 		return nil, err
 	}
-	grantedBalance -= minInt(grantedBalance, expiredGrantBalance)
-	available := balance + grantedBalance
+	grantedBalance -= minInt64(grantedBalance, expiredGrantBalance)
+	available, err := money.Add(balance, grantedBalance)
+	if err != nil {
+		return nil, fmt.Errorf("calculate reservation extension availability: %w", err)
+	}
 	if available < amount {
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO billing_reservation_extensions (
 				org_id, request_id, sequence, additional_completion_tokens,
-				target_completion_tokens, reserved_amount,
-				reserved_balance_amount, reserved_granted_amount,
+				target_completion_tokens, reserved_micros,
+				reserved_balance_micros, reserved_granted_micros,
 				pricing_version, status, error_code
 			) VALUES ($1,$2,$3,$4,$5,0,0,0,$6,'rejected','insufficient_balance')`,
 			request.OrgID, request.RequestID, request.Sequence,
@@ -158,31 +157,35 @@ func (b *Billing) ExtendReservation(ctx context.Context, request ExtendReservati
 			Success: false, Sequence: request.Sequence,
 			AddedCompletionTokens:  request.AdditionalCompletionTokens,
 			TargetCompletionTokens: request.TargetCompletionTokens,
-			NewFrozenAmount:        frozenAmount, NewBalance: balance,
+			NewFrozenMicros:        frozenAmount, NewBalanceMicros: balance,
 			PricingVersion: pricingVersion, ErrorCode: "insufficient_balance",
 			ErrorDetail: fmt.Sprintf("available=%d, required=%d", available, amount),
 		}, nil
 	}
 
-	reservedGrant := minInt(grantedBalance, amount)
+	reservedGrant := minInt64(grantedBalance, amount)
 	reservedCash := amount - reservedGrant
 	newGranted := grantedBalance - reservedGrant
 	newBalance := balance - reservedCash
+	newFrozen, err := money.Add(frozenAmount, amount)
+	if err != nil {
+		return nil, fmt.Errorf("calculate reservation extension receipt: %w", err)
+	}
 	allocations, err := reserveGrantRows(ctx, tx, request.OrgID, reservedGrant)
 	if err != nil {
 		return nil, err
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE wallets
-		SET balance=$2, granted_balance=$3, frozen=frozen+$4, updated_at=NOW()
+		SET balance_micros=$2, granted_balance_micros=$3, frozen_micros=frozen_micros+$4, updated_at=NOW()
 		WHERE org_id=$1`, request.OrgID, newBalance, newGranted, amount); err != nil {
 		return nil, fmt.Errorf("reserve wallet extension: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE freeze_idempotency
-		SET frozen_amount=frozen_amount+$3,
-		    reserved_balance_amount=reserved_balance_amount+$4,
-		    reserved_granted_amount=reserved_granted_amount+$5,
+		SET frozen_amount_micros=frozen_amount_micros+$3,
+		    reserved_balance_micros=reserved_balance_micros+$4,
+		    reserved_granted_micros=reserved_granted_micros+$5,
 		    reserved_completion_tokens=$6,
 		    reservation_extension_sequence=$7,
 		    estimated_tokens=estimated_tokens+$8,
@@ -195,18 +198,18 @@ func (b *Billing) ExtendReservation(ctx context.Context, request ExtendReservati
 	}
 	for _, allocation := range allocations {
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO billing_reservation_grant_allocations (org_id,request_id,grant_id,reserved_amount)
+			INSERT INTO billing_reservation_grant_allocations (org_id,request_id,grant_id,reserved_micros)
 			VALUES ($1,$2,$3,$4)
 			ON CONFLICT (org_id,request_id,grant_id)
-			DO UPDATE SET reserved_amount=billing_reservation_grant_allocations.reserved_amount+EXCLUDED.reserved_amount,
+			DO UPDATE SET reserved_micros=billing_reservation_grant_allocations.reserved_micros+EXCLUDED.reserved_micros,
 			              updated_at=NOW()`,
-			request.OrgID, request.RequestID, allocation.GrantID, allocation.Amount,
+			request.OrgID, request.RequestID, allocation.GrantID, allocation.Micros,
 		); err != nil {
 			return nil, fmt.Errorf("record grant extension allocation: %w", err)
 		}
 	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO transactions (request_id,org_id,type,status,amount,note,created_at)
+		INSERT INTO transactions (request_id,org_id,type,status,amount_micros,note,created_at)
 		VALUES ($1,$2,'freeze','completed',$3,$4,NOW())`,
 		request.RequestID, request.OrgID, amount,
 		fmt.Sprintf("Extend freeze for request %s sequence %d", request.RequestID, request.Sequence),
@@ -216,8 +219,8 @@ func (b *Billing) ExtendReservation(ctx context.Context, request ExtendReservati
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO billing_reservation_extensions (
 			org_id, request_id, sequence, additional_completion_tokens,
-			target_completion_tokens, reserved_amount,
-			reserved_balance_amount, reserved_granted_amount,
+		target_completion_tokens, reserved_micros,
+		reserved_balance_micros, reserved_granted_micros,
 			pricing_version, status, error_code
 		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'reserved','')`,
 		request.OrgID, request.RequestID, request.Sequence,
@@ -233,7 +236,7 @@ func (b *Billing) ExtendReservation(ctx context.Context, request ExtendReservati
 		Success: true, Sequence: request.Sequence,
 		AddedCompletionTokens:  request.AdditionalCompletionTokens,
 		TargetCompletionTokens: request.TargetCompletionTokens,
-		Amount:                 amount, NewFrozenAmount: frozenAmount + amount,
-		NewBalance: newBalance, PricingVersion: pricingVersion,
+		AmountMicros:           amount, NewFrozenMicros: newFrozen,
+		NewBalanceMicros: newBalance, PricingVersion: pricingVersion,
 	}, nil
 }

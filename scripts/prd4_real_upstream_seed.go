@@ -275,12 +275,12 @@ func upsertPRD4UpstreamProjectMember(ctx context.Context, tx pgx.Tx, projectID, 
 
 func upsertPRD4UpstreamWallet(ctx context.Context, tx pgx.Tx, orgID int64) error {
 	_, err := tx.Exec(ctx,
-		`INSERT INTO wallets (org_id, balance, granted_balance, frozen, total_spent, currency, auto_freeze, low_balance_threshold_cents, created_at, updated_at)
-		 VALUES ($1, 200000, 200000, 0, 0, 'CNY', false, 0, NOW(), NOW())
+		`INSERT INTO wallets (org_id, balance_micros, granted_balance_micros, frozen_micros, total_spent_micros, currency, auto_freeze, low_balance_threshold_cents, created_at, updated_at)
+		 VALUES ($1, 2000000000, 2000000000, 0, 0, 'CNY', false, 0, NOW(), NOW())
 		 ON CONFLICT (org_id) DO UPDATE
-		   SET balance = GREATEST(wallets.balance, 200000),
-		       granted_balance = GREATEST(wallets.granted_balance, 200000),
-		       frozen = 0,
+		   SET balance_micros = GREATEST(wallets.balance_micros, 2000000000),
+		       granted_balance_micros = GREATEST(wallets.granted_balance_micros, 2000000000),
+		       frozen_micros = 0,
 		       currency = 'CNY',
 		       updated_at = NOW()`,
 		orgID,

@@ -14,7 +14,7 @@ interface AnalyticsRow {
   success_requests: number;
   failed_requests: number;
   total_tokens: number;
-  cost_cents: number;
+  cost_micros: string;
   avg_latency_ms: number;
   estimated_ratio: number;
 }
@@ -24,7 +24,7 @@ interface AnalyticsSummary {
   success_requests: number;
   failed_requests: number;
   total_tokens: number;
-  cost_cents: number;
+  cost_micros: string;
   avg_latency_ms: number;
   estimated_tokens: number;
   upstream_tokens: number;
@@ -114,7 +114,7 @@ export default function UsageAnalyticsPage() {
     { title: '请求数', dataIndex: 'total_requests', key: 'total_requests', render: (value: number) => formatCompactNumber(value) },
     { title: '成功 / 失败', key: 'status_mix', render: (_: unknown, row: AnalyticsRow) => `${row.success_requests || 0} / ${row.failed_requests || 0}` },
     { title: 'Token', dataIndex: 'total_tokens', key: 'total_tokens', render: (value: number) => formatCompactNumber(value) },
-    { title: '费用', dataIndex: 'cost_cents', key: 'cost_cents', render: (value: number) => <MoneyText cents={value || 0} precision={4} tone="cost" /> },
+    { title: '费用', dataIndex: 'cost_micros', key: 'cost_micros', render: (value: string) => <MoneyText micros={value || '0'} precision={6} tone="cost" /> },
     { title: '平均延迟', dataIndex: 'avg_latency_ms', key: 'avg_latency_ms', render: (value: number) => formatLatencyMs(value) },
     { title: '估算占比', dataIndex: 'estimated_ratio', key: 'estimated_ratio', render: (value: number) => <StatusTag status={(value || 0) > 0.2 ? 'warning' : 'ok'}>{formatPercent(value)}</StatusTag> },
   ];
@@ -178,7 +178,7 @@ export default function UsageAnalyticsPage() {
       <div className="ur-kpi-grid">
         <MetricTile label="请求数" value={formatCompactNumber(summary?.total_requests)} icon={<IconSearch />} tone="blue" meta={`成功 ${summary?.success_requests || 0} / 失败 ${summary?.failed_requests || 0}`} />
         <MetricTile label="Token" value={formatCompactNumber(summary?.total_tokens)} icon={<IconServer />} tone="violet" meta={`估算来源 ${formatCompactNumber(summary?.estimated_tokens)} / 上游 ${formatCompactNumber(summary?.upstream_tokens)}`} />
-        <MetricTile label="费用" value={<MoneyText cents={summary?.cost_cents || 0} precision={4} strong tone="cost" />} icon={<IconCoinMoney />} tone="green" meta={`平均延迟 ${formatLatencyMs(summary?.avg_latency_ms)}`} />
+        <MetricTile label="费用" value={<MoneyText micros={summary?.cost_micros || '0'} precision={6} strong tone="cost" />} icon={<IconCoinMoney />} tone="green" meta={`平均延迟 ${formatLatencyMs(summary?.avg_latency_ms)}`} />
         <MetricTile label="估算占比" value={formatPercent(summary?.estimated_ratio)} icon={<IconSearch />} tone={(summary?.estimated_ratio || 0) > 0.2 ? 'amber' : 'slate'} meta={summary?.csv_export_scope === 'filtered_query' ? '当前筛选口径 / 总览已包含全部匹配数据' : summary?.csv_export_scope || '当前筛选口径'} />
       </div>
 

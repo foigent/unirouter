@@ -5,6 +5,21 @@ import { api } from '../api/client';
 import { isPlatformAdminRole } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { PagedTable, PageHeader, Surface } from '../ui';
+import { canonicalExactDecimal } from '../utils/exactDecimal';
+
+export function parseOrgModelPriceMultiplier(value: unknown) {
+  return canonicalExactDecimal(value, {
+    decimalPlaces: 3,
+    maxWholeDigits: 2,
+    minScaled: 1n,
+    maxScaled: 99999n,
+    errorMessage: 'invalid organization price multiplier',
+  });
+}
+
+function mutationError(prefix: string, error: unknown) {
+  return error instanceof Error && error.message ? `${prefix}：${error.message}` : prefix;
+}
 
 export default function OrgModelPricesPage() {
   const user = useAuthStore((s) => s.user);
@@ -39,26 +54,26 @@ export default function OrgModelPricesPage() {
       await api.createOrgModelPrice({
         org_id: orgID,
         model_name: v.model_name,
-        multiplier: Number(v.multiplier),
+		multiplier: parseOrgModelPriceMultiplier(v.multiplier),
       });
       Toast.success('创建成功');
       closeDrawer();
       setSelectedOrgID(orgID);
       setOrgFilter(String(orgID));
       load(1, pageSize, orgID);
-    } catch { Toast.error('创建失败'); }
+    } catch (error) { Toast.error(mutationError('创建失败', error)); }
   };
 
   const handleUpdate = async (v: any) => {
     if (!editPrice) return;
     try {
       await api.updateOrgModelPrice(editPrice.id, {
-        multiplier: Number(v.multiplier),
+		multiplier: parseOrgModelPriceMultiplier(v.multiplier),
       });
       Toast.success('更新成功');
       closeDrawer();
       load();
-    } catch { Toast.error('更新失败'); }
+    } catch (error) { Toast.error(mutationError('更新失败', error)); }
   };
 
   const handleDelete = (id: number) => {
@@ -89,7 +104,7 @@ export default function OrgModelPricesPage() {
       formApi?.setValues({
         org_id: r.org_id?.toString(),
         model_name: r.model_name,
-        multiplier: r.multiplier,
+		multiplier: String(r.multiplier),
       });
     }, 100);
   };
@@ -101,7 +116,9 @@ export default function OrgModelPricesPage() {
       render: (v: string, record: any) => v ? `${v}（ID ${record.org_id}）` : `组织 ID ${record.org_id}`,
     },
     { title: '模型', dataIndex: 'model_name' },
-    { title: '计费倍率', dataIndex: 'multiplier', render: (v: number) => `${Number(v).toFixed(3).replace(/0+$/, '').replace(/\.$/, '')}×` },
+	{ title: '计费倍率', dataIndex: 'multiplier', render: (v: unknown) => {
+		try { return `${parseOrgModelPriceMultiplier(v)}×`; } catch { return '-'; }
+	} },
     { title: '更新时间', dataIndex: 'updated_at', render: (v: string) => v || '-' },
   ];
   if (canMutate) columns.push({
@@ -178,7 +195,7 @@ export default function OrgModelPricesPage() {
           <Form.InputNumber field="org_id" label="组织 ID" min={1} rules={[{ required: true, message: '必填' }]}
             disabled={!!editPrice} style={{ width: '100%' }} />
           <Form.Select field="model_name" label="模型名称" rules={[{ required: true, message: '请选择模型' }]} filter optionList={modelNames.map(m => ({ label: m, value: m }))} placeholder="选择或搜索模型" disabled={!!editPrice} />
-          <Form.InputNumber field="multiplier" label="计费倍率" min={0.001} max={99.999} precision={3} rules={[{ required: true, message: '必填' }]} placeholder="例如 1.2" style={{ width: '100%' }} />
+		  <Form.Input field="multiplier" label="计费倍率" rules={[{ required: true, message: '必填' }]} placeholder="例如 1.2" />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
             <Button onClick={closeDrawer}>取消</Button>
             <Button type="primary" onClick={() => formApi?.submitForm()}>{editPrice ? '更新' : '创建'}</Button>

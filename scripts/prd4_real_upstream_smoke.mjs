@@ -214,7 +214,9 @@ async function runGatewayCase(provider, stream) {
     log_status_code: log.status_code,
     usage_source: log.usage_source,
     total_tokens: log.total_tokens,
-    cost_cents: log.cost_cents,
+	cost_micros: log.cost_micros,
+	currency: log.currency,
+	amount_scale: log.amount_scale,
     latency_ms: log.latency_ms,
     ttft_ms: log.ttft_ms,
     trace_events: Array.from(stages).sort(),
@@ -242,7 +244,8 @@ async function waitForCallLog(requestID, provider, stream) {
       if (row.provider !== provider.provider || row.model !== provider.model || row.is_stream !== stream) {
         throw new Error(`unexpected call log row for ${requestID}: ${JSON.stringify(row)}`);
       }
-      if (row.cost_cents < 1) {
+	  if (!/^\d+$/.test(String(row.cost_micros || '')) || BigInt(row.cost_micros) < 1n
+		|| row.currency !== 'CNY' || Number(row.amount_scale) !== 1000000) {
         throw new Error(`expected settled cost for ${requestID}, got ${JSON.stringify(row)}`);
       }
       if (!['upstream', 'counter_v2', 'adapter_estimated'].includes(row.usage_source)) {

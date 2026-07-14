@@ -39,7 +39,7 @@ func TestGetLogDetail_NullSafeUpstreamError(t *testing.T) {
 				*dest[13].(*int) = 1
 				*dest[14].(*int) = 5
 				*dest[15].(*int) = 15
-				*dest[16].(*int) = 1
+				*dest[16].(*int64) = 10_000
 				*dest[17].(*int) = http.StatusOK
 				*dest[18].(*int) = 12
 				*dest[19].(*int) = 0
@@ -51,12 +51,12 @@ func TestGetLogDetail_NullSafeUpstreamError(t *testing.T) {
 				*dest[25].(*string) = "pv2_test"
 				*dest[26].(*float64) = 0.1
 				*dest[27].(*float64) = 1.25
-				*dest[28].(*float64) = 2
-				*dest[29].(*float64) = 0.2
-				*dest[30].(*float64) = 2.5
-				*dest[31].(*float64) = 8
-				*dest[32].(*float64) = 0.001
-				*dest[33].(*float64) = 0.0025
+				*dest[28].(*int64) = 20_000_000
+				*dest[29].(*int64) = 2_000_000
+				*dest[30].(*int64) = 25_000_000
+				*dest[31].(*int64) = 80_000_000
+				*dest[32].(*int64) = 10
+				*dest[33].(*int64) = 25
 				*dest[34].(*bool) = false
 				*dest[35].(*string) = "127.0.0.1"
 				*dest[36].(*string) = "company-chat"

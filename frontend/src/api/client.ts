@@ -270,9 +270,9 @@ export const api = {
   getModelPriceList: (page = 1, pageSize = 20) =>
     request(`/model-prices?page=${page}&page_size=${pageSize}`),
   getModelNames: () => request('/model-names'),
-  createModelPrice: (data: { model_name: string; input_price_cny_per_million_tokens: number; output_price_cny_per_million_tokens: number; cache_read_ratio?: number; cache_creation_ratio?: number }) =>
+  createModelPrice: (data: { model_name: string; input_price_cny_per_million_tokens: string; output_price_cny_per_million_tokens: string; cache_read_ratio?: string; cache_creation_ratio?: string }) =>
     request('/model-prices', { method: 'POST', body: JSON.stringify(data) }),
-  updateModelPrice: (id: number, data: { model_name?: string; input_price_cny_per_million_tokens?: number; output_price_cny_per_million_tokens?: number; cache_read_ratio?: number; cache_creation_ratio?: number }) =>
+  updateModelPrice: (id: number, data: { model_name?: string; input_price_cny_per_million_tokens?: string; output_price_cny_per_million_tokens?: string; cache_read_ratio?: string; cache_creation_ratio?: string }) =>
     request(`/model-prices/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteModelPrice: (id: number) =>
     request(`/model-prices/${id}`, { method: 'DELETE' }),
@@ -336,9 +336,9 @@ export const api = {
   // Org Model Prices
   getOrgModelPrices: (page = 1, pageSize = 20, orgId?: number) =>
     request(appendParams('/org-model-prices', { page, page_size: pageSize, org_id: orgId })),
-  createOrgModelPrice: (data: { org_id: number; model_name: string; multiplier: number }) =>
+  createOrgModelPrice: (data: { org_id: number; model_name: string; multiplier: string }) =>
     request('/org-model-prices', { method: 'POST', body: JSON.stringify(data) }),
-  updateOrgModelPrice: (id: number, data: { multiplier: number }) =>
+  updateOrgModelPrice: (id: number, data: { multiplier: string }) =>
     request(`/org-model-prices/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteOrgModelPrice: (id: number) =>
     request(`/org-model-prices/${id}`, { method: 'DELETE' }),

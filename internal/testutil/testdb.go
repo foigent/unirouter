@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/migrate"
+	"github.com/uniroute/unirouter/internal/money"
 )
 
 // TestDB_DSN returns the test database DSN from environment or default.
@@ -83,13 +84,13 @@ func SetupIsolatedTestDB(t *testing.T) *pgxpool.Pool {
 
 	pool, err := pgxpool.New(ctx, tempDSN)
 	if err != nil {
-		_, _ = adminPool.Exec(ctx, `DROP DATABASE IF EXISTS `+quoteIdent(dbName))
+		_ = dropTemporaryDatabase(ctx, adminPool, dbName)
 		adminPool.Close()
 		testDatabaseUnavailable(t, "cannot connect to temporary test database %s: %v", dbName, err)
 	}
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
-		_, _ = adminPool.Exec(ctx, `DROP DATABASE IF EXISTS `+quoteIdent(dbName))
+		_ = dropTemporaryDatabase(ctx, adminPool, dbName)
 		adminPool.Close()
 		testDatabaseUnavailable(t, "cannot ping temporary test database %s: %v", dbName, err)
 	}
@@ -98,7 +99,9 @@ func SetupIsolatedTestDB(t *testing.T) *pgxpool.Pool {
 		pool.Close()
 		dropCtx, dropCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer dropCancel()
-		_, _ = adminPool.Exec(dropCtx, `DROP DATABASE IF EXISTS `+quoteIdent(dbName))
+		if err := dropTemporaryDatabase(dropCtx, adminPool, dbName); err != nil {
+			t.Errorf("drop temporary test database %s: %v", dbName, err)
+		}
 		adminPool.Close()
 	})
 
@@ -139,6 +142,11 @@ func tempDatabaseDSNs(baseDSN string) (adminDSN, tempDSN, dbName string, err err
 
 func quoteIdent(value string) string {
 	return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
+}
+
+func dropTemporaryDatabase(ctx context.Context, adminPool *pgxpool.Pool, dbName string) error {
+	_, err := adminPool.Exec(ctx, `DROP DATABASE IF EXISTS `+quoteIdent(dbName)+` WITH (FORCE)`)
+	return err
 }
 
 func testDatabaseUnavailable(t *testing.T, format string, args ...any) {
@@ -220,28 +228,32 @@ func NewTestOrg(t *testing.T, pool *pgxpool.Pool) int64 {
 	return orgID
 }
 
-// NewTestWallet creates a wallet for the given org with the specified balance.
-func NewTestWallet(t *testing.T, pool *pgxpool.Pool, orgID int64, balance int) {
+// NewTestWalletCents creates a wallet from an explicitly cents-denominated test fixture.
+func NewTestWalletCents(t *testing.T, pool *pgxpool.Pool, orgID int64, balanceCents int64) {
 	t.Helper()
 	ctx := context.Background()
+	balanceMicros, err := money.CentsToMicros(balanceCents)
+	require.NoError(t, err, "convert test wallet cents")
 
-	_, err := pool.Exec(ctx,
-		`INSERT INTO wallets (org_id, balance, granted_balance, frozen, total_spent)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO wallets (org_id, balance_micros, granted_balance_micros, frozen_micros, total_spent_micros)
 		 VALUES ($1, $2, 0, 0, 0)`,
-		orgID, balance,
+		orgID, balanceMicros,
 	)
 	require.NoError(t, err, "create test wallet")
 }
 
-// NewTestGrant creates a grant for the given org.
-func NewTestGrant(t *testing.T, pool *pgxpool.Pool, orgID int64, amount int, expiresAt *time.Time) {
+// NewTestGrantCents creates a grant from an explicitly cents-denominated test fixture.
+func NewTestGrantCents(t *testing.T, pool *pgxpool.Pool, orgID int64, amountCents int64, expiresAt *time.Time) {
 	t.Helper()
 	ctx := context.Background()
+	amountMicros, err := money.CentsToMicros(amountCents)
+	require.NoError(t, err, "convert test grant cents")
 
-	_, err := pool.Exec(ctx,
-		`INSERT INTO grants (org_id, amount, balance, status, expires_at)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO grants (org_id, amount_micros, balance_micros, status, expires_at)
 		 VALUES ($1, $2, $2, 'active', $3)`,
-		orgID, amount, expiresAt,
+		orgID, amountMicros, expiresAt,
 	)
 	require.NoError(t, err, "create test grant")
 }

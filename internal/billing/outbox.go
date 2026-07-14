@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/metering"
+	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/outbox"
 	"github.com/uniroute/unirouter/internal/terminalhook"
 )
@@ -32,8 +34,13 @@ type usageJournalPayload struct {
 	UsageEstimateVersion string    `json:"usage_estimate_version,omitempty"`
 	CacheUsageSchema     string    `json:"cache_usage_schema"`
 	CacheUsageStatus     string    `json:"cache_usage_status"`
-	CalculatedCost       int       `json:"calculated_cost"`
-	ChargedCost          int       `json:"charged_cost"`
+	MoneySchema          string    `json:"money_schema,omitempty"`
+	Currency             string    `json:"currency,omitempty"`
+	AmountScale          int64     `json:"amount_scale,omitempty"`
+	CalculatedCostMicros string    `json:"calculated_cost_micros,omitempty"`
+	ChargedCostMicros    string    `json:"charged_cost_micros,omitempty"`
+	CalculatedCostCents  *int64    `json:"calculated_cost,omitempty"`
+	ChargedCostCents     *int64    `json:"charged_cost,omitempty"`
 	PricingVersion       string    `json:"pricing_version"`
 	TerminalTransaction  int64     `json:"terminal_transaction_id,omitempty"`
 	OccurredAt           time.Time `json:"occurred_at"`
@@ -50,7 +57,7 @@ func billingEventKey(eventType string, orgID int64, requestID string) string {
 	return fmt.Sprintf("billing:%s:%d:%s", eventType, orgID, requestID)
 }
 
-func enqueueUsageJournalTx(ctx context.Context, tx pgx.Tx, service *outbox.Service, outboxType, journalType string, record reservationRecord, req SettleRequest, calculatedCost, chargedCost int, terminalTransactionID int64) error {
+func enqueueUsageJournalTx(ctx context.Context, tx pgx.Tx, service *outbox.Service, outboxType, journalType string, record reservationRecord, req SettleRequest, calculatedCost, chargedCost int64, terminalTransactionID int64) error {
 	if service == nil {
 		return nil
 	}
@@ -73,8 +80,11 @@ func enqueueUsageJournalTx(ctx context.Context, tx pgx.Tx, service *outbox.Servi
 		UsageEstimateVersion: req.UsageEstimateVersion,
 		CacheUsageSchema:     req.CacheUsageSchema,
 		CacheUsageStatus:     req.CacheUsageStatus,
-		CalculatedCost:       calculatedCost,
-		ChargedCost:          chargedCost,
+		MoneySchema:          outbox.MoneyVersion,
+		Currency:             "CNY",
+		AmountScale:          money.MicrosPerCNY,
+		CalculatedCostMicros: strconv.FormatInt(calculatedCost, 10),
+		ChargedCostMicros:    strconv.FormatInt(chargedCost, 10),
 		PricingVersion:       record.PricingVersion,
 		TerminalTransaction:  terminalTransactionID,
 		OccurredAt:           time.Now().UTC(),
@@ -120,6 +130,10 @@ func (b *Billing) ProcessUsageJournalEvent(ctx context.Context, event outbox.Eve
 	if payload.OrgID <= 0 || payload.RequestID == "" || payload.EventType == "" {
 		return fmt.Errorf("usage journal event identity is invalid")
 	}
+	calculatedCostMicros, chargedCostMicros, err := decodeUsageJournalMoney(event.Type, payload)
+	if err != nil {
+		return err
+	}
 
 	tx, err := b.db.Begin(ctx)
 	if err != nil {
@@ -134,8 +148,8 @@ func (b *Billing) ProcessUsageJournalEvent(ctx context.Context, event outbox.Eve
 			cache_creation_tokens, completion_tokens, usage_source,
 			usage_authority, usage_purpose, usage_finality,
 			usage_contract_version, usage_estimate_version,
-			cache_usage_schema, cache_usage_status, calculated_cost,
-			charged_cost, pricing_version, terminal_transaction_id, occurred_at
+			cache_usage_schema, cache_usage_status, calculated_cost_micros,
+			charged_cost_micros, pricing_version, terminal_transaction_id, occurred_at
 		 ) VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9, $10, $11, $12,
@@ -149,7 +163,7 @@ func (b *Billing) ProcessUsageJournalEvent(ctx context.Context, event outbox.Eve
 		payload.UsageSource, payload.UsageAuthority, payload.UsagePurpose,
 		payload.UsageFinality, payload.UsageContractVersion, payload.UsageEstimateVersion,
 		payload.CacheUsageSchema, payload.CacheUsageStatus,
-		payload.CalculatedCost, payload.ChargedCost, payload.PricingVersion,
+		calculatedCostMicros, chargedCostMicros, payload.PricingVersion,
 		nullablePositiveInt64(payload.TerminalTransaction), payload.OccurredAt,
 	)
 	if err != nil {
@@ -167,7 +181,7 @@ func (b *Billing) ProcessUsageJournalEvent(ctx context.Context, event outbox.Eve
 				payload.OrgID,
 				terminalhook.TerminalSettled,
 				int64(payload.PromptTokens+payload.CompletionTokens),
-				int64(payload.CalculatedCost),
+				calculatedCostMicros,
 			); err != nil {
 				return fmt.Errorf("schedule settled runtime terminal hooks: %w", err)
 			}
@@ -209,13 +223,13 @@ func (b *Billing) ProcessUsageJournalEvent(ctx context.Context, event outbox.Eve
 	periodStart := budgetPeriodStart(payload.OccurredAt, budgetPeriod)
 	if _, err := tx.Exec(ctx,
 		`INSERT INTO project_budget_usage (
-			org_id, project_id, budget_period, period_start, spent_cents, updated_at
+			org_id, project_id, budget_period, period_start, spent_micros, updated_at
 		 ) VALUES ($1, $2, $3, $4, $5, NOW())
 		 ON CONFLICT (org_id, project_id, budget_period, period_start)
 		 DO UPDATE SET
-			spent_cents = project_budget_usage.spent_cents + EXCLUDED.spent_cents,
+			spent_micros = project_budget_usage.spent_micros + EXCLUDED.spent_micros,
 			updated_at = NOW()`,
-		payload.OrgID, payload.ProjectID, budgetPeriod, periodStart, payload.ChargedCost,
+		payload.OrgID, payload.ProjectID, budgetPeriod, periodStart, chargedCostMicros,
 	); err != nil {
 		return fmt.Errorf("increment project budget usage: %w", err)
 	}
@@ -242,6 +256,43 @@ func (b *Billing) ProcessUsageJournalEvent(ctx context.Context, event outbox.Eve
 		return fmt.Errorf("enqueue budget evaluation: %w", err)
 	}
 	return tx.Commit(ctx)
+}
+
+func decodeUsageJournalMoney(eventType string, payload usageJournalPayload) (int64, int64, error) {
+	switch eventType {
+	case outbox.EventBillingUsagePrepared, outbox.EventBillingSettled, outbox.EventBillingCancelled:
+		if payload.MoneySchema != outbox.MoneyVersion {
+			return 0, 0, fmt.Errorf("usage journal money schema %q is unsupported", payload.MoneySchema)
+		}
+		if payload.Currency != "CNY" || payload.AmountScale != money.MicrosPerCNY {
+			return 0, 0, fmt.Errorf("usage journal currency or amount scale is invalid")
+		}
+		calculated, err := strconv.ParseInt(payload.CalculatedCostMicros, 10, 64)
+		if err != nil || calculated < 0 || strconv.FormatInt(calculated, 10) != payload.CalculatedCostMicros {
+			return 0, 0, fmt.Errorf("usage journal calculated_cost_micros is invalid")
+		}
+		charged, err := strconv.ParseInt(payload.ChargedCostMicros, 10, 64)
+		if err != nil || charged < 0 || strconv.FormatInt(charged, 10) != payload.ChargedCostMicros {
+			return 0, 0, fmt.Errorf("usage journal charged_cost_micros is invalid")
+		}
+		return calculated, charged, nil
+	case outbox.EventBillingUsagePreparedV1, outbox.EventBillingSettledV1, outbox.EventBillingCancelledV1:
+		if payload.CalculatedCostCents == nil || payload.ChargedCostCents == nil ||
+			*payload.CalculatedCostCents < 0 || *payload.ChargedCostCents < 0 {
+			return 0, 0, fmt.Errorf("legacy usage journal cent amounts are invalid")
+		}
+		calculated, err := money.CentsToMicros(*payload.CalculatedCostCents)
+		if err != nil {
+			return 0, 0, fmt.Errorf("convert legacy calculated cost: %w", err)
+		}
+		charged, err := money.CentsToMicros(*payload.ChargedCostCents)
+		if err != nil {
+			return 0, 0, fmt.Errorf("convert legacy charged cost: %w", err)
+		}
+		return calculated, charged, nil
+	default:
+		return 0, 0, fmt.Errorf("usage journal event type %q is unsupported", eventType)
+	}
 }
 
 func nullablePositiveInt64(value int64) interface{} {

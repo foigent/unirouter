@@ -186,7 +186,7 @@ func TestEventService_CheckProjectBudgetEmitsThresholdEvent(t *testing.T) {
 					t.Fatalf("expected usage query, got %s", query)
 				}
 				return &testutil.MockRow{ScanFn: func(dest ...any) error {
-					*dest[0].(*int64) = 1200
+					*dest[0].(*int64) = 12_000_000
 					return nil
 				}}
 			case 3:
@@ -233,7 +233,8 @@ func TestEventService_CheckProjectBudgetEmitsThresholdEvent(t *testing.T) {
 	if err := json.Unmarshal(eventPayload, &payload); err != nil {
 		t.Fatalf("unmarshal event payload: %v", err)
 	}
-	if payload["usage_percent"].(float64) != 120 || payload["budget_cents"].(float64) != 1000 {
+	if payload["usage_percent"].(float64) != 120 || payload["budget_cents"].(float64) != 1000 ||
+		payload["budget_micros"] != "10000000" || payload["spent_micros"] != "12000000" {
 		t.Fatalf("unexpected budget payload: %#v", payload)
 	}
 }

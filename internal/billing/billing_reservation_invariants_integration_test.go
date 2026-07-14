@@ -9,8 +9,13 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
+	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
+
+func testMicros(cents int) int64 {
+	return int64(cents) * money.MicrosPerCent
+}
 
 func newReservationFixture(t *testing.T, balance, granted int) (*pgxpool.Pool, int64, string) {
 	t.Helper()
@@ -25,8 +30,8 @@ func newReservationFixture(t *testing.T, balance, granted int) (*pgxpool.Pool, i
 	).Scan(&orgID))
 	require.NoError(t, func() error {
 		_, err := pool.Exec(ctx,
-			`INSERT INTO wallets (org_id, balance, granted_balance, frozen, total_spent)
-			 VALUES ($1, $2, $3, 0, 0)`, orgID, balance, granted)
+			`INSERT INTO wallets (org_id, balance_micros, granted_balance_micros, frozen_micros, total_spent_micros)
+			 VALUES ($1, $2, $3, 0, 0)`, orgID, testMicros(balance), testMicros(granted))
 		return err
 	}())
 	model := fmt.Sprintf("p6f18-model-%d", time.Now().UnixNano())
@@ -46,12 +51,12 @@ func freezeForInvariantTest(t *testing.T, b *Billing, orgID int64, model, reques
 		OrgID:           orgID,
 		Model:           model,
 		EstimatedTokens: 1,
-		SafetyFactor:    1,
-		MinFreezeAmount: amount,
+		SafetyFactor:    "1",
+		MinFreezeCents:  int64(amount),
 	})
 	require.NoError(t, err)
 	require.True(t, result.Success, "%s: %s", result.ErrorCode, result.ErrorDetail)
-	require.Equal(t, amount, result.Amount)
+	require.Equal(t, testMicros(amount), result.AmountMicros)
 	return result
 }
 
@@ -71,8 +76,8 @@ func TestP6F18FreezeDoesNotReenterSingleConnectionPool(t *testing.T) {
 		OrgID:           orgID,
 		Model:           model,
 		EstimatedTokens: 1000,
-		SafetyFactor:    1,
-		MinFreezeAmount: 10,
+		SafetyFactor:    "1",
+		MinFreezeCents:  10,
 	})
 	require.NoError(t, err)
 	require.True(t, result.Success)
@@ -84,12 +89,12 @@ func TestP6F18AvailableBalanceDoesNotSubtractHeldFundsTwice(t *testing.T) {
 	freezeForInvariantTest(t, b, orgID, model, "op_p6f18_available_1", 40)
 	freezeForInvariantTest(t, b, orgID, model, "op_p6f18_available_2", 50)
 
-	var balance, frozen int
+	var balanceMicros, frozenMicros int64
 	require.NoError(t, pool.QueryRow(t.Context(),
-		`SELECT balance, frozen FROM wallets WHERE org_id = $1`, orgID,
-	).Scan(&balance, &frozen))
-	require.Equal(t, 10, balance)
-	require.Equal(t, 90, frozen)
+		`SELECT balance_micros, frozen_micros FROM wallets WHERE org_id = $1`, orgID,
+	).Scan(&balanceMicros, &frozenMicros))
+	require.Equal(t, testMicros(10), balanceMicros)
+	require.Equal(t, testMicros(90), frozenMicros)
 }
 
 func TestP6F18ConcurrentDuplicateWithExactFundsReturnsOneReceipt(t *testing.T) {
@@ -111,8 +116,8 @@ func TestP6F18ConcurrentDuplicateWithExactFundsReturnsOneReceipt(t *testing.T) {
 				OrgID:           orgID,
 				Model:           model,
 				EstimatedTokens: 1,
-				SafetyFactor:    1,
-				MinFreezeAmount: 100,
+				SafetyFactor:    "1",
+				MinFreezeCents:  100,
 			})
 			results <- result
 			errs <- err
@@ -128,19 +133,20 @@ func TestP6F18ConcurrentDuplicateWithExactFundsReturnsOneReceipt(t *testing.T) {
 	for result := range results {
 		require.NotNil(t, result)
 		require.True(t, result.Success, "%s: %s", result.ErrorCode, result.ErrorDetail)
-		require.Equal(t, 100, result.Amount)
+		require.Equal(t, testMicros(100), result.AmountMicros)
 	}
 
-	var balance, frozen, freezeEvents int
+	var balanceMicros, frozenMicros int64
+	var freezeEvents int
 	require.NoError(t, pool.QueryRow(t.Context(),
-		`SELECT balance, frozen FROM wallets WHERE org_id = $1`, orgID,
-	).Scan(&balance, &frozen))
+		`SELECT balance_micros, frozen_micros FROM wallets WHERE org_id = $1`, orgID,
+	).Scan(&balanceMicros, &frozenMicros))
 	require.NoError(t, pool.QueryRow(t.Context(),
 		`SELECT COUNT(*) FROM transactions
 		 WHERE org_id = $1 AND request_id = $2 AND type = 'freeze'`, orgID, requestID,
 	).Scan(&freezeEvents))
-	require.Zero(t, balance)
-	require.Equal(t, 100, frozen)
+	require.Zero(t, balanceMicros)
+	require.Equal(t, testMicros(100), frozenMicros)
 	require.Equal(t, 1, freezeEvents)
 }
 
@@ -149,8 +155,8 @@ func TestP6F18CancelRestoresOriginalCashAndGrantPools(t *testing.T) {
 	ctx := t.Context()
 	var grantID int64
 	require.NoError(t, pool.QueryRow(ctx,
-		`INSERT INTO grants (org_id, amount, balance, status, reason, created_by)
-		 VALUES ($1, 500, 500, 'active', 'p6f18', 0) RETURNING id`, orgID,
+		`INSERT INTO grants (org_id, amount_micros, balance_micros, status, reason, created_by)
+		 VALUES ($1, 5000000, 5000000, 'active', 'p6f18', 0) RETURNING id`, orgID,
 	).Scan(&grantID))
 
 	b := NewBilling(pool, nil)
@@ -159,21 +165,22 @@ func TestP6F18CancelRestoresOriginalCashAndGrantPools(t *testing.T) {
 	require.NoError(t, b.Cancel(ctx, requestID, orgID))
 	require.NoError(t, b.Cancel(ctx, requestID, orgID), "duplicate cancel must be idempotent")
 
-	var balance, granted, frozen, grantBalance, terminals int
+	var balanceMicros, grantedMicros, frozenMicros, grantBalanceMicros int64
+	var terminals int
 	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT balance, granted_balance, frozen FROM wallets WHERE org_id = $1`, orgID,
-	).Scan(&balance, &granted, &frozen))
+		`SELECT balance_micros, granted_balance_micros, frozen_micros FROM wallets WHERE org_id = $1`, orgID,
+	).Scan(&balanceMicros, &grantedMicros, &frozenMicros))
 	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT balance FROM grants WHERE id = $1`, grantID,
-	).Scan(&grantBalance))
+		`SELECT balance_micros FROM grants WHERE id = $1`, grantID,
+	).Scan(&grantBalanceMicros))
 	require.NoError(t, pool.QueryRow(ctx,
 		`SELECT COUNT(*) FROM transactions
 		 WHERE org_id = $1 AND request_id = $2 AND type IN ('settle', 'cancel')`, orgID, requestID,
 	).Scan(&terminals))
-	require.Equal(t, 5000, balance)
-	require.Equal(t, 500, granted)
-	require.Zero(t, frozen)
-	require.Equal(t, 500, grantBalance)
+	require.Equal(t, testMicros(5000), balanceMicros)
+	require.Equal(t, testMicros(500), grantedMicros)
+	require.Zero(t, frozenMicros)
+	require.Equal(t, testMicros(500), grantBalanceMicros)
 	require.Equal(t, 1, terminals)
 }
 
@@ -182,29 +189,29 @@ func TestP6F18SettleRefundsUnusedFundsToOriginalPools(t *testing.T) {
 	ctx := t.Context()
 	var grantID int64
 	require.NoError(t, pool.QueryRow(ctx,
-		`INSERT INTO grants (org_id, amount, balance, status, reason, created_by)
-		 VALUES ($1, 500, 500, 'active', 'p6f18-settle', 0) RETURNING id`, orgID,
+		`INSERT INTO grants (org_id, amount_micros, balance_micros, status, reason, created_by)
+		 VALUES ($1, 5000000, 5000000, 'active', 'p6f18-settle', 0) RETURNING id`, orgID,
 	).Scan(&grantID))
 
 	b := NewBilling(pool, nil)
 	requestID := "op_p6f18_source_settle"
 	freezeForInvariantTest(t, b, orgID, model, requestID, 2000)
-	settled, err := b.Settle(ctx, SettleRequest{RequestID: requestID, OrgID: orgID, ActualCost: 100})
+	settled, err := b.Settle(ctx, SettleRequest{RequestID: requestID, OrgID: orgID, PromptTokens: 50_000, UsageSource: "upstream"})
 	require.NoError(t, err)
 	require.True(t, settled.Success)
-	require.Equal(t, 1900, settled.Refund)
+	require.Equal(t, testMicros(1900), settled.RefundMicros)
 
-	var balance, granted, frozen, spent, grantBalance int
+	var balanceMicros, grantedMicros, frozenMicros, spentMicros, grantBalanceMicros int64
 	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT balance, granted_balance, frozen, total_spent FROM wallets WHERE org_id = $1`, orgID,
-	).Scan(&balance, &granted, &frozen, &spent))
-	require.NoError(t, pool.QueryRow(ctx, `SELECT balance FROM grants WHERE id = $1`, grantID).Scan(&grantBalance))
-	require.Equal(t, 5000, balance, "all reserved cash was unused and must return to cash")
-	require.Equal(t, 400, granted, "100 cents consumed from the earliest grant")
-	require.Equal(t, 400, grantBalance)
-	require.Zero(t, frozen)
-	require.Equal(t, 100, spent)
-	require.Equal(t, 5500, balance+granted+frozen+spent)
+		`SELECT balance_micros, granted_balance_micros, frozen_micros, total_spent_micros FROM wallets WHERE org_id = $1`, orgID,
+	).Scan(&balanceMicros, &grantedMicros, &frozenMicros, &spentMicros))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT balance_micros FROM grants WHERE id = $1`, grantID).Scan(&grantBalanceMicros))
+	require.Equal(t, testMicros(5000), balanceMicros, "all reserved cash was unused and must return to cash")
+	require.Equal(t, testMicros(400), grantedMicros, "100 cents consumed from the earliest grant")
+	require.Equal(t, testMicros(400), grantBalanceMicros)
+	require.Zero(t, frozenMicros)
+	require.Equal(t, testMicros(100), spentMicros)
+	require.Equal(t, testMicros(5500), balanceMicros+grantedMicros+frozenMicros+spentMicros)
 }
 
 func TestP6F18ExpiredGrantCannotBeSpentBeforeScheduledCleanup(t *testing.T) {
@@ -212,8 +219,8 @@ func TestP6F18ExpiredGrantCannotBeSpentBeforeScheduledCleanup(t *testing.T) {
 	ctx := t.Context()
 	var grantID int64
 	require.NoError(t, pool.QueryRow(ctx,
-		`INSERT INTO grants (org_id, amount, balance, status, expires_at, reason, created_by)
-		 VALUES ($1, 100, 100, 'active', NOW() - INTERVAL '1 second', 'expired', 0)
+		`INSERT INTO grants (org_id, amount_micros, balance_micros, status, expires_at, reason, created_by)
+		 VALUES ($1, 1000000, 1000000, 'active', NOW() - INTERVAL '1 second', 'expired', 0)
 		 RETURNING id`, orgID,
 	).Scan(&grantID))
 
@@ -222,23 +229,23 @@ func TestP6F18ExpiredGrantCannotBeSpentBeforeScheduledCleanup(t *testing.T) {
 		OrgID:           orgID,
 		Model:           model,
 		EstimatedTokens: 1,
-		SafetyFactor:    1,
-		MinFreezeAmount: 100,
+		SafetyFactor:    "1",
+		MinFreezeCents:  100,
 	})
 	require.NoError(t, err)
 	require.False(t, result.Success)
 	require.Equal(t, "insufficient_balance", result.ErrorCode)
 
-	var granted, grantBalance int
+	var grantedMicros, grantBalanceMicros int64
 	var status string
 	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT granted_balance FROM wallets WHERE org_id = $1`, orgID,
-	).Scan(&granted))
+		`SELECT granted_balance_micros FROM wallets WHERE org_id = $1`, orgID,
+	).Scan(&grantedMicros))
 	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT balance, status FROM grants WHERE id = $1`, grantID,
-	).Scan(&grantBalance, &status))
-	require.Zero(t, granted)
-	require.Zero(t, grantBalance)
+		`SELECT balance_micros, status FROM grants WHERE id = $1`, grantID,
+	).Scan(&grantBalanceMicros, &status))
+	require.Zero(t, grantedMicros)
+	require.Zero(t, grantBalanceMicros)
 	require.Equal(t, "expired", status)
 }
 
@@ -247,8 +254,8 @@ func TestP6F18ExpiredHeldGrantIsNotConvertedToCashOnCancel(t *testing.T) {
 	ctx := t.Context()
 	var grantID int64
 	require.NoError(t, pool.QueryRow(ctx,
-		`INSERT INTO grants (org_id, amount, balance, status, expires_at, reason, created_by)
-		 VALUES ($1, 100, 100, 'active', NOW() + INTERVAL '1 day', 'held-expiry', 0)
+		`INSERT INTO grants (org_id, amount_micros, balance_micros, status, expires_at, reason, created_by)
+		 VALUES ($1, 1000000, 1000000, 'active', NOW() + INTERVAL '1 day', 'held-expiry', 0)
 		 RETURNING id`, orgID,
 	).Scan(&grantID))
 
@@ -259,18 +266,18 @@ func TestP6F18ExpiredHeldGrantIsNotConvertedToCashOnCancel(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, b.Cancel(ctx, requestID, orgID))
 
-	var balance, granted, frozen, forfeited int
+	var balanceMicros, grantedMicros, frozenMicros, forfeitedMicros int64
 	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT balance, granted_balance, frozen FROM wallets WHERE org_id = $1`, orgID,
-	).Scan(&balance, &granted, &frozen))
+		`SELECT balance_micros, granted_balance_micros, frozen_micros FROM wallets WHERE org_id = $1`, orgID,
+	).Scan(&balanceMicros, &grantedMicros, &frozenMicros))
 	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT forfeited_grant_amount FROM freeze_idempotency
+		`SELECT forfeited_grant_amount_micros FROM freeze_idempotency
 		 WHERE org_id = $1 AND request_id = $2`, orgID, requestID,
-	).Scan(&forfeited))
-	require.Zero(t, balance, "expired grant credit must not become cash")
-	require.Zero(t, granted)
-	require.Zero(t, frozen)
-	require.Equal(t, 100, forfeited)
+	).Scan(&forfeitedMicros))
+	require.Zero(t, balanceMicros, "expired grant credit must not become cash")
+	require.Zero(t, grantedMicros)
+	require.Zero(t, frozenMicros)
+	require.Equal(t, testMicros(100), forfeitedMicros)
 }
 
 func TestP6F18SettlementUsesFrozenPriceAndMultiplierVersion(t *testing.T) {
@@ -286,20 +293,21 @@ func TestP6F18SettlementUsesFrozenPriceAndMultiplierVersion(t *testing.T) {
 	b := NewBilling(pool, nil)
 	requestID := "op_p6f18_price_snapshot"
 	freeze := freezeForInvariantTest(t, b, orgID, model, requestID, 100)
-	require.Equal(t, 100, freeze.Amount)
+	require.Equal(t, testMicros(100), freeze.AmountMicros)
 
-	var inputPrice, outputPrice, multiplier float64
+	var inputPriceMicros, outputPriceMicros int64
+	var multiplier float64
 	var pricingVersion string
 	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT effective_input_price_cents::float8,
-		        effective_output_price_cents::float8,
+		`SELECT effective_input_price_micros_per_million,
+		        effective_output_price_micros_per_million,
 		        price_multiplier::float8,
 		        pricing_version
 		 FROM freeze_idempotency
 		 WHERE org_id = $1 AND request_id = $2`, orgID, requestID,
-	).Scan(&inputPrice, &outputPrice, &multiplier, &pricingVersion))
-	require.Equal(t, 4.0, inputPrice)
-	require.Equal(t, 20.0, outputPrice)
+	).Scan(&inputPriceMicros, &outputPriceMicros, &multiplier, &pricingVersion))
+	require.Equal(t, int64(40_000_000), inputPriceMicros)
+	require.Equal(t, int64(200_000_000), outputPriceMicros)
 	require.Equal(t, 2.0, multiplier)
 	require.NotEqual(t, "legacy", pricingVersion)
 
@@ -321,24 +329,24 @@ func TestP6F18SettlementUsesFrozenPriceAndMultiplierVersion(t *testing.T) {
 	settled, err := b.Settle(ctx, SettleRequest{
 		RequestID:    requestID,
 		OrgID:        orgID,
-		ActualCost:   999,
 		PromptTokens: 1000,
 		UsageSource:  "upstream",
 	})
 	require.NoError(t, err)
 	require.True(t, settled.Success)
-	require.Equal(t, 4, settled.ActualCost, "snapshot price must win over live catalog and caller-supplied cost")
-	require.Equal(t, 96, settled.Refund)
+	require.Equal(t, int64(40_000), settled.ActualCostMicros, "snapshot price must win over the live catalog")
+	require.Equal(t, int64(960_000), settled.RefundMicros)
 
 	duplicate, err := b.Settle(ctx, SettleRequest{
-		RequestID:  requestID,
-		OrgID:      orgID,
-		ActualCost: 1,
+		RequestID:    requestID,
+		OrgID:        orgID,
+		PromptTokens: 1000,
+		UsageSource:  "upstream",
 	})
 	require.NoError(t, err)
 	require.True(t, duplicate.Success, "same terminal operation must return its durable receipt")
 	require.Equal(t, settled.SettleID, duplicate.SettleID)
-	require.Equal(t, settled.ActualCost, duplicate.ActualCost)
+	require.Equal(t, settled.ActualCostMicros, duplicate.ActualCostMicros)
 }
 
 func TestP6F18HundredWaySettleCancelRaceHasOneTerminalEvent(t *testing.T) {
@@ -357,9 +365,10 @@ func TestP6F18HundredWaySettleCancelRaceHasOneTerminalEvent(t *testing.T) {
 			<-start
 			if index%2 == 0 {
 				_, err := b.Settle(context.Background(), SettleRequest{
-					RequestID:  requestID,
-					OrgID:      orgID,
-					ActualCost: 25,
+					RequestID:    requestID,
+					OrgID:        orgID,
+					PromptTokens: 12_500,
+					UsageSource:  "upstream",
 				})
 				errs <- err
 				return
@@ -375,19 +384,20 @@ func TestP6F18HundredWaySettleCancelRaceHasOneTerminalEvent(t *testing.T) {
 	}
 
 	var state string
-	var balance, granted, frozen, spent, terminalEvents int
+	var balanceMicros, grantedMicros, frozenMicros, spentMicros int64
+	var terminalEvents int
 	require.NoError(t, pool.QueryRow(t.Context(),
 		`SELECT status FROM freeze_idempotency WHERE org_id = $1 AND request_id = $2`, orgID, requestID,
 	).Scan(&state))
 	require.Contains(t, []string{"settled", "cancelled"}, state)
 	require.NoError(t, pool.QueryRow(t.Context(),
-		`SELECT balance, granted_balance, frozen, total_spent FROM wallets WHERE org_id = $1`, orgID,
-	).Scan(&balance, &granted, &frozen, &spent))
+		`SELECT balance_micros, granted_balance_micros, frozen_micros, total_spent_micros FROM wallets WHERE org_id = $1`, orgID,
+	).Scan(&balanceMicros, &grantedMicros, &frozenMicros, &spentMicros))
 	require.NoError(t, pool.QueryRow(t.Context(),
 		`SELECT COUNT(*) FROM transactions
 		 WHERE org_id = $1 AND request_id = $2 AND type IN ('settle', 'cancel')`, orgID, requestID,
 	).Scan(&terminalEvents))
-	require.Zero(t, frozen)
-	require.Equal(t, 1000, balance+granted+frozen+spent, "wallet plus durable spend must conserve value")
+	require.Zero(t, frozenMicros)
+	require.Equal(t, testMicros(1000), balanceMicros+grantedMicros+frozenMicros+spentMicros, "wallet plus durable spend must conserve value")
 	require.Equal(t, 1, terminalEvents)
 }

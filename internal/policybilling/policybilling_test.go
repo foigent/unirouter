@@ -30,18 +30,18 @@ type fakeProvider struct {
 	completeReq  billing.ProviderAttemptCompletion
 }
 
-func (p *fakeProvider) QueryModelPriceForOrg(context.Context, int64, string) (float64, float64, error) {
+func (p *fakeProvider) QueryModelPriceMicrosForOrg(context.Context, int64, string) (int64, int64, error) {
 	return 1, 1, nil
 }
 
-func (p *fakeProvider) CalculateCost(context.Context, string, int, int) (int, error) {
+func (p *fakeProvider) CalculateCostMicrosForOrg(context.Context, int64, string, int, int) (int64, error) {
 	return 1, nil
 }
 
 func (p *fakeProvider) Freeze(context.Context, billing.FreezeRequest) (*billing.FreezeResult, error) {
 	p.freezeCalls++
 	if p.freezeResult == nil && p.freezeErr == nil {
-		return &billing.FreezeResult{Success: true, Amount: 10}, nil
+		return &billing.FreezeResult{Success: true, AmountMicros: 10}, nil
 	}
 	return p.freezeResult, p.freezeErr
 }
@@ -55,7 +55,7 @@ func (p *fakeProvider) ExtendReservation(_ context.Context, req billing.ExtendRe
 		Success: true, Sequence: req.Sequence,
 		AddedCompletionTokens:  req.AdditionalCompletionTokens,
 		TargetCompletionTokens: req.TargetCompletionTokens,
-		Amount:                 1,
+		AmountMicros:           1,
 	}, nil
 }
 
@@ -116,7 +116,7 @@ func (p *fakeProvider) PersistSettlementUsage(context.Context, billing.SettleReq
 func (p *fakeProvider) Settle(context.Context, billing.SettleRequest) (*billing.SettleResult, error) {
 	p.settleCalls++
 	if p.settleResult == nil && p.settleErr == nil {
-		return &billing.SettleResult{Success: true, ActualCost: 1}, nil
+		return &billing.SettleResult{Success: true, ActualCostMicros: 1}, nil
 	}
 	return p.settleResult, p.settleErr
 }

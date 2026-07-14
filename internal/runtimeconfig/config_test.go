@@ -31,7 +31,7 @@ func TestNewBuildsTypedEffectiveConfiguration(t *testing.T) {
 		snapshot.StreamTransport.MaxSSELineBytes != 4*1024*1024 || snapshot.StreamTransport.WriteIdleTimeoutSeconds != 30 {
 		t.Fatalf("unexpected stream transport registry: %#v", snapshot.StreamTransport)
 	}
-	if snapshot.AgentCapability.Version != "unirouter.agent-capability.v1" || snapshot.AgentCapability.TokenTTLSeconds != 300 ||
+	if snapshot.AgentCapability.Version != "unirouter.agent-capability.v2" || snapshot.AgentCapability.TokenTTLSeconds != 300 ||
 		snapshot.AgentCapability.RefreshBaseSeconds != 180 || snapshot.AgentCapability.ActiveRevocationSLOSeconds > 30 ||
 		snapshot.AgentCapability.AuthorityScope != "model_gateway_only" || snapshot.AgentCapability.RedisOutageMode != "fail_closed" ||
 		snapshot.AgentCapability.RuntimeBudgetMode != "reserve_estimate_on_every_ancestor_settle_actual" ||

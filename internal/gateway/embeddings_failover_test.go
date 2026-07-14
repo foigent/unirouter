@@ -136,7 +136,7 @@ func TestHandleEmbeddings_RetryClassificationAndFailover(t *testing.T) {
 			b := &mockBilling{
 				freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
 					freezeCalls++
-					return &billing.FreezeResult{FreezeID: 1, Amount: 100, Success: true}, nil
+					return &billing.FreezeResult{FreezeID: 1, AmountMicros: 100, Success: true}, nil
 				},
 				settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
 					settleCalls++
@@ -244,7 +244,7 @@ func TestHandleEmbeddings_AllRoutesFailBounded(t *testing.T) {
 	cancelCalls := 0
 	b := &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
-			return &billing.FreezeResult{FreezeID: 1, Amount: 100, Success: true}, nil
+			return &billing.FreezeResult{FreezeID: 1, AmountMicros: 100, Success: true}, nil
 		},
 		cancelFn: func(ctx context.Context, requestID string, orgID int64) error {
 			cancelCalls++
@@ -306,7 +306,7 @@ func TestP6F40BHandleEmbeddingsSkipsUnsupportedAdapterButHoldsAmbiguousTransport
 	var completions []billing.ProviderAttemptCompletion
 	b := &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
-			return &billing.FreezeResult{FreezeID: 1, Amount: 100, Success: true}, nil
+			return &billing.FreezeResult{FreezeID: 1, AmountMicros: 100, Success: true}, nil
 		},
 		settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
 			settleCalls++
@@ -354,7 +354,7 @@ func TestP6F40BHandleEmbeddingsMalformedSuccessRetainsProviderLiability(t *testi
 	var completions []billing.ProviderAttemptCompletion
 	b := &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
-			return &billing.FreezeResult{FreezeID: 1, Amount: 100, Success: true}, nil
+			return &billing.FreezeResult{FreezeID: 1, AmountMicros: 100, Success: true}, nil
 		},
 		settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
 			settleCalls++

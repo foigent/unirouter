@@ -22,12 +22,12 @@ describe('pricing authority pages', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getModelPriceList.mockResolvedValue({
-      data: [{ id: 7, model_name: 'gpt-4o', input_price_cny_per_million_tokens: 50, output_price_cny_per_million_tokens: 150, cache_read_ratio: 0.1, cache_creation_ratio: 1.25, updated_at: '2026-07-11T00:00:00Z' }],
+		data: [{ id: 7, model_name: 'gpt-4o', input_price_cny_per_million_tokens: '50', output_price_cny_per_million_tokens: '150', cache_read_ratio: '0.1', cache_creation_ratio: '1.25', updated_at: '2026-07-11T00:00:00Z' }],
       total: 1,
     });
     mocks.getModelNames.mockResolvedValue({ data: ['gpt-4o'] });
     mocks.getOrgModelPrices.mockResolvedValue({
-      data: [{ id: 9, org_id: 22, org_name: 'Acme', model_name: 'gpt-4o', multiplier: 1.5, updated_at: '2026-07-11T00:00:00Z' }],
+		data: [{ id: 9, org_id: 22, org_name: 'Acme', model_name: 'gpt-4o', multiplier: '1.5', updated_at: '2026-07-11T00:00:00Z' }],
       total: 1,
       org_id: 22,
     });

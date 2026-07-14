@@ -8,11 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/db"
+	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/outbox"
 )
 
@@ -252,20 +255,24 @@ func (s *EventService) CheckProjectBudget(ctx context.Context, orgID, projectID 
 	}
 
 	periodStart := budgetPeriodStart(s.now(), budgetPeriod)
-	var spentCents int64
+	var spentMicros int64
 	if err := s.db.QueryRow(ctx,
-		`SELECT COALESCE(SUM(cost_cents), 0)
+		`SELECT COALESCE(SUM(cost_micros), 0)
 		 FROM call_logs
 		 WHERE org_id = $1 AND project_id = $2 AND created_at >= $3`,
 		orgID, projectID, periodStart,
-	).Scan(&spentCents); err != nil {
+	).Scan(&spentMicros); err != nil {
 		return nil, err
 	}
-	if spentCents < budgetCents.Int64 {
+	budgetMicros, err := money.CentsToMicros(budgetCents.Int64)
+	if err != nil {
+		return nil, fmt.Errorf("project budget is out of range: %w", err)
+	}
+	if spentMicros < budgetMicros {
 		return nil, nil
 	}
 
-	usagePercent := int(spentCents * 100 / budgetCents.Int64)
+	usagePercent := budgetUsagePercent(spentMicros, budgetMicros)
 	dedupeKey := fmt.Sprintf("project_budget.threshold:%d:%s:100", projectID, periodStart.Format("20060102T150405Z"))
 	return s.Emit(ctx, EventInput{
 		OrgID:      orgID,
@@ -278,17 +285,31 @@ func (s *EventService) CheckProjectBudget(ctx context.Context, orgID, projectID 
 		ResourceID: fmt.Sprintf("%d", projectID),
 		DedupeKey:  dedupeKey,
 		Payload: map[string]interface{}{
-			"org_id":            orgID,
-			"project_id":        projectID,
-			"project_name":      projectName,
-			"budget_cents":      budgetCents.Int64,
-			"spent_cents":       spentCents,
+			"org_id":        orgID,
+			"project_id":    projectID,
+			"project_name":  projectName,
+			"budget_cents":  budgetCents.Int64,
+			"budget_micros": strconv.FormatInt(budgetMicros, 10),
+			"spent_micros":  strconv.FormatInt(spentMicros, 10),
+			"currency":      "CNY", "amount_scale": money.MicrosPerCNY,
 			"budget_period":     budgetPeriod,
 			"period_start":      periodStart.Format(time.RFC3339),
 			"threshold_percent": 100,
 			"usage_percent":     usagePercent,
 		},
 	})
+}
+
+func budgetUsagePercent(spentMicros, budgetMicros int64) int {
+	if spentMicros <= 0 || budgetMicros <= 0 {
+		return 0
+	}
+	percent := new(big.Int).Mul(big.NewInt(spentMicros), big.NewInt(100))
+	percent.Quo(percent, big.NewInt(budgetMicros))
+	if !percent.IsInt64() || percent.Int64() > int64(^uint(0)>>1) {
+		return int(^uint(0) >> 1)
+	}
+	return int(percent.Int64())
 }
 
 type webhookRoute struct {

@@ -16,11 +16,13 @@ vi.mock('../../api/client', () => ({
 
 const BILLING_WALLET = {
   org_id: 22,
-  balance_cents: 100_000,
-  granted_cents: 20_000,
-  frozen_cents: 5_000,
-  threshold_cents: 1_000,
-  total_spent_cents: 8_000,
+  balance_micros: '1000000000',
+  granted_balance_micros: '200000000',
+  frozen_micros: '50000000',
+  threshold_micros: '10000000',
+  total_spent_micros: '80000000',
+  currency: 'CNY',
+  amount_scale: 1_000_000,
   is_admin: true,
 };
 
@@ -57,7 +59,7 @@ describe('WalletPage', () => {
   });
 
   it('submits an atomic delta with a stable idempotency identity and reason', async () => {
-    mockAdjustWallet.mockResolvedValue({ success: true, balance_cents: 90_000 });
+    mockAdjustWallet.mockResolvedValue({ success: true, balance_micros: '900000000' });
     render(<WalletPage />);
 
     fireEvent.click(await screen.findByRole('button', { name: '调整额度' }));

@@ -25,9 +25,9 @@ func TestP6F17OperationIdempotencyMigrationUpDownAndSafeRollForward(t *testing.T
 		`INSERT INTO orgs (name, status, org_type) VALUES ('p6f17-org-b', 'active', 'standard') RETURNING id`,
 	).Scan(&orgB))
 	_, err := pool.Exec(ctx,
-		`INSERT INTO grants (org_id, amount, balance, reason, created_by, client_request_id)
-		 VALUES ($1, 1, 1, 'a', 0, 'same-client-value'),
-		        ($2, 1, 1, 'b', 0, 'same-client-value')`, orgA, orgB)
+		`INSERT INTO grants (org_id, amount_micros, balance_micros, reason, created_by, client_request_id)
+		 VALUES ($1, 10000, 10000, 'a', 0, 'same-client-value'),
+		        ($2, 10000, 10000, 'b', 0, 'same-client-value')`, orgA, orgB)
 	require.NoError(t, err, "tenant-scoped grant idempotency must permit cross-org reuse")
 
 	_, err = pool.Exec(ctx,

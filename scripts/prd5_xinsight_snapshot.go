@@ -24,7 +24,7 @@ import (
 	"github.com/uniroute/unirouter/internal/traceutil"
 )
 
-const prd5SnapshotSchemaVersion = "unirouter.prd5.xinsight.snapshot.v1"
+const prd5SnapshotSchemaVersion = "unirouter.prd5.xinsight.snapshot.v2"
 const prd5ApprovalManifestSchemaVersion = "unirouter.prd5.xinsight.approval.v1"
 
 type repeatedFlag []string
@@ -124,7 +124,10 @@ type snapshotCallLog struct {
 	EstimatedTokens        int64   `json:"estimated_tokens"`
 	UsageSource            string  `json:"usage_source"`
 	UsageConfidence        string  `json:"usage_confidence"`
-	CostCents              int64   `json:"cost_cents"`
+	CostMicros             string  `json:"cost_micros"`
+	Currency               string  `json:"currency"`
+	AmountScale            int64   `json:"amount_scale"`
+	MoneySchema            string  `json:"money_schema"`
 	LatencyMS              int64   `json:"latency_ms"`
 	TTFTMS                 int64   `json:"ttft_ms"`
 	StatusCode             int64   `json:"status_code"`
@@ -358,6 +361,7 @@ func loadSnapshot(ctx context.Context, db *sql.DB, sourceInstance string, select
 			"request_id_join": "request_id is the intended join key between call_logs and request_trace_events",
 			"missing_rows":    "missing call logs or trace events are represented as capture gaps and should not be fabricated by importers",
 			"payload_policy":  "UniRouter raw prompt/response capture remains disabled for this snapshot path",
+			"money_contract":  "cost_micros is canonical integer micro-CNY text; currency=CNY, amount_scale=1000000",
 		},
 	}
 	return snapshot, nil
@@ -383,7 +387,7 @@ SELECT
   estimated_tokens,
   usage_source,
   usage_confidence::text,
-  cost_cents,
+  cost_micros::text,
   latency_ms,
   ttft_ms,
   status_code,
@@ -439,7 +443,7 @@ ORDER BY created_at, id`, placeholders(len(requestIDs)))
 			&row.EstimatedTokens,
 			&row.UsageSource,
 			&row.UsageConfidence,
-			&row.CostCents,
+			&row.CostMicros,
 			&row.LatencyMS,
 			&row.TTFTMS,
 			&row.StatusCode,
@@ -464,6 +468,9 @@ ORDER BY created_at, id`, placeholders(len(requestIDs)))
 			return nil, err
 		}
 		row.ProjectID = nullableInt64(projectID)
+		row.Currency = "CNY"
+		row.AmountScale = 1_000_000
+		row.MoneySchema = "micro-cny.v1"
 		row.APIKeyID = nullableInt64(apiKeyID)
 		row.OwnerUserID = nullableInt64(ownerUserID)
 		row.UpstreamStatusCode = nullableInt64(upstreamStatusCode)

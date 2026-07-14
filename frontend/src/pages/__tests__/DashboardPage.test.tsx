@@ -16,15 +16,17 @@ vi.mock('../../api/client', () => ({
 
 const MOCK_STATS = {
   total_requests: 12345,
-  today_cost_cents: 5678,
+  today_cost_micros: '56780000',
+  currency: 'CNY',
+  amount_scale: 1_000_000,
   avg_latency_ms: 320,
   p95_latency_ms: 780,
   p99_latency_ms: 1290,
   success_rate: 0.987,
-  wallet_balance: 100000,
-  wallet_granted: 20000,
-  wallet_frozen: 5000,
-  wallet_threshold: 1000,
+  wallet_balance_micros: '1000000000',
+  wallet_granted_micros: '200000000',
+  wallet_frozen_micros: '50000000',
+  wallet_threshold_micros: '10000000',
   recent_logs: [
     {
       request_id: 'req-abc-123',
@@ -33,17 +35,17 @@ const MOCK_STATS = {
       status_code: 200,
       latency_ms: 450,
       total_tokens: 1500,
-      cost_cents: 30,
+      cost_micros: '300000',
       created_at: '2026-06-29T10:00:00Z',
       is_stream: false,
     },
   ],
   model_prices: [
-    { model_name: 'gpt-4o', input_price_cents: 100, output_price_cents: 200 },
+    { model_name: 'gpt-4o', input_price_cny_per_million: '1000', output_price_cny_per_million: '2000' },
   ],
   daily_trend: [
-    { date: '2026-06-28', requests: 5000, cost_cents: 2000 },
-    { date: '2026-06-29', requests: 7345, cost_cents: 3678 },
+    { date: '2026-06-28', requests: 5000, cost_micros: '20000000' },
+    { date: '2026-06-29', requests: 7345, cost_micros: '36780000' },
   ],
   model_distribution: [
     { model: 'gpt-4o', requests: 8000 },
@@ -54,7 +56,7 @@ const MOCK_STATS = {
     { id: 2, name: 'Azure Backup', provider: 'azure', enabled: true, status: 'degraded', success_count: 2000, fail_count: 300 },
     { id: 3, name: 'Disabled CH', provider: 'custom', enabled: false, status: 'healthy', success_count: 0, fail_count: 0 },
   ],
-  delta_vs_yesterday: { cost_cents: 500, latency_ms: -20, success_rate: 0.005 },
+  delta_vs_yesterday: { cost_micros: '5000000', latency_ms: -20, success_rate: 0.005 },
 };
 
 function renderDashboard() {
@@ -115,7 +117,7 @@ describe('DashboardPage', () => {
     const { container } = renderDashboard();
     await waitFor(() => {
       const html = container.textContent || '';
-      // wallet_balance 100000 cents = ¥1,000.00
+      // wallet_balance_micros = ¥1,000.00
       // wallet shows as budget progress: today_cost/threshold
       expect(html).toContain('56.78');
       expect(html).toContain('预算进度');

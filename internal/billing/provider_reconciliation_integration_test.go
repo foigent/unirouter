@@ -21,7 +21,7 @@ func TestP6F40CCollectReplaysStoredAuthoritativeUsageWithoutCallerAmount(t *test
 	}))
 	settleReq := SettleRequest{
 		RequestID: requestID, AttemptID: attempt.AttemptID, OrgID: orgID,
-		ActualCost: 500, UsageSource: "upstream",
+		PromptTokens: 250_000, UsageSource: "upstream",
 	}
 	require.NoError(t, b.MarkBillableOutput(t.Context(), requestID, orgID))
 	require.NoError(t, b.PersistSettlementUsage(t.Context(), settleReq))
@@ -35,13 +35,13 @@ func TestP6F40CCollectReplaysStoredAuthoritativeUsageWithoutCallerAmount(t *test
 	}
 	_, err = b.ReconcileProviderAttempt(t.Context(), reconciliation)
 	require.ErrorIs(t, err, ErrSettlementFundingPending)
-	_, err = pool.Exec(t.Context(), `UPDATE wallets SET balance = balance + 400 WHERE org_id = $1`, orgID)
+	_, err = pool.Exec(t.Context(), `UPDATE wallets SET balance_micros = balance_micros + 4000000 WHERE org_id = $1`, orgID)
 	require.NoError(t, err)
 
 	result, err := b.ReconcileProviderAttempt(t.Context(), reconciliation)
 	require.NoError(t, err)
-	require.Equal(t, 500, result.CustomerChargedCost)
-	require.Zero(t, result.CustomerRefund)
+	require.Equal(t, "5000000", result.CustomerChargedMicros)
+	require.Equal(t, "0", result.CustomerRefundMicros)
 
 	duplicate, err := b.ReconcileProviderAttempt(t.Context(), reconciliation)
 	require.NoError(t, err)
@@ -84,8 +84,8 @@ func TestP6F40CRefundReleasesOnlyExistingHoldAndConflictingActionFails(t *testin
 		Reason: "provider confirmed no customer delivery", EvidenceRef: "case://refund-1",
 	})
 	require.NoError(t, err)
-	require.Equal(t, 100, result.CustomerRefund)
-	require.Zero(t, result.CustomerChargedCost)
+	require.Equal(t, "1000000", result.CustomerRefundMicros)
+	require.Equal(t, "0", result.CustomerChargedMicros)
 
 	_, err = b.ReconcileProviderAttempt(t.Context(), ProviderReconciliationRequest{
 		OrgID: orgID, RequestID: requestID, AttemptID: attempt.AttemptID,
@@ -100,14 +100,15 @@ func TestP6F40CRefundReleasesOnlyExistingHoldAndConflictingActionFails(t *testin
 	})
 	require.ErrorIs(t, err, ErrProviderReconciliationConflict)
 
-	var balance, frozen, events int
+	var balanceMicros, frozenMicros int64
+	var events int
 	var reservationState, attemptState string
-	require.NoError(t, pool.QueryRow(t.Context(), `SELECT balance, frozen FROM wallets WHERE org_id=$1`, orgID).Scan(&balance, &frozen))
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT balance_micros, frozen_micros FROM wallets WHERE org_id=$1`, orgID).Scan(&balanceMicros, &frozenMicros))
 	require.NoError(t, pool.QueryRow(t.Context(), `SELECT status FROM freeze_idempotency WHERE org_id=$1 AND request_id=$2`, orgID, requestID).Scan(&reservationState))
 	require.NoError(t, pool.QueryRow(t.Context(), `SELECT state FROM billing_provider_attempts WHERE org_id=$1 AND request_id=$2 AND attempt_id=$3`, orgID, requestID, attempt.AttemptID).Scan(&attemptState))
 	require.NoError(t, pool.QueryRow(t.Context(), `SELECT COUNT(*) FROM provider_cost_reconciliations WHERE org_id=$1 AND request_id=$2`, orgID, requestID).Scan(&events))
-	require.Equal(t, 1000, balance)
-	require.Zero(t, frozen)
+	require.Equal(t, testMicros(1000), balanceMicros)
+	require.Zero(t, frozenMicros)
 	require.Equal(t, "cancelled", reservationState)
 	require.Equal(t, "reconciled", attemptState)
 	require.Equal(t, 2, events)
@@ -126,7 +127,7 @@ func TestP6F40CCollectRejectsEstimatedOrUnknownUsage(t *testing.T) {
 	}))
 	prepared, err := b.PrepareNonStreamDelivery(t.Context(), SettleRequest{
 		RequestID: requestID, AttemptID: attempt.AttemptID, OrgID: orgID,
-		ActualCost: 500, UsageSource: "estimated",
+		PromptTokens: 250_000, UsageSource: "estimated",
 	})
 	require.NoError(t, err)
 	require.False(t, prepared.Funded)
@@ -151,7 +152,7 @@ func TestP6F40CCollectRejectsAuthoritativeUsageWithoutLocalDelivery(t *testing.T
 	}))
 	prepared, err := b.PrepareNonStreamDelivery(t.Context(), SettleRequest{
 		RequestID: requestID, AttemptID: attempt.AttemptID, OrgID: orgID,
-		ActualCost: 500, UsageSource: "upstream",
+		PromptTokens: 250_000, UsageSource: "upstream",
 	})
 	require.NoError(t, err)
 	require.False(t, prepared.Funded)
@@ -176,7 +177,7 @@ func TestP6F40CCollectRecoversCompletionEvidenceAfterSettlementCrashGap(t *testi
 	}))
 	settleReq := SettleRequest{
 		RequestID: requestID, AttemptID: attempt.AttemptID, OrgID: orgID,
-		ActualCost: 500, UsageSource: "upstream",
+		PromptTokens: 250_000, UsageSource: "upstream",
 	}
 	require.NoError(t, b.MarkBillableOutput(t.Context(), requestID, orgID))
 	require.NoError(t, b.PersistSettlementUsage(t.Context(), settleReq))
@@ -192,7 +193,7 @@ func TestP6F40CCollectRecoversCompletionEvidenceAfterSettlementCrashGap(t *testi
 	require.NoError(t, err)
 	require.NoError(t, authorizeProviderReconciliationTx(t.Context(), tx, req, attempt.APIKeyID))
 	require.NoError(t, tx.Commit(t.Context()))
-	_, err = pool.Exec(t.Context(), `UPDATE wallets SET balance = balance + 400 WHERE org_id=$1`, orgID)
+	_, err = pool.Exec(t.Context(), `UPDATE wallets SET balance_micros = balance_micros + 4000000 WHERE org_id=$1`, orgID)
 	require.NoError(t, err)
 	settled, err := b.Settle(t.Context(), settleReq)
 	require.NoError(t, err)
@@ -247,7 +248,7 @@ func TestP6F40CSubsidyRequiresKnownBoundedCost(t *testing.T) {
 	}))
 	prepared, err := b.PrepareNonStreamDelivery(t.Context(), SettleRequest{
 		RequestID: requestID, AttemptID: attempt.AttemptID, OrgID: orgID,
-		ActualCost: 500, UsageSource: "upstream",
+		PromptTokens: 250_000, UsageSource: "upstream",
 	})
 	require.NoError(t, err)
 	require.False(t, prepared.Funded)
@@ -257,7 +258,7 @@ func TestP6F40CSubsidyRequiresKnownBoundedCost(t *testing.T) {
 		Reason: "bounded platform subsidy approved", EvidenceRef: "case://subsidy-1",
 	})
 	require.NoError(t, err)
-	require.Equal(t, 100, result.CustomerRefund)
+	require.Equal(t, "1000000", result.CustomerRefundMicros)
 }
 
 func TestP6F40CConcurrentRefundProducesOneTerminalAndTwoEvidencePhases(t *testing.T) {

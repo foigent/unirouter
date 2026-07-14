@@ -5,23 +5,44 @@ import { api } from '../api/client';
 import { isPlatformAdminRole } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { PagedTable, PageHeader, Surface } from '../ui';
+import { canonicalExactDecimal, groupExactDecimal, padExactDecimal } from '../utils/exactDecimal';
 
 export function parseCNYPerMillionPrice(value: unknown) {
-  const raw = String(value ?? '').trim();
-  if (!/^\d{1,13}(?:\.\d{1,5})?$/.test(raw)) {
-    throw new Error('invalid CNY-per-million price');
-  }
-  const price = Number(raw);
-  if (!Number.isFinite(price) || price >= 1e13) {
-    throw new Error('invalid CNY-per-million price');
-  }
-  return price;
+	return canonicalExactDecimal(value, {
+		decimalPlaces: 5,
+		maxWholeDigits: 13,
+		maxScaled: 922337203685477580n,
+		errorMessage: 'invalid CNY-per-million price',
+	});
+}
+
+export function parseCachePriceRatio(value: unknown) {
+	return canonicalExactDecimal(value, {
+		decimalPlaces: 6,
+		maxWholeDigits: 3,
+		maxScaled: 100000000n,
+		errorMessage: 'invalid cache price ratio',
+	});
 }
 
 function formatCNYPerMillionPrice(value: unknown) {
-  const price = Number(value);
-  if (!Number.isFinite(price)) return '-';
-  return `¥${price.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 5 })}`;
+	try {
+		return `¥${groupExactDecimal(parseCNYPerMillionPrice(value))}`;
+	} catch {
+		return '-';
+	}
+}
+
+function formatCachePriceRatio(value: unknown) {
+	try {
+		return `${padExactDecimal(parseCachePriceRatio(value ?? '1'), 3)}×`;
+	} catch {
+		return '-';
+	}
+}
+
+function mutationError(prefix: string, error: unknown) {
+	return error instanceof Error && error.message ? `${prefix}：${error.message}` : prefix;
 }
 
 export default function ModelPricesPage() {
@@ -54,13 +75,13 @@ export default function ModelPricesPage() {
         model_name: String(v.model_name || '').trim(),
         input_price_cny_per_million_tokens: parseCNYPerMillionPrice(v.input_price),
         output_price_cny_per_million_tokens: parseCNYPerMillionPrice(v.output_price),
-        cache_read_ratio: Number(v.cache_read_ratio ?? 1),
-        cache_creation_ratio: Number(v.cache_creation_ratio ?? 1),
+		cache_read_ratio: parseCachePriceRatio(v.cache_read_ratio ?? '1'),
+		cache_creation_ratio: parseCachePriceRatio(v.cache_creation_ratio ?? '1'),
       });
       Toast.success('价格创建成功');
       closeDrawer();
       load(1);
-    } catch { Toast.error('创建失败'); }
+    } catch (error) { Toast.error(mutationError('创建失败', error)); }
   };
 
   const handleUpdate = async (v: any) => {
@@ -70,13 +91,13 @@ export default function ModelPricesPage() {
         model_name: String(v.model_name || '').trim(),
         input_price_cny_per_million_tokens: parseCNYPerMillionPrice(v.input_price),
         output_price_cny_per_million_tokens: parseCNYPerMillionPrice(v.output_price),
-        cache_read_ratio: Number(v.cache_read_ratio ?? 1),
-        cache_creation_ratio: Number(v.cache_creation_ratio ?? 1),
+		cache_read_ratio: parseCachePriceRatio(v.cache_read_ratio ?? '1'),
+		cache_creation_ratio: parseCachePriceRatio(v.cache_creation_ratio ?? '1'),
       });
       Toast.success('更新成功');
       closeDrawer();
       load();
-    } catch { Toast.error('更新失败'); }
+    } catch (error) { Toast.error(mutationError('更新失败', error)); }
   };
 
   const handleDelete = (id: number) => {
@@ -107,8 +128,8 @@ export default function ModelPricesPage() {
         model_name: r.model_name,
         input_price: String(r.input_price_cny_per_million_tokens),
         output_price: String(r.output_price_cny_per_million_tokens),
-        cache_read_ratio: Number(r.cache_read_ratio ?? 1),
-        cache_creation_ratio: Number(r.cache_creation_ratio ?? 1),
+		cache_read_ratio: String(r.cache_read_ratio ?? '1'),
+		cache_creation_ratio: String(r.cache_creation_ratio ?? '1'),
       });
     }, 100);
   };
@@ -118,8 +139,8 @@ export default function ModelPricesPage() {
     { title: '模型名称', dataIndex: 'model_name' },
     { title: '输入价格（CNY/百万 tokens）', dataIndex: 'input_price_cny_per_million_tokens', render: formatCNYPerMillionPrice },
     { title: '输出价格（CNY/百万 tokens）', dataIndex: 'output_price_cny_per_million_tokens', render: formatCNYPerMillionPrice },
-    { title: '缓存读取倍率', dataIndex: 'cache_read_ratio', width: 120, render: (v: number) => `${Number(v ?? 1).toFixed(3)}×` },
-    { title: '缓存写入倍率', dataIndex: 'cache_creation_ratio', width: 120, render: (v: number) => `${Number(v ?? 1).toFixed(3)}×` },
+	{ title: '缓存读取倍率', dataIndex: 'cache_read_ratio', width: 120, render: formatCachePriceRatio },
+	{ title: '缓存写入倍率', dataIndex: 'cache_creation_ratio', width: 120, render: formatCachePriceRatio },
     { title: '更新时间', dataIndex: 'updated_at', render: (v: string) => v || '-' },
   ];
   if (canMutate) columns.push({
@@ -167,8 +188,8 @@ export default function ModelPricesPage() {
           <Form.Input field="model_name" label="模型名称" rules={[{ required: true, message: '请输入模型名称' }]} placeholder="例如 gpt-4o" />
           <Form.Input field="input_price" label="输入价格（CNY/百万 tokens）" rules={[{ required: true, message: '必填' }]} placeholder="例如 18.00000" />
           <Form.Input field="output_price" label="输出价格（CNY/百万 tokens）" rules={[{ required: true, message: '必填' }]} placeholder="例如 72.00000" />
-          <Form.InputNumber field="cache_read_ratio" label="缓存读取倍率" initValue={1} min={0} max={100} precision={6} rules={[{ required: true, message: '必填' }]} placeholder="0.1" style={{ width: '100%' }} />
-          <Form.InputNumber field="cache_creation_ratio" label="缓存写入倍率" initValue={1} min={0} max={100} precision={6} rules={[{ required: true, message: '必填' }]} placeholder="1.25" style={{ width: '100%' }} />
+		  <Form.Input field="cache_read_ratio" label="缓存读取倍率" initValue="1" rules={[{ required: true, message: '必填' }]} placeholder="0.1" />
+		  <Form.Input field="cache_creation_ratio" label="缓存写入倍率" initValue="1" rules={[{ required: true, message: '必填' }]} placeholder="1.25" />
           <div style={{ marginTop: 8, color: 'var(--semi-color-text-2)', fontSize: 12, lineHeight: 1.7 }}>
             价格统一使用人民币/百万 tokens，最多 5 位小数，不接受单位缩写、尾随字符或科学计数法。倍率以普通输入价格为基准：0.1 表示按 10% 计费，1.25 表示按 125% 计费；仅供应商明确回传的 Prompt Cache Token 使用倍率，不是响应缓存。
           </div>

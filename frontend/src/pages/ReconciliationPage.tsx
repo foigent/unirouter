@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Button, Table, Select, Toast, Tag } from '@douyinfe/semi-ui';
 import { IconAlertTriangle, IconCoinMoney, IconRefresh, IconServer } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-import { MetricTile, PageHeader, StatusTag, Surface } from '../ui';
+import { formatMoney, MetricTile, PageHeader, StatusTag, Surface } from '../ui';
 import { usageSourceLabel, usageSourceOptions } from '../utils/displayLabels';
 import { formatInteger, formatPercent, formatSignedInteger } from '../utils/formatNumber';
 
@@ -23,8 +23,8 @@ interface ReconRecord {
   cache_usage_schema?: string;
   cache_usage_status?: string;
   pricing_version?: string;
-  cache_read_cost_cents?: number;
-  cache_creation_cost_cents?: number;
+  cache_read_cost_micros?: string;
+  cache_creation_cost_micros?: string;
   status: string;
   created_at: string;
 }
@@ -43,8 +43,8 @@ interface ReconSummary {
   estimated_ratio_scope: string;
   cache_read_tokens: number;
   cache_creation_tokens: number;
-  cache_read_cost_cents: number;
-  cache_creation_cost_cents: number;
+  cache_read_cost_micros: string;
+  cache_creation_cost_micros: string;
   authoritative_cache_records: number;
   unreported_cache_records: number;
 }
@@ -223,14 +223,14 @@ export default function ReconciliationPage() {
           value={formatInteger(summary?.cache_read_tokens)}
           icon={<IconCoinMoney />}
           tone="green"
-          meta={`读取费用 ${(summary?.cache_read_cost_cents || 0).toFixed(6)} 分；权威回传 ${formatInteger(summary?.authoritative_cache_records)} 条`}
+          meta={`读取费用 ${formatMoney(summary?.cache_read_cost_micros || '0', 6)}；权威回传 ${formatInteger(summary?.authoritative_cache_records)} 条`}
         />
         <MetricTile
           label="缓存写入 Token"
           value={formatInteger(summary?.cache_creation_tokens)}
           icon={<IconServer />}
           tone="violet"
-          meta={`写入费用 ${(summary?.cache_creation_cost_cents || 0).toFixed(6)} 分；未回传 ${formatInteger(summary?.unreported_cache_records)} 条`}
+          meta={`写入费用 ${formatMoney(summary?.cache_creation_cost_micros || '0', 6)}；未回传 ${formatInteger(summary?.unreported_cache_records)} 条`}
         />
       </div>
       <Surface>

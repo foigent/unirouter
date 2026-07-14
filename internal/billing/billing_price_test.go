@@ -17,25 +17,25 @@ func newCanceledQueryPool(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
-// --- QueryModelPrice unit tests ---
+// --- QueryModelPriceMicrosForOrg unit tests ---
 
 func TestQueryModelPrice_Success(t *testing.T) {
 	b := newTestBilling(mockPrice(5, 15))
-	input, output, err := b.QueryModelPrice(context.Background(), "gpt-4o")
+	input, output, err := b.QueryModelPriceMicrosForOrg(context.Background(), 1, "gpt-4o")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if input != 5 {
-		t.Errorf("expected input 5, got %v", input)
+	if input != 50_000_000 {
+		t.Errorf("expected input 50000000 micro-CNY/million, got %v", input)
 	}
-	if output != 15 {
-		t.Errorf("expected output 15, got %v", output)
+	if output != 150_000_000 {
+		t.Errorf("expected output 150000000 micro-CNY/million, got %v", output)
 	}
 }
 
 func TestQueryModelPrice_Error(t *testing.T) {
 	b := newTestBilling(errPrice(errors.New("db timeout")))
-	_, _, err := b.QueryModelPrice(context.Background(), "model")
+	_, _, err := b.QueryModelPriceMicrosForOrg(context.Background(), 1, "model")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -61,7 +61,7 @@ func TestQueryModelPriceForOrg_QueryErrorDoesNotFallback(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	input, output, err := b.QueryModelPriceForOrg(ctx, 1, "gpt-4o")
+	input, output, err := b.QueryModelPriceMicrosForOrg(ctx, 1, "gpt-4o")
 	require.Error(t, err)
 	require.True(t, errors.Is(err, context.Canceled), "expected wrapped context cancellation, got %v", err)
 	require.Zero(t, input)
@@ -70,7 +70,7 @@ func TestQueryModelPriceForOrg_QueryErrorDoesNotFallback(t *testing.T) {
 
 func TestQueryModelPrice_ZeroPrices(t *testing.T) {
 	b := newTestBilling(mockPrice(0, 0))
-	input, output, err := b.QueryModelPrice(context.Background(), "free-model")
+	input, output, err := b.QueryModelPriceMicrosForOrg(context.Background(), 1, "free-model")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -83,25 +83,23 @@ func TestQueryModelPrice_ZeroPrices(t *testing.T) {
 
 func TestCalculateCost_SingleToken(t *testing.T) {
 	b := newTestBilling(mockPrice(1000, 1000))
-	cost, err := b.CalculateCost(context.Background(), "model", 1, 1)
+	cost, err := b.CalculateCostMicros(context.Background(), "model", 1, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// (1*1000 + 1*1000) / 1000 = 2
-	if cost != 2 {
-		t.Errorf("expected 2, got %d", cost)
+	if cost != 20_000 {
+		t.Errorf("expected 20000 micros, got %d", cost)
 	}
 }
 
 func TestCalculateCost_HighPriceModel(t *testing.T) {
 	b := newTestBilling(mockPrice(100, 200))
-	cost, err := b.CalculateCost(context.Background(), "expensive", 500, 500)
+	cost, err := b.CalculateCostMicros(context.Background(), "expensive", 500, 500)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// (500*100 + 500*200) / 1000 = 150000 / 1000 = 150
-	if cost != 150 {
-		t.Errorf("expected 150, got %d", cost)
+	if cost != 1_500_000 {
+		t.Errorf("expected 1500000 micros, got %d", cost)
 	}
 }
 
@@ -109,25 +107,23 @@ func TestCalculateCost_HighPriceModel(t *testing.T) {
 
 func TestEstimateFreezeAmount_LargeSafetyFactor(t *testing.T) {
 	b := newTestBilling(mockPrice(2, 10))
-	amount, err := b.EstimateFreezeAmount(context.Background(), "model", 1000, 10.0, 1)
+	amount, err := b.EstimateFreezeMicros(context.Background(), "model", 1000, "10", 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// math.Round(1000 * 10 / 1000 * 10.0) = math.Round(100.0) = 100
-	if amount != 100 {
-		t.Errorf("expected 100, got %d", amount)
+	if amount != 1_000_000 {
+		t.Errorf("expected 1000000 micros, got %d", amount)
 	}
 }
 
 func TestEstimateFreezeAmount_ExactMinFreeze(t *testing.T) {
 	b := newTestBilling(mockPrice(0, 1))
-	amount, err := b.EstimateFreezeAmount(context.Background(), "model", 100, 1.0, 1)
+	amount, err := b.EstimateFreezeMicros(context.Background(), "model", 100, "1", 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// math.Round(100 * 1 / 1000 * 1.0) = math.Round(0.1) = 0 → clamped to 1
-	if amount != 1 {
-		t.Errorf("expected 1 (min freeze), got %d", amount)
+	if amount != 10_000 {
+		t.Errorf("expected 10000 micros (min freeze), got %d", amount)
 	}
 }
 
@@ -144,11 +140,11 @@ func TestWithPriceProvider_ReturnsSelf(t *testing.T) {
 func TestWithPriceProvider_NilPriceProvider(t *testing.T) {
 	b := &Billing{}
 	b.WithPriceProvider(nil)
-	// QueryModelPrice should panic with nil prices
+	// QueryModelPriceMicrosForOrg should panic with nil prices
 	defer func() {
 		if r := recover(); r == nil {
 			t.Error("expected panic with nil PriceProvider")
 		}
 	}()
-	b.QueryModelPrice(context.Background(), "model")
+	b.QueryModelPriceMicrosForOrg(context.Background(), 1, "model")
 }

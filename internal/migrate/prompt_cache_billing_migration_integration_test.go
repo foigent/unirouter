@@ -11,15 +11,13 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/migrate"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
 func TestP6F09PromptCacheBillingMigrationUpDownGuardAndRollForward(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool, migrationsDir := setupMigratedThrough(t, "000026_prd6_prompt_cache_billing.up.sql")
 	ctx := context.Background()
-	migrationsDir := testutil.MigrationsDir(t)
 
 	assertUp := func() {
 		t.Helper()
@@ -105,24 +103,13 @@ SELECT COUNT(*) FROM information_schema.columns
 		return updateErr
 	}())
 
-	require.NoError(t, func() error {
-		_, insertErr := pool.Exec(ctx,
-			`INSERT INTO wallets (org_id,balance,granted_balance,frozen,total_spent)
-			 VALUES ($1,1000,0,0,0)`, orgID)
-		return insertErr
-	}())
 	requestID := "op_p6f09_migration_pv2_guard"
-	freeze, err := billing.NewBilling(pool, nil).Freeze(ctx, billing.FreezeRequest{
-		RequestID:       requestID,
-		OrgID:           orgID,
-		Model:           model,
-		EstimatedTokens: 1000,
-		SafetyFactor:    1,
-		MinFreezeAmount: 1,
-	})
+	const pricingVersion = "pv2_migration_guard"
+	_, err = pool.Exec(ctx,
+		`INSERT INTO freeze_idempotency (
+			request_id, org_id, frozen_amount, status, pricing_version
+		 ) VALUES ($1, $2, 0, 'settled', $3)`, requestID, orgID, pricingVersion)
 	require.NoError(t, err)
-	require.True(t, freeze.Success)
-	require.Contains(t, freeze.PricingVersion, "pv2_")
 
 	_, err = pool.Exec(ctx, string(downSQL))
 	require.ErrorContains(t, err, "P6-F09 down refused")
@@ -132,5 +119,5 @@ SELECT COUNT(*) FROM information_schema.columns
 	require.NoError(t, pool.QueryRow(ctx,
 		`SELECT pricing_version FROM freeze_idempotency WHERE org_id=$1 AND request_id=$2`, orgID, requestID,
 	).Scan(&storedVersion))
-	require.Equal(t, freeze.PricingVersion, storedVersion, "refused rollback must preserve the financial receipt")
+	require.Equal(t, pricingVersion, storedVersion, "refused rollback must preserve the financial receipt")
 }

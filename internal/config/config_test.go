@@ -46,9 +46,10 @@ func TestValidate_MissingAPIKeyHashSecret(t *testing.T) {
 
 func TestValidate_Exact32ByteKey(t *testing.T) {
 	cfg := &Config{
-		JWTSecret:        "secret",
-		APIKeyHashSecret: "api-key-secret",
-		EncryptionKey:    "0123456789abcdef0123456789abcdef", // 32 bytes
+		JWTSecret:          "secret",
+		APIKeyHashSecret:   "api-key-secret",
+		EncryptionKey:      "0123456789abcdef0123456789abcdef", // 32 bytes
+		FreezeSafetyFactor: "1",
 	}
 	err := cfg.Validate()
 	if err != nil {
@@ -130,6 +131,7 @@ func TestValidate_RuntimeExposureConfig(t *testing.T) {
 		LoginRateLimitUser:       10,
 		PrometheusURL:            "http://prometheus:9090",
 		GrafanaURL:               "https://grafana.example.com",
+		FreezeSafetyFactor:       "1",
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -531,8 +533,8 @@ func TestLoad_Defaults(t *testing.T) {
 		RuntimeEnvironment:           getEnvStr("RUNTIME_ENVIRONMENT", "unspecified"),
 		RuntimeDeploymentMode:        getEnvStr("RUNTIME_DEPLOYMENT_MODE", "single-node"),
 		RuntimeDeploymentRole:        getEnvStr("RUNTIME_DEPLOYMENT_ROLE", "stable"),
-		MinFreezeAmount:              getEnvInt("MIN_FREEZE_AMOUNT", 10),
-		FreezeSafetyFactor:           getEnvFloat("FREEZE_SAFETY_FACTOR", 1.5),
+		MinFreezeCents:               int64(getEnvInt("MIN_FREEZE_AMOUNT", 10)),
+		FreezeSafetyFactor:           getEnvStr("FREEZE_SAFETY_FACTOR", "1.5"),
 		DefaultKeyRPM:                getEnvInt("DEFAULT_KEY_RPM", 60),
 		DefaultKeyQPS:                getEnvInt("DEFAULT_KEY_QPS", 10),
 		StreamMaxSSELineBytes:        getEnvInt("STREAM_MAX_SSE_LINE_BYTES", 2*1024*1024),
@@ -566,11 +568,11 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.DBMaxConnections != 25 {
 		t.Fatalf("expected 25 max conns, got %d", cfg.DBMaxConnections)
 	}
-	if cfg.MinFreezeAmount != 10 {
-		t.Fatalf("expected 10 min freeze, got %d", cfg.MinFreezeAmount)
+	if cfg.MinFreezeCents != 10 {
+		t.Fatalf("expected 10 cent min freeze, got %d", cfg.MinFreezeCents)
 	}
-	if cfg.FreezeSafetyFactor != 1.5 {
-		t.Fatalf("expected 1.5 safety factor, got %f", cfg.FreezeSafetyFactor)
+	if cfg.FreezeSafetyFactor != "1.5" {
+		t.Fatalf("expected exact 1.5 safety factor, got %q", cfg.FreezeSafetyFactor)
 	}
 	if cfg.DefaultKeyRPM != 60 {
 		t.Fatalf("expected 60 RPM, got %d", cfg.DefaultKeyRPM)

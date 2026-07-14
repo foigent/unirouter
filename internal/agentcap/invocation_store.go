@@ -43,7 +43,7 @@ if redis.call("EXISTS", operation) == 1 then
        redis.call("HGET", operation, "agent_id") == agent_id and
        redis.call("HGET", operation, "lineage_digest") == lineage_digest and
        tonumber(redis.call("HGET", operation, "token_reserved") or "-1") == requested_tokens and
-       tonumber(redis.call("HGET", operation, "cost_reserved_cents") or "-1") == requested_cost then
+       tonumber(redis.call("HGET", operation, "cost_reserved_micros") or "-1") == requested_cost then
         return 8
     end
     return 9
@@ -62,9 +62,9 @@ for index = 0, lineage_count - 1 do
         return 2
     end
 
-    local cost_limit = tonumber(redis.call("HGET", agent, "cost_limit_cents") or "-1")
-    local cost_reserved = tonumber(redis.call("HGET", agent, "cost_reserved_cents") or "-1")
-    local cost_used = tonumber(redis.call("HGET", agent, "cost_used_cents") or "-1")
+    local cost_limit = tonumber(redis.call("HGET", agent, "cost_limit_micros") or "-1")
+    local cost_reserved = tonumber(redis.call("HGET", agent, "cost_reserved_micros") or "-1")
+    local cost_used = tonumber(redis.call("HGET", agent, "cost_used_micros") or "-1")
     local token_limit = tonumber(redis.call("HGET", agent, "token_limit") or "-1")
     local token_reserved = tonumber(redis.call("HGET", agent, "token_reserved") or "-1")
     local token_used = tonumber(redis.call("HGET", agent, "token_used") or "-1")
@@ -110,7 +110,7 @@ for index = 0, lineage_count - 1 do
     local rps = KEYS[base + 1]
     local rpm = KEYS[base + 2]
     local concurrency = KEYS[base + 3]
-    redis.call("HINCRBY", agent, "cost_reserved_cents", requested_cost)
+    redis.call("HINCRBY", agent, "cost_reserved_micros", requested_cost)
     redis.call("HINCRBY", agent, "token_reserved", requested_tokens)
     redis.call("ZADD", rps, now_ms, member)
     redis.call("EXPIRE", rps, 2)
@@ -126,7 +126,7 @@ redis.call("HSET", operation,
     "agent_id", agent_id,
     "lineage_digest", lineage_digest,
     "token_reserved", requested_tokens,
-    "cost_reserved_cents", requested_cost,
+	"cost_reserved_micros", requested_cost,
 	"extension_sequence", 0,
     "lease_expires_at_ms", lease_expires_ms)
 redis.call("EXPIRE", operation, state_ttl)
@@ -153,7 +153,7 @@ if redis.call("HGET", operation, "status") ~= "reserved" then return 9 end
 local current_sequence = tonumber(redis.call("HGET", operation, "extension_sequence") or "0")
 if sequence == current_sequence then
     if tonumber(redis.call("HGET", operation, "last_extension_tokens") or "-1") == additional_tokens and
-       tonumber(redis.call("HGET", operation, "last_extension_cost_cents") or "-1") == additional_cost then
+       tonumber(redis.call("HGET", operation, "last_extension_cost_micros") or "-1") == additional_cost then
         return 8
     end
     return 9
@@ -163,9 +163,9 @@ if sequence ~= current_sequence + 1 then return 9 end
 for index = 0, lineage_count - 1 do
     local agent = KEYS[2 + index]
     if redis.call("EXISTS", agent) == 0 then return 2 end
-    local cost_limit = tonumber(redis.call("HGET", agent, "cost_limit_cents") or "-1")
-    local cost_reserved = tonumber(redis.call("HGET", agent, "cost_reserved_cents") or "-1")
-    local cost_used = tonumber(redis.call("HGET", agent, "cost_used_cents") or "-1")
+    local cost_limit = tonumber(redis.call("HGET", agent, "cost_limit_micros") or "-1")
+    local cost_reserved = tonumber(redis.call("HGET", agent, "cost_reserved_micros") or "-1")
+    local cost_used = tonumber(redis.call("HGET", agent, "cost_used_micros") or "-1")
     local token_limit = tonumber(redis.call("HGET", agent, "token_limit") or "-1")
     local token_reserved = tonumber(redis.call("HGET", agent, "token_reserved") or "-1")
     local token_used = tonumber(redis.call("HGET", agent, "token_used") or "-1")
@@ -182,15 +182,15 @@ end
 
 for index = 0, lineage_count - 1 do
     local agent = KEYS[2 + index]
-    redis.call("HINCRBY", agent, "cost_reserved_cents", additional_cost)
+    redis.call("HINCRBY", agent, "cost_reserved_micros", additional_cost)
     redis.call("HINCRBY", agent, "token_reserved", additional_tokens)
 end
 redis.call("HINCRBY", operation, "token_reserved", additional_tokens)
-redis.call("HINCRBY", operation, "cost_reserved_cents", additional_cost)
+redis.call("HINCRBY", operation, "cost_reserved_micros", additional_cost)
 redis.call("HSET", operation,
     "extension_sequence", sequence,
     "last_extension_tokens", additional_tokens,
-    "last_extension_cost_cents", additional_cost)
+	"last_extension_cost_micros", additional_cost)
 return 0
 `)
 
@@ -221,7 +221,7 @@ if status ~= "reserved" then
 end
 
 local reserved_tokens = tonumber(redis.call("HGET", operation, "token_reserved") or "-1")
-local reserved_cost = tonumber(redis.call("HGET", operation, "cost_reserved_cents") or "-1")
+local reserved_cost = tonumber(redis.call("HGET", operation, "cost_reserved_micros") or "-1")
 if reserved_tokens < 0 or reserved_cost < 0 then
     return 2
 end
@@ -230,7 +230,7 @@ for index = 0, lineage_count - 1 do
     local agent = KEYS[base]
     if redis.call("EXISTS", agent) == 0 or
        tonumber(redis.call("HGET", agent, "token_reserved") or "-1") < reserved_tokens or
-       tonumber(redis.call("HGET", agent, "cost_reserved_cents") or "-1") < reserved_cost then
+       tonumber(redis.call("HGET", agent, "cost_reserved_micros") or "-1") < reserved_cost then
         return 2
     end
 end
@@ -239,9 +239,9 @@ for index = 0, lineage_count - 1 do
     local base = 2 + (index * 2)
     local agent = KEYS[base]
     local concurrency = KEYS[base + 1]
-    local other_cost_reserved = tonumber(redis.call("HGET", agent, "cost_reserved_cents")) - reserved_cost
-    local cost_used = tonumber(redis.call("HGET", agent, "cost_used_cents"))
-    local cost_limit = tonumber(redis.call("HGET", agent, "cost_limit_cents"))
+    local other_cost_reserved = tonumber(redis.call("HGET", agent, "cost_reserved_micros")) - reserved_cost
+    local cost_used = tonumber(redis.call("HGET", agent, "cost_used_micros"))
+    local cost_limit = tonumber(redis.call("HGET", agent, "cost_limit_micros"))
     local other_token_reserved = tonumber(redis.call("HGET", agent, "token_reserved")) - reserved_tokens
     local token_used = tonumber(redis.call("HGET", agent, "token_used"))
     local token_limit = tonumber(redis.call("HGET", agent, "token_limit"))
@@ -251,16 +251,16 @@ for index = 0, lineage_count - 1 do
     if actual_tokens > (token_limit - token_used - other_token_reserved) then
         redis.call("HSET", agent, "token_exhausted", 1)
     end
-    redis.call("HINCRBY", agent, "cost_reserved_cents", -reserved_cost)
+    redis.call("HINCRBY", agent, "cost_reserved_micros", -reserved_cost)
     redis.call("HINCRBY", agent, "token_reserved", -reserved_tokens)
-    redis.call("HINCRBY", agent, "cost_used_cents", actual_cost)
+    redis.call("HINCRBY", agent, "cost_used_micros", actual_cost)
     redis.call("HINCRBY", agent, "token_used", actual_tokens)
     redis.call("ZREM", concurrency, member)
 end
 redis.call("HSET", operation,
     "status", "settled",
     "actual_tokens", actual_tokens,
-    "actual_cost_cents", actual_cost)
+	"actual_cost_micros", actual_cost)
 return 0
 `)
 
@@ -289,7 +289,7 @@ if status ~= "reserved" then
 end
 
 local reserved_tokens = tonumber(redis.call("HGET", operation, "token_reserved") or "-1")
-local reserved_cost = tonumber(redis.call("HGET", operation, "cost_reserved_cents") or "-1")
+local reserved_cost = tonumber(redis.call("HGET", operation, "cost_reserved_micros") or "-1")
 if reserved_tokens < 0 or reserved_cost < 0 then
     return 2
 end
@@ -298,7 +298,7 @@ for index = 0, lineage_count - 1 do
     local agent = KEYS[base]
     if redis.call("EXISTS", agent) == 0 or
        tonumber(redis.call("HGET", agent, "token_reserved") or "-1") < reserved_tokens or
-       tonumber(redis.call("HGET", agent, "cost_reserved_cents") or "-1") < reserved_cost then
+       tonumber(redis.call("HGET", agent, "cost_reserved_micros") or "-1") < reserved_cost then
         return 2
     end
 end
@@ -307,7 +307,7 @@ for index = 0, lineage_count - 1 do
     local base = 2 + (index * 2)
     local agent = KEYS[base]
     local concurrency = KEYS[base + 1]
-    redis.call("HINCRBY", agent, "cost_reserved_cents", -reserved_cost)
+    redis.call("HINCRBY", agent, "cost_reserved_micros", -reserved_cost)
     redis.call("HINCRBY", agent, "token_reserved", -reserved_tokens)
     redis.call("ZREM", concurrency, member)
 end
@@ -332,7 +332,7 @@ func (s *Service) reserveInvocation(ctx context.Context, claims *Claims, reserva
 		claims.AgentID,
 		invocationOperationDigest(reservation.OperationID),
 		reservation.ReservedTokens,
-		reservation.ReservedCostCents,
+		reservation.ReservedCostMicros,
 		ceilMilliseconds(leaseTTL),
 		ceilSeconds(stateTTL),
 		len(claims.Lineage),
@@ -365,14 +365,14 @@ func (s *Service) reserveInvocation(ctx context.Context, claims *Claims, reserva
 	}
 }
 
-func (s *Service) finalizeInvocation(ctx context.Context, reservation *InvocationReservation, actualTokens, actualCostCents int64) error {
+func (s *Service) finalizeInvocation(ctx context.Context, reservation *InvocationReservation, actualTokens, actualCostMicros int64) error {
 	keys := invocationTerminalKeys(reservation)
 	result, err := finalizeInvocationScript.Run(ctx, s.rdb, keys,
 		reservation.WorkflowGeneration,
 		reservation.AgentID,
 		invocationOperationDigest(reservation.OperationID),
 		actualTokens,
-		actualCostCents,
+		actualCostMicros,
 		len(reservation.Lineage),
 		invocationLineageDigest(reservation.Lineage),
 	).Int64()
@@ -391,7 +391,7 @@ func (s *Service) finalizeInvocation(ctx context.Context, reservation *Invocatio
 	}
 }
 
-func (s *Service) extendInvocation(ctx context.Context, reservation *InvocationReservation, sequence int, additionalTokens, additionalCostCents int64) error {
+func (s *Service) extendInvocation(ctx context.Context, reservation *InvocationReservation, sequence int, additionalTokens, additionalCostMicros int64) error {
 	keys := []string{invocationOperationKey(reservation.WorkflowID, reservation.OperationID)}
 	for _, agentID := range reservation.Lineage {
 		keys = append(keys, agentKey(reservation.WorkflowID, agentID))
@@ -401,7 +401,7 @@ func (s *Service) extendInvocation(ctx context.Context, reservation *InvocationR
 		reservation.AgentID,
 		sequence,
 		additionalTokens,
-		additionalCostCents,
+		additionalCostMicros,
 		len(reservation.Lineage),
 		invocationLineageDigest(reservation.Lineage),
 	).Int64()
@@ -476,13 +476,13 @@ func invocationOperationKey(workflowID, operationID string) string {
 }
 
 func invocationOperationDigest(operationID string) string {
-	digest := sha256.Sum256([]byte("unirouter.agent-capability.invocation.v1\x00" + operationID))
+	digest := sha256.Sum256([]byte("unirouter.agent-capability.invocation.v2\x00" + operationID))
 	return hex.EncodeToString(digest[:])
 }
 
 func invocationLineageDigest(lineage []string) string {
 	hasher := sha256.New()
-	_, _ = hasher.Write([]byte("unirouter.agent-capability.lineage.v1\x00"))
+	_, _ = hasher.Write([]byte("unirouter.agent-capability.lineage.v2\x00"))
 	for _, agentID := range lineage {
 		_, _ = hasher.Write([]byte(agentID))
 		_, _ = hasher.Write([]byte{0})

@@ -69,9 +69,9 @@ func (b *Billing) HoldNonStreamOutput(ctx context.Context, request SettleRequest
 		    usage_authority=$10, usage_purpose=$11, usage_finality=$12,
 		    usage_contract_version=$13, usage_estimate_version=$14,
 		    cache_usage_schema=$15, cache_usage_status=$16,
-		    calculated_cost=$17, uncached_input_cost_cents=$18,
-		    cache_read_cost_cents=$19, cache_creation_cost_cents=$20,
-		    output_cost_cents=$21, settlement_payload_ready_at=NOW(),
+		    calculated_cost_micros=$17, uncached_input_cost_micros=$18,
+		    cache_read_cost_micros=$19, cache_creation_cost_micros=$20,
+		    output_cost_micros=$21, settlement_payload_ready_at=NOW(),
 		    settlement_claimed_until=NULL, settlement_next_attempt_at=NULL,
 		    settlement_last_error='', updated_at=NOW()
 		WHERE request_id=$1 AND org_id=$2 AND status='frozen'`,
@@ -79,15 +79,15 @@ func (b *Billing) HoldNonStreamOutput(ctx context.Context, request SettleRequest
 		req.CacheReadTokens, req.CacheCreationTokens, req.CompletionTokens, req.UsageSource,
 		req.UsageAuthority, req.UsagePurpose, req.UsageFinality, req.UsageContractVersion,
 		req.UsageEstimateVersion, req.CacheUsageSchema, req.CacheUsageStatus, calculatedCost,
-		breakdown.UncachedInputCostCents, breakdown.CacheReadCostCents,
-		breakdown.CacheCreationCostCents, breakdown.OutputCostCents,
+		breakdown.UncachedInputCostMicros, breakdown.CacheReadCostMicros,
+		breakdown.CacheCreationCostMicros, breakdown.OutputCostMicros,
 	); err != nil {
 		return fmt.Errorf("persist output hold: %w", err)
 	}
 	result, err := tx.Exec(ctx, `
 		UPDATE billing_provider_attempts
 		SET state='output_withheld', outcome_certainty='known_usage',
-		    retry_authorized=FALSE, calculated_cost=$4, updated_at=NOW()
+		    retry_authorized=FALSE, calculated_cost_micros=$4, updated_at=NOW()
 		WHERE org_id=$1 AND request_id=$2 AND attempt_id=$3
 		  AND state='response_accepted'`,
 		req.OrgID, req.RequestID, req.AttemptID, calculatedCost)

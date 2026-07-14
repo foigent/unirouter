@@ -14,6 +14,7 @@ import (
 
 	"github.com/uniroute/unirouter/internal/logger"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/outbox"
 	"github.com/uniroute/unirouter/internal/traceutil"
 )
 
@@ -526,7 +527,7 @@ func hashTraceEvent(requestID, clientRequestID, idempotencyKeyHash, traceID, par
 	return hex.EncodeToString(sum[:])
 }
 
-func hashCallLogEvidence(requestID, clientRequestID, idempotencyKeyHash string, orgID int64, projectID interface{}, keyID int64, ownerUserID interface{}, keyType, model, requestedModel, provider, channel string, promptTokens, uncachedPromptTokens, cacheReadTokens, cacheCreationTokens, completionTokens, costCents, statusCode, latencyMs, ttftMs int, usageSource, usageAuthority, usagePurpose, usageFinality, usageContractVersion, usageEstimateVersion, cacheUsageSchema, cacheUsageStatus, pricingVersion string, isStream bool, estimatedTokens int, usageConfidence float64, upstreamRequestID, traceID, sessionID, workflowID, agentID, attemptID, actorType, actorRef, onBehalfOf, payloadCaptureMode string) string {
+func hashCallLogEvidence(requestID, clientRequestID, idempotencyKeyHash string, orgID int64, projectID interface{}, keyID int64, ownerUserID interface{}, keyType, model, requestedModel, provider, channel string, promptTokens, uncachedPromptTokens, cacheReadTokens, cacheCreationTokens, completionTokens int, costMicros int64, statusCode, latencyMs, ttftMs int, usageSource, usageAuthority, usagePurpose, usageFinality, usageContractVersion, usageEstimateVersion, cacheUsageSchema, cacheUsageStatus, pricingVersion string, isStream bool, estimatedTokens int, usageConfidence float64, upstreamRequestID, traceID, sessionID, workflowID, agentID, attemptID, actorType, actorRef, onBehalfOf, payloadCaptureMode string) string {
 	payload := struct {
 		RequestID            string      `json:"request_id"`
 		ClientRequestID      string      `json:"client_request_id"`
@@ -550,7 +551,8 @@ func hashCallLogEvidence(requestID, clientRequestID, idempotencyKeyHash string, 
 		CacheReadTokens      int         `json:"cache_read_tokens"`
 		CacheCreationTokens  int         `json:"cache_creation_tokens"`
 		CompletionTokens     int         `json:"completion_tokens"`
-		CostCents            int         `json:"cost_cents"`
+		CostMicros           string      `json:"cost_micros"`
+		MoneySchema          string      `json:"money_schema"`
 		StatusCode           int         `json:"status_code"`
 		LatencyMS            int         `json:"latency_ms"`
 		TTFTMS               int         `json:"ttft_ms"`
@@ -579,7 +581,8 @@ func hashCallLogEvidence(requestID, clientRequestID, idempotencyKeyHash string, 
 		Provider: provider, Channel: channel, PromptTokens: promptTokens,
 		UncachedPromptTokens: uncachedPromptTokens, CacheReadTokens: cacheReadTokens,
 		CacheCreationTokens: cacheCreationTokens, CompletionTokens: completionTokens,
-		CostCents: costCents, StatusCode: statusCode, LatencyMS: latencyMs, TTFTMS: ttftMs,
+		CostMicros: microsText(costMicros), MoneySchema: outbox.MoneyVersion,
+		StatusCode: statusCode, LatencyMS: latencyMs, TTFTMS: ttftMs,
 		UsageSource: usageSource, UsageAuthority: usageAuthority, UsagePurpose: usagePurpose,
 		UsageFinality: usageFinality, UsageContractVersion: usageContractVersion,
 		UsageEstimateVersion: usageEstimateVersion, CacheUsageSchema: cacheUsageSchema, CacheUsageStatus: cacheUsageStatus,

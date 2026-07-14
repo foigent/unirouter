@@ -113,6 +113,25 @@ func TestCreateModelPriceRejectsUnrepresentablePublicPrecision(t *testing.T) {
 	require.Zero(t, beginCalls)
 }
 
+func TestCreateModelPriceRejectsExponentNotationBeforeTransaction(t *testing.T) {
+	beginCalls := 0
+	h := newTestHandler(&testutil.MockDB{BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+		beginCalls++
+		return &testutil.MockTx{}, nil
+	}})
+	req := pricingActorRequest(
+		httptest.NewRequest(http.MethodPost, "/model-prices", strings.NewReader(`{"model_name":"gpt-4o","input_price_cny_per_million_tokens":1e3,"output_price_cny_per_million_tokens":1}`)),
+		1,
+		auth.RolePlatformAdmin,
+	)
+	rec := httptest.NewRecorder()
+
+	h.CreateModelPrice(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Zero(t, beginCalls)
+}
+
 func TestOrgModelPriceMultiplierBoundsRejectValuesThatDatabaseWouldRoundOrOverflow(t *testing.T) {
 	for _, multiplier := range []string{"0.0004", "100"} {
 		t.Run("create_"+multiplier, func(t *testing.T) {
@@ -159,8 +178,8 @@ func TestOrgModelPriceMultiplierBoundsRejectValuesThatDatabaseWouldRoundOrOverfl
 		})
 	}
 
-	require.True(t, validOrgModelPriceMultiplier(0.001))
-	require.True(t, validOrgModelPriceMultiplier(99.999))
+	require.True(t, validOrgModelPriceMultiplier("0.001"))
+	require.True(t, validOrgModelPriceMultiplier("99.999"))
 }
 
 func TestUpdateModelPriceRejectsEmptyRenameBeforeTransaction(t *testing.T) {
@@ -194,7 +213,7 @@ func TestUpdateModelPriceRenameLocksTargetKeyBeforeRowMutation(t *testing.T) {
 			return modelPriceMockRow(1, "new-model", 5, 15)
 		},
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			operations = append(operations, "exec:"+sql)
+			operations = append(operations, fmt.Sprintf("exec:%s:%v", sql, args))
 			if strings.Contains(sql, "UPDATE model_prices") {
 				return pgconn.NewCommandTag("UPDATE 1"), nil
 			}
@@ -213,7 +232,16 @@ func TestUpdateModelPriceRenameLocksTargetKeyBeforeRowMutation(t *testing.T) {
 	h.UpdateModelPrice(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
-	require.GreaterOrEqual(t, len(operations), 2)
+	require.GreaterOrEqual(t, len(operations), 6)
 	require.Contains(t, operations[0], "pg_advisory_xact_lock")
-	require.Contains(t, operations[1], "FOR UPDATE")
+	var forUpdateIndex int
+	for i, operation := range operations {
+		if strings.Contains(operation, "FOR UPDATE") {
+			forUpdateIndex = i
+			break
+		}
+	}
+	require.Positive(t, forUpdateIndex)
+	require.Contains(t, strings.Join(operations[:forUpdateIndex], "\n"), "effective_model_price:new-model")
+	require.Contains(t, strings.Join(operations[:forUpdateIndex], "\n"), "model_price:new-model")
 }

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/outbox"
 )
 
@@ -23,15 +24,15 @@ func TestP6F20FinancialJournalIncrementalBudgetAndWebhookReplay(t *testing.T) {
 	).Scan(&projectID))
 	require.NoError(t, func() error {
 		_, err := pool.Exec(ctx,
-			`INSERT INTO call_logs (request_id, org_id, project_id, cost_cents, created_at)
-			 VALUES ('legacy-before-p6f20', $1, $2, 5, NOW())`, orgID, projectID)
+			`INSERT INTO call_logs (request_id, org_id, project_id, cost_micros, created_at)
+			 VALUES ('legacy-before-p6f20', $1, $2, 50000, NOW())`, orgID, projectID)
 		return err
 	}())
 	require.NoError(t, func() error {
 		_, err := pool.Exec(ctx,
 			`INSERT INTO project_budget_usage (
-				org_id, project_id, budget_period, period_start, spent_cents
-			 ) VALUES ($1, $2, 'daily', $3, 5)`,
+				org_id, project_id, budget_period, period_start, spent_micros
+			 ) VALUES ($1, $2, 'daily', $3, 50000)`,
 			orgID, projectID, budgetPeriodStart(time.Now().UTC(), "daily"))
 		return err
 	}(), "simulate the one-time migration baseline for legacy request logs")
@@ -79,8 +80,8 @@ func TestP6F20FinancialJournalIncrementalBudgetAndWebhookReplay(t *testing.T) {
 		ProjectID:       projectID,
 		Model:           model,
 		EstimatedTokens: 100,
-		SafetyFactor:    1,
-		MinFreezeAmount: 10,
+		SafetyFactor:    "1",
+		MinFreezeCents:  10,
 	})
 	require.NoError(t, err)
 	require.True(t, freeze.Success)
@@ -98,7 +99,7 @@ func TestP6F20FinancialJournalIncrementalBudgetAndWebhookReplay(t *testing.T) {
 	settled, err := billingService.Settle(ctx, usage)
 	require.NoError(t, err)
 	require.True(t, settled.Success)
-	require.Equal(t, 1, settled.ChargedCost)
+	require.Equal(t, int64(120), settled.ChargedCostMicros)
 
 	var queued, journalRows, callLogRows int
 	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM internal_outbox_events`).Scan(&queued))
@@ -115,10 +116,10 @@ func TestP6F20FinancialJournalIncrementalBudgetAndWebhookReplay(t *testing.T) {
 	require.Equal(t, 2, journalRows)
 	var spent int64
 	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT spent_cents FROM project_budget_usage
+		`SELECT spent_micros FROM project_budget_usage
 		 WHERE org_id = $1 AND project_id = $2`, orgID, projectID,
 	).Scan(&spent))
-	require.EqualValues(t, 6, spent, "the incremental ledger must seed existing period spend before adding the new settlement")
+	require.EqualValues(t, 50_120, spent, "the incremental ledger must seed existing period spend before adding the exact new settlement")
 
 	processed, err = outboxService.DrainOnce(ctx)
 	require.NoError(t, err)
@@ -153,10 +154,10 @@ func TestP6F20FinancialJournalIncrementalBudgetAndWebhookReplay(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, processed)
 	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT spent_cents FROM project_budget_usage
+		`SELECT spent_micros FROM project_budget_usage
 		 WHERE org_id = $1 AND project_id = $2`, orgID, projectID,
 	).Scan(&spent))
-	require.EqualValues(t, 6, spent)
+	require.EqualValues(t, 50_120, spent)
 	require.EqualValues(t, 1, webhookCalls.Load())
 }
 
@@ -171,10 +172,10 @@ func TestP6F20IncrementalBudgetDoesNotDoubleCountAheadOfJournalCallLogs(t *testi
 		 RETURNING id`, orgID, "p6f20-budget-ordering",
 	).Scan(&projectID))
 	_, err := pool.Exec(ctx,
-		`INSERT INTO call_logs (request_id, org_id, project_id, cost_cents, created_at)
+		`INSERT INTO call_logs (request_id, org_id, project_id, cost_micros, created_at)
 		 VALUES
-		 ('op_p6f20_order_a', $1, $2, 1, NOW()),
-		 ('op_p6f20_order_b', $1, $2, 1, NOW())`, orgID, projectID)
+		 ('op_p6f20_order_a', $1, $2, 10000, NOW()),
+		 ('op_p6f20_order_b', $1, $2, 10000, NOW())`, orgID, projectID)
 	require.NoError(t, err)
 
 	options := outbox.DefaultOptions()
@@ -199,8 +200,11 @@ func TestP6F20IncrementalBudgetDoesNotDoubleCountAheadOfJournalCallLogs(t *testi
 				UncachedPromptTokens: 1,
 				CompletionTokens:     1,
 				CacheUsageStatus:     "not_reported",
-				CalculatedCost:       1,
-				ChargedCost:          1,
+				MoneySchema:          outbox.MoneyVersion,
+				Currency:             "CNY",
+				AmountScale:          money.MicrosPerCNY,
+				CalculatedCostMicros: "10000",
+				ChargedCostMicros:    "10000",
 				OccurredAt:           time.Now().UTC(),
 			},
 			time.Now().UTC(),
@@ -211,10 +215,10 @@ func TestP6F20IncrementalBudgetDoesNotDoubleCountAheadOfJournalCallLogs(t *testi
 
 	var spent int64
 	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT spent_cents FROM project_budget_usage
+		`SELECT spent_micros FROM project_budget_usage
 		 WHERE org_id = $1 AND project_id = $2`, orgID, projectID,
 	).Scan(&spent))
-	require.EqualValues(t, 2, spent, "call-log materialization order must not influence financial increments")
+	require.EqualValues(t, 20_000, spent, "call-log materialization order must not influence financial increments")
 }
 
 func TestP6F20CancellationProducesOneTerminalJournal(t *testing.T) {
@@ -234,8 +238,8 @@ func TestP6F20CancellationProducesOneTerminalJournal(t *testing.T) {
 		OrgID:           orgID,
 		Model:           model,
 		EstimatedTokens: 1,
-		SafetyFactor:    1,
-		MinFreezeAmount: 10,
+		SafetyFactor:    "1",
+		MinFreezeCents:  10,
 	})
 	require.NoError(t, err)
 	require.True(t, freeze.Success)

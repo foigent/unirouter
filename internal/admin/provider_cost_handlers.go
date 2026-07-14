@@ -25,19 +25,21 @@ type providerCostReconciliationMutation struct {
 }
 
 type pendingProviderCost struct {
-	OrgID             int64     `json:"org_id"`
-	RequestID         string    `json:"request_id"`
-	AttemptID         string    `json:"attempt_id"`
-	APIKeyID          int64     `json:"api_key_id"`
-	Provider          string    `json:"provider"`
-	Channel           string    `json:"channel"`
-	State             string    `json:"state"`
-	OutcomeCertainty  string    `json:"outcome_certainty"`
-	CalculatedCost    *int64    `json:"calculated_cost,omitempty"`
-	ChargedCost       *int64    `json:"charged_cost,omitempty"`
-	UpstreamRequestID *string   `json:"upstream_request_id,omitempty"`
-	StartedAt         time.Time `json:"started_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	OrgID                int64     `json:"org_id"`
+	RequestID            string    `json:"request_id"`
+	AttemptID            string    `json:"attempt_id"`
+	APIKeyID             int64     `json:"api_key_id"`
+	Provider             string    `json:"provider"`
+	Channel              string    `json:"channel"`
+	State                string    `json:"state"`
+	OutcomeCertainty     string    `json:"outcome_certainty"`
+	CalculatedCostMicros *string   `json:"calculated_cost_micros,omitempty"`
+	ChargedCostMicros    *string   `json:"charged_cost_micros,omitempty"`
+	Currency             string    `json:"currency"`
+	AmountScale          int64     `json:"amount_scale"`
+	UpstreamRequestID    *string   `json:"upstream_request_id,omitempty"`
+	StartedAt            time.Time `json:"started_at"`
+	UpdatedAt            time.Time `json:"updated_at"`
 }
 
 func (h *Handler) ListPendingProviderCosts(w http.ResponseWriter, r *http.Request) {
@@ -48,7 +50,7 @@ func (h *Handler) ListPendingProviderCosts(w http.ResponseWriter, r *http.Reques
 	}
 	rows, err := h.db.Query(r.Context(),
 		`SELECT org_id, request_id, attempt_id, api_key_id, provider, channel_name,
-		        state, outcome_certainty, calculated_cost, charged_cost,
+		        state, outcome_certainty, calculated_cost_micros, charged_cost_micros,
 		        upstream_request_id, started_at, updated_at
 		 FROM billing_provider_attempts
 		 WHERE org_id=$1 AND state IN (
@@ -74,11 +76,14 @@ func (h *Handler) ListPendingProviderCosts(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		if calculatedCost.Valid {
-			item.CalculatedCost = &calculatedCost.Int64
+			value := strconv.FormatInt(calculatedCost.Int64, 10)
+			item.CalculatedCostMicros = &value
 		}
 		if chargedCost.Valid {
-			item.ChargedCost = &chargedCost.Int64
+			value := strconv.FormatInt(chargedCost.Int64, 10)
+			item.ChargedCostMicros = &value
 		}
+		item.Currency, item.AmountScale = "CNY", 1_000_000
 		if upstreamRequestID.Valid {
 			item.UpstreamRequestID = &upstreamRequestID.String
 		}
@@ -131,8 +136,10 @@ func (h *Handler) ReconcileProviderCost(w http.ResponseWriter, r *http.Request) 
 		fmt.Sprintf("%s/%s", result.RequestID, result.AttemptID), map[string]interface{}{
 			"action": result.Action, "api_key_id": result.APIKeyID,
 			"terminal_transaction_id": result.TerminalTransactionID,
-			"customer_charged_cost":   result.CustomerChargedCost,
-			"customer_refund":         result.CustomerRefund, "evidence_ref": mutation.EvidenceRef,
+			"customer_charged_micros": result.CustomerChargedMicros,
+			"customer_refund_micros":  result.CustomerRefundMicros,
+			"currency":                result.Currency, "amount_scale": result.AmountScale,
+			"evidence_ref": mutation.EvidenceRef,
 		})
 	writeJSON(w, http.StatusOK, result)
 }

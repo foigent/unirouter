@@ -65,7 +65,7 @@ func TestP6F41AChatMissingUsageUsesVersionedConservativeEstimate(t *testing.T) {
 	if cost["usage_authority"] != string(metering.UsageAuthorityConservativeEstimate) || cost["usage_estimate_version"] != metering.ConservativeEstimateVersionV1 {
 		t.Fatalf("client receipt lost estimate labels: %#v", cost)
 	}
-	if cost["charged"] != float64(0) || cost["projected_charge"] == nil || cost["charge_finality"] != "pending_local_delivery" {
+	if cost["charged_cost_micros"] != "0" || cost["projected_charge_micros"] == nil || cost["charge_finality"] != "pending_local_delivery" {
 		t.Fatalf("pre-delivery response falsely claimed a terminal customer charge: %#v", cost)
 	}
 }
@@ -169,7 +169,7 @@ func TestP6F41AEmbeddingsMissingUsageUsesInputOnlyConservativeEstimate(t *testin
 	var settled billing.SettleRequest
 	relay := NewRelay(db, nil, NewRouter(db), &mockBilling{
 		freezeFn: func(context.Context, billing.FreezeRequest) (*billing.FreezeResult, error) {
-			return &billing.FreezeResult{Amount: 10, Success: true}, nil
+			return &billing.FreezeResult{AmountMicros: 10, Success: true}, nil
 		},
 		settleFn: func(_ context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
 			settled = req
@@ -217,7 +217,7 @@ func TestP6F41BEmbeddingsWriterFailureHasNoCustomerCharge(t *testing.T) {
 	settleCalls := 0
 	relay := NewRelay(db, nil, NewRouter(db), &mockBilling{
 		freezeFn: func(context.Context, billing.FreezeRequest) (*billing.FreezeResult, error) {
-			return &billing.FreezeResult{Amount: 10, Success: true}, nil
+			return &billing.FreezeResult{AmountMicros: 10, Success: true}, nil
 		},
 		recordDeliveryFn: func(_ context.Context, event billing.DeliveryEvent) error {
 			outcomes = append(outcomes, event.Outcome)

@@ -12,11 +12,11 @@ import (
 )
 
 const (
-	SchemaVersion = "unirouter.agent-capability.v1"
+	SchemaVersion = "unirouter.agent-capability.v2"
 	TokenPrefix   = "urc_"
 	Issuer        = "unirouter"
 	Audience      = "unirouter-model-gateway"
-	SigningKeyID  = "agent-capability-hs256-v1"
+	SigningKeyID  = "agent-capability-hs256-v2"
 
 	TokenTTL             = 5 * time.Minute
 	RefreshBase          = 3 * time.Minute
@@ -171,7 +171,7 @@ func (l Limits) ValidateShape() error {
 	if l.CostBudgetCents <= 0 || l.TokenBudget <= 0 || l.RPMLimit <= 0 || l.RPSLimit <= 0 || l.ConcurrencyLimit <= 0 {
 		return fmt.Errorf("%w: cost, token, RPM, RPS and concurrency limits must be positive", ErrInvalidRequest)
 	}
-	if l.CostBudgetCents > MaxExactRuntimeBudget || l.TokenBudget > MaxExactRuntimeBudget ||
+	if l.CostBudgetCents > MaxExactRuntimeBudget/10_000 || l.TokenBudget > MaxExactRuntimeBudget ||
 		int64(l.RPMLimit) > MaxExactRuntimeBudget || int64(l.RPSLimit) > MaxExactRuntimeBudget ||
 		int64(l.ConcurrencyLimit) > MaxExactRuntimeBudget {
 		return fmt.Errorf("%w: runtime limits exceed the exact shared-counter range", ErrInvalidRequest)

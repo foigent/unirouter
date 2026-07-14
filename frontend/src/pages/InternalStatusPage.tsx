@@ -86,7 +86,7 @@ interface RuntimeStatus {
       error_requests: number;
       error_rate: number;
       total_tokens: number;
-      cost_cents: number;
+      cost_micros: string;
       p95_latency_ms: number;
       p99_latency_ms: number;
       reason?: string;

@@ -256,7 +256,7 @@ func TestP6F11RelayBlocksUnsafeFrameWithoutRetryOrCustomerChargeForIt(t *testing
 		},
 		settleFn: func(_ context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
 			settled = req
-			return &billing.SettleResult{SettleID: 1, ActualCost: 1, ChargedCost: 1, Success: true}, nil
+			return &billing.SettleResult{SettleID: 1, ActualCostMicros: 1, ChargedCostMicros: 1, Success: true}, nil
 		},
 		recordDeliveryFn: func(_ context.Context, event billing.DeliveryEvent) error {
 			if event.Outcome == billing.DeliveryOutcomeInterrupted {
@@ -314,7 +314,7 @@ func TestP6F11EnforcedStreamClosesMicroBufferAtFourKiB(t *testing.T) {
 	var terminal billing.DeliveryEvent
 	b := &mockBilling{
 		settleFn: func(_ context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
-			return &billing.SettleResult{SettleID: 1, ActualCost: 1, ChargedCost: 1, Success: true}, nil
+			return &billing.SettleResult{SettleID: 1, ActualCostMicros: 1, ChargedCostMicros: 1, Success: true}, nil
 		},
 		recordDeliveryFn: func(_ context.Context, event billing.DeliveryEvent) error {
 			if event.Outcome == billing.DeliveryOutcomeInterrupted {

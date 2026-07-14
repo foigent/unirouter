@@ -30,8 +30,8 @@ const (
 )
 
 type Provider interface {
-	QueryModelPriceForOrg(ctx context.Context, orgID int64, model string) (float64, float64, error)
-	CalculateCost(ctx context.Context, model string, promptTokens, completionTokens int) (int, error)
+	QueryModelPriceMicrosForOrg(ctx context.Context, orgID int64, model string) (int64, int64, error)
+	CalculateCostMicrosForOrg(ctx context.Context, orgID int64, model string, promptTokens, completionTokens int) (int64, error)
 	Freeze(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error)
 	ExtendReservation(ctx context.Context, req billing.ExtendReservationRequest) (*billing.ExtendReservationResult, error)
 	BeginStreamDelivery(ctx context.Context, start billing.StreamDeliveryStart) error
@@ -50,9 +50,9 @@ type Provider interface {
 }
 
 type RuntimeBudget interface {
-	ReserveInvocation(ctx context.Context, claims *agentcap.Claims, operationID string, estimatedTokens, reservedCostCents int64, leaseTTL time.Duration) (*agentcap.InvocationReservation, error)
-	ExtendInvocation(ctx context.Context, reservation *agentcap.InvocationReservation, sequence int, additionalTokens, additionalCostCents int64) error
-	FinalizeInvocation(ctx context.Context, reservation *agentcap.InvocationReservation, actualTokens, actualCostCents int64) error
+	ReserveInvocation(ctx context.Context, claims *agentcap.Claims, operationID string, estimatedTokens, reservedCostMicros int64, leaseTTL time.Duration) (*agentcap.InvocationReservation, error)
+	ExtendInvocation(ctx context.Context, reservation *agentcap.InvocationReservation, sequence int, additionalTokens, additionalCostMicros int64) error
+	FinalizeInvocation(ctx context.Context, reservation *agentcap.InvocationReservation, actualTokens, actualCostMicros int64) error
 	CancelInvocation(ctx context.Context, reservation *agentcap.InvocationReservation) error
 }
 
@@ -71,12 +71,12 @@ type Billing struct {
 }
 
 type trackedReservation struct {
-	mu              sync.Mutex
-	reservation     *agentcap.InvocationReservation
-	settleAttempted bool
-	terminal        string
-	actualTokens    int64
-	actualCostCents int64
+	mu               sync.Mutex
+	reservation      *agentcap.InvocationReservation
+	settleAttempted  bool
+	terminal         string
+	actualTokens     int64
+	actualCostMicros int64
 }
 
 func New(inner Provider, runtime RuntimeBudget) *Billing {
@@ -87,12 +87,12 @@ func (b *Billing) SetTerminalHooks(hooks TerminalHooks) {
 	b.terminalHooks = hooks
 }
 
-func (b *Billing) QueryModelPriceForOrg(ctx context.Context, orgID int64, model string) (float64, float64, error) {
-	return b.inner.QueryModelPriceForOrg(ctx, orgID, model)
+func (b *Billing) QueryModelPriceMicrosForOrg(ctx context.Context, orgID int64, model string) (int64, int64, error) {
+	return b.inner.QueryModelPriceMicrosForOrg(ctx, orgID, model)
 }
 
-func (b *Billing) CalculateCost(ctx context.Context, model string, promptTokens, completionTokens int) (int, error) {
-	return b.inner.CalculateCost(ctx, model, promptTokens, completionTokens)
+func (b *Billing) CalculateCostMicrosForOrg(ctx context.Context, orgID int64, model string, promptTokens, completionTokens int) (int64, error) {
+	return b.inner.CalculateCostMicrosForOrg(ctx, orgID, model, promptTokens, completionTokens)
 }
 
 func (b *Billing) Freeze(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
@@ -116,7 +116,7 @@ func (b *Billing) Freeze(ctx context.Context, req billing.FreezeRequest) (*billi
 		claims,
 		req.RequestID,
 		int64(req.EstimatedTokens),
-		int64(result.Amount),
+		result.AmountMicros,
 		agentcap.InvocationLeaseTTLFromContext(ctx),
 	)
 	if reserveErr != nil {
@@ -184,7 +184,7 @@ func (b *Billing) ExtendReservation(ctx context.Context, req billing.ExtendReser
 	}
 	if err := b.runtime.ExtendInvocation(
 		ctx, state.reservation, req.Sequence,
-		int64(req.AdditionalCompletionTokens), int64(result.Amount),
+		int64(req.AdditionalCompletionTokens), result.AmountMicros,
 	); err != nil {
 		result.Success = false
 		result.ErrorCode = runtimeErrorCode(err)
@@ -255,9 +255,9 @@ func (b *Billing) Settle(ctx context.Context, req billing.SettleRequest) (*billi
 		if state != nil {
 			state.terminal = "settled"
 			state.actualTokens = int64(req.PromptTokens) + int64(req.CompletionTokens)
-			state.actualCostCents = int64(result.ActualCost)
+			state.actualCostMicros = result.ActualCostMicros
 			terminalCtx, cancel := runtimeContext(ctx)
-			if err := b.runtime.FinalizeInvocation(terminalCtx, state.reservation, state.actualTokens, state.actualCostCents); err != nil {
+			if err := b.runtime.FinalizeInvocation(terminalCtx, state.reservation, state.actualTokens, state.actualCostMicros); err != nil {
 				log.Printf("[agent-capability] operation=%s immediate ancestor finalization failed; durable hook retained: %v", req.RequestID, err)
 			}
 			cancel()
@@ -286,7 +286,7 @@ func (b *Billing) Settle(ctx context.Context, req billing.SettleRequest) (*billi
 	}
 	state.terminal = "settled"
 	state.actualTokens = int64(req.PromptTokens) + int64(req.CompletionTokens)
-	state.actualCostCents = int64(result.ActualCost)
+	state.actualCostMicros = result.ActualCostMicros
 	if err := b.finalizeTracked(ctx, req.RequestID, state); err != nil {
 		log.Printf("[agent-capability] operation=%s ancestor budget finalization retained conservatively: %v", req.RequestID, err)
 	}
@@ -374,7 +374,7 @@ func (b *Billing) reconcileTerminal(ctx context.Context, requestID string, orgID
 func (b *Billing) finalizeTracked(ctx context.Context, requestID string, state *trackedReservation) error {
 	terminalCtx, cancel := runtimeContext(ctx)
 	defer cancel()
-	if err := b.runtime.FinalizeInvocation(terminalCtx, state.reservation, state.actualTokens, state.actualCostCents); err != nil {
+	if err := b.runtime.FinalizeInvocation(terminalCtx, state.reservation, state.actualTokens, state.actualCostMicros); err != nil {
 		return err
 	}
 	b.reservations.Delete(requestID)
@@ -435,5 +435,5 @@ func sameReservation(left, right *agentcap.InvocationReservation) bool {
 	return left.OperationID == right.OperationID && left.WorkflowID == right.WorkflowID &&
 		left.WorkflowGeneration == right.WorkflowGeneration && left.AgentID == right.AgentID &&
 		left.OrgID == right.OrgID && left.ReservedTokens == right.ReservedTokens &&
-		left.ReservedCostCents == right.ReservedCostCents && slices.Equal(left.Lineage, right.Lineage)
+		left.ReservedCostMicros == right.ReservedCostMicros && slices.Equal(left.Lineage, right.Lineage)
 }

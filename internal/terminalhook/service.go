@@ -8,12 +8,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/db"
+	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/outbox"
 )
 
@@ -26,10 +28,14 @@ const (
 )
 
 type terminalEventPayload struct {
-	OperationID string `json:"operation_id"`
-	OrgID       int64  `json:"org_id"`
-	HookType    string `json:"hook_type"`
-	Terminal    string `json:"terminal"`
+	OperationID      string `json:"operation_id"`
+	OrgID            int64  `json:"org_id"`
+	HookType         string `json:"hook_type"`
+	Terminal         string `json:"terminal"`
+	ActualCostMicros string `json:"actual_cost_micros,omitempty"`
+	Currency         string `json:"currency,omitempty"`
+	AmountScale      int64  `json:"amount_scale,omitempty"`
+	MoneySchema      string `json:"money_schema,omitempty"`
 }
 
 type Executor func(context.Context, json.RawMessage, string, int64, int64) error
@@ -136,7 +142,7 @@ func reconcileFinancialStateTx(ctx context.Context, tx pgx.Tx, outboxService *ou
 	var status string
 	var promptTokens, completionTokens, calculatedCost int64
 	err := tx.QueryRow(ctx,
-		`SELECT status, prompt_tokens, completion_tokens, calculated_cost
+		`SELECT status, prompt_tokens, completion_tokens, calculated_cost_micros
 		 FROM freeze_idempotency
 		 WHERE request_id = $1 AND org_id = $2`, operationID, orgID,
 	).Scan(&status, &promptTokens, &completionTokens, &calculatedCost)
@@ -160,21 +166,21 @@ func reconcileFinancialStateTx(ctx context.Context, tx pgx.Tx, outboxService *ou
 
 // MarkFromFinancialTx is called from the minimal financial journal worker so
 // a recovered settlement cannot bypass Agent/policy terminal cleanup.
-func MarkFromFinancialTx(ctx context.Context, tx pgx.Tx, outboxService *outbox.Service, operationID string, orgID int64, terminal string, actualTokens, actualCostCents int64) error {
-	if tx == nil || outboxService == nil || strings.TrimSpace(operationID) == "" || orgID <= 0 || !validTerminal(terminal) || actualTokens < 0 || actualCostCents < 0 {
+func MarkFromFinancialTx(ctx context.Context, tx pgx.Tx, outboxService *outbox.Service, operationID string, orgID int64, terminal string, actualTokens, actualCostMicros int64) error {
+	if tx == nil || outboxService == nil || strings.TrimSpace(operationID) == "" || orgID <= 0 || !validTerminal(terminal) || actualTokens < 0 || actualCostMicros < 0 {
 		return fmt.Errorf("runtime terminal mark is invalid")
 	}
 	rows, err := tx.Query(ctx,
 		`UPDATE runtime_terminal_hooks
 		 SET terminal_kind = $3,
 		     actual_tokens = $4,
-		     actual_cost_cents = $5,
+		     actual_cost_micros = $5,
 		     updated_at = NOW()
 		 WHERE operation_id = $1 AND org_id = $2
 		   AND completed_at IS NULL
 		   AND terminal_kind IN ('', $3)
 		 RETURNING hook_type`,
-		operationID, orgID, terminal, actualTokens, actualCostCents,
+		operationID, orgID, terminal, actualTokens, actualCostMicros,
 	)
 	if err != nil {
 		return fmt.Errorf("mark runtime terminal hooks: %w", err)
@@ -197,10 +203,9 @@ func MarkFromFinancialTx(ctx context.Context, tx pgx.Tx, outboxService *outbox.S
 	for _, hookType := range hookTypes {
 		eventKey := fmt.Sprintf("runtime-terminal:%s:%s:%d:%s", terminal, hookType, orgID, operationID)
 		payload := terminalEventPayload{
-			OperationID: operationID,
-			OrgID:       orgID,
-			HookType:    hookType,
-			Terminal:    terminal,
+			OperationID: operationID, OrgID: orgID, HookType: hookType, Terminal: terminal,
+			ActualCostMicros: strconv.FormatInt(actualCostMicros, 10),
+			Currency:         "CNY", AmountScale: money.MicrosPerCNY, MoneySchema: outbox.MoneyVersion,
 		}
 		event, err := outbox.NewEvent(
 			outbox.EventRuntimeTerminal,
@@ -239,6 +244,19 @@ func (s *Service) ProcessEvent(ctx context.Context, event outbox.Event) error {
 	if !validHookType(payload.HookType) || !validTerminal(payload.Terminal) || payload.OperationID == "" || payload.OrgID <= 0 {
 		return fmt.Errorf("terminal hook event identity is invalid")
 	}
+	var payloadCostMicros int64
+	if event.Type == outbox.EventRuntimeTerminal {
+		if payload.MoneySchema != outbox.MoneyVersion || payload.Currency != "CNY" || payload.AmountScale != money.MicrosPerCNY {
+			return fmt.Errorf("terminal hook event money contract is invalid")
+		}
+		amount, err := strconv.ParseInt(payload.ActualCostMicros, 10, 64)
+		if err != nil || amount < 0 || strconv.FormatInt(amount, 10) != payload.ActualCostMicros {
+			return fmt.Errorf("terminal hook event amount is invalid")
+		}
+		payloadCostMicros = amount
+	} else if event.Type != outbox.EventRuntimeTerminalV1 {
+		return fmt.Errorf("terminal hook event version is unsupported")
+	}
 
 	var reservation json.RawMessage
 	var terminal string
@@ -246,7 +264,7 @@ func (s *Service) ProcessEvent(ctx context.Context, event outbox.Event) error {
 	var expiresAt time.Time
 	var completedAt sql.NullTime
 	err := s.db.QueryRow(ctx,
-		`SELECT reservation, terminal_kind, actual_tokens, actual_cost_cents,
+		`SELECT reservation, terminal_kind, actual_tokens, actual_cost_micros,
 		        expires_at, completed_at
 		 FROM runtime_terminal_hooks
 		 WHERE operation_id = $1 AND org_id = $2 AND hook_type = $3`,
@@ -263,6 +281,9 @@ func (s *Service) ProcessEvent(ctx context.Context, event outbox.Event) error {
 	}
 	if terminal != payload.Terminal {
 		return fmt.Errorf("terminal hook event conflicts with durable state")
+	}
+	if event.Type == outbox.EventRuntimeTerminal && payloadCostMicros != actualCost {
+		return fmt.Errorf("terminal hook event amount conflicts with durable state")
 	}
 	if !time.Now().UTC().Before(expiresAt.UTC()) {
 		_, err := s.db.Exec(ctx,

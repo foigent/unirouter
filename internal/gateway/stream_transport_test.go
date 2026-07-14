@@ -176,7 +176,7 @@ func TestP6StreamTransportFinalWriteFailurePreservesSettlementWithoutDone(t *tes
 		},
 		settleFn: func(context.Context, billing.SettleRequest) (*billing.SettleResult, error) {
 			settleCalls++
-			return &billing.SettleResult{SettleID: 1, ActualCost: 1, ChargedCost: 1, Success: true}, nil
+			return &billing.SettleResult{SettleID: 1, ActualCostMicros: 1, ChargedCostMicros: 1, Success: true}, nil
 		},
 	})
 	writer := &failAfterWritesResponseWriter{header: make(http.Header), failAt: 3}
@@ -231,7 +231,7 @@ func TestP6F41BInterruptedStreamSeparatesProviderUsageFromCustomerCharge(t *test
 		},
 		settleFn: func(_ context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
 			settled = req
-			return &billing.SettleResult{SettleID: 1, ActualCost: 1, ChargedCost: 1, Success: true}, nil
+			return &billing.SettleResult{SettleID: 1, ActualCostMicros: 1, ChargedCostMicros: 1, Success: true}, nil
 		},
 	})
 	body := &countingReadCloser{reader: &readThenError{payload: []byte(
@@ -333,7 +333,7 @@ func TestP6StreamTransportDoesNotBillFailedNormalizedDelta(t *testing.T) {
 	relay := newTestRelay(streamTransportTestDB(), &mockBilling{
 		settleFn: func(_ context.Context, request billing.SettleRequest) (*billing.SettleResult, error) {
 			settledCompletionTokens = request.CompletionTokens
-			return &billing.SettleResult{SettleID: 1, ActualCost: 1, ChargedCost: 1, Success: true}, nil
+			return &billing.SettleResult{SettleID: 1, ActualCostMicros: 1, ChargedCostMicros: 1, Success: true}, nil
 		},
 	})
 	// The normalized assistant-role frame succeeds; the following text delta
@@ -371,7 +371,7 @@ func TestP6StreamTransportReadFailureSettlesDeliveredOutputWithoutDone(t *testin
 		},
 		settleFn: func(context.Context, billing.SettleRequest) (*billing.SettleResult, error) {
 			settleCalls++
-			return &billing.SettleResult{SettleID: 1, ActualCost: 1, ChargedCost: 1, Success: true}, nil
+			return &billing.SettleResult{SettleID: 1, ActualCostMicros: 1, ChargedCostMicros: 1, Success: true}, nil
 		},
 		cancelFn: func(context.Context, string, int64) error {
 			cancelCalls++

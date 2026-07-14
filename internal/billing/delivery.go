@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/outbox"
 )
 
@@ -70,7 +71,7 @@ func (b *Billing) PrepareNonStreamDelivery(ctx context.Context, request SettleRe
 		if !settlementUsageMatches(record, req) {
 			return nil, ErrSettlementUsageConflict
 		}
-		return prepareDeliveryResult(record, record.CalculatedCost, record.TopUpAmount, true), tx.Commit(ctx)
+		return prepareDeliveryResult(record, record.CalculatedCostMicros, record.TopUpAmountMicros, true), tx.Commit(ctx)
 	}
 	if record.Status != "frozen" {
 		return nil, fmt.Errorf("cannot prepare delivery in reservation state %s", record.Status)
@@ -80,11 +81,23 @@ func (b *Billing) PrepareNonStreamDelivery(ctx context.Context, request SettleRe
 	if err != nil {
 		return nil, err
 	}
-	grantConsumed := minInt(calculatedCost, record.ReservedGrantedAmount)
+	grantConsumed := minInt64(calculatedCost, record.ReservedGrantedMicros)
 	cashNeeded := calculatedCost - grantConsumed
-	additionalTopUp := cashNeeded - record.ReservedBalanceAmount
+	additionalTopUp := cashNeeded - record.ReservedBalanceMicros
 	if additionalTopUp < 0 {
 		additionalTopUp = 0
+	}
+	newFrozenAmount, err := money.Add(record.FrozenAmountMicros, additionalTopUp)
+	if err != nil {
+		return nil, fmt.Errorf("calculate delivery frozen amount: %w", err)
+	}
+	newReservedBalance, err := money.Add(record.ReservedBalanceMicros, additionalTopUp)
+	if err != nil {
+		return nil, fmt.Errorf("calculate delivery reserved balance: %w", err)
+	}
+	newTopUpAmount, err := money.Add(record.TopUpAmountMicros, additionalTopUp)
+	if err != nil {
+		return nil, fmt.Errorf("calculate delivery top-up receipt: %w", err)
 	}
 	availableCash, err := lockWalletCashForBilling(ctx, tx, req.OrgID)
 	if err != nil {
@@ -111,8 +124,8 @@ func (b *Billing) PrepareNonStreamDelivery(ctx context.Context, request SettleRe
 	if additionalTopUp > 0 {
 		result, err := tx.Exec(ctx, `
 			UPDATE wallets
-			SET balance = balance - $1, frozen = frozen + $1, updated_at = NOW()
-			WHERE org_id = $2 AND balance >= $1`, additionalTopUp, req.OrgID)
+			SET balance_micros = balance_micros - $1, frozen_micros = frozen_micros + $1, updated_at = NOW()
+			WHERE org_id = $2 AND balance_micros >= $1`, additionalTopUp, req.OrgID)
 		if err != nil {
 			return nil, fmt.Errorf("reserve delivery top-up: %w", err)
 		}
@@ -125,9 +138,9 @@ func (b *Billing) PrepareNonStreamDelivery(ctx context.Context, request SettleRe
 		UPDATE freeze_idempotency
 		SET status = 'settlement_pending',
 		    settlement_pending_reason = 'delivery_prepared',
-		    frozen_amount = frozen_amount + $3,
-		    reserved_balance_amount = reserved_balance_amount + $3,
-		    topup_amount = topup_amount + $3,
+		    frozen_amount_micros = $3,
+		    reserved_balance_micros = $22,
+		    topup_amount_micros = $23,
 		    prompt_tokens = $4,
 		    uncached_prompt_tokens = $5,
 		    cache_read_tokens = $6,
@@ -141,24 +154,25 @@ func (b *Billing) PrepareNonStreamDelivery(ctx context.Context, request SettleRe
 		    usage_estimate_version = $14,
 		    cache_usage_schema = $15,
 		    cache_usage_status = $16,
-		    calculated_cost = $17,
-		    uncached_input_cost_cents = $18,
-		    cache_read_cost_cents = $19,
-		    cache_creation_cost_cents = $20,
-		    output_cost_cents = $21,
+		    calculated_cost_micros = $17,
+		    uncached_input_cost_micros = $18,
+		    cache_read_cost_micros = $19,
+		    cache_creation_cost_micros = $20,
+		    output_cost_micros = $21,
 		    settlement_payload_ready_at = NOW(),
 		    settlement_claimed_until = NULL,
 		    settlement_next_attempt_at = NULL,
 		    settlement_last_error = '',
 		    updated_at = NOW()
 		WHERE request_id = $1 AND org_id = $2 AND status = 'frozen'`,
-		req.RequestID, req.OrgID, additionalTopUp,
+		req.RequestID, req.OrgID, newFrozenAmount,
 		req.PromptTokens, req.UncachedPromptTokens, req.CacheReadTokens, req.CacheCreationTokens,
 		req.CompletionTokens, req.UsageSource, req.UsageAuthority, req.UsagePurpose,
 		req.UsageFinality, req.UsageContractVersion, req.UsageEstimateVersion,
 		req.CacheUsageSchema, req.CacheUsageStatus, calculatedCost,
-		breakdown.UncachedInputCostCents, breakdown.CacheReadCostCents,
-		breakdown.CacheCreationCostCents, breakdown.OutputCostCents,
+		breakdown.UncachedInputCostMicros, breakdown.CacheReadCostMicros,
+		breakdown.CacheCreationCostMicros, breakdown.OutputCostMicros,
+		newReservedBalance, newTopUpAmount,
 	); err != nil {
 		return nil, fmt.Errorf("persist delivery preparation: %w", err)
 	}
@@ -174,44 +188,44 @@ func (b *Billing) PrepareNonStreamDelivery(ctx context.Context, request SettleRe
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit delivery preparation: %w", err)
 	}
-	record.FrozenAmount += additionalTopUp
-	record.ReservedBalanceAmount += additionalTopUp
-	record.TopUpAmount += additionalTopUp
-	record.UncachedInputCost = breakdown.UncachedInputCostCents
-	record.CacheReadCost = breakdown.CacheReadCostCents
-	record.CacheCreationCost = breakdown.CacheCreationCostCents
-	record.OutputCost = breakdown.OutputCostCents
-	return prepareDeliveryResult(record, calculatedCost, record.TopUpAmount, true), nil
+	record.FrozenAmountMicros = newFrozenAmount
+	record.ReservedBalanceMicros = newReservedBalance
+	record.TopUpAmountMicros = newTopUpAmount
+	record.UncachedInputCostMicros = breakdown.UncachedInputCostMicros
+	record.CacheReadCostMicros = breakdown.CacheReadCostMicros
+	record.CacheCreationCostMicros = breakdown.CacheCreationCostMicros
+	record.OutputCostMicros = breakdown.OutputCostMicros
+	return prepareDeliveryResult(record, calculatedCost, record.TopUpAmountMicros, true), nil
 }
 
-func prepareDeliveryResult(record reservationRecord, calculatedCost, topUp int, funded bool) *PrepareDeliveryResult {
+func prepareDeliveryResult(record reservationRecord, calculatedCost, topUp int64, funded bool) *PrepareDeliveryResult {
 	return &PrepareDeliveryResult{
 		Funded: funded,
 		Preview: SettleResult{
-			ActualCost: calculatedCost, ChargedCost: calculatedCost, TopUpAmount: topUp,
-			PricingVersion:                   record.PricingVersion,
-			EffectiveInputPriceCents:         record.EffectiveInputPrice,
-			EffectiveCacheReadPriceCents:     record.EffectiveCacheReadPrice,
-			EffectiveCacheCreationPriceCents: record.EffectiveCacheCreationPrice,
-			EffectiveOutputPriceCents:        record.EffectiveOutputPrice,
-			CacheReadRatio:                   record.CacheReadRatio, CacheCreationRatio: record.CacheCreationRatio,
-			UncachedInputCostCents: record.UncachedInputCost,
-			CacheReadCostCents:     record.CacheReadCost,
-			CacheCreationCostCents: record.CacheCreationCost,
-			OutputCostCents:        record.OutputCost,
-			Success:                funded,
+			ActualCostMicros: calculatedCost, ChargedCostMicros: calculatedCost, TopUpAmountMicros: topUp,
+			PricingVersion:                              record.PricingVersion,
+			EffectiveInputPriceMicrosPerMillion:         record.EffectiveInputPriceMicrosPerMillion,
+			EffectiveCacheReadPriceMicrosPerMillion:     record.EffectiveCacheReadPriceMicrosPerMillion,
+			EffectiveCacheCreationPriceMicrosPerMillion: record.EffectiveCacheCreationPriceMicrosPerMillion,
+			EffectiveOutputPriceMicrosPerMillion:        record.EffectiveOutputPriceMicrosPerMillion,
+			CacheReadRatio:                              record.CacheReadRatio, CacheCreationRatio: record.CacheCreationRatio,
+			UncachedInputCostMicros: record.UncachedInputCostMicros,
+			CacheReadCostMicros:     record.CacheReadCostMicros,
+			CacheCreationCostMicros: record.CacheCreationCostMicros,
+			OutputCostMicros:        record.OutputCostMicros,
+			Success:                 funded,
 		},
 	}
 }
 
-func markProviderAttemptDeliveryPendingTx(ctx context.Context, tx pgx.Tx, req SettleRequest, calculatedCost int) error {
+func markProviderAttemptDeliveryPendingTx(ctx context.Context, tx pgx.Tx, req SettleRequest, calculatedCost int64) error {
 	if strings.TrimSpace(req.AttemptID) == "" {
 		return nil
 	}
 	result, err := tx.Exec(ctx, `
 		UPDATE billing_provider_attempts
 		SET state = 'delivery_pending', outcome_certainty = 'known_usage',
-		    retry_authorized = FALSE, calculated_cost = $4, updated_at = NOW()
+		    retry_authorized = FALSE, calculated_cost_micros = $4, updated_at = NOW()
 		WHERE org_id = $1 AND request_id = $2 AND attempt_id = $3
 		  AND state IN ('response_accepted', 'delivery_pending')`,
 		req.OrgID, req.RequestID, req.AttemptID, calculatedCost)

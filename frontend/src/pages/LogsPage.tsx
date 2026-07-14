@@ -3,7 +3,7 @@ import { Typography, Table, Tag, Input, Select, Button, Space, Descriptions, Too
 import { IconSearch, IconRefresh, IconClose, IconCopy } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
-import { LatencyText, MoneyText, PageHeader, StatusTag } from '../ui';
+import { LatencyText, microsRatio, MoneyText, PageHeader, StatusTag } from '../ui';
 import { usageSourceLabel, usageSourceOptions } from '../utils/displayLabels';
 
 const { Title, Text } = Typography;
@@ -27,7 +27,7 @@ interface Log {
   cache_creation_tokens?: number;
   completion_tokens: number;
   total_tokens: number;
-  cost_cents: number;
+  cost_micros: string;
   is_stream: boolean;
   ip_address: string;
   requested_model: string;
@@ -39,12 +39,12 @@ interface Log {
   pricing_version?: string;
   cache_read_ratio?: number;
   cache_creation_ratio?: number;
-  effective_input_price_cents?: number;
-  effective_cache_read_price_cents?: number;
-  effective_cache_creation_price_cents?: number;
-  effective_output_price_cents?: number;
-  cache_read_cost_cents?: number;
-  cache_creation_cost_cents?: number;
+  effective_input_price_micros_per_million?: string;
+  effective_cache_read_price_micros_per_million?: string;
+  effective_cache_creation_price_micros_per_million?: string;
+  effective_output_price_micros_per_million?: string;
+  cache_read_cost_micros?: string;
+  cache_creation_cost_micros?: string;
   created_at: string;
 }
 
@@ -203,10 +203,10 @@ function cacheUsageLabel(status?: string) {
   return '供应商未回传';
 }
 
-function priceRatio(ratio?: number, cachePrice?: number, inputPrice?: number) {
+function priceRatio(ratio?: number, cachePrice?: string, inputPrice?: string) {
   if (ratio !== undefined) return `${ratio.toFixed(3)}×`;
-  if (!inputPrice || inputPrice <= 0 || cachePrice === undefined) return '-';
-  return `${(cachePrice / inputPrice).toFixed(3)}×`;
+  if (!inputPrice || !cachePrice) return '-';
+  return `${microsRatio(cachePrice, inputPrice).toFixed(3)}×`;
 }
 
 function uniqueEvidenceValues(events: TraceEvent[], key: keyof TraceEvent) {
@@ -491,10 +491,10 @@ export default function LogsPage() {
     },
     {
       title: '费用',
-      dataIndex: 'cost_cents',
-      key: 'cost_cents',
+      dataIndex: 'cost_micros',
+      key: 'cost_micros',
       width: 90,
-      render: (v: number) => <MoneyText cents={v} precision={4} tone="cost" />,
+      render: (v: string) => <MoneyText micros={v || '0'} precision={6} tone="cost" />,
     },
     {
       title: '时间',
@@ -840,7 +840,7 @@ export default function LogsPage() {
                     { key: '提示词', value: selectedLog.prompt_tokens.toLocaleString() },
                     { key: '生成', value: selectedLog.completion_tokens.toLocaleString() },
                     { key: '合计', value: <Text strong>{selectedLog.total_tokens.toLocaleString()}</Text> },
-                    { key: '费用', value: <MoneyText cents={selectedLog.cost_cents} precision={4} strong tone="cost" /> },
+                    { key: '费用', value: <MoneyText micros={selectedLog.cost_micros || '0'} precision={6} strong tone="cost" /> },
                     { key: '来源', value: usageSourceLabel(selectedLog.usage_source) },
                   ]}
                 />
@@ -856,10 +856,10 @@ export default function LogsPage() {
                     { key: '普通输入', value: (selectedLog.uncached_prompt_tokens ?? selectedLog.prompt_tokens).toLocaleString() },
                     { key: '缓存读取', value: (selectedLog.cache_read_tokens || 0).toLocaleString() },
                     { key: '缓存写入', value: (selectedLog.cache_creation_tokens || 0).toLocaleString() },
-                    { key: '读取倍率', value: priceRatio(selectedLog.cache_read_ratio, selectedLog.effective_cache_read_price_cents, selectedLog.effective_input_price_cents) },
-                    { key: '写入倍率', value: priceRatio(selectedLog.cache_creation_ratio, selectedLog.effective_cache_creation_price_cents, selectedLog.effective_input_price_cents) },
-                    { key: '读取费用', value: <MoneyText cents={selectedLog.cache_read_cost_cents || 0} precision={6} /> },
-                    { key: '写入费用', value: <MoneyText cents={selectedLog.cache_creation_cost_cents || 0} precision={6} /> },
+                    { key: '读取倍率', value: priceRatio(selectedLog.cache_read_ratio, selectedLog.effective_cache_read_price_micros_per_million, selectedLog.effective_input_price_micros_per_million) },
+                    { key: '写入倍率', value: priceRatio(selectedLog.cache_creation_ratio, selectedLog.effective_cache_creation_price_micros_per_million, selectedLog.effective_input_price_micros_per_million) },
+                    { key: '读取费用', value: <MoneyText micros={selectedLog.cache_read_cost_micros || '0'} precision={6} /> },
+                    { key: '写入费用', value: <MoneyText micros={selectedLog.cache_creation_cost_micros || '0'} precision={6} /> },
                     { key: '价格版本', value: selectedLog.pricing_version ? <Text code size="small">{compactEvidenceValue(selectedLog.pricing_version, 28)}</Text> : '-' },
                     { key: '字段合同', value: selectedLog.cache_usage_schema || '-' },
                   ]}

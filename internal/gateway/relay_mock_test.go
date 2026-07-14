@@ -28,6 +28,7 @@ import (
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/models"
+	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/payloadpolicy"
 	"github.com/uniroute/unirouter/internal/testutil"
 	"github.com/uniroute/unirouter/internal/traceutil"
@@ -36,8 +37,8 @@ import (
 // --- Mock BillingProvider ---
 
 type mockBilling struct {
-	queryModelPriceFn func(ctx context.Context, orgID int64, model string) (float64, float64, error)
-	calculateCostFn   func(ctx context.Context, model string, promptTokens, completionTokens int) (int, error)
+	queryModelPriceFn func(ctx context.Context, orgID int64, model string) (int64, int64, error)
+	calculateCostFn   func(ctx context.Context, orgID int64, model string, promptTokens, completionTokens int) (int64, error)
 	freezeFn          func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error)
 	extendFn          func(ctx context.Context, req billing.ExtendReservationRequest) (*billing.ExtendReservationResult, error)
 	beginStreamFn     func(ctx context.Context, start billing.StreamDeliveryStart) error
@@ -75,7 +76,7 @@ func (m *mockBilling) PrepareNonStreamDelivery(ctx context.Context, req billing.
 	}
 	return &billing.PrepareDeliveryResult{
 		Funded:  true,
-		Preview: billing.SettleResult{ActualCost: 1, ChargedCost: 1, Success: true},
+		Preview: billing.SettleResult{ActualCostMicros: 1, ChargedCostMicros: 1, Success: true},
 	}, nil
 }
 
@@ -107,25 +108,33 @@ func (m *mockBilling) PersistSettlementUsage(ctx context.Context, req billing.Se
 	return nil
 }
 
-func (m *mockBilling) QueryModelPriceForOrg(ctx context.Context, orgID int64, model string) (float64, float64, error) {
+func (m *mockBilling) QueryModelPriceMicrosForOrg(ctx context.Context, orgID int64, model string) (int64, int64, error) {
 	if m.queryModelPriceFn != nil {
 		return m.queryModelPriceFn(ctx, orgID, model)
 	}
-	return 2, 10, nil
+	return 20_000_000, 100_000_000, nil
 }
 
-func (m *mockBilling) CalculateCost(ctx context.Context, model string, promptTokens, completionTokens int) (int, error) {
+func (m *mockBilling) CalculateCostMicrosForOrg(ctx context.Context, orgID int64, model string, promptTokens, completionTokens int) (int64, error) {
 	if m.calculateCostFn != nil {
-		return m.calculateCostFn(ctx, model, promptTokens, completionTokens)
+		return m.calculateCostFn(ctx, orgID, model, promptTokens, completionTokens)
 	}
-	return 100, nil
+	inputPrice, outputPrice, err := m.QueryModelPriceMicrosForOrg(ctx, orgID, model)
+	if err != nil {
+		return 0, err
+	}
+	calculation, err := money.Calculate(
+		money.Component{Tokens: int64(promptTokens), PriceMicrosPerMillion: inputPrice},
+		money.Component{Tokens: int64(completionTokens), PriceMicrosPerMillion: outputPrice},
+	)
+	return calculation.TotalMicros, err
 }
 
 func (m *mockBilling) Freeze(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
 	if m.freezeFn != nil {
 		return m.freezeFn(ctx, req)
 	}
-	return &billing.FreezeResult{FreezeID: 1, Amount: 100, NewBalance: 900, Success: true}, nil
+	return &billing.FreezeResult{FreezeID: 1, AmountMicros: 100, NewBalanceMicros: 900, Success: true}, nil
 }
 
 func (m *mockBilling) ExtendReservation(ctx context.Context, req billing.ExtendReservationRequest) (*billing.ExtendReservationResult, error) {
@@ -136,7 +145,7 @@ func (m *mockBilling) ExtendReservation(ctx context.Context, req billing.ExtendR
 		Success: true, Sequence: req.Sequence,
 		AddedCompletionTokens:  req.AdditionalCompletionTokens,
 		TargetCompletionTokens: req.TargetCompletionTokens,
-		Amount:                 1,
+		AmountMicros:           1,
 	}, nil
 }
 
@@ -188,22 +197,16 @@ func (m *mockBilling) Settle(ctx context.Context, req billing.SettleRequest) (*b
 	if m.settleFn != nil {
 		result, err = m.settleFn(ctx, req)
 	} else {
-		result = &billing.SettleResult{SettleID: 1, Refund: 10, NewBalance: 910, Success: true}
+		result = &billing.SettleResult{SettleID: 1, RefundMicros: 10, NewBalanceMicros: 910, Success: true}
 	}
 	if err != nil || result == nil || !result.Success {
 		return result, err
 	}
-	if result.ActualCost == 0 && (req.PromptTokens > 0 || req.CompletionTokens > 0) {
-		inputPrice, outputPrice, priceErr := m.QueryModelPriceForOrg(ctx, req.OrgID, "")
-		if priceErr == nil {
-			result.ActualCost = int((float64(req.PromptTokens)*inputPrice + float64(req.CompletionTokens)*outputPrice) / 1000)
-			if result.ActualCost < 1 {
-				result.ActualCost = 1
-			}
-		}
+	if result.ActualCostMicros == 0 && (req.PromptTokens > 0 || req.CompletionTokens > 0) {
+		result.ActualCostMicros, _ = m.CalculateCostMicrosForOrg(ctx, req.OrgID, "", req.PromptTokens, req.CompletionTokens)
 	}
-	if result.ChargedCost == 0 {
-		result.ChargedCost = result.ActualCost
+	if result.ChargedCostMicros == 0 {
+		result.ChargedCostMicros = result.ActualCostMicros
 	}
 	return result, nil
 }
@@ -377,8 +380,8 @@ func TestHandleModels_EmptyAllowedModels(t *testing.T) {
 
 func TestCalculateCost_Success(t *testing.T) {
 	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
-		queryModelPriceFn: func(ctx context.Context, orgID int64, model string) (float64, float64, error) {
-			return 5, 15, nil // 5 cents per 1K input, 15 cents per 1K output
+		queryModelPriceFn: func(ctx context.Context, orgID int64, model string) (int64, int64, error) {
+			return 50_000_000, 150_000_000, nil // 5 and 15 cents per 1K tokens
 		},
 	})
 
@@ -386,16 +389,15 @@ func TestCalculateCost_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// cost = (1000 * 5 + 500 * 15) / 1000 = (5000 + 7500) / 1000 = 12.5 → 12
-	if cost != 12 {
-		t.Fatalf("expected cost=12, got %d", cost)
+	if cost != 125_000 {
+		t.Fatalf("expected cost=125000 micros, got %d", cost)
 	}
 }
 
 func TestCalculateCost_MinimumCost(t *testing.T) {
 	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
-		queryModelPriceFn: func(ctx context.Context, orgID int64, model string) (float64, float64, error) {
-			return 1, 1, nil
+		queryModelPriceFn: func(ctx context.Context, orgID int64, model string) (int64, int64, error) {
+			return 10_000_000, 10_000_000, nil
 		},
 	})
 
@@ -403,15 +405,14 @@ func TestCalculateCost_MinimumCost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// cost = (1*1 + 1*1) / 1000 = 0.002 → min 1
-	if cost != 1 {
-		t.Fatalf("expected min cost=1, got %d", cost)
+	if cost != 20 {
+		t.Fatalf("expected exact cost=20 micros, got %d", cost)
 	}
 }
 
 func TestCalculateCost_ReturnsErrorOnPriceLookupFailure(t *testing.T) {
 	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
-		queryModelPriceFn: func(ctx context.Context, orgID int64, model string) (float64, float64, error) {
+		queryModelPriceFn: func(ctx context.Context, orgID int64, model string) (int64, int64, error) {
 			return 0, 0, fmt.Errorf("db error")
 		},
 	})
@@ -1248,7 +1249,7 @@ func TestHandleChatCompletion_NoMessages(t *testing.T) {
 	}
 	relay := newTestRelay(db, &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
-			return &billing.FreezeResult{FreezeID: 1, Amount: 100, NewBalance: 900, Success: true}, nil
+			return &billing.FreezeResult{FreezeID: 1, AmountMicros: 100, NewBalanceMicros: 900, Success: true}, nil
 		},
 	})
 
@@ -1295,7 +1296,7 @@ func TestHandleChatCompletion_NoRoute(t *testing.T) {
 	}
 	relay := newTestRelay(db, &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
-			return &billing.FreezeResult{FreezeID: 1, Amount: 100, NewBalance: 900, Success: true}, nil
+			return &billing.FreezeResult{FreezeID: 1, AmountMicros: 100, NewBalanceMicros: 900, Success: true}, nil
 		},
 	})
 
@@ -1552,7 +1553,7 @@ func TestHandleEmbeddings_NoRoute(t *testing.T) {
 	}
 	relay := newTestRelay(db, &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
-			return &billing.FreezeResult{FreezeID: 1, Amount: 100, NewBalance: 900, Success: true}, nil
+			return &billing.FreezeResult{FreezeID: 1, AmountMicros: 100, NewBalanceMicros: 900, Success: true}, nil
 		},
 	})
 
@@ -1585,12 +1586,12 @@ func TestRelayNonStreamRequest_Success(t *testing.T) {
 		},
 	}
 	b := &mockBilling{
-		queryModelPriceFn: func(ctx context.Context, orgID int64, model string) (float64, float64, error) {
-			return 5, 15, nil
+		queryModelPriceFn: func(ctx context.Context, orgID int64, model string) (int64, int64, error) {
+			return 50_000_000, 150_000_000, nil
 		},
 		settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
 			settleCalled = true
-			return &billing.SettleResult{SettleID: 1, Refund: 5, NewBalance: 995, Success: true}, nil
+			return &billing.SettleResult{SettleID: 1, RefundMicros: 5, NewBalanceMicros: 995, Success: true}, nil
 		},
 	}
 	relay := newTestRelay(db, b)
@@ -1739,8 +1740,8 @@ func TestRelayStreamRequest_NormalFlow(t *testing.T) {
 		},
 	}
 	b := &mockBilling{
-		queryModelPriceFn: func(ctx context.Context, orgID int64, model string) (float64, float64, error) {
-			return 5, 15, nil
+		queryModelPriceFn: func(ctx context.Context, orgID int64, model string) (int64, int64, error) {
+			return 50_000_000, 150_000_000, nil
 		},
 		settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
 			settleCalled = true
@@ -1750,7 +1751,7 @@ func TestRelayStreamRequest_NormalFlow(t *testing.T) {
 			if req.CompletionTokens != 8 {
 				t.Errorf("expected completionTokens=8, got %d", req.CompletionTokens)
 			}
-			return &billing.SettleResult{SettleID: 1, Refund: 0, NewBalance: 9990, Success: true}, nil
+			return &billing.SettleResult{SettleID: 1, RefundMicros: 0, NewBalanceMicros: 9990, Success: true}, nil
 		},
 	}
 	relay := newTestRelay(db, b)
@@ -1966,7 +1967,7 @@ func TestRelayStreamRequest_SettleError(t *testing.T) {
 	if !strings.Contains(body, `"billing_status":"settlement_pending_recovery"`) {
 		t.Fatalf("expected settle failure billing status, got %s", body)
 	}
-	if !strings.Contains(body, `"charged":0`) {
+	if !strings.Contains(body, `"charged_cost_micros":"0"`) {
 		t.Fatalf("expected charged cost to remain pending until recovery, got %s", body)
 	}
 }
@@ -1998,7 +1999,7 @@ func TestP6F18BRelayStreamMarksOutputAndPersistsUsageBeforeSettlement(t *testing
 		},
 		settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
 			sequence = append(sequence, "settle")
-			return &billing.SettleResult{SettleID: 1, ActualCost: 2, ChargedCost: 2, Success: true}, nil
+			return &billing.SettleResult{SettleID: 1, ActualCostMicros: 2, ChargedCostMicros: 2, Success: true}, nil
 		},
 	}
 	relay := newTestRelay(db, b)
@@ -2362,8 +2363,8 @@ func TestP6F40BHandleChatCompletionProviderAttemptPrecedesNonStreamDispatch(t *t
 	}
 
 	// Mock billing
-	freezeResult := &billing.FreezeResult{FreezeID: 1, Amount: 100, NewBalance: 900, Success: true}
-	settleResult := &billing.SettleResult{SettleID: 1, Refund: 5, NewBalance: 905, Success: true}
+	freezeResult := &billing.FreezeResult{FreezeID: 1, AmountMicros: 100, NewBalanceMicros: 900, Success: true}
+	settleResult := &billing.SettleResult{SettleID: 1, RefundMicros: 5, NewBalanceMicros: 905, Success: true}
 	b := &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
 			return freezeResult, nil
@@ -2547,25 +2548,25 @@ func TestHandleChatCompletion_AnthropicNativeNonStream(t *testing.T) {
 	}
 	b := &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
-			return &billing.FreezeResult{FreezeID: 1, Amount: 100, NewBalance: 900, Success: true}, nil
+			return &billing.FreezeResult{FreezeID: 1, AmountMicros: 100, NewBalanceMicros: 900, Success: true}, nil
 		},
 		prepareDeliveryFn: func(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error) {
 			return &billing.PrepareDeliveryResult{Funded: true, Preview: billing.SettleResult{
-				ActualCost: 1, ChargedCost: 1, Success: true,
+				ActualCostMicros: 1, ChargedCostMicros: 1, Success: true,
 				PricingVersion: "pv2_test", CacheReadRatio: 0.1, CacheCreationRatio: 1.25,
-				EffectiveInputPriceCents: 2, EffectiveCacheReadPriceCents: 0.2,
-				EffectiveCacheCreationPriceCents: 2.5, EffectiveOutputPriceCents: 10,
-				CacheReadCostCents: 0.0014, CacheCreationCostCents: 0.0075,
+				EffectiveInputPriceMicrosPerMillion: 20_000_000, EffectiveCacheReadPriceMicrosPerMillion: 2_000_000,
+				EffectiveCacheCreationPriceMicrosPerMillion: 25_000_000, EffectiveOutputPriceMicrosPerMillion: 100_000_000,
+				CacheReadCostMicros: 14, CacheCreationCostMicros: 75,
 			}}, nil
 		},
 		settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
 			settleReq = req
 			return &billing.SettleResult{
-				SettleID: 1, Refund: 0, NewBalance: 900, Success: true,
+				SettleID: 1, RefundMicros: 0, NewBalanceMicros: 900, Success: true,
 				PricingVersion: "pv2_test", CacheReadRatio: 0.1, CacheCreationRatio: 1.25,
-				EffectiveInputPriceCents: 2, EffectiveCacheReadPriceCents: 0.2,
-				EffectiveCacheCreationPriceCents: 2.5, EffectiveOutputPriceCents: 10,
-				CacheReadCostCents: 0.0014, CacheCreationCostCents: 0.0075,
+				EffectiveInputPriceMicrosPerMillion: 20_000_000, EffectiveCacheReadPriceMicrosPerMillion: 2_000_000,
+				EffectiveCacheCreationPriceMicrosPerMillion: 25_000_000, EffectiveOutputPriceMicrosPerMillion: 100_000_000,
+				CacheReadCostMicros: 14, CacheCreationCostMicros: 75,
 			}, nil
 		},
 	}
@@ -2720,11 +2721,11 @@ func TestHandleChatCompletion_AnthropicNativeStream(t *testing.T) {
 	}
 	b := &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
-			return &billing.FreezeResult{FreezeID: 1, Amount: 100, NewBalance: 900, Success: true}, nil
+			return &billing.FreezeResult{FreezeID: 1, AmountMicros: 100, NewBalanceMicros: 900, Success: true}, nil
 		},
 		settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
 			settleReq = req
-			return &billing.SettleResult{SettleID: 1, Refund: 0, NewBalance: 900, PricingVersion: "pv2_stream", CacheReadRatio: 0.1, CacheCreationRatio: 1.25, Success: true}, nil
+			return &billing.SettleResult{SettleID: 1, RefundMicros: 0, NewBalanceMicros: 900, PricingVersion: "pv2_stream", CacheReadRatio: 0.1, CacheCreationRatio: 1.25, Success: true}, nil
 		},
 	}
 	relay := &Relay{db: db, router: NewRouter(db), billing: b, encKey: encKey}
@@ -2882,7 +2883,7 @@ func TestHandleChatCompletion_RetryClassification(t *testing.T) {
 			b := &mockBilling{
 				freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
 					freezeCalls++
-					return &billing.FreezeResult{FreezeID: 1, Amount: 100, Success: true}, nil
+					return &billing.FreezeResult{FreezeID: 1, AmountMicros: 100, Success: true}, nil
 				},
 				settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
 					settleCalls++
@@ -3023,7 +3024,7 @@ func TestP6F40BHandleChatCompletionRejectedThenAmbiguousTransportStops(t *testin
 	var completions []billing.ProviderAttemptCompletion
 	b := &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
-			return &billing.FreezeResult{FreezeID: 1, Amount: 100, Success: true}, nil
+			return &billing.FreezeResult{FreezeID: 1, AmountMicros: 100, Success: true}, nil
 		},
 		cancelFn: func(ctx context.Context, requestID string, orgID int64) error {
 			cancelCalled = true
@@ -3090,7 +3091,7 @@ func TestHandleChatCompletion_ModelNotAllowed(t *testing.T) {
 	b := &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
 			freezeCalled = true
-			return &billing.FreezeResult{FreezeID: 1, Amount: 100, Success: true}, nil
+			return &billing.FreezeResult{FreezeID: 1, AmountMicros: 100, Success: true}, nil
 		},
 	}
 
@@ -3138,7 +3139,7 @@ func TestHandleChatCompletion_SensitiveContent(t *testing.T) {
 	b := &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
 			freezeCalled = true
-			return &billing.FreezeResult{FreezeID: 1, Amount: 100, Success: true}, nil
+			return &billing.FreezeResult{FreezeID: 1, AmountMicros: 100, Success: true}, nil
 		},
 	}
 

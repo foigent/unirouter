@@ -10,13 +10,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/migrate"
-	"github.com/uniroute/unirouter/internal/testutil"
 )
 
 func TestP6F20DurableOutboxMigrationUpDownGuardAndRollForward(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool, migrationsDir := setupMigratedThrough(t, "000027_prd6_durable_internal_outbox.up.sql")
 	ctx := context.Background()
-	migrationsDir := testutil.MigrationsDir(t)
 
 	assertUp := func() {
 		t.Helper()
