@@ -61,4 +61,5 @@ trash/*
 
 # Local visual QA evidence. Keep screenshots on disk, not in PRs.
 output/playwright/*.png
+output/license-studio/
 .playwright-cli/

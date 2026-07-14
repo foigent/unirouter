@@ -39,6 +39,9 @@ services:
         RUNTIME_VERSION: ${RUNTIME_VERSION:-local}
         RUNTIME_COMMIT: ${RUNTIME_COMMIT:-unknown}
         GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+        # Source Compose is development-only. Customer/release images are built
+        # separately with immutable embedded License and upgrade trust roots.
+        UNIROUTER_RELEASE_TRUST_MODE: development
     container_name: uniroute-api
     ports:
       - "8080:8080"
@@ -95,7 +98,11 @@ services:
       PAYLOAD_ORG_INFLIGHT_BYTES: ${PAYLOAD_ORG_INFLIGHT_BYTES:-67108864}
       LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-30}
       LICENSE_PUBLIC_KEY: ${LICENSE_PUBLIC_KEY:-}
+      LICENSE_PUBLIC_KEYS: ${LICENSE_PUBLIC_KEYS:-}
+      LICENSE_DEPLOYMENT_ID: ${LICENSE_DEPLOYMENT_ID:-}
       LICENSE_EXPIRY_WARNING_DAYS: ${LICENSE_EXPIRY_WARNING_DAYS:-30}
+      LICENSE_REFRESH_SECONDS: ${LICENSE_REFRESH_SECONDS:-30}
+      UPGRADE_PUBLIC_KEYS: ${UPGRADE_PUBLIC_KEYS:-}
       OIDC_ENABLED: ${OIDC_ENABLED:-false}
       OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}

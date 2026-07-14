@@ -62,6 +62,9 @@ jobs:
                   frontend=true
                   docker=true
                   ;;
+                deploy/customer/*)
+                  docker=true
+                  ;;
                 *.go|go.mod|go.sum|migrations/*|cmd/*|internal/*)
                   backend=true
                   docker=true
@@ -89,7 +92,7 @@ jobs:
       always() &&
       (needs.changes.result != 'success' || needs.changes.outputs.backend == 'true')
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     concurrency:
       group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-backend
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -173,6 +176,11 @@ jobs:
         env:
           REQUIRE_TEST_DATABASE: "1"
         run: go test -tags=integration -race ./internal/billing ./internal/migrate -run 'TestV1(Pricing(Authority|UnitContract)|MicroPrecisionLedger)' -count=1
+
+      - name: Run V1 commercial license and signed upgrade integration tests
+        env:
+          REQUIRE_TEST_DATABASE: "1"
+        run: go test -tags=integration -race ./internal/migrate ./cmd/uniroute -run 'Test(V1CommercialReleaseControlMigrationAndConcurrentResourceLimit|UpgradeRecordAppliedPinsRuntimeDigestSequenceAndSchema)' -count=1
 
       - name: Run routing policy integration tests
         env:
@@ -404,6 +412,34 @@ jobs:
           grep -F 'ARG VITE_DEPLOY_ENV=' frontend/Dockerfile
           grep -F 'ENV VITE_DEPLOY_ENV=${VITE_DEPLOY_ENV}' frontend/Dockerfile
 
+          customer_compose="$(
+            UNIROUTER_BACKEND_IMAGE=unirouter/backend@sha256:5555555555555555555555555555555555555555555555555555555555555555 \
+            UNIROUTER_FRONTEND_IMAGE=unirouter/frontend@sha256:6666666666666666666666666666666666666666666666666666666666666666 \
+            POSTGRES_IMAGE=postgres@sha256:1111111111111111111111111111111111111111111111111111111111111111 \
+            REDIS_IMAGE=redis@sha256:2222222222222222222222222222222222222222222222222222222222222222 \
+            PROMETHEUS_IMAGE=prom/prometheus@sha256:3333333333333333333333333333333333333333333333333333333333333333 \
+            GRAFANA_IMAGE=grafana/grafana@sha256:4444444444444444444444444444444444444444444444444444444444444444 \
+            POSTGRES_PASSWORD=ci-compose-validation \
+            DB_DSN='postgres://uniroute:ci-compose-validation@postgres:5432/uniroute?sslmode=disable' \
+            REDIS_PASSWORD=ci-compose-validation \
+            JWT_SECRET=ci-compose-validation \
+            API_KEY_HASH_SECRET=ci-compose-validation \
+            ENCRYPTION_KEY=ci-compose-validation-32bytes! \
+            GRAFANA_ADMIN_PASSWORD=ci-compose-validation \
+            LICENSE_DEPLOYMENT_ID=ci-deployment \
+            docker compose -f deploy/customer/docker-compose.yml config
+          )"
+          grep -F 'image: unirouter/backend@sha256:5555555555555555555555555555555555555555555555555555555555555555' <<< "$customer_compose"
+          grep -F 'image: unirouter/frontend@sha256:6666666666666666666666666666666666666666666666666666666666666666' <<< "$customer_compose"
+          grep -F 'image: postgres@sha256:1111111111111111111111111111111111111111111111111111111111111111' <<< "$customer_compose"
+          grep -F 'image: redis@sha256:2222222222222222222222222222222222222222222222222222222222222222' <<< "$customer_compose"
+          grep -F 'image: prom/prometheus@sha256:3333333333333333333333333333333333333333333333333333333333333333' <<< "$customer_compose"
+          grep -F 'image: grafana/grafana@sha256:4444444444444444444444444444444444444444444444444444444444444444' <<< "$customer_compose"
+          if grep -Fq 'build:' <<< "$customer_compose"; then
+            echo 'customer Compose must not contain build contexts' >&2
+            exit 1
+          fi
+
           cleanup() {
             rm -f .env.production
             rm -f frontend/.env
@@ -423,7 +459,11 @@ jobs:
           mkdir frontend/secrets
           printf 'docker-context-regression-marker\n' > frontend/secrets/docker-context-regression.txt
 
-          docker build -t unirouter:test .
+          docker build \
+            --build-arg UNIROUTER_RELEASE_TRUST_MODE=release \
+            --build-arg UNIROUTER_LICENSE_TRUST_BUNDLE_B64=eyJsaWNlbnNlLWNpIjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQT0ifQ \
+            --build-arg UNIROUTER_UPGRADE_TRUST_BUNDLE_B64=eyJ1cGdyYWRlLWNpIjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQT0ifQ \
+            -t unirouter:test .
 
           docker build -t unirouter-frontend-context:test -f - frontend <<'DOCKERFILE'
           FROM alpine:3.19

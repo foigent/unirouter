@@ -2,6 +2,10 @@
 
 企业级 AI 模型管控平台 — 统一接入 + 按量计费 + 本地部署
 
+下面的源码 `docker compose` 快速开始仅用于开发和内部测试。客户正式交付使用
+签名包内的 `deploy/customer` 模板与预构建镜像，不需要也不应取得源码、
+builder cache 或签名私钥。
+
 ## 快速开始
 
 ```bash
@@ -10,7 +14,9 @@ git clone <repo-url> && cd uniroute
 
 # 2. 配置环境变量
 cp .env.example .env
-# 编辑 .env，修改 JWT_SECRET、API_KEY_HASH_SECRET、ENCRYPTION_KEY、GRAFANA_ADMIN_PASSWORD；如需导入离线 License，同时配置 LICENSE_PUBLIC_KEY
+# 编辑 .env，修改 JWT_SECRET、API_KEY_HASH_SECRET、ENCRYPTION_KEY、GRAFANA_ADMIN_PASSWORD。
+# 源码 Compose 仅用于开发；可选 LICENSE_PUBLIC_KEYS/UPGRADE_PUBLIC_KEYS 也是开发验签输入。
+# 正式商业镜像把两类公钥信任根嵌入二进制，运行时环境变量不能替换。
 openssl rand -hex 32  # 生成密钥
 
 # 3. 启动服务
@@ -27,6 +33,18 @@ docker compose exec backend ./uniroute migrate up
 docker compose exec backend ./uniroute admin set-password \
     --username admin --password <strong-password> --org-id 1
 ```
+
+服务可以在缺少商业 License 时启动，以保留本地登录、健康检查和 License
+导入恢复面；但 Chat、Embeddings、Models 与 Agent capability 新请求会返回
+`license_error.*`，不会进入 API Key、计费或上游。客户交付应使用不含源码和
+builder cache 的最终镜像/制品，并在“商业授权”页导入由发行方离线签发、与
+`LICENSE_DEPLOYMENT_ID` 精确绑定的 `unirouter.license.v1` 文档。
+
+发行方日常生成和签发不需要终端：macOS 使用可双击的
+`UniRouter License Studio.app`。它通过本机文件选择器生成 License/升级包两套
+独立 Ed25519 密钥、填写客户授权、签发并复核；私钥不进入浏览器、客户部署或
+UniRouter 数据库。构建与使用说明见
+[商业授权技术参考](docs/tech-ref/16-license-foundation.md)。
 
 ## 架构
 
@@ -69,8 +87,9 @@ Docker Compose（6 个容器）：
 - [PRD6 P6-F32/P6-F39 本地证据](docs/ops/evidence/PRD6-B0B-P6F32-P6F39-finance-and-usage-tenant-isolation-local-20260711.md) — 财务、请求日志和用量派生视图的租户隔离
 - [PRD6 流式传输本地证据](docs/ops/evidence/PRD6-B0C-P6STREAM002A-stream-transport-local-20260712.md) — 长流帧、超时、写入串行化、异常结算及剩余边界
 - [PRD6 产品/架构/UX 审计](docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md) — 审计日志、用量核验、链路 ID、UI、扩展性与升级建议
+- [V1 商业授权与签名升级合同](docs/planning/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-CONTRACT-20260714.md) — 交付前强制门槛、非声明与目标激活边界
 - [PRD6 高可用与流式故障研究](docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md) — 竞品集群模式、UniRouter 当前事实和已接受 D6-12 边界
-- [PRD7 候选 Backlog](docs/planning/PRD7-CANDIDATE-BACKLOG.md) — 未来首项方向已选；全部实施后置到 PRD6 闭环后
+- [PRD7 候选 Backlog](docs/planning/PRD7-CANDIDATE-BACKLOG.md) — Post-PRD6 最低签名包基础与仍未接受的 Update Center/自动化/N-1 产品化边界
 - [PRD5 产品范围](docs/PRD-Phase5.md) — Accepted Scope Complete 历史事实
 - [PRD5 验收矩阵](docs/ops/PRD5-ACCEPTANCE-MATRIX.md) — PRD5 关闭证据和明确决策
 - [PRD3 验收矩阵](docs/ops/PRD3-ACCEPTANCE-MATRIX.md) — 已完成 PRD3 清理/优化验收状态
@@ -90,6 +109,8 @@ Docker Compose（6 个容器）：
   - [04 OneAPI Hook 清单](docs/tech-ref/04-oneapi-hook-manifest.md)
   - [05 OpenAPI Spec](docs/tech-ref/05-openapi-spec.yaml)
   - [06 前端页面规格](docs/tech-ref/06-frontend-spec.md)
+  - [16 商业授权强制](docs/tech-ref/16-license-foundation.md)
+  - [27 签名离线升级包](docs/tech-ref/27-signed-offline-upgrade.md)
 - [运维文档](docs/ops/) — 部署和测试
   - [部署手册](docs/ops/deployment-runbook.md)
   - [测试计划](docs/ops/test-plan.md)
@@ -100,6 +121,7 @@ Docker Compose（6 个容器）：
 UniRouter/
 ├── cmd/uniroute/         # 入口
 │   └── main.go
+├── cmd/uniroute-license-studio/ # 发行方 macOS 图形化 License 工具
 ├── internal/             # 内部包
 │   ├── admin/            # 管理后台 API handlers
 │   ├── auth/             # 认证逻辑
@@ -110,7 +132,11 @@ UniRouter/
 │   ├── errdocs/          # 错误码文档注册表
 │   ├── filter/           # 请求过滤
 │   ├── gateway/          # 网关路由 & 中继
-│   ├── licensing/        # 离线 License 校验
+│   ├── licensing/        # 商业 License 签名、部署/时间/功能/限额强制
+│   ├── licensestudio/    # 本机 GUI、macOS 文件选择和安全文件操作
+│   ├── releasetrust/     # 正式镜像编译时嵌入、运行时不可替换的公钥信任根
+│   ├── signing/          # Ed25519 密钥和公钥环严格解析
+│   ├── upgradebundle/    # 确定性签名离线升级包与流式验证
 │   ├── logger/           # 日志辅助
 │   ├── metering/         # token usage 来源与口径
 │   ├── middleware/        # HTTP 中间件（鉴权、限流、CORS）
@@ -135,6 +161,7 @@ UniRouter/
 │   └── console/          # 控制台构建产物
 ├── migrations/           # SQL 迁移脚本
 ├── scripts/              # 验收/运维辅助脚本
+├── deploy/customer/      # 不含 build/source mount 的客户最终制品 Compose 模板
 ├── docs/                 # 文档
 │   ├── PROJECT-HANDOFF.md # Agent 接手入口
 │   ├── CODEBASE-MAP.md   # 代码结构地图
@@ -167,3 +194,8 @@ UniRouter/
 Copyright © 2024 Foigent. All Rights Reserved.
 
 本软件为闭源商业软件，未经授权不得复制、修改或分发。
+
+商业交付不依赖“混淆即可防破解”的错误假设：离线 License 在请求入口强制，升级
+制品独立签名并防篡改/回滚；源码、签名私钥和构建缓存不进入客户交付包。拥有主机
+root 或源码的一方最终仍可修改本地二进制，因此技术控制必须与合同、授权审计、
+签名更新和受控支持渠道共同使用。

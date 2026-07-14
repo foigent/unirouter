@@ -142,6 +142,9 @@ func (s *EventService) ProcessNotificationDelivery(ctx context.Context, event ou
 	if s == nil || s.db == nil {
 		return fmt.Errorf("notification service is unavailable")
 	}
+	if !s.admitted() {
+		return nil
+	}
 	var payload notificationDeliveryPayload
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		return fmt.Errorf("decode notification delivery event: %w", err)
@@ -192,6 +195,9 @@ func (s *EventService) ProcessNotificationDelivery(ctx context.Context, event ou
 func (s *EventService) ProcessBudgetEvaluation(ctx context.Context, event outbox.Event) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("notification service is unavailable")
+	}
+	if !s.admitted() {
+		return nil
 	}
 	var payload budgetEvaluationPayload
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {

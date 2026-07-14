@@ -231,6 +231,9 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		req.OrgID, projectID, nullableOwnerUserID(ownerUserID), keyType, req.Name, keyHash, keyPrefix, req.RPMLimit, req.QPSLimit, req.AllowedIPs, req.AllowedModels, policyLabels,
 	).Scan(&id)
 	if err != nil {
+		if writeCommercialLimitViolation(w, err) {
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to create key"})
 		return
 	}
@@ -442,6 +445,9 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 	query := fmt.Sprintf("UPDATE api_keys SET %s WHERE %s", joinStrings(sets, ", "), whereClause)
 	tag, err := h.db.Exec(r.Context(), query, args...)
 	if err != nil {
+		if writeCommercialLimitViolation(w, err) {
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to update key"})
 		return
 	}

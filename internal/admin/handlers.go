@@ -43,6 +43,7 @@ type Handler struct {
 	jwtSecret                    string
 	apiKeyHashSecret             string
 	licenseVerifier              *licensing.Verifier
+	licenseRuntime               *licensing.Runtime
 	eventService                 *billing.EventService
 	oidcService                  *oidc.Service
 	encKey                       []byte
@@ -99,6 +100,10 @@ func NewHandlerWithAPIKeyHashSecret(db db.DBQuerier, jwtSecret, apiKeyHashSecret
 
 func (h *Handler) SetLicenseVerifier(verifier *licensing.Verifier) {
 	h.licenseVerifier = verifier
+}
+
+func (h *Handler) SetLicenseRuntime(runtime *licensing.Runtime) {
+	h.licenseRuntime = runtime
 }
 
 func (h *Handler) SetEventService(svc *billing.EventService) {

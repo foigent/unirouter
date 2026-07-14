@@ -1,8 +1,8 @@
 # PRD7 Candidate Backlog（候选输入，不是 Accepted Scope）
 
-> Date: 2026-07-13
-> Status: Candidate / future Upgrade, Cache Service and Provider Cost Reconciliation directions recorded; all implementation deferred until PRD6 closeout
-> Authority: 本文只做 PRD6 收尾后的候选分流、排序和验收设计；不授权实现、部署或外部集成。
+> Date: 2026-07-15
+> Status: Candidate / the separately approved Post-PRD6 V1 release gate implements the minimum signed-upgrade foundation; PRD7 productization remains unaccepted
+> Authority: 本文只做 PRD6 收尾后的候选分流、排序和验收设计；除另行批准的 V1 商业授权与签名升级发布门槛外，不授权 PRD7 实现、部署或外部集成。
 > Source of truth: PRD6 的已接受范围仍以 `docs/PRD-Phase6.md`、
 > `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` 和用户已确认的 D6 决策为准。
 
@@ -15,8 +15,11 @@ PRD6 完成当前正确性、租户隔离、计费、链路身份、分布式策
 用户已在 2026-07-11 接受 D7-UPGRADE-001/002 作为未来第一个 PRD7 产品化方向：
 **客户本地、人工批准、可验证签名的离线升级包与只读优先的 Update Center**。
 它直接解决 2B 私有化客户打补丁、回滚和证明“装了什么版本”的问题，又不要求
-UniRouter 变成托管 SaaS 或自动控制客户环境。该方向选择不是当前实施授权；全部
-PRD7 实现必须等 PRD6 闭环后再以独立 PRD7、acceptance row、分支、PR 和 CI 启动。
+UniRouter 变成托管 SaaS 或自动控制客户环境。用户在 PRD6 正式完成后，于
+2026-07-15 另行批准“商业授权强制与签名升级包”为 V1 交付门槛；该 Post-PRD6
+授权只覆盖本地签名/验证、回滚与 schema preflight、release sequence readback、
+source-free Compose 交付和人工 runbook。它不接受 PRD7、Update Center、自动
+apply/rollback、在线发布渠道、N-1/N-2 支持政策或客户环境部署。
 
 用户同日在澄清方案 B 的边界后，接受将完整响应缓存能力列为未来必须补足的能力，
 目标形态为可独立部署、同时可被私有化和 SaaS regional cell 复用的 Cache Service。
@@ -68,9 +71,10 @@ D7-UPGRADE-001/002 的首项顺序，也不授权当前连接真实凭证、导�
 | 可升级基础 | 统一 SemVer/build/schema metadata、兼容窗口、迁移锁/校验/dirty-state、防并发升级、release manifest schema、备份/回滚检查和 CI release gate | 让未来 patch 可安全产品化 | 迁移不可逆、混合版本 writer、供应链和回滚数据库 | P1 | 重复/并发迁移；旧 writer 拒绝或兼容；manifest/hash；恢复演练；required CI |
 | 架构演进 | 保持 modular monolith，逐步拆分 relay orchestration、worker lease、billing finalization 和 admin domain seam | 降低大文件/大流程变更风险，不引入分布式重写 | 大爆炸重构、隐式事务边界、worker 多副本重复 | P1/P2 | 行为保持测试；依赖方向检查；race/load/failure test；无 API 破坏 |
 
-PRD6 的“可升级基础”不等于已经交付 Update Center。PRD6 只建立可验证版本、兼容、
-迁移和发布原语；客户可见的离线包、导入/校验/应用体验和发布渠道属于待接受的
-PRD7 产品化层。
+PRD6 的“可升级基础”不等于已经交付 Update Center。PRD6 建立可验证版本、兼容、
+迁移和发布原语；另行批准的 Post-PRD6 V1 gate 在此基础上增加签名离线包、离线
+验证、release-state readback 和 source-free Compose。客户可见的导入/校验/应用
+体验、自动化 pre/postflight、N-1 支持矩阵和发布渠道仍属于待接受的 PRD7 产品化层。
 
 ## 3. PRD7 候选功能矩阵
 
@@ -78,7 +82,7 @@ PRD7 产品化层。
 
 | 候选 | 产品价值 | UniRouter 所有权 | 外部所有权/依赖 | 主要风险 | 候选优先级 | 建议验收证据 |
 |------|----------|------------------|-----------------|----------|--------------|--------------|
-| D7-UPGRADE-001 签名离线升级包 | 私有化客户可离线打安全 patch、核验来源并可控回滚 | 版本/兼容 manifest、包验证器、迁移 preflight、人工 apply/rollback workflow | 客户运维决定窗口、备份和最终应用 | 供应链伪造、错误包、数据库不可逆、混合版本 | P1（推荐首项） | 篡改/错版本/错架构拒绝；签名/哈希；无网安装；备份恢复；N-1 升级；SBOM/构建溯源 |
+| D7-UPGRADE-001 签名离线升级产品化 | 私有化客户可离线打安全 patch、核验来源并可控回滚 | Post-PRD6 gate 已提供签名 manifest、流式验证、sequence/schema preflight、人工 apply/record 原语；PRD7 只承接自动化 pre/postflight、备份恢复与支持矩阵 | 客户运维决定窗口、备份和最终应用 | 供应链伪造、错误包、数据库不可逆、混合版本 | P1（推荐首项） | 已有 tamper/错版本/错架构/签名/哈希回归；剩余无网恢复演练、N-1 升级、操作体验和发布流程 |
 | D7-UPGRADE-002 Local Update Center | 管理员清楚当前版本、可用 patch、影响、前置条件和回滚状态 | 默认只读检查、本地导入、preflight、审计、人工批准 | 可选离线介质或客户配置的受信更新源 | 变成远程控制面、自动外联、权限误用 | P1 | 无外网默认；RBAC；CSRF/重放；导入/验证/拒绝/审批审计；失败不改变运行态 |
 | D7-UPGRADE-003 Release channels/lifecycle | 为安全修复、稳定版和 LTS 提供清晰支持窗口 | 版本通道元数据、兼容矩阵、deprecation 和 support bundle | 商业支持政策由产品/运营决定 | 通道碎片、长期维护负担 | P2 | stable/security/LTS 升降级矩阵；EOL 提示；可复现 support bundle；不含秘密 |
 | P6-F12 外部 secret reference/version/rotation | 跨云凭证安全轮换，避免配置文件静态秘密 | 选定 backend 的引用、版本 pin、热切换、回滚和审计 | Vault/KMS/云 secret 服务的可用性与运营 | 旧 worker、失联、权限扩大、供应商耦合 | P1/P2 | stale-worker、轮换、回滚、outage/fail mode、secret 不出日志；先选一个 backend |
@@ -166,8 +170,9 @@ PRD7 产品化层。
   PRD7 的前置条件，不是 PRD7 候选。
 - UniRouter 的核心产品边界是请求路径 admission/routing/billing/safety 和本地
   权威事实；异步跨请求分析、训练和不可见工具副作用有外部 owner。
-- 私有化 2B 客户需要可审计 patch、兼容检查和回滚，但当前产品化的签名离线包与
-  Update Center 尚未被接受或交付。
+- 私有化 2B 客户需要可审计 patch、兼容检查和回滚；Post-PRD6 V1 gate 已接受并
+  实现本地签名包/验证/sequence-state/source-free Compose 基础，但 Update Center、
+  自动 apply/rollback、N-1 支持政策和完整产品化仍未接受或交付。
 - 自动升级、外部 exporter、continuous ingestion、真实/付费请求和目标环境变更
   均不在本文授权范围。
 
@@ -189,7 +194,8 @@ PRD7 产品化层。
   状态等能力可能在 UI 中不可见或命名不清；PRD6 应先做 capability inventory 和
   API/UI parity，而不是在 PRD7 重写一套。
 - 历史迁移、事故证据、回滚记录和旧 worker 兼容问题已经包含升级产品的重要约束；
-  D7-UPGRADE-001 立项前应把这些约束转为 machine-checkable preflight。
+  V1 gate 已把签名、平台、时序和 schema 约束转为 machine-checkable preflight，
+  PRD7 仍需补足备份恢复、混合 writer、N-1 和操作流程检查。
 - provider adapter、notification worker 和静态 extension seam 已提供部分扩展能力，
   但不等于 runtime plugin platform；应复用窄接口，不误报 marketplace 已存在。
 - 客户/operator 可能已经有离线镜像导入、备份和变更窗口流程；Update Center 应
@@ -215,7 +221,7 @@ PRD7 产品化层。
 | Batch | 目标 | 进入门槛 | 退出证据 |
 |-------|------|----------|----------|
 | D7-0 Candidate Validation | 确定首个客户问题、支持矩阵、KPI、威胁模型和 owner | PRD6 P0 完成；用户选择首项 | 正式 PRD7、acceptance matrix、安全边界、design partner 输入；仍无部署 |
-| D7-1 Offline Upgrade V1（推荐） | 签名离线包、manifest/SBOM、导入验证、preflight、人工 apply/rollback audit；Update Center 先只读 | PRD6 version/migration/release foundation 通过 | tamper/离线/N-1/backup-restore/权限/失败原子性；独立 PR 和 required CI |
+| D7-1 Offline Upgrade Productization（推荐） | 在 Post-PRD6 签名包/验证/state 基础上产品化 machine pre/postflight、备份恢复、N-1 支持矩阵、人工 apply/rollback audit；Update Center 先只读 | V1 gate 合并并验证；正式接受 PRD7 范围 | 离线/N-1/backup-restore/权限/失败原子性/操作体验；独立 PR 和 required CI |
 | D7-2 Policy Lifecycle And Secret V1 | 选择一个 secret backend；policy simulation/rollback；BYO detector 仅走窄 adapter | D7-1 release safety；明确 backend 和 detector owner | rotation/outage/stale-worker；fixture diff；RBAC/audit；兼容与 rollback |
 | D7-3 Cost Reconciliation And Optimization | 先建立 D7-COST-001 Provider COGS 双账/对账内核和首批连接器，再实施独立 opt-in Exact Cache Service；semantic cache 与 managed billing 仍单独决定 | P6-F40/P6-F41 闭环；正式 FinOps/credential/import owner；Routing V1、计费真值、telemetry 和价值数据可信；`D7-CACHE-0` 通过 | 双账守恒、import 幂等/回填/撤销、账单差额隔离、RBAC/audit；缓存隔离/权限版本/purge/tombstone/stampede；离线 replay、预算和 kill switch |
 | D7-4 Async Media Plane | image/video object-reference job/status/cancel/settlement；provenance 可后置 | 用户接受 media roadmap、object store/queue/retention | 幂等、租约、取消、费用、删除、负载隔离、恢复；不发送真实付费任务 |

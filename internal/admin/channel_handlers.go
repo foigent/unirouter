@@ -105,6 +105,9 @@ func (h *Handler) CreateChannel(w http.ResponseWriter, r *http.Request) {
 		req.Name, req.Provider, req.BaseURL, req.Models, req.AdapterType, string(req.AdapterConfig), req.Priority, req.DegradationThreshold, req.RoutingWeight,
 	).Scan(&id)
 	if err != nil {
+		if writeCommercialLimitViolation(w, err) {
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to create channel"})
 		return
 	}
@@ -242,6 +245,9 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 	query := fmt.Sprintf("UPDATE channels SET %s WHERE %s", joinStrings(sets, ", "), where)
 	tag, err := h.db.Exec(r.Context(), query, args...)
 	if err != nil {
+		if writeCommercialLimitViolation(w, err) {
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to update channel"})
 		return
 	}

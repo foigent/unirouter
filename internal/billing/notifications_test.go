@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/uniroute/unirouter/internal/outbox"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
@@ -368,5 +369,39 @@ func TestEventService_RetryDueDeliveriesKeepsEventFailedWhenOtherDeliveriesRemai
 	}
 	if retried != 1 || eventState != DeliveryStateFailed {
 		t.Fatalf("expected event to remain failed while another delivery is not delivered, retried=%d state=%s", retried, eventState)
+	}
+}
+
+func TestEventService_CommercialAdmissionFailsClosedBeforePersistenceOrDelivery(t *testing.T) {
+	db := &testutil.MockDB{
+		QueryFn: func(context.Context, string, ...any) (pgx.Rows, error) {
+			t.Fatal("commercially disabled notifications must not query")
+			return nil, nil
+		},
+		QueryRowFn: func(context.Context, string, ...any) pgx.Row {
+			t.Fatal("commercially disabled notifications must not query")
+			return &testutil.MockRow{}
+		},
+		ExecFn: func(context.Context, string, ...any) (pgconn.CommandTag, error) {
+			t.Fatal("commercially disabled notifications must not write")
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	svc := NewEventService(db)
+	svc.SetAdmission(func() bool { return false })
+	result, err := svc.Emit(context.Background(), EventInput{OrgID: 1, EventType: EventAPIKeyDisabled, Title: "disabled"})
+	if err != nil || result.Created || result.DeliveryState != DeliveryStateNotConfigured {
+		t.Fatalf("Emit() = %#v, %v", result, err)
+	}
+	if retried, err := svc.RetryDueDeliveries(context.Background(), 10); err != nil || retried != 0 {
+		t.Fatalf("RetryDueDeliveries() = %d, %v", retried, err)
+	}
+	event := outbox.Event{Type: outbox.EventNotificationDelivery, Payload: []byte(`{"delivery_id":1}`)}
+	if err := svc.ProcessNotificationDelivery(context.Background(), event); err != nil {
+		t.Fatalf("ProcessNotificationDelivery() error = %v", err)
+	}
+	event = outbox.Event{Type: outbox.EventBudgetEvaluate, Payload: []byte(`{}`)}
+	if err := svc.ProcessBudgetEvaluation(context.Background(), event); err != nil {
+		t.Fatalf("ProcessBudgetEvaluation() error = %v", err)
 	}
 }

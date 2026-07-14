@@ -45,6 +45,8 @@
 | `docs/planning/V1-MICRO-PRECISION-LEDGER-PLAN-20260714.md` | User-approved Post-PRD6 option B money contract, non-rolling migration boundary and R3 decision gate |
 | `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-LOCAL-20260714.md` | V1 micro-CNY implementation matrix, full local regression, isolated migration/API/browser evidence and target/X-Insight activation gates |
 | `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-TARGET-20260714.md` | PR #202/#203 CI and merge truth, authorized non-rolling development-ECS migration/cutover, exact release, DB/API/runtime/browser/environment-label evidence and preserved non-claims |
+| `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-LOCAL-20260715.md` | P0 runtime trust-root replacement closure, double-click macOS License Studio, local security/API/browser/build evidence and preserved key/merge/ECS/production boundaries |
+| `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-CI-20260715.md` | PR #205 exact code-head required-CI closure for embedded License/upgrade trust rings, License Studio and formal release Docker image; merge/key/ECS decisions remain open |
 | `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` | Official competitor HA patterns, current UniRouter cluster facts, Four Quadrants and accepted D6-12 stream/HA boundary |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | Source-backed audit/reconciliation/correlation/UI/architecture/upgrade findings, Four Quadrants and PRD6 batches |
 | `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md` | Accepted customer-revenue/provider-COGS boundary, competitor and supplier billing evidence, Four Quadrants, PRD6 non-claims and future cost/metering/media candidates |
@@ -104,7 +106,8 @@
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | PRD6 product/architecture/UX audit | Confirmed findings, hypotheses and user requirements remain separately labeled |
 | `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` | PRD6 HA and stream-failover architecture reference | Official-source competitor facts, explicit inferences and recommendations remain separately labeled; no deployment authorization |
 | `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md` | PRD6 provider-cost reconciliation reference | D6-14 accepted architecture boundary and future candidate classification; no live connector, bill import, media implementation, service split or production claim |
-| `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | PRD7 candidate backlog | D7-UPGRADE-001/002 remain the future first direction; Cache, native provider runtime, cost reconciliation/connectors, generalized metering and async media future capabilities are recorded; managed billing still needs a decision; implementation remains deferred and separately gated |
+| `docs/planning/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-CONTRACT-20260714.md` | Post-PRD6 V1 release contract | User-approved commercial License enforcement, signed offline bundle, recovery, acceptance and separate R4 target-activation boundaries; does not reopen PRD6 |
+| `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | PRD7 candidate backlog | The separately approved Post-PRD6 gate implements minimum signed-bundle verification/state/source-free delivery; Update Center, automatic apply/rollback, N-1 policy and all other PRD7 candidates remain separately gated |
 | `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` | Future Cache Service candidate | Exact-cache service boundary and private/SaaS cell profiles accepted as direction only; no implementation authorization |
 | `docs/PRD-Phase5.md` | PRD5 completed product requirements | Accepted Scope Complete; preserve as closed phase evidence |
 | `docs/PRD-Phase4.md` | PRD4 formal product requirements | Completed current PRD4 scope |
@@ -140,7 +143,7 @@
 | `docs/tech-ref/13-audit-schema-upgrade.md` | PRD2 audit source, filter, and before/after contract |
 | `docs/tech-ref/14-notification-event-foundation.md` | PRD2 notification event, webhook routing, and project budget threshold contract |
 | `docs/tech-ref/15-ha-readiness.md` | PRD2 multi-instance, shared-state, smoke, and rollback contract |
-| `docs/tech-ref/16-license-foundation.md` | PRD2 offline license, audit, warning, and Batch 22 smoke contract |
+| `docs/tech-ref/16-license-foundation.md` | V1 commercial License enforcement and historical PRD2 compatibility boundary |
 | `docs/tech-ref/17-cache-research.md` | PRD2 cache research boundary; exact/semantic risks and no default runtime cache |
 | `docs/tech-ref/18-oidc-sso.md` | PRD2 OIDC first SSO, claim mapping, provisioning, and audit contract |
 | `docs/tech-ref/19-prompt-response-storage-policy.md` | PRD2 P2-F11 prompt/response storage policy: plaintext disabled by default and future opt-in controls |
@@ -151,6 +154,7 @@
 | `docs/tech-ref/24-prd4-real-sso-evidence.md` | PRD4 real SSO evidence harness and Logto/OIDC credential guardrails; real target execution is deferred to PRD5 |
 | `docs/tech-ref/25-prd5-xinsight-sanitized-snapshot.md` | PRD5 X-Insight sanitized snapshot tool, handoff note, and handoff contract |
 | `docs/tech-ref/26-prd5-evidence-field-contract.md` | PRD5 structural evidence field dictionary and migration/writer plan |
+| `docs/tech-ref/27-signed-offline-upgrade.md` | V1 signed offline bundle, verification, sequence/schema and readback contract |
 | `docs/governance/ADR-TEMPLATE.md` | Architecture Decision Record template |
 | `docs/governance/adr/ADR-0001-prd4-plungein-ports.md` | PRD4 PlungeIn ports architecture decision |
 | `docs/governance/adr/ADR-0002-prd4-api-key-owner-usage.md` | PRD4 API key owner usage attribution decision draft |
@@ -167,6 +171,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | `docs/ops/PRD4-ACCEPTANCE-MATRIX.md` | PRD4 completed acceptance matrix and evidence rules |
 | `docs/ops/PRD5-ACCEPTANCE-MATRIX.md` | PRD5 completed acceptance matrix and evidence rules |
 | `docs/ops/PRD6-ACCEPTANCE-MATRIX.md` | Current PRD6 Accepted Scope Complete and proposed/external/target-evidence truth |
+| `docs/ops/evidence/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-LOCAL-20260715.md` | Complete Post-PRD6 License/upgrade issue matrix, local implementation/test evidence, required-CI gate and target non-claims |
 | `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md` | Current PRD6 local baseline and code-finding evidence |
 | `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md` | Current PRD6 scalability/anti-pattern audit; findings remain source/local, not 100x or target verified |
 | `docs/ops/evidence/PRD6-B0B-P6F33-notification-tenant-isolation-local-20260711.md` | Current P6-F33 local plus PR/post-merge CI evidence; target cutover not executed |

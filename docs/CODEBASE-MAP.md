@@ -33,7 +33,12 @@
 | `internal/guardrail` | Immutable stacked Guardrail policies, deterministic PII/secret detection, sensitive-word compatibility, fixed-registry bounded external classifiers, fail-closed/degraded decisions and HMAC-only finding evidence |
 | `internal/errdocs` | Error documentation registry used by gateway `doc_url` responses and API Docs |
 | `internal/gateway` | Model routing, immutable weighted route snapshots, cross-replica probe/epoch health, upstream relay, chat completions, embeddings, model listing, request logging, metadata-only request trace events, distributed/Guardrail policy evidence and errors, bounded request/non-stream response envelopes, and serialized bounded SSE transport |
-| `internal/licensing` | Offline license document parsing, Ed25519 signature verification, expiry status, and warning calculation |
+| `internal/licensing` | Strict V1 commercial License signing/verification, deployment/time/feature/limit admission, legacy read compatibility and HTTP gates |
+| `internal/licensestudio` | Loopback-only graphical vendor issuer, macOS native file dialogs, no-overwrite key/License file operations and browser assets |
+| `internal/releasetrust` | Release-build embedded License/upgrade public rings; formal binaries reject runtime trust-root replacement |
+| `internal/signing` | Shared strict Ed25519 key parsing/encoding and named public-key ring validation |
+| `internal/upgradebundle` | Deterministic signed offline release bundle packing and streaming tamper/platform/sequence/schema verification |
+| `deploy/customer` | Source-free customer Compose/env template for prebuilt signed release artifacts; public trust roots are embedded in the backend image and no `build:` context is present |
 | `internal/logger` | Logging helpers |
 | `internal/metering` | Usage-source constants and token-metering source classification |
 | `internal/middleware` | Gateway auth, admin auth, rate limit, admission control, CORS, baseline security headers, Prometheus metrics |

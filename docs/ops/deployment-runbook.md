@@ -1,9 +1,9 @@
 # Deployment Runbook（部署运维手册）
 
-> **版本**：v1.7
-> **日期**：2026-07-06
+> **版本**：v1.9
+> **日期**：2026-07-15
 > **用途**：运维人员部署和维护 UniRoute 的操作手册
-> **变更记录**：v1.7 新增 PRD3 SEC-005 运行时暴露策略：CORS 精确 origin、登录限流、metrics 开关/CIDR；v1.6 新增 PRD2 OIDC-first SSO 配置和 mock-provider smoke；v1.5 新增 HTTP-only canary overlay、8081 canary direct smoke、PRD2 HA/backup rehearsal 命令；v1.4 新增生产 `.env` 保护、`API_KEY_HASH_SECRET`、rsync 安全同步规则和 PR #44 部署事故复盘；v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
+> **变更记录**：v1.9 增加可双击 License Studio，并把正式 License/升级验签根从客户运行时环境变量迁到发布二进制；v1.8 新增 V1 商业 License 强制、公钥环/部署绑定和签名离线升级包流程；v1.7 新增 PRD3 SEC-005 运行时暴露策略：CORS 精确 origin、登录限流、metrics 开关/CIDR；v1.6 新增 PRD2 OIDC-first SSO 配置和 mock-provider smoke；v1.5 新增 HTTP-only canary overlay、8081 canary direct smoke、PRD2 HA/backup rehearsal 命令；v1.4 新增生产 `.env` 保护、`API_KEY_HASH_SECRET`、rsync 安全同步规则和 PR #44 部署事故复盘；v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
 
 ---
 
@@ -32,7 +32,7 @@ cp .env.example .env
 # - JWT_SECRET: 32 字节随机字符串
 # - API_KEY_HASH_SECRET: API Key HMAC 稳定密钥
 # - ENCRYPTION_KEY: 32 字节随机字符串
-# - LICENSE_PUBLIC_KEY: 离线 License Ed25519 公钥（导入 License 前必填）
+# - LICENSE_DEPLOYMENT_ID: 与客户 License 精确绑定的稳定部署标识
 # - GRAFANA_ADMIN_PASSWORD: Grafana 管理员强密码
 # - ADMIN_CORS_ALLOWED_ORIGINS: 仅当浏览器会跨域直连 backend 时配置精确 origin
 # - METRICS_ALLOWED_CIDRS: 生产建议限制到 Prometheus 所在网络
@@ -52,9 +52,19 @@ openssl rand -base64 24  # 用于 GRAFANA_ADMIN_PASSWORD
 | `JWT_SECRET` | Admin JWT 签名 | 管理员需要重新登录；不应影响 API Key |
 | `API_KEY_HASH_SECRET` | API Key HMAC 哈希 | 变更会导致既有 API Key 全部失效 |
 | `ENCRYPTION_KEY` | 上游渠道密钥 AES-GCM 加密 | 变更且无法恢复会导致已保存 channel key 无法解密 |
-| `LICENSE_PUBLIC_KEY` | 离线 License Ed25519 签名校验公钥 | 缺失时可启动服务，但无法导入或验证 License |
+| 正式镜像内嵌 License 公钥环 | V1 商业 License Ed25519 验签根 | 发布构建缺失时镜像构建失败；客户运行时不能替换 |
+| `LICENSE_DEPLOYMENT_ID` | V1 License 绑定的稳定部署标识 | 缺失或与签名 payload 不一致时商业 License 不可强制执行 |
+| 正式镜像内嵌升级公钥环 | 独立的升级包 Ed25519 验签根 | 发布构建缺失时镜像构建失败；客户运行时不能替换 |
+| `LICENSE_PUBLIC_KEY` / `LICENSE_PUBLIC_KEYS` / `UPGRADE_PUBLIC_KEYS` | 仅源码开发兼容 | 正式 release 二进制发现任一运行时覆盖即拒绝启动 |
 
-License 公钥由 License 签发方提供，支持 base64 或 hex 编码的 32 字节 Ed25519 public key。该值不是 secret，但 stable/canary 应保持一致，避免同一份 license 在不同实例上校验结果不同。
+两个公钥环均为严格 JSON 对象，例如
+`{"license-2026-a":"base64-public-key"}`，由受控发布构建分别编码到
+`UNIROUTER_LICENSE_TRUST_BUNDLE_B64` 和
+`UNIROUTER_UPGRADE_TRUST_BUNDLE_B64`。`Dockerfile` 默认按 `release` 构建，任一
+公开验签环缺失就失败；根目录源码 Compose 显式使用 `development`，只能用于
+开发。公钥不是 secret，但信任根变更是高影响发布操作；stable/canary 必须使用
+同一签名镜像和部署标识。两类私钥必须分开保管，且不得进入 `.env`、镜像、仓库、
+数据库、日志或客户包。
 
 运行时暴露策略：
 
@@ -83,29 +93,33 @@ License 公钥由 License 签发方提供，支持 base64 或 hex 编码的 32 �
 | `VITE_DEPLOY_ENV` | 空 | 前端镜像构建时写入的环境标签；支持 `development`、`staging`、`canary`、`production` 等值，并应与 `RUNTIME_ENVIRONMENT` 保持一致。修改后必须重建 frontend 镜像，仅重启容器不会生效 |
 | `RUNTIME_DEPLOYMENT_MODE` | `single-node` | Runtime Status Center 展示的部署形态，如 `docker-compose`、`kubernetes` |
 | `RUNTIME_DEPLOYMENT_ROLE` | `stable` | 当前实例角色，如 `stable`、`canary` |
-| `RUNTIME_VERSION` | 空 | 可选版本号；为空时使用 Docker build `-ldflags` 注入值 |
-| `RUNTIME_COMMIT` | 空 | 可选 git commit；为空时使用 Docker build `-ldflags` 注入值 |
+| `RUNTIME_VERSION` | 空 | 仅 source/dev 构建的 fallback；正式镜像始终以不可变 Docker build `-ldflags` 注入值为准 |
+| `RUNTIME_COMMIT` | 空 | 仅 source/dev 构建的 fallback；签名发布必须注入完整 40/64 位小写 Git commit，环境变量不能覆盖 |
 | `PROMETHEUS_URL` | 空（docker-compose 默认 `http://prometheus:9090`） | Runtime Status Center 的 Prometheus base URL；用于 `/-/ready` 和 `up{job="unirouter"}` 探测，同时作为深链入口；不嵌入完整 Prometheus UI |
 | `GRAFANA_URL` | 空（docker-compose 默认 `http://grafana:3000`） | Runtime Status Center 的 Grafana base URL；用于 `/api/health` 探测，同时作为深链入口；不嵌入完整 Grafana UI |
 
 登录限流只信任 backend 看到的 `RemoteAddr`，不会直接信任客户端可伪造的 `X-Forwarded-For`。如果后续需要按真实客户端 IP 穿透多层代理，需要先定义可信代理链策略，不在 PRD3 临时扩展。
 
-非生产环境可用 Batch 22 smoke 生成测试 License 公钥和离线 License，并验证 `/license` 浏览器导入、状态、审计与 `license.warning` 事件：
+PRD2 Batch 22 smoke 只验证历史 payload-only foundation，不能作为 V1 商业
+激活证据，也不能放行新模型流量。发行方在 macOS 上应双击 `UniRouter License
+Studio.app` 生成两套独立密钥和严格 `unirouter.license.v1` 文档；正常签发无需
+终端。CLI 只保留给 CI/受控自动化。任何非生产目标激活仍须在执行前获得明示授权。
+完整流程见 `docs/tech-ref/16-license-foundation.md`。
 
-```bash
-# 生成 smoke 测试公钥；将输出值写入非生产 backend 的 LICENSE_PUBLIC_KEY 后重启 backend
-scripts/prd2-batch22-license-smoke.sh --print-public-key
+激活顺序：
 
-UNIROUTE_SMOKE_BACKEND_URL=http://localhost:8080 \
-UNIROUTE_SMOKE_FRONTEND_URL=http://localhost:3000 \
-UNIROUTE_SMOKE_DB_DSN='postgres://uniroute:password@localhost:5432/uniroute?sslmode=disable' \
-UNIROUTE_BATCH22_ALLOW_LICENSE_RESET=non-production-license-reset \
-UNIROUTE_SMOKE_SKIP_BROWSER_INSTALL=true \
-scripts/prd2-batch22-license-smoke.sh
-```
+1. 通过独立受信渠道取得签名发布清单，核对已内嵌两个公钥环的 backend 镜像
+   digest，并为 stable/canary 设置同一个批准的部署标识；
+2. 启动后确认 `/health/ready` 与本地平台管理员登录可用；
+3. 在未导入 License 时用无付费上游副作用的请求证明 `license_error.missing`；
+4. 在“商业授权”页导入与部署标识绑定、当前有效的 V1 文档；
+5. 读回 `commercial=true`、`enforceable=true`、签名/部署匹配、key ID、到期日、
+   feature 和 limit；
+6. 仅用 mock/无付费路径证明授权后 admission，再进行另外批准的真实用户测试。
 
-`UNIROUTE_BATCH22_ALLOW_LICENSE_RESET=non-production-license-reset` 会清空或覆盖全局 `settings.license.offline`，只能在本地、预发或用户明确批准的目标环境使用。
-smoke 默认结束后会清理测试 License；如需人工检查最终导入状态，可临时设置 `UNIROUTE_BATCH22_KEEP_LICENSE=true`。
+License 导入会同时锁定并核对 active API keys/users/projects/channels；低于
+当前使用量的续期返回 `409`，不会写入一半状态。严禁直接修改
+`settings.license.offline` 或 `commercial_license_entitlements` 绕过该事务。
 
 OIDC SSO 默认关闭。启用前在身份提供商侧创建 Web/OIDC client，并将 callback 配置为：
 
@@ -642,19 +656,64 @@ docker compose logs frontend
 
 ## 八、升级流程
 
+V1 客户升级必须使用签名离线包。第一次安装需要通过受认证的 bootstrap 渠道
+取得独立 `uniroute-upgrade` 验证器、公钥环及验证器 SHA-256；之后由已安装的
+`./uniroute upgrade verify` 作为本地信任延续。不要从待验证包内部取出并运行
+验证器来验证它自己。
+
 ```bash
-# 1. 备份数据库
-docker compose exec postgres pg_dump -U uniroute uniroute > pre_upgrade_backup.sql
+# 1. 读取真实安装状态，不改状态
+docker compose -f deploy/customer/docker-compose.yml --env-file deploy/customer/.env \
+  exec backend ./uniroute upgrade status
 
-# 2. 拉取新镜像
-docker compose pull
+# 2. 将只读升级包提供给当前 backend 后，完整验证签名、hash/size、平台、
+#    sequence 和 schema。失败时立即停止，不提取、不执行。
+docker compose -f deploy/customer/docker-compose.yml --env-file deploy/customer/.env \
+  cp /approved-read-only/unirouter-release.tar.gz backend:/tmp/unirouter-release.tar.gz
+docker compose -f deploy/customer/docker-compose.yml --env-file deploy/customer/.env \
+  exec backend ./uniroute upgrade verify \
+  --package /tmp/unirouter-release.tar.gz
 
-# 3. 重启服务（迁移自动执行）
-docker compose up -d
+# 3. 备份数据库并验证备份目录可读
+docker compose -f deploy/customer/docker-compose.yml --env-file deploy/customer/.env \
+  exec postgres pg_dump -Fc -U uniroute uniroute > pre_upgrade_backup.dump
+pg_restore -l pre_upgrade_backup.dump >/dev/null
 
-# 4. 验证
-curl http://localhost:8080/health/ready
+# 4. 进入批准的维护窗口，drain 旧请求；严格按该包的 release note 应用已验证
+#    的 OCI 镜像/迁移制品。不得将“tar 可打开”当作签名验证。
+#    具体 docker load / compose switch 命令由每个包的签名版本/平台清单给出。
+
+# 5. 验证新 runtime 版本/commit、目标 schema 和健康状态
+docker compose -f deploy/customer/docker-compose.yml --env-file deploy/customer/.env \
+  exec backend wget -qO- http://localhost:8080/health/ready
+docker compose -f deploy/customer/docker-compose.yml --env-file deploy/customer/.env \
+  exec backend ./uniroute migrate status
+docker compose -f deploy/customer/docker-compose.yml --env-file deploy/customer/.env \
+  exec backend ./uniroute upgrade status
+
+# 6. 只从已健康的新 binary 重新验证同一包并登记安装事实
+docker compose -f deploy/customer/docker-compose.yml --env-file deploy/customer/.env \
+  cp /approved-read-only/unirouter-release.tar.gz backend:/tmp/unirouter-release.tar.gz
+docker compose -f deploy/customer/docker-compose.yml --env-file deploy/customer/.env \
+  exec backend ./uniroute upgrade record-applied \
+  --package /tmp/unirouter-release.tar.gz \
+  --recorded-by <operator-or-deployment-identity>
+
+# 7. 登记成功后只删除这个明确的容器内临时包；保留受控原件和证据摘要
+docker compose -f deploy/customer/docker-compose.yml --env-file deploy/customer/.env \
+  exec backend rm -f /tmp/unirouter-release.tar.gz
 ```
+
+`record-applied` 要求运行中的 version/commit 与签名 manifest 一致，当前 schema
+已等于签名 target，并在 serializable 事务和 release-state 锁下写入 package
+SHA-256、key ID、sequence、manifest 和操作者。重复包、旧 sequence 或不兼容
+schema 会拒绝。`000037_v1_commercial_release_control` 一旦已有签名发布历史便
+拒绝 down migration；此时恢复策略是评审后的 roll-forward，不是静默回滚旧
+writer。
+
+该流程没有网页“上传即执行”按钮，也没有静默自动更新。未来若要做 Update
+Center，必须先补 maintenance window、多节点编排、受控 staging、N-1 夹具、
+失败暂停和审计责任边界；不能复用 License 导入接口执行二进制。
 
 如果目标构建网络无法访问默认的 `proxy.golang.org`，可在构建时显式选择经审批且可达的 Go module proxy；默认值仍保持官方代理：
 
@@ -803,7 +862,7 @@ docker compose exec postgres pg_dump -U uniroute uniroute > pre_upgrade_$(date +
 
 # 3. 重建 stable（新代码）
 export RUNTIME_VERSION="$(date +%Y%m%d.%H%M)"
-export RUNTIME_COMMIT="$(git rev-parse --short HEAD)"
+export RUNTIME_COMMIT="$(git rev-parse HEAD)"
 docker compose build backend
 docker compose up -d backend
 

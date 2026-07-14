@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"os"
 	"testing"
 	"time"
@@ -100,6 +101,24 @@ func TestValidate_NegativeLicenseExpiryWarningDays(t *testing.T) {
 	err := cfg.Validate()
 	if err == nil {
 		t.Fatal("expected error for negative LICENSE_EXPIRY_WARNING_DAYS")
+	}
+}
+
+func TestValidateRejectsOverflowingLicenseTiming(t *testing.T) {
+	cfg := &Config{
+		JWTSecret:                "secret",
+		APIKeyHashSecret:         "api-key-secret",
+		EncryptionKey:            "0123456789abcdef0123456789abcdef",
+		FreezeSafetyFactor:       "1",
+		LicenseExpiryWarningDays: 36501,
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected excessive License warning window rejection")
+	}
+	cfg.LicenseExpiryWarningDays = 30
+	cfg.LicenseRefreshSeconds = 3601
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected excessive License refresh interval rejection")
 	}
 }
 
@@ -505,7 +524,7 @@ func TestLoad_Defaults(t *testing.T) {
 		"WORKLOAD_INTERACTIVE_MAX_WAIT_MS", "WORKLOAD_STREAM_MAX_WAIT_MS", "WORKLOAD_EMBEDDING_MAX_WAIT_MS",
 		"RUNTIME_ENVIRONMENT", "RUNTIME_DEPLOYMENT_MODE",
 		"RUNTIME_DEPLOYMENT_ROLE", "RUNTIME_VERSION", "RUNTIME_COMMIT", "PROMETHEUS_URL", "GRAFANA_URL",
-		"LICENSE_PUBLIC_KEY", "LICENSE_EXPIRY_WARNING_DAYS", "MIN_FREEZE_AMOUNT", "FREEZE_SAFETY_FACTOR", "DEFAULT_KEY_RPM", "DEFAULT_KEY_QPS",
+		"LICENSE_PUBLIC_KEY", "LICENSE_PUBLIC_KEYS", "LICENSE_DEPLOYMENT_ID", "LICENSE_EXPIRY_WARNING_DAYS", "LICENSE_REFRESH_SECONDS", "UPGRADE_PUBLIC_KEYS", "MIN_FREEZE_AMOUNT", "FREEZE_SAFETY_FACTOR", "DEFAULT_KEY_RPM", "DEFAULT_KEY_QPS",
 	}
 	for _, v := range envVars {
 		os.Unsetenv(v)
@@ -606,12 +625,44 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 }
 
+func TestValidateUpgradePublicKeys(t *testing.T) {
+	cfg := &Config{
+		JWTSecret:          "secret",
+		APIKeyHashSecret:   "api-key-secret",
+		EncryptionKey:      "0123456789abcdef0123456789abcdef",
+		FreezeSafetyFactor: "1",
+		UpgradePublicKeys:  `{"bad key":"not-a-key"}`,
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected invalid UPGRADE_PUBLIC_KEYS to fail startup validation")
+	}
+}
+
+func TestValidateLicensePublicKeys(t *testing.T) {
+	cfg := &Config{
+		JWTSecret:          "secret",
+		APIKeyHashSecret:   "api-key-secret",
+		EncryptionKey:      "0123456789abcdef0123456789abcdef",
+		FreezeSafetyFactor: "1",
+		LicensePublicKeys:  `{"bad key":"not-a-key"}`,
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected invalid LICENSE_PUBLIC_KEYS to fail startup validation")
+	}
+	cfg.LicensePublicKeys = ""
+	cfg.LicensePublicKey = "not-a-key"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected invalid LICENSE_PUBLIC_KEY to fail startup validation")
+	}
+}
+
 func TestLoad_EnvOverrides(t *testing.T) {
 	os.Setenv("LISTEN_PORT", "9090")
 	os.Setenv("LOG_LEVEL", "debug")
 	os.Setenv("JWT_SECRET", "test-secret")
 	os.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
-	os.Setenv("LICENSE_PUBLIC_KEY", "test-public-key")
+	licensePublicKey := base64.StdEncoding.EncodeToString(make([]byte, 32))
+	os.Setenv("LICENSE_PUBLIC_KEY", licensePublicKey)
 	os.Setenv("LICENSE_EXPIRY_WARNING_DAYS", "45")
 	defer func() {
 		os.Unsetenv("LISTEN_PORT")
@@ -636,7 +687,7 @@ func TestLoad_EnvOverrides(t *testing.T) {
 	if cfg.APIKeyHashSecret != "test-secret" {
 		t.Fatalf("expected APIKeyHashSecret to default to JWT_SECRET, got %s", cfg.APIKeyHashSecret)
 	}
-	if cfg.LicensePublicKey != "test-public-key" {
+	if cfg.LicensePublicKey != licensePublicKey {
 		t.Fatalf("expected LicensePublicKey override, got %s", cfg.LicensePublicKey)
 	}
 	if cfg.LicenseExpiryWarningDays != 45 {

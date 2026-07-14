@@ -1,42 +1,125 @@
 # Current Execution Record
 
-**Batch:** V1 Micro-Ledger Target Activation And Environment-Label Closeout
+**Batch:** V1 Commercial License Studio, Embedded Trust And Signed Offline Upgrade Bundle
 **Owner:** Codex
-**Risk:** R1 documentation closeout after a completed User-authorized R3 target cutover
-**Status:** PR #202/#203 merged; development/test ECS Target verified at exact `545e514`; evidence publication is PR #204
-**Baseline:** clean `origin/main` / `545e514ab51937e6589512192141b9359cfcb504`
-**Branch:** `codex/v1-target-evidence-closeout`
-**PR:** #204 docs-only target-evidence publication
-**Decision:** User authorized merge of PR #202 and the non-rolling test-ECS activation; the development environment label is also approved and deployed
-**Evidence:** `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-TARGET-20260714.md`
-**Next product gate:** X-Insight v2 consumer coordination and the remaining separately classified Post-PRD6 product/UI queue
-**Previous batch:** V1 micro-ledger PR #202 and environment-label PR #203 required CI, merge and target activation
+**Risk:** R3 authorization/signing implementation; any target activation is R4
+**Status:** Implementation, browser UI and exact-code-head required CI verified; awaiting User merge decision
+**Baseline:** clean `origin/main` / `e94a4b184a6f675d76c292602b7c18293ab2ce61`
+**Branch:** `codex/v1-commercial-license-upgrade`
+**PR:** #205 open; code-bearing head `cd05055afe25cedff77830230d2788d8f06c96b3` passed required CI run `29359673125`
+**Decision:** User requires commercial authorization enforcement, signed upgrades and a click-only License generation program before customer delivery
+**Evidence:** `docs/planning/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-CONTRACT-20260714.md`; `docs/ops/evidence/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-LOCAL-20260715.md`; `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-LOCAL-20260715.md`; `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-CI-20260715.md`
+**Next product gate:** User decision on PR #205 merge; production key ceremony and any non-production target activation remain separate decisions
+**Previous batch:** PR #204 documentation closeout after V1 micro-ledger PR #202 and environment-label PR #203
 **Previous phase:** PRD5 Accepted Scope Complete; its Batch 1Z historical target backend was `95d1da9` / PR #133 and is now superseded on the same target by this PRD6 deployment
+
+## Current Batch Scope
+
+1. Replace the PRD2 payload-only License foundation with an explicit,
+   key-identified commercial schema whose signature covers its schema, key and
+   payload.
+2. Bind an enforceable License to the configured stable deployment identity;
+   block new model/Agent admission for missing, invalid, mismatched,
+   not-yet-valid or expired authority while retaining recovery/admin access.
+3. Enforce signed feature and positive active-resource limits without a
+   configuration switch that disables enforcement in the customer release.
+4. Remove customer-controlled runtime trust-root replacement: formal release
+   images embed separate License and upgrade public rings at build time and
+   reject runtime overrides.
+5. Add a double-click macOS License Studio for native-folder key generation,
+   customer form signing and verification without putting private-key bytes in
+   the browser, runtime image, database, logs or evidence.
+6. Retain vendor-side License CLI compatibility tooling for CI/controlled
+   automation, not as the normal operator workflow.
+7. Add a separately trusted signed offline upgrade archive with signed
+   manifest, payload hash/size, platform, release-sequence, metadata-expiry and
+   schema-compatibility checks before extraction or execution.
+8. Add tamper, traversal, rollback, wrong-key/platform/product, concurrency and
+   recovery-path regression tests, documentation, PR and required CI.
+
+## Current Non-Goals And Stop Conditions
+
+- No PRD6 row is reopened and no existing PRD6 completion claim is promoted.
+- No production signing key, persistent target key, customer License or
+  production deployment is created without a separate concrete approval.
+- No hardware fingerprint, online activation, arbitrary Admin Console package
+  execution or full TUF-conformance claim.
+- Stop before target activation if the new runtime cannot retain health/login/
+  License recovery while unlicensed, if a denied request can reach API-key
+  lookup/billing/provider dispatch, if limits race above signed capacity, or if
+  any archive content can be extracted/executed before complete verification.
 
 ## Current Batch Result
 
-1. Micro-ledger PR #202 exact head `1944e31` passed required run
-   `29334221779` and squash-merged as `ec0dde2`.
-2. The User-authorized non-rolling activation created and validated a
-   PostgreSQL backup, proved zero active financial state, applied `000035` then
-   `000036`, and switched the development/test ECS to exact V1 images.
-3. Environment-label PR #203 exact head `b76f253` passed final required run
-   `29339373907`, squash-merged as `545e514`, and the target was rebuilt and
-   switched to that exact stable/canary/frontend release.
-4. One cutover attempt hit an immediate Nginx startup-probe race and
-   automatically restored the old healthy runtime. A bounded readiness retry
-   then completed in approximately 16 seconds; all final containers have
-   restart count zero.
-5. Independent database/API/runtime readback verified migration `000036`, 38
-   micro columns, no active/pending financial state, exact commit/environment,
-   and healthy PostgreSQL/Redis/Prometheus/Grafana connectivity.
-6. Authenticated browser checks verified Dashboard, Internal Status, Model
-   Pricing and Reconciliation with `开发环境`, HTTP 200 business requests and
-   zero console errors/warnings.
-7. This closes the selected V1 financial/deployment issues at Target level on
-   the test ECS. It does not claim Production, real provider/detector,
-   migration down, TLS, capacity/HA or X-Insight v2 consumer acceptance, and it
-   does not reopen PRD6 Accepted Scope.
+1. Commercial License admission now requires a strict key-identified Ed25519
+   document, exact deployment/time/feature authority and concurrency-safe
+   signed active-resource limits. Missing/invalid authority fails before new
+   model, Agent or real channel-test upstream dispatch while retaining local
+   recovery/import/diagnostic access.
+2. Migration `000037` projects the verified entitlement and prevents API-key,
+   user, project or channel creation/re-enable beyond capacity or after expiry;
+   startup safely rebuilds restored derived state, recurring refresh rejects a
+   mismatched projection, and guarded down refuses while entitlement or release
+   history remains.
+3. Formal release binaries now load only build-embedded License and upgrade
+   public rings. Runtime `LICENSE_PUBLIC_KEY`, `LICENSE_PUBLIC_KEYS` or
+   `UPGRADE_PUBLIC_KEYS` cannot replace trust; source/development mode remains
+   explicit and is not customer-release eligible.
+4. Vendor-only `UniRouter License Studio.app` uses a random loopback session,
+   strict origin/token/CSP/host checks and macOS native file dialogs. It
+   generates separate License/upgrade keys, issues and self-verifies strict
+   customer documents, refuses overwrite and never sends private-key bytes to
+   browser JavaScript. The CLI remains for compatibility only.
+5. `uniroute-upgrade` packs and verifies deterministic signed archives before
+   extraction/execution, rejects untrusted/tampered/unsafe/rollback/schema-
+   incompatible content and binds provenance to its fixed declared artifact.
+6. Runtime `upgrade verify/status/record-applied` uses actual database/schema
+   state and records only the exact healthy immutable version/commit under a
+   serializable/advisory-lock release sequence.
+7. `deploy/customer` is a no-build/source-free Compose profile with mandatory
+   image references, embedded binary trust roots, external signed
+   config/secrets, unexposed dependencies and a local-only frontend default.
+8. Current-tree serial full Go tests, focused race tests, vet/build, 31 frontend
+   files / 164 tests, type-check/build and YAML parsing pass locally. Exact
+   code-bearing head `cd05055` also passed all four required checks in run
+   `29359673125`, including the full race-enabled Go suite, migrated-PostgreSQL
+   gates, frontend suite/build and formal release Docker image build.
+9. No production/customer private key or License was generated. No ECS embedded
+   trust root, deployment identity, License, migration, release state or
+   image was changed. Target activation is a separate R4 decision and this
+   batch does not reopen PRD6 or accept PRD7 Update Center/automatic apply.
+
+## Current Focused Verification
+
+- Commercial License/Admin/signing/release-trust/License-Studio/upgrade packages
+  and CLIs: focused `PASS`.
+- License Studio HTTP keygen→issue→verify, no-overwrite, wrong-deployment,
+  malformed-key, dialog-cancel, non-loopback, wrong-origin/token and security-
+  header tests: `PASS`.
+- macOS arm64 `.app`: `plutil`, ad-hoc `codesign --verify --strict`, JavaScript
+  syntax and embedded-release `go build -ldflags` checks: `PASS`. Developer ID
+  signing/notarization remains a distribution prerequisite, not a local claim.
+- Playwright headed desktop and 390 px mobile UI: tabs/defaults/feature toggle,
+  responsive render, zero console errors/warnings and only three loopback
+  static requests: `PASS`.
+- Exact current tree `go test -p 1 ./... -count=1`, `go vet ./...` and
+  `go build ./...`: `PASS`. The new signing/trust/Studio/License/upgrade slice
+  also passes `-race`; the exact code-bearing PR head passed the full CI Go and
+  integration-test path.
+- Migrated PostgreSQL `000037` capacity/expiry/down guard and upgrade
+  record/replay integration gate under `-race`: `PASS`; generated temporary
+  database count returned to zero.
+- Frontend Vitest 31 files / 164 tests, type-check and production build:
+  `PASS`.
+- CI/OpenAPI/customer Compose YAML parse and `git diff --check`: `PASS`.
+- Local Docker: not run because this host has no `docker` executable. Required
+  Docker CI passed the formal release image and Docker-context checks on exact
+  code-bearing head `cd05055`.
+- Evidence:
+  `docs/ops/evidence/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-LOCAL-20260715.md`
+  and
+  `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-LOCAL-20260715.md` and
+  `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-CI-20260715.md`.
 
 ## Previous CI Efficiency Result
 
@@ -148,7 +231,7 @@ the browser-verified `开发环境` label.
 - No dedicated FinOps workflow UI, supersession workflow, provider COGS import
   or supplier connector; those remain future D7-COST candidates.
 
-## Current Focused Verification
+## Previous P6-F11 Focused Verification
 
 - P6-F11 guardrail, gateway, billing, Agent-capability, shared-policy,
   idempotency and control-plane tests: `PASS`, including measured 200 ms / 4

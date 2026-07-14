@@ -2,6 +2,23 @@
 
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
+> Current Post-PRD6 release work is
+> `codex/v1-commercial-license-upgrade`, based on clean `origin/main`
+> `e94a4b184a6f675d76c292602b7c18293ab2ce61`. The User requires signed
+> commercial License enforcement and a signed offline upgrade bundle before
+> customer delivery. PR #205 is open. A follow-up P0 review found
+> customer-controlled runtime replacement of both public trust roots. Exact
+> code-bearing head `cd05055afe25cedff77830230d2788d8f06c96b3` now embeds
+> separate License/upgrade public rings in formal release binaries, rejects
+> runtime overrides and adds a
+> double-click macOS License Studio for native-folder key generation, customer
+> signing and verification. Focused tests, headed desktop/mobile browser
+> verification and all four required checks in run `29359673125` pass. No
+> persistent production/customer key or License exists, and no target was
+> mutated. Merge,
+> production key ceremony and ECS trust-root/License/migration/image activation
+> are separate decisions. This does not reopen PRD6 or accept the PRD7 Update
+> Center/automatic-upgrade product scope.
 > PRD6 is formally `Completed (Accepted Scope)` at repository/CI evidence level. All 27
 > accepted rows are verified or closed. P6-F11 closed through PR #189: final
 > evidence head `3d4c61b` passed run `29246431182`, squash merge `4c78a5b7`
@@ -58,7 +75,7 @@
 29. `docs/ops/evidence/PRD6-B3-P6F20-durable-outbox-local-20260712.md` - CI-verified durable finalization/outbox closure, PR #177/main runs and non-claims.
 30. `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` - official competitor HA patterns, current cluster facts and accepted D6-12 boundary.
 31. `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` - source-backed UI, reconciliation, correlation, architecture and upgrade audit.
-32. `docs/planning/PRD7-CANDIDATE-BACKLOG.md` - future first direction selected; implementation remains later after PRD6 closeout and needs its own authorization.
+32. `docs/planning/PRD7-CANDIDATE-BACKLOG.md` - future productization candidates; the separately approved Post-PRD6 signed-bundle foundation does not accept Update Center, automatic apply/rollback or PRD7 scope.
 33. `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` - accepted future independent Cache Service target, planning bands and SaaS prerequisites; implementation deferred.
 34. `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md` - version-fixed competitor audit and Four Quadrants.
 35. `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md` - third-round boundary, CARTA/shadow/collusion analysis and Killer Features.
@@ -93,6 +110,12 @@
 64. `docs/ops/evidence/V1-POST-PRD6-FINANCIAL-PREREQUISITES-CI-20260714.md` - wallet atomicity and public pricing-unit prerequisite merge/CI evidence.
 65. `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-LOCAL-20260714.md` - option B implementation, full local regression, isolated migration/API/browser evidence, issue classification and R3 cutover checklist.
 66. `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-TARGET-20260714.md` - PR #202/#203 CI/merge truth, authorized non-rolling ECS activation, database/API/runtime/browser readback, environment-label verification and remaining non-claims.
+67. `docs/planning/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-CONTRACT-20260714.md` - User-approved V1 commercial authority and signed offline bundle release contract, recovery surface, acceptance and target-activation boundary.
+68. `docs/ops/evidence/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-LOCAL-20260715.md` - complete issue matrix, local implementation/test evidence, CI gate and R4 ECS non-claims.
+69. `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-LOCAL-20260715.md` - P0 trust-root bypass closure, click-only macOS tool, security boundary and local browser/test/build evidence.
+70. `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-CI-20260715.md` - exact code-head required-CI and formal release Docker-image closure evidence.
+71. `docs/tech-ref/16-license-foundation.md` - enforceable License schema, runtime admission, resource limits, recovery and historical PRD2 compatibility.
+72. `docs/tech-ref/27-signed-offline-upgrade.md` - bundle format, trust ordering, provenance binding, verify/record workflow and explicit Update Center/TUF non-claims.
 
 ## Current Project Shape
 

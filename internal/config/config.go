@@ -13,6 +13,7 @@ import (
 	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/payloadpolicy"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
+	"github.com/uniroute/unirouter/internal/signing"
 	"github.com/uniroute/unirouter/internal/streampolicy"
 	"github.com/uniroute/unirouter/internal/traceutil"
 	"github.com/uniroute/unirouter/internal/workloadadmission"
@@ -65,7 +66,13 @@ type Config struct {
 
 	// License
 	LicensePublicKey         string
+	LicensePublicKeys        string
+	LicenseDeploymentID      string
 	LicenseExpiryWarningDays int
+	LicenseRefreshSeconds    int
+
+	// Signed offline upgrades use a trust root independent from License signing.
+	UpgradePublicKeys string
 
 	// OIDC SSO
 	OIDCEnabled            bool
@@ -164,8 +171,29 @@ func (c *Config) Validate() error {
 	if c.ShutdownTimeoutSecs < 0 {
 		return fmt.Errorf("SHUTDOWN_TIMEOUT_SECONDS must be >= 0")
 	}
-	if c.LicenseExpiryWarningDays < 0 {
-		return fmt.Errorf("LICENSE_EXPIRY_WARNING_DAYS must be >= 0")
+	if c.LicenseExpiryWarningDays < 0 || c.LicenseExpiryWarningDays > 36500 {
+		return fmt.Errorf("LICENSE_EXPIRY_WARNING_DAYS must be between 0 and 36500")
+	}
+	if c.LicenseRefreshSeconds < 0 || c.LicenseRefreshSeconds > 3600 {
+		return fmt.Errorf("LICENSE_REFRESH_SECONDS must be between 0 and 3600")
+	}
+	if len(c.LicenseDeploymentID) > 128 {
+		return fmt.Errorf("LICENSE_DEPLOYMENT_ID must be at most 128 characters")
+	}
+	if c.LicensePublicKey != "" {
+		if _, err := signing.ParsePublicKey(c.LicensePublicKey); err != nil {
+			return fmt.Errorf("LICENSE_PUBLIC_KEY: %w", err)
+		}
+	}
+	if c.LicensePublicKeys != "" {
+		if _, err := signing.ParsePublicKeyRing(c.LicensePublicKeys, "LICENSE_PUBLIC_KEYS"); err != nil {
+			return err
+		}
+	}
+	if c.UpgradePublicKeys != "" {
+		if _, err := signing.ParsePublicKeyRing(c.UpgradePublicKeys, "UPGRADE_PUBLIC_KEYS"); err != nil {
+			return err
+		}
 	}
 	for _, origin := range c.AdminCORSAllowedOrigins {
 		parsed, err := url.Parse(origin)
@@ -308,7 +336,11 @@ func Load() (*Config, error) {
 		GrafanaURL:                 strings.TrimRight(getEnvStr("GRAFANA_URL", ""), "/"),
 
 		LicensePublicKey:         getEnvStr("LICENSE_PUBLIC_KEY", ""),
+		LicensePublicKeys:        getEnvStr("LICENSE_PUBLIC_KEYS", ""),
+		LicenseDeploymentID:      strings.TrimSpace(getEnvStr("LICENSE_DEPLOYMENT_ID", "")),
 		LicenseExpiryWarningDays: getEnvInt("LICENSE_EXPIRY_WARNING_DAYS", 30),
+		LicenseRefreshSeconds:    getEnvInt("LICENSE_REFRESH_SECONDS", 30),
+		UpgradePublicKeys:        getEnvStr("UPGRADE_PUBLIC_KEYS", ""),
 
 		OIDCEnabled:            getEnvBool("OIDC_ENABLED", false),
 		OIDCIssuerURL:          strings.TrimRight(getEnvStr("OIDC_ISSUER_URL", ""), "/"),
@@ -453,6 +485,14 @@ func (c Config) PayloadLimits() payloadpolicy.Limits {
 		limits.OrgInFlightBytes = int64(c.PayloadOrgInFlightBytes)
 	}
 	return limits
+}
+
+func (c Config) LicenseRefreshInterval() time.Duration {
+	seconds := c.LicenseRefreshSeconds
+	if seconds <= 0 {
+		seconds = 30
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 func splitCSV(value string) []string {

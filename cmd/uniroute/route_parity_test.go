@@ -143,11 +143,31 @@ func TestMainRegistersExtractedModelGovernanceRoutes(t *testing.T) {
 	mainSource := string(src)
 	for _, fragment := range []string{
 		"registerModelGovernanceRoutes(mux, adminHandler",
-		"organization: orgAdminRoute",
-		"projectRead:  projectReadRoute",
+		"organization: licensedRoute(licensing.FeatureModelGovernance, orgAdminRoute)",
+		"projectRead:  licensedRoute(licensing.FeatureModelGovernance, projectReadRoute)",
 	} {
 		if !strings.Contains(mainSource, fragment) {
 			t.Fatalf("main.go model-governance registrar wiring missing %q", fragment)
+		}
+	}
+}
+
+func TestMainRegistersCommercialFeatureGates(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	mainSource := string(src)
+	for _, fragment := range []string{
+		"licenseRuntime.Gate(licensing.FeatureOIDC)",
+		"licensedRoute(licensing.FeatureGateway, platformRoute)(adminHandler.TestChannel)",
+		"licensedRoute(licensing.FeatureNotifications",
+		"licensedRoute(licensing.FeatureDataExchange",
+		"licensedRoute(licensing.FeatureGuardrails",
+		"eventSvc.SetAdmission",
+	} {
+		if !strings.Contains(mainSource, fragment) {
+			t.Fatalf("main.go commercial feature wiring missing %q", fragment)
 		}
 	}
 }
