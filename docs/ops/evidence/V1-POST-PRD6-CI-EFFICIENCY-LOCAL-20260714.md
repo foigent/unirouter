@@ -106,6 +106,9 @@ execution and Docker build on this branch before merge.
    required job and removes the workflow-level queue. Concurrency acceptance
    remains pending until a later head cancels in-progress Backend and Frontend
    jobs created with this job-level contract.
+5. Run `29298848300` started both Backend Tests and Frontend Build on head
+   `0ffdc31`. The commit carrying this item is the controlled successor used
+   for the job-level cancellation readback.
 
 ## Rollback and non-goals
 
