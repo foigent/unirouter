@@ -1,8 +1,11 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
-> **2026-07-15 current checkpoint:** `main` / `origin/main` are
+> **2026-07-15 current checkpoint:** the latest code-bearing release is
 > `a0a567dd169dcb133b09eed3f711cdcf87214641`, the squash merge of PR #207.
+> PR #208 later merged this target-closeout record as docs-only commit
+> `2f593a4fb2c9c9729ddf35152e11a1c292b5d392`; it changes no runtime tree,
+> image, schema or target release authority.
 > Exact PR head `f63bcb268251cd6ec0d8701afc20a7928cd32ecb` passed Change Routing,
 > Backend Tests, Frontend Build and Docker Build in required run `29368640933`;
 > no duplicate automatic `main` run was created. The separately authorized

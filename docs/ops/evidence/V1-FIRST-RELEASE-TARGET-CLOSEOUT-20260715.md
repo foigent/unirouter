@@ -27,6 +27,12 @@ directory synchronization or automatic-upgrade product scope.
 | Merge | `a0a567dd169dcb133b09eed3f711cdcf87214641` at 2026-07-15 05:24:12 Asia/Shanghai | `main` release authority |
 | Post-merge CI | no run exists for the merge commit | Expected: the CI-efficiency policy does not repeat the already-passed full PR run on automatic `main` push |
 
+This evidence closeout was subsequently merged through docs-only PR #208 as
+`2f593a4fb2c9c9729ddf35152e11a1c292b5d392`. Run `29372762933` passed Change
+Routing and explicitly skipped Backend Tests, Frontend Build and Docker Build;
+no automatic post-merge `main` run was created. Docs-only commits after
+`a0a567d` do not alter the code-bearing release or ECS image authority.
+
 The merged tree contains the same 41 files as the exact tested head. Before
 image construction, all 41 changed target files were checked against the
 merged-tree SHA-256 manifest. No unmerged branch commit was deployed.
