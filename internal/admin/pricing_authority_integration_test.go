@@ -104,8 +104,8 @@ func TestP6F34PriceAuthorityIntegration(t *testing.T) {
 		paths := []struct {
 			method, target, body string
 		}{
-			{http.MethodPost, "/api/v1/model-prices", `{"model_name":"p6f34-main","input_price_cents":999,"output_price_cents":999}`},
-			{http.MethodPut, fmt.Sprintf("/api/v1/model-prices/%d", baseID), `{"input_price_cents":999}`},
+			{http.MethodPost, "/api/v1/model-prices", `{"model_name":"p6f34-main","input_price_cny_per_million_tokens":9990,"output_price_cny_per_million_tokens":9990}`},
+			{http.MethodPut, fmt.Sprintf("/api/v1/model-prices/%d", baseID), `{"input_price_cny_per_million_tokens":9990}`},
 			{http.MethodDelete, fmt.Sprintf("/api/v1/model-prices/%d", baseID), ""},
 			{http.MethodPost, "/api/v1/org-model-prices", fmt.Sprintf(`{"org_id":%d,"model_name":"p6f34-main","multiplier":9}`, fx.orgA)},
 			{http.MethodPost, "/api/v1/org-model-prices", fmt.Sprintf(`{"org_id":%d,"model_name":"p6f34-main","multiplier":9}`, fx.orgB)},
@@ -129,13 +129,13 @@ func TestP6F34PriceAuthorityIntegration(t *testing.T) {
 			"p6f34-org-upsert", "p6f34-org-update", "p6f34-org-delete",
 		}
 		createdModel := serve(t, http.MethodPost, "/api/v1/model-prices",
-			`{"model_name":"p6f34-created","input_price_cents":3,"output_price_cents":4}`,
+			`{"model_name":"p6f34-created","input_price_cny_per_million_tokens":30,"output_price_cny_per_million_tokens":40}`,
 			fx.platformA, fx.orgA, auth.RolePlatformAdmin, requestIDs[0])
 		assertStatus(t, createdModel, http.StatusCreated)
 		createdModelID := p6f34ResponseID(t, createdModel)
 
 		assertStatus(t, serve(t, http.MethodPut, fmt.Sprintf("/api/v1/model-prices/%d", baseID),
-			`{"input_price_cents":12,"output_price_cents":60}`,
+			`{"input_price_cny_per_million_tokens":120,"output_price_cny_per_million_tokens":600}`,
 			fx.platformA, fx.orgA, auth.RolePlatformAdmin, requestIDs[1]), http.StatusOK)
 		assertStatus(t, serve(t, http.MethodDelete, fmt.Sprintf("/api/v1/model-prices/%d", createdModelID), "",
 			fx.platformA, fx.orgA, auth.RolePlatformAdmin, requestIDs[2]), http.StatusOK)
@@ -191,7 +191,7 @@ func TestP6F34PriceAuthorityIntegration(t *testing.T) {
 		require.NoError(t, err)
 
 		legacy := serve(t, http.MethodPost, "/api/v1/model-prices",
-			fmt.Sprintf(`{"model_name":%q,"input_price_cents":6,"output_price_cents":30}`, model),
+			fmt.Sprintf(`{"model_name":%q,"input_price_cny_per_million_tokens":60,"output_price_cny_per_million_tokens":300}`, model),
 			fx.platformA, fx.orgA, auth.RolePlatformAdmin, "p6f09-legacy-price-upsert")
 		assertStatus(t, legacy, http.StatusCreated)
 
@@ -207,7 +207,7 @@ func TestP6F34PriceAuthorityIntegration(t *testing.T) {
 		require.InDelta(t, 1.4, creationRatio, 0.000001)
 
 		explicit := serve(t, http.MethodPost, "/api/v1/model-prices",
-			fmt.Sprintf(`{"model_name":%q,"input_price_cents":6,"output_price_cents":30,"cache_read_ratio":0.1,"cache_creation_ratio":1.25}`, model),
+			fmt.Sprintf(`{"model_name":%q,"input_price_cny_per_million_tokens":60,"output_price_cny_per_million_tokens":300,"cache_read_ratio":0.1,"cache_creation_ratio":1.25}`, model),
 			fx.platformA, fx.orgA, auth.RolePlatformAdmin, "p6f09-explicit-price-upsert")
 		assertStatus(t, explicit, http.StatusCreated)
 		require.NoError(t, pool.QueryRow(ctx,
@@ -250,8 +250,8 @@ func TestP6F34PriceAuthorityIntegration(t *testing.T) {
 		}
 
 		runPair("/api/v1/model-prices", []concurrentWrite{
-			{requestID: "p6f34-concurrent-model-a", body: `{"model_name":"p6f34-concurrent","input_price_cents":7,"output_price_cents":14}`},
-			{requestID: "p6f34-concurrent-model-b", body: `{"model_name":"p6f34-concurrent","input_price_cents":8,"output_price_cents":16}`},
+			{requestID: "p6f34-concurrent-model-a", body: `{"model_name":"p6f34-concurrent","input_price_cny_per_million_tokens":70,"output_price_cny_per_million_tokens":140}`},
+			{requestID: "p6f34-concurrent-model-b", body: `{"model_name":"p6f34-concurrent","input_price_cny_per_million_tokens":80,"output_price_cny_per_million_tokens":160}`},
 		})
 		runPair("/api/v1/org-model-prices", []concurrentWrite{
 			{requestID: "p6f34-concurrent-org-a", body: fmt.Sprintf(`{"org_id":%d,"model_name":"p6f34-concurrent-org","multiplier":1.1}`, fx.orgB)},

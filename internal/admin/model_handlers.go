@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -349,10 +350,11 @@ func (h *Handler) ListModelPrices(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		prices = append(prices, map[string]interface{}{
-			"id": id, "model_name": modelName, "input_price_cents": inputPrice,
-			"output_price_cents": outputPrice,
-			"cache_read_ratio":   cacheReadRatio, "cache_creation_ratio": cacheCreationRatio,
-			"currency": "CNY", "updated_at": updatedAt,
+			"id": id, "model_name": modelName,
+			"input_price_cny_per_million_tokens":  billing.InternalPriceCentsToCNYPerMillion(inputPrice),
+			"output_price_cny_per_million_tokens": billing.InternalPriceCentsToCNYPerMillion(outputPrice),
+			"cache_read_ratio":                    cacheReadRatio, "cache_creation_ratio": cacheCreationRatio,
+			"currency": "CNY", "price_basis_tokens": billing.PublicPriceBasisTokens, "updated_at": updatedAt,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -366,27 +368,57 @@ func (h *Handler) ListModelPrices(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type modelPriceMutation struct {
+	ModelName                *string  `json:"model_name"`
+	InputPriceCNYPerMillion  *float64 `json:"input_price_cny_per_million_tokens"`
+	OutputPriceCNYPerMillion *float64 `json:"output_price_cny_per_million_tokens"`
+	CacheReadRatio           *float64 `json:"cache_read_ratio"`
+	CacheCreationRatio       *float64 `json:"cache_creation_ratio"`
+}
+
+func decodeModelPriceMutation(w http.ResponseWriter, r *http.Request) (modelPriceMutation, bool) {
+	var req modelPriceMutation
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid model price payload"})
+		return modelPriceMutation{}, false
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Only one model price object is allowed"})
+		return modelPriceMutation{}, false
+	}
+	return req, true
+}
+
+func normalizePublicModelPrice(value *float64) (float64, bool) {
+	if value == nil {
+		return 0, false
+	}
+	normalized, ok := billing.NormalizeCNYPerMillionPrice(*value)
+	if !ok {
+		return 0, false
+	}
+	return billing.CNYPerMillionToInternalPriceCents(normalized), true
+}
+
 func (h *Handler) CreateModelPrice(w http.ResponseWriter, r *http.Request) {
 	if !requirePlatformPriceMutation(w, r) {
 		return
 	}
-	var req struct {
-		ModelName          string   `json:"model_name"`
-		InputPriceCents    float64  `json:"input_price_cents"`
-		OutputPriceCents   float64  `json:"output_price_cents"`
-		CacheReadRatio     *float64 `json:"cache_read_ratio"`
-		CacheCreationRatio *float64 `json:"cache_creation_ratio"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
+	req, ok := decodeModelPriceMutation(w, r)
+	if !ok {
 		return
 	}
-	if req.ModelName == "" {
+	if req.ModelName == nil || strings.TrimSpace(*req.ModelName) == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "model_name required"})
 		return
 	}
-	if req.InputPriceCents < 0 || req.OutputPriceCents < 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "price must be >= 0"})
+	modelName := strings.TrimSpace(*req.ModelName)
+	inputPriceCents, inputOK := normalizePublicModelPrice(req.InputPriceCNYPerMillion)
+	outputPriceCents, outputOK := normalizePublicModelPrice(req.OutputPriceCNYPerMillion)
+	if !inputOK || !outputOK {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "CNY-per-million prices are required, nonnegative, and support at most 5 decimal places"})
 		return
 	}
 	if (req.CacheReadRatio != nil && !validCachePriceRatio(*req.CacheReadRatio)) ||
@@ -408,11 +440,11 @@ func (h *Handler) CreateModelPrice(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(r.Context())
 
-	if err := lockPriceMutationKey(r.Context(), tx, "model_price:"+req.ModelName); err != nil {
+	if err := lockPriceMutationKey(r.Context(), tx, "model_price:"+modelName); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Lock failed"})
 		return
 	}
-	before, beforeFound, err := loadModelPriceByName(r.Context(), tx, req.ModelName, true)
+	before, beforeFound, err := loadModelPriceByName(r.Context(), tx, modelName, true)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Lookup failed"})
 		return
@@ -432,7 +464,7 @@ func (h *Handler) CreateModelPrice(w http.ResponseWriter, r *http.Request) {
 			updated_at = NOW()
 		 RETURNING id, model_name, input_price_cents::float8, output_price_cents::float8,
 		           cache_read_ratio::float8, cache_creation_ratio::float8`,
-		req.ModelName, req.InputPriceCents, req.OutputPriceCents, cacheReadRatio, cacheCreationRatio,
+		modelName, inputPriceCents, outputPriceCents, cacheReadRatio, cacheCreationRatio,
 	).Scan(&after.ID, &after.ModelName, &after.InputPriceCents, &after.OutputPriceCents, &after.CacheReadRatio, &after.CacheCreationRatio)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Insert failed"})
@@ -452,7 +484,9 @@ func (h *Handler) CreateModelPrice(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"id": after.ID, "model_name": after.ModelName,
-		"input_price_cents": after.InputPriceCents, "output_price_cents": after.OutputPriceCents,
+		"input_price_cny_per_million_tokens":  billing.InternalPriceCentsToCNYPerMillion(after.InputPriceCents),
+		"output_price_cny_per_million_tokens": billing.InternalPriceCentsToCNYPerMillion(after.OutputPriceCents),
+		"currency":                            "CNY", "price_basis_tokens": billing.PublicPriceBasisTokens,
 		"cache_read_ratio": after.CacheReadRatio, "cache_creation_ratio": after.CacheCreationRatio,
 	})
 }
@@ -467,45 +501,41 @@ func (h *Handler) UpdateModelPrice(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid ID"})
 		return
 	}
-	var req struct {
-		InputPriceCents    *float64 `json:"input_price_cents"`
-		OutputPriceCents   *float64 `json:"output_price_cents"`
-		CacheReadRatio     *float64 `json:"cache_read_ratio"`
-		CacheCreationRatio *float64 `json:"cache_creation_ratio"`
-		ModelName          *string  `json:"model_name"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
+	req, ok := decodeModelPriceMutation(w, r)
+	if !ok {
 		return
 	}
 	var sets []string
 	var args []interface{}
 	argIdx := 1
 	if req.ModelName != nil {
-		if strings.TrimSpace(*req.ModelName) == "" {
+		modelName := strings.TrimSpace(*req.ModelName)
+		if modelName == "" {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "model_name must not be empty"})
 			return
 		}
 		sets = append(sets, fmt.Sprintf("model_name = $%d", argIdx))
-		args = append(args, *req.ModelName)
+		args = append(args, modelName)
 		argIdx++
 	}
-	if req.InputPriceCents != nil {
-		if *req.InputPriceCents < 0 {
-			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "input_price_cents must be >= 0"})
+	if req.InputPriceCNYPerMillion != nil {
+		inputPriceCents, valid := normalizePublicModelPrice(req.InputPriceCNYPerMillion)
+		if !valid {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "input_price_cny_per_million_tokens must be nonnegative with at most 5 decimal places"})
 			return
 		}
 		sets = append(sets, fmt.Sprintf("input_price_cents = $%d", argIdx))
-		args = append(args, *req.InputPriceCents)
+		args = append(args, inputPriceCents)
 		argIdx++
 	}
-	if req.OutputPriceCents != nil {
-		if *req.OutputPriceCents < 0 {
-			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "output_price_cents must be >= 0"})
+	if req.OutputPriceCNYPerMillion != nil {
+		outputPriceCents, valid := normalizePublicModelPrice(req.OutputPriceCNYPerMillion)
+		if !valid {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "output_price_cny_per_million_tokens must be nonnegative with at most 5 decimal places"})
 			return
 		}
 		sets = append(sets, fmt.Sprintf("output_price_cents = $%d", argIdx))
-		args = append(args, *req.OutputPriceCents)
+		args = append(args, outputPriceCents)
 		argIdx++
 	}
 	if req.CacheReadRatio != nil {
@@ -538,7 +568,7 @@ func (h *Handler) UpdateModelPrice(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 
 	if req.ModelName != nil {
-		if err := lockPriceMutationKey(r.Context(), tx, "model_price:"+*req.ModelName); err != nil {
+		if err := lockPriceMutationKey(r.Context(), tx, "model_price:"+strings.TrimSpace(*req.ModelName)); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Lock failed"})
 			return
 		}
@@ -860,7 +890,9 @@ type modelPriceAuditRecord struct {
 func (p modelPriceAuditRecord) auditState() map[string]interface{} {
 	return map[string]interface{}{
 		"id": p.ID, "model_name": p.ModelName,
-		"input_price_cents": p.InputPriceCents, "output_price_cents": p.OutputPriceCents,
+		"input_price_cny_per_million_tokens":  billing.InternalPriceCentsToCNYPerMillion(p.InputPriceCents),
+		"output_price_cny_per_million_tokens": billing.InternalPriceCentsToCNYPerMillion(p.OutputPriceCents),
+		"currency":                            "CNY", "price_basis_tokens": billing.PublicPriceBasisTokens,
 		"cache_read_ratio": p.CacheReadRatio, "cache_creation_ratio": p.CacheCreationRatio,
 	}
 }

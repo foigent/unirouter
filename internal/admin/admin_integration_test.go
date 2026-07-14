@@ -392,7 +392,7 @@ func TestTopUp_Success_Integration(t *testing.T) {
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
-	body := `{"amount_cents":500,"description":"Test top-up"}`
+	body := `{"amount_cents":500,"description":"Test top-up","client_request_id":"topup-success-integration"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/recharge", bytes.NewBufferString(body))
 	req = withTestActor(req, 1, orgID, auth.RoleBillingAdmin)
 	req.Header.Set("Content-Type", "application/json")
@@ -456,7 +456,7 @@ func TestTopUp_Idempotency_Integration(t *testing.T) {
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
-	body := `{"amount_cents":500,"client_request_id":"idem-test-123"}`
+	body := `{"amount_cents":500,"description":"Idempotent top-up","client_request_id":"idem-test-123"}`
 
 	// First request
 	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/recharge", bytes.NewBufferString(body))
@@ -466,19 +466,52 @@ func TestTopUp_Idempotency_Integration(t *testing.T) {
 	h.TopUp(rec1, req1)
 	require.Equal(t, http.StatusOK, rec1.Code)
 
-	// Second request with same id — should return 409 Conflict
+	// Second request with the same identity returns the original result.
 	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/recharge", bytes.NewBufferString(body))
 	req2 = withTestActor(req2, 1, orgID, auth.RoleBillingAdmin)
 	req2.Header.Set("Content-Type", "application/json")
 	rec2 := httptest.NewRecorder()
 	h.TopUp(rec2, req2)
-	require.Equal(t, http.StatusConflict, rec2.Code)
+	require.Equal(t, http.StatusOK, rec2.Code)
+	var replay map[string]interface{}
+	require.NoError(t, json.Unmarshal(rec2.Body.Bytes(), &replay))
+	require.Equal(t, true, replay["idempotent_replay"])
 
 	// Verify balance only increased once
 	var balance int
 	err := pool.QueryRow(t.Context(), `SELECT balance FROM wallets WHERE org_id = $1`, orgID).Scan(&balance)
 	require.NoError(t, err)
 	require.Equal(t, 1500, balance, "balance should be 1000 + 500, not 1000 + 1000")
+}
+
+func TestTopUp_IdempotencyKeyReuseWithDifferentPayload_Integration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
+	testutil.NewTestWallet(t, pool, orgID, 1000)
+	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
+
+	serve := func(body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/topup", bytes.NewBufferString(body))
+		req = withTestActor(req, 1, orgID, auth.RoleBillingAdmin)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		h.TopUp(rec, req)
+		return rec
+	}
+
+	first := serve(`{"amount_cents":500,"description":"Invoice A","client_request_id":"topup-reuse-conflict"}`)
+	require.Equal(t, http.StatusOK, first.Code, first.Body.String())
+	conflict := serve(`{"amount_cents":600,"description":"Invoice B","client_request_id":"topup-reuse-conflict"}`)
+	require.Equal(t, http.StatusConflict, conflict.Code, conflict.Body.String())
+	require.Contains(t, conflict.Body.String(), "idempotency_key_reused")
+
+	var balance, transactions int
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT balance FROM wallets WHERE org_id = $1`, orgID).Scan(&balance))
+	require.NoError(t, pool.QueryRow(t.Context(),
+		`SELECT COUNT(*) FROM transactions WHERE org_id = $1 AND type = 'topup'`, orgID,
+	).Scan(&transactions))
+	require.Equal(t, 1500, balance)
+	require.Equal(t, 1, transactions)
 }
 
 // --- CreateGrant handler tests ---
@@ -637,7 +670,7 @@ func TestBalanceAdjust_Success_Integration(t *testing.T) {
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
-	body := `{"target_balance":500,"description":"Admin adjustment"}`
+	body := `{"delta_cents":-500,"description":"Admin adjustment","client_request_id":"adjust-success-integration"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/adjust", bytes.NewBufferString(body))
 	req = withTestActor(req, 1, orgID, auth.RoleBillingAdmin)
 	req.Header.Set("Content-Type", "application/json")
@@ -662,21 +695,22 @@ func TestBalanceAdjust_Success_Integration(t *testing.T) {
 	require.Equal(t, 500, balance)
 }
 
-func TestBalanceAdjust_NegativeTarget_Integration(t *testing.T) {
+func TestBalanceAdjust_InsufficientBalance_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	testutil.NewTestWallet(t, pool, orgID, 1000)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
-	body := `{"target_balance":-100}`
+	body := `{"delta_cents":-1100,"description":"Too large debit","client_request_id":"adjust-insufficient-integration"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/adjust", bytes.NewBufferString(body))
+	req = withTestActor(req, 1, orgID, auth.RoleBillingAdmin)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
 	h.BalanceAdjust(rec, req)
 
-	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Equal(t, http.StatusConflict, rec.Code)
 
 	// Verify balance unchanged
 	var balance int
@@ -692,7 +726,7 @@ func TestBalanceAdjust_NoWallet_Integration(t *testing.T) {
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
-	body := `{"target_balance":500}`
+	body := `{"delta_cents":500,"description":"Missing wallet","client_request_id":"adjust-missing-integration"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/wallet/adjust", bytes.NewBufferString(body))
 	req = withTestActor(req, 1, orgID, auth.RoleBillingAdmin)
 	req.Header.Set("Content-Type", "application/json")

@@ -621,12 +621,7 @@ func TestTopUp_Success(t *testing.T) {
 	txCommitted := false
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					*dest[0].(*int64) = 1 // wallet org_id
-					return nil
-				},
-			}
+			return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
 		},
 		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
 			return &testutil.MockTx{
@@ -651,7 +646,7 @@ func TestTopUp_Success(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"amount_cents":5000,"description":"Test top-up"}`
+	body := `{"amount_cents":5000,"description":"Test top-up","client_request_id":"topup-success"}`
 	req := httptest.NewRequest("POST", "/wallet/topup", strings.NewReader(body))
 	req = withTestBillingActor(req)
 	req.Header.Set("Content-Type", "application/json")
@@ -716,7 +711,10 @@ func TestTopUp_Idempotency(t *testing.T) {
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			return &testutil.MockRow{
 				ScanFn: func(dest ...any) error {
-					*dest[0].(*int64) = 42 // existing transaction id
+					*dest[0].(*int64) = 42
+					*dest[1].(*int) = 5000
+					*dest[2].(*int) = 15000
+					*dest[3].(*string) = "Replay top-up"
 					return nil
 				},
 			}
@@ -724,7 +722,7 @@ func TestTopUp_Idempotency(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"amount_cents":5000,"client_request_id":"req-123"}`
+	body := `{"amount_cents":5000,"description":"Replay top-up","client_request_id":"req-123"}`
 	req := httptest.NewRequest("POST", "/wallet/topup", strings.NewReader(body))
 	req = withTestBillingActor(req)
 	req.Header.Set("Content-Type", "application/json")
@@ -732,13 +730,13 @@ func TestTopUp_Idempotency(t *testing.T) {
 
 	h.TopUp(rec, req)
 
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 	var resp map[string]interface{}
 	json.Unmarshal(rec.Body.Bytes(), &resp)
-	if resp["existing_id"].(float64) != 42 {
-		t.Fatalf("expected existing_id=42, got %v", resp["existing_id"])
+	if resp["idempotent_replay"] != true || resp["balance_cents"].(float64) != 15000 {
+		t.Fatalf("expected replayed balance, got %v", resp)
 	}
 }
 
@@ -756,7 +754,7 @@ func TestTopUp_IdempotencyReadErrorDoesNotBeginFinancialWrite(t *testing.T) {
 		},
 	}
 	h := newTestHandler(db)
-	req := httptest.NewRequest(http.MethodPost, "/wallet/topup", strings.NewReader(`{"amount_cents":5000,"client_request_id":"req-db-error"}`))
+	req := httptest.NewRequest(http.MethodPost, "/wallet/topup", strings.NewReader(`{"amount_cents":5000,"description":"DB error","client_request_id":"req-db-error"}`))
 	req = withTestBillingActor(req)
 	rec := httptest.NewRecorder()
 
@@ -772,6 +770,9 @@ func TestTopUp_IdempotencyReadErrorDoesNotBeginFinancialWrite(t *testing.T) {
 
 func TestTopUp_WalletNotFound(t *testing.T) {
 	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
+		},
 		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
 			return &testutil.MockTx{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 				return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
@@ -780,7 +781,7 @@ func TestTopUp_WalletNotFound(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"amount_cents":5000}`
+	body := `{"amount_cents":5000,"description":"Missing wallet","client_request_id":"missing-wallet"}`
 	req := httptest.NewRequest("POST", "/wallet/topup", strings.NewReader(body))
 	req = withTestBillingActor(req)
 	req.Header.Set("Content-Type", "application/json")
@@ -796,12 +797,7 @@ func TestTopUp_WalletNotFound(t *testing.T) {
 func TestTopUp_TxBeginFail(t *testing.T) {
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					*dest[0].(*int64) = 1
-					return nil
-				},
-			}
+			return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
 		},
 		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
 			return nil, fmt.Errorf("connection pool exhausted")
@@ -809,7 +805,7 @@ func TestTopUp_TxBeginFail(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"amount_cents":5000}`
+	body := `{"amount_cents":5000,"description":"Begin failure","client_request_id":"begin-failure"}`
 	req := httptest.NewRequest("POST", "/wallet/topup", strings.NewReader(body))
 	req = withTestBillingActor(req)
 	req.Header.Set("Content-Type", "application/json")
@@ -825,12 +821,7 @@ func TestTopUp_TxBeginFail(t *testing.T) {
 func TestTopUp_TxExecFail_WalletUpdate(t *testing.T) {
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					*dest[0].(*int64) = 1
-					return nil
-				},
-			}
+			return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
 		},
 		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
 			return &testutil.MockTx{
@@ -848,7 +839,7 @@ func TestTopUp_TxExecFail_WalletUpdate(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"amount_cents":5000}`
+	body := `{"amount_cents":5000,"description":"Update failure","client_request_id":"update-failure"}`
 	req := httptest.NewRequest("POST", "/wallet/topup", strings.NewReader(body))
 	req = withTestBillingActor(req)
 	req.Header.Set("Content-Type", "application/json")
@@ -864,12 +855,7 @@ func TestTopUp_TxExecFail_WalletUpdate(t *testing.T) {
 func TestTopUp_TxCommitFail(t *testing.T) {
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					*dest[0].(*int64) = 1
-					return nil
-				},
-			}
+			return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
 		},
 		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
 			return &testutil.MockTx{
@@ -890,7 +876,7 @@ func TestTopUp_TxCommitFail(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"amount_cents":5000}`
+	body := `{"amount_cents":5000,"description":"Commit failure","client_request_id":"commit-failure"}`
 	req := httptest.NewRequest("POST", "/wallet/topup", strings.NewReader(body))
 	req = withTestBillingActor(req)
 	req.Header.Set("Content-Type", "application/json")
@@ -911,13 +897,7 @@ func TestBalanceAdjust_Success(t *testing.T) {
 	var auditArgs []any
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					*dest[0].(*int64) = 1  // org_id
-					*dest[1].(*int) = 5000 // current balance
-					return nil
-				},
-			}
+			return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
 		},
 		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
 			return &testutil.MockTx{
@@ -941,7 +921,7 @@ func TestBalanceAdjust_Success(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"target_balance":10000,"description":"Manual adjustment"}`
+	body := `{"delta_cents":5000,"description":"Manual adjustment","client_request_id":"adjust-success"}`
 	req := httptest.NewRequest("POST", "/wallet/adjust", strings.NewReader(body))
 	req = withTestBillingActor(req)
 	req.Header.Set("Content-Type", "application/json")
@@ -971,7 +951,7 @@ func TestBalanceAdjust_Success(t *testing.T) {
 	}
 }
 
-func TestBalanceAdjust_NegativeTarget(t *testing.T) {
+func TestBalanceAdjust_RejectsLegacyTargetBalance(t *testing.T) {
 	h := newTestHandler(&testutil.MockDB{})
 
 	body := `{"target_balance":-100}`
@@ -1001,6 +981,9 @@ func TestBalanceAdjust_WrongMethod(t *testing.T) {
 
 func TestBalanceAdjust_WalletNotFound(t *testing.T) {
 	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
+		},
 		BeginFn: func(ctx context.Context) (pgx.Tx, error) {
 			return &testutil.MockTx{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 				return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
@@ -1009,7 +992,7 @@ func TestBalanceAdjust_WalletNotFound(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"target_balance":10000}`
+	body := `{"delta_cents":10000,"description":"Missing wallet","client_request_id":"adjust-missing-wallet"}`
 	req := httptest.NewRequest("POST", "/wallet/adjust", strings.NewReader(body))
 	req = withTestBillingActor(req)
 	req.Header.Set("Content-Type", "application/json")
@@ -4105,7 +4088,7 @@ func TestCreateModelPrice_Success(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"model_name":"gpt-4o","input_price_cents":5,"output_price_cents":15}`
+	body := `{"model_name":"gpt-4o","input_price_cny_per_million_tokens":50,"output_price_cny_per_million_tokens":150}`
 	req := platformPricingRequest("POST", "/model-prices", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -4132,7 +4115,7 @@ func TestCreateModelPrice_DecimalCents(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"model_name":"mimo-v2.5","input_price_cents":0.2,"output_price_cents":0.1}`
+	body := `{"model_name":"mimo-v2.5","input_price_cny_per_million_tokens":2,"output_price_cny_per_million_tokens":1}`
 	req := platformPricingRequest("POST", "/model-prices", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -4168,7 +4151,7 @@ func TestCreateModelPrice_CacheRatios(t *testing.T) {
 		}}, nil
 	}}
 	h := newTestHandler(db)
-	body := `{"model_name":"claude","input_price_cents":4,"output_price_cents":20,"cache_read_ratio":0.1,"cache_creation_ratio":1.25}`
+	body := `{"model_name":"claude","input_price_cny_per_million_tokens":40,"output_price_cny_per_million_tokens":200,"cache_read_ratio":0.1,"cache_creation_ratio":1.25}`
 	req := platformPricingRequest("POST", "/model-prices", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	h.CreateModelPrice(rec, req)
@@ -4207,7 +4190,7 @@ func TestCreateModelPrice_DBError(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"model_name":"gpt-4o","input_price_cents":5,"output_price_cents":15}`
+	body := `{"model_name":"gpt-4o","input_price_cny_per_million_tokens":50,"output_price_cny_per_million_tokens":150}`
 	req := platformPricingRequest("POST", "/model-prices", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -4861,7 +4844,7 @@ func TestUpdateModelPrice_Success(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"input_price_cents":10,"output_price_cents":30}`
+	body := `{"input_price_cny_per_million_tokens":100,"output_price_cny_per_million_tokens":300}`
 	req := platformPricingRequest("PUT", "/model-prices/1", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "1")
@@ -4934,7 +4917,7 @@ func TestUpdateModelPrice_DBError(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"input_price_cents":10}`
+	body := `{"input_price_cny_per_million_tokens":100}`
 	req := platformPricingRequest("PUT", "/model-prices/1", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "1")
@@ -4957,7 +4940,7 @@ func TestUpdateModelPrice_NotFound(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"input_price_cents":10}`
+	body := `{"input_price_cny_per_million_tokens":100}`
 	req := platformPricingRequest("PUT", "/model-prices/999", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "999")

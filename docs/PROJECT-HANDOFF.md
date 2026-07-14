@@ -10,6 +10,15 @@
 > `f4fe41d`, verified selected authenticated UI and closed P6-E01 for one
 > historical request. This is Target verified only, not a
 > Production, capacity/HA, real-provider/detector, TLS or migration-down claim.
+> Post-PRD6 V1 release hardening is separate: CI-efficiency PR #198 passed run
+> `29299202652`, merged as `31d87de`, produced no duplicate automatic main run,
+> and passed trusted main dispatch `29299765793`. Shared Go cache `5720112747`
+> is seeded and final capacity is 32 caches / `9,503,335,891` bytes. The next
+> confirmed release blocker is `V1-FIN-001`, the integer-cent terminal clamp;
+> User selected the micro-CNY ledger option B. Wallet prerequisite PR #196
+> passed run `29300560434` and merged as `86a3bd8`; pricing prerequisite PR
+> #197 passed run `29301071299` and merged as `94c93dc`. The ledger remains
+> unimplemented and requires a later R3 merge/deployment decision gate.
 
 ## First Read Order
 
@@ -73,6 +82,10 @@
 58. `docs/ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md` - authoritative 27/27 accepted-row closeout, evidence level and preserved future boundaries.
 59. `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md` - authorized PRD6 ECS migration/deployment, stable/canary runtime, authenticated UI, P6-E01 historical request readback, cleanup and remaining target non-claims.
 60. `docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md` - fresh Git/CI/matrix/target-health audit, formal phase-completion decision, corrected 27/27 accounting and preserved later boundaries.
+61. `docs/ops/evidence/V1-POST-PRD6-CI-EFFICIENCY-LOCAL-20260714.md` - CI duplication, change-routing, concurrency and cache baseline evidence.
+62. `docs/ops/evidence/V1-POST-PRD6-CI-EFFICIENCY-CI-20260714.md` - PR #198, main dispatch and exact cache-seed/cleanup readback.
+63. `docs/planning/V1-MICRO-PRECISION-LEDGER-PLAN-20260714.md` - accepted P0 micro-CNY ledger contract, migration boundary and approval gate.
+64. `docs/ops/evidence/V1-POST-PRD6-FINANCIAL-PREREQUISITES-CI-20260714.md` - wallet atomicity and public pricing-unit prerequisite merge/CI evidence.
 
 ## Current Project Shape
 

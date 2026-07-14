@@ -42,7 +42,7 @@ func TestCreateModelPriceRollsBackWhenAuditInsertFails(t *testing.T) {
 	db := &testutil.MockDB{BeginFn: func(ctx context.Context) (pgx.Tx, error) { return tx, nil }}
 	h := newTestHandler(db)
 	req := pricingActorRequest(
-		httptest.NewRequest(http.MethodPost, "/model-prices", strings.NewReader(`{"model_name":"gpt-4o","input_price_cents":5,"output_price_cents":15}`)),
+		httptest.NewRequest(http.MethodPost, "/model-prices", strings.NewReader(`{"model_name":"gpt-4o","input_price_cny_per_million_tokens":50,"output_price_cny_per_million_tokens":150}`)),
 		1,
 		auth.RolePlatformAdmin,
 	)
@@ -63,7 +63,7 @@ func TestPriceMutationHandlerDefenseInDepthRejectsAuthenticatedTenantRole(t *tes
 		return &testutil.MockTx{}, nil
 	}})
 	req := pricingActorRequest(
-		httptest.NewRequest(http.MethodPost, "/model-prices", strings.NewReader(`{"model_name":"gpt-4o","input_price_cents":5,"output_price_cents":15}`)),
+		httptest.NewRequest(http.MethodPost, "/model-prices", strings.NewReader(`{"model_name":"gpt-4o","input_price_cny_per_million_tokens":50,"output_price_cny_per_million_tokens":150}`)),
 		1,
 		auth.RoleOrgAdmin,
 	)
@@ -72,6 +72,44 @@ func TestPriceMutationHandlerDefenseInDepthRejectsAuthenticatedTenantRole(t *tes
 	h.CreateModelPrice(rec, req)
 
 	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Zero(t, beginCalls)
+}
+
+func TestCreateModelPriceRejectsLegacyAmbiguousUnit(t *testing.T) {
+	beginCalls := 0
+	h := newTestHandler(&testutil.MockDB{BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+		beginCalls++
+		return &testutil.MockTx{}, nil
+	}})
+	req := pricingActorRequest(
+		httptest.NewRequest(http.MethodPost, "/model-prices", strings.NewReader(`{"model_name":"gpt-4o","input_price_cents":5,"output_price_cents":15}`)),
+		1,
+		auth.RolePlatformAdmin,
+	)
+	rec := httptest.NewRecorder()
+
+	h.CreateModelPrice(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Zero(t, beginCalls)
+}
+
+func TestCreateModelPriceRejectsUnrepresentablePublicPrecision(t *testing.T) {
+	beginCalls := 0
+	h := newTestHandler(&testutil.MockDB{BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+		beginCalls++
+		return &testutil.MockTx{}, nil
+	}})
+	req := pricingActorRequest(
+		httptest.NewRequest(http.MethodPost, "/model-prices", strings.NewReader(`{"model_name":"gpt-4o","input_price_cny_per_million_tokens":0.000001,"output_price_cny_per_million_tokens":1}`)),
+		1,
+		auth.RolePlatformAdmin,
+	)
+	rec := httptest.NewRecorder()
+
+	h.CreateModelPrice(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.Zero(t, beginCalls)
 }
 

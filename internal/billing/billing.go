@@ -182,13 +182,14 @@ func (b *Billing) WithPriceProvider(p PriceProvider) *Billing {
 	return b
 }
 
-// QueryModelPrice returns the per-token cost in cents for a model.
-// Falls back to a default rate if the model is not in model_prices.
+// QueryModelPrice returns the internal CNY-cent rate per 1,000 tokens for a
+// model. An unpriced model fails closed.
 func (b *Billing) QueryModelPrice(ctx context.Context, model string) (inputCost, outputCost float64, err error) {
 	return b.prices.QueryModelPrice(ctx, model)
 }
 
-// QueryModelPriceForOrg returns per-token costs with org-level multiplier applied.
+// QueryModelPriceForOrg returns internal CNY-cent rates per 1,000 tokens with
+// the organization multiplier applied.
 // Merges base price lookup and org multiplier into a single SQL query to reduce
 // round-trips from 3 (PriceProvider + fallback + multiplier) to 1.
 func (b *Billing) QueryModelPriceForOrg(ctx context.Context, orgID int64, model string) (inputCost, outputCost float64, err error) {
@@ -216,18 +217,21 @@ func (b *Billing) queryPriceQuoteForOrg(ctx context.Context, orgID int64, model 
 	var baseUpdatedAt, orgUpdatedAt sql.NullTime
 	err := b.db.QueryRow(ctx, `
 		SELECT
-			COALESCE(mp.input_price_cents, 2)::float8,
-			COALESCE(mp.output_price_cents, 10)::float8,
+			mp.input_price_cents::float8,
+			mp.output_price_cents::float8,
 			COALESCE(mp.cache_read_ratio, 1)::float8,
 			COALESCE(mp.cache_creation_ratio, 1)::float8,
 			COALESCE(omp.multiplier, 1.0)::float8,
 			mp.updated_at,
 			omp.updated_at
-		FROM (SELECT 1) AS stub
-		LEFT JOIN model_prices mp ON mp.model_name = $1
+		FROM model_prices mp
 		LEFT JOIN org_model_prices omp ON omp.org_id = $2 AND omp.model_name = $1
+		WHERE mp.model_name = $1
 	`, model, orgID).Scan(&baseInput, &baseOutput, &cacheReadRatio, &cacheCreationRatio, &multiplier, &baseUpdatedAt, &orgUpdatedAt)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return priceQuote{}, fmt.Errorf("%w: %s", ErrModelPriceNotConfigured, model)
+		}
 		return priceQuote{}, fmt.Errorf("query model price for org %d model %s: %w", orgID, model, err)
 	}
 	return newPriceQuote(model, baseInput, baseOutput, cacheReadRatio, cacheCreationRatio, multiplier, nullableTime(baseUpdatedAt), nullableTime(orgUpdatedAt), "database"), nil

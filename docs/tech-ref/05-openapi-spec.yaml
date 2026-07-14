@@ -599,10 +599,61 @@ paths:
     get: { $ref: "#/components/pathItems/Get" }
 
   /api/v1/wallet/topup:
-    post: { $ref: "#/components/pathItems/Create" }
+    post:
+      tags: [Admin]
+      summary: Atomically add cash to the latest wallet balance
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [amount_cents, description, client_request_id]
+              properties:
+                org_id: { type: integer, format: int64, description: Platform administrators may select a target organization. }
+                amount_cents: { type: integer, minimum: 1 }
+                description: { type: string, minLength: 1 }
+                client_request_id: { type: string, minLength: 1, maxLength: 128, description: Stable idempotency identity reused for retries of the same payload. }
+      responses:
+        "200": { $ref: "#/components/responses/JSON" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
 
   /api/v1/wallet/adjust:
-    post: { $ref: "#/components/pathItems/Create" }
+    post:
+      tags: [Admin]
+      summary: Atomically apply a signed delta to the latest wallet balance
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [delta_cents, description, client_request_id]
+              properties:
+                org_id: { type: integer, format: int64, description: Platform administrators may select a target organization. }
+                delta_cents:
+                  type: integer
+                  oneOf:
+                    - maximum: -1
+                    - minimum: 1
+                  description: Positive values add funds; negative values reduce funds. Applied to the server's latest locked balance.
+                description: { type: string, minLength: 1 }
+                client_request_id: { type: string, minLength: 1, maxLength: 128, description: Stable idempotency identity reused for retries of the same payload. }
+      responses:
+        "200": { $ref: "#/components/responses/JSON" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
 
   /api/v1/wallet/transactions:
     get: { $ref: "#/components/pathItems/List" }
@@ -738,7 +789,16 @@ paths:
     x-unirouter-rbac:
       get: [platform_admin, org_admin]
       post: [platform_admin]
-    description: Platform-owned base input/output prices plus cache_read_ratio and cache_creation_ratio. Ratios default to 1 and apply only to provider-authoritative Prompt Cache token classes for requests frozen after the change.
+    description: |
+      Platform-owned base input/output prices plus cache_read_ratio and
+      cache_creation_ratio. The V1 public price contract is CNY per 1,000,000
+      tokens, represented by input_price_cny_per_million_tokens and
+      output_price_cny_per_million_tokens; responses also return currency=CNY
+      and price_basis_tokens=1000000. Legacy input_price_cents and
+      output_price_cents request fields are rejected because their unit is
+      ambiguous. Ratios default to 1 and apply only to provider-authoritative
+      Prompt Cache token classes for requests frozen after the change. A model
+      with no explicit model_prices row fails closed; no default price is used.
     get: { $ref: "#/components/pathItems/List" }
     post: { $ref: "#/components/pathItems/Create" }
 

@@ -15,6 +15,18 @@
 > `main`/`origin/main` at `9c73d6f`, successful exact-head main run
 > `29274010760`, and current public ECS readiness with DB/Redis healthy. See
 > `docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md`.
+> Post-PRD6 V1 release hardening is tracked separately and does not reopen that
+> completion. CI-efficiency PR #198 passed exact-head run `29299202652`, merged
+> as `31d87de`, produced no automatic post-merge CI, and passed one trusted main
+> dispatch `29299765793`. Shared Go cache `5720112747` is seeded; final capacity
+> is 32 caches / `9,503,335,891` bytes after four explicit single-ID deletions.
+> `V1-FIN-001` separately confirms the integer-cent terminal clamp as a P0 V1
+> release blocker; User-approved option B is documented in
+> `docs/planning/V1-MICRO-PRECISION-LEDGER-PLAN-20260714.md`. Its wallet
+> atomicity prerequisite PR #196 passed run `29300560434` and merged as
+> `86a3bd8`; pricing-contract prerequisite PR #197 passed run `29301071299`
+> and merged as `94c93dc`. The micro-CNY ledger itself is not yet implemented
+> or deployed.
 > PRD6 Batch 0B P6-F16 was squash-merged by PR #140 as
 > `f244f669c529fec8767f85fff209882b333d8ed2`. P6-F33 was squash-merged by
 > PR #142 as `7173c5967a42c112fd0b219938a0901c1a0b9633`; its PR and post-merge
@@ -567,6 +579,8 @@ Historical PRD1 summary: Core backend modules, admin APIs, frontend pages, migra
 
 | Area | Status | Evidence |
 |------|--------|----------|
+| V1 Financial Prerequisites | CI verified; target price review pending | PR #196 exact head `2c5e930` / run `29300560434` / merge `86a3bd8` closes unsafe absolute wallet adjustment. PR #197 exact head `74ebf62` / run `29301071299` / merge `94c93dc` closes the public price-unit/default-price defect and adds `000035` without rewriting existing rows. Evidence: `docs/ops/evidence/V1-POST-PRD6-FINANCIAL-PREREQUISITES-CI-20260714.md`. No target mutation or automatic price conversion |
+| V1 Post-PRD6 CI Efficiency | CI verified / closed | PR #198 exact head run `29299202652`, squash merge `31d87de`, no automatic merge-commit CI, trusted main run `29299765793`, shared cache `5720112747` and final 32-cache / `9,503,335,891`-byte readback. Docs-only PR #199 run `29300434659` passed with explicit skipped Backend/Frontend/Docker contexts. Evidence: `docs/ops/evidence/V1-POST-PRD6-CI-EFFICIENCY-CI-20260714.md` |
 | PRD6 Final Completion | Completed (Accepted Scope) | Fresh 2026-07-14 audit: 27/27 accepted rows closed, clean/aligned pre-publication baseline `9c73d6f`, exact-head main run `29274010760` green, public ECS readiness healthy; `docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md`. No Production or future-scope promotion |
 | PRD6 Target Deployment And UI Verification | Target verified for selected surfaces | `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md`; exact PRD6 stable/canary commit `ce9307a`, exact final frontend `f4fe41d`, migrations through `000034`, public/internal readiness, authenticated Dashboard/limits/Guardrails/routing/reconciliation/logs/status/docs, one historical P6-E01 route/failover detail, mobile checks, PR #191 runbook/Vite correction, PR #192 inline favicon correction and zero-row QA cleanup. No Production, policy-enforcement, real-provider/detector, capacity/HA, TLS or migration-down claim |
 | PRD5 X-Insight Runtime Contract Reconciliation | CI verified | PR #136 passed Backend Tests, Frontend Build, and Docker Build. `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md` records the answered request, synthetic-only X-Insight target, disabled unimplemented capabilities, and UniRouter v1 contract lock. No deployment is claimed |
