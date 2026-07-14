@@ -55,6 +55,9 @@ jobs:
               case "$file" in
                 docs/*|*.md|LICENSE*|.github/ISSUE_TEMPLATE/*|.github/PULL_REQUEST_TEMPLATE*)
                   ;;
+                .dockerignore|Dockerfile|frontend/.dockerignore)
+                  docker=true
+                  ;;
                 frontend/*)
                   frontend=true
                   docker=true
@@ -377,16 +380,48 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Verify Docker build context excludes local secrets
+      - name: Build backend image and verify Docker contexts
+        shell: bash
         run: |
-          trap 'rm -f .env.production' EXIT
+          set -euo pipefail
+
+          test ! -e .env.production
+          test ! -e frontend/.env
+          test ! -e frontend/.env.local
+          test ! -e frontend/docker-context-regression.pem
+          test ! -e frontend/secrets
+
+          cleanup() {
+            rm -f .env.production
+            rm -f frontend/.env
+            rm -f frontend/.env.local
+            rm -f frontend/docker-context-regression.pem
+            rm -f frontend/secrets/docker-context-regression.txt
+            if [[ -d frontend/secrets ]]; then
+              rmdir frontend/secrets
+            fi
+          }
+          trap cleanup EXIT
+
           printf 'docker-context-regression-marker\n' > .env.production
-          docker build --target builder -t unirouter:context-test .
-          docker run --rm unirouter:context-test sh -ec \
-            'test ! -e /app/.env.production && test -e /app/.env.example'
-      
-      - name: Build Docker image
-        run: docker build -t unirouter:test .
+          printf 'docker-context-regression-marker\n' > frontend/.env
+          printf 'docker-context-regression-marker\n' > frontend/.env.local
+          printf 'docker-context-regression-marker\n' > frontend/docker-context-regression.pem
+          mkdir frontend/secrets
+          printf 'docker-context-regression-marker\n' > frontend/secrets/docker-context-regression.txt
+
+          docker build -t unirouter:test .
+
+          docker build -t unirouter-frontend-context:test -f - frontend <<'DOCKERFILE'
+          FROM alpine:3.19
+          WORKDIR /app
+          COPY . .
+          RUN test -e /app/package.json \
+              && test ! -e /app/.env \
+              && test ! -e /app/.env.local \
+              && test ! -e /app/docker-context-regression.pem \
+              && test ! -d /app/secrets
+          DOCKERFILE
       
       - name: Verify image
         run: docker images unirouter:test
