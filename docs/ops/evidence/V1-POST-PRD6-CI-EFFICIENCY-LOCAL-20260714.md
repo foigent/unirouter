@@ -38,10 +38,11 @@
 1. Full required CI runs on `pull_request` only. A manual `workflow_dispatch`
    remains available and deliberately routes to the full suite. The duplicate
    automatic post-merge `main` run is removed.
-2. Workflow-level concurrency is keyed by workflow plus PR number/ref.
-   Superseded pull-request runs are cancellation candidates; manual full-suite
-   dispatches retain their running job rather than being canceled by another
-   dispatch.
+2. Expensive-job concurrency is keyed by workflow, PR number/ref and required
+   job. Superseded Backend, Frontend and Docker jobs for the same pull request
+   are cancellation candidates, while the lightweight change router can run
+   immediately. Manual full-suite dispatches retain their running jobs rather
+   than being canceled by another dispatch.
 3. A repository-owned change router classifies the complete PR diff:
    - documentation and Markdown-only changes request no expensive job;
    - Go, migration, `cmd` or `internal` changes request Backend plus Docker;
@@ -97,10 +98,14 @@ execution and Docker build on this branch before merge.
 2. To avoid spending more minutes on that superseded head, only exact run
    `29298226707` was canceled and then force-canceled after the ordinary cancel
    request did not interrupt its active integration-test step.
-3. Run `29298666478` then started on head `d4c803c`. The commit carrying this
-   section is the controlled same-group update used to verify whether an
-   in-progress run created with the final concurrency contract is canceled.
-   Concurrency acceptance remains pending until that readback is recorded.
+3. Run `29298666478` then started on head `d4c803c`. A controlled same-group
+   update still left that run active, demonstrating that workflow-level
+   `cancel-in-progress` was not stopping active jobs in this repository at the
+   time of verification.
+4. The final design therefore scopes native concurrency to each expensive
+   required job and removes the workflow-level queue. Concurrency acceptance
+   remains pending until a later head cancels in-progress Backend and Frontend
+   jobs created with this job-level contract.
 
 ## Rollback and non-goals
 
