@@ -89,7 +89,7 @@ jobs:
     timeout-minutes: 25
     concurrency:
       group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-backend
-      cancel-in-progress: true
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     
     services:
       postgres:
@@ -316,7 +316,7 @@ jobs:
     timeout-minutes: 10
     concurrency:
       group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-frontend
-      cancel-in-progress: true
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     
     defaults:
       run:
@@ -359,7 +359,7 @@ jobs:
     timeout-minutes: 10
     concurrency:
       group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-docker
-      cancel-in-progress: true
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     
     steps:
       - name: Validate routed prerequisites

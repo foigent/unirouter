@@ -5,7 +5,7 @@
 - Issue: `V1-CI-001`
 - Category: confirmed engineering/operational regression
 - Severity: High
-- Evidence level: Local verified; required CI pending
+- Evidence level: Local and runtime concurrency verified; required CI pending
 - Baseline: `origin/main` at `f90e7eb79ae23d48c99b882e2d7a3bb568b46c5a`
 - Branch: `codex/v1-ci-efficiency`
 - PRD6 boundary: unchanged; PRD6 remains Completed (Accepted Scope)
@@ -103,12 +103,19 @@ execution and Docker build on this branch before merge.
    `cancel-in-progress` was not stopping active jobs in this repository at the
    time of verification.
 4. The final design therefore scopes native concurrency to each expensive
-   required job and removes the workflow-level queue. Concurrency acceptance
-   remains pending until a later head cancels in-progress Backend and Frontend
-   jobs created with this job-level contract.
-5. Run `29298848300` started both Backend Tests and Frontend Build on head
-   `0ffdc31`. The commit carrying this item is the controlled successor used
-   for the job-level cancellation readback.
+   required job and removes the workflow-level queue.
+5. Run `29298848300` started Backend Tests and Frontend Build on head
+   `0ffdc31`. Successor run `29298886913` used the same PR-only job-level
+   cancellation contract. It canceled the older Backend job at
+   `2026-07-14T01:34:48Z` and Frontend job at `2026-07-14T01:34:46Z`, rather
+   than waiting for either suite to complete.
+6. The canceled predecessor's Docker job failed only its prerequisite gate;
+   checkout, image build and image verification were skipped. Run
+   `29298886913` was itself superseded and canceled by `29298914576`, providing
+   a second job-level cancellation readback.
+7. The final workflow keeps the verified PR-only expression so a newer pull
+   request head cancels stale expensive jobs, while independent trusted manual
+   dispatches are not terminated by that PR policy.
 
 ## Rollback and non-goals
 
