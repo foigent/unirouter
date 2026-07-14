@@ -25,6 +25,8 @@ func runCLI(ctx context.Context, args []string, cfg *config.Config) (bool, error
 		return true, runAdminCLI(ctx, args[1:], cfg)
 	case "migrate":
 		return true, runMigrateCLI(ctx, args[1:], cfg)
+	case "upgrade":
+		return true, runUpgradeCLI(ctx, args[1:], cfg)
 	default:
 		return false, nil
 	}

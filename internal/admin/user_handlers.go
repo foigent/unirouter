@@ -115,6 +115,9 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		`INSERT INTO users (org_id, username, password_hash, role) VALUES ($1, $2, $3, $4) RETURNING id`,
 		req.OrgId, req.Username, string(hash), req.Role).Scan(&id)
 	if err != nil {
+		if writeCommercialLimitViolation(w, err) {
+			return
+		}
 		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Username already exists"})
 		return
 	}
@@ -190,6 +193,9 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	query := fmt.Sprintf("UPDATE users SET %s WHERE %s", joinStrings(sets, ", "), whereClause)
 	tag, err := h.db.Exec(r.Context(), query, args...)
 	if err != nil {
+		if writeCommercialLimitViolation(w, err) {
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
 		return
 	}

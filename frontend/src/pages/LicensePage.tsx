@@ -7,10 +7,12 @@ import { EmptyState, PageHeader, Surface } from '../ui';
 const { Text } = Typography;
 
 interface LicensePayload {
+  license_id?: string;
   customer?: string;
   deployment_id?: string;
   tier?: string;
   issued_at?: string;
+  not_before?: string;
   expires_at?: string;
   features?: string[];
   limits?: Record<string, number>;
@@ -20,11 +22,17 @@ interface LicensePayload {
 interface LicenseStatus {
   status: string;
   valid: boolean;
+  enforceable: boolean;
+  commercial: boolean;
   signature_valid: boolean;
+  deployment_match: boolean;
   warning: boolean;
   days_until_expiry: number;
   checked_at: string;
   verifier_configured: boolean;
+  schema_version?: string;
+  key_id?: string;
+  expected_deployment_id?: string;
   license?: LicensePayload;
   error?: string;
 }
@@ -37,6 +45,8 @@ function statusColor(status?: string) {
       return 'orange';
     case 'expired':
     case 'invalid':
+    case 'not_yet_valid':
+    case 'deployment_mismatch':
       return 'red';
     case 'missing':
     default:
@@ -47,15 +57,19 @@ function statusColor(status?: string) {
 function statusText(status?: string) {
   switch (status) {
     case 'active':
-      return 'Active';
+      return '有效';
     case 'expiring':
-      return 'Expiring';
+      return '即将到期';
     case 'expired':
-      return 'Expired';
+      return '已到期';
     case 'invalid':
-      return 'Invalid';
+      return '无效';
+    case 'not_yet_valid':
+      return '尚未生效';
+    case 'deployment_mismatch':
+      return '部署不匹配';
     case 'missing':
-      return 'Missing';
+      return '未导入';
     default:
       return status || '-';
   }
@@ -97,12 +111,14 @@ export default function LicensePage() {
   const metadataRows = useMemo(() => {
     const license = status?.license || {};
     return [
-      { key: 'Customer', value: license.customer || '-' },
-      { key: 'Deployment', value: license.deployment_id || '-' },
-      { key: 'Tier', value: license.tier || '-' },
-      { key: 'Issued At', value: license.issued_at || '-' },
-      { key: 'Expires At', value: license.expires_at || '-' },
-      { key: 'Features', value: formatList(license.features) },
+      { key: 'License ID', value: license.license_id || '-' },
+      { key: '客户', value: license.customer || '-' },
+      { key: '绑定部署', value: license.deployment_id || '-' },
+      { key: '授权层级', value: license.tier || '-' },
+      { key: '签发时间', value: license.issued_at || '-' },
+      { key: '生效时间', value: license.not_before || '-' },
+      { key: '到期时间', value: license.expires_at || '-' },
+      { key: '功能授权', value: formatList(license.features) },
     ];
   }, [status]);
 
@@ -128,6 +144,10 @@ export default function LicensePage() {
 
   const readFile = async (file?: File) => {
     if (!file) return;
+    if (file.size > 240 * 1024) {
+      Toast.error('License 文件不能超过 240 KiB');
+      return;
+    }
     const text = await file.text();
     setLicenseText(text);
   };
@@ -139,9 +159,9 @@ export default function LicensePage() {
   return (
     <div className="ur-page">
       <PageHeader
-        eyebrow="Governance"
-        title="License"
-        description="查看离线 License 状态、有效期和部署授权信息。"
+        eyebrow="商业控制"
+        title="商业授权"
+        description="查看签名、部署绑定、功能与资源授权。只有可强制执行的 unirouter.license.v1 才能放行新模型流量。"
         actions={
           <Button icon={<IconRefresh />} onClick={loadLicense}>
             刷新
@@ -153,17 +173,28 @@ export default function LicensePage() {
         <Surface title="状态">
           <Descriptions
             data={[
-              { key: 'Status', value: <Tag color={statusColor(status?.status)}>{statusText(status?.status)}</Tag> },
-              { key: 'Signature', value: status?.signature_valid ? 'Valid' : 'Not verified' },
-              { key: 'Verifier', value: status?.verifier_configured ? 'Configured' : 'Missing public key' },
-              { key: 'Days Left', value: status?.license ? String(status.days_until_expiry) : '-' },
-              { key: 'Checked At', value: status?.checked_at || '-' },
+              { key: '状态', value: <Tag color={statusColor(status?.status)}>{statusText(status?.status)}</Tag> },
+              { key: '商业格式', value: status?.commercial ? '是' : '否' },
+              { key: '可强制执行', value: status?.enforceable ? '是' : '否' },
+              { key: '签名', value: status?.signature_valid ? '有效' : '未验证' },
+              { key: '部署匹配', value: status?.deployment_match ? '是' : '否' },
+              { key: '验签器', value: status?.verifier_configured ? '已配置' : '缺少公钥' },
+              { key: 'Schema', value: status?.schema_version || '-' },
+              { key: 'Key ID', value: status?.key_id || '-' },
+              { key: '本机部署标识', value: status?.expected_deployment_id || '-' },
+              { key: '剩余天数', value: status?.license ? String(status.days_until_expiry) : '-' },
+              { key: '校验时间', value: status?.checked_at || '-' },
             ]}
             row
           />
           {status?.error && (
             <div style={{ marginTop: 16 }}>
               <Text type="danger">{status.error}</Text>
+            </div>
+          )}
+          {!status?.enforceable && !status?.error && (
+            <div style={{ marginTop: 16 }}>
+              <Text type="danger">当前授权不可用于商业运行；新模型请求保持拒绝。</Text>
             </div>
           )}
         </Surface>
@@ -173,7 +204,7 @@ export default function LicensePage() {
         </Surface>
       </div>
 
-      <Surface title="导入离线 License">
+      <Surface title="导入签名商业 License">
         <Space vertical align="start" style={{ width: '100%' }}>
           <input
             ref={fileInputRef}
@@ -194,7 +225,7 @@ export default function LicensePage() {
             value={licenseText}
             onChange={setLicenseText}
             autosize={{ minRows: 8, maxRows: 16 }}
-            placeholder='{"payload": {...}, "signature": "..."}'
+            placeholder='{"schema_version":"unirouter.license.v1","key_id":"license-...","payload":{...},"signature":"..."}'
             style={{ width: '100%' }}
           />
         </Space>
@@ -207,10 +238,10 @@ export default function LicensePage() {
           dataSource={formatRecord(status?.license?.limits)}
           rowKey="key"
           columns={[
-            { title: 'Key', dataIndex: 'key' },
-            { title: 'Value', dataIndex: 'value' },
+            { title: '限制项（签名键）', dataIndex: 'key' },
+            { title: '活跃数量上限', dataIndex: 'value' },
           ]}
-          empty={<EmptyState title="无 License 限制" minHeight={180} />}
+          empty={<EmptyState title="未设置资源数量上限" description="缺少 limit 表示该资源不受 License 数量约束。" minHeight={180} />}
         />
       </Surface>
     </div>

@@ -145,7 +145,10 @@ func quoteIdent(value string) string {
 }
 
 func dropTemporaryDatabase(ctx context.Context, adminPool *pgxpool.Pool, dbName string) error {
-	_, err := adminPool.Exec(ctx, `DROP DATABASE IF EXISTS `+quoteIdent(dbName)+` WITH (FORCE)`)
+	// The test pool is closed before this runs, so a regular DROP both avoids
+	// requiring pg_signal_backend and exposes real connection leaks instead of
+	// terminating unrelated sessions from a privileged CI role.
+	_, err := adminPool.Exec(ctx, `DROP DATABASE IF EXISTS `+quoteIdent(dbName))
 	return err
 }
 
@@ -163,6 +166,18 @@ func testDatabaseUnavailable(t *testing.T, format string, args ...any) {
 func TruncateAll(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	ctx := context.Background()
+
+	// Security-control state is reset explicitly for isolated tests. Keep the
+	// release_state singleton itself because runtime code relies on its presence.
+	for _, statement := range []string{
+		"DELETE FROM release_history",
+		"DELETE FROM commercial_license_entitlements",
+		"UPDATE release_state SET release_sequence = 0, version = '', commit = '', package_sha256 = NULL, trusted_key_id = '', target_schema = '', manifest = NULL, updated_at = NOW() WHERE singleton = TRUE",
+	} {
+		if _, err := pool.Exec(ctx, statement); err != nil {
+			t.Logf("release-control reset warning for %q: %v", statement, err)
+		}
+	}
 
 	tables := []string{
 		"guardrail_policies",

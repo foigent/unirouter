@@ -1,6 +1,18 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
+> The User-approved Post-PRD6 V1 delivery gate for commercial License
+> enforcement and signed offline upgrades is locally verified on
+> `codex/v1-commercial-license-upgrade`, based on clean `origin/main`
+> `e94a4b184a6f675d76c292602b7c18293ab2ce61`. It adds fail-closed signed
+> deployment/feature/resource authority, migration `000037`, vendor License
+> tooling, deterministic pre-extraction signed-bundle verification, installed
+> release-state readback and a no-build/source-free customer Compose profile.
+> Pull request and exact-head required CI are pending. No production/customer
+> signing key or License was created, and no ECS trust root, deployment ID,
+> License, migration or image was changed. Those target operations remain a
+> separate R4 decision. Evidence:
+> `docs/ops/evidence/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-LOCAL-20260715.md`.
 > PRD6 is formally `Completed (Accepted Scope)` at repository/CI evidence level. All 27
 > accepted rows are verified or closed. The final row, P6-F11, passed PR #189
 > implementation run `29245696926`, final-head run `29246431182`, squash merge

@@ -180,6 +180,9 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		req.OrgID, req.Name, req.Slug, req.Description, budgetArg, req.BudgetPeriod, createdBy,
 	).Scan(&id)
 	if err != nil {
+		if writeCommercialLimitViolation(w, err) {
+			return
+		}
 		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
 			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Project slug already exists"})
 			return
@@ -338,6 +341,9 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	query := fmt.Sprintf("UPDATE projects SET %s WHERE %s", strings.Join(sets, ", "), whereClause)
 	tag, err := h.db.Exec(r.Context(), query, args...)
 	if err != nil {
+		if writeCommercialLimitViolation(w, err) {
+			return
+		}
 		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
 			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Project slug already exists"})
 			return

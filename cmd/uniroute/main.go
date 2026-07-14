@@ -181,11 +181,28 @@ func main() {
 	adminHandler.SetGuardrailController(guardrailService)
 	adminHandler.SetProviderCostReconciler(billingSvc)
 	adminHandler.SetLimitPolicyReloader(limitPolicyService)
-	licenseVerifier, err := licensing.NewVerifierFromPublicKey(cfg.LicensePublicKey, cfg.LicenseExpiryWarningDays)
+	legacyLicenseKey, err := licensing.ParsePublicKey(cfg.LicensePublicKey)
 	if err != nil {
 		log.Fatalf("Invalid license configuration: %v", err)
 	}
+	licenseKeyRing, err := licensing.ParsePublicKeyRing(cfg.LicensePublicKeys)
+	if err != nil {
+		log.Fatalf("Invalid commercial license key ring: %v", err)
+	}
+	licenseVerifier := licensing.NewCommercialVerifier(licenseKeyRing, legacyLicenseKey, cfg.LicenseExpiryWarningDays, cfg.LicenseDeploymentID)
+	licenseRuntime := licensing.NewRuntime(licenseVerifier)
 	adminHandler.SetLicenseVerifier(licenseVerifier)
+	adminHandler.SetLicenseRuntime(licenseRuntime)
+	initialLicenseStatus, err := adminHandler.ReconcileStoredCommercialLicense(context.Background())
+	if err != nil {
+		licenseRuntime.Replace(nil)
+		log.Printf("Commercial License startup reconciliation failed; runtime remains fail-closed: %v", err)
+		initialLicenseStatus = licenseRuntime.Status()
+	}
+	log.Printf("Commercial license status: %s enforceable=%t", initialLicenseStatus.Status, initialLicenseStatus.Enforceable)
+	eventSvc.SetAdmission(func() bool {
+		return licenseRuntime.Authorize(licensing.FeatureNotifications).Allowed
+	})
 	adminHandler.SetEventService(eventSvc)
 	adminHandler.SetRedisClient(redisClient.Client)
 	adminHandler.SetRuntimeStatusOptions(admin.RuntimeStatusOptions{
@@ -249,6 +266,9 @@ func main() {
 		log.Fatalf("Invalid OIDC configuration: %v", err)
 	}
 	adminHandler.SetOIDCService(oidcService)
+	licenseRefreshCtx, stopLicenseRefresh := context.WithCancel(context.Background())
+	defer stopLicenseRefresh()
+	go runLicenseRefreshLoop(licenseRefreshCtx, adminHandler, cfg.LicenseRefreshInterval())
 
 	// Load sensitive words from settings and periodically refresh all instances.
 	go startSensitiveWordsReloadLoop(postgres.Pool, sensitiveFilter, time.Minute)
@@ -306,6 +326,8 @@ func main() {
 
 	// Gateway endpoints (with auth + rate limiting)
 	gatewayAuth := middleware.GatewayAuthWithAgentCapabilities(postgres.Pool, cfg.APIKeyHashSecret, agentCapabilityService)
+	gatewayLicenseGate := licenseRuntime.Gate(licensing.FeatureGateway)
+	agentLicenseGate := licenseRuntime.GateAll(licensing.FeatureGateway, licensing.FeatureAgentCapabilities)
 	rateLimiter := middleware.RateLimit(redisClient.Client)
 	admissionMiddleware := middleware.AdmissionFromContext(admissionCtrl)
 	idempotencyStore := middleware.NewPostgresIdempotencyStore(postgres.Pool)
@@ -318,10 +340,11 @@ func main() {
 	chatPayloadGuard := payloadpolicy.RequestMiddleware(payloadBudget, payloadpolicy.ProfileChatRequest, middleware.GetOrgIDFromContext)
 	embeddingsPayloadGuard := payloadpolicy.RequestMiddleware(payloadBudget, payloadpolicy.ProfileEmbeddingsRequest, middleware.GetOrgIDFromContext)
 
-	mux.Handle("POST /v1/chat/completions", gatewayAuth(chatPayloadGuard(idempotencyGuard(chatHandler))))
-	mux.Handle("POST /v1/embeddings", gatewayAuth(embeddingsPayloadGuard(idempotencyGuard(embeddingsHandler))))
-	mux.Handle("GET /v1/models", gatewayAuth(admissionMiddleware(http.HandlerFunc(relay.HandleModels))))
+	mux.Handle("POST /v1/chat/completions", gatewayLicenseGate(gatewayAuth(chatPayloadGuard(idempotencyGuard(chatHandler)))))
+	mux.Handle("POST /v1/embeddings", gatewayLicenseGate(gatewayAuth(embeddingsPayloadGuard(idempotencyGuard(embeddingsHandler)))))
+	mux.Handle("GET /v1/models", gatewayLicenseGate(gatewayAuth(admissionMiddleware(http.HandlerFunc(relay.HandleModels)))))
 	registerAgentCapabilityRoutes(mux, agentCapabilityHandler, agentCapabilityRouteGuards{
+		authorize:    agentLicenseGate,
 		authenticate: gatewayAuth,
 		rateLimit:    rateLimiter,
 	})
@@ -358,6 +381,12 @@ func main() {
 	projectWriteRoute := func(h http.HandlerFunc) http.Handler {
 		return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper)
 	}
+	licensedRoute := func(feature string, route func(http.HandlerFunc) http.Handler) func(http.HandlerFunc) http.Handler {
+		return func(h http.HandlerFunc) http.Handler {
+			gated := licenseRuntime.Gate(feature)(http.HandlerFunc(h))
+			return route(http.HandlerFunc(gated.ServeHTTP))
+		}
+	}
 
 	loginRateLimiter := middleware.LoginRateLimit(redisClient.Client, middleware.LoginRateLimitOptions{
 		Enabled:      cfg.LoginRateLimitEnabled,
@@ -368,9 +397,9 @@ func main() {
 
 	// Admin endpoints
 	mux.Handle("POST /api/v1/auth/login", loginRateLimiter(http.HandlerFunc(adminHandler.Login)))
-	mux.HandleFunc("GET /api/v1/auth/oidc/config", adminHandler.OIDCConfig)
-	mux.HandleFunc("GET /api/v1/auth/oidc/start", adminHandler.OIDCStart)
-	mux.HandleFunc("GET /api/v1/auth/oidc/callback", adminHandler.OIDCCallback)
+	mux.Handle("GET /api/v1/auth/oidc/config", licenseRuntime.Gate(licensing.FeatureOIDC)(http.HandlerFunc(adminHandler.OIDCConfig)))
+	mux.Handle("GET /api/v1/auth/oidc/start", licenseRuntime.Gate(licensing.FeatureOIDC)(http.HandlerFunc(adminHandler.OIDCStart)))
+	mux.Handle("GET /api/v1/auth/oidc/callback", licenseRuntime.Gate(licensing.FeatureOIDC)(http.HandlerFunc(adminHandler.OIDCCallback)))
 	mux.Handle("GET /api/v1/me", adminRoute(adminHandler.GetMe))
 	mux.Handle("PUT /api/v1/me/password", adminRoute(adminHandler.ChangePassword))
 	mux.HandleFunc("GET /docs", func(w http.ResponseWriter, r *http.Request) {
@@ -557,8 +586,8 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("GET /api/v1/reconciliation", billingRoute(adminHandler.ListReconciliation))
 	registerProviderCostRoutes(mux, adminHandler, platformRoute)
 	registerModelGovernanceRoutes(mux, adminHandler, modelGovernanceRouteGuards{
-		organization: orgAdminRoute,
-		projectRead:  projectReadRoute,
+		organization: licensedRoute(licensing.FeatureModelGovernance, orgAdminRoute),
+		projectRead:  licensedRoute(licensing.FeatureModelGovernance, projectReadRoute),
 	})
 	registerPricingRoutes(mux, adminHandler, pricingRouteGuards{read: orgAdminRoute, write: platformRoute})
 	registerLimitPolicyRoutes(mux, adminHandler, limitPolicyRouteGuards{
@@ -568,10 +597,10 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 		write: orgAdminRoute,
 	})
 	registerGuardrailPolicyRoutes(mux, adminHandler, guardrailPolicyRouteGuards{
-		read: func(h http.HandlerFunc) http.Handler {
+		read: licensedRoute(licensing.FeatureGuardrails, func(h http.HandlerFunc) http.Handler {
 			return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin)
-		},
-		write: orgAdminRoute,
+		}),
+		write: licensedRoute(licensing.FeatureGuardrails, orgAdminRoute),
 	})
 
 	mux.Handle("GET /api/v1/users", orgAdminRoute(adminHandler.ListUsers))
@@ -582,26 +611,29 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("GET /api/v1/grants", billingRoute(adminHandler.ListGrants))
 	mux.Handle("POST /api/v1/grants", billingRoute(adminHandler.CreateGrant))
 
-	mux.Handle("GET /api/v1/notification-events", notificationReadRoute(adminHandler.ListNotificationEvents))
-	mux.Handle("GET /api/v1/notification-deliveries", notificationReadRoute(adminHandler.ListNotificationDeliveries))
-	mux.Handle("GET /api/v1/notification-webhooks", notificationReadRoute(adminHandler.ListNotificationWebhooks))
-	mux.Handle("POST /api/v1/notification-webhooks", notificationWriteRoute(adminHandler.CreateNotificationWebhook))
-	mux.Handle("PUT /api/v1/notification-webhooks/{id}", notificationWriteRoute(adminHandler.UpdateNotificationWebhook))
-	mux.Handle("POST /api/v1/notification-webhooks/{id}/verify-scope", notificationWriteRoute(adminHandler.VerifyNotificationWebhookScope))
+	notificationReadLicensedRoute := licensedRoute(licensing.FeatureNotifications, notificationReadRoute)
+	notificationWriteLicensedRoute := licensedRoute(licensing.FeatureNotifications, notificationWriteRoute)
+	mux.Handle("GET /api/v1/notification-events", notificationReadLicensedRoute(adminHandler.ListNotificationEvents))
+	mux.Handle("GET /api/v1/notification-deliveries", notificationReadLicensedRoute(adminHandler.ListNotificationDeliveries))
+	mux.Handle("GET /api/v1/notification-webhooks", notificationReadLicensedRoute(adminHandler.ListNotificationWebhooks))
+	mux.Handle("POST /api/v1/notification-webhooks", notificationWriteLicensedRoute(adminHandler.CreateNotificationWebhook))
+	mux.Handle("PUT /api/v1/notification-webhooks/{id}", notificationWriteLicensedRoute(adminHandler.UpdateNotificationWebhook))
+	mux.Handle("POST /api/v1/notification-webhooks/{id}/verify-scope", notificationWriteLicensedRoute(adminHandler.VerifyNotificationWebhookScope))
 
 	mux.Handle("GET /api/v1/audit-logs", roleRoute(adminHandler.ListAuditLogs, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin))
-	mux.Handle("GET /api/v1/data-exchange/items", platformRoute(adminHandler.ListDataExchangeItems))
-	mux.Handle("POST /api/v1/data-exchange/items", platformRoute(adminHandler.CreateDataExchangeItem))
-	mux.Handle("PUT /api/v1/data-exchange/items/{id}", platformRoute(adminHandler.UpdateDataExchangeItem))
-	mux.Handle("GET /api/v1/data-exchange/exchanges", platformRoute(adminHandler.ListDataExchanges))
-	mux.Handle("POST /api/v1/data-exchange/exchanges", platformRoute(adminHandler.CreateDataExchange))
-	mux.Handle("GET /api/v1/data-exchange/exchanges/{id}/activity", platformRoute(adminHandler.GetDataExchangeActivity))
-	mux.Handle("POST /api/v1/data-exchange/exchanges/{id}/deliveries", platformRoute(adminHandler.CreateDataExchangeDelivery))
-	mux.Handle("POST /api/v1/data-exchange/exchanges/{id}/receipts", platformRoute(adminHandler.CreateDataExchangeReceipt))
-	mux.Handle("POST /api/v1/data-exchange/exchanges/{id}/artifact-delete", platformRoute(adminHandler.DeleteDataExchangeArtifact))
+	dataExchangeRoute := licensedRoute(licensing.FeatureDataExchange, platformRoute)
+	mux.Handle("GET /api/v1/data-exchange/items", dataExchangeRoute(adminHandler.ListDataExchangeItems))
+	mux.Handle("POST /api/v1/data-exchange/items", dataExchangeRoute(adminHandler.CreateDataExchangeItem))
+	mux.Handle("PUT /api/v1/data-exchange/items/{id}", dataExchangeRoute(adminHandler.UpdateDataExchangeItem))
+	mux.Handle("GET /api/v1/data-exchange/exchanges", dataExchangeRoute(adminHandler.ListDataExchanges))
+	mux.Handle("POST /api/v1/data-exchange/exchanges", dataExchangeRoute(adminHandler.CreateDataExchange))
+	mux.Handle("GET /api/v1/data-exchange/exchanges/{id}/activity", dataExchangeRoute(adminHandler.GetDataExchangeActivity))
+	mux.Handle("POST /api/v1/data-exchange/exchanges/{id}/deliveries", dataExchangeRoute(adminHandler.CreateDataExchangeDelivery))
+	mux.Handle("POST /api/v1/data-exchange/exchanges/{id}/receipts", dataExchangeRoute(adminHandler.CreateDataExchangeReceipt))
+	mux.Handle("POST /api/v1/data-exchange/exchanges/{id}/artifact-delete", dataExchangeRoute(adminHandler.DeleteDataExchangeArtifact))
 
-	registerGlobalControlRoutes(mux, adminHandler, platformRoute)
-	mux.Handle("POST /api/v1/channels/{id}/test", platformRoute(adminHandler.TestChannel))
+	registerGlobalControlRoutes(mux, adminHandler, platformRoute, licensedRoute(licensing.FeatureGuardrails, platformRoute))
+	mux.Handle("POST /api/v1/channels/{id}/test", licensedRoute(licensing.FeatureGateway, platformRoute)(adminHandler.TestChannel))
 	mux.Handle("GET /api/v1/wallet/transactions/export", billingRoute(adminHandler.ExportWalletTransactions))
 	metricsHandler := middleware.MetricsMiddleware(mux)
 	corsHandler := middleware.CORSWithOptions(middleware.CORSOptions{
@@ -678,6 +710,24 @@ func findMigrationsDir() string {
 	return "./migrations"
 }
 
+func runLicenseRefreshLoop(ctx context.Context, handler *admin.Handler, interval time.Duration) {
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if _, err := handler.RefreshStoredCommercialLicense(ctx); err != nil {
+				log.Printf("Commercial license refresh failed: %v", err)
+			}
+		}
+	}
+}
+
 // loadSensitiveWords loads the versioned deployment-wide input blocking policy.
 func loadSensitiveWords(ctx context.Context, pool *pgxpool.Pool) ([]string, time.Time, error) {
 	var value string
@@ -733,10 +783,12 @@ func applyBuildRuntimeMetadata(cfg *config.Config) {
 }
 
 func runtimeMetadataValue(configured, injected string) string {
-	if value := strings.TrimSpace(configured); value != "" {
+	// Release identity is immutable build evidence. Environment values are a
+	// source-build/dev fallback only and must not override -ldflags metadata.
+	if value := strings.TrimSpace(injected); value != "" {
 		return value
 	}
-	return strings.TrimSpace(injected)
+	return strings.TrimSpace(configured)
 }
 
 // trimQuotes removes surrounding double quotes from a string.

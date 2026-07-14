@@ -88,8 +88,8 @@ func TestApplyBuildRuntimeMetadata(t *testing.T) {
 
 	cfg = &config.Config{RuntimeVersion: "configured-version", RuntimeCommit: "configured-commit"}
 	applyBuildRuntimeMetadata(cfg)
-	if cfg.RuntimeVersion != "configured-version" || cfg.RuntimeCommit != "configured-commit" {
-		t.Fatalf("configured metadata should win, got version=%q commit=%q", cfg.RuntimeVersion, cfg.RuntimeCommit)
+	if cfg.RuntimeVersion != "2026.07.08" || cfg.RuntimeCommit != "abc1234" {
+		t.Fatalf("immutable build metadata should win, got version=%q commit=%q", cfg.RuntimeVersion, cfg.RuntimeCommit)
 	}
 }
 

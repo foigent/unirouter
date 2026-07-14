@@ -1116,10 +1116,22 @@ paths:
     x-unirouter-rbac:
       get: [platform_admin]
       put: [platform_admin]
-    get: { $ref: "#/components/pathItems/Get" }
+    description: Platform recovery and commercial License surface. The response never returns the raw signed document or signature. Only enforceable=true authorizes commercial runtime.
+    get:
+      tags: [Admin]
+      summary: Get verified commercial License status
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current verified License status and non-secret signed payload metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LicenseStatus"
     put:
       tags: [Admin]
-      summary: Import offline license
+      summary: Import strict signed commercial License
       security:
         - bearerAuth: []
       requestBody:
@@ -1132,11 +1144,25 @@ paths:
               properties:
                 license:
                   oneOf:
-                    - type: object
+                    - $ref: "#/components/schemas/CommercialLicenseDocument"
                     - type: string
       responses:
         "200":
+          description: Imported and immediately active verified License status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LicenseStatus"
+        "400":
           $ref: "#/components/responses/JSON"
+        "409":
+          description: Signed resource limit is below current active inventory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: License import exceeds 256 KiB
 
   /api/v1/sensitive-words:
     x-unirouter-rbac:
@@ -1434,6 +1460,67 @@ components:
           description: Deleted
 
   schemas:
+    CommercialLicensePayload:
+      type: object
+      additionalProperties: false
+      required: [license_id, customer, deployment_id, tier, issued_at, not_before, expires_at, features]
+      properties:
+        license_id: { type: string, minLength: 1, maxLength: 128 }
+        customer: { type: string, minLength: 1, maxLength: 256 }
+        deployment_id: { type: string, minLength: 1, maxLength: 128 }
+        tier: { type: string, minLength: 1, maxLength: 64 }
+        issued_at: { type: string, format: date-time }
+        not_before: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        features:
+          type: array
+          minItems: 1
+          maxItems: 32
+          uniqueItems: true
+          items:
+            type: string
+            enum: ['*', gateway, agent_capabilities, oidc, guardrails, notifications, model_governance, data_exchange]
+        limits:
+          type: object
+          additionalProperties: false
+          properties:
+            active_api_keys: { type: integer, format: int64, minimum: 1 }
+            active_users: { type: integer, format: int64, minimum: 1 }
+            active_projects: { type: integer, format: int64, minimum: 1 }
+            active_channels: { type: integer, format: int64, minimum: 1 }
+        metadata:
+          type: object
+          maxProperties: 32
+          additionalProperties: { type: string, maxLength: 512 }
+    CommercialLicenseDocument:
+      type: object
+      additionalProperties: false
+      required: [schema_version, key_id, payload, signature]
+      properties:
+        schema_version: { type: string, enum: [unirouter.license.v1] }
+        key_id: { type: string, pattern: '^[A-Za-z0-9_.-]{1,64}$' }
+        payload: { $ref: "#/components/schemas/CommercialLicensePayload" }
+        signature: { type: string, description: Base64 Ed25519 signature; accepted on PUT but never returned by GET. }
+    LicenseStatus:
+      type: object
+      additionalProperties: false
+      required: [status, valid, enforceable, commercial, signature_valid, deployment_match, warning, days_until_expiry, checked_at, verifier_configured]
+      properties:
+        status: { type: string, enum: [missing, active, expiring, expired, invalid, not_yet_valid, deployment_mismatch] }
+        valid: { type: boolean }
+        enforceable: { type: boolean }
+        commercial: { type: boolean }
+        signature_valid: { type: boolean }
+        deployment_match: { type: boolean }
+        warning: { type: boolean }
+        days_until_expiry: { type: integer }
+        checked_at: { type: string, format: date-time }
+        verifier_configured: { type: boolean }
+        schema_version: { type: string }
+        key_id: { type: string }
+        expected_deployment_id: { type: string }
+        license: { type: object, additionalProperties: true, description: Signed payload metadata. Commercial responses follow CommercialLicensePayload; historical non-enforceable PRD2 evidence may contain legacy keys. }
+        error: { type: string }
     CanonicalMicros:
       type: string
       pattern: '^-?(0|[1-9][0-9]*)$'

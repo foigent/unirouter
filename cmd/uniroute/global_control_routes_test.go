@@ -21,7 +21,7 @@ func TestRegisterGlobalControlRoutesEnforcesProductionAuthorityBoundary(t *testi
 	platform := func(handler http.HandlerFunc) http.Handler {
 		return middleware.AdminAuth(secret)(middleware.RequireRoles(auth.RolePlatformAdmin)(handler))
 	}
-	registerGlobalControlRoutes(mux, handler, platform)
+	registerGlobalControlRoutes(mux, handler, platform, platform)
 
 	serve := func(method, target, body, role string) *httptest.ResponseRecorder {
 		t.Helper()

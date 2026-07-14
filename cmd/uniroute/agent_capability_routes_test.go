@@ -14,6 +14,7 @@ func TestMainWiresExtractedAgentCapabilityRoutes(t *testing.T) {
 	mainSource := string(source)
 	for _, fragment := range []string{
 		"registerAgentCapabilityRoutes(mux, agentCapabilityHandler",
+		"authorize:    agentLicenseGate",
 		"authenticate: gatewayAuth",
 		"rateLimit:    rateLimiter",
 	} {

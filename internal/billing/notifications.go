@@ -66,6 +66,7 @@ type EventService struct {
 	now       func() time.Time
 	retryWait time.Duration
 	outbox    *outbox.Service
+	admit     func() bool
 }
 
 type dueWebhookDelivery struct {
@@ -101,10 +102,25 @@ func (s *EventService) SetOutbox(service *outbox.Service) {
 	}
 }
 
+// SetAdmission installs the commercial feature admission check. A nil check
+// preserves existing behavior for tests and non-runtime construction.
+func (s *EventService) SetAdmission(admit func() bool) {
+	if s != nil {
+		s.admit = admit
+	}
+}
+
+func (s *EventService) admitted() bool {
+	return s == nil || s.admit == nil || s.admit()
+}
+
 // Emit records an event and immediately attempts matching webhook delivery.
 func (s *EventService) Emit(ctx context.Context, input EventInput) (*EventResult, error) {
 	if s == nil || s.db == nil {
 		return nil, errors.New("event service is not configured")
+	}
+	if !s.admitted() {
+		return &EventResult{Created: false, DeliveryState: DeliveryStateNotConfigured}, nil
 	}
 	input.EventType = trimNonEmpty(input.EventType)
 	input.Title = trimNonEmpty(input.Title)
@@ -168,6 +184,9 @@ func (s *EventService) Emit(ctx context.Context, input EventInput) (*EventResult
 func (s *EventService) RetryDueDeliveries(ctx context.Context, limit int) (int, error) {
 	if s == nil || s.db == nil {
 		return 0, errors.New("event service is not configured")
+	}
+	if !s.admitted() {
+		return 0, nil
 	}
 	if limit <= 0 || limit > 100 {
 		limit = 50
