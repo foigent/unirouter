@@ -64,15 +64,18 @@
 
 ## Explicit cache cleanup
 
-Only two individually identified caches were removed:
+Only three individually identified caches were removed:
 
 1. cache `5670690671`, scoped to merged PR #165;
-2. cache `5671017473`, scoped to merged PR #166.
+2. cache `5671017473`, scoped to merged PR #166;
+3. cache `5671159947`, scoped to merged PR #167, after a fresh capacity
+   readback showed that seeding the shared main cache would otherwise exceed
+   10 GB.
 
 Each cache was deleted with a separate command. No wildcard, key-wide or bulk
-deletion was used. Readback after both deletions reported 33 caches totaling
-`9,865,023,859` bytes (`9.865 GB`), including 32 Go caches. No current PR,
-default-branch npm cache or repository file was deleted.
+deletion was used. Readback after the third deletion reported 32 caches
+totaling `9,571,677,983` bytes (`9.572 GB`), including 31 Go caches. No current
+PR, default-branch cache or repository file was deleted.
 
 ## Local verification
 
@@ -124,6 +127,8 @@ execution and Docker build on this branch before merge.
 - This batch does not weaken Backend, Frontend or Docker required-check
   semantics, alter application behavior, deploy a target, change credentials,
   mutate a database or reopen PRD6.
-- Before the first trusted `main` cache seed, capacity must be read back and at
-  most one additional explicitly identified closed-PR cache removed if needed.
-  No key-wide or bulk cleanup is permitted.
+- Capacity must be read back again immediately before the first trusted `main`
+  cache seed. The current `9,571,677,983`-byte readback leaves room for the
+  expected shared Go cache; if actual size or intervening activity removes that
+  margin, at most one additional explicitly identified closed-PR cache may be
+  removed. No key-wide or bulk cleanup is permitted.
