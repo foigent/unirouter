@@ -1,0 +1,21 @@
+# The frontend image uses ./frontend as its independent Docker build context,
+# so the repository-root .dockerignore does not protect this context.
+.env
+.env.*
+!.env.example
+.secrets/
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Dependencies and generated developer artifacts are rebuilt in the image.
+node_modules/
+dist/
+.vite/
+.playwright-cli/
+coverage/
+*.log
+*.bak
+.DS_Store

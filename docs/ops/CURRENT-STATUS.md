@@ -27,6 +27,13 @@
 > `86a3bd8`; pricing-contract prerequisite PR #197 passed run `29301071299`
 > and merged as `94c93dc`. The micro-CNY ledger itself is not yet implemented
 > or deployed.
+> `V1-BUILD-CONTEXT-001` is separately implemented on refreshed Draft PR #195:
+> backend and independent frontend Docker contexts exclude local environment,
+> private-key and generated files; the backend performs a post-copy invariant
+> check and required CI uses root, nested and private-key regression markers
+> without repeating the expensive backend build. Local YAML/shell checks pass,
+> but the final exact-head Docker CI remains required before this is called
+> fixed or merged. No image was built or deployed locally.
 > PRD6 Batch 0B P6-F16 was squash-merged by PR #140 as
 > `f244f669c529fec8767f85fff209882b333d8ed2`. P6-F33 was squash-merged by
 > PR #142 as `7173c5967a42c112fd0b219938a0901c1a0b9633`; its PR and post-merge

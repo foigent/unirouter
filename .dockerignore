@@ -1,0 +1,37 @@
+# Keep local configuration and credentials out of Docker build contexts and
+# intermediate-layer caches. The checked-in example remains available to
+# developers and release tooling.
+**/.env
+**/.env.*
+!**/.env.example
+**/.secrets/
+**/secrets/
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+
+# Repository and workstation metadata are not build inputs.
+.git/
+.idea/
+.vscode/
+.DS_Store
+**/.DS_Store
+*.swp
+*.swo
+
+# Dependencies, generated output, and local QA artifacts must not be copied
+# into the Go builder stage.
+**/node_modules/
+frontend/dist/
+frontend/.vite/
+output/
+trash/
+.playwright-cli/
+coverage.out
+*.out
+*.test
+*.log
+*.bak
+/uniroute
+/uniroute-linux*
