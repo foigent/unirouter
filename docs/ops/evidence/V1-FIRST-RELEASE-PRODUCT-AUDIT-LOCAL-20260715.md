@@ -6,7 +6,17 @@
 
 **Working branch:** `codex/v1-release-ui-target-closeout`
 
-**Status:** existing development target audited; code/document fixes are Local verified; exact-head CI and deployment of this batch remain later evidence gates
+**Post-merge update:** exact head
+`f63bcb268251cd6ec0d8701afc20a7928cd32ecb` passed required CI run
+`29368640933`; PR #207 squash-merged as
+`a0a567dd169dcb133b09eed3f711cdcf87214641`; the exact merged release is now
+Target verified. Deployment/API/browser/signed-upgrade evidence and remaining
+environment gates are recorded in
+`V1-FIRST-RELEASE-TARGET-CLOSEOUT-20260715.md`. The baseline below remains the
+historical pre-fix audit baseline.
+
+**Status:** local evidence node completed and later promoted through required
+CI, PR #207 merge and exact target deployment; see the post-merge update above
 
 **Scope boundary:** first-release defect and unreasonable-UX correction only. This batch does not add a vendor discovery service, directory synchronization, Update Center, new menu product, new X-Insight behavior, or a new PRD. PRD6 remains `Completed (Accepted Scope)` and is not reopened.
 

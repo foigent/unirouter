@@ -6,13 +6,20 @@
 
 **Risk:** R2 UI/API/document corrections; R4 authorized development-target deployment after merge
 
-**Status:** Local verified in focused and full suites; PR/CI, merge and target deployment pending
+**Status:** Target verified / closed for accepted first-release corrections
 
 **Baseline:** clean `main` / `origin/main` at `c051e0abe2a02382cefc8a77b04a9bdcc45828a1`
 
-**Branch:** `codex/v1-release-ui-target-closeout`
+**Implementation branch:** `codex/v1-release-ui-target-closeout`
 
-**Evidence:** `docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md`
+**PR / required CI:** #207; exact head
+`f63bcb268251cd6ec0d8701afc20a7928cd32ecb`; run `29368640933`; Change
+Routing, Backend Tests, Frontend Build and Docker Build passed
+
+**Merge:** `a0a567dd169dcb133b09eed3f711cdcf87214641`
+
+**Evidence:** `docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md`;
+`docs/ops/evidence/V1-FIRST-RELEASE-TARGET-CLOSEOUT-20260715.md`
 
 Scope is limited to first-release defects and unreasonable presentation found
 in the User's complete product checklist: contributor/README truth, route and
@@ -22,16 +29,15 @@ page-size correctness and taxonomy alignment. It adds no vendor discovery,
 directory synchronization, Update Center, new menu hierarchy, paid provider
 call or X-Insight behavior.
 
-The existing development target was audited at exact release `c051e0a`, version
-`1.0.0`, environment `development`, migration `000037`. All 24 authenticated
-admin routes rendered without captured browser errors. Real local-target
-lifecycle checks covered caller credential create/auth/disable, read-only
-routing preview, guardrail policy/runtime snapshot, notification/finance/
-reconciliation/audit readback and a restricted developer session. Existing
-route allowlists do not match the current model catalog; no allowlist or
-supplier secret was changed and no paid upstream request was made.
+The existing development target was first audited at exact release `c051e0a`,
+then updated only after the exact PR head passed required CI and PR #207 merged.
+Stable/canary/frontend now run exact merge `a0a567d`, version `1.0.0`,
+environment `development`, migration `000037`. Stable/canary use exact image
+`sha256:a7fe9237174862c5afcfaab892d486a61acde44684923a522f8b6ffc0ddfaa82`;
+frontend uses
+`sha256:5b4ad05756ed9f3cc9c5815fa2e19ce0461d7575076493425213f6663120db7e`.
 
-Local verification passes:
+Verification passes:
 
 - `go test ./internal/admin ./internal/auth -count=1`;
 - six affected frontend test files, 18 tests;
@@ -39,14 +45,20 @@ Local verification passes:
 - required local PostgreSQL admin integration suite; zero temporary databases
   remained;
 - full frontend suite, 33 files / 167 tests, type-check and production build;
-- `git diff --check`.
+- `git diff --check`;
+- required PR CI run `29368640933`, all four jobs;
+- public/stable/canary readiness with PostgreSQL and Redis healthy;
+- signed upgrade sequence `2` verify/record/readback plus verify and
+  `record-applied` replay rejection;
+- 24/24 authenticated admin routes in a real browser with no captured console
+  error, error boundary, 4xx/5xx resource failure or horizontal overflow;
+- restricted developer usage console and API authorization readback;
+- temporary QA/developer actors disabled and browser state cleared.
 
-Next: review the final diff, create the PR and require exact-head CI. After
-merge, deploy only the merged commit to the already authorized development ECS,
-preserve rollback, re-run API/browser/license/upgrade checks, then clean
-temporary QA/developer credentials and browser state. Never rewrite current
-upstream allowlists or invoke paid providers without separate authorization.
-PRD6 remains closed.
+Existing route allowlists still do not match the current model catalog. No
+allowlist, supplier secret or financial record was changed and no paid upstream
+request was made. Real provider/detector/enterprise-IdP, Production and
+X-Insight v2 evidence remain explicit later gates. PRD6 remains closed.
 
 ## Previous Batch Record — Commercial License Studio And Signed Upgrade
 
