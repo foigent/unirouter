@@ -3,10 +3,10 @@
 **Batch:** V1 Micro-Ledger Target Activation And Environment-Label Closeout
 **Owner:** Codex
 **Risk:** R1 documentation closeout after a completed User-authorized R3 target cutover
-**Status:** PR #202/#203 merged; development/test ECS Target verified at exact `545e514`; docs-only closeout pending
+**Status:** PR #202/#203 merged; development/test ECS Target verified at exact `545e514`; evidence publication is PR #204
 **Baseline:** clean `origin/main` / `545e514ab51937e6589512192141b9359cfcb504`
 **Branch:** `codex/v1-target-evidence-closeout`
-**PR:** pending docs-only closeout
+**PR:** #204 docs-only target-evidence publication
 **Decision:** User authorized merge of PR #202 and the non-rolling test-ECS activation; the development environment label is also approved and deployed
 **Evidence:** `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-TARGET-20260714.md`
 **Next product gate:** X-Insight v2 consumer coordination and the remaining separately classified Post-PRD6 product/UI queue
