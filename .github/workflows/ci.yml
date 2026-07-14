@@ -393,7 +393,13 @@ jobs:
           test ! -e frontend/docker-context-regression.pem
           test ! -e frontend/secrets
 
-          compose_config="$(VITE_DEPLOY_ENV=development docker compose config)"
+          compose_config="$(
+            GRAFANA_ADMIN_PASSWORD=ci-compose-validation \
+            JWT_SECRET=ci-compose-validation \
+            ENCRYPTION_KEY=ci-compose-validation \
+            VITE_DEPLOY_ENV=development \
+            docker compose config
+          )"
           grep -F 'VITE_DEPLOY_ENV: development' <<< "$compose_config"
           grep -F 'ARG VITE_DEPLOY_ENV=' frontend/Dockerfile
           grep -F 'ENV VITE_DEPLOY_ENV=${VITE_DEPLOY_ENV}' frontend/Dockerfile
