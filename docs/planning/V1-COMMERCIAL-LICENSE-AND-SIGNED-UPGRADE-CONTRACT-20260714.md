@@ -171,9 +171,13 @@ image rollback must never silently pair an old writer with an incompatible new
 schema.
 
 Upgrade-signing trust is separate from License-signing trust. Both use named
-public-key rings; production private keys are separately custodied. A later
-threshold/TUF repository may replace this single-offline-bundle profile, but
-V1 does not claim full TUF conformance.
+public-key rings; production private keys are separately custodied. Formal
+release builds embed both public rings into the signed backend binary and
+reject runtime `LICENSE_PUBLIC_KEY`, `LICENSE_PUBLIC_KEYS`, or
+`UPGRADE_PUBLIC_KEYS` overrides. Source-development builds retain explicit
+test rings, but are not customer-release eligible. A later threshold/TUF
+repository may replace this single-offline-bundle profile, but V1 does not
+claim full TUF conformance.
 
 The design follows the relevant TUF principles of signed target metadata,
 hash/size verification and rollback/freeze resistance, and SLSA's separation
@@ -211,11 +215,11 @@ between artifact identity and build provenance:
 
 ## 5. Target Activation Boundary
 
-The existing ECS is development/test, but changing its License trust root,
-deployment identity, stored License, release sequence or runtime admission is
-an R4 action. Local and CI completion do not authorize creation of a persistent
-production signing key or customer License. Before target activation, retain
-the old images and database backup, import a separately approved non-production
-License, prove the unlicensed denial and licensed success without a paid
-provider call, then remove any ephemeral private signing material from the
-target workflow.
+The existing ECS is development/test, but deploying a new image with embedded
+License/upgrade trust roots, changing its deployment identity, stored License,
+release sequence or runtime admission is an R4 action. Local and CI completion
+do not authorize creation of a persistent production signing key or customer
+License. Before target activation, retain the old images and database backup,
+import a separately approved non-production License, prove the unlicensed
+denial and licensed success without a paid provider call, then remove any
+ephemeral private signing material from the target workflow.

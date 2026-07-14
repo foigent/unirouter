@@ -1,15 +1,15 @@
 # Current Execution Record
 
-**Batch:** V1 Commercial License Enforcement And Signed Offline Upgrade Bundle
+**Batch:** V1 Commercial License Studio, Embedded Trust And Signed Offline Upgrade Bundle
 **Owner:** Codex
 **Risk:** R3 authorization/signing implementation; any target activation is R4
-**Status:** Local verified; pull request and exact-head required CI pending
+**Status:** Local implementation, focused tests and browser UI verified; exact-head pull-request CI pending
 **Baseline:** clean `origin/main` / `e94a4b184a6f675d76c292602b7c18293ab2ce61`
 **Branch:** `codex/v1-commercial-license-upgrade`
-**PR:** pending
-**Decision:** User requires commercial authorization enforcement and a signed upgrade bundle before customer delivery
-**Evidence:** `docs/planning/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-CONTRACT-20260714.md`; `docs/ops/evidence/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-LOCAL-20260715.md`
-**Next product gate:** pull request and required CI, then a User decision on merge and separately authorized non-production License/key activation
+**PR:** #205 open; earlier head passed required CI, current exact head pending
+**Decision:** User requires commercial authorization enforcement, signed upgrades and a click-only License generation program before customer delivery
+**Evidence:** `docs/planning/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-CONTRACT-20260714.md`; `docs/ops/evidence/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-LOCAL-20260715.md`; `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-LOCAL-20260715.md`
+**Next product gate:** exact-head required CI, then a User decision on PR #205 merge; production key ceremony and any non-production target activation remain separate decisions
 **Previous batch:** PR #204 documentation closeout after V1 micro-ledger PR #202 and environment-label PR #203
 **Previous phase:** PRD5 Accepted Scope Complete; its Batch 1Z historical target backend was `95d1da9` / PR #133 and is now superseded on the same target by this PRD6 deployment
 
@@ -23,12 +23,18 @@
    not-yet-valid or expired authority while retaining recovery/admin access.
 3. Enforce signed feature and positive active-resource limits without a
    configuration switch that disables enforcement in the customer release.
-4. Add vendor-side License key/issue/verify tooling without placing private
-   keys in runtime images or evidence.
-5. Add a separately trusted signed offline upgrade archive with signed
+4. Remove customer-controlled runtime trust-root replacement: formal release
+   images embed separate License and upgrade public rings at build time and
+   reject runtime overrides.
+5. Add a double-click macOS License Studio for native-folder key generation,
+   customer form signing and verification without putting private-key bytes in
+   the browser, runtime image, database, logs or evidence.
+6. Retain vendor-side License CLI compatibility tooling for CI/controlled
+   automation, not as the normal operator workflow.
+7. Add a separately trusted signed offline upgrade archive with signed
    manifest, payload hash/size, platform, release-sequence, metadata-expiry and
    schema-compatibility checks before extraction or execution.
-6. Add tamper, traversal, rollback, wrong-key/platform/product, concurrency and
+8. Add tamper, traversal, rollback, wrong-key/platform/product, concurrency and
    recovery-path regression tests, documentation, PR and required CI.
 
 ## Current Non-Goals And Stop Conditions
@@ -55,32 +61,51 @@
    startup safely rebuilds restored derived state, recurring refresh rejects a
    mismatched projection, and guarded down refuses while entitlement or release
    history remains.
-3. Vendor-only `uniroute-license` keygen/issue/verify tooling is separated from
-   runtime public trust. No persistent production/customer private key or
-   License was generated.
-4. `uniroute-upgrade` packs and verifies deterministic signed archives before
+3. Formal release binaries now load only build-embedded License and upgrade
+   public rings. Runtime `LICENSE_PUBLIC_KEY`, `LICENSE_PUBLIC_KEYS` or
+   `UPGRADE_PUBLIC_KEYS` cannot replace trust; source/development mode remains
+   explicit and is not customer-release eligible.
+4. Vendor-only `UniRouter License Studio.app` uses a random loopback session,
+   strict origin/token/CSP/host checks and macOS native file dialogs. It
+   generates separate License/upgrade keys, issues and self-verifies strict
+   customer documents, refuses overwrite and never sends private-key bytes to
+   browser JavaScript. The CLI remains for compatibility only.
+5. `uniroute-upgrade` packs and verifies deterministic signed archives before
    extraction/execution, rejects untrusted/tampered/unsafe/rollback/schema-
    incompatible content and binds provenance to its fixed declared artifact.
-5. Runtime `upgrade verify/status/record-applied` uses actual database/schema
+6. Runtime `upgrade verify/status/record-applied` uses actual database/schema
    state and records only the exact healthy immutable version/commit under a
    serializable/advisory-lock release sequence.
-6. `deploy/customer` is a no-build/source-free Compose profile with mandatory
-   digest image references, external signed config/secrets, unexposed
-   dependencies and a local-only frontend default.
-7. Focused/full/race Go tests, vet/build, 31 frontend files / 164 tests,
-   type-check/build, YAML parsing and targeted migrated-PostgreSQL concurrency,
-   expiry, rollback and record/replay gates pass locally. Docker is unavailable
-   on this Mac, so the real customer Compose/image assertion remains required
-   CI evidence.
-8. No ECS trust root, deployment identity, License, migration, release state or
+7. `deploy/customer` is a no-build/source-free Compose profile with mandatory
+   image references, embedded binary trust roots, external signed
+   config/secrets, unexposed dependencies and a local-only frontend default.
+8. Current-tree serial full Go tests, focused race tests, vet/build, 31 frontend
+   files / 164 tests, type-check/build, YAML parsing and the earlier-head
+   migrated-PostgreSQL concurrency/expiry/rollback/record-replay gates pass
+   locally. Docker is unavailable on this Mac, so real Docker and exact-head
+   full-race assertions remain required CI evidence.
+9. No production/customer private key or License was generated. No ECS embedded
+   trust root, deployment identity, License, migration, release state or
    image was changed. Target activation is a separate R4 decision and this
    batch does not reopen PRD6 or accept PRD7 Update Center/automatic apply.
 
 ## Current Focused Verification
 
-- Commercial License/Admin/signing/upgrade packages and CLIs: `PASS`.
-- Full `go test ./... -count=1`, `go test -race ./... -count=1`, `go vet
-  ./...` and `go build ./...`: `PASS`.
+- Commercial License/Admin/signing/release-trust/License-Studio/upgrade packages
+  and CLIs: focused `PASS`.
+- License Studio HTTP keygen→issue→verify, no-overwrite, wrong-deployment,
+  malformed-key, dialog-cancel, non-loopback, wrong-origin/token and security-
+  header tests: `PASS`.
+- macOS arm64 `.app`: `plutil`, ad-hoc `codesign --verify --strict`, JavaScript
+  syntax and embedded-release `go build -ldflags` checks: `PASS`. Developer ID
+  signing/notarization remains a distribution prerequisite, not a local claim.
+- Playwright headed desktop and 390 px mobile UI: tabs/defaults/feature toggle,
+  responsive render, zero console errors/warnings and only three loopback
+  static requests: `PASS`.
+- Exact current tree `go test -p 1 ./... -count=1`, `go vet ./...` and
+  `go build ./...`: `PASS`. The new signing/trust/Studio/License/upgrade slice
+  also passes `-race`; the previous PR head had passed full race, while current
+  exact-head full race remains a required CI check.
 - Migrated PostgreSQL `000037` capacity/expiry/down guard and upgrade
   record/replay integration gate under `-race`: `PASS`; generated temporary
   database count returned to zero.
@@ -91,7 +116,9 @@
   customer Compose and image-reference behavior remains a required Docker CI
   gate; PR and CI are still pending.
 - Evidence:
-  `docs/ops/evidence/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-LOCAL-20260715.md`.
+  `docs/ops/evidence/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-LOCAL-20260715.md`
+  and
+  `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-LOCAL-20260715.md`.
 
 ## Previous CI Efficiency Result
 

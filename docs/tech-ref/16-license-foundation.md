@@ -1,6 +1,6 @@
 # Commercial License Enforcement
 
-> Version: v1.0
+> Version: v1.1
 > Scope: Post-PRD6 V1 commercial runtime. The PRD2 foundation remains
 > historical evidence, but its non-blocking behavior is superseded here.
 
@@ -59,20 +59,25 @@ rejected. The request body is capped at 256 KiB. Private signing keys must
 never enter the repository, runtime image, customer package, logs, database
 projection, or evidence.
 
-## Runtime Config
+## Release Trust And Runtime Config
 
-| Variable | Required | Purpose |
-|----------|----------|---------|
-| `LICENSE_PUBLIC_KEYS` | Required for V1 commercial operation | Strict JSON key-ID to Ed25519 public-key ring |
+| Input | Required | Purpose |
+|-------|----------|---------|
+| build arg `UNIROUTER_RELEASE_TRUST_MODE=release` | Required for a formal backend image | Selects the fail-closed release trust path |
+| build arg `UNIROUTER_LICENSE_TRUST_BUNDLE_B64` | Required for a formal backend image | Base64url JSON key-ID to Ed25519 public-key ring, embedded into the binary |
+| build arg `UNIROUTER_UPGRADE_TRUST_BUNDLE_B64` | Required for a formal backend image | Separate embedded upgrade-verification ring |
 | `LICENSE_DEPLOYMENT_ID` | Required for V1 commercial operation | Stable deployment identity that must exactly match the signed payload |
 | `LICENSE_EXPIRY_WARNING_DAYS` | Optional, default `30` | Warning window before expiry |
 | `LICENSE_REFRESH_SECONDS` | Optional, default `30` | Maximum database-to-replica convergence interval after import |
-| `LICENSE_PUBLIC_KEY` | Legacy only | PRD2 payload-only verification key; never makes a document commercially enforceable |
+| `LICENSE_PUBLIC_KEYS` / `UPGRADE_PUBLIC_KEYS` | Source/development only | Explicit local test rings; a release binary rejects either runtime override |
+| `LICENSE_PUBLIC_KEY` | Development legacy only | PRD2 payload-only verification key; a release binary rejects it and it never makes a document commercially enforceable |
 
 The service may start without commercial authority so a platform administrator
-can recover it, but new model traffic remains fail-closed. Malformed configured
-keys fail startup validation. Stable and canary replicas must use the same V1
-key ring and deployment identity.
+can recover it, but new model traffic remains fail-closed. A formal release
+image cannot be built without both embedded public rings; at runtime it rejects
+`LICENSE_PUBLIC_KEY`, `LICENSE_PUBLIC_KEYS`, or `UPGRADE_PUBLIC_KEYS` instead of
+silently trusting customer-controlled environment values. Stable and canary
+replicas must use the same signed image and deployment identity.
 
 ## API
 
@@ -144,9 +149,39 @@ unlimited capacity.
 The raw signature and complete signed document are not returned by GET and are
 not written into audit summaries or entitlement projections.
 
-## Offline Issuer Tooling
+## Graphical Offline Issuer
 
-Build the vendor-side tool outside the customer runtime image:
+The normal vendor workflow is the macOS `UniRouter License Studio.app`; an
+operator does not need Terminal:
+
+1. Double-click the app. It opens a random loopback-only session in the default
+   browser and never makes an external network request.
+2. Under **密钥管理**, generate the License key on an encrypted external volume
+   or dedicated offline Mac. Generate the upgrade key separately; never reuse
+   one private key for both purposes.
+3. Preserve each `*.private` file in offline custody. The corresponding
+   `*.public-keys.json` and displayed build parameter are public verification
+   material used by the controlled release build.
+4. Under **签发 License**, fill customer, exact deployment ID, dates, features
+   and limits; choose the License private key and the output location.
+5. Under **验证 License**, select the public ring and generated License and
+   require signature, deployment binding and validity to pass before delivery.
+
+The app uses macOS native file/folder selectors, refuses overwrite, creates
+private files and License output as mode `0600`, self-verifies every issued
+document and keeps no key history. The browser never receives private-key
+bytes. Before creating a real production key, quit ChatGPT/Codex and every
+other app with Full Disk Access; do not run the production ceremony in an AI
+session. The locally built app is at `output/license-studio/UniRouter License
+Studio.app`; a release engineer can produce a fresh bundle with
+`scripts/build-license-studio-macos.sh`. Public distribution additionally
+requires an Apple Developer ID signature and notarization; the local build is
+only ad-hoc signed.
+
+## CLI Compatibility Tooling
+
+The existing CLI remains for CI and controlled automation, outside the customer
+runtime image. It is not the normal human workflow:
 
 ```bash
 go build -o ./bin/uniroute-license ./cmd/uniroute-license
@@ -169,10 +204,9 @@ go build -o ./bin/uniroute-license ./cmd/uniroute-license
 new key through a separately reviewed rotation step; do not hand-edit a private
 key into this file.
 
-Output files are created with no-overwrite semantics; private keys use mode
-`0600`. Key generation in this repository is tooling, not a key-custody
-decision. Production/customer key creation and storage require separately
-approved custody and rotation procedures.
+Both GUI and CLI use no-overwrite semantics; private keys use mode `0600`.
+Tooling does not itself establish key custody. Production/customer key creation
+and storage require separately approved custody and rotation procedures.
 
 ## Historical PRD2 Evidence
 

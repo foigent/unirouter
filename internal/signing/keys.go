@@ -1,6 +1,7 @@
 package signing
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/hex"
@@ -81,27 +82,50 @@ func ParsePublicKeyRing(value, fieldName string) (map[string]ed25519.PublicKey, 
 }
 
 func ParsePrivateKey(value string) (ed25519.PrivateKey, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
+	return ParsePrivateKeyBytes([]byte(value))
+}
+
+// ParsePrivateKeyBytes avoids converting key material to an immutable Go
+// string. Callers handling persistent signing keys can clear both the input and
+// returned key slices immediately after use.
+func ParsePrivateKeyBytes(value []byte) (ed25519.PrivateKey, error) {
+	value = bytes.TrimSpace(value)
+	if len(value) == 0 {
 		return nil, fmt.Errorf("private key is empty")
 	}
 	var lengthErr error
-	for _, decoder := range []func(string) ([]byte, error){
-		base64.StdEncoding.DecodeString,
-		base64.RawStdEncoding.DecodeString,
-		hex.DecodeString,
+	for _, decoder := range []func([]byte) ([]byte, error){
+		func(input []byte) ([]byte, error) {
+			decoded := make([]byte, base64.StdEncoding.DecodedLen(len(input)))
+			written, err := base64.StdEncoding.Decode(decoded, input)
+			return decoded[:written], err
+		},
+		func(input []byte) ([]byte, error) {
+			decoded := make([]byte, base64.RawStdEncoding.DecodedLen(len(input)))
+			written, err := base64.RawStdEncoding.Decode(decoded, input)
+			return decoded[:written], err
+		},
+		func(input []byte) ([]byte, error) {
+			decoded := make([]byte, hex.DecodedLen(len(input)))
+			written, err := hex.Decode(decoded, input)
+			return decoded[:written], err
+		},
 	} {
 		decoded, err := decoder(value)
 		if err != nil {
+			clear(decoded)
 			continue
 		}
 		switch len(decoded) {
 		case ed25519.PrivateKeySize:
 			return ed25519.PrivateKey(decoded), nil
 		case ed25519.SeedSize:
-			return ed25519.NewKeyFromSeed(decoded), nil
+			privateKey := ed25519.NewKeyFromSeed(decoded)
+			clear(decoded)
+			return privateKey, nil
 		default:
 			lengthErr = fmt.Errorf("private key decoded to %d bytes, want %d-byte seed or %d-byte private key", len(decoded), ed25519.SeedSize, ed25519.PrivateKeySize)
+			clear(decoded)
 		}
 	}
 	if lengthErr != nil {

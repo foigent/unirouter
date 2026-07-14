@@ -1,9 +1,9 @@
 # Deployment Runbook（部署运维手册）
 
-> **版本**：v1.8
+> **版本**：v1.9
 > **日期**：2026-07-15
 > **用途**：运维人员部署和维护 UniRoute 的操作手册
-> **变更记录**：v1.8 新增 V1 商业 License 强制、公钥环/部署绑定和签名离线升级包流程；v1.7 新增 PRD3 SEC-005 运行时暴露策略：CORS 精确 origin、登录限流、metrics 开关/CIDR；v1.6 新增 PRD2 OIDC-first SSO 配置和 mock-provider smoke；v1.5 新增 HTTP-only canary overlay、8081 canary direct smoke、PRD2 HA/backup rehearsal 命令；v1.4 新增生产 `.env` 保护、`API_KEY_HASH_SECRET`、rsync 安全同步规则和 PR #44 部署事故复盘；v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
+> **变更记录**：v1.9 增加可双击 License Studio，并把正式 License/升级验签根从客户运行时环境变量迁到发布二进制；v1.8 新增 V1 商业 License 强制、公钥环/部署绑定和签名离线升级包流程；v1.7 新增 PRD3 SEC-005 运行时暴露策略：CORS 精确 origin、登录限流、metrics 开关/CIDR；v1.6 新增 PRD2 OIDC-first SSO 配置和 mock-provider smoke；v1.5 新增 HTTP-only canary overlay、8081 canary direct smoke、PRD2 HA/backup rehearsal 命令；v1.4 新增生产 `.env` 保护、`API_KEY_HASH_SECRET`、rsync 安全同步规则和 PR #44 部署事故复盘；v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
 
 ---
 
@@ -32,9 +32,7 @@ cp .env.example .env
 # - JWT_SECRET: 32 字节随机字符串
 # - API_KEY_HASH_SECRET: API Key HMAC 稳定密钥
 # - ENCRYPTION_KEY: 32 字节随机字符串
-# - LICENSE_PUBLIC_KEYS: 商业 License key-id -> Ed25519 公钥 JSON 环
 # - LICENSE_DEPLOYMENT_ID: 与客户 License 精确绑定的稳定部署标识
-# - UPGRADE_PUBLIC_KEYS: 与 License 独立的签名升级公钥 JSON 环
 # - GRAFANA_ADMIN_PASSWORD: Grafana 管理员强密码
 # - ADMIN_CORS_ALLOWED_ORIGINS: 仅当浏览器会跨域直连 backend 时配置精确 origin
 # - METRICS_ALLOWED_CIDRS: 生产建议限制到 Prometheus 所在网络
@@ -54,16 +52,19 @@ openssl rand -base64 24  # 用于 GRAFANA_ADMIN_PASSWORD
 | `JWT_SECRET` | Admin JWT 签名 | 管理员需要重新登录；不应影响 API Key |
 | `API_KEY_HASH_SECRET` | API Key HMAC 哈希 | 变更会导致既有 API Key 全部失效 |
 | `ENCRYPTION_KEY` | 上游渠道密钥 AES-GCM 加密 | 变更且无法恢复会导致已保存 channel key 无法解密 |
-| `LICENSE_PUBLIC_KEYS` | V1 商业 License Ed25519 公钥环 | 缺失时服务保留恢复面，但新模型/Agent 请求 fail-closed |
+| 正式镜像内嵌 License 公钥环 | V1 商业 License Ed25519 验签根 | 发布构建缺失时镜像构建失败；客户运行时不能替换 |
 | `LICENSE_DEPLOYMENT_ID` | V1 License 绑定的稳定部署标识 | 缺失或与签名 payload 不一致时商业 License 不可强制执行 |
-| `UPGRADE_PUBLIC_KEYS` | 独立的升级包 Ed25519 公钥环 | 缺失时不能验证或登记签名升级包；不影响 License 恢复 |
-| `LICENSE_PUBLIC_KEY` | PRD2 legacy 公钥 | 仅用于读取历史 payload-only 证据，永远不能放行 V1 商业流量 |
+| 正式镜像内嵌升级公钥环 | 独立的升级包 Ed25519 验签根 | 发布构建缺失时镜像构建失败；客户运行时不能替换 |
+| `LICENSE_PUBLIC_KEY` / `LICENSE_PUBLIC_KEYS` / `UPGRADE_PUBLIC_KEYS` | 仅源码开发兼容 | 正式 release 二进制发现任一运行时覆盖即拒绝启动 |
 
 两个公钥环均为严格 JSON 对象，例如
-`{"license-2026-a":"base64-public-key"}`。公钥不是 secret，但信任根变更是
-高影响操作；stable/canary 必须使用相同的 License 公钥环、升级公钥环和部署
-标识。两类私钥必须分开保管，且不得进入 `.env`、镜像、仓库、数据库、日志或
-客户包。
+`{"license-2026-a":"base64-public-key"}`，由受控发布构建分别编码到
+`UNIROUTER_LICENSE_TRUST_BUNDLE_B64` 和
+`UNIROUTER_UPGRADE_TRUST_BUNDLE_B64`。`Dockerfile` 默认按 `release` 构建，任一
+公开验签环缺失就失败；根目录源码 Compose 显式使用 `development`，只能用于
+开发。公钥不是 secret，但信任根变更是高影响发布操作；stable/canary 必须使用
+同一签名镜像和部署标识。两类私钥必须分开保管，且不得进入 `.env`、镜像、仓库、
+数据库、日志或客户包。
 
 运行时暴露策略：
 
@@ -100,14 +101,15 @@ openssl rand -base64 24  # 用于 GRAFANA_ADMIN_PASSWORD
 登录限流只信任 backend 看到的 `RemoteAddr`，不会直接信任客户端可伪造的 `X-Forwarded-For`。如果后续需要按真实客户端 IP 穿透多层代理，需要先定义可信代理链策略，不在 PRD3 临时扩展。
 
 PRD2 Batch 22 smoke 只验证历史 payload-only foundation，不能作为 V1 商业
-激活证据，也不能放行新模型流量。V1 非生产测试必须使用
-`cmd/uniroute-license` 生成独立临时 key、签发严格
-`unirouter.license.v1` 文档，并在目标执行前获得明示授权。完整格式、签发和
-验签命令见 `docs/tech-ref/16-license-foundation.md`。
+激活证据，也不能放行新模型流量。发行方在 macOS 上应双击 `UniRouter License
+Studio.app` 生成两套独立密钥和严格 `unirouter.license.v1` 文档；正常签发无需
+终端。CLI 只保留给 CI/受控自动化。任何非生产目标激活仍须在执行前获得明示授权。
+完整流程见 `docs/tech-ref/16-license-foundation.md`。
 
 激活顺序：
 
-1. 通过独立受信渠道取得两个公钥环和部署标识，写入 stable/canary 配置；
+1. 通过独立受信渠道取得签名发布清单，核对已内嵌两个公钥环的 backend 镜像
+   digest，并为 stable/canary 设置同一个批准的部署标识；
 2. 启动后确认 `/health/ready` 与本地平台管理员登录可用；
 3. 在未导入 License 时用无付费上游副作用的请求证明 `license_error.missing`；
 4. 在“商业授权”页导入与部署标识绑定、当前有效的 V1 文档；

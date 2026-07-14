@@ -35,6 +35,7 @@ import (
 	"github.com/uniroute/unirouter/internal/payloadpolicy"
 	"github.com/uniroute/unirouter/internal/policybilling"
 	"github.com/uniroute/unirouter/internal/redisx"
+	"github.com/uniroute/unirouter/internal/releasetrust"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
 )
 
@@ -51,6 +52,11 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 	applyBuildRuntimeMetadata(cfg)
+	trustBundle, err := applyReleaseTrust(cfg)
+	if err != nil {
+		log.Fatalf("Failed to load release trust: %v", err)
+	}
+	log.Printf("Release trust mode: %s license_keys=%d upgrade_keys=%d", trustBundle.Mode, trustBundle.LicenseKeyCount, trustBundle.UpgradeKeyCount)
 	if handled, err := runCLI(context.Background(), os.Args[1:], cfg); handled {
 		if err != nil {
 			log.Fatalf("Command failed: %v", err)
@@ -680,6 +686,22 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 		log.Printf("Internal outbox workers did not stop before shutdown timeout")
 	}
 	log.Println("Server exited")
+}
+
+func applyReleaseTrust(cfg *config.Config) (releasetrust.Bundle, error) {
+	if cfg == nil {
+		return releasetrust.Bundle{}, fmt.Errorf("configuration is required")
+	}
+	bundle, err := releasetrust.Resolve(cfg.LicensePublicKeys, cfg.UpgradePublicKeys)
+	if err != nil {
+		return releasetrust.Bundle{}, err
+	}
+	if bundle.Mode == releasetrust.ModeRelease && strings.TrimSpace(cfg.LicensePublicKey) != "" {
+		return releasetrust.Bundle{}, fmt.Errorf("release binaries forbid the legacy runtime LICENSE_PUBLIC_KEY trust root")
+	}
+	cfg.LicensePublicKeys = bundle.LicensePublicKeys
+	cfg.UpgradePublicKeys = bundle.UpgradePublicKeys
+	return bundle, nil
 }
 
 func rootHandler(w http.ResponseWriter, r *http.Request) {

@@ -39,6 +39,9 @@ services:
         RUNTIME_VERSION: ${RUNTIME_VERSION:-local}
         RUNTIME_COMMIT: ${RUNTIME_COMMIT:-unknown}
         GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+        # Source Compose is development-only. Customer/release images are built
+        # separately with immutable embedded License and upgrade trust roots.
+        UNIROUTER_RELEASE_TRUST_MODE: development
     container_name: uniroute-api
     ports:
       - "8080:8080"

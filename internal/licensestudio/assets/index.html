@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UniRouter License Studio</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23175c43'/%3E%3Cpath d='M20 17v19c0 9 5 13 12 13s12-4 12-13V17h-7v19c0 5-2 7-5 7s-5-2-5-7V17z' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">U</div>
+        <div>
+          <p class="eyebrow">VENDOR TOOL · 本机离线</p>
+          <h1>UniRouter License Studio</h1>
+        </div>
+      </div>
+      <div class="offline-badge"><span aria-hidden="true"></span>仅连接 127.0.0.1</div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div>
+          <p class="eyebrow">商业授权工作台</p>
+          <h2>不用终端，也能安全生成和签发 License</h2>
+          <p>私钥只由本机程序读取，不会上传到 UniRouter、ECS 或任何网络服务。客户只会收到已签名的 License 文件。</p>
+        </div>
+        <div class="flow" aria-label="授权流程">
+          <span class="flow-step active">1&nbsp; 生成密钥</span>
+          <span aria-hidden="true">→</span>
+          <span class="flow-step">2&nbsp; 签发授权</span>
+          <span aria-hidden="true">→</span>
+          <span class="flow-step">3&nbsp; 客户导入</span>
+        </div>
+      </section>
+
+      <section class="security-alert" role="note">
+        <div class="alert-icon" aria-hidden="true">!</div>
+        <div>
+          <strong>生成正式私钥前，请先退出 ChatGPT、Codex 和其他拥有“完全磁盘访问权限”的应用。</strong>
+          <p>正式私钥应保存到加密外置盘或专用离线 Mac，并至少保留两份加密离线备份。License 私钥和升级包私钥必须分开生成、分开保管。</p>
+        </div>
+      </section>
+
+      <nav class="tabs" aria-label="License Studio 功能">
+        <button class="tab active" type="button" role="tab" aria-selected="true" data-tab="keys">密钥管理</button>
+        <button class="tab" type="button" role="tab" aria-selected="false" data-tab="issue">签发 License</button>
+        <button class="tab" type="button" role="tab" aria-selected="false" data-tab="verify">验证 License</button>
+      </nav>
+
+      <section class="panel active" id="panel-keys" role="tabpanel">
+        <div class="panel-heading">
+          <div>
+            <p class="step-label">首次设置</p>
+            <h3>生成一对签名密钥</h3>
+            <p>程序会让你选择安全文件夹，并一次保存一个私钥文件和一个公开验签文件；不会覆盖已有文件。</p>
+          </div>
+          <div class="number">01</div>
+        </div>
+        <form id="keygen-form" class="form-grid">
+          <label class="field">
+            <span>密钥用途</span>
+            <select name="purpose" id="key-purpose">
+              <option value="license">License 签名（客户授权）</option>
+              <option value="upgrade">升级包签名（版本发布）</option>
+            </select>
+            <small>两种用途必须分别生成，不能共用同一私钥。</small>
+          </label>
+          <label class="field">
+            <span>Key ID</span>
+            <input name="key_id" id="key-id" required maxlength="64" pattern="[A-Za-z0-9._-]+" autocomplete="off">
+            <small>用于识别签名密钥，例如 license-2026-a。</small>
+          </label>
+          <div class="action-row span-2">
+            <button class="primary" type="submit" id="keygen-submit">选择安全文件夹并生成…</button>
+            <p>点击后会打开 macOS 文件夹选择器。</p>
+          </div>
+        </form>
+        <div class="result-card hidden" id="keygen-result" aria-live="polite"></div>
+      </section>
+
+      <section class="panel" id="panel-issue" role="tabpanel" hidden>
+        <div class="panel-heading">
+          <div>
+            <p class="step-label">日常签发</p>
+            <h3>填写客户授权并生成 License</h3>
+            <p>所有字段都会进入签名。生成后修改 JSON 的任何授权字段都会导致验签失败。</p>
+          </div>
+          <div class="number">02</div>
+        </div>
+        <form id="issue-form" class="form-grid">
+          <label class="field">
+            <span>License ID</span>
+            <input name="license_id" id="license-id" required maxlength="128" autocomplete="off">
+          </label>
+          <label class="field">
+            <span>签名 Key ID</span>
+            <input name="key_id" id="issue-key-id" required maxlength="64" pattern="[A-Za-z0-9._-]+" autocomplete="off" placeholder="license-2026-a">
+          </label>
+          <label class="field">
+            <span>客户名称</span>
+            <input name="customer" required maxlength="256" autocomplete="organization" placeholder="示例科技有限公司">
+          </label>
+          <label class="field">
+            <span>部署 ID</span>
+            <input name="deployment_id" required maxlength="128" autocomplete="off" placeholder="customer-prod-cluster-01">
+            <small>必须与客户部署的 LICENSE_DEPLOYMENT_ID 完全一致。</small>
+          </label>
+          <label class="field">
+            <span>授权版本 / Tier</span>
+            <input name="tier" required maxlength="64" value="enterprise" autocomplete="off">
+          </label>
+          <label class="field">
+            <span>合同或订单号（可选）</span>
+            <input name="contract_reference" maxlength="128" autocomplete="off">
+          </label>
+          <label class="field">
+            <span>签发日（UTC）</span>
+            <input name="issued_date" id="issued-date" type="date" required>
+          </label>
+          <label class="field">
+            <span>生效日（UTC）</span>
+            <input name="not_before_date" id="not-before-date" type="date" required>
+          </label>
+          <label class="field span-2">
+            <span>授权截止日（UTC，当日 23:59:59 到期）</span>
+            <input name="expires_date" id="expires-date" type="date" required>
+          </label>
+
+          <fieldset class="field span-2 feature-fieldset">
+            <legend>授权功能</legend>
+            <label class="check feature-all"><input type="checkbox" name="features" value="*" checked>全部当前功能</label>
+            <div class="check-grid" id="feature-grid">
+              <label class="check"><input type="checkbox" name="features" value="gateway">模型网关</label>
+              <label class="check"><input type="checkbox" name="features" value="agent_capabilities">Agent 能力</label>
+              <label class="check"><input type="checkbox" name="features" value="oidc">OIDC / SSO</label>
+              <label class="check"><input type="checkbox" name="features" value="guardrails">内容安全</label>
+              <label class="check"><input type="checkbox" name="features" value="notifications">通知中心</label>
+              <label class="check"><input type="checkbox" name="features" value="model_governance">模型治理</label>
+              <label class="check"><input type="checkbox" name="features" value="data_exchange">数据交换</label>
+            </div>
+            <small>选择“全部当前功能”时，下面的单项选择会自动停用。</small>
+          </fieldset>
+
+          <fieldset class="field span-2">
+            <legend>资源上限（留空表示该项不设置签名上限）</legend>
+            <div class="limit-grid">
+              <label><span>有效访问凭证</span><input name="active_api_keys" type="number" min="1" step="1" placeholder="不限"></label>
+              <label><span>有效用户</span><input name="active_users" type="number" min="1" step="1" placeholder="不限"></label>
+              <label><span>有效项目</span><input name="active_projects" type="number" min="1" step="1" placeholder="不限"></label>
+              <label><span>有效上游通道</span><input name="active_channels" type="number" min="1" step="1" placeholder="不限"></label>
+            </div>
+          </fieldset>
+
+          <div class="action-row span-2">
+            <button class="primary" type="submit" id="issue-submit">选择私钥并生成 License…</button>
+            <p>程序会先让你选择私钥，再选择 License 保存位置。</p>
+          </div>
+        </form>
+        <div class="result-card hidden" id="issue-result" aria-live="polite"></div>
+      </section>
+
+      <section class="panel" id="panel-verify" role="tabpanel" hidden>
+        <div class="panel-heading">
+          <div>
+            <p class="step-label">交付前复核</p>
+            <h3>验证签名、部署绑定和有效期</h3>
+            <p>依次选择公开验签文件和客户 License。验证过程不需要也不会读取私钥。</p>
+          </div>
+          <div class="number">03</div>
+        </div>
+        <form id="verify-form" class="form-grid compact-form">
+          <label class="field span-2">
+            <span>预期部署 ID</span>
+            <input name="deployment_id" required maxlength="128" autocomplete="off" placeholder="customer-prod-cluster-01">
+          </label>
+          <div class="action-row span-2">
+            <button class="primary" type="submit" id="verify-submit">选择文件并验证…</button>
+            <p>先选择 <code>*.public-keys.json</code>，再选择 <code>*.license.json</code>。</p>
+          </div>
+        </form>
+        <div class="result-card hidden" id="verify-result" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <footer>
+      <p>私钥不会写入浏览器存储、UniRouter 数据库或应用日志。闲置 2 小时后程序会自动退出。</p>
+      <button class="text-button" id="shutdown-button" type="button">安全退出 License Studio</button>
+    </footer>
+  </div>
+  <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+  <script src="assets/app.js" defer></script>
+</body>
+</html>

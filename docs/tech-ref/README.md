@@ -21,7 +21,7 @@
 | 13 | [Audit Schema Upgrade](13-audit-schema-upgrade.md) | PRD2 audit source, filter, and before/after contract | v0.1 |
 | 14 | [Notification And Event Foundation](14-notification-event-foundation.md) | PRD2 notification events, webhook routing, and project budget threshold contract | v0.1 |
 | 15 | [HA Readiness](15-ha-readiness.md) | PRD2 multi-instance, shared-state, smoke, and rollback contract | v0.1 |
-| 16 | [Commercial License Enforcement](16-license-foundation.md) | V1 strict signed License, deployment binding, runtime/feature/resource enforcement and PRD2 compatibility boundary | v1.0 |
+| 16 | [Commercial License Enforcement](16-license-foundation.md) | V1 strict signed License, embedded release trust, double-click macOS License Studio, deployment/feature/resource enforcement and PRD2 compatibility boundary | v1.1 |
 | 17 | [Cache Research](17-cache-research.md) | PRD2 exact/semantic cache research boundary; no runtime cache by default | v0.1 |
 | 18 | [OIDC First SSO](18-oidc-sso.md) | PRD2 OIDC login, claim mapping, provisioning, and audit contract | v0.1 |
 | 19 | [Prompt And Response Storage Policy](19-prompt-response-storage-policy.md) | PRD2 P2-F11 policy: plaintext disabled by default; future opt-in controls | v0.1 |
@@ -32,7 +32,7 @@
 | 24 | [PRD4 Real SSO Evidence](24-prd4-real-sso-evidence.md) | PRD4 Logto/OIDC browser-login evidence harness, credential guardrails, and target-environment acceptance boundary | v0.1 |
 | 25 | [PRD5 X-Insight Sanitized Snapshot](25-prd5-xinsight-sanitized-snapshot.md) | PRD5 Gate A snapshot tool, handoff note, safety behavior, source refs, capture-gap candidates, controlled handoff prerequisites, and read-only access gate | v0.4 |
 | 26 | [PRD5 Evidence Field Contract](26-prd5-evidence-field-contract.md) | PRD5 trace/span/source/capture/decision/actor/payload field dictionary and nullable migration plan | v0.1 |
-| 27 | [Signed Offline Upgrade Bundle](27-signed-offline-upgrade.md) | V1 deterministic signed bundle, tamper/rollback/schema preflight and installed-release readback | v1.0 |
+| 27 | [Signed Offline Upgrade Bundle](27-signed-offline-upgrade.md) | V1 deterministic signed bundle, embedded independent trust root, tamper/rollback/schema preflight and installed-release readback | v1.1 |
 
 ## 关联文档
 - [PRD Phase 1](../PRD-Phase1.md) — 产品需求文档

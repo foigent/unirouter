@@ -8,11 +8,18 @@
 > deployment/feature/resource authority, migration `000037`, vendor License
 > tooling, deterministic pre-extraction signed-bundle verification, installed
 > release-state readback and a no-build/source-free customer Compose profile.
-> Pull request and exact-head required CI are pending. No production/customer
-> signing key or License was created, and no ECS trust root, deployment ID,
-> License, migration or image was changed. Those target operations remain a
-> separate R4 decision. Evidence:
-> `docs/ops/evidence/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-LOCAL-20260715.md`.
+> PR #205 is open. Its earlier head passed all required checks; the current
+> embedded-trust/License-Studio head still requires exact-head CI. A follow-up
+> P0 review found that customer Compose could replace both public trust roots;
+> the current local patch moves them into the formal release binary, rejects
+> runtime overrides and adds a double-click macOS License Studio for separate
+> key generation, customer-form signing and verification. Headed desktop/mobile
+> browser checks have zero console errors and only loopback requests. No
+> production/customer signing key or License was created, and no ECS embedded
+> trust root, deployment ID, License, migration or image was changed. Merge,
+> production key ceremony and target activation remain separate decisions.
+> Evidence: `docs/ops/evidence/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-LOCAL-20260715.md`
+> and `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-LOCAL-20260715.md`.
 > PRD6 is formally `Completed (Accepted Scope)` at repository/CI evidence level. All 27
 > accepted rows are verified or closed. The final row, P6-F11, passed PR #189
 > implementation run `29245696926`, final-head run `29246431182`, squash merge

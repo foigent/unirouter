@@ -1,6 +1,6 @@
 # Signed Offline Upgrade Bundle
 
-> Version: v1.0
+> Version: v1.1
 > Scope: Post-PRD6 V1 customer-local, operator-approved release verification.
 
 ## Security Boundary
@@ -10,14 +10,20 @@ anything. It does not silently update a deployment and it does not accept an
 arbitrary Admin Console upload. Apply remains a separate backup, maintenance,
 migration, image switch and health-check procedure.
 
-Upgrade signing uses a public-key ring independent from License signing:
+Upgrade signing uses a public-key ring independent from License signing. In a
+formal release, both rings are compiled into the backend binary:
 
 ```text
-UPGRADE_PUBLIC_KEYS={"upgrade-2026-a":"base64-ed25519-public-key"}
+UNIROUTER_RELEASE_TRUST_MODE=release
+UNIROUTER_UPGRADE_TRUST_BUNDLE_B64=<base64url-public-ring-json>
 ```
 
-Only public keys enter the customer runtime. A trusted release private key
-must stay in separately approved offline/HSM custody.
+The release binary rejects a runtime `UPGRADE_PUBLIC_KEYS` override. Source
+development may still use that variable explicitly. Only public keys enter the
+customer runtime; a trusted release private key must stay in separately
+approved offline/HSM custody. License Studio generates this key separately from
+the License key and displays the public build argument without exposing the
+private key to the browser.
 
 ## Bundle Contract
 

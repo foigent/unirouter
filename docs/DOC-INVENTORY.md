@@ -45,6 +45,7 @@
 | `docs/planning/V1-MICRO-PRECISION-LEDGER-PLAN-20260714.md` | User-approved Post-PRD6 option B money contract, non-rolling migration boundary and R3 decision gate |
 | `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-LOCAL-20260714.md` | V1 micro-CNY implementation matrix, full local regression, isolated migration/API/browser evidence and target/X-Insight activation gates |
 | `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-TARGET-20260714.md` | PR #202/#203 CI and merge truth, authorized non-rolling development-ECS migration/cutover, exact release, DB/API/runtime/browser/environment-label evidence and preserved non-claims |
+| `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-LOCAL-20260715.md` | P0 runtime trust-root replacement closure, double-click macOS License Studio, local security/API/browser/build evidence and preserved key/merge/ECS/production boundaries |
 | `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` | Official competitor HA patterns, current UniRouter cluster facts, Four Quadrants and accepted D6-12 stream/HA boundary |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | Source-backed audit/reconciliation/correlation/UI/architecture/upgrade findings, Four Quadrants and PRD6 batches |
 | `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md` | Accepted customer-revenue/provider-COGS boundary, competitor and supplier billing evidence, Four Quadrants, PRD6 non-claims and future cost/metering/media candidates |

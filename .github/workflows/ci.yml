@@ -426,9 +426,7 @@ jobs:
             API_KEY_HASH_SECRET=ci-compose-validation \
             ENCRYPTION_KEY=ci-compose-validation-32bytes! \
             GRAFANA_ADMIN_PASSWORD=ci-compose-validation \
-            LICENSE_PUBLIC_KEYS='{"license-ci":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}' \
             LICENSE_DEPLOYMENT_ID=ci-deployment \
-            UPGRADE_PUBLIC_KEYS='{"upgrade-ci":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}' \
             docker compose -f deploy/customer/docker-compose.yml config
           )"
           grep -F 'image: unirouter/backend@sha256:5555555555555555555555555555555555555555555555555555555555555555' <<< "$customer_compose"
@@ -461,7 +459,11 @@ jobs:
           mkdir frontend/secrets
           printf 'docker-context-regression-marker\n' > frontend/secrets/docker-context-regression.txt
 
-          docker build -t unirouter:test .
+          docker build \
+            --build-arg UNIROUTER_RELEASE_TRUST_MODE=release \
+            --build-arg UNIROUTER_LICENSE_TRUST_BUNDLE_B64=eyJsaWNlbnNlLWNpIjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQT0ifQ \
+            --build-arg UNIROUTER_UPGRADE_TRUST_BUNDLE_B64=eyJ1cGdyYWRlLWNpIjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQT0ifQ \
+            -t unirouter:test .
 
           docker build -t unirouter-frontend-context:test -f - frontend <<'DOCKERFILE'
           FROM alpine:3.19

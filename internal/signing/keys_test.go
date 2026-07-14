@@ -1,6 +1,7 @@
 package signing
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
@@ -62,5 +63,27 @@ func TestParsePublicKeyRing(t *testing.T) {
 	}
 	if _, err := ParsePublicKeyRing(string(tooManyJSON), "UPGRADE_PUBLIC_KEYS"); err == nil {
 		t.Fatal("expected oversized key ring rejection")
+	}
+}
+
+func TestParsePrivateKeyBytes(t *testing.T) {
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := EncodePrivateKey(privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := ParsePrivateKeyBytes([]byte(" \n" + encoded + "\t"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(parsed, privateKey) {
+		t.Fatal("parsed private key does not match")
+	}
+	clear(parsed)
+	if _, err := ParsePrivateKeyBytes([]byte("not-a-key")); err == nil {
+		t.Fatal("expected malformed private key rejection")
 	}
 }

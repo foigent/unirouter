@@ -6,12 +6,17 @@
 > `codex/v1-commercial-license-upgrade`, based on clean `origin/main`
 > `e94a4b184a6f675d76c292602b7c18293ab2ce61`. The User requires signed
 > commercial License enforcement and a signed offline upgrade bundle before
-> customer delivery. The implementation, migration `000037`, vendor tooling,
-> source-free customer Compose and local verification are complete; PR and
-> exact-head required CI are pending. No persistent production/customer key or
-> License exists, and no target was mutated. ECS trust-root/License/migration/
-> image activation is a separate R4 decision. This does not reopen PRD6 or
-> accept the PRD7 Update Center/automatic-upgrade product scope.
+> customer delivery. PR #205 is open. Its earlier head passed required CI, but
+> a follow-up P0 review found customer-controlled runtime replacement of both
+> public trust roots. The current local head embeds separate License/upgrade
+> public rings in formal release binaries, rejects runtime overrides and adds a
+> double-click macOS License Studio for native-folder key generation, customer
+> signing and verification. Focused tests and headed desktop/mobile browser
+> verification pass; exact-head required CI is pending. No persistent
+> production/customer key or License exists, and no target was mutated. Merge,
+> production key ceremony and ECS trust-root/License/migration/image activation
+> are separate decisions. This does not reopen PRD6 or accept the PRD7 Update
+> Center/automatic-upgrade product scope.
 > PRD6 is formally `Completed (Accepted Scope)` at repository/CI evidence level. All 27
 > accepted rows are verified or closed. P6-F11 closed through PR #189: final
 > evidence head `3d4c61b` passed run `29246431182`, squash merge `4c78a5b7`

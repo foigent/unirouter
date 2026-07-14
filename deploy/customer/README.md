@@ -9,14 +9,15 @@ Every runtime image variable is mandatory and must use the exact digest identity
 approved in the release note; this template has no mutable image-tag fallback.
 
 The Compose file contains no `build:` entry, source mount, builder cache or
-host migration mount. The backend image owns its exact migrations and immutable
-build version/commit. Commercial License and upgrade public-key rings plus a
-stable deployment identity are mandatory configuration.
+host migration mount. The backend image owns its exact migrations, immutable
+build version/commit and vendor License/upgrade public trust roots. Runtime
+environment variables cannot replace those embedded roots. A stable deployment
+identity remains mandatory configuration.
 
 Before first start:
 
 1. verify the complete signed release with the separately bootstrapped
-   `uniroute-upgrade` verifier and public-key ring;
+   `uniroute-upgrade` verifier and vendor-published public-key ring;
 2. copy `.env.example` to `.env`, replace every placeholder, keep the file out
    of tickets/evidence, and retain the exact signed image references;
 3. include the signed `config/` tree beside this Compose file;
