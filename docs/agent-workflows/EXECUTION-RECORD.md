@@ -3,13 +3,13 @@
 **Batch:** V1 Commercial License Studio, Embedded Trust And Signed Offline Upgrade Bundle
 **Owner:** Codex
 **Risk:** R3 authorization/signing implementation; any target activation is R4
-**Status:** Local implementation, focused tests and browser UI verified; exact-head pull-request CI pending
+**Status:** Implementation, browser UI and exact-code-head required CI verified; awaiting User merge decision
 **Baseline:** clean `origin/main` / `e94a4b184a6f675d76c292602b7c18293ab2ce61`
 **Branch:** `codex/v1-commercial-license-upgrade`
-**PR:** #205 open; earlier head passed required CI, current exact head pending
+**PR:** #205 open; code-bearing head `cd05055afe25cedff77830230d2788d8f06c96b3` passed required CI run `29359673125`
 **Decision:** User requires commercial authorization enforcement, signed upgrades and a click-only License generation program before customer delivery
-**Evidence:** `docs/planning/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-CONTRACT-20260714.md`; `docs/ops/evidence/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-LOCAL-20260715.md`; `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-LOCAL-20260715.md`
-**Next product gate:** exact-head required CI, then a User decision on PR #205 merge; production key ceremony and any non-production target activation remain separate decisions
+**Evidence:** `docs/planning/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-CONTRACT-20260714.md`; `docs/ops/evidence/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-LOCAL-20260715.md`; `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-LOCAL-20260715.md`; `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-CI-20260715.md`
+**Next product gate:** User decision on PR #205 merge; production key ceremony and any non-production target activation remain separate decisions
 **Previous batch:** PR #204 documentation closeout after V1 micro-ledger PR #202 and environment-label PR #203
 **Previous phase:** PRD5 Accepted Scope Complete; its Batch 1Z historical target backend was `95d1da9` / PR #133 and is now superseded on the same target by this PRD6 deployment
 
@@ -80,10 +80,10 @@
    image references, embedded binary trust roots, external signed
    config/secrets, unexposed dependencies and a local-only frontend default.
 8. Current-tree serial full Go tests, focused race tests, vet/build, 31 frontend
-   files / 164 tests, type-check/build, YAML parsing and the earlier-head
-   migrated-PostgreSQL concurrency/expiry/rollback/record-replay gates pass
-   locally. Docker is unavailable on this Mac, so real Docker and exact-head
-   full-race assertions remain required CI evidence.
+   files / 164 tests, type-check/build and YAML parsing pass locally. Exact
+   code-bearing head `cd05055` also passed all four required checks in run
+   `29359673125`, including the full race-enabled Go suite, migrated-PostgreSQL
+   gates, frontend suite/build and formal release Docker image build.
 9. No production/customer private key or License was generated. No ECS embedded
    trust root, deployment identity, License, migration, release state or
    image was changed. Target activation is a separate R4 decision and this
@@ -104,21 +104,22 @@
   static requests: `PASS`.
 - Exact current tree `go test -p 1 ./... -count=1`, `go vet ./...` and
   `go build ./...`: `PASS`. The new signing/trust/Studio/License/upgrade slice
-  also passes `-race`; the previous PR head had passed full race, while current
-  exact-head full race remains a required CI check.
+  also passes `-race`; the exact code-bearing PR head passed the full CI Go and
+  integration-test path.
 - Migrated PostgreSQL `000037` capacity/expiry/down guard and upgrade
   record/replay integration gate under `-race`: `PASS`; generated temporary
   database count returned to zero.
 - Frontend Vitest 31 files / 164 tests, type-check and production build:
   `PASS`.
 - CI/OpenAPI/customer Compose YAML parse and `git diff --check`: `PASS`.
-- Local Docker: not run because this host has no `docker` executable. Exact
-  customer Compose and image-reference behavior remains a required Docker CI
-  gate; PR and CI are still pending.
+- Local Docker: not run because this host has no `docker` executable. Required
+  Docker CI passed the formal release image and Docker-context checks on exact
+  code-bearing head `cd05055`.
 - Evidence:
   `docs/ops/evidence/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-LOCAL-20260715.md`
   and
-  `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-LOCAL-20260715.md`.
+  `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-LOCAL-20260715.md` and
+  `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-CI-20260715.md`.
 
 ## Previous CI Efficiency Result
 

@@ -8,18 +8,22 @@
 > deployment/feature/resource authority, migration `000037`, vendor License
 > tooling, deterministic pre-extraction signed-bundle verification, installed
 > release-state readback and a no-build/source-free customer Compose profile.
-> PR #205 is open. Its earlier head passed all required checks; the current
-> embedded-trust/License-Studio head still requires exact-head CI. A follow-up
-> P0 review found that customer Compose could replace both public trust roots;
-> the current local patch moves them into the formal release binary, rejects
-> runtime overrides and adds a double-click macOS License Studio for separate
+> PR #205 is open. A follow-up P0 review found that customer Compose could
+> replace both public trust roots; exact code-bearing head
+> `cd05055afe25cedff77830230d2788d8f06c96b3` moves them into the formal
+> release binary, rejects runtime overrides and adds a double-click macOS
+> License Studio for separate
 > key generation, customer-form signing and verification. Headed desktop/mobile
-> browser checks have zero console errors and only loopback requests. No
+> browser checks have zero console errors and only loopback requests. Required
+> CI run `29359673125` passed Change Routing, Backend Tests, Frontend Build and
+> Docker Build, including the commercial-License/signed-upgrade integration
+> gate and a release image built with separate embedded public rings. No
 > production/customer signing key or License was created, and no ECS embedded
 > trust root, deployment ID, License, migration or image was changed. Merge,
 > production key ceremony and target activation remain separate decisions.
-> Evidence: `docs/ops/evidence/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-LOCAL-20260715.md`
-> and `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-LOCAL-20260715.md`.
+> Evidence: `docs/ops/evidence/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-LOCAL-20260715.md`,
+> `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-LOCAL-20260715.md` and
+> `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-CI-20260715.md`.
 > PRD6 is formally `Completed (Accepted Scope)` at repository/CI evidence level. All 27
 > accepted rows are verified or closed. The final row, P6-F11, passed PR #189
 > implementation run `29245696926`, final-head run `29246431182`, squash merge
