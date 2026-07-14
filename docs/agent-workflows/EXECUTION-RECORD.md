@@ -1,19 +1,35 @@
 # Current Execution Record
 
-**Batch:** V1 Post-PRD6 CI Efficiency Closeout And Micro-Ledger Plan
+**Batch:** V1 Financial Prerequisites Closeout And Micro-Ledger Preparation
 **Owner:** Codex
-**Risk:** R2 repository workflow, required-check routing and CI evidence integrity
-**Status:** CI verified; V1-CI-001 closed; V1-FIN-001 planning accepted
-**Baseline:** clean `origin/main` / `31d87def0e7c689a6bea8f4f1e39cd9583959694`
-**Branch:** `codex/v1-ci-closeout-ledger-plan`
-**PR:** #199; first docs-only run `29300434659` passed, final-head check pending
-**Decision:** User approved CI deduplication, change routing, PR concurrency, single-run optimization, fixed Go patch and evidence-based cache handling on 2026-07-14
-**Evidence:** `docs/ops/evidence/V1-POST-PRD6-CI-EFFICIENCY-LOCAL-20260714.md`, `docs/ops/evidence/V1-POST-PRD6-CI-EFFICIENCY-CI-20260714.md`
+**Risk:** R1 documentation closeout; next implementation is R3 financial schema/runtime cutover
+**Status:** PR #196/#197 prerequisites CI verified and merged; V1-FIN-001 implementation next
+**Baseline:** clean `origin/main` / `94c93dccd8dff8543ac4ee1cdc7c9219c384a5d0`
+**Branch:** `codex/v1-prerequisite-closeout`
+**PR:** pending docs-only closeout
+**Decision:** User selected source-preserving micro-precision ledger option B on 2026-07-14; stop before the R3 merge/deploy gate
+**Evidence:** `docs/ops/evidence/V1-POST-PRD6-FINANCIAL-PREREQUISITES-CI-20260714.md`, `docs/planning/V1-MICRO-PRECISION-LEDGER-PLAN-20260714.md`
 **Next product gate:** source-preserving micro-precision billing ledger (User selected option B)
-**Previous batch:** V1 pricing authority PR #197; run `29287273675` attempt 4 passed Backend Tests, Frontend Build and Docker Build after the external GitHub billing block was removed; merge remains separate
+**Previous batch:** V1 CI efficiency PR #198/#199, CI/main cache/docs-only routing verified and closed
 **Previous phase:** PRD5 Accepted Scope Complete; its Batch 1Z historical target backend was `95d1da9` / PR #133 and is now superseded on the same target by this PRD6 deployment
 
 ## Current Batch Result
+
+1. Wallet atomicity PR #196 exact head `2c5e930` passed run `29300560434`
+   and squash-merged as `86a3bd8`; exact retries are idempotent and signed
+   deltas apply to the latest locked balance.
+2. Pricing-contract PR #197 exact head `74ebf62` passed run `29301071299`,
+   including its dedicated PostgreSQL gate, and squash-merged as `94c93dc`.
+3. The public price contract is CNY per million tokens, missing prices fail
+   closed and migration `000035` documents rather than rewrites existing rows.
+4. No automatic post-merge CI was created for either merge, consistent with
+   the closed CI-efficiency contract.
+5. No target price row, wallet, migration, deployment or credential changed.
+   Existing target price provenance remains an explicit pre-deployment review.
+6. `V1-FIN-001` prerequisites are complete. Implementation starts from clean
+   main `94c93dc` and stops before R3 merge or target migration approval.
+
+## Previous CI Efficiency Result
 
 1. PR #198 exact head `e9d0847` passed Change Routing, Backend Tests, Frontend
    Build and Docker Build in run `29299202652`, then squash-merged as

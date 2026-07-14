@@ -15,8 +15,10 @@
 > and passed trusted main dispatch `29299765793`. Shared Go cache `5720112747`
 > is seeded and final capacity is 32 caches / `9,503,335,891` bytes. The next
 > confirmed release blocker is `V1-FIN-001`, the integer-cent terminal clamp;
-> User selected the micro-CNY ledger option B, which remains unimplemented and
-> requires a later R3 merge/deployment decision gate.
+> User selected the micro-CNY ledger option B. Wallet prerequisite PR #196
+> passed run `29300560434` and merged as `86a3bd8`; pricing prerequisite PR
+> #197 passed run `29301071299` and merged as `94c93dc`. The ledger remains
+> unimplemented and requires a later R3 merge/deployment decision gate.
 
 ## First Read Order
 
@@ -83,6 +85,7 @@
 61. `docs/ops/evidence/V1-POST-PRD6-CI-EFFICIENCY-LOCAL-20260714.md` - CI duplication, change-routing, concurrency and cache baseline evidence.
 62. `docs/ops/evidence/V1-POST-PRD6-CI-EFFICIENCY-CI-20260714.md` - PR #198, main dispatch and exact cache-seed/cleanup readback.
 63. `docs/planning/V1-MICRO-PRECISION-LEDGER-PLAN-20260714.md` - accepted P0 micro-CNY ledger contract, migration boundary and approval gate.
+64. `docs/ops/evidence/V1-POST-PRD6-FINANCIAL-PREREQUISITES-CI-20260714.md` - wallet atomicity and public pricing-unit prerequisite merge/CI evidence.
 
 ## Current Project Shape
 
