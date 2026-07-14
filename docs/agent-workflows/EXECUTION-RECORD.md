@@ -1,19 +1,40 @@
 # Current Execution Record
 
-**Batch:** PRD6 Final Completion Publication
+**Batch:** V1 Post-PRD6 CI Efficiency
 **Owner:** Codex
-**Risk:** R2 phase-state truth, acceptance accounting, immutable-evidence preservation and evidence-level leakage
-**Status:** PRD6 formally Completed (Accepted Scope); publication must pass required CI before merge
-**Baseline:** clean/aligned `main` / `origin/main` / `9c73d6fd00fd5e58d126d9a6adc7fe9decf91cdd`
-**Branch:** `codex/prd6-final-completion`
-**PR:** #194; merge only after Backend Tests, Frontend Build and Docker Build pass
-**Decision:** User directed on 2026-07-14 that PRD6 be marked complete if a fresh audit confirmed all PRD6-scoped work was finished; the audit confirmed all 27 accepted rows closed
-**Publication evidence:** `docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md`
-**Next product gate:** post-PRD6 target acceptance issue triage; PRD7, P6-E02 through P6-E04 and Production evidence remain later
-**Previous batch:** PRD6 target deployment/UI publication PR #193 merged as `9c73d6f`; exact-head main run `29274010760` passed all three required jobs
+**Risk:** R2 repository workflow, required-check routing and CI evidence integrity
+**Status:** Implemented; Local verified; required CI pending
+**Baseline:** clean `origin/main` / `f90e7eb79ae23d48c99b882e2d7a3bb568b46c5a`
+**Branch:** `codex/v1-ci-efficiency`
+**PR:** pending; merge only after Backend Tests, Frontend Build and Docker Build pass
+**Decision:** User approved CI deduplication, change routing, PR concurrency, single-run optimization, fixed Go patch and evidence-based cache handling on 2026-07-14
+**Evidence:** `docs/ops/evidence/V1-POST-PRD6-CI-EFFICIENCY-LOCAL-20260714.md`
+**Next product gate:** source-preserving micro-precision billing ledger (User selected option B)
+**Previous batch:** V1 pricing authority PR #197; run `29287273675` attempt 4 passed Backend Tests, Frontend Build and Docker Build after the external GitHub billing block was removed; merge remains separate
 **Previous phase:** PRD5 Accepted Scope Complete; its Batch 1Z historical target backend was `95d1da9` / PR #133 and is now superseded on the same target by this PRD6 deployment
 
-## Completion Result
+## Current Batch Result
+
+1. Confirmed strict `main` protection requires Backend Tests, Frontend Build and
+   Docker Build against the latest base before merge.
+2. Removed the duplicate automatic full run on post-merge `main`; retained
+   manual full-suite dispatch.
+3. Added fail-closed PR path routing without top-level path filters, preserving
+   all three required check names and failure propagation.
+4. Added per-PR concurrency cancellation, exact Go `1.25.12`, local-only Go
+   toolchain enforcement, PR restore-only caching from one trusted-main key and
+   removed duplicate frontend type checking.
+5. Verified 35 caches / `10,450,365,643` bytes before cleanup. Deleted only two
+   explicit caches for merged PR #165 and #166, one command each; readback is
+   33 caches / `9,865,023,859` bytes.
+6. `actionlint`, YAML structure, real historical-PR route scenarios, invalid-SHA
+   failure, direct Vite production build and `git diff --check` pass locally.
+   GitHub required CI remains pending.
+
+No application behavior, target environment, credential, database, production
+or PRD6 accepted-scope state changed.
+
+## Previous PRD6 Completion Result
 
 1. Re-read the PRD6 PRD, acceptance matrix, closeout evidence, implementation
    plan, backlog, current status, handoff, open issues and execution protocol.
