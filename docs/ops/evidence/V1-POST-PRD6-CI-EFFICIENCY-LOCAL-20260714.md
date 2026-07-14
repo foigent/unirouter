@@ -51,8 +51,10 @@
    all three jobs are forced to start and fail; a routing failure cannot turn
    into a green bypass.
 5. Go is fixed to `1.25.12`, `GOTOOLCHAIN=local` prevents an implicit toolchain
-   download, and setup-go's persisted Go cache is disabled. The runner-local Go
-   cache remains available within one Backend job.
+   download, and setup-go's automatic merge-ref cache is disabled. Pull-request
+   jobs use restore-only access to a controlled shared key; only a trusted
+   manual dispatch on `main` may save that key after a full successful run.
+   Pull requests therefore cannot create another per-merge-ref Go cache.
 6. Frontend CI keeps the explicit type-check and runs Vite directly afterward,
    avoiding the second `tsc` pass.
 7. Bounded timeouts are set for routing, Backend, Frontend and Docker jobs.
@@ -91,4 +93,6 @@ execution and Docker build on this branch before merge.
 - This batch does not weaken Backend, Frontend or Docker required-check
   semantics, alter application behavior, deploy a target, change credentials,
   mutate a database or reopen PRD6.
-- Additional cache cleanup is unnecessary for this batch and is not performed.
+- Before the first trusted `main` cache seed, capacity must be read back and at
+  most one additional explicitly identified closed-PR cache removed if needed.
+  No key-wide or bulk cleanup is permitted.

@@ -22,8 +22,8 @@
 3. Added fail-closed PR path routing without top-level path filters, preserving
    all three required check names and failure propagation.
 4. Added per-PR concurrency cancellation, exact Go `1.25.12`, local-only Go
-   toolchain enforcement, disabled persisted Go caching and removed duplicate
-   frontend type checking.
+   toolchain enforcement, PR restore-only caching from one trusted-main key and
+   removed duplicate frontend type checking.
 5. Verified 35 caches / `10,450,365,643` bytes before cleanup. Deleted only two
    explicit caches for merged PR #165 and #166, one command each; readback is
    33 caches / `9,865,023,859` bytes.

@@ -141,6 +141,17 @@ jobs:
         with:
           go-version: '1.25.12'
           cache: false
+
+      - name: Restore shared Go cache
+        id: go-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: unirouter-go-v1-${{ runner.os }}-${{ runner.arch }}-go1.25.12-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            unirouter-go-v1-${{ runner.os }}-${{ runner.arch }}-go1.25.12-
       
       - name: Download dependencies
         run: go mod download
@@ -282,6 +293,19 @@ jobs:
         with:
           name: coverage
           path: coverage.out
+
+      - name: Save shared Go cache from trusted main dispatch
+        if: >-
+          success() &&
+          github.event_name == 'workflow_dispatch' &&
+          github.ref == 'refs/heads/main' &&
+          steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: unirouter-go-v1-${{ runner.os }}-${{ runner.arch }}-go1.25.12-${{ hashFiles('go.sum') }}
 
   frontend:
     name: Frontend Build
