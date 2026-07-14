@@ -3,18 +3,20 @@
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
 > **Current checkpoint (2026-07-15):** `main` / `origin/main` are
-> `c051e0abe2a02382cefc8a77b04a9bdcc45828a1`; the authorized development ECS
-> target runs that exact stable/canary/frontend release with version `1.0.0`,
-> environment `development`, migration `000037`, healthy dependencies, an
-> enforceable test License and signed-upgrade apply/readback/replay evidence.
-> The active branch `codex/v1-release-ui-target-closeout` contains only
-> first-release defect/UX/document corrections found by a 24-route authenticated
-> audit; its complete matrix is
-> `docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md`.
-> Required CI, merge and deployment of that branch are still pending. Existing
-> target upstream model allowlists remain a configuration gap; real provider,
-> detector, enterprise IdP, Production/TLS/capacity and X-Insight v2 evidence
-> are not claimed. PRD6 stays closed as `Completed (Accepted Scope)`.
+> `a0a567dd169dcb133b09eed3f711cdcf87214641`, the PR #207 squash merge.
+> Exact head `f63bcb268251cd6ec0d8701afc20a7928cd32ecb` passed all four required
+> checks in run `29368640933`, and the authorized development ECS runs the exact
+> merged stable/canary/frontend release with version `1.0.0`, environment
+> `development`, migration `000037`, healthy dependencies, an enforceable test
+> License and signed-upgrade sequence `2` apply/readback/replay evidence.
+> Authenticated API and real-browser target verification passed all 24 admin
+> routes plus a restricted developer session; temporary actors are disabled
+> and browser state is cleared. The complete issue matrix and target closeout
+> are `docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md`
+> and `docs/ops/evidence/V1-FIRST-RELEASE-TARGET-CLOSEOUT-20260715.md`.
+> Existing target upstream model allowlists remain a configuration gap; real
+> provider, detector, enterprise IdP, Production/TLS/capacity and X-Insight v2
+> evidence are not claimed. PRD6 stays closed as `Completed (Accepted Scope)`.
 > Post-PRD6 commercial-release hardening is merged on `main` as
 > `5c1313521870731b0164d4eecfbbb06d7a7f0704` through PR #205. A follow-up P0
 > review had found
@@ -58,8 +60,10 @@
 
 ## First Read Order
 
-Current first-release batch evidence is
-`docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md`; read it
+Current first-release evidence is
+`docs/ops/evidence/V1-FIRST-RELEASE-TARGET-CLOSEOUT-20260715.md`, with the full
+classification matrix in
+`docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md`; read both
 immediately after `docs/ops/CURRENT-STATUS.md` before using the preserved PRD6
 history below.
 
@@ -134,8 +138,10 @@ history below.
 69. `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-LOCAL-20260715.md` - P0 trust-root bypass closure, click-only macOS tool, security boundary and local browser/test/build evidence.
 70. `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-CI-20260715.md` - exact code-head required-CI and formal release Docker-image closure evidence.
 71. `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-MERGE-20260715.md` - PR #205 approval, exact squash merge/main readback, final-head CI and no-automatic-main-run evidence.
-72. `docs/tech-ref/16-license-foundation.md` - enforceable License schema, runtime admission, resource limits, recovery and historical PRD2 compatibility.
-73. `docs/tech-ref/27-signed-offline-upgrade.md` - bundle format, trust ordering, provenance binding, verify/record workflow and explicit Update Center/TUF non-claims.
+72. `docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md` - complete user-question classification, source/API facts, local verification and explicit non-claims.
+73. `docs/ops/evidence/V1-FIRST-RELEASE-TARGET-CLOSEOUT-20260715.md` - PR #207 CI/merge truth, exact ECS release, signed sequence-2 replay proof, authenticated API/browser acceptance and remaining decision gates.
+74. `docs/tech-ref/16-license-foundation.md` - enforceable License schema, runtime admission, resource limits, recovery and historical PRD2 compatibility.
+75. `docs/tech-ref/27-signed-offline-upgrade.md` - bundle format, trust ordering, provenance binding, verify/record workflow and explicit Update Center/TUF non-claims.
 
 ## Current Project Shape
 
@@ -245,6 +251,8 @@ no PRD6 response persistence, deployment or semantic cache is accepted.
 
 | Question | Current Source |
 |----------|----------------|
+| What did the complete first-release product audit classify? | `docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md` |
+| Which first-release corrections are merged and Target verified, and what still needs a decision? | `docs/ops/evidence/V1-FIRST-RELEASE-TARGET-CLOSEOUT-20260715.md` |
 | What is the PRD6 decision state? | `docs/planning/PRD6-START-HERE.md` |
 | What baseline and findings were verified? | `docs/ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md` |
 | What did the 100x/Agent/streaming anti-pattern audit find? | `docs/ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md` |

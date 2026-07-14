@@ -2,20 +2,24 @@
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
 > **2026-07-15 current checkpoint:** `main` / `origin/main` are
-> `c051e0abe2a02382cefc8a77b04a9bdcc45828a1`. The separately authorized
-> development ECS target runs that exact stable/canary/frontend release as
-> version `1.0.0`, environment `development`, migration `000037`, with healthy
-> PostgreSQL/Redis, an enforceable deployment-bound test License, embedded
-> trust roots and verified signed-upgrade apply/readback/replay rejection. A
-> first-release product audit then exercised all 24 authenticated admin routes,
-> a real caller-key lifecycle, route preview, guardrail snapshot, finance/
-> reconciliation reads, audit events and a real restricted developer session
-> without a paid provider call. Its complete issue matrix and Local-verified
-> defect/UX corrections are in
-> `docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md` on branch
-> `codex/v1-release-ui-target-closeout`; exact-head CI, merge and deployment of
-> those corrections are still pending. Existing target route allowlists do not
-> match the current model catalog, and real provider/detector/enterprise-IdP,
+> `a0a567dd169dcb133b09eed3f711cdcf87214641`, the squash merge of PR #207.
+> Exact PR head `f63bcb268251cd6ec0d8701afc20a7928cd32ecb` passed Change Routing,
+> Backend Tests, Frontend Build and Docker Build in required run `29368640933`;
+> no duplicate automatic `main` run was created. The separately authorized
+> development ECS target now runs the exact merged stable/canary/frontend
+> release as version `1.0.0`, environment `development`, migration `000037`,
+> with healthy PostgreSQL/Redis, an enforceable deployment-bound **test**
+> License and signed-upgrade sequence `2` apply/readback/replay rejection.
+> Authenticated API and real-browser verification passed all 24 admin routes,
+> a caller-key lifecycle, route preview, guardrail snapshots, finance/
+> reconciliation reads, audit identity/detail UX and a restricted developer
+> session. Temporary QA/developer users are disabled and browser state is
+> cleared. The complete classification and target evidence are
+> `docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md` and
+> `docs/ops/evidence/V1-FIRST-RELEASE-TARGET-CLOSEOUT-20260715.md`.
+> `V1-FIRST-RELEASE-UX-001` is Target verified / closed. Existing target route
+> allowlists still do not match the current model catalog; no supplier secret,
+> allowlist or paid traffic was changed. Real provider/detector/enterprise-IdP,
 > Production/TLS/capacity and X-Insight v2 evidence remain explicit later
 > gates. PRD6 remains `Completed (Accepted Scope)` and is not reopened.
 > The User-approved Post-PRD6 V1 delivery gate for commercial License
@@ -74,14 +78,16 @@
 > outbox/Redis v2 and cleanup regressions are CI verified; the selected target
 > schema, API and UI surfaces are Target verified.
 > Deployment-label PR #203 passed exact-head required run `29339373907`, merged
-> as `545e514ab51937e6589512192141b9359cfcb504`, and is the final ECS release.
-> Stable/canary report exact commit `545e514`, version `v1`, environment
+> as `545e514ab51937e6589512192141b9359cfcb504`, and became the intermediate ECS
+> release later superseded by exact first-release closeout `a0a567d`.
+> At that intermediate checkpoint, stable/canary reported exact commit
+> `545e514`, version `v1`, environment
 > `development`, healthy DB/Redis and migration `000036`; authenticated browser
 > checks display `开发环境` with zero console errors/warnings. Evidence:
 > `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-TARGET-20260714.md`.
 > This development/test target is not Production, real-provider/detector,
 > TLS, capacity/HA or migration-down evidence. X-Insight v2 consumer acceptance
-> and the broader Post-PRD6 product/UI issue queue remain separate.
+> and explicit target-configuration/Production gates remain separate.
 > `V1-BUILD-CONTEXT-001` is CI verified / closed by PR #195:
 > backend and independent frontend Docker contexts exclude local environment,
 > private-key and generated files; the backend performs a post-copy invariant
@@ -837,6 +843,8 @@ Historical PRD1 summary: Core backend modules, admin APIs, frontend pages, migra
 | Codebase map | `docs/CODEBASE-MAP.md` |
 | Documentation inventory | `docs/DOC-INVENTORY.md` |
 | Current project status | `docs/ops/CURRENT-STATUS.md` |
+| V1 first-release issue matrix | `docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md` |
+| V1 first-release target closeout | `docs/ops/evidence/V1-FIRST-RELEASE-TARGET-CLOSEOUT-20260715.md` |
 | PRD1 closeout plan | `docs/ops/PRD1-CLOSEOUT-PLAN.md` |
 | PRD1 strict closeout gate | `docs/ops/PRD1-STRICT-CLOSEOUT-RUNBOOK.md` |
 | PRD1 acceptance test ownership | `docs/ops/PRD1-ACCEPTANCE-TEST-OWNERSHIP.md` |

@@ -3,7 +3,8 @@
 ## 当前入口
 - [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — Agent 接手项目的第一阅读入口
 - [ops/CURRENT-STATUS.md](ops/CURRENT-STATUS.md) — 当前项目真实状态（进度、测试、部署、缺口）
-- [ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md](ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md) — 正式第一版完整问题矩阵、现有 ECS/API/浏览器事实、本地修复与未宣称边界
+- [ops/evidence/V1-FIRST-RELEASE-TARGET-CLOSEOUT-20260715.md](ops/evidence/V1-FIRST-RELEASE-TARGET-CLOSEOUT-20260715.md) — PR #207 CI/合并、精确 ECS 发布、签名升级回放保护、真实 API/浏览器验收与剩余决策门
+- [ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md](ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md) — 正式第一版完整问题矩阵、修复前 ECS/API/浏览器事实、本地修复与未宣称边界
 - [planning/PRD6-START-HERE.md](planning/PRD6-START-HERE.md) — PRD6 Completed (Accepted Scope)、决策边界和证据阅读顺序
 - [ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md](ops/evidence/PRD6-B0-baseline-and-competitor-audit-20260711.md) — Git/CI/测试/X-Insight/代码事实基线
 - [ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md](ops/evidence/PRD6-B0B-scalability-antipattern-audit-20260711.md) — 100x、Agent 扇出、鉴权、计费、路由、流式和多模态反模式审计
