@@ -18,12 +18,31 @@ interface WalletInfo {
   org_name: string;
 }
 
+export function parseYuanToCents(value: string): number | null {
+  const normalized = value.trim();
+  if (!/^-?\d+(?:\.\d{1,2})?$/.test(normalized)) return null;
+  const negative = normalized.startsWith('-');
+  const unsigned = negative ? normalized.slice(1) : normalized;
+  const [whole, fraction = ''] = unsigned.split('.');
+  const cents = Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
+  if (!Number.isSafeInteger(cents)) return null;
+  return negative ? -cents : cents;
+}
+
+function createWalletOperationID(type: 'recharge' | 'adjust') {
+  const randomPart = globalThis.crypto?.randomUUID?.()
+    ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `wallet-${type}-${randomPart}`;
+}
+
 export default function WalletPage() {
   const [wallet, setWallet] = useState<WalletInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalType, setModalType] = useState<'recharge' | 'adjust'>('recharge');
   const [modalAmount, setModalAmount] = useState('');
+  const [modalDescription, setModalDescription] = useState('');
+  const [clientRequestID, setClientRequestID] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const load = () => {
@@ -41,28 +60,52 @@ export default function WalletPage() {
 
   useEffect(() => { load(); }, []);
 
+  const openWalletModal = (type: 'recharge' | 'adjust') => {
+    setModalType(type);
+    setModalAmount('');
+    setModalDescription('');
+    setClientRequestID(createWalletOperationID(type));
+    setModalVisible(true);
+  };
+
+  const closeWalletModal = () => {
+    setModalVisible(false);
+    setModalAmount('');
+    setModalDescription('');
+    setClientRequestID('');
+  };
+
   const handleWalletOp = async () => {
     if (!wallet) return;
-    const amountCents = Math.round(parseFloat(modalAmount) * 100);
-    if (isNaN(amountCents) || (modalType === 'recharge' && amountCents <= 0) || (modalType === 'adjust' && amountCents === 0)) {
+    const amountCents = parseYuanToCents(modalAmount);
+    if (amountCents === null || (modalType === 'recharge' && amountCents <= 0) || (modalType === 'adjust' && amountCents === 0)) {
       Toast.error('请输入有效金额');
       return;
     }
-    const targetBalance = wallet.balance_cents + amountCents;
-    if (modalType === 'adjust' && targetBalance < 0) {
-      Toast.error('调整后余额不能小于 0');
+    const description = modalDescription.trim();
+    if (!description) {
+      Toast.error('请输入操作原因');
       return;
     }
+    const operationID = clientRequestID || createWalletOperationID(modalType);
+    if (!clientRequestID) setClientRequestID(operationID);
     setSubmitting(true);
     try {
       if (modalType === 'recharge') {
-        await api.topUp({ amount_cents: amountCents });
+        await api.topUp({
+          amount_cents: amountCents,
+          description,
+          client_request_id: operationID,
+        });
       } else {
-        await api.adjustWallet({ target_balance: targetBalance });
+        await api.adjustWallet({
+          delta_cents: amountCents,
+          description,
+          client_request_id: operationID,
+        });
       }
       Toast.success(modalType === 'recharge' ? '入账成功' : '调整成功');
-      setModalVisible(false);
-      setModalAmount('');
+      closeWalletModal();
       load();
     } catch (err: any) {
       Toast.error(err.message || '操作失败');
@@ -157,10 +200,10 @@ export default function WalletPage() {
           description="入账会增加余额；调整额度支持正负数，但调整后余额不能小于 0。"
           actions={(
             <>
-              <Button type="primary" onClick={() => { setModalType('recharge'); setModalVisible(true); }}>
+              <Button type="primary" onClick={() => openWalletModal('recharge')}>
                 入账
               </Button>
-              <Button type="tertiary" onClick={() => { setModalType('adjust'); setModalVisible(true); }}>
+              <Button type="tertiary" onClick={() => openWalletModal('adjust')}>
                 调整额度
               </Button>
             </>
@@ -182,7 +225,7 @@ export default function WalletPage() {
       <Modal
         title={modalType === 'recharge' ? '资金入账' : '调整额度'}
         visible={modalVisible}
-        onCancel={() => { setModalVisible(false); setModalAmount(''); }}
+        onCancel={closeWalletModal}
         onOk={handleWalletOp}
         confirmLoading={submitting}
         okText={modalType === 'recharge' ? '确认入账' : '确认调整'}
@@ -197,6 +240,17 @@ export default function WalletPage() {
             placeholder="请输入金额，例如 100.00"
             type="number"
           />
+          <Text style={{ display: 'block', margin: '16px 0 8px' }}>操作原因</Text>
+          <Input
+            value={modalDescription}
+            onChange={setModalDescription}
+            placeholder="请输入业务原因或工单号"
+          />
+          {modalType === 'adjust' && (
+            <Text type="tertiary" style={{ display: 'block', marginTop: 8 }}>
+              增减额会原子应用到服务器最新余额；余额不足时操作会被拒绝，不会覆盖并发消费或入账。
+            </Text>
+          )}
         </div>
       </Modal>
     </div>

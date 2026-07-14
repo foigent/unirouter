@@ -295,9 +295,9 @@ func TestP6F32FinanceAndUsageTenantIsolationIntegration(t *testing.T) {
 			assertStatus(t, serve(t, http.MethodGet, target, "", billingB, fx.orgB, auth.RoleBillingAdmin), http.StatusForbidden)
 		}
 		assertStatus(t, serve(t, http.MethodPost, "/api/v1/wallet/topup",
-			fmt.Sprintf(`{"org_id":%d,"amount_cents":10}`, fx.orgA), billingB, fx.orgB, auth.RoleBillingAdmin), http.StatusForbidden)
+			fmt.Sprintf(`{"org_id":%d,"amount_cents":10,"description":"foreign","client_request_id":"foreign-topup"}`, fx.orgA), billingB, fx.orgB, auth.RoleBillingAdmin), http.StatusForbidden)
 		assertStatus(t, serve(t, http.MethodPost, "/api/v1/wallet/adjust",
-			fmt.Sprintf(`{"org_id":%d,"target_balance":10}`, fx.orgA), billingB, fx.orgB, auth.RoleBillingAdmin), http.StatusForbidden)
+			fmt.Sprintf(`{"org_id":%d,"delta_cents":10,"description":"foreign","client_request_id":"foreign-adjust"}`, fx.orgA), billingB, fx.orgB, auth.RoleBillingAdmin), http.StatusForbidden)
 		assertStatus(t, serve(t, http.MethodPost, "/api/v1/grants",
 			fmt.Sprintf(`{"org_id":%d,"amount_cents":10,"reason":"foreign"}`, fx.orgA), billingB, fx.orgB, auth.RoleBillingAdmin), http.StatusForbidden)
 
@@ -345,7 +345,7 @@ func TestP6F32FinanceAndUsageTenantIsolationIntegration(t *testing.T) {
 			`{"amount_cents":100,"description":"own-b-topup","client_request_id":"p6f32-topup-b"}`,
 			billingB, fx.orgB, auth.RoleBillingAdmin), http.StatusOK)
 		assertStatus(t, serve(t, http.MethodPost, "/api/v1/wallet/adjust",
-			`{"target_balance":2400,"description":"own-b-adjust"}`,
+			`{"delta_cents":300,"description":"own-b-adjust","client_request_id":"p6f32-adjust-b"}`,
 			billingB, fx.orgB, auth.RoleBillingAdmin), http.StatusOK)
 		assertStatus(t, serve(t, http.MethodPost, "/api/v1/grants",
 			`{"amount_cents":50,"reason":"own-b-grant-new","client_request_id":"p6f32-grant-new-b"}`,
