@@ -5,7 +5,7 @@
 - Issue: `V1-CI-001`
 - Category: confirmed engineering/operational regression
 - Severity: High
-- Evidence level: CI verified; docs-only routing readback pending
+- Evidence level: CI verified; closed
 - PRD6 boundary: unchanged; PRD6 remains `Completed (Accepted Scope)`
 - Predecessor evidence:
   `docs/ops/evidence/V1-POST-PRD6-CI-EFFICIENCY-LOCAL-20260714.md`
@@ -47,14 +47,14 @@
    including 31 Go caches totaling `9,431,942,142` bytes. Cache
    `5576166108` is absent and shared cache `5720112747` is present.
 
-## Remaining closeout check
+## Documentation-only routing verification
 
-This documentation-only closeout pull request must provide the final routing
-readback: Change Routing succeeds while Backend Tests, Frontend Build and
-Docker Build produce explicit skipped conclusions accepted by branch
-protection, rather than missing/Pending required contexts. That result will be
-recorded by a follow-up commit in the same lightweight pull request before
-merge.
+PR #199 first evidence head
+`67e603c73b01772983c15ee5b4ba485725d70810` produced run `29300434659`.
+Change Routing completed successfully; Backend Tests, Frontend Build and Docker
+Build each produced an explicit `skipped` conclusion. The workflow completed
+successfully, no expensive job runner was started and the required contexts
+were not left missing or Pending. This closes the last `V1-CI-001` gate.
 
 No application behavior, target environment, credential, database, deployment,
 production state or PRD6 accepted-scope state changed in this verification.

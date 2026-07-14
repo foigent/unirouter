@@ -3,10 +3,10 @@
 **Batch:** V1 Post-PRD6 CI Efficiency Closeout And Micro-Ledger Plan
 **Owner:** Codex
 **Risk:** R2 repository workflow, required-check routing and CI evidence integrity
-**Status:** CI verified; main cache seeded; docs-only routing readback pending
+**Status:** CI verified; V1-CI-001 closed; V1-FIN-001 planning accepted
 **Baseline:** clean `origin/main` / `31d87def0e7c689a6bea8f4f1e39cd9583959694`
 **Branch:** `codex/v1-ci-closeout-ledger-plan`
-**PR:** pending docs-only closeout; merge only after required-context skip behavior is read back
+**PR:** #199; first docs-only run `29300434659` passed, final-head check pending
 **Decision:** User approved CI deduplication, change routing, PR concurrency, single-run optimization, fixed Go patch and evidence-based cache handling on 2026-07-14
 **Evidence:** `docs/ops/evidence/V1-POST-PRD6-CI-EFFICIENCY-LOCAL-20260714.md`, `docs/ops/evidence/V1-POST-PRD6-CI-EFFICIENCY-CI-20260714.md`
 **Next product gate:** source-preserving micro-precision billing ledger (User selected option B)
@@ -25,9 +25,9 @@
    deleted by exact ID.
 4. Final capacity readback is 32 caches / `9,503,335,891` bytes, including 31
    Go caches / `9,431,942,142` bytes. No wildcard or bulk deletion occurred.
-5. The remaining CI-efficiency gate is runtime proof that this docs-only PR
-   produces explicit skipped Backend/Frontend/Docker required contexts rather
-   than missing/Pending checks.
+5. Docs-only PR #199 first-head run `29300434659` completed successfully:
+   Change Routing passed and Backend/Frontend/Docker each reported explicit
+   `skipped`, with no expensive runner started. `V1-CI-001` is closed.
 6. `V1-FIN-001` is confirmed P0: cent truncation plus a one-cent terminal clamp
    overcharges sub-cent usage and charges zero-token calculations. User-approved
    option B is fixed in
