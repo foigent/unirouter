@@ -3,13 +3,13 @@
 **Batch:** V1 Commercial License Studio, Embedded Trust And Signed Offline Upgrade Bundle
 **Owner:** Codex
 **Risk:** R3 authorization/signing implementation; any target activation is R4
-**Status:** Implementation, browser UI and exact-code-head required CI verified; awaiting User merge decision
+**Status:** Merged and CI verified; production key ceremony and target activation pending separate decisions
 **Baseline:** clean `origin/main` / `e94a4b184a6f675d76c292602b7c18293ab2ce61`
-**Branch:** `codex/v1-commercial-license-upgrade`
-**PR:** #205 open; code-bearing head `cd05055afe25cedff77830230d2788d8f06c96b3` passed required CI run `29359673125`
+**Branch:** implementation branch `codex/v1-commercial-license-upgrade` merged to `main`
+**PR:** #205 squash-merged as `5c1313521870731b0164d4eecfbbb06d7a7f0704`; final head `f1fdee12499aa399e63f205a00040d772425e7df` passed required CI run `29360683242`
 **Decision:** User requires commercial authorization enforcement, signed upgrades and a click-only License generation program before customer delivery
-**Evidence:** `docs/planning/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-CONTRACT-20260714.md`; `docs/ops/evidence/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-LOCAL-20260715.md`; `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-LOCAL-20260715.md`; `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-CI-20260715.md`
-**Next product gate:** User decision on PR #205 merge; production key ceremony and any non-production target activation remain separate decisions
+**Evidence:** `docs/planning/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-CONTRACT-20260714.md`; `docs/ops/evidence/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-LOCAL-20260715.md`; `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-LOCAL-20260715.md`; `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-CI-20260715.md`; `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-MERGE-20260715.md`
+**Next product gate:** production key custody/ceremony and any non-production target activation remain separate decisions
 **Previous batch:** PR #204 documentation closeout after V1 micro-ledger PR #202 and environment-label PR #203
 **Previous phase:** PRD5 Accepted Scope Complete; its Batch 1Z historical target backend was `95d1da9` / PR #133 and is now superseded on the same target by this PRD6 deployment
 
@@ -119,7 +119,8 @@
   `docs/ops/evidence/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-LOCAL-20260715.md`
   and
   `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-LOCAL-20260715.md` and
-  `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-CI-20260715.md`.
+  `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-CI-20260715.md` and
+  `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-MERGE-20260715.md`.
 
 ## Previous CI Efficiency Result
 
