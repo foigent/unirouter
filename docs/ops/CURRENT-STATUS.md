@@ -41,6 +41,13 @@
 > PR required CI is pending; merge, ECS
 > drain/migration/deployment and X-Insight v2 consumer acceptance remain gated.
 > Evidence: `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-LOCAL-20260714.md`.
+> `V1-BUILD-CONTEXT-001` is CI verified / closed by PR #195:
+> backend and independent frontend Docker contexts exclude local environment,
+> private-key and generated files; the backend performs a post-copy invariant
+> check and required CI uses root, nested and private-key regression markers
+> without repeating the expensive backend build. Exact head `8a082cf` passed
+> run `29333175230`, including the real Docker assertions, and squash-merged as
+> `65a0d07`. No image was deployed to ECS.
 > PRD6 Batch 0B P6-F16 was squash-merged by PR #140 as
 > `f244f669c529fec8767f85fff209882b333d8ed2`. P6-F33 was squash-merged by
 > PR #142 as `7173c5967a42c112fd0b219938a0901c1a0b9633`; its PR and post-merge
