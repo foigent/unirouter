@@ -313,7 +313,7 @@ export default function DashboardPage() {
       <div className="ur-page">
         <section className="ur-dashboard-hero">
           <PageHeader
-            eyebrow="Platform Overview"
+            eyebrow="概览"
             title="平台总览"
             description="统一观察请求量、成功率、延迟、成本和渠道健康状态。"
             actions={(

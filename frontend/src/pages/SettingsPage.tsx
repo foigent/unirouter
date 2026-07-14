@@ -43,7 +43,7 @@ export default function SettingsPage() {
   return (
     <div className="ur-page">
       <PageHeader
-        eyebrow="System"
+        eyebrow="系统治理"
         title="系统设置"
         description="管理当前账号信息、密码和系统入口信息。"
       />

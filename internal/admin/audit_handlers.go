@@ -56,9 +56,9 @@ func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Cross-organization access denied"})
 			return
 		}
-		addCondition("org_id", actorOrgID)
+		addCondition("a.org_id", actorOrgID)
 	} else if hasOrgFilter {
-		addCondition("org_id", requestedOrgID)
+		addCondition("a.org_id", requestedOrgID)
 	}
 
 	requestedProjectID, hasProjectFilter, ok := parsePositiveIntFilter("project_id")
@@ -70,7 +70,7 @@ func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Cross-organization project access denied"})
 			return
 		}
-		addCondition("project_id", requestedProjectID)
+		addCondition("a.project_id", requestedProjectID)
 	}
 
 	addIntFilter := func(queryKey, column string) bool {
@@ -83,7 +83,7 @@ func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 		}
 		return true
 	}
-	if !addIntFilter("actor_id", "user_id") || !addIntFilter("user_id", "user_id") {
+	if !addIntFilter("actor_id", "a.user_id") || !addIntFilter("user_id", "a.user_id") {
 		return
 	}
 	addStringFilter := func(queryKey, column string) {
@@ -95,18 +95,18 @@ func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 		args = append(args, value)
 		argIdx++
 	}
-	addStringFilter("action", "action")
-	addStringFilter("resource", "resource")
-	addStringFilter("resource_id", "resource_id")
-	addStringFilter("request_id", "request_id")
-	addStringFilter("client_request_id", "client_request_id")
+	addStringFilter("action", "a.action")
+	addStringFilter("resource", "a.resource")
+	addStringFilter("resource_id", "a.resource_id")
+	addStringFilter("request_id", "a.request_id")
+	addStringFilter("client_request_id", "a.client_request_id")
 	if rawSource := strings.TrimSpace(r.URL.Query().Get("source")); rawSource != "" {
 		source := normalizeAuditSource(rawSource)
 		if !isValidAuditSource(source) {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid source"})
 			return
 		}
-		conditions = append(conditions, fmt.Sprintf("source = $%d", argIdx))
+		conditions = append(conditions, fmt.Sprintf("a.source = $%d", argIdx))
 		args = append(args, source)
 		argIdx++
 	}
@@ -116,7 +116,7 @@ func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid start_time"})
 			return
 		}
-		conditions = append(conditions, fmt.Sprintf("created_at >= $%d", argIdx))
+		conditions = append(conditions, fmt.Sprintf("a.created_at >= $%d", argIdx))
 		args = append(args, startAt)
 		argIdx++
 	}
@@ -126,7 +126,7 @@ func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid end_time"})
 			return
 		}
-		conditions = append(conditions, fmt.Sprintf("created_at <= $%d", argIdx))
+		conditions = append(conditions, fmt.Sprintf("a.created_at <= $%d", argIdx))
 		args = append(args, endAt)
 		argIdx++
 	}
@@ -137,16 +137,22 @@ func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var total int
-	if err := h.db.QueryRow(r.Context(), fmt.Sprintf(`SELECT COUNT(*) FROM audit_logs %s`, where), args...).Scan(&total); err != nil {
+	if err := h.db.QueryRow(r.Context(), fmt.Sprintf(`SELECT COUNT(*) FROM audit_logs a %s`, where), args...).Scan(&total); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Count failed"})
 		return
 	}
 
 	query := fmt.Sprintf(
-		`SELECT id, org_id, COALESCE(project_id, 0), user_id, action, resource, resource_id,
-		        detail, COALESCE(before_state, '{}'::jsonb), COALESCE(after_state, '{}'::jsonb),
-		        ip, user_agent, request_id, COALESCE(source, 'admin_console'), COALESCE(client_request_id, ''), created_at
-		 FROM audit_logs %s ORDER BY id DESC LIMIT $%d OFFSET $%d`,
+		`SELECT a.id, a.org_id, COALESCE(a.project_id, 0), a.user_id,
+		        COALESCE(o.name, ''), COALESCE(p.name, ''), COALESCE(u.username, ''),
+		        a.action, a.resource, a.resource_id,
+		        a.detail, COALESCE(a.before_state, '{}'::jsonb), COALESCE(a.after_state, '{}'::jsonb),
+		        a.ip, a.user_agent, a.request_id, COALESCE(a.source, 'admin_console'), COALESCE(a.client_request_id, ''), a.created_at
+		 FROM audit_logs a
+		 LEFT JOIN orgs o ON o.id = a.org_id
+		 LEFT JOIN projects p ON p.id = a.project_id AND p.org_id = a.org_id
+		 LEFT JOIN users u ON u.id = a.user_id AND (u.org_id = a.org_id OR u.role IN ('admin', 'platform_admin'))
+		 %s ORDER BY a.id DESC LIMIT $%d OFFSET $%d`,
 		where, argIdx, argIdx+1,
 	)
 	args = append(args, pageSize, offset)
@@ -160,10 +166,10 @@ func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	logs := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var id, orgID, projectID, userID int64
-		var action, resource, resourceID, ip, userAgent, requestID, source, clientRequestID string
+		var orgName, projectName, actorName, action, resource, resourceID, ip, userAgent, requestID, source, clientRequestID string
 		var detail, beforeState, afterState []byte
 		var createdAt time.Time
-		if err := rows.Scan(&id, &orgID, &projectID, &userID, &action, &resource, &resourceID, &detail, &beforeState, &afterState, &ip, &userAgent, &requestID, &source, &clientRequestID, &createdAt); err != nil {
+		if err := rows.Scan(&id, &orgID, &projectID, &userID, &orgName, &projectName, &actorName, &action, &resource, &resourceID, &detail, &beforeState, &afterState, &ip, &userAgent, &requestID, &source, &clientRequestID, &createdAt); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 			return
 		}
@@ -172,7 +178,8 @@ func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 			projectValue = projectID
 		}
 		logs = append(logs, map[string]interface{}{
-			"id": id, "org_id": orgID, "project_id": projectValue, "actor_id": userID, "user_id": userID,
+			"id": id, "org_id": orgID, "org_name": orgName, "project_id": projectValue, "project_name": projectName,
+			"actor_id": userID, "actor_name": actorName, "user_id": userID,
 			"action": action, "resource": resource, "resource_id": resourceID,
 			"detail": json.RawMessage(detail), "before": json.RawMessage(beforeState), "after": json.RawMessage(afterState),
 			"ip": ip, "user_agent": userAgent, "request_id": requestID, "client_request_id": clientRequestID,

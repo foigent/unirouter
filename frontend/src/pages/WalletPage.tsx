@@ -139,7 +139,7 @@ export default function WalletPage() {
   return (
     <div className="ur-page">
       <PageHeader
-        eyebrow="Billing"
+        eyebrow="财务治理"
         title="资金账户"
         description="查看组织可用现金、可用赠送额度、冻结金额和低余额告警阈值。管理员可进行现金入账和额度调整。"
         actions={(

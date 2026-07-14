@@ -59,7 +59,7 @@ const endpointGroups = [
     ],
   },
   {
-    area: 'PRD2 Product',
+    area: '产品与运行状态',
     endpoints: [
       ['GET', '/api/v1/usage/analytics', '用量钻取聚合与 CSV 导出'],
       ['GET', '/api/v1/internal-status', '内部状态与事件历史'],

@@ -76,6 +76,7 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
     render(<ChannelsPage />);
 
     expect(await screen.findByText('primary-cn')).toBeTruthy();
+    expect(mocks.getChannels).toHaveBeenCalledWith(1, 20);
     expect(screen.getByText('同级权重')).toBeTruthy();
     expect(screen.getByText(/熔断阈值决定连续失败多少次/)).toBeTruthy();
     expect(screen.getByText(/真实请求按服务器请求 ID 确定/)).toBeTruthy();

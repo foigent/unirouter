@@ -32,7 +32,7 @@ describe('AuditLogsPage', () => {
     });
   });
 
-  it('renders PRD2 audit filters and loads with filter argument', async () => {
+  it('renders audit filters and loads with filter argument', async () => {
     const { container } = render(<AuditLogsPage />);
 
     await waitFor(() => {
@@ -52,7 +52,7 @@ describe('AuditLogsPage', () => {
     expect(container.querySelector('input[placeholder="目标 ID"]')).toBeTruthy();
     expect(container.querySelector('input[placeholder="操作 ID（Request ID）"]')).toBeTruthy();
     expect(container.querySelector('input[placeholder="客户端请求 ID"]')).toBeTruthy();
-    expect(container.querySelector('input[placeholder="开始时间 RFC3339"]')).toBeTruthy();
-    expect(container.querySelector('input[placeholder="结束时间 RFC3339"]')).toBeTruthy();
+    expect(container.querySelector('input[placeholder="开始时间"]')).toBeTruthy();
+    expect(container.querySelector('input[placeholder="结束时间"]')).toBeTruthy();
   });
 });

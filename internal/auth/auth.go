@@ -41,7 +41,9 @@ func VerifyAPIKey(rawKey, storedHash, secret string) bool {
 }
 
 // GenerateAPIKey generates a new API key for the given org.
-// Format: ur-{org_id_4位}-{random_32字符} per PRD spec
+// The raw format is ur-{4-digit org id}-{32 random hex characters}. The stored
+// display prefix is the first 12 characters: the fixed org segment plus four
+// random hex characters. Authentication always uses the full-key HMAC hash.
 func GenerateAPIKey(orgID int64) (rawKey string, keyPrefix string, err error) {
 	buf := make([]byte, 16)
 	if _, err := rand.Read(buf); err != nil {
@@ -50,7 +52,7 @@ func GenerateAPIKey(orgID int64) (rawKey string, keyPrefix string, err error) {
 	hexStr := hex.EncodeToString(buf) // 32 chars
 	orgPart := fmt.Sprintf("%04d", orgID%10000)
 	rawKey = fmt.Sprintf("ur-%s-%s", orgPart, hexStr)
-	keyPrefix = rawKey[:12] // "ur-XXXX-XXXXXXXX" = 16 chars, but we take first 12 for prefix storage
+	keyPrefix = rawKey[:12]
 	return rawKey, keyPrefix, nil
 }
 

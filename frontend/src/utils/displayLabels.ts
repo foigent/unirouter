@@ -176,7 +176,7 @@ export function eventStatusLabel(value?: string) {
 }
 
 const deliveryStateLabels: Record<string, string> = {
-  not_configured: '未配置',
+  not_configured: '未配置 Webhook',
   pending: '待投递',
   delivered: '已投递',
   failed: '投递失败',
@@ -199,6 +199,36 @@ export const deliveryStatusOptions: SelectOption[] = [
 
 export function deliveryStateLabel(value?: string) {
   return deliveryStateLabels[value || ''] || value || '-';
+}
+
+const notificationResourceLabels: Record<string, string> = {
+  api_key: '访问凭证',
+  channel: '上游通道',
+  project: '项目',
+  model: '模型',
+  license: 'License',
+  wallet: '资金账户',
+};
+
+export function notificationResourceLabel(resource?: string, resourceId?: string | number | null) {
+  if (!resource) return '-';
+  const label = notificationResourceLabels[resource] || resource;
+  return resourceId !== undefined && resourceId !== null && String(resourceId) !== ''
+    ? `${label} #${resourceId}`
+    : label;
+}
+
+export function notificationTitleLabel(eventType?: string, title?: string) {
+  if (eventType === 'api_key.disabled') return '访问凭证已停用';
+  return title || '-';
+}
+
+export function notificationMessageLabel(eventType?: string, message?: string) {
+  if (eventType === 'api_key.disabled') {
+    const match = String(message || '').match(/^API key (.+) was disabled$/);
+    if (match) return `访问凭证 ${match[1]} 已停用`;
+  }
+  return message || '-';
 }
 
 const internalStatusLabels: Record<string, string> = {

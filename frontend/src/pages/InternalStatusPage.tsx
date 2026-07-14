@@ -6,7 +6,7 @@ import { api } from '../api/client';
 import { canReadRuntimeStatus } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, MetricTile, PageHeader, StatusTag, Surface } from '../ui';
-import { deliveryStateLabel, eventStatusLabel, eventTypeLabel, internalStatusLabel, severityLabel } from '../utils/displayLabels';
+import { deliveryStateLabel, eventStatusLabel, eventTypeLabel, internalStatusLabel, notificationResourceLabel, severityLabel } from '../utils/displayLabels';
 
 const { Text } = Typography;
 
@@ -360,7 +360,7 @@ export default function InternalStatusPage() {
     { title: '级别', dataIndex: 'severity', key: 'severity', render: (value: string) => <StatusTag status={value}>{severityLabel(value)}</StatusTag> },
     { title: '事件状态', dataIndex: 'status', key: 'status', render: (value: string) => <StatusTag status={value}>{eventStatusLabel(value)}</StatusTag> },
     { title: '投递', dataIndex: 'delivery_state', key: 'delivery_state', render: (value: string) => <StatusTag status={value}>{deliveryStateLabel(value)}</StatusTag> },
-    { title: '资源', key: 'resource', render: (_: unknown, row: Incident) => row.resource ? `${row.resource}:${row.resource_id || '-'}` : '-' },
+    { title: '资源', key: 'resource', render: (_: unknown, row: Incident) => notificationResourceLabel(row.resource, row.resource_id) },
     { title: '时间', dataIndex: 'created_at', key: 'created_at', render: (value: string) => value ? new Date(value).toLocaleString() : '-' },
   ];
 
@@ -377,7 +377,7 @@ export default function InternalStatusPage() {
         <MetricTile label="当前状态" value={<StatusTag status={data?.status || 'operational'}>{internalStatusLabel(data?.status || 'operational')}</StatusTag>} icon={<IconServer />} tone={data?.status === 'degraded' ? 'red' : data?.status === 'warning' ? 'amber' : 'green'} meta="基于通知事件聚合" />
         <MetricTile label="Open 严重事件" value={data?.open_critical || 0} icon={<IconAlertTriangle />} tone={(data?.open_critical || 0) > 0 ? 'red' : 'slate'} meta="severity = critical 且 status = open" />
         <MetricTile label="Open 预警事件" value={data?.open_warning || 0} icon={<IconBell />} tone={(data?.open_warning || 0) > 0 ? 'amber' : 'slate'} meta="severity = warning 且 status = open" />
-        <MetricTile label="维护窗口" value="未启用" icon={<IconServer />} tone="slate" meta="当前接口保留空数组，调度能力进入 PRD4" />
+        <MetricTile label="维护窗口" value="未启用" icon={<IconServer />} tone="slate" meta="当前版本未启用维护窗口调度" />
       </div>
 
       {canViewRuntime && (

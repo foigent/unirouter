@@ -78,9 +78,9 @@ export default function ChannelsPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [preview, setPreview] = useState<RoutingPreview | null>(null);
 
-  const load = (p = page) => {
+  const load = (p = page, size = pageSize) => {
     setLoading(true);
-    api.getChannels(p)
+    api.getChannels(p, size)
       .then((data) => {
         setChannels(data.data || []);
         setTotal(data.total || 0);
@@ -89,7 +89,7 @@ export default function ChannelsPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(1); }, []);
+  useEffect(() => { load(1, pageSize); }, []);
 
   const closeDrawer = () => { setShowDrawer(false); setEditing(null); };
 
@@ -180,27 +180,31 @@ export default function ChannelsPage() {
   const openEdit = (record: Channel) => {
     setEditing(record);
     setShowDrawer(true);
-    setTimeout(() => {
-      formApi?.setValues({
-        name: record.name,
-        provider: record.provider,
-        base_url: record.base_url,
-        models: record.models,
-        adapter_type: record.adapter_type || 'openai_compatible',
-        adapter_config: formatAdapterConfig(record.adapter_config),
-        priority: record.priority,
-        routing_weight: record.routing_weight,
-        degradation_threshold: record.degradation_threshold,
-      });
-    }, 100);
   };
 
   const openCreate = () => {
     setEditing(null);
     setShowDrawer(true);
-    formApi?.reset();
-    setTimeout(() => formApi?.setValues({ adapter_type: 'openai_compatible', adapter_config: '{}' }), 0);
   };
+
+  useEffect(() => {
+    if (!showDrawer || !formApi) return;
+    formApi.reset();
+    formApi.setValues(editing ? {
+      name: editing.name,
+      provider: editing.provider,
+      base_url: editing.base_url,
+      models: editing.models,
+      adapter_type: editing.adapter_type || 'openai_compatible',
+      adapter_config: formatAdapterConfig(editing.adapter_config),
+      priority: editing.priority,
+      routing_weight: editing.routing_weight,
+      degradation_threshold: editing.degradation_threshold,
+    } : {
+      adapter_type: 'openai_compatible',
+      adapter_config: '{}',
+    });
+  }, [editing, formApi, showDrawer]);
 
   const columns = [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
@@ -315,8 +319,8 @@ export default function ChannelsPage() {
               total,
               pageSizeOpts: [20, 50, 100],
               showSizeChanger: true,
-              onPageChange: (p: number) => { setPage(p); load(p); },
-              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1); },
+              onPageChange: (p: number) => { setPage(p); load(p, pageSize); },
+              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1, s); },
             }}
           />
         </div>

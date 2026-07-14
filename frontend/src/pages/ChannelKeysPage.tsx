@@ -8,10 +8,19 @@ interface ChannelKey {
   id: number;
   channel_id: number;
   channel_name: string;
-  api_key: string;
   key_prefix: string;
+  allowed_models: string;
   status: string;
   created_at: string;
+}
+
+function normalizeAllowedModels(value: unknown) {
+  return String(value || '')
+    .split(/[,，\n]/)
+    .map(model => model.trim())
+    .filter(Boolean)
+    .filter((model, index, models) => models.indexOf(model) === index)
+    .join(',');
 }
 
 export default function ChannelKeysPage() {
@@ -49,15 +58,19 @@ export default function ChannelKeysPage() {
   const handleSubmit = async (values: Record<string, any>) => {
     try {
       if (editing) {
-        await api.updateChannelKey(editing.id, {
+        const payload: Record<string, any> = {
           channel_id: parseInt(values.channel_id),
-          key: values.api_key,
-        });
+          allowed_models: normalizeAllowedModels(values.allowed_models),
+          status: values.status,
+        };
+        if (String(values.api_key || '').trim()) payload.key = String(values.api_key).trim();
+        await api.updateChannelKey(editing.id, payload);
         Toast.success('更新成功');
       } else {
         await api.createChannelKey({
           channel_id: parseInt(values.channel_id),
-          key: values.api_key,
+          key: String(values.api_key || '').trim(),
+          allowed_models: normalizeAllowedModels(values.allowed_models),
         });
         Toast.success('创建成功');
       }
@@ -85,35 +98,42 @@ export default function ChannelKeysPage() {
   const openEdit = (record: ChannelKey) => {
     setEditing(record);
     setShowDrawer(true);
-    setTimeout(() => {
-      formApi?.setValues({
-        channel_id: record.channel_id,
-        api_key: '',
-      });
-    }, 100);
   };
 
   const openCreate = () => {
     setEditing(null);
     setShowDrawer(true);
-    formApi?.reset();
   };
+
+  useEffect(() => {
+    if (!showDrawer || !formApi) return;
+    formApi.reset();
+    if (editing) {
+      formApi.setValues({
+        channel_id: editing.channel_id,
+        api_key: '',
+        allowed_models: editing.allowed_models || '',
+        status: editing.status,
+      });
+    }
+  }, [editing, formApi, showDrawer]);
 
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 60 },
     { title: '渠道', dataIndex: 'channel_name', render: (v: string) => v || '-' },
-    { title: 'Key 前缀', dataIndex: 'key_prefix', render: (v: string) => <code>{v}***</code> },
+    { title: '加密标识', dataIndex: 'key_prefix', render: (v: string) => <code>{v}</code> },
+    { title: '允许模型', dataIndex: 'allowed_models', render: (v: string) => v || '全部' },
     {
       title: '状态', dataIndex: 'status', width: 80,
-      render: (v: string) => <StatusTag status={v}>{v}</StatusTag>,
+      render: (v: string) => <StatusTag status={v}>{v === 'active' ? '启用' : v === 'disabled' ? '停用' : v}</StatusTag>,
     },
     { title: '创建时间', dataIndex: 'created_at', width: 180 },
     {
       title: '操作', width: 120,
       render: (_: any, record: ChannelKey) => (
         <Space>
-          <Button icon={<IconEdit />} size="small" onClick={() => openEdit(record)} />
-          <Button icon={<IconDelete />} size="small" type="danger" onClick={() => handleDelete(record.id)} />
+          <Button aria-label={`编辑上游凭证 ${record.channel_name}`} icon={<IconEdit />} size="small" onClick={() => openEdit(record)} />
+          <Button aria-label={`删除上游凭证 ${record.channel_name}`} icon={<IconDelete />} size="small" type="danger" onClick={() => handleDelete(record.id)} />
         </Space>
       ),
     },
@@ -124,7 +144,7 @@ export default function ChannelKeysPage() {
       <PageHeader
         eyebrow="流量治理"
         title="上游凭证"
-        description="管理每个上游通道绑定的供应商访问凭证。"
+        description="管理每个上游通道绑定的供应商访问凭证及其精确模型白名单；加密标识用于区分记录，并非供应商 Key 前缀。"
         actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增上游凭证</Button>}
       />
 
@@ -156,10 +176,22 @@ export default function ChannelKeysPage() {
           <Form.Input
             field="api_key"
             label="上游凭证"
-            rules={[{ required: true, message: '必填' }]}
-            placeholder={editing ? '输入新的上游凭证，保存后会重置冷却状态' : 'sk-...'}
-            extraText={editing ? '出于安全原因，已有密钥不会回显；请输入新的完整密钥。' : undefined}
+            rules={editing ? [] : [{ required: true, message: '必填' }]}
+            placeholder={editing ? '留空表示不更换现有凭证' : 'sk-...'}
+            extraText={editing ? '已有凭证不会回显；只有需要轮换时才输入新的完整凭证。' : undefined}
           />
+          <Form.Input
+            field="allowed_models"
+            label="允许模型（逗号分隔，留空=全部）"
+            placeholder="deepseek-chat,deepseek-reasoner"
+            extraText="必须使用模型定价/模型治理中的精确模型标识；中文逗号会在保存时规范为英文逗号。"
+          />
+          {editing && <Form.Select
+            field="status"
+            label="状态"
+            optionList={[{ label: '启用', value: 'active' }, { label: '停用', value: 'disabled' }]}
+            rules={[{ required: true, message: '必填' }]}
+          />}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
             <Button onClick={closeDrawer}>取消</Button>
             <Button type="primary" onClick={() => formApi?.submitForm()}>{editing ? '更新' : '创建'}</Button>
