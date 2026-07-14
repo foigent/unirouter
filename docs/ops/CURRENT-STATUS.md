@@ -30,12 +30,13 @@
 > `000036`, exact API/UI strings, outbox/Redis v2, migrated PostgreSQL and real
 > local browser flows passed. Price and organization-multiplier mutations also
 > reject exact effective-price overflow atomically and serialize cross-table
-> races by model. `V1-PRICE-RENAME-001` remains decision-gated: source/schema
-> tracing proves that renaming only a base-price row does not migrate the
-> independently owned organization, routing or model-governance references;
-> the recommended V1 behavior is an immutable model name on update, but P6-F34
-> explicitly accepted rename serialization so this API change is not being
-> made silently. The unused initial `web/admin` bundle was also removed after
+> races by model. The User approved the `V1-PRICE-RENAME-001` V1 compatibility
+> change after source/schema tracing proved that renaming only a base-price row
+> does not migrate independently owned organization, routing or model-governance
+> references. Model identity is now immutable on update: a different name is
+> rejected before price/audit mutation, while the edit UI keeps the identity
+> outside the submitted form. Migrated PostgreSQL and frontend regressions pass.
+> The unused initial `web/admin` bundle was also removed after
 > proving the current release uses the independent Nginx frontend image. Draft
 > PR required CI is pending; merge, ECS
 > drain/migration/deployment and X-Insight v2 consumer acceptance remain gated.

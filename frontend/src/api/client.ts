@@ -272,7 +272,7 @@ export const api = {
   getModelNames: () => request('/model-names'),
   createModelPrice: (data: { model_name: string; input_price_cny_per_million_tokens: string; output_price_cny_per_million_tokens: string; cache_read_ratio?: string; cache_creation_ratio?: string }) =>
     request('/model-prices', { method: 'POST', body: JSON.stringify(data) }),
-  updateModelPrice: (id: number, data: { model_name?: string; input_price_cny_per_million_tokens?: string; output_price_cny_per_million_tokens?: string; cache_read_ratio?: string; cache_creation_ratio?: string }) =>
+  updateModelPrice: (id: number, data: { input_price_cny_per_million_tokens?: string; output_price_cny_per_million_tokens?: string; cache_read_ratio?: string; cache_creation_ratio?: string }) =>
     request(`/model-prices/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteModelPrice: (id: number) =>
     request(`/model-prices/${id}`, { method: 'DELETE' }),

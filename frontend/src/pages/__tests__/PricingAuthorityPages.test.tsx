@@ -56,6 +56,29 @@ describe('pricing authority pages', () => {
     expect(screen.getByText('操作')).toBeTruthy();
   });
 
+  it('keeps the model identity immutable while editing and omits it from updates', async () => {
+    useAuthStore.setState({ user: { id: 1, username: 'platform', role: 'platform_admin', org_id: 11 } });
+
+    render(<ModelPricesPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '编辑价格' }));
+    const modelName = await screen.findByLabelText('模型名称') as HTMLInputElement;
+    await waitFor(() => expect(modelName.value).toBe('gpt-4o'));
+    expect(modelName.disabled).toBe(true);
+    expect(screen.getByText(/模型名称是计费、组织倍率、路由和模型治理共同使用的稳定标识/)).toBeTruthy();
+	const inputPrice = screen.getByLabelText('输入价格（CNY/百万 tokens）') as HTMLInputElement;
+	await waitFor(() => expect(inputPrice.value).toBe('50'));
+
+    fireEvent.click(screen.getByRole('button', { name: '更新' }));
+    await waitFor(() => expect(mocks.updateModelPrice).toHaveBeenCalledWith(7, {
+      input_price_cny_per_million_tokens: '50',
+      output_price_cny_per_million_tokens: '150',
+      cache_read_ratio: '0.1',
+      cache_creation_ratio: '1.25',
+    }));
+    expect(mocks.updateModelPrice.mock.calls[0][1]).not.toHaveProperty('model_name');
+  });
+
   it('loads an organization administrator own multiplier without a hard-coded org id', async () => {
     useAuthStore.setState({ user: { id: 2, username: 'org', role: 'org_admin', org_id: 22 } });
 

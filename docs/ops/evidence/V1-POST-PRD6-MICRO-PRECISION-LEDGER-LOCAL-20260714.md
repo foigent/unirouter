@@ -19,7 +19,7 @@
 |---|---|---|---|---|---|
 | `V1-FIN-001` | confirmed bug/regression | Critical / P0; sub-cent calls could be overcharged and zero use could be charged one cent | Binary floating-point calculation was truncated to integer cents and both calculation and settlement applied a one-cent terminal minimum | UniRouter billing, wallet, gateway, control-plane API/UI | Canonical checked `int64` micro-CNY, exact price snapshots, one half-up total rounding, no terminal minimum, source-preserving cash/grant settlement, migrated PostgreSQL/race tests and real local API/UI readback |
 | `V1-PRICE-RANGE-001` | confirmed bug/regression | High / P1 availability and financial-control integrity; an accepted price could make a model fail closed at quote time | Public base-price, cache-ratio and organization-multiplier fields were each bounded, but create/update did not validate their exact effective combination | UniRouter pricing authority API/database transaction | All four base-price/organization-multiplier create/update paths now take a common per-model transaction lock, validate the same exact half-up `int64` boundary as runtime, and return `400` with no write or audit on overflow; pricing pages expose the server reason instead of replacing it with a generic failure. Migrated integration coverage proves each rollback and a concurrent cross-table race permits only one safe commit |
-| `V1-PRICE-RENAME-001` | confirmed bug/regression; product/API decision required | High / P1 routing and billing availability; renaming one price row can leave the routed model unpriced, orphan organization multipliers or attach pre-existing multipliers to the new name | The price update API treats `model_name` as mutable, while billing joins base and organization prices by exact name and model governance, aliases, model sets and channel mappings own independent references with no rename cascade | UniRouter pricing authority API/UI, with routing and model-governance boundaries | Verified by source/schema tracing; no mutation has been made because PRD6 P6-F34 explicitly accepted serialized renames. Recommended V1 resolution is to make `model_name` immutable on update, disable it in the edit UI and require an explicit create plus separately reviewed reference migration. A cross-domain atomic rename would be new product scope. User decision and corresponding reject/no-write/no-audit tests remain pending |
+| `V1-PRICE-RENAME-001` | confirmed bug/regression | High / P1 routing and billing availability; renaming one price row can leave the routed model unpriced, orphan organization multipliers or attach pre-existing multipliers to the new name | The price update API treated `model_name` as mutable, while billing joins base and organization prices by exact name and model governance, aliases, model sets and channel mappings own independent references with no rename cascade | UniRouter pricing authority API/UI, with routing and model-governance boundaries | The User selected immutable V1 identity. PUT now rejects a different name before any price write or audit, accepts an exact same-name compatibility field only alongside mutable updates, and the edit UI renders the identity outside the submitted form. Migrated PostgreSQL proves rejection leaves the base row, organization multipliers, billing quote and audit count unchanged; frontend behavior coverage proves the disabled identity and name-free update payload. A rename now requires explicit create plus separately reviewed reference migration |
 | `V1-MIG-SEQ-001` | confirmed bug/regression | High / P1; the first organization creation on a fresh install could fail once with duplicate `orgs.id=1` | Historical migration `000001` inserted the platform organization with an explicit id without advancing `orgs_id_seq` | UniRouter schema/migration | `000036` advances but never rewinds the sequence to at least the current maximum; integration coverage asserts the next generated organization id is beyond all existing ids |
 | `V1-UI-MONEY-001` | confirmed bug/regression | High / P1 financial-display accuracy; balances containing micro-CNY could look unchanged | API values were exact strings but default wallet/dashboard formatting rounded them to two decimals | UniRouter frontend | BigInt formatting remains compact for cent-aligned values and automatically renders six decimals when sub-cent evidence exists; browser readback displayed `10000.000002` exactly |
 | `V1-REPO-UI-ARTIFACT-001` | confirmed documentation/release-hygiene defect | Medium / P2; developers or packagers could mistake an obsolete PRD1 bundle with cent-based UI for the current release | Three tracked `web/admin` build artifacts survived the move to an independent frontend image, while the frontend technical reference still claimed Go embedding | UniRouter build/docs | Source and Docker search proved the current backend never references or copies `web/admin`; the independent frontend image rebuilds `frontend/dist` into Nginx. The three obsolete files were removed one explicit path at a time and the technical reference now states the real build boundary |
@@ -90,6 +90,14 @@ left untouched.
   `0.00001` / `1234567890123.12345` CNY per million tokens and
   `0.123456` / `99.999999` cache multipliers without JavaScript number
   coercion. That one explicit local test row was then deleted through the UI.
+- A fresh migrated browser/API/database check opened the edit drawer for
+  `v1-immutable-browser`, rendered the model identity as disabled with the
+  explicit migration guidance, and preserved `1.25` / `2.5` prices plus
+  `0.1` / `1.25` cache ratios. Updating the input price to `1.5` succeeded
+  without changing the identity. A direct PUT that combined a different
+  `model_name` with price `999` returned `400`; PostgreSQL retained the prior
+  price row and organization multiplier, created no renamed row and recorded
+  no audit event for the rejected request.
 - Migrated pricing-authority integration sent overflow combinations through
   each base-price and organization-multiplier create/update endpoint. Every
   request returned `400`, retained its prior row and wrote no audit event. A
@@ -106,7 +114,9 @@ left untouched.
   affect these flows.
 - Local screenshots are retained in ignored test artifacts:
   `output/playwright/v1-micro-ledger-wallet-local.png` and
-  `output/playwright/v1-micro-ledger-reconciliation-local.png`.
+  `output/playwright/v1-micro-ledger-reconciliation-local.png`, plus
+  `output/playwright/v1-model-price-immutable-local.png` for the immutable
+  model-price identity.
 
 ## Local regression gates
 

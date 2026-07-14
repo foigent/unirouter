@@ -4910,7 +4910,7 @@ func TestUpdateModelPrice_Success(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"input_price_cny_per_million_tokens":100,"output_price_cny_per_million_tokens":300}`
+	body := `{"model_name":"gpt-4o","input_price_cny_per_million_tokens":100,"output_price_cny_per_million_tokens":300}`
 	req := platformPricingRequest("PUT", "/model-prices/1", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "1")

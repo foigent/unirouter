@@ -548,15 +548,14 @@ func (h *Handler) UpdateModelPrice(w http.ResponseWriter, r *http.Request) {
 	var sets []string
 	var args []interface{}
 	argIdx := 1
+	var requestedModelName *string
 	if req.ModelName != nil {
 		modelName := strings.TrimSpace(*req.ModelName)
 		if modelName == "" {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "model_name must not be empty"})
 			return
 		}
-		sets = append(sets, fmt.Sprintf("model_name = $%d", argIdx))
-		args = append(args, modelName)
-		argIdx++
+		requestedModelName = &modelName
 	}
 	if req.InputPriceCNYPerMillion != nil {
 		inputPriceCents, valid := normalizePublicModelPrice(req.InputPriceCNYPerMillion)
@@ -598,7 +597,7 @@ func (h *Handler) UpdateModelPrice(w http.ResponseWriter, r *http.Request) {
 		args = append(args, cacheCreationRatio)
 		argIdx++
 	}
-	if len(sets) == 0 {
+	if len(sets) == 0 && requestedModelName == nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "No fields to update"})
 		return
 	}
@@ -622,15 +621,20 @@ func (h *Handler) UpdateModelPrice(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Model price not found"})
 		return
 	}
-	modelNames := []string{probe.ModelName}
-	if req.ModelName != nil {
-		modelNames = append(modelNames, strings.TrimSpace(*req.ModelName))
+	if requestedModelName != nil && *requestedModelName != probe.ModelName {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"error": "model_name is immutable; create a new price record and migrate references explicitly",
+		})
+		return
 	}
-	lockKeys := make([]string, 0, len(modelNames)*2)
-	for _, modelName := range modelNames {
-		lockKeys = append(lockKeys, effectiveModelPriceLockKey(modelName), "model_price:"+modelName)
+	if len(sets) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "No mutable fields to update"})
+		return
 	}
-	if err := lockPriceMutationKeys(r.Context(), tx, lockKeys...); err != nil {
+	if err := lockPriceMutationKeys(r.Context(), tx,
+		effectiveModelPriceLockKey(probe.ModelName),
+		"model_price:"+probe.ModelName,
+	); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Lock failed"})
 		return
 	}

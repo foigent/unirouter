@@ -202,22 +202,25 @@ func TestUpdateModelPriceRejectsEmptyRenameBeforeTransaction(t *testing.T) {
 	require.Zero(t, beginCalls)
 }
 
-func TestUpdateModelPriceRenameLocksTargetKeyBeforeRowMutation(t *testing.T) {
-	operations := make([]string, 0, 5)
+func TestUpdateModelPriceRejectsRenameWithoutWriteOrAudit(t *testing.T) {
+	operations := make([]string, 0, 4)
+	var committed, rolledBack bool
 	tx := &testutil.MockTx{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			operations = append(operations, "query:"+sql)
-			if strings.Contains(sql, "FOR UPDATE") {
-				return modelPriceMockRow(1, "old-model", 5, 15)
-			}
-			return modelPriceMockRow(1, "new-model", 5, 15)
+			return modelPriceMockRow(1, "old-model", 5, 15)
 		},
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			operations = append(operations, fmt.Sprintf("exec:%s:%v", sql, args))
-			if strings.Contains(sql, "UPDATE model_prices") {
-				return pgconn.NewCommandTag("UPDATE 1"), nil
-			}
 			return pgconn.NewCommandTag("SELECT 1"), nil
+		},
+		CommitFn: func(ctx context.Context) error {
+			committed = true
+			return nil
+		},
+		RollbackFn: func(ctx context.Context) error {
+			rolledBack = true
+			return nil
 		},
 	}
 	h := newTestHandler(&testutil.MockDB{BeginFn: func(ctx context.Context) (pgx.Tx, error) { return tx, nil }})
@@ -231,17 +234,13 @@ func TestUpdateModelPriceRenameLocksTargetKeyBeforeRowMutation(t *testing.T) {
 
 	h.UpdateModelPrice(rec, req)
 
-	require.Equal(t, http.StatusOK, rec.Code)
-	require.GreaterOrEqual(t, len(operations), 6)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "model_name is immutable")
+	require.NotEmpty(t, operations)
 	require.Contains(t, operations[0], "pg_advisory_xact_lock")
-	var forUpdateIndex int
-	for i, operation := range operations {
-		if strings.Contains(operation, "FOR UPDATE") {
-			forUpdateIndex = i
-			break
-		}
-	}
-	require.Positive(t, forUpdateIndex)
-	require.Contains(t, strings.Join(operations[:forUpdateIndex], "\n"), "effective_model_price:new-model")
-	require.Contains(t, strings.Join(operations[:forUpdateIndex], "\n"), "model_price:new-model")
+	require.NotContains(t, strings.Join(operations, "\n"), "UPDATE model_prices")
+	require.NotContains(t, strings.Join(operations, "\n"), "INSERT INTO audit_logs")
+	require.NotContains(t, strings.Join(operations, "\n"), "new-model")
+	require.False(t, committed)
+	require.True(t, rolledBack)
 }

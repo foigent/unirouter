@@ -825,7 +825,11 @@ paths:
       with no explicit model_prices row fails closed; no default price is used.
       Supported mutations are serialized per model and return 400 without an
       audit/write when any base/cache/organization-effective price would exceed
-      the signed micro-CNY price range.
+      the signed micro-CNY price range. model_name is the stable pricing,
+      organization-multiplier, routing and governance identity: it is required
+      on create and immutable afterward. Updating a different model_name returns
+      400 without changing prices or writing audit evidence; create a new price
+      row and migrate independently owned references explicitly instead.
     get:
       tags: [Admin]
       security: [{ bearerAuth: [] }]
@@ -857,6 +861,7 @@ paths:
       delete: [platform_admin]
     put:
       tags: [Admin]
+      description: Updates only mutable price and cache-ratio fields. If model_name is supplied for compatibility it must exactly match the stored identity; a different value returns 400 without a write or audit record.
       security: [{ bearerAuth: [] }]
       parameters: [{ $ref: "#/components/parameters/Id" }]
       requestBody:
@@ -1511,7 +1516,7 @@ components:
     ModelPriceMutation:
       type: object
       properties:
-        model_name: { type: string, minLength: 1 }
+        model_name: { type: string, minLength: 1, description: Required when creating a model price. Immutable after creation; PUT may omit it or repeat the exact stored value, but cannot rename the record. }
         input_price_cny_per_million_tokens: { $ref: "#/components/schemas/PublicPriceDecimalInput" }
         output_price_cny_per_million_tokens: { $ref: "#/components/schemas/PublicPriceDecimalInput" }
         cache_read_ratio: { $ref: "#/components/schemas/CachePriceRatioInput" }

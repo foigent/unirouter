@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Button, Modal, Form, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
+import { Button, Modal, Form, Input, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { isPlatformAdminRole } from '../navigation';
@@ -88,7 +88,6 @@ export default function ModelPricesPage() {
     if (!editPrice) return;
     try {
       await api.updateModelPrice(editPrice.id, {
-        model_name: String(v.model_name || '').trim(),
         input_price_cny_per_million_tokens: parseCNYPerMillionPrice(v.input_price),
         output_price_cny_per_million_tokens: parseCNYPerMillionPrice(v.output_price),
 		cache_read_ratio: parseCachePriceRatio(v.cache_read_ratio ?? '1'),
@@ -123,15 +122,6 @@ export default function ModelPricesPage() {
   const openEdit = (r: any) => {
     setEditPrice(r);
     setShowDrawer(true);
-    setTimeout(() => {
-      formApi?.setValues({
-        model_name: r.model_name,
-        input_price: String(r.input_price_cny_per_million_tokens),
-        output_price: String(r.output_price_cny_per_million_tokens),
-		cache_read_ratio: String(r.cache_read_ratio ?? '1'),
-		cache_creation_ratio: String(r.cache_creation_ratio ?? '1'),
-      });
-    }, 100);
   };
 
   const columns: any[] = [
@@ -147,8 +137,8 @@ export default function ModelPricesPage() {
       title: '操作', width: 120,
       render: (_: any, record: any) => (
         <Space>
-          <Button icon={<IconEdit />} size="small" onClick={() => openEdit(record)} />
-          <Button icon={<IconDelete />} size="small" type="danger" onClick={() => handleDelete(record.id)} />
+          <Button aria-label="编辑价格" icon={<IconEdit />} size="small" onClick={() => openEdit(record)} />
+          <Button aria-label="删除价格" icon={<IconDelete />} size="small" type="danger" onClick={() => handleDelete(record.id)} />
         </Space>
       ),
     });
@@ -184,12 +174,28 @@ export default function ModelPricesPage() {
         onCancel={closeDrawer}
         width={480}
       >
-        <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={editPrice ? handleUpdate : handleCreate}>
-          <Form.Input field="model_name" label="模型名称" rules={[{ required: true, message: '请输入模型名称' }]} placeholder="例如 gpt-4o" />
+        <Form
+          key={editPrice ? `edit-${editPrice.id}` : 'create'}
+          getFormApi={(api: any) => setFormApi(api)}
+          onSubmit={editPrice ? handleUpdate : handleCreate}
+          initValues={editPrice ? {
+            input_price: String(editPrice.input_price_cny_per_million_tokens),
+            output_price: String(editPrice.output_price_cny_per_million_tokens),
+            cache_read_ratio: String(editPrice.cache_read_ratio ?? '1'),
+            cache_creation_ratio: String(editPrice.cache_creation_ratio ?? '1'),
+          } : { cache_read_ratio: '1', cache_creation_ratio: '1' }}
+        >
+          {editPrice ? <div style={{ marginBottom: 12 }}>
+            <div style={{ marginBottom: 4, color: 'var(--semi-color-text-0)', fontSize: 14 }}>模型名称</div>
+            <Input aria-label="模型名称" disabled value={String(editPrice.model_name || '')} />
+            <div style={{ marginTop: 4, color: 'var(--semi-color-text-2)', fontSize: 12, lineHeight: 1.7 }}>
+              模型名称是计费、组织倍率、路由和模型治理共同使用的稳定标识，创建后不可修改。如需更名，请新建价格记录并单独迁移相关引用。
+            </div>
+          </div> : <Form.Input field="model_name" label="模型名称" rules={[{ required: true, message: '请输入模型名称' }]} placeholder="例如 gpt-4o" />}
           <Form.Input field="input_price" label="输入价格（CNY/百万 tokens）" rules={[{ required: true, message: '必填' }]} placeholder="例如 18.00000" />
           <Form.Input field="output_price" label="输出价格（CNY/百万 tokens）" rules={[{ required: true, message: '必填' }]} placeholder="例如 72.00000" />
-		  <Form.Input field="cache_read_ratio" label="缓存读取倍率" initValue="1" rules={[{ required: true, message: '必填' }]} placeholder="0.1" />
-		  <Form.Input field="cache_creation_ratio" label="缓存写入倍率" initValue="1" rules={[{ required: true, message: '必填' }]} placeholder="1.25" />
+		  <Form.Input field="cache_read_ratio" label="缓存读取倍率" rules={[{ required: true, message: '必填' }]} placeholder="0.1" />
+		  <Form.Input field="cache_creation_ratio" label="缓存写入倍率" rules={[{ required: true, message: '必填' }]} placeholder="1.25" />
           <div style={{ marginTop: 8, color: 'var(--semi-color-text-2)', fontSize: 12, lineHeight: 1.7 }}>
             价格统一使用人民币/百万 tokens，最多 5 位小数，不接受单位缩写、尾随字符或科学计数法。倍率以普通输入价格为基准：0.1 表示按 10% 计费，1.25 表示按 125% 计费；仅供应商明确回传的 Prompt Cache Token 使用倍率，不是响应缓存。
           </div>

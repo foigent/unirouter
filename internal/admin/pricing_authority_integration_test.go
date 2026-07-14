@@ -123,6 +123,39 @@ func TestP6F34PriceAuthorityIntegration(t *testing.T) {
 		require.Equal(t, before, readP6F34Snapshot(t, pool, bill, fx.orgA, fx.orgB))
 	})
 
+	t.Run("model name is immutable without partial write or audit", func(t *testing.T) {
+		const requestID = "v1-model-price-rename-rejected"
+		rec := serve(t, http.MethodPut, fmt.Sprintf("/api/v1/model-prices/%d", baseID),
+			`{"model_name":"p6f34-renamed","input_price_cny_per_million_tokens":999}`,
+			fx.platformA, fx.orgA, auth.RolePlatformAdmin, requestID)
+		assertStatus(t, rec, http.StatusBadRequest)
+		require.Contains(t, rec.Body.String(), "model_name is immutable")
+
+		var modelName, inputPrice string
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT model_name, input_price_cents::text FROM model_prices WHERE id = $1`, baseID,
+		).Scan(&modelName, &inputPrice))
+		require.Equal(t, "p6f34-main", modelName)
+		require.Equal(t, "10.000000", inputPrice)
+
+		var renamedRows, originalMultipliers, auditCount int
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT COUNT(*) FROM model_prices WHERE model_name = 'p6f34-renamed'`,
+		).Scan(&renamedRows))
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT COUNT(*) FROM org_model_prices WHERE model_name = 'p6f34-main'`,
+		).Scan(&originalMultipliers))
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT COUNT(*) FROM audit_logs WHERE request_id = $1`, requestID,
+		).Scan(&auditCount))
+		require.Zero(t, renamedRows)
+		require.Equal(t, 2, originalMultipliers)
+		require.Zero(t, auditCount)
+
+		_, _, err := billing.NewBilling(pool, nil).QueryModelPriceMicrosForOrg(ctx, fx.orgA, "p6f34-main")
+		require.NoError(t, err)
+	})
+
 	t.Run("platform mutations audit atomically and preserve billing math", func(t *testing.T) {
 		requestIDs := []string{
 			"p6f34-model-upsert", "p6f34-model-update", "p6f34-model-delete",
