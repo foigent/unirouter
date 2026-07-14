@@ -2,22 +2,22 @@
 
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
-> Current Post-PRD6 release work is
-> `codex/v1-commercial-license-upgrade`, based on clean `origin/main`
-> `e94a4b184a6f675d76c292602b7c18293ab2ce61`. The User requires signed
-> commercial License enforcement and a signed offline upgrade bundle before
-> customer delivery. PR #205 is open. A follow-up P0 review found
+> Post-PRD6 commercial-release hardening is merged on `main` as
+> `5c1313521870731b0164d4eecfbbb06d7a7f0704` through PR #205. A follow-up P0
+> review had found
 > customer-controlled runtime replacement of both public trust roots. Exact
 > code-bearing head `cd05055afe25cedff77830230d2788d8f06c96b3` now embeds
 > separate License/upgrade public rings in formal release binaries, rejects
 > runtime overrides and adds a
 > double-click macOS License Studio for native-folder key generation, customer
 > signing and verification. Focused tests, headed desktop/mobile browser
-> verification and all four required checks in run `29359673125` pass. No
+> verification and all four required checks in run `29359673125` pass. Final
+> PR head `f1fdee12499aa399e63f205a00040d772425e7df` also passed all four
+> required checks in run `29360683242` before the squash merge. No
 > persistent production/customer key or License exists, and no target was
-> mutated. Merge,
-> production key ceremony and ECS trust-root/License/migration/image activation
-> are separate decisions. This does not reopen PRD6 or accept the PRD7 Update
+> mutated. Production key ceremony and ECS
+> trust-root/License/migration/image activation are separate decisions. This
+> does not reopen PRD6 or accept the PRD7 Update
 > Center/automatic-upgrade product scope.
 > PRD6 is formally `Completed (Accepted Scope)` at repository/CI evidence level. All 27
 > accepted rows are verified or closed. P6-F11 closed through PR #189: final
@@ -114,8 +114,9 @@
 68. `docs/ops/evidence/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-LOCAL-20260715.md` - complete issue matrix, local implementation/test evidence, CI gate and R4 ECS non-claims.
 69. `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-LOCAL-20260715.md` - P0 trust-root bypass closure, click-only macOS tool, security boundary and local browser/test/build evidence.
 70. `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-CI-20260715.md` - exact code-head required-CI and formal release Docker-image closure evidence.
-71. `docs/tech-ref/16-license-foundation.md` - enforceable License schema, runtime admission, resource limits, recovery and historical PRD2 compatibility.
-72. `docs/tech-ref/27-signed-offline-upgrade.md` - bundle format, trust ordering, provenance binding, verify/record workflow and explicit Update Center/TUF non-claims.
+71. `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-MERGE-20260715.md` - PR #205 approval, exact squash merge/main readback, final-head CI and no-automatic-main-run evidence.
+72. `docs/tech-ref/16-license-foundation.md` - enforceable License schema, runtime admission, resource limits, recovery and historical PRD2 compatibility.
+73. `docs/tech-ref/27-signed-offline-upgrade.md` - bundle format, trust ordering, provenance binding, verify/record workflow and explicit Update Center/TUF non-claims.
 
 ## Current Project Shape
 

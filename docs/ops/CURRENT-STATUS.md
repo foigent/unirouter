@@ -2,13 +2,13 @@
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
 > The User-approved Post-PRD6 V1 delivery gate for commercial License
-> enforcement and signed offline upgrades is locally verified on
-> `codex/v1-commercial-license-upgrade`, based on clean `origin/main`
-> `e94a4b184a6f675d76c292602b7c18293ab2ce61`. It adds fail-closed signed
+> enforcement and signed offline upgrades is merged on `main` as
+> `5c1313521870731b0164d4eecfbbb06d7a7f0704` through PR #205. It adds
+> fail-closed signed
 > deployment/feature/resource authority, migration `000037`, vendor License
 > tooling, deterministic pre-extraction signed-bundle verification, installed
 > release-state readback and a no-build/source-free customer Compose profile.
-> PR #205 is open. A follow-up P0 review found that customer Compose could
+> A follow-up P0 review found that customer Compose could
 > replace both public trust roots; exact code-bearing head
 > `cd05055afe25cedff77830230d2788d8f06c96b3` moves them into the formal
 > release binary, rejects runtime overrides and adds a double-click macOS
@@ -17,13 +17,16 @@
 > browser checks have zero console errors and only loopback requests. Required
 > CI run `29359673125` passed Change Routing, Backend Tests, Frontend Build and
 > Docker Build, including the commercial-License/signed-upgrade integration
-> gate and a release image built with separate embedded public rings. No
+> gate and a release image built with separate embedded public rings. Final PR
+> head `f1fdee12499aa399e63f205a00040d772425e7df` passed the same four checks
+> in run `29360683242` before squash merge. No
 > production/customer signing key or License was created, and no ECS embedded
-> trust root, deployment ID, License, migration or image was changed. Merge,
-> production key ceremony and target activation remain separate decisions.
+> trust root, deployment ID, License, migration or image was changed.
+> Production key ceremony and target activation remain separate decisions.
 > Evidence: `docs/ops/evidence/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-LOCAL-20260715.md`,
 > `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-LOCAL-20260715.md` and
-> `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-CI-20260715.md`.
+> `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-CI-20260715.md` and
+> `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-MERGE-20260715.md`.
 > PRD6 is formally `Completed (Accepted Scope)` at repository/CI evidence level. All 27
 > accepted rows are verified or closed. The final row, P6-F11, passed PR #189
 > implementation run `29245696926`, final-head run `29246431182`, squash merge
