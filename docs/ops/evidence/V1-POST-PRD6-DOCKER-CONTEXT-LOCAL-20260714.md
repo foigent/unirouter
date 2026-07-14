@@ -2,7 +2,7 @@
 
 ## Status and boundary
 
-- Status: Implemented; refreshed Draft PR #195 exact-head required CI pending.
+- Status: CI verified / closed.
 - Baseline: `origin/main` at
   `8cd268549917bb548e8b58a53c4a0f2b135a5781`.
 - Classification: confirmed bug/regression; High / P1 release security and
@@ -73,7 +73,25 @@ root `.dockerignore`, frontend `.dockerignore`, frontend source, backend source
 and unknown workflow paths.
 
 The local machine has no `docker` command, so the realistic Docker-context
-reproducer is deliberately not claimed locally. Exact-head GitHub `Docker
-Build` is the acceptance gate. Because this PR also changes its workflow,
-change routing, Backend Tests and Frontend Build must all report a successful
-or intentional routed result on that same head before merge.
+reproducer was not claimed locally.
+
+## Exact-head CI and merge evidence
+
+PR #195 exact head `8a082cfd802bdeb596aa5145dd0356fdfefe3614`
+passed required run `29333175230`:
+
+- Change Routing, Backend Tests, Frontend Build and Docker Build all completed
+  successfully;
+- the Docker log shows the backend post-copy environment/key/secret-directory
+  assertion executed as builder step 6/7 and completed;
+- the final backend image was built once and tagged `unirouter:test`;
+- the independent lightweight frontend context copied its allowed inputs,
+  rejected exact `.env`, `.env.local`, private-key and `secrets/` markers, and
+  completed; and
+- the image readback step completed successfully.
+
+PR #195 squash-merged as
+`65a0d07e0ae9b3a8344b23690511f49742cc40ef`. This closes the broken build
+boundary at repository/CI evidence level. The merged commit has no automatic
+workflow run, preserving the accepted no-duplicate-main-CI policy. It does not
+claim an ECS rebuild or deployment.
