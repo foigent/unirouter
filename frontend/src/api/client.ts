@@ -135,9 +135,9 @@ export const api = {
   getWallet: (orgId?: number) => request(appendParams('/wallet', { org_id: orgId })),
   getWalletTransactions: (page = 1, pageSize = 20, orgId?: number) =>
     request(appendParams('/wallet/transactions', { page, page_size: pageSize, org_id: orgId })),
-  topUp: (data: { org_id?: number; amount_cents: number; description?: string; client_request_id?: string }) =>
+  topUp: (data: { org_id?: number; amount_cents: number; description: string; client_request_id: string }) =>
     request('/wallet/topup', { method: 'POST', body: JSON.stringify(data) }),
-  adjustWallet: (data: { org_id?: number; target_balance: number; description?: string }) =>
+  adjustWallet: (data: { org_id?: number; delta_cents: number; description: string; client_request_id: string }) =>
     request('/wallet/adjust', { method: 'POST', body: JSON.stringify(data) }),
 
   // Logs (with optional filters)

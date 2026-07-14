@@ -219,11 +219,11 @@ curl http://8.130.18.85:3000/api/v1/wallet/transactions -H "Authorization: Beare
 
 #### TC-15: 余额不足拦截
 ```bash
-# 1. 调账把余额清零
+# 1. 根据刚读取的服务器余额提交负向增减额（示例值仅用于隔离测试组织）
 curl -X POST http://8.130.18.85:3000/api/v1/wallet/adjust \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"amount_cents":-9999,"note":"测试清零"}'
+  -d '{"delta_cents":-9999,"description":"隔离测试余额调整","client_request_id":"tc15-adjust-001"}'
 
 # 2. 调用 API → 402
 curl -X POST http://8.130.18.85:3000/v1/chat/completions \
@@ -236,7 +236,7 @@ curl -X POST http://8.130.18.85:3000/v1/chat/completions \
 curl -X POST http://8.130.18.85:3000/api/v1/wallet/topup \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"amount_cents":500,"note":"恢复"}'
+  -d '{"amount_cents":500,"description":"隔离测试余额恢复","client_request_id":"tc15-topup-001"}'
 ```
 
 #### TC-16: 流式中断结算
