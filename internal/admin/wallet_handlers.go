@@ -13,15 +13,16 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/money"
 )
 
 const maxWalletIntegerCents = int64(1<<31 - 1)
 
 type walletTransactionRecord struct {
-	ID           int64
-	Amount       int
-	BalanceAfter int
-	Note         string
+	ID                 int64
+	AmountMicros       int64
+	BalanceAfterMicros int64
+	Note               string
 }
 
 func decodeWalletMutation(w http.ResponseWriter, r *http.Request, target interface{}) bool {
@@ -52,16 +53,16 @@ func normalizeWalletMutationIdentity(clientRequestID, description string) (strin
 func (h *Handler) findWalletTransaction(ctx context.Context, orgID int64, transactionType, clientRequestID string) (walletTransactionRecord, error) {
 	var record walletTransactionRecord
 	err := h.db.QueryRow(ctx,
-		`SELECT id, amount, balance_after, note
+		`SELECT id, amount_micros, balance_after_micros, note
 		 FROM transactions
 		 WHERE org_id = $1 AND type = $2 AND client_request_id = $3`,
 		orgID, transactionType, clientRequestID,
-	).Scan(&record.ID, &record.Amount, &record.BalanceAfter, &record.Note)
+	).Scan(&record.ID, &record.AmountMicros, &record.BalanceAfterMicros, &record.Note)
 	return record, err
 }
 
-func walletTransactionMatches(record walletTransactionRecord, amount int, description string) bool {
-	return record.Amount == amount && record.Note == description
+func walletTransactionMatches(record walletTransactionRecord, amountMicros int64, description string) bool {
+	return record.AmountMicros == amountMicros && record.Note == description
 }
 
 func writeWalletIdempotencyConflict(w http.ResponseWriter, clientRequestID string) {
@@ -78,12 +79,13 @@ func (h *Handler) GetWallet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var balanceCents, grantedCents, frozenCents, totalSpentCents, lowThreshold int
+	var balanceMicros, grantedMicros, frozenMicros, totalSpentMicros int64
+	var lowThresholdCents int64
 	var currency string
 	var autoFreeze bool
 	var createdAt, updatedAt time.Time
 	rows, err := h.db.Query(r.Context(),
-		`SELECT org_id, balance, granted_balance, frozen, total_spent, currency, auto_freeze, low_balance_threshold_cents, created_at, updated_at
+		`SELECT org_id, balance_micros, granted_balance_micros, frozen_micros, total_spent_micros, currency, auto_freeze, low_balance_threshold_cents, created_at, updated_at
 		 FROM wallets WHERE org_id = $1`, orgID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Query failed"})
@@ -98,7 +100,7 @@ func (h *Handler) GetWallet(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Wallet not found"})
 		return
 	}
-	if err := rows.Scan(&orgID, &balanceCents, &grantedCents, &frozenCents, &totalSpentCents, &currency, &autoFreeze, &lowThreshold, &createdAt, &updatedAt); err != nil {
+	if err := rows.Scan(&orgID, &balanceMicros, &grantedMicros, &frozenMicros, &totalSpentMicros, &currency, &autoFreeze, &lowThresholdCents, &createdAt, &updatedAt); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 		return
 	}
@@ -106,18 +108,23 @@ func (h *Handler) GetWallet(w http.ResponseWriter, r *http.Request) {
 	role := actorRole(r.Context())
 	canManage := role == auth.RolePlatformAdmin || role == auth.RoleBillingAdmin
 
+	thresholdMicros, err := money.CentsToMicros(lowThresholdCents)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Wallet threshold is out of range"})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"id":                          orgID,
 		"org_id":                      orgID,
-		"balance_cents":               balanceCents,
-		"granted_cents":               grantedCents,
-		"granted_balance_cents":       grantedCents,
-		"frozen_cents":                frozenCents,
-		"threshold_cents":             lowThreshold,
+		"balance_micros":              strconv.FormatInt(balanceMicros, 10),
+		"granted_balance_micros":      strconv.FormatInt(grantedMicros, 10),
+		"frozen_micros":               strconv.FormatInt(frozenMicros, 10),
+		"threshold_micros":            strconv.FormatInt(thresholdMicros, 10),
+		"amount_scale":                money.MicrosPerCNY,
 		"currency":                    currency,
 		"auto_freeze":                 autoFreeze,
-		"low_balance_threshold_cents": lowThreshold,
-		"total_spent_cents":           totalSpentCents,
+		"low_balance_threshold_cents": lowThresholdCents,
+		"total_spent_micros":          strconv.FormatInt(totalSpentMicros, 10),
 		"is_admin":                    canManage,
 		"can_top_up":                  canManage,
 		"can_adjust":                  canManage,
@@ -131,7 +138,7 @@ func (h *Handler) GetWallet(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) TopUp(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		OrgID           int64  `json:"org_id"`
-		AmountCents     int    `json:"amount_cents"`
+		AmountCents     int64  `json:"amount_cents"`
 		Description     string `json:"description"`
 		ClientRequestID string `json:"client_request_id"`
 	}
@@ -143,7 +150,7 @@ func (h *Handler) TopUp(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "amount_cents must be positive"})
 		return
 	}
-	if int64(req.AmountCents) > maxWalletIntegerCents {
+	if req.AmountCents > maxWalletIntegerCents {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "amount_cents is out of range"})
 		return
 	}
@@ -162,17 +169,23 @@ func (h *Handler) TopUp(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	amountMicros, err := money.CentsToMicros(req.AmountCents)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "amount_cents is out of range"})
+		return
+	}
 
 	existing, err := h.findWalletTransaction(r.Context(), walletOrgID, "topup", req.ClientRequestID)
 	if err == nil {
-		if !walletTransactionMatches(existing, req.AmountCents, req.Description) {
+		if !walletTransactionMatches(existing, amountMicros, req.Description) {
 			writeWalletIdempotencyConflict(w, req.ClientRequestID)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"message":           "Top-up successful",
-			"org_id":            walletOrgID,
-			"balance_cents":     existing.BalanceAfter,
+			"message":        "Top-up successful",
+			"org_id":         walletOrgID,
+			"balance_micros": strconv.FormatInt(existing.BalanceAfterMicros, 10),
+			"currency":       "CNY", "amount_scale": money.MicrosPerCNY,
 			"client_request_id": req.ClientRequestID,
 			"idempotent_replay": true,
 		})
@@ -190,11 +203,11 @@ func (h *Handler) TopUp(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(r.Context())
 
-	var balanceAfter int
+	var balanceAfterMicros int64
 	err = tx.QueryRow(r.Context(),
-		`UPDATE wallets SET balance = balance + $1, updated_at = NOW() WHERE org_id = $2 RETURNING balance`,
-		req.AmountCents, walletOrgID,
-	).Scan(&balanceAfter)
+		`UPDATE wallets SET balance_micros = balance_micros + $1, updated_at = NOW() WHERE org_id = $2 RETURNING balance_micros`,
+		amountMicros, walletOrgID,
+	).Scan(&balanceAfterMicros)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Wallet not found"})
 		return
@@ -205,22 +218,23 @@ func (h *Handler) TopUp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err = tx.Exec(r.Context(),
-		`INSERT INTO transactions (request_id, client_request_id, org_id, type, status, amount, balance_after, note, created_at)
+		`INSERT INTO transactions (request_id, client_request_id, org_id, type, status, amount_micros, balance_after_micros, note, created_at)
 		 VALUES ($1, $2, $3, 'topup', 'completed', $4, $5, $6, NOW())`,
-		operationID, req.ClientRequestID, walletOrgID, req.AmountCents, balanceAfter, req.Description)
+		operationID, req.ClientRequestID, walletOrgID, amountMicros, balanceAfterMicros, req.Description)
 	if err != nil {
 		if isPostgresUniqueViolation(err) {
 			_ = tx.Rollback(r.Context())
 			existing, lookupErr := h.findWalletTransaction(r.Context(), walletOrgID, "topup", req.ClientRequestID)
 			if lookupErr == nil {
-				if !walletTransactionMatches(existing, req.AmountCents, req.Description) {
+				if !walletTransactionMatches(existing, amountMicros, req.Description) {
 					writeWalletIdempotencyConflict(w, req.ClientRequestID)
 					return
 				}
 				writeJSON(w, http.StatusOK, map[string]interface{}{
-					"message":           "Top-up successful",
-					"org_id":            walletOrgID,
-					"balance_cents":     existing.BalanceAfter,
+					"message":        "Top-up successful",
+					"org_id":         walletOrgID,
+					"balance_micros": strconv.FormatInt(existing.BalanceAfterMicros, 10),
+					"currency":       "CNY", "amount_scale": money.MicrosPerCNY,
 					"client_request_id": req.ClientRequestID,
 					"idempotent_replay": true,
 				})
@@ -238,6 +252,7 @@ func (h *Handler) TopUp(w http.ResponseWriter, r *http.Request) {
 
 	h.recordAuditForOrgProjectFromRequest(r, walletOrgID, 0, "wallet.topup", "wallet", fmt.Sprintf("%d", walletOrgID), map[string]interface{}{
 		"amount_cents":      req.AmountCents,
+		"amount_micros":     strconv.FormatInt(amountMicros, 10),
 		"description":       req.Description,
 		"client_request_id": req.ClientRequestID,
 		"after": map[string]interface{}{
@@ -247,9 +262,10 @@ func (h *Handler) TopUp(w http.ResponseWriter, r *http.Request) {
 	})
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"message":           "Top-up successful",
-		"org_id":            walletOrgID,
-		"balance_cents":     balanceAfter,
+		"message":        "Top-up successful",
+		"org_id":         walletOrgID,
+		"balance_micros": strconv.FormatInt(balanceAfterMicros, 10),
+		"currency":       "CNY", "amount_scale": money.MicrosPerCNY,
 		"client_request_id": req.ClientRequestID,
 		"idempotent_replay": false,
 	})
@@ -264,7 +280,7 @@ func (h *Handler) BalanceAdjust(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		OrgID           int64  `json:"org_id"`
-		DeltaCents      int    `json:"delta_cents"`
+		DeltaCents      int64  `json:"delta_cents"`
 		Description     string `json:"description"`
 		ClientRequestID string `json:"client_request_id"`
 	}
@@ -276,7 +292,7 @@ func (h *Handler) BalanceAdjust(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "delta_cents must not be zero"})
 		return
 	}
-	if int64(req.DeltaCents) > maxWalletIntegerCents || int64(req.DeltaCents) < -maxWalletIntegerCents {
+	if req.DeltaCents > maxWalletIntegerCents || req.DeltaCents < -maxWalletIntegerCents {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "delta_cents is out of range"})
 		return
 	}
@@ -295,25 +311,32 @@ func (h *Handler) BalanceAdjust(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	deltaMicros, err := money.CentsToMicros(req.DeltaCents)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "delta_cents is out of range"})
+		return
+	}
 
 	existing, err := h.findWalletTransaction(r.Context(), walletOrgID, "adjust", req.ClientRequestID)
 	if err == nil {
-		if !walletTransactionMatches(existing, req.DeltaCents, req.Description) {
+		if !walletTransactionMatches(existing, deltaMicros, req.Description) {
 			writeWalletIdempotencyConflict(w, req.ClientRequestID)
 			return
 		}
-		previousBalance := existing.BalanceAfter - existing.Amount
+		previousBalance, subtractErr := money.Sub(existing.BalanceAfterMicros, existing.AmountMicros)
+		if subtractErr != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Stored transaction is out of range"})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"success":                true,
-			"org_id":                 walletOrgID,
-			"previous":               previousBalance,
-			"previous_balance_cents": previousBalance,
-			"new_balance":            existing.BalanceAfter,
-			"balance_cents":          existing.BalanceAfter,
-			"adjust_amount":          existing.Amount,
-			"delta_cents":            existing.Amount,
-			"client_request_id":      req.ClientRequestID,
-			"idempotent_replay":      true,
+			"success":                 true,
+			"org_id":                  walletOrgID,
+			"previous_balance_micros": strconv.FormatInt(previousBalance, 10),
+			"balance_micros":          strconv.FormatInt(existing.BalanceAfterMicros, 10),
+			"delta_micros":            strconv.FormatInt(existing.AmountMicros, 10),
+			"currency":                "CNY", "amount_scale": money.MicrosPerCNY,
+			"client_request_id": req.ClientRequestID,
+			"idempotent_replay": true,
 		})
 		return
 	}
@@ -329,10 +352,10 @@ func (h *Handler) BalanceAdjust(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(r.Context())
 
-	var currentBalance int
+	var currentBalanceMicros int64
 	err = tx.QueryRow(r.Context(),
-		`SELECT balance FROM wallets WHERE org_id = $1 FOR UPDATE`, walletOrgID,
-	).Scan(&currentBalance)
+		`SELECT balance_micros FROM wallets WHERE org_id = $1 FOR UPDATE`, walletOrgID,
+	).Scan(&currentBalanceMicros)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Wallet not found"})
 		return
@@ -341,53 +364,54 @@ func (h *Handler) BalanceAdjust(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to read wallet"})
 		return
 	}
-	newBalance64 := int64(currentBalance) + int64(req.DeltaCents)
-	if newBalance64 < 0 {
-		writeJSON(w, http.StatusConflict, map[string]interface{}{
-			"error":                 "insufficient_balance",
-			"current_balance_cents": currentBalance,
-		})
-		return
-	}
-	if newBalance64 > maxWalletIntegerCents {
+	newBalanceMicros, addErr := money.Add(currentBalanceMicros, deltaMicros)
+	if addErr != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "resulting balance is out of range"})
 		return
 	}
-	newBalance := int(newBalance64)
+	if newBalanceMicros < 0 {
+		writeJSON(w, http.StatusConflict, map[string]interface{}{
+			"error":                  "insufficient_balance",
+			"current_balance_micros": strconv.FormatInt(currentBalanceMicros, 10),
+		})
+		return
+	}
 
 	_, err = tx.Exec(r.Context(),
-		`UPDATE wallets SET balance = $1, updated_at = NOW() WHERE org_id = $2`,
-		newBalance, walletOrgID)
+		`UPDATE wallets SET balance_micros = $1, updated_at = NOW() WHERE org_id = $2`,
+		newBalanceMicros, walletOrgID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to update wallet"})
 		return
 	}
 
 	_, err = tx.Exec(r.Context(),
-		`INSERT INTO transactions (request_id, client_request_id, org_id, type, status, amount, balance_after, note, created_at)
+		`INSERT INTO transactions (request_id, client_request_id, org_id, type, status, amount_micros, balance_after_micros, note, created_at)
 		 VALUES ($1, $2, $3, 'adjust', 'completed', $4, $5, $6, NOW())`,
-		operationID, req.ClientRequestID, walletOrgID, req.DeltaCents, newBalance, req.Description)
+		operationID, req.ClientRequestID, walletOrgID, deltaMicros, newBalanceMicros, req.Description)
 	if err != nil {
 		if isPostgresUniqueViolation(err) {
 			_ = tx.Rollback(r.Context())
 			existing, lookupErr := h.findWalletTransaction(r.Context(), walletOrgID, "adjust", req.ClientRequestID)
 			if lookupErr == nil {
-				if !walletTransactionMatches(existing, req.DeltaCents, req.Description) {
+				if !walletTransactionMatches(existing, deltaMicros, req.Description) {
 					writeWalletIdempotencyConflict(w, req.ClientRequestID)
 					return
 				}
-				previousBalance := existing.BalanceAfter - existing.Amount
+				previousBalance, subtractErr := money.Sub(existing.BalanceAfterMicros, existing.AmountMicros)
+				if subtractErr != nil {
+					writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Stored transaction is out of range"})
+					return
+				}
 				writeJSON(w, http.StatusOK, map[string]interface{}{
-					"success":                true,
-					"org_id":                 walletOrgID,
-					"previous":               previousBalance,
-					"previous_balance_cents": previousBalance,
-					"new_balance":            existing.BalanceAfter,
-					"balance_cents":          existing.BalanceAfter,
-					"adjust_amount":          existing.Amount,
-					"delta_cents":            existing.Amount,
-					"client_request_id":      req.ClientRequestID,
-					"idempotent_replay":      true,
+					"success":                 true,
+					"org_id":                  walletOrgID,
+					"previous_balance_micros": strconv.FormatInt(previousBalance, 10),
+					"balance_micros":          strconv.FormatInt(existing.BalanceAfterMicros, 10),
+					"delta_micros":            strconv.FormatInt(existing.AmountMicros, 10),
+					"currency":                "CNY", "amount_scale": money.MicrosPerCNY,
+					"client_request_id": req.ClientRequestID,
+					"idempotent_replay": true,
 				})
 				return
 			}
@@ -402,30 +426,29 @@ func (h *Handler) BalanceAdjust(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.recordAuditForOrgProjectFromRequest(r, walletOrgID, 0, "wallet.adjust", "wallet", fmt.Sprintf("%d", walletOrgID), map[string]interface{}{
-		"from":              currentBalance,
-		"to":                newBalance,
+		"from_micros":       strconv.FormatInt(currentBalanceMicros, 10),
+		"to_micros":         strconv.FormatInt(newBalanceMicros, 10),
 		"delta_cents":       req.DeltaCents,
+		"delta_micros":      strconv.FormatInt(deltaMicros, 10),
 		"description":       req.Description,
 		"client_request_id": req.ClientRequestID,
 		"before": map[string]interface{}{
-			"balance_cents": currentBalance,
+			"balance_micros": strconv.FormatInt(currentBalanceMicros, 10),
 		},
 		"after": map[string]interface{}{
-			"balance_cents": newBalance,
+			"balance_micros": strconv.FormatInt(newBalanceMicros, 10),
 		},
 	})
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success":                true,
-		"org_id":                 walletOrgID,
-		"previous":               currentBalance,
-		"previous_balance_cents": currentBalance,
-		"new_balance":            newBalance,
-		"balance_cents":          newBalance,
-		"adjust_amount":          req.DeltaCents,
-		"delta_cents":            req.DeltaCents,
-		"client_request_id":      req.ClientRequestID,
-		"idempotent_replay":      false,
+		"success":                 true,
+		"org_id":                  walletOrgID,
+		"previous_balance_micros": strconv.FormatInt(currentBalanceMicros, 10),
+		"balance_micros":          strconv.FormatInt(newBalanceMicros, 10),
+		"delta_micros":            strconv.FormatInt(deltaMicros, 10),
+		"currency":                "CNY", "amount_scale": money.MicrosPerCNY,
+		"client_request_id": req.ClientRequestID,
+		"idempotent_replay": false,
 	})
 }
 func (h *Handler) ListWalletTransactions(w http.ResponseWriter, r *http.Request) {
@@ -444,7 +467,7 @@ func (h *Handler) ListWalletTransactions(w http.ResponseWriter, r *http.Request)
 	}
 
 	rows, err := h.db.Query(r.Context(),
-		`SELECT id, type, amount, note, created_at
+		`SELECT id, type, amount_micros, note, created_at
 		 FROM transactions WHERE org_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
 		orgID, pageSize, offset)
 	if err != nil {
@@ -457,14 +480,15 @@ func (h *Handler) ListWalletTransactions(w http.ResponseWriter, r *http.Request)
 	for rows.Next() {
 		var id int64
 		var txnType, note string
-		var amountCents int
+		var amountMicros int64
 		var createdAt time.Time
-		if err := rows.Scan(&id, &txnType, &amountCents, &note, &createdAt); err != nil {
+		if err := rows.Scan(&id, &txnType, &amountMicros, &note, &createdAt); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 			return
 		}
 		txns = append(txns, map[string]interface{}{
-			"id": id, "type": txnType, "amount_cents": amountCents,
+			"id": id, "type": txnType, "amount_micros": strconv.FormatInt(amountMicros, 10),
+			"currency": "CNY", "amount_scale": money.MicrosPerCNY,
 			"description": note, "created_at": createdAt,
 		})
 	}
@@ -484,7 +508,7 @@ func (h *Handler) ExportWalletTransactions(w http.ResponseWriter, r *http.Reques
 	}
 
 	rows, err := h.db.Query(r.Context(),
-		`SELECT t.id, t.type, t.amount, t.balance_after, t.note, t.request_id, t.created_at
+		`SELECT t.id, t.type, t.amount_micros, t.balance_after_micros, t.note, t.request_id, t.created_at
 		 FROM transactions t
 		 WHERE t.org_id = $1
 		 ORDER BY t.created_at DESC LIMIT 10000`, orgID,
@@ -499,28 +523,30 @@ func (h *Handler) ExportWalletTransactions(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Content-Disposition", "attachment; filename=wallet_transactions.csv")
 	fmt.Fprint(w, "\xEF\xBB\xBF") // UTF-8 BOM for Excel
 	csvWriter := csv.NewWriter(w)
-	if err := csvWriter.Write([]string{"ID", "类型", "金额(分)", "余额(分)", "描述", "引用ID", "时间"}); err != nil {
+	if err := csvWriter.Write([]string{"ID", "类型", "金额(微元)", "余额(微元)", "币种", "精度", "描述", "引用ID", "时间"}); err != nil {
 		return
 	}
 
 	for rows.Next() {
 		var id int64
 		var txType, description, referenceID string
-		var amount int
-		var balanceAfter *int
+		var amount int64
+		var balanceAfter *int64
 		var createdAt time.Time
 		if err := rows.Scan(&id, &txType, &amount, &balanceAfter, &description, &referenceID, &createdAt); err != nil {
 			return
 		}
 		balance := ""
 		if balanceAfter != nil {
-			balance = strconv.Itoa(*balanceAfter)
+			balance = strconv.FormatInt(*balanceAfter, 10)
 		}
 		if err := csvWriter.Write([]string{
 			strconv.FormatInt(id, 10),
 			neutralizeSpreadsheetFormula(txType),
-			strconv.Itoa(amount),
+			strconv.FormatInt(amount, 10),
 			balance,
+			"CNY",
+			strconv.FormatInt(money.MicrosPerCNY, 10),
 			neutralizeSpreadsheetFormula(description),
 			neutralizeSpreadsheetFormula(referenceID),
 			createdAt.Format(time.RFC3339),

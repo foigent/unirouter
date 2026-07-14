@@ -17,7 +17,7 @@ func newP6F41DeliveryFixture(t *testing.T, requestID string) (*Billing, int64, s
 	b := NewBilling(pool, nil)
 	freeze, err := b.Freeze(t.Context(), FreezeRequest{
 		RequestID: requestID, OrgID: orgID, Model: model,
-		EstimatedTokens: 100, SafetyFactor: 1.5, MinFreezeAmount: 10,
+		EstimatedTokens: 100, SafetyFactor: "1.5", MinFreezeCents: 10,
 	})
 	require.NoError(t, err)
 	require.True(t, freeze.Success)
@@ -69,10 +69,11 @@ func TestP6F41BNonStreamChargeRequiresCompletedLocalDelivery(t *testing.T) {
 	require.True(t, prepared.Funded)
 	_, err = b.Settle(t.Context(), req)
 	require.ErrorIs(t, err, ErrDeliveryNotChargeable, "a funded hold without local delivery cannot charge the customer")
-	var totalSpent, terminalCount int
-	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT total_spent FROM wallets WHERE org_id=$1`, orgID).Scan(&totalSpent))
+	var totalSpentMicros int64
+	var terminalCount int
+	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT total_spent_micros FROM wallets WHERE org_id=$1`, orgID).Scan(&totalSpentMicros))
 	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT COUNT(*) FROM transactions WHERE org_id=$1 AND request_id=$2 AND type='settle'`, orgID, requestID).Scan(&terminalCount))
-	require.Zero(t, totalSpent, "delivery preparation is a hold, not a customer charge")
+	require.Zero(t, totalSpentMicros, "delivery preparation is a hold, not a customer charge")
 	require.Zero(t, terminalCount)
 
 	require.NoError(t, b.RecordDelivery(t.Context(), DeliveryEvent{
@@ -134,12 +135,12 @@ func TestP6F41BWriterFailureDoesNotChargeAndRequiresExplicitRelease(t *testing.T
 		ErrorCode: "downstream_write_failed", HTTPStatus: 200,
 	}))
 
-	var totalSpent int
+	var totalSpentMicros int64
 	var reservationState, attemptState, pendingReason string
-	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT total_spent FROM wallets WHERE org_id=$1`, orgID).Scan(&totalSpent))
+	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT total_spent_micros FROM wallets WHERE org_id=$1`, orgID).Scan(&totalSpentMicros))
 	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT status,settlement_pending_reason FROM freeze_idempotency WHERE org_id=$1 AND request_id=$2`, orgID, requestID).Scan(&reservationState, &pendingReason))
 	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT state FROM billing_provider_attempts WHERE org_id=$1 AND request_id=$2 AND attempt_id=$3`, orgID, requestID, attemptID).Scan(&attemptState))
-	require.Zero(t, totalSpent)
+	require.Zero(t, totalSpentMicros)
 	require.Equal(t, "settlement_pending", reservationState)
 	require.Equal(t, "delivery_failed", pendingReason)
 	require.Equal(t, providerAttemptStateDeliveryFailed, attemptState)
@@ -151,8 +152,8 @@ func TestP6F41BWriterFailureDoesNotChargeAndRequiresExplicitRelease(t *testing.T
 		Reason: "local response writer failed", EvidenceRef: "delivery://writer-failure",
 	})
 	require.NoError(t, err)
-	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT total_spent FROM wallets WHERE org_id=$1`, orgID).Scan(&totalSpent))
-	require.Zero(t, totalSpent)
+	require.NoError(t, b.db.QueryRow(t.Context(), `SELECT total_spent_micros FROM wallets WHERE org_id=$1`, orgID).Scan(&totalSpentMicros))
+	require.Zero(t, totalSpentMicros)
 }
 
 func TestP6F41BStreamPartialDeliveryChargesOnlyDurableCounterUsage(t *testing.T) {

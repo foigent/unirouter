@@ -20,7 +20,7 @@ type InvocationReservation struct {
 	OrgID              int64     `json:"org_id"`
 	Lineage            []string  `json:"lineage"`
 	ReservedTokens     int64     `json:"reserved_tokens"`
-	ReservedCostCents  int64     `json:"reserved_cost_cents"`
+	ReservedCostMicros int64     `json:"reserved_cost_micros"`
 	ExtensionSequence  int       `json:"extension_sequence"`
 	LeaseExpiresAt     time.Time `json:"lease_expires_at"`
 	StateExpiresAt     time.Time `json:"state_expires_at"`
@@ -47,10 +47,10 @@ func InvocationLeaseTTLFromContext(ctx context.Context) time.Duration {
 // ReserveInvocation atomically charges one new request against every Agent in
 // the signed lineage. Rate attempts are not refunded; cost/token reservations
 // and concurrency are released by a financial terminal hook.
-func (s *Service) ReserveInvocation(ctx context.Context, claims *Claims, operationID string, estimatedTokens, reservedCostCents int64, leaseTTL time.Duration) (*InvocationReservation, error) {
+func (s *Service) ReserveInvocation(ctx context.Context, claims *Claims, operationID string, estimatedTokens, reservedCostMicros int64, leaseTTL time.Duration) (*InvocationReservation, error) {
 	if s == nil || claims == nil || strings.TrimSpace(operationID) == "" || len(operationID) > 64 ||
-		estimatedTokens <= 0 || reservedCostCents <= 0 || estimatedTokens > MaxExactRuntimeBudget ||
-		reservedCostCents > MaxExactRuntimeBudget {
+		estimatedTokens <= 0 || reservedCostMicros <= 0 || estimatedTokens > MaxExactRuntimeBudget ||
+		reservedCostMicros > MaxExactRuntimeBudget {
 		return nil, ErrInvalidRequest
 	}
 	if err := validateClaims(claims, s.tokenTTL); err != nil || claims.ExpiresAt == nil || !claims.ExpiresAt.Time.After(s.now()) {
@@ -74,7 +74,7 @@ func (s *Service) ReserveInvocation(ctx context.Context, claims *Claims, operati
 		OrgID:              claims.OrgID,
 		Lineage:            slices.Clone(claims.Lineage),
 		ReservedTokens:     estimatedTokens,
-		ReservedCostCents:  reservedCostCents,
+		ReservedCostMicros: reservedCostMicros,
 		LeaseExpiresAt:     leaseExpiresAt,
 		StateExpiresAt:     stateExpiresAt,
 	}
@@ -84,34 +84,34 @@ func (s *Service) ReserveInvocation(ctx context.Context, claims *Claims, operati
 	return reservation, nil
 }
 
-func (s *Service) FinalizeInvocation(ctx context.Context, reservation *InvocationReservation, actualTokens, actualCostCents int64) error {
-	if err := validateInvocationReservation(reservation); err != nil || actualTokens < 0 || actualCostCents < 0 ||
-		actualTokens > MaxExactRuntimeBudget || actualCostCents > MaxExactRuntimeBudget {
+func (s *Service) FinalizeInvocation(ctx context.Context, reservation *InvocationReservation, actualTokens, actualCostMicros int64) error {
+	if err := validateInvocationReservation(reservation); err != nil || actualTokens < 0 || actualCostMicros < 0 ||
+		actualTokens > MaxExactRuntimeBudget || actualCostMicros > MaxExactRuntimeBudget {
 		return ErrInvalidRequest
 	}
-	return s.finalizeInvocation(ctx, reservation, actualTokens, actualCostCents)
+	return s.finalizeInvocation(ctx, reservation, actualTokens, actualCostMicros)
 }
 
 // ExtendInvocation grows every Agent ancestor reservation before another
 // stream batch may be disclosed. Sequence makes an ambiguous Redis retry
 // idempotent without turning the reservation handle into external authority.
-func (s *Service) ExtendInvocation(ctx context.Context, reservation *InvocationReservation, sequence int, additionalTokens, additionalCostCents int64) error {
+func (s *Service) ExtendInvocation(ctx context.Context, reservation *InvocationReservation, sequence int, additionalTokens, additionalCostMicros int64) error {
 	if err := validateInvocationReservation(reservation); err != nil || sequence <= 0 ||
-		additionalTokens <= 0 || additionalCostCents < 0 ||
-		additionalTokens > MaxExactRuntimeBudget || additionalCostCents > MaxExactRuntimeBudget ||
+		additionalTokens <= 0 || additionalCostMicros < 0 ||
+		additionalTokens > MaxExactRuntimeBudget || additionalCostMicros > MaxExactRuntimeBudget ||
 		reservation.ReservedTokens > MaxExactRuntimeBudget-additionalTokens ||
-		reservation.ReservedCostCents > MaxExactRuntimeBudget-additionalCostCents {
+		reservation.ReservedCostMicros > MaxExactRuntimeBudget-additionalCostMicros {
 		return ErrInvalidRequest
 	}
 	if reservation.ExtensionSequence > sequence {
 		return ErrConflict
 	}
-	if err := s.extendInvocation(ctx, reservation, sequence, additionalTokens, additionalCostCents); err != nil {
+	if err := s.extendInvocation(ctx, reservation, sequence, additionalTokens, additionalCostMicros); err != nil {
 		return err
 	}
 	if reservation.ExtensionSequence < sequence {
 		reservation.ReservedTokens += additionalTokens
-		reservation.ReservedCostCents += additionalCostCents
+		reservation.ReservedCostMicros += additionalCostMicros
 		reservation.ExtensionSequence = sequence
 	}
 	return nil
@@ -128,7 +128,7 @@ func validateInvocationReservation(reservation *InvocationReservation) error {
 	if reservation == nil || strings.TrimSpace(reservation.OperationID) == "" || len(reservation.OperationID) > 64 ||
 		!validWorkflowID(reservation.WorkflowID) || reservation.WorkflowGeneration == "" || reservation.AgentID == "" ||
 		reservation.OrgID <= 0 || len(reservation.Lineage) == 0 || reservation.Lineage[len(reservation.Lineage)-1] != reservation.AgentID ||
-		reservation.ReservedTokens <= 0 || reservation.ReservedCostCents <= 0 || reservation.ExtensionSequence < 0 {
+		reservation.ReservedTokens <= 0 || reservation.ReservedCostMicros <= 0 || reservation.ExtensionSequence < 0 {
 		return ErrInvalidRequest
 	}
 	seen := make(map[string]struct{}, len(reservation.Lineage))

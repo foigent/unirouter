@@ -3,6 +3,7 @@ package redisx
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -49,32 +50,37 @@ func (r *Redis) Health(ctx context.Context) error {
 	return r.Client.Ping(ctx).Err()
 }
 
-// GetBalance retrieves the cached balance for an org. Returns (balance, frozen, error).
-func (r *Redis) GetBalance(ctx context.Context, orgID int64) (int, int, error) {
-	key := fmt.Sprintf("wallet:%d", orgID)
-	vals, err := r.Client.HMGet(ctx, key, "balance", "frozen").Result()
+// GetBalance retrieves the v2 micro-CNY wallet cache for an org.
+func (r *Redis) GetBalance(ctx context.Context, orgID int64) (int64, int64, error) {
+	key := fmt.Sprintf("wallet:v2:%d", orgID)
+	vals, err := r.Client.HMGet(ctx, key, "balance_micros", "frozen_micros").Result()
 	if err != nil {
 		return 0, 0, err
 	}
-	balance := 0
-	frozen := 0
+	var balance, frozen int64
 	if vals[0] != nil {
-		fmt.Sscanf(vals[0].(string), "%d", &balance)
+		balance, err = strconv.ParseInt(fmt.Sprint(vals[0]), 10, 64)
+		if err != nil {
+			return 0, 0, fmt.Errorf("parse cached balance: %w", err)
+		}
 	}
 	if vals[1] != nil {
-		fmt.Sscanf(vals[1].(string), "%d", &frozen)
+		frozen, err = strconv.ParseInt(fmt.Sprint(vals[1]), 10, 64)
+		if err != nil {
+			return 0, 0, fmt.Errorf("parse cached frozen balance: %w", err)
+		}
 	}
 	return balance, frozen, nil
 }
 
 // SetBalance caches the balance for an org.
-func (r *Redis) SetBalance(ctx context.Context, orgID int64, balance, frozen int) error {
-	key := fmt.Sprintf("wallet:%d", orgID)
-	return r.Client.HSet(ctx, key, "balance", balance, "frozen", frozen).Err()
+func (r *Redis) SetBalance(ctx context.Context, orgID int64, balanceMicros, frozenMicros int64) error {
+	key := fmt.Sprintf("wallet:v2:%d", orgID)
+	return r.Client.HSet(ctx, key, "balance_micros", balanceMicros, "frozen_micros", frozenMicros).Err()
 }
 
 // InvalidateBalance removes the cached balance for an org.
 func (r *Redis) InvalidateBalance(ctx context.Context, orgID int64) error {
-	key := fmt.Sprintf("wallet:%d", orgID)
+	key := fmt.Sprintf("wallet:v2:%d", orgID)
 	return r.Client.Del(ctx, key).Err()
 }

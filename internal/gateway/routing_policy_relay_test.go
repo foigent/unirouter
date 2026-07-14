@@ -96,7 +96,7 @@ func TestHandleChatCompletion_UsesEffectiveRetryBudgetAndTracePolicy(t *testing.
 			cancelCalls := 0
 			b := &mockBilling{
 				freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
-					return &billing.FreezeResult{FreezeID: 1, Amount: 100, Success: true}, nil
+					return &billing.FreezeResult{FreezeID: 1, AmountMicros: 100, Success: true}, nil
 				},
 				settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
 					settleCalls++

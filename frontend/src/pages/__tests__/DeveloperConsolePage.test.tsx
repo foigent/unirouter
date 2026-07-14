@@ -48,7 +48,7 @@ const MODELS = {
 
 const LOGS = {
   data: [
-    { id: 31, project_id: 7, request_id: 'req-001', model: 'company-chat', provider: 'openai', channel: 'primary', prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cost_cents: 3, status_code: 200, latency_ms: 320, usage_source: 'api', created_at: '2026-07-02T10:00:00Z' },
+    { id: 31, project_id: 7, request_id: 'req-001', model: 'company-chat', provider: 'openai', channel: 'primary', prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cost_micros: '30000', status_code: 200, latency_ms: 320, usage_source: 'api', created_at: '2026-07-02T10:00:00Z' },
   ],
   total: 1,
 };
@@ -59,12 +59,12 @@ const USAGE_ANALYTICS = {
     success_requests: 11,
     failed_requests: 1,
     total_tokens: 3456,
-    cost_cents: 78,
+    cost_micros: '780000',
     avg_latency_ms: 240,
     estimated_ratio: 0,
   },
   data: [
-    { key: 'company-chat', total_requests: 12, success_requests: 11, failed_requests: 1, total_tokens: 3456, cost_cents: 78, avg_latency_ms: 240, estimated_ratio: 0 },
+    { key: 'company-chat', total_requests: 12, success_requests: 11, failed_requests: 1, total_tokens: 3456, cost_micros: '780000', avg_latency_ms: 240, estimated_ratio: 0 },
   ],
 };
 
@@ -116,6 +116,8 @@ describe('DeveloperConsolePage', () => {
     expect(screen.getByText('RPM 60 / RPS 10 / TPM 未配置')).toBeTruthy();
     expect(screen.getByText('Migrate to gpt-4.1-mini')).toBeTruthy();
     expect(screen.getByText('req-001')).toBeTruthy();
+    expect(screen.getAllByText('¥0.780000').length).toBeGreaterThan(0);
+    expect(screen.getByText('¥0.030000')).toBeTruthy();
     expect(screen.getByText('请求调试台')).toBeTruthy();
     expect(screen.getByPlaceholderText('粘贴项目访问凭证')).toBeTruthy();
   });

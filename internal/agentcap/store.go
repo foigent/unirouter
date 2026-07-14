@@ -11,9 +11,10 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/uniroute/unirouter/internal/money"
 )
 
-const redisKeyPrefix = "ur:agentcap:v1"
+const redisKeyPrefix = "ur:agentcap:v2"
 
 type refreshGrant struct {
 	JTI      string `json:"jti"`
@@ -42,9 +43,9 @@ redis.call("HSET", KEYS[2],
     "max_descendants", ARGV[6],
     "children_count", 0,
     "descendant_count", 0,
-    "cost_limit_cents", ARGV[9],
-    "cost_reserved_cents", 0,
-    "cost_used_cents", 0,
+    "cost_limit_micros", ARGV[9],
+    "cost_reserved_micros", 0,
+    "cost_used_micros", 0,
     "cost_exhausted", 0,
     "token_limit", ARGV[10],
     "token_reserved", 0,
@@ -106,9 +107,9 @@ redis.call("HSET", child,
     "max_descendants", ARGV[8],
     "children_count", 0,
     "descendant_count", 0,
-    "cost_limit_cents", ARGV[10],
-    "cost_reserved_cents", 0,
-    "cost_used_cents", 0,
+    "cost_limit_micros", ARGV[10],
+    "cost_reserved_micros", 0,
+    "cost_used_micros", 0,
     "cost_exhausted", 0,
     "token_limit", ARGV[11],
     "token_reserved", 0,
@@ -149,6 +150,10 @@ return 0
 `)
 
 func (s *Service) registerWorkflow(ctx context.Context, claims *Claims) error {
+	costLimitMicros, err := capabilityCostBudgetMicros(claims.Limits.CostBudgetCents)
+	if err != nil {
+		return err
+	}
 	stateExpiresAt := time.Unix(claims.WorkflowExpiresAt, 0).Add(s.tokenTTL).Unix()
 	result, err := registerWorkflowScript.Run(ctx, s.rdb,
 		[]string{workflowKey(claims.WorkflowID), agentKey(claims.WorkflowID, claims.AgentID)},
@@ -160,7 +165,7 @@ func (s *Service) registerWorkflow(ctx context.Context, claims *Claims) error {
 		claims.Limits.MaxDescendants,
 		stateExpiresAt,
 		claims.Limits.MaxChildren,
-		claims.Limits.CostBudgetCents,
+		costLimitMicros,
 		claims.Limits.TokenBudget,
 		claims.Limits.RPMLimit,
 		claims.Limits.RPSLimit,
@@ -176,6 +181,10 @@ func (s *Service) registerWorkflow(ctx context.Context, claims *Claims) error {
 }
 
 func (s *Service) registerChild(ctx context.Context, parent, child *Claims) error {
+	costLimitMicros, err := capabilityCostBudgetMicros(child.Limits.CostBudgetCents)
+	if err != nil {
+		return err
+	}
 	keys := make([]string, 0, len(parent.Lineage)+2)
 	keys = append(keys, workflowKey(parent.WorkflowID))
 	for _, ancestorID := range parent.Lineage {
@@ -193,7 +202,7 @@ func (s *Service) registerChild(ctx context.Context, parent, child *Claims) erro
 		child.Limits.MaxChildren,
 		child.Limits.MaxDescendants,
 		stateExpiresAt,
-		child.Limits.CostBudgetCents,
+		costLimitMicros,
 		child.Limits.TokenBudget,
 		child.Limits.RPMLimit,
 		child.Limits.RPSLimit,
@@ -216,6 +225,14 @@ func (s *Service) registerChild(ctx context.Context, parent, child *Claims) erro
 	default:
 		return fmt.Errorf("%w: unknown child registration result", ErrUnavailable)
 	}
+}
+
+func capabilityCostBudgetMicros(costBudgetCents int64) (int64, error) {
+	value, err := money.CentsToMicros(costBudgetCents)
+	if err != nil || value <= 0 || value > MaxExactRuntimeBudget {
+		return 0, fmt.Errorf("%w: cost budget exceeds the exact shared-counter range", ErrInvalidRequest)
+	}
+	return value, nil
 }
 
 func (s *Service) verifyState(ctx context.Context, claims *Claims) error {

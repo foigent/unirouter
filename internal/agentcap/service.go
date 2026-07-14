@@ -96,7 +96,7 @@ func NewServiceWithOptions(q db.DBQuerier, rdb *redis.Client, rootSecret string,
 
 func deriveSigningKey(rootSecret string) []byte {
 	mac := hmac.New(sha256.New, []byte(rootSecret))
-	_, _ = mac.Write([]byte("unirouter.agent-capability.signing.v1\x00"))
+	_, _ = mac.Write([]byte("unirouter.agent-capability.signing.v2\x00"))
 	return mac.Sum(nil)
 }
 

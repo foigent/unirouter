@@ -17,8 +17,12 @@
 > confirmed release blocker is `V1-FIN-001`, the integer-cent terminal clamp;
 > User selected the micro-CNY ledger option B. Wallet prerequisite PR #196
 > passed run `29300560434` and merged as `86a3bd8`; pricing prerequisite PR
-> #197 passed run `29301071299` and merged as `94c93dc`. The ledger remains
-> unimplemented and requires a later R3 merge/deployment decision gate.
+> #197 passed run `29301071299` and merged as `94c93dc`. The ledger is now
+> Local verified on `codex/v1-micro-precision-ledger`, including `000036`,
+> migrated PostgreSQL, exact API/UI contracts, effective-price overflow/race
+> rejection and isolated browser evidence.
+> Draft PR CI is pending; R3 merge, target drain/migration/deployment and
+> X-Insight v2 consumer acceptance remain explicit decision gates.
 
 ## First Read Order
 
@@ -86,6 +90,7 @@
 62. `docs/ops/evidence/V1-POST-PRD6-CI-EFFICIENCY-CI-20260714.md` - PR #198, main dispatch and exact cache-seed/cleanup readback.
 63. `docs/planning/V1-MICRO-PRECISION-LEDGER-PLAN-20260714.md` - accepted P0 micro-CNY ledger contract, migration boundary and approval gate.
 64. `docs/ops/evidence/V1-POST-PRD6-FINANCIAL-PREREQUISITES-CI-20260714.md` - wallet atomicity and public pricing-unit prerequisite merge/CI evidence.
+65. `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-LOCAL-20260714.md` - option B implementation, full local regression, isolated migration/API/browser evidence, issue classification and R3 cutover checklist.
 
 ## Current Project Shape
 

@@ -1,5 +1,10 @@
 # V1 Micro-Precision Ledger Plan — 2026-07-14
 
+> Implementation status: Local verified on branch
+> `codex/v1-micro-precision-ledger`, based on
+> `8cd268549917bb548e8b58a53c4a0f2b135a5781`. Draft PR required CI is
+> pending. The R3 merge/deployment decision gate below remains unchanged.
+
 ## Decision and classification
 
 - Decision: User selected option B, a source-preserving micro-precision ledger,
@@ -177,6 +182,8 @@ default; it must not round customer balances back to cents.
 ## Required acceptance evidence
 
 - Exact arithmetic, rounding, overflow and component-conservation unit tests.
+- Base-price/cache-ratio/organization-multiplier effective-range rejection on
+  every supported mutation path, including a concurrent cross-table race.
 - `2`-micro one-token charge and zero-token/zero-price zero-charge tests.
 - Cash/grant freeze, top-up, settle, refund, cancel and replay invariants in a
   migrated PostgreSQL database under concurrency.

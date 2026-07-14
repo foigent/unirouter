@@ -203,12 +203,12 @@ func upsertProject(ctx context.Context, tx pgx.Tx, orgID, userID int64, name, sl
 
 func upsertWallet(ctx context.Context, tx pgx.Tx, orgID int64) error {
 	_, err := tx.Exec(ctx,
-		`INSERT INTO wallets (org_id, balance, granted_balance, frozen, total_spent, currency, auto_freeze, low_balance_threshold_cents, created_at, updated_at)
-		 VALUES ($1, 1000000, 1000000, 0, 0, 'CNY', false, 0, NOW(), NOW())
+		`INSERT INTO wallets (org_id, balance_micros, granted_balance_micros, frozen_micros, total_spent_micros, currency, auto_freeze, low_balance_threshold_cents, created_at, updated_at)
+		 VALUES ($1, 10000000000, 10000000000, 0, 0, 'CNY', false, 0, NOW(), NOW())
 		 ON CONFLICT (org_id) DO UPDATE
-		   SET balance = GREATEST(wallets.balance, 1000000),
-		       granted_balance = GREATEST(wallets.granted_balance, 1000000),
-		       frozen = 0,
+		   SET balance_micros = GREATEST(wallets.balance_micros, 10000000000),
+		       granted_balance_micros = GREATEST(wallets.granted_balance_micros, 10000000000),
+		       frozen_micros = 0,
 		       currency = 'CNY',
 		       updated_at = NOW()`,
 		orgID,
@@ -416,12 +416,12 @@ func upsertOtherProjectHiddenLog(ctx context.Context, tx pgx.Tx, orgID, otherPro
 	_, err := tx.Exec(ctx,
 		`INSERT INTO call_logs (
 		     request_id, org_id, project_id, model, requested_model, provider, channel,
-		     prompt_tokens, completion_tokens, total_tokens, cost_cents, latency_ms, ttft_ms,
+		     prompt_tokens, completion_tokens, total_tokens, cost_micros, latency_ms, ttft_ms,
 		     status_code, upstream_status_code, upstream_error, usage_source, is_stream,
 		     ip_address, estimated_tokens, usage_confidence, created_at
 		 )
 		 SELECT 'batch16-other-project-hidden', $1, $2, $3, $4, 'batch16-mock', $5,
-		         1, 1, 2, 1, 1, 0, 200, 200, '', 'upstream', false,
+		         1, 1, 2, 10000, 1, 0, 200, 200, '', 'upstream', false,
 		         '127.0.0.1', 2, 1.000, NOW()
 		 WHERE NOT EXISTS (
 		     SELECT 1 FROM call_logs WHERE request_id = 'batch16-other-project-hidden' AND project_id = $2

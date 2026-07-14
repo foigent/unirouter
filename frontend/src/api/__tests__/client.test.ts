@@ -184,20 +184,20 @@ describe('API Client', () => {
 
     it('uses the multiplier contract for create and update', async () => {
       mockJsonResponse({ id: 4 })
-      await api.createOrgModelPrice({ org_id: 9, model_name: 'gpt-4o', multiplier: 1.25 })
+      await api.createOrgModelPrice({ org_id: 9, model_name: 'gpt-4o', multiplier: '1.25' })
       expect(mockFetch).toHaveBeenLastCalledWith(
         '/api/v1/org-model-prices',
         expect.objectContaining({
           method: 'POST',
-          body: JSON.stringify({ org_id: 9, model_name: 'gpt-4o', multiplier: 1.25 }),
+          body: JSON.stringify({ org_id: 9, model_name: 'gpt-4o', multiplier: '1.25' }),
         })
       )
 
       mockJsonResponse({ success: true })
-      await api.updateOrgModelPrice(4, { multiplier: 1.5 })
+      await api.updateOrgModelPrice(4, { multiplier: '1.5' })
       expect(mockFetch).toHaveBeenLastCalledWith(
         '/api/v1/org-model-prices/4',
-        expect.objectContaining({ method: 'PUT', body: JSON.stringify({ multiplier: 1.5 }) })
+        expect.objectContaining({ method: 'PUT', body: JSON.stringify({ multiplier: '1.5' }) })
       )
     })
   })

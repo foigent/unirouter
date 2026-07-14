@@ -26,7 +26,7 @@ const (
 	batch19ProjectSlug   = "prd2-batch19-budget-project"
 	batch19WebhookName   = "Batch19 Ops Webhook"
 	batch19BudgetCents   = 1000
-	batch19SpentCents    = 1200
+	batch19SpentMicros   = int64(12_000_000)
 )
 
 type batch19SeedOutput struct {
@@ -37,7 +37,9 @@ type batch19SeedOutput struct {
 	WebhookID     int64  `json:"webhook_id"`
 	EventID       int64  `json:"event_id"`
 	BudgetCents   int    `json:"budget_cents"`
-	SpentCents    int    `json:"spent_cents"`
+	SpentMicros   string `json:"spent_micros"`
+	Currency      string `json:"currency"`
+	AmountScale   int64  `json:"amount_scale"`
 	BudgetPeriod  string `json:"budget_period"`
 	WebhookName   string `json:"webhook_name"`
 }
@@ -117,7 +119,9 @@ func runBatch19Seed() error {
 		WebhookID:     webhookID,
 		EventID:       result.EventID,
 		BudgetCents:   batch19BudgetCents,
-		SpentCents:    batch19SpentCents,
+		SpentMicros:   fmt.Sprintf("%d", batch19SpentMicros),
+		Currency:      "CNY",
+		AmountScale:   1_000_000,
 		BudgetPeriod:  "daily",
 		WebhookName:   batch19WebhookName,
 	}
@@ -210,11 +214,11 @@ func createBatch19BudgetLogs(ctx context.Context, q execer, orgID, projectID int
 	now := time.Now().UTC()
 	periodStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	_, err := q.Exec(ctx,
-		`INSERT INTO call_logs (request_id, org_id, project_id, model, provider, channel, total_tokens, cost_cents, status_code, created_at)
+		`INSERT INTO call_logs (request_id, org_id, project_id, model, provider, channel, total_tokens, cost_micros, status_code, created_at)
 		 VALUES
 		   ($1, $2, $3, 'batch19-budget-model', 'batch19', 'batch19-current', 10, $4, 200, $5),
-		   ($6, $2, $3, 'batch19-budget-model', 'batch19', 'batch19-previous', 10, 5000, 200, $7)`,
-		fmt.Sprintf("batch19-budget-current-%d", now.UnixNano()), orgID, projectID, batch19SpentCents, periodStart.Add(time.Hour),
+		   ($6, $2, $3, 'batch19-budget-model', 'batch19', 'batch19-previous', 10, 50000000, 200, $7)`,
+		fmt.Sprintf("batch19-budget-current-%d", now.UnixNano()), orgID, projectID, batch19SpentMicros, periodStart.Add(time.Hour),
 		fmt.Sprintf("batch19-budget-previous-%d", now.UnixNano()), periodStart.Add(-time.Minute),
 	)
 	if err != nil {

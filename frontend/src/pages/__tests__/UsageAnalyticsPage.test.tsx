@@ -20,7 +20,7 @@ describe('UsageAnalyticsPage', () => {
         success_requests: 10,
         failed_requests: 2,
         total_tokens: 1200,
-        cost_cents: 32,
+        cost_micros: '320000',
         avg_latency_ms: 210,
         estimated_tokens: 200,
         upstream_tokens: 1000,
@@ -35,7 +35,7 @@ describe('UsageAnalyticsPage', () => {
         success_requests: 10,
         failed_requests: 2,
         total_tokens: 1200,
-        cost_cents: 32,
+        cost_micros: '320000',
         avg_latency_ms: 210,
         estimated_ratio: 0.2,
       }],
@@ -56,5 +56,6 @@ describe('UsageAnalyticsPage', () => {
     expect(screen.getByText('当前筛选口径 / 总览已包含全部匹配数据')).toBeTruthy();
     expect(screen.getByText('当前分组：总览（不分组）。请求内容：默认不存储明文 / 响应内容：默认不存储明文')).toBeTruthy();
     expect(screen.getByText('全部请求')).toBeTruthy();
+    expect(screen.getAllByText('¥0.320000').length).toBeGreaterThanOrEqual(2);
   });
 });

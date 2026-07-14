@@ -16,7 +16,7 @@ func freezeStreamReservation(t *testing.T, b *Billing, orgID int64, model, reque
 	result, err := b.Freeze(t.Context(), FreezeRequest{
 		RequestID: requestID, OrgID: orgID, Model: model,
 		EstimatedTokens: 100 + reservedCompletion, ReservedCompletionTokens: reservedCompletion,
-		SafetyFactor: 1, MinFreezeAmount: 10,
+		SafetyFactor: "1", MinFreezeCents: 10,
 	})
 	require.NoError(t, err)
 	require.True(t, result.Success, "%s: %s", result.ErrorCode, result.ErrorDetail)
@@ -54,19 +54,20 @@ func TestP6F11ConcurrentReservationExtensionChargesOnce(t *testing.T) {
 	for err := range errs {
 		require.NoError(t, err)
 	}
-	var extensionAmount int
+	var extensionAmount int64
 	for result := range results {
 		require.NotNil(t, result)
 		require.True(t, result.Success, "%s: %s", result.ErrorCode, result.ErrorDetail)
 		if extensionAmount == 0 {
-			extensionAmount = result.Amount
+			extensionAmount = result.AmountMicros
 		}
-		require.Equal(t, extensionAmount, result.Amount)
+		require.Equal(t, extensionAmount, result.AmountMicros)
 	}
 	require.Positive(t, extensionAmount)
 
-	var balance, frozen, reservedCompletion, extensionSequence, extensionRows int
-	require.NoError(t, pool.QueryRow(t.Context(), `SELECT balance,frozen FROM wallets WHERE org_id=$1`, orgID).Scan(&balance, &frozen))
+	var balanceMicros, frozenMicros int64
+	var reservedCompletion, extensionSequence, extensionRows int
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT balance_micros,frozen_micros FROM wallets WHERE org_id=$1`, orgID).Scan(&balanceMicros, &frozenMicros))
 	require.NoError(t, pool.QueryRow(t.Context(), `
 		SELECT reserved_completion_tokens,reservation_extension_sequence
 		FROM freeze_idempotency WHERE org_id=$1 AND request_id=$2`, orgID, requestID,
@@ -75,8 +76,8 @@ func TestP6F11ConcurrentReservationExtensionChargesOnce(t *testing.T) {
 		SELECT COUNT(*) FROM billing_reservation_extensions
 		WHERE org_id=$1 AND request_id=$2`, orgID, requestID,
 	).Scan(&extensionRows))
-	require.Equal(t, 10_000-initial.Amount-extensionAmount, balance)
-	require.Equal(t, initial.Amount+extensionAmount, frozen)
+	require.Equal(t, testMicros(10_000)-initial.AmountMicros-extensionAmount, balanceMicros)
+	require.Equal(t, initial.AmountMicros+extensionAmount, frozenMicros)
 	require.Equal(t, 1_100, reservedCompletion)
 	require.Equal(t, 1, extensionSequence)
 	require.Equal(t, 1, extensionRows)
@@ -95,7 +96,7 @@ func TestP6F11RejectedReservationExtensionIsDurablyIdempotent(t *testing.T) {
 	b := NewBilling(pool, nil)
 	const requestID = "op_p6f11_extend_rejected"
 	initial := freezeStreamReservation(t, b, orgID, model, requestID, 100)
-	require.Equal(t, 10, initial.Amount)
+	require.Equal(t, testMicros(10), initial.AmountMicros)
 
 	request := ExtendReservationRequest{
 		RequestID: requestID, OrgID: orgID, Sequence: 1,
@@ -108,8 +109,9 @@ func TestP6F11RejectedReservationExtensionIsDurablyIdempotent(t *testing.T) {
 		require.False(t, result.Success)
 		require.Equal(t, "insufficient_balance", result.ErrorCode)
 	}
-	var balance, frozen, reservedCompletion, extensionSequence, extensionRows int
-	require.NoError(t, pool.QueryRow(t.Context(), `SELECT balance,frozen FROM wallets WHERE org_id=$1`, orgID).Scan(&balance, &frozen))
+	var balanceMicros, frozenMicros int64
+	var reservedCompletion, extensionSequence, extensionRows int
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT balance_micros,frozen_micros FROM wallets WHERE org_id=$1`, orgID).Scan(&balanceMicros, &frozenMicros))
 	require.NoError(t, pool.QueryRow(t.Context(), `
 		SELECT reserved_completion_tokens,reservation_extension_sequence
 		FROM freeze_idempotency WHERE org_id=$1 AND request_id=$2`, orgID, requestID,
@@ -118,8 +120,8 @@ func TestP6F11RejectedReservationExtensionIsDurablyIdempotent(t *testing.T) {
 		SELECT COUNT(*) FROM billing_reservation_extensions
 		WHERE org_id=$1 AND request_id=$2 AND status='rejected'`, orgID, requestID,
 	).Scan(&extensionRows))
-	require.Zero(t, balance)
-	require.Equal(t, initial.Amount, frozen)
+	require.Zero(t, balanceMicros)
+	require.Equal(t, initial.AmountMicros, frozenMicros)
 	require.Equal(t, 100, reservedCompletion)
 	require.Equal(t, 1, extensionSequence)
 	require.Equal(t, 1, extensionRows)
@@ -259,21 +261,22 @@ func TestP6F11ExpiredStreamRecoveryUsesLastCheckpointOnly(t *testing.T) {
 	require.Equal(t, StreamRecoveryResult{Claimed: 2, Settled: 1, ProviderCostHeld: 1}, recovered)
 
 	var checkpointedStatus, uncheckpointedStatus, uncheckpointedReason string
-	var checkpointedPrompt, checkpointedCompletion, uncheckpointedCharged int
+	var checkpointedPrompt, checkpointedCompletion int
+	var uncheckpointedChargedMicros int64
 	require.NoError(t, pool.QueryRow(t.Context(), `
 		SELECT status,prompt_tokens,completion_tokens FROM freeze_idempotency
 		WHERE org_id=$1 AND request_id=$2`, orgID, checkpointedRequest,
 	).Scan(&checkpointedStatus, &checkpointedPrompt, &checkpointedCompletion))
 	require.NoError(t, pool.QueryRow(t.Context(), `
-		SELECT status,settlement_pending_reason,charged_cost FROM freeze_idempotency
+		SELECT status,settlement_pending_reason,charged_cost_micros FROM freeze_idempotency
 		WHERE org_id=$1 AND request_id=$2`, orgID, uncheckpointedRequest,
-	).Scan(&uncheckpointedStatus, &uncheckpointedReason, &uncheckpointedCharged))
+	).Scan(&uncheckpointedStatus, &uncheckpointedReason, &uncheckpointedChargedMicros))
 	require.Equal(t, "settled", checkpointedStatus)
 	require.Equal(t, 20, checkpointedPrompt)
 	require.Equal(t, 5, checkpointedCompletion)
 	require.Equal(t, "settlement_pending", uncheckpointedStatus)
 	require.Equal(t, pendingReasonProviderAttemptUnresolved, uncheckpointedReason)
-	require.Zero(t, uncheckpointedCharged, "no checkpoint means no provable customer usage and no customer charge")
+	require.Zero(t, uncheckpointedChargedMicros, "no checkpoint means no provable customer usage and no customer charge")
 
 	var zeroInterruptionReceipts int
 	require.NoError(t, pool.QueryRow(t.Context(), `

@@ -14,10 +14,11 @@ import (
 // customer price.
 var ErrModelPriceNotConfigured = errors.New("model price is not configured")
 
-// PriceProvider abstracts model price lookup so that billing calculation
-// logic can be unit-tested without a live PostgreSQL connection.
+// PriceProvider returns the legacy database source unit as exact decimal text:
+// CNY cents per 1,000 tokens. Text keeps customer calculations out of binary
+// floating point while allowing tests to inject deterministic prices.
 type PriceProvider interface {
-	QueryModelPrice(ctx context.Context, model string) (inputCost, outputCost float64, err error)
+	QueryModelPrice(ctx context.Context, model string) (inputCentsPerThousand, outputCentsPerThousand string, err error)
 }
 
 // DBPriceProvider is the production implementation backed by model_prices table.
@@ -32,23 +33,23 @@ func NewDBPriceProvider(db *pgxpool.Pool) *DBPriceProvider {
 
 // QueryModelPrice returns the internal CNY-cent rate per 1,000 tokens for a
 // model. Missing prices and query failures are both returned to callers.
-func (p *DBPriceProvider) QueryModelPrice(ctx context.Context, model string) (inputCost, outputCost float64, err error) {
+func (p *DBPriceProvider) QueryModelPrice(ctx context.Context, model string) (inputCost, outputCost string, err error) {
 	err = p.db.QueryRow(ctx,
-		`SELECT input_price_cents::float8, output_price_cents::float8 FROM model_prices WHERE model_name = $1`,
+		`SELECT input_price_cents::text, output_price_cents::text FROM model_prices WHERE model_name = $1`,
 		model).Scan(&inputCost, &outputCost)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return 0, 0, fmt.Errorf("%w: %s", ErrModelPriceNotConfigured, model)
+			return "", "", fmt.Errorf("%w: %s", ErrModelPriceNotConfigured, model)
 		}
-		return 0, 0, fmt.Errorf("query model price for %s: %w", model, err)
+		return "", "", fmt.Errorf("query model price for %s: %w", model, err)
 	}
 	return
 }
 
 // PriceProviderFunc is a function adapter for PriceProvider, convenient for tests.
-type PriceProviderFunc func(ctx context.Context, model string) (inputCost, outputCost float64, err error)
+type PriceProviderFunc func(ctx context.Context, model string) (inputCost, outputCost string, err error)
 
 // QueryModelPrice implements PriceProvider.
-func (f PriceProviderFunc) QueryModelPrice(ctx context.Context, model string) (float64, float64, error) {
+func (f PriceProviderFunc) QueryModelPrice(ctx context.Context, model string) (string, string, error) {
 	return f(ctx, model)
 }

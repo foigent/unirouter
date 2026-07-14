@@ -15,7 +15,7 @@ import {
 import { api } from '../api/client';
 import { useAuthStore } from '../store/auth';
 import { canCreateProjectKey, canDisableProjectKey } from '../navigation';
-import { EmptyState, MetricTile, MoneyText, PageHeader, StatusTag, Surface } from '../ui';
+import { EmptyState, MetricTile, MoneyText, PageHeader, parseMicros, StatusTag, Surface } from '../ui';
 import { roleLabel as formatRoleLabel } from '../utils/displayLabels';
 import { keyQuotaText } from '../utils/quota';
 
@@ -78,7 +78,7 @@ interface CallLog {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
-  cost_cents: number;
+  cost_micros: string;
   status_code: number;
   latency_ms: number;
   ttft_ms?: number;
@@ -95,7 +95,7 @@ interface UsageAnalyticsRow {
   success_requests: number;
   failed_requests: number;
   total_tokens: number;
-  cost_cents: number;
+  cost_micros: string;
   avg_latency_ms: number;
   estimated_ratio: number;
 }
@@ -105,7 +105,7 @@ interface UsageAnalyticsSummary {
   success_requests: number;
   failed_requests: number;
   total_tokens: number;
-  cost_cents: number;
+  cost_micros: string;
   avg_latency_ms: number;
   estimated_ratio: number;
 }
@@ -174,7 +174,7 @@ export default function DeveloperConsolePage() {
     status: number;
     content: string;
     request_id?: string;
-    cost_cents?: number;
+    cost_micros?: string;
     total_tokens?: number;
     latency_ms?: number;
     usage_source?: string;
@@ -209,7 +209,7 @@ export default function DeveloperConsolePage() {
       return {
         requestCount: usageSummary.total_requests || 0,
         totalTokens: usageSummary.total_tokens || 0,
-        totalCost: usageSummary.cost_cents || 0,
+        totalCostMicros: usageSummary.cost_micros || '0',
         errorRate: usageSummary.total_requests ? (usageSummary.failed_requests || 0) / usageSummary.total_requests * 100 : 0,
         avgLatency: usageSummary.avg_latency_ms || 0,
         sourceLabel: '我的 Key 聚合',
@@ -217,7 +217,7 @@ export default function DeveloperConsolePage() {
     }
     const requestCount = logTotal;
     const totalTokens = logs.reduce((sum, log) => sum + (log.total_tokens || 0), 0);
-    const totalCost = logs.reduce((sum, log) => sum + (log.cost_cents || 0), 0);
+    const totalCostMicros = logs.reduce((sum, log) => sum + parseMicros(log.cost_micros || '0'), 0n);
     const failed = logs.filter(log => log.status_code >= 400 || log.status_code === 0).length;
     const avgLatency = logs.length
       ? logs.reduce((sum, log) => sum + (log.latency_ms || 0), 0) / logs.length
@@ -225,7 +225,7 @@ export default function DeveloperConsolePage() {
     return {
       requestCount,
       totalTokens,
-      totalCost,
+      totalCostMicros,
       errorRate: logs.length ? failed / logs.length * 100 : 0,
       avgLatency,
       sourceLabel: '最近 20 条合计',
@@ -428,7 +428,7 @@ export default function DeveloperConsolePage() {
           status: response.status,
           content: content || '(empty stream)',
           request_id: finalMeta?.request_id,
-          cost_cents: finalMeta?.cost?.charged,
+          cost_micros: finalMeta?.cost?.charged_cost_micros,
           total_tokens: finalMeta?.usage?.total_tokens,
           latency_ms: latency,
           usage_source: finalMeta?.usage_source,
@@ -453,7 +453,7 @@ export default function DeveloperConsolePage() {
         status: response.status,
         content: payload?.choices?.[0]?.message?.content || JSON.stringify(payload, null, 2),
         request_id: uniroute?.request_id || payload?.id,
-        cost_cents: uniroute?.cost?.charged,
+        cost_micros: uniroute?.cost?.charged_cost_micros,
         total_tokens: payload?.usage?.total_tokens,
         latency_ms: latency,
         usage_source: uniroute?.usage_source || payload?.usage_source,
@@ -527,7 +527,7 @@ export default function DeveloperConsolePage() {
     { title: '模型', dataIndex: 'model', key: 'model' },
     { title: '状态', dataIndex: 'status_code', key: 'status_code', render: (value: number) => <StatusTag status={value}>{value}</StatusTag> },
     { title: 'Token', dataIndex: 'total_tokens', key: 'total_tokens', render: (value: number) => compactNumber(value || 0) },
-    { title: '费用', dataIndex: 'cost_cents', key: 'cost_cents', render: (value: number) => <MoneyText cents={value || 0} precision={4} tone="cost" /> },
+    { title: '费用', dataIndex: 'cost_micros', key: 'cost_micros', render: (value: string) => <MoneyText micros={value || '0'} precision={6} tone="cost" /> },
     { title: '延迟', dataIndex: 'latency_ms', key: 'latency_ms', render: (value: number) => `${value || 0}ms` },
   ];
 
@@ -536,7 +536,7 @@ export default function DeveloperConsolePage() {
     { title: '请求数', dataIndex: 'total_requests', key: 'total_requests', render: (value: number) => compactNumber(value || 0) },
     { title: '成功 / 失败', key: 'status_mix', render: (_: unknown, row: UsageAnalyticsRow) => `${row.success_requests || 0} / ${row.failed_requests || 0}` },
     { title: 'Token', dataIndex: 'total_tokens', key: 'total_tokens', render: (value: number) => compactNumber(value || 0) },
-    { title: '费用', dataIndex: 'cost_cents', key: 'cost_cents', render: (value: number) => <MoneyText cents={value || 0} precision={4} tone="cost" /> },
+    { title: '费用', dataIndex: 'cost_micros', key: 'cost_micros', render: (value: string) => <MoneyText micros={value || '0'} precision={6} tone="cost" /> },
     { title: '平均延迟', dataIndex: 'avg_latency_ms', key: 'avg_latency_ms', render: (value: number) => `${Math.round(value || 0)}ms` },
   ];
 
@@ -604,7 +604,7 @@ export default function DeveloperConsolePage() {
       <div className="ur-kpi-grid">
         <MetricTile label="请求数" value={compactNumber(usageSnapshot.requestCount)} icon={<IconFile />} tone="blue" meta={usageSnapshot.sourceLabel} />
         <MetricTile label="Token" value={compactNumber(usageSnapshot.totalTokens)} icon={<IconServer />} tone="violet" meta={usageSnapshot.sourceLabel} />
-        <MetricTile label="费用" value={<MoneyText cents={usageSnapshot.totalCost} precision={4} strong tone="cost" />} icon={<IconCoinMoney />} tone="green" meta={usageSnapshot.sourceLabel} />
+        <MetricTile label="费用" value={<MoneyText micros={usageSnapshot.totalCostMicros} precision={6} strong tone="cost" />} icon={<IconCoinMoney />} tone="green" meta={usageSnapshot.sourceLabel} />
         <MetricTile label="错误率" value={`${usageSnapshot.errorRate.toFixed(1)}%`} icon={<IconAlertTriangle />} tone={usageSnapshot.errorRate > 5 ? 'red' : 'amber'} meta={`平均延迟 ${usageSnapshot.avgLatency.toFixed(0)}ms`} />
       </div>
 
@@ -703,7 +703,7 @@ export default function DeveloperConsolePage() {
                   <StatusTag status={playgroundResult.status}>{playgroundResult.status || 'network_error'}</StatusTag>
                   {playgroundResult.request_id && <Text code>{playgroundResult.request_id}</Text>}
                   {playgroundResult.total_tokens !== undefined && <StatusTag status="tokens">{playgroundResult.total_tokens} tokens</StatusTag>}
-                  {playgroundResult.cost_cents !== undefined && <MoneyText cents={playgroundResult.cost_cents} precision={4} tone="cost" />}
+                  {playgroundResult.cost_micros !== undefined && <MoneyText micros={playgroundResult.cost_micros} precision={6} tone="cost" />}
                   {playgroundResult.latency_ms !== undefined && <Text type="tertiary">{playgroundResult.latency_ms}ms</Text>}
                 </div>
                 {playgroundResult.error ? (
@@ -772,7 +772,7 @@ export default function DeveloperConsolePage() {
                 <div><Text type="tertiary">供应商</Text><strong>{lookupResult.provider || '-'}</strong></div>
                 <div><Text type="tertiary">渠道</Text><strong>{lookupResult.channel || '-'}</strong></div>
                 <div><Text type="tertiary">Token</Text><strong>{compactNumber(lookupResult.total_tokens || 0)}</strong></div>
-                <div><Text type="tertiary">费用</Text><MoneyText cents={lookupResult.cost_cents || 0} precision={4} strong tone="cost" /></div>
+                <div><Text type="tertiary">费用</Text><MoneyText micros={lookupResult.cost_micros || '0'} precision={6} strong tone="cost" /></div>
                 <div><Text type="tertiary">延迟</Text><strong>{lookupResult.latency_ms || 0}ms</strong></div>
                 {lookupResult.upstream_error && (
                   <div className="ur-dev-lookup-wide">

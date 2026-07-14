@@ -7,7 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +17,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	internaldb "github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/metering"
+	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/outbox"
 )
 
@@ -29,19 +30,19 @@ type FreezeRequest struct {
 	EstimatedTokens          int
 	EstimatedInputTokens     int
 	ReservedCompletionTokens int
-	SafetyFactor             float64
-	MinFreezeAmount          int
+	SafetyFactor             string
+	MinFreezeCents           int64
 }
 
 // FreezeResult contains the result of a freeze operation.
 type FreezeResult struct {
-	FreezeID       int64
-	Amount         int
-	NewBalance     int
-	PricingVersion string
-	Success        bool
-	ErrorCode      string
-	ErrorDetail    string
+	FreezeID         int64
+	AmountMicros     int64
+	NewBalanceMicros int64
+	PricingVersion   string
+	Success          bool
+	ErrorCode        string
+	ErrorDetail      string
 }
 
 // SettleRequest contains the parameters for a settlement.
@@ -49,7 +50,6 @@ type SettleRequest struct {
 	RequestID            string
 	AttemptID            string
 	OrgID                int64
-	ActualCost           int
 	PromptTokens         int
 	UncachedPromptTokens int
 	CacheReadTokens      int
@@ -67,81 +67,81 @@ type SettleRequest struct {
 
 // SettleResult contains the result of a settlement.
 type SettleResult struct {
-	SettleID                         int64
-	ActualCost                       int
-	ChargedCost                      int
-	UncoveredCost                    int
-	TopUpAmount                      int
-	Refund                           int
-	NewBalance                       int
-	PricingVersion                   string
-	EffectiveInputPriceCents         float64
-	EffectiveCacheReadPriceCents     float64
-	EffectiveCacheCreationPriceCents float64
-	EffectiveOutputPriceCents        float64
-	CacheReadRatio                   float64
-	CacheCreationRatio               float64
-	UncachedInputCostCents           float64
-	CacheReadCostCents               float64
-	CacheCreationCostCents           float64
-	OutputCostCents                  float64
-	Success                          bool
-	ErrorCode                        string
+	SettleID                                    int64
+	ActualCostMicros                            int64
+	ChargedCostMicros                           int64
+	UncoveredCostMicros                         int64
+	TopUpAmountMicros                           int64
+	RefundMicros                                int64
+	NewBalanceMicros                            int64
+	PricingVersion                              string
+	EffectiveInputPriceMicrosPerMillion         int64
+	EffectiveCacheReadPriceMicrosPerMillion     int64
+	EffectiveCacheCreationPriceMicrosPerMillion int64
+	EffectiveOutputPriceMicrosPerMillion        int64
+	CacheReadRatio                              float64
+	CacheCreationRatio                          float64
+	UncachedInputCostMicros                     int64
+	CacheReadCostMicros                         int64
+	CacheCreationCostMicros                     int64
+	OutputCostMicros                            int64
+	Success                                     bool
+	ErrorCode                                   string
 }
 
 type priceQuote struct {
-	InputPriceCents         float64
-	CacheReadPriceCents     float64
-	CacheCreationPriceCents float64
-	OutputPriceCents        float64
-	CacheReadRatio          float64
-	CacheCreationRatio      float64
-	Multiplier              float64
-	Version                 string
+	InputPriceMicrosPerMillion         int64
+	CacheReadPriceMicrosPerMillion     int64
+	CacheCreationPriceMicrosPerMillion int64
+	OutputPriceMicrosPerMillion        int64
+	CacheReadRatio                     float64
+	CacheCreationRatio                 float64
+	Multiplier                         string
+	Version                            string
 }
 
 type reservationRecord struct {
-	Model                       string
-	ProjectID                   int64
-	FrozenAmount                int
-	ReservedBalanceAmount       int
-	ReservedGrantedAmount       int
-	EffectiveInputPrice         float64
-	EffectiveCacheReadPrice     float64
-	EffectiveCacheCreationPrice float64
-	EffectiveOutputPrice        float64
-	CacheReadRatio              float64
-	CacheCreationRatio          float64
-	PricingVersion              string
-	Status                      string
-	SettlementPendingReason     string
-	PromptTokens                int
-	UncachedPromptTokens        int
-	CacheReadTokens             int
-	CacheCreationTokens         int
-	CompletionTokens            int
-	UsageSource                 string
-	UsageAuthority              metering.UsageAuthority
-	UsagePurpose                metering.UsagePurpose
-	UsageFinality               metering.UsageFinality
-	UsageContractVersion        string
-	UsageEstimateVersion        string
-	CacheUsageSchema            string
-	CacheUsageStatus            string
-	OutputStartedAt             sql.NullTime
-	SettlementPayloadAt         sql.NullTime
-	SettlementAttempts          int
-	CalculatedCost              int
-	ChargedCost                 int
-	UncoveredCost               int
-	TopUpAmount                 int
-	RefundAmount                int
-	UncachedInputCost           float64
-	CacheReadCost               float64
-	CacheCreationCost           float64
-	OutputCost                  float64
-	TerminalTransactionID       sql.NullInt64
-	BalanceAfter                sql.NullInt64
+	Model                                       string
+	ProjectID                                   int64
+	FrozenAmountMicros                          int64
+	ReservedBalanceMicros                       int64
+	ReservedGrantedMicros                       int64
+	EffectiveInputPriceMicrosPerMillion         int64
+	EffectiveCacheReadPriceMicrosPerMillion     int64
+	EffectiveCacheCreationPriceMicrosPerMillion int64
+	EffectiveOutputPriceMicrosPerMillion        int64
+	CacheReadRatio                              float64
+	CacheCreationRatio                          float64
+	PricingVersion                              string
+	Status                                      string
+	SettlementPendingReason                     string
+	PromptTokens                                int
+	UncachedPromptTokens                        int
+	CacheReadTokens                             int
+	CacheCreationTokens                         int
+	CompletionTokens                            int
+	UsageSource                                 string
+	UsageAuthority                              metering.UsageAuthority
+	UsagePurpose                                metering.UsagePurpose
+	UsageFinality                               metering.UsageFinality
+	UsageContractVersion                        string
+	UsageEstimateVersion                        string
+	CacheUsageSchema                            string
+	CacheUsageStatus                            string
+	OutputStartedAt                             sql.NullTime
+	SettlementPayloadAt                         sql.NullTime
+	SettlementAttempts                          int
+	CalculatedCostMicros                        int64
+	ChargedCostMicros                           int64
+	UncoveredCostMicros                         int64
+	TopUpAmountMicros                           int64
+	RefundAmountMicros                          int64
+	UncachedInputCostMicros                     int64
+	CacheReadCostMicros                         int64
+	CacheCreationCostMicros                     int64
+	OutputCostMicros                            int64
+	TerminalTransactionID                       sql.NullInt64
+	BalanceAfter                                sql.NullInt64
 }
 
 var ErrSettlementPending = errors.New("billing reservation has billable output pending settlement")
@@ -182,22 +182,14 @@ func (b *Billing) WithPriceProvider(p PriceProvider) *Billing {
 	return b
 }
 
-// QueryModelPrice returns the internal CNY-cent rate per 1,000 tokens for a
-// model. An unpriced model fails closed.
-func (b *Billing) QueryModelPrice(ctx context.Context, model string) (inputCost, outputCost float64, err error) {
-	return b.prices.QueryModelPrice(ctx, model)
-}
-
-// QueryModelPriceForOrg returns internal CNY-cent rates per 1,000 tokens with
-// the organization multiplier applied.
-// Merges base price lookup and org multiplier into a single SQL query to reduce
-// round-trips from 3 (PriceProvider + fallback + multiplier) to 1.
-func (b *Billing) QueryModelPriceForOrg(ctx context.Context, orgID int64, model string) (inputCost, outputCost float64, err error) {
+// QueryModelPriceMicrosForOrg returns immutable effective integer prices in
+// micro-CNY per one million tokens.
+func (b *Billing) QueryModelPriceMicrosForOrg(ctx context.Context, orgID int64, model string) (inputCost, outputCost int64, err error) {
 	quote, err := b.queryPriceQuoteForOrg(ctx, orgID, model)
 	if err != nil {
 		return 0, 0, err
 	}
-	return quote.InputPriceCents, quote.OutputPriceCents, nil
+	return quote.InputPriceMicrosPerMillion, quote.OutputPriceMicrosPerMillion, nil
 }
 
 // queryPriceQuoteForOrg resolves pricing before a wallet transaction begins.
@@ -210,18 +202,18 @@ func (b *Billing) queryPriceQuoteForOrg(ctx context.Context, orgID int64, model 
 		if err != nil {
 			return priceQuote{}, err
 		}
-		return newPriceQuote(model, inputCost, outputCost, 1, 1, 1, time.Time{}, time.Time{}, "injected"), nil
+		return newPriceQuote(model, inputCost, outputCost, "1", "1", "1", time.Time{}, time.Time{}, "injected")
 	}
 
-	var baseInput, baseOutput, cacheReadRatio, cacheCreationRatio, multiplier float64
+	var baseInput, baseOutput, cacheReadRatio, cacheCreationRatio, multiplier string
 	var baseUpdatedAt, orgUpdatedAt sql.NullTime
 	err := b.db.QueryRow(ctx, `
 		SELECT
-			mp.input_price_cents::float8,
-			mp.output_price_cents::float8,
-			COALESCE(mp.cache_read_ratio, 1)::float8,
-			COALESCE(mp.cache_creation_ratio, 1)::float8,
-			COALESCE(omp.multiplier, 1.0)::float8,
+			mp.input_price_cents::text,
+			mp.output_price_cents::text,
+			COALESCE(mp.cache_read_ratio, 1)::text,
+			COALESCE(mp.cache_creation_ratio, 1)::text,
+			COALESCE(omp.multiplier, 1.0)::text,
 			mp.updated_at,
 			omp.updated_at
 		FROM model_prices mp
@@ -234,7 +226,7 @@ func (b *Billing) queryPriceQuoteForOrg(ctx context.Context, orgID int64, model 
 		}
 		return priceQuote{}, fmt.Errorf("query model price for org %d model %s: %w", orgID, model, err)
 	}
-	return newPriceQuote(model, baseInput, baseOutput, cacheReadRatio, cacheCreationRatio, multiplier, nullableTime(baseUpdatedAt), nullableTime(orgUpdatedAt), "database"), nil
+	return newPriceQuote(model, baseInput, baseOutput, cacheReadRatio, cacheCreationRatio, multiplier, nullableTime(baseUpdatedAt), nullableTime(orgUpdatedAt), "database")
 }
 
 func nullableTime(value sql.NullTime) time.Time {
@@ -244,12 +236,38 @@ func nullableTime(value sql.NullTime) time.Time {
 	return value.Time.UTC()
 }
 
-func newPriceQuote(model string, baseInput, baseOutput, cacheReadRatio, cacheCreationRatio, multiplier float64, baseUpdatedAt, orgUpdatedAt time.Time, source string) priceQuote {
+func newPriceQuote(model, baseInput, baseOutput, cacheReadRatio, cacheCreationRatio, multiplier string, baseUpdatedAt, orgUpdatedAt time.Time, source string) (priceQuote, error) {
+	inputPrice, err := money.PriceMicrosPerMillionFromInternal(baseInput, "1", multiplier)
+	if err != nil {
+		return priceQuote{}, fmt.Errorf("input price for %s: %w", model, err)
+	}
+	cacheReadPrice, err := money.PriceMicrosPerMillionFromInternal(baseInput, cacheReadRatio, multiplier)
+	if err != nil {
+		return priceQuote{}, fmt.Errorf("cache-read price for %s: %w", model, err)
+	}
+	cacheCreationPrice, err := money.PriceMicrosPerMillionFromInternal(baseInput, cacheCreationRatio, multiplier)
+	if err != nil {
+		return priceQuote{}, fmt.Errorf("cache-creation price for %s: %w", model, err)
+	}
+	outputPrice, err := money.PriceMicrosPerMillionFromInternal(baseOutput, "1", multiplier)
+	if err != nil {
+		return priceQuote{}, fmt.Errorf("output price for %s: %w", model, err)
+	}
+	cacheReadRatioFloat, err := strconv.ParseFloat(cacheReadRatio, 64)
+	if err != nil {
+		return priceQuote{}, fmt.Errorf("cache-read display ratio for %s: %w", model, err)
+	}
+	cacheCreationRatioFloat, err := strconv.ParseFloat(cacheCreationRatio, 64)
+	if err != nil {
+		return priceQuote{}, fmt.Errorf("cache-creation display ratio for %s: %w", model, err)
+	}
 	canonical := fmt.Sprintf(
-		"pv2|%s|%.6f|%.6f|%.6f|%.6f|%.6f|%d|%d|%s",
+		"pv3|%s|%d|%d|%d|%d|%s|%s|%s|%d|%d|%s",
 		model,
-		baseInput,
-		baseOutput,
+		inputPrice,
+		cacheReadPrice,
+		cacheCreationPrice,
+		outputPrice,
 		cacheReadRatio,
 		cacheCreationRatio,
 		multiplier,
@@ -259,53 +277,69 @@ func newPriceQuote(model string, baseInput, baseOutput, cacheReadRatio, cacheCre
 	)
 	digest := sha256.Sum256([]byte(canonical))
 	return priceQuote{
-		InputPriceCents:         baseInput * multiplier,
-		CacheReadPriceCents:     baseInput * cacheReadRatio * multiplier,
-		CacheCreationPriceCents: baseInput * cacheCreationRatio * multiplier,
-		OutputPriceCents:        baseOutput * multiplier,
-		CacheReadRatio:          cacheReadRatio,
-		CacheCreationRatio:      cacheCreationRatio,
-		Multiplier:              multiplier,
-		Version:                 "pv2_" + hex.EncodeToString(digest[:]),
-	}
+		InputPriceMicrosPerMillion:         inputPrice,
+		CacheReadPriceMicrosPerMillion:     cacheReadPrice,
+		CacheCreationPriceMicrosPerMillion: cacheCreationPrice,
+		OutputPriceMicrosPerMillion:        outputPrice,
+		CacheReadRatio:                     cacheReadRatioFloat,
+		CacheCreationRatio:                 cacheCreationRatioFloat,
+		Multiplier:                         multiplier,
+		Version:                            "pv3_" + hex.EncodeToString(digest[:]),
+	}, nil
 }
 
-func estimateFreezeAmountFromQuote(quote priceQuote, estimatedTokens int, safetyFactor float64, minFreezeAmount int) int {
-	reservationPrice := math.Max(
-		math.Max(quote.InputPriceCents, quote.OutputPriceCents),
-		math.Max(quote.CacheReadPriceCents, quote.CacheCreationPriceCents),
+func estimateFreezeAmountFromQuote(quote priceQuote, estimatedTokens int, safetyFactor string, minFreezeCents int64) (int64, error) {
+	reservationPrice := quote.InputPriceMicrosPerMillion
+	for _, candidate := range []int64{quote.OutputPriceMicrosPerMillion, quote.CacheReadPriceMicrosPerMillion, quote.CacheCreationPriceMicrosPerMillion} {
+		if candidate > reservationPrice {
+			reservationPrice = candidate
+		}
+	}
+	return money.EstimateHold(int64(estimatedTokens), reservationPrice, safetyFactor, minFreezeCents)
+}
+
+// CalculateCostMicros calculates a base-price request charge in micro-CNY.
+func (b *Billing) CalculateCostMicros(ctx context.Context, model string, promptTokens, completionTokens int) (int64, error) {
+	inputSource, outputSource, err := b.prices.QueryModelPrice(ctx, model)
+	if err != nil {
+		return 0, err
+	}
+	quote, err := newPriceQuote(model, inputSource, outputSource, "1", "1", "1", time.Time{}, time.Time{}, "base")
+	if err != nil {
+		return 0, err
+	}
+	calculation, err := money.Calculate(
+		money.Component{Tokens: int64(promptTokens), PriceMicrosPerMillion: quote.InputPriceMicrosPerMillion},
+		money.Component{Tokens: int64(completionTokens), PriceMicrosPerMillion: quote.OutputPriceMicrosPerMillion},
 	)
-	estimated := int(math.Round(float64(estimatedTokens) * reservationPrice / 1000.0 * safetyFactor))
-	if estimated < minFreezeAmount {
-		estimated = minFreezeAmount
-	}
-	return estimated
+	return calculation.TotalMicros, err
 }
 
-// CalculateCost calculates the cost of a request in cents.
-func (b *Billing) CalculateCost(ctx context.Context, model string, promptTokens, completionTokens int) (int, error) {
-	inputCost, outputCost, err := b.prices.QueryModelPrice(ctx, model)
+// CalculateCostMicrosForOrg applies an organization's immutable multiplier.
+func (b *Billing) CalculateCostMicrosForOrg(ctx context.Context, orgID int64, model string, promptTokens, completionTokens int) (int64, error) {
+	quote, err := b.queryPriceQuoteForOrg(ctx, orgID, model)
 	if err != nil {
 		return 0, err
 	}
-	total := int((float64(promptTokens)*inputCost + float64(completionTokens)*outputCost) / 1000)
-	if total < 1 {
-		total = 1
-	}
-	return total, nil
+	calculation, err := money.Calculate(
+		money.Component{Tokens: int64(promptTokens), PriceMicrosPerMillion: quote.InputPriceMicrosPerMillion},
+		money.Component{Tokens: int64(completionTokens), PriceMicrosPerMillion: quote.OutputPriceMicrosPerMillion},
+	)
+	return calculation.TotalMicros, err
 }
 
-// EstimateFreezeAmount calculates the freeze amount based on estimated tokens.
-func (b *Billing) EstimateFreezeAmount(ctx context.Context, model string, estimatedTokens int, safetyFactor float64, minFreezeAmount int) (int, error) {
-	_, outputCost, err := b.prices.QueryModelPrice(ctx, model)
+// EstimateFreezeMicros calculates a conservative hold from an exact decimal
+// safety factor and an explicitly cents-denominated policy minimum.
+func (b *Billing) EstimateFreezeMicros(ctx context.Context, model string, estimatedTokens int, safetyFactor string, minFreezeCents int64) (int64, error) {
+	inputSource, outputSource, err := b.prices.QueryModelPrice(ctx, model)
 	if err != nil {
 		return 0, err
 	}
-	estimated := int(math.Round(float64(estimatedTokens) * outputCost / 1000.0 * safetyFactor))
-	if estimated < minFreezeAmount {
-		estimated = minFreezeAmount
+	quote, err := newPriceQuote(model, inputSource, outputSource, "1", "1", "1", time.Time{}, time.Time{}, "base")
+	if err != nil {
+		return 0, err
 	}
-	return estimated, nil
+	return estimateFreezeAmountFromQuote(quote, estimatedTokens, safetyFactor, minFreezeCents)
 }
 
 // Freeze deducts balance (prioritizing granted_balance) and creates a freeze record.
@@ -318,7 +352,14 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 	if err != nil {
 		return nil, fmt.Errorf("quote freeze price: %w", err)
 	}
-	freezeAmount := estimateFreezeAmountFromQuote(quote, req.EstimatedTokens, req.SafetyFactor, req.MinFreezeAmount)
+	freezeAmount, err := estimateFreezeAmountFromQuote(quote, req.EstimatedTokens, req.SafetyFactor, req.MinFreezeCents)
+	if err != nil {
+		return nil, fmt.Errorf("calculate freeze amount: %w", err)
+	}
+	minFreezeMicros, err := money.CentsToMicros(req.MinFreezeCents)
+	if err != nil {
+		return nil, fmt.Errorf("convert minimum freeze: %w", err)
+	}
 
 	tx, err := b.db.Begin(ctx)
 	if err != nil {
@@ -340,15 +381,15 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 	// server operation ID cannot be silently reused after settlement/cancel.
 	var existing reservationRecord
 	err = tx.QueryRow(ctx,
-		`SELECT frozen_amount, status, pricing_version
+		`SELECT frozen_amount_micros, status, pricing_version
 		 FROM freeze_idempotency
 		 WHERE request_id = $1 AND org_id = $2`,
 		req.RequestID, req.OrgID,
-	).Scan(&existing.FrozenAmount, &existing.Status, &existing.PricingVersion)
+	).Scan(&existing.FrozenAmountMicros, &existing.Status, &existing.PricingVersion)
 	if err == nil {
 		if existing.Status == "frozen" {
 			return &FreezeResult{
-				Amount:         existing.FrozenAmount,
+				AmountMicros:   existing.FrozenAmountMicros,
 				PricingVersion: existing.PricingVersion,
 				Success:        true,
 			}, nil
@@ -364,9 +405,9 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 	}
 
 	// Get current balance
-	var balance, grantedBalance, frozen int
+	var balance, grantedBalance, frozen int64
 	err = tx.QueryRow(ctx,
-		`SELECT balance, granted_balance, frozen FROM wallets WHERE org_id = $1 FOR UPDATE`,
+		`SELECT balance_micros, granted_balance_micros, frozen_micros FROM wallets WHERE org_id = $1 FOR UPDATE`,
 		req.OrgID).Scan(&balance, &grantedBalance, &frozen)
 	if err != nil {
 		return nil, fmt.Errorf("get wallet: %w", err)
@@ -375,12 +416,15 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 	if err != nil {
 		return nil, err
 	}
-	grantedBalance -= minInt(grantedBalance, expiredGrantBalance)
+	grantedBalance -= minInt64(grantedBalance, expiredGrantBalance)
 
 	// balance and granted_balance are already debited when a reservation is
 	// created. frozen is a held-funds control total, not another deduction from
 	// spendable funds.
-	available := balance + grantedBalance
+	available, err := money.Add(balance, grantedBalance)
+	if err != nil {
+		return nil, fmt.Errorf("calculate available balance: %w", err)
+	}
 	if available < freezeAmount {
 		// Persist any lazy grant expiry performed above even though no
 		// reservation is created.
@@ -397,7 +441,7 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 	// Deduct: prioritize granted_balance first, then cash. Grant-row balances
 	// are reduced in earliest-expiry order so the aggregate wallet and grant
 	// ledger cannot later be charged a second time by expiry cleanup.
-	reservedGranted := minInt(grantedBalance, freezeAmount)
+	reservedGranted := minInt64(grantedBalance, freezeAmount)
 	reservedBalance := freezeAmount - reservedGranted
 	newGranted := grantedBalance - reservedGranted
 	newBalance := balance - reservedBalance
@@ -407,7 +451,7 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 	}
 
 	_, err = tx.Exec(ctx,
-		`UPDATE wallets SET balance = $1, granted_balance = $2, frozen = frozen + $3, updated_at = NOW()
+		`UPDATE wallets SET balance_micros = $1, granted_balance_micros = $2, frozen_micros = frozen_micros + $3, updated_at = NOW()
 		 WHERE org_id = $4`,
 		newBalance, newGranted, freezeAmount, req.OrgID)
 	if err != nil {
@@ -416,7 +460,7 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 
 	// Record transaction
 	_, err = tx.Exec(ctx,
-		`INSERT INTO transactions (request_id, org_id, type, status, amount, note, created_at)
+		`INSERT INTO transactions (request_id, org_id, type, status, amount_micros, note, created_at)
 		 VALUES ($1, $2, 'freeze', 'completed', $3, $4, NOW())`,
 		req.RequestID, req.OrgID, freezeAmount, "Freeze for request "+req.RequestID)
 	if err != nil {
@@ -426,13 +470,13 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 	// Insert the self-contained reservation and its immutable price snapshot.
 	_, err = tx.Exec(ctx,
 		`INSERT INTO freeze_idempotency (
-			request_id, org_id, frozen_amount, status,
+			request_id, org_id, frozen_amount_micros, status,
 			project_id,
-			reserved_balance_amount, reserved_granted_amount,
+			reserved_balance_micros, reserved_granted_micros,
 			model_name, estimated_tokens, reserved_completion_tokens,
-			safety_factor, min_freeze_amount,
-			effective_input_price_cents, effective_cache_read_price_cents,
-			effective_cache_creation_price_cents, effective_output_price_cents,
+			safety_factor, min_freeze_micros,
+			effective_input_price_micros_per_million, effective_cache_read_price_micros_per_million,
+			effective_cache_creation_price_micros_per_million, effective_output_price_micros_per_million,
 			cache_read_ratio, cache_creation_ratio,
 			price_multiplier, pricing_version, updated_at
 		 ) VALUES (
@@ -445,9 +489,9 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 		req.ProjectID,
 		reservedBalance, reservedGranted,
 		req.Model, req.EstimatedTokens, req.ReservedCompletionTokens,
-		req.SafetyFactor, req.MinFreezeAmount,
-		quote.InputPriceCents, quote.CacheReadPriceCents, quote.CacheCreationPriceCents,
-		quote.OutputPriceCents, quote.CacheReadRatio, quote.CacheCreationRatio,
+		req.SafetyFactor, minFreezeMicros,
+		quote.InputPriceMicrosPerMillion, quote.CacheReadPriceMicrosPerMillion, quote.CacheCreationPriceMicrosPerMillion,
+		quote.OutputPriceMicrosPerMillion, quote.CacheReadRatio, quote.CacheCreationRatio,
 		quote.Multiplier, quote.Version,
 	)
 	if err != nil {
@@ -456,7 +500,7 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 			record, lookupErr := b.lookupReservation(ctx, req.RequestID, req.OrgID)
 			if lookupErr == nil && record.Status == "frozen" {
 				return &FreezeResult{
-					Amount:         record.FrozenAmount,
+					AmountMicros:   record.FrozenAmountMicros,
 					PricingVersion: record.PricingVersion,
 					Success:        true,
 				}, nil
@@ -468,9 +512,9 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 	for _, allocation := range grantAllocations {
 		_, err = tx.Exec(ctx,
 			`INSERT INTO billing_reservation_grant_allocations (
-				org_id, request_id, grant_id, reserved_amount
+				org_id, request_id, grant_id, reserved_micros
 			 ) VALUES ($1, $2, $3, $4)`,
-			req.OrgID, req.RequestID, allocation.GrantID, allocation.Amount,
+			req.OrgID, req.RequestID, allocation.GrantID, allocation.Micros,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("record grant reservation allocation: %w", err)
@@ -482,29 +526,29 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 	}
 
 	return &FreezeResult{
-		FreezeID:       0,
-		Amount:         freezeAmount,
-		NewBalance:     newBalance,
-		PricingVersion: quote.Version,
-		Success:        true,
+		FreezeID:         0,
+		AmountMicros:     freezeAmount,
+		NewBalanceMicros: newBalance,
+		PricingVersion:   quote.Version,
+		Success:          true,
 	}, nil
 }
 
 type grantReservationAllocation struct {
 	GrantID int64
-	Amount  int
+	Micros  int64
 }
 
-func reserveGrantRows(ctx context.Context, tx pgx.Tx, orgID int64, requested int) ([]grantReservationAllocation, error) {
+func reserveGrantRows(ctx context.Context, tx pgx.Tx, orgID int64, requested int64) ([]grantReservationAllocation, error) {
 	if requested <= 0 {
 		return nil, nil
 	}
 	rows, err := tx.Query(ctx,
-		`SELECT id, balance
+		`SELECT id, balance_micros
 		 FROM grants
 		 WHERE org_id = $1
 		   AND status = 'active'
-		   AND balance > 0
+		   AND balance_micros > 0
 		   AND (expires_at IS NULL OR expires_at > NOW())
 		 ORDER BY expires_at ASC NULLS LAST, created_at ASC, id ASC
 		 FOR UPDATE`, orgID)
@@ -517,12 +561,12 @@ func reserveGrantRows(ctx context.Context, tx pgx.Tx, orgID int64, requested int
 	allocations := make([]grantReservationAllocation, 0)
 	for rows.Next() && remaining > 0 {
 		var grantID int64
-		var balance int
+		var balance int64
 		if err := rows.Scan(&grantID, &balance); err != nil {
 			return nil, fmt.Errorf("scan grant balance: %w", err)
 		}
-		amount := minInt(balance, remaining)
-		allocations = append(allocations, grantReservationAllocation{GrantID: grantID, Amount: amount})
+		amount := minInt64(balance, remaining)
+		allocations = append(allocations, grantReservationAllocation{GrantID: grantID, Micros: amount})
 		remaining -= amount
 	}
 	if err := rows.Err(); err != nil {
@@ -531,8 +575,8 @@ func reserveGrantRows(ctx context.Context, tx pgx.Tx, orgID int64, requested int
 	rows.Close()
 	for _, allocation := range allocations {
 		if _, err := tx.Exec(ctx,
-			`UPDATE grants SET balance = balance - $1, updated_at = NOW() WHERE id = $2`,
-			allocation.Amount, allocation.GrantID,
+			`UPDATE grants SET balance_micros = balance_micros - $1, updated_at = NOW() WHERE id = $2`,
+			allocation.Micros, allocation.GrantID,
 		); err != nil {
 			return nil, fmt.Errorf("reserve grant balance: %w", err)
 		}
@@ -550,14 +594,21 @@ func minInt(left, right int) int {
 	return right
 }
 
+func minInt64(left, right int64) int64 {
+	if left < right {
+		return left
+	}
+	return right
+}
+
 func (b *Billing) lookupReservation(ctx context.Context, requestID string, orgID int64) (reservationRecord, error) {
 	var record reservationRecord
 	err := b.db.QueryRow(ctx,
-		`SELECT frozen_amount, reserved_balance_amount, reserved_granted_amount,
-		        effective_input_price_cents::float8,
-		        effective_cache_read_price_cents::float8,
-		        effective_cache_creation_price_cents::float8,
-		        effective_output_price_cents::float8,
+		`SELECT frozen_amount_micros, reserved_balance_micros, reserved_granted_micros,
+		        effective_input_price_micros_per_million,
+		        effective_cache_read_price_micros_per_million,
+		        effective_cache_creation_price_micros_per_million,
+		        effective_output_price_micros_per_million,
 		        cache_read_ratio::float8, cache_creation_ratio::float8,
 		        pricing_version, status, settlement_pending_reason,
 		        prompt_tokens, uncached_prompt_tokens, cache_read_tokens, cache_creation_tokens,
@@ -567,22 +618,22 @@ func (b *Billing) lookupReservation(ctx context.Context, requestID string, orgID
 		        cache_usage_schema, cache_usage_status,
 		        output_started_at,
 		        settlement_payload_ready_at, settlement_attempts,
-		        calculated_cost, charged_cost, uncovered_cost, topup_amount,
-		        refund_amount,
-		        uncached_input_cost_cents::float8, cache_read_cost_cents::float8,
-		        cache_creation_cost_cents::float8, output_cost_cents::float8,
-		        terminal_transaction_id, balance_after
+		        calculated_cost_micros, charged_cost_micros, uncovered_cost_micros, topup_amount_micros,
+		        refund_amount_micros,
+		        uncached_input_cost_micros, cache_read_cost_micros,
+		        cache_creation_cost_micros, output_cost_micros,
+		        terminal_transaction_id, balance_after_micros
 		 FROM freeze_idempotency
 		 WHERE request_id = $1 AND org_id = $2`,
 		requestID, orgID,
 	).Scan(
-		&record.FrozenAmount,
-		&record.ReservedBalanceAmount,
-		&record.ReservedGrantedAmount,
-		&record.EffectiveInputPrice,
-		&record.EffectiveCacheReadPrice,
-		&record.EffectiveCacheCreationPrice,
-		&record.EffectiveOutputPrice,
+		&record.FrozenAmountMicros,
+		&record.ReservedBalanceMicros,
+		&record.ReservedGrantedMicros,
+		&record.EffectiveInputPriceMicrosPerMillion,
+		&record.EffectiveCacheReadPriceMicrosPerMillion,
+		&record.EffectiveCacheCreationPriceMicrosPerMillion,
+		&record.EffectiveOutputPriceMicrosPerMillion,
 		&record.CacheReadRatio,
 		&record.CacheCreationRatio,
 		&record.PricingVersion,
@@ -604,15 +655,15 @@ func (b *Billing) lookupReservation(ctx context.Context, requestID string, orgID
 		&record.OutputStartedAt,
 		&record.SettlementPayloadAt,
 		&record.SettlementAttempts,
-		&record.CalculatedCost,
-		&record.ChargedCost,
-		&record.UncoveredCost,
-		&record.TopUpAmount,
-		&record.RefundAmount,
-		&record.UncachedInputCost,
-		&record.CacheReadCost,
-		&record.CacheCreationCost,
-		&record.OutputCost,
+		&record.CalculatedCostMicros,
+		&record.ChargedCostMicros,
+		&record.UncoveredCostMicros,
+		&record.TopUpAmountMicros,
+		&record.RefundAmountMicros,
+		&record.UncachedInputCostMicros,
+		&record.CacheReadCostMicros,
+		&record.CacheCreationCostMicros,
+		&record.OutputCostMicros,
 		&record.TerminalTransactionID,
 		&record.BalanceAfter,
 	)
@@ -635,13 +686,12 @@ func normalizeSettlementUsage(req SettleRequest) (SettleRequest, error) {
 		"cache_read_tokens":      req.CacheReadTokens,
 		"cache_creation_tokens":  req.CacheCreationTokens,
 		"completion_tokens":      req.CompletionTokens,
-		"actual_cost":            req.ActualCost,
 	}
 	for name, value := range values {
 		if value < 0 {
 			return req, fmt.Errorf("billing %s must be nonnegative", name)
 		}
-		if name != "actual_cost" && value > maxPersistedTokenCount {
+		if value > maxPersistedTokenCount {
 			return req, fmt.Errorf("billing %s exceeds the persisted integer limit", name)
 		}
 	}
@@ -821,16 +871,19 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 	// available prepaid cash for an atomic top-up; never close a known positive
 	// shortfall as an implicit platform subsidy.
 	chargedCost := calculatedCost
-	uncoveredCost := 0
-	grantConsumed := minInt(chargedCost, record.ReservedGrantedAmount)
+	uncoveredCost := int64(0)
+	grantConsumed := minInt64(chargedCost, record.ReservedGrantedMicros)
 	totalCashConsumed := chargedCost - grantConsumed
-	additionalTopUpAmount := totalCashConsumed - record.ReservedBalanceAmount
+	additionalTopUpAmount := totalCashConsumed - record.ReservedBalanceMicros
 	if additionalTopUpAmount < 0 {
 		additionalTopUpAmount = 0
 	}
-	totalTopUpAmount := record.TopUpAmount + additionalTopUpAmount
+	totalTopUpAmount, err := money.Add(record.TopUpAmountMicros, additionalTopUpAmount)
+	if err != nil {
+		return nil, fmt.Errorf("calculate prepaid top-up: %w", err)
+	}
 	reservedCashConsumed := totalCashConsumed - additionalTopUpAmount
-	refundCash := record.ReservedBalanceAmount - reservedCashConsumed
+	refundCash := record.ReservedBalanceMicros - reservedCashConsumed
 	if refundCash < 0 {
 		return nil, fmt.Errorf("reservation cash source invariant violated for %s", req.RequestID)
 	}
@@ -849,13 +902,13 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 			return nil, fmt.Errorf("commit funding-pending settlement: %w", err)
 		}
 		return &SettleResult{
-			ActualCost:     calculatedCost,
-			ChargedCost:    0,
-			UncoveredCost:  additionalTopUpAmount,
-			TopUpAmount:    0,
-			PricingVersion: record.PricingVersion,
-			Success:        false,
-			ErrorCode:      "insufficient_topup",
+			ActualCostMicros:    calculatedCost,
+			ChargedCostMicros:   0,
+			UncoveredCostMicros: additionalTopUpAmount,
+			TopUpAmountMicros:   0,
+			PricingVersion:      record.PricingVersion,
+			Success:             false,
+			ErrorCode:           "insufficient_topup",
 		}, nil
 	}
 
@@ -864,27 +917,30 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		tx,
 		req.OrgID,
 		req.RequestID,
-		record.ReservedGrantedAmount,
+		record.ReservedGrantedMicros,
 		grantConsumed,
 	)
 	if err != nil {
 		return nil, err
 	}
-	refund := refundCash + restoredGrant
+	refund, err := money.Add(refundCash, restoredGrant)
+	if err != nil {
+		return nil, fmt.Errorf("calculate settlement refund: %w", err)
+	}
 
 	// The wallet row is updated once while the reservation row lock guarantees
 	// that mixed Settle/Cancel callers cannot both produce terminal effects.
-	var newBalance int
+	var newBalance int64
 	err = tx.QueryRow(ctx,
 		`UPDATE wallets
-		 SET frozen = frozen - $1,
-		     balance = balance + $2 - $3,
-		     granted_balance = granted_balance + $4,
-		     total_spent = total_spent + $5,
+		 SET frozen_micros = frozen_micros - $1,
+		     balance_micros = balance_micros + $2 - $3,
+		     granted_balance_micros = granted_balance_micros + $4,
+		     total_spent_micros = total_spent_micros + $5,
 		     updated_at = NOW()
-		 WHERE org_id = $6 AND frozen >= $1 AND balance >= $3
-		 RETURNING balance`,
-		record.FrozenAmount, refundCash, additionalTopUpAmount, restoredGrant, chargedCost, req.OrgID,
+		 WHERE org_id = $6 AND frozen_micros >= $1 AND balance_micros >= $3
+		 RETURNING balance_micros`,
+		record.FrozenAmountMicros, refundCash, additionalTopUpAmount, restoredGrant, chargedCost, req.OrgID,
 	).Scan(&newBalance)
 	if err != nil {
 		return nil, fmt.Errorf("settle balance: %w", err)
@@ -893,7 +949,7 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 	// Record settle transaction
 	var settleID int64
 	err = tx.QueryRow(ctx,
-		`INSERT INTO transactions (request_id, org_id, type, status, amount, balance_after, note)
+		`INSERT INTO transactions (request_id, org_id, type, status, amount_micros, balance_after_micros, note)
 		 VALUES ($1, $2, 'settle', 'completed', $3, $4, $5)
 		 RETURNING id`,
 		req.RequestID,
@@ -923,18 +979,18 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		     usage_estimate_version = $13,
 		     cache_usage_schema = $14,
 		     cache_usage_status = $15,
-		     calculated_cost = $16,
-		     charged_cost = $17,
-		     uncovered_cost = $18,
-		     topup_amount = $19,
-		     refund_amount = $20,
-		     forfeited_grant_amount = $21,
-		     uncached_input_cost_cents = $22,
-		     cache_read_cost_cents = $23,
-		     cache_creation_cost_cents = $24,
-		     output_cost_cents = $25,
+		     calculated_cost_micros = $16,
+		     charged_cost_micros = $17,
+		     uncovered_cost_micros = $18,
+		     topup_amount_micros = $19,
+		     refund_amount_micros = $20,
+		     forfeited_grant_amount_micros = $21,
+		     uncached_input_cost_micros = $22,
+		     cache_read_cost_micros = $23,
+		     cache_creation_cost_micros = $24,
+		     output_cost_micros = $25,
 		     terminal_transaction_id = $26,
-		     balance_after = $27,
+		     balance_after_micros = $27,
 		     terminal_at = NOW(),
 		     provider_cost_pending_at = NULL,
 		     settlement_pending_reason = '',
@@ -949,8 +1005,8 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		req.UsageContractVersion, req.UsageEstimateVersion,
 		req.CacheUsageSchema, req.CacheUsageStatus,
 		calculatedCost, chargedCost, uncoveredCost, totalTopUpAmount, refund, forfeitedGrant,
-		costBreakdown.UncachedInputCostCents, costBreakdown.CacheReadCostCents,
-		costBreakdown.CacheCreationCostCents, costBreakdown.OutputCostCents,
+		costBreakdown.UncachedInputCostMicros, costBreakdown.CacheReadCostMicros,
+		costBreakdown.CacheCreationCostMicros, costBreakdown.OutputCostMicros,
 		settleID, newBalance,
 	)
 	if err != nil {
@@ -973,7 +1029,7 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 			     cache_creation_tokens = $6,
 			     completion_tokens = $7,
 			     total_tokens = $3::integer + $7::integer,
-			     cost_cents = $8,
+			     cost_micros = $8,
 			     usage_source = $9,
 			     usage_authority = $10,
 			     usage_purpose = $11,
@@ -983,12 +1039,12 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 			     cache_usage_schema = $15,
 			     cache_usage_status = $16,
 			     pricing_version = $17,
-			     effective_input_price_cents = $18,
-			     effective_cache_read_price_cents = $19,
-			     effective_cache_creation_price_cents = $20,
-			     effective_output_price_cents = $21,
-			     cache_read_cost_cents = $22,
-			     cache_creation_cost_cents = $23
+			     effective_input_price_micros_per_million = $18,
+			     effective_cache_read_price_micros_per_million = $19,
+			     effective_cache_creation_price_micros_per_million = $20,
+			     effective_output_price_micros_per_million = $21,
+			     cache_read_cost_micros = $22,
+			     cache_creation_cost_micros = $23
 			 WHERE request_id = $1 AND org_id = $2`,
 			req.RequestID, req.OrgID,
 			req.PromptTokens, req.UncachedPromptTokens, req.CacheReadTokens, req.CacheCreationTokens,
@@ -996,9 +1052,9 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 			req.UsageAuthority, req.UsagePurpose, req.UsageFinality,
 			req.UsageContractVersion, req.UsageEstimateVersion,
 			req.CacheUsageSchema, req.CacheUsageStatus, record.PricingVersion,
-			record.EffectiveInputPrice, record.EffectiveCacheReadPrice,
-			record.EffectiveCacheCreationPrice, record.EffectiveOutputPrice,
-			costBreakdown.CacheReadCostCents, costBreakdown.CacheCreationCostCents,
+			record.EffectiveInputPriceMicrosPerMillion, record.EffectiveCacheReadPriceMicrosPerMillion,
+			record.EffectiveCacheCreationPriceMicrosPerMillion, record.EffectiveOutputPriceMicrosPerMillion,
+			costBreakdown.CacheReadCostMicros, costBreakdown.CacheCreationCostMicros,
 		); err != nil {
 			return nil, fmt.Errorf("converge recovered call log: %w", err)
 		}
@@ -1016,25 +1072,25 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 	}
 
 	return &SettleResult{
-		SettleID:                         settleID,
-		ActualCost:                       calculatedCost,
-		ChargedCost:                      chargedCost,
-		UncoveredCost:                    uncoveredCost,
-		TopUpAmount:                      totalTopUpAmount,
-		Refund:                           refund,
-		NewBalance:                       newBalance,
-		PricingVersion:                   record.PricingVersion,
-		EffectiveInputPriceCents:         record.EffectiveInputPrice,
-		EffectiveCacheReadPriceCents:     record.EffectiveCacheReadPrice,
-		EffectiveCacheCreationPriceCents: record.EffectiveCacheCreationPrice,
-		EffectiveOutputPriceCents:        record.EffectiveOutputPrice,
-		CacheReadRatio:                   record.CacheReadRatio,
-		CacheCreationRatio:               record.CacheCreationRatio,
-		UncachedInputCostCents:           costBreakdown.UncachedInputCostCents,
-		CacheReadCostCents:               costBreakdown.CacheReadCostCents,
-		CacheCreationCostCents:           costBreakdown.CacheCreationCostCents,
-		OutputCostCents:                  costBreakdown.OutputCostCents,
-		Success:                          true,
+		SettleID:                                    settleID,
+		ActualCostMicros:                            calculatedCost,
+		ChargedCostMicros:                           chargedCost,
+		UncoveredCostMicros:                         uncoveredCost,
+		TopUpAmountMicros:                           totalTopUpAmount,
+		RefundMicros:                                refund,
+		NewBalanceMicros:                            newBalance,
+		PricingVersion:                              record.PricingVersion,
+		EffectiveInputPriceMicrosPerMillion:         record.EffectiveInputPriceMicrosPerMillion,
+		EffectiveCacheReadPriceMicrosPerMillion:     record.EffectiveCacheReadPriceMicrosPerMillion,
+		EffectiveCacheCreationPriceMicrosPerMillion: record.EffectiveCacheCreationPriceMicrosPerMillion,
+		EffectiveOutputPriceMicrosPerMillion:        record.EffectiveOutputPriceMicrosPerMillion,
+		CacheReadRatio:                              record.CacheReadRatio,
+		CacheCreationRatio:                          record.CacheCreationRatio,
+		UncachedInputCostMicros:                     costBreakdown.UncachedInputCostMicros,
+		CacheReadCostMicros:                         costBreakdown.CacheReadCostMicros,
+		CacheCreationCostMicros:                     costBreakdown.CacheCreationCostMicros,
+		OutputCostMicros:                            costBreakdown.OutputCostMicros,
+		Success:                                     true,
 	}, nil
 }
 
@@ -1044,8 +1100,8 @@ func persistFundingPendingTx(
 	service *outbox.Service,
 	record reservationRecord,
 	req SettleRequest,
-	calculatedCost int,
-	shortfall int,
+	calculatedCost int64,
+	shortfall int64,
 	costBreakdown reservationCostBreakdown,
 ) error {
 	result, err := tx.Exec(ctx,
@@ -1066,14 +1122,14 @@ func persistFundingPendingTx(
 		     usage_estimate_version = $13,
 		     cache_usage_schema = $14,
 		     cache_usage_status = $15,
-		     calculated_cost = $16,
-		     charged_cost = 0,
-		     uncovered_cost = $17,
-		     topup_amount = 0,
-		     uncached_input_cost_cents = $18,
-		     cache_read_cost_cents = $19,
-		     cache_creation_cost_cents = $20,
-		     output_cost_cents = $21,
+		     calculated_cost_micros = $16,
+		     charged_cost_micros = 0,
+		     uncovered_cost_micros = $17,
+		     topup_amount_micros = 0,
+		     uncached_input_cost_micros = $18,
+		     cache_read_cost_micros = $19,
+		     cache_creation_cost_micros = $20,
+		     output_cost_micros = $21,
 		     settlement_payload_ready_at = COALESCE(settlement_payload_ready_at, NOW()),
 		     settlement_claimed_until = NULL,
 		     settlement_next_attempt_at = NULL,
@@ -1088,8 +1144,8 @@ func persistFundingPendingTx(
 		req.UsageContractVersion, req.UsageEstimateVersion,
 		req.CacheUsageSchema, req.CacheUsageStatus,
 		calculatedCost, shortfall,
-		costBreakdown.UncachedInputCostCents, costBreakdown.CacheReadCostCents,
-		costBreakdown.CacheCreationCostCents, costBreakdown.OutputCostCents,
+		costBreakdown.UncachedInputCostMicros, costBreakdown.CacheReadCostMicros,
+		costBreakdown.CacheCreationCostMicros, costBreakdown.OutputCostMicros,
 	)
 	if err != nil {
 		return fmt.Errorf("persist funding-pending settlement: %w", err)
@@ -1131,65 +1187,64 @@ func canonicalizeLegacyReservationUsage(record reservationRecord) reservationRec
 }
 
 type reservationCostBreakdown struct {
-	UncachedInputCostCents float64
-	CacheReadCostCents     float64
-	CacheCreationCostCents float64
-	OutputCostCents        float64
+	UncachedInputCostMicros int64
+	CacheReadCostMicros     int64
+	CacheCreationCostMicros int64
+	OutputCostMicros        int64
 }
 
-func calculateReservationCost(record reservationRecord, req SettleRequest) (int, reservationCostBreakdown, error) {
-	if req.PromptTokens < 0 || req.CompletionTokens < 0 || req.ActualCost < 0 {
+func calculateReservationCost(record reservationRecord, req SettleRequest) (int64, reservationCostBreakdown, error) {
+	if req.PromptTokens < 0 || req.CompletionTokens < 0 {
 		return 0, reservationCostBreakdown{}, fmt.Errorf("billing usage values must be nonnegative")
 	}
-	if req.PromptTokens > 0 || req.CompletionTokens > 0 {
-		if record.EffectiveInputPrice > 0 || record.EffectiveCacheReadPrice > 0 || record.EffectiveCacheCreationPrice > 0 || record.EffectiveOutputPrice > 0 {
-			cacheReadPrice := record.EffectiveCacheReadPrice
-			cacheCreationPrice := record.EffectiveCacheCreationPrice
-			if !strings.HasPrefix(record.PricingVersion, "pv2_") {
-				cacheReadPrice = record.EffectiveInputPrice
-				cacheCreationPrice = record.EffectiveInputPrice
-			}
-			breakdown := reservationCostBreakdown{
-				UncachedInputCostCents: float64(req.UncachedPromptTokens) * record.EffectiveInputPrice / 1000,
-				CacheReadCostCents:     float64(req.CacheReadTokens) * cacheReadPrice / 1000,
-				CacheCreationCostCents: float64(req.CacheCreationTokens) * cacheCreationPrice / 1000,
-				OutputCostCents:        float64(req.CompletionTokens) * record.EffectiveOutputPrice / 1000,
-			}
-			cost := int(breakdown.UncachedInputCostCents + breakdown.CacheReadCostCents + breakdown.CacheCreationCostCents + breakdown.OutputCostCents)
-			if cost < 1 {
-				cost = 1
-			}
-			return cost, breakdown, nil
-		}
+	cacheReadPrice := record.EffectiveCacheReadPriceMicrosPerMillion
+	cacheCreationPrice := record.EffectiveCacheCreationPriceMicrosPerMillion
+	if !strings.HasPrefix(record.PricingVersion, "pv2_") && !strings.HasPrefix(record.PricingVersion, "pv3_") {
+		cacheReadPrice = record.EffectiveInputPriceMicrosPerMillion
+		cacheCreationPrice = record.EffectiveInputPriceMicrosPerMillion
 	}
-	return req.ActualCost, reservationCostBreakdown{}, nil
+	calculation, err := money.Calculate(
+		money.Component{Tokens: int64(req.UncachedPromptTokens), PriceMicrosPerMillion: record.EffectiveInputPriceMicrosPerMillion},
+		money.Component{Tokens: int64(req.CacheReadTokens), PriceMicrosPerMillion: cacheReadPrice},
+		money.Component{Tokens: int64(req.CacheCreationTokens), PriceMicrosPerMillion: cacheCreationPrice},
+		money.Component{Tokens: int64(req.CompletionTokens), PriceMicrosPerMillion: record.EffectiveOutputPriceMicrosPerMillion},
+	)
+	if err != nil {
+		return 0, reservationCostBreakdown{}, fmt.Errorf("calculate reservation cost: %w", err)
+	}
+	return calculation.TotalMicros, reservationCostBreakdown{
+		UncachedInputCostMicros: calculation.ComponentMicros[0],
+		CacheReadCostMicros:     calculation.ComponentMicros[1],
+		CacheCreationCostMicros: calculation.ComponentMicros[2],
+		OutputCostMicros:        calculation.ComponentMicros[3],
+	}, nil
 }
 
 func settleResultFromRecord(record reservationRecord) *SettleResult {
 	result := &SettleResult{
-		ActualCost:                       record.CalculatedCost,
-		ChargedCost:                      record.ChargedCost,
-		UncoveredCost:                    record.UncoveredCost,
-		TopUpAmount:                      record.TopUpAmount,
-		Refund:                           record.RefundAmount,
-		PricingVersion:                   record.PricingVersion,
-		EffectiveInputPriceCents:         record.EffectiveInputPrice,
-		EffectiveCacheReadPriceCents:     record.EffectiveCacheReadPrice,
-		EffectiveCacheCreationPriceCents: record.EffectiveCacheCreationPrice,
-		EffectiveOutputPriceCents:        record.EffectiveOutputPrice,
-		CacheReadRatio:                   record.CacheReadRatio,
-		CacheCreationRatio:               record.CacheCreationRatio,
-		UncachedInputCostCents:           record.UncachedInputCost,
-		CacheReadCostCents:               record.CacheReadCost,
-		CacheCreationCostCents:           record.CacheCreationCost,
-		OutputCostCents:                  record.OutputCost,
-		Success:                          true,
+		ActualCostMicros:                            record.CalculatedCostMicros,
+		ChargedCostMicros:                           record.ChargedCostMicros,
+		UncoveredCostMicros:                         record.UncoveredCostMicros,
+		TopUpAmountMicros:                           record.TopUpAmountMicros,
+		RefundMicros:                                record.RefundAmountMicros,
+		PricingVersion:                              record.PricingVersion,
+		EffectiveInputPriceMicrosPerMillion:         record.EffectiveInputPriceMicrosPerMillion,
+		EffectiveCacheReadPriceMicrosPerMillion:     record.EffectiveCacheReadPriceMicrosPerMillion,
+		EffectiveCacheCreationPriceMicrosPerMillion: record.EffectiveCacheCreationPriceMicrosPerMillion,
+		EffectiveOutputPriceMicrosPerMillion:        record.EffectiveOutputPriceMicrosPerMillion,
+		CacheReadRatio:                              record.CacheReadRatio,
+		CacheCreationRatio:                          record.CacheCreationRatio,
+		UncachedInputCostMicros:                     record.UncachedInputCostMicros,
+		CacheReadCostMicros:                         record.CacheReadCostMicros,
+		CacheCreationCostMicros:                     record.CacheCreationCostMicros,
+		OutputCostMicros:                            record.OutputCostMicros,
+		Success:                                     true,
 	}
 	if record.TerminalTransactionID.Valid {
 		result.SettleID = record.TerminalTransactionID.Int64
 	}
 	if record.BalanceAfter.Valid {
-		result.NewBalance = int(record.BalanceAfter.Int64)
+		result.NewBalanceMicros = record.BalanceAfter.Int64
 	}
 	return result
 }
@@ -1198,11 +1253,11 @@ func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgI
 	var record reservationRecord
 	err := tx.QueryRow(ctx,
 		`SELECT model_name, project_id,
-		        frozen_amount, reserved_balance_amount, reserved_granted_amount,
-		        effective_input_price_cents::float8,
-		        effective_cache_read_price_cents::float8,
-		        effective_cache_creation_price_cents::float8,
-		        effective_output_price_cents::float8,
+		        frozen_amount_micros, reserved_balance_micros, reserved_granted_micros,
+		        effective_input_price_micros_per_million,
+		        effective_cache_read_price_micros_per_million,
+		        effective_cache_creation_price_micros_per_million,
+		        effective_output_price_micros_per_million,
 		        cache_read_ratio::float8, cache_creation_ratio::float8,
 		        pricing_version, status, settlement_pending_reason,
 		        prompt_tokens, uncached_prompt_tokens, cache_read_tokens, cache_creation_tokens,
@@ -1212,24 +1267,24 @@ func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgI
 		        cache_usage_schema, cache_usage_status,
 		        output_started_at,
 		        settlement_payload_ready_at, settlement_attempts,
-		        calculated_cost, charged_cost, uncovered_cost, topup_amount,
-		        refund_amount,
-		        uncached_input_cost_cents::float8, cache_read_cost_cents::float8,
-		        cache_creation_cost_cents::float8, output_cost_cents::float8,
-		        terminal_transaction_id, balance_after
+		        calculated_cost_micros, charged_cost_micros, uncovered_cost_micros, topup_amount_micros,
+		        refund_amount_micros,
+		        uncached_input_cost_micros, cache_read_cost_micros,
+		        cache_creation_cost_micros, output_cost_micros,
+		        terminal_transaction_id, balance_after_micros
 		 FROM freeze_idempotency
 		 WHERE request_id = $1 AND org_id = $2
 		 FOR UPDATE`, requestID, orgID,
 	).Scan(
 		&record.Model,
 		&record.ProjectID,
-		&record.FrozenAmount,
-		&record.ReservedBalanceAmount,
-		&record.ReservedGrantedAmount,
-		&record.EffectiveInputPrice,
-		&record.EffectiveCacheReadPrice,
-		&record.EffectiveCacheCreationPrice,
-		&record.EffectiveOutputPrice,
+		&record.FrozenAmountMicros,
+		&record.ReservedBalanceMicros,
+		&record.ReservedGrantedMicros,
+		&record.EffectiveInputPriceMicrosPerMillion,
+		&record.EffectiveCacheReadPriceMicrosPerMillion,
+		&record.EffectiveCacheCreationPriceMicrosPerMillion,
+		&record.EffectiveOutputPriceMicrosPerMillion,
 		&record.CacheReadRatio,
 		&record.CacheCreationRatio,
 		&record.PricingVersion,
@@ -1251,15 +1306,15 @@ func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgI
 		&record.OutputStartedAt,
 		&record.SettlementPayloadAt,
 		&record.SettlementAttempts,
-		&record.CalculatedCost,
-		&record.ChargedCost,
-		&record.UncoveredCost,
-		&record.TopUpAmount,
-		&record.RefundAmount,
-		&record.UncachedInputCost,
-		&record.CacheReadCost,
-		&record.CacheCreationCost,
-		&record.OutputCost,
+		&record.CalculatedCostMicros,
+		&record.ChargedCostMicros,
+		&record.UncoveredCostMicros,
+		&record.TopUpAmountMicros,
+		&record.RefundAmountMicros,
+		&record.UncachedInputCostMicros,
+		&record.CacheReadCostMicros,
+		&record.CacheCreationCostMicros,
+		&record.OutputCostMicros,
 		&record.TerminalTransactionID,
 		&record.BalanceAfter,
 	)
@@ -1276,19 +1331,19 @@ func lockWalletForBilling(ctx context.Context, tx pgx.Tx, orgID int64) error {
 	return nil
 }
 
-func lockWalletCashForBilling(ctx context.Context, tx pgx.Tx, orgID int64) (int, error) {
-	var balance int
+func lockWalletCashForBilling(ctx context.Context, tx pgx.Tx, orgID int64) (int64, error) {
+	var balance int64
 	if err := tx.QueryRow(ctx,
-		`SELECT balance FROM wallets WHERE org_id = $1 FOR UPDATE`, orgID,
+		`SELECT balance_micros FROM wallets WHERE org_id = $1 FOR UPDATE`, orgID,
 	).Scan(&balance); err != nil {
 		return 0, fmt.Errorf("lock wallet cash: %w", err)
 	}
 	return balance, nil
 }
 
-func finalizeGrantAllocations(ctx context.Context, tx pgx.Tx, orgID int64, requestID string, reservedGrant, grantConsumed int) (restored, forfeited int, err error) {
+func finalizeGrantAllocations(ctx context.Context, tx pgx.Tx, orgID int64, requestID string, reservedGrant, grantConsumed int64) (restored, forfeited int64, err error) {
 	rows, err := tx.Query(ctx,
-		`SELECT a.grant_id, a.reserved_amount,
+		`SELECT a.grant_id, a.reserved_micros,
 		        (g.status = 'active' AND (g.expires_at IS NULL OR g.expires_at > NOW())) AS refundable
 		 FROM billing_reservation_grant_allocations a
 		 JOIN grants g ON g.id = a.grant_id
@@ -1302,18 +1357,22 @@ func finalizeGrantAllocations(ctx context.Context, tx pgx.Tx, orgID int64, reque
 
 	type allocation struct {
 		grantID    int64
-		reserved   int
+		reserved   int64
 		refundable bool
 	}
 	allocations := make([]allocation, 0)
-	totalAllocated := 0
+	var totalAllocated int64
 	for rows.Next() {
 		var item allocation
 		if err := rows.Scan(&item.grantID, &item.reserved, &item.refundable); err != nil {
 			return 0, 0, fmt.Errorf("scan reservation grant allocation: %w", err)
 		}
 		allocations = append(allocations, item)
-		totalAllocated += item.reserved
+		nextTotal, addErr := money.Add(totalAllocated, item.reserved)
+		if addErr != nil {
+			return 0, 0, fmt.Errorf("sum reservation grant allocations: %w", addErr)
+		}
+		totalAllocated = nextTotal
 	}
 	if err := rows.Err(); err != nil {
 		return 0, 0, fmt.Errorf("iterate reservation grant allocations: %w", err)
@@ -1325,15 +1384,15 @@ func finalizeGrantAllocations(ctx context.Context, tx pgx.Tx, orgID int64, reque
 
 	remainingConsumed := grantConsumed
 	for _, item := range allocations {
-		consumed := minInt(item.reserved, remainingConsumed)
+		consumed := minInt64(item.reserved, remainingConsumed)
 		remainingConsumed -= consumed
 		refundCandidate := item.reserved - consumed
-		refunded := 0
+		refunded := int64(0)
 		if refundCandidate > 0 {
 			if item.refundable {
 				if _, err := tx.Exec(ctx,
 					`UPDATE grants
-					 SET balance = balance + $1, updated_at = NOW()
+					 SET balance_micros = balance_micros + $1, updated_at = NOW()
 					 WHERE id = $2
 					   AND status = 'active'
 					   AND (expires_at IS NULL OR expires_at > NOW())`,
@@ -1342,14 +1401,20 @@ func finalizeGrantAllocations(ctx context.Context, tx pgx.Tx, orgID int64, reque
 					return 0, 0, fmt.Errorf("refund grant allocation: %w", err)
 				}
 				refunded = refundCandidate
-				restored += refunded
+				restored, err = money.Add(restored, refunded)
+				if err != nil {
+					return 0, 0, fmt.Errorf("sum restored grant allocations: %w", err)
+				}
 			} else {
-				forfeited += refundCandidate
+				forfeited, err = money.Add(forfeited, refundCandidate)
+				if err != nil {
+					return 0, 0, fmt.Errorf("sum forfeited grant allocations: %w", err)
+				}
 			}
 		}
 		if _, err := tx.Exec(ctx,
 			`UPDATE billing_reservation_grant_allocations
-			 SET consumed_amount = $1, refunded_amount = $2, updated_at = NOW()
+			 SET consumed_micros = $1, refunded_micros = $2, updated_at = NOW()
 			 WHERE org_id = $3 AND request_id = $4 AND grant_id = $5`,
 			consumed, refunded, orgID, requestID, item.grantID,
 		); err != nil {
@@ -1358,12 +1423,15 @@ func finalizeGrantAllocations(ctx context.Context, tx pgx.Tx, orgID int64, reque
 	}
 
 	unallocated := reservedGrant - totalAllocated
-	unallocatedConsumed := minInt(unallocated, remainingConsumed)
+	unallocatedConsumed := minInt64(unallocated, remainingConsumed)
 	remainingConsumed -= unallocatedConsumed
 	if remainingConsumed != 0 {
 		return 0, 0, fmt.Errorf("grant consumption invariant violated for %s", requestID)
 	}
-	restored += unallocated - unallocatedConsumed
+	restored, err = money.Add(restored, unallocated-unallocatedConsumed)
+	if err != nil {
+		return 0, 0, fmt.Errorf("sum unallocated restored grant balance: %w", err)
+	}
 	return restored, forfeited, nil
 }
 
@@ -1425,23 +1493,26 @@ func cancelReservation(ctx context.Context, database internaldb.DBQuerier, servi
 	}
 
 	restoredGrant, forfeitedGrant, err := finalizeGrantAllocations(
-		ctx, tx, orgID, requestID, record.ReservedGrantedAmount, 0,
+		ctx, tx, orgID, requestID, record.ReservedGrantedMicros, 0,
 	)
 	if err != nil {
 		return err
 	}
-	refund := record.ReservedBalanceAmount + restoredGrant
+	refund, err := money.Add(record.ReservedBalanceMicros, restoredGrant)
+	if err != nil {
+		return fmt.Errorf("calculate cancellation refund: %w", err)
+	}
 
-	var newBalance int
+	var newBalance int64
 	err = tx.QueryRow(ctx,
 		`UPDATE wallets
-		 SET frozen = frozen - $1,
-		     balance = balance + $2,
-		     granted_balance = granted_balance + $3,
+		 SET frozen_micros = frozen_micros - $1,
+		     balance_micros = balance_micros + $2,
+		     granted_balance_micros = granted_balance_micros + $3,
 		     updated_at = NOW()
-		 WHERE org_id = $4 AND frozen >= $1
-		 RETURNING balance`,
-		record.FrozenAmount, record.ReservedBalanceAmount, restoredGrant, orgID,
+		 WHERE org_id = $4 AND frozen_micros >= $1
+		 RETURNING balance_micros`,
+		record.FrozenAmountMicros, record.ReservedBalanceMicros, restoredGrant, orgID,
 	).Scan(&newBalance)
 	if err != nil {
 		return fmt.Errorf("unfreeze balance: %w", err)
@@ -1449,7 +1520,7 @@ func cancelReservation(ctx context.Context, database internaldb.DBQuerier, servi
 
 	var cancelID int64
 	err = tx.QueryRow(ctx,
-		`INSERT INTO transactions (request_id, org_id, type, status, amount, balance_after, note)
+		`INSERT INTO transactions (request_id, org_id, type, status, amount_micros, balance_after_micros, note)
 		 VALUES ($1, $2, 'cancel', 'completed', $3, $4, $5)
 		 RETURNING id`, requestID, orgID, refund, newBalance,
 		"Cancel reservation for request "+requestID,
@@ -1461,10 +1532,10 @@ func cancelReservation(ctx context.Context, database internaldb.DBQuerier, servi
 	_, err = tx.Exec(ctx,
 		`UPDATE freeze_idempotency
 		 SET status = 'cancelled',
-		     refund_amount = $3,
-		     forfeited_grant_amount = $4,
+		     refund_amount_micros = $3,
+		     forfeited_grant_amount_micros = $4,
 		     terminal_transaction_id = $5,
-		     balance_after = $6,
+		     balance_after_micros = $6,
 		     terminal_at = NOW(),
 		     updated_at = NOW()
 		 WHERE request_id = $1 AND org_id = $2 AND status = 'frozen'`,

@@ -51,8 +51,10 @@ try {
     event_id: seed.event_id,
     webhook_id: seed.webhook_id,
     webhook_receipts: receiver.receipts.length,
-    budget_cents: seed.budget_cents,
-    spent_cents: seed.spent_cents,
+	budget_cents: seed.budget_cents,
+	spent_micros: seed.spent_micros,
+	currency: seed.currency,
+	amount_scale: seed.amount_scale,
     screenshot: screenshotPath,
   }, null, 2));
 } catch (err) {
@@ -130,7 +132,7 @@ async function startWebhookReceiver() {
           if (match.event_type !== 'project_budget.threshold') {
             throw new Error(`unexpected webhook event type: ${JSON.stringify(match)}`);
           }
-          if (Number(match.payload?.spent_cents) !== 1200) {
+		  if (match.payload?.spent_micros !== '12000000' || match.payload?.currency !== 'CNY' || Number(match.payload?.amount_scale) !== 1000000) {
             throw new Error(`webhook payload did not include current-period spend: ${JSON.stringify(match)}`);
           }
           return match;
@@ -235,7 +237,8 @@ async function assertNotificationEventAPI(token, seed) {
   if (match.delivery_state !== 'delivered' || match.severity !== 'critical') {
     throw new Error(`budget notification state mismatch: ${JSON.stringify(match)}`);
   }
-  if (Number(match.payload?.spent_cents) !== seed.spent_cents || Number(match.payload?.budget_cents) !== seed.budget_cents) {
+	if (match.payload?.spent_micros !== seed.spent_micros || Number(match.payload?.budget_cents) !== seed.budget_cents
+	  || match.payload?.currency !== seed.currency || Number(match.payload?.amount_scale) !== seed.amount_scale) {
     throw new Error(`budget notification payload mismatch: ${JSON.stringify(match)}`);
   }
   return match;

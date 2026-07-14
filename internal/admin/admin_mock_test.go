@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -78,14 +78,26 @@ func globalControlTestDB(db *testutil.MockDB) *testutil.MockDB {
 }
 
 func modelPriceMockRow(id int64, modelName string, inputPrice, outputPrice float64) pgx.Row {
+	return modelPriceExactMockRow(id, modelName,
+		strconv.FormatFloat(inputPrice, 'f', -1, 64),
+		strconv.FormatFloat(outputPrice, 'f', -1, 64), "1", "1")
+}
+
+func modelPriceExactMockRow(id int64, modelName, inputPrice, outputPrice, cacheReadRatio, cacheCreationRatio string) pgx.Row {
 	return &testutil.MockRow{ScanFn: func(dest ...any) error {
+		if len(dest) == 1 {
+			if overflow, ok := dest[0].(*bool); ok {
+				*overflow = false
+				return nil
+			}
+		}
 		*dest[0].(*int64) = id
 		*dest[1].(*string) = modelName
-		*dest[2].(*float64) = inputPrice
-		*dest[3].(*float64) = outputPrice
+		*dest[2].(*string) = inputPrice
+		*dest[3].(*string) = outputPrice
 		if len(dest) > 4 {
-			*dest[4].(*float64) = 1
-			*dest[5].(*float64) = 1
+			*dest[4].(*string) = cacheReadRatio
+			*dest[5].(*string) = cacheCreationRatio
 		}
 		return nil
 	}}
@@ -93,10 +105,23 @@ func modelPriceMockRow(id int64, modelName string, inputPrice, outputPrice float
 
 func orgModelPriceMockRow(id, orgID int64, modelName string, multiplier float64) pgx.Row {
 	return &testutil.MockRow{ScanFn: func(dest ...any) error {
+		if len(dest) == 1 {
+			if overflow, ok := dest[0].(*bool); ok {
+				*overflow = false
+				return nil
+			}
+		}
 		*dest[0].(*int64) = id
 		*dest[1].(*int64) = orgID
 		*dest[2].(*string) = modelName
-		*dest[3].(*float64) = multiplier
+		*dest[3].(*string) = strconv.FormatFloat(multiplier, 'f', -1, 64)
+		return nil
+	}}
+}
+
+func effectivePriceOverflowMockRow(overflow bool) pgx.Row {
+	return &testutil.MockRow{ScanFn: func(dest ...any) error {
+		*dest[0].(*bool) = overflow
 		return nil
 	}}
 }
@@ -488,16 +513,16 @@ func TestGetWallet_Success(t *testing.T) {
 			return &testutil.MockRows{
 				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
-						*dest[0].(*int64) = 1       // org_id
-						*dest[1].(*int) = 10000     // balance
-						*dest[2].(*int) = 5000      // granted_balance
-						*dest[3].(*int) = 0         // frozen
-						*dest[4].(*int) = 2500      // total_spent
-						*dest[5].(*string) = "USD"  // currency
-						*dest[6].(*bool) = true     // auto_freeze
-						*dest[7].(*int) = 1000      // low_balance_threshold_cents
-						*dest[8].(*time.Time) = now // created_at
-						*dest[9].(*time.Time) = now // updated_at
+						*dest[0].(*int64) = 1           // org_id
+						*dest[1].(*int64) = 100_000_000 // balance_micros
+						*dest[2].(*int64) = 50_000_000  // granted_balance_micros
+						*dest[3].(*int64) = 0           // frozen_micros
+						*dest[4].(*int64) = 25_000_000  // total_spent_micros
+						*dest[5].(*string) = "USD"      // currency
+						*dest[6].(*bool) = true         // auto_freeze
+						*dest[7].(*int64) = 1000        // low_balance_threshold_cents
+						*dest[8].(*time.Time) = now     // created_at
+						*dest[9].(*time.Time) = now     // updated_at
 						return nil
 					},
 				},
@@ -517,17 +542,17 @@ func TestGetWallet_Success(t *testing.T) {
 	}
 	var resp map[string]interface{}
 	json.Unmarshal(rec.Body.Bytes(), &resp)
-	if resp["balance_cents"].(float64) != 10000 {
-		t.Fatalf("expected balance_cents=10000, got %v", resp["balance_cents"])
+	if resp["balance_micros"] != "100000000" {
+		t.Fatalf("expected balance_micros=100000000, got %v", resp["balance_micros"])
 	}
 	if resp["currency"] != "USD" {
 		t.Fatalf("expected currency=USD, got %v", resp["currency"])
 	}
-	if resp["granted_cents"].(float64) != 5000 {
-		t.Fatalf("expected granted_cents=5000, got %v", resp["granted_cents"])
+	if resp["granted_balance_micros"] != "50000000" {
+		t.Fatalf("expected granted_balance_micros=50000000, got %v", resp["granted_balance_micros"])
 	}
-	if resp["threshold_cents"].(float64) != 1000 {
-		t.Fatalf("expected threshold_cents=1000, got %v", resp["threshold_cents"])
+	if resp["threshold_micros"] != "10000000" {
+		t.Fatalf("expected threshold_micros=10000000, got %v", resp["threshold_micros"])
 	}
 	if resp["is_admin"].(bool) {
 		t.Fatalf("expected is_admin=false without admin role context")
@@ -542,13 +567,13 @@ func TestGetWallet_AdminRole(t *testing.T) {
 				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1
-						*dest[1].(*int) = 10000
-						*dest[2].(*int) = 5000
-						*dest[3].(*int) = 0
-						*dest[4].(*int) = 2500
+						*dest[1].(*int64) = 100_000_000
+						*dest[2].(*int64) = 50_000_000
+						*dest[3].(*int64) = 0
+						*dest[4].(*int64) = 25_000_000
 						*dest[5].(*string) = "USD"
 						*dest[6].(*bool) = true
-						*dest[7].(*int) = 1000
+						*dest[7].(*int64) = 1000
 						*dest[8].(*time.Time) = now
 						*dest[9].(*time.Time) = now
 						return nil
@@ -627,7 +652,7 @@ func TestTopUp_Success(t *testing.T) {
 			return &testutil.MockTx{
 				QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 					return &testutil.MockRow{ScanFn: func(dest ...any) error {
-						*dest[0].(*int) = 15000
+						*dest[0].(*int64) = 150_000_000
 						return nil
 					}}
 				},
@@ -712,8 +737,8 @@ func TestTopUp_Idempotency(t *testing.T) {
 			return &testutil.MockRow{
 				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 42
-					*dest[1].(*int) = 5000
-					*dest[2].(*int) = 15000
+					*dest[1].(*int64) = 50_000_000
+					*dest[2].(*int64) = 150_000_000
 					*dest[3].(*string) = "Replay top-up"
 					return nil
 				},
@@ -735,7 +760,7 @@ func TestTopUp_Idempotency(t *testing.T) {
 	}
 	var resp map[string]interface{}
 	json.Unmarshal(rec.Body.Bytes(), &resp)
-	if resp["idempotent_replay"] != true || resp["balance_cents"].(float64) != 15000 {
+	if resp["idempotent_replay"] != true || resp["balance_micros"] != "150000000" {
 		t.Fatalf("expected replayed balance, got %v", resp)
 	}
 }
@@ -861,7 +886,7 @@ func TestTopUp_TxCommitFail(t *testing.T) {
 			return &testutil.MockTx{
 				QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 					return &testutil.MockRow{ScanFn: func(dest ...any) error {
-						*dest[0].(*int) = 5000
+						*dest[0].(*int64) = 50_000_000
 						return nil
 					}}
 				},
@@ -903,7 +928,7 @@ func TestBalanceAdjust_Success(t *testing.T) {
 			return &testutil.MockTx{
 				QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 					return &testutil.MockRow{ScanFn: func(dest ...any) error {
-						*dest[0].(*int) = 5000
+						*dest[0].(*int64) = 50_000_000
 						return nil
 					}}
 				},
@@ -934,19 +959,19 @@ func TestBalanceAdjust_Success(t *testing.T) {
 	}
 	var resp map[string]interface{}
 	json.Unmarshal(rec.Body.Bytes(), &resp)
-	if resp["previous"].(float64) != 5000 {
-		t.Fatalf("expected previous=5000, got %v", resp["previous"])
+	if resp["previous_balance_micros"] != "50000000" {
+		t.Fatalf("expected previous_balance_micros=50000000, got %v", resp["previous_balance_micros"])
 	}
-	if resp["new_balance"].(float64) != 10000 {
-		t.Fatalf("expected new_balance=10000, got %v", resp["new_balance"])
+	if resp["balance_micros"] != "100000000" {
+		t.Fatalf("expected balance_micros=100000000, got %v", resp["balance_micros"])
 	}
-	if resp["adjust_amount"].(float64) != 5000 {
-		t.Fatalf("expected adjust_amount=5000, got %v", resp["adjust_amount"])
+	if resp["delta_micros"] != "50000000" {
+		t.Fatalf("expected delta_micros=50000000, got %v", resp["delta_micros"])
 	}
 	if len(auditArgs) != 14 {
 		t.Fatalf("expected 14 audit args, got %#v", auditArgs)
 	}
-	if !strings.Contains(auditArgs[11].(string), `"balance_cents":5000`) || !strings.Contains(auditArgs[12].(string), `"balance_cents":10000`) {
+	if !strings.Contains(auditArgs[11].(string), `"balance_micros":"50000000"`) || !strings.Contains(auditArgs[12].(string), `"balance_micros":"100000000"`) {
 		t.Fatalf("expected wallet before/after balance audit, got before=%v after=%v", auditArgs[11], auditArgs[12])
 	}
 }
@@ -2309,7 +2334,7 @@ func TestListWalletTransactions_Success(t *testing.T) {
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1
 						*dest[1].(*string) = "topup"
-						*dest[2].(*int) = 5000
+						*dest[2].(*int64) = 50_000_000
 						*dest[3].(*string) = "Admin top-up"
 						*dest[4].(*time.Time) = time.Now()
 						return nil
@@ -2317,7 +2342,7 @@ func TestListWalletTransactions_Success(t *testing.T) {
 					func(dest ...any) error {
 						*dest[0].(*int64) = 2
 						*dest[1].(*string) = "settle"
-						*dest[2].(*int) = -100
+						*dest[2].(*int64) = -1_000_000
 						*dest[3].(*string) = "Settle for request"
 						*dest[4].(*time.Time) = time.Now()
 						return nil
@@ -2791,9 +2816,11 @@ func TestListModelPrices_Success(t *testing.T) {
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1
 						*dest[1].(*string) = "gpt-4o"
-						*dest[2].(*float64) = 5
-						*dest[3].(*float64) = 15
-
+						*dest[2].(*string) = "5"
+						*dest[3].(*string) = "15"
+						*dest[4].(*string) = "1"
+						*dest[5].(*string) = "1"
+						*dest[6].(*time.Time) = time.Now()
 						return nil
 					},
 				},
@@ -2933,7 +2960,7 @@ func TestListLogs_Success(t *testing.T) {
 						*dest[13].(*int) = 10
 						*dest[14].(*int) = 50
 						*dest[15].(*int) = 150
-						*dest[16].(*int) = 200
+						*dest[16].(*int64) = 2_000_000
 						*dest[17].(*int) = 200
 						*dest[18].(*int) = 350
 						*dest[19].(*int) = 0
@@ -2945,12 +2972,12 @@ func TestListLogs_Success(t *testing.T) {
 						*dest[25].(*string) = "pv2_test"
 						*dest[26].(*float64) = 0.1
 						*dest[27].(*float64) = 1.25
-						*dest[28].(*float64) = 2
-						*dest[29].(*float64) = 0.2
-						*dest[30].(*float64) = 2.5
-						*dest[31].(*float64) = 8
-						*dest[32].(*float64) = 0.004
-						*dest[33].(*float64) = 0.025
+						*dest[28].(*int64) = 20_000_000
+						*dest[29].(*int64) = 2_000_000
+						*dest[30].(*int64) = 25_000_000
+						*dest[31].(*int64) = 80_000_000
+						*dest[32].(*int64) = 40
+						*dest[33].(*int64) = 250
 						*dest[34].(*bool) = false
 						*dest[35].(*time.Time) = now
 						return nil
@@ -3009,7 +3036,7 @@ func TestListLogs_WithFilters(t *testing.T) {
 						*dest[13].(*int) = 0
 						*dest[14].(*int) = 100
 						*dest[15].(*int) = 300
-						*dest[16].(*int) = 200
+						*dest[16].(*int64) = 2_000_000
 						*dest[17].(*int) = 200
 						*dest[18].(*int) = 500
 						*dest[19].(*int) = 0
@@ -3022,7 +3049,7 @@ func TestListLogs_WithFilters(t *testing.T) {
 						*dest[26].(*float64) = 1
 						*dest[27].(*float64) = 1
 						for i := 28; i <= 33; i++ {
-							*dest[i].(*float64) = 0
+							*dest[i].(*int64) = 0
 						}
 						*dest[34].(*bool) = false
 						*dest[35].(*time.Time) = now
@@ -3256,8 +3283,8 @@ func TestListReconciliation_Success(t *testing.T) {
 						*dest[4].(*float64) = 0.82
 						*dest[5].(*int64) = 40
 						*dest[6].(*int64) = 10
-						*dest[7].(*float64) = 0.008
-						*dest[8].(*float64) = 0.025
+						*dest[7].(*int64) = 80
+						*dest[8].(*int64) = 250
 						*dest[9].(*int64) = 1
 						*dest[10].(*int64) = 1
 						return nil
@@ -3291,8 +3318,8 @@ func TestListReconciliation_Success(t *testing.T) {
 						*dest[13].(*string) = "anthropic.prompt_cache.v1"
 						*dest[14].(*string) = "cache_read_write_reported"
 						*dest[15].(*string) = "pv2_test"
-						*dest[16].(*float64) = 0.008
-						*dest[17].(*float64) = 0.05
+						*dest[16].(*int64) = 80
+						*dest[17].(*int64) = 500
 						*dest[18].(*time.Time) = now
 						return nil
 					},
@@ -3313,8 +3340,8 @@ func TestListReconciliation_Success(t *testing.T) {
 						*dest[13].(*string) = ""
 						*dest[14].(*string) = "not_reported"
 						*dest[15].(*string) = "pv2_test"
-						*dest[16].(*float64) = 0
-						*dest[17].(*float64) = 0
+						*dest[16].(*int64) = 0
+						*dest[17].(*int64) = 0
 						*dest[18].(*time.Time) = now.Add(time.Minute)
 						return nil
 					},
@@ -3379,8 +3406,8 @@ func TestListReconciliation_UsageSourceFilterNormalizesLegacyAlias(t *testing.T)
 					*dest[4].(*float64) = 0
 					*dest[5].(*int64) = 0
 					*dest[6].(*int64) = 0
-					*dest[7].(*float64) = 0
-					*dest[8].(*float64) = 0
+					*dest[7].(*int64) = 0
+					*dest[8].(*int64) = 0
 					*dest[9].(*int64) = 0
 					*dest[10].(*int64) = 0
 					return nil
@@ -3435,8 +3462,8 @@ func TestListReconciliation_EmitsHighEstimatedRatioEvent(t *testing.T) {
 					*dest[4].(*float64) = 0.62
 					*dest[5].(*int64) = 0
 					*dest[6].(*int64) = 0
-					*dest[7].(*float64) = 0
-					*dest[8].(*float64) = 0
+					*dest[7].(*int64) = 0
+					*dest[8].(*int64) = 0
 					*dest[9].(*int64) = 0
 					*dest[10].(*int64) = 1
 					return nil
@@ -3550,21 +3577,15 @@ func TestDashboardStats_Success(t *testing.T) {
 						*dest[0].(*float64) = 350.5
 						return nil
 					}
-					switch len(dest) {
-					case 1:
-						*dest[0].(*int) = 100
-					case 2:
-						*dest[0].(*int) = 500
-						*dest[1].(*int) = 100
-					case 3:
-						*dest[0].(*int) = 5000
-						*dest[1].(*int) = 2000
-						*dest[2].(*int) = 0
-					case 4:
-						*dest[0].(*int) = 5000
-						*dest[1].(*int) = 2000
-						*dest[2].(*int) = 0
-						*dest[3].(*int) = 1000
+					for _, target := range dest {
+						switch value := target.(type) {
+						case *int:
+							*value = 100
+						case *int64:
+							*value = 1_000_000
+						case *float64:
+							*value = 350.5
+						}
 					}
 					return nil
 				},
@@ -3576,8 +3597,8 @@ func TestDashboardStats_Success(t *testing.T) {
 					Rows: []func(dest ...any) error{
 						func(dest ...any) error {
 							*dest[0].(*string) = "gpt-4o"
-							*dest[1].(*float64) = 5
-							*dest[2].(*float64) = 15
+							*dest[1].(*string) = "50"
+							*dest[2].(*string) = "150"
 							return nil
 						},
 					},
@@ -3619,14 +3640,14 @@ func TestDashboardStats_Success(t *testing.T) {
 							// trend: bucket, requests, cost
 							*dest[0].(*time.Time) = now
 							*dest[1].(*int) = 50
-							*dest[2].(*int) = 1000
+							*dest[2].(*int64) = 10_000_000
 						} else {
-							// recent logs: request_id, model, status_code, latency_ms, cost_cents, created_at
+							// recent logs: request_id, model, status_code, latency_ms, cost_micros, created_at
 							*dest[0].(*string) = "req-001"
 							*dest[1].(*string) = "gpt-4o"
 							*dest[2].(*int) = 200
 							*dest[3].(*int) = 350
-							*dest[4].(*int) = 5
+							*dest[4].(*int64) = 50_000
 							*dest[5].(*time.Time) = now
 						}
 						return nil
@@ -4108,6 +4129,9 @@ func TestCreateModelPrice_DecimalCents(t *testing.T) {
 				if strings.Contains(sql, "SELECT id") {
 					return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
 				}
+				if strings.Contains(sql, "SELECT EXISTS") {
+					return effectivePriceOverflowMockRow(false)
+				}
 				capturedArgs = append([]any(nil), args...)
 				return modelPriceMockRow(42, "mimo-v2.5", 0.2, 0.1)
 			}}, nil
@@ -4128,10 +4152,10 @@ func TestCreateModelPrice_DecimalCents(t *testing.T) {
 	if len(capturedArgs) != 5 {
 		t.Fatalf("expected 5 insert args, got %d", len(capturedArgs))
 	}
-	if math.Abs(capturedArgs[1].(float64)-0.2) > 0.000001 {
+	if capturedArgs[1] != "0.2" {
 		t.Fatalf("expected input_price_cents=0.2, got %v", capturedArgs[1])
 	}
-	if math.Abs(capturedArgs[2].(float64)-0.1) > 0.000001 {
+	if capturedArgs[2] != "0.1" {
 		t.Fatalf("expected output_price_cents=0.1, got %v", capturedArgs[2])
 	}
 	if capturedArgs[3] != nil || capturedArgs[4] != nil {
@@ -4146,6 +4170,9 @@ func TestCreateModelPrice_CacheRatios(t *testing.T) {
 			if strings.Contains(sql, "SELECT id") {
 				return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
 			}
+			if strings.Contains(sql, "SELECT EXISTS") {
+				return effectivePriceOverflowMockRow(false)
+			}
 			capturedArgs = append([]any(nil), args...)
 			return modelPriceMockRow(42, "claude", 4, 20)
 		}}, nil
@@ -4158,8 +4185,47 @@ func TestCreateModelPrice_CacheRatios(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if len(capturedArgs) != 5 || capturedArgs[3].(float64) != 0.1 || capturedArgs[4].(float64) != 1.25 {
+	if len(capturedArgs) != 5 || capturedArgs[3] != "0.1" || capturedArgs[4] != "1.25" {
 		t.Fatalf("unexpected cache ratio args: %#v", capturedArgs)
+	}
+}
+
+func TestCreateModelPrice_PreservesExactStringDecimals(t *testing.T) {
+	var capturedArgs []any
+	db := &testutil.MockDB{BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+		return &testutil.MockTx{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			if strings.Contains(sql, "SELECT id") {
+				return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
+			}
+			if strings.Contains(sql, "SELECT EXISTS") {
+				return effectivePriceOverflowMockRow(false)
+			}
+			capturedArgs = append([]any(nil), args...)
+			return modelPriceExactMockRow(42, "exact-price", "0.000001", "123.456789", "0.123456", "1.234567")
+		}}, nil
+	}}
+	h := newTestHandler(db)
+	body := `{"model_name":"exact-price","input_price_cny_per_million_tokens":"0.00001","output_price_cny_per_million_tokens":"1234.56789","cache_read_ratio":"0.123456","cache_creation_ratio":"1.234567"}`
+	req := platformPricingRequest("POST", "/model-prices", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	h.CreateModelPrice(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	wantArgs := []any{"exact-price", "0.000001", "123.456789", "0.123456", "1.234567"}
+	if !reflect.DeepEqual(capturedArgs, wantArgs) {
+		t.Fatalf("exact DB args=%#v, want %#v", capturedArgs, wantArgs)
+	}
+	var response map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response["input_price_cny_per_million_tokens"] != "0.00001" ||
+		response["output_price_cny_per_million_tokens"] != "1234.56789" ||
+		response["cache_read_ratio"] != "0.123456" || response["cache_creation_ratio"] != "1.234567" {
+		t.Fatalf("exact response contract lost precision: %s", rec.Body.String())
 	}
 }
 
@@ -4225,7 +4291,7 @@ func TestListOrgModelPrices_Success(t *testing.T) {
 						*dest[1].(*int64) = 1
 						*dest[2].(*string) = "Default"
 						*dest[3].(*string) = "gpt-4o"
-						*dest[4].(*float64) = 1.5
+						*dest[4].(*string) = "1.5"
 						*dest[5].(*time.Time) = now
 						*dest[6].(*time.Time) = now
 						return nil
@@ -4844,7 +4910,7 @@ func TestUpdateModelPrice_Success(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"input_price_cny_per_million_tokens":100,"output_price_cny_per_million_tokens":300}`
+	body := `{"model_name":"gpt-4o","input_price_cny_per_million_tokens":100,"output_price_cny_per_million_tokens":300}`
 	req := platformPricingRequest("PUT", "/model-prices/1", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "1")
@@ -5299,11 +5365,11 @@ func TestExportWalletTransactions_Success(t *testing.T) {
 			return &testutil.MockRows{
 				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
-						balanceAfter := 15000
+						balanceAfter := int64(150_000_000)
 						*dest[0].(*int64) = 1
 						*dest[1].(*string) = "topup"
-						*dest[2].(*int) = 5000
-						*dest[3].(**int) = &balanceAfter
+						*dest[2].(*int64) = 50_000_000
+						*dest[3].(**int64) = &balanceAfter
 						*dest[4].(*string) = "Admin top-up"
 						*dest[5].(*string) = "req-001"
 						*dest[6].(*time.Time) = now
@@ -5511,7 +5577,7 @@ func TestCreateGrant_Success(t *testing.T) {
 					return &testutil.MockRow{
 						ScanFn: func(dest ...any) error {
 							if strings.Contains(sql, "UPDATE wallets") {
-								*dest[0].(*int) = 11000
+								*dest[0].(*int64) = 110_000_000
 							} else {
 								*dest[0].(*int64) = 42 // grant id
 							}

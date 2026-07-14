@@ -10,13 +10,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/migrate"
-	"github.com/uniroute/unirouter/internal/testutil"
 )
 
 func TestP6F40BProviderAttemptLedgerMigrationUpDownGuardAndRollForward(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool, migrationsDir := setupMigratedThrough(t, "000032_prd6_delivery_receipt.up.sql")
 	ctx := context.Background()
-	migrationsDir := testutil.MigrationsDir(t)
 
 	assertUp := func() {
 		t.Helper()

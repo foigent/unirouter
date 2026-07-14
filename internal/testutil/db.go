@@ -81,8 +81,8 @@ func SeedTestData(t *testing.T, pool *pgxpool.Pool) (orgID int64) {
 
 	// Ensure wallet exists for this org
 	_, err = pool.Exec(ctx,
-		`INSERT INTO wallets (org_id, balance, granted_balance, frozen, total_spent)
-		 VALUES ($1, 100000, 0, 0, 0)
+		`INSERT INTO wallets (org_id, balance_micros, granted_balance_micros, frozen_micros, total_spent_micros)
+		 VALUES ($1, 1000000000, 0, 0, 0)
 		 ON CONFLICT (org_id) DO NOTHING`,
 		orgID)
 	if err != nil {

@@ -12,29 +12,29 @@ func TestFreezeRequest_Fields(t *testing.T) {
 		OrgID:           1,
 		Model:           "gpt-4o",
 		EstimatedTokens: 1000,
-		SafetyFactor:    1.5,
-		MinFreezeAmount: 10,
+		SafetyFactor:    "1.5",
+		MinFreezeCents:  10,
 	}
 	if req.RequestID != "req-001" {
 		t.Fatalf("RequestID mismatch: %s", req.RequestID)
 	}
-	if req.SafetyFactor != 1.5 {
-		t.Fatalf("SafetyFactor mismatch: %f", req.SafetyFactor)
+	if req.SafetyFactor != "1.5" {
+		t.Fatalf("SafetyFactor mismatch: %s", req.SafetyFactor)
 	}
 }
 
 func TestFreezeResult_Fields(t *testing.T) {
 	result := FreezeResult{
-		FreezeID:   42,
-		Amount:     100,
-		NewBalance: 900,
-		Success:    true,
+		FreezeID:         42,
+		AmountMicros:     100,
+		NewBalanceMicros: 900,
+		Success:          true,
 	}
 	if !result.Success {
 		t.Fatal("expected success")
 	}
-	if result.Amount != 100 {
-		t.Fatalf("Amount mismatch: %d", result.Amount)
+	if result.AmountMicros != 100 {
+		t.Fatalf("AmountMicros mismatch: %d", result.AmountMicros)
 	}
 }
 
@@ -54,15 +54,15 @@ func TestFreezeResult_Error(t *testing.T) {
 
 func TestSettleRequest_Fields(t *testing.T) {
 	req := SettleRequest{
-		RequestID:        "req-002",
-		OrgID:            1,
-		ActualCost:       85,
-		PromptTokens:     500,
-		CompletionTokens: 300,
-		UsageSource:      "upstream",
+		RequestID:            "req-002",
+		OrgID:                1,
+		PromptTokens:         500,
+		UncachedPromptTokens: 500,
+		CompletionTokens:     300,
+		UsageSource:          "upstream",
 	}
-	if req.ActualCost != 85 {
-		t.Fatalf("ActualCost mismatch: %d", req.ActualCost)
+	if req.PromptTokens != 500 || req.UncachedPromptTokens != 500 {
+		t.Fatalf("prompt token partition mismatch: total=%d uncached=%d", req.PromptTokens, req.UncachedPromptTokens)
 	}
 }
 
@@ -79,16 +79,16 @@ func TestNormalizeSettlementUsageRejectsPersistedIntegerOverflow(t *testing.T) {
 
 func TestSettleResult_Fields(t *testing.T) {
 	result := SettleResult{
-		SettleID:   43,
-		Refund:     15,
-		NewBalance: 900,
-		Success:    true,
+		SettleID:         43,
+		RefundMicros:     15,
+		NewBalanceMicros: 900,
+		Success:          true,
 	}
 	if !result.Success {
 		t.Fatal("expected success")
 	}
-	if result.Refund != 15 {
-		t.Fatalf("Refund mismatch: %d", result.Refund)
+	if result.RefundMicros != 15 {
+		t.Fatalf("RefundMicros mismatch: %d", result.RefundMicros)
 	}
 }
 

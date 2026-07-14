@@ -81,8 +81,8 @@ type providerAttemptRecord struct {
 	HTTPStatus            sql.NullInt32
 	FailureKind           sql.NullString
 	UpstreamRequestID     sql.NullString
-	CalculatedCost        sql.NullInt64
-	ChargedCost           sql.NullInt64
+	CalculatedCostMicros  sql.NullInt64
+	ChargedCostMicros     sql.NullInt64
 	TerminalTransactionID sql.NullInt64
 }
 
@@ -306,7 +306,7 @@ func providerAttemptForUpdate(ctx context.Context, tx pgx.Tx, orgID int64, reque
 	err := tx.QueryRow(ctx,
 		`SELECT api_key_id, channel_id, channel_key_id, route_sequence, route_total,
 		        endpoint, provider, channel_name, state, outcome_certainty, retry_authorized,
-		        http_status, failure_kind, upstream_request_id, calculated_cost, charged_cost,
+		        http_status, failure_kind, upstream_request_id, calculated_cost_micros, charged_cost_micros,
 		        terminal_transaction_id
 		 FROM billing_provider_attempts
 		 WHERE org_id = $1 AND request_id = $2 AND attempt_id = $3
@@ -315,7 +315,7 @@ func providerAttemptForUpdate(ctx context.Context, tx pgx.Tx, orgID int64, reque
 		&record.APIKeyID, &record.ChannelID, &record.ChannelKeyID, &record.RouteSequence, &record.RouteTotal,
 		&record.Endpoint, &record.Provider, &record.Channel, &record.State, &record.OutcomeCertainty,
 		&record.RetryAuthorized, &record.HTTPStatus, &record.FailureKind,
-		&record.UpstreamRequestID, &record.CalculatedCost, &record.ChargedCost,
+		&record.UpstreamRequestID, &record.CalculatedCostMicros, &record.ChargedCostMicros,
 		&record.TerminalTransactionID,
 	)
 	return record, err
@@ -342,13 +342,13 @@ func nullableStringEquals(value sql.NullString, expected string) bool {
 	return value.Valid == (expected != "") && (!value.Valid || value.String == expected)
 }
 
-func markProviderAttemptFundingPendingTx(ctx context.Context, tx pgx.Tx, req SettleRequest, calculatedCost int) error {
+func markProviderAttemptFundingPendingTx(ctx context.Context, tx pgx.Tx, req SettleRequest, calculatedCost int64) error {
 	return updateProviderAttemptFinancialStateTx(
 		ctx, tx, req, providerAttemptStateFundingPending, calculatedCost, 0, 0,
 	)
 }
 
-func markProviderAttemptSettledTx(ctx context.Context, tx pgx.Tx, req SettleRequest, calculatedCost, chargedCost int, transactionID int64) error {
+func markProviderAttemptSettledTx(ctx context.Context, tx pgx.Tx, req SettleRequest, calculatedCost, chargedCost int64, transactionID int64) error {
 	return updateProviderAttemptFinancialStateTx(
 		ctx, tx, req, providerAttemptStateSettled, calculatedCost, chargedCost, transactionID,
 	)
@@ -359,8 +359,8 @@ func updateProviderAttemptFinancialStateTx(
 	tx pgx.Tx,
 	req SettleRequest,
 	state string,
-	calculatedCost int,
-	chargedCost int,
+	calculatedCost int64,
+	chargedCost int64,
 	transactionID int64,
 ) error {
 	result, err := tx.Exec(ctx,
@@ -368,8 +368,8 @@ func updateProviderAttemptFinancialStateTx(
 		 SET state = $4::varchar(32),
 		     outcome_certainty = $5::varchar(24),
 		     retry_authorized = FALSE,
-		     calculated_cost = $6,
-		     charged_cost = $7,
+		     calculated_cost_micros = $6,
+		     charged_cost_micros = $7,
 		     terminal_transaction_id = NULLIF($8::bigint, 0),
 		     financial_resolved_at = CASE WHEN $4::text = 'settled' THEN COALESCE(financial_resolved_at, NOW()) ELSE NULL END,
 		     updated_at = NOW()

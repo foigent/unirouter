@@ -350,18 +350,18 @@ func TestCreateChannel_InvalidJSON_Integration(t *testing.T) {
 func TestCleanupOldData_ReleasesStaleFrozen_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
-	testutil.NewTestWallet(t, pool, orgID, 900)
+	testutil.NewTestWalletCents(t, pool, orgID, 900)
 
 	_, err := pool.Exec(t.Context(),
-		`UPDATE wallets SET frozen = 100 WHERE org_id = $1`,
+		`UPDATE wallets SET frozen_micros = 1000000 WHERE org_id = $1`,
 		orgID,
 	)
 	require.NoError(t, err)
 	_, err = pool.Exec(t.Context(),
 		`INSERT INTO freeze_idempotency (
-			request_id, org_id, frozen_amount, reserved_balance_amount, status, created_at, updated_at
+			request_id, org_id, frozen_amount_micros, reserved_balance_micros, status, created_at, updated_at
 		 ) VALUES (
-			'stale-settle-cleanup', $1, 100, 100, 'frozen',
+			'stale-settle-cleanup', $1, 1000000, 1000000, 'frozen',
 			NOW() - INTERVAL '25 hours', NOW() - INTERVAL '25 hours'
 		 )`,
 		orgID,
@@ -371,11 +371,11 @@ func TestCleanupOldData_ReleasesStaleFrozen_Integration(t *testing.T) {
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 	require.NoError(t, h.CleanupOldData(t.Context(), 30))
 
-	var balance, frozen int
-	err = pool.QueryRow(t.Context(), `SELECT balance, frozen FROM wallets WHERE org_id = $1`, orgID).Scan(&balance, &frozen)
+	var balanceMicros, frozenMicros int64
+	err = pool.QueryRow(t.Context(), `SELECT balance_micros, frozen_micros FROM wallets WHERE org_id = $1`, orgID).Scan(&balanceMicros, &frozenMicros)
 	require.NoError(t, err)
-	require.Equal(t, 1000, balance)
-	require.Equal(t, 0, frozen)
+	require.Equal(t, int64(10_000_000), balanceMicros)
+	require.Equal(t, int64(0), frozenMicros)
 
 	var status string
 	err = pool.QueryRow(t.Context(), `SELECT status FROM freeze_idempotency WHERE request_id = 'stale-settle-cleanup'`).Scan(&status)
@@ -388,7 +388,7 @@ func TestCleanupOldData_ReleasesStaleFrozen_Integration(t *testing.T) {
 func TestTopUp_Success_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
-	testutil.NewTestWallet(t, pool, orgID, 1000)
+	testutil.NewTestWalletCents(t, pool, orgID, 1000)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
@@ -403,16 +403,16 @@ func TestTopUp_Success_Integration(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
 
 	// Verify balance increased
-	var balance int
-	err := pool.QueryRow(t.Context(), `SELECT balance FROM wallets WHERE org_id = $1`, orgID).Scan(&balance)
+	var balanceMicros int64
+	err := pool.QueryRow(t.Context(), `SELECT balance_micros FROM wallets WHERE org_id = $1`, orgID).Scan(&balanceMicros)
 	require.NoError(t, err)
-	require.Equal(t, 1500, balance, "balance should be 1000 + 500")
+	require.Equal(t, int64(15_000_000), balanceMicros, "balance should be 1000 + 500 cents")
 }
 
 func TestTopUp_NegativeAmount_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
-	testutil.NewTestWallet(t, pool, orgID, 1000)
+	testutil.NewTestWalletCents(t, pool, orgID, 1000)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
@@ -426,16 +426,16 @@ func TestTopUp_NegativeAmount_Integration(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 
 	// Verify balance unchanged
-	var balance int
-	err := pool.QueryRow(t.Context(), `SELECT balance FROM wallets WHERE org_id = $1`, orgID).Scan(&balance)
+	var balanceMicros int64
+	err := pool.QueryRow(t.Context(), `SELECT balance_micros FROM wallets WHERE org_id = $1`, orgID).Scan(&balanceMicros)
 	require.NoError(t, err)
-	require.Equal(t, 1000, balance, "balance should not change")
+	require.Equal(t, int64(10_000_000), balanceMicros, "balance should not change")
 }
 
 func TestTopUp_ZeroAmount_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
-	testutil.NewTestWallet(t, pool, orgID, 1000)
+	testutil.NewTestWalletCents(t, pool, orgID, 1000)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
@@ -452,7 +452,7 @@ func TestTopUp_ZeroAmount_Integration(t *testing.T) {
 func TestTopUp_Idempotency_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
-	testutil.NewTestWallet(t, pool, orgID, 1000)
+	testutil.NewTestWalletCents(t, pool, orgID, 1000)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
@@ -478,16 +478,16 @@ func TestTopUp_Idempotency_Integration(t *testing.T) {
 	require.Equal(t, true, replay["idempotent_replay"])
 
 	// Verify balance only increased once
-	var balance int
-	err := pool.QueryRow(t.Context(), `SELECT balance FROM wallets WHERE org_id = $1`, orgID).Scan(&balance)
+	var balanceMicros int64
+	err := pool.QueryRow(t.Context(), `SELECT balance_micros FROM wallets WHERE org_id = $1`, orgID).Scan(&balanceMicros)
 	require.NoError(t, err)
-	require.Equal(t, 1500, balance, "balance should be 1000 + 500, not 1000 + 1000")
+	require.Equal(t, int64(15_000_000), balanceMicros, "balance should be 1000 + 500 cents, not 1000 + 1000")
 }
 
 func TestTopUp_IdempotencyKeyReuseWithDifferentPayload_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
-	testutil.NewTestWallet(t, pool, orgID, 1000)
+	testutil.NewTestWalletCents(t, pool, orgID, 1000)
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
 	serve := func(body string) *httptest.ResponseRecorder {
@@ -505,12 +505,13 @@ func TestTopUp_IdempotencyKeyReuseWithDifferentPayload_Integration(t *testing.T)
 	require.Equal(t, http.StatusConflict, conflict.Code, conflict.Body.String())
 	require.Contains(t, conflict.Body.String(), "idempotency_key_reused")
 
-	var balance, transactions int
-	require.NoError(t, pool.QueryRow(t.Context(), `SELECT balance FROM wallets WHERE org_id = $1`, orgID).Scan(&balance))
+	var balanceMicros int64
+	var transactions int
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT balance_micros FROM wallets WHERE org_id = $1`, orgID).Scan(&balanceMicros))
 	require.NoError(t, pool.QueryRow(t.Context(),
 		`SELECT COUNT(*) FROM transactions WHERE org_id = $1 AND type = 'topup'`, orgID,
 	).Scan(&transactions))
-	require.Equal(t, 1500, balance)
+	require.Equal(t, int64(15_000_000), balanceMicros)
 	require.Equal(t, 1, transactions)
 }
 
@@ -519,7 +520,7 @@ func TestTopUp_IdempotencyKeyReuseWithDifferentPayload_Integration(t *testing.T)
 func TestCreateGrant_Success_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
-	testutil.NewTestWallet(t, pool, orgID, 1000)
+	testutil.NewTestWalletCents(t, pool, orgID, 1000)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
@@ -539,20 +540,20 @@ func TestCreateGrant_Success_Integration(t *testing.T) {
 	require.NotZero(t, resp["id"])
 
 	// A grant is expiring credit, not cash.
-	var balance, grantedBalance, grantBalance int
-	err = pool.QueryRow(t.Context(), `SELECT balance, granted_balance FROM wallets WHERE org_id = $1`, orgID).Scan(&balance, &grantedBalance)
+	var balanceMicros, grantedBalanceMicros, grantBalanceMicros int64
+	err = pool.QueryRow(t.Context(), `SELECT balance_micros, granted_balance_micros FROM wallets WHERE org_id = $1`, orgID).Scan(&balanceMicros, &grantedBalanceMicros)
 	require.NoError(t, err)
-	require.Equal(t, 1000, balance)
-	require.Equal(t, 500, grantedBalance)
-	err = pool.QueryRow(t.Context(), `SELECT balance FROM grants WHERE id = $1`, int64(resp["id"].(float64))).Scan(&grantBalance)
+	require.Equal(t, int64(10_000_000), balanceMicros)
+	require.Equal(t, int64(5_000_000), grantedBalanceMicros)
+	err = pool.QueryRow(t.Context(), `SELECT balance_micros FROM grants WHERE id = $1`, int64(resp["id"].(float64))).Scan(&grantBalanceMicros)
 	require.NoError(t, err)
-	require.Equal(t, 500, grantBalance)
+	require.Equal(t, int64(5_000_000), grantBalanceMicros)
 }
 
 func TestCreateGrant_Idempotency_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
-	testutil.NewTestWallet(t, pool, orgID, 1000)
+	testutil.NewTestWalletCents(t, pool, orgID, 1000)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
@@ -579,17 +580,17 @@ func TestCreateGrant_Idempotency_Integration(t *testing.T) {
 	require.Equal(t, true, resp["duplicate"])
 
 	// Verify grant credit only increased once and cash was not changed.
-	var balance, grantedBalance int
-	err := pool.QueryRow(t.Context(), `SELECT balance, granted_balance FROM wallets WHERE org_id = $1`, orgID).Scan(&balance, &grantedBalance)
+	var balanceMicros, grantedBalanceMicros int64
+	err := pool.QueryRow(t.Context(), `SELECT balance_micros, granted_balance_micros FROM wallets WHERE org_id = $1`, orgID).Scan(&balanceMicros, &grantedBalanceMicros)
 	require.NoError(t, err)
-	require.Equal(t, 1000, balance)
-	require.Equal(t, 500, grantedBalance)
+	require.Equal(t, int64(10_000_000), balanceMicros)
+	require.Equal(t, int64(5_000_000), grantedBalanceMicros)
 }
 
 func TestCreateGrant_ZeroAmount_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
-	testutil.NewTestWallet(t, pool, orgID, 1000)
+	testutil.NewTestWalletCents(t, pool, orgID, 1000)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
@@ -603,10 +604,10 @@ func TestCreateGrant_ZeroAmount_Integration(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 
 	// Verify wallet unchanged
-	var balance int
-	err := pool.QueryRow(t.Context(), `SELECT balance FROM wallets WHERE org_id = $1`, orgID).Scan(&balance)
+	var balanceMicros int64
+	err := pool.QueryRow(t.Context(), `SELECT balance_micros FROM wallets WHERE org_id = $1`, orgID).Scan(&balanceMicros)
 	require.NoError(t, err)
-	require.Equal(t, 1000, balance)
+	require.Equal(t, int64(10_000_000), balanceMicros)
 }
 
 func TestCreateGrant_InvalidJSON_Integration(t *testing.T) {
@@ -627,7 +628,7 @@ func TestCreateGrant_InvalidJSON_Integration(t *testing.T) {
 func TestGetWallet_Success_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
-	testutil.NewTestWallet(t, pool, orgID, 5000)
+	testutil.NewTestWalletCents(t, pool, orgID, 5000)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
@@ -642,7 +643,7 @@ func TestGetWallet_Success_Integration(t *testing.T) {
 	var resp map[string]interface{}
 	err := json.Unmarshal(rec.Body.Bytes(), &resp)
 	require.NoError(t, err)
-	require.Equal(t, float64(5000), resp["balance_cents"])
+	require.Equal(t, "50000000", resp["balance_micros"])
 }
 
 func TestGetWallet_NotFound_Integration(t *testing.T) {
@@ -666,7 +667,7 @@ func TestGetWallet_NotFound_Integration(t *testing.T) {
 func TestBalanceAdjust_Success_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
-	testutil.NewTestWallet(t, pool, orgID, 1000)
+	testutil.NewTestWalletCents(t, pool, orgID, 1000)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
@@ -684,21 +685,21 @@ func TestBalanceAdjust_Success_Integration(t *testing.T) {
 	err := json.Unmarshal(rec.Body.Bytes(), &resp)
 	require.NoError(t, err)
 	require.Equal(t, true, resp["success"])
-	require.Equal(t, float64(1000), resp["previous"])
-	require.Equal(t, float64(500), resp["new_balance"])
-	require.Equal(t, float64(-500), resp["adjust_amount"])
+	require.Equal(t, "10000000", resp["previous_balance_micros"])
+	require.Equal(t, "5000000", resp["balance_micros"])
+	require.Equal(t, "-5000000", resp["delta_micros"])
 
 	// Verify balance in DB
-	var balance int
-	err = pool.QueryRow(t.Context(), `SELECT balance FROM wallets WHERE org_id = $1`, orgID).Scan(&balance)
+	var balanceMicros int64
+	err = pool.QueryRow(t.Context(), `SELECT balance_micros FROM wallets WHERE org_id = $1`, orgID).Scan(&balanceMicros)
 	require.NoError(t, err)
-	require.Equal(t, 500, balance)
+	require.Equal(t, int64(5_000_000), balanceMicros)
 }
 
 func TestBalanceAdjust_InsufficientBalance_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
-	testutil.NewTestWallet(t, pool, orgID, 1000)
+	testutil.NewTestWalletCents(t, pool, orgID, 1000)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
@@ -713,10 +714,10 @@ func TestBalanceAdjust_InsufficientBalance_Integration(t *testing.T) {
 	require.Equal(t, http.StatusConflict, rec.Code)
 
 	// Verify balance unchanged
-	var balance int
-	err := pool.QueryRow(t.Context(), `SELECT balance FROM wallets WHERE org_id = $1`, orgID).Scan(&balance)
+	var balanceMicros int64
+	err := pool.QueryRow(t.Context(), `SELECT balance_micros FROM wallets WHERE org_id = $1`, orgID).Scan(&balanceMicros)
 	require.NoError(t, err)
-	require.Equal(t, 1000, balance)
+	require.Equal(t, int64(10_000_000), balanceMicros)
 }
 
 func TestBalanceAdjust_NoWallet_Integration(t *testing.T) {
@@ -740,7 +741,7 @@ func TestBalanceAdjust_NoWallet_Integration(t *testing.T) {
 func TestBalanceAdjust_WrongMethod_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
-	testutil.NewTestWallet(t, pool, orgID, 1000)
+	testutil.NewTestWalletCents(t, pool, orgID, 1000)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
@@ -755,7 +756,7 @@ func TestBalanceAdjust_WrongMethod_Integration(t *testing.T) {
 func TestBalanceAdjust_InvalidJSON_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
-	testutil.NewTestWallet(t, pool, orgID, 1000)
+	testutil.NewTestWalletCents(t, pool, orgID, 1000)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 

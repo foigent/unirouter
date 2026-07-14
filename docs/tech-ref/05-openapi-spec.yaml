@@ -596,7 +596,18 @@ paths:
     delete: { $ref: "#/components/pathItems/DeleteById" }
 
   /api/v1/wallet:
-    get: { $ref: "#/components/pathItems/Get" }
+    get:
+      tags: [Admin]
+      summary: Read the organization wallet in canonical micro-CNY
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Exact wallet state; every `*_micros` amount is canonical decimal string text.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WalletResponse" }
+        "404": { $ref: "#/components/responses/Error" }
 
   /api/v1/wallet/topup:
     post:
@@ -618,7 +629,11 @@ paths:
                 description: { type: string, minLength: 1 }
                 client_request_id: { type: string, minLength: 1, maxLength: 128, description: Stable idempotency identity reused for retries of the same payload. }
       responses:
-        "200": { $ref: "#/components/responses/JSON" }
+        "200":
+          description: Exact post-mutation wallet balance in micro-CNY.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WalletMutationResponse" }
         "400": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -649,13 +664,18 @@ paths:
                 description: { type: string, minLength: 1 }
                 client_request_id: { type: string, minLength: 1, maxLength: 128, description: Stable idempotency identity reused for retries of the same payload. }
       responses:
-        "200": { $ref: "#/components/responses/JSON" }
+        "200":
+          description: Exact signed delta and before/after balance in micro-CNY.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WalletMutationResponse" }
         "400": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
 
   /api/v1/wallet/transactions:
+    description: Transaction amount_micros values are canonical signed decimal strings with currency=CNY and amount_scale=1000000; no legacy rounded cent output is emitted.
     get: { $ref: "#/components/pathItems/List" }
 
   /api/v1/wallet/transactions/export:
@@ -672,6 +692,7 @@ paths:
     get:
       tags: [Admin]
       summary: Tenant-scoped call logs with operation and correlation filters
+      description: cost_micros, component costs and effective `*_price_micros_per_million` snapshots are canonical decimal strings; currency=CNY and amount_scale=1000000 identify the amount unit.
       security:
         - bearerAuth: []
       parameters:
@@ -796,17 +817,61 @@ paths:
       output_price_cny_per_million_tokens; responses also return currency=CNY
       and price_basis_tokens=1000000. Legacy input_price_cents and
       output_price_cents request fields are rejected because their unit is
-      ambiguous. Ratios default to 1 and apply only to provider-authoritative
+      ambiguous. Public prices and ratios are returned as canonical decimal
+      strings and may be submitted as strings; finite JSON number literals
+      remain accepted for compatibility but are parsed from their exact JSON
+      lexical form, never through binary floating point. Ratios default to 1 and apply only to provider-authoritative
       Prompt Cache token classes for requests frozen after the change. A model
       with no explicit model_prices row fails closed; no default price is used.
-    get: { $ref: "#/components/pathItems/List" }
-    post: { $ref: "#/components/pathItems/Create" }
+      Supported mutations are serialized per model and return 400 without an
+      audit/write when any base/cache/organization-effective price would exceed
+      the signed micro-CNY price range. model_name is the stable pricing,
+      organization-multiplier, routing and governance identity: it is required
+      on create and immutable afterward. Updating a different model_name returns
+      400 without changing prices or writing audit evidence; create a new price
+      row and migrate independently owned references explicitly instead.
+    get:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Paginated exact model-price authority.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelPriceListResponse" }
+    post:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModelPriceMutation" }
+      responses:
+        "201":
+          description: Exact model price created or replaced.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelPrice" }
+        "400": { $ref: "#/components/responses/Error" }
 
   /api/v1/model-prices/{id}:
     x-unirouter-rbac:
       put: [platform_admin]
       delete: [platform_admin]
-    put: { $ref: "#/components/pathItems/UpdateById" }
+    put:
+      tags: [Admin]
+      description: Updates only mutable price and cache-ratio fields. If model_name is supplied for compatibility it must exactly match the stored identity; a different value returns 400 without a write or audit record.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModelPriceMutation" }
+      responses:
+        "200": { $ref: "#/components/responses/JSON" }
+        "400": { $ref: "#/components/responses/Error" }
     delete: { $ref: "#/components/pathItems/DeleteById" }
 
   /api/v1/model-names:
@@ -909,19 +974,52 @@ paths:
     x-unirouter-rbac:
       get: [platform_admin, org_admin]
       post: [platform_admin]
-    description: Organization administrators read only their JWT organization; platform administrators may select an explicit org_id.
-    get: { $ref: "#/components/pathItems/List" }
-    post: { $ref: "#/components/pathItems/Create" }
+    description: Organization administrators read only their JWT organization; platform administrators may select an explicit org_id. Multiplier input and output use canonical decimal strings with at most three fractional digits; JSON number literals remain compatibility input only and are parsed lexically. Mutations are serialized with the matching base-price authority and return 400 atomically if any resulting effective micro-CNY price would exceed the supported signed range.
+    get:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Paginated exact organization multiplier authority.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrgModelPriceListResponse" }
+    post:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrgModelPriceMutation" }
+      responses:
+        "201":
+          description: Exact organization multiplier created or replaced.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrgModelPrice" }
+        "400": { $ref: "#/components/responses/Error" }
 
   /api/v1/org-model-prices/{id}:
     x-unirouter-rbac:
       put: [platform_admin]
       delete: [platform_admin]
-    put: { $ref: "#/components/pathItems/UpdateById" }
+    put:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrgModelPriceMutation" }
+      responses:
+        "200": { $ref: "#/components/responses/JSON" }
+        "400": { $ref: "#/components/responses/Error" }
     delete: { $ref: "#/components/pathItems/DeleteById" }
 
   /api/v1/reconciliation:
-    description: Organization-scoped comparison of preflight estimates and actual usage, with a separate provider Prompt Cache read/write token and cost breakdown. `cache_usage_schema` distinguishes authoritative provider reports from `not_reported`; no cache hit is inferred.
+    description: Organization-scoped comparison of preflight estimates and actual usage, with a separate provider Prompt Cache read/write token and cost breakdown. All `*_micros` costs are canonical decimal strings with currency=CNY and amount_scale=1000000. `cache_usage_schema` distinguishes authoritative provider reports from `not_reported`; no cache hit is inferred.
     get: { $ref: "#/components/pathItems/List" }
 
   /api/v1/provider-cost/reconciliations:
@@ -1336,6 +1434,133 @@ components:
           description: Deleted
 
   schemas:
+    CanonicalMicros:
+      type: string
+      pattern: '^-?(0|[1-9][0-9]*)$'
+      description: Signed canonical integer micro-CNY text. Leading plus signs and leading zeroes are invalid.
+    NonnegativeCanonicalMicros:
+      type: string
+      pattern: '^(0|[1-9][0-9]*)$'
+      description: Nonnegative canonical integer micro-CNY text.
+    PublicPriceDecimalInput:
+      description: Exact CNY per 1,000,000 tokens with at most five fractional digits, bounded so the canonical micro-CNY price fits signed int64 (maximum 9223372036854.77580). Prefer the string form; the numeric form is compatibility input parsed from JSON text.
+      oneOf:
+        - type: string
+          pattern: '^[0-9]+(?:\.[0-9]{1,5})?$'
+          maxLength: 64
+        - type: number
+          minimum: 0
+          maximum: 9223372036854.7758
+          multipleOf: 0.00001
+    CachePriceRatioInput:
+      description: Exact provider Prompt Cache price multiplier with at most six fractional digits.
+      oneOf:
+        - type: string
+          pattern: '^[0-9]+(?:\.[0-9]{1,6})?$'
+          maxLength: 64
+        - type: number
+          minimum: 0
+          maximum: 100
+          multipleOf: 0.000001
+    OrgPriceMultiplierInput:
+      description: Exact organization price multiplier with at most three fractional digits.
+      oneOf:
+        - type: string
+          pattern: '^[0-9]+(?:\.[0-9]{1,3})?$'
+          maxLength: 64
+        - type: number
+          minimum: 0.001
+          maximum: 99.999
+          multipleOf: 0.001
+    WalletResponse:
+      type: object
+      required: [id, org_id, balance_micros, granted_balance_micros, frozen_micros, total_spent_micros, threshold_micros, currency, amount_scale]
+      properties:
+        id: { type: integer, format: int64 }
+        org_id: { type: integer, format: int64 }
+        balance_micros: { $ref: "#/components/schemas/CanonicalMicros" }
+        granted_balance_micros: { $ref: "#/components/schemas/CanonicalMicros" }
+        frozen_micros: { $ref: "#/components/schemas/CanonicalMicros" }
+        total_spent_micros: { $ref: "#/components/schemas/CanonicalMicros" }
+        threshold_micros: { $ref: "#/components/schemas/CanonicalMicros" }
+        currency: { type: string, enum: [CNY] }
+        amount_scale: { type: integer, format: int64, enum: [1000000] }
+      additionalProperties: true
+    WalletMutationResponse:
+      type: object
+      required: [org_id, balance_micros, currency, amount_scale, client_request_id, idempotent_replay]
+      properties:
+        org_id: { type: integer, format: int64 }
+        previous_balance_micros: { $ref: "#/components/schemas/CanonicalMicros" }
+        balance_micros: { $ref: "#/components/schemas/CanonicalMicros" }
+        delta_micros: { $ref: "#/components/schemas/CanonicalMicros" }
+        currency: { type: string, enum: [CNY] }
+        amount_scale: { type: integer, format: int64, enum: [1000000] }
+        client_request_id: { type: string }
+        idempotent_replay: { type: boolean }
+      additionalProperties: true
+    ModelPrice:
+      type: object
+      required: [id, model_name, input_price_cny_per_million_tokens, output_price_cny_per_million_tokens, cache_read_ratio, cache_creation_ratio, currency, price_basis_tokens]
+      properties:
+        id: { type: integer, format: int64 }
+        model_name: { type: string }
+        input_price_cny_per_million_tokens: { type: string, pattern: '^(0|[1-9][0-9]{0,12})(?:\.[0-9]{1,5})?$' }
+        output_price_cny_per_million_tokens: { type: string, pattern: '^(0|[1-9][0-9]{0,12})(?:\.[0-9]{1,5})?$' }
+        cache_read_ratio: { type: string, pattern: '^(0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$' }
+        cache_creation_ratio: { type: string, pattern: '^(0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$' }
+        currency: { type: string, enum: [CNY] }
+        price_basis_tokens: { type: integer, format: int64, enum: [1000000] }
+        updated_at: { type: string, format: date-time }
+      additionalProperties: false
+    ModelPriceMutation:
+      type: object
+      properties:
+        model_name: { type: string, minLength: 1, description: Required when creating a model price. Immutable after creation; PUT may omit it or repeat the exact stored value, but cannot rename the record. }
+        input_price_cny_per_million_tokens: { $ref: "#/components/schemas/PublicPriceDecimalInput" }
+        output_price_cny_per_million_tokens: { $ref: "#/components/schemas/PublicPriceDecimalInput" }
+        cache_read_ratio: { $ref: "#/components/schemas/CachePriceRatioInput" }
+        cache_creation_ratio: { $ref: "#/components/schemas/CachePriceRatioInput" }
+      additionalProperties: false
+    ModelPriceListResponse:
+      type: object
+      required: [data, total, page, page_size, can_mutate]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/ModelPrice" } }
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }
+        can_mutate: { type: boolean }
+    OrgModelPrice:
+      type: object
+      required: [id, org_id, model_name, multiplier]
+      properties:
+        id: { type: integer, format: int64 }
+        org_id: { type: integer, format: int64 }
+        org_name: { type: string }
+        model_name: { type: string }
+        multiplier: { type: string, pattern: '^(?:0\.00[1-9]|0\.0[1-9][0-9]?|0\.[1-9][0-9]{0,2}|[1-9][0-9]?(?:\.[0-9]{1,3})?)$' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+      additionalProperties: true
+    OrgModelPriceMutation:
+      type: object
+      required: [multiplier]
+      properties:
+        org_id: { type: integer, format: int64, minimum: 1 }
+        model_name: { type: string, minLength: 1 }
+        multiplier: { $ref: "#/components/schemas/OrgPriceMultiplierInput" }
+      additionalProperties: false
+    OrgModelPriceListResponse:
+      type: object
+      required: [data, total, page, page_size, org_id, can_mutate]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/OrgModelPrice" } }
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }
+        org_id: { type: integer, format: int64 }
+        can_mutate: { type: boolean }
     AgentCapabilityLimits:
       type: object
       additionalProperties: false
@@ -1344,7 +1569,7 @@ components:
         max_depth: { type: integer, minimum: 0, maximum: 16 }
         max_children: { type: integer, minimum: 0, maximum: 10000 }
         max_descendants: { type: integer, minimum: 0, maximum: 10000 }
-        cost_budget_cents: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991, description: Shared subtree cost ceiling; estimated cost is reserved on this Agent and every ancestor, then replaced with actual settled cost. }
+        cost_budget_cents: { type: integer, format: int64, minimum: 1, maximum: 900719925474, description: Compatibility configuration input in whole cents. It is converted exactly to micro-CNY before the v2 Redis counter is written; estimated cost is reserved on this Agent and every ancestor, then replaced with actual settled cost. }
         token_budget: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991, description: Shared subtree token ceiling; estimated tokens are reserved on every ancestor and replaced with actual settled tokens. }
         rpm_limit: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991, description: Exact rolling one-minute aggregate admission limit for this Agent subtree. }
         rps_limit: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991, description: Exact rolling one-second aggregate admission limit for this Agent subtree. }
@@ -1381,7 +1606,7 @@ components:
       type: object
       required: [schema_version, capability_token, token_type, workflow_id, root_agent_id, agent_id, depth, expires_at, refresh_after, workflow_expires_at, limits]
       properties:
-        schema_version: { type: string, enum: [unirouter.agent-capability.v1] }
+        schema_version: { type: string, enum: [unirouter.agent-capability.v2] }
         capability_token: { type: string, readOnly: true, description: Secret bearer capability beginning with urc_; never log or persist it. }
         token_type: { type: string, enum: [Bearer] }
         workflow_id: { type: string, pattern: '^capwf_[0-9a-f]{32}$' }

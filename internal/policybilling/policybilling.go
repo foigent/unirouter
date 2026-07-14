@@ -30,8 +30,8 @@ const (
 )
 
 type Provider interface {
-	QueryModelPriceForOrg(ctx context.Context, orgID int64, model string) (float64, float64, error)
-	CalculateCost(ctx context.Context, model string, promptTokens, completionTokens int) (int, error)
+	QueryModelPriceMicrosForOrg(ctx context.Context, orgID int64, model string) (int64, int64, error)
+	CalculateCostMicrosForOrg(ctx context.Context, orgID int64, model string, promptTokens, completionTokens int) (int64, error)
 	Freeze(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error)
 	ExtendReservation(ctx context.Context, req billing.ExtendReservationRequest) (*billing.ExtendReservationResult, error)
 	BeginStreamDelivery(ctx context.Context, start billing.StreamDeliveryStart) error
@@ -87,12 +87,12 @@ func (b *Billing) SetTerminalHooks(hooks TerminalHooks) {
 	b.terminalHooks = hooks
 }
 
-func (b *Billing) QueryModelPriceForOrg(ctx context.Context, orgID int64, model string) (float64, float64, error) {
-	return b.inner.QueryModelPriceForOrg(ctx, orgID, model)
+func (b *Billing) QueryModelPriceMicrosForOrg(ctx context.Context, orgID int64, model string) (int64, int64, error) {
+	return b.inner.QueryModelPriceMicrosForOrg(ctx, orgID, model)
 }
 
-func (b *Billing) CalculateCost(ctx context.Context, model string, promptTokens, completionTokens int) (int, error) {
-	return b.inner.CalculateCost(ctx, model, promptTokens, completionTokens)
+func (b *Billing) CalculateCostMicrosForOrg(ctx context.Context, orgID int64, model string, promptTokens, completionTokens int) (int64, error) {
+	return b.inner.CalculateCostMicrosForOrg(ctx, orgID, model, promptTokens, completionTokens)
 }
 
 func (b *Billing) Freeze(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {

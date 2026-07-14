@@ -48,7 +48,7 @@ func TestPRD2P0DeveloperProjectKeyGatewayE2E_Integration(t *testing.T) {
 	defer upstream.Close()
 
 	orgID, userID, projectID := seedPRD2P0OrgProjectUser(t, pool, "developer")
-	testutil.NewTestWallet(t, pool, orgID, 10000)
+	testutil.NewTestWalletCents(t, pool, orgID, 10000)
 	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
 	seedPRD2P0ModelGovernance(t, pool, orgID, projectID)
 	seedPRD2P0Channel(t, pool, upstream.URL, "gpt-4o")
@@ -205,7 +205,7 @@ func TestGatewayUnregisteredModelAllowedButAudited_Integration(t *testing.T) {
 	defer upstream.Close()
 
 	orgID, userID, projectID := seedPRD2P0OrgProjectUser(t, pool, "developer")
-	testutil.NewTestWallet(t, pool, orgID, 10000)
+	testutil.NewTestWalletCents(t, pool, orgID, 10000)
 	testutil.NewTestModelPrice(t, pool, "unregistered-chat", 2, 10)
 	seedPRD2P0Channel(t, pool, upstream.URL, "unregistered-chat")
 

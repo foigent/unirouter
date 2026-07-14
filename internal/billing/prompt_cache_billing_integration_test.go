@@ -35,32 +35,33 @@ func TestP6F09PromptCachePriceFreezeSettlementAndIdempotency(t *testing.T) {
 		OrgID:           orgID,
 		Model:           model,
 		EstimatedTokens: 1000,
-		SafetyFactor:    1,
-		MinFreezeAmount: 1,
+		SafetyFactor:    "1",
+		MinFreezeCents:  1,
 	})
 	require.NoError(t, err)
 	require.True(t, freeze.Success, "%s: %s", freeze.ErrorCode, freeze.ErrorDetail)
-	require.Equal(t, 40, freeze.Amount, "reservation must cover the most expensive effective token class")
-	require.True(t, strings.HasPrefix(freeze.PricingVersion, "pv2_"))
+	require.Equal(t, testMicros(40), freeze.AmountMicros, "reservation must cover the most expensive effective token class")
+	require.True(t, strings.HasPrefix(freeze.PricingVersion, "pv3_"))
 
 	var pricingVersion string
-	var inputPrice, readPrice, creationPrice, outputPrice, readRatio, creationRatio float64
+	var inputPriceMicros, readPriceMicros, creationPriceMicros, outputPriceMicros int64
+	var readRatio, creationRatio float64
 	require.NoError(t, pool.QueryRow(ctx,
 		`SELECT pricing_version,
-		        effective_input_price_cents::float8,
-		        effective_cache_read_price_cents::float8,
-		        effective_cache_creation_price_cents::float8,
-		        effective_output_price_cents::float8,
+		        effective_input_price_micros_per_million,
+		        effective_cache_read_price_micros_per_million,
+		        effective_cache_creation_price_micros_per_million,
+		        effective_output_price_micros_per_million,
 		        cache_read_ratio::float8,
 		        cache_creation_ratio::float8
 		 FROM freeze_idempotency
 		 WHERE org_id = $1 AND request_id = $2`, orgID, requestID,
-	).Scan(&pricingVersion, &inputPrice, &readPrice, &creationPrice, &outputPrice, &readRatio, &creationRatio))
+	).Scan(&pricingVersion, &inputPriceMicros, &readPriceMicros, &creationPriceMicros, &outputPriceMicros, &readRatio, &creationRatio))
 	require.Equal(t, freeze.PricingVersion, pricingVersion)
-	require.InDelta(t, 8, inputPrice, 0.000001)
-	require.InDelta(t, 0.8, readPrice, 0.000001)
-	require.InDelta(t, 10, creationPrice, 0.000001)
-	require.InDelta(t, 40, outputPrice, 0.000001)
+	require.Equal(t, int64(80_000_000), inputPriceMicros)
+	require.Equal(t, int64(8_000_000), readPriceMicros)
+	require.Equal(t, int64(100_000_000), creationPriceMicros)
+	require.Equal(t, int64(400_000_000), outputPriceMicros)
 	require.InDelta(t, 0.1, readRatio, 0.000001)
 	require.InDelta(t, 1.25, creationRatio, 0.000001)
 
@@ -112,55 +113,56 @@ func TestP6F09PromptCachePriceFreezeSettlementAndIdempotency(t *testing.T) {
 	settled, err := b.Settle(ctx, usage)
 	require.NoError(t, err)
 	require.True(t, settled.Success)
-	require.Equal(t, 18, settled.ActualCost)
-	require.Equal(t, 18, settled.ChargedCost)
-	require.Zero(t, settled.UncoveredCost)
-	require.Equal(t, 22, settled.Refund)
+	require.Equal(t, int64(186_000), settled.ActualCostMicros)
+	require.Equal(t, int64(186_000), settled.ChargedCostMicros)
+	require.Zero(t, settled.UncoveredCostMicros)
+	require.Equal(t, int64(214_000), settled.RefundMicros)
 	require.Equal(t, freeze.PricingVersion, settled.PricingVersion)
-	require.InDelta(t, 8, settled.UncachedInputCostCents, 0.000001)
-	require.InDelta(t, 1.6, settled.CacheReadCostCents, 0.000001)
-	require.InDelta(t, 5, settled.CacheCreationCostCents, 0.000001)
-	require.InDelta(t, 4, settled.OutputCostCents, 0.000001)
+	require.Equal(t, int64(80_000), settled.UncachedInputCostMicros)
+	require.Equal(t, int64(16_000), settled.CacheReadCostMicros)
+	require.Equal(t, int64(50_000), settled.CacheCreationCostMicros)
+	require.Equal(t, int64(40_000), settled.OutputCostMicros)
 
 	replayed, err := b.Settle(ctx, usage)
 	require.NoError(t, err)
 	require.Equal(t, settled.SettleID, replayed.SettleID)
-	require.Equal(t, settled.ActualCost, replayed.ActualCost)
-	require.InDelta(t, settled.CacheReadCostCents, replayed.CacheReadCostCents, 0.000001)
+	require.Equal(t, settled.ActualCostMicros, replayed.ActualCostMicros)
+	require.Equal(t, settled.CacheReadCostMicros, replayed.CacheReadCostMicros)
 	require.ErrorIs(t, func() error {
 		_, replayErr := b.Settle(ctx, conflict)
 		return replayErr
 	}(), ErrSettlementUsageConflict, "a terminal cache-aware receipt must reject conflicting replay evidence")
 
-	var balance, frozen, spent, terminalEvents int
+	var balanceMicros, frozenMicros, spentMicros int64
+	var terminalEvents int
 	var storedStatus, storedSchema, storedCacheStatus string
 	var uncachedTokens, readTokens, creationTokens int
-	var storedReadCost, storedCreationCost float64
+	var storedReadCostMicros, storedCreationCostMicros int64
 	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT balance, frozen, total_spent FROM wallets WHERE org_id = $1`, orgID,
-	).Scan(&balance, &frozen, &spent))
+		`SELECT balance_micros, frozen_micros, total_spent_micros FROM wallets WHERE org_id = $1`, orgID,
+	).Scan(&balanceMicros, &frozenMicros, &spentMicros))
 	require.NoError(t, pool.QueryRow(ctx,
 		`SELECT status, uncached_prompt_tokens, cache_read_tokens, cache_creation_tokens,
 		        cache_usage_schema, cache_usage_status,
-		        cache_read_cost_cents::float8, cache_creation_cost_cents::float8
+		        cache_read_cost_micros, cache_creation_cost_micros
 		 FROM freeze_idempotency
 		 WHERE org_id = $1 AND request_id = $2`, orgID, requestID,
 	).Scan(&storedStatus, &uncachedTokens, &readTokens, &creationTokens,
-		&storedSchema, &storedCacheStatus, &storedReadCost, &storedCreationCost))
+		&storedSchema, &storedCacheStatus, &storedReadCostMicros, &storedCreationCostMicros))
 	require.NoError(t, pool.QueryRow(ctx,
 		`SELECT COUNT(*) FROM transactions
 		 WHERE org_id = $1 AND request_id = $2 AND type IN ('settle', 'cancel')`, orgID, requestID,
 	).Scan(&terminalEvents))
-	require.Equal(t, 982, balance)
-	require.Zero(t, frozen)
-	require.Equal(t, 18, spent)
+	require.Equal(t, int64(9_814_000), balanceMicros)
+	require.Zero(t, frozenMicros)
+	require.Equal(t, int64(186_000), spentMicros)
 	require.Equal(t, "settled", storedStatus)
 	require.Equal(t, 1000, uncachedTokens)
 	require.Equal(t, 2000, readTokens)
 	require.Equal(t, 500, creationTokens)
 	require.Equal(t, usage.CacheUsageSchema, storedSchema)
 	require.Equal(t, usage.CacheUsageStatus, storedCacheStatus)
-	require.InDelta(t, 1.6, storedReadCost, 0.000001)
-	require.InDelta(t, 5, storedCreationCost, 0.000001)
+	require.Equal(t, int64(16_000), storedReadCostMicros)
+	require.Equal(t, int64(50_000), storedCreationCostMicros)
 	require.Equal(t, 1, terminalEvents)
 }

@@ -159,6 +159,9 @@ func main() {
 		log.Fatalf("Invalid payload safety configuration: %v", err)
 	}
 	relay := gateway.NewRelay(postgres.Pool, redisClient.Client, router, sharedPolicyBilling, sensitiveFilter, encKey)
+	if err := relay.SetBillingFreezePolicy(cfg.FreezeSafetyFactor, cfg.MinFreezeCents); err != nil {
+		log.Fatalf("Invalid billing freeze policy: %v", err)
+	}
 	relay.SetPayloadBudget(payloadBudget)
 	relay.SetGuardrail(guardrailService)
 	relay.SetOutbox(outboxSvc)
@@ -202,12 +205,17 @@ func main() {
 		{outbox.EventBillingUsagePrepared, billingSvc.ProcessUsageJournalEvent},
 		{outbox.EventBillingSettled, billingSvc.ProcessUsageJournalEvent},
 		{outbox.EventBillingCancelled, billingSvc.ProcessUsageJournalEvent},
+		{outbox.EventBillingUsagePreparedV1, billingSvc.ProcessUsageJournalEvent},
+		{outbox.EventBillingSettledV1, billingSvc.ProcessUsageJournalEvent},
+		{outbox.EventBillingCancelledV1, billingSvc.ProcessUsageJournalEvent},
 		{outbox.EventCallLog, relay.ProcessCallLogOutbox},
+		{outbox.EventCallLogV1, relay.ProcessCallLogOutbox},
 		{outbox.EventTrace, relay.ProcessTraceOutbox},
 		{outbox.EventAudit, adminHandler.ProcessAuditOutbox},
 		{outbox.EventBudgetEvaluate, eventSvc.ProcessBudgetEvaluation},
 		{outbox.EventNotificationDelivery, eventSvc.ProcessNotificationDelivery},
 		{outbox.EventRuntimeTerminal, terminalHookSvc.ProcessEvent},
+		{outbox.EventRuntimeTerminalV1, terminalHookSvc.ProcessEvent},
 	} {
 		if err := outboxSvc.RegisterHandler(registration.eventType, registration.handler); err != nil {
 			log.Fatalf("Failed to register internal outbox handler %s: %v", registration.eventType, err)

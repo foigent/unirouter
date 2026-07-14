@@ -12,7 +12,10 @@
 
 **理由**：3.5 人团队维护两套 CSS 框架（Semi + Tailwind）成本过高。路由级分离增加复杂度。统一 Semi Design 可以复用 OneAPI 原生组件。
 
-**构建**：Vite，输出到 `web/admin/dist/`，Go 二进制内嵌静态资源。
+**构建与交付**：Vite 输出到被 Git 忽略的 `frontend/dist/`；
+`frontend/Dockerfile` 在独立构建阶段生成该目录，并将其复制到 Nginx
+`/usr/share/nginx/html`。后端 Go 镜像不内嵌前端静态资源。仓库不提交编译产物，
+发布时必须从待发布 commit 重新构建前端镜像。
 
 ---
 

@@ -66,9 +66,9 @@ func TestP6F18BStreamSettlementRecoveryMigrationUpDownGuardAndRollForward(t *tes
 	assertUp()
 	_, err = pool.Exec(ctx,
 		`INSERT INTO freeze_idempotency (
-		    request_id, org_id, frozen_amount, reserved_balance_amount,
+		    request_id, org_id, frozen_amount_micros, reserved_balance_micros,
 		    status, output_started_at
-		 ) VALUES ('op_p6f18b_down_guard', 9001, 1, 1, 'settlement_pending', NOW())`)
+		 ) VALUES ('op_p6f18b_down_guard', 9001, 10000, 10000, 'settlement_pending', NOW())`)
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(downSQL))
 	require.ErrorContains(t, err, "P6-F18B down refused")

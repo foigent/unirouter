@@ -3,7 +3,10 @@ package admin
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"time"
+
+	"github.com/uniroute/unirouter/internal/money"
 )
 
 func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
@@ -24,7 +27,7 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 		endTime = time.Now().Format(time.RFC3339)
 	}
 
-	totalRequests, todayCostCents, avgLatencyMs, successRate := h.dashboardOverview(ctx, orgID, startTime, endTime)
+	totalRequests, todayCostMicros, avgLatencyMs, successRate := h.dashboardOverview(ctx, orgID, startTime, endTime)
 	p95LatencyMs, p99LatencyMs := h.dashboardLatencyPercentiles(ctx, orgID, startTime, endTime)
 	recentLogs := h.dashboardRecentLogs(ctx, orgID)
 	modelPrices := h.dashboardModelPrices(ctx)
@@ -32,26 +35,27 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 	walletBalance, walletGranted, walletFrozen, walletThreshold := h.dashboardWalletInfo(ctx, orgID)
 	modelDistribution := h.dashboardModelDistribution(ctx, orgID, startTime, endTime)
 	channelHealth := h.dashboardChannelHealth(ctx, orgID, startTime, endTime)
-	deltaCost, deltaLatency, deltaRate := h.dashboardYesterdayDelta(ctx, orgID, todayCostCents, p95LatencyMs, successRate)
+	deltaCostMicros, deltaLatency, deltaRate := h.dashboardYesterdayDelta(ctx, orgID, todayCostMicros, p95LatencyMs, successRate)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"total_requests":     totalRequests,
-		"today_cost_cents":   todayCostCents,
-		"avg_latency_ms":     avgLatencyMs,
-		"p95_latency_ms":     p95LatencyMs,
-		"p99_latency_ms":     p99LatencyMs,
-		"success_rate":       successRate,
-		"recent_logs":        recentLogs,
-		"model_prices":       modelPrices,
-		"daily_trend":        dailyTrend,
-		"wallet_balance":     walletBalance,
-		"wallet_granted":     walletGranted,
-		"wallet_frozen":      walletFrozen,
-		"wallet_threshold":   walletThreshold,
-		"model_distribution": modelDistribution,
-		"channel_health":     channelHealth,
+		"total_requests":    totalRequests,
+		"today_cost_micros": strconv.FormatInt(todayCostMicros, 10),
+		"currency":          "CNY", "amount_scale": money.MicrosPerCNY,
+		"avg_latency_ms":          avgLatencyMs,
+		"p95_latency_ms":          p95LatencyMs,
+		"p99_latency_ms":          p99LatencyMs,
+		"success_rate":            successRate,
+		"recent_logs":             recentLogs,
+		"model_prices":            modelPrices,
+		"daily_trend":             dailyTrend,
+		"wallet_balance_micros":   strconv.FormatInt(walletBalance, 10),
+		"wallet_granted_micros":   strconv.FormatInt(walletGranted, 10),
+		"wallet_frozen_micros":    strconv.FormatInt(walletFrozen, 10),
+		"wallet_threshold_micros": strconv.FormatInt(walletThreshold, 10),
+		"model_distribution":      modelDistribution,
+		"channel_health":          channelHealth,
 		"delta_vs_yesterday": map[string]interface{}{
-			"cost_cents":   deltaCost,
+			"cost_micros":  strconv.FormatInt(deltaCostMicros, 10),
 			"latency_ms":   deltaLatency,
 			"success_rate": deltaRate,
 		},
@@ -59,15 +63,15 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 }
 
 // dashboardOverview returns total requests, period cost, avg latency, and success rate.
-func (h *Handler) dashboardOverview(ctx context.Context, orgID int64, startTime, endTime string) (totalRequests, todayCostCents int, avgLatencyMs float64, successRate float64) {
+func (h *Handler) dashboardOverview(ctx context.Context, orgID int64, startTime, endTime string) (totalRequests int, todayCostMicros int64, avgLatencyMs float64, successRate float64) {
 	h.db.QueryRow(ctx,
 		`SELECT COUNT(*) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3`,
 		orgID, startTime, endTime,
 	).Scan(&totalRequests)
 	h.db.QueryRow(ctx,
-		`SELECT COALESCE(SUM(cost_cents), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3`,
+		`SELECT COALESCE(SUM(cost_micros), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3`,
 		orgID, startTime, endTime,
-	).Scan(&todayCostCents)
+	).Scan(&todayCostMicros)
 	h.db.QueryRow(ctx,
 		`SELECT COALESCE(AVG(latency_ms), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3 AND latency_ms > 0`,
 		orgID, startTime, endTime,
@@ -104,7 +108,7 @@ func (h *Handler) dashboardLatencyPercentiles(ctx context.Context, orgID int64, 
 // dashboardRecentLogs returns the last 10 call logs.
 func (h *Handler) dashboardRecentLogs(ctx context.Context, orgID int64) []map[string]interface{} {
 	rows, err := h.db.Query(ctx,
-		`SELECT request_id, model, status_code, latency_ms, cost_cents, created_at
+		`SELECT request_id, model, status_code, latency_ms, cost_micros, created_at
 		 FROM call_logs WHERE org_id = $1 ORDER BY created_at DESC LIMIT 10`, orgID)
 	if err != nil {
 		return nil
@@ -113,12 +117,13 @@ func (h *Handler) dashboardRecentLogs(ctx context.Context, orgID int64) []map[st
 	logs := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var requestID, model string
-		var statusCode, costCents, latencyMs int
+		var statusCode, latencyMs int
+		var costMicros int64
 		var createdAt time.Time
-		rows.Scan(&requestID, &model, &statusCode, &latencyMs, &costCents, &createdAt)
+		rows.Scan(&requestID, &model, &statusCode, &latencyMs, &costMicros, &createdAt)
 		logs = append(logs, map[string]interface{}{
 			"request_id": requestID, "model": model, "status_code": statusCode,
-			"latency_ms": latencyMs, "cost_cents": costCents, "created_at": createdAt,
+			"latency_ms": latencyMs, "cost_micros": strconv.FormatInt(costMicros, 10), "created_at": createdAt,
 		})
 	}
 	return logs
@@ -127,7 +132,7 @@ func (h *Handler) dashboardRecentLogs(ctx context.Context, orgID int64) []map[st
 // dashboardModelPrices returns all model prices.
 func (h *Handler) dashboardModelPrices(ctx context.Context) []map[string]interface{} {
 	rows, err := h.db.Query(ctx,
-		`SELECT model_name, input_price_cents::float8, output_price_cents::float8 FROM model_prices ORDER BY model_name`)
+		`SELECT model_name, (input_price_cents * 10)::text, (output_price_cents * 10)::text FROM model_prices ORDER BY model_name`)
 	if err != nil {
 		return nil
 	}
@@ -135,12 +140,12 @@ func (h *Handler) dashboardModelPrices(ctx context.Context) []map[string]interfa
 	prices := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var modelName string
-		var inputPrice, outputPrice float64
+		var inputPrice, outputPrice string
 		if err := rows.Scan(&modelName, &inputPrice, &outputPrice); err != nil {
 			return nil
 		}
 		prices = append(prices, map[string]interface{}{
-			"model_name": modelName, "input_price_cents": inputPrice, "output_price_cents": outputPrice,
+			"model_name": modelName, "input_price_cny_per_million": inputPrice, "output_price_cny_per_million": outputPrice,
 		})
 	}
 	return prices
@@ -156,7 +161,7 @@ func (h *Handler) dashboardDailyTrend(ctx context.Context, orgID int64, startTim
 	}
 
 	rows, err := h.db.Query(ctx,
-		`SELECT date_trunc($4, created_at) AS bucket, COUNT(*) AS requests, COALESCE(SUM(cost_cents), 0) AS cost
+		`SELECT date_trunc($4, created_at) AS bucket, COUNT(*) AS requests, COALESCE(SUM(cost_micros), 0) AS cost
 		 FROM call_logs
 		 WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3
 		 GROUP BY bucket
@@ -167,12 +172,13 @@ func (h *Handler) dashboardDailyTrend(ctx context.Context, orgID int64, startTim
 	defer rows.Close()
 	type bucketValue struct {
 		requests int
-		cost     int
+		cost     int64
 	}
 	values := make(map[string]bucketValue)
 	for rows.Next() {
 		var bucket time.Time
-		var requests, cost int
+		var requests int
+		var cost int64
 		if err := rows.Scan(&bucket, &requests, &cost); err != nil {
 			return nil
 		}
@@ -187,7 +193,7 @@ func (h *Handler) dashboardDailyTrend(ctx context.Context, orgID int64, startTim
 	if startErr != nil || endErr != nil || !end.After(start) {
 		trend := make([]map[string]interface{}, 0, len(values))
 		for bucket, value := range values {
-			trend = append(trend, map[string]interface{}{"date": bucket, "requests": value.requests, "cost_cents": value.cost})
+			trend = append(trend, map[string]interface{}{"date": bucket, "requests": value.requests, "cost_micros": strconv.FormatInt(value.cost, 10)})
 		}
 		return trend
 	}
@@ -214,7 +220,7 @@ func (h *Handler) dashboardDailyTrend(ctx context.Context, orgID int64, startTim
 		}
 		value := values[key]
 		trend = append(trend, map[string]interface{}{
-			"date": key, "requests": value.requests, "cost_cents": value.cost,
+			"date": key, "requests": value.requests, "cost_micros": strconv.FormatInt(value.cost, 10),
 		})
 		cursor = cursor.Add(step)
 	}
@@ -222,12 +228,14 @@ func (h *Handler) dashboardDailyTrend(ctx context.Context, orgID int64, startTim
 }
 
 // dashboardWalletInfo returns wallet balance, granted, frozen, and threshold.
-func (h *Handler) dashboardWalletInfo(ctx context.Context, orgID int64) (balance, granted, frozen, threshold int) {
+func (h *Handler) dashboardWalletInfo(ctx context.Context, orgID int64) (balance, granted, frozen, threshold int64) {
+	var thresholdCents int64
 	h.db.QueryRow(ctx,
-		`SELECT COALESCE(balance,0), COALESCE(granted_balance,0), COALESCE(frozen,0), COALESCE(low_balance_threshold_cents,0)
+		`SELECT COALESCE(balance_micros,0), COALESCE(granted_balance_micros,0), COALESCE(frozen_micros,0), COALESCE(low_balance_threshold_cents,0)
 		 FROM wallets WHERE org_id = $1`,
 		orgID,
-	).Scan(&balance, &granted, &frozen, &threshold)
+	).Scan(&balance, &granted, &frozen, &thresholdCents)
+	threshold, _ = money.CentsToMicros(thresholdCents)
 	return
 }
 
@@ -290,12 +298,12 @@ func (h *Handler) dashboardChannelHealth(ctx context.Context, orgID int64, start
 }
 
 // dashboardYesterdayDelta computes delta vs yesterday for cost, P95 latency, and success rate.
-func (h *Handler) dashboardYesterdayDelta(ctx context.Context, orgID int64, todayCost int, todayLatency, todayRate float64) (deltaCost int, deltaLatency, deltaRate float64) {
+func (h *Handler) dashboardYesterdayDelta(ctx context.Context, orgID int64, todayCost int64, todayLatency, todayRate float64) (deltaCost int64, deltaLatency, deltaRate float64) {
 	yesterdayStart := time.Now().Add(-48 * time.Hour).Format(time.RFC3339)
 	yesterdayEnd := time.Now().Add(-24 * time.Hour).Format(time.RFC3339)
-	var yesterCost int
+	var yesterCost int64
 	h.db.QueryRow(ctx,
-		`SELECT COALESCE(SUM(cost_cents), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3`,
+		`SELECT COALESCE(SUM(cost_micros), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3`,
 		orgID, yesterdayStart, yesterdayEnd,
 	).Scan(&yesterCost)
 	var yesterLatency float64

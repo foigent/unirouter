@@ -42,6 +42,8 @@
 | `docs/ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md` | PRD6 27/27 accepted-row closeout, repository/CI evidence level, non-claims and preserved PRD7/target boundaries |
 | `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md` | Authorized PRD6 ECS migration/deployment, stable/canary runtime, authenticated UI, selected historical route/failover readback, cleanup and remaining target non-claims |
 | `docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md` | Fresh Git/CI/matrix/target-health audit, formal PRD6 phase-completion decision, corrected 27/27 accounting and preserved later boundaries |
+| `docs/planning/V1-MICRO-PRECISION-LEDGER-PLAN-20260714.md` | User-approved Post-PRD6 option B money contract, non-rolling migration boundary and R3 decision gate |
+| `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-LOCAL-20260714.md` | V1 micro-CNY implementation matrix, full local regression, isolated migration/API/browser evidence and target/X-Insight activation gates |
 | `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` | Official competitor HA patterns, current UniRouter cluster facts, Four Quadrants and accepted D6-12 stream/HA boundary |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | Source-backed audit/reconciliation/correlation/UI/architecture/upgrade findings, Four Quadrants and PRD6 batches |
 | `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md` | Accepted customer-revenue/provider-COGS boundary, competitor and supplier billing evidence, Four Quadrants, PRD6 non-claims and future cost/metering/media candidates |

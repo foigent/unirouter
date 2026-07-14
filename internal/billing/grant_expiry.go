@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	internaldb "github.com/uniroute/unirouter/internal/db"
+	"github.com/uniroute/unirouter/internal/money"
 )
 
 // GrantExpiryResult reports one bounded cleanup pass.
@@ -93,9 +94,9 @@ func expireGrantsForOrganization(ctx context.Context, database internaldb.DBQuer
 // expireGrantRowsInLockedWallet requires the caller to hold the wallet row
 // lock. It is shared by scheduled cleanup and Freeze's lazy expiry check so
 // credit cannot be spent in the interval between expires_at and the next job.
-func expireGrantRowsInLockedWallet(ctx context.Context, tx pgx.Tx, orgID int64) (expiredCount, expiredBalance int, err error) {
+func expireGrantRowsInLockedWallet(ctx context.Context, tx pgx.Tx, orgID int64) (expiredCount int, expiredBalance int64, err error) {
 	grantRows, err := tx.Query(ctx,
-		`SELECT id, balance
+		`SELECT id, balance_micros
 		 FROM grants
 		 WHERE org_id = $1
 		   AND status = 'active'
@@ -108,10 +109,10 @@ func expireGrantRowsInLockedWallet(ctx context.Context, tx pgx.Tx, orgID int64) 
 	}
 	type expiredGrant struct {
 		id      int64
-		balance int
+		balance int64
 	}
 	grants := make([]expiredGrant, 0)
-	total := 0
+	var total int64
 	for grantRows.Next() {
 		var grant expiredGrant
 		if err := grantRows.Scan(&grant.id, &grant.balance); err != nil {
@@ -119,7 +120,11 @@ func expireGrantRowsInLockedWallet(ctx context.Context, tx pgx.Tx, orgID int64) 
 			return 0, 0, fmt.Errorf("scan expired grant for org %d: %w", orgID, err)
 		}
 		grants = append(grants, grant)
-		total += grant.balance
+		total, err = money.Add(total, grant.balance)
+		if err != nil {
+			grantRows.Close()
+			return 0, 0, fmt.Errorf("sum expired grant balances for org %d: %w", orgID, err)
+		}
 	}
 	if err := grantRows.Err(); err != nil {
 		grantRows.Close()
@@ -133,7 +138,7 @@ func expireGrantRowsInLockedWallet(ctx context.Context, tx pgx.Tx, orgID int64) 
 	for _, grant := range grants {
 		if _, err := tx.Exec(ctx,
 			`UPDATE grants
-			 SET balance = 0, status = 'expired', updated_at = NOW()
+			 SET balance_micros = 0, status = 'expired', updated_at = NOW()
 			 WHERE id = $1 AND status = 'active'`, grant.id,
 		); err != nil {
 			return 0, 0, fmt.Errorf("mark grant %d expired: %w", grant.id, err)
@@ -141,7 +146,7 @@ func expireGrantRowsInLockedWallet(ctx context.Context, tx pgx.Tx, orgID int64) 
 	}
 	if _, err := tx.Exec(ctx,
 		`UPDATE wallets
-		 SET granted_balance = GREATEST(granted_balance - $1, 0), updated_at = NOW()
+		 SET granted_balance_micros = GREATEST(granted_balance_micros - $1, 0), updated_at = NOW()
 		 WHERE org_id = $2`, total, orgID,
 	); err != nil {
 		return 0, 0, fmt.Errorf("deduct expired grant balance for org %d: %w", orgID, err)

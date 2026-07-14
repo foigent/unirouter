@@ -63,11 +63,11 @@ func TestApiKey_KeyHashHidden(t *testing.T) {
 }
 
 func TestWallet_BalanceFields(t *testing.T) {
-	w := Wallet{OrgID: 1, Balance: 1000, GrantedBalance: 200, Frozen: 50, TotalSpent: 300}
+	w := Wallet{OrgID: 1, BalanceMicros: 1000, GrantedBalanceMicros: 200, FrozenMicros: 50, TotalSpentMicros: 300}
 	data, _ := json.Marshal(w)
 	var decoded Wallet
 	json.Unmarshal(data, &decoded)
-	if decoded.Balance != 1000 || decoded.Frozen != 50 || decoded.TotalSpent != 300 {
+	if decoded.BalanceMicros != 1000 || decoded.FrozenMicros != 50 || decoded.TotalSpentMicros != 300 {
 		t.Fatalf("wallet roundtrip mismatch: %+v", decoded)
 	}
 }
@@ -108,7 +108,7 @@ func TestSetting_JSONValue(t *testing.T) {
 func TestTransaction_Types(t *testing.T) {
 	types := []string{"freeze", "settle", "cancel", "recharge", "grant", "deduction"}
 	for _, typ := range types {
-		tx := Transaction{Type: typ, Status: "completed", Amount: 100}
+		tx := Transaction{Type: typ, Status: "completed", AmountMicros: 100}
 		data, _ := json.Marshal(tx)
 		if !contains(data, typ) {
 			t.Fatalf("type %q should be in JSON", typ)

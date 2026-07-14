@@ -456,29 +456,29 @@ func TestInvocationBudgetsAggregateAcrossAncestorsAndSettleActualUsage(t *testin
 		t.Fatal(err)
 	}
 
-	reservation, err := service.ReserveInvocation(context.Background(), firstAuth.Claims, "req_first", 600, 60, time.Minute)
+	reservation, err := service.ReserveInvocation(context.Background(), firstAuth.Claims, "req_first", 600, 600_000, time.Minute)
 	if err != nil {
 		t.Fatalf("reserve first child: %v", err)
 	}
-	if err := service.FinalizeInvocation(context.Background(), reservation, 500, 50); err != nil {
+	if err := service.FinalizeInvocation(context.Background(), reservation, 500, 500_000); err != nil {
 		t.Fatalf("finalize first child: %v", err)
 	}
 	rootState, err := rdb.HMGet(context.Background(), agentKey(root.WorkflowID, rootAuth.Claims.AgentID),
-		"cost_reserved_cents", "cost_used_cents", "token_reserved", "token_used").Result()
+		"cost_reserved_micros", "cost_used_micros", "token_reserved", "token_used").Result()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fmt.Sprint(rootState) != "[0 50 0 500]" {
+	if fmt.Sprint(rootState) != "[0 500000 0 500]" {
 		t.Fatalf("unexpected root usage after settlement: %v", rootState)
 	}
 
-	if _, err := service.ReserveInvocation(context.Background(), secondAuth.Claims, "req_cost_denied", 400, 60, time.Minute); !errors.Is(err, ErrCostBudgetExceeded) {
+	if _, err := service.ReserveInvocation(context.Background(), secondAuth.Claims, "req_cost_denied", 400, 600_000, time.Minute); !errors.Is(err, ErrCostBudgetExceeded) {
 		t.Fatalf("aggregate cost denial = %v, want ErrCostBudgetExceeded", err)
 	}
-	if _, err := service.ReserveInvocation(context.Background(), secondAuth.Claims, "req_token_denied", 600, 40, time.Minute); !errors.Is(err, ErrTokenBudgetExceeded) {
+	if _, err := service.ReserveInvocation(context.Background(), secondAuth.Claims, "req_token_denied", 600, 400_000, time.Minute); !errors.Is(err, ErrTokenBudgetExceeded) {
 		t.Fatalf("aggregate token denial = %v, want ErrTokenBudgetExceeded", err)
 	}
-	secondReservation, err := service.ReserveInvocation(context.Background(), secondAuth.Claims, "req_second", 400, 40, time.Minute)
+	secondReservation, err := service.ReserveInvocation(context.Background(), secondAuth.Claims, "req_second", 400, 400_000, time.Minute)
 	if err != nil {
 		t.Fatalf("reserve remaining ancestor budget: %v", err)
 	}
@@ -486,11 +486,11 @@ func TestInvocationBudgetsAggregateAcrossAncestorsAndSettleActualUsage(t *testin
 		t.Fatalf("cancel second child: %v", err)
 	}
 	rootState, err = rdb.HMGet(context.Background(), agentKey(root.WorkflowID, rootAuth.Claims.AgentID),
-		"cost_reserved_cents", "cost_used_cents", "token_reserved", "token_used").Result()
+		"cost_reserved_micros", "cost_used_micros", "token_reserved", "token_used").Result()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fmt.Sprint(rootState) != "[0 50 0 500]" {
+	if fmt.Sprint(rootState) != "[0 500000 0 500]" {
 		t.Fatalf("cancel must release reservations without refunding usage: %v", rootState)
 	}
 }
@@ -523,45 +523,45 @@ func TestP6F11InvocationExtensionCoversEveryAncestorAndIsIdempotent(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	reservation, err := service.ReserveInvocation(context.Background(), childAuth.Claims, "req_p6f11_extension", 40, 40, time.Minute)
+	reservation, err := service.ReserveInvocation(context.Background(), childAuth.Claims, "req_p6f11_extension", 40, 400_000, time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := service.ExtendInvocation(context.Background(), reservation, 1, 30, 30); err != nil {
+	if err := service.ExtendInvocation(context.Background(), reservation, 1, 30, 300_000); err != nil {
 		t.Fatalf("first ancestor extension: %v", err)
 	}
-	if err := service.ExtendInvocation(context.Background(), reservation, 1, 30, 30); err != nil {
+	if err := service.ExtendInvocation(context.Background(), reservation, 1, 30, 300_000); err != nil {
 		t.Fatalf("idempotent ancestor extension replay: %v", err)
 	}
-	if reservation.ReservedTokens != 70 || reservation.ReservedCostCents != 70 || reservation.ExtensionSequence != 1 {
+	if reservation.ReservedTokens != 70 || reservation.ReservedCostMicros != 700_000 || reservation.ExtensionSequence != 1 {
 		t.Fatalf("extension was not applied exactly once: %#v", reservation)
 	}
 	for _, agentID := range reservation.Lineage {
 		state, readErr := rdb.HMGet(context.Background(), agentKey(root.WorkflowID, agentID),
-			"cost_reserved_cents", "token_reserved").Result()
+			"cost_reserved_micros", "token_reserved").Result()
 		if readErr != nil {
 			t.Fatal(readErr)
 		}
-		if fmt.Sprint(state) != "[70 70]" {
+		if fmt.Sprint(state) != "[700000 70]" {
 			t.Fatalf("ancestor %s did not reserve the extension: %v", agentID, state)
 		}
 	}
-	if err := service.ExtendInvocation(context.Background(), reservation, 2, 40, 40); !errors.Is(err, ErrCostBudgetExceeded) {
+	if err := service.ExtendInvocation(context.Background(), reservation, 2, 40, 400_000); !errors.Is(err, ErrCostBudgetExceeded) {
 		t.Fatalf("extension beyond ancestor budget = %v, want ErrCostBudgetExceeded", err)
 	}
-	if reservation.ExtensionSequence != 1 || reservation.ReservedTokens != 70 || reservation.ReservedCostCents != 70 {
+	if reservation.ExtensionSequence != 1 || reservation.ReservedTokens != 70 || reservation.ReservedCostMicros != 700_000 {
 		t.Fatalf("denied extension changed local authority: %#v", reservation)
 	}
-	if err := service.FinalizeInvocation(context.Background(), reservation, 50, 50); err != nil {
+	if err := service.FinalizeInvocation(context.Background(), reservation, 50, 500_000); err != nil {
 		t.Fatal(err)
 	}
 	for _, agentID := range reservation.Lineage {
 		state, readErr := rdb.HMGet(context.Background(), agentKey(root.WorkflowID, agentID),
-			"cost_reserved_cents", "cost_used_cents", "token_reserved", "token_used").Result()
+			"cost_reserved_micros", "cost_used_micros", "token_reserved", "token_used").Result()
 		if readErr != nil {
 			t.Fatal(readErr)
 		}
-		if fmt.Sprint(state) != "[0 50 0 50]" {
+		if fmt.Sprint(state) != "[0 500000 0 50]" {
 			t.Fatalf("ancestor %s retained the terminal extension: %v", agentID, state)
 		}
 	}
@@ -769,14 +769,14 @@ func TestInvocationActualOverrunExhaustsFutureAdmissionsAndRedisFailsClosed(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	reservation, err := service.ReserveInvocation(context.Background(), authenticated.Claims, "req_overrun", 100, 80, time.Minute)
+	reservation, err := service.ReserveInvocation(context.Background(), authenticated.Claims, "req_overrun", 100, 800_000, time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := service.FinalizeInvocation(context.Background(), reservation, 100, 120); err != nil {
+	if err := service.FinalizeInvocation(context.Background(), reservation, 100, 1_200_000); err != nil {
 		t.Fatalf("finalize actual overrun: %v", err)
 	}
-	if _, err := service.ReserveInvocation(context.Background(), authenticated.Claims, "req_after_overrun", 1, 1, time.Minute); !errors.Is(err, ErrCostBudgetExceeded) {
+	if _, err := service.ReserveInvocation(context.Background(), authenticated.Claims, "req_after_overrun", 1, 10_000, time.Minute); !errors.Is(err, ErrCostBudgetExceeded) {
 		t.Fatalf("future request after actual overrun = %v, want ErrCostBudgetExceeded", err)
 	}
 

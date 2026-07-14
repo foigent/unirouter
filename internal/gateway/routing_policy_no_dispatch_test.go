@@ -59,7 +59,7 @@ func TestP6F08ProbeLeaseContentionReturnsRetryable503WithoutDispatch(t *testing.
 	settleCalls := 0
 	relay := NewRelay(db, nil, router, &mockBilling{
 		freezeFn: func(context.Context, billing.FreezeRequest) (*billing.FreezeResult, error) {
-			return &billing.FreezeResult{FreezeID: 1, Amount: 100, Success: true}, nil
+			return &billing.FreezeResult{FreezeID: 1, AmountMicros: 100, Success: true}, nil
 		},
 		cancelFn: func(context.Context, string, int64) error {
 			cancelCalls++

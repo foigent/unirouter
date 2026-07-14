@@ -170,10 +170,10 @@ type ModelPrice struct {
 	ID                 int64     `json:"id" db:"id"`
 	ModelName          string    `json:"model_name" db:"model_name"`
 	Provider           string    `json:"provider" db:"provider"`
-	InputPriceCents    float64   `json:"input_price_cents" db:"input_price_cents"`
-	OutputPriceCents   float64   `json:"output_price_cents" db:"output_price_cents"`
-	CacheReadRatio     float64   `json:"cache_read_ratio" db:"cache_read_ratio"`
-	CacheCreationRatio float64   `json:"cache_creation_ratio" db:"cache_creation_ratio"`
+	InputPriceCents    string    `json:"input_price_cents" db:"input_price_cents"`
+	OutputPriceCents   string    `json:"output_price_cents" db:"output_price_cents"`
+	CacheReadRatio     string    `json:"cache_read_ratio" db:"cache_read_ratio"`
+	CacheCreationRatio string    `json:"cache_creation_ratio" db:"cache_creation_ratio"`
 	MaxContext         int       `json:"max_context" db:"max_context"`
 	DefaultMaxOutput   int       `json:"default_max_output" db:"default_max_output"`
 	CreatedAt          time.Time `json:"created_at" db:"created_at"`
@@ -185,7 +185,7 @@ type OrgModelPrice struct {
 	ID         int64     `json:"id" db:"id"`
 	OrgID      int64     `json:"org_id" db:"org_id"`
 	ModelName  string    `json:"model_name" db:"model_name"`
-	Multiplier float64   `json:"multiplier" db:"multiplier"`
+	Multiplier string    `json:"multiplier" db:"multiplier"`
 	CreatedAt  time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at" db:"updated_at"`
 }
@@ -244,64 +244,64 @@ type ModelSetItem struct {
 
 // Wallet represents the wallets table.
 type Wallet struct {
-	OrgID          int64     `json:"org_id" db:"org_id"`
-	Balance        int       `json:"balance" db:"balance"`
-	GrantedBalance int       `json:"granted_balance" db:"granted_balance"`
-	Frozen         int       `json:"frozen" db:"frozen"`
-	TotalSpent     int       `json:"total_spent" db:"total_spent"`
-	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`
+	OrgID                int64     `json:"org_id" db:"org_id"`
+	BalanceMicros        int64     `json:"balance_micros,string" db:"balance_micros"`
+	GrantedBalanceMicros int64     `json:"granted_balance_micros,string" db:"granted_balance_micros"`
+	FrozenMicros         int64     `json:"frozen_micros,string" db:"frozen_micros"`
+	TotalSpentMicros     int64     `json:"total_spent_micros,string" db:"total_spent_micros"`
+	UpdatedAt            time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // Transaction represents the transactions table.
 type Transaction struct {
-	ID           int64     `json:"id" db:"id"`
-	RequestID    string    `json:"request_id" db:"request_id"`
-	OrgID        int64     `json:"org_id" db:"org_id"`
-	ProjectID    *int64    `json:"project_id" db:"project_id"`
-	Type         string    `json:"type" db:"type"`
-	Status       string    `json:"status" db:"status"`
-	Amount       int       `json:"amount" db:"amount"`
-	BalanceAfter *int      `json:"balance_after" db:"balance_after"`
-	Note         string    `json:"note" db:"note"`
-	CreatedAt    time.Time `json:"created_at" db:"created_at"`
+	ID                 int64     `json:"id" db:"id"`
+	RequestID          string    `json:"request_id" db:"request_id"`
+	OrgID              int64     `json:"org_id" db:"org_id"`
+	ProjectID          *int64    `json:"project_id" db:"project_id"`
+	Type               string    `json:"type" db:"type"`
+	Status             string    `json:"status" db:"status"`
+	AmountMicros       int64     `json:"amount_micros,string" db:"amount_micros"`
+	BalanceAfterMicros *int64    `json:"balance_after_micros,string" db:"balance_after_micros"`
+	Note               string    `json:"note" db:"note"`
+	CreatedAt          time.Time `json:"created_at" db:"created_at"`
 }
 
 // CallLog represents the call_logs table.
 type CallLog struct {
-	ID                               int64          `json:"id" db:"id"`
-	RequestID                        string         `json:"request_id" db:"request_id"`
-	OrgID                            int64          `json:"org_id" db:"org_id"`
-	ProjectID                        *int64         `json:"project_id" db:"project_id"`
-	ApiKeyID                         *int64         `json:"api_key_id" db:"api_key_id"`
-	Model                            string         `json:"model" db:"model"`
-	Provider                         string         `json:"provider" db:"provider"`
-	Channel                          string         `json:"channel" db:"channel"`
-	PromptTokens                     int            `json:"prompt_tokens" db:"prompt_tokens"`
-	UncachedPromptTokens             int            `json:"uncached_prompt_tokens" db:"uncached_prompt_tokens"`
-	CacheReadTokens                  int            `json:"cache_read_tokens" db:"cache_read_tokens"`
-	CacheCreationTokens              int            `json:"cache_creation_tokens" db:"cache_creation_tokens"`
-	CompletionTokens                 int            `json:"completion_tokens" db:"completion_tokens"`
-	TotalTokens                      int            `json:"total_tokens" db:"total_tokens"`
-	EstimatedTokens                  int            `json:"estimated_tokens" db:"estimated_tokens"`
-	CostCents                        int            `json:"cost_cents" db:"cost_cents"`
-	LatencyMs                        int            `json:"latency_ms" db:"latency_ms"`
-	TtftMs                           int            `json:"ttft_ms" db:"ttft_ms"`
-	StatusCode                       int            `json:"status_code" db:"status_code"`
-	UpstreamStatusCode               *int           `json:"upstream_status_code" db:"upstream_status_code"`
-	UpstreamError                    sql.NullString `json:"upstream_error" db:"upstream_error"`
-	UsageSource                      string         `json:"usage_source" db:"usage_source"`
-	CacheUsageSchema                 string         `json:"cache_usage_schema" db:"cache_usage_schema"`
-	CacheUsageStatus                 string         `json:"cache_usage_status" db:"cache_usage_status"`
-	PricingVersion                   string         `json:"pricing_version" db:"pricing_version"`
-	EffectiveInputPriceCents         float64        `json:"effective_input_price_cents" db:"effective_input_price_cents"`
-	EffectiveCacheReadPriceCents     float64        `json:"effective_cache_read_price_cents" db:"effective_cache_read_price_cents"`
-	EffectiveCacheCreationPriceCents float64        `json:"effective_cache_creation_price_cents" db:"effective_cache_creation_price_cents"`
-	EffectiveOutputPriceCents        float64        `json:"effective_output_price_cents" db:"effective_output_price_cents"`
-	CacheReadCostCents               float64        `json:"cache_read_cost_cents" db:"cache_read_cost_cents"`
-	CacheCreationCostCents           float64        `json:"cache_creation_cost_cents" db:"cache_creation_cost_cents"`
-	UsageConfidence                  float64        `json:"usage_confidence" db:"usage_confidence"`
-	IsStream                         bool           `json:"is_stream" db:"is_stream"`
-	CreatedAt                        time.Time      `json:"created_at" db:"created_at"`
+	ID                                          int64          `json:"id" db:"id"`
+	RequestID                                   string         `json:"request_id" db:"request_id"`
+	OrgID                                       int64          `json:"org_id" db:"org_id"`
+	ProjectID                                   *int64         `json:"project_id" db:"project_id"`
+	ApiKeyID                                    *int64         `json:"api_key_id" db:"api_key_id"`
+	Model                                       string         `json:"model" db:"model"`
+	Provider                                    string         `json:"provider" db:"provider"`
+	Channel                                     string         `json:"channel" db:"channel"`
+	PromptTokens                                int            `json:"prompt_tokens" db:"prompt_tokens"`
+	UncachedPromptTokens                        int            `json:"uncached_prompt_tokens" db:"uncached_prompt_tokens"`
+	CacheReadTokens                             int            `json:"cache_read_tokens" db:"cache_read_tokens"`
+	CacheCreationTokens                         int            `json:"cache_creation_tokens" db:"cache_creation_tokens"`
+	CompletionTokens                            int            `json:"completion_tokens" db:"completion_tokens"`
+	TotalTokens                                 int            `json:"total_tokens" db:"total_tokens"`
+	EstimatedTokens                             int            `json:"estimated_tokens" db:"estimated_tokens"`
+	CostMicros                                  int64          `json:"cost_micros,string" db:"cost_micros"`
+	LatencyMs                                   int            `json:"latency_ms" db:"latency_ms"`
+	TtftMs                                      int            `json:"ttft_ms" db:"ttft_ms"`
+	StatusCode                                  int            `json:"status_code" db:"status_code"`
+	UpstreamStatusCode                          *int           `json:"upstream_status_code" db:"upstream_status_code"`
+	UpstreamError                               sql.NullString `json:"upstream_error" db:"upstream_error"`
+	UsageSource                                 string         `json:"usage_source" db:"usage_source"`
+	CacheUsageSchema                            string         `json:"cache_usage_schema" db:"cache_usage_schema"`
+	CacheUsageStatus                            string         `json:"cache_usage_status" db:"cache_usage_status"`
+	PricingVersion                              string         `json:"pricing_version" db:"pricing_version"`
+	EffectiveInputPriceMicrosPerMillion         int64          `json:"effective_input_price_micros_per_million,string" db:"effective_input_price_micros_per_million"`
+	EffectiveCacheReadPriceMicrosPerMillion     int64          `json:"effective_cache_read_price_micros_per_million,string" db:"effective_cache_read_price_micros_per_million"`
+	EffectiveCacheCreationPriceMicrosPerMillion int64          `json:"effective_cache_creation_price_micros_per_million,string" db:"effective_cache_creation_price_micros_per_million"`
+	EffectiveOutputPriceMicrosPerMillion        int64          `json:"effective_output_price_micros_per_million,string" db:"effective_output_price_micros_per_million"`
+	CacheReadCostMicros                         int64          `json:"cache_read_cost_micros,string" db:"cache_read_cost_micros"`
+	CacheCreationCostMicros                     int64          `json:"cache_creation_cost_micros,string" db:"cache_creation_cost_micros"`
+	UsageConfidence                             float64        `json:"usage_confidence" db:"usage_confidence"`
+	IsStream                                    bool           `json:"is_stream" db:"is_stream"`
+	CreatedAt                                   time.Time      `json:"created_at" db:"created_at"`
 }
 
 // AuditLog represents the audit_logs table.
@@ -325,16 +325,16 @@ type AuditLog struct {
 
 // Grant represents the grants table.
 type Grant struct {
-	ID        int64      `json:"id" db:"id"`
-	OrgID     int64      `json:"org_id" db:"org_id"`
-	Amount    int        `json:"amount" db:"amount"`
-	Balance   int        `json:"balance" db:"balance"`
-	ExpiresAt *time.Time `json:"expires_at" db:"expires_at"`
-	Status    string     `json:"status" db:"status"`
-	Reason    string     `json:"reason" db:"reason"`
-	CreatedBy int64      `json:"created_by" db:"created_by"`
-	CreatedAt time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
+	ID            int64      `json:"id" db:"id"`
+	OrgID         int64      `json:"org_id" db:"org_id"`
+	AmountMicros  int64      `json:"amount_micros,string" db:"amount_micros"`
+	BalanceMicros int64      `json:"balance_micros,string" db:"balance_micros"`
+	ExpiresAt     *time.Time `json:"expires_at" db:"expires_at"`
+	Status        string     `json:"status" db:"status"`
+	Reason        string     `json:"reason" db:"reason"`
+	CreatedBy     int64      `json:"created_by" db:"created_by"`
+	CreatedAt     time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at" db:"updated_at"`
 }
 
 // FreezeIdempotency represents the freeze_idempotency table.

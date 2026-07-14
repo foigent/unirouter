@@ -56,7 +56,7 @@ describe('InternalStatusPage', () => {
         app_memory: { status: 'available', alloc_bytes: 1048576, sys_bytes: 2097152, heap_alloc_bytes: 1048576, heap_sys_bytes: 2097152 },
         database: { status: 'connected', latency_ms: 2 },
         redis: { status: 'unavailable', reason: 'redis_client_not_configured' },
-        traffic: { status: 'available', window_minutes: 5, requests: 40, error_requests: 1, error_rate: 0.025, total_tokens: 1200, cost_cents: 88, p95_latency_ms: 240, p99_latency_ms: 310 },
+        traffic: { status: 'available', window_minutes: 5, requests: 40, error_requests: 1, error_rate: 0.025, total_tokens: 1200, cost_micros: '880000', p95_latency_ms: 240, p99_latency_ms: 310 },
         cpu: { status: 'available', usage_ratio: 0.25, logical_cores: 8, sample_millis: 50 },
         disk: { status: 'available', usage_ratio: 0.7, total_bytes: 10737418240, used_bytes: 7516192768, free_bytes: 3221225472, mount_point: '/' },
         network: { status: 'available', interface_count: 3, active_interface_count: 2, rx_bytes: 1048576, tx_bytes: 2097152 },

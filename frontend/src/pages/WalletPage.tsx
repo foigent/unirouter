@@ -3,16 +3,18 @@ import { Typography, Tag, Progress, Button, Modal, Input } from '@douyinfe/semi-
 import { Toast } from '@douyinfe/semi-ui';
 import { IconBell, IconCoinMoney, IconGift, IconLock, IconRefresh } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-import { EmptyState, MetricTile, MoneyText, PageHeader, Surface, formatMoney } from '../ui';
+import { EmptyState, MetricTile, MoneyText, PageHeader, Surface, formatMoney, microsRatio, parseMicros } from '../ui';
 
 const { Text } = Typography;
 
 interface WalletInfo {
-  balance_cents: number;
-  granted_cents: number;
-  granted_balance_cents?: number;
-  frozen_cents: number;
-  threshold_cents: number;
+	balance_micros: string;
+	granted_balance_micros: string;
+	frozen_micros: string;
+	threshold_micros: string;
+	total_spent_micros: string;
+	currency: 'CNY';
+	amount_scale: 1000000;
   low_balance_threshold_cents?: number;
   is_admin: boolean;
   org_name: string;
@@ -48,12 +50,7 @@ export default function WalletPage() {
   const load = () => {
     setLoading(true);
     api.getWallet()
-      .then((d: any) => setWallet({
-        ...d,
-        granted_cents: d.granted_cents ?? d.granted_balance_cents ?? 0,
-        threshold_cents: d.threshold_cents ?? d.low_balance_threshold_cents ?? 0,
-        is_admin: Boolean(d.is_admin),
-      }))
+			.then((d: WalletInfo) => setWallet({ ...d, is_admin: Boolean(d.is_admin) }))
       .catch(console.error)
       .finally(() => setLoading(false));
   };
@@ -131,12 +128,12 @@ export default function WalletPage() {
   }
 
   // The backend debits cash/grant buckets when a reservation is created.
-  // frozen_cents is therefore a held-funds control total, not a second amount
+	// frozen_micros is therefore a held-funds control total, not a second amount
   // to subtract from the already-spendable balance.
-  const available = wallet.balance_cents + wallet.granted_cents;
-  const held = wallet.frozen_cents;
-  const managedTotal = available + held;
-  const usagePct = managedTotal > 0 ? (held / managedTotal) * 100 : 0;
+	const available = parseMicros(wallet.balance_micros) + parseMicros(wallet.granted_balance_micros);
+	const held = parseMicros(wallet.frozen_micros);
+	const managedTotal = available + held;
+	const usagePct = microsRatio(held, managedTotal) * 100;
   const barColor = usagePct >= 80 ? '#d92d20' : usagePct >= 50 ? '#b76e00' : '#0f8f5f';
 
   return (
@@ -155,25 +152,25 @@ export default function WalletPage() {
       <div className="ur-kpi-grid">
         <MetricTile
           label="可用现金"
-          value={<MoneyText cents={wallet.balance_cents} strong tone="income" />}
+			value={<MoneyText micros={wallet.balance_micros} strong tone="income" />}
           tone="blue"
           icon={<IconCoinMoney />}
         />
         <MetricTile
           label="可用赠送额度"
-          value={<MoneyText cents={wallet.granted_cents} strong tone="income" />}
+			value={<MoneyText micros={wallet.granted_balance_micros} strong tone="income" />}
           tone="green"
           icon={<IconGift />}
         />
         <MetricTile
           label="冻结金额"
-          value={<MoneyText cents={wallet.frozen_cents} strong tone="warning" />}
+			value={<MoneyText micros={wallet.frozen_micros} strong tone="warning" />}
           tone="amber"
           icon={<IconLock />}
         />
         <MetricTile
           label="告警阈值"
-          value={<MoneyText cents={wallet.threshold_cents} strong />}
+			value={<MoneyText micros={wallet.threshold_micros} strong />}
           tone="violet"
           icon={<IconBell />}
         />

@@ -121,6 +121,8 @@
 - [ops/test-plan.md](ops/test-plan.md) — 测试计划
 - [ops/test-report.md](ops/test-report.md) — 测试报告
 - [ops/evidence/COMPREHENSIVE-TEST-REPORT-20260705.md](ops/evidence/COMPREHENSIVE-TEST-REPORT-20260705.md) — 2026-07-05 Canary 综合测试/安全审计证据；当前问题状态以 `issues/OPEN-ISSUES.md` 为准
+- [planning/V1-MICRO-PRECISION-LEDGER-PLAN-20260714.md](planning/V1-MICRO-PRECISION-LEDGER-PLAN-20260714.md) — Post-PRD6 V1 option B 微人民币账本合同、非滚动迁移边界与 R3 决策闸门
+- [ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-LOCAL-20260714.md](ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-LOCAL-20260714.md) — 本地迁移/API/真实浏览器证据、问题矩阵及目标/X-Insight 前置条件
 - [ops/PRD2-ACCEPTANCE-MATRIX.md](ops/PRD2-ACCEPTANCE-MATRIX.md) — PRD2 已冻结验收状态
 - [ops/PRD4-ACCEPTANCE-MATRIX.md](ops/PRD4-ACCEPTANCE-MATRIX.md) — PRD4 已完成验收矩阵
 - [ops/PRD5-ACCEPTANCE-MATRIX.md](ops/PRD5-ACCEPTANCE-MATRIX.md) — PRD5 收口验收矩阵

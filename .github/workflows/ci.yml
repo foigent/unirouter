@@ -169,10 +169,10 @@ jobs:
           REQUIRE_TEST_DATABASE: "1"
         run: go test -tags=integration -race ./internal/admin -count=1
 
-      - name: Run V1 pricing authority integration tests
+      - name: Run V1 pricing and micro-ledger integration tests
         env:
           REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/billing ./internal/migrate -run 'TestV1Pricing(Authority|UnitContract)' -count=1
+        run: go test -tags=integration -race ./internal/billing ./internal/migrate -run 'TestV1(Pricing(Authority|UnitContract)|MicroPrecisionLedger)' -count=1
 
       - name: Run routing policy integration tests
         env:

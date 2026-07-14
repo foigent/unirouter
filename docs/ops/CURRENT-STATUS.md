@@ -25,8 +25,22 @@
 > `docs/planning/V1-MICRO-PRECISION-LEDGER-PLAN-20260714.md`. Its wallet
 > atomicity prerequisite PR #196 passed run `29300560434` and merged as
 > `86a3bd8`; pricing-contract prerequisite PR #197 passed run `29301071299`
-> and merged as `94c93dc`. The micro-CNY ledger itself is not yet implemented
-> or deployed.
+> and merged as `94c93dc`. Option B is now Local verified on
+> `codex/v1-micro-precision-ledger`: checked micro-CNY arithmetic, non-rolling
+> `000036`, exact API/UI strings, outbox/Redis v2, migrated PostgreSQL and real
+> local browser flows passed. Price and organization-multiplier mutations also
+> reject exact effective-price overflow atomically and serialize cross-table
+> races by model. The User approved the `V1-PRICE-RENAME-001` V1 compatibility
+> change after source/schema tracing proved that renaming only a base-price row
+> does not migrate independently owned organization, routing or model-governance
+> references. Model identity is now immutable on update: a different name is
+> rejected before price/audit mutation, while the edit UI keeps the identity
+> outside the submitted form. Migrated PostgreSQL and frontend regressions pass.
+> The unused initial `web/admin` bundle was also removed after
+> proving the current release uses the independent Nginx frontend image. Draft
+> PR required CI is pending; merge, ECS
+> drain/migration/deployment and X-Insight v2 consumer acceptance remain gated.
+> Evidence: `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-LOCAL-20260714.md`.
 > `V1-BUILD-CONTEXT-001` is CI verified / closed by PR #195:
 > backend and independent frontend Docker contexts exclude local environment,
 > private-key and generated files; the backend performs a post-copy invariant
@@ -587,6 +601,7 @@ Historical PRD1 summary: Core backend modules, admin APIs, frontend pages, migra
 | Area | Status | Evidence |
 |------|--------|----------|
 | V1 Financial Prerequisites | CI verified; target price review pending | PR #196 exact head `2c5e930` / run `29300560434` / merge `86a3bd8` closes unsafe absolute wallet adjustment. PR #197 exact head `74ebf62` / run `29301071299` / merge `94c93dc` closes the public price-unit/default-price defect and adds `000035` without rewriting existing rows. Evidence: `docs/ops/evidence/V1-POST-PRD6-FINANCIAL-PREREQUISITES-CI-20260714.md`. No target mutation or automatic price conversion |
+| V1 Micro-Precision Ledger | Local verified; Draft PR CI and R3 target activation pending | User-approved option B replaces integer-cent/minimum-charge terminal authority with checked micro-CNY, source-preserving settlement, non-rolling `000036`, explicit string API/UI amounts and outbox/Redis v2. Fresh migration, full local regression, exact effective-price overflow/race rejection and real isolated browser/API flows passed. Evidence: `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-LOCAL-20260714.md`. No target mutation, X-Insight acceptance or deployment claim |
 | V1 Post-PRD6 CI Efficiency | CI verified / closed | PR #198 exact head run `29299202652`, squash merge `31d87de`, no automatic merge-commit CI, trusted main run `29299765793`, shared cache `5720112747` and final 32-cache / `9,503,335,891`-byte readback. Docs-only PR #199 run `29300434659` passed with explicit skipped Backend/Frontend/Docker contexts. Evidence: `docs/ops/evidence/V1-POST-PRD6-CI-EFFICIENCY-CI-20260714.md` |
 | PRD6 Final Completion | Completed (Accepted Scope) | Fresh 2026-07-14 audit: 27/27 accepted rows closed, clean/aligned pre-publication baseline `9c73d6f`, exact-head main run `29274010760` green, public ECS readiness healthy; `docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md`. No Production or future-scope promotion |
 | PRD6 Target Deployment And UI Verification | Target verified for selected surfaces | `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md`; exact PRD6 stable/canary commit `ce9307a`, exact final frontend `f4fe41d`, migrations through `000034`, public/internal readiness, authenticated Dashboard/limits/Guardrails/routing/reconciliation/logs/status/docs, one historical P6-E01 route/failover detail, mobile checks, PR #191 runbook/Vite correction, PR #192 inline favicon correction and zero-row QA cleanup. No Production, policy-enforcement, real-provider/detector, capacity/HA, TLS or migration-down claim |

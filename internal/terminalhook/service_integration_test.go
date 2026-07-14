@@ -27,8 +27,8 @@ func TestP6F20FinancialTerminalHookSurvivesWorkerFailureAndProcessReplacement(t 
 		fmt.Sprintf("p6f20-terminal-%d", time.Now().UnixNano()),
 	).Scan(&orgID))
 	_, err := pool.Exec(ctx,
-		`INSERT INTO wallets (org_id, balance, granted_balance, frozen, total_spent)
-		 VALUES ($1, 1000, 0, 0, 0)`, orgID)
+		`INSERT INTO wallets (org_id, balance_micros, granted_balance_micros, frozen_micros, total_spent_micros)
+		 VALUES ($1, 10000000, 0, 0, 0)`, orgID)
 	require.NoError(t, err)
 	model := fmt.Sprintf("p6f20-terminal-model-%d", time.Now().UnixNano())
 	_, err = pool.Exec(ctx,
@@ -56,13 +56,13 @@ func TestP6F20FinancialTerminalHookSurvivesWorkerFailureAndProcessReplacement(t 
 		payload json.RawMessage,
 		terminal string,
 		actualTokens int64,
-		actualCostCents int64,
+		actualCostMicros int64,
 	) error {
 		attempts.Add(1)
 		require.JSONEq(t, `{"reservation_id":"server-owned"}`, string(payload))
 		require.Equal(t, terminalhook.TerminalSettled, terminal)
 		require.EqualValues(t, 2, actualTokens)
-		require.EqualValues(t, 1, actualCostCents)
+		require.EqualValues(t, 120, actualCostMicros)
 		return errors.New("simulated Redis outage")
 	}))
 	require.NoError(t, firstOutbox.RegisterHandler(outbox.EventRuntimeTerminal, firstHooks.ProcessEvent))
@@ -73,8 +73,8 @@ func TestP6F20FinancialTerminalHookSurvivesWorkerFailureAndProcessReplacement(t 
 		OrgID:           orgID,
 		Model:           model,
 		EstimatedTokens: 100,
-		SafetyFactor:    1,
-		MinFreezeAmount: 10,
+		SafetyFactor:    "1",
+		MinFreezeCents:  10,
 	})
 	require.NoError(t, err)
 	require.True(t, frozen.Success)
@@ -100,7 +100,7 @@ func TestP6F20FinancialTerminalHookSurvivesWorkerFailureAndProcessReplacement(t 
 	settled, err := financial.Settle(ctx, usage)
 	require.NoError(t, err)
 	require.True(t, settled.Success)
-	require.Equal(t, 1, settled.ChargedCost)
+	require.EqualValues(t, 120, settled.ChargedCostMicros)
 
 	processed, err := firstOutbox.DrainOnce(ctx)
 	require.NoError(t, err)

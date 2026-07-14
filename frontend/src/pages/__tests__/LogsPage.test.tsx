@@ -37,7 +37,7 @@ const MOCK_LOGS_RESPONSE = {
       cache_creation_tokens: 50,
       completion_tokens: 200,
       total_tokens: 700,
-      cost_cents: 15,
+      cost_micros: '150000',
       is_stream: true,
       ip_address: '1.2.3.4',
       requested_model: 'gpt-4o',
@@ -49,12 +49,12 @@ const MOCK_LOGS_RESPONSE = {
       pricing_version: 'pv2_test',
       cache_read_ratio: 0.1,
       cache_creation_ratio: 1.25,
-      effective_input_price_cents: 5,
-      effective_cache_read_price_cents: 0.5,
-      effective_cache_creation_price_cents: 6.25,
-      effective_output_price_cents: 15,
-      cache_read_cost_cents: 0.05,
-      cache_creation_cost_cents: 0.3125,
+      effective_input_price_micros_per_million: '50000000',
+      effective_cache_read_price_micros_per_million: '5000000',
+      effective_cache_creation_price_micros_per_million: '62500000',
+      effective_output_price_micros_per_million: '150000000',
+      cache_read_cost_micros: '500',
+      cache_creation_cost_micros: '3125',
       created_at: '2026-06-29T10:00:00Z',
     },
     {
@@ -69,7 +69,7 @@ const MOCK_LOGS_RESPONSE = {
       prompt_tokens: 100,
       completion_tokens: 0,
       total_tokens: 100,
-      cost_cents: 2,
+      cost_micros: '20000',
       is_stream: false,
       ip_address: '5.6.7.8',
       requested_model: 'claude-3.5-sonnet',
@@ -184,6 +184,8 @@ describe('LogsPage', () => {
       const html = container.textContent || '';
       expect(html).toContain('req-001-aaa');
       expect(html).toContain('req-002-bbb');
+      expect(html).toContain('¥0.150000');
+      expect(html).toContain('¥0.020000');
     });
   });
 
@@ -278,6 +280,8 @@ describe('LogsPage', () => {
       expect(html).toContain('缓存写入50');
       expect(html).toContain('读取倍率0.100×');
       expect(html).toContain('写入倍率1.250×');
+      expect(html).toContain('读取费用¥0.000500');
+      expect(html).toContain('写入费用¥0.003125');
       expect(html).toContain('未回传”不会推测命中');
     });
   });

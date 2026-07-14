@@ -19,10 +19,10 @@ func TestP6F40FundingPendingSettlementIsNotCancelled(t *testing.T) {
 		settleFn: func(context.Context, billing.SettleRequest) (*billing.SettleResult, error) {
 			settleCalls++
 			return &billing.SettleResult{
-				ActualCost:    500,
-				UncoveredCost: 400,
-				Success:       false,
-				ErrorCode:     "insufficient_topup",
+				ActualCostMicros:    500,
+				UncoveredCostMicros: 400,
+				Success:             false,
+				ErrorCode:           "insufficient_topup",
 			}, nil
 		},
 		cancelFn: func(context.Context, string, int64) error {
@@ -33,9 +33,8 @@ func TestP6F40FundingPendingSettlementIsNotCancelled(t *testing.T) {
 	relay := newTestRelay(nil, b)
 
 	outcome, err := relay.settleBillingWithRetry(billing.SettleRequest{
-		RequestID:  "op_p6f40_gateway_pending",
-		OrgID:      7,
-		ActualCost: 500,
+		RequestID: "op_p6f40_gateway_pending",
+		OrgID:     7,
 	}, logger.New(logger.Fields{}))
 
 	require.ErrorIs(t, err, billing.ErrSettlementFundingPending)
@@ -47,14 +46,14 @@ func TestP6F40FundingPendingSettlementIsNotCancelled(t *testing.T) {
 
 func TestP6F40SettlementEvidenceIncludesPrepaidTopUp(t *testing.T) {
 	usage := adapters.Usage{PromptTokens: 5, UncachedPromptTokens: 5, Source: metering.UsageSourceUpstream}
-	result := &billing.SettleResult{ActualCost: 500, ChargedCost: 500, TopUpAmount: 400, Success: true}
+	result := &billing.SettleResult{ActualCostMicros: 500, ChargedCostMicros: 500, TopUpAmountMicros: 400, Success: true}
 
-	cost := settlementCostExtension(usage, result, result.ActualCost, result.ChargedCost)
-	require.Equal(t, 500, cost["actual"])
-	require.Equal(t, 500, cost["charged"])
-	require.Equal(t, 400, cost["prepaid_topup"])
+	cost := settlementCostExtension(usage, result, result.ActualCostMicros, result.ChargedCostMicros)
+	require.Equal(t, "500", cost["actual_cost_micros"])
+	require.Equal(t, "500", cost["charged_cost_micros"])
+	require.Equal(t, "400", cost["prepaid_topup_micros"])
 	require.Equal(t, false, cost["cache_hit"])
 
-	metadata := traceutil.SanitizeMetadata(settlementTraceMetadata(usage, result, result.ActualCost, result.ChargedCost))
-	require.Equal(t, 400, metadata["prepaid_topup_cents"])
+	metadata := traceutil.SanitizeMetadata(settlementTraceMetadata(usage, result, result.ActualCostMicros, result.ChargedCostMicros))
+	require.Equal(t, "400", metadata["prepaid_topup_micros"])
 }

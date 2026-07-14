@@ -61,7 +61,7 @@ func TestP6F40BProviderAttemptLedgerFailurePreventsDispatch(t *testing.T) {
 	var attemptID string
 	b := &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
-			return &billing.FreezeResult{FreezeID: 1, Amount: 100, Success: true}, nil
+			return &billing.FreezeResult{FreezeID: 1, AmountMicros: 100, Success: true}, nil
 		},
 		beginAttemptFn: func(ctx context.Context, req billing.ProviderAttemptStart) error {
 			beginCalls++
@@ -107,7 +107,7 @@ func TestP6F40BAcceptedResponseLedgerFailureWithholdsOutputWithoutCancel(t *test
 	cancelCalls := 0
 	b := &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
-			return &billing.FreezeResult{FreezeID: 1, Amount: 100, Success: true}, nil
+			return &billing.FreezeResult{FreezeID: 1, AmountMicros: 100, Success: true}, nil
 		},
 		completeAttemptFn: func(ctx context.Context, req billing.ProviderAttemptCompletion) error {
 			completeCalls++

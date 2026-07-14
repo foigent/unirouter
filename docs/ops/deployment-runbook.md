@@ -351,6 +351,44 @@ schema 对象已存在但 `schema_migrations` 尚未登记，立即停止自动�
 必须保留证据并 roll-forward，不能删除记录来迁就旧二进制。此仓库步骤不授权部署、
 真实/付费上游调用、外部检测器启用或凭证变更。
 
+### 3.7 V1 `000035` / `000036` 微人民币账本非滚动启用
+
+`000035_v1_pricing_unit_contract` 只固定公开的 CNY/百万 tokens 价格合同，不会
+自动修改既有价格。`000036_v1_micro_precision_ledger` 将客户账本、冻结、结算、
+恢复和用量证据从整数分切换为显式 `BIGINT` 微人民币，并同步启用 outbox/runtime
+v2 与 `ur:agentcap:v2`。旧二进制不认识新列和新单位，因此不能滚动混跑。
+
+该切换必须先取得 R3 User 批准，再按下列顺序执行：
+
+1. 固定待发布 image/commit，确认 migration 顺序包含 `000035` 后紧接 `000036`；
+2. 停止入口流量，drain 并停止全部 stable/canary gateway、control-plane、outbox、
+   terminal recovery 和其他旧写入者；
+3. 备份 PostgreSQL，记录受影响表的行数、金额合计与校验值；逐条复核目标价格的
+   来源、币种和生效日期，不允许自动换算或批量改价；
+4. 确认数据库不存在 `frozen` / `settlement_pending` reservation、未解决 provider
+   attempt 或未完成 terminal hook。`000036` 会再次 fail closed 检查这些条件以及
+   价格/金额溢出；
+5. 使用只读 `SCAN`/审计证明不存在仍活跃的 `ur:agentcap:v1:*:workflow` 权限，
+   再切换 v2。旧 v1 key 按 TTL 自然过期，不做 Redis 批量删除；
+6. 确认 X-Insight 已接受带 `cost_micros`、`currency=CNY` 和
+   `amount_scale=1000000` 的 snapshot v2，或暂停下一次跨系统交换；
+7. 应用 migration，一次只启动确认过 commit 的新版本，读回
+   `ledger.version="micro-cny.v1"`、列类型、金额合计和约束；
+8. 在恢复流量前验证零用量零收费、2-micro 最小精度、现金/赠送额度结算、outbox
+   v2、Redis v2、钱包/API/UI 六位精度和恢复 worker；
+9. 分阶段恢复流量并持续核对余额、冻结、终态交易、provider pending 与 outbox
+   backlog，不把 readiness 绿灯单独当作财务验收。
+
+启用后，基础价格、cache ratio 与组织倍率必须通过受支持的 Admin API 修改；该路径
+会按 model 串行化并在同一事务中验证所有有效组合的精确 micro-CNY `int64` 边界。
+不得用手工 SQL 或旧 seed 脚本绕过价格权限、审计和组合溢出校验。
+
+`000036` 的 down 只允许在完全无损时执行：任何非整分金额、不可逆价格、v2-only
+outbox/runtime 证据或数据库 `micro_evidence_written` 标记都会拒绝。写入第一条新
+微人民币证据后，默认恢复方式是保留证据并 roll-forward，不得删除记录或四舍五入
+回旧单位。完整本地证据和 target checklist 见
+`docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-LOCAL-20260714.md`。
+
 ---
 
 ## 四、备份与恢复

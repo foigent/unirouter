@@ -113,6 +113,25 @@ func TestCreateModelPriceRejectsUnrepresentablePublicPrecision(t *testing.T) {
 	require.Zero(t, beginCalls)
 }
 
+func TestCreateModelPriceRejectsExponentNotationBeforeTransaction(t *testing.T) {
+	beginCalls := 0
+	h := newTestHandler(&testutil.MockDB{BeginFn: func(ctx context.Context) (pgx.Tx, error) {
+		beginCalls++
+		return &testutil.MockTx{}, nil
+	}})
+	req := pricingActorRequest(
+		httptest.NewRequest(http.MethodPost, "/model-prices", strings.NewReader(`{"model_name":"gpt-4o","input_price_cny_per_million_tokens":1e3,"output_price_cny_per_million_tokens":1}`)),
+		1,
+		auth.RolePlatformAdmin,
+	)
+	rec := httptest.NewRecorder()
+
+	h.CreateModelPrice(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Zero(t, beginCalls)
+}
+
 func TestOrgModelPriceMultiplierBoundsRejectValuesThatDatabaseWouldRoundOrOverflow(t *testing.T) {
 	for _, multiplier := range []string{"0.0004", "100"} {
 		t.Run("create_"+multiplier, func(t *testing.T) {
@@ -159,8 +178,8 @@ func TestOrgModelPriceMultiplierBoundsRejectValuesThatDatabaseWouldRoundOrOverfl
 		})
 	}
 
-	require.True(t, validOrgModelPriceMultiplier(0.001))
-	require.True(t, validOrgModelPriceMultiplier(99.999))
+	require.True(t, validOrgModelPriceMultiplier("0.001"))
+	require.True(t, validOrgModelPriceMultiplier("99.999"))
 }
 
 func TestUpdateModelPriceRejectsEmptyRenameBeforeTransaction(t *testing.T) {
@@ -183,22 +202,25 @@ func TestUpdateModelPriceRejectsEmptyRenameBeforeTransaction(t *testing.T) {
 	require.Zero(t, beginCalls)
 }
 
-func TestUpdateModelPriceRenameLocksTargetKeyBeforeRowMutation(t *testing.T) {
-	operations := make([]string, 0, 5)
+func TestUpdateModelPriceRejectsRenameWithoutWriteOrAudit(t *testing.T) {
+	operations := make([]string, 0, 4)
+	var committed, rolledBack bool
 	tx := &testutil.MockTx{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			operations = append(operations, "query:"+sql)
-			if strings.Contains(sql, "FOR UPDATE") {
-				return modelPriceMockRow(1, "old-model", 5, 15)
-			}
-			return modelPriceMockRow(1, "new-model", 5, 15)
+			return modelPriceMockRow(1, "old-model", 5, 15)
 		},
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			operations = append(operations, "exec:"+sql)
-			if strings.Contains(sql, "UPDATE model_prices") {
-				return pgconn.NewCommandTag("UPDATE 1"), nil
-			}
+			operations = append(operations, fmt.Sprintf("exec:%s:%v", sql, args))
 			return pgconn.NewCommandTag("SELECT 1"), nil
+		},
+		CommitFn: func(ctx context.Context) error {
+			committed = true
+			return nil
+		},
+		RollbackFn: func(ctx context.Context) error {
+			rolledBack = true
+			return nil
 		},
 	}
 	h := newTestHandler(&testutil.MockDB{BeginFn: func(ctx context.Context) (pgx.Tx, error) { return tx, nil }})
@@ -212,8 +234,13 @@ func TestUpdateModelPriceRenameLocksTargetKeyBeforeRowMutation(t *testing.T) {
 
 	h.UpdateModelPrice(rec, req)
 
-	require.Equal(t, http.StatusOK, rec.Code)
-	require.GreaterOrEqual(t, len(operations), 2)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "model_name is immutable")
+	require.NotEmpty(t, operations)
 	require.Contains(t, operations[0], "pg_advisory_xact_lock")
-	require.Contains(t, operations[1], "FOR UPDATE")
+	require.NotContains(t, strings.Join(operations, "\n"), "UPDATE model_prices")
+	require.NotContains(t, strings.Join(operations, "\n"), "INSERT INTO audit_logs")
+	require.NotContains(t, strings.Join(operations, "\n"), "new-model")
+	require.False(t, committed)
+	require.True(t, rolledBack)
 }

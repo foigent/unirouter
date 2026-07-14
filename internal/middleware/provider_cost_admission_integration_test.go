@@ -20,14 +20,14 @@ func TestP6F40CAffectedKeyPaidAdmissionBlockClearsOnlyAfterResolution(t *testing
 	require.NoError(t, pool.QueryRow(ctx,
 		`INSERT INTO api_keys (org_id,name,key_prefix,key_hash,status) VALUES ($1,'blocked-key','ur-test','hash','active') RETURNING id`,
 		orgID).Scan(&apiKeyID))
-	_, err := pool.Exec(ctx, `INSERT INTO wallets (org_id,balance,granted_balance,frozen,total_spent) VALUES ($1,1000,0,0,0)`, orgID)
+	_, err := pool.Exec(ctx, `INSERT INTO wallets (org_id,balance_micros,granted_balance_micros,frozen_micros,total_spent_micros) VALUES ($1,10000000,0,0,0)`, orgID)
 	require.NoError(t, err)
 	model := fmt.Sprintf("p6f40c-auth-model-%d", time.Now().UnixNano())
 	_, err = pool.Exec(ctx, `INSERT INTO model_prices (model_name,provider,input_price_cents,output_price_cents) VALUES ($1,'test',2,10)`, model)
 	require.NoError(t, err)
 	b := billing.NewBilling(pool, nil)
 	requestID := "op_p6f40c_auth"
-	freeze, err := b.Freeze(ctx, billing.FreezeRequest{RequestID: requestID, OrgID: orgID, Model: model, EstimatedTokens: 1, SafetyFactor: 1, MinFreezeAmount: 100})
+	freeze, err := b.Freeze(ctx, billing.FreezeRequest{RequestID: requestID, OrgID: orgID, Model: model, EstimatedTokens: 1, SafetyFactor: "1", MinFreezeCents: 100})
 	require.NoError(t, err)
 	require.True(t, freeze.Success)
 	attempt := billing.ProviderAttemptStart{

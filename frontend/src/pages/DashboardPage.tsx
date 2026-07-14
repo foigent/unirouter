@@ -20,28 +20,30 @@ import {
   ResponsiveContainer, BarChart, Bar, Cell,
 } from 'recharts';
 import { api } from '../api/client';
-import { EmptyState, LatencyText, MetricTile, MoneyText, PageHeader, StatusTag, Surface, formatMoney } from '../ui';
+import { EmptyState, LatencyText, MetricTile, MoneyText, PageHeader, StatusTag, Surface, formatMoney, microsRatio, microsToChartYuan, parseMicros } from '../ui';
 import { formatCompactNumber } from '../utils/formatNumber';
 
 const { Text } = Typography;
 
 interface DashboardStats {
   total_requests: number;
-  today_cost_cents: number;
+	today_cost_micros: string;
+	currency: 'CNY';
+	amount_scale: 1000000;
   avg_latency_ms: number;
   p95_latency_ms?: number;
   p99_latency_ms?: number;
   success_rate: number;
   recent_logs: any[];
-  model_prices: { model_name: string; input_price_cents: number; output_price_cents: number }[];
-  wallet_balance?: number;
-  wallet_granted?: number;
-  wallet_frozen?: number;
-  wallet_threshold?: number;
-  daily_trend?: { date: string; requests: number; cost_cents: number }[];
+	model_prices: { model_name: string; input_price_cny_per_million: string; output_price_cny_per_million: string }[];
+	wallet_balance_micros?: string;
+	wallet_granted_micros?: string;
+	wallet_frozen_micros?: string;
+	wallet_threshold_micros?: string;
+	daily_trend?: { date: string; requests: number; cost_micros: string }[];
   model_distribution?: { model: string; requests: number }[];
   channel_health?: { id: number; name: string; provider: string; enabled: boolean; status: string; success_count: number; fail_count: number }[];
-  delta_vs_yesterday?: { cost_cents: number; latency_ms: number; success_rate: number };
+	delta_vs_yesterday?: { cost_micros: string; latency_ms: number; success_rate: number };
 }
 
 type TimeRange = '24h' | '7d' | '30d' | 'custom';
@@ -234,13 +236,14 @@ export default function DashboardPage() {
   const trendData = (stats?.daily_trend || []).map(d => ({
     date: formatTrendLabel(d.date),
     requests: d.requests,
-    cost_yuan: d.cost_cents / 100,
+		cost_yuan: microsToChartYuan(d.cost_micros),
   }));
   const modelData = [...(stats?.model_distribution || [])]
     .sort((a, b) => b.requests - a.requests)
     .slice(0, 6);
-  const budgetThreshold = stats?.wallet_threshold || 0;
-  const budgetPercent = budgetThreshold > 0 ? Math.min(100, (stats?.today_cost_cents || 0) / budgetThreshold * 100) : 0;
+	const budgetThreshold = stats?.wallet_threshold_micros || '0';
+	const budgetPercent = Math.min(100, microsRatio(stats?.today_cost_micros || '0', budgetThreshold) * 100);
+	const walletAvailable = parseMicros(stats?.wallet_balance_micros || '0') + parseMicros(stats?.wallet_granted_micros || '0');
   const avgLatency = stats?.avg_latency_ms || 0;
   const p95Latency = stats?.p95_latency_ms ?? avgLatency;
   const p99Latency = stats?.p99_latency_ms ?? p95Latency;
@@ -278,9 +281,9 @@ export default function DashboardPage() {
     },
     {
       title: '费用',
-      dataIndex: 'cost_cents',
-      key: 'cost_cents',
-      render: (v: number) => <MoneyText cents={v} precision={4} tone="cost" />,
+		dataIndex: 'cost_micros',
+		key: 'cost_micros',
+		render: (v: string) => <MoneyText micros={v || '0'} precision={6} tone="cost" />,
     },
     {
       title: '时间',
@@ -353,7 +356,7 @@ export default function DashboardPage() {
               <IconCoinMoney />
               <div>
                 <Text>钱包余额</Text>
-                <strong>{formatMoney((stats?.wallet_balance || 0) + (stats?.wallet_granted || 0))}</strong>
+				<strong>{formatMoney(walletAvailable)}</strong>
               </div>
             </div>
           </div>
@@ -388,14 +391,14 @@ export default function DashboardPage() {
           />
           <MetricTile
             label="今日花费"
-            value={<MoneyText cents={stats?.today_cost_cents || 0} strong tone="cost" />}
+			value={<MoneyText micros={stats?.today_cost_micros || '0'} precision={6} strong tone="cost" />}
             tone="violet"
             icon={<IconCoinMoney />}
-            meta={budgetThreshold > 0 ? (
+			meta={parseMicros(budgetThreshold) > 0n ? (
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
                   <Text type="tertiary" size="small">预算进度</Text>
-                  <Text type="tertiary" size="small">{formatMoney(stats?.today_cost_cents || 0)} / {formatMoney(budgetThreshold)}</Text>
+				  <Text type="tertiary" size="small">{formatMoney(stats?.today_cost_micros || '0', 6)} / {formatMoney(budgetThreshold)}</Text>
                 </div>
                 <Progress
                   percent={budgetPercent}
@@ -403,9 +406,9 @@ export default function DashboardPage() {
                   stroke={budgetPercent > 80 ? '#d92d20' : '#1f6feb'}
                   size="small"
                 />
-                {delta && <div style={{ marginTop: 7 }}><Text type="tertiary" size="small">vs 昨日</Text><DeltaTag value={delta.cost_cents / 100} suffix="¥" inverse /></div>}
+				{delta && <div style={{ marginTop: 7 }}><Text type="tertiary" size="small">vs 昨日</Text><DeltaTag value={microsToChartYuan(delta.cost_micros)} suffix="¥" inverse /></div>}
               </div>
-            ) : delta && <><Text type="tertiary" size="small">vs 昨日</Text><DeltaTag value={delta.cost_cents / 100} suffix="¥" inverse /></>}
+			) : delta && <><Text type="tertiary" size="small">vs 昨日</Text><DeltaTag value={microsToChartYuan(delta.cost_micros)} suffix="¥" inverse /></>}
           />
         </div>
 

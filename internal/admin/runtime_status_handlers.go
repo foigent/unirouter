@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
 )
 
@@ -115,7 +116,9 @@ type runtimeTrafficStatus struct {
 	ErrorRequests int64   `json:"error_requests"`
 	ErrorRate     float64 `json:"error_rate"`
 	TotalTokens   int64   `json:"total_tokens"`
-	CostCents     int64   `json:"cost_cents"`
+	CostMicros    int64   `json:"cost_micros,string"`
+	Currency      string  `json:"currency"`
+	AmountScale   int64   `json:"amount_scale"`
 	P95LatencyMS  float64 `json:"p95_latency_ms"`
 	P99LatencyMS  float64 `json:"p99_latency_ms"`
 	Reason        string  `json:"reason,omitempty"`
@@ -476,7 +479,7 @@ func (h *Handler) runtimeRedisHealth(ctx context.Context) runtimeDependencyStatu
 }
 
 func (h *Handler) runtimeTrafficStatus(ctx context.Context, orgID int64) runtimeTrafficStatus {
-	status := runtimeTrafficStatus{Status: "available", WindowMinutes: runtimeTrafficWindowMinutes}
+	status := runtimeTrafficStatus{Status: "available", WindowMinutes: runtimeTrafficWindowMinutes, Currency: "CNY", AmountScale: money.MicrosPerCNY}
 	if h.db == nil {
 		status.Status = "unavailable"
 		status.Reason = "database_not_configured"
@@ -486,7 +489,7 @@ func (h *Handler) runtimeTrafficStatus(ctx context.Context, orgID int64) runtime
 	defer cancel()
 	err := h.db.QueryRow(queryCtx, `
 WITH recent AS (
-	SELECT total_tokens, cost_cents, latency_ms, status_code
+	SELECT total_tokens, cost_micros, latency_ms, status_code
 	FROM call_logs
 	WHERE org_id = $1
 	  AND created_at >= NOW() - ($2::int * INTERVAL '1 minute')
@@ -495,14 +498,14 @@ SELECT
 	COUNT(*),
 	COALESCE(SUM(CASE WHEN status_code = 0 OR status_code >= 500 THEN 1 ELSE 0 END), 0),
 	COALESCE(SUM(total_tokens), 0),
-	COALESCE(SUM(cost_cents), 0),
+	COALESCE(SUM(cost_micros), 0),
 	COALESCE((SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) FROM recent WHERE latency_ms > 0), 0),
 	COALESCE((SELECT percentile_cont(0.99) WITHIN GROUP (ORDER BY latency_ms) FROM recent WHERE latency_ms > 0), 0)
 FROM recent`, orgID, runtimeTrafficWindowMinutes).Scan(
 		&status.Requests,
 		&status.ErrorRequests,
 		&status.TotalTokens,
-		&status.CostCents,
+		&status.CostMicros,
 		&status.P95LatencyMS,
 		&status.P99LatencyMS,
 	)

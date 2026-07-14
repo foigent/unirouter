@@ -9,6 +9,7 @@ import (
 
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/metering"
+	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/traceutil"
 )
 
@@ -201,25 +202,25 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 		        model, provider, channel, prompt_tokens,
 		        CASE WHEN cache_usage_schema = '' AND uncached_prompt_tokens = 0 THEN prompt_tokens ELSE uncached_prompt_tokens END,
 		        cache_read_tokens, cache_creation_tokens, completion_tokens, total_tokens,
-		        cost_cents, status_code, latency_ms, ttft_ms, upstream_status_code, COALESCE(upstream_error, ''),
+		        cost_micros, status_code, latency_ms, ttft_ms, upstream_status_code, COALESCE(upstream_error, ''),
 		        usage_source, cache_usage_schema, cache_usage_status, pricing_version,
 		        COALESCE(
 		          (SELECT f.cache_read_ratio::float8 FROM freeze_idempotency f
 		           WHERE f.org_id = call_logs.org_id AND f.request_id = call_logs.request_id),
-		          CASE WHEN effective_input_price_cents <> 0
-		               THEN (effective_cache_read_price_cents / effective_input_price_cents)::float8
+		          CASE WHEN effective_input_price_micros_per_million <> 0
+		               THEN (effective_cache_read_price_micros_per_million::numeric / effective_input_price_micros_per_million)::float8
 		               ELSE 1::float8 END
 		        ),
 		        COALESCE(
 		          (SELECT f.cache_creation_ratio::float8 FROM freeze_idempotency f
 		           WHERE f.org_id = call_logs.org_id AND f.request_id = call_logs.request_id),
-		          CASE WHEN effective_input_price_cents <> 0
-		               THEN (effective_cache_creation_price_cents / effective_input_price_cents)::float8
+		          CASE WHEN effective_input_price_micros_per_million <> 0
+		               THEN (effective_cache_creation_price_micros_per_million::numeric / effective_input_price_micros_per_million)::float8
 		               ELSE 1::float8 END
 		        ),
-		        effective_input_price_cents::float8, effective_cache_read_price_cents::float8,
-		        effective_cache_creation_price_cents::float8, effective_output_price_cents::float8,
-		        cache_read_cost_cents::float8, cache_creation_cost_cents::float8,
+		        effective_input_price_micros_per_million, effective_cache_read_price_micros_per_million,
+		        effective_cache_creation_price_micros_per_million, effective_output_price_micros_per_million,
+		        cache_read_cost_micros, cache_creation_cost_micros,
 		        is_stream, created_at
 		 FROM call_logs%s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`,
 		whereClause, argIdx, argIdx+1)
@@ -236,17 +237,18 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var id, projectID int64
 		var requestID, clientRequestID, workflowID, agentID, attemptID, model, provider, channel string
-		var promptTokens, uncachedPromptTokens, cacheReadTokens, cacheCreationTokens, completionTokens, totalTokens, costCents, statusCode, latencyMs, ttftMs int
+		var promptTokens, uncachedPromptTokens, cacheReadTokens, cacheCreationTokens, completionTokens, totalTokens, statusCode, latencyMs, ttftMs int
+		var costMicros int64
 		var upstreamStatusCode *int
 		var upstreamError, usageSource, cacheUsageSchema, cacheUsageStatus, pricingVersion string
 		var cacheReadRatio, cacheCreationRatio float64
-		var effectiveInputPrice, effectiveCacheReadPrice, effectiveCacheCreationPrice, effectiveOutputPrice float64
-		var cacheReadCost, cacheCreationCost float64
+		var effectiveInputPrice, effectiveCacheReadPrice, effectiveCacheCreationPrice, effectiveOutputPrice int64
+		var cacheReadCost, cacheCreationCost int64
 		var isStream bool
 		var createdAt time.Time
 		if err := rows.Scan(&id, &projectID, &requestID, &clientRequestID, &workflowID, &agentID, &attemptID,
 			&model, &provider, &channel, &promptTokens, &uncachedPromptTokens, &cacheReadTokens, &cacheCreationTokens, &completionTokens, &totalTokens,
-			&costCents, &statusCode, &latencyMs, &ttftMs, &upstreamStatusCode, &upstreamError,
+			&costMicros, &statusCode, &latencyMs, &ttftMs, &upstreamStatusCode, &upstreamError,
 			&usageSource, &cacheUsageSchema, &cacheUsageStatus, &pricingVersion,
 			&cacheReadRatio, &cacheCreationRatio,
 			&effectiveInputPrice, &effectiveCacheReadPrice, &effectiveCacheCreationPrice, &effectiveOutputPrice,
@@ -261,15 +263,16 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 			"prompt_tokens": promptTokens, "uncached_prompt_tokens": uncachedPromptTokens,
 			"cache_read_tokens": cacheReadTokens, "cache_creation_tokens": cacheCreationTokens,
 			"completion_tokens": completionTokens, "total_tokens": totalTokens,
-			"cost_cents": costCents, "status_code": statusCode, "latency_ms": latencyMs, "ttft_ms": ttftMs,
+			"cost_micros": strconv.FormatInt(costMicros, 10), "currency": "CNY", "amount_scale": money.MicrosPerCNY,
+			"status_code": statusCode, "latency_ms": latencyMs, "ttft_ms": ttftMs,
 			"upstream_status_code": upstreamStatusCode, "upstream_error": upstreamError,
 			"usage_source": usageSource, "cache_usage_schema": cacheUsageSchema, "cache_usage_status": cacheUsageStatus,
 			"pricing_version": pricingVersion, "cache_read_ratio": cacheReadRatio, "cache_creation_ratio": cacheCreationRatio,
-			"effective_input_price_cents":          effectiveInputPrice,
-			"effective_cache_read_price_cents":     effectiveCacheReadPrice,
-			"effective_cache_creation_price_cents": effectiveCacheCreationPrice,
-			"effective_output_price_cents":         effectiveOutputPrice,
-			"cache_read_cost_cents":                cacheReadCost, "cache_creation_cost_cents": cacheCreationCost,
+			"effective_input_price_micros_per_million":          strconv.FormatInt(effectiveInputPrice, 10),
+			"effective_cache_read_price_micros_per_million":     strconv.FormatInt(effectiveCacheReadPrice, 10),
+			"effective_cache_creation_price_micros_per_million": strconv.FormatInt(effectiveCacheCreationPrice, 10),
+			"effective_output_price_micros_per_million":         strconv.FormatInt(effectiveOutputPrice, 10),
+			"cache_read_cost_micros":                            strconv.FormatInt(cacheReadCost, 10), "cache_creation_cost_micros": strconv.FormatInt(cacheCreationCost, 10),
 			"is_stream": isStream, "created_at": createdAt,
 		})
 	}
@@ -297,12 +300,13 @@ func (h *Handler) GetLogDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	var requestID, clientRequestID, workflowID, agentID, attemptID, model, provider, channel string
 	var recordOrgID, projectID int64
-	var promptTokens, uncachedPromptTokens, cacheReadTokens, cacheCreationTokens, completionTokens, totalTokens, costCents, statusCode, latencyMs, ttftMs int
+	var promptTokens, uncachedPromptTokens, cacheReadTokens, cacheCreationTokens, completionTokens, totalTokens, statusCode, latencyMs, ttftMs int
+	var costMicros int64
 	var upstreamStatusCode *int
 	var upstreamError, usageSource, ipAddress, requestedModel, cacheUsageSchema, cacheUsageStatus, pricingVersion string
 	var cacheReadRatio, cacheCreationRatio float64
-	var effectiveInputPrice, effectiveCacheReadPrice, effectiveCacheCreationPrice, effectiveOutputPrice float64
-	var cacheReadCost, cacheCreationCost float64
+	var effectiveInputPrice, effectiveCacheReadPrice, effectiveCacheCreationPrice, effectiveOutputPrice int64
+	var cacheReadCost, cacheCreationCost int64
 	var isStream bool
 	var createdAt time.Time
 	err = h.db.QueryRow(r.Context(),
@@ -311,30 +315,30 @@ func (h *Handler) GetLogDetail(w http.ResponseWriter, r *http.Request) {
 		        model, provider, channel, prompt_tokens,
 		        CASE WHEN cache_usage_schema = '' AND uncached_prompt_tokens = 0 THEN prompt_tokens ELSE uncached_prompt_tokens END,
 		        cache_read_tokens, cache_creation_tokens, completion_tokens, total_tokens,
-		        cost_cents, status_code, latency_ms, ttft_ms, upstream_status_code, COALESCE(upstream_error, ''),
+		        cost_micros, status_code, latency_ms, ttft_ms, upstream_status_code, COALESCE(upstream_error, ''),
 		        usage_source, cache_usage_schema, cache_usage_status, pricing_version,
 		        COALESCE(
 		          (SELECT f.cache_read_ratio::float8 FROM freeze_idempotency f
 		           WHERE f.org_id = call_logs.org_id AND f.request_id = call_logs.request_id),
-		          CASE WHEN effective_input_price_cents <> 0
-		               THEN (effective_cache_read_price_cents / effective_input_price_cents)::float8
+		          CASE WHEN effective_input_price_micros_per_million <> 0
+		               THEN (effective_cache_read_price_micros_per_million::numeric / effective_input_price_micros_per_million)::float8
 		               ELSE 1::float8 END
 		        ),
 		        COALESCE(
 		          (SELECT f.cache_creation_ratio::float8 FROM freeze_idempotency f
 		           WHERE f.org_id = call_logs.org_id AND f.request_id = call_logs.request_id),
-		          CASE WHEN effective_input_price_cents <> 0
-		               THEN (effective_cache_creation_price_cents / effective_input_price_cents)::float8
+		          CASE WHEN effective_input_price_micros_per_million <> 0
+		               THEN (effective_cache_creation_price_micros_per_million::numeric / effective_input_price_micros_per_million)::float8
 		               ELSE 1::float8 END
 		        ),
-		        effective_input_price_cents::float8, effective_cache_read_price_cents::float8,
-		        effective_cache_creation_price_cents::float8, effective_output_price_cents::float8,
-		        cache_read_cost_cents::float8, cache_creation_cost_cents::float8,
+		        effective_input_price_micros_per_million, effective_cache_read_price_micros_per_million,
+		        effective_cache_creation_price_micros_per_million, effective_output_price_micros_per_million,
+		        cache_read_cost_micros, cache_creation_cost_micros,
 		        is_stream, ip_address, requested_model, created_at
 		 FROM call_logs WHERE id = $1 AND org_id = $2`, id, orgID,
 	).Scan(&recordOrgID, &projectID, &requestID, &clientRequestID, &workflowID, &agentID, &attemptID,
 		&model, &provider, &channel, &promptTokens, &uncachedPromptTokens, &cacheReadTokens, &cacheCreationTokens, &completionTokens, &totalTokens,
-		&costCents, &statusCode, &latencyMs, &ttftMs, &upstreamStatusCode, &upstreamError,
+		&costMicros, &statusCode, &latencyMs, &ttftMs, &upstreamStatusCode, &upstreamError,
 		&usageSource, &cacheUsageSchema, &cacheUsageStatus, &pricingVersion,
 		&cacheReadRatio, &cacheCreationRatio,
 		&effectiveInputPrice, &effectiveCacheReadPrice, &effectiveCacheCreationPrice, &effectiveOutputPrice,
@@ -349,45 +353,47 @@ func (h *Handler) GetLogDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"id":                                   id,
-		"org_id":                               recordOrgID,
-		"project_id":                           projectID,
-		"request_id":                           requestID,
-		"client_request_id":                    clientRequestID,
-		"workflow_id":                          workflowID,
-		"agent_id":                             agentID,
-		"attempt_id":                           attemptID,
-		"model":                                model,
-		"provider":                             provider,
-		"channel":                              channel,
-		"prompt_tokens":                        promptTokens,
-		"uncached_prompt_tokens":               uncachedPromptTokens,
-		"cache_read_tokens":                    cacheReadTokens,
-		"cache_creation_tokens":                cacheCreationTokens,
-		"completion_tokens":                    completionTokens,
-		"total_tokens":                         totalTokens,
-		"cost_cents":                           costCents,
-		"status_code":                          statusCode,
-		"latency_ms":                           latencyMs,
-		"ttft_ms":                              ttftMs,
-		"upstream_status_code":                 upstreamStatusCode,
-		"upstream_error":                       upstreamError,
-		"usage_source":                         usageSource,
-		"cache_usage_schema":                   cacheUsageSchema,
-		"cache_usage_status":                   cacheUsageStatus,
-		"pricing_version":                      pricingVersion,
-		"cache_read_ratio":                     cacheReadRatio,
-		"cache_creation_ratio":                 cacheCreationRatio,
-		"effective_input_price_cents":          effectiveInputPrice,
-		"effective_cache_read_price_cents":     effectiveCacheReadPrice,
-		"effective_cache_creation_price_cents": effectiveCacheCreationPrice,
-		"effective_output_price_cents":         effectiveOutputPrice,
-		"cache_read_cost_cents":                cacheReadCost,
-		"cache_creation_cost_cents":            cacheCreationCost,
-		"is_stream":                            isStream,
-		"ip_address":                           ipAddress,
-		"requested_model":                      requestedModel,
-		"created_at":                           createdAt,
+		"id":                     id,
+		"org_id":                 recordOrgID,
+		"project_id":             projectID,
+		"request_id":             requestID,
+		"client_request_id":      clientRequestID,
+		"workflow_id":            workflowID,
+		"agent_id":               agentID,
+		"attempt_id":             attemptID,
+		"model":                  model,
+		"provider":               provider,
+		"channel":                channel,
+		"prompt_tokens":          promptTokens,
+		"uncached_prompt_tokens": uncachedPromptTokens,
+		"cache_read_tokens":      cacheReadTokens,
+		"cache_creation_tokens":  cacheCreationTokens,
+		"completion_tokens":      completionTokens,
+		"total_tokens":           totalTokens,
+		"cost_micros":            strconv.FormatInt(costMicros, 10),
+		"currency":               "CNY",
+		"amount_scale":           money.MicrosPerCNY,
+		"status_code":            statusCode,
+		"latency_ms":             latencyMs,
+		"ttft_ms":                ttftMs,
+		"upstream_status_code":   upstreamStatusCode,
+		"upstream_error":         upstreamError,
+		"usage_source":           usageSource,
+		"cache_usage_schema":     cacheUsageSchema,
+		"cache_usage_status":     cacheUsageStatus,
+		"pricing_version":        pricingVersion,
+		"cache_read_ratio":       cacheReadRatio,
+		"cache_creation_ratio":   cacheCreationRatio,
+		"effective_input_price_micros_per_million":          strconv.FormatInt(effectiveInputPrice, 10),
+		"effective_cache_read_price_micros_per_million":     strconv.FormatInt(effectiveCacheReadPrice, 10),
+		"effective_cache_creation_price_micros_per_million": strconv.FormatInt(effectiveCacheCreationPrice, 10),
+		"effective_output_price_micros_per_million":         strconv.FormatInt(effectiveOutputPrice, 10),
+		"cache_read_cost_micros":                            strconv.FormatInt(cacheReadCost, 10),
+		"cache_creation_cost_micros":                        strconv.FormatInt(cacheCreationCost, 10),
+		"is_stream":                                         isStream,
+		"ip_address":                                        ipAddress,
+		"requested_model":                                   requestedModel,
+		"created_at":                                        createdAt,
 	})
 }
 

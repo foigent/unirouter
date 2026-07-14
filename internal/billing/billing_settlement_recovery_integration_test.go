@@ -46,20 +46,21 @@ func TestP6F18BBillableOutputCannotBeCancelledAndUsageIsImmutable(t *testing.T) 
 	settled, err := b.Settle(ctx, usage)
 	require.NoError(t, err)
 	require.True(t, settled.Success)
-	require.Equal(t, 3, settled.ActualCost)
-	require.Equal(t, 3, settled.ChargedCost)
+	require.Equal(t, testMicros(3), settled.ActualCostMicros)
+	require.Equal(t, testMicros(3), settled.ChargedCostMicros)
 
-	var balance, frozen, spent, terminals int
+	var balanceMicros, frozenMicros, spentMicros int64
+	var terminals int
 	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT balance, frozen, total_spent FROM wallets WHERE org_id = $1`, orgID,
-	).Scan(&balance, &frozen, &spent))
+		`SELECT balance_micros, frozen_micros, total_spent_micros FROM wallets WHERE org_id = $1`, orgID,
+	).Scan(&balanceMicros, &frozenMicros, &spentMicros))
 	require.NoError(t, pool.QueryRow(ctx,
 		`SELECT COUNT(*) FROM transactions
 		 WHERE org_id = $1 AND request_id = $2 AND type IN ('settle', 'cancel')`, orgID, requestID,
 	).Scan(&terminals))
-	require.Equal(t, 997, balance)
-	require.Zero(t, frozen)
-	require.Equal(t, 3, spent)
+	require.Equal(t, testMicros(997), balanceMicros)
+	require.Zero(t, frozenMicros)
+	require.Equal(t, testMicros(3), spentMicros)
 	require.Equal(t, 1, terminals)
 }
 
@@ -94,7 +95,7 @@ func TestP6F18BPostChunkDatabaseFailureRecoversExactlyOnceAfterRestart(t *testin
 	// This represents the best-effort gateway log written before a restart. The
 	// recovery settlement must converge its usage and cost to the ledger receipt.
 	_, err = pool.Exec(ctx,
-		`INSERT INTO call_logs (request_id, org_id, model, cost_cents, is_stream, usage_source)
+		`INSERT INTO call_logs (request_id, org_id, model, cost_micros, is_stream, usage_source)
 		 VALUES ($1, $2, $3, 0, TRUE, 'counter_v2')`, requestID, orgID, model)
 	require.NoError(t, err)
 
@@ -130,15 +131,16 @@ func TestP6F18BPostChunkDatabaseFailureRecoversExactlyOnceAfterRestart(t *testin
 	require.Equal(t, 1, settledCount)
 
 	var state, usageSource string
-	var promptTokens, completionTokens, costCents, terminalEvents int
+	var promptTokens, completionTokens, terminalEvents int
+	var costMicros int64
 	require.NoError(t, pool.QueryRow(ctx,
 		`SELECT status, prompt_tokens, completion_tokens, usage_source
 		 FROM freeze_idempotency WHERE org_id = $1 AND request_id = $2`, orgID, requestID,
 	).Scan(&state, &promptTokens, &completionTokens, &usageSource))
 	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT prompt_tokens, completion_tokens, cost_cents, usage_source
+		`SELECT prompt_tokens, completion_tokens, cost_micros, usage_source
 		 FROM call_logs WHERE org_id = $1 AND request_id = $2`, orgID, requestID,
-	).Scan(&promptTokens, &completionTokens, &costCents, &usageSource))
+	).Scan(&promptTokens, &completionTokens, &costMicros, &usageSource))
 	require.NoError(t, pool.QueryRow(ctx,
 		`SELECT COUNT(*) FROM transactions
 		 WHERE org_id = $1 AND request_id = $2 AND type IN ('settle', 'cancel')`, orgID, requestID,
@@ -146,7 +148,7 @@ func TestP6F18BPostChunkDatabaseFailureRecoversExactlyOnceAfterRestart(t *testin
 	require.Equal(t, "settled", state)
 	require.Equal(t, 1000, promptTokens)
 	require.Equal(t, 100, completionTokens)
-	require.Equal(t, 3, costCents)
+	require.Equal(t, testMicros(3), costMicros)
 	require.Equal(t, "upstream", usageSource)
 	require.Equal(t, 1, terminalEvents)
 
@@ -170,16 +172,16 @@ func TestP6F18BPendingWithoutFinalUsageIsHeldForManualReconciliation(t *testing.
 	require.True(t, errors.Is(err, ErrSettlementUsageNotReady))
 
 	var status string
-	var balance, frozen int
+	var balanceMicros, frozenMicros int64
 	require.NoError(t, pool.QueryRow(t.Context(),
 		`SELECT status FROM freeze_idempotency WHERE org_id = $1 AND request_id = $2`, orgID, requestID,
 	).Scan(&status))
 	require.NoError(t, pool.QueryRow(t.Context(),
-		`SELECT balance, frozen FROM wallets WHERE org_id = $1`, orgID,
-	).Scan(&balance, &frozen))
+		`SELECT balance_micros, frozen_micros FROM wallets WHERE org_id = $1`, orgID,
+	).Scan(&balanceMicros, &frozenMicros))
 	require.Equal(t, "settlement_pending", status)
-	require.Equal(t, 900, balance)
-	require.Equal(t, 100, frozen)
+	require.Equal(t, testMicros(900), balanceMicros)
+	require.Equal(t, testMicros(100), frozenMicros)
 }
 
 func TestP6F18BRecoveryFailureUsesBackoffAndKeepsReservationPending(t *testing.T) {
@@ -224,8 +226,8 @@ func TestP6F18BRecoveryFailureUsesBackoffAndKeepsReservationPending(t *testing.T
 	require.Zero(t, immediate.Claimed, "backoff must suppress an immediate hot retry")
 
 	_, err = pool.Exec(ctx,
-		`INSERT INTO wallets (org_id, balance, granted_balance, frozen, total_spent)
-		 VALUES ($1, 900, 0, 100, 0)`, orgID)
+		`INSERT INTO wallets (org_id, balance_micros, granted_balance_micros, frozen_micros, total_spent_micros)
+		 VALUES ($1, 9000000, 0, 1000000, 0)`, orgID)
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx,
 		`UPDATE freeze_idempotency SET settlement_next_attempt_at = NOW()

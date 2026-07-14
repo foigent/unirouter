@@ -223,11 +223,11 @@ func (b *Billing) PersistSettlementUsage(ctx context.Context, req SettleRequest)
 		     usage_estimate_version = $13,
 		     cache_usage_schema = $14,
 		     cache_usage_status = $15,
-		     calculated_cost = $16,
-		     uncached_input_cost_cents = $17,
-		     cache_read_cost_cents = $18,
-		     cache_creation_cost_cents = $19,
-		     output_cost_cents = $20,
+		     calculated_cost_micros = $16,
+		     uncached_input_cost_micros = $17,
+		     cache_read_cost_micros = $18,
+		     cache_creation_cost_micros = $19,
+		     output_cost_micros = $20,
 		     settlement_payload_ready_at = NOW(),
 		     settlement_claimed_until = NULL,
 		     settlement_next_attempt_at = NOW(),
@@ -240,8 +240,8 @@ func (b *Billing) PersistSettlementUsage(ctx context.Context, req SettleRequest)
 		req.UsageAuthority, req.UsagePurpose, req.UsageFinality,
 		req.UsageContractVersion, req.UsageEstimateVersion,
 		req.CacheUsageSchema, req.CacheUsageStatus,
-		calculatedCost, costBreakdown.UncachedInputCostCents, costBreakdown.CacheReadCostCents,
-		costBreakdown.CacheCreationCostCents, costBreakdown.OutputCostCents,
+		calculatedCost, costBreakdown.UncachedInputCostMicros, costBreakdown.CacheReadCostMicros,
+		costBreakdown.CacheCreationCostMicros, costBreakdown.OutputCostMicros,
 	); err != nil {
 		return fmt.Errorf("persist settlement payload: %w", err)
 	}
