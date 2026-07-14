@@ -2,8 +2,11 @@
 
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
-> **Current checkpoint (2026-07-15):** `main` / `origin/main` are
+> **Current checkpoint (2026-07-15):** the latest code-bearing release is
 > `a0a567dd169dcb133b09eed3f711cdcf87214641`, the PR #207 squash merge.
+> PR #208 later merged this target-closeout record as docs-only commit
+> `2f593a4fb2c9c9729ddf35152e11a1c292b5d392`; it changes no runtime tree,
+> image, schema or target release authority.
 > Exact head `f63bcb268251cd6ec0d8701afc20a7928cd32ecb` passed all four required
 > checks in run `29368640933`, and the authorized development ECS runs the exact
 > merged stable/canary/frontend release with version `1.0.0`, environment
