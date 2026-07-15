@@ -26,10 +26,11 @@ evidence. See
 `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md`.
 
 A separate User-authorized Post-PRD6 run on 2026-07-15 partially satisfies the
-real-upstream half of P6-E03 for bounded Mimo calls only. It does not reopen
-PRD6 or satisfy enterprise SSO, broader-provider, capacity/HA, policy-enforcement
-or Production evidence. See
-`docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md`.
+real-upstream half of P6-E03 for bounded Mimo and DeepSeek Flash calls only. It
+does not reopen PRD6 or satisfy enterprise SSO, broader-provider, capacity/HA,
+policy-enforcement or Production evidence. See
+`docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md` and
+`docs/ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md`.
 
 ## 2. Non-Negotiable Starting State
 
