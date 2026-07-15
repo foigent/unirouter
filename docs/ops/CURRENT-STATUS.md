@@ -1,7 +1,7 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
-> **2026-07-15 current checkpoint:** the latest code-bearing release is
+> **2026-07-16 current checkpoint:** the latest code-bearing release is
 > `ae9ce2c927460e993dd00c6d81c8736cc5a015a2`, the squash merge of PR #210.
 > Exact PR head `5f8cd6a4aedb74354dea9f33223d4aca95e3f2e9` passed Change Routing,
 > Backend Tests and Docker Build in required run `29419821405`; Frontend Build
@@ -11,18 +11,24 @@
 > version `1.0.0`, environment `development`, migration `000037`, release trust
 > `license_keys=1 upgrade_keys=1`, active enforceable test License and signed
 > sequence `3`. The unchanged frontend/Nginx remain on the PR #207 a0a release.
-> Separately approved bounded Mimo requests and one DeepSeek Flash request
+> Separately approved bounded Mimo requests and two DeepSeek Flash requests
 > returned real HTTP 200 responses, persisted exact provider-attempt/call-log
-> evidence and settled for a cumulative 810000 micro-CNY UniRouter customer
-> ledger charge. Temporary access is disabled and no pending attempt, outbox or
-> reservation remains. Mimo non-stream/stream and DeepSeek Flash non-stream
+> evidence and settled for a cumulative 810007 micro-CNY UniRouter customer
+> ledger charge. Temporary API keys and operator accounts are disabled; the
+> last admin JWT was not persisted, but account disablement does not
+> cryptographically revoke it. No pending attempt, outbox or reservation
+> remains. Mimo non-stream/stream and DeepSeek Flash non-stream
 > routing are Target verified for bounded single calls. Kimi, DeepSeek Pro,
 > capacity, detector, enterprise IdP, customer operations, Production/TLS/HA
-> and X-Insight v2 acceptance remain open. The DeepSeek Flash target customer
-> rate is 1000x the supplier's current published cache-miss input/output rate;
-> this is a Critical commercial-pricing decision before customer traffic, not
-> authorization to auto-reprice.
-> Evidence: `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md`
+> and X-Insight v2 acceptance remain open. The User-selected dated DeepSeek
+> Flash pass-through pilot rate is Target verified: no organization multiplier,
+> CNY 1 per million uncached/cache-miss input tokens, CNY 0.02 per million
+> cache-hit input tokens and CNY 2 per million output tokens. Supported Admin
+> API audit #196, request `op_240a63dd8e3de67036d894cd5b7d0d8f`, exact
+> 7-micro-CNY settlement and cleanup passed. This is not supplier-invoice
+> reconciliation or a permanent zero-markup policy.
+> Evidence: `docs/ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md`,
+> `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md`
 > and `docs/ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md`.
 > The earlier PR #207/#208 no-paid-call closeout remains immutable evidence for
 > its checkpoint and is superseded only for the explicitly authorized Mimo and
@@ -654,8 +660,8 @@ Historical PRD1 summary: Core backend modules, admin APIs, frontend pages, migra
 
 | Area | Status | Evidence |
 |------|--------|----------|
-| V1 ae9 Upstream Status, Mimo And DeepSeek Flash Target | Target verified / closed for status regression and the bounded named calls | PR #210 exact head `5f8cd6a` passed required run `29419821405` and merged as `ae9ce2c`. Stable/canary run formal image `sha256:fca7fe8f...`, release trust 1/1, active enforceable test License and signed sequence `3`. Mimo request `op_1dc206219bcbafc45d4b9df2b66915c7` and DeepSeek Flash request `op_773ffcc46d00b98e1bb373ef161b90d1` prove gateway/upstream 200, provider-reported final usage, exact settlement and credential cleanup. Evidence: `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md` and `docs/ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md`. Kimi, DeepSeek Pro, target pricing authority, capacity, detector, IdP, customer, Production and X-Insight remain open |
-| V1 Financial Prerequisites | CI verified / closed; exact target rows preserved | PR #196 exact head `2c5e930` / run `29300560434` / merge `86a3bd8` closes unsafe absolute wallet adjustment. PR #197 exact head `74ebf62` / run `29301071299` / merge `94c93dc` closes the public price-unit/default-price defect and adds `000035` without rewriting existing rows. The test target retained every existing price exactly; no automatic conversion or repricing was performed. Evidence: `docs/ops/evidence/V1-POST-PRD6-FINANCIAL-PREREQUISITES-CI-20260714.md` and the V1 target evidence |
+| V1 ae9 Upstream Status, Mimo And DeepSeek Flash Route/Price Target | Target verified / closed for the status regression, bounded named calls and dated Flash pilot rate | PR #210 exact head `5f8cd6a` passed required run `29419821405` and merged as `ae9ce2c`. Stable/canary run formal image `sha256:fca7fe8f...`, release trust 1/1, active enforceable test License and signed sequence `3`. Mimo request `op_1dc206219bcbafc45d4b9df2b66915c7` and DeepSeek Flash requests `op_773ffcc46d00b98e1bb373ef161b90d1` / `op_240a63dd8e3de67036d894cd5b7d0d8f` prove gateway/upstream 200, provider-reported final usage, exact settlement and credential cleanup. The second Flash request settled 5 uncached input plus 1 output token for 7 micro-CNY after supported Admin API audit #196 aligned the target to DeepSeek's 2026-07-16 public CNY rates. Evidence: `docs/ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md`, `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md` and `docs/ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md`. Kimi, DeepSeek Pro, capacity, detector, IdP, customer, Production and X-Insight remain open; supplier invoice and durable markup policy are not claimed |
+| V1 Financial Prerequisites | CI verified / closed; exact target rows preserved at the 2026-07-14 checkpoint | PR #196 exact head `2c5e930` / run `29300560434` / merge `86a3bd8` closes unsafe absolute wallet adjustment. PR #197 exact head `74ebf62` / run `29301071299` / merge `94c93dc` closes the public price-unit/default-price defect and adds `000035` without rewriting existing rows. The test target retained every price at that checkpoint; no automatic conversion or repricing occurred. The later supported Admin API update changed only authorized DeepSeek Flash row #9 and did not bulk-reprice any other row. Evidence: `docs/ops/evidence/V1-POST-PRD6-FINANCIAL-PREREQUISITES-CI-20260714.md` and the V1 target evidence |
 | V1 Micro-Precision Ledger And Environment Label | Target verified / closed for the selected development ECS | PR #202 exact head `1944e31` passed run `29334221779` and merged as `ec0dde2`; the authorized non-rolling activation applied `000035`/`000036`. PR #203 exact head `b76f253` passed run `29339373907`, merged as intermediate release `545e514`, and wired the frontend build-time environment label. Stable/canary/runtime/schema/API and authenticated browser evidence passed; `开发环境` renders with zero console errors/warnings. Evidence: `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-LOCAL-20260714.md`, `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-TARGET-20260714.md`. No Production, real-provider/detector, HA/capacity, TLS, migration-down or X-Insight consumer claim |
 | V1 Post-PRD6 CI Efficiency | CI verified / closed | PR #198 exact head run `29299202652`, squash merge `31d87de`, no automatic merge-commit CI, trusted main run `29299765793`, shared cache `5720112747` and final 32-cache / `9,503,335,891`-byte readback. Docs-only PR #199 run `29300434659` passed with explicit skipped Backend/Frontend/Docker contexts. Evidence: `docs/ops/evidence/V1-POST-PRD6-CI-EFFICIENCY-CI-20260714.md` |
 | PRD6 Final Completion | Completed (Accepted Scope) | Fresh 2026-07-14 audit: 27/27 accepted rows closed, clean/aligned pre-publication baseline `9c73d6f`, exact-head main run `29274010760` green, public ECS readiness healthy; `docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md`. No Production or future-scope promotion |

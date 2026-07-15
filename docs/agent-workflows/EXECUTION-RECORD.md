@@ -1,6 +1,66 @@
 # Current Execution Record
 
-## Active Batch — V1 DeepSeek Flash Target Routing Evidence
+## Active Batch — V1 DeepSeek Flash Official Price Target Evidence
+
+**Owner:** Codex
+
+**Risk:** R4 User-approved target price mutation and exactly one additional
+bounded paid request; R2 status/evidence reconciliation
+
+**Status:** Target verified / closed for `V1-TARGET-PRICING-001` within the
+dated DeepSeek Flash pass-through pilot scope; broader provider, pilot,
+Production and X-Insight gates remain open
+
+**Repository baseline:** clean `main` / `origin/main` at documentation-only
+checkpoint `e61feb96071e88b6f45016239148160b7c374c51`; latest code-bearing
+release remains `ae9ce2c927460e993dd00c6d81c8736cc5a015a2`
+
+**Documentation branch:** `codex/v1-deepseek-flash-price-evidence`
+
+**Documentation publication at this record checkpoint:** pending docs-only
+commit, pull request, required CI and merge. The target runtime result below is
+already independently read back; publication state must not be mistaken for a
+pending target mutation or a reopening of PRD6.
+
+**Evidence:**
+`docs/ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md`
+
+DeepSeek's official 2026-07-16 page publishes V4 Flash at CNY 1 per million
+cache-miss input tokens, CNY 0.02 per million cache-hit input tokens and CNY 2
+per million output tokens. Target preflight found price row #9 at the preserved
+legacy CNY 1000/2000 public rates, cache ratios 1/1 and no organization
+multiplier. Route channel #5/key #4, wallet and pending state were healthy.
+
+Supported `PUT /api/v1/model-prices/9` changed only the exact price fields to
+`0.1/0.2` cents per 1K and cache ratios `0.02/1`. Transactional audit #196
+records exact public before/after state `1000/2000/1/1` to `1/2/0.02/1`, server
+operation `op_c4080691d371ed08e61a70dd33df5988` and a separate client
+correlation.
+
+Exactly one additional non-stream request,
+`op_240a63dd8e3de67036d894cd5b7d0d8f`, returned gateway/upstream HTTP 200 and
+response model `deepseek-v4-flash`. Authoritative usage is 5 uncached input, 0
+cache-read, 0 cache-creation and 1 output token. Provider attempt
+`att_f427b66ed0a10fd1484eaeb07f674da9` was the only attempt and settled known
+usage for 7 micro-CNY. Wallet balance/spent changed
+`7,980,000/2,640,000 -> 7,979,993/2,640,007`, while granted balance remained
+zero; the 100,000-micro-CNY minimum
+freeze released all but 7, leaving zero frozen/uncovered/pending state.
+
+The approved CNY 0.01 value is an actual-settlement spend boundary, not a
+technical API-key cap or maximum freeze. Temporary key #42 and operator #15 are
+disabled; key audits #198/#199 and zero outbox are read back. The 24-hour admin
+JWT was never printed or persisted and was cleared with the completed process,
+but account disablement is not claimed as server-side JWT revocation.
+
+Independent invocation `t-wl06r0meexcuu4g` passed exact price, audit, one-call,
+one-attempt, pricing snapshot, ledger conservation, cleanup, capacity and zero
+pending assertions. Stable/canary remain healthy on formal ae9 image
+`sha256:fca7fe8f...`, signed sequence `3`, migration `000037` and the unchanged
+development/test License. No code, image, schema, supplier credential, Kimi,
+DeepSeek Pro, permanent markup policy, Production or X-Insight state changed.
+
+## Previous Batch — V1 DeepSeek Flash Target Routing Evidence
 
 **Owner:** Codex
 
