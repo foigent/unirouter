@@ -1,59 +1,39 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
-> **Active local batch (2026-07-16; not a release or target claim):** the User
-> accepted live administrator principal-state enforcement and a first-customer
-> pilot limited to `mimo-v2.5-pro` plus `DeepSeek-V4-Flash`. Branch
-> `codex/v1-admin-revocation-pilot-catalog` starts from clean docs-only main
-> `0b37f961ef75e2f8ab889cfea66f71e282a53e9f`. The auth slice now reconciles
-> each protected JWT request to the exact active user/organization/role,
-> returning 401 while state is missing or mismatched and fail-closed 503 when
-> state cannot be read. The frontend retains its token on transient profile 503,
-> exposes an explicit retry state and clears the session on 401. These slices
-> passed focused local backend/integration/race and frontend tests. One bounded/
-> batch `/v1/models` filter now matches callable alias, lifecycle and project-
-> model-set admission in a single query; focused unit, race, vet and real
-> migrated-PostgreSQL parity checks pass. Full `go test -race ./...`, full Go
-> vet, selected tagged integration suites, all 169 frontend tests and the
-> production frontend build also pass. PR, required CI, merge, image and
-> ECS/catalog verification are pending. Request-
-> time state rejection is not permanent token revocation:
-> an unexpired token can work again if the identical active principal state is
-> restored. Evidence:
+> **2026-07-16 current V1 checkpoint:** PR #214 exact head
+> `4cf13761edbdc50163cbade1151051a74d3d42dc` passed Change Routing plus the
+> three required checks in run `29441931266` and squash-merged as
+> `46b49b60835225a0b32b641615e6afe4a8a9696b`. That exact commit is now the
+> latest code-bearing repository and development-target release. Stable/canary
+> run backend image
+> `sha256:60b2f5620f815eff3e75716c7f20516dda49c611cfa8202df37ae98643634e7f`;
+> the frontend runs
+> `sha256:7a3c8eca48309e6743386bb2d24c1f66fb7838c2d57970fdba34876d72e36993`.
+> Environment `development`, migration `000037`, release trust 1/1, active
+> enforceable test License and signed-upgrade sequence `4` are healthy.
+> Request-time administrator state enforcement is Target verified: the same
+> temporary JWT returned 200 while its exact principal was active and 401 after
+> disablement. An unexpired token can still work again if the identical
+> user/org/role/status is restored; this is not permanent token revocation.
+> Model set `v1-pilot-20260716`, project binding, the approved-only catalog
+> view and stable/canary `/v1/models` expose exactly `mimo-v2.5-pro` plus
+> `DeepSeek-V4-Flash`. Internal governance/channel views retain Kimi, whose
+> channel #6 is intentionally disabled. One excluded Kimi request returned 403
+> before dispatch with zero
+> call-log/freeze/provider-attempt/transaction/outbox rows and no wallet change.
+> Temporary users/keys are inactive and public readiness is healthy. Evidence:
+> `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md`;
+> its immutable local predecessor remains
 > `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md`.
-> **2026-07-16 current checkpoint:** the latest code-bearing release is
-> `ae9ce2c927460e993dd00c6d81c8736cc5a015a2`, the squash merge of PR #210.
-> Exact PR head `5f8cd6a4aedb74354dea9f33223d4aca95e3f2e9` passed Change Routing,
-> Backend Tests and Docker Build in required run `29419821405`; Frontend Build
-> was correctly skipped by change routing. The authorized development ECS
-> stable/canary backends now run exact formal image
-> `sha256:fca7fe8fdabfcbfd32198c8bb4ba054e1b465f8342f671af39dba76b54b822d0`,
-> version `1.0.0`, environment `development`, migration `000037`, release trust
-> `license_keys=1 upgrade_keys=1`, active enforceable test License and signed
-> sequence `3`. The unchanged frontend/Nginx remain on the PR #207 a0a release.
-> Separately approved bounded Mimo requests and two DeepSeek Flash requests
-> returned real HTTP 200 responses, persisted exact provider-attempt/call-log
-> evidence and settled for a cumulative 810007 micro-CNY UniRouter customer
-> ledger charge. Temporary API keys and operator accounts are disabled; the
-> last admin JWT was not persisted, but account disablement does not
-> cryptographically revoke it. No pending attempt, outbox or reservation
-> remains. Mimo non-stream/stream and DeepSeek Flash non-stream
-> routing are Target verified for bounded single calls. Kimi, DeepSeek Pro,
-> capacity, detector, enterprise IdP, customer operations, Production/TLS/HA
-> and X-Insight v2 acceptance remain open. The User-selected dated DeepSeek
-> Flash pass-through pilot rate is Target verified: no organization multiplier,
-> CNY 1 per million uncached/cache-miss input tokens, CNY 0.02 per million
-> cache-hit input tokens and CNY 2 per million output tokens. Supported Admin
-> API audit #196, request `op_240a63dd8e3de67036d894cd5b7d0d8f`, exact
-> 7-micro-CNY settlement and cleanup passed. This is not supplier-invoice
-> reconciliation or a permanent zero-markup policy.
-> Evidence: `docs/ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md`,
-> `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md`
-> and `docs/ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md`.
-> The earlier PR #207/#208 no-paid-call closeout remains immutable evidence for
-> its checkpoint and is superseded only for the explicitly authorized Mimo and
-> DeepSeek Flash calls. PRD6 remains `Completed (Accepted Scope)` and is not
-> reopened.
+> This closes the administrator defect, catalog-consistency defect and exact
+> two-model target-configuration slice only. Capacity, detector, enterprise
+> IdP, customer operations, Production/TLS/HA, broader providers and X-Insight
+> remain open. No supplier billing console/export/invoice or isolated balance
+> delta has been reconciled. Historical provider-returned usage and 810007
+> micro-CNY settlement prove the UniRouter customer ledger, not actual supplier
+> COGS; `V1-PROVIDER-BILL-RECON-001` remains P1. PRD6 remains
+> `Completed (Accepted Scope)` and is not reopened.
 > The User-approved Post-PRD6 V1 delivery gate for commercial License
 > enforcement and signed offline upgrades is merged on `main` as
 > `5c1313521870731b0164d4eecfbbb06d7a7f0704` through PR #205. It adds
@@ -674,14 +654,15 @@ Historical PRD1 summary: Core backend modules, admin APIs, frontend pages, migra
 | PRD3 | Complete for confirmed scope. User confirmed PRD3 is not a new-feature implementation phase; it is PRD1->PRD2 consistency, semantics, contract, documentation lifecycle, module boundaries, frontend architecture, parity tests, and engineering governance for existing functionality only. PRD3 Batch 17 final evidence hygiene passed Canary 7/7, consolidates all P3 rows to `Canary passed`, preserves PRD2 E2E accepted versus Production verified boundaries, and keeps PRD4 backlog items separate. No planned PRD3 implementation work remains unless User reopens scope | `docs/planning/PRD3-CONSISTENCY-AUDIT.md`, `docs/PRD-Phase3.md`, `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`, `docs/issues/OPEN-ISSUES.md`, `docs/agent-workflows/VERIFY-RESULT.md` |
 | PRD4 | Complete for the confirmed current scope. Batch 0 through Batch 1S passed the required gates for scoped PRD4 work. Batch 1S Open Issue Boundary Closeout passed Canary 7/7, Sentinel merge is reflected by `5b41b87` / PR #103, and User reported Atlas deleted `uniroute_test`, closing `PRD4-DEPLOY-002`. PRD4 delivered API key owner usage/cost visibility, quota vocabulary, Flow/Event/Trace foundation, PlungeIn observation-first port contract, Runtime Observability and host telemetry, Prometheus/Grafana integration health, real upstream/SSO guarded harness assets only, auth UX hardening, production-evidence boundary classification, runtime/build-chain hardening, security/redaction guardrails, and PRD5 backlog consolidation. No PRD4 matrix row is promoted to `Production verified` without target-environment evidence. Full Scheduler V2, runtime plugin marketplace, Logto/IAM rewrite, managed-HA IaC product, multi-instance infrastructure observability/topology, budget hard-block enforcement, runtime cache, full SDK, new persistent roles, real upstream target E2E, real SSO target E2E, and public SaaS/commercial growth features are deferred to PRD5 unless User reopens scope | `docs/PRD-Phase4.md`, `docs/ops/PRD4-ACCEPTANCE-MATRIX.md`, `docs/planning/PRD5-BACKLOG.md`, `docs/ops/evidence/PRD4-final-closeout-20260708.md`, `docs/issues/OPEN-ISSUES.md`, `docs/agent-workflows/VERIFY-RESULT.md` |
 | PRD5 | Accepted UniRouter scope complete. Historical Batch 1A through Batch 1V evidence remains valid; Batch 1W is target/external-integration verified for the authorized denied scenario. Batch 1X audit/screening is Local verified. Batch 1Y implementation is merged, and Batch 1Z verifies target migration/deployment/browser evidence plus the `INFRA-SEC-001` cutover. Structural search, Data Exchange Control, and redacted topology are Target verified; route/failover visibility is CI verified. X-Insight's synthetic-only target is verified and its runtime request is answered; unimplemented durable-job/deep-link/automated-receipt contracts, migration down, TLS 443 behavior, real upstream/SSO, read-only DB/view, exporter/outbox, and deferred P5-F12 products remain separate. PRD4 remains closed | `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`, `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md`, `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md`, `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md`, `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md`, `docs/planning/PRD5-IMPLEMENTATION-PLAN.md`, `docs/planning/PRD5-BACKLOG.md`, `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md`, `docs/planning/PRD5-DEFERRED-CONTROL-DESIGNS-20260710.md`, `docs/agent-workflows/EXECUTION-RECORD.md` |
-| PRD6 | Completed for Accepted Scope. All 27 accepted feature rows and the separate accepted engineering-integrity issue are repository/required-CI verified or closed. Selected ECS deployment/UI surfaces and P6-E01 are Target verified; P6-E03 is partially Target verified for bounded Mimo and DeepSeek Flash calls only. P6-E02, P6-E04, P6-E03 enterprise SSO/broader-provider evidence, PRD7, native IAM revocation, 100x/HA and Production evidence remain later and do not reopen PRD6 | `docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md`, `docs/PRD-Phase6.md`, `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`, `docs/ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md`, `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md`, `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md`, `docs/ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md` |
+| PRD6 | Completed for Accepted Scope. All 27 accepted feature rows and the separate accepted engineering-integrity issue are repository/required-CI verified or closed. Selected ECS deployment/UI surfaces and P6-E01 are Target verified; P6-E03 is partially Target verified for bounded Mimo and DeepSeek Flash calls only. P6-E02, P6-E04, P6-E03 enterprise SSO/broader-provider evidence, PRD7, broader native IAM revocation, 100x/HA and Production evidence remain later and do not reopen PRD6 | `docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md`, `docs/PRD-Phase6.md`, `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`, `docs/ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md`, `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md`, `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md`, `docs/ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md` |
 
 ## Current Verification
 
 | Area | Status | Evidence |
 |------|--------|----------|
-| V1 Admin Principal State And Pilot Catalog | Local verified — PR/CI and target pending | User accepted request-time administrator principal reconciliation and a pilot limited to `mimo-v2.5-pro` plus `DeepSeek-V4-Flash`. Focused auth, already-issued-token, race, tagged-admin, all 169 frontend tests and the production frontend build pass. A missing/mismatched principal is denied while its state differs; database uncertainty is 503 and the frontend preserves the token for explicit retry. This is not a permanent JWT blacklist. The bounded/batch `/v1/models` filter matches per-request governance in unit/race and migrated real-PostgreSQL parity checks; full Go race and vet also pass. PR/CI/merge and ECS API/UI/config readback remain pending. Evidence: `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md` |
-| V1 ae9 Upstream Status, Mimo And DeepSeek Flash Route/Price Target | Target verified / closed for the status regression, bounded named calls and dated Flash pilot rate | PR #210 exact head `5f8cd6a` passed required run `29419821405` and merged as `ae9ce2c`. Stable/canary run formal image `sha256:fca7fe8f...`, release trust 1/1, active enforceable test License and signed sequence `3`. Mimo request `op_1dc206219bcbafc45d4b9df2b66915c7` and DeepSeek Flash requests `op_773ffcc46d00b98e1bb373ef161b90d1` / `op_240a63dd8e3de67036d894cd5b7d0d8f` prove gateway/upstream 200, provider-reported final usage, exact settlement and credential cleanup. The second Flash request settled 5 uncached input plus 1 output token for 7 micro-CNY after supported Admin API audit #196 aligned the target to DeepSeek's 2026-07-16 public CNY rates. Evidence: `docs/ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md`, `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md` and `docs/ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md`. Kimi, DeepSeek Pro, capacity, detector, IdP, customer, Production and X-Insight remain open; supplier invoice and durable markup policy are not claimed |
+| V1 Admin Principal State And Pilot Catalog | Target verified / closed for the administrator defect, catalog-consistency defect and exact two-model target configuration | PR #214 head `4cf1376` passed run `29441931266` and merged/deployed as `46b49b6` with formal sequence `4`. The same temporary JWT was 200 before and 401 after disablement. Stable/canary API, DB and authenticated-browser approved/model-set/project views show exactly `mimo-v2.5-pro` plus `DeepSeek-V4-Flash`; internal channel views retain intentionally disabled Kimi. Excluded operation `op_163bb39294d192e19e664d7912111512` was 403 with zero dispatch, financial rows or wallet change; temporary users/keys are inactive. The public target is HTTP, so this is not TLS evidence. Evidence: `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md`. `V1-TARGET-PILOT-001`, permanent JWT revocation, broader providers, capacity, detector, IdP, customer operations, Production/X-Insight and supplier-bill reconciliation remain open |
+| V1 Provider Bill Reconciliation | Open — P1 Production/external billing evidence gap | Real calls prove provider-returned usage/status and UniRouter customer-ledger settlement only. No provider billing console, finalized export/API, invoice or isolated balance delta has been inspected, so actual supplier cost, discount/free-credit/cache/tax/rounding treatment and margin are unverified. Evidence boundary: `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md`; issue `V1-PROVIDER-BILL-RECON-001` |
+| V1 ae9 Historical Upstream Status, Mimo And DeepSeek Flash Route/Price Target | Target verified / closed for the status regression, bounded named calls and dated Flash pilot rate | PR #210 exact head `5f8cd6a` passed required run `29419821405` and merged as `ae9ce2c`. At that immutable checkpoint stable/canary ran formal image `sha256:fca7fe8f...`, release trust 1/1, active enforceable test License and signed sequence `3`; PR #214 later superseded the runtime without invalidating its request evidence. Mimo request `op_1dc206219bcbafc45d4b9df2b66915c7` and DeepSeek Flash requests `op_773ffcc46d00b98e1bb373ef161b90d1` / `op_240a63dd8e3de67036d894cd5b7d0d8f` prove gateway/upstream 200, provider-reported final usage, exact settlement and credential cleanup. The second Flash request settled 5 uncached input plus 1 output token for 7 micro-CNY after supported Admin API audit #196 aligned the target to DeepSeek's 2026-07-16 public CNY rates. Evidence: `docs/ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md`, `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md` and `docs/ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md`. Kimi, DeepSeek Pro, capacity, detector, IdP, customer, Production and X-Insight remain open; supplier invoice and durable markup policy are not claimed |
 | V1 Financial Prerequisites | CI verified / closed; exact target rows preserved at the 2026-07-14 checkpoint | PR #196 exact head `2c5e930` / run `29300560434` / merge `86a3bd8` closes unsafe absolute wallet adjustment. PR #197 exact head `74ebf62` / run `29301071299` / merge `94c93dc` closes the public price-unit/default-price defect and adds `000035` without rewriting existing rows. The test target retained every price at that checkpoint; no automatic conversion or repricing occurred. The later supported Admin API update changed only authorized DeepSeek Flash row #9 and did not bulk-reprice any other row. Evidence: `docs/ops/evidence/V1-POST-PRD6-FINANCIAL-PREREQUISITES-CI-20260714.md` and the V1 target evidence |
 | V1 Micro-Precision Ledger And Environment Label | Target verified / closed for the selected development ECS | PR #202 exact head `1944e31` passed run `29334221779` and merged as `ec0dde2`; the authorized non-rolling activation applied `000035`/`000036`. PR #203 exact head `b76f253` passed run `29339373907`, merged as intermediate release `545e514`, and wired the frontend build-time environment label. Stable/canary/runtime/schema/API and authenticated browser evidence passed; `开发环境` renders with zero console errors/warnings. Evidence: `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-LOCAL-20260714.md`, `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-TARGET-20260714.md`. No Production, real-provider/detector, HA/capacity, TLS, migration-down or X-Insight consumer claim |
 | V1 Post-PRD6 CI Efficiency | CI verified / closed | PR #198 exact head run `29299202652`, squash merge `31d87de`, no automatic merge-commit CI, trusted main run `29299765793`, shared cache `5720112747` and final 32-cache / `9,503,335,891`-byte readback. Docs-only PR #199 run `29300434659` passed with explicit skipped Backend/Frontend/Docker contexts. Evidence: `docs/ops/evidence/V1-POST-PRD6-CI-EFFICIENCY-CI-20260714.md` |

@@ -3,7 +3,8 @@
 ## 当前入口
 - [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — Agent 接手项目的第一阅读入口
 - [ops/CURRENT-STATUS.md](ops/CURRENT-STATUS.md) — 当前项目真实状态（进度、测试、部署、缺口）
-- [ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md](ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md) — 管理端逐请求主体状态校验、前端 503 会话保留、双模型 pilot catalog 一致性和当前 PR/CI/目标待验边界
+- [ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md](ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md) — PR #214 CI/合并、正式 sequence-4 发布、管理员禁用回放、双模型 API/数据库/浏览器验收、负向零分发和厂商账单未对账边界
+- [ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md](ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md) — 管理端逐请求主体状态校验、前端 503 会话保留与双模型 catalog 一致性的不可变本地实现 checkpoint
 - [ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md](ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md) — DeepSeek Flash 官方日期价格、Admin API 精确审计、第二次受控调用、7 micro-CNY 账本守恒与清理证据
 - [ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md](ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md) — DeepSeek V4 精确模型权威、目标映射、真实受控调用/账本/清理证据及目标定价决策门
 - [ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md](ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md) — PR #210 上游状态修复、测试升级根轮换、正式 ae9/序列 3 部署、Mimo 真实受控调用与清理证据
@@ -72,7 +73,7 @@
 - [PRD-Phase3.md](PRD-Phase3.md) — 已完成 PRD3 一致性、语义、契约和架构清理范围
 - [planning/PRD3-CONSISTENCY-AUDIT.md](planning/PRD3-CONSISTENCY-AUDIT.md) — PRD3 范围审计和 PRD1→PRD2 遗留问题梳理
 - [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 当前未关闭问题列表
-- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前执行记录：DeepSeek Flash 日期价格闭环、正式 ae9 延续、精确账本/清理与保留边界
+- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前执行记录：PR #214 正式发布、管理员状态与双模型 pilot 目标闭环，以及厂商账单/Production/X-Insight 保留边界
 - [agent-workflows/reviews/README.md](agent-workflows/reviews/README.md) — 可选独立复核记录格式和问题级别规则
 - [ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md](ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md) — 单一执行负责人、Git/CI、高影响授权和复核规则的确认记录
 - [ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md](ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md) — Batch 1W 根因、代码、回归和目标证据边界

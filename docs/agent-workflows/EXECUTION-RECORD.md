@@ -1,83 +1,81 @@
 # Current Execution Record
 
-## Active Batch — V1 Admin Principal State And Pilot Catalog
+## Active Batch — V1 Admin Principal State And Pilot Catalog Target Closure
 
 **Owner:** Codex
 
 **Risk:** R3 administrator authentication and model-admission behavior; R2
-frontend/API presentation; later R4 development-target deployment and reversible
-pilot configuration
+frontend/API presentation and status reconciliation; R4 approved development-
+target formal release, reversible pilot configuration and credential cleanup
 
-**Status:** Local verified for administrator principal-state enforcement,
-frontend transient-503 session handling and bounded/batch model-list governance.
-Full-repository local checks pass. PR, required CI, merge and target acceptance
-are pending.
+**Status:** Target verified / closed for `V1-ADMIN-STATUS-001`,
+`V1-PILOT-CATALOG-001`, and the exact two-model configuration slice of
+`V1-TARGET-ROUTING-001`. The broader pilot, supplier bill, Production and
+X-Insight evidence gates remain open.
 
-**Repository baseline:** clean `main` / `origin/main` at docs-only checkpoint
-`0b37f961ef75e2f8ab889cfea66f71e282a53e9f`; latest code-bearing release and
-development-target backend remain
-`ae9ce2c927460e993dd00c6d81c8736cc5a015a2`
-
-**Implementation branch:** `codex/v1-admin-revocation-pilot-catalog`
-
-**Expected pull request:** pending; do not infer a PR number, CI result, merge
-commit, image digest or deployment from this local record
+**Repository and release authority:** PR #214 exact head
+`4cf13761edbdc50163cbade1151051a74d3d42dc` passed Change Routing and the
+three required checks in run `29441931266`, then squash-merged and formally
+released as `46b49b60835225a0b32b641615e6afe4a8a9696b`. PR-head and merge trees
+are identical. No automatic post-merge run was created, as intended by the
+trusted-dispatch CI design.
 
 **Evidence:**
-`docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md`
 
-The User accepted the recommended first-release boundaries: protected
-administrator requests must reconcile signed user/org/role claims against an
-active current principal, and the initial customer pilot must expose/admit only
-the already Target-verified `mimo-v2.5-pro` and `DeepSeek-V4-Flash` identities.
-This is Post-PRD6 work and does not reopen PRD6.
+- immutable local checkpoint:
+  `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md`;
+- target release/API/DB/browser/cleanup checkpoint:
+  `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md`.
 
-The current auth slice passes the database query boundary into `AdminAuth`.
-After ordinary JWT validation, every protected request requires the exact signed
-user, organization and role with active user and organization state. Missing or
-mismatched state returns 401; database uncertainty returns typed 503 and does
-not invoke the protected handler. This is state-dependent request rejection,
-not permanent token revocation: restoring the exact principal state before JWT
-expiry can make the old token usable again.
+Stable/canary run exact formal backend image
+`sha256:60b2f5620f815eff3e75716c7f20516dda49c611cfa8202df37ae98643634e7f`;
+the frontend runs
+`sha256:7a3c8eca48309e6743386bb2d24c1f66fb7838c2d57970fdba34876d72e36993`.
+Migration `000037`, formal release trust 1/1, active enforceable test License,
+signed-upgrade sequence `4`, readiness and zero-restart checks pass.
 
-The matching frontend change clears session state only on 401. A 503 or other
-transient profile error retains the token, displays an explicit retry state and
-does not enter an automatic retry loop or render a protected page without a
-resolved role.
+The same temporary administrator JWT reached the protected endpoint with HTTP
+200 while the exact principal was active and returned 401 after disablement.
+Database uncertainty remains typed 503 and the frontend preserves the token for
+explicit retry; 401 clears the session. This is state-dependent request
+rejection, not a token blacklist or permanent per-session/password/logout
+revocation.
 
-Local auth/frontend checks passed focused middleware/cmd tests, the disabled-
-user integration/race path, the selected tagged integration packages, all 169
-frontend tests, the production frontend build and `git diff --check`. A
-read-only review found no direct management-route JWT bypass in the running
-application.
+Model set `v1-pilot-20260716` is active with exactly
+`DeepSeek-V4-Flash` and `mimo-v2.5-pro`; project #1 has exactly that one model-
+set binding and `approved_catalog` is true only for those two identities.
+Stable/canary `/v1/models`, routing preview and authenticated browser readback
+match the exact two-model boundary. Kimi channel #6 is disabled at routing
+epoch 4, not deleted, retired or declared broken.
 
-The model-list change uses one bounded `FilterCallableModels` query for explicit,
-wildcard and fallback `/v1/models` candidates. It preserves order, deduplicates,
-resolves aliases and matches request-admission lifecycle/model-set behavior.
-Production request context uses the authenticated API-key authority directly;
-missing context/query authority fails closed instead of expanding to all price
-rows. Unit/race/vet checks and a migrated real-PostgreSQL parity test pass,
-including a 128-candidate one-query assertion and no-partial-list error path.
-The implementation does not hard-code provider names or convert
-`approved_catalog` into call authority. The later target configuration must
-retain unverified records as internal/staging data while the pilot project model
-set and key expose only Mimo Pro and DeepSeek Flash.
+Excluded operation `op_163bb39294d192e19e664d7912111512` returned 403 before
+provider dispatch. It has zero call log, freeze, provider-attempt, transaction
+and internal-outbox rows, with an unchanged wallet. Temporary key #44 replayed
+as 401 after disablement; temporary administrator #17 is disabled. Final DB
+readback found two temporary users and two temporary keys, all inactive.
 
-**Non-targets:** no session center/blacklist, password-change revocation,
-vendor discovery, Kimi/DeepSeek Pro activation, price/route/provider mutation,
-migration, License change, paid call, PRD7, Production or X-Insight change.
+The authenticated browser verified the development label, exact two approved
+models, exact two model-set items/project assignment, channel states, routing
+preview, key one-time-display/created-time semantics and disabled temporary
+keys, then logged out to `/login` with no console errors observed. RSA protected
+only the ECS-to-automation credential handoff; the actual login POST used the
+public HTTP target. The temporary credential was never printed, was disabled
+after verification and was cleared when the tab closed. This is not TLS or
+Production evidence.
 
-**Stop/rollback boundary:** no target mutation before exact-head required CI and
-merge. Target rollout must retain the prior image plus exact catalog/model-set/
-key values, promote canary before stable, and stop on auth, readiness, License,
-release-trust, schema or model-surface mismatch. No destructive cleanup or bulk
-record deletion is authorized.
+**Preserved non-claims:** no supplier billing console/export/API/invoice or
+isolated balance delta was inspected. Historical provider-reported usage and
+810007 micro-CNY settlement prove UniRouter's customer ledger, not supplier
+COGS. `V1-PROVIDER-BILL-RECON-001` is a P1 Production/external-evidence gap.
+Capacity, detector, enterprise IdP, customer backup/restore/upgrade,
+Production/TLS/HA, long-running reliability, broader providers, permanent JWT
+revocation and X-Insight v2 acceptance also remain open. PRD6 remains
+`Completed (Accepted Scope)` and is not reopened.
 
-Full `go test -race ./...` and `go vet ./...` also pass. **Pending:** inspect the
-final scoped diff; create PR; pass selected required CI; merge; then perform
-the approved development-target token replay, two-model API/UI/catalog
-readback, excluded-model zero-dispatch check and cleanup. Target/Production
-claims remain prohibited until their own evidence exists.
+**Publication validation:** this reconciliation changes documentation only.
+Change Routing should explicitly skip Backend Tests, Frontend Build and Docker
+Build because the code-bearing PR #214 already passed all three required checks
+before merge.
 
 ## Previous Batch — V1 DeepSeek Flash Official Price Target Evidence
 
