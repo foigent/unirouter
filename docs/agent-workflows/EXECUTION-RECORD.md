@@ -1,6 +1,60 @@
 # Current Execution Record
 
-## Active Batch — V1 Mimo Routing, Upstream Status And Formal ae9 Target
+## Active Batch — V1 DeepSeek Flash Target Routing Evidence
+
+**Owner:** Codex
+
+**Risk:** R4 User-approved one-provider target configuration and exactly one
+bounded paid request; R2 status/evidence reconciliation
+
+**Status:** Target verified / closed for the named DeepSeek Flash route and
+single request; target pricing authority, Kimi/DeepSeek Pro and broader
+target/Production/X-Insight gates remain open
+
+**Repository baseline:** clean `main` / `origin/main` at documentation-only
+checkpoint `998ff1bb79df0d83c7cdd2d9c3be80e6f44c0ab3`; latest code-bearing
+release remains `ae9ce2c927460e993dd00c6d81c8736cc5a015a2`
+
+**Documentation branch:** `codex/v1-deepseek-flash-target-evidence`
+
+**Evidence:**
+`docs/ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md`
+
+Official DeepSeek documentation and the target credential's live `GET /models`
+response independently proved `deepseek-v4-flash` as the exact current supplier
+identifier. Preflight found channel #5 healthy but scoped to retiring aliases,
+while key #4 allowed the public `DeepSeek-V4-Flash` identity and no mapping
+existed.
+
+One exact-precondition database transaction changed only channel #5 to public
+model `DeepSeek-V4-Flash` with mapping to `deepseek-v4-flash` and advanced its
+routing epoch from 1 to 2. Audit #193 captures the before/after state. Stable
+and canary previews then each selected that one healthy channel/key with zero
+exclusions.
+
+Exactly one approved non-stream request,
+`op_773ffcc46d00b98e1bb373ef161b90d1`, returned gateway/upstream HTTP 200 with
+5 input plus 1 output token and response model `deepseek-v4-flash`. Provider
+attempt `att_084c92d8a84aa85f8c2ca3ac858c1633` settled known usage at HTTP
+200. Exact charge was 7000 micro-CNY, below the CNY 0.35 cap; wallet
+conservation holds, temporary key #41 is disabled, and pending attempt/outbox/
+reservation plus active temporary-key counts are zero.
+
+No code, image, schema, supplier credential, price, multiplier, License, Kimi,
+DeepSeek Pro, Production or X-Insight state changed. Stable/canary remain on
+formal ae9 image `sha256:fca7fe8f...`, signed release sequence 3 and migration
+`000037`.
+
+The target DeepSeek Flash customer rate is CNY 1000 input / 2000 output per
+million tokens, 1000x the supplier's current published CNY 1 cache-miss input /
+CNY 2 output rates. This may be intentional resale pricing, so it is not
+classified as a code bug. It is `V1-TARGET-PRICING-001`, a Critical decision
+gate before customer traffic; no automatic repricing is authorized. The
+operator-only `model_mapping` procedure is separately tracked as Medium
+`V1-CHANNEL-MAPPING-001` and does not justify adding unapproved V1 feature
+scope before pilot feedback.
+
+## Previous Batch — V1 Mimo Routing, Upstream Status And Formal ae9 Target
 
 **Owner:** Codex
 

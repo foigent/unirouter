@@ -51,6 +51,7 @@
 | `docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md` | Complete first-release issue matrix, pre-fix development-target API/browser facts, local and PR #207 promotion truth, and explicit provider/IdP/detector/X-Insight/Production boundaries |
 | `docs/ops/evidence/V1-FIRST-RELEASE-TARGET-CLOSEOUT-20260715.md` | PR #207 required-CI/merge truth, exact development-ECS release and backup, test License/signed-upgrade sequence/replay evidence, authenticated API/browser/developer acceptance and remaining target/Production/X-Insight gates |
 | `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md` | PR #210 upstream-status regression closure, persistent test upgrade-root rotation, formal ae9/sequence-3 deployment, bounded Mimo ledger evidence, cleanup and remaining target/Production/X-Insight gates |
+| `docs/ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md` | Current DeepSeek V4 model authority, exact audited target mapping, bounded real Flash call/ledger/cleanup proof, target pricing decision gate and preserved provider/Production/X-Insight non-claims |
 | `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` | Official competitor HA patterns, current UniRouter cluster facts, Four Quadrants and accepted D6-12 stream/HA boundary |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | Source-backed audit/reconciliation/correlation/UI/architecture/upgrade findings, Four Quadrants and PRD6 batches |
 | `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md` | Accepted customer-revenue/provider-COGS boundary, competitor and supplier billing evidence, Four Quadrants, PRD6 non-claims and future cost/metering/media candidates |
@@ -91,7 +92,7 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required single-owner execution, approval, evidence and optional-review workflow |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current ae9/Mimo/upstream-status target closeout, exact release/CI/deployment truth and preserved Production/X-Insight/future boundaries; previous V1/PRD6/PRD5 evidence remains linked |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current DeepSeek Flash target routing evidence, exact ae9 release continuity, bounded ledger/cleanup truth, pricing decision gate and preserved Production/X-Insight/future boundaries; previous V1/PRD6/PRD5 evidence remains linked |
 | `docs/agent-workflows/reviews/` | Optional immutable independent review results |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry pointing to the current execution record |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |
@@ -224,7 +225,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 |------|------|
 | `docs/agent-workflows/README.md` | Agent workflow index |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Current Agent Protocol v2.0 |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current ae9/Mimo/upstream-status target closeout, branch/CI gate and preserved Production/X-Insight/future boundaries; prior execution evidence remains linked |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current DeepSeek Flash target evidence reconciliation, ae9 continuity, branch/CI gate and preserved target-pricing/Production/X-Insight/future boundaries; prior execution evidence remains linked |
 | `docs/agent-workflows/reviews/README.md` | Independent review naming, contents and severity rules |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |

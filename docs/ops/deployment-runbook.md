@@ -1,9 +1,9 @@
 # Deployment Runbook（部署运维手册）
 
-> **版本**：v1.9
+> **版本**：v1.10
 > **日期**：2026-07-15
 > **用途**：运维人员部署和维护 UniRoute 的操作手册
-> **变更记录**：v1.9 增加可双击 License Studio，并把正式 License/升级验签根从客户运行时环境变量迁到发布二进制；v1.8 新增 V1 商业 License 强制、公钥环/部署绑定和签名离线升级包流程；v1.7 新增 PRD3 SEC-005 运行时暴露策略：CORS 精确 origin、登录限流、metrics 开关/CIDR；v1.6 新增 PRD2 OIDC-first SSO 配置和 mock-provider smoke；v1.5 新增 HTTP-only canary overlay、8081 canary direct smoke、PRD2 HA/backup rehearsal 命令；v1.4 新增生产 `.env` 保护、`API_KEY_HASH_SECRET`、rsync 安全同步规则和 PR #44 部署事故复盘；v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
+> **变更记录**：v1.10 增加真实上游启用前的模型身份、映射、价格权限和受控调用检查；v1.9 增加可双击 License Studio，并把正式 License/升级验签根从客户运行时环境变量迁到发布二进制；v1.8 新增 V1 商业 License 强制、公钥环/部署绑定和签名离线升级包流程；v1.7 新增 PRD3 SEC-005 运行时暴露策略：CORS 精确 origin、登录限流、metrics 开关/CIDR；v1.6 新增 PRD2 OIDC-first SSO 配置和 mock-provider smoke；v1.5 新增 HTTP-only canary overlay、8081 canary direct smoke、PRD2 HA/backup rehearsal 命令；v1.4 新增生产 `.env` 保护、`API_KEY_HASH_SECRET`、rsync 安全同步规则和 PR #44 部署事故复盘；v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
 
 ---
 
@@ -198,6 +198,27 @@ curl -I http://localhost:3000
 # 检查日志
 docker compose logs -f backend
 ```
+
+#### 2.3.1 真实上游启用前检查
+
+真实模型不能只凭管理页显示名称判断可用。每次只启用一个明确模型，并完成：
+
+1. 从厂商官方文档和当前凭证的只读模型列表核对精确 supplier model ID；不得把
+   历史别名或营销名称当作长期 API 合同，也不得在日志中输出凭证；
+2. channel 和 channel-key allowlist 使用同一个 UniRouter public model ID，
+   `model_mapping` 只负责把该 public ID 映射到精确 supplier ID；
+3. 当前 channel API/UI 尚不支持安全编辑 `model_mapping`。V1 只能按批准的
+   单次目标变更计划执行：精确前置条件、单行/单模型范围、before/after 审计及
+   失败即停止；不得猜测、批量归一化或顺带添加其他模型；
+4. stable/canary 路由预览都必须显示预期唯一候选、可用 key 数和零意外排除；
+5. 单独核对客户价格的来源、币种、生效日期和批准的加价规则。模型映射变更不
+   授权修改价格；客户售价与供应商 COGS 不一致时必须先取得商业定价决定；
+6. 只有取得具体模型、次数和费用上限授权后才发真实请求。使用最小合成输入，
+   读回 route/attempt/call-log/trace/钱包守恒，随后禁用临时凭证并确认无 pending
+   attempt、reservation 或 outbox。
+
+路由预览通过只证明当前配置可以选路；至少一个同范围真实 HTTP 200 请求才证明
+对应上游可调通。单次成功仍不能替代容量、HA、供应商账单或 Production 证据。
 
 ### 2.4 初始化管理员
 
