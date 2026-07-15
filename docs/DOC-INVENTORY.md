@@ -53,6 +53,7 @@
 | `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md` | PR #210 upstream-status regression closure, persistent test upgrade-root rotation, formal ae9/sequence-3 deployment, bounded Mimo ledger evidence, cleanup and remaining target/Production/X-Insight gates |
 | `docs/ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md` | Current DeepSeek V4 model authority, exact audited target mapping, bounded real Flash call/ledger/cleanup proof, target pricing decision gate and preserved provider/Production/X-Insight non-claims |
 | `docs/ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md` | Dated official Flash price authority, supported Admin API before/after audit, second bounded call, exact 7-micro-CNY settlement, cleanup and preserved commercial/Production/X-Insight non-claims |
+| `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md` | Active Post-PRD6 local evidence for request-time admin principal reconciliation, transient-503 frontend session handling, selected Mimo Pro/DeepSeek Flash pilot catalog consistency and explicit PR/CI/target pending boundaries |
 | `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` | Official competitor HA patterns, current UniRouter cluster facts, Four Quadrants and accepted D6-12 stream/HA boundary |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | Source-backed audit/reconciliation/correlation/UI/architecture/upgrade findings, Four Quadrants and PRD6 batches |
 | `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md` | Accepted customer-revenue/provider-COGS boundary, competitor and supplier billing evidence, Four Quadrants, PRD6 non-claims and future cost/metering/media candidates |
@@ -93,7 +94,7 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required single-owner execution, approval, evidence and optional-review workflow |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current DeepSeek Flash dated-price target evidence, exact ae9 release continuity, bounded ledger/cleanup truth and preserved commercial/Production/X-Insight/future boundaries; previous V1/PRD6/PRD5 evidence remains linked |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current admin principal-state and two-model pilot-catalog local batch, verification/CI/target gates and exact ae9 release continuity; previous DeepSeek/Mimo/V1/PRD6/PRD5 evidence remains linked |
 | `docs/agent-workflows/reviews/` | Optional immutable independent review results |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry pointing to the current execution record |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |

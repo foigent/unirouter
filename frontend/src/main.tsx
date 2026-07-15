@@ -1,7 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { Spin } from '@douyinfe/semi-ui'
+import { Button, Spin } from '@douyinfe/semi-ui'
 import './index.css'
 import App from './App'
 import LoginPage from './pages/LoginPage'
@@ -46,15 +46,25 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const user = useAuthStore((s) => s.user)
   const profileLoading = useAuthStore((s) => s.profileLoading)
+  const profileError = useAuthStore((s) => s.profileError)
   const loadProfile = useAuthStore((s) => s.loadProfile)
 
   React.useEffect(() => {
-    if (isAuthenticated && !user?.role && !profileLoading) {
+    if (isAuthenticated && !user?.role && !profileLoading && !profileError) {
       loadProfile().catch(() => {})
     }
-  }, [isAuthenticated, loadProfile, profileLoading, user?.role])
+  }, [isAuthenticated, loadProfile, profileError, profileLoading, user?.role])
 
   if (!isAuthenticated) return <Navigate to="/login" replace />
+  if (!user?.role && profileError) {
+    return (
+      <div className="ur-route-error" role="alert">
+        <strong>暂时无法验证登录状态</strong>
+        <span>{profileError}</span>
+        <Button theme="solid" onClick={() => loadProfile().catch(() => {})}>重试</Button>
+      </div>
+    )
+  }
   if (!user?.role) return <RouteLoading />
   return <>{children}</>
 }

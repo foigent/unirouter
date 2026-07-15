@@ -148,7 +148,7 @@ func TestP6F07LimitPolicyControlPlaneIntegration(t *testing.T) {
 func p6f07LimitPolicyMux(handler *Handler) *http.ServeMux {
 	mux := http.NewServeMux()
 	roleRoute := func(h http.HandlerFunc, roles ...string) http.Handler {
-		return middleware.AdminAuth(p6f16JWTSecret)(middleware.RequireRoles(roles...)(h))
+		return middleware.AdminAuth(handler.db, p6f16JWTSecret)(middleware.RequireRoles(roles...)(h))
 	}
 	mux.Handle("GET /api/v1/limit-policies", roleRoute(handler.ListLimitPolicies, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin))
 	mux.Handle("POST /api/v1/limit-policies", roleRoute(handler.CreateLimitPolicy, auth.RolePlatformAdmin, auth.RoleOrgAdmin))

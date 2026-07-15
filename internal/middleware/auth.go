@@ -390,8 +390,12 @@ func writeGatewayAuthError(w http.ResponseWriter, status int, code, message stri
 	})
 }
 
-// AdminAuth returns middleware that authenticates admin JWT tokens.
-func AdminAuth(jwtSecret string) func(http.Handler) http.Handler {
+// AdminAuth returns middleware that authenticates admin JWT tokens and verifies
+// that the signed principal still matches an active user in an active
+// organization. Principal-state failures fail closed so tokens are rejected
+// while their user is disabled, deleted, moved, or no longer has the signed
+// role.
+func AdminAuth(q db.DBQuerier, jwtSecret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			identifiedRequest, ok := ensureRequestIdentity(w, r, jwtSecret)
@@ -411,6 +415,33 @@ func AdminAuth(jwtSecret string) func(http.Handler) http.Handler {
 			// Validate JWT
 			claims, err := auth.ParseJWT(tokenStr, jwtSecret)
 			if err != nil {
+				http.Error(w, `{"error":{"type":"auth_error.invalid_token","message":"Invalid or expired token"}}`, http.StatusUnauthorized)
+				return
+			}
+
+			if q == nil {
+				http.Error(w, `{"error":{"type":"auth_error.state_unavailable","message":"Authentication state is temporarily unavailable"}}`, http.StatusServiceUnavailable)
+				return
+			}
+			var principalActive bool
+			err = q.QueryRow(r.Context(),
+				`SELECT EXISTS (
+				    SELECT 1
+				      FROM users u
+				      JOIN orgs o ON o.id = u.org_id
+				     WHERE u.id = $1
+				       AND u.org_id = $2
+				       AND u.role = $3
+				       AND u.status = 'active'
+				       AND o.status = 'active'
+				)`,
+				claims.UserID, claims.OrgID, claims.Role,
+			).Scan(&principalActive)
+			if err != nil {
+				http.Error(w, `{"error":{"type":"auth_error.state_unavailable","message":"Authentication state is temporarily unavailable"}}`, http.StatusServiceUnavailable)
+				return
+			}
+			if !principalActive {
 				http.Error(w, `{"error":{"type":"auth_error.invalid_token","message":"Invalid or expired token"}}`, http.StatusUnauthorized)
 				return
 			}

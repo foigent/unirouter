@@ -137,7 +137,7 @@ func TestP6F36ModelGovernanceTenantIsolationIntegration(t *testing.T) {
 				assertStatus(t, serve(t, http.MethodGet, path+"?org_id=0", "",
 					fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin, ""), http.StatusBadRequest)
 				assertStatus(t, serve(t, http.MethodGet, path, "",
-					fx.orgAdminA, 0, auth.RoleOrgAdmin, ""), http.StatusForbidden)
+					fx.orgAdminA, 0, auth.RoleOrgAdmin, ""), http.StatusUnauthorized)
 
 				platform := serve(t, http.MethodGet,
 					fmt.Sprintf("%s?org_id=%d", path, fx.orgB), "",
@@ -486,7 +486,7 @@ func TestP6F36ModelGovernanceTenantIsolationIntegration(t *testing.T) {
 func p6f36ModelGovernanceMux(h *Handler) *http.ServeMux {
 	mux := http.NewServeMux()
 	roleRoute := func(handler http.HandlerFunc, roles ...string) http.Handler {
-		return middleware.AdminAuth(p6f16JWTSecret)(middleware.RequireRoles(roles...)(handler))
+		return middleware.AdminAuth(h.db, p6f16JWTSecret)(middleware.RequireRoles(roles...)(handler))
 	}
 	orgAdmin := []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin}
 	projectRead := []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper, auth.RoleViewer}

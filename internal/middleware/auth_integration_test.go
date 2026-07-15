@@ -293,26 +293,66 @@ func TestGatewayAuth_ContextInjection_Integration(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 }
 
-// Test AdminAuth verify context injection after valid token.
-func TestAdminAuth_ContextInjection_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+// TestAdminAuth_DisabledUserTokenRejected_Integration proves that an already
+// issued admin JWT stops authorizing requests as soon as the user is disabled.
+func TestAdminAuth_DisabledUserTokenRejected_Integration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
-	_ = pool // pool not needed for AdminAuth (no DB dependency)
 
-	secret := "admin-test-secret"
-	token, err := auth.GenerateJWT(1, orgID, "admin", secret, 1)
+	var userID int64
+	err := pool.QueryRow(t.Context(),
+		`INSERT INTO users (org_id, username, password_hash, role, status)
+		 VALUES ($1, 'admin-auth-revocation', 'unused', $2, 'active')
+		 RETURNING id`,
+		orgID, auth.RoleOrgAdmin,
+	).Scan(&userID)
 	require.NoError(t, err)
 
-	handler := AdminAuth(secret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	secret := "admin-test-secret"
+	token, err := auth.GenerateJWT(userID, orgID, auth.RoleOrgAdmin, secret, 1)
+	require.NoError(t, err)
+
+	handler := AdminAuth(pool, secret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, orgID, GetOrgIDFromContext(r.Context()))
+		require.Equal(t, userID, GetUserIDFromContext(r.Context()))
+		require.Equal(t, auth.RoleOrgAdmin, GetUserRoleFromContext(r.Context()))
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest("GET", "/admin/test", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	rec := httptest.NewRecorder()
+	serve := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/admin/test", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
 
-	handler.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, serve().Code)
+	_, err = pool.Exec(t.Context(), `UPDATE users SET status = 'disabled' WHERE id = $1`, userID)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusUnauthorized, serve().Code)
 
-	require.Equal(t, http.StatusOK, rec.Code)
+	_, err = pool.Exec(t.Context(), `UPDATE users SET status = 'active' WHERE id = $1`, userID)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, serve().Code)
+
+	_, err = pool.Exec(t.Context(), `UPDATE users SET role = $2 WHERE id = $1`, userID, auth.RoleViewer)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusUnauthorized, serve().Code)
+
+	_, err = pool.Exec(t.Context(), `UPDATE users SET role = $2 WHERE id = $1`, userID, auth.RoleOrgAdmin)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, serve().Code)
+
+	_, err = pool.Exec(t.Context(), `UPDATE orgs SET status = 'disabled' WHERE id = $1`, orgID)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusUnauthorized, serve().Code)
+
+	_, err = pool.Exec(t.Context(), `UPDATE orgs SET status = 'active' WHERE id = $1`, orgID)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, serve().Code)
+
+	_, err = pool.Exec(t.Context(), `DELETE FROM users WHERE id = $1`, userID)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusUnauthorized, serve().Code)
 }

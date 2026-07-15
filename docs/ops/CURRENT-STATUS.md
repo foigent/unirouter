@@ -1,6 +1,26 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
+> **Active local batch (2026-07-16; not a release or target claim):** the User
+> accepted live administrator principal-state enforcement and a first-customer
+> pilot limited to `mimo-v2.5-pro` plus `DeepSeek-V4-Flash`. Branch
+> `codex/v1-admin-revocation-pilot-catalog` starts from clean docs-only main
+> `0b37f961ef75e2f8ab889cfea66f71e282a53e9f`. The auth slice now reconciles
+> each protected JWT request to the exact active user/organization/role,
+> returning 401 while state is missing or mismatched and fail-closed 503 when
+> state cannot be read. The frontend retains its token on transient profile 503,
+> exposes an explicit retry state and clears the session on 401. These slices
+> passed focused local backend/integration/race and frontend tests. One bounded/
+> batch `/v1/models` filter now matches callable alias, lifecycle and project-
+> model-set admission in a single query; focused unit, race, vet and real
+> migrated-PostgreSQL parity checks pass. Full `go test -race ./...`, full Go
+> vet, selected tagged integration suites, all 169 frontend tests and the
+> production frontend build also pass. PR, required CI, merge, image and
+> ECS/catalog verification are pending. Request-
+> time state rejection is not permanent token revocation:
+> an unexpired token can work again if the identical active principal state is
+> restored. Evidence:
+> `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md`.
 > **2026-07-16 current checkpoint:** the latest code-bearing release is
 > `ae9ce2c927460e993dd00c6d81c8736cc5a015a2`, the squash merge of PR #210.
 > Exact PR head `5f8cd6a4aedb74354dea9f33223d4aca95e3f2e9` passed Change Routing,
@@ -660,6 +680,7 @@ Historical PRD1 summary: Core backend modules, admin APIs, frontend pages, migra
 
 | Area | Status | Evidence |
 |------|--------|----------|
+| V1 Admin Principal State And Pilot Catalog | Local verified — PR/CI and target pending | User accepted request-time administrator principal reconciliation and a pilot limited to `mimo-v2.5-pro` plus `DeepSeek-V4-Flash`. Focused auth, already-issued-token, race, tagged-admin, all 169 frontend tests and the production frontend build pass. A missing/mismatched principal is denied while its state differs; database uncertainty is 503 and the frontend preserves the token for explicit retry. This is not a permanent JWT blacklist. The bounded/batch `/v1/models` filter matches per-request governance in unit/race and migrated real-PostgreSQL parity checks; full Go race and vet also pass. PR/CI/merge and ECS API/UI/config readback remain pending. Evidence: `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md` |
 | V1 ae9 Upstream Status, Mimo And DeepSeek Flash Route/Price Target | Target verified / closed for the status regression, bounded named calls and dated Flash pilot rate | PR #210 exact head `5f8cd6a` passed required run `29419821405` and merged as `ae9ce2c`. Stable/canary run formal image `sha256:fca7fe8f...`, release trust 1/1, active enforceable test License and signed sequence `3`. Mimo request `op_1dc206219bcbafc45d4b9df2b66915c7` and DeepSeek Flash requests `op_773ffcc46d00b98e1bb373ef161b90d1` / `op_240a63dd8e3de67036d894cd5b7d0d8f` prove gateway/upstream 200, provider-reported final usage, exact settlement and credential cleanup. The second Flash request settled 5 uncached input plus 1 output token for 7 micro-CNY after supported Admin API audit #196 aligned the target to DeepSeek's 2026-07-16 public CNY rates. Evidence: `docs/ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md`, `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md` and `docs/ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md`. Kimi, DeepSeek Pro, capacity, detector, IdP, customer, Production and X-Insight remain open; supplier invoice and durable markup policy are not claimed |
 | V1 Financial Prerequisites | CI verified / closed; exact target rows preserved at the 2026-07-14 checkpoint | PR #196 exact head `2c5e930` / run `29300560434` / merge `86a3bd8` closes unsafe absolute wallet adjustment. PR #197 exact head `74ebf62` / run `29301071299` / merge `94c93dc` closes the public price-unit/default-price defect and adds `000035` without rewriting existing rows. The test target retained every price at that checkpoint; no automatic conversion or repricing occurred. The later supported Admin API update changed only authorized DeepSeek Flash row #9 and did not bulk-reprice any other row. Evidence: `docs/ops/evidence/V1-POST-PRD6-FINANCIAL-PREREQUISITES-CI-20260714.md` and the V1 target evidence |
 | V1 Micro-Precision Ledger And Environment Label | Target verified / closed for the selected development ECS | PR #202 exact head `1944e31` passed run `29334221779` and merged as `ec0dde2`; the authorized non-rolling activation applied `000035`/`000036`. PR #203 exact head `b76f253` passed run `29339373907`, merged as intermediate release `545e514`, and wired the frontend build-time environment label. Stable/canary/runtime/schema/API and authenticated browser evidence passed; `开发环境` renders with zero console errors/warnings. Evidence: `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-LOCAL-20260714.md`, `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-TARGET-20260714.md`. No Production, real-provider/detector, HA/capacity, TLS, migration-down or X-Insight consumer claim |

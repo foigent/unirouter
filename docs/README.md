@@ -3,6 +3,7 @@
 ## 当前入口
 - [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — Agent 接手项目的第一阅读入口
 - [ops/CURRENT-STATUS.md](ops/CURRENT-STATUS.md) — 当前项目真实状态（进度、测试、部署、缺口）
+- [ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md](ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md) — 管理端逐请求主体状态校验、前端 503 会话保留、双模型 pilot catalog 一致性和当前 PR/CI/目标待验边界
 - [ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md](ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md) — DeepSeek Flash 官方日期价格、Admin API 精确审计、第二次受控调用、7 micro-CNY 账本守恒与清理证据
 - [ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md](ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md) — DeepSeek V4 精确模型权威、目标映射、真实受控调用/账本/清理证据及目标定价决策门
 - [ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md](ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md) — PR #210 上游状态修复、测试升级根轮换、正式 ae9/序列 3 部署、Mimo 真实受控调用与清理证据

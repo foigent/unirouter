@@ -27,6 +27,7 @@ import (
 	"github.com/uniroute/unirouter/internal/logger"
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/modelgov"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/outbox"
@@ -3208,34 +3209,40 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleModels handles GET /v1/models — returns available models for the caller.
-// Uses the API key's allowed_models field; falls back to all model_prices.
+// It intersects the API key's allowed_models (or model_prices fallback) with
+// the same lifecycle and project model-set rules used for call admission.
 func (relay *Relay) HandleModels(w http.ResponseWriter, r *http.Request) {
 	orgID := middleware.GetOrgIDFromContext(r.Context())
 	keyID := middleware.GetKeyIDFromContext(r.Context())
-	if middleware.GetAgentCapabilityFromContext(r.Context()) != nil {
-		if apiKey := middleware.GetAPIKeyFromContext(r.Context()); apiKey != nil {
-			if modelListContainsWildcard(apiKey.AllowedModels) {
-				relay.handleModelsFallback(w, r)
-				return
-			}
-			if apiKey.AllowedModels != "" {
-				writeAllowedModelList(w, apiKey.AllowedModels)
-				return
-			}
+	if apiKey := middleware.GetAPIKeyFromContext(r.Context()); apiKey != nil {
+		if modelListContainsWildcard(apiKey.AllowedModels) {
+			relay.handleModelsFallback(w, r)
+			return
 		}
+		if apiKey.AllowedModels != "" {
+			relay.writeAllowedModelList(w, r, apiKey.AllowedModels)
+			return
+		}
+		relay.handleModelsFallback(w, r)
+		return
 	}
 
-	// Try per-key model list from api_keys.allowed_models (comma-separated)
+	// Production authentication always supplies CtxAPIKey. Keep this lookup only
+	// for direct handler callers, and fail closed if its authority is unavailable.
 	var allowedModels string
 	err := relay.db.QueryRow(r.Context(),
 		`SELECT COALESCE(allowed_models, '') FROM api_keys WHERE id = $1 AND org_id = $2 AND status = 'active'`,
 		keyID, orgID).Scan(&allowedModels)
-	if err == nil && allowedModels != "" {
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to resolve API key models")
+		return
+	}
+	if allowedModels != "" {
 		if modelListContainsWildcard(allowedModels) {
 			relay.handleModelsFallback(w, r)
 			return
 		}
-		writeAllowedModelList(w, allowedModels)
+		relay.writeAllowedModelList(w, r, allowedModels)
 		return
 	}
 
@@ -3252,23 +3259,15 @@ func modelListContainsWildcard(allowedModels string) bool {
 	return false
 }
 
-func writeAllowedModelList(w http.ResponseWriter, allowedModels string) {
-	var listedModels []map[string]interface{}
+func (relay *Relay) writeAllowedModelList(w http.ResponseWriter, r *http.Request, allowedModels string) {
+	candidates := make([]string, 0)
 	for _, model := range strings.Split(allowedModels, ",") {
 		model = strings.TrimSpace(model)
 		if model != "" {
-			listedModels = append(listedModels, map[string]interface{}{
-				"id":       model,
-				"object":   "model",
-				"owned_by": "uniroute",
-			})
+			candidates = append(candidates, model)
 		}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"object": "list",
-		"data":   listedModels,
-	})
+	relay.writeAuthorizedModelList(w, r, candidates)
 }
 
 func (relay *Relay) handleModelsFallback(w http.ResponseWriter, r *http.Request) {
@@ -3280,21 +3279,50 @@ func (relay *Relay) handleModelsFallback(w http.ResponseWriter, r *http.Request)
 	}
 	defer rows.Close()
 
-	var models []map[string]interface{}
+	candidates := make([]string, 0)
 	for rows.Next() {
 		var model string
-		rows.Scan(&model)
-		models = append(models, map[string]interface{}{
+		if err := rows.Scan(&model); err != nil {
+			writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to query models")
+			return
+		}
+		candidates = append(candidates, model)
+	}
+	if err := rows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to query models")
+		return
+	}
+	relay.writeAuthorizedModelList(w, r, candidates)
+}
+
+func (relay *Relay) writeAuthorizedModelList(w http.ResponseWriter, r *http.Request, candidates []string) {
+	orgID := middleware.GetOrgIDFromContext(r.Context())
+	projectID := middleware.GetProjectIDFromContext(r.Context())
+	if apiKey := middleware.GetAPIKeyFromContext(r.Context()); apiKey != nil {
+		orgID = apiKey.OrgID
+		projectID = 0
+		if apiKey.ProjectID != nil {
+			projectID = *apiKey.ProjectID
+		}
+	}
+	allowedModels, err := modelgov.FilterCallableModels(r.Context(), relay.db, orgID, projectID, candidates)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to resolve authorized models")
+		return
+	}
+
+	listedModels := make([]map[string]interface{}, 0, len(allowedModels))
+	for _, model := range allowedModels {
+		listedModels = append(listedModels, map[string]interface{}{
 			"id":       model,
 			"object":   "model",
 			"owned_by": "uniroute",
 		})
 	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"object": "list",
-		"data":   models,
+		"data":   listedModels,
 	})
 }
 

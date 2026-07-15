@@ -3,6 +3,7 @@ package modelgov
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -124,6 +125,64 @@ func TestCheckAccess_ProjectModelSetsBindProjectAndSetOrganization(t *testing.T)
 	}
 	if !result.Allowed {
 		t.Fatalf("expected allowed result, got %+v", result)
+	}
+}
+
+func TestFilterCallableModels_UsesOneQueryForManyCandidates(t *testing.T) {
+	candidates := make([]string, 0, 130)
+	for i := 0; i < 128; i++ {
+		candidates = append(candidates, fmt.Sprintf("model-%03d", i))
+	}
+	candidates = append(candidates, " model-000 ", "")
+
+	queryCount := 0
+	database := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			t.Fatal("batch filtering must not issue per-model QueryRow calls")
+			return nil
+		},
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			queryCount++
+			if !strings.Contains(sql, "WITH candidates AS") ||
+				!strings.Contains(sql, "FROM project_model_sets") ||
+				!strings.Contains(sql, "JOIN model_aliases") ||
+				!strings.Contains(sql, "LEFT JOIN model_registry") {
+				t.Fatalf("batch query is missing governance predicates: %s", sql)
+			}
+			if args[0] != int64(9) || args[1] != int64(42) {
+				t.Fatalf("unexpected scope arguments: %#v", args)
+			}
+			normalized, ok := args[2].([]string)
+			if !ok || len(normalized) != 128 || normalized[0] != "model-000" || normalized[127] != "model-127" {
+				t.Fatalf("unexpected normalized candidates: %#v", args[2])
+			}
+			return &testutil.MockRows{Rows: []func(dest ...any) error{
+				func(dest ...any) error { *dest[0].(*string) = "model-000"; return nil },
+				func(dest ...any) error { *dest[0].(*string) = "model-127"; return nil },
+			}}, nil
+		},
+	}
+
+	allowed, err := FilterCallableModels(context.Background(), database, 9, 42, candidates)
+	if err != nil {
+		t.Fatalf("FilterCallableModels returned error: %v", err)
+	}
+	if queryCount != 1 {
+		t.Fatalf("expected one fixed-cost query, got %d", queryCount)
+	}
+	if len(allowed) != 2 || allowed[0] != "model-000" || allowed[1] != "model-127" {
+		t.Fatalf("unexpected allowed models: %#v", allowed)
+	}
+}
+
+func TestFilterCallableModels_QueryError(t *testing.T) {
+	database := &testutil.MockDB{QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+		return nil, errors.New("database unavailable")
+	}}
+
+	_, err := FilterCallableModels(context.Background(), database, 1, 0, []string{"model"})
+	if err == nil || !strings.Contains(err.Error(), "filter callable models") {
+		t.Fatalf("expected wrapped batch query error, got %v", err)
 	}
 }
 

@@ -42,7 +42,7 @@ func TestP6F37AuditLogTenantIsolationIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	h := NewHandler(pool, p6f16JWTSecret, []byte("0123456789abcdef01234567"), nil)
-	route := middleware.AdminAuth(p6f16JWTSecret)(
+	route := middleware.AdminAuth(pool, p6f16JWTSecret)(
 		middleware.RequireRoles(auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin)(http.HandlerFunc(h.ListAuditLogs)),
 	)
 	serve := func(tb testing.TB, target string, userID, orgID int64, role string) *httptest.ResponseRecorder {
@@ -138,6 +138,6 @@ func TestP6F37AuditLogTenantIsolationIntegration(t *testing.T) {
 
 	t.Run("missing organization identity fails closed", func(t *testing.T) {
 		rec := serve(t, "/api/v1/audit-logs?action=p6f37.audit", fx.orgAdminA, 0, auth.RoleOrgAdmin)
-		assertStatus(t, rec, http.StatusForbidden)
+		assertStatus(t, rec, http.StatusUnauthorized)
 	})
 }

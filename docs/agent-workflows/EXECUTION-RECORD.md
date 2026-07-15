@@ -1,6 +1,85 @@
 # Current Execution Record
 
-## Active Batch — V1 DeepSeek Flash Official Price Target Evidence
+## Active Batch — V1 Admin Principal State And Pilot Catalog
+
+**Owner:** Codex
+
+**Risk:** R3 administrator authentication and model-admission behavior; R2
+frontend/API presentation; later R4 development-target deployment and reversible
+pilot configuration
+
+**Status:** Local verified for administrator principal-state enforcement,
+frontend transient-503 session handling and bounded/batch model-list governance.
+Full-repository local checks pass. PR, required CI, merge and target acceptance
+are pending.
+
+**Repository baseline:** clean `main` / `origin/main` at docs-only checkpoint
+`0b37f961ef75e2f8ab889cfea66f71e282a53e9f`; latest code-bearing release and
+development-target backend remain
+`ae9ce2c927460e993dd00c6d81c8736cc5a015a2`
+
+**Implementation branch:** `codex/v1-admin-revocation-pilot-catalog`
+
+**Expected pull request:** pending; do not infer a PR number, CI result, merge
+commit, image digest or deployment from this local record
+
+**Evidence:**
+`docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md`
+
+The User accepted the recommended first-release boundaries: protected
+administrator requests must reconcile signed user/org/role claims against an
+active current principal, and the initial customer pilot must expose/admit only
+the already Target-verified `mimo-v2.5-pro` and `DeepSeek-V4-Flash` identities.
+This is Post-PRD6 work and does not reopen PRD6.
+
+The current auth slice passes the database query boundary into `AdminAuth`.
+After ordinary JWT validation, every protected request requires the exact signed
+user, organization and role with active user and organization state. Missing or
+mismatched state returns 401; database uncertainty returns typed 503 and does
+not invoke the protected handler. This is state-dependent request rejection,
+not permanent token revocation: restoring the exact principal state before JWT
+expiry can make the old token usable again.
+
+The matching frontend change clears session state only on 401. A 503 or other
+transient profile error retains the token, displays an explicit retry state and
+does not enter an automatic retry loop or render a protected page without a
+resolved role.
+
+Local auth/frontend checks passed focused middleware/cmd tests, the disabled-
+user integration/race path, the selected tagged integration packages, all 169
+frontend tests, the production frontend build and `git diff --check`. A
+read-only review found no direct management-route JWT bypass in the running
+application.
+
+The model-list change uses one bounded `FilterCallableModels` query for explicit,
+wildcard and fallback `/v1/models` candidates. It preserves order, deduplicates,
+resolves aliases and matches request-admission lifecycle/model-set behavior.
+Production request context uses the authenticated API-key authority directly;
+missing context/query authority fails closed instead of expanding to all price
+rows. Unit/race/vet checks and a migrated real-PostgreSQL parity test pass,
+including a 128-candidate one-query assertion and no-partial-list error path.
+The implementation does not hard-code provider names or convert
+`approved_catalog` into call authority. The later target configuration must
+retain unverified records as internal/staging data while the pilot project model
+set and key expose only Mimo Pro and DeepSeek Flash.
+
+**Non-targets:** no session center/blacklist, password-change revocation,
+vendor discovery, Kimi/DeepSeek Pro activation, price/route/provider mutation,
+migration, License change, paid call, PRD7, Production or X-Insight change.
+
+**Stop/rollback boundary:** no target mutation before exact-head required CI and
+merge. Target rollout must retain the prior image plus exact catalog/model-set/
+key values, promote canary before stable, and stop on auth, readiness, License,
+release-trust, schema or model-surface mismatch. No destructive cleanup or bulk
+record deletion is authorized.
+
+Full `go test -race ./...` and `go vet ./...` also pass. **Pending:** inspect the
+final scoped diff; create PR; pass selected required CI; merge; then perform
+the approved development-target token replay, two-model API/UI/catalog
+readback, excluded-model zero-dispatch check and cleanup. Target/Production
+claims remain prohibited until their own evidence exists.
+
+## Previous Batch — V1 DeepSeek Flash Official Price Target Evidence
 
 **Owner:** Codex
 

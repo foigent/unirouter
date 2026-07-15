@@ -10,15 +10,15 @@ import (
 	"github.com/uniroute/unirouter/internal/admin"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
-	"github.com/uniroute/unirouter/internal/testutil"
 )
 
 func TestP6F40CProviderCostRoutesRequirePlatformAuthority(t *testing.T) {
 	const secret = "p6f40c-provider-cost-route-secret"
-	handler := admin.NewHandler(&testutil.MockDB{}, secret, []byte("0123456789abcdef01234567"), nil)
+	db := activeAdminPrincipalDB()
+	handler := admin.NewHandler(db, secret, []byte("0123456789abcdef01234567"), nil)
 	mux := http.NewServeMux()
 	platformRoute := func(handler http.HandlerFunc) http.Handler {
-		return middleware.AdminAuth(secret)(middleware.RequireRoles(auth.RolePlatformAdmin)(handler))
+		return middleware.AdminAuth(db, secret)(middleware.RequireRoles(auth.RolePlatformAdmin)(handler))
 	}
 	registerProviderCostRoutes(mux, handler, platformRoute)
 

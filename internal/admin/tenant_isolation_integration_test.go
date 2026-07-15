@@ -21,12 +21,34 @@ import (
 const p6f16JWTSecret = "p6f16-test-jwt-secret-32-bytes!!"
 
 type p6f16Fixture struct {
-	orgA, orgB                    int64
-	orgAdminA, platformA, normalA int64
-	orgAdminB, normalB            int64
-	projectA, projectB            int64
-	keyA, keyB                    int64
-	modelSetA, modelSetB          int64
+	orgA, orgB                                           int64
+	orgAdminA, platformA, legacyAdminA, billingAdminA    int64
+	projectAdminA, developerA, normalA, orgViewerA       int64
+	unknownRoleA, orgAdminB, normalB                     int64
+	projectA, projectB, keyA, keyB, modelSetA, modelSetB int64
+}
+
+func (fx p6f16Fixture) actorForRole(role string) int64 {
+	switch role {
+	case auth.RolePlatformAdmin:
+		return fx.platformA
+	case auth.RoleLegacyAdmin:
+		return fx.legacyAdminA
+	case auth.RoleOrgAdmin:
+		return fx.orgAdminA
+	case auth.RoleBillingAdmin:
+		return fx.billingAdminA
+	case auth.RoleProjectAdmin:
+		return fx.projectAdminA
+	case auth.RoleDeveloper:
+		return fx.developerA
+	case auth.RoleViewer:
+		return fx.normalA
+	case auth.RoleOrgViewer:
+		return fx.orgViewerA
+	default:
+		return fx.unknownRoleA
+	}
 }
 
 func TestP6F16TenantIsolationIntegration(t *testing.T) {
@@ -214,17 +236,15 @@ func TestP6F16TenantIsolationIntegration(t *testing.T) {
 	t.Run("malformed cross-org membership cannot authorize a stale org claim", func(t *testing.T) {
 		_, err := pool.Exec(ctx,
 			`INSERT INTO project_members (project_id, user_id, role) VALUES ($1, $2, 'project_developer') ON CONFLICT DO NOTHING`,
-			fx.projectB, fx.normalA,
+			fx.projectB, fx.developerA,
 		)
 		require.NoError(t, err)
 
-		rec := serve(t, http.MethodGet, "/api/v1/projects", "", fx.normalA, fx.orgB, auth.RoleDeveloper)
-		assertStatus(t, rec, http.StatusOK)
-		assertEmptyData(t, rec.Body.Bytes())
-		rec = serve(t, http.MethodGet, "/api/v1/keys", "", fx.normalA, fx.orgB, auth.RoleDeveloper)
-		assertStatus(t, rec, http.StatusOK)
-		assertEmptyData(t, rec.Body.Bytes())
-		assertStatus(t, serve(t, http.MethodGet, fmt.Sprintf("/api/v1/projects/%d", fx.projectB), "", fx.normalA, fx.orgB, auth.RoleDeveloper), http.StatusForbidden)
+		rec := serve(t, http.MethodGet, "/api/v1/projects", "", fx.developerA, fx.orgB, auth.RoleDeveloper)
+		assertStatus(t, rec, http.StatusUnauthorized)
+		rec = serve(t, http.MethodGet, "/api/v1/keys", "", fx.developerA, fx.orgB, auth.RoleDeveloper)
+		assertStatus(t, rec, http.StatusUnauthorized)
+		assertStatus(t, serve(t, http.MethodGet, fmt.Sprintf("/api/v1/projects/%d", fx.projectB), "", fx.developerA, fx.orgB, auth.RoleDeveloper), http.StatusUnauthorized)
 	})
 
 	t.Run("runtime ignores pre-existing cross-org model-set assignments", func(t *testing.T) {
@@ -264,24 +284,24 @@ func TestP6F16TenantIsolationIntegration(t *testing.T) {
 
 		rec = serve(t, http.MethodPost, "/api/v1/projects", fmt.Sprintf(`{"org_id":%d,"name":"Platform Foreign Project"}`, fx.orgB), fx.platformA, fx.orgA, auth.RolePlatformAdmin)
 		assertStatus(t, rec, http.StatusCreated)
-		assertStatus(t, serve(t, http.MethodGet, fmt.Sprintf("/api/v1/projects/%d", fx.projectB), "", fx.platformA, fx.orgA, auth.RoleLegacyAdmin), http.StatusOK)
-		assertStatus(t, serve(t, http.MethodPut, fmt.Sprintf("/api/v1/projects/%d", fx.projectB), `{"description":"legacy-admin-updated"}`, fx.platformA, fx.orgA, auth.RoleLegacyAdmin), http.StatusOK)
+		assertStatus(t, serve(t, http.MethodGet, fmt.Sprintf("/api/v1/projects/%d", fx.projectB), "", fx.legacyAdminA, fx.orgA, auth.RoleLegacyAdmin), http.StatusOK)
+		assertStatus(t, serve(t, http.MethodPut, fmt.Sprintf("/api/v1/projects/%d", fx.projectB), `{"description":"legacy-admin-updated"}`, fx.legacyAdminA, fx.orgA, auth.RoleLegacyAdmin), http.StatusOK)
 		var description string
 		require.NoError(t, pool.QueryRow(ctx, `SELECT description FROM projects WHERE id = $1`, fx.projectB).Scan(&description))
 		require.Equal(t, "legacy-admin-updated", description)
 	})
 
 	t.Run("non-platform actor with zero organization fails closed", func(t *testing.T) {
-		assertStatus(t, serve(t, http.MethodGet, "/api/v1/keys", "", fx.orgAdminA, 0, auth.RoleOrgAdmin), http.StatusForbidden)
-		assertStatus(t, serve(t, http.MethodGet, "/api/v1/users", "", fx.orgAdminA, 0, auth.RoleOrgAdmin), http.StatusForbidden)
-		assertStatus(t, serve(t, http.MethodGet, "/api/v1/projects", "", fx.orgAdminA, 0, auth.RoleOrgAdmin), http.StatusForbidden)
+		assertStatus(t, serve(t, http.MethodGet, "/api/v1/keys", "", fx.orgAdminA, 0, auth.RoleOrgAdmin), http.StatusUnauthorized)
+		assertStatus(t, serve(t, http.MethodGet, "/api/v1/users", "", fx.orgAdminA, 0, auth.RoleOrgAdmin), http.StatusUnauthorized)
+		assertStatus(t, serve(t, http.MethodGet, "/api/v1/projects", "", fx.orgAdminA, 0, auth.RoleOrgAdmin), http.StatusUnauthorized)
 	})
 }
 
 func p6f16AdminMux(h *Handler) *http.ServeMux {
 	mux := http.NewServeMux()
 	roleRoute := func(handler http.HandlerFunc, roles ...string) http.Handler {
-		return middleware.AdminAuth(p6f16JWTSecret)(middleware.RequireRoles(roles...)(handler))
+		return middleware.AdminAuth(h.db, p6f16JWTSecret)(middleware.RequireRoles(roles...)(handler))
 	}
 	projectRead := []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper, auth.RoleViewer}
 	projectWrite := []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper}
@@ -329,7 +349,13 @@ func seedP6F16Fixture(t *testing.T, pool *pgxpool.Pool) p6f16Fixture {
 	}
 	fx.orgAdminA = insertUser(fx.orgA, "org-admin-a", auth.RoleOrgAdmin)
 	fx.platformA = insertUser(fx.orgA, "platform-a", auth.RolePlatformAdmin)
+	fx.legacyAdminA = insertUser(fx.orgA, "legacy-admin-a", auth.RoleLegacyAdmin)
+	fx.billingAdminA = insertUser(fx.orgA, "billing-admin-a", auth.RoleBillingAdmin)
+	fx.projectAdminA = insertUser(fx.orgA, "project-admin-a", auth.RoleProjectAdmin)
+	fx.developerA = insertUser(fx.orgA, "developer-a", auth.RoleDeveloper)
 	fx.normalA = insertUser(fx.orgA, "normal-a", auth.RoleViewer)
+	fx.orgViewerA = insertUser(fx.orgA, "org-viewer-a", auth.RoleOrgViewer)
+	fx.unknownRoleA = insertUser(fx.orgA, "unknown-role-a", "unknown_role")
 	fx.orgAdminB = insertUser(fx.orgB, "org-admin-b", auth.RoleOrgAdmin)
 	fx.normalB = insertUser(fx.orgB, "normal-b", auth.RoleViewer)
 

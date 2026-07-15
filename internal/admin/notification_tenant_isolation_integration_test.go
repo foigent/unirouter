@@ -23,18 +23,8 @@ func TestP6F33NotificationTenantIsolationIntegration(t *testing.T) {
 	ctx := context.Background()
 	fx := seedP6F16Fixture(t, pool)
 
-	insertUser := func(orgID int64, username, role string) int64 {
-		t.Helper()
-		var id int64
-		require.NoError(t, pool.QueryRow(ctx,
-			`INSERT INTO users (org_id, username, password_hash, role, status)
-			 VALUES ($1, $2, 'test-hash', $3, 'active') RETURNING id`,
-			orgID, username, role,
-		).Scan(&id))
-		return id
-	}
-	billingA := insertUser(fx.orgA, "billing-a", auth.RoleBillingAdmin)
-	projectAdminA := insertUser(fx.orgA, "project-admin-a", auth.RoleProjectAdmin)
+	billingA := fx.billingAdminA
+	projectAdminA := fx.projectAdminA
 	var projectAOther int64
 	require.NoError(t, pool.QueryRow(ctx,
 		`INSERT INTO projects (org_id, name, slug, description, status, created_by)
@@ -341,10 +331,10 @@ func TestP6F33NotificationTenantIsolationIntegration(t *testing.T) {
 	})
 
 	t.Run("missing tenant identity fails closed", func(t *testing.T) {
-		assertStatus(t, serve(t, http.MethodGet, "/api/v1/notification-events", "", fx.orgAdminA, 0, auth.RoleOrgAdmin), http.StatusForbidden)
+		assertStatus(t, serve(t, http.MethodGet, "/api/v1/notification-events", "", fx.orgAdminA, 0, auth.RoleOrgAdmin), http.StatusUnauthorized)
 		assertStatus(t, serve(t, http.MethodPost, "/api/v1/notification-webhooks",
 			fmt.Sprintf(`{"org_id":%d,"name":"zero-org","url":"https://attacker.example.test/hook","event_types":["tenant.test"]}`, fx.orgA),
-			fx.orgAdminA, 0, auth.RoleOrgAdmin), http.StatusForbidden)
+			fx.orgAdminA, 0, auth.RoleOrgAdmin), http.StatusUnauthorized)
 	})
 
 	t.Run("denied foreign sink receives no victim event", func(t *testing.T) {
@@ -383,7 +373,7 @@ func TestP6F33NotificationTenantIsolationIntegration(t *testing.T) {
 func p6f33AdminMux(h *Handler) *http.ServeMux {
 	mux := http.NewServeMux()
 	roleRoute := func(handler http.HandlerFunc, roles ...string) http.Handler {
-		return middleware.AdminAuth(p6f16JWTSecret)(middleware.RequireRoles(roles...)(handler))
+		return middleware.AdminAuth(h.db, p6f16JWTSecret)(middleware.RequireRoles(roles...)(handler))
 	}
 	readRoles := []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleProjectAdmin}
 	mux.Handle("GET /api/v1/notification-events", roleRoute(h.ListNotificationEvents, readRoles...))

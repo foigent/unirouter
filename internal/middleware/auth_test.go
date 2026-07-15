@@ -4,16 +4,49 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/models"
+	"github.com/uniroute/unirouter/internal/testutil"
 )
 
+func adminPrincipalDB(t *testing.T, wantUserID, wantOrgID int64, wantRole string, active bool, scanErr error) *testutil.MockDB {
+	t.Helper()
+	return &testutil.MockDB{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+		if len(args) != 3 || args[0] != wantUserID || args[1] != wantOrgID || args[2] != wantRole {
+			t.Fatalf("unexpected principal lookup args: %#v", args)
+		}
+		for _, fragment := range []string{"FROM users", "JOIN orgs", "u.status = 'active'", "o.status = 'active'"} {
+			if !strings.Contains(sql, fragment) {
+				t.Fatalf("principal lookup missing %q: %s", fragment, sql)
+			}
+		}
+		return &testutil.MockRow{ScanFn: func(dest ...any) error {
+			if scanErr != nil {
+				return scanErr
+			}
+			*dest[0].(*bool) = active
+			return nil
+		}}
+	}}
+}
+
+func unexpectedAdminPrincipalDB(t *testing.T) *testutil.MockDB {
+	t.Helper()
+	return &testutil.MockDB{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+		t.Fatalf("principal state must not be queried before JWT validation: %s %#v", sql, args)
+		return &testutil.MockRow{}
+	}}
+}
+
 func TestAdminAuth_MissingHeader(t *testing.T) {
-	handler := AdminAuth("test-secret")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := AdminAuth(unexpectedAdminPrincipalDB(t), "test-secret")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	req := httptest.NewRequest("GET", "/admin/test", nil)
@@ -25,7 +58,7 @@ func TestAdminAuth_MissingHeader(t *testing.T) {
 }
 
 func TestAdminAuth_InvalidToken(t *testing.T) {
-	handler := AdminAuth("test-secret")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := AdminAuth(unexpectedAdminPrincipalDB(t), "test-secret")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	req := httptest.NewRequest("GET", "/admin/test", nil)
@@ -39,7 +72,7 @@ func TestAdminAuth_InvalidToken(t *testing.T) {
 
 func TestAdminAuth_WrongSecret(t *testing.T) {
 	token, _ := auth.GenerateJWT(1, 1, "admin", "correct-secret", 1)
-	handler := AdminAuth("wrong-secret")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := AdminAuth(unexpectedAdminPrincipalDB(t), "wrong-secret")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	req := httptest.NewRequest("GET", "/admin/test", nil)
@@ -54,10 +87,16 @@ func TestAdminAuth_WrongSecret(t *testing.T) {
 func TestAdminAuth_ValidToken(t *testing.T) {
 	secret := "test-secret"
 	token, _ := auth.GenerateJWT(42, 7, "admin", secret, 1)
-	handler := AdminAuth(secret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := AdminAuth(adminPrincipalDB(t, 42, 7, "admin", true, nil), secret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		orgID := GetOrgIDFromContext(r.Context())
 		if orgID != 7 {
 			t.Fatalf("expected orgID=7, got %d", orgID)
+		}
+		if userID := GetUserIDFromContext(r.Context()); userID != 42 {
+			t.Fatalf("expected userID=42, got %d", userID)
+		}
+		if role := GetUserRoleFromContext(r.Context()); role != "admin" {
+			t.Fatalf("expected role=admin, got %q", role)
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -72,7 +111,7 @@ func TestAdminAuth_ValidToken(t *testing.T) {
 
 func TestAdminAuth_BearerPrefixRequired(t *testing.T) {
 	token, _ := auth.GenerateJWT(1, 1, "admin", "secret", 1)
-	handler := AdminAuth("secret")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := AdminAuth(unexpectedAdminPrincipalDB(t), "secret")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	req := httptest.NewRequest("GET", "/admin/test", nil)
@@ -81,6 +120,52 @@ func TestAdminAuth_BearerPrefixRequired(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestAdminAuth_InactivePrincipal(t *testing.T) {
+	const secret = "test-secret"
+	token, err := auth.GenerateJWT(42, 7, auth.RoleOrgAdmin, secret, 1)
+	if err != nil {
+		t.Fatalf("generate JWT: %v", err)
+	}
+	called := false
+	handler := AdminAuth(adminPrincipalDB(t, 42, 7, auth.RoleOrgAdmin, false, nil), secret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/admin/test", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if called {
+		t.Fatal("inactive principal reached protected handler")
+	}
+}
+
+func TestAdminAuth_PrincipalStateUnavailable(t *testing.T) {
+	const secret = "test-secret"
+	token, err := auth.GenerateJWT(42, 7, auth.RoleOrgAdmin, secret, 1)
+	if err != nil {
+		t.Fatalf("generate JWT: %v", err)
+	}
+	called := false
+	handler := AdminAuth(adminPrincipalDB(t, 42, 7, auth.RoleOrgAdmin, false, fmt.Errorf("database unavailable")), secret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/admin/test", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if called {
+		t.Fatal("unavailable principal state reached protected handler")
 	}
 }
 

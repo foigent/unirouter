@@ -82,7 +82,7 @@ func TestP6F35GlobalControlAuthorityIntegration(t *testing.T) {
 			auth.RoleDeveloper, auth.RoleViewer, auth.RoleOrgViewer, "unknown_role",
 		} {
 			for _, target := range []string{"/api/v1/settings", "/api/v1/license", "/api/v1/sensitive-words"} {
-				assertStatus(t, serve(t, http.MethodGet, target, "", fx.orgAdminA, fx.orgA, role, ""), http.StatusForbidden)
+				assertStatus(t, serve(t, http.MethodGet, target, "", fx.actorForRole(role), fx.orgA, role, ""), http.StatusForbidden)
 			}
 		}
 
@@ -124,7 +124,7 @@ func TestP6F35GlobalControlAuthorityIntegration(t *testing.T) {
 		} {
 			for _, route := range routes {
 				assertStatus(t, serve(t, route.method, route.target, "not-json",
-					fx.orgAdminA, fx.orgA, role, "p6f35-denied"), http.StatusForbidden)
+					fx.actorForRole(role), fx.orgA, role, "p6f35-denied"), http.StatusForbidden)
 			}
 		}
 		require.Equal(t, before, readP6F35Snapshot(t, pool, sensitiveFilter))
@@ -349,7 +349,7 @@ func TestP6F35GlobalControlAuthorityIntegration(t *testing.T) {
 	})
 
 	t.Run("legacy admin compatibility and invalid authentication", func(t *testing.T) {
-		assertStatus(t, serve(t, http.MethodGet, "/api/v1/settings", "", fx.platformA, fx.orgA, auth.RoleLegacyAdmin, ""), http.StatusOK)
+		assertStatus(t, serve(t, http.MethodGet, "/api/v1/settings", "", fx.legacyAdminA, fx.orgA, auth.RoleLegacyAdmin, ""), http.StatusOK)
 		for _, authorization := range []string{"", "Bearer invalid"} {
 			req := httptest.NewRequest(http.MethodPut, "/api/v1/settings/maintenance_mode", bytes.NewBufferString("not-json"))
 			if authorization != "" {
@@ -365,7 +365,7 @@ func TestP6F35GlobalControlAuthorityIntegration(t *testing.T) {
 func p6f35GlobalControlMux(h *Handler) *http.ServeMux {
 	mux := http.NewServeMux()
 	platformRoute := func(handler http.HandlerFunc) http.Handler {
-		return middleware.AdminAuth(p6f16JWTSecret)(middleware.RequireRoles(auth.RolePlatformAdmin)(handler))
+		return middleware.AdminAuth(h.db, p6f16JWTSecret)(middleware.RequireRoles(auth.RolePlatformAdmin)(handler))
 	}
 	mux.Handle("GET /api/v1/settings", platformRoute(h.ListSettings))
 	mux.Handle("PUT /api/v1/settings/{key}", platformRoute(h.UpdateSetting))

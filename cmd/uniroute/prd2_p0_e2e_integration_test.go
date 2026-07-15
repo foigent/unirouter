@@ -280,7 +280,7 @@ func TestPRD2P0RouteRBACNegativeE2E_Integration(t *testing.T) {
 	billingToken := mustJWT(t, billingAdminID, orgID, auth.RoleBillingAdmin)
 	projectAdminToken := mustJWT(t, projectAdminID, orgID, auth.RoleProjectAdmin)
 
-	platformOnly := middleware.AdminAuth(prd2E2EJWTSecret)(
+	platformOnly := middleware.AdminAuth(pool, prd2E2EJWTSecret)(
 		middleware.RequireRoles(auth.RolePlatformAdmin)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		})),
@@ -288,7 +288,7 @@ func TestPRD2P0RouteRBACNegativeE2E_Integration(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, serveBearer(platformOnly, http.MethodGet, "/api/v1/channels", developerToken).Code)
 	require.Equal(t, http.StatusForbidden, serveBearer(platformOnly, http.MethodPost, "/api/v1/channels", billingToken).Code)
 
-	auditRoute := middleware.AdminAuth(prd2E2EJWTSecret)(
+	auditRoute := middleware.AdminAuth(pool, prd2E2EJWTSecret)(
 		middleware.RequireRoles(auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		})),
@@ -296,7 +296,7 @@ func TestPRD2P0RouteRBACNegativeE2E_Integration(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, serveBearer(auditRoute, http.MethodGet, "/api/v1/audit-logs", developerToken).Code)
 
 	h := admin.NewHandler(pool, prd2E2EJWTSecret, prd2E2EEncryptionKey, nil)
-	usageRoute := middleware.AdminAuth(prd2E2EJWTSecret)(
+	usageRoute := middleware.AdminAuth(pool, prd2E2EJWTSecret)(
 		middleware.RequireRoles(auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper, auth.RoleViewer)(http.HandlerFunc(h.ListLogs)),
 	)
 	rec := serveBearer(usageRoute, http.MethodGet, "/api/v1/logs?project_id="+jsonNumber(otherProjectID), projectAdminToken)
@@ -323,7 +323,7 @@ func TestPRD2AuditFiltersJWTBeforeAfterE2E_Integration(t *testing.T) {
 	require.NoError(t, err)
 
 	h := admin.NewHandler(pool, prd2E2EJWTSecret, prd2E2EEncryptionKey, nil)
-	auditRoute := middleware.AdminAuth(prd2E2EJWTSecret)(
+	auditRoute := middleware.AdminAuth(pool, prd2E2EJWTSecret)(
 		middleware.RequireRoles(auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin)(http.HandlerFunc(h.ListAuditLogs)),
 	)
 	token := mustJWT(t, userID, orgID, auth.RoleOrgAdmin)

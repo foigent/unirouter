@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
 
 export interface UserProfile {
   id: number;
@@ -14,6 +14,7 @@ interface AuthState {
   token: string | null;
   user: UserProfile | null;
   profileLoading: boolean;
+  profileError: string | null;
   isAuthenticated: boolean;
   login: (username: string, password: string) => Promise<UserProfile>;
   logout: () => void;
@@ -25,6 +26,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   token: localStorage.getItem('token'),
   user: null,
   profileLoading: false,
+  profileError: null,
   isAuthenticated: !!localStorage.getItem('token'),
 
   login: async (username, password) => {
@@ -37,7 +39,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         org_id: data.org_id,
       };
       localStorage.setItem('token', data.token);
-      set({ token: data.token, isAuthenticated: true, user });
+      set({ token: data.token, isAuthenticated: true, user, profileError: null });
       return user;
     } else {
       throw new Error(data.error || 'Login failed');
@@ -46,7 +48,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout: () => {
     localStorage.removeItem('token');
-    set({ token: null, isAuthenticated: false, user: null, profileLoading: false });
+    set({ token: null, isAuthenticated: false, user: null, profileLoading: false, profileError: null });
   },
 
   checkAuth: () => {
@@ -55,7 +57,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   loadProfile: async () => {
-    set({ profileLoading: true });
+    set({ profileLoading: true, profileError: null });
     try {
       const data = await api.getMe();
       const user = {
@@ -66,11 +68,15 @@ export const useAuthStore = create<AuthState>((set) => ({
         org_name: data.org_name,
         status: data.status,
       };
-      set({ user, isAuthenticated: true, profileLoading: false });
+      set({ user, isAuthenticated: true, profileLoading: false, profileError: null });
       return user;
     } catch (err) {
-      localStorage.removeItem('token');
-      set({ user: null, isAuthenticated: false, profileLoading: false, token: null });
+      if (err instanceof ApiError && err.status === 401) {
+        localStorage.removeItem('token');
+        set({ user: null, isAuthenticated: false, profileLoading: false, profileError: null, token: null });
+      } else {
+        set({ profileLoading: false, profileError: '认证服务暂时不可用，请稍后重试。' });
+      }
       throw err;
     }
   },
