@@ -2,7 +2,7 @@
 
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
-> **Current checkpoint (2026-07-15):** the latest code-bearing release is
+> **Current checkpoint (2026-07-16):** the latest code-bearing release is
 > `ae9ce2c927460e993dd00c6d81c8736cc5a015a2`, the PR #210 squash merge.
 > Exact head `5f8cd6a4aedb74354dea9f33223d4aca95e3f2e9` passed Change Routing,
 > Backend Tests and Docker Build in run `29419821405`; Frontend Build was
@@ -11,18 +11,22 @@
 > `sha256:fca7fe8fdabfcbfd32198c8bb4ba054e1b465f8342f671af39dba76b54b822d0`,
 > migration `000037`, formal release trust, active enforceable test License and
 > signed-upgrade sequence `3`. The unchanged frontend/Nginx remain on the a0a
-> release from PR #207. Bounded real Mimo calls and one separately approved
-> DeepSeek Flash call on ae9 returned HTTP 200, persisted exact upstream status
-> and provider-reported usage, settled for a cumulative 810000 micro-CNY
-> UniRouter customer-ledger charge, and left temporary access disabled with zero
-> pending attempt/outbox/reservation. Full evidence is
+> release from PR #207. Bounded real Mimo calls and two separately approved
+> DeepSeek Flash calls on ae9 returned HTTP 200, persisted exact upstream status
+> and provider-reported usage, settled for a cumulative 810007 micro-CNY
+> UniRouter customer-ledger charge, and left temporary API keys/operator
+> accounts disabled with zero pending attempt/outbox/reservation. The last admin
+> JWT was not persisted; account disablement is not cryptographic token
+> revocation. Full evidence is
+> `docs/ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md`,
 > `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md`
 > and `docs/ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md`.
-> Kimi/DeepSeek Pro, target price provenance, capacity, detector, enterprise
+> Kimi/DeepSeek Pro, capacity, detector, enterprise
 > IdP, customer operations, Production/TLS/HA and X-Insight v2 acceptance
-> remain separate. The current target DeepSeek Flash customer rate is 1000x
-> the supplier's published cache-miss input/output rate; no repricing is
-> authorized until commercial intent is decided. The earlier
+> remain separate. The dated DeepSeek Flash pass-through pilot rate is Target
+> verified through supported Admin API audit #196 and a 7-micro-CNY settlement;
+> this is neither supplier-invoice reconciliation nor a permanent zero-markup
+> policy. The earlier
 > PR #207/#208 no-paid checkpoint remains historically correct. PRD6 stays
 > closed as `Completed (Accepted Scope)`.
 > Post-PRD6 commercial-release hardening is merged on `main` as
@@ -69,9 +73,10 @@
 ## First Read Order
 
 Current target evidence is
-`docs/ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md` followed by
+`docs/ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md` followed by
+`docs/ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md` and
 `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md`.
-Read both immediately after `docs/ops/CURRENT-STATUS.md`, then read the earlier
+Read all three immediately after `docs/ops/CURRENT-STATUS.md`, then read the earlier
 `docs/ops/evidence/V1-FIRST-RELEASE-TARGET-CLOSEOUT-20260715.md` and full
 classification matrix in
 `docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md` before
@@ -152,8 +157,9 @@ using the preserved PRD6 history below.
 73. `docs/ops/evidence/V1-FIRST-RELEASE-TARGET-CLOSEOUT-20260715.md` - PR #207 CI/merge truth, exact ECS release, signed sequence-2 replay proof, authenticated API/browser acceptance and remaining decision gates.
 74. `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md` - PR #210 upstream-status fix, test upgrade-root rotation, formal ae9/sequence-3 deployment, bounded real Mimo evidence and remaining target boundaries.
 75. `docs/ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md` - exact DeepSeek V4 authority, audited public-to-supplier mapping, bounded real call/ledger/cleanup proof, price-decision gate and preserved non-claims.
-76. `docs/tech-ref/16-license-foundation.md` - enforceable License schema, runtime admission, resource limits, recovery and historical PRD2 compatibility.
-77. `docs/tech-ref/27-signed-offline-upgrade.md` - bundle format, trust ordering, provenance binding, verify/record workflow and explicit Update Center/TUF non-claims.
+76. `docs/ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md` - official dated Flash rate, supported Admin API audit, second bounded call, 7-micro-CNY settlement, cleanup and preserved commercial/Production/X-Insight non-claims.
+77. `docs/tech-ref/16-license-foundation.md` - enforceable License schema, runtime admission, resource limits, recovery and historical PRD2 compatibility.
+78. `docs/tech-ref/27-signed-offline-upgrade.md` - bundle format, trust ordering, provenance binding, verify/record workflow and explicit Update Center/TUF non-claims.
 
 ## Current Project Shape
 

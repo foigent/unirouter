@@ -3,6 +3,7 @@
 ## 当前入口
 - [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — Agent 接手项目的第一阅读入口
 - [ops/CURRENT-STATUS.md](ops/CURRENT-STATUS.md) — 当前项目真实状态（进度、测试、部署、缺口）
+- [ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md](ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md) — DeepSeek Flash 官方日期价格、Admin API 精确审计、第二次受控调用、7 micro-CNY 账本守恒与清理证据
 - [ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md](ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md) — DeepSeek V4 精确模型权威、目标映射、真实受控调用/账本/清理证据及目标定价决策门
 - [ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md](ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md) — PR #210 上游状态修复、测试升级根轮换、正式 ae9/序列 3 部署、Mimo 真实受控调用与清理证据
 - [ops/evidence/V1-FIRST-RELEASE-TARGET-CLOSEOUT-20260715.md](ops/evidence/V1-FIRST-RELEASE-TARGET-CLOSEOUT-20260715.md) — PR #207 CI/合并、精确 ECS 发布、签名升级回放保护、真实 API/浏览器验收与剩余决策门
@@ -70,7 +71,7 @@
 - [PRD-Phase3.md](PRD-Phase3.md) — 已完成 PRD3 一致性、语义、契约和架构清理范围
 - [planning/PRD3-CONSISTENCY-AUDIT.md](planning/PRD3-CONSISTENCY-AUDIT.md) — PRD3 范围审计和 PRD1→PRD2 遗留问题梳理
 - [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 当前未关闭问题列表
-- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前执行记录：DeepSeek Flash 目标验收、正式 ae9 延续、定价决策门与保留边界
+- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前执行记录：DeepSeek Flash 日期价格闭环、正式 ae9 延续、精确账本/清理与保留边界
 - [agent-workflows/reviews/README.md](agent-workflows/reviews/README.md) — 可选独立复核记录格式和问题级别规则
 - [ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md](ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md) — 单一执行负责人、Git/CI、高影响授权和复核规则的确认记录
 - [ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md](ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md) — Batch 1W 根因、代码、回归和目标证据边界
