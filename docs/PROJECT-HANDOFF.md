@@ -2,6 +2,21 @@
 
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
+> **Post-PRD6 V1 window decision (2026-07-16):** the selected first-release
+> work window is closed. There is no remaining active UniRouter-owned
+> implementation or target mutation in this window; `V1-XI-LEDGER-001` is the
+> sole active follow-up within this V1 Post-PRD6 window and remains X-Insight
+> coordination pending.
+> `V1-TARGET-PILOT-001` is deferred to a future customer/Production acceptance
+> window, `V1-CHANNEL-MAPPING-001` is deferred until post-pilot feedback, and
+> `V1-PROVIDER-BILL-RECON-001` records that actual supplier-bill reconciliation
+> was not executed; recurring/productized reconciliation is not implemented and
+> remains PRD7 candidate `D7-COST-001/002`. No actual supplier bill has been
+> reconciled, so supplier-cost equality, proven pass-through, gross-margin and
+> Production-financial-accuracy claims remain prohibited. Evidence:
+> `docs/ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md`. This closes the
+> work window, not unexecuted evidence or future product candidates, and it
+> does not reopen PRD6.
 > **Current V1 target checkpoint (2026-07-16):** PR #214 exact head
 > `4cf13761edbdc50163cbade1151051a74d3d42dc` passed Change Routing and all
 > three required checks (Backend Tests, Frontend Build, Docker Build) in run
@@ -27,11 +42,12 @@
 > `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md`;
 > the preceding local checkpoint remains immutable at
 > `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md`.
-> `V1-TARGET-PILOT-001`, capacity, detector, enterprise IdP, customer
-> operations, Production/TLS/HA, X-Insight v2, broader provider verification,
-> and supplier billing reconciliation remain separate. No provider billing
-> console/export/invoice was inspected: the prior cumulative 810007 micro-CNY
-> is a UniRouter customer-ledger charge, not proven supplier COGS. PRD6 stays
+> Capacity, detector, enterprise IdP, customer operations,
+> Production/TLS/HA and broader provider verification are deferred outside this
+> closed window. X-Insight v2 is the sole active coordination follow-up. No
+> provider billing console/export/invoice was inspected: the prior cumulative
+> 810007 micro-CNY is a UniRouter customer-ledger charge, not proven supplier
+> COGS. PRD6 stays
 > closed as `Completed (Accepted Scope)`.
 > Post-PRD6 commercial-release hardening is merged on `main` as
 > `5c1313521870731b0164d4eecfbbb06d7a7f0704` through PR #205. A follow-up P0
@@ -71,15 +87,17 @@
 > authenticated browser readback passed; the UI displays `开发环境` with zero
 > browser console errors/warnings. This is Target verified, not Production,
 > real-provider/detector, TLS, capacity/HA or migration-down evidence.
-> X-Insight v2 consumer acceptance and the remaining Post-PRD6 product/UI issue
-> queue remain separate decision/work gates.
+> X-Insight v2 consumer acceptance remains the sole active Post-PRD6 follow-up;
+> the non-X-Insight residuals are deferred/not implemented outside this closed
+> work window.
 
 ## First Read Order
 
-Read current target evidence
+Read the current window-closeout decision
+`docs/ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md` immediately after
+`docs/ops/CURRENT-STATUS.md`, then read current target evidence
 `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md`
-immediately after `docs/ops/CURRENT-STATUS.md`, followed by its immutable local
-checkpoint
+followed by its immutable local checkpoint
 `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md`.
 Earlier named-provider target evidence is
 `docs/ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md` followed by
@@ -171,6 +189,7 @@ using the preserved PRD6 history below.
 78. `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md` - PR #214 CI/merge, formal sequence-4 release, exact two-model API/DB/browser readback, administrator disable replay, excluded-model zero-dispatch proof, cleanup and supplier-bill non-claim.
 79. `docs/tech-ref/16-license-foundation.md` - enforceable License schema, runtime admission, resource limits, recovery and historical PRD2 compatibility.
 80. `docs/tech-ref/27-signed-offline-upgrade.md` - bundle format, trust ordering, provenance binding, verify/record workflow and explicit Update Center/TUF non-claims.
+81. `docs/ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md` - User-directed V1 work-window closeout, X-Insight-only active boundary, deferred/not-implemented register and supplier-cost non-claims.
 
 ## Current Project Shape
 
@@ -280,7 +299,8 @@ no PRD6 response persistence, deployment or semantic cache is accepted.
 
 | Question | Current Source |
 |----------|----------------|
-| What proves PR #214's formal release, administrator disable replay and exact two-model pilot target closure, and what remains open? | `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md` |
+| What closes the Post-PRD6 V1 first-release work window, and which items remain pending or deferred? | `docs/ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md` |
+| What proves PR #214's formal release, administrator disable replay and exact two-model pilot target closure, and which boundaries did it preserve? | `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md` |
 | What did the complete first-release product audit classify? | `docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md` |
 | Which first-release corrections are merged and Target verified, and what still needs a decision? | `docs/ops/evidence/V1-FIRST-RELEASE-TARGET-CLOSEOUT-20260715.md` |
 | What is the PRD6 decision state? | `docs/planning/PRD6-START-HERE.md` |

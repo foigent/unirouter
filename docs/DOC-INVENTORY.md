@@ -55,10 +55,11 @@
 | `docs/ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md` | Dated official Flash price authority, supported Admin API before/after audit, second bounded call, exact 7-micro-CNY settlement, cleanup and preserved commercial/Production/X-Insight non-claims |
 | `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md` | Historical immutable Post-PRD6 local implementation/full-suite checkpoint for request-time admin principal reconciliation, transient-503 frontend handling and bounded model-list governance; its then-pending statements are not current target truth |
 | `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md` | Current PR #214 CI/merge, formal sequence-4 release, administrator disable replay, exact two-model API/DB/browser/config, excluded-model zero-dispatch, credential cleanup and supplier-bill non-claim evidence |
+| `docs/ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md` | User-directed V1 first-release work-window closeout, window-scoped X-Insight-only active boundary, unexecuted one-time bill evidence, unimplemented recurring reconciliation and supplier-cost/pass-through/margin non-claims |
 | `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` | Official competitor HA patterns, current UniRouter cluster facts, Four Quadrants and accepted D6-12 stream/HA boundary |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | Source-backed audit/reconciliation/correlation/UI/architecture/upgrade findings, Four Quadrants and PRD6 batches |
 | `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md` | Accepted customer-revenue/provider-COGS boundary, competitor and supplier billing evidence, Four Quadrants, PRD6 non-claims and future cost/metering/media candidates |
-| `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | PRD7 candidate split; first future direction selected, implementation remains later after PRD6 closeout and still requires its own authorization |
+| `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | PRD7 candidate split; one-time supplier-bill reconciliation is deferred/not executed, while recurring/productized reconciliation remains unimplemented candidate D7-COST-001/002; either path requires its own authorization |
 | `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` | Accepted future Cache Service direction, service boundary, capacity planning triggers, SaaS cell reuse and non-authorization guardrails |
 | `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md` | Version-fixed competitor audit, Four Quadrants and priority matrix |
 | `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md` | Third-round Four Quadrants, CARTA/shadow/collusion ownership, Killer Features and candidate acceptance rows |
@@ -95,7 +96,7 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required single-owner execution, approval, evidence and optional-review workflow |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PR #214 formal release and admin/two-model target closure, supplier-bill/Production/X-Insight gates and preserved historical V1/PRD6/PRD5 evidence |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current X-Insight-only active boundary, closed Post-PRD6 V1 window, deferred/not-implemented residuals and preserved historical V1/PRD6/PRD5 evidence |
 | `docs/agent-workflows/reviews/` | Optional immutable independent review results |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry pointing to the current execution record |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |
@@ -228,7 +229,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 |------|------|
 | `docs/agent-workflows/README.md` | Agent workflow index |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Current Agent Protocol v2.0 |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PR #214 formal release and admin/two-model target closure, supplier-bill/Production/X-Insight gates and preserved historical V1/PRD6/PRD5 evidence |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current X-Insight-only active boundary, closed Post-PRD6 V1 window, deferred/not-implemented residuals and preserved historical V1/PRD6/PRD5 evidence |
 | `docs/agent-workflows/reviews/README.md` | Independent review naming, contents and severity rules |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |

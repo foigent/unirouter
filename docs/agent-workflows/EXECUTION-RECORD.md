@@ -1,6 +1,48 @@
 # Current Execution Record
 
-## Active Batch — V1 Admin Principal State And Pilot Catalog Target Closure
+## Active Boundary — X-Insight Cooperation Only
+
+**Owner:** Codex for UniRouter status reconciliation; X-Insight consumer/joint
+acceptance requires the external project owner.
+
+**Risk:** R2 documentation/status decision only
+
+**Status:** the selected Post-PRD6 V1 first-release work window is closed. No
+active UniRouter-owned code, schema, deployment, credential, provider-price or
+target-configuration work remains in this window. `V1-XI-LEDGER-001` is the
+sole active follow-up within this V1 Post-PRD6 window and remains
+`Coordination pending`.
+
+**Decision baseline:** clean/aligned `main` and `origin/main` at
+`90ffc010c4220d4cae738f04cad4021d2eb20f0e`; latest code-bearing repository and
+development-target release remains PR #214 merge
+`46b49b60835225a0b32b641615e6afe4a8a9696b`.
+
+**Closeout evidence:**
+`docs/ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md`.
+
+The non-X-Insight residuals are recorded without false completion:
+
+- `V1-TARGET-PILOT-001`: deferred to a separately approved future
+  customer/Production acceptance window;
+- `V1-PROVIDER-BILL-RECON-001`: actual reconciliation deferred/not executed;
+  recurring/productized reconciliation is not implemented and remains PRD7
+  candidate `D7-COST-001/002`;
+- `V1-CHANNEL-MAPPING-001`: deferred until post-pilot user feedback; the
+  controlled V1 operator procedure remains the current boundary.
+
+Supplier-bill reconciliation does not block the current functional pilot but
+continues to block supplier-cost equality, pass-through, gross-margin and
+Production-financial-accuracy claims. A one-time bounded manual/account
+reconciliation may be authorized separately from PRD7; recurring product
+capability requires separate `D7-COST-001/002` acceptance. Neither path is
+authorized here. PRD6 remains `Completed (Accepted Scope)` and is not reopened.
+Reactivation requires an explicit new decision/window.
+
+**Publication validation:** this closeout changes documentation only. Change
+Routing should explicitly skip Backend Tests, Frontend Build and Docker Build.
+
+## Previous Batch — V1 Admin Principal State And Pilot Catalog Target Closure
 
 **Owner:** Codex
 
@@ -10,8 +52,9 @@ target formal release, reversible pilot configuration and credential cleanup
 
 **Status:** Target verified / closed for `V1-ADMIN-STATUS-001`,
 `V1-PILOT-CATALOG-001`, and the exact two-model configuration slice of
-`V1-TARGET-ROUTING-001`. The broader pilot, supplier bill, Production and
-X-Insight evidence gates remain open.
+`V1-TARGET-ROUTING-001`. The later window-closeout decision defers the broader
+pilot/Production and supplier-bill items; X-Insight remains coordination
+pending.
 
 **Repository and release authority:** PR #214 exact head
 `4cf13761edbdc50163cbade1151051a74d3d42dc` passed Change Routing and the
@@ -66,10 +109,13 @@ Production evidence.
 **Preserved non-claims:** no supplier billing console/export/API/invoice or
 isolated balance delta was inspected. Historical provider-reported usage and
 810007 micro-CNY settlement prove UniRouter's customer ledger, not supplier
-COGS. `V1-PROVIDER-BILL-RECON-001` is a P1 Production/external-evidence gap.
-Capacity, detector, enterprise IdP, customer backup/restore/upgrade,
-Production/TLS/HA, long-running reliability, broader providers, permanent JWT
-revocation and X-Insight v2 acceptance also remain open. PRD6 remains
+COGS. Actual reconciliation is deferred/not executed; recurring/productized
+reconciliation is not implemented and remains candidate `D7-COST-001/002`.
+Capacity, detector, enterprise IdP, customer
+backup/restore/upgrade, Production/TLS/HA, long-running reliability, broader
+providers and permanent JWT revocation are deferred outside this window;
+X-Insight v2 acceptance remains the sole active follow-up within this V1
+Post-PRD6 window. PRD6 remains
 `Completed (Accepted Scope)` and is not reopened.
 
 **Publication validation:** this reconciliation changes documentation only.
