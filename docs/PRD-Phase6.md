@@ -25,6 +25,12 @@ migration-down/TLS, real provider/SSO, capacity/HA or real policy-enforcement
 evidence. See
 `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md`.
 
+A separate User-authorized Post-PRD6 run on 2026-07-15 partially satisfies the
+real-upstream half of P6-E03 for bounded Mimo calls only. It does not reopen
+PRD6 or satisfy enterprise SSO, broader-provider, capacity/HA, policy-enforcement
+or Production evidence. See
+`docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md`.
+
 ## 2. Non-Negotiable Starting State
 
 - PRD1 through PRD4 remain completed/frozen according to their own accepted

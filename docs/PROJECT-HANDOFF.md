@@ -3,23 +3,23 @@
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
 > **Current checkpoint (2026-07-15):** the latest code-bearing release is
-> `a0a567dd169dcb133b09eed3f711cdcf87214641`, the PR #207 squash merge.
-> PR #208 later merged this target-closeout record as docs-only commit
-> `2f593a4fb2c9c9729ddf35152e11a1c292b5d392`; it changes no runtime tree,
-> image, schema or target release authority.
-> Exact head `f63bcb268251cd6ec0d8701afc20a7928cd32ecb` passed all four required
-> checks in run `29368640933`, and the authorized development ECS runs the exact
-> merged stable/canary/frontend release with version `1.0.0`, environment
-> `development`, migration `000037`, healthy dependencies, an enforceable test
-> License and signed-upgrade sequence `2` apply/readback/replay evidence.
-> Authenticated API and real-browser target verification passed all 24 admin
-> routes plus a restricted developer session; temporary actors are disabled
-> and browser state is cleared. The complete issue matrix and target closeout
-> are `docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md`
-> and `docs/ops/evidence/V1-FIRST-RELEASE-TARGET-CLOSEOUT-20260715.md`.
-> Existing target upstream model allowlists remain a configuration gap; real
-> provider, detector, enterprise IdP, Production/TLS/capacity and X-Insight v2
-> evidence are not claimed. PRD6 stays closed as `Completed (Accepted Scope)`.
+> `ae9ce2c927460e993dd00c6d81c8736cc5a015a2`, the PR #210 squash merge.
+> Exact head `5f8cd6a4aedb74354dea9f33223d4aca95e3f2e9` passed Change Routing,
+> Backend Tests and Docker Build in run `29419821405`; Frontend Build was
+> correctly skipped. The development ECS stable/canary backends run exact
+> formal image
+> `sha256:fca7fe8fdabfcbfd32198c8bb4ba054e1b465f8342f671af39dba76b54b822d0`,
+> migration `000037`, formal release trust, active enforceable test License and
+> signed-upgrade sequence `3`. The unchanged frontend/Nginx remain on the a0a
+> release from PR #207. A bounded real Mimo request on ae9 returned HTTP 200,
+> persisted `upstream_status_code=200`, settled exactly at 259000 micro-CNY and
+> left the temporary key/user disabled with zero pending attempt/outbox. Full
+> evidence is
+> `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md`.
+> DeepSeek/Kimi, capacity, detector, enterprise IdP, customer operations,
+> Production/TLS/HA and X-Insight v2 acceptance remain separate. The earlier
+> PR #207/#208 no-paid checkpoint remains historically correct. PRD6 stays
+> closed as `Completed (Accepted Scope)`.
 > Post-PRD6 commercial-release hardening is merged on `main` as
 > `5c1313521870731b0164d4eecfbbb06d7a7f0704` through PR #205. A follow-up P0
 > review had found
@@ -53,7 +53,7 @@
 > `ec0dde201841b8286f6802cc7e588e79eda40719`, and was activated by an
 > authorized non-rolling ECS migration through `000036`. Environment-label PR
 > #203 passed final run `29339373907`, merged as
-> `545e514ab51937e6589512192141b9359cfcb504`, and is now the exact
+> `545e514ab51937e6589512192141b9359cfcb504`, and was an intermediate
 > stable/canary/frontend development-target release. Database, API, runtime and
 > authenticated browser readback passed; the UI displays `开发环境` with zero
 > browser console errors/warnings. This is Target verified, not Production,
@@ -63,12 +63,13 @@
 
 ## First Read Order
 
-Current first-release evidence is
-`docs/ops/evidence/V1-FIRST-RELEASE-TARGET-CLOSEOUT-20260715.md`, with the full
+Current target evidence is
+`docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md`.
+Read it immediately after `docs/ops/CURRENT-STATUS.md`, then read the earlier
+`docs/ops/evidence/V1-FIRST-RELEASE-TARGET-CLOSEOUT-20260715.md` and full
 classification matrix in
-`docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md`; read both
-immediately after `docs/ops/CURRENT-STATUS.md` before using the preserved PRD6
-history below.
+`docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md` before
+using the preserved PRD6 history below.
 
 1. `docs/ops/CURRENT-STATUS.md` - current verified project status.
 2. `docs/planning/PRD6-START-HERE.md` - PRD6 decision state and reading map.
@@ -143,8 +144,9 @@ history below.
 71. `docs/ops/evidence/V1-LICENSE-STUDIO-AND-EMBEDDED-TRUST-MERGE-20260715.md` - PR #205 approval, exact squash merge/main readback, final-head CI and no-automatic-main-run evidence.
 72. `docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md` - complete user-question classification, source/API facts, local verification and explicit non-claims.
 73. `docs/ops/evidence/V1-FIRST-RELEASE-TARGET-CLOSEOUT-20260715.md` - PR #207 CI/merge truth, exact ECS release, signed sequence-2 replay proof, authenticated API/browser acceptance and remaining decision gates.
-74. `docs/tech-ref/16-license-foundation.md` - enforceable License schema, runtime admission, resource limits, recovery and historical PRD2 compatibility.
-75. `docs/tech-ref/27-signed-offline-upgrade.md` - bundle format, trust ordering, provenance binding, verify/record workflow and explicit Update Center/TUF non-claims.
+74. `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md` - PR #210 upstream-status fix, test upgrade-root rotation, formal ae9/sequence-3 deployment, bounded real Mimo evidence and remaining target boundaries.
+75. `docs/tech-ref/16-license-foundation.md` - enforceable License schema, runtime admission, resource limits, recovery and historical PRD2 compatibility.
+76. `docs/tech-ref/27-signed-offline-upgrade.md` - bundle format, trust ordering, provenance binding, verify/record workflow and explicit Update Center/TUF non-claims.
 
 ## Current Project Shape
 

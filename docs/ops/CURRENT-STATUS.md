@@ -2,29 +2,26 @@
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
 > **2026-07-15 current checkpoint:** the latest code-bearing release is
-> `a0a567dd169dcb133b09eed3f711cdcf87214641`, the squash merge of PR #207.
-> PR #208 later merged this target-closeout record as docs-only commit
-> `2f593a4fb2c9c9729ddf35152e11a1c292b5d392`; it changes no runtime tree,
-> image, schema or target release authority.
-> Exact PR head `f63bcb268251cd6ec0d8701afc20a7928cd32ecb` passed Change Routing,
-> Backend Tests, Frontend Build and Docker Build in required run `29368640933`;
-> no duplicate automatic `main` run was created. The separately authorized
-> development ECS target now runs the exact merged stable/canary/frontend
-> release as version `1.0.0`, environment `development`, migration `000037`,
-> with healthy PostgreSQL/Redis, an enforceable deployment-bound **test**
-> License and signed-upgrade sequence `2` apply/readback/replay rejection.
-> Authenticated API and real-browser verification passed all 24 admin routes,
-> a caller-key lifecycle, route preview, guardrail snapshots, finance/
-> reconciliation reads, audit identity/detail UX and a restricted developer
-> session. Temporary QA/developer users are disabled and browser state is
-> cleared. The complete classification and target evidence are
-> `docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md` and
-> `docs/ops/evidence/V1-FIRST-RELEASE-TARGET-CLOSEOUT-20260715.md`.
-> `V1-FIRST-RELEASE-UX-001` is Target verified / closed. Existing target route
-> allowlists still do not match the current model catalog; no supplier secret,
-> allowlist or paid traffic was changed. Real provider/detector/enterprise-IdP,
-> Production/TLS/capacity and X-Insight v2 evidence remain explicit later
-> gates. PRD6 remains `Completed (Accepted Scope)` and is not reopened.
+> `ae9ce2c927460e993dd00c6d81c8736cc5a015a2`, the squash merge of PR #210.
+> Exact PR head `5f8cd6a4aedb74354dea9f33223d4aca95e3f2e9` passed Change Routing,
+> Backend Tests and Docker Build in required run `29419821405`; Frontend Build
+> was correctly skipped by change routing. The authorized development ECS
+> stable/canary backends now run exact formal image
+> `sha256:fca7fe8fdabfcbfd32198c8bb4ba054e1b465f8342f671af39dba76b54b822d0`,
+> version `1.0.0`, environment `development`, migration `000037`, release trust
+> `license_keys=1 upgrade_keys=1`, active enforceable test License and signed
+> sequence `3`. The unchanged frontend/Nginx remain on the PR #207 a0a release.
+> One separately approved bounded Mimo request returned HTTP 200 and proved
+> `call_logs.status_code=200`, `upstream_status_code=200`, provider attempt
+> `settled/known_usage/http 200` and exact 259000-micro-CNY ledger conservation;
+> the temporary key and QA user are disabled and no pending attempt/outbox
+> remains. Mimo non-stream/stream routing is now Target verified for bounded
+> single calls. DeepSeek/Kimi, capacity, detector, enterprise IdP, customer
+> operations, Production/TLS/HA and X-Insight v2 acceptance remain open.
+> Evidence: `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md`.
+> The earlier PR #207/#208 no-paid-call closeout remains immutable evidence for
+> its checkpoint and is superseded only for the explicitly authorized Mimo
+> calls. PRD6 remains `Completed (Accepted Scope)` and is not reopened.
 > The User-approved Post-PRD6 V1 delivery gate for commercial License
 > enforcement and signed offline upgrades is merged on `main` as
 > `5c1313521870731b0164d4eecfbbb06d7a7f0704` through PR #205. It adds
@@ -645,14 +642,15 @@ Historical PRD1 summary: Core backend modules, admin APIs, frontend pages, migra
 | PRD3 | Complete for confirmed scope. User confirmed PRD3 is not a new-feature implementation phase; it is PRD1->PRD2 consistency, semantics, contract, documentation lifecycle, module boundaries, frontend architecture, parity tests, and engineering governance for existing functionality only. PRD3 Batch 17 final evidence hygiene passed Canary 7/7, consolidates all P3 rows to `Canary passed`, preserves PRD2 E2E accepted versus Production verified boundaries, and keeps PRD4 backlog items separate. No planned PRD3 implementation work remains unless User reopens scope | `docs/planning/PRD3-CONSISTENCY-AUDIT.md`, `docs/PRD-Phase3.md`, `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`, `docs/issues/OPEN-ISSUES.md`, `docs/agent-workflows/VERIFY-RESULT.md` |
 | PRD4 | Complete for the confirmed current scope. Batch 0 through Batch 1S passed the required gates for scoped PRD4 work. Batch 1S Open Issue Boundary Closeout passed Canary 7/7, Sentinel merge is reflected by `5b41b87` / PR #103, and User reported Atlas deleted `uniroute_test`, closing `PRD4-DEPLOY-002`. PRD4 delivered API key owner usage/cost visibility, quota vocabulary, Flow/Event/Trace foundation, PlungeIn observation-first port contract, Runtime Observability and host telemetry, Prometheus/Grafana integration health, real upstream/SSO guarded harness assets only, auth UX hardening, production-evidence boundary classification, runtime/build-chain hardening, security/redaction guardrails, and PRD5 backlog consolidation. No PRD4 matrix row is promoted to `Production verified` without target-environment evidence. Full Scheduler V2, runtime plugin marketplace, Logto/IAM rewrite, managed-HA IaC product, multi-instance infrastructure observability/topology, budget hard-block enforcement, runtime cache, full SDK, new persistent roles, real upstream target E2E, real SSO target E2E, and public SaaS/commercial growth features are deferred to PRD5 unless User reopens scope | `docs/PRD-Phase4.md`, `docs/ops/PRD4-ACCEPTANCE-MATRIX.md`, `docs/planning/PRD5-BACKLOG.md`, `docs/ops/evidence/PRD4-final-closeout-20260708.md`, `docs/issues/OPEN-ISSUES.md`, `docs/agent-workflows/VERIFY-RESULT.md` |
 | PRD5 | Accepted UniRouter scope complete. Historical Batch 1A through Batch 1V evidence remains valid; Batch 1W is target/external-integration verified for the authorized denied scenario. Batch 1X audit/screening is Local verified. Batch 1Y implementation is merged, and Batch 1Z verifies target migration/deployment/browser evidence plus the `INFRA-SEC-001` cutover. Structural search, Data Exchange Control, and redacted topology are Target verified; route/failover visibility is CI verified. X-Insight's synthetic-only target is verified and its runtime request is answered; unimplemented durable-job/deep-link/automated-receipt contracts, migration down, TLS 443 behavior, real upstream/SSO, read-only DB/view, exporter/outbox, and deferred P5-F12 products remain separate. PRD4 remains closed | `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`, `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md`, `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md`, `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md`, `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md`, `docs/planning/PRD5-IMPLEMENTATION-PLAN.md`, `docs/planning/PRD5-BACKLOG.md`, `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md`, `docs/planning/PRD5-DEFERRED-CONTROL-DESIGNS-20260710.md`, `docs/agent-workflows/EXECUTION-RECORD.md` |
-| PRD6 | Completed for Accepted Scope. All 27 accepted feature rows and the separate accepted engineering-integrity issue are repository/required-CI verified or closed. Selected ECS deployment/UI surfaces and P6-E01 are Target verified. Proposed/deferred rows, P6-E02 through P6-E04, PRD7, native IAM revocation, 100x/HA and Production evidence remain later and do not reopen PRD6 | `docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md`, `docs/PRD-Phase6.md`, `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`, `docs/ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md`, `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md` |
+| PRD6 | Completed for Accepted Scope. All 27 accepted feature rows and the separate accepted engineering-integrity issue are repository/required-CI verified or closed. Selected ECS deployment/UI surfaces and P6-E01 are Target verified; P6-E03 is partially Target verified for bounded Mimo calls only. P6-E02, P6-E04, P6-E03 enterprise SSO/broader-provider evidence, PRD7, native IAM revocation, 100x/HA and Production evidence remain later and do not reopen PRD6 | `docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md`, `docs/PRD-Phase6.md`, `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`, `docs/ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md`, `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md`, `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md` |
 
 ## Current Verification
 
 | Area | Status | Evidence |
 |------|--------|----------|
+| V1 ae9 Upstream Status And Mimo Target | Target verified / closed for status regression and bounded Mimo single calls | PR #210 exact head `5f8cd6a` passed required run `29419821405` and merged as `ae9ce2c`. Stable/canary run formal image `sha256:fca7fe8f...`, release trust 1/1, active enforceable test License and signed sequence `3`. Request `op_1dc206219bcbafc45d4b9df2b66915c7` proved gateway/upstream 200, provider-reported final usage, exact 259000-micro-CNY settlement and credential cleanup. Evidence: `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md`. DeepSeek/Kimi, capacity, detector, IdP, customer, Production and X-Insight remain open |
 | V1 Financial Prerequisites | CI verified / closed; exact target rows preserved | PR #196 exact head `2c5e930` / run `29300560434` / merge `86a3bd8` closes unsafe absolute wallet adjustment. PR #197 exact head `74ebf62` / run `29301071299` / merge `94c93dc` closes the public price-unit/default-price defect and adds `000035` without rewriting existing rows. The test target retained every existing price exactly; no automatic conversion or repricing was performed. Evidence: `docs/ops/evidence/V1-POST-PRD6-FINANCIAL-PREREQUISITES-CI-20260714.md` and the V1 target evidence |
-| V1 Micro-Precision Ledger And Environment Label | Target verified / closed for the selected development ECS | PR #202 exact head `1944e31` passed run `29334221779` and merged as `ec0dde2`; the authorized non-rolling activation applied `000035`/`000036`. PR #203 exact head `b76f253` passed run `29339373907`, merged as final release `545e514`, and wired the frontend build-time environment label. Stable/canary/runtime/schema/API and authenticated browser evidence passed; `开发环境` renders with zero console errors/warnings. Evidence: `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-LOCAL-20260714.md`, `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-TARGET-20260714.md`. No Production, real-provider/detector, HA/capacity, TLS, migration-down or X-Insight consumer claim |
+| V1 Micro-Precision Ledger And Environment Label | Target verified / closed for the selected development ECS | PR #202 exact head `1944e31` passed run `29334221779` and merged as `ec0dde2`; the authorized non-rolling activation applied `000035`/`000036`. PR #203 exact head `b76f253` passed run `29339373907`, merged as intermediate release `545e514`, and wired the frontend build-time environment label. Stable/canary/runtime/schema/API and authenticated browser evidence passed; `开发环境` renders with zero console errors/warnings. Evidence: `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-LOCAL-20260714.md`, `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-TARGET-20260714.md`. No Production, real-provider/detector, HA/capacity, TLS, migration-down or X-Insight consumer claim |
 | V1 Post-PRD6 CI Efficiency | CI verified / closed | PR #198 exact head run `29299202652`, squash merge `31d87de`, no automatic merge-commit CI, trusted main run `29299765793`, shared cache `5720112747` and final 32-cache / `9,503,335,891`-byte readback. Docs-only PR #199 run `29300434659` passed with explicit skipped Backend/Frontend/Docker contexts. Evidence: `docs/ops/evidence/V1-POST-PRD6-CI-EFFICIENCY-CI-20260714.md` |
 | PRD6 Final Completion | Completed (Accepted Scope) | Fresh 2026-07-14 audit: 27/27 accepted rows closed, clean/aligned pre-publication baseline `9c73d6f`, exact-head main run `29274010760` green, public ECS readiness healthy; `docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md`. No Production or future-scope promotion |
 | PRD6 Target Deployment And UI Verification | Target verified for selected surfaces | `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md`; exact PRD6 stable/canary commit `ce9307a`, exact final frontend `f4fe41d`, migrations through `000034`, public/internal readiness, authenticated Dashboard/limits/Guardrails/routing/reconciliation/logs/status/docs, one historical P6-E01 route/failover detail, mobile checks, PR #191 runbook/Vite correction, PR #192 inline favicon correction and zero-row QA cleanup. No Production, policy-enforcement, real-provider/detector, capacity/HA, TLS or migration-down claim |
