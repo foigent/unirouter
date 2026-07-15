@@ -3,6 +3,7 @@
 ## 当前入口
 - [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — Agent 接手项目的第一阅读入口
 - [ops/CURRENT-STATUS.md](ops/CURRENT-STATUS.md) — 当前项目真实状态（进度、测试、部署、缺口）
+- [ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md](ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md) — Post-PRD6 V1 首发窗口收口、窗口内仅 X-Insight 协同仍活动、真实账单核对未执行及持续对账能力未实现边界
 - [ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md](ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md) — PR #214 CI/合并、正式 sequence-4 发布、管理员禁用回放、双模型 API/数据库/浏览器验收、负向零分发和厂商账单未对账边界
 - [ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md](ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md) — 管理端逐请求主体状态校验、前端 503 会话保留与双模型 catalog 一致性的不可变本地实现 checkpoint
 - [ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md](ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md) — DeepSeek Flash 官方日期价格、Admin API 精确审计、第二次受控调用、7 micro-CNY 账本守恒与清理证据
@@ -73,7 +74,7 @@
 - [PRD-Phase3.md](PRD-Phase3.md) — 已完成 PRD3 一致性、语义、契约和架构清理范围
 - [planning/PRD3-CONSISTENCY-AUDIT.md](planning/PRD3-CONSISTENCY-AUDIT.md) — PRD3 范围审计和 PRD1→PRD2 遗留问题梳理
 - [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 当前未关闭问题列表
-- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前执行记录：PR #214 正式发布、管理员状态与双模型 pilot 目标闭环，以及厂商账单/Production/X-Insight 保留边界
+- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前执行边界：Post-PRD6 V1 窗口已关闭、窗口内仅 X-Insight 协同仍活动；真实账单核对未执行，持续能力未实现
 - [agent-workflows/reviews/README.md](agent-workflows/reviews/README.md) — 可选独立复核记录格式和问题级别规则
 - [ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md](ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md) — 单一执行负责人、Git/CI、高影响授权和复核规则的确认记录
 - [ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md](ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md) — Batch 1W 根因、代码、回归和目标证据边界
@@ -143,7 +144,7 @@
 
 ## Agent 协作
 - [agent-workflows/AGENT-PROTOCOL.md](agent-workflows/AGENT-PROTOCOL.md) — 单一执行负责人、授权、证据和可选独立复核协议
-- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前批次执行、测试、CI、部署和缺口记录
+- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前 X-Insight-only 执行边界、已关闭批次、延期项和历史测试/CI/部署记录
 - [agent-workflows/reviews/README.md](agent-workflows/reviews/README.md) — 独立复核入口
 - [agent-workflows/FIX-SIGNAL.md](agent-workflows/FIX-SIGNAL.md) — 协议 v1.x 兼容入口
 - [agent-workflows/VERIFY-RESULT.md](agent-workflows/VERIFY-RESULT.md) — 协议 v1.x 历史结果
