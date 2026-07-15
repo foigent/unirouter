@@ -37,8 +37,25 @@ func TestP6F20GatewayEvidenceIsReplayableAndIdempotent(t *testing.T) {
 	require.NoError(t, service.RegisterHandler(outbox.EventTrace, relay.ProcessTraceOutbox))
 	require.NoError(t, service.RegisterHandler(outbox.EventCallLog, relay.ProcessCallLogOutbox))
 
-	evidenceCtx := contextWithEvidenceSpanState(context.WithValue(ctx, middleware.CtxOrgID, orgID))
 	requestID := "op_p6f20_gateway_evidence"
+	attemptID := "att_p6f20_gateway_evidence"
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO freeze_idempotency (request_id, org_id, status, pricing_version)
+		 VALUES ($1, $2, 'settled', 'p6f20-test')
+		 RETURNING request_id`, requestID, orgID,
+	).Scan(&requestID))
+	_, err = pool.Exec(ctx,
+		`INSERT INTO billing_provider_attempts (
+			org_id, request_id, attempt_id, api_key_id, channel_id, channel_key_id,
+			route_sequence, route_total, endpoint, provider, channel_name,
+			state, outcome_certainty, http_status
+		 ) VALUES ($1, $2, $3, 101, 201, 301, 1, 1,
+			'/v1/chat/completions', 'provider-a', 'channel-a', 'settled', 'known_usage', 202)`,
+		orgID, requestID, attemptID,
+	)
+	require.NoError(t, err)
+	evidenceCtx := contextWithEvidenceSpanState(context.WithValue(ctx, middleware.CtxOrgID, orgID))
+	evidenceCtx = contextWithAttemptID(evidenceCtx, attemptID)
 	relay.recordTraceEvent(evidenceCtx, requestID, "gateway.request.accepted", "gateway", "info", "model-a", "model-a", nil, 0, 3, map[string]interface{}{
 		"outbox_version": outbox.Version,
 	})
@@ -63,6 +80,11 @@ func TestP6F20GatewayEvidenceIsReplayableAndIdempotent(t *testing.T) {
 	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM request_trace_events`).Scan(&traces))
 	require.Equal(t, 1, logs)
 	require.Equal(t, 2, traces)
+	var upstreamStatus int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT upstream_status_code FROM call_logs WHERE org_id=$1 AND request_id=$2`, orgID, requestID,
+	).Scan(&upstreamStatus))
+	require.Equal(t, 202, upstreamStatus, "call-log materialization must preserve the authoritative provider-attempt status")
 
 	var createdAt time.Time
 	require.NoError(t, pool.QueryRow(ctx,
@@ -84,4 +106,36 @@ func TestP6F20GatewayEvidenceIsReplayableAndIdempotent(t *testing.T) {
 	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM request_trace_events`).Scan(&traces))
 	require.Equal(t, 1, logs)
 	require.Equal(t, 3, traces, "the duplicate producer attempt remains visible as a distinct trace while the call log stays singular")
+
+	// The synchronous fallback uses the same authoritative attempt lookup when
+	// the durable outbox is unavailable.
+	syncRequestID := "op_p6f20_gateway_evidence_sync"
+	syncAttemptID := "att_p6f20_gateway_evidence_sync"
+	_, err = pool.Exec(ctx,
+		`INSERT INTO freeze_idempotency (request_id, org_id, status, pricing_version)
+		 VALUES ($1, $2, 'settled', 'p6f20-test')`,
+		syncRequestID, orgID,
+	)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO billing_provider_attempts (
+			org_id, request_id, attempt_id, api_key_id, channel_id, channel_key_id,
+			route_sequence, route_total, endpoint, provider, channel_name,
+			state, outcome_certainty, http_status
+		 ) VALUES ($1, $2, $3, 102, 202, 302, 1, 1,
+			'/v1/chat/completions', 'provider-b', 'channel-b', 'settled', 'known_usage', 204)`,
+		orgID, syncRequestID, syncAttemptID,
+	)
+	require.NoError(t, err)
+	relay.outbox = nil
+	syncEvidenceCtx := contextWithAttemptID(context.WithValue(ctx, middleware.CtxOrgID, orgID), syncAttemptID)
+	relay.recordRequest(
+		syncEvidenceCtx, syncRequestID, orgID, 0, 0, "provider-b", "channel-b",
+		"model-b", "model-b", "127.0.0.1", 10, 2, 3, 200, 20, 0,
+		false, metering.UsageSourceUpstream, 12, "upstream-b",
+	)
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT upstream_status_code FROM call_logs WHERE org_id=$1 AND request_id=$2`, orgID, syncRequestID,
+	).Scan(&upstreamStatus))
+	require.Equal(t, 204, upstreamStatus, "synchronous call-log fallback must preserve the authoritative provider-attempt status")
 }

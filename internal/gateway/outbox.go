@@ -326,7 +326,7 @@ func (relay *Relay) ProcessCallLogOutbox(ctx context.Context, event outbox.Event
 			org_id, project_id, api_key_id, owner_user_id, key_type,
 			model, requested_model, provider, channel,
 			prompt_tokens, uncached_prompt_tokens, cache_read_tokens, cache_creation_tokens,
-			completion_tokens, total_tokens, cost_micros, status_code, latency_ms, ttft_ms, usage_source,
+			completion_tokens, total_tokens, cost_micros, status_code, upstream_status_code, latency_ms, ttft_ms, usage_source,
 			usage_authority, usage_purpose, usage_finality, usage_contract_version, usage_estimate_version,
 			cache_usage_schema, cache_usage_status, pricing_version,
 			effective_input_price_micros_per_million, effective_cache_read_price_micros_per_million,
@@ -343,7 +343,14 @@ func (relay *Relay) ProcessCallLogOutbox(ctx context.Context, event outbox.Event
 			$4, $5, $6, $7, $8,
 			$9, $10, $11, $12,
 			$13, $14, $15, $16,
-			$17, $18, $19, $20, $21, $22, $23,
+			$17, $18, $19, $20,
+			(SELECT provider_attempt.http_status
+			   FROM billing_provider_attempts provider_attempt
+			  WHERE provider_attempt.org_id = $4::bigint
+			    AND provider_attempt.request_id = $1::varchar(64)
+			    AND provider_attempt.attempt_id = $50::varchar(64)
+			  LIMIT 1),
+			$21, $22, $23,
 			$24, $25, $26, $27, $28,
 			$29, $30, $31,
 			$32, $33, $34, $35,
