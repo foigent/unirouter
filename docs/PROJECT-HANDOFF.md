@@ -2,6 +2,22 @@
 
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
+> **Active local batch (2026-07-16; not yet PR/CI/target evidence):** User
+> accepted live administrator principal reconciliation and a first-customer
+> pilot limited to `mimo-v2.5-pro` plus `DeepSeek-V4-Flash`. Branch
+> `codex/v1-admin-revocation-pilot-catalog` starts from docs-only main
+> `0b37f961ef75e2f8ab889cfea66f71e282a53e9f`. The auth/frontend slices are
+> Local verified: every protected JWT request must match the current active
+> user/organization/role; mismatch returns 401, state uncertainty returns 503,
+> and the UI retains a transient-503 token for explicit retry while clearing on
+> 401. This is state-dependent rejection, not a permanent token blacklist. A
+> bounded/batch `/v1/models` query now matches callable alias/lifecycle/project-
+> model-set admission; unit/race/vet and migrated real-PostgreSQL parity checks
+> pass. Full `go test -race ./...`, full Go vet, the selected tagged integration
+> suites, all 169 frontend tests and the production frontend build also pass.
+> PR, required CI, merge and ECS/catalog verification remain pending. Local
+> evidence is
+> `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md`.
 > **Current checkpoint (2026-07-16):** the latest code-bearing release is
 > `ae9ce2c927460e993dd00c6d81c8736cc5a015a2`, the PR #210 squash merge.
 > Exact head `5f8cd6a4aedb74354dea9f33223d4aca95e3f2e9` passed Change Routing,
@@ -72,7 +88,10 @@
 
 ## First Read Order
 
-Current target evidence is
+Read the active local evidence
+`docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md`
+immediately after `docs/ops/CURRENT-STATUS.md`; it does not supersede the target
+release below. Current target evidence is
 `docs/ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md` followed by
 `docs/ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md` and
 `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md`.

@@ -10,15 +10,15 @@ import (
 	"github.com/uniroute/unirouter/internal/admin"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
-	"github.com/uniroute/unirouter/internal/testutil"
 )
 
 func TestRegisterModelGovernanceRoutesEnforcesProductionRoleBoundary(t *testing.T) {
 	const secret = "p6f36-model-governance-route-secret"
-	handler := admin.NewHandler(&testutil.MockDB{}, secret, []byte("0123456789abcdef01234567"), nil)
+	db := activeAdminPrincipalDB()
+	handler := admin.NewHandler(db, secret, []byte("0123456789abcdef01234567"), nil)
 	mux := http.NewServeMux()
 	roleRoute := func(handler http.HandlerFunc, roles ...string) http.Handler {
-		return middleware.AdminAuth(secret)(middleware.RequireRoles(roles...)(handler))
+		return middleware.AdminAuth(db, secret)(middleware.RequireRoles(roles...)(handler))
 	}
 	registerModelGovernanceRoutes(mux, handler, modelGovernanceRouteGuards{
 		organization: func(handler http.HandlerFunc) http.Handler {

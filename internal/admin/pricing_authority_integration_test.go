@@ -85,7 +85,7 @@ func TestP6F34PriceAuthorityIntegration(t *testing.T) {
 		assertStatus(t, serve(t, http.MethodGet, "/api/v1/org-model-prices?org_id=invalid", "",
 			fx.orgAdminB, fx.orgB, auth.RoleOrgAdmin, ""), http.StatusBadRequest)
 		assertStatus(t, serve(t, http.MethodGet, "/api/v1/org-model-prices", "",
-			fx.orgAdminB, 0, auth.RoleOrgAdmin, ""), http.StatusForbidden)
+			fx.orgAdminB, 0, auth.RoleOrgAdmin, ""), http.StatusUnauthorized)
 
 		own := serve(t, http.MethodGet, "/api/v1/org-model-prices", "", fx.platformA, fx.orgA, auth.RolePlatformAdmin, "")
 		assertStatus(t, own, http.StatusOK)
@@ -115,7 +115,7 @@ func TestP6F34PriceAuthorityIntegration(t *testing.T) {
 		roles := []string{auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper, auth.RoleViewer}
 		for _, role := range roles {
 			for _, path := range paths {
-				assertStatus(t, serve(t, path.method, path.target, path.body, fx.orgAdminA, fx.orgA, role, "p6f34-denied"), http.StatusForbidden)
+				assertStatus(t, serve(t, path.method, path.target, path.body, fx.actorForRole(role), fx.orgA, role, "p6f34-denied"), http.StatusForbidden)
 			}
 		}
 		assertStatus(t, serve(t, http.MethodPost, "/api/v1/model-prices", "not-json",
@@ -437,7 +437,7 @@ func TestP6F34PriceAuthorityIntegration(t *testing.T) {
 func p6f34PricingMux(h *Handler) *http.ServeMux {
 	mux := http.NewServeMux()
 	roleRoute := func(handler http.HandlerFunc, roles ...string) http.Handler {
-		return middleware.AdminAuth(p6f16JWTSecret)(middleware.RequireRoles(roles...)(handler))
+		return middleware.AdminAuth(h.db, p6f16JWTSecret)(middleware.RequireRoles(roles...)(handler))
 	}
 	readRoles := []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin}
 	mux.Handle("GET /api/v1/model-prices", roleRoute(h.ListModelPrices, readRoles...))

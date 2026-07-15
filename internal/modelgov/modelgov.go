@@ -192,6 +192,107 @@ func CheckAccess(ctx context.Context, q db.DBQuerier, orgID, projectID int64, re
 	return result, nil
 }
 
+// FilterCallableModels applies the same alias, lifecycle, and project model-set
+// rules as CheckAccess to a model list in one database query. It deliberately
+// does not apply approved_catalog: that flag controls catalog presentation,
+// while gateway call admission is governed by lifecycle and project model sets.
+func FilterCallableModels(ctx context.Context, q db.DBQuerier, orgID, projectID int64, requestedModels []string) ([]string, error) {
+	if orgID <= 0 {
+		return nil, fmt.Errorf("org_id is required")
+	}
+
+	normalized := make([]string, 0, len(requestedModels))
+	seen := make(map[string]struct{}, len(requestedModels))
+	for _, model := range requestedModels {
+		model = strings.TrimSpace(model)
+		if model == "" {
+			continue
+		}
+		if _, duplicate := seen[model]; duplicate {
+			continue
+		}
+		seen[model] = struct{}{}
+		normalized = append(normalized, model)
+	}
+	if len(normalized) == 0 {
+		return []string{}, nil
+	}
+
+	rows, err := q.Query(ctx,
+		`WITH candidates AS (
+		   SELECT requested_model, ordinality
+		   FROM unnest($3::text[]) WITH ORDINALITY AS candidate(requested_model, ordinality)
+		 ),
+		 resolved AS (
+		   SELECT c.requested_model,
+		          c.ordinality,
+		          COALESCE(ma.target_model, c.requested_model) AS resolved_model
+		   FROM candidates c
+		   LEFT JOIN model_aliases ma
+		     ON ma.org_id = $1::bigint
+		    AND ma.alias = c.requested_model
+		    AND ma.status = 'active'
+		 ),
+		 project_scope AS (
+		   SELECT EXISTS (
+		     SELECT 1
+		     FROM project_model_sets pms
+		     JOIN projects p ON p.id = pms.project_id
+		     JOIN model_sets ms ON ms.id = pms.model_set_id AND ms.org_id = p.org_id
+		     WHERE $2::bigint > 0
+		       AND pms.project_id = $2::bigint
+		       AND p.org_id = $1::bigint
+		   ) AS has_sets
+		 )
+		 SELECT r.requested_model
+		 FROM resolved r
+		 CROSS JOIN project_scope ps
+		 LEFT JOIN model_registry mr
+		   ON mr.org_id = $1::bigint
+		  AND mr.model_name = r.resolved_model
+		 WHERE COALESCE(mr.lifecycle, '') <> 'retired'
+		   AND (
+		     $2::bigint <= 0
+		     OR NOT ps.has_sets
+		     OR EXISTS (
+		       SELECT 1
+		       FROM project_model_sets pms
+		       JOIN projects p ON p.id = pms.project_id
+		       JOIN model_sets ms
+		         ON ms.id = pms.model_set_id
+		        AND ms.status = 'active'
+		        AND ms.org_id = p.org_id
+		       JOIN model_set_items msi ON msi.model_set_id = ms.id
+		       WHERE pms.project_id = $2::bigint
+		         AND p.org_id = $1::bigint
+		         AND (
+		           (msi.item_type = 'model' AND (msi.item_name = r.requested_model OR msi.item_name = r.resolved_model))
+		           OR (msi.item_type = 'alias' AND msi.item_name = r.requested_model)
+		         )
+		     )
+		   )
+		 ORDER BY r.ordinality`,
+		orgID, projectID, normalized,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("filter callable models: %w", err)
+	}
+	defer rows.Close()
+
+	allowed := make([]string, 0, len(normalized))
+	for rows.Next() {
+		var model string
+		if err := rows.Scan(&model); err != nil {
+			return nil, fmt.Errorf("scan callable model: %w", err)
+		}
+		allowed = append(allowed, model)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate callable models: %w", err)
+	}
+	return allowed, nil
+}
+
 func resolveAlias(ctx context.Context, q db.DBQuerier, orgID int64, requestedModel string) (targetModel, alias string, err error) {
 	err = q.QueryRow(ctx,
 		`SELECT target_model

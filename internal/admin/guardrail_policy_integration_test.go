@@ -162,7 +162,7 @@ func TestP6F10GuardrailControlPlaneTenantAuthorityAndVersioning(t *testing.T) {
 func p6f10GuardrailPolicyMux(handler *Handler) *http.ServeMux {
 	mux := http.NewServeMux()
 	roleRoute := func(h http.HandlerFunc, roles ...string) http.Handler {
-		return middleware.AdminAuth(p6f16JWTSecret)(middleware.RequireRoles(roles...)(h))
+		return middleware.AdminAuth(handler.db, p6f16JWTSecret)(middleware.RequireRoles(roles...)(h))
 	}
 	mux.Handle("GET /api/v1/guardrail-policies", roleRoute(handler.ListGuardrailPolicies, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin))
 	mux.Handle("POST /api/v1/guardrail-policies", roleRoute(handler.CreateGuardrailPolicy, auth.RolePlatformAdmin, auth.RoleOrgAdmin))

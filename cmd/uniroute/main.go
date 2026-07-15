@@ -356,7 +356,7 @@ func main() {
 	})
 
 	// Admin auth middleware
-	adminAuth := middleware.AdminAuth(cfg.JWTSecret)
+	adminAuth := middleware.AdminAuth(postgres.Pool, cfg.JWTSecret)
 	adminRoute := func(h http.HandlerFunc) http.Handler {
 		return adminAuth(http.HandlerFunc(h))
 	}

@@ -407,7 +407,7 @@ func TestP6F32FinanceAndUsageTenantIsolationIntegration(t *testing.T) {
 			"/api/v1/dashboard/stats",
 			"/api/v1/runtime/status",
 		} {
-			assertStatus(t, serve(t, http.MethodGet, target, "", billingB, 0, auth.RoleBillingAdmin), http.StatusForbidden)
+			assertStatus(t, serve(t, http.MethodGet, target, "", billingB, 0, auth.RoleBillingAdmin), http.StatusUnauthorized)
 		}
 	})
 }
@@ -415,7 +415,7 @@ func TestP6F32FinanceAndUsageTenantIsolationIntegration(t *testing.T) {
 func p6f32AdminMux(h *Handler) *http.ServeMux {
 	mux := http.NewServeMux()
 	roleRoute := func(handler http.HandlerFunc, roles ...string) http.Handler {
-		return middleware.AdminAuth(p6f16JWTSecret)(middleware.RequireRoles(roles...)(handler))
+		return middleware.AdminAuth(h.db, p6f16JWTSecret)(middleware.RequireRoles(roles...)(handler))
 	}
 	billingRoles := []string{auth.RolePlatformAdmin, auth.RoleBillingAdmin}
 	usageRoles := []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper, auth.RoleViewer}

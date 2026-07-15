@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/agentcap"
 	"github.com/uniroute/unirouter/internal/auth"
@@ -235,12 +236,15 @@ func newTestRelay(db *testutil.MockDB, b *mockBilling) *Relay {
 func TestHandleModels_WithAllowedModels(t *testing.T) {
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					*dest[0].(*string) = "gpt-4o,gpt-3.5-turbo"
-					return nil
-				},
-			}
+			t.Fatal("CtxAPIKey authority must not be queried again")
+			return nil
+		},
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			require.Contains(t, sql, "WITH candidates AS")
+			return &testutil.MockRows{Rows: []func(dest ...any) error{
+				func(dest ...any) error { *dest[0].(*string) = "gpt-4o"; return nil },
+				func(dest ...any) error { *dest[0].(*string) = "gpt-3.5-turbo"; return nil },
+			}}, nil
 		},
 	}
 	relay := newTestRelay(db, &mockBilling{})
@@ -248,6 +252,7 @@ func TestHandleModels_WithAllowedModels(t *testing.T) {
 	req := httptest.NewRequest("GET", "/v1/models", nil)
 	ctx := context.WithValue(req.Context(), middleware.CtxOrgID, int64(1))
 	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxAPIKey, &models.ApiKey{ID: 1, OrgID: 1, AllowedModels: "gpt-4o,gpt-3.5-turbo"})
 	req = req.WithContext(ctx)
 	rec := httptest.NewRecorder()
 
@@ -265,27 +270,27 @@ func TestHandleModels_WithAllowedModels(t *testing.T) {
 }
 
 func TestHandleModels_FallbackToModelPrices(t *testing.T) {
-	callCount := 0
+	queryCount := 0
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					callCount++
-					return fmt.Errorf("no key found")
-				},
-			}
+			t.Fatal("CtxAPIKey authority must not be queried again")
+			return nil
 		},
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			queryCount++
+			if strings.Contains(sql, "FROM model_prices") {
+				return &testutil.MockRows{
+					Rows: []func(dest ...any) error{
+						func(dest ...any) error { *dest[0].(*string) = "gpt-4o"; return nil },
+						func(dest ...any) error { *dest[0].(*string) = "claude-3"; return nil },
+					},
+				}, nil
+			}
+			require.Contains(t, sql, "WITH candidates AS")
 			return &testutil.MockRows{
 				Rows: []func(dest ...any) error{
-					func(dest ...any) error {
-						*dest[0].(*string) = "gpt-4o"
-						return nil
-					},
-					func(dest ...any) error {
-						*dest[0].(*string) = "claude-3"
-						return nil
-					},
+					func(dest ...any) error { *dest[0].(*string) = "gpt-4o"; return nil },
+					func(dest ...any) error { *dest[0].(*string) = "claude-3"; return nil },
 				},
 			}, nil
 		},
@@ -295,6 +300,7 @@ func TestHandleModels_FallbackToModelPrices(t *testing.T) {
 	req := httptest.NewRequest("GET", "/v1/models", nil)
 	ctx := context.WithValue(req.Context(), middleware.CtxOrgID, int64(1))
 	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxAPIKey, &models.ApiKey{ID: 1, OrgID: 1})
 	req = req.WithContext(ctx)
 	rec := httptest.NewRecorder()
 
@@ -309,16 +315,14 @@ func TestHandleModels_FallbackToModelPrices(t *testing.T) {
 	if len(data) != 2 {
 		t.Fatalf("expected 2 models, got %d", len(data))
 	}
+	require.Equal(t, 2, queryCount, "fallback must use one candidate query and one fixed-cost governance query")
 }
 
 func TestHandleModels_FallbackQueryError(t *testing.T) {
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					return fmt.Errorf("no key")
-				},
-			}
+			t.Fatal("CtxAPIKey authority must not be queried again")
+			return nil
 		},
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			return nil, fmt.Errorf("db error")
@@ -329,6 +333,7 @@ func TestHandleModels_FallbackQueryError(t *testing.T) {
 	req := httptest.NewRequest("GET", "/v1/models", nil)
 	ctx := context.WithValue(req.Context(), middleware.CtxOrgID, int64(1))
 	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxAPIKey, &models.ApiKey{ID: 1, OrgID: 1})
 	req = req.WithContext(ctx)
 	rec := httptest.NewRecorder()
 
@@ -343,14 +348,13 @@ func TestHandleModels_EmptyAllowedModels(t *testing.T) {
 	// When allowed_models is empty, falls back to model_prices
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					*dest[0].(*string) = "" // empty allowed_models
-					return nil
-				},
-			}
+			t.Fatal("CtxAPIKey authority must not be queried again")
+			return nil
 		},
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			if !strings.Contains(sql, "FROM model_prices") {
+				require.Contains(t, sql, "WITH candidates AS")
+			}
 			return &testutil.MockRows{
 				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
@@ -366,6 +370,7 @@ func TestHandleModels_EmptyAllowedModels(t *testing.T) {
 	req := httptest.NewRequest("GET", "/v1/models", nil)
 	ctx := context.WithValue(req.Context(), middleware.CtxOrgID, int64(1))
 	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxAPIKey, &models.ApiKey{ID: 1, OrgID: 1})
 	req = req.WithContext(ctx)
 	rec := httptest.NewRecorder()
 
@@ -374,6 +379,189 @@ func TestHandleModels_EmptyAllowedModels(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
+}
+
+func TestHandleModels_ProjectModelSetExcludesModelsDeniedAtCallAdmission(t *testing.T) {
+	projectID := int64(7)
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			t.Fatal("CtxAPIKey authority and batch governance must not use QueryRow")
+			return nil
+		},
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			if strings.Contains(sql, "FROM model_prices") {
+				return &testutil.MockRows{Rows: []func(dest ...any) error{
+					func(dest ...any) error {
+						*dest[0].(*string) = "DeepSeek-V4-Flash"
+						return nil
+					},
+					func(dest ...any) error {
+						*dest[0].(*string) = "kimi-k2.6"
+						return nil
+					},
+				}}, nil
+			}
+			require.Contains(t, sql, "WITH candidates AS")
+			require.Equal(t, int64(1), args[0])
+			require.Equal(t, projectID, args[1])
+			return &testutil.MockRows{Rows: []func(dest ...any) error{
+				func(dest ...any) error {
+					*dest[0].(*string) = "DeepSeek-V4-Flash"
+					return nil
+				},
+			}}, nil
+		},
+	}
+	relay := newTestRelay(db, &mockBilling{})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	ctx := context.WithValue(req.Context(), middleware.CtxOrgID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxProjectID, projectID)
+	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxAPIKey, &models.ApiKey{ID: 1, OrgID: 1, ProjectID: &projectID})
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	relay.HandleModels(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var resp struct {
+		Data []map[string]interface{} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, []map[string]interface{}{{
+		"id": "DeepSeek-V4-Flash", "object": "model", "owned_by": "uniroute",
+	}}, resp.Data)
+}
+
+func TestHandleModels_ProjectModelSetIntersectsExplicitKeyAllowlist(t *testing.T) {
+	projectID := int64(7)
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			t.Fatal("CtxAPIKey authority and batch governance must not use QueryRow")
+			return nil
+		},
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			require.Contains(t, sql, "WITH candidates AS")
+			require.NotContains(t, sql, "FROM model_prices")
+			require.Equal(t, []string{"DeepSeek-V4-Flash", "kimi-k2.6"}, args[2])
+			return &testutil.MockRows{Rows: []func(dest ...any) error{
+				func(dest ...any) error {
+					*dest[0].(*string) = "DeepSeek-V4-Flash"
+					return nil
+				},
+			}}, nil
+		},
+	}
+	relay := newTestRelay(db, &mockBilling{})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	ctx := context.WithValue(req.Context(), middleware.CtxOrgID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxProjectID, projectID)
+	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxAPIKey, &models.ApiKey{
+		ID: 1, OrgID: 1, ProjectID: &projectID, AllowedModels: "DeepSeek-V4-Flash,kimi-k2.6",
+	})
+	rec := httptest.NewRecorder()
+	relay.HandleModels(rec, req.WithContext(ctx))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var resp struct {
+		Data []map[string]interface{} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, []map[string]interface{}{{
+		"id": "DeepSeek-V4-Flash", "object": "model", "owned_by": "uniroute",
+	}}, resp.Data)
+}
+
+func TestHandleModels_NoProjectExcludesRetiredModel(t *testing.T) {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			t.Fatal("CtxAPIKey authority and batch governance must not use QueryRow")
+			return nil
+		},
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			require.Contains(t, sql, "WITH candidates AS")
+			require.Equal(t, int64(1), args[0])
+			require.Equal(t, int64(0), args[1])
+			require.Equal(t, []string{"active-model", "retired-model"}, args[2])
+			return &testutil.MockRows{Rows: []func(dest ...any) error{
+				func(dest ...any) error {
+					*dest[0].(*string) = "active-model"
+					return nil
+				},
+			}}, nil
+		},
+	}
+	relay := newTestRelay(db, &mockBilling{})
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	ctx := context.WithValue(req.Context(), middleware.CtxOrgID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxAPIKey, &models.ApiKey{
+		ID: 1, OrgID: 1, AllowedModels: "active-model,retired-model",
+	})
+	rec := httptest.NewRecorder()
+
+	relay.HandleModels(rec, req.WithContext(ctx))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var resp struct {
+		Data []map[string]interface{} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, []map[string]interface{}{{
+		"id": "active-model", "object": "model", "owned_by": "uniroute",
+	}}, resp.Data)
+}
+
+func TestHandleModels_GovernanceErrorReturns500(t *testing.T) {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			t.Fatal("CtxAPIKey authority and batch governance must not use QueryRow")
+			return nil
+		},
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			require.Contains(t, sql, "WITH candidates AS")
+			return nil, errors.New("governance unavailable")
+		},
+	}
+	relay := newTestRelay(db, &mockBilling{})
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	ctx := context.WithValue(req.Context(), middleware.CtxAPIKey, &models.ApiKey{
+		ID: 1, OrgID: 1, AllowedModels: "active-model",
+	})
+	rec := httptest.NewRecorder()
+
+	relay.HandleModels(rec, req.WithContext(ctx))
+
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.Contains(t, rec.Body.String(), "server_error.internal_error")
+	require.NotContains(t, rec.Body.String(), "active-model")
+}
+
+func TestHandleModels_MissingContextAuthorityQueryFailureDoesNotExpandToFallback(t *testing.T) {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				return errors.New("authority unavailable")
+			}}
+		},
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			t.Fatal("authority failure must not fall back to the global model list")
+			return nil, nil
+		},
+	}
+	relay := newTestRelay(db, &mockBilling{})
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	ctx := context.WithValue(req.Context(), middleware.CtxOrgID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(1))
+	rec := httptest.NewRecorder()
+
+	relay.HandleModels(rec, req.WithContext(ctx))
+
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.Contains(t, rec.Body.String(), "Failed to resolve API key models")
 }
 
 // --- calculateCost tests ---
