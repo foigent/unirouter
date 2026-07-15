@@ -1,6 +1,66 @@
 # Current Execution Record
 
-## Active Batch — V1 First Release Product Audit And Target Closeout
+## Active Batch — V1 Mimo Routing, Upstream Status And Formal ae9 Target
+
+**Owner:** Codex
+
+**Risk:** R2 evidence regression fix; R4 User-approved test signing-root
+rotation, development-target deployment and one bounded paid request
+
+**Status:** Target verified / closed for the upstream-status regression and
+bounded Mimo single-call path; remaining target/Production/X-Insight gates open
+
+**Code baseline before fix:** clean `main` / `origin/main` at
+`dfb9ecb52d20d1c0b69d0ea43285dbac69e12ef1`
+
+**Implementation branch / PR:** `codex/v1-upstream-status-evidence`; PR #210;
+exact head `5f8cd6a4aedb74354dea9f33223d4aca95e3f2e9`; required run
+`29419821405`
+
+**Merge / backend release:**
+`ae9ce2c927460e993dd00c6d81c8736cc5a015a2`
+
+**Evidence:**
+`docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md`
+
+Two pre-fix real Mimo requests proved the regression: their provider attempts
+were `settled/known_usage/http 200`, but both call-log upstream statuses were
+null. PR #210 makes the durable outbox and synchronous fallback resolve the
+exact attempt HTTP status; Backend and Docker required jobs passed while the
+unaffected Frontend job was correctly skipped.
+
+The User approved a persistent test upgrade key and formal ae9 activation. The
+private key remains outside the repository under
+`~/Documents/UniRouter-Test-Keys/2026-07-15-ae9-upgrade/` with mode `0600`;
+only its public ring reached the ECS. Formal backend image
+`sha256:fca7fe8fdabfcbfd32198c8bb4ba054e1b465f8342f671af39dba76b54b822d0`
+embeds one License root and one upgrade root. Signed package sequence `3`, hash
+`ac7413476b08e54561a8e243d5a0bc32916f8312443d62f82025613413ff3746`,
+verified against current sequence `2`, was recorded once and rejects replay.
+
+The first ae9 attempt accidentally used the source/development Compose trust
+mode. License admission failed closed, release state stayed at sequence `2`,
+and the prior formal backend was restored immediately. The first formal canary
+operator script later rolled back on a `pipefail`/SIGPIPE false negative after
+the application was healthy; readback proved rollback and the corrected
+output-matching check passed. Final stable/canary promotion and sequence record
+completed with zero restarts. Frontend/Nginx remain on the unchanged a0a
+release because PR #210 is backend-only.
+
+Exactly one additionally approved non-stream Mimo request returned request
+`op_1dc206219bcbafc45d4b9df2b66915c7`, HTTP 200, 257 input plus 1 output
+token, call-log upstream 200 and a `settled/known_usage/http 200` attempt. The
+259000-micro-CNY charge is below the approved CNY 0.35 additional ledger cap;
+wallet deltas conserve exactly, frozen balance is zero, temporary key #40 and
+QA user #13 are disabled, and pending attempt/outbox counts are zero.
+
+Final independent readback passed public/stable/canary readiness, authentication
+boundary, exact image/commit, formal trust, active enforceable test License,
+migration/release history, ledger conservation and cleanup. No DeepSeek/Kimi,
+capacity, detector, IdP, supplier-invoice, customer, Production or X-Insight
+claim is made. PRD6 remains closed.
+
+## Previous Batch — V1 First Release Product Audit And Target Closeout
 
 **Owner:** Codex
 

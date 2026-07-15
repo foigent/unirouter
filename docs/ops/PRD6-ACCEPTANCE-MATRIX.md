@@ -102,11 +102,16 @@ or promote P6-E02 through P6-E04. The previously accepted 2026-07-17 Gate A
 file-retention/delete deadline is a separate timed obligation and is not moved
 by this target execution.
 
+On 2026-07-15 the User separately authorized bounded real Mimo non-stream and
+stream requests. That execution partially satisfies only the real-upstream half
+of P6-E03 for Mimo. Enterprise SSO, broader-provider, capacity/HA and Production
+evidence remain unsatisfied; PRD6 Accepted Scope stays closed.
+
 | ID | Matter | Owner | Source-code status | Required evidence |
 |----|--------|-------|--------------------|-------------------|
 | P6-E01 | P5-F35 concrete target route/failover detail | Authorized target operator | Target verified for one selected historical request on 2026-07-13 | `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md`; no new paid request or capacity claim |
 | P6-E02 | Migration down and TLS 443 | Authorized target operator | Not a confirmed source defect | rollback/HTTPS run evidence on selected target |
-| P6-E03 | Real upstream and enterprise SSO | User-selected provider/IdP owner | Harness exists; credentials/environment absent | separately authorized real integration evidence |
+| P6-E03 | Real upstream and enterprise SSO | User-selected provider/IdP owner | Partially Target verified for bounded Mimo calls only; enterprise SSO and broader-provider evidence absent | `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md`; separate authorization and evidence remain required for enterprise SSO and other providers |
 | P6-E04 | Multi-instance load, capacity and HA/DR | Target infrastructure owner | Product/target prerequisite not selected | selected topology, load model, fault/restore evidence |
 
 ## Explicit Non-Scope Guard

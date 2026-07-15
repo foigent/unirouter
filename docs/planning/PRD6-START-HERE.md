@@ -57,6 +57,12 @@ and remaining target non-claims are recorded in
 This does not authorize or satisfy migration-down/TLS, real provider/SSO,
 capacity/HA, PRD7 or Production verified evidence.
 
+The later, separately authorized 2026-07-15 Post-PRD6 run partially satisfies
+only the real-upstream half of P6-E03 for bounded Mimo calls. Enterprise SSO,
+broader-provider, capacity/HA and Production evidence remain open, and PRD6
+Accepted Scope remains closed. See
+`docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md`.
+
 ## Read Order
 
 1. `docs/ops/CURRENT-STATUS.md`
@@ -227,7 +233,8 @@ completion defects and must not be used to reopen PRD5:
 
 - P5-F35 concrete target route/failover detail, now separately Target verified
   for one historical request under P6-E01 without becoming a PRD5 source gap;
-- migration down, TLS 443, real upstream and real SSO target evidence;
+- migration down, TLS 443, real SSO and broader real-upstream target evidence;
+  bounded Mimo calls are separately Target verified under P6-E03;
 - X-Insight capabilities beyond the accepted v1 receipt sidecar;
 - previously deferred Scheduler V2, plugin/marketplace, IAM rewrite, managed
   HA/IaC, runtime budget hard-block, plaintext cache, SDK, service-account

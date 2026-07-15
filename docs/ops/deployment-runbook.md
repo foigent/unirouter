@@ -110,7 +110,10 @@ Studio.app` 生成两套独立密钥和严格 `unirouter.license.v1` 文档；�
 
 1. 通过独立受信渠道取得签名发布清单，核对已内嵌两个公钥环的 backend 镜像
    digest，并为 stable/canary 设置同一个批准的部署标识；
-2. 启动后确认 `/health/ready` 与本地平台管理员登录可用；
+2. 启动后确认 `/health/ready` 与本地平台管理员登录可用，并从每个
+   stable/canary 启动日志读回 `Release trust mode: release`、非零
+   `license_keys` / `upgrade_keys`；出现 `development` 或零验签根必须停止
+   切换并回滚，不能把 source Compose 健康当作正式发布成功；
 3. 在未导入 License 时用无付费上游副作用的请求证明 `license_error.missing`；
 4. 在“商业授权”页导入与部署标识绑定、当前有效的 V1 文档；
 5. 读回 `commercial=true`、`enforceable=true`、签名/部署匹配、key ID、到期日、
