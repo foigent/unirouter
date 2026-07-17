@@ -259,6 +259,37 @@ func TestP6F41BInterruptedStreamSeparatesProviderUsageFromCustomerCharge(t *test
 	}
 }
 
+func TestP6F41BCompleteStreamIncompleteUsageUsesGatewayCounter(t *testing.T) {
+	var persisted, settled billing.SettleRequest
+	relay := newTestRelay(streamTransportTestDB(), &mockBilling{
+		persistUsageFn: func(_ context.Context, req billing.SettleRequest) error {
+			persisted = req
+			return nil
+		},
+		settleFn: func(_ context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
+			settled = req
+			return &billing.SettleResult{SettleID: 1, ActualCostMicros: 1, ChargedCostMicros: 1, Success: true}, nil
+		},
+	})
+	body := &countingReadCloser{reader: strings.NewReader(
+		"data: {\"choices\":[{\"delta\":{\"content\":\"delivered\"}}]}\n\n" +
+			"data: {\"usage\":{\"prompt_tokens\":100}}\n\n" +
+			"data: [DONE]\n\n",
+	)}
+	recorder := runStreamTransportTest(t, relay, body, "req-p6f41b-incomplete-usage")
+	if !strings.Contains(recorder.Body.String(), "data: [DONE]") {
+		t.Fatalf("completed stream lost terminal marker: %s", recorder.Body.String())
+	}
+	if persisted.UsageAuthority != metering.UsageAuthorityGatewayCounter ||
+		persisted.UsageEstimateVersion != metering.GatewayCounterEstimateVersionV2 ||
+		persisted.CompletionTokens <= 0 {
+		t.Fatalf("incomplete stream usage did not use delivered-counter authority: %+v", persisted)
+	}
+	if settled != persisted {
+		t.Fatalf("settlement changed the durable delivered usage: persisted=%+v settled=%+v", persisted, settled)
+	}
+}
+
 func TestP6F41BFirstStreamWriteFailureHasNoCustomerCharge(t *testing.T) {
 	var outcomes []string
 	persistCalls := 0

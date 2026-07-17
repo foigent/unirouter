@@ -22,6 +22,26 @@ func dataExchangeTestRequest(method, target, body string) *http.Request {
 	return req.WithContext(ctx)
 }
 
+func dataExchangeTransactionalMockDB(db *testutil.MockDB) *testutil.MockDB {
+	db.BeginFn = func(ctx context.Context) (pgx.Tx, error) {
+		return &testutil.MockTx{
+			QueryRowFn: func(ctx context.Context, query string, args ...any) pgx.Row {
+				if db.QueryRowFn != nil {
+					return db.QueryRowFn(ctx, query, args...)
+				}
+				return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
+			},
+			ExecFn: func(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error) {
+				if db.ExecFn != nil {
+					return db.ExecFn(ctx, query, args...)
+				}
+				return pgconn.NewCommandTag("UPDATE 1"), nil
+			},
+		}, nil
+	}
+	return db
+}
+
 func TestCreateDataExchangeItem_RequiresRequestIDForExactApproval(t *testing.T) {
 	h := newTestHandler(&testutil.MockDB{})
 	req := dataExchangeTestRequest(http.MethodPost, "/data-exchange/items", `{
@@ -57,7 +77,7 @@ func TestCreateDataExchangeItem_AcceptsControlledScenarioWithoutRequestID(t *tes
 			return pgconn.CommandTag{}, nil
 		},
 	}
-	h := newTestHandler(db)
+	h := newTestHandler(dataExchangeTransactionalMockDB(db))
 	req := dataExchangeTestRequest(http.MethodPost, "/data-exchange/items", `{
 		"approval_mode":"controlled_scenario",
 		"scenario_label":"provider failure",
@@ -93,7 +113,7 @@ func TestCreateDataExchangeReceipt_RejectsMismatchedExchangeID(t *testing.T) {
 			}}
 		},
 	}
-	h := newTestHandler(db)
+	h := newTestHandler(dataExchangeTransactionalMockDB(db))
 	req := dataExchangeTestRequest(http.MethodPost, "/data-exchange/exchanges/9/receipts", `{
 		"exchange_id":"uxchg_other_001",
 		"schema_version":"xinsight.import-receipt.v1",
@@ -197,7 +217,7 @@ func TestUpdateDataExchangeItem_RejectsUnknownExactRequestID(t *testing.T) {
 			}}
 		},
 	}
-	h := newTestHandler(db)
+	h := newTestHandler(dataExchangeTransactionalMockDB(db))
 	req := dataExchangeTestRequest(http.MethodPut, "/data-exchange/items/7", `{"approval_status":"approved","reason":"approved metadata only"}`)
 	req.SetPathValue("id", "7")
 	rec := httptest.NewRecorder()
@@ -240,7 +260,7 @@ func TestCreateDataExchangeReceipt_DerivesOutdatedFromArtifactHash(t *testing.T)
 			return pgconn.CommandTag{}, nil
 		},
 	}
-	h := newTestHandler(db)
+	h := newTestHandler(dataExchangeTransactionalMockDB(db))
 	req := dataExchangeTestRequest(http.MethodPost, "/data-exchange/exchanges/9/receipts", `{
 		"exchange_id":"uxchg_expected_001",
 		"schema_version":"xinsight.import-receipt.v1",
@@ -283,7 +303,7 @@ func TestDeleteDataExchangeArtifact_IsLedgerOnly(t *testing.T) {
 			return pgconn.CommandTag{}, nil
 		},
 	}
-	h := newTestHandler(db)
+	h := newTestHandler(dataExchangeTransactionalMockDB(db))
 	req := dataExchangeTestRequest(http.MethodPost, "/data-exchange/exchanges/9/artifact-delete", "")
 	req.SetPathValue("id", "9")
 	rec := httptest.NewRecorder()

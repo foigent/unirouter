@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Form, Input, Select, SideSheet, Space, Table, TextArea, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconEdit, IconPlus, IconRefresh, IconServer, IconSetting } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
+import { isPlatformAdminRole } from '../navigation';
+import { useAuthStore } from '../store/auth';
 import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
+import { loadAllPages } from '../utils/loadAllPages';
 
 const { Text } = Typography;
 
@@ -70,6 +73,11 @@ interface ModelSetItem {
   item_name: string;
 }
 
+interface Organization {
+  id: number;
+  name: string;
+}
+
 function compactNumber(value?: number) {
   const n = Number(value || 0);
   if (!n) return '-';
@@ -125,6 +133,10 @@ export function formatModelSetItems(items: ModelSetItem[]) {
 }
 
 export default function ModelGovernancePage() {
+  const user = useAuthStore((state) => state.user);
+  const platform = isPlatformAdminRole(user?.role);
+  const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(user?.org_id);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [activeTab, setActiveTab] = useState<TabKey>('registry');
 
   const [registry, setRegistry] = useState<ModelRegistryItem[]>([]);
@@ -132,6 +144,7 @@ export default function ModelGovernancePage() {
   const [registryPage, setRegistryPage] = useState(1);
   const [registryPageSize, setRegistryPageSize] = useState(20);
   const [registryLoading, setRegistryLoading] = useState(false);
+  const [registryLoadError, setRegistryLoadError] = useState('');
   const [registryLifecycle, setRegistryLifecycle] = useState('');
   const [registrySearch, setRegistrySearch] = useState('');
   const [registryApprovedOnly, setRegistryApprovedOnly] = useState(false);
@@ -143,6 +156,7 @@ export default function ModelGovernancePage() {
   const [aliasPage, setAliasPage] = useState(1);
   const [aliasPageSize, setAliasPageSize] = useState(20);
   const [aliasLoading, setAliasLoading] = useState(false);
+  const [aliasLoadError, setAliasLoadError] = useState('');
   const [aliasSheet, setAliasSheet] = useState<{ mode: 'create' | 'edit'; record?: ModelAlias } | null>(null);
   const [aliasFormApi, setAliasFormApi] = useState<any>(null);
 
@@ -151,6 +165,7 @@ export default function ModelGovernancePage() {
   const [modelSetPage, setModelSetPage] = useState(1);
   const [modelSetPageSize, setModelSetPageSize] = useState(20);
   const [modelSetLoading, setModelSetLoading] = useState(false);
+  const [modelSetLoadError, setModelSetLoadError] = useState('');
   const [modelSetSheet, setModelSetSheet] = useState(false);
   const [modelSetFormApi, setModelSetFormApi] = useState<any>(null);
   const [itemsSheet, setItemsSheet] = useState<ModelSet | null>(null);
@@ -162,6 +177,14 @@ export default function ModelGovernancePage() {
   const [selectedProjectId, setSelectedProjectId] = useState<number>();
   const [assignedIds, setAssignedIds] = useState<number[]>([]);
   const [assignmentLoading, setAssignmentLoading] = useState(false);
+  const [assignmentBaseError, setAssignmentBaseError] = useState('');
+  const [assignmentLoadError, setAssignmentLoadError] = useState('');
+  const [loadedAssignmentProjectId, setLoadedAssignmentProjectId] = useState<number>();
+  const registryRequestVersion = useRef(0);
+  const aliasRequestVersion = useRef(0);
+  const modelSetRequestVersion = useRef(0);
+  const assignmentBaseRequestVersion = useRef(0);
+  const assignmentRequestVersion = useRef(0);
 
   const tabs = [
     { key: 'registry' as const, label: '模型目录' },
@@ -169,82 +192,142 @@ export default function ModelGovernancePage() {
     { key: 'sets' as const, label: '模型集' },
     { key: 'assignments' as const, label: '项目分配' },
   ];
+  const targetOrgID = platform ? selectedOrgID : undefined;
 
   const loadRegistry = useCallback(async (page = registryPage, pageSize = registryPageSize) => {
+    const version = ++registryRequestVersion.current;
     setRegistryLoading(true);
+    setRegistryLoadError('');
+    setRegistry([]);
+    setRegistryTotal(0);
     try {
       const data = await api.getModelRegistry(page, pageSize, {
         lifecycle: registryLifecycle,
         approved_only: registryApprovedOnly,
         q: registrySearch,
+        ...(targetOrgID ? { org_id: targetOrgID } : {}),
       });
+      if (version !== registryRequestVersion.current) return;
       setRegistry((data?.data || []) as ModelRegistryItem[]);
       setRegistryTotal(Number(data?.total || 0));
-    } catch (err: any) {
-      Toast.error(`模型目录加载失败${err?.message ? `：${err.message}` : ''}`);
+    } catch {
+      if (version !== registryRequestVersion.current) return;
+      setRegistryLoadError('无法加载当前组织与筛选条件下的模型目录。');
+      Toast.error('模型目录加载失败');
     } finally {
-      setRegistryLoading(false);
+      if (version === registryRequestVersion.current) setRegistryLoading(false);
     }
-  }, [registryApprovedOnly, registryLifecycle, registryPage, registryPageSize, registrySearch]);
+  }, [registryApprovedOnly, registryLifecycle, registryPage, registryPageSize, registrySearch, targetOrgID]);
 
   const loadAliases = useCallback(async (page = aliasPage, pageSize = aliasPageSize) => {
+    const version = ++aliasRequestVersion.current;
     setAliasLoading(true);
+    setAliasLoadError('');
+    setAliases([]);
+    setAliasTotal(0);
     try {
-      const data = await api.getModelAliases(page, pageSize);
+      const data = targetOrgID
+        ? await api.getModelAliases(page, pageSize, { org_id: targetOrgID })
+        : await api.getModelAliases(page, pageSize);
+      if (version !== aliasRequestVersion.current) return;
       setAliases((data?.data || []) as ModelAlias[]);
       setAliasTotal(Number(data?.total || 0));
-    } catch (err: any) {
-      Toast.error(`别名加载失败${err?.message ? `：${err.message}` : ''}`);
+    } catch {
+      if (version !== aliasRequestVersion.current) return;
+      setAliasLoadError('无法加载当前组织的企业别名。');
+      Toast.error('别名加载失败');
     } finally {
-      setAliasLoading(false);
+      if (version === aliasRequestVersion.current) setAliasLoading(false);
     }
-  }, [aliasPage, aliasPageSize]);
+  }, [aliasPage, aliasPageSize, targetOrgID]);
 
   const loadModelSets = useCallback(async (page = modelSetPage, pageSize = modelSetPageSize) => {
+    const version = ++modelSetRequestVersion.current;
     setModelSetLoading(true);
+    setModelSetLoadError('');
+    setModelSets([]);
+    setModelSetTotal(0);
     try {
-      const data = await api.getModelSets(page, pageSize);
+      const data = targetOrgID
+        ? await api.getModelSets(page, pageSize, { org_id: targetOrgID })
+        : await api.getModelSets(page, pageSize);
+      if (version !== modelSetRequestVersion.current) return;
       setModelSets((data?.data || []) as ModelSet[]);
       setModelSetTotal(Number(data?.total || 0));
-    } catch (err: any) {
-      Toast.error(`模型集加载失败${err?.message ? `：${err.message}` : ''}`);
+    } catch {
+      if (version !== modelSetRequestVersion.current) return;
+      setModelSetLoadError('无法加载当前组织的模型集。');
+      Toast.error('模型集加载失败');
     } finally {
-      setModelSetLoading(false);
+      if (version === modelSetRequestVersion.current) setModelSetLoading(false);
     }
-  }, [modelSetPage, modelSetPageSize]);
+  }, [modelSetPage, modelSetPageSize, targetOrgID]);
 
   const loadAssignmentBase = useCallback(async () => {
+    const version = ++assignmentBaseRequestVersion.current;
+    assignmentRequestVersion.current += 1;
     setAssignmentLoading(true);
+    setAssignmentBaseError('');
+    setAssignmentLoadError('');
+    setProjects([]);
+    setAssignmentModelSets([]);
+    setSelectedProjectId(undefined);
+    setAssignedIds([]);
+    setLoadedAssignmentProjectId(undefined);
     try {
       const [projectData, setData] = await Promise.all([
-        api.getProjects(1, 100, { status: 'active' }),
-        api.getModelSets(1, 100),
+        loadAllPages<Project>((page, size) => api.getProjects(page, size, {
+          status: 'active',
+          ...(targetOrgID ? { org_id: targetOrgID } : {}),
+        })),
+        loadAllPages<ModelSet>((page, size) => targetOrgID
+          ? api.getModelSets(page, size, { org_id: targetOrgID })
+          : api.getModelSets(page, size)),
       ]);
-      const projectItems = (projectData?.data || []) as Project[];
-      const setItems = (setData?.data || []) as ModelSet[];
+      if (version !== assignmentBaseRequestVersion.current) return;
+      const projectItems = projectData as Project[];
+      const setItems = setData as ModelSet[];
       setProjects(projectItems);
       setAssignmentModelSets(setItems);
       setSelectedProjectId(current => {
         if (current && projectItems.some(project => project.id === current)) return current;
         return projectItems[0]?.id;
       });
-    } catch (err: any) {
-      Toast.error(`项目模型集加载失败${err?.message ? `：${err.message}` : ''}`);
+    } catch {
+      if (version !== assignmentBaseRequestVersion.current) return;
+      setAssignmentBaseError('无法加载项目与可用模型集。');
+      Toast.error('项目模型集加载失败');
     } finally {
-      setAssignmentLoading(false);
+      if (version === assignmentBaseRequestVersion.current) setAssignmentLoading(false);
     }
-  }, []);
+  }, [targetOrgID]);
+
+  useEffect(() => {
+    if (!platform) return;
+    if (user?.org_id) setSelectedOrgID(current => current || user.org_id);
+    loadAllPages<Organization>((page, size) => api.getOrganizations(page, size))
+      .then(setOrganizations)
+      .catch((err: any) => Toast.error(`组织列表加载失败${err?.message ? `：${err.message}` : ''}`));
+  }, [platform, user?.org_id]);
 
   const loadProjectAssignment = useCallback(async (projectId: number) => {
+    const version = ++assignmentRequestVersion.current;
     setAssignmentLoading(true);
+    setAssignmentLoadError('');
+    setAssignedIds([]);
+    setLoadedAssignmentProjectId(undefined);
     try {
       const data = await api.getProjectModelSets(projectId);
+      if (version !== assignmentRequestVersion.current) return;
       const items = (data?.data || []) as ModelSet[];
       setAssignedIds(items.map(item => item.id));
-    } catch (err: any) {
-      Toast.error(`项目分配加载失败${err?.message ? `：${err.message}` : ''}`);
+      setLoadedAssignmentProjectId(projectId);
+    } catch {
+      if (version !== assignmentRequestVersion.current) return;
+      setAssignmentLoadError('无法加载所选项目的模型集分配，保存已禁用。');
+      Toast.error('项目分配加载失败');
     } finally {
-      setAssignmentLoading(false);
+      if (version === assignmentRequestVersion.current) setAssignmentLoading(false);
     }
   }, []);
 
@@ -260,6 +343,40 @@ export default function ModelGovernancePage() {
       loadProjectAssignment(selectedProjectId);
     }
   }, [activeTab, loadProjectAssignment, selectedProjectId]);
+
+  const changeOrganization = (value: unknown) => {
+    const orgID = Number(value);
+    if (!Number.isSafeInteger(orgID) || orgID <= 0) return;
+    setSelectedOrgID(orgID);
+    registryRequestVersion.current += 1;
+    aliasRequestVersion.current += 1;
+    modelSetRequestVersion.current += 1;
+    assignmentBaseRequestVersion.current += 1;
+    setRegistryPage(1);
+    setAliasPage(1);
+    setModelSetPage(1);
+    setRegistry([]);
+    setRegistryTotal(0);
+    setAliases([]);
+    setAliasTotal(0);
+    setModelSets([]);
+    setModelSetTotal(0);
+    setProjects([]);
+    setAssignmentModelSets([]);
+    setSelectedProjectId(undefined);
+    setAssignedIds([]);
+    setLoadedAssignmentProjectId(undefined);
+    assignmentRequestVersion.current += 1;
+    setRegistrySheet(null);
+    setAliasSheet(null);
+    setModelSetSheet(false);
+    setItemsSheet(null);
+    setRegistryLoadError('');
+    setAliasLoadError('');
+    setModelSetLoadError('');
+    setAssignmentBaseError('');
+    setAssignmentLoadError('');
+  };
 
   useEffect(() => {
     if (!registrySheet || !registryFormApi) return;
@@ -336,10 +453,12 @@ export default function ModelGovernancePage() {
       pricing_model_name: String(values.pricing_model_name || values.model_name || '').trim(),
       approved_catalog: isApproved(values.approved_catalog),
       migration_recommendation: String(values.migration_recommendation || '').trim(),
+      ...(targetOrgID ? { org_id: targetOrgID } : {}),
     };
     try {
       if (registrySheet?.mode === 'edit' && registrySheet.record) {
-        await api.updateModelRegistry(registrySheet.record.id, payload);
+        if (targetOrgID) await api.updateModelRegistry(registrySheet.record.id, payload, targetOrgID);
+        else await api.updateModelRegistry(registrySheet.record.id, payload);
         Toast.success('模型目录已更新');
       } else {
         await api.createModelRegistry(payload);
@@ -374,10 +493,12 @@ export default function ModelGovernancePage() {
       display_name: String(values.display_name || '').trim(),
       description: String(values.description || '').trim(),
       status: String(values.status || 'active'),
+      ...(targetOrgID ? { org_id: targetOrgID } : {}),
     };
     try {
       if (aliasSheet?.mode === 'edit' && aliasSheet.record) {
-        await api.updateModelAlias(aliasSheet.record.id, payload);
+        if (targetOrgID) await api.updateModelAlias(aliasSheet.record.id, payload, targetOrgID);
+        else await api.updateModelAlias(aliasSheet.record.id, payload);
         Toast.success('别名已更新');
       } else {
         await api.createModelAlias(payload);
@@ -420,6 +541,7 @@ export default function ModelGovernancePage() {
         description: String(values.description || '').trim(),
         status: String(values.status || 'active'),
         items,
+        ...(targetOrgID ? { org_id: targetOrgID } : {}),
       });
       Toast.success('模型集已创建');
       closeModelSetSheet();
@@ -435,7 +557,9 @@ export default function ModelGovernancePage() {
     setItemsText('');
     setItemsLoading(true);
     try {
-      const data = await api.getModelSetItems(record.id);
+      const data = targetOrgID
+        ? await api.getModelSetItems(record.id, { org_id: targetOrgID })
+        : await api.getModelSetItems(record.id);
       setItemsText(formatModelSetItems((data?.data || []) as ModelSetItem[]));
     } catch (err: any) {
       Toast.error(`条目加载失败${err?.message ? `：${err.message}` : ''}`);
@@ -460,7 +584,8 @@ export default function ModelGovernancePage() {
     }
     setItemsLoading(true);
     try {
-      await api.replaceModelSetItems(itemsSheet.id, { items });
+      if (targetOrgID) await api.replaceModelSetItems(itemsSheet.id, { items }, targetOrgID);
+      else await api.replaceModelSetItems(itemsSheet.id, { items });
       Toast.success('模型集条目已更新');
       closeItemsSheet();
       loadModelSets(modelSetPage, modelSetPageSize);
@@ -472,12 +597,12 @@ export default function ModelGovernancePage() {
   };
 
   const handleAssignmentSubmit = async () => {
-    if (!selectedProjectId) return;
+    if (!selectedProjectId || loadedAssignmentProjectId !== selectedProjectId) return;
     setAssignmentLoading(true);
     try {
       await api.replaceProjectModelSets(selectedProjectId, assignedIds);
       Toast.success('项目模型集已更新');
-      loadProjectAssignment(selectedProjectId);
+      await loadProjectAssignment(selectedProjectId);
     } catch (err: any) {
       Toast.error(`保存失败${err?.message ? `：${err.message}` : ''}`);
     } finally {
@@ -558,10 +683,28 @@ export default function ModelGovernancePage() {
   return (
     <div className="ur-page ur-page-wide">
       <PageHeader
-        eyebrow="流量治理"
+        eyebrow="模型接入"
         title="模型治理"
         description="维护企业内部模型目录、生命周期、企业别名、模型集和项目可访问模型范围。"
-        actions={<Button icon={<IconRefresh />} onClick={() => activeTab === 'assignments' ? loadAssignmentBase() : activeTab === 'sets' ? loadModelSets() : activeTab === 'aliases' ? loadAliases() : loadRegistry()}>刷新</Button>}
+        actions={(
+          <Space>
+            {platform && (
+              <Space spacing={6}>
+                <Text type="tertiary">目标组织</Text>
+                <Select
+                  aria-label="目标组织"
+                  placeholder="选择目标组织"
+                  value={selectedOrgID}
+                  optionList={organizations.map(org => ({ label: `${org.name}（ID ${org.id}）`, value: org.id }))}
+                  onChange={changeOrganization}
+                  disabled={registryLoading || aliasLoading || modelSetLoading || assignmentLoading}
+                  style={{ width: 220 }}
+                />
+              </Space>
+            )}
+            <Button icon={<IconRefresh />} onClick={() => activeTab === 'assignments' ? loadAssignmentBase() : activeTab === 'sets' ? loadModelSets() : activeTab === 'aliases' ? loadAliases() : loadRegistry()}>刷新</Button>
+          </Space>
+        )}
       />
 
       <div className="ur-modelgov-tabs" role="tablist" aria-label="模型治理视图">
@@ -592,9 +735,24 @@ export default function ModelGovernancePage() {
             actions={<Button icon={<IconPlus />} type="primary" onClick={openCreateRegistry}>新增模型</Button>}
           >
             <div className="ur-modelgov-filters">
-              <Input prefix={<IconServer />} value={registrySearch} onChange={setRegistrySearch} placeholder="搜索模型、显示名或供应商族" showClear />
-              <Select value={registryLifecycle} onChange={(value) => setRegistryLifecycle(String(value || ''))} optionList={lifecycleOptions} placeholder="生命周期" showClear />
-              <Button type={registryApprovedOnly ? 'primary' : 'tertiary'} onClick={() => setRegistryApprovedOnly(current => !current)}>仅看已批准</Button>
+              <Input prefix={<IconServer />} value={registrySearch} onChange={(value) => {
+                registryRequestVersion.current += 1;
+                setRegistry([]);
+                setRegistryTotal(0);
+                setRegistrySearch(value);
+              }} placeholder="搜索模型、显示名或供应商族" showClear />
+              <Select value={registryLifecycle} onChange={(value) => {
+                registryRequestVersion.current += 1;
+                setRegistry([]);
+                setRegistryTotal(0);
+                setRegistryLifecycle(String(value || ''));
+              }} optionList={lifecycleOptions} placeholder="生命周期" showClear />
+              <Button type={registryApprovedOnly ? 'primary' : 'tertiary'} onClick={() => {
+                registryRequestVersion.current += 1;
+                setRegistry([]);
+                setRegistryTotal(0);
+                setRegistryApprovedOnly(current => !current);
+              }}>仅看已批准</Button>
             </div>
             <div className="ur-table-shell">
               <Table
@@ -602,7 +760,9 @@ export default function ModelGovernancePage() {
                 dataSource={registry}
                 rowKey="id"
                 loading={registryLoading}
-                empty={<EmptyState title="暂无模型" description="新增模型后才能进入别名、模型集和项目分配流程。" minHeight={220} />}
+                empty={registryLoadError ? (
+                  <EmptyState title="模型目录加载失败" description={registryLoadError} actions={<Button type="primary" onClick={() => loadRegistry()}>重新加载模型目录</Button>} minHeight={220} />
+                ) : <EmptyState title="暂无模型" description="新增模型后才能进入别名、模型集和项目分配流程。" minHeight={220} />}
                 pagination={{
                   currentPage: registryPage,
                   pageSize: registryPageSize,
@@ -628,7 +788,9 @@ export default function ModelGovernancePage() {
               dataSource={aliases}
               rowKey="id"
               loading={aliasLoading}
-              empty={<EmptyState title="暂无别名" description="常见形式如 company-chat -> gpt-4o。" minHeight={220} />}
+              empty={aliasLoadError ? (
+                <EmptyState title="企业别名加载失败" description={aliasLoadError} actions={<Button type="primary" onClick={() => loadAliases()}>重新加载企业别名</Button>} minHeight={220} />
+              ) : <EmptyState title="暂无别名" description="常见形式如 company-chat -> gpt-4o。" minHeight={220} />}
               pagination={{
                 currentPage: aliasPage,
                 pageSize: aliasPageSize,
@@ -653,7 +815,9 @@ export default function ModelGovernancePage() {
               dataSource={modelSets}
               rowKey="id"
               loading={modelSetLoading}
-              empty={<EmptyState title="暂无模型集" description="模型集条目支持 model:gpt-4o 和 alias:company-chat 两种格式。" minHeight={220} />}
+              empty={modelSetLoadError ? (
+                <EmptyState title="模型集加载失败" description={modelSetLoadError} actions={<Button type="primary" onClick={() => loadModelSets()}>重新加载模型集</Button>} minHeight={220} />
+              ) : <EmptyState title="暂无模型集" description="模型集条目支持 model:gpt-4o 和 alias:company-chat 两种格式。" minHeight={220} />}
               pagination={{
                 currentPage: modelSetPage,
                 pageSize: modelSetPageSize,
@@ -668,18 +832,29 @@ export default function ModelGovernancePage() {
 
       {activeTab === 'assignments' && (
         <Surface title="项目分配" description="把模型集绑定到项目；项目存在绑定时，网关只允许这些模型或别名。">
-          {projects.length === 0 ? (
+          {assignmentBaseError ? (
+            <EmptyState title="项目分配加载失败" description={assignmentBaseError} actions={<Button type="primary" onClick={loadAssignmentBase}>重新加载项目分配</Button>} minHeight={260} />
+          ) : projects.length === 0 ? (
             <EmptyState title="暂无可分配项目" description="先创建活跃项目后再绑定模型集。" minHeight={260} />
           ) : (
             <div className="ur-modelgov-assignment">
               <div>
-                <Text className="ur-filter-label">项目</Text>
+								<Text id="model-governance-project-label" className="ur-filter-label">项目</Text>
                 <Select
                   value={selectedProjectId}
-                  onChange={(value) => setSelectedProjectId(Number(value))}
+                  onChange={(value) => {
+                    const projectId = Number(value);
+                    if (!Number.isSafeInteger(projectId) || projectId <= 0 || projectId === selectedProjectId) return;
+                    assignmentRequestVersion.current += 1;
+                    setSelectedProjectId(projectId);
+                    setAssignedIds([]);
+                    setLoadedAssignmentProjectId(undefined);
+                    setAssignmentLoading(true);
+                  }}
                   optionList={projects.map(project => ({ label: `${project.name} (${project.slug})`, value: project.id }))}
                   style={{ width: '100%' }}
-                  aria-label="选择项目"
+									aria-labelledby="model-governance-project-label"
+                  disabled={assignmentLoading}
                 />
               </div>
               <div>
@@ -692,16 +867,30 @@ export default function ModelGovernancePage() {
                   style={{ width: '100%' }}
                   placeholder="选择一个或多个模型集"
                   aria-label="选择模型集"
+                  disabled={assignmentLoading || loadedAssignmentProjectId !== selectedProjectId}
                 />
               </div>
               <div className="ur-modelgov-assignment-actions">
                 <Button icon={<IconRefresh />} onClick={() => selectedProjectId && loadProjectAssignment(selectedProjectId)} loading={assignmentLoading}>重新加载</Button>
-                <Button type="primary" onClick={handleAssignmentSubmit} loading={assignmentLoading}>保存分配</Button>
+                <Button
+                  type="primary"
+                  onClick={handleAssignmentSubmit}
+                  loading={assignmentLoading}
+                  disabled={!selectedProjectId || loadedAssignmentProjectId !== selectedProjectId}
+                >保存分配</Button>
               </div>
+              {assignmentLoadError && (
+                <EmptyState
+                  title="所选项目分配加载失败"
+                  description={assignmentLoadError}
+                  actions={<Button type="primary" onClick={() => selectedProjectId && loadProjectAssignment(selectedProjectId)}>重新加载所选项目</Button>}
+                  minHeight={160}
+                />
+              )}
               <div className="ur-chip-row">
-                {assignedIds.length === 0 ? (
+                {!assignmentLoadError && assignedIds.length === 0 ? (
                   <Text type="tertiary">当前项目未绑定模型集，将使用基础模型目录。</Text>
-                ) : assignedIds.map(id => {
+                ) : !assignmentLoadError && assignedIds.map(id => {
                   const set = assignmentModelSets.find(item => item.id === id);
                   return <StatusTag key={id} status="active">{set?.name || `#${id}`}</StatusTag>;
                 })}

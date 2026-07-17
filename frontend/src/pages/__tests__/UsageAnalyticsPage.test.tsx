@@ -1,18 +1,33 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import UsageAnalyticsPage from '../UsageAnalyticsPage';
 
 const mockGetUsageAnalytics = vi.fn();
+const mockGetOrganizations = vi.fn();
+const auth = vi.hoisted(() => ({ user: null as any }));
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => { resolve = next; });
+  return { promise, resolve };
+}
 
 vi.mock('../../api/client', () => ({
   api: {
     getUsageAnalytics: (...args: any[]) => mockGetUsageAnalytics(...args),
+    getOrganizations: (...args: any[]) => mockGetOrganizations(...args),
   },
+}));
+
+vi.mock('../../store/auth', () => ({
+  useAuthStore: (selector: any) => selector({ user: auth.user }),
 }));
 
 describe('UsageAnalyticsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    auth.user = null;
+    mockGetOrganizations.mockResolvedValue({ data: [{ id: 7, name: '总部' }], total: 1 });
     mockGetUsageAnalytics.mockResolvedValue({
       group_by: { key: 'overall', label: '总体' },
       summary: {
@@ -57,5 +72,59 @@ describe('UsageAnalyticsPage', () => {
     expect(screen.getByText('当前分组：总览（不分组）。请求内容：默认不存储明文 / 响应内容：默认不存储明文')).toBeTruthy();
     expect(screen.getByText('全部请求')).toBeTruthy();
     expect(screen.getAllByText('¥0.320000').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('adds the selected platform organization to analytics requests', async () => {
+    auth.user = { role: 'platform_admin', org_id: 7 };
+    render(<UsageAnalyticsPage />);
+
+    expect(await screen.findByText('目标组织')).toBeTruthy();
+    await waitFor(() => expect(mockGetUsageAnalytics).toHaveBeenCalledWith(expect.objectContaining({ org_id: 7 })));
+    expect(mockGetOrganizations).toHaveBeenCalledWith(1, 100);
+  });
+
+  it('keeps organization-scoped roles on their server-enforced JWT scope', async () => {
+    auth.user = { role: 'org_admin', org_id: 7 };
+    render(<UsageAnalyticsPage />);
+
+    await waitFor(() => expect(mockGetUsageAnalytics).toHaveBeenCalled());
+    const latestFilters = mockGetUsageAnalytics.mock.calls[mockGetUsageAnalytics.mock.calls.length - 1]?.[0];
+    expect(latestFilters).not.toHaveProperty('org_id');
+    expect(screen.queryByText('目标组织')).toBeNull();
+    expect(mockGetOrganizations).not.toHaveBeenCalled();
+  });
+
+  it('discards stale filtered responses, clears old data, and exposes retry on failure', async () => {
+    const oldRequest = deferred<any>();
+    const currentRequest = deferred<any>();
+    mockGetUsageAnalytics
+      .mockReturnValueOnce(oldRequest.promise)
+      .mockReturnValueOnce(currentRequest.promise);
+
+    render(<UsageAnalyticsPage />);
+    await waitFor(() => expect(mockGetUsageAnalytics).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByPlaceholderText('模型'), { target: { value: 'fresh-model' } });
+    await waitFor(() => expect(mockGetUsageAnalytics).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText('全部请求')).toBeNull();
+
+    await act(async () => currentRequest.resolve({
+      summary: { total_requests: 1, total_tokens: 2, cost_micros: '3', estimated_ratio: 0 },
+      data: [{ key: 'fresh-model', total_requests: 1, success_requests: 1, failed_requests: 0, total_tokens: 2, cost_micros: '3', avg_latency_ms: 4, estimated_ratio: 0 }],
+    }));
+    expect(await screen.findByText('fresh-model')).toBeTruthy();
+
+    await act(async () => oldRequest.resolve({
+      summary: { total_requests: 99 },
+      data: [{ key: 'stale-model', total_requests: 99 }],
+    }));
+    await waitFor(() => expect(screen.queryByText('stale-model')).toBeNull());
+
+    mockGetUsageAnalytics.mockRejectedValueOnce(new Error('unavailable'));
+    const callCount = mockGetUsageAnalytics.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: /刷新/ }));
+    await waitFor(() => expect(mockGetUsageAnalytics.mock.calls.length).toBe(callCount + 1));
+    expect(await screen.findByRole('heading', { name: '用量分析加载失败' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '重新加载用量分析' })).toBeTruthy();
   });
 });

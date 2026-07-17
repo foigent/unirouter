@@ -127,10 +127,19 @@ func TestCreateAPIKey_DeveloperRequiresProjectID(t *testing.T) {
 func TestListAPIKeys_ProjectIDFilterRequiresProjectAccess(t *testing.T) {
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			if strings.Contains(sql, "SELECT COUNT(*) FROM api_keys ak") {
+				if len(args) != 3 || args[0] != int64(1) || args[1] != int64(7) || args[2] != int64(10) {
+					t.Fatalf("unexpected key count args: %#v", args)
+				}
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*int) = 0
+					return nil
+				}}
+			}
 			if !strings.Contains(sql, "FROM project_members") {
 				t.Fatalf("expected membership check, got %s", sql)
 			}
-			if args[0] != int64(7) || args[1] != int64(10) {
+			if len(args) < 3 || args[0] != int64(7) || args[1] != int64(10) || args[2] != int64(1) {
 				t.Fatalf("unexpected membership args: %#v", args)
 			}
 			return &testutil.MockRow{ScanFn: func(dest ...any) error {
@@ -145,7 +154,7 @@ func TestListAPIKeys_ProjectIDFilterRequiresProjectAccess(t *testing.T) {
 			if !strings.Contains(sql, "pm.project_id = ak.project_id") {
 				t.Fatalf("expected project-scoped membership filter, got %s", sql)
 			}
-			if len(args) != 3 || args[0] != int64(1) || args[1] != int64(7) || args[2] != int64(10) {
+			if len(args) != 5 || args[0] != int64(1) || args[1] != int64(7) || args[2] != int64(10) || args[3] != 20 || args[4] != 0 {
 				t.Fatalf("unexpected query args: %#v", args)
 			}
 			return &testutil.MockRows{}, nil
@@ -203,7 +212,7 @@ func TestListAPIKeys_ProjectIDFilterRejectsUnauthorizedProject(t *testing.T) {
 func TestCreateUser_InvalidRole(t *testing.T) {
 	h := newTestHandler(&testutil.MockDB{})
 
-	req := httptest.NewRequest(http.MethodPost, "/users", strings.NewReader(`{"org_id":1,"username":"u","password":"secret123","role":"owner"}`))
+	req := httptest.NewRequest(http.MethodPost, "/users", strings.NewReader(`{"org_id":1,"username":"u","password":"secret-password-123","role":"owner"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 

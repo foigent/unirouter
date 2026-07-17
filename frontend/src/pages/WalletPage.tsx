@@ -1,13 +1,21 @@
-import { useState, useEffect } from 'react';
-import { Typography, Tag, Progress, Button, Modal, Input } from '@douyinfe/semi-ui';
+import { useRef, useState, useEffect } from 'react';
+import { Typography, Tag, Progress, Button, Modal, Input, Select, Space, Tabs } from '@douyinfe/semi-ui';
 import { Toast } from '@douyinfe/semi-ui';
-import { IconBell, IconCoinMoney, IconGift, IconLock, IconRefresh } from '@douyinfe/semi-icons';
+import { IconBell, IconCoinMoney, IconDownload, IconGift, IconLock, IconRefresh } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-import { EmptyState, MetricTile, MoneyText, PageHeader, Surface, formatMoney, microsRatio, parseMicros } from '../ui';
+import { EmptyState, MetricTile, MoneyText, PagedTable, PageHeader, Surface, formatMoney, microsRatio, parseMicros } from '../ui';
+import { formatDateTime } from '../utils/formatDate';
+import { GrantCreditsPanel } from './GrantsPage';
+import { loadAllPages } from '../utils/loadAllPages';
+import { isBillingRole } from '../navigation';
+import { useAuthStore } from '../store/auth';
+import ProjectBudgetPanel from './ProjectBudgetPanel';
 
 const { Text } = Typography;
+const { TabPane } = Tabs;
 
 interface WalletInfo {
+	org_id: number;
 	balance_micros: string;
 	granted_balance_micros: string;
 	frozen_micros: string;
@@ -17,7 +25,103 @@ interface WalletInfo {
 	amount_scale: 1000000;
   low_balance_threshold_cents?: number;
   is_admin: boolean;
+  can_select_org?: boolean;
+  can_export_transactions?: boolean;
   org_name: string;
+}
+
+interface OrganizationOption {
+  id: number;
+  name: string;
+}
+
+const transactionTypeLabels: Record<string, string> = {
+  topup: '现金入账',
+  adjust: '现金调整',
+  grant: '赠送额度',
+  reserve: '请求冻结',
+  settle: '请求结算',
+  cancel: '冻结释放',
+};
+
+export function WalletTransactionsPanel({ orgId, canExport }: { orgId?: number; canExport: boolean }) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [loading, setLoading] = useState(true);
+  const requestVersion = useRef(0);
+
+  const load = (nextPage = page, nextPageSize = pageSize) => {
+    const version = ++requestVersion.current;
+    setLoading(true);
+    setRows([]);
+    setTotal(0);
+    api.getWalletTransactions(nextPage, nextPageSize, orgId)
+      .then((data: any) => {
+        if (version !== requestVersion.current) return;
+        setRows(data?.data || []);
+        setTotal(data?.total || 0);
+      })
+      .catch((error: any) => {
+        if (version !== requestVersion.current) return;
+        Toast.error(`资金流水加载失败${error?.message ? `：${error.message}` : ''}`);
+      })
+      .finally(() => {
+        if (version === requestVersion.current) setLoading(false);
+      });
+  };
+
+  useEffect(() => {
+    setPage(1);
+    load(1, pageSize);
+  }, [orgId]);
+
+  const exportCSV = async () => {
+    try {
+      const csv = await api.exportWalletTransactions(orgId) as string;
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'uniroute-wallet-transactions.csv';
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      Toast.error(`资金流水导出失败${error?.message ? `：${error.message}` : ''}`);
+    }
+  };
+
+  const columns = [
+    { title: '流水 ID', dataIndex: 'id', width: 90 },
+    { title: '业务类型', dataIndex: 'type', render: (value: string) => transactionTypeLabels[value] || value || '-' },
+    {
+      title: '变动金额', dataIndex: 'amount_micros',
+      render: (value: string) => <MoneyText micros={value || '0'} tone={parseMicros(value || '0') < 0 ? 'cost' : 'income'} />,
+    },
+    { title: '说明', dataIndex: 'description', render: (value: string) => value || '-' },
+    { title: '发生时间', dataIndex: 'created_at', render: (value: string) => formatDateTime(value) },
+  ];
+
+  return (
+    <Surface
+      title="资金流水"
+      description="现金、赠送额度和请求结算统一记录在这里；金额为正表示增加，负数表示扣减或占用。"
+      actions={canExport ? <Button icon={<IconDownload />} onClick={exportCSV}>导出 CSV</Button> : undefined}
+    >
+      <PagedTable
+        columns={columns}
+        dataSource={rows}
+        loading={loading}
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        onPageChange={(nextPage: number) => { setPage(nextPage); load(nextPage, pageSize); }}
+        onPageSizeChange={(nextSize: number) => { setPageSize(nextSize); setPage(1); load(1, nextSize); }}
+        rowKey="id"
+      />
+    </Surface>
+  );
 }
 
 export function parseYuanToCents(value: string): number | null {
@@ -38,8 +142,19 @@ function createWalletOperationID(type: 'recharge' | 'adjust') {
 }
 
 export default function WalletPage() {
+  const role = useAuthStore(state => state.user?.role);
+  const canManageProjectBudgets = isBillingRole(role);
   const [wallet, setWallet] = useState<WalletInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [organizations, setOrganizations] = useState<OrganizationOption[]>([]);
+  const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>();
+  const requestVersion = useRef(0);
+  const initialTab = new URLSearchParams(window.location.search).get('tab');
+  const allowedTabs = canManageProjectBudgets
+    ? ['summary', 'transactions', 'grants', 'budgets']
+    : ['summary', 'transactions', 'grants'];
+  const [activeTab, setActiveTab] = useState(allowedTabs.includes(initialTab || '') ? initialTab! : 'summary');
   const [modalVisible, setModalVisible] = useState(false);
   const [modalType, setModalType] = useState<'recharge' | 'adjust'>('recharge');
   const [modalAmount, setModalAmount] = useState('');
@@ -47,15 +162,52 @@ export default function WalletPage() {
   const [clientRequestID, setClientRequestID] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const load = () => {
+  const load = async (orgID = selectedOrgID) => {
+    const version = ++requestVersion.current;
     setLoading(true);
-    api.getWallet()
-			.then((d: WalletInfo) => setWallet({ ...d, is_admin: Boolean(d.is_admin) }))
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    setWallet(null);
+    setLoadError('');
+    try {
+      const data = await api.getWallet(orgID) as WalletInfo;
+      if (version !== requestVersion.current) return;
+      const nextWallet = { ...data, is_admin: Boolean(data.is_admin) };
+      setWallet(nextWallet);
+      if (nextWallet.can_select_org && organizations.length === 0) {
+        try {
+          const items = await loadAllPages<OrganizationOption>((page, size) => api.getOrganizations(page, size));
+          if (version === requestVersion.current) setOrganizations(items);
+        } catch (error: any) {
+          if (version === requestVersion.current) {
+            Toast.error(`组织列表加载失败${error?.message ? `：${error.message}` : ''}`);
+          }
+        }
+      }
+    } catch (error: any) {
+      if (version !== requestVersion.current) return;
+      const message = `资金账户加载失败${error?.message ? `：${error.message}` : ''}`;
+      setLoadError(message);
+      Toast.error(message);
+    } finally {
+      if (version === requestVersion.current) setLoading(false);
+    }
   };
 
   useEffect(() => { load(); }, []);
+
+  const changeTab = (key: string) => {
+    setActiveTab(key);
+    const params = new URLSearchParams(window.location.search);
+    if (key === 'summary') params.delete('tab'); else params.set('tab', key);
+    const query = params.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
+  };
+
+  const changeOrganization = (value: unknown) => {
+    const orgID = Number(value);
+    if (!Number.isInteger(orgID) || orgID <= 0) return;
+    setSelectedOrgID(orgID);
+    load(orgID);
+  };
 
   const openWalletModal = (type: 'recharge' | 'adjust') => {
     setModalType(type);
@@ -90,12 +242,14 @@ export default function WalletPage() {
     try {
       if (modalType === 'recharge') {
         await api.topUp({
+          org_id: selectedOrgID,
           amount_cents: amountCents,
           description,
           client_request_id: operationID,
         });
       } else {
         await api.adjustWallet({
+          org_id: selectedOrgID,
           delta_cents: amountCents,
           description,
           client_request_id: operationID,
@@ -103,7 +257,7 @@ export default function WalletPage() {
       }
       Toast.success(modalType === 'recharge' ? '入账成功' : '调整成功');
       closeWalletModal();
-      load();
+      load(selectedOrgID);
     } catch (err: any) {
       Toast.error(err.message || '操作失败');
     } finally {
@@ -122,7 +276,12 @@ export default function WalletPage() {
   if (!wallet) {
     return (
       <div className="ur-page">
-        <EmptyState title="无法加载资金账户信息" minHeight={360} />
+        <EmptyState
+          title="无法加载资金账户信息"
+          description={loadError || '当前资金账户数据不可用。'}
+          actions={<Button icon={<IconRefresh />} onClick={() => load(selectedOrgID)}>重试</Button>}
+          minHeight={360}
+        />
       </div>
     );
   }
@@ -130,97 +289,94 @@ export default function WalletPage() {
   // The backend debits cash/grant buckets when a reservation is created.
 	// frozen_micros is therefore a held-funds control total, not a second amount
   // to subtract from the already-spendable balance.
-	const available = parseMicros(wallet.balance_micros) + parseMicros(wallet.granted_balance_micros);
-	const held = parseMicros(wallet.frozen_micros);
-	const managedTotal = available + held;
-	const usagePct = microsRatio(held, managedTotal) * 100;
+  const available = parseMicros(wallet.balance_micros) + parseMicros(wallet.granted_balance_micros);
+  const held = parseMicros(wallet.frozen_micros);
+  const managedTotal = available + held;
+  const usagePct = microsRatio(held, managedTotal) * 100;
   const barColor = usagePct >= 80 ? '#d92d20' : usagePct >= 50 ? '#b76e00' : '#0f8f5f';
+  const displayedOrgID = selectedOrgID || wallet.org_id;
+  const displayedOrgName = organizations.find((item) => item.id === displayedOrgID)?.name || wallet.org_name;
 
   return (
     <div className="ur-page">
       <PageHeader
-        eyebrow="财务治理"
+        eyebrow="计费与资金"
         title="资金账户"
-        description="查看组织可用现金、可用赠送额度、冻结金额和低余额告警阈值。管理员可进行现金入账和额度调整。"
+        description="围绕一个组织统一查看账户余额、资金流水和赠送额度；有权限的财务角色可在同一上下文完成资金操作。"
         actions={(
-          <Button icon={<IconRefresh />} size="small" onClick={load}>
-            刷新
-          </Button>
+          <Space>
+            {wallet.can_select_org && organizations.length > 0 ? (
+              <>
+                <Text id="wallet-organization-label" type="tertiary">查看组织</Text>
+                <Select
+                  aria-labelledby="wallet-organization-label"
+                  value={displayedOrgID}
+                  optionList={organizations.map((item) => ({ value: item.id, label: `${item.name}（ID ${item.id}）` }))}
+                  onChange={changeOrganization}
+                  filter
+                  style={{ width: 240 }}
+                />
+              </>
+            ) : null}
+            <Button icon={<IconRefresh />} size="small" onClick={() => load(selectedOrgID)}>刷新</Button>
+          </Space>
         )}
       />
 
-      <div className="ur-kpi-grid">
-        <MetricTile
-          label="可用现金"
-			value={<MoneyText micros={wallet.balance_micros} strong tone="income" />}
-          tone="blue"
-          icon={<IconCoinMoney />}
-        />
-        <MetricTile
-          label="可用赠送额度"
-			value={<MoneyText micros={wallet.granted_balance_micros} strong tone="income" />}
-          tone="green"
-          icon={<IconGift />}
-        />
-        <MetricTile
-          label="冻结金额"
-			value={<MoneyText micros={wallet.frozen_micros} strong tone="warning" />}
-          tone="amber"
-          icon={<IconLock />}
-        />
-        <MetricTile
-          label="告警阈值"
-			value={<MoneyText micros={wallet.threshold_micros} strong />}
-          tone="violet"
-          icon={<IconBell />}
-        />
+      <div className="ur-org-line" style={{ marginBottom: 12 }}>
+        <Text>当前范围: <Tag color="blue">{displayedOrgName || `组织 #${displayedOrgID}`}</Tag></Text>
+        <Text>权限: <Tag color={wallet.is_admin ? 'red' : 'grey' as any}>{wallet.is_admin ? '可管理资金' : '只读'}</Tag></Text>
       </div>
 
-      <Surface title="资金占用情况" description="可用金额已经扣除了冻结中的请求；冻结金额仅用于展示仍在处理的资金占用，不会再次扣减。">
-        <div className="ur-wallet-budget">
-          <div>
-            <Progress
-              percent={usagePct}
-              stroke={barColor}
-              showInfo={false}
-            />
+      <Tabs activeKey={activeTab} onChange={changeTab}>
+        <TabPane tab="账户总览" itemKey="summary">
+          <div className="ur-kpi-grid">
+            <MetricTile label="可用现金" value={<MoneyText micros={wallet.balance_micros} strong tone="income" />} tone="blue" icon={<IconCoinMoney />} />
+            <MetricTile label="可用赠送额度" value={<MoneyText micros={wallet.granted_balance_micros} strong tone="income" />} tone="green" icon={<IconGift />} />
+            <MetricTile label="冻结金额" value={<MoneyText micros={wallet.frozen_micros} strong tone="warning" />} tone="amber" icon={<IconLock />} />
+            <MetricTile label="累计已结算" value={<MoneyText micros={wallet.total_spent_micros} strong tone="cost" />} tone="blue" icon={<IconCoinMoney />} />
+            <MetricTile label="低余额告警阈值" value={<MoneyText micros={wallet.threshold_micros} strong />} tone="violet" icon={<IconBell />} />
           </div>
-          <Text className="ur-budget-caption">
-            {usagePct.toFixed(1)}% 冻结中 / 管理资金: {formatMoney(managedTotal)} / 冻结中: {formatMoney(held)} / 当前可用: {formatMoney(available)}
-          </Text>
-        </div>
-      </Surface>
 
-      {wallet.is_admin && (
-        <Surface
-          title="管理员操作"
-          description="入账会增加余额；调整额度支持正负数，但调整后余额不能小于 0。"
-          actions={(
-            <>
-              <Button type="primary" onClick={() => openWalletModal('recharge')}>
-                入账
-              </Button>
-              <Button type="tertiary" onClick={() => openWalletModal('adjust')}>
-                调整额度
-              </Button>
-            </>
+          <Surface title="在途资金占用" description="可用金额已经扣除了冻结中的请求；冻结金额只表示尚未完成结算的占用，不会再次从可用余额扣减。">
+            <div className="ur-wallet-budget">
+              <Progress percent={usagePct} stroke={barColor} showInfo={false} />
+              <Text className="ur-budget-caption">
+                {usagePct.toFixed(1)}% 冻结中 / 管理资金: {formatMoney(managedTotal)} / 冻结中: {formatMoney(held)} / 当前可用: {formatMoney(available)}
+              </Text>
+            </div>
+          </Surface>
+
+          {wallet.is_admin && (
+            <Surface
+              title="现金操作"
+              description="现金入账只允许正数；现金调整允许正负数，服务端会基于最新余额原子校验并记录审计。赠送额度请使用上方独立页签。"
+              actions={(
+                <Space>
+                  <Button type="primary" onClick={() => openWalletModal('recharge')}>现金入账</Button>
+                  <Button type="tertiary" onClick={() => openWalletModal('adjust')}>现金调整</Button>
+                </Space>
+              )}
+            >
+              <Text type="tertiary">所有资金变动都可在“资金流水”中追溯。</Text>
+            </Surface>
           )}
-        >
-          <Text type="tertiary">操作完成后会自动刷新资金账户数据，并写入后端审计路径。</Text>
-        </Surface>
-      )}
-
-      {wallet.org_name && (
-        <Surface title="组织信息">
-          <div className="ur-org-line">
-            <Text>所属组织: <Tag color="blue">{wallet.org_name}</Tag></Text>
-            <Text>角色: <Tag color={wallet.is_admin ? 'red' : 'grey' as any}>{wallet.is_admin ? '管理员' : '普通用户'}</Tag></Text>
-          </div>
-        </Surface>
-      )}
+        </TabPane>
+        <TabPane tab="资金流水" itemKey="transactions">
+          {activeTab === 'transactions' ? <WalletTransactionsPanel orgId={selectedOrgID} canExport={Boolean(wallet.can_export_transactions)} /> : null}
+        </TabPane>
+        <TabPane tab="赠送额度" itemKey="grants">
+          {activeTab === 'grants' ? <GrantCreditsPanel orgId={selectedOrgID} canCreate={wallet.is_admin} onChanged={() => load(selectedOrgID)} /> : null}
+        </TabPane>
+        {canManageProjectBudgets ? (
+          <TabPane tab="项目预算" itemKey="budgets">
+            {activeTab === 'budgets' ? <ProjectBudgetPanel /> : null}
+          </TabPane>
+        ) : null}
+      </Tabs>
 
       <Modal
-        title={modalType === 'recharge' ? '资金入账' : '调整额度'}
+        title={modalType === 'recharge' ? '现金入账' : '现金调整'}
         visible={modalVisible}
         onCancel={closeWalletModal}
         onOk={handleWalletOp}
@@ -229,7 +385,7 @@ export default function WalletPage() {
       >
         <div style={{ padding: '8px 0' }}>
           <Text style={{ display: 'block', marginBottom: 8 }}>
-            {modalType === 'recharge' ? '入账金额（元）' : '调整金额（元，正数增加，负数减少）'}
+            {modalType === 'recharge' ? '入账金额（元）' : '现金调整金额（元，正数增加，负数减少）'}
           </Text>
           <Input
             value={modalAmount}

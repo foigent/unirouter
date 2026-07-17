@@ -3,14 +3,21 @@ package billing
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math/big"
+	"net"
 	"net/http"
+	"net/netip"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -36,7 +43,32 @@ const (
 	DeliveryStatePending       = "pending"
 	DeliveryStateDelivered     = "delivered"
 	DeliveryStateFailed        = "failed"
+
+	WebhookTimestampHeader = "X-UniRouter-Webhook-Timestamp"
+	WebhookSignatureHeader = "X-UniRouter-Webhook-Signature"
 )
+
+// FinancialNotificationEventTypes returns the notification taxonomy owned by
+// the billing role. Keep this allowlist narrow: operational, security, model
+// lifecycle, and licensing events belong to organization/platform operators.
+// A fresh slice prevents callers from mutating the process-wide contract.
+func FinancialNotificationEventTypes() []string {
+	return []string{
+		EventProjectBudgetThreshold,
+		EventTokenMeteringEstimatedRatioHigh,
+	}
+}
+
+// IsFinancialNotificationEventType reports whether billing administrators may
+// inspect and transition this event type.
+func IsFinancialNotificationEventType(eventType string) bool {
+	switch eventType {
+	case EventProjectBudgetThreshold, EventTokenMeteringEstimatedRatioHigh:
+		return true
+	default:
+		return false
+	}
+}
 
 // EventInput describes a persisted notification event.
 type EventInput struct {
@@ -67,6 +99,9 @@ type EventService struct {
 	retryWait time.Duration
 	outbox    *outbox.Service
 	admit     func() bool
+
+	webhookSigningSecret        []byte
+	enforceWebhookNetworkPolicy bool
 }
 
 type dueWebhookDelivery struct {
@@ -79,21 +114,179 @@ type dueWebhookDelivery struct {
 }
 
 // NewEventService creates an event service backed by the shared DB interface.
-func NewEventService(db db.DBQuerier) *EventService {
+func NewEventService(db db.DBQuerier, webhookSigningSecret string) *EventService {
 	return &EventService{
-		db:        db,
-		client:    &http.Client{Timeout: 10 * time.Second},
-		now:       func() time.Time { return time.Now().UTC() },
-		retryWait: 5 * time.Minute,
+		db:                          db,
+		client:                      newNotificationWebhookClient(10 * time.Second),
+		now:                         func() time.Time { return time.Now().UTC() },
+		retryWait:                   5 * time.Minute,
+		webhookSigningSecret:        []byte(webhookSigningSecret),
+		enforceWebhookNetworkPolicy: true,
 	}
 }
 
-// WithHTTPClient replaces the delivery client, primarily for tests.
+// WithHTTPClient replaces the delivery client and its destination policy. It is
+// intended for tests that use an isolated loopback receiver; production
+// construction uses the secure default client from NewEventService.
 func (s *EventService) WithHTTPClient(client *http.Client) *EventService {
 	if client != nil {
 		s.client = client
+		s.enforceWebhookNetworkPolicy = false
 	}
 	return s
+}
+
+// WithWebhookSigningSecret overrides the deployment-wide HMAC secret in tests.
+func (s *EventService) WithWebhookSigningSecret(secret string) *EventService {
+	if s != nil {
+		s.webhookSigningSecret = []byte(secret)
+	}
+	return s
+}
+
+func newNotificationWebhookClient(timeout time.Duration) *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	// A proxy could resolve the destination independently and bypass the dial
+	// guard, so notification webhooks use direct connections.
+	transport.Proxy = nil
+	transport.DialContext = secureNotificationWebhookDialContext
+	return &http.Client{
+		Timeout:   timeout,
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return errors.New("too many webhook redirects")
+			}
+			return validateNotificationWebhookTarget(req.Context(), req.URL)
+		},
+	}
+}
+
+type notificationWebhookResolver interface {
+	LookupIPAddr(context.Context, string) ([]net.IPAddr, error)
+}
+
+type notificationWebhookDialFunc func(context.Context, string, string) (net.Conn, error)
+
+func secureNotificationWebhookDialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	dialer := &net.Dialer{}
+	return dialNotificationWebhook(ctx, network, address, net.DefaultResolver, dialer.DialContext)
+}
+
+func dialNotificationWebhook(ctx context.Context, network, address string, resolver notificationWebhookResolver, dial notificationWebhookDialFunc) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, errors.New("invalid webhook network address")
+	}
+	addresses, err := resolveNotificationWebhookHostWithResolver(ctx, host, resolver)
+	if err != nil {
+		return nil, err
+	}
+	if dial == nil {
+		return nil, errors.New("webhook network dialer is not configured")
+	}
+	return dial(ctx, network, net.JoinHostPort(addresses[0].String(), port))
+}
+
+func validateNotificationWebhookTarget(ctx context.Context, target *url.URL) error {
+	if target == nil || !validNotificationWebhookURL(target) {
+		return errors.New("invalid webhook target")
+	}
+	_, err := resolveNotificationWebhookHost(ctx, target.Hostname())
+	return err
+}
+
+func validNotificationWebhookURL(target *url.URL) bool {
+	if target == nil || target.Scheme != "https" || target.Host == "" || target.Hostname() == "" || target.User != nil || target.Fragment != "" {
+		return false
+	}
+	hostname := strings.ToLower(strings.TrimSuffix(target.Hostname(), "."))
+	return hostname != "localhost" && !strings.HasSuffix(hostname, ".localhost") && hostname != "metadata.google.internal" && hostname != "instance-data"
+}
+
+func resolveNotificationWebhookHost(ctx context.Context, host string) ([]net.IP, error) {
+	return resolveNotificationWebhookHostWithResolver(ctx, host, net.DefaultResolver)
+}
+
+func resolveNotificationWebhookHostWithResolver(ctx context.Context, host string, resolver notificationWebhookResolver) ([]net.IP, error) {
+	if ip := net.ParseIP(strings.Trim(host, "[]")); ip != nil {
+		if blockedNotificationWebhookIP(ip) {
+			return nil, errors.New("webhook target is not allowed")
+		}
+		return []net.IP{ip}, nil
+	}
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") || host == "metadata.google.internal" || host == "instance-data" {
+		return nil, errors.New("webhook target is not allowed")
+	}
+	if resolver == nil {
+		return nil, errors.New("webhook target could not be resolved")
+	}
+	resolved, err := resolver.LookupIPAddr(ctx, host)
+	if err != nil || len(resolved) == 0 {
+		return nil, errors.New("webhook target could not be resolved")
+	}
+	addresses := make([]net.IP, 0, len(resolved))
+	for _, candidate := range resolved {
+		if blockedNotificationWebhookIP(candidate.IP) {
+			return nil, errors.New("webhook target is not allowed")
+		}
+		addresses = append(addresses, candidate.IP)
+	}
+	return addresses, nil
+}
+
+var blockedNotificationWebhookPrefixes = []netip.Prefix{
+	// IPv4 special-use ranges which net.IP.IsGlobalUnicast deliberately treats
+	// as globally scoped even though they are not safe public webhook targets.
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"), // shared address space / CGNAT
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("192.88.99.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"), // benchmarking
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	// IPv6 local, translation, documentation, benchmarking, and transition
+	// ranges. 6to4 is blocked because it can encode a private IPv4 target.
+	netip.MustParsePrefix("::/96"),
+	netip.MustParsePrefix("64:ff9b::/96"),
+	netip.MustParsePrefix("64:ff9b:1::/48"),
+	netip.MustParsePrefix("100::/64"),
+	netip.MustParsePrefix("2001::/23"),
+	netip.MustParsePrefix("2001:db8::/32"),
+	netip.MustParsePrefix("2002::/16"),
+	netip.MustParsePrefix("3fff::/20"),
+	netip.MustParsePrefix("5f00::/16"),
+	netip.MustParsePrefix("fec0::/10"),
+}
+
+// IsNotificationWebhookIPAllowed reports whether an address is eligible for
+// the default webhook policy. Private-network delivery requires a future,
+// explicit deployment opt-in; it is never inferred from route ownership.
+func IsNotificationWebhookIPAllowed(ip net.IP) bool {
+	return !blockedNotificationWebhookIP(ip)
+}
+
+func blockedNotificationWebhookIP(ip net.IP) bool {
+	if ip == nil {
+		return true
+	}
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return true
+	}
+	addr = addr.Unmap()
+	if !addr.IsGlobalUnicast() || addr.IsPrivate() || addr.IsLoopback() || addr.IsUnspecified() || addr.IsLinkLocalUnicast() || addr.IsMulticast() {
+		return true
+	}
+	for _, prefix := range blockedNotificationWebhookPrefixes {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *EventService) SetOutbox(service *outbox.Service) {
@@ -242,7 +435,11 @@ func (s *EventService) RetryDueDeliveries(ctx context.Context, limit int) (int, 
 
 	retried := 0
 	for _, delivery := range deliveries {
-		if s.retryOneWebhook(ctx, delivery) {
+		delivered, err := s.retryOneWebhook(ctx, delivery)
+		if err != nil {
+			return retried, err
+		}
+		if delivered {
 			retried++
 		}
 	}
@@ -378,7 +575,10 @@ func (s *EventService) deliverWebhooks(ctx context.Context, eventID int64, input
 
 	state := DeliveryStateDelivered
 	for _, route := range routes {
-		delivered := s.deliverOneWebhook(ctx, eventID, route, input, payloadJSON)
+		delivered, err := s.deliverOneWebhook(ctx, eventID, route, input, payloadJSON)
+		if err != nil {
+			return "", err
+		}
 		if !delivered {
 			state = DeliveryStateFailed
 		}
@@ -389,7 +589,7 @@ func (s *EventService) deliverWebhooks(ctx context.Context, eventID int64, input
 	return state, nil
 }
 
-func (s *EventService) deliverOneWebhook(ctx context.Context, eventID int64, route webhookRoute, input EventInput, payloadJSON []byte) bool {
+func (s *EventService) deliverOneWebhook(ctx context.Context, eventID int64, route webhookRoute, input EventInput, payloadJSON []byte) (bool, error) {
 	var deliveryID int64
 	if err := s.db.QueryRow(ctx,
 		`INSERT INTO notification_deliveries (event_id, webhook_id, status, created_at, updated_at)
@@ -397,7 +597,7 @@ func (s *EventService) deliverOneWebhook(ctx context.Context, eventID int64, rou
 		 RETURNING id`,
 		eventID, route.ID,
 	).Scan(&deliveryID); err != nil {
-		return false
+		return false, err
 	}
 
 	body, err := json.Marshal(map[string]interface{}{
@@ -414,14 +614,16 @@ func (s *EventService) deliverOneWebhook(ctx context.Context, eventID int64, rou
 		"created_at":  s.now().Format(time.RFC3339),
 	})
 	if err != nil {
-		_ = s.markDeliveryFailed(ctx, deliveryID, nil, err.Error())
-		return false
+		if updateErr := s.markDeliveryFailed(ctx, deliveryID, nil, err.Error()); updateErr != nil {
+			return false, updateErr
+		}
+		return false, nil
 	}
 
 	return s.sendWebhookAndUpdateDelivery(ctx, deliveryID, route.URL, body)
 }
 
-func (s *EventService) retryOneWebhook(ctx context.Context, delivery dueWebhookDelivery) bool {
+func (s *EventService) retryOneWebhook(ctx context.Context, delivery dueWebhookDelivery) (bool, error) {
 	body, err := json.Marshal(map[string]interface{}{
 		"event_id":    delivery.EventID,
 		"event_type":  delivery.Input.EventType,
@@ -436,51 +638,81 @@ func (s *EventService) retryOneWebhook(ctx context.Context, delivery dueWebhookD
 		"created_at":  s.now().Format(time.RFC3339),
 	})
 	if err != nil {
-		_ = s.markDeliveryFailed(ctx, delivery.DeliveryID, nil, err.Error())
-		return false
-	}
-	delivered := s.sendWebhookAndUpdateDelivery(ctx, delivery.DeliveryID, delivery.URL, body)
-	if err := s.refreshEventDeliveryStateFromDeliveries(ctx, delivery.EventID); err != nil {
-		if delivered {
-			_ = s.updateEventDeliveryState(ctx, delivery.EventID, DeliveryStateDelivered)
-		} else {
-			_ = s.updateEventDeliveryState(ctx, delivery.EventID, DeliveryStateFailed)
+		if updateErr := s.markDeliveryFailed(ctx, delivery.DeliveryID, nil, err.Error()); updateErr != nil {
+			return false, updateErr
 		}
+		return false, nil
 	}
-	return delivered
+	delivered, err := s.sendWebhookAndUpdateDelivery(ctx, delivery.DeliveryID, delivery.URL, body)
+	if err != nil {
+		return false, err
+	}
+	if err := s.refreshEventDeliveryStateFromDeliveries(ctx, delivery.EventID); err != nil {
+		return delivered, err
+	}
+	return delivered, nil
 }
 
-func (s *EventService) sendWebhookAndUpdateDelivery(ctx context.Context, deliveryID int64, webhookURL string, body []byte) bool {
+func (s *EventService) sendWebhookAndUpdateDelivery(ctx context.Context, deliveryID int64, webhookURL string, body []byte) (bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(body))
 	if err != nil {
-		_ = s.markDeliveryFailed(ctx, deliveryID, nil, err.Error())
-		return false
+		if updateErr := s.markDeliveryFailed(ctx, deliveryID, nil, "invalid webhook target"); updateErr != nil {
+			return false, updateErr
+		}
+		return false, nil
+	}
+	if s.enforceWebhookNetworkPolicy {
+		if err := validateNotificationWebhookTarget(ctx, req.URL); err != nil {
+			if updateErr := s.markDeliveryFailed(ctx, deliveryID, nil, err.Error()); updateErr != nil {
+				return false, updateErr
+			}
+			return false, nil
+		}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Idempotency-Key", fmt.Sprintf("unirouter-notification-delivery-%d", deliveryID))
+	timestamp := strconv.FormatInt(s.now().Unix(), 10)
+	req.Header.Set(WebhookTimestampHeader, timestamp)
+	if len(s.webhookSigningSecret) > 0 {
+		mac := hmac.New(sha256.New, s.webhookSigningSecret)
+		_, _ = mac.Write([]byte(timestamp))
+		_, _ = mac.Write([]byte("."))
+		_, _ = mac.Write(body)
+		req.Header.Set(WebhookSignatureHeader, "v1="+hex.EncodeToString(mac.Sum(nil)))
+	}
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		_ = s.markDeliveryFailed(ctx, deliveryID, nil, err.Error())
-		return false
+		if updateErr := s.markDeliveryFailed(ctx, deliveryID, nil, "webhook delivery failed"); updateErr != nil {
+			return false, updateErr
+		}
+		return false, nil
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body)
 
 	statusCode := resp.StatusCode
 	if statusCode < 200 || statusCode >= 300 {
-		_ = s.markDeliveryFailed(ctx, deliveryID, &statusCode, fmt.Sprintf("webhook returned status %d", statusCode))
-		return false
+		if updateErr := s.markDeliveryFailed(ctx, deliveryID, &statusCode, fmt.Sprintf("webhook returned status %d", statusCode)); updateErr != nil {
+			return false, updateErr
+		}
+		return false, nil
 	}
 
-	_, _ = s.db.Exec(ctx,
+	tag, err := s.db.Exec(ctx,
 		`UPDATE notification_deliveries
 		 SET status = 'delivered', attempts = attempts + 1, response_status = $1,
 		     error = '', next_retry_at = NULL, delivered_at = NOW(), updated_at = NOW()
 		 WHERE id = $2`,
 		statusCode, deliveryID,
 	)
-	return true
+	if err != nil {
+		return false, fmt.Errorf("persist delivered notification state: %w", err)
+	}
+	if tag.RowsAffected() != 1 {
+		return false, fmt.Errorf("persist delivered notification state: delivery %d was not updated", deliveryID)
+	}
+	return true, nil
 }
 
 func (s *EventService) markDeliveryFailed(ctx context.Context, deliveryID int64, responseStatus *int, message string) error {

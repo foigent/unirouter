@@ -14,15 +14,30 @@ RUN test -e /app/.env.example \
     && test -z "$(find /app -type f \( \
         -name '.env' -o -name '.env.*' -o \
         -name '*.pem' -o -name '*.key' -o \
-        -name '*.p12' -o -name '*.pfx' \
+        -name '*.private' -o -name '*.p12' -o -name '*.pfx' \
       \) ! -name '.env.example' -print -quit)" \
     && test -z "$(find /app -type d \( \
         -name '.secrets' -o -name 'secrets' \
       \) -print -quit)"
 RUN case "${UNIROUTER_RELEASE_TRUST_MODE}" in \
       release) \
-        test -n "${UNIROUTER_LICENSE_TRUST_BUNDLE_B64}" \
-        && test -n "${UNIROUTER_UPGRADE_TRUST_BUNDLE_B64}" ;; \
+        case "${RUNTIME_VERSION}" in \
+          ''|local|unknown|*[!A-Za-z0-9._+-]*) echo "release builds require a safe immutable runtime version" >&2; exit 1 ;; \
+        esac; \
+        test "${#RUNTIME_VERSION}" -le 128 \
+        || { echo "release runtime version exceeds 128 bytes" >&2; exit 1; }; \
+        for trust_bundle in "${UNIROUTER_LICENSE_TRUST_BUNDLE_B64}" "${UNIROUTER_UPGRADE_TRUST_BUNDLE_B64}"; do \
+          case "${trust_bundle}" in \
+            ''|*[!A-Za-z0-9_-]*) echo "release trust bundles must be non-empty unpadded base64url" >&2; exit 1 ;; \
+          esac; \
+        done; \
+        case "${RUNTIME_COMMIT}" in \
+          ''|*[!0-9a-f]*) echo "release builds require a lowercase hexadecimal runtime commit" >&2; exit 1 ;; \
+        esac; \
+        case "${#RUNTIME_COMMIT}" in \
+          40|64) ;; \
+          *) echo "release builds require a complete 40- or 64-character runtime commit" >&2; exit 1 ;; \
+        esac ;; \
       development) ;; \
       *) echo "UNIROUTER_RELEASE_TRUST_MODE must be release or development" >&2; exit 1 ;; \
     esac \
@@ -35,7 +50,7 @@ RUN case "${UNIROUTER_RELEASE_TRUST_MODE}" in \
         -X github.com/uniroute/unirouter/internal/releasetrust.embeddedUpgradeKeyRingBase64=${UNIROUTER_UPGRADE_TRUST_BUNDLE_B64}" \
       -o /app/uniroute ./cmd/uniroute/
 
-FROM alpine:3.19
+FROM alpine:3.23
 RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 COPY --from=builder /app/uniroute .

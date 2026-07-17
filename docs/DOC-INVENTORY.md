@@ -55,7 +55,8 @@
 | `docs/ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md` | Dated official Flash price authority, supported Admin API before/after audit, second bounded call, exact 7-micro-CNY settlement, cleanup and preserved commercial/Production/X-Insight non-claims |
 | `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md` | Historical immutable Post-PRD6 local implementation/full-suite checkpoint for request-time admin principal reconciliation, transient-503 frontend handling and bounded model-list governance; its then-pending statements are not current target truth |
 | `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md` | Current PR #214 CI/merge, formal sequence-4 release, administrator disable replay, exact two-model API/DB/browser/config, excluded-model zero-dispatch, credential cleanup and supplier-bill non-claim evidence |
-| `docs/ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md` | User-directed V1 first-release work-window closeout, window-scoped X-Insight-only active boundary, unexecuted one-time bill evidence, unimplemented recurring reconciliation and supplier-cost/pass-through/margin non-claims |
+| `docs/ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md` | Immutable closeout of the earlier selected V1 work window, including its then-current X-Insight-only boundary and financial non-claims; it does not describe or authorize the later independent `V1-UX-IA-001` corrective batch |
+| `docs/ops/evidence/V1-SECURITY-REMEDIATION-LOCAL-20260717.md` | Current immutable local checkpoint for all 39 canonical security remediations, migrations `000038`–`000042`, local/OIDC identity and safe CLI corrections, final full-tree gates and explicit CI/ECS/Production non-claims |
 | `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` | Official competitor HA patterns, current UniRouter cluster facts, Four Quadrants and accepted D6-12 stream/HA boundary |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | Source-backed audit/reconciliation/correlation/UI/architecture/upgrade findings, Four Quadrants and PRD6 batches |
 | `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md` | Accepted customer-revenue/provider-COGS boundary, competitor and supplier billing evidence, Four Quadrants, PRD6 non-claims and future cost/metering/media candidates |
@@ -96,7 +97,7 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required single-owner execution, approval, evidence and optional-review workflow |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current X-Insight-only active boundary, closed Post-PRD6 V1 window, deferred/not-implemented residuals and preserved historical V1/PRD6/PRD5 evidence |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current `V1-SECURITY-REMEDIATION-001` amendment scope, baseline and publication state, with `V1-UX-IA-001` preserved as its underlying worktree context; followed by the closed Post-PRD6 window and historical V1/PRD6/PRD5 evidence |
 | `docs/agent-workflows/reviews/` | Optional immutable independent review results |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry pointing to the current execution record |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |
@@ -140,9 +141,9 @@
 | `docs/tech-ref/01-provider-capability-matrix.md` | Provider capability reference |
 | `docs/tech-ref/02-billing-state-machine.md` | Billing state reference |
 | `docs/tech-ref/03-error-handling-matrix.md` | Error handling and retry reference |
-| `docs/tech-ref/04-oneapi-hook-manifest.md` | OneAPI hook analysis |
+| `docs/tech-ref/04-oneapi-hook-manifest.md` | Historical, explicitly unimplemented OneAPI hook analysis; not the current extension contract |
 | `docs/tech-ref/05-openapi-spec.yaml` | Current UniRouter API route contract aligned to backend routes and docs parity guards |
-| `docs/tech-ref/06-frontend-spec.md` | Frontend spec reference |
+| `docs/tech-ref/06-frontend-spec.md` | Historical PRD1 frontend design snapshot; current UI/API authority remains code, OpenAPI and tests |
 | `docs/tech-ref/07-structured-logging.md` | Logging plan/reference |
 | `docs/tech-ref/08-prometheus-metrics.md` | Metrics reference |
 | `docs/tech-ref/09-admission-control.md` | Replica-invariant weighted Chat/Streaming/Embeddings admission, fairness, lease and failure-contract reference |
@@ -228,8 +229,8 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | File | Role |
 |------|------|
 | `docs/agent-workflows/README.md` | Agent workflow index |
-| `docs/agent-workflows/AGENT-PROTOCOL.md` | Current Agent Protocol v2.0 |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current X-Insight-only active boundary, closed Post-PRD6 V1 window, deferred/not-implemented residuals and preserved historical V1/PRD6/PRD5 evidence |
+| `docs/agent-workflows/AGENT-PROTOCOL.md` | Current Agent Protocol v2.1 |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current `V1-SECURITY-REMEDIATION-001` amendment scope, baseline and publication state, with `V1-UX-IA-001` preserved as its underlying worktree context; followed by the closed Post-PRD6 window and historical V1/PRD6/PRD5 evidence |
 | `docs/agent-workflows/reviews/README.md` | Independent review naming, contents and severity rules |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |

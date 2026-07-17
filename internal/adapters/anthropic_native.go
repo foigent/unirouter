@@ -132,6 +132,10 @@ func (a *AnthropicNative) ParseResponse(ctx context.Context, in ResponseInput) (
 	}
 	if parsed.Usage == nil {
 		normalized.Usage = NewMissingUsage()
+	} else if err := validateAnthropicUsageWire(*parsed.Usage); err != nil {
+		return nil, fmt.Errorf("normalize anthropic usage: %w", err)
+	} else if parsed.Usage.InputTokens == nil || parsed.Usage.OutputTokens == nil {
+		normalized.Usage = NewMissingUsage()
 	} else {
 		usage, err := normalizeAnthropicUsage(*parsed.Usage, metering.UsageSourceUpstream)
 		if err != nil {
@@ -199,18 +203,23 @@ func (a *AnthropicNative) NormalizeStreamChunk(ctx context.Context, in StreamChu
 				model = event.Message.Model
 			}
 			if event.Message.Usage != nil {
-				usage, err := normalizeAnthropicUsage(*event.Message.Usage, metering.UsageSourceUpstream)
-				if err != nil {
+				if err := validateAnthropicUsageWire(*event.Message.Usage); err != nil {
 					return nil, fmt.Errorf("normalize anthropic stream usage: %w", err)
 				}
-				in.State.ProviderUsageReported = true
-				in.State.PromptTokens = usage.PromptTokens
-				in.State.UncachedPromptTokens = usage.UncachedPromptTokens
-				in.State.CacheReadTokens = usage.CacheReadTokens
-				in.State.CacheCreationTokens = usage.CacheCreationTokens
-				in.State.CompletionTokens = usage.CompletionTokens
-				in.State.CacheUsageSchema = usage.CacheUsageSchema
-				in.State.CacheUsageStatus = usage.CacheUsageStatus
+				if event.Message.Usage.InputTokens != nil {
+					usage, err := normalizeAnthropicUsage(*event.Message.Usage, metering.UsageSourceUpstream)
+					if err != nil {
+						return nil, fmt.Errorf("normalize anthropic stream usage: %w", err)
+					}
+					in.State.ProviderUsageReported = true
+					in.State.PromptTokens = usage.PromptTokens
+					in.State.UncachedPromptTokens = usage.UncachedPromptTokens
+					in.State.CacheReadTokens = usage.CacheReadTokens
+					in.State.CacheCreationTokens = usage.CacheCreationTokens
+					in.State.CompletionTokens = usage.CompletionTokens
+					in.State.CacheUsageSchema = usage.CacheUsageSchema
+					in.State.CacheUsageStatus = usage.CacheUsageStatus
+				}
 			}
 		}
 		result.Data = marshalOpenAIStreamChunk(in.State, model, map[string]interface{}{"role": "assistant"}, nil)
@@ -230,8 +239,11 @@ func (a *AnthropicNative) NormalizeStreamChunk(ctx context.Context, in StreamChu
 		result.Data = marshalOpenAIStreamChunk(in.State, model, map[string]interface{}{"content": event.Delta.Text}, nil)
 	case "message_delta":
 		if event.Usage != nil {
-			in.State.CompletionTokens = event.Usage.OutputTokens
-			if in.State.ProviderUsageReported {
+			if err := validateAnthropicUsageWire(*event.Usage); err != nil {
+				return nil, fmt.Errorf("normalize anthropic final stream usage: %w", err)
+			}
+			if event.Usage.OutputTokens != nil && in.State.ProviderUsageReported {
+				in.State.CompletionTokens = *event.Usage.OutputTokens
 				result.HasUsage = true
 				usage, err := UsageFromStreamState(in.State, metering.UsageSourceUpstream)
 				if err != nil {
@@ -436,8 +448,8 @@ func openAIContentToText(raw json.RawMessage) string {
 }
 
 type anthropicUsageWire struct {
-	InputTokens              int  `json:"input_tokens"`
-	OutputTokens             int  `json:"output_tokens"`
+	InputTokens              *int `json:"input_tokens"`
+	OutputTokens             *int `json:"output_tokens"`
 	CacheReadInputTokens     *int `json:"cache_read_input_tokens,omitempty"`
 	CacheCreationInputTokens *int `json:"cache_creation_input_tokens,omitempty"`
 	CacheCreation            *struct {
@@ -447,6 +459,11 @@ type anthropicUsageWire struct {
 }
 
 func normalizeAnthropicUsage(wire anthropicUsageWire, source string) (Usage, error) {
+	if err := validateAnthropicUsageWire(wire); err != nil {
+		return Usage{}, err
+	}
+	inputTokens := valueOrZero(wire.InputTokens)
+	outputTokens := valueOrZero(wire.OutputTokens)
 	readTokens := valueOrZero(wire.CacheReadInputTokens)
 	creationTokens := valueOrZero(wire.CacheCreationInputTokens)
 	readReported := wire.CacheReadInputTokens != nil
@@ -465,7 +482,7 @@ func normalizeAnthropicUsage(wire anthropicUsageWire, source string) (Usage, err
 		}
 	}
 	if !cacheReported {
-		return NewUsage(wire.InputTokens, wire.OutputTokens, wire.InputTokens+wire.OutputTokens, source)
+		return NewUsage(inputTokens, outputTokens, inputTokens+outputTokens, source)
 	}
 	status := CacheUsageStatusReadWriteReported
 	if readReported && !creationReported {
@@ -473,18 +490,34 @@ func normalizeAnthropicUsage(wire anthropicUsageWire, source string) (Usage, err
 	} else if creationReported && !readReported {
 		status = CacheUsageStatusWriteReported
 	}
-	promptTotal := wire.InputTokens + readTokens + creationTokens
+	promptTotal := inputTokens + readTokens + creationTokens
 	return NewCacheAwareUsage(
 		promptTotal,
-		wire.InputTokens,
+		inputTokens,
 		readTokens,
 		creationTokens,
-		wire.OutputTokens,
-		promptTotal+wire.OutputTokens,
+		outputTokens,
+		promptTotal+outputTokens,
 		source,
 		CacheUsageSchemaAnthropicV1,
 		status,
 	)
+}
+
+func validateAnthropicUsageWire(wire anthropicUsageWire) error {
+	counters := []optionalUsageCounter{
+		{name: "input_tokens", value: wire.InputTokens},
+		{name: "output_tokens", value: wire.OutputTokens},
+		{name: "cache_read_input_tokens", value: wire.CacheReadInputTokens},
+		{name: "cache_creation_input_tokens", value: wire.CacheCreationInputTokens},
+	}
+	if wire.CacheCreation != nil {
+		counters = append(counters,
+			optionalUsageCounter{name: "cache_creation.ephemeral_5m_input_tokens", value: wire.CacheCreation.Ephemeral5mInputTokens},
+			optionalUsageCounter{name: "cache_creation.ephemeral_1h_input_tokens", value: wire.CacheCreation.Ephemeral1hInputTokens},
+		)
+	}
+	return validateOptionalUsageCounters(counters...)
 }
 
 type anthropicMessageResponse struct {

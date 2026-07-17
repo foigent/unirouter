@@ -31,6 +31,7 @@ type SettlementRecoveryResult struct {
 
 type pendingSettlement struct {
 	RequestID            string
+	AttemptID            string
 	OrgID                int64
 	PromptTokens         int
 	UncachedPromptTokens int
@@ -45,6 +46,8 @@ type pendingSettlement struct {
 	UsageEstimateVersion string
 	CacheUsageSchema     string
 	CacheUsageStatus     string
+	StreamOwnerID        sql.NullString
+	StreamGeneration     sql.NullInt64
 	Attempt              int
 }
 
@@ -187,6 +190,34 @@ func (b *Billing) PersistSettlementUsage(ctx context.Context, req SettleRequest)
 		return fmt.Errorf("lock settlement payload: %w", err)
 	}
 	record = canonicalizeLegacyReservationUsage(record)
+	if req.AttemptID != "" {
+		if err := bindDeliveryAttemptTx(ctx, tx, &record, req.OrgID, req.RequestID, req.AttemptID); err != nil {
+			return err
+		}
+	}
+	if err := requireBoundOrInternalSettlementTx(ctx, tx, record, req); err != nil {
+		return err
+	}
+	if req.StreamFence != nil {
+		if req.StreamFence.OrgID != req.OrgID || req.StreamFence.RequestID != req.RequestID || req.StreamFence.AttemptID != req.AttemptID {
+			return fmt.Errorf("stream settlement payload fence identity is invalid")
+		}
+		if err := requireCurrentStreamFenceTx(ctx, tx, *req.StreamFence); err != nil {
+			return err
+		}
+	} else if !record.SettlementPayloadAt.Valid {
+		var hasStreamLease bool
+		if err := tx.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM stream_delivery_leases
+				WHERE org_id=$1 AND request_id=$2
+			)`, req.OrgID, req.RequestID).Scan(&hasStreamLease); err != nil {
+			return fmt.Errorf("inspect stream settlement authority: %w", err)
+		}
+		if hasStreamLease {
+			return ErrStreamLeaseConflict
+		}
+	}
 
 	if record.Status == "settled" {
 		if settlementUsageMatches(record, req) {
@@ -207,6 +238,12 @@ func (b *Billing) PersistSettlementUsage(ctx context.Context, req SettleRequest)
 	calculatedCost, costBreakdown, err := calculateReservationCost(record, req)
 	if err != nil {
 		return err
+	}
+	var streamOwner any
+	var streamGeneration any
+	if req.StreamFence != nil {
+		streamOwner = req.StreamFence.OwnerID
+		streamGeneration = req.StreamFence.Generation
 	}
 	if _, err := tx.Exec(ctx,
 		`UPDATE freeze_idempotency
@@ -232,6 +269,8 @@ func (b *Billing) PersistSettlementUsage(ctx context.Context, req SettleRequest)
 		     settlement_claimed_until = NULL,
 		     settlement_next_attempt_at = NOW(),
 		     settlement_last_error = '',
+		     settlement_stream_owner_id = $21,
+		     settlement_stream_generation = $22,
 		     updated_at = NOW()
 		 WHERE request_id = $1 AND org_id = $2 AND status = 'settlement_pending'`,
 		req.RequestID, req.OrgID,
@@ -242,6 +281,7 @@ func (b *Billing) PersistSettlementUsage(ctx context.Context, req SettleRequest)
 		req.CacheUsageSchema, req.CacheUsageStatus,
 		calculatedCost, costBreakdown.UncachedInputCostMicros, costBreakdown.CacheReadCostMicros,
 		costBreakdown.CacheCreationCostMicros, costBreakdown.OutputCostMicros,
+		streamOwner, streamGeneration,
 	); err != nil {
 		return fmt.Errorf("persist settlement payload: %w", err)
 	}
@@ -294,8 +334,9 @@ func (b *Billing) RecoverPendingSettlements(ctx context.Context, limit int) (Set
 	result := SettlementRecoveryResult{Claimed: len(items)}
 	var recoveryErrors []error
 	for _, item := range items {
-		settled, settleErr := b.Settle(ctx, SettleRequest{
+		settleRequest := SettleRequest{
 			RequestID:            item.RequestID,
+			AttemptID:            item.AttemptID,
 			OrgID:                item.OrgID,
 			PromptTokens:         item.PromptTokens,
 			UncachedPromptTokens: item.UncachedPromptTokens,
@@ -310,7 +351,15 @@ func (b *Billing) RecoverPendingSettlements(ctx context.Context, limit int) (Set
 			UsageEstimateVersion: item.UsageEstimateVersion,
 			CacheUsageSchema:     item.CacheUsageSchema,
 			CacheUsageStatus:     item.CacheUsageStatus,
-		})
+		}
+		if item.StreamOwnerID.Valid && item.StreamGeneration.Valid {
+			settleRequest.settlementRecovery = &settlementRecoveryAuthority{
+				ClaimAttempt:     item.Attempt,
+				StreamOwnerID:    item.StreamOwnerID.String,
+				StreamGeneration: item.StreamGeneration.Int64,
+			}
+		}
+		settled, settleErr := b.Settle(ctx, settleRequest)
 		if settleErr == nil && settled != nil && settled.Success {
 			result.Settled++
 			continue
@@ -335,10 +384,17 @@ func (b *Billing) claimPendingSettlements(ctx context.Context, limit int) ([]pen
 	rows, err := b.db.Query(ctx,
 		`WITH candidates AS (
 		    SELECT org_id, request_id
-		    FROM freeze_idempotency
-		    WHERE status = 'settlement_pending'
+			    FROM freeze_idempotency f
+			    WHERE status = 'settlement_pending'
 		      AND settlement_payload_ready_at IS NOT NULL
-		      AND settlement_pending_reason IN ('billable_output', 'delivery_completed')
+			      AND settlement_pending_reason IN ('billable_output', 'delivery_completed')
+			      AND (
+			          delivery_attempt_id IS NOT NULL
+			          OR NOT EXISTS (
+			              SELECT 1 FROM billing_provider_attempts p
+			              WHERE p.org_id=f.org_id AND p.request_id=f.request_id
+			          )
+			      )
 		      AND (settlement_claimed_until IS NULL OR settlement_claimed_until <= NOW())
 		      AND (settlement_next_attempt_at IS NULL OR settlement_next_attempt_at <= NOW())
 		    ORDER BY COALESCE(settlement_next_attempt_at, settlement_payload_ready_at),
@@ -353,13 +409,14 @@ func (b *Billing) claimPendingSettlements(ctx context.Context, limit int) ([]pen
 		    updated_at = NOW()
 		FROM candidates c
 		WHERE f.org_id = c.org_id AND f.request_id = c.request_id
-		RETURNING f.request_id, f.org_id,
+			RETURNING f.request_id, COALESCE(f.delivery_attempt_id, ''), f.org_id,
 		          f.prompt_tokens, f.uncached_prompt_tokens,
 		          f.cache_read_tokens, f.cache_creation_tokens,
 		          f.completion_tokens, f.usage_source,
 		          f.usage_authority, f.usage_purpose, f.usage_finality,
 		          f.usage_contract_version, f.usage_estimate_version,
 		          f.cache_usage_schema, f.cache_usage_status,
+		          f.settlement_stream_owner_id, f.settlement_stream_generation,
 		          f.settlement_attempts`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("claim pending settlements: %w", err)
@@ -371,6 +428,7 @@ func (b *Billing) claimPendingSettlements(ctx context.Context, limit int) ([]pen
 		var item pendingSettlement
 		if err := rows.Scan(
 			&item.RequestID,
+			&item.AttemptID,
 			&item.OrgID,
 			&item.PromptTokens,
 			&item.UncachedPromptTokens,
@@ -385,6 +443,8 @@ func (b *Billing) claimPendingSettlements(ctx context.Context, limit int) ([]pen
 			&item.UsageEstimateVersion,
 			&item.CacheUsageSchema,
 			&item.CacheUsageStatus,
+			&item.StreamOwnerID,
+			&item.StreamGeneration,
 			&item.Attempt,
 		); err != nil {
 			return nil, fmt.Errorf("scan pending settlement: %w", err)
@@ -409,8 +469,9 @@ func (b *Billing) recordSettlementRecoveryFailure(ctx context.Context, item pend
 		     settlement_next_attempt_at = NOW() + ($3 * INTERVAL '1 second'),
 		     settlement_last_error = $4,
 		     updated_at = NOW()
-		 WHERE request_id = $1 AND org_id = $2 AND status = 'settlement_pending'`,
-		item.RequestID, item.OrgID, int(delay/time.Second), message)
+		 WHERE request_id = $1 AND org_id = $2 AND status = 'settlement_pending'
+		   AND settlement_attempts = $5`,
+		item.RequestID, item.OrgID, int(delay/time.Second), message, item.Attempt)
 	return err
 }
 

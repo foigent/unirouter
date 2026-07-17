@@ -24,6 +24,7 @@ describe('role display labels', () => {
 
   it('labels current roles and preserves the legacy admin display text', () => {
     expect(roleLabel('platform_admin')).toBe('平台管理员');
+    expect(roleLabel('billing_admin')).toBe('账务管理员');
     expect(roleLabel('developer')).toBe('开发者');
     expect(roleLabel('admin')).toBe('系统管理员（兼容）');
     expect(roleLabel('', '未加载角色')).toBe('未加载角色');

@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { Form, Button, Toast, Typography, Table } from '@douyinfe/semi-ui';
+import { Form, Button, Toast, Typography, Table, Modal } from '@douyinfe/semi-ui';
 import { api } from '../api/client';
 import { LatencyText, PageHeader, StatusTag, Surface } from '../ui';
+import { loadAllPages } from '../utils/loadAllPages';
 
 const { Text } = Typography;
 
@@ -14,6 +15,7 @@ export interface Channel {
 }
 
 interface TestResult {
+  result_key: string;
   success: boolean;
   channel_id: number;
   channel_name: string;
@@ -48,10 +50,15 @@ export default function TestPage() {
   const formApiRef = useRef<any>(null);
 
   useEffect(() => {
-    api.getChannels(1, 100).then((res: any) => {
-      setChannels(res.data || []);
-    });
+    loadAllPages<Channel>((page, size) => api.getChannels(page, size))
+      .then(setChannels)
+      .catch((error: any) => Toast.error({ content: `通道列表加载失败${error?.message ? `：${error.message}` : ''}` }));
   }, []);
+
+  const withResultKey = (result: Omit<TestResult, 'result_key'>): TestResult => ({
+    ...result,
+    result_key: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+  });
 
   const selectedChannel = channels.find(c => c.id === selectedChannelId);
   const modelOptions = parseChannelModels(selectedChannel?.models).map(m => ({ label: m, value: m }));
@@ -62,16 +69,16 @@ export default function TestPage() {
         method: 'POST',
         body: JSON.stringify({ model, prompt }),
       });
-      return { ...res, channel_name: channelName } as TestResult;
+      return withResultKey({ ...res, channel_name: channelName } as Omit<TestResult, 'result_key'>);
     } catch (err: any) {
-      return {
+      return withResultKey({
         success: false,
         channel_id: channelId,
         channel_name: channelName,
         latency_ms: 0,
         status_code: 0,
         error: err.message,
-      } as TestResult;
+      });
     }
   };
 
@@ -99,7 +106,7 @@ export default function TestPage() {
     setTesting(false);
   };
 
-  const handleBatchTest = async () => {
+  const executeBatchTest = async () => {
     setTesting(true);
     const activeChannels = channels.filter(c => c.status === 'active');
     const batchResults: TestResult[] = [];
@@ -107,14 +114,14 @@ export default function TestPage() {
     for (const channel of activeChannels) {
       const model = firstChannelModel(channel);
       if (!model) {
-        batchResults.push({
+        batchResults.push(withResultKey({
           success: false,
           channel_id: channel.id,
           channel_name: channel.name,
           latency_ms: 0,
           status_code: 0,
           error: '通道未配置检测模型',
-        });
+        }));
         continue;
       }
       const result = await runTest(channel.id, channel.name, model, 'Hello, this is a test message.');
@@ -125,6 +132,20 @@ export default function TestPage() {
     const successCount = batchResults.filter(r => r.success).length;
     Toast.info({ content: `批量检测完成: ${successCount}/${batchResults.length} 成功` });
     setTesting(false);
+  };
+
+  const handleBatchTest = () => {
+    const activeCount = channels.filter((channel) => channel.status === 'active').length;
+    if (activeCount === 0) {
+      Toast.warning({ content: '当前没有可检测的活跃通道' });
+      return;
+    }
+    Modal.confirm({
+      title: `确认检测 ${activeCount} 个活跃通道`,
+      content: '每个通道都会向真实供应商发起一次非流式模型请求，可能产生供应商费用和 UniRouter 计费记录。确定继续吗？',
+      okText: '确认并发起真实请求',
+      onOk: executeBatchTest,
+    });
   };
 
   const submitSelectedChannelTest = () => {
@@ -145,7 +166,7 @@ export default function TestPage() {
         <StatusTag status={v ? 'success' : 'failed'}>{v ? '成功' : '失败'}</StatusTag>
       ),
     },
-    { title: '渠道', dataIndex: 'channel_name', key: 'channel_name', width: 150 },
+    { title: '通道', dataIndex: 'channel_name', key: 'channel_name', width: 150 },
     {
       title: '延迟',
       dataIndex: 'latency_ms',
@@ -180,9 +201,9 @@ export default function TestPage() {
   return (
     <div className="ur-page">
       <PageHeader
-        eyebrow="流量治理"
+        eyebrow="模型接入"
         title="连通性检测"
-        description="对单个上游通道或全部活跃通道发起非流式探测，记录延迟、状态码和错误信息。"
+        description="向真实供应商发起非流式模型请求，验证凭证、模型和网络链路；检测可能产生供应商费用，并写入正常用量与计费记录。"
       />
 
       <Surface title="检测请求">
@@ -190,7 +211,7 @@ export default function TestPage() {
           <Form.Select
             field="channel_id"
             label="选择通道"
-            rules={[{ required: true, message: '请选择渠道' }]}
+            rules={[{ required: true, message: '请选择通道' }]}
             placeholder="选择要检测的上游通道"
             optionList={channels.map(c => ({
               label: `${c.name} (${c.provider})`,
@@ -236,7 +257,7 @@ export default function TestPage() {
           <Table
             columns={columns}
             dataSource={results}
-            rowKey={(record) => record ? `${record.channel_id}-${record.latency_ms}` : String(Math.random())}
+            rowKey="result_key"
             pagination={false}
           />
         </div>

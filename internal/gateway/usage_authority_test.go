@@ -70,6 +70,52 @@ func TestP6F41AChatMissingUsageUsesVersionedConservativeEstimate(t *testing.T) {
 	}
 }
 
+func TestP6F41AChatIncompleteUsageUsesVersionedConservativeEstimate(t *testing.T) {
+	tests := []struct {
+		name  string
+		usage string
+	}{
+		{name: "partial", usage: `{"prompt_tokens":10}`},
+		{name: "null completion", usage: `{"prompt_tokens":10,"completion_tokens":null}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var settled billing.SettleRequest
+			relay := newTestRelay(&testutil.MockDB{
+				ExecFn: func(context.Context, string, ...any) (pgconn.CommandTag, error) { return pgconn.CommandTag{}, nil },
+			}, &mockBilling{
+				settleFn: func(_ context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
+					settled = req
+					return &billing.SettleResult{SettleID: 1, Success: true}, nil
+				},
+			})
+			resp := &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body: io.NopCloser(strings.NewReader(
+					`{"id":"chatcmpl-incomplete","choices":[{"message":{"role":"assistant","content":"bounded answer"}}],"usage":` + tt.usage + `}`,
+				)),
+			}
+			recorder := httptest.NewRecorder()
+			relay.relayNonStreamRequest(
+				contextWithAttemptID(context.Background(), "att_p6f41_incomplete"), recorder, resp,
+				&RouteResult{Channel: testOpenAIChannel()}, "op_p6f41_incomplete", 1, 1,
+				"gpt-4o", "gpt-4o", "127.0.0.1",
+				logger.New(logger.Fields{RequestID: "op_p6f41_incomplete", OrgID: 1}), time.Now(),
+				nil, 120, 40, "upstream-p6f41-incomplete",
+			)
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("expected bounded estimate to permit response, got %d: %s", recorder.Code, recorder.Body.String())
+			}
+			if settled.PromptTokens != 120 || settled.CompletionTokens != 40 ||
+				settled.UsageAuthority != metering.UsageAuthorityConservativeEstimate ||
+				settled.UsageEstimateVersion != metering.ConservativeEstimateVersionV1 {
+				t.Fatalf("incomplete Chat usage did not use the bounded fallback: %+v", settled)
+			}
+		})
+	}
+}
+
 func TestP6F41AChatUnfundedConservativeEstimateWithholdsResponse(t *testing.T) {
 	cancelled := false
 	relay := newTestRelay(&testutil.MockDB{

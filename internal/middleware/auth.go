@@ -63,16 +63,17 @@ func validateKeyAndOrgStatus(apiKey *models.ApiKey, orgStatus string) error {
 type contextKey string
 
 const (
-	CtxAPIKey          contextKey = "api_key"
-	CtxOrgID           contextKey = "org_id"
-	CtxProjectID       contextKey = "project_id"
-	CtxKeyID           contextKey = "key_id"
-	CtxRequestID       contextKey = "request_id"
-	CtxUserID          contextKey = "user_id"
-	CtxUserRole        contextKey = "user_role"
-	CtxModelAlias      contextKey = "model_alias"
-	CtxAuthKind        contextKey = "auth_kind"
-	CtxAgentCapability contextKey = "agent_capability"
+	CtxAPIKey           contextKey = "api_key"
+	CtxOrgID            contextKey = "org_id"
+	CtxProjectID        contextKey = "project_id"
+	CtxKeyID            contextKey = "key_id"
+	CtxRequestID        contextKey = "request_id"
+	CtxUserID           contextKey = "user_id"
+	CtxUserRole         contextKey = "user_role"
+	CtxAdminSessionHash contextKey = "admin_session_hash"
+	CtxModelAlias       contextKey = "model_alias"
+	CtxAuthKind         contextKey = "auth_kind"
+	CtxAgentCapability  contextKey = "agent_capability"
 )
 
 const (
@@ -122,6 +123,13 @@ func GetUserRoleFromContext(ctx context.Context) string {
 	return v
 }
 
+// GetAdminSessionHashFromContext returns a defensive copy of the current
+// admin-session lookup key. The raw bearer sid is never placed in context.
+func GetAdminSessionHashFromContext(ctx context.Context) []byte {
+	v, _ := ctx.Value(CtxAdminSessionHash).([]byte)
+	return append([]byte(nil), v...)
+}
+
 // GetModelAliasFromContext retrieves the original requested model when the gateway resolves an alias.
 func GetModelAliasFromContext(ctx context.Context) string {
 	v, _ := ctx.Value(CtxModelAlias).(string)
@@ -136,30 +144,6 @@ func GetAuthKindFromContext(ctx context.Context) string {
 func GetAgentCapabilityFromContext(ctx context.Context) *agentcap.Claims {
 	v, _ := ctx.Value(CtxAgentCapability).(*agentcap.Claims)
 	return v
-}
-
-// getClientIP extracts the client IP from the request.
-// Checks X-Forwarded-For, X-Real-IP, then RemoteAddr.
-func getClientIP(r *http.Request) string {
-	// X-Forwarded-For may contain multiple IPs: "client, proxy1, proxy2"
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		if len(parts) > 0 {
-			ip := strings.TrimSpace(parts[0])
-			if ip != "" {
-				return ip
-			}
-		}
-	}
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
-	}
-	// Fallback to RemoteAddr (host:port)
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
 }
 
 // checkIPWhitelist checks if the client IP is allowed by the whitelist.
@@ -207,7 +191,18 @@ func resolveAPIKey(ctx context.Context, q db.DBQuerier, keyHash string) (*models
 		        o.status
 		 FROM api_keys ak
 		 JOIN orgs o ON o.id = ak.org_id
-		 WHERE ak.key_hash = $1`,
+		 LEFT JOIN projects p ON p.id = ak.project_id AND p.org_id = ak.org_id
+		 LEFT JOIN users u ON u.id = ak.owner_user_id AND u.org_id = ak.org_id
+		 LEFT JOIN project_members pm ON pm.project_id = ak.project_id AND pm.user_id = ak.owner_user_id
+		 WHERE ak.key_hash = $1
+		   AND (ak.project_id IS NULL OR p.status = 'active')
+		   AND (
+		       COALESCE(NULLIF(ak.key_type, ''), 'shared') <> 'personal'
+		       OR (
+		           u.status = 'active'
+		           AND (ak.project_id IS NULL OR pm.user_id IS NOT NULL)
+		       )
+		   )`,
 		keyHash,
 	).Scan(
 		&apiKey.ID, &apiKey.OrgID, &projectID, &apiKey.Status, &apiKey.IPWhitelist,
@@ -262,6 +257,13 @@ func GatewayAuthWithAPIKeyHashSecret(q db.DBQuerier, apiKeyHashSecret string) fu
 // so existing aggregate rate and billing boundaries are not multiplied by the
 // number of child Agents.
 func GatewayAuthWithAgentCapabilities(q db.DBQuerier, apiKeyHashSecret string, capabilities *agentcap.Service) func(http.Handler) http.Handler {
+	return GatewayAuthWithAgentCapabilitiesAndClientIP(q, apiKeyHashSecret, capabilities, ClientIPResolver{})
+}
+
+// GatewayAuthWithAgentCapabilitiesAndClientIP applies the same explicit
+// trusted-proxy client-IP contract used by login throttling to API-key IP
+// allowlists. The zero resolver ignores forwarding headers.
+func GatewayAuthWithAgentCapabilitiesAndClientIP(q db.DBQuerier, apiKeyHashSecret string, capabilities *agentcap.Service, clientIPResolver ClientIPResolver) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			rawCredential, err := extractAPIKey(r)
@@ -323,7 +325,7 @@ func GatewayAuthWithAgentCapabilities(q db.DBQuerier, apiKeyHashSecret string, c
 			}
 
 			// Check IP whitelist
-			clientIP := getClientIP(r)
+			clientIP := clientIPResolver.Resolve(r)
 			if !checkIPWhitelist(clientIP, apiKey.IPWhitelist) {
 				writeGatewayAuthError(w, http.StatusForbidden, "auth_error.ip_not_allowed", "Client IP is not in the API key's allowed list")
 				return
@@ -391,10 +393,10 @@ func writeGatewayAuthError(w http.ResponseWriter, status int, code, message stri
 }
 
 // AdminAuth returns middleware that authenticates admin JWT tokens and verifies
-// that the signed principal still matches an active user in an active
-// organization. Principal-state failures fail closed so tokens are rejected
-// while their user is disabled, deleted, moved, or no longer has the signed
-// role.
+// that the signed principal still matches an active user, active organization,
+// current auth epoch, and live server-side session. State failures fail closed
+// so legacy/stateless, revoked, expired, disabled, moved, and stale-epoch
+// tokens cannot authorize requests.
 func AdminAuth(q db.DBQuerier, jwtSecret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -423,19 +425,26 @@ func AdminAuth(q db.DBQuerier, jwtSecret string) func(http.Handler) http.Handler
 				http.Error(w, `{"error":{"type":"auth_error.state_unavailable","message":"Authentication state is temporarily unavailable"}}`, http.StatusServiceUnavailable)
 				return
 			}
+			sessionHash := auth.HashAdminSessionID(claims.SessionID)
 			var principalActive bool
 			err = q.QueryRow(r.Context(),
 				`SELECT EXISTS (
 				    SELECT 1
 				      FROM users u
 				      JOIN orgs o ON o.id = u.org_id
+				      JOIN admin_sessions s ON s.user_id = u.id
 				     WHERE u.id = $1
 				       AND u.org_id = $2
 				       AND u.role = $3
+				       AND u.auth_epoch = $4
+				       AND s.sid_hash = $5
+				       AND s.revoked_at IS NULL
+				       AND s.issued_at <= NOW()
+				       AND s.expires_at > NOW()
 				       AND u.status = 'active'
 				       AND o.status = 'active'
 				)`,
-				claims.UserID, claims.OrgID, claims.Role,
+				claims.UserID, claims.OrgID, claims.Role, claims.AuthEpoch, sessionHash,
 			).Scan(&principalActive)
 			if err != nil {
 				http.Error(w, `{"error":{"type":"auth_error.state_unavailable","message":"Authentication state is temporarily unavailable"}}`, http.StatusServiceUnavailable)
@@ -450,6 +459,7 @@ func AdminAuth(q db.DBQuerier, jwtSecret string) func(http.Handler) http.Handler
 			ctx := context.WithValue(r.Context(), CtxOrgID, claims.OrgID)
 			ctx = context.WithValue(ctx, CtxUserID, claims.UserID)
 			ctx = context.WithValue(ctx, CtxUserRole, claims.Role)
+			ctx = context.WithValue(ctx, CtxAdminSessionHash, sessionHash)
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

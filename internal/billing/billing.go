@@ -49,6 +49,7 @@ type FreezeResult struct {
 type SettleRequest struct {
 	RequestID            string
 	AttemptID            string
+	StreamFence          *StreamLeaseFence
 	OrgID                int64
 	PromptTokens         int
 	UncachedPromptTokens int
@@ -63,6 +64,17 @@ type SettleRequest struct {
 	UsageEstimateVersion string
 	CacheUsageSchema     string
 	CacheUsageStatus     string
+
+	// settlementRecovery is an internal, durable-claim-bound capability used
+	// only by the generic recovery worker. External/live callers cannot mint it
+	// or opt out of current stream lease validation.
+	settlementRecovery *settlementRecoveryAuthority
+}
+
+type settlementRecoveryAuthority struct {
+	ClaimAttempt     int
+	StreamOwnerID    string
+	StreamGeneration int64
 }
 
 // SettleResult contains the result of a settlement.
@@ -115,6 +127,7 @@ type reservationRecord struct {
 	PricingVersion                              string
 	Status                                      string
 	SettlementPendingReason                     string
+	DeliveryAttemptID                           sql.NullString
 	PromptTokens                                int
 	UncachedPromptTokens                        int
 	CacheReadTokens                             int
@@ -130,6 +143,8 @@ type reservationRecord struct {
 	CacheUsageStatus                            string
 	OutputStartedAt                             sql.NullTime
 	SettlementPayloadAt                         sql.NullTime
+	SettlementStreamOwnerID                     sql.NullString
+	SettlementStreamGeneration                  sql.NullInt64
 	SettlementAttempts                          int
 	CalculatedCostMicros                        int64
 	ChargedCostMicros                           int64
@@ -610,14 +625,15 @@ func (b *Billing) lookupReservation(ctx context.Context, requestID string, orgID
 		        effective_cache_creation_price_micros_per_million,
 		        effective_output_price_micros_per_million,
 		        cache_read_ratio::float8, cache_creation_ratio::float8,
-		        pricing_version, status, settlement_pending_reason,
+		        pricing_version, status, settlement_pending_reason, delivery_attempt_id,
 		        prompt_tokens, uncached_prompt_tokens, cache_read_tokens, cache_creation_tokens,
 		        completion_tokens, usage_source,
 		        usage_authority, usage_purpose, usage_finality,
 		        usage_contract_version, usage_estimate_version,
 		        cache_usage_schema, cache_usage_status,
 		        output_started_at,
-		        settlement_payload_ready_at, settlement_attempts,
+		        settlement_payload_ready_at, settlement_stream_owner_id,
+		        settlement_stream_generation, settlement_attempts,
 		        calculated_cost_micros, charged_cost_micros, uncovered_cost_micros, topup_amount_micros,
 		        refund_amount_micros,
 		        uncached_input_cost_micros, cache_read_cost_micros,
@@ -639,6 +655,7 @@ func (b *Billing) lookupReservation(ctx context.Context, requestID string, orgID
 		&record.PricingVersion,
 		&record.Status,
 		&record.SettlementPendingReason,
+		&record.DeliveryAttemptID,
 		&record.PromptTokens,
 		&record.UncachedPromptTokens,
 		&record.CacheReadTokens,
@@ -654,6 +671,8 @@ func (b *Billing) lookupReservation(ctx context.Context, requestID string, orgID
 		&record.CacheUsageStatus,
 		&record.OutputStartedAt,
 		&record.SettlementPayloadAt,
+		&record.SettlementStreamOwnerID,
+		&record.SettlementStreamGeneration,
 		&record.SettlementAttempts,
 		&record.CalculatedCostMicros,
 		&record.ChargedCostMicros,
@@ -679,6 +698,13 @@ func normalizeSettlementUsage(req SettleRequest) (SettleRequest, error) {
 	req.AttemptID = strings.TrimSpace(req.AttemptID)
 	if len(req.AttemptID) > 64 {
 		return req, fmt.Errorf("billing attempt_id exceeds 64 characters")
+	}
+	if req.StreamFence != nil {
+		fence, err := normalizeStreamLeaseFence(*req.StreamFence)
+		if err != nil {
+			return req, err
+		}
+		req.StreamFence = &fence
 	}
 	values := map[string]int{
 		"prompt_tokens":          req.PromptTokens,
@@ -818,6 +844,9 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 
 	switch record.Status {
 	case "settled":
+		if err := requireSettlementAttempt(record, req); err != nil {
+			return nil, err
+		}
 		// A cache-aware terminal receipt is immutable evidence, not merely an
 		// idempotency shortcut. Preserve legacy cost-only replay behavior, but
 		// never hide a conflicting authoritative provider partition after the
@@ -829,6 +858,12 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 	case "cancelled":
 		return &SettleResult{Success: false, ErrorCode: "already_cancelled"}, nil
 	case "settlement_pending":
+		if err := requireBoundOrInternalSettlementTx(ctx, tx, record, req); err != nil {
+			return nil, err
+		}
+		if err := requireSettlementStreamAuthorityTx(ctx, tx, record, req); err != nil {
+			return nil, err
+		}
 		if !record.SettlementPayloadAt.Valid {
 			return nil, ErrSettlementUsageNotReady
 		}
@@ -856,8 +891,8 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		// Legacy/internal reservations without a provider attempt may still settle
 		// directly. Once an upstream attempt exists, P6-F41 requires the caller to
 		// prepare delivery and persist a chargeable local write receipt first.
-		if strings.TrimSpace(req.AttemptID) != "" {
-			return nil, ErrDeliveryNotChargeable
+		if err := requireBoundOrInternalSettlementTx(ctx, tx, record, req); err != nil {
+			return nil, err
 		}
 	default:
 		return &SettleResult{Success: false, ErrorCode: "invalid_state"}, nil
@@ -1259,14 +1294,15 @@ func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgI
 		        effective_cache_creation_price_micros_per_million,
 		        effective_output_price_micros_per_million,
 		        cache_read_ratio::float8, cache_creation_ratio::float8,
-		        pricing_version, status, settlement_pending_reason,
+		        pricing_version, status, settlement_pending_reason, delivery_attempt_id,
 		        prompt_tokens, uncached_prompt_tokens, cache_read_tokens, cache_creation_tokens,
 		        completion_tokens, usage_source,
 		        usage_authority, usage_purpose, usage_finality,
 		        usage_contract_version, usage_estimate_version,
 		        cache_usage_schema, cache_usage_status,
 		        output_started_at,
-		        settlement_payload_ready_at, settlement_attempts,
+		        settlement_payload_ready_at, settlement_stream_owner_id,
+		        settlement_stream_generation, settlement_attempts,
 		        calculated_cost_micros, charged_cost_micros, uncovered_cost_micros, topup_amount_micros,
 		        refund_amount_micros,
 		        uncached_input_cost_micros, cache_read_cost_micros,
@@ -1290,6 +1326,7 @@ func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgI
 		&record.PricingVersion,
 		&record.Status,
 		&record.SettlementPendingReason,
+		&record.DeliveryAttemptID,
 		&record.PromptTokens,
 		&record.UncachedPromptTokens,
 		&record.CacheReadTokens,
@@ -1305,6 +1342,8 @@ func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgI
 		&record.CacheUsageStatus,
 		&record.OutputStartedAt,
 		&record.SettlementPayloadAt,
+		&record.SettlementStreamOwnerID,
+		&record.SettlementStreamGeneration,
 		&record.SettlementAttempts,
 		&record.CalculatedCostMicros,
 		&record.ChargedCostMicros,

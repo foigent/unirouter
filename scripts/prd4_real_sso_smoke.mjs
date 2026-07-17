@@ -3,6 +3,13 @@ import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import {
+  buildAllowedCredentialOrigins,
+  canonicalNavigationOrigin,
+  fillFirstVisible,
+  installMainFrameNavigationGuard,
+  requireCredentialOrigin,
+} from './prd4_real_sso_origin_guard.mjs';
 
 const rootDir = process.cwd();
 const requireFromFrontend = createRequire(path.join(rootDir, 'frontend', 'package.json'));
@@ -44,7 +51,11 @@ if (process.env.UNIROUTE_PRD4_SSO_ALLOW_BROWSER !== requiredApprovalValue) {
 const startedAt = new Date().toISOString();
 const backendConfig = await assertBackendOIDCConfig();
 const discovery = await assertOIDCDiscovery();
-const browserResult = await runBrowserSSO(backendConfig);
+const allowedCredentialOrigins = buildAllowedCredentialOrigins(
+  discovery.authorization_endpoint,
+  process.env.UNIROUTE_PRD4_SSO_ADDITIONAL_CREDENTIAL_ORIGINS,
+);
+const browserResult = await runBrowserSSO(backendConfig, allowedCredentialOrigins);
 const me = await apiFetch('/me', browserResult.token);
 assertExpectedProfile(me);
 
@@ -129,16 +140,21 @@ async function assertOIDCDiscovery() {
   return discovery;
 }
 
-async function runBrowserSSO(backendConfig) {
+async function runBrowserSSO(backendConfig, allowedCredentialOrigins) {
   const { chromium } = requireFromFrontend('playwright');
   const browser = await chromium.launch({ headless });
   const context = await browser.newContext();
   const page = await context.newPage();
+  const allowedNavigationOrigins = new Set(allowedCredentialOrigins);
+  allowedNavigationOrigins.add(canonicalNavigationOrigin(consoleURL, 'console URL'));
+  allowedNavigationOrigins.add(canonicalNavigationOrigin(backendURL, 'backend URL'));
+  const navigationGuard = await installMainFrameNavigationGuard(page, allowedNavigationOrigins);
   try {
     await page.goto(`${consoleURL}/login`, { waitUntil: 'domcontentloaded', timeout: 30000 });
     const loginButton = page.getByRole('button', { name: /使用 .*登录/ }).last();
     await loginButton.waitFor({ state: 'visible', timeout: 15000 });
     await loginButton.click();
+    navigationGuard.setAllowedOrigins(allowedCredentialOrigins);
 
     await fillFirstVisible(page, selectorList(process.env.UNIROUTE_PRD4_SSO_USERNAME_SELECTOR, [
       'input[name="username"]',
@@ -146,7 +162,7 @@ async function runBrowserSSO(backendConfig) {
       'input[type="email"]',
       'input[autocomplete="username"]',
       'input[autocomplete="email"]',
-    ]), process.env.UNIROUTE_PRD4_SSO_TEST_USERNAME, 'username');
+    ]), () => process.env.UNIROUTE_PRD4_SSO_TEST_USERNAME, 'username', allowedCredentialOrigins, navigationGuard);
 
     if (process.env.UNIROUTE_PRD4_SSO_AFTER_USERNAME_SELECTOR) {
       await page.locator(process.env.UNIROUTE_PRD4_SSO_AFTER_USERNAME_SELECTOR).first().click();
@@ -156,8 +172,11 @@ async function runBrowserSSO(backendConfig) {
       'input[name="password"]',
       'input[type="password"]',
       'input[autocomplete="current-password"]',
-    ]), process.env.UNIROUTE_PRD4_SSO_TEST_PASSWORD, 'password');
+    ]), () => process.env.UNIROUTE_PRD4_SSO_TEST_PASSWORD, 'password', allowedCredentialOrigins, navigationGuard);
 
+    navigationGuard.assertAllowed();
+    requireCredentialOrigin(page.url(), allowedCredentialOrigins, 'submit');
+    navigationGuard.setAllowedOrigins(allowedNavigationOrigins);
     const submitSelector = process.env.UNIROUTE_PRD4_SSO_SUBMIT_SELECTOR || 'button[type="submit"]';
     await page.locator(submitSelector).first().click();
 
@@ -173,28 +192,13 @@ async function runBrowserSSO(backendConfig) {
       sawLoginButton: true,
     };
   } finally {
-    await context.close();
-    await browser.close();
-  }
-}
-
-async function fillFirstVisible(page, selectors, value, label) {
-  const deadline = Date.now() + 30000;
-  let lastError = '';
-  while (Date.now() < deadline) {
-    for (const selector of selectors) {
-      const locator = page.locator(selector).first();
-      try {
-        await locator.waitFor({ state: 'visible', timeout: 500 });
-        await locator.fill(value);
-        return;
-      } catch (err) {
-        lastError = err.message;
-      }
+    try {
+      await navigationGuard.dispose();
+    } finally {
+      await context.close();
+      await browser.close();
     }
-    await delay(250);
   }
-  throw new Error(`could not find visible ${label} field; last error=${lastError}`);
 }
 
 async function apiFetch(pathName, token) {
@@ -307,8 +311,4 @@ function safeOrigin(rawURL) {
 
 function trimTrailingSlash(value) {
   return String(value || '').replace(/\/+$/, '');
-}
-
-function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
 }

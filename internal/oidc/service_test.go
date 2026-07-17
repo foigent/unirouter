@@ -14,7 +14,18 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/uniroute/unirouter/internal/auth"
 )
+
+func TestServiceKeepsOrganizationViewerDefaultRoleDistinct(t *testing.T) {
+	svc, err := NewService(Config{DefaultRole: auth.RoleOrgViewer})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	if got := svc.Config().DefaultRole; got != auth.RoleOrgViewer {
+		t.Fatalf("expected org_viewer default role to remain distinct, got %q", got)
+	}
+}
 
 func TestServiceAuthCodeURL(t *testing.T) {
 	provider := newOIDCTestProvider(t, "nonce-1")
@@ -81,6 +92,108 @@ func TestServiceExchangeVerifiesIDTokenAndMapsClaims(t *testing.T) {
 	}
 }
 
+func TestServiceRejectsMissingEmailWhenDomainAllowlistConfigured(t *testing.T) {
+	provider := newOIDCTestProvider(t, "nonce-email-required", func(claims jwt.MapClaims) {
+		delete(claims, "email")
+		claims["preferred_username"] = "provider-user"
+	})
+	defer provider.Close()
+
+	svc, err := NewService(Config{
+		Enabled:            true,
+		IssuerURL:          provider.URL,
+		ClientID:           "uniroute",
+		ClientSecret:       "secret",
+		RedirectURL:        "http://console.example/api/v1/auth/oidc/callback",
+		AllowedEmailDomain: "example.com",
+		AutoProvision:      true,
+		DefaultOrgID:       1,
+	})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	if _, err := svc.Exchange(context.Background(), "code-ok", "nonce-email-required"); err == nil {
+		t.Fatal("expected configured email-domain policy to reject an identity without an email claim")
+	}
+}
+
+func TestServiceRejectsEmailOutsideConfiguredDomain(t *testing.T) {
+	provider := newOIDCTestProvider(t, "nonce-email-domain", func(claims jwt.MapClaims) {
+		claims["email"] = "provider-user@example.net"
+	})
+	defer provider.Close()
+
+	svc, err := NewService(Config{
+		Enabled:            true,
+		IssuerURL:          provider.URL,
+		ClientID:           "uniroute",
+		ClientSecret:       "secret",
+		RedirectURL:        "http://console.example/api/v1/auth/oidc/callback",
+		AllowedEmailDomain: "example.com",
+		DefaultOrgID:       1,
+	})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	if _, err := svc.Exchange(context.Background(), "code-ok", "nonce-email-domain"); err == nil {
+		t.Fatal("expected configured email-domain policy to reject an out-of-domain email")
+	}
+}
+
+func TestServiceAllowsMissingEmailWithoutDomainAllowlist(t *testing.T) {
+	provider := newOIDCTestProvider(t, "nonce-email-optional", func(claims jwt.MapClaims) {
+		delete(claims, "email")
+		claims["preferred_username"] = "provider-user"
+	})
+	defer provider.Close()
+
+	svc, err := NewService(Config{
+		Enabled:      true,
+		IssuerURL:    provider.URL,
+		ClientID:     "uniroute",
+		ClientSecret: "secret",
+		RedirectURL:  "http://console.example/api/v1/auth/oidc/callback",
+		DefaultOrgID: 1,
+	})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	identity, err := svc.Exchange(context.Background(), "code-ok", "nonce-email-optional")
+	if err != nil {
+		t.Fatalf("missing email must remain supported when no domain policy is configured: %v", err)
+	}
+	if identity.Email != "" || identity.Username != "provider-user" {
+		t.Fatalf("unexpected email-optional identity: %#v", identity)
+	}
+}
+
+func TestServiceCustomEmailClaimFallsBackToStandardEmail(t *testing.T) {
+	provider := newOIDCTestProvider(t, "nonce-email-fallback")
+	defer provider.Close()
+
+	svc, err := NewService(Config{
+		Enabled:            true,
+		IssuerURL:          provider.URL,
+		ClientID:           "uniroute",
+		ClientSecret:       "secret",
+		RedirectURL:        "http://console.example/api/v1/auth/oidc/callback",
+		AllowedEmailDomain: "example.com",
+		EmailClaim:         "mail",
+		DefaultOrgID:       1,
+	})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	identity, err := svc.Exchange(context.Background(), "code-ok", "nonce-email-fallback")
+	if err != nil {
+		t.Fatalf("standard email fallback should satisfy the configured domain: %v", err)
+	}
+	if identity.Email != "dev@example.com" {
+		t.Fatalf("expected standard email fallback, got %#v", identity)
+	}
+}
+
 func TestServiceRejectsNonceMismatch(t *testing.T) {
 	provider := newOIDCTestProvider(t, "nonce-a")
 	defer provider.Close()
@@ -101,7 +214,7 @@ func TestServiceRejectsNonceMismatch(t *testing.T) {
 	}
 }
 
-func newOIDCTestProvider(t *testing.T, nonce string) *httptest.Server {
+func newOIDCTestProvider(t *testing.T, nonce string, mutateClaims ...func(jwt.MapClaims)) *httptest.Server {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -126,7 +239,7 @@ func newOIDCTestProvider(t *testing.T, nonce string) *httptest.Server {
 			writeTestJSON(w, map[string]string{"error": "invalid_grant"})
 			return
 		}
-		token := signedOIDCTestToken(t, key, server.URL, "uniroute", nonce)
+		token := signedOIDCTestToken(t, key, server.URL, "uniroute", nonce, mutateClaims...)
 		writeTestJSON(w, map[string]string{
 			"id_token":     token,
 			"access_token": "access",
@@ -150,7 +263,7 @@ func newOIDCTestProvider(t *testing.T, nonce string) *httptest.Server {
 	return server
 }
 
-func signedOIDCTestToken(t *testing.T, key *rsa.PrivateKey, issuer, audience, nonce string) string {
+func signedOIDCTestToken(t *testing.T, key *rsa.PrivateKey, issuer, audience, nonce string, mutateClaims ...func(jwt.MapClaims)) string {
 	t.Helper()
 	claims := jwt.MapClaims{
 		"iss":                issuer,
@@ -164,6 +277,9 @@ func signedOIDCTestToken(t *testing.T, key *rsa.PrivateKey, issuer, audience, no
 		"name":               "Dev User",
 		"uniroute_role":      "developer",
 		"uniroute_org_id":    7,
+	}
+	for _, mutate := range mutateClaims {
+		mutate(claims)
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	token.Header["kid"] = "kid-1"

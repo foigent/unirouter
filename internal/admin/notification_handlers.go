@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/billing"
 	internaldb "github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/middleware"
 )
@@ -101,6 +103,117 @@ func (h *Handler) ListNotificationEvents(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]interface{}{"data": events, "total": total, "page": page, "page_size": pageSize})
 }
 
+// AcknowledgeNotificationEvent records that an operator has taken ownership of
+// an open event. Delivery state is intentionally independent from this
+// lifecycle: acknowledging an event never retries or cancels a webhook.
+func (h *Handler) AcknowledgeNotificationEvent(w http.ResponseWriter, r *http.Request) {
+	h.transitionNotificationEvent(w, r, "acknowledged")
+}
+
+// ResolveNotificationEvent closes an open or acknowledged event after the
+// operator has handled it. Resolved events cannot be reopened through this API.
+func (h *Handler) ResolveNotificationEvent(w http.ResponseWriter, r *http.Request) {
+	h.transitionNotificationEvent(w, r, "resolved")
+}
+
+type notificationEventLifecycleRecord struct {
+	OrgID     int64
+	ProjectID int64
+	Status    string
+}
+
+func (h *Handler) transitionNotificationEvent(w http.ResponseWriter, r *http.Request, targetStatus string) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid event ID"})
+		return
+	}
+
+	conditions, args, argIdx, ok := h.notificationEventConditions(w, r)
+	if !ok {
+		return
+	}
+	conditions = append(conditions, fmt.Sprintf("id = $%d", argIdx))
+	args = append(args, id)
+	var event notificationEventLifecycleRecord
+	err = h.db.QueryRow(r.Context(),
+		"SELECT org_id, COALESCE(project_id, 0), status FROM notification_events WHERE "+strings.Join(conditions, " AND "),
+		args...,
+	).Scan(&event.OrgID, &event.ProjectID, &event.Status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Notification event not found"})
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Query failed"})
+		return
+	}
+	if !h.canWriteNotificationEvent(r, event.OrgID, event.ProjectID) {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		return
+	}
+
+	if event.Status == targetStatus {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"id": id, "status": targetStatus})
+		return
+	}
+	legal := targetStatus == "acknowledged" && event.Status == "open" ||
+		targetStatus == "resolved" && (event.Status == "open" || event.Status == "acknowledged")
+	if !legal {
+		writeJSON(w, http.StatusConflict, map[string]interface{}{
+			"error":          "Illegal notification event status transition",
+			"current_status": event.Status,
+			"target_status":  targetStatus,
+		})
+		return
+	}
+
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to start notification event update"})
+		return
+	}
+	defer func() { _ = tx.Rollback(r.Context()) }()
+
+	tag, err := tx.Exec(r.Context(),
+		`UPDATE notification_events
+		 SET status = $1, updated_at = NOW()
+		 WHERE id = $2 AND org_id = $3 AND status = $4 AND COALESCE(project_id, 0) = $5`,
+		targetStatus, id, event.OrgID, event.Status, event.ProjectID,
+	)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to update notification event"})
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Notification event changed; reload and try again"})
+		return
+	}
+
+	action := "notification_event." + targetStatus
+	detail := map[string]interface{}{
+		"before": map[string]interface{}{"status": event.Status},
+		"after":  map[string]interface{}{"status": targetStatus},
+	}
+	if err := insertAuditEntry(r.Context(), tx, action, "notification_event", strconv.FormatInt(id, 10), detail, auditMeta{
+		OrgID:           event.OrgID,
+		ProjectID:       event.ProjectID,
+		IP:              r.RemoteAddr,
+		UserAgent:       r.UserAgent(),
+		RequestID:       middleware.GetRequestIDFromContext(r.Context()),
+		ClientRequestID: middleware.GetClientRequestIDFromContext(r.Context()),
+		Source:          auditSourceFromContext(r.Context()),
+	}); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to audit notification event update"})
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to commit notification event update"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"id": id, "status": targetStatus})
+}
+
 func (h *Handler) ListNotificationDeliveries(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePagination(r)
 	offset := paginationOffset(page, pageSize)
@@ -176,7 +289,7 @@ func (h *Handler) ListNotificationDeliveries(w http.ResponseWriter, r *http.Requ
 			"status":                  status,
 			"attempts":                attempts,
 			"response_status":         nullableInt(responseStatus),
-			"error":                   errMessage,
+			"error":                   sanitizeWebhookDeliveryError(errMessage),
 			"next_retry_at":           nullableTime(nextRetryAt),
 			"retry_scope_quarantined": retryScopeQuarantined,
 			"scope_quarantine_previous_next_retry_at": nullableTime(scopeQuarantinePreviousNextRetryAt),
@@ -197,6 +310,9 @@ func (h *Handler) ListNotificationDeliveries(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *Handler) ListNotificationWebhooks(w http.ResponseWriter, r *http.Request) {
+	if rejectBillingNotificationWebhookAccess(w, r) {
+		return
+	}
 	page, pageSize := parsePagination(r)
 	offset := paginationOffset(page, pageSize)
 
@@ -262,6 +378,9 @@ func (h *Handler) ListNotificationWebhooks(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *Handler) CreateNotificationWebhook(w http.ResponseWriter, r *http.Request) {
+	if rejectBillingNotificationWebhookAccess(w, r) {
+		return
+	}
 	var req struct {
 		OrgID      int64    `json:"org_id"`
 		ProjectID  int64    `json:"project_id"`
@@ -281,6 +400,10 @@ func (h *Handler) CreateNotificationWebhook(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "org_id is required"})
 		return
 	}
+	if req.ProjectID < 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid project_id"})
+		return
+	}
 	if !h.canWriteNotificationWebhook(r, req.OrgID, req.ProjectID) {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 		return
@@ -298,8 +421,15 @@ func (h *Handler) CreateNotificationWebhook(w http.ResponseWriter, r *http.Reque
 		projectArg = req.ProjectID
 	}
 
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to start webhook creation"})
+		return
+	}
+	defer func() { _ = tx.Rollback(r.Context()) }()
+
 	var id int64
-	err := h.db.QueryRow(r.Context(),
+	err = tx.QueryRow(r.Context(),
 		`INSERT INTO notification_webhooks (org_id, project_id, name, url, event_types, enabled, scope_verified, scope_write_generation, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, TRUE, 1, NOW(), NOW())
 		 RETURNING id`,
@@ -310,8 +440,15 @@ func (h *Handler) CreateNotificationWebhook(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	after := map[string]interface{}{"id": id, "org_id": req.OrgID, "project_id": nullableInt64(req.ProjectID), "name": name, "url": webhookURL, "event_types": json.RawMessage(eventTypesJSON), "enabled": enabled, "scope_verified": true}
-	h.recordAuditForOrgProjectFromRequest(r, req.OrgID, req.ProjectID, "notification_webhook.create", "notification_webhook", strconv.FormatInt(id, 10), map[string]interface{}{"after": after})
+	after := map[string]interface{}{"id": id, "org_id": req.OrgID, "project_id": nullableInt64(req.ProjectID), "name": name, "url": maskWebhookURL(webhookURL), "event_types": json.RawMessage(eventTypesJSON), "enabled": enabled, "scope_verified": true}
+	if err := insertAuditEntry(r.Context(), tx, "notification_webhook.create", "notification_webhook", strconv.FormatInt(id, 10), map[string]interface{}{"after": after}, requestAuditMeta(r, req.OrgID, req.ProjectID)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to audit webhook creation"})
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to commit webhook creation"})
+		return
+	}
 	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id})
 }
 
@@ -325,10 +462,6 @@ type notificationWebhookRecord struct {
 	ScopeVerified                  bool
 	ScopeQuarantinePreviousEnabled sql.NullBool
 	UpdatedAt                      time.Time
-}
-
-func (h *Handler) notificationWebhookForActor(ctx context.Context, id int64) (notificationWebhookRecord, int) {
-	return h.notificationWebhookForActorWithDB(ctx, h.db, id, false)
 }
 
 func (h *Handler) notificationWebhookForActorWithDB(ctx context.Context, querier internaldb.DBQuerier, id int64, lock bool) (notificationWebhookRecord, int) {
@@ -379,19 +512,12 @@ func writeNotificationWebhookLookupError(w http.ResponseWriter, status int) {
 }
 
 func (h *Handler) UpdateNotificationWebhook(w http.ResponseWriter, r *http.Request) {
+	if rejectBillingNotificationWebhookAccess(w, r) {
+		return
+	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid webhook ID"})
-		return
-	}
-
-	existing, status := h.notificationWebhookForActor(r.Context(), id)
-	if status != 0 {
-		writeNotificationWebhookLookupError(w, status)
-		return
-	}
-	if !h.canWriteNotificationWebhook(r, existing.OrgID, existing.ProjectID) {
-		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 		return
 	}
 
@@ -403,6 +529,23 @@ func (h *Handler) UpdateNotificationWebhook(w http.ResponseWriter, r *http.Reque
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
+		return
+	}
+
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to start webhook update"})
+		return
+	}
+	defer func() { _ = tx.Rollback(r.Context()) }()
+
+	existing, status := h.notificationWebhookForActorWithDB(r.Context(), tx, id, true)
+	if status != 0 {
+		writeNotificationWebhookLookupError(w, status)
+		return
+	}
+	if !h.canWriteNotificationWebhook(r, existing.OrgID, existing.ProjectID) {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 		return
 	}
 
@@ -435,7 +578,7 @@ func (h *Handler) UpdateNotificationWebhook(w http.ResponseWriter, r *http.Reque
 		}
 		sets = append(sets, fmt.Sprintf("url = $%d", argIdx))
 		args = append(args, webhookURL)
-		after["url"] = webhookURL
+		after["url"] = maskWebhookURL(webhookURL)
 		hasChanges = true
 		argIdx++
 	}
@@ -465,7 +608,7 @@ func (h *Handler) UpdateNotificationWebhook(w http.ResponseWriter, r *http.Reque
 	sets = append(sets, "updated_at = NOW()")
 	args = append(args, id, existing.OrgID)
 	query := fmt.Sprintf("UPDATE notification_webhooks SET %s WHERE id = $%d AND org_id = $%d", strings.Join(sets, ", "), argIdx, argIdx+1)
-	tag, err := h.db.Exec(r.Context(), query, args...)
+	tag, err := tx.Exec(r.Context(), query, args...)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to update webhook"})
 		return
@@ -475,18 +618,28 @@ func (h *Handler) UpdateNotificationWebhook(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	before := map[string]interface{}{"id": id, "org_id": existing.OrgID, "project_id": nullableInt64(existing.ProjectID), "name": existing.Name, "url": existing.URL, "event_types": existing.EventTypes, "enabled": existing.Enabled, "scope_verified": existing.ScopeVerified, "scope_quarantine_previous_enabled": nullableBool(existing.ScopeQuarantinePreviousEnabled)}
+	before := map[string]interface{}{"id": id, "org_id": existing.OrgID, "project_id": nullableInt64(existing.ProjectID), "name": existing.Name, "url": maskWebhookURL(existing.URL), "event_types": existing.EventTypes, "enabled": existing.Enabled, "scope_verified": existing.ScopeVerified, "scope_quarantine_previous_enabled": nullableBool(existing.ScopeQuarantinePreviousEnabled)}
 	after["id"] = id
 	after["org_id"] = existing.OrgID
 	after["project_id"] = nullableInt64(existing.ProjectID)
 	after["enabled"] = false
 	after["scope_verified"] = false
 	after["scope_quarantine_previous_enabled"] = desiredEnabled
-	h.recordAuditForOrgProjectFromRequest(r, existing.OrgID, existing.ProjectID, "notification_webhook.update", "notification_webhook", strconv.FormatInt(id, 10), map[string]interface{}{"before": before, "after": after})
+	if err := insertAuditEntry(r.Context(), tx, "notification_webhook.update", "notification_webhook", strconv.FormatInt(id, 10), map[string]interface{}{"before": before, "after": after}, requestAuditMeta(r, existing.OrgID, existing.ProjectID)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to audit webhook update"})
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to commit webhook update"})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"message": "Webhook updated and quarantined pending scope verification", "scope_verified": false})
 }
 
 func (h *Handler) VerifyNotificationWebhookScope(w http.ResponseWriter, r *http.Request) {
+	if rejectBillingNotificationWebhookAccess(w, r) {
+		return
+	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid webhook ID"})
@@ -554,8 +707,8 @@ func (h *Handler) VerifyNotificationWebhookScope(w http.ResponseWriter, r *http.
 		return
 	}
 
-	before := map[string]interface{}{"id": id, "org_id": existing.OrgID, "project_id": nullableInt64(existing.ProjectID), "name": existing.Name, "url": existing.URL, "event_types": existing.EventTypes, "enabled": existing.Enabled, "scope_verified": false, "scope_quarantine_previous_enabled": nullableBool(existing.ScopeQuarantinePreviousEnabled)}
-	after := map[string]interface{}{"id": id, "org_id": existing.OrgID, "project_id": nullableInt64(existing.ProjectID), "name": existing.Name, "url": existing.URL, "event_types": existing.EventTypes, "enabled": restoredEnabled, "scope_verified": true, "scope_quarantine_previous_enabled": nil}
+	before := map[string]interface{}{"id": id, "org_id": existing.OrgID, "project_id": nullableInt64(existing.ProjectID), "name": existing.Name, "url": maskWebhookURL(existing.URL), "event_types": existing.EventTypes, "enabled": existing.Enabled, "scope_verified": false, "scope_quarantine_previous_enabled": nullableBool(existing.ScopeQuarantinePreviousEnabled)}
+	after := map[string]interface{}{"id": id, "org_id": existing.OrgID, "project_id": nullableInt64(existing.ProjectID), "name": existing.Name, "url": maskWebhookURL(existing.URL), "event_types": existing.EventTypes, "enabled": restoredEnabled, "scope_verified": true, "scope_quarantine_previous_enabled": nil}
 	var projectIDArg int64
 	if existing.ProjectID > 0 {
 		projectIDArg = existing.ProjectID
@@ -579,7 +732,11 @@ func (h *Handler) VerifyNotificationWebhookScope(w http.ResponseWriter, r *http.
 }
 
 func (h *Handler) notificationEventConditions(w http.ResponseWriter, r *http.Request) ([]string, []interface{}, int, bool) {
-	return h.notificationProjectScopedConditions(w, r, "org_id", "project_id")
+	conditions, args, argIdx, ok := h.notificationProjectScopedConditions(w, r, "org_id", "project_id")
+	if !ok {
+		return nil, nil, 0, false
+	}
+	return appendBillingNotificationEventScope(r.Context(), "event_type", conditions, args, argIdx)
 }
 
 func (h *Handler) notificationDeliveryConditions(w http.ResponseWriter, r *http.Request) ([]string, []interface{}, int, bool) {
@@ -587,7 +744,24 @@ func (h *Handler) notificationDeliveryConditions(w http.ResponseWriter, r *http.
 	if !ok {
 		return nil, nil, 0, false
 	}
-	return conditions, args, argIdx, true
+	return appendBillingNotificationEventScope(r.Context(), "e.event_type", conditions, args, argIdx)
+}
+
+func appendBillingNotificationEventScope(ctx context.Context, eventTypeColumn string, conditions []string, args []interface{}, argIdx int) ([]string, []interface{}, int, bool) {
+	if actorRole(ctx) != auth.RoleBillingAdmin {
+		return conditions, args, argIdx, true
+	}
+	conditions = append(conditions, fmt.Sprintf("%s = ANY($%d::text[])", eventTypeColumn, argIdx))
+	args = append(args, billing.FinancialNotificationEventTypes())
+	return conditions, args, argIdx + 1, true
+}
+
+func rejectBillingNotificationWebhookAccess(w http.ResponseWriter, r *http.Request) bool {
+	if !isUnauthenticatedUnitContext(r.Context()) && actorRole(r.Context()) == auth.RoleBillingAdmin {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		return true
+	}
+	return false
 }
 
 func (h *Handler) notificationWebhookConditions(w http.ResponseWriter, r *http.Request, requireWritable bool) ([]string, []interface{}, int, bool) {
@@ -678,6 +852,24 @@ func (h *Handler) canWriteNotificationWebhook(r *http.Request, orgID, projectID 
 	if auth.IsProjectScopedRole(role) {
 		return projectID > 0 && h.canWriteProject(r.Context(), projectID)
 	}
+	return role == auth.RolePlatformAdmin || role == auth.RoleOrgAdmin
+}
+
+func (h *Handler) canWriteNotificationEvent(r *http.Request, orgID, projectID int64) bool {
+	if isUnauthenticatedUnitContext(r.Context()) {
+		return true
+	}
+	if !actorCanAccessOrg(r.Context(), orgID) {
+		return false
+	}
+	role := actorRole(r.Context())
+	if projectID > 0 && !h.projectBelongsToOrg(r.Context(), projectID, orgID) {
+		return false
+	}
+	if auth.IsProjectScopedRole(role) {
+		requestedProjectID, valid := projectIDFromQuery(r)
+		return valid && projectID > 0 && requestedProjectID == projectID && h.canWriteProject(r.Context(), projectID)
+	}
 	return role == auth.RolePlatformAdmin || role == auth.RoleOrgAdmin || role == auth.RoleBillingAdmin
 }
 
@@ -735,7 +927,40 @@ func normalizeEventTypes(w http.ResponseWriter, eventTypes []string) ([]byte, bo
 
 func validWebhookURL(raw string) bool {
 	u, err := url.Parse(raw)
-	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.Hostname() == "" || u.User != nil || u.Fragment != "" {
+		return false
+	}
+	hostname := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+	if hostname == "localhost" || strings.HasSuffix(hostname, ".localhost") || hostname == "metadata.google.internal" || hostname == "instance-data" {
+		return false
+	}
+	if ip := net.ParseIP(hostname); ip != nil && !billing.IsNotificationWebhookIPAllowed(ip) {
+		return false
+	}
+	return true
+}
+
+func maskWebhookURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "[redacted]"
+	}
+	u.User = nil
+	u.RawQuery = ""
+	u.ForceQuery = false
+	u.Fragment = ""
+	if u.Path != "" && u.Path != "/" {
+		u.Path = "/..."
+		u.RawPath = ""
+	}
+	return u.String()
+}
+
+func sanitizeWebhookDeliveryError(message string) string {
+	if strings.Contains(message, "http://") || strings.Contains(message, "https://") {
+		return "webhook delivery failed"
+	}
+	return message
 }
 
 func notificationWebhookResponse(id, orgID, projectID int64, name, webhookURL string, eventTypes json.RawMessage, enabled, scopeVerified bool, scopeQuarantinePreviousEnabled sql.NullBool, createdAt, updatedAt time.Time) map[string]interface{} {
@@ -744,7 +969,7 @@ func notificationWebhookResponse(id, orgID, projectID int64, name, webhookURL st
 		"org_id":                            orgID,
 		"project_id":                        nullableInt64(projectID),
 		"name":                              name,
-		"url":                               webhookURL,
+		"url":                               maskWebhookURL(webhookURL),
 		"event_types":                       eventTypes,
 		"enabled":                           enabled,
 		"scope_verified":                    scopeVerified,

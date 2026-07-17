@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -64,6 +65,7 @@ func TestOIDCCallbackAutoProvisionsUserAndReturnsJWT(t *testing.T) {
 	defer provider.Close()
 
 	var auditArgs []interface{}
+	var sessionArgs []interface{}
 	var membershipInserted bool
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
@@ -85,14 +87,37 @@ func TestOIDCCallbackAutoProvisionsUserAndReturnsJWT(t *testing.T) {
 			}
 		},
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			if strings.Contains(sql, "INSERT INTO project_members") {
-				membershipInserted = true
-			}
 			if strings.Contains(sql, "INSERT INTO audit_logs") {
 				auditArgs = args
 			}
+			if strings.Contains(sql, "INSERT INTO admin_sessions") {
+				sessionArgs = args
+			}
 			return pgconn.NewCommandTag("INSERT 1"), nil
 		},
+	}
+	db.BeginFn = func(context.Context) (pgx.Tx, error) {
+		return &testutil.MockTx{
+			QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+				if !strings.Contains(sql, "INSERT INTO users") {
+					t.Fatalf("unexpected transaction query: %s", sql)
+				}
+				if !strings.Contains(sql, "ON CONFLICT DO NOTHING") || strings.Contains(sql, "ON CONFLICT (org_id, username)") {
+					t.Fatalf("OIDC provisioning must handle both display-name and issuer/subject races: %s", sql)
+				}
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*int64) = 42
+					return nil
+				}}
+			},
+			ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+				if strings.Contains(sql, "INSERT INTO project_members") {
+					membershipInserted = true
+					return pgconn.NewCommandTag("INSERT 1"), nil
+				}
+				return pgconn.NewCommandTag("SELECT 1"), nil
+			},
+		}, nil
 	}
 	h := newOIDCTestHandler(t, db, provider.URL)
 	stateValue, err := h.encodeOIDCState(oidcStateCookie{
@@ -113,6 +138,10 @@ func TestOIDCCallbackAutoProvisionsUserAndReturnsJWT(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
+	if rec.Header().Get("Cache-Control") != "no-store" || rec.Header().Get("Pragma") != "no-cache" ||
+		rec.Header().Get("Referrer-Policy") != "no-referrer" {
+		t.Fatalf("OIDC token response must disable caching and referrers: %#v", rec.Header())
+	}
 	var resp map[string]interface{}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v", err)
@@ -125,6 +154,13 @@ func TestOIDCCallbackAutoProvisionsUserAndReturnsJWT(t *testing.T) {
 	if claims.UserID != 42 || claims.OrgID != 7 || claims.Role != auth.RoleDeveloper {
 		t.Fatalf("unexpected jwt claims: %#v", claims)
 	}
+	if len(sessionArgs) != 4 || sessionArgs[0] != int64(42) {
+		t.Fatalf("expected persisted OIDC admin session, got %#v", sessionArgs)
+	}
+	storedHash, ok := sessionArgs[1].([]byte)
+	if !ok || len(storedHash) != 32 || !bytes.Equal(storedHash, auth.HashAdminSessionID(claims.SessionID)) {
+		t.Fatalf("OIDC session must persist only the matching SHA-256 sid hash: %#v", sessionArgs[1])
+	}
 	if !membershipInserted {
 		t.Fatal("expected default project membership for developer role")
 	}
@@ -132,8 +168,83 @@ func TestOIDCCallbackAutoProvisionsUserAndReturnsJWT(t *testing.T) {
 		t.Fatalf("expected oidc login audit args, got %#v", auditArgs)
 	}
 	detail, _ := auditArgs[5].(string)
-	if strings.Contains(detail, "id_token") || strings.Contains(detail, "access_token") {
-		t.Fatalf("audit detail leaked token material: %s", detail)
+	for _, sensitive := range []string{"id_token", "access_token", provider.URL, "sub-42", "dev@example.com"} {
+		if strings.Contains(detail, sensitive) {
+			t.Fatalf("audit detail leaked %q: %s", sensitive, detail)
+		}
+	}
+	for _, reference := range []string{"oidc_identity_ref", "username_ref", "email_ref", "sha256:"} {
+		if !strings.Contains(detail, reference) {
+			t.Fatalf("audit detail missing %q: %s", reference, detail)
+		}
+	}
+	if gotSource, _ := auditArgs[9].(string); gotSource != "system" {
+		t.Fatalf("expected system audit source, got %#v", auditArgs[9])
+	}
+}
+
+func TestWriteOIDCCallbackHTMLDisablesTokenCaching(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	writeOIDCCallbackHTML(rec, "signed-token", "/developer")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if rec.Header().Get("Cache-Control") != "no-store" || rec.Header().Get("Pragma") != "no-cache" ||
+		rec.Header().Get("Referrer-Policy") != "no-referrer" {
+		t.Fatalf("OIDC HTML token response must disable caching and referrers: %#v", rec.Header())
+	}
+}
+
+func TestOIDCUsernameCollisionCandidatePreservesSuffixAtMaximumLength(t *testing.T) {
+	base := strings.Repeat("a", 180)
+	suffix := "0123456789abcdef"
+
+	candidate := oidcUsernameWithSuffix(base, suffix)
+
+	if candidate == base {
+		t.Fatal("collision candidate must differ from the original username")
+	}
+	if len(candidate) > 180 {
+		t.Fatalf("collision candidate exceeds username limit: %d", len(candidate))
+	}
+	if !strings.HasSuffix(candidate, "-"+suffix) {
+		t.Fatalf("collision candidate lost deterministic suffix: %q", candidate)
+	}
+}
+
+func TestEnsureDefaultProjectMembershipSkipsOrganizationViewer(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		role        string
+		wantInserts int
+	}{
+		{name: "project viewer", role: auth.RoleViewer, wantInserts: 1},
+		{name: "organization viewer", role: auth.RoleOrgViewer, wantInserts: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			membershipInserts := 0
+			tx := &testutil.MockTx{
+				ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+					if strings.Contains(sql, "INSERT INTO project_members") {
+						membershipInserts++
+						if len(args) != 4 || args[2] != projectMemberViewer || args[3] != "default" {
+							t.Fatalf("unexpected default membership args: %#v", args)
+						}
+					}
+					return pgconn.NewCommandTag("INSERT 1"), nil
+				},
+			}
+
+			if err := ensureDefaultProjectMembershipTx(context.Background(), tx, 7, 42, tc.role, "default"); err != nil {
+				t.Fatalf("ensure membership: %v", err)
+			}
+
+			if membershipInserts != tc.wantInserts {
+				t.Fatalf("role %s: expected %d membership inserts, got %d", tc.role, tc.wantInserts, membershipInserts)
+			}
+		})
 	}
 }
 

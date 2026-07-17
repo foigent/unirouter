@@ -211,7 +211,7 @@ func (s *Service) Refresh(ctx context.Context, current *Claims) (TokenResponse, 
 		return TokenResponse{}, ErrInvalidToken
 	}
 	now := s.now().UTC()
-	grant, grantExists, err := s.loadRefreshGrant(ctx, current.ID)
+	grant, grantExists, err := s.loadRefreshGrant(ctx, current.WorkflowID, current.ID)
 	if err != nil {
 		return TokenResponse{}, err
 	}
@@ -223,7 +223,7 @@ func (s *Service) Refresh(ctx context.Context, current *Claims) (TokenResponse, 
 			return TokenResponse{}, err
 		}
 		if !grantExists {
-			grant, grantExists, err = s.loadRefreshGrant(ctx, current.ID)
+			grant, grantExists, err = s.loadRefreshGrant(ctx, current.WorkflowID, current.ID)
 			if err != nil {
 				return TokenResponse{}, err
 			}

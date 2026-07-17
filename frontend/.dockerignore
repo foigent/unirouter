@@ -5,10 +5,11 @@
 !.env.example
 .secrets/
 secrets/
-*.pem
-*.key
-*.p12
-*.pfx
+**/*.pem
+**/*.key
+**/*.private
+**/*.p12
+**/*.pfx
 
 # Dependencies and generated developer artifacts are rebuilt in the image.
 node_modules/

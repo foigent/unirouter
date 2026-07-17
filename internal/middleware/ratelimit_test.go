@@ -437,6 +437,62 @@ func TestLoginRateLimit_UserLimitExceeded(t *testing.T) {
 	}
 }
 
+func TestLoginRateLimit_UserLimitSharedAcrossClientIPs(t *testing.T) {
+	_, rdb := setupMiniredis(t)
+	handlerCalls := 0
+	handler := LoginRateLimit(rdb, LoginRateLimitOptions{
+		Enabled:      true,
+		Window:       time.Minute,
+		IPRequests:   10,
+		UserRequests: 1,
+	})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		handlerCalls++
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	for index, attempt := range []struct {
+		remoteAddr string
+		username   string
+		wantStatus int
+	}{
+		{remoteAddr: "203.0.113.10:4567", username: " Admin@Example.com ", wantStatus: http.StatusOK},
+		{remoteAddr: "198.51.100.20:4567", username: "admin@example.com", wantStatus: http.StatusTooManyRequests},
+	} {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"username":"`+attempt.username+`","password":"x"}`))
+		req.RemoteAddr = attempt.remoteAddr
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != attempt.wantStatus {
+			t.Fatalf("attempt %d: expected %d, got %d", index+1, attempt.wantStatus, rec.Code)
+		}
+	}
+	if handlerCalls != 1 {
+		t.Fatalf("account-wide limit must stop the second IP before password handling, got %d handler calls", handlerCalls)
+	}
+}
+
+func TestLoginRateLimit_DifferentUsersHaveIndependentUserLimits(t *testing.T) {
+	_, rdb := setupMiniredis(t)
+	handler := LoginRateLimit(rdb, LoginRateLimitOptions{
+		Enabled:      true,
+		Window:       time.Minute,
+		IPRequests:   10,
+		UserRequests: 1,
+	})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	for index, username := range []string{"alice@example.com", "bob@example.com"} {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"username":"`+username+`","password":"x"}`))
+		req.RemoteAddr = "203.0.113.10:4567"
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("user %d should have an independent account bucket, got %d", index+1, rec.Code)
+		}
+	}
+}
+
 func TestLoginRateLimit_RestoresOversizedBody(t *testing.T) {
 	_, rdb := setupMiniredis(t)
 	originalBody := `{"username":"` + strings.Repeat("a", 32) + `","password":"x"}`
@@ -491,9 +547,56 @@ func TestLoginRateLimit_IPLimitExceededAcrossUsers(t *testing.T) {
 	}
 }
 
-func TestLoginRateLimit_DisabledPassesThrough(t *testing.T) {
+func TestLoginRateLimitTrustedFrontendAndTLSEdgeSeparateBrowserIPs(t *testing.T) {
 	_, rdb := setupMiniredis(t)
 	handler := LoginRateLimit(rdb, LoginRateLimitOptions{
+		Enabled:    true,
+		Window:     time.Minute,
+		IPRequests: 1,
+		ClientIP:   mustClientIPResolver(t, "172.30.250.10/32", "172.30.250.1/32"),
+	})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	for _, client := range []string{"203.0.113.10", "203.0.113.11"} {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"username":"admin","password":"x"}`))
+		req.RemoteAddr = "172.30.250.10:4567"
+		req.Header.Set("X-Forwarded-For", client+", 172.30.250.1")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("first login from browser %s should have its own bucket, got %d", client, rec.Code)
+		}
+	}
+}
+
+func TestLoginRateLimitUntrustedPeerCannotSplitBucketWithSpoofedXFF(t *testing.T) {
+	_, rdb := setupMiniredis(t)
+	handler := LoginRateLimit(rdb, LoginRateLimitOptions{
+		Enabled:    true,
+		Window:     time.Minute,
+		IPRequests: 1,
+	})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	for index, spoofed := range []string{"203.0.113.10", "203.0.113.11"} {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"username":"admin","password":"x"}`))
+		req.RemoteAddr = "198.51.100.20:4567"
+		req.Header.Set("X-Forwarded-For", spoofed)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if index == 0 && rec.Code != http.StatusOK {
+			t.Fatalf("first login should pass, got %d", rec.Code)
+		}
+		if index == 1 && rec.Code != http.StatusTooManyRequests {
+			t.Fatalf("untrusted XFF must not create a second bucket, got %d", rec.Code)
+		}
+	}
+}
+
+func TestLoginRateLimit_DisabledPassesThrough(t *testing.T) {
+	handler := LoginRateLimit(nil, LoginRateLimitOptions{
 		Enabled:      false,
 		Window:       time.Minute,
 		IPRequests:   0,
@@ -510,23 +613,79 @@ func TestLoginRateLimit_DisabledPassesThrough(t *testing.T) {
 	}
 }
 
-func TestLoginRateLimit_RedisErrorFailOpen(t *testing.T) {
-	rdb := redis.NewClient(&redis.Options{Addr: "localhost:1"})
-	defer rdb.Close()
+func TestLoginRateLimit_RedisUnavailableFailsClosed(t *testing.T) {
+	deadRedis := redis.NewClient(&redis.Options{Addr: "localhost:1"})
+	defer deadRedis.Close()
+
+	for _, testCase := range []struct {
+		name         string
+		rdb          *redis.Client
+		ipRequests   int
+		userRequests int
+	}{
+		{name: "nil client", rdb: nil, ipRequests: 1, userRequests: 1},
+		{name: "IP counter error", rdb: deadRedis, ipRequests: 1, userRequests: 0},
+		{name: "user counter error", rdb: deadRedis, ipRequests: 0, userRequests: 1},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			handlerCalls := 0
+			handler := LoginRateLimit(testCase.rdb, LoginRateLimitOptions{
+				Enabled:      true,
+				Window:       time.Minute,
+				IPRequests:   testCase.ipRequests,
+				UserRequests: testCase.userRequests,
+			})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				handlerCalls++
+				w.WriteHeader(http.StatusOK)
+			}))
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"username":"admin","password":"x"}`))
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusServiceUnavailable {
+				t.Fatalf("expected 503 while shared login-limit state is unavailable, got %d", rec.Code)
+			}
+			if rec.Header().Get("Retry-After") != "1" {
+				t.Fatalf("expected Retry-After 1, got %q", rec.Header().Get("Retry-After"))
+			}
+			if !strings.Contains(rec.Body.String(), "limit_policy.state_unavailable") {
+				t.Fatalf("expected typed state-unavailable error, got %q", rec.Body.String())
+			}
+			if handlerCalls != 0 {
+				t.Fatalf("Redis uncertainty must stop before password handling, got %d handler calls", handlerCalls)
+			}
+		})
+	}
+}
+
+func TestLoginRateLimit_CanceledRequestFailsClosedWithoutRedisMutation(t *testing.T) {
+	_, rdb := setupMiniredis(t)
+	handlerCalls := 0
 	handler := LoginRateLimit(rdb, LoginRateLimitOptions{
 		Enabled:      true,
 		Window:       time.Minute,
 		IPRequests:   1,
 		UserRequests: 1,
-	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		handlerCalls++
 		w.WriteHeader(http.StatusOK)
 	}))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"username":"admin","password":"x"}`))
+	ctx, cancel := context.WithCancel(req.Context())
+	cancel()
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("login limiter should fail open on Redis errors, got %d", rec.Code)
+	handler.ServeHTTP(rec, req.WithContext(ctx))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected canceled Redis operation to fail closed, got %d", rec.Code)
+	}
+	if handlerCalls != 0 {
+		t.Fatalf("canceled request must not reach password handling, got %d handler calls", handlerCalls)
+	}
+	if keys, err := rdb.Keys(context.Background(), "rl:login:*").Result(); err != nil {
+		t.Fatalf("read login rate-limit keys: %v", err)
+	} else if len(keys) != 0 {
+		t.Fatalf("canceled request must not mutate Redis, found keys %v", keys)
 	}
 }
 

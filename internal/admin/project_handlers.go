@@ -4,12 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
 )
@@ -111,7 +113,14 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 			return
 		}
-		projects = append(projects, projectResponse(id, orgID, name, slug, description, status, budgetCents, budgetPeriod, orgName, keyCount, createdAt, updatedAt))
+		if actorRole(r.Context()) == auth.RoleBillingAdmin {
+			projects = append(projects, map[string]interface{}{
+				"id": id, "org_id": orgID, "name": name, "slug": slug, "status": status,
+				"budget_cents": budgetCents, "budget_period": budgetPeriod,
+			})
+		} else {
+			projects = append(projects, projectResponse(id, orgID, name, slug, description, status, budgetCents, budgetPeriod, orgName, keyCount, createdAt, updatedAt))
+		}
 	}
 	if err := rows.Err(); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Rows failed"})
@@ -158,6 +167,10 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	if req.BudgetPeriod == "" {
 		req.BudgetPeriod = "monthly"
 	}
+	if req.BudgetCents != nil && (*req.BudgetCents < 0 || int64(*req.BudgetCents) > maxProjectBudgetCents) {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "budget_cents must be between 0 and 2147483647"})
+		return
+	}
 	if !validBudgetPeriod(req.BudgetPeriod) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid budget_period"})
 		return
@@ -172,8 +185,21 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		createdBy = userID
 	}
 
+	var err error
+	var tx pgx.Tx
+	queryer := projectQueryRower(h.db)
+	if !isUnauthenticatedUnitContext(r.Context()) {
+		tx, err = h.db.Begin(r.Context())
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to create project"})
+			return
+		}
+		defer tx.Rollback(r.Context())
+		queryer = tx
+	}
+
 	var id int64
-	err := h.db.QueryRow(r.Context(),
+	err = queryer.QueryRow(r.Context(),
 		`INSERT INTO projects (org_id, name, slug, description, status, budget_cents, budget_period, created_by, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, NOW(), NOW())
 		 RETURNING id`,
@@ -191,14 +217,26 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.recordAuditForProjectFromRequest(r, "project.create", "project", strconv.FormatInt(id, 10), id,
-		map[string]interface{}{"after": map[string]interface{}{
-			"org_id":        req.OrgID,
-			"name":          req.Name,
-			"slug":          req.Slug,
-			"budget_cents":  req.BudgetCents,
-			"budget_period": req.BudgetPeriod,
-		}})
+	detail := map[string]interface{}{"after": map[string]interface{}{
+		"org_id":        req.OrgID,
+		"name":          req.Name,
+		"slug":          req.Slug,
+		"budget_cents":  req.BudgetCents,
+		"budget_period": req.BudgetPeriod,
+	}}
+	if tx != nil {
+		if err := insertAuditEntry(r.Context(), tx, "project.create", "project", strconv.FormatInt(id, 10), detail,
+			requestAuditMeta(r, req.OrgID, id)); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
+			return
+		}
+		if err := tx.Commit(r.Context()); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to create project"})
+			return
+		}
+	} else {
+		h.recordAuditForProjectFromRequest(r, "project.create", "project", strconv.FormatInt(id, 10), id, detail)
+	}
 
 	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "org_id": req.OrgID, "name": req.Name, "slug": req.Slug})
 }
@@ -260,8 +298,6 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	before, beforeFound := h.projectAuditSnapshot(r.Context(), id)
-
 	var sets []string
 	var args []interface{}
 	var changed []string
@@ -307,6 +343,10 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		argIdx++
 	}
 	if req.BudgetCents != nil {
+		if *req.BudgetCents < 0 || int64(*req.BudgetCents) > maxProjectBudgetCents {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "budget_cents must be between 0 and 2147483647"})
+			return
+		}
 		sets = append(sets, fmt.Sprintf("budget_cents = $%d", argIdx))
 		args = append(args, *req.BudgetCents)
 		changed = append(changed, "budget_cents")
@@ -330,6 +370,58 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var tx pgx.Tx
+	execer := auditExecer(h.db)
+	queryer := projectQueryRower(h.db)
+	if !isUnauthenticatedUnitContext(r.Context()) {
+		tx, err = h.db.Begin(r.Context())
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to update project"})
+			return
+		}
+		defer tx.Rollback(r.Context())
+		execer = tx
+		queryer = tx
+	}
+	before, err := projectAuditSnapshot(r.Context(), queryer, id, tx != nil)
+	if err != nil {
+		if tx == nil {
+			before = nil
+		} else if errors.Is(err, pgx.ErrNoRows) {
+			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Project not found"})
+		} else {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to read project"})
+		}
+		if tx != nil {
+			return
+		}
+	}
+	targetOrgID := middleware.GetOrgIDFromContext(r.Context())
+	if before != nil {
+		targetOrgID, _ = before["org_id"].(int64)
+	}
+	if tx != nil && !actorCanAccessOrg(r.Context(), targetOrgID) {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		return
+	}
+	if tx != nil && actorRole(r.Context()) == auth.RoleProjectAdmin {
+		// The fast preflight above keeps ordinary denials cheap, but it cannot
+		// authorize the eventual write: membership may be revoked before this
+		// transaction locks the project. Re-check while holding the project row
+		// lock and take a shared lock on the actor membership/user rows. A
+		// concurrent revoke therefore either commits first and denies this update,
+		// or waits until this already-authorized transaction finishes.
+		allowed, authErr := canManageProjectMembersTx(r.Context(), tx, id, targetOrgID)
+		if authErr != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Project authorization failed"})
+			return
+		}
+		if !allowed {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			return
+		}
+	}
+
 	sets = append(sets, "updated_at = NOW()")
 	idArg := argIdx
 	args = append(args, id)
@@ -339,7 +431,7 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		args = append(args, actorOrgID)
 	}
 	query := fmt.Sprintf("UPDATE projects SET %s WHERE %s", strings.Join(sets, ", "), whereClause)
-	tag, err := h.db.Exec(r.Context(), query, args...)
+	tag, err := execer.Exec(r.Context(), query, args...)
 	if err != nil {
 		if writeCommercialLimitViolation(w, err) {
 			return
@@ -357,10 +449,22 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	detail := map[string]interface{}{"fields": changed, "after": after}
-	if beforeFound {
+	if before != nil {
 		detail["before"] = before
 	}
-	h.recordAuditForProjectFromRequest(r, "project.update", "project", strconv.FormatInt(id, 10), id, detail)
+	if tx != nil {
+		if err := insertAuditEntry(r.Context(), tx, "project.update", "project", strconv.FormatInt(id, 10), detail,
+			requestAuditMeta(r, targetOrgID, id)); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
+			return
+		}
+		if err := tx.Commit(r.Context()); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to update project"})
+			return
+		}
+	} else {
+		h.recordAuditForProjectFromRequest(r, "project.update", "project", strconv.FormatInt(id, 10), id, detail)
+	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"message": "Project updated"})
 }
@@ -413,18 +517,26 @@ func validBudgetPeriod(period string) bool {
 	return period == "none" || period == "daily" || period == "monthly"
 }
 
-func (h *Handler) projectAuditSnapshot(ctx context.Context, projectID int64) (map[string]interface{}, bool) {
+type projectQueryRower interface {
+	QueryRow(context.Context, string, ...interface{}) pgx.Row
+}
+
+func projectAuditSnapshot(ctx context.Context, q projectQueryRower, projectID int64, lock bool) (map[string]interface{}, error) {
 	var orgID int64
 	var name, slug, description, status, budgetPeriod string
 	var budgetCents sql.NullInt64
-	err := h.db.QueryRow(ctx,
-		`SELECT org_id, name, slug, description, status, budget_cents, budget_period
+	query := `SELECT org_id, name, slug, description, status, budget_cents, budget_period
 		 FROM projects
-		 WHERE id = $1`,
+		 WHERE id = $1`
+	if lock {
+		query += ` FOR UPDATE`
+	}
+	err := q.QueryRow(ctx,
+		query,
 		projectID,
 	).Scan(&orgID, &name, &slug, &description, &status, &budgetCents, &budgetPeriod)
 	if err != nil {
-		return nil, false
+		return nil, err
 	}
 	snapshot := map[string]interface{}{
 		"org_id":        orgID,
@@ -439,5 +551,5 @@ func (h *Handler) projectAuditSnapshot(ctx context.Context, projectID int64) (ma
 	} else {
 		snapshot["budget_cents"] = nil
 	}
-	return snapshot, true
+	return snapshot, nil
 }

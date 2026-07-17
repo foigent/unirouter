@@ -300,14 +300,15 @@ export default function DataExchangePage() {
   return (
     <div className="ur-page ur-page-wide">
       <PageHeader
-        eyebrow="访问控制"
-        title="数据交换"
-        description="管理出站审批、交换制品账本、交付记录与 X-Insight 回执。"
+        eyebrow="系统与集成"
+        title="X-Insight 数据交换控制"
+        description="管理出站审批、制品元数据账本、人工交付记录与 X-Insight 回执；本页面不生成文件，也不执行网络传输。"
         actions={<Button icon={<IconRefresh />} onClick={() => { loadItems(); loadExchanges(); }}>刷新</Button>}
       />
 
       <Surface>
         <div className="ur-chip-row" style={{ marginBottom: 12 }}>
+          <Tag color="orange">不生成或传输文件</Tag>
           <Tag color="green">metadata only</Tag>
           <Tag>无原始 prompt/response</Tag>
           <Tag>无凭证</Tag>

@@ -79,19 +79,18 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     }),
+  logout: () => request('/auth/logout', { method: 'POST' }),
   getOIDCConfig: () => request('/auth/oidc/config'),
   getOIDCStartURL: (redirect = '/') =>
     `${BASE_URL}/auth/oidc/start?redirect=${encodeURIComponent(redirect)}`,
 
   // Dashboard
-  getDashboardStats: (startTime?: string, endTime?: string) => {
-    let url = '/dashboard/stats';
-    const params: string[] = [];
-    if (startTime) params.push(`start_time=${encodeURIComponent(startTime)}`);
-    if (endTime) params.push(`end_time=${encodeURIComponent(endTime)}`);
-    if (params.length) url += '?' + params.join('&');
-    return request(url);
-  },
+  getDashboardStats: (startTime?: string, endTime?: string, orgId?: number) =>
+    request(appendParams('/dashboard/stats', {
+      start_time: startTime,
+      end_time: endTime,
+      org_id: orgId,
+    })),
 
   // Channels
   getChannels: (page = 1, pageSize = 20) =>
@@ -131,10 +130,17 @@ export const api = {
   updateGuardrailPolicy: (id: number, data: any) =>
     request(`/guardrail-policies/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 
+  // Deployment-wide input blocking words (platform admin only)
+  getSensitiveWords: () => request('/sensitive-words'),
+  replaceSensitiveWords: (words: string[]) =>
+    request('/sensitive-words', { method: 'PUT', body: JSON.stringify({ words }) }),
+
   // Wallet
   getWallet: (orgId?: number) => request(appendParams('/wallet', { org_id: orgId })),
   getWalletTransactions: (page = 1, pageSize = 20, orgId?: number) =>
     request(appendParams('/wallet/transactions', { page, page_size: pageSize, org_id: orgId })),
+  exportWalletTransactions: (orgId?: number) =>
+    request(appendParams('/wallet/transactions/export', { org_id: orgId })),
   topUp: (data: { org_id?: number; amount_cents: number; description: string; client_request_id: string }) =>
     request('/wallet/topup', { method: 'POST', body: JSON.stringify(data) }),
   adjustWallet: (data: { org_id?: number; delta_cents: number; description: string; client_request_id: string }) =>
@@ -229,7 +235,20 @@ export const api = {
   // Projects and developer catalog
   getProjects: (page = 1, pageSize = 20, filters?: { status?: string; org_id?: number }) =>
     request(appendParams('/projects', { page, page_size: pageSize, status: filters?.status, org_id: filters?.org_id })),
+  createProject: (data: any) =>
+    request('/projects', { method: 'POST', body: JSON.stringify(data) }),
   getProject: (id: number) => request(`/projects/${id}`),
+  updateProject: (id: number, data: any) =>
+    request(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  getProjectMembers: (id: number, page = 1, pageSize = 20, query?: string) =>
+    request(appendParams(`/projects/${id}/members`, { page, page_size: pageSize, q: query })),
+  upsertProjectMember: (projectId: number, userId: number, role: string) =>
+    request(`/projects/${projectId}/members/${userId}`, { method: 'PUT', body: JSON.stringify({ role }) }),
+  deleteProjectMember: (projectId: number, userId: number) =>
+    request(`/projects/${projectId}/members/${userId}`, { method: 'DELETE' }),
+  getProjectBudget: (id: number) => request(`/projects/${id}/budget`),
+  updateProjectBudget: (id: number, data: { budget_cents?: number; budget_period?: string }) =>
+    request(`/projects/${id}/budget`, { method: 'PUT', body: JSON.stringify(data) }),
   getProjectModelSets: (id: number) => request(`/projects/${id}/model-sets`),
   replaceProjectModelSets: (id: number, modelSetIds: number[]) =>
     request(`/projects/${id}/model-sets`, { method: 'PUT', body: JSON.stringify({ model_set_ids: modelSetIds }) }),
@@ -298,6 +317,8 @@ export const api = {
     request(`/channel-keys/${id}`, { method: 'DELETE' }),
 
   // Users
+  getOrganizations: (page = 1, pageSize = 100) =>
+    request(`/organizations?page=${page}&page_size=${pageSize}`),
   getUsers: (page = 1, pageSize = 20) =>
     request(`/users?page=${page}&page_size=${pageSize}`),
   createUser: (data: any) =>
@@ -360,7 +381,7 @@ export const api = {
 
   // Notifications
   getNotificationEvents: (page = 1, pageSize = 20, filters?: {
-    event_type?: string; severity?: string; status?: string; delivery_state?: string; project_id?: number;
+    event_type?: string; severity?: string; status?: string; delivery_state?: string; org_id?: number; project_id?: number;
   }) => request(appendParams('/notification-events', {
     page,
     page_size: pageSize,
@@ -368,21 +389,28 @@ export const api = {
     severity: filters?.severity,
     status: filters?.status,
     delivery_state: filters?.delivery_state,
+    org_id: filters?.org_id,
     project_id: filters?.project_id,
   })),
-  getNotificationDeliveries: (page = 1, pageSize = 20, filters?: { status?: string; event_id?: number; project_id?: number }) =>
+  acknowledgeNotificationEvent: (id: number, projectId?: number, orgId?: number) =>
+    request(appendParams(`/notification-events/${id}/acknowledge`, { project_id: projectId, org_id: orgId }), { method: 'POST' }),
+  resolveNotificationEvent: (id: number, projectId?: number, orgId?: number) =>
+    request(appendParams(`/notification-events/${id}/resolve`, { project_id: projectId, org_id: orgId }), { method: 'POST' }),
+  getNotificationDeliveries: (page = 1, pageSize = 20, filters?: { status?: string; event_id?: number; org_id?: number; project_id?: number }) =>
     request(appendParams('/notification-deliveries', {
       page,
       page_size: pageSize,
       status: filters?.status,
       event_id: filters?.event_id,
+      org_id: filters?.org_id,
       project_id: filters?.project_id,
     })),
-  getNotificationWebhooks: (page = 1, pageSize = 20, filters?: { enabled?: boolean; project_id?: number }) =>
+  getNotificationWebhooks: (page = 1, pageSize = 20, filters?: { enabled?: boolean; org_id?: number; project_id?: number }) =>
     request(appendParams('/notification-webhooks', {
       page,
       page_size: pageSize,
       enabled: filters?.enabled === undefined ? undefined : String(filters.enabled),
+      org_id: filters?.org_id,
       project_id: filters?.project_id,
     })),
   createNotificationWebhook: (data: any) =>

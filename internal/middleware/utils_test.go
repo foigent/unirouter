@@ -94,7 +94,7 @@ func TestCheckIPWhitelist_SpacesInList(t *testing.T) {
 func TestGetClientIP_XForwardedFor_Single(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("X-Forwarded-For", "203.0.113.50")
-	ip := getClientIP(req)
+	ip := mustClientIPResolver(t, "192.0.2.1/32").Resolve(req)
 	if ip != "203.0.113.50" {
 		t.Fatalf("expected 203.0.113.50, got %s", ip)
 	}
@@ -103,7 +103,7 @@ func TestGetClientIP_XForwardedFor_Single(t *testing.T) {
 func TestGetClientIP_XForwardedFor_Multiple(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("X-Forwarded-For", "203.0.113.50, 70.41.3.18, 150.172.238.178")
-	ip := getClientIP(req)
+	ip := mustClientIPResolver(t, "192.0.2.1/32", "70.41.3.18/32", "150.172.238.178/32").Resolve(req)
 	if ip != "203.0.113.50" {
 		t.Fatalf("expected first IP 203.0.113.50, got %s", ip)
 	}
@@ -112,7 +112,7 @@ func TestGetClientIP_XForwardedFor_Multiple(t *testing.T) {
 func TestGetClientIP_XRealIP(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("X-Real-IP", "10.0.0.1")
-	ip := getClientIP(req)
+	ip := mustClientIPResolver(t, "192.0.2.1/32").Resolve(req)
 	if ip != "10.0.0.1" {
 		t.Fatalf("expected 10.0.0.1, got %s", ip)
 	}
@@ -122,7 +122,7 @@ func TestGetClientIP_XForwardedFor_PriorityOver_XRealIP(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("X-Forwarded-For", "203.0.113.50")
 	req.Header.Set("X-Real-IP", "10.0.0.1")
-	ip := getClientIP(req)
+	ip := mustClientIPResolver(t, "192.0.2.1/32").Resolve(req)
 	if ip != "203.0.113.50" {
 		t.Fatalf("X-Forwarded-For should take priority, got %s", ip)
 	}
@@ -141,9 +141,9 @@ func TestGetClientIP_EmptyXForwardedFor(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("X-Forwarded-For", "")
 	req.Header.Set("X-Real-IP", "10.0.0.1")
-	ip := getClientIP(req)
-	if ip != "10.0.0.1" {
-		t.Fatalf("empty X-Forwarded-For should fall through to X-Real-IP, got %s", ip)
+	ip := mustClientIPResolver(t, "192.0.2.1/32").Resolve(req)
+	if ip != "192.0.2.1" {
+		t.Fatalf("present but empty X-Forwarded-For must fail safe to the peer, got %s", ip)
 	}
 }
 

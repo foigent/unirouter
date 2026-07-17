@@ -39,8 +39,9 @@ describe('ChannelKeysPage', () => {
     render(<ChannelKeysPage />);
 
     await screen.findByText('mimo-v2.5-pro，mimo-v2.5');
-    fireEvent.click(screen.getByRole('button', { name: '编辑上游凭证 mimo' }));
+    fireEvent.click(screen.getByRole('button', { name: '编辑供应商凭证 mimo' }));
 
+    expect(await screen.findByLabelText('供应商 API Key')).toHaveAttribute('type', 'password');
     const allowedModels = await screen.findByLabelText('允许模型（逗号分隔，留空=全部）');
     fireEvent.change(allowedModels, { target: { value: 'mimo-v2.5-pro，mimo-v2.5,mimo-v2.5-pro' } });
     fireEvent.click(screen.getByText('更新'));
@@ -50,5 +51,14 @@ describe('ChannelKeysPage', () => {
       allowed_models: 'mimo-v2.5-pro,mimo-v2.5',
       status: 'active',
     }));
+  });
+
+  it('shows an explicit retry state when supplier credentials cannot be loaded', async () => {
+    mockGetChannelKeys.mockRejectedValueOnce(new Error('unavailable'));
+
+    render(<ChannelKeysPage />);
+
+    expect(await screen.findByRole('heading', { name: '供应商凭证加载失败' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '重新加载供应商凭证' })).toBeTruthy();
   });
 });

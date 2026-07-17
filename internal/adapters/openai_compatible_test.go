@@ -51,6 +51,7 @@ func TestOpenAICompatibleBuildRequest_RewritesModelAndURL(t *testing.T) {
 func TestOpenAICompatibleParseResponse_Usage(t *testing.T) {
 	adapter := NewOpenAICompatible()
 	resp, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		Endpoint:       EndpointChatCompletions,
 		StatusCode:     http.StatusOK,
 		Body:           []byte(`{"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}}`),
 		Channel:        models.Channel{ID: 9, Name: "test", Provider: "openai", AdapterType: TypeOpenAICompatible},
@@ -74,6 +75,7 @@ func TestOpenAICompatibleParseResponse_Usage(t *testing.T) {
 func TestP6F41OpenAICompatibleExplicitZeroAndMissingUsageRemainDistinct(t *testing.T) {
 	explicitZero, present, err := ParseOpenAICompatibleUsage(
 		[]byte(`{"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}`),
+		EndpointChatCompletions,
 		metering.UsageSourceUpstream,
 	)
 	if err != nil || !present {
@@ -86,7 +88,7 @@ func TestP6F41OpenAICompatibleExplicitZeroAndMissingUsageRemainDistinct(t *testi
 		t.Fatalf("explicit provider zero must be eligible for the customer-charge contract: %v", err)
 	}
 
-	missing, present, err := ParseOpenAICompatibleUsage([]byte(`{"data":[]}`), metering.UsageSourceUpstream)
+	missing, present, err := ParseOpenAICompatibleUsage([]byte(`{"data":[]}`), EndpointChatCompletions, metering.UsageSourceUpstream)
 	if err != nil || present {
 		t.Fatalf("absent usage must remain absent: present=%t err=%v", present, err)
 	}
@@ -95,6 +97,71 @@ func TestP6F41OpenAICompatibleExplicitZeroAndMissingUsageRemainDistinct(t *testi
 	}
 	if _, err := missing.ForCustomerCharge(); err == nil {
 		t.Fatal("missing usage must not be relabelled as a customer charge")
+	}
+}
+
+func TestOpenAICompatibleIncompleteCoreUsageIsNotAuthoritative(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "empty usage object", body: `{"usage":{}}`},
+		{name: "total only", body: `{"usage":{"total_tokens":12}}`},
+		{name: "prompt only", body: `{"usage":{"prompt_tokens":7}}`},
+		{name: "completion only", body: `{"usage":{"completion_tokens":5}}`},
+		{name: "null prompt", body: `{"usage":{"prompt_tokens":null,"completion_tokens":5}}`},
+		{name: "null completion", body: `{"usage":{"prompt_tokens":7,"completion_tokens":null}}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			usage, present, err := ParseOpenAICompatibleUsage([]byte(tt.body), EndpointChatCompletions, metering.UsageSourceUpstream)
+			if err != nil {
+				t.Fatalf("incomplete usage should allow the caller fallback: %v", err)
+			}
+			if present || !usage.IsMissing() {
+				t.Fatalf("incomplete usage became provider authority: present=%t usage=%+v", present, usage)
+			}
+		})
+	}
+}
+
+func TestOpenAICompatibleUsageCompletenessIsEndpointAware(t *testing.T) {
+	chat, present, err := ParseOpenAICompatibleUsage(
+		[]byte(`{"usage":{"prompt_tokens":7,"completion_tokens":5}}`),
+		EndpointChatCompletions,
+		metering.UsageSourceUpstream,
+	)
+	if err != nil || !present || chat.TotalTokens != 12 {
+		t.Fatalf("complete Chat usage without total must remain authoritative and derive total: present=%t usage=%+v err=%v", present, chat, err)
+	}
+
+	embeddings, present, err := ParseOpenAICompatibleUsage(
+		[]byte(`{"usage":{"prompt_tokens":4,"total_tokens":4}}`),
+		EndpointEmbeddings,
+		metering.UsageSourceUpstream,
+	)
+	if err != nil || !present || embeddings.PromptTokens != 4 || embeddings.CompletionTokens != 0 || embeddings.TotalTokens != 4 {
+		t.Fatalf("Embeddings structural completion zero was not preserved: present=%t usage=%+v err=%v", present, embeddings, err)
+	}
+
+	missing, present, err := ParseOpenAICompatibleUsage(
+		[]byte(`{"usage":{"total_tokens":4}}`),
+		EndpointEmbeddings,
+		metering.UsageSourceUpstream,
+	)
+	if err != nil || present || !missing.IsMissing() {
+		t.Fatalf("Embeddings usage without prompt_tokens became authoritative: present=%t usage=%+v err=%v", present, missing, err)
+	}
+}
+
+func TestOpenAICompatibleInvalidPresentCounterStillFails(t *testing.T) {
+	_, present, err := ParseOpenAICompatibleUsage(
+		[]byte(`{"usage":{"prompt_tokens":-1}}`),
+		EndpointChatCompletions,
+		metering.UsageSourceUpstream,
+	)
+	if err == nil || present {
+		t.Fatalf("invalid present counter must fail before fallback: present=%t err=%v", present, err)
 	}
 }
 
@@ -181,6 +248,7 @@ func TestOpenAICompatibleParseResponse_CacheUsageFixtures(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			resp, err := adapter.ParseResponse(context.Background(), ResponseInput{
+				Endpoint:   EndpointChatCompletions,
 				StatusCode: http.StatusOK,
 				Body:       []byte(tt.body),
 				Channel:    models.Channel{Provider: "fixture", AdapterType: TypeOpenAICompatible},
@@ -241,7 +309,7 @@ func TestOpenAICompatibleTest(t *testing.T) {
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Header:     make(http.Header),
-				Body:       io.NopCloser(strings.NewReader(`{"usage":{"total_tokens":11}}`)),
+				Body:       io.NopCloser(strings.NewReader(`{"usage":{"prompt_tokens":6,"completion_tokens":5,"total_tokens":11}}`)),
 			}, nil
 		}),
 	})

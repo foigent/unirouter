@@ -15,7 +15,7 @@ formal release, both rings are compiled into the backend binary:
 
 ```text
 UNIROUTER_RELEASE_TRUST_MODE=release
-UNIROUTER_UPGRADE_TRUST_BUNDLE_B64=<base64url-public-ring-json>
+UNIROUTER_UPGRADE_TRUST_BUNDLE_B64=REPLACE_WITH_BASE64URL_PUBLIC_RING_JSON
 ```
 
 The release binary rejects a runtime `UPGRADE_PUBLIC_KEYS` override. Source
@@ -57,6 +57,9 @@ creates generic Ed25519 material; using a distinct path and key ID preserves
 the trust separation.
 
 ```bash
+: "${UNIROUTER_RELEASE_COMMIT:?Set the exact 40-character source commit}"
+: "${UNIROUTER_PROVENANCE_SHA256:?Set the build-provenance SHA-256}"
+
 go build -o ./bin/uniroute-license ./cmd/uniroute-license
 go build -o ./bin/uniroute-upgrade ./cmd/uniroute-upgrade
 
@@ -70,7 +73,7 @@ go build -o ./bin/uniroute-upgrade ./cmd/uniroute-upgrade
   --private-key /approved-offline-custody/upgrade-2026-a.private \
   --release-sequence 1 \
   --version 1.0.0 \
-  --commit <exact-40-character-commit> \
+  --commit "$UNIROUTER_RELEASE_COMMIT" \
   --created-at 2026-07-15T00:00:00Z \
   --expires-at 2026-07-22T00:00:00Z \
   --target-os linux \
@@ -79,7 +82,7 @@ go build -o ./bin/uniroute-upgrade ./cmd/uniroute-upgrade
   --max-current-sequence 0 \
   --min-current-schema 000036_v1_micro_precision_ledger \
   --target-schema 000037_v1_commercial_release_control \
-  --provenance-sha256 <sha256-of-build-provenance> \
+  --provenance-sha256 "$UNIROUTER_PROVENANCE_SHA256" \
   --artifact payload/images/unirouter-backend.oci.tar=/release/unirouter-backend.oci.tar \
   --artifact payload/images/unirouter-frontend.oci.tar=/release/unirouter-frontend.oci.tar \
   --artifact payload/images/postgres.oci.tar=/release/postgres.oci.tar \
@@ -88,6 +91,8 @@ go build -o ./bin/uniroute-upgrade ./cmd/uniroute-upgrade
   --artifact payload/images/grafana.oci.tar=/release/grafana.oci.tar \
   --artifact payload/deploy/docker-compose.yml=deploy/customer/docker-compose.yml \
   --artifact payload/deploy/.env.example=deploy/customer/.env.example \
+  --artifact payload/deploy/README.md=deploy/customer/README.md \
+  --artifact payload/deploy/preflight.sh=deploy/customer/preflight.sh \
   --artifact payload/deploy/config/prometheus.yml=infra/prometheus/prometheus.yml \
   --artifact payload/deploy/config/grafana/provisioning/datasources/datasource.yml=infra/grafana/provisioning/datasources/datasource.yml \
   --artifact payload/deploy/config/grafana/provisioning/dashboards/dashboards.yml=infra/grafana/provisioning/dashboards/dashboards.yml \
@@ -118,6 +123,15 @@ Compose file. A fully offline delivery includes all six image archives shown
 above; an already-installed dependency may be omitted only when the release
 note explicitly names its approved preloaded digest.
 
+Bundle entries are canonical regular files with mode `0644`. The customer
+preflight is therefore invoked explicitly with Bash after copying the example
+environment to the package's `payload/deploy/.env` and replacing every
+placeholder:
+
+```bash
+bash ./payload/deploy/preflight.sh ./payload/deploy/.env
+```
+
 ## Customer Runtime Procedure
 
 The running binary reads the actual database sequence/schema and its configured
@@ -133,9 +147,36 @@ maintenance procedure, migrations have reached the signed target, and the new
 runtime is healthy, run from the new binary:
 
 ```bash
+: "${UNIROUTER_RELEASE_OPERATOR:?Set the approved operator or deployment identity}"
+
 ./uniroute upgrade record-applied \
   --package /approved-read-only/unirouter-1.0.0-linux-amd64.tar.gz \
-  --recorded-by <operator-or-deployment-identity>
+  --recorded-by "$UNIROUTER_RELEASE_OPERATOR"
+```
+
+The customer Compose does not mount an arbitrary host package directory. On
+both first install and later upgrade, stage the exact independently verified
+host package explicitly, then run the command from the healthy backend:
+
+```bash
+: "${UNIROUTER_SIGNED_PACKAGE:?Set the absolute path to the exact verified release package}"
+: "${UNIROUTER_RELEASE_OPERATOR:?Set the approved operator or deployment identity}"
+test -r "${UNIROUTER_SIGNED_PACKAGE}"
+
+docker compose --env-file payload/deploy/.env \
+  -f payload/deploy/docker-compose.yml cp \
+  "${UNIROUTER_SIGNED_PACKAGE}" backend:/tmp/unirouter-release.tar.gz
+docker compose --env-file payload/deploy/.env \
+  -f payload/deploy/docker-compose.yml exec backend \
+  ./uniroute upgrade record-applied \
+  --package /tmp/unirouter-release.tar.gz \
+  --recorded-by "${UNIROUTER_RELEASE_OPERATOR}"
+docker compose --env-file payload/deploy/.env \
+  -f payload/deploy/docker-compose.yml exec backend \
+  ./uniroute upgrade status
+docker compose --env-file payload/deploy/.env \
+  -f payload/deploy/docker-compose.yml exec backend \
+  rm -f /tmp/unirouter-release.tar.gz
 ```
 
 `record-applied` re-verifies the complete package under a serializable

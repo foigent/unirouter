@@ -105,7 +105,9 @@ func TestP6F11PinnedStreamFailsClosedWhenSensitiveCapabilityOutgrowsBound(t *tes
 }
 
 func installPolicies(service *Service, policies ...Policy) {
-	service.snapshot.Store(&snapshot{policies: policies, loadedAt: time.Now().UTC(), version: policySetVersion(policies)})
+	if err := service.publishPolicyRefresh(time.Now().UTC(), policies, nil, true); err != nil {
+		panic(err)
+	}
 }
 
 func TestPIIRedactionTransformsExactTextWithoutRawEvidence(t *testing.T) {
@@ -131,6 +133,96 @@ func TestPIIRedactionTransformsExactTextWithoutRawEvidence(t *testing.T) {
 	}
 	if len(result.Receipts) != 1 || len(result.Receipts[0].Fingerprints) != 1 || len(result.Receipts[0].Fingerprints[0]) != 24 {
 		t.Fatalf("missing irreversible bounded fingerprint: %+v", result.Receipts)
+	}
+}
+
+func TestPIIFindingCapAllowsExactly256CompleteFindings(t *testing.T) {
+	service := newGuardrailTestService(t, nil)
+	installPolicies(service, Policy{
+		ID: 1, Ref: "guardrail:cap", Name: "bounded email redaction", Version: 1,
+		Stage: StageInput, DetectorRef: DetectorPII, Action: ActionRedact,
+		Mode: ModeEnforce, FailureMode: FailureDegradedAllow,
+		Config: json.RawMessage(`{"entities":["email"]}`),
+	})
+	content := strings.Repeat("a@example.com ", 256)
+	result := service.Pin(Subject{OrgID: 7, APIKeyID: 9, Model: "gpt"}).Evaluate(
+		t.Context(), StageInput, []Text{{Path: "messages[0].content", Content: content}},
+	)
+	if result.Decision != DecisionAllow || result.Degraded || !result.Transformed ||
+		len(result.Receipts) != 1 || result.Receipts[0].Outcome != OutcomeTransform ||
+		strings.Contains(result.Texts[0].Content, "a@example.com") {
+		t.Fatalf("complete finding set at the cap was not transformed: %+v", result)
+	}
+}
+
+func TestPIIFindingCapCannotStarveLaterProtectedCategory(t *testing.T) {
+	service := newGuardrailTestService(t, nil)
+	installPolicies(service, Policy{
+		ID: 1, Ref: "guardrail:cap", Name: "email and secret redaction", Version: 1,
+		Stage: StageInput, DetectorRef: DetectorPII, Action: ActionRedact,
+		Mode: ModeEnforce, FailureMode: FailureDegradedAllow,
+		Config: json.RawMessage(`{"entities":["email","secret"]}`),
+	})
+	content := strings.Repeat("a@example.com ", 256) + "token_abcdefghijkl"
+	result := service.Pin(Subject{OrgID: 7, APIKeyID: 9, Model: "gpt"}).Evaluate(
+		t.Context(), StageInput, []Text{{Path: "messages[0].content", Content: content}},
+	)
+	if result.Decision != DecisionBlock || !result.Degraded || len(result.Receipts) != 1 ||
+		result.Receipts[0].Outcome != OutcomeIndeterminate || result.Transformed {
+		t.Fatalf("incomplete multi-category redaction was not withheld: %+v", result)
+	}
+}
+
+func TestPIIFindingCapCannotPartiallyRedactOneCategory(t *testing.T) {
+	service := newGuardrailTestService(t, nil)
+	installPolicies(service, Policy{
+		ID: 1, Ref: "guardrail:cap", Name: "bounded email redaction", Version: 1,
+		Stage: StageInput, DetectorRef: DetectorPII, Action: ActionRedact,
+		Mode: ModeEnforce, FailureMode: FailureDegradedAllow,
+		Config: json.RawMessage(`{"entities":["email"]}`),
+	})
+	content := strings.Repeat("a@example.com ", 257)
+	result := service.Pin(Subject{OrgID: 7, APIKeyID: 9, Model: "gpt"}).Evaluate(
+		t.Context(), StageInput, []Text{{Path: "messages[0].content", Content: content}},
+	)
+	if result.Decision != DecisionBlock || !result.Degraded || len(result.Receipts) != 1 ||
+		result.Receipts[0].Outcome != OutcomeIndeterminate || result.Transformed {
+		t.Fatalf("incomplete single-category redaction was not withheld: %+v", result)
+	}
+}
+
+func TestPIICreditCardValidationDoesNotConsumeFindingCap(t *testing.T) {
+	service := newGuardrailTestService(t, nil)
+	installPolicies(service, Policy{
+		ID: 1, Ref: "guardrail:card", Name: "credit card block", Version: 1,
+		Stage: StageInput, DetectorRef: DetectorPII, Action: ActionBlock,
+		Mode: ModeEnforce, FailureMode: FailureDegradedAllow,
+		Config: json.RawMessage(`{"entities":["credit_card"]}`),
+	})
+	content := strings.Repeat("0000000000001 ", 256) + "4111111111111111"
+	result := service.Pin(Subject{OrgID: 7, APIKeyID: 9, Model: "gpt"}).Evaluate(
+		t.Context(), StageInput, []Text{{Path: "messages[0].content", Content: content}},
+	)
+	if result.Decision != DecisionBlock || result.Degraded || len(result.Receipts) != 1 ||
+		result.Receipts[0].Outcome != OutcomeMatch || result.Receipts[0].MatchCount != 1 {
+		t.Fatalf("valid card after invalid candidates was not blocked: %+v", result)
+	}
+}
+
+func TestPIIFindingCapAuditRemainsAllowedButIndeterminate(t *testing.T) {
+	service := newGuardrailTestService(t, nil)
+	installPolicies(service, Policy{
+		ID: 1, Ref: "guardrail:cap", Name: "bounded email audit", Version: 1,
+		Stage: StageInput, DetectorRef: DetectorPII, Action: ActionAudit,
+		Mode: ModeEnforce, FailureMode: FailureDegradedAllow,
+		Config: json.RawMessage(`{"entities":["email"]}`),
+	})
+	result := service.Pin(Subject{OrgID: 7, APIKeyID: 9, Model: "gpt"}).Evaluate(
+		t.Context(), StageInput, []Text{{Path: "messages[0].content", Content: strings.Repeat("a@example.com ", 257)}},
+	)
+	if result.Decision != DecisionAllow || !result.Degraded || len(result.Receipts) != 1 ||
+		result.Receipts[0].Outcome != OutcomeIndeterminate || result.Transformed {
+		t.Fatalf("incomplete audit did not surface an indeterminate receipt: %+v", result)
 	}
 }
 
@@ -258,6 +350,41 @@ func TestNoInspectableTextIsSkippedAndUsesPolicyFailureMode(t *testing.T) {
 	result = service.Pin(Subject{OrgID: 1, APIKeyID: 1, Model: "gpt"}).Evaluate(t.Context(), StageNonStreamOutput, nil)
 	if result.Decision != DecisionAllow || !result.Degraded || result.Receipts[0].Outcome != OutcomeSkipped {
 		t.Fatalf("uninspectable advisory output lost degraded evidence: %+v", result)
+	}
+}
+
+func TestIncompleteInspectableOutputFailsClosedOnlyForPreventivePolicies(t *testing.T) {
+	service := newGuardrailTestService(t, nil)
+	policy := Policy{
+		ID: 1, Ref: "guardrail:shape", Name: "output shape", Version: 1,
+		Stage: StageNonStreamOutput, DetectorRef: DetectorPII, Action: ActionRedact,
+		Mode: ModeEnforce, FailureMode: FailureDegradedAllow,
+		Config: json.RawMessage(`{"entities":["email"]}`),
+	}
+	installPolicies(service, policy)
+	pinned := service.Pin(Subject{OrgID: 1, APIKeyID: 1, Model: "gpt"})
+	result := pinned.EvaluateWithCompleteness(t.Context(), StageNonStreamOutput, []Text{{Content: "safe"}}, false)
+	if result.Decision != DecisionBlock || !result.Degraded || result.BlockedBy != policy.Ref ||
+		len(result.Receipts) != 1 || result.Receipts[0].Outcome != OutcomeIndeterminate {
+		t.Fatalf("incomplete preventive output was not withheld: %+v", result)
+	}
+
+	policy.Action = ActionAudit
+	installPolicies(service, policy)
+	result = service.Pin(Subject{OrgID: 1, APIKeyID: 1, Model: "gpt"}).EvaluateWithCompleteness(
+		t.Context(), StageNonStreamOutput, []Text{{Content: "safe"}}, false,
+	)
+	if result.Decision != DecisionAllow || !result.Degraded || len(result.Receipts) != 1 ||
+		result.Receipts[0].Outcome != OutcomeIndeterminate {
+		t.Fatalf("incomplete audit output lost degraded evidence: %+v", result)
+	}
+
+	installPolicies(service)
+	result = service.Pin(Subject{OrgID: 1, APIKeyID: 1, Model: "gpt"}).EvaluateWithCompleteness(
+		t.Context(), StageNonStreamOutput, []Text{{Content: "safe"}}, false,
+	)
+	if result.Decision != DecisionAllow || result.Degraded || len(result.Receipts) != 0 {
+		t.Fatalf("irrelevant shape strictness affected traffic without a matching policy: %+v", result)
 	}
 }
 

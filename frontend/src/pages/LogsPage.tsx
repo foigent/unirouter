@@ -3,8 +3,11 @@ import { Typography, Table, Tag, Input, Select, Button, Space, Descriptions, Too
 import { IconSearch, IconRefresh, IconClose, IconCopy } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
+import { isPlatformAdminRole } from '../navigation';
+import { useAuthStore } from '../store/auth';
 import { LatencyText, microsRatio, MoneyText, PageHeader, StatusTag } from '../ui';
 import { usageSourceLabel, usageSourceOptions } from '../utils/displayLabels';
+import { loadAllPages } from '../utils/loadAllPages';
 
 const { Title, Text } = Typography;
 
@@ -67,6 +70,11 @@ interface LogFilters {
   latency_min?: string;
   latency_max?: string;
   search?: string;
+}
+
+interface Organization {
+  id: number;
+  name: string;
 }
 
 interface TraceEvent {
@@ -285,6 +293,10 @@ function routeAttemptsFromTrace(events: TraceEvent[]): RouteAttempt[] {
 }
 
 export default function LogsPage() {
+  const user = useAuthStore((state) => state.user);
+  const platform = isPlatformAdminRole(user?.role);
+  const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(platform ? user?.org_id : undefined);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [logs, setLogs] = useState<Log[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -298,16 +310,16 @@ export default function LogsPage() {
   const searchRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const [modelOptions, setModelOptions] = useState<string[]>([]);
-  const [providerOptions, setProviderOptions] = useState<string[]>([]);
   const [customTimeStart, setCustomTimeStart] = useState('');
   const [customTimeEnd, setCustomTimeEnd] = useState('');
   const [selectedPreset, setSelectedPreset] = useState<string>('');
+  const targetOrgID = platform ? selectedOrgID : undefined;
 
   const fetchLogs = useCallback(async (p?: number) => {
     setLoading(true);
     try {
       const currentPage = p ?? page;
-      const data = await api.getLogs(currentPage, pageSize, filters);
+      const data = await api.getLogs(currentPage, pageSize, targetOrgID ? { ...filters, org_id: targetOrgID } : filters);
       setLogs(data.data || []);
       setTotal(data.total || 0);
     } catch (e) {
@@ -315,25 +327,27 @@ export default function LogsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, filters]);
+  }, [page, pageSize, filters, targetOrgID]);
 
   useEffect(() => { fetchLogs(); }, [fetchLogs]);
 
   useEffect(() => {
-    Promise.all([
-      api.getModelNames().catch(() => ({ data: [] })),
-      api.getChannels(1, 100).catch(() => ({ data: [] })),
-    ]).then(([modelData, channelData]: any[]) => {
+    api.getModelNames().then((modelData: any) => {
       const modelSource = Array.isArray(modelData?.data) ? modelData.data : modelData;
       const models = (Array.isArray(modelSource) ? modelSource : [])
         .map((m: any) => typeof m === 'string' ? m : m.model_name || m.model)
         .filter(Boolean);
-      const channels = Array.isArray(channelData?.data) ? channelData.data : [];
-      const providers = [...new Set(channels.map((c: any) => c.provider).filter(Boolean))] as string[];
       setModelOptions(models);
-      setProviderOptions(providers);
     }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!platform) return;
+    if (user?.org_id) setSelectedOrgID(current => current || user.org_id);
+    loadAllPages<Organization>((page, size) => api.getOrganizations(page, size))
+      .then(setOrganizations)
+      .catch((err: any) => Toast.error(`组织列表加载失败${err?.message ? `：${err.message}` : ''}`));
+  }, [platform, user?.org_id]);
 
   useEffect(() => {
     const qs = filtersToParams(filters);
@@ -373,7 +387,7 @@ export default function LogsPage() {
     setShowDetail(true);
     setTraceEvents([]);
     setTraceLoading(true);
-    api.getLogTrace(record.id)
+    (targetOrgID ? api.getLogTrace(record.id, targetOrgID) : api.getLogTrace(record.id))
       .then((data: any) => {
         setTraceEvents(Array.isArray(data?.events) ? data.events : []);
       })
@@ -382,7 +396,19 @@ export default function LogsPage() {
         setTraceEvents([]);
       })
       .finally(() => setTraceLoading(false));
-  }, []);
+  }, [targetOrgID]);
+
+  const changeOrganization = (value: unknown) => {
+    const orgID = Number(value);
+    if (!Number.isSafeInteger(orgID) || orgID <= 0) return;
+    setSelectedOrgID(orgID);
+    setPage(1);
+    setLogs([]);
+    setTotal(0);
+    setSelectedLog(null);
+    setShowDetail(false);
+    setTraceEvents([]);
+  };
 
   const hasActiveFilters = Object.values(filters).some(v => v);
   const timePresets = [
@@ -446,7 +472,7 @@ export default function LogsPage() {
       render: (v: string) => <Tag size="small">{v}</Tag>,
     },
     {
-      title: '渠道',
+      title: '供应商',
       dataIndex: 'provider',
       key: 'provider',
       width: 110,
@@ -528,11 +554,25 @@ export default function LogsPage() {
   return (
     <div className="ur-page ur-page-wide">
       <PageHeader
-        eyebrow="流量治理"
+        eyebrow="监控与用量"
         title="请求日志"
         description="用于定位失败请求、成本异常、延迟抖动和上游供应商问题。"
         actions={(
           <>
+            {platform && (
+              <Space spacing={6}>
+                <Text type="tertiary">目标组织</Text>
+                <Select
+                  aria-label="目标组织"
+                  placeholder="选择目标组织"
+                  value={selectedOrgID}
+                  optionList={organizations.map(org => ({ label: `${org.name}（ID ${org.id}）`, value: org.id }))}
+                  onChange={changeOrganization}
+                  disabled={loading}
+                  style={{ width: 220 }}
+                />
+              </Space>
+            )}
             <Tag color="blue">{total} 条</Tag>
             <Tooltip content="刷新">
               <Button icon={<IconRefresh />} size="small" onClick={() => fetchLogs()} />
@@ -590,17 +630,15 @@ export default function LogsPage() {
           <Divider style={{ margin: '12px 0' }} />
 
           <div className="ur-filter-group">
-            <Text className="ur-filter-label">渠道 / 供应商</Text>
-            <Select
+            <Text className="ur-filter-label">供应商</Text>
+            <Input
               size="small"
               placeholder="供应商名称"
               value={filters.provider || undefined}
-              onChange={(v) => updateFilter('provider', v as string)}
+              onChange={(v) => updateFilter('provider', v)}
               style={{ width: '100%' }}
-              filter
-            >
-              {providerOptions.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
-            </Select>
+              showClear
+            />
           </div>
 
           <div className="ur-filter-group">
@@ -790,7 +828,7 @@ export default function LogsPage() {
                     <div><Text size="small">{selectedLog.requested_model || '-'}</Text></div>
                   </div>
                   <div>
-                    <Text type="tertiary" size="small">渠道名称</Text>
+                    <Text type="tertiary" size="small">通道名称</Text>
                     <div><Text size="small">{selectedLog.channel || '-'}</Text></div>
                   </div>
                   <div>

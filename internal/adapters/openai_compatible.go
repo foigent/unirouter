@@ -56,7 +56,7 @@ func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) 
 	usage := NewMissingUsage()
 	if in.StatusCode >= 200 && in.StatusCode < 300 {
 		var err error
-		usage, _, err = ParseOpenAICompatibleUsage(in.Body, metering.UsageSourceUpstream)
+		usage, _, err = ParseOpenAICompatibleUsage(in.Body, in.Endpoint, metering.UsageSourceUpstream)
 		if err != nil {
 			return nil, err
 		}
@@ -124,6 +124,7 @@ func (a *OpenAICompatible) Test(ctx context.Context, in TestInput) (*TestResult,
 
 	body, _ := io.ReadAll(resp.Body)
 	normalized, err := a.ParseResponse(ctx, ResponseInput{
+		Endpoint:       EndpointChatCompletions,
 		StatusCode:     resp.StatusCode,
 		Header:         resp.Header,
 		Body:           body,

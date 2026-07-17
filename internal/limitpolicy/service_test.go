@@ -357,7 +357,7 @@ func TestShadowModeRecordsWouldDenyWithoutBlocking(t *testing.T) {
 	_ = service.CancelBeforeDispatch(context.Background(), second)
 }
 
-func TestLastKnownSafeLeaseIsShortAndAmountBounded(t *testing.T) {
+func TestLastKnownSafePolicyCannotBypassFailClosedWorkloadAdmission(t *testing.T) {
 	options := testOptions()
 	options.FallbackTTL = 2 * time.Second
 	options.FallbackGlobalCap = 5
@@ -374,19 +374,26 @@ func TestLastKnownSafeLeaseIsShortAndAmountBounded(t *testing.T) {
 	}
 	mr.Close()
 	ctx, collector := ContextWithDecisionCollector(context.Background())
-	fallback, err := service.Reserve(ctx, admission("lks-once", 1))
-	if err != nil {
-		t.Fatalf("one pre-issued emergency admission should be allowed: %v", err)
-	}
-	if fallback == nil {
-		t.Fatal("missing fallback reservation")
+	reservation, err := service.Reserve(ctx, admission("lks-once", 1))
+	if !errors.Is(err, ErrStateUnavailable) || reservation != nil {
+		t.Fatalf("shared Redis outage reservation=%#v err=%v, want fail-closed", reservation, err)
 	}
 	decisions, _ := collector.Snapshot()
-	if len(decisions) == 0 || decisions[0].Reason != ReasonLastKnownSafe || !decisions[0].Fallback {
-		t.Fatalf("missing last-known-safe decision: %#v", decisions)
+	var policyFallback, workloadDenied bool
+	for _, decision := range decisions {
+		switch decision.PolicyRef {
+		case "policy:lks":
+			policyFallback = decision.Decision == DecisionAllow &&
+				decision.Reason == ReasonLastKnownSafe && decision.Fallback
+		case "builtin:workload-admission-v2":
+			workloadDenied = decision.PolicyVersion == 2 &&
+				decision.FailureMode == FailureFailClosed &&
+				decision.Decision == DecisionDeny &&
+				decision.Reason == ReasonStateUnavailable && !decision.Fallback
+		}
 	}
-	if _, err := service.Reserve(context.Background(), admission("lks-twice", 1)); !errors.Is(err, ErrStateUnavailable) {
-		t.Fatalf("second outage admission = %v, want ErrStateUnavailable", err)
+	if !policyFallback || !workloadDenied {
+		t.Fatalf("composed outage decisions do not preserve policy evidence and fail-closed workload authority: %#v", decisions)
 	}
 }
 

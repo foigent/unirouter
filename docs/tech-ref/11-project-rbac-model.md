@@ -1,9 +1,8 @@
 # Project And RBAC Model
 
-> Version: v0.1
-> Phase: PRD2
-> Status: Draft for Review
-> Related PRD: `docs/PRD-Phase2.md` P2-F01, P2-F02, P2-F07
+> Version: v1.0
+> Status: Current implementation contract
+> Source of truth: `internal/auth/auth.go`, `internal/admin/rbac_helpers.go`, project/user/member/budget handlers, and `cmd/uniroute/main.go`
 
 ## 1. Goal
 
@@ -29,8 +28,8 @@ RBAC must enforce this hierarchy in backend handlers and gateway authorization. 
 | `slug` | Stable URL/API slug where needed |
 | `status` | `active`, `disabled`, `archived` |
 | `description` | Optional description |
-| `budget_cents` | Optional project budget |
-| `budget_period` | `monthly` or future values |
+| `budget_cents` | Optional whole-cent alert threshold, `0..2147483647` |
+| `budget_period` | `none`, `daily`, or `monthly` |
 | `created_by` | User who created project |
 | `created_at`, `updated_at` | Timestamps |
 
@@ -45,25 +44,23 @@ Default project rule:
 |-------|---------|
 | `project_id` | Project |
 | `user_id` | User |
-| `role` | `project_admin`, `developer`, `viewer` |
+| `role` | Persisted membership role: `project_admin`, `project_developer`, or `project_viewer` |
 | `created_at`, `updated_at` | Timestamps |
 
-Rule:
+Rules:
 
-- A project member must also be an org member.
+- A project member must also be a user in the same organization.
+- For project-scoped accounts, user role and membership role are one-to-one: `project_admin -> project_admin`, `developer -> project_developer`, `viewer -> project_viewer`.
+- An active project-scoped user must belong to at least one project. A disabled project-scoped user may temporarily have none.
+- `project_ids` is invalid for organization-scoped roles. Changing to an organization-scoped role removes existing project memberships.
+- User role/status updates and membership mutations use one per-user transaction lock so concurrent requests cannot remove the last project from an active project user.
+- Migration `000009` retained default-project membership rows for pre-existing platform/org administrators; those organization-scoped roles authorize through their account scope, and new member writes accept only the three project-scoped account roles.
 
 ### API Key Scope
 
-Preferred incremental option:
-
-- Add nullable `project_id` to `api_keys`.
-- During migration, set existing keys to default project.
-
-Alternative:
-
-- Add `project_api_keys` table if the current `api_keys` shape becomes too constrained.
-
-Initial recommendation: add `project_id` to `api_keys` for minimal churn.
+The implemented schema adds `project_id` directly to `api_keys`. Migration
+`000009` backfills existing keys to the owning organization's default project;
+new project keys carry the selected project in the key row and gateway context.
 
 ## 3. Roles
 
@@ -74,11 +71,11 @@ Initial recommendation: add `project_id` to `api_keys` for minimal churn.
 | `billing_admin` | org | Wallet, project budgets, usage, reconciliation |
 | `project_admin` | project | Manage project members, keys, allowed models, budget |
 | `developer` | project | Use models, manage permitted project keys, view usage |
-| `viewer` | org/project | Read-only usage/config where granted |
+| `viewer` | project | Read-only project usage/config where granted |
 
 Compatibility:
 
-- Existing `org_viewer` can map to `viewer` at org scope.
+- Existing `org_viewer` remains a distinct organization-scoped read-only role and does not inherit project `viewer` membership or APIs.
 - Existing `org_admin` remains org-level admin.
 
 ## 4. Permission Matrix
@@ -87,7 +84,8 @@ Compatibility:
 |--------|----------------|-----------|---------------|---------------|-----------|--------|
 | Manage provider channels | yes | no | no | no | no | no |
 | Manage channel keys | yes | no | no | no | no | no |
-| Manage model registry | yes | yes if allowed | no | no | no | read approved only |
+| Manage model registry | yes | yes if licensed | no | no | no | no |
+| Read approved model catalog | yes | yes if licensed | no | own project if licensed | own project if licensed | own project if licensed |
 | Assign model sets to project | yes | yes | no | yes for own project if allowed | no | no |
 | Create project | yes | yes | no | no | no | no |
 | Manage project members | yes | yes | no | own project | no | no |
@@ -95,8 +93,15 @@ Compatibility:
 | Disable project API key | yes | yes | no | own project | own key if allowed | no |
 | View project usage | yes | yes | yes | own project | own project | own project read-only |
 | Manage wallet adjustment | yes | no | yes if allowed | no | no | no |
-| View audit logs | yes | org scope | billing-related | own project | own actions/project subset | read-only if granted |
+| View audit logs | yes | org scope | no | no | no | no |
 | License management | yes | no | no | no | no | no |
+
+Budget authority is intentionally narrower than project authority. `billing_admin`
+may list projects in its JWT organization and use only
+`GET/PUT /api/v1/projects/{id}/budget`; it cannot open project detail, manage
+members/model sets/keys, or mutate non-budget project fields. A configured
+project budget is currently an event threshold, not a hard request-admission
+cap.
 
 Every `no` cell must have at least one negative test when the feature is implemented.
 
@@ -120,9 +125,25 @@ RequireSystemRole(ctx, roles...)
 
 Avoid relying on client-supplied org/project alone. Load resource ownership from DB for update/delete/read-by-id paths.
 
+Implemented member constraints:
+
+- `platform_admin` and the owning `org_admin` may manage eligible project roles.
+- `project_admin` must have an active `project_admin` membership in the target project.
+- `project_admin` cannot grant or remove another `project_admin`, and cannot alter its own membership.
+- A target user from another organization is rejected.
+- Membership add/update/removal and its audit entry commit in the same transaction.
+
+Implemented APIs:
+
+- `GET /api/v1/projects/{id}/members` returns paginated members plus a bounded, server-filtered list of eligible same-organization users.
+- `PUT /api/v1/projects/{id}/members/{user_id}` adds or aligns a membership with the target user's account role.
+- `DELETE /api/v1/projects/{id}/members/{user_id}` removes a membership while preserving the active-user invariant.
+- `GET/PUT /api/v1/projects/{id}/budget` is the field-limited, tenant-bound budget surface.
+- `POST /api/v1/users` and `PUT /api/v1/users/{id}` accept `project_ids` and update the user/membership state atomically.
+
 ## 6. Gateway Authorization
 
-Gateway API key validation should add project context:
+Gateway API key validation carries project context:
 
 1. Validate API key prefix/hash.
 2. Check key status.
@@ -152,6 +173,15 @@ allowed = key_allows(requested_model_or_alias)
 
 Retired models must not be callable even if old keys or project sets reference them.
 
+All model-set list/assignment routes require the commercial
+`model_governance` feature. `project_admin` may list model sets in its JWT
+organization only to obtain assignment candidates, and may read/replace
+`/projects/{id}/model-sets` only for a project where both its active account
+role and membership role are `project_admin`. It cannot create model sets or
+read/replace `/model-sets/{id}/items`; those remain platform/org governance
+actions. `developer` and `viewer` may read the sets assigned to their own
+project but cannot replace them.
+
 ## 8. Audit Requirements
 
 Audit records should include:
@@ -177,24 +207,23 @@ Source values:
 - `gateway_api`
 - `system`
 
-## 9. Migration Plan
+## 9. Implemented Migration Shape
 
-Draft migration sequence:
+Implemented sequence:
 
 1. Add `projects` table.
 2. Add `project_members` table.
 3. Add nullable `project_id` to `api_keys`, `call_logs`, and future usage tables where needed.
 4. Backfill one default project per org.
 5. Backfill existing `api_keys.project_id` to the org default project.
-6. For historical `call_logs`, either backfill default project where reliable or leave nullable with documented historical behavior.
+6. Backfill historical `call_logs` from their API key first, then the organization default project; backfill historical transactions and audit rows to the organization default project.
 7. Add indexes for `(org_id, project_id, created_at)` on high-volume tables.
 8. Update gateway context to carry project_id.
 9. Enforce new RBAC in admin/developer handlers.
 
-Historical data rule:
-
-- Do not invent project granularity for old logs beyond default project backfill.
-- Mark historical project_id provenance if needed in implementation.
+Historical data rule: migration `000009` uses only the linked API key project or
+the owning organization's explicit `default` project; later handlers do not
+reassign that stored project provenance.
 
 ## 10. Test Requirements
 
@@ -209,8 +238,8 @@ Minimum tests:
 - Audit writes project_id for project key creation.
 - Route parity covers Developer Console API routes.
 
-## 11. Open Decisions
+## 11. Resolved V1 Behavior
 
-- Whether `developer` can create keys by default or requires project_admin grant.
-- Whether project budgets are enforced hard or alert-only in first PRD2 implementation.
-- Whether historical call logs should show default project or "pre-project".
+- An active `developer` with a matching project membership can create a project key and disable only an active key it owns in that project.
+- Project budgets are alert thresholds. Reaching a daily/monthly threshold emits a deduplicated `project_budget.threshold` event; it does not reject gateway traffic.
+- Historical request rows keep their migrated provenance; handlers do not fabricate a project outside the implemented migration/backfill rules.

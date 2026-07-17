@@ -19,15 +19,17 @@ func TestGatewayAuth_ValidKey_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 
-	// Generate and store a real API key
+	// Generate and store a real API key with the legacy 12-character display
+	// prefix. Authentication is hash-based, so existing rows remain valid after
+	// newly generated display prefixes expand to 20 characters.
 	rawKey, _, err := auth.GenerateAPIKey(orgID)
 	require.NoError(t, err)
 	keyHash := auth.HashAPIKey(rawKey, "test-secret")
 
 	_, err = pool.Exec(t.Context(),
 		`INSERT INTO api_keys (org_id, name, key_hash, key_prefix, status, rpm_limit, qps_limit, allowed_ips, allowed_models)
-		 VALUES ($1, 'test-key', $2, 'ur-0001-', 'active', 60, 10, '', 'gpt-4,gpt-3.5')`,
-		orgID, keyHash,
+		 VALUES ($1, 'test-key', $2, $3, 'active', 60, 10, '', 'gpt-4,gpt-3.5')`,
+		orgID, keyHash, rawKey[:12],
 	)
 	require.NoError(t, err)
 
@@ -156,6 +158,70 @@ func TestGatewayAuth_DisabledOrg_Integration(t *testing.T) {
 
 	require.Equal(t, http.StatusForbidden, rec.Code, "body: %s", rec.Body.String())
 	require.Contains(t, rec.Body.String(), "disabled")
+}
+
+func TestGatewayAuth_PersonalProjectAuthorityRevocation_Integration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
+
+	var userID, projectID int64
+	require.NoError(t, pool.QueryRow(t.Context(),
+		`INSERT INTO users (org_id, username, password_hash, role, status)
+		 VALUES ($1, 'gateway-personal-owner', 'unused', $2, 'active') RETURNING id`,
+		orgID, auth.RoleDeveloper,
+	).Scan(&userID))
+	require.NoError(t, pool.QueryRow(t.Context(),
+		`INSERT INTO projects (org_id, name, slug, status)
+		 VALUES ($1, 'Gateway authority project', 'gateway-authority-project', 'active') RETURNING id`,
+		orgID,
+	).Scan(&projectID))
+	_, err := pool.Exec(t.Context(),
+		`INSERT INTO project_members (project_id, user_id, role) VALUES ($1, $2, 'project_developer')`,
+		projectID, userID,
+	)
+	require.NoError(t, err)
+
+	rawKey, keyPrefix, err := auth.GenerateAPIKey(orgID)
+	require.NoError(t, err)
+	keyHash := auth.HashAPIKey(rawKey, "test-secret")
+	_, err = pool.Exec(t.Context(),
+		`INSERT INTO api_keys (
+			org_id, project_id, owner_user_id, key_type, name, key_hash, key_prefix,
+			status, rpm_limit, qps_limit, allowed_ips, allowed_models
+		 ) VALUES ($1, $2, $3, 'personal', 'gateway-personal-key', $4, $5, 'active', 60, 10, '', '')`,
+		orgID, projectID, userID, keyHash, keyPrefix,
+	)
+	require.NoError(t, err)
+
+	handler := GatewayAuth(pool, "test-secret")(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	serve := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+		req.Header.Set("Authorization", "Bearer "+rawKey)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+
+	require.Equal(t, http.StatusOK, serve().Code)
+	_, err = pool.Exec(t.Context(), `UPDATE projects SET status = 'disabled' WHERE id = $1`, projectID)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusUnauthorized, serve().Code)
+	_, err = pool.Exec(t.Context(), `UPDATE projects SET status = 'active' WHERE id = $1`, projectID)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, serve().Code)
+
+	_, err = pool.Exec(t.Context(), `UPDATE users SET status = 'disabled' WHERE id = $1`, userID)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusUnauthorized, serve().Code)
+	_, err = pool.Exec(t.Context(), `UPDATE users SET status = 'active' WHERE id = $1`, userID)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, serve().Code)
+
+	_, err = pool.Exec(t.Context(), `DELETE FROM project_members WHERE project_id = $1 AND user_id = $2`, projectID, userID)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusUnauthorized, serve().Code)
 }
 
 func TestGatewayAuth_IPBlocked_Integration(t *testing.T) {
@@ -309,7 +375,11 @@ func TestAdminAuth_DisabledUserTokenRejected_Integration(t *testing.T) {
 	require.NoError(t, err)
 
 	secret := "admin-test-secret"
-	token, err := auth.GenerateJWT(userID, orgID, auth.RoleOrgAdmin, secret, 1)
+	token, session, err := auth.GenerateAdminSessionJWT(userID, orgID, auth.RoleOrgAdmin, 0, secret, 1)
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(),
+		`INSERT INTO admin_sessions (user_id, sid_hash, issued_at, expires_at) VALUES ($1, $2, $3, $4)`,
+		userID, session.SIDHash, session.IssuedAt, session.ExpiresAt)
 	require.NoError(t, err)
 
 	handler := AdminAuth(pool, secret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

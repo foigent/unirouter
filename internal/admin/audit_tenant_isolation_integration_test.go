@@ -47,8 +47,7 @@ func TestP6F37AuditLogTenantIsolationIntegration(t *testing.T) {
 	)
 	serve := func(tb testing.TB, target string, userID, orgID int64, role string) *httptest.ResponseRecorder {
 		tb.Helper()
-		token, tokenErr := auth.GenerateJWT(userID, orgID, role, p6f16JWTSecret, 1)
-		require.NoError(tb, tokenErr)
+		token := testutil.MustAdminSessionJWT(tb, ctx, pool, userID, orgID, role, p6f16JWTSecret)
 		req := httptest.NewRequest(http.MethodGet, target, bytes.NewReader(nil))
 		req.Header.Set("Authorization", "Bearer "+token)
 		rec := httptest.NewRecorder()

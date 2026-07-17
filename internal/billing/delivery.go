@@ -24,6 +24,7 @@ const (
 )
 
 var ErrDeliveryNotChargeable = errors.New("billing reservation has no chargeable local delivery outcome")
+var ErrDeliveryAttemptConflict = errors.New("billing delivery attempt authority changed")
 
 type PrepareDeliveryResult struct {
 	Funded    bool
@@ -41,6 +42,7 @@ type DeliveryEvent struct {
 	DeliveredChunks int
 	HTTPStatus      int
 	ErrorCode       string
+	StreamFence     *StreamLeaseFence
 }
 
 // PrepareNonStreamDelivery persists the customer-charge usage payload and
@@ -55,6 +57,9 @@ func (b *Billing) PrepareNonStreamDelivery(ctx context.Context, request SettleRe
 	if err != nil {
 		return nil, err
 	}
+	if req.AttemptID == "" {
+		return nil, ErrDeliveryAttemptConflict
+	}
 	tx, err := b.db.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin delivery preparation: %w", err)
@@ -66,6 +71,13 @@ func (b *Billing) PrepareNonStreamDelivery(ctx context.Context, request SettleRe
 		return nil, fmt.Errorf("lock delivery preparation: %w", err)
 	}
 	record = canonicalizeLegacyReservationUsage(record)
+	if record.Status != "frozen" && !(record.Status == "settlement_pending" &&
+		(record.SettlementPendingReason == "delivery_prepared" || record.SettlementPendingReason == "delivery_completed")) {
+		return nil, fmt.Errorf("cannot prepare delivery in reservation state %s", record.Status)
+	}
+	if err := bindDeliveryAttemptTx(ctx, tx, &record, req.OrgID, req.RequestID, req.AttemptID); err != nil {
+		return nil, err
+	}
 	if record.Status == "settlement_pending" &&
 		(record.SettlementPendingReason == "delivery_prepared" || record.SettlementPendingReason == "delivery_completed") {
 		if !settlementUsageMatches(record, req) {
@@ -73,10 +85,6 @@ func (b *Billing) PrepareNonStreamDelivery(ctx context.Context, request SettleRe
 		}
 		return prepareDeliveryResult(record, record.CalculatedCostMicros, record.TopUpAmountMicros, true), tx.Commit(ctx)
 	}
-	if record.Status != "frozen" {
-		return nil, fmt.Errorf("cannot prepare delivery in reservation state %s", record.Status)
-	}
-
 	calculatedCost, breakdown, err := calculateReservationCost(record, req)
 	if err != nil {
 		return nil, err
@@ -219,9 +227,6 @@ func prepareDeliveryResult(record reservationRecord, calculatedCost, topUp int64
 }
 
 func markProviderAttemptDeliveryPendingTx(ctx context.Context, tx pgx.Tx, req SettleRequest, calculatedCost int64) error {
-	if strings.TrimSpace(req.AttemptID) == "" {
-		return nil
-	}
 	result, err := tx.Exec(ctx, `
 		UPDATE billing_provider_attempts
 		SET state = 'delivery_pending', outcome_certainty = 'known_usage',
@@ -253,18 +258,18 @@ func updateRequestIdempotencyUsageTx(ctx context.Context, tx pgx.Tx, req SettleR
 }
 
 func requireChargeableDeliveryTx(ctx context.Context, tx pgx.Tx, record reservationRecord, req SettleRequest) error {
-	switch record.SettlementPendingReason {
-	case "delivery_failed":
-		return ErrDeliveryNotChargeable
-	case "delivery_prepared", "delivery_completed":
+	if record.DeliveryAttemptID.Valid {
+		if req.AttemptID == "" || req.AttemptID != record.DeliveryAttemptID.String {
+			return ErrDeliveryAttemptConflict
+		}
 		var mode, outcome string
 		var deliveredBytes int64
 		var deliveredChunks int
 		err := tx.QueryRow(ctx, `
 			SELECT mode,outcome,delivered_bytes,delivered_chunks
 			FROM request_delivery_receipts
-			WHERE org_id=$1 AND request_id=$2
-			ORDER BY sequence DESC LIMIT 1`, req.OrgID, req.RequestID,
+			WHERE org_id=$1 AND request_id=$2 AND attempt_id=$3
+			ORDER BY sequence DESC LIMIT 1`, req.OrgID, req.RequestID, req.AttemptID,
 		).Scan(&mode, &outcome, &deliveredBytes, &deliveredChunks)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -282,6 +287,13 @@ func requireChargeableDeliveryTx(ctx context.Context, tx pgx.Tx, record reservat
 			return nil
 		}
 		return ErrDeliveryNotChargeable
+	}
+
+	switch record.SettlementPendingReason {
+	case "delivery_failed":
+		return ErrDeliveryNotChargeable
+	case "delivery_prepared", "delivery_completed":
+		return ErrDeliveryAttemptConflict
 	default:
 		// Pre-P6-F41 billable-output recovery remains compatible. New gateway
 		// paths move to a delivery_* reason before persisting chargeable usage.
@@ -299,7 +311,7 @@ func (b *Billing) RecordDelivery(ctx context.Context, event DeliveryEvent) error
 	event.Mode = strings.TrimSpace(event.Mode)
 	event.Outcome = strings.TrimSpace(event.Outcome)
 	event.ErrorCode = strings.TrimSpace(event.ErrorCode)
-	if event.OrgID <= 0 || event.RequestID == "" || len(event.RequestID) > 64 || len(event.AttemptID) > 64 ||
+	if event.OrgID <= 0 || event.RequestID == "" || len(event.RequestID) > 64 || event.AttemptID == "" || len(event.AttemptID) > 64 ||
 		(event.Mode != DeliveryModeNonStream && event.Mode != DeliveryModeStream) ||
 		event.DeliveredBytes < 0 || event.DeliveredChunks < 0 || len(event.ErrorCode) > 80 {
 		return fmt.Errorf("delivery event is invalid")
@@ -320,6 +332,18 @@ func (b *Billing) RecordDelivery(ctx context.Context, event DeliveryEvent) error
 		((event.DeliveredBytes == 0) != (event.DeliveredChunks == 0)) {
 		return fmt.Errorf("interrupted outcome requires both delivery counters to be zero or positive")
 	}
+	if event.Mode == DeliveryModeStream {
+		if event.StreamFence == nil {
+			return fmt.Errorf("stream delivery event requires a lease fence")
+		}
+		fence, err := normalizeStreamLeaseFence(*event.StreamFence)
+		if err != nil || fence.OrgID != event.OrgID || fence.RequestID != event.RequestID || fence.AttemptID != event.AttemptID {
+			return fmt.Errorf("stream delivery event lease fence is invalid")
+		}
+		event.StreamFence = &fence
+	} else if event.StreamFence != nil {
+		return fmt.Errorf("non-stream delivery event cannot carry a stream lease fence")
+	}
 
 	tx, err := b.db.Begin(ctx)
 	if err != nil {
@@ -330,21 +354,29 @@ func (b *Billing) RecordDelivery(ctx context.Context, event DeliveryEvent) error
 	if err != nil {
 		return fmt.Errorf("lock delivery receipt: %w", err)
 	}
+	if err := bindDeliveryAttemptTx(ctx, tx, &record, event.OrgID, event.RequestID, event.AttemptID); err != nil {
+		return err
+	}
+	if event.StreamFence != nil {
+		if err := requireCurrentStreamFenceTx(ctx, tx, *event.StreamFence); err != nil {
+			return err
+		}
+	}
 
 	var previous DeliveryEvent
 	var sequence int
 	err = tx.QueryRow(ctx, `
-		SELECT sequence, mode, outcome, delivered_bytes, delivered_chunks,
+		SELECT sequence, attempt_id, mode, outcome, delivered_bytes, delivered_chunks,
 		       COALESCE(http_status, 0), error_code
 		FROM request_delivery_receipts
 		WHERE org_id=$1 AND request_id=$2
 		ORDER BY sequence DESC LIMIT 1`, event.OrgID, event.RequestID,
-	).Scan(&sequence, &previous.Mode, &previous.Outcome, &previous.DeliveredBytes,
+	).Scan(&sequence, &previous.AttemptID, &previous.Mode, &previous.Outcome, &previous.DeliveredBytes,
 		&previous.DeliveredChunks, &previous.HTTPStatus, &previous.ErrorCode)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("read delivery receipt: %w", err)
 	}
-	if err == nil && previous.Mode == event.Mode && previous.Outcome == event.Outcome &&
+	if err == nil && previous.AttemptID == event.AttemptID && previous.Mode == event.Mode && previous.Outcome == event.Outcome &&
 		previous.DeliveredBytes == event.DeliveredBytes && previous.DeliveredChunks == event.DeliveredChunks &&
 		previous.HTTPStatus == event.HTTPStatus && previous.ErrorCode == event.ErrorCode {
 		return tx.Commit(ctx)
@@ -357,13 +389,21 @@ func (b *Billing) RecordDelivery(ctx context.Context, event DeliveryEvent) error
 	if event.HTTPStatus > 0 {
 		status = event.HTTPStatus
 	}
+	var streamOwner any
+	var streamGeneration any
+	if event.StreamFence != nil {
+		streamOwner = event.StreamFence.OwnerID
+		streamGeneration = event.StreamFence.Generation
+	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO request_delivery_receipts (
-			org_id, request_id, sequence, mode, outcome,
-			delivered_bytes, delivered_chunks, http_status, error_code, occurred_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-		event.OrgID, event.RequestID, sequence, event.Mode, event.Outcome,
+			org_id, request_id, attempt_id, sequence, mode, outcome,
+			delivered_bytes, delivered_chunks, http_status, error_code, occurred_at,
+			stream_owner_id, stream_lease_generation
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+		event.OrgID, event.RequestID, event.AttemptID, sequence, event.Mode, event.Outcome,
 		event.DeliveredBytes, event.DeliveredChunks, status, event.ErrorCode, time.Now().UTC(),
+		streamOwner, streamGeneration,
 	); err != nil {
 		return fmt.Errorf("append delivery receipt: %w", err)
 	}
@@ -461,9 +501,6 @@ func (b *Billing) RecordDelivery(ctx context.Context, event DeliveryEvent) error
 }
 
 func updateProviderAttemptDeliveryState(ctx context.Context, tx pgx.Tx, event DeliveryEvent, state, certainty string) error {
-	if event.AttemptID == "" {
-		return nil
-	}
 	result, err := tx.Exec(ctx, `
 		UPDATE billing_provider_attempts
 		SET state=$4, outcome_certainty=$5, retry_authorized=FALSE, updated_at=NOW()
@@ -475,6 +512,143 @@ func updateProviderAttemptDeliveryState(ctx context.Context, tx pgx.Tx, event De
 	}
 	if result.RowsAffected() != 1 {
 		return fmt.Errorf("update provider attempt delivery state: authority changed")
+	}
+	return nil
+}
+
+func bindDeliveryAttemptTx(ctx context.Context, tx pgx.Tx, record *reservationRecord, orgID int64, requestID, attemptID string) error {
+	requestID = strings.TrimSpace(requestID)
+	attemptID = strings.TrimSpace(attemptID)
+	if record == nil || orgID <= 0 || requestID == "" || len(requestID) > 64 || attemptID == "" || len(attemptID) > 64 {
+		return ErrDeliveryAttemptConflict
+	}
+	if record.DeliveryAttemptID.Valid {
+		if record.DeliveryAttemptID.String != attemptID {
+			return ErrDeliveryAttemptConflict
+		}
+		return nil
+	}
+	result, err := tx.Exec(ctx, `
+		UPDATE freeze_idempotency f
+		SET delivery_attempt_id=$3, updated_at=NOW()
+		WHERE f.org_id=$1 AND f.request_id=$2 AND f.delivery_attempt_id IS NULL
+		  AND EXISTS (
+		      SELECT 1 FROM billing_provider_attempts p
+		      WHERE p.org_id=f.org_id AND p.request_id=f.request_id AND p.attempt_id=$3
+		        AND p.state IN (
+		            'response_accepted','delivery_pending','delivery_failed',
+		            'funding_pending','output_withheld'
+		        )
+		  )`, orgID, requestID, attemptID)
+	if err != nil {
+		return fmt.Errorf("bind delivery attempt: %w", err)
+	}
+	if result.RowsAffected() != 1 {
+		return ErrDeliveryAttemptConflict
+	}
+	record.DeliveryAttemptID.String = attemptID
+	record.DeliveryAttemptID.Valid = true
+	return nil
+}
+
+func requireSettlementAttempt(record reservationRecord, req SettleRequest) error {
+	if record.DeliveryAttemptID.Valid {
+		if req.AttemptID == "" || req.AttemptID != record.DeliveryAttemptID.String {
+			return ErrDeliveryAttemptConflict
+		}
+		return nil
+	}
+	if req.AttemptID != "" {
+		return ErrDeliveryAttemptConflict
+	}
+	return nil
+}
+
+func requireBoundOrInternalSettlementTx(ctx context.Context, tx pgx.Tx, record reservationRecord, req SettleRequest) error {
+	if err := requireSettlementAttempt(record, req); err != nil {
+		return err
+	}
+	if record.DeliveryAttemptID.Valid {
+		return nil
+	}
+	var hasProviderAttempt bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM billing_provider_attempts
+			WHERE org_id=$1 AND request_id=$2
+		)`, req.OrgID, req.RequestID).Scan(&hasProviderAttempt); err != nil {
+		return fmt.Errorf("verify unbound settlement identity: %w", err)
+	}
+	if hasProviderAttempt {
+		return ErrDeliveryAttemptConflict
+	}
+	return nil
+}
+
+func requireSettlementStreamAuthorityTx(ctx context.Context, tx pgx.Tx, record reservationRecord, req SettleRequest) error {
+	hasFencedPayload := record.SettlementStreamOwnerID.Valid && record.SettlementStreamGeneration.Valid
+	if record.SettlementStreamOwnerID.Valid != record.SettlementStreamGeneration.Valid {
+		return fmt.Errorf("settlement stream fence invariant is incomplete")
+	}
+	if req.StreamFence != nil {
+		if !hasFencedPayload || !record.DeliveryAttemptID.Valid ||
+			req.StreamFence.OrgID != req.OrgID || req.StreamFence.RequestID != req.RequestID ||
+			req.StreamFence.AttemptID != record.DeliveryAttemptID.String {
+			return ErrStreamLeaseConflict
+		}
+		return requireCurrentStreamFenceTx(ctx, tx, *req.StreamFence)
+	}
+	if req.settlementRecovery != nil {
+		authority := req.settlementRecovery
+		if !hasFencedPayload || !record.DeliveryAttemptID.Valid || authority.ClaimAttempt <= 0 ||
+			strings.TrimSpace(authority.StreamOwnerID) == "" || authority.StreamGeneration <= 0 ||
+			authority.StreamOwnerID != record.SettlementStreamOwnerID.String ||
+			authority.StreamGeneration != record.SettlementStreamGeneration.Int64 ||
+			authority.ClaimAttempt != record.SettlementAttempts {
+			return ErrStreamLeaseConflict
+		}
+		// The in-memory capability is not sufficient by itself. The reservation
+		// row is already held FOR UPDATE, and this predicate binds the terminal
+		// side effect to the still-live durable claim, immutable attempt binding,
+		// and immutable stream payload fence loaded by the recovery worker.
+		var current int
+		err := tx.QueryRow(ctx, `
+			SELECT 1
+			FROM freeze_idempotency
+			WHERE org_id=$1 AND request_id=$2 AND status='settlement_pending'
+			  AND delivery_attempt_id=$3 AND settlement_attempts=$4
+			  AND settlement_claimed_until>clock_timestamp()
+			  AND settlement_payload_ready_at IS NOT NULL
+			  AND settlement_pending_reason IN ('billable_output','delivery_completed')
+			  AND settlement_stream_owner_id=$5 AND settlement_stream_generation=$6
+			FOR UPDATE`,
+			req.OrgID, req.RequestID, req.AttemptID, authority.ClaimAttempt,
+			authority.StreamOwnerID, authority.StreamGeneration,
+		).Scan(&current)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrStreamLeaseConflict
+		}
+		if err != nil {
+			return fmt.Errorf("verify fenced settlement recovery claim: %w", err)
+		}
+		return nil
+	}
+	if hasFencedPayload {
+		return ErrStreamLeaseConflict
+	}
+	var hasUnfencedStreamEvidence bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM stream_delivery_leases
+			WHERE org_id=$1 AND request_id=$2
+		) OR EXISTS (
+			SELECT 1 FROM request_delivery_receipts
+			WHERE org_id=$1 AND request_id=$2 AND mode='stream'
+		)`, req.OrgID, req.RequestID).Scan(&hasUnfencedStreamEvidence); err != nil {
+		return fmt.Errorf("inspect settlement stream evidence: %w", err)
+	}
+	if hasUnfencedStreamEvidence {
+		return ErrStreamLeaseConflict
 	}
 	return nil
 }

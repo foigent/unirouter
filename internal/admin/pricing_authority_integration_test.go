@@ -46,8 +46,7 @@ func TestP6F34PriceAuthorityIntegration(t *testing.T) {
 	mux := p6f34PricingMux(h)
 	serve := func(tb testing.TB, method, target, body string, userID, orgID int64, role, requestID string) *httptest.ResponseRecorder {
 		tb.Helper()
-		token, tokenErr := auth.GenerateJWT(userID, orgID, role, p6f16JWTSecret, 1)
-		require.NoError(tb, tokenErr)
+		token := testutil.MustAdminSessionJWT(tb, ctx, pool, userID, orgID, role, p6f16JWTSecret)
 		req := httptest.NewRequest(method, target, bytes.NewBufferString(body))
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
@@ -96,6 +95,23 @@ func TestP6F34PriceAuthorityIntegration(t *testing.T) {
 		assertStatus(t, foreign, http.StatusOK)
 		assertP6F34OrgPriceResponse(t, foreign, fx.orgB, multiplierBID)
 		require.Contains(t, foreign.Body.String(), `"can_mutate":true`)
+	})
+
+	t.Run("billing administrator reads pricing without mutation authority", func(t *testing.T) {
+		global := serve(t, http.MethodGet, "/api/v1/model-prices", "", fx.billingAdminA, fx.orgA, auth.RoleBillingAdmin, "")
+		assertStatus(t, global, http.StatusOK)
+		require.Contains(t, global.Body.String(), "p6f34-main")
+		require.Contains(t, global.Body.String(), `"can_mutate":false`)
+
+		own := serve(t, http.MethodGet, "/api/v1/org-model-prices", "", fx.billingAdminA, fx.orgA, auth.RoleBillingAdmin, "")
+		assertStatus(t, own, http.StatusOK)
+		assertP6F34OrgPriceResponse(t, own, fx.orgA, multiplierAID)
+		require.Contains(t, own.Body.String(), `"can_mutate":false`)
+
+		foreign := serve(t, http.MethodGet,
+			fmt.Sprintf("/api/v1/org-model-prices?org_id=%d", fx.orgB), "",
+			fx.billingAdminA, fx.orgA, auth.RoleBillingAdmin, "")
+		assertStatus(t, foreign, http.StatusForbidden)
 	})
 
 	t.Run("all tenant roles are denied before parsing or side effects", func(t *testing.T) {
@@ -439,7 +455,7 @@ func p6f34PricingMux(h *Handler) *http.ServeMux {
 	roleRoute := func(handler http.HandlerFunc, roles ...string) http.Handler {
 		return middleware.AdminAuth(h.db, p6f16JWTSecret)(middleware.RequireRoles(roles...)(handler))
 	}
-	readRoles := []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin}
+	readRoles := []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin}
 	mux.Handle("GET /api/v1/model-prices", roleRoute(h.ListModelPrices, readRoles...))
 	mux.Handle("POST /api/v1/model-prices", roleRoute(h.CreateModelPrice, auth.RolePlatformAdmin))
 	mux.Handle("PUT /api/v1/model-prices/{id}", roleRoute(h.UpdateModelPrice, auth.RolePlatformAdmin))

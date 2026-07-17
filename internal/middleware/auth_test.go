@@ -9,20 +9,36 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
+const adminAuthTestEpoch int64 = 7
+
+func adminSessionToken(t *testing.T, userID, orgID int64, role, secret string) string {
+	t.Helper()
+	token, _, err := auth.GenerateAdminSessionJWT(userID, orgID, role, adminAuthTestEpoch, secret, 1)
+	if err != nil {
+		t.Fatalf("generate admin session JWT: %v", err)
+	}
+	return token
+}
+
 func adminPrincipalDB(t *testing.T, wantUserID, wantOrgID int64, wantRole string, active bool, scanErr error) *testutil.MockDB {
 	t.Helper()
 	return &testutil.MockDB{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-		if len(args) != 3 || args[0] != wantUserID || args[1] != wantOrgID || args[2] != wantRole {
+		if len(args) != 5 || args[0] != wantUserID || args[1] != wantOrgID || args[2] != wantRole || args[3] != adminAuthTestEpoch {
 			t.Fatalf("unexpected principal lookup args: %#v", args)
 		}
-		for _, fragment := range []string{"FROM users", "JOIN orgs", "u.status = 'active'", "o.status = 'active'"} {
+		if sidHash, ok := args[4].([]byte); !ok || len(sidHash) != 32 {
+			t.Fatalf("principal lookup must use a SHA-256 sid hash: %#v", args[4])
+		}
+		for _, fragment := range []string{"FROM users", "JOIN orgs", "JOIN admin_sessions", "u.auth_epoch", "s.revoked_at IS NULL", "s.expires_at > NOW()", "u.status = 'active'", "o.status = 'active'"} {
 			if !strings.Contains(sql, fragment) {
 				t.Fatalf("principal lookup missing %q: %s", fragment, sql)
 			}
@@ -71,7 +87,7 @@ func TestAdminAuth_InvalidToken(t *testing.T) {
 }
 
 func TestAdminAuth_WrongSecret(t *testing.T) {
-	token, _ := auth.GenerateJWT(1, 1, "admin", "correct-secret", 1)
+	token := adminSessionToken(t, 1, 1, "admin", "correct-secret")
 	handler := AdminAuth(unexpectedAdminPrincipalDB(t), "wrong-secret")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -86,7 +102,7 @@ func TestAdminAuth_WrongSecret(t *testing.T) {
 
 func TestAdminAuth_ValidToken(t *testing.T) {
 	secret := "test-secret"
-	token, _ := auth.GenerateJWT(42, 7, "admin", secret, 1)
+	token := adminSessionToken(t, 42, 7, "admin", secret)
 	handler := AdminAuth(adminPrincipalDB(t, 42, 7, "admin", true, nil), secret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		orgID := GetOrgIDFromContext(r.Context())
 		if orgID != 7 {
@@ -110,7 +126,7 @@ func TestAdminAuth_ValidToken(t *testing.T) {
 }
 
 func TestAdminAuth_BearerPrefixRequired(t *testing.T) {
-	token, _ := auth.GenerateJWT(1, 1, "admin", "secret", 1)
+	token := adminSessionToken(t, 1, 1, "admin", "secret")
 	handler := AdminAuth(unexpectedAdminPrincipalDB(t), "secret")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -125,10 +141,7 @@ func TestAdminAuth_BearerPrefixRequired(t *testing.T) {
 
 func TestAdminAuth_InactivePrincipal(t *testing.T) {
 	const secret = "test-secret"
-	token, err := auth.GenerateJWT(42, 7, auth.RoleOrgAdmin, secret, 1)
-	if err != nil {
-		t.Fatalf("generate JWT: %v", err)
-	}
+	token := adminSessionToken(t, 42, 7, auth.RoleOrgAdmin, secret)
 	called := false
 	handler := AdminAuth(adminPrincipalDB(t, 42, 7, auth.RoleOrgAdmin, false, nil), secret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
@@ -148,10 +161,7 @@ func TestAdminAuth_InactivePrincipal(t *testing.T) {
 
 func TestAdminAuth_PrincipalStateUnavailable(t *testing.T) {
 	const secret = "test-secret"
-	token, err := auth.GenerateJWT(42, 7, auth.RoleOrgAdmin, secret, 1)
-	if err != nil {
-		t.Fatalf("generate JWT: %v", err)
-	}
+	token := adminSessionToken(t, 42, 7, auth.RoleOrgAdmin, secret)
 	called := false
 	handler := AdminAuth(adminPrincipalDB(t, 42, 7, auth.RoleOrgAdmin, false, fmt.Errorf("database unavailable")), secret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
@@ -166,6 +176,33 @@ func TestAdminAuth_PrincipalStateUnavailable(t *testing.T) {
 	}
 	if called {
 		t.Fatal("unavailable principal state reached protected handler")
+	}
+}
+
+func TestAdminAuth_LegacyJWTRejectedBeforeStateLookup(t *testing.T) {
+	now := time.Now().UTC()
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, auth.Claims{
+		UserID: 42,
+		OrgID:  7,
+		Role:   auth.RoleOrgAdmin,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			Issuer:    "uniroute",
+		},
+	}).SignedString([]byte("test-secret"))
+	if err != nil {
+		t.Fatalf("generate legacy JWT: %v", err)
+	}
+	handler := AdminAuth(unexpectedAdminPrincipalDB(t), "test-secret")(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("legacy token reached protected handler")
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/admin/test", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected legacy token to fail closed with 401, got %d", rec.Code)
 	}
 }
 
@@ -486,7 +523,7 @@ func TestWriteGatewayAuthErrorIncludesDocURL(t *testing.T) {
 func TestGetClientIP_XForwardedFor_MultipleIPs(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("X-Forwarded-For", "1.2.3.4, 5.6.7.8, 9.10.11.12")
-	ip := getClientIP(r)
+	ip := mustClientIPResolver(t, "192.0.2.1/32", "5.6.7.8/32", "9.10.11.12/32").Resolve(r)
 	if ip != "1.2.3.4" {
 		t.Fatalf("expected 1.2.3.4, got %s", ip)
 	}
@@ -495,7 +532,7 @@ func TestGetClientIP_XForwardedFor_MultipleIPs(t *testing.T) {
 func TestGetClientIP_XForwardedFor_SingleIP(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("X-Forwarded-For", "10.0.0.1")
-	ip := getClientIP(r)
+	ip := mustClientIPResolver(t, "192.0.2.1/32").Resolve(r)
 	if ip != "10.0.0.1" {
 		t.Fatalf("expected 10.0.0.1, got %s", ip)
 	}
@@ -514,7 +551,7 @@ func TestGetClientIP_XForwardedFor_Empty(t *testing.T) {
 func TestGetClientIP_XRealIP_Only(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("X-Real-IP", "172.16.0.1")
-	ip := getClientIP(r)
+	ip := mustClientIPResolver(t, "192.0.2.1/32").Resolve(r)
 	if ip != "172.16.0.1" {
 		t.Fatalf("expected 172.16.0.1, got %s", ip)
 	}
@@ -523,7 +560,7 @@ func TestGetClientIP_XRealIP_Only(t *testing.T) {
 func TestGetClientIP_XRealIP_WithSpaces(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("X-Real-IP", "  172.16.0.1  ")
-	ip := getClientIP(r)
+	ip := mustClientIPResolver(t, "192.0.2.1/32").Resolve(r)
 	if ip != "172.16.0.1" {
 		t.Fatalf("expected 172.16.0.1, got %s", ip)
 	}
@@ -543,7 +580,7 @@ func TestGetClientIP_XForwardedFor_TakesPrecedence(t *testing.T) {
 	r.Header.Set("X-Forwarded-For", "1.1.1.1")
 	r.Header.Set("X-Real-IP", "2.2.2.2")
 	r.RemoteAddr = "3.3.3.3:8080"
-	ip := getClientIP(r)
+	ip := mustClientIPResolver(t, "3.3.3.3/32").Resolve(r)
 	if ip != "1.1.1.1" {
 		t.Fatalf("expected 1.1.1.1 (X-Forwarded-For), got %s", ip)
 	}
@@ -553,7 +590,7 @@ func TestGetClientIP_XRealIP_TakesPrecedenceOverRemoteAddr(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("X-Real-IP", "2.2.2.2")
 	r.RemoteAddr = "3.3.3.3:8080"
-	ip := getClientIP(r)
+	ip := mustClientIPResolver(t, "3.3.3.3/32").Resolve(r)
 	if ip != "2.2.2.2" {
 		t.Fatalf("expected 2.2.2.2 (X-Real-IP), got %s", ip)
 	}

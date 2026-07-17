@@ -38,6 +38,8 @@ func TestP6F32FinanceAndUsageTenantIsolationIntegration(t *testing.T) {
 	billingA := insertUser(fx.orgA, "p6f32-billing-a", auth.RoleBillingAdmin)
 	billingB := insertUser(fx.orgB, "p6f32-billing-b", auth.RoleBillingAdmin)
 	developerB := insertUser(fx.orgB, "p6f32-developer-b", auth.RoleDeveloper)
+	projectViewerB := insertUser(fx.orgB, "p6f32-project-viewer-b", auth.RoleViewer)
+	orgViewerB := insertUser(fx.orgB, "p6f32-org-viewer-b", auth.RoleOrgViewer)
 	var projectB2 int64
 	require.NoError(t, pool.QueryRow(ctx,
 		`INSERT INTO projects (org_id, name, slug, description, status, created_by)
@@ -46,7 +48,7 @@ func TestP6F32FinanceAndUsageTenantIsolationIntegration(t *testing.T) {
 	).Scan(&projectB2))
 	_, err := pool.Exec(ctx,
 		`INSERT INTO project_members (project_id, user_id, role)
-		 VALUES ($1, $2, 'project_developer')`, fx.projectB, developerB)
+		 VALUES ($1, $2, 'project_developer'), ($1, $3, 'project_viewer')`, fx.projectB, developerB, projectViewerB)
 	require.NoError(t, err)
 
 	_, err = pool.Exec(ctx,
@@ -121,12 +123,11 @@ func TestP6F32FinanceAndUsageTenantIsolationIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	h := NewHandler(pool, p6f16JWTSecret, []byte("0123456789abcdef01234567"), nil)
-	h.SetEventService(billing.NewEventService(pool))
+	h.SetEventService(billing.NewEventService(pool, ""))
 	mux := p6f32AdminMux(h)
 	serve := func(tb testing.TB, method, target, body string, userID, orgID int64, role string) *httptest.ResponseRecorder {
 		tb.Helper()
-		token, tokenErr := auth.GenerateJWT(userID, orgID, role, p6f16JWTSecret, 1)
-		require.NoError(tb, tokenErr)
+		token := testutil.MustAdminSessionJWT(tb, ctx, pool, userID, orgID, role, p6f16JWTSecret)
 		req := httptest.NewRequest(method, target, bytes.NewBufferString(body))
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
@@ -181,9 +182,7 @@ func TestP6F32FinanceAndUsageTenantIsolationIntegration(t *testing.T) {
 		for _, target := range []string{
 			"/api/v1/wallet/transactions/export",
 			"/api/v1/usage/analytics?group_by=overall",
-			"/api/v1/internal-status",
 			dashboardTarget,
-			"/api/v1/runtime/status",
 		} {
 			rec := serve(t, http.MethodGet, target, "", billingB, fx.orgB, auth.RoleBillingAdmin)
 			assertStatus(t, rec, http.StatusOK)
@@ -206,31 +205,17 @@ func TestP6F32FinanceAndUsageTenantIsolationIntegration(t *testing.T) {
 		require.Equal(t, "220000", usageBody.Summary.CostMicros)
 		require.Zero(t, usageBody.Summary.EstimatedRatio)
 
-		internalStatus := serve(t, http.MethodGet, "/api/v1/internal-status", "", billingB, fx.orgB, auth.RoleBillingAdmin)
-		assertStatus(t, internalStatus, http.StatusOK)
-		require.Contains(t, internalStatus.Body.String(), "own-b-incident")
-		assertNoVictim(t, internalStatus)
+		for _, target := range []string{"/api/v1/internal-status", "/api/v1/runtime/status"} {
+			assertStatus(t, serve(t, http.MethodGet, target, "", billingB, fx.orgB, auth.RoleBillingAdmin), http.StatusForbidden)
+		}
 
 		dashboard := serve(t, http.MethodGet, dashboardTarget, "", billingB, fx.orgB, auth.RoleBillingAdmin)
 		assertStatus(t, dashboard, http.StatusOK)
 		require.Equal(t, "1", extractP6F32JSONNumber(t, dashboard, "total_requests"))
 		require.Equal(t, "220000", extractP6F32JSONNumber(t, dashboard, "today_cost_micros"))
-
-		runtime := serve(t, http.MethodGet, "/api/v1/runtime/status", "", billingB, fx.orgB, auth.RoleBillingAdmin)
-		assertStatus(t, runtime, http.StatusOK)
-		var runtimeBody struct {
-			CapacityHealth struct {
-				Traffic struct {
-					Requests    int64  `json:"requests"`
-					TotalTokens int64  `json:"total_tokens"`
-					CostMicros  string `json:"cost_micros"`
-				} `json:"traffic"`
-			} `json:"capacity_health"`
-		}
-		require.NoError(t, json.Unmarshal(runtime.Body.Bytes(), &runtimeBody))
-		require.EqualValues(t, 1, runtimeBody.CapacityHealth.Traffic.Requests)
-		require.EqualValues(t, 20, runtimeBody.CapacityHealth.Traffic.TotalTokens)
-		require.Equal(t, "220000", runtimeBody.CapacityHealth.Traffic.CostMicros)
+		require.Contains(t, dashboard.Body.String(), `"wallet_balance_micros"`)
+		require.Contains(t, dashboard.Body.String(), `"model_prices"`)
+		require.NotContains(t, dashboard.Body.String(), `"channel_health"`)
 
 		var notificationCount int
 		require.NoError(t, pool.QueryRow(ctx,
@@ -238,6 +223,31 @@ func TestP6F32FinanceAndUsageTenantIsolationIntegration(t *testing.T) {
 			fx.orgB, billing.EventTokenMeteringEstimatedRatioHigh,
 		).Scan(&notificationCount))
 		require.Zero(t, notificationCount, "foreign estimated usage must not derive a tenant-B alert")
+	})
+
+	t.Run("organization dashboard denies project roles even when they share the organization", func(t *testing.T) {
+		orgViewer := serve(t, http.MethodGet, "/api/v1/dashboard/stats", "", orgViewerB, fx.orgB, auth.RoleOrgViewer)
+		assertStatus(t, orgViewer, http.StatusOK)
+		assertNoVictim(t, orgViewer)
+		require.NotContains(t, orgViewer.Body.String(), `"wallet_balance_micros"`)
+		require.NotContains(t, orgViewer.Body.String(), `"model_prices"`)
+		require.NotContains(t, orgViewer.Body.String(), `"channel_health"`)
+
+		orgAdmin := serve(t, http.MethodGet, "/api/v1/dashboard/stats", "", fx.orgAdminB, fx.orgB, auth.RoleOrgAdmin)
+		assertStatus(t, orgAdmin, http.StatusOK)
+		require.NotContains(t, orgAdmin.Body.String(), `"wallet_balance_micros"`)
+		require.Contains(t, orgAdmin.Body.String(), `"model_prices"`)
+		require.NotContains(t, orgAdmin.Body.String(), `"channel_health"`)
+
+		for _, actor := range []struct {
+			userID int64
+			role   string
+		}{
+			{userID: projectViewerB, role: auth.RoleViewer},
+			{userID: developerB, role: auth.RoleDeveloper},
+		} {
+			assertStatus(t, serve(t, http.MethodGet, "/api/v1/dashboard/stats", "", actor.userID, fx.orgB, actor.role), http.StatusForbidden)
+		}
 	})
 
 	t.Run("wallet CSV is tenant scoped, parseable and formula neutralized", func(t *testing.T) {
@@ -417,6 +427,9 @@ func p6f32AdminMux(h *Handler) *http.ServeMux {
 	roleRoute := func(handler http.HandlerFunc, roles ...string) http.Handler {
 		return middleware.AdminAuth(h.db, p6f16JWTSecret)(middleware.RequireRoles(roles...)(handler))
 	}
+	exactRoleRoute := func(handler http.HandlerFunc, roles ...string) http.Handler {
+		return middleware.AdminAuth(h.db, p6f16JWTSecret)(middleware.RequireExactRoles(roles...)(handler))
+	}
 	billingRoles := []string{auth.RolePlatformAdmin, auth.RoleBillingAdmin}
 	usageRoles := []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper, auth.RoleViewer}
 
@@ -432,9 +445,10 @@ func p6f32AdminMux(h *Handler) *http.ServeMux {
 	mux.Handle("GET /api/v1/logs/{id}", roleRoute(h.GetLogDetail, usageRoles...))
 	mux.Handle("GET /api/v1/logs/{id}/trace", roleRoute(h.GetRequestTrace, usageRoles...))
 	mux.Handle("GET /api/v1/usage/analytics", roleRoute(h.UsageAnalytics, usageRoles...))
-	mux.Handle("GET /api/v1/internal-status", roleRoute(h.InternalStatus, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleProjectAdmin))
-	mux.Handle("GET /api/v1/dashboard/stats", roleRoute(h.DashboardStats, usageRoles...))
-	mux.Handle("GET /api/v1/runtime/status", roleRoute(h.RuntimeStatus, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin))
+	mux.Handle("GET /api/v1/internal-status", roleRoute(h.InternalStatus, auth.RolePlatformAdmin, auth.RoleOrgAdmin))
+	mux.Handle("GET /api/v1/dashboard/stats", exactRoleRoute(h.DashboardStats,
+		auth.RoleLegacyAdmin, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleOrgViewer))
+	mux.Handle("GET /api/v1/runtime/status", roleRoute(h.RuntimeStatus, auth.RolePlatformAdmin, auth.RoleOrgAdmin))
 	return mux
 }
 

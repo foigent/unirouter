@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -12,11 +13,324 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
 )
 
+const apiKeyPrefixInsertMaxAttempts = 4
+
+var errAPIKeyAuthorizationChanged = errors.New("API-key authorization changed")
+
+type apiKeyMutationOperation string
+
+const (
+	apiKeyMutationCreate apiKeyMutationOperation = "create"
+	apiKeyMutationUpdate apiKeyMutationOperation = "update"
+)
+
+type apiKeyAuthorizationIntent struct {
+	operation               apiKeyMutationOperation
+	targetOrgID             int64
+	sourceProjectID         int64
+	targetProjectID         int64
+	targetProjectMustActive bool
+	validateOwnership       bool
+	ownerUserID             int64
+	keyType                 string
+}
+
+type apiKeyAuditState struct {
+	OrgID         int64
+	ProjectID     int64
+	OwnerUserID   int64
+	KeyType       string
+	Name          string
+	Status        string
+	RPMLimit      int
+	QPSLimit      int
+	AllowedIPs    string
+	AllowedModels string
+	PolicyLabels  string
+}
+
+func isAPIKeyPrefixCollision(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "idx_api_keys_prefix"
+}
+
+// reauthorizeAPIKeyMutationTx establishes one commit order with user and
+// project-membership revocation. It deliberately takes every user advisory
+// lock before any API-key row lock; user mutation paths use the same lock
+// order before disabling personal keys.
+func (h *Handler) reauthorizeAPIKeyMutationTx(ctx context.Context, tx pgx.Tx, intent apiKeyAuthorizationIntent) error {
+	actorUserID := middleware.GetUserIDFromContext(ctx)
+	actorOrgID := middleware.GetOrgIDFromContext(ctx)
+	expectedRole := middleware.GetUserRoleFromContext(ctx)
+	if actorUserID <= 0 || actorOrgID <= 0 || expectedRole == "" || intent.targetOrgID <= 0 {
+		return errAPIKeyAuthorizationChanged
+	}
+	if intent.validateOwnership && (!validAPIKeyType(intent.keyType) ||
+		(intent.keyType == "personal" && intent.ownerUserID <= 0) ||
+		(intent.keyType != "personal" && intent.ownerUserID != 0)) {
+		return errAPIKeyAuthorizationChanged
+	}
+
+	lockUserIDs := []int64{actorUserID}
+	if intent.validateOwnership && intent.ownerUserID > 0 && intent.ownerUserID != actorUserID {
+		lockUserIDs = append(lockUserIDs, intent.ownerUserID)
+	}
+	sort.Slice(lockUserIDs, func(i, j int) bool { return lockUserIDs[i] < lockUserIDs[j] })
+	for _, userID := range lockUserIDs {
+		if err := lockProjectMembershipMutation(ctx, tx, userID); err != nil {
+			return fmt.Errorf("lock API-key authorization user %d: %w", userID, err)
+		}
+	}
+
+	var currentOrgID int64
+	var currentRole, userStatus, actorOrganizationStatus string
+	err := tx.QueryRow(ctx,
+		`SELECT u.org_id, u.role, u.status, o.status
+		 FROM users u
+		 JOIN orgs o ON o.id = u.org_id
+		 WHERE u.id = $1
+		 FOR SHARE OF u, o`,
+		actorUserID,
+	).Scan(&currentOrgID, &currentRole, &userStatus, &actorOrganizationStatus)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errAPIKeyAuthorizationChanged
+	}
+	if err != nil {
+		return fmt.Errorf("read current API-key actor: %w", err)
+	}
+	if currentOrgID != actorOrgID || currentRole != expectedRole || userStatus != "active" || actorOrganizationStatus != "active" {
+		return errAPIKeyAuthorizationChanged
+	}
+
+	role := auth.NormalizeRole(currentRole)
+	switch intent.operation {
+	case apiKeyMutationCreate:
+		if !auth.RoleIn(role, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper) {
+			return errAPIKeyAuthorizationChanged
+		}
+	case apiKeyMutationUpdate:
+		if !auth.RoleIn(role, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin) {
+			return errAPIKeyAuthorizationChanged
+		}
+	default:
+		return errAPIKeyAuthorizationChanged
+	}
+	if role != auth.RolePlatformAdmin && currentOrgID != intent.targetOrgID {
+		return errAPIKeyAuthorizationChanged
+	}
+
+	var targetOrganizationStatus string
+	err = tx.QueryRow(ctx, `SELECT status FROM orgs WHERE id = $1 FOR SHARE`, intent.targetOrgID).Scan(&targetOrganizationStatus)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errAPIKeyAuthorizationChanged
+	}
+	if err != nil {
+		return fmt.Errorf("read API-key target organization: %w", err)
+	}
+	if targetOrganizationStatus != "active" {
+		return errAPIKeyAuthorizationChanged
+	}
+
+	projectRequirements := make(map[int64]bool, 2)
+	if intent.sourceProjectID > 0 {
+		projectRequirements[intent.sourceProjectID] = false
+	}
+	if intent.targetProjectID > 0 {
+		projectRequirements[intent.targetProjectID] = projectRequirements[intent.targetProjectID] || intent.targetProjectMustActive
+	}
+	if intent.operation == apiKeyMutationCreate && intent.targetProjectID <= 0 {
+		return errAPIKeyAuthorizationChanged
+	}
+	if intent.operation == apiKeyMutationUpdate && intent.sourceProjectID <= 0 &&
+		role != auth.RolePlatformAdmin && role != auth.RoleOrgAdmin {
+		return errAPIKeyAuthorizationChanged
+	}
+	projectIDs := make([]int64, 0, len(projectRequirements))
+	for projectID := range projectRequirements {
+		projectIDs = append(projectIDs, projectID)
+	}
+	sort.Slice(projectIDs, func(i, j int) bool { return projectIDs[i] < projectIDs[j] })
+	for _, projectID := range projectIDs {
+		mustBeActive := projectRequirements[projectID]
+		if err := reauthorizeAPIKeyProjectTx(ctx, tx, role, actorUserID, intent.targetOrgID, projectID, mustBeActive, intent.operation); err != nil {
+			return err
+		}
+	}
+
+	if intent.operation == apiKeyMutationCreate && auth.IsProjectScopedRole(role) {
+		if intent.keyType == "service" || (role == auth.RoleDeveloper && (intent.keyType != "personal" || intent.ownerUserID != actorUserID)) {
+			return errAPIKeyAuthorizationChanged
+		}
+	}
+	if intent.validateOwnership {
+		if err := reauthorizeAPIKeyOwnerTx(ctx, tx, intent.targetOrgID, intent.targetProjectID, intent.ownerUserID, intent.keyType); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func reauthorizeAPIKeyProjectTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	role string,
+	actorUserID, orgID, projectID int64,
+	mustBeActive bool,
+	operation apiKeyMutationOperation,
+) error {
+	var projectStatus string
+	err := tx.QueryRow(ctx,
+		`SELECT status FROM projects WHERE id = $1 AND org_id = $2 FOR SHARE`,
+		projectID, orgID,
+	).Scan(&projectStatus)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errAPIKeyAuthorizationChanged
+	}
+	if err != nil {
+		return fmt.Errorf("read API-key project authorization: %w", err)
+	}
+	if mustBeActive && projectStatus != "active" {
+		return errAPIKeyAuthorizationChanged
+	}
+	if role == auth.RolePlatformAdmin || role == auth.RoleOrgAdmin {
+		return nil
+	}
+
+	var membershipRole string
+	err = tx.QueryRow(ctx,
+		`SELECT pm.role
+		 FROM project_members pm
+		 WHERE pm.project_id = $1 AND pm.user_id = $2
+		 FOR SHARE OF pm`,
+		projectID, actorUserID,
+	).Scan(&membershipRole)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errAPIKeyAuthorizationChanged
+	}
+	if err != nil {
+		return fmt.Errorf("read current API-key project membership: %w", err)
+	}
+	if operation == apiKeyMutationCreate {
+		if membershipRole != projectMemberAdmin && membershipRole != projectMemberDeveloper && membershipRole != auth.RoleDeveloper {
+			return errAPIKeyAuthorizationChanged
+		}
+		return nil
+	}
+	if role != auth.RoleProjectAdmin || membershipRole != projectMemberAdmin {
+		return errAPIKeyAuthorizationChanged
+	}
+	return nil
+}
+
+func reauthorizeAPIKeyOwnerTx(ctx context.Context, tx pgx.Tx, orgID, projectID, ownerUserID int64, keyType string) error {
+	if keyType != "personal" {
+		if ownerUserID != 0 {
+			return errAPIKeyAuthorizationChanged
+		}
+		return nil
+	}
+	if ownerUserID <= 0 {
+		return errAPIKeyAuthorizationChanged
+	}
+
+	var ownerStatus string
+	err := tx.QueryRow(ctx,
+		`SELECT owner_user.status
+		 FROM users owner_user
+		 WHERE owner_user.id = $1 AND owner_user.org_id = $2
+		 FOR SHARE OF owner_user`,
+		ownerUserID, orgID,
+	).Scan(&ownerStatus)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errAPIKeyAuthorizationChanged
+	}
+	if err != nil {
+		return fmt.Errorf("read current API-key owner: %w", err)
+	}
+	if ownerStatus != "active" {
+		return errAPIKeyAuthorizationChanged
+	}
+	if projectID <= 0 {
+		return nil
+	}
+
+	var ownerMembershipRole string
+	err = tx.QueryRow(ctx,
+		`SELECT owner_membership.role
+		 FROM project_members owner_membership
+		 WHERE owner_membership.project_id = $1 AND owner_membership.user_id = $2
+		 FOR SHARE OF owner_membership`,
+		projectID, ownerUserID,
+	).Scan(&ownerMembershipRole)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errAPIKeyAuthorizationChanged
+	}
+	if err != nil {
+		return fmt.Errorf("read current API-key owner membership: %w", err)
+	}
+	return nil
+}
+
+func loadAPIKeyAuditStateTx(ctx context.Context, tx pgx.Tx, id int64, forUpdate bool) (apiKeyAuditState, error) {
+	query := `SELECT org_id, COALESCE(project_id, 0), COALESCE(owner_user_id, 0),
+	                COALESCE(NULLIF(key_type, ''), 'shared'), name, status, rpm_limit, qps_limit,
+	                COALESCE(allowed_ips, ''), COALESCE(allowed_models, ''), COALESCE(policy_labels, '')
+	         FROM api_keys WHERE id = $1`
+	if forUpdate {
+		query += " FOR UPDATE"
+	}
+	var state apiKeyAuditState
+	err := tx.QueryRow(ctx, query, id).Scan(
+		&state.OrgID, &state.ProjectID, &state.OwnerUserID, &state.KeyType,
+		&state.Name, &state.Status, &state.RPMLimit, &state.QPSLimit,
+		&state.AllowedIPs, &state.AllowedModels, &state.PolicyLabels,
+	)
+	return state, err
+}
+
+func apiKeyChangedFieldProjection(state apiKeyAuditState, changedFields []string) map[string]interface{} {
+	projection := make(map[string]interface{}, len(changedFields)+1)
+	for _, field := range changedFields {
+		switch field {
+		case "name":
+			projection[field] = state.Name
+		case "allowed_ips":
+			projection[field] = state.AllowedIPs
+		case "allowed_models":
+			projection[field] = state.AllowedModels
+		case "policy_labels":
+			labels := splitPolicyLabelCSV(state.PolicyLabels)
+			sort.Strings(labels)
+			projection[field] = labels
+		case "status":
+			projection[field] = state.Status
+		case "project_id":
+			projection[field] = state.ProjectID
+		case "owner_user_id":
+			projection[field] = nullableOwnerUserID(state.OwnerUserID)
+		case "key_type":
+			projection[field] = state.KeyType
+		case "rpm_limit":
+			projection[field] = state.RPMLimit
+		case "rps_limit", "qps_limit":
+			// Both names are API aliases for the same stored value. Recording both
+			// makes the durable transition unambiguous without retaining secrets.
+			projection["rps_limit"] = state.QPSLimit
+			projection["qps_limit"] = state.QPSLimit
+		}
+	}
+	return projection
+}
+
 func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
+	page, pageSize := parsePagination(r)
+	offset := paginationOffset(page, pageSize)
 	var conditions []string
 	var args []interface{}
 	argIdx := 1
@@ -58,6 +372,13 @@ func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 		whereClause = "WHERE " + joinStrings(conditions, " AND ")
 	}
 
+	var total int
+	countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM api_keys ak %s`, whereClause)
+	if err := h.db.QueryRow(r.Context(), countQuery, args...).Scan(&total); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Count failed"})
+		return
+	}
+
 	rows, err := h.db.Query(r.Context(),
 		fmt.Sprintf(`SELECT ak.id, ak.org_id, COALESCE(ak.project_id, 0), ak.name, ak.key_prefix, ak.status, ak.rpm_limit, ak.qps_limit,
 		        COALESCE(ak.budget_limit, 0), ak.allowed_ips, ak.allowed_models, ak.created_at,
@@ -69,8 +390,8 @@ func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 		 LEFT JOIN projects p ON p.id = ak.project_id AND p.org_id = ak.org_id
 		 LEFT JOIN users u ON u.id = ak.owner_user_id AND u.org_id = ak.org_id
 		 %s
-		 ORDER BY ak.id ASC`, whereClause),
-		args...,
+		 ORDER BY ak.id ASC LIMIT $%d OFFSET $%d`, whereClause, argIdx, argIdx+1),
+		append(args, pageSize, offset)...,
 	)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Query failed"})
@@ -108,7 +429,7 @@ func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{"data": keys, "total": len(keys)})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": keys, "total": total})
 }
 
 func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
@@ -130,12 +451,21 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.OrgID == 0 {
-		if actorOrgID, constrained := actorOrgConstraint(r.Context()); constrained {
-			req.OrgID = actorOrgID
-		} else {
-			req.OrgID = 1
+	if req.OrgID < 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid org_id"})
+		return
+	}
+	if actorOrgID, constrained := actorOrgConstraint(r.Context()); constrained {
+		if actorOrgID <= 0 {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			return
 		}
+		if req.OrgID == 0 {
+			req.OrgID = actorOrgID
+		}
+	} else if req.OrgID == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "org_id is required"})
+		return
 	}
 	if !actorCanAccessOrg(r.Context(), req.OrgID) {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
@@ -215,22 +545,97 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rawKey, keyPrefix, err := auth.GenerateAPIKey(req.OrgID)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to generate key"})
-		return
+	auditDetail := map[string]interface{}{
+		"org_id":     req.OrgID,
+		"project_id": projectID,
+		"key_type":   keyType,
+		"name":       req.Name,
+		"after": map[string]interface{}{
+			"org_id":         req.OrgID,
+			"project_id":     projectID,
+			"owner_user_id":  nullableOwnerUserID(ownerUserID),
+			"key_type":       keyType,
+			"name":           req.Name,
+			"status":         "active",
+			"rpm_limit":      req.RPMLimit,
+			"rps_limit":      req.QPSLimit,
+			"qps_limit":      req.QPSLimit,
+			"allowed_ips":    req.AllowedIPs,
+			"allowed_models": req.AllowedModels,
+			"policy_labels":  splitPolicyLabelCSV(policyLabels),
+		},
 	}
 
-	keyHash := auth.HashAPIKey(rawKey, h.apiKeyHashSecret)
-
+	atomicAudit := !isUnauthenticatedUnitContext(r.Context())
+	var rawKey, keyPrefix string
 	var id int64
-	err = h.db.QueryRow(r.Context(),
-		`INSERT INTO api_keys (org_id, project_id, owner_user_id, key_type, name, key_hash, key_prefix, status, rpm_limit, qps_limit, allowed_ips, allowed_models, policy_labels, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8, $9, $10, $11, $12, NOW(), NOW())
-		 RETURNING id`,
-		req.OrgID, projectID, nullableOwnerUserID(ownerUserID), keyType, req.Name, keyHash, keyPrefix, req.RPMLimit, req.QPSLimit, req.AllowedIPs, req.AllowedModels, policyLabels,
-	).Scan(&id)
+	for attempt := 0; attempt < apiKeyPrefixInsertMaxAttempts; attempt++ {
+		rawKey, keyPrefix, err = auth.GenerateAPIKey(req.OrgID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to generate key"})
+			return
+		}
+
+		keyHash := auth.HashAPIKey(rawKey, h.apiKeyHashSecret)
+		if !atomicAudit {
+			err = h.db.QueryRow(r.Context(),
+				`INSERT INTO api_keys (org_id, project_id, owner_user_id, key_type, name, key_hash, key_prefix, status, rpm_limit, qps_limit, allowed_ips, allowed_models, policy_labels, created_at, updated_at)
+				 VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8, $9, $10, $11, $12, NOW(), NOW())
+				 RETURNING id`,
+				req.OrgID, projectID, nullableOwnerUserID(ownerUserID), keyType, req.Name, keyHash, keyPrefix, req.RPMLimit, req.QPSLimit, req.AllowedIPs, req.AllowedModels, policyLabels,
+			).Scan(&id)
+			if err == nil || !isAPIKeyPrefixCollision(err) {
+				break
+			}
+			continue
+		}
+
+		tx, beginErr := h.db.Begin(r.Context())
+		if beginErr != nil {
+			err = beginErr
+			break
+		}
+		if err = h.reauthorizeAPIKeyMutationTx(r.Context(), tx, apiKeyAuthorizationIntent{
+			operation:               apiKeyMutationCreate,
+			targetOrgID:             req.OrgID,
+			targetProjectID:         projectID,
+			targetProjectMustActive: true,
+			ownerUserID:             ownerUserID,
+			keyType:                 keyType,
+			validateOwnership:       true,
+		}); err != nil {
+			_ = tx.Rollback(r.Context())
+			break
+		}
+		err = tx.QueryRow(r.Context(),
+			`INSERT INTO api_keys (org_id, project_id, owner_user_id, key_type, name, key_hash, key_prefix, status, rpm_limit, qps_limit, allowed_ips, allowed_models, policy_labels, created_at, updated_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8, $9, $10, $11, $12, NOW(), NOW())
+			 RETURNING id`,
+			req.OrgID, projectID, nullableOwnerUserID(ownerUserID), keyType, req.Name, keyHash, keyPrefix, req.RPMLimit, req.QPSLimit, req.AllowedIPs, req.AllowedModels, policyLabels,
+		).Scan(&id)
+		if err != nil {
+			_ = tx.Rollback(r.Context())
+			if isAPIKeyPrefixCollision(err) {
+				continue
+			}
+			break
+		}
+		if err = insertAuditEntry(r.Context(), tx, "apikey.create", "apikey", strconv.FormatInt(id, 10), auditDetail,
+			requestAuditMeta(r, req.OrgID, projectID)); err != nil {
+			_ = tx.Rollback(r.Context())
+			break
+		}
+		if err = tx.Commit(r.Context()); err != nil {
+			_ = tx.Rollback(r.Context())
+			break
+		}
+		break
+	}
 	if err != nil {
+		if errors.Is(err, errAPIKeyAuthorizationChanged) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			return
+		}
 		if writeCommercialLimitViolation(w, err) {
 			return
 		}
@@ -238,27 +643,9 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.recordAuditForProjectFromRequest(r, "apikey.create", "apikey", strconv.FormatInt(id, 10), projectID,
-		map[string]interface{}{
-			"org_id":     req.OrgID,
-			"project_id": projectID,
-			"key_type":   keyType,
-			"name":       req.Name,
-			"after": map[string]interface{}{
-				"org_id":         req.OrgID,
-				"project_id":     projectID,
-				"owner_user_id":  nullableOwnerUserID(ownerUserID),
-				"key_type":       keyType,
-				"name":           req.Name,
-				"status":         "active",
-				"rpm_limit":      req.RPMLimit,
-				"rps_limit":      req.QPSLimit,
-				"qps_limit":      req.QPSLimit,
-				"allowed_ips":    req.AllowedIPs,
-				"allowed_models": req.AllowedModels,
-				"policy_labels":  splitPolicyLabelCSV(policyLabels),
-			},
-		})
+	if !atomicAudit {
+		h.recordAuditForOrgProjectFromRequest(r, req.OrgID, projectID, "apikey.create", "apikey", strconv.FormatInt(id, 10), auditDetail)
+	}
 
 	response := map[string]interface{}{
 		"id":            id,
@@ -312,7 +699,11 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 			`SELECT org_id, COALESCE(project_id, 0), COALESCE(owner_user_id, 0), COALESCE(NULLIF(key_type, ''), 'shared')
 			 FROM api_keys WHERE id = $1`, id,
 		).Scan(&currentOrgID, &currentProjectID, &currentOwnerUserID, &currentKeyType); err != nil {
-			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Key not found"})
+			if errors.Is(err, pgx.ErrNoRows) {
+				writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Key not found"})
+			} else {
+				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to read key"})
+			}
 			return
 		}
 		if !h.canWriteAPIKey(r.Context(), currentOrgID, currentProjectID) {
@@ -326,6 +717,8 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 	argIdx := 1
 	targetOrgID := currentOrgID
 	targetProjectID := currentProjectID
+	targetOwnerUserID := currentOwnerUserID
+	targetKeyType := currentKeyType
 
 	if req.Name != nil {
 		name, validationErr := normalizeAPIKeyName(*req.Name)
@@ -363,6 +756,10 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		argIdx++
 	}
 	if req.Status != nil {
+		if *req.Status != "active" && *req.Status != "disabled" {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid status"})
+			return
+		}
 		sets = append(sets, fmt.Sprintf("status = $%d", argIdx))
 		args = append(args, *req.Status)
 		argIdx++
@@ -401,6 +798,8 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 			writeAPIKeyOwnershipError(w, err)
 			return
 		}
+		targetOwnerUserID = ownerUserID
+		targetKeyType = keyType
 		sets = append(sets, fmt.Sprintf("owner_user_id = $%d", argIdx))
 		args = append(args, nullableOwnerUserID(ownerUserID))
 		argIdx++
@@ -442,8 +841,58 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		args = append(args, actorOrgID)
 	}
 
+	var tx pgx.Tx
+	var beforeAuditState apiKeyAuditState
+	execer := auditExecer(h.db)
+	if !isUnauthenticatedUnitContext(r.Context()) {
+		tx, err = h.db.Begin(r.Context())
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to update key"})
+			return
+		}
+		defer tx.Rollback(r.Context())
+		execer = tx
+		if err := h.reauthorizeAPIKeyMutationTx(r.Context(), tx, apiKeyAuthorizationIntent{
+			operation:               apiKeyMutationUpdate,
+			targetOrgID:             targetOrgID,
+			sourceProjectID:         currentProjectID,
+			targetProjectID:         targetProjectID,
+			targetProjectMustActive: req.ProjectID != nil,
+			ownerUserID:             targetOwnerUserID,
+			keyType:                 targetKeyType,
+			validateOwnership:       req.ProjectID != nil || req.OwnerUserID != nil || req.KeyType != nil,
+		}); err != nil {
+			if errors.Is(err, errAPIKeyAuthorizationChanged) {
+				writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			} else {
+				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to reauthorize key update"})
+			}
+			return
+		}
+		beforeAuditState, err = loadAPIKeyAuditStateTx(r.Context(), tx, id, true)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Key not found"})
+			} else {
+				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to read key"})
+			}
+			return
+		}
+		if beforeAuditState.OrgID != currentOrgID || beforeAuditState.ProjectID != currentProjectID ||
+			beforeAuditState.OwnerUserID != currentOwnerUserID || beforeAuditState.KeyType != currentKeyType {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Key changed; retry the update"})
+			return
+		}
+		// The organization is immutable, but constraining the write to the
+		// authorized snapshot prevents a stale pre-read from mutating another row.
+		if _, constrained := actorOrgConstraint(r.Context()); !constrained {
+			whereClause += fmt.Sprintf(" AND org_id = $%d", len(args)+1)
+			args = append(args, currentOrgID)
+		}
+	}
+
 	query := fmt.Sprintf("UPDATE api_keys SET %s WHERE %s", joinStrings(sets, ", "), whereClause)
-	tag, err := h.db.Exec(r.Context(), query, args...)
+	tag, err := execer.Exec(r.Context(), query, args...)
 	if err != nil {
 		if writeCommercialLimitViolation(w, err) {
 			return
@@ -475,10 +924,14 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 	if req.ProjectID != nil {
 		changedFields = append(changedFields, "project_id")
 	}
-	if req.OwnerUserID != nil {
+	// Ownership resolution can change owner_user_id implicitly when key_type
+	// changes (personal keys acquire an owner; shared/service keys clear it).
+	// Preserve that effective persisted transition in the authoritative audit,
+	// even when the caller did not send owner_user_id explicitly.
+	if req.OwnerUserID != nil || targetOwnerUserID != currentOwnerUserID {
 		changedFields = append(changedFields, "owner_user_id")
 	}
-	if req.KeyType != nil {
+	if req.KeyType != nil || targetKeyType != currentKeyType {
 		changedFields = append(changedFields, "key_type")
 	}
 	if req.RPMLimit != nil {
@@ -490,8 +943,27 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 	if req.QPSLimit != nil {
 		changedFields = append(changedFields, "qps_limit")
 	}
-	h.recordAudit(r.Context(), "apikey.update", "apikey", idStr,
-		map[string]interface{}{"fields": changedFields}, r.RemoteAddr)
+	auditDetail := map[string]interface{}{"fields": changedFields}
+	if tx != nil {
+		afterAuditState, stateErr := loadAPIKeyAuditStateTx(r.Context(), tx, id, false)
+		if stateErr != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to capture updated key"})
+			return
+		}
+		auditDetail["before"] = apiKeyChangedFieldProjection(beforeAuditState, changedFields)
+		auditDetail["after"] = apiKeyChangedFieldProjection(afterAuditState, changedFields)
+		if err := insertAuditEntry(r.Context(), tx, "apikey.update", "apikey", idStr, auditDetail,
+			requestAuditMeta(r, afterAuditState.OrgID, afterAuditState.ProjectID)); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
+			return
+		}
+		if err := tx.Commit(r.Context()); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to update key"})
+			return
+		}
+	} else {
+		h.recordAudit(r.Context(), "apikey.update", "apikey", idStr, auditDetail, r.RemoteAddr)
+	}
 
 	response := map[string]interface{}{"message": "Key updated"}
 	if req.PolicyLabels != nil {
@@ -529,28 +1001,89 @@ func (h *Handler) DisableAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var eventOrgID, eventProjectID int64
+	var eventOrgID, eventProjectID, eventOwnerUserID int64
 	var eventName, eventKeyPrefix, currentStatus string
 	if err := h.db.QueryRow(r.Context(),
-		`SELECT org_id, COALESCE(project_id, 0), name, key_prefix, status FROM api_keys WHERE id = $1`,
+		`SELECT org_id, COALESCE(project_id, 0), COALESCE(owner_user_id, 0), name, key_prefix, status
+		 FROM api_keys WHERE id = $1`,
 		id,
-	).Scan(&eventOrgID, &eventProjectID, &eventName, &eventKeyPrefix, &currentStatus); err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Key not found"})
+	).Scan(&eventOrgID, &eventProjectID, &eventOwnerUserID, &eventName, &eventKeyPrefix, &currentStatus); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Key not found"})
+		} else {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to read key"})
+		}
 		return
 	}
 
-	if !h.canWriteAPIKey(r.Context(), eventOrgID, eventProjectID) {
+	role := actorRole(r.Context())
+	actorUserID := middleware.GetUserIDFromContext(r.Context())
+	developerOwnsProjectKey := role == auth.RoleDeveloper &&
+		actorUserID > 0 &&
+		eventProjectID > 0 &&
+		eventOwnerUserID == actorUserID &&
+		actorCanAccessOrg(r.Context(), eventOrgID) &&
+		h.hasProjectMembership(
+			r.Context(),
+			eventProjectID,
+			projectMemberAdmin,
+			projectMemberDeveloper,
+			auth.RoleDeveloper,
+		)
+	if role == auth.RoleDeveloper && !developerOwnsProjectKey {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		return
+	}
+	if role != auth.RoleDeveloper && !h.canWriteAPIKey(r.Context(), eventOrgID, eventProjectID) {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 		return
 	}
 
 	query := `UPDATE api_keys SET status = 'disabled', updated_at = NOW() WHERE id = $1`
 	args := []interface{}{id}
-	if actorOrgID, constrained := actorOrgConstraint(r.Context()); constrained {
+	if role == auth.RoleDeveloper {
+		query += ` AND org_id = $2 AND project_id = $3 AND owner_user_id = $4`
+		args = append(args, eventOrgID, eventProjectID, actorUserID)
+	} else if actorOrgID, constrained := actorOrgConstraint(r.Context()); constrained {
 		query += ` AND org_id = $2`
 		args = append(args, actorOrgID)
 	}
-	tag, err := h.db.Exec(r.Context(), query, args...)
+	var tx pgx.Tx
+	execer := auditExecer(h.db)
+	if !isUnauthenticatedUnitContext(r.Context()) {
+		tx, err = h.db.Begin(r.Context())
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to disable key"})
+			return
+		}
+		defer tx.Rollback(r.Context())
+		execer = tx
+		var lockedOrgID, lockedProjectID, lockedOwnerUserID int64
+		var lockedName, lockedKeyPrefix, lockedStatus string
+		if err := tx.QueryRow(r.Context(),
+			`SELECT org_id, COALESCE(project_id, 0), COALESCE(owner_user_id, 0), name, key_prefix, status
+			 FROM api_keys WHERE id = $1 FOR UPDATE`, id,
+		).Scan(&lockedOrgID, &lockedProjectID, &lockedOwnerUserID, &lockedName, &lockedKeyPrefix, &lockedStatus); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Key not found"})
+			} else {
+				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to read key"})
+			}
+			return
+		}
+		if lockedOrgID != eventOrgID || lockedProjectID != eventProjectID || lockedOwnerUserID != eventOwnerUserID {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Key changed; retry the update"})
+			return
+		}
+		eventName, eventKeyPrefix, currentStatus = lockedName, lockedKeyPrefix, lockedStatus
+		if role != auth.RoleDeveloper {
+			if _, constrained := actorOrgConstraint(r.Context()); !constrained {
+				query += fmt.Sprintf(" AND org_id = $%d", len(args)+1)
+				args = append(args, eventOrgID)
+			}
+		}
+	}
+	tag, err := execer.Exec(r.Context(), query, args...)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to disable key"})
 		return
@@ -560,7 +1093,23 @@ func (h *Handler) DisableAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.recordAudit(r.Context(), "apikey.disable", "apikey", idStr, map[string]interface{}{}, r.RemoteAddr)
+	auditDetail := map[string]interface{}{
+		"before": map[string]interface{}{"status": currentStatus},
+		"after":  map[string]interface{}{"status": "disabled"},
+	}
+	if tx != nil {
+		if err := insertAuditEntry(r.Context(), tx, "apikey.disable", "apikey", idStr, auditDetail,
+			requestAuditMeta(r, eventOrgID, eventProjectID)); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
+			return
+		}
+		if err := tx.Commit(r.Context()); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to disable key"})
+			return
+		}
+	} else {
+		h.recordAudit(r.Context(), "apikey.disable", "apikey", idStr, auditDetail, r.RemoteAddr)
+	}
 	if currentStatus != "disabled" {
 		h.emitAPIKeyDisabledEvent(r.Context(), eventOrgID, eventProjectID, id, eventName, eventKeyPrefix)
 	}
@@ -861,12 +1410,14 @@ func (h *Handler) resolveAPIKeyProjectID(ctx context.Context, orgID, requestedPr
 		return projectID, err
 	}
 
+	// PRD2 establishes one active default project as an organization invariant.
+	// Key mutation paths must not silently create a control-plane resource as a
+	// pre-transaction side effect: a later authorization or audit failure would
+	// otherwise leave an unaudited project behind. Fail closed when the invariant
+	// is broken and let the organization/project lifecycle repair it explicitly.
 	var projectID int64
 	err := h.db.QueryRow(ctx,
-		`INSERT INTO projects (org_id, name, slug, description, status, created_at, updated_at)
-		 VALUES ($1, 'Default Project', 'default', 'Default project created for PRD2 compatibility', 'active', NOW(), NOW())
-		 ON CONFLICT (org_id, slug) DO UPDATE SET updated_at = projects.updated_at
-		 RETURNING id`,
+		`SELECT id FROM projects WHERE org_id = $1 AND slug = 'default' AND status = 'active'`,
 		orgID,
 	).Scan(&projectID)
 	return projectID, err

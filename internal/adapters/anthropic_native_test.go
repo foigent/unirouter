@@ -202,6 +202,34 @@ func TestP6F41AnthropicExplicitZeroAndMissingUsageRemainDistinct(t *testing.T) {
 	}
 }
 
+func TestAnthropicNativeIncompleteCoreUsageIsNotAuthoritative(t *testing.T) {
+	adapter := NewAnthropicNative()
+	tests := []struct {
+		name  string
+		usage string
+	}{
+		{name: "empty usage object", usage: `{}`},
+		{name: "input only", usage: `{"input_tokens":7}`},
+		{name: "output only", usage: `{"output_tokens":5}`},
+		{name: "null input", usage: `{"input_tokens":null,"output_tokens":5}`},
+		{name: "null output", usage: `{"input_tokens":7,"output_tokens":null}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp, err := adapter.ParseResponse(context.Background(), ResponseInput{
+				StatusCode: http.StatusOK,
+				Body:       []byte(`{"id":"msg_incomplete","content":[],"usage":` + tt.usage + `}`),
+			})
+			if err != nil {
+				t.Fatalf("incomplete usage should allow the caller fallback: %v", err)
+			}
+			if !resp.Usage.IsMissing() {
+				t.Fatalf("incomplete usage became provider authority: %+v", resp.Usage)
+			}
+		})
+	}
+}
+
 func TestAnthropicNativeParseResponse_CacheReadCreationUsage(t *testing.T) {
 	adapter := NewAnthropicNative()
 	resp, err := adapter.ParseResponse(context.Background(), ResponseInput{
@@ -437,6 +465,59 @@ func TestP6F41AnthropicStreamExplicitZeroAndMissingUsageRemainDistinct(t *testin
 	missing := finalUsage(`{"type":"message_start","message":{"id":"msg_missing"}}`)
 	if missing.HasUsage {
 		t.Fatalf("missing stream usage became authoritative zero: %+v", missing)
+	}
+}
+
+func TestAnthropicNativeStreamIncompleteCoreUsageIsNotAuthoritative(t *testing.T) {
+	adapter := NewAnthropicNative()
+	tests := []struct {
+		name         string
+		messageStart string
+		messageDelta string
+		wantUsage    bool
+	}{
+		{
+			name:         "empty start usage",
+			messageStart: `{"type":"message_start","message":{"id":"msg_empty","usage":{}}}`,
+			messageDelta: `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}`,
+		},
+		{
+			name:         "null start input",
+			messageStart: `{"type":"message_start","message":{"id":"msg_null_input","usage":{"input_tokens":null}}}`,
+			messageDelta: `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}`,
+		},
+		{
+			name:         "empty final usage",
+			messageStart: `{"type":"message_start","message":{"id":"msg_empty_final","usage":{"input_tokens":7}}}`,
+			messageDelta: `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{}}`,
+		},
+		{
+			name:         "null final output",
+			messageStart: `{"type":"message_start","message":{"id":"msg_null_output","usage":{"input_tokens":7}}}`,
+			messageDelta: `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":null}}`,
+		},
+		{
+			name:         "complete split usage",
+			messageStart: `{"type":"message_start","message":{"id":"msg_complete","usage":{"input_tokens":7}}}`,
+			messageDelta: `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}`,
+			wantUsage:    true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state := &StreamState{}
+			input := StreamChunkInput{RequestedModel: "company-chat", State: state}
+			if _, err := adapter.NormalizeStreamChunk(context.Background(), withStreamData(input, tt.messageStart)); err != nil {
+				t.Fatalf("message_start failed: %v", err)
+			}
+			chunk, err := adapter.NormalizeStreamChunk(context.Background(), withStreamData(input, tt.messageDelta))
+			if err != nil {
+				t.Fatalf("message_delta failed: %v", err)
+			}
+			if chunk.HasUsage != tt.wantUsage {
+				t.Fatalf("HasUsage=%t, want %t: %+v", chunk.HasUsage, tt.wantUsage, chunk.Usage)
+			}
+		})
 	}
 }
 

@@ -1,7 +1,7 @@
 # UniRouter Agent 执行与复核协议
 
-**版本：** 2.0
-**生效方式：** User 已确认单一执行负责人流程；本文件修改时间为最新时间
+**版本：** 2.1
+**生效方式：** User 已确认单一执行负责人流程；当前仓库版本是规则权威
 
 ---
 
@@ -174,7 +174,7 @@ docs/agent-workflows/reviews/<batch-id>-<reviewer>-<YYYYMMDD>.md
 
 | 级别 | 处理 |
 |------|------|
-| **P0/P1** | 立即阻断未合并/未部署动作，或重新打开已完成批次 |
+| **P0/P1** | 立即阻断未合并/未部署动作；已发布问题建立新的纠错批次并保留原证据，不得静默重开已完成 PRD 范围 |
 | **P2** | 执行负责人评估是否当前批修复；未修复必须进入 `OPEN-ISSUES.md` 或 backlog |
 | **P3** | 可记录为非阻断建议，不影响当前事实状态 |
 
@@ -188,7 +188,7 @@ docs/agent-workflows/reviews/<batch-id>-<reviewer>-<YYYYMMDD>.md
 2. 分支默认使用 `codex/<scope>`。
 3. 提交前检查工作树，不能回退或覆盖不属于当前批次的改动。
 4. PR 必须说明范围、风险、测试、证据、非目标和目标环境状态。
-5. UniRouter 当前强制 CI 至少包括 `Backend Tests`、`Frontend Build`、`Docker Build`；全部通过后才可合并。
+5. UniRouter 当前强制 CI 包括 `Change Routing` 和它判定适用的 `Backend Tests`、`Frontend Build`、`Docker Build`；适用检查通过后才可合并。纯文档 PR 只能由路由显式跳过昂贵任务。
 6. 合并后以 `origin/main` 的实际 commit/PR 为准更新状态，不以本地分支 SHA 猜测。
 7. 强制推送、删除远端保护分支或绕过检查不在默认授权内。
 

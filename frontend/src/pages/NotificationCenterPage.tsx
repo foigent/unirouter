@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Form, Modal, Select, SideSheet, Table, Tabs, Tag, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconBell, IconPlus, IconRefresh, IconSetting } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
+import { isBillingRole, isPlatformAdminRole } from '../navigation';
+import { useAuthStore } from '../store/auth';
 import { formatDateTime } from '../utils/formatDate';
-import { PageHeader, StatusTag, Surface } from '../ui';
+import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
+import { loadAllPages } from '../utils/loadAllPages';
 import {
   deliveryStateLabel,
   deliveryStateOptions,
@@ -25,6 +28,7 @@ type TabKey = 'events' | 'deliveries' | 'webhooks';
 
 interface NotificationEvent {
   id: number;
+  org_id?: number;
   project_id?: number | null;
   event_type: string;
   severity: string;
@@ -95,101 +99,208 @@ function parseEventTypes(value?: string) {
     .filter(Boolean);
 }
 
+function projectIDFromLocation() {
+  const raw = new URLSearchParams(window.location.search).get('project_id');
+  if (!raw || !/^\d+$/.test(raw)) return undefined;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) && value > 0 ? value : undefined;
+}
+
+const eventStatusOptions = [
+  { label: '未确认', value: 'open' },
+  { label: '已确认', value: 'acknowledged' },
+  { label: '已解决', value: 'resolved' },
+];
+
+const financialEventTypeOptions = eventTypeOptions.filter(option => (
+  !option.value
+  || option.value === 'project_budget.threshold'
+  || option.value === 'token_metering.estimated_ratio.high'
+));
+
+function notificationEventStatusLabel(status?: string) {
+  return eventStatusOptions.find(option => option.value === status)?.label || status || '-';
+}
+
 export default function NotificationCenterPage() {
+  const user = useAuthStore((state) => state.user);
+  const platform = isPlatformAdminRole(user?.role);
+  const billing = isBillingRole(user?.role);
+  const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(platform ? user?.org_id : undefined);
+  const [organizations, setOrganizations] = useState<Array<{ id: number; name: string }>>([]);
   const [activeTab, setActiveTab] = useState<TabKey>('events');
+  const projectID = projectIDFromLocation();
+  const targetOrgID = platform ? selectedOrgID : undefined;
 
   const [events, setEvents] = useState<NotificationEvent[]>([]);
   const [eventTotal, setEventTotal] = useState(0);
   const [eventPage, setEventPage] = useState(1);
   const [eventPageSize, setEventPageSize] = useState(20);
   const [eventLoading, setEventLoading] = useState(false);
+  const [eventLoadError, setEventLoadError] = useState('');
   const [eventType, setEventType] = useState('');
   const [severity, setSeverity] = useState('');
+  const [eventStatus, setEventStatus] = useState('');
   const [deliveryState, setDeliveryState] = useState('');
+  const [eventActionID, setEventActionID] = useState<number | null>(null);
 
   const [deliveries, setDeliveries] = useState<NotificationDelivery[]>([]);
   const [deliveryTotal, setDeliveryTotal] = useState(0);
   const [deliveryPage, setDeliveryPage] = useState(1);
   const [deliveryPageSize, setDeliveryPageSize] = useState(20);
   const [deliveryLoading, setDeliveryLoading] = useState(false);
+  const [deliveryLoadError, setDeliveryLoadError] = useState('');
   const [deliveryStatus, setDeliveryStatus] = useState('');
+  const [deliveryEventID, setDeliveryEventID] = useState<number | undefined>();
 
   const [webhooks, setWebhooks] = useState<NotificationWebhook[]>([]);
   const [webhookTotal, setWebhookTotal] = useState(0);
   const [webhookPage, setWebhookPage] = useState(1);
   const [webhookPageSize, setWebhookPageSize] = useState(20);
   const [webhookLoading, setWebhookLoading] = useState(false);
+  const [webhookLoadError, setWebhookLoadError] = useState('');
   const [webhookSheet, setWebhookSheet] = useState<{ mode: 'create' | 'edit'; record?: NotificationWebhook } | null>(null);
   const [webhookFormApi, setWebhookFormApi] = useState<any>(null);
+  const eventRequestVersion = useRef(0);
+  const deliveryRequestVersion = useRef(0);
+  const webhookRequestVersion = useRef(0);
 
   const loadEvents = useCallback(async (page = eventPage, pageSize = eventPageSize) => {
+    const version = ++eventRequestVersion.current;
     setEventLoading(true);
+    setEventLoadError('');
+    setEvents([]);
+    setEventTotal(0);
     try {
       const data = await api.getNotificationEvents(page, pageSize, {
         event_type: eventType,
         severity,
+        status: eventStatus,
         delivery_state: deliveryState,
+        ...(targetOrgID ? { org_id: targetOrgID } : {}),
+        project_id: projectID,
       });
+      if (version !== eventRequestVersion.current) return;
       setEvents((data?.data || []) as NotificationEvent[]);
       setEventTotal(Number(data?.total || 0));
-    } catch (err: any) {
-      Toast.error(`通知事件加载失败${err?.message ? `：${err.message}` : ''}`);
+    } catch {
+      if (version !== eventRequestVersion.current) return;
+      setEventLoadError('无法加载当前范围的通知事件。');
+      Toast.error('通知事件加载失败');
     } finally {
-      setEventLoading(false);
+      if (version === eventRequestVersion.current) setEventLoading(false);
     }
-  }, [deliveryState, eventPage, eventPageSize, eventType, severity]);
+  }, [deliveryState, eventPage, eventPageSize, eventStatus, eventType, projectID, severity, targetOrgID]);
 
   const loadDeliveries = useCallback(async (page = deliveryPage, pageSize = deliveryPageSize) => {
+    const version = ++deliveryRequestVersion.current;
     setDeliveryLoading(true);
+    setDeliveryLoadError('');
+    setDeliveries([]);
+    setDeliveryTotal(0);
     try {
-      const data = await api.getNotificationDeliveries(page, pageSize, { status: deliveryStatus });
+      const data = await api.getNotificationDeliveries(page, pageSize, {
+        status: deliveryStatus,
+        event_id: deliveryEventID,
+        ...(targetOrgID ? { org_id: targetOrgID } : {}),
+        project_id: projectID,
+      });
+      if (version !== deliveryRequestVersion.current) return;
       setDeliveries((data?.data || []) as NotificationDelivery[]);
       setDeliveryTotal(Number(data?.total || 0));
-    } catch (err: any) {
-      Toast.error(`投递记录加载失败${err?.message ? `：${err.message}` : ''}`);
+    } catch {
+      if (version !== deliveryRequestVersion.current) return;
+      setDeliveryLoadError('无法加载当前范围的投递记录。');
+      Toast.error('投递记录加载失败');
     } finally {
-      setDeliveryLoading(false);
+      if (version === deliveryRequestVersion.current) setDeliveryLoading(false);
     }
-  }, [deliveryPage, deliveryPageSize, deliveryStatus]);
+  }, [deliveryEventID, deliveryPage, deliveryPageSize, deliveryStatus, projectID, targetOrgID]);
 
   const loadWebhooks = useCallback(async (page = webhookPage, pageSize = webhookPageSize) => {
+    const version = ++webhookRequestVersion.current;
     setWebhookLoading(true);
+    setWebhookLoadError('');
+    setWebhooks([]);
+    setWebhookTotal(0);
     try {
-      const data = await api.getNotificationWebhooks(page, pageSize);
+      const data = await api.getNotificationWebhooks(page, pageSize, {
+        ...(targetOrgID ? { org_id: targetOrgID } : {}),
+        project_id: projectID,
+      });
+      if (version !== webhookRequestVersion.current) return;
       setWebhooks((data?.data || []) as NotificationWebhook[]);
       setWebhookTotal(Number(data?.total || 0));
-    } catch (err: any) {
-      Toast.error(`Webhook 路由加载失败${err?.message ? `：${err.message}` : ''}`);
+    } catch {
+      if (version !== webhookRequestVersion.current) return;
+      setWebhookLoadError('无法加载当前范围的 Webhook 路由。');
+      Toast.error('Webhook 路由加载失败');
     } finally {
-      setWebhookLoading(false);
+      if (version === webhookRequestVersion.current) setWebhookLoading(false);
     }
-  }, [webhookPage, webhookPageSize]);
+  }, [projectID, targetOrgID, webhookPage, webhookPageSize]);
+
+  const invalidateEvents = () => {
+    eventRequestVersion.current += 1;
+    setEvents([]);
+    setEventTotal(0);
+    setEventLoadError('');
+  };
+
+  const invalidateDeliveries = () => {
+    deliveryRequestVersion.current += 1;
+    setDeliveries([]);
+    setDeliveryTotal(0);
+    setDeliveryLoadError('');
+  };
 
   useEffect(() => { loadEvents(); }, [loadEvents]);
   useEffect(() => { loadDeliveries(); }, [loadDeliveries]);
-  useEffect(() => { loadWebhooks(); }, [loadWebhooks]);
+  useEffect(() => {
+    if (!billing) loadWebhooks();
+  }, [billing, loadWebhooks]);
+
+  useEffect(() => {
+    if (!platform) return;
+    if (user?.org_id) setSelectedOrgID(current => current || user.org_id);
+    loadAllPages<{ id: number; name: string }>((page, size) => api.getOrganizations(page, size))
+      .then(setOrganizations)
+      .catch((err: any) => Toast.error(`组织列表加载失败${err?.message ? `：${err.message}` : ''}`));
+  }, [platform, user?.org_id]);
+
+  useEffect(() => {
+    if (!webhookSheet || !webhookFormApi) return;
+    const record = webhookSheet.record;
+    webhookFormApi.setValues(record ? {
+      name: record.name,
+      url: '',
+      event_types: toEventTypeList(record.event_types) === '-' ? '' : toEventTypeList(record.event_types),
+      enabled: (record.scope_verified ? record.enabled : record.scope_quarantine_previous_enabled) ? 'true' : 'false',
+      project_id: record.project_id || projectID || undefined,
+    } : { enabled: 'true', project_id: projectID });
+  }, [projectID, webhookFormApi, webhookSheet]);
 
   const openWebhookSheet = (record?: NotificationWebhook) => {
     setWebhookSheet(record ? { mode: 'edit', record } : { mode: 'create' });
-    setTimeout(() => {
-      webhookFormApi?.setValues(record ? {
-        name: record.name,
-        url: record.url,
-        event_types: toEventTypeList(record.event_types) === '-' ? '' : toEventTypeList(record.event_types),
-        enabled: (record.scope_verified ? record.enabled : record.scope_quarantine_previous_enabled) ? 'true' : 'false',
-        project_id: record.project_id || undefined,
-      } : { enabled: 'true' });
-    }, 0);
   };
 
   const saveWebhook = async (values: any) => {
-    const payload = {
+    const enteredProjectID = String(values.project_id || '').trim();
+    const selectedProjectID = projectID || (enteredProjectID ? Number(enteredProjectID) : 0);
+    if (enteredProjectID && (!Number.isSafeInteger(selectedProjectID) || selectedProjectID <= 0)) {
+      Toast.error('项目 ID 必须是正整数');
+      return;
+    }
+    const payload: Record<string, unknown> = {
       name: values.name,
-      url: values.url,
-      project_id: values.project_id ? Number(values.project_id) : 0,
+      ...(targetOrgID ? { org_id: targetOrgID } : {}),
+      project_id: selectedProjectID,
       event_types: parseEventTypes(values.event_types),
       enabled: values.enabled !== 'false',
     };
+    if (webhookSheet?.mode !== 'edit' || String(values.url || '').trim()) {
+      payload.url = String(values.url || '').trim();
+    }
     try {
       if (webhookSheet?.mode === 'edit' && webhookSheet.record) {
         await api.updateNotificationWebhook(webhookSheet.record.id, payload);
@@ -203,6 +314,74 @@ export default function NotificationCenterPage() {
     } catch (err: any) {
       Toast.error(`保存失败${err?.message ? `：${err.message}` : ''}`);
     }
+  };
+
+  const updateEventStatus = async (record: NotificationEvent, action: 'acknowledge' | 'resolve') => {
+    setEventActionID(record.id);
+    try {
+      if (action === 'acknowledge') {
+        if (targetOrgID) await api.acknowledgeNotificationEvent(record.id, projectID, targetOrgID);
+        else await api.acknowledgeNotificationEvent(record.id, projectID);
+        Toast.success('事件已确认');
+      } else {
+        if (targetOrgID) await api.resolveNotificationEvent(record.id, projectID, targetOrgID);
+        else await api.resolveNotificationEvent(record.id, projectID);
+        Toast.success('事件已解决');
+      }
+      await loadEvents();
+    } catch (err: any) {
+      Toast.error(`事件处理失败${err?.message ? `：${err.message}` : ''}`);
+    } finally {
+      setEventActionID(null);
+    }
+  };
+
+  const showEventDeliveries = (record: NotificationEvent) => {
+    invalidateDeliveries();
+    setDeliveryEventID(record.id);
+    setDeliveryPage(1);
+    setActiveTab('deliveries');
+  };
+
+  const changeOrganization = (value: unknown) => {
+    const orgID = Number(value);
+    if (!Number.isSafeInteger(orgID) || orgID <= 0) return;
+    if (projectID) {
+      const params = new URLSearchParams(window.location.search);
+      params.delete('project_id');
+      const query = params.toString();
+      window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
+    }
+    setSelectedOrgID(orgID);
+    eventRequestVersion.current += 1;
+    deliveryRequestVersion.current += 1;
+    webhookRequestVersion.current += 1;
+    setEventPage(1);
+    setDeliveryPage(1);
+    setWebhookPage(1);
+    setEvents([]);
+    setEventTotal(0);
+    setDeliveries([]);
+    setDeliveryTotal(0);
+    setWebhooks([]);
+    setWebhookTotal(0);
+    setDeliveryEventID(undefined);
+    setWebhookSheet(null);
+    setEventLoadError('');
+    setDeliveryLoadError('');
+    setWebhookLoadError('');
+  };
+
+  const confirmEventResolution = (record: NotificationEvent) => {
+    Modal.confirm({
+      title: '确认解决事件',
+      content: '解决后当前版本不能重新打开该事件；Webhook 投递记录不会被删除或重试。',
+      okText: '确认解决',
+      cancelText: '取消',
+      okButtonProps: { 'aria-label': '确认解决' },
+      cancelButtonProps: { 'aria-label': '取消' },
+      onOk: () => updateEventStatus(record, 'resolve'),
+    });
   };
 
   const verifyWebhookScope = (record: NotificationWebhook) => {
@@ -221,6 +400,8 @@ export default function NotificationCenterPage() {
       ),
       okText: '确认范围',
       cancelText: '取消',
+      okButtonProps: { 'aria-label': '确认范围' },
+      cancelButtonProps: { 'aria-label': '取消' },
       onOk: async () => {
         try {
           await api.verifyNotificationWebhookScope(record.id, record.updated_at);
@@ -241,14 +422,27 @@ export default function NotificationCenterPage() {
     { title: '标题', dataIndex: 'title', width: 220, render: (v: string, row: NotificationEvent) => notificationTitleLabel(row.event_type, v) },
     { title: '消息', dataIndex: 'message', ellipsis: true, render: (v: string, row: NotificationEvent) => notificationMessageLabel(row.event_type, v) },
     { title: '资源', width: 160, render: (_: unknown, row: NotificationEvent) => notificationResourceLabel(row.resource, row.resource_id) },
-    { title: '投递', dataIndex: 'delivery_state', width: 130, render: (v: string) => <StatusTag status={v}>{deliveryStateLabel(v)}</StatusTag> },
+    { title: '处理状态', dataIndex: 'status', width: 120, render: (v: string) => <StatusTag status={v}>{notificationEventStatusLabel(v)}</StatusTag> },
+    { title: '投递状态', dataIndex: 'delivery_state', width: 130, render: (v: string) => <StatusTag status={v}>{deliveryStateLabel(v)}</StatusTag> },
     { title: '时间', dataIndex: 'created_at', width: 180, render: (v: string) => formatDateTime(v) },
+    {
+      title: '操作',
+      width: 230,
+      fixed: 'right' as const,
+      render: (_: unknown, row: NotificationEvent) => (
+        <div style={{ display: 'flex', gap: 6 }}>
+          <Button size="small" onClick={() => showEventDeliveries(row)}>查看投递</Button>
+          {row.status === 'open' && <Button size="small" loading={eventActionID === row.id} onClick={() => updateEventStatus(row, 'acknowledge')}>确认</Button>}
+          {row.status !== 'resolved' && <Button size="small" type="primary" loading={eventActionID === row.id} onClick={() => confirmEventResolution(row)}>解决</Button>}
+        </div>
+      ),
+    },
   ];
 
   const deliveryColumns = [
     { title: 'ID', dataIndex: 'id', width: 72 },
     { title: '事件', dataIndex: 'event_type', width: 220, render: (v: string) => <Text>{eventTypeLabel(v)}</Text> },
-    { title: 'Webhook', dataIndex: 'webhook_name', width: 180, render: (v: string) => v || '-' },
+    { title: billing ? '投递路由' : 'Webhook', dataIndex: 'webhook_name', width: 180, render: (v: string) => v || '-' },
     { title: '状态', dataIndex: 'status', width: 120, render: (v: string, row: NotificationDelivery) => row.retry_scope_quarantined ? <Tag color="orange">安全隔离</Tag> : <StatusTag status={v}>{deliveryStateLabel(v)}</StatusTag> },
     { title: '尝试', dataIndex: 'attempts', width: 88 },
     { title: '响应', dataIndex: 'response_status', width: 88, render: (v: number) => v || '-' },
@@ -268,7 +462,7 @@ export default function NotificationCenterPage() {
     { title: 'ID', dataIndex: 'id', width: 72 },
     { title: '组织', dataIndex: 'org_id', width: 100, render: (v: number) => `#${v}` },
     { title: '名称', dataIndex: 'name', width: 180 },
-    { title: 'URL', dataIndex: 'url', ellipsis: true },
+    { title: '目标（路径已隐藏）', dataIndex: 'url', ellipsis: true },
     { title: '事件类型', dataIndex: 'event_types', width: 260, render: (v: unknown) => eventTypeListLabel(v) },
     { title: '范围', dataIndex: 'project_id', width: 120, render: (v: number) => v ? `项目 #${v}` : '组织级' },
     {
@@ -295,19 +489,44 @@ export default function NotificationCenterPage() {
   return (
     <div className="ur-page ur-page-wide">
       <PageHeader
-        eyebrow="流量治理"
-        title="通知中心"
-        description="查看事件、Webhook 投递状态和项目预算通知路由；“未配置 Webhook”表示事件已入库，但没有匹配的启用投递路由。"
-        actions={<Button icon={<IconRefresh />} onClick={() => { loadEvents(); loadDeliveries(); loadWebhooks(); }}>刷新</Button>}
+        eyebrow={billing ? '计费与资金' : '监控与用量'}
+        title={billing ? '财务提醒' : '通知中心'}
+        description={billing
+          ? `查看并处理预算与计量质量提醒${projectID ? `；当前项目 #${projectID}` : ''}。投递结果仅供核对，Webhook 路由由组织或平台管理员维护。“未配置”表示事件已记录但没有匹配的启用路由。`
+          : `查看并处理通知事件、核对投递结果和管理 Webhook 路由${projectID ? `；当前项目 #${projectID}` : ''}。“未配置”表示事件已记录但没有匹配的启用路由。`}
+        actions={(
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {platform && (
+              <>
+                <Text type="tertiary">目标组织</Text>
+                <Select
+                  aria-label="目标组织"
+                  placeholder="选择目标组织"
+                  value={selectedOrgID}
+                  optionList={organizations.map(org => ({ label: `${org.name}（ID ${org.id}）`, value: org.id }))}
+                  onChange={changeOrganization}
+                  disabled={eventLoading || deliveryLoading || (!billing && webhookLoading)}
+                  style={{ width: 220 }}
+                />
+              </>
+            )}
+            <Button icon={<IconRefresh />} onClick={() => {
+              loadEvents();
+              loadDeliveries();
+              if (!billing) loadWebhooks();
+            }}>刷新</Button>
+          </div>
+        )}
       />
 
       <Surface>
         <Tabs activeKey={activeTab} onChange={(key) => setActiveTab(key as TabKey)}>
-          <TabPane tab="事件" itemKey="events">
+          <TabPane tab={billing ? '财务事件' : '事件'} itemKey="events">
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-              <Select optionList={eventTypeOptions} value={eventType || undefined} placeholder="事件类型" style={{ width: 250 }} onChange={(v) => { setEventType((v as string) || ''); setEventPage(1); }} />
-              <Select optionList={severityOptions} value={severity || undefined} placeholder="级别" style={{ width: 160 }} onChange={(v) => { setSeverity((v as string) || ''); setEventPage(1); }} />
-              <Select optionList={deliveryStateOptions} value={deliveryState || undefined} placeholder="投递状态" style={{ width: 190 }} onChange={(v) => { setDeliveryState((v as string) || ''); setEventPage(1); }} />
+              <Select optionList={billing ? financialEventTypeOptions : eventTypeOptions} value={eventType || undefined} placeholder={billing ? '财务事件类型' : '事件类型'} style={{ width: 250 }} onChange={(v) => { invalidateEvents(); setEventType((v as string) || ''); setEventPage(1); }} />
+              <Select optionList={severityOptions} value={severity || undefined} placeholder="级别" style={{ width: 160 }} onChange={(v) => { invalidateEvents(); setSeverity((v as string) || ''); setEventPage(1); }} />
+              <Select optionList={eventStatusOptions} value={eventStatus || undefined} placeholder="处理状态" style={{ width: 160 }} onChange={(v) => { invalidateEvents(); setEventStatus((v as string) || ''); setEventPage(1); }} />
+              <Select optionList={deliveryStateOptions} value={deliveryState || undefined} placeholder="投递状态" style={{ width: 190 }} onChange={(v) => { invalidateEvents(); setDeliveryState((v as string) || ''); setEventPage(1); }} />
             </div>
             <div className="ur-table-shell">
               <Table
@@ -315,19 +534,28 @@ export default function NotificationCenterPage() {
                 dataSource={events}
                 loading={eventLoading}
                 rowKey="id"
+                empty={eventLoadError ? (
+                  <EmptyState
+                    title="通知事件加载失败"
+                    description={eventLoadError}
+                    actions={<Button type="primary" onClick={() => loadEvents()}>重新加载通知事件</Button>}
+                    minHeight={220}
+                  />
+                ) : <EmptyState title="暂无通知事件" minHeight={220} />}
                 pagination={{
                   currentPage: eventPage,
                   pageSize: eventPageSize,
                   total: eventTotal,
-                  onPageChange: (p: number) => setEventPage(p),
-                  onPageSizeChange: (s: number) => { setEventPageSize(s); setEventPage(1); },
+                  onPageChange: (p: number) => { invalidateEvents(); setEventPage(p); },
+                  onPageSizeChange: (s: number) => { invalidateEvents(); setEventPageSize(s); setEventPage(1); },
                 }}
               />
             </div>
           </TabPane>
-          <TabPane tab="投递" itemKey="deliveries">
+          <TabPane tab={billing ? '投递记录（只读）' : '投递'} itemKey="deliveries">
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-              <Select optionList={deliveryStatusOptions} value={deliveryStatus || undefined} placeholder="投递状态" style={{ width: 180 }} onChange={(v) => { setDeliveryStatus((v as string) || ''); setDeliveryPage(1); }} />
+              <Select optionList={deliveryStatusOptions} value={deliveryStatus || undefined} placeholder="投递状态" style={{ width: 180 }} onChange={(v) => { invalidateDeliveries(); setDeliveryStatus((v as string) || ''); setDeliveryPage(1); }} />
+              {deliveryEventID && <Text>仅显示事件 #{deliveryEventID} <Button size="small" onClick={() => { invalidateDeliveries(); setDeliveryEventID(undefined); setDeliveryPage(1); }}>显示全部</Button></Text>}
             </div>
             <div className="ur-table-shell">
               <Table
@@ -335,60 +563,86 @@ export default function NotificationCenterPage() {
                 dataSource={deliveries}
                 loading={deliveryLoading}
                 rowKey="id"
+                empty={deliveryLoadError ? (
+                  <EmptyState
+                    title="投递记录加载失败"
+                    description={deliveryLoadError}
+                    actions={<Button type="primary" onClick={() => loadDeliveries()}>重新加载投递记录</Button>}
+                    minHeight={220}
+                  />
+                ) : <EmptyState title="暂无投递记录" minHeight={220} />}
                 pagination={{
                   currentPage: deliveryPage,
                   pageSize: deliveryPageSize,
                   total: deliveryTotal,
-                  onPageChange: (p: number) => setDeliveryPage(p),
-                  onPageSizeChange: (s: number) => { setDeliveryPageSize(s); setDeliveryPage(1); },
+                  onPageChange: (p: number) => { invalidateDeliveries(); setDeliveryPage(p); },
+                  onPageSizeChange: (s: number) => { invalidateDeliveries(); setDeliveryPageSize(s); setDeliveryPage(1); },
                 }}
               />
             </div>
           </TabPane>
-          <TabPane tab="Webhook" itemKey="webhooks">
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-              <Button icon={<IconPlus />} type="primary" onClick={() => openWebhookSheet()}>新增 Webhook</Button>
-            </div>
-            <div className="ur-table-shell">
-              <Table
-                columns={webhookColumns}
-                dataSource={webhooks}
-                loading={webhookLoading}
-                rowKey="id"
-                pagination={{
-                  currentPage: webhookPage,
-                  pageSize: webhookPageSize,
-                  total: webhookTotal,
-                  onPageChange: (p: number) => setWebhookPage(p),
-                  onPageSizeChange: (s: number) => { setWebhookPageSize(s); setWebhookPage(1); },
-                }}
-              />
-            </div>
-          </TabPane>
+          {!billing && (
+            <TabPane tab="Webhook" itemKey="webhooks">
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+                <Button icon={<IconPlus />} type="primary" onClick={() => openWebhookSheet()}>新增 Webhook</Button>
+              </div>
+              <div className="ur-table-shell">
+                <Table
+                  columns={webhookColumns}
+                  dataSource={webhooks}
+                  loading={webhookLoading}
+                  rowKey="id"
+                  empty={webhookLoadError ? (
+                    <EmptyState
+                      title="Webhook 路由加载失败"
+                      description={webhookLoadError}
+                      actions={<Button type="primary" onClick={() => loadWebhooks()}>重新加载 Webhook 路由</Button>}
+                      minHeight={220}
+                    />
+                  ) : <EmptyState title="暂无 Webhook 路由" minHeight={220} />}
+                  pagination={{
+                    currentPage: webhookPage,
+                    pageSize: webhookPageSize,
+                    total: webhookTotal,
+                    onPageChange: (p: number) => setWebhookPage(p),
+                    onPageSizeChange: (s: number) => { setWebhookPageSize(s); setWebhookPage(1); },
+                  }}
+                />
+              </div>
+            </TabPane>
+          )}
         </Tabs>
       </Surface>
 
-      <SideSheet
-        title={webhookSheet?.mode === 'edit' ? '编辑 Webhook' : '新增 Webhook'}
-        visible={!!webhookSheet}
-        width={520}
-        onCancel={() => setWebhookSheet(null)}
-      >
-        <Form getFormApi={(formApi: any) => setWebhookFormApi(formApi)} onSubmit={saveWebhook}>
-          <Form.Input field="name" label="名称" rules={[{ required: true, message: '必填' }]} />
-          <Form.Input field="url" label="URL" rules={[{ required: true, message: '必填' }]} placeholder="https://ops.example.com/webhook" />
-          <Form.Input field="project_id" label="项目 ID" placeholder="留空为组织级路由" />
-          <Form.TextArea field="event_types" label="事件类型" placeholder="留空表示全部事件；可用逗号或换行分隔" autosize={{ minRows: 3, maxRows: 6 }} />
-          <Form.Select field="enabled" label="状态" initValue="true" optionList={[
-            { label: '启用', value: 'true' },
-            { label: '停用', value: 'false' },
-          ]} />
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
-            <Button onClick={() => setWebhookSheet(null)}>取消</Button>
-            <Button type="primary" icon={<IconBell />} onClick={() => webhookFormApi?.submitForm()}>保存</Button>
-          </div>
-        </Form>
-      </SideSheet>
+      {!billing && (
+        <SideSheet
+          title={webhookSheet?.mode === 'edit' ? '编辑 Webhook' : '新增 Webhook'}
+          visible={!!webhookSheet}
+          width={520}
+          onCancel={() => setWebhookSheet(null)}
+        >
+          <Form getFormApi={(formApi: any) => setWebhookFormApi(formApi)} onSubmit={saveWebhook}>
+            <Form.Input field="name" label="名称" rules={[{ required: true, message: '必填' }]} />
+            <Form.Input
+              field="url"
+              label={webhookSheet?.mode === 'edit' ? '新 URL（留空保持现有目标）' : 'URL'}
+              rules={webhookSheet?.mode === 'edit' ? [] : [{ required: true, message: '必填' }]}
+              placeholder={webhookSheet?.mode === 'edit' ? `当前：${webhookSheet.record?.url || '-'}` : 'https://ops.example.com/webhook'}
+              extraText="允许客户内网地址；本机、链路本地和云元数据地址会被拒绝。"
+            />
+            <Form.Input field="project_id" label="项目 ID" placeholder="留空为组织级路由" disabled={webhookSheet?.mode === 'edit' || !!projectID} />
+            <Form.TextArea field="event_types" label="事件类型" placeholder="留空表示全部事件；可用逗号或换行分隔" autosize={{ minRows: 3, maxRows: 6 }} />
+            <Form.Select field="enabled" label="状态" initValue="true" optionList={[
+              { label: '启用', value: 'true' },
+              { label: '停用', value: 'false' },
+            ]} />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
+              <Button onClick={() => setWebhookSheet(null)}>取消</Button>
+              <Button type="primary" icon={<IconBell />} onClick={() => webhookFormApi?.submitForm()}>保存</Button>
+            </div>
+          </Form>
+        </SideSheet>
+      )}
     </div>
   );
 }

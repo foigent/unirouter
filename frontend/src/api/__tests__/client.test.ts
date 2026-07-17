@@ -64,6 +64,31 @@ describe('API Client', () => {
     })
   })
 
+  describe('logout', () => {
+    it('asks the server to revoke the current bearer session', async () => {
+      mockJsonResponse({ success: true })
+
+      await api.logout()
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/v1/auth/logout',
+        expect.objectContaining({ method: 'POST' }),
+      )
+    })
+  })
+
+  describe('getDashboardStats', () => {
+    it('passes the selected organization and time range explicitly', async () => {
+      mockJsonResponse({ total_requests: 0 })
+
+      await api.getDashboardStats('2026-07-15T00:00:00Z', '2026-07-16T00:00:00Z', 22)
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/v1/dashboard/stats?start_time=2026-07-15T00%3A00%3A00Z&end_time=2026-07-16T00%3A00%3A00Z&org_id=22',
+        expect.objectContaining({ headers: expect.any(Object) })
+      )
+    })
+  })
+
   describe('getChannels', () => {
     it('sends GET to /api/v1/channels with pagination', async () => {
       mockJsonResponse({ data: [], total: 0 })
@@ -154,6 +179,34 @@ describe('API Client', () => {
         expect.objectContaining({
           method: 'PUT',
           body: JSON.stringify({ old_password: 'oldpass', new_password: 'newpass123' }),
+        })
+      )
+    })
+  })
+
+  describe('project membership and budget', () => {
+    it('uses explicit project member and field-limited budget endpoints', async () => {
+      mockJsonResponse({ data: [], eligible_users: [], total: 0 })
+      await api.getProjectMembers(31, 2, 50, 'alice@example.com')
+      expect(mockFetch).toHaveBeenLastCalledWith(
+        '/api/v1/projects/31/members?page=2&page_size=50&q=alice%40example.com',
+        expect.any(Object)
+      )
+
+      mockJsonResponse({ success: true })
+      await api.upsertProjectMember(31, 9, 'project_developer')
+      expect(mockFetch).toHaveBeenLastCalledWith(
+        '/api/v1/projects/31/members/9',
+        expect.objectContaining({ method: 'PUT', body: JSON.stringify({ role: 'project_developer' }) })
+      )
+
+      mockJsonResponse({ project_id: 31, budget_cents: 123400, budget_period: 'monthly' })
+      await api.updateProjectBudget(31, { budget_cents: 123400, budget_period: 'monthly' })
+      expect(mockFetch).toHaveBeenLastCalledWith(
+        '/api/v1/projects/31/budget',
+        expect.objectContaining({
+          method: 'PUT',
+          body: JSON.stringify({ budget_cents: 123400, budget_period: 'monthly' }),
         })
       )
     })
@@ -394,6 +447,20 @@ describe('API Client', () => {
       await api.updateGuardrailPolicy(8, { version: 1, mode: 'enforce' })
       expect(mockFetch.mock.calls[2][0]).toBe('/api/v1/guardrail-policies/8')
       expect(mockFetch.mock.calls[2][1]).toEqual(expect.objectContaining({ method: 'PUT' }))
+    })
+
+    it('loads and replaces the deployment-wide sensitive-word list', async () => {
+      mockJsonResponse({ data: ['blocked'] })
+      await api.getSensitiveWords()
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/sensitive-words')
+
+      mockJsonResponse({ data: ['blocked', 'restricted'] })
+      await api.replaceSensitiveWords(['blocked', 'restricted'])
+      expect(mockFetch.mock.calls[1][0]).toBe('/api/v1/sensitive-words')
+      expect(mockFetch.mock.calls[1][1]).toEqual(expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ words: ['blocked', 'restricted'] }),
+      }))
     })
   })
 

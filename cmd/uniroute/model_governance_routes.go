@@ -11,6 +11,7 @@ type modelGovernanceRouteGuard func(http.HandlerFunc) http.Handler
 type modelGovernanceRouteGuards struct {
 	organization modelGovernanceRouteGuard
 	projectRead  modelGovernanceRouteGuard
+	modelSetRead modelGovernanceRouteGuard
 }
 
 // registerModelGovernanceRoutes keeps the organization-governance authority
@@ -23,7 +24,7 @@ func registerModelGovernanceRoutes(mux *http.ServeMux, handler *admin.Handler, g
 	mux.Handle("GET /api/v1/model-aliases", guards.organization(handler.ListModelAliases))
 	mux.Handle("POST /api/v1/model-aliases", guards.organization(handler.CreateModelAlias))
 	mux.Handle("PUT /api/v1/model-aliases/{id}", guards.organization(handler.UpdateModelAlias))
-	mux.Handle("GET /api/v1/model-sets", guards.organization(handler.ListModelSets))
+	mux.Handle("GET /api/v1/model-sets", guards.modelSetRead(handler.ListModelSets))
 	mux.Handle("POST /api/v1/model-sets", guards.organization(handler.CreateModelSet))
 	mux.Handle("GET /api/v1/model-sets/{id}/items", guards.organization(handler.ListModelSetItems))
 	mux.Handle("PUT /api/v1/model-sets/{id}/items", guards.organization(handler.ReplaceModelSetItems))

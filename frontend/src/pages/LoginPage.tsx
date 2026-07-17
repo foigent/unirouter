@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Form, Button, Typography, Tag } from '@douyinfe/semi-ui';
 import { IconBolt, IconHistogram, IconShield, IconServer } from '@douyinfe/semi-icons';
@@ -15,21 +15,32 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [oidcLoading, setOIDCLoading] = useState(false);
   const [oidcConfig, setOIDCConfig] = useState<{ enabled?: boolean; provider_name?: string } | null>(null);
+  const [oidcConfigState, setOIDCConfigState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [error, setError] = useState('');
+  const oidcRequestVersion = useRef(0);
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadOIDCConfig = useCallback(() => {
+    const version = ++oidcRequestVersion.current;
+    setOIDCConfigState('loading');
+    setOIDCConfig(null);
     api.getOIDCConfig()
       .then((config) => {
-        if (!cancelled) setOIDCConfig(config || { enabled: false });
+        if (version === oidcRequestVersion.current) {
+          setOIDCConfig(config || { enabled: false });
+          setOIDCConfigState('ready');
+        }
       })
       .catch(() => {
-        if (!cancelled) setOIDCConfig({ enabled: false });
+        if (version === oidcRequestVersion.current) setOIDCConfigState('error');
       });
-    return () => {
-      cancelled = true;
-    };
   }, []);
+
+  useEffect(() => {
+    loadOIDCConfig();
+    return () => {
+      oidcRequestVersion.current += 1;
+    };
+  }, [loadOIDCConfig]);
 
   const handleSubmit = async (values: Record<string, any>) => {
     setLoading(true);
@@ -67,23 +78,23 @@ export default function LoginPage() {
               <span />
               <span />
               <span />
-                <Tag color="violet">运行中</Tag>
+                <Tag color="violet">产品能力</Tag>
             </div>
             <div className="ur-preview-metrics">
               <div>
                 <IconHistogram />
-                <strong>2.24M</strong>
-                <span>请求量</span>
+                <strong>多供应商</strong>
+                <span>统一接入</span>
               </div>
               <div>
                 <IconShield />
-                <strong>99.92%</strong>
-                <span>成功率</span>
+                <strong>微元精度</strong>
+                <span>计量口径</span>
               </div>
               <div>
                 <IconServer />
-                <strong>18</strong>
-                <span>接入通道</span>
+                <strong>签名校验</strong>
+                <span>离线升级</span>
               </div>
             </div>
             <div className="ur-preview-chart">
@@ -97,9 +108,9 @@ export default function LoginPage() {
               <span style={{ height: '84%' }} />
             </div>
             <div className="ur-preview-list">
-              <div><span /> 策略路由 <strong>运行中</strong></div>
-              <div><span /> 用量计量 <strong>已校验</strong></div>
-              <div><span /> 故障切换 <strong>待命</strong></div>
+              <div><span /> 策略路由 <strong>统一配置</strong></div>
+              <div><span /> 访问控制 <strong>基于角色</strong></div>
+              <div><span /> 审计追踪 <strong>请求级</strong></div>
             </div>
           </div>
         </section>
@@ -116,8 +127,8 @@ export default function LoginPage() {
             </div>
           )}
           <Form onSubmit={handleSubmit} className="ur-login-form">
-            <Form.Input field="username" label="用户名" placeholder="请输入用户名" rules={[{ required: true, message: '请输入用户名' }]} />
-            <PasswordField field="password" label="密码" placeholder="请输入密码" rules={[{ required: true, message: '请输入密码' }]} />
+            <Form.Input field="username" label="用户名" placeholder="请输入用户名" autoComplete="username" rules={[{ required: true, message: '请输入用户名' }]} />
+            <PasswordField field="password" label="密码" placeholder="请输入密码" autoComplete="current-password" rules={[{ required: true, message: '请输入密码' }]} />
             <Button htmlType="submit" theme="solid" block loading={loading} className="ur-primary-action">登录</Button>
           </Form>
           {oidcConfig?.enabled && (
@@ -131,6 +142,12 @@ export default function LoginPage() {
             >
               使用 {oidcConfig.provider_name || 'OIDC'} 登录
             </Button>
+          )}
+          {oidcConfigState === 'error' && (
+            <div className="ur-login-identity-status" role="status">
+              <Text type="secondary">企业登录配置暂时无法确认；这不代表企业登录未启用。</Text>
+              <Button size="small" onClick={loadOIDCConfig}>重新检查企业登录</Button>
+            </div>
           )}
         </section>
       </div>

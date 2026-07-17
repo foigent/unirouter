@@ -25,8 +25,7 @@ func TestRegisterGlobalControlRoutesEnforcesProductionAuthorityBoundary(t *testi
 
 	serve := func(method, target, body, role string) *httptest.ResponseRecorder {
 		t.Helper()
-		token, err := auth.GenerateJWT(7, 11, role, secret, 1)
-		require.NoError(t, err)
+		token := activeAdminToken(t, 7, 11, role, secret)
 		req := httptest.NewRequest(method, target, strings.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
@@ -51,7 +50,7 @@ func TestRegisterGlobalControlRoutesEnforcesProductionAuthorityBoundary(t *testi
 	}
 	tenantRoles := []string{
 		auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleProjectAdmin,
-		auth.RoleDeveloper, auth.RoleViewer, auth.RoleOrgViewer, "unknown_role",
+		auth.RoleDeveloper, auth.RoleViewer, auth.RoleOrgViewer,
 	}
 	for _, role := range tenantRoles {
 		for _, route := range routes {

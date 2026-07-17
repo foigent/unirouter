@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"sort"
@@ -19,14 +20,18 @@ import (
 )
 
 type Options struct {
-	RefreshInterval          time.Duration
-	SnapshotMaxAge           time.Duration
-	ExternalDeadline         time.Duration
-	ExternalConcurrency      int
-	MaxMatchingPolicies      int
-	MaxDetectorTexts         int
-	LocalDetectorMaxBytes    int
-	ExternalDetectorMaxBytes int
+	RefreshInterval           time.Duration
+	SnapshotMaxAge            time.Duration
+	ExternalDeadline          time.Duration
+	ExternalConcurrency       int
+	MaxMatchingPolicies       int
+	MaxDetectorTexts          int
+	LocalDetectorMaxBytes     int
+	ExternalDetectorMaxBytes  int
+	MaxActivePoliciesPerOrg   int
+	MaxActivePlatformPolicies int
+	MaxCachedPolicies         int
+	MaxCachedTenantScopes     int
 }
 
 func DefaultOptions() Options {
@@ -34,6 +39,8 @@ func DefaultOptions() Options {
 		RefreshInterval: time.Second, SnapshotMaxAge: 30 * time.Second,
 		ExternalDeadline: time.Second, ExternalConcurrency: 32, MaxMatchingPolicies: 64,
 		MaxDetectorTexts: 256, LocalDetectorMaxBytes: 128 * 1024, ExternalDetectorMaxBytes: 256 * 1024,
+		MaxActivePoliciesPerOrg: 256, MaxActivePlatformPolicies: 256,
+		MaxCachedPolicies: 4096, MaxCachedTenantScopes: 4096,
 	}
 }
 
@@ -43,16 +50,33 @@ func (o Options) Validate() error {
 		o.MaxMatchingPolicies <= 0 || o.MaxMatchingPolicies > 256 ||
 		o.MaxDetectorTexts <= 0 || o.MaxDetectorTexts > 1024 ||
 		o.LocalDetectorMaxBytes <= 0 || o.LocalDetectorMaxBytes > 1024*1024 ||
-		o.ExternalDetectorMaxBytes <= 0 || o.ExternalDetectorMaxBytes > 1024*1024 {
+		o.ExternalDetectorMaxBytes <= 0 || o.ExternalDetectorMaxBytes > 1024*1024 ||
+		o.MaxActivePoliciesPerOrg <= 0 || o.MaxActivePoliciesPerOrg > 4096 ||
+		o.MaxActivePlatformPolicies <= 0 || o.MaxActivePlatformPolicies > 4096 ||
+		o.MaxCachedPolicies < o.MaxActivePoliciesPerOrg || o.MaxCachedPolicies < o.MaxActivePlatformPolicies ||
+		o.MaxCachedPolicies > 65536 || o.MaxCachedTenantScopes <= 0 || o.MaxCachedTenantScopes > o.MaxCachedPolicies {
 		return fmt.Errorf("invalid guardrail service options")
 	}
 	return nil
 }
 
-type snapshot struct {
+type scopedSnapshot struct {
 	policies []Policy
 	loadedAt time.Time
 	version  string
+}
+
+type snapshot struct {
+	platform                scopedSnapshot
+	tenants                 map[int64]scopedSnapshot
+	tenantDiscoveryComplete bool
+}
+
+type PolicyLimits struct {
+	MaxActivePoliciesPerOrg   int
+	MaxActivePlatformPolicies int
+	MaxCachedPolicies         int
+	MaxCachedTenantScopes     int
 }
 
 type Service struct {
@@ -78,8 +102,28 @@ func NewService(database db.DBQuerier, sensitive *filter.DFAFilter, fingerprintS
 		detectors: make(map[string]Detector), externalSlots: make(chan struct{}, options.ExternalConcurrency),
 	}
 	service.detectors[DetectorPII] = piiSecretsDetector{}
-	service.snapshot.Store(&snapshot{loadedAt: time.Now().UTC(), version: policySetVersion(nil)})
+	service.snapshot.Store(emptySnapshot(time.Now().UTC()))
 	return service, nil
+}
+
+func emptySnapshot(now time.Time) *snapshot {
+	return &snapshot{
+		platform: scopedSnapshot{loadedAt: now, version: policySetVersion(nil)},
+		tenants:  make(map[int64]scopedSnapshot), tenantDiscoveryComplete: true,
+	}
+}
+
+func (s *Service) PolicyLimits() PolicyLimits {
+	options := DefaultOptions()
+	if s != nil {
+		options = s.options
+	}
+	return PolicyLimits{
+		MaxActivePoliciesPerOrg:   options.MaxActivePoliciesPerOrg,
+		MaxActivePlatformPolicies: options.MaxActivePlatformPolicies,
+		MaxCachedPolicies:         options.MaxCachedPolicies,
+		MaxCachedTenantScopes:     options.MaxCachedTenantScopes,
+	}
 }
 
 func (s *Service) RegisterDetector(ref string, detector Detector) error {
@@ -197,15 +241,25 @@ func (s *Service) Refresh(ctx context.Context) error {
 		return fmt.Errorf("guardrail service is unavailable")
 	}
 	if s.db == nil {
-		s.snapshot.Store(&snapshot{loadedAt: time.Now().UTC(), version: policySetVersion(nil)})
+		s.snapshot.Store(emptySnapshot(time.Now().UTC()))
 		return nil
 	}
 	rows, err := s.db.Query(ctx, `
+		WITH active AS (
+			SELECT id, org_id, project_id, api_key_id, name, model, stage,
+			       detector_ref, action, mode, failure_mode, mandatory, config,
+			       version, created_at, updated_at,
+			       COUNT(*) OVER (PARTITION BY org_id) AS scope_count
+			FROM guardrail_policies
+			WHERE mode <> 'disabled'
+		)
 		SELECT id, org_id, project_id, api_key_id, name, model, stage,
 		       detector_ref, action, mode, failure_mode, mandatory, config,
 		       version, created_at, updated_at
-		FROM guardrail_policies
-		ORDER BY mandatory DESC, id ASC`)
+		FROM active
+		WHERE org_id IS NULL OR scope_count <= $1
+		ORDER BY org_id NULLS FIRST, id ASC
+		LIMIT $2`, s.options.MaxActivePoliciesPerOrg, s.options.MaxCachedPolicies+1)
 	if err != nil {
 		return fmt.Errorf("load guardrail policies: %w", err)
 	}
@@ -219,19 +273,175 @@ func (s *Service) Refresh(ctx context.Context) error {
 			return fmt.Errorf("scan guardrail policy: %w", err)
 		}
 		policy.Ref = fmt.Sprintf("guardrail:%d", policy.ID)
-		if err := s.ValidatePolicy(policy); err != nil {
-			return fmt.Errorf("validate guardrail policy %d: %w", policy.ID, err)
-		}
 		policies = append(policies, policy)
-		if len(policies) > 4096 {
-			return fmt.Errorf("guardrail policy snapshot exceeds 4096 rows")
-		}
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate guardrail policies: %w", err)
 	}
-	s.snapshot.Store(&snapshot{policies: policies, loadedAt: time.Now().UTC(), version: policySetVersion(policies)})
+	discoveryComplete := len(policies) <= s.options.MaxCachedPolicies
+	if !discoveryComplete {
+		// Never publish a partial tenant scope. Missing scopes fail closed while
+		// the configured cache bound is exceeded.
+		lastOrg := policies[s.options.MaxCachedPolicies].OrgID
+		policies = policies[:s.options.MaxCachedPolicies]
+		if lastOrg != nil {
+			cut := len(policies)
+			for cut > 0 && policies[cut-1].OrgID != nil && *policies[cut-1].OrgID == *lastOrg {
+				cut--
+			}
+			policies = policies[:cut]
+		}
+	}
+
+	excessRows, err := s.db.Query(ctx, `
+		SELECT org_id
+		FROM guardrail_policies
+		WHERE org_id IS NOT NULL AND mode <> 'disabled'
+		GROUP BY org_id
+		HAVING COUNT(*) > $1
+		ORDER BY org_id
+		LIMIT $2`, s.options.MaxActivePoliciesPerOrg, s.options.MaxCachedTenantScopes+1)
+	if err != nil {
+		return fmt.Errorf("load over-limit guardrail tenant scopes: %w", err)
+	}
+	excess := make(map[int64]struct{})
+	for excessRows.Next() {
+		var orgID int64
+		if err := excessRows.Scan(&orgID); err != nil {
+			excessRows.Close()
+			return fmt.Errorf("scan over-limit guardrail tenant scope: %w", err)
+		}
+		excess[orgID] = struct{}{}
+	}
+	if err := excessRows.Err(); err != nil {
+		excessRows.Close()
+		return fmt.Errorf("iterate over-limit guardrail tenant scopes: %w", err)
+	}
+	excessRows.Close()
+	if len(excess) > s.options.MaxCachedTenantScopes {
+		discoveryComplete = false
+	}
+	return s.publishPolicyRefresh(time.Now().UTC(), policies, excess, discoveryComplete)
+}
+
+func (s *Service) publishPolicyRefresh(now time.Time, policies []Policy, excessOrgs map[int64]struct{}, discoveryComplete bool) error {
+	if s == nil {
+		return fmt.Errorf("guardrail service is unavailable")
+	}
+	current := s.snapshot.Load()
+	if current == nil {
+		current = emptySnapshot(time.Time{})
+	}
+	platformPolicies := make([]Policy, 0)
+	tenantPolicies := make(map[int64][]Policy)
+	for _, policy := range policies {
+		if policy.Mode == ModeDisabled {
+			continue
+		}
+		if policy.OrgID == nil {
+			platformPolicies = append(platformPolicies, policy)
+			continue
+		}
+		tenantPolicies[*policy.OrgID] = append(tenantPolicies[*policy.OrgID], policy)
+	}
+
+	nextPlatform := current.platform
+	var fatalErrors []error
+	if len(platformPolicies) > s.options.MaxActivePlatformPolicies {
+		fatalErrors = append(fatalErrors, fmt.Errorf("platform active policy limit %d exceeded", s.options.MaxActivePlatformPolicies))
+	} else if err := s.validatePolicyScope(platformPolicies); err != nil {
+		fatalErrors = append(fatalErrors, fmt.Errorf("validate platform guardrail scope: %w", err))
+	} else {
+		nextPlatform = newScopedSnapshot(platformPolicies, now)
+	}
+
+	nextTenants := make(map[int64]scopedSnapshot)
+	if !discoveryComplete {
+		for orgID, tenant := range current.tenants {
+			nextTenants[orgID] = tenant
+		}
+		log.Printf("[guardrail] tenant snapshot discovery exceeded cache bounds; known tenants remain isolated and unknown tenants fail closed")
+	}
+	orgIDs := make([]int64, 0, len(tenantPolicies)+len(excessOrgs))
+	seen := make(map[int64]struct{})
+	for orgID := range tenantPolicies {
+		seen[orgID] = struct{}{}
+		orgIDs = append(orgIDs, orgID)
+	}
+	for orgID := range excessOrgs {
+		if _, ok := seen[orgID]; !ok {
+			orgIDs = append(orgIDs, orgID)
+		}
+	}
+	sort.Slice(orgIDs, func(i, j int) bool { return orgIDs[i] < orgIDs[j] })
+	for index, orgID := range orgIDs {
+		if index >= s.options.MaxCachedTenantScopes {
+			discoveryComplete = false
+			log.Printf("[guardrail] tenant snapshot cache limit %d reached; omitted tenants fail closed locally", s.options.MaxCachedTenantScopes)
+			break
+		}
+		orgPolicies := tenantPolicies[orgID]
+		_, explicitlyExcess := excessOrgs[orgID]
+		var scopeErr error
+		switch {
+		case explicitlyExcess || len(orgPolicies) > s.options.MaxActivePoliciesPerOrg:
+			scopeErr = fmt.Errorf("active policy limit %d exceeded", s.options.MaxActivePoliciesPerOrg)
+		case len(platformPolicies)+len(orgPolicies) > s.options.MaxCachedPolicies:
+			scopeErr = fmt.Errorf("policy cache limit %d exceeded", s.options.MaxCachedPolicies)
+		default:
+			scopeErr = s.validatePolicyScope(orgPolicies)
+		}
+		if scopeErr != nil {
+			if previous, ok := current.tenants[orgID]; ok {
+				nextTenants[orgID] = previous
+			} else {
+				nextTenants[orgID] = scopedSnapshot{version: "unavailable"}
+			}
+			log.Printf("[guardrail] tenant %d snapshot refresh rejected; retaining only that tenant's prior scope: %v", orgID, scopeErr)
+			continue
+		}
+		nextTenants[orgID] = newScopedSnapshot(orgPolicies, now)
+	}
+
+	s.snapshot.Store(&snapshot{
+		platform: nextPlatform, tenants: nextTenants,
+		tenantDiscoveryComplete: discoveryComplete,
+	})
+	return errors.Join(fatalErrors...)
+}
+
+func (s *Service) validatePolicyScope(policies []Policy) error {
+	for _, policy := range policies {
+		if err := s.ValidatePolicy(policy); err != nil {
+			return fmt.Errorf("validate guardrail policy %d: %w", policy.ID, err)
+		}
+	}
 	return nil
+}
+
+func newScopedSnapshot(policies []Policy, loadedAt time.Time) scopedSnapshot {
+	cloned := make([]Policy, len(policies))
+	for index, policy := range policies {
+		cloned[index] = cloneSnapshotPolicy(policy)
+	}
+	return scopedSnapshot{policies: cloned, loadedAt: loadedAt, version: policySetVersion(cloned)}
+}
+
+func cloneSnapshotPolicy(policy Policy) Policy {
+	clone := policy
+	clone.OrgID = cloneInt64Pointer(policy.OrgID)
+	clone.ProjectID = cloneInt64Pointer(policy.ProjectID)
+	clone.APIKeyID = cloneInt64Pointer(policy.APIKeyID)
+	clone.Config = append(json.RawMessage(nil), policy.Config...)
+	return clone
+}
+
+func cloneInt64Pointer(value *int64) *int64 {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
 }
 
 func (s *Service) RunRefreshLoop(ctx context.Context) {
@@ -252,12 +462,13 @@ func (s *Service) RunRefreshLoop(ctx context.Context) {
 }
 
 type Pinned struct {
-	service   *Service
-	subject   Subject
-	policies  []Policy
-	version   string
-	stale     bool
-	detectors map[string]Detector
+	service    *Service
+	subject    Subject
+	policies   []Policy
+	version    string
+	stale      bool
+	staleScope string
+	detectors  map[string]Detector
 }
 
 func (s *Service) Pin(subject Subject) *Pinned {
@@ -268,12 +479,22 @@ func (s *Service) Pin(subject Subject) *Pinned {
 	if current == nil {
 		return &Pinned{service: s, subject: subject, stale: true, version: "unavailable"}
 	}
-	policies := make([]Policy, 0)
-	for _, policy := range current.policies {
+	platformPolicies := make([]Policy, 0)
+	for _, policy := range current.platform.policies {
 		if policy.Matches(subject) {
-			policies = append(policies, policy)
+			platformPolicies = append(platformPolicies, policy)
 		}
 	}
+	tenantSnapshot, tenantFound := current.tenants[subject.OrgID]
+	tenantPolicies := make([]Policy, 0)
+	if tenantFound {
+		for _, policy := range tenantSnapshot.policies {
+			if policy.Matches(subject) {
+				tenantPolicies = append(tenantPolicies, policy)
+			}
+		}
+	}
+	policies := append(append([]Policy(nil), platformPolicies...), tenantPolicies...)
 	detectors := make(map[string]Detector)
 	s.mu.RLock()
 	for ref, detector := range s.detectors {
@@ -293,28 +514,71 @@ func (s *Service) Pin(subject Subject) *Pinned {
 			Mode: ModeEnforce, FailureMode: FailureFailClosed, Mandatory: true, Builtin: true,
 		}}, policies...)
 	}
-	version := current.version
+	version := combinedPolicySetVersion(current.platform, tenantSnapshot, tenantFound)
 	if sensitiveVersion != "" {
-		sum := sha256.Sum256([]byte(current.version + "|" + sensitiveVersion))
+		sum := sha256.Sum256([]byte(version + "|" + sensitiveVersion))
 		version = hex.EncodeToString(sum[:8])
+	}
+	staleScope := ""
+	now := time.Now()
+	if snapshotScopeStale(current.platform, now, s.options.SnapshotMaxAge) || len(platformPolicies) > s.options.MaxMatchingPolicies {
+		staleScope = "platform"
+	} else if (tenantFound && snapshotScopeStale(tenantSnapshot, now, s.options.SnapshotMaxAge)) ||
+		(!tenantFound && !current.tenantDiscoveryComplete) || len(policies) > s.options.MaxMatchingPolicies {
+		staleScope = "tenant"
 	}
 	return &Pinned{
 		service: s, subject: subject, policies: policies, version: version,
-		stale:     current.loadedAt.IsZero() || time.Since(current.loadedAt) > s.options.SnapshotMaxAge || len(policies) > s.options.MaxMatchingPolicies,
+		stale: staleScope != "", staleScope: staleScope,
 		detectors: detectors,
 	}
 }
 
+func snapshotScopeStale(scope scopedSnapshot, now time.Time, maxAge time.Duration) bool {
+	return scope.loadedAt.IsZero() || now.Sub(scope.loadedAt) > maxAge
+}
+
+func combinedPolicySetVersion(platform, tenant scopedSnapshot, tenantFound bool) string {
+	if !tenantFound {
+		if platform.version != "" {
+			return platform.version
+		}
+		return policySetVersion(nil)
+	}
+	sum := sha256.Sum256([]byte(platform.version + "|" + tenant.version))
+	return hex.EncodeToString(sum[:8])
+}
+
+func (p *Pinned) StreamAdvisoryPolicyIdentities() []PolicyIdentity {
+	if p == nil || p.service == nil || p.stale {
+		return nil
+	}
+	identities := make([]PolicyIdentity, 0)
+	for _, policy := range p.policies {
+		if policy.Stage == StageStreamOutput && policy.Mode != ModeDisabled && !policyRequiresPreflush(policy) {
+			identities = append(identities, PolicyIdentity{Ref: policy.Ref, Version: policy.Version})
+		}
+	}
+	return identities
+}
+
 func (p *Pinned) Evaluate(ctx context.Context, stage string, texts []Text) Result {
-	return p.evaluateSelected(ctx, stage, texts, func(Policy) bool { return true }, true)
+	return p.evaluateSelected(ctx, stage, texts, true, func(Policy) bool { return true }, true)
+}
+
+// EvaluateWithCompleteness evaluates text extracted from an envelope whose
+// known model-text fields may have an unsupported shape. Preventive enforced
+// policies must not treat a partial extraction as complete inspection.
+func (p *Pinned) EvaluateWithCompleteness(ctx context.Context, stage string, texts []Text, complete bool) Result {
+	return p.evaluateSelected(ctx, stage, texts, complete, func(Policy) bool { return true }, true)
 }
 
 func (p *Pinned) EvaluateStreamEnforced(ctx context.Context, texts []Text) Result {
-	return p.evaluateSelected(ctx, StageStreamOutput, texts, policyRequiresPreflush, true)
+	return p.evaluateSelected(ctx, StageStreamOutput, texts, true, policyRequiresPreflush, true)
 }
 
 func (p *Pinned) EvaluateStreamAdvisory(ctx context.Context, texts []Text) Result {
-	return p.evaluateSelected(ctx, StageStreamOutput, texts, func(policy Policy) bool {
+	return p.evaluateSelected(ctx, StageStreamOutput, texts, true, func(policy Policy) bool {
 		return !policyRequiresPreflush(policy)
 	}, false)
 }
@@ -366,7 +630,7 @@ func (p *Pinned) StreamProfile() StreamProfile {
 	return profile
 }
 
-func (p *Pinned) evaluateSelected(ctx context.Context, stage string, texts []Text, selected func(Policy) bool, failClosedUnavailable bool) Result {
+func (p *Pinned) evaluateSelected(ctx context.Context, stage string, texts []Text, complete bool, selected func(Policy) bool, failClosedUnavailable bool) Result {
 	version := "unavailable"
 	if p != nil && p.version != "" {
 		version = p.version
@@ -378,10 +642,10 @@ func (p *Pinned) evaluateSelected(ctx context.Context, stage string, texts []Tex
 		}
 		result.Degraded = true
 		if failClosedUnavailable {
-			result.BlockedBy = "guardrail:snapshot"
+			result.BlockedBy = guardrailSnapshotRef(p)
 		}
 		result.Receipts = append(result.Receipts, Receipt{
-			PolicyRef: "guardrail:snapshot", PolicyVersion: 1, Stage: stage, DetectorRef: "policy_snapshot",
+			PolicyRef: guardrailSnapshotRef(p), PolicyVersion: 1, Stage: stage, DetectorRef: "policy_snapshot",
 			Mode:    map[bool]string{true: ModeEnforce, false: ModeShadow}[failClosedUnavailable],
 			Action:  map[bool]string{true: ActionBlock, false: ActionAudit}[failClosedUnavailable],
 			Outcome: OutcomeUnavailable, FailureMode: map[bool]string{true: FailureFailClosed, false: FailureDegradedAllow}[failClosedUnavailable],
@@ -413,7 +677,7 @@ func (p *Pinned) evaluateSelected(ctx context.Context, stage string, texts []Tex
 				}
 			}
 		}
-		receipt, transformed, blocked := p.service.evaluatePolicy(ctx, externalCtx, policy, result.Texts, detector, detectionCache)
+		receipt, transformed, blocked := p.service.evaluatePolicy(ctx, externalCtx, policy, result.Texts, complete, detector, detectionCache)
 		result.Receipts = append(result.Receipts, receipt)
 		if transformed != nil {
 			result.Texts = transformed
@@ -431,7 +695,14 @@ func (p *Pinned) evaluateSelected(ctx context.Context, stage string, texts []Tex
 	return result
 }
 
-func (s *Service) evaluatePolicy(ctx, externalCtx context.Context, policy Policy, texts []Text, pinnedDetector Detector, cache map[detectionCacheKey]detectionCacheValue) (Receipt, []Text, bool) {
+func guardrailSnapshotRef(p *Pinned) string {
+	if p != nil && (p.staleScope == "platform" || p.staleScope == "tenant") {
+		return "guardrail:snapshot:" + p.staleScope
+	}
+	return "guardrail:snapshot"
+}
+
+func (s *Service) evaluatePolicy(ctx, externalCtx context.Context, policy Policy, texts []Text, complete bool, pinnedDetector Detector, cache map[detectionCacheKey]detectionCacheValue) (Receipt, []Text, bool) {
 	receipt := Receipt{
 		PolicyRef: policy.Ref, PolicyVersion: policy.Version, Stage: policy.Stage,
 		DetectorRef: policy.DetectorRef, Mode: policy.Mode, Action: policy.Action,
@@ -439,6 +710,14 @@ func (s *Service) evaluatePolicy(ctx, externalCtx context.Context, policy Policy
 		Categories: make(map[string]int),
 	}
 	detector := pinnedDetector
+	if !complete {
+		if detector != nil {
+			receipt.DetectorVersion = detector.Version()
+		}
+		receipt.Outcome = OutcomeIndeterminate
+		receipt.Degraded = true
+		return receipt, nil, policy.Mode == ModeEnforce && policy.Action != ActionAudit
+	}
 	if detector == nil {
 		receipt.Outcome = OutcomeUnavailable
 		receipt.Degraded = true
@@ -490,6 +769,11 @@ func (s *Service) evaluatePolicy(ctx, externalCtx context.Context, policy Policy
 		findings, err := s.detect(detectorCtx, policy.DetectorRef, detectorVersion, configKey, detector, text, policy.Config, cache)
 		if err != nil {
 			receipt.LatencyMS = time.Since(started).Milliseconds()
+			if errors.Is(err, ErrDetectionIncomplete) {
+				receipt.Outcome = OutcomeIndeterminate
+				receipt.Degraded = true
+				return receipt, nil, policy.Mode == ModeEnforce && policy.Action != ActionAudit
+			}
 			receipt.Outcome = OutcomeUnavailable
 			receipt.Degraded = true
 			return receipt, nil, policy.Mode == ModeEnforce && policy.FailureMode == FailureFailClosed

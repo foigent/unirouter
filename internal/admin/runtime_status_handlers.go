@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -13,16 +14,28 @@ import (
 	goruntime "runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
+	"golang.org/x/sync/singleflight"
 )
 
-const runtimeTrafficWindowMinutes = 5
-const runtimeMonitoringProbeTimeout = 750 * time.Millisecond
-const prometheusUniRouterTargetQuery = `up{job="unirouter"}`
+const (
+	runtimeTrafficWindowMinutes     = 5
+	runtimeMonitoringProbeTimeout   = 750 * time.Millisecond
+	runtimeMonitoringMaxBodyBytes   = 256 * 1024
+	runtimeStatusSnapshotTTL        = 5 * time.Second
+	runtimeStatusSnapshotMaxEntries = 64
+	runtimeStatusRefreshConcurrency = 4
+	runtimeStatusCollectionTimeout  = 6 * time.Second
+	prometheusUniRouterTargetQuery  = `up{job="unirouter"}`
+)
+
+var errMonitoringResponseTooLarge = errors.New("monitoring response too large")
+var errRuntimeStatusRefreshSaturated = errors.New("runtime status refresh concurrency exhausted")
 
 type RuntimeStatusOptions struct {
 	Environment     string
@@ -188,21 +201,184 @@ type monitoringHTTPResult struct {
 	LatencyMS  int64
 }
 
+type runtimeStatusCollector func(context.Context, int64) (runtimeStatusResponse, error)
+
+type cachedRuntimeStatus struct {
+	response  runtimeStatusResponse
+	storedAt  time.Time
+	expiresAt time.Time
+}
+
+type runtimeStatusSnapshotCache struct {
+	initOnce           sync.Once
+	mu                 sync.RWMutex
+	entries            map[int64]cachedRuntimeStatus
+	refresh            singleflight.Group
+	refreshSlots       chan struct{}
+	ttl                time.Duration
+	maxEntries         int
+	refreshConcurrency int
+	collectionTimeout  time.Duration
+	now                func() time.Time
+}
+
+func (c *runtimeStatusSnapshotCache) initialize() {
+	c.initOnce.Do(func() {
+		if c.ttl <= 0 {
+			c.ttl = runtimeStatusSnapshotTTL
+		}
+		if c.maxEntries <= 0 {
+			c.maxEntries = runtimeStatusSnapshotMaxEntries
+		}
+		if c.refreshConcurrency <= 0 {
+			c.refreshConcurrency = runtimeStatusRefreshConcurrency
+		}
+		if c.collectionTimeout <= 0 {
+			c.collectionTimeout = runtimeStatusCollectionTimeout
+		}
+		if c.now == nil {
+			c.now = time.Now
+		}
+		c.entries = make(map[int64]cachedRuntimeStatus, c.maxEntries)
+		c.refreshSlots = make(chan struct{}, c.refreshConcurrency)
+	})
+}
+
+func (c *runtimeStatusSnapshotCache) get(ctx context.Context, orgID int64, collector runtimeStatusCollector) (runtimeStatusResponse, error) {
+	if collector == nil {
+		return runtimeStatusResponse{}, errors.New("runtime status collector is not configured")
+	}
+	c.initialize()
+	now := c.now().UTC()
+	if entry, ok := c.loadFresh(orgID, now); ok {
+		return runtimeStatusResponseAt(entry, now), nil
+	}
+	if err := ctx.Err(); err != nil {
+		return runtimeStatusResponse{}, err
+	}
+
+	resultCh := c.refresh.DoChan(strconv.FormatInt(orgID, 10), func() (any, error) {
+		if entry, ok := c.loadFresh(orgID, c.now().UTC()); ok {
+			return entry, nil
+		}
+
+		select {
+		case c.refreshSlots <- struct{}{}:
+			defer func() { <-c.refreshSlots }()
+		default:
+			return cachedRuntimeStatus{}, errRuntimeStatusRefreshSaturated
+		}
+		refreshCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), c.collectionTimeout)
+		defer cancel()
+
+		response, err := collector(refreshCtx, orgID)
+		if err != nil {
+			return cachedRuntimeStatus{}, err
+		}
+		storedAt := c.now().UTC()
+		if response.GeneratedAt.IsZero() {
+			response.GeneratedAt = storedAt
+		} else {
+			response.GeneratedAt = response.GeneratedAt.UTC()
+		}
+		response.DataFreshnessSeconds = 0
+		entry := cachedRuntimeStatus{
+			response:  response,
+			storedAt:  storedAt,
+			expiresAt: storedAt.Add(c.ttl),
+		}
+		c.storeBounded(orgID, entry, storedAt)
+		return entry, nil
+	})
+
+	select {
+	case <-ctx.Done():
+		return runtimeStatusResponse{}, ctx.Err()
+	case result := <-resultCh:
+		if result.Err != nil {
+			return runtimeStatusResponse{}, result.Err
+		}
+		entry, ok := result.Val.(cachedRuntimeStatus)
+		if !ok {
+			return runtimeStatusResponse{}, errors.New("runtime status snapshot has unexpected type")
+		}
+		return runtimeStatusResponseAt(entry, c.now().UTC()), nil
+	}
+}
+
+func (c *runtimeStatusSnapshotCache) loadFresh(orgID int64, now time.Time) (cachedRuntimeStatus, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	entry, ok := c.entries[orgID]
+	return entry, ok && now.Before(entry.expiresAt)
+}
+
+func (c *runtimeStatusSnapshotCache) storeBounded(orgID int64, entry cachedRuntimeStatus, now time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for cachedOrgID, candidate := range c.entries {
+		if !now.Before(candidate.expiresAt) {
+			delete(c.entries, cachedOrgID)
+		}
+	}
+	if _, exists := c.entries[orgID]; !exists && len(c.entries) >= c.maxEntries {
+		var oldestOrgID int64
+		var oldestStoredAt time.Time
+		haveOldest := false
+		for cachedOrgID, candidate := range c.entries {
+			if !haveOldest || candidate.storedAt.Before(oldestStoredAt) || (candidate.storedAt.Equal(oldestStoredAt) && cachedOrgID < oldestOrgID) {
+				oldestOrgID = cachedOrgID
+				oldestStoredAt = candidate.storedAt
+				haveOldest = true
+			}
+		}
+		if haveOldest {
+			delete(c.entries, oldestOrgID)
+		}
+	}
+	c.entries[orgID] = entry
+}
+
+func runtimeStatusResponseAt(entry cachedRuntimeStatus, now time.Time) runtimeStatusResponse {
+	response := entry.response
+	age := now.Sub(response.GeneratedAt)
+	if age < 0 {
+		age = 0
+	}
+	response.DataFreshnessSeconds = int(age / time.Second)
+	return response
+}
+
 func (h *Handler) RuntimeStatus(w http.ResponseWriter, r *http.Request) {
 	orgID, err := resolveRequestOrganization(r)
 	if err != nil {
 		writeOrganizationScopeError(w, err)
 		return
 	}
-	database := h.runtimeDatabaseHealth(r.Context())
-	redis := h.runtimeRedisHealth(r.Context())
-	traffic := h.runtimeTrafficStatus(r.Context(), orgID)
+	collector := h.runtimeStatusCollector
+	if collector == nil {
+		collector = h.collectRuntimeStatus
+	}
+	response, err := h.runtimeStatusCache.get(r.Context(), orgID, collector)
+	if err != nil {
+		w.Header().Set("Retry-After", "1")
+		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Runtime status temporarily unavailable"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (h *Handler) collectRuntimeStatus(ctx context.Context, orgID int64) (runtimeStatusResponse, error) {
+	database := h.runtimeDatabaseHealth(ctx)
+	redis := h.runtimeRedisHealth(ctx)
+	traffic := h.runtimeTrafficStatus(ctx, orgID)
 	hostTelemetry := h.runtimeHostTelemetry()
 
 	overallStatus := runtimeOverallStatus(database, redis, traffic)
 	response := runtimeStatusResponse{
 		Status:               overallStatus,
-		GeneratedAt:          time.Now().UTC(),
 		DataFreshnessSeconds: 0,
 		RuntimeEnvironment:   h.runtimeEnvironmentStatus(),
 		CapacityHealth: runtimeCapacityHealth{
@@ -214,12 +390,15 @@ func (h *Handler) RuntimeStatus(w http.ResponseWriter, r *http.Request) {
 			Disk:      hostTelemetry.Disk,
 			Network:   hostTelemetry.Network,
 		},
-		ObservabilityIntegrations: h.runtimeObservabilityIntegrations(r.Context()),
+		ObservabilityIntegrations: h.runtimeObservabilityIntegrations(ctx),
 		Topology:                  h.runtimeTopologyStatus(overallStatus, database, redis),
 		EffectiveConfiguration:    h.runtimeOptions.EffectiveConfig,
 	}
-
-	writeJSON(w, http.StatusOK, response)
+	if err := ctx.Err(); err != nil {
+		return runtimeStatusResponse{}, err
+	}
+	response.GeneratedAt = time.Now().UTC()
+	return response, nil
 }
 
 func (h *Handler) runtimeTopologyStatus(appStatus string, database, redis runtimeDependencyStatus) runtimeTopologyStatus {
@@ -566,7 +745,7 @@ func runtimePrometheusIntegration(ctx context.Context, rawURL string) runtimeInt
 	status.LatencyMS = elapsedMillis(started)
 	if err != nil {
 		status.Status = "unavailable"
-		status.Reason = "probe_failed"
+		status.Reason = monitoringFailureReason(err, "probe_failed")
 		return status
 	}
 	if healthResp.StatusCode < 200 || healthResp.StatusCode >= 300 {
@@ -579,7 +758,7 @@ func runtimePrometheusIntegration(ctx context.Context, rawURL string) runtimeInt
 	status.LatencyMS = elapsedMillis(started)
 	if err != nil {
 		status.Status = "unavailable"
-		status.Reason = "query_failed"
+		status.Reason = monitoringFailureReason(err, "query_failed")
 		return status
 	}
 	if queryResp.StatusCode < 200 || queryResp.StatusCode >= 300 {
@@ -644,7 +823,7 @@ func runtimeGrafanaIntegration(ctx context.Context, rawURL string) runtimeIntegr
 	status.LatencyMS = elapsedMillis(started)
 	if err != nil {
 		status.Status = "unavailable"
-		status.Reason = "probe_failed"
+		status.Reason = monitoringFailureReason(err, "probe_failed")
 		return status
 	}
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
@@ -685,6 +864,10 @@ func runtimeIntegration(configName, rawURL string) runtimeIntegrationStatus {
 }
 
 func monitoringGet(ctx context.Context, targetURL string) (monitoringHTTPResult, error) {
+	return monitoringGetWithClient(ctx, http.DefaultClient, targetURL)
+}
+
+func monitoringGetWithClient(ctx context.Context, client *http.Client, targetURL string) (monitoringHTTPResult, error) {
 	probeCtx, cancel := context.WithTimeout(ctx, runtimeMonitoringProbeTimeout)
 	defer cancel()
 	started := time.Now()
@@ -692,20 +875,33 @@ func monitoringGet(ctx context.Context, targetURL string) (monitoringHTTPResult,
 	if err != nil {
 		return monitoringHTTPResult{}, err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return monitoringHTTPResult{}, err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	if resp.ContentLength > runtimeMonitoringMaxBodyBytes {
+		return monitoringHTTPResult{}, errMonitoringResponseTooLarge
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, runtimeMonitoringMaxBodyBytes+1))
 	if err != nil {
 		return monitoringHTTPResult{}, err
+	}
+	if len(body) > runtimeMonitoringMaxBodyBytes {
+		return monitoringHTTPResult{}, errMonitoringResponseTooLarge
 	}
 	return monitoringHTTPResult{
 		StatusCode: resp.StatusCode,
 		Body:       body,
 		LatencyMS:  elapsedMillis(started),
 	}, nil
+}
+
+func monitoringFailureReason(err error, fallback string) string {
+	if errors.Is(err, errMonitoringResponseTooLarge) {
+		return "response_too_large"
+	}
+	return fallback
 }
 
 func monitoringURL(rawURL, path string) string {

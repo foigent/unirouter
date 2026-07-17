@@ -1,10 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Input, Select, Table, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconCoinMoney, IconDownload, IconRefresh, IconSearch, IconServer } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-import { MetricTile, MoneyText, PageHeader, StatusTag, Surface } from '../ui';
+import { isPlatformAdminRole } from '../navigation';
+import { useAuthStore } from '../store/auth';
+import { EmptyState, MetricTile, MoneyText, PageHeader, StatusTag, Surface } from '../ui';
 import { keyTypeOptions, requestStatusOptions, usageAnalyticsGroupOptions, usageScopeOptions, usageSourceOptions } from '../utils/displayLabels';
 import { formatCompactNumber, formatLatencyMs, formatPercent } from '../utils/formatNumber';
+import { loadAllPages } from '../utils/loadAllPages';
 
 const { Text } = Typography;
 
@@ -46,6 +49,10 @@ function retentionLabel(value?: string) {
 }
 
 export default function UsageAnalyticsPage() {
+  const user = useAuthStore((state) => state.user);
+  const platform = isPlatformAdminRole(user?.role);
+  const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(platform ? user?.org_id : undefined);
+  const [organizations, setOrganizations] = useState<Array<{ id: number; name: string }>>([]);
   const [rows, setRows] = useState<AnalyticsRow[]>([]);
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [groupBy, setGroupBy] = useState('overall');
@@ -63,9 +70,13 @@ export default function UsageAnalyticsPage() {
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const requestVersion = useRef(0);
+  const targetOrgID = platform ? selectedOrgID : undefined;
 
   const filters = {
     group_by: groupBy,
+    ...(targetOrgID ? { org_id: targetOrgID } : {}),
     project_id: projectId,
     key_id: keyId,
     owner_user_id: ownerUserId,
@@ -82,17 +93,59 @@ export default function UsageAnalyticsPage() {
   };
 
   const load = () => {
+    const version = ++requestVersion.current;
     setLoading(true);
+    setLoadError('');
+    setRows([]);
+    setSummary(null);
     api.getUsageAnalytics(filters)
       .then((data: any) => {
+        if (version !== requestVersion.current) return;
         setRows(data?.data || []);
         setSummary(data?.summary || null);
       })
-      .catch((err: any) => Toast.error(`用量分析加载失败${err?.message ? `：${err.message}` : ''}`))
-      .finally(() => setLoading(false));
+      .catch(() => {
+        if (version !== requestVersion.current) return;
+        setLoadError('无法加载当前筛选范围的用量与费用数据。');
+        Toast.error('用量分析加载失败');
+      })
+      .finally(() => {
+        if (version === requestVersion.current) setLoading(false);
+      });
   };
 
-  useEffect(() => { load(); }, [groupBy, projectId, keyId, ownerUserId, keyType, scope, status, usageSource, model, alias, provider, channel, startTime, endTime]);
+  const updateAnalyticsFilter = (update: () => void) => {
+    requestVersion.current += 1;
+    setRows([]);
+    setSummary(null);
+    setLoadError('');
+    update();
+  };
+
+  useEffect(() => {
+    load();
+    return () => { requestVersion.current += 1; };
+  }, [groupBy, projectId, keyId, ownerUserId, keyType, scope, status, usageSource, model, alias, provider, channel, startTime, endTime, targetOrgID]);
+
+  useEffect(() => {
+    if (!platform) return;
+    if (user?.org_id) setSelectedOrgID(current => current || user.org_id);
+    loadAllPages<{ id: number; name: string }>((page, size) => api.getOrganizations(page, size))
+      .then(setOrganizations)
+      .catch((err: any) => Toast.error(`组织列表加载失败${err?.message ? `：${err.message}` : ''}`));
+  }, [platform, user?.org_id]);
+
+  const changeOrganization = (value: unknown) => {
+    const orgID = Number(value);
+    if (!Number.isSafeInteger(orgID) || orgID <= 0) return;
+    setSelectedOrgID(orgID);
+    requestVersion.current += 1;
+    setRows([]);
+    setSummary(null);
+    setProjectId('');
+    setKeyId('');
+    setOwnerUserId('');
+  };
 
   const downloadCSV = async () => {
     try {
@@ -122,7 +175,7 @@ export default function UsageAnalyticsPage() {
   return (
     <div className="ur-page ur-page-wide">
       <PageHeader
-        eyebrow="流量治理"
+        eyebrow="监控与用量"
         title="用量分析"
           description="按总览、项目、访问凭证、Key Owner、凭证类型、模型、供应商、上游通道、请求状态和计量来源查看当前权限范围内的请求量、Token、费用与估算占比。"
         actions={<Button icon={<IconDownload />} onClick={downloadCSV}>导出 CSV</Button>}
@@ -133,48 +186,71 @@ export default function UsageAnalyticsPage() {
         description="未设置筛选表示当前权限范围内全部数据。供应商是 provider family 或 adapter 维度；上游通道是一个具体配置实例，包含 endpoint、凭证、权重/优先级和可用模型。"
       >
         <div className="ur-inline-controls">
-          <Select value={groupBy} optionList={usageAnalyticsGroupOptions} onChange={(value) => setGroupBy(String(value || 'overall'))} style={{ width: 190 }} />
+          {platform && (
+            <>
+              <Text type="tertiary">目标组织</Text>
+              <Select
+                aria-label="目标组织"
+                placeholder="选择目标组织"
+                value={selectedOrgID}
+                optionList={organizations.map(org => ({ label: `${org.name}（ID ${org.id}）`, value: org.id }))}
+                onChange={changeOrganization}
+                disabled={loading}
+                style={{ width: 220 }}
+              />
+            </>
+          )}
+          <Select value={groupBy} optionList={usageAnalyticsGroupOptions} onChange={(value) => updateAnalyticsFilter(() => setGroupBy(String(value || 'overall')))} style={{ width: 190 }} />
           <Select
             value={scope || undefined}
             placeholder="用量范围"
             optionList={usageScopeOptions}
-            onChange={(value) => setScope(String(value || ''))}
+            onChange={(value) => updateAnalyticsFilter(() => setScope(String(value || '')))}
             style={{ width: 160 }}
           />
-          <Input prefix={<IconSearch />} value={projectId} onChange={setProjectId} placeholder="项目 ID" showClear style={{ width: 140 }} />
-          <Input prefix={<IconSearch />} value={keyId} onChange={setKeyId} placeholder="访问凭证 ID" showClear style={{ width: 160 }} />
-          <Input prefix={<IconSearch />} value={ownerUserId} onChange={setOwnerUserId} placeholder="Owner 用户 ID" showClear style={{ width: 170 }} />
+          <Input prefix={<IconSearch />} value={projectId} onChange={(value) => updateAnalyticsFilter(() => setProjectId(value))} placeholder="项目 ID" showClear style={{ width: 140 }} />
+          <Input prefix={<IconSearch />} value={keyId} onChange={(value) => updateAnalyticsFilter(() => setKeyId(value))} placeholder="访问凭证 ID" showClear style={{ width: 160 }} />
+          <Input prefix={<IconSearch />} value={ownerUserId} onChange={(value) => updateAnalyticsFilter(() => setOwnerUserId(value))} placeholder="Owner 用户 ID" showClear style={{ width: 170 }} />
           <Select
             value={keyType || undefined}
             placeholder="凭证类型"
             optionList={keyTypeOptions}
-            onChange={(value) => setKeyType(String(value || ''))}
+            onChange={(value) => updateAnalyticsFilter(() => setKeyType(String(value || '')))}
             style={{ width: 160 }}
           />
           <Select
             value={status || undefined}
             placeholder="请求状态"
             optionList={requestStatusOptions}
-            onChange={(value) => setStatus(String(value || ''))}
+            onChange={(value) => updateAnalyticsFilter(() => setStatus(String(value || '')))}
             style={{ width: 150 }}
           />
           <Select
             value={usageSource || undefined}
             placeholder="计量来源"
             optionList={usageSourceOptions}
-            onChange={(value) => setUsageSource(String(value || ''))}
+            onChange={(value) => updateAnalyticsFilter(() => setUsageSource(String(value || '')))}
             style={{ width: 190 }}
           />
-          <Input prefix={<IconSearch />} value={model} onChange={setModel} placeholder="模型" showClear style={{ width: 180 }} />
-          <Input prefix={<IconSearch />} value={alias} onChange={setAlias} placeholder="模型别名" showClear style={{ width: 180 }} />
-          <Input prefix={<IconServer />} value={provider} onChange={setProvider} placeholder="供应商" showClear style={{ width: 180 }} />
-          <Input prefix={<IconServer />} value={channel} onChange={setChannel} placeholder="上游通道" showClear style={{ width: 180 }} />
-          <Input value={startTime} onChange={setStartTime} type="datetime-local" placeholder="开始时间" showClear style={{ width: 190 }} />
-          <Input value={endTime} onChange={setEndTime} type="datetime-local" placeholder="结束时间" showClear style={{ width: 190 }} />
+          <Input prefix={<IconSearch />} value={model} onChange={(value) => updateAnalyticsFilter(() => setModel(value))} placeholder="模型" showClear style={{ width: 180 }} />
+          <Input prefix={<IconSearch />} value={alias} onChange={(value) => updateAnalyticsFilter(() => setAlias(value))} placeholder="模型别名" showClear style={{ width: 180 }} />
+          <Input prefix={<IconServer />} value={provider} onChange={(value) => updateAnalyticsFilter(() => setProvider(value))} placeholder="供应商" showClear style={{ width: 180 }} />
+          <Input prefix={<IconServer />} value={channel} onChange={(value) => updateAnalyticsFilter(() => setChannel(value))} placeholder="上游通道" showClear style={{ width: 180 }} />
+          <Input value={startTime} onChange={(value) => updateAnalyticsFilter(() => setStartTime(value))} type="datetime-local" placeholder="开始时间" showClear style={{ width: 190 }} />
+          <Input value={endTime} onChange={(value) => updateAnalyticsFilter(() => setEndTime(value))} type="datetime-local" placeholder="结束时间" showClear style={{ width: 190 }} />
           <Button icon={<IconRefresh />} onClick={load} loading={loading}>刷新</Button>
         </div>
       </Surface>
 
+      {loadError ? (
+        <Surface>
+          <EmptyState
+            title="用量分析加载失败"
+            description={loadError}
+            actions={<Button type="primary" onClick={load}>重新加载用量分析</Button>}
+          />
+        </Surface>
+      ) : <>
       <div className="ur-kpi-grid">
         <MetricTile label="请求数" value={formatCompactNumber(summary?.total_requests)} icon={<IconSearch />} tone="blue" meta={`成功 ${summary?.success_requests || 0} / 失败 ${summary?.failed_requests || 0}`} />
         <MetricTile label="Token" value={formatCompactNumber(summary?.total_tokens)} icon={<IconServer />} tone="violet" meta={`估算来源 ${formatCompactNumber(summary?.estimated_tokens)} / 上游 ${formatCompactNumber(summary?.upstream_tokens)}`} />
@@ -194,6 +270,7 @@ export default function UsageAnalyticsPage() {
           />
         </div>
       </Surface>
+      </>}
     </div>
   );
 }

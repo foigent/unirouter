@@ -29,7 +29,6 @@ func testOptions() Options {
 	options.ActivePollWindow = 10 * time.Millisecond
 	options.StoreTimeout = 500 * time.Millisecond
 	options.LeaseGrace = 5 * time.Millisecond
-	options.FallbackTTL = 500 * time.Millisecond
 	options.MaxQueueDepth = 128
 	options.MaxOrgQueueDepth = 64
 	options.MaxQueueScan = 64
@@ -273,7 +272,7 @@ func TestP6F21LeaseExpiryRecoversFromCrashedHolder(t *testing.T) {
 	}
 }
 
-func TestP6F21RedisOutageUsesOneShortLastKnownSafeAdmission(t *testing.T) {
+func TestP6F21RedisOutageFailsClosedAfterHealthyAdmission(t *testing.T) {
 	server := miniredis.RunT(t)
 	service, _ := newTestService(t, server, testOptions())
 	primed, _, err := service.Reserve(context.Background(), request("prime", 7, ClassInteractive, time.Minute))
@@ -285,16 +284,76 @@ func TestP6F21RedisOutageUsesOneShortLastKnownSafeAdmission(t *testing.T) {
 	}
 	server.Close()
 
-	fallback, decision, err := service.Reserve(context.Background(), request("fallback", 7, ClassInteractive, time.Minute))
-	if err != nil || fallback == nil || !fallback.Fallback || !decision.Fallback || decision.Reason != ReasonLastKnownSafe {
-		t.Fatalf("fallback=%#v decision=%#v err=%v", fallback, decision, err)
+	reservation, decision, err := service.Reserve(context.Background(), request("outage", 7, ClassInteractive, time.Minute))
+	if !errors.Is(err, ErrStateUnavailable) || reservation != nil || decision.Decision != "deny" || decision.Reason != ReasonStateUnavailable || decision.Fallback {
+		t.Fatalf("outage reservation=%#v decision=%#v err=%v", reservation, decision, err)
 	}
 	if _, decision, err := service.Reserve(context.Background(), request("closed", 7, ClassInteractive, time.Minute)); !errors.Is(err, ErrStateUnavailable) || decision.Reason != ReasonStateUnavailable {
-		t.Fatalf("second outage admission err=%v decision=%#v", err, decision)
+		t.Fatalf("subsequent outage admission err=%v decision=%#v", err, decision)
 	}
 }
 
-func TestP6F21CancelledCallerCannotConsumeEmergencyAdmission(t *testing.T) {
+func TestP6F21RedisOutageFailsClosedForEveryClassAndOrganization(t *testing.T) {
+	server := miniredis.RunT(t)
+	service, _ := newTestService(t, server, testOptions())
+	primed, _, err := service.Reserve(context.Background(), request("prime-all-classes", 7, ClassInteractive, time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Release(context.Background(), primed); err != nil {
+		t.Fatal(err)
+	}
+	server.Close()
+
+	fixtures := []struct {
+		class string
+		orgID int64
+	}{
+		{class: ClassInteractive, orgID: 7},
+		{class: ClassStream, orgID: 7},
+		{class: ClassEmbedding, orgID: 8},
+	}
+	for index, fixture := range fixtures {
+		reservation, decision, err := service.Reserve(context.Background(), request(fmt.Sprintf("outage-class-%d", index), fixture.orgID, fixture.class, time.Minute))
+		if !errors.Is(err, ErrStateUnavailable) || reservation != nil || decision.Decision != "deny" || decision.Reason != ReasonStateUnavailable || decision.Fallback {
+			t.Fatalf("class=%s org=%d reservation=%#v decision=%#v err=%v", fixture.class, fixture.orgID, reservation, decision, err)
+		}
+	}
+}
+
+func TestP6F21RedisOutageFailsClosedWithoutUntrackedAdmissionAcrossReplicas(t *testing.T) {
+	server := miniredis.RunT(t)
+	options := testOptions()
+	options.GlobalCapacity = 12
+	options.OrgCapacity = 12
+	services := make([]*Service, 3)
+	for index := range services {
+		services[index], _ = newTestService(t, server, options)
+		primed, _, err := services[index].Reserve(context.Background(), request(fmt.Sprintf("prime-%d", index), 7, ClassInteractive, time.Minute))
+		if err != nil {
+			t.Fatalf("prime replica %d: %v", index, err)
+		}
+		if err := services[index].Release(context.Background(), primed); err != nil {
+			t.Fatalf("release prime replica %d: %v", index, err)
+		}
+	}
+
+	for index := 0; index < 12; index++ {
+		if _, _, err := services[0].Reserve(context.Background(), request(fmt.Sprintf("tracked-%02d", index), 7, ClassInteractive, time.Minute)); err != nil {
+			t.Fatalf("fill tracked capacity at unit %d: %v", index, err)
+		}
+	}
+	server.Close()
+
+	for index, service := range services {
+		reservation, decision, err := service.Reserve(context.Background(), request(fmt.Sprintf("outage-stream-%d", index), 7, ClassStream, time.Minute))
+		if !errors.Is(err, ErrStateUnavailable) || reservation != nil || decision.Decision != "deny" || decision.Reason != ReasonStateUnavailable || decision.Fallback {
+			t.Fatalf("replica %d admitted untracked weighted work: reservation=%#v decision=%#v err=%v", index, reservation, decision, err)
+		}
+	}
+}
+
+func TestP6F21CancelledCallerAndSubsequentOutageFailClosed(t *testing.T) {
 	server := miniredis.RunT(t)
 	service, _ := newTestService(t, server, testOptions())
 	primed, _, err := service.Reserve(context.Background(), request("cancel-prime", 7, ClassInteractive, time.Minute))
@@ -310,8 +369,8 @@ func TestP6F21CancelledCallerCannotConsumeEmergencyAdmission(t *testing.T) {
 		t.Fatalf("cancelled caller reservation=%#v decision=%#v err=%v", reservation, decision, err)
 	}
 	server.Close()
-	if reservation, decision, err := service.Reserve(context.Background(), request("after-cancel", 7, ClassInteractive, time.Minute)); err != nil || reservation == nil || !reservation.Fallback || !decision.Fallback {
-		t.Fatalf("cancelled caller consumed emergency lease: reservation=%#v decision=%#v err=%v", reservation, decision, err)
+	if reservation, decision, err := service.Reserve(context.Background(), request("after-cancel", 7, ClassInteractive, time.Minute)); !errors.Is(err, ErrStateUnavailable) || reservation != nil || decision.Decision != "deny" || decision.Reason != ReasonStateUnavailable || decision.Fallback {
+		t.Fatalf("subsequent outage was not fail-closed: reservation=%#v decision=%#v err=%v", reservation, decision, err)
 	}
 }
 

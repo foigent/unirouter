@@ -79,16 +79,28 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
     expect(mocks.getChannels).toHaveBeenCalledWith(1, 20);
     expect(screen.getByText('同级权重')).toBeTruthy();
     expect(screen.getByText(/熔断阈值决定连续失败多少次/)).toBeTruthy();
-    expect(screen.getByText(/真实请求按服务器请求 ID 确定/)).toBeTruthy();
+    expect(screen.getByText(/真实请求仍以服务器请求 ID 进行稳定选择/)).toBeTruthy();
 
     fireEvent.change(screen.getByPlaceholderText('模型名称，例如 gpt-4o'), { target: { value: 'gpt-4o' } });
     fireEvent.click(screen.getByRole('button', { name: '预览路由' }));
 
     await waitFor(() => expect(mocks.previewRouting).toHaveBeenCalledWith('gpt-4o'));
-    expect(await screen.findByText(/策略 routing-policy.v1/)).toBeTruthy();
+    expect(await screen.findByText(/模型 gpt-4o · 策略 routing-policy.v1/)).toBeTruthy();
     expect(screen.getByText(/刚从数据库刷新/)).toBeTruthy();
     expect(screen.getByText('同优先级内按权重排序')).toBeTruthy();
     expect(screen.getByText('凭证冷却中')).toBeTruthy();
     expect(screen.getByRole('button', { name: '编辑通道 primary-cn' })).toBeTruthy();
+
+    fireEvent.change(screen.getByPlaceholderText('模型名称，例如 gpt-4o'), { target: { value: 'claude-3-5-sonnet' } });
+    expect(screen.queryByText(/策略 routing-policy.v1/)).toBeNull();
+  });
+
+  it('does not present a failed channel request as an empty list', async () => {
+    mocks.getChannels.mockRejectedValueOnce(new Error('unavailable'));
+
+    render(<ChannelsPage />);
+
+    expect(await screen.findByRole('heading', { name: '上游通道加载失败' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '重新加载上游通道' })).toBeTruthy();
   });
 });

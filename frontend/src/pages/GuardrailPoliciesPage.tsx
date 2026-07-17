@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Button, Form, SideSheet, Space, Table, Tag, Toast, Typography } from '@douyinfe/semi-ui';
+import { useEffect, useState } from 'react';
+import { Button, Form, Modal, SideSheet, Space, Table, Tag, TextArea, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconEdit, IconPlus } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { isBillingRole, isOrgAdminRole, isPlatformAdminRole } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { PageHeader, Surface } from '../ui';
+import { loadAllPages } from '../utils/loadAllPages';
 
 const { Text, Paragraph } = Typography;
 
@@ -60,6 +61,10 @@ function modeTag(mode: GuardrailPolicy['mode']) {
   return <Tag color="grey">已停用</Tag>;
 }
 
+function wordsFromText(value: string) {
+  return Array.from(new Set(value.split(/\r?\n/).map((word) => word.trim()).filter(Boolean)));
+}
+
 const detectorLabels: Record<string, string> = {
   'builtin:sensitive_words': '现有敏感词兼容检测',
   'builtin:pii_secrets': '本地 PII 与密钥检测',
@@ -83,6 +88,8 @@ export default function GuardrailPoliciesPage() {
   const [policies, setPolicies] = useState<GuardrailPolicy[]>([]);
   const [keys, setKeys] = useState<KeyOption[]>([]);
   const [models, setModels] = useState<string[]>([]);
+  const [organizations, setOrganizations] = useState<Array<{ value: number; label: string }>>([]);
+  const [projects, setProjects] = useState<Array<{ value: number; label: string }>>([]);
   const [detectors, setDetectors] = useState<string[]>(['builtin:sensitive_words', 'builtin:pii_secrets']);
   const [streamCapabilities, setStreamCapabilities] = useState<Record<string, StreamDetectorCapability>>({
     'builtin:sensitive_words': { synchronous: true, lookbehind_bytes: 4 * 1024 },
@@ -101,6 +108,11 @@ export default function GuardrailPoliciesPage() {
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [editing, setEditing] = useState<GuardrailPolicy | null>(null);
   const [formApi, setFormApi] = useState<any>(null);
+  const [sensitiveWordsText, setSensitiveWordsText] = useState('');
+  const [sensitiveWordsLoaded, setSensitiveWordsLoaded] = useState(false);
+  const [sensitiveWordsLoading, setSensitiveWordsLoading] = useState(false);
+  const [sensitiveWordsSaving, setSensitiveWordsSaving] = useState(false);
+  const [sensitiveWordsError, setSensitiveWordsError] = useState('');
 
   const load = (nextPage = page, nextSize = pageSize) => {
     setLoading(true);
@@ -125,28 +137,51 @@ export default function GuardrailPoliciesPage() {
   };
 
   useEffect(() => { load(1, pageSize); }, []);
+  const loadSensitiveWords = async () => {
+    setSensitiveWordsLoading(true);
+    setSensitiveWordsLoaded(false);
+    setSensitiveWordsError('');
+    try {
+      const result = await api.getSensitiveWords();
+      if (!Array.isArray(result?.data) || result.data.some((word: unknown) => typeof word !== 'string')) {
+        throw new Error('服务返回了无法识别的词库数据');
+      }
+      setSensitiveWordsText(result.data.join('\n'));
+      setSensitiveWordsLoaded(true);
+    } catch (err: any) {
+      setSensitiveWordsError(err?.message || '全局输入阻断词库加载失败');
+    } finally {
+      setSensitiveWordsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    Promise.all([api.getKeys(1, 100), api.getModelNames()])
-      .then(([keyData, modelData]: any[]) => {
-        setKeys(keyData?.data || []);
+    if (platform) void loadSensitiveWords();
+  }, [platform]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const [keyData, orgData, modelData] = await Promise.all([
+          loadAllPages<KeyOption>((page, size) => api.getKeys(page, size)),
+          loadAllPages<any>((page, size) => api.getOrganizations(page, size)),
+          api.getModelNames(),
+        ]);
+        const projectData = platform
+          ? (await Promise.all(orgData.map((org: any) =>
+              loadAllPages<any>((page, size) => api.getProjects(page, size, { org_id: org.id })),
+            ))).flat()
+          : await loadAllPages<any>((page, size) => api.getProjects(page, size));
+        setKeys(keyData || []);
+        setOrganizations(orgData.map((org: any) => ({ value: org.id, label: `${org.name}（ID ${org.id}）` })));
+        setProjects((projectData || []).map((project: any) => ({ value: project.id, label: `${project.name} · ${project.org_name || `组织 #${project.org_id}`}` })));
         const source = Array.isArray(modelData?.data) ? modelData.data : modelData;
         setModels((Array.isArray(source) ? source : []).map((item: any) => typeof item === 'string' ? item : item.model).filter(Boolean));
-      })
-      .catch(() => {});
-  }, []);
-
-  const organizations = useMemo(() => {
-    const map = new Map<number, string>();
-    keys.forEach((key) => map.set(key.org_id, key.org_name || `组织 #${key.org_id}`));
-    return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
-  }, [keys]);
-  const projects = useMemo(() => {
-    const map = new Map<number, string>();
-    keys.forEach((key) => {
-      if (key.project_id) map.set(key.project_id, `${key.project_name || `项目 #${key.project_id}`} · ${key.org_name || `组织 #${key.org_id}`}`);
-    });
-    return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
-  }, [keys]);
+      } catch {
+        Toast.error('安全策略选项加载失败，请刷新后重试');
+      }
+    })();
+  }, [platform]);
 
   const closeDrawer = () => {
     setDrawerVisible(false);
@@ -213,6 +248,36 @@ export default function GuardrailPoliciesPage() {
     }
   };
 
+  const confirmSensitiveWordsReplace = () => {
+    const words = wordsFromText(sensitiveWordsText);
+    const clearingAll = words.length === 0;
+    Modal.confirm({
+      title: clearingAll ? '确认清空全局输入阻断词库？' : '确认替换全局输入阻断词库？',
+      content: clearingAll
+        ? '当前内容为空。继续后将清空全部部署级输入阻断词，所有组织、项目和访问凭证都会受到影响。'
+        : `将以当前 ${words.length} 个词完整替换部署级词库，并影响所有组织、项目和访问凭证；这不是追加操作。`,
+      okText: clearingAll ? '确认清空' : '确认全局替换',
+      cancelText: '取消',
+      onOk: async () => {
+        setSensitiveWordsSaving(true);
+        setSensitiveWordsError('');
+        try {
+          const result = await api.replaceSensitiveWords(words);
+          if (!Array.isArray(result?.data) || result.data.some((word: unknown) => typeof word !== 'string')) {
+            throw new Error('保存成功状态无法确认：服务返回了无法识别的词库数据');
+          }
+          setSensitiveWordsText(result.data.join('\n'));
+          Toast.success('全局输入阻断词库已替换');
+        } catch (err: any) {
+          setSensitiveWordsError(err?.message || '全局输入阻断词库保存失败，当前编辑内容尚未确认生效');
+          throw err;
+        } finally {
+          setSensitiveWordsSaving(false);
+        }
+      },
+    });
+  };
+
   const columns = [
     { title: '策略', dataIndex: 'name', render: (value: string, record: GuardrailPolicy) => <div><Text strong>{value}</Text><br /><Text type="tertiary" size="small">版本 v{record.version}{record.mandatory ? ' · 平台强制' : ''}</Text></div> },
     { title: '适用范围', render: (_: unknown, record: GuardrailPolicy) => selectorText(record) },
@@ -230,25 +295,13 @@ export default function GuardrailPoliciesPage() {
   return (
     <div className="ur-page">
       <PageHeader
-        eyebrow="安全治理"
+        eyebrow="访问与安全"
         title="内容安全策略"
         description="在请求发往模型前，以及非流式或流式结果交付客户前，执行版本固定的审计、脱敏或阻断。"
         actions={canManage ? <Button icon={<IconPlus />} type="primary" onClick={() => { setEditing(null); setDrawerVisible(true); }}>新增策略</Button> : undefined}
       />
 
-      <Surface title="如何安全使用">
-        <Paragraph><Text strong>推荐从影子观察开始：</Text>检测器只报告发现，由 UniRouter 内核统一决定继续、脱敏或阻断；影子模式不会改变客户请求。</Paragraph>
-        <Paragraph>平台强制规则对所有租户生效，组织、项目和访问凭证策略只能继续收紧，不能关闭或放宽平台规则。外部检测器必须先由平台注册，不能填写任意网址。</Paragraph>
-        <Paragraph><Text strong>外部检测会传输内容：</Text>启用外部检测策略会把所选文本发送到平台预先登记的固定服务。只有在租户授权、数据驻留、保留与供应商条款均已确认后才能启用；当前默认未登记真实外部检测器。</Paragraph>
-        <Paragraph><Text strong>故障规则：</Text>强制安全检测器不可用时拒绝请求；普通审计可选择“留痕后继续”。外部检测默认最多等待 1 秒且不自动重试，避免同一次请求被重复处理。</Paragraph>
-        <Paragraph><Text strong>同步扫描边界：</Text>每次策略评估最多检查 {detectorMaxTexts} 个文本单元；本地 PII/密钥检测最多处理 {Math.round(localDetectorMaxBytes / 1024)} KiB，外部检测最多处理 {Math.round(externalDetectorMaxBytes / 1024)} KiB。超出时不会假装已检查，而是标记为“无法完整判断”，再按上面的故障规则安全拒绝或留痕后继续。</Paragraph>
-        <Paragraph><Text strong>流式输出不是零泄露承诺：</Text>每个完整的模型数据帧都在写出前同步检查；已标准化的模型数据 JSON 最多聚合 {streamBufferMaxWaitMs} 毫秒或 {Math.round(streamBufferMaxBytes / 1024)} KiB，先到即关闭本批，并只保留检测器申报的有限跨帧上下文。单个标准化模型数据帧超过该上限会在交付前安全中断；更大的 SSE 传输行上限不代表强制检查缓冲也允许同样大小。影子/只审计检测可能在内容写出后才形成结论。</Paragraph>
-        <Paragraph><Text strong>流式中断与恢复：</Text>命中阻断或硬预算无法扩容时立即停止当前上游，不再切换渠道。已安全写出的前缀按实际用量结算；未写出的内容不向客户收费。系统约每 {Math.max(1, Math.round(streamCheckpointIntervalMs / 1000))} 秒保存一次不含正文的计数 checkpoint，实例故障后明确标记中断，不会从中间偷偷重放或迁移。</Paragraph>
-        <Paragraph><Text strong>输出阻断与费用：</Text>未交付的被阻断内容不向客户收费；上游可能已经计费，因此该部分会进入上游成本待处理，直到平台操作员明确退款或承担成本。</Paragraph>
-        <Paragraph>当前策略覆盖 Chat 输入、Embeddings 文本输入，以及 Chat 非流式和流式普通文本、文本分段、函数/工具参数；无法识别的结构化输出不会假装检查通过。</Paragraph>
-      </Surface>
-
-      <Surface>
+      <Surface title="安全策略" description="策略列表是权威管理入口；先确认当前范围、检查阶段和执行模式，再新增或编辑。">
         <div className="ur-table-shell">
           <Table rowKey="id" columns={columns} dataSource={policies} loading={loading} pagination={{
             currentPage: page, pageSize, total, pageSizeOpts: [20, 50, 100], showSizeChanger: true,
@@ -256,6 +309,58 @@ export default function GuardrailPoliciesPage() {
             onPageSizeChange: (next: number) => { setPageSize(next); setPage(1); load(1, next); },
           }} />
         </div>
+      </Surface>
+
+      {platform ? (
+        <Surface
+          title="全局输入阻断词库"
+          description="部署级兼容词库，一行一词。保存会完整替换当前词库，而不是追加。"
+        >
+          <Paragraph>
+            <Text strong>全局影响：</Text>
+            修改会影响所有组织、项目和访问凭证的请求输入；当前处理实例在提交后立即应用，其他实例通过周期刷新收敛。
+          </Paragraph>
+          {sensitiveWordsError ? <Paragraph><Text type="danger">{sensitiveWordsError}</Text></Paragraph> : null}
+          {!sensitiveWordsLoaded ? (
+            <Button onClick={() => void loadSensitiveWords()} loading={sensitiveWordsLoading}>
+              {sensitiveWordsLoading ? '正在加载词库' : '重新加载词库'}
+            </Button>
+          ) : (
+            <>
+              <TextArea
+                aria-label="全局输入阻断词库"
+                value={sensitiveWordsText}
+                onChange={setSensitiveWordsText}
+                placeholder={'例如：\n测试词\n禁止内容'}
+                autosize={{ minRows: 8, maxRows: 18 }}
+                disabled={sensitiveWordsLoading || sensitiveWordsSaving}
+              />
+              <Space style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12 }}>
+                <Text type="tertiary">当前编辑内容共 {wordsFromText(sensitiveWordsText).length} 个非空去重词条</Text>
+                <Button
+                  type="primary"
+                  loading={sensitiveWordsSaving}
+                  disabled={sensitiveWordsLoading}
+                  onClick={confirmSensitiveWordsReplace}
+                >
+                  保存并替换全局词库
+                </Button>
+              </Space>
+            </>
+          )}
+        </Surface>
+      ) : null}
+
+      <Surface title="安全边界与使用说明">
+        <Paragraph><Text strong>推荐从影子观察开始：</Text>检测器只报告发现，由 UniRouter 内核统一决定继续、脱敏或阻断；影子模式不会改变客户请求。</Paragraph>
+        <Paragraph>平台强制规则对所有租户生效，组织、项目和访问凭证策略只能继续收紧，不能关闭或放宽平台规则。外部检测器必须先由平台注册，不能填写任意网址。</Paragraph>
+        <Paragraph><Text strong>外部检测会传输内容：</Text>启用外部检测策略会把所选文本发送到平台预先登记的固定服务。只有在租户授权、数据驻留、保留与供应商条款均已确认后才能启用；当前默认未登记真实外部检测器。</Paragraph>
+        <Paragraph><Text strong>故障规则：</Text>强制安全检测器不可用时拒绝请求；普通审计可选择“留痕后继续”。外部检测默认最多等待 1 秒且不自动重试，避免同一次请求被重复处理。</Paragraph>
+        <Paragraph><Text strong>同步扫描边界：</Text>每次策略评估最多检查 {detectorMaxTexts} 个文本单元；本地 PII/密钥检测最多处理 {Math.round(localDetectorMaxBytes / 1024)} KiB，外部检测最多处理 {Math.round(externalDetectorMaxBytes / 1024)} KiB。超出时不会假装已检查，而是标记为“无法完整判断”，再按上面的故障规则安全拒绝或留痕后继续。</Paragraph>
+        <Paragraph><Text strong>流式输出不是零泄露承诺：</Text>每个完整的模型数据帧都在写出前同步检查；已标准化的模型数据 JSON 最多聚合 {streamBufferMaxWaitMs} 毫秒或 {Math.round(streamBufferMaxBytes / 1024)} KiB，先到即关闭本批，并只保留检测器申报的有限跨帧上下文。单个标准化模型数据帧超过该上限会在交付前安全中断；更大的 SSE 传输行上限不代表强制检查缓冲也允许同样大小。影子/只审计检测可能在内容写出后才形成结论。</Paragraph>
+        <Paragraph><Text strong>流式中断与恢复：</Text>命中阻断或硬预算无法扩容时立即停止当前上游，不再切换通道。已安全写出的前缀按实际用量结算；未写出的内容不向客户收费。系统约每 {Math.max(1, Math.round(streamCheckpointIntervalMs / 1000))} 秒保存一次不含正文的计数 checkpoint，实例故障后明确标记中断，不会从中间偷偷重放或迁移。</Paragraph>
+        <Paragraph><Text strong>输出阻断与费用：</Text>未交付的被阻断内容不向客户收费；上游可能已经计费，因此该部分会进入上游成本待处理，直到平台操作员明确退款或承担成本。</Paragraph>
+        <Paragraph>当前策略覆盖 Chat 输入、Embeddings 文本输入，以及 Chat 非流式和流式普通文本、文本分段、函数/工具参数；无法识别的结构化输出不会假装检查通过。</Paragraph>
       </Surface>
 
       <SideSheet title={editing ? `编辑安全策略：${editing.name}` : '新增内容安全策略'} visible={drawerVisible} onCancel={closeDrawer} width={580}>

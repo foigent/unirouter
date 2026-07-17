@@ -45,6 +45,8 @@ func (d *sensitiveWordDetector) Detect(_ Context, text Text, _ json.RawMessage) 
 
 type piiSecretsDetector struct{}
 
+const maxDetectorFindings = 256
+
 func (piiSecretsDetector) Version() string { return "unirouter.local-pii-secrets.v1" }
 
 func (piiSecretsDetector) StreamCapability() StreamCapability {
@@ -108,15 +110,14 @@ func (piiSecretsDetector) Detect(_ Context, text Text, raw json.RawMessage) ([]F
 			return nil, fmt.Errorf("unsupported or duplicate PII entity %q", entity)
 		}
 		seen[entity] = true
-		remaining := 256 - len(findings)
-		if remaining <= 0 {
-			break
-		}
-		for _, span := range pattern.FindAllStringIndex(text.Content, remaining) {
+		for _, span := range pattern.FindAllStringIndex(text.Content, -1) {
 			if entity == "credit_card" && !validLuhn(text.Content[span[0]:span[1]]) {
 				continue
 			}
 			findings = append(findings, Finding{Category: entity, Start: span[0], End: span[1], ConfidenceBucket: "deterministic"})
+			if len(findings) > maxDetectorFindings {
+				return nil, fmt.Errorf("%w: local detector exceeded %d findings", ErrDetectionIncomplete, maxDetectorFindings)
+			}
 		}
 	}
 	sort.Slice(findings, func(i, j int) bool {
@@ -174,7 +175,7 @@ func normalizeFindings(content string, findings []Finding, detectorErr error) ([
 	if detectorErr != nil {
 		return nil, detectorErr
 	}
-	if len(findings) > 256 {
+	if len(findings) > maxDetectorFindings {
 		return nil, fmt.Errorf("detector returned too many findings")
 	}
 	findings = append([]Finding(nil), findings...)

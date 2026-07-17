@@ -1,9 +1,9 @@
 import { formatDateTime } from '../utils/formatDate';
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, DatePicker, Input, Select, SideSheet, Space, Table, Tag } from '@douyinfe/semi-ui';
 import { IconRefresh, IconSearch } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-import { PageHeader, Surface } from '../ui';
+import { EmptyState, PageHeader, Surface } from '../ui';
 import { auditSourceLabel, auditSourceOptions } from '../utils/displayLabels';
 
 type TagColor = 'amber' | 'blue' | 'cyan' | 'green' | 'grey' | 'indigo' | 'light-blue' | 'light-green' | 'lime' | 'orange' | 'pink' | 'purple' | 'red' | 'teal' | 'violet' | 'yellow' | 'white';
@@ -50,56 +50,82 @@ export default function AuditLogsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [filters, setFilters] = useState<AuditFilters>({});
   const [selectedLog, setSelectedLog] = useState<any | null>(null);
+  const requestVersion = useRef(0);
 
   const load = (p = page, size = pageSize) => {
+    const version = ++requestVersion.current;
     setLoading(true);
+    setLoadError('');
+    setLogs([]);
+    setTotal(0);
+    setSelectedLog(null);
     api.getAuditLogs(p, size, filters)
-      .then((d: any) => { setLogs(d.data || []); setTotal(d.total || 0); })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+      .then((d: any) => {
+        if (version !== requestVersion.current) return;
+        setLogs(d.data || []);
+        setTotal(d.total || 0);
+      })
+      .catch(() => {
+        if (version === requestVersion.current) setLoadError('无法加载当前筛选条件下的审计记录。');
+      })
+      .finally(() => {
+        if (version === requestVersion.current) setLoading(false);
+      });
   };
 
-  useEffect(() => { load(page, pageSize); }, [page, pageSize, filters]);
+  useEffect(() => {
+    load(page, pageSize);
+    return () => { requestVersion.current += 1; };
+  }, [page, pageSize, filters]);
 
   const updateFilter = (key: keyof AuditFilters, value: string | undefined) => {
+    requestVersion.current += 1;
+    setLogs([]);
+    setTotal(0);
+    setLoadError('');
     setFilters(prev => ({ ...prev, [key]: value || undefined }));
     setPage(1);
   };
 
   const clearFilters = () => {
+    requestVersion.current += 1;
+    setLogs([]);
+    setTotal(0);
+    setLoadError('');
     setFilters({});
     setPage(1);
   };
 
   const columns = [
-    { title: 'ID', dataIndex: 'id', width: 60 },
-    { title: '组织', dataIndex: 'org_id', width: 170, render: (v: number, row: any) => scopedIdentity(row.org_name, v, '组织') },
-    { title: '项目', dataIndex: 'project_id', width: 170, render: (v: number | null, row: any) => scopedIdentity(row.project_name, v, '项目') },
+    { title: '时间', dataIndex: 'created_at', width: 170, render: (v: string) => formatDateTime(v) },
+    {
+      title: '范围', width: 220,
+      render: (_: unknown, row: any) => row.project_id
+        ? `${scopedIdentity(row.org_name, row.org_id, '组织')} / ${scopedIdentity(row.project_name, row.project_id, '项目')}`
+        : scopedIdentity(row.org_name, row.org_id, '组织'),
+    },
     { title: '操作者', dataIndex: 'actor_id', width: 170, render: (v: number, row: any) => scopedIdentity(row.actor_name, v, '用户') },
     {
       title: '动作', dataIndex: 'action',
       width: 180,
       render: (v: string) => <Tag color={actionColor(v)}>{v}</Tag>,
     },
-    { title: '目标类型', dataIndex: 'resource', width: 130 },
-    { title: '目标ID', dataIndex: 'resource_id', width: 150, render: (v: string) => v || '-' },
-    { title: '操作 ID', dataIndex: 'request_id', width: 190, render: (v: string) => v || '-' },
-    { title: '客户端请求 ID', dataIndex: 'client_request_id', width: 170, render: (v: string) => v || '-' },
+    { title: '目标', width: 190, render: (_: unknown, row: any) => `${row.resource || '-'}${row.resource_id ? ` #${row.resource_id}` : ''}` },
     { title: '来源', dataIndex: 'source', width: 150, render: (v: string) => v ? <Tag>{auditSourceLabel(v)}</Tag> : '-' },
     { title: '详情', width: 88, render: (_: unknown, row: any) => <Button size="small" onClick={() => setSelectedLog(row)}>查看</Button> },
-    { title: '时间', dataIndex: 'created_at', width: 180, render: (v: string) => formatDateTime(v) },
   ];
 
   return (
     <div className="ur-page">
       <PageHeader
-        eyebrow="访问控制"
+        eyebrow="访问与安全"
         title="审计日志"
         description="查看登录、配置变更、入账、额度调整和结算等关键后台动作。"
       />
-      <Surface>
+      <Surface title="筛选条件">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
           <Input prefix="组织" placeholder="组织 ID" value={filters.org_id || ''} onChange={(v) => updateFilter('org_id', v)} />
           <Input prefix="项目" placeholder="项目 ID" value={filters.project_id || ''} onChange={(v) => updateFilter('project_id', v)} />
@@ -120,6 +146,10 @@ export default function AuditLogsPage() {
             style={{ width: '100%', gridColumn: 'span 2' }}
             value={filters.start_time && filters.end_time ? [new Date(filters.start_time), new Date(filters.end_time)] : undefined}
             onChange={(value) => {
+              requestVersion.current += 1;
+              setLogs([]);
+              setTotal(0);
+              setLoadError('');
               const range = Array.isArray(value) ? value : [];
               setFilters(prev => ({
                 ...prev,
@@ -135,10 +165,18 @@ export default function AuditLogsPage() {
           <Button icon={<IconRefresh />} onClick={clearFilters}>重置</Button>
         </Space>
       </Surface>
-      <Surface>
+      <Surface title="审计记录" description="列表保留定位所需的核心字段；操作 ID、客户端请求 ID、IP、User-Agent 和变更 JSON 请在详情中查看。">
         <div className="ur-table-shell">
           <Table columns={columns} dataSource={logs} loading={loading} rowKey="id"
-            scroll={{ x: 1550, y: 620 }}
+            scroll={{ x: 1050, y: 620 }}
+            empty={loadError ? (
+              <EmptyState
+                title="审计记录加载失败"
+                description={loadError}
+                actions={<Button type="primary" onClick={() => load(page, pageSize)}>重新加载审计记录</Button>}
+                minHeight={220}
+              />
+            ) : <EmptyState title="暂无审计记录" minHeight={220} />}
             pagination={{ currentPage: page, pageSize, pageSizeOpts: [20, 50, 100], showSizeChanger: true, total, onPageChange: (p) => setPage(p), onPageSizeChange: (s) => { setPageSize(s); setPage(1); } }} />
         </div>
       </Surface>
@@ -151,6 +189,16 @@ export default function AuditLogsPage() {
       >
         {selectedLog && (
           <div style={{ display: 'grid', gap: 16 }}>
+            <section>
+              <strong>请求与来源</strong>
+              <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+                <span>操作 ID：<code>{selectedLog.request_id || '-'}</code></span>
+                <span>客户端请求 ID：<code>{selectedLog.client_request_id || '-'}</code></span>
+                <span>来源：{auditSourceLabel(selectedLog.source) || '-'}</span>
+                <span>IP：<code>{selectedLog.ip || '-'}</code></span>
+                <span>User-Agent：<code style={{ overflowWrap: 'anywhere' }}>{selectedLog.user_agent || '-'}</code></span>
+              </div>
+            </section>
             {[
               ['详情', selectedLog.detail],
               ['变更前', selectedLog.before],

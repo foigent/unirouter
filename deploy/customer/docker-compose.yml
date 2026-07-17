@@ -47,6 +47,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
       API_KEY_HASH_SECRET: ${API_KEY_HASH_SECRET:?Set API_KEY_HASH_SECRET}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY}
+      UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET: ${UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET:?Set a notification Webhook HMAC secret of at least 32 bytes}
       UNIROUTE_ALLOW_DEFAULT_ADMIN_LOGIN: "false"
       ADMIN_CORS_ALLOWED_ORIGINS: ${ADMIN_CORS_ALLOWED_ORIGINS:-}
       METRICS_ENABLED: ${METRICS_ENABLED:-true}
@@ -65,6 +66,11 @@ services:
       LOGIN_RATE_LIMIT_WINDOW_SECONDS: ${LOGIN_RATE_LIMIT_WINDOW_SECONDS:-60}
       LOGIN_RATE_LIMIT_IP_REQUESTS: ${LOGIN_RATE_LIMIT_IP_REQUESTS:-30}
       LOGIN_RATE_LIMIT_USER_REQUESTS: ${LOGIN_RATE_LIMIT_USER_REQUESTS:-10}
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:?Set the exact frontend proxy /32 and any approved edge proxy hop CIDRs}
+      GUARDRAIL_ORG_ACTIVE_POLICY_LIMIT: ${GUARDRAIL_ORG_ACTIVE_POLICY_LIMIT:-256}
+      GUARDRAIL_PLATFORM_ACTIVE_POLICY_LIMIT: ${GUARDRAIL_PLATFORM_ACTIVE_POLICY_LIMIT:-256}
+      GUARDRAIL_CACHED_POLICY_LIMIT: ${GUARDRAIL_CACHED_POLICY_LIMIT:-4096}
+      GUARDRAIL_CACHED_TENANT_LIMIT: ${GUARDRAIL_CACHED_TENANT_LIMIT:-4096}
       LICENSE_DEPLOYMENT_ID: ${LICENSE_DEPLOYMENT_ID:?Set the approved stable deployment identity}
       LICENSE_EXPIRY_WARNING_DAYS: ${LICENSE_EXPIRY_WARNING_DAYS:-30}
       LICENSE_REFRESH_SECONDS: ${LICENSE_REFRESH_SECONDS:-30}
@@ -102,6 +108,9 @@ services:
     image: ${UNIROUTER_FRONTEND_IMAGE:?Set the signed release frontend image reference}
     ports:
       - "${UNIROUTER_LISTEN_ADDRESS:-127.0.0.1}:${UNIROUTER_HTTP_PORT:-3000}:80"
+    networks:
+      default:
+        ipv4_address: ${UNIROUTER_FRONTEND_PROXY_IP:?Set the fixed frontend proxy address inside UNIROUTER_INTERNAL_NETWORK_CIDR}
     depends_on:
       backend:
         condition: service_healthy
@@ -141,3 +150,10 @@ volumes:
   redis_data:
   prometheus_data:
   grafana_data:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${UNIROUTER_INTERNAL_NETWORK_CIDR:?Set the dedicated internal Docker network CIDR}
+          gateway: ${UNIROUTER_INTERNAL_NETWORK_GATEWAY:?Set the gateway inside the internal Docker network CIDR}

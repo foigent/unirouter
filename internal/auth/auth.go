@@ -6,9 +6,11 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"strconv"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -23,6 +25,10 @@ const (
 	RoleDeveloper     = "developer"
 	RoleViewer        = "viewer"
 	RoleOrgViewer     = "org_viewer"
+
+	apiKeyDisplayPrefixLength = 20
+	adminJWTVersion           = 2
+	adminSessionIDBytes       = 32
 )
 
 // --- API Key hashing (HMAC-SHA256) ---
@@ -42,8 +48,9 @@ func VerifyAPIKey(rawKey, storedHash, secret string) bool {
 
 // GenerateAPIKey generates a new API key for the given org.
 // The raw format is ur-{4-digit org id}-{32 random hex characters}. The stored
-// display prefix is the first 12 characters: the fixed org segment plus four
-// random hex characters. Authentication always uses the full-key HMAC hash.
+// display prefix uses the full VARCHAR(20) field: the fixed org segment plus
+// twelve random hex characters (48 bits). Authentication always uses the
+// full-key HMAC hash, so existing shorter stored prefixes remain compatible.
 func GenerateAPIKey(orgID int64) (rawKey string, keyPrefix string, err error) {
 	buf := make([]byte, 16)
 	if _, err := rand.Read(buf); err != nil {
@@ -52,7 +59,7 @@ func GenerateAPIKey(orgID int64) (rawKey string, keyPrefix string, err error) {
 	hexStr := hex.EncodeToString(buf) // 32 chars
 	orgPart := fmt.Sprintf("%04d", orgID%10000)
 	rawKey = fmt.Sprintf("ur-%s-%s", orgPart, hexStr)
-	keyPrefix = rawKey[:12]
+	keyPrefix = rawKey[:apiKeyDisplayPrefixLength]
 	return rawKey, keyPrefix, nil
 }
 
@@ -106,36 +113,78 @@ func DecryptKey(encoded string, key []byte) (string, error) {
 
 // Claims represents the JWT claims for admin users.
 type Claims struct {
-	UserID int64  `json:"user_id"`
-	OrgID  int64  `json:"org_id"`
-	Role   string `json:"role"`
+	UserID        int64  `json:"user_id"`
+	OrgID         int64  `json:"org_id"`
+	Role          string `json:"role"`
+	SessionID     string `json:"sid"`
+	AuthEpoch     int64  `json:"auth_epoch"`
+	SchemaVersion int    `json:"ver"`
 	jwt.RegisteredClaims
 }
 
-// GenerateJWT creates a JWT token for the given user.
-func GenerateJWT(userID, orgID int64, role, secret string, expireHours int) (string, error) {
+// AdminSession is the non-sensitive server-side record required to authorize
+// an admin JWT. The raw bearer sid never leaves the token generator.
+type AdminSession struct {
+	SIDHash   []byte
+	IssuedAt  time.Time
+	ExpiresAt time.Time
+}
+
+// GenerateAdminSessionJWT creates a versioned admin JWT and the hashed session
+// record that must be persisted before the token is returned to a client.
+func GenerateAdminSessionJWT(userID, orgID int64, role string, authEpoch int64, secret string, expireHours int) (string, AdminSession, error) {
+	if userID <= 0 || orgID <= 0 || !IsValidRole(role) || authEpoch < 0 || expireHours <= 0 {
+		return "", AdminSession{}, fmt.Errorf("invalid admin session claims")
+	}
+	sidBytes := make([]byte, adminSessionIDBytes)
+	if _, err := rand.Read(sidBytes); err != nil {
+		return "", AdminSession{}, fmt.Errorf("generate admin session id: %w", err)
+	}
+	sessionID := base64.RawURLEncoding.EncodeToString(sidBytes)
+	issuedAt := time.Now().UTC()
+	expiresAt := issuedAt.Add(time.Duration(expireHours) * time.Hour)
 	claims := Claims{
-		UserID: userID,
-		OrgID:  orgID,
-		Role:   role,
+		UserID:        userID,
+		OrgID:         orgID,
+		Role:          role,
+		SessionID:     sessionID,
+		AuthEpoch:     authEpoch,
+		SchemaVersion: adminJWTVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(expireHours) * time.Hour)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+			IssuedAt:  jwt.NewNumericDate(issuedAt),
 			Issuer:    "uniroute",
+			Subject:   strconv.FormatInt(userID, 10),
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(secret))
+	signed, err := token.SignedString([]byte(secret))
+	if err != nil {
+		return "", AdminSession{}, err
+	}
+	hash := sha256.Sum256([]byte(sessionID))
+	return signed, AdminSession{
+		SIDHash:   append([]byte(nil), hash[:]...),
+		IssuedAt:  issuedAt,
+		ExpiresAt: expiresAt,
+	}, nil
+}
+
+// HashAdminSessionID returns the SHA-256 session lookup key stored by the
+// server. The raw sid is bearer material and must not be persisted or logged.
+func HashAdminSessionID(sessionID string) []byte {
+	hash := sha256.Sum256([]byte(sessionID))
+	return append([]byte(nil), hash[:]...)
 }
 
 // ParseJWT parses and validates a JWT token.
 func ParseJWT(tokenStr, secret string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (interface{}, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+		if t.Method != jwt.SigningMethodHS256 {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 		}
 		return []byte(secret), nil
-	})
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithIssuer("uniroute"), jwt.WithExpirationRequired(), jwt.WithIssuedAt())
 	if err != nil {
 		return nil, err
 	}
@@ -143,18 +192,23 @@ func ParseJWT(tokenStr, secret string) (*Claims, error) {
 	if !ok || !token.Valid {
 		return nil, fmt.Errorf("invalid token")
 	}
+	decodedSID, decodeErr := base64.RawURLEncoding.DecodeString(claims.SessionID)
+	if claims.SchemaVersion != adminJWTVersion || claims.UserID <= 0 || claims.OrgID <= 0 ||
+		!IsValidRole(claims.Role) || claims.AuthEpoch < 0 || claims.IssuedAt == nil ||
+		claims.Subject != strconv.FormatInt(claims.UserID, 10) ||
+		len(decodedSID) != adminSessionIDBytes || decodeErr != nil {
+		return nil, fmt.Errorf("invalid admin session token")
+	}
 	return claims, nil
 }
 
 // --- Permission helpers ---
 
-// NormalizeRole maps legacy PRD1 roles to their PRD2 equivalents.
+// NormalizeRole maps legacy aliases while preserving roles with different scopes.
 func NormalizeRole(role string) string {
 	switch role {
 	case RoleLegacyAdmin:
 		return RolePlatformAdmin
-	case RoleOrgViewer:
-		return RoleViewer
 	default:
 		return role
 	}

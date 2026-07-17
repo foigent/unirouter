@@ -5,15 +5,20 @@ import LogsPage from '../LogsPage';
 
 const mockGetLogs = vi.fn();
 const mockGetModelNames = vi.fn();
-const mockGetChannels = vi.fn();
 const mockGetLogTrace = vi.fn();
+const mockGetOrganizations = vi.fn();
+const auth = vi.hoisted(() => ({ user: null as any }));
 vi.mock('../../api/client', () => ({
   api: {
     getLogs: (...args: any[]) => mockGetLogs(...args),
     getModelNames: (...args: any[]) => mockGetModelNames(...args),
-    getChannels: (...args: any[]) => mockGetChannels(...args),
     getLogTrace: (...args: any[]) => mockGetLogTrace(...args),
+    getOrganizations: (...args: any[]) => mockGetOrganizations(...args),
   },
+}));
+
+vi.mock('../../store/auth', () => ({
+  useAuthStore: (selector: any) => selector({ user: auth.user }),
 }));
 
 const MOCK_LOGS_RESPONSE = {
@@ -86,13 +91,6 @@ const MOCK_MODEL_NAMES = {
   data: ['gpt-4o', 'claude-3.5-sonnet'],
 };
 
-const MOCK_CHANNELS = {
-  data: [
-    { provider: 'openai' },
-    { provider: 'anthropic' },
-  ],
-};
-
 const MOCK_TRACE_RESPONSE = {
   request_id: 'req-001-aaa',
   events: [
@@ -162,10 +160,11 @@ function renderLogs() {
 describe('LogsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    auth.user = null;
     mockGetLogs.mockResolvedValue(MOCK_LOGS_RESPONSE);
     mockGetModelNames.mockResolvedValue(MOCK_MODEL_NAMES);
-    mockGetChannels.mockResolvedValue(MOCK_CHANNELS);
     mockGetLogTrace.mockResolvedValue(MOCK_TRACE_RESPONSE);
+    mockGetOrganizations.mockResolvedValue({ data: [{ id: 7, name: '总部' }], total: 1 });
   });
 
   it('fetches logs with default page params', async () => {
@@ -176,6 +175,15 @@ describe('LogsPage', () => {
     const [page, pageSize] = mockGetLogs.mock.calls[0];
     expect(page).toBe(1);
     expect(pageSize).toBe(50);
+  });
+
+  it('uses the platform JWT organization as the explicit request scope', async () => {
+    auth.user = { role: 'platform_admin', org_id: 7 };
+    renderLogs();
+
+    expect(await screen.findByText('目标组织')).toBeTruthy();
+    await waitFor(() => expect(mockGetLogs).toHaveBeenCalledWith(1, 50, expect.objectContaining({ org_id: 7 })));
+    expect(mockGetOrganizations).toHaveBeenCalledWith(1, 100);
   });
 
   it('renders log data in DOM after fetch', async () => {
@@ -209,12 +217,13 @@ describe('LogsPage', () => {
   it('places provider filter before model filter', async () => {
     const { container } = renderLogs();
     await waitFor(() => {
-      expect(mockGetChannels).toHaveBeenCalled();
+      expect(mockGetModelNames).toHaveBeenCalled();
     });
     const labels = Array.from(container.querySelectorAll('.ur-filter-label')).map(el => el.textContent || '');
-    expect(labels.indexOf('渠道 / 供应商')).toBeGreaterThanOrEqual(0);
+    expect(labels.indexOf('供应商')).toBeGreaterThanOrEqual(0);
     expect(labels.indexOf('模型')).toBeGreaterThanOrEqual(0);
-    expect(labels.indexOf('渠道 / 供应商')).toBeLessThan(labels.indexOf('模型'));
+    expect(labels.indexOf('供应商')).toBeLessThan(labels.indexOf('模型'));
+    expect(screen.getByPlaceholderText('供应商名称')).toBeTruthy();
   });
 
   it('renders usage source filter for metering drilldown', async () => {
@@ -359,11 +368,10 @@ describe('LogsPage', () => {
     });
   });
 
-  it('loads model names and channels for filter options on mount', async () => {
+  it('loads model names without requesting platform-only channel data', async () => {
     renderLogs();
     await waitFor(() => {
       expect(mockGetModelNames).toHaveBeenCalled();
-      expect(mockGetChannels).toHaveBeenCalledWith(1, 100);
     });
   });
 });

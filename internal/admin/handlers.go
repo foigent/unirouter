@@ -51,6 +51,8 @@ type Handler struct {
 	startedAt                    time.Time
 	runtimeOptions               RuntimeStatusOptions
 	runtimeHostTelemetryProvider func() runtimeHostTelemetry
+	runtimeStatusCache           runtimeStatusSnapshotCache
+	runtimeStatusCollector       runtimeStatusCollector
 	limitPolicyReloader          interface{ Refresh(context.Context) error }
 	routingController            routingController
 	outbox                       *outbox.Service
@@ -138,26 +140,47 @@ func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var username, role, status string
+	var username, role, status, email, authProvider string
 	var orgID int64
 	var orgName string
 	var createdAt time.Time
 	err := h.db.QueryRow(r.Context(),
-		`SELECT u.username, u.role, u.status, u.org_id, u.created_at, COALESCE(o.name, '') as org_name
+		`SELECT u.username, u.role, u.status, u.org_id, u.created_at, COALESCE(o.name, '') as org_name,
+		        COALESCE(u.email, ''), COALESCE(NULLIF(u.auth_provider, ''), 'local')
 		 FROM users u LEFT JOIN orgs o ON o.id = u.org_id
-		 WHERE u.id = $1`, userID).Scan(&username, &role, &status, &orgID, &createdAt, &orgName)
+		 WHERE u.id = $1`, userID).Scan(&username, &role, &status, &orgID, &createdAt, &orgName, &email, &authProvider)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "User not found"})
 		return
 	}
 
+	licenseAccess := licensing.CapabilityStatus{
+		Status:      licensing.StatusInvalid,
+		Enforceable: false,
+		Features: map[string]bool{
+			licensing.FeatureGateway:           false,
+			licensing.FeatureAgentCapabilities: false,
+			licensing.FeatureOIDC:              false,
+			licensing.FeatureGuardrails:        false,
+			licensing.FeatureNotifications:     false,
+			licensing.FeatureModelGovernance:   false,
+			licensing.FeatureDataExchange:      false,
+		},
+	}
+	if h.licenseRuntime != nil {
+		licenseAccess = h.licenseRuntime.Capabilities()
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"id":         userID,
-		"username":   username,
-		"role":       role,
-		"status":     status,
-		"org_id":     orgID,
-		"org_name":   orgName,
-		"created_at": createdAt,
+		"id":             userID,
+		"username":       username,
+		"role":           role,
+		"status":         status,
+		"org_id":         orgID,
+		"org_name":       orgName,
+		"email":          email,
+		"auth_provider":  authProvider,
+		"created_at":     createdAt,
+		"license_access": licenseAccess,
 	})
 }

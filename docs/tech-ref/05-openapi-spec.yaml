@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: UniRoute API
+  title: UniRouter API
   version: 1.0.0
   description: |
     Current UniRouter API contract snapshot for active backend routes.
@@ -30,6 +30,124 @@ tags:
   - name: Admin
   - name: Health
   - name: Observability
+
+# OpenAPI 3.0 has no reusable Operation Object component. These YAML anchors
+# keep the serialized document DRY while every path method still expands to a
+# real Operation Object for standards-compliant tooling.
+x-unirouter-operation-templates:
+  Get: &operation_get
+    tags: [Admin]
+    summary: Get resource
+    security:
+      - bearerAuth: []
+    responses:
+      "200":
+        $ref: "#/components/responses/JSON"
+  List: &operation_list
+    tags: [Admin]
+    summary: List resources
+    security:
+      - bearerAuth: []
+    parameters:
+      - $ref: "#/components/parameters/Page"
+      - $ref: "#/components/parameters/PageSize"
+    responses:
+      "200":
+        $ref: "#/components/responses/JSON"
+  ListById: &operation_list_by_id
+    tags: [Admin]
+    summary: List nested resources by parent ID
+    security:
+      - bearerAuth: []
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - $ref: "#/components/parameters/Page"
+      - $ref: "#/components/parameters/PageSize"
+    responses:
+      "200":
+        $ref: "#/components/responses/JSON"
+  ListChannels: &operation_list_channels
+    tags: [Admin]
+    summary: List channels
+    security:
+      - bearerAuth: []
+    parameters:
+      - $ref: "#/components/parameters/Page"
+      - $ref: "#/components/parameters/PageSize"
+    responses:
+      "200":
+        $ref: "#/components/responses/JSON"
+  Create: &operation_create
+    tags: [Admin]
+    summary: Create resource
+    security:
+      - bearerAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    responses:
+      "200":
+        $ref: "#/components/responses/JSON"
+      "201":
+        $ref: "#/components/responses/JSON"
+  CreateChannel: &operation_create_channel
+    tags: [Admin]
+    summary: Create channel
+    security:
+      - bearerAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    responses:
+      "201":
+        $ref: "#/components/responses/JSON"
+  GetById: &operation_get_by_id
+    tags: [Admin]
+    summary: Get resource by ID
+    security:
+      - bearerAuth: []
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    responses:
+      "200":
+        $ref: "#/components/responses/JSON"
+  UpdateById: &operation_update_by_id
+    tags: [Admin]
+    summary: Update resource by ID
+    security:
+      - bearerAuth: []
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    responses:
+      "200":
+        $ref: "#/components/responses/JSON"
+  DeleteById: &operation_delete_by_id
+    tags: [Admin]
+    summary: Delete resource by ID
+    security:
+      - bearerAuth: []
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    responses:
+      "200":
+        $ref: "#/components/responses/JSON"
+      "204":
+        description: Deleted
 
 paths:
   /:
@@ -312,6 +430,7 @@ paths:
     post:
       tags: [Auth]
       summary: Admin login
+      description: Password login applies only to local identities. The local login ID is deployment-global, ignores case and outer Unicode whitespace, and cannot resolve to an external identity with the same displayed username. A successful response returns the stored username rather than the submitted spelling.
       requestBody:
         required: true
         content:
@@ -322,6 +441,7 @@ paths:
               properties:
                 username:
                   type: string
+                  description: Local login ID. Matching ignores case and outer Unicode whitespace.
                 password:
                   type: string
       responses:
@@ -330,6 +450,21 @@ paths:
         "400":
           $ref: "#/components/responses/Error"
         "401":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke the current admin session
+      description: Idempotently revokes the authenticated session. A retry with the same otherwise-valid session token returns success without creating a duplicate audit event.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+        "401":
+          $ref: "#/components/responses/Error"
+        "500":
           $ref: "#/components/responses/Error"
 
   /api/v1/auth/oidc/config:
@@ -366,11 +501,16 @@ paths:
     get:
       tags: [Admin]
       summary: Current admin user profile
+      description: Returns the authenticated profile plus a non-sensitive, fail-closed commercial License capability projection. The projection contains no signed payload, customer identity, key ID, signature, or resource limits.
       security:
         - bearerAuth: []
       responses:
         "200":
-          $ref: "#/components/responses/JSON"
+          description: Authenticated user profile and seven-feature License projection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentUserProfile"
         "401":
           $ref: "#/components/responses/Error"
 
@@ -392,7 +532,9 @@ paths:
                   type: string
                 new_password:
                   type: string
-                  minLength: 6
+                  minLength: 12
+                  description: At least 12 Unicode characters and at most 72 UTF-8 bytes.
+                  x-unirouter-max-utf8-bytes: 72
       responses:
         "200":
           $ref: "#/components/responses/JSON"
@@ -400,15 +542,21 @@ paths:
           $ref: "#/components/responses/Error"
         "401":
           $ref: "#/components/responses/Error"
+        "409":
+          description: Password is managed by an external identity provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /api/v1/channels:
-    get: { $ref: "#/components/pathItems/ListChannels" }
-    post: { $ref: "#/components/pathItems/CreateChannel" }
+    get: *operation_list_channels
+    post: *operation_create_channel
 
   /api/v1/channels/{id}:
-    get: { $ref: "#/components/pathItems/GetById" }
-    put: { $ref: "#/components/pathItems/UpdateById" }
-    delete: { $ref: "#/components/pathItems/DeleteById" }
+    get: *operation_get_by_id
+    put: *operation_update_by_id
+    delete: *operation_delete_by_id
 
   /api/v1/channels/{id}/test:
     post:
@@ -444,17 +592,20 @@ paths:
           $ref: "#/components/responses/Error"
 
   /api/v1/keys:
-    get: { $ref: "#/components/pathItems/List" }
-    post: { $ref: "#/components/pathItems/Create" }
+    get: *operation_list
+    post: *operation_create
 
   /api/v1/keys/{id}:
-    get: { $ref: "#/components/pathItems/GetById" }
-    put: { $ref: "#/components/pathItems/UpdateById" }
+    get: *operation_get_by_id
+    put: *operation_update_by_id
 
   /api/v1/keys/{id}/disable:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin, project_admin, developer]
     post:
       tags: [Admin]
       summary: Disable API key
+      description: The developer console exposes this action only for active keys. The API authorizes a developer only when owner_user_id is their own user ID and they retain project membership. Administrators retain their existing scope rules.
       security:
         - bearerAuth: []
       parameters:
@@ -462,6 +613,9 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/JSON"
+
+  /api/v1/organizations:
+    get: *operation_list
 
   /api/v1/limit-policies:
     get:
@@ -576,24 +730,155 @@ paths:
           $ref: "#/components/responses/Error"
 
   /api/v1/projects:
-    get: { $ref: "#/components/pathItems/List" }
-    post: { $ref: "#/components/pathItems/Create" }
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, billing_admin, project_admin, developer, viewer]
+      post: [platform_admin, org_admin]
+    description: Organization-scoped roles list their organization; project roles list only projects with a matching membership. Billing administrators receive only id, org_id, name, slug, status, budget_cents, and budget_period for project-budget administration; they do not gain project detail, member, model-set, or key authority.
+    get: *operation_list
+    post: *operation_create
 
   /api/v1/projects/{id}:
-    get: { $ref: "#/components/pathItems/GetById" }
-    put: { $ref: "#/components/pathItems/UpdateById" }
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, project_admin, developer, viewer]
+      put: [platform_admin, org_admin, project_admin]
+    get: *operation_get_by_id
+    put: *operation_update_by_id
 
   /api/v1/projects/{id}/model-sets:
-    get: { $ref: "#/components/pathItems/ListById" }
-    put: { $ref: "#/components/pathItems/UpdateById" }
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, project_admin, developer, viewer]
+      put: [platform_admin, org_admin, project_admin]
+    description: Requires the model_governance License feature. Project-scoped actors are constrained to an authorized project; PUT requires the actor's active project_admin account and membership roles for that project.
+    get: *operation_list_by_id
+    put: *operation_update_by_id
+
+  /api/v1/projects/{id}/members:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, project_admin]
+    get:
+      tags: [Admin]
+      summary: List project members and eligible same-organization users
+      description: A project administrator can access only a project where their active user and membership roles are both project_admin. Their eligible-user list excludes project_admin accounts so the role cannot grant peer administrators.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: q
+          in: query
+          required: false
+          description: Case-insensitive username or email search applied to eligible users
+          schema: { type: string }
+      responses:
+        "200":
+          description: Paginated memberships plus at most 100 eligible users
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectMemberListResponse"
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v1/projects/{id}/members/{user_id}:
+    x-unirouter-rbac:
+      put: [platform_admin, org_admin, project_admin]
+      delete: [platform_admin, org_admin, project_admin]
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - name: user_id
+        in: path
+        required: true
+        schema: { type: integer, format: int64, minimum: 1 }
+    put:
+      tags: [Admin]
+      summary: Add or update a project membership
+      description: User and project must share an organization. The requested membership role must exactly match the user's project-scoped account role. Project administrators cannot grant project_admin or change their own membership. The membership and audit record commit atomically.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [role]
+              properties:
+                role: { $ref: "#/components/schemas/ProjectMembershipRole" }
+      responses:
+        "200": { $ref: "#/components/responses/JSON" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Admin]
+      summary: Remove a project membership
+      description: Project administrators cannot remove project_admin memberships or themselves. An active project-scoped user must retain at least one project; concurrent membership and user mutations are serialized, and the removal and audit record commit atomically.
+      security:
+        - bearerAuth: []
+      responses:
+        "200": { $ref: "#/components/responses/JSON" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/v1/projects/{id}/budget:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, billing_admin, project_admin]
+      put: [platform_admin, org_admin, billing_admin, project_admin]
+    description: Dedicated field-limited project-budget surface. Billing administrators are restricted to their JWT organization and receive no broader project-management authority. Project administrators require an active project_admin membership. Updates and their audit record commit atomically.
+    get:
+      tags: [Admin]
+      summary: Get project budget
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Project budget in whole cents
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectBudget"
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [Admin]
+      summary: Update project budget
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectBudgetMutation"
+      responses:
+        "200":
+          description: Updated project budget
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectBudget"
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
 
   /api/v1/channel-keys:
-    get: { $ref: "#/components/pathItems/List" }
-    post: { $ref: "#/components/pathItems/Create" }
+    get: *operation_list
+    post: *operation_create
 
   /api/v1/channel-keys/{id}:
-    put: { $ref: "#/components/pathItems/UpdateById" }
-    delete: { $ref: "#/components/pathItems/DeleteById" }
+    put: *operation_update_by_id
+    delete: *operation_delete_by_id
 
   /api/v1/wallet:
     get:
@@ -676,7 +961,7 @@ paths:
 
   /api/v1/wallet/transactions:
     description: Transaction amount_micros values are canonical signed decimal strings with currency=CNY and amount_scale=1000000; no legacy rounded cent output is emitted.
-    get: { $ref: "#/components/pathItems/List" }
+    get: *operation_list
 
   /api/v1/wallet/transactions/export:
     get:
@@ -710,7 +995,7 @@ paths:
           $ref: "#/components/responses/JSON"
 
   /api/v1/logs/{id}:
-    get: { $ref: "#/components/pathItems/GetById" }
+    get: *operation_get_by_id
 
   /api/v1/logs/{id}/trace:
     get:
@@ -729,30 +1014,36 @@ paths:
           $ref: "#/components/responses/JSON"
 
   /api/v1/data-exchange/items:
-    get: { $ref: "#/components/pathItems/List" }
-    post: { $ref: "#/components/pathItems/Create" }
+    get: *operation_list
+    post: *operation_create
 
   /api/v1/data-exchange/items/{id}:
-    put: { $ref: "#/components/pathItems/UpdateById" }
+    put: *operation_update_by_id
 
   /api/v1/data-exchange/exchanges:
-    get: { $ref: "#/components/pathItems/List" }
-    post: { $ref: "#/components/pathItems/Create" }
+    get: *operation_list
+    post: *operation_create
 
   /api/v1/data-exchange/exchanges/{id}/activity:
-    get: { $ref: "#/components/pathItems/GetById" }
+    get: *operation_get_by_id
 
   /api/v1/data-exchange/exchanges/{id}/deliveries:
-    post: { $ref: "#/components/pathItems/Create" }
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post: *operation_create
 
   /api/v1/data-exchange/exchanges/{id}/receipts:
-    post: { $ref: "#/components/pathItems/Create" }
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post: *operation_create
 
   /api/v1/data-exchange/exchanges/{id}/artifact-delete:
-    post: { $ref: "#/components/pathItems/Create" }
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post: *operation_create
 
   /api/v1/dashboard/stats:
-    get: { $ref: "#/components/pathItems/Get" }
+    get: *operation_get
 
   /api/v1/usage/analytics:
     get:
@@ -808,7 +1099,7 @@ paths:
 
   /api/v1/model-prices:
     x-unirouter-rbac:
-      get: [platform_admin, org_admin]
+      get: [platform_admin, org_admin, billing_admin]
       post: [platform_admin]
     description: |
       Platform-owned base input/output prices plus cache_read_ratio and
@@ -872,10 +1163,10 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/JSON" }
         "400": { $ref: "#/components/responses/Error" }
-    delete: { $ref: "#/components/pathItems/DeleteById" }
+    delete: *operation_delete_by_id
 
   /api/v1/model-names:
-    get: { $ref: "#/components/pathItems/Get" }
+    get: *operation_get
 
   /api/v1/model-registry:
     x-unirouter-rbac:
@@ -888,8 +1179,8 @@ paths:
       (including the normalized legacy admin role) may explicitly select a positive
       org_id; otherwise their positive JWT organization is used. No organization is
       selected by database order or a hard-coded fallback.
-    get: { $ref: "#/components/pathItems/List" }
-    post: { $ref: "#/components/pathItems/Create" }
+    get: *operation_list
+    post: *operation_create
 
   /api/v1/model-registry/{id}:
     x-unirouter-rbac:
@@ -901,7 +1192,7 @@ paths:
       platform administrator (including normalized legacy admin) may select org_id in
       the query; when omitted, the existing record supplies the explicit target
       organization. A missing/zero tenant JWT organization fails closed.
-    put: { $ref: "#/components/pathItems/UpdateById" }
+    put: *operation_update_by_id
 
   /api/v1/model-catalog:
     x-unirouter-rbac:
@@ -913,7 +1204,7 @@ paths:
       organization is canonical and any explicit org_id mismatch is rejected. Project-
       scoped roles must provide project_id and have membership in that project. Foreign
       organization selection returns 403; missing/zero tenant organization fails closed.
-    get: { $ref: "#/components/pathItems/List" }
+    get: *operation_list
 
   /api/v1/model-aliases:
     x-unirouter-rbac:
@@ -925,8 +1216,8 @@ paths:
       missing/zero JWT organization fails closed. Platform administrators (including
       normalized legacy admin) may explicitly select a positive org_id; otherwise their
       positive JWT organization is used. No implicit organization fallback is used.
-    get: { $ref: "#/components/pathItems/List" }
-    post: { $ref: "#/components/pathItems/Create" }
+    get: *operation_list
+    post: *operation_create
 
   /api/v1/model-aliases/{id}:
     x-unirouter-rbac:
@@ -938,41 +1229,45 @@ paths:
       platform administrator (including normalized legacy admin) may select org_id in
       the query; when omitted, the existing record supplies the explicit target
       organization. A missing/zero tenant JWT organization fails closed.
-    put: { $ref: "#/components/pathItems/UpdateById" }
+    put: *operation_update_by_id
 
   /api/v1/model-sets:
     x-unirouter-rbac:
-      get: [platform_admin, org_admin]
+      get: [platform_admin, org_admin, project_admin]
       post: [platform_admin, org_admin]
     description: |
-      Organization-scoped model sets. Organization administrators always use their JWT
-      organization; a foreign org_id query or request-body value returns 403, and a
-      missing/zero JWT organization fails closed. Platform administrators (including
-      normalized legacy admin) may explicitly select a positive org_id; otherwise their
-      positive JWT organization is used. Creating a set and all of its initial items is
-      one transaction: either the whole model set is committed or none of it is.
-    get: { $ref: "#/components/pathItems/List" }
-    post: { $ref: "#/components/pathItems/Create" }
+      Requires the model_governance License feature. Organization administrators always
+      use their JWT organization; a foreign org_id query or request-body value returns
+      403, and a missing/zero JWT organization fails closed. Project administrators may
+      list only their JWT organization so the project assignment UI can select from the
+      existing candidate sets; this does not grant create or item read/write authority.
+      Platform administrators (including normalized legacy admin) may explicitly select
+      a positive org_id; otherwise their positive JWT organization is used. Creating a
+      set and all of its initial items is one transaction: either the whole model set is
+      committed or none of it is.
+    get: *operation_list
+    post: *operation_create
 
   /api/v1/model-sets/{id}/items:
     x-unirouter-rbac:
       get: [platform_admin, org_admin]
       put: [platform_admin, org_admin]
     description: |
-      Organization-scoped global-ID access. Organization administrators are bound to
-      their JWT organization; a foreign org_id query returns 403, while a foreign or
-      nonexistent set ID returns 404 without revealing which case occurred. A platform
-      administrator (including normalized legacy admin) may select org_id in the query;
-      when omitted, the existing model set supplies the explicit target organization.
-      Replacing items is atomic: readers see either the old complete set or the new
-      complete set, never a partial replacement. Missing/zero tenant JWT organization
-      fails closed.
-    get: { $ref: "#/components/pathItems/ListById" }
-    put: { $ref: "#/components/pathItems/UpdateById" }
+      Requires the model_governance License feature and remains limited to platform/org
+      governance; project administrators cannot read or replace items. Organization-
+      scoped global-ID access binds organization administrators to their JWT organization;
+      a foreign org_id query returns 403, while a foreign or nonexistent set ID returns
+      404 without revealing which case occurred. A platform administrator (including
+      normalized legacy admin) may select org_id in the query; when omitted, the existing
+      model set supplies the explicit target organization. Replacing items is atomic:
+      readers see either the old complete set or the new complete set, never a partial
+      replacement. Missing/zero tenant JWT organization fails closed.
+    get: *operation_list_by_id
+    put: *operation_update_by_id
 
   /api/v1/org-model-prices:
     x-unirouter-rbac:
-      get: [platform_admin, org_admin]
+      get: [platform_admin, org_admin, billing_admin]
       post: [platform_admin]
     description: Organization administrators read only their JWT organization; platform administrators may select an explicit org_id. Multiplier input and output use canonical decimal strings with at most three fractional digits; JSON number literals remain compatibility input only and are parsed lexically. Mutations are serialized with the matching base-price authority and return 400 atomically if any resulting effective micro-CNY price would exceed the supported signed range.
     get:
@@ -1016,51 +1311,212 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/JSON" }
         "400": { $ref: "#/components/responses/Error" }
-    delete: { $ref: "#/components/pathItems/DeleteById" }
+    delete: *operation_delete_by_id
 
   /api/v1/reconciliation:
     description: Organization-scoped comparison of preflight estimates and actual usage, with a separate provider Prompt Cache read/write token and cost breakdown. All `*_micros` costs are canonical decimal strings with currency=CNY and amount_scale=1000000. `cache_usage_schema` distinguishes authoritative provider reports from `not_reported`; no cache hit is inferred.
-    get: { $ref: "#/components/pathItems/List" }
+    get: *operation_list
 
   /api/v1/provider-cost/reconciliations:
     x-unirouter-rbac:
       post: [platform_admin]
     description: Apply one bounded collect/refund/subsidy decision to an unresolved provider attempt. The request contains no amount; collect replays only authoritative stored usage and the frozen customer price. Aggregate provider bills cannot create customer debt.
-    post: { $ref: "#/components/pathItems/Create" }
+    post: *operation_create
 
   /api/v1/provider-cost/pending:
     x-unirouter-rbac:
       get: [platform_admin]
     description: List at most 100 unresolved provider attempts for one required explicit organization. Returns bounded metadata only and never prompt, response, credential, or full provider URL.
-    get: { $ref: "#/components/pathItems/List" }
+    get: *operation_list
 
   /api/v1/users:
-    get: { $ref: "#/components/pathItems/List" }
-    post: { $ref: "#/components/pathItems/Create" }
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+      post: [platform_admin, org_admin]
+    get:
+      tags: [Admin]
+      summary: List users and their effective project memberships
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200": { $ref: "#/components/responses/JSON" }
+        "403": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [Admin]
+      summary: Create a local user with atomic project assignments
+      description: The local login ID is deployment-global, ignores case and outer Unicode whitespace, and remains reserved while a local account is disabled. A collision returns the same generic 409 response without revealing the owning organization. An active project_admin, developer, or viewer requires at least one project_id. Project IDs are allowed only for those three roles and every project must belong to the user's organization. User creation and memberships commit atomically.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserCreateRequest"
+      responses:
+        "201":
+          description: Created user and normalized project IDs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserMutationResponse"
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
 
   /api/v1/users/{id}:
-    put: { $ref: "#/components/pathItems/UpdateById" }
-    delete: { $ref: "#/components/pathItems/DeleteById" }
+    x-unirouter-rbac:
+      put: [platform_admin, org_admin]
+      delete: [platform_admin, org_admin]
+    put:
+      tags: [Admin]
+      summary: Update a user role, status, and project assignments atomically
+      description: The resulting active project-scoped role must retain at least one same-organization project. Changing to an organization-scoped role removes memberships; supplying non-empty project_ids for such a role is rejected. An actor cannot change their own role or disable the current account.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserUpdateRequest"
+      responses:
+        "200":
+          description: Updated user and normalized project IDs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserMutationResponse"
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+    delete: *operation_delete_by_id
 
   /api/v1/grants:
-    get: { $ref: "#/components/pathItems/List" }
-    post: { $ref: "#/components/pathItems/Create" }
+    get: *operation_list
+    post:
+      tags: [Admin]
+      summary: Atomically issue auditable organization grant credit
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [amount_cents, reason, client_request_id]
+              properties:
+                org_id: { type: integer, format: int64, description: Platform administrators may select a target organization. }
+                amount_cents: { type: integer, minimum: 1 }
+                reason: { type: string, minLength: 1, description: "Business reason or ticket reference recorded in the grant, transaction, and audit log." }
+                client_request_id: { type: string, minLength: 1, maxLength: 128, description: Stable idempotency identity reused only for retries of this exact amount and reason. }
+      responses:
+        "200": { $ref: "#/components/responses/JSON" }
+        "201": { $ref: "#/components/responses/JSON" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
 
   /api/v1/notification-events:
-    get: { $ref: "#/components/pathItems/List" }
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, billing_admin, project_admin]
+    description: Requires the notifications License feature. Billing administrators are SQL-filtered to the financial taxonomy `project_budget.threshold` and `token_metering.estimated_ratio.high`; project administrators require an explicit readable project_id.
+    get: *operation_list
+
+  /api/v1/notification-events/{id}/acknowledge:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin, billing_admin, project_admin]
+    post:
+      tags: [Admin]
+      summary: Acknowledge a tenant-scoped notification event
+      description: Requires the notifications License feature. Billing administrators can transition only the two financial event types visible to them. Lifecycle state is independent from webhook delivery state.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - name: project_id
+          in: query
+          required: false
+          description: Required for project-scoped roles; ignored only where the caller has organization-wide scope
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/notification-events/{id}/resolve:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin, billing_admin, project_admin]
+    post:
+      tags: [Admin]
+      summary: Resolve a tenant-scoped notification event
+      description: Requires the notifications License feature. Billing administrators can transition only the two financial event types visible to them. Resolved events cannot be reopened through this API.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - name: project_id
+          in: query
+          required: false
+          description: Required for project-scoped roles; ignored only where the caller has organization-wide scope
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
 
   /api/v1/notification-deliveries:
-    get: { $ref: "#/components/pathItems/List" }
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, billing_admin, project_admin]
+    description: Requires the notifications License feature. Billing administrators see delivery rows only when the joined event is in the two-type financial taxonomy; project administrators require an explicit readable project_id.
+    get: *operation_list
 
   /api/v1/notification-webhooks:
-    get: { $ref: "#/components/pathItems/List" }
-    post: { $ref: "#/components/pathItems/Create" }
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, project_admin]
+      post: [platform_admin, org_admin, project_admin]
+    description: Requires the notifications License feature. Billing administrators have no webhook authority; route middleware excludes the role and every handler also returns 403 before persistence as defense in depth.
+    get: *operation_list
+    post: *operation_create
 
   /api/v1/notification-webhooks/{id}:
-    put: { $ref: "#/components/pathItems/UpdateById" }
+    x-unirouter-rbac:
+      put: [platform_admin, org_admin, project_admin]
+    description: Requires the notifications License feature. Billing administrators receive 403 and no read or write is attempted.
+    put: *operation_update_by_id
 
   /api/v1/notification-webhooks/{id}/verify-scope:
-    post: { $ref: "#/components/pathItems/UpdateById" }
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin, project_admin]
+    description: Requires the notifications License feature. Billing administrators receive 403 and no verification or audit mutation is attempted.
+    post: *operation_update_by_id
 
   /api/v1/audit-logs:
     get:
@@ -1081,7 +1537,7 @@ paths:
     x-unirouter-rbac:
       get: [platform_admin]
     description: Deployment-wide settings. Dedicated license and sensitive-word values are redacted. Retired global budget-alert keys are marked retired/effective=false with their project and notification API replacements; their historical values have no runtime effect.
-    get: { $ref: "#/components/pathItems/List" }
+    get: *operation_list
 
   /api/v1/settings/{key}:
     x-unirouter-rbac:
@@ -1107,7 +1563,7 @@ paths:
               required: [value]
               properties:
                 value:
-                  nullable: true
+                  description: Arbitrary valid JSON value, including null.
       responses:
         "200":
           $ref: "#/components/responses/JSON"
@@ -1171,7 +1627,7 @@ paths:
       put: [platform_admin]
       delete: [platform_admin]
     description: Deployment-wide input blocking word list. The handling instance reloads after commit; other instances converge through the existing periodic reload.
-    get: { $ref: "#/components/pathItems/List" }
+    get: *operation_list
     post:
       tags: [Admin]
       summary: Add sensitive words
@@ -1344,122 +1800,157 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
 
-  pathItems:
-    Get:
-      tags: [Admin]
-      summary: Get resource
-      security:
-        - bearerAuth: []
-      responses:
-        "200":
-          $ref: "#/components/responses/JSON"
-    List:
-      tags: [Admin]
-      summary: List resources
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: "#/components/parameters/Page"
-        - $ref: "#/components/parameters/PageSize"
-      responses:
-        "200":
-          $ref: "#/components/responses/JSON"
-    ListById:
-      tags: [Admin]
-      summary: List nested resources by parent ID
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: "#/components/parameters/Id"
-        - $ref: "#/components/parameters/Page"
-        - $ref: "#/components/parameters/PageSize"
-      responses:
-        "200":
-          $ref: "#/components/responses/JSON"
-    ListChannels:
-      tags: [Admin]
-      summary: List channels
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: "#/components/parameters/Page"
-        - $ref: "#/components/parameters/PageSize"
-      responses:
-        "200":
-          $ref: "#/components/responses/JSON"
-    Create:
-      tags: [Admin]
-      summary: Create resource
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-      responses:
-        "200":
-          $ref: "#/components/responses/JSON"
-        "201":
-          $ref: "#/components/responses/JSON"
-    CreateChannel:
-      tags: [Admin]
-      summary: Create channel
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-      responses:
-        "201":
-          $ref: "#/components/responses/JSON"
-    GetById:
-      tags: [Admin]
-      summary: Get resource by ID
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: "#/components/parameters/Id"
-      responses:
-        "200":
-          $ref: "#/components/responses/JSON"
-    UpdateById:
-      tags: [Admin]
-      summary: Update resource by ID
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: "#/components/parameters/Id"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-      responses:
-        "200":
-          $ref: "#/components/responses/JSON"
-    DeleteById:
-      tags: [Admin]
-      summary: Delete resource by ID
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: "#/components/parameters/Id"
-      responses:
-        "200":
-          $ref: "#/components/responses/JSON"
-        "204":
-          description: Deleted
-
   schemas:
+    LicenseCapabilityFeatures:
+      type: object
+      additionalProperties: false
+      required: [gateway, agent_capabilities, oidc, guardrails, notifications, model_governance, data_exchange]
+      properties:
+        gateway: { type: boolean }
+        agent_capabilities: { type: boolean }
+        oidc: { type: boolean }
+        guardrails: { type: boolean }
+        notifications: { type: boolean }
+        model_governance: { type: boolean }
+        data_exchange: { type: boolean }
+    LicenseCapabilityProjection:
+      type: object
+      additionalProperties: false
+      required: [status, enforceable, features]
+      description: Non-sensitive, fail-closed feature authorization projection. It never includes the signed License, customer or deployment identity, key ID, signature, expiry metadata, or resource limits.
+      properties:
+        status:
+          type: string
+          enum: [missing, active, expiring, expired, invalid, not_yet_valid, deployment_mismatch]
+        enforceable: { type: boolean }
+        features: { $ref: "#/components/schemas/LicenseCapabilityFeatures" }
+    CurrentUserProfile:
+      type: object
+      additionalProperties: false
+      required: [id, username, role, status, org_id, org_name, email, auth_provider, created_at, license_access]
+      properties:
+        id: { type: integer, format: int64 }
+        username: { type: string }
+        role: { $ref: "#/components/schemas/UserRole" }
+        status: { type: string, enum: [active, disabled] }
+        org_id: { type: integer, format: int64 }
+        org_name: { type: string }
+        email: { type: string }
+        auth_provider: { type: string, description: "`local` for password-managed users; otherwise the configured external identity provider." }
+        created_at: { type: string, format: date-time }
+        license_access: { $ref: "#/components/schemas/LicenseCapabilityProjection" }
+    UserRole:
+      type: string
+      enum: [admin, platform_admin, org_admin, billing_admin, project_admin, developer, viewer, org_viewer]
+    UserProjectRole:
+      type: string
+      enum: [project_admin, developer, viewer]
+    ProjectMembershipRole:
+      type: string
+      enum: [project_admin, project_developer, project_viewer]
+      description: Persisted membership role derived one-to-one from the user's project-scoped account role; callers cannot choose a different privilege level.
+    UserCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        org_id: { type: integer, format: int64, minimum: 1, description: Required for a platform administrator; organization administrators are constrained to their JWT organization. }
+        username: { type: string, minLength: 1, description: Deployment-global local login ID. Outer Unicode whitespace is removed before storage and uniqueness ignores case; an unavailable ID returns a generic 409 response. }
+        password:
+          type: string
+          minLength: 12
+          description: At least 12 Unicode characters and at most 72 UTF-8 bytes. Creates a local identity under the shared backend, recovery CLI, and UI password policy; externally managed identities are provisioned through OIDC.
+          x-unirouter-max-utf8-bytes: 72
+        role: { $ref: "#/components/schemas/UserRole" }
+        status: { type: string, enum: [active, disabled], default: active }
+        project_ids:
+          type: array
+          description: Accepted only for project_admin, developer, and viewer. Duplicate IDs are normalized; all IDs must belong to org_id.
+          items: { type: integer, format: int64, minimum: 1 }
+    UserUpdateRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: At least one of role, status, or project_ids is required.
+      properties:
+        role: { $ref: "#/components/schemas/UserRole" }
+        status: { type: string, enum: [active, disabled] }
+        project_ids:
+          type: array
+          description: Replaces the complete project membership set. Duplicate IDs are normalized; all IDs must belong to the user's organization.
+          items: { type: integer, format: int64, minimum: 1 }
+    UserMutationResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        id: { type: integer, format: int64, description: Present on create. }
+        success: { type: boolean, description: Present on update. }
+        project_ids:
+          type: array
+          nullable: true
+          items: { type: integer, format: int64, minimum: 1 }
+    ProjectMember:
+      type: object
+      additionalProperties: false
+      required: [user_id, username, email, auth_provider, user_role, status, membership_role, created_at, updated_at]
+      properties:
+        user_id: { type: integer, format: int64, minimum: 1 }
+        username: { type: string }
+        email: { type: string }
+        auth_provider: { type: string }
+        user_role: { $ref: "#/components/schemas/UserRole" }
+        status: { type: string, enum: [active, disabled] }
+        membership_role: { $ref: "#/components/schemas/ProjectMembershipRole" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    EligibleProjectUser:
+      type: object
+      additionalProperties: false
+      required: [user_id, username, email, user_role, membership_role, status]
+      properties:
+        user_id: { type: integer, format: int64, minimum: 1 }
+        username: { type: string }
+        email: { type: string }
+        user_role: { $ref: "#/components/schemas/UserProjectRole" }
+        membership_role: { $ref: "#/components/schemas/ProjectMembershipRole" }
+        status: { type: string, enum: [active, disabled] }
+    ProjectMemberListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, total, page, page_size, eligible_users, eligible_total, project_id, project_name]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/ProjectMember" }
+        total: { type: integer, minimum: 0 }
+        page: { type: integer, minimum: 1 }
+        page_size: { type: integer, minimum: 1, maximum: 100 }
+        eligible_users:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/EligibleProjectUser" }
+        eligible_total: { type: integer, minimum: 0 }
+        project_id: { type: integer, format: int64, minimum: 1 }
+        project_name: { type: string }
+    ProjectBudget:
+      type: object
+      additionalProperties: false
+      required: [project_id, org_id, project_name, budget_cents, budget_period]
+      properties:
+        project_id: { type: integer, format: int64, minimum: 1 }
+        org_id: { type: integer, format: int64, minimum: 1 }
+        project_name: { type: string }
+        status: { type: string, enum: [active, disabled, archived], description: Present on GET. }
+        budget_cents: { type: integer, format: int64, minimum: 0, maximum: 2147483647 }
+        budget_period: { type: string, enum: [none, daily, monthly] }
+    ProjectBudgetMutation:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: At least one of budget_cents or budget_period is required. No other project field is accepted.
+      properties:
+        budget_cents: { type: integer, format: int64, minimum: 0, maximum: 2147483647 }
+        budget_period: { type: string, enum: [none, daily, monthly] }
     CommercialLicensePayload:
       type: object
       additionalProperties: false
@@ -1603,7 +2094,7 @@ components:
     ModelPriceMutation:
       type: object
       properties:
-        model_name: { type: string, minLength: 1, description: Required when creating a model price. Immutable after creation; PUT may omit it or repeat the exact stored value, but cannot rename the record. }
+        model_name: { type: string, minLength: 1, description: "Required when creating a model price. Immutable after creation; PUT may omit it or repeat the exact stored value, but cannot rename the record." }
         input_price_cny_per_million_tokens: { $ref: "#/components/schemas/PublicPriceDecimalInput" }
         output_price_cny_per_million_tokens: { $ref: "#/components/schemas/PublicPriceDecimalInput" }
         cache_read_ratio: { $ref: "#/components/schemas/CachePriceRatioInput" }
@@ -1656,11 +2147,11 @@ components:
         max_depth: { type: integer, minimum: 0, maximum: 16 }
         max_children: { type: integer, minimum: 0, maximum: 10000 }
         max_descendants: { type: integer, minimum: 0, maximum: 10000 }
-        cost_budget_cents: { type: integer, format: int64, minimum: 1, maximum: 900719925474, description: Compatibility configuration input in whole cents. It is converted exactly to micro-CNY before the v2 Redis counter is written; estimated cost is reserved on this Agent and every ancestor, then replaced with actual settled cost. }
+        cost_budget_cents: { type: integer, format: int64, minimum: 1, maximum: 900719925474, description: "Compatibility configuration input in whole cents. It is converted exactly to micro-CNY before the v2 Redis counter is written; estimated cost is reserved on this Agent and every ancestor, then replaced with actual settled cost." }
         token_budget: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991, description: Shared subtree token ceiling; estimated tokens are reserved on every ancestor and replaced with actual settled tokens. }
         rpm_limit: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991, description: Exact rolling one-minute aggregate admission limit for this Agent subtree. }
         rps_limit: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991, description: Exact rolling one-second aggregate admission limit for this Agent subtree. }
-        concurrency_limit: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991, description: Shared in-flight request limit for this Agent subtree, enforced with an expiring Redis lease. }
+        concurrency_limit: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991, description: "Shared in-flight request limit for this Agent subtree, enforced with an expiring Redis lease." }
         allowed_models:
           type: array
           minItems: 1

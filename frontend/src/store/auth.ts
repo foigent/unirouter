@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api, ApiError } from '../api/client';
+import type { LicenseAccess } from '../navigation';
 
 export interface UserProfile {
   id: number;
@@ -8,6 +9,16 @@ export interface UserProfile {
   org_id?: number;
   org_name?: string;
   status?: string;
+  email?: string;
+  auth_provider?: string;
+  // undefined means the current session has not loaded /me yet. null means a
+  // rolling-upgrade backend returned no capability projection, so the client
+  // must not treat that response as positive entitlement evidence.
+  license_access?: LicenseAccess | null;
+}
+
+export function profileNeedsRefresh(user: UserProfile | null) {
+  return !user?.role || user.license_access === undefined;
 }
 
 interface AuthState {
@@ -17,7 +28,8 @@ interface AuthState {
   profileError: string | null;
   isAuthenticated: boolean;
   login: (username: string, password: string) => Promise<UserProfile>;
-  logout: () => void;
+  logout: () => Promise<void>;
+  clearSession: () => void;
   checkAuth: () => void;
   loadProfile: () => Promise<UserProfile>;
 }
@@ -32,11 +44,16 @@ export const useAuthStore = create<AuthState>((set) => ({
   login: async (username, password) => {
     const data = await api.login(username, password);
     if (data.token) {
-      const user = {
+      const user: UserProfile = {
         id: data.user_id,
         username: data.username,
         role: data.role,
         org_id: data.org_id,
+        org_name: data.org_name,
+        status: data.status,
+        email: data.email,
+        auth_provider: data.auth_provider,
+        license_access: data.license_access ?? undefined,
       };
       localStorage.setItem('token', data.token);
       set({ token: data.token, isAuthenticated: true, user, profileError: null });
@@ -46,7 +63,20 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
-  logout: () => {
+  logout: async () => {
+    try {
+      await api.logout();
+    } catch (err) {
+      // A 401 is authoritative evidence that the bearer is already unusable;
+      // other failures retain the local session so the UI cannot claim that a
+      // server-side revocation succeeded when it did not.
+      if (!(err instanceof ApiError) || err.status !== 401) throw err;
+    }
+    localStorage.removeItem('token');
+    set({ token: null, isAuthenticated: false, user: null, profileLoading: false, profileError: null });
+  },
+
+  clearSession: () => {
     localStorage.removeItem('token');
     set({ token: null, isAuthenticated: false, user: null, profileLoading: false, profileError: null });
   },
@@ -60,13 +90,16 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ profileLoading: true, profileError: null });
     try {
       const data = await api.getMe();
-      const user = {
+      const user: UserProfile = {
         id: data.id,
         username: data.username,
         role: data.role,
         org_id: data.org_id,
         org_name: data.org_name,
         status: data.status,
+        email: data.email,
+        auth_provider: data.auth_provider,
+        license_access: data.license_access ?? null,
       };
       set({ user, isAuthenticated: true, profileLoading: false, profileError: null });
       return user;

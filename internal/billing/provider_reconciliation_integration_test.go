@@ -24,6 +24,15 @@ func TestP6F40CCollectReplaysStoredAuthoritativeUsageWithoutCallerAmount(t *test
 		PromptTokens: 250_000, UsageSource: "upstream",
 	}
 	require.NoError(t, b.MarkBillableOutput(t.Context(), requestID, orgID))
+	require.NoError(t, b.RecordDelivery(t.Context(), DeliveryEvent{
+		RequestID: requestID, AttemptID: attempt.AttemptID, OrgID: orgID,
+		Mode: DeliveryModeNonStream, Outcome: DeliveryOutcomeWriteStarted, HTTPStatus: 200,
+	}))
+	require.NoError(t, b.RecordDelivery(t.Context(), DeliveryEvent{
+		RequestID: requestID, AttemptID: attempt.AttemptID, OrgID: orgID,
+		Mode: DeliveryModeNonStream, Outcome: DeliveryOutcomeCompleted,
+		DeliveredBytes: 1, DeliveredChunks: 1, HTTPStatus: 200,
+	}))
 	require.NoError(t, b.PersistSettlementUsage(t.Context(), settleReq))
 	pending, err := b.Settle(t.Context(), settleReq)
 	require.NoError(t, err)
@@ -180,6 +189,15 @@ func TestP6F40CCollectRecoversCompletionEvidenceAfterSettlementCrashGap(t *testi
 		PromptTokens: 250_000, UsageSource: "upstream",
 	}
 	require.NoError(t, b.MarkBillableOutput(t.Context(), requestID, orgID))
+	require.NoError(t, b.RecordDelivery(t.Context(), DeliveryEvent{
+		RequestID: requestID, AttemptID: attempt.AttemptID, OrgID: orgID,
+		Mode: DeliveryModeNonStream, Outcome: DeliveryOutcomeWriteStarted, HTTPStatus: 200,
+	}))
+	require.NoError(t, b.RecordDelivery(t.Context(), DeliveryEvent{
+		RequestID: requestID, AttemptID: attempt.AttemptID, OrgID: orgID,
+		Mode: DeliveryModeNonStream, Outcome: DeliveryOutcomeCompleted,
+		DeliveredBytes: 1, DeliveredChunks: 1, HTTPStatus: 200,
+	}))
 	require.NoError(t, b.PersistSettlementUsage(t.Context(), settleReq))
 	pending, err := b.Settle(t.Context(), settleReq)
 	require.NoError(t, err)

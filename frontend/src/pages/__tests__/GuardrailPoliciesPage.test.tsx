@@ -1,5 +1,6 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Modal } from '@douyinfe/semi-ui';
 import GuardrailPoliciesPage from '../GuardrailPoliciesPage';
 import { useAuthStore } from '../../store/auth';
 
@@ -8,7 +9,11 @@ const mocks = vi.hoisted(() => ({
   createGuardrailPolicy: vi.fn(),
   updateGuardrailPolicy: vi.fn(),
   getKeys: vi.fn(),
+  getOrganizations: vi.fn(),
+  getProjects: vi.fn(),
   getModelNames: vi.fn(),
+  getSensitiveWords: vi.fn(),
+  replaceSensitiveWords: vi.fn(),
 }));
 
 vi.mock('../../api/client', () => ({ api: mocks }));
@@ -49,8 +54,14 @@ describe('GuardrailPoliciesPage', () => {
       data: [{ id: 15, name: 'frontend-prod', key_prefix: 'ur-prod', org_id: 22, org_name: 'Acme', project_id: 9, project_name: 'Customer API' }],
       total: 1,
     });
+    mocks.getOrganizations.mockResolvedValue({ data: [{ id: 22, name: 'Acme', status: 'active' }], total: 1 });
+    mocks.getProjects.mockResolvedValue({ data: [{ id: 9, org_id: 22, name: 'Customer API', status: 'active' }], total: 1 });
     mocks.getModelNames.mockResolvedValue({ data: ['company-chat'] });
+    mocks.getSensitiveWords.mockResolvedValue({ data: ['blocked', 'restricted'] });
+    mocks.replaceSensitiveWords.mockResolvedValue({ data: ['blocked', 'new-word'] });
   });
+
+  afterEach(() => vi.restoreAllMocks());
 
   it('explains safe rollout, failure, streaming, and output-cost behavior in plain language', async () => {
     useAuthStore.setState({ user: { id: 2, username: 'org-admin', role: 'org_admin', org_id: 22, org_name: 'Acme' } });
@@ -73,6 +84,8 @@ describe('GuardrailPoliciesPage', () => {
     expect(screen.getByText('Acme · Customer API · 凭证 frontend-prod · 模型 company-chat')).toBeTruthy();
     expect(screen.getByText('平台只读')).toBeTruthy();
     expect(screen.queryByRole('button', { name: '编辑安全策略 platform-mandatory' })).toBeNull();
+    expect(mocks.getSensitiveWords).not.toHaveBeenCalled();
+    expect(screen.queryByText('全局输入阻断词库')).toBeNull();
   });
 
   it('keeps billing administrators read-only', async () => {
@@ -94,5 +107,62 @@ describe('GuardrailPoliciesPage', () => {
       8,
       expect.objectContaining({ version: 2, name: 'redact-email', mode: 'shadow', action: 'redact' }),
     ));
+  });
+
+  it('lets only a platform administrator replace the global input blocking words after confirmation', async () => {
+    useAuthStore.setState({ user: { id: 1, username: 'platform', role: 'platform_admin', org_id: 1 } });
+    let confirmation: any;
+    const confirmSpy = vi.spyOn(Modal, 'confirm').mockImplementation((config: any) => {
+      confirmation = config;
+      return {} as any;
+    });
+
+    render(<GuardrailPoliciesPage />);
+
+    const editor = await screen.findByRole('textbox', { name: '全局输入阻断词库' });
+    expect(mocks.getSensitiveWords).toHaveBeenCalledTimes(1);
+    expect((editor as HTMLTextAreaElement).value).toBe('blocked\nrestricted');
+    expect(screen.getByText(/修改会影响所有组织、项目和访问凭证/)).toBeTruthy();
+
+    fireEvent.change(editor, { target: { value: ' blocked \nnew-word\nblocked\n' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存并替换全局词库' }));
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(confirmation.title).toBe('确认替换全局输入阻断词库？');
+    expect(confirmation.content).toContain('完整替换部署级词库');
+
+    await act(async () => { await confirmation.onOk(); });
+    await waitFor(() => expect(mocks.replaceSensitiveWords).toHaveBeenCalledWith(['blocked', 'new-word']));
+    expect((editor as HTMLTextAreaElement).value).toBe('blocked\nnew-word');
+  });
+
+  it('shows a platform word-list load failure instead of an empty editable list', async () => {
+    useAuthStore.setState({ user: { id: 1, username: 'platform', role: 'platform_admin', org_id: 1 } });
+    mocks.getSensitiveWords.mockRejectedValue(new Error('词库服务不可用'));
+
+    render(<GuardrailPoliciesPage />);
+
+    expect(await screen.findByText('词库服务不可用')).toBeTruthy();
+    expect(screen.queryByRole('textbox', { name: '全局输入阻断词库' })).toBeNull();
+    expect(screen.getByRole('button', { name: '重新加载词库' })).toBeTruthy();
+  });
+
+  it('keeps the edited words visible and reports a failed global replacement', async () => {
+    useAuthStore.setState({ user: { id: 1, username: 'platform', role: 'platform_admin', org_id: 1 } });
+    mocks.replaceSensitiveWords.mockRejectedValue(new Error('词库保存被服务拒绝'));
+    let confirmation: any;
+    vi.spyOn(Modal, 'confirm').mockImplementation((config: any) => {
+      confirmation = config;
+      return {} as any;
+    });
+
+    render(<GuardrailPoliciesPage />);
+
+    const editor = await screen.findByRole('textbox', { name: '全局输入阻断词库' });
+    fireEvent.change(editor, { target: { value: 'unsaved-word' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存并替换全局词库' }));
+    await act(async () => { await expect(confirmation.onOk()).rejects.toThrow('词库保存被服务拒绝'); });
+
+    expect(await screen.findByText('词库保存被服务拒绝')).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: '全局输入阻断词库' })).toHaveValue('unsaved-word');
   });
 });

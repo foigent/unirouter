@@ -229,8 +229,11 @@ func (s *Service) VerifyIDToken(ctx context.Context, idToken, expectedNonce stri
 	if email == "" && s.cfg.EmailClaim != "email" {
 		email = claimString(claims, "email")
 	}
-	if s.cfg.AllowedEmailDomain != "" && email != "" {
+	if s.cfg.AllowedEmailDomain != "" {
 		domain := strings.TrimPrefix(strings.ToLower(s.cfg.AllowedEmailDomain), "@")
+		if email == "" {
+			return nil, fmt.Errorf("email is required for allowed domain %q", domain)
+		}
 		if !strings.HasSuffix(strings.ToLower(email), "@"+domain) {
 			return nil, fmt.Errorf("email domain %q is not allowed", domain)
 		}

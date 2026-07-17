@@ -6,13 +6,18 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/uniroute/unirouter/internal/guardrail"
+	"github.com/uniroute/unirouter/internal/middleware"
 )
 
 type streamReservationContextKey struct{}
+
+const streamAdvisoryGapRecordWait = 2 * time.Second
 
 type streamReservationState struct {
 	ReservedCompletionTokens int
@@ -66,8 +71,6 @@ func inspectGuardedStreamFrame(ctx context.Context, pinned *guardrail.Pinned, pr
 	return inspection, err
 }
 
-var streamAdvisorySlots = make(chan struct{}, 64)
-
 func streamAdvisoryTextsWithHistory(texts []guardrail.Text, history map[string]string) []guardrail.Text {
 	if len(texts) == 0 {
 		return nil
@@ -85,30 +88,107 @@ func (relay *Relay) evaluateStreamAdvisoryAfterDisclosure(ctx context.Context, p
 	if relay == nil || pinned == nil || len(texts) == 0 {
 		return
 	}
-	copied := append([]guardrail.Text(nil), texts...)
-	select {
-	case streamAdvisorySlots <- struct{}{}:
-	default:
-		relay.recordTraceEvent(ctx, requestID, "guardrail.stream_advisory.dropped", "stream_output", "warning", model, requestedModel, route, 200, 0, map[string]interface{}{
-			"pre_verdict_disclosure": true, "reason": "bounded_advisory_capacity",
-		}, upstreamRequestID)
+	policies := pinned.StreamAdvisoryPolicyIdentities()
+	orgID := middleware.GetOrgIDFromContext(ctx)
+	if orgID <= 0 || len(policies) == 0 {
 		return
 	}
-	go func() {
-		defer func() { <-streamAdvisorySlots }()
-		base := context.Background()
-		if ctx != nil {
-			base = context.WithoutCancel(ctx)
+	currentStreamAdvisoryScheduler().Submit(streamAdvisoryJob{
+		ctx: ctx, relay: relay, pinned: pinned, texts: texts, orgID: orgID,
+		requestID: requestID, policies: policies, model: model, requestedModel: requestedModel,
+		route: route, upstreamRequestID: upstreamRequestID,
+	})
+}
+
+var defaultStreamAdvisoryRuntime struct {
+	sync.Mutex
+	scheduler *streamAdvisoryScheduler
+	gapWriter *streamAdvisoryGapWriter
+}
+
+func currentStreamAdvisoryScheduler() *streamAdvisoryScheduler {
+	defaultStreamAdvisoryRuntime.Lock()
+	defer defaultStreamAdvisoryRuntime.Unlock()
+	if defaultStreamAdvisoryRuntime.scheduler != nil {
+		return defaultStreamAdvisoryRuntime.scheduler
+	}
+	writer := newStreamAdvisoryGapWriter(defaultStreamAdvisoryGapWriterOptions())
+	scheduler := newStreamAdvisoryScheduler(
+		defaultStreamAdvisorySchedulerOptions(),
+		executeStreamAdvisoryJob,
+		func(ctx context.Context, job streamAdvisoryJob, reason string) {
+			recordStreamAdvisoryGap(ctx, writer, job, reason)
+		},
+	)
+	defaultStreamAdvisoryRuntime.gapWriter = writer
+	defaultStreamAdvisoryRuntime.scheduler = scheduler
+	return scheduler
+}
+
+func executeStreamAdvisoryJob(ctx context.Context, job streamAdvisoryJob) {
+	if job.relay == nil || job.pinned == nil || len(job.texts) == 0 {
+		return
+	}
+	result := job.pinned.EvaluateStreamAdvisory(ctx, job.texts)
+	if ctx.Err() != nil {
+		return
+	}
+	job.relay.recordGuardrailResult(ctx, job.requestID, job.model, job.requestedModel, guardrail.StageStreamOutput, result, job.route, 200, job.upstreamRequestID)
+	job.relay.recordTraceEvent(ctx, job.requestID, "guardrail.stream_advisory.completed", "stream_output", "info", job.model, job.requestedModel, job.route, 200, 0, map[string]interface{}{
+		"pre_verdict_disclosure":       true,
+		"guardrail_policy_set_version": result.PolicySetVersion,
+		"guardrail_decision":           result.Decision,
+		"guardrail_degraded":           result.Degraded,
+	}, job.upstreamRequestID)
+}
+
+func recordStreamAdvisoryGap(ctx context.Context, writer *streamAdvisoryGapWriter, job streamAdvisoryJob, reason string) {
+	var err error
+	if reason == streamAdvisoryGapShutdown {
+		_, err = writer.Enqueue(ctx, job, reason)
+	} else {
+		if ctx == nil {
+			ctx = context.Background()
 		}
-		advisoryCtx, cancel := context.WithTimeout(base, 2*time.Second)
-		defer cancel()
-		result := pinned.EvaluateStreamAdvisory(advisoryCtx, copied)
-		relay.recordGuardrailResult(advisoryCtx, requestID, model, requestedModel, guardrail.StageStreamOutput, result, route, 200, upstreamRequestID)
-		relay.recordTraceEvent(advisoryCtx, requestID, "guardrail.stream_advisory.completed", "stream_output", "info", model, requestedModel, route, 200, 0, map[string]interface{}{
-			"pre_verdict_disclosure":       true,
-			"guardrail_policy_set_version": result.PolicySetVersion,
-			"guardrail_decision":           result.Decision,
-			"guardrail_degraded":           result.Degraded,
-		}, upstreamRequestID)
-	}()
+		recordCtx, cancel := context.WithTimeout(ctx, streamAdvisoryGapRecordWait)
+		err = writer.Record(recordCtx, job, reason)
+		cancel()
+	}
+	if err != nil {
+		log.Printf("[guardrail] failed to queue durable stream advisory gap: %v", err)
+		return
+	}
+	if job.relay == nil || reason == streamAdvisoryGapShutdown {
+		return
+	}
+	traceCtx := context.Background()
+	if job.ctx != nil {
+		traceCtx = context.WithoutCancel(job.ctx)
+	}
+	traceCtx, cancel := context.WithTimeout(traceCtx, time.Second)
+	defer cancel()
+	job.relay.recordTraceEvent(traceCtx, job.requestID, "guardrail.stream_advisory.gap", "stream_output", "warning", job.model, job.requestedModel, job.route, 200, 0, map[string]interface{}{
+		"pre_verdict_disclosure": true,
+		"reason":                 reason,
+		"policy_count":           len(job.policies),
+	}, job.upstreamRequestID)
+}
+
+// ShutdownStreamAdvisoryScheduler records queued and active work as shutdown
+// gaps, waits for workers, and flushes the durable metadata writer.
+func ShutdownStreamAdvisoryScheduler(ctx context.Context) error {
+	defaultStreamAdvisoryRuntime.Lock()
+	scheduler := defaultStreamAdvisoryRuntime.scheduler
+	writer := defaultStreamAdvisoryRuntime.gapWriter
+	defaultStreamAdvisoryRuntime.Unlock()
+	if scheduler == nil {
+		return nil
+	}
+	return shutdownStreamAdvisoryRuntime(ctx, scheduler, writer)
+}
+
+func shutdownStreamAdvisoryRuntime(ctx context.Context, scheduler *streamAdvisoryScheduler, writer *streamAdvisoryGapWriter) error {
+	schedulerErr := scheduler.Close(ctx)
+	writerErr := writer.Close(ctx)
+	return joinStreamAdvisoryShutdownErrors(schedulerErr, writerErr)
 }

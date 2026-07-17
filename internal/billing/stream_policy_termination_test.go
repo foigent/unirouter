@@ -23,6 +23,11 @@ func freezeStreamReservation(t *testing.T, b *Billing, orgID int64, model, reque
 	return result
 }
 
+func testStreamFence(start StreamDeliveryStart) *StreamLeaseFence {
+	fence := start.Fence()
+	return &fence
+}
+
 func TestP6F11ConcurrentReservationExtensionChargesOnce(t *testing.T) {
 	pool, orgID, model := newReservationFixture(t, 10_000, 0)
 	b := NewBilling(pool, nil)
@@ -137,13 +142,13 @@ func TestP6F11ReservationExtensionRequiresActiveStreamState(t *testing.T) {
 	beginAcceptedStreamAttempt(t, b, orgID, requestID, attemptID)
 	start := StreamDeliveryStart{
 		RequestID: requestID, AttemptID: attemptID, OwnerID: "active-stream-owner",
-		OrgID: orgID, LeaseTTL: time.Minute,
+		OrgID: orgID, Generation: 1, LeaseTTL: time.Minute,
 	}
 	require.NoError(t, b.BeginStreamDelivery(t.Context(), start))
 	require.NoError(t, b.RecordDelivery(t.Context(), DeliveryEvent{
 		RequestID: requestID, AttemptID: attemptID, OrgID: orgID,
 		Mode: DeliveryModeStream, Outcome: DeliveryOutcomePartial,
-		DeliveredBytes: 128, DeliveredChunks: 1, HTTPStatus: 200,
+		DeliveredBytes: 128, DeliveredChunks: 1, HTTPStatus: 200, StreamFence: testStreamFence(start),
 	}))
 	extension := ExtendReservationRequest{
 		RequestID: requestID, OrgID: orgID, Sequence: 1,
@@ -156,7 +161,7 @@ func TestP6F11ReservationExtensionRequiresActiveStreamState(t *testing.T) {
 	require.NoError(t, b.RecordDelivery(t.Context(), DeliveryEvent{
 		RequestID: requestID, AttemptID: attemptID, OrgID: orgID,
 		Mode: DeliveryModeStream, Outcome: DeliveryOutcomeInterrupted,
-		DeliveredBytes: 128, DeliveredChunks: 1, HTTPStatus: 200, ErrorCode: "test_terminal",
+		DeliveredBytes: 128, DeliveredChunks: 1, HTTPStatus: 200, ErrorCode: "test_terminal", StreamFence: testStreamFence(start),
 	}))
 	result, err = b.ExtendReservation(t.Context(), ExtendReservationRequest{
 		RequestID: requestID, OrgID: orgID, Sequence: 2,
@@ -188,12 +193,12 @@ func TestP6F11ExpiredStreamRecoveryUsesLastCheckpointOnly(t *testing.T) {
 	beginAcceptedStreamAttempt(t, b, orgID, checkpointedRequest, checkpointedAttempt)
 	checkpointedStart := StreamDeliveryStart{
 		RequestID: checkpointedRequest, AttemptID: checkpointedAttempt, OwnerID: ownerID,
-		OrgID: orgID, LeaseTTL: time.Minute,
+		OrgID: orgID, Generation: 1, LeaseTTL: time.Minute,
 	}
 	require.NoError(t, b.BeginStreamDelivery(t.Context(), checkpointedStart))
 	checkpoint := StreamDeliveryCheckpoint{
 		RequestID: checkpointedRequest, AttemptID: checkpointedAttempt, OwnerID: ownerID,
-		OrgID: orgID, DeliveredBytes: 512, DeliveredChunks: 3,
+		OrgID: orgID, Generation: checkpointedStart.Generation, DeliveredBytes: 512, DeliveredChunks: 3,
 		PromptTokens: 20, CompletionTokens: 5, PolicySetVersion: "guardrail-test-v1",
 		LeaseTTL: time.Minute,
 	}
@@ -207,13 +212,13 @@ func TestP6F11ExpiredStreamRecoveryUsesLastCheckpointOnly(t *testing.T) {
 	require.NoError(t, b.RecordDelivery(t.Context(), DeliveryEvent{
 		RequestID: checkpointedRequest, AttemptID: checkpointedAttempt, OrgID: orgID,
 		Mode: DeliveryModeStream, Outcome: DeliveryOutcomePartial,
-		DeliveredBytes: 512, DeliveredChunks: 3, HTTPStatus: 200,
+		DeliveredBytes: 512, DeliveredChunks: 3, HTTPStatus: 200, StreamFence: testStreamFence(checkpointedStart),
 	}))
 	require.NoError(t, b.RecordDelivery(t.Context(), DeliveryEvent{
 		RequestID: checkpointedRequest, AttemptID: checkpointedAttempt, OrgID: orgID,
 		Mode: DeliveryModeStream, Outcome: DeliveryOutcomeInterrupted,
 		DeliveredBytes: 512, DeliveredChunks: 3, HTTPStatus: 200,
-		ErrorCode: "settlement_usage_persist_failed",
+		ErrorCode: "settlement_usage_persist_failed", StreamFence: testStreamFence(checkpointedStart),
 	}), "recovery must reuse a pre-existing terminal receipt instead of appending another")
 
 	const uncheckpointedRequest = "op_p6f11_recover_no_checkpoint"
@@ -222,7 +227,7 @@ func TestP6F11ExpiredStreamRecoveryUsesLastCheckpointOnly(t *testing.T) {
 	beginAcceptedStreamAttempt(t, b, orgID, uncheckpointedRequest, uncheckpointedAttempt)
 	require.NoError(t, b.BeginStreamDelivery(t.Context(), StreamDeliveryStart{
 		RequestID: uncheckpointedRequest, AttemptID: uncheckpointedAttempt, OwnerID: ownerID,
-		OrgID: orgID, LeaseTTL: time.Minute,
+		OrgID: orgID, Generation: 1, LeaseTTL: time.Minute,
 	}))
 
 	_, err = pool.Exec(t.Context(), `
@@ -306,24 +311,25 @@ func TestP6F11ExpiredRecoveryFinishesExistingCompletedReceipt(t *testing.T) {
 	const attemptID = "att_p6f11_recover_completed_receipt"
 	start := StreamDeliveryStart{
 		RequestID: requestID, AttemptID: attemptID, OwnerID: "completed-stream-owner",
-		OrgID: orgID, LeaseTTL: time.Minute,
+		OrgID: orgID, Generation: 1, LeaseTTL: time.Minute,
 	}
 	freezeStreamReservation(t, b, orgID, model, requestID, 100)
 	beginAcceptedStreamAttempt(t, b, orgID, requestID, attemptID)
 	require.NoError(t, b.BeginStreamDelivery(t.Context(), start))
 	_, err := b.CheckpointStreamDelivery(t.Context(), StreamDeliveryCheckpoint{
 		RequestID: requestID, AttemptID: attemptID, OwnerID: start.OwnerID, OrgID: orgID,
-		DeliveredBytes: 256, DeliveredChunks: 2, PromptTokens: 10, CompletionTokens: 4,
+		Generation: start.Generation, DeliveredBytes: 256, DeliveredChunks: 2, PromptTokens: 10, CompletionTokens: 4,
 		PolicySetVersion: "guardrail-completed-v1", LeaseTTL: time.Minute,
 	})
 	require.NoError(t, err)
 	require.NoError(t, b.RecordDelivery(t.Context(), DeliveryEvent{
 		RequestID: requestID, AttemptID: attemptID, OrgID: orgID,
 		Mode: DeliveryModeStream, Outcome: DeliveryOutcomePartial,
-		DeliveredBytes: 128, DeliveredChunks: 1, HTTPStatus: 200,
+		DeliveredBytes: 128, DeliveredChunks: 1, HTTPStatus: 200, StreamFence: testStreamFence(start),
 	}))
 	settle := SettleRequest{
 		RequestID: requestID, AttemptID: attemptID, OrgID: orgID,
+		StreamFence:  testStreamFence(start),
 		PromptTokens: 10, UncachedPromptTokens: 10, CompletionTokens: 4,
 		UsageSource:          metering.UsageSourceCounterV2,
 		UsageAuthority:       metering.UsageAuthorityGatewayCounter,
@@ -339,7 +345,7 @@ func TestP6F11ExpiredRecoveryFinishesExistingCompletedReceipt(t *testing.T) {
 	require.NoError(t, b.RecordDelivery(t.Context(), DeliveryEvent{
 		RequestID: requestID, AttemptID: attemptID, OrgID: orgID,
 		Mode: DeliveryModeStream, Outcome: DeliveryOutcomeCompleted,
-		DeliveredBytes: 256, DeliveredChunks: 2, HTTPStatus: 200,
+		DeliveredBytes: 256, DeliveredChunks: 2, HTTPStatus: 200, StreamFence: testStreamFence(start),
 	}))
 	_, err = pool.Exec(t.Context(), `UPDATE stream_delivery_leases
 		SET lease_expires_at=NOW()-INTERVAL '1 second' WHERE org_id=$1 AND request_id=$2`, orgID, requestID)
@@ -366,14 +372,14 @@ func TestP6F11ExpiredRecoveryClaimCanBeReclaimedAfterClaimerCrash(t *testing.T) 
 	const attemptID = "att_p6f11_recovery_claim_crash"
 	start := StreamDeliveryStart{
 		RequestID: requestID, AttemptID: attemptID, OwnerID: "original-stream-owner",
-		OrgID: orgID, LeaseTTL: time.Minute,
+		OrgID: orgID, Generation: 1, LeaseTTL: time.Minute,
 	}
 	freezeStreamReservation(t, b, orgID, model, requestID, 100)
 	beginAcceptedStreamAttempt(t, b, orgID, requestID, attemptID)
 	require.NoError(t, b.BeginStreamDelivery(t.Context(), start))
 	_, err := b.CheckpointStreamDelivery(t.Context(), StreamDeliveryCheckpoint{
 		RequestID: requestID, AttemptID: attemptID, OwnerID: start.OwnerID, OrgID: orgID,
-		DeliveredBytes: 256, DeliveredChunks: 2, PromptTokens: 10, CompletionTokens: 4,
+		Generation: start.Generation, DeliveredBytes: 256, DeliveredChunks: 2, PromptTokens: 10, CompletionTokens: 4,
 		PolicySetVersion: "guardrail-recovery-v1", LeaseTTL: time.Minute,
 	})
 	require.NoError(t, err)

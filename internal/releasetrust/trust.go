@@ -1,6 +1,7 @@
 package releasetrust
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -51,6 +52,9 @@ func Resolve(runtimeLicenseKeys, runtimeUpgradeKeys string) (Bundle, error) {
 		if err != nil {
 			return Bundle{}, err
 		}
+		if err := ensureDisjointSigningKeys(licenseJSON, upgradeJSON); err != nil {
+			return Bundle{}, err
+		}
 		return Bundle{
 			Mode:              mode,
 			LicensePublicKeys: licenseJSON,
@@ -77,6 +81,25 @@ func Resolve(runtimeLicenseKeys, runtimeUpgradeKeys string) (Bundle, error) {
 	default:
 		return Bundle{}, fmt.Errorf("unsupported embedded release trust mode %q", mode)
 	}
+}
+
+func ensureDisjointSigningKeys(licenseJSON, upgradeJSON string) error {
+	licenseKeys, err := signing.ParsePublicKeyRing(licenseJSON, "embedded License public-key ring")
+	if err != nil {
+		return err
+	}
+	upgradeKeys, err := signing.ParsePublicKeyRing(upgradeJSON, "embedded upgrade public-key ring")
+	if err != nil {
+		return err
+	}
+	for licenseKeyID, licenseKey := range licenseKeys {
+		for upgradeKeyID, upgradeKey := range upgradeKeys {
+			if bytes.Equal(licenseKey, upgradeKey) {
+				return fmt.Errorf("release License key %q and upgrade key %q must use distinct Ed25519 public keys", licenseKeyID, upgradeKeyID)
+			}
+		}
+	}
+	return nil
 }
 
 func decodeEmbeddedRing(encoded, fieldName string) (string, int, error) {

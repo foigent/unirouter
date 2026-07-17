@@ -6,6 +6,9 @@
 
 详见 [Agent 执行与复核协议](./docs/agent-workflows/AGENT-PROTOCOL.md)。执行时还应遵守当前工作区或任务明确提供的更高优先级约束。
 
+本地直接开发使用与 CI 一致的 Go `1.25.12` 和 Node.js `20`；
+Docker 开发路径使用根目录 source Compose，不得将其当作客户正式交付模板。
+
 ## 开发流程
 
 ### 1. 创建分支
@@ -14,7 +17,7 @@
 # 从最新 main 创建工作分支
 git checkout main
 git pull --ff-only
-git checkout -b codex/简短描述
+git checkout -b codex/short-description
 ```
 
 不得直接推送 `main`。人工开发者可以使用团队约定的命名空间；自动执行负责人默认使用 `codex/`。
@@ -28,7 +31,8 @@ go vet ./...
 
 # 前端测试
 cd frontend
-npm test -- --run
+npm run type-check
+npm test
 npm run build
 
 # 本地验证
@@ -131,9 +135,10 @@ Fixes #45"
 
 ### React/TypeScript
 
-- 使用 ESLint + Prettier
+- 保持现有格式和最小 diff；仓库当前没有把 ESLint/Prettier 配置为强制工具
 - 命名：camelCase（变量/函数），PascalCase（组件）
 - 组件：函数式组件 + Hooks
+- 强制本地检查为 `npm run type-check`、`npm test` 和 `npm run build`
 
 ### SQL
 
@@ -153,7 +158,7 @@ go test -coverprofile=coverage.out ./...
 go tool cover -html=coverage.out
 
 # 前端测试
-cd frontend && npm test -- --run
+cd frontend && npm run type-check && npm test && npm run build
 ```
 
 ## 安全规范
@@ -175,9 +180,9 @@ cd frontend && npm test -- --run
 ## 问题反馈
 
 内部成员请通过以下方式反馈：
-- **Bug**：创建 GitHub Issue（使用 Bug Report 模板）
-- **功能建议**：创建 GitHub Issue（使用 Feature Request 模板）
-- **紧急问题**：直接联系 Nicholas
+- **Bug**：创建 GitHub Issue，至少记录影响、环境/版本、复现步骤、预期/实际结果和可脱敏证据
+- **功能建议**：创建 GitHub Issue，明确用户问题、范围和不做的内容；不得因为建立 Issue 就当作已接受范围
+- **安全/凭证事件**：使用已批准的私密事故通道；不得在 Issue、PR、日志或共享 Markdown 中粘贴凭证或未脱敏数据
 
 ## 许可证
 

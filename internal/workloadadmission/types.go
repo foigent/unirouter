@@ -44,7 +44,6 @@ type Options struct {
 	ActivePollWindow   time.Duration
 	StoreTimeout       time.Duration
 	LeaseGrace         time.Duration
-	FallbackTTL        time.Duration
 	MaxQueueDepth      int64
 	MaxOrgQueueDepth   int64
 	MaxQueueScan       int64
@@ -63,7 +62,6 @@ func DefaultOptions() Options {
 		ActivePollWindow:   25 * time.Millisecond,
 		StoreTimeout:       100 * time.Millisecond,
 		LeaseGrace:         5 * time.Second,
-		FallbackTTL:        2 * time.Second,
 		MaxQueueDepth:      512,
 		MaxOrgQueueDepth:   64,
 		MaxQueueScan:       64,
@@ -76,7 +74,6 @@ func (o Options) Validate() error {
 		o.OrgShortReserve < 0 || o.OrgShortReserve >= o.OrgCapacity ||
 		o.PollInterval <= 0 || o.ActivePollWindow < o.PollInterval ||
 		o.StoreTimeout <= 0 || o.StoreTimeout > time.Second || o.LeaseGrace < 0 ||
-		o.FallbackTTL <= 0 || o.FallbackTTL > 5*time.Second ||
 		o.MaxQueueDepth <= 0 || o.MaxQueueDepth > 10_000 ||
 		o.MaxOrgQueueDepth <= 0 || o.MaxOrgQueueDepth > o.MaxQueueDepth ||
 		o.MaxQueueScan <= 0 || o.MaxQueueScan > o.MaxQueueDepth {
