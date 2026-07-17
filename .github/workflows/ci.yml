@@ -389,7 +389,10 @@ jobs:
         run: docker build --build-arg VITE_DEPLOY_ENV=development -t unirouter-frontend:test .
 
       - name: Validate frontend Nginx configuration
-        run: docker run --rm --entrypoint nginx unirouter-frontend:test -t
+        # The runtime hostname is supplied by Compose service discovery. The
+        # standalone syntax check still needs a resolvable placeholder, but it
+        # never connects to the address while evaluating `nginx -t`.
+        run: docker run --rm --add-host backend:127.0.0.1 --entrypoint nginx unirouter-frontend:test -t
 
   docker:
     name: Docker Build
