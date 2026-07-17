@@ -1,7 +1,8 @@
 # Notification And Event Foundation
 
-> Version: v0.2
-> Scope: PRD2 batch 7 backend foundation plus Batch 19 frontend/retry/emitter completion.
+> Version: v1.0
+> Status: Current implementation contract
+> Source of truth: `internal/admin/notification_handlers.go`, `internal/billing/notifications*.go`, and notification routes in `cmd/uniroute/main.go`
 
 ## Goals
 
@@ -54,6 +55,7 @@ Batch 19 adds:
 - `url`
 - `event_types` JSON array
 - `enabled`
+- `scope_verified` plus the write generation used to quarantine edited or historical routes
 
 An empty `event_types` array means all event types for that org/project route.
 
@@ -62,6 +64,10 @@ When an event is created, the service delivers to enabled webhooks where:
 - route `org_id` matches event `org_id`.
 - route `project_id` is empty or matches event `project_id`.
 - route `event_types` is empty or contains event `event_type`.
+
+Stored targets are not returned verbatim by the list API. The operator surface
+uses a masked target and sanitized delivery errors so credentials embedded in a
+legacy URL or upstream error cannot be exposed in the UI or audit detail.
 
 ## Delivery State
 
@@ -81,7 +87,7 @@ Failed deliveries record `next_retry_at`. Batch 19 runs a background retry worke
 
 ## Project Budget Threshold
 
-`EventService.CheckProjectBudget` reads an active project budget and sums `call_logs.cost_cents` from the current budget period.
+`EventService.CheckProjectBudget` reads an active project budget in cents, converts it to micros, and sums `call_logs.cost_micros` from the current budget period.
 
 Supported periods:
 
@@ -94,7 +100,10 @@ When spending reaches `budget_cents`, the service creates a deduplicated `projec
 - `project_id`
 - `project_name`
 - `budget_cents`
-- `spent_cents`
+- `budget_micros`
+- `spent_micros`
+- `currency` (`CNY`)
+- `amount_scale` (`1000000` micros per CNY)
 - `budget_period`
 - `period_start`
 - `threshold_percent`
@@ -107,6 +116,8 @@ Gateway relay invokes this check after settlement and after the request is recor
 The admin API exposes:
 
 - `GET /api/v1/notification-events`
+- `POST /api/v1/notification-events/{id}/acknowledge`
+- `POST /api/v1/notification-events/{id}/resolve`
 - `GET /api/v1/notification-deliveries`
 - `GET /api/v1/notification-webhooks`
 - `POST /api/v1/notification-webhooks`
@@ -114,6 +125,19 @@ The admin API exposes:
 - `POST /api/v1/notification-webhooks/{id}/verify-scope`
 
 Project-scoped roles must provide a readable project id for event/delivery visibility. Webhook writes require project write permission when scoped to a project.
+Every route above requires the commercial `notifications` feature.
+
+Role boundaries:
+
+- `platform_admin` and `org_admin` can read and transition events/deliveries and operate Webhook routes in their authorized scope.
+- `project_admin` must select a project where it has writable administrator membership.
+- `billing_admin` can read, acknowledge, and resolve only `project_budget.threshold` and `token_metering.estimated_ratio.high` in its JWT organization. The allowlist is applied in SQL to events and joined delivery rows, including lifecycle lookups.
+- `billing_admin` has no Webhook authority. All four Webhook handlers return 403 before querying or mutating persistence, in addition to route-level role exclusion.
+
+Event lifecycle (`open -> acknowledged -> resolved`, or `open -> resolved`) is
+independent from delivery state. Acknowledging does not retry/cancel delivery;
+resolved events cannot be reopened through these APIs. Event transitions and
+their audit rows commit atomically.
 Rows created before migration `000020` are retained but excluded from new and
 retry delivery until an authorized actor reviews the stored organization,
 project and URL and explicitly verifies the scope. New Webhooks are verified at
@@ -131,13 +155,16 @@ control-plane migration.
 
 ## Frontend
 
-Batch 19 adds a Notification Center page at `/notifications` for admin/billing users:
+The Notification Center at `/notifications` is role-shaped:
 
 - Events tab: event type, severity, delivery state, resource, message, and time.
 - Deliveries tab: webhook name, status, attempts, response status, next retry, error, and update time.
-- Webhook tab: route URL, scoped project, event types, enabled state, scope
+- Webhook tab for platform/org/project operators: masked route target, scoped project, event types, enabled state, scope
   verification state, create/edit actions, and explicit re-verification for
   quarantined historical routes.
+- Billing administrators receive a finance-only center with financial events
+  and read-only delivery records. They are not shown the Webhook tab, create/edit
+  controls, or a request path that would invoke Webhook APIs.
 
 The topbar notification button routes to `/notifications`.
 

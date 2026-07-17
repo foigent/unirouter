@@ -1,8 +1,12 @@
 # Frontend Spec（前端页面规格）
 
+> **状态**：PRD1 时期的历史设计快照，不是当前页面、路由或 API 验收合同。
+> 当前实现以 `frontend/src/navigation.tsx`、`frontend/src/App.tsx`、
+> `frontend/src/api/client.ts` 和 `docs/tech-ref/05-openapi-spec.yaml` 为准；
+> 不得仅依据本文新增、删除或重命名当前功能。
 > **版本**：v1.0
 > **日期**：2026-06-18
-> **用途**：前端开发的页面结构、交互和 API 绑定参考
+> **用途**：解释最初设计意图和历史差异
 
 ---
 
@@ -241,7 +245,7 @@
 - request_id
 - 完整 usage（prompt_tokens / completion_tokens / total_tokens）
 - usage_source（upstream / estimated）
-- cost_cents
+- cost_micros（十进制字符串；前端按 `1 CNY = 1,000,000 micros` 格式化）
 - latency_ms / ttft_ms
 - upstream_error（如有）
 - is_stream

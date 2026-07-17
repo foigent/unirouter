@@ -33,7 +33,6 @@ func TestP6F21RedisMultiInstanceLeaseAndFaultIntegration(t *testing.T) {
 	options.Stream = ClassPolicy{Weight: 3, MaxWait: 100 * time.Millisecond}
 	options.ActivePollWindow = 50 * time.Millisecond
 	options.StoreTimeout = 500 * time.Millisecond
-	options.FallbackTTL = 500 * time.Millisecond
 	for index := range clients {
 		clients[index] = redis.NewClient(&redis.Options{
 			Addr: address, Password: os.Getenv("REDIS_PASSWORD"), PoolSize: 8,

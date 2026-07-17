@@ -1,10 +1,12 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -17,6 +19,7 @@ var (
 	errStreamGuardrailCrossBoundary   = errors.New("stream redaction crosses already delivered context")
 	errStreamGuardrailArguments       = errors.New("stream redaction cannot safely rewrite structured arguments")
 	errStreamGuardrailBufferExceeded  = errors.New("stream frame exceeds synchronous guardrail buffer")
+	errStreamDuplicateJSONMember      = errors.New("stream frame contains a duplicate JSON member")
 )
 
 type streamTextRef struct {
@@ -35,6 +38,9 @@ type guardedStreamFrame struct {
 }
 
 func parseGuardedStreamFrame(data []byte) (*guardedStreamFrame, error) {
+	if err := rejectDuplicateJSONMembers(data); err != nil {
+		return nil, fmt.Errorf("stream frame has ambiguous JSON members: %w", err)
+	}
 	var envelope map[string]interface{}
 	if err := json.Unmarshal(data, &envelope); err != nil {
 		return nil, err
@@ -146,6 +152,76 @@ func parseGuardedStreamFrame(data []byte) (*guardedStreamFrame, error) {
 		frame.collectTextValue(choice, "text", fmt.Sprintf("choices[%d].text", choiceIndex))
 	}
 	return frame, nil
+}
+
+func rejectDuplicateJSONMembers(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := walkUniqueJSONValue(decoder); err != nil {
+		return err
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("stream frame contains trailing JSON data")
+		}
+		return err
+	}
+	return nil
+}
+
+func walkUniqueJSONValue(decoder *json.Decoder) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	delim, composite := token.(json.Delim)
+	if !composite {
+		return nil
+	}
+	switch delim {
+	case '{':
+		seen := make(map[string]struct{})
+		for decoder.More() {
+			keyToken, err := decoder.Token()
+			if err != nil {
+				return err
+			}
+			key, ok := keyToken.(string)
+			if !ok {
+				return fmt.Errorf("stream frame object member name is invalid")
+			}
+			if _, exists := seen[key]; exists {
+				return errStreamDuplicateJSONMember
+			}
+			seen[key] = struct{}{}
+			if err := walkUniqueJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+		closing, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		if closing != json.Delim('}') {
+			return fmt.Errorf("stream frame object is not terminated")
+		}
+	case '[':
+		for decoder.More() {
+			if err := walkUniqueJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+		closing, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		if closing != json.Delim(']') {
+			return fmt.Errorf("stream frame array is not terminated")
+		}
+	default:
+		return fmt.Errorf("stream frame contains an unexpected JSON delimiter")
+	}
+	return nil
 }
 
 func streamTopLevelShapeSupported(envelope map[string]interface{}) bool {

@@ -44,11 +44,26 @@ func TestNormalizeRole(t *testing.T) {
 	if NormalizeRole("admin") != RolePlatformAdmin {
 		t.Fatal("legacy admin should normalize to platform_admin")
 	}
-	if NormalizeRole("org_viewer") != RoleViewer {
-		t.Fatal("org_viewer should normalize to viewer")
+	if NormalizeRole("org_viewer") != RoleOrgViewer {
+		t.Fatal("org_viewer should remain a distinct organization-scoped role")
 	}
 	if NormalizeRole("developer") != RoleDeveloper {
 		t.Fatal("developer should remain developer")
+	}
+}
+
+func TestOrganizationViewerDoesNotInheritProjectViewerCapabilities(t *testing.T) {
+	if RoleIn(RoleOrgViewer, RoleViewer) {
+		t.Fatal("org_viewer must not match project viewer capability checks")
+	}
+	if RoleIn(RoleViewer, RoleOrgViewer) {
+		t.Fatal("project viewer must not match organization viewer capability checks")
+	}
+	if IsProjectScopedRole(RoleOrgViewer) {
+		t.Fatal("org_viewer must not be treated as a project-scoped role")
+	}
+	if !IsProjectScopedRole(RoleViewer) {
+		t.Fatal("viewer should remain a project-scoped role")
 	}
 }
 
@@ -213,20 +228,15 @@ func TestHashAPIKey_HexLength(t *testing.T) {
 // --- JWT edge cases ---
 
 func TestGenerateJWT_ExpiredToken(t *testing.T) {
-	token, err := GenerateJWT(1, 1, "admin", "secret", 0)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	_, err = ParseJWT(token, "secret")
-	if err == nil {
-		t.Fatal("expected error for expired token")
+	if _, _, err := GenerateAdminSessionJWT(1, 1, "admin", 0, "secret", 0); err == nil {
+		t.Fatal("expected non-positive session lifetime to be rejected")
 	}
 }
 
 func TestGenerateJWT_DifferentRoles(t *testing.T) {
 	roles := []string{"platform_admin", "org_admin", "org_viewer"}
 	for _, role := range roles {
-		token, err := GenerateJWT(1, 1, role, "secret", 1)
+		token, _, err := GenerateAdminSessionJWT(1, 1, role, 0, "secret", 1)
 		if err != nil {
 			t.Fatalf("role %s: unexpected error: %v", role, err)
 		}

@@ -276,9 +276,9 @@ func TestPRD2P0RouteRBACNegativeE2E_Integration(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	developerToken := mustJWT(t, developerID, orgID, auth.RoleDeveloper)
-	billingToken := mustJWT(t, billingAdminID, orgID, auth.RoleBillingAdmin)
-	projectAdminToken := mustJWT(t, projectAdminID, orgID, auth.RoleProjectAdmin)
+	developerToken := mustJWT(t, pool, developerID, orgID, auth.RoleDeveloper)
+	billingToken := mustJWT(t, pool, billingAdminID, orgID, auth.RoleBillingAdmin)
+	projectAdminToken := mustJWT(t, pool, projectAdminID, orgID, auth.RoleProjectAdmin)
 
 	platformOnly := middleware.AdminAuth(pool, prd2E2EJWTSecret)(
 		middleware.RequireRoles(auth.RolePlatformAdmin)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -326,7 +326,7 @@ func TestPRD2AuditFiltersJWTBeforeAfterE2E_Integration(t *testing.T) {
 	auditRoute := middleware.AdminAuth(pool, prd2E2EJWTSecret)(
 		middleware.RequireRoles(auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin)(http.HandlerFunc(h.ListAuditLogs)),
 	)
-	token := mustJWT(t, userID, orgID, auth.RoleOrgAdmin)
+	token := mustJWT(t, pool, userID, orgID, auth.RoleOrgAdmin)
 	target := "/api/v1/audit-logs?org_id=" + jsonNumber(orgID) +
 		"&project_id=" + jsonNumber(projectID) +
 		"&actor_id=" + jsonNumber(userID) +
@@ -475,11 +475,9 @@ func projectActorContext(ctx context.Context, orgID, userID int64, role, request
 	return ctx
 }
 
-func mustJWT(t *testing.T, userID, orgID int64, role string) string {
+func mustJWT(t *testing.T, pool *pgxpool.Pool, userID, orgID int64, role string) string {
 	t.Helper()
-	token, err := auth.GenerateJWT(userID, orgID, role, prd2E2EJWTSecret, 1)
-	require.NoError(t, err)
-	return token
+	return testutil.MustAdminSessionJWT(t, t.Context(), pool, userID, orgID, role, prd2E2EJWTSecret)
 }
 
 func serveBearer(handler http.Handler, method, target, token string) *httptest.ResponseRecorder {

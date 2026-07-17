@@ -1,43 +1,36 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import InternalStatusPage from '../InternalStatusPage';
 
 const mockGetInternalStatus = vi.fn();
 const mockGetRuntimeStatus = vi.fn();
+const mockGetOrganizations = vi.fn();
+const auth = vi.hoisted(() => ({ user: { role: 'platform_admin' } as any }));
 
 vi.mock('../../api/client', () => ({
   api: {
     getInternalStatus: (...args: any[]) => mockGetInternalStatus(...args),
     getRuntimeStatus: (...args: any[]) => mockGetRuntimeStatus(...args),
+    getOrganizations: (...args: any[]) => mockGetOrganizations(...args),
   },
 }));
 
 vi.mock('../../store/auth', () => ({
-  useAuthStore: (selector: any) => selector({ user: { role: 'platform_admin' } }),
+  useAuthStore: (selector: any) => selector({ user: auth.user }),
 }));
 
 describe('InternalStatusPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    auth.user = { role: 'platform_admin' };
+    window.history.replaceState({}, '', '/status');
     mockGetInternalStatus.mockResolvedValue({
-      status: 'warning',
+      summary_kind: 'notification_events',
+      attention_level: 'warning',
       open_critical: 0,
       open_warning: 1,
-      maintenance_windows: [],
-      incidents: [{
-        id: 1,
-        event_type: 'provider.channel.failure',
-        severity: 'warning',
-        title: 'Provider channel failure',
-        message: 'primary channel failed',
-        resource: 'channel',
-        resource_id: '3',
-        status: 'open',
-        delivery_state: 'failed',
-        created_at: '2026-07-04T10:00:00Z',
-        updated_at: '2026-07-04T10:00:00Z',
-      }],
     });
+    mockGetOrganizations.mockResolvedValue({ data: [{ id: 7, name: '总部' }], total: 1 });
     mockGetRuntimeStatus.mockResolvedValue({
       status: 'warning',
       generated_at: '2026-07-07T10:00:00Z',
@@ -140,21 +133,23 @@ describe('InternalStatusPage', () => {
           { id: 'dependency:database', kind: 'dependency', role: 'postgresql', status: 'connected' },
           { id: 'dependency:redis', kind: 'dependency', role: 'redis', status: 'unavailable' },
         ],
-        edges: [],
+        edges: [
+          { from: 'service:uniroute', to: 'dependency:database', kind: 'uses', status: 'connected' },
+        ],
         limitations: ['network_exposure_not_observed'],
       },
     });
   });
 
-  it('renders internal status and incident history', async () => {
+  it('renders runtime health separately from notification attention and dependency edges', async () => {
     render(<InternalStatusPage />);
 
     await waitFor(() => {
-      expect(mockGetInternalStatus).toHaveBeenCalled();
+      expect(mockGetInternalStatus).toHaveBeenCalledWith(undefined);
       expect(mockGetRuntimeStatus).toHaveBeenCalled();
     });
 
-    expect(await screen.findByText('内部状态')).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: '运行状态', level: 3 })).toBeTruthy();
     expect(screen.getByText('运行时观测')).toBeTruthy();
     expect(screen.getByText('数据库')).toBeTruthy();
     expect(screen.getByText('Prometheus')).toBeTruthy();
@@ -171,14 +166,14 @@ describe('InternalStatusPage', () => {
     expect(screen.getByText('网络')).toBeTruthy();
     expect(screen.getByText('2/3')).toBeTruthy();
     expect(screen.getByText(/active 2\/3 \/ rx 1.0 MB \/ tx 2.0 MB/)).toBeTruthy();
-    expect(screen.getByText('有效路由策略')).toBeTruthy();
+    expect(screen.getByText('请求保护策略')).toBeTruthy();
     expect(screen.getByText('Provider 重试')).toBeTruthy();
     expect(screen.getByText('4 次')).toBeTruthy();
     expect(screen.getByText(/恢复等待 90 秒/)).toBeTruthy();
     expect(screen.getByText('25%')).toBeTruthy();
     expect(screen.getByText('429 密钥冷却')).toBeTruthy();
     expect(screen.getByText('鉴权失败冷却')).toBeTruthy();
-    expect(screen.getByText(/startup_environment/)).toBeTruthy();
+    expect(screen.queryByText(/startup_environment/)).toBeNull();
     expect(screen.getByText('路由选择版本')).toBeTruthy();
     expect(screen.getByText('routing-policy.v1')).toBeTruthy();
     expect(screen.getByText('路由快照')).toBeTruthy();
@@ -186,14 +181,14 @@ describe('InternalStatusPage', () => {
     expect(screen.getByText('半开探针租约')).toBeTruthy();
     expect(screen.getByText('路由内存边界')).toBeTruthy();
     expect(screen.getByText(/每实例最多 1024 个模型快照/)).toBeTruthy();
-    expect(screen.getByText('有效流式传输策略')).toBeTruthy();
+    expect(screen.getByText('流式连接保护')).toBeTruthy();
     expect(screen.getByText('单帧安全上限')).toBeTruthy();
     expect(screen.getByText('2.0 MB')).toBeTruthy();
     expect(screen.getByText('写入空闲超时')).toBeTruthy();
     expect(screen.getByText('连接心跳')).toBeTruthy();
     expect(screen.getByText('最长流时长')).toBeTruthy();
     expect(screen.getByText('30 分钟')).toBeTruthy();
-    expect(screen.getByText('Agent 能力合同')).toBeTruthy();
+    expect(screen.getByText('Agent 使用边界')).toBeTruthy();
     expect(screen.getByText('能力令牌')).toBeTruthy();
     expect(screen.getByText('子 Agent 发现')).toBeTruthy();
     expect(screen.getByText('显式登记')).toBeTruthy();
@@ -204,20 +199,79 @@ describe('InternalStatusPage', () => {
     expect(screen.getByText('共享执行')).toBeTruthy();
     expect(screen.getByText('子树速率 / 并发')).toBeTruthy();
     expect(screen.getByText('Redis 共享')).toBeTruthy();
-    expect(screen.getByText('有效预算告警合同')).toBeTruthy();
+    expect(screen.getByText('预算告警规则')).toBeTruthy();
     expect(screen.getByText('项目级')).toBeTruthy();
     expect(screen.getByText('100%')).toBeTruthy();
     expect(screen.getByText('租户隔离')).toBeTruthy();
     expect(screen.getByText('已停用')).toBeTruthy();
     expect(screen.getByText('受限拓扑')).toBeTruthy();
-    expect(screen.getByText('service:uniroute')).toBeTruthy();
+    expect(screen.getAllByText('service:uniroute').length).toBeGreaterThan(1);
+    expect(screen.getByText('uses')).toBeTruthy();
     expect(screen.getByText('网络暴露: not_observed')).toBeTruthy();
-    expect(screen.getByText('Provider channel failure')).toBeTruthy();
-    expect(screen.getByText('上游通道故障')).toBeTruthy();
-    expect(screen.getByText('Open 预警事件')).toBeTruthy();
-    expect(screen.getByText('severity = warning 且 status = open')).toBeTruthy();
-    expect(screen.getByText('未启用')).toBeTruthy();
-    expect(screen.getByText(/事件状态：未关闭 \/ 已确认 \/ 已解决/)).toBeTruthy();
-    expect(screen.getByText(/投递状态只表示 webhook 投递结果/)).toBeTruthy();
+    expect(screen.getByText('通知关注级别')).toBeTruthy();
+    expect(screen.getByText('未确认预警事件')).toBeTruthy();
+    expect(screen.getAllByText('运行状态').length).toBeGreaterThan(1);
+    expect(screen.getByRole('link', { name: '打开通知中心' }).getAttribute('href')).toBe('/notifications');
+    const advanced = screen.getByText('高级运行参数（排障时展开）').closest('details');
+    expect(advanced?.hasAttribute('open')).toBe(false);
+    expect(screen.queryByText('Provider channel failure')).toBeNull();
+  });
+
+  it('loads both notification and runtime status for the platform JWT organization', async () => {
+    auth.user = { role: 'platform_admin', org_id: 7 };
+    render(<InternalStatusPage />);
+
+    expect(await screen.findByText('目标组织')).toBeTruthy();
+    await waitFor(() => {
+      expect(mockGetInternalStatus).toHaveBeenCalledWith({ org_id: 7 });
+      expect(mockGetRuntimeStatus).toHaveBeenCalledWith(7);
+    });
+    expect(mockGetOrganizations).toHaveBeenCalledWith(1, 100);
+  });
+
+  it('passes project context to the notification summary and link', async () => {
+    window.history.replaceState({}, '', '/status?project_id=9');
+    render(<InternalStatusPage />);
+
+    await waitFor(() => expect(mockGetInternalStatus).toHaveBeenCalledWith({ project_id: 9 }));
+    expect((await screen.findByRole('link', { name: '打开通知中心' })).getAttribute('href')).toBe('/notifications?project_id=9');
+  });
+
+  it('keeps runtime health available without calling the notification summary when the License omits notifications', async () => {
+    auth.user = {
+      role: 'org_admin',
+      license_access: {
+        status: 'active',
+        enforceable: true,
+        features: { notifications: false },
+      },
+    };
+    render(<InternalStatusPage />);
+
+    await waitFor(() => expect(mockGetRuntimeStatus).toHaveBeenCalled());
+    expect(mockGetInternalStatus).not.toHaveBeenCalled();
+    expect(screen.getByText('通知摘要已锁定')).toBeTruthy();
+    expect(screen.getAllByText(/未包含「通知中心」/).length).toBeGreaterThan(0);
+    expect(screen.getByText('运行时观测')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: '打开通知中心' })).toBeNull();
+  });
+
+  it('replaces old status with explicit errors instead of healthy-looking defaults', async () => {
+    render(<InternalStatusPage />);
+
+    expect(await screen.findByText('未确认预警事件')).toBeTruthy();
+    await screen.findByText('Prometheus');
+
+    mockGetInternalStatus.mockRejectedValueOnce(new Error('notification unavailable'));
+    mockGetRuntimeStatus.mockRejectedValueOnce(new Error('runtime unavailable'));
+    fireEvent.click(screen.getByRole('button', { name: /刷新/ }));
+
+    expect(await screen.findByText('通知摘要加载失败')).toBeTruthy();
+    expect(await screen.findByText('运行时状态加载失败')).toBeTruthy();
+    expect(screen.getAllByText(/notification unavailable/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/runtime unavailable/).length).toBeGreaterThan(0);
+    expect(screen.queryByText('无待处理')).toBeNull();
+    expect(screen.queryByText('未确认预警事件')).toBeNull();
+    expect(screen.queryByText('Prometheus')).toBeNull();
   });
 });

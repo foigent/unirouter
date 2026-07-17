@@ -14,12 +14,12 @@ import (
 )
 
 // --- helpers ---
-// （helper 逻辑直接内联在各测试中，使用 testutil.SetupTestDB/NewTestOrg/NewTestWallet/NewTestGrant/NewTestModelPrice）
+// （helper 逻辑直接内联在各测试中，使用隔离迁移库和 testutil 的数据 fixture）
 
 // --- Freeze tests ---
 
 func TestFreeze_Success_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	testutil.NewTestWalletCents(t, pool, orgID, 10000)
 	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
@@ -49,7 +49,7 @@ func TestFreeze_Success_Integration(t *testing.T) {
 }
 
 func TestFreeze_InsufficientBalance_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	testutil.NewTestWalletCents(t, pool, orgID, 5) // only 5 cents
 	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
@@ -70,7 +70,7 @@ func TestFreeze_InsufficientBalance_Integration(t *testing.T) {
 }
 
 func TestFreeze_Idempotency_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	testutil.NewTestWalletCents(t, pool, orgID, 10000)
 	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
@@ -112,7 +112,7 @@ func TestFreeze_Idempotency_Integration(t *testing.T) {
 }
 
 func TestFreeze_ConcurrentDuplicateRequestAcrossInstances_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	testutil.NewTestWalletCents(t, pool, orgID, 10000)
 	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
@@ -244,7 +244,7 @@ func TestEventService_CheckProjectBudgetPeriodBoundaries_Integration(t *testing.
 			)
 			require.NoError(t, err)
 
-			svc := NewEventService(pool)
+			svc := NewEventService(pool, "")
 			svc.now = func() time.Time { return tc.now }
 			result, err := svc.CheckProjectBudget(ctx, orgID, projectID)
 			require.NoError(t, err)
@@ -311,7 +311,7 @@ func TestEventService_CheckProjectBudgetTenantScope_Integration(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	svc := NewEventService(pool)
+	svc := NewEventService(pool, "")
 	result, err := svc.CheckProjectBudget(ctx, orgA, projectB)
 	require.NoError(t, err)
 	require.Nil(t, result, "a foreign organization/project pair must not emit an event")
@@ -346,7 +346,7 @@ func TestEventService_CheckProjectBudgetTenantScope_Integration(t *testing.T) {
 }
 
 func TestFreeze_MinAmount_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	testutil.NewTestWalletCents(t, pool, orgID, 10000)
 	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
@@ -369,7 +369,7 @@ func TestFreeze_MinAmount_Integration(t *testing.T) {
 // --- Settle tests ---
 
 func TestSettle_Success_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	testutil.NewTestWalletCents(t, pool, orgID, 10000)
 	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
@@ -412,7 +412,7 @@ func TestSettle_Success_Integration(t *testing.T) {
 }
 
 func TestSettle_NotFound_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 
 	b := NewBilling(pool, nil)
@@ -430,7 +430,7 @@ func TestSettle_NotFound_Integration(t *testing.T) {
 // --- Cancel tests ---
 
 func TestCancel_Success_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	testutil.NewTestWalletCents(t, pool, orgID, 10000)
 	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
@@ -465,7 +465,7 @@ func TestCancel_Success_Integration(t *testing.T) {
 }
 
 func TestCancel_AlreadyCancelled_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	testutil.NewTestWalletCents(t, pool, orgID, 10000)
 	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
@@ -498,7 +498,7 @@ func TestCancel_AlreadyCancelled_Integration(t *testing.T) {
 // --- EstimateFreezeAmount tests ---
 
 func TestEstimateFreezeAmount_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
 
 	b := NewBilling(pool, nil)
@@ -517,7 +517,7 @@ func TestEstimateFreezeAmount_Integration(t *testing.T) {
 // --- CalculateCost tests ---
 
 func TestCalculateCost_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
 
 	b := NewBilling(pool, nil)
@@ -536,7 +536,7 @@ func TestCalculateCost_Integration(t *testing.T) {
 // --- QueryModelPrice tests ---
 
 func TestQueryModelPrice_Found_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	testutil.NewTestModelPrice(t, pool, "gpt-4o", 5, 15)
 
 	b := NewBilling(pool, nil)
@@ -547,7 +547,7 @@ func TestQueryModelPrice_Found_Integration(t *testing.T) {
 }
 
 func TestQueryModelPrice_NotFoundFailsClosed_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 
 	b := NewBilling(pool, nil)
 	inputCost, outputCost, err := b.QueryModelPriceMicrosForOrg(context.Background(), 0, "nonexistent-model")
@@ -559,7 +559,7 @@ func TestQueryModelPrice_NotFoundFailsClosed_Integration(t *testing.T) {
 // --- QueryModelPriceForOrg tests ---
 
 func TestQueryModelPriceForOrg_NoMultiplier_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	testutil.NewTestModelPrice(t, pool, "claude-opus", 15, 75)
 
 	b := NewBilling(pool, nil)
@@ -570,7 +570,7 @@ func TestQueryModelPriceForOrg_NoMultiplier_Integration(t *testing.T) {
 }
 
 func TestQueryModelPriceForOrg_WithMultiplier_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	testutil.NewTestModelPrice(t, pool, "org-model-test", 10, 50)
 
@@ -589,7 +589,7 @@ func TestQueryModelPriceForOrg_WithMultiplier_Integration(t *testing.T) {
 }
 
 func TestQueryModelPriceForOrg_MultiplierOne_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	testutil.NewTestModelPrice(t, pool, "mult1-model", 10, 50)
 
@@ -606,7 +606,7 @@ func TestQueryModelPriceForOrg_MultiplierOne_Integration(t *testing.T) {
 }
 
 func TestQueryModelPriceForOrg_UnpricedMultiplierFailsClosed_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	// An orphan multiplier is not a price authority.
 
@@ -623,7 +623,7 @@ func TestQueryModelPriceForOrg_UnpricedMultiplierFailsClosed_Integration(t *test
 }
 
 func TestQueryModelPriceForOrg_QueryErrorDoesNotFallback_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	b := NewBilling(pool, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -638,7 +638,7 @@ func TestQueryModelPriceForOrg_QueryErrorDoesNotFallback_Integration(t *testing.
 // --- CalculateCost: boundary tests ---
 
 func TestCalculateCost_ExactlyOneCent_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	// price: input=2, output=10 cents per 1K
 	// cost = (prompt*2 + completion*10) / 1000
 	// For cost=1: need promptTokens*2 + completionTokens*10 >= 1000
@@ -653,7 +653,7 @@ func TestCalculateCost_ExactlyOneCent_Integration(t *testing.T) {
 }
 
 func TestCalculateCost_SubCentRemainsExact_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
 
 	b := NewBilling(pool, nil)
@@ -663,7 +663,7 @@ func TestCalculateCost_SubCentRemainsExact_Integration(t *testing.T) {
 }
 
 func TestCalculateCost_LargeTokens_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
 
 	b := NewBilling(pool, nil)
@@ -674,7 +674,7 @@ func TestCalculateCost_LargeTokens_Integration(t *testing.T) {
 }
 
 func TestCalculateCost_OnlyCompletionTokens_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
 
 	b := NewBilling(pool, nil)
@@ -687,7 +687,7 @@ func TestCalculateCost_OnlyCompletionTokens_Integration(t *testing.T) {
 // --- EstimateFreezeAmount: boundary tests ---
 
 func TestEstimateFreezeAmount_SafetyFactorBoundaries_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
 
 	b := NewBilling(pool, nil)
@@ -704,7 +704,7 @@ func TestEstimateFreezeAmount_SafetyFactorBoundaries_Integration(t *testing.T) {
 }
 
 func TestEstimateFreezeAmount_MinFreezeDominates_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
 
 	b := NewBilling(pool, nil)
@@ -716,7 +716,7 @@ func TestEstimateFreezeAmount_MinFreezeDominates_Integration(t *testing.T) {
 }
 
 func TestEstimateFreezeAmount_ZeroSafetyFactor_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
 
 	b := NewBilling(pool, nil)
@@ -730,7 +730,7 @@ func TestEstimateFreezeAmount_ZeroSafetyFactor_Integration(t *testing.T) {
 // --- Freeze: granted_balance priority tests ---
 
 func TestFreeze_ConsumesGrantedFirst_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	// Wallet: balance=5000, granted_balance=3000
 	testutil.NewTestWalletCents(t, pool, orgID, 5000)
@@ -766,7 +766,7 @@ func TestFreeze_ConsumesGrantedFirst_Integration(t *testing.T) {
 }
 
 func TestFreeze_PartialGrantPartialBalance_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	// Wallet: balance=5000, granted_balance=500
 	testutil.NewTestWalletCents(t, pool, orgID, 5000)
@@ -803,7 +803,7 @@ func TestFreeze_PartialGrantPartialBalance_Integration(t *testing.T) {
 // --- Settle: boundary tests ---
 
 func TestSettle_ExactCost_NoRefund_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	testutil.NewTestWalletCents(t, pool, orgID, 10000)
 	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
@@ -833,7 +833,7 @@ func TestSettle_ExactCost_NoRefund_Integration(t *testing.T) {
 }
 
 func TestSettle_CostExceedsFrozen_LossLogged_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	testutil.NewTestWalletCents(t, pool, orgID, 10000)
 	testutil.NewTestModelPrice(t, pool, "gpt-4o", 2, 10)
@@ -865,7 +865,7 @@ func TestSettle_CostExceedsFrozen_LossLogged_Integration(t *testing.T) {
 // --- Cancel: idempotency edge case ---
 
 func TestCancel_NonExistent_Integration(t *testing.T) {
-	pool := testutil.SetupTestDB(t)
+	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 
 	b := NewBilling(pool, nil)

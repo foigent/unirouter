@@ -66,22 +66,23 @@ RUN_ADMIN_READ_SMOKE=1 ADMIN_USERNAME='<admin>' ADMIN_PASSWORD='<password>' scri
 
 On 2026-07-01 Codex confirmed Alibaba Cloud accepted `admin/admin123456` and returned a JWT. After redeploy, `scripts/prd1-cloud-smoke.sh` passed and the same default login returned 403.
 
-Code-level remediation in this round:
+Code-level remediation recorded at PRD1 closeout:
 
 - Web login rejects the public default admin password unless `UNIROUTE_ALLOW_DEFAULT_ADMIN_LOGIN=true`.
-- `./uniroute admin set-password --username admin --password <new-password>` is available for deployment remediation.
-- `./uniroute admin create --username <name> --password <password> --role <role>` is available for bootstrap operations.
+- At that historical point, the recovery commands accepted a value-bearing password flag. V1 has retired that interface because it exposed secrets in process arguments. This historical statement is not an executable current instruction.
 
-Deployment remediation command used by operators:
+Current supported deployment remediation uses a hidden interactive prompt:
 
 ```bash
 docker compose exec backend ./uniroute admin set-password \
   --username admin \
-  --password '<strong-new-password>' \
   --org-id 1
 ```
 
-Do not set the password back to `admin123456`; the CLI refuses it by default.
+For non-interactive operation, follow the current deployment runbook's controlled
+secret-file plus `docker compose exec -T ... --password-stdin` procedure. Do not
+put a password in argv or an environment variable. Do not set the password back
+to `admin123456`; the CLI refuses it by default.
 
 Current cloud evidence:
 

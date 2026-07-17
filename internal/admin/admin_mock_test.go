@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/billing"
+	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/testutil"
 	"golang.org/x/crypto/bcrypt"
@@ -145,6 +146,10 @@ func TestLogin_Success(t *testing.T) {
 					*dest[2].(*string) = hash     // password_hash
 					*dest[3].(*string) = "admin"  // role
 					*dest[4].(*string) = "active" // status
+					*dest[5].(*string) = "Acme"   // org_name
+					*dest[6].(*string) = "admin@example.com"
+					*dest[7].(*string) = "local"
+					*dest[9].(*string) = "admin"
 					return nil
 				},
 			}
@@ -162,6 +167,10 @@ func TestLogin_Success(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
+	if rec.Header().Get("Cache-Control") != "no-store" || rec.Header().Get("Pragma") != "no-cache" ||
+		rec.Header().Get("Referrer-Policy") != "no-referrer" {
+		t.Fatalf("token response must disable caching and referrers: %#v", rec.Header())
+	}
 	var resp map[string]interface{}
 	json.Unmarshal(rec.Body.Bytes(), &resp)
 	if _, ok := resp["token"]; !ok {
@@ -169,6 +178,51 @@ func TestLogin_Success(t *testing.T) {
 	}
 	if resp["role"] != "admin" {
 		t.Fatalf("expected role=admin, got %v", resp["role"])
+	}
+	if resp["org_id"] != float64(1) || resp["org_name"] != "Acme" || resp["status"] != "active" ||
+		resp["email"] != "admin@example.com" || resp["auth_provider"] != "local" {
+		t.Fatalf("unexpected login user context: %#v", resp)
+	}
+}
+
+func TestLogin_ExternalProviderWithBcryptDenied(t *testing.T) {
+	hash := "$2a$10$FQbk3L3IVXe.UiYojf7YVeq1nbfb4oI.igx8Jed8fxF6slCek.hLG"
+	auditWrites := 0
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int64) = 1
+				*dest[1].(*int64) = 1
+				*dest[2].(*string) = hash
+				*dest[3].(*string) = "admin"
+				*dest[4].(*string) = "active"
+				*dest[5].(*string) = "Acme"
+				*dest[6].(*string) = "admin@example.com"
+				*dest[7].(*string) = "oidc"
+				*dest[9].(*string) = "admin"
+				return nil
+			}}
+		},
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			auditWrites++
+			return pgconn.NewCommandTag("INSERT 1"), nil
+		},
+	}
+	h := newTestHandler(db)
+	req := httptest.NewRequest(http.MethodPost, "/auth/login",
+		strings.NewReader(`{"username":"admin","password":"password123"}`))
+	rec := httptest.NewRecorder()
+
+	h.Login(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected generic 401 for externally managed user, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "token") || strings.Contains(rec.Body.String(), "oidc") {
+		t.Fatalf("denial must not disclose credentials or provider ownership: %s", rec.Body.String())
+	}
+	if auditWrites != 0 {
+		t.Fatalf("denied local fallback must not create a successful-login audit, got %d writes", auditWrites)
 	}
 }
 
@@ -185,6 +239,10 @@ func TestLogin_WritesAuditWithActor(t *testing.T) {
 					*dest[2].(*string) = hash
 					*dest[3].(*string) = "admin"
 					*dest[4].(*string) = "active"
+					*dest[5].(*string) = "Default"
+					*dest[6].(*string) = ""
+					*dest[7].(*string) = "local"
+					*dest[9].(*string) = "admin"
 					return nil
 				},
 			}
@@ -226,6 +284,10 @@ func TestLogin_WrongPassword(t *testing.T) {
 					*dest[2].(*string) = hash
 					*dest[3].(*string) = "admin"
 					*dest[4].(*string) = "active"
+					*dest[5].(*string) = "Default"
+					*dest[6].(*string) = ""
+					*dest[7].(*string) = "local"
+					*dest[9].(*string) = "admin"
 					return nil
 				},
 			}
@@ -245,7 +307,7 @@ func TestLogin_WrongPassword(t *testing.T) {
 	}
 }
 
-func TestLogin_DefaultAdminPasswordBlocked(t *testing.T) {
+func TestLogin_PublicDefaultPasswordBlockedWithoutApplicationUsernameFold(t *testing.T) {
 	t.Setenv("UNIROUTE_ALLOW_DEFAULT_ADMIN_LOGIN", "")
 	hash, err := bcrypt.GenerateFromPassword([]byte("admin123456"), bcrypt.DefaultCost)
 	if err != nil {
@@ -260,6 +322,10 @@ func TestLogin_DefaultAdminPasswordBlocked(t *testing.T) {
 					*dest[2].(*string) = string(hash)
 					*dest[3].(*string) = "admin"
 					*dest[4].(*string) = "active"
+					*dest[5].(*string) = "Default"
+					*dest[6].(*string) = ""
+					*dest[7].(*string) = "local"
+					*dest[9].(*string) = "unicode-\u0130dentity"
 					return nil
 				},
 			}
@@ -267,7 +333,7 @@ func TestLogin_DefaultAdminPasswordBlocked(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	req := httptest.NewRequest("POST", "/auth/login", strings.NewReader(`{"username":"admin","password":"admin123456"}`))
+	req := httptest.NewRequest("POST", "/auth/login", strings.NewReader(`{"username":"unicode-\u0130dentity","password":"admin123456"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -293,6 +359,10 @@ func TestLogin_DefaultAdminPasswordAllowedForExplicitDevOverride(t *testing.T) {
 					*dest[2].(*string) = string(hash)
 					*dest[3].(*string) = "admin"
 					*dest[4].(*string) = "active"
+					*dest[5].(*string) = "Default"
+					*dest[6].(*string) = ""
+					*dest[7].(*string) = "local"
+					*dest[9].(*string) = "admin"
 					return nil
 				},
 			}
@@ -339,30 +409,34 @@ func TestChangePassword_Success(t *testing.T) {
 	oldHash := "$2a$10$FQbk3L3IVXe.UiYojf7YVeq1nbfb4oI.igx8Jed8fxF6slCek.hLG"
 	var updatedHash string
 	var updatedUserID int64
+	var auditWasAtomic bool
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			if strings.Contains(sql, "WITH changed AS") {
+				updatedHash = args[0].(string)
+				updatedUserID = args[1].(int64)
+				auditWasAtomic = strings.Contains(sql, "INSERT INTO audit_logs") && strings.Contains(sql, "auth_epoch = auth_epoch + 1")
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*bool) = true
+					*dest[1].(*bool) = true
+					return nil
+				}}
+			}
 			if args[0] != int64(42) {
 				t.Fatalf("expected user id 42, got %v", args[0])
 			}
 			return &testutil.MockRow{
 				ScanFn: func(dest ...any) error {
 					*dest[0].(*string) = oldHash
+					*dest[1].(*string) = "local"
 					return nil
 				},
 			}
 		},
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			if strings.Contains(sql, "INSERT INTO audit_logs") {
-				return pgconn.NewCommandTag("INSERT 1"), nil
-			}
-			updatedHash = args[0].(string)
-			updatedUserID = args[1].(int64)
-			return pgconn.NewCommandTag("UPDATE 1"), nil
-		},
 	}
 	h := newTestHandler(db)
 
-	body := `{"old_password":"password123","new_password":"newpass123"}`
+	body := `{"old_password":"password123","new_password":"newpass12345"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/me/password", strings.NewReader(body))
 	ctx := context.WithValue(req.Context(), middleware.CtxUserID, int64(42))
 	req = req.WithContext(ctx)
@@ -379,7 +453,10 @@ func TestChangePassword_Success(t *testing.T) {
 	if updatedHash == "" || updatedHash == oldHash {
 		t.Fatal("expected a new password hash")
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(updatedHash), []byte("newpass123")); err != nil {
+	if !auditWasAtomic {
+		t.Fatal("password, auth epoch, and authoritative audit must share one database statement")
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(updatedHash), []byte("newpass12345")); err != nil {
 		t.Fatalf("updated hash does not match new password: %v", err)
 	}
 }
@@ -392,6 +469,7 @@ func TestChangePassword_WrongOldPassword(t *testing.T) {
 			return &testutil.MockRow{
 				ScanFn: func(dest ...any) error {
 					*dest[0].(*string) = oldHash
+					*dest[1].(*string) = "local"
 					return nil
 				},
 			}
@@ -403,7 +481,7 @@ func TestChangePassword_WrongOldPassword(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"old_password":"wrongpass","new_password":"newpass123"}`
+	body := `{"old_password":"wrongpass","new_password":"newpass12345"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/me/password", strings.NewReader(body))
 	ctx := context.WithValue(req.Context(), middleware.CtxUserID, int64(42))
 	req = req.WithContext(ctx)
@@ -419,10 +497,104 @@ func TestChangePassword_WrongOldPassword(t *testing.T) {
 	}
 }
 
+func TestChangePassword_RejectsWeakNewPasswordBeforeDatabaseAccess(t *testing.T) {
+	db := &testutil.MockDB{QueryRowFn: func(context.Context, string, ...any) pgx.Row {
+		t.Fatal("weak password must be rejected before reading credentials")
+		return &testutil.MockRow{}
+	}}
+	h := newTestHandler(db)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/me/password", strings.NewReader(`{"old_password":"password123","new_password":"short-pass"}`))
+	req = req.WithContext(context.WithValue(req.Context(), middleware.CtxUserID, int64(42)))
+	rec := httptest.NewRecorder()
+
+	h.ChangePassword(rec, req)
+
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "at least 12 characters") {
+		t.Fatalf("expected password policy rejection, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestChangePassword_RejectsExternalIdentityProvider(t *testing.T) {
+	execCalled := false
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*string) = "unused-password-hash"
+				*dest[1].(*string) = "oidc"
+				return nil
+			}}
+		},
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			execCalled = true
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	h := newTestHandler(db)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/me/password", strings.NewReader(`{"old_password":"oldpass","new_password":"newpass12345"}`))
+	req = req.WithContext(context.WithValue(req.Context(), middleware.CtxUserID, int64(42)))
+	rec := httptest.NewRecorder()
+
+	h.ChangePassword(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if execCalled {
+		t.Fatal("external identity-provider account must not update a local password")
+	}
+}
+
+func TestGetMe_IncludesIdentityProviderAndEmail(t *testing.T) {
+	createdAt := time.Date(2026, 7, 16, 9, 0, 0, 0, time.UTC)
+	db := &testutil.MockDB{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+		return &testutil.MockRow{ScanFn: func(dest ...any) error {
+			*dest[0].(*string) = "alice"
+			*dest[1].(*string) = "org_admin"
+			*dest[2].(*string) = "active"
+			*dest[3].(*int64) = 22
+			*dest[4].(*time.Time) = createdAt
+			*dest[5].(*string) = "Acme"
+			*dest[6].(*string) = "alice@example.com"
+			*dest[7].(*string) = "oidc"
+			return nil
+		}}
+	}}
+	h := newTestHandler(db)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req = req.WithContext(context.WithValue(req.Context(), middleware.CtxUserID, int64(42)))
+	rec := httptest.NewRecorder()
+
+	h.GetMe(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body["auth_provider"] != "oidc" || body["email"] != "alice@example.com" {
+		t.Fatalf("unexpected identity fields: %#v", body)
+	}
+	licenseAccess, ok := body["license_access"].(map[string]interface{})
+	if !ok || licenseAccess["status"] != licensing.StatusInvalid || licenseAccess["enforceable"] != false {
+		t.Fatalf("expected a fail-closed non-sensitive license projection: %#v", body["license_access"])
+	}
+	features, ok := licenseAccess["features"].(map[string]interface{})
+	if !ok || len(features) != 7 {
+		t.Fatalf("expected every concrete license feature result: %#v", licenseAccess)
+	}
+	for _, sensitiveKey := range []string{"customer", "license_id", "signature", "key_id", "limits", "payload"} {
+		if _, exists := licenseAccess[sensitiveKey]; exists {
+			t.Fatalf("license_access must not expose %s: %#v", sensitiveKey, licenseAccess)
+		}
+	}
+}
+
 func TestChangePassword_Unauthenticated(t *testing.T) {
 	h := newTestHandler(&testutil.MockDB{})
 
-	body := `{"old_password":"password123","new_password":"newpass123"}`
+	body := `{"old_password":"password123","new_password":"newpass12345"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/me/password", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 
@@ -444,6 +616,10 @@ func TestLogin_DisabledAccount(t *testing.T) {
 					*dest[2].(*string) = hash
 					*dest[3].(*string) = "admin"
 					*dest[4].(*string) = "disabled"
+					*dest[5].(*string) = "Default"
+					*dest[6].(*string) = ""
+					*dest[7].(*string) = "local"
+					*dest[9].(*string) = "admin"
 					return nil
 				},
 			}
@@ -460,6 +636,9 @@ func TestLogin_DisabledAccount(t *testing.T) {
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), "token") || !strings.Contains(rec.Body.String(), "Account is disabled") {
+		t.Fatalf("disabled login must return only the denial, got %s", rec.Body.String())
 	}
 }
 
@@ -514,15 +693,16 @@ func TestGetWallet_Success(t *testing.T) {
 				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1           // org_id
-						*dest[1].(*int64) = 100_000_000 // balance_micros
-						*dest[2].(*int64) = 50_000_000  // granted_balance_micros
-						*dest[3].(*int64) = 0           // frozen_micros
-						*dest[4].(*int64) = 25_000_000  // total_spent_micros
-						*dest[5].(*string) = "USD"      // currency
-						*dest[6].(*bool) = true         // auto_freeze
-						*dest[7].(*int64) = 1000        // low_balance_threshold_cents
-						*dest[8].(*time.Time) = now     // created_at
-						*dest[9].(*time.Time) = now     // updated_at
+						*dest[1].(*string) = "Default"  // org_name
+						*dest[2].(*int64) = 100_000_000 // balance_micros
+						*dest[3].(*int64) = 50_000_000  // granted_balance_micros
+						*dest[4].(*int64) = 0           // frozen_micros
+						*dest[5].(*int64) = 25_000_000  // total_spent_micros
+						*dest[6].(*string) = "USD"      // currency
+						*dest[7].(*bool) = true         // auto_freeze
+						*dest[8].(*int64) = 1000        // low_balance_threshold_cents
+						*dest[9].(*time.Time) = now     // created_at
+						*dest[10].(*time.Time) = now    // updated_at
 						return nil
 					},
 				},
@@ -567,15 +747,16 @@ func TestGetWallet_AdminRole(t *testing.T) {
 				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1
-						*dest[1].(*int64) = 100_000_000
-						*dest[2].(*int64) = 50_000_000
-						*dest[3].(*int64) = 0
-						*dest[4].(*int64) = 25_000_000
-						*dest[5].(*string) = "USD"
-						*dest[6].(*bool) = true
-						*dest[7].(*int64) = 1000
-						*dest[8].(*time.Time) = now
+						*dest[1].(*string) = "Default"
+						*dest[2].(*int64) = 100_000_000
+						*dest[3].(*int64) = 50_000_000
+						*dest[4].(*int64) = 0
+						*dest[5].(*int64) = 25_000_000
+						*dest[6].(*string) = "USD"
+						*dest[7].(*bool) = true
+						*dest[8].(*int64) = 1000
 						*dest[9].(*time.Time) = now
+						*dest[10].(*time.Time) = now
 						return nil
 					},
 				},
@@ -933,15 +1114,12 @@ func TestBalanceAdjust_Success(t *testing.T) {
 					}}
 				},
 				ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+					if strings.Contains(sql, "INSERT INTO audit_logs") {
+						auditArgs = append([]any(nil), args...)
+					}
 					return pgconn.CommandTag{}, nil
 				},
 			}, nil
-		},
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			if strings.Contains(sql, "INSERT INTO audit_logs") {
-				auditArgs = append([]any(nil), args...)
-			}
-			return pgconn.CommandTag{}, nil // audit log
 		},
 	}
 	h := newTestHandler(db)
@@ -1162,8 +1340,13 @@ func TestListChannels_QueryError(t *testing.T) {
 // ===================================================================
 
 func TestCreateUser_Success(t *testing.T) {
+	var insertedStatus string
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			if !strings.Contains(sql, "role, status") || len(args) != 5 {
+				t.Fatalf("expected explicit user status insert, got query %q args %#v", sql, args)
+			}
+			insertedStatus = args[4].(string)
 			return &testutil.MockRow{
 				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 42 // new user id
@@ -1174,7 +1357,7 @@ func TestCreateUser_Success(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"username":"newuser","password":"secret123","role":"org_viewer","org_id":1}`
+	body := `{"username":"newuser","password":"secret-password-123","role":"org_viewer","org_id":1}`
 	req := httptest.NewRequest("POST", "/users", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -1189,12 +1372,67 @@ func TestCreateUser_Success(t *testing.T) {
 	if resp["id"].(float64) != 42 {
 		t.Fatalf("expected id=42, got %v", resp["id"])
 	}
+	if insertedStatus != "active" {
+		t.Fatalf("expected default status active, got %s", insertedStatus)
+	}
+}
+
+func TestCreateUser_DisabledStatus(t *testing.T) {
+	var insertedStatus string
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			if !strings.Contains(sql, "role, status") || len(args) != 5 {
+				t.Fatalf("expected explicit user status insert, got query %q args %#v", sql, args)
+			}
+			insertedStatus = args[4].(string)
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int64) = 43
+				return nil
+			}}
+		},
+	}
+	h := newTestHandler(db)
+	req := httptest.NewRequest(http.MethodPost, "/users", strings.NewReader(
+		`{"org_id":1,"username":"disabled-user","password":"secret-password-123","role":"org_viewer","status":"disabled"}`,
+	))
+	rec := httptest.NewRecorder()
+
+	h.CreateUser(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if insertedStatus != "disabled" {
+		t.Fatalf("expected disabled status, got %s", insertedStatus)
+	}
+}
+
+func TestCreateUser_InvalidStatus(t *testing.T) {
+	dbCalled := false
+	db := &testutil.MockDB{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+		dbCalled = true
+		return &testutil.MockRow{}
+	}}
+	h := newTestHandler(db)
+	req := httptest.NewRequest(http.MethodPost, "/users", strings.NewReader(
+		`{"org_id":1,"username":"paused-user","password":"secret-password-123","role":"org_viewer","status":"paused"}`,
+	))
+	rec := httptest.NewRecorder()
+
+	h.CreateUser(rec, req)
+
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "Invalid status") {
+		t.Fatalf("expected 400 Invalid status, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if dbCalled {
+		t.Fatal("invalid status must be rejected before database work")
+	}
 }
 
 func TestCreateUser_EmptyUsername(t *testing.T) {
 	h := newTestHandler(&testutil.MockDB{})
 
-	body := `{"username":"","password":"secret123"}`
+	body := `{"username":"","password":"secret-password-123"}`
 	req := httptest.NewRequest("POST", "/users", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -1221,19 +1459,38 @@ func TestCreateUser_EmptyPassword(t *testing.T) {
 	}
 }
 
+func TestCreateUser_RejectsWeakPasswordBeforeDatabaseAccess(t *testing.T) {
+	db := &testutil.MockDB{QueryRowFn: func(context.Context, string, ...any) pgx.Row {
+		t.Fatal("weak password must be rejected before insertion")
+		return &testutil.MockRow{}
+	}}
+	h := newTestHandler(db)
+	req := httptest.NewRequest(http.MethodPost, "/users", strings.NewReader(`{"org_id":1,"username":"testuser","password":"short-pass"}`))
+	rec := httptest.NewRecorder()
+
+	h.CreateUser(rec, req)
+
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "at least 12 characters") {
+		t.Fatalf("expected password policy rejection, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestCreateUser_DuplicateUsername(t *testing.T) {
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			return &testutil.MockRow{
 				ScanFn: func(dest ...any) error {
-					return fmt.Errorf("duplicate key value violates unique constraint")
+					return &pgconn.PgError{
+						Code:           "23505",
+						ConstraintName: localLoginIdentityUniqueIndex,
+					}
 				},
 			}
 		},
 	}
 	h := newTestHandler(db)
 
-	body := `{"username":"existinguser","password":"secret123","org_id":1}`
+	body := `{"username":"existinguser","password":"secret-password-123","org_id":1}`
 	req := httptest.NewRequest("POST", "/users", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -1267,7 +1524,7 @@ func TestCreateUser_DefaultRole(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"username":"testuser","password":"secret123","org_id":1}`
+	body := `{"username":"testuser","password":"secret-password-123","org_id":1}`
 	req := httptest.NewRequest("POST", "/users", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -1548,6 +1805,12 @@ func TestCleanupOldData_ExecError(t *testing.T) {
 func TestListAPIKeys_Success(t *testing.T) {
 	now := time.Now()
 	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int) = 1
+				return nil
+			}}
+		},
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			return &testutil.MockRows{
 				Rows: []func(dest ...any) error{
@@ -1600,6 +1863,12 @@ func TestListAPIKeys_Success(t *testing.T) {
 
 func TestListAPIKeys_QueryError(t *testing.T) {
 	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int) = 1
+				return nil
+			}}
+		},
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			return nil, fmt.Errorf("db error")
 		},
@@ -1618,6 +1887,12 @@ func TestListAPIKeys_QueryError(t *testing.T) {
 
 func TestListAPIKeys_ScanError(t *testing.T) {
 	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int) = 1
+				return nil
+			}}
+		},
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			if !strings.Contains(sql, "COALESCE(ak.budget_limit, 0)") {
 				t.Fatalf("expected budget_limit to be null-safe, got query: %s", sql)
@@ -2059,6 +2334,7 @@ func TestDeleteUser_Success(t *testing.T) {
 					return &testutil.MockRow{ScanFn: func(dest ...any) error {
 						*dest[0].(*int64) = 1
 						*dest[1].(*string) = auth.RoleOrgViewer
+						*dest[2].(*string) = "active"
 						return nil
 					}}
 				},
@@ -2110,6 +2386,7 @@ func TestDeleteUser_DBError(t *testing.T) {
 					return &testutil.MockRow{ScanFn: func(dest ...any) error {
 						*dest[0].(*int64) = 1
 						*dest[1].(*string) = auth.RoleOrgViewer
+						*dest[2].(*string) = "active"
 						return nil
 					}}
 				},
@@ -3518,7 +3795,7 @@ func TestListReconciliation_EmitsHighEstimatedRatioEvent(t *testing.T) {
 		},
 	}
 	h := newTestHandler(db)
-	h.SetEventService(billing.NewEventService(db))
+	h.SetEventService(billing.NewEventService(db, ""))
 
 	req := httptest.NewRequest("GET", "/reconciliation?usage_source=counter_v2", nil)
 	req = withTestActor(req, 7, 3, auth.RoleBillingAdmin)
@@ -3715,6 +3992,82 @@ func TestDashboardStats_Success(t *testing.T) {
 	}
 }
 
+func TestDashboardStats_RejectsInvalidTimeRangeBeforeQuerying(t *testing.T) {
+	db := &testutil.MockDB{
+		QueryRowFn: func(context.Context, string, ...any) pgx.Row {
+			t.Fatal("database must not be queried for an invalid dashboard time range")
+			return nil
+		},
+	}
+	h := newTestHandler(db)
+	req := httptest.NewRequest("GET", "/dashboard/stats?start_time=2026-07-02T00:00:00Z&end_time=2026-07-01T00:00:00Z", nil)
+	req = withTestBillingActor(req)
+	rec := httptest.NewRecorder()
+
+	h.DashboardStats(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDashboardStats_ReturnsServerErrorWhenOverviewQueryFails(t *testing.T) {
+	db := &testutil.MockDB{
+		QueryRowFn: func(context.Context, string, ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(...any) error { return fmt.Errorf("database unavailable") }}
+		},
+	}
+	h := newTestHandler(db)
+	req := httptest.NewRequest("GET", "/dashboard/stats", nil)
+	req = withTestBillingActor(req)
+	rec := httptest.NewRecorder()
+
+	h.DashboardStats(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDashboardPreviousPeriodDelta_UsesImmediatelyPrecedingEqualWindow(t *testing.T) {
+	start := time.Date(2026, 7, 10, 6, 0, 0, 0, time.UTC)
+	end := start.Add(6 * time.Hour)
+	var queryArgs [][]any
+	db := &testutil.MockDB{
+		QueryRowFn: func(_ context.Context, _ string, args ...any) pgx.Row {
+			queryArgs = append(queryArgs, append([]any(nil), args...))
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				for _, target := range dest {
+					switch value := target.(type) {
+					case *int:
+						*value = 1
+					case *int64:
+						*value = 1
+					case *float64:
+						*value = 1
+					}
+				}
+				return nil
+			}}
+		},
+	}
+	h := newTestHandler(db)
+
+	if _, _, _, err := h.dashboardPreviousPeriodDelta(context.Background(), 7, start, end, 0, 0, 0); err != nil {
+		t.Fatalf("dashboardPreviousPeriodDelta returned error: %v", err)
+	}
+	if len(queryArgs) != 4 {
+		t.Fatalf("expected four previous-period queries, got %d", len(queryArgs))
+	}
+	expectedStart := start.Add(-6 * time.Hour).Format(time.RFC3339Nano)
+	expectedEnd := start.Format(time.RFC3339Nano)
+	for _, args := range queryArgs {
+		if len(args) != 3 || args[0] != int64(7) || args[1] != expectedStart || args[2] != expectedEnd {
+			t.Fatalf("unexpected previous-period query args: %#v", args)
+		}
+	}
+}
+
 func TestDashboardOverview_TotalUsesTimeRange(t *testing.T) {
 	var firstSQL string
 	var firstArgs []any
@@ -3741,12 +4094,15 @@ func TestDashboardOverview_TotalUsesTimeRange(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	total, _, _, _ := h.dashboardOverview(context.Background(), 1, "2026-07-01T00:00:00Z", "2026-07-01T01:00:00Z")
+	total, _, _, _, err := h.dashboardOverview(context.Background(), 1, "2026-07-01T00:00:00Z", "2026-07-01T01:00:00Z")
+	if err != nil {
+		t.Fatalf("dashboardOverview returned error: %v", err)
+	}
 
 	if total != 7 {
 		t.Fatalf("expected total=7, got %d", total)
 	}
-	if !strings.Contains(firstSQL, "created_at >= $2") || !strings.Contains(firstSQL, "created_at <= $3") {
+	if !strings.Contains(firstSQL, "created_at >= $2") || !strings.Contains(firstSQL, "created_at < $3") {
 		t.Fatalf("expected total query to use time range, got %s", firstSQL)
 	}
 	if len(firstArgs) != 3 {
@@ -3772,7 +4128,10 @@ func TestDashboardLatencyPercentiles_UsesOrgTimeRangeAndPositiveLatency(t *testi
 	}
 	h := newTestHandler(db)
 
-	p95, p99 := h.dashboardLatencyPercentiles(context.Background(), 42, "2026-07-01T00:00:00Z", "2026-07-01T01:00:00Z")
+	p95, p99, err := h.dashboardLatencyPercentiles(context.Background(), 42, "2026-07-01T00:00:00Z", "2026-07-01T01:00:00Z")
+	if err != nil {
+		t.Fatalf("dashboardLatencyPercentiles returned error: %v", err)
+	}
 
 	if p95 != 820 || p99 != 1240 {
 		t.Fatalf("expected p95=820 and p99=1240, got p95=%v p99=%v", p95, p99)
@@ -3782,7 +4141,7 @@ func TestDashboardLatencyPercentiles_UsesOrgTimeRangeAndPositiveLatency(t *testi
 		"percentile_cont(0.99)",
 		"org_id = $1",
 		"created_at >= $2",
-		"created_at <= $3",
+		"created_at < $3",
 		"latency_ms > 0",
 	} {
 		if !strings.Contains(sqlSeen, expected) {
@@ -3889,9 +4248,10 @@ func TestDisableAPIKey_Success(t *testing.T) {
 			return &testutil.MockRow{ScanFn: func(dest ...any) error {
 				*dest[0].(*int64) = 1
 				*dest[1].(*int64) = 2
-				*dest[2].(*string) = "Project key"
-				*dest[3].(*string) = "uk_test"
-				*dest[4].(*string) = "active"
+				*dest[2].(*int64) = 0
+				*dest[3].(*string) = "Project key"
+				*dest[4].(*string) = "uk_test"
+				*dest[5].(*string) = "active"
 				return nil
 			}}
 		},
@@ -3909,6 +4269,115 @@ func TestDisableAPIKey_Success(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDisableAPIKey_DeveloperCanDisableOwnedKeyWithProjectMembership(t *testing.T) {
+	var updateSQL string
+	var updateArgs []any
+	tx := &testutil.MockTx{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			if !strings.Contains(sql, "FROM api_keys") || !strings.Contains(sql, "FOR UPDATE") {
+				t.Fatalf("unexpected transaction query: %s", sql)
+			}
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int64) = 3
+				*dest[1].(*int64) = 9
+				*dest[2].(*int64) = 42
+				*dest[3].(*string) = "Developer key"
+				*dest[4].(*string) = "uk_developer"
+				*dest[5].(*string) = "active"
+				return nil
+			}}
+		},
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(sql, "UPDATE api_keys") {
+				updateSQL = sql
+				updateArgs = append([]any(nil), args...)
+			}
+			return pgconn.NewCommandTag("UPDATE 1"), nil
+		},
+	}
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			switch {
+			case strings.Contains(sql, "FROM api_keys WHERE id"):
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*int64) = 3
+					*dest[1].(*int64) = 9
+					*dest[2].(*int64) = 42
+					*dest[3].(*string) = "Developer key"
+					*dest[4].(*string) = "uk_developer"
+					*dest[5].(*string) = "active"
+					return nil
+				}}
+			case strings.Contains(sql, "FROM project_members"):
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*int) = 1
+					return nil
+				}}
+			default:
+				t.Fatalf("unexpected QueryRow: %s", sql)
+				return &testutil.MockRow{}
+			}
+		},
+		BeginFn: func(ctx context.Context) (pgx.Tx, error) { return tx, nil },
+	}
+	h := newTestHandler(db)
+
+	req := httptest.NewRequest(http.MethodPost, "/keys/1/disable", nil)
+	req.SetPathValue("id", "1")
+	req = withTestActor(req, 42, 3, auth.RoleDeveloper)
+	rec := httptest.NewRecorder()
+
+	h.DisableAPIKey(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	for _, required := range []string{"org_id = $2", "project_id = $3", "owner_user_id = $4"} {
+		if !strings.Contains(updateSQL, required) {
+			t.Fatalf("developer disable update must constrain %s: %s", required, updateSQL)
+		}
+	}
+	if len(updateArgs) != 4 || updateArgs[0] != int64(1) || updateArgs[1] != int64(3) || updateArgs[2] != int64(9) || updateArgs[3] != int64(42) {
+		t.Fatalf("unexpected developer disable args: %#v", updateArgs)
+	}
+}
+
+func TestDisableAPIKey_DeveloperCannotDisableAnotherUsersKey(t *testing.T) {
+	execCalled := false
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int64) = 3
+				*dest[1].(*int64) = 9
+				*dest[2].(*int64) = 77
+				*dest[3].(*string) = "Another developer key"
+				*dest[4].(*string) = "uk_other"
+				*dest[5].(*string) = "active"
+				return nil
+			}}
+		},
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			execCalled = true
+			return pgconn.NewCommandTag("UPDATE 1"), nil
+		},
+	}
+	h := newTestHandler(db)
+
+	req := httptest.NewRequest(http.MethodPost, "/keys/1/disable", nil)
+	req.SetPathValue("id", "1")
+	req = withTestActor(req, 42, 3, auth.RoleDeveloper)
+	rec := httptest.NewRecorder()
+
+	h.DisableAPIKey(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if execCalled {
+		t.Fatal("developer must not update another user's key")
 	}
 }
 
@@ -3952,13 +4421,14 @@ func TestDisableAPIKey_EmitsNotificationEvent(t *testing.T) {
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			switch {
-			case strings.Contains(sql, "SELECT org_id, COALESCE(project_id, 0), name, key_prefix, status FROM api_keys"):
+			case strings.Contains(sql, "FROM api_keys WHERE id"):
 				return &testutil.MockRow{ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 3
 					*dest[1].(*int64) = 9
-					*dest[2].(*string) = "Batch19 project key"
-					*dest[3].(*string) = "uk_batch19"
-					*dest[4].(*string) = "active"
+					*dest[2].(*int64) = 0
+					*dest[3].(*string) = "Batch19 project key"
+					*dest[4].(*string) = "uk_batch19"
+					*dest[5].(*string) = "active"
 					return nil
 				}}
 			case strings.Contains(sql, "INSERT INTO notification_events"):
@@ -3986,7 +4456,7 @@ func TestDisableAPIKey_EmitsNotificationEvent(t *testing.T) {
 		},
 	}
 	h := newTestHandler(db)
-	h.SetEventService(billing.NewEventService(db))
+	h.SetEventService(billing.NewEventService(db, ""))
 
 	req := httptest.NewRequest("POST", "/keys/1/disable", nil)
 	req.SetPathValue("id", "1")
@@ -5630,7 +6100,7 @@ func TestCreateGrant_Success(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"org_id":1,"amount_cents":10000,"reason":"welcome bonus"}`
+	body := `{"org_id":1,"amount_cents":10000,"reason":"welcome bonus","client_request_id":"grant-success"}`
 	req := httptest.NewRequest("POST", "/grants", strings.NewReader(body))
 	req = withTestBillingActor(req)
 	req.Header.Set("Content-Type", "application/json")
@@ -5679,6 +6149,8 @@ func TestCreateGrant_Idempotency(t *testing.T) {
 			return &testutil.MockRow{
 				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 99 // existing grant id
+					*dest[1].(*int64) = 100_000_000
+					*dest[2].(*string) = "same grant"
 					return nil
 				},
 			}
@@ -5686,7 +6158,7 @@ func TestCreateGrant_Idempotency(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"org_id":1,"amount_cents":10000,"client_request_id":"req-123"}`
+	body := `{"org_id":1,"amount_cents":10000,"reason":"same grant","client_request_id":"req-123"}`
 	req := httptest.NewRequest("POST", "/grants", strings.NewReader(body))
 	req = withTestBillingActor(req)
 	req.Header.Set("Content-Type", "application/json")
@@ -5701,6 +6173,56 @@ func TestCreateGrant_Idempotency(t *testing.T) {
 	json.Unmarshal(rec.Body.Bytes(), &resp)
 	if resp["duplicate"] != true {
 		t.Fatal("expected duplicate=true")
+	}
+}
+
+func TestCreateGrant_RequiresStableIdentityAndReason(t *testing.T) {
+	h := newTestHandler(&testutil.MockDB{})
+
+	for _, tc := range []struct {
+		name string
+		body string
+		err  string
+	}{
+		{name: "missing identity", body: `{"org_id":1,"amount_cents":100,"reason":"support"}`, err: "client_request_id is required"},
+		{name: "missing reason", body: `{"org_id":1,"amount_cents":100,"client_request_id":"grant-1"}`, err: "reason is required"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/grants", strings.NewReader(tc.body))
+			req = withTestBillingActor(req)
+			rec := httptest.NewRecorder()
+
+			h.CreateGrant(rec, req)
+
+			if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), tc.err) {
+				t.Fatalf("expected 400 %q, got %d: %s", tc.err, rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestCreateGrant_RejectsIdentityReuseWithDifferentPayload(t *testing.T) {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int64) = 99
+				*dest[1].(*int64) = 1_000_000
+				*dest[2].(*string) = "original"
+				return nil
+			}}
+		},
+	}
+	h := newTestHandler(db)
+	req := httptest.NewRequest(http.MethodPost, "/grants", strings.NewReader(
+		`{"org_id":1,"amount_cents":200,"reason":"changed","client_request_id":"grant-reused"}`,
+	))
+	req = withTestBillingActor(req)
+	rec := httptest.NewRecorder()
+
+	h.CreateGrant(rec, req)
+
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "idempotency_key_reused") {
+		t.Fatalf("expected 409 idempotency conflict, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -5719,7 +6241,7 @@ func TestCreateGrant_TxBeginFail(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"org_id":1,"amount_cents":10000,"reason":"test"}`
+	body := `{"org_id":1,"amount_cents":10000,"reason":"test","client_request_id":"grant-begin-fail"}`
 	req := httptest.NewRequest("POST", "/grants", strings.NewReader(body))
 	req = withTestBillingActor(req)
 	req.Header.Set("Content-Type", "application/json")

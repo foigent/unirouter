@@ -9,11 +9,11 @@
 | Agent handoff | `docs/PROJECT-HANDOFF.md` | Read first when taking over the project |
 | Codebase map | `docs/CODEBASE-MAP.md` | High-level implementation map, not a substitute for reading code |
 | Document inventory | `docs/DOC-INVENTORY.md` | Classifies current, reference, and historical docs |
-| Active product scope | `docs/PRD-Phase5.md` | Active PRD5 implementation scope and evidence boundaries |
-| Product lineage | `docs/PRD-Phase1.md`, `docs/PRD-Phase2.md`, `docs/PRD-Phase3.md` | Frozen/completed requirements references, not current-progress sources |
-| Current status | `docs/ops/CURRENT-STATUS.md` | One-page current truth for progress, tests, deployment, and gaps |
-| PRD acceptance | `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`, `docs/ops/PRD4-ACCEPTANCE-MATRIX.md`, `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`, `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`, `docs/ops/PRD-ACCEPTANCE-MATRIX.md` | Evidence-backed acceptance state for active, completed, or frozen PRD checklist items |
-| PRD5 backlog | `docs/planning/PRD5-BACKLOG.md` | Deferred and prerequisite-gated capability record; formal active scope is `docs/PRD-Phase5.md` |
+| Active delivery scope | `docs/agent-workflows/EXECUTION-RECORD.md` | Current issue/corrective batch, baseline, non-goals, verification and promotion state; it cannot silently reopen a completed PRD |
+| Product lineage | `docs/PRD-Phase1.md` through `docs/PRD-Phase6.md` | Frozen/completed requirements references, not current-progress sources |
+| Current status | `docs/ops/CURRENT-STATUS.md` | Current verified summary for progress, tests, deployment, gaps and explicit non-claims |
+| PRD acceptance | `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`, `docs/ops/PRD4-ACCEPTANCE-MATRIX.md`, `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`, `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`, `docs/ops/PRD-ACCEPTANCE-MATRIX.md` | Evidence-backed acceptance state for completed or frozen PRD checklist items |
+| Future candidate backlog | `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | Candidate and prerequisite-gated capability record; it is not Accepted Scope or execution authorization |
 | Engineering governance | `docs/governance/README.md` | Minimum ADR, API compatibility, migration/rollback, release, incident, and deprecation rules |
 | Active issues | `docs/issues/OPEN-ISSUES.md` | Only active unresolved issues and recently closed items |
 | Agent protocol | `docs/agent-workflows/AGENT-PROTOCOL.md` | Single execution owner, approval, evidence and optional review rules |
@@ -31,7 +31,10 @@
 | PRD2 | Frozen for new feature work | Use as accepted/deferred product reference. Do not add new PRD2 feature scope. |
 | PRD3 | Completed cleanup/optimization phase | Use as accepted cleanup/optimization reference. Do not add new PRD3 scope unless User explicitly reopens it. |
 | PRD4 | Completed for the confirmed scope | Do not reopen unless the User explicitly changes the boundary. Deferred work is routed to PRD5. |
-| PRD5 | Active implementation phase | Use `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`, and `docs/planning/PRD5-IMPLEMENTATION-PLAN.md` as the current contract. |
+| PRD5 | Completed / Accepted Scope Complete | Preserve its scope and evidence; do not route new work back into PRD5. |
+| PRD6 | Completed (Accepted Scope) | Preserve the 27/27 accepted-row closeout. Later issue-driven corrections are separate batches, not silent PRD6 reopening. |
+| Post-PRD6 V1 corrections | Issue-driven delivery batches only | Use `EXECUTION-RECORD.md`, `OPEN-ISSUES.md` and new evidence. State exact non-goals and keep previous immutable closeout evidence unchanged. |
+| PRD7 | Candidate only | `PRD7-CANDIDATE-BACKLOG.md` records candidates and prior decisions; implementation requires explicit Accepted Scope. |
 
 ## Rules
 
@@ -40,10 +43,10 @@
 3. Do not reuse issue IDs.
 4. Do not hard-code "latest" dates unless they are verified in the current pass.
 5. Every `E2E accepted` or `Production verified` claim needs command/manual path, environment, expected result, actual result, and timestamp or commit/worktree reference.
-6. Execution is risk-tiered by `docs/agent-workflows/AGENT-PROTOCOL.md`: R2/R3/R4 changes update `EXECUTION-RECORD.md` and evidence as applicable; independent review is optional unless the User explicitly requires it, but P0/P1 findings block or reopen a batch.
+6. Execution is risk-tiered by `docs/agent-workflows/AGENT-PROTOCOL.md`: R2/R3/R4 changes update `EXECUTION-RECORD.md` and evidence as applicable; independent review is optional unless the User explicitly requires it. P0/P1 findings block an active batch; findings after release create a new corrective batch without rewriting evidence or silently reopening a completed PRD.
 7. Documentation-only changes use the protocol only when they alter current status, issue state, acceptance state, phase boundaries, reader entrypoints, or process rules.
-8. Root and docs README files must route readers to the active phase first, then frozen/historical references.
-9. PRD5 backlog candidates must not be described as implemented, accepted, or scheduled unless `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`, or a later approved PRD says so.
+8. Root and docs README files must route readers to the active delivery batch and customer/developer task first, then frozen/historical references.
+9. PRD7 candidates must not be described as implemented, accepted, or scheduled unless a later approved PRD or an explicitly separate delivery decision says so; a separate V1 correction does not accept PRD7 as a whole.
 
 ## Cleanup Policy
 

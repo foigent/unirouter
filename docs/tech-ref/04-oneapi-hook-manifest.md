@@ -11,13 +11,13 @@
 
 ## 一、重要说明
 
-**OneAPI 的 `preConsumeQuota`/`postConsumeQuota` 与 UniRoute 的 Freeze/Settle/Cancel 是概念借鉴关系，不是同构替换。**
+**OneAPI 的 `preConsumeQuota`/`postConsumeQuota` 与 UniRouter 的 Freeze/Settle/Cancel 是概念借鉴关系，不是同构替换。**
 
-| 维度 | OneAPI quota | UniRoute billing |
+| 维度 | OneAPI quota | UniRouter billing |
 |------|-------------|-----------------|
-| **数据类型** | Token 数量（int64） | 法币金额（int64，单位：分） |
-| **存储** | `users.quota` 字段 | `wallets.balance` + `wallets.frozen` |
-| **原子性** | `UPDATE users SET quota = quota - ?` | `UPDATE wallets SET balance = balance - ?, frozen = frozen + ?` |
+| **数据类型** | Token 数量（int64） | 法币金额（int64，单位：micro-CNY；1 CNY = 1,000,000） |
+| **存储** | `users.quota` 字段 | `wallets.balance_micros` + `wallets.frozen_micros` |
+| **原子性** | `UPDATE users SET quota = quota - ?` | `UPDATE wallets SET balance_micros = balance_micros - ?, frozen_micros = frozen_micros + ?` |
 | **退还** | `ReturnPreConsumedQuota()` | `Cancel()` → `frozen -= amount, balance += amount` |
 
 **结论**：借鉴 OneAPI 的注入点位置和流程控制模式，但计费数据模型完全重新实现。

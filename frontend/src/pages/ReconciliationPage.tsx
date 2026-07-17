@@ -2,9 +2,12 @@ import { useState, useEffect } from 'react';
 import { Button, Table, Select, Toast, Tag } from '@douyinfe/semi-ui';
 import { IconAlertTriangle, IconCoinMoney, IconRefresh, IconServer } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
+import { isPlatformAdminRole } from '../navigation';
+import { useAuthStore } from '../store/auth';
 import { formatMoney, MetricTile, PageHeader, StatusTag, Surface } from '../ui';
 import { usageSourceLabel, usageSourceOptions } from '../utils/displayLabels';
 import { formatInteger, formatPercent, formatSignedInteger } from '../utils/formatNumber';
+import { loadAllPages } from '../utils/loadAllPages';
 
 interface ReconRecord {
   id: number;
@@ -50,6 +53,10 @@ interface ReconSummary {
 }
 
 export default function ReconciliationPage() {
+  const user = useAuthStore((state) => state.user);
+  const platform = isPlatformAdminRole(user?.role);
+  const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(platform ? user?.org_id : undefined);
+  const [organizations, setOrganizations] = useState<Array<{ id: number; name: string }>>([]);
   const [records, setRecords] = useState<ReconRecord[]>([]);
   const [summary, setSummary] = useState<ReconSummary | null>(null);
   const [total, setTotal] = useState(0);
@@ -60,10 +67,12 @@ export default function ReconciliationPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [usageSourceFilter, setUsageSourceFilter] = useState('');
   const [modelNames, setModelNames] = useState<string[]>([]);
+  const targetOrgID = platform ? selectedOrgID : undefined;
 
   const load = (p = page) => {
     setLoading(true);
     api.getReconciliation(p, pageSize, {
+      ...(targetOrgID ? { org_id: targetOrgID } : {}),
       model: modelFilter,
       status: statusFilter,
       usage_source: usageSourceFilter,
@@ -77,15 +86,42 @@ export default function ReconciliationPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, [page, pageSize, modelFilter, statusFilter, usageSourceFilter]);
+  useEffect(() => { load(); }, [page, pageSize, modelFilter, statusFilter, usageSourceFilter, targetOrgID]);
   useEffect(() => { api.getModelNames().then((d: any) => setModelNames(d.data || [])).catch(() => {}); }, []);
+  useEffect(() => {
+    if (!platform) return;
+    if (user?.org_id) setSelectedOrgID(current => current || user.org_id);
+    loadAllPages<{ id: number; name: string }>((page, size) => api.getOrganizations(page, size))
+      .then(setOrganizations)
+      .catch((err: any) => Toast.error(`组织列表加载失败${err?.message ? `：${err.message}` : ''}`));
+  }, [platform, user?.org_id]);
+
+  const changeOrganization = (value: unknown) => {
+    const orgID = Number(value);
+    if (!Number.isSafeInteger(orgID) || orgID <= 0) return;
+    setSelectedOrgID(orgID);
+    setPage(1);
+    setRecords([]);
+    setSummary(null);
+    setTotal(0);
+  };
 
   const columns = [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 80 },
     { title: 'Request ID', dataIndex: 'request_id', key: 'request_id', ellipsis: true },
     { title: '模型', dataIndex: 'model', key: 'model', width: 150 },
     { title: '估算 Token', dataIndex: 'estimated_tokens', key: 'estimated_tokens', width: 120 },
-    { title: '实际 Token', dataIndex: 'actual_tokens', key: 'actual_tokens', width: 120 },
+    {
+      title: '记账 Token', dataIndex: 'actual_tokens', key: 'actual_tokens', width: 150,
+      render: (value: number, record: ReconRecord) => (
+        <span>
+          {formatInteger(value)}
+          <Tag size="small" color={['upstream', 'api', ''].includes(record.usage_source || '') ? 'blue' : 'orange'} style={{ marginLeft: 6 }}>
+            {['upstream', 'api', ''].includes(record.usage_source || '') ? '上游回传' : '本地计量'}
+          </Tag>
+        </span>
+      ),
+    },
     {
       title: '来源',
       dataIndex: 'usage_source',
@@ -144,12 +180,26 @@ export default function ReconciliationPage() {
   return (
     <div className="ur-page">
       <PageHeader
-        eyebrow="财务治理"
-        title="用量对账"
-        description="对比请求前估算与请求后实际 Token；同时核对供应商明确回传的 Prompt Cache 读写用量和费用。"
+        eyebrow="计费与资金"
+        title="计量校验"
+        description="校验请求前估算与 UniRouter 最终记账 Token、缓存用量和费用；仅“上游回传”来源代表供应商响应口径，不等同于厂商账单对账。"
       />
       <Surface title="筛选条件">
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+          {platform && (
+            <>
+              <span>目标组织</span>
+              <Select
+                aria-label="目标组织"
+                placeholder="选择目标组织"
+                value={selectedOrgID}
+                optionList={organizations.map(org => ({ label: `${org.name}（ID ${org.id}）`, value: org.id }))}
+                onChange={changeOrganization}
+                disabled={loading}
+                style={{ width: 220 }}
+              />
+            </>
+          )}
           <Select
             placeholder="模型筛选"
             style={{ width: 200 }}
@@ -205,18 +255,18 @@ export default function ReconciliationPage() {
           meta={`口径 ${summary?.estimated_ratio_scope === 'filtered_query' ? '当前筛选口径' : summary?.estimated_ratio_scope || '当前筛选口径'}`}
         />
         <MetricTile
-          label="上游 Token"
+          label="上游回传 Token"
           value={formatInteger(summary?.upstream_tokens)}
           icon={<IconCoinMoney />}
           tone="blue"
-          meta={`实际合计 ${formatInteger(summary?.actual_tokens)}`}
+          meta={`记账合计 ${formatInteger(summary?.actual_tokens)}`}
         />
         <MetricTile
-          label="估算与实际总偏差"
+          label="估算与记账总偏差"
           value={formatSignedInteger(summary?.variance_tokens)}
           icon={<IconAlertTriangle />}
           tone={(summary?.variance_tokens || 0) === 0 ? 'slate' : 'violet'}
-          meta={`实际合计 − 请求前估算；偏差率 ${formatPercent(summary?.variance_ratio)} / 置信度 ${formatPercent(summary?.average_source_confidence)}`}
+          meta={`记账合计 − 请求前估算；偏差率 ${formatPercent(summary?.variance_ratio)} / 置信度 ${formatPercent(summary?.average_source_confidence)}`}
         />
         <MetricTile
           label="缓存读取 Token"

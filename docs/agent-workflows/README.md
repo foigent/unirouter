@@ -6,7 +6,7 @@
 
 | 文件 | 用途 |
 |------|------|
-| [AGENT-PROTOCOL.md](AGENT-PROTOCOL.md) | Agent Protocol v2.0，权限、风险、执行和复核规则 |
+| [AGENT-PROTOCOL.md](AGENT-PROTOCOL.md) | Agent Protocol v2.1，权限、风险、执行和复核规则 |
 | [EXECUTION-RECORD.md](EXECUTION-RECORD.md) | 当前批次的执行、测试、CI、部署、批准和缺口记录 |
 | [reviews/README.md](reviews/README.md) | 可选独立复核文件格式和严重级别规则 |
 | [../ops/CURRENT-STATUS.md](../ops/CURRENT-STATUS.md) | 当前项目事实入口 |
@@ -31,7 +31,7 @@ User 确认范围和高影响授权
 -> CI 通过后 Codex 合并
 -> 已授权非生产目标由 Codex 部署和验证
 -> 生产或高影响动作经 User 单次批准后执行
--> 独立复核者按需写入 reviews/，P0/P1 阻断或重新打开批次
+-> 独立复核者按需写入 reviews/；P0/P1 阻断活动批次，发布后发现则新建纠错批次
 ```
 
 Canary、Sentinel、Atlas 可以作为复核画像继续参与，但不再是默认串行关卡。详见 [AGENT-PROTOCOL.md](AGENT-PROTOCOL.md)。

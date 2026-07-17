@@ -52,6 +52,12 @@ Real mode:
 
 - checks `GET /api/v1/auth/oidc/config` and requires OIDC to be enabled;
 - checks issuer discovery at `/.well-known/openid-configuration`;
+- derives the approved credential destination from the discovered
+  `authorization_endpoint` and rejects non-HTTPS or non-exact browser origins
+  before each username/password fill;
+- blocks unapproved main-frame redirects during credential entry; federated or
+  multi-origin login requires each additional HTTPS origin to be explicitly
+  configured, while subframe and static-resource loading remains unaffected;
 - opens the UniRouter console login page with Playwright;
 - clicks the configured SSO login button;
 - fills the IdP username and password fields;
@@ -83,6 +89,7 @@ Real mode:
 | `UNIROUTE_PRD4_SSO_AFTER_USERNAME_SELECTOR` | Optional | Selector for IdP next/continue button when the IdP has a two-step login |
 | `UNIROUTE_PRD4_SSO_PASSWORD_SELECTOR` | Optional | Comma-separated selector override for IdP password field |
 | `UNIROUTE_PRD4_SSO_SUBMIT_SELECTOR` | Optional | Selector override for IdP submit button |
+| `UNIROUTE_PRD4_SSO_ADDITIONAL_CREDENTIAL_ORIGINS` | Optional | Comma-separated additional exact HTTPS origins approved to receive test credentials; paths, queries, fragments, HTTP, suffix matches, and implicit wildcarding are rejected |
 | `UNIROUTE_PRD4_SSO_EXPECTED_ROLE` | Optional | Verifies `/me` and DB role mapping |
 | `UNIROUTE_PRD4_SSO_EXPECTED_ORG_ID` | Optional | Verifies `/me` and DB org mapping |
 | `UNIROUTE_PRD4_SSO_EXPECTED_USERNAME` | Optional | Verifies `/me` and DB username mapping |

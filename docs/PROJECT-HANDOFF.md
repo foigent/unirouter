@@ -2,6 +2,39 @@
 
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
+> **Newest checkpoint (2026-07-17):** the User-approved Post-PRD6 security
+> amendment `A1 + B1 + C1 + D1` is implemented and locally verified on
+> `codex/v1-user-task-ia-correctness` from source revision
+> `92ba78878782114a82411697597f5e58e10602a8`. All 39 canonical scan findings
+> are `fixed_verified`; migrations `000038` through `000041` cover revocable
+> administrator sessions, tenant-isolated Guardrail capacity, immutable
+> delivery-attempt binding and stream generation fencing. Full Go race plus
+> coverage, tagged integration race, vet/diff and frontend type-check/test/build
+> gates pass locally. The User subsequently accepted deployment-global,
+> case-insensitive local login IDs and removal of value-bearing CLI password
+> arguments. Migration `000042`, the fail-closed local lookup, hidden TTY /
+> bounded `--password-stdin` transport, UI explanation and active runbooks are
+> implemented and fully rebaselined locally. Final full repository Go
+> race/coverage, tagged integration race through `000042`, vet, diff, module
+> verification, frontend type-check, 41-file/277-test suite and production
+> build all pass. Final review also closes same-organization local/OIDC display
+> overlap, concurrent OIDC first-login convergence, shared user-creation and
+> self-service Unicode/UTF-8 password semantics, and typed
+> License-versus-login conflict handling. Local
+> Docker/Compose is unavailable, so the Docker/context gate remains for
+> required GitHub CI. This local checkpoint predates publication and does not
+> itself claim GitHub CI, ECS migration/deployment, or target/Production
+> verification. Evidence:
+> `docs/ops/evidence/V1-SECURITY-REMEDIATION-LOCAL-20260717.md`. Read
+> `docs/agent-workflows/EXECUTION-RECORD.md` before taking any
+> publication action. PRD6 remains `Completed (Accepted Scope)` and is not
+> reopened.
+> **Underlying worktree batch (2026-07-16):** `V1-UX-IA-001` is an independent
+> first-release user-task information-architecture and role-correctness batch.
+> Its live scope, baseline, non-goals and verification state are maintained in
+> `docs/agent-workflows/EXECUTION-RECORD.md`. It does not reopen PRD6, accept
+> PRD7, add X-Insight behavior, or invalidate the immutable closeout evidence for
+> the earlier Post-PRD6 work window.
 > **Post-PRD6 V1 window decision (2026-07-16):** the selected first-release
 > work window is closed. There is no remaining active UniRouter-owned
 > implementation or target mutation in this window; `V1-XI-LEDGER-001` is the
@@ -93,9 +126,12 @@
 
 ## First Read Order
 
-Read the current window-closeout decision
+Read `docs/agent-workflows/EXECUTION-RECORD.md` first for the active
+`V1-SECURITY-REMEDIATION-001` amendment and its nested `V1-UX-IA-001` worktree
+context, then read `docs/ops/CURRENT-STATUS.md`. For the earlier closed work
+window, read the immutable closeout decision
 `docs/ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md` immediately after
-`docs/ops/CURRENT-STATUS.md`, then read current target evidence
+those mutable current-state files, then read the latest completed target evidence
 `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md`
 followed by its immutable local checkpoint
 `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md`.

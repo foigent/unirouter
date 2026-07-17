@@ -27,12 +27,14 @@ func TestRegisterModelGovernanceRoutesEnforcesProductionRoleBoundary(t *testing.
 		projectRead: func(handler http.HandlerFunc) http.Handler {
 			return roleRoute(handler, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper, auth.RoleViewer)
 		},
+		modelSetRead: func(handler http.HandlerFunc) http.Handler {
+			return roleRoute(handler, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin)
+		},
 	})
 
 	serve := func(method, target, body, role string) *httptest.ResponseRecorder {
 		t.Helper()
-		token, err := auth.GenerateJWT(7, 11, role, secret, 1)
-		require.NoError(t, err)
+		token := activeAdminToken(t, 7, 11, role, secret)
 		req := httptest.NewRequest(method, target, strings.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
@@ -52,10 +54,17 @@ func TestRegisterModelGovernanceRoutesEnforcesProductionRoleBoundary(t *testing.
 		{http.MethodGet, "/api/v1/model-aliases", ""},
 		{http.MethodPost, "/api/v1/model-aliases", "not-json"},
 		{http.MethodPut, "/api/v1/model-aliases/1", "not-json"},
-		{http.MethodGet, "/api/v1/model-sets", ""},
 		{http.MethodPost, "/api/v1/model-sets", "not-json"},
 		{http.MethodGet, "/api/v1/model-sets/1/items", ""},
 		{http.MethodPut, "/api/v1/model-sets/1/items", "not-json"},
+	}
+	for _, role := range []string{auth.RolePlatformAdmin, auth.RoleLegacyAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin} {
+		require.NotEqual(t, http.StatusForbidden, serve(http.MethodGet, "/api/v1/model-sets", "", role).Code,
+			"GET /api/v1/model-sets role=%s", role)
+	}
+	for _, role := range []string{auth.RoleBillingAdmin, auth.RoleDeveloper, auth.RoleViewer, auth.RoleOrgViewer} {
+		require.Equal(t, http.StatusForbidden, serve(http.MethodGet, "/api/v1/model-sets", "", role).Code,
+			"GET /api/v1/model-sets role=%s", role)
 	}
 	for _, role := range []string{auth.RolePlatformAdmin, auth.RoleLegacyAdmin, auth.RoleOrgAdmin} {
 		for _, route := range organizationRoutes {
@@ -65,7 +74,7 @@ func TestRegisterModelGovernanceRoutesEnforcesProductionRoleBoundary(t *testing.
 	}
 	for _, role := range []string{
 		auth.RoleBillingAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper,
-		auth.RoleViewer, auth.RoleOrgViewer, "unknown_role",
+		auth.RoleViewer, auth.RoleOrgViewer,
 	} {
 		for _, route := range organizationRoutes {
 			require.Equal(t, http.StatusForbidden, serve(route.method, route.target, route.body, role).Code,
@@ -75,13 +84,13 @@ func TestRegisterModelGovernanceRoutesEnforcesProductionRoleBoundary(t *testing.
 
 	for _, role := range []string{
 		auth.RolePlatformAdmin, auth.RoleLegacyAdmin, auth.RoleOrgAdmin,
-		auth.RoleProjectAdmin, auth.RoleDeveloper, auth.RoleViewer, auth.RoleOrgViewer,
+		auth.RoleProjectAdmin, auth.RoleDeveloper, auth.RoleViewer,
 	} {
 		require.Equal(t, http.StatusBadRequest,
 			serve(http.MethodGet, "/api/v1/model-catalog?project_id=bad", "", role).Code,
 			"catalog role=%s", role)
 	}
-	for _, role := range []string{auth.RoleBillingAdmin, "unknown_role"} {
+	for _, role := range []string{auth.RoleBillingAdmin, auth.RoleOrgViewer} {
 		require.Equal(t, http.StatusForbidden,
 			serve(http.MethodGet, "/api/v1/model-catalog?project_id=bad", "", role).Code,
 			"catalog role=%s", role)

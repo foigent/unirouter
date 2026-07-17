@@ -7,7 +7,7 @@ export const roleLabels: Record<string, string> = {
   admin: '系统管理员（兼容）',
   platform_admin: '平台管理员',
   org_admin: '组织管理员',
-  billing_admin: '账单管理员',
+  billing_admin: '账务管理员',
   project_admin: '项目管理员',
   developer: '开发者',
   viewer: '项目只读成员',

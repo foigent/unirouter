@@ -8,6 +8,7 @@ import (
 const Version = "stream-safety.v2"
 
 const (
+	InitialLeaseGeneration      = int64(1)
 	EnforceBufferMaxBytes       = 4 * 1024
 	EnforceBufferMaxWait        = 200 * time.Millisecond
 	CheckpointInterval          = time.Second

@@ -74,8 +74,7 @@ func TestP6F33NotificationTenantIsolationIntegration(t *testing.T) {
 	mux := p6f33AdminMux(h)
 	serve := func(tb testing.TB, method, target, body string, userID, orgID int64, role string) *httptest.ResponseRecorder {
 		tb.Helper()
-		token, tokenErr := auth.GenerateJWT(userID, orgID, role, p6f16JWTSecret, 1)
-		require.NoError(tb, tokenErr)
+		token := testutil.MustAdminSessionJWT(tb, ctx, pool, userID, orgID, role, p6f16JWTSecret)
 		req := httptest.NewRequest(method, target, bytes.NewBufferString(body))
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
@@ -137,6 +136,29 @@ func TestP6F33NotificationTenantIsolationIntegration(t *testing.T) {
 		assertResponseOrgIDs(t, rec.Body.Bytes(), fx.orgB)
 	})
 
+	t.Run("event lifecycle enforces tenant and project write scope", func(t *testing.T) {
+		ackPath := fmt.Sprintf("/api/v1/notification-events/%d/acknowledge", eventA)
+		foreignPath := fmt.Sprintf("/api/v1/notification-events/%d/acknowledge", eventB)
+		assertStatus(t, serve(t, http.MethodPost, foreignPath, "", fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusNotFound)
+		assertStatus(t, serve(t, http.MethodPost, ackPath, "", projectAdminA, fx.orgA, auth.RoleProjectAdmin), http.StatusForbidden)
+		assertStatus(t, serve(t, http.MethodPost, ackPath+fmt.Sprintf("?project_id=%d", projectAOther), "", projectAdminA, fx.orgA, auth.RoleProjectAdmin), http.StatusForbidden)
+		assertStatus(t, serve(t, http.MethodPost, ackPath+fmt.Sprintf("?project_id=%d", fx.projectA), "", projectAdminA, fx.orgA, auth.RoleProjectAdmin), http.StatusOK)
+
+		resolvePath := fmt.Sprintf("/api/v1/notification-events/%d/resolve", eventA)
+		assertStatus(t, serve(t, http.MethodPost, resolvePath, "", fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusOK)
+		var status string
+		require.NoError(t, pool.QueryRow(ctx, `SELECT status FROM notification_events WHERE id = $1`, eventA).Scan(&status))
+		require.Equal(t, "resolved", status)
+		var auditCount int
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT COUNT(*) FROM audit_logs
+			 WHERE org_id = $1 AND resource = 'notification_event' AND resource_id = $2
+			   AND action IN ('notification_event.acknowledged', 'notification_event.resolved')`,
+			fx.orgA, fmt.Sprint(eventA),
+		).Scan(&auditCount))
+		require.Equal(t, 2, auditCount)
+	})
+
 	t.Run("foreign organization and mismatched project creates have no side effects", func(t *testing.T) {
 		var webhookCount, auditCount int
 		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM notification_webhooks`).Scan(&webhookCount))
@@ -184,7 +206,7 @@ func TestP6F33NotificationTenantIsolationIntegration(t *testing.T) {
 		assertStatus(t, serve(t, http.MethodPut, fmt.Sprintf("/api/v1/notification-webhooks/%d", webhookB),
 			`{"url":"https://attacker.example.test/hook"}`, fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusNotFound)
 		assertStatus(t, serve(t, http.MethodPut, fmt.Sprintf("/api/v1/notification-webhooks/%d", webhookB),
-			`{"url":"https://attacker.example.test/hook"}`, billingA, fx.orgA, auth.RoleBillingAdmin), http.StatusNotFound)
+			`{"url":"https://attacker.example.test/hook"}`, billingA, fx.orgA, auth.RoleBillingAdmin), http.StatusForbidden)
 		assertStatus(t, serve(t, http.MethodPut, "/api/v1/notification-webhooks/9223372036854775807",
 			`{"url":"https://attacker.example.test/hook"}`, fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusNotFound)
 		var foreignURL string
@@ -212,6 +234,7 @@ func TestP6F33NotificationTenantIsolationIntegration(t *testing.T) {
 			w.WriteHeader(http.StatusNoContent)
 		}))
 		defer receiver.Close()
+		eventService := billing.NewEventService(pool, "").WithHTTPClient(receiver.Client())
 
 		var historicalID int64
 		require.NoError(t, pool.QueryRow(ctx,
@@ -221,7 +244,7 @@ func TestP6F33NotificationTenantIsolationIntegration(t *testing.T) {
 			fx.orgB, fx.projectB, receiver.URL,
 		).Scan(&historicalID))
 
-		result, emitErr := billing.NewEventService(pool).Emit(ctx, billing.EventInput{
+		result, emitErr := eventService.Emit(ctx, billing.EventInput{
 			OrgID:     fx.orgB,
 			ProjectID: fx.projectB,
 			EventType: "victim.legacy",
@@ -239,7 +262,7 @@ func TestP6F33NotificationTenantIsolationIntegration(t *testing.T) {
 			result.EventID, historicalID,
 		)
 		require.NoError(t, err)
-		retried, retryErr := billing.NewEventService(pool).RetryDueDeliveries(ctx, 10)
+		retried, retryErr := eventService.RetryDueDeliveries(ctx, 10)
 		require.NoError(t, retryErr)
 		require.Zero(t, retried)
 		require.Zero(t, calls.Load())
@@ -312,12 +335,12 @@ func TestP6F33NotificationTenantIsolationIntegration(t *testing.T) {
 			fx.orgB, fx.orgAdminB, fmt.Sprint(historicalID),
 		).Scan(&verificationAuditCount))
 		require.Equal(t, 1, verificationAuditCount)
-		retried, retryErr = billing.NewEventService(pool).RetryDueDeliveries(ctx, 10)
+		retried, retryErr = eventService.RetryDueDeliveries(ctx, 10)
 		require.NoError(t, retryErr)
 		require.Zero(t, retried, "scope verification must not replay a pre-P6-F33 failed delivery")
 		require.Zero(t, calls.Load())
 
-		result, emitErr = billing.NewEventService(pool).Emit(ctx, billing.EventInput{
+		result, emitErr = eventService.Emit(ctx, billing.EventInput{
 			OrgID:     fx.orgB,
 			ProjectID: fx.projectB,
 			EventType: "victim.legacy",
@@ -348,7 +371,7 @@ func TestP6F33NotificationTenantIsolationIntegration(t *testing.T) {
 		assertStatus(t, serve(t, http.MethodPost, "/api/v1/notification-webhooks",
 			fmt.Sprintf(`{"org_id":%d,"name":"victim-exfil","url":%q,"event_types":["victim.event"]}`, fx.orgB, receiver.URL),
 			fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusForbidden)
-		result, emitErr := billing.NewEventService(pool).Emit(ctx, billing.EventInput{
+		result, emitErr := billing.NewEventService(pool, "").Emit(ctx, billing.EventInput{
 			OrgID:     fx.orgB,
 			ProjectID: fx.projectB,
 			EventType: "victim.event",
@@ -367,6 +390,63 @@ func TestP6F33NotificationTenantIsolationIntegration(t *testing.T) {
 		var name string
 		require.NoError(t, pool.QueryRow(ctx, `SELECT name FROM notification_webhooks WHERE id = $1`, webhookB).Scan(&name))
 		require.Equal(t, "platform-updated-b", name)
+		var auditCount int
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT COUNT(*) FROM audit_logs
+			 WHERE org_id = $1 AND project_id = $2 AND user_id = $3
+			   AND action = 'notification_webhook.update'
+			   AND resource = 'notification_webhook' AND resource_id = $4`,
+			fx.orgB, fx.projectB, fx.platformA, fmt.Sprint(webhookB),
+		).Scan(&auditCount))
+		require.Equal(t, 1, auditCount, "cross-tenant audit must be attributed to the mutated webhook tenant")
+	})
+
+	t.Run("webhook update rolls back when its audit cannot be written", func(t *testing.T) {
+		var beforeName string
+		var beforeGeneration int64
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT name, scope_write_generation FROM notification_webhooks WHERE id = $1`, webhookB,
+		).Scan(&beforeName, &beforeGeneration))
+		var beforeAuditCount int
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT COUNT(*) FROM audit_logs
+			 WHERE action = 'notification_webhook.update' AND resource_id = $1`, fmt.Sprint(webhookB),
+		).Scan(&beforeAuditCount))
+
+		_, err := pool.Exec(ctx, `
+			CREATE FUNCTION p6f33_reject_update_audit() RETURNS trigger LANGUAGE plpgsql AS $$
+			BEGIN
+				IF NEW.action = 'notification_webhook.update' THEN
+					RAISE EXCEPTION 'injected webhook update audit failure';
+				END IF;
+				RETURN NEW;
+			END;
+			$$;
+			CREATE TRIGGER p6f33_reject_update_audit
+			BEFORE INSERT ON audit_logs
+			FOR EACH ROW EXECUTE FUNCTION p6f33_reject_update_audit();`)
+		require.NoError(t, err)
+		defer func() {
+			_, _ = pool.Exec(context.Background(), `DROP TRIGGER IF EXISTS p6f33_reject_update_audit ON audit_logs`)
+			_, _ = pool.Exec(context.Background(), `DROP FUNCTION IF EXISTS p6f33_reject_update_audit()`)
+		}()
+
+		assertStatus(t, serve(t, http.MethodPut, fmt.Sprintf("/api/v1/notification-webhooks/%d", webhookB),
+			`{"name":"must-not-commit"}`, fx.orgAdminB, fx.orgB, auth.RoleOrgAdmin), http.StatusInternalServerError)
+
+		var afterName string
+		var afterGeneration int64
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT name, scope_write_generation FROM notification_webhooks WHERE id = $1`, webhookB,
+		).Scan(&afterName, &afterGeneration))
+		require.Equal(t, beforeName, afterName)
+		require.Equal(t, beforeGeneration, afterGeneration)
+		var afterAuditCount int
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT COUNT(*) FROM audit_logs
+			 WHERE action = 'notification_webhook.update' AND resource_id = $1`, fmt.Sprint(webhookB),
+		).Scan(&afterAuditCount))
+		require.Equal(t, beforeAuditCount, afterAuditCount)
 	})
 }
 
@@ -377,6 +457,8 @@ func p6f33AdminMux(h *Handler) *http.ServeMux {
 	}
 	readRoles := []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleProjectAdmin}
 	mux.Handle("GET /api/v1/notification-events", roleRoute(h.ListNotificationEvents, readRoles...))
+	mux.Handle("POST /api/v1/notification-events/{id}/acknowledge", roleRoute(h.AcknowledgeNotificationEvent, readRoles...))
+	mux.Handle("POST /api/v1/notification-events/{id}/resolve", roleRoute(h.ResolveNotificationEvent, readRoles...))
 	mux.Handle("GET /api/v1/notification-deliveries", roleRoute(h.ListNotificationDeliveries, readRoles...))
 	mux.Handle("GET /api/v1/notification-webhooks", roleRoute(h.ListNotificationWebhooks, readRoles...))
 	mux.Handle("POST /api/v1/notification-webhooks", roleRoute(h.CreateNotificationWebhook, readRoles...))

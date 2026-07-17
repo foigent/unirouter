@@ -13,6 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/uniroute/unirouter/internal/adapters"
@@ -1171,6 +1172,7 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 		adapter = adapters.NewOpenAICompatible()
 	}
 	normalized, err := adapter.ParseResponse(ctx, adapters.ResponseInput{
+		Endpoint:       adapters.EndpointChatCompletions,
 		StatusCode:     resp.StatusCode,
 		Header:         resp.Header,
 		Body:           body,
@@ -1245,8 +1247,7 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 		return nil
 	}
 	if pinnedGuardrail := guardrailPinFromContext(ctx); pinnedGuardrail != nil {
-		outputTexts, outputRefs := nonStreamOutputTexts(responseMap)
-		guardrailResult := pinnedGuardrail.Evaluate(ctx, guardrail.StageNonStreamOutput, outputTexts)
+		guardrailResult, outputRefs := evaluateNonStreamOutputGuardrail(ctx, pinnedGuardrail, responseMap)
 		guardrailEvidenceCtx, cancelGuardrailEvidence := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 		relay.recordGuardrailResult(guardrailEvidenceCtx, requestID, model, requestedModel, normalizedGuardrailStage(guardrail.StageNonStreamOutput), guardrailResult, route, resp.StatusCode, upstreamRequestID)
 		cancelGuardrailEvidence()
@@ -1464,8 +1465,9 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	preOutputBillingFailure := false
 	leaseStart := billing.StreamDeliveryStart{
 		RequestID: requestID, AttemptID: attemptIDFromContext(ctx), OwnerID: processStreamLeaseOwner,
-		OrgID: orgID, LeaseTTL: streampolicy.CheckpointLeaseDuration,
+		OrgID: orgID, Generation: streampolicy.InitialLeaseGeneration, LeaseTTL: streampolicy.CheckpointLeaseDuration,
 	}
+	streamFence := leaseStart.Fence()
 	leaseTerminalState := billing.StreamLeaseStateInterrupted
 	leaseTerminalReason := "stream_ended"
 	leaveLeaseForRecovery := false
@@ -1645,6 +1647,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		checkpointCtx, checkpointCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		_, err := relay.billing.CheckpointStreamDelivery(checkpointCtx, billing.StreamDeliveryCheckpoint{
 			RequestID: requestID, AttemptID: leaseStart.AttemptID, OwnerID: leaseStart.OwnerID, OrgID: orgID,
+			Generation:     leaseStart.Generation,
 			DeliveredBytes: deliveredBytes, DeliveredChunks: deliveredChunks,
 			PromptTokens: deliveredCounter.InputTokens(), CompletionTokens: deliveredCounter.OutputTokens(),
 			PolicySetVersion: streamGuardrailProfile.PolicySetVersion,
@@ -1699,7 +1702,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			RequestID: requestID, AttemptID: attemptIDFromContext(ctx), OrgID: orgID,
 			Mode: billing.DeliveryModeStream, Outcome: billing.DeliveryOutcomePartial,
 			DeliveredBytes: deliveredBytes, DeliveredChunks: deliveredChunks,
-			HTTPStatus: http.StatusOK,
+			HTTPStatus: http.StatusOK, StreamFence: &streamFence,
 		})
 		deliveryCancel()
 		if err != nil {
@@ -1849,6 +1852,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		return true
 	}
 	var scanErr error
+	firstSSELine := true
 streamLoop:
 	for !done {
 		var line string
@@ -1889,15 +1893,26 @@ streamLoop:
 			done = true
 			break streamLoop
 		}
+		if firstSSELine {
+			line = strings.TrimPrefix(line, "\uFEFF")
+			firstSSELine = false
+		}
+		if !utf8.ValidString(line) {
+			streamPayloadInvalid = true
+			streamTerminationCode = "upstream_stream_invalid_frame"
+			done = true
+			continue
+		}
+		field, hasField := parseSSEFieldLine(line)
 
 		if streamNormalizer != nil {
-			if strings.TrimSpace(line) == "" || strings.HasPrefix(line, "event:") || strings.HasPrefix(line, ":") {
+			if strings.TrimSpace(line) == "" || strings.HasPrefix(line, ":") {
 				continue
 			}
-			if !strings.HasPrefix(line, "data: ") {
+			if !hasField || field.name != "data" {
 				continue
 			}
-			data := strings.TrimPrefix(line, "data: ")
+			data := field.value
 			if data == "[DONE]" {
 				if !streamPayloadInvalid {
 					markRouteHealthy()
@@ -1957,7 +1972,7 @@ streamLoop:
 			skipRawEventSeparator = false
 		}
 
-		if line == "data: [DONE]" {
+		if hasField && field.name == "data" && field.value == "[DONE]" {
 			if !streamPayloadInvalid {
 				markRouteHealthy()
 			}
@@ -1968,15 +1983,15 @@ streamLoop:
 			done = true
 			continue
 		}
-		if strings.HasPrefix(line, "data: ") {
-			data := strings.TrimPrefix(line, "data: ")
+		if hasField && field.name == "data" {
+			data := field.value
 			if !json.Valid([]byte(data)) {
 				streamPayloadInvalid = true
 				streamTerminationCode = "upstream_stream_invalid_frame"
 				done = true
 				continue
 			}
-			parsedUsage, hasUsage, usageErr := adapters.ParseOpenAICompatibleUsage([]byte(data), metering.UsageSourceUpstream)
+			parsedUsage, hasUsage, usageErr := adapters.ParseOpenAICompatibleUsage([]byte(data), adapters.EndpointChatCompletions, metering.UsageSourceUpstream)
 			if usageErr != nil {
 				reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Failed to normalize final stream usage: %v", usageErr)
 				streamPayloadInvalid = true
@@ -2087,7 +2102,7 @@ streamLoop:
 			RequestID: requestID, AttemptID: attemptIDFromContext(ctx), OrgID: orgID,
 			Mode: billing.DeliveryModeStream, Outcome: outcome,
 			DeliveredBytes: deliveredBytes, DeliveredChunks: deliveredChunks,
-			HTTPStatus: http.StatusOK, ErrorCode: errorCode,
+			HTTPStatus: http.StatusOK, ErrorCode: errorCode, StreamFence: &streamFence,
 		})
 		deliveryCancel()
 		if err != nil {
@@ -2247,6 +2262,7 @@ streamLoop:
 	}
 
 	settleReq := settleRequestFromUsage(requestID, attemptIDFromContext(ctx), orgID, customerUsage)
+	settleReq.StreamFence = &streamFence
 	if persistErr := relay.persistSettlementUsageWithRetry(settleReq, reqLog); persistErr != nil {
 		leaveLeaseForRecovery = true
 		billingStatus := "settlement_pending_usage_unpersisted"
@@ -3002,6 +3018,7 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		defer releaseResponsePayload()
 
 		normalized, err := adapter.ParseResponse(attemptCtx, adapters.ResponseInput{
+			Endpoint:       adapters.EndpointEmbeddings,
 			StatusCode:     resp.StatusCode,
 			Header:         resp.Header,
 			Body:           respBody,

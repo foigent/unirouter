@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -23,6 +22,7 @@ type LoginRateLimitOptions struct {
 	UserRequests  int
 	MaxBodyBytes  int64
 	RedisKeyScope string
+	ClientIP      ClientIPResolver
 }
 
 func LoginRateLimit(rdb *redis.Client, options LoginRateLimitOptions) func(http.Handler) http.Handler {
@@ -38,8 +38,12 @@ func LoginRateLimit(rdb *redis.Client, options LoginRateLimitOptions) func(http.
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !options.Enabled || rdb == nil || r.Method != http.MethodPost {
+			if !options.Enabled || r.Method != http.MethodPost {
 				next.ServeHTTP(w, r)
+				return
+			}
+			if rdb == nil {
+				writeLoginRateLimitUnavailable(w)
 				return
 			}
 
@@ -59,23 +63,26 @@ func LoginRateLimit(rdb *redis.Client, options LoginRateLimitOptions) func(http.
 				}
 			}
 
-			client := clientAddress(r.RemoteAddr)
-			ctx := context.Background()
-			if options.IPRequests > 0 {
-				key := rateLimitKey(options.RedisKeyScope, "ip", client)
-				allowed, retryAfter, err := fixedWindowAllow(ctx, rdb, key, options.IPRequests, options.Window)
-				if err == nil && !allowed {
-					writeRateLimitExceeded(w, retryAfter)
-					return
+			client := options.ClientIP.Resolve(r)
+			ctx := r.Context()
+			checkWindow := func(key string, limit int) bool {
+				if limit <= 0 {
+					return true
 				}
+				allowed, retryAfter, err := fixedWindowAllow(ctx, rdb, key, limit, options.Window)
+				if err != nil {
+					writeLoginRateLimitUnavailable(w)
+					return false
+				}
+				if !allowed {
+					writeRateLimitExceeded(w, retryAfter)
+					return false
+				}
+				return true
 			}
-			if options.UserRequests > 0 {
-				key := rateLimitKey(options.RedisKeyScope, "user", client, username)
-				allowed, retryAfter, err := fixedWindowAllow(ctx, rdb, key, options.UserRequests, options.Window)
-				if err == nil && !allowed {
-					writeRateLimitExceeded(w, retryAfter)
-					return
-				}
+			if !checkWindow(rateLimitKey(options.RedisKeyScope, "ip", client), options.IPRequests) ||
+				!checkWindow(rateLimitKey(options.RedisKeyScope, "user", username), options.UserRequests) {
+				return
 			}
 
 			next.ServeHTTP(w, r)
@@ -117,17 +124,6 @@ func loginUsername(body []byte) string {
 	return username
 }
 
-func clientAddress(remoteAddr string) string {
-	host, _, err := net.SplitHostPort(remoteAddr)
-	if err == nil && host != "" {
-		return host
-	}
-	if remoteAddr == "" {
-		return "__unknown__"
-	}
-	return remoteAddr
-}
-
 func rateLimitKey(scope string, parts ...string) string {
 	sum := sha256.Sum256([]byte(strings.Join(append([]string{scope}, parts...), "\x00")))
 	return fmt.Sprintf("rl:%s:%s", scope, hex.EncodeToString(sum[:]))
@@ -142,6 +138,11 @@ func writeRateLimitExceeded(w http.ResponseWriter, retryAfter time.Duration) {
 	w.Header().Set("Retry-After", fmt.Sprint(seconds))
 	w.WriteHeader(http.StatusTooManyRequests)
 	w.Write([]byte(`{"error":{"type":"rate_limit_exceeded","message":"Too many login attempts"}}`))
+}
+
+func writeLoginRateLimitUnavailable(w http.ResponseWriter) {
+	w.Header().Set("Retry-After", "1")
+	writeGatewayLimitError(w, http.StatusServiceUnavailable, "server_error", "limit_policy.state_unavailable", "Shared login rate state is temporarily unavailable")
 }
 
 type replayReadCloser struct {

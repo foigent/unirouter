@@ -292,7 +292,7 @@ func TestWorkloadDecisionSummaryUsesServerDerivedBoundedFields(t *testing.T) {
 	class, weight, waitMS, queueDepth := summarizeWorkloadDecision([]limitpolicy.Decision{
 		{PolicyRef: "policy:ordinary"},
 		{
-			PolicyRef: "builtin:workload-admission-v1", WorkloadClass: "stream",
+			PolicyRef: "builtin:workload-admission-v2", WorkloadClass: "stream",
 			WorkloadWeight: 4, WaitMS: 23, QueueDepth: 7,
 		},
 	})

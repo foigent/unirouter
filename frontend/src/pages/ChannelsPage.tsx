@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Table, Modal, Form, Tag, Toast, Space, Tooltip, SideSheet, Input, Typography } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api, ApiError } from '../api/client';
-import { PageHeader, StatusTag, Surface } from '../ui';
+import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
 
 interface Channel {
   id: number;
@@ -68,6 +68,8 @@ const routingSourceLabel = (source: string) => ({
 export default function ChannelsPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const requestVersion = useRef(0);
   const [showDrawer, setShowDrawer] = useState(false);
   const [editing, setEditing] = useState<Channel | null>(null);
   const [formApi, setFormApi] = useState<any>(null);
@@ -79,14 +81,23 @@ export default function ChannelsPage() {
   const [preview, setPreview] = useState<RoutingPreview | null>(null);
 
   const load = (p = page, size = pageSize) => {
+    const version = ++requestVersion.current;
     setLoading(true);
+    setLoadError('');
+    setChannels([]);
+    setTotal(0);
     api.getChannels(p, size)
       .then((data) => {
+        if (version !== requestVersion.current) return;
         setChannels(data.data || []);
         setTotal(data.total || 0);
       })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+      .catch(() => {
+        if (version === requestVersion.current) setLoadError('无法加载上游通道列表。');
+      })
+      .finally(() => {
+        if (version === requestVersion.current) setLoading(false);
+      });
   };
 
   useEffect(() => { load(1, pageSize); }, []);
@@ -129,10 +140,10 @@ export default function ChannelsPage() {
     try {
       if (editing) {
         await api.updateChannel(editing.id, payload);
-        Toast.success('渠道更新成功');
+        Toast.success('通道更新成功');
       } else {
         await api.createChannel(payload);
-        Toast.success('渠道创建成功');
+        Toast.success('通道创建成功');
       }
       closeDrawer();
       load();
@@ -151,10 +162,12 @@ export default function ChannelsPage() {
       Toast.warning('请输入要预览的模型名称');
       return;
     }
+    setPreview(null);
     setPreviewLoading(true);
     try {
       setPreview(await api.previewRouting(model) as RoutingPreview);
     } catch {
+      setPreview(null);
       Toast.error('路由预览失败，请检查模型和通道状态');
     } finally {
       setPreviewLoading(false);
@@ -164,7 +177,7 @@ export default function ChannelsPage() {
   const handleDelete = async (id: number) => {
     Modal.confirm({
       title: '确认删除',
-      content: '删除后不可恢复，确定要删除这个渠道吗？',
+      content: '删除后不可恢复，确定要删除这个通道吗？',
       onOk: async () => {
         try {
           await api.deleteChannel(id);
@@ -209,9 +222,9 @@ export default function ChannelsPage() {
   const columns = [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
     { title: '名称', dataIndex: 'name', key: 'name' },
-    { title: 'Provider', dataIndex: 'provider', key: 'provider' },
-    { title: 'Adapter', dataIndex: 'adapter_type', key: 'adapter_type', render: (v: string) => v || 'openai_compatible' },
-    { title: 'Base URL', dataIndex: 'base_url', key: 'base_url', ellipsis: true },
+    { title: '供应商', dataIndex: 'provider', key: 'provider' },
+    { title: '协议适配', dataIndex: 'adapter_type', key: 'adapter_type', render: (v: string) => v || 'openai_compatible' },
+    { title: '服务地址', dataIndex: 'base_url', key: 'base_url', ellipsis: true },
     { title: '支持模型', dataIndex: 'models', key: 'models', ellipsis: true },
     { title: '优先级', dataIndex: 'priority', key: 'priority', width: 80 },
     {
@@ -225,7 +238,7 @@ export default function ChannelsPage() {
       key: 'status',
       width: 80,
       render: (v: string) => v === 'deprecated'
-        ? <Tooltip content="该渠道已废弃，建议尽快迁移到新渠道"><Tag color="yellow">deprecated ⚠</Tag></Tooltip>
+        ? <Tooltip content="该通道已废弃，建议尽快迁移到新通道"><Tag color="yellow">deprecated ⚠</Tag></Tooltip>
         : <StatusTag status={v}>{v}</StatusTag>,
     },
     {
@@ -251,20 +264,46 @@ export default function ChannelsPage() {
   return (
     <div className="ur-page">
       <PageHeader
-        eyebrow="流量治理"
+        eyebrow="模型接入"
         title="上游通道"
         description="优先级决定先用哪一组通道；同级权重决定组内流量比例；熔断阈值决定连续失败多少次后暂停通道。"
-        actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增渠道</Button>}
+        actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增通道</Button>}
       />
+
+      <Surface title="通道列表" description="这里是通道配置的权威入口。先确认通道、凭证和状态，再使用下方路由预览解释候选顺序。">
+        <div className="ur-table-shell">
+          <Table
+            dataSource={channels}
+            columns={columns}
+            rowKey="id"
+            loading={loading}
+            empty={loadError ? (
+              <EmptyState title="上游通道加载失败" description={loadError} actions={<Button type="primary" onClick={() => load()}>重新加载上游通道</Button>} minHeight={220} />
+            ) : <EmptyState title="暂无上游通道" minHeight={220} />}
+            pagination={{
+              currentPage: page,
+              pageSize,
+              total,
+              pageSizeOpts: [20, 50, 100],
+              showSizeChanger: true,
+              onPageChange: (p: number) => { setPage(p); load(p, pageSize); },
+              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1, s); },
+            }}
+          />
+        </div>
+      </Surface>
 
       <Surface
         title="路由预览"
-        description="只读查看可重复的示例顺序和排除原因；真实请求按服务器请求 ID 确定，同一 ID 始终一致。预览不会调用上游，也不会占用半开探针。"
+        description="只读解释指定模型当前会选择哪些通道以及排除原因。它不会调用上游、不会产生费用，也不会占用半开探针；真实请求仍以服务器请求 ID 进行稳定选择。"
       >
         <div className="ur-inline-controls">
           <Input
             value={previewModel}
-            onChange={setPreviewModel}
+            onChange={(value) => {
+              setPreviewModel(value);
+              setPreview(null);
+            }}
             onEnterPress={handlePreview}
             placeholder="模型名称，例如 gpt-4o"
             style={{ width: 320 }}
@@ -275,11 +314,11 @@ export default function ChannelsPage() {
         {preview && (
           <div className="ur-routing-preview">
             <Typography.Text type="tertiary">
-              策略 {preview.policy_version} · 快照 {preview.snapshot_version} · {routingSourceLabel(preview.snapshot_source)}
+              模型 {preview.model} · 策略 {preview.policy_version} · 快照 {preview.snapshot_version} · {routingSourceLabel(preview.snapshot_source)}
             </Typography.Text>
             <div className="ur-routing-preview-grid">
               <div>
-                <strong>示例候选顺序</strong>
+                <strong>候选顺序</strong>
                 {preview.candidates.length === 0 && <p>没有可用通道</p>}
                 {preview.candidates.map((item) => (
                   <div className="ur-routing-preview-item" key={`candidate-${item.channel_id}`}>
@@ -306,35 +345,15 @@ export default function ChannelsPage() {
         )}
       </Surface>
 
-      <Surface>
-        <div className="ur-table-shell">
-          <Table
-            dataSource={channels}
-            columns={columns}
-            rowKey="id"
-            loading={loading}
-            pagination={{
-              currentPage: page,
-              pageSize,
-              total,
-              pageSizeOpts: [20, 50, 100],
-              showSizeChanger: true,
-              onPageChange: (p: number) => { setPage(p); load(p, pageSize); },
-              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1, s); },
-            }}
-          />
-        </div>
-      </Surface>
-
       <SideSheet
-        title={editing ? '编辑渠道' : '新增渠道'}
+        title={editing ? '编辑通道' : '新增通道'}
         visible={showDrawer}
         onCancel={closeDrawer}
         width={480}
       >
         <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleSubmit}>
-          <Form.Input field="name" label="渠道名称" rules={[{ required: true, message: '必填' }]} />
-          <Form.Select field="provider" label="Provider" rules={[{ required: true, message: '必填' }]}
+          <Form.Input field="name" label="通道名称" rules={[{ required: true, message: '必填' }]} />
+          <Form.Select field="provider" label="供应商" rules={[{ required: true, message: '必填' }]}
             optionList={[
               { label: 'OpenAI', value: 'openai' },
               { label: 'Anthropic', value: 'anthropic' },
@@ -342,7 +361,7 @@ export default function ChannelsPage() {
               { label: '自定义', value: 'custom' },
             ]}
           />
-          <Form.Input field="base_url" label="Base URL" rules={[{ required: true, message: '必填' }]} />
+          <Form.Input field="base_url" label="服务地址（Base URL）" rules={[{ required: true, message: '必填' }]} />
           <Form.Input field="models" label="支持模型" placeholder="多个模型用英文逗号分隔，如 gpt-4o, gpt-4o-mini" rules={[{ required: true, message: '必填' }]} />
           <Form.Select field="adapter_type" label="Adapter Type" initValue="openai_compatible"
             optionList={[

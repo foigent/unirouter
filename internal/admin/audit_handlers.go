@@ -220,7 +220,11 @@ func (h *Handler) recordAuditForProjectFromRequest(r *http.Request, action, reso
 }
 
 func (h *Handler) recordAuditForOrgProjectFromRequest(r *http.Request, orgID, projectID int64, action, resource, resourceID string, detail map[string]interface{}) {
-	h.recordAuditEntry(r.Context(), action, resource, resourceID, detail, auditMeta{
+	h.recordAuditEntry(r.Context(), action, resource, resourceID, detail, requestAuditMeta(r, orgID, projectID))
+}
+
+func requestAuditMeta(r *http.Request, orgID, projectID int64) auditMeta {
+	return auditMeta{
 		OrgID:           orgID,
 		ProjectID:       projectID,
 		IP:              r.RemoteAddr,
@@ -228,7 +232,7 @@ func (h *Handler) recordAuditForOrgProjectFromRequest(r *http.Request, orgID, pr
 		RequestID:       middleware.GetRequestIDFromContext(r.Context()),
 		ClientRequestID: middleware.GetClientRequestIDFromContext(r.Context()),
 		Source:          auditSourceFromContext(r.Context()),
-	})
+	}
 }
 
 type auditMeta struct {
@@ -341,6 +345,12 @@ func (h *Handler) CleanupOldDataWithTraceRetention(ctx context.Context, retentio
 func (h *Handler) cleanupOldData(ctx context.Context, retentionDays, traceRetentionDays int) error {
 	var result pgconn.CommandTag
 	var err error
+
+	result, err = h.db.Exec(ctx, `DELETE FROM admin_sessions WHERE expires_at < NOW()`)
+	if err != nil {
+		return fmt.Errorf("cleanup admin_sessions: %w", err)
+	}
+	log.Printf("Cleanup: deleted %d expired admin sessions", result.RowsAffected())
 
 	if retentionDays > 0 {
 		result, err = h.db.Exec(ctx,

@@ -46,7 +46,8 @@ func TestV1MicroPrecisionLedgerMigrationConvertsAndGuardsDowngrade(t *testing.T)
 		)`, orgID)
 	require.NoError(t, err)
 
-	require.NoError(t, migrate.Run(ctx, pool, migrationsDir))
+	microLedgerDir := migrationsThrough(t, migrationsDir, "000036_v1_micro_precision_ledger.up.sql")
+	require.NoError(t, migrate.Run(ctx, pool, microLedgerDir))
 	var balance, granted, spent, transactionAmount, callCost int64
 	var inputPrice, cacheReadPrice, cacheReadCost, cacheCreationCost int64
 	require.NoError(t, pool.QueryRow(ctx, `

@@ -8,7 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/middleware"
 )
 
 func (h *Handler) ListChannelKeys(w http.ResponseWriter, r *http.Request) {
@@ -87,19 +90,42 @@ func (h *Handler) CreateChannelKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var id int64
-	err = h.db.QueryRow(r.Context(),
-		`INSERT INTO channel_keys (channel_id, key_enc, allowed_models, status, fail_count, created_at, updated_at)
-		 VALUES ($1, $2, $3, 'active', 0, NOW(), NOW())
-		 RETURNING id`,
-		req.ChannelID, keyEnc, req.AllowedModels,
-	).Scan(&id)
+	auditDetail := map[string]interface{}{"channel_id": req.ChannelID}
+	if isUnauthenticatedUnitContext(r.Context()) {
+		err = h.db.QueryRow(r.Context(),
+			`INSERT INTO channel_keys (channel_id, key_enc, allowed_models, status, fail_count, created_at, updated_at)
+			 VALUES ($1, $2, $3, 'active', 0, NOW(), NOW())
+			 RETURNING id`,
+			req.ChannelID, keyEnc, req.AllowedModels,
+		).Scan(&id)
+		if err == nil {
+			h.recordAudit(r.Context(), "channelkey.create", "channel_key", strconv.FormatInt(id, 10), auditDetail, r.RemoteAddr)
+		}
+	} else {
+		var tx pgx.Tx
+		tx, err = h.db.Begin(r.Context())
+		if err == nil {
+			defer tx.Rollback(r.Context())
+			err = tx.QueryRow(r.Context(),
+				`INSERT INTO channel_keys (channel_id, key_enc, allowed_models, status, fail_count, created_at, updated_at)
+				 VALUES ($1, $2, $3, 'active', 0, NOW(), NOW())
+				 RETURNING id`,
+				req.ChannelID, keyEnc, req.AllowedModels,
+			).Scan(&id)
+		}
+		if err == nil {
+			err = insertAuditEntry(r.Context(), tx, "channelkey.create", "channel_key", strconv.FormatInt(id, 10), auditDetail,
+				requestAuditMeta(r, middleware.GetOrgIDFromContext(r.Context()), middleware.GetProjectIDFromContext(r.Context())))
+		}
+		if err == nil {
+			err = tx.Commit(r.Context())
+		}
+	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to create channel key"})
 		return
 	}
 
-	h.recordAudit(r.Context(), "channelkey.create", "channel_key", fmt.Sprintf("%d", id),
-		map[string]interface{}{"channel_id": req.ChannelID}, r.RemoteAddr)
 	h.invalidateRoutingSnapshots()
 
 	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id})
@@ -178,7 +204,33 @@ func (h *Handler) UpdateChannelKey(w http.ResponseWriter, r *http.Request) {
 	args = append(args, id)
 
 	query := fmt.Sprintf("UPDATE channel_keys SET %s WHERE id = $%d", joinStrings(sets, ", "), argIdx)
-	tag, err := h.db.Exec(r.Context(), query, args...)
+	auditDetail := map[string]interface{}{
+		"channel_id_updated":     req.ChannelID != nil,
+		"key_updated":            req.Key != nil,
+		"status_updated":         req.Status != nil,
+		"allowed_models_updated": req.AllowedModels != nil,
+	}
+	var tag pgconn.CommandTag
+	if isUnauthenticatedUnitContext(r.Context()) {
+		tag, err = h.db.Exec(r.Context(), query, args...)
+		if err == nil && tag.RowsAffected() > 0 {
+			h.recordAudit(r.Context(), "channelkey.update", "channel_key", idStr, auditDetail, r.RemoteAddr)
+		}
+	} else {
+		var tx pgx.Tx
+		tx, err = h.db.Begin(r.Context())
+		if err == nil {
+			defer tx.Rollback(r.Context())
+			tag, err = tx.Exec(r.Context(), query, args...)
+		}
+		if err == nil && tag.RowsAffected() > 0 {
+			err = insertAuditEntry(r.Context(), tx, "channelkey.update", "channel_key", idStr, auditDetail,
+				requestAuditMeta(r, middleware.GetOrgIDFromContext(r.Context()), middleware.GetProjectIDFromContext(r.Context())))
+		}
+		if err == nil && tag.RowsAffected() > 0 {
+			err = tx.Commit(r.Context())
+		}
+	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
 		return
@@ -188,12 +240,6 @@ func (h *Handler) UpdateChannelKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.recordAudit(r.Context(), "channelkey.update", "channel_key", idStr, map[string]interface{}{
-		"channel_id_updated":     req.ChannelID != nil,
-		"key_updated":            req.Key != nil,
-		"status_updated":         req.Status != nil,
-		"allowed_models_updated": req.AllowedModels != nil,
-	}, r.RemoteAddr)
 	h.invalidateRoutingSnapshots()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
@@ -227,7 +273,27 @@ func (h *Handler) DeleteChannelKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tag, err := h.db.Exec(r.Context(), `DELETE FROM channel_keys WHERE id = $1`, id)
+	var tag pgconn.CommandTag
+	if isUnauthenticatedUnitContext(r.Context()) {
+		tag, err = h.db.Exec(r.Context(), `DELETE FROM channel_keys WHERE id = $1`, id)
+		if err == nil && tag.RowsAffected() > 0 {
+			h.recordAudit(r.Context(), "channelkey.delete", "channel_key", idStr, map[string]interface{}{}, r.RemoteAddr)
+		}
+	} else {
+		var tx pgx.Tx
+		tx, err = h.db.Begin(r.Context())
+		if err == nil {
+			defer tx.Rollback(r.Context())
+			tag, err = tx.Exec(r.Context(), `DELETE FROM channel_keys WHERE id = $1`, id)
+		}
+		if err == nil && tag.RowsAffected() > 0 {
+			err = insertAuditEntry(r.Context(), tx, "channelkey.delete", "channel_key", idStr, map[string]interface{}{},
+				requestAuditMeta(r, middleware.GetOrgIDFromContext(r.Context()), middleware.GetProjectIDFromContext(r.Context())))
+		}
+		if err == nil && tag.RowsAffected() > 0 {
+			err = tx.Commit(r.Context())
+		}
+	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Delete failed"})
 		return
@@ -237,7 +303,6 @@ func (h *Handler) DeleteChannelKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.recordAudit(r.Context(), "channelkey.delete", "channel_key", idStr, map[string]interface{}{}, r.RemoteAddr)
 	h.invalidateRoutingSnapshots()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})

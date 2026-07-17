@@ -1,6 +1,43 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
+> **2026-07-17 Post-PRD6 security-remediation checkpoint:** the User-approved
+> `A1 + B1 + C1 + D1` amendment is implemented and locally verified on branch
+> `codex/v1-user-task-ia-correctness` from source revision
+> `92ba78878782114a82411697597f5e58e10602a8`. All 39 canonical scan findings
+> are now `fixed_verified`. The amendment adds versioned revocable administrator
+> sessions (`000038`), tenant-isolated Guardrail capacity and fair advisory-gap
+> evidence (`000039`), immutable delivery-attempt binding with ambiguity
+> quarantine (`000040`), stream owner/generation fencing (`000041`), atomic
+> migration/ledger commits, workflow-scoped Agent capability supersession, and
+> fail-closed workload admission on Redis uncertainty. Full repository Go race
+> plus coverage, tagged integration race, vet, diff checks, and frontend
+> type-check/test/build pass locally; the frontend suite is 41 files / 267 tests.
+> The User then accepted two adjacent V1 corrections: deployment-global,
+> case-insensitive, outer-Unicode-whitespace-normalized local login IDs through
+> `000042`, and removal of value-bearing CLI password argv in favor of a hidden
+> twice-confirmed TTY prompt or bounded one-line `--password-stdin`. Those
+> implementations are fully rebaselined locally. Final full repository Go
+> race/coverage and tagged integration race through `000042`, vet, diff and
+> module verification pass; frontend type-check, 41-file/277-test suite and
+> production build pass. The final review also verifies provider-scoped
+> local/OIDC display-name overlap, concurrent OIDC provisioning convergence,
+> exact shared user-creation/self-service Unicode/UTF-8 password limits and
+> typed License-versus-login conflict handling. Local Docker/Compose is
+> unavailable, so the Docker/context gate remains for required GitHub CI. This
+> local checkpoint does not itself claim GitHub CI, ECS migration/deployment,
+> target-browser verification, or Production verification. PRD6 remains
+> `Completed (Accepted Scope)` and is not reopened; this is a separate
+> Post-PRD6 amendment. Evidence:
+> `docs/ops/evidence/V1-SECURITY-REMEDIATION-LOCAL-20260717.md`. The
+> authoritative live record is `docs/agent-workflows/EXECUTION-RECORD.md`.
+> **2026-07-16 underlying worktree batch:** `V1-UX-IA-001` is an independent
+> first-release user-task information-architecture and role-correctness batch.
+> Its current implementation/test/CI/target state is recorded in
+> `docs/agent-workflows/EXECUTION-RECORD.md`. The batch does not reopen PRD6,
+> accept PRD7, or add X-Insight runtime behavior. The following window-closeout
+> statement remains the immutable boundary of the earlier selected work window,
+> not a claim that this later corrective batch does not exist.
 > **2026-07-16 Post-PRD6 V1 window closeout:** the selected first-release work
 > window is closed. No active UniRouter-owned implementation or target mutation
 > remains in it. `V1-XI-LEDGER-001` is the sole active follow-up within this V1
@@ -674,6 +711,7 @@ Historical PRD1 summary: Core backend modules, admin APIs, frontend pages, migra
 
 | Area | Status | Evidence |
 |------|--------|----------|
+| V1 Security Remediation | Local verified; publication/CI pending | User-approved `A1 + B1 + C1 + D1` closes all 39 canonical scan findings. The accepted adjacent `000042` normalized global local-ID and secure CLI password transport corrections are also final-tree verified, including same-org local/OIDC overlap, concurrent OIDC provisioning, invalid UTF-8, shared user-creation/self-service password rules, typed License conflict control and guarded down behavior. Full Go race/coverage, full tagged integration race through `000042`, vet, diff, module verification, frontend type-check, 41-file/277-test suite, production build and shell/YAML/security harnesses pass. Docker/context remains for required GitHub CI because local Docker/Compose is unavailable. This local checkpoint does not itself claim CI, ECS migration/deployment, target-browser or Production verification. PRD6 remains `Completed (Accepted Scope)`. Evidence: `docs/ops/evidence/V1-SECURITY-REMEDIATION-LOCAL-20260717.md`, `docs/agent-workflows/EXECUTION-RECORD.md` and `docs/ops/deployment-runbook.md` |
 | V1 Post-PRD6 First-Release Window | Closed for the selected scope; X-Insight coordination is the sole active follow-up within this window | No active UniRouter-owned implementation/target mutation remains in this window. `V1-TARGET-PILOT-001` and `V1-CHANNEL-MAPPING-001` are deferred. Actual supplier-bill reconciliation was not executed; recurring/productized reconciliation is not implemented and remains candidate `D7-COST-001/002`. Closing the window does not verify those items. Evidence: `docs/ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md` |
 | V1 Admin Principal State And Pilot Catalog | Target verified / closed for the administrator defect, catalog-consistency defect and exact two-model target configuration | PR #214 head `4cf1376` passed run `29441931266` and merged/deployed as `46b49b6` with formal sequence `4`. The same temporary JWT was 200 before and 401 after disablement. Stable/canary API, DB and authenticated-browser approved/model-set/project views show exactly `mimo-v2.5-pro` plus `DeepSeek-V4-Flash`; internal channel views retain intentionally disabled Kimi. Excluded operation `op_163bb39294d192e19e664d7912111512` was 403 with zero dispatch, financial rows or wallet change; temporary users/keys are inactive. The public target is HTTP, so this is not TLS evidence. Evidence: `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md`. Broader providers, capacity, detector, IdP, customer operations and Production are deferred outside this window; supplier-bill reconciliation was not executed; X-Insight remains the sole active coordination follow-up within this window |
 | V1 Provider Bill Reconciliation | Deferred — actual reconciliation not executed; recurring/productized capability not implemented | Real calls prove provider-returned usage/status and UniRouter customer-ledger settlement only. No provider billing console, finalized export/API, invoice or isolated balance delta has been inspected, so actual supplier cost, discount/free-credit/cache/tax/rounding treatment and margin are unverified. A bounded manual/account reconciliation may be separately authorized; recurring product capability remains PRD7 candidate `D7-COST-001/002`. This does not block the current functional pilot but blocks supplier-cost/pass-through/margin/Production-financial claims. Evidence boundary: `docs/ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md`; issue `V1-PROVIDER-BILL-RECON-001` |

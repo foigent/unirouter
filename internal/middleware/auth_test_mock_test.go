@@ -370,13 +370,56 @@ func TestGatewayAuth_IPWhitelist(t *testing.T) {
 	rawKey := "sk-test-key-12345"
 	req := httptest.NewRequest("GET", "/v1/models", nil)
 	req.Header.Set("Authorization", "Bearer "+rawKey)
-	req.Header.Set("X-Forwarded-For", "8.8.8.8") // external IP
+	req.RemoteAddr = "198.51.100.20:4321"
+	req.Header.Set("X-Forwarded-For", "10.0.0.1") // spoofed allowlisted IP
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 (IP not allowed), got %d", rec.Code)
+		t.Fatalf("expected 403 for an untrusted peer spoofing an allowlisted XFF, got %d", rec.Code)
+	}
+}
+
+func TestGatewayAuth_IPWhitelistUsesTrustedProxyChain(t *testing.T) {
+	budgetLimit := 10000
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{
+				ScanFn: func(dest ...any) error {
+					*dest[0].(*int64) = 1
+					*dest[1].(*int64) = 1
+					*dest[2].(*int64) = 11
+					*dest[3].(*string) = "active"
+					*dest[4].(*string) = "203.0.113.77"
+					*dest[5].(*string) = ""
+					*dest[6].(*int) = 60
+					*dest[7].(*int) = 10
+					*dest[8].(**int) = &budgetLimit
+					*dest[9].(*string) = "sk-ab12"
+					*dest[10].(*string) = "test"
+					*dest[11].(*int64) = 0
+					*dest[12].(*string) = "shared"
+					*dest[13].(*string) = "active"
+					return nil
+				},
+			}
+		},
+	}
+	resolver := mustClientIPResolver(t, "172.30.250.10/32", "172.30.250.1/32")
+	handler := GatewayAuthWithAgentCapabilitiesAndClientIP(db, "test-secret", nil, resolver)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	req.Header.Set("Authorization", "Bearer sk-test-key-12345")
+	req.RemoteAddr = "172.30.250.10:4321"
+	req.Header.Set("X-Forwarded-For", "203.0.113.77, 172.30.250.1")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected trusted two-proxy chain to preserve allowlisted browser IP, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

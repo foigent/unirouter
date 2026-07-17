@@ -1,9 +1,9 @@
 # Deployment Runbook（部署运维手册）
 
-> **版本**：v1.10
-> **日期**：2026-07-15
-> **用途**：运维人员部署和维护 UniRoute 的操作手册
-> **变更记录**：v1.10 增加真实上游启用前的模型身份、映射、价格权限和受控调用检查；v1.9 增加可双击 License Studio，并把正式 License/升级验签根从客户运行时环境变量迁到发布二进制；v1.8 新增 V1 商业 License 强制、公钥环/部署绑定和签名离线升级包流程；v1.7 新增 PRD3 SEC-005 运行时暴露策略：CORS 精确 origin、登录限流、metrics 开关/CIDR；v1.6 新增 PRD2 OIDC-first SSO 配置和 mock-provider smoke；v1.5 新增 HTTP-only canary overlay、8081 canary direct smoke、PRD2 HA/backup rehearsal 命令；v1.4 新增生产 `.env` 保护、`API_KEY_HASH_SECRET`、rsync 安全同步规则和 PR #44 部署事故复盘；v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
+> **版本**：v1.16
+> **日期**：2026-07-17
+> **用途**：运维人员部署和维护 UniRouter 的操作手册
+> **变更记录**：v1.16 增加 `000037`→`000042` 统一停流量/单次 migrate/部分提交后 roll-forward 流程，补充 `000042` provider-scoped 本地/OIDC 身份合同和 guarded down，并移除管理 CLI 的 argv 密码输入，改为双次无回显交互或受控单行 `--password-stdin`；v1.15 增加迁移原子 ledger 语义，以及 `000039` Guardrail 租户隔离、`000040` 投递尝试绑定、`000041` 流式 generation fencing 的非滚动切换与 quarantine/roll-forward 边界；v1.14 增加 `000038` 管理会话撤销的非滚动切换与 guarded-down 边界；v1.13 增加正式模式 32-byte 运行时密钥门禁，并补齐客户首次安装对同一验签包的容器 staging、`record-applied` 与读回；v1.12 修正客户 preflight 调用、可执行占位符、micro-CNY 查询和 Canary Compose/Nginx 命令；v1.11 明确分离源码开发与签名客户交付路径，增加客户 Compose digest preflight 和通知 Webhook HMAC 配置；v1.10 增加真实上游启用前的模型身份、映射、价格权限和受控调用检查；v1.9 增加可双击 License Studio，并把正式 License/升级验签根从客户运行时环境变量迁到发布二进制；v1.8 新增 V1 商业 License 强制、公钥环/部署绑定和签名离线升级包流程；v1.7 新增 PRD3 SEC-005 运行时暴露策略：CORS 精确 origin、登录限流、metrics 开关/CIDR；v1.6 新增 PRD2 OIDC-first SSO 配置和 mock-provider smoke；v1.5 新增 HTTP-only canary overlay、8081 canary direct smoke、PRD2 HA/backup rehearsal 命令；v1.4 新增生产 `.env` 保护、`API_KEY_HASH_SECRET`、rsync 安全同步规则和 PR #44 部署事故复盘；v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
 
 ---
 
@@ -12,14 +12,26 @@
 | 组件 | 版本 | 说明 |
 |------|------|------|
 | Docker | 24+ | 容器运行时 |
-| Docker Compose | 2.20+ | 编排工具 |
+| Docker Compose | 2.20+，且支持 `config --environment` | 编排与正式密钥 preflight |
+| Bash | 3.2+ | 执行客户 Compose 的本地 preflight |
 | 磁盘 | 50GB+ | PostgreSQL 数据 + 备份 |
 | 内存 | 4GB+ | Go 二进制 + PG + Redis |
 | CPU | 2 核+ | 建议 4 核 |
 
+部署路径只有两条，不能混用：
+
+- 根目录 `docker-compose.yml` 与 `docker-compose.canary.yml` 会从源码构建，
+  固定使用 `development` release-trust mode，仅用于开发、内部测试和已授权的
+  非生产 ECS 验证；
+- 客户正式安装/升级只使用已经验签的离线发布包、`deploy/customer`、预构建
+  digest 镜像和嵌入式信任根。先验证签名 manifest，再运行
+  `bash deploy/customer/preflight.sh`。preflight 检查正式密钥下限、Compose 形状与
+  digest 语法，不能代替签名验证。正式 release 二进制也会拒绝短于 32 bytes 的
+  `JWT_SECRET` 或 `API_KEY_HASH_SECRET`；development 构建保留非空值兼容。
+
 ---
 
-## 二、首次部署
+## 二、源码开发与内部测试首次部署
 
 ### 2.1 准备配置文件
 
@@ -32,7 +44,8 @@ cp .env.example .env
 # - JWT_SECRET: 32 字节随机字符串
 # - API_KEY_HASH_SECRET: API Key HMAC 稳定密钥
 # - ENCRYPTION_KEY: 32 字节随机字符串
-# - LICENSE_DEPLOYMENT_ID: 与客户 License 精确绑定的稳定部署标识
+# - UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET: 启用签名通知时至少 32 字节；stable/canary 必须相同
+# - LICENSE_DEPLOYMENT_ID: 仅在本地测试商业 License 时填写绑定标识
 # - GRAFANA_ADMIN_PASSWORD: Grafana 管理员强密码
 # - ADMIN_CORS_ALLOWED_ORIGINS: 仅当浏览器会跨域直连 backend 时配置精确 origin
 # - METRICS_ALLOWED_CIDRS: 生产建议限制到 Prometheus 所在网络
@@ -42,6 +55,7 @@ cp .env.example .env
 openssl rand -hex 32  # 用于 JWT_SECRET
 openssl rand -hex 32  # 用于 API_KEY_HASH_SECRET
 openssl rand -hex 32  # 用于 ENCRYPTION_KEY
+openssl rand -hex 32  # 用于 UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET
 openssl rand -base64 24  # 用于 GRAFANA_ADMIN_PASSWORD
 ```
 
@@ -52,6 +66,7 @@ openssl rand -base64 24  # 用于 GRAFANA_ADMIN_PASSWORD
 | `JWT_SECRET` | Admin JWT 签名 | 管理员需要重新登录；不应影响 API Key |
 | `API_KEY_HASH_SECRET` | API Key HMAC 哈希 | 变更会导致既有 API Key 全部失效 |
 | `ENCRYPTION_KEY` | 上游渠道密钥 AES-GCM 加密 | 变更且无法恢复会导致已保存 channel key 无法解密 |
+| `UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET` | 出站通知 Webhook HMAC | 非空必须至少 32 字节；stable/canary 不一致会造成接收端间歇验签失败 |
 | 正式镜像内嵌 License 公钥环 | V1 商业 License Ed25519 验签根 | 发布构建缺失时镜像构建失败；客户运行时不能替换 |
 | `LICENSE_DEPLOYMENT_ID` | V1 License 绑定的稳定部署标识 | 缺失或与签名 payload 不一致时商业 License 不可强制执行 |
 | 正式镜像内嵌升级公钥环 | 独立的升级包 Ed25519 验签根 | 发布构建缺失时镜像构建失败；客户运行时不能替换 |
@@ -72,10 +87,11 @@ openssl rand -base64 24  # 用于 GRAFANA_ADMIN_PASSWORD
 |------|------|------|
 | `SHUTDOWN_TIMEOUT_SECONDS` | `120` | graceful shutdown 等待时间；默认与 backend `WriteTimeout` 对齐，避免 30 秒内强制截断较长流式响应 |
 | `ADMIN_CORS_ALLOWED_ORIGINS` | 空 | 为空表示只支持同源/服务端代理访问；需要 Vite 或跨域控制台直连 backend 时填精确 origin，如 `http://localhost:3000,http://localhost:5173`；不支持 `*` |
-| `LOGIN_RATE_LIMIT_ENABLED` | `true` | 保持开启；按 backend `RemoteAddr` 与 `RemoteAddr+username` 计数 |
+| `LOGIN_RATE_LIMIT_ENABLED` | `true` | 保持开启；分别按可信代理解析后的客户端 IP 与规范化 username 计数；没有可信代理时安全退回 backend `RemoteAddr` |
 | `LOGIN_RATE_LIMIT_WINDOW_SECONDS` | `60` | 登录尝试固定窗口秒数 |
-| `LOGIN_RATE_LIMIT_IP_REQUESTS` | `30` | 单个 `RemoteAddr` 每窗口最大登录尝试数；经过反向代理时应结合代理或网络层限流 |
-| `LOGIN_RATE_LIMIT_USER_REQUESTS` | `10` | 单个 `RemoteAddr+username` 每窗口最大登录尝试数 |
+| `LOGIN_RATE_LIMIT_IP_REQUESTS` | `30` | 单个解析后客户端 IP 每窗口最大登录尝试数 |
+| `LOGIN_RATE_LIMIT_USER_REQUESTS` | `10` | 同一规范化 username 在所有客户端 IP 之间共享的每窗口最大登录尝试数 |
+| `TRUSTED_PROXY_CIDRS` | 空（customer Compose 显式设置） | 只填实际受控代理 hop；为空时忽略 `X-Forwarded-For`/`X-Real-IP`。customer Compose 必须包含固定 frontend `/32`，同宿主 TLS 代理默认另含固定 Docker gateway `/32` |
 | `METRICS_ENABLED` | `true` | 兼容 bundled Prometheus；不需要应用内指标时设为 `false` |
 | `METRICS_ALLOWED_CIDRS` | 空 | 为空表示应用层不限制；生产建议填 Prometheus/内网 CIDR，公网隔离仍应依赖安全组、防火墙或反向代理 |
 | `TRACE_EVENTS_ENABLED` | `true` | 记录 metadata-only 请求路径事件；高流量生产环境可设为 `false` 暂停写入 |
@@ -87,7 +103,12 @@ openssl rand -base64 24  # 用于 GRAFANA_ADMIN_PASSWORD
 | `NONSTREAM_RESPONSE_MAX_BYTES` | `16777216` | 最终非流式客户响应默认 16 MiB（其中为 UniRouter 元数据预留 64 KiB）；超限返回 502、不 failover、不向客户收费，并保留可能的上游成本待处理状态 |
 | `PAYLOAD_NODE_INFLIGHT_BYTES` | `268435456` | 单个 UniRouter 副本实际保留 payload 的总字节预算；需按堆内存与并发实测调整 |
 | `PAYLOAD_ORG_INFLIGHT_BYTES` | `67108864` | 单组织在单副本的实际保留字节预算；必须小于等于 node budget |
+| `GUARDRAIL_ORG_ACTIVE_POLICY_LIMIT` | `256` | 单组织 active guardrail policy 原子上限；`disabled` 历史不计入，不会被自动删除 |
+| `GUARDRAIL_PLATFORM_ACTIVE_POLICY_LIMIT` | `256` | 平台级 active guardrail policy 独立上限；平台 mandatory 快照失效可全局 fail closed |
+| `GUARDRAIL_CACHED_POLICY_LIMIT` | `4096` | 单副本 immutable active-policy cache 总上限，同时由数据库触发器防止跨副本超配 |
+| `GUARDRAIL_CACHED_TENANT_LIMIT` | `4096` | 单副本可缓存的 active tenant policy scope 数；必须小于等于总 cache 上限 |
 | `EVIDENCE_CONTEXT_TRUST_SECRET` | 空 | PRD5 受信 evidence context 共享密钥；为空时忽略所有 inbound trace/session/actor/delegation headers。仅在受控内网/上游业务系统可持有密钥时启用，且不要写入 repo 或共享文档 |
+| `UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET` | 空（客户 Compose 必填） | 出站通知 Webhook HMAC 密钥；非空至少 32 字节，同一部署的 stable/canary 必须完全相同。接收端验证规则见 `docs/ops/notification-webhooks.md` |
 | `LOG_RETENTION_DAYS` | `30` | call logs、settle/cancel transactions 和相关清理的保留窗口；audit logs 保留该值的 2 倍 |
 | `RUNTIME_ENVIRONMENT` | `unspecified`（docker-compose 默认 `local`） | Runtime Status Center 展示的环境标签，如 `dev`、`staging`、`prod` |
 | `VITE_DEPLOY_ENV` | 空 | 前端镜像构建时写入的环境标签；支持 `development`、`staging`、`canary`、`production` 等值，并应与 `RUNTIME_ENVIRONMENT` 保持一致。修改后必须重建 frontend 镜像，仅重启容器不会生效 |
@@ -98,7 +119,19 @@ openssl rand -base64 24  # 用于 GRAFANA_ADMIN_PASSWORD
 | `PROMETHEUS_URL` | 空（docker-compose 默认 `http://prometheus:9090`） | Runtime Status Center 的 Prometheus base URL；用于 `/-/ready` 和 `up{job="unirouter"}` 探测，同时作为深链入口；不嵌入完整 Prometheus UI |
 | `GRAFANA_URL` | 空（docker-compose 默认 `http://grafana:3000`） | Runtime Status Center 的 Grafana base URL；用于 `/api/health` 探测，同时作为深链入口；不嵌入完整 Grafana UI |
 
-登录限流只信任 backend 看到的 `RemoteAddr`，不会直接信任客户端可伪造的 `X-Forwarded-For`。如果后续需要按真实客户端 IP 穿透多层代理，需要先定义可信代理链策略，不在 PRD3 临时扩展。
+登录限流和 API Key IP allowlist 使用同一个可信代理解析器。只有 backend
+直接 peer 命中 `TRUSTED_PROXY_CIDRS` 时才读取转发头，并从
+`X-Forwarded-For` 右向左剥离受信 hop，取第一个非受信地址；否则完全忽略转发头并
+使用 `RemoteAddr`。frontend Nginx 会 append 自己看到的网络 peer，因此直连调用者
+伪造的左侧 XFF 不能抢占真实 peer。外层 TLS 代理必须使用 overwrite 或 append
+语义，并把其实际 hop CIDR 精确加入配置；禁止信任 `0.0.0.0/0` 或 `::/0`。
+
+IP 桶继续限制单一来源的总尝试量；username 桶不再按来源 IP 分片，以阻止多来源绕过
+同一账户预算。该账户级短窗口也意味着知道 username 的调用者可以暂时耗尽其预算，
+运维应观察登录 `429` 并按实际风险调整窗口和阈值，不应改回 `IP+username`。
+限流启用时，Redis client 缺失、计数操作失败或请求上下文取消都会在密码验证前返回
+`503` 和 `Retry-After: 1`；服务不会在共享限流状态不确定时降级放行。此时先恢复
+Redis 并确认 `/health/ready`，不要通过关闭登录限流来绕过故障。
 
 PRD2 Batch 22 smoke 只验证历史 payload-only foundation，不能作为 V1 商业
 激活证据，也不能放行新模型流量。发行方在 macOS 上应双击 `UniRouter License
@@ -127,7 +160,7 @@ License 导入会同时锁定并核对 active API keys/users/projects/channels�
 OIDC SSO 默认关闭。启用前在身份提供商侧创建 Web/OIDC client，并将 callback 配置为：
 
 ```text
-https://<console-host>/api/v1/auth/oidc/callback
+https://console.example.com/api/v1/auth/oidc/callback
 ```
 
 然后设置：
@@ -136,14 +169,18 @@ https://<console-host>/api/v1/auth/oidc/callback
 OIDC_ENABLED=true
 OIDC_ISSUER_URL=https://idp.example.com
 OIDC_CLIENT_ID=uniroute
-OIDC_CLIENT_SECRET=...
-OIDC_REDIRECT_URL=https://<console-host>/api/v1/auth/oidc/callback
+OIDC_CLIENT_SECRET=REPLACE_WITH_OIDC_CLIENT_SECRET
+OIDC_REDIRECT_URL=https://console.example.com/api/v1/auth/oidc/callback
 OIDC_PROVIDER_NAME='Company SSO'
 OIDC_SCOPES=openid,email,profile
 OIDC_AUTO_PROVISION=false
 ```
 
-如果允许首登自动创建用户，必须同时设置 `OIDC_AUTO_PROVISION=true` 和 `OIDC_DEFAULT_ORG_ID=<active org id>`。角色可由 `OIDC_ROLE_CLAIM` 映射，缺失时使用 `OIDC_DEFAULT_ROLE`；项目角色会被加入 `OIDC_DEFAULT_PROJECT_SLUG` 指向的默认项目。配置语义见 `docs/tech-ref/18-oidc-sso.md`。
+如果允许首登自动创建用户，必须同时设置 `OIDC_AUTO_PROVISION=true`，并将
+`OIDC_DEFAULT_ORG_ID` 设置为已存在的活动组织 ID。不要复制带尖括号的占位符到
+shell 或 `.env`。角色可由 `OIDC_ROLE_CLAIM` 映射，缺失时使用
+`OIDC_DEFAULT_ROLE`；项目角色会被加入 `OIDC_DEFAULT_PROJECT_SLUG` 指向的默认
+项目。配置语义见 `docs/tech-ref/18-oidc-sso.md`。
 
 非生产环境可用 Batch 24 mock-provider smoke 验证 OIDC 协议、用户映射和登录页入口：
 
@@ -160,7 +197,7 @@ scripts/prd2-batch24-oidc-smoke.sh
 3. 之后如需轮换管理员 JWT，只轮换 `JWT_SECRET`，保持 `API_KEY_HASH_SECRET` 不变。
 4. 只有在接受“所有 API Key 需要重新生成”的前提下，才轮换 `API_KEY_HASH_SECRET`。
 
-生产 `.env` 必须视为状态文件，不属于代码发布目录的可删除内容。建议在部署机保留只读备份：
+共享或长期测试环境的 `.env` 必须视为状态文件，不属于代码发布目录的可删除内容。建议在部署机保留只读备份：
 
 ```bash
 cp .env .env.production
@@ -223,43 +260,80 @@ docker compose logs -f backend
 ### 2.4 初始化管理员
 
 ```bash
-# 首次部署会随迁移创建 admin 用户，但公开默认密码不可用于生产。
-# 部署后必须立即轮换密码，否则 PRD1 不能关闭。
+# 首次部署会随迁移创建 admin 用户，但公开默认密码不可用于任何非本地流量。
+# 交互终端中会无回显输入并确认两次。
 docker compose exec backend ./uniroute admin set-password \
     --username admin \
-    --password <strong-password> \
     --org-id 1
 
-# 如需额外管理员，可显式创建，禁止使用 admin123456。
+# 如需额外管理员，可显式创建；同样使用无回显的交互输入，禁止使用 admin123456。
+: "${UNIROUTER_NEW_ADMIN_USERNAME:?Set the new administrator username}"
 docker compose exec backend ./uniroute admin create \
-    --username <new-admin> \
-    --password <strong-password> \
+    --username "$UNIROUTER_NEW_ADMIN_USERNAME" \
     --role admin \
     --org-id 1
 ```
 
-### 2.5 发布同步安全规则
-
-生产发布时禁止让代码同步删除运行态密钥文件。PR #44 部署时曾因 `rsync --delete` 删除服务器 `.env`，导致只能重新生成 `JWT_SECRET`；由于历史 API Key 的 `key_hash` 使用旧 JWT secret 计算，31 个 API Key 全部失效。`ENCRYPTION_KEY` 从历史记录恢复后，上游渠道密钥未受影响。
-
-如必须使用 `rsync --delete`，至少排除生产密钥和运行态数据：
+非交互自动化必须从受控、只读的 secret 文件向容器标准输入传递恰好一行密码，
+并使用 `-T` 禁止 Docker 分配 TTY。文件内容允许一个末尾 LF 或 CRLF，不允许第二行
+或任何额外字节；不要改用环境变量密码或命令参数：
 
 ```bash
-rsync -az --delete \
+: "${UNIROUTER_ADMIN_PASSWORD_FILE:?Set the approved administrator password file}"
+test -r "$UNIROUTER_ADMIN_PASSWORD_FILE"
+docker compose exec -T backend ./uniroute admin set-password \
+    --username admin \
+    --org-id 1 \
+    --password-stdin < "$UNIROUTER_ADMIN_PASSWORD_FILE"
+
+: "${UNIROUTER_NEW_ADMIN_USERNAME:?Set the new administrator username}"
+: "${UNIROUTER_NEW_ADMIN_PASSWORD_FILE:?Set the approved new-administrator password file}"
+test -r "$UNIROUTER_NEW_ADMIN_PASSWORD_FILE"
+docker compose exec -T backend ./uniroute admin create \
+    --username "$UNIROUTER_NEW_ADMIN_USERNAME" \
+    --role admin \
+    --org-id 1 \
+    --password-stdin < "$UNIROUTER_NEW_ADMIN_PASSWORD_FILE"
+```
+
+当前二进制会在数据库访问前拒绝旧的 value-bearing `--password`，也会拒绝位置参数
+形式的密码。没有 `--password-stdin` 时，非 TTY 标准输入会明确失败，不会从环境变量
+回退读取秘密。
+
+### 2.5 发布同步安全规则
+
+历史 source-based 内部目标同步时，禁止让代码同步删除运行态密钥文件。
+客户正式交付不使用本节 `rsync` 路径。PR #44 部署时曾因
+`rsync --delete` 删除服务器 `.env`，导致只能重新生成 `JWT_SECRET`；
+由于历史 API Key 的 `key_hash` 使用旧 JWT secret 计算，31 个
+API Key 全部失效。`ENCRYPTION_KEY` 从历史记录恢复后，上游渠道密钥未受影响。
+
+内部测试目标也不得使用 `rsync --delete` 或其他批量删除参数。先设置明确的目标
+主机，再只同步新增/变更文件；如需清理旧文件，逐个确认明确路径后单独处理：
+
+```bash
+: "${DEPLOY_USER:?Set the approved deployment user}"
+: "${DEPLOY_HOST:?Set the approved deployment host}"
+
+rsync -az \
   --exclude='.env' \
   --exclude='.env.production' \
   --exclude='backups/' \
   --exclude='data/' \
-  ./ <deploy-user>@<host>:/opt/uniroute/
+  ./ "$DEPLOY_USER@$DEPLOY_HOST:/opt/uniroute/"
 ```
 
-同步后必须检查：
+同步后必须在目标主机检查，且不得把密钥值打印到终端或 CI 日志：
 
 ```bash
-test -s .env
-test -s .env.production
-grep -E '^(JWT_SECRET|API_KEY_HASH_SECRET|ENCRYPTION_KEY|LICENSE_PUBLIC_KEY)=' .env
-docker compose config >/tmp/uniroute-compose-check.yml
+ssh "$DEPLOY_USER@$DEPLOY_HOST" 'cd /opt/uniroute &&
+  test -s .env &&
+  test -s .env.production &&
+  grep -Eq "^JWT_SECRET=.+" .env &&
+  grep -Eq "^API_KEY_HASH_SECRET=.+" .env &&
+  grep -Eq "^ENCRYPTION_KEY=.+" .env &&
+  grep -Eq "^UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET=.+" .env &&
+  docker compose config >/dev/null'
 ```
 
 若 `.env` 丢失：
@@ -298,14 +372,16 @@ docker compose exec backend ./uniroute migrate up
 
 当前二进制不提供自动 down 回滚命令。回滚必须由运维人员按具体 migration `.down.sql` 和备份恢复方案执行。
 
-迁移文件各自包含 `BEGIN` / `COMMIT`，不要把多个 `.up.sql` 再包在一个外层
-transaction 中当作“dry-run”。PostgreSQL 的内层 `COMMIT` 会结束外层 transaction，
-最后的 `ROLLBACK` 不能撤销已经提交的迁移。需要预演时，必须恢复备份到一个明确的
-隔离数据库，在隔离库运行当前发布二进制的 `migrate up` 并完成 schema/ledger
-读回；不要把生产或共享目标数据库当作 dry-run 目标。如果手工执行 SQL 后发现
-schema 对象已存在但 `schema_migrations` 尚未登记，立即停止自动迁移，逐个核对
-迁移文件、对象和约束，再通过受审计的修复步骤登记准确版本；不得直接重跑或假定
-外层回滚已经生效。
+迁移 SQL 仍保留首个独立 `BEGIN;` 和末尾独立 `COMMIT;`，以兼容人工直接执行；由
+当前二进制的 `migrate.Run` 执行时，只移除这两个最外层语句，并为每个 migration
+自行开启一个事务。该事务同时提交 SQL 正文和对应 `schema_migrations` 行，因此不会
+再出现“schema 已提交但 ledger 未登记”的正常失败窗口。一个 session advisory lock
+覆盖完整迁移列表和各 migration 之间的间隙，多个副本不能并发发现并重复应用同一
+版本。人工直接执行单个 SQL 文件时仍由该文件自己的事务负责，且不会替你写入
+`schema_migrations`；不得把人工 SQL 和二进制迁移混用为自动流程。需要预演时，必须
+把备份恢复到明确的隔离数据库，使用待发布二进制运行 `migrate up` 并读回 schema 与
+ledger。若发现两者不一致，立即停止启动/自动迁移，逐个核对对象、约束与版本，再通过
+受审计的修复步骤恢复准确 ledger；不得猜测成功或直接重跑。
 
 ### 3.4 PRD6 `000020` Webhook 安全确认
 
@@ -428,6 +504,241 @@ outbox/runtime 证据或数据库 `micro_evidence_written` 标记都会拒绝。
 回旧单位。完整本地证据和 target checklist 见
 `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-LOCAL-20260714.md`。
 
+### 3.8 V1 `000037` → `000042` 统一非滚动升级窗口
+
+当前目标环境仍在 `000037` 时，`uniroute migrate up` 不会让运维在
+`000038`、`000039`、`000040`、`000041` 或 `000042` 之间暂停选择，而会按
+`schema_migrations` ledger 顺序尝试全部 pending migration。以下各节分别解释每个
+migration 的领域约束，但不是五次可独立启动业务的部署窗口。
+
+从 `000037` 升级到本版本必须采用一个统一停机窗口：
+
+1. 固定已经通过 required CI 的 release commit 和本次实际运行的全部镜像 digest。
+   客户正式包必须固定六个 digest 镜像；已批准的 development 目标也至少记录
+   stable/canary/frontend 及未变基础服务的实际 digest。确认待发布 backend 只会运行
+   `000038` 到 `000042` 这一条连续 migration 链，并先在与目标数据量接近的副本上评估
+   锁等待和迁移耗时；
+2. 在任何写入停止前完成下述各节要求的全部只读预检，包括 Guardrail 四类 quota、
+   active stream lease、delivery-attempt/quarantine 影响范围以及本地登录 ID 的 blank、
+   untrimmed 和 collision 计数。任一拒绝条件非零都先停止发布并由有权人员处置，不让
+   migration 猜测删除、改名或补绑定；
+3. 阻断新的管理登录、控制面和 gateway 流量，drain 并停止全部旧 stable/canary
+   backend，以及 admin、gateway、stream/terminal/settlement recovery、outbox、Agent
+   capability、workload admission 和所有其他数据库/Redis writer；随后备份 PostgreSQL，
+   记录 preflight 计数和镜像 digest；
+4. 只用待发布二进制执行一次受支持的 `migrate up`。不得在版本间手工执行 SQL、补写
+   ledger，或启动任何业务副本；
+5. 每个 migration 与自己的 ledger 行在独立事务中提交。如果后续 migration 拒绝，
+   已成功的较早版本不会自动回滚。此时继续保持全部流量和 writer 停止，保留 ledger
+   与证据，修正准确拒绝条件后重跑同一个 `migrate up`；它会跳过已登记版本并继续
+   roll-forward。不得为了回到“整齐版本”而删除 ledger、quarantine、lease、会话或
+   账户；
+6. 只有 `schema_migrations` 连续读回 `000038` 至 `000042`，且各节列出的 function、
+   index、constraint、quarantine、fence、会话与配置指纹验证全部通过后，才能启动同一
+   release commit 的新副本；先完成无流量 smoke，再逐步恢复入口。
+
+若目标已经包含其中部分 migration，也使用同一原则：把实际 ledger 与待发布 manifest
+的差集作为一个不可拆分的非滚动窗口，不在 pending 版本之间启动。以下分节中的
+“应用 migration”均受本统一流程约束。
+
+### 3.9 V1 `000038` 管理会话撤销非滚动启用
+
+`000038_v1_admin_session_revocation` 把管理员 JWT 从纯客户端持有的无状态令牌改为
+服务端可撤销会话，并用用户级 `auth_epoch` 让改密和受控密码重置立即失效全部旧
+会话。新令牌带随机 `sid`；数据库只保存其 SHA-256，不保存可直接使用的 bearer 值。
+旧二进制既不检查会话行，也不检查 `auth_epoch`，因此旧、新 backend 不能混跑：
+否则已经注销或改密失效的令牌仍可能被旧副本接受。
+
+安全切换顺序是：
+
+1. 固定待发布 image/commit，确认所有 stable、canary 和管理 API 副本使用同一
+   `JWT_SECRET`，并备份 PostgreSQL；
+2. 阻断新的管理端登录和写请求，drain 后停止全部旧 backend；不能保留旧 canary
+   承接少量流量；
+3. 应用 `000038`，只启动认识 `sid`/`auth_epoch` 的新版本。迁移前签发的无状态 JWT
+   会 fail closed，管理员需要重新登录；
+4. 在恢复管理流量前验证本地和 OIDC 登录均创建 32-byte `sid_hash`，JWT 原文和
+   `sid` 未进入数据库/日志；验证同一令牌 logout 重试两次均返回成功、注销后的受保护
+   API 返回 `401`，以及改密后该用户所有旧会话均返回 `401`、重新登录可用；
+5. 再恢复管理流量并观察登录失败、会话落库失败、`401` 和审计写入。业务 API Key
+   鉴权不使用此管理员会话表，不应被混为一类。
+
+down 只允许在严格逆序、且新版本从未签发会话或产生密码撤销纪元的预激活窗口执行。
+存在任何后续 migration、任意 `admin_sessions` 行或任意非零 `auth_epoch` 时，down 会
+明确拒绝并保留证据。更严格的运维边界是：一旦新 backend 已经承接管理流量，即使
+数据库 guard 尚未观察到会话写入，也把恢复视为 roll-forward；不得删除会话、清零
+`auth_epoch` 或恢复旧 JWT 接受逻辑来迁就旧镜像。仓库测试只证明代码、迁移 guard
+和本地数据库行为，不代表任何目标环境已经执行该切换。
+
+### 3.10 V1 `000039` Guardrail 租户隔离与公平调度非滚动启用
+
+`000039_v1_guardrail_tenant_isolation` 为平台策略和每个租户策略建立独立运行时
+快照边界，并在数据库中原子限制活跃平台策略、每组织活跃策略、总缓存策略和活跃租户
+scope。它还持久化只含组织、请求、策略、原因、时间窗和丢弃计数的 advisory gap
+聚合证据。旧版本的全局快照或无租户公平性的 scheduler 不能与新版本混跑，否则一个
+异常租户仍可影响其他租户，且 gap 证据语义不一致。
+
+当前 scheduler 固定上限为全局并发 `64`、每组织并发 `4`、全局队列 `4096`、
+每组织队列 `64`、单任务 `256 KiB`、全局排队正文 `32 MiB`、每组织排队正文
+`1 MiB`；这些是当前二进制合同，不是本节建议运维人员临时调大的容量旋钮。
+
+安全切换顺序是：
+
+1. 固定待发布 image/commit，确认所有副本使用完全相同的四项 quota；默认分别为每组织
+   活跃策略 `256`、平台活跃策略 `256`、总缓存策略 `4096`、活跃租户 scope `4096`；
+2. 备份 PostgreSQL，停止入口流量并 drain/停止所有旧 gateway/control-plane；保留
+   disabled 历史，不通过删除策略来满足配额；
+3. 按平台、组织、总缓存和活跃租户 scope 读回当前计数。任何已超目标配额的 scope
+   必须先由产品/运维明确处置，不能靠迁移猜测删除；
+4. 应用 `000039`，只启动具备 scoped snapshot、租户公平队列和 gap writer 的新版本；
+5. 验证一个无效/超限租户只对自身 fail closed，平台 scope 无效仍全局 fail closed；
+   验证跨租户轮转、全局/组织并发与队列上限，以及 gap 聚合幂等读回；
+6. 恢复流量后监控 quota 拒绝、advisory overload/timeout/shutdown 和未持久化 shutdown
+   计数。gap receipt/batch 不保存模型正文，但 V1 不自动清理，保留周期由部署方制定。
+
+存在 gap receipt/batch 历史时 down 会拒绝。不得删除策略历史或 gap 证据来迁就旧版本；
+激活后按 roll-forward 处理。仓库测试不代表目标环境已经执行该切换。
+
+### 3.11 V1 `000040` / `000041` 投递尝试绑定与流式 generation fencing
+
+`000040_v1_delivery_attempt_binding` 把 reservation、投递回执、结算和恢复绑定到一个
+不可变 provider attempt。历史数据只有在数据库证据能唯一确定 attempt 时才回填；
+歧义 reservation/receipt 被完整保留到 `delivery_attempt_quarantine` 和
+`request_delivery_receipt_quarantine`，相关 pending 原因改为 `ambiguous_attempt`，不会
+被自动恢复或猜测收费。`000041_v1_stream_lease_fencing` 再以
+`{org, request, attempt, owner, generation}` 隔离旧 stream worker，并要求 checkpoint、
+terminal receipt 与 settlement recovery 在副作用提交前证明当前 authority。
+
+安全切换顺序是：
+
+1. 固定待发布 image/commit并备份 PostgreSQL；停止新入口，drain/停止所有旧 gateway、
+   stream recovery、terminal recovery、settlement/outbox 和其他相关写入者；
+2. 确认不存在仍为 `active` 的 `stream_delivery_leases`。`000041` 即使租约时间已过也会
+   拒绝 active 行；应先用受支持的恢复/终态流程排空，禁止手工改状态或删除 lease；
+3. 使用待发布二进制执行一次受支持的 `migrate up`，让所有 pending migration 按
+   ledger 顺序执行。不要暂停在 `000040` 后改用人工 SQL 或手工补 ledger；
+4. 全部 pending migration 完成后、启动流量前，读回两个 quarantine 表的行数、
+   request/attempt 候选与 `settlement_pending_reason='ambiguous_attempt'` 数量；把它们
+   进入人工账务复核，不得为了启动而删除或补猜 attempt。此时只启动认识 attempt
+   binding、owner/generation、wall-clock expiry 和 durable settlement claim 的新版本；
+5. 恢复流量前验证合法 non-stream/stream 各一次，确认 attempt 一致；制造旧 owner 或
+   旧 generation 冲突，必须在 checkpoint、receipt 和 settlement 前失败；再验证当前
+   recovery owner 只形成一次终态与一次准确结算；
+6. 持续监控 quarantine、`ambiguous_attempt`、lease conflict、checkpoint conflict 和
+   settlement recovery。000040/000041 激活后的金融/投递证据不得为 down 而删除；
+   恢复策略是修复后 roll-forward。
+
+每个 migration 与自己的 ledger 行各自在一个独立事务中提交。如果 `000040` 已成功、
+而 `000041` 因 active lease 拒绝，`000040` 会保持已提交；此时继续停流量，按受支持
+流程排空 lease 后重跑 `migrate up`，让它跳过已登记的 `000040` 并 roll-forward
+`000041`。不得手工删除 ledger/quarantine，也不得先 down `000040`。任何人工 down
+都必须严格按版本逆序且满足各 down guard；产生新金融/投递证据后默认只允许
+roll-forward。这两个 migration 会持有较强表锁，执行窗口必须按目标数据量评估；
+本地真实 PostgreSQL 验证不能替代目标规模的锁等待和迁移耗时预演。
+
+注意 `000041.up` 只要求切换时不存在 `active` lease，但 `000041.down` 会在存在任意
+`stream_delivery_leases` 行（包括 inactive 历史）或任何 fenced 副作用证据时拒绝。
+因此一旦新版本产生租约历史，实际恢复路径就是保留证据并 roll-forward。
+
+### 3.12 V1 Agent capability 与 workload admission 非滚动切换
+
+C1.1 把 Agent refresh grant 和 superseded marker 移到 workflow Redis hash slot，
+并在写入 child/topology 的同一 Lua transition 内检查父 token；新版本只读兼容旧 key，
+不会继续写旧 layout。D1 则把新 workload admission 改为 Redis 不确定时 fail closed，
+并把共享配置指纹升级为 `admission-v2|redis=fail-closed`。旧写入者无法参与这两个新
+原子合同，因此不能依赖混合版本长期兼容。
+
+切换时先停止新 Agent/workload 入口，drain 并停止全部旧 gateway/capability issuer，
+再只启动新版本。不要批量删除 Redis key：既有 Agent legacy grant/marker 由 token TTL
+自然过期，新 reader 在有界窗口只读兼容；既有 workload Redis reservation 仍可由原
+请求释放，新版本不会再创建本地 fallback。恢复流量前验证：父 token refresh 与 child
+注册竞态必须拒绝 child 且不增加拓扑计数；健康 Redis 下多副本容量仍一致；Redis
+不可用时新请求返回 `state_unavailable`/重试语义且没有 provider dispatch；所有副本
+报告同一 admission v2 配置，否则配置冲突应 fail closed。仓库证据不代表目标环境已
+完成该 drain/readback。
+
+### 3.13 V1 `000042` 全局本地登录 ID 非滚动切换
+
+本地密码登录页只有“用户名 + 密码”，没有组织选择器。因此 `000042` 把本地账户
+登录 ID 固定为跨组织全局唯一、忽略外层空白且大小写不敏感；OIDC 身份继续由
+issuer/subject 识别，不进入这个本地 namespace。同组织 OIDC 与 local 允许使用相同
+显示名；外部身份自身仍通过 provider-scoped partial index 保持同组织显示名唯一，
+但显示名不是 OIDC 的认证键。CLI 保存时只去除 username 外层空白并保留显示大小写，
+数据库函数 `public.normalize_local_login_id(text)` 是本地登录比较和唯一性的最终权威。
+
+这是非滚动切换。迁移前停止新的登录/用户管理写请求，drain 并停止所有旧 admin API、
+本地登录和管理 CLI writer，再备份 PostgreSQL。只读预检仅输出计数，不列出 username、
+组织或密码：
+
+```sql
+WITH local_identities AS (
+    SELECT username,
+           lower(btrim(
+               username,
+               U&'\0009\000A\000B\000C\000D\0020\0085\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000'
+           )) AS login_id
+      FROM users
+     WHERE COALESCE(NULLIF(auth_provider, ''), 'local') = 'local'
+)
+SELECT COUNT(*) FILTER (WHERE login_id = '') AS blank_count,
+       COUNT(*) FILTER (WHERE lower(username) IS DISTINCT FROM login_id) AS untrimmed_count
+  FROM local_identities;
+
+WITH local_identities AS (
+    SELECT lower(btrim(
+               username,
+               U&'\0009\000A\000B\000C\000D\0020\0085\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000'
+           )) AS login_id
+      FROM users
+     WHERE COALESCE(NULLIF(auth_provider, ''), 'local') = 'local'
+)
+SELECT COUNT(*) AS collision_groups
+  FROM (
+        SELECT login_id
+          FROM local_identities
+         GROUP BY login_id
+        HAVING COUNT(*) > 1
+       ) AS conflicts;
+```
+
+任一计数非零都必须停止并由有权人员逐个解决；不得自动改名、选择“赢家”或删除账户。
+`000042` 会取得 `users` 的 `ACCESS EXCLUSIVE` 锁并再次执行同样的 preflight，任一
+`blank_count`、`untrimmed_count` 或 `collision_groups` 非零都会让 migration 与 ledger
+整事务回滚。清理完成后重跑 `migrate up`，只启动新版本。
+
+恢复管理流量前验证：
+
+```sql
+SELECT to_regprocedure('public.normalize_local_login_id(text)');
+SELECT indexname, indexdef
+  FROM pg_indexes
+ WHERE indexname IN ('users_local_login_id_unique', 'users_external_org_username_unique')
+ ORDER BY indexname;
+SELECT conname, convalidated
+  FROM pg_constraint
+ WHERE conname IN ('users_local_login_id_nonblank', 'users_local_login_username_canonical');
+SELECT version FROM schema_migrations WHERE version = '000042_v1_local_login_identity';
+```
+
+确认 function、两个 validated CHECK、local/external 两个 partial unique index、旧
+`users_org_username_unique` constraint 已移除且 ledger 存在后，再验证同一 local ID
+的大小写/外层空白登录、跨组织重复 local 创建的通用冲突响应、同组织同显示名的
+local 与 OIDC 身份可并存且密码登录只选择 local、并发首次 OIDC 登录收敛到同一身份，
+以及 OIDC 不受本地密码重置影响。管理 CLI 的以下两个秘密输入面是唯一受支持方式：
+交互 TTY 双次无回显确认，或 `docker compose exec -T ... --password-stdin` 从受控单行
+文件读取。旧
+value-bearing `--password`、位置参数密码、非 TTY 无 flag、TTY 强制 stdin flag 和
+多行/超长输入都必须在数据库访问前失败；不存在密码环境变量回退。
+
+down 只允许在未对外激活且严格逆序的明确回退窗口执行；存在任何 version 大于
+`000042_v1_local_login_identity` 的 migration ledger 时会拒绝。因为旧 constraint
+无法表达 provider scope，down 还会先统计 `(org_id, username)` 重叠；只要新合同下
+已经存在同组织 cross-provider 同显示名，整个 down 会原子拒绝，不改任何 index、
+constraint、function 或 ledger。只有不存在这类重叠时，成功 down 才恢复旧
+`users_org_username_unique`，删除两个 partial unique index、两个 CHECK、规范化函数和
+本 migration ledger，从而重新引入本地身份歧义风险。一旦新版本承接登录或用户管理
+流量，优先保留身份合同并 roll-forward，不为迁就旧二进制删除账户或约束。
+
 ---
 
 ## 四、备份与恢复
@@ -435,11 +746,29 @@ outbox/runtime 证据或数据库 `micro_evidence_written` 标记都会拒绝。
 ### 4.1 手动备份
 
 ```bash
-# 备份 PostgreSQL
-docker compose exec postgres pg_dump -U uniroute uniroute > backup_$(date +%Y%m%d_%H%M%S).sql
+umask 077
+install -d -m 700 backups
+chmod 700 backups
 
-# 备份 Redis（AOF 文件）
+# 备份 PostgreSQL
+postgres_backup_file="$(mktemp "$PWD/backups/postgres.XXXXXX")"
+chmod 600 "$postgres_backup_file"
+docker compose exec -T postgres pg_dump -U uniroute uniroute > "$postgres_backup_file"
+test -s "$postgres_backup_file"
+printf 'PostgreSQL backup retained at %s\n' "$postgres_backup_file"
+
+# 备份 Redis RDB；等待后台快照完成后再复制
 docker compose exec redis redis-cli BGSAVE
+redis_bgsave_state=1
+for _ in $(seq 1 60); do
+  redis_bgsave_state="$(docker compose exec -T redis redis-cli --raw INFO persistence \
+    | tr -d '\r' | awk -F: '/^rdb_bgsave_in_progress:/ {print $2}')"
+  [ "$redis_bgsave_state" = 0 ] && break
+  sleep 1
+done
+test "$redis_bgsave_state" = 0
+docker compose exec -T redis redis-cli --raw INFO persistence \
+  | tr -d '\r' | grep -q '^rdb_last_bgsave_status:ok$'
 docker compose cp redis:/data/dump.rdb ./backups/redis_$(date +%Y%m%d_%H%M%S).rdb
 ```
 
@@ -449,18 +778,36 @@ docker compose cp redis:/data/dump.rdb ./backups/redis_$(date +%Y%m%d_%H%M%S).rd
 # 恢复 PostgreSQL
 cat backup.sql | docker compose exec -T postgres psql -U uniroute uniroute
 
-# 恢复 Redis
+# 恢复 Redis；必须先停止实例，避免关停保存覆盖待恢复的 RDB
+docker compose stop redis
 docker compose cp ./backups/dump.rdb redis:/data/dump.rdb
-docker compose restart redis
+docker compose start redis
+redis_ready=0
+for _ in $(seq 1 30); do
+  if docker compose exec -T redis redis-cli PING | grep -q PONG; then
+    redis_ready=1
+    break
+  fi
+  sleep 1
+done
+test "$redis_ready" = 1
 ```
 
 ### 4.3 PRD2 备份/恢复演练
 
-PRD2 的恢复演练必须在空的非生产数据库执行。脚本不会清空目标库；如果目标库已有对象，恢复会失败，由运维人员重新准备安全目标库后再跑。
+PRD2 的恢复演练必须在空的非生产数据库执行。脚本不会清空目标库；如果目标库
+已有对象，恢复会失败，由运维人员重新准备安全目标库后再跑。两个 DSN 都不得
+内嵌密码；需要密码认证时，必须由批准的秘密注入机制分别设置
+`UNIROUTE_BACKUP_SOURCE_PASSWORD` 和
+`UNIROUTE_RESTORE_REHEARSAL_PASSWORD`，不要把密码写入命令、DSN、文档或
+evidence。脚本也会拒绝在 shell xtrace 开启时运行。
 
 ```bash
-UNIROUTE_BACKUP_SOURCE_DSN='postgres://uniroute:...@postgres:5432/uniroute?sslmode=disable' \
-UNIROUTE_RESTORE_REHEARSAL_DSN='postgres://uniroute:...@localhost:5432/uniroute_restore_rehearsal?sslmode=disable' \
+: "${UNIROUTE_BACKUP_SOURCE_DSN:?Set the approved source DSN}"
+: "${UNIROUTE_RESTORE_REHEARSAL_DSN:?Set the empty non-production restore DSN}"
+
+UNIROUTE_BACKUP_SOURCE_DSN="$UNIROUTE_BACKUP_SOURCE_DSN" \
+UNIROUTE_RESTORE_REHEARSAL_DSN="$UNIROUTE_RESTORE_REHEARSAL_DSN" \
 UNIROUTE_BACKUP_RESTORE_CONFIRM=non-production-restore-target \
 scripts/prd2-backup-restore-rehearsal.sh
 ```
@@ -468,10 +815,14 @@ scripts/prd2-backup-restore-rehearsal.sh
 期望输出：
 
 ```text
-PASS backup/restore rehearsal schema_versions=<n> core_tables=6 dump_file=/tmp/...
+PASS backup/restore rehearsal schema_versions=N core_tables=6 dump_file=/tmp/uniroute-prd2-backup-rehearsal.XXXXXX/database.XXXXXX
 ```
 
-备份文件默认保留在 `/tmp`，便于事后校验和归档。不要把该脚本指向生产恢复目标。
+脚本拒绝 `UNIROUTE_BACKUP_DUMP_FILE` 任意路径覆盖，并在
+`${TMPDIR:-/tmp}` 下建立随机的 `0700` 私有工作目录和 `0600` dump 文件。
+成功后的 dump 不会自动删除，便于按既定保留策略校验和加密归档；失败后的私有
+工作区也会保留供故障调查。运维人员必须把输出路径作为敏感信息处理，并按批准的
+保留周期处置。不要把该脚本指向生产恢复目标。
 
 2026-07-03 Atlas 在 Alibaba Cloud ECS dev/test 环境完成了一次 Docker PostgreSQL 备份恢复演练，证据见 `docs/ops/evidence/PRD2-B21-backup-recovery-drill-20260703.md`。该演练验证了 custom-format dump、`pg_restore -l`、隔离 drill DB 恢复、迁移/表/核心行数/FK/索引/查询校验、drill DB 清理和 WAL 归档。
 
@@ -522,8 +873,9 @@ curl http://localhost:8080/health/ready
 # 期望：{"status":"ok","db":"ok","redis":"ok"}
 
 # 通过管理 API 查看系统状态
+: "${UNIROUTER_ADMIN_JWT:?Set an active administrator JWT}"
 curl http://localhost:8080/api/v1/dashboard/stats \
-    -H "Authorization: Bearer <JWT>"
+    -H "Authorization: Bearer $UNIROUTER_ADMIN_JWT"
 ```
 
 ### 6.2 Prometheus 指标
@@ -603,11 +955,16 @@ brew install k6
 # 运行压测
 k6 run infra/loadtest/k6-chat-completions.js
 
-# 自定义目标地址和 API Key
-BASE_URL=http://your-server:8080 API_KEY=your-key k6 run infra/loadtest/k6-chat-completions.js
+# 指定已批准的测试地址和专用 API Key
+: "${UNIROUTE_LOADTEST_BASE_URL:?Set the approved load-test base URL}"
+: "${UNIROUTE_LOADTEST_API_KEY:?Set a dedicated load-test API key}"
+BASE_URL="$UNIROUTE_LOADTEST_BASE_URL" API_KEY="$UNIROUTE_LOADTEST_API_KEY" \
+  k6 run infra/loadtest/k6-chat-completions.js
 ```
 
-脚本路径：`infra/loadtest/k6-chat-completions.js`
+脚本路径：`infra/loadtest/k6-chat-completions.js`。当前脚本固定请求
+`gpt-3.5-turbo`；仅当该模型已在测试项目中批准并绑定时运行，不能把默认占位
+模型的失败计入平台容量结论。
 
 ### 6.5 告警建议
 
@@ -634,15 +991,16 @@ docker compose logs backend
 # - DB_DSN 连接失败 → 检查 PostgreSQL 容器状态
 # - REDIS_ADDR 连接失败 → 检查 Redis 容器状态
 # - JWT_SECRET/API_KEY_HASH_SECRET/ENCRYPTION_KEY 未设置 → 检查 .env 文件
-# - License 导入失败且提示 public key → 检查 LICENSE_PUBLIC_KEY
+# - 正式镜像的 release trust 异常 → 检查启动日志和内嵌公钥环；不得添加运行时 LICENSE_PUBLIC_KEY 覆盖
 ```
 
 ### 7.2 请求返回 502
 
 ```bash
 # 检查上游渠道状态
+: "${UNIROUTER_ADMIN_JWT:?Set an active administrator JWT}"
 curl http://localhost:8080/api/v1/channels \
-    -H "Authorization: Bearer <JWT>"
+    -H "Authorization: Bearer $UNIROUTER_ADMIN_JWT"
 
 # 检查熔断器状态
 docker compose logs backend | grep "circuit"
@@ -651,17 +1009,21 @@ docker compose logs backend | grep "circuit"
 ### 7.3 余额异常
 
 ```bash
-# 检查钱包状态
-docker compose exec postgres psql -U uniroute -c \
-    "SELECT * FROM wallets WHERE org_id = <org_id>;"
+: "${UNIROUTER_ORG_ID:?Set the organization ID to inspect}"
 
-# 检查冻结记录
+# 检查钱包状态
+docker compose exec postgres psql -U uniroute \
+    -v org_id="$UNIROUTER_ORG_ID" -c \
+    "SELECT * FROM wallets WHERE org_id = :'org_id'::bigint;"
+
+# 检查未进入已结算/已取消终态的冻结记录
 docker compose exec postgres psql -U uniroute -c \
-    "SELECT * FROM freeze_idempotency WHERE status = 'Processing';"
+    "SELECT * FROM freeze_idempotency WHERE status NOT IN ('settled', 'cancelled') ORDER BY created_at DESC LIMIT 20;"
 
 # 检查交易记录
-docker compose exec postgres psql -U uniroute -c \
-    "SELECT * FROM transactions WHERE org_id = <org_id> ORDER BY created_at DESC LIMIT 20;"
+docker compose exec postgres psql -U uniroute \
+    -v org_id="$UNIROUTER_ORG_ID" -c \
+    "SELECT * FROM transactions WHERE org_id = :'org_id'::bigint ORDER BY created_at DESC LIMIT 20;"
 ```
 
 ### 7.4 前端无法访问
@@ -686,6 +1048,8 @@ V1 客户升级必须使用签名离线包。第一次安装需要通过受认�
 验证器来验证它自己。
 
 ```bash
+: "${UNIROUTER_RELEASE_OPERATOR:?Set the approved operator or deployment identity}"
+
 # 1. 读取真实安装状态，不改状态
 docker compose -f deploy/customer/docker-compose.yml --env-file deploy/customer/.env \
   exec backend ./uniroute upgrade status
@@ -721,7 +1085,7 @@ docker compose -f deploy/customer/docker-compose.yml --env-file deploy/customer/
 docker compose -f deploy/customer/docker-compose.yml --env-file deploy/customer/.env \
   exec backend ./uniroute upgrade record-applied \
   --package /tmp/unirouter-release.tar.gz \
-  --recorded-by <operator-or-deployment-identity>
+  --recorded-by "$UNIROUTER_RELEASE_OPERATOR"
 
 # 7. 登记成功后只删除这个明确的容器内临时包；保留受控原件和证据摘要
 docker compose -f deploy/customer/docker-compose.yml --env-file deploy/customer/.env \
@@ -739,7 +1103,9 @@ writer。
 Center，必须先补 maintenance window、多节点编排、受控 staging、N-1 夹具、
 失败暂停和审计责任边界；不能复用 License 导入接口执行二进制。
 
-如果目标构建网络无法访问默认的 `proxy.golang.org`，可在构建时显式选择经审批且可达的 Go module proxy；默认值仍保持官方代理：
+以下命令只适用于源码开发/内部测试构建，不属于客户签名包升级流程。如果开发
+构建网络无法访问默认的 `proxy.golang.org`，可显式选择经审批且可达的 Go
+module proxy；默认值仍保持官方代理：
 
 ```bash
 GOPROXY=https://goproxy.cn,direct docker compose build backend
@@ -754,6 +1120,11 @@ GOPROXY=https://goproxy.cn,direct docker compose build backend
 
 ## 九、Canary 测试部署
 
+本章使用根目录源码 Compose，固定为 `development` trust mode，只适用于开发、
+staging 或已授权的非生产测试目标。不得把本章命令当作客户正式安装/升级路径。
+stable 与 canary 必须读取同一个
+`UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET`；Compose/CI 会检查两者配置一致。
+
 ### 9.1 前置条件：Nginx 配置
 
 默认 canary overlay 挂载 `nginx/nginx.http-canary.conf`，只监听 HTTP 80，适合本地和 staging smoke，不需要 TLS 证书。
@@ -762,10 +1133,10 @@ GOPROXY=https://goproxy.cn,direct docker compose build backend
 docker compose -f docker-compose.yml -f docker-compose.canary.yml config
 ```
 
-生产启用 TLS 时，把 `docker-compose.canary.yml` 的 Nginx mount 改为 `./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro`，并挂载证书：
+staging 启用 TLS 时，把 `docker-compose.canary.yml` 的 Nginx mount 改为 `./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro`，并挂载证书：
 
 ```bash
-# TLS 生产配置示例
+# TLS staging 配置示例
 # - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
 # - /etc/letsencrypt/live/your-domain/fullchain.pem:/etc/nginx/ssl/fullchain.pem:ro
 # - /etc/letsencrypt/live/your-domain/privkey.pem:/etc/nginx/ssl/privkey.pem:ro
@@ -812,15 +1183,31 @@ docker compose -f docker-compose.yml -f docker-compose.canary.yml ps
 ### 9.4 验证流量分发
 
 ```bash
-# 连续请求 20 次，观察响应差异
-for i in $(seq 1 20); do
-  curl -s http://localhost/v1/chat/completions     -H "Authorization: Bearer sk-test"     -H "Content-Type: application/json"     -d '{"model":"deepseek-chat","messages":[{"role":"user","content":"ping"}]}'     | jq -r '.model // "error"'
-done
+: "${UNIROUTER_ADMIN_JWT:?Set an active administrator JWT}"
+
+# 先证明两个直连实例各自报告正确角色，再对 Nginx 做无计费的只读采样。
+curl -fsS http://localhost:8080/api/v1/runtime/status \
+  -H "Authorization: Bearer $UNIROUTER_ADMIN_JWT" \
+  | jq -r '.runtime_environment.deployment_role'
+curl -fsS http://localhost:8081/api/v1/runtime/status \
+  -H "Authorization: Bearer $UNIROUTER_ADMIN_JWT" \
+  | jq -r '.runtime_environment.deployment_role'
+for _ in $(seq 1 50); do
+  curl -fsS http://localhost/api/v1/runtime/status \
+    -H "Authorization: Bearer $UNIROUTER_ADMIN_JWT" \
+    | jq -r '.runtime_environment.deployment_role'
+done | sort | uniq -c
 ```
+
+前两次应分别输出 `stable` 和 `canary`。代理采样应与当前权重大致一致，但有限
+样本不是精确比例证明；若没有观察到 canary，先检查实际挂载配置和 Nginx 日志，
+不要用付费模型调用反复试探。
 
 ### 9.5 调整 canary 权重
 
-编辑 `nginx/nginx.conf`，修改 `upstream backend_canary` 的 `weight` 值：
+编辑当前实际挂载的 Nginx 配置，修改 `upstream backend_canary` 的
+`weight` 值。默认 HTTP overlay 使用 `nginx/nginx.http-canary.conf`；
+只有按 9.1 切换 TLS mount 后才编辑 `nginx/nginx.conf`：
 
 ```nginx
 upstream backend_canary {
@@ -837,7 +1224,8 @@ upstream backend_canary {
 修改后重载 Nginx：
 
 ```bash
-docker compose exec nginx nginx -s reload
+docker compose -f docker-compose.yml -f docker-compose.canary.yml \
+  exec nginx nginx -s reload
 ```
 
 ### 9.6 监控 canary
@@ -851,16 +1239,21 @@ echo "=== Stable errors ==="
 docker compose logs backend --since 5m | grep -i "error\|panic\|fatal" | wc -l
 
 echo "=== Canary errors ==="
-docker compose logs backend-canary --since 5m | grep -i "error\|panic\|fatal" | wc -l
+docker compose -f docker-compose.yml -f docker-compose.canary.yml \
+  logs backend-canary --since 5m | grep -i "error\|panic\|fatal" | wc -l
 
-# 检查 canary 的计费准确性（对比 call_logs）
+# 检查共享流量的近期客户扣费摘要（micro-CNY）
 docker compose exec postgres psql -U uniroute -c \
-    "SELECT api_key_id, SUM(total_cost_cents) as total, COUNT(*) as requests \
+    "SELECT api_key_id, SUM(cost_micros) AS total_cost_micros, COUNT(*) AS requests \
      FROM call_logs WHERE created_at > NOW() - INTERVAL '1 hour' \
      GROUP BY api_key_id ORDER BY requests DESC LIMIT 10;"
 ```
 
-### 9.6 回滚 canary
+该聚合查询不能单独证明 canary 计费正确，因为 stable/canary 共享数据库。
+精确验收必须用已批准请求的 request ID 核对 route/attempt/call-log/钱包守恒；
+真实上游请求仍需独立授权。
+
+### 9.7 回滚 canary
 
 如果 canary 出现问题，立即停止 canary 容器：
 
@@ -870,10 +1263,15 @@ docker compose -f docker-compose.yml -f docker-compose.canary.yml stop backend-c
 docker compose -f docker-compose.yml -f docker-compose.canary.yml rm -f backend-canary
 
 # 验证流量全部回到 stable
-curl http://localhost/v1/models -H "Authorization: Bearer sk-test"
+: "${UNIROUTER_ADMIN_JWT:?Set an active administrator JWT}"
+for _ in $(seq 1 20); do
+  curl -fsS http://localhost/api/v1/runtime/status \
+    -H "Authorization: Bearer $UNIROUTER_ADMIN_JWT" \
+    | jq -r '.runtime_environment.deployment_role'
+done | sort | uniq -c
 ```
 
-### 9.7 升级 stable
+### 9.8 升级 stable
 
 canary 验证通过后，将 stable 升级到 canary 版本：
 
@@ -893,11 +1291,11 @@ docker compose up -d backend
 # 4. 验证
 curl http://localhost:8080/health/ready
 
-# 5. 移除外层 Nginx（可选，如果不需要持续 canary）
-docker compose -f docker-compose.yml -f docker-compose.canary.yml down nginx
+# 5. 停止外层 Nginx（可选，如果不需要持续 canary）
+docker compose -f docker-compose.yml -f docker-compose.canary.yml stop nginx
 ```
 
-### 9.8 PRD2 HA readiness smoke
+### 9.9 PRD2 HA readiness smoke
 
 PRD2 HA readiness 的最小验收目标是：两个 UniRouter 应用实例连接同一 PostgreSQL 和 Redis，且各自的 gateway/admin health check 均可服务。完整边界见 `docs/tech-ref/15-ha-readiness.md`。
 
@@ -928,23 +1326,32 @@ scripts/prd2-ha-smoke.sh
 可选真实 gateway smoke（会真实发起模型请求，必须显式开启）。如果提供 `UNIROUTE_HA_DB_DSN`，脚本会额外检查同一 `request_id` 没有产生重复 freeze idempotency/transaction 行：
 
 ```bash
+: "${UNIROUTE_API_KEY:?Set the approved bounded-smoke API key}"
+: "${UNIROUTE_MODEL:?Set the approved bounded-smoke model}"
+
 UNIROUTE_STABLE_URL=http://localhost:8080 \
 UNIROUTE_CANARY_URL=http://localhost:8081 \
 UNIROUTE_PROXY_URL=http://localhost \
 UNIROUTE_RUN_GATEWAY_SMOKE=1 \
-UNIROUTE_API_KEY=sk-... \
-UNIROUTE_MODEL=gpt-4o \
-UNIROUTE_HA_DB_DSN='postgres://uniroute:...@localhost:5432/uniroute?sslmode=disable' \
+UNIROUTE_API_KEY="$UNIROUTE_API_KEY" \
+UNIROUTE_MODEL="$UNIROUTE_MODEL" \
 scripts/prd2-ha-smoke.sh
 ```
+
+如需数据库证据，另行通过秘密注入设置 `UNIROUTE_HA_DB_DSN`；不要把 DSN 写进
+文档、命令历史或 evidence。
 
 可选共享 rate-limit smoke 需要一把低限额测试 API Key。该检查会交替打 stable/canary，直到观察到 HTTP 429：
 
 ```bash
+: "${UNIROUTE_LOW_LIMIT_API_KEY:?Set the dedicated low-limit API key}"
+: "${UNIROUTE_MODEL:?Set the approved bounded-smoke model}"
+
 UNIROUTE_RUN_GATEWAY_SMOKE=1 \
 UNIROUTE_RUN_RATE_LIMIT_SMOKE=1 \
 UNIROUTE_RATE_LIMIT_REQUESTS=4 \
-UNIROUTE_API_KEY=sk-low-limit \
+UNIROUTE_API_KEY="$UNIROUTE_LOW_LIMIT_API_KEY" \
+UNIROUTE_MODEL="$UNIROUTE_MODEL" \
 scripts/prd2-ha-smoke.sh
 ```
 
@@ -961,40 +1368,83 @@ curl -fsS http://localhost:8080/health/ready
 
 ---
 
-## 十、生产环境部署（HTTPS）
+## 十、客户正式安装与 HTTPS
 
-### 10.1 架构
+客户路径从已经通过独立信任渠道取得并验签的发布包开始，不从 Git checkout
+开始，也不运行根目录 source Compose 或 `scripts/fix-compose-for-deploy.py`。
+以下命令假定独立 `verify` 已 PASS，并已按该包的签名 release note 把经校验的
+`payload/` 解包到一个新的 `/opt/unirouter-release` staging 目录；原始 archive
+仍原样保存在 `UNIROUTER_SIGNED_PACKAGE` 指向的受控只读路径。未验签前不得解包。
 
-```
-客户端 → Nginx:443 (TLS) → backend:8080 + frontend:80
-```
-
-### 10.2 申请 SSL 证书
-
-```bash
-# 安装 certbot
-apt install certbot
-
-# 申请证书（需先停止 Nginx 或使用 DNS 验证）
-certbot certonly --standalone -d your-domain.com
-
-# 证书路径
-# /etc/letsencrypt/live/your-domain.com/fullchain.pem
-# /etc/letsencrypt/live/your-domain.com/privkey.pem
-```
-
-### 10.3 配置 Nginx
-
-编辑 `nginx/nginx.conf`：
-1. 将 `server_name _;` 改为你的域名
-2. 取消注释 TLS 证书路径
-3. 取消注释 HTTP→HTTPS 重定向
-
-### 10.4 启动
+### 10.1 配置与可执行 preflight
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.canary.yml up -d
+cd /opt/unirouter-release
+cp payload/deploy/.env.example payload/deploy/.env
+chmod 600 payload/deploy/.env
+
+# 按签名 manifest 填入六个完整 image@sha256:64位小写十六进制摘要，并替换所有 secret。
+# JWT_SECRET、API_KEY_HASH_SECRET 与通知 Webhook HMAC 必须分别至少 32 bytes。
+# 同时设置稳定的 LICENSE_DEPLOYMENT_ID。
+bash ./payload/deploy/preflight.sh payload/deploy/.env
 ```
+
+preflight 必须拒绝短密钥或示例占位符，找到恰好六个 digest 镜像且没有
+`build:`。它不会判断 digest 是否由 UniRouter 批准；该授权事实只来自已经验证的
+签名 manifest 和逐文件 hash/size。
+
+### 10.2 启动、首装登记与读回
+
+```bash
+: "${UNIROUTER_SIGNED_PACKAGE:?Set the absolute path to the exact verified release package}"
+: "${UNIROUTER_RELEASE_OPERATOR:?Set the approved operator or deployment identity}"
+test -r "${UNIROUTER_SIGNED_PACKAGE}"
+
+docker compose --env-file payload/deploy/.env \
+  -f payload/deploy/docker-compose.yml up -d
+docker compose --env-file payload/deploy/.env \
+  -f payload/deploy/docker-compose.yml ps
+docker compose --env-file payload/deploy/.env \
+  -f payload/deploy/docker-compose.yml exec backend \
+  wget -qO- http://localhost:8080/health/ready
+
+# 首次安装同样必须登记已应用的签名发布。客户 Compose 不挂载宿主包目录，
+# 因此显式把步骤 10.1 中独立验签的同一包 staging 到 backend。
+docker compose --env-file payload/deploy/.env \
+  -f payload/deploy/docker-compose.yml cp \
+  "${UNIROUTER_SIGNED_PACKAGE}" backend:/tmp/unirouter-initial-release.tar.gz
+docker compose --env-file payload/deploy/.env \
+  -f payload/deploy/docker-compose.yml exec backend \
+  ./uniroute upgrade record-applied \
+  --package /tmp/unirouter-initial-release.tar.gz \
+  --recorded-by "${UNIROUTER_RELEASE_OPERATOR}"
+docker compose --env-file payload/deploy/.env \
+  -f payload/deploy/docker-compose.yml exec backend \
+  ./uniroute upgrade status
+docker compose --env-file payload/deploy/.env \
+  -f payload/deploy/docker-compose.yml exec backend \
+  rm -f /tmp/unirouter-initial-release.tar.gz
+```
+
+启动日志必须读回 `Release trust mode: release`、非零 License/upgrade key 数量、
+签名版本/commit 和批准的部署标识。出现 `development`、mutable tag、缺失签名
+密钥或镜像不符都应停止切换。`upgrade status` 还必须读回与同一签名包一致的
+非零 sequence、package SHA-256、runtime version/commit 和 target schema；在此
+之前不得接入客户流量。受控宿主原包继续保留，容器只删除上述明确临时文件。
+
+### 10.3 HTTPS 边界
+
+客户 Compose 默认只把前端绑定到 `127.0.0.1:3000`，PostgreSQL、Redis、
+Prometheus 和 Grafana 不暴露宿主端口。使用客户已有或经批准的 TLS 反向代理把
+`https://console.example.com` 转发到 `127.0.0.1:3000`，并在安全组/防火墙只开放所需
+入口。不要为获得 TLS 而改用根目录 canary/source Compose。
+
+客户模板把 frontend 固定在 `UNIROUTER_FRONTEND_PROXY_IP`，preflight 要求该地址
+位于专用 IPv4 `/24`、不是 network/broadcast/gateway，且其 `/32` 必须出现在
+`TRUSTED_PROXY_CIDRS`。默认 gateway `/32` 只覆盖同宿主受控 TLS 代理；代理位于
+其他主机或容器时，应以 frontend 实际观察到的 hop IP/CIDR 替换或追加，并保持
+`UNIROUTER_LISTEN_ADDRESS=127.0.0.1`。这样浏览器 IP 可用于登录限流与 API Key
+allowlist，同时外部请求不能直接伪造 XFF 获得信任。
 
 ---
 
@@ -1006,9 +1456,9 @@ docker compose -f docker-compose.yml -f docker-compose.canary.yml up -d
 | 防火墙 | 只开放 80/443 端口 |
 | 数据库 | 不暴露外部端口，只通过 Docker 网络访问 |
 | CORS | `ADMIN_CORS_ALLOWED_ORIGINS` 只允许精确 origin；禁止 `*` |
-| 登录限流 | `LOGIN_RATE_LIMIT_*` 默认开启；Redis 错误时 fail-open，避免运维锁死 |
+| 登录限流 | `LOGIN_RATE_LIMIT_*` 默认开启；独立 IP 桶与跨 IP 共享的 username 桶同时生效；Redis 状态不可用时在密码验证前 fail-closed 为 `503`，并返回 `Retry-After: 1` |
 | Metrics | `/metrics` 默认兼容 Prometheus；生产用 `METRICS_ALLOWED_CIDRS`、防火墙或反向代理限制，或设置 `METRICS_ENABLED=false` |
 | Redis | 设置密码，不暴露外部端口 |
-| 密钥 | `JWT_SECRET` 可按需轮换；`API_KEY_HASH_SECRET` 和 `ENCRYPTION_KEY` 轮换前必须确认会话、API Key、上游渠道密钥的影响；`LICENSE_PUBLIC_KEY` 由签发方管理 |
+| 密钥 | 正式模式要求 `JWT_SECRET` 与 `API_KEY_HASH_SECRET` 均至少 32 bytes；`JWT_SECRET` 可按需轮换；`API_KEY_HASH_SECRET`、`ENCRYPTION_KEY` 和通知 Webhook HMAC 轮换前必须确认 API Key、上游通道密钥及接收端双密钥窗口的影响；正式验签根由签发/发布方管理 |
 | Grafana | 设置 `GRAFANA_ADMIN_PASSWORD`，禁止继续使用 `admin/admin` |
 | 备份 | 备份文件加密存储 |

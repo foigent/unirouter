@@ -1,21 +1,18 @@
 #!/usr/bin/env python3
-"""
-fix-compose-for-deploy.py
-将 docker-compose.yml 从源码构建模式切换到预编译二进制部署模式。
-保留所有注释和格式。
-
-变更：
-  1. backend.build.dockerfile: Dockerfile → Dockerfile.deploy
-  2. 移除 backend.build.args 块（预编译二进制不需要 build args）
-
-用法：
-  python3 scripts/fix-compose-for-deploy.py [--canary] [--dir /opt/unirouter]
-"""
+"""Retired: customer releases use the signed deploy/customer artifacts."""
 
 import re
 import sys
 import os
 import argparse
+
+
+print(
+    "ERROR: fix-compose-for-deploy.py is retired and must not rewrite source Compose. "
+    "Use the signed deploy/customer package and docs/ops/deployment-runbook.md.",
+    file=sys.stderr,
+)
+sys.exit(2)
 
 
 def remove_yaml_block(lines, start_idx, indent_level):

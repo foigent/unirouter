@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Modal, Form, Input, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { isPlatformAdminRole } from '../navigation';
 import { useAuthStore } from '../store/auth';
-import { PagedTable, PageHeader, Surface } from '../ui';
+import { EmptyState, PagedTable, PageHeader, Surface } from '../ui';
 import { canonicalExactDecimal, groupExactDecimal, padExactDecimal } from '../utils/exactDecimal';
 
 export function parseCNYPerMillionPrice(value: unknown) {
@@ -45,7 +45,7 @@ function mutationError(prefix: string, error: unknown) {
 	return error instanceof Error && error.message ? `${prefix}：${error.message}` : prefix;
 }
 
-export default function ModelPricesPage() {
+export default function ModelPricesPage({ embedded = false }: { embedded?: boolean }) {
   const role = useAuthStore((s) => s.user?.role);
   const canMutate = isPlatformAdminRole(role);
   const [prices, setPrices] = useState<any[]>([]);
@@ -53,16 +53,30 @@ export default function ModelPricesPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const requestVersion = useRef(0);
   const [showDrawer, setShowDrawer] = useState(false);
   const [editPrice, setEditPrice] = useState<any>(null);
   const [formApi, setFormApi] = useState<any>(null);
 
   const load = (p = page, size = pageSize) => {
+    const version = ++requestVersion.current;
     setLoading(true);
+    setLoadError('');
+    setPrices([]);
+    setTotal(0);
     api.getModelPriceList(p, size)
-      .then((d: any) => { setPrices(d.data || []); setTotal(d.total || 0); })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+      .then((d: any) => {
+        if (version !== requestVersion.current) return;
+        setPrices(d.data || []);
+        setTotal(d.total || 0);
+      })
+      .catch(() => {
+        if (version === requestVersion.current) setLoadError('无法加载模型价格列表。');
+      })
+      .finally(() => {
+        if (version === requestVersion.current) setLoading(false);
+      });
   };
 
   useEffect(() => { load(1); }, []);
@@ -144,22 +158,31 @@ export default function ModelPricesPage() {
     });
 
   return (
-    <div className="ur-page">
-      <PageHeader
-        eyebrow="财务治理"
+    <div className={embedded ? undefined : 'ur-page'}>
+      {!embedded && <PageHeader
+        eyebrow="计费与资金"
         title="模型定价"
         description={canMutate
           ? '按 CNY/百万 tokens 维护明确的基础价格和供应商 Prompt Cache 倍率；未配置价格的模型拒绝计费与路由。'
           : '只读查看平台统一维护的 CNY/百万 tokens 基础价格与供应商 Prompt Cache 倍率。'}
         actions={canMutate ? <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增价格</Button> : undefined}
-      />
+      />}
 
-      <Surface>
+      <Surface
+        title={embedded ? '基础价格' : undefined}
+        description={embedded ? (canMutate
+          ? '维护平台统一的 CNY/百万 tokens 基础价格与 Prompt Cache 倍率；未配置价格的模型拒绝计费与路由。'
+          : '只读查看平台统一维护的基础价格与 Prompt Cache 倍率。') : undefined}
+        actions={embedded && canMutate ? <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增价格</Button> : undefined}
+      >
         <PagedTable
           columns={columns}
           dataSource={prices}
           loading={loading}
           rowKey="id"
+          empty={loadError ? (
+            <EmptyState title="模型价格加载失败" description={loadError} actions={<Button type="primary" onClick={() => load()}>重新加载模型价格</Button>} minHeight={220} />
+          ) : <EmptyState title="暂无模型价格" minHeight={220} />}
           page={page}
           pageSize={pageSize}
           total={total}

@@ -2,10 +2,13 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/testutil"
@@ -49,21 +52,61 @@ func TestUsageAnalyticsGroup(t *testing.T) {
 	}
 }
 
-func TestInternalStatusLevel(t *testing.T) {
+func TestNotificationAttentionLevel(t *testing.T) {
 	cases := []struct {
 		critical int64
 		warning  int64
 		want     string
 	}{
-		{0, 0, "operational"},
+		{0, 0, "none"},
 		{0, 2, "warning"},
-		{1, 0, "degraded"},
-		{1, 2, "degraded"},
+		{1, 0, "critical"},
+		{1, 2, "critical"},
 	}
 	for _, tc := range cases {
-		if got := internalStatusLevel(tc.critical, tc.warning); got != tc.want {
+		if got := notificationAttentionLevel(tc.critical, tc.warning); got != tc.want {
 			t.Fatalf("critical=%d warning=%d: got %s want %s", tc.critical, tc.warning, got, tc.want)
 		}
+	}
+}
+
+func TestInternalStatusReturnsNotificationSummaryNotRuntimeHealth(t *testing.T) {
+	queryCalls := 0
+	db := &testutil.MockDB{QueryRowFn: func(_ context.Context, query string, _ ...any) pgx.Row {
+		queryCalls++
+		if !strings.Contains(query, "FROM notification_events") || strings.Contains(query, "LIMIT 20") {
+			t.Fatalf("unexpected internal status query: %s", query)
+		}
+		return &testutil.MockRow{ScanFn: func(dest ...any) error {
+			*dest[0].(*int64) = 1
+			*dest[1].(*int64) = 2
+			return nil
+		}}
+	}}
+	h := newTestHandler(db)
+	req := httptest.NewRequest(http.MethodGet, "/internal-status", nil)
+	ctx := context.WithValue(req.Context(), middleware.CtxOrgID, int64(3))
+	ctx = context.WithValue(ctx, middleware.CtxUserRole, auth.RoleOrgAdmin)
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	h.InternalStatus(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if queryCalls != 1 || response["summary_kind"] != "notification_events" || response["attention_level"] != "critical" {
+		t.Fatalf("unexpected notification summary: %#v calls=%d", response, queryCalls)
+	}
+	if _, exists := response["status"]; exists {
+		t.Fatalf("notification aggregation must not be exposed as runtime status: %#v", response)
+	}
+	if _, exists := response["incidents"]; exists {
+		t.Fatalf("internal status must link to notification center instead of duplicating event rows: %#v", response)
 	}
 }
 

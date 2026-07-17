@@ -102,7 +102,7 @@ func runBatch19Seed() error {
 		return fmt.Errorf("commit transaction: %w", err)
 	}
 
-	svc := billing.NewEventService(pool)
+	svc := billing.NewEventService(pool, "")
 	result, err := svc.CheckProjectBudget(ctx, orgID, projectID)
 	if err != nil {
 		return fmt.Errorf("check project budget: %w", err)

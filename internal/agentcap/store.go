@@ -60,6 +60,7 @@ return 0
 
 var registerChildScript = redis.NewScript(`
 local workflow = KEYS[1]
+local superseded = KEYS[2]
 local child = KEYS[#KEYS]
 local parent = KEYS[#KEYS - 1]
 if redis.call("EXISTS", workflow) == 0 then
@@ -71,6 +72,9 @@ if redis.call("HGET", workflow, "status") ~= "active" or
    tonumber(redis.call("HGET", workflow, "expires_at") or "0") <= tonumber(ARGV[3]) then
     return 1
 end
+if redis.call("EXISTS", superseded) == 1 then
+    return 5
+end
 if redis.call("EXISTS", child) == 1 then
     return 3
 end
@@ -78,7 +82,7 @@ if tonumber(redis.call("HGET", workflow, "descendant_count") or "0") >=
    tonumber(redis.call("HGET", workflow, "max_descendants") or "0") then
     return 4
 end
-for index = 2, #KEYS - 1 do
+for index = 3, #KEYS - 1 do
     if redis.call("EXISTS", KEYS[index]) == 0 then
         return 2
     end
@@ -95,7 +99,7 @@ if tonumber(redis.call("HGET", parent, "children_count") or "0") >=
     return 4
 end
 redis.call("HINCRBY", workflow, "descendant_count", 1)
-for index = 2, #KEYS - 1 do
+for index = 3, #KEYS - 1 do
     redis.call("HINCRBY", KEYS[index], "descendant_count", 1)
 end
 redis.call("HINCRBY", parent, "children_count", 1)
@@ -185,8 +189,12 @@ func (s *Service) registerChild(ctx context.Context, parent, child *Claims) erro
 	if err != nil {
 		return err
 	}
-	keys := make([]string, 0, len(parent.Lineage)+2)
+	keys := make([]string, 0, len(parent.Lineage)+3)
 	keys = append(keys, workflowKey(parent.WorkflowID))
+	// The parent-current marker shares the workflow hash slot. Its check is
+	// part of the same Redis transition that commits the child and ancestor
+	// counters, closing the refresh/delegate time-of-check race across replicas.
+	keys = append(keys, supersededKey(parent.WorkflowID, parent.ID))
 	for _, ancestorID := range parent.Lineage {
 		keys = append(keys, agentKey(parent.WorkflowID, ancestorID))
 	}
@@ -222,6 +230,8 @@ func (s *Service) registerChild(ctx context.Context, parent, child *Claims) erro
 		return fmt.Errorf("%w: child Agent is already registered", ErrConflict)
 	case 4:
 		return fmt.Errorf("%w: parent or ancestor topology limit reached", ErrLimitExceeded)
+	case 5:
+		return ErrSuperseded
 	default:
 		return fmt.Errorf("%w: unknown child registration result", ErrUnavailable)
 	}
@@ -239,10 +249,14 @@ func (s *Service) verifyState(ctx context.Context, claims *Claims) error {
 	var workflowCommand *redis.SliceCmd
 	var agentCommand *redis.SliceCmd
 	var supersededCommand *redis.IntCmd
+	var legacySupersededCommand *redis.IntCmd
 	_, err := s.rdb.Pipelined(ctx, func(pipe redis.Pipeliner) error {
 		workflowCommand = pipe.HMGet(ctx, workflowKey(claims.WorkflowID), "status", "generation", "root_key_id", "expires_at")
 		agentCommand = pipe.HMGet(ctx, agentKey(claims.WorkflowID, claims.AgentID), "agent_id", "parent_agent_id", "depth")
-		supersededCommand = pipe.Exists(ctx, supersededKey(claims.ID))
+		supersededCommand = pipe.Exists(ctx, supersededKey(claims.WorkflowID, claims.ID))
+		// Legacy keys are read-only after the required old-writer drain. Their
+		// TTL is bounded by the old token lifetime; new refreshes never write them.
+		legacySupersededCommand = pipe.Exists(ctx, legacySupersededKey(claims.ID))
 		return nil
 	})
 	if err != nil {
@@ -274,22 +288,30 @@ func (s *Service) verifyState(ctx context.Context, claims *Claims) error {
 	} else if superseded > 0 {
 		return ErrSuperseded
 	}
+	if superseded, err := legacySupersededCommand.Result(); err != nil {
+		return fmt.Errorf("%w: verify legacy token generation: %v", ErrUnavailable, err)
+	} else if superseded > 0 {
+		return ErrSuperseded
+	}
 	return nil
 }
 
-func (s *Service) loadRefreshGrant(ctx context.Context, jti string) (refreshGrant, bool, error) {
-	encoded, err := s.rdb.Get(ctx, refreshKey(jti)).Result()
-	if errors.Is(err, redis.Nil) {
-		return refreshGrant{}, false, nil
+func (s *Service) loadRefreshGrant(ctx context.Context, workflowID, jti string) (refreshGrant, bool, error) {
+	for _, key := range []string{refreshKey(workflowID, jti), legacyRefreshKey(jti)} {
+		encoded, err := s.rdb.Get(ctx, key).Result()
+		if errors.Is(err, redis.Nil) {
+			continue
+		}
+		if err != nil {
+			return refreshGrant{}, false, fmt.Errorf("%w: read refresh state: %v", ErrUnavailable, err)
+		}
+		var grant refreshGrant
+		if err := json.Unmarshal([]byte(encoded), &grant); err != nil || grant.JTI == "" || grant.IssuedAt <= 0 {
+			return refreshGrant{}, false, fmt.Errorf("%w: corrupt refresh grant", ErrUnavailable)
+		}
+		return grant, true, nil
 	}
-	if err != nil {
-		return refreshGrant{}, false, fmt.Errorf("%w: read refresh state: %v", ErrUnavailable, err)
-	}
-	var grant refreshGrant
-	if err := json.Unmarshal([]byte(encoded), &grant); err != nil || grant.JTI == "" || grant.IssuedAt <= 0 {
-		return refreshGrant{}, false, fmt.Errorf("%w: corrupt refresh grant", ErrUnavailable)
-	}
-	return grant, true, nil
+	return refreshGrant{}, false, nil
 }
 
 func (s *Service) reserveRefreshGrant(ctx context.Context, old *Claims) (refreshGrant, error) {
@@ -307,7 +329,7 @@ func (s *Service) reserveRefreshGrant(ctx context.Context, old *Claims) (refresh
 		supersededTTL = 1
 	}
 	stored, err := storeRefreshScript.Run(ctx, s.rdb,
-		[]string{refreshKey(old.ID), supersededKey(old.ID)},
+		[]string{refreshKey(old.WorkflowID, old.ID), supersededKey(old.WorkflowID, old.ID)},
 		string(encoded),
 		supersededTTL,
 		supersededTTL,
@@ -352,11 +374,24 @@ func agentKey(workflowID, agentID string) string {
 	return workflowKey(workflowID) + ":agent:" + hex.EncodeToString(digest[:])
 }
 
-func refreshKey(jti string) string {
+func refreshKey(workflowID, jti string) string {
+	return workflowKey(workflowID) + ":refresh:" + refreshStateDigest(jti) + ":grant"
+}
+
+func supersededKey(workflowID, jti string) string {
+	return workflowKey(workflowID) + ":refresh:" + refreshStateDigest(jti) + ":superseded"
+}
+
+func refreshStateDigest(jti string) string {
+	digest := sha256.Sum256([]byte(jti))
+	return hex.EncodeToString(digest[:])
+}
+
+func legacyRefreshKey(jti string) string {
 	return redisKeyPrefix + ":{refresh:" + jti + "}:grant"
 }
 
-func supersededKey(jti string) string {
+func legacySupersededKey(jti string) string {
 	return redisKeyPrefix + ":{refresh:" + jti + "}:superseded"
 }
 

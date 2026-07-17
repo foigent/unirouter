@@ -14,8 +14,8 @@ type pricingRouteGuards struct {
 }
 
 // registerPricingRoutes keeps the pricing authority boundary in one production
-// wiring point. Reads remain available to organization administrators; every
-// mutation is guarded by platform authority.
+// wiring point. Reads remain available to organization and billing
+// administrators; every mutation is guarded by platform authority.
 func registerPricingRoutes(mux *http.ServeMux, handler *admin.Handler, guards pricingRouteGuards) {
 	mux.Handle("GET /api/v1/model-prices", guards.read(handler.ListModelPrices))
 	mux.Handle("POST /api/v1/model-prices", guards.write(handler.CreateModelPrice))

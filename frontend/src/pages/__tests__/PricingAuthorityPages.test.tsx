@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   createOrgModelPrice: vi.fn(),
   updateOrgModelPrice: vi.fn(),
   deleteOrgModelPrice: vi.fn(),
+  getOrganizations: vi.fn(),
 }));
 
 vi.mock('../../api/client', () => ({ api: mocks }));
@@ -30,6 +31,12 @@ describe('pricing authority pages', () => {
 		data: [{ id: 9, org_id: 22, org_name: 'Acme', model_name: 'gpt-4o', multiplier: '1.5', updated_at: '2026-07-11T00:00:00Z' }],
       total: 1,
       org_id: 22,
+    });
+    mocks.getOrganizations.mockResolvedValue({
+      data: [
+        { id: 11, name: 'Platform' },
+        { id: 22, name: 'Acme' },
+      ],
     });
   });
 
@@ -97,11 +104,24 @@ describe('pricing authority pages', () => {
 
     render(<OrgModelPricesPage />);
 
-    const input = await screen.findByLabelText('目标组织 ID');
-    fireEvent.change(input, { target: { value: '22' } });
-    fireEvent.click(screen.getByRole('button', { name: '查看目标组织' }));
+    expect(await screen.findByText('目标组织')).toBeTruthy();
+    await waitFor(() => expect(mocks.getOrganizations).toHaveBeenCalledTimes(1));
+    const targetSelect = screen.getByRole('combobox');
+    fireEvent.click(targetSelect);
+    const acmeLabels = await screen.findAllByText('Acme（ID 22）');
+    fireEvent.click(acmeLabels[acmeLabels.length - 1]);
 
     await waitFor(() => expect(mocks.getOrgModelPrices).toHaveBeenCalledWith(1, 20, 22));
     expect(screen.getByRole('button', { name: /新增倍率/ })).toBeTruthy();
+  });
+
+  it('distinguishes a global price load failure from an empty price catalog', async () => {
+    useAuthStore.setState({ user: { id: 1, username: 'platform', role: 'platform_admin', org_id: 11 } });
+    mocks.getModelPriceList.mockRejectedValueOnce(new Error('unavailable'));
+
+    render(<ModelPricesPage />);
+
+    expect(await screen.findByRole('heading', { name: '模型价格加载失败' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '重新加载模型价格' })).toBeTruthy();
   });
 });

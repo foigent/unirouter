@@ -81,12 +81,13 @@ func (h *Handler) GetWallet(w http.ResponseWriter, r *http.Request) {
 
 	var balanceMicros, grantedMicros, frozenMicros, totalSpentMicros int64
 	var lowThresholdCents int64
-	var currency string
+	var currency, orgName string
 	var autoFreeze bool
 	var createdAt, updatedAt time.Time
 	rows, err := h.db.Query(r.Context(),
-		`SELECT org_id, balance_micros, granted_balance_micros, frozen_micros, total_spent_micros, currency, auto_freeze, low_balance_threshold_cents, created_at, updated_at
-		 FROM wallets WHERE org_id = $1`, orgID)
+		`SELECT w.org_id, o.name, w.balance_micros, w.granted_balance_micros, w.frozen_micros, w.total_spent_micros,
+		        w.currency, w.auto_freeze, w.low_balance_threshold_cents, w.created_at, w.updated_at
+		 FROM wallets w JOIN orgs o ON o.id = w.org_id WHERE w.org_id = $1`, orgID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Query failed"})
 		return
@@ -100,7 +101,7 @@ func (h *Handler) GetWallet(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Wallet not found"})
 		return
 	}
-	if err := rows.Scan(&orgID, &balanceMicros, &grantedMicros, &frozenMicros, &totalSpentMicros, &currency, &autoFreeze, &lowThresholdCents, &createdAt, &updatedAt); err != nil {
+	if err := rows.Scan(&orgID, &orgName, &balanceMicros, &grantedMicros, &frozenMicros, &totalSpentMicros, &currency, &autoFreeze, &lowThresholdCents, &createdAt, &updatedAt); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 		return
 	}
@@ -116,6 +117,7 @@ func (h *Handler) GetWallet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"id":                          orgID,
 		"org_id":                      orgID,
+		"org_name":                    orgName,
 		"balance_micros":              strconv.FormatInt(balanceMicros, 10),
 		"granted_balance_micros":      strconv.FormatInt(grantedMicros, 10),
 		"frozen_micros":               strconv.FormatInt(frozenMicros, 10),
@@ -245,12 +247,7 @@ func (h *Handler) TopUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := tx.Commit(r.Context()); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Transaction commit failed"})
-		return
-	}
-
-	h.recordAuditForOrgProjectFromRequest(r, walletOrgID, 0, "wallet.topup", "wallet", fmt.Sprintf("%d", walletOrgID), map[string]interface{}{
+	auditDetail := map[string]interface{}{
 		"amount_cents":      req.AmountCents,
 		"amount_micros":     strconv.FormatInt(amountMicros, 10),
 		"description":       req.Description,
@@ -259,7 +256,16 @@ func (h *Handler) TopUp(w http.ResponseWriter, r *http.Request) {
 			"amount_cents": req.AmountCents,
 			"description":  req.Description,
 		},
-	})
+	}
+	if err := insertAuditEntry(r.Context(), tx, "wallet.topup", "wallet", fmt.Sprintf("%d", walletOrgID), auditDetail,
+		requestAuditMeta(r, walletOrgID, 0)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Transaction commit failed"})
+		return
+	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"message":        "Top-up successful",
@@ -420,12 +426,7 @@ func (h *Handler) BalanceAdjust(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := tx.Commit(r.Context()); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Transaction commit failed"})
-		return
-	}
-
-	h.recordAuditForOrgProjectFromRequest(r, walletOrgID, 0, "wallet.adjust", "wallet", fmt.Sprintf("%d", walletOrgID), map[string]interface{}{
+	auditDetail := map[string]interface{}{
 		"from_micros":       strconv.FormatInt(currentBalanceMicros, 10),
 		"to_micros":         strconv.FormatInt(newBalanceMicros, 10),
 		"delta_cents":       req.DeltaCents,
@@ -438,7 +439,16 @@ func (h *Handler) BalanceAdjust(w http.ResponseWriter, r *http.Request) {
 		"after": map[string]interface{}{
 			"balance_micros": strconv.FormatInt(newBalanceMicros, 10),
 		},
-	})
+	}
+	if err := insertAuditEntry(r.Context(), tx, "wallet.adjust", "wallet", fmt.Sprintf("%d", walletOrgID), auditDetail,
+		requestAuditMeta(r, walletOrgID, 0)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Transaction commit failed"})
+		return
+	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success":                 true,

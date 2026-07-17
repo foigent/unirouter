@@ -4,12 +4,19 @@ import ReconciliationPage from '../ReconciliationPage';
 
 const mockGetReconciliation = vi.fn();
 const mockGetModelNames = vi.fn();
+const mockGetOrganizations = vi.fn();
+const auth = vi.hoisted(() => ({ user: null as any }));
 
 vi.mock('../../api/client', () => ({
   api: {
     getReconciliation: (...args: any[]) => mockGetReconciliation(...args),
     getModelNames: (...args: any[]) => mockGetModelNames(...args),
+    getOrganizations: (...args: any[]) => mockGetOrganizations(...args),
   },
+}));
+
+vi.mock('../../store/auth', () => ({
+  useAuthStore: (selector: any) => selector({ user: auth.user }),
 }));
 
 const RECON_RESPONSE = {
@@ -61,8 +68,10 @@ const RECON_RESPONSE = {
 describe('ReconciliationPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    auth.user = null;
     mockGetReconciliation.mockResolvedValue(RECON_RESPONSE);
     mockGetModelNames.mockResolvedValue({ data: ['company-chat'] });
+    mockGetOrganizations.mockResolvedValue({ data: [{ id: 7, name: '总部' }], total: 1 });
   });
 
   it('loads reconciliation through the API client and renders full-query summary', async () => {
@@ -85,6 +94,15 @@ describe('ReconciliationPage', () => {
     expect(screen.getByText(/读 30.*写 10/)).toBeTruthy();
     expect(screen.getByText(/读取费用 ¥0\.000030/)).toBeTruthy();
     expect(screen.getByText(/写入费用 ¥0\.000250/)).toBeTruthy();
+  });
+
+  it('scopes platform reconciliation to the JWT organization', async () => {
+    auth.user = { role: 'platform_admin', org_id: 7 };
+    render(<ReconciliationPage />);
+
+    expect(await screen.findByText('目标组织')).toBeTruthy();
+    await waitFor(() => expect(mockGetReconciliation).toHaveBeenCalledWith(1, 20, expect.objectContaining({ org_id: 7 })));
+    expect(mockGetOrganizations).toHaveBeenCalledWith(1, 100);
   });
 
   it('renders usage source filter', async () => {

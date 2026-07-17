@@ -61,7 +61,7 @@ func TestP6F20FinancialJournalIncrementalBudgetAndWebhookReplay(t *testing.T) {
 	require.NoError(t, err)
 	billingService := NewBilling(pool, nil)
 	billingService.SetOutbox(outboxService)
-	eventService := NewEventService(pool)
+	eventService := NewEventService(pool, "").WithHTTPClient(webhook.Client())
 	eventService.SetOutbox(outboxService)
 	for _, eventType := range []string{
 		outbox.EventBillingUsagePrepared,

@@ -61,17 +61,15 @@ flowchart LR
 Redis 是共享容量真值。所有脚本键使用同一个 Redis Cluster hash tag，使全局与组织
 容量、队列、租约和 operation 状态在一个原子脚本内更新。
 
-健康期成功准入会为当前进程预发一个很小的 last-known-safe 许可：
+Post-PRD6 V1 安全修正于 2026-07-17 获批：Redis 无法证明全局与组织剩余容量时，
+所有新工作负载在 provider dispatch 前返回 503；已经取得共享租约的在途工作继续。
+原先的进程本地 last-known-safe 许可未绑定组织、工作类别、权重或共享预留容量，已被
+移除。所有 Redis 调用仍尊重调用方 context deadline，避免 20-100 ms 的准入边界被
+socket 默认超时拉长到数秒。
 
-- 最长 2 秒；
-- 每个进程最多使用 1 次；
-- 没有健康期许可或许可已消耗时，Redis 超时/故障返回 503；
-- 所有 Redis 调用尊重调用方 context deadline，避免 20-100 ms 的准入边界被 socket
-  默认超时拉长到数秒；
-- 许可不会改变 Tool、IAM、数据库、导出或其他系统权限。
-
-这仍是短时、金额/容量有界的可用性缓冲，不是无限 fail-open，也不是目标环境 HA
-证明。
+此修正收紧而不改写历史 D6-02 接受记录。若真实客户证据要求 Redis 短故障期间继续
+接纳新工作，必须另行设计由健康 Redis 预扣、绑定组织/类别/权重/实例 generation 的
+紧急额度；不得恢复进程本地无共享容量证明的许可。
 
 ## 五、配置
 
@@ -104,8 +102,9 @@ Redis 是共享容量真值。所有脚本键使用同一个 Redis Cluster hash 
 - `workload_class`、`workload_weight`；
 - 实际公平等待毫秒数与有界队列深度；
 - 共享 policy-set 指纹；
-- `allowed`、`workload_capacity_exceeded`、`last_known_safe` 或
-  `state_unavailable` 等低基数结果。
+- `allowed`、`workload_capacity_exceeded` 或 `state_unavailable` 等工作负载
+  低基数结果；组合的通用限流策略仍可独立记录其 `last_known_safe` 结果，不能据此
+  推断工作负载容量获得了降级租约。
 
 响应可暴露 `X-UniRouter-Workload-Class` 和
 `X-UniRouter-Limit-Policy-Version`；原始 prompt、response、密钥和租约内部成员不会

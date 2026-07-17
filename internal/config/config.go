@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/guardrail"
 	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/payloadpolicy"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
@@ -42,11 +43,18 @@ type Config struct {
 	JWTSecret        string
 	APIKeyHashSecret string
 	EncryptionKey    string
+	// NotificationWebhookSigningSecret signs outbound notification Webhook
+	// bodies. It is optional for source development, but customer Compose makes
+	// it mandatory so receivers can authenticate deliveries.
+	NotificationWebhookSigningSecret string
 
 	// Runtime exposure hardening
-	AdminCORSAllowedOrigins    []string
-	MetricsEnabled             bool
-	MetricsAllowedCIDRs        []string
+	AdminCORSAllowedOrigins []string
+	MetricsEnabled          bool
+	MetricsAllowedCIDRs     []string
+	// TrustedProxyCIDRs contains only network hops authorized to supply client
+	// forwarding headers. Empty means forwarding headers are ignored.
+	TrustedProxyCIDRs          []string
 	LoginRateLimitEnabled      bool
 	LoginRateLimitWindowSec    int
 	LoginRateLimitIP           int
@@ -114,6 +122,12 @@ type Config struct {
 	WorkloadStreamMaxWaitMS      int
 	WorkloadEmbeddingMaxWaitMS   int
 
+	// Guardrail active-policy and immutable snapshot cache bounds.
+	GuardrailOrgActivePolicyLimit      int
+	GuardrailPlatformActivePolicyLimit int
+	GuardrailCachedPolicyLimit         int
+	GuardrailCachedTenantLimit         int
+
 	// Application-authoritative payload and per-replica memory safety.
 	ChatRequestMaxBytes       int
 	EmbeddingsRequestMaxBytes int
@@ -157,6 +171,25 @@ type Config struct {
 	SkipMigration bool
 }
 
+// ValidateReleaseSecrets applies the stronger symmetric-secret floor required
+// by vendor-signed customer release binaries. Source-development builds keep
+// Validate's historical non-empty requirement for local compatibility.
+func (c *Config) ValidateReleaseSecrets() error {
+	if c == nil {
+		return fmt.Errorf("configuration is required")
+	}
+	if len(c.JWTSecret) < 32 {
+		return fmt.Errorf("JWT_SECRET must be at least 32 bytes in release mode, got %d bytes", len(c.JWTSecret))
+	}
+	if len(c.APIKeyHashSecret) < 32 {
+		return fmt.Errorf("API_KEY_HASH_SECRET must be at least 32 bytes in release mode, got %d bytes", len(c.APIKeyHashSecret))
+	}
+	if len(c.NotificationWebhookSigningSecret) < 32 {
+		return fmt.Errorf("UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET must be at least 32 bytes in release mode, got %d bytes", len(c.NotificationWebhookSigningSecret))
+	}
+	return nil
+}
+
 // Validate checks that all required configuration values are valid.
 func (c *Config) Validate() error {
 	if c.JWTSecret == "" {
@@ -167,6 +200,9 @@ func (c *Config) Validate() error {
 	}
 	if len(c.EncryptionKey) != 32 {
 		return fmt.Errorf("ENCRYPTION_KEY must be exactly 32 bytes for AES-256, got %d bytes", len(c.EncryptionKey))
+	}
+	if c.NotificationWebhookSigningSecret != "" && len(c.NotificationWebhookSigningSecret) < 32 {
+		return fmt.Errorf("UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET must be at least 32 bytes when set")
 	}
 	if c.ShutdownTimeoutSecs < 0 {
 		return fmt.Errorf("SHUTDOWN_TIMEOUT_SECONDS must be >= 0")
@@ -210,6 +246,15 @@ func (c *Config) Validate() error {
 	for _, cidr := range c.MetricsAllowedCIDRs {
 		if _, _, err := net.ParseCIDR(cidr); err != nil {
 			return fmt.Errorf("METRICS_ALLOWED_CIDRS contains invalid CIDR: %s", cidr)
+		}
+	}
+	for _, cidr := range c.TrustedProxyCIDRs {
+		_, network, err := net.ParseCIDR(cidr)
+		if err != nil {
+			return fmt.Errorf("TRUSTED_PROXY_CIDRS contains invalid CIDR: %s", cidr)
+		}
+		if ones, _ := network.Mask.Size(); ones == 0 {
+			return fmt.Errorf("TRUSTED_PROXY_CIDRS must not trust every address: %s", cidr)
 		}
 	}
 	if c.LoginRateLimitEnabled && c.LoginRateLimitWindowSec <= 0 {
@@ -263,6 +308,9 @@ func (c *Config) Validate() error {
 	if err := c.PayloadLimits().Validate(); err != nil {
 		return fmt.Errorf("invalid payload safety configuration: %w", err)
 	}
+	if err := c.GuardrailOptions().Validate(); err != nil {
+		return fmt.Errorf("invalid guardrail snapshot configuration: %w", err)
+	}
 	if err := validateOptionalHTTPURL("PROMETHEUS_URL", c.PrometheusURL); err != nil {
 		return err
 	}
@@ -311,13 +359,15 @@ func Load() (*Config, error) {
 		RedisDB:       getEnvInt("REDIS_DB", 0),
 		RedisMaxConns: getEnvInt("REDIS_MAX_CONNECTIONS", 10),
 
-		JWTSecret:        jwtSecret,
-		APIKeyHashSecret: getEnvStr("API_KEY_HASH_SECRET", jwtSecret),
-		EncryptionKey:    getEnvStr("ENCRYPTION_KEY", ""),
+		JWTSecret:                        jwtSecret,
+		APIKeyHashSecret:                 getEnvStr("API_KEY_HASH_SECRET", jwtSecret),
+		EncryptionKey:                    getEnvStr("ENCRYPTION_KEY", ""),
+		NotificationWebhookSigningSecret: getEnvStr("UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET", ""),
 
 		AdminCORSAllowedOrigins:    splitCSVAllowEmpty(getEnvStr("ADMIN_CORS_ALLOWED_ORIGINS", "")),
 		MetricsEnabled:             getEnvBool("METRICS_ENABLED", true),
 		MetricsAllowedCIDRs:        splitCSVAllowEmpty(getEnvStr("METRICS_ALLOWED_CIDRS", "")),
+		TrustedProxyCIDRs:          splitCSVAllowEmpty(getEnvStr("TRUSTED_PROXY_CIDRS", "")),
 		LoginRateLimitEnabled:      getEnvBool("LOGIN_RATE_LIMIT_ENABLED", true),
 		LoginRateLimitWindowSec:    getEnvInt("LOGIN_RATE_LIMIT_WINDOW_SECONDS", 60),
 		LoginRateLimitIP:           getEnvInt("LOGIN_RATE_LIMIT_IP_REQUESTS", 30),
@@ -378,6 +428,11 @@ func Load() (*Config, error) {
 		WorkloadStreamMaxWaitMS:      getEnvInt("WORKLOAD_STREAM_MAX_WAIT_MS", 250),
 		WorkloadEmbeddingMaxWaitMS:   getEnvInt("WORKLOAD_EMBEDDING_MAX_WAIT_MS", 50),
 
+		GuardrailOrgActivePolicyLimit:      getEnvInt("GUARDRAIL_ORG_ACTIVE_POLICY_LIMIT", 256),
+		GuardrailPlatformActivePolicyLimit: getEnvInt("GUARDRAIL_PLATFORM_ACTIVE_POLICY_LIMIT", 256),
+		GuardrailCachedPolicyLimit:         getEnvInt("GUARDRAIL_CACHED_POLICY_LIMIT", 4096),
+		GuardrailCachedTenantLimit:         getEnvInt("GUARDRAIL_CACHED_TENANT_LIMIT", 4096),
+
 		ChatRequestMaxBytes:       getEnvInt("CHAT_REQUEST_MAX_BYTES", int(8*payloadpolicy.MiB)),
 		EmbeddingsRequestMaxBytes: getEnvInt("EMBEDDINGS_REQUEST_MAX_BYTES", int(16*payloadpolicy.MiB)),
 		NonStreamResponseMaxBytes: getEnvInt("NONSTREAM_RESPONSE_MAX_BYTES", int(16*payloadpolicy.MiB)),
@@ -418,6 +473,23 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+func (c Config) GuardrailOptions() guardrail.Options {
+	options := guardrail.DefaultOptions()
+	if c.GuardrailOrgActivePolicyLimit != 0 {
+		options.MaxActivePoliciesPerOrg = c.GuardrailOrgActivePolicyLimit
+	}
+	if c.GuardrailPlatformActivePolicyLimit != 0 {
+		options.MaxActivePlatformPolicies = c.GuardrailPlatformActivePolicyLimit
+	}
+	if c.GuardrailCachedPolicyLimit != 0 {
+		options.MaxCachedPolicies = c.GuardrailCachedPolicyLimit
+	}
+	if c.GuardrailCachedTenantLimit != 0 {
+		options.MaxCachedTenantScopes = c.GuardrailCachedTenantLimit
+	}
+	return options
 }
 
 func (c Config) RoutingPolicyConfig() routingpolicy.Config {

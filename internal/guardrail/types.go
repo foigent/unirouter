@@ -44,8 +44,9 @@ const (
 )
 
 var (
-	ErrInvalidPolicy   = errors.New("invalid guardrail policy")
-	ErrDetectorMissing = errors.New("guardrail detector is not registered")
+	ErrInvalidPolicy       = errors.New("invalid guardrail policy")
+	ErrDetectorMissing     = errors.New("guardrail detector is not registered")
+	ErrDetectionIncomplete = errors.New("guardrail detection is incomplete")
 )
 
 type Policy struct {
@@ -146,6 +147,11 @@ type Subject struct {
 	APIKeyID  int64
 	Model     string
 	Endpoint  string
+}
+
+type PolicyIdentity struct {
+	Ref     string `json:"ref"`
+	Version int64  `json:"version"`
 }
 
 func (p Policy) Matches(subject Subject) bool {

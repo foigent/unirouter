@@ -1,35 +1,20 @@
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
-import { Button, Table, Toast, Typography } from '@douyinfe/semi-ui';
+import { Button, Select, Table, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconAlertTriangle, IconBell, IconRefresh, IconRoute, IconServer } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-import { canReadRuntimeStatus } from '../navigation';
+import { canReadRuntimeStatus, hasLicensedFeature, isPlatformAdminRole, licenseRestrictionMessage } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, MetricTile, PageHeader, StatusTag, Surface } from '../ui';
-import { deliveryStateLabel, eventStatusLabel, eventTypeLabel, internalStatusLabel, notificationResourceLabel, severityLabel } from '../utils/displayLabels';
+import { loadAllPages } from '../utils/loadAllPages';
 
 const { Text } = Typography;
 
-interface Incident {
-  id: number;
-  event_type: string;
-  severity: string;
-  title: string;
-  message: string;
-  resource: string;
-  resource_id: string;
-  status: string;
-  delivery_state: string;
-  created_at: string;
-  updated_at: string;
-}
-
 interface InternalStatus {
-  status: string;
+  summary_kind: 'notification_events';
+  attention_level: string;
   open_critical: number;
   open_warning: number;
-  incidents: Incident[];
-  maintenance_windows: unknown[];
 }
 
 interface RuntimeIntegration {
@@ -176,6 +161,7 @@ interface RuntimeStatus {
 }
 
 type MetricTone = 'blue' | 'green' | 'amber' | 'violet' | 'red' | 'slate';
+type LoadState = 'loading' | 'ready' | 'error';
 
 function runtimeStatusLabel(status?: string) {
   switch (status) {
@@ -187,6 +173,19 @@ function runtimeStatusLabel(status?: string) {
       return '降级';
     default:
       return status || '-';
+  }
+}
+
+function notificationAttentionLabel(level?: string) {
+  switch (level) {
+    case 'critical':
+      return '严重';
+    case 'warning':
+      return '预警';
+    case 'none':
+      return '无待处理';
+    default:
+      return level || '-';
   }
 }
 
@@ -311,77 +310,198 @@ function networkMeta(metric?: RuntimeMetric) {
   return details.join(' / ') || '-';
 }
 
+function projectIDFromLocation() {
+  const raw = new URLSearchParams(window.location.search).get('project_id');
+  if (!raw || !/^\d+$/.test(raw)) return undefined;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) && value > 0 ? value : undefined;
+}
+
 export default function InternalStatusPage() {
+  const user = useAuthStore((state) => state.user);
+  const platform = isPlatformAdminRole(user?.role);
+  const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(platform ? user?.org_id : undefined);
+  const [organizations, setOrganizations] = useState<Array<{ id: number; name: string }>>([]);
   const [data, setData] = useState<InternalStatus | null>(null);
   const [runtimeData, setRuntimeData] = useState<RuntimeStatus | null>(null);
   const [loading, setLoading] = useState(true);
-  const role = useAuthStore((s) => s.user?.role);
+  const [notificationLoadState, setNotificationLoadState] = useState<LoadState>('loading');
+  const [notificationLoadError, setNotificationLoadError] = useState('');
+  const [runtimeLoadState, setRuntimeLoadState] = useState<LoadState>('loading');
+  const [runtimeLoadError, setRuntimeLoadError] = useState('');
+  const role = user?.role;
   const canViewRuntime = canReadRuntimeStatus(role);
+  const notificationsLicensed = hasLicensedFeature(user?.license_access, 'notifications');
+  const notificationsRestriction = user?.license_access
+    ? licenseRestrictionMessage(user.license_access, 'notifications')
+    : '当前商业授权信息尚未加载。';
+  const targetOrgID = platform ? selectedOrgID : undefined;
   const prometheusIntegration = runtimeData?.observability_integrations.prometheus;
   const grafanaIntegration = runtimeData?.observability_integrations.grafana;
   const routingPolicy = runtimeData?.effective_configuration?.routing_policy;
   const streamTransport = runtimeData?.effective_configuration?.stream_transport;
   const agentCapability = runtimeData?.effective_configuration?.agent_capability;
   const budgetAlerts = runtimeData?.effective_configuration?.budget_alerts;
+  const projectID = projectIDFromLocation();
+  const notificationCenterHref = projectID ? `/notifications?project_id=${projectID}` : '/notifications';
 
   const load = () => {
     setLoading(true);
-    const requests: Promise<void>[] = [
-      api.getInternalStatus()
-        .then((result: any) => setData(result))
+    const requests: Promise<void>[] = [];
+    if (notificationsLicensed) {
+      setData(null);
+      setNotificationLoadState('loading');
+      setNotificationLoadError('');
+      requests.push(api.getInternalStatus(targetOrgID || projectID ? {
+        ...(targetOrgID ? { org_id: targetOrgID } : {}),
+        ...(projectID ? { project_id: projectID } : {}),
+      } : undefined)
+        .then((result: any) => {
+          if (!result) throw new Error('服务未返回通知摘要');
+          setData(result);
+          setNotificationLoadState('ready');
+        })
         .catch((err: any) => {
-          Toast.error(`内部状态加载失败${err?.message ? `：${err.message}` : ''}`);
-        }),
-    ];
+          const message = `通知摘要加载失败${err?.message ? `：${err.message}` : ''}`;
+          setNotificationLoadError(message);
+          setNotificationLoadState('error');
+          Toast.error(message);
+        }));
+    } else {
+      setData(null);
+      setNotificationLoadState('ready');
+      setNotificationLoadError('');
+    }
     if (canViewRuntime) {
+      setRuntimeData(null);
+      setRuntimeLoadState('loading');
+      setRuntimeLoadError('');
       requests.push(
-        api.getRuntimeStatus()
-          .then((result: any) => setRuntimeData(result))
+        (targetOrgID ? api.getRuntimeStatus(targetOrgID) : api.getRuntimeStatus())
+          .then((result: any) => {
+            if (!result) throw new Error('服务未返回运行时状态');
+            setRuntimeData(result);
+            setRuntimeLoadState('ready');
+          })
           .catch((err: any) => {
-            Toast.error(`运行时状态加载失败${err?.message ? `：${err.message}` : ''}`);
+            const message = `运行时状态加载失败${err?.message ? `：${err.message}` : ''}`;
+            setRuntimeLoadError(message);
+            setRuntimeLoadState('error');
+            Toast.error(message);
           }),
       );
     } else {
       setRuntimeData(null);
+      setRuntimeLoadState('ready');
+      setRuntimeLoadError('');
     }
     Promise.allSettled(requests).finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, [canViewRuntime]);
+  useEffect(() => { load(); }, [canViewRuntime, notificationsLicensed, projectID, targetOrgID]);
 
-  const columns = [
-    { title: '事件', dataIndex: 'title', key: 'title', render: (value: string, row: Incident) => (
-      <div>
-        <Text strong>{value}</Text>
-        <div><Text type="tertiary" size="small">{row.message}</Text></div>
-      </div>
-    ) },
-    { title: '类型', dataIndex: 'event_type', key: 'event_type', render: (value: string) => <Text>{eventTypeLabel(value)}</Text> },
-    { title: '级别', dataIndex: 'severity', key: 'severity', render: (value: string) => <StatusTag status={value}>{severityLabel(value)}</StatusTag> },
-    { title: '事件状态', dataIndex: 'status', key: 'status', render: (value: string) => <StatusTag status={value}>{eventStatusLabel(value)}</StatusTag> },
-    { title: '投递', dataIndex: 'delivery_state', key: 'delivery_state', render: (value: string) => <StatusTag status={value}>{deliveryStateLabel(value)}</StatusTag> },
-    { title: '资源', key: 'resource', render: (_: unknown, row: Incident) => notificationResourceLabel(row.resource, row.resource_id) },
-    { title: '时间', dataIndex: 'created_at', key: 'created_at', render: (value: string) => value ? new Date(value).toLocaleString() : '-' },
-  ];
+  useEffect(() => {
+    if (!platform) return;
+    if (user?.org_id) setSelectedOrgID(current => current || user.org_id);
+    loadAllPages<{ id: number; name: string }>((page, size) => api.getOrganizations(page, size))
+      .then(setOrganizations)
+      .catch((err: any) => Toast.error(`组织列表加载失败${err?.message ? `：${err.message}` : ''}`));
+  }, [platform, user?.org_id]);
+
+  const changeOrganization = (value: unknown) => {
+    const orgID = Number(value);
+    if (!Number.isSafeInteger(orgID) || orgID <= 0) return;
+    if (projectID) {
+      const params = new URLSearchParams(window.location.search);
+      params.delete('project_id');
+      const query = params.toString();
+      window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
+    }
+    setSelectedOrgID(orgID);
+    setData(null);
+    setRuntimeData(null);
+  };
 
   return (
     <div className="ur-page ur-page-wide">
       <PageHeader
-        eyebrow="系统治理"
-        title="内部状态"
-        description="事件状态保持 notification_events 聚合语义；运行时观测独立展示应用、依赖和外部监控状态。"
-        actions={<Button icon={<IconRefresh />} onClick={load} loading={loading}>刷新</Button>}
+        eyebrow="监控与用量"
+        title="运行状态"
+        description="服务健康以运行时观测为准；未确认通知仅提示需要人工关注的业务事件。"
+        actions={(
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {platform && (
+              <>
+                <Text type="tertiary">目标组织</Text>
+                <Select
+                  aria-label="目标组织"
+                  placeholder="选择目标组织"
+                  value={selectedOrgID}
+                  optionList={organizations.map(org => ({ label: `${org.name}（ID ${org.id}）`, value: org.id }))}
+                  onChange={changeOrganization}
+                  disabled={loading}
+                  style={{ width: 220 }}
+                />
+              </>
+            )}
+            <Button icon={<IconRefresh />} onClick={load} loading={loading}>刷新</Button>
+          </div>
+        )}
       />
 
-      <div className="ur-kpi-grid">
-        <MetricTile label="当前状态" value={<StatusTag status={data?.status || 'operational'}>{internalStatusLabel(data?.status || 'operational')}</StatusTag>} icon={<IconServer />} tone={data?.status === 'degraded' ? 'red' : data?.status === 'warning' ? 'amber' : 'green'} meta="基于通知事件聚合" />
-        <MetricTile label="Open 严重事件" value={data?.open_critical || 0} icon={<IconAlertTriangle />} tone={(data?.open_critical || 0) > 0 ? 'red' : 'slate'} meta="severity = critical 且 status = open" />
-        <MetricTile label="Open 预警事件" value={data?.open_warning || 0} icon={<IconBell />} tone={(data?.open_warning || 0) > 0 ? 'amber' : 'slate'} meta="severity = warning 且 status = open" />
-        <MetricTile label="维护窗口" value="未启用" icon={<IconServer />} tone="slate" meta="当前版本未启用维护窗口调度" />
-      </div>
+			{notificationsLicensed ? notificationLoadState === 'loading' ? (
+				<Surface title="通知关注摘要">
+					<EmptyState title="正在加载通知摘要..." minHeight={180} />
+				</Surface>
+			) : notificationLoadState === 'error' ? (
+				<Surface title="通知关注摘要">
+					<EmptyState
+						title="通知摘要加载失败"
+						description={notificationLoadError}
+						actions={<Button icon={<IconRefresh />} onClick={load}>重试</Button>}
+						minHeight={180}
+					/>
+				</Surface>
+			) : data ? <div className="ur-kpi-grid">
+				<MetricTile
+					label="通知关注级别"
+					value={<StatusTag status={data.attention_level}>{notificationAttentionLabel(data.attention_level)}</StatusTag>}
+					icon={<IconBell />}
+					tone={data.attention_level === 'critical' ? 'red' : data.attention_level === 'warning' ? 'amber' : 'green'}
+					meta="仅基于未确认通知，不代表服务健康"
+				/>
+				<MetricTile label="未确认严重事件" value={data.open_critical} icon={<IconAlertTriangle />} tone={data.open_critical > 0 ? 'red' : 'slate'} meta="status = open 的严重通知" />
+				<MetricTile label="未确认预警事件" value={data.open_warning} icon={<IconBell />} tone={data.open_warning > 0 ? 'amber' : 'slate'} meta="status = open 的预警通知" />
+				<MetricTile label="事件处理" value={<a href={notificationCenterHref}>打开通知中心</a>} icon={<IconBell />} tone="blue" meta="查看详情、确认或解决事件" />
+			</div> : null : (
+        <Surface title="通知关注摘要" description="运行状态保持可用；通知事件摘要需要当前商业授权包含通知中心。">
+          <EmptyState
+            title="通知摘要已锁定"
+            description={notificationsRestriction}
+            minHeight={180}
+          />
+        </Surface>
+      )}
 
-      {canViewRuntime && (
-        <Surface title="运行时观测" description="应用运行时、依赖健康、近 5 分钟流量和外部监控健康。">
+			{canViewRuntime && runtimeLoadState === 'loading' && (
+				<Surface title="运行时观测">
+					<EmptyState title="正在加载运行时状态..." minHeight={220} />
+				</Surface>
+			)}
+
+			{canViewRuntime && runtimeLoadState === 'error' && (
+				<Surface title="运行时观测">
+					<EmptyState
+						title="运行时状态加载失败"
+						description={runtimeLoadError}
+						actions={<Button icon={<IconRefresh />} onClick={load}>重试</Button>}
+						minHeight={220}
+					/>
+				</Surface>
+			)}
+
+			{canViewRuntime && runtimeLoadState === 'ready' && runtimeData && (
+				<Surface title="运行时观测" description="应用运行时、依赖健康、近 5 分钟流量和外部监控健康。">
           <div className="ur-kpi-grid">
             <MetricTile
               label="运行状态"
@@ -461,15 +581,18 @@ export default function InternalStatusPage() {
         </Surface>
       )}
 
-      {canViewRuntime && routingPolicy && (
-        <Surface title="有效路由策略" description="当前实例实际采用的重试、同级权重快照、熔断、跨副本半开探测与密钥冷却参数；版本和值同时写入路由轨迹。">
+      {canViewRuntime && (routingPolicy || streamTransport || agentCapability || budgetAlerts) && (
+        <details style={{ marginTop: 16 }}>
+          <summary style={{ cursor: 'pointer', fontWeight: 600, marginBottom: 12 }}>高级运行参数（排障时展开）</summary>
+      {routingPolicy && (
+        <Surface title="请求保护策略" description="当前实例处理上游失败、限流和熔断时采用的保护参数。">
           <div className="ur-kpi-grid">
             <MetricTile
               label="Provider 重试"
               value={`${routingPolicy.max_retry_count} 次`}
               icon={<IconRefresh />}
               tone="blue"
-              meta={`首次调用之外 / ${routingPolicy.version}`}
+              meta="同一次请求中的追加尝试次数"
             />
             <MetricTile
               label="默认熔断阈值"
@@ -504,7 +627,7 @@ export default function InternalStatusPage() {
               value={`${routingPolicy.key_failure_threshold} 次`}
               icon={<IconServer />}
               tone="slate"
-              meta={routingPolicy.source}
+              meta="连续失败后暂停使用该密钥"
             />
             <MetricTile
               label="路由选择版本"
@@ -538,15 +661,15 @@ export default function InternalStatusPage() {
         </Surface>
       )}
 
-      {canViewRuntime && streamTransport && (
-        <Surface title="有效流式传输策略" description="当前实例实际采用的流式帧大小、心跳与连接时限。它保护长回答和大工具结果的传输；动态追加计费冻结属于后续独立能力。">
+      {streamTransport && (
+        <Surface title="流式连接保护" description="长回答和大工具结果传输时使用的帧大小、心跳与连接时限。">
           <div className="ur-kpi-grid">
             <MetricTile
               label="单帧安全上限"
               value={formatBytes(streamTransport.max_sse_line_bytes)}
               icon={<IconServer />}
               tone="blue"
-              meta={`超过上限会安全终止 / ${streamTransport.version}`}
+              meta="超过上限会安全终止"
             />
             <MetricTile
               label="写入空闲超时"
@@ -573,8 +696,8 @@ export default function InternalStatusPage() {
         </Surface>
       )}
 
-      {canViewRuntime && agentCapability && (
-        <Surface title="Agent 能力合同" description="子 Agent 必须显式登记；该能力只覆盖 UniRouter 模型网关，不代表 Tool、IAM、数据库或导出权限。">
+      {agentCapability && (
+        <Surface title="Agent 使用边界" description="子 Agent 必须显式登记；授权只覆盖模型网关，不包含工具、账号、数据库或导出权限。">
           <div className="ur-kpi-grid">
             <MetricTile
               label="能力令牌"
@@ -602,7 +725,7 @@ export default function InternalStatusPage() {
               value="仅模型网关"
               icon={<IconServer />}
               tone="slate"
-              meta={`${agentCapability.version} / 深度 ≤ ${agentCapability.max_depth}`}
+              meta={`最大委派深度 ${agentCapability.max_depth}`}
             />
             <MetricTile
               label="祖先预算"
@@ -622,15 +745,15 @@ export default function InternalStatusPage() {
         </Surface>
       )}
 
-      {canViewRuntime && budgetAlerts && (
-        <Surface title="有效预算告警合同" description="预算告警只按当前租户的项目统计；项目预算变更写管理审计，触发结果与投递写通知事件账本。旧的全局第一钱包配置已停用。">
+      {budgetAlerts && (
+        <Surface title="预算告警规则" description="按当前租户的项目预算触发，处理记录可在通知中心查看。">
           <div className="ur-kpi-grid">
             <MetricTile
               label="告警范围"
               value={budgetAlerts.scope === 'project' ? '项目级' : budgetAlerts.scope}
               icon={<IconServer />}
               tone="blue"
-              meta={`${budgetAlerts.budget_source} / ${budgetAlerts.period_source}`}
+              meta="使用项目预算与预算周期"
             />
             <MetricTile
               label="触发阈值"
@@ -644,17 +767,19 @@ export default function InternalStatusPage() {
               value="租户隔离"
               icon={<IconBell />}
               tone="green"
-              meta={`${budgetAlerts.event_ledger} / ${budgetAlerts.delivery_route_source}`}
+              meta="通知中心记录并按 Webhook 路由投递"
             />
             <MetricTile
               label="旧全局配置"
               value={budgetAlerts.legacy_global_settings_active ? '仍在生效' : '已停用'}
               icon={<IconServer />}
               tone={budgetAlerts.legacy_global_settings_active ? 'red' : 'slate'}
-              meta={`${budgetAlerts.version} / ${budgetAlerts.evaluation_trigger}`}
+              meta="仅项目级规则生效"
             />
           </div>
         </Surface>
+      )}
+        </details>
       )}
 
       {canViewRuntime && runtimeData?.topology && (
@@ -678,22 +803,23 @@ export default function InternalStatusPage() {
               ]}
             />
           </div>
+          <div className="ur-table-shell" style={{ marginTop: 12 }}>
+            <Table
+              rowKey={(row?: { from: string; to: string; kind: string }) => row ? `${row.from}-${row.to}-${row.kind}` : ''}
+              size="small"
+              pagination={false}
+              dataSource={runtimeData.topology.edges}
+              columns={[
+                { title: '来源', dataIndex: 'from', render: (value: string) => <Text code>{value}</Text> },
+                { title: '依赖关系', dataIndex: 'kind', width: 160 },
+                { title: '目标', dataIndex: 'to', render: (value: string) => <Text code>{value}</Text> },
+                { title: '状态', dataIndex: 'status', width: 140, render: (value: string) => <StatusTag status={value}>{componentStatusLabel(value)}</StatusTag> },
+              ]}
+              empty={<Text type="tertiary">当前运行时未返回依赖边。</Text>}
+            />
+          </div>
         </Surface>
       )}
-
-      <Surface title="通知事件" description="最近 20 条 notification_events 按 open 优先、时间倒序展示。事件状态：未关闭 / 已确认 / 已解决；投递状态只表示 webhook 投递结果。">
-        <div className="ur-table-shell">
-          <Table
-            columns={columns}
-            dataSource={data?.incidents || []}
-            rowKey="id"
-            loading={loading}
-            pagination={false}
-            size="small"
-            empty={<EmptyState title="暂无事件" description="没有 open 或近期通知事件。" minHeight={180} />}
-          />
-        </div>
-      </Surface>
     </div>
   );
 }

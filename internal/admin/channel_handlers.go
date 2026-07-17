@@ -8,8 +8,16 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/uniroute/unirouter/internal/adapters"
+	"github.com/uniroute/unirouter/internal/middleware"
 )
+
+type channelMutationStore interface {
+	QueryRow(context.Context, string, ...interface{}) pgx.Row
+	Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error)
+}
 
 func (h *Handler) ListChannels(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePagination(r)
@@ -106,8 +114,23 @@ func (h *Handler) CreateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var id int64
-	err := h.db.QueryRow(r.Context(),
+	var (
+		id    int64
+		tx    pgx.Tx
+		store channelMutationStore = h.db
+	)
+	if !isUnauthenticatedUnitContext(r.Context()) {
+		var err error
+		tx, err = h.db.Begin(r.Context())
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to create channel"})
+			return
+		}
+		defer tx.Rollback(r.Context())
+		store = tx
+	}
+
+	err := store.QueryRow(r.Context(),
 		`INSERT INTO channels (name, provider, base_url, models, adapter_type, adapter_config, priority, degradation_threshold, routing_weight, status, circuit_state, fail_count, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, 'active', 'healthy', 0, NOW(), NOW())
 		 RETURNING id`,
@@ -124,7 +147,20 @@ func (h *Handler) CreateChannel(w http.ResponseWriter, r *http.Request) {
 	after := channelAuditState(id, req.Name, req.Provider, req.BaseURL, req.Models, req.AdapterType, req.Priority, req.DegradationThreshold, "active", "healthy", 0)
 	after["routing_weight"] = req.RoutingWeight
 	after["routing_epoch"] = int64(1)
-	h.recordAudit(r.Context(), "channel.create", "channel", fmt.Sprintf("%d", id), map[string]interface{}{"after": after}, r.RemoteAddr)
+	detail := map[string]interface{}{"after": after}
+	if tx != nil {
+		if err := insertAuditEntry(r.Context(), tx, "channel.create", "channel", fmt.Sprintf("%d", id), detail,
+			requestAuditMeta(r, middleware.GetOrgIDFromContext(r.Context()), middleware.GetProjectIDFromContext(r.Context()))); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to create channel"})
+			return
+		}
+		if err := tx.Commit(r.Context()); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to create channel"})
+			return
+		}
+	} else {
+		h.recordAudit(r.Context(), "channel.create", "channel", fmt.Sprintf("%d", id), detail, r.RemoteAddr)
+	}
 	h.invalidateRoutingSnapshots()
 
 	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id})
@@ -240,7 +276,21 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	before, beforeFound := h.channelAuditSnapshot(r.Context(), id)
+	var (
+		tx    pgx.Tx
+		store channelMutationStore = h.db
+	)
+	if !isUnauthenticatedUnitContext(r.Context()) {
+		tx, err = h.db.Begin(r.Context())
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to update channel"})
+			return
+		}
+		defer tx.Rollback(r.Context())
+		store = tx
+	}
+
+	before, beforeFound := h.channelAuditSnapshot(r.Context(), store, id, tx != nil)
 
 	sets = append(sets, "routing_epoch = routing_epoch + 1", "updated_at = NOW()")
 	args = append(args, id)
@@ -252,7 +302,7 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := fmt.Sprintf("UPDATE channels SET %s WHERE %s", joinStrings(sets, ", "), where)
-	tag, err := h.db.Exec(r.Context(), query, args...)
+	tag, err := store.Exec(r.Context(), query, args...)
 	if err != nil {
 		if writeCommercialLimitViolation(w, err) {
 			return
@@ -304,10 +354,27 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 	if beforeFound {
 		detail["before"] = before
 	}
-	if after, ok := h.channelAuditSnapshot(r.Context(), id); ok {
+	after, afterFound := h.channelAuditSnapshot(r.Context(), store, id, false)
+	if afterFound {
 		detail["after"] = after
 	}
-	h.recordAudit(r.Context(), "channel.update", "channel", idStr, detail, r.RemoteAddr)
+	if tx != nil {
+		if !beforeFound || !afterFound {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to update channel"})
+			return
+		}
+		if err := insertAuditEntry(r.Context(), tx, "channel.update", "channel", idStr, detail,
+			requestAuditMeta(r, middleware.GetOrgIDFromContext(r.Context()), middleware.GetProjectIDFromContext(r.Context()))); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to update channel"})
+			return
+		}
+		if err := tx.Commit(r.Context()); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to update channel"})
+			return
+		}
+	} else {
+		h.recordAudit(r.Context(), "channel.update", "channel", idStr, detail, r.RemoteAddr)
+	}
 	h.invalidateRoutingSnapshots()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"message": "Channel updated"})
@@ -321,9 +388,23 @@ func (h *Handler) DeleteChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	before, beforeFound := h.channelAuditSnapshot(r.Context(), id)
+	var (
+		tx    pgx.Tx
+		store channelMutationStore = h.db
+	)
+	if !isUnauthenticatedUnitContext(r.Context()) {
+		tx, err = h.db.Begin(r.Context())
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to delete channel"})
+			return
+		}
+		defer tx.Rollback(r.Context())
+		store = tx
+	}
 
-	tag, err := h.db.Exec(r.Context(), `DELETE FROM channels WHERE id = $1`, id)
+	before, beforeFound := h.channelAuditSnapshot(r.Context(), store, id, tx != nil)
+
+	tag, err := store.Exec(r.Context(), `DELETE FROM channels WHERE id = $1`, id)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to delete channel"})
 		return
@@ -337,7 +418,23 @@ func (h *Handler) DeleteChannel(w http.ResponseWriter, r *http.Request) {
 	if beforeFound {
 		detail["before"] = before
 	}
-	h.recordAudit(r.Context(), "channel.delete", "channel", idStr, detail, r.RemoteAddr)
+	if tx != nil {
+		if !beforeFound {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to delete channel"})
+			return
+		}
+		if err := insertAuditEntry(r.Context(), tx, "channel.delete", "channel", idStr, detail,
+			requestAuditMeta(r, middleware.GetOrgIDFromContext(r.Context()), middleware.GetProjectIDFromContext(r.Context()))); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to delete channel"})
+			return
+		}
+		if err := tx.Commit(r.Context()); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to delete channel"})
+			return
+		}
+	} else {
+		h.recordAudit(r.Context(), "channel.delete", "channel", idStr, detail, r.RemoteAddr)
+	}
 	h.invalidateRoutingSnapshots()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"message": "Channel deleted"})
@@ -359,15 +456,19 @@ func channelAuditState(id int64, name, provider, baseURL, models, adapterType st
 	}
 }
 
-func (h *Handler) channelAuditSnapshot(ctx context.Context, id int64) (map[string]interface{}, bool) {
+func (h *Handler) channelAuditSnapshot(ctx context.Context, store channelMutationStore, id int64, lock bool) (map[string]interface{}, bool) {
 	var name, provider, baseURL, models, adapterType, status, circuitState string
 	var priority, degradationThreshold, routingWeight, failCount int
 	var routingEpoch int64
-	err := h.db.QueryRow(ctx,
-		`SELECT name, provider, base_url, models, COALESCE(adapter_type, 'openai_compatible'),
+	query := `SELECT name, provider, base_url, models, COALESCE(adapter_type, 'openai_compatible'),
 		        priority, degradation_threshold, status, circuit_state, fail_count,
 		        routing_weight, routing_epoch
-		 FROM channels WHERE id = $1`,
+		 FROM channels WHERE id = $1`
+	if lock {
+		query += " FOR UPDATE"
+	}
+	err := store.QueryRow(ctx,
+		query,
 		id,
 	).Scan(&name, &provider, &baseURL, &models, &adapterType, &priority, &degradationThreshold, &status, &circuitState, &failCount, &routingWeight, &routingEpoch)
 	if err != nil {

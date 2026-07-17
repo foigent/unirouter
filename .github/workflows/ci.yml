@@ -49,10 +49,17 @@ jobs:
             fi
 
             # Fail closed if either commit cannot be resolved before routing.
-            git diff --name-only "$BASE_SHA" "$HEAD_SHA" >/dev/null
+            # Keep both sides of cross-surface renames visible to the router.
+            # Otherwise a Go file renamed into docs/ is reported only by its
+            # new docs path and can incorrectly skip the backend gate.
+            git diff --no-renames --name-only "$BASE_SHA" "$HEAD_SHA" >/dev/null
             while IFS= read -r -d '' file; do
               printf 'changed=%q\n' "$file"
               case "$file" in
+                docs/tech-ref/05-openapi-spec.yaml)
+                  # This contract is consumed by backend route-parity tests.
+                  backend=true
+                  ;;
                 docs/*|*.md|LICENSE*|.github/ISSUE_TEMPLATE/*|.github/PULL_REQUEST_TEMPLATE*)
                   ;;
                 .dockerignore|Dockerfile|frontend/.dockerignore)
@@ -76,7 +83,7 @@ jobs:
                   docker=true
                   ;;
               esac
-            done < <(git diff --name-only -z "$BASE_SHA" "$HEAD_SHA")
+            done < <(git diff --no-renames --name-only -z "$BASE_SHA" "$HEAD_SHA")
           fi
 
           {
@@ -165,12 +172,28 @@ jobs:
         run: go vet ./...
       
       - name: Run tests
+        # Includes the untagged 000039 tenant-isolation migration regression.
         run: go test -v -race -coverprofile=coverage.out ./...
 
       - name: Run admin integration tests
         env:
           REQUIRE_TEST_DATABASE: "1"
         run: go test -tags=integration -race ./internal/admin -count=1
+
+      - name: Run V1 security migration integration tests
+        env:
+          REQUIRE_TEST_DATABASE: "1"
+        run: go test -tags=integration -race ./internal/migrate -run '^(TestAdminSessionRevocationMigration(ConstraintsIntegration|UnusedDownAndEvidenceGuardsIntegration)|TestV1(DeliveryAttemptBinding|StreamLeaseFencing|LocalLoginIdentity).*)$' -count=1
+
+      - name: Run secure admin CLI integration tests
+        env:
+          REQUIRE_TEST_DATABASE: "1"
+        run: go test -tags=integration -race ./cmd/uniroute -run '^TestAdmin(SetPassword|Create)CLI.*Integration$' -count=1
+
+      - name: Run V1 delivery and personal-key authority integration tests
+        env:
+          REQUIRE_TEST_DATABASE: "1"
+        run: go test -tags=integration -race ./internal/billing ./internal/middleware -run '^(TestV1(DeliveryAttemptBinding|ProviderBackedFrozenReservation|StreamFence|CheckpointCannotReviveLease|StreamGenerationFences|GenericRecoveryRejects).*|TestGatewayAuth_PersonalProjectAuthorityRevocation_Integration)$' -count=1
 
       - name: Run V1 pricing and micro-ledger integration tests
         env:
@@ -349,7 +372,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
       
@@ -362,10 +385,11 @@ jobs:
       - name: Frontend tests
         run: npm test -- --run
 
-      - name: Build
-        env:
-          VITE_DEPLOY_ENV: development
-        run: npm exec -- vite build
+      - name: Build frontend runtime image
+        run: docker build --build-arg VITE_DEPLOY_ENV=development -t unirouter-frontend:test .
+
+      - name: Validate frontend Nginx configuration
+        run: docker run --rm --entrypoint nginx unirouter-frontend:test -t
 
   docker:
     name: Docker Build
@@ -399,80 +423,182 @@ jobs:
           test ! -e frontend/.env
           test ! -e frontend/.env.local
           test ! -e frontend/docker-context-regression.pem
+          test ! -e frontend/src/docker-context-regression.pem
+          test ! -e frontend/src/docker-context-regression.key
+          test ! -e frontend/docker-context-regression.private
+          test ! -e frontend/src/docker-context-regression.private
           test ! -e frontend/secrets
+          test ! -e release-signing-regression.private
+          git check-ignore -q release-signing-regression.private
+          git check-ignore -q frontend/docker-context-regression.private
+          git check-ignore -q frontend/src/docker-context-regression.private
 
           compose_config="$(
             GRAFANA_ADMIN_PASSWORD=ci-compose-validation \
             JWT_SECRET=ci-compose-validation \
             ENCRYPTION_KEY=ci-compose-validation \
+            UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET=0123456789abcdef0123456789abcdef \
             VITE_DEPLOY_ENV=development \
             docker compose config
           )"
           grep -F 'VITE_DEPLOY_ENV: development' <<< "$compose_config"
+          grep -F 'UNIROUTER_RELEASE_TRUST_MODE: development' <<< "$compose_config"
           grep -F 'ARG VITE_DEPLOY_ENV=' frontend/Dockerfile
           grep -F 'ENV VITE_DEPLOY_ENV=${VITE_DEPLOY_ENV}' frontend/Dockerfile
 
-          customer_compose="$(
-            UNIROUTER_BACKEND_IMAGE=unirouter/backend@sha256:5555555555555555555555555555555555555555555555555555555555555555 \
-            UNIROUTER_FRONTEND_IMAGE=unirouter/frontend@sha256:6666666666666666666666666666666666666666666666666666666666666666 \
-            POSTGRES_IMAGE=postgres@sha256:1111111111111111111111111111111111111111111111111111111111111111 \
-            REDIS_IMAGE=redis@sha256:2222222222222222222222222222222222222222222222222222222222222222 \
-            PROMETHEUS_IMAGE=prom/prometheus@sha256:3333333333333333333333333333333333333333333333333333333333333333 \
-            GRAFANA_IMAGE=grafana/grafana@sha256:4444444444444444444444444444444444444444444444444444444444444444 \
-            POSTGRES_PASSWORD=ci-compose-validation \
-            DB_DSN='postgres://uniroute:ci-compose-validation@postgres:5432/uniroute?sslmode=disable' \
-            REDIS_PASSWORD=ci-compose-validation \
-            JWT_SECRET=ci-compose-validation \
-            API_KEY_HASH_SECRET=ci-compose-validation \
-            ENCRYPTION_KEY=ci-compose-validation-32bytes! \
+          canary_compose="$(
             GRAFANA_ADMIN_PASSWORD=ci-compose-validation \
-            LICENSE_DEPLOYMENT_ID=ci-deployment \
-            docker compose -f deploy/customer/docker-compose.yml config
+            JWT_SECRET=ci-compose-validation \
+            ENCRYPTION_KEY=ci-compose-validation \
+            UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET=0123456789abcdef0123456789abcdef \
+            VITE_DEPLOY_ENV=development \
+            docker compose -f docker-compose.yml -f docker-compose.canary.yml config
           )"
+          test "$(grep -Fc 'UNIROUTER_RELEASE_TRUST_MODE: development' <<< "$canary_compose")" -eq 2
+          test "$(grep -Fc 'UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET: 0123456789abcdef0123456789abcdef' <<< "$canary_compose")" -eq 2
+
+          export UNIROUTER_BACKEND_IMAGE=unirouter/backend@sha256:5555555555555555555555555555555555555555555555555555555555555555
+          export UNIROUTER_FRONTEND_IMAGE=unirouter/frontend@sha256:6666666666666666666666666666666666666666666666666666666666666666
+          export POSTGRES_IMAGE=postgres@sha256:1111111111111111111111111111111111111111111111111111111111111111
+          export REDIS_IMAGE=redis@sha256:2222222222222222222222222222222222222222222222222222222222222222
+          export PROMETHEUS_IMAGE=prom/prometheus@sha256:3333333333333333333333333333333333333333333333333333333333333333
+          export GRAFANA_IMAGE=grafana/grafana@sha256:4444444444444444444444444444444444444444444444444444444444444444
+          export POSTGRES_PASSWORD=ci-compose-validation
+          export DB_DSN='postgres://uniroute:ci-compose-validation@postgres:5432/uniroute?sslmode=disable'
+          export REDIS_PASSWORD=ci-compose-validation
+          export JWT_SECRET=ci-jwt-secret-0123456789abcdef0123456789abcdef
+          export API_KEY_HASH_SECRET=ci-api-key-hash-0123456789abcdef0123456789abcdef
+          export ENCRYPTION_KEY=0123456789abcdef0123456789abcdef
+          export UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET=0123456789abcdef0123456789abcdef
+          export GRAFANA_ADMIN_PASSWORD=ci-compose-validation
+          export LICENSE_DEPLOYMENT_ID=ci-deployment
+          export UNIROUTER_LISTEN_ADDRESS=127.0.0.1
+          export UNIROUTER_INTERNAL_NETWORK_CIDR=172.30.250.0/24
+          export UNIROUTER_INTERNAL_NETWORK_GATEWAY=172.30.250.1
+          export UNIROUTER_FRONTEND_PROXY_IP=172.30.250.10
+          export TRUSTED_PROXY_CIDRS=172.30.250.10/32,172.30.250.1/32
+
+          customer_compose="$(docker compose -f deploy/customer/docker-compose.yml config)"
           grep -F 'image: unirouter/backend@sha256:5555555555555555555555555555555555555555555555555555555555555555' <<< "$customer_compose"
           grep -F 'image: unirouter/frontend@sha256:6666666666666666666666666666666666666666666666666666666666666666' <<< "$customer_compose"
           grep -F 'image: postgres@sha256:1111111111111111111111111111111111111111111111111111111111111111' <<< "$customer_compose"
           grep -F 'image: redis@sha256:2222222222222222222222222222222222222222222222222222222222222222' <<< "$customer_compose"
           grep -F 'image: prom/prometheus@sha256:3333333333333333333333333333333333333333333333333333333333333333' <<< "$customer_compose"
           grep -F 'image: grafana/grafana@sha256:4444444444444444444444444444444444444444444444444444444444444444' <<< "$customer_compose"
+          grep -F 'ipv4_address: 172.30.250.10' <<< "$customer_compose"
+          grep -F 'TRUSTED_PROXY_CIDRS: 172.30.250.10/32,172.30.250.1/32' <<< "$customer_compose"
           if grep -Fq 'build:' <<< "$customer_compose"; then
             echo 'customer Compose must not contain build contexts' >&2
             exit 1
           fi
-
-          cleanup() {
-            rm -f .env.production
-            rm -f frontend/.env
-            rm -f frontend/.env.local
-            rm -f frontend/docker-context-regression.pem
-            rm -f frontend/secrets/docker-context-regression.txt
-            if [[ -d frontend/secrets ]]; then
-              rmdir frontend/secrets
-            fi
-          }
-          trap cleanup EXIT
+          deploy/customer/preflight.sh /dev/null
+          if JWT_SECRET=short deploy/customer/preflight.sh /dev/null; then
+            echo 'customer preflight must reject a short JWT secret' >&2
+            exit 1
+          fi
+          if API_KEY_HASH_SECRET=short deploy/customer/preflight.sh /dev/null; then
+            echo 'customer preflight must reject a short API-key hash secret' >&2
+            exit 1
+          fi
+          if UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET=short deploy/customer/preflight.sh /dev/null; then
+            echo 'customer preflight must reject a short notification Webhook signing secret' >&2
+            exit 1
+          fi
+          if ENCRYPTION_KEY=short deploy/customer/preflight.sh /dev/null; then
+            echo 'customer preflight must reject an invalid AES-256 encryption key' >&2
+            exit 1
+          fi
+          if JWT_SECRET=REPLACE_WITH_32_BYTE_RANDOM_VALUE deploy/customer/preflight.sh /dev/null; then
+            echo 'customer preflight must reject an unreplaced secret placeholder' >&2
+            exit 1
+          fi
+          if DB_DSN='postgres://uniroute:REPLACE_WITH_URL_ENCODED_PASSWORD@postgres:5432/uniroute?sslmode=disable' deploy/customer/preflight.sh /dev/null; then
+            echo 'customer preflight must reject an embedded configuration placeholder' >&2
+            exit 1
+          fi
+          if TRUSTED_PROXY_CIDRS=172.30.250.1/32 deploy/customer/preflight.sh /dev/null; then
+            echo 'customer preflight must require the fixed frontend proxy /32' >&2
+            exit 1
+          fi
+          if UNIROUTER_FRONTEND_PROXY_IP=172.30.251.10 TRUSTED_PROXY_CIDRS=172.30.251.10/32 deploy/customer/preflight.sh /dev/null; then
+            echo 'customer preflight must reject a frontend proxy IP outside the internal subnet' >&2
+            exit 1
+          fi
+          if UNIROUTER_LISTEN_ADDRESS=0.0.0.0 deploy/customer/preflight.sh /dev/null; then
+            echo 'customer preflight must keep the formal frontend bind behind loopback TLS ingress' >&2
+            exit 1
+          fi
+          if UNIROUTER_BACKEND_IMAGE=unirouter/backend:latest deploy/customer/preflight.sh /dev/null; then
+            echo 'customer preflight must reject a mutable image tag' >&2
+            exit 1
+          fi
 
           printf 'docker-context-regression-marker\n' > .env.production
           printf 'docker-context-regression-marker\n' > frontend/.env
           printf 'docker-context-regression-marker\n' > frontend/.env.local
           printf 'docker-context-regression-marker\n' > frontend/docker-context-regression.pem
+          printf 'docker-context-regression-marker\n' > frontend/src/docker-context-regression.pem
+          printf 'docker-context-regression-marker\n' > frontend/src/docker-context-regression.key
+          printf 'docker-context-regression-marker\n' > frontend/docker-context-regression.private
+          printf 'docker-context-regression-marker\n' > frontend/src/docker-context-regression.private
+          printf 'docker-context-regression-marker\n' > release-signing-regression.private
           mkdir frontend/secrets
           printf 'docker-context-regression-marker\n' > frontend/secrets/docker-context-regression.txt
 
-          docker build \
+          if docker build \
             --build-arg UNIROUTER_RELEASE_TRUST_MODE=release \
-            --build-arg UNIROUTER_LICENSE_TRUST_BUNDLE_B64=eyJsaWNlbnNlLWNpIjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQT0ifQ \
-            --build-arg UNIROUTER_UPGRADE_TRUST_BUNDLE_B64=eyJ1cGdyYWRlLWNpIjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQT0ifQ \
+            --build-arg UNIROUTER_LICENSE_TRUST_BUNDLE_B64=eyJsaWNlbnNlLWNpIjoiM2JvVTZyMWtOMXhNY1VtMmh0cFk4ZE0zR3A2ZVE2ZHFiVnZjT1hKWm5qTT0ifQ \
+            --build-arg UNIROUTER_UPGRADE_TRUST_BUNDLE_B64=eyJ1cGdyYWRlLWNpIjoiaTlRLzlSVm5YNjlqZDhNbWJzWVdCa1RIOHRIWk9rdng2c3l4cTJvNjFlMD0ifQ \
+            -t unirouter-missing-release-identity:test .; then
+            echo 'release image build must reject missing immutable version/commit metadata' >&2
+            exit 1
+          fi
+
+          if docker build \
+            --build-arg RUNTIME_VERSION=1.0.0-ci \
+            --build-arg RUNTIME_COMMIT=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --build-arg UNIROUTER_RELEASE_TRUST_MODE=release \
+            --build-arg UNIROUTER_LICENSE_TRUST_BUNDLE_B64=eyJsaWNlbnNlLWNpIjoiM2JvVTZyMWtOMXhNY1VtMmh0cFk4ZE0zR3A2ZVE2ZHFiVnZjT1hKWm5qTT0ifQ \
+            --build-arg 'UNIROUTER_UPGRADE_TRUST_BUNDLE_B64=invalid -X injected=value' \
+            -t unirouter-unsafe-release-argument:test .; then
+            echo 'release image build must reject linker-argument injection through trust metadata' >&2
+            exit 1
+          fi
+
+          docker build \
+            --build-arg RUNTIME_VERSION=1.0.0-ci \
+            --build-arg RUNTIME_COMMIT=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --build-arg UNIROUTER_RELEASE_TRUST_MODE=release \
+            --build-arg UNIROUTER_LICENSE_TRUST_BUNDLE_B64=eyJsaWNlbnNlLWNpIjoiM2JvVTZyMWtOMXhNY1VtMmh0cFk4ZE0zR3A2ZVE2ZHFiVnZjT1hKWm5qTT0ifQ \
+            --build-arg UNIROUTER_UPGRADE_TRUST_BUNDLE_B64=eyJ1cGdyYWRlLWNpIjoiaTlRLzlSVm5YNjlqZDhNbWJzWVdCa1RIOHRIWk9rdng2c3l4cTJvNjFlMD0ifQ \
             -t unirouter:test .
 
+          if release_smoke="$(
+            docker run --rm \
+              -e JWT_SECRET=ci-jwt-secret-0123456789abcdef0123456789abcdef \
+              -e API_KEY_HASH_SECRET=ci-api-key-hash-0123456789abcdef0123456789abcdef \
+              -e ENCRYPTION_KEY=0123456789abcdef0123456789abcdef \
+              -e UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET=0123456789abcdef0123456789abcdef \
+              --entrypoint ./uniroute unirouter:test admin 2>&1
+          )"; then
+            echo 'release image smoke command must stop at the intentional admin usage error' >&2
+            exit 1
+          fi
+          grep -F 'Release trust mode: release license_keys=1 upgrade_keys=1' <<< "$release_smoke"
+          grep -F 'usage: uniroute admin <create|set-password>' <<< "$release_smoke"
+
           docker build -t unirouter-frontend-context:test -f - frontend <<'DOCKERFILE'
-          FROM alpine:3.19
+          FROM alpine:3.23
           WORKDIR /app
           COPY . .
           RUN test -e /app/package.json \
               && test ! -e /app/.env \
               && test ! -e /app/.env.local \
               && test ! -e /app/docker-context-regression.pem \
+              && test ! -e /app/src/docker-context-regression.pem \
+              && test ! -e /app/src/docker-context-regression.key \
+              && test ! -e /app/docker-context-regression.private \
+              && test ! -e /app/src/docker-context-regression.private \
               && test ! -d /app/secrets
           DOCKERFILE
       

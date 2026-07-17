@@ -162,10 +162,11 @@ func (m *mockBilling) BeginStreamDelivery(ctx context.Context, start billing.Str
 		}
 	}
 	if m.recordDeliveryFn != nil {
+		fence := start.Fence()
 		return m.recordDeliveryFn(ctx, billing.DeliveryEvent{
 			RequestID: start.RequestID, AttemptID: start.AttemptID, OrgID: start.OrgID,
 			Mode: billing.DeliveryModeStream, Outcome: billing.DeliveryOutcomeWriteStarted,
-			HTTPStatus: http.StatusOK,
+			HTTPStatus: http.StatusOK, StreamFence: &fence,
 		})
 	}
 	return nil
@@ -2260,6 +2261,60 @@ func TestP6F18BRelayStreamWithholdsContentWhenOutputMarkerFails(t *testing.T) {
 	}
 }
 
+func TestRelayStreamNoSpaceDataUsesProtectedOutputPath(t *testing.T) {
+	markCalls := 0
+	cancelCalls := 0
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int) = 10000
+				return nil
+			}}
+		},
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	b := &mockBilling{
+		markOutputFn: func(ctx context.Context, requestID string, orgID int64) error {
+			markCalls++
+			return fmt.Errorf("database unavailable")
+		},
+		cancelFn: func(ctx context.Context, requestID string, orgID int64) error {
+			cancelCalls++
+			return nil
+		},
+		persistUsageFn: func(ctx context.Context, req billing.SettleRequest) error {
+			t.Fatal("usage must not be persisted without an output marker")
+			return nil
+		},
+		settleFn: func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
+			t.Fatal("settlement must not run without an output marker")
+			return nil, nil
+		},
+	}
+	relay := newTestRelay(db, b)
+	rec := httptest.NewRecorder()
+	resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("data:{\"choices\":[{\"delta\":{\"content\":\"must-not-leak\"}}]}\n\ndata:[DONE]\n\n"))}
+	route := &RouteResult{Channel: models.Channel{ID: 1, Name: "openai", Provider: "openai"}}
+
+	relay.relayStreamRequest(context.Background(), rec, resp, route, "req-sse-no-space-marker-fail", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", nil, logger.New(logger.Fields{RequestID: "req-sse-no-space-marker-fail", OrgID: 1}), time.Now(), 1000, nil, "")
+
+	if markCalls != 1 {
+		t.Fatalf("no-space data field bypassed the protected output marker: calls=%d body=%s", markCalls, rec.Body.String())
+	}
+	if cancelCalls != 1 {
+		t.Fatalf("expected one safe pre-output cancellation, got %d", cancelCalls)
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "must-not-leak") {
+		t.Fatalf("no-space model content crossed a failed billing marker: %s", body)
+	}
+	if !strings.Contains(body, "Unable to establish durable billing state") || strings.Contains(body, "data: [DONE]") {
+		t.Fatalf("expected protected stream failure, got %s", body)
+	}
+}
+
 func TestP6F18BRelayStreamDoesNotCancelWhenFinalUsagePersistenceFails(t *testing.T) {
 	persistCalls := 0
 	cancelCalls := 0
@@ -3540,7 +3595,10 @@ func TestP6F10ProviderOutputHoldRetriesIdempotentlyAfterCancellation(t *testing.
 
 func newP6F10GuardrailService(t *testing.T, policy guardrail.Policy) *guardrail.Service {
 	t.Helper()
-	database := &testutil.MockDB{QueryFn: func(context.Context, string, ...any) (pgx.Rows, error) {
+	database := &testutil.MockDB{QueryFn: func(_ context.Context, query string, _ ...any) (pgx.Rows, error) {
+		if strings.Contains(query, "HAVING COUNT(*)") {
+			return &testutil.MockRows{}, nil
+		}
 		return &testutil.MockRows{Rows: []func(...any) error{func(dest ...any) error {
 			*dest[0].(*int64) = policy.ID
 			*dest[1].(**int64) = policy.OrgID
@@ -3656,6 +3714,46 @@ func TestP6F10OutputBlockRetainsProviderEvidenceWithoutDelivery(t *testing.T) {
 	}
 }
 
+func TestNonStreamReasoningContentIsBlockedBeforeDelivery(t *testing.T) {
+	service := newP6F10GuardrailService(t, guardrail.Policy{
+		ID: 22, Name: "block reasoning email", Version: 1, Stage: guardrail.StageNonStreamOutput,
+		DetectorRef: guardrail.DetectorPII, Action: guardrail.ActionBlock,
+		Mode: guardrail.ModeEnforce, FailureMode: guardrail.FailureDegradedAllow,
+		Config: json.RawMessage(`{"entities":["email"]}`),
+	})
+	pinned := service.Pin(guardrail.Subject{OrgID: 1, APIKeyID: 2, Model: "gpt-4o", Endpoint: "chat"})
+	var holdReason string
+	deliveryPrepared := false
+	b := &mockBilling{
+		holdOutputFn: func(_ context.Context, _ billing.SettleRequest, reason string) error {
+			holdReason = reason
+			return nil
+		},
+		prepareDeliveryFn: func(context.Context, billing.SettleRequest) (*billing.PrepareDeliveryResult, error) {
+			deliveryPrepared = true
+			return nil, nil
+		},
+	}
+	relay := newTestRelay(&testutil.MockDB{}, b)
+	route := &RouteResult{Channel: models.Channel{ID: 1, Provider: "test", Name: "test"}, ChannelKey: models.ChannelKey{ID: 1}}
+	resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"id":"chatcmpl-reasoning-block","choices":[{"message":{"role":"assistant","content":"safe","reasoning_content":"alice@example.com"}}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}`))}
+	ctx := context.WithValue(context.Background(), middleware.CtxOrgID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(2))
+	ctx = contextWithGuardrailPin(ctx, pinned)
+	ctx = contextWithRouteAttempt(ctx, 1, 1)
+	ctx = contextWithAttemptID(ctx, "att-reasoning-block")
+	rec := httptest.NewRecorder()
+
+	relay.relayNonStreamRequest(ctx, rec, resp, route, "req-reasoning-block", 1, 2, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{}), time.Now(), adapters.NewOpenAICompatible(), 2, 3, "upstream-reasoning-block")
+
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "guardrail_error.output_blocked") {
+		t.Fatalf("reasoning content bypassed output block: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if deliveryPrepared || holdReason != "guardrail_withheld" {
+		t.Fatalf("reasoning block reached delivery: prepared=%t hold=%q", deliveryPrepared, holdReason)
+	}
+}
+
 func TestP6F10OutputRedactionDeliversTransformedContent(t *testing.T) {
 	service := newP6F10GuardrailService(t, guardrail.Policy{
 		ID: 3, Name: "redact output email", Version: 1, Stage: guardrail.StageNonStreamOutput,
@@ -3682,6 +3780,74 @@ func TestP6F10OutputRedactionDeliversTransformedContent(t *testing.T) {
 	}
 	if held {
 		t.Fatal("redacted deliverable output entered cost hold")
+	}
+}
+
+func TestNonStreamReasoningIsRedactedBeforeDelivery(t *testing.T) {
+	service := newP6F10GuardrailService(t, guardrail.Policy{
+		ID: 23, Name: "redact reasoning email", Version: 1, Stage: guardrail.StageNonStreamOutput,
+		DetectorRef: guardrail.DetectorPII, Action: guardrail.ActionRedact,
+		Mode: guardrail.ModeEnforce, FailureMode: guardrail.FailureDegradedAllow,
+		Config: json.RawMessage(`{"entities":["email"]}`),
+	})
+	pinned := service.Pin(guardrail.Subject{OrgID: 1, APIKeyID: 2, Model: "gpt-4o", Endpoint: "chat"})
+	held := false
+	b := &mockBilling{holdOutputFn: func(context.Context, billing.SettleRequest, string) error { held = true; return nil }}
+	relay := newTestRelay(&testutil.MockDB{}, b)
+	route := &RouteResult{Channel: models.Channel{ID: 1, Provider: "test", Name: "test"}, ChannelKey: models.ChannelKey{ID: 1}}
+	resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"id":"chatcmpl-reasoning-redact","choices":[{"message":{"role":"assistant","content":"safe","reasoning":"alice@example.com"}}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}`))}
+	ctx := context.WithValue(context.Background(), middleware.CtxOrgID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(2))
+	ctx = contextWithGuardrailPin(ctx, pinned)
+	ctx = contextWithRouteAttempt(ctx, 1, 1)
+	ctx = contextWithAttemptID(ctx, "att-reasoning-redact")
+	rec := httptest.NewRecorder()
+
+	relay.relayNonStreamRequest(ctx, rec, resp, route, "req-reasoning-redact", 1, 2, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{}), time.Now(), adapters.NewOpenAICompatible(), 2, 3, "upstream-reasoning-redact")
+
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"reasoning":"[REDACTED]"`) ||
+		strings.Contains(rec.Body.String(), "alice@example.com") || !strings.Contains(rec.Body.String(), `"content":"safe"`) {
+		t.Fatalf("reasoning was not atomically redacted: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if held {
+		t.Fatal("redacted reasoning entered provider-evidence hold")
+	}
+}
+
+func TestNonStreamUnsupportedKnownTextShapeIsWithheld(t *testing.T) {
+	service := newP6F10GuardrailService(t, guardrail.Policy{
+		ID: 24, Name: "redact modeled output", Version: 1, Stage: guardrail.StageNonStreamOutput,
+		DetectorRef: guardrail.DetectorPII, Action: guardrail.ActionRedact,
+		Mode: guardrail.ModeEnforce, FailureMode: guardrail.FailureDegradedAllow,
+		Config: json.RawMessage(`{"entities":["email"]}`),
+	})
+	pinned := service.Pin(guardrail.Subject{OrgID: 1, APIKeyID: 2, Model: "gpt-4o", Endpoint: "chat"})
+	var holdReason string
+	deliveryPrepared := false
+	b := &mockBilling{
+		holdOutputFn: func(_ context.Context, _ billing.SettleRequest, reason string) error {
+			holdReason = reason
+			return nil
+		},
+		prepareDeliveryFn: func(context.Context, billing.SettleRequest) (*billing.PrepareDeliveryResult, error) {
+			deliveryPrepared = true
+			return nil, nil
+		},
+	}
+	relay := newTestRelay(&testutil.MockDB{}, b)
+	route := &RouteResult{Channel: models.Channel{ID: 1, Provider: "test", Name: "test"}, ChannelKey: models.ChannelKey{ID: 1}}
+	resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"id":"chatcmpl-reasoning-shape","choices":[{"message":{"role":"assistant","content":"safe","reasoning_content":{"text":"alice@example.com"}}}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}`))}
+	ctx := context.WithValue(context.Background(), middleware.CtxOrgID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(2))
+	ctx = contextWithGuardrailPin(ctx, pinned)
+	ctx = contextWithRouteAttempt(ctx, 1, 1)
+	ctx = contextWithAttemptID(ctx, "att-reasoning-shape")
+	rec := httptest.NewRecorder()
+
+	relay.relayNonStreamRequest(ctx, rec, resp, route, "req-reasoning-shape", 1, 2, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{}), time.Now(), adapters.NewOpenAICompatible(), 2, 3, "upstream-reasoning-shape")
+
+	if rec.Code != http.StatusForbidden || deliveryPrepared || holdReason != "guardrail_withheld" {
+		t.Fatalf("unsupported modeled text shape was delivered: status=%d prepared=%t hold=%q body=%s", rec.Code, deliveryPrepared, holdReason, rec.Body.String())
 	}
 }
 

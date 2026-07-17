@@ -2,10 +2,13 @@ package admin
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/money"
 )
 
@@ -17,75 +20,159 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Optional time range params; default to last 24h
-	startTime := r.URL.Query().Get("start_time")
-	endTime := r.URL.Query().Get("end_time")
-	if startTime == "" {
-		startTime = time.Now().Add(-24 * time.Hour).Format(time.RFC3339)
+	start, end, err := dashboardTimeRange(r, time.Now())
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error()})
+		return
 	}
-	if endTime == "" {
-		endTime = time.Now().Format(time.RFC3339)
+	startTime, endTime := start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano)
+
+	totalRequests, todayCostMicros, avgLatencyMs, successRate, err := h.dashboardOverview(ctx, orgID, startTime, endTime)
+	if err != nil {
+		writeDashboardQueryError(w, err)
+		return
+	}
+	p95LatencyMs, p99LatencyMs, err := h.dashboardLatencyPercentiles(ctx, orgID, startTime, endTime)
+	if err != nil {
+		writeDashboardQueryError(w, err)
+		return
+	}
+	recentLogs, err := h.dashboardRecentLogs(ctx, orgID)
+	if err != nil {
+		writeDashboardQueryError(w, err)
+		return
+	}
+	dailyTrend, err := h.dashboardDailyTrend(ctx, orgID, startTime, endTime)
+	if err != nil {
+		writeDashboardQueryError(w, err)
+		return
+	}
+	modelDistribution, err := h.dashboardModelDistribution(ctx, orgID, startTime, endTime)
+	if err != nil {
+		writeDashboardQueryError(w, err)
+		return
+	}
+	deltaCostMicros, deltaLatency, deltaRate, err := h.dashboardPreviousPeriodDelta(ctx, orgID, start, end, todayCostMicros, p95LatencyMs, successRate)
+	if err != nil {
+		writeDashboardQueryError(w, err)
+		return
 	}
 
-	totalRequests, todayCostMicros, avgLatencyMs, successRate := h.dashboardOverview(ctx, orgID, startTime, endTime)
-	p95LatencyMs, p99LatencyMs := h.dashboardLatencyPercentiles(ctx, orgID, startTime, endTime)
-	recentLogs := h.dashboardRecentLogs(ctx, orgID)
-	modelPrices := h.dashboardModelPrices(ctx)
-	dailyTrend := h.dashboardDailyTrend(ctx, orgID, startTime, endTime)
-	walletBalance, walletGranted, walletFrozen, walletThreshold := h.dashboardWalletInfo(ctx, orgID)
-	modelDistribution := h.dashboardModelDistribution(ctx, orgID, startTime, endTime)
-	channelHealth := h.dashboardChannelHealth(ctx, orgID, startTime, endTime)
-	deltaCostMicros, deltaLatency, deltaRate := h.dashboardYesterdayDelta(ctx, orgID, todayCostMicros, p95LatencyMs, successRate)
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	response := map[string]interface{}{
 		"total_requests":    totalRequests,
 		"today_cost_micros": strconv.FormatInt(todayCostMicros, 10),
 		"currency":          "CNY", "amount_scale": money.MicrosPerCNY,
-		"avg_latency_ms":          avgLatencyMs,
-		"p95_latency_ms":          p95LatencyMs,
-		"p99_latency_ms":          p99LatencyMs,
-		"success_rate":            successRate,
-		"recent_logs":             recentLogs,
-		"model_prices":            modelPrices,
-		"daily_trend":             dailyTrend,
-		"wallet_balance_micros":   strconv.FormatInt(walletBalance, 10),
-		"wallet_granted_micros":   strconv.FormatInt(walletGranted, 10),
-		"wallet_frozen_micros":    strconv.FormatInt(walletFrozen, 10),
-		"wallet_threshold_micros": strconv.FormatInt(walletThreshold, 10),
-		"model_distribution":      modelDistribution,
-		"channel_health":          channelHealth,
+		"avg_latency_ms":     avgLatencyMs,
+		"p95_latency_ms":     p95LatencyMs,
+		"p99_latency_ms":     p99LatencyMs,
+		"success_rate":       successRate,
+		"recent_logs":        recentLogs,
+		"daily_trend":        dailyTrend,
+		"model_distribution": modelDistribution,
 		"delta_vs_yesterday": map[string]interface{}{
 			"cost_micros":  strconv.FormatInt(deltaCostMicros, 10),
 			"latency_ms":   deltaLatency,
 			"success_rate": deltaRate,
 		},
-	})
+	}
+
+	// The dashboard must not become a capability bypass. Direct handler unit
+	// tests have no authenticated role, so they keep the complete legacy shape;
+	// production requests expose only data the same role may read elsewhere.
+	role := middleware.GetUserRoleFromContext(ctx)
+	unitContext := isUnauthenticatedUnitContext(ctx)
+	if unitContext || auth.IsBillingAdmin(role) {
+		walletBalance, walletGranted, walletFrozen, walletThreshold, err := h.dashboardWalletInfo(ctx, orgID)
+		if err != nil {
+			writeDashboardQueryError(w, err)
+			return
+		}
+		response["wallet_balance_micros"] = strconv.FormatInt(walletBalance, 10)
+		response["wallet_granted_micros"] = strconv.FormatInt(walletGranted, 10)
+		response["wallet_frozen_micros"] = strconv.FormatInt(walletFrozen, 10)
+		response["wallet_threshold_micros"] = strconv.FormatInt(walletThreshold, 10)
+	}
+	if unitContext || auth.RoleIn(role, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin) {
+		modelPrices, err := h.dashboardModelPrices(ctx)
+		if err != nil {
+			writeDashboardQueryError(w, err)
+			return
+		}
+		response["model_prices"] = modelPrices
+	}
+	if unitContext || auth.IsPlatformAdmin(role) {
+		channelHealth, err := h.dashboardChannelHealth(ctx, orgID, startTime, endTime)
+		if err != nil {
+			writeDashboardQueryError(w, err)
+			return
+		}
+		response["channel_health"] = channelHealth
+	}
+
+	writeJSON(w, http.StatusOK, response)
+}
+
+func dashboardTimeRange(r *http.Request, now time.Time) (time.Time, time.Time, error) {
+	end := now
+	if raw := r.URL.Query().Get("end_time"); raw != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, raw)
+		if err != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("end_time must be RFC3339")
+		}
+		end = parsed
+	}
+	start := end.Add(-24 * time.Hour)
+	if raw := r.URL.Query().Get("start_time"); raw != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, raw)
+		if err != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("start_time must be RFC3339")
+		}
+		start = parsed
+	}
+	if !end.After(start) {
+		return time.Time{}, time.Time{}, fmt.Errorf("end_time must be after start_time")
+	}
+	return start.UTC(), end.UTC(), nil
+}
+
+func writeDashboardQueryError(w http.ResponseWriter, _ error) {
+	writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Dashboard query failed"})
 }
 
 // dashboardOverview returns total requests, period cost, avg latency, and success rate.
-func (h *Handler) dashboardOverview(ctx context.Context, orgID int64, startTime, endTime string) (totalRequests int, todayCostMicros int64, avgLatencyMs float64, successRate float64) {
-	h.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3`,
+func (h *Handler) dashboardOverview(ctx context.Context, orgID int64, startTime, endTime string) (totalRequests int, todayCostMicros int64, avgLatencyMs float64, successRate float64, err error) {
+	if err = h.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at < $3`,
 		orgID, startTime, endTime,
-	).Scan(&totalRequests)
-	h.db.QueryRow(ctx,
-		`SELECT COALESCE(SUM(cost_micros), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3`,
+	).Scan(&totalRequests); err != nil {
+		return
+	}
+	if err = h.db.QueryRow(ctx,
+		`SELECT COALESCE(SUM(cost_micros), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at < $3`,
 		orgID, startTime, endTime,
-	).Scan(&todayCostMicros)
-	h.db.QueryRow(ctx,
-		`SELECT COALESCE(AVG(latency_ms), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3 AND latency_ms > 0`,
+	).Scan(&todayCostMicros); err != nil {
+		return
+	}
+	if err = h.db.QueryRow(ctx,
+		`SELECT COALESCE(AVG(latency_ms), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at < $3 AND latency_ms > 0`,
 		orgID, startTime, endTime,
-	).Scan(&avgLatencyMs)
+	).Scan(&avgLatencyMs); err != nil {
+		return
+	}
 
 	var successCount, totalCount int
-	h.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3 AND status_code >= 200 AND status_code < 300`,
+	if err = h.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at < $3 AND status_code >= 200 AND status_code < 300`,
 		orgID, startTime, endTime,
-	).Scan(&successCount)
-	h.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3`,
+	).Scan(&successCount); err != nil {
+		return
+	}
+	if err = h.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at < $3`,
 		orgID, startTime, endTime,
-	).Scan(&totalCount)
+	).Scan(&totalCount); err != nil {
+		return
+	}
 	if totalCount > 0 {
 		successRate = float64(successCount) / float64(totalCount)
 	}
@@ -93,25 +180,25 @@ func (h *Handler) dashboardOverview(ctx context.Context, orgID int64, startTime,
 }
 
 // dashboardLatencyPercentiles returns tail latency for the selected org/time range.
-func (h *Handler) dashboardLatencyPercentiles(ctx context.Context, orgID int64, startTime, endTime string) (p95LatencyMs, p99LatencyMs float64) {
-	h.db.QueryRow(ctx,
+func (h *Handler) dashboardLatencyPercentiles(ctx context.Context, orgID int64, startTime, endTime string) (p95LatencyMs, p99LatencyMs float64, err error) {
+	err = h.db.QueryRow(ctx,
 		`SELECT
 			COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms), 0),
 			COALESCE(percentile_cont(0.99) WITHIN GROUP (ORDER BY latency_ms), 0)
 		 FROM call_logs
-		 WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3 AND latency_ms > 0`,
+		 WHERE org_id = $1 AND created_at >= $2 AND created_at < $3 AND latency_ms > 0`,
 		orgID, startTime, endTime,
 	).Scan(&p95LatencyMs, &p99LatencyMs)
 	return
 }
 
 // dashboardRecentLogs returns the last 10 call logs.
-func (h *Handler) dashboardRecentLogs(ctx context.Context, orgID int64) []map[string]interface{} {
+func (h *Handler) dashboardRecentLogs(ctx context.Context, orgID int64) ([]map[string]interface{}, error) {
 	rows, err := h.db.Query(ctx,
 		`SELECT request_id, model, status_code, latency_ms, cost_micros, created_at
 		 FROM call_logs WHERE org_id = $1 ORDER BY created_at DESC LIMIT 10`, orgID)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	defer rows.Close()
 	logs := make([]map[string]interface{}, 0)
@@ -120,21 +207,26 @@ func (h *Handler) dashboardRecentLogs(ctx context.Context, orgID int64) []map[st
 		var statusCode, latencyMs int
 		var costMicros int64
 		var createdAt time.Time
-		rows.Scan(&requestID, &model, &statusCode, &latencyMs, &costMicros, &createdAt)
+		if err := rows.Scan(&requestID, &model, &statusCode, &latencyMs, &costMicros, &createdAt); err != nil {
+			return nil, err
+		}
 		logs = append(logs, map[string]interface{}{
 			"request_id": requestID, "model": model, "status_code": statusCode,
 			"latency_ms": latencyMs, "cost_micros": strconv.FormatInt(costMicros, 10), "created_at": createdAt,
 		})
 	}
-	return logs
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return logs, nil
 }
 
 // dashboardModelPrices returns all model prices.
-func (h *Handler) dashboardModelPrices(ctx context.Context) []map[string]interface{} {
+func (h *Handler) dashboardModelPrices(ctx context.Context) ([]map[string]interface{}, error) {
 	rows, err := h.db.Query(ctx,
 		`SELECT model_name, (input_price_cents * 10)::text, (output_price_cents * 10)::text FROM model_prices ORDER BY model_name`)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	defer rows.Close()
 	prices := make([]map[string]interface{}, 0)
@@ -142,17 +234,20 @@ func (h *Handler) dashboardModelPrices(ctx context.Context) []map[string]interfa
 		var modelName string
 		var inputPrice, outputPrice string
 		if err := rows.Scan(&modelName, &inputPrice, &outputPrice); err != nil {
-			return nil
+			return nil, err
 		}
 		prices = append(prices, map[string]interface{}{
 			"model_name": modelName, "input_price_cny_per_million": inputPrice, "output_price_cny_per_million": outputPrice,
 		})
 	}
-	return prices
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return prices, nil
 }
 
 // dashboardDailyTrend returns hourly buckets for short ranges and daily buckets for longer ranges.
-func (h *Handler) dashboardDailyTrend(ctx context.Context, orgID int64, startTime, endTime string) []map[string]interface{} {
+func (h *Handler) dashboardDailyTrend(ctx context.Context, orgID int64, startTime, endTime string) ([]map[string]interface{}, error) {
 	start, startErr := time.Parse(time.RFC3339Nano, startTime)
 	end, endErr := time.Parse(time.RFC3339Nano, endTime)
 	granularity := "day"
@@ -163,11 +258,11 @@ func (h *Handler) dashboardDailyTrend(ctx context.Context, orgID int64, startTim
 	rows, err := h.db.Query(ctx,
 		`SELECT date_trunc($4, created_at) AS bucket, COUNT(*) AS requests, COALESCE(SUM(cost_micros), 0) AS cost
 		 FROM call_logs
-		 WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3
+		 WHERE org_id = $1 AND created_at >= $2 AND created_at < $3
 		 GROUP BY bucket
 		 ORDER BY bucket ASC`, orgID, startTime, endTime, granularity)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	defer rows.Close()
 	type bucketValue struct {
@@ -180,7 +275,7 @@ func (h *Handler) dashboardDailyTrend(ctx context.Context, orgID int64, startTim
 		var requests int
 		var cost int64
 		if err := rows.Scan(&bucket, &requests, &cost); err != nil {
-			return nil
+			return nil, err
 		}
 		bucket = bucket.UTC()
 		bucketKey := bucket.Format("2006-01-02")
@@ -189,13 +284,16 @@ func (h *Handler) dashboardDailyTrend(ctx context.Context, orgID int64, startTim
 		}
 		values[bucketKey] = bucketValue{requests: requests, cost: cost}
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	if startErr != nil || endErr != nil || !end.After(start) {
 		trend := make([]map[string]interface{}, 0, len(values))
 		for bucket, value := range values {
 			trend = append(trend, map[string]interface{}{"date": bucket, "requests": value.requests, "cost_micros": strconv.FormatInt(value.cost, 10)})
 		}
-		return trend
+		return trend, nil
 	}
 
 	start = start.UTC()
@@ -224,54 +322,62 @@ func (h *Handler) dashboardDailyTrend(ctx context.Context, orgID int64, startTim
 		})
 		cursor = cursor.Add(step)
 	}
-	return trend
+	return trend, nil
 }
 
 // dashboardWalletInfo returns wallet balance, granted, frozen, and threshold.
-func (h *Handler) dashboardWalletInfo(ctx context.Context, orgID int64) (balance, granted, frozen, threshold int64) {
+func (h *Handler) dashboardWalletInfo(ctx context.Context, orgID int64) (balance, granted, frozen, threshold int64, err error) {
 	var thresholdCents int64
-	h.db.QueryRow(ctx,
+	err = h.db.QueryRow(ctx,
 		`SELECT COALESCE(balance_micros,0), COALESCE(granted_balance_micros,0), COALESCE(frozen_micros,0), COALESCE(low_balance_threshold_cents,0)
 		 FROM wallets WHERE org_id = $1`,
 		orgID,
 	).Scan(&balance, &granted, &frozen, &thresholdCents)
-	threshold, _ = money.CentsToMicros(thresholdCents)
+	if err != nil {
+		return
+	}
+	threshold, err = money.CentsToMicros(thresholdCents)
 	return
 }
 
 // dashboardModelDistribution returns top 5 models by request count in the time range.
-func (h *Handler) dashboardModelDistribution(ctx context.Context, orgID int64, startTime, endTime string) []map[string]interface{} {
+func (h *Handler) dashboardModelDistribution(ctx context.Context, orgID int64, startTime, endTime string) ([]map[string]interface{}, error) {
 	rows, err := h.db.Query(ctx,
 		`SELECT model, COUNT(*) as cnt
 		 FROM call_logs
-		 WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3
+		 WHERE org_id = $1 AND created_at >= $2 AND created_at < $3
 		 GROUP BY model ORDER BY cnt DESC LIMIT 5`, orgID, startTime, endTime)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	defer rows.Close()
 	dist := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var model string
 		var cnt int
-		rows.Scan(&model, &cnt)
+		if err := rows.Scan(&model, &cnt); err != nil {
+			return nil, err
+		}
 		dist = append(dist, map[string]interface{}{"model": model, "requests": cnt})
 	}
-	return dist
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return dist, nil
 }
 
 // dashboardChannelHealth returns channel health with success/fail counts and derived status.
-func (h *Handler) dashboardChannelHealth(ctx context.Context, orgID int64, startTime, endTime string) []map[string]interface{} {
+func (h *Handler) dashboardChannelHealth(ctx context.Context, orgID int64, startTime, endTime string) ([]map[string]interface{}, error) {
 	rows, err := h.db.Query(ctx,
 		`SELECT c.id, c.name, c.provider, c.status,
 		        COALESCE(SUM(CASE WHEN cl.status_code >= 200 AND cl.status_code < 300 THEN 1 ELSE 0 END), 0) as success_count,
 		        COALESCE(SUM(CASE WHEN cl.status_code >= 400 OR cl.status_code = 0 THEN 1 ELSE 0 END), 0) as fail_count
 		 FROM channels c
-		 LEFT JOIN call_logs cl ON cl.channel = c.name AND cl.org_id = $1 AND cl.created_at >= $2 AND cl.created_at <= $3
+		 LEFT JOIN call_logs cl ON cl.channel = c.name AND cl.org_id = $1 AND cl.created_at >= $2 AND cl.created_at < $3
 		 GROUP BY c.id, c.name, c.provider, c.status
 		 ORDER BY c.id`, orgID, startTime, endTime)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	defer rows.Close()
 	health := make([]map[string]interface{}, 0)
@@ -279,7 +385,9 @@ func (h *Handler) dashboardChannelHealth(ctx context.Context, orgID int64, start
 		var id int
 		var name, provider, chStatus string
 		var successCount, failCount int
-		rows.Scan(&id, &name, &provider, &chStatus, &successCount, &failCount)
+		if err := rows.Scan(&id, &name, &provider, &chStatus, &successCount, &failCount); err != nil {
+			return nil, err
+		}
 		status := "healthy"
 		if chStatus != "active" {
 			status = "disabled"
@@ -294,35 +402,50 @@ func (h *Handler) dashboardChannelHealth(ctx context.Context, orgID int64, start
 			"success_count": successCount, "fail_count": failCount,
 		})
 	}
-	return health
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return health, nil
 }
 
-// dashboardYesterdayDelta computes delta vs yesterday for cost, P95 latency, and success rate.
-func (h *Handler) dashboardYesterdayDelta(ctx context.Context, orgID int64, todayCost int64, todayLatency, todayRate float64) (deltaCost int64, deltaLatency, deltaRate float64) {
-	yesterdayStart := time.Now().Add(-48 * time.Hour).Format(time.RFC3339)
-	yesterdayEnd := time.Now().Add(-24 * time.Hour).Format(time.RFC3339)
+// dashboardPreviousPeriodDelta compares the selected range with the immediately
+// preceding range of the same duration. For the default 24h view this is the
+// previous 24-hour period represented by the legacy response field name.
+func (h *Handler) dashboardPreviousPeriodDelta(ctx context.Context, orgID int64, start, end time.Time, todayCost int64, todayLatency, todayRate float64) (deltaCost int64, deltaLatency, deltaRate float64, err error) {
+	previousEnd := start
+	previousStart := start.Add(-end.Sub(start))
+	previousStartText := previousStart.Format(time.RFC3339Nano)
+	previousEndText := previousEnd.Format(time.RFC3339Nano)
 	var yesterCost int64
-	h.db.QueryRow(ctx,
-		`SELECT COALESCE(SUM(cost_micros), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3`,
-		orgID, yesterdayStart, yesterdayEnd,
-	).Scan(&yesterCost)
+	if err = h.db.QueryRow(ctx,
+		`SELECT COALESCE(SUM(cost_micros), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at < $3`,
+		orgID, previousStartText, previousEndText,
+	).Scan(&yesterCost); err != nil {
+		return
+	}
 	var yesterLatency float64
-	h.db.QueryRow(ctx,
-		`SELECT COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3 AND latency_ms > 0`,
-		orgID, yesterdayStart, yesterdayEnd,
-	).Scan(&yesterLatency)
+	if err = h.db.QueryRow(ctx,
+		`SELECT COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at < $3 AND latency_ms > 0`,
+		orgID, previousStartText, previousEndText,
+	).Scan(&yesterLatency); err != nil {
+		return
+	}
 	var yesterSuccess, yesterTotal int
-	h.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3 AND status_code >= 200 AND status_code < 300`,
-		orgID, yesterdayStart, yesterdayEnd,
-	).Scan(&yesterSuccess)
-	h.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at <= $3`,
-		orgID, yesterdayStart, yesterdayEnd,
-	).Scan(&yesterTotal)
+	if err = h.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at < $3 AND status_code >= 200 AND status_code < 300`,
+		orgID, previousStartText, previousEndText,
+	).Scan(&yesterSuccess); err != nil {
+		return
+	}
+	if err = h.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at < $3`,
+		orgID, previousStartText, previousEndText,
+	).Scan(&yesterTotal); err != nil {
+		return
+	}
 	yesterRate := 0.0
 	if yesterTotal > 0 {
 		yesterRate = float64(yesterSuccess) / float64(yesterTotal)
 	}
-	return todayCost - yesterCost, todayLatency - yesterLatency, todayRate - yesterRate
+	return todayCost - yesterCost, todayLatency - yesterLatency, todayRate - yesterRate, nil
 }

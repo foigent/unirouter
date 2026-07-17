@@ -31,6 +31,16 @@ var supportedFeatures = map[string]bool{
 	FeatureModelGovernance: true, FeatureDataExchange: true,
 }
 
+var concreteFeatures = []string{
+	FeatureGateway,
+	FeatureAgentCapabilities,
+	FeatureOIDC,
+	FeatureGuardrails,
+	FeatureNotifications,
+	FeatureModelGovernance,
+	FeatureDataExchange,
+}
+
 var supportedLimits = map[string]bool{
 	LimitActiveAPIKeys: true, LimitActiveUsers: true,
 	LimitActiveProjects: true, LimitActiveChannels: true,
@@ -41,6 +51,15 @@ type Decision struct {
 	Code    string
 	Message string
 	Status  Status
+}
+
+// CapabilityStatus is the non-sensitive authorization projection exposed to
+// authenticated clients. It deliberately excludes the signed payload,
+// customer identity, key ID, signature and resource limits.
+type CapabilityStatus struct {
+	Status      string          `json:"status"`
+	Enforceable bool            `json:"enforceable"`
+	Features    map[string]bool `json:"features"`
 }
 
 // Runtime holds the latest stored license bytes while evaluating signature,
@@ -76,6 +95,22 @@ func (r *Runtime) Status() Status {
 	}
 	raw, _ := r.raw.Load().([]byte)
 	return r.verifier.VerifyBytes(raw)
+}
+
+// Capabilities expands wildcard and partial licenses into one stable boolean
+// result per supported concrete feature. Invalid, missing, expired, not-yet-
+// valid and deployment-mismatched licenses deny every feature.
+func (r *Runtime) Capabilities() CapabilityStatus {
+	status := r.Status()
+	capabilities := CapabilityStatus{
+		Status:      status.Status,
+		Enforceable: status.Enforceable && status.Valid,
+		Features:    make(map[string]bool, len(concreteFeatures)),
+	}
+	for _, feature := range concreteFeatures {
+		capabilities.Features[feature] = authorizeStatus(status, feature).Allowed
+	}
+	return capabilities
 }
 
 func (r *Runtime) Authorize(feature string) Decision {

@@ -96,12 +96,11 @@ func TestP6F36ModelGovernanceTenantIsolationIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	h := NewHandler(pool, p6f16JWTSecret, []byte("0123456789abcdef01234567"), nil)
-	h.SetEventService(billing.NewEventService(pool))
+	h.SetEventService(billing.NewEventService(pool, ""))
 	mux := p6f36ModelGovernanceMux(h)
 	serve := func(tb testing.TB, method, target, body string, userID, orgID int64, role, requestID string) *httptest.ResponseRecorder {
 		tb.Helper()
-		token, tokenErr := auth.GenerateJWT(userID, orgID, role, p6f16JWTSecret, 1)
-		require.NoError(tb, tokenErr)
+		token := testutil.MustAdminSessionJWT(tb, ctx, pool, userID, orgID, role, p6f16JWTSecret)
 		req := httptest.NewRequest(method, target, bytes.NewBufferString(body))
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
@@ -444,12 +443,20 @@ func TestP6F36ModelGovernanceTenantIsolationIntegration(t *testing.T) {
 		p6f36AssertAuditOrg(t, pool, "p6f36-set-items-platform-id", "model_set.items.replace", fx.orgB)
 	})
 
+	t.Run("platform project model-set replacement audits the target organization", func(t *testing.T) {
+		assertStatus(t, serve(t, http.MethodPut,
+			fmt.Sprintf("/api/v1/projects/%d/model-sets", fx.projectB),
+			fmt.Sprintf(`{"model_set_ids":[%d]}`, fx.modelSetB),
+			fx.platformA, fx.orgA, auth.RolePlatformAdmin, "p6f36-project-set-platform"), http.StatusOK)
+		p6f36AssertAuditOrg(t, pool, "p6f36-project-set-platform", "project.model_sets.replace", fx.orgB)
+	})
+
 	t.Run("model set audit failures roll back parents items and policy", func(t *testing.T) {
 		_, err := pool.Exec(ctx, `
 			CREATE OR REPLACE FUNCTION p6f36_reject_selected_audit()
 			RETURNS trigger AS $$
 			BEGIN
-				IF NEW.request_id IN ('p6f36-force-audit-set-create', 'p6f36-force-audit-set-replace') THEN
+				IF NEW.request_id IN ('p6f36-force-audit-set-create', 'p6f36-force-audit-set-replace', 'p6f36-force-audit-project-set-replace') THEN
 					RAISE EXCEPTION 'p6f36 forced audit failure';
 				END IF;
 				RETURN NEW;
@@ -480,6 +487,24 @@ func TestP6F36ModelGovernanceTenantIsolationIntegration(t *testing.T) {
 			fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin, "p6f36-force-audit-set-replace"), http.StatusInternalServerError)
 		require.Equal(t, beforePolicy, p6f36ReadSetItems(t, pool, fx.modelSetA), "failed audit changed the active model-set policy")
 		p6f36AssertNoAudit(t, pool, "p6f36-force-audit-set-replace")
+
+		var assignmentsBefore int
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT COUNT(*) FROM project_model_sets WHERE project_id = $1 AND model_set_id = $2`,
+			fx.projectB, fx.modelSetB,
+		).Scan(&assignmentsBefore))
+		require.Equal(t, 1, assignmentsBefore)
+		assertStatus(t, serve(t, http.MethodPut,
+			fmt.Sprintf("/api/v1/projects/%d/model-sets", fx.projectB),
+			`{"model_set_ids":[]}`,
+			fx.platformA, fx.orgA, auth.RolePlatformAdmin, "p6f36-force-audit-project-set-replace"), http.StatusInternalServerError)
+		var assignmentsAfter int
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT COUNT(*) FROM project_model_sets WHERE project_id = $1 AND model_set_id = $2`,
+			fx.projectB, fx.modelSetB,
+		).Scan(&assignmentsAfter))
+		require.Equal(t, assignmentsBefore, assignmentsAfter, "failed audit changed project model-set assignments")
+		p6f36AssertNoAudit(t, pool, "p6f36-force-audit-project-set-replace")
 	})
 }
 
@@ -502,6 +527,8 @@ func p6f36ModelGovernanceMux(h *Handler) *http.ServeMux {
 	mux.Handle("POST /api/v1/model-sets", roleRoute(h.CreateModelSet, orgAdmin...))
 	mux.Handle("GET /api/v1/model-sets/{id}/items", roleRoute(h.ListModelSetItems, orgAdmin...))
 	mux.Handle("PUT /api/v1/model-sets/{id}/items", roleRoute(h.ReplaceModelSetItems, orgAdmin...))
+	mux.Handle("PUT /api/v1/projects/{id}/model-sets", roleRoute(h.ReplaceProjectModelSets,
+		auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin))
 	return mux
 }
 

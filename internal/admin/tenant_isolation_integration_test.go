@@ -60,8 +60,7 @@ func TestP6F16TenantIsolationIntegration(t *testing.T) {
 
 	serve := func(tb testing.TB, method, target, body string, userID, orgID int64, role string) *httptest.ResponseRecorder {
 		tb.Helper()
-		token, err := auth.GenerateJWT(userID, orgID, role, p6f16JWTSecret, 1)
-		require.NoError(tb, err)
+		token := testutil.MustAdminSessionJWT(tb, ctx, pool, userID, orgID, role, p6f16JWTSecret)
 		req := httptest.NewRequest(method, target, bytes.NewBufferString(body))
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
@@ -81,6 +80,112 @@ func TestP6F16TenantIsolationIntegration(t *testing.T) {
 		rec := serve(t, http.MethodGet, "/api/v1/keys", "", fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin)
 		assertStatus(t, rec, http.StatusOK)
 		assertResponseOrgIDs(t, rec.Body.Bytes(), fx.orgA)
+	})
+
+	t.Run("organization viewer cannot inherit project viewer routes", func(t *testing.T) {
+		_, err := pool.Exec(ctx,
+			`INSERT INTO project_members (project_id, user_id, role)
+			 VALUES ($1, $2, $3)
+			 ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
+			fx.projectA, fx.orgViewerA, projectMemberViewer,
+		)
+		require.NoError(t, err)
+
+		for _, target := range []string{
+			"/api/v1/keys",
+			"/api/v1/projects",
+			fmt.Sprintf("/api/v1/projects/%d", fx.projectA),
+			fmt.Sprintf("/api/v1/projects/%d/model-sets", fx.projectA),
+		} {
+			assertStatus(t, serve(t, http.MethodGet, target, "", fx.orgViewerA, fx.orgA, auth.RoleOrgViewer), http.StatusForbidden)
+		}
+	})
+
+	t.Run("organization choices respect platform and tenant scope", func(t *testing.T) {
+		decode := func(tb testing.TB, rec *httptest.ResponseRecorder) []struct {
+			ID   int64  `json:"id"`
+			Name string `json:"name"`
+		} {
+			tb.Helper()
+			var response struct {
+				Data []struct {
+					ID   int64  `json:"id"`
+					Name string `json:"name"`
+				} `json:"data"`
+			}
+			require.NoError(tb, json.Unmarshal(rec.Body.Bytes(), &response))
+			return response.Data
+		}
+
+		platform := serve(t, http.MethodGet, "/api/v1/organizations", "", fx.platformA, fx.orgA, auth.RolePlatformAdmin)
+		assertStatus(t, platform, http.StatusOK)
+		platformOrganizations := decode(t, platform)
+		var sawOrgA, sawOrgB bool
+		for i, organization := range platformOrganizations {
+			if i > 0 {
+				require.LessOrEqual(t, platformOrganizations[i-1].Name, organization.Name)
+			}
+			sawOrgA = sawOrgA || organization.ID == fx.orgA
+			sawOrgB = sawOrgB || organization.ID == fx.orgB
+		}
+		require.True(t, sawOrgA && sawOrgB)
+
+		organization := serve(t, http.MethodGet, "/api/v1/organizations", "", fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin)
+		assertStatus(t, organization, http.StatusOK)
+		organizationChoices := decode(t, organization)
+		require.Len(t, organizationChoices, 1)
+		require.Equal(t, fx.orgA, organizationChoices[0].ID)
+
+		assertStatus(t, serve(t, http.MethodGet, "/api/v1/organizations", "", fx.unknownRoleA, fx.orgA, "unknown_role"), http.StatusUnauthorized)
+	})
+
+	t.Run("tenant create omission binds resources to actor organization", func(t *testing.T) {
+		key := serve(t, http.MethodPost, "/api/v1/keys", fmt.Sprintf(`{"project_id":%d,"name":"implicit-own-key"}`, fx.projectA), fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin)
+		assertStatus(t, key, http.StatusCreated)
+		keyID := responseID(t, key.Body.Bytes())
+		var keyOrgID int64
+		require.NoError(t, pool.QueryRow(ctx, `SELECT org_id FROM api_keys WHERE id = $1`, keyID).Scan(&keyOrgID))
+		require.Equal(t, fx.orgA, keyOrgID)
+
+		user := serve(t, http.MethodPost, "/api/v1/users", fmt.Sprintf(`{"username":"implicit-own-user","password":"secret-password-123","role":"viewer","project_ids":[%d]}`, fx.projectA), fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin)
+		assertStatus(t, user, http.StatusCreated)
+		userID := responseID(t, user.Body.Bytes())
+		var userOrgID int64
+		require.NoError(t, pool.QueryRow(ctx, `SELECT org_id FROM users WHERE id = $1`, userID).Scan(&userOrgID))
+		require.Equal(t, fx.orgA, userOrgID)
+	})
+
+	t.Run("api key pagination returns database total", func(t *testing.T) {
+		rec := serve(t, http.MethodGet, "/api/v1/keys?page=2&page_size=1", "", fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin)
+		assertStatus(t, rec, http.StatusOK)
+		var response struct {
+			Data  []map[string]interface{} `json:"data"`
+			Total int                      `json:"total"`
+		}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+		require.Len(t, response.Data, 1)
+		var expectedTotal int
+		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM api_keys WHERE org_id = $1`, fx.orgA).Scan(&expectedTotal))
+		require.GreaterOrEqual(t, expectedTotal, 2)
+		require.Equal(t, expectedTotal, response.Total)
+	})
+
+	t.Run("platform create requires explicit target organization", func(t *testing.T) {
+		var keysBefore, usersBefore, auditBefore int
+		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM api_keys`).Scan(&keysBefore))
+		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM users`).Scan(&usersBefore))
+		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM audit_logs`).Scan(&auditBefore))
+
+		assertStatus(t, serve(t, http.MethodPost, "/api/v1/keys", `{"name":"platform-missing-org"}`, fx.platformA, fx.orgA, auth.RolePlatformAdmin), http.StatusBadRequest)
+		assertStatus(t, serve(t, http.MethodPost, "/api/v1/users", `{"username":"platform-missing-org","password":"secret-password-123","role":"viewer"}`, fx.platformA, fx.orgA, auth.RolePlatformAdmin), http.StatusBadRequest)
+
+		var keysAfter, usersAfter, auditAfter int
+		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM api_keys`).Scan(&keysAfter))
+		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM users`).Scan(&usersAfter))
+		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM audit_logs`).Scan(&auditAfter))
+		require.Equal(t, keysBefore, keysAfter)
+		require.Equal(t, usersBefore, usersAfter)
+		require.Equal(t, auditBefore, auditAfter)
 	})
 
 	t.Run("org admin key reads and mutations stay in its org", func(t *testing.T) {
@@ -126,6 +231,57 @@ func TestP6F16TenantIsolationIntegration(t *testing.T) {
 		require.Equal(t, "disabled", status)
 	})
 
+	t.Run("developer disables only an owned key in an assigned project", func(t *testing.T) {
+		var unassignedProjectID, unassignedKeyID int64
+		require.NoError(t, pool.QueryRow(ctx,
+			`INSERT INTO projects (org_id, name, slug, status, created_by)
+			 VALUES ($1, 'Developer Unassigned', 'developer-unassigned', 'active', $2) RETURNING id`,
+			fx.orgA, fx.orgAdminA,
+		).Scan(&unassignedProjectID))
+		require.NoError(t, pool.QueryRow(ctx,
+			`INSERT INTO api_keys (org_id, project_id, owner_user_id, key_type, name, key_hash, key_prefix, status, rpm_limit, qps_limit)
+			 VALUES ($1, $2, $3, 'personal', 'developer-unassigned-key', $4, 'p6f16-dev-unassign', 'active', 60, 10) RETURNING id`,
+			fx.orgA, unassignedProjectID, fx.developerA, strings.Repeat("c", 64),
+		).Scan(&unassignedKeyID))
+		assertStatus(t, serve(t, http.MethodPost, fmt.Sprintf("/api/v1/keys/%d/disable", unassignedKeyID), "", fx.developerA, fx.orgA, auth.RoleDeveloper), http.StatusForbidden)
+
+		_, err := pool.Exec(ctx,
+			`INSERT INTO project_members (project_id, user_id, role)
+			 VALUES ($1, $2, 'project_developer'), ($1, $3, 'project_viewer')
+			 ON CONFLICT DO NOTHING`,
+			fx.projectA, fx.developerA, fx.normalA,
+		)
+		require.NoError(t, err)
+
+		created := serve(t, http.MethodPost, "/api/v1/keys", fmt.Sprintf(`{"org_id":%d,"project_id":%d,"name":"developer-owned-key"}`, fx.orgA, fx.projectA), fx.developerA, fx.orgA, auth.RoleDeveloper)
+		assertStatus(t, created, http.StatusCreated)
+		ownedKeyID := responseID(t, created.Body.Bytes())
+		var createdResponse struct {
+			OwnerUserID int64 `json:"owner_user_id"`
+		}
+		require.NoError(t, json.Unmarshal(created.Body.Bytes(), &createdResponse))
+		require.Equal(t, fx.developerA, createdResponse.OwnerUserID)
+
+		var otherKeyID int64
+		require.NoError(t, pool.QueryRow(ctx,
+			`INSERT INTO api_keys (org_id, project_id, owner_user_id, key_type, name, key_hash, key_prefix, status, rpm_limit, qps_limit)
+			 VALUES ($1, $2, $3, 'personal', 'developer-other-key', $4, 'p6f16-dev-other', 'active', 60, 10) RETURNING id`,
+			fx.orgA, fx.projectA, fx.normalA, strings.Repeat("d", 64),
+		).Scan(&otherKeyID))
+
+		assertStatus(t, serve(t, http.MethodPut, fmt.Sprintf("/api/v1/keys/%d", ownedKeyID), `{"name":"developer-cannot-edit"}`, fx.developerA, fx.orgA, auth.RoleDeveloper), http.StatusForbidden)
+		assertStatus(t, serve(t, http.MethodPost, fmt.Sprintf("/api/v1/keys/%d/disable", otherKeyID), "", fx.developerA, fx.orgA, auth.RoleDeveloper), http.StatusForbidden)
+		assertStatus(t, serve(t, http.MethodPost, fmt.Sprintf("/api/v1/keys/%d/disable", ownedKeyID), "", fx.developerA, fx.orgA, auth.RoleDeveloper), http.StatusOK)
+
+		var ownedStatus, otherStatus, unassignedStatus string
+		require.NoError(t, pool.QueryRow(ctx, `SELECT status FROM api_keys WHERE id = $1`, ownedKeyID).Scan(&ownedStatus))
+		require.NoError(t, pool.QueryRow(ctx, `SELECT status FROM api_keys WHERE id = $1`, otherKeyID).Scan(&otherStatus))
+		require.NoError(t, pool.QueryRow(ctx, `SELECT status FROM api_keys WHERE id = $1`, unassignedKeyID).Scan(&unassignedStatus))
+		require.Equal(t, "disabled", ownedStatus)
+		require.Equal(t, "active", otherStatus)
+		require.Equal(t, "active", unassignedStatus)
+	})
+
 	t.Run("org admin user operations stay in its org and cannot create platform authority", func(t *testing.T) {
 		rec := serve(t, http.MethodGet, "/api/v1/users", "", fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin)
 		assertStatus(t, rec, http.StatusOK)
@@ -133,14 +289,14 @@ func TestP6F16TenantIsolationIntegration(t *testing.T) {
 
 		var beforeCount int
 		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE org_id = $1`, fx.orgB).Scan(&beforeCount))
-		assertStatus(t, serve(t, http.MethodPost, "/api/v1/users", fmt.Sprintf(`{"org_id":%d,"username":"foreign-new","password":"secret123","role":"viewer"}`, fx.orgB), fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusForbidden)
+		assertStatus(t, serve(t, http.MethodPost, "/api/v1/users", fmt.Sprintf(`{"org_id":%d,"username":"foreign-new","password":"secret-password-123","role":"viewer"}`, fx.orgB), fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusForbidden)
 		var afterCount int
 		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE org_id = $1`, fx.orgB).Scan(&afterCount))
 		require.Equal(t, beforeCount, afterCount)
 
 		for _, role := range []string{auth.RolePlatformAdmin, auth.RoleLegacyAdmin} {
 			target := strings.ReplaceAll(role, "_", "-")
-			assertStatus(t, serve(t, http.MethodPost, "/api/v1/users", fmt.Sprintf(`{"org_id":%d,"username":"blocked-%s","password":"secret123","role":"%s"}`, fx.orgA, target, role), fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusForbidden)
+			assertStatus(t, serve(t, http.MethodPost, "/api/v1/users", fmt.Sprintf(`{"org_id":%d,"username":"blocked-%s","password":"secret-password-123","role":"%s"}`, fx.orgA, target, role), fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusForbidden)
 			assertStatus(t, serve(t, http.MethodPut, fmt.Sprintf("/api/v1/users/%d", fx.normalA), fmt.Sprintf(`{"role":"%s"}`, role), fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusForbidden)
 		}
 		var blockedRoleCount int
@@ -163,14 +319,14 @@ func TestP6F16TenantIsolationIntegration(t *testing.T) {
 		require.Equal(t, "active", foreignUserStatus)
 		require.Equal(t, "active", platformStatus)
 
-		assertStatus(t, serve(t, http.MethodPut, fmt.Sprintf("/api/v1/users/%d", fx.normalA), `{"role":"developer"}`, fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusOK)
+		assertStatus(t, serve(t, http.MethodPut, fmt.Sprintf("/api/v1/users/%d", fx.normalA), fmt.Sprintf(`{"role":"developer","project_ids":[%d]}`, fx.projectA), fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusOK)
 		var role string
 		require.NoError(t, pool.QueryRow(ctx, `SELECT role FROM users WHERE id = $1`, fx.normalA).Scan(&role))
 		require.Equal(t, auth.RoleDeveloper, role)
 	})
 
 	t.Run("same-tenant user create update and delete succeeds", func(t *testing.T) {
-		rec := serve(t, http.MethodPost, "/api/v1/users", fmt.Sprintf(`{"org_id":%d,"username":"same-tenant-user","password":"secret123","role":"viewer"}`, fx.orgA), fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin)
+		rec := serve(t, http.MethodPost, "/api/v1/users", fmt.Sprintf(`{"org_id":%d,"username":"same-tenant-user","password":"secret-password-123","role":"viewer","project_ids":[%d]}`, fx.orgA, fx.projectA), fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin)
 		assertStatus(t, rec, http.StatusCreated)
 		userID := responseID(t, rec.Body.Bytes())
 		assertStatus(t, serve(t, http.MethodPut, fmt.Sprintf("/api/v1/users/%d", userID), `{"status":"disabled"}`, fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusOK)
@@ -276,7 +432,7 @@ func TestP6F16TenantIsolationIntegration(t *testing.T) {
 		assertStatus(t, serve(t, http.MethodPut, fmt.Sprintf("/api/v1/keys/%d", fx.keyB), `{"name":"platform-key-update"}`, fx.platformA, fx.orgA, auth.RolePlatformAdmin), http.StatusOK)
 		assertStatus(t, serve(t, http.MethodPost, fmt.Sprintf("/api/v1/keys/%d/disable", fx.keyB), "", fx.platformA, fx.orgA, auth.RolePlatformAdmin), http.StatusOK)
 
-		rec := serve(t, http.MethodPost, "/api/v1/users", fmt.Sprintf(`{"org_id":%d,"username":"platform-foreign-user","password":"secret123","role":"viewer"}`, fx.orgB), fx.platformA, fx.orgA, auth.RolePlatformAdmin)
+		rec := serve(t, http.MethodPost, "/api/v1/users", fmt.Sprintf(`{"org_id":%d,"username":"platform-foreign-user","password":"secret-password-123","role":"viewer","project_ids":[%d]}`, fx.orgB, fx.projectB), fx.platformA, fx.orgA, auth.RolePlatformAdmin)
 		assertStatus(t, rec, http.StatusCreated)
 		userID := responseID(t, rec.Body.Bytes())
 		assertStatus(t, serve(t, http.MethodPut, fmt.Sprintf("/api/v1/users/%d", userID), `{"status":"disabled"}`, fx.platformA, fx.orgA, auth.RolePlatformAdmin), http.StatusOK)
@@ -304,6 +460,7 @@ func p6f16AdminMux(h *Handler) *http.ServeMux {
 		return middleware.AdminAuth(h.db, p6f16JWTSecret)(middleware.RequireRoles(roles...)(handler))
 	}
 	projectRead := []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper, auth.RoleViewer}
+	organizationRead := []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper, auth.RoleViewer}
 	projectWrite := []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper}
 	orgAdmin := []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin}
 
@@ -311,7 +468,8 @@ func p6f16AdminMux(h *Handler) *http.ServeMux {
 	mux.Handle("POST /api/v1/keys", roleRoute(h.CreateAPIKey, projectWrite...))
 	mux.Handle("GET /api/v1/keys/{id}", roleRoute(h.GetAPIKey, projectRead...))
 	mux.Handle("PUT /api/v1/keys/{id}", roleRoute(h.UpdateAPIKey, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin))
-	mux.Handle("POST /api/v1/keys/{id}/disable", roleRoute(h.DisableAPIKey, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin))
+	mux.Handle("POST /api/v1/keys/{id}/disable", roleRoute(h.DisableAPIKey, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper))
+	mux.Handle("GET /api/v1/organizations", roleRoute(h.ListOrganizations, organizationRead...))
 
 	mux.Handle("GET /api/v1/users", roleRoute(h.ListUsers, orgAdmin...))
 	mux.Handle("POST /api/v1/users", roleRoute(h.CreateUser, orgAdmin...))

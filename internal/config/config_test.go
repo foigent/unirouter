@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/base64"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -55,6 +56,56 @@ func TestValidate_Exact32ByteKey(t *testing.T) {
 	err := cfg.Validate()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateReleaseSecretsRequires32BytesWithoutChangingDevelopmentValidation(t *testing.T) {
+	cfg := &Config{
+		JWTSecret:          "development-secret",
+		APIKeyHashSecret:   "development-api-secret",
+		EncryptionKey:      "0123456789abcdef0123456789abcdef",
+		FreezeSafetyFactor: "1",
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("development validation must remain compatible with non-empty legacy secrets: %v", err)
+	}
+	if err := cfg.ValidateReleaseSecrets(); err == nil || !strings.Contains(err.Error(), "JWT_SECRET") {
+		t.Fatalf("expected short release JWT secret rejection, got %v", err)
+	}
+
+	cfg.JWTSecret = strings.Repeat("j", 32)
+	if err := cfg.ValidateReleaseSecrets(); err == nil || !strings.Contains(err.Error(), "API_KEY_HASH_SECRET") {
+		t.Fatalf("expected short release API-key hash secret rejection, got %v", err)
+	}
+
+	cfg.APIKeyHashSecret = strings.Repeat("a", 32)
+	if err := cfg.ValidateReleaseSecrets(); err == nil || !strings.Contains(err.Error(), "UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET") {
+		t.Fatalf("expected missing release Webhook signing secret rejection, got %v", err)
+	}
+
+	cfg.NotificationWebhookSigningSecret = strings.Repeat("w", 32)
+	if err := cfg.ValidateReleaseSecrets(); err != nil {
+		t.Fatalf("expected exact 32-byte release secrets to pass, got %v", err)
+	}
+}
+
+func TestValidate_NotificationWebhookSigningSecret(t *testing.T) {
+	cfg := &Config{
+		JWTSecret:          "secret",
+		APIKeyHashSecret:   "api-key-secret",
+		EncryptionKey:      "0123456789abcdef0123456789abcdef",
+		FreezeSafetyFactor: "1",
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("empty development Webhook signing secret should remain optional: %v", err)
+	}
+	cfg.NotificationWebhookSigningSecret = "too-short"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected a short Webhook signing secret to fail validation")
+	}
+	cfg.NotificationWebhookSigningSecret = "0123456789abcdef0123456789abcdef"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("unexpected 32-byte Webhook signing secret validation error: %v", err)
 	}
 }
 
@@ -145,6 +196,7 @@ func TestValidate_RuntimeExposureConfig(t *testing.T) {
 		LicenseExpiryWarningDays: 30,
 		AdminCORSAllowedOrigins:  []string{"https://console.example.com", "http://localhost:3000/"},
 		MetricsAllowedCIDRs:      []string{"10.0.0.0/8"},
+		TrustedProxyCIDRs:        []string{"172.30.0.10/32"},
 		LoginRateLimitWindowSec:  60,
 		LoginRateLimitIP:         30,
 		LoginRateLimitUser:       10,
@@ -201,6 +253,18 @@ func TestValidate_InvalidRuntimeExposureConfig(t *testing.T) {
 			name: "invalid metrics cidr",
 			mutate: func(cfg *Config) {
 				cfg.MetricsAllowedCIDRs = []string{"not-a-cidr"}
+			},
+		},
+		{
+			name: "invalid trusted proxy cidr",
+			mutate: func(cfg *Config) {
+				cfg.TrustedProxyCIDRs = []string{"not-a-cidr"}
+			},
+		},
+		{
+			name: "trust every proxy cidr",
+			mutate: func(cfg *Config) {
+				cfg.TrustedProxyCIDRs = []string{"0.0.0.0/0"}
 			},
 		},
 		{
@@ -328,6 +392,7 @@ func TestLoad_RuntimeExposureEnvOverrides(t *testing.T) {
 	t.Setenv("ADMIN_CORS_ALLOWED_ORIGINS", "https://console.example.com, http://localhost:3000")
 	t.Setenv("METRICS_ENABLED", "false")
 	t.Setenv("METRICS_ALLOWED_CIDRS", "10.0.0.0/8,127.0.0.1/32")
+	t.Setenv("TRUSTED_PROXY_CIDRS", "172.30.0.10/32, 192.0.2.9/32")
 	t.Setenv("LOGIN_RATE_LIMIT_ENABLED", "false")
 	t.Setenv("LOGIN_RATE_LIMIT_WINDOW_SECONDS", "120")
 	t.Setenv("LOGIN_RATE_LIMIT_IP_REQUESTS", "50")
@@ -338,6 +403,7 @@ func TestLoad_RuntimeExposureEnvOverrides(t *testing.T) {
 	t.Setenv("TRACE_EVENT_RETENTION_DAYS", "14")
 	t.Setenv("PAYLOAD_CAPTURE_MODE", "disabled")
 	t.Setenv("EVIDENCE_CONTEXT_TRUST_SECRET", "shared-secret-123456")
+	t.Setenv("UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET", "0123456789abcdef0123456789abcdef")
 	t.Setenv("LOG_RETENTION_DAYS", "60")
 	t.Setenv("RUNTIME_ENVIRONMENT", "staging")
 	t.Setenv("RUNTIME_DEPLOYMENT_MODE", "docker-compose")
@@ -360,6 +426,9 @@ func TestLoad_RuntimeExposureEnvOverrides(t *testing.T) {
 	if got := cfg.MetricsAllowedCIDRs; len(got) != 2 || got[0] != "10.0.0.0/8" || got[1] != "127.0.0.1/32" {
 		t.Fatalf("unexpected metrics CIDRs: %#v", got)
 	}
+	if got := cfg.TrustedProxyCIDRs; len(got) != 2 || got[0] != "172.30.0.10/32" || got[1] != "192.0.2.9/32" {
+		t.Fatalf("unexpected trusted proxy CIDRs: %#v", got)
+	}
 	if cfg.LoginRateLimitEnabled {
 		t.Fatal("expected login limiter disabled override")
 	}
@@ -377,6 +446,9 @@ func TestLoad_RuntimeExposureEnvOverrides(t *testing.T) {
 	}
 	if cfg.TraceEventRetentionDays != 14 || cfg.LogRetentionDays != 60 {
 		t.Fatalf("unexpected retention days: trace=%d log=%d", cfg.TraceEventRetentionDays, cfg.LogRetentionDays)
+	}
+	if cfg.NotificationWebhookSigningSecret != "0123456789abcdef0123456789abcdef" {
+		t.Fatal("expected typed notification Webhook signing secret override")
 	}
 	if cfg.PayloadCaptureMode != traceutil.PayloadCaptureModeDisabled {
 		t.Fatalf("expected payload capture mode disabled, got %s", cfg.PayloadCaptureMode)
@@ -511,18 +583,51 @@ func TestLoad_InvalidWorkloadAdmissionFailsClosed(t *testing.T) {
 	}
 }
 
+func TestLoad_GuardrailPolicyQuotaEnvOverrides(t *testing.T) {
+	t.Setenv("JWT_SECRET", "jwt-secret")
+	t.Setenv("API_KEY_HASH_SECRET", "api-key-secret")
+	t.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+	t.Setenv("GUARDRAIL_ORG_ACTIVE_POLICY_LIMIT", "128")
+	t.Setenv("GUARDRAIL_PLATFORM_ACTIVE_POLICY_LIMIT", "64")
+	t.Setenv("GUARDRAIL_CACHED_POLICY_LIMIT", "2048")
+	t.Setenv("GUARDRAIL_CACHED_TENANT_LIMIT", "1024")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load guardrail quota override: %v", err)
+	}
+	options := cfg.GuardrailOptions()
+	if options.MaxActivePoliciesPerOrg != 128 || options.MaxActivePlatformPolicies != 64 ||
+		options.MaxCachedPolicies != 2048 || options.MaxCachedTenantScopes != 1024 {
+		t.Fatalf("unexpected guardrail quota options: %#v", options)
+	}
+}
+
+func TestLoad_InvalidGuardrailPolicyQuotaFailsClosed(t *testing.T) {
+	t.Setenv("JWT_SECRET", "jwt-secret")
+	t.Setenv("API_KEY_HASH_SECRET", "api-key-secret")
+	t.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+	t.Setenv("GUARDRAIL_ORG_ACTIVE_POLICY_LIMIT", "257")
+	t.Setenv("GUARDRAIL_CACHED_POLICY_LIMIT", "128")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid guardrail quota configuration to fail startup validation")
+	}
+}
+
 func TestLoad_Defaults(t *testing.T) {
 	// Clear all env vars to test defaults
 	envVars := []string{
 		"LISTEN_PORT", "LOG_LEVEL", "GIN_MODE", "SHUTDOWN_TIMEOUT_SECONDS", "DB_DSN", "DB_MAX_CONNECTIONS",
 		"REDIS_ADDR", "REDIS_PASSWORD", "REDIS_DB", "JWT_SECRET", "API_KEY_HASH_SECRET", "ENCRYPTION_KEY",
 		"TRACE_EVENTS_ENABLED", "TRACE_EVENT_SAMPLE_RATE", "TRACE_EVENT_RETENTION_DAYS", "LOG_RETENTION_DAYS",
-		"PAYLOAD_CAPTURE_MODE", "EVIDENCE_CONTEXT_TRUST_SECRET",
+		"PAYLOAD_CAPTURE_MODE", "EVIDENCE_CONTEXT_TRUST_SECRET", "UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET",
 		"STREAM_MAX_SSE_LINE_BYTES", "STREAM_WRITE_IDLE_TIMEOUT_SECONDS", "STREAM_HEARTBEAT_SECONDS", "STREAM_MAX_DURATION_SECONDS",
 		"WORKLOAD_GLOBAL_CAPACITY", "WORKLOAD_ORG_CAPACITY", "WORKLOAD_GLOBAL_SHORT_RESERVE", "WORKLOAD_ORG_SHORT_RESERVE",
 		"WORKLOAD_INTERACTIVE_WEIGHT", "WORKLOAD_STREAM_WEIGHT", "WORKLOAD_EMBEDDING_WEIGHT",
 		"WORKLOAD_INTERACTIVE_MAX_WAIT_MS", "WORKLOAD_STREAM_MAX_WAIT_MS", "WORKLOAD_EMBEDDING_MAX_WAIT_MS",
-		"RUNTIME_ENVIRONMENT", "RUNTIME_DEPLOYMENT_MODE",
+		"GUARDRAIL_ORG_ACTIVE_POLICY_LIMIT", "GUARDRAIL_PLATFORM_ACTIVE_POLICY_LIMIT", "GUARDRAIL_CACHED_POLICY_LIMIT", "GUARDRAIL_CACHED_TENANT_LIMIT",
+		"RUNTIME_ENVIRONMENT", "RUNTIME_DEPLOYMENT_MODE", "TRUSTED_PROXY_CIDRS",
 		"RUNTIME_DEPLOYMENT_ROLE", "RUNTIME_VERSION", "RUNTIME_COMMIT", "PROMETHEUS_URL", "GRAFANA_URL",
 		"LICENSE_PUBLIC_KEY", "LICENSE_PUBLIC_KEYS", "LICENSE_DEPLOYMENT_ID", "LICENSE_EXPIRY_WARNING_DAYS", "LICENSE_REFRESH_SECONDS", "UPGRADE_PUBLIC_KEYS", "MIN_FREEZE_AMOUNT", "FREEZE_SAFETY_FACTOR", "DEFAULT_KEY_RPM", "DEFAULT_KEY_QPS",
 	}
@@ -547,29 +652,34 @@ func TestLoad_Defaults(t *testing.T) {
 			"TRACE_EVENT_RETENTION_DAYS",
 			getEnvInt("LOG_RETENTION_DAYS", 30),
 		),
-		PayloadCaptureMode:           traceutil.NormalizePayloadCaptureMode(getEnvStr("PAYLOAD_CAPTURE_MODE", traceutil.PayloadCaptureModeMetadataOnly)),
-		EvidenceContextTrustSecret:   getEnvStr("EVIDENCE_CONTEXT_TRUST_SECRET", ""),
-		RuntimeEnvironment:           getEnvStr("RUNTIME_ENVIRONMENT", "unspecified"),
-		RuntimeDeploymentMode:        getEnvStr("RUNTIME_DEPLOYMENT_MODE", "single-node"),
-		RuntimeDeploymentRole:        getEnvStr("RUNTIME_DEPLOYMENT_ROLE", "stable"),
-		MinFreezeCents:               int64(getEnvInt("MIN_FREEZE_AMOUNT", 10)),
-		FreezeSafetyFactor:           getEnvStr("FREEZE_SAFETY_FACTOR", "1.5"),
-		DefaultKeyRPM:                getEnvInt("DEFAULT_KEY_RPM", 60),
-		DefaultKeyQPS:                getEnvInt("DEFAULT_KEY_QPS", 10),
-		StreamMaxSSELineBytes:        getEnvInt("STREAM_MAX_SSE_LINE_BYTES", 2*1024*1024),
-		StreamWriteIdleTimeoutSecs:   getEnvInt("STREAM_WRITE_IDLE_TIMEOUT_SECONDS", 30),
-		StreamHeartbeatSecs:          getEnvInt("STREAM_HEARTBEAT_SECONDS", 15),
-		StreamMaxDurationSecs:        getEnvInt("STREAM_MAX_DURATION_SECONDS", 30*60),
-		WorkloadGlobalCapacity:       getEnvInt("WORKLOAD_GLOBAL_CAPACITY", 100),
-		WorkloadOrgCapacity:          getEnvInt("WORKLOAD_ORG_CAPACITY", 10),
-		WorkloadGlobalShortReserve:   getEnvInt("WORKLOAD_GLOBAL_SHORT_RESERVE", 10),
-		WorkloadOrgShortReserve:      getEnvInt("WORKLOAD_ORG_SHORT_RESERVE", 2),
-		WorkloadInteractiveWeight:    getEnvInt("WORKLOAD_INTERACTIVE_WEIGHT", 1),
-		WorkloadStreamWeight:         getEnvInt("WORKLOAD_STREAM_WEIGHT", 4),
-		WorkloadEmbeddingWeight:      getEnvInt("WORKLOAD_EMBEDDING_WEIGHT", 1),
-		WorkloadInteractiveMaxWaitMS: getEnvInt("WORKLOAD_INTERACTIVE_MAX_WAIT_MS", 50),
-		WorkloadStreamMaxWaitMS:      getEnvInt("WORKLOAD_STREAM_MAX_WAIT_MS", 250),
-		WorkloadEmbeddingMaxWaitMS:   getEnvInt("WORKLOAD_EMBEDDING_MAX_WAIT_MS", 50),
+		PayloadCaptureMode:                 traceutil.NormalizePayloadCaptureMode(getEnvStr("PAYLOAD_CAPTURE_MODE", traceutil.PayloadCaptureModeMetadataOnly)),
+		EvidenceContextTrustSecret:         getEnvStr("EVIDENCE_CONTEXT_TRUST_SECRET", ""),
+		NotificationWebhookSigningSecret:   getEnvStr("UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET", ""),
+		RuntimeEnvironment:                 getEnvStr("RUNTIME_ENVIRONMENT", "unspecified"),
+		RuntimeDeploymentMode:              getEnvStr("RUNTIME_DEPLOYMENT_MODE", "single-node"),
+		RuntimeDeploymentRole:              getEnvStr("RUNTIME_DEPLOYMENT_ROLE", "stable"),
+		MinFreezeCents:                     int64(getEnvInt("MIN_FREEZE_AMOUNT", 10)),
+		FreezeSafetyFactor:                 getEnvStr("FREEZE_SAFETY_FACTOR", "1.5"),
+		DefaultKeyRPM:                      getEnvInt("DEFAULT_KEY_RPM", 60),
+		DefaultKeyQPS:                      getEnvInt("DEFAULT_KEY_QPS", 10),
+		StreamMaxSSELineBytes:              getEnvInt("STREAM_MAX_SSE_LINE_BYTES", 2*1024*1024),
+		StreamWriteIdleTimeoutSecs:         getEnvInt("STREAM_WRITE_IDLE_TIMEOUT_SECONDS", 30),
+		StreamHeartbeatSecs:                getEnvInt("STREAM_HEARTBEAT_SECONDS", 15),
+		StreamMaxDurationSecs:              getEnvInt("STREAM_MAX_DURATION_SECONDS", 30*60),
+		WorkloadGlobalCapacity:             getEnvInt("WORKLOAD_GLOBAL_CAPACITY", 100),
+		WorkloadOrgCapacity:                getEnvInt("WORKLOAD_ORG_CAPACITY", 10),
+		WorkloadGlobalShortReserve:         getEnvInt("WORKLOAD_GLOBAL_SHORT_RESERVE", 10),
+		WorkloadOrgShortReserve:            getEnvInt("WORKLOAD_ORG_SHORT_RESERVE", 2),
+		WorkloadInteractiveWeight:          getEnvInt("WORKLOAD_INTERACTIVE_WEIGHT", 1),
+		WorkloadStreamWeight:               getEnvInt("WORKLOAD_STREAM_WEIGHT", 4),
+		WorkloadEmbeddingWeight:            getEnvInt("WORKLOAD_EMBEDDING_WEIGHT", 1),
+		WorkloadInteractiveMaxWaitMS:       getEnvInt("WORKLOAD_INTERACTIVE_MAX_WAIT_MS", 50),
+		WorkloadStreamMaxWaitMS:            getEnvInt("WORKLOAD_STREAM_MAX_WAIT_MS", 250),
+		WorkloadEmbeddingMaxWaitMS:         getEnvInt("WORKLOAD_EMBEDDING_MAX_WAIT_MS", 50),
+		GuardrailOrgActivePolicyLimit:      getEnvInt("GUARDRAIL_ORG_ACTIVE_POLICY_LIMIT", 256),
+		GuardrailPlatformActivePolicyLimit: getEnvInt("GUARDRAIL_PLATFORM_ACTIVE_POLICY_LIMIT", 256),
+		GuardrailCachedPolicyLimit:         getEnvInt("GUARDRAIL_CACHED_POLICY_LIMIT", 4096),
+		GuardrailCachedTenantLimit:         getEnvInt("GUARDRAIL_CACHED_TENANT_LIMIT", 4096),
 	}
 
 	if cfg.ListenPort != 8080 {
@@ -608,6 +718,11 @@ func TestLoad_Defaults(t *testing.T) {
 		workload.GlobalShortReserve != 10 || workload.OrgShortReserve != 2 || workload.Stream.MaxWait != 250*time.Millisecond {
 		t.Fatalf("unexpected workload defaults: %#v", workload)
 	}
+	guardrailOptions := cfg.GuardrailOptions()
+	if guardrailOptions.MaxActivePoliciesPerOrg != 256 || guardrailOptions.MaxActivePlatformPolicies != 256 ||
+		guardrailOptions.MaxCachedPolicies != 4096 || guardrailOptions.MaxCachedTenantScopes != 4096 {
+		t.Fatalf("unexpected guardrail quota defaults: %#v", guardrailOptions)
+	}
 	if !cfg.TraceEventsEnabled || cfg.TraceEventSampleRate != 1 {
 		t.Fatalf("expected trace events enabled with sample rate 1, got enabled=%v sample=%f", cfg.TraceEventsEnabled, cfg.TraceEventSampleRate)
 	}
@@ -619,6 +734,9 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if cfg.EvidenceContextTrustSecret != "" {
 		t.Fatalf("expected evidence context trust secret disabled by default, got %s", cfg.EvidenceContextTrustSecret)
+	}
+	if cfg.NotificationWebhookSigningSecret != "" {
+		t.Fatal("expected notification Webhook signing to be disabled by default")
 	}
 	if cfg.RuntimeEnvironment != "unspecified" || cfg.RuntimeDeploymentMode != "single-node" || cfg.RuntimeDeploymentRole != "stable" {
 		t.Fatalf("unexpected runtime defaults: env=%s mode=%s role=%s", cfg.RuntimeEnvironment, cfg.RuntimeDeploymentMode, cfg.RuntimeDeploymentRole)

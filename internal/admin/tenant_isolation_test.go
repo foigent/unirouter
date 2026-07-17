@@ -28,12 +28,24 @@ func p6f16Request(method, target, body, role string, orgID, userID int64) *http.
 
 func TestP6F16ListAPIKeysScopesOrgAdmin(t *testing.T) {
 	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			if !strings.Contains(sql, "ak.org_id = $1") {
+				t.Fatalf("expected actor organization predicate in count, got %s", sql)
+			}
+			if len(args) != 1 || args[0] != int64(7) {
+				t.Fatalf("expected actor org argument 7 in count, got %#v", args)
+			}
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int) = 0
+				return nil
+			}}
+		},
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			if !strings.Contains(sql, "ak.org_id = $1") {
 				t.Fatalf("expected actor organization predicate, got %s", sql)
 			}
-			if len(args) != 1 || args[0] != int64(7) {
-				t.Fatalf("expected actor org argument 7, got %#v", args)
+			if len(args) != 3 || args[0] != int64(7) || args[1] != 20 || args[2] != 0 {
+				t.Fatalf("expected actor org and pagination arguments, got %#v", args)
 			}
 			return &testutil.MockRows{}, nil
 		},
@@ -112,7 +124,7 @@ func TestP6F16OrgAdminCannotCreatePlatformAdmin(t *testing.T) {
 		},
 	}
 	h := newTestHandler(db)
-	req := p6f16Request(http.MethodPost, "/api/v1/users", `{"org_id":7,"username":"elevated","password":"secret123","role":"platform_admin"}`, auth.RoleOrgAdmin, 7, 70)
+	req := p6f16Request(http.MethodPost, "/api/v1/users", `{"org_id":7,"username":"elevated","password":"secret-password-123","role":"platform_admin"}`, auth.RoleOrgAdmin, 7, 70)
 	rec := httptest.NewRecorder()
 
 	h.CreateUser(rec, req)
@@ -138,6 +150,9 @@ func TestP6F16UpdateAPIKeyRejectsForeignOrgBeforeMutation(t *testing.T) {
 			}}
 		},
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(sql, "pg_advisory_xact_lock") {
+				return pgconn.NewCommandTag("SELECT 1"), nil
+			}
 			execCalled = true
 			return pgconn.NewCommandTag("UPDATE 1"), nil
 		},
@@ -164,10 +179,14 @@ func TestP6F16DeleteUserRejectsForeignOrgBeforeMutation(t *testing.T) {
 			return &testutil.MockRow{ScanFn: func(dest ...any) error {
 				*dest[0].(*int64) = 8
 				*dest[1].(*string) = auth.RoleOrgViewer
+				*dest[2].(*string) = "active"
 				return nil
 			}}
 		},
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(sql, "pg_advisory_xact_lock") {
+				return pgconn.NewCommandTag("SELECT 1"), nil
+			}
 			execCalled = true
 			return pgconn.NewCommandTag("DELETE 1"), nil
 		},
@@ -248,27 +267,43 @@ func TestP6F16ProjectMembershipRequiresActorOrg(t *testing.T) {
 }
 
 func TestP6F16UpdateUserFinalPredicateProtectsPlatformRoles(t *testing.T) {
-	db := &testutil.MockDB{
+	updateCalled := false
+	tx := &testutil.MockTx{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			return &testutil.MockRow{ScanFn: func(dest ...any) error {
 				*dest[0].(*int64) = 7
 				*dest[1].(*string) = auth.RoleOrgViewer
+				*dest[2].(*string) = "active"
 				return nil
 			}}
 		},
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(sql, "pg_advisory_xact_lock") {
+				return pgconn.NewCommandTag("SELECT 1"), nil
+			}
+			if strings.Contains(sql, "DELETE FROM project_members") {
+				return pgconn.NewCommandTag("DELETE 0"), nil
+			}
+			if strings.Contains(sql, "INSERT INTO audit_logs") {
+				return pgconn.NewCommandTag("INSERT 0 1"), nil
+			}
 			if !strings.Contains(sql, "role NOT IN ('admin', 'platform_admin')") {
 				t.Fatalf("expected final update predicate to close platform-role race, got %s", sql)
 			}
+			updateCalled = true
 			return pgconn.NewCommandTag("UPDATE 1"), nil
 		},
 	}
+	db := &testutil.MockDB{BeginFn: func(ctx context.Context) (pgx.Tx, error) { return tx, nil }}
 	h := newTestHandler(db)
 	req := p6f16Request(http.MethodPut, "/api/v1/users/9", `{"status":"disabled"}`, auth.RoleOrgAdmin, 7, 70)
 	req.SetPathValue("id", "9")
 	rec := httptest.NewRecorder()
 
 	h.UpdateUser(rec, req)
+	if !updateCalled {
+		t.Fatal("expected guarded user update")
+	}
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -334,13 +369,22 @@ func TestP6F16ProjectModelSetReplaceRollsBackAfterPartialWriteError(t *testing.T
 
 func TestP6F16PlatformAdminCrossTenantException(t *testing.T) {
 	inserted := false
-	db := &testutil.MockDB{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-		inserted = true
-		return &testutil.MockRow{ScanFn: func(dest ...any) error {
-			*dest[0].(*int64) = 42
-			return nil
-		}}
-	}}
+	tx := &testutil.MockTx{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			inserted = true
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int64) = 42
+				return nil
+			}}
+		},
+		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if !strings.Contains(sql, "INSERT INTO audit_logs") {
+				t.Fatalf("unexpected exec: %s", sql)
+			}
+			return pgconn.NewCommandTag("INSERT 0 1"), nil
+		},
+	}
+	db := &testutil.MockDB{BeginFn: func(ctx context.Context) (pgx.Tx, error) { return tx, nil }}
 	h := newTestHandler(db)
 	req := p6f16Request(http.MethodPost, "/api/v1/projects", `{"org_id":8,"name":"Foreign"}`, auth.RolePlatformAdmin, 7, 70)
 	rec := httptest.NewRecorder()

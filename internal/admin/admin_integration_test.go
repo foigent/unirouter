@@ -21,12 +21,15 @@ import (
 func TestLogin_Success_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
+	var orgName string
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT name FROM orgs WHERE id = $1`, orgID).Scan(&orgName))
 
 	// Create a test user with bcrypt-hashed password
 	hash, err := bcrypt.GenerateFromPassword([]byte("testpassword123"), bcrypt.DefaultCost)
 	require.NoError(t, err)
 	_, err = pool.Exec(t.Context(),
-		`INSERT INTO users (org_id, username, password_hash, role, status) VALUES ($1, 'testadmin', $2, 'admin', 'active')`,
+		`INSERT INTO users (org_id, username, password_hash, role, status, email, auth_provider)
+		 VALUES ($1, 'testadmin', $2, 'admin', 'active', 'testadmin@example.com', 'local')`,
 		orgID, string(hash),
 	)
 	require.NoError(t, err)
@@ -46,8 +49,41 @@ func TestLogin_Success_Integration(t *testing.T) {
 	err = json.Unmarshal(rec.Body.Bytes(), &resp)
 	require.NoError(t, err)
 	require.NotEmpty(t, resp["token"], "should return JWT token")
+	require.EqualValues(t, orgID, resp["org_id"])
 	require.Equal(t, "testadmin", resp["username"])
 	require.Equal(t, "admin", resp["role"])
+	require.Equal(t, orgName, resp["org_name"])
+	require.Equal(t, "active", resp["status"])
+	require.Equal(t, "testadmin@example.com", resp["email"])
+	require.Equal(t, "local", resp["auth_provider"])
+}
+
+func TestLogin_ExternalProviderWithBcryptDenied_Integration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
+	hash, err := bcrypt.GenerateFromPassword([]byte("retained-placeholder-password"), bcrypt.DefaultCost)
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(),
+		`INSERT INTO users (org_id, username, password_hash, role, status, email, auth_provider)
+		 VALUES ($1, 'external-retained-hash', $2, 'org_admin', 'active', 'external@example.com', 'oidc')`,
+		orgID, string(hash),
+	)
+	require.NoError(t, err)
+
+	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login",
+		bytes.NewBufferString(`{"username":"external-retained-hash","password":"retained-placeholder-password"}`))
+	rec := httptest.NewRecorder()
+
+	h.Login(rec, req)
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code, "body: %s", rec.Body.String())
+	require.NotContains(t, rec.Body.String(), "token")
+	require.NotContains(t, rec.Body.String(), "oidc")
+	var loginAudits int
+	require.NoError(t, pool.QueryRow(t.Context(),
+		`SELECT COUNT(*) FROM audit_logs WHERE org_id = $1 AND action = 'login'`, orgID).Scan(&loginAudits))
+	require.Zero(t, loginAudits)
 }
 
 func TestLogin_WrongPassword_Integration(t *testing.T) {
@@ -72,6 +108,7 @@ func TestLogin_WrongPassword_Integration(t *testing.T) {
 	h.Login(rec, req)
 
 	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	require.NotContains(t, rec.Body.String(), "token")
 }
 
 func TestLogin_DisabledUser_Integration(t *testing.T) {
@@ -96,6 +133,8 @@ func TestLogin_DisabledUser_Integration(t *testing.T) {
 	h.Login(rec, req)
 
 	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Contains(t, rec.Body.String(), "Account is disabled")
+	require.NotContains(t, rec.Body.String(), "token")
 }
 
 func TestLogin_EmptyCredentials_Integration(t *testing.T) {
@@ -156,6 +195,10 @@ func TestLogin_InvalidJSON_Integration(t *testing.T) {
 func TestCreateAPIKey_Success_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
+	var defaultProjectID int64
+	require.NoError(t, pool.QueryRow(t.Context(),
+		`INSERT INTO projects (org_id, name, slug, status) VALUES ($1, 'Default Project', 'default', 'active') RETURNING id`, orgID,
+	).Scan(&defaultProjectID))
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
@@ -178,6 +221,8 @@ func TestCreateAPIKey_Success_Integration(t *testing.T) {
 	// Verify key_prefix starts with expected pattern (ur-XXXX-...)
 	keyPrefix := resp["key_prefix"].(string)
 	require.Contains(t, keyPrefix, "ur-")
+	require.Len(t, keyPrefix, 20)
+	require.Equal(t, keyPrefix, resp["key"].(string)[:len(keyPrefix)])
 
 	// Verify key stored in DB
 	var keyHash, dbPrefix string
@@ -187,6 +232,7 @@ func TestCreateAPIKey_Success_Integration(t *testing.T) {
 	).Scan(&keyHash, &dbPrefix)
 	require.NoError(t, err)
 	require.NotEmpty(t, keyHash)
+	require.Equal(t, keyPrefix, dbPrefix)
 	require.NotEqual(t, resp["key"], keyHash, "stored hash should differ from raw key")
 }
 
@@ -208,6 +254,10 @@ func TestCreateAPIKey_NoName_Integration(t *testing.T) {
 func TestCreateAPIKey_DefaultLimits_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
+	var defaultProjectID int64
+	require.NoError(t, pool.QueryRow(t.Context(),
+		`INSERT INTO projects (org_id, name, slug, status) VALUES ($1, 'Default Project', 'default', 'active') RETURNING id`, orgID,
+	).Scan(&defaultProjectID))
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
@@ -235,19 +285,14 @@ func TestCreateAPIKey_DefaultLimits_Integration(t *testing.T) {
 	require.Equal(t, 10, qps, "default qps_limit should be 10")
 }
 
-func TestCreateAPIKey_OrgDefault_Integration(t *testing.T) {
+func TestCreateAPIKey_RequiresOrganization_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
-	// Need an org to exist; org_id=0 is hardcoded to 1 in CreateAPIKey.
-	// Create a synthetic org with id=1 via direct insert (bypassing auto-increment).
-	_, err := pool.Exec(t.Context(),
-		`INSERT INTO orgs (id, name, status, org_type) VALUES (1, 'default-org', 'active', 'standard') ON CONFLICT DO NOTHING`)
-	require.NoError(t, err)
-	// Reset sequence if needed
-	pool.Exec(t.Context(), `SELECT setval('orgs_id_seq', GREATEST(1, (SELECT COALESCE(MAX(id),0) FROM orgs)))`)
-
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
-	// org_id=0 should default to 1
+	var before int
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT COUNT(*) FROM api_keys`).Scan(&before))
+
+	// A platform-capable direct call must select its target organization explicitly.
 	body := `{"org_id":0,"name":"default-org-key"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/keys", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -255,7 +300,10 @@ func TestCreateAPIKey_OrgDefault_Integration(t *testing.T) {
 
 	h.CreateAPIKey(rec, req)
 
-	require.Equal(t, http.StatusCreated, rec.Code, "body: %s", rec.Body.String())
+	require.Equal(t, http.StatusBadRequest, rec.Code, "body: %s", rec.Body.String())
+	var after int
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT COUNT(*) FROM api_keys`).Scan(&after))
+	require.Equal(t, before, after)
 }
 
 // --- CreateChannel handler tests ---
@@ -524,7 +572,7 @@ func TestCreateGrant_Success_Integration(t *testing.T) {
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
-	body := `{"org_id":0,"amount_cents":500,"reason":"Test grant"}`
+	body := `{"org_id":0,"amount_cents":500,"reason":"Test grant","client_request_id":"grant-success-integration"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/grants", bytes.NewBufferString(body))
 	req = withTestActor(req, 1, orgID, auth.RoleBillingAdmin)
 	req.Header.Set("Content-Type", "application/json")
@@ -779,7 +827,7 @@ func TestCreateUser_Success_Integration(t *testing.T) {
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
-	body := fmt.Sprintf(`{"org_id":%d,"username":"newuser","password":"pass123","role":"org_admin"}`, orgID)
+	body := fmt.Sprintf(`{"org_id":%d,"username":"newuser","password":"valid-password-123","role":"org_admin"}`, orgID)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -807,7 +855,7 @@ func TestCreateUser_DuplicateUsername_Integration(t *testing.T) {
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
-	body := fmt.Sprintf(`{"org_id":%d,"username":"dupuser","password":"pass123"}`, orgID)
+	body := fmt.Sprintf(`{"org_id":%d,"username":"dupuser","password":"valid-password-123"}`, orgID)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -844,7 +892,7 @@ func TestCreateUser_DefaultRole_Integration(t *testing.T) {
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
-	body := fmt.Sprintf(`{"org_id":%d,"username":"defaultrole","password":"pass123"}`, orgID)
+	body := fmt.Sprintf(`{"org_id":%d,"username":"defaultrole","password":"valid-password-123"}`, orgID)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -1132,6 +1180,10 @@ func TestDisableAPIKey_NotFound_Integration(t *testing.T) {
 func TestListAPIKeys_Success_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
+	var defaultProjectID int64
+	require.NoError(t, pool.QueryRow(t.Context(),
+		`INSERT INTO projects (org_id, name, slug, status) VALUES ($1, 'Default Project', 'default', 'active') RETURNING id`, orgID,
+	).Scan(&defaultProjectID))
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 

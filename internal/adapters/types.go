@@ -78,6 +78,7 @@ type RequestInput struct {
 }
 
 type ResponseInput struct {
+	Endpoint       Endpoint
 	StatusCode     int
 	Header         http.Header
 	Body           []byte

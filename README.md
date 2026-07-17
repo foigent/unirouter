@@ -9,8 +9,9 @@ builder cache 或签名私钥。
 ## 快速开始
 
 ```bash
-# 1. 克隆项目
-git clone <repo-url> UniRouter && cd UniRouter
+# 1. 克隆项目（先将内部仓库地址写入环境变量）
+: "${UNIROUTER_REPO_URL:?Set the approved repository URL}"
+git clone "$UNIROUTER_REPO_URL" UniRouter && cd UniRouter
 
 # 2. 配置环境变量
 cp .env.example .env
@@ -29,9 +30,10 @@ curl http://localhost:8080/health/ready
 # 5. 数据库迁移会在后端启动时自动执行；也可以手动补跑
 docker compose exec backend ./uniroute migrate up
 
-# 6. 首次部署后必须立刻轮换默认管理员密码
+# 6. 首次部署后必须立刻轮换默认管理员密码。
+# 在交互终端中会无回显输入并确认两次；不要把密码放在命令参数或环境变量中。
 docker compose exec backend ./uniroute admin set-password \
-    --username admin --password <strong-password> --org-id 1
+    --username admin --org-id 1
 ```
 
 服务可以在缺少商业 License 时启动，以保留本地登录、健康检查和 License
@@ -55,7 +57,7 @@ Docker Compose（6 个容器）：
 │   ├── /api/v1/*   → 管理后台 API
 │   └── /health/*   → 健康检查
 ├── frontend（Nginx + React 静态资源）
-├── PostgreSQL 15
+├── PostgreSQL 16
 ├── Redis 7
 ├── Prometheus
 └── Grafana
@@ -64,57 +66,20 @@ Docker Compose（6 个容器）：
 ## 技术栈
 
 - **后端**：Go `net/http` + pgx + go-redis
-- **数据库**：PostgreSQL 15 + Redis 7
+- **数据库**：PostgreSQL 16 + Redis 7
 - **前端**：React 18 + Semi Design + Vite
-- **基础**：OneAPI（Go, MIT）Deep Fork
 
 ## 文档
 
-- [贡献指南](CONTRIBUTING.md) — 开发流程、代码规范、提交规范
-- [Agent Handoff](docs/PROJECT-HANDOFF.md) — 其他 agent 接手项目的第一入口
-- [当前状态](docs/ops/CURRENT-STATUS.md) — 当前真实进度、测试和缺口
-- [PRD6 收口入口](docs/planning/PRD6-START-HERE.md) — Completed (Accepted Scope)、决策边界和阅读顺序
-- [PRD6 产品范围](docs/PRD-Phase6.md) — 已完成 accepted scope、proposed/deferred、安全边界和所有权
-- [PRD6 验收矩阵](docs/ops/PRD6-ACCEPTANCE-MATRIX.md) — 27/27 accepted rows、外部和目标证据边界
-- [PRD6 收口证据](docs/ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md) — repository/CI 证据等级、非声明与后续队列
-- [PRD6 最终完成证据](docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md) — 新鲜 Git/CI/矩阵/目标健康审计、正式完成状态与后续边界
-- [PRD6 竞品与四象限](docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md) — 固定版本竞品核验和优先级
-- [PRD6 P6-F16 本地证据](docs/ops/evidence/PRD6-B0B-P6F16-tenant-isolation-local-20260711.md) — key/user/project/project-policy 租户边界修复与回归
-- [PRD6 管理面租户审计](docs/ops/evidence/PRD6-B0B-admin-tenant-surface-audit-20260711.md) — 财务、通知、价格、全局设置和模型治理的后续 confirmed findings
-- [PRD6 P6-F33 本地证据](docs/ops/evidence/PRD6-B0B-P6F33-notification-tenant-isolation-local-20260711.md) — 通知/Webhook 租户隔离修复与红绿回归
-- [PRD6 P6-F37 本地证据](docs/ops/evidence/PRD6-B0B-P6F37-audit-log-tenant-isolation-local-20260711.md) — 审计日志租户隔离修复与双租户回归
-- [PRD6 P6-F38 本地证据](docs/ops/evidence/PRD6-B0B-P6F38-frontend-test-ci-local-20260711.md) — 现有前端测试纳入 required CI
-- [PRD6 P6-F32/P6-F39 本地证据](docs/ops/evidence/PRD6-B0B-P6F32-P6F39-finance-and-usage-tenant-isolation-local-20260711.md) — 财务、请求日志和用量派生视图的租户隔离
-- [PRD6 流式传输本地证据](docs/ops/evidence/PRD6-B0C-P6STREAM002A-stream-transport-local-20260712.md) — 长流帧、超时、写入串行化、异常结算及剩余边界
-- [PRD6 产品/架构/UX 审计](docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md) — 审计日志、用量核验、链路 ID、UI、扩展性与升级建议
-- [V1 商业授权与签名升级合同](docs/planning/V1-COMMERCIAL-LICENSE-AND-SIGNED-UPGRADE-CONTRACT-20260714.md) — 交付前强制门槛、非声明与目标激活边界
-- [V1 正式第一版产品审计](docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md) — 用户问题完整矩阵、真实 ECS/API/浏览器证据、当前修复与后续环境边界
-- [PRD6 高可用与流式故障研究](docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md) — 竞品集群模式、UniRouter 当前事实和已接受 D6-12 边界
-- [PRD7 候选 Backlog](docs/planning/PRD7-CANDIDATE-BACKLOG.md) — Post-PRD6 最低签名包基础与仍未接受的 Update Center/自动化/N-1 产品化边界
-- [PRD5 产品范围](docs/PRD-Phase5.md) — Accepted Scope Complete 历史事实
-- [PRD5 验收矩阵](docs/ops/PRD5-ACCEPTANCE-MATRIX.md) — PRD5 关闭证据和明确决策
-- [PRD3 验收矩阵](docs/ops/PRD3-ACCEPTANCE-MATRIX.md) — 已完成 PRD3 清理/优化验收状态
-- [PRD3 产品范围](docs/PRD-Phase3.md) — 已完成 PRD3 一致性、语义、契约和架构清理范围
-- [PRD3 一致性审计](docs/planning/PRD3-CONSISTENCY-AUDIT.md) — PRD1→PRD2 遗留问题梳理
-- [PRD4 候选 Backlog](docs/planning/PRD4-BACKLOG.md) — PRD4 候选能力来源记录，正式范围以 PRD4 产品范围为准
-- [Open Issues](docs/issues/OPEN-ISSUES.md) — 当前未关闭问题
-- [Agent 协议](docs/agent-workflows/AGENT-PROTOCOL.md) — 单一执行负责人、授权、证据和可选独立复核流程
-- [文档目录](docs/README.md) — 当前、冻结、历史和候选文档入口
-- [文档治理](docs/DOCS-GOVERNANCE.md) — 文档状态和更新规则
-- [PRD2 产品需求](docs/PRD-Phase2.md) — PRD2 已冻结需求参考
-- [PRD1 产品需求](docs/PRD-Phase1.md) — PRD1 历史需求参考
-- [技术参考](docs/tech-ref/) — 开发团队技术参考
-  - [01 模型能力矩阵](docs/tech-ref/01-provider-capability-matrix.md)
-  - [02 计费状态机](docs/tech-ref/02-billing-state-machine.md)
-  - [03 错误处理矩阵](docs/tech-ref/03-error-handling-matrix.md)
-  - [04 OneAPI Hook 清单](docs/tech-ref/04-oneapi-hook-manifest.md)
-  - [05 OpenAPI Spec](docs/tech-ref/05-openapi-spec.yaml)
-  - [06 前端页面规格](docs/tech-ref/06-frontend-spec.md)
-  - [16 商业授权强制](docs/tech-ref/16-license-foundation.md)
-  - [27 签名离线升级包](docs/tech-ref/27-signed-offline-upgrade.md)
-- [运维文档](docs/ops/) — 部署和测试
-  - [部署手册](docs/ops/deployment-runbook.md)
-  - [测试计划](docs/ops/test-plan.md)
+- [客户正式安装](deploy/customer/README.md) — 签名发布包、digest 镜像与 source-free Compose 边界
+- [部署与升级手册](docs/ops/deployment-runbook.md) — 开发/内部测试与客户交付的分离流程
+- [商业授权](docs/tech-ref/16-license-foundation.md) 与 [签名离线升级](docs/tech-ref/27-signed-offline-upgrade.md) — V1 发布信任合同
+- [OpenAPI 合同](docs/tech-ref/05-openapi-spec.yaml) — 当前网关与管理 API 路径
+- [贡献指南](CONTRIBUTING.md) 与 [Agent 协议](docs/agent-workflows/AGENT-PROTOCOL.md) — 开发、验证、PR 与授权边界
+- [当前执行记录](docs/agent-workflows/EXECUTION-RECORD.md) — 当前 V1 纠错批次；不重开 PRD6
+- [当前状态](docs/ops/CURRENT-STATUS.md) 与 [Open Issues](docs/issues/OPEN-ISSUES.md) — 已验证事实、缺口和后续决策
+- [文档目录](docs/README.md) 与 [文档清单](docs/DOC-INVENTORY.md) — 技术参考、不可变证据与历史 PRD 索引
+- [PRD6 最终完成证据](docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md) — `Completed (Accepted Scope)` 的历史边界，不得静默重开
 
 ## 项目结构
 

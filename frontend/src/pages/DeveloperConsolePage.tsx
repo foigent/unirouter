@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button, Form, Input, Modal, Select, SideSheet, Space, Table, TextArea, Toast, Tooltip, Typography } from '@douyinfe/semi-ui';
 import {
   IconAlertTriangle,
+  IconBell,
   IconBolt,
   IconCoinMoney,
   IconCopy,
@@ -14,10 +16,19 @@ import {
 } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { useAuthStore } from '../store/auth';
-import { canCreateProjectKey, canDisableProjectKey } from '../navigation';
+import {
+  canCreateProjectKey,
+  canDisableProjectKey,
+  hasLicensedFeature,
+  isProjectAdminRole,
+  licenseRestrictionMessage,
+  normalizeRole,
+} from '../navigation';
 import { EmptyState, MetricTile, MoneyText, PageHeader, parseMicros, StatusTag, Surface } from '../ui';
 import { roleLabel as formatRoleLabel } from '../utils/displayLabels';
+import { loadAllPages } from '../utils/loadAllPages';
 import { keyQuotaText } from '../utils/quota';
+import { buildChatCompletionsCurl } from '../utils/shell';
 
 const { Text } = Typography;
 
@@ -35,6 +46,7 @@ interface Project {
 interface ApiKey {
   id: number;
   project_id: number;
+  owner_user_id?: number | null;
   name: string;
   key_prefix: string;
   status: string;
@@ -144,21 +156,61 @@ function fallbackCopyText(text: string) {
 }
 
 export default function DeveloperConsolePage() {
+  const navigate = useNavigate();
   const role = useAuthStore((s) => s.user?.role);
+  const currentUserID = useAuthStore((s) => s.user?.id);
+  const licenseAccess = useAuthStore((s) => s.user?.license_access);
   const roleLabel = formatRoleLabel(role, '项目成员');
+  const gatewayLicensed = hasLicensedFeature(licenseAccess, 'gateway');
+  const modelGovernanceLicensed = hasLicensedFeature(licenseAccess, 'model_governance');
+  const notificationsLicensed = hasLicensedFeature(licenseAccess, 'notifications');
+  const gatewayRestriction = licenseAccess && !gatewayLicensed
+    ? licenseRestrictionMessage(licenseAccess, 'gateway')
+    : '';
+  const modelGovernanceRestriction = licenseAccess && !modelGovernanceLicensed
+    ? licenseRestrictionMessage(licenseAccess, 'model_governance')
+    : '';
+  const notificationsRestriction = licenseAccess && !notificationsLicensed
+    ? licenseRestrictionMessage(licenseAccess, 'notifications')
+    : '';
   const mayCreateKey = canCreateProjectKey(role);
   const mayDisableKey = canDisableProjectKey(role);
+  const developerOwnKeyOnly = normalizeRole(role) === 'developer';
+  const mayRunPlayground = normalizeRole(role) !== 'viewer';
+  const keySurfaceDescription = !gatewayLicensed
+    ? `${gatewayRestriction} 仍可管理凭证，但模型调用会被后端拒绝。`
+    : mayCreateKey
+      ? '创建后只显示一次完整凭证；列表仅显示前缀。'
+      : '只读查看当前项目的凭证前缀和使用范围；创建或停用请联系项目管理员。';
+  const emptyKeyDescription = mayCreateKey
+    ? '创建项目凭证后即可从内部应用调用网关。'
+    : '当前项目暂无可见凭证；如需调用权限，请联系项目管理员。';
+  const workbenchDescription = normalizeRole(role) === 'viewer'
+    ? '查看当前项目的个人用量、已批准模型和最近调用，并按 Request ID 排查请求。'
+    : isProjectAdminRole(role)
+      ? '创建和停用项目访问凭证、查看已批准模型、调试调用并排查当前项目请求。'
+      : '创建项目访问凭证、停用本人拥有的凭证、查看已批准模型、调试调用并排查当前项目请求。';
+  const noProjectDescription = normalizeRole(role) === 'viewer'
+    ? '请联系组织管理员把你的账号加入项目成员后查看用量和已批准模型。'
+    : '请联系组织管理员把你的账号加入项目成员后再创建项目 Key 和查看用量。';
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<number>();
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [models, setModels] = useState<CatalogModel[]>([]);
+  const [keyPage, setKeyPage] = useState(1);
+  const [keyPageSize, setKeyPageSize] = useState(20);
+  const [modelPage, setModelPage] = useState(1);
+  const [modelPageSize, setModelPageSize] = useState(20);
   const [logs, setLogs] = useState<CallLog[]>([]);
   const [logTotal, setLogTotal] = useState(0);
   const [usageSummary, setUsageSummary] = useState<UsageAnalyticsSummary | null>(null);
   const [usageByModel, setUsageByModel] = useState<UsageAnalyticsRow[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
-  const [dataLoading, setDataLoading] = useState(false);
+  const [projectsLoadError, setProjectsLoadError] = useState('');
+  const [dataLoading, setDataLoading] = useState(true);
+  const [projectDataError, setProjectDataError] = useState('');
+  const [usageLoadError, setUsageLoadError] = useState('');
   const [showKeySheet, setShowKeySheet] = useState(false);
   const [formApi, setFormApi] = useState<any>(null);
   const [createdKey, setCreatedKey] = useState<{ key: string; key_prefix: string; name: string } | null>(null);
@@ -181,6 +233,7 @@ export default function DeveloperConsolePage() {
     doc_url?: string;
     error?: string;
   } | null>(null);
+  const projectDataRequestVersion = useRef(0);
 
   const selectedProject = projects.find(project => project.id === selectedProjectId);
 
@@ -195,14 +248,11 @@ export default function DeveloperConsolePage() {
     return values.filter((value, index) => values.indexOf(value) === index);
   }, [models]);
 
-  const sampleModel = modelOptions[0] || 'company-chat';
-  const effectivePlaygroundModel = playgroundModel || sampleModel;
+  const sampleModel = modelOptions[0] || (modelGovernanceLicensed ? 'company-chat' : '<APPROVED_MODEL_OR_ALIAS>');
+  const effectivePlaygroundModel = playgroundModel || (modelGovernanceLicensed ? sampleModel : '');
   const sampleKey = createdKey?.key || '<YOUR_PROJECT_API_KEY>';
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://your-unirouter.example';
-  const quickstartCurl = `curl ${baseUrl}/v1/chat/completions \\
-  -H "Authorization: Bearer ${sampleKey}" \\
-  -H "Content-Type: application/json" \\
-  -d '{"model":"${sampleModel}","messages":[{"role":"user","content":"Hello"}]}'`;
+  const quickstartCurl = buildChatCompletionsCurl(baseUrl, sampleKey, sampleModel);
 
   const usageSnapshot = useMemo(() => {
     if (usageSummary) {
@@ -232,48 +282,99 @@ export default function DeveloperConsolePage() {
     };
   }, [logTotal, logs, usageSummary]);
 
+  const clearProjectData = useCallback(() => {
+    setKeys([]);
+    setModels([]);
+    setLogs([]);
+    setLogTotal(0);
+    setUsageSummary(null);
+    setUsageByModel([]);
+    setKeyPage(1);
+    setModelPage(1);
+  }, []);
+
   const loadProjects = useCallback(async () => {
     setInitialLoading(true);
+    setProjectsLoadError('');
     try {
-      const data = await api.getProjects(1, 100, { status: 'active' });
-      const items = (data?.data || []) as Project[];
+      const items = await loadAllPages<Project>((page, pageSize) => (
+        api.getProjects(page, pageSize, { status: 'active' })
+      ));
       setProjects(items);
       setSelectedProjectId(current => {
         if (current && items.some(project => project.id === current)) return current;
         return items[0]?.id;
       });
     } catch (err: any) {
+      projectDataRequestVersion.current += 1;
+      clearProjectData();
+      setProjects([]);
+      setSelectedProjectId(undefined);
+      setProjectsLoadError('无法读取当前账号可访问的项目。请检查网络或服务状态后重试。');
       Toast.error(`项目加载失败${err?.message ? `：${err.message}` : ''}`);
     } finally {
       setInitialLoading(false);
     }
-  }, []);
+  }, [clearProjectData]);
 
   const loadProjectData = useCallback(async () => {
-    if (!selectedProjectId) return;
+    if (!selectedProjectId) {
+      setDataLoading(false);
+      return;
+    }
+    const projectId = selectedProjectId;
+    const requestVersion = ++projectDataRequestVersion.current;
+    clearProjectData();
+    setProjectDataError('');
+    setUsageLoadError('');
     setDataLoading(true);
     try {
-      const [keyData, modelData, logData, usageData] = await Promise.all([
-        api.getKeys(1, 50, { project_id: selectedProjectId }),
-        api.getModelCatalog(1, 100, { project_id: selectedProjectId }),
-        api.getLogs(1, 20, { project_id: selectedProjectId }),
-        api.getUsageAnalytics({ project_id: selectedProjectId, scope: 'my', group_by: 'alias' }).catch((err: any) => {
-          Toast.warning(`我的用量加载失败${err?.message ? `：${err.message}` : ''}`);
+      let usageFailure = '';
+      const [keyItems, modelItems, logData, usageData] = await Promise.all([
+        loadAllPages<ApiKey>((page, pageSize) => api.getKeys(page, pageSize, { project_id: projectId })),
+        modelGovernanceLicensed
+          ? loadAllPages<CatalogModel>((page, pageSize) => api.getModelCatalog(page, pageSize, { project_id: projectId }))
+          : Promise.resolve([] as CatalogModel[]),
+        api.getLogs(1, 20, { project_id: projectId }),
+        api.getUsageAnalytics({ project_id: projectId, scope: 'my', group_by: 'alias' }).catch((err: any) => {
+          usageFailure = `无法读取当前项目的个人用量汇总${err?.message ? `：${err.message}` : ''}`;
           return null;
         }),
       ]);
-      setKeys((keyData?.data || []) as ApiKey[]);
-      setModels((modelData?.data || []) as CatalogModel[]);
+      if (projectDataRequestVersion.current !== requestVersion) return;
+      setKeys(keyItems);
+      setModels(modelItems);
       setLogs((logData?.data || []) as CallLog[]);
       setLogTotal(Number(logData?.total || 0));
       setUsageSummary((usageData?.summary || null) as UsageAnalyticsSummary | null);
       setUsageByModel((usageData?.data || []) as UsageAnalyticsRow[]);
+      setUsageLoadError(usageFailure);
+      if (usageFailure) Toast.warning(usageFailure);
     } catch (err: any) {
+      if (projectDataRequestVersion.current !== requestVersion) return;
+      setProjectDataError('无法读取当前项目的凭证、模型或调用数据。请检查网络或服务状态后重试。');
       Toast.error(`项目数据加载失败${err?.message ? `：${err.message}` : ''}`);
     } finally {
-      setDataLoading(false);
+      if (projectDataRequestVersion.current === requestVersion) setDataLoading(false);
     }
-  }, [selectedProjectId]);
+  }, [clearProjectData, modelGovernanceLicensed, selectedProjectId]);
+
+  const handleProjectChange = (value: unknown) => {
+    const nextProjectId = Number(value);
+    if (!Number.isFinite(nextProjectId) || nextProjectId === selectedProjectId) return;
+    projectDataRequestVersion.current += 1;
+    clearProjectData();
+    setProjectDataError('');
+    setUsageLoadError('');
+    setLookupRequestId('');
+    setLookupResult(null);
+    setPlaygroundKey('');
+    setPlaygroundModel('');
+    setPlaygroundResult(null);
+    setCreatedKey(null);
+    setDataLoading(true);
+    setSelectedProjectId(nextProjectId);
+  };
 
   useEffect(() => { loadProjects(); }, [loadProjects]);
   useEffect(() => { loadProjectData(); }, [loadProjectData]);
@@ -480,15 +581,20 @@ export default function DeveloperConsolePage() {
       title: '操作',
       key: 'actions',
       width: 96,
-      render: (_: unknown, record: ApiKey) => (
-        mayDisableKey && record.status !== 'disabled'
-          ? (
-            <Tooltip content="停用项目 Key">
-              <Button icon={<IconDelete />} size="small" type="danger" onClick={() => handleDisableKey(record)} aria-label="停用项目 Key" />
-            </Tooltip>
-          )
-          : <Text type="tertiary">-</Text>
-      ),
+      render: (_: unknown, record: ApiKey) => {
+        const canDisableRecord = mayDisableKey &&
+          record.status !== 'disabled' &&
+          (!developerOwnKeyOnly || (record.status === 'active' && record.owner_user_id === currentUserID));
+        return (
+          canDisableRecord
+            ? (
+              <Tooltip content="停用项目 Key">
+                <Button icon={<IconDelete />} size="small" type="danger" onClick={() => handleDisableKey(record)} aria-label="停用项目 Key" />
+              </Tooltip>
+            )
+            : <Text type="tertiary">-</Text>
+        );
+      },
     },
   ];
 
@@ -550,34 +656,54 @@ export default function DeveloperConsolePage() {
     );
   }
 
+  if (projectsLoadError) {
+    return (
+      <div className="ur-page">
+        <PageHeader
+          eyebrow="项目空间"
+          title="项目工作台"
+          description="读取项目上下文后才能展示当前账号的凭证、模型和用量。"
+        />
+        <Surface>
+          <EmptyState
+            title="项目列表加载失败"
+            description={projectsLoadError}
+            actions={<Button type="primary" icon={<IconRefresh />} onClick={loadProjects}>重新加载项目</Button>}
+            minHeight={320}
+          />
+        </Surface>
+      </div>
+    );
+  }
+
   if (projects.length === 0) {
     return (
       <div className="ur-page">
         <PageHeader
-          eyebrow="开发者工作台"
+          eyebrow="项目空间"
           title="项目工作台"
           description="当前账号没有可访问项目。"
         />
         <EmptyState
           title="没有可访问项目"
-          description="请联系组织管理员把你的账号加入项目成员后再创建项目 Key 和查看用量。"
+          description={noProjectDescription}
           minHeight={320}
         />
       </div>
     );
   }
 
-  return (
-    <div className="ur-page ur-page-wide">
+  const projectHeader = (
+    <>
       <PageHeader
-        eyebrow="开发者工作台"
+        eyebrow="项目空间"
         title="项目工作台"
-        description="项目成员可在这里创建项目访问凭证、查看已批准模型、定位请求，并复制兼容 OpenAI 协议的调用示例。"
+        description={workbenchDescription}
         actions={(
           <Space>
             <Select
               value={selectedProjectId}
-              onChange={(value) => setSelectedProjectId(Number(value))}
+              onChange={handleProjectChange}
               optionList={projects.map(project => ({
                 label: `${project.name} (${project.slug})`,
                 value: project.id,
@@ -585,6 +711,20 @@ export default function DeveloperConsolePage() {
               style={{ width: 280 }}
               aria-label="选择项目"
             />
+            {isProjectAdminRole(role) && selectedProjectId && (
+              <Tooltip content={notificationsLicensed ? '打开当前项目通知' : notificationsRestriction}>
+                <span>
+                  <Button
+                    icon={<IconBell />}
+                    aria-label={notificationsLicensed ? '打开当前项目通知' : '项目通知（授权未包含）'}
+                    disabled={!notificationsLicensed}
+                    onClick={() => navigate(`/notifications?project_id=${selectedProjectId}`)}
+                  >
+                    {notificationsLicensed ? '项目通知' : '项目通知（授权未包含）'}
+                  </Button>
+                </span>
+              </Tooltip>
+            )}
             <Button icon={<IconRefresh />} onClick={loadProjectData} loading={dataLoading}>刷新</Button>
           </Space>
         )}
@@ -600,32 +740,89 @@ export default function DeveloperConsolePage() {
         <StatusTag status={roleLabel}>{roleLabel}</StatusTag>
         <Text type="tertiary">项目 ID：{selectedProject?.id}</Text>
       </section>
+    </>
+  );
 
-      <div className="ur-kpi-grid">
-        <MetricTile label="请求数" value={compactNumber(usageSnapshot.requestCount)} icon={<IconFile />} tone="blue" meta={usageSnapshot.sourceLabel} />
-        <MetricTile label="Token" value={compactNumber(usageSnapshot.totalTokens)} icon={<IconServer />} tone="violet" meta={usageSnapshot.sourceLabel} />
-        <MetricTile label="费用" value={<MoneyText micros={usageSnapshot.totalCostMicros} precision={6} strong tone="cost" />} icon={<IconCoinMoney />} tone="green" meta={usageSnapshot.sourceLabel} />
-        <MetricTile label="错误率" value={`${usageSnapshot.errorRate.toFixed(1)}%`} icon={<IconAlertTriangle />} tone={usageSnapshot.errorRate > 5 ? 'red' : 'amber'} meta={`平均延迟 ${usageSnapshot.avgLatency.toFixed(0)}ms`} />
+  const workbenchTaskNav = (
+    <nav className="ur-dev-task-nav" aria-label="项目工作台任务入口">
+      <Text strong>快速定位</Text>
+      <div className="ur-dev-task-links">
+        <a href="#project-usage">概览与用量</a>
+        <a href="#project-access">凭证与接入</a>
+        {mayRunPlayground && <a href="#project-debug">{gatewayLicensed ? '调试与排障' : '调试与排障（授权未包含）'}</a>}
+        <a href="#project-models">{modelGovernanceLicensed ? '已批准模型' : '已批准模型（授权未包含）'}</a>
       </div>
+    </nav>
+  );
 
-      <Surface title="我的模型用量" description="按当前账号名下 API Key 聚合当前项目的模型用量和费用；历史未归属 Owner 的调用不会被计入。">
-        <div className="ur-table-shell">
-          <Table
-            columns={usageModelColumns}
-            dataSource={usageByModel}
-            rowKey="key"
-            loading={dataLoading}
-            pagination={false}
-            empty={<EmptyState title="暂无我的用量" description="使用当前账号名下的项目 Key 调用后，会在这里按模型显示请求、Token 和费用。" minHeight={180} />}
-            size="small"
+  if (dataLoading) {
+    return (
+      <div className="ur-page ur-page-wide">
+        {projectHeader}
+        <Surface>
+          <div className="ur-dev-loading"><IconRefresh /> 正在加载当前项目数据</div>
+        </Surface>
+      </div>
+    );
+  }
+
+  if (projectDataError) {
+    return (
+      <div className="ur-page ur-page-wide">
+        {projectHeader}
+        <Surface>
+          <EmptyState
+            title="项目数据加载失败"
+            description={projectDataError}
+            actions={<Button type="primary" icon={<IconRefresh />} onClick={loadProjectData}>重新加载当前项目</Button>}
+            minHeight={320}
           />
-        </div>
-      </Surface>
+        </Surface>
+      </div>
+    );
+  }
 
-      <div className="ur-dev-main-grid">
+  return (
+    <div className="ur-page ur-page-wide">
+      {projectHeader}
+      {workbenchTaskNav}
+
+      <section id="project-usage" className="ur-dev-section-stack">
+        <div className="ur-kpi-grid">
+          <MetricTile label="请求数" value={compactNumber(usageSnapshot.requestCount)} icon={<IconFile />} tone="blue" meta={usageSnapshot.sourceLabel} />
+          <MetricTile label="Token" value={compactNumber(usageSnapshot.totalTokens)} icon={<IconServer />} tone="violet" meta={usageSnapshot.sourceLabel} />
+          <MetricTile label="费用" value={<MoneyText micros={usageSnapshot.totalCostMicros} precision={6} strong tone="cost" />} icon={<IconCoinMoney />} tone="green" meta={usageSnapshot.sourceLabel} />
+          <MetricTile label="错误率" value={`${usageSnapshot.errorRate.toFixed(1)}%`} icon={<IconAlertTriangle />} tone={usageSnapshot.errorRate > 5 ? 'red' : 'amber'} meta={`平均延迟 ${usageSnapshot.avgLatency.toFixed(0)}ms`} />
+        </div>
+
+        <Surface title="我的模型用量" description="按当前账号名下 API Key 聚合当前项目的模型用量和费用；历史未归属 Owner 的调用不会被计入。">
+          {usageLoadError ? (
+            <EmptyState
+              title="个人用量加载失败"
+              description={`${usageLoadError}。上方指标暂按最近 20 条调用计算，并非完整用量汇总。`}
+              actions={<Button icon={<IconRefresh />} onClick={loadProjectData}>重新加载当前项目</Button>}
+              minHeight={180}
+            />
+          ) : (
+            <div className="ur-table-shell">
+              <Table
+                columns={usageModelColumns}
+                dataSource={usageByModel}
+                rowKey="key"
+                loading={dataLoading}
+                pagination={false}
+                empty={<EmptyState title="暂无我的用量" description="使用当前账号名下的项目 Key 调用后，会在这里按模型显示请求、Token 和费用。" minHeight={180} />}
+                size="small"
+              />
+            </div>
+          )}
+        </Surface>
+      </section>
+
+      <div id="project-access" className="ur-dev-main-grid ur-dev-section-anchor">
         <Surface
           title="项目访问凭证"
-          description="创建后只显示一次完整凭证；列表仅显示前缀。"
+          description={keySurfaceDescription}
           actions={mayCreateKey && <Button icon={<IconPlus />} type="primary" onClick={openCreateKey}>创建项目凭证</Button>}
         >
           <div className="ur-table-shell">
@@ -634,107 +831,158 @@ export default function DeveloperConsolePage() {
               dataSource={keys}
               rowKey="id"
               loading={dataLoading}
-              pagination={false}
-              empty={<EmptyState title="暂无项目凭证" description="创建项目凭证后即可从内部应用调用网关。" minHeight={180} />}
+              pagination={{
+                currentPage: keyPage,
+                pageSize: keyPageSize,
+                total: keys.length,
+                pageSizeOpts: [10, 20, 50, 100],
+                showSizeChanger: true,
+                showTotal: true,
+                onPageChange: (page: number) => setKeyPage(page),
+                onPageSizeChange: (pageSize: number) => { setKeyPageSize(pageSize); setKeyPage(1); },
+              }}
+              empty={<EmptyState title="暂无项目凭证" description={emptyKeyDescription} minHeight={180} />}
               size="small"
             />
           </div>
         </Surface>
 
         <Surface title="项目接入示例" description="示例使用当前项目的已批准模型或别名。">
-          <div className="ur-dev-docs">
-            <div>
-              <Text className="ur-filter-label">Base URL</Text>
-              <Text code>{baseUrl}/v1</Text>
+          {gatewayLicensed ? (
+            <div className="ur-dev-docs">
+              <div>
+                <Text className="ur-filter-label">Base URL</Text>
+                <Text code>{baseUrl}/v1</Text>
+              </div>
+              <div>
+                <Text className="ur-filter-label">推荐模型</Text>
+                <Text code>{sampleModel}</Text>
+              </div>
+              {!modelGovernanceLicensed && (
+                <Text type="warning">{modelGovernanceRestriction} 请使用管理员提供的现有模型或别名替换示例占位符。</Text>
+              )}
+              <pre className="ur-dev-code">{quickstartCurl}</pre>
             </div>
-            <div>
-              <Text className="ur-filter-label">推荐模型</Text>
-              <Text code>{sampleModel}</Text>
-            </div>
-            <pre className="ur-dev-code">{quickstartCurl}</pre>
-          </div>
+          ) : (
+            <EmptyState title="模型接入暂不可用" description={gatewayRestriction} minHeight={180} />
+          )}
         </Surface>
       </div>
 
-      <Surface
-        title="请求调试台"
-        description="使用项目访问凭证直接调用兼容 OpenAI 协议的网关；提示词和响应仅保留在当前页面，不写入历史。"
-      >
-        <div className="ur-playground-grid">
-          <div className="ur-playground-controls">
-            <div className="ur-inline-controls">
-              <Input
-                value={playgroundKey}
-                onChange={setPlaygroundKey}
-                type="password"
-                placeholder="粘贴项目访问凭证"
-                style={{ width: 260 }}
-              />
-              <Select
-                value={effectivePlaygroundModel}
-                optionList={modelOptions.map(model => ({ label: model, value: model }))}
-                onChange={(value) => setPlaygroundModel(String(value || ''))}
-                style={{ width: 220 }}
-                placeholder="选择已批准模型或别名"
-              />
-              <Select
-                value={playgroundMode}
-                optionList={[
-                  { label: '非流式', value: 'non_stream' },
-                  { label: '流式', value: 'stream' },
-                ]}
-                onChange={(value) => setPlaygroundMode(String(value || 'non_stream'))}
-                style={{ width: 120 }}
-              />
-              <Button type="primary" icon={<IconBolt />} loading={playgroundLoading} onClick={handlePlaygroundRun}>运行</Button>
-            </div>
-            <TextArea
-              value={playgroundPrompt}
-              onChange={setPlaygroundPrompt}
-              rows={5}
-              placeholder="输入本次测试提示词"
-              style={{ width: '100%', marginTop: 12 }}
-            />
-          </div>
-          <div className="ur-playground-result">
-            {playgroundResult ? (
-              <>
-                <div className="ur-chip-row">
-                  <StatusTag status={playgroundResult.status}>{playgroundResult.status || 'network_error'}</StatusTag>
-                  {playgroundResult.request_id && <Text code>{playgroundResult.request_id}</Text>}
-                  {playgroundResult.total_tokens !== undefined && <StatusTag status="tokens">{playgroundResult.total_tokens} tokens</StatusTag>}
-                  {playgroundResult.cost_micros !== undefined && <MoneyText micros={playgroundResult.cost_micros} precision={6} tone="cost" />}
-                  {playgroundResult.latency_ms !== undefined && <Text type="tertiary">{playgroundResult.latency_ms}ms</Text>}
-                </div>
-                {playgroundResult.error ? (
-                  <div className="ur-playground-error">
-                    <Text type="danger">{playgroundResult.error}</Text>
-                    {playgroundResult.doc_url && <a href={playgroundResult.doc_url}>查看错误文档</a>}
+      {mayRunPlayground && (
+        <div id="project-debug" className="ur-dev-section-anchor">
+          {gatewayLicensed ? (
+            <Surface
+              title="请求调试台"
+              description="使用项目访问凭证直接调用兼容 OpenAI 协议的网关；提示词和响应仅保留在当前页面，不写入历史。"
+            >
+              <div className="ur-playground-grid">
+                <div className="ur-playground-controls">
+                  <div className="ur-inline-controls">
+                    <Input
+                      value={playgroundKey}
+                      onChange={setPlaygroundKey}
+                      type="password"
+                      placeholder="粘贴项目访问凭证"
+                      style={{ width: 260 }}
+                    />
+                    {modelGovernanceLicensed ? (
+                      <Select
+                        value={effectivePlaygroundModel}
+                        optionList={modelOptions.map(model => ({ label: model, value: model }))}
+                        onChange={(value) => setPlaygroundModel(String(value || ''))}
+                        style={{ width: 220 }}
+                        placeholder="选择已批准模型或别名"
+                      />
+                    ) : (
+                      <Input
+                        value={playgroundModel}
+                        onChange={setPlaygroundModel}
+                        style={{ width: 220 }}
+                        placeholder="输入现有模型或别名"
+                      />
+                    )}
+                    <Select
+                      value={playgroundMode}
+                      optionList={[
+                        { label: '非流式', value: 'non_stream' },
+                        { label: '流式', value: 'stream' },
+                      ]}
+                      onChange={(value) => setPlaygroundMode(String(value || 'non_stream'))}
+                      style={{ width: 120 }}
+                    />
+                    <Button type="primary" icon={<IconBolt />} loading={playgroundLoading} onClick={handlePlaygroundRun}>运行</Button>
                   </div>
-                ) : (
-                  <pre className="ur-dev-code">{playgroundResult.content}</pre>
-                )}
-              </>
-            ) : (
-              <EmptyState title="等待运行" description="选择 approved model 或 alias，粘贴项目 Key 后运行一次测试。" minHeight={180} />
-            )}
-          </div>
+                  {!modelGovernanceLicensed && <Text type="warning">{modelGovernanceRestriction} 调试仍可使用管理员提供的现有模型或别名。</Text>}
+                  <TextArea
+                    value={playgroundPrompt}
+                    onChange={setPlaygroundPrompt}
+                    rows={5}
+                    placeholder="输入本次测试提示词"
+                    style={{ width: '100%', marginTop: 12 }}
+                  />
+                </div>
+                <div className="ur-playground-result">
+                  {playgroundResult ? (
+                    <>
+                      <div className="ur-chip-row">
+                        <StatusTag status={playgroundResult.status}>{playgroundResult.status || 'network_error'}</StatusTag>
+                        {playgroundResult.request_id && <Text code>{playgroundResult.request_id}</Text>}
+                        {playgroundResult.total_tokens !== undefined && <StatusTag status="tokens">{playgroundResult.total_tokens} tokens</StatusTag>}
+                        {playgroundResult.cost_micros !== undefined && <MoneyText micros={playgroundResult.cost_micros} precision={6} tone="cost" />}
+                        {playgroundResult.latency_ms !== undefined && <Text type="tertiary">{playgroundResult.latency_ms}ms</Text>}
+                      </div>
+                      {playgroundResult.error ? (
+                        <div className="ur-playground-error">
+                          <Text type="danger">{playgroundResult.error}</Text>
+                          {playgroundResult.doc_url && <a href={playgroundResult.doc_url}>查看错误文档</a>}
+                        </div>
+                      ) : (
+                        <pre className="ur-dev-code">{playgroundResult.content}</pre>
+                      )}
+                    </>
+                  ) : (
+                    <EmptyState title="等待运行" description="填写项目 Key、现有模型或别名后运行一次测试。" minHeight={180} />
+                  )}
+                </div>
+              </div>
+            </Surface>
+          ) : (
+            <Surface title="请求调试台" description="此区块需要模型网关授权。">
+              <EmptyState title="调试调用暂不可用" description={gatewayRestriction} minHeight={180} />
+            </Surface>
+          )}
         </div>
-      </Surface>
+      )}
 
-      <Surface title="Approved Models" description="只展示当前项目可用且进入 approved catalog 的 GA / Deprecated 模型。">
-        <div className="ur-table-shell">
-          <Table
-            columns={modelColumns}
-            dataSource={models}
-            rowKey="id"
-            loading={dataLoading}
-            pagination={false}
-            empty={<EmptyState title="暂无已批准模型" description="请联系组织管理员把模型加入项目模型集或批准目录。" minHeight={180} />}
-            size="small"
-          />
-        </div>
-      </Surface>
+      <div id="project-models" className="ur-dev-section-anchor">
+        <Surface title="已批准模型" description="只展示当前项目可用且已进入批准目录的正式或已弃用模型。">
+          {modelGovernanceLicensed ? (
+            <div className="ur-table-shell">
+              <Table
+                columns={modelColumns}
+                dataSource={models}
+                rowKey="id"
+                loading={dataLoading}
+                pagination={{
+                  currentPage: modelPage,
+                  pageSize: modelPageSize,
+                  total: models.length,
+                  pageSizeOpts: [10, 20, 50, 100],
+                  showSizeChanger: true,
+                  showTotal: true,
+                  onPageChange: (page: number) => setModelPage(page),
+                  onPageSizeChange: (pageSize: number) => { setModelPageSize(pageSize); setModelPage(1); },
+                }}
+                empty={<EmptyState title="暂无已批准模型" description="请联系组织管理员把模型加入项目模型集或批准目录。" minHeight={180} />}
+                size="small"
+              />
+            </div>
+          ) : (
+            <EmptyState title="模型目录暂不可用" description={modelGovernanceRestriction} minHeight={180} />
+          )}
+        </Surface>
+      </div>
 
       <div className="ur-dev-main-grid">
         <Surface title="最近调用" description="项目最近请求，用于快速确认状态、token、费用和延迟。">
@@ -770,7 +1018,7 @@ export default function DeveloperConsolePage() {
                 <div><Text type="tertiary">模型</Text><strong>{lookupResult.requested_model || lookupResult.model}</strong></div>
                 <div><Text type="tertiary">路由模型</Text><strong>{lookupResult.model}</strong></div>
                 <div><Text type="tertiary">供应商</Text><strong>{lookupResult.provider || '-'}</strong></div>
-                <div><Text type="tertiary">渠道</Text><strong>{lookupResult.channel || '-'}</strong></div>
+                <div><Text type="tertiary">通道</Text><strong>{lookupResult.channel || '-'}</strong></div>
                 <div><Text type="tertiary">Token</Text><strong>{compactNumber(lookupResult.total_tokens || 0)}</strong></div>
                 <div><Text type="tertiary">费用</Text><MoneyText micros={lookupResult.cost_micros || '0'} precision={6} strong tone="cost" /></div>
                 <div><Text type="tertiary">延迟</Text><strong>{lookupResult.latency_ms || 0}ms</strong></div>
@@ -796,14 +1044,18 @@ export default function DeveloperConsolePage() {
       >
         <Form getFormApi={(apiRef: any) => setFormApi(apiRef)} onSubmit={handleCreateKey} initValues={{ rpm_limit: 60, rps_limit: 10 }}>
           <Form.Input field="name" label="凭证名称" placeholder="frontend-prod" rules={[{ required: true, message: '请输入凭证名称' }]} />
-          <Form.Select
-            field="allowed_models"
-            label="允许模型 / 别名"
-            placeholder="留空表示继承项目模型集"
-            multiple
-            optionList={modelOptions.map(model => ({ label: model, value: model }))}
-            style={{ width: '100%' }}
-          />
+          {modelGovernanceLicensed ? (
+            <Form.Select
+              field="allowed_models"
+              label="允许模型 / 别名"
+              placeholder="留空表示继承项目模型集"
+              multiple
+              optionList={modelOptions.map(model => ({ label: model, value: model }))}
+              style={{ width: '100%' }}
+            />
+          ) : (
+            <Text type="warning">{modelGovernanceRestriction} 新凭证将继承项目现有模型范围。</Text>
+          )}
           <Form.Input field="allowed_ips" label="允许 IP" placeholder="留空表示不限制，多个 IP 用逗号分隔" />
           <Form.InputNumber field="rpm_limit" label="RPM 限速" min={1} style={{ width: '100%' }} />
           <Form.InputNumber field="rps_limit" label="RPS 限速" min={1} style={{ width: '100%' }} />

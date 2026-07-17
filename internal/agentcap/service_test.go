@@ -2,8 +2,10 @@ package agentcap
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -352,6 +354,168 @@ func TestRefreshIsFiveMinuteAndServerSingleflightSafe(t *testing.T) {
 	}
 	if ttl := newAuthentication.Claims.ExpiresAt.Time.Sub(newAuthentication.Claims.IssuedAt.Time); ttl != TokenTTL {
 		t.Fatalf("refreshed TTL = %s, want %s", ttl, TokenTTL)
+	}
+}
+
+func TestSupersededParentCannotCommitChildAfterDelegationPrecheck(t *testing.T) {
+	base := time.Now().UTC().Truncate(time.Second)
+	fixture := defaultAuthorityFixture()
+	service, _, rdb := newTestService(t, fixture, newTestClock(base))
+	root := exchangeRoot(t, service, fixture, rootLimits(2, 10, 20))
+	parent, err := service.Authenticate(context.Background(), root.CapabilityToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Model the exact vulnerable interleaving: Delegate completed its initial
+	// state and authority checks, Refresh then committed supersession, and only
+	// afterward did Delegate attempt the child/topology commit.
+	authority, err := service.loadAuthority(context.Background(), parent.Claims.RootKeyID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childLimits := rootLimits(1, 0, 0)
+	childLimits.CostBudgetCents = 1_000
+	childLimits.TokenBudget = 100_000
+	childLimits.RPMLimit = 50
+	childLimits.RPSLimit = 5
+	childLimits.ConcurrencyLimit = 5
+	lineage := append(slices.Clone(parent.Claims.Lineage), "agent:raced-child")
+	childClaims, _, err := service.newClaims(
+		authority,
+		parent.Claims.WorkflowID,
+		parent.Claims.WorkflowGeneration,
+		time.Unix(parent.Claims.WorkflowExpiresAt, 0).UTC(),
+		parent.Claims.RootAgentID,
+		parent.Claims.AgentID,
+		lineage,
+		parent.Claims.Depth+1,
+		childLimits,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.reserveRefreshGrant(context.Background(), parent.Claims); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.registerChild(context.Background(), parent.Claims, childClaims); !errors.Is(err, ErrSuperseded) {
+		t.Fatalf("child commit after parent supersession error = %v, want ErrSuperseded", err)
+	}
+	if exists, err := rdb.Exists(context.Background(), agentKey(parent.Claims.WorkflowID, childClaims.AgentID)).Result(); err != nil || exists != 0 {
+		t.Fatalf("superseded parent left child state: exists=%d err=%v", exists, err)
+	}
+	workflowCount, err := rdb.HGet(context.Background(), workflowKey(parent.Claims.WorkflowID), "descendant_count").Int64()
+	if err != nil || workflowCount != 0 {
+		t.Fatalf("superseded parent changed workflow count: count=%d err=%v", workflowCount, err)
+	}
+	parentCount, err := rdb.HGet(context.Background(), agentKey(parent.Claims.WorkflowID, parent.Claims.AgentID), "children_count").Int64()
+	if err != nil || parentCount != 0 {
+		t.Fatalf("superseded parent changed parent count: count=%d err=%v", parentCount, err)
+	}
+}
+
+func TestChildCommittedBeforeParentRefreshRemainsValid(t *testing.T) {
+	base := time.Now().UTC().Truncate(time.Second)
+	fixture := defaultAuthorityFixture()
+	clock := newTestClock(base.Add(-3 * time.Minute))
+	service, _, _ := newTestService(t, fixture, clock)
+	root := exchangeRoot(t, service, fixture, rootLimits(2, 10, 20))
+	clock.Set(base)
+	parent, err := service.Authenticate(context.Background(), root.CapabilityToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childLimits := rootLimits(1, 0, 0)
+	childLimits.CostBudgetCents = 1_000
+	childLimits.TokenBudget = 100_000
+	childLimits.RPMLimit = 50
+	childLimits.RPSLimit = 5
+	childLimits.ConcurrencyLimit = 5
+	child, err := service.Delegate(context.Background(), parent.Claims, DelegateRequest{
+		ChildAgentID: "agent:committed-before-refresh",
+		Limits:       childLimits,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Refresh(context.Background(), parent.Claims); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Authenticate(context.Background(), child.CapabilityToken); err != nil {
+		t.Fatalf("already committed child was retroactively revoked: %v", err)
+	}
+}
+
+func TestLegacySupersededMarkerRemainsFailClosedDuringBoundedReadBridge(t *testing.T) {
+	base := time.Now().UTC().Truncate(time.Second)
+	fixture := defaultAuthorityFixture()
+	service, _, rdb := newTestService(t, fixture, newTestClock(base))
+	root := exchangeRoot(t, service, fixture, rootLimits(2, 10, 20))
+	authenticated, err := service.Authenticate(context.Background(), root.CapabilityToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rdb.Set(context.Background(), legacySupersededKey(authenticated.Claims.ID), "1", TokenTTL).Err(); err != nil {
+		t.Fatal(err)
+	}
+	if exists, err := rdb.Exists(context.Background(), supersededKey(authenticated.Claims.WorkflowID, authenticated.Claims.ID)).Result(); err != nil || exists != 0 {
+		t.Fatalf("fixture unexpectedly wrote new marker: exists=%d err=%v", exists, err)
+	}
+	if _, err := service.Authenticate(context.Background(), root.CapabilityToken); !errors.Is(err, ErrSuperseded) {
+		t.Fatalf("legacy superseded token error = %v, want ErrSuperseded", err)
+	}
+}
+
+func TestLegacyRefreshGrantReplaysDuringBoundedReadBridge(t *testing.T) {
+	base := time.Now().UTC().Truncate(time.Second)
+	fixture := defaultAuthorityFixture()
+	clock := newTestClock(base.Add(-3 * time.Minute))
+	service, _, rdb := newTestService(t, fixture, clock)
+	root := exchangeRoot(t, service, fixture, rootLimits(2, 10, 20))
+	clock.Set(base)
+	authenticated, err := service.Authenticate(context.Background(), root.CapabilityToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := refreshGrant{JTI: "capjti_legacy_bridge_fixture", IssuedAt: base.Unix()}
+	encoded, err := json.Marshal(grant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pipe := rdb.TxPipeline()
+	pipe.Set(context.Background(), legacyRefreshKey(authenticated.Claims.ID), string(encoded), TokenTTL)
+	pipe.Set(context.Background(), legacySupersededKey(authenticated.Claims.ID), "1", TokenTTL)
+	if _, err := pipe.Exec(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	refreshed, err := service.Refresh(context.Background(), authenticated.Claims)
+	if err != nil {
+		t.Fatalf("replay legacy refresh grant: %v", err)
+	}
+	refreshedAuth, err := service.Authenticate(context.Background(), refreshed.CapabilityToken)
+	if err != nil {
+		t.Fatalf("authenticate legacy-bridge refreshed token: %v", err)
+	}
+	if refreshedAuth.Claims.ID != grant.JTI {
+		t.Fatalf("refreshed JTI = %q, want legacy grant %q", refreshedAuth.Claims.ID, grant.JTI)
+	}
+}
+
+func TestRefreshAndChildCommitKeysShareWorkflowClusterSlot(t *testing.T) {
+	workflowID := "capwf_cluster_slot_fixture"
+	wantTag := "{" + workflowID + "}"
+	keys := []string{
+		workflowKey(workflowID),
+		agentKey(workflowID, "agent:parent"),
+		refreshKey(workflowID, "capjti_parent"),
+		supersededKey(workflowID, "capjti_parent"),
+	}
+	for _, key := range keys {
+		if !strings.Contains(key, wantTag) {
+			t.Fatalf("key %q does not share workflow hash tag %q", key, wantTag)
+		}
 	}
 }
 

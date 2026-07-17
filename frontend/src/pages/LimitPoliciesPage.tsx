@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Form, SideSheet, Space, Table, Tag, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconEdit, IconPlus } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { isBillingRole, isOrgAdminRole, isPlatformAdminRole } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { PageHeader, Surface } from '../ui';
+import { loadAllPages } from '../utils/loadAllPages';
 
 const { Text, Paragraph } = Typography;
 
@@ -88,6 +89,8 @@ export default function LimitPoliciesPage() {
   const [policies, setPolicies] = useState<LimitPolicy[]>([]);
   const [keys, setKeys] = useState<KeyOption[]>([]);
   const [models, setModels] = useState<string[]>([]);
+  const [organizations, setOrganizations] = useState<Array<{ value: number; label: string }>>([]);
+  const [projects, setProjects] = useState<Array<{ value: number; label: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -111,27 +114,28 @@ export default function LimitPoliciesPage() {
 
   useEffect(() => { load(1, pageSize); }, []);
   useEffect(() => {
-    Promise.all([api.getKeys(1, 100), api.getModelNames()])
-      .then(([keyData, modelData]: any[]) => {
-        setKeys(keyData?.data || []);
+    void (async () => {
+      try {
+        const [keyData, orgData, modelData] = await Promise.all([
+          loadAllPages<KeyOption>((page, size) => api.getKeys(page, size)),
+          loadAllPages<any>((page, size) => api.getOrganizations(page, size)),
+          api.getModelNames(),
+        ]);
+        const projectData = platform
+          ? (await Promise.all(orgData.map((org: any) =>
+              loadAllPages<any>((page, size) => api.getProjects(page, size, { org_id: org.id })),
+            ))).flat()
+          : await loadAllPages<any>((page, size) => api.getProjects(page, size));
+        setKeys(keyData || []);
+        setOrganizations(orgData.map((org: any) => ({ value: org.id, label: `${org.name}（ID ${org.id}）` })));
+        setProjects((projectData || []).map((project: any) => ({ value: project.id, label: `${project.name} · ${project.org_name || `组织 #${project.org_id}`}` })));
         const source = Array.isArray(modelData?.data) ? modelData.data : modelData;
         setModels((Array.isArray(source) ? source : []).map((item: any) => typeof item === 'string' ? item : item.model).filter(Boolean));
-      })
-      .catch(() => {});
-  }, []);
-
-  const organizations = useMemo(() => {
-    const map = new Map<number, string>();
-    keys.forEach((key) => map.set(key.org_id, key.org_name || `组织 #${key.org_id}`));
-    return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
-  }, [keys]);
-  const projects = useMemo(() => {
-    const map = new Map<number, string>();
-    keys.forEach((key) => {
-      if (key.project_id) map.set(key.project_id, `${key.project_name || `项目 #${key.project_id}`} · ${key.org_name || `组织 #${key.org_id}`}`);
-    });
-    return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
-  }, [keys]);
+      } catch {
+        Toast.error('策略选项加载失败，请刷新后重试');
+      }
+    })();
+  }, [platform]);
 
   const openCreate = () => {
     setEditing(null);
@@ -213,23 +217,13 @@ export default function LimitPoliciesPage() {
   return (
     <div className="ur-page">
       <PageHeader
-        eyebrow="流量治理"
+        eyebrow="访问与安全"
         title="共享限额策略"
         description="跨所有 UniRouter 副本统一限制请求速率、Token 和并发；增加服务器不会把客户额度成倍放大。"
         actions={canManage ? <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增策略</Button> : undefined}
       />
 
-      <Surface title="这些数字分别控制什么">
-        <Paragraph>RPS 是每秒请求数，RPM 是每分钟请求数，TPM 是每分钟可预留并最终按实际用量结算的 Token；并发是同一时刻正在执行的请求数。</Paragraph>
-        <Paragraph><Text strong>推荐先用“影子观察”：</Text>只记录“本来会拦截”的结果，不影响业务；确认阈值后再切到“正式拦截”。所有匹配策略会叠加，较具体的策略只能进一步收紧。</Paragraph>
-        <Paragraph>每个访问凭证自身的 RPM/RPS 也是内置共享策略；表格中的组织、项目、模型和标签策略会在它之上继续收紧。</Paragraph>
-        <Paragraph><Text strong>当前内置加权容量：</Text>全平台 {builtinLimits.workload_global_capacity ?? builtinLimits.global_concurrency ?? '加载中'} 个容量单位，每个组织 {builtinLimits.workload_organization_capacity ?? builtinLimits.organization_concurrency ?? '加载中'} 个。普通对话和 Embeddings 每次占 {builtinLimits.workload_interactive_weight ?? 1} 个，流式对话占 {builtinLimits.workload_stream_weight ?? 4} 个；平台和组织分别至少为短请求保留 {builtinLimits.workload_global_short_reserve ?? 10} / {builtinLimits.workload_organization_short_reserve ?? 2} 个单位。</Paragraph>
-        <Paragraph><Text strong>公平等待：</Text>普通对话最多等待 {builtinLimits.workload_interactive_max_wait_ms ?? 50} 毫秒，Embeddings 最多等待 {builtinLimits.workload_embedding_max_wait_ms ?? 50} 毫秒，流式对话最多等待 {builtinLimits.workload_stream_max_wait_ms ?? 250} 毫秒。仍无容量时返回 429 和 Retry-After，客户端可以稍后重试；增加 UniRouter 副本不会把这些数字成倍放大。</Paragraph>
-        <Paragraph>表格中的“并发”仍表示匹配策略允许的同时请求数，并且只能进一步收紧内置容量，不能把它放宽。</Paragraph>
-        <Paragraph><Text strong>故障策略：</Text>默认在 Redis 无法确认额度时立即返回 503。选择“短暂安全许可”时，也只能使用健康期预先拿到、约 2 秒失效且每个副本最多 1 次的许可，不会无限放行。</Paragraph>
-      </Surface>
-
-      <Surface>
+      <Surface title="限额策略" description="策略按范围条件叠加匹配；先从列表确认现状，再新增或编辑。">
         <div className="ur-table-shell">
           <Table
             rowKey="id"
@@ -243,6 +237,16 @@ export default function LimitPoliciesPage() {
             }}
           />
         </div>
+      </Surface>
+
+      <Surface title="使用说明与故障策略">
+        <Paragraph>RPS 是每秒请求数，RPM 是每分钟请求数，TPM 是每分钟可预留并最终按实际用量结算的 Token；并发是同一时刻正在执行的请求数。</Paragraph>
+        <Paragraph><Text strong>推荐先用“影子观察”：</Text>只记录“本来会拦截”的结果，不影响业务；确认阈值后再切到“正式拦截”。所有匹配策略会叠加，较具体的策略只能进一步收紧。</Paragraph>
+        <Paragraph>每个访问凭证自身的 RPM/RPS 也是内置共享策略；表格中的组织、项目、模型和标签策略会在它之上继续收紧。</Paragraph>
+        <Paragraph><Text strong>当前内置加权容量：</Text>全平台 {builtinLimits.workload_global_capacity ?? builtinLimits.global_concurrency ?? '加载中'} 个容量单位，每个组织 {builtinLimits.workload_organization_capacity ?? builtinLimits.organization_concurrency ?? '加载中'} 个。普通对话和 Embeddings 每次占 {builtinLimits.workload_interactive_weight ?? 1} 个，流式对话占 {builtinLimits.workload_stream_weight ?? 4} 个；平台和组织分别至少为短请求保留 {builtinLimits.workload_global_short_reserve ?? 10} / {builtinLimits.workload_organization_short_reserve ?? 2} 个单位。</Paragraph>
+        <Paragraph><Text strong>公平等待：</Text>普通对话最多等待 {builtinLimits.workload_interactive_max_wait_ms ?? 50} 毫秒，Embeddings 最多等待 {builtinLimits.workload_embedding_max_wait_ms ?? 50} 毫秒，流式对话最多等待 {builtinLimits.workload_stream_max_wait_ms ?? 250} 毫秒。仍无容量时返回 429 和 Retry-After，客户端可以稍后重试；增加 UniRouter 副本不会把这些数字成倍放大。</Paragraph>
+        <Paragraph>表格中的“并发”仍表示匹配策略允许的同时请求数，并且只能进一步收紧内置容量，不能把它放宽。</Paragraph>
+        <Paragraph><Text strong>故障策略：</Text>默认在 Redis 无法确认额度时立即返回 503。选择“短暂安全许可”时，也只能使用健康期预先拿到、约 2 秒失效且每个副本最多 1 次的许可，不会无限放行。</Paragraph>
       </Surface>
 
       <SideSheet title={editing ? `编辑策略：${editing.name}` : '新增共享限额策略'} visible={drawerVisible} onCancel={closeDrawer} width={560}>

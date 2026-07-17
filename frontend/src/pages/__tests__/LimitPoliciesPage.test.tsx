@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   createLimitPolicy: vi.fn(),
   updateLimitPolicy: vi.fn(),
   getKeys: vi.fn(),
+  getOrganizations: vi.fn(),
+  getProjects: vi.fn(),
   getModelNames: vi.fn(),
 }));
 
@@ -55,6 +57,8 @@ describe('LimitPoliciesPage', () => {
       data: [{ id: 15, name: 'frontend-prod', key_prefix: 'ur-prod', org_id: 22, org_name: 'Acme', project_id: 9, project_name: 'Customer API' }],
       total: 1,
     });
+    mocks.getOrganizations.mockResolvedValue({ data: [{ id: 22, name: 'Acme', status: 'active' }], total: 1 });
+    mocks.getProjects.mockResolvedValue({ data: [{ id: 9, org_id: 22, name: 'Customer API', status: 'active' }], total: 1 });
     mocks.getModelNames.mockResolvedValue({ data: ['company-chat'] });
   });
 

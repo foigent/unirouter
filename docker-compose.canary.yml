@@ -5,7 +5,7 @@
 services:
   # --- 外层 Nginx：TLS 终止 + canary 路由 ---
   nginx:
-    image: nginx:1.27-alpine
+    image: nginx:1.30.3-alpine
     container_name: uniroute-nginx
     ports:
       - "80:80"
@@ -14,22 +14,25 @@ services:
       # The default canary overlay is HTTP-only so local/staging smoke can run
       # without TLS certificates. Mount nginx/nginx.conf instead for TLS.
       - ./nginx/nginx.http-canary.conf:/etc/nginx/conf.d/default.conf:ro
-      # TLS 证书（生产环境挂载）
+      # TLS 证书（共享 staging 环境挂载）
       # - /etc/letsencrypt/live/your-domain/fullchain.pem:/etc/nginx/ssl/fullchain.pem:ro
       # - /etc/letsencrypt/live/your-domain/privkey.pem:/etc/nginx/ssl/privkey.pem:ro
     depends_on:
       - backend
       - backend-canary
       - frontend
+    networks:
+      default:
+        ipv4_address: ${UNIROUTER_CANARY_PROXY_IP:-172.30.250.11}
     restart: unless-stopped
 
   # --- 遮蔽原有端口暴露（避免与 nginx 冲突） ---
   # 注意：docker compose override 不能直接"移除" ports，
-  # 生产环境应将 docker-compose.yml 中的 ports 注释掉，
+  # 共享 staging 环境应将 docker-compose.yml 中的 ports 注释掉，
   # 或使用 profiles 机制。
-  # 此处保留原端口用于直接调试，生产部署时注释掉。
+  # 此处保留原端口用于直接调试，staging 部署时注释掉。
   frontend:
-    # 生产环境注释掉 ports，只通过 nginx 访问
+    # staging 环境注释掉 ports，只通过 nginx 访问
     # ports:
     #   - "3000:80"
     restart: unless-stopped
@@ -46,9 +49,12 @@ services:
         RUNTIME_VERSION: ${RUNTIME_VERSION:-local}
         RUNTIME_COMMIT: ${RUNTIME_COMMIT:-unknown}
         GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+        # Keep the source canary on the same explicit development trust mode as
+        # stable. Customer releases never use this source-build overlay.
+        UNIROUTER_RELEASE_TRUST_MODE: development
     container_name: uniroute-api-canary
-    # Expose a direct debug/smoke port. Production deployments may remove this
-    # and route canary traffic only through the load balancer.
+    # Expose a direct debug/smoke port. Shared staging deployments may remove
+    # this and route canary traffic only through the load balancer.
     ports:
       - "8081:8080"
     environment:
@@ -63,6 +69,8 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       API_KEY_HASH_SECRET: ${API_KEY_HASH_SECRET:-}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      # Both replicas read the same deployment-level HMAC secret.
+      UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET: ${UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET:-}
       ADMIN_CORS_ALLOWED_ORIGINS: ${ADMIN_CORS_ALLOWED_ORIGINS:-}
       METRICS_ENABLED: ${METRICS_ENABLED:-true}
       METRICS_ALLOWED_CIDRS: ${METRICS_ALLOWED_CIDRS:-}
@@ -82,6 +90,7 @@ services:
       LOGIN_RATE_LIMIT_WINDOW_SECONDS: ${LOGIN_RATE_LIMIT_WINDOW_SECONDS:-60}
       LOGIN_RATE_LIMIT_IP_REQUESTS: ${LOGIN_RATE_LIMIT_IP_REQUESTS:-30}
       LOGIN_RATE_LIMIT_USER_REQUESTS: ${LOGIN_RATE_LIMIT_USER_REQUESTS:-10}
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-172.30.250.10/32,172.30.250.11/32}
       CHAT_REQUEST_MAX_BYTES: ${CHAT_REQUEST_MAX_BYTES:-8388608}
       EMBEDDINGS_REQUEST_MAX_BYTES: ${EMBEDDINGS_REQUEST_MAX_BYTES:-16777216}
       NONSTREAM_RESPONSE_MAX_BYTES: ${NONSTREAM_RESPONSE_MAX_BYTES:-16777216}

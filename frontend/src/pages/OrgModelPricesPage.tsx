@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Button, Modal, Form, Toast, Space, SideSheet, Input } from '@douyinfe/semi-ui';
+import { Button, Modal, Form, Toast, Space, SideSheet, Select } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { isPlatformAdminRole } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { PagedTable, PageHeader, Surface } from '../ui';
 import { canonicalExactDecimal } from '../utils/exactDecimal';
+import { loadAllPages } from '../utils/loadAllPages';
 
 export function parseOrgModelPriceMultiplier(value: unknown) {
   return canonicalExactDecimal(value, {
@@ -21,7 +22,7 @@ function mutationError(prefix: string, error: unknown) {
   return error instanceof Error && error.message ? `${prefix}：${error.message}` : prefix;
 }
 
-export default function OrgModelPricesPage() {
+export default function OrgModelPricesPage({ embedded = false }: { embedded?: boolean }) {
   const user = useAuthStore((s) => s.user);
   const canMutate = isPlatformAdminRole(user?.role);
   const [prices, setPrices] = useState<any[]>([]);
@@ -33,8 +34,8 @@ export default function OrgModelPricesPage() {
   const [editPrice, setEditPrice] = useState<any>(null);
   const [formApi, setFormApi] = useState<any>(null);
   const [modelNames, setModelNames] = useState<string[]>([]);
-  const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>();
-  const [orgFilter, setOrgFilter] = useState('');
+  const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(canMutate ? user?.org_id : undefined);
+  const [organizations, setOrganizations] = useState<Array<{ id: number; name: string }>>([]);
 
   const load = (p = page, size = pageSize, orgID = selectedOrgID) => {
     setLoading(true);
@@ -44,7 +45,15 @@ export default function OrgModelPricesPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(1); api.getModelNames().then((d: any) => setModelNames(d.data || [])).catch(() => {}); }, []);
+  useEffect(() => {
+    load(1, pageSize, selectedOrgID);
+    api.getModelNames().then((d: any) => setModelNames(d.data || [])).catch(() => {});
+    if (canMutate) {
+      loadAllPages<{ id: number; name: string }>((page, size) => api.getOrganizations(page, size))
+        .then(setOrganizations)
+        .catch((error: any) => Toast.error(mutationError('组织列表加载失败', error)));
+    }
+  }, []);
 
   const closeDrawer = () => { setShowDrawer(false); setEditPrice(null); };
 
@@ -59,7 +68,6 @@ export default function OrgModelPricesPage() {
       Toast.success('创建成功');
       closeDrawer();
       setSelectedOrgID(orgID);
-      setOrgFilter(String(orgID));
       load(1, pageSize, orgID);
     } catch (error) { Toast.error(mutationError('创建失败', error)); }
   };
@@ -131,46 +139,42 @@ export default function OrgModelPricesPage() {
       ),
     });
 
-  const applyOrgFilter = () => {
-    const parsed = Number.parseInt(orgFilter, 10);
-    if (!Number.isInteger(parsed) || parsed <= 0) {
-      Toast.warning('请输入有效的组织 ID');
-      return;
-    }
-    setSelectedOrgID(parsed);
+  const selectOrganization = (value: unknown) => {
+    const orgID = Number(value);
+    if (!Number.isInteger(orgID) || orgID <= 0) return;
+    setSelectedOrgID(orgID);
     setPage(1);
-    load(1, pageSize, parsed);
-  };
-
-  const resetOrgFilter = () => {
-    setOrgFilter('');
-    setSelectedOrgID(undefined);
-    setPage(1);
-    load(1, pageSize, undefined);
+    load(1, pageSize, orgID);
   };
 
   return (
-    <div className="ur-page">
-      <PageHeader
-        eyebrow="财务治理"
+    <div className={embedded ? undefined : 'ur-page'}>
+      {!embedded && <PageHeader
+        eyebrow="计费与资金"
         title="组织计费倍率"
         description={canMutate
           ? '按组织设置基础模型价格的乘数；例如 1.2× 表示按基础价格的 1.2 倍计费。'
           : '只读查看本组织适用的计费倍率；倍率由平台管理员统一维护。'}
         actions={canMutate ? <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增倍率</Button> : undefined}
-      />
+      />}
 
-      <Surface>
+      <Surface
+        title={embedded ? '组织倍率' : undefined}
+        description={embedded ? (canMutate
+          ? '为目标组织设置基础价格乘数；未配置时使用 1.0×。'
+          : '只读查看本组织适用的价格乘数。') : undefined}
+        actions={embedded && canMutate ? <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增倍率</Button> : undefined}
+      >
         {canMutate && <Space style={{ marginBottom: 16 }}>
-          <Input
-            aria-label="目标组织 ID"
-            placeholder="输入组织 ID"
-            value={orgFilter}
-            onChange={(value) => setOrgFilter(value)}
-            style={{ width: 180 }}
+          <span>目标组织</span>
+          <Select
+            placeholder="选择组织"
+            value={selectedOrgID}
+            onChange={selectOrganization}
+            optionList={organizations.map((org) => ({ value: org.id, label: `${org.name}（ID ${org.id}）` }))}
+            filter
+            style={{ width: 260 }}
           />
-          <Button onClick={applyOrgFilter}>查看目标组织</Button>
-          <Button onClick={resetOrgFilter}>返回我的组织</Button>
         </Space>}
         <PagedTable
           columns={columns}
@@ -192,8 +196,15 @@ export default function OrgModelPricesPage() {
         width={480}
       >
         <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={editPrice ? handleUpdate : handleCreate}>
-          <Form.InputNumber field="org_id" label="组织 ID" min={1} rules={[{ required: true, message: '必填' }]}
-            disabled={!!editPrice} style={{ width: '100%' }} />
+          <Form.Select
+            field="org_id"
+            label="组织"
+            rules={[{ required: true, message: '必填' }]}
+            optionList={organizations.map((org) => ({ value: org.id, label: `${org.name}（ID ${org.id}）` }))}
+            disabled={!!editPrice}
+            filter
+            style={{ width: '100%' }}
+          />
           <Form.Select field="model_name" label="模型名称" rules={[{ required: true, message: '请选择模型' }]} filter optionList={modelNames.map(m => ({ label: m, value: m }))} placeholder="选择或搜索模型" disabled={!!editPrice} />
 		  <Form.Input field="multiplier" label="计费倍率" rules={[{ required: true, message: '必填' }]} placeholder="例如 1.2" />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>

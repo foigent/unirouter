@@ -1,8 +1,13 @@
 package auth
 
 import (
+	"bytes"
+	"encoding/hex"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 func TestHashAPIKey_Deterministic(t *testing.T) {
@@ -58,21 +63,31 @@ func TestGenerateAPIKey_Format(t *testing.T) {
 		t.Fatalf("GenerateAPIKey error: %v", err)
 	}
 	if !strings.HasPrefix(raw, "ur-0001-") {
-		t.Fatalf("expected prefix ur-test-, got %s", raw)
+		t.Fatalf("expected prefix ur-0001-, got %s", raw)
 	}
-	// raw = "ur-test-<32 hex chars>" = 8 + 32 = 40 chars
+	// raw = "ur-0001-<32 hex chars>" = 8 + 32 = 40 chars
 	if len(raw) != 40 {
 		t.Fatalf("expected 40-char key, got %d: %s", len(raw), raw)
 	}
 	if !strings.HasPrefix(prefix, "ur-0001-") {
-		t.Fatalf("prefix should start with ur-test-, got %s", prefix)
+		t.Fatalf("prefix should start with ur-0001-, got %s", prefix)
+	}
+	if len(prefix) != 20 {
+		t.Fatalf("expected 20-char display prefix, got %d: %s", len(prefix), prefix)
+	}
+	if !strings.HasPrefix(raw, prefix) {
+		t.Fatalf("raw key should start with its display prefix: raw=%s prefix=%s", raw, prefix)
+	}
+	if _, err := hex.DecodeString(prefix[8:]); err != nil {
+		t.Fatalf("display prefix random segment should be 12 hex characters: %s", prefix)
 	}
 }
 
 func TestGenerateAPIKey_Uniqueness(t *testing.T) {
 	keys := make(map[string]bool)
+	prefixes := make(map[string]bool)
 	for i := 0; i < 100; i++ {
-		raw, _, err := GenerateAPIKey(1)
+		raw, prefix, err := GenerateAPIKey(1)
 		if err != nil {
 			t.Fatalf("iteration %d: %v", i, err)
 		}
@@ -80,6 +95,10 @@ func TestGenerateAPIKey_Uniqueness(t *testing.T) {
 			t.Fatalf("duplicate key generated: %s", raw)
 		}
 		keys[raw] = true
+		if prefixes[prefix] {
+			t.Fatalf("duplicate display prefix generated: %s", prefix)
+		}
+		prefixes[prefix] = true
 	}
 }
 
@@ -137,12 +156,15 @@ func TestJWT_GenerateAndParse(t *testing.T) {
 	orgID := int64(7)
 	role := "admin"
 
-	token, err := GenerateJWT(userID, orgID, role, secret, 24)
+	token, session, err := GenerateAdminSessionJWT(userID, orgID, role, 3, secret, 24)
 	if err != nil {
 		t.Fatalf("GenerateJWT error: %v", err)
 	}
 	if token == "" {
 		t.Fatal("token should not be empty")
+	}
+	if len(session.SIDHash) != 32 {
+		t.Fatal("session should expose only its SHA-256 persistence key")
 	}
 
 	claims, err := ParseJWT(token, secret)
@@ -158,14 +180,42 @@ func TestJWT_GenerateAndParse(t *testing.T) {
 	if claims.Role != role {
 		t.Fatalf("Role mismatch: got %s, want %s", claims.Role, role)
 	}
+	if claims.AuthEpoch != 3 || !bytes.Equal(session.SIDHash, HashAdminSessionID(claims.SessionID)) {
+		t.Fatalf("session claims mismatch: %#v", claims)
+	}
 }
 
 func TestJWT_WrongSecret(t *testing.T) {
-	token, _ := GenerateJWT(1, 1, "admin", "secret-a", 24)
+	token, _, _ := GenerateAdminSessionJWT(1, 1, "admin", 0, "secret-a", 24)
 	_, err := ParseJWT(token, "secret-b")
 	if err == nil {
 		t.Fatal("ParseJWT with wrong secret should fail")
 	}
+}
+
+func TestJWT_LegacyStatelessTokenRejected(t *testing.T) {
+	token, err := legacyStatelessJWTForTest(1, 1, "admin", "secret", 24)
+	if err != nil {
+		t.Fatalf("generate legacy token: %v", err)
+	}
+	if _, err := ParseJWT(token, "secret"); err == nil {
+		t.Fatal("legacy JWT without a versioned sid must fail closed")
+	}
+}
+
+func legacyStatelessJWTForTest(userID, orgID int64, role, secret string, expireHours int) (string, error) {
+	now := time.Now().UTC()
+	claims := Claims{
+		UserID: userID,
+		OrgID:  orgID,
+		Role:   role,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(now.Add(time.Duration(expireHours) * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			Issuer:    "uniroute",
+		},
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
 }
 
 func TestJWT_InvalidToken(t *testing.T) {

@@ -1,6 +1,155 @@
 # Current Execution Record
 
-## Active Boundary — X-Insight Cooperation Only
+## Active Amendment — V1 Security Remediation
+
+**Batch:** `V1-SECURITY-REMEDIATION-001`
+
+**Scan:** `124093ab-e945-47e9-8fa3-2eb688dc31dc`
+
+**Owner:** Codex
+
+**Risk:** R3 for authentication, schema, distributed capacity and financial
+fencing. A future target cutover is R4 and remains a separate authorization and
+evidence step.
+
+**Status:** Local verified; publication and required GitHub CI pending
+
+**Baseline:** `main` / `origin/main` at
+`92ba78878782114a82411697597f5e58e10602a8`
+
+**Branch:** `codex/v1-user-task-ia-correctness`
+
+**User decision:** implement `A1 + B1 + C1 + D1`; preserve PRD6 as
+`Completed (Accepted Scope)` and treat this as an independent Post-PRD6
+amendment.
+
+**Implemented boundary:** all 39 canonical scan findings are
+`fixed_verified` in the scan-local ledger. The final approved package adds:
+
+- A1: versioned administrator JWTs with random 256-bit session identity,
+  server-side hashed revocation, live principal/epoch enforcement, atomic
+  logout and password invalidation, idempotent retry, sibling-session
+  preservation and non-cacheable login/token responses; migration `000038`;
+- B1: platform plus copy-on-write tenant Guardrail snapshots, atomic active
+  policy/cache/tenant quotas, tenant-fair bounded advisory scheduling, and
+  durable metadata-only aggregate gap receipts; migration `000039`;
+- C1.1: workflow-slot Agent refresh/supersession authority with an atomic Lua
+  parent check and a token-TTL-bounded legacy read bridge;
+- C1.2: immutable reservation/receipt/settlement/recovery binding to a unique
+  delivery attempt, with uniquely evidenced historical backfill and preserved
+  quarantine for ambiguous history; migration `000040`;
+- C1.3: full `{org, request, attempt, owner, generation}` stream fencing,
+  wall-clock expiry checks, final checkpoint authority recheck and durable
+  settlement recovery claims; migration `000041`;
+- D1: fail-closed new workload admission whenever Redis cannot prove shared
+  capacity, while existing tracked work remains releasable; admission
+  fingerprint v2 prevents mixed safety contracts;
+- accepted release-adjacent correction: migration `000042` makes local login
+  IDs deployment-global, case-insensitive and outer-Unicode-whitespace
+  normalized, rejects ambiguous legacy data atomically, excludes OIDC
+  identities and makes duplicate lookup fail closed. Provider-scoped indexes
+  allow same-organization local/OIDC display overlap without shadowing local
+  login; concurrent OIDC first login converges by issuer/subject and guarded
+  down refuses activated cross-provider overlap;
+- accepted release-adjacent correction: management CLI passwords no longer
+  accept value-bearing argv. Interactive use is a twice-confirmed hidden TTY
+  prompt; automation uses bounded, single-line `--password-stdin` with no
+  password environment fallback. API, CLI and UI share 12 Unicode code points
+  minimum, 72 UTF-8 bytes maximum and invalid-UTF-8 rejection.
+
+**Local verification:**
+
+- `GOCACHE=/private/tmp/unirouter-go-build-final go test -race
+  -coverprofile=/private/tmp/unirouter-v1-security-final-postreview-20260717.out
+  ./...`
+  — pass for every package;
+- `REQUIRE_TEST_DATABASE=1 GOCACHE=/private/tmp/unirouter-go-build-final go test
+  -tags=integration -race ./...` — pass for
+  every package against the repository integration services and migrations
+  through `000042`;
+- `GOCACHE=/private/tmp/unirouter-go-build-final go vet ./...`,
+  `git diff --check` and `go mod verify` — pass;
+- frontend `npm run type-check`, `npm test -- --run` (41 files / 277 tests), and
+  `npm run build` — pass; existing framework warnings and the Vite large-chunk
+  advisory remain non-failing and are not claimed as absent;
+- workflow/Compose YAML, changed shell syntax, backup security regression,
+  13 SSO origin-guard tests and the deployment-helper Python syntax check —
+  pass;
+- the full gates caught and corrected two stale cross-suite contracts: the
+  limit-policy last-known-safe fixture could not override D1 workload
+  fail-closed semantics, and the `000036` immediate-down fixture now stops its
+  setup at `000036` instead of applying later activation evidence first. Final
+  review additionally caught and fixed legacy local/OIDC same-name blocking,
+  concurrent OIDC provisioning, frontend `409` mislabeling and Unicode-byte
+  password drift in both user creation and self-service password change.
+
+**Verification boundary at this local checkpoint:** local Docker/Compose is
+unavailable, so the actual Docker/context gate must run in required GitHub CI.
+The local evidence does not by itself claim a commit, push, pull request,
+GitHub CI run, ECS migration/deployment, target-browser verification, or
+Production verification. Immutable local evidence:
+`docs/ops/evidence/V1-SECURITY-REMEDIATION-LOCAL-20260717.md`.
+
+**Final local rebaseline:** safe temporary-cache cleanup restored enough local
+space and every previously interrupted final-tree gate was rerun successfully.
+The first focused sandboxed run could not bind an `httptest` loopback port;
+the identical local-permission rerun passed, so the sandbox denial is recorded
+as an environment restriction rather than a code result. Intentional
+diff/sensitive-file review is complete with no repository-content blocker;
+the remaining publication gates are commit/PR and required GitHub CI.
+Docker/context is intentionally deferred to that CI because no local Docker
+CLI is installed. The adjacent fixes are not new canonical scan findings and
+do not reopen PRD6.
+
+## Underlying Worktree Batch — V1 User-Task IA And Role Correctness
+
+**Batch:** `V1-UX-IA-001`
+
+**Owner:** Codex
+
+**Risk:** R3 because the user-visible information architecture is coupled to
+tenant selection, role landing, notification scope and financial control
+surfaces; PRD6 remains closed and is not reopened.
+
+**Status:** underlying implementation context; publication and remaining gates
+are governed by the active security amendment above
+
+**Baseline:** clean and aligned `main` / `origin/main` at
+`92ba78878782114a82411697597f5e58e10602a8`
+
+**Branch:** `codex/v1-user-task-ia-correctness`
+
+**User decision:** execute the user-task information architecture when it is
+the best practical first-release design; keep at most two sidebar levels; make
+every role land on a usable dashboard/workbench with discoverable working
+entry points; verify that visible functions work rather than merely render.
+
+**Accepted direction:**
+
+- organize navigation by user task rather than implementation phase;
+- preserve independent owner pages for independent objects and allow only
+  read-only summaries with context-preserving drill-downs;
+- merge funds overview/history/grants under one funds-account workspace and
+  base price/organization multiplier under one model-billing workspace while
+  preserving old deep links;
+- keep the existing X-Insight control surface bounded; no new feed, exporter,
+  credential, external call or integration contract is authorized;
+- correct platform-tenant selection, project-role scope, role landing,
+  misleading financial/monitoring semantics and dead or false navigation;
+- use business language in primary views and move implementation details to
+  advanced diagnostics.
+
+**Non-goals:** PRD7 acceptance, actual provider-bill reconciliation, new SSO
+provider integration, new model-discovery automation, Production deployment,
+new X-Insight runtime behavior, destructive data operations or paid provider
+calls.
+
+**Target verification boundary:** local/API/browser and required CI first. The
+existing ECS is an approved development/test target, but deployment requires a
+merged signed release package and a new sequence; no target mutation occurs
+before CI and release preflight.
+
+## Previous Boundary — X-Insight Cooperation Only
 
 **Owner:** Codex for UniRouter status reconciliation; X-Insight consumer/joint
 acceptance requires the external project owner.

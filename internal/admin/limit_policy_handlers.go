@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
 )
@@ -172,10 +173,16 @@ func (h *Handler) CreateLimitPolicy(w http.ResponseWriter, r *http.Request) {
 		writeLimitPolicyError(w, err)
 		return
 	}
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Transaction failed"})
+		return
+	}
+	defer tx.Rollback(r.Context())
 
 	var id int64
 	var createdAt, updatedAt time.Time
-	err := h.db.QueryRow(r.Context(), `
+	err = tx.QueryRow(r.Context(), `
 		INSERT INTO distributed_limit_policies (
 			org_id, project_id, api_key_id, name, model, policy_label, mode, failure_mode,
 			rps_limit, rpm_limit, tpm_limit, concurrency_limit, version, created_by, updated_by,
@@ -194,7 +201,15 @@ func (h *Handler) CreateLimitPolicy(w http.ResponseWriter, r *http.Request) {
 	record.ID = id
 	record.CreatedAt = createdAt
 	record.UpdatedAt = updatedAt
-	h.recordLimitPolicyAudit(r, "limit_policy.create", record, map[string]interface{}{"after": limitPolicyPayload(record)})
+	if err := insertAuditEntry(r.Context(), tx, "limit_policy.create", "distributed_limit_policy", strconv.FormatInt(record.ID, 10),
+		map[string]interface{}{"after": limitPolicyPayload(record)}, limitPolicyAuditMeta(r, record)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Commit failed"})
+		return
+	}
 	applied := h.refreshLimitPolicySnapshot(r.Context())
 	payload := limitPolicyPayload(record)
 	payload["runtime_snapshot_applied"] = applied
@@ -237,7 +252,13 @@ func (h *Handler) UpdateLimitPolicy(w http.ResponseWriter, r *http.Request) {
 		writeLimitPolicyError(w, err)
 		return
 	}
-	tag, err := h.db.Exec(r.Context(), `
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Transaction failed"})
+		return
+	}
+	defer tx.Rollback(r.Context())
+	tag, err := tx.Exec(r.Context(), `
 		UPDATE distributed_limit_policies SET
 			org_id=$1, project_id=$2, api_key_id=$3, name=$4, model=$5, policy_label=$6,
 			mode=$7, failure_mode=$8, rps_limit=$9, rpm_limit=$10, tpm_limit=$11,
@@ -252,7 +273,7 @@ func (h *Handler) UpdateLimitPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if tag.RowsAffected() == 0 {
-		latest, readErr := h.readLimitPolicy(r.Context(), id)
+		latest, readErr := readLimitPolicyFrom(r.Context(), tx, id)
 		if readErr != nil {
 			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Policy not found"})
 			return
@@ -262,14 +283,20 @@ func (h *Handler) UpdateLimitPolicy(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	updated, err := h.readLimitPolicy(r.Context(), id)
+	updated, err := readLimitPolicyFrom(r.Context(), tx, id)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Policy updated but readback failed"})
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to read updated policy"})
 		return
 	}
-	h.recordLimitPolicyAudit(r, "limit_policy.update", updated, map[string]interface{}{
-		"before": limitPolicyPayload(before), "after": limitPolicyPayload(updated),
-	})
+	if err := insertAuditEntry(r.Context(), tx, "limit_policy.update", "distributed_limit_policy", strconv.FormatInt(updated.ID, 10),
+		map[string]interface{}{"before": limitPolicyPayload(before), "after": limitPolicyPayload(updated)}, limitPolicyAuditMeta(r, updated)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Commit failed"})
+		return
+	}
 	applied := h.refreshLimitPolicySnapshot(r.Context())
 	payload := limitPolicyPayload(updated)
 	payload["runtime_snapshot_applied"] = applied
@@ -277,7 +304,15 @@ func (h *Handler) UpdateLimitPolicy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) readLimitPolicy(ctx context.Context, id int64) (limitPolicyRecord, error) {
-	row := h.db.QueryRow(ctx, `
+	return readLimitPolicyFrom(ctx, h.db, id)
+}
+
+type limitPolicyQueryRower interface {
+	QueryRow(context.Context, string, ...interface{}) pgx.Row
+}
+
+func readLimitPolicyFrom(ctx context.Context, queryer limitPolicyQueryRower, id int64) (limitPolicyRecord, error) {
+	row := queryer.QueryRow(ctx, `
 		SELECT p.id, p.org_id, p.project_id, p.api_key_id, p.name, p.model, p.policy_label,
 		       p.mode, p.failure_mode, p.rps_limit, p.rpm_limit, p.tpm_limit,
 		       p.concurrency_limit, p.version, p.created_at, p.updated_at,
@@ -493,7 +528,7 @@ func limitPolicyPayload(record limitPolicyRecord) map[string]interface{} {
 	}
 }
 
-func (h *Handler) recordLimitPolicyAudit(r *http.Request, action string, record limitPolicyRecord, detail map[string]interface{}) {
+func limitPolicyAuditMeta(r *http.Request, record limitPolicyRecord) auditMeta {
 	orgID := middleware.GetOrgIDFromContext(r.Context())
 	if record.OrgID != nil {
 		orgID = *record.OrgID
@@ -502,7 +537,7 @@ func (h *Handler) recordLimitPolicyAudit(r *http.Request, action string, record 
 	if record.ProjectID != nil {
 		projectID = *record.ProjectID
 	}
-	h.recordAuditForOrgProjectFromRequest(r, orgID, projectID, action, "distributed_limit_policy", strconv.FormatInt(record.ID, 10), detail)
+	return requestAuditMeta(r, orgID, projectID)
 }
 
 func (h *Handler) refreshLimitPolicySnapshot(ctx context.Context) bool {

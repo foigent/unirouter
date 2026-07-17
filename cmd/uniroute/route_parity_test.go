@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
@@ -17,6 +18,7 @@ func TestAdminRoutesRegisteredForFrontendClient(t *testing.T) {
 
 	routes := []string{
 		"POST /api/v1/auth/login",
+		"POST /api/v1/auth/logout",
 		"GET /api/v1/auth/oidc/config",
 		"GET /api/v1/auth/oidc/start",
 		"GET /api/v1/auth/oidc/callback",
@@ -32,6 +34,7 @@ func TestAdminRoutesRegisteredForFrontendClient(t *testing.T) {
 		"POST /api/v1/keys",
 		"PUT /api/v1/keys/{id}",
 		"POST /api/v1/keys/{id}/disable",
+		"GET /api/v1/organizations",
 		"GET /api/v1/limit-policies",
 		"POST /api/v1/limit-policies",
 		"PUT /api/v1/limit-policies/{id}",
@@ -44,6 +47,11 @@ func TestAdminRoutesRegisteredForFrontendClient(t *testing.T) {
 		"PUT /api/v1/projects/{id}",
 		"GET /api/v1/projects/{id}/model-sets",
 		"PUT /api/v1/projects/{id}/model-sets",
+		"GET /api/v1/projects/{id}/members",
+		"PUT /api/v1/projects/{id}/members/{user_id}",
+		"DELETE /api/v1/projects/{id}/members/{user_id}",
+		"GET /api/v1/projects/{id}/budget",
+		"PUT /api/v1/projects/{id}/budget",
 		"GET /api/v1/channel-keys",
 		"POST /api/v1/channel-keys",
 		"PUT /api/v1/channel-keys/{id}",
@@ -120,8 +128,71 @@ func TestMainRegistersExtractedPricingRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read main.go: %v", err)
 	}
-	if !strings.Contains(string(src), "registerPricingRoutes(mux, adminHandler") {
-		t.Fatal("main.go does not call the extracted pricing route registrar")
+	mainSource := string(src)
+	for _, fragment := range []string{
+		"return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin)",
+		"registerPricingRoutes(mux, adminHandler, pricingRouteGuards{read: pricingReadRoute, write: platformRoute})",
+	} {
+		if !strings.Contains(mainSource, fragment) {
+			t.Fatalf("main.go pricing route wiring missing %q", fragment)
+		}
+	}
+}
+
+func TestMainOrganizationRouteUsesScopedReadGuard(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	const registration = `mux.Handle("GET /api/v1/organizations", usageRoute(adminHandler.ListOrganizations))`
+	if !strings.Contains(string(src), registration) {
+		t.Fatalf("main.go organization route must use the tenant-scoped read guard: %s", registration)
+	}
+}
+
+func TestMainKeyMutationRoutesAllowDeveloperDisableOnly(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	mainSource := string(src)
+	disableRoute := `mux.Handle("POST /api/v1/keys/{id}/disable", roleRoute(adminHandler.DisableAPIKey, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper))`
+	if !strings.Contains(mainSource, disableRoute) {
+		t.Fatalf("developer-owned key disable route must include developer: %s", disableRoute)
+	}
+	updateRoute := `mux.Handle("PUT /api/v1/keys/{id}", roleRoute(adminHandler.UpdateAPIKey, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin))`
+	if !strings.Contains(mainSource, updateRoute) {
+		t.Fatalf("general key update route must remain administrator-only: %s", updateRoute)
+	}
+
+	spec, err := os.ReadFile("../../docs/tech-ref/05-openapi-spec.yaml")
+	if err != nil {
+		t.Fatalf("read OpenAPI spec: %v", err)
+	}
+	for _, fragment := range []string{
+		"  /api/v1/keys/{id}/disable:\n    x-unirouter-rbac:\n      post: [platform_admin, org_admin, project_admin, developer]",
+		"The API authorizes a developer only when owner_user_id is their own user ID and they retain project membership.",
+	} {
+		if !strings.Contains(string(spec), fragment) {
+			t.Fatalf("OpenAPI developer key-disable boundary missing %q", fragment)
+		}
+	}
+}
+
+func TestMainDashboardRouteUsesOrganizationScopeGuard(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	mainSource := string(src)
+	for _, fragment := range []string{
+		"dashboardRoute := func(h http.HandlerFunc) http.Handler",
+		"auth.RoleOrgViewer",
+		`mux.Handle("GET /api/v1/dashboard/stats", dashboardRoute(adminHandler.DashboardStats))`,
+	} {
+		if !strings.Contains(mainSource, fragment) {
+			t.Fatalf("main.go dashboard scope guard missing %q", fragment)
+		}
 	}
 }
 
@@ -145,6 +216,9 @@ func TestMainRegistersExtractedModelGovernanceRoutes(t *testing.T) {
 		"registerModelGovernanceRoutes(mux, adminHandler",
 		"organization: licensedRoute(licensing.FeatureModelGovernance, orgAdminRoute)",
 		"projectRead:  licensedRoute(licensing.FeatureModelGovernance, projectReadRoute)",
+		"modelSetRead: licensedRoute(licensing.FeatureModelGovernance",
+		`mux.Handle("GET /api/v1/projects/{id}/model-sets", licensedRoute(licensing.FeatureModelGovernance, projectReadRoute)(adminHandler.ListProjectModelSets))`,
+		`mux.Handle("PUT /api/v1/projects/{id}/model-sets", licensedRoute(licensing.FeatureModelGovernance`,
 	} {
 		if !strings.Contains(mainSource, fragment) {
 			t.Fatalf("main.go model-governance registrar wiring missing %q", fragment)
@@ -162,6 +236,7 @@ func TestMainRegistersCommercialFeatureGates(t *testing.T) {
 		"licenseRuntime.Gate(licensing.FeatureOIDC)",
 		"licensedRoute(licensing.FeatureGateway, platformRoute)(adminHandler.TestChannel)",
 		"licensedRoute(licensing.FeatureNotifications",
+		`mux.Handle("GET /api/v1/internal-status", licensedRoute(licensing.FeatureNotifications, orgAdminRoute)(adminHandler.InternalStatus))`,
 		"licensedRoute(licensing.FeatureDataExchange",
 		"licensedRoute(licensing.FeatureGuardrails",
 		"eventSvc.SetAdmission",
@@ -196,8 +271,26 @@ func TestFrontendDocsPageCoversRegisteredRoutes(t *testing.T) {
 	src := string(srcBytes)
 
 	for _, route := range routes {
-		if !strings.Contains(src, route.Path) {
-			t.Fatalf("frontend API docs page missing registered route path: %s %s", route.Method, route.Path)
+		operation := fmt.Sprintf("['%s', '%s'", route.Method, route.Path)
+		if !strings.Contains(src, operation) {
+			t.Fatalf("frontend API docs page missing registered operation: %s %s", route.Method, route.Path)
+		}
+	}
+}
+
+func TestFrontendEntrypointHasRoleAwareUnknownRouteFallback(t *testing.T) {
+	srcBytes, err := os.ReadFile("../../frontend/src/main.tsx")
+	if err != nil {
+		t.Fatalf("read frontend entrypoint: %v", err)
+	}
+	src := string(srcBytes)
+	for _, fragment := range []string{
+		"function UnknownRoute()",
+		"getDefaultPathForRole(role)",
+		`<Route path="*" element={<UnknownRoute />} />`,
+	} {
+		if !strings.Contains(src, fragment) {
+			t.Fatalf("frontend unknown-route fallback missing %q", fragment)
 		}
 	}
 }

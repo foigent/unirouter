@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/metering"
@@ -63,7 +64,7 @@ func TestP6F41BNonStreamChargeRequiresCompletedLocalDelivery(t *testing.T) {
 	req := p6f41ProviderUsage(requestID, attemptID, orgID)
 
 	_, err := b.Settle(t.Context(), req)
-	require.ErrorIs(t, err, ErrDeliveryNotChargeable, "a provider attempt cannot bypass local delivery preparation")
+	require.ErrorIs(t, err, ErrDeliveryAttemptConflict, "a provider attempt cannot bypass immutable attempt binding")
 	prepared, err := b.PrepareNonStreamDelivery(t.Context(), req)
 	require.NoError(t, err)
 	require.True(t, prepared.Funded)
@@ -170,15 +171,16 @@ func TestP6F41BStreamPartialDeliveryChargesOnlyDurableCounterUsage(t *testing.T)
 		UsageEstimateVersion: metering.GatewayCounterEstimateVersionV2,
 		CacheUsageStatus:     cacheUsageStatusNotReported,
 	}
-	require.NoError(t, b.MarkBillableOutput(t.Context(), requestID, orgID))
-	require.NoError(t, b.RecordDelivery(t.Context(), DeliveryEvent{
-		RequestID: requestID, AttemptID: attemptID, OrgID: orgID,
-		Mode: DeliveryModeStream, Outcome: DeliveryOutcomeWriteStarted, HTTPStatus: 200,
-	}))
+	start := StreamDeliveryStart{
+		RequestID: requestID, AttemptID: attemptID, OwnerID: "stream-partial-owner",
+		OrgID: orgID, Generation: 1, LeaseTTL: time.Minute,
+	}
+	req.StreamFence = testStreamFence(start)
+	require.NoError(t, b.BeginStreamDelivery(t.Context(), start))
 	require.NoError(t, b.RecordDelivery(t.Context(), DeliveryEvent{
 		RequestID: requestID, AttemptID: attemptID, OrgID: orgID,
 		Mode: DeliveryModeStream, Outcome: DeliveryOutcomePartial,
-		DeliveredBytes: 128, DeliveredChunks: 1, HTTPStatus: 200,
+		DeliveredBytes: 128, DeliveredChunks: 1, HTTPStatus: 200, StreamFence: testStreamFence(start),
 	}))
 	require.NoError(t, b.PersistSettlementUsage(t.Context(), req))
 	settled, err := b.Settle(t.Context(), req)
@@ -207,15 +209,16 @@ func TestP6F41BTerminalDeliveryDoesNotOverwriteFundingHold(t *testing.T) {
 	req.PromptTokens = 1_000_000
 	req.UncachedPromptTokens = 1_000_000
 	req.CompletionTokens = 0
-	require.NoError(t, b.MarkBillableOutput(t.Context(), requestID, orgID))
-	require.NoError(t, b.RecordDelivery(t.Context(), DeliveryEvent{
-		RequestID: requestID, AttemptID: attemptID, OrgID: orgID,
-		Mode: DeliveryModeStream, Outcome: DeliveryOutcomeWriteStarted, HTTPStatus: 200,
-	}))
+	start := StreamDeliveryStart{
+		RequestID: requestID, AttemptID: attemptID, OwnerID: "stream-funding-owner",
+		OrgID: orgID, Generation: 1, LeaseTTL: time.Minute,
+	}
+	req.StreamFence = testStreamFence(start)
+	require.NoError(t, b.BeginStreamDelivery(t.Context(), start))
 	require.NoError(t, b.RecordDelivery(t.Context(), DeliveryEvent{
 		RequestID: requestID, AttemptID: attemptID, OrgID: orgID,
 		Mode: DeliveryModeStream, Outcome: DeliveryOutcomePartial,
-		DeliveredBytes: 128, DeliveredChunks: 1, HTTPStatus: 200,
+		DeliveredBytes: 128, DeliveredChunks: 1, HTTPStatus: 200, StreamFence: testStreamFence(start),
 	}))
 	require.NoError(t, b.PersistSettlementUsage(t.Context(), req))
 	result, err := b.Settle(t.Context(), req)
@@ -225,7 +228,7 @@ func TestP6F41BTerminalDeliveryDoesNotOverwriteFundingHold(t *testing.T) {
 	require.NoError(t, b.RecordDelivery(t.Context(), DeliveryEvent{
 		RequestID: requestID, AttemptID: attemptID, OrgID: orgID,
 		Mode: DeliveryModeStream, Outcome: DeliveryOutcomeCompleted,
-		DeliveredBytes: 256, DeliveredChunks: 2, HTTPStatus: 200,
+		DeliveredBytes: 256, DeliveredChunks: 2, HTTPStatus: 200, StreamFence: testStreamFence(start),
 	}))
 
 	var reason, attemptState, outcome string

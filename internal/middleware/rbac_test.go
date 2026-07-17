@@ -40,3 +40,51 @@ func TestRequireRoles_DeniesBillingAdminForPlatformOnlyRoute(t *testing.T) {
 		t.Fatalf("expected 403, got %d", rec.Code)
 	}
 }
+
+func TestRequireRoles_DeniesOrganizationViewerForProjectViewerRoute(t *testing.T) {
+	handler := RequireRoles(auth.RoleViewer)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	for _, tc := range []struct {
+		role string
+		want int
+	}{
+		{role: auth.RoleViewer, want: http.StatusNoContent},
+		{role: auth.RoleOrgViewer, want: http.StatusForbidden},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/projects", nil)
+		req = req.WithContext(context.WithValue(req.Context(), CtxUserRole, tc.role))
+		rec := httptest.NewRecorder()
+
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != tc.want {
+			t.Fatalf("role %s: expected %d, got %d: %s", tc.role, tc.want, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestRequireExactRoles_DistinguishesOrganizationViewerFromProjectViewer(t *testing.T) {
+	handler := RequireExactRoles(auth.RoleOrgViewer)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	for _, tc := range []struct {
+		role string
+		want int
+	}{
+		{role: auth.RoleOrgViewer, want: http.StatusNoContent},
+		{role: auth.RoleViewer, want: http.StatusForbidden},
+		{role: auth.RoleDeveloper, want: http.StatusForbidden},
+		{role: auth.RoleProjectAdmin, want: http.StatusForbidden},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/stats", nil)
+		req = req.WithContext(context.WithValue(req.Context(), CtxUserRole, tc.role))
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != tc.want {
+			t.Fatalf("role %s: expected %d, got %d: %s", tc.role, tc.want, rec.Code, rec.Body.String())
+		}
+	}
+}

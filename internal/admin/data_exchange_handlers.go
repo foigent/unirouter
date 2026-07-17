@@ -170,9 +170,15 @@ func (h *Handler) CreateDataExchangeItem(w http.ResponseWriter, r *http.Request)
 	if !decodeDataExchangeJSON(w, r, &req) || !validateExchangeItemRequest(w, &req) {
 		return
 	}
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "Transaction failed"})
+		return
+	}
+	defer tx.Rollback(r.Context())
 	userID := middleware.GetUserIDFromContext(r.Context())
 	var id int64
-	err := h.db.QueryRow(r.Context(), `INSERT INTO integration_exchange_items
+	err = tx.QueryRow(r.Context(), `INSERT INTO integration_exchange_items
 		(org_id, approval_mode, request_id, scenario_label, source_instance, data_classes,
 		 safety_profile, approval_status, reason, authorized_operator, retention_until, created_by)
 		VALUES ($1, $2, NULLIF($3, ''), $4, $5, $6, 'metadata_only', 'pending', $7, NULLIF($8, ''), $9, NULLIF($10, 0))
@@ -182,9 +188,16 @@ func (h *Handler) CreateDataExchangeItem(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "Candidate already exists or could not be created"})
 		return
 	}
-	h.recordAuditForOrgProjectFromRequest(r, orgID, 0, "data_exchange.item.create", "integration_exchange_item", strconv.FormatInt(id, 10), map[string]any{
+	if err := insertAuditEntry(r.Context(), tx, "data_exchange.item.create", "integration_exchange_item", strconv.FormatInt(id, 10), map[string]any{
 		"after": map[string]any{"approval_mode": req.ApprovalMode, "request_id": req.RequestID, "scenario_label": req.ScenarioLabel, "approval_status": "pending"},
-	})
+	}, requestAuditMeta(r, orgID, 0)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "Audit failed"})
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "Commit failed"})
+		return
+	}
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id})
 }
 
@@ -212,9 +225,15 @@ func (h *Handler) UpdateDataExchangeItem(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "reason is required for unavailable items"})
 		return
 	}
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "Transaction failed"})
+		return
+	}
+	defer tx.Rollback(r.Context())
 	var previousStatus, approvalMode string
 	var existingRequestID sql.NullString
-	if err := h.db.QueryRow(r.Context(), `SELECT approval_status, approval_mode, request_id FROM integration_exchange_items WHERE id = $1 AND org_id = $2`, id, orgID).Scan(&previousStatus, &approvalMode, &existingRequestID); err != nil {
+	if err := tx.QueryRow(r.Context(), `SELECT approval_status, approval_mode, request_id FROM integration_exchange_items WHERE id = $1 AND org_id = $2 FOR UPDATE`, id, orgID).Scan(&previousStatus, &approvalMode, &existingRequestID); err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "Candidate not found"})
 		return
 	}
@@ -228,25 +247,32 @@ func (h *Handler) UpdateDataExchangeItem(w http.ResponseWriter, r *http.Request)
 	}
 	if req.ApprovalStatus == "approved" && requestID != "" {
 		var requestCount int
-		if err := h.db.QueryRow(r.Context(), `SELECT COUNT(*) FROM call_logs WHERE org_id = $1 AND request_id = $2`, orgID, requestID).Scan(&requestCount); err != nil || requestCount == 0 {
+		if err := tx.QueryRow(r.Context(), `SELECT COUNT(*) FROM call_logs WHERE org_id = $1 AND request_id = $2`, orgID, requestID).Scan(&requestCount); err != nil || requestCount == 0 {
 			writeJSON(w, http.StatusConflict, map[string]any{"error": "request_id does not exist in this organization"})
 			return
 		}
 	}
-	if _, err := h.db.Exec(r.Context(), `UPDATE integration_exchange_items
-		SET approval_status = $1, reason = $2,
-		    approved_by = CASE WHEN $1 = 'approved' THEN NULLIF($3, 0) ELSE NULL END,
-		    approved_at = CASE WHEN $1 = 'approved' THEN NOW() ELSE NULL END,
-		    request_id = CASE WHEN $6 <> '' THEN $6 ELSE request_id END,
+	if _, err := tx.Exec(r.Context(), `UPDATE integration_exchange_items
+		SET approval_status = $1::varchar(24), reason = $2::varchar(500),
+		    approved_by = CASE WHEN $1::varchar(24) = 'approved' THEN NULLIF($3, 0) ELSE NULL END,
+		    approved_at = CASE WHEN $1::varchar(24) = 'approved' THEN NOW() ELSE NULL END,
+		    request_id = CASE WHEN $6::text <> '' THEN $6::varchar(128) ELSE request_id END,
 		    updated_at = NOW()
 		WHERE id = $4 AND org_id = $5`, req.ApprovalStatus, req.Reason, middleware.GetUserIDFromContext(r.Context()), id, orgID, req.RequestID); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "Candidate update failed"})
 		return
 	}
-	h.recordAuditForOrgProjectFromRequest(r, orgID, 0, "data_exchange.item.update", "integration_exchange_item", strconv.FormatInt(id, 10), map[string]any{
+	if err := insertAuditEntry(r.Context(), tx, "data_exchange.item.update", "integration_exchange_item", strconv.FormatInt(id, 10), map[string]any{
 		"before": map[string]any{"approval_status": previousStatus, "request_id": existingRequestID.String},
 		"after":  map[string]any{"approval_status": req.ApprovalStatus, "reason": req.Reason, "request_id": requestID},
-	})
+	}, requestAuditMeta(r, orgID, 0)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "Audit failed"})
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "Commit failed"})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "approval_status": req.ApprovalStatus})
 }
 
@@ -366,13 +392,16 @@ func (h *Handler) CreateDataExchange(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "Could not attach approved items"})
 		return
 	}
+	if err := insertAuditEntry(r.Context(), tx, "data_exchange.exchange.create", "integration_exchange", strconv.FormatInt(id, 10), map[string]any{
+		"after": map[string]any{"exchange_id": req.ExchangeID, "artifact_sha256": req.ArtifactSHA256, "item_ids": req.ItemIDs, "workflow_status": "generated"},
+	}, requestAuditMeta(r, orgID, 0)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "Audit failed"})
+		return
+	}
 	if err := tx.Commit(r.Context()); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "Commit failed"})
 		return
 	}
-	h.recordAuditForOrgProjectFromRequest(r, orgID, 0, "data_exchange.exchange.create", "integration_exchange", strconv.FormatInt(id, 10), map[string]any{
-		"after": map[string]any{"exchange_id": req.ExchangeID, "artifact_sha256": req.ArtifactSHA256, "item_ids": req.ItemIDs, "workflow_status": "generated"},
-	})
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "exchange_id": req.ExchangeID})
 }
 
@@ -547,13 +576,16 @@ func (h *Handler) mutateDataExchangeDelivery(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "Exchange update failed"})
 		return
 	}
+	if err := insertAuditEntry(r.Context(), tx, "data_exchange."+req.Action, "integration_exchange", strconv.FormatInt(id, 10), map[string]any{
+		"exchange_id": exchangeID, "handoff_ref": req.HandoffRef, "delivery_id": deliveryID,
+	}, requestAuditMeta(r, orgID, 0)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "Audit failed"})
+		return
+	}
 	if err := tx.Commit(r.Context()); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "Commit failed"})
 		return
 	}
-	h.recordAuditForOrgProjectFromRequest(r, orgID, 0, "data_exchange."+req.Action, "integration_exchange", strconv.FormatInt(id, 10), map[string]any{
-		"exchange_id": exchangeID, "handoff_ref": req.HandoffRef, "delivery_id": deliveryID,
-	})
 	writeJSON(w, http.StatusCreated, map[string]any{"id": deliveryID, "workflow_status": "handed_off"})
 }
 
@@ -566,8 +598,14 @@ func (h *Handler) DeleteDataExchangeArtifact(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "Transaction failed"})
+		return
+	}
+	defer tx.Rollback(r.Context())
 	var exchangeID, artifactHash, artifactRef string
-	err := h.db.QueryRow(r.Context(), `UPDATE integration_exchanges
+	err = tx.QueryRow(r.Context(), `UPDATE integration_exchanges
 		SET workflow_status = 'artifact_deleted', artifact_deleted_by = NULLIF($1, 0), artifact_deleted_at = NOW(), updated_at = NOW()
 		WHERE id = $2 AND org_id = $3 AND workflow_status <> 'artifact_deleted'
 		RETURNING exchange_id, artifact_sha256, artifact_ref`, middleware.GetUserIDFromContext(r.Context()), id, orgID).Scan(&exchangeID, &artifactHash, &artifactRef)
@@ -575,10 +613,17 @@ func (h *Handler) DeleteDataExchangeArtifact(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "Active exchange not found"})
 		return
 	}
-	h.recordAuditForOrgProjectFromRequest(r, orgID, 0, "data_exchange.artifact.mark_deleted", "integration_exchange", strconv.FormatInt(id, 10), map[string]any{
+	if err := insertAuditEntry(r.Context(), tx, "data_exchange.artifact.mark_deleted", "integration_exchange", strconv.FormatInt(id, 10), map[string]any{
 		"exchange_id": exchangeID, "artifact_sha256": artifactHash, "artifact_ref": artifactRef,
 		"after": map[string]any{"workflow_status": "artifact_deleted"},
-	})
+	}, requestAuditMeta(r, orgID, 0)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "Audit failed"})
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "Commit failed"})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "workflow_status": "artifact_deleted", "filesystem_deleted": false})
 }
 
@@ -595,8 +640,14 @@ func (h *Handler) CreateDataExchangeReceipt(w http.ResponseWriter, r *http.Reque
 	if !decodeDataExchangeJSON(w, r, &req) || !validateReceiptRequest(w, &req) {
 		return
 	}
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "Transaction failed"})
+		return
+	}
+	defer tx.Rollback(r.Context())
 	var exchangeID, currentArtifactHash, sourceInstance, schemaVersion, manifestHash string
-	if err := h.db.QueryRow(r.Context(), `SELECT exchange_id, artifact_sha256, source_instance, schema_version, approval_manifest_sha256 FROM integration_exchanges WHERE id = $1 AND org_id = $2`, id, orgID).Scan(&exchangeID, &currentArtifactHash, &sourceInstance, &schemaVersion, &manifestHash); err != nil {
+	if err := tx.QueryRow(r.Context(), `SELECT exchange_id, artifact_sha256, source_instance, schema_version, approval_manifest_sha256 FROM integration_exchanges WHERE id = $1 AND org_id = $2`, id, orgID).Scan(&exchangeID, &currentArtifactHash, &sourceInstance, &schemaVersion, &manifestHash); err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "Exchange not found"})
 		return
 	}
@@ -610,7 +661,7 @@ func (h *Handler) CreateDataExchangeReceipt(w http.ResponseWriter, r *http.Reque
 	}
 	warningsJSON, _ := json.Marshal(req.WarningCodes)
 	var receiptID int64
-	err := h.db.QueryRow(r.Context(), `INSERT INTO integration_exchange_receipts
+	err = tx.QueryRow(r.Context(), `INSERT INTO integration_exchange_receipts
 		(exchange_record_id, receipt_schema_version, source_system, source_instance, artifact_schema_version,
 		 artifact_sha256, approval_manifest_sha256, result_status, request_ids, input_events, accepted,
 		 duplicate_noop, rerun_duplicate_noop, rejected, quarantined, capture_gap_events, persisted_inserted,
@@ -631,10 +682,17 @@ func (h *Handler) CreateDataExchangeReceipt(w http.ResponseWriter, r *http.Reque
 	if req.ArtifactSHA256 != currentArtifactHash {
 		summaryStatus = "receipt_outdated"
 	}
-	h.recordAuditForOrgProjectFromRequest(r, orgID, 0, "data_exchange.receipt.record", "integration_exchange", strconv.FormatInt(id, 10), map[string]any{
+	if err := insertAuditEntry(r.Context(), tx, "data_exchange.receipt.record", "integration_exchange", strconv.FormatInt(id, 10), map[string]any{
 		"exchange_id": exchangeID, "receipt_id": receiptID, "result_status": req.ResultStatus,
 		"summary_status": summaryStatus, "artifact_sha256": req.ArtifactSHA256, "warning_codes": req.WarningCodes,
-	})
+	}, requestAuditMeta(r, orgID, 0)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "Audit failed"})
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "Commit failed"})
+		return
+	}
 	writeJSON(w, http.StatusCreated, map[string]any{"id": receiptID, "receipt_status": summaryStatus})
 }
 

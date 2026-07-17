@@ -1,14 +1,14 @@
 # UniRouter Engineering Governance
 
-> Status: PRD3 Batch 8 minimum governance baseline.
+> Status: Current minimum engineering governance baseline; originally introduced in PRD3 Batch 8.
 > Scope: existing code, docs, release, and compatibility workflow. This is not a
 > new product capability.
 
 ## Purpose
 
-This document defines the minimum engineering rules that must be checked before
-PRD4 expands UniRouter with larger plugin, deployment, role, or operations
-surfaces.
+This document defines the minimum engineering rules for any change to UniRouter.
+Completed PRD scope remains historical; current execution authority comes from
+the active issue/batch record and explicit User decisions.
 
 ## ADR Policy
 
@@ -24,7 +24,7 @@ ADRs live under `docs/governance/adr/` and should use
 accepted ADRs must reference the PR, evidence file, or issue that validates the
 decision.
 
-Current proposed PRD4 ADRs:
+Existing ADR register (preserve each file's own Accepted/Proposed status):
 
 - `docs/governance/adr/ADR-0001-prd4-plungein-ports.md`
 - `docs/governance/adr/ADR-0002-prd4-api-key-owner-usage.md`
@@ -72,15 +72,16 @@ Operational rules:
 
 ## Release Checklist
 
-Before a release or Sentinel merge that changes code or acceptance-sensitive
-docs:
+Before a release or PR merge that changes code or acceptance-sensitive docs:
 
 - `git status --short` was checked before editing.
 - Scope stays inside the approved PRD/batch.
 - Relevant tests pass locally or are explicitly delegated with reason.
 - `git diff --check` passes.
-- `docs/agent-workflows/FIX-SIGNAL.md` describes verification steps.
-- `docs/agent-workflows/VERIFY-RESULT.md` is updated by Canary after verification.
+- `docs/agent-workflows/EXECUTION-RECORD.md` records scope, risk, verification,
+  CI, target state and non-goals for the active R2/R3/R4 batch.
+- `Change Routing` and every applicable required CI job pass; docs-only changes
+  may skip expensive jobs only when routing classifies them explicitly.
 - `docs/ops/CURRENT-STATUS.md`, acceptance matrix, and `docs/issues/OPEN-ISSUES.md`
   are updated when acceptance state changes.
 - Deployment-affecting changes include rollback notes and target-environment
@@ -97,9 +98,10 @@ For engineering incidents, record:
 - evidence command/output summary;
 - follow-up issue and owner.
 
-PRD3 Internal Status remains notification-event-derived. A full maintenance
-window, SLA/SLO, and incident operations product model stays in PRD4 unless the
-User explicitly approves earlier scope.
+Notification lifecycle and runtime observability remain separate operational
+concepts. A broader maintenance-window, SLA/SLO, or incident-operations product
+model requires its own accepted scope; it must not be inferred from historical
+PRD labels.
 
 ## Deprecation Policy
 

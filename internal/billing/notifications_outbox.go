@@ -179,14 +179,18 @@ func (s *EventService) ProcessNotificationDelivery(ctx context.Context, event ou
 		return err
 	}
 	if status == "delivered" {
-		return nil
+		return s.refreshEventDeliveryStateFromDeliveries(ctx, delivery.EventID)
 	}
 	if !enabled || !scopeVerified || quarantined {
 		return fmt.Errorf("notification webhook is not eligible for delivery")
 	}
 	delivery.DeliveryID = payload.DeliveryID
 	delivery.URL = url
-	if !s.retryOneWebhook(ctx, delivery) {
+	delivered, err := s.retryOneWebhook(ctx, delivery)
+	if err != nil {
+		return err
+	}
+	if !delivered {
 		return fmt.Errorf("notification delivery %d failed", payload.DeliveryID)
 	}
 	return nil

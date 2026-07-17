@@ -24,8 +24,7 @@ func TestP6F40CProviderCostRoutesRequirePlatformAuthority(t *testing.T) {
 
 	serve := func(method, target, body, role string) *httptest.ResponseRecorder {
 		t.Helper()
-		token, err := auth.GenerateJWT(7, 11, role, secret, 1)
-		require.NoError(t, err)
+		token := activeAdminToken(t, 7, 11, role, secret)
 		req := httptest.NewRequest(method, target, strings.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
@@ -44,7 +43,7 @@ func TestP6F40CProviderCostRoutesRequirePlatformAuthority(t *testing.T) {
 	}
 	for _, role := range []string{
 		auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleProjectAdmin,
-		auth.RoleDeveloper, auth.RoleViewer, auth.RoleOrgViewer, "unknown_role",
+		auth.RoleDeveloper, auth.RoleViewer, auth.RoleOrgViewer,
 	} {
 		for _, route := range routes {
 			require.Equal(t, http.StatusForbidden, serve(route.method, route.target, route.body, role).Code)

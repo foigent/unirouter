@@ -53,8 +53,7 @@ func TestP6F35GlobalControlAuthorityIntegration(t *testing.T) {
 	mux := p6f35GlobalControlMux(h)
 	serveOn := func(tb testing.TB, targetMux *http.ServeMux, method, target, body string, userID, orgID int64, role, requestID string) *httptest.ResponseRecorder {
 		tb.Helper()
-		token, tokenErr := auth.GenerateJWT(userID, orgID, role, p6f16JWTSecret, 1)
-		require.NoError(tb, tokenErr)
+		token := testutil.MustAdminSessionJWT(tb, ctx, pool, userID, orgID, role, p6f16JWTSecret)
 		req := httptest.NewRequest(method, target, bytes.NewBufferString(body))
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
@@ -75,16 +74,18 @@ func TestP6F35GlobalControlAuthorityIntegration(t *testing.T) {
 			tb.Fatalf("expected status %d, got %d: %s", want, rec.Code, rec.Body.String())
 		}
 	}
+	tenantRoles := []string{
+		auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleProjectAdmin,
+		auth.RoleDeveloper, auth.RoleViewer, auth.RoleOrgViewer,
+	}
 
 	t.Run("reads are platform only and redact dedicated or secret settings", func(t *testing.T) {
-		for _, role := range []string{
-			auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleProjectAdmin,
-			auth.RoleDeveloper, auth.RoleViewer, auth.RoleOrgViewer, "unknown_role",
-		} {
+		for _, role := range tenantRoles {
 			for _, target := range []string{"/api/v1/settings", "/api/v1/license", "/api/v1/sensitive-words"} {
 				assertStatus(t, serve(t, http.MethodGet, target, "", fx.actorForRole(role), fx.orgA, role, ""), http.StatusForbidden)
 			}
 		}
+		assertStatus(t, serve(t, http.MethodGet, "/api/v1/settings", "", fx.unknownRoleA, fx.orgA, "unknown_role", ""), http.StatusUnauthorized)
 
 		settings := serve(t, http.MethodGet, "/api/v1/settings", "", fx.platformA, fx.orgA, auth.RolePlatformAdmin, "")
 		assertStatus(t, settings, http.StatusOK)
@@ -118,14 +119,15 @@ func TestP6F35GlobalControlAuthorityIntegration(t *testing.T) {
 			{http.MethodPut, "/api/v1/sensitive-words"},
 			{http.MethodDelete, "/api/v1/sensitive-words"},
 		}
-		for _, role := range []string{
-			auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleProjectAdmin,
-			auth.RoleDeveloper, auth.RoleViewer, auth.RoleOrgViewer, "unknown_role",
-		} {
+		for _, role := range tenantRoles {
 			for _, route := range routes {
 				assertStatus(t, serve(t, route.method, route.target, "not-json",
 					fx.actorForRole(role), fx.orgA, role, "p6f35-denied"), http.StatusForbidden)
 			}
+		}
+		for _, route := range routes {
+			assertStatus(t, serve(t, route.method, route.target, "not-json",
+				fx.unknownRoleA, fx.orgA, "unknown_role", "p6f35-invalid-role"), http.StatusUnauthorized)
 		}
 		require.Equal(t, before, readP6F35Snapshot(t, pool, sensitiveFilter))
 	})

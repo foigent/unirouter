@@ -297,7 +297,7 @@ func TestGlobalControlCommitFailureDoesNotApplyPostCommitEffects(t *testing.T) {
 			eventQueries++
 			return &testutil.MockRow{}
 		}}
-		h.SetEventService(billing.NewEventService(eventDB))
+		h.SetEventService(billing.NewEventService(eventDB, ""))
 		req := platformGlobalControlRequest(httptest.NewRequest(http.MethodPut, "/license",
 			strings.NewReader(fmt.Sprintf(`{"license":%s}`, licenseJSON))))
 		rec := httptest.NewRecorder()

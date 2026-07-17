@@ -236,9 +236,9 @@ func (u Usage) ValidateContract() error {
 }
 
 type openAIUsageWire struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	PromptTokens     *int `json:"prompt_tokens"`
+	CompletionTokens *int `json:"completion_tokens"`
+	TotalTokens      *int `json:"total_tokens"`
 	PromptDetails    *struct {
 		CachedTokens     *int `json:"cached_tokens"`
 		CacheWriteTokens *int `json:"cache_write_tokens"`
@@ -247,10 +247,23 @@ type openAIUsageWire struct {
 	PromptCacheMissTokens *int `json:"prompt_cache_miss_tokens,omitempty"`
 }
 
+type optionalUsageCounter struct {
+	name  string
+	value *int
+}
+
 // ParseOpenAICompatibleUsage recognizes only version-fixed, provider-owned
 // fields. Generic unknown fields are deliberately ignored and never become a
 // cache discount. It is shared by non-stream and final streaming usage paths.
-func ParseOpenAICompatibleUsage(data []byte, source string) (Usage, bool, error) {
+// The boolean is true only when the endpoint's required core counters are
+// explicitly present; missing and null counters remain non-authoritative.
+func ParseOpenAICompatibleUsage(data []byte, endpoint Endpoint, source string) (Usage, bool, error) {
+	switch endpoint {
+	case EndpointChatCompletions, EndpointEmbeddings:
+	default:
+		return Usage{}, false, fmt.Errorf("unsupported OpenAI-compatible usage endpoint %q", endpoint)
+	}
+
 	var envelope struct {
 		Usage *openAIUsageWire `json:"usage"`
 	}
@@ -261,6 +274,15 @@ func ParseOpenAICompatibleUsage(data []byte, source string) (Usage, bool, error)
 		return NewMissingUsage(), false, nil
 	}
 	wire := envelope.Usage
+	if err := validateOpenAIUsageWire(wire); err != nil {
+		return Usage{}, false, err
+	}
+	if wire.PromptTokens == nil || (endpoint == EndpointChatCompletions && wire.CompletionTokens == nil) {
+		return NewMissingUsage(), false, nil
+	}
+	promptTokens := *wire.PromptTokens
+	completionTokens := valueOrZero(wire.CompletionTokens)
+	totalTokens := valueOrZero(wire.TotalTokens)
 
 	// DeepSeek's official usage object reports cache hit and miss as a complete
 	// prompt partition. Presence is pointer-based so an authoritative zero-hit
@@ -271,7 +293,7 @@ func ParseOpenAICompatibleUsage(data []byte, source string) (Usage, bool, error)
 		}
 		hit := valueOrZero(wire.PromptCacheHitTokens)
 		miss := valueOrZero(wire.PromptCacheMissTokens)
-		promptTotal := wire.PromptTokens
+		promptTotal := promptTokens
 		if promptTotal == 0 {
 			promptTotal = hit + miss
 		}
@@ -280,8 +302,8 @@ func ParseOpenAICompatibleUsage(data []byte, source string) (Usage, bool, error)
 			miss,
 			hit,
 			0,
-			wire.CompletionTokens,
-			wire.TotalTokens,
+			completionTokens,
+			totalTokens,
 			source,
 			CacheUsageSchemaDeepSeekV1,
 			CacheUsageStatusHitMissReported,
@@ -301,12 +323,12 @@ func ParseOpenAICompatibleUsage(data []byte, source string) (Usage, bool, error)
 			status = CacheUsageStatusReadWriteReported
 		}
 		usage, err := NewCacheAwareUsage(
-			wire.PromptTokens,
-			wire.PromptTokens-cached-created,
+			promptTokens,
+			promptTokens-cached-created,
 			cached,
 			created,
-			wire.CompletionTokens,
-			wire.TotalTokens,
+			completionTokens,
+			totalTokens,
 			source,
 			CacheUsageSchemaOpenAIV2,
 			status,
@@ -318,12 +340,12 @@ func ParseOpenAICompatibleUsage(data []byte, source string) (Usage, bool, error)
 	if wire.PromptDetails != nil && wire.PromptDetails.CachedTokens != nil {
 		cached := *wire.PromptDetails.CachedTokens
 		usage, err := NewCacheAwareUsage(
-			wire.PromptTokens,
-			wire.PromptTokens-cached,
+			promptTokens,
+			promptTokens-cached,
 			cached,
 			0,
-			wire.CompletionTokens,
-			wire.TotalTokens,
+			completionTokens,
+			totalTokens,
 			source,
 			CacheUsageSchemaOpenAIV1,
 			CacheUsageStatusReadReported,
@@ -332,12 +354,47 @@ func ParseOpenAICompatibleUsage(data []byte, source string) (Usage, bool, error)
 	}
 
 	usage, err := NewUsage(
-		wire.PromptTokens,
-		wire.CompletionTokens,
-		wire.TotalTokens,
+		promptTokens,
+		completionTokens,
+		totalTokens,
 		source,
 	)
 	return usage, true, err
+}
+
+func validateOpenAIUsageWire(wire *openAIUsageWire) error {
+	if wire == nil {
+		return nil
+	}
+	counters := []optionalUsageCounter{
+		{name: "prompt_tokens", value: wire.PromptTokens},
+		{name: "completion_tokens", value: wire.CompletionTokens},
+		{name: "total_tokens", value: wire.TotalTokens},
+		{name: "prompt_cache_hit_tokens", value: wire.PromptCacheHitTokens},
+		{name: "prompt_cache_miss_tokens", value: wire.PromptCacheMissTokens},
+	}
+	if wire.PromptDetails != nil {
+		counters = append(counters,
+			optionalUsageCounter{name: "prompt_tokens_details.cached_tokens", value: wire.PromptDetails.CachedTokens},
+			optionalUsageCounter{name: "prompt_tokens_details.cache_write_tokens", value: wire.PromptDetails.CacheWriteTokens},
+		)
+	}
+	return validateOptionalUsageCounters(counters...)
+}
+
+func validateOptionalUsageCounters(counters ...optionalUsageCounter) error {
+	for _, counter := range counters {
+		if counter.value == nil {
+			continue
+		}
+		if *counter.value < 0 {
+			return fmt.Errorf("%s must be nonnegative", counter.name)
+		}
+		if *counter.value > maxPersistedUsageTokens {
+			return fmt.Errorf("%s exceeds the persisted integer limit", counter.name)
+		}
+	}
+	return nil
 }
 
 func valueOrZero(value *int) int {

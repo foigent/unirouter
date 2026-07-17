@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -16,10 +15,6 @@ const maxLeaseTTL = 24 * time.Hour
 type Service struct {
 	rdb     *redis.Client
 	options Options
-
-	fallbackMu        sync.Mutex
-	fallbackExpiresAt time.Time
-	fallbackRemaining int
 }
 
 func NewService(rdb *redis.Client, options Options) (*Service, error) {
@@ -44,13 +39,13 @@ func (s *Service) Version() string {
 		return ""
 	}
 	o := s.options
-	canonical := fmt.Sprintf("admission-v1|g=%d|o=%d|gs=%d|os=%d|i=%d/%d|s=%d/%d|e=%d/%d|poll=%d|active=%d|store=%d|grace=%d|fallback=%d|queue=%d/%d/%d",
+	canonical := fmt.Sprintf("admission-v2|redis=fail-closed|g=%d|o=%d|gs=%d|os=%d|i=%d/%d|s=%d/%d|e=%d/%d|poll=%d|active=%d|store=%d|grace=%d|queue=%d/%d/%d",
 		o.GlobalCapacity, o.OrgCapacity, o.GlobalShortReserve, o.OrgShortReserve,
 		o.Interactive.Weight, ceilMilliseconds(o.Interactive.MaxWait),
 		o.Stream.Weight, ceilMilliseconds(o.Stream.MaxWait),
 		o.Embedding.Weight, ceilMilliseconds(o.Embedding.MaxWait),
 		ceilMilliseconds(o.PollInterval), ceilMilliseconds(o.ActivePollWindow),
-		ceilMilliseconds(o.StoreTimeout), ceilMilliseconds(o.LeaseGrace), ceilMilliseconds(o.FallbackTTL),
+		ceilMilliseconds(o.StoreTimeout), ceilMilliseconds(o.LeaseGrace),
 		o.MaxQueueDepth, o.MaxOrgQueueDepth, o.MaxQueueScan)
 	sum := sha256.Sum256([]byte(canonical))
 	return hex.EncodeToString(sum[:8])
@@ -90,14 +85,6 @@ func (s *Service) Reserve(ctx context.Context, request Request) (*Reservation, D
 				decision.RetryAfter = time.Second
 				return nil, decision, ErrStateUnavailable
 			}
-			if s.consumeFallback(time.Now()) {
-				decision := s.decision(request.Class, policy.Weight, "allow", ReasonLastKnownSafe)
-				decision.Fallback = true
-				return &Reservation{
-					OperationID: request.OperationID, OrgID: request.OrgID, Class: request.Class,
-					Weight: policy.Weight, member: member, fingerprint: fingerprint, Fallback: true,
-				}, decision, nil
-			}
 			decision := s.decision(request.Class, policy.Weight, "deny", ReasonStateUnavailable)
 			decision.RetryAfter = time.Second
 			return nil, decision, ErrStateUnavailable
@@ -116,9 +103,6 @@ func (s *Service) Reserve(ctx context.Context, request Request) (*Reservation, D
 		decision.QueueDepth = store.QueueDepth
 		switch store.Code {
 		case storeAdmitted, storeIdempotent:
-			if store.Code == storeAdmitted {
-				s.armFallback(time.Now())
-			}
 			return &Reservation{
 				OperationID: request.OperationID, OrgID: request.OrgID, Class: request.Class,
 				Weight: policy.Weight, member: member, fingerprint: fingerprint,
@@ -175,6 +159,8 @@ func (s *Service) Release(ctx context.Context, reservation *Reservation) error {
 		return ErrInvalidRequest
 	}
 	if reservation.Fallback {
+		// Backward-compatible cleanup for a reservation admitted by a drained
+		// pre-v2 process. Admission v2 never creates fallback reservations.
 		return nil
 	}
 	callCtx, cancel := context.WithTimeout(contextOrBackground(ctx), s.options.StoreTimeout)
@@ -227,23 +213,6 @@ func (s *Service) abandon(orgID int64, member, fingerprint string, stateTTL time
 	ctx, cancel := context.WithTimeout(context.Background(), s.options.StoreTimeout)
 	defer cancel()
 	_, _ = abandonScript.Run(ctx, s.rdb, runtimeKeys(orgID), member, fingerprint, ceilSeconds(stateTTL)).Result()
-}
-
-func (s *Service) armFallback(now time.Time) {
-	s.fallbackMu.Lock()
-	s.fallbackExpiresAt = now.Add(s.options.FallbackTTL)
-	s.fallbackRemaining = 1
-	s.fallbackMu.Unlock()
-}
-
-func (s *Service) consumeFallback(now time.Time) bool {
-	s.fallbackMu.Lock()
-	defer s.fallbackMu.Unlock()
-	if s.fallbackRemaining <= 0 || !now.Before(s.fallbackExpiresAt) {
-		return false
-	}
-	s.fallbackRemaining--
-	return true
 }
 
 func contextOrBackground(ctx context.Context) context.Context {

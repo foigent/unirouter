@@ -53,14 +53,14 @@ func usageAnalyticsGroup(groupBy string) (analyticsGroup, string, bool) {
 	}
 }
 
-func internalStatusLevel(openCritical, openWarning int64) string {
+func notificationAttentionLevel(openCritical, openWarning int64) string {
 	switch {
 	case openCritical > 0:
-		return "degraded"
+		return "critical"
 	case openWarning > 0:
 		return "warning"
 	default:
-		return "operational"
+		return "none"
 	}
 }
 
@@ -368,54 +368,11 @@ func (h *Handler) InternalStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query := fmt.Sprintf(
-		`SELECT id, event_type, severity, title, message, resource, resource_id, status, delivery_state, created_at, updated_at
-		 FROM notification_events%s
-		 ORDER BY CASE WHEN status = 'open' THEN 0 ELSE 1 END, created_at DESC
-		 LIMIT 20`,
-		where,
-	)
-	rows, err := h.db.Query(r.Context(), query, args...)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Query failed"})
-		return
-	}
-	defer rows.Close()
-
-	incidents := make([]map[string]interface{}, 0)
-	for rows.Next() {
-		var id int64
-		var eventType, severity, title, message, resource, resourceID, status, deliveryState string
-		var createdAt, updatedAt time.Time
-		if err := rows.Scan(&id, &eventType, &severity, &title, &message, &resource, &resourceID, &status, &deliveryState, &createdAt, &updatedAt); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
-			return
-		}
-		incidents = append(incidents, map[string]interface{}{
-			"id":             id,
-			"event_type":     eventType,
-			"severity":       severity,
-			"title":          title,
-			"message":        message,
-			"resource":       resource,
-			"resource_id":    resourceID,
-			"status":         status,
-			"delivery_state": deliveryState,
-			"created_at":     createdAt,
-			"updated_at":     updatedAt,
-		})
-	}
-	if err := rows.Err(); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Rows failed"})
-		return
-	}
-
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"status":              internalStatusLevel(openCritical, openWarning),
-		"open_critical":       openCritical,
-		"open_warning":        openWarning,
-		"incidents":           incidents,
-		"maintenance_windows": []interface{}{},
+		"summary_kind":    "notification_events",
+		"attention_level": notificationAttentionLevel(openCritical, openWarning),
+		"open_critical":   openCritical,
+		"open_warning":    openWarning,
 	})
 }
 
@@ -445,7 +402,7 @@ func (h *Handler) internalStatusConditions(r *http.Request) ([]string, []interfa
 		if !h.canReadProjectUsage(r.Context(), projectID) {
 			return nil, nil, fmt.Errorf("Forbidden")
 		}
-		add("(project_id = $%d OR project_id IS NULL)", projectID)
+		add("project_id = $%d", projectID)
 	} else if auth.IsProjectScopedRole(role) {
 		return nil, nil, fmt.Errorf("project_id is required")
 	}

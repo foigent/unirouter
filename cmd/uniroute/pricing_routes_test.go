@@ -22,7 +22,7 @@ func TestRegisterPricingRoutesEnforcesProductionAuthorityBoundary(t *testing.T) 
 	}
 	registerPricingRoutes(mux, handler, pricingRouteGuards{
 		read: func(handler http.HandlerFunc) http.Handler {
-			return roleRoute(handler, auth.RolePlatformAdmin, auth.RoleOrgAdmin)
+			return roleRoute(handler, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin)
 		},
 		write: func(handler http.HandlerFunc) http.Handler {
 			return roleRoute(handler, auth.RolePlatformAdmin)
@@ -31,8 +31,7 @@ func TestRegisterPricingRoutesEnforcesProductionAuthorityBoundary(t *testing.T) 
 
 	serve := func(method, target, body, role string) *httptest.ResponseRecorder {
 		t.Helper()
-		token, err := auth.GenerateJWT(7, 11, role, secret, 1)
-		require.NoError(t, err)
+		token := activeAdminToken(t, 7, 11, role, secret)
 		req := httptest.NewRequest(method, target, strings.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
@@ -50,5 +49,7 @@ func TestRegisterPricingRoutesEnforcesProductionAuthorityBoundary(t *testing.T) 
 
 	require.NotEqual(t, http.StatusForbidden, serve(http.MethodGet, "/api/v1/model-prices", "", auth.RoleOrgAdmin).Code)
 	require.NotEqual(t, http.StatusForbidden, serve(http.MethodGet, "/api/v1/org-model-prices", "", auth.RoleOrgAdmin).Code)
-	require.Equal(t, http.StatusForbidden, serve(http.MethodGet, "/api/v1/model-prices", "", auth.RoleBillingAdmin).Code)
+	for _, target := range []string{"/api/v1/model-prices", "/api/v1/model-names", "/api/v1/org-model-prices"} {
+		require.NotEqual(t, http.StatusForbidden, serve(http.MethodGet, target, "", auth.RoleBillingAdmin).Code)
+	}
 }

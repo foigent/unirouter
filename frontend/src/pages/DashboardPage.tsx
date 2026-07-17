@@ -1,7 +1,7 @@
 import { formatDateTime } from '../utils/formatDate';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Typography, Table, Spin, Tag, Tooltip, Button, Progress, Checkbox } from '@douyinfe/semi-ui';
+import { Typography, Table, Spin, Tag, Tooltip, Button, Progress, Checkbox, Select } from '@douyinfe/semi-ui';
 import {
   IconActivity,
   IconAlertTriangle,
@@ -20,8 +20,11 @@ import {
   ResponsiveContainer, BarChart, Bar, Cell,
 } from 'recharts';
 import { api } from '../api/client';
-import { EmptyState, LatencyText, MetricTile, MoneyText, PageHeader, StatusTag, Surface, formatMoney, microsRatio, microsToChartYuan, parseMicros } from '../ui';
+import { EmptyState, LatencyText, MetricTile, MoneyText, PageHeader, StatusTag, Surface, formatMoney, microsToChartYuan, parseMicros } from '../ui';
 import { formatCompactNumber } from '../utils/formatNumber';
+import { useAuthStore } from '../store/auth';
+import { getNavItemsForRole, isBillingRole, isOrgViewerRole, isPlatformAdminRole, isRouteAllowedForRole } from '../navigation';
+import { loadAllPages } from '../utils/loadAllPages';
 
 const { Text } = Typography;
 
@@ -35,7 +38,7 @@ interface DashboardStats {
   p99_latency_ms?: number;
   success_rate: number;
   recent_logs: any[];
-	model_prices: { model_name: string; input_price_cny_per_million: string; output_price_cny_per_million: string }[];
+	model_prices?: { model_name: string; input_price_cny_per_million: string; output_price_cny_per_million: string }[];
 	wallet_balance_micros?: string;
 	wallet_granted_micros?: string;
 	wallet_frozen_micros?: string;
@@ -45,6 +48,11 @@ interface DashboardStats {
   channel_health?: { id: number; name: string; provider: string; enabled: boolean; status: string; success_count: number; fail_count: number }[];
 	delta_vs_yesterday?: { cost_micros: string; latency_ms: number; success_rate: number };
 }
+
+// Semi Table compares dataSource references during componentDidUpdate. Keep the
+// empty state stable so unrelated dashboard state updates cannot trigger an
+// update loop while there are no recent requests.
+const EMPTY_RECENT_LOGS: DashboardStats['recent_logs'] = [];
 
 type TimeRange = '24h' | '7d' | '30d' | 'custom';
 type TrendMetric = 'requests' | 'cost_yuan';
@@ -210,29 +218,55 @@ function TrendTooltip({ active, payload, label }: any) {
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const user = useAuthStore((state) => state.user);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [range, setRange] = useState<TimeRange>('24h');
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [visibleTrendMetrics, setVisibleTrendMetrics] = useState<TrendMetric[]>(['requests', 'cost_yuan']);
+  const platform = isPlatformAdminRole(user?.role);
+  const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(platform ? user?.org_id : undefined);
+  const [organizations, setOrganizations] = useState<Array<{ id: number; name: string }>>([]);
+  const [organizationsError, setOrganizationsError] = useState('');
+  const requestVersion = useRef(0);
+
+  const loadOrganizations = useCallback(async () => {
+    if (!platform) return;
+    setOrganizationsError('');
+    try {
+      const items = await loadAllPages<{ id: number; name: string }>((page, size) => api.getOrganizations(page, size));
+      setOrganizations(items);
+    } catch {
+      setOrganizationsError('组织列表加载失败；当前总览仍使用登录账号所属组织。');
+    }
+  }, [platform]);
+
+  useEffect(() => { void loadOrganizations(); }, [loadOrganizations]);
 
   const fetchData = useCallback(async () => {
+    const version = ++requestVersion.current;
     setLoading(true);
+    setLoadError('');
     try {
       const params = getRangeParams(range);
-      const data = await api.getDashboardStats(params.startTime, params.endTime);
+      const data = await api.getDashboardStats(params.startTime, params.endTime, platform ? selectedOrgID : undefined);
+      if (version !== requestVersion.current) return;
       setStats(data);
       setLastUpdated(new Date());
     } catch (e) {
+      if (version !== requestVersion.current) return;
       console.error('Failed to load dashboard stats', e);
+      setStats(null);
+      setLoadError('无法读取当前权限范围的总览数据。请检查网络或服务状态后重试。');
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
-  }, [range]);
+  }, [platform, range, selectedOrgID]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const delta = stats?.delta_vs_yesterday;
+  const comparableDelta = range === '24h' ? stats?.delta_vs_yesterday : undefined;
   const trendData = (stats?.daily_trend || []).map(d => ({
     date: formatTrendLabel(d.date),
     requests: d.requests,
@@ -241,16 +275,44 @@ export default function DashboardPage() {
   const modelData = [...(stats?.model_distribution || [])]
     .sort((a, b) => b.requests - a.requests)
     .slice(0, 6);
-	const budgetThreshold = stats?.wallet_threshold_micros || '0';
-	const budgetPercent = Math.min(100, microsRatio(stats?.today_cost_micros || '0', budgetThreshold) * 100);
+	const walletThreshold = stats?.wallet_threshold_micros || '0';
 	const walletAvailable = parseMicros(stats?.wallet_balance_micros || '0') + parseMicros(stats?.wallet_granted_micros || '0');
+  const hasWalletThreshold = parseMicros(walletThreshold) > 0n;
+  const lowBalance = hasWalletThreshold && walletAvailable <= parseMicros(walletThreshold);
+  const selectedOrganization = organizations.find(org => org.id === selectedOrgID);
+  const scopeLabel = platform
+    ? (selectedOrganization?.name || (selectedOrgID === user?.org_id ? user?.org_name : '') || (selectedOrgID ? `组织 #${selectedOrgID}` : '当前权限范围'))
+    : (user?.org_name || (user?.org_id ? `组织 #${user.org_id}` : '当前权限范围'));
   const avgLatency = stats?.avg_latency_ms || 0;
   const p95Latency = stats?.p95_latency_ms ?? avgLatency;
   const p99Latency = stats?.p99_latency_ms ?? p95Latency;
   const healthyChannels = (stats?.channel_health || []).filter(ch => channelHealthView(ch).tone === 'healthy').length;
   const channelTotal = (stats?.channel_health || []).length;
+  const canReadWallet = platform || isBillingRole(user?.role);
+  const canReadChannelHealth = platform;
+  const canOpenRecentRequests = isRouteAllowedForRole('/logs', user?.role);
+  const dashboardTitle = isPlatformAdminRole(user?.role)
+    ? '平台总览'
+    : isBillingRole(user?.role)
+      ? '财务与用量总览'
+      : isOrgViewerRole(user?.role)
+        ? '组织只读总览'
+        : '组织运营总览';
+  const dashboardDescription = isPlatformAdminRole(user?.role)
+    ? '统一观察请求量、成功率、延迟、成本和通道健康状态。'
+    : isBillingRole(user?.role)
+      ? '统一观察用量、费用、余额和近期请求状态。'
+      : '统一观察当前组织的请求量、成功率、延迟和费用。';
+  const taskGroups = getNavItemsForRole(user?.role, user?.license_access)
+    .filter(item => item.itemKey !== '/')
+    .map(item => ({
+      key: item.itemKey,
+      title: item.text,
+      icon: item.icon,
+      links: item.items || [{ itemKey: item.itemKey, text: item.text, icon: item.icon }],
+    }));
 
-  const recentCols = [
+  const recentCols = useMemo(() => [
     {
       title: 'Request ID',
       dataIndex: 'request_id',
@@ -291,7 +353,7 @@ export default function DashboardPage() {
       key: 'created_at',
       render: (v: string) => formatDateTime(v),
     },
-  ];
+  ], []);
 
   const timeRanges: { label: string; value: TimeRange }[] = [
     { label: '24h', value: '24h' },
@@ -308,35 +370,79 @@ export default function DashboardPage() {
     });
   };
 
+  const dashboardHeader = (
+    <PageHeader
+      eyebrow="概览"
+      title={dashboardTitle}
+      description={`数据范围：${scopeLabel}。${dashboardDescription}`}
+      actions={(
+        <>
+          {platform && (
+            <>
+              <Text id="dashboard-target-organization-label" type="tertiary">目标组织</Text>
+              <Select
+                aria-labelledby="dashboard-target-organization-label"
+                value={selectedOrgID}
+                optionList={organizations.map(org => ({ label: `${org.name}（ID ${org.id}）`, value: org.id }))}
+                onChange={(value) => {
+                  const orgID = Number(value);
+                  if (!Number.isInteger(orgID) || orgID <= 0 || orgID === selectedOrgID) return;
+                  setStats(null);
+                  setLoadError('');
+                  setSelectedOrgID(orgID);
+                }}
+                disabled={loading}
+                filter
+                style={{ width: 220 }}
+              />
+              {organizationsError && (
+                <Tooltip content={organizationsError}>
+                  <Button size="small" onClick={() => void loadOrganizations()}>重试组织列表</Button>
+                </Tooltip>
+              )}
+            </>
+          )}
+          <div className="ur-toolbar time-range-selector">
+            {timeRanges.map(t => (
+              <Button
+                key={t.value}
+                size="small"
+                theme={range === t.value ? 'solid' : 'borderless'}
+                type={range === t.value ? 'primary' : 'tertiary'}
+                onClick={() => setRange(t.value)}
+              >
+                {t.label}
+              </Button>
+            ))}
+          </div>
+          <Tooltip content="刷新">
+            <Button icon={<IconRefresh />} size="small" onClick={fetchData} className="ur-icon-button" aria-label="刷新总览" />
+          </Tooltip>
+        </>
+      )}
+    />
+  );
+
+  if (!loading && loadError) {
+    return (
+      <div className="ur-page">
+        <section className="ur-dashboard-hero">{dashboardHeader}</section>
+        <Surface>
+          <EmptyState
+            title="总览数据加载失败"
+            description={loadError}
+            actions={<Button type="primary" icon={<IconRefresh />} onClick={fetchData} aria-label="重新加载总览">重新加载</Button>}
+          />
+        </Surface>
+      </div>
+    );
+  }
+
   return (
     <Spin spinning={loading} size="large">
       <div className="ur-page">
         <section className="ur-dashboard-hero">
-          <PageHeader
-            eyebrow="概览"
-            title="平台总览"
-            description="统一观察请求量、成功率、延迟、成本和渠道健康状态。"
-            actions={(
-              <>
-                <div className="ur-toolbar time-range-selector">
-                  {timeRanges.map(t => (
-                    <Button
-                      key={t.value}
-                      size="small"
-                      theme={range === t.value ? 'solid' : 'borderless'}
-                      type={range === t.value ? 'primary' : 'tertiary'}
-                      onClick={() => setRange(t.value)}
-                    >
-                      {t.label}
-                    </Button>
-                  ))}
-                </div>
-                <Tooltip content="刷新">
-                  <Button icon={<IconRefresh />} size="small" onClick={fetchData} className="ur-icon-button" />
-                </Tooltip>
-              </>
-            )}
-          />
+          {dashboardHeader}
           <div className="ur-dashboard-status-strip">
             <div className="ur-dashboard-status-card">
               <IconPulse />
@@ -345,22 +451,64 @@ export default function DashboardPage() {
                 <strong>{lastUpdated.toLocaleTimeString()}</strong>
               </div>
             </div>
-            <div className="ur-dashboard-status-card">
-              <IconServer />
-              <div>
-                <Text>健康渠道</Text>
-                <strong>{healthyChannels}/{channelTotal || 0}</strong>
+            {canReadChannelHealth && (
+              <div className="ur-dashboard-status-card">
+                <IconServer />
+                <div>
+                  <Text>健康通道</Text>
+                  <strong>{healthyChannels}/{channelTotal || 0}</strong>
+                </div>
               </div>
-            </div>
-            <div className="ur-dashboard-status-card">
-              <IconCoinMoney />
-              <div>
-                <Text>钱包余额</Text>
-				<strong>{formatMoney(walletAvailable)}</strong>
+            )}
+            {canReadWallet && (
+              <div className="ur-dashboard-status-card">
+                <IconCoinMoney />
+                <div>
+                  <Text>可用余额</Text>
+				  <strong>{formatMoney(walletAvailable)}</strong>
+                  <div style={{ marginTop: 4 }}>
+                    {hasWalletThreshold ? (
+                      <><StatusTag status={lowBalance ? 'warning' : 'available'}>{lowBalance ? '已触发低余额' : '余额正常'}</StatusTag><Text type="tertiary" size="small" style={{ marginLeft: 6 }}>阈值 {formatMoney(walletThreshold)}</Text></>
+                    ) : <Text type="tertiary" size="small">低余额阈值未配置</Text>}
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </section>
+
+        {taskGroups.length > 0 && (
+          <Surface title="任务入口" description="只展示当前角色可进入的功能；当前商业授权未包含的功能保留为锁定入口，并与左侧导航使用同一权限配置。">
+            <div className="ur-dashboard-task-grid">
+              {taskGroups.map(group => (
+                <div className="ur-dashboard-task-group" key={group.key}>
+                  <div className="ur-dashboard-task-title">
+                    {group.icon}
+                    <Text strong>{group.title}</Text>
+                  </div>
+                  <div className="ur-dashboard-task-links">
+                    {group.links.map(link => {
+                      const button = (
+                        <Button
+                          key={link.itemKey}
+                          size="small"
+                          disabled={link.disabled || link.licenseLocked}
+                          aria-label={link.text}
+                          onClick={() => navigate(link.itemKey)}
+                        >
+                          {link.text}
+                        </Button>
+                      );
+                      return link.licenseLocked ? (
+                        <Tooltip key={link.itemKey} content={link.licenseReason}>{button}</Tooltip>
+                      ) : button;
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Surface>
+        )}
 
         <div className="ur-kpi-grid">
           <MetricTile
@@ -375,7 +523,7 @@ export default function DashboardPage() {
             value={`${((stats?.success_rate || 0) * 100).toFixed(2)}%`}
             tone={(stats?.success_rate || 0) >= 0.99 ? 'green' : 'red'}
             icon={<IconPercentage />}
-            meta={delta && <><Text type="tertiary" size="small">vs 昨日</Text><DeltaTag value={delta.success_rate * 100} suffix="%" /></>}
+            meta={comparableDelta && <><Text type="tertiary" size="small">较前 24h</Text><DeltaTag value={comparableDelta.success_rate * 100} suffix=" 个百分点" /></>}
           />
           <MetricTile
             label="P95 延迟"
@@ -385,30 +533,18 @@ export default function DashboardPage() {
             meta={(
               <div className="ur-kpi-meta-stack">
                 <Text type="tertiary" size="small">Avg {avgLatency.toFixed(0)}ms · P99 {p99Latency.toFixed(0)}ms</Text>
-                {delta && <div><Text type="tertiary" size="small">vs 昨日</Text><DeltaTag value={delta.latency_ms} suffix="ms" inverse /></div>}
+                {comparableDelta && <div><Text type="tertiary" size="small">较前 24h</Text><DeltaTag value={comparableDelta.latency_ms} suffix="ms" inverse /></div>}
               </div>
             )}
           />
           <MetricTile
-            label="今日花费"
+            label="当前窗口费用"
 			value={<MoneyText micros={stats?.today_cost_micros || '0'} precision={6} strong tone="cost" />}
             tone="violet"
             icon={<IconCoinMoney />}
-			meta={parseMicros(budgetThreshold) > 0n ? (
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
-                  <Text type="tertiary" size="small">预算进度</Text>
-				  <Text type="tertiary" size="small">{formatMoney(stats?.today_cost_micros || '0', 6)} / {formatMoney(budgetThreshold)}</Text>
-                </div>
-                <Progress
-                  percent={budgetPercent}
-                  showInfo={false}
-                  stroke={budgetPercent > 80 ? '#d92d20' : '#1f6feb'}
-                  size="small"
-                />
-				{delta && <div style={{ marginTop: 7 }}><Text type="tertiary" size="small">vs 昨日</Text><DeltaTag value={microsToChartYuan(delta.cost_micros)} suffix="¥" inverse /></div>}
-              </div>
-			) : delta && <><Text type="tertiary" size="small">vs 昨日</Text><DeltaTag value={microsToChartYuan(delta.cost_micros)} suffix="¥" inverse /></>}
+            meta={comparableDelta ? (
+              <><Text type="tertiary" size="small">较前 24h</Text><DeltaTag value={microsToChartYuan(comparableDelta.cost_micros)} suffix=" 元" inverse /></>
+            ) : <Text type="tertiary" size="small">按所选时间窗口累计</Text>}
           />
         </div>
 
@@ -512,7 +648,7 @@ export default function DashboardPage() {
           </Surface>
         </div>
 
-        <div className="ur-split-grid">
+        <div className={canReadChannelHealth ? 'ur-split-grid' : undefined}>
           <Surface title="模型活动分布" description="按请求数展示 Top 模型，优先帮助定位成本和流量集中点。">
             {modelData.length > 0 ? (
               <ResponsiveContainer width="100%" height={260}>
@@ -538,32 +674,39 @@ export default function DashboardPage() {
             )}
           </Surface>
 
-          <Surface title="渠道健康状态" description="聚合当前窗口内各渠道成功、失败和可用状态。">
-            {(stats?.channel_health || []).length > 0 ? (
-              <div className="ur-channel-list">
-                {(stats?.channel_health || []).map(ch => (
-                  <ChannelHealthCard key={ch.id} ch={ch} />
-                ))}
-              </div>
-            ) : (
-              <EmptyState title="暂无渠道数据" />
-            )}
-          </Surface>
+          {canReadChannelHealth && (
+            <Surface title="通道健康状态" description="聚合当前窗口内各通道成功、失败和可用状态。">
+              {(stats?.channel_health || []).length > 0 ? (
+                <div className="ur-channel-list">
+                  {(stats?.channel_health || []).map(ch => (
+                    <ChannelHealthCard key={ch.id} ch={ch} />
+                  ))}
+                </div>
+              ) : (
+                <EmptyState title="暂无通道数据" />
+              )}
+            </Surface>
+          )}
         </div>
 
-        <Surface title="最近请求" description="点击任意请求可跳转到日志探索器并带入 Request ID。">
+        <Surface
+          title="最近请求"
+          description={canOpenRecentRequests
+            ? '点击任意请求可跳转到日志探索器并带入 Request ID。'
+            : '展示当前权限范围内的最近请求摘要；当前只读角色不提供日志明细入口。'}
+        >
           <div className="ur-table-shell">
             <Table
-              dataSource={stats?.recent_logs || []}
+              dataSource={stats?.recent_logs ?? EMPTY_RECENT_LOGS}
               columns={recentCols}
               rowKey="request_id"
               size="small"
               pagination={false}
               empty="暂无请求记录"
-              onRow={(record) => ({
+              onRow={canOpenRecentRequests ? (record) => ({
                 onClick: () => navigate(`/logs?request_id=${record.request_id}`),
                 style: { cursor: 'pointer' },
-              })}
+              }) : undefined}
             />
           </div>
         </Surface>

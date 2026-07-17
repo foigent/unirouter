@@ -133,43 +133,89 @@ type outputTextRef struct {
 	path      string
 }
 
-func nonStreamOutputTexts(response map[string]interface{}) ([]guardrail.Text, []outputTextRef) {
+// nonStreamOutputInspection keeps the exact mutation references together with
+// the completeness of the modeled text fields. An absent or null field carries
+// no text. A present field with an unsupported shape is incomplete and must not
+// be treated as successfully inspected by an enforced output policy.
+type nonStreamOutputInspection struct {
+	texts           []guardrail.Text
+	refs            []outputTextRef
+	incompletePaths []string
+}
+
+func (inspection nonStreamOutputInspection) complete() bool {
+	return len(inspection.incompletePaths) == 0
+}
+
+func (inspection *nonStreamOutputInspection) appendText(container map[string]interface{}, key, path, content string) {
+	inspection.texts = append(inspection.texts, guardrail.Text{Path: path, Content: content})
+	inspection.refs = append(inspection.refs, outputTextRef{container: container, key: key, path: path})
+}
+
+func (inspection *nonStreamOutputInspection) markIncomplete(path string) {
+	inspection.incompletePaths = append(inspection.incompletePaths, path)
+}
+
+func (inspection *nonStreamOutputInspection) collectTextValue(container map[string]interface{}, key, path string) {
+	value, exists := container[key]
+	if !exists || value == nil {
+		return
+	}
+	if text, ok := value.(string); ok {
+		inspection.appendText(container, key, path, text)
+		return
+	}
+	parts, ok := value.([]interface{})
+	if !ok {
+		inspection.markIncomplete(path)
+		return
+	}
+	for partIndex, rawPart := range parts {
+		partPath := fmt.Sprintf("%s[%d]", path, partIndex)
+		part, ok := rawPart.(map[string]interface{})
+		if !ok {
+			inspection.markIncomplete(partPath)
+			continue
+		}
+		if partType, exists := part["type"]; exists && partType != nil {
+			typeName, ok := partType.(string)
+			if !ok || (typeName != "text" && typeName != "output_text") {
+				inspection.markIncomplete(partPath + ".type")
+			}
+		}
+		textValue, exists := part["text"]
+		if !exists || textValue == nil {
+			inspection.markIncomplete(partPath + ".text")
+			continue
+		}
+		text, ok := textValue.(string)
+		if !ok {
+			inspection.markIncomplete(partPath + ".text")
+			continue
+		}
+		inspection.appendText(part, "text", partPath+".text", text)
+	}
+}
+
+func inspectNonStreamOutputTexts(response map[string]interface{}) nonStreamOutputInspection {
 	choices, _ := response["choices"].([]interface{})
-	texts := make([]guardrail.Text, 0, len(choices))
-	refs := make([]outputTextRef, 0, len(choices))
+	inspection := nonStreamOutputInspection{
+		texts: make([]guardrail.Text, 0, len(choices)),
+		refs:  make([]outputTextRef, 0, len(choices)),
+	}
 	for index, rawChoice := range choices {
 		choice, ok := rawChoice.(map[string]interface{})
 		if !ok {
 			continue
 		}
 		if message, ok := choice["message"].(map[string]interface{}); ok {
-			if content, ok := message["content"].(string); ok {
-				path := fmt.Sprintf("choices[%d].message.content", index)
-				texts = append(texts, guardrail.Text{Path: path, Content: content})
-				refs = append(refs, outputTextRef{container: message, key: "content", path: path})
-			} else if parts, ok := message["content"].([]interface{}); ok {
-				for partIndex, rawPart := range parts {
-					part, ok := rawPart.(map[string]interface{})
-					if !ok {
-						continue
-					}
-					if text, ok := part["text"].(string); ok {
-						path := fmt.Sprintf("choices[%d].message.content[%d].text", index, partIndex)
-						texts = append(texts, guardrail.Text{Path: path, Content: text})
-						refs = append(refs, outputTextRef{container: part, key: "text", path: path})
-					}
-				}
-			}
-			if refusal, ok := message["refusal"].(string); ok {
-				path := fmt.Sprintf("choices[%d].message.refusal", index)
-				texts = append(texts, guardrail.Text{Path: path, Content: refusal})
-				refs = append(refs, outputTextRef{container: message, key: "refusal", path: path})
+			for _, key := range []string{"content", "refusal", "reasoning_content", "reasoning"} {
+				inspection.collectTextValue(message, key, fmt.Sprintf("choices[%d].message.%s", index, key))
 			}
 			if functionCall, ok := message["function_call"].(map[string]interface{}); ok {
 				if arguments, ok := functionCall["arguments"].(string); ok {
 					path := fmt.Sprintf("choices[%d].message.function_call.arguments", index)
-					texts = append(texts, guardrail.Text{Path: path, Content: arguments})
-					refs = append(refs, outputTextRef{container: functionCall, key: "arguments", path: path})
+					inspection.appendText(functionCall, "arguments", path, arguments)
 				}
 			}
 			if toolCalls, ok := message["tool_calls"].([]interface{}); ok {
@@ -184,19 +230,32 @@ func nonStreamOutputTexts(response map[string]interface{}) ([]guardrail.Text, []
 					}
 					if arguments, ok := function["arguments"].(string); ok {
 						path := fmt.Sprintf("choices[%d].message.tool_calls[%d].function.arguments", index, toolIndex)
-						texts = append(texts, guardrail.Text{Path: path, Content: arguments})
-						refs = append(refs, outputTextRef{container: function, key: "arguments", path: path})
+						inspection.appendText(function, "arguments", path, arguments)
 					}
 				}
 			}
 		}
 		if text, ok := choice["text"].(string); ok {
 			path := fmt.Sprintf("choices[%d].text", index)
-			texts = append(texts, guardrail.Text{Path: path, Content: text})
-			refs = append(refs, outputTextRef{container: choice, key: "text", path: path})
+			inspection.appendText(choice, "text", path, text)
 		}
 	}
-	return texts, refs
+	return inspection
+}
+
+// nonStreamOutputTexts preserves the existing extraction API for callers that
+// do not yet consume completeness. Enforced delivery must use
+// evaluateNonStreamOutputGuardrail so an unsupported text shape cannot be
+// mistaken for a clean inspection.
+func nonStreamOutputTexts(response map[string]interface{}) ([]guardrail.Text, []outputTextRef) {
+	inspection := inspectNonStreamOutputTexts(response)
+	return inspection.texts, inspection.refs
+}
+
+func evaluateNonStreamOutputGuardrail(ctx context.Context, pinned *guardrail.Pinned, response map[string]interface{}) (guardrail.Result, []outputTextRef) {
+	inspection := inspectNonStreamOutputTexts(response)
+	result := pinned.EvaluateWithCompleteness(ctx, guardrail.StageNonStreamOutput, inspection.texts, inspection.complete())
+	return result, inspection.refs
 }
 
 func applyOutputGuardrailTransform(result guardrail.Result, refs []outputTextRef) error {

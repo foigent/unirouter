@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -94,19 +95,39 @@ func (h *Handler) CreateGrant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.OrgId = orgID
+	req.ClientRequestID = strings.TrimSpace(req.ClientRequestID)
+	req.Reason = strings.TrimSpace(req.Reason)
+	if req.ClientRequestID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "client_request_id is required"})
+		return
+	}
+	if len(req.ClientRequestID) > 128 {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "client_request_id must not exceed 128 characters"})
+		return
+	}
+	if req.Reason == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "reason is required"})
+		return
+	}
 	r, operationID, ok := ensureOperationIdentityForHandler(w, r)
 	if !ok {
 		return
 	}
-	if req.ClientRequestID == "" {
-		req.ClientRequestID = fmt.Sprintf("grant_%d", time.Now().UnixNano())
-	}
 
 	// Idempotency check
 	var existingId int64
+	var existingAmountMicros int64
+	var existingReason string
 	err = h.db.QueryRow(r.Context(),
-		`SELECT id FROM grants WHERE org_id = $1 AND client_request_id = $2`, req.OrgId, req.ClientRequestID).Scan(&existingId)
+		`SELECT id, amount_micros, reason FROM grants WHERE org_id = $1 AND client_request_id = $2`, req.OrgId, req.ClientRequestID).
+		Scan(&existingId, &existingAmountMicros, &existingReason)
 	if err == nil {
+		if existingAmountMicros != amountMicros || existingReason != req.Reason {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{
+				"error": "idempotency_key_reused", "client_request_id": req.ClientRequestID,
+			})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{"id": existingId, "duplicate": true})
 		return
 	}
@@ -149,10 +170,16 @@ func (h *Handler) CreateGrant(w http.ResponseWriter, r *http.Request) {
 		if isPostgresUniqueViolation(err) {
 			_ = tx.Rollback(r.Context())
 			lookupErr := h.db.QueryRow(r.Context(),
-				`SELECT id FROM grants WHERE org_id = $1 AND client_request_id = $2`,
+				`SELECT id, amount_micros, reason FROM grants WHERE org_id = $1 AND client_request_id = $2`,
 				req.OrgId, req.ClientRequestID,
-			).Scan(&existingId)
+			).Scan(&existingId, &existingAmountMicros, &existingReason)
 			if lookupErr == nil {
+				if existingAmountMicros != amountMicros || existingReason != req.Reason {
+					writeJSON(w, http.StatusConflict, map[string]interface{}{
+						"error": "idempotency_key_reused", "client_request_id": req.ClientRequestID,
+					})
+					return
+				}
 				writeJSON(w, http.StatusOK, map[string]interface{}{"id": existingId, "duplicate": true})
 				return
 			}
@@ -169,17 +196,20 @@ func (h *Handler) CreateGrant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := tx.Commit(r.Context()); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Commit failed"})
-		return
-	}
-	h.recordAuditForOrgProjectFromRequest(r, req.OrgId, 0, "wallet.grant", "grant", fmt.Sprintf("%d", grantId), map[string]interface{}{
+	if err := insertAuditEntry(r.Context(), tx, "wallet.grant", "grant", fmt.Sprintf("%d", grantId), map[string]interface{}{
 		"amount_cents":      req.AmountCents,
 		"amount_micros":     strconv.FormatInt(amountMicros, 10),
 		"reason":            req.Reason,
 		"created_by":        createdBy,
 		"client_request_id": req.ClientRequestID,
-	})
+	}, requestAuditMeta(r, req.OrgId, 0)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Commit failed"})
+		return
+	}
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"id": grantId, "org_id": req.OrgId, "amount_micros": strconv.FormatInt(amountMicros, 10),
 		"currency": "CNY", "amount_scale": money.MicrosPerCNY,

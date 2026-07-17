@@ -54,6 +54,11 @@ describe('LoginPage', () => {
     renderLoginPage()
     expect(screen.getByText('UniRouter')).toBeInTheDocument()
     expect(screen.getByText('Enterprise Intelligence Foundation')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('请输入用户名')).toHaveAttribute('autocomplete', 'username')
+    expect(screen.getByPlaceholderText('请输入密码')).toHaveAttribute('autocomplete', 'current-password')
+    expect(screen.queryByText('2.24M')).not.toBeInTheDocument()
+    expect(screen.queryByText('99.92%')).not.toBeInTheDocument()
+    expect(screen.queryByText('18')).not.toBeInTheDocument()
   })
 
   it('toggles password visibility without changing the submitted value', async () => {
@@ -135,7 +140,7 @@ describe('LoginPage', () => {
     await user.click(screen.getByRole('button', { name: /登录/i }))
 
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/access')
+      expect(mockNavigate).toHaveBeenCalledWith('/')
     })
   })
 
@@ -180,5 +185,19 @@ describe('LoginPage', () => {
     renderLoginPage()
 
     expect(await screen.findByRole('button', { name: /Acme IDP/ })).toBeInTheDocument()
+  })
+
+  it('shows an indeterminate enterprise-login state and supports retry when config loading fails', async () => {
+    mockGetOIDCConfig.mockRejectedValueOnce(new Error('network unavailable'))
+    renderLoginPage()
+
+    expect(await screen.findByText(/企业登录配置暂时无法确认/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Acme IDP/ })).toBeNull()
+
+    mockGetOIDCConfig.mockResolvedValueOnce({ enabled: true, provider_name: 'Acme IDP' })
+    fireEvent.click(screen.getByRole('button', { name: '重新检查企业登录' }))
+
+    expect(await screen.findByRole('button', { name: /Acme IDP/ })).toBeInTheDocument()
+    expect(mockGetOIDCConfig).toHaveBeenCalledTimes(2)
   })
 })

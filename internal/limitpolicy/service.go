@@ -787,9 +787,9 @@ func workloadLimitDecision(source workloadadmission.Decision) Decision {
 		reason = ReasonStateUnavailable
 	}
 	decision := Decision{
-		PolicyRef: "builtin:workload-admission-v1", PolicyName: "Built-in weighted workload admission",
-		PolicyVersion: 1, SelectorHash: "global-org", Mode: ModeEnforce,
-		FailureMode: FailureLastKnownSafe, Decision: DecisionAllow, Reason: reason,
+		PolicyRef: "builtin:workload-admission-v2", PolicyName: "Built-in weighted workload admission",
+		PolicyVersion: 2, SelectorHash: "global-org", Mode: ModeEnforce,
+		FailureMode: FailureFailClosed, Decision: DecisionAllow, Reason: reason,
 		Limits:   Limits{Concurrency: source.GlobalCapacity},
 		Observed: Usage{Concurrency: source.GlobalUsed}, Fallback: source.Fallback,
 		WorkloadClass: source.Class, WorkloadWeight: source.Weight,

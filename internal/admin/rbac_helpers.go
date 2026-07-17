@@ -168,6 +168,43 @@ func (h *Handler) canWriteProject(ctx context.Context, projectID int64) bool {
 	return h.hasProjectMembership(ctx, projectID, projectMemberAdmin)
 }
 
+// canManageProjectMembers deliberately stays narrower than canWriteProject:
+// billing administrators may update project budget fields, but never project
+// membership. Project administrators are constrained to projects where their
+// own membership is still project_admin.
+func (h *Handler) canManageProjectMembers(ctx context.Context, projectID int64) bool {
+	if isUnauthenticatedUnitContext(ctx) {
+		return true
+	}
+	role := actorRole(ctx)
+	if role == auth.RolePlatformAdmin {
+		return true
+	}
+	if projectID <= 0 {
+		return false
+	}
+	if role == auth.RoleOrgAdmin {
+		return h.projectBelongsToActorOrg(ctx, projectID)
+	}
+	if role != auth.RoleProjectAdmin {
+		return false
+	}
+	return h.hasProjectMembership(ctx, projectID, projectMemberAdmin)
+}
+
+func projectMemberRoleForUserRole(role string) (string, bool) {
+	switch auth.NormalizeRole(role) {
+	case auth.RoleProjectAdmin:
+		return projectMemberAdmin, true
+	case auth.RoleDeveloper:
+		return projectMemberDeveloper, true
+	case auth.RoleViewer:
+		return projectMemberViewer, true
+	default:
+		return "", false
+	}
+}
+
 func (h *Handler) canCreateProjectKey(ctx context.Context, projectID int64) bool {
 	if isUnauthenticatedUnitContext(ctx) {
 		return true

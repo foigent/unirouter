@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,44 @@ import (
 type modelSetItemRequest struct {
 	ItemType string `json:"item_type"`
 	ItemName string `json:"item_name"`
+}
+
+type modelRegistryAuditState struct {
+	OrgID                   int64
+	ModelName               string
+	DisplayName             string
+	ProviderFamily          string
+	Lifecycle               string
+	ContextLength           int
+	OutputLimit             int
+	CapabilityTags          string
+	DataResidency           string
+	PricingModelName        string
+	ApprovedCatalog         bool
+	MigrationRecommendation string
+}
+
+func scanModelRegistryAuditState(row pgx.Row) (modelRegistryAuditState, error) {
+	var state modelRegistryAuditState
+	err := row.Scan(
+		&state.OrgID, &state.ModelName, &state.DisplayName, &state.ProviderFamily,
+		&state.Lifecycle, &state.ContextLength, &state.OutputLimit, &state.CapabilityTags,
+		&state.DataResidency, &state.PricingModelName, &state.ApprovedCatalog,
+		&state.MigrationRecommendation,
+	)
+	return state, err
+}
+
+func (state modelRegistryAuditState) auditMap(id int64) map[string]interface{} {
+	return map[string]interface{}{
+		"id": id, "org_id": state.OrgID, "model_name": state.ModelName,
+		"display_name": state.DisplayName, "provider_family": state.ProviderFamily,
+		"lifecycle": state.Lifecycle, "context_length": state.ContextLength,
+		"output_limit": state.OutputLimit, "capability_tags": state.CapabilityTags,
+		"data_residency": state.DataResidency, "pricing_model_name": state.PricingModelName,
+		"approved_catalog":         state.ApprovedCatalog,
+		"migration_recommendation": state.MigrationRecommendation,
+	}
 }
 
 func (h *Handler) ListModelRegistry(w http.ResponseWriter, r *http.Request) {
@@ -141,8 +180,15 @@ func (h *Handler) CreateModelRegistry(w http.ResponseWriter, r *http.Request) {
 		req.PricingModelName = req.ModelName
 	}
 
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Create failed"})
+		return
+	}
+	defer tx.Rollback(r.Context())
+
 	var id int64
-	err = h.db.QueryRow(r.Context(),
+	err = tx.QueryRow(r.Context(),
 		`INSERT INTO model_registry (
 		    org_id, model_name, display_name, provider_family, lifecycle,
 		    context_length, output_limit, capability_tags, data_residency,
@@ -164,8 +210,24 @@ func (h *Handler) CreateModelRegistry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.recordAuditForOrgProjectFromRequest(r, orgID, 0, "model_registry.create", "model_registry", strconv.FormatInt(id, 10),
-		map[string]interface{}{"org_id": orgID, "model_name": req.ModelName, "lifecycle": req.Lifecycle})
+	afterState := map[string]interface{}{
+		"id": id, "org_id": orgID, "model_name": req.ModelName, "display_name": req.DisplayName,
+		"provider_family": req.ProviderFamily, "lifecycle": req.Lifecycle,
+		"context_length": req.ContextLength, "output_limit": req.OutputLimit,
+		"capability_tags": req.CapabilityTags, "data_residency": req.DataResidency,
+		"pricing_model_name": req.PricingModelName, "approved_catalog": req.ApprovedCatalog,
+		"migration_recommendation": req.MigrationRecommendation,
+	}
+	if err := insertAuditEntry(r.Context(), tx, "model_registry.create", "model_registry", strconv.FormatInt(id, 10),
+		map[string]interface{}{"org_id": orgID, "model_name": req.ModelName, "lifecycle": req.Lifecycle, "after": afterState},
+		modelGovernanceAuditMeta(r, orgID)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Create failed"})
+		return
+	}
 	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "org_id": orgID, "model_name": req.ModelName})
 }
 
@@ -256,34 +318,32 @@ func (h *Handler) UpdateModelRegistry(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "No fields to update"})
 		return
 	}
-	beforeState := map[string]interface{}{"id": id}
-	var beforeOrgID int64
-	var beforeModelName, beforeLifecycle, beforeMigrationRecommendation string
-	var beforeApprovedCatalog bool
-	beforeQuery := `SELECT org_id, model_name, lifecycle, approved_catalog, migration_recommendation FROM model_registry WHERE id = $1`
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	beforeQuery := `SELECT org_id, model_name, display_name, provider_family, lifecycle,
+		context_length, output_limit, capability_tags, data_residency, pricing_model_name,
+		approved_catalog, migration_recommendation
+		FROM model_registry WHERE id = $1`
 	beforeArgs := []interface{}{id}
 	if scope.constrained {
 		beforeQuery += ` AND org_id = $2`
 		beforeArgs = append(beforeArgs, scope.orgID)
 	}
-	if err := h.db.QueryRow(r.Context(), beforeQuery, beforeArgs...).Scan(
-		&beforeOrgID, &beforeModelName, &beforeLifecycle, &beforeApprovedCatalog, &beforeMigrationRecommendation,
-	); err != nil {
+	beforeQuery += ` FOR UPDATE`
+	beforeAuditState, err := scanModelRegistryAuditState(tx.QueryRow(r.Context(), beforeQuery, beforeArgs...))
+	if err != nil {
 		writeModelGovernanceLookupError(w, err, "Model")
 		return
 	}
-	beforeState = map[string]interface{}{
-		"id":                       id,
-		"org_id":                   beforeOrgID,
-		"model_name":               beforeModelName,
-		"lifecycle":                beforeLifecycle,
-		"approved_catalog":         beforeApprovedCatalog,
-		"migration_recommendation": beforeMigrationRecommendation,
-	}
 	sets = append(sets, "updated_at = NOW()")
-	args = append(args, id, beforeOrgID)
+	args = append(args, id, beforeAuditState.OrgID)
 	query := fmt.Sprintf("UPDATE model_registry SET %s WHERE id = $%d AND org_id = $%d", strings.Join(sets, ", "), argIdx, argIdx+1)
-	tag, err := h.db.Exec(r.Context(), query, args...)
+	tag, err := tx.Exec(r.Context(), query, args...)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
 		return
@@ -292,36 +352,40 @@ func (h *Handler) UpdateModelRegistry(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Model not found"})
 		return
 	}
-	afterState := map[string]interface{}{"id": id}
-	if req.ModelName != nil {
-		afterState["model_name"] = strings.TrimSpace(*req.ModelName)
+	afterAuditState, err := scanModelRegistryAuditState(tx.QueryRow(r.Context(),
+		`SELECT org_id, model_name, display_name, provider_family, lifecycle,
+		        context_length, output_limit, capability_tags, data_residency, pricing_model_name,
+		        approved_catalog, migration_recommendation
+		 FROM model_registry WHERE id = $1 AND org_id = $2`, id, beforeAuditState.OrgID,
+	))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update readback failed"})
+		return
 	}
-	if req.Lifecycle != nil {
-		afterState["lifecycle"] = strings.TrimSpace(*req.Lifecycle)
-	}
-	if req.ApprovedCatalog != nil {
-		afterState["approved_catalog"] = *req.ApprovedCatalog
-	}
-	if req.MigrationRecommendation != nil {
-		afterState["migration_recommendation"] = strings.TrimSpace(*req.MigrationRecommendation)
-	}
-	h.recordAuditForOrgProjectFromRequest(r, beforeOrgID, 0, "model_registry.update", "model_registry", strconv.FormatInt(id, 10), map[string]interface{}{
+	if err := insertAuditEntry(r.Context(), tx, "model_registry.update", "model_registry", strconv.FormatInt(id, 10), map[string]interface{}{
 		"id":     id,
-		"before": beforeState,
-		"after":  afterState,
-	})
+		"before": beforeAuditState.auditMap(id),
+		"after":  afterAuditState.auditMap(id),
+	}, modelGovernanceAuditMeta(r, beforeAuditState.OrgID)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
+		return
+	}
 	if req.Lifecycle != nil {
 		lifecycle := strings.TrimSpace(*req.Lifecycle)
-		modelName := beforeModelName
+		modelName := beforeAuditState.ModelName
 		if req.ModelName != nil {
 			modelName = strings.TrimSpace(*req.ModelName)
 		}
-		recommendation := beforeMigrationRecommendation
+		recommendation := beforeAuditState.MigrationRecommendation
 		if req.MigrationRecommendation != nil {
 			recommendation = strings.TrimSpace(*req.MigrationRecommendation)
 		}
-		if beforeOrgID > 0 && lifecycle != beforeLifecycle {
-			h.emitModelLifecycleEvent(r.Context(), beforeOrgID, id, modelName, lifecycle, recommendation)
+		if beforeAuditState.OrgID > 0 && lifecycle != beforeAuditState.Lifecycle {
+			h.emitModelLifecycleEvent(r.Context(), beforeAuditState.OrgID, id, modelName, lifecycle, recommendation)
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
@@ -514,8 +578,15 @@ func (h *Handler) CreateModelAlias(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid status"})
 		return
 	}
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Create failed"})
+		return
+	}
+	defer tx.Rollback(r.Context())
+
 	var id int64
-	err = h.db.QueryRow(r.Context(),
+	err = tx.QueryRow(r.Context(),
 		`INSERT INTO model_aliases (org_id, alias, target_model, display_name, description, status, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW()) RETURNING id`,
 		orgID, req.Alias, req.TargetModel, req.DisplayName, req.Description, req.Status,
@@ -528,8 +599,20 @@ func (h *Handler) CreateModelAlias(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Create failed"})
 		return
 	}
-	h.recordAuditForOrgProjectFromRequest(r, orgID, 0, "model_alias.create", "model_alias", strconv.FormatInt(id, 10),
-		map[string]interface{}{"org_id": orgID, "alias": req.Alias, "target_model": req.TargetModel})
+	afterState := map[string]interface{}{
+		"id": id, "org_id": orgID, "alias": req.Alias, "target_model": req.TargetModel,
+		"display_name": req.DisplayName, "description": req.Description, "status": req.Status,
+	}
+	if err := insertAuditEntry(r.Context(), tx, "model_alias.create", "model_alias", strconv.FormatInt(id, 10),
+		map[string]interface{}{"org_id": orgID, "alias": req.Alias, "target_model": req.TargetModel, "after": afterState},
+		modelGovernanceAuditMeta(r, orgID)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Create failed"})
+		return
+	}
 	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "org_id": orgID, "alias": req.Alias, "target_model": req.TargetModel})
 }
 
@@ -583,6 +666,13 @@ func (h *Handler) UpdateModelAlias(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "No fields to update"})
 		return
 	}
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
+		return
+	}
+	defer tx.Rollback(r.Context())
+
 	var beforeOrgID int64
 	var beforeAlias, beforeTargetModel, beforeDisplayName, beforeDescription, beforeStatus string
 	beforeQuery := `SELECT org_id, alias, target_model, display_name, description, status FROM model_aliases WHERE id = $1`
@@ -591,7 +681,8 @@ func (h *Handler) UpdateModelAlias(w http.ResponseWriter, r *http.Request) {
 		beforeQuery += ` AND org_id = $2`
 		beforeArgs = append(beforeArgs, scope.orgID)
 	}
-	if err := h.db.QueryRow(r.Context(), beforeQuery, beforeArgs...).Scan(
+	beforeQuery += ` FOR UPDATE`
+	if err := tx.QueryRow(r.Context(), beforeQuery, beforeArgs...).Scan(
 		&beforeOrgID, &beforeAlias, &beforeTargetModel, &beforeDisplayName, &beforeDescription, &beforeStatus,
 	); err != nil {
 		writeModelGovernanceLookupError(w, err, "Alias")
@@ -600,7 +691,7 @@ func (h *Handler) UpdateModelAlias(w http.ResponseWriter, r *http.Request) {
 	sets = append(sets, "updated_at = NOW()")
 	args = append(args, id, beforeOrgID)
 	query := fmt.Sprintf("UPDATE model_aliases SET %s WHERE id = $%d AND org_id = $%d", strings.Join(sets, ", "), argIdx, argIdx+1)
-	tag, err := h.db.Exec(r.Context(), query, args...)
+	tag, err := tx.Exec(r.Context(), query, args...)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
 		return
@@ -628,14 +719,21 @@ func (h *Handler) UpdateModelAlias(w http.ResponseWriter, r *http.Request) {
 	if req.Status != nil {
 		afterState["status"] = strings.TrimSpace(*req.Status)
 	}
-	h.recordAuditForOrgProjectFromRequest(r, beforeOrgID, 0, "model_alias.update", "model_alias", strconv.FormatInt(id, 10), map[string]interface{}{
+	if err := insertAuditEntry(r.Context(), tx, "model_alias.update", "model_alias", strconv.FormatInt(id, 10), map[string]interface{}{
 		"id": id,
 		"before": map[string]interface{}{
 			"id": id, "org_id": beforeOrgID, "alias": beforeAlias, "target_model": beforeTargetModel,
 			"display_name": beforeDisplayName, "description": beforeDescription, "status": beforeStatus,
 		},
 		"after": afterState,
-	})
+	}, modelGovernanceAuditMeta(r, beforeOrgID)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 }
 
@@ -931,6 +1029,10 @@ func (h *Handler) ReplaceProjectModelSets(w http.ResponseWriter, r *http.Request
 		seen[modelSetID] = true
 		modelSetIDs = append(modelSetIDs, modelSetID)
 	}
+	// Lock model sets in one deterministic order. FOR SHARE prevents a
+	// concurrent status update from disabling a set after validation but before
+	// this transaction commits its assignment.
+	sort.Slice(modelSetIDs, func(i, j int) bool { return modelSetIDs[i] < modelSetIDs[j] })
 
 	tx, err := h.db.Begin(r.Context())
 	if err != nil {
@@ -952,7 +1054,7 @@ func (h *Handler) ReplaceProjectModelSets(w http.ResponseWriter, r *http.Request
 	for _, modelSetID := range modelSetIDs {
 		var validatedID int64
 		if err := tx.QueryRow(r.Context(),
-			`SELECT id FROM model_sets WHERE id = $1 AND org_id = $2 AND status = 'active'`,
+			`SELECT id FROM model_sets WHERE id = $1 AND org_id = $2 AND status = 'active' FOR SHARE`,
 			modelSetID, projectOrgID,
 		).Scan(&validatedID); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid model_set_id"})
@@ -980,12 +1082,17 @@ func (h *Handler) ReplaceProjectModelSets(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
+	audit := modelGovernanceAuditMeta(r, projectOrgID)
+	audit.ProjectID = projectID
+	if err := insertAuditEntry(r.Context(), tx, "project.model_sets.replace", "project", strconv.FormatInt(projectID, 10),
+		map[string]interface{}{"model_set_ids": modelSetIDs}, audit); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
+		return
+	}
 	if err := tx.Commit(r.Context()); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Replace assignment failed"})
 		return
 	}
-	h.recordAuditForProject(r.Context(), "project.model_sets.replace", "project", strconv.FormatInt(projectID, 10), projectID,
-		map[string]interface{}{"model_set_ids": modelSetIDs}, r.RemoteAddr)
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 }
 

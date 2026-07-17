@@ -42,9 +42,73 @@ func TestReleaseTrustFailsClosedWithoutEmbeddedRings(t *testing.T) {
 	}
 }
 
+func TestReleaseTrustRejectsLicenseAndUpgradeKeyReuse(t *testing.T) {
+	publicKey, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	licenseRing := testRingForPublicKey(t, "license-2026-a", publicKey)
+	upgradeRing := testRingForPublicKey(t, "upgrade-2026-a", publicKey)
+	setBuildTrustForTest(t, ModeRelease, encodeRing(licenseRing), encodeRing(upgradeRing))
+
+	if _, err := Resolve("", ""); err == nil || !strings.Contains(err.Error(), "must use distinct") {
+		t.Fatalf("expected cross-purpose signing-key reuse rejection, got %v", err)
+	}
+}
+
+func TestReleaseTrustAllowsSameKeyIDWithDistinctKeys(t *testing.T) {
+	licensePublicKey, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upgradePublicKey, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	licenseRing := testRingForPublicKey(t, "shared-key-id", licensePublicKey)
+	upgradeRing := testRingForPublicKey(t, "shared-key-id", upgradePublicKey)
+	setBuildTrustForTest(t, ModeRelease, encodeRing(licenseRing), encodeRing(upgradeRing))
+
+	if _, err := Resolve("", ""); err != nil {
+		t.Fatalf("distinct signing keys with the same ring-local ID must remain valid: %v", err)
+	}
+}
+
+func TestReleaseTrustRejectsOneOverlapAcrossMultiKeyRings(t *testing.T) {
+	sharedPublicKey, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	licenseOnlyPublicKey, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upgradeOnlyPublicKey, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	licenseRing := testRingForPublicKeys(t, map[string]ed25519.PublicKey{
+		"license-only":   licenseOnlyPublicKey,
+		"license-shared": sharedPublicKey,
+	})
+	upgradeRing := testRingForPublicKeys(t, map[string]ed25519.PublicKey{
+		"upgrade-only":   upgradeOnlyPublicKey,
+		"upgrade-shared": sharedPublicKey,
+	})
+	setBuildTrustForTest(t, ModeRelease, encodeRing(licenseRing), encodeRing(upgradeRing))
+
+	if _, err := Resolve("", ""); err == nil || !strings.Contains(err.Error(), "must use distinct") {
+		t.Fatalf("expected overlap in multi-key rings to be rejected, got %v", err)
+	}
+}
+
 func TestDevelopmentTrustAcceptsExplicitRuntimeRings(t *testing.T) {
-	licenseRing := testRing(t, "license-dev")
-	upgradeRing := testRing(t, "upgrade-dev")
+	sharedPublicKey, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	licenseRing := testRingForPublicKey(t, "license-dev", sharedPublicKey)
+	upgradeRing := testRingForPublicKey(t, "upgrade-dev", sharedPublicKey)
 	setBuildTrustForTest(t, ModeDevelopment, "", "")
 
 	bundle, err := Resolve(licenseRing, upgradeRing)
@@ -74,11 +138,25 @@ func testRing(t *testing.T, keyID string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	encoded, err := signing.EncodePublicKey(publicKey)
-	if err != nil {
-		t.Fatal(err)
+	return testRingForPublicKey(t, keyID, publicKey)
+}
+
+func testRingForPublicKey(t *testing.T, keyID string, publicKey ed25519.PublicKey) string {
+	t.Helper()
+	return testRingForPublicKeys(t, map[string]ed25519.PublicKey{keyID: publicKey})
+}
+
+func testRingForPublicKeys(t *testing.T, keys map[string]ed25519.PublicKey) string {
+	t.Helper()
+	encodedKeys := make(map[string]string, len(keys))
+	for keyID, publicKey := range keys {
+		encoded, err := signing.EncodePublicKey(publicKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		encodedKeys[keyID] = encoded
 	}
-	raw, err := json.Marshal(map[string]string{keyID: encoded})
+	raw, err := json.Marshal(encodedKeys)
 	if err != nil {
 		t.Fatal(err)
 	}

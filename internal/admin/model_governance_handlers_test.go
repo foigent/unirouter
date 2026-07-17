@@ -33,14 +33,28 @@ func TestCreateModelRegistry_InvalidLifecycle(t *testing.T) {
 
 func TestUpdateModelRegistry_LifecycleAuditBeforeAfter(t *testing.T) {
 	var auditArgs []any
-	db := &testutil.MockDB{
+	lockedBeforeRead := false
+	tx := &testutil.MockTx{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			lockedBefore := strings.Contains(sql, "FOR UPDATE")
+			lockedBeforeRead = lockedBeforeRead || lockedBefore
 			return &testutil.MockRow{ScanFn: func(dest ...any) error {
 				*dest[0].(*int64) = 1
 				*dest[1].(*string) = "gpt-4o"
-				*dest[2].(*string) = "ga"
-				*dest[3].(*bool) = true
-				*dest[4].(*string) = ""
+				*dest[2].(*string) = "GPT-4o"
+				*dest[3].(*string) = "openai"
+				*dest[4].(*string) = "ga"
+				*dest[5].(*int) = 128000
+				*dest[6].(*int) = 16384
+				*dest[7].(*string) = "chat,vision"
+				*dest[8].(*string) = "global"
+				*dest[9].(*string) = "gpt-4o"
+				*dest[10].(*bool) = true
+				*dest[11].(*string) = ""
+				if !lockedBefore {
+					*dest[4].(*string) = "deprecated"
+					*dest[11].(*string) = "Use company-chat-v2"
+				}
 				return nil
 			}}
 		},
@@ -52,6 +66,7 @@ func TestUpdateModelRegistry_LifecycleAuditBeforeAfter(t *testing.T) {
 			return pgconn.NewCommandTag("UPDATE 1"), nil
 		},
 	}
+	db := &testutil.MockDB{BeginFn: func(context.Context) (pgx.Tx, error) { return tx, nil }}
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest(http.MethodPut, "/model-registry/10", strings.NewReader(`{"lifecycle":"deprecated","migration_recommendation":"Use company-chat-v2"}`))
@@ -70,6 +85,9 @@ func TestUpdateModelRegistry_LifecycleAuditBeforeAfter(t *testing.T) {
 	}
 	if len(auditArgs) != 14 {
 		t.Fatalf("expected 14 audit args, got %#v", auditArgs)
+	}
+	if !lockedBeforeRead {
+		t.Fatal("model registry before state must be locked in the mutation transaction")
 	}
 	if auditArgs[1] != int64(7) || auditArgs[9] != "admin_console" {
 		t.Fatalf("expected actor/source in audit args, got %#v", auditArgs)

@@ -11,10 +11,10 @@ import (
 )
 
 // startGuardrailRuntime keeps high-risk safety initialization and lifecycle
-// outside main assembly. Startup requires one valid database snapshot; later
-// refresh failures retain the pinned immutable snapshot until it becomes stale.
-func startGuardrailRuntime(pool *pgxpool.Pool, sensitive *filter.DFAFilter, fingerprintSecret string) (*guardrail.Service, context.CancelFunc, error) {
-	service, err := guardrail.NewService(pool, sensitive, []byte(fingerprintSecret), guardrail.DefaultOptions())
+// outside main assembly. Startup requires a readable policy source and valid
+// platform scope; tenant scopes publish or retain their snapshots independently.
+func startGuardrailRuntime(pool *pgxpool.Pool, sensitive *filter.DFAFilter, fingerprintSecret string, options guardrail.Options) (*guardrail.Service, context.CancelFunc, error) {
+	service, err := guardrail.NewService(pool, sensitive, []byte(fingerprintSecret), options)
 	if err != nil {
 		return nil, nil, err
 	}

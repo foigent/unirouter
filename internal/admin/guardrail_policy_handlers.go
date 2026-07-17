@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/guardrail"
 	"github.com/uniroute/unirouter/internal/middleware"
@@ -134,16 +135,29 @@ func (h *Handler) ListGuardrailPolicies(w http.ResponseWriter, r *http.Request) 
 		guardrail.DetectorPII:            {Synchronous: true, LookbehindBytes: 512},
 	}
 	localDetectorMaxBytes, externalDetectorMaxBytes, detectorMaxTexts := guardrail.DefaultOptions().LocalDetectorMaxBytes, guardrail.DefaultOptions().ExternalDetectorMaxBytes, guardrail.DefaultOptions().MaxDetectorTexts
+	policyLimits := guardrail.PolicyLimits{
+		MaxActivePoliciesPerOrg:   guardrail.DefaultOptions().MaxActivePoliciesPerOrg,
+		MaxActivePlatformPolicies: guardrail.DefaultOptions().MaxActivePlatformPolicies,
+		MaxCachedPolicies:         guardrail.DefaultOptions().MaxCachedPolicies,
+		MaxCachedTenantScopes:     guardrail.DefaultOptions().MaxCachedTenantScopes,
+	}
 	if h.guardrailController != nil {
 		detectors = h.guardrailController.ApprovedDetectors()
 		streamCapabilities = h.guardrailController.DetectorStreamCapabilities()
 		localDetectorMaxBytes, externalDetectorMaxBytes, detectorMaxTexts = h.guardrailController.DetectorInputLimits()
+		if provider, ok := h.guardrailController.(interface{ PolicyLimits() guardrail.PolicyLimits }); ok {
+			policyLimits = provider.PolicyLimits()
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": data, "total": total, "approved_detectors": detectors,
 		"external_deadline_ms": 1000, "automatic_detector_retry": false,
 		"local_detector_max_bytes": localDetectorMaxBytes, "external_detector_max_bytes": externalDetectorMaxBytes,
 		"detector_max_texts":                detectorMaxTexts,
+		"org_active_policy_limit":           policyLimits.MaxActivePoliciesPerOrg,
+		"platform_active_policy_limit":      policyLimits.MaxActivePlatformPolicies,
+		"cached_policy_limit":               policyLimits.MaxCachedPolicies,
+		"cached_tenant_limit":               policyLimits.MaxCachedTenantScopes,
 		"stream_detector_capabilities":      streamCapabilities,
 		"stream_enforce_buffer_max_bytes":   streampolicy.EnforceBufferMaxBytes,
 		"stream_enforce_buffer_max_wait_ms": streampolicy.EnforceBufferMaxWait.Milliseconds(),
@@ -168,9 +182,19 @@ func (h *Handler) CreateGuardrailPolicy(w http.ResponseWriter, r *http.Request) 
 		writeGuardrailPolicyError(w, err)
 		return
 	}
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Transaction failed"})
+		return
+	}
+	defer tx.Rollback(r.Context())
+	if err := h.configureGuardrailPolicyQuota(r.Context(), tx); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to configure policy quota"})
+		return
+	}
 	var id int64
 	var createdAt, updatedAt time.Time
-	err = h.db.QueryRow(r.Context(), `
+	err = tx.QueryRow(r.Context(), `
 		INSERT INTO guardrail_policies (
 		 org_id,project_id,api_key_id,name,model,stage,detector_ref,action,mode,
 		 failure_mode,mandatory,config,version,created_by,updated_by,created_at,updated_at
@@ -181,11 +205,23 @@ func (h *Handler) CreateGuardrailPolicy(w http.ResponseWriter, r *http.Request) 
 		record.FailureMode, record.Mandatory, string(record.Config), nullablePositiveUserID(middleware.GetUserIDFromContext(r.Context())),
 	).Scan(&id, &createdAt, &updatedAt)
 	if err != nil {
-		writeJSON(w, policyMutationStatus(err), map[string]interface{}{"error": "Failed to create policy"})
+		if isGuardrailPolicyQuotaError(err) {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Guardrail active policy quota exceeded"})
+		} else {
+			writeJSON(w, policyMutationStatus(err), map[string]interface{}{"error": "Failed to create policy"})
+		}
 		return
 	}
 	record.ID, record.CreatedAt, record.UpdatedAt = id, createdAt, updatedAt
-	h.recordGuardrailPolicyAudit(r, "guardrail_policy.create", record, map[string]interface{}{"after": guardrailPolicyAuditPayload(record)})
+	if err := insertAuditEntry(r.Context(), tx, "guardrail_policy.create", "guardrail_policy", strconv.FormatInt(record.ID, 10),
+		map[string]interface{}{"after": guardrailPolicyAuditPayload(record)}, guardrailPolicyAuditMeta(r, record)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Commit failed"})
+		return
+	}
 	applied := h.refreshGuardrailSnapshot(r.Context())
 	payload := guardrailPolicyPayload(record)
 	payload["runtime_snapshot_applied"] = applied
@@ -226,7 +262,17 @@ func (h *Handler) UpdateGuardrailPolicy(w http.ResponseWriter, r *http.Request) 
 		writeGuardrailPolicyError(w, err)
 		return
 	}
-	result, err := h.db.Exec(r.Context(), `
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Transaction failed"})
+		return
+	}
+	defer tx.Rollback(r.Context())
+	if err := h.configureGuardrailPolicyQuota(r.Context(), tx); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to configure policy quota"})
+		return
+	}
+	result, err := tx.Exec(r.Context(), `
 		UPDATE guardrail_policies SET org_id=$2,project_id=$3,api_key_id=$4,name=$5,
 		 model=$6,stage=$7,detector_ref=$8,action=$9,mode=$10,failure_mode=$11,
 		 mandatory=$12,config=$13::jsonb,version=version+1,updated_by=$14,updated_at=NOW()
@@ -235,19 +281,31 @@ func (h *Handler) UpdateGuardrailPolicy(w http.ResponseWriter, r *http.Request) 
 		current.Name, current.Model, current.Stage, current.DetectorRef, current.Action, current.Mode,
 		current.FailureMode, current.Mandatory, string(current.Config), nullablePositiveUserID(middleware.GetUserIDFromContext(r.Context())), *mutation.Version)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to update policy"})
+		if isGuardrailPolicyQuotaError(err) {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Guardrail active policy quota exceeded"})
+		} else {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to update policy"})
+		}
 		return
 	}
 	if result.RowsAffected() != 1 {
 		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Policy version changed"})
 		return
 	}
-	updated, err := h.readGuardrailPolicy(r.Context(), id)
+	updated, err := readGuardrailPolicyFrom(r.Context(), tx, id)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to read updated policy"})
 		return
 	}
-	h.recordGuardrailPolicyAudit(r, "guardrail_policy.update", updated, map[string]interface{}{"before": before, "after": guardrailPolicyAuditPayload(updated)})
+	if err := insertAuditEntry(r.Context(), tx, "guardrail_policy.update", "guardrail_policy", strconv.FormatInt(updated.ID, 10),
+		map[string]interface{}{"before": before, "after": guardrailPolicyAuditPayload(updated)}, guardrailPolicyAuditMeta(r, updated)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Commit failed"})
+		return
+	}
 	payload := guardrailPolicyPayload(updated)
 	payload["runtime_snapshot_applied"] = h.refreshGuardrailSnapshot(r.Context())
 	writeJSON(w, http.StatusOK, payload)
@@ -278,7 +336,15 @@ func scanGuardrailPolicy(scanner guardrailPolicyScanner) (guardrailPolicyRecord,
 }
 
 func (h *Handler) readGuardrailPolicy(ctx context.Context, id int64) (guardrailPolicyRecord, error) {
-	row := h.db.QueryRow(ctx, `
+	return readGuardrailPolicyFrom(ctx, h.db, id)
+}
+
+type guardrailPolicyQueryRower interface {
+	QueryRow(context.Context, string, ...interface{}) pgx.Row
+}
+
+func readGuardrailPolicyFrom(ctx context.Context, queryer guardrailPolicyQueryRower, id int64) (guardrailPolicyRecord, error) {
+	row := queryer.QueryRow(ctx, `
 		SELECT p.id,p.org_id,p.project_id,p.api_key_id,p.name,p.model,p.stage,
 		       p.detector_ref,p.action,p.mode,p.failure_mode,p.mandatory,p.config,
 		       p.version,p.created_at,p.updated_at,
@@ -411,7 +477,7 @@ func guardrailPolicyAuditPayload(record guardrailPolicyRecord) map[string]interf
 	return payload
 }
 
-func (h *Handler) recordGuardrailPolicyAudit(r *http.Request, action string, record guardrailPolicyRecord, detail map[string]interface{}) {
+func guardrailPolicyAuditMeta(r *http.Request, record guardrailPolicyRecord) auditMeta {
 	orgID := middleware.GetOrgIDFromContext(r.Context())
 	if record.OrgID != nil {
 		orgID = *record.OrgID
@@ -420,7 +486,7 @@ func (h *Handler) recordGuardrailPolicyAudit(r *http.Request, action string, rec
 	if record.ProjectID != nil {
 		projectID = *record.ProjectID
 	}
-	h.recordAuditForOrgProjectFromRequest(r, orgID, projectID, action, "guardrail_policy", strconv.FormatInt(record.ID, 10), detail)
+	return requestAuditMeta(r, orgID, projectID)
 }
 
 func (h *Handler) refreshGuardrailSnapshot(ctx context.Context) bool {
@@ -434,6 +500,40 @@ func (h *Handler) refreshGuardrailSnapshot(ctx context.Context) bool {
 		return false
 	}
 	return true
+}
+
+func (h *Handler) configureGuardrailPolicyQuota(ctx context.Context, tx pgx.Tx) error {
+	limits := guardrail.PolicyLimits{
+		MaxActivePoliciesPerOrg:   guardrail.DefaultOptions().MaxActivePoliciesPerOrg,
+		MaxActivePlatformPolicies: guardrail.DefaultOptions().MaxActivePlatformPolicies,
+		MaxCachedPolicies:         guardrail.DefaultOptions().MaxCachedPolicies,
+		MaxCachedTenantScopes:     guardrail.DefaultOptions().MaxCachedTenantScopes,
+	}
+	if provider, ok := h.guardrailController.(interface{ PolicyLimits() guardrail.PolicyLimits }); ok {
+		limits = provider.PolicyLimits()
+	}
+	_, err := tx.Exec(ctx, `SELECT
+		set_config('unirouter.guardrail_org_active_policy_limit', $1, TRUE),
+		set_config('unirouter.guardrail_platform_active_policy_limit', $2, TRUE),
+		set_config('unirouter.guardrail_cached_policy_limit', $3, TRUE),
+		set_config('unirouter.guardrail_cached_tenant_limit', $4, TRUE)`,
+		strconv.Itoa(limits.MaxActivePoliciesPerOrg), strconv.Itoa(limits.MaxActivePlatformPolicies),
+		strconv.Itoa(limits.MaxCachedPolicies), strconv.Itoa(limits.MaxCachedTenantScopes))
+	return err
+}
+
+func isGuardrailPolicyQuotaError(err error) bool {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+	switch pgErr.ConstraintName {
+	case "guardrail_org_active_policy_quota", "guardrail_platform_active_policy_quota",
+		"guardrail_active_policy_cache_quota", "guardrail_active_tenant_scope_quota":
+		return true
+	default:
+		return false
+	}
 }
 
 var errGuardrailPolicyForbidden = errors.New("forbidden")
