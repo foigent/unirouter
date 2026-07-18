@@ -56,7 +56,8 @@
 | `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md` | Historical immutable Post-PRD6 local implementation/full-suite checkpoint for request-time admin principal reconciliation, transient-503 frontend handling and bounded model-list governance; its then-pending statements are not current target truth |
 | `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md` | Current PR #214 CI/merge, formal sequence-4 release, administrator disable replay, exact two-model API/DB/browser/config, excluded-model zero-dispatch, credential cleanup and supplier-bill non-claim evidence |
 | `docs/ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md` | Immutable closeout of the earlier selected V1 work window, including its then-current X-Insight-only boundary and financial non-claims; it does not describe or authorize the later independent `V1-UX-IA-001` corrective batch |
-| `docs/ops/evidence/V1-SECURITY-REMEDIATION-LOCAL-20260717.md` | Current immutable local checkpoint for all 39 canonical security remediations, migrations `000038`–`000042`, local/OIDC identity and safe CLI corrections, final full-tree gates and explicit CI/ECS/Production non-claims |
+| `docs/ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md` | Current code/CI/release truth chain plus exact seven-role UI/API/session/key/database/runtime/cleanup development-target closeout and explicit non-claims |
+| `docs/ops/evidence/V1-SECURITY-REMEDIATION-LOCAL-20260717.md` | Immutable local predecessor for all 39 canonical security remediations, migrations `000038`–`000042`, local/OIDC identity and safe CLI corrections; later CI/target truth is recorded separately |
 | `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` | Official competitor HA patterns, current UniRouter cluster facts, Four Quadrants and accepted D6-12 stream/HA boundary |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | Source-backed audit/reconciliation/correlation/UI/architecture/upgrade findings, Four Quadrants and PRD6 batches |
 | `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md` | Accepted customer-revenue/provider-COGS boundary, competitor and supplier billing evidence, Four Quadrants, PRD6 non-claims and future cost/metering/media candidates |
@@ -97,7 +98,7 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required single-owner execution, approval, evidence and optional-review workflow |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current `V1-SECURITY-REMEDIATION-001` amendment scope, baseline and publication state, with `V1-UX-IA-001` preserved as its underlying worktree context; followed by the closed Post-PRD6 window and historical V1/PRD6/PRD5 evidence |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current completed V1 security/IA publication and seven-role target closeout, followed by the closed Post-PRD6 window and historical V1/PRD6/PRD5 evidence |
 | `docs/agent-workflows/reviews/` | Optional immutable independent review results |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry pointing to the current execution record |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |
@@ -208,6 +209,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 | `docs/ops/PRD1-STRICT-CLOSEOUT-RUNBOOK.md` | Final strict closeout gate and evidence procedure |
 | `docs/ops/deployment-runbook.md` | Deployment reference |
 | `docs/ops/evidence/` | Current runtime/deployment evidence cited by acceptance matrices and status docs |
+| `docs/ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md` | Current release `1.0.1` / sequence `5` / schema `000042` seven-role development-target acceptance and cleanup evidence |
 | `docs/ops/canary-testing.md` | Canary deployment/testing reference |
 | `docs/ops/test-plan.md` | Test case catalog |
 | `docs/ops/test-report.md` | Historical test report; contains stale date/status and must not be used as current truth |
@@ -230,7 +232,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 |------|------|
 | `docs/agent-workflows/README.md` | Agent workflow index |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Current Agent Protocol v2.1 |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current `V1-SECURITY-REMEDIATION-001` amendment scope, baseline and publication state, with `V1-UX-IA-001` preserved as its underlying worktree context; followed by the closed Post-PRD6 window and historical V1/PRD6/PRD5 evidence |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current completed V1 security/IA publication and seven-role target closeout, followed by the closed Post-PRD6 window and historical V1/PRD6/PRD5 evidence |
 | `docs/agent-workflows/reviews/README.md` | Independent review naming, contents and severity rules |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |

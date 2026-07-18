@@ -1,6 +1,42 @@
 # Current Execution Record
 
-## Active Amendment — V1 Security Remediation
+## Completed Closeout — V1 Seven-Role Target Acceptance
+
+**Batch:** `V1-UX-IA-001` plus the target-verifiable authentication, session,
+local-login, RBAC, API and release slices of `V1-SECURITY-REMEDIATION-001`
+
+**Owner:** Codex
+
+**Risk:** R4 target release and authenticated role acceptance
+
+**Status:** Required CI verified; Target verified / closed for the enumerated
+seven-role UI, API, session, credential, database, release and cleanup surfaces
+
+**Repository/release authority:** PR #217 exact head
+`afb5269a15619858f7eb6c477a35d59ca5753151` passed CI run `29590689179` and
+squash-merged as code-bearing commit
+`cdbaa972db9b318b4412dd2aebce118c934debac`. The development/test ECS runs
+version `1.0.1`, signed sequence `5`, schema
+`000042_v1_local_login_identity`.
+
+**Target result:** final run `20260718075833-e8d4b221` passed all seven roles,
+52/52 enumerated allowed route visits, the representative positive/negative
+API matrix, developer key create/model-list/disable/replay, all seven logout
+revocations, desktop/mobile shell checks and browser-runtime assertions. Final
+database readback found 42/42 fixture sessions revoked, zero live sessions, the
+temporary key disabled, all seven temporary users disabled after cleanup, the
+release identity unchanged and all eight expected service probes healthy.
+
+**Evidence:**
+`docs/ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md`
+
+**Non-goals:** Production/customer-equivalent evidence, cross-organization
+target isolation, supplier-bill reconciliation, paid provider generation,
+enterprise IdP/detector, X-Insight consumer acceptance, PRD7 and general
+automatic/N-1 upgrade behavior remain unclaimed. PRD6 remains `Completed
+(Accepted Scope)` and is not reopened.
+
+## Completed Amendment — V1 Security Remediation
 
 **Batch:** `V1-SECURITY-REMEDIATION-001`
 
@@ -9,15 +45,18 @@
 **Owner:** Codex
 
 **Risk:** R3 for authentication, schema, distributed capacity and financial
-fencing. A future target cutover is R4 and remains a separate authorization and
-evidence step.
+fencing; the separately authorized R4 target cutover is recorded above.
 
-**Status:** Local verified; publication and required GitHub CI pending
+**Status:** CI verified / closed for all 39 canonical findings at
+`cdbaa972db9b318b4412dd2aebce118c934debac`; only the explicitly exercised
+target slices recorded above are Target verified
 
-**Baseline:** `main` / `origin/main` at
-`92ba78878782114a82411697597f5e58e10602a8`
+**Baseline:** PR #217 base
+`92ba78878782114a82411697597f5e58e10602a8`; merged code authority
+`cdbaa972db9b318b4412dd2aebce118c934debac`
 
-**Branch:** `codex/v1-user-task-ia-correctness`
+**Publication:** PR #217 / CI run `29590689179` / squash merge
+`cdbaa972db9b318b4412dd2aebce118c934debac`
 
 **User decision:** implement `A1 + B1 + C1 + D1`; preserve PRD6 as
 `Completed (Accepted Scope)` and treat this as an independent Post-PRD6
@@ -95,11 +134,12 @@ space and every previously interrupted final-tree gate was rerun successfully.
 The first focused sandboxed run could not bind an `httptest` loopback port;
 the identical local-permission rerun passed, so the sandbox denial is recorded
 as an environment restriction rather than a code result. Intentional
-diff/sensitive-file review is complete with no repository-content blocker;
-the remaining publication gates are commit/PR and required GitHub CI.
-Docker/context is intentionally deferred to that CI because no local Docker
-CLI is installed. The adjacent fixes are not new canonical scan findings and
-do not reopen PRD6.
+diff/sensitive-file review is complete with no repository-content blocker.
+At that checkpoint the remaining gates were commit/PR and required GitHub CI;
+those gates and the later authorized target cutover are now closed by the
+current record above. Docker/context ran in CI because no local Docker CLI was
+installed. The adjacent fixes are not new canonical scan findings and do not
+reopen PRD6.
 
 ## Underlying Worktree Batch — V1 User-Task IA And Role Correctness
 
@@ -111,13 +151,15 @@ do not reopen PRD6.
 tenant selection, role landing, notification scope and financial control
 surfaces; PRD6 remains closed and is not reopened.
 
-**Status:** underlying implementation context; publication and remaining gates
-are governed by the active security amendment above
+**Status:** CI verified and Target verified / closed for the exact seven-role
+UI/API acceptance matrix recorded above; this is not an assertion that every
+backend operation or future feature was exercised
 
-**Baseline:** clean and aligned `main` / `origin/main` at
-`92ba78878782114a82411697597f5e58e10602a8`
+**Baseline:** PR #217 base `92ba78878782114a82411697597f5e58e10602a8`;
+merged code authority `cdbaa972db9b318b4412dd2aebce118c934debac`
 
-**Branch:** `codex/v1-user-task-ia-correctness`
+**Publication:** PR #217 / CI run `29590689179` / squash merge
+`cdbaa972db9b318b4412dd2aebce118c934debac`
 
 **User decision:** execute the user-task information architecture when it is
 the best practical first-release design; keep at most two sidebar levels; make
@@ -144,10 +186,11 @@ provider integration, new model-discovery automation, Production deployment,
 new X-Insight runtime behavior, destructive data operations or paid provider
 calls.
 
-**Target verification boundary:** local/API/browser and required CI first. The
-existing ECS is an approved development/test target, but deployment requires a
-merged signed release package and a new sequence; no target mutation occurs
-before CI and release preflight.
+**Historical target-planning boundary:** this batch required local/API checks
+and required CI before any target mutation, followed by a merged signed release
+package and a new sequence. PR #217, signed sequence `5` and the target
+closeout at the top of this record now satisfy those preconditions; this
+paragraph preserves the pre-cutover control order rather than a pending gate.
 
 ## Previous Boundary — X-Insight Cooperation Only
 

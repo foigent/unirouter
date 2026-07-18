@@ -2,7 +2,24 @@
 
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
-> **Newest checkpoint (2026-07-17):** the User-approved Post-PRD6 security
+> **Newest checkpoint (2026-07-18):** PR #217 exact head
+> `afb5269a15619858f7eb6c477a35d59ca5753151` passed CI run `29590689179`;
+> Change Routing and all three branch-protection required checks succeeded. Its
+> identical Git tree squash-merged as code-bearing release
+> `cdbaa972db9b318b4412dd2aebce118c934debac`. The development/test ECS reads
+> back version `1.0.1`, signed sequence `5`, schema
+> `000042_v1_local_login_identity`, the exact commit and all eight expected
+> service probes healthy. Final seven-role acceptance passed 52/52 enumerated
+> route visits, representative API allow/deny checks, developer-key lifecycle,
+> logout/session revocation, desktop/mobile shell checks and bounded cleanup.
+> This is Target verified only for the enumerated surfaces in
+> `docs/ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md`.
+> All 39 canonical security findings are CI verified / closed; only explicitly
+> exercised slices are Target verified. This is not Production,
+> cross-organization target isolation, supplier-bill, paid-provider,
+> enterprise-IdP/detector or X-Insight acceptance evidence. PRD6 remains
+> `Completed (Accepted Scope)` and is not reopened.
+> **Previous local checkpoint (2026-07-17):** the User-approved Post-PRD6 security
 > amendment `A1 + B1 + C1 + D1` is implemented and locally verified on
 > `codex/v1-user-task-ia-correctness` from source revision
 > `92ba78878782114a82411697597f5e58e10602a8`. All 39 canonical scan findings
@@ -50,10 +67,10 @@
 > `docs/ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md`. This closes the
 > work window, not unexecuted evidence or future product candidates, and it
 > does not reopen PRD6.
-> **Current V1 target checkpoint (2026-07-16):** PR #214 exact head
+> **Previous V1 target checkpoint (2026-07-16):** PR #214 exact head
 > `4cf13761edbdc50163cbade1151051a74d3d42dc` passed Change Routing and all
 > three required checks (Backend Tests, Frontend Build, Docker Build) in run
-> `29441931266`, then squash-merged as the latest code-bearing repository and
+> `29441931266`, then squash-merged as the then-current code-bearing repository and
 > development-target release commit
 > `46b49b60835225a0b32b641615e6afe4a8a9696b`. Stable/canary run exact backend
 > image `sha256:60b2f5620f815eff3e75716c7f20516dda49c611cfa8202df37ae98643634e7f`;
@@ -126,13 +143,16 @@
 
 ## First Read Order
 
-Read `docs/agent-workflows/EXECUTION-RECORD.md` first for the active
-`V1-SECURITY-REMEDIATION-001` amendment and its nested `V1-UX-IA-001` worktree
-context, then read `docs/ops/CURRENT-STATUS.md`. For the earlier closed work
-window, read the immutable closeout decision
-`docs/ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md` immediately after
-those mutable current-state files, then read the latest completed target evidence
-`docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md`
+Read `docs/agent-workflows/EXECUTION-RECORD.md` first, then the exact current
+target evidence
+`docs/ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md`, then
+`docs/ops/CURRENT-STATUS.md`. The immutable local implementation predecessor is
+`docs/ops/evidence/V1-SECURITY-REMEDIATION-LOCAL-20260717.md`. For the earlier
+closed work window, next read
+`docs/ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md`; the later
+security/IA corrective closeout does not rewrite it. Earlier completed target
+evidence is
+`docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md`,
 followed by its immutable local checkpoint
 `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md`.
 Earlier named-provider target evidence is
@@ -335,6 +355,7 @@ no PRD6 response persistence, deployment or semantic cache is accepted.
 
 | Question | Current Source |
 |----------|----------------|
+| What proves release `1.0.1` / sequence `5` / schema `000042`, the seven-role UI/API/DB acceptance and cleanup? | `docs/ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md` |
 | What closes the Post-PRD6 V1 first-release work window, and which items remain pending or deferred? | `docs/ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md` |
 | What proves PR #214's formal release, administrator disable replay and exact two-model pilot target closure, and which boundaries did it preserve? | `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md` |
 | What did the complete first-release product audit classify? | `docs/ops/evidence/V1-FIRST-RELEASE-PRODUCT-AUDIT-LOCAL-20260715.md` |
@@ -434,8 +455,9 @@ passed. P6-F17 full local/race/migrated/frontend verification, PR #149 required
 CI, merge and post-merge main CI passed. P6-F18A/F18B full local/race/fault/
 migration verification, PR #151/#153 required CI and post-merge main CI passed;
 P6-F18 and P6-F20 are independently CI verified / closed. PRD7/target evidence are explicitly later;
-historical branches remain retained. No new item is target or production
-verified. Any
+historical branches remain retained. The statement that no new item was target
+or Production verified described that historical PRD6 checkpoint only. Later
+V1 target evidence is indexed above; no Production promotion is implied. Any
 later P6-F35 target cutover must first drain old control-plane binaries and use
 a non-rolling activation; new-version replicas converge global-word changes
 through the existing approximately one-minute reload path.
