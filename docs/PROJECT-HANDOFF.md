@@ -3,21 +3,32 @@
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
 > **Newest cross-project checkpoint (2026-07-18):**
-> `V1-XI-LEDGER-001` is UniRouter-side Local verified on
-> `codex/v1-xi-ledger-v2-closeout`; its PR and required CI remain pending.
-> The actual build-ignored UniRouter operator producer generated an
+> `V1-XI-LEDGER-001` is UniRouter-owned implementation and CI verified through
+> PR #219: exact head `be2d5f5d1cd6d322728b3d7c9aa8a5a347650563`,
+> required CI run `29640791281`, squash merge
+> `5176654d7d320b56c1c136f39b3debb8156ece4b`. Change Routing, Backend
+> Tests, Frontend Build and Docker Build all succeeded. The actual
+> build-ignored UniRouter operator producer generated an
 > exact synthetic, metadata-only v2 artifact with SHA-256
 > `93bc4c8448f1f838668f9dab10cbba070f0df550665b16d73bb494066fe8d6a1`
 > and `cost_micros="7"`, `CNY`, scale `1000000`. X-Insight's actual CLI
 > persisted and read it back; replay was 2 duplicate/no-op and 0 conflicts;
 > SQL/API and real loopback browser showed
 > `CNY 0.000007 (7 micro-CNY)` without `cost_cents` or raw content.
-> That was a non-modifying X-Insight-worktree probe using a task-owned isolated
-> local database, not consumer acceptance or publication. Independent
+> That was a probe against the then-current uncommitted X-Insight worktree using
+> task-owned isolated databases, not consumer acceptance or publication. After
+> the ownership correction, this closeout made no further X-Insight worktree
+> writes and did not stage, commit, push, reset or clean that repository.
+> Independent
 > review found an X-Insight-owned v2-to-v1 source-registry downgrade case still
-> open. UniRouter now defaults new exchange registrations to snapshot v2 and
-> configures its producer contract test for required CI. This is synthetic
-> sidecar evidence only, not a Target/Production/customer-data/live-feed claim.
+> open. UniRouter now defaults new exchange registrations to snapshot v2; its
+> producer query/mapper/negative-money contract runs in required CI. All five
+> exact temporary JSON files and three task-owned isolated databases were
+> removed with absence checks; no X-Insight worktree file was deleted during
+> cleanup. This is synthetic sidecar evidence only, not a
+> Target/Production/customer-data/live-feed or closed External-integration
+> claim. The development/test ECS remains on PR #217 / `cdbaa972`; PR #219 was
+> not deployed.
 > Evidence:
 > `docs/ops/evidence/V1-XI-LEDGER-V2-SIDECAR-LOCAL-20260718.md`.
 > **Newest checkpoint (2026-07-18):** PR #217 exact head

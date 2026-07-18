@@ -1,6 +1,6 @@
 # Current Execution Record
 
-## Active Closeout — V1 X-Insight Ledger v2 Sidecar
+## Completed UniRouter-Owned Closeout — V1 X-Insight Ledger v2 Sidecar
 
 **Batch:** `V1-XI-LEDGER-001`
 
@@ -9,19 +9,20 @@
 **Risk:** R3 cross-repository monetary schema, persistence and evidence
 compatibility
 
-**Status:** UniRouter-side Local verified with synthetic, metadata-only data;
-UniRouter PR/required CI and X-Insight-owned consumer acceptance remain pending
+**Status:** UniRouter implementation and required CI verified; X-Insight-owned
+consumer fix/publication/acceptance remain pending, so the joint issue stays open
 
-**Baseline:** UniRouter `main == origin/main` at docs-only commit
-`72a0a05e64085a53c4832c6d91af59a598406e5c`; current code-bearing release
-and development-target authority remains PR #217 merge
-`cdbaa972db9b318b4412dd2aebce118c934debac` with required CI run
-`29590689179`. Work branch: `codex/v1-xi-ledger-v2-closeout`.
+**Repository authority:** PR #219 exact head
+`be2d5f5d1cd6d322728b3d7c9aa8a5a347650563` passed required CI run
+`29640791281` and squash-merged as code-bearing commit
+`5176654d7d320b56c1c136f39b3debb8156ece4b`. The development-target runtime
+authority remains PR #217 / `cdbaa972db9b318b4412dd2aebce118c934debac`;
+PR #219 was not deployed.
 
 **Implemented boundary:** new exchange registrations default to
 `unirouter.prd5.xinsight.snapshot.v2`; the operator producer's exact
-micro-CNY contract is covered by an explicit query/mapper script test that is
-configured to run in required CI and fails closed on invalid negative money;
+micro-CNY contract is covered by an explicit query/mapper script test that
+passed required CI and fails closed on invalid negative money;
 the receipt regression proves the unchanged
 `xinsight.import-receipt.v1` envelope accepts a v2 artifact; and the technical
 reference no longer describes the build-ignored operator script as a deployed
@@ -32,8 +33,9 @@ synthetic metadata-only v2 artifact with `cost_micros="7"`,
 `currency=CNY`, `amount_scale=1000000` and
 `money_schema=micro-cny.v1`. Artifact SHA-256:
 `93bc4c8448f1f838668f9dab10cbba070f0df550665b16d73bb494066fe8d6a1`.
-The exact bytes are the X-Insight golden fixture. The actual X-Insight CLI
-persisted 2 normalized events including 1 explicit capture gap into an
+At observation time the exact bytes existed as an untracked X-Insight
+worktree fixture; this task makes no X-Insight publication claim. The actual
+X-Insight CLI persisted 2 normalized events including 1 explicit capture gap into an
 isolated local PostgreSQL database; a second identical CLI run returned
 2 `duplicate_noop`, 0 inserts and 0 conflicts. SQL, search API, event-detail
 API and the real loopback UI all retained the exact string `"7"` and displayed
@@ -41,9 +43,11 @@ API and the real loopback UI all retained the exact string `"7"` and displayed
 returned for the v2 usage event.
 
 **Verification boundary:** UniRouter's producer side is Local verified. The
-cross-repository run is a synthetic compatibility probe that left X-Insight's
-current uncommitted worktree unmodified and wrote only to a task-owned isolated
-local database. It is not X-Insight acceptance, CI verification or a closed
+cross-repository run is a synthetic compatibility probe against the then-current
+uncommitted X-Insight worktree using task-owned isolated databases. After the
+ownership correction, this closeout made no further X-Insight worktree writes
+and did not stage, commit, push, reset or clean that repository. It is not
+X-Insight acceptance, CI verification or a closed
 External integration. Independent review found that a later v1 replay
 can downgrade X-Insight's source registry after v2, which is X-Insight-owned
 and remains open. This is not Target, Production or customer-data evidence.
@@ -51,6 +55,14 @@ The current UniRouter target proves the micro-CNY runtime, not execution of the
 operator producer there. Completed-execution live feed, endpoint,
 cursor/replay, service token, continuous polling and p95 freshness remain
 proposed/unimplemented and were not changed.
+
+**CI and cleanup:** CI run `29640791281` passed Change Routing, Backend Tests,
+Frontend Build and Docker Build, including the new direct producer contract
+step. Five exact mode-`0600` temporary JSON artifacts/receipts and the three
+task-owned isolated databases `unirouter_xi_v2_019f747b`,
+`xinsight_xi_v2_019f747b` and `xinsight_xi_v2_cli_019f747b` were removed one at
+a time and verified absent. No temporary role or credential was created; no
+customer data or X-Insight worktree file was deleted during cleanup.
 
 **Evidence:**
 `docs/ops/evidence/V1-XI-LEDGER-V2-SIDECAR-LOCAL-20260718.md`
