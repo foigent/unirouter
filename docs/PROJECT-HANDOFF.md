@@ -2,6 +2,24 @@
 
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
+> **Newest cross-project checkpoint (2026-07-18):**
+> `V1-XI-LEDGER-001` is UniRouter-side Local verified on
+> `codex/v1-xi-ledger-v2-closeout`; its PR and required CI remain pending.
+> The actual build-ignored UniRouter operator producer generated an
+> exact synthetic, metadata-only v2 artifact with SHA-256
+> `93bc4c8448f1f838668f9dab10cbba070f0df550665b16d73bb494066fe8d6a1`
+> and `cost_micros="7"`, `CNY`, scale `1000000`. X-Insight's actual CLI
+> persisted and read it back; replay was 2 duplicate/no-op and 0 conflicts;
+> SQL/API and real loopback browser showed
+> `CNY 0.000007 (7 micro-CNY)` without `cost_cents` or raw content.
+> That was a non-modifying X-Insight-worktree probe using a task-owned isolated
+> local database, not consumer acceptance or publication. Independent
+> review found an X-Insight-owned v2-to-v1 source-registry downgrade case still
+> open. UniRouter now defaults new exchange registrations to snapshot v2 and
+> configures its producer contract test for required CI. This is synthetic
+> sidecar evidence only, not a Target/Production/customer-data/live-feed claim.
+> Evidence:
+> `docs/ops/evidence/V1-XI-LEDGER-V2-SIDECAR-LOCAL-20260718.md`.
 > **Newest checkpoint (2026-07-18):** PR #217 exact head
 > `afb5269a15619858f7eb6c477a35d59ca5753151` passed CI run `29590689179`;
 > Change Routing and all three branch-protection required checks succeeded. Its

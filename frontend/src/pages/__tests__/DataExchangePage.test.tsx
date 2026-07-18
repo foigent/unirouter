@@ -86,6 +86,12 @@ describe('DataExchangePage', () => {
     });
   });
 
+  it('defaults new exchanges to the micro-CNY snapshot v2 contract', async () => {
+    render(<DataExchangePage />);
+    fireEvent.click(await screen.findByRole('button', { name: '登记交换制品' }));
+    expect(await screen.findByDisplayValue('unirouter.prd5.xinsight.snapshot.v2')).toBeTruthy();
+  });
+
   it('loads member, delivery, and receipt history from the activity endpoint', async () => {
     render(<DataExchangePage />);
     fireEvent.click(await screen.findByText('交换账本'));
