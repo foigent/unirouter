@@ -6,8 +6,8 @@
 
 **Owner:** Codex
 
-**Status:** UniRouter-side Local verified with synthetic, metadata-only data;
-UniRouter PR/required CI and X-Insight-owned consumer acceptance pending
+**Status:** UniRouter implemented and required CI verified with synthetic,
+metadata-only data; X-Insight-owned fix/publication/acceptance pending
 
 ## Frozen boundaries
 
@@ -17,11 +17,13 @@ UniRouter PR/required CI and X-Insight-owned consumer acceptance pending
 - No completed-execution read model, endpoint, cursor/replay, service token,
   continuous polling, p95 freshness gate, Production access or customer data
   was added or used.
-- UniRouter's code-bearing release remains
-  `cdbaa972db9b318b4412dd2aebce118c934debac`; docs-only current main was
-  `72a0a05e64085a53c4832c6d91af59a598406e5c` at branch creation.
+- UniRouter PR #219 exact head
+  `be2d5f5d1cd6d322728b3d7c9aa8a5a347650563` passed required CI run
+  `29640791281` and squash-merged as code-bearing commit
+  `5176654d7d320b56c1c136f39b3debb8156ece4b`.
 - The current target's micro-CNY runtime evidence does not prove that the
-  build-ignored operator producer ran on that target.
+  build-ignored operator producer ran on that target. PR #219 was not deployed;
+  development-target authority remains PR #217 / `cdbaa972`.
 
 ## Compatibility findings and corrections
 
@@ -71,11 +73,14 @@ database. The final temporary artifact was mode `0600`, 3763 bytes, SHA-256
 `94c8db5610037e87c18e196aecdf40ce27888e9375c14f139beb8c7953dfa4a5`,
 and retained the exact v2 tuple with no `cost_cents` or raw-content flags.
 
-## Non-modifying X-Insight worktree observation
+## X-Insight dirty-worktree observation (non-acceptance)
 
-The local probe left X-Insight's current uncommitted worktree unmodified and
-wrote import/readback state only to task-owned isolated PostgreSQL databases.
-This task does not own, publish or accept that consumer. The observed patch:
+The local probe used the then-current uncommitted X-Insight worktree, which
+contained user-existing and exploratory changes, and wrote import/readback
+state to task-owned isolated PostgreSQL databases. After the ownership
+correction, this closeout made no further X-Insight worktree writes and did not
+stage, commit, push, reset or clean that repository. It does not own, publish
+or accept that consumer. The observed patch:
 
 - strictly accepts v1 cents or the complete v2 four-field money tuple, never a
   mixed or partial tuple;
@@ -161,20 +166,55 @@ actual PostgreSQL-backed server displayed:
   real-browser checks: observed pass against its uncommitted worktree.
 - X-Insight existing test suites also passed in that worktree, but they did not
   cover the later-v1 source-registry downgrade found by independent review.
-- UniRouter required CI: pending at this checkpoint.
+- UniRouter required CI run `29640791281`: Change Routing, Backend Tests,
+  Frontend Build and Docker Build all pass. The direct producer contract step
+  passed inside Backend Tests.
 - UniRouter `git diff --check`: pass at this checkpoint.
+
+## UR-XI-01 through UR-XI-10 fact matrix
+
+The request defines UR-XI-02 through UR-XI-10 around the proposed live feed.
+The accepted sidecar result must not be used as a substitute for those gates.
+
+| ID | Current fact | Result |
+| --- | --- | --- |
+| UR-XI-01 | UniRouter main is `5176654`; PR #219 required CI run `29640791281` is green | Satisfied |
+| UR-XI-02 | A UniRouter response exists, but no joint versioned decision is accepted and linked by both projects | Not satisfied |
+| UR-XI-03 | The accepted sidecar preserves UniRouter independence; proposed feed failure/slow-path isolation has no executable evidence | Not satisfied for feed |
+| UR-XI-04 | No universal completed-execution terminal ledger covers all required success/failure/stream fixtures | Not satisfied |
+| UR-XI-05 | The synthetic sidecar proved no raw content, but no feed endpoint/cross-organization negative conformance exists | Not satisfied for feed |
+| UR-XI-06 | No feed cursor, revision, replay expiry, reset or restart contract is implemented | Not satisfied |
+| UR-XI-07 | No X-Insight-scoped service authentication exists | Not satisfied |
+| UR-XI-08 | No live-feed limit, 8 MiB, overload or replay-retention behavior exists | Not satisfied |
+| UR-XI-09 | The synthetic sidecar reached search/API/UI, but no live completion-to-search run with restart/outage recovery exists | Not satisfied for defined gate |
+| UR-XI-10 | No terminal-to-search freshness distribution or p95 live-feed measurement exists | Not satisfied |
 
 ## Classification
 
 | Layer | Result |
 | --- | --- |
-| Implemented | UniRouter worktree patch only; publication pending |
+| Implemented | Yes in UniRouter main merge `5176654d7d320b56c1c136f39b3debb8156ece4b` |
 | Local verified | Yes for UniRouter producer/ledger behavior; synthetic cross-repository compatibility probe observed |
-| CI verified | Pending for the UniRouter patch |
+| CI verified | Yes for UniRouter, required CI run `29640791281` |
 | Target verified | No for this v2 producer/consumer pairing |
 | External integration | Not closed; X-Insight-owned fix, publication and acceptance pending |
 | Production verified | No |
 
-No Target or Production mutation occurred. Temporary local databases, snapshot
-and receipt files are retained only until final evidence/CI identities are
-recorded, then must be removed by exact path/name with absence checks.
+## Cleanup
+
+No Target or Production mutation occurred. After recording the artifact and CI
+identities, the following task-owned state was removed one item at a time and
+verified absent:
+
+- `/private/tmp/unirouter-xi-v2-019f747b.json`;
+- `/private/tmp/unirouter-xi-v2-postpatch-019f747b.json`;
+- `/private/tmp/xinsight-xi-v2-receipt-019f747b.json`;
+- `/private/tmp/xinsight-xi-v2-receipt-clean-019f747b.json`;
+- `/private/tmp/xinsight-xi-v2-receipt-replay-019f747b.json`;
+- PostgreSQL databases `unirouter_xi_v2_019f747b`,
+  `xinsight_xi_v2_019f747b` and `xinsight_xi_v2_cli_019f747b`.
+
+No temporary role or credential was created. No customer data or X-Insight
+worktree file was deleted during cleanup. The deleted temporary files/databases
+are not recoverable except from an independent backup; the sanitized hashes
+and durable evidence above remain in this repository.

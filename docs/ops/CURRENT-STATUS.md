@@ -2,8 +2,11 @@
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
 > **2026-07-18 X-Insight ledger v2 checkpoint:** `V1-XI-LEDGER-001` is
-> UniRouter-side Local verified; the UniRouter PR/required CI and X-Insight
-> consumer acceptance remain pending. UniRouter's actual operator producer
+> UniRouter implemented and CI verified through PR #219: exact head
+> `be2d5f5d1cd6d322728b3d7c9aa8a5a347650563`, required CI run
+> `29640791281`, squash merge
+> `5176654d7d320b56c1c136f39b3debb8156ece4b`. X-Insight consumer acceptance
+> remains pending. UniRouter's actual operator producer
 > generated one exact synthetic
 > metadata-only v2 artifact, SHA-256
 > `93bc4c8448f1f838668f9dab10cbba070f0df550665b16d73bb494066fe8d6a1`,
@@ -15,12 +18,17 @@
 > `CNY 0.000007 (7 micro-CNY)` without a cents fallback or raw content.
 > UniRouter's bounded patch changes the new exchange default to v2, adds
 > producer-contract CI coverage and verifies the v1 receipt envelope with a v2
-> artifact. The cross-repository run left X-Insight's current uncommitted
-> worktree unmodified and wrote only to a task-owned isolated local database; it
-> was not consumer acceptance. Independent
+> artifact. The cross-repository run probed the then-current uncommitted
+> X-Insight worktree using task-owned isolated databases; it was not consumer
+> acceptance. After the ownership correction, this closeout made no further
+> X-Insight worktree writes and did not stage, commit, push, reset or clean that
+> repository. Independent
 > review found an X-Insight-owned source-registry downgrade on v1 replay after
-> v2. The producer is a build-ignored operator script, not a component deployed
-> in the runtime image. This does not reopen PRD6 and is not Target/Production,
+> v2. All five temporary JSON files and three task-owned isolated databases
+> were removed with absence checks. The producer is a build-ignored operator
+> script, not a component deployed in the runtime image. PR #219 was not
+> deployed; the development/test ECS remains on PR #217 / `cdbaa972`. This does
+> not reopen PRD6 and is not Target/Production,
 > customer-data, closed External integration or completed-execution live-feed
 > evidence.
 > Evidence:

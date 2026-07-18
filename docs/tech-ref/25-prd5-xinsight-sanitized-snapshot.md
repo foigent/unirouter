@@ -4,9 +4,9 @@
 > Date: 2026-07-18
 > Status: the bounded operator-mediated sidecar is implemented. Two historical
 > controlled v1 exchanges completed; the current producer emits snapshot v2
-> with exact micro-CNY fields. A local synthetic compatibility probe passed,
-> but X-Insight-owned publication and consumer acceptance remain a separate
-> verification gate.
+> with exact micro-CNY fields. UniRouter PR #219 / `5176654` passed required CI;
+> a local synthetic compatibility probe also passed, but X-Insight-owned fix,
+> publication and consumer acceptance remain a separate verification gate.
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`,
 > `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md`
