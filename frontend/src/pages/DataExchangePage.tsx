@@ -373,7 +373,7 @@ export default function DataExchangePage() {
       </SideSheet>
 
       <SideSheet title="登记交换制品" visible={exchangeOpen} onCancel={() => setExchangeOpen(false)} width={560}>
-        <Form onSubmit={saveExchange} initValues={{ item_ids: approvedItemIDs.join(','), schema_version: 'unirouter.prd5.xinsight.snapshot.v1', generated_at: new Date().toISOString() }} key={approvedItemIDs.join(',')}>
+        <Form onSubmit={saveExchange} initValues={{ item_ids: approvedItemIDs.join(','), schema_version: 'unirouter.prd5.xinsight.snapshot.v2', generated_at: new Date().toISOString() }} key={approvedItemIDs.join(',')}>
           <Form.Input field="exchange_id" label="Exchange ID" required />
           <Form.Input field="source_instance" label="来源实例" required />
           <Form.Input field="schema_version" label="制品 Schema" required />

@@ -1,6 +1,30 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
+> **2026-07-18 X-Insight ledger v2 checkpoint:** `V1-XI-LEDGER-001` is
+> UniRouter-side Local verified; the UniRouter PR/required CI and X-Insight
+> consumer acceptance remain pending. UniRouter's actual operator producer
+> generated one exact synthetic
+> metadata-only v2 artifact, SHA-256
+> `93bc4c8448f1f838668f9dab10cbba070f0df550665b16d73bb494066fe8d6a1`,
+> carrying `cost_micros="7"`, `currency=CNY`,
+> `amount_scale=1000000` and `money_schema=micro-cny.v1`. X-Insight's
+> actual CLI persisted 2 events including 1 capture gap; an identical replay
+> produced 2 duplicate/no-op, 0 inserts and 0 conflicts. SQL, search/event API
+> and real loopback UI retained the exact string and displayed
+> `CNY 0.000007 (7 micro-CNY)` without a cents fallback or raw content.
+> UniRouter's bounded patch changes the new exchange default to v2, adds
+> producer-contract CI coverage and verifies the v1 receipt envelope with a v2
+> artifact. The cross-repository run left X-Insight's current uncommitted
+> worktree unmodified and wrote only to a task-owned isolated local database; it
+> was not consumer acceptance. Independent
+> review found an X-Insight-owned source-registry downgrade on v1 replay after
+> v2. The producer is a build-ignored operator script, not a component deployed
+> in the runtime image. This does not reopen PRD6 and is not Target/Production,
+> customer-data, closed External integration or completed-execution live-feed
+> evidence.
+> Evidence:
+> `docs/ops/evidence/V1-XI-LEDGER-V2-SIDECAR-LOCAL-20260718.md`.
 > **2026-07-18 V1 target closeout checkpoint:** PR #217 exact head
 > `afb5269a15619858f7eb6c477a35d59ca5753151` passed CI run `29590689179`:
 > Change Routing and all three branch-protection required checks (Backend

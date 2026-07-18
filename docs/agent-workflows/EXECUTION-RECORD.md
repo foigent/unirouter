@@ -1,5 +1,60 @@
 # Current Execution Record
 
+## Active Closeout — V1 X-Insight Ledger v2 Sidecar
+
+**Batch:** `V1-XI-LEDGER-001`
+
+**Owner:** Codex
+
+**Risk:** R3 cross-repository monetary schema, persistence and evidence
+compatibility
+
+**Status:** UniRouter-side Local verified with synthetic, metadata-only data;
+UniRouter PR/required CI and X-Insight-owned consumer acceptance remain pending
+
+**Baseline:** UniRouter `main == origin/main` at docs-only commit
+`72a0a05e64085a53c4832c6d91af59a598406e5c`; current code-bearing release
+and development-target authority remains PR #217 merge
+`cdbaa972db9b318b4412dd2aebce118c934debac` with required CI run
+`29590689179`. Work branch: `codex/v1-xi-ledger-v2-closeout`.
+
+**Implemented boundary:** new exchange registrations default to
+`unirouter.prd5.xinsight.snapshot.v2`; the operator producer's exact
+micro-CNY contract is covered by an explicit query/mapper script test that is
+configured to run in required CI and fails closed on invalid negative money;
+the receipt regression proves the unchanged
+`xinsight.import-receipt.v1` envelope accepts a v2 artifact; and the technical
+reference no longer describes the build-ignored operator script as a deployed
+runtime component.
+
+**Local integration result:** the actual UniRouter producer generated one
+synthetic metadata-only v2 artifact with `cost_micros="7"`,
+`currency=CNY`, `amount_scale=1000000` and
+`money_schema=micro-cny.v1`. Artifact SHA-256:
+`93bc4c8448f1f838668f9dab10cbba070f0df550665b16d73bb494066fe8d6a1`.
+The exact bytes are the X-Insight golden fixture. The actual X-Insight CLI
+persisted 2 normalized events including 1 explicit capture gap into an
+isolated local PostgreSQL database; a second identical CLI run returned
+2 `duplicate_noop`, 0 inserts and 0 conflicts. SQL, search API, event-detail
+API and the real loopback UI all retained the exact string `"7"` and displayed
+`CNY 0.000007 (7 micro-CNY)`. No `cost_cents` or raw source excerpt was
+returned for the v2 usage event.
+
+**Verification boundary:** UniRouter's producer side is Local verified. The
+cross-repository run is a synthetic compatibility probe that left X-Insight's
+current uncommitted worktree unmodified and wrote only to a task-owned isolated
+local database. It is not X-Insight acceptance, CI verification or a closed
+External integration. Independent review found that a later v1 replay
+can downgrade X-Insight's source registry after v2, which is X-Insight-owned
+and remains open. This is not Target, Production or customer-data evidence.
+The current UniRouter target proves the micro-CNY runtime, not execution of the
+operator producer there. Completed-execution live feed, endpoint,
+cursor/replay, service token, continuous polling and p95 freshness remain
+proposed/unimplemented and were not changed.
+
+**Evidence:**
+`docs/ops/evidence/V1-XI-LEDGER-V2-SIDECAR-LOCAL-20260718.md`
+
 ## Completed Closeout — V1 Seven-Role Target Acceptance
 
 **Batch:** `V1-UX-IA-001` plus the target-verifiable authentication, session,

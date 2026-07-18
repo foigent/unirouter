@@ -240,7 +240,7 @@ func TestCreateDataExchangeReceipt_DerivesOutdatedFromArtifactHash(t *testing.T)
 					*dest[0].(*string) = "uxchg_expected_001"
 					*dest[1].(*string) = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 					*dest[2].(*string) = "dev-a"
-					*dest[3].(*string) = "unirouter.prd5.xinsight.snapshot.v1"
+					*dest[3].(*string) = "unirouter.prd5.xinsight.snapshot.v2"
 					*dest[4].(*string) = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 					return nil
 				}}
@@ -266,7 +266,7 @@ func TestCreateDataExchangeReceipt_DerivesOutdatedFromArtifactHash(t *testing.T)
 		"schema_version":"xinsight.import-receipt.v1",
 		"source_system":"unirouter",
 		"source_instance":"dev-a",
-		"artifact_schema_version":"unirouter.prd5.xinsight.snapshot.v1",
+		"artifact_schema_version":"unirouter.prd5.xinsight.snapshot.v2",
 		"artifact_sha256":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 		"result_status":"persisted",
 		"checked_at":"2026-07-10T08:00:00Z",

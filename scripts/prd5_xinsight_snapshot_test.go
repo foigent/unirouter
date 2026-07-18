@@ -9,7 +9,14 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
+
+type snapshotRowScannerFunc func(dest ...any) error
+
+func (f snapshotRowScannerFunc) Scan(dest ...any) error {
+	return f(dest...)
+}
 
 func TestLoadApprovalManifestHashesExactBytes(t *testing.T) {
 	payload := []byte(`{"schema_version":"unirouter.prd5.xinsight.approval.v1","source_instance":"gate-a","requests":[{"scenario_label":"successful_non_stream","request_id":"req-1","approval_status":"approved","required":true}]}
@@ -111,6 +118,67 @@ func TestSnapshotEnvelopeJSONOmitsManifestAndArtifactHashesInDirectMode(t *testi
 	}
 	if strings.Contains(encoded, "approval_manifest_sha256") || strings.Contains(encoded, "artifact_sha256") {
 		t.Fatalf("unexpected hash in direct-mode snapshot envelope: %s", encoded)
+	}
+}
+
+func TestSnapshotV2SerializesExactMicroCNYContract(t *testing.T) {
+	if prd5SnapshotSchemaVersion != "unirouter.prd5.xinsight.snapshot.v2" {
+		t.Fatalf("snapshot schema=%q", prd5SnapshotSchemaVersion)
+	}
+	query := callLogsQuery(2)
+	if !strings.Contains(query, "cost_micros::text") || strings.Contains(query, "cost_cents") || !strings.Contains(query, "IN ($1, $2)") {
+		t.Fatalf("unexpected call-log query: %s", query)
+	}
+
+	row, err := scanSnapshotCallLog(snapshotCallLogScanner(t, "7"), "synthetic-local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.CostMicros != "7" || row.Currency != "CNY" || row.AmountScale != 1_000_000 || row.MoneySchema != "micro-cny.v1" {
+		t.Fatalf("mapped money contract=%#v", row)
+	}
+	payload, err := json.Marshal(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded["cost_micros"] != "7" || decoded["currency"] != "CNY" || decoded["amount_scale"] != float64(1_000_000) || decoded["money_schema"] != "micro-cny.v1" {
+		t.Fatalf("money contract=%#v", decoded)
+	}
+	if _, exists := decoded["cost_cents"]; exists {
+		t.Fatalf("snapshot v2 must not serialize cost_cents: %#v", decoded)
+	}
+}
+
+func TestSnapshotV2RejectsNegativeMicroCNYAtProducerBoundary(t *testing.T) {
+	_, err := scanSnapshotCallLog(snapshotCallLogScanner(t, "-1"), "synthetic-local")
+	if err == nil || !strings.Contains(err.Error(), "canonical non-negative integer text") {
+		t.Fatalf("expected negative cost rejection, got %v", err)
+	}
+}
+
+func snapshotCallLogScanner(t *testing.T, costMicros string) snapshotRowScannerFunc {
+	t.Helper()
+	return func(dest ...any) error {
+		if len(dest) != 38 {
+			t.Fatalf("scan destinations=%d want=38", len(dest))
+		}
+		*dest[0].(*int64) = 41
+		*dest[1].(*string) = "req-v2-contract"
+		*dest[2].(*int64) = 7
+		*dest[6].(*string) = "personal"
+		*dest[7].(*string) = "synthetic-model"
+		*dest[8].(*string) = "synthetic-model"
+		*dest[9].(*string) = "synthetic-provider"
+		*dest[10].(*string) = "synthetic-channel"
+		*dest[15].(*string) = "api"
+		*dest[16].(*string) = "authoritative"
+		*dest[17].(*string) = costMicros
+		*dest[25].(*time.Time) = time.Date(2026, 7, 18, 8, 0, 0, 0, time.UTC)
+		return nil
 	}
 }
 

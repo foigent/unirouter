@@ -1,10 +1,12 @@
 # PRD5 X-Insight Sanitized Snapshot
 
-> Version: v0.5
-> Date: 2026-07-10
-> Status: Batch 1A/1B, Batch 1K, Batch 1N, Batch 1O, Batch 1Q, Batch 1R,
-> Batch 1S, and Batch 1T Canary/Sentinel complete; real controlled snapshot not
-> generated because environment/operator/retention authorization remains open
+> Version: v0.6
+> Date: 2026-07-18
+> Status: the bounded operator-mediated sidecar is implemented. Two historical
+> controlled v1 exchanges completed; the current producer emits snapshot v2
+> with exact micro-CNY fields. A local synthetic compatibility probe passed,
+> but X-Insight-owned publication and consumer acceptance remain a separate
+> verification gate.
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`,
 > `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md`
@@ -145,7 +147,9 @@ The output preserves:
 - org/project/API-key/owner/key-type context;
 - structural PRD5 evidence fields when present;
 - event ordering through `created_at` and `id`;
-- usage, cost, status, latency, streaming, usage source, and confidence fields;
+- usage, exact `cost_micros`, `currency=CNY`, `amount_scale=1000000`,
+  `money_schema=micro-cny.v1`, status, latency, streaming, usage source, and
+  confidence fields;
 - sanitized trace metadata;
 - generated source refs;
 - generated source event hashes;
@@ -177,7 +181,7 @@ Raw upstream errors are reduced to `upstream_error_present`.
 
 Top-level fields:
 
-- `schema_version`: `unirouter.prd5.xinsight.snapshot.v1`
+- `schema_version`: `unirouter.prd5.xinsight.snapshot.v2`
 - `generated_at`
 - `source`: `unirouter`
 - `source_instance`
@@ -189,6 +193,19 @@ Top-level fields:
 - `call_logs`
 - `request_trace_events`
 - `notes`
+
+Each `call_logs` row in snapshot v2 has one and only one money contract:
+
+- `cost_micros` is required JSON string text matching `0|[1-9][0-9]*`;
+- `currency` is required and exactly `CNY`;
+- `amount_scale` is the required JSON integer `1000000`;
+- `money_schema` is required and exactly `micro-cny.v1`;
+- `cost_cents` is prohibited and must not be inferred as a fallback.
+
+The operator producer reads PostgreSQL `BIGINT` through
+`cost_micros::text`, attaches the three fixed companion fields and fails closed
+before writing an artifact if the value is not canonical non-negative integer
+text.
 
 Source ref shape:
 
@@ -269,11 +286,13 @@ Prefer read-only views over direct whole-table privileges.
 Queries must use bounded filters/cursors and avoid broad unbounded scans on the
 shared development/test database.
 
-Batch 1O does not generate a real snapshot artifact. It documents the next Gate
-A handoff prerequisites: approved request IDs, scenario labels, a non-secret
-source instance label, an approved data source, and no DSN/credential/raw
-payload material in the repo or shared folder.
+Historical Batch 1O/1Q work established the approval gate before any controlled
+artifact existed. Later Gate A runs generated and exchanged two bounded v1
+artifacts under explicit authorization. The current producer contract is v2;
+new ledger registrations and receipts must preserve the exact artifact schema
+instead of defaulting to the historical v1 value.
 
-Batch 1Q still does not generate a real snapshot artifact or fill request IDs.
-It adds the approval manifest gate so the later real snapshot can be created
-only after User/UniRouter-owner approval of concrete scenario request IDs.
+The producer is an operator script with `//go:build ignore`; it is merged source
+and can be run from an authenticated checkout, but it is not copied into the
+runtime Docker image. A deployed micro-CNY database/runtime therefore does not
+by itself prove that the producer script executed on that target.

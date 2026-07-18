@@ -361,14 +361,35 @@ func loadSnapshot(ctx context.Context, db *sql.DB, sourceInstance string, select
 			"request_id_join": "request_id is the intended join key between call_logs and request_trace_events",
 			"missing_rows":    "missing call logs or trace events are represented as capture gaps and should not be fabricated by importers",
 			"payload_policy":  "UniRouter raw prompt/response capture remains disabled for this snapshot path",
-			"money_contract":  "cost_micros is canonical integer micro-CNY text; currency=CNY, amount_scale=1000000",
+			"money_contract":  "cost_micros is canonical non-negative integer micro-CNY text; currency=CNY, amount_scale=1000000, money_schema=micro-cny.v1; cost_cents is absent",
 		},
 	}
 	return snapshot, nil
 }
 
 func loadCallLogs(ctx context.Context, db *sql.DB, sourceInstance string, requestIDs []string) ([]snapshotCallLog, error) {
-	query := fmt.Sprintf(`
+	rows, err := db.QueryContext(ctx, callLogsQuery(len(requestIDs)), argsFromStrings(requestIDs)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var logs []snapshotCallLog
+	for rows.Next() {
+		row, err := scanSnapshotCallLog(rows, sourceInstance)
+		if err != nil {
+			return nil, err
+		}
+		logs = append(logs, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return logs, nil
+}
+
+func callLogsQuery(requestIDCount int) string {
+	return fmt.Sprintf(`
 SELECT
   id,
   request_id,
@@ -410,103 +431,114 @@ SELECT
   payload_ref
 FROM call_logs
 WHERE request_id IN (%s)
-ORDER BY created_at, id`, placeholders(len(requestIDs)))
+ORDER BY created_at, id`, placeholders(requestIDCount))
+}
 
-	rows, err := db.QueryContext(ctx, query, argsFromStrings(requestIDs)...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+type snapshotRowScanner interface {
+	Scan(dest ...any) error
+}
 
-	var logs []snapshotCallLog
-	for rows.Next() {
-		var row snapshotCallLog
-		var projectID, apiKeyID, ownerUserID, upstreamStatusCode sql.NullInt64
-		var traceID, sessionID, upstreamRequestID, evidenceRef, sourceEventHash sql.NullString
-		var actorType, actorRef, onBehalfOf, payloadRef sql.NullString
-		var createdAt time.Time
-		if err := rows.Scan(
-			&row.ID,
-			&row.RequestID,
-			&row.OrgID,
-			&projectID,
-			&apiKeyID,
-			&ownerUserID,
-			&row.KeyType,
-			&row.Model,
-			&row.RequestedModel,
-			&row.Provider,
-			&row.Channel,
-			&row.PromptTokens,
-			&row.CompletionTokens,
-			&row.TotalTokens,
-			&row.EstimatedTokens,
-			&row.UsageSource,
-			&row.UsageConfidence,
-			&row.CostMicros,
-			&row.LatencyMS,
-			&row.TTFTMS,
-			&row.StatusCode,
-			&upstreamStatusCode,
-			&row.UpstreamErrorPresent,
-			&row.IPAddressWasPresent,
-			&row.IsStream,
-			&createdAt,
-			&traceID,
-			&sessionID,
-			&upstreamRequestID,
-			&row.DerivedSchemaVersion,
-			&row.DerivedCaptureMode,
-			&evidenceRef,
-			&sourceEventHash,
-			&actorType,
-			&actorRef,
-			&onBehalfOf,
-			&row.PayloadCaptureMode,
-			&payloadRef,
-		); err != nil {
-			return nil, err
-		}
-		row.ProjectID = nullableInt64(projectID)
-		row.Currency = "CNY"
-		row.AmountScale = 1_000_000
-		row.MoneySchema = "micro-cny.v1"
-		row.APIKeyID = nullableInt64(apiKeyID)
-		row.OwnerUserID = nullableInt64(ownerUserID)
-		row.UpstreamStatusCode = nullableInt64(upstreamStatusCode)
-		row.IPAddressRedacted = row.IPAddressWasPresent
-		row.CreatedAt = createdAt.UTC().Format(time.RFC3339Nano)
-		row.TraceID = nullableStringSQL(traceID)
-		row.SessionID = nullableStringSQL(sessionID)
-		row.UpstreamRequestID = nullableStringSQL(upstreamRequestID)
-		row.EvidenceRef = nullableStringSQL(evidenceRef)
-		row.ActorType = nullableStringSQL(actorType)
-		row.ActorRef = nullableStringSQL(actorRef)
-		row.OnBehalfOf = nullableStringSQL(onBehalfOf)
-		row.PayloadRef = nullableStringSQL(payloadRef)
-		if row.PayloadCaptureMode == "" {
-			row.PayloadCaptureMode = "metadata_only"
-		}
-		if row.DerivedSchemaVersion == "" {
-			row.DerivedSchemaVersion = prd5SnapshotSchemaVersion
-		}
-		if row.DerivedCaptureMode == "" {
-			row.DerivedCaptureMode = "db_import"
-		}
-		row.PayloadCaptureReason = "raw prompt/response export is disabled for PRD5 Gate A snapshots"
-		row.DerivedSourceComponent = "logging"
-		row.SourceRef = sourceRef(sourceInstance, "call_logs", row.ID)
-		if sourceEventHash.Valid && sourceEventHash.String != "" {
-			row.SourceEventHash = sourceEventHash.String
-		} else {
-			row.SourceEventHash = stableHash(row)
-		}
-		logs = append(logs, row)
+func scanSnapshotCallLog(scanner snapshotRowScanner, sourceInstance string) (snapshotCallLog, error) {
+	var row snapshotCallLog
+	var projectID, apiKeyID, ownerUserID, upstreamStatusCode sql.NullInt64
+	var traceID, sessionID, upstreamRequestID, evidenceRef, sourceEventHash sql.NullString
+	var actorType, actorRef, onBehalfOf, payloadRef sql.NullString
+	var createdAt time.Time
+	if err := scanner.Scan(
+		&row.ID,
+		&row.RequestID,
+		&row.OrgID,
+		&projectID,
+		&apiKeyID,
+		&ownerUserID,
+		&row.KeyType,
+		&row.Model,
+		&row.RequestedModel,
+		&row.Provider,
+		&row.Channel,
+		&row.PromptTokens,
+		&row.CompletionTokens,
+		&row.TotalTokens,
+		&row.EstimatedTokens,
+		&row.UsageSource,
+		&row.UsageConfidence,
+		&row.CostMicros,
+		&row.LatencyMS,
+		&row.TTFTMS,
+		&row.StatusCode,
+		&upstreamStatusCode,
+		&row.UpstreamErrorPresent,
+		&row.IPAddressWasPresent,
+		&row.IsStream,
+		&createdAt,
+		&traceID,
+		&sessionID,
+		&upstreamRequestID,
+		&row.DerivedSchemaVersion,
+		&row.DerivedCaptureMode,
+		&evidenceRef,
+		&sourceEventHash,
+		&actorType,
+		&actorRef,
+		&onBehalfOf,
+		&row.PayloadCaptureMode,
+		&payloadRef,
+	); err != nil {
+		return snapshotCallLog{}, err
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
+	if err := validateCostMicros(row.CostMicros); err != nil {
+		return snapshotCallLog{}, fmt.Errorf("call log %d: %w", row.ID, err)
 	}
-	return logs, nil
+	row.ProjectID = nullableInt64(projectID)
+	row.Currency = "CNY"
+	row.AmountScale = 1_000_000
+	row.MoneySchema = "micro-cny.v1"
+	row.APIKeyID = nullableInt64(apiKeyID)
+	row.OwnerUserID = nullableInt64(ownerUserID)
+	row.UpstreamStatusCode = nullableInt64(upstreamStatusCode)
+	row.IPAddressRedacted = row.IPAddressWasPresent
+	row.CreatedAt = createdAt.UTC().Format(time.RFC3339Nano)
+	row.TraceID = nullableStringSQL(traceID)
+	row.SessionID = nullableStringSQL(sessionID)
+	row.UpstreamRequestID = nullableStringSQL(upstreamRequestID)
+	row.EvidenceRef = nullableStringSQL(evidenceRef)
+	row.ActorType = nullableStringSQL(actorType)
+	row.ActorRef = nullableStringSQL(actorRef)
+	row.OnBehalfOf = nullableStringSQL(onBehalfOf)
+	row.PayloadRef = nullableStringSQL(payloadRef)
+	if row.PayloadCaptureMode == "" {
+		row.PayloadCaptureMode = "metadata_only"
+	}
+	if row.DerivedSchemaVersion == "" {
+		row.DerivedSchemaVersion = prd5SnapshotSchemaVersion
+	}
+	if row.DerivedCaptureMode == "" {
+		row.DerivedCaptureMode = "db_import"
+	}
+	row.PayloadCaptureReason = "raw prompt/response export is disabled for PRD5 Gate A snapshots"
+	row.DerivedSourceComponent = "logging"
+	row.SourceRef = sourceRef(sourceInstance, "call_logs", row.ID)
+	if sourceEventHash.Valid && sourceEventHash.String != "" {
+		row.SourceEventHash = sourceEventHash.String
+	} else {
+		row.SourceEventHash = stableHash(row)
+	}
+	return row, nil
+}
+
+func validateCostMicros(value string) error {
+	if value == "0" {
+		return nil
+	}
+	if value == "" || value[0] < '1' || value[0] > '9' {
+		return fmt.Errorf("cost_micros must be canonical non-negative integer text, got %q", value)
+	}
+	for i := 1; i < len(value); i++ {
+		if value[i] < '0' || value[i] > '9' {
+			return fmt.Errorf("cost_micros must be canonical non-negative integer text, got %q", value)
+		}
+	}
+	return nil
 }
 
 func loadTraceEvents(ctx context.Context, db *sql.DB, sourceInstance string, requestIDs []string) ([]snapshotTraceEvent, error) {

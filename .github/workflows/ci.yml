@@ -175,6 +175,9 @@ jobs:
         # Includes the untagged 000039 tenant-isolation migration regression.
         run: go test -v -race -coverprofile=coverage.out ./...
 
+      - name: Run X-Insight snapshot producer contract tests
+        run: go test scripts/prd5_xinsight_snapshot.go scripts/prd5_xinsight_snapshot_test.go -count=1
+
       - name: Run admin integration tests
         env:
           REQUIRE_TEST_DATABASE: "1"
