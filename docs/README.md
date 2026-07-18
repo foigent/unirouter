@@ -2,9 +2,10 @@
 
 ## 当前入口
 
-- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前 `V1-SECURITY-REMEDIATION-001` 修复批次；`V1-UX-IA-001` 是其底层工作树上下文，均不重开 PRD6
+- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前已完成的 V1 安全/信息架构发布与七角色目标验收；不重开 PRD6
 - [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — Agent 接手项目的第一阅读入口
 - [ops/CURRENT-STATUS.md](ops/CURRENT-STATUS.md) — 当前已验证项目状态和明确非声明
+- [ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md](ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md) — 当前 `1.0.1` 七角色开发目标验收与清理证据
 - [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 活动、延期和未实现问题登记
 - [../deploy/customer/README.md](../deploy/customer/README.md) — 客户签名发布包与 source-free Compose 安装入口
 - [ops/deployment-runbook.md](ops/deployment-runbook.md) — 部署、备份、签名升级和客户 HTTPS 边界
@@ -19,7 +20,8 @@
 
 - [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — Agent 接手项目的第一阅读入口
 - [ops/CURRENT-STATUS.md](ops/CURRENT-STATUS.md) — 当前项目真实状态（进度、测试、部署、缺口）
-- [ops/evidence/V1-SECURITY-REMEDIATION-LOCAL-20260717.md](ops/evidence/V1-SECURITY-REMEDIATION-LOCAL-20260717.md) — 39 项安全修复、`000038`–`000042`、本地/OIDC 身份与安全 CLI 的最终整树本地证据；GitHub CI/ECS/Production 仍分开
+- [ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md](ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md) — PR #217、`1.0.1`/sequence 5/schema 42、七角色 UI/API/session/key/数据库/清理的开发目标收口证据
+- [ops/evidence/V1-SECURITY-REMEDIATION-LOCAL-20260717.md](ops/evidence/V1-SECURITY-REMEDIATION-LOCAL-20260717.md) — 39 项安全修复、`000038`–`000042`、本地/OIDC 身份与安全 CLI 的不可变本地前置证据
 - [ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md](ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md) — Post-PRD6 V1 首发窗口收口、窗口内仅 X-Insight 协同仍活动、真实账单核对未执行及持续对账能力未实现边界
 - [ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md](ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md) — PR #214 CI/合并、正式 sequence-4 发布、管理员禁用回放、双模型 API/数据库/浏览器验收、负向零分发和厂商账单未对账边界
 - [ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md](ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md) — 管理端逐请求主体状态校验、前端 503 会话保留与双模型 catalog 一致性的不可变本地实现 checkpoint
@@ -91,7 +93,7 @@
 - [PRD-Phase3.md](PRD-Phase3.md) — 已完成 PRD3 一致性、语义、契约和架构清理范围
 - [planning/PRD3-CONSISTENCY-AUDIT.md](planning/PRD3-CONSISTENCY-AUDIT.md) — PRD3 范围审计和 PRD1→PRD2 遗留问题梳理
 - [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 当前未关闭问题列表
-- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前 `V1-SECURITY-REMEDIATION-001` 及其底层 `V1-UX-IA-001` 工作树、之前已关闭 Post-PRD6 窗口的历史边界
+- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前已完成的 V1 安全/信息架构发布与七角色目标验收，以及此前 Post-PRD6 窗口的历史边界
 - [agent-workflows/reviews/README.md](agent-workflows/reviews/README.md) — 可选独立复核记录格式和问题级别规则
 - [ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md](ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md) — 单一执行负责人、Git/CI、高影响授权和复核规则的确认记录
 - [ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md](ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md) — Batch 1W 根因、代码、回归和目标证据边界
@@ -164,7 +166,7 @@
 
 ## Agent 协作
 - [agent-workflows/AGENT-PROTOCOL.md](agent-workflows/AGENT-PROTOCOL.md) — 单一执行负责人、授权、证据和可选独立复核协议
-- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前 `V1-SECURITY-REMEDIATION-001` 执行边界、底层 `V1-UX-IA-001` 上下文、已关闭批次、延期项和历史测试/CI/部署记录
+- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前已完成的 V1 安全/信息架构与七角色目标验收、已关闭批次、延期项和历史测试/CI/部署记录
 - [agent-workflows/reviews/README.md](agent-workflows/reviews/README.md) — 独立复核入口
 - [agent-workflows/FIX-SIGNAL.md](agent-workflows/FIX-SIGNAL.md) — 协议 v1.x 兼容入口
 - [agent-workflows/VERIFY-RESULT.md](agent-workflows/VERIFY-RESULT.md) — 协议 v1.x 历史结果
