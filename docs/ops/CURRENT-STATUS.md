@@ -1,12 +1,24 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
+> **2026-07-19 UR-E U0 governance checkpoint:** UniRouter accepts the exact
+> bounded synthetic v2 sidecar proposal in its owner-authored
+> [response](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-19-unirouter-prd2-v2-sidecar-external-integration-artifact-response.md>).
+> The linked
+> [joint decision candidate](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-19-prd2-ur-e-bounded-synthetic-sidecar-execution.md>)
+> remains `Decision proposed` / `Not binding` and pending joint activation.
+> This is a docs/governance publication only: no manifest, seed database,
+> artifact, transfer, handoff evidence, Target write, deployment, credential
+> change or customer-data use occurred. A separately designated shared-
+> decision writer must perform the atomic acceptance/binding update before
+> Stage A is reachable. PRD6 remains closed and the completed-execution live
+> feed remains deferred.
 > **2026-07-18 X-Insight ledger v2 checkpoint:** `V1-XI-LEDGER-001` is
 > UniRouter implemented and CI verified through PR #219: exact head
 > `be2d5f5d1cd6d322728b3d7c9aa8a5a347650563`, required CI run
 > `29640791281`, squash merge
-> `5176654d7d320b56c1c136f39b3debb8156ece4b`. X-Insight consumer acceptance
-> remains pending. UniRouter's actual operator producer
+> `5176654d7d320b56c1c136f39b3debb8156ece4b`. At that checkpoint, X-Insight
+> consumer publication remained pending. UniRouter's actual operator producer
 > generated one exact synthetic
 > metadata-only v2 artifact, SHA-256
 > `93bc4c8448f1f838668f9dab10cbba070f0df550665b16d73bb494066fe8d6a1`,
@@ -24,7 +36,11 @@
 > X-Insight worktree writes and did not stage, commit, push, reset or clean that
 > repository. Independent
 > review found an X-Insight-owned source-registry downgrade on v1 replay after
-> v2. All five temporary JSON files and three task-owned isolated databases
+> v2. X-Insight later fixed and published that defect in PR #52 / `0462e698`,
+> published deployable rc.6 in PR #54 / `0ca502f`, and recorded the historical
+> fixture Target proof in PR #55 / `6b1ea900` as execution-owner verified, not
+> independent acceptance or fresh External integration. All five temporary
+> JSON files and three task-owned isolated databases
 > were removed with absence checks. The producer is a build-ignored operator
 > script, not a component deployed in the runtime image. PR #219 was not
 > deployed; the development/test ECS remains on PR #217 / `cdbaa972`. This does
@@ -33,6 +49,14 @@
 > evidence.
 > Evidence:
 > `docs/ops/evidence/V1-XI-LEDGER-V2-SIDECAR-LOCAL-20260718.md`.
+> **2026-07-18 completed-execution live-feed scope decision:** the User accepted
+> [deferral of the whole live-feed slice](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-18-prd2-completed-execution-live-feed-deferral.md>)
+> from the first formal version. This accepts deferral, not the proposed feed
+> contract: the operator-mediated sidecar-only boundary remains binding,
+> UR-XI-03 through UR-XI-10 remain factually unsatisfied and out of current
+> scope, and there is no endpoint, credential, polling, deployment or automatic
+> `p95 <= 10s` authorization. A fresh manifest-bound External-integration proof
+> remains a separate, currently non-binding coordination item.
 > **2026-07-18 V1 target closeout checkpoint:** PR #217 exact head
 > `afb5269a15619858f7eb6c477a35d59ca5753151` passed CI run `29590689179`:
 > Change Routing and all three branch-protection required checks (Backend
@@ -93,8 +117,9 @@
 > not a claim that this later corrective batch does not exist.
 > **2026-07-16 Post-PRD6 V1 window closeout:** the selected first-release work
 > window is closed. No active UniRouter-owned implementation or target mutation
-> remains in it. `V1-XI-LEDGER-001` is the sole active follow-up within this V1
-> Post-PRD6 window and remains X-Insight coordination pending. The broader
+> remains in it. The historical `V1-XI-LEDGER-001` consumer defect later closed
+> in X-Insight; UR-E is a separate pending-activation governance item and does
+> not reopen this V1 Post-PRD6 window. The broader
 > customer/Production pilot is deferred, channel-mapping UI is deferred until
 > post-pilot feedback, and
 > actual supplier-bill reconciliation was not executed; recurring/productized
@@ -202,8 +227,10 @@
 > checks display `开发环境` with zero console errors/warnings. Evidence:
 > `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-TARGET-20260714.md`.
 > This development/test target is not Production, real-provider/detector,
-> TLS, capacity/HA or migration-down evidence. X-Insight v2 consumer acceptance
-> and explicit target-configuration/Production gates remain separate.
+> TLS, capacity/HA or migration-down evidence. X-Insight's historical v2
+> consumer correction and fixture Target proof are now published; fresh
+> External integration plus explicit target-configuration/Production gates
+> remain separate.
 > `V1-BUILD-CONTEXT-001` is CI verified / closed by PR #195:
 > backend and independent frontend Docker contexts exclude local environment,
 > private-key and generated files; the backend performs a post-copy invariant
@@ -659,9 +686,10 @@ accepted the complete exact-response Cache Service as future required
 `D7-CACHE-001`, but
 deferred every PRD7 implementation and target-evidence execution through PRD6
 source closeout. PRD6 is now closed, but those queues remain later work and are
-not authorized by closeout. Historical branches remain retained and no
-cleanup/deletion is authorized. This ordering does not postpone the existing
-2026-07-17 Gate A exact-path file deadline.
+not authorized by closeout. Historical branches remain retained and no new
+cleanup/deletion is authorized. The historical Gate A temporary snapshot files
+were later removed by exact identity and verified absent; retained receipts,
+hashes, sanitized evidence and normalized evidence were not deleted.
 
 The third PRD6 research round confirmed that UniRouter currently owns model
 request enforcement, not arbitrary MCP/tool/data/export side effects. X-Insight
@@ -679,9 +707,9 @@ detail satisfies P6-E01. Migration down, TLS 443, real provider/SSO,
 capacity/HA and later X-Insight contracts remain separate evidence/ownership
 matters, not reopened PRD5 source gaps.
 
-The two temporary Gate A JSON snapshots remain present with accepted hashes and
-are due for exact-path deletion by 2026-07-17. Receipts, hashes, sanitized
-evidence and persisted normalized evidence remain retained.
+The two historical temporary Gate A JSON snapshots were removed by exact path
+and verified absent. Receipts, hashes, sanitized evidence and persisted
+normalized evidence remain retained.
 
 The accepted PRD5 cross-project contract remains operator-mediated
 `xinsight.import-receipt.v1` sidecar reconciliation. PRD6 considers only the
@@ -757,7 +785,7 @@ Historical PRD1 summary: Core backend modules, admin APIs, frontend pages, migra
 | PRD2 | Batch 25 final closeout docs/status reconciliation passed Canary 4/4, and User reported Sentinel completed. Batch 26 UI/UX hardening passed Canary 5/5, and User reported Sentinel/Atlas completed. Batch 27 copy/navigation polish passed Canary 7/7, and User reported Canary/Sentinel/Atlas completed. Batch 28 product consistency/filter parity passed Canary 6/6, and User reported Canary/Sentinel/Atlas completed: shared display labels, Usage Analytics filter parity with backend-supported filters, localized enum/status labels, and stable `usage_source` API values. Batch 25 adds the P2-F11 prompt/response storage policy and reconciles the matrix to accepted/deferred/out-of-scope states. PRD2 is frozen for new feature work. Batch 24 OIDC-first SSO, Batch 23 P2 product features, Batch 22 License local E2E smoke, and Batch 21 HA readiness evidence remain the latest accepted implementation evidence. External boundaries remain explicit: P2-F10 License is E2E accepted but not `Production verified`; Batch 18 provider real-upstream acceptance needs credentials; budget hard-blocking is deferred; production HA/DR and real enterprise IdP browser login require target-environment evidence | `docs/planning/PRD2-DISCOVERY.md`, `docs/PRD-Phase2.md`, `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`, `docs/ops/PRD2-COMPLETION-PLAN.md`, `docs/ops/evidence/`, `docs/agent-workflows/FIX-SIGNAL.md`, `docs/agent-workflows/VERIFY-RESULT.md`, `docs/issues/OPEN-ISSUES.md`, `docs/ops/deployment-runbook.md`, `docs/tech-ref/15-ha-readiness.md`, `docs/tech-ref/16-license-foundation.md`, `docs/tech-ref/17-cache-research.md`, `docs/tech-ref/18-oidc-sso.md`, `docs/tech-ref/19-prompt-response-storage-policy.md`, `docs/tech-ref/14-notification-event-foundation.md` |
 | PRD3 | Complete for confirmed scope. User confirmed PRD3 is not a new-feature implementation phase; it is PRD1->PRD2 consistency, semantics, contract, documentation lifecycle, module boundaries, frontend architecture, parity tests, and engineering governance for existing functionality only. PRD3 Batch 17 final evidence hygiene passed Canary 7/7, consolidates all P3 rows to `Canary passed`, preserves PRD2 E2E accepted versus Production verified boundaries, and keeps PRD4 backlog items separate. No planned PRD3 implementation work remains unless User reopens scope | `docs/planning/PRD3-CONSISTENCY-AUDIT.md`, `docs/PRD-Phase3.md`, `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`, `docs/issues/OPEN-ISSUES.md`, `docs/agent-workflows/VERIFY-RESULT.md` |
 | PRD4 | Complete for the confirmed current scope. Batch 0 through Batch 1S passed the required gates for scoped PRD4 work. Batch 1S Open Issue Boundary Closeout passed Canary 7/7, Sentinel merge is reflected by `5b41b87` / PR #103, and User reported Atlas deleted `uniroute_test`, closing `PRD4-DEPLOY-002`. PRD4 delivered API key owner usage/cost visibility, quota vocabulary, Flow/Event/Trace foundation, PlungeIn observation-first port contract, Runtime Observability and host telemetry, Prometheus/Grafana integration health, real upstream/SSO guarded harness assets only, auth UX hardening, production-evidence boundary classification, runtime/build-chain hardening, security/redaction guardrails, and PRD5 backlog consolidation. No PRD4 matrix row is promoted to `Production verified` without target-environment evidence. Full Scheduler V2, runtime plugin marketplace, Logto/IAM rewrite, managed-HA IaC product, multi-instance infrastructure observability/topology, budget hard-block enforcement, runtime cache, full SDK, new persistent roles, real upstream target E2E, real SSO target E2E, and public SaaS/commercial growth features are deferred to PRD5 unless User reopens scope | `docs/PRD-Phase4.md`, `docs/ops/PRD4-ACCEPTANCE-MATRIX.md`, `docs/planning/PRD5-BACKLOG.md`, `docs/ops/evidence/PRD4-final-closeout-20260708.md`, `docs/issues/OPEN-ISSUES.md`, `docs/agent-workflows/VERIFY-RESULT.md` |
-| PRD5 | Accepted UniRouter scope complete. Historical Batch 1A through Batch 1V evidence remains valid; Batch 1W is target/external-integration verified for the authorized denied scenario. Batch 1X audit/screening is Local verified. Batch 1Y implementation is merged, and Batch 1Z verifies target migration/deployment/browser evidence plus the `INFRA-SEC-001` cutover. Structural search, Data Exchange Control, and redacted topology are Target verified; route/failover visibility is CI verified. X-Insight's synthetic-only target is verified and its runtime request is answered; unimplemented durable-job/deep-link/automated-receipt contracts, migration down, TLS 443 behavior, real upstream/SSO, read-only DB/view, exporter/outbox, and deferred P5-F12 products remain separate. PRD4 remains closed | `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`, `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md`, `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md`, `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md`, `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md`, `docs/planning/PRD5-IMPLEMENTATION-PLAN.md`, `docs/planning/PRD5-BACKLOG.md`, `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md`, `docs/planning/PRD5-DEFERRED-CONTROL-DESIGNS-20260710.md`, `docs/agent-workflows/EXECUTION-RECORD.md` |
+| PRD5 | Accepted UniRouter scope complete. Historical Batch 1A through Batch 1V evidence remains valid; Batch 1W is target/external-integration verified for the authorized denied scenario. Batch 1X audit/screening is Local verified. Batch 1Y implementation is merged, and Batch 1Z verifies target migration/deployment/browser evidence plus the `INFRA-SEC-001` cutover. Structural search, Data Exchange Control, and redacted topology are Target verified; route/failover visibility is CI verified. X-Insight's historical synthetic v2 fixture is named-Target execution-owner verified, not independently accepted or fresh External integration. UR-E accepts one future bounded proof but remains proposed/non-binding pending atomic activation. Unimplemented durable-job/deep-link/automated-receipt contracts, migration down, TLS 443 behavior, real upstream/SSO, read-only DB/view, exporter/outbox, and deferred P5-F12 products remain separate. PRD4 remains closed | `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`, `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md`, `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md`, `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md`, `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md`, `docs/planning/PRD5-IMPLEMENTATION-PLAN.md`, `docs/planning/PRD5-BACKLOG.md`, `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md`, `docs/planning/PRD5-DEFERRED-CONTROL-DESIGNS-20260710.md`, `docs/agent-workflows/EXECUTION-RECORD.md` |
 | PRD6 | Completed for Accepted Scope. All 27 accepted feature rows and the separate accepted engineering-integrity issue are repository/required-CI verified or closed. Selected ECS deployment/UI surfaces and P6-E01 are Target verified; P6-E03 is partially Target verified for bounded Mimo and DeepSeek Flash calls only. P6-E02, P6-E04, P6-E03 enterprise SSO/broader-provider evidence, PRD7, broader native IAM revocation, 100x/HA and Production evidence remain later and do not reopen PRD6 | `docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md`, `docs/PRD-Phase6.md`, `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`, `docs/ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md`, `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md`, `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md`, `docs/ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md` |
 
 ## Current Verification
@@ -766,10 +794,10 @@ Historical PRD1 summary: Core backend modules, admin APIs, frontend pages, migra
 |------|--------|----------|
 | V1 Security Remediation | CI verified / closed for all findings; selected target slices Target verified | PR #217 required CI and merge close all 39 canonical findings at `cdbaa972db9b318b4412dd2aebce118c934debac`. Only the authentication/session/local-login/RBAC/UI/API slices explicitly exercised by the later target closeout are Target verified; unexercised findings are not promoted. Evidence: `docs/ops/evidence/V1-SECURITY-REMEDIATION-LOCAL-20260717.md`, `docs/ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md` and `docs/agent-workflows/EXECUTION-RECORD.md` |
 | V1 Seven-Role User-Task IA And Role Correctness | Target verified / closed for enumerated UI/API/DB surfaces | Release `1.0.1` / sequence `5` / schema `000042` passed the seven-role 52-route matrix, representative API allow/deny checks, key lifecycle, logout/session readback, responsive checks and bounded cleanup. This is not an all-feature or Production claim. Evidence: `docs/ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md` |
-| V1 Post-PRD6 First-Release Window | Closed for the selected scope; X-Insight coordination is the sole active follow-up within this window | No active UniRouter-owned implementation/target mutation remains in this window. The later independent V1 security/IA corrective batch is now closed separately and does not rewrite the immutable 2026-07-16 window evidence. `V1-TARGET-PILOT-001` and `V1-CHANNEL-MAPPING-001` are deferred. Actual supplier-bill reconciliation was not executed; recurring/productized reconciliation is not implemented and remains candidate `D7-COST-001/002`. Closing the window does not verify those items. Evidence: `docs/ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md`, `docs/ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md` |
-| V1 Admin Principal State And Pilot Catalog | Target verified / closed for the administrator defect, catalog-consistency defect and exact two-model target configuration | PR #214 head `4cf1376` passed run `29441931266` and merged/deployed as `46b49b6` with formal sequence `4`. The same temporary JWT was 200 before and 401 after disablement. Stable/canary API, DB and authenticated-browser approved/model-set/project views show exactly `mimo-v2.5-pro` plus `DeepSeek-V4-Flash`; internal channel views retain intentionally disabled Kimi. Excluded operation `op_163bb39294d192e19e664d7912111512` was 403 with zero dispatch, financial rows or wallet change; temporary users/keys are inactive. The public target is HTTP, so this is not TLS evidence. Evidence: `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md`. Broader providers, capacity, detector, IdP, customer operations and Production are deferred outside this window; supplier-bill reconciliation was not executed; X-Insight remains the sole active coordination follow-up within this window |
+| V1 Post-PRD6 First-Release Window | Closed for the selected scope; UR-E is separate pending-activation governance | No active UniRouter-owned implementation/target mutation remains in this window. The later independent V1 security/IA corrective batch is now closed separately and does not rewrite the immutable 2026-07-16 window evidence. The historical X-Insight v2 consumer defect is closed; UR-E does not reopen this window. `V1-TARGET-PILOT-001` and `V1-CHANNEL-MAPPING-001` are deferred. Actual supplier-bill reconciliation was not executed; recurring/productized reconciliation is not implemented and remains candidate `D7-COST-001/002`. Closing the window does not verify those items. Evidence: `docs/ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md`, `docs/ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md` |
+| V1 Admin Principal State And Pilot Catalog | Target verified / closed for the administrator defect, catalog-consistency defect and exact two-model target configuration | PR #214 head `4cf1376` passed run `29441931266` and merged/deployed as `46b49b6` with formal sequence `4`. The same temporary JWT was 200 before and 401 after disablement. Stable/canary API, DB and authenticated-browser approved/model-set/project views show exactly `mimo-v2.5-pro` plus `DeepSeek-V4-Flash`; internal channel views retain intentionally disabled Kimi. Excluded operation `op_163bb39294d192e19e664d7912111512` was 403 with zero dispatch, financial rows or wallet change; temporary users/keys are inactive. The public target is HTTP, so this is not TLS evidence. Evidence: `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-TARGET-20260716.md`. Broader providers, capacity, detector, IdP, customer operations and Production are deferred outside this window; supplier-bill reconciliation was not executed; the later UR-E proposal is separate pending-activation governance |
 | V1 Provider Bill Reconciliation | Deferred — actual reconciliation not executed; recurring/productized capability not implemented | Real calls prove provider-returned usage/status and UniRouter customer-ledger settlement only. No provider billing console, finalized export/API, invoice or isolated balance delta has been inspected, so actual supplier cost, discount/free-credit/cache/tax/rounding treatment and margin are unverified. A bounded manual/account reconciliation may be separately authorized; recurring product capability remains PRD7 candidate `D7-COST-001/002`. This does not block the current functional pilot but blocks supplier-cost/pass-through/margin/Production-financial claims. Evidence boundary: `docs/ops/evidence/V1-POST-PRD6-WINDOW-CLOSEOUT-20260716.md`; issue `V1-PROVIDER-BILL-RECON-001` |
-| V1 ae9 Historical Upstream Status, Mimo And DeepSeek Flash Route/Price Target | Target verified / closed for the status regression, bounded named calls and dated Flash pilot rate | PR #210 exact head `5f8cd6a` passed required run `29419821405` and merged as `ae9ce2c`. At that immutable checkpoint stable/canary ran formal image `sha256:fca7fe8f...`, release trust 1/1, active enforceable test License and signed sequence `3`; PR #214 later superseded the runtime without invalidating its request evidence. Mimo request `op_1dc206219bcbafc45d4b9df2b66915c7` and DeepSeek Flash requests `op_773ffcc46d00b98e1bb373ef161b90d1` / `op_240a63dd8e3de67036d894cd5b7d0d8f` prove gateway/upstream 200, provider-reported final usage, exact settlement and credential cleanup. The second Flash request settled 5 uncached input plus 1 output token for 7 micro-CNY after supported Admin API audit #196 aligned the target to DeepSeek's 2026-07-16 public CNY rates. Evidence: `docs/ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md`, `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md` and `docs/ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md`. Kimi, DeepSeek Pro, capacity, detector, IdP, customer and Production are deferred outside this window; X-Insight remains active, while supplier invoice and durable markup policy are not claimed |
+| V1 ae9 Historical Upstream Status, Mimo And DeepSeek Flash Route/Price Target | Target verified / closed for the status regression, bounded named calls and dated Flash pilot rate | PR #210 exact head `5f8cd6a` passed required run `29419821405` and merged as `ae9ce2c`. At that immutable checkpoint stable/canary ran formal image `sha256:fca7fe8f...`, release trust 1/1, active enforceable test License and signed sequence `3`; PR #214 later superseded the runtime without invalidating its request evidence. Mimo request `op_1dc206219bcbafc45d4b9df2b66915c7` and DeepSeek Flash requests `op_773ffcc46d00b98e1bb373ef161b90d1` / `op_240a63dd8e3de67036d894cd5b7d0d8f` prove gateway/upstream 200, provider-reported final usage, exact settlement and credential cleanup. The second Flash request settled 5 uncached input plus 1 output token for 7 micro-CNY after supported Admin API audit #196 aligned the target to DeepSeek's 2026-07-16 public CNY rates. Evidence: `docs/ops/evidence/V1-DEEPSEEK-FLASH-OFFICIAL-PRICE-TARGET-20260716.md`, `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md` and `docs/ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md`. Kimi, DeepSeek Pro, capacity, detector, IdP, customer and Production are deferred outside this window; the later UR-E proposal remains non-binding, while supplier invoice and durable markup policy are not claimed |
 | V1 Financial Prerequisites | CI verified / closed; exact target rows preserved at the 2026-07-14 checkpoint | PR #196 exact head `2c5e930` / run `29300560434` / merge `86a3bd8` closes unsafe absolute wallet adjustment. PR #197 exact head `74ebf62` / run `29301071299` / merge `94c93dc` closes the public price-unit/default-price defect and adds `000035` without rewriting existing rows. The test target retained every price at that checkpoint; no automatic conversion or repricing occurred. The later supported Admin API update changed only authorized DeepSeek Flash row #9 and did not bulk-reprice any other row. Evidence: `docs/ops/evidence/V1-POST-PRD6-FINANCIAL-PREREQUISITES-CI-20260714.md` and the V1 target evidence |
 | V1 Micro-Precision Ledger And Environment Label | Target verified / closed for the selected development ECS | PR #202 exact head `1944e31` passed run `29334221779` and merged as `ec0dde2`; the authorized non-rolling activation applied `000035`/`000036`. PR #203 exact head `b76f253` passed run `29339373907`, merged as intermediate release `545e514`, and wired the frontend build-time environment label. Stable/canary/runtime/schema/API and authenticated browser evidence passed; `开发环境` renders with zero console errors/warnings. Evidence: `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-LOCAL-20260714.md`, `docs/ops/evidence/V1-POST-PRD6-MICRO-PRECISION-LEDGER-TARGET-20260714.md`. No Production, real-provider/detector, HA/capacity, TLS, migration-down or X-Insight consumer claim |
 | V1 Post-PRD6 CI Efficiency | CI verified / closed | PR #198 exact head run `29299202652`, squash merge `31d87de`, no automatic merge-commit CI, trusted main run `29299765793`, shared cache `5720112747` and final 32-cache / `9,503,335,891`-byte readback. Docs-only PR #199 run `29300434659` passed with explicit skipped Backend/Frontend/Docker contexts. Evidence: `docs/ops/evidence/V1-POST-PRD6-CI-EFFICIENCY-CI-20260714.md` |

@@ -2,6 +2,19 @@
 
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
+> **Newest cross-project checkpoint (2026-07-19):** UniRouter accepts the exact
+> bounded synthetic v2 sidecar proposal in its owner-authored
+> [UR-E U0 response](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-19-unirouter-prd2-v2-sidecar-external-integration-artifact-response.md>).
+> The exact
+> [joint decision candidate](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-19-prd2-ur-e-bounded-synthetic-sidecar-execution.md>)
+> remains `Decision proposed` / `Not binding` and pending joint activation.
+> This planning link authorizes no manifest, seed database, artifact,
+> transfer, Target write, deployment, credential change or customer-data use.
+> No artifact or handoff evidence was created at U0. After this independent
+> UniRouter docs PR merges, one designated shared-decision writer must still
+> perform the atomic acceptance/binding update before the UniRouter Stage A
+> owner may execute. PRD6 stays closed and the completed-execution live feed
+> remains deferred as a whole.
 > **Newest cross-project checkpoint (2026-07-18):**
 > `V1-XI-LEDGER-001` is UniRouter-owned implementation and CI verified through
 > PR #219: exact head `be2d5f5d1cd6d322728b3d7c9aa8a5a347650563`,
@@ -15,13 +28,18 @@
 > persisted and read it back; replay was 2 duplicate/no-op and 0 conflicts;
 > SQL/API and real loopback browser showed
 > `CNY 0.000007 (7 micro-CNY)` without `cost_cents` or raw content.
-> That was a probe against the then-current uncommitted X-Insight worktree using
-> task-owned isolated databases, not consumer acceptance or publication. After
+> At that historical checkpoint, this was a probe against the then-current
+> uncommitted X-Insight worktree using task-owned isolated databases, not yet
+> consumer publication or Target evidence. After
 > the ownership correction, this closeout made no further X-Insight worktree
 > writes and did not stage, commit, push, reset or clean that repository.
 > Independent
-> review found an X-Insight-owned v2-to-v1 source-registry downgrade case still
-> open. UniRouter now defaults new exchange registrations to snapshot v2; its
+> review found an X-Insight-owned v2-to-v1 source-registry downgrade case. That
+> later closed in X-Insight PR #52 / merge `0462e698`; rc.6 deployable source is
+> PR #54 / `0ca502f`, and PR #55 / `6b1ea900` records the historical fixture
+> Target proof as execution-owner verified, not independent acceptance or fresh
+> External integration. UniRouter now defaults new exchange registrations to
+> snapshot v2; its
 > producer query/mapper/negative-money contract runs in required CI. All five
 > exact temporary JSON files and three task-owned isolated databases were
 > removed with absence checks; no X-Insight worktree file was deleted during
@@ -31,6 +49,13 @@
 > not deployed.
 > Evidence:
 > `docs/ops/evidence/V1-XI-LEDGER-V2-SIDECAR-LOCAL-20260718.md`.
+> The User also accepted the shared
+> [2026-07-18 live-feed deferral decision](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-18-prd2-completed-execution-live-feed-deferral.md>):
+> the whole completed-execution feed slice is outside the first formal version,
+> not accepted or implemented piecemeal. The sidecar-only boundary remains
+> binding; no automatic freshness commitment or runtime authorization exists.
+> The fresh manifest-bound External-integration proof remains separate and is
+> represented only by the non-binding UR-E candidate above.
 > **Newest checkpoint (2026-07-18):** PR #217 exact head
 > `afb5269a15619858f7eb6c477a35d59ca5753151` passed CI run `29590689179`;
 > Change Routing and all three branch-protection required checks succeeded. Its
@@ -83,9 +108,10 @@
 > the earlier Post-PRD6 work window.
 > **Post-PRD6 V1 window decision (2026-07-16):** the selected first-release
 > work window is closed. There is no remaining active UniRouter-owned
-> implementation or target mutation in this window; `V1-XI-LEDGER-001` is the
-> sole active follow-up within this V1 Post-PRD6 window and remains X-Insight
-> coordination pending.
+> implementation or target mutation in this window. The historical
+> `V1-XI-LEDGER-001` consumer defect is closed by X-Insight; the later UR-E
+> proposal is a separate pending-activation cross-project governance item, not
+> reopened Post-PRD6 implementation.
 > `V1-TARGET-PILOT-001` is deferred to a future customer/Production acceptance
 > window, `V1-CHANNEL-MAPPING-001` is deferred until post-pilot feedback, and
 > `V1-PROVIDER-BILL-RECON-001` records that actual supplier-bill reconciliation
@@ -123,7 +149,8 @@
 > `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md`.
 > Capacity, detector, enterprise IdP, customer operations,
 > Production/TLS/HA and broader provider verification are deferred outside this
-> closed window. X-Insight v2 is the sole active coordination follow-up. No
+> closed window. The later UR-E proposal is a separate pending-activation
+> coordination item. No
 > provider billing console/export/invoice was inspected: the prior cumulative
 > 810007 micro-CNY is a UniRouter customer-ledger charge, not proven supplier
 > COGS. PRD6 stays
@@ -166,9 +193,9 @@
 > authenticated browser readback passed; the UI displays `开发环境` with zero
 > browser console errors/warnings. This is Target verified, not Production,
 > real-provider/detector, TLS, capacity/HA or migration-down evidence.
-> X-Insight v2 consumer acceptance remains the sole active Post-PRD6 follow-up;
-> the non-X-Insight residuals are deferred/not implemented outside this closed
-> work window.
+> The historical X-Insight v2 consumer defect is closed; the later UR-E
+> proposal remains non-binding and outside this closed work window. The
+> non-X-Insight residuals are deferred/not implemented outside it.
 
 ## First Read Order
 
@@ -521,8 +548,9 @@ Batch 1V Atlas execution produced an immutable sanitized snapshot with a known
 denied-scenario correlation/source-trace gap. X-Insight persistent import/readback
 is External integration verified. The Batch 1W denied follow-up and key disable
 are complete, and its second snapshot passed X-Insight persistence/idempotency/
-readback. X-Insight's fixture/synthetic-only non-production target is Target
-verified at release artifact `b9e5811`; real upstream E2E and unimplemented
+readback. X-Insight's fixture/synthetic-only non-production Target is recorded
+as execution-owner verified at release artifact `b9e5811`; independent
+acceptance, fresh External integration, real upstream E2E and unimplemented
 durable runtime contracts remain separate.
 
 Batch 1X and Batch 1Y are integrated through PR #131. Batch 1Z records final
