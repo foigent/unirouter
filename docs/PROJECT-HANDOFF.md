@@ -2,23 +2,40 @@
 
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
-> **Newest cross-project checkpoint (2026-07-19):** UniRouter accepts the exact
+> **Newest cross-project checkpoint (2026-07-19 UR-E Stage A):** the binding
+> [joint decision](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-19-prd2-ur-e-bounded-synthetic-sidecar-execution.md>)
+> authorized one fresh metadata-only synthetic sidecar. UniRouter generated it
+> once from clean head `9a94d549...` using producer authority `5176654d...` /
+> CI `29640791281`. Artifact SHA-256 is `412c9b641c...`; it contains the exact
+> request `req-ur-e-v2-synthetic-20260719-001`, `cost_micros="314159"`, one
+> call log, no trace row and one missing-trace gap. The approved exclusive-copy
+> mechanism created distinct `0600` receiver files whose hashes and bytes match
+> the senders. The sanitized
+> [handoff](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/evidence/2026-07-19-prd2-ur-e-bounded-synthetic-sidecar-handoff.md>)
+> is `producer_complete_receiver_pending`, and the writer baton is released.
+> Next owner action is X-Insight Stage A.5: independently hash the receiver and
+> perform read-only Target/release/database/path and pre-existence checks. No
+> Target placement/import is reachable until `stage_b_gate_passed`. Evidence:
+> `docs/ops/evidence/V1-XI-LEDGER-V2-SIDECAR-UR-E-STAGE-A-20260719.md`.
+> This is not External integration verified, Production, customer data or live
+> feed.
+> **Historical U0 checkpoint (2026-07-19):** UniRouter accepted the exact
 > bounded synthetic v2 sidecar proposal in its corrected owner-authored
 > [UR-E U0 response](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-19-unirouter-prd2-v2-sidecar-external-integration-artifact-response.md>).
 > The exact
 > [joint decision candidate](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-19-prd2-ur-e-bounded-synthetic-sidecar-execution.md>)
-> remains `Decision proposed` / `Not binding` at SHA-256 `c92fd0b...` and
-> pending joint activation. The linked
+> was `Decision proposed` / `Not binding` at SHA-256 `c92fd0b...` and
+> pending joint activation at that checkpoint. The linked
 > [P1 correction](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-19-x-insight-ur-e-u0-exclusive-create-correction.md>)
 > is addressed by versioned `ur-e-exclusive-copy-v1`, whose destination open is
 > atomically exclusive and whose success/failure states are exact-file scoped.
-> This planning link authorizes no manifest, seed database, artifact,
+> At that checkpoint this planning link authorized no manifest, seed database, artifact,
 > transfer, Target write, deployment, credential change or customer-data use.
 > No artifact or handoff evidence was created. The correction is published by
 > the independent UniRouter PR carrying this record, with required-CI and merge
-> identities backfilled in the owner response. X-Insight must independently
-> verify that publication before one designated shared-decision writer may
-> perform the atomic acceptance/binding update. The UniRouter Stage A owner may
+> identities backfilled in the owner response. X-Insight still had to independently
+> verify that publication before one designated shared-decision writer could
+> perform the atomic acceptance/binding update. The UniRouter Stage A owner could
 > not execute earlier. PRD6 stays closed and the completed-execution live feed
 > remains deferred as a whole.
 > **Newest cross-project checkpoint (2026-07-18):**
@@ -60,8 +77,9 @@
 > the whole completed-execution feed slice is outside the first formal version,
 > not accepted or implemented piecemeal. The sidecar-only boundary remains
 > binding; no automatic freshness commitment or runtime authorization exists.
-> The fresh manifest-bound External-integration proof remains separate and is
-> represented only by the non-binding UR-E candidate above.
+> At that checkpoint the fresh manifest-bound External-integration proof was
+> represented only by a non-binding UR-E candidate; its later binding Stage A
+> state is recorded at the top of this handoff.
 > **Newest checkpoint (2026-07-18):** PR #217 exact head
 > `afb5269a15619858f7eb6c477a35d59ca5753151` passed CI run `29590689179`;
 > Change Routing and all three branch-protection required checks succeeded. Its
@@ -116,8 +134,8 @@
 > work window is closed. There is no remaining active UniRouter-owned
 > implementation or target mutation in this window. The historical
 > `V1-XI-LEDGER-001` consumer defect is closed by X-Insight; the later UR-E
-> proposal is a separate pending-activation cross-project governance item, not
-> reopened Post-PRD6 implementation.
+> execution is a separate cross-project item whose current Stage A state is
+> recorded above, not reopened Post-PRD6 implementation.
 > `V1-TARGET-PILOT-001` is deferred to a future customer/Production acceptance
 > window, `V1-CHANNEL-MAPPING-001` is deferred until post-pilot feedback, and
 > `V1-PROVIDER-BILL-RECON-001` records that actual supplier-bill reconciliation
@@ -155,8 +173,8 @@
 > `docs/ops/evidence/V1-ADMIN-JWT-STATUS-AND-PILOT-CATALOG-LOCAL-20260716.md`.
 > Capacity, detector, enterprise IdP, customer operations,
 > Production/TLS/HA and broader provider verification are deferred outside this
-> closed window. The later UR-E proposal is a separate pending-activation
-> coordination item. No
+> closed window. The later UR-E execution is a separate cross-project item;
+> Stage A is complete and Stage A.5 remains pending as recorded above. No
 > provider billing console/export/invoice was inspected: the prior cumulative
 > 810007 micro-CNY is a UniRouter customer-ledger charge, not proven supplier
 > COGS. PRD6 stays
@@ -200,7 +218,8 @@
 > browser console errors/warnings. This is Target verified, not Production,
 > real-provider/detector, TLS, capacity/HA or migration-down evidence.
 > The historical X-Insight v2 consumer defect is closed; the later UR-E
-> proposal remains non-binding and outside this closed work window. The
+> execution is binding with Stage A complete and Stage A.5 pending, and remains
+> outside this closed work window. The
 > non-X-Insight residuals are deferred/not implemented outside it.
 
 ## First Read Order
