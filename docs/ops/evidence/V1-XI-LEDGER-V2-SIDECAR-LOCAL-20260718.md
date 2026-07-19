@@ -6,12 +6,11 @@
 
 **Owner:** Codex
 
-**Status:** UniRouter implemented and required CI verified with synthetic,
-metadata-only data; the historical X-Insight consumer defect is published and
-named-Target fixture proof is execution-owner verified; the later UR-E U0
-exclusive-create safety correction is locally verified and carried by its
-independent publication PR, but fresh External integration remains pending
-independent X-Insight verification, joint activation and execution
+**Status:** historical 2026-07-18 local evidence. The consumer defect and
+publication gap later closed; the separate UR-E decision is now binding and
+its Stage A generation/transfer is owner-verified in
+`V1-XI-LEDGER-V2-SIDECAR-UR-E-STAGE-A-20260719.md`. Fresh External integration
+still awaits X-Insight Stage A.5 and Stage B.
 
 ## Frozen boundaries
 
@@ -25,19 +24,20 @@ independent X-Insight verification, joint activation and execution
 - No completed-execution read model, endpoint, cursor/replay, service token,
   continuous polling, p95 freshness gate, Production access or customer data
   was added or used.
-- The later UniRouter
+- At this historical checkpoint, the later UniRouter
   [UR-E U0 response](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-19-unirouter-prd2-v2-sidecar-external-integration-artifact-response.md>)
   accepts one new bounded synthetic v2 proof. Its
   [joint decision candidate](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-19-prd2-ur-e-bounded-synthetic-sidecar-execution.md>)
-  remains proposed/non-binding; no manifest, artifact, transfer or handoff
-  evidence exists from U0.
+  was proposed/non-binding; no manifest, artifact, transfer or handoff evidence
+  existed from U0. The later binding activation and Stage A result are recorded
+  separately in `V1-XI-LEDGER-V2-SIDECAR-UR-E-STAGE-A-20260719.md`.
 - The later
   [P1 exclusive-create correction](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-19-x-insight-ur-e-u0-exclusive-create-correction.md>)
   withdraws ordinary `install -m 0600`. The amended response fixes the
   mechanism at `ur-e-exclusive-copy-v1`, requires atomic
   `O_WRONLY|O_CREAT|O_EXCL`, verifies regular file / `0600` / length / SHA-256
   after close, and confines post-create failure handling to the exact created
-  receiver. It does not activate the decision or create any exchange bytes.
+  receiver. At U0 it did not activate the decision or create exchange bytes.
 - UniRouter PR #219 exact head
   `be2d5f5d1cd6d322728b3d7c9aa8a5a347650563` passed required CI run
   `29640791281` and squash-merged as code-bearing commit
@@ -250,7 +250,7 @@ project implements live transport.
 | Local verified | Yes for UniRouter producer/ledger behavior; synthetic cross-repository compatibility probe observed |
 | CI verified | Yes for UniRouter, required CI run `29640791281` |
 | Target verified | Historical `93bc4c...` fixture pairing is X-Insight execution-owner verified on the named non-production Target; independent acceptance is not claimed |
-| External integration | Not closed for a fresh producer handoff; UR-E is accepted by UniRouter but remains proposed/non-binding pending independent X-Insight verification, atomic activation and execution |
+| External integration | Not closed; UR-E is now binding and Stage A generation/transfer is owner-verified, while X-Insight Stage A.5 and Stage B remain pending |
 | Production verified | No |
 
 ## Cleanup

@@ -1,6 +1,57 @@
 # Current Execution Record
 
-## Completed UniRouter-Owned Closeout — V1 X-Insight Ledger v2 Sidecar
+## Active Cross-Project Execution — UR-E Bounded Synthetic Sidecar
+
+**Batch:** `V1-XI-LEDGER-001 / UR-E`
+
+**Owner:** Codex, sequential single execution owner
+
+**Risk:** R3 controlled cross-project evidence transfer and exact monetary
+schema compatibility; Stage B Target write remains R4-gated
+
+**Status:** UniRouter Stage A generation/transfer complete; shared handoff is
+`producer_complete_receiver_pending`; X-Insight Stage A.5 read-only preflight
+is next
+
+**Binding authority:** accepted decision SHA-256 `c674b04f...`, activated
+`2026-07-19 12:15:26 CST`; corrected response SHA-256 `12857bd7...`.
+
+**Producer authority:** clean generation head `9a94d549...`; actual producer
+merge `5176654d...`, PR #219 head `be2d5f5...`, required CI `29640791281` and
+producer source SHA-256 `a2f2fc72...`. The complete generation-head delta from
+producer authority is seven `docs/**` paths only.
+
+**Stage A result:** exact request
+`req-ur-e-v2-synthetic-20260719-001`, source instance
+`unirouter-ur-e-20260719-001`, source time after activation,
+`cost_micros="314159"`, one call log, zero trace events and one approved
+missing-trace gap. The new artifact is 3985 bytes, mode `0600`, SHA-256
+`412c9b641cb6b6451a8b66f3ff808ef29750a7f3bedafdef93a473b66f641e7e`;
+it embeds the exact 412-byte manifest SHA-256 `b1c096df...` and differs from
+both historical artifacts. Safety/contract checks found no raw prompt,
+response, API key, IP, upstream error, credential or `cost_cents`.
+
+**Transfer:** corrected `ur-e-exclusive-copy-v1` created the manifest and then
+artifact receiver once each at their exact non-Target paths. Both receivers
+are separate mode-`0600` inodes with sender-equal length/SHA and bytewise
+`cmp`. There was no retry, overwrite, substitution or Target access.
+
+**Next gate:** the writer baton is released. X-Insight may append only its
+Stage A.5 receiver/preflight half after independently recomputing receiver
+hashes and completing read-only Target/release/database/path and source-
+qualified pre-existence checks. Target placement/import is prohibited until
+`stage_b_gate_passed`; any mismatch records `stopped` and the artifact cannot
+be regenerated or substituted under this decision.
+
+**Evidence:**
+`docs/ops/evidence/V1-XI-LEDGER-V2-SIDECAR-UR-E-STAGE-A-20260719.md` and
+[shared handoff](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/evidence/2026-07-19-prd2-ur-e-bounded-synthetic-sidecar-handoff.md>).
+
+**Claim boundary:** Stage A owner-verified only. No X-Insight acceptance,
+Target write/import, External integration verified, customer data, Production
+or live-feed claim. PRD6 remains closed.
+
+## Historical Completed UniRouter-Owned Closeout — V1 X-Insight Ledger v2 Sidecar
 
 **Batch:** `V1-XI-LEDGER-001`
 
@@ -9,8 +60,10 @@
 **Risk:** R3 cross-repository monetary schema, persistence and evidence
 compatibility
 
-**Status:** UniRouter implementation and required CI verified; X-Insight-owned
-consumer fix/publication/acceptance remain pending, so the joint issue stays open
+**Historical status at 2026-07-18:** UniRouter implementation and required CI
+were verified; X-Insight-owned consumer fix/publication/acceptance were then
+pending. The newer active UR-E record above supersedes only that current-status
+classification, not this evidence.
 
 **Repository authority:** PR #219 exact head
 `be2d5f5d1cd6d322728b3d7c9aa8a5a347650563` passed required CI run
