@@ -8,8 +8,10 @@
 
 **Status:** UniRouter implemented and required CI verified with synthetic,
 metadata-only data; the historical X-Insight consumer defect is published and
-named-Target fixture proof is execution-owner verified; fresh External
-integration remains pending joint activation and execution
+named-Target fixture proof is execution-owner verified; the later UR-E U0
+exclusive-create safety correction is locally verified and carried by its
+independent publication PR, but fresh External integration remains pending
+independent X-Insight verification, joint activation and execution
 
 ## Frozen boundaries
 
@@ -29,6 +31,13 @@ integration remains pending joint activation and execution
   [joint decision candidate](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-19-prd2-ur-e-bounded-synthetic-sidecar-execution.md>)
   remains proposed/non-binding; no manifest, artifact, transfer or handoff
   evidence exists from U0.
+- The later
+  [P1 exclusive-create correction](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-19-x-insight-ur-e-u0-exclusive-create-correction.md>)
+  withdraws ordinary `install -m 0600`. The amended response fixes the
+  mechanism at `ur-e-exclusive-copy-v1`, requires atomic
+  `O_WRONLY|O_CREAT|O_EXCL`, verifies regular file / `0600` / length / SHA-256
+  after close, and confines post-create failure handling to the exact created
+  receiver. It does not activate the decision or create any exchange bytes.
 - UniRouter PR #219 exact head
   `be2d5f5d1cd6d322728b3d7c9aa8a5a347650563` passed required CI run
   `29640791281` and squash-merged as code-bearing commit
@@ -241,7 +250,7 @@ project implements live transport.
 | Local verified | Yes for UniRouter producer/ledger behavior; synthetic cross-repository compatibility probe observed |
 | CI verified | Yes for UniRouter, required CI run `29640791281` |
 | Target verified | Historical `93bc4c...` fixture pairing is X-Insight execution-owner verified on the named non-production Target; independent acceptance is not claimed |
-| External integration | Not closed for a fresh producer handoff; UR-E is accepted by UniRouter but remains proposed/non-binding pending atomic activation and execution |
+| External integration | Not closed for a fresh producer handoff; UR-E is accepted by UniRouter but remains proposed/non-binding pending independent X-Insight verification, atomic activation and execution |
 | Production verified | No |
 
 ## Cleanup
