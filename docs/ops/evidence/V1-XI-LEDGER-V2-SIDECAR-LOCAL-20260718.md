@@ -7,16 +7,28 @@
 **Owner:** Codex
 
 **Status:** UniRouter implemented and required CI verified with synthetic,
-metadata-only data; X-Insight-owned fix/publication/acceptance pending
+metadata-only data; the historical X-Insight consumer defect is published and
+named-Target fixture proof is execution-owner verified; fresh External
+integration remains pending joint activation and execution
 
 ## Frozen boundaries
 
 - PRD6 remains `Completed (Accepted Scope)`; this batch does not reopen it.
 - The accepted joint runtime remains the operator-mediated
   `xinsight.import-receipt.v1` sidecar.
+- The User accepted the shared
+  [2026-07-18 completed-execution live-feed deferral](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-18-prd2-completed-execution-live-feed-deferral.md>).
+  This defers the whole slice from the first formal version; it does not accept
+  the proposed feed contract or waive any unimplemented feed gate.
 - No completed-execution read model, endpoint, cursor/replay, service token,
   continuous polling, p95 freshness gate, Production access or customer data
   was added or used.
+- The later UniRouter
+  [UR-E U0 response](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-19-unirouter-prd2-v2-sidecar-external-integration-artifact-response.md>)
+  accepts one new bounded synthetic v2 proof. Its
+  [joint decision candidate](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-19-prd2-ur-e-bounded-synthetic-sidecar-execution.md>)
+  remains proposed/non-binding; no manifest, artifact, transfer or handoff
+  evidence exists from U0.
 - UniRouter PR #219 exact head
   `be2d5f5d1cd6d322728b3d7c9aa8a5a347650563` passed required CI run
   `29640791281` and squash-merged as code-bearing commit
@@ -93,13 +105,14 @@ or accept that consumer. The observed patch:
 - makes the exported event builder validate malformed snapshots instead of
   panicking.
 
-Independent review also found an unresolved X-Insight-owned compatibility bug:
-after a v2 import, a later valid v1 replay can downgrade the mutable source
-registry to v1 even though v2 events remain persisted. Existing smoke coverage
-only checks that the source list is non-empty. This does not corrupt the exact
-money event readback proven below, but it prevents consumer acceptance and
-External-integration closure until X-Insight fixes and verifies monotonic
-version behavior (or adopts a non-mutable version model).
+Independent review also found an X-Insight-owned compatibility bug at this
+historical checkpoint: after a v2 import, a later valid v1 replay could
+downgrade the mutable source registry to v1 even though v2 events remained
+persisted. Existing smoke coverage then checked only that the source list was
+non-empty. This did not corrupt the exact money event readback proven below,
+but it prevented consumer acceptance at that time. X-Insight later fixed and
+published monotonic source-version behavior in PR #52 / merge `0462e698`; the
+subsequent evidence boundary is recorded below.
 
 The actual X-Insight migration and importer CLIs ran against a fresh isolated
 local database:
@@ -164,12 +177,38 @@ actual PostgreSQL-backed server displayed:
   build pass. The focused Data Exchange file passed 5/5.
 - X-Insight PostgreSQL-backed first-write, identical replay, search/API and
   real-browser checks: observed pass against its uncommitted worktree.
-- X-Insight existing test suites also passed in that worktree, but they did not
-  cover the later-v1 source-registry downgrade found by independent review.
+- X-Insight existing test suites also passed in that worktree, but at that
+  checkpoint they did not cover the later-v1 source-registry downgrade found
+  by independent review; PR #52 later added the missing correction/regression.
 - UniRouter required CI run `29640791281`: Change Routing, Backend Tests,
   Frontend Build and Docker Build all pass. The direct producer contract step
   passed inside Backend Tests.
 - UniRouter `git diff --check`: pass at this checkpoint.
+
+## Subsequent X-Insight-Owned Publication And Target Boundary
+
+This UniRouter evidence preserves the historical 2026-07-18 probe. Later
+read-only reconciliation verified the following X-Insight-owned publication
+chain without modifying the X-Insight repository:
+
+- PR #52 merged as `0462e698775488d86e1263debf64990239464340`;
+  PR CI `29645951982` and exact-main CI `29646094307` succeeded. The merged
+  consumer preserves monotonic source versions and separate v1/v2 mapper
+  identities.
+- PR #54 merged as `0ca502f99181173e3542592ae5a018a5bfc43e0c`;
+  exact-main CI `29648815418` and owner-supervised workflow `29648976737`
+  succeeded for the rc.6 release identity.
+- PR #55 merged as `6b1ea9002a7a8769473d3ceb4b180bf44d6ee6c4` and records
+  the historical `93bc4c...` fixture on the named non-production Target.
+  Those Target details are X-Insight execution-owner evidence, not independent
+  acceptance by UniRouter and not a fresh producer-to-consumer handoff.
+
+Accordingly, the historical consumer defect and publication gap are closed.
+The historical fixture pairing is Target execution-owner verified only.
+External integration remains open until a genuinely new manifest-bound
+artifact completes the separately governed UR-E generation, transfer,
+first-write, identical replay and bounded readback proof. U0 itself performs
+none of those operations.
 
 ## UR-XI-01 through UR-XI-10 fact matrix
 
@@ -178,16 +217,21 @@ The accepted sidecar result must not be used as a substitute for those gates.
 
 | ID | Current fact | Result |
 | --- | --- | --- |
-| UR-XI-01 | UniRouter main is `5176654`; PR #219 required CI run `29640791281` is green | Satisfied |
-| UR-XI-02 | A UniRouter response exists, but no joint versioned decision is accepted and linked by both projects | Not satisfied |
-| UR-XI-03 | The accepted sidecar preserves UniRouter independence; proposed feed failure/slow-path isolation has no executable evidence | Not satisfied for feed |
-| UR-XI-04 | No universal completed-execution terminal ledger covers all required success/failure/stream fixtures | Not satisfied |
-| UR-XI-05 | The synthetic sidecar proved no raw content, but no feed endpoint/cross-organization negative conformance exists | Not satisfied for feed |
-| UR-XI-06 | No feed cursor, revision, replay expiry, reset or restart contract is implemented | Not satisfied |
-| UR-XI-07 | No X-Insight-scoped service authentication exists | Not satisfied |
-| UR-XI-08 | No live-feed limit, 8 MiB, overload or replay-retention behavior exists | Not satisfied |
-| UR-XI-09 | The synthetic sidecar reached search/API/UI, but no live completion-to-search run with restart/outage recovery exists | Not satisfied for defined gate |
-| UR-XI-10 | No terminal-to-search freshness distribution or p95 live-feed measurement exists | Not satisfied |
+| UR-XI-01 | Current docs-only head is `f96fb039`; code-bearing PR #219 merge is `5176654`, with required CI run `29640791281` green | Satisfied |
+| UR-XI-02 | The User accepted a deferral decision linked from the UniRouter truth chain; the feed contract was not accepted and this task did not modify the X-Insight truth chain | Closed for current scope by deferral; not satisfied as a feed-enable gate |
+| UR-XI-03 | The accepted sidecar preserves UniRouter independence; proposed feed failure/slow-path isolation has no executable evidence | Not satisfied; explicitly deferred |
+| UR-XI-04 | No universal completed-execution terminal ledger covers all required success/failure/stream fixtures | Not satisfied; explicitly deferred |
+| UR-XI-05 | The synthetic sidecar proved no raw content, but no feed endpoint/cross-organization negative conformance exists | Not satisfied; explicitly deferred |
+| UR-XI-06 | No feed cursor, revision, replay expiry, reset or restart contract is implemented | Not satisfied; explicitly deferred |
+| UR-XI-07 | No X-Insight-scoped service authentication exists | Not satisfied; explicitly deferred |
+| UR-XI-08 | No live-feed limit, 8 MiB, overload or replay-retention behavior exists | Not satisfied; explicitly deferred |
+| UR-XI-09 | The synthetic sidecar reached search/API/UI, but no live completion-to-search run with restart/outage recovery exists | Not satisfied; explicitly deferred |
+| UR-XI-10 | No terminal-to-search freshness distribution or p95 live-feed measurement exists | Not satisfied; explicitly deferred |
+
+The accepted decision removes UR-XI-03 through UR-XI-10 from the current first
+formal version; it does not mark them passed, waived or Production-ready. A new
+explicit product decision must reopen the whole minimum slice before either
+project implements live transport.
 
 ## Classification
 
@@ -196,8 +240,8 @@ The accepted sidecar result must not be used as a substitute for those gates.
 | Implemented | Yes in UniRouter main merge `5176654d7d320b56c1c136f39b3debb8156ece4b` |
 | Local verified | Yes for UniRouter producer/ledger behavior; synthetic cross-repository compatibility probe observed |
 | CI verified | Yes for UniRouter, required CI run `29640791281` |
-| Target verified | No for this v2 producer/consumer pairing |
-| External integration | Not closed; X-Insight-owned fix, publication and acceptance pending |
+| Target verified | Historical `93bc4c...` fixture pairing is X-Insight execution-owner verified on the named non-production Target; independent acceptance is not claimed |
+| External integration | Not closed for a fresh producer handoff; UR-E is accepted by UniRouter but remains proposed/non-binding pending atomic activation and execution |
 | Production verified | No |
 
 ## Cleanup
