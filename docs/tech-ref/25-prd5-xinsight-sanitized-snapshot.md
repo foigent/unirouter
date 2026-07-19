@@ -1,12 +1,15 @@
 # PRD5 X-Insight Sanitized Snapshot
 
-> Version: v0.6
-> Date: 2026-07-18
+> Version: v0.7
+> Date: 2026-07-20
 > Status: the bounded operator-mediated sidecar is implemented. Two historical
 > controlled v1 exchanges completed; the current producer emits snapshot v2
 > with exact micro-CNY fields. UniRouter PR #219 / `5176654` passed required CI;
 > a local synthetic compatibility probe also passed, but X-Insight-owned fix,
-> publication and consumer acceptance remain a separate verification gate.
+> publication and consumer acceptance remain a separate verification gate. A
+> Linux-only strict internal-real generation path is now defined below; its
+> activation, source qualification, artifact generation and cross-project
+> binding remain separate User-gated work.
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`,
 > `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md`
@@ -20,7 +23,112 @@ The snapshot is not a production exporter. It is a bounded test artifact so
 X-Insight can validate import, dedupe, source refs, capture gaps, and read APIs
 without touching shared ECS or requiring live read-only credentials.
 
+## 2026-07-20 Strict Internal-Real Path
+
+The historical direct-ID and handoff workflow below remains useful evidence for
+the completed controlled Gate A exchanges, but it is not qualifying input for a
+new internal-real exchange. For that purpose, approval-manifest mode is the
+only strict path and applies these fail-closed rules:
+
+- the manifest contains `1..20` rows and every row is exactly `approved`,
+  `required: true`, notes-free, concrete, canonical and unique by both request
+  ID and scenario label; no row is ignored or normalized;
+- its exact bytes remain bound by `approval_manifest_sha256`, and the manifest
+  `source_instance` must already be canonical, must not be an `unknown`-class
+  placeholder and must match any CLI override;
+- an immutable limit requires `call_logs + request_trace_events + generated
+  capture_gaps <= 200`; the producer never truncates, samples or paginates to
+  satisfy it;
+- one server-confirmed `READ ONLY`, `REPEATABLE READ` transaction performs the
+  catalog preflight, source aggregates, both detail reads and every gate;
+- the actual `public.call_logs` and `public.request_trace_events` relations must
+  contain every snapshot-v2 column with a compatible type before any source-row
+  read; `call_logs.usage_confidence` is additionally required to be the actual
+  `NUMERIC(4,3)` source contract;
+- every selected request has source coverage, all rows belong to one positive
+  organization, no selected request spans organizations, and no request has
+  more than one call log;
+- final request/scenario/row/gap/count/source-ref sets must reconcile exactly;
+- source `payload_ref` is absent, payload mode is exactly `none`,
+  `metadata_only` or `hash_only`, and every exportable string, reference and
+  metadata scalar passes the producer-local field/value policy without silent
+  dropping, trimming or truncation; the already strict-validated metadata is
+  also passed through `traceutil.SanitizeMetadata` and generation fails unless
+  that sanitizer preserves it exactly. Metadata code strings use the current
+  receiver-safe character grammar, and integer-like metadata values in the
+  receiver-blocked absolute range `[1e9,1e15)` fail closed;
+- aggregate gates reject source rows containing any current blocked-class
+  marker (customer identifier, email, phone, URL, credential, raw error, raw IP
+  or unreviewed free text) before detail publication;
+- raw-IP or raw-upstream-error presence blocks strict generation. The two IP
+  booleans remain the only permitted artifact proof fields and are both false
+  for a qualifying source; this does not relax source qualification; and
+- each source event hash is raw lowercase 64-hex. It is a UniRouter producer
+  declaration, not a claim that X-Insight can recompute it from sidecar bytes.
+
+This B1 path validates manifest bytes, content and source binding only. It does
+not establish manifest-file custody; absolute/no-follow/current-owner/private-
+mode/single-link manifest custody remains a future B3/import prerequisite and
+is not implemented or claimed here.
+
+Strict output is Linux-only. Before reading the DSN, opening the database or
+reading source rows, the producer requires:
+
+- an explicit absolute, lexically normalized, non-stdout destination;
+- an already existing, symlink-free parent traversal whose final directory is
+  owned by the current user with exact mode `0700`;
+- a parent on the specifically qualified local ext4 backend, proven by both
+  `fstatfs` and the parent descriptor's `STATX_MNT_ID` joined to the exact
+  `ext4` entry in safely parsed `/proc/self/mountinfo`; the shared ext2/ext3/ext4
+  superblock magic alone is insufficient, and ext2, ext3, NFS, remote, overlay,
+  tmpfs and every other unproven filesystem type are unsupported;
+- no existing final entry, whether regular file or symlink;
+- a real anonymous `O_TMPFILE` inode with regular/current-owner/`0600`/zero-link
+  invariants; and
+- a verified `/proc/self/fd/<fd>` route for one atomic no-replace `linkat`
+  commit.
+
+All JSON bytes are encoded, written, `fsync`ed, descriptor-read back, length and
+SHA-256 checked while the inode has no directory entry. One successful
+`linkat` is the publication point and cannot later be downgraded by close or
+diagnostic failure. `EEXIST` leaves the winning file or symlink unchanged. The
+strict path never creates a named temporary file, writes under the final name,
+renames, unlinks, retries the commit, or accepts a `cleanup_blocked` state.
+Unsupported operating systems, kernels, filesystems or link routes fail before
+DSN lookup and create no output. The initial accepted backend identity is
+`linux/ext4/o_tmpfile/procfd-linkat`; no macOS, NFS, remote, overlay, tmpfs or
+other-platform/filesystem equivalence is claimed.
+
+The strict command shape is therefore limited to private custody paths whose
+literal values are not copied into shared evidence:
+
+```bash
+UNIROUTE_PRD5_SNAPSHOT_DSN="<least-privilege read-only DSN supplied out of band>" \
+go run scripts/prd5_xinsight_snapshot.go \
+  --approval-manifest /approved/private-custody/approval.json \
+  --output /approved/private-custody/snapshot.json
+```
+
+`--overwrite`, `--handoff-note`, stdout, relative output and direct request-ID
+selection are not valid on this strict path. Manifest or artifact bytes, request
+IDs, literal private paths, DSNs and field values must not be written to the
+shared cooperation directory. The exact direct regression command is:
+
+```bash
+go test scripts/prd5_xinsight_snapshot.go scripts/prd5_xinsight_snapshot_test.go -count=1
+```
+
+The Linux ext4 anonymous-inode success test must execute, rather than skip, and
+record the backend identity in the required `ubuntu-latest` backend check. A code merge alone does not activate
+generation: an eligible project-owned non-customer current-schema source, exact
+private request set, least-privilege read authorization, custody/expiry rules
+and a later explicit binding decision remain prerequisites.
+
 ## Tool
+
+The examples in this section describe the historical controlled Gate A surface.
+Direct-ID selection, overwrite, handoff notes and shared-folder artifact paths
+must not be reused for the strict internal-real path above.
 
 ```bash
 go run scripts/prd5_xinsight_snapshot.go -help
