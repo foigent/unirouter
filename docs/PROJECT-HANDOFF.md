@@ -3,17 +3,23 @@
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
 > **Newest cross-project checkpoint (2026-07-19):** UniRouter accepts the exact
-> bounded synthetic v2 sidecar proposal in its owner-authored
+> bounded synthetic v2 sidecar proposal in its corrected owner-authored
 > [UR-E U0 response](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-19-unirouter-prd2-v2-sidecar-external-integration-artifact-response.md>).
 > The exact
 > [joint decision candidate](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-19-prd2-ur-e-bounded-synthetic-sidecar-execution.md>)
-> remains `Decision proposed` / `Not binding` and pending joint activation.
+> remains `Decision proposed` / `Not binding` at SHA-256 `c92fd0b...` and
+> pending joint activation. The linked
+> [P1 correction](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-19-x-insight-ur-e-u0-exclusive-create-correction.md>)
+> is addressed by versioned `ur-e-exclusive-copy-v1`, whose destination open is
+> atomically exclusive and whose success/failure states are exact-file scoped.
 > This planning link authorizes no manifest, seed database, artifact,
 > transfer, Target write, deployment, credential change or customer-data use.
-> No artifact or handoff evidence was created at U0. After this independent
-> UniRouter docs PR merges, one designated shared-decision writer must still
-> perform the atomic acceptance/binding update before the UniRouter Stage A
-> owner may execute. PRD6 stays closed and the completed-execution live feed
+> No artifact or handoff evidence was created. The correction is published by
+> the independent UniRouter PR carrying this record, with required-CI and merge
+> identities backfilled in the owner response. X-Insight must independently
+> verify that publication before one designated shared-decision writer may
+> perform the atomic acceptance/binding update. The UniRouter Stage A owner may
+> not execute earlier. PRD6 stays closed and the completed-execution live feed
 > remains deferred as a whole.
 > **Newest cross-project checkpoint (2026-07-18):**
 > `V1-XI-LEDGER-001` is UniRouter-owned implementation and CI verified through
