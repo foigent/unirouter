@@ -1,6 +1,6 @@
 # PRD5 X-Insight Sanitized Snapshot
 
-> Version: v0.7
+> Version: v0.8
 > Date: 2026-07-20
 > Status: the bounded operator-mediated sidecar is implemented. Two historical
 > controlled v1 exchanges completed; the current producer emits snapshot v2
@@ -8,8 +8,10 @@
 > a local synthetic compatibility probe also passed, but X-Insight-owned fix,
 > publication and consumer acceptance remain a separate verification gate. A
 > Linux-only strict internal-real generation path is now defined below; its
-> activation, source qualification, artifact generation and cross-project
-> binding remain separate User-gated work.
+> designated source-IP field now uses a dual-boolean proof under
+> `IR-IP-POLICY-ADAPTATION`. This is UniRouter repository implementation only;
+> activation, source qualification, artifact generation, X-Insight review and
+> cross-project binding remain separate User-gated work.
 > Related: `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`,
 > `docs/planning/PRD5-XINSIGHT-GATE-A-COORDINATION.md`,
 > `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md`
@@ -58,18 +60,30 @@ only strict path and applies these fail-closed rules:
   receiver-safe character grammar, and integer-like metadata values in the
   receiver-blocked absolute range `[1e9,1e15)` fail closed;
 - aggregate gates reject source rows containing any current blocked-class
-  marker (customer identifier, email, phone, URL, credential, raw error, raw IP
-  or unreviewed free text) before detail publication;
-- raw-IP or raw-upstream-error presence blocks strict generation. The two IP
-  booleans remain the only permitted artifact proof fields and are both false
-  for a qualifying source; this does not relax source qualification; and
+  marker (customer identifier, email, phone, URL, credential, raw error,
+  unreviewed free text or an IP-like value outside the designated source field)
+  before detail publication;
+- the database may evaluate only whether designated
+  `public.call_logs.ip_address` is non-empty. Its raw string is never selected,
+  returned, scanned, logged, hashed or serialized. The bounded per-request
+  positive-presence count cannot exceed its call-log count and must reconcile
+  exactly with detail rows;
+- the only valid row proofs are `false/false` and `true/true` for
+  `ip_address_was_present` / `ip_address_redacted`; either mismatch fails before
+  publication. Those are the only permitted IP-related artifact fields, and
+  strict `safety.ip_handling` is frozen to
+  `raw IP addresses are not exported; only ip_address_was_present and ip_address_redacted boolean fields are retained`;
+- raw-upstream-error presence and every other blocked family continue to block
+  strict generation; designated IP presence is not source eligibility and does
+  not relax any other field/value policy; and
 - each source event hash is raw lowercase 64-hex. It is a UniRouter producer
   declaration, not a claim that X-Insight can recompute it from sidecar bytes.
 
 This B1 path validates manifest bytes, content and source binding only. It does
 not establish manifest-file custody; absolute/no-follow/current-owner/private-
 mode/single-link manifest custody remains a future B3/import prerequisite and
-is not implemented or claimed here.
+is not implemented or claimed here. Query/result non-disclosure also does not
+claim that the database principal lacks permission to select the base column.
 
 Strict output is Linux-only. Before reading the DSN, opening the database or
 reading source rows, the producer requires:
@@ -119,10 +133,13 @@ go test scripts/prd5_xinsight_snapshot.go scripts/prd5_xinsight_snapshot_test.go
 ```
 
 The Linux ext4 anonymous-inode success test must execute, rather than skip, and
-record the backend identity in the required `ubuntu-latest` backend check. A code merge alone does not activate
-generation: an eligible project-owned non-customer current-schema source, exact
-private request set, least-privilege read authorization, custody/expiry rules
-and a later explicit binding decision remain prerequisites.
+record the backend identity in the required `ubuntu-latest` backend check. A
+code merge alone does not activate B2a, B2b or generation: an eligible project-
+owned non-customer current-schema source, exact private request set, least-
+privilege read authorization, custody/expiry rules, X-Insight compatibility
+review and a later explicit binding decision remain prerequisites. This work
+item creates no manifest or artifact and performs no source, Target or
+Production operation.
 
 ## Tool
 
@@ -264,7 +281,10 @@ The output preserves:
 - capture gaps for selected request IDs with missing rows, including candidate
   capture-gap categories where UniRouter cannot assert one definitive cause.
 
-## Safety Behavior
+## Historical Direct-ID Safety Behavior
+
+This section applies only to the historical direct-ID workflow. It does not
+override the strict internal-real dual-boolean contract above.
 
 The snapshot does not export:
 

@@ -1,5 +1,41 @@
 # Current Execution Record
 
+## Current Repository Execution — IR-IP Policy Adaptation
+
+**Work item:** `IR-IP-POLICY-ADAPTATION`
+
+**Owner:** UniRouter execution owner, single repository writer
+
+**Risk:** R3 strict privacy boundary and cross-project producer/receiver
+compatibility; source and artifact operations remain separately gated
+
+**Authority:** exact
+[request](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-20-x-insight-prd2-internal-real-raw-ip-policy-adaptation-b2-retry-request.md>)
+SHA-256 `7517496d...`; `Decision owner: N/A`; `Cross-project binding state: Not
+binding`
+
+**Repository behavior:** designated `public.call_logs.ip_address` is evaluated
+only as a presence boolean. The producer accepts only `false/false` and
+`true/true` for `ip_address_was_present` / `ip_address_redacted`, rejects both
+mismatches, and reconciles bounded positive counts per request. The frozen
+declaration is
+`raw IP addresses are not exported; only ip_address_was_present and ip_address_redacted boolean fields are retained`.
+Raw error and every other blocked family remain fail-closed; the Linux
+anonymous-inode / atomic no-replace publication contract is unchanged.
+
+**Verification level:** this repository record identifies the implementation
+contract and direct regressions. Exact Local commands, PR head, routed CI jobs,
+real `linux/ext4/o_tmpfile/procfd-linkat` proof, merge and clean-main identities
+must be bound in the immutable owner response before this work item is closed.
+
+**Next gate:** Integration Coordinator independently verifies that response,
+then routes the separate X-Insight compatibility review. B2a is independent;
+B2b and B3 remain dependency-blocked.
+
+**Claim boundary:** no source/cloud/private-value read, B2a/B2b execution,
+manifest/artifact generation or transfer, X-Insight write/import, Target,
+Production, live-feed or binding action is part of this repository execution.
+
 ## Active Cross-Project Execution — UR-E Bounded Synthetic Sidecar
 
 **Batch:** `V1-XI-LEDGER-001 / UR-E`

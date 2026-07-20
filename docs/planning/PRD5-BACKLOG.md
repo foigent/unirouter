@@ -10,6 +10,13 @@
 > the X-Insight runtime response is reconciled in
 > `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md`;
 > full deferred items remain inactive.
+> **2026-07-20 `IR-IP-POLICY-ADAPTATION` checkpoint:** the SHA-bound
+> [request](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-20-x-insight-prd2-internal-real-raw-ip-policy-adaptation-b2-retry-request.md>)
+> (`7517496d...`) authorizes one UniRouter-only strict-producer change. The
+> designated source field is reduced to bounded presence accounting; only
+> `false/false` and `true/true` are accepted for
+> `ip_address_was_present` / `ip_address_redacted`, with exact aggregate/detail
+> reconciliation. Cross-project binding state remains `Not binding`.
 > The 2026-07-19 UR-E decision is accepted/binding at SHA-256 `c674b04f...`.
 > UniRouter Stage A generated and exclusively transferred one new manifest-
 > bound metadata-only synthetic v2 artifact, SHA-256 `412c9b641c...`. The
@@ -76,6 +83,18 @@ scoped follow-ups; full Scheduler V2, runtime plugins/marketplace, IAM rewrite,
 managed HA/IaC product, hard budget blocking implementation, runtime
 prompt/response cache, full SDK suite, new service-account authority, and full
 SLA operations remain separate decisions.
+
+## Strict Raw-IP Policy Adaptation (2026-07-20)
+
+`IR-IP-POLICY-ADAPTATION` changes only the strict internal-real producer. Its
+frozen declaration is
+`raw IP addresses are not exported; only ip_address_was_present and ip_address_redacted boolean fields are retained`.
+The database may evaluate designated `public.call_logs.ip_address` presence,
+but the raw string is never returned, scanned, logged, hashed or serialized;
+raw error and every other blocked family remain fail-closed. This repository
+checkpoint is implementation evidence only, not source qualification, X-Insight
+acceptance or a binding decision. It does not start B2a/B2b, create or transfer
+a manifest/artifact, or authorize Target, Production, live-feed or B3 work.
 
 ## UR-E Bounded Synthetic Sidecar Execution (2026-07-19)
 

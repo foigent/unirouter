@@ -188,6 +188,40 @@ func TestSnapshotV2SerializesExactMicroCNYContract(t *testing.T) {
 	}
 }
 
+func TestStrictIPPresenceProjectionReturnsBooleanOnly(t *testing.T) {
+	callQuery := strictCallLogsQuery(1)
+	const detailProjection = "ip_address IS NOT NULL AND ip_address <> '' AS ip_address_present"
+	if strings.Count(callQuery, detailProjection) != 1 || strings.Contains(callQuery, "ip_address::") || strings.Contains(callQuery, "ip_address AS") {
+		t.Fatalf("strict detail query does not reduce IP to one presence boolean: %s", callQuery)
+	}
+
+	aggregateQuery := strictAggregateQuery(1)
+	const aggregateProjection = "(cl.ip_address IS NOT NULL AND cl.ip_address <> '') AS ip_address_present"
+	if strings.Count(aggregateQuery, aggregateProjection) != 1 ||
+		strings.Count(aggregateQuery, "COUNT(r.id) FILTER (WHERE r.ip_address_present)") != 1 ||
+		strings.Contains(aggregateQuery, "cl.ip_address::") || strings.Contains(aggregateQuery, "cl.ip_address AS") {
+		t.Fatalf("strict aggregate query does not reduce IP to a bounded presence count: %s", aggregateQuery)
+	}
+
+	values := validCallLogScanValues(1, "req-1", 7)
+	values[23] = true
+	row, err := scanSnapshotCallLogStrict(snapshotRowScannerFunc(func(dest ...any) error {
+		if len(dest) <= 23 {
+			t.Fatalf("scanner destination count=%d", len(dest))
+		}
+		if _, ok := dest[23].(*bool); !ok {
+			t.Fatalf("IP presence destination type=%T want *bool", dest[23])
+		}
+		return assignFakeScan(values, dest)
+	}), "internal-dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !row.IPAddressWasPresent || !row.IPAddressRedacted {
+		t.Fatalf("presence proof=%t/%t", row.IPAddressWasPresent, row.IPAddressRedacted)
+	}
+}
+
 func TestStrictCallLogScanFailureUsesSafeNonEchoingError(t *testing.T) {
 	const canary = "private-source-value-canary"
 	_, err := scanSnapshotCallLogStrict(snapshotRowScannerFunc(func(...any) error {
@@ -1156,6 +1190,99 @@ func TestReconcileStrictSnapshotAcceptsExactSetsCountsGapsAndTableSourceRefs(t *
 	}
 }
 
+func TestStrictIPPresenceAggregateDetailReconcilesExactly(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		aggregate    int64
+		present      bool
+		redacted     bool
+		wantAccepted bool
+	}{
+		{name: "zero_matches_false_false", aggregate: 0, wantAccepted: true},
+		{name: "one_matches_true_true", aggregate: 1, present: true, redacted: true, wantAccepted: true},
+		{name: "aggregate_zero_detail_true", aggregate: 0, present: true, redacted: true},
+		{name: "aggregate_one_detail_false", aggregate: 1},
+		{name: "detail_mismatch", aggregate: 1, present: true, redacted: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			snapshot, aggregates := validPureStrictSnapshot(t)
+			snapshot.CallLogs[0].IPAddressWasPresent = tc.present
+			snapshot.CallLogs[0].IPAddressRedacted = tc.redacted
+			aggregates[0].IPAddressPresentRows = tc.aggregate
+			err := reconcileStrictSnapshot(bindingForSnapshot(snapshot), aggregates, snapshot)
+			if tc.wantAccepted {
+				if err != nil {
+					t.Fatalf("matching IP aggregate rejected: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "strict_reconciliation_failed: ip_") {
+				t.Fatalf("IP reconciliation mismatch accepted: %v", err)
+			}
+		})
+	}
+
+	requestIDs := []string{"req-1", "req-2"}
+	snapshot, err := loadValidStrictSnapshotForTest(t, validStrictDBForRequests(requestIDs), requestIDs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot.CallLogs[0].IPAddressWasPresent = true
+	snapshot.CallLogs[0].IPAddressRedacted = true
+	aggregates := []strictSourceAggregate{
+		{Ordinal: 1, CallLogs: 1, TraceEvents: 1, DistinctOrgs: 1, OrgID: 7, IPAddressPresentRows: 0},
+		{Ordinal: 2, CallLogs: 1, TraceEvents: 1, DistinctOrgs: 1, OrgID: 7, IPAddressPresentRows: 1},
+	}
+	if err := reconcileStrictSnapshot(bindingForSnapshot(snapshot), aggregates, snapshot); err == nil || !strings.Contains(err.Error(), "ip_presence_count") {
+		t.Fatalf("per-request presence swap accepted despite matching global total: %v", err)
+	}
+}
+
+func TestLoadStrictSnapshotAcceptsPositiveIPPresenceWithExactReconciliation(t *testing.T) {
+	db := validStrictDBForRequests([]string{"req-1"})
+	aggregateRows := db.tx.queryResults[1].rows.(*fakeSnapshotRows)
+	aggregateRows.values[0][5] = int64(1)
+	callRows := db.tx.queryResults[2].rows.(*fakeSnapshotRows)
+	callRows.values[0][23] = true
+
+	snapshot, err := loadValidStrictSnapshotForTest(t, db, []string{"req-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.CallLogs) != 1 || !snapshot.CallLogs[0].IPAddressWasPresent || !snapshot.CallLogs[0].IPAddressRedacted {
+		t.Fatalf("loaded proof=%#v", snapshot.CallLogs)
+	}
+	if db.tx.commitCalls != 1 || db.tx.rollbackCalls != 0 || db.tx.queryIndex != 4 {
+		t.Fatalf("transaction commit=%d rollback=%d queryIndex=%d", db.tx.commitCalls, db.tx.rollbackCalls, db.tx.queryIndex)
+	}
+}
+
+func TestStrictIPPresenceAggregateMismatchPublishesNothingWithoutEcho(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		aggregate int64
+		detail    bool
+	}{
+		{name: "aggregate_true_detail_false", aggregate: 1, detail: false},
+		{name: "aggregate_false_detail_true", aggregate: 0, detail: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			requestID := "private-ip-reconciliation-canary"
+			manifestPath := writeStrictManifestFixture(t, []approvalManifestRequest{oneStrictManifestRequest(requestID)})
+			destination := filepath.Join(t.TempDir(), "snapshot.json")
+			db := validStrictDBForRequests([]string{requestID})
+			aggregateRows := db.tx.queryResults[1].rows.(*fakeSnapshotRows)
+			aggregateRows.values[0][5] = tc.aggregate
+			callRows := db.tx.queryResults[2].rows.(*fakeSnapshotRows)
+			callRows.values[0][23] = tc.detail
+			assertStrictFailurePublishesNothing(t, manifestPath, destination, "strict_reconciliation_failed: ip_presence_count", requestID, db)
+			if db.tx.commitCalls != 0 || db.tx.rollbackCalls != 1 {
+				t.Fatalf("transaction commit=%d rollback=%d", db.tx.commitCalls, db.tx.rollbackCalls)
+			}
+		})
+	}
+}
+
 func TestReconcileStrictSnapshotAcceptsOneSourceTableAndOneExactGeneratedGapAtBoundary(t *testing.T) {
 	snapshot, aggregates := validPureStrictSnapshot(t)
 	snapshot.TraceEvents = nil
@@ -1340,11 +1467,50 @@ func TestStrictMetadataMirrorsReceiverCodeGrammarAndNumericIdentifierBoundary(t 
 	}
 }
 
-func TestStrictSafetyMatchesReceiverAndMetadataSanitizerCannotMutateOrDrop(t *testing.T) {
+func TestStrictSafetyUsesExactDualBooleanIPHandlingDeclaration(t *testing.T) {
+	const exact = "raw IP addresses are not exported; only ip_address_was_present and ip_address_redacted boolean fields are retained"
 	snapshot, _ := validPureStrictSnapshot(t)
-	if snapshot.Safety.IPHandling != strictIPHandling || snapshot.Safety.ErrorHandling != strictErrorHandling || snapshot.Safety.MetadataHandling != strictMetadataHandling {
+	if strictIPHandling != exact || snapshot.Safety.IPHandling != exact || snapshot.Safety.ErrorHandling != strictErrorHandling || snapshot.Safety.MetadataHandling != strictMetadataHandling {
 		t.Fatalf("strict safety declarations=%#v", snapshot.Safety)
 	}
+}
+
+func TestStrictSafetyRejectsMutationOmissionAndLegacyStrictDeclaration(t *testing.T) {
+	const legacyStrict = "raw IP addresses are not exported; only ip_address_was_present is retained"
+	for _, value := range []string{
+		"",
+		legacyStrict,
+		"raw IP addresses are not exported; only ip_address_redacted and ip_address_was_present boolean fields are retained",
+		strictIPHandling + ".",
+	} {
+		snapshot, _ := validPureStrictSnapshot(t)
+		snapshot.Safety.IPHandling = value
+		if err := validateStrictSnapshotValuePolicy(snapshot); err == nil || err.Error() != "strict_value_policy: snapshot.safety_text" {
+			t.Fatalf("strict safety mutation %q accepted: %v", value, err)
+		}
+	}
+}
+
+func TestHistoricalDirectIPHandlingDeclarationRemainsSingleBoolean(t *testing.T) {
+	_, testPath, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("test source path unavailable")
+	}
+	producerSource, err := os.ReadFile(filepath.Join(filepath.Dir(testPath), "prd5_xinsight_snapshot.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := []byte("raw IP addresses are not exported; only ip_address_was_present is retained")
+	strict := []byte("raw IP addresses are not exported; only ip_address_was_present and ip_address_redacted boolean fields are retained")
+	if count := bytes.Count(producerSource, legacy); count != 1 {
+		t.Fatalf("historical direct declaration count=%d want=1", count)
+	}
+	if count := bytes.Count(producerSource, strict); count != 1 {
+		t.Fatalf("strict dual-boolean declaration count=%d want=1", count)
+	}
+}
+
+func TestStrictMetadataSanitizerCannotMutateOrDrop(t *testing.T) {
 	metadata, err := strictMetadata(`{"usage_source":"upstream","amount_scale":1000000}`)
 	if err != nil || metadata["usage_source"] != "upstream" {
 		t.Fatalf("strict metadata sanitizer round trip metadata=%#v err=%v", metadata, err)
@@ -1479,25 +1645,222 @@ func TestStrictHTTPStatusFieldsRejectOutOfRangeBoundaries(t *testing.T) {
 	}
 }
 
-func TestStrictRawIPPresenceBlocksBeforeArtifact(t *testing.T) {
+func TestStrictIPProofAcceptsFalseFalseAndTrueTrueRejectsMismatches(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		present    bool
+		redacted   bool
+		wantAccept bool
+	}{
+		{name: "no_ip", present: false, redacted: false, wantAccept: true},
+		{name: "redacted_ip", present: true, redacted: true, wantAccept: true},
+		{name: "presence_without_redaction", present: true, redacted: false},
+		{name: "redaction_without_presence", present: false, redacted: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			snapshot, _ := validPureStrictSnapshot(t)
+			snapshot.CallLogs[0].IPAddressWasPresent = tc.present
+			snapshot.CallLogs[0].IPAddressRedacted = tc.redacted
+			helperErr := validateStrictIPProof(tc.present, tc.redacted)
+			policyErr := validateStrictSnapshotValuePolicy(snapshot)
+			if tc.wantAccept {
+				if helperErr != nil || policyErr != nil {
+					t.Fatalf("allowed proof rejected: helper=%v policy=%v", helperErr, policyErr)
+				}
+				return
+			}
+			if helperErr == nil || helperErr.Error() != "strict_ip_proof_mismatch" || policyErr == nil || policyErr.Error() != "strict_ip_proof_mismatch" {
+				t.Fatalf("mismatch not rejected statically: helper=%v policy=%v", helperErr, policyErr)
+			}
+		})
+	}
+}
+
+func TestStrictIPProofMismatchPublishesNothingWithoutEcho(t *testing.T) {
+	for _, tc := range []struct {
+		name, privateCanary string
+		present, redacted   bool
+	}{
+		{name: "presence_without_redaction", privateCanary: "private-ip-proof-present-canary", present: true, redacted: false},
+		{name: "redaction_without_presence", privateCanary: "private-ip-proof-redacted-canary", present: false, redacted: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			snapshot, _ := validPureStrictSnapshot(t)
+			snapshot.CallLogs[0].IPAddressWasPresent = tc.present
+			snapshot.CallLogs[0].IPAddressRedacted = tc.redacted
+			evidenceRef := tc.privateCanary
+			snapshot.CallLogs[0].EvidenceRef = &evidenceRef
+			stage := newFakeSnapshotStage()
+			var runErr error
+			stdout := captureStdout(t, func() {
+				runErr = validateStrictSnapshotValuePolicy(snapshot)
+				if runErr == nil {
+					_, runErr = publishStrictSnapshot(stage, snapshot)
+				}
+			})
+			if runErr == nil || runErr.Error() != "strict_ip_proof_mismatch" {
+				t.Fatalf("mismatch error=%v", runErr)
+			}
+			if strings.Contains(runErr.Error(), tc.privateCanary) || len(stdout) != 0 || stage.commitCalls != 0 || len(stage.data) != 0 {
+				t.Fatalf("mismatch leaked or published: err=%v stdout=%q commits=%d bytes=%d", runErr, stdout, stage.commitCalls, len(stage.data))
+			}
+		})
+	}
+}
+
+func TestStrictRawIPSentinelIsNeverEchoedHashedOrSerialized(t *testing.T) {
+	type result struct {
+		row       snapshotCallLog
+		rowJSON   []byte
+		output    []byte
+		outputSHA string
+	}
+	build := func(rawSentinel string) result {
+		t.Helper()
+		values := validCallLogScanValues(1, "req-1", 7)
+		// This is the test-only source boundary: production receives only the
+		// boolean result of the SQL presence expression, never rawSentinel.
+		values[23] = rawSentinel != ""
+		row, err := scanSnapshotCallLogStrict(snapshotRowScannerFunc(func(dest ...any) error {
+			return assignFakeScan(values, dest)
+		}), "internal-dev")
+		if err != nil {
+			t.Fatal(err)
+		}
+		snapshot := newStrictSnapshotFile(
+			"internal-dev", "approved_request_id_manifest", "uxchg_0123456789abcdef0123456789abcdef",
+			"sha256:"+strings.Repeat("a", 64), []string{"req-1"}, strictScenarios([]string{"req-1"}),
+			"2026-07-20T00:00:00Z", []snapshotCallLog{row}, nil, nil,
+		)
+		if err := validateStrictSnapshotValuePolicy(snapshot); err != nil {
+			t.Fatal(err)
+		}
+		rowJSON, err := json.Marshal(row)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stage := newFakeSnapshotStage()
+		var publishResult strictPublishResult
+		stdout := captureStdout(t, func() { publishResult, err = publishStrictSnapshot(stage, snapshot) })
+		if err != nil || !publishResult.Published || len(stdout) != 0 {
+			t.Fatalf("publish result=%#v err=%v stdout=%q", publishResult, err, stdout)
+		}
+		return result{row: row, rowJSON: rowJSON, output: append([]byte(nil), stage.data...), outputSHA: publishResult.SHA256}
+	}
+
+	sentinels := []string{"198.51.100.17", "2001:db8::17"}
+	results := []result{build(sentinels[0]), build(sentinels[1])}
+	if !reflect.DeepEqual(results[0].row, results[1].row) || results[0].row.SourceEventHash != results[1].row.SourceEventHash ||
+		!bytes.Equal(results[0].output, results[1].output) || results[0].outputSHA != results[1].outputSHA {
+		t.Fatalf("producer-visible row/bytes/hash depend on raw sentinel")
+	}
+	for _, sentinel := range sentinels {
+		rawDigest := sha256Hex([]byte(sentinel))
+		for _, visible := range [][]byte{results[0].rowJSON, results[1].rowJSON, results[0].output, results[1].output} {
+			if bytes.Contains(visible, []byte(sentinel)) || bytes.Contains(visible, []byte(rawDigest)) {
+				t.Fatalf("raw sentinel or its digest reached producer-visible bytes")
+			}
+		}
+		if results[0].row.SourceEventHash == rawDigest || results[1].row.SourceEventHash == rawDigest || results[0].outputSHA == rawDigest || results[1].outputSHA == rawDigest {
+			t.Fatal("raw sentinel digest became a producer-visible hash")
+		}
+	}
+}
+
+func TestStrictArtifactContainsOnlyApprovedIPBooleanFields(t *testing.T) {
 	snapshot, _ := validPureStrictSnapshot(t)
 	snapshot.CallLogs[0].IPAddressWasPresent = true
 	snapshot.CallLogs[0].IPAddressRedacted = true
-	err := validateStrictSnapshotValuePolicy(snapshot)
-	if err == nil || !strings.Contains(err.Error(), "strict_source_blocked") {
-		t.Fatalf("raw IP presence did not block: %v", err)
+	if err := validateStrictSnapshotValuePolicy(snapshot); err != nil {
+		t.Fatal(err)
 	}
-	snapshot, _ = validPureStrictSnapshot(t)
+
+	isIPRelatedField := func(key string) bool {
+		key = strings.ToLower(key)
+		return strings.Contains(key, "ip_address") || strings.Contains(key, "raw_ip") ||
+			strings.HasPrefix(key, "ip_") || strings.HasSuffix(key, "_ip") ||
+			strings.Contains(key, "client_address") || strings.Contains(key, "remote_addr")
+	}
+	var reflected []string
+	var allJSONTags []string
+	typeOfCallLog := reflect.TypeOf(snapshotCallLog{})
+	for idx := 0; idx < typeOfCallLog.NumField(); idx++ {
+		tag := strings.Split(typeOfCallLog.Field(idx).Tag.Get("json"), ",")[0]
+		allJSONTags = append(allJSONTags, tag)
+		if isIPRelatedField(tag) {
+			reflected = append(reflected, tag)
+		}
+	}
+	sort.Strings(allJSONTags)
+	const exactCallLogJSONContractSHA256 = "0c6afe35f0905ddd131caf9d55af8f84a27f7fdd5d943bb9634886fea99ed3f0"
+	if len(allJSONTags) != 45 || sha256Hex([]byte(strings.Join(allJSONTags, "\n")+"\n")) != exactCallLogJSONContractSHA256 {
+		t.Fatalf("snapshotCallLog JSON contract changed: count=%d digest=%s", len(allJSONTags), sha256Hex([]byte(strings.Join(allJSONTags, "\n")+"\n")))
+	}
+	sort.Strings(reflected)
+	want := []string{"ip_address_redacted", "ip_address_was_present"}
+	if !reflect.DeepEqual(reflected, want) {
+		t.Fatalf("IP JSON tags=%v want=%v", reflected, want)
+	}
+
+	payload, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	callLogs := decoded["call_logs"].([]any)
+	callLog := callLogs[0].(map[string]any)
+	var actual []string
+	for key, value := range callLog {
+		if isIPRelatedField(key) {
+			actual = append(actual, key)
+			if value != true {
+				t.Fatalf("IP proof %s=%v want=true", key, value)
+			}
+		}
+	}
+	sort.Strings(actual)
+	if !reflect.DeepEqual(actual, want) {
+		t.Fatalf("artifact IP fields=%v want=%v", actual, want)
+	}
+	for _, forbiddenAlias := range []string{"ip_address", "raw_ip", "raw_ip_address", "client_ip", "source_ip", "remote_ip", "client_address", "remote_address"} {
+		if _, exists := callLog[forbiddenAlias]; exists {
+			t.Fatalf("forbidden raw-IP alias serialized: %s", forbiddenAlias)
+		}
+	}
+}
+
+func TestStrictRawErrorPresenceStillBlocksBeforeArtifact(t *testing.T) {
+	snapshot, _ := validPureStrictSnapshot(t)
 	snapshot.CallLogs[0].UpstreamErrorPresent = true
-	err = validateStrictSnapshotValuePolicy(snapshot)
+	err := validateStrictSnapshotValuePolicy(snapshot)
 	if err == nil || !strings.Contains(err.Error(), "strict_source_blocked") {
 		t.Fatalf("raw error presence did not block: %v", err)
 	}
 }
 
-func TestStrictAggregateBlocksRawIPRawErrorAndOtherBlockedValueClassesBeforeDetail(t *testing.T) {
+func TestStrictIPPresenceAggregateCountsAreBounded(t *testing.T) {
+	for _, count := range []int64{0, 1} {
+		aggregate := strictSourceAggregate{Ordinal: 1, CallLogs: 1, DistinctOrgs: 1, OrgID: 7, IPAddressPresentRows: count}
+		if err := validateStrictSourceAggregates([]strictSourceAggregate{aggregate}, 1); err != nil {
+			t.Fatalf("presence count %d rejected: %v", count, err)
+		}
+	}
 	for _, aggregate := range []strictSourceAggregate{
-		{Ordinal: 1, CallLogs: 1, DistinctOrgs: 1, OrgID: 7, RawIPRows: 1},
+		{Ordinal: 1, CallLogs: 1, DistinctOrgs: 1, OrgID: 7, IPAddressPresentRows: -1},
+		{Ordinal: 1, CallLogs: 1, DistinctOrgs: 1, OrgID: 7, IPAddressPresentRows: 2},
+		{Ordinal: 1, TraceEvents: 1, DistinctOrgs: 1, OrgID: 7, IPAddressPresentRows: 1},
+	} {
+		if err := validateStrictSourceAggregates([]strictSourceAggregate{aggregate}, 1); err == nil || err.Error() != "strict_source_aggregate_invalid: ip_presence_count" {
+			t.Fatalf("out-of-range presence aggregate accepted: %#v err=%v", aggregate, err)
+		}
+	}
+}
+
+func TestStrictAggregateStillBlocksRawErrorAndOtherBlockedValueClassesBeforeDetail(t *testing.T) {
+	for _, aggregate := range []strictSourceAggregate{
 		{Ordinal: 1, CallLogs: 1, DistinctOrgs: 1, OrgID: 7, RawErrorRows: 1},
 		{Ordinal: 1, CallLogs: 1, DistinctOrgs: 1, OrgID: 7, BlockedValueRows: 1},
 	} {
@@ -1506,9 +1869,9 @@ func TestStrictAggregateBlocksRawIPRawErrorAndOtherBlockedValueClassesBeforeDeta
 		}
 	}
 	query := strictAggregateQuery(1)
-	for _, marker := range []string{"blocked_value_present", "raw_ip_present", "raw_error_present", "metadata::text", "ghp_", "customer"} {
+	for _, marker := range []string{"blocked_value_present", "ip_address_present", "raw_error_present", "metadata::text", "ghp_", "customer"} {
 		if !strings.Contains(query, marker) {
-			t.Fatalf("aggregate query missing blocked-class marker %q", marker)
+			t.Fatalf("aggregate query missing safety marker %q", marker)
 		}
 	}
 	for _, receiverMarker := range []string{
