@@ -1,6 +1,20 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
+> **2026-07-20 `IR-IP-POLICY-ADAPTATION` checkpoint:** under the exact
+> [SHA-bound request](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-20-x-insight-prd2-internal-real-raw-ip-policy-adaptation-b2-retry-request.md>)
+> (`7517496d...`), the UniRouter strict producer in this code-bearing revision
+> keeps raw `public.call_logs.ip_address` out of query results and producer-
+> visible values while accepting only exact `false/false` or `true/true`
+> `ip_address_was_present` / `ip_address_redacted` proofs. Per-request aggregate
+> and detail counts must reconcile. The frozen declaration is
+> `raw IP addresses are not exported; only ip_address_was_present and ip_address_redacted boolean fields are retained`.
+> This is UniRouter implementation evidence only;
+> `Cross-project binding state: Not binding`. Exact Local, PR CI and merged-main
+> identities belong in the immutable owner response. No source/cloud/private-
+> value access, B2a/B2b start, integration manifest/artifact generation,
+> transfer or import, X-Insight repository write/import, Target, Production,
+> live-feed or B3 action is claimed or authorized here.
 > **2026-07-19 UR-E Stage A checkpoint:** the joint
 > [bounded synthetic sidecar decision](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-19-prd2-ur-e-bounded-synthetic-sidecar-execution.md>)
 > is accepted/binding at SHA-256 `c674b04f...`. UniRouter generated exactly one

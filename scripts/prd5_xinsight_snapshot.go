@@ -41,7 +41,7 @@ const (
 	maxSnapshotRows          = 200
 	prd5PayloadCaptureReason = "raw prompt/response export is disabled for PRD5 Gate A snapshots"
 	strictGapClass           = "not_available_from_source"
-	strictIPHandling         = "raw IP addresses are not exported; only ip_address_was_present is retained"
+	strictIPHandling         = "raw IP addresses are not exported; only ip_address_was_present and ip_address_redacted boolean fields are retained"
 	strictErrorHandling      = "raw upstream_error text is not exported; only upstream_error_present is retained"
 	strictMetadataHandling   = "request_trace_events.metadata is re-sanitized through internal/traceutil.SanitizeMetadata before export"
 	strictCallGapReason      = "no call_logs row matched this request_id in the selected snapshot"
@@ -653,14 +653,14 @@ func preflightSnapshotV2Schema(ctx context.Context, tx strictReadTx) error {
 }
 
 type strictSourceAggregate struct {
-	Ordinal          int
-	CallLogs         int64
-	TraceEvents      int64
-	DistinctOrgs     int64
-	OrgID            int64
-	RawIPRows        int64
-	RawErrorRows     int64
-	BlockedValueRows int64
+	Ordinal              int
+	CallLogs             int64
+	TraceEvents          int64
+	DistinctOrgs         int64
+	OrgID                int64
+	IPAddressPresentRows int64
+	RawErrorRows         int64
+	BlockedValueRows     int64
 }
 
 func strictAggregateQuery(requestIDCount int) string {
@@ -677,7 +677,7 @@ WITH selected(request_id, ord) AS (
     cl.org_id,
     cl.id,
     'call_logs'::text AS source_name,
-    (cl.ip_address IS NOT NULL AND cl.ip_address <> '') AS raw_ip_present,
+    (cl.ip_address IS NOT NULL AND cl.ip_address <> '') AS ip_address_present,
     (cl.upstream_error IS NOT NULL AND cl.upstream_error <> '') AS raw_error_present,
     (
       lower(concat_ws('|', cl.request_id, cl.key_type, cl.model, cl.requested_model,
@@ -725,7 +725,7 @@ SELECT
   COUNT(r.id) FILTER (WHERE r.source_name = 'request_trace_events'),
   COUNT(DISTINCT r.org_id),
   MIN(r.org_id),
-  COUNT(r.id) FILTER (WHERE r.raw_ip_present),
+  COUNT(r.id) FILTER (WHERE r.ip_address_present),
   COUNT(r.id) FILTER (WHERE r.raw_error_present),
   COUNT(r.id) FILTER (WHERE r.blocked_value_present)
 FROM selected s
@@ -751,7 +751,7 @@ func loadStrictSourceAggregates(ctx context.Context, tx strictReadTx, requestIDs
 			&aggregate.TraceEvents,
 			&aggregate.DistinctOrgs,
 			&orgID,
-			&aggregate.RawIPRows,
+			&aggregate.IPAddressPresentRows,
 			&aggregate.RawErrorRows,
 			&aggregate.BlockedValueRows,
 		); err != nil {
@@ -799,8 +799,8 @@ func validateStrictSourceAggregates(aggregates []strictSourceAggregate, requestC
 		if aggregate.CallLogs > 1 {
 			return fmt.Errorf("strict_source_duplicate_call_log: request_index=%d", idx+1)
 		}
-		if aggregate.RawIPRows > 0 {
-			return fmt.Errorf("strict_source_blocked: class=raw_ip count=%d", aggregate.RawIPRows)
+		if aggregate.IPAddressPresentRows < 0 || aggregate.IPAddressPresentRows > aggregate.CallLogs {
+			return errors.New("strict_source_aggregate_invalid: ip_presence_count")
 		}
 		if aggregate.RawErrorRows > 0 {
 			return fmt.Errorf("strict_source_blocked: class=raw_error count=%d", aggregate.RawErrorRows)
@@ -1302,10 +1302,9 @@ func scanSnapshotCallLogMode(scanner snapshotRowScanner, sourceInstance string, 
 		if row.UpstreamErrorPresent {
 			return snapshotCallLog{}, errors.New("strict_source_blocked: class=raw_error count=1")
 		}
-		if row.IPAddressWasPresent {
-			return snapshotCallLog{}, errors.New("strict_source_blocked: class=raw_ip count=1")
+		if err := validateStrictIPProof(row.IPAddressWasPresent, row.IPAddressRedacted); err != nil {
+			return snapshotCallLog{}, err
 		}
-		row.IPAddressRedacted = false
 		hash, err := normalizeStrictSourceEventHash(sourceEventHash, row)
 		if err != nil {
 			return snapshotCallLog{}, err
@@ -2083,8 +2082,11 @@ func validateStrictCallLogValues(row snapshotCallLog) error {
 	if row.PromptTokens < 0 || row.CompletionTokens < 0 || row.TotalTokens < 0 || row.EstimatedTokens < 0 || row.LatencyMS < 0 || row.TTFTMS < 0 || !validHTTPStatus(row.StatusCode) || !validOptionalHTTPStatus(row.UpstreamStatusCode) {
 		return errors.New("strict_value_policy: call_logs.nonnegative")
 	}
-	if row.UpstreamErrorPresent || row.IPAddressWasPresent || row.IPAddressRedacted {
-		return errors.New("strict_source_blocked: call_logs.raw_presence")
+	if row.UpstreamErrorPresent {
+		return errors.New("strict_source_blocked: call_logs.raw_error_presence")
+	}
+	if err := validateStrictIPProof(row.IPAddressWasPresent, row.IPAddressRedacted); err != nil {
+		return err
 	}
 	if validateStrictTimestamp(row.CreatedAt) != nil {
 		return errors.New("strict_value_policy: call_logs.created_at")
@@ -2200,6 +2202,13 @@ func validOptionalHTTPStatus(value *int64) bool {
 	return value == nil || validHTTPStatus(*value)
 }
 
+func validateStrictIPProof(ipAddressWasPresent, ipAddressRedacted bool) error {
+	if ipAddressWasPresent != ipAddressRedacted {
+		return errors.New("strict_ip_proof_mismatch")
+	}
+	return nil
+}
+
 func oneOf(value string, allowed ...string) bool {
 	for _, candidate := range allowed {
 		if value == candidate {
@@ -2232,6 +2241,8 @@ func reconcileStrictSnapshot(binding strictSnapshotBinding, aggregates []strictS
 
 	callCounts := make([]int64, len(requestIDs))
 	traceCounts := make([]int64, len(requestIDs))
+	ipAddressPresentCounts := make([]int64, len(requestIDs))
+	ipAddressRedactedCounts := make([]int64, len(requestIDs))
 	callIDs := map[int64]bool{}
 	traceIDs := map[int64]bool{}
 	for _, row := range snapshot.CallLogs {
@@ -2241,6 +2252,15 @@ func reconcileStrictSnapshot(binding strictSnapshotBinding, aggregates []strictS
 		}
 		callIDs[row.ID] = true
 		callCounts[idx]++
+		if validateStrictIPProof(row.IPAddressWasPresent, row.IPAddressRedacted) != nil {
+			return errors.New("strict_reconciliation_failed: ip_proof")
+		}
+		if row.IPAddressWasPresent {
+			ipAddressPresentCounts[idx]++
+		}
+		if row.IPAddressRedacted {
+			ipAddressRedactedCounts[idx]++
+		}
 	}
 	for _, row := range snapshot.TraceEvents {
 		idx, ok := selected[row.RequestID]
@@ -2253,6 +2273,9 @@ func reconcileStrictSnapshot(binding strictSnapshotBinding, aggregates []strictS
 	for idx, aggregate := range aggregates {
 		if callCounts[idx] != aggregate.CallLogs || traceCounts[idx] != aggregate.TraceEvents {
 			return errors.New("strict_reconciliation_failed: aggregate_detail_count")
+		}
+		if ipAddressPresentCounts[idx] != aggregate.IPAddressPresentRows || ipAddressRedactedCounts[idx] != aggregate.IPAddressPresentRows {
+			return errors.New("strict_reconciliation_failed: ip_presence_count")
 		}
 	}
 

@@ -2,6 +2,21 @@
 
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
+> **Newest checkpoint (2026-07-20 `IR-IP-POLICY-ADAPTATION`):** the exact
+> [request](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-20-x-insight-prd2-internal-real-raw-ip-policy-adaptation-b2-retry-request.md>)
+> at SHA-256 `7517496d...` limits this code-bearing change to UniRouter's strict
+> producer. It emits only `ip_address_was_present` and
+> `ip_address_redacted`, accepts only `false/false` and `true/true`, and binds
+> each positive presence count to the corresponding request detail. Its frozen
+> declaration is
+> `raw IP addresses are not exported; only ip_address_was_present and ip_address_redacted boolean fields are retained`.
+> Next owner after the SHA-bound merged implementation response is the
+> Integration Coordinator for independent verification and routing of the
+> separate X-Insight compatibility review. `Cross-project binding state: Not
+> binding`; B2a was not started here, and B2b/B3 remain dependency-gated. No
+> source/private-value access, integration manifest/artifact generation,
+> transfer or import, X-Insight repository write/import, Target, Production or
+> live-feed action occurred under this checkpoint.
 > **Newest cross-project checkpoint (2026-07-19 UR-E Stage A):** the binding
 > [joint decision](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-19-prd2-ur-e-bounded-synthetic-sidecar-execution.md>)
 > authorized one fresh metadata-only synthetic sidecar. UniRouter generated it
