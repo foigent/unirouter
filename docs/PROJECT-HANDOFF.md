@@ -2,7 +2,26 @@
 
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
-> **Newest checkpoint (2026-07-21 `FV-SOURCE-QUALIFICATION-CURRENT-ECS`):**
+> **Newest checkpoint (2026-07-21
+> `FV-SOURCE-QUALIFICATION-CURRENT-ECS-CONTINUATION`):** exact User
+> [decision](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-21-prd2-fresh-controlled-existing-ecs-and-final-outcome-authorization.md>)
+> SHA-256 `d0464491...` remains `Not binding`. The corrected task-private SDK
+> harness passed build, vet, bounded synthetic tests and local preflight; one
+> independent release review returned `P0=0`, `P1=0`, `P2=2`. The only provider
+> invocation and adapter dispatch ended as
+> `DECISION_REQUIRED_provider_invocation_failed`, with exact
+> invocation/dispatch/page/record/retry/error counts `1/1/0/0/0/1`. The retained
+> safe category is `unknown_invocation_error_class`; whether an HTTP response
+> arrived is `unknown_not_persisted`. Do not infer a pre-response failure from
+> zero accepted pages. The lifecycle did not retry or use the second nominal
+> cap. Candidate, SSH, DB, source, Receipt v0, MaaS, artifact, transfer/import
+> and X-Insight counts are all zero. The designated owner
+> [response](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-21-unirouter-prd2-fresh-controlled-existing-ecs-qualification-continuation-response.md>)
+> is finalized after this docs-only PR/required CI/merge. Next owner is the
+> Integration Coordinator; `FV-CONTROLLED-TRAFFIC` and Binding stay blocked,
+> and PRD5/PRD6 remain closed.
+> **Historical initial checkpoint (2026-07-21
+> `FV-SOURCE-QUALIFICATION-CURRENT-ECS`):**
 > UniRouter accepted the exact owner scope in the User
 > [decision](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-21-prd2-fresh-controlled-existing-ecs-and-final-outcome-authorization.md>)
 > at SHA-256 `d0464491...`; cross-project state remains `Not binding`. The
