@@ -2,6 +2,26 @@
 
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
+> **Newest checkpoint (2026-07-21 `FV-SOURCE-QUALIFICATION`):** the exact User
+> [decision](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-21-prd2-fresh-controlled-product-value-proof-authorization.md>)
+> at SHA-256 `6d8e32f3...` is accepted for the UniRouter-owned qualification
+> scope, while cross-project state remains `Not binding`. Qualification stops
+> as `DECISION_REQUIRED`: no exact current environment was previously proved,
+> and the current machine has no existing Docker/Podman/Colima/Linux-VM runtime
+> for the producer's required `linux/ext4/o_tmpfile/procfd-linkat` path. Local
+> PostgreSQL tooling on Darwin is not an equivalent producer platform, so no
+> substitute source or Source Trust Receipt v0 was created. External calls,
+> source reads, MaaS traffic, manifests/artifacts, transfers/imports and
+> environment/database mutations are all zero. The designated owner
+> [response](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-21-unirouter-prd2-fresh-controlled-value-proof-acceptance-readiness-response.md>)
+> is published only after this docs-only branch passes required CI and merges.
+> `FV-CONTROLLED-TRAFFIC` remains blocked. A new User choice must either provide
+> two separated authorities—first establish one task-owned local Linux/current-
+> schema source, then bootstrap only its non-customer License/API-key/model-
+> price/route controls using an existing unchanged and undisclosed development
+> credential—or designate one already configured exact development source for
+> qualification. Retention/cleanup remains separately gated. PRD5/PRD6 remain
+> closed.
 > **Newest checkpoint (2026-07-20 `IR-IP-POLICY-ADAPTATION`):** the exact
 > [request](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-20-x-insight-prd2-internal-real-raw-ip-policy-adaptation-b2-retry-request.md>)
 > at SHA-256 `7517496d...` limits this code-bearing change to UniRouter's strict

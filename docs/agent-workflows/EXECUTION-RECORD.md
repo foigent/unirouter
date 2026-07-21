@@ -1,6 +1,65 @@
 # Current Execution Record
 
-## Current Repository Execution — IR-IP Policy Adaptation
+## Current Repository Execution — Fresh-Controlled Source Qualification
+
+**Work item:** `FV-SOURCE-QUALIFICATION`
+
+**Owner:** UniRouter execution owner, single repository writer
+
+**Risk:** R2 current planning/status truth with an R4-gated future source and
+traffic lifecycle; this work item performs no traffic, source-row read or
+artifact action
+
+**Authority:** exact User
+[decision](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-21-prd2-fresh-controlled-product-value-proof-authorization.md>)
+SHA-256 `6d8e32f33c59bb10799c629b0d3c929b6ff4980f520c074252d48f70c3628eb3`;
+Authorization ID `UR-XI-FRESH-VALUE-AUTH-20260721-01`; `Cross-project binding
+state: Not binding`
+
+**Owner acceptance:** the exact UniRouter-owned qualification scope is accepted
+without product-scope amendment. Repository planning/status may link the
+decision and designated owner-response path before publication; the immutable
+shared response is finalized only after this docs-only PR passes required CI,
+merges and merged main is reverified.
+
+**Qualification result:** `DECISION_REQUIRED`. The prior owner result still
+provides no exact current environment identity, classification or custody.
+This machine has local PostgreSQL tooling but no existing Docker, Podman,
+Colima or Linux-VM runtime. The strict producer intentionally supports only
+`linux/ext4/o_tmpfile/procfd-linkat`; Darwin cannot be declared equivalent.
+Creating a macOS-only PostgreSQL source would therefore produce a candidate
+that cannot complete the authorized strict-artifact lifecycle. No candidate
+was bound and no Source Trust Receipt v0 was created.
+
+**Counts:** external cloud/control-plane calls `0`; broad searches, retries and
+pagination `0`; environment/database mutations `0`; source rows/values,
+request IDs, raw IP and raw errors read `0`; MaaS requests `0`; manifests,
+artifacts, transfers and imports `0`.
+
+**Finding gate:** `P0=0`, `P1=1`, `P2=0`. The P1 is that no exact current source
+identity/custody plus supported Linux producer path is proved and bound, not a
+producer code defect or a source-absence finding. A migration-only local
+database would also lack the test License, API key, model price and provider
+route required by the later traffic stage. The smallest complete User choice
+is therefore either (a) two explicitly separated authorities—first establish
+one task-owned local Linux/current-schema source, then perform bounded non-
+customer control-plane bootstrap using an existing owner-controlled development
+credential without creating, changing or disclosing it—or (b) designate one
+already configured exact development source for owner qualification. Retention
+and cleanup remain separately gated. No environment or control-plane mutation
+is performed here.
+
+**Next gate:** publish the immutable owner
+[response](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-21-unirouter-prd2-fresh-controlled-value-proof-acceptance-readiness-response.md>)
+after merge and return it to the Integration Coordinator. `FV-CONTROLLED-TRAFFIC`
+remains blocked; no cross-project Binding activation is reachable from this
+result.
+
+**Claim boundary:** no old-ECS diagnosis, cloud resource action, credential,
+IAM, network or database-grant change, product-code change, X-Insight mutation,
+Target, Production, live feed, Core Intake, second source or deletion occurred.
+
+## Historical Completed Repository Execution — IR-IP Policy Adaptation
 
 **Work item:** `IR-IP-POLICY-ADAPTATION`
 
@@ -23,14 +82,16 @@ declaration is
 Raw error and every other blocked family remain fail-closed; the Linux
 anonymous-inode / atomic no-replace publication contract is unchanged.
 
-**Verification level:** this repository record identifies the implementation
-contract and direct regressions. Exact Local commands, PR head, routed CI jobs,
-real `linux/ext4/o_tmpfile/procfd-linkat` proof, merge and clean-main identities
-must be bound in the immutable owner response before this work item is closed.
+**Verification level:** completed by PR #225, required CI run `29711162577`
+attempt 2 and merged-main commit
+`d43fef6eed92323da0880f0f6e0e8d35e388e8e0`; the immutable owner response and
+X-Insight compatibility review are published. This remains producer/receiver
+compatibility evidence, not source qualification or artifact authorization.
 
-**Next gate:** Integration Coordinator independently verifies that response,
-then routes the separate X-Insight compatibility review. B2a is independent;
-B2b and B3 remain dependency-blocked.
+**Next gate:** completed. The identity-ambiguous historical ECS B2a is deferred
+by the separate fresh-controlled decision; the independent UR-E lifecycle is
+not rewritten by that decision. The current new-lifecycle gate is the source-
+qualification result above.
 
 **Claim boundary:** no source/cloud/private-value read, B2a/B2b execution,
 manifest/artifact generation or transfer, X-Insight write/import, Target,
