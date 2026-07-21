@@ -18,11 +18,14 @@
 > is finalized only after the docs-only PR/required-CI/merge identities exist.
 > `FV-CONTROLLED-TRAFFIC` remains blocked. A new User choice must either provide
 > two separated authorities—first establish a task-owned local Linux/current-
-> schema source, then bootstrap its bounded non-customer control-plane using an
+> schema source with task-specific runtime/admin secrets, then bootstrap its
+> bounded non-customer License/API-key/model-price/model-access/provider-route
+> and positive-wallet controls through an encrypted one-source binding to an
 > existing unchanged and undisclosed development credential—or designate one
-> already configured exact development source. Retention/cleanup remains
-> separately gated. This is not a product-code defect, source absence claim,
-> Target, Production, External integration or reopening of completed PRD5/PRD6.
+> already configured exact development source. The binding is a new private
+> configuration write; retention/cleanup remains separately gated. This is not
+> a product-code defect, source absence claim, Target, Production, External
+> integration or reopening of completed PRD5/PRD6.
 > **2026-07-20 `IR-IP-POLICY-ADAPTATION` checkpoint:** under the exact
 > [SHA-bound request](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-20-x-insight-prd2-internal-real-raw-ip-policy-adaptation-b2-retry-request.md>)
 > (`7517496d...`), the UniRouter strict producer in this code-bearing revision

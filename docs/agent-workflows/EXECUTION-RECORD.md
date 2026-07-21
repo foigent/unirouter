@@ -39,15 +39,18 @@ artifacts, transfers and imports `0`.
 **Finding gate:** `P0=0`, `P1=1`, `P2=0`. The P1 is that no exact current source
 identity/custody plus supported Linux producer path is proved and bound, not a
 producer code defect or a source-absence finding. A migration-only local
-database would also lack the test License, API key, model price and provider
-route required by the later traffic stage. The smallest complete User choice
-is therefore either (a) two explicitly separated authorities—first establish
-one task-owned local Linux/current-schema source, then perform bounded non-
-customer control-plane bootstrap using an existing owner-controlled development
-credential without creating, changing or disclosing it—or (b) designate one
-already configured exact development source for owner qualification. Retention
-and cleanup remain separately gated. No environment or control-plane mutation
-is performed here.
+database would also lack required runtime/admin secrets, test License, API key,
+model price, model access, provider binding/route and positive wallet grant.
+The smallest complete User choice is therefore either (a) two explicitly
+separated authorities—first establish one task-owned local Linux/current-schema
+source with task-specific runtime/admin secrets, then bootstrap the bounded
+non-customer controls and positive grant using an encrypted one-source binding
+to an existing owner-controlled development credential—or (b) designate one
+already configured exact development source for owner qualification. The
+external credential may not be created, changed, rotated, disclosed or
+onboarded; its binding into the new source is itself an authorized private
+configuration write. Retention and cleanup remain separately gated. No
+environment or control-plane mutation is performed here.
 
 **Next gate:** publish the immutable owner
 [response](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-21-unirouter-prd2-fresh-controlled-value-proof-acceptance-readiness-response.md>)
