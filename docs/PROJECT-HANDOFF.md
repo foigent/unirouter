@@ -2,7 +2,31 @@
 
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
-> **Newest checkpoint (2026-07-21 `FV-SOURCE-QUALIFICATION`):** the exact User
+> **Newest checkpoint (2026-07-21 `FV-SOURCE-QUALIFICATION-CURRENT-ECS`):**
+> UniRouter accepted the exact owner scope in the User
+> [decision](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-21-prd2-fresh-controlled-existing-ecs-and-final-outcome-authorization.md>)
+> at SHA-256 `d0464491...`; cross-project state remains `Not binding`. The
+> owner stopped before the first external call with
+> `DECISION_REQUIRED_pre_call_owner_controls_unproved`. An owner-authored,
+> sanitized local preflight found one configured profile and one region plus
+> one existing owner-known SSH alias. The owner accepted independent static
+> review that the available execution boundary could not guarantee exact
+> provider HTTP-attempt/redirect accounting and lacked a validated durable
+> owner-private Receipt v0 registry needed to complete the authorized
+> lifecycle. Candidate-stage runtime/control-chain/destination predicates were
+> never executed and are not classified as failed pre-call predicates. API
+> calls/pages/records/retries/errors, SSH sessions, database
+> transactions, candidates and receipts are all `0`; this is not evidence that
+> an ECS or data is absent. The exact owner
+> [response](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-21-unirouter-prd2-fresh-controlled-existing-ecs-qualification-response.md>)
+> is finalized after this docs-only PR passes routed CI and merges.
+> `FV-CONTROLLED-TRAFFIC` remains blocked. A later lifecycle must either run in
+> an authorized owner execution boundary with an instrumented bounded provider
+> client and durable private registry, or select the already documented task-
+> owned Local/Linux path under separate bootstrap authority. No cloud, host, source,
+> traffic, artifact, X-Insight, Target or Production action occurred. PRD5 and
+> PRD6 remain closed.
+> **Historical parent checkpoint (2026-07-21 `FV-SOURCE-QUALIFICATION`):** the exact User
 > [decision](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-21-prd2-fresh-controlled-product-value-proof-authorization.md>)
 > at SHA-256 `6d8e32f3...` is accepted for the UniRouter-owned qualification
 > scope, while cross-project state remains `Not binding`. Qualification stops
@@ -12,19 +36,12 @@
 > PostgreSQL tooling on Darwin is not an equivalent producer platform, so no
 > substitute source or Source Trust Receipt v0 was created. External calls,
 > source reads, MaaS traffic, manifests/artifacts, transfers/imports and
-> environment/database mutations are all zero. The designated owner
+> environment/database mutations were all zero. The owner
 > [response](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-21-unirouter-prd2-fresh-controlled-value-proof-acceptance-readiness-response.md>)
-> is published only after this docs-only branch passes required CI and merges.
-> `FV-CONTROLLED-TRAFFIC` remains blocked. A new User choice must either provide
-> two separated authorities—first establish one task-owned local Linux/current-
-> schema source with task-specific runtime/admin secrets, then bootstrap only
-> its non-customer License/API-key/model-price/model-access/provider-route and
-> positive-wallet controls through an encrypted one-source binding to an
-> existing unchanged and undisclosed development credential—or designate one
-> already configured exact development source for qualification. The binding is
-> a new private configuration write even though the external credential is not
-> created, changed, rotated or onboarded. Retention/cleanup remains separately
-> gated. PRD5/PRD6 remain closed.
+> is published at SHA-256 `d118f0c4...`; its final docs chain is merged on
+> `b3ecb4fad351e4ef04fb5033faaca4ee25771f27`. Authorization `...-02` then chose
+> the current-ECS qualification path recorded above. This parent result remains
+> historical and does not reopen PRD5/PRD6.
 > **Newest checkpoint (2026-07-20 `IR-IP-POLICY-ADAPTATION`):** the exact
 > [request](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-20-x-insight-prd2-internal-real-raw-ip-policy-adaptation-b2-retry-request.md>)
 > at SHA-256 `7517496d...` limits this code-bearing change to UniRouter's strict
