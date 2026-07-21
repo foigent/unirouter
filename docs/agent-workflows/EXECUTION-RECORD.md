@@ -1,6 +1,67 @@
 # Current Execution Record
 
-## Current Repository Execution — Existing-ECS Qualification Continuation
+## Current Repository Execution — Existing-ECS Replacement Lifecycle
+
+**Work item:** `FV-SOURCE-QUALIFICATION-CURRENT-ECS-REPLACEMENT`
+
+**Capability budget:** `FV-CURRENT-ECS-REPLACEMENT-BUDGET-01`
+
+**Owner:** UniRouter execution owner, single repository writer
+
+**Risk:** Red bounded provider-metadata lifecycle plus R2 planning/status truth;
+no traffic, source-row read or artifact action
+
+**Authority:** exact User
+[authorization](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-21-prd2-fresh-controlled-existing-ecs-replacement-lifecycle-authorization.md>)
+SHA-256 `d1b235b4065b7868e97da7f565e1b832b5978ea8d5f3c04f26c45a0994a89f83`;
+`scope_acceptance=accept_exact`; `Cross-project binding state: Not binding`
+
+**Stage 0 release:** the task-private non-product harness source is SHA-256
+`67b864cc94d0122727f0f3ed96e6a659a8e402945fc31ccd2e5bba972362ca12`;
+the ordinary binary is SHA-256
+`f354fe03af42b3b5215ff2a73adfc7fb3a4b943e3919cbab6c6cfe7a7c3ae90c`.
+`gofmt`, build, `go vet ./...`, bounded self-test, race build/self-test and the
+zero-dispatch owner preflight passed. Debug/proxy negative preflights failed
+closed before dispatch. The same bounded independent reviewer verified the
+three prior release findings closed and returned `P0=0`, `P1=0`, `P2=0`.
+
+**Terminal result:** `DECISION_REQUIRED_provider_transport_dns_failed`. The
+safe phase is `transport_no_response` and `http_response_observed=no`. The
+bounded harness classified the observed transport outcome; it did not retain
+or expose a raw error and this result does not diagnose the underlying DNS
+cause.
+
+**Exact counts:** logical provider API invocations `1`; actual adapter
+dispatches `1`; accepted pages `0`; decoded records `0`; SDK retries `0`;
+redirect follow-ups `0`; invocation errors/failures `1/1`; candidates `0`;
+host read-only session attempts/completions `0/0`; database metadata
+transaction attempts/completions `0/0`; source rows/values `0`; receipts `0`;
+traffic/artifact/import/X-Insight actions `0`.
+
+**Budget terminal state:** lifecycle allocated/consumed/remaining `1/1/0`;
+provider dispatch capacity allocated/consumed/unused/remaining `2/1/1/0`.
+Unused capacity expired at the first terminal result and is neither retry nor
+carryover authority.
+
+**Predicate boundary:** all candidate identity/running/custody/classification,
+lineage, runtime, schema and control predicates remain `not_executed`; there
+was no candidate and Stage 2 did not start.
+`candidate_local_strict_primitive_status=not_executed_read_only_gate`. No ECS,
+source, data, credential or architecture absence/failure claim follows.
+
+**Next gate:** publish the exact owner
+[response](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-21-unirouter-prd2-fresh-controlled-existing-ecs-replacement-lifecycle-response.md>)
+after this docs-only PR/required-CI/merge evidence exists, then return to the
+Integration Coordinator. Any diagnostic/retry requires new User authority.
+`FV-CONTROLLED-TRAFFIC`, source rows, artifact/import, B3 and Binding remain
+blocked.
+
+**Claim boundary:** no product-code change, ECS/IAM/network/credential/host/
+database/source mutation, source-row access, MaaS traffic, manifest/artifact,
+transfer/import, X-Insight mutation, Target, Production, live feed, B3 or
+deletion occurred.
+
+## Historical Repository Execution — Existing-ECS Qualification Continuation
 
 **Work item:** `FV-SOURCE-QUALIFICATION-CURRENT-ECS-CONTINUATION`
 
