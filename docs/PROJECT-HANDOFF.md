@@ -3,6 +3,26 @@
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
 > **Newest checkpoint (2026-07-21
+> `FV-SOURCE-QUALIFICATION-CURRENT-ECS-REPLACEMENT`):** UniRouter accepted the
+> exact User
+> [authorization](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-21-prd2-fresh-controlled-existing-ecs-replacement-lifecycle-authorization.md>)
+> at SHA-256 `d1b235b4...`; cross-project state remains `Not binding`. The
+> task-private diagnostic harness passed build, vet, bounded synthetic/race
+> tests and zero-dispatch preflight. The same independent reviewer released
+> Stage 1 with `P0=0`, `P1=0`, `P2=0`. The sole provider lifecycle then ended
+> `DECISION_REQUIRED_provider_transport_dns_failed` at
+> `transport_no_response`, with `http_response_observed=no`. Exact
+> invocation/dispatch/accepted-page/record/retry/redirect/error counts are
+> `1/1/0/0/0/0/1`. The two-dispatch budget consumed one actual dispatch; its
+> unused unit expired at this terminal result and cannot carry over. No
+> candidate, host/SSH, database metadata, source row/value, Receipt v0, MaaS,
+> artifact, transfer/import or X-Insight action followed. The designated owner
+> [response](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-21-unirouter-prd2-fresh-controlled-existing-ecs-replacement-lifecycle-response.md>)
+> is finalized after this docs-only PR/required CI/merge. Next owner is the
+> Integration Coordinator for independent terminal review. Any diagnostic or
+> retry needs new User authority; `FV-CONTROLLED-TRAFFIC` and Binding remain
+> blocked, and PRD5/PRD6 remain closed.
+> **Historical continuation checkpoint (2026-07-21
 > `FV-SOURCE-QUALIFICATION-CURRENT-ECS-CONTINUATION`):** exact User
 > [decision](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-21-prd2-fresh-controlled-existing-ecs-and-final-outcome-authorization.md>)
 > SHA-256 `d0464491...` remains `Not binding`. The corrected task-private SDK
