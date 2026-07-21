@@ -1,6 +1,60 @@
 # Current Execution Record
 
-## Current Repository Execution — Fresh-Controlled Current-ECS Qualification
+## Current Repository Execution — Existing-ECS Qualification Continuation
+
+**Work item:** `FV-SOURCE-QUALIFICATION-CURRENT-ECS-CONTINUATION`
+
+**Owner:** UniRouter execution owner, single repository writer
+
+**Risk:** R2 planning/status truth with a bounded R4 provider-metadata action;
+no traffic, source-row read or artifact action
+
+**Authority:** exact User
+[decision](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-21-prd2-fresh-controlled-existing-ecs-and-final-outcome-authorization.md>)
+SHA-256 `d0464491727493939ad788698171f16474c6298db851502e04db77758315043f`,
+under parent SHA-256
+`6d8e32f33c59bb10799c629b0d3c929b6ff4980f520c074252d48f70c3628eb3`;
+Authorization ID `UR-XI-FRESH-VALUE-AUTH-20260721-02`; `Cross-project binding
+state: Not binding`
+
+**Owner acceptance:** `scope_acceptance=accept_exact`. The continuation
+corrected two self-imposed pre-call requirements from the prior response: it
+does not require a Registry platform or proof of every lower-level network
+mechanism. It uses the decision's bounded SDK invocation/dispatch semantics and
+would create only one minimum private Receipt v0 after all candidate predicates.
+
+**Qualification result:** `DECISION_REQUIRED_provider_invocation_failed`.
+Build, vet, bounded synthetic tests, local preflight and the single independent
+release review passed (`P0=0`, `P1=0`, `P2=2`). The one authorized provider API
+invocation entered the adapter transport exactly once and returned an invocation
+error before any response page was accepted. The decision terminates on that
+error, so no retry or second nominal call occurred. The narrowest retained
+classification is `unknown_invocation_error_class`; whether an HTTP response
+was received is `unknown_not_persisted`. Zero accepted pages does not establish
+a pre-response failure.
+
+**Exact counts:** provider API invocations `1`; adapter-level provider
+dispatches `1`; accepted pages `0`; decoded records `0`; SDK retries `0`;
+invocation errors `1`; candidates `0`; SSH sessions `0`; database metadata
+transaction attempts/completions `0/0`; source reads `0`; receipts `0`;
+traffic/artifact/import/X-Insight actions `0`.
+
+**Predicate boundary:** exact candidate identity, running state, custody,
+non-customer/non-Production classification, lineage, runtime, schema and
+control metadata were not executed because no provider page was accepted.
+`candidate_local_strict_primitive_status=not_executed_read_only_gate`. No asset,
+source, data or architecture absence claim follows.
+
+**Next gate:** publish the exact owner
+[response](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-21-unirouter-prd2-fresh-controlled-existing-ecs-qualification-continuation-response.md>)
+after this docs-only PR/required-CI/merge evidence exists, then return to the
+Integration Coordinator. `FV-CONTROLLED-TRAFFIC` and Binding remain blocked.
+
+**Claim boundary:** no product-code change, ECS mutation, host/database/source
+access, MaaS traffic, manifest/artifact, transfer/import, X-Insight mutation,
+Target, Production, live feed, B3 or deletion occurred.
+
+## Historical Repository Execution — Initial Current-ECS Qualification
 
 **Work item:** `FV-SOURCE-QUALIFICATION-CURRENT-ECS`
 
