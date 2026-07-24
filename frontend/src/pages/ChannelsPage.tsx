@@ -45,6 +45,27 @@ interface RoutingPreview {
   exclusions: RoutingPreviewCandidate[];
 }
 
+const channelStatusOptions = [
+  { label: '启用', value: 'active' },
+  { label: '禁用', value: 'disabled' },
+];
+
+function channelUpdateErrorMessage(error: unknown) {
+  if (!(error instanceof ApiError)) return '更新失败，请稍后重试';
+  const backendMessage = error.message.toLowerCase();
+  if (error.status === 400 && backendMessage.includes('status must be')) {
+    return '通道状态仅支持 active 或 disabled';
+  }
+  if (error.status === 400 && backendMessage.includes('adapter_type')) {
+    return 'Adapter Type 不受支持';
+  }
+  if (error.status === 400) return '通道配置无效，请检查字段后重试';
+  if (error.status === 403) return '当前账号无权更新此通道';
+  if (error.status === 404) return '通道不存在或已被删除';
+  if (error.status >= 500) return '服务暂时无法更新通道，请稍后重试';
+  return `更新失败（HTTP ${error.status}）`;
+}
+
 const routingReasonLabel = (reason: string) => ({
   equal_priority_static_weight: '同优先级内按权重排序',
   priority_failover: '按优先级故障转移',
@@ -151,7 +172,7 @@ export default function ChannelsPage() {
       if (editing && error instanceof ApiError && error.status === 409) {
         Toast.error('该通道已被其他管理员修改，请关闭编辑页、刷新后重试');
       } else {
-        Toast.error(editing ? '更新失败' : '创建失败');
+        Toast.error(editing ? channelUpdateErrorMessage(error) : '创建失败');
       }
     }
   };
@@ -213,6 +234,7 @@ export default function ChannelsPage() {
       priority: editing.priority,
       routing_weight: editing.routing_weight,
       degradation_threshold: editing.degradation_threshold,
+      status: editing.status,
     } : {
       adapter_type: 'openai_compatible',
       adapter_config: '{}',
@@ -358,6 +380,7 @@ export default function ChannelsPage() {
               { label: 'OpenAI', value: 'openai' },
               { label: 'Anthropic', value: 'anthropic' },
               { label: 'Azure', value: 'azure' },
+              { label: 'Kimi', value: 'kimi' },
               { label: '自定义', value: 'custom' },
             ]}
           />
@@ -373,6 +396,7 @@ export default function ChannelsPage() {
           <Form.InputNumber field="priority" label="优先级 (越小越优先)" initValue={100} />
           <Form.InputNumber field="routing_weight" label="同优先级权重 (1-1000)" initValue={100} extraText="只在优先级相同时分配流量；例如 100 与 200 约为 1:2。" />
           <Form.InputNumber field="degradation_threshold" label="熔断阈值 (连续失败次数)" initValue={10} extraText="达到次数后暂停该通道，恢复窗口到期后只允许一个探针请求。" />
+          {editing && <Form.Select field="status" label="状态" optionList={channelStatusOptions} />}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
             <Button onClick={closeDrawer}>取消</Button>
             <Button type="primary" onClick={() => formApi?.submitForm()}>{editing ? '更新' : '创建'}</Button>

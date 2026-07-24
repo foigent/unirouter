@@ -120,6 +120,52 @@ func TestP6F08ChannelUpdateUsesOptionalRoutingEpochCASAndInvalidatesSnapshot(t *
 	}
 }
 
+func TestChannelUpdateValidatesSupportedStatusBeforeDatabaseAccess(t *testing.T) {
+	for _, status := range []string{"active", "disabled"} {
+		t.Run(status, func(t *testing.T) {
+			var updateArgs []any
+			db := &testutil.MockDB{
+				ExecFn: func(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+					if strings.HasPrefix(sql, "UPDATE channels") {
+						updateArgs = append([]any(nil), args...)
+					}
+					return pgconn.NewCommandTag("UPDATE 1"), nil
+				},
+			}
+			h := &Handler{db: db}
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/channels/7", strings.NewReader(fmt.Sprintf(`{"status":%q}`, status)))
+			req.SetPathValue("id", "7")
+			rec := httptest.NewRecorder()
+
+			h.UpdateChannel(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200 for %q, got %d: %s", status, rec.Code, rec.Body.String())
+			}
+			if len(updateArgs) == 0 || updateArgs[0] != status {
+				t.Fatalf("status %q was not passed to the channel update: %#v", status, updateArgs)
+			}
+		})
+	}
+
+	databaseAccessed := false
+	h := &Handler{db: &testutil.MockDB{
+		ExecFn: func(context.Context, string, ...any) (pgconn.CommandTag, error) {
+			databaseAccessed = true
+			return pgconn.NewCommandTag("UPDATE 1"), nil
+		},
+	}}
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/channels/7", strings.NewReader(`{"status":"paused"}`))
+	req.SetPathValue("id", "7")
+	rec := httptest.NewRecorder()
+
+	h.UpdateChannel(rec, req)
+
+	if rec.Code != http.StatusBadRequest || databaseAccessed {
+		t.Fatalf("unsupported status must fail before database access: status=%d database_accessed=%t body=%s", rec.Code, databaseAccessed, rec.Body.String())
+	}
+}
+
 func TestP6F08ListChannelsFailsClosedOnNewRoutingFieldScanError(t *testing.T) {
 	h := &Handler{db: &testutil.MockDB{QueryFn: func(context.Context, string, ...any) (pgx.Rows, error) {
 		return &testutil.MockRows{Rows: []func(...any) error{

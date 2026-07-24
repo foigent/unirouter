@@ -96,4 +96,23 @@ describe('AuditLogsPage', () => {
     expect(await screen.findByRole('heading', { name: '审计记录加载失败' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '重新加载审计记录' })).toBeTruthy();
   });
+
+  it('renders a zero system actor as 系统 instead of missing attribution', async () => {
+    mockGetAuditLogs.mockResolvedValueOnce({
+      data: [{
+        id: 3,
+        actor_id: 0,
+        action: 'wallet.grant',
+        resource: 'grant',
+        source: 'system',
+        created_at: '2026-07-24T10:10:28Z',
+      }],
+      total: 1,
+    });
+
+    render(<AuditLogsPage />);
+
+    expect(await screen.findByText('系统')).toBeTruthy();
+    expect(screen.getByText('系统任务')).toBeTruthy();
+  });
 });
