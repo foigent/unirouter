@@ -44,6 +44,11 @@ function scopedIdentity(name: string | undefined, id: number | null | undefined,
   return name ? `${name} (#${id})` : `${fallback} #${id}`;
 }
 
+function actorIdentity(row: any) {
+  if (row.actor_id === 0 && row.source === 'system') return '系统';
+  return scopedIdentity(row.actor_name, row.actor_id, '用户');
+}
+
 export default function AuditLogsPage() {
   const [logs, setLogs] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
@@ -107,7 +112,7 @@ export default function AuditLogsPage() {
         ? `${scopedIdentity(row.org_name, row.org_id, '组织')} / ${scopedIdentity(row.project_name, row.project_id, '项目')}`
         : scopedIdentity(row.org_name, row.org_id, '组织'),
     },
-    { title: '操作者', dataIndex: 'actor_id', width: 170, render: (v: number, row: any) => scopedIdentity(row.actor_name, v, '用户') },
+    { title: '操作者', dataIndex: 'actor_id', width: 170, render: (_: number, row: any) => actorIdentity(row) },
     {
       title: '动作', dataIndex: 'action',
       width: 180,

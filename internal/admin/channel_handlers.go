@@ -14,6 +14,15 @@ import (
 	"github.com/uniroute/unirouter/internal/middleware"
 )
 
+func validChannelStatus(status string) bool {
+	switch status {
+	case "active", "disabled", "deprecated":
+		return true
+	default:
+		return false
+	}
+}
+
 type channelMutationStore interface {
 	QueryRow(context.Context, string, ...interface{}) pgx.Row
 	Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error)
@@ -207,6 +216,10 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 	if req.AdapterConfig != nil && (len(*req.AdapterConfig) == 0 || string(*req.AdapterConfig) == "null") {
 		empty := json.RawMessage(`{}`)
 		req.AdapterConfig = &empty
+	}
+	if req.Status != nil && !validChannelStatus(*req.Status) {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "status must be active, disabled, or deprecated"})
+		return
 	}
 	if (req.Priority != nil && (*req.Priority < 1 || *req.Priority > 10000)) ||
 		(req.RoutingWeight != nil && (*req.RoutingWeight < 1 || *req.RoutingWeight > 1000)) ||
