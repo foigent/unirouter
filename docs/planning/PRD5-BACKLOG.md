@@ -10,19 +10,61 @@
 > the X-Insight runtime response is reconciled in
 > `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md`;
 > full deferred items remain inactive.
-> **2026-07-21 fresh-controlled value-proof qualification:** the User
+> **2026-07-21 current-ECS replacement lifecycle:** the exact User
+> [authorization](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-21-prd2-fresh-controlled-existing-ecs-replacement-lifecycle-authorization.md>)
+> at SHA-256 `d1b235b4...` remains `Not binding`. UniRouter accepted the exact
+> scope; the task-private harness passed build, vet, bounded synthetic/race
+> tests, zero-dispatch preflight and the one independent release review with
+> `P0=0`, `P1=0`, `P2=0`. Its sole provider invocation/dispatch terminated
+> `DECISION_REQUIRED_provider_transport_dns_failed` before any HTTP response or
+> accepted page; page/record/retry/redirect counts are zero. Of two allocated
+> dispatches, one was consumed and the unused capacity expired terminally. No
+> candidate, host/DB/source access, Receipt v0, traffic, artifact, import or
+> environment mutation followed. The owner
+> [response](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-21-unirouter-prd2-fresh-controlled-existing-ecs-replacement-lifecycle-response.md>)
+> binds the docs-only PR/CI/merge evidence. Any retry needs new User authority;
+> `FV-CONTROLLED-TRAFFIC` and Binding remain blocked, and this checkpoint does
+> not reopen accepted PRD5 scope.
+> **Historical 2026-07-21 current-ECS continuation:** the exact User
+> [decision](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-21-prd2-fresh-controlled-existing-ecs-and-final-outcome-authorization.md>)
+> (SHA-256 `d0464491...`) remains `Not binding`. UniRouter accepted the exact
+> continuation; the corrected pre-call harness and one independent review
+> passed with `P0=0`, `P1=0`, `P2=2`. The only provider
+> invocation/dispatch ended `DECISION_REQUIRED_provider_invocation_failed`
+> before any page was accepted; page/record/retry counts are zero. The retained
+> safe class is `unknown_invocation_error_class`, and HTTP-response receipt is
+> unknown rather than guessed. No retry, candidate, host/DB/source access,
+> Receipt v0, traffic, artifact, import or environment mutation followed. The
+> owner
+> [response](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-21-unirouter-prd2-fresh-controlled-existing-ecs-qualification-continuation-response.md>)
+> binds the docs-only PR/CI/merge evidence. `FV-CONTROLLED-TRAFFIC` and Binding
+> remain blocked; this checkpoint does not reopen accepted PRD5 scope.
+> **Historical initial 2026-07-21 current-ECS qualification:** the exact User
+> [decision](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-21-prd2-fresh-controlled-existing-ecs-and-final-outcome-authorization.md>)
+> at SHA-256 `d0464491...` was accepted for owner execution only. The result is
+> `DECISION_REQUIRED_pre_call_owner_controls_unproved`: the owner stopped at
+> zero cloud/API/SSH/database/source calls because the available owner execution
+> boundary could not guarantee exact provider transport-attempt accounting and
+> lacked a validated durable private Receipt v0 registry. Candidate-stage
+> runtime/control-chain/destination predicates were not executed. The designated
+> [response](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-21-unirouter-prd2-fresh-controlled-existing-ecs-qualification-response.md>)
+> will be the terminal handback after its PR/CI/merge identities exist. This
+> does not prove asset/data absence and does not activate traffic, artifact,
+> X-Insight, Target, Production or Binding.
+> **Historical 2026-07-21 fresh-controlled value-proof qualification:** the User
 > [decision](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-21-prd2-fresh-controlled-product-value-proof-authorization.md>)
-> (SHA-256 `6d8e32f3...`) replaces the historical-ECS mainline with an independent
-> fresh-source value-proof lifecycle; the historical route is
-> `historical_backfill_deferred`. UniRouter accepts its exact qualification
-> scope, but the current owner result is `DECISION_REQUIRED`: no exact existing
+> (SHA-256 `6d8e32f3...`) replaced the historical-ECS mainline with an independent
+> fresh-source value-proof lifecycle; the historical route became
+> `historical_backfill_deferred`. UniRouter accepted its exact qualification
+> scope, and its owner result was `DECISION_REQUIRED`: no exact existing
 > source is proved and no already installed Linux/Docker/VM path is available
 > for strict producer execution. No substitute source, traffic, source read,
-> artifact or environment mutation is authorized or performed. The planned
-> owner
+> artifact or environment mutation was performed. The owner
 > [response](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-21-unirouter-prd2-fresh-controlled-value-proof-acceptance-readiness-response.md>)
-> will bind the docs-only PR/CI/merge evidence. `FV-CONTROLLED-TRAFFIC` remains
-> blocked and this checkpoint does not reopen accepted PRD5 scope.
+> is published at SHA-256 `d118f0c4...`; its docs chain is merged on
+> `b3ecb4fad351e4ef04fb5033faaca4ee25771f27`. Authorization `...-02` then chose
+> the current-ECS path above. This checkpoint does not reopen accepted PRD5
+> scope.
 > **2026-07-20 `IR-IP-POLICY-ADAPTATION` checkpoint:** the SHA-bound
 > [request](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-20-x-insight-prd2-internal-real-raw-ip-policy-adaptation-b2-retry-request.md>)
 > (`7517496d...`) authorizes one UniRouter-only strict-producer change. The
@@ -155,7 +197,7 @@ deferred as previously classified. Evidence:
 | PRD5-OPS-001 | Full maintenance/SLA/SLO incident operations | Needs incident lifecycle, planned maintenance, communication workflow, SLO policy, and notification governance | PRD4 Status Center baseline, operator roles, notification reliability, customer-visible policy |
 | PRD5-UPSTREAM-001 | Real upstream target-environment E2E | No approved real upstream environment, credentials, and model slugs are available for the current PRD4 closeout; PRD4 keeps only guarded harness assets | Approved OpenRouter and direct Anthropic credentials, target environment owner, cost/risk approval, non-stream/stream run plan, cleanup plan |
 | PRD5-SSO-001 | Real SSO target-environment E2E | No approved Logto or enterprise OIDC target, test user, and browser-login environment are available for the current PRD4 closeout; PRD4 keeps only guarded harness assets | Approved IdP tenant/client, test user, callback URL, target console/backend URLs, DB audit access, redaction review |
-| PRD5-XINSIGHT-001 | X-Insight integration contract and shared working process | Both controlled v1 snapshots passed artifact reconciliation, persistence, idempotent rerun and readback; Batch 1W is Target verified and keys 36/37 are disabled. X-Insight PR #52 / `0462e698` published the v2 consumer and monotonic source-version correction; PR #54 / `0ca502f` published deployable rc.6; PR #55 / `6b1ea900` records the historical synthetic v2 fixture on the named non-production Target as execution-owner verified, not independent acceptance. Producer/receiver compatibility is current through UniRouter PR #225 / `d43fef6` and the corresponding X-Insight review. External integration for a fresh producer handoff remains pending. The accepted sidecar-only boundary remains binding; the completed-execution live feed is deferred | UR-E Stage A remains immutable historical evidence and this decision does not authorize or rewrite its independent later state. The 2026-07-21 User decision separately defers the identity-ambiguous historical ECS B2a and creates a fresh-controlled lifecycle. Current gate: exact source qualification, both owner responses, merged planning links and coordinator Binding activation. UniRouter qualification is `DECISION_REQUIRED` until one exact current source identity/custody plus supported Linux producer path is proved and bound; no traffic is active. Durable job/deep-link/automated receipt/authenticity/public-adapter contracts, real upstream E2E, read-only views/exporter/outbox and broader data remain unimplemented or unapproved. UniRouter ECS `INFRA-SEC-001` remediation is closed in Batch 1Z |
+| PRD5-XINSIGHT-001 | X-Insight integration contract and shared working process | Both controlled v1 snapshots passed artifact reconciliation, persistence, idempotent rerun and readback; Batch 1W is Target verified and keys 36/37 are disabled. X-Insight PR #52 / `0462e698` published the v2 consumer and monotonic source-version correction; PR #54 / `0ca502f` published deployable rc.6; PR #55 / `6b1ea900` records the historical synthetic v2 fixture on the named non-production Target as execution-owner verified, not independent acceptance. Producer/receiver compatibility is current through UniRouter PR #225 / `d43fef6` and the corresponding X-Insight review. External integration for a fresh producer handoff remains pending. The accepted sidecar-only boundary remains binding; the completed-execution live feed is deferred | UR-E Stage A remains immutable historical evidence. The replacement current-ECS lifecycle is `DECISION_REQUIRED_provider_transport_dns_failed`: one invocation/dispatch, zero accepted pages/records/retries, no HTTP response, no candidate/host/source/traffic/artifact action, and no inference about the DNS cause or asset/data absence. The lifecycle and its unused provider capacity are terminal; any diagnostic/retry needs new User authority. Current gate remains exact source qualification, both owner responses, merged planning links and coordinator Binding activation. Durable job/deep-link/automated receipt/authenticity/public-adapter contracts, real upstream E2E, read-only views/exporter/outbox and broader data remain unimplemented or unapproved. UniRouter ECS `INFRA-SEC-001` remediation is closed in Batch 1Z |
 | PRD5-EVIDENCE-001 | Structured execution-chain evidence fields | PRD4 trace events are a metadata-only foundation but do not yet model multi-agent/multi-tool/multi-business-system chains with explicit structural fields | Batch 1A/1B/1C accepted the field contract, nullable migration, gateway-known structural writes, read-side exposure, snapshot output, and lightweight trace UI. Batch 1D adds provider-returned upstream request ID capture. Batch 1E adds event-level redacted capture-gap emission for sanitized trace metadata. Batch 1F adds restricted payload evidence mode configuration. Batch 1G adds default-off trusted evidence context intake for internal trace/session/actor/delegation fields. Batch 1H adds per-request gateway root span parenting for UniRouter-emitted trace events. Batch 1I adds explicit payload policy decision events. Batch 1J adds `provider_not_returned` capture gaps for provider response events without upstream request IDs. Batch 1L refines repeated same-component event parenting. Batch 1M adds `not_available_from_source` capture gaps for provider-stage failures that occur before any upstream response source exists. Batch 1N adds snapshot `candidate_capture_gaps` for missing trace rows. Batch 1P adds `permission_denied` auth decision evidence for Chat model rejects. Batch 1U closes the equivalent Embeddings `allowed_models` bypass. Batch 1V proved the live wrapper still bypassed Chat rejection evidence; Batch 1W removes that duplicate pre-relay check. `decision_not_emitted` remains an observed import/gap condition rather than a fabricated runtime event |
 | PRD5-PAYLOAD-001 | Enterprise-configurable prompt/response payload policy | Raw prompt/response storage is privacy-sensitive and should not be silently introduced through trace, cache, or X-Insight integration work | Batch 1F accepts only `metadata_only` and `disabled` runtime payload evidence modes. Batch 1I emits explicit `payload.policy.applied` decision events while keeping `raw_payload_stored=false` and `payload_ref_present=false`. Remaining prerequisites before redacted/hash/reference/raw modes: User approval, UniRouter/X-Insight ownership split, encryption/key management, retention, deletion/export, audit-on-read, redacted summary, hash, and `evidence_ref` behavior |
 | PRD5-COMPARE-001 | NewAPI/LiteLLM/one-api and observability-platform comparison | Functional, technical, and UI comparison is needed before feature-chase planning; older research snapshots and X-Insight prior research are inputs but must be refreshed before PRD commitments | Batch 1A/1B/1C accepted the initial comparison and UniRouter/X-Insight ownership split. Refresh again before public claims, adapter implementation, pricing claims, or choosing a new catch-up workstream |

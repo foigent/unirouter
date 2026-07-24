@@ -1,11 +1,73 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
-> **2026-07-21 `FV-SOURCE-QUALIFICATION` checkpoint:** UniRouter accepts the
+> **2026-07-21
+> `FV-SOURCE-QUALIFICATION-CURRENT-ECS-REPLACEMENT` checkpoint:** UniRouter
+> accepted the exact User
+> [authorization](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-21-prd2-fresh-controlled-existing-ecs-replacement-lifecycle-authorization.md>)
+> at SHA-256 `d1b235b4...`, with `Cross-project binding state: Not binding`.
+> Stage 0 build/vet/bounded synthetic/race/preflight evidence passed and the
+> single independent release review returned `P0=0`, `P1=0`, `P2=0`. The sole
+> bounded provider lifecycle ended
+> `DECISION_REQUIRED_provider_transport_dns_failed`; safe phase is
+> `transport_no_response` and `http_response_observed=no`. Exact
+> invocation/dispatch/page/record/retry/redirect/error counts are
+> `1/1/0/0/0/0/1`. Provider dispatch capacity was allocated `2`, consumed `1`,
+> unused `1`, remaining `0`, and expired on the terminal result. There was no
+> retry, candidate, host/SSH, DB metadata/source read, Receipt v0, traffic,
+> artifact, transfer/import or X-Insight action. The exact owner
+> [response](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-21-unirouter-prd2-fresh-controlled-existing-ecs-replacement-lifecycle-response.md>)
+> is finalized after this docs-only PR/required-CI/merge. This safe DNS class
+> does not prove the cause, ECS/source/data absence, credential failure,
+> architecture failure, Target, Production or External integration. Any retry
+> needs new User authority. `FV-CONTROLLED-TRAFFIC` and Binding remain blocked;
+> PRD5/PRD6 remain closed.
+> **Historical 2026-07-21
+> `FV-SOURCE-QUALIFICATION-CURRENT-ECS-CONTINUATION` checkpoint:** under the
+> exact User
+> [decision](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-21-prd2-fresh-controlled-existing-ecs-and-final-outcome-authorization.md>)
+> at SHA-256 `d0464491...`, UniRouter accepted the exact continuation and kept
+> cross-project state `Not binding`. The corrected task-private SDK harness
+> passed build, vet, bounded synthetic tests and owner preflight; the one
+> independent release review returned `P0=0`, `P1=0`, `P2=2`. The terminal
+> result is `DECISION_REQUIRED_provider_invocation_failed`: provider API
+> invocation/adapter dispatch/page/record/retry/error counts are
+> `1/1/0/0/0/1`. The safe category is
+> `unknown_invocation_error_class`, and HTTP-response receipt is
+> `unknown_not_persisted`; zero accepted pages does not prove a pre-response
+> failure. No retry, candidate, SSH, DB/source read, Receipt v0, traffic,
+> artifact, transfer/import or X-Insight action followed. The exact owner
+> [response](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-21-unirouter-prd2-fresh-controlled-existing-ecs-qualification-continuation-response.md>)
+> is finalized after this docs-only PR/required-CI/merge. This is not an
+> asset/source/data absence, architecture, Target, Production or External-
+> integration claim. `FV-CONTROLLED-TRAFFIC` and Binding remain blocked; PRD5
+> and PRD6 remain closed.
+> **Historical initial 2026-07-21
+> `FV-SOURCE-QUALIFICATION-CURRENT-ECS` checkpoint:** under the
+> exact User
+> [decision](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-21-prd2-fresh-controlled-existing-ecs-and-final-outcome-authorization.md>)
+> (SHA-256 `d0464491...`), UniRouter accepted the exact owner scope and stopped
+> before the first external call as
+> `DECISION_REQUIRED_pre_call_owner_controls_unproved`. Owner-authored local
+> non-network checks found one configured profile/region and one owner-known
+> SSH alias. The owner accepted static review that the available execution
+> boundary could not guarantee exact provider transport-attempt accounting and
+> lacked a validated durable owner-private Receipt v0 registry. Candidate-stage
+> runtime/control-chain/destination predicates were never executed.
+> Provider/API calls, pages, records, retries/errors, candidates, SSH sessions,
+> database transactions and receipts are all `0`; no ECS/source/data absence
+> is inferred. `P0=0`, `P1=1`, `P2=0`; the P1 is an owner execution-boundary
+> blocker, not a product defect or candidate-predicate result. The designated
+> [response](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-21-unirouter-prd2-fresh-controlled-existing-ecs-qualification-response.md>)
+> is finalized after this docs-only PR/required-CI/merge chain. Cross-project
+> state remains `Not binding`; `FV-CONTROLLED-TRAFFIC` remains blocked. No
+> cloud, host, database, source, traffic, artifact, X-Insight, Target,
+> Production or live-feed action occurred. PRD5/PRD6 remain closed.
+> **Historical 2026-07-21 `FV-SOURCE-QUALIFICATION` checkpoint:** UniRouter accepted the
 > exact owner scope in the User
 > [decision](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/decisions/2026-07-21-prd2-fresh-controlled-product-value-proof-authorization.md>)
 > (SHA-256 `6d8e32f3...`) without treating it as cross-project Binding or traffic
-> activation. The current result is `DECISION_REQUIRED`, with `P0=0`, `P1=1`,
+> activation. Its result was `DECISION_REQUIRED`, with `P0=0`, `P1=1`,
 > `P2=0`. No exact current environment identity/custody was already proved, and
 > no existing local Linux/Docker/VM runtime is available for the strict
 > producer's sole accepted `linux/ext4/o_tmpfile/procfd-linkat` backend. Darwin
@@ -13,18 +75,12 @@
 > bound, no owner-private Source Trust Receipt v0 was created, and no substitute
 > was selected. External/control-plane calls, source/data reads, MaaS traffic,
 > environment/database mutations, manifests/artifacts, transfers/imports and
-> X-Insight actions are all zero. The exact owner
+> X-Insight actions were all zero. The exact owner
 > [response](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/responses/2026-07-21-unirouter-prd2-fresh-controlled-value-proof-acceptance-readiness-response.md>)
-> is finalized only after the docs-only PR/required-CI/merge identities exist.
-> `FV-CONTROLLED-TRAFFIC` remains blocked. A new User choice must either provide
-> two separated authorities—first establish a task-owned local Linux/current-
-> schema source with task-specific runtime/admin secrets, then bootstrap its
-> bounded non-customer License/API-key/model-price/model-access/provider-route
-> and positive-wallet controls through an encrypted one-source binding to an
-> existing unchanged and undisclosed development credential—or designate one
-> already configured exact development source. The binding is a new private
-> configuration write; retention/cleanup remains separately gated. This is not
-> a product-code defect, source absence claim, Target, Production, External
+> is published at SHA-256 `d118f0c4...`; its docs chain is merged on
+> `b3ecb4fad351e4ef04fb5033faaca4ee25771f27`. Authorization `...-02` then chose
+> the current-ECS path recorded above. This historical parent is not a
+> product-code defect, source absence claim, Target, Production, External
 > integration or reopening of completed PRD5/PRD6.
 > **2026-07-20 `IR-IP-POLICY-ADAPTATION` checkpoint:** under the exact
 > [SHA-bound request](</Users/m4/Desktop/projects/UniRouter-X-Insight Cooperation/requests/2026-07-20-x-insight-prd2-internal-real-raw-ip-policy-adaptation-b2-retry-request.md>)
@@ -850,7 +906,7 @@ Historical PRD1 summary: Core backend modules, admin APIs, frontend pages, migra
 | PRD2 | Batch 25 final closeout docs/status reconciliation passed Canary 4/4, and User reported Sentinel completed. Batch 26 UI/UX hardening passed Canary 5/5, and User reported Sentinel/Atlas completed. Batch 27 copy/navigation polish passed Canary 7/7, and User reported Canary/Sentinel/Atlas completed. Batch 28 product consistency/filter parity passed Canary 6/6, and User reported Canary/Sentinel/Atlas completed: shared display labels, Usage Analytics filter parity with backend-supported filters, localized enum/status labels, and stable `usage_source` API values. Batch 25 adds the P2-F11 prompt/response storage policy and reconciles the matrix to accepted/deferred/out-of-scope states. PRD2 is frozen for new feature work. Batch 24 OIDC-first SSO, Batch 23 P2 product features, Batch 22 License local E2E smoke, and Batch 21 HA readiness evidence remain the latest accepted implementation evidence. External boundaries remain explicit: P2-F10 License is E2E accepted but not `Production verified`; Batch 18 provider real-upstream acceptance needs credentials; budget hard-blocking is deferred; production HA/DR and real enterprise IdP browser login require target-environment evidence | `docs/planning/PRD2-DISCOVERY.md`, `docs/PRD-Phase2.md`, `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`, `docs/ops/PRD2-COMPLETION-PLAN.md`, `docs/ops/evidence/`, `docs/agent-workflows/FIX-SIGNAL.md`, `docs/agent-workflows/VERIFY-RESULT.md`, `docs/issues/OPEN-ISSUES.md`, `docs/ops/deployment-runbook.md`, `docs/tech-ref/15-ha-readiness.md`, `docs/tech-ref/16-license-foundation.md`, `docs/tech-ref/17-cache-research.md`, `docs/tech-ref/18-oidc-sso.md`, `docs/tech-ref/19-prompt-response-storage-policy.md`, `docs/tech-ref/14-notification-event-foundation.md` |
 | PRD3 | Complete for confirmed scope. User confirmed PRD3 is not a new-feature implementation phase; it is PRD1->PRD2 consistency, semantics, contract, documentation lifecycle, module boundaries, frontend architecture, parity tests, and engineering governance for existing functionality only. PRD3 Batch 17 final evidence hygiene passed Canary 7/7, consolidates all P3 rows to `Canary passed`, preserves PRD2 E2E accepted versus Production verified boundaries, and keeps PRD4 backlog items separate. No planned PRD3 implementation work remains unless User reopens scope | `docs/planning/PRD3-CONSISTENCY-AUDIT.md`, `docs/PRD-Phase3.md`, `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`, `docs/issues/OPEN-ISSUES.md`, `docs/agent-workflows/VERIFY-RESULT.md` |
 | PRD4 | Complete for the confirmed current scope. Batch 0 through Batch 1S passed the required gates for scoped PRD4 work. Batch 1S Open Issue Boundary Closeout passed Canary 7/7, Sentinel merge is reflected by `5b41b87` / PR #103, and User reported Atlas deleted `uniroute_test`, closing `PRD4-DEPLOY-002`. PRD4 delivered API key owner usage/cost visibility, quota vocabulary, Flow/Event/Trace foundation, PlungeIn observation-first port contract, Runtime Observability and host telemetry, Prometheus/Grafana integration health, real upstream/SSO guarded harness assets only, auth UX hardening, production-evidence boundary classification, runtime/build-chain hardening, security/redaction guardrails, and PRD5 backlog consolidation. No PRD4 matrix row is promoted to `Production verified` without target-environment evidence. Full Scheduler V2, runtime plugin marketplace, Logto/IAM rewrite, managed-HA IaC product, multi-instance infrastructure observability/topology, budget hard-block enforcement, runtime cache, full SDK, new persistent roles, real upstream target E2E, real SSO target E2E, and public SaaS/commercial growth features are deferred to PRD5 unless User reopens scope | `docs/PRD-Phase4.md`, `docs/ops/PRD4-ACCEPTANCE-MATRIX.md`, `docs/planning/PRD5-BACKLOG.md`, `docs/ops/evidence/PRD4-final-closeout-20260708.md`, `docs/issues/OPEN-ISSUES.md`, `docs/agent-workflows/VERIFY-RESULT.md` |
-| PRD5 | Accepted UniRouter scope complete. Historical Batch 1A through Batch 1V evidence remains valid; Batch 1W is target/external-integration verified for the authorized denied scenario. Batch 1X audit/screening is Local verified. Batch 1Y implementation is merged, and Batch 1Z verifies target migration/deployment/browser evidence plus the `INFRA-SEC-001` cutover. Structural search, Data Exchange Control, and redacted topology are Target verified; route/failover visibility is CI verified. X-Insight's historical synthetic v2 fixture is named-Target execution-owner verified, not independently accepted or fresh External integration. The UR-E Stage A artifact and transfer remain immutable historical evidence; the new decision neither authorizes nor rewrites that independent lifecycle's later state. The 2026-07-21 User decision defers the identity-ambiguous historical ECS B2a and starts a separate fresh-controlled lifecycle; its current UniRouter result is `FV-SOURCE-QUALIFICATION=DECISION_REQUIRED`, cross-project activation pending. No fresh External integration, Target or Production claim follows. Unimplemented durable-job/deep-link/automated-receipt contracts, migration down, TLS 443 behavior, real upstream/SSO, read-only DB/view, exporter/outbox, and deferred P5-F12 products remain separate. PRD4 remains closed | `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`, `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md`, `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md`, `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md`, `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md`, `docs/ops/evidence/V1-XI-LEDGER-V2-SIDECAR-UR-E-STAGE-A-20260719.md`, `docs/planning/PRD5-IMPLEMENTATION-PLAN.md`, `docs/planning/PRD5-BACKLOG.md`, `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md`, `docs/planning/PRD5-DEFERRED-CONTROL-DESIGNS-20260710.md`, `docs/agent-workflows/EXECUTION-RECORD.md` |
+| PRD5 | Accepted UniRouter scope complete. Historical Batch 1A through Batch 1V evidence remains valid; Batch 1W is target/external-integration verified for the authorized denied scenario. Batch 1X audit/screening is Local verified. Batch 1Y implementation is merged, and Batch 1Z verifies target migration/deployment/browser evidence plus the `INFRA-SEC-001` cutover. Structural search, Data Exchange Control, and redacted topology are Target verified; route/failover visibility is CI verified. X-Insight's historical synthetic v2 fixture is named-Target execution-owner verified, not independently accepted or fresh External integration. The UR-E Stage A artifact and transfer remain immutable historical evidence. The replacement source-qualification lifecycle is `DECISION_REQUIRED_provider_transport_dns_failed` after exactly one provider invocation/dispatch, zero accepted pages/records/retries and no candidate/host/source/traffic/artifact action. The bounded harness observed no HTTP response; this safe DNS class does not establish the underlying cause or any asset/data absence. Cross-project activation remains pending, so there is no fresh External integration, Target or Production claim. Unimplemented durable-job/deep-link/automated-receipt contracts, migration down, TLS 443 behavior, real upstream/SSO, read-only DB/view, exporter/outbox, and deferred P5-F12 products remain separate. PRD4 remains closed | `docs/PRD-Phase5.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`, `docs/ops/evidence/PRD5-XINSIGHT-runtime-contract-reconciliation-20260711.md`, `docs/ops/evidence/PRD5-B1Z-target-deployment-and-infra-security-20260710.md`, `docs/ops/evidence/PRD5-B1Y-unirouter-owned-completion-local-20260710.md`, `docs/ops/evidence/PRD5-P5F12-architecture-audit-20260710.md`, `docs/ops/evidence/V1-XI-LEDGER-V2-SIDECAR-UR-E-STAGE-A-20260719.md`, `docs/planning/PRD5-IMPLEMENTATION-PLAN.md`, `docs/planning/PRD5-BACKLOG.md`, `docs/planning/PRD5-XINSIGHT-DATA-EXCHANGE-CONTROL.md`, `docs/planning/PRD5-DEFERRED-CONTROL-DESIGNS-20260710.md`, `docs/agent-workflows/EXECUTION-RECORD.md` |
 | PRD6 | Completed for Accepted Scope. All 27 accepted feature rows and the separate accepted engineering-integrity issue are repository/required-CI verified or closed. Selected ECS deployment/UI surfaces and P6-E01 are Target verified; P6-E03 is partially Target verified for bounded Mimo and DeepSeek Flash calls only. P6-E02, P6-E04, P6-E03 enterprise SSO/broader-provider evidence, PRD7, broader native IAM revocation, 100x/HA and Production evidence remain later and do not reopen PRD6 | `docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md`, `docs/PRD-Phase6.md`, `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`, `docs/ops/evidence/PRD6-ACCEPTED-SCOPE-CLOSEOUT-20260713.md`, `docs/ops/evidence/PRD6-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260713.md`, `docs/ops/evidence/V1-MIMO-ROUTING-AND-UPSTREAM-STATUS-TARGET-20260715.md`, `docs/ops/evidence/V1-DEEPSEEK-FLASH-ROUTING-TARGET-20260715.md` |
 
 ## Current Verification
