@@ -121,7 +121,7 @@ func TestP6F08ChannelUpdateUsesOptionalRoutingEpochCASAndInvalidatesSnapshot(t *
 }
 
 func TestChannelUpdateValidatesSupportedStatusBeforeDatabaseAccess(t *testing.T) {
-	for _, status := range []string{"active", "disabled", "deprecated"} {
+	for _, status := range []string{"active", "disabled"} {
 		t.Run(status, func(t *testing.T) {
 			var updateArgs []any
 			db := &testutil.MockDB{

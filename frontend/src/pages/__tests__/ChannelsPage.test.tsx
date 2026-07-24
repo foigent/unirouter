@@ -152,12 +152,12 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
 
   it('keeps the epoch conflict message and maps other backend failures to safe useful text', async () => {
     const { ApiError } = await import('../../api/client');
-    mocks.updateChannel.mockRejectedValueOnce(new ApiError('status must be active, disabled, or deprecated', 400, null));
+    mocks.updateChannel.mockRejectedValueOnce(new ApiError('status must be active or disabled', 400, null));
 
     render(<ChannelsPage />);
     fireEvent.click(await screen.findByRole('button', { name: '编辑通道 primary-cn' }));
     fireEvent.click(screen.getByRole('button', { name: '更新' }));
-    expect(await screen.findByText('通道状态仅支持 active、disabled 或 deprecated')).toBeTruthy();
+    expect(await screen.findByText('通道状态仅支持 active 或 disabled')).toBeTruthy();
 
     mocks.updateChannel.mockRejectedValueOnce(new ApiError('stale', 409, null));
     fireEvent.click(screen.getByRole('button', { name: '更新' }));

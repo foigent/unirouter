@@ -16,7 +16,7 @@ import (
 
 func validChannelStatus(status string) bool {
 	switch status {
-	case "active", "disabled", "deprecated":
+	case "active", "disabled":
 		return true
 	default:
 		return false
@@ -218,7 +218,7 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 		req.AdapterConfig = &empty
 	}
 	if req.Status != nil && !validChannelStatus(*req.Status) {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "status must be active, disabled, or deprecated"})
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "status must be active or disabled"})
 		return
 	}
 	if (req.Priority != nil && (*req.Priority < 1 || *req.Priority > 10000)) ||

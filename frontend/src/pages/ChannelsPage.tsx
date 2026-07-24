@@ -48,14 +48,13 @@ interface RoutingPreview {
 const channelStatusOptions = [
   { label: '启用', value: 'active' },
   { label: '禁用', value: 'disabled' },
-  { label: '已废弃', value: 'deprecated' },
 ];
 
 function channelUpdateErrorMessage(error: unknown) {
   if (!(error instanceof ApiError)) return '更新失败，请稍后重试';
   const backendMessage = error.message.toLowerCase();
   if (error.status === 400 && backendMessage.includes('status must be')) {
-    return '通道状态仅支持 active、disabled 或 deprecated';
+    return '通道状态仅支持 active 或 disabled';
   }
   if (error.status === 400 && backendMessage.includes('adapter_type')) {
     return 'Adapter Type 不受支持';
