@@ -88,6 +88,24 @@ The formal customer HTTP bind remains `127.0.0.1:3000`; expose it through an
 approved TLS reverse proxy. PostgreSQL, Redis, Prometheus and Grafana have no
 host port in this template.
 
+An application-binary rollback to a release that predates purpose-scoped API
+keys must not start until X-Insight polling is stopped, the exact
+`xinsight.feed.read` key is disabled through the current control plane, and the
+current backend reports:
+
+```bash
+compose=(docker compose --env-file ./.env -f ./docker-compose.yml)
+"${compose[@]}" exec backend ./uniroute upgrade preflight-legacy-rollback
+```
+
+`rollback_preflight=pass` and `active_purpose_keys=0` are required before the
+image switch. Enabled feed keys use an internal `feed_active` status that old
+binaries reject, so omission remains fail-closed; the preflight is still the
+supported operational order. Binary rollback is supported after key
+disablement. Migration `000043` schema down additionally requires removal of
+purpose credentials and retained feed state and is not part of a routine
+binary rollback.
+
 The backend ignores `X-Forwarded-For` and `X-Real-IP` unless its direct peer is
 in `TRUSTED_PROXY_CIDRS`. It then walks `X-Forwarded-For` from right to left and
 uses the first untrusted hop. The template gives frontend Nginx a deterministic

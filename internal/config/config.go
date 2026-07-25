@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -54,23 +55,25 @@ type Config struct {
 	MetricsAllowedCIDRs     []string
 	// TrustedProxyCIDRs contains only network hops authorized to supply client
 	// forwarding headers. Empty means forwarding headers are ignored.
-	TrustedProxyCIDRs          []string
-	LoginRateLimitEnabled      bool
-	LoginRateLimitWindowSec    int
-	LoginRateLimitIP           int
-	LoginRateLimitUser         int
-	TraceEventsEnabled         bool
-	TraceEventSampleRate       float64
-	TraceEventRetentionDays    int
-	PayloadCaptureMode         string
-	EvidenceContextTrustSecret string
-	RuntimeEnvironment         string
-	RuntimeDeploymentMode      string
-	RuntimeDeploymentRole      string
-	RuntimeVersion             string
-	RuntimeCommit              string
-	PrometheusURL              string
-	GrafanaURL                 string
+	TrustedProxyCIDRs                    []string
+	LoginRateLimitEnabled                bool
+	LoginRateLimitWindowSec              int
+	LoginRateLimitIP                     int
+	LoginRateLimitUser                   int
+	TraceEventsEnabled                   bool
+	TraceEventSampleRate                 float64
+	TraceEventRetentionDays              int
+	PayloadCaptureMode                   string
+	EvidenceContextTrustSecret           string
+	RuntimeEnvironment                   string
+	RuntimeDeploymentMode                string
+	RuntimeDeploymentRole                string
+	RuntimeVersion                       string
+	RuntimeCommit                        string
+	PrometheusURL                        string
+	GrafanaURL                           string
+	CompletedExecutionFeedEnabled        bool
+	CompletedExecutionFeedSourceInstance string
 
 	// License
 	LicensePublicKey         string
@@ -337,8 +340,15 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("OIDC_DEFAULT_ORG_ID must be set when OIDC auto provisioning is enabled")
 		}
 	}
+	if c.CompletedExecutionFeedEnabled {
+		if !completedExecutionSourceInstancePattern.MatchString(c.CompletedExecutionFeedSourceInstance) {
+			return fmt.Errorf("COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE must use 1-128 letters, numbers, dot, underscore, colon, or dash")
+		}
+	}
 	return nil
 }
+
+var completedExecutionSourceInstancePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
 func Load() (*Config, error) {
 	jwtSecret := getEnvStr("JWT_SECRET", "")
@@ -364,26 +374,28 @@ func Load() (*Config, error) {
 		EncryptionKey:                    getEnvStr("ENCRYPTION_KEY", ""),
 		NotificationWebhookSigningSecret: getEnvStr("UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET", ""),
 
-		AdminCORSAllowedOrigins:    splitCSVAllowEmpty(getEnvStr("ADMIN_CORS_ALLOWED_ORIGINS", "")),
-		MetricsEnabled:             getEnvBool("METRICS_ENABLED", true),
-		MetricsAllowedCIDRs:        splitCSVAllowEmpty(getEnvStr("METRICS_ALLOWED_CIDRS", "")),
-		TrustedProxyCIDRs:          splitCSVAllowEmpty(getEnvStr("TRUSTED_PROXY_CIDRS", "")),
-		LoginRateLimitEnabled:      getEnvBool("LOGIN_RATE_LIMIT_ENABLED", true),
-		LoginRateLimitWindowSec:    getEnvInt("LOGIN_RATE_LIMIT_WINDOW_SECONDS", 60),
-		LoginRateLimitIP:           getEnvInt("LOGIN_RATE_LIMIT_IP_REQUESTS", 30),
-		LoginRateLimitUser:         getEnvInt("LOGIN_RATE_LIMIT_USER_REQUESTS", 10),
-		TraceEventsEnabled:         getEnvBool("TRACE_EVENTS_ENABLED", true),
-		TraceEventSampleRate:       getEnvFloat("TRACE_EVENT_SAMPLE_RATE", 1),
-		TraceEventRetentionDays:    getEnvInt("TRACE_EVENT_RETENTION_DAYS", logRetentionDays),
-		PayloadCaptureMode:         traceutil.NormalizePayloadCaptureMode(getEnvStr("PAYLOAD_CAPTURE_MODE", traceutil.PayloadCaptureModeMetadataOnly)),
-		EvidenceContextTrustSecret: getEnvStr("EVIDENCE_CONTEXT_TRUST_SECRET", ""),
-		RuntimeEnvironment:         getEnvStr("RUNTIME_ENVIRONMENT", "unspecified"),
-		RuntimeDeploymentMode:      getEnvStr("RUNTIME_DEPLOYMENT_MODE", "single-node"),
-		RuntimeDeploymentRole:      getEnvStr("RUNTIME_DEPLOYMENT_ROLE", "stable"),
-		RuntimeVersion:             getEnvStr("RUNTIME_VERSION", ""),
-		RuntimeCommit:              getEnvStr("RUNTIME_COMMIT", ""),
-		PrometheusURL:              strings.TrimRight(getEnvStr("PROMETHEUS_URL", ""), "/"),
-		GrafanaURL:                 strings.TrimRight(getEnvStr("GRAFANA_URL", ""), "/"),
+		AdminCORSAllowedOrigins:              splitCSVAllowEmpty(getEnvStr("ADMIN_CORS_ALLOWED_ORIGINS", "")),
+		MetricsEnabled:                       getEnvBool("METRICS_ENABLED", true),
+		MetricsAllowedCIDRs:                  splitCSVAllowEmpty(getEnvStr("METRICS_ALLOWED_CIDRS", "")),
+		TrustedProxyCIDRs:                    splitCSVAllowEmpty(getEnvStr("TRUSTED_PROXY_CIDRS", "")),
+		LoginRateLimitEnabled:                getEnvBool("LOGIN_RATE_LIMIT_ENABLED", true),
+		LoginRateLimitWindowSec:              getEnvInt("LOGIN_RATE_LIMIT_WINDOW_SECONDS", 60),
+		LoginRateLimitIP:                     getEnvInt("LOGIN_RATE_LIMIT_IP_REQUESTS", 30),
+		LoginRateLimitUser:                   getEnvInt("LOGIN_RATE_LIMIT_USER_REQUESTS", 10),
+		TraceEventsEnabled:                   getEnvBool("TRACE_EVENTS_ENABLED", true),
+		TraceEventSampleRate:                 getEnvFloat("TRACE_EVENT_SAMPLE_RATE", 1),
+		TraceEventRetentionDays:              getEnvInt("TRACE_EVENT_RETENTION_DAYS", logRetentionDays),
+		PayloadCaptureMode:                   traceutil.NormalizePayloadCaptureMode(getEnvStr("PAYLOAD_CAPTURE_MODE", traceutil.PayloadCaptureModeMetadataOnly)),
+		EvidenceContextTrustSecret:           getEnvStr("EVIDENCE_CONTEXT_TRUST_SECRET", ""),
+		RuntimeEnvironment:                   getEnvStr("RUNTIME_ENVIRONMENT", "unspecified"),
+		RuntimeDeploymentMode:                getEnvStr("RUNTIME_DEPLOYMENT_MODE", "single-node"),
+		RuntimeDeploymentRole:                getEnvStr("RUNTIME_DEPLOYMENT_ROLE", "stable"),
+		RuntimeVersion:                       getEnvStr("RUNTIME_VERSION", ""),
+		RuntimeCommit:                        getEnvStr("RUNTIME_COMMIT", ""),
+		PrometheusURL:                        strings.TrimRight(getEnvStr("PROMETHEUS_URL", ""), "/"),
+		GrafanaURL:                           strings.TrimRight(getEnvStr("GRAFANA_URL", ""), "/"),
+		CompletedExecutionFeedEnabled:        getEnvBool("COMPLETED_EXECUTION_FEED_ENABLED", false),
+		CompletedExecutionFeedSourceInstance: strings.TrimSpace(getEnvStr("COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE", "")),
 
 		LicensePublicKey:         getEnvStr("LICENSE_PUBLIC_KEY", ""),
 		LicensePublicKeys:        getEnvStr("LICENSE_PUBLIC_KEYS", ""),

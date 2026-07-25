@@ -1099,6 +1099,41 @@ schema 会拒绝。`000037_v1_commercial_release_control` 一旦已有签名发�
 拒绝 down migration；此时恢复策略是评审后的 roll-forward，不是静默回滚旧
 writer。
 
+### 8.1 回退到不识别 feed purpose 的旧 binary
+
+当前正式流程没有自动回滚控制器，镜像切换由维护窗口中的操作者执行。若目标
+binary 早于 `xinsight.feed.read` 语义，必须按以下顺序操作：
+
+```bash
+: "${UNIROUTER_ADMIN_JWT:?Set an active administrator JWT}"
+: "${UNIROUTER_FEED_KEY_ID:?Set the exact xinsight.feed.read key ID}"
+
+# 1. 先停止 X-Insight poller，确认它不再发起 feed 请求。
+
+# 2. 仍使用当前 purpose-aware binary 禁用精确 feed key。
+curl -fsS -X POST \
+  "http://localhost:8080/api/v1/keys/${UNIROUTER_FEED_KEY_ID}/disable" \
+  -H "Authorization: Bearer ${UNIROUTER_ADMIN_JWT}"
+
+# 3. 在任何旧 binary 启动前，从当前 backend 执行兼容性预检。
+docker compose -f deploy/customer/docker-compose.yml --env-file deploy/customer/.env \
+  exec backend ./uniroute upgrade preflight-legacy-rollback
+
+# 期望：
+# rollback_preflight=pass
+# active_purpose_keys=0
+```
+
+预检失败、数据库不可读或输出不为 PASS 时不得启动旧 binary。启用中的 feed
+key 在数据库内使用 `feed_active`，而旧版网关只放行 `active`；`000043` 约束
+同时禁止把 purpose key 改成普通 `active`。因此即使操作顺序被遗漏，旧 binary
+也不能把 feed-only 凭据扩权成模型调用凭据。明确禁用 feed key 后支持 binary
+回退；重新启用只能在 purpose-aware binary 恢复后进行。
+
+schema down 更严格：只要 purpose key 仍存在或保留 feed 状态存在，`000043`
+就拒绝回退。常规故障恢复仍应 roll-forward；删除凭据/保留数据不是普通 binary
+回退的一部分。
+
 该流程没有网页“上传即执行”按钮，也没有静默自动更新。未来若要做 Update
 Center，必须先补 maintenance window、多节点编排、受控 staging、N-1 夹具、
 失败暂停和审计责任边界；不能复用 License 导入接口执行二进制。

@@ -13,6 +13,7 @@ info:
     - Agent capability exchange/revoke: root UniRouter API key only.
     - Agent capability delegate/refresh: authenticated parent/current Agent capability only.
     - Admin: `Authorization: Bearer <JWT>`
+    - X-Insight completed-execution feed: project-bound `service` key with purpose `xinsight.feed.read` and an exact IP/CIDR binding. The credential is rejected by every model route.
 
     Request identity:
     - Response `X-Request-ID` is a server-generated operation ID and cannot be overridden by a caller.
@@ -26,6 +27,7 @@ servers:
 tags:
   - name: Gateway
   - name: Agent Capability
+  - name: Private Integration
   - name: Auth
   - name: Admin
   - name: Health
@@ -425,6 +427,54 @@ paths:
           $ref: "#/components/responses/Error"
         "503":
           $ref: "#/components/responses/Error"
+
+  /api/v1/integrations/xinsight/completed-executions:
+    get:
+      tags: [Private Integration]
+      summary: Pull immutable final completed-execution metadata
+      description: |
+        Private, activation-forward V1 pull feed. An omitted or empty cursor
+        establishes the current project high-watermark and returns no items.
+        Subsequent opaque cursors provide a retained seven-day replay window.
+        A cursor ahead of the current source high-watermark fails permanently
+        with 409; it is never auto-reset or treated as an idle page.
+        Pages contain at most 50 items and are always smaller than 8 MiB.
+      security:
+        - completedFeedKey: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 512
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 50
+      responses:
+        "200":
+          description: One immutable page from a repeatable-read source snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompletedExecutionFeedPage"
+        "400":
+          $ref: "#/components/responses/CompletedExecutionFeedError"
+        "401":
+          $ref: "#/components/responses/CompletedExecutionFeedError"
+        "403":
+          $ref: "#/components/responses/CompletedExecutionFeedError"
+        "409":
+          $ref: "#/components/responses/CompletedExecutionFeedError"
+        "410":
+          $ref: "#/components/responses/CompletedExecutionFeedError"
+        "503":
+          $ref: "#/components/responses/CompletedExecutionFeedError"
 
   /api/v1/auth/login:
     post:
@@ -1690,6 +1740,10 @@ components:
       scheme: bearer
       bearerFormat: urc_JWT
       description: Five-minute, attenuation-only Agent capability for UniRouter model-gateway authority.
+    completedFeedKey:
+      type: http
+      scheme: bearer
+      description: Project-bound, network-bound service key whose exact purpose is xinsight.feed.read. It has no model allowance and is rejected by every non-feed API-key route.
 
   parameters:
     Id:
@@ -1799,8 +1853,154 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
+    CompletedExecutionFeedError:
+      description: Bounded completed-execution feed error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/CompletedExecutionFeedError"
 
   schemas:
+    CompletedExecutionFeedPage:
+      type: object
+      additionalProperties: false
+      required: [schema_version, source_instance, generated_at, items, next_cursor, high_watermark, has_more]
+      properties:
+        schema_version:
+          type: string
+          enum: [xinsight.completed-execution-feed.v1]
+        source_instance:
+          type: string
+          minLength: 1
+          maxLength: 128
+        generated_at:
+          type: string
+          format: date-time
+        items:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/CompletedExecutionFeedItem"
+        next_cursor:
+          type: string
+          maxLength: 512
+        high_watermark:
+          type: string
+          maxLength: 512
+        has_more:
+          type: boolean
+    CompletedExecutionFeedItem:
+      type: object
+      additionalProperties: false
+      required: [request_id, terminal_available_at, revision, timeline_complete, snapshot_sha256, snapshot]
+      properties:
+        request_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+        terminal_available_at:
+          type: string
+          format: date-time
+        revision:
+          type: string
+          enum: ["1"]
+        timeline_complete:
+          type: boolean
+          enum: [true]
+        snapshot_sha256:
+          type: string
+          pattern: '^sha256:[a-f0-9]{64}$'
+        snapshot:
+          $ref: "#/components/schemas/CompletedExecutionSnapshot"
+    CompletedExecutionSnapshot:
+      type: object
+      additionalProperties: false
+      required: [schema_version, request_id, org_id, project_id, terminal, usage, money, capture_gaps]
+      properties:
+        schema_version:
+          type: string
+          enum: [unirouter.completed-execution.v1]
+        request_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+        org_id:
+          type: integer
+          format: int64
+          minimum: 1
+        project_id:
+          type: integer
+          format: int64
+          minimum: 1
+        terminal:
+          type: object
+          additionalProperties: false
+          required: [status, available_at]
+          properties:
+            status:
+              type: string
+              enum: [settled, cancelled]
+            available_at:
+              type: string
+              format: date-time
+        usage:
+          type: object
+          additionalProperties: false
+          required: [model, prompt_tokens, uncached_prompt_tokens, cache_read_tokens, cache_creation_tokens, completion_tokens, source, authority, purpose, finality, contract_version, cache_usage_schema, cache_usage_status]
+          properties:
+            model: { type: string, minLength: 1, maxLength: 100 }
+            prompt_tokens: { type: integer, minimum: 0 }
+            uncached_prompt_tokens: { type: integer, minimum: 0 }
+            cache_read_tokens: { type: integer, minimum: 0 }
+            cache_creation_tokens: { type: integer, minimum: 0 }
+            completion_tokens: { type: integer, minimum: 0 }
+            source: { type: string, maxLength: 32 }
+            authority: { type: string, maxLength: 64 }
+            purpose: { type: string, maxLength: 64 }
+            finality: { type: string, maxLength: 64 }
+            contract_version: { type: string, maxLength: 80 }
+            estimate_version: { type: string, maxLength: 80 }
+            cache_usage_schema: { type: string, maxLength: 80 }
+            cache_usage_status: { type: string, maxLength: 40 }
+        money:
+          type: object
+          additionalProperties: false
+          required: [schema, currency, amount_scale, calculated_cost_micros, charged_cost_micros, pricing_version]
+          properties:
+            schema: { type: string, enum: [micro-cny.v1] }
+            currency: { type: string, enum: [CNY] }
+            amount_scale: { type: integer, format: int64, enum: [1000000] }
+            calculated_cost_micros: { type: string, pattern: '^(0|[1-9][0-9]{0,18})$' }
+            charged_cost_micros: { type: string, pattern: '^(0|[1-9][0-9]{0,18})$' }
+            pricing_version: { type: string, maxLength: 80 }
+        capture_gaps:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            type: object
+            additionalProperties: false
+            required: [source, reason]
+            properties:
+              source:
+                type: string
+                enum: [call_log, request_trace, client_ip_presence, upstream_error_presence]
+              reason:
+                type: string
+                enum: [not_available_at_billing_terminal]
+    CompletedExecutionFeedError:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message, retryable]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            retryable: { type: boolean }
     LicenseCapabilityFeatures:
       type: object
       additionalProperties: false

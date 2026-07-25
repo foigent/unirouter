@@ -200,6 +200,36 @@ func (b *Billing) ProcessUsageJournalEvent(ctx context.Context, event outbox.Eve
 			}
 		}
 	}
+	if created && b.terminalMaterializer != nil &&
+		(payload.EventType == "settled" || payload.EventType == "cancelled") {
+		if err := b.terminalMaterializer.MaterializeTerminalTx(ctx, tx, TerminalRecord{
+			EventKey:             event.Key,
+			RequestID:            payload.RequestID,
+			OrgID:                payload.OrgID,
+			ProjectID:            payload.ProjectID,
+			Status:               payload.EventType,
+			Model:                payload.Model,
+			PromptTokens:         payload.PromptTokens,
+			UncachedPromptTokens: payload.UncachedPromptTokens,
+			CacheReadTokens:      payload.CacheReadTokens,
+			CacheCreationTokens:  payload.CacheCreationTokens,
+			CompletionTokens:     payload.CompletionTokens,
+			UsageSource:          payload.UsageSource,
+			UsageAuthority:       payload.UsageAuthority,
+			UsagePurpose:         payload.UsagePurpose,
+			UsageFinality:        payload.UsageFinality,
+			UsageContractVersion: payload.UsageContractVersion,
+			UsageEstimateVersion: payload.UsageEstimateVersion,
+			CacheUsageSchema:     payload.CacheUsageSchema,
+			CacheUsageStatus:     payload.CacheUsageStatus,
+			CalculatedCostMicros: calculatedCostMicros,
+			ChargedCostMicros:    chargedCostMicros,
+			PricingVersion:       payload.PricingVersion,
+			OccurredAt:           payload.OccurredAt,
+		}); err != nil {
+			return fmt.Errorf("materialize completed-execution terminal: %w", err)
+		}
+	}
 	if !created || payload.EventType != "settled" || payload.ProjectID <= 0 {
 		return tx.Commit(ctx)
 	}

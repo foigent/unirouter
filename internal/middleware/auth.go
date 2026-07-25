@@ -188,6 +188,7 @@ func resolveAPIKey(ctx context.Context, q db.DBQuerier, keyHash string) (*models
 		`SELECT ak.id, ak.org_id, COALESCE(ak.project_id, 0), ak.status, ak.allowed_ips, ak.allowed_models,
 		        ak.rpm_limit, ak.qps_limit, ak.budget_limit, ak.key_prefix, ak.name,
 		        COALESCE(ak.owner_user_id, 0), COALESCE(NULLIF(ak.key_type, ''), 'shared'),
+		        COALESCE(ak.purpose, ''),
 		        o.status
 		 FROM api_keys ak
 		 JOIN orgs o ON o.id = ak.org_id
@@ -207,7 +208,7 @@ func resolveAPIKey(ctx context.Context, q db.DBQuerier, keyHash string) (*models
 	).Scan(
 		&apiKey.ID, &apiKey.OrgID, &projectID, &apiKey.Status, &apiKey.IPWhitelist,
 		&apiKey.AllowedModels, &apiKey.RPMLimit, &apiKey.QPSLimit,
-		&apiKey.BudgetLimit, &apiKey.KeyPrefix, &apiKey.Name, &ownerUserID, &apiKey.KeyType, &orgStatus,
+		&apiKey.BudgetLimit, &apiKey.KeyPrefix, &apiKey.Name, &ownerUserID, &apiKey.KeyType, &apiKey.Purpose, &orgStatus,
 	)
 	if err != nil {
 		return nil, "", err
@@ -303,6 +304,11 @@ func GatewayAuthWithAgentCapabilitiesAndClientIP(q db.DBQuerier, apiKeyHashSecre
 					writeGatewayAuthError(w, http.StatusUnauthorized, "auth_error.invalid_api_key", "Invalid API key")
 					return
 				}
+				if apiKey.Purpose != "" {
+					completedFeedAuthDenials.WithLabelValues("non_feed_route").Inc()
+					writeGatewayAuthError(w, http.StatusForbidden, "auth_error.api_key_purpose_not_allowed", "API key purpose does not allow this model-gateway endpoint")
+					return
+				}
 				if err := validateKeyAndOrgStatus(apiKey, orgStatus); err != nil {
 					var typed *AuthError
 					if errors.As(err, &typed) {
@@ -310,6 +316,12 @@ func GatewayAuthWithAgentCapabilitiesAndClientIP(q db.DBQuerier, apiKeyHashSecre
 					}
 					return
 				}
+			}
+
+			if capabilityClaims != nil && apiKey.Purpose != "" {
+				completedFeedAuthDenials.WithLabelValues("non_feed_route").Inc()
+				writeGatewayAuthError(w, http.StatusForbidden, "auth_error.api_key_purpose_not_allowed", "API key purpose does not allow this model-gateway endpoint")
+				return
 			}
 
 			if isPaidGatewayEndpoint(r.URL.Path) {

@@ -33,6 +33,7 @@
 | 25 | [PRD5 X-Insight Sanitized Snapshot](25-prd5-xinsight-sanitized-snapshot.md) | PRD5 Gate A snapshot tool, handoff note, safety behavior, source refs, capture-gap candidates, controlled handoff prerequisites, and read-only access gate | v0.4 |
 | 26 | [PRD5 Evidence Field Contract](26-prd5-evidence-field-contract.md) | PRD5 trace/span/source/capture/decision/actor/payload field dictionary and nullable migration plan | v0.1 |
 | 27 | [Signed Offline Upgrade Bundle](27-signed-offline-upgrade.md) | V1 deterministic signed bundle, embedded independent trust root, tamper/rollback/schema preflight and installed-release readback | v1.1 |
+| 28 | [Completed-Execution Feed V1](28-completed-execution-feed-v1.md) | UniRouter-owned final metadata contract, private pull cursor, feed-only authorization, retention and rollback boundary | v1.0 |
 
 ## 关联文档
 - [PRD Phase 1](../PRD-Phase1.md) — 历史需求参考

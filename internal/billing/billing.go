@@ -171,10 +171,11 @@ const (
 
 // Billing handles the freeze/settle/cancel state machine.
 type Billing struct {
-	db     *pgxpool.Pool
-	rdb    *redis.Client
-	prices PriceProvider
-	outbox *outbox.Service
+	db                   *pgxpool.Pool
+	rdb                  *redis.Client
+	prices               PriceProvider
+	outbox               *outbox.Service
+	terminalMaterializer TerminalMaterializer
 }
 
 // NewBilling creates a new Billing instance.

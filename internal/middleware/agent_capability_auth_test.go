@@ -105,14 +105,15 @@ func agentCapabilityAuthorityDB(t *testing.T) *testutil.MockDB {
 			*dest[7].(*string) = "active"
 			*dest[8].(*string) = ""
 			*dest[9].(*string) = "gpt-4o"
-			*dest[10].(*int) = 60
-			*dest[11].(*int) = 10
-			*dest[12].(*int) = -1
-			*dest[13].(*string) = "active"
-			*dest[14].(*string) = ""
+			*dest[10].(*string) = ""
+			*dest[11].(*int) = 60
+			*dest[12].(*int) = 10
+			*dest[13].(*int) = -1
+			*dest[14].(*string) = "active"
 			*dest[15].(*string) = ""
 			*dest[16].(*string) = ""
 			*dest[17].(*string) = ""
+			*dest[18].(*string) = ""
 			return nil
 		}}
 	}}

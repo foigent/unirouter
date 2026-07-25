@@ -22,6 +22,7 @@ import (
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/capapi"
 	"github.com/uniroute/unirouter/internal/capbilling"
+	"github.com/uniroute/unirouter/internal/completedfeed"
 	"github.com/uniroute/unirouter/internal/config"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/filter"
@@ -127,6 +128,16 @@ func main() {
 		log.Fatalf("Invalid effective routing configuration: %v", err)
 	}
 	billingSvc := billing.NewBilling(postgres.Pool, redisClient.Client)
+	completedFeedSvc, err := completedfeed.NewService(
+		postgres.Pool,
+		cfg.APIKeyHashSecret,
+		cfg.CompletedExecutionFeedSourceInstance,
+		cfg.CompletedExecutionFeedEnabled,
+	)
+	if err != nil {
+		log.Fatalf("Failed to initialize completed-execution feed: %v", err)
+	}
+	billingSvc.SetTerminalMaterializer(completedFeedSvc)
 	outboxSvc, err := outbox.New(postgres.Pool, outbox.DefaultOptions())
 	if err != nil {
 		log.Fatalf("Failed to initialize internal outbox: %v", err)
@@ -250,6 +261,12 @@ func main() {
 		defer close(outboxDone)
 		outboxSvc.Run(outboxCtx)
 	}()
+	completedFeedRetentionCtx, stopCompletedFeedRetention := context.WithCancel(context.Background())
+	completedFeedRetentionDone := make(chan struct{})
+	go func() {
+		defer close(completedFeedRetentionDone)
+		completedFeedSvc.RunRetention(completedFeedRetentionCtx)
+	}()
 	oidcService, err := oidc.NewService(oidc.Config{
 		Enabled:            cfg.OIDCEnabled,
 		IssuerURL:          cfg.OIDCIssuerURL,
@@ -336,6 +353,7 @@ func main() {
 		log.Fatalf("Invalid trusted proxy configuration: %v", err)
 	}
 	gatewayAuth := middleware.GatewayAuthWithAgentCapabilitiesAndClientIP(postgres.Pool, cfg.APIKeyHashSecret, agentCapabilityService, clientIPResolver)
+	completedFeedAuth := middleware.CompletedExecutionFeedAuth(postgres.Pool, cfg.APIKeyHashSecret, clientIPResolver)
 	gatewayLicenseGate := licenseRuntime.Gate(licensing.FeatureGateway)
 	agentLicenseGate := licenseRuntime.GateAll(licensing.FeatureGateway, licensing.FeatureAgentCapabilities)
 	rateLimiter := middleware.RateLimit(redisClient.Client)
@@ -353,6 +371,10 @@ func main() {
 	mux.Handle("POST /v1/chat/completions", gatewayLicenseGate(gatewayAuth(chatPayloadGuard(idempotencyGuard(chatHandler)))))
 	mux.Handle("POST /v1/embeddings", gatewayLicenseGate(gatewayAuth(embeddingsPayloadGuard(idempotencyGuard(embeddingsHandler)))))
 	mux.Handle("GET /v1/models", gatewayLicenseGate(gatewayAuth(admissionMiddleware(http.HandlerFunc(relay.HandleModels)))))
+	mux.Handle(
+		"GET /api/v1/integrations/xinsight/completed-executions",
+		completedFeedAuth(completedFeedSvc.Handler()),
+	)
 	registerAgentCapabilityRoutes(mux, agentCapabilityHandler, agentCapabilityRouteGuards{
 		authorize:    agentLicenseGate,
 		authenticate: gatewayAuth,
@@ -452,7 +474,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 </head>
 <body>
 <h1>UniRouter API Documentation</h1>
-<p class="muted">Current API contract index. Admin APIs use JWT Bearer auth. Gateway model APIs accept UniRouter API keys or endpoint-scoped Agent capabilities.</p>
+<p class="muted">Current API contract index. Admin APIs use JWT Bearer auth. Gateway model APIs accept UniRouter API keys or endpoint-scoped Agent capabilities. The private completed-execution feed accepts only its project- and network-bound feed service key.</p>
 <p>Admin Base URL: <code>/api/v1</code> &nbsp; Gateway Base URL: <code>/v1</code></p>
 <p><code>X-Request-ID</code> in every response is a server operation ID. Send caller correlation in <code>X-UniRouter-Client-Request-ID</code>. Chat and Embeddings accept <code>Idempotency-Key</code> for tenant/key/payload-bound metadata-only deduplication; completed model responses are not stored or replayed.</p>
 <p>Agent discovery is explicit: a supervisor exchanges its root API key, then registers each child with an attenuation-only capability. Capabilities last at most five minutes, normally refresh near minute three, grant model-gateway authority only, and never grant Tool, IAM, database or export authority. Model calls reserve cost, tokens, rolling rate, and concurrency on every signed ancestor before any upstream dispatch; Redis uncertainty denies new capability admission.</p>
@@ -471,6 +493,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">POST</td><td><code>/v1/agent-capabilities/delegate</code></td><td>Register one child Agent with attenuation-only authority</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/agent-capabilities/refresh</code></td><td>Refresh a five-minute Agent capability</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/agent-capabilities/revoke</code></td><td>Revoke a workflow for new admissions</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/integrations/xinsight/completed-executions</code></td><td>Private final completed-execution metadata feed for X-Insight</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/auth/login</code></td><td>Admin login</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/auth/logout</code></td><td>Revoke current admin session</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/auth/oidc/config</code></td><td>OIDC login configuration</td></tr>
@@ -725,6 +748,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	<-quit
 	log.Println("Shutting down server...")
 	stopSettlementRecovery()
+	stopCompletedFeedRetention()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.ShutdownTimeoutSecs)*time.Second)
 	defer cancel()
@@ -740,6 +764,11 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	case <-outboxDone:
 	case <-ctx.Done():
 		log.Printf("Internal outbox workers did not stop before shutdown timeout")
+	}
+	select {
+	case <-completedFeedRetentionDone:
+	case <-ctx.Done():
+		log.Printf("Completed-execution retention worker did not stop before shutdown timeout")
 	}
 	log.Println("Server exited")
 }

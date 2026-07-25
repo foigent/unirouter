@@ -31,7 +31,7 @@ type installedReleaseState struct {
 
 func runUpgradeCLI(ctx context.Context, args []string, cfg *config.Config) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: uniroute upgrade <status|verify|record-applied>")
+		return fmt.Errorf("usage: uniroute upgrade <status|verify|record-applied|preflight-legacy-rollback>")
 	}
 	postgres, err := db.NewPostgres(cfg.DB_DSN, cfg.DBMaxConnections, cfg.DBMaxIdleConns)
 	if err != nil {
@@ -46,9 +46,35 @@ func runUpgradeCLI(ctx context.Context, args []string, cfg *config.Config) error
 		return runInstalledUpgradeVerify(ctx, args[1:], cfg, postgres.Pool)
 	case "record-applied":
 		return runUpgradeRecordApplied(ctx, args[1:], cfg, postgres.Pool)
+	case "preflight-legacy-rollback":
+		if len(args) != 1 {
+			return fmt.Errorf("usage: uniroute upgrade preflight-legacy-rollback")
+		}
+		return preflightLegacyPurposeRollback(ctx, postgres.Pool)
 	default:
-		return fmt.Errorf("unknown upgrade command %q; supported: status, verify, record-applied", args[0])
+		return fmt.Errorf("unknown upgrade command %q; supported: status, verify, record-applied, preflight-legacy-rollback", args[0])
 	}
+}
+
+func preflightLegacyPurposeRollback(ctx context.Context, querier releaseStateQuerier) error {
+	var activePurposeKeys int
+	if err := querier.QueryRow(ctx,
+		`SELECT COUNT(*)
+		 FROM api_keys
+		 WHERE purpose <> ''
+		   AND status IN ('active', 'feed_active')`,
+	).Scan(&activePurposeKeys); err != nil {
+		return fmt.Errorf("read active purpose-scoped credential count: %w", err)
+	}
+	if activePurposeKeys > 0 {
+		return fmt.Errorf(
+			"legacy rollback refused: %d active purpose-scoped credential(s); stop feed consumption and disable the exact feed credential before starting a binary without purpose semantics",
+			activePurposeKeys,
+		)
+	}
+	fmt.Println("rollback_preflight=pass")
+	fmt.Println("active_purpose_keys=0")
+	return nil
 }
 
 func printUpgradeStatus(ctx context.Context, pool *pgxpool.Pool) error {
