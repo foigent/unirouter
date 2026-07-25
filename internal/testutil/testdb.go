@@ -186,6 +186,8 @@ func TruncateAll(t *testing.T, pool *pgxpool.Pool) {
 		"billing_provider_attempts",
 		"internal_outbox_events",
 		"usage_finalization_journal",
+		"completed_execution_feed_items",
+		"completed_execution_feed_states",
 		"project_budget_usage",
 		"runtime_terminal_hooks",
 		"notification_deliveries",

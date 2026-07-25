@@ -152,6 +152,7 @@ type ApiKey struct {
 	ProjectID     *int64    `json:"project_id" db:"project_id"`
 	OwnerUserID   *int64    `json:"owner_user_id" db:"owner_user_id"`
 	KeyType       string    `json:"key_type" db:"key_type"`
+	Purpose       string    `json:"purpose" db:"purpose"`
 	Name          string    `json:"name" db:"name"`
 	KeyPrefix     string    `json:"key_prefix" db:"key_prefix"`
 	KeyHash       string    `json:"-" db:"key_hash"`

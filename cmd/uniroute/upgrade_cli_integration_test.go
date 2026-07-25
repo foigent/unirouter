@@ -107,3 +107,58 @@ func TestUpgradeRecordAppliedPinsRuntimeDigestSequenceAndSchema(t *testing.T) {
 		t.Fatalf("replay error = %v, want rollback/window rejection", err)
 	}
 }
+
+func TestUpgradeLegacyRollbackPreflightRequiresFeedCredentialDisablement(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var orgID, projectID, keyID int64
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO orgs (name, status, org_type)
+		 VALUES ('legacy-rollback-cli', 'active', 'standard')
+		 RETURNING id`,
+	).Scan(&orgID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO projects (org_id, name, slug, status, budget_period)
+		 VALUES ($1, 'Legacy rollback CLI', 'legacy-rollback-cli', 'active', 'none')
+		 RETURNING id`,
+		orgID,
+	).Scan(&projectID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO api_keys (
+		    org_id, project_id, key_type, name, key_prefix, key_hash,
+		    status, allowed_ips, allowed_models, purpose
+		 ) VALUES (
+		    $1, $2, 'service', 'X-Insight feed', 'ur-feed-cli',
+		    'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+		    'feed_active', '127.0.0.1/32', '', 'xinsight.feed.read'
+		 ) RETURNING id`,
+		orgID, projectID,
+	).Scan(&keyID); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{
+		DB_DSN:           pool.Config().ConnString(),
+		DBMaxConnections: 2,
+	}
+	err := runUpgradeCLI(ctx, []string{"preflight-legacy-rollback"}, cfg)
+	if err == nil || !strings.Contains(err.Error(), "disable the exact feed credential") {
+		t.Fatalf("active purpose credential did not stop legacy rollback: %v", err)
+	}
+
+	if _, err := pool.Exec(ctx,
+		`UPDATE api_keys SET status = 'disabled' WHERE id = $1`,
+		keyID,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := runUpgradeCLI(ctx, []string{"preflight-legacy-rollback"}, cfg); err != nil {
+		t.Fatalf("disabled feed credential should permit binary rollback: %v", err)
+	}
+}

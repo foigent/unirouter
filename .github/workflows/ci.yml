@@ -208,6 +208,15 @@ jobs:
           REQUIRE_TEST_DATABASE: "1"
         run: go test -tags=integration -race ./internal/migrate ./cmd/uniroute -run 'Test(V1CommercialReleaseControlMigrationAndConcurrentResourceLimit|UpgradeRecordAppliedPinsRuntimeDigestSequenceAndSchema)' -count=1
 
+      - name: Run completed-execution feed ordering, retention, retry and rollback tests
+        env:
+          REQUIRE_TEST_DATABASE: "1"
+        run: >-
+          go test -tags=integration -race
+          ./internal/completedfeed ./internal/migrate ./internal/admin ./cmd/uniroute
+          -run '^(TestMaterializationProjectFenceOrdersVisibilityByCommit|TestMaterializationRollbackAndReplayRemainSingleFinalItem|TestRetentionUsesPublicationOrderNotTerminalTime|TestRetentionProjectFencePreventsFloorJumpOnConcurrentRollback|TestBillingTerminalMaterializationFailureIsRetriedWithoutPartialFeedState|TestCompletedExecutionFeedPurposeCredentialIsLegacyBinaryFailClosed|TestCompletedExecutionFeedMigrationDownRemainsAvailableWithoutFeedState|TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration|TestUpgradeLegacyRollbackPreflightRequiresFeedCredentialDisablement)$'
+          -count=1
+
       - name: Run routing policy integration tests
         env:
           REQUIRE_TEST_DATABASE: "1"

@@ -35,7 +35,8 @@ func TestResolveAPIKey_Success(t *testing.T) {
 					*dest[10].(*string) = "test"     // name
 					*dest[11].(*int64) = 42          // owner_user_id
 					*dest[12].(*string) = "personal" // key_type
-					*dest[13].(*string) = "active"   // org_status
+					*dest[13].(*string) = ""         // purpose
+					*dest[14].(*string) = "active"   // org_status
 					return nil
 				},
 			}
@@ -107,7 +108,8 @@ func TestGatewayAuth_Success(t *testing.T) {
 					*dest[10].(*string) = "test"
 					*dest[11].(*int64) = 42
 					*dest[12].(*string) = "personal"
-					*dest[13].(*string) = "active"
+					*dest[13].(*string) = ""
+					*dest[14].(*string) = "active"
 					return nil
 				},
 			}
@@ -176,7 +178,8 @@ func TestGatewayAuthWithAPIKeyHashSecret_UsesSeparateSecret(t *testing.T) {
 					*dest[10].(*string) = "test"
 					*dest[11].(*int64) = 0
 					*dest[12].(*string) = "shared"
-					*dest[13].(*string) = "active"
+					*dest[13].(*string) = ""
+					*dest[14].(*string) = "active"
 					return nil
 				},
 			}
@@ -269,7 +272,8 @@ func TestGatewayAuth_DisabledKey(t *testing.T) {
 					*dest[10].(*string) = "test"
 					*dest[11].(*int64) = 0
 					*dest[12].(*string) = "shared"
-					*dest[13].(*string) = "active"
+					*dest[13].(*string) = ""
+					*dest[14].(*string) = "active"
 					return nil
 				},
 			}
@@ -312,7 +316,8 @@ func TestGatewayAuth_DisabledOrg(t *testing.T) {
 					*dest[10].(*string) = "test"
 					*dest[11].(*int64) = 0
 					*dest[12].(*string) = "shared"
-					*dest[13].(*string) = "disabled" // org disabled
+					*dest[13].(*string) = ""
+					*dest[14].(*string) = "disabled" // org disabled
 					return nil
 				},
 			}
@@ -355,7 +360,8 @@ func TestGatewayAuth_IPWhitelist(t *testing.T) {
 					*dest[10].(*string) = "test"
 					*dest[11].(*int64) = 0
 					*dest[12].(*string) = "shared"
-					*dest[13].(*string) = "active"
+					*dest[13].(*string) = ""
+					*dest[14].(*string) = "active"
 					return nil
 				},
 			}
@@ -400,7 +406,8 @@ func TestGatewayAuth_IPWhitelistUsesTrustedProxyChain(t *testing.T) {
 					*dest[10].(*string) = "test"
 					*dest[11].(*int64) = 0
 					*dest[12].(*string) = "shared"
-					*dest[13].(*string) = "active"
+					*dest[13].(*string) = ""
+					*dest[14].(*string) = "active"
 					return nil
 				},
 			}

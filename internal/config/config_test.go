@@ -615,6 +615,40 @@ func TestLoad_InvalidGuardrailPolicyQuotaFailsClosed(t *testing.T) {
 	}
 }
 
+func TestLoadCompletedExecutionFeedRequiresStableSourceIdentity(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		source string
+		valid  bool
+	}{
+		{name: "missing", source: "", valid: false},
+		{name: "invalid", source: "contains whitespace", valid: false},
+		{name: "valid", source: "dev.unirouter:stable-1", valid: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("JWT_SECRET", "jwt-secret")
+			t.Setenv("API_KEY_HASH_SECRET", "api-key-secret")
+			t.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+			t.Setenv("COMPLETED_EXECUTION_FEED_ENABLED", "true")
+			t.Setenv("COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE", test.source)
+
+			cfg, err := Load()
+			if !test.valid {
+				if err == nil {
+					t.Fatal("expected enabled feed without a valid source identity to fail")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("load enabled completed-execution feed: %v", err)
+			}
+			if !cfg.CompletedExecutionFeedEnabled || cfg.CompletedExecutionFeedSourceInstance != test.source {
+				t.Fatalf("unexpected completed-execution feed configuration: %#v", cfg)
+			}
+		})
+	}
+}
+
 func TestLoad_Defaults(t *testing.T) {
 	// Clear all env vars to test defaults
 	envVars := []string{
@@ -629,6 +663,7 @@ func TestLoad_Defaults(t *testing.T) {
 		"GUARDRAIL_ORG_ACTIVE_POLICY_LIMIT", "GUARDRAIL_PLATFORM_ACTIVE_POLICY_LIMIT", "GUARDRAIL_CACHED_POLICY_LIMIT", "GUARDRAIL_CACHED_TENANT_LIMIT",
 		"RUNTIME_ENVIRONMENT", "RUNTIME_DEPLOYMENT_MODE", "TRUSTED_PROXY_CIDRS",
 		"RUNTIME_DEPLOYMENT_ROLE", "RUNTIME_VERSION", "RUNTIME_COMMIT", "PROMETHEUS_URL", "GRAFANA_URL",
+		"COMPLETED_EXECUTION_FEED_ENABLED", "COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE",
 		"LICENSE_PUBLIC_KEY", "LICENSE_PUBLIC_KEYS", "LICENSE_DEPLOYMENT_ID", "LICENSE_EXPIRY_WARNING_DAYS", "LICENSE_REFRESH_SECONDS", "UPGRADE_PUBLIC_KEYS", "MIN_FREEZE_AMOUNT", "FREEZE_SAFETY_FACTOR", "DEFAULT_KEY_RPM", "DEFAULT_KEY_QPS",
 	}
 	for _, v := range envVars {

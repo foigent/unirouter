@@ -303,6 +303,7 @@ type apiKeySecurityRow struct {
 	projectID     int64
 	ownerUserID   int64
 	keyType       string
+	purpose       string
 	name          string
 	status        string
 	rpmLimit      int
@@ -475,7 +476,17 @@ func scanAPIKeySecurityRow(dest []any, row apiKeySecurityRow) error {
 		*dest[3].(*string) = row.keyType
 		return nil
 	}
-	if len(dest) != 11 {
+	if len(dest) == 7 {
+		*dest[0].(*int64) = row.orgID
+		*dest[1].(*int64) = row.projectID
+		*dest[2].(*int64) = row.ownerUserID
+		*dest[3].(*string) = row.keyType
+		*dest[4].(*string) = row.purpose
+		*dest[5].(*string) = row.allowedIPs
+		*dest[6].(*string) = row.allowedModels
+		return nil
+	}
+	if len(dest) != 12 {
 		return errors.New("unexpected API-key scan width")
 	}
 	*dest[0].(*int64) = row.orgID
@@ -489,5 +500,6 @@ func scanAPIKeySecurityRow(dest []any, row apiKeySecurityRow) error {
 	*dest[8].(*string) = row.allowedIPs
 	*dest[9].(*string) = row.allowedModels
 	*dest[10].(*string) = row.policyLabels
+	*dest[11].(*string) = row.purpose
 	return nil
 }

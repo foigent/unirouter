@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"sort"
 	"strconv"
 	"strings"
@@ -46,6 +47,7 @@ type apiKeyAuditState struct {
 	ProjectID     int64
 	OwnerUserID   int64
 	KeyType       string
+	Purpose       string
 	Name          string
 	Status        string
 	RPMLimit      int
@@ -280,7 +282,8 @@ func reauthorizeAPIKeyOwnerTx(ctx context.Context, tx pgx.Tx, orgID, projectID, 
 func loadAPIKeyAuditStateTx(ctx context.Context, tx pgx.Tx, id int64, forUpdate bool) (apiKeyAuditState, error) {
 	query := `SELECT org_id, COALESCE(project_id, 0), COALESCE(owner_user_id, 0),
 	                COALESCE(NULLIF(key_type, ''), 'shared'), name, status, rpm_limit, qps_limit,
-	                COALESCE(allowed_ips, ''), COALESCE(allowed_models, ''), COALESCE(policy_labels, '')
+	                COALESCE(allowed_ips, ''), COALESCE(allowed_models, ''), COALESCE(policy_labels, ''),
+	                COALESCE(purpose, '')
 	         FROM api_keys WHERE id = $1`
 	if forUpdate {
 		query += " FOR UPDATE"
@@ -289,7 +292,7 @@ func loadAPIKeyAuditStateTx(ctx context.Context, tx pgx.Tx, id int64, forUpdate 
 	err := tx.QueryRow(ctx, query, id).Scan(
 		&state.OrgID, &state.ProjectID, &state.OwnerUserID, &state.KeyType,
 		&state.Name, &state.Status, &state.RPMLimit, &state.QPSLimit,
-		&state.AllowedIPs, &state.AllowedModels, &state.PolicyLabels,
+		&state.AllowedIPs, &state.AllowedModels, &state.PolicyLabels, &state.Purpose,
 	)
 	return state, err
 }
@@ -316,6 +319,8 @@ func apiKeyChangedFieldProjection(state apiKeyAuditState, changedFields []string
 			projection[field] = nullableOwnerUserID(state.OwnerUserID)
 		case "key_type":
 			projection[field] = state.KeyType
+		case "purpose":
+			projection[field] = state.Purpose
 		case "rpm_limit":
 			projection[field] = state.RPMLimit
 		case "rps_limit", "qps_limit":
@@ -384,7 +389,7 @@ func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 		        COALESCE(ak.budget_limit, 0), ak.allowed_ips, ak.allowed_models, ak.created_at,
 		        o.name as org_name, COALESCE(p.name, '') as project_name,
 		        COALESCE(ak.owner_user_id, 0), COALESCE(NULLIF(ak.key_type, ''), 'shared'), COALESCE(u.username, ''),
-		        COALESCE(ak.policy_labels, '')
+		        COALESCE(ak.policy_labels, ''), COALESCE(ak.purpose, '')
 		 FROM api_keys ak
 		 JOIN orgs o ON o.id = ak.org_id
 		 LEFT JOIN projects p ON p.id = ak.project_id AND p.org_id = ak.org_id
@@ -404,9 +409,9 @@ func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 		var id, orgID, projectID, ownerUserID int64
 		var name, keyPrefix, status, orgName, projectName, keyType, ownerUsername string
 		var rpmLimit, qpsLimit, budgetLimit int
-		var allowedIPs, allowedModels, policyLabels string
+		var allowedIPs, allowedModels, policyLabels, purpose string
 		var createdAt time.Time
-		if err := rows.Scan(&id, &orgID, &projectID, &name, &keyPrefix, &status, &rpmLimit, &qpsLimit, &budgetLimit, &allowedIPs, &allowedModels, &createdAt, &orgName, &projectName, &ownerUserID, &keyType, &ownerUsername, &policyLabels); err != nil {
+		if err := rows.Scan(&id, &orgID, &projectID, &name, &keyPrefix, &status, &rpmLimit, &qpsLimit, &budgetLimit, &allowedIPs, &allowedModels, &createdAt, &orgName, &projectName, &ownerUserID, &keyType, &ownerUsername, &policyLabels, &purpose); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 			return
 		}
@@ -416,12 +421,13 @@ func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 		}
 		keys = append(keys, map[string]interface{}{
 			"id": id, "org_id": orgID, "project_id": projectID, "name": name, "key_prefix": keyPrefix,
-			"status": status, "rpm_limit": rpmLimit, "qps_limit": qpsLimit, "rps_limit": qpsLimit,
+			"status": apiKeyDisplayStatus(status, purpose), "rpm_limit": rpmLimit, "qps_limit": qpsLimit, "rps_limit": qpsLimit,
 			"budget_limit": budgetLimit, "allowed_ips": allowedIPs, "allowed_models": allowedModels,
 			"policy_labels": splitPolicyLabelCSV(policyLabels),
 			"created_at":    createdAt, "org_name": orgName, "project_name": projectName,
 			"owner_user_id": owner, "owner_username": ownerUsername, "key_type": keyType,
-			"quota": apiKeyQuotaPayload(rpmLimit, qpsLimit, budgetLimit),
+			"purpose": purpose,
+			"quota":   apiKeyQuotaPayload(rpmLimit, qpsLimit, budgetLimit),
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -445,6 +451,7 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		AllowedIPs    string   `json:"allowed_ips"`
 		AllowedModels string   `json:"allowed_models"`
 		PolicyLabels  []string `json:"policy_labels"`
+		Purpose       string   `json:"purpose"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
@@ -480,6 +487,15 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	policyLabels, labelErr := normalizePolicyLabels(req.PolicyLabels)
 	if labelErr != "" {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": labelErr})
+		return
+	}
+	purpose, purposeErr := normalizeAPIKeyPurpose(req.Purpose)
+	if purposeErr != "" {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": purposeErr})
+		return
+	}
+	if purpose != "" && !auth.IsOrgAdmin(actorRole(r.Context())) && !isUnauthenticatedUnitContext(r.Context()) {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Only organization administrators can assign a service-key purpose"})
 		return
 	}
 	if policyLabels != "" && !auth.IsOrgAdmin(actorRole(r.Context())) && !isUnauthenticatedUnitContext(r.Context()) {
@@ -544,6 +560,17 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		writeAPIKeyOwnershipError(w, err)
 		return
 	}
+	if validationErr := validateCompletedFeedKeyShape(purpose, keyType, projectID, req.AllowedIPs, req.AllowedModels); validationErr != "" {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": validationErr})
+		return
+	}
+	keyStatus := "active"
+	if purpose == middleware.APIKeyPurposeXInsightFeedRead {
+		// A purpose-active status is deliberately unknown to older binaries,
+		// so a binary rollback cannot reinterpret this credential as a normal
+		// gateway key.
+		keyStatus = middleware.APIKeyStatusFeedActive
+	}
 
 	auditDetail := map[string]interface{}{
 		"org_id":     req.OrgID,
@@ -556,13 +583,14 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 			"owner_user_id":  nullableOwnerUserID(ownerUserID),
 			"key_type":       keyType,
 			"name":           req.Name,
-			"status":         "active",
+			"status":         keyStatus,
 			"rpm_limit":      req.RPMLimit,
 			"rps_limit":      req.QPSLimit,
 			"qps_limit":      req.QPSLimit,
 			"allowed_ips":    req.AllowedIPs,
 			"allowed_models": req.AllowedModels,
 			"policy_labels":  splitPolicyLabelCSV(policyLabels),
+			"purpose":        purpose,
 		},
 	}
 
@@ -579,10 +607,10 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		keyHash := auth.HashAPIKey(rawKey, h.apiKeyHashSecret)
 		if !atomicAudit {
 			err = h.db.QueryRow(r.Context(),
-				`INSERT INTO api_keys (org_id, project_id, owner_user_id, key_type, name, key_hash, key_prefix, status, rpm_limit, qps_limit, allowed_ips, allowed_models, policy_labels, created_at, updated_at)
-				 VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8, $9, $10, $11, $12, NOW(), NOW())
+				`INSERT INTO api_keys (org_id, project_id, owner_user_id, key_type, name, key_hash, key_prefix, status, rpm_limit, qps_limit, allowed_ips, allowed_models, policy_labels, purpose, created_at, updated_at)
+				 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
 				 RETURNING id`,
-				req.OrgID, projectID, nullableOwnerUserID(ownerUserID), keyType, req.Name, keyHash, keyPrefix, req.RPMLimit, req.QPSLimit, req.AllowedIPs, req.AllowedModels, policyLabels,
+				req.OrgID, projectID, nullableOwnerUserID(ownerUserID), keyType, req.Name, keyHash, keyPrefix, keyStatus, req.RPMLimit, req.QPSLimit, req.AllowedIPs, req.AllowedModels, policyLabels, purpose,
 			).Scan(&id)
 			if err == nil || !isAPIKeyPrefixCollision(err) {
 				break
@@ -608,10 +636,10 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		err = tx.QueryRow(r.Context(),
-			`INSERT INTO api_keys (org_id, project_id, owner_user_id, key_type, name, key_hash, key_prefix, status, rpm_limit, qps_limit, allowed_ips, allowed_models, policy_labels, created_at, updated_at)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8, $9, $10, $11, $12, NOW(), NOW())
+			`INSERT INTO api_keys (org_id, project_id, owner_user_id, key_type, name, key_hash, key_prefix, status, rpm_limit, qps_limit, allowed_ips, allowed_models, policy_labels, purpose, created_at, updated_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
 			 RETURNING id`,
-			req.OrgID, projectID, nullableOwnerUserID(ownerUserID), keyType, req.Name, keyHash, keyPrefix, req.RPMLimit, req.QPSLimit, req.AllowedIPs, req.AllowedModels, policyLabels,
+			req.OrgID, projectID, nullableOwnerUserID(ownerUserID), keyType, req.Name, keyHash, keyPrefix, keyStatus, req.RPMLimit, req.QPSLimit, req.AllowedIPs, req.AllowedModels, policyLabels, purpose,
 		).Scan(&id)
 		if err != nil {
 			_ = tx.Rollback(r.Context())
@@ -658,6 +686,7 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		"rps_limit":     req.QPSLimit,
 		"qps_limit":     req.QPSLimit,
 		"policy_labels": splitPolicyLabelCSV(policyLabels),
+		"purpose":       purpose,
 		"quota":         apiKeyQuotaPayload(req.RPMLimit, req.QPSLimit, 0),
 	}
 	if policyLabels != "" {
@@ -686,19 +715,35 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		RPSLimit      *int      `json:"rps_limit"`
 		QPSLimit      *int      `json:"qps_limit"`
 		PolicyLabels  *[]string `json:"policy_labels"`
+		Purpose       *string   `json:"purpose"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
 		return
 	}
 
+	if req.Purpose != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "purpose is immutable; create a dedicated service key"})
+		return
+	}
+
 	var currentOrgID, currentProjectID, currentOwnerUserID int64
-	var currentKeyType string
+	var currentKeyType, currentPurpose, currentAllowedIPs, currentAllowedModels string
 	if !isUnauthenticatedUnitContext(r.Context()) {
 		if err := h.db.QueryRow(r.Context(),
-			`SELECT org_id, COALESCE(project_id, 0), COALESCE(owner_user_id, 0), COALESCE(NULLIF(key_type, ''), 'shared')
+			`SELECT org_id, COALESCE(project_id, 0), COALESCE(owner_user_id, 0),
+			        COALESCE(NULLIF(key_type, ''), 'shared'), COALESCE(purpose, ''),
+			        COALESCE(allowed_ips, ''), COALESCE(allowed_models, '')
 			 FROM api_keys WHERE id = $1`, id,
-		).Scan(&currentOrgID, &currentProjectID, &currentOwnerUserID, &currentKeyType); err != nil {
+		).Scan(
+			&currentOrgID,
+			&currentProjectID,
+			&currentOwnerUserID,
+			&currentKeyType,
+			&currentPurpose,
+			&currentAllowedIPs,
+			&currentAllowedModels,
+		); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Key not found"})
 			} else {
@@ -708,6 +753,30 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		}
 		if !h.canWriteAPIKey(r.Context(), currentOrgID, currentProjectID) {
 			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			return
+		}
+	}
+	if currentPurpose == middleware.APIKeyPurposeXInsightFeedRead {
+		if req.ProjectID != nil || req.OwnerUserID != nil || req.KeyType != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "feed service-key project, owner, and key type are immutable"})
+			return
+		}
+		effectiveIPs := currentAllowedIPs
+		if req.AllowedIPs != nil {
+			effectiveIPs = *req.AllowedIPs
+		}
+		effectiveModels := currentAllowedModels
+		if req.AllowedModels != nil {
+			effectiveModels = *req.AllowedModels
+		}
+		if validationErr := validateCompletedFeedKeyShape(
+			currentPurpose,
+			currentKeyType,
+			currentProjectID,
+			effectiveIPs,
+			effectiveModels,
+		); validationErr != "" {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": validationErr})
 			return
 		}
 	}
@@ -759,6 +828,9 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		if *req.Status != "active" && *req.Status != "disabled" {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid status"})
 			return
+		}
+		if currentPurpose == middleware.APIKeyPurposeXInsightFeedRead && *req.Status == "active" {
+			*req.Status = middleware.APIKeyStatusFeedActive
 		}
 		sets = append(sets, fmt.Sprintf("status = $%d", argIdx))
 		args = append(args, *req.Status)
@@ -1132,6 +1204,7 @@ func (h *Handler) GetAPIKey(w http.ResponseWriter, r *http.Request) {
 		RPMLimit, QPSLimit, BudgetLimit   int
 		AllowedIPs, AllowedModels         string
 		PolicyLabels                      string
+		Purpose                           string
 		OrgName, ProjectName              string
 		CreatedAt                         time.Time
 	}
@@ -1139,13 +1212,13 @@ func (h *Handler) GetAPIKey(w http.ResponseWriter, r *http.Request) {
 		`SELECT ak.id, ak.org_id, COALESCE(ak.project_id, 0), ak.name, ak.key_prefix, ak.status, ak.rpm_limit, ak.qps_limit,
 		        COALESCE(ak.budget_limit, 0), ak.allowed_ips, ak.allowed_models, ak.created_at, o.name, COALESCE(p.name, ''),
 		        COALESCE(ak.owner_user_id, 0), COALESCE(NULLIF(ak.key_type, ''), 'shared'), COALESCE(u.username, ''),
-		        COALESCE(ak.policy_labels, '')
+		        COALESCE(ak.policy_labels, ''), COALESCE(ak.purpose, '')
 		 FROM api_keys ak JOIN orgs o ON o.id = ak.org_id
 		 LEFT JOIN projects p ON p.id = ak.project_id AND p.org_id = ak.org_id
 		 LEFT JOIN users u ON u.id = ak.owner_user_id AND u.org_id = ak.org_id
 		 WHERE ak.id = $1`, id).Scan(
 		&k.ID, &k.OrgID, &k.ProjectID, &k.Name, &k.KeyPrefix, &k.Status, &k.RPMLimit, &k.QPSLimit,
-		&k.BudgetLimit, &k.AllowedIPs, &k.AllowedModels, &k.CreatedAt, &k.OrgName, &k.ProjectName, &k.OwnerUserID, &k.KeyType, &k.OwnerUsername, &k.PolicyLabels)
+		&k.BudgetLimit, &k.AllowedIPs, &k.AllowedModels, &k.CreatedAt, &k.OrgName, &k.ProjectName, &k.OwnerUserID, &k.KeyType, &k.OwnerUsername, &k.PolicyLabels, &k.Purpose)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "API key not found"})
 		return
@@ -1160,9 +1233,10 @@ func (h *Handler) GetAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"id": k.ID, "org_id": k.OrgID, "project_id": k.ProjectID, "name": k.Name, "key_prefix": k.KeyPrefix,
-		"status": k.Status, "rpm_limit": k.RPMLimit, "qps_limit": k.QPSLimit, "rps_limit": k.QPSLimit,
+		"status": apiKeyDisplayStatus(k.Status, k.Purpose), "rpm_limit": k.RPMLimit, "qps_limit": k.QPSLimit, "rps_limit": k.QPSLimit,
 		"budget_limit": k.BudgetLimit, "allowed_ips": k.AllowedIPs, "allowed_models": k.AllowedModels,
 		"policy_labels": splitPolicyLabelCSV(k.PolicyLabels),
+		"purpose":       k.Purpose,
 		"created_at":    k.CreatedAt, "org_name": k.OrgName, "project_name": k.ProjectName,
 		"owner_user_id": owner, "owner_username": k.OwnerUsername, "key_type": k.KeyType,
 		"quota": apiKeyQuotaPayload(k.RPMLimit, k.QPSLimit, k.BudgetLimit),
@@ -1191,6 +1265,68 @@ func normalizePolicyLabels(labels []string) (string, string) {
 	}
 	sort.Strings(normalized)
 	return strings.Join(normalized, ","), ""
+}
+
+func normalizeAPIKeyPurpose(raw string) (string, string) {
+	purpose := strings.TrimSpace(raw)
+	switch purpose {
+	case "":
+		return "", ""
+	case middleware.APIKeyPurposeXInsightFeedRead:
+		return purpose, ""
+	default:
+		return "", "Invalid purpose"
+	}
+}
+
+func apiKeyDisplayStatus(status, purpose string) string {
+	if purpose == middleware.APIKeyPurposeXInsightFeedRead && status == middleware.APIKeyStatusFeedActive {
+		return "active"
+	}
+	return status
+}
+
+func validateCompletedFeedKeyShape(purpose, keyType string, projectID int64, allowedIPs, allowedModels string) string {
+	if purpose == "" {
+		return ""
+	}
+	if purpose != middleware.APIKeyPurposeXInsightFeedRead ||
+		keyType != "service" ||
+		projectID <= 0 ||
+		strings.TrimSpace(allowedModels) != "" {
+		return "xinsight.feed.read requires a project-bound service key with no model allowance"
+	}
+	if !validNetworkBinding(allowedIPs) {
+		return "xinsight.feed.read requires a non-empty valid IP or CIDR binding"
+	}
+	return ""
+}
+
+func validNetworkBinding(raw string) bool {
+	entries := strings.Split(raw, ",")
+	if len(entries) == 0 || len(entries) > 32 {
+		return false
+	}
+	valid := 0
+	for _, entry := range entries {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			return false
+		}
+		if strings.Contains(entry, "/") {
+			prefix, err := netip.ParsePrefix(entry)
+			if err != nil || prefix.Addr().Zone() != "" || prefix.Bits() == 0 {
+				return false
+			}
+		} else {
+			address, err := netip.ParseAddr(entry)
+			if err != nil || address.Zone() != "" {
+				return false
+			}
+		}
+		valid++
+	}
+	return valid > 0
 }
 
 func splitPolicyLabelCSV(value string) []string {

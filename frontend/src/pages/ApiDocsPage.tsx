@@ -43,6 +43,12 @@ const endpointGroups = [
     ],
   },
   {
+    area: 'Private Integration',
+    endpoints: [
+      ['GET', '/api/v1/integrations/xinsight/completed-executions', 'X-Insight 使用项目绑定、网络绑定且不可调用模型的专用 service key 拉取终态执行元数据'],
+    ],
+  },
+  {
     area: '开发者工作台',
     endpoints: [
       ['GET', '/api/v1/projects', '当前账号可访问项目'],

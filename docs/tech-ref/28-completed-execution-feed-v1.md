@@ -1,6 +1,6 @@
 # Completed-Execution Feed V1 Contract
 
-Status: accepted contract, implementation in progress
+Status: accepted V1 contract and implementation
 
 ## Boundary
 
@@ -49,8 +49,48 @@ cursor is the activation-forward handshake: UniRouter returns no historical
 items and advances the client to the current project high-watermark. Later
 polls return only items after that cursor. Replays are at-least-once and
 content-stable; a cursor older than the seven-day retained floor fails
-explicitly.
+explicitly. A valid cursor ahead of the current source high-watermark returns
+permanent `409 completed_execution_feed.cursor_regressed`; it is never treated
+as an idle empty page and never auto-resets or backfills.
 
 The endpoint accepts only an active, project-bound `service` API key with the
 dedicated purpose `xinsight.feed.read` and a non-empty matching network/IP
 allowlist. That purpose is denied on every model-gateway route.
+
+Internally, an enabled feed credential uses the reserved database status
+`feed_active`; the Admin API still renders it as `active`. Binaries predating
+purpose-aware authorization only accept database status `active`, so they
+continue to reject a feed credential even if an operator skips the supported
+rollback preflight. A database constraint also prevents a purpose-scoped key
+from being changed to ordinary `active`.
+
+## Publication and retention ordering
+
+The billing terminal journal and feed item are materialized in one outbox
+handler transaction. Before allocating the retained `BIGSERIAL` item ID, the
+transaction locks the project row in `completed_execution_feed_states`.
+Same-project publication ID order is therefore commit order even when the
+internal outbox has multiple workers.
+
+Seven-day Development retention uses feed publication `created_at`, not the
+possibly out-of-order billing-terminal time. Each retention transaction locks
+one project state row, deletes only that project's contiguous expired ID
+prefix, and advances `retained_after_id` in the same transaction. A concurrent
+retention worker cannot skip a lower row and move the floor past it.
+
+## Binary and schema rollback
+
+Rolling the V1 application binary back to a version without purpose semantics
+is intentionally supported only after:
+
+1. stop the X-Insight poller;
+2. disable the exact `xinsight.feed.read` key through the current UniRouter
+   control plane;
+3. run `./uniroute upgrade preflight-legacy-rollback` from the current binary;
+4. start the older binary only after the preflight reports zero active
+   purpose-scoped credentials.
+
+Schema rollback is stricter than binary rollback. Migration `000043` refuses
+down while any purpose-scoped key or retained feed state exists. Normal
+recovery is roll-forward; removing the retired exact key and feed state for a
+schema down is a separately controlled data-lifecycle action.
