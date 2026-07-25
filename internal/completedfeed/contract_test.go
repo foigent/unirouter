@@ -101,3 +101,25 @@ func TestCompletedExecutionContractRejectsInvalidMoneyAndTokenPartition(t *testi
 		t.Fatal("invalid token partition and money must fail closed")
 	}
 }
+
+func TestCompletedExecutionContractMicroAmountLexicalBoundary(t *testing.T) {
+	payload, err := os.ReadFile(filepath.Join("..", "..", "contracts", "completed-execution", "v1", "fixtures", "valid-settled.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot Snapshot
+	if err := json.Unmarshal(payload, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot.Money.CalculatedCostMicros = "9999999999999999999"
+	snapshot.Money.ChargedCostMicros = "9999999999999999999"
+	if err := ValidateSnapshot(snapshot); err != nil {
+		t.Fatalf("19-digit canonical micro amount must be accepted: %v", err)
+	}
+
+	snapshot.Money.CalculatedCostMicros = "10000000000000000000"
+	if err := ValidateSnapshot(snapshot); err == nil {
+		t.Fatal("20-digit micro amount must be rejected")
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -40,6 +41,8 @@ var requiredCaptureGaps = [...]string{
 	"client_ip_presence",
 	"upstream_error_presence",
 }
+
+var canonicalMicroAmountPattern = regexp.MustCompile(`^(0|[1-9][0-9]{0,18})$`)
 
 type Snapshot struct {
 	SchemaVersion string       `json:"schema_version"`
@@ -311,9 +314,8 @@ func ValidateSnapshot(snapshot Snapshot) error {
 }
 
 func validateCanonicalAmount(name, value string) error {
-	parsed, err := strconv.ParseInt(value, 10, 64)
-	if err != nil || parsed < 0 || strconv.FormatInt(parsed, 10) != value {
-		return fmt.Errorf("%s must be a canonical nonnegative integer string", name)
+	if !canonicalMicroAmountPattern.MatchString(value) {
+		return fmt.Errorf("%s must be a canonical nonnegative decimal string of at most 19 digits", name)
 	}
 	return nil
 }
