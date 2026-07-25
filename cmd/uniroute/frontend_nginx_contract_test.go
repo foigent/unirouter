@@ -54,6 +54,27 @@ func TestFrontendNginxSPAResponsesCarryBaselineSecurityHeaders(t *testing.T) {
 	}
 }
 
+func TestSourceComposeBackendsShareCompletedExecutionFeedEnvironment(t *testing.T) {
+	for _, name := range []string{
+		"../../docker-compose.yml",
+		"../../docker-compose.canary.yml",
+	} {
+		srcBytes, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		src := string(srcBytes)
+		for _, mapping := range []string{
+			"COMPLETED_EXECUTION_FEED_ENABLED: ${COMPLETED_EXECUTION_FEED_ENABLED:-false}",
+			"COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE: ${COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE:-}",
+		} {
+			if count := strings.Count(src, mapping); count != 1 {
+				t.Fatalf("%s must contain exactly one %q mapping, got %d", name, mapping, count)
+			}
+		}
+	}
+}
+
 func nginxLocationBlock(t *testing.T, src, path string) string {
 	t.Helper()
 	marker := "location " + path + " {"
