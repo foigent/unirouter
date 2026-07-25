@@ -31,6 +31,14 @@ CREATE UNIQUE INDEX api_keys_one_active_xinsight_feed_per_project
     ON api_keys (project_id)
     WHERE status = 'feed_active' AND purpose = 'xinsight.feed.read';
 
+-- P6-F10 introduced the composite project uniqueness as a guardrail-owned
+-- index and its controlled down migration drops that exact name. Transfer the
+-- existing index to a feed-owned stable identity before creating the feed
+-- foreign keys, then recreate the guardrail-owned name independently. This
+-- keeps either migration rollback from dropping the other's uniqueness basis.
+ALTER INDEX idx_projects_guardrail_scope
+    RENAME TO completed_execution_feed_projects_scope_key;
+
 -- Successful internal-outbox rows are deleted. This independent retained
 -- sequence is therefore the only cursor authority exposed to X-Insight.
 CREATE TABLE completed_execution_feed_items (
@@ -78,5 +86,8 @@ CREATE TABLE completed_execution_feed_states (
     CONSTRAINT completed_execution_feed_state_floor
         CHECK (retained_after_id >= 0)
 );
+
+CREATE UNIQUE INDEX idx_projects_guardrail_scope
+    ON projects (id, org_id);
 
 COMMIT;

@@ -109,3 +109,83 @@ func TestCompletedExecutionFeedMigrationDownRemainsAvailableWithoutFeedState(t *
 	_, err = pool.Exec(context.Background(), string(downSQL))
 	require.NoError(t, err)
 }
+
+func TestCompletedExecutionFeedProjectScopeSurvivesGuardrailRollbackThenFeedRollback(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+	migrationsDir := testutil.MigrationsDir(t)
+
+	var itemIndex, stateIndex string
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT referenced.relname
+		 FROM pg_constraint constraint_row
+		 JOIN pg_class referenced ON referenced.oid = constraint_row.conindid
+		 WHERE constraint_row.conname = 'completed_execution_feed_project_scope'`,
+	).Scan(&itemIndex))
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT referenced.relname
+		 FROM pg_constraint constraint_row
+		 JOIN pg_class referenced ON referenced.oid = constraint_row.conindid
+		 WHERE constraint_row.conname = 'completed_execution_feed_state_project_scope'`,
+	).Scan(&stateIndex))
+	require.Equal(t, "completed_execution_feed_projects_scope_key", itemIndex)
+	require.Equal(t, itemIndex, stateIndex)
+
+	guardrailDown, err := os.ReadFile(filepath.Join(
+		migrationsDir,
+		"000033_prd6_guardrail_kernel.down.sql",
+	))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(guardrailDown))
+	require.NoError(t, err, "guardrail rollback must not own the feed foreign-key index")
+
+	var feedIndex, guardrailIndex, feedTables int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM pg_class
+		 WHERE relkind = 'i'
+		   AND relname = 'completed_execution_feed_projects_scope_key'`,
+	).Scan(&feedIndex))
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM pg_class
+		 WHERE relkind = 'i'
+		   AND relname = 'idx_projects_guardrail_scope'`,
+	).Scan(&guardrailIndex))
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM information_schema.tables
+		 WHERE table_schema = 'public'
+		   AND table_name IN (
+		     'completed_execution_feed_items',
+		     'completed_execution_feed_states'
+		   )`,
+	).Scan(&feedTables))
+	require.Equal(t, 1, feedIndex)
+	require.Zero(t, guardrailIndex)
+	require.Equal(t, 2, feedTables)
+
+	feedDown, err := os.ReadFile(filepath.Join(
+		migrationsDir,
+		"000043_v1_completed_execution_feed.down.sql",
+	))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(feedDown))
+	require.NoError(t, err)
+
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM pg_class
+		 WHERE relkind = 'i'
+		   AND relname IN (
+		     'completed_execution_feed_projects_scope_key',
+		     'idx_projects_guardrail_scope'
+		   )`,
+	).Scan(&feedIndex))
+	require.Zero(t, feedIndex)
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM information_schema.tables
+		 WHERE table_schema = 'public'
+		   AND table_name IN (
+		     'completed_execution_feed_items',
+		     'completed_execution_feed_states'
+		   )`,
+	).Scan(&feedTables))
+	require.Zero(t, feedTables)
+}
