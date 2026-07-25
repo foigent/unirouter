@@ -149,7 +149,7 @@ const taskNavItems: NavItem[] = [
     icon: <IconSettingStroked />,
     items: [
       { itemKey: '/license', text: '商业授权', icon: <IconShield /> },
-      { itemKey: '/data-exchange', text: 'X-Insight 数据交换控制', icon: <IconConnectionPoint1 />, licenseFeature: 'data_exchange' },
+      { itemKey: '/data-exchange', text: 'X-Insight 数据交换控制', icon: <IconConnectionPoint1 /> },
       { itemKey: '/docs', text: 'API 文档', icon: <IconBookOpenStroked /> },
     ],
   },
@@ -238,7 +238,6 @@ const routeLicenseFeatures: Partial<Record<string, LicenseFeature>> = {
   '/test': 'gateway',
   '/guardrail-policies': 'guardrails',
   '/notifications': 'notifications',
-  '/data-exchange': 'data_exchange',
 };
 
 export function getRequiredLicenseFeatureForRoute(path: string): LicenseFeature | undefined {

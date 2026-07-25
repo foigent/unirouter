@@ -35,7 +35,7 @@ func TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration(t *testing.T)
 	).Scan(&projectID))
 	require.NoError(t, pool.QueryRow(ctx,
 		`INSERT INTO users (org_id, username, password_hash, role, status)
-		 VALUES ($1, 'completed-feed-org-admin', 'test-hash', 'org_admin', 'active')
+		 VALUES ($1, 'completed-feed-platform-admin', 'test-hash', 'platform_admin', 'active')
 		 RETURNING id`,
 		orgID,
 	).Scan(&actorID))
@@ -248,6 +248,7 @@ func TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration(t *testing.T)
 	require.Equal(t, http.StatusOK, statusResponse.Code, statusResponse.Body.String())
 	var controlStatus map[string]any
 	require.NoError(t, json.Unmarshal(statusResponse.Body.Bytes(), &controlStatus))
+	require.Equal(t, "active", controlStatus["project_status"])
 	require.Equal(t, "paused", controlStatus["connection_status"])
 	require.Equal(t, "next_requested_cursor_after_receiver_persistence", controlStatus["receiver_acknowledgement_semantics"])
 	require.Equal(t, float64(0), controlStatus["pending_item_count"])

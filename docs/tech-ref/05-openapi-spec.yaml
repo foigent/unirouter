@@ -1096,10 +1096,12 @@ paths:
     post: *operation_create
 
   /api/v1/data-exchange/xinsight/connections/{project_id}:
+    x-unirouter-rbac:
+      get: [platform_admin]
     get:
       tags: [Admin]
       summary: Read the project-bound X-Insight completed-feed connection
-      description: The receiver cursor is a durable receiver-persistence acknowledgement only; it does not claim search, API, or UI visibility.
+      description: Available for existing active, disabled or archived projects independent of the current Data Exchange entitlement. The receiver cursor is a durable receiver-persistence acknowledgement only; it does not claim search, API, or UI visibility.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: project_id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
@@ -1112,35 +1114,43 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
 
   /api/v1/data-exchange/xinsight/connections/{project_id}/pause:
+    x-unirouter-rbac:
+      post: [platform_admin]
     parameters:
       - { name: project_id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
     post:
       tags: [Admin]
       summary: Pause feed delivery without disabling a credential
-      description: Authenticated active or staged feed keys receive a strict retryable 503 while paused.
+      description: Authority-reducing safety action available for existing inactive projects and without the current Data Exchange entitlement. Authenticated active or staged feed keys receive a strict retryable 503 while paused.
       security: [{ bearerAuth: [] }]
       responses:
         "200": { $ref: "#/components/responses/JSON" }
+        "403": { $ref: "#/components/responses/Error" }
 
   /api/v1/data-exchange/xinsight/connections/{project_id}/resume:
+    x-unirouter-rbac:
+      post: [platform_admin]
     parameters:
       - { name: project_id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
     post:
       tags: [Admin]
       summary: Resume feed delivery
-      description: Requires exactly one active feed credential and no staged replacement.
+      description: Requires an active project, current Data Exchange entitlement, exactly one active feed credential and no staged replacement.
       security: [{ bearerAuth: [] }]
       responses:
         "200": { $ref: "#/components/responses/JSON" }
+        "403": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
 
   /api/v1/data-exchange/xinsight/connections/{project_id}/credentials:
+    x-unirouter-rbac:
+      post: [platform_admin]
     parameters:
       - { name: project_id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
     post:
       tags: [Admin]
       summary: Create the initial staged X-Insight feed-only credential
-      description: Dedicated fixed-purpose action. The plaintext is returned once and is never available from generic key management.
+      description: Active-project and Data Exchange entitlement required. Dedicated fixed-purpose action. The plaintext is returned once and is never available from generic key management.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -1158,14 +1168,18 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/XInsightStagedFeedCredential" }
+        "403": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
 
   /api/v1/data-exchange/xinsight/connections/{project_id}/credentials/activate:
+    x-unirouter-rbac:
+      post: [platform_admin]
     parameters:
       - { name: project_id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
     post:
       tags: [Admin]
       summary: Activate the installed initial staged credential while keeping the connection paused
+      description: Requires an active project and current Data Exchange entitlement.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -1174,27 +1188,34 @@ paths:
             schema: { $ref: "#/components/schemas/XInsightStagedCredentialReference" }
       responses:
         "200": { $ref: "#/components/responses/JSON" }
+        "403": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
 
   /api/v1/data-exchange/xinsight/connections/{project_id}/credentials/{credential_id}/revoke:
+    x-unirouter-rbac:
+      post: [platform_admin]
     parameters:
       - { name: project_id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
       - { name: credential_id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
     post:
       tags: [Admin]
       summary: Irreversibly revoke one feed credential and pause the connection
+      description: Authority-reducing safety action available for active or staged credentials on existing inactive projects and without the current Data Exchange entitlement.
       security: [{ bearerAuth: [] }]
       responses:
         "200": { $ref: "#/components/responses/JSON" }
+        "403": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
 
   /api/v1/data-exchange/xinsight/connections/{project_id}/rotation/prepare:
+    x-unirouter-rbac:
+      post: [platform_admin]
     parameters:
       - { name: project_id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
     post:
       tags: [Admin]
       summary: Prepare one staged replacement while retaining the active credential
-      description: The connection must be paused. The staged key may authenticate only to receive the retryable paused response; it can never read data.
+      description: Requires an active project, current Data Exchange entitlement and a paused connection. The staged key may authenticate only to receive the retryable paused response; it can never read data.
       security: [{ bearerAuth: [] }]
       responses:
         "201":
@@ -1202,14 +1223,18 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/XInsightStagedFeedCredential" }
+        "403": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
 
   /api/v1/data-exchange/xinsight/connections/{project_id}/rotation/activate:
+    x-unirouter-rbac:
+      post: [platform_admin]
     parameters:
       - { name: project_id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
     post:
       tags: [Admin]
       summary: Atomically promote staged and revoke old after X systemctl restart and staged-key 503 proof
+      description: Requires an active project and current Data Exchange entitlement.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -1218,14 +1243,18 @@ paths:
             schema: { $ref: "#/components/schemas/XInsightStagedCredentialReference" }
       responses:
         "200": { $ref: "#/components/responses/JSON" }
+        "403": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
 
   /api/v1/data-exchange/xinsight/connections/{project_id}/rotation/cancel:
+    x-unirouter-rbac:
+      post: [platform_admin]
     parameters:
       - { name: project_id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
     post:
       tags: [Admin]
       summary: Irreversibly revoke the staged replacement and keep the old credential active
+      description: Authority-reducing safety action available for an existing inactive project and without the current Data Exchange entitlement.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -1234,6 +1263,7 @@ paths:
             schema: { $ref: "#/components/schemas/XInsightStagedCredentialReference" }
       responses:
         "200": { $ref: "#/components/responses/JSON" }
+        "403": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
 
   /api/v1/dashboard/stats:
@@ -2018,10 +2048,11 @@ components:
     XInsightFeedConnection:
       type: object
       additionalProperties: false
-      required: [project_id, project_name, global_configured, global_enabled, source_instance, connection_status, source_high_watermark, receiver_acknowledged_cursor, receiver_acknowledgement_semantics, pending_item_count, cursor_outside_retention]
+      required: [project_id, project_name, project_status, global_configured, global_enabled, source_instance, connection_status, source_high_watermark, receiver_acknowledged_cursor, receiver_acknowledgement_semantics, pending_item_count, cursor_outside_retention]
       properties:
         project_id: { type: integer, format: int64, minimum: 1 }
         project_name: { type: string }
+        project_status: { type: string, enum: [active, disabled, archived] }
         global_configured: { type: boolean }
         global_enabled: { type: boolean }
         source_instance: { type: string }

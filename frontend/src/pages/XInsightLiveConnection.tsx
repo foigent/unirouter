@@ -3,6 +3,7 @@ import { Button, Descriptions, Input, Popconfirm, Select, SideSheet, Spin, Tag, 
 import { IconRefresh } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
+import { loadAllPages } from '../utils/loadAllPages';
 import { StatusTag } from '../ui';
 
 const { Text, Title } = Typography;
@@ -11,6 +12,7 @@ interface Project {
   id: number;
   name: string;
   org_name?: string;
+  status: 'active' | 'disabled' | 'archived';
 }
 
 interface FeedCredential {
@@ -24,6 +26,7 @@ interface FeedCredential {
 interface FeedConnectionStatus {
   project_id: number;
   project_name: string;
+  project_status: 'active' | 'disabled' | 'archived';
   global_configured: boolean;
   global_enabled: boolean;
   source_instance: string;
@@ -55,7 +58,15 @@ function credentialLabel(credential?: FeedCredential | null) {
   return `#${credential.id} · ${credential.key_prefix} · ${credential.lifecycle}`;
 }
 
-export default function XInsightLiveConnection() {
+interface XInsightLiveConnectionProps {
+  expansionAllowed?: boolean;
+  expansionRestriction?: string;
+}
+
+export default function XInsightLiveConnection({
+  expansionAllowed = true,
+  expansionRestriction = '',
+}: XInsightLiveConnectionProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectID, setProjectID] = useState<number>();
   const [status, setStatus] = useState<FeedConnectionStatus | null>(null);
@@ -65,8 +76,7 @@ export default function XInsightLiveConnection() {
 
   const loadProjects = useCallback(async () => {
     try {
-      const response = await api.getProjects(1, 100, { status: 'active' });
-      const next = (response?.data || []) as Project[];
+      const next = await loadAllPages<Project>((page, pageSize) => api.getProjects(page, pageSize));
       setProjects(next);
       setProjectID(current => current || next[0]?.id);
     } catch (error: any) {
@@ -138,8 +148,17 @@ export default function XInsightLiveConnection() {
 
   const projectOptions = useMemo(() => projects.map(project => ({
     value: project.id,
-    label: `${project.name}${project.org_name ? ` · ${project.org_name}` : ''}`,
+    label: `${project.name}${project.org_name ? ` · ${project.org_name}` : ''}${
+      project.status === 'active' ? '' : project.status === 'archived' ? ' · 已归档' : ' · 已停用'
+    }`,
   })), [projects]);
+  const selectedProject = useMemo(
+    () => projects.find(project => project.id === projectID),
+    [projectID, projects],
+  );
+  const projectStatus = status?.project_status || selectedProject?.status;
+  const projectActive = projectStatus === 'active';
+  const expansionEnabled = projectActive && expansionAllowed;
 
   if (!projectID && projects.length === 0) {
     return <Spin tip="正在读取可用项目…" />;
@@ -171,6 +190,7 @@ export default function XInsightLiveConnection() {
         row
         data={[
           { key: '全局配置 / 启用', value: `${status?.global_configured ? '已配置' : '未配置'} / ${status?.global_enabled ? '已启用' : '未启用'}` },
+          { key: '项目状态', value: <StatusTag status={projectStatus || 'unknown'}>{projectStatus || 'unknown'}</StatusTag> },
           { key: '连接状态', value: <StatusTag status={status?.connection_status || 'not_configured'}>{status?.connection_status || 'not_configured'}</StatusTag> },
           { key: '来源实例', value: status?.source_instance || '-' },
           { key: '当前 active 凭证', value: credentialLabel(status?.active_credential) },
@@ -183,6 +203,25 @@ export default function XInsightLiveConnection() {
           { key: '待拉取项', value: String(status?.pending_item_count ?? 0) },
         ]}
       />
+
+      {!projectActive && (
+        <div style={{ padding: 12, border: '1px solid var(--semi-color-warning-light-default)', borderRadius: 8 }}>
+          <Tag color="orange">{projectStatus === 'archived' ? '项目已归档' : '项目已停用'}</Tag>
+          <Text type="tertiary">
+            创建、激活、恢复和准备轮换已禁用；状态查看、暂停、取消轮换和不可逆撤销仍可使用。
+          </Text>
+        </div>
+      )}
+
+      {!expansionAllowed && (
+        <div style={{ padding: 12, border: '1px solid var(--semi-color-warning-light-default)', borderRadius: 8 }}>
+          <Tag color="orange">仅保留安全控制</Tag>
+          <Text type="tertiary">
+            {expansionRestriction || '当前 Data Exchange entitlement 不可用。'}
+            状态查看、暂停、取消轮换与不可逆撤销保持可用；创建、激活、恢复和准备轮换已禁用。
+          </Text>
+        </div>
+      )}
 
       <div style={{ padding: 12, border: '1px solid var(--semi-color-border)', borderRadius: 8 }}>
         <Text strong>确认语义</Text>
@@ -205,9 +244,10 @@ export default function XInsightLiveConnection() {
               placeholder="X worker 私网 /32 或 /128"
               value={allowedIP}
               onChange={setAllowedIP}
+              disabled={!expansionEnabled}
               style={{ width: 250 }}
             />
-            <Button type="primary" disabled={!allowedIP} onClick={createCredential}>创建初始 staged 凭证</Button>
+            <Button type="primary" disabled={!allowedIP || !expansionEnabled} onClick={createCredential}>创建初始 staged 凭证</Button>
           </>
         )}
 
@@ -222,7 +262,7 @@ export default function XInsightLiveConnection() {
                 );
               }}
             >
-              <Button type="primary">激活初始凭证</Button>
+              <Button type="primary" disabled={!expansionEnabled}>激活初始凭证</Button>
             </Popconfirm>
             <Popconfirm
               title="撤销未安装或交付失败的 staged 凭证；连接保持暂停，之后可重新创建。"
@@ -242,11 +282,11 @@ export default function XInsightLiveConnection() {
           <Button onClick={() => projectID && mutate(() => api.pauseXInsightFeedConnection(projectID), '连接暂停')}>暂停连接</Button>
         )}
         {status?.connection_status === 'paused' && status?.active_credential && !status?.staged_credential && (
-          <Button type="primary" onClick={() => projectID && mutate(() => api.resumeXInsightFeedConnection(projectID), '连接恢复')}>恢复连接</Button>
+          <Button type="primary" disabled={!expansionEnabled} onClick={() => projectID && mutate(() => api.resumeXInsightFeedConnection(projectID), '连接恢复')}>恢复连接</Button>
         )}
 
         {status?.connection_status === 'paused' && status?.active_credential && !status?.staged_credential && (
-          <Button onClick={prepareRotation}>准备两阶段轮换</Button>
+          <Button disabled={!expansionEnabled} onClick={prepareRotation}>准备两阶段轮换</Button>
         )}
         {status?.connection_status === 'paused' && status?.active_credential && status?.staged_credential && (
           <>
@@ -259,7 +299,7 @@ export default function XInsightLiveConnection() {
                 );
               }}
             >
-              <Button type="primary">确认重启与 503，激活轮换</Button>
+              <Button type="primary" disabled={!expansionEnabled}>确认重启与 503，激活轮换</Button>
             </Popconfirm>
             <Popconfirm
               title="撤销 staged 替换凭证；旧 active 凭证保持不变，连接保持暂停。"

@@ -26,7 +26,6 @@ const (
 var (
 	errXInsightFeedConflict     = errors.New("x-insight feed control state conflicts with the requested operation")
 	errXInsightFeedNotFound     = errors.New("x-insight feed project or credential was not found")
-	errXInsightFeedNotReady     = errors.New("x-insight feed connection is not ready")
 	errXInsightFeedInvalidScope = errors.New("x-insight feed network binding must be one exact IPv4 /32 or IPv6 /128")
 )
 
@@ -42,6 +41,7 @@ type xInsightFeedCredential struct {
 type xInsightFeedConnectionStatus struct {
 	ProjectID                   int64                   `json:"project_id"`
 	ProjectName                 string                  `json:"project_name"`
+	ProjectStatus               string                  `json:"project_status"`
 	GlobalConfigured            bool                    `json:"global_configured"`
 	GlobalEnabled               bool                    `json:"global_enabled"`
 	SourceInstance              string                  `json:"source_instance"`
@@ -108,7 +108,7 @@ func (h *Handler) setXInsightFeedConnectionState(w http.ResponseWriter, r *http.
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Invalid project ID"})
 		return
 	}
-	orgID, err := h.xInsightFeedProjectOrg(r.Context(), projectID)
+	orgID, err := h.xInsightFeedExistingProjectOrg(r.Context(), projectID)
 	if err != nil {
 		writeXInsightFeedControlError(w, err)
 		return
@@ -124,6 +124,13 @@ func (h *Handler) setXInsightFeedConnectionState(w http.ResponseWriter, r *http.
 		return
 	}
 	defer tx.Rollback(r.Context())
+	if err := h.reauthorizeXInsightFeedControlTx(
+		r.Context(), tx, orgID, projectID, apiKeyMutationUpdate,
+		target == xInsightFeedConnectionActive,
+	); err != nil {
+		writeXInsightFeedControlError(w, err)
+		return
+	}
 	current, err := lockXInsightFeedConnection(r.Context(), tx, orgID, projectID)
 	if err != nil {
 		writeXInsightFeedControlError(w, err)
@@ -192,7 +199,7 @@ func (h *Handler) CreateXInsightFeedCredential(w http.ResponseWriter, r *http.Re
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Invalid project ID"})
 		return
 	}
-	orgID, err := h.xInsightFeedProjectOrg(r.Context(), projectID)
+	orgID, err := h.xInsightFeedExistingProjectOrg(r.Context(), projectID)
 	if err != nil {
 		writeXInsightFeedControlError(w, err)
 		return
@@ -212,7 +219,7 @@ func (h *Handler) PrepareXInsightFeedRotation(w http.ResponseWriter, r *http.Req
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Invalid project ID"})
 		return
 	}
-	orgID, err := h.xInsightFeedProjectOrg(r.Context(), projectID)
+	orgID, err := h.xInsightFeedExistingProjectOrg(r.Context(), projectID)
 	if err != nil {
 		writeXInsightFeedControlError(w, err)
 		return
@@ -247,6 +254,11 @@ func (h *Handler) createXInsightFeedStagedCredential(
 				_ = tx.Rollback(r.Context())
 			}
 		}()
+		if err := h.reauthorizeXInsightFeedControlTx(
+			r.Context(), tx, orgID, projectID, apiKeyMutationCreate, true,
+		); err != nil {
+			return stagedXInsightFeedCredentialResponse{}, err
+		}
 		connectionStatus, err := lockXInsightFeedConnection(r.Context(), tx, orgID, projectID)
 		if err != nil {
 			return stagedXInsightFeedCredentialResponse{}, err
@@ -365,6 +377,12 @@ func (h *Handler) activateXInsightFeedCredential(w http.ResponseWriter, r *http.
 		return
 	}
 	defer tx.Rollback(r.Context())
+	if err := h.reauthorizeXInsightFeedControlTx(
+		r.Context(), tx, orgID, projectID, apiKeyMutationUpdate, true,
+	); err != nil {
+		writeXInsightFeedControlError(w, err)
+		return
+	}
 	connectionStatus, err := lockXInsightFeedConnection(r.Context(), tx, orgID, projectID)
 	if err != nil {
 		writeXInsightFeedControlError(w, err)
@@ -468,6 +486,12 @@ func (h *Handler) CancelXInsightFeedRotation(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	defer tx.Rollback(r.Context())
+	if err := h.reauthorizeXInsightFeedControlTx(
+		r.Context(), tx, orgID, projectID, apiKeyMutationUpdate, false,
+	); err != nil {
+		writeXInsightFeedControlError(w, err)
+		return
+	}
 	connectionStatus, err := lockXInsightFeedConnection(r.Context(), tx, orgID, projectID)
 	if err != nil {
 		writeXInsightFeedControlError(w, err)
@@ -516,7 +540,7 @@ func (h *Handler) RevokeXInsightFeedCredential(w http.ResponseWriter, r *http.Re
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Invalid credential ID"})
 		return
 	}
-	orgID, err := h.xInsightFeedProjectOrg(r.Context(), projectID)
+	orgID, err := h.xInsightFeedExistingProjectOrg(r.Context(), projectID)
 	if err != nil {
 		writeXInsightFeedControlError(w, err)
 		return
@@ -527,6 +551,12 @@ func (h *Handler) RevokeXInsightFeedCredential(w http.ResponseWriter, r *http.Re
 		return
 	}
 	defer tx.Rollback(r.Context())
+	if err := h.reauthorizeXInsightFeedControlTx(
+		r.Context(), tx, orgID, projectID, apiKeyMutationUpdate, false,
+	); err != nil {
+		writeXInsightFeedControlError(w, err)
+		return
+	}
 	if _, err := lockXInsightFeedConnection(r.Context(), tx, orgID, projectID); err != nil {
 		writeXInsightFeedControlError(w, err)
 		return
@@ -615,7 +645,7 @@ func (h *Handler) xInsightFeedCredentialMutationRequest(
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "staged_credential_id is required"})
 		return 0, 0, xInsightFeedCredentialIDRequest{}, false
 	}
-	orgID, err := h.xInsightFeedProjectOrg(r.Context(), projectID)
+	orgID, err := h.xInsightFeedExistingProjectOrg(r.Context(), projectID)
 	if err != nil {
 		writeXInsightFeedControlError(w, err)
 		return 0, 0, xInsightFeedCredentialIDRequest{}, false
@@ -631,7 +661,7 @@ func (h *Handler) readXInsightFeedConnectionStatus(ctx context.Context, projectI
 	var lastAuthenticatedPull sql.NullTime
 	var lastAuthenticatedKeyID sql.NullInt64
 	if err := h.db.QueryRow(ctx,
-		`SELECT project.org_id, project.name,
+		`SELECT project.org_id, project.name, project.status,
 		        connection.status,
 		        COALESCE(connection.acknowledged_sequence, 0),
 		        connection.last_authenticated_pull_at,
@@ -645,6 +675,7 @@ func (h *Handler) readXInsightFeedConnectionStatus(ctx context.Context, projectI
 	).Scan(
 		&orgID,
 		&result.ProjectName,
+		&result.ProjectStatus,
 		&connectionStatus,
 		&acknowledgedSequence,
 		&lastAuthenticatedPull,
@@ -771,17 +802,13 @@ func (h *Handler) readXInsightFeedCredential(
 	return &credential, nil
 }
 
-func (h *Handler) xInsightFeedProjectOrg(ctx context.Context, projectID int64) (int64, error) {
+func (h *Handler) xInsightFeedExistingProjectOrg(ctx context.Context, projectID int64) (int64, error) {
 	var orgID int64
-	var status string
-	if err := h.db.QueryRow(ctx, `SELECT org_id, status FROM projects WHERE id = $1`, projectID).Scan(&orgID, &status); err != nil {
+	if err := h.db.QueryRow(ctx, `SELECT org_id FROM projects WHERE id = $1`, projectID).Scan(&orgID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, errXInsightFeedNotFound
 		}
 		return 0, err
-	}
-	if status != "active" {
-		return 0, errXInsightFeedNotReady
 	}
 	return orgID, nil
 }
@@ -805,6 +832,29 @@ func lockXInsightFeedConnection(ctx context.Context, tx pgx.Tx, orgID, projectID
 		return "", err
 	}
 	return status, nil
+}
+
+func (h *Handler) reauthorizeXInsightFeedControlTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	orgID, projectID int64,
+	operation apiKeyMutationOperation,
+	targetProjectMustActive bool,
+) error {
+	intent := apiKeyAuthorizationIntent{
+		operation:               operation,
+		targetOrgID:             orgID,
+		targetProjectID:         projectID,
+		targetProjectMustActive: targetProjectMustActive,
+	}
+	if operation == apiKeyMutationCreate {
+		intent.validateOwnership = true
+		intent.ownerUserID = 0
+		intent.keyType = "service"
+	} else {
+		intent.sourceProjectID = projectID
+	}
+	return h.reauthorizeAPIKeyMutationTx(ctx, tx, intent)
 }
 
 func xInsightFeedProjectID(r *http.Request) (int64, error) {
@@ -837,12 +887,12 @@ func xInsightFeedLifecycle(status string) string {
 
 func writeXInsightFeedControlError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, errAPIKeyAuthorizationChanged):
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": "Forbidden"})
 	case errors.Is(err, errXInsightFeedNotFound), errors.Is(err, pgx.ErrNoRows):
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "X-Insight feed project or credential not found"})
 	case errors.Is(err, errXInsightFeedConflict):
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "X-Insight feed state conflicts with the requested operation"})
-	case errors.Is(err, errXInsightFeedNotReady):
-		writeJSON(w, http.StatusConflict, map[string]any{"error": "Project is not active"})
 	case errors.Is(err, errXInsightFeedInvalidScope):
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 	default:

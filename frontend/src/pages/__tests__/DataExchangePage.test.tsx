@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import DataExchangePage, { receiptPayload } from '../DataExchangePage';
+import { useAuthStore } from '../../store/auth';
 
 const getItems = vi.fn();
 const getExchanges = vi.fn();
@@ -11,6 +12,20 @@ const pauseConnection = vi.fn();
 const resumeConnection = vi.fn();
 const prepareRotation = vi.fn();
 const activateRotation = vi.fn();
+
+const licensedAccess = {
+  status: 'active',
+  enforceable: true,
+  features: {
+    gateway: true,
+    agent_capabilities: true,
+    oidc: true,
+    guardrails: true,
+    notifications: true,
+    model_governance: true,
+    data_exchange: true,
+  },
+} as const;
 
 vi.mock('../../api/client', () => ({
   api: {
@@ -39,6 +54,15 @@ vi.mock('../../api/client', () => ({
 describe('DataExchangePage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useAuthStore.setState({
+      user: {
+        id: 1,
+        username: 'platform',
+        role: 'platform_admin',
+        org_id: 1,
+        license_access: licensedAccess,
+      },
+    });
     getItems.mockResolvedValue({
       data: [{
         id: 7,
@@ -81,12 +105,13 @@ describe('DataExchangePage', () => {
       receipts: [{ id: 4, receipt_status: 'persisted', input_events: 2, accepted: 2, rerun_duplicate_noop: 2, rejected: 0, checked_at: '2026-07-10T08:20:00Z' }],
     });
     getProjects.mockResolvedValue({
-      data: [{ id: 22, name: 'Development', org_name: 'UniRouter' }],
+      data: [{ id: 22, name: 'Development', org_name: 'UniRouter', status: 'active' }],
       total: 1,
     });
     getFeedConnection.mockResolvedValue({
       project_id: 22,
       project_name: 'Development',
+      project_status: 'active',
       global_configured: true,
       global_enabled: true,
       source_instance: 'unirouter-dev-149a8220bf1e',
@@ -106,6 +131,7 @@ describe('DataExchangePage', () => {
   it('defaults to the product live connection and labels receiver acknowledgement truthfully', async () => {
     const { container } = render(<DataExchangePage />);
     await waitFor(() => expect(getFeedConnection).toHaveBeenCalledWith(22));
+    expect(getProjects).toHaveBeenCalledWith(1, 100);
     expect(container.textContent).toContain('metadata only');
     expect(container.textContent).toContain('无原始 prompt/response');
     expect(container.textContent).toContain('接收端提交确认 cursor');
@@ -163,6 +189,7 @@ describe('DataExchangePage', () => {
     getFeedConnection.mockResolvedValueOnce({
       project_id: 22,
       project_name: 'Development',
+      project_status: 'active',
       global_configured: true,
       global_enabled: true,
       source_instance: 'unirouter-dev-149a8220bf1e',
@@ -182,6 +209,7 @@ describe('DataExchangePage', () => {
     getFeedConnection.mockResolvedValueOnce({
       project_id: 22,
       project_name: 'Development',
+      project_status: 'active',
       global_configured: true,
       global_enabled: true,
       source_instance: 'unirouter-dev-149a8220bf1e',
@@ -193,5 +221,84 @@ describe('DataExchangePage', () => {
     const { container } = render(<DataExchangePage />);
     await waitFor(() => expect(container.textContent).toContain('撤销未安装的 staged 凭证'));
     expect(container.textContent).toContain('激活初始凭证');
+  });
+
+  it('keeps only safety controls and locks legacy flows without the Data Exchange entitlement', async () => {
+    useAuthStore.setState({
+      user: {
+        id: 1,
+        username: 'platform',
+        role: 'platform_admin',
+        org_id: 1,
+        license_access: {
+          ...licensedAccess,
+          status: 'expired',
+          enforceable: false,
+          features: { ...licensedAccess.features, data_exchange: false },
+        },
+      },
+    });
+    const { container } = render(<DataExchangePage />);
+
+    await waitFor(() => expect(container.textContent).toContain('仅保留安全控制'));
+    expect(screen.getByRole('button', { name: '恢复连接' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: '准备两阶段轮换' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: '撤销当前 feed 凭证' }).hasAttribute('disabled')).toBe(false);
+    expect(screen.getByRole('button', { name: /刷新历史账本/ }).hasAttribute('disabled')).toBe(true);
+
+    fireEvent.click(screen.getByText('历史人工审批（授权锁定）'));
+    expect(getItems).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('扩张动作和历史人工流程已锁定');
+  });
+
+  it('keeps pause and revoke reachable for a disabled project loaded without an active-only filter', async () => {
+    getProjects.mockResolvedValueOnce({
+      data: [{ id: 22, name: 'Development', org_name: 'UniRouter', status: 'disabled' }],
+      total: 1,
+    });
+    getFeedConnection.mockResolvedValueOnce({
+      project_id: 22,
+      project_name: 'Development',
+      project_status: 'disabled',
+      global_configured: true,
+      global_enabled: true,
+      source_instance: 'unirouter-dev-149a8220bf1e',
+      connection_status: 'active',
+      active_credential: { id: 41, key_prefix: 'ur-feed-active', lifecycle: 'active', created_at: '2026-07-25T08:00:00Z' },
+      staged_credential: null,
+      pending_item_count: 0,
+    });
+    const { container } = render(<DataExchangePage />);
+
+    await waitFor(() => expect(container.textContent).toContain('项目已停用'));
+    expect(container.textContent).toContain('Development · UniRouter · 已停用');
+    expect(screen.getByRole('button', { name: '暂停连接' }).hasAttribute('disabled')).toBe(false);
+    expect(screen.getByRole('button', { name: '撤销当前 feed 凭证' }).hasAttribute('disabled')).toBe(false);
+    expect(getProjects).toHaveBeenCalledWith(1, 100);
+  });
+
+  it('labels archived projects and keeps cancel while blocking rotation activation', async () => {
+    getProjects.mockResolvedValueOnce({
+      data: [{ id: 22, name: 'Archive', org_name: 'UniRouter', status: 'archived' }],
+      total: 1,
+    });
+    getFeedConnection.mockResolvedValueOnce({
+      project_id: 22,
+      project_name: 'Archive',
+      project_status: 'archived',
+      global_configured: true,
+      global_enabled: true,
+      source_instance: 'unirouter-dev-149a8220bf1e',
+      connection_status: 'paused',
+      active_credential: { id: 41, key_prefix: 'ur-feed-active', lifecycle: 'active', created_at: '2026-07-25T08:00:00Z' },
+      staged_credential: { id: 42, key_prefix: 'ur-feed-staged', lifecycle: 'staged', created_at: '2026-07-25T08:20:00Z' },
+      pending_item_count: 0,
+    });
+    const { container } = render(<DataExchangePage />);
+
+    await waitFor(() => expect(container.textContent).toContain('项目已归档'));
+    expect(container.textContent).toContain('Archive · UniRouter · 已归档');
+    expect(screen.getByRole('button', { name: '确认重启与 503，激活轮换' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: '取消轮换' }).hasAttribute('disabled')).toBe(false);
   });
 });

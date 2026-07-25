@@ -723,15 +723,10 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("POST /api/v1/data-exchange/exchanges/{id}/deliveries", dataExchangeRoute(adminHandler.CreateDataExchangeDelivery))
 	mux.Handle("POST /api/v1/data-exchange/exchanges/{id}/receipts", dataExchangeRoute(adminHandler.CreateDataExchangeReceipt))
 	mux.Handle("POST /api/v1/data-exchange/exchanges/{id}/artifact-delete", dataExchangeRoute(adminHandler.DeleteDataExchangeArtifact))
-	mux.Handle("GET /api/v1/data-exchange/xinsight/connections/{project_id}", dataExchangeRoute(adminHandler.GetXInsightFeedConnection))
-	mux.Handle("POST /api/v1/data-exchange/xinsight/connections/{project_id}/pause", dataExchangeRoute(adminHandler.PauseXInsightFeedConnection))
-	mux.Handle("POST /api/v1/data-exchange/xinsight/connections/{project_id}/resume", dataExchangeRoute(adminHandler.ResumeXInsightFeedConnection))
-	mux.Handle("POST /api/v1/data-exchange/xinsight/connections/{project_id}/credentials", dataExchangeRoute(adminHandler.CreateXInsightFeedCredential))
-	mux.Handle("POST /api/v1/data-exchange/xinsight/connections/{project_id}/credentials/activate", dataExchangeRoute(adminHandler.ActivateInitialXInsightFeedCredential))
-	mux.Handle("POST /api/v1/data-exchange/xinsight/connections/{project_id}/credentials/{credential_id}/revoke", dataExchangeRoute(adminHandler.RevokeXInsightFeedCredential))
-	mux.Handle("POST /api/v1/data-exchange/xinsight/connections/{project_id}/rotation/prepare", dataExchangeRoute(adminHandler.PrepareXInsightFeedRotation))
-	mux.Handle("POST /api/v1/data-exchange/xinsight/connections/{project_id}/rotation/activate", dataExchangeRoute(adminHandler.ActivateXInsightFeedRotation))
-	mux.Handle("POST /api/v1/data-exchange/xinsight/connections/{project_id}/rotation/cancel", dataExchangeRoute(adminHandler.CancelXInsightFeedRotation))
+	registerXInsightFeedControlRoutes(mux, adminHandler, xInsightFeedControlRouteGuards{
+		safety:    platformRoute,
+		expansion: dataExchangeRoute,
+	})
 
 	registerGlobalControlRoutes(mux, adminHandler, platformRoute, licensedRoute(licensing.FeatureGuardrails, platformRoute))
 	mux.Handle("POST /api/v1/channels/{id}/test", licensedRoute(licensing.FeatureGateway, platformRoute)(adminHandler.TestChannel))
