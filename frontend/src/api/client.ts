@@ -202,6 +202,33 @@ export const api = {
     request(`/data-exchange/exchanges/${id}/receipts`, { method: 'POST', body: JSON.stringify(data) }),
   markDataExchangeArtifactDeleted: (id: number) =>
     request(`/data-exchange/exchanges/${id}/artifact-delete`, { method: 'POST' }),
+  getXInsightFeedConnection: (projectId: number) =>
+    request(`/data-exchange/xinsight/connections/${projectId}`),
+  pauseXInsightFeedConnection: (projectId: number) =>
+    request(`/data-exchange/xinsight/connections/${projectId}/pause`, { method: 'POST' }),
+  resumeXInsightFeedConnection: (projectId: number) =>
+    request(`/data-exchange/xinsight/connections/${projectId}/resume`, { method: 'POST' }),
+  createXInsightFeedCredential: (projectId: number, data: { allowed_ip: string }) =>
+    request(`/data-exchange/xinsight/connections/${projectId}/credentials`, { method: 'POST', body: JSON.stringify(data) }),
+  activateInitialXInsightFeedCredential: (projectId: number, stagedCredentialId: number) =>
+    request(`/data-exchange/xinsight/connections/${projectId}/credentials/activate`, {
+      method: 'POST',
+      body: JSON.stringify({ staged_credential_id: stagedCredentialId }),
+    }),
+  revokeXInsightFeedCredential: (projectId: number, credentialId: number) =>
+    request(`/data-exchange/xinsight/connections/${projectId}/credentials/${credentialId}/revoke`, { method: 'POST' }),
+  prepareXInsightFeedRotation: (projectId: number) =>
+    request(`/data-exchange/xinsight/connections/${projectId}/rotation/prepare`, { method: 'POST' }),
+  activateXInsightFeedRotation: (projectId: number, stagedCredentialId: number) =>
+    request(`/data-exchange/xinsight/connections/${projectId}/rotation/activate`, {
+      method: 'POST',
+      body: JSON.stringify({ staged_credential_id: stagedCredentialId }),
+    }),
+  cancelXInsightFeedRotation: (projectId: number, stagedCredentialId: number) =>
+    request(`/data-exchange/xinsight/connections/${projectId}/rotation/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ staged_credential_id: stagedCredentialId }),
+    }),
 
   // PRD2 Batch 23 product surfaces
   getUsageAnalytics: (filters?: {

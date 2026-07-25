@@ -114,6 +114,15 @@ func TestAdminRoutesRegisteredForFrontendClient(t *testing.T) {
 		"POST /api/v1/data-exchange/exchanges/{id}/deliveries",
 		"POST /api/v1/data-exchange/exchanges/{id}/receipts",
 		"POST /api/v1/data-exchange/exchanges/{id}/artifact-delete",
+		"GET /api/v1/data-exchange/xinsight/connections/{project_id}",
+		"POST /api/v1/data-exchange/xinsight/connections/{project_id}/pause",
+		"POST /api/v1/data-exchange/xinsight/connections/{project_id}/resume",
+		"POST /api/v1/data-exchange/xinsight/connections/{project_id}/credentials",
+		"POST /api/v1/data-exchange/xinsight/connections/{project_id}/credentials/activate",
+		"POST /api/v1/data-exchange/xinsight/connections/{project_id}/credentials/{credential_id}/revoke",
+		"POST /api/v1/data-exchange/xinsight/connections/{project_id}/rotation/prepare",
+		"POST /api/v1/data-exchange/xinsight/connections/{project_id}/rotation/activate",
+		"POST /api/v1/data-exchange/xinsight/connections/{project_id}/rotation/cancel",
 	}
 
 	for _, route := range routes {

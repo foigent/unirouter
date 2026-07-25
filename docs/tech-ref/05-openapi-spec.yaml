@@ -438,6 +438,9 @@ paths:
         Subsequent opaque cursors provide a retained seven-day replay window.
         A cursor ahead of the current source high-watermark fails permanently
         with 409; it is never auto-reset or treated as an idle page.
+        A valid active or staged feed credential receives a strict retryable
+        503 while its project connection is paused. A staged credential can
+        never receive data and is denied if the connection is active.
         Pages contain at most 50 items and are always smaller than 8 MiB.
       security:
         - completedFeedKey: []
@@ -1091,6 +1094,147 @@ paths:
     parameters:
       - $ref: "#/components/parameters/Id"
     post: *operation_create
+
+  /api/v1/data-exchange/xinsight/connections/{project_id}:
+    get:
+      tags: [Admin]
+      summary: Read the project-bound X-Insight completed-feed connection
+      description: The receiver cursor is a durable receiver-persistence acknowledgement only; it does not claim search, API, or UI visibility.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: project_id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+      responses:
+        "200":
+          description: Source-side connection, credential lifecycle, cursor and pending-item truth
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/XInsightFeedConnection" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v1/data-exchange/xinsight/connections/{project_id}/pause:
+    parameters:
+      - { name: project_id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    post:
+      tags: [Admin]
+      summary: Pause feed delivery without disabling a credential
+      description: Authenticated active or staged feed keys receive a strict retryable 503 while paused.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { $ref: "#/components/responses/JSON" }
+
+  /api/v1/data-exchange/xinsight/connections/{project_id}/resume:
+    parameters:
+      - { name: project_id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    post:
+      tags: [Admin]
+      summary: Resume feed delivery
+      description: Requires exactly one active feed credential and no staged replacement.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { $ref: "#/components/responses/JSON" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/v1/data-exchange/xinsight/connections/{project_id}/credentials:
+    parameters:
+      - { name: project_id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    post:
+      tags: [Admin]
+      summary: Create the initial staged X-Insight feed-only credential
+      description: Dedicated fixed-purpose action. The plaintext is returned once and is never available from generic key management.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [allowed_ip]
+              properties:
+                allowed_ip: { type: string, description: Exact IPv4 /32 or IPv6 /128 X worker binding }
+      responses:
+        "201":
+          description: One-time staged credential
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/XInsightStagedFeedCredential" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/v1/data-exchange/xinsight/connections/{project_id}/credentials/activate:
+    parameters:
+      - { name: project_id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    post:
+      tags: [Admin]
+      summary: Activate the installed initial staged credential while keeping the connection paused
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/XInsightStagedCredentialReference" }
+      responses:
+        "200": { $ref: "#/components/responses/JSON" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/v1/data-exchange/xinsight/connections/{project_id}/credentials/{credential_id}/revoke:
+    parameters:
+      - { name: project_id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+      - { name: credential_id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    post:
+      tags: [Admin]
+      summary: Irreversibly revoke one feed credential and pause the connection
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { $ref: "#/components/responses/JSON" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/v1/data-exchange/xinsight/connections/{project_id}/rotation/prepare:
+    parameters:
+      - { name: project_id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    post:
+      tags: [Admin]
+      summary: Prepare one staged replacement while retaining the active credential
+      description: The connection must be paused. The staged key may authenticate only to receive the retryable paused response; it can never read data.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: One-time staged replacement credential
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/XInsightStagedFeedCredential" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/v1/data-exchange/xinsight/connections/{project_id}/rotation/activate:
+    parameters:
+      - { name: project_id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    post:
+      tags: [Admin]
+      summary: Atomically promote staged and revoke old after X systemctl restart and staged-key 503 proof
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/XInsightStagedCredentialReference" }
+      responses:
+        "200": { $ref: "#/components/responses/JSON" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/v1/data-exchange/xinsight/connections/{project_id}/rotation/cancel:
+    parameters:
+      - { name: project_id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    post:
+      tags: [Admin]
+      summary: Irreversibly revoke the staged replacement and keep the old credential active
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/XInsightStagedCredentialReference" }
+      responses:
+        "200": { $ref: "#/components/responses/JSON" }
+        "409": { $ref: "#/components/responses/Error" }
 
   /api/v1/dashboard/stats:
     get: *operation_get
@@ -1861,6 +2005,55 @@ components:
             $ref: "#/components/schemas/CompletedExecutionFeedError"
 
   schemas:
+    XInsightFeedCredentialSummary:
+      type: object
+      additionalProperties: false
+      required: [id, key_prefix, lifecycle, created_at]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        key_prefix: { type: string }
+        lifecycle: { type: string, enum: [active, staged, revoked] }
+        created_at: { type: string, format: date-time }
+        revoked_at: { type: string, format: date-time }
+    XInsightFeedConnection:
+      type: object
+      additionalProperties: false
+      required: [project_id, project_name, global_configured, global_enabled, source_instance, connection_status, source_high_watermark, receiver_acknowledged_cursor, receiver_acknowledgement_semantics, pending_item_count, cursor_outside_retention]
+      properties:
+        project_id: { type: integer, format: int64, minimum: 1 }
+        project_name: { type: string }
+        global_configured: { type: boolean }
+        global_enabled: { type: boolean }
+        source_instance: { type: string }
+        connection_status: { type: string, enum: [not_configured, paused, active] }
+        active_credential: { $ref: "#/components/schemas/XInsightFeedCredentialSummary", nullable: true }
+        staged_credential: { $ref: "#/components/schemas/XInsightFeedCredentialSummary", nullable: true }
+        last_revoked_credential: { $ref: "#/components/schemas/XInsightFeedCredentialSummary", nullable: true }
+        last_authenticated_pull_at: { type: string, format: date-time, nullable: true }
+        last_authenticated_credential: { $ref: "#/components/schemas/XInsightFeedCredentialSummary", nullable: true }
+        source_high_watermark: { type: string, maxLength: 512 }
+        receiver_acknowledged_cursor: { type: string, maxLength: 512 }
+        receiver_acknowledgement_semantics: { type: string, enum: [next_requested_cursor_after_receiver_persistence] }
+        pending_item_count: { type: integer, format: int64, minimum: 0 }
+        cursor_outside_retention: { type: boolean }
+    XInsightStagedFeedCredential:
+      type: object
+      additionalProperties: false
+      required: [id, key, key_prefix, lifecycle, project_id, purpose, key_type]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        key: { type: string, readOnly: true, description: One-time plaintext; never log or persist it outside the exact receiver credential sink. }
+        key_prefix: { type: string }
+        lifecycle: { type: string, enum: [staged] }
+        project_id: { type: integer, format: int64, minimum: 1 }
+        purpose: { type: string, enum: [xinsight.feed.read] }
+        key_type: { type: string, enum: [service] }
+    XInsightStagedCredentialReference:
+      type: object
+      additionalProperties: false
+      required: [staged_credential_id]
+      properties:
+        staged_credential_id: { type: integer, format: int64, minimum: 1 }
     CompletedExecutionFeedPage:
       type: object
       additionalProperties: false

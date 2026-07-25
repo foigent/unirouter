@@ -194,6 +194,7 @@ func main() {
 
 	adminHandler := admin.NewHandlerWithAPIKeyHashSecret(postgres.Pool, cfg.JWTSecret, cfg.APIKeyHashSecret, encKey, sensitiveFilter)
 	adminHandler.SetOutbox(outboxSvc)
+	adminHandler.SetCompletedFeedController(completedFeedSvc)
 	adminHandler.SetRoutingController(router)
 	adminHandler.SetGuardrailController(guardrailService)
 	adminHandler.SetProviderCostReconciler(billingSvc)
@@ -554,6 +555,15 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">POST</td><td><code>/api/v1/data-exchange/exchanges/{id}/deliveries</code></td><td>Record exchange handoff or re-delivery</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/data-exchange/exchanges/{id}/receipts</code></td><td>Record X-Insight import receipt</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/data-exchange/exchanges/{id}/artifact-delete</code></td><td>Mark exchange artifact deleted in ledger</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/data-exchange/xinsight/connections/{project_id}</code></td><td>X-Insight live feed connection status</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/data-exchange/xinsight/connections/{project_id}/pause</code></td><td>Pause live feed delivery without disabling its credential</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/data-exchange/xinsight/connections/{project_id}/resume</code></td><td>Resume live feed delivery</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/data-exchange/xinsight/connections/{project_id}/credentials</code></td><td>Create the initial staged feed-only credential</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/data-exchange/xinsight/connections/{project_id}/credentials/activate</code></td><td>Activate the installed initial credential while paused</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/data-exchange/xinsight/connections/{project_id}/credentials/{credential_id}/revoke</code></td><td>Terminally revoke one feed credential and pause</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/data-exchange/xinsight/connections/{project_id}/rotation/prepare</code></td><td>Prepare one staged replacement</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/data-exchange/xinsight/connections/{project_id}/rotation/activate</code></td><td>Atomically promote staged and revoke old</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/data-exchange/xinsight/connections/{project_id}/rotation/cancel</code></td><td>Terminally cancel staged replacement</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/settings</code></td><td>List deployment settings (platform admin)</td></tr>
 <tr><td class="method">PUT</td><td><code>/api/v1/settings/{key}</code></td><td>Update deployment setting (platform admin)</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/license</code></td><td>License status (platform admin)</td></tr>
@@ -713,6 +723,15 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("POST /api/v1/data-exchange/exchanges/{id}/deliveries", dataExchangeRoute(adminHandler.CreateDataExchangeDelivery))
 	mux.Handle("POST /api/v1/data-exchange/exchanges/{id}/receipts", dataExchangeRoute(adminHandler.CreateDataExchangeReceipt))
 	mux.Handle("POST /api/v1/data-exchange/exchanges/{id}/artifact-delete", dataExchangeRoute(adminHandler.DeleteDataExchangeArtifact))
+	mux.Handle("GET /api/v1/data-exchange/xinsight/connections/{project_id}", dataExchangeRoute(adminHandler.GetXInsightFeedConnection))
+	mux.Handle("POST /api/v1/data-exchange/xinsight/connections/{project_id}/pause", dataExchangeRoute(adminHandler.PauseXInsightFeedConnection))
+	mux.Handle("POST /api/v1/data-exchange/xinsight/connections/{project_id}/resume", dataExchangeRoute(adminHandler.ResumeXInsightFeedConnection))
+	mux.Handle("POST /api/v1/data-exchange/xinsight/connections/{project_id}/credentials", dataExchangeRoute(adminHandler.CreateXInsightFeedCredential))
+	mux.Handle("POST /api/v1/data-exchange/xinsight/connections/{project_id}/credentials/activate", dataExchangeRoute(adminHandler.ActivateInitialXInsightFeedCredential))
+	mux.Handle("POST /api/v1/data-exchange/xinsight/connections/{project_id}/credentials/{credential_id}/revoke", dataExchangeRoute(adminHandler.RevokeXInsightFeedCredential))
+	mux.Handle("POST /api/v1/data-exchange/xinsight/connections/{project_id}/rotation/prepare", dataExchangeRoute(adminHandler.PrepareXInsightFeedRotation))
+	mux.Handle("POST /api/v1/data-exchange/xinsight/connections/{project_id}/rotation/activate", dataExchangeRoute(adminHandler.ActivateXInsightFeedRotation))
+	mux.Handle("POST /api/v1/data-exchange/xinsight/connections/{project_id}/rotation/cancel", dataExchangeRoute(adminHandler.CancelXInsightFeedRotation))
 
 	registerGlobalControlRoutes(mux, adminHandler, platformRoute, licensedRoute(licensing.FeatureGuardrails, platformRoute))
 	mux.Handle("POST /api/v1/channels/{id}/test", licensedRoute(licensing.FeatureGateway, platformRoute)(adminHandler.TestChannel))

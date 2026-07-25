@@ -14,6 +14,8 @@ import (
 const (
 	APIKeyPurposeXInsightFeedRead = "xinsight.feed.read"
 	APIKeyStatusFeedActive        = "feed_active"
+	APIKeyStatusFeedStaged        = "feed_staged"
+	APIKeyStatusFeedRevoked       = "feed_revoked"
 )
 
 var completedFeedAuthDenials = prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -59,7 +61,7 @@ func CompletedExecutionFeedAuth(
 				writeGatewayAuthError(w, http.StatusUnauthorized, "auth_error.invalid_api_key", "Invalid API key")
 				return
 			}
-			if apiKey.Status != APIKeyStatusFeedActive || orgStatus != "active" {
+			if (apiKey.Status != APIKeyStatusFeedActive && apiKey.Status != APIKeyStatusFeedStaged) || orgStatus != "active" {
 				completedFeedAuthDenials.WithLabelValues("inactive").Inc()
 				if orgStatus != "active" {
 					writeGatewayAuthError(w, http.StatusForbidden, "auth_error.org_"+orgStatus, "Organization is "+orgStatus)

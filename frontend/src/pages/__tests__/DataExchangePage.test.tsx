@@ -5,12 +5,28 @@ import DataExchangePage, { receiptPayload } from '../DataExchangePage';
 const getItems = vi.fn();
 const getExchanges = vi.fn();
 const getActivity = vi.fn();
+const getProjects = vi.fn();
+const getFeedConnection = vi.fn();
+const pauseConnection = vi.fn();
+const resumeConnection = vi.fn();
+const prepareRotation = vi.fn();
+const activateRotation = vi.fn();
 
 vi.mock('../../api/client', () => ({
   api: {
     getDataExchangeItems: (...args: any[]) => getItems(...args),
     getDataExchanges: (...args: any[]) => getExchanges(...args),
     getDataExchangeActivity: (...args: any[]) => getActivity(...args),
+    getProjects: (...args: any[]) => getProjects(...args),
+    getXInsightFeedConnection: (...args: any[]) => getFeedConnection(...args),
+    pauseXInsightFeedConnection: (...args: any[]) => pauseConnection(...args),
+    resumeXInsightFeedConnection: (...args: any[]) => resumeConnection(...args),
+    prepareXInsightFeedRotation: (...args: any[]) => prepareRotation(...args),
+    activateXInsightFeedRotation: (...args: any[]) => activateRotation(...args),
+    createXInsightFeedCredential: vi.fn(),
+    activateInitialXInsightFeedCredential: vi.fn(),
+    cancelXInsightFeedRotation: vi.fn(),
+    revokeXInsightFeedCredential: vi.fn(),
     createDataExchangeItem: vi.fn(),
     updateDataExchangeItem: vi.fn(),
     createDataExchange: vi.fn(),
@@ -64,21 +80,51 @@ describe('DataExchangePage', () => {
       deliveries: [{ id: 3, action: 'handed_off', handoff_ref: 'evidence/handoff.md', delivered_at: '2026-07-10T08:10:00Z' }],
       receipts: [{ id: 4, receipt_status: 'persisted', input_events: 2, accepted: 2, rerun_duplicate_noop: 2, rejected: 0, checked_at: '2026-07-10T08:20:00Z' }],
     });
+    getProjects.mockResolvedValue({
+      data: [{ id: 22, name: 'Development', org_name: 'UniRouter' }],
+      total: 1,
+    });
+    getFeedConnection.mockResolvedValue({
+      project_id: 22,
+      project_name: 'Development',
+      global_configured: true,
+      global_enabled: true,
+      source_instance: 'unirouter-dev-149a8220bf1e',
+      connection_status: 'paused',
+      active_credential: { id: 41, key_prefix: 'ur-feed-active', lifecycle: 'active', created_at: '2026-07-25T08:00:00Z' },
+      staged_credential: null,
+      last_revoked_credential: null,
+      last_authenticated_pull_at: '2026-07-25T08:10:00Z',
+      source_high_watermark: 'cursor-high',
+      receiver_acknowledged_cursor: 'cursor-ack',
+      receiver_acknowledgement_semantics: 'next_requested_cursor_after_receiver_persistence',
+      pending_item_count: 2,
+      cursor_outside_retention: false,
+    });
   });
 
-  it('renders the metadata-only safety boundary and approval queue', async () => {
+  it('defaults to the product live connection and labels receiver acknowledgement truthfully', async () => {
     const { container } = render(<DataExchangePage />);
-    await waitFor(() => expect(getItems).toHaveBeenCalledWith(1, 100, undefined));
+    await waitFor(() => expect(getFeedConnection).toHaveBeenCalledWith(22));
     expect(container.textContent).toContain('metadata only');
     expect(container.textContent).toContain('无原始 prompt/response');
+    expect(container.textContent).toContain('接收端提交确认 cursor');
+    expect(container.textContent).toContain('不代表搜索、API 或 UI 已可见');
+    expect(container.textContent).toContain('systemctl restart（不可 reload）');
+  });
+
+  it('keeps the manual approval flow in a clearly historical tab', async () => {
+    const { container } = render(<DataExchangePage />);
+    fireEvent.click(await screen.findByText('历史人工审批'));
+    await waitFor(() => expect(getItems).toHaveBeenCalledWith(1, 100, undefined));
     expect(container.textContent).toContain('req-controlled-001');
     expect(container.textContent).toContain('已批准');
   });
 
   it('shows source and downstream statuses separately in the ledger', async () => {
     render(<DataExchangePage />);
+    fireEvent.click(screen.getByText('历史交换账本'));
     await waitFor(() => expect(getExchanges).toHaveBeenCalled());
-    fireEvent.click(screen.getByText('交换账本'));
     await waitFor(() => {
       expect(screen.getByText('uxchg_test_001')).toBeTruthy();
       expect(screen.getByText('handed_off')).toBeTruthy();
@@ -88,13 +134,14 @@ describe('DataExchangePage', () => {
 
   it('defaults new exchanges to the micro-CNY snapshot v2 contract', async () => {
     render(<DataExchangePage />);
+    fireEvent.click(await screen.findByText('历史人工审批'));
     fireEvent.click(await screen.findByRole('button', { name: '登记交换制品' }));
     expect(await screen.findByDisplayValue('unirouter.prd5.xinsight.snapshot.v2')).toBeTruthy();
   });
 
   it('loads member, delivery, and receipt history from the activity endpoint', async () => {
     render(<DataExchangePage />);
-    fireEvent.click(await screen.findByText('交换账本'));
+    fireEvent.click(await screen.findByText('历史交换账本'));
     const preview = await screen.findByRole('button', { name: '查看交换' });
     fireEvent.click(preview);
 
@@ -110,5 +157,41 @@ describe('DataExchangePage', () => {
     expect(() => receiptPayload(JSON.stringify({
       import_job_id: '',
     }))).toThrow('X-Insight 尚未提供 durable import job 或 deep link 合同');
+  });
+
+  it('renders two-phase rotation only while paused and requires restart plus staged 503', async () => {
+    getFeedConnection.mockResolvedValueOnce({
+      project_id: 22,
+      project_name: 'Development',
+      global_configured: true,
+      global_enabled: true,
+      source_instance: 'unirouter-dev-149a8220bf1e',
+      connection_status: 'paused',
+      active_credential: { id: 41, key_prefix: 'ur-feed-active', lifecycle: 'active', created_at: '2026-07-25T08:00:00Z' },
+      staged_credential: { id: 42, key_prefix: 'ur-feed-staged', lifecycle: 'staged', created_at: '2026-07-25T08:20:00Z' },
+      pending_item_count: 0,
+    });
+    const { container } = render(<DataExchangePage />);
+    await waitFor(() => expect(container.textContent).toContain('确认重启与 503，激活轮换'));
+    expect(container.textContent).toContain('systemctl restart（不可 reload）');
+    expect(container.textContent).toContain('旧凭证保持 active');
+    expect(container.textContent).not.toContain('撤销当前 feed 凭证');
+  });
+
+  it('allows an undelivered initial staged credential to be revoked without an active key', async () => {
+    getFeedConnection.mockResolvedValueOnce({
+      project_id: 22,
+      project_name: 'Development',
+      global_configured: true,
+      global_enabled: true,
+      source_instance: 'unirouter-dev-149a8220bf1e',
+      connection_status: 'paused',
+      active_credential: null,
+      staged_credential: { id: 42, key_prefix: 'ur-feed-staged', lifecycle: 'staged', created_at: '2026-07-25T08:20:00Z' },
+      pending_item_count: 0,
+    });
+    const { container } = render(<DataExchangePage />);
+    await waitFor(() => expect(container.textContent).toContain('撤销未安装的 staged 凭证'));
+    expect(container.textContent).toContain('激活初始凭证');
   });
 });

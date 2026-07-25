@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
@@ -73,6 +74,7 @@ func TestCompletedExecutionFeedPurposeCredentialIsLegacyBinaryFailClosed(t *test
 	).Scan(&legacyStatus))
 	require.Equal(t, "disabled", legacyStatus)
 
+	rollbackXInsightFeedControl(t, pool)
 	downSQL, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t),
 		"000043_v1_completed_execution_feed.down.sql",
@@ -101,6 +103,7 @@ func TestCompletedExecutionFeedPurposeCredentialIsLegacyBinaryFailClosed(t *test
 
 func TestCompletedExecutionFeedMigrationDownRemainsAvailableWithoutFeedState(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
+	rollbackXInsightFeedControl(t, pool)
 	downSQL, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t),
 		"000043_v1_completed_execution_feed.down.sql",
@@ -162,6 +165,7 @@ func TestCompletedExecutionFeedProjectScopeSurvivesGuardrailRollbackThenFeedRoll
 	require.Zero(t, guardrailIndex)
 	require.Equal(t, 2, feedTables)
 
+	rollbackXInsightFeedControl(t, pool)
 	feedDown, err := os.ReadFile(filepath.Join(
 		migrationsDir,
 		"000043_v1_completed_execution_feed.down.sql",
@@ -188,4 +192,15 @@ func TestCompletedExecutionFeedProjectScopeSurvivesGuardrailRollbackThenFeedRoll
 		   )`,
 	).Scan(&feedTables))
 	require.Zero(t, feedTables)
+}
+
+func rollbackXInsightFeedControl(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	downSQL, err := os.ReadFile(filepath.Join(
+		testutil.MigrationsDir(t),
+		"000044_v1_xinsight_feed_control.down.sql",
+	))
+	require.NoError(t, err)
+	_, err = pool.Exec(context.Background(), string(downSQL))
+	require.NoError(t, err)
 }

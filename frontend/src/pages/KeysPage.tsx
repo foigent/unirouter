@@ -50,6 +50,7 @@ interface ApiKey {
     budget_limit_cents?: number | null;
   };
   policy_labels?: string[];
+  purpose?: string;
   created_at: string;
 }
 
@@ -311,8 +312,8 @@ export default function KeysPage() {
         : '—',
     },
     { title: 'Key 前缀', dataIndex: 'key_prefix', key: 'prefix', render: (v: string) => <code>{v}***</code> },
-    { title: '允许 IP', dataIndex: 'allowed_ips', key: 'ips', render: (v: string) => v || '全部' },
-    { title: '允许模型', dataIndex: 'allowed_models', key: 'models', render: (v: string) => v || '全部' },
+    { title: '允许 IP', key: 'ips', render: (_: unknown, record: ApiKey) => record.purpose === 'xinsight.feed.read' ? '由实时连接控制' : (record.allowed_ips || '全部') },
+    { title: '允许模型', key: 'models', render: (_: unknown, record: ApiKey) => record.purpose === 'xinsight.feed.read' ? '无模型权限' : (record.allowed_models || '全部') },
     { title: '策略标签', dataIndex: 'policy_labels', key: 'policy_labels', render: (v: string[]) => v?.length ? v.join(', ') : '无' },
     { title: '限速', key: 'quota', render: (_: unknown, record: ApiKey) => keyRateLimitText(record) },
     {
@@ -322,7 +323,9 @@ export default function KeysPage() {
     { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 180, render: (v: string) => formatDateTime(v) },
     {
       title: '操作', key: 'actions', width: 180,
-      render: (_: any, record: ApiKey) => (
+      render: (_: any, record: ApiKey) => record.purpose === 'xinsight.feed.read' ? (
+        <Text type="tertiary">请前往 X-Insight 数据交换控制</Text>
+      ) : (
         <Space>
           <Button aria-label={`编辑访问凭证 ${record.name}`} icon={<IconEdit />} size="small" onClick={() => openEdit(record)}>编辑</Button>
           {record.status === 'disabled' ? (

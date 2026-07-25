@@ -4,11 +4,12 @@ import { IconDelete, IconEyeOpened, IconPlus, IconRefresh, IconSendStroked, Icon
 import { api } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
 import { PageHeader, StatusTag, Surface } from '../ui';
+import XInsightLiveConnection from './XInsightLiveConnection';
 
 const { Text } = Typography;
 const { TabPane } = Tabs;
 
-type TabKey = 'approvals' | 'ledger';
+type TabKey = 'live' | 'approvals' | 'ledger';
 
 interface ExchangeItem {
   id: number;
@@ -101,7 +102,7 @@ export function receiptPayload(raw: string) {
 }
 
 export default function DataExchangePage() {
-  const [activeTab, setActiveTab] = useState<TabKey>('approvals');
+  const [activeTab, setActiveTab] = useState<TabKey>('live');
   const [items, setItems] = useState<ExchangeItem[]>([]);
   const [itemStatus, setItemStatus] = useState('');
   const [itemsLoading, setItemsLoading] = useState(false);
@@ -140,8 +141,12 @@ export default function DataExchangePage() {
     }
   }, []);
 
-  useEffect(() => { loadItems(); }, [loadItems]);
-  useEffect(() => { loadExchanges(); }, [loadExchanges]);
+  useEffect(() => {
+    if (activeTab === 'approvals') loadItems();
+  }, [activeTab, loadItems]);
+  useEffect(() => {
+    if (activeTab === 'ledger') loadExchanges();
+  }, [activeTab, loadExchanges]);
 
   const approvedItemIDs = useMemo(() => items.filter(item => item.approval_status === 'approved' && item.request_id).map(item => item.id), [items]);
 
@@ -302,21 +307,24 @@ export default function DataExchangePage() {
       <PageHeader
         eyebrow="系统与集成"
         title="X-Insight 数据交换控制"
-        description="管理出站审批、制品元数据账本、人工交付记录与 X-Insight 回执；本页面不生成文件，也不执行网络传输。"
-        actions={<Button icon={<IconRefresh />} onClick={() => { loadItems(); loadExchanges(); }}>刷新</Button>}
+        description="实时连接是 UniRouter → X-Insight 的产品化 metadata feed；旧审批与制品账本保留为独立的历史人工流程。"
+        actions={<Button icon={<IconRefresh />} onClick={() => { loadItems(); loadExchanges(); }}>刷新历史账本</Button>}
       />
 
       <Surface>
         <div className="ur-chip-row" style={{ marginBottom: 12 }}>
-          <Tag color="orange">不生成或传输文件</Tag>
+          <Tag color="blue">实时连接：私有 pull feed</Tag>
           <Tag color="green">metadata only</Tag>
           <Tag>无原始 prompt/response</Tag>
-          <Tag>无凭证</Tag>
+          <Tag>feed-only service credential</Tag>
           <Tag>无原始 IP</Tag>
           <Tag>无原始上游错误</Tag>
         </div>
         <Tabs activeKey={activeTab} onChange={key => setActiveTab(key as TabKey)}>
-          <TabPane tab="审批队列" itemKey="approvals">
+          <TabPane tab="实时连接" itemKey="live">
+            <XInsightLiveConnection />
+          </TabPane>
+          <TabPane tab="历史人工审批" itemKey="approvals">
             <div className="ur-toolbar">
               <Select
                 value={itemStatus || undefined}
@@ -337,7 +345,7 @@ export default function DataExchangePage() {
               <Table columns={itemColumns} dataSource={items} rowKey="id" loading={itemsLoading} pagination={false} scroll={{ x: 1320 }} />
             </div>
           </TabPane>
-          <TabPane tab="交换账本" itemKey="ledger">
+          <TabPane tab="历史交换账本" itemKey="ledger">
             <div className="ur-table-shell">
               <Table columns={exchangeColumns} dataSource={exchanges} rowKey="id" loading={exchangesLoading} pagination={false} scroll={{ x: 1320 }} />
             </div>
