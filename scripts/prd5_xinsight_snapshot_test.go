@@ -1467,6 +1467,115 @@ func TestStrictMetadataMirrorsReceiverCodeGrammarAndNumericIdentifierBoundary(t 
 	}
 }
 
+func TestStrictMetadataAcceptsFieldSpecificServerOwnedGrammars(t *testing.T) {
+	const detectorVersion = "unirouter.local-pii-secrets.v1.2.3.4"
+	const limitPolicyChain = "builtin:rps@1#global-org=allow/allowed,builtin:tpm@2#org-7=allow/allowed"
+
+	if class := blockedStringClass(detectorVersion); class != "ip" {
+		t.Fatalf("fixture must reproduce generic IP false positive, class=%q", class)
+	}
+	if class := blockedStringClass(limitPolicyChain); class != "email" {
+		t.Fatalf("fixture must reproduce generic email false positive, class=%q", class)
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"guardrail_detector_version": detectorVersion,
+		"limit_policy_chain":         limitPolicyChain,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata, err := strictMetadata(string(payload))
+	if err != nil {
+		t.Fatalf("server-owned metadata grammars rejected: %v", err)
+	}
+	if metadata["guardrail_detector_version"] != detectorVersion || metadata["limit_policy_chain"] != limitPolicyChain {
+		t.Fatalf("field-specific metadata changed: %#v", metadata)
+	}
+}
+
+func TestStrictMetadataFieldSpecificGrammarsRejectRealSensitiveLookalikesWithSafeDiagnostics(t *testing.T) {
+	tests := []struct {
+		name, field, value, family, class string
+	}{
+		{
+			name: "detector_exact_ip", field: "guardrail_detector_version", value: "127.0.0.1",
+			family: "guardrail_detector_version", class: "ip",
+		},
+		{
+			name: "detector_embedded_ip", field: "guardrail_detector_version", value: "detector.127.0.0.1",
+			family: "guardrail_detector_version", class: "ip",
+		},
+		{
+			name: "detector_email", field: "guardrail_detector_version", value: "ops@example.com",
+			family: "guardrail_detector_version", class: "email",
+		},
+		{
+			name: "detector_credential", field: "guardrail_detector_version", value: "token=private-detector-canary",
+			family: "guardrail_detector_version", class: "credential",
+		},
+		{
+			name: "chain_email", field: "limit_policy_chain", value: "ops@example.com",
+			family: "limit_policy_chain", class: "email",
+		},
+		{
+			name: "chain_ip", field: "limit_policy_chain", value: "builtin:rps@1#127.0.0.1=allow/allowed",
+			family: "limit_policy_chain", class: "ip",
+		},
+		{
+			name: "chain_credential", field: "limit_policy_chain", value: "builtin:rps@1#global=allow/token=private-chain-canary",
+			family: "limit_policy_chain", class: "credential",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			payload, err := json.Marshal(map[string]string{tc.field: tc.value})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = strictMetadata(string(payload))
+			if err == nil {
+				t.Fatal("sensitive lookalike accepted")
+			}
+			message := err.Error()
+			for _, marker := range []string{
+				"field=" + tc.field,
+				"family=" + tc.family,
+				"class=" + tc.class,
+				"count=1",
+			} {
+				if !strings.Contains(message, marker) {
+					t.Fatalf("diagnostic missing %q: %v", marker, err)
+				}
+			}
+			if strings.Contains(message, tc.value) ||
+				strings.Contains(message, "private-detector-canary") ||
+				strings.Contains(message, "private-chain-canary") {
+				t.Fatalf("metadata value leaked: %v", err)
+			}
+		})
+	}
+}
+
+func TestStrictMetadataDocumentAndUnknownKeyDiagnosticsNeverEchoInput(t *testing.T) {
+	const unknownKey = "private_metadata_key_canary"
+	_, err := strictMetadata(`{"` + unknownKey + `":"private_metadata_value_canary"}`)
+	if err == nil ||
+		!strings.Contains(err.Error(), "field=unknown family=unknown_key class=unknown_key count=1") ||
+		strings.Contains(err.Error(), unknownKey) ||
+		strings.Contains(err.Error(), "private_metadata_value_canary") {
+		t.Fatalf("unsafe unknown-key diagnostic: %v", err)
+	}
+
+	_, err = strictMetadata(" {\"usage_source\":\"upstream\"}")
+	if err == nil ||
+		!strings.Contains(err.Error(), "field=metadata family=document class=noncanonical_json count=1") ||
+		strings.Contains(err.Error(), "upstream") {
+		t.Fatalf("unsafe document diagnostic: %v", err)
+	}
+}
+
 func TestStrictSafetyUsesExactDualBooleanIPHandlingDeclaration(t *testing.T) {
 	const exact = "raw IP addresses are not exported; only ip_address_was_present and ip_address_redacted boolean fields are retained"
 	snapshot, _ := validPureStrictSnapshot(t)
@@ -1528,6 +1637,10 @@ func safeMetadataValue(rule strictMetadataRule) interface{} {
 		return "code-v1"
 	case metadataCodeList:
 		return "code-v1,code-v2"
+	case metadataGuardrailDetectorVersion:
+		return "unirouter.local-pii-secrets.v1.2.3.4"
+	case metadataLimitPolicyChain:
+		return "builtin:rps@1#global-org=allow/allowed"
 	case metadataBool:
 		return true
 	case metadataFalseBool:
@@ -1869,10 +1982,13 @@ func TestStrictAggregateStillBlocksRawErrorAndOtherBlockedValueClassesBeforeDeta
 		}
 	}
 	query := strictAggregateQuery(1)
-	for _, marker := range []string{"blocked_value_present", "ip_address_present", "raw_error_present", "metadata::text", "ghp_", "customer"} {
+	for _, marker := range []string{"blocked_value_present", "ip_address_present", "raw_error_present", "ghp_", "customer"} {
 		if !strings.Contains(query, marker) {
 			t.Fatalf("aggregate query missing safety marker %q", marker)
 		}
+	}
+	if strings.Contains(query, "metadata::text") {
+		t.Fatal("aggregate preflight must not apply field-agnostic detectors to serialized metadata")
 	}
 	for _, receiverMarker := range []string{
 		"api[_-]?key", "authorization", "access[_-]?token", "refresh[_-]?token", "-----begin", "private[[:space:]]key",
