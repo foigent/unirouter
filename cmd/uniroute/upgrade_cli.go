@@ -62,7 +62,7 @@ func preflightLegacyPurposeRollback(ctx context.Context, querier releaseStateQue
 		`SELECT COUNT(*)
 		 FROM api_keys
 		 WHERE purpose <> ''
-		   AND status IN ('active', 'feed_active')`,
+		   AND status IN ('active', 'feed_active', 'feed_staged')`,
 	).Scan(&activePurposeKeys); err != nil {
 		return fmt.Errorf("read active purpose-scoped credential count: %w", err)
 	}

@@ -36,6 +36,12 @@ type guardrailController interface {
 	ValidatePolicy(guardrail.Policy) error
 }
 
+type completedFeedController interface {
+	Enabled() bool
+	SourceInstance() string
+	EncodeSequence(int64, int64) (string, error)
+}
+
 // Handler contains all admin API handlers.
 type Handler struct {
 	sensitiveFilter              *filter.DFAFilter
@@ -58,6 +64,7 @@ type Handler struct {
 	outbox                       *outbox.Service
 	providerCostReconciler       providerCostReconciler
 	guardrailController          guardrailController
+	completedFeedController      completedFeedController
 }
 
 func (h *Handler) SetLimitPolicyReloader(reloader interface{ Refresh(context.Context) error }) {
@@ -74,6 +81,10 @@ func (h *Handler) SetProviderCostReconciler(reconciler providerCostReconciler) {
 
 func (h *Handler) SetGuardrailController(controller guardrailController) {
 	h.guardrailController = controller
+}
+
+func (h *Handler) SetCompletedFeedController(controller completedFeedController) {
+	h.completedFeedController = controller
 }
 
 func (h *Handler) invalidateRoutingSnapshots() {

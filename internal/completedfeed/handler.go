@@ -27,9 +27,26 @@ func (service *Service) Handler() http.Handler {
 		}
 		orgID := middleware.GetOrgIDFromContext(r.Context())
 		projectID := middleware.GetProjectIDFromContext(r.Context())
+		keyID := middleware.GetKeyIDFromContext(r.Context())
+		apiKey := middleware.GetAPIKeyFromContext(r.Context())
+		connectionStatus := ConnectionStatusActive
 		if orgID <= 0 || projectID <= 0 {
 			service.writeError(w, http.StatusForbidden, "completed_execution_feed.project_scope_required", "Project-scoped feed authorization is required", false, "project_scope_required")
 			return
+		}
+		if service.access != nil {
+			var err error
+			connectionStatus, err = service.access.RecordAuthenticatedPull(r.Context(), orgID, projectID, keyID)
+			if err != nil {
+				w.Header().Set("Retry-After", "1")
+				service.writeError(w, http.StatusServiceUnavailable, "completed_execution_feed.connection_unavailable", "Completed-execution feed connection state is temporarily unavailable", true, "connection_unavailable")
+				return
+			}
+			if connectionStatus == ConnectionStatusActive &&
+				(apiKey == nil || apiKey.Status != middleware.APIKeyStatusFeedActive) {
+				service.writeError(w, http.StatusConflict, "completed_execution_feed.staged_credential_requires_pause", "Staged feed credentials cannot read while the connection is active", false, "staged_active_denied")
+				return
+			}
 		}
 		select {
 		case service.readSlots <- struct{}{}:
@@ -72,6 +89,11 @@ func (service *Service) Handler() http.Handler {
 				return
 			}
 		}
+		if bootstrap && connectionStatus == ConnectionStatusPaused {
+			w.Header().Set("Retry-After", "5")
+			service.writeError(w, http.StatusServiceUnavailable, "completed_execution_feed.connection_paused", "Completed-execution feed connection is paused", true, "connection_paused")
+			return
+		}
 
 		readCtx := r.Context()
 		if _, hasDeadline := readCtx.Deadline(); !hasDeadline {
@@ -91,6 +113,18 @@ func (service *Service) Handler() http.Handler {
 		}
 		if !bootstrap && after > window.HighWatermark {
 			service.writeError(w, http.StatusConflict, "completed_execution_feed.cursor_regressed", "Cursor is ahead of the source high watermark", false, "cursor_regressed")
+			return
+		}
+		if !bootstrap && service.access != nil {
+			if err := service.access.Acknowledge(readCtx, orgID, projectID, keyID, after); err != nil {
+				w.Header().Set("Retry-After", "1")
+				service.writeError(w, http.StatusServiceUnavailable, "completed_execution_feed.acknowledgement_unavailable", "Receiver acknowledgement could not be recorded", true, "acknowledgement_unavailable")
+				return
+			}
+		}
+		if connectionStatus == ConnectionStatusPaused {
+			w.Header().Set("Retry-After", "5")
+			service.writeError(w, http.StatusServiceUnavailable, "completed_execution_feed.connection_paused", "Completed-execution feed connection is paused", true, "connection_paused")
 			return
 		}
 

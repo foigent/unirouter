@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/models"
 )
 
 func TestHandlerBootstrapIsActivationForwardAtCurrentHighWatermark(t *testing.T) {
@@ -124,6 +125,97 @@ func TestHandlerRejectsCursorAheadOfSourceHighWatermark(t *testing.T) {
 	require.False(t, body.Error.Retryable)
 }
 
+func TestHandlerReturnsRetryablePauseForActiveAndStagedCredentials(t *testing.T) {
+	for _, status := range []string{
+		middleware.APIKeyStatusFeedActive,
+		middleware.APIKeyStatusFeedStaged,
+	} {
+		t.Run(status, func(t *testing.T) {
+			readCalled := false
+			service := newHandlerTestService(t, readerFunc(func(_ context.Context, _, _ int64, _ int64, _ int) (ReadWindow, error) {
+				readCalled = true
+				return ReadWindow{}, nil
+			}))
+			access := &handlerAccessRecorder{connectionStatus: ConnectionStatusPaused}
+			service.access = access
+			request := completedFeedHandlerCredentialRequest(t, status, "")
+			response := httptest.NewRecorder()
+
+			service.Handler().ServeHTTP(response, request)
+
+			require.Equal(t, http.StatusServiceUnavailable, response.Code, response.Body.String())
+			requireErrorCode(t, response, "completed_execution_feed.connection_paused")
+			var body ErrorResponse
+			require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
+			require.True(t, body.Error.Retryable)
+			require.Equal(t, "5", response.Header().Get("Retry-After"))
+			require.False(t, readCalled)
+			require.Equal(t, 1, access.pullCalls)
+			require.Zero(t, access.ackCalls)
+		})
+	}
+}
+
+func TestHandlerPausedRequestRecordsOnlyAValidReceiverCommitAcknowledgement(t *testing.T) {
+	service := newHandlerTestService(t, readerFunc(func(_ context.Context, _, _ int64, after int64, _ int) (ReadWindow, error) {
+		require.EqualValues(t, 9, after)
+		return ReadWindow{HighWatermark: 12, RetainedAfter: 3}, nil
+	}))
+	access := &handlerAccessRecorder{connectionStatus: ConnectionStatusPaused}
+	service.access = access
+	cursor, err := service.codec.Encode(22, 9)
+	require.NoError(t, err)
+	request := completedFeedHandlerCredentialRequest(t, middleware.APIKeyStatusFeedStaged, "?cursor="+cursor)
+	response := httptest.NewRecorder()
+
+	service.Handler().ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusServiceUnavailable, response.Code, response.Body.String())
+	requireErrorCode(t, response, "completed_execution_feed.connection_paused")
+	require.Equal(t, 1, access.ackCalls)
+	require.EqualValues(t, 9, access.acknowledgedSequence)
+}
+
+func TestHandlerNeverServesDataToStagedCredentialWhileConnectionActive(t *testing.T) {
+	readCalled := false
+	service := newHandlerTestService(t, readerFunc(func(_ context.Context, _, _ int64, _ int64, _ int) (ReadWindow, error) {
+		readCalled = true
+		return ReadWindow{}, nil
+	}))
+	access := &handlerAccessRecorder{connectionStatus: ConnectionStatusActive}
+	service.access = access
+	request := completedFeedHandlerCredentialRequest(t, middleware.APIKeyStatusFeedStaged, "")
+	response := httptest.NewRecorder()
+
+	service.Handler().ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusConflict, response.Code, response.Body.String())
+	requireErrorCode(t, response, "completed_execution_feed.staged_credential_requires_pause")
+	require.False(t, readCalled)
+	require.Equal(t, 1, access.pullCalls)
+	require.Zero(t, access.ackCalls)
+}
+
+func TestHandlerRecordsReceiverCommitAcknowledgementOnlyForValidActiveCursor(t *testing.T) {
+	service := newHandlerTestService(t, readerFunc(func(_ context.Context, _, _ int64, after int64, _ int) (ReadWindow, error) {
+		require.EqualValues(t, 9, after)
+		return ReadWindow{HighWatermark: 9, RetainedAfter: 3}, nil
+	}))
+	access := &handlerAccessRecorder{connectionStatus: ConnectionStatusActive}
+	service.access = access
+	cursor, err := service.codec.Encode(22, 9)
+	require.NoError(t, err)
+	request := completedFeedHandlerCredentialRequest(t, middleware.APIKeyStatusFeedActive, "?cursor="+cursor)
+	response := httptest.NewRecorder()
+
+	service.Handler().ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	require.Equal(t, 1, access.pullCalls)
+	require.Equal(t, 1, access.ackCalls)
+	require.EqualValues(t, 9, access.acknowledgedSequence)
+}
+
 func TestHandlerFailsClosedOnRetainedSnapshotIntegrityMismatch(t *testing.T) {
 	item := storedFeedItem(t, 5, "handler-integrity", time.Now().UTC())
 	item.SnapshotSHA256 = "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
@@ -175,6 +267,41 @@ func completedFeedHandlerRequest(t *testing.T, _ *Service, query string) *http.R
 	ctx := context.WithValue(request.Context(), middleware.CtxOrgID, int64(7))
 	ctx = context.WithValue(ctx, middleware.CtxProjectID, int64(22))
 	return request.WithContext(ctx)
+}
+
+func completedFeedHandlerCredentialRequest(t *testing.T, status, query string) *http.Request {
+	t.Helper()
+	request := completedFeedHandlerRequest(t, nil, query)
+	projectID := int64(22)
+	key := &models.ApiKey{
+		ID:        42,
+		OrgID:     7,
+		ProjectID: &projectID,
+		Status:    status,
+		Purpose:   middleware.APIKeyPurposeXInsightFeedRead,
+		KeyType:   "service",
+	}
+	ctx := context.WithValue(request.Context(), middleware.CtxAPIKey, key)
+	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(42))
+	return request.WithContext(ctx)
+}
+
+type handlerAccessRecorder struct {
+	connectionStatus     string
+	pullCalls            int
+	ackCalls             int
+	acknowledgedSequence int64
+}
+
+func (recorder *handlerAccessRecorder) RecordAuthenticatedPull(_ context.Context, _, _, _ int64) (string, error) {
+	recorder.pullCalls++
+	return recorder.connectionStatus, nil
+}
+
+func (recorder *handlerAccessRecorder) Acknowledge(_ context.Context, _, _, _, sequence int64) error {
+	recorder.ackCalls++
+	recorder.acknowledgedSequence = sequence
+	return nil
 }
 
 func storedFeedItem(t *testing.T, sequence int64, requestID string, terminalAt time.Time) StoredItem {

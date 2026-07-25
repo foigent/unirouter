@@ -53,16 +53,52 @@ explicitly. A valid cursor ahead of the current source high-watermark returns
 permanent `409 completed_execution_feed.cursor_regressed`; it is never treated
 as an idle empty page and never auto-resets or backfills.
 
-The endpoint accepts only an active, project-bound `service` API key with the
-dedicated purpose `xinsight.feed.read` and a non-empty matching network/IP
-allowlist. That purpose is denied on every model-gateway route.
+The endpoint accepts only a project-bound `service` API key with the dedicated
+purpose `xinsight.feed.read` and a non-empty matching network/IP allowlist.
+That purpose is denied on every model-gateway route.
 
-Internally, an enabled feed credential uses the reserved database status
-`feed_active`; the Admin API still renders it as `active`. Binaries predating
-purpose-aware authorization only accept database status `active`, so they
-continue to reject a feed credential even if an operator skips the supported
-rollback preflight. A database constraint also prevents a purpose-scoped key
-from being changed to ordinary `active`.
+Feed credentials have purpose-specific lifecycles: `feed_staged`,
+`feed_active`, and terminal `feed_revoked`. They are read-only in generic key
+management and can be changed only from the X-Insight connection control.
+Binaries predating purpose-aware authorization only accept database status
+`active`, so they continue to reject every feed lifecycle even if an operator
+skips the supported rollback preflight. A database constraint also prevents a
+purpose-scoped key from being changed to ordinary `active`.
+
+## Operator connection control
+
+The System and Integrations / X-Insight Data Exchange page has a product
+`实时连接` surface. Its project-scoped source truth includes global
+configured/enabled state, active/paused connection state, credential
+ID/prefix/lifecycle, last authenticated pull, source high-watermark, receiver
+acknowledged cursor, and pending count. Historical approval/artifact ledgers
+remain a separate manual flow.
+
+Pause does not disable credentials. A valid active or staged credential gets
+`503 completed_execution_feed.connection_paused`, `retryable=true`, and
+`Retry-After: 5`. X-Insight keeps its cursor and backs off. A staged credential
+is authentication-valid only far enough to get that paused response; if the
+connection is active it gets a permanent conflict and can never receive data.
+
+The receiver-acknowledged cursor is the cursor on X-Insight's next
+authenticated GET. It proves only that the prior page converged into the
+receiver EvidenceStore and its durable page cursor committed. It is not a
+claim of search, API, or UI visibility and is never an independent source
+completeness assertion.
+
+Rotation is two phase and requires a paused connection:
+
+1. observe the old key receiving the paused 503;
+2. prepare one staged replacement while the old key stays active;
+3. atomically replace the X systemd credential and run `systemctl restart`
+   (there is no reload contract);
+4. require the staged key to receive the same paused 503;
+5. atomically promote staged to active and terminally revoke the old key;
+6. resume the connection explicitly.
+
+Cancellation terminally revokes only the staged replacement. Revoke
+terminally revokes the selected feed credential and pauses the connection.
+Neither operation changes other keys, users, grants, or wallets.
 
 ## Publication and retention ordering
 
@@ -84,8 +120,8 @@ Rolling the V1 application binary back to a version without purpose semantics
 is intentionally supported only after:
 
 1. stop the X-Insight poller;
-2. disable the exact `xinsight.feed.read` key through the current UniRouter
-   control plane;
+2. revoke the exact `xinsight.feed.read` key through the current X-Insight
+   connection control;
 3. run `./uniroute upgrade preflight-legacy-rollback` from the current binary;
 4. start the older binary only after the preflight reports zero active
    purpose-scoped credentials.

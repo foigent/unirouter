@@ -26,7 +26,8 @@ func TestLegacyRollbackPreflightRequiresPurposeCredentialDisablement(t *testing.
 		t.Run(test.name, func(t *testing.T) {
 			database := &testutil.MockDB{QueryRowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
 				if !strings.Contains(sql, "purpose <> ''") ||
-					!strings.Contains(sql, "'feed_active'") {
+					!strings.Contains(sql, "'feed_active'") ||
+					!strings.Contains(sql, "'feed_staged'") {
 					t.Fatalf("rollback preflight did not query the purpose-active compatibility boundary: %s", sql)
 				}
 				return &testutil.MockRow{ScanFn: func(dest ...any) error {

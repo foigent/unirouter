@@ -494,8 +494,8 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": purposeErr})
 		return
 	}
-	if purpose != "" && !auth.IsOrgAdmin(actorRole(r.Context())) && !isUnauthenticatedUnitContext(r.Context()) {
-		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Only organization administrators can assign a service-key purpose"})
+	if purpose != "" {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Purpose-specific feed credentials must be created from X-Insight Data Exchange control"})
 		return
 	}
 	if policyLabels != "" && !auth.IsOrgAdmin(actorRole(r.Context())) && !isUnauthenticatedUnitContext(r.Context()) {
@@ -757,28 +757,8 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if currentPurpose == middleware.APIKeyPurposeXInsightFeedRead {
-		if req.ProjectID != nil || req.OwnerUserID != nil || req.KeyType != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "feed service-key project, owner, and key type are immutable"})
-			return
-		}
-		effectiveIPs := currentAllowedIPs
-		if req.AllowedIPs != nil {
-			effectiveIPs = *req.AllowedIPs
-		}
-		effectiveModels := currentAllowedModels
-		if req.AllowedModels != nil {
-			effectiveModels = *req.AllowedModels
-		}
-		if validationErr := validateCompletedFeedKeyShape(
-			currentPurpose,
-			currentKeyType,
-			currentProjectID,
-			effectiveIPs,
-			effectiveModels,
-		); validationErr != "" {
-			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": validationErr})
-			return
-		}
+		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Feed credentials are managed only from X-Insight Data Exchange control"})
+		return
 	}
 
 	var sets []string
@@ -1074,17 +1054,21 @@ func (h *Handler) DisableAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var eventOrgID, eventProjectID, eventOwnerUserID int64
-	var eventName, eventKeyPrefix, currentStatus string
+	var eventName, eventKeyPrefix, currentStatus, currentPurpose string
 	if err := h.db.QueryRow(r.Context(),
-		`SELECT org_id, COALESCE(project_id, 0), COALESCE(owner_user_id, 0), name, key_prefix, status
+		`SELECT org_id, COALESCE(project_id, 0), COALESCE(owner_user_id, 0), name, key_prefix, status, COALESCE(purpose, '')
 		 FROM api_keys WHERE id = $1`,
 		id,
-	).Scan(&eventOrgID, &eventProjectID, &eventOwnerUserID, &eventName, &eventKeyPrefix, &currentStatus); err != nil {
+	).Scan(&eventOrgID, &eventProjectID, &eventOwnerUserID, &eventName, &eventKeyPrefix, &currentStatus, &currentPurpose); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Key not found"})
 		} else {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to read key"})
 		}
+		return
+	}
+	if currentPurpose == middleware.APIKeyPurposeXInsightFeedRead {
+		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Feed credentials are managed only from X-Insight Data Exchange control"})
 		return
 	}
 
@@ -1280,8 +1264,8 @@ func normalizeAPIKeyPurpose(raw string) (string, string) {
 }
 
 func apiKeyDisplayStatus(status, purpose string) string {
-	if purpose == middleware.APIKeyPurposeXInsightFeedRead && status == middleware.APIKeyStatusFeedActive {
-		return "active"
+	if purpose == middleware.APIKeyPurposeXInsightFeedRead {
+		return xInsightFeedLifecycle(status)
 	}
 	return status
 }

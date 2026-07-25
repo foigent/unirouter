@@ -1110,9 +1110,10 @@ binary 早于 `xinsight.feed.read` 语义，必须按以下顺序操作：
 
 # 1. 先停止 X-Insight poller，确认它不再发起 feed 请求。
 
-# 2. 仍使用当前 purpose-aware binary 禁用精确 feed key。
+# 2. 仍使用当前 purpose-aware binary 通过专用 X-Insight 控制面撤销精确 feed key。
+: "${UNIROUTER_FEED_PROJECT_ID:?Set the exact feed project ID}"
 curl -fsS -X POST \
-  "http://localhost:8080/api/v1/keys/${UNIROUTER_FEED_KEY_ID}/disable" \
+  "http://localhost:8080/api/v1/data-exchange/xinsight/connections/${UNIROUTER_FEED_PROJECT_ID}/credentials/${UNIROUTER_FEED_KEY_ID}/revoke" \
   -H "Authorization: Bearer ${UNIROUTER_ADMIN_JWT}"
 
 # 3. 在任何旧 binary 启动前，从当前 backend 执行兼容性预检。
@@ -1126,7 +1127,8 @@ docker compose -f deploy/customer/docker-compose.yml --env-file deploy/customer/
 
 预检失败、数据库不可读或输出不为 PASS 时不得启动旧 binary。启用中的 feed
 key 在数据库内使用 `feed_active`，而旧版网关只放行 `active`；`000043` 约束
-同时禁止把 purpose key 改成普通 `active`。因此即使操作顺序被遗漏，旧 binary
+同时禁止把 purpose key 改成普通 `active`。`feed_revoked` 是不可逆终态，通用
+Keys API 不允许重新启用。因此即使操作顺序被遗漏，旧 binary
 也不能把 feed-only 凭据扩权成模型调用凭据。明确禁用 feed key 后支持 binary
 回退；重新启用只能在 purpose-aware binary 恢复后进行。
 

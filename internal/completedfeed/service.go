@@ -28,6 +28,7 @@ type Service struct {
 	enabled        bool
 	now            func() time.Time
 	readSlots      chan struct{}
+	access         accessRecorder
 }
 
 func NewService(database db.DBQuerier, cursorSecret, sourceInstance string, enabled bool) (*Service, error) {
@@ -38,6 +39,7 @@ func NewService(database db.DBQuerier, cursorSecret, sourceInstance string, enab
 		enabled:        enabled,
 		now:            time.Now,
 		readSlots:      make(chan struct{}, maxConcurrentFeedRead),
+		access:         postgresAccessRecorder{db: database},
 	}
 	if !enabled {
 		return service, nil

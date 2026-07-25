@@ -205,7 +205,7 @@ describe('navigation role boundaries', () => {
     expect(canDisableProjectKey('project_admin')).toBe(true);
   });
 
-  it('keeps role-authorized partial-license entries visible and locked without exposing new role routes', () => {
+  it('keeps the X-Insight safety route reachable while locking unrelated licensed routes', () => {
     const partial = licenseAccess('active', true, ['gateway', 'notifications']);
     const platformItems = getNavItemsForRole('platform_admin', partial);
     const platformChildren = platformItems.flatMap(item => item.items || []);
@@ -218,14 +218,16 @@ describe('navigation role boundaries', () => {
       disabled: true,
     });
     expect(platformChildren.find(item => item.itemKey === '/data-exchange')).toMatchObject({
-      licenseLocked: true,
-      disabled: true,
+      text: 'X-Insight 数据交换控制',
     });
+    expect(platformChildren.find(item => item.itemKey === '/data-exchange')?.licenseLocked).toBeUndefined();
+    expect(platformChildren.find(item => item.itemKey === '/data-exchange')?.disabled).toBeUndefined();
 
     expect(routeKeys('billing_admin')).not.toContain('/data-exchange');
     expect(getNavItemsForRole('billing_admin', partial).flatMap(item => item.items || []).some(item => item.itemKey === '/data-exchange')).toBe(false);
     expect(isRouteLicensed('/guardrail-policies', partial)).toBe(false);
     expect(isRouteLicensed('/notifications?project_id=7', partial)).toBe(true);
+    expect(isRouteLicensed('/data-exchange', partial)).toBe(true);
   });
 
   it('treats wildcard projection as all concrete capabilities and fail-closes missing or expired projections', () => {

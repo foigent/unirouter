@@ -44,6 +44,40 @@ func TestCompletedExecutionFeedAuthAcceptsOnlyExactFeedServiceKey(t *testing.T) 
 	}
 }
 
+func TestCompletedExecutionFeedAuthAdmitsStagedCredentialToPausedGate(t *testing.T) {
+	db := completedFeedAuthMockDB(t, completedFeedAuthFixture{
+		projectID:    22,
+		keyType:      "service",
+		purpose:      APIKeyPurposeXInsightFeedRead,
+		allowedIPs:   "127.0.0.1",
+		orgStatus:    "active",
+		keyStatus:    APIKeyStatusFeedStaged,
+		allowedModel: "",
+	})
+	called := false
+	handler := CompletedExecutionFeedAuth(
+		db,
+		"feed-auth-secret",
+		mustClientIPResolver(t),
+	)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		if key := GetAPIKeyFromContext(r.Context()); key == nil || key.Status != APIKeyStatusFeedStaged {
+			t.Fatal("staged feed credential status was not preserved for the connection-state gate")
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/integrations/xinsight/completed-executions", nil)
+	request.Header.Set("Authorization", "Bearer ur-feed-staged")
+	request.RemoteAddr = "127.0.0.1:54321"
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if !called || response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("staged credential must reach only the downstream pause gate: called=%t status=%d", called, response.Code)
+	}
+}
+
 func TestCompletedExecutionFeedAuthRejectsPurposeOrScopeSubstitutes(t *testing.T) {
 	tests := []struct {
 		name    string

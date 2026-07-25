@@ -2,13 +2,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Descriptions, Form, Popconfirm, Select, SideSheet, Table, Tabs, Tag, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconDelete, IconEyeOpened, IconPlus, IconRefresh, IconSendStroked, IconUpload } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
+import { hasLicensedFeature, licenseRestrictionMessage } from '../navigation';
+import { useAuthStore } from '../store/auth';
 import { formatDateTime } from '../utils/formatDate';
 import { PageHeader, StatusTag, Surface } from '../ui';
+import XInsightLiveConnection from './XInsightLiveConnection';
 
 const { Text } = Typography;
 const { TabPane } = Tabs;
 
-type TabKey = 'approvals' | 'ledger';
+type TabKey = 'live' | 'approvals' | 'ledger';
 
 interface ExchangeItem {
   id: number;
@@ -101,7 +104,12 @@ export function receiptPayload(raw: string) {
 }
 
 export default function DataExchangePage() {
-  const [activeTab, setActiveTab] = useState<TabKey>('approvals');
+  const licenseAccess = useAuthStore((state) => state.user?.license_access);
+  const dataExchangeLicensed = hasLicensedFeature(licenseAccess, 'data_exchange');
+  const dataExchangeRestriction = licenseAccess && !dataExchangeLicensed
+    ? licenseRestrictionMessage(licenseAccess, 'data_exchange')
+    : '';
+  const [activeTab, setActiveTab] = useState<TabKey>('live');
   const [items, setItems] = useState<ExchangeItem[]>([]);
   const [itemStatus, setItemStatus] = useState('');
   const [itemsLoading, setItemsLoading] = useState(false);
@@ -140,8 +148,12 @@ export default function DataExchangePage() {
     }
   }, []);
 
-  useEffect(() => { loadItems(); }, [loadItems]);
-  useEffect(() => { loadExchanges(); }, [loadExchanges]);
+  useEffect(() => {
+    if (activeTab === 'approvals') loadItems();
+  }, [activeTab, loadItems]);
+  useEffect(() => {
+    if (activeTab === 'ledger') loadExchanges();
+  }, [activeTab, loadExchanges]);
 
   const approvedItemIDs = useMemo(() => items.filter(item => item.approval_status === 'approved' && item.request_id).map(item => item.id), [items]);
 
@@ -302,21 +314,53 @@ export default function DataExchangePage() {
       <PageHeader
         eyebrow="系统与集成"
         title="X-Insight 数据交换控制"
-        description="管理出站审批、制品元数据账本、人工交付记录与 X-Insight 回执；本页面不生成文件，也不执行网络传输。"
-        actions={<Button icon={<IconRefresh />} onClick={() => { loadItems(); loadExchanges(); }}>刷新</Button>}
+        description="实时连接是 UniRouter → X-Insight 的产品化 metadata feed；旧审批与制品账本保留为独立的历史人工流程。"
+        actions={(
+          <Button
+            icon={<IconRefresh />}
+            disabled={!dataExchangeLicensed}
+            onClick={() => { loadItems(); loadExchanges(); }}
+          >
+            刷新历史账本
+          </Button>
+        )}
       />
 
       <Surface>
         <div className="ur-chip-row" style={{ marginBottom: 12 }}>
-          <Tag color="orange">不生成或传输文件</Tag>
+          <Tag color="blue">实时连接：私有 pull feed</Tag>
           <Tag color="green">metadata only</Tag>
           <Tag>无原始 prompt/response</Tag>
-          <Tag>无凭证</Tag>
+          <Tag>feed-only service credential</Tag>
           <Tag>无原始 IP</Tag>
           <Tag>无原始上游错误</Tag>
         </div>
-        <Tabs activeKey={activeTab} onChange={key => setActiveTab(key as TabKey)}>
-          <TabPane tab="审批队列" itemKey="approvals">
+        {!dataExchangeLicensed && (
+          <div style={{ padding: 12, marginBottom: 12, border: '1px solid var(--semi-color-warning-light-default)', borderRadius: 8 }}>
+            <Tag color="orange">Data Exchange 授权当前不可用</Tag>
+            <Text type="tertiary">
+              {dataExchangeRestriction} 实时连接的状态、暂停、取消与不可逆撤销仍可使用；扩张动作和历史人工流程已锁定。
+            </Text>
+          </div>
+        )}
+        <Tabs
+          activeKey={activeTab}
+          onChange={key => {
+            const next = key as TabKey;
+            if (dataExchangeLicensed || next === 'live') setActiveTab(next);
+          }}
+        >
+          <TabPane tab="实时连接" itemKey="live">
+            <XInsightLiveConnection
+              expansionAllowed={dataExchangeLicensed}
+              expansionRestriction={dataExchangeRestriction}
+            />
+          </TabPane>
+          <TabPane
+            tab={dataExchangeLicensed ? '历史人工审批' : '历史人工审批（授权锁定）'}
+            itemKey="approvals"
+            disabled={!dataExchangeLicensed}
+          >
             <div className="ur-toolbar">
               <Select
                 value={itemStatus || undefined}
@@ -337,7 +381,11 @@ export default function DataExchangePage() {
               <Table columns={itemColumns} dataSource={items} rowKey="id" loading={itemsLoading} pagination={false} scroll={{ x: 1320 }} />
             </div>
           </TabPane>
-          <TabPane tab="交换账本" itemKey="ledger">
+          <TabPane
+            tab={dataExchangeLicensed ? '历史交换账本' : '历史交换账本（授权锁定）'}
+            itemKey="ledger"
+            disabled={!dataExchangeLicensed}
+          >
             <div className="ur-table-shell">
               <Table columns={exchangeColumns} dataSource={exchanges} rowKey="id" loading={exchangesLoading} pagination={false} scroll={{ x: 1320 }} />
             </div>

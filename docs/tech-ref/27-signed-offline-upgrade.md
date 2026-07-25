@@ -191,20 +191,20 @@ signed release history exists. Evidence-bearing or incompatible migrations are
 roll-forward recovery, not an automatic image rollback claim.
 
 Before starting a UniRouter binary that predates purpose-scoped API keys, stop
-the completed-execution feed consumer, disable the exact feed credential
-through the current control plane, then run:
+the completed-execution feed consumer, terminally revoke the exact feed
+credential through the dedicated X-Insight connection control, then run:
 
 ```bash
 ./uniroute upgrade preflight-legacy-rollback
 ```
 
 The preflight refuses while any nonempty-purpose credential remains active.
-Migration `000043` also stores active feed credentials as `feed_active`, which
-older binaries reject as inactive, and prevents converting them to ordinary
-`active`; this is the fail-closed compatibility invariant if operational
-ordering is missed. Binary rollback after explicit feed-key disablement is
-supported. Schema rollback remains stricter and refuses while a purpose key or
-retained feed state exists.
+Migrations `000043` and `000044` store serving and staged feed credentials as
+`feed_active` and `feed_staged`, which older binaries reject as inactive, and
+prevent converting them to ordinary `active`; this is the fail-closed
+compatibility invariant if operational ordering is missed. Binary rollback
+after explicit feed-key revocation is supported. Schema rollback remains
+stricter and refuses while a purpose key or retained feed state exists.
 
 V1 uses TUF-inspired signed target metadata, hash/size checks and rollback/
 freeze resistance, plus an optional SLSA provenance digest. It does not claim

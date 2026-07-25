@@ -53,6 +53,7 @@ function renderApp(
           <Route path="settings" element={<div>Account Settings</div>} />
           <Route path="license" element={<div>License Page</div>} />
           <Route path="guardrail-policies" element={<div>Restricted Child Page</div>} />
+          <Route path="data-exchange" element={<div>Data Exchange Safety Surface</div>} />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -193,5 +194,15 @@ describe('App shell', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '查看或更新商业授权' }));
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/license'));
+  });
+
+  it('keeps the X-Insight safety surface mounted when Data Exchange entitlement is unavailable', () => {
+    renderApp('platform_admin', {
+      initialEntry: '/data-exchange',
+      licenseAccess: { ...PARTIAL_LICENSE, status: 'expired', enforceable: false },
+    });
+
+    expect(screen.getByText('Data Exchange Safety Surface')).toBeTruthy();
+    expect(screen.queryByText('X-Insight 数据交换控制暂不可用')).toBeNull();
   });
 });

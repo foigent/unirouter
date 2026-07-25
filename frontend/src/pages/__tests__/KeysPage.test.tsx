@@ -126,4 +126,37 @@ describe('KeysPage', () => {
     expect(screen.queryByText('service-key')).toBeNull();
     expect(screen.getByRole('button', { name: '重新加载访问凭证' })).toBeTruthy();
   });
+
+  it('keeps purpose-specific feed credentials read-only in generic key management', async () => {
+    mockGetKeys.mockResolvedValueOnce({
+      data: [{
+        id: 41,
+        org_id: 1,
+        org_name: '总部',
+        project_id: 11,
+        project_name: '核心项目',
+        key_type: 'service',
+        name: 'X-Insight feed',
+        key_prefix: 'ur-feed',
+        allowed_ips: '10.0.0.8/32',
+        allowed_models: '',
+        status: 'revoked',
+        purpose: 'xinsight.feed.read',
+        rpm_limit: 60,
+        rps_limit: 1,
+        created_at: '2026-07-25T10:00:00Z',
+      }],
+      total: 1,
+    });
+
+    render(<KeysPage />);
+
+    expect(await screen.findByText('X-Insight feed')).toBeTruthy();
+    expect(screen.getByText('由实时连接控制')).toBeTruthy();
+    expect(screen.getByText('无模型权限')).toBeTruthy();
+    expect(screen.getByText('请前往 X-Insight 数据交换控制')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '编辑访问凭证 X-Insight feed' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '启用访问凭证 X-Insight feed' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '停用访问凭证 X-Insight feed' })).toBeNull();
+  });
 });

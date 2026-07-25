@@ -94,8 +94,7 @@ type streamAdvisoryGapWriter struct {
 	finishOnce     sync.Once
 	closeInputOnce sync.Once
 
-	pendingPolicies atomic.Int64
-	failedPolicies  atomic.Int64
+	unpersistedPolicies atomic.Int64
 }
 
 func newStreamAdvisoryGapWriter(options streamAdvisoryGapWriterOptions) *streamAdvisoryGapWriter {
@@ -157,23 +156,19 @@ func (writer *streamAdvisoryGapWriter) Enqueue(ctx context.Context, job streamAd
 	writer.mu.Lock()
 	if writer.closed {
 		writer.mu.Unlock()
-		writer.failedPolicies.Add(policyCount)
+		writer.unpersistedPolicies.Add(policyCount)
 		return nil, fmt.Errorf("stream advisory gap writer is closed")
 	}
 	writer.activeEnqueues.Add(1)
 	writer.mu.Unlock()
 	defer writer.activeEnqueues.Done()
 
-	writer.pendingPolicies.Add(policyCount)
+	writer.unpersistedPolicies.Add(policyCount)
 	select {
 	case writer.input <- event:
 	case <-ctx.Done():
-		writer.pendingPolicies.Add(-policyCount)
-		writer.failedPolicies.Add(policyCount)
 		return nil, ctx.Err()
 	case <-writer.runCtx.Done():
-		writer.pendingPolicies.Add(-policyCount)
-		writer.failedPolicies.Add(policyCount)
 		return nil, writer.runCtx.Err()
 	}
 	return event.ack, nil
@@ -264,7 +259,7 @@ func (writer *streamAdvisoryGapWriter) run() {
 				ackStreamAdvisoryGapEvents(batch.events, err)
 				return
 			}
-			writer.pendingPolicies.Add(-streamAdvisoryGapBatchDroppedCount(batch))
+			writer.unpersistedPolicies.Add(-streamAdvisoryGapBatchDroppedCount(batch))
 			ackStreamAdvisoryGapEvents(batch.events, nil)
 		}
 	}
@@ -498,7 +493,7 @@ func (err *streamAdvisoryGapPersistenceError) Error() string {
 }
 
 func (writer *streamAdvisoryGapWriter) persistenceError(cause error) error {
-	unpersisted := writer.pendingPolicies.Load() + writer.failedPolicies.Load()
+	unpersisted := writer.unpersistedPolicies.Load()
 	if unpersisted <= 0 {
 		return cause
 	}

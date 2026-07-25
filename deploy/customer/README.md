@@ -90,7 +90,8 @@ host port in this template.
 
 An application-binary rollback to a release that predates purpose-scoped API
 keys must not start until X-Insight polling is stopped, the exact
-`xinsight.feed.read` key is disabled through the current control plane, and the
+`xinsight.feed.read` key is terminally revoked through the dedicated
+X-Insight connection control, and the
 current backend reports:
 
 ```bash
@@ -99,10 +100,11 @@ compose=(docker compose --env-file ./.env -f ./docker-compose.yml)
 ```
 
 `rollback_preflight=pass` and `active_purpose_keys=0` are required before the
-image switch. Enabled feed keys use an internal `feed_active` status that old
-binaries reject, so omission remains fail-closed; the preflight is still the
-supported operational order. Binary rollback is supported after key
-disablement. Migration `000043` schema down additionally requires removal of
+image switch. Serving and staged feed keys use internal `feed_active` and
+`feed_staged` statuses that old binaries reject, so omission remains
+fail-closed; the preflight is still the supported operational order. Binary
+rollback is supported after key revocation. Migration `000043` schema down
+additionally requires removal of
 purpose credentials and retained feed state and is not part of a routine
 binary rollback.
 
