@@ -703,7 +703,7 @@ WITH selected(request_id, ord) AS (
     (
       lower(concat_ws('|', te.request_id, te.key_type, te.event_type, te.stage,
         te.severity, te.model, te.requested_model, te.provider, te.channel,
-        te.metadata::text, te.trace_id, te.span_id, te.parent_span_id,
+        te.trace_id, te.span_id, te.parent_span_id,
         te.schema_version, te.source_component, te.capture_mode, te.capture_gap,
         te.evidence_ref, te.upstream_request_id, te.decision_kind,
         te.decision_result, te.decision_reason, te.actor_type, te.actor_ref,
@@ -1560,20 +1560,23 @@ func sanitizedMetadata(metadataText string) (map[string]interface{}, error) {
 }
 
 var (
-	strictSourceInstancePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$`)
-	strictOpaquePattern         = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]*$`)
-	strictCodePattern           = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:=,+-]*$`)
-	strictCodeListPattern       = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:=,+-]*$`)
-	strictEventHashPattern      = regexp.MustCompile(`^[a-f0-9]{64}$`)
-	strictManifestHashPattern   = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
-	strictExchangeIDPattern     = regexp.MustCompile(`^uxchg_[a-f0-9]{32}$`)
-	strictIntegerPattern        = regexp.MustCompile(`^(0|[1-9][0-9]*)$`)
-	strictDecimalPattern        = regexp.MustCompile(`^(0|[1-9][0-9]*)(\.[0-9]+)?$`)
-	strictUnitConfidencePattern = regexp.MustCompile(`^(0\.[0-9]{3}|1\.000)$`)
-	strictIPv4Pattern           = regexp.MustCompile(`(?:^|[^0-9])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?:$|[^0-9])`)
-	strictEmbeddedPhonePattern  = regexp.MustCompile(`(?:^|[^0-9])1[3-9][0-9]{9}(?:$|[^0-9])`)
-	strictGenericPhonePattern   = regexp.MustCompile(`(?:^|[^A-Za-z0-9])(?:\+[0-9]{1,3}[ .-]?)?(?:\([0-9]{2,4}\)[ .-]?|[0-9]{2,4}[ .-])[0-9]{3,4}[ .-][0-9]{4}(?:$|[^A-Za-z0-9])`)
-	strictCredentialPattern     = regexp.MustCompile(`(?i)(?:\bbearer\s+|\bbasic\s+|\b(?:api[_-]?key|authorization|password|secret|access[_-]?token|refresh[_-]?token)\s*[:=]|-----BEGIN [A-Z ]+PRIVATE KEY-----|\bsk-[A-Za-z0-9_-]{12,})`)
+	strictSourceInstancePattern  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$`)
+	strictOpaquePattern          = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]*$`)
+	strictCodePattern            = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:=,+-]*$`)
+	strictCodeListPattern        = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:=,+-]*$`)
+	strictEventHashPattern       = regexp.MustCompile(`^[a-f0-9]{64}$`)
+	strictManifestHashPattern    = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
+	strictExchangeIDPattern      = regexp.MustCompile(`^uxchg_[a-f0-9]{32}$`)
+	strictIntegerPattern         = regexp.MustCompile(`^(0|[1-9][0-9]*)$`)
+	strictDecimalPattern         = regexp.MustCompile(`^(0|[1-9][0-9]*)(\.[0-9]+)?$`)
+	strictUnitConfidencePattern  = regexp.MustCompile(`^(0\.[0-9]{3}|1\.000)$`)
+	strictIPv4Pattern            = regexp.MustCompile(`(?:^|[^0-9])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?:$|[^0-9])`)
+	strictEmbeddedPhonePattern   = regexp.MustCompile(`(?:^|[^0-9])1[3-9][0-9]{9}(?:$|[^0-9])`)
+	strictGenericPhonePattern    = regexp.MustCompile(`(?:^|[^A-Za-z0-9])(?:\+[0-9]{1,3}[ .-]?)?(?:\([0-9]{2,4}\)[ .-]?|[0-9]{2,4}[ .-])[0-9]{3,4}[ .-][0-9]{4}(?:$|[^A-Za-z0-9])`)
+	strictEmailPattern           = regexp.MustCompile(`(?i)[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}`)
+	strictCredentialPattern      = regexp.MustCompile(`(?i)(?:\bbearer\s+|\bbasic\s+|\b(?:api[_-]?key|authorization|password|secret|access[_-]?token|refresh[_-]?token)\s*[:=]|-----BEGIN [A-Z ]+PRIVATE KEY-----|\bsk-[A-Za-z0-9_-]{12,})`)
+	strictDetectorVersionPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$`)
+	strictDottedVersionPattern   = regexp.MustCompile(`(?i)(?:^|[._:-])v[0-9]+(?:[._-][0-9]+){0,3}$`)
 )
 
 func validateStrictPayloadContract(table string, payloadRef sql.NullString, mode string) (*string, string, error) {
@@ -1735,6 +1738,8 @@ type strictMetadataKind int
 const (
 	metadataCode strictMetadataKind = iota
 	metadataCodeList
+	metadataGuardrailDetectorVersion
+	metadataLimitPolicyChain
 	metadataBool
 	metadataFalseBool
 	metadataInteger
@@ -1765,10 +1770,12 @@ func buildStrictMetadataRules() map[string]strictMetadataRule {
 		"routing_policy_version", "routing_snapshot_version", "routing_snapshot_source", "routing_selection_reason",
 		"retry_decision", "stream_policy_version", "usage_source", "limit_policy_set_version", "limit_policy_result",
 		"limit_policy_reason", "guardrail_policy_set_version", "guardrail_policy_ref", "guardrail_policy_version",
-		"guardrail_detector_ref", "guardrail_detector_version", "guardrail_mode", "guardrail_action",
+		"guardrail_detector_ref", "guardrail_mode", "guardrail_action",
 		"guardrail_outcome", "guardrail_failure_mode", "guardrail_decision",
 	)
-	add(metadataCodeList, "routing_exclusion_reasons", "limit_policy_chain", "guardrail_categories", "guardrail_finding_fingerprints")
+	add(metadataCodeList, "routing_exclusion_reasons", "guardrail_categories", "guardrail_finding_fingerprints")
+	add(metadataGuardrailDetectorVersion, "guardrail_detector_version")
+	add(metadataLimitPolicyChain, "limit_policy_chain")
 	add(metadataBool,
 		"cache_usage_authoritative", "cache_hit", "is_stream", "routing_snapshot_degraded", "routing_requires_probe",
 		"retryable", "settle_cancelled", "stream", "guardrail_mandatory", "guardrail_transformed", "guardrail_degraded",
@@ -1798,37 +1805,98 @@ func buildStrictMetadataRules() map[string]strictMetadataRule {
 
 var strictMetadataRules = buildStrictMetadataRules()
 
+func strictMetadataFamily(rule strictMetadataRule) string {
+	switch rule.kind {
+	case metadataCode:
+		return "code"
+	case metadataCodeList:
+		return "code_list"
+	case metadataGuardrailDetectorVersion:
+		return "guardrail_detector_version"
+	case metadataLimitPolicyChain:
+		return "limit_policy_chain"
+	case metadataBool:
+		return "bool"
+	case metadataFalseBool:
+		return "false_bool"
+	case metadataInteger:
+		return "integer"
+	case metadataDecimal:
+		return "decimal"
+	case metadataConfidence:
+		return "confidence"
+	case metadataPercent:
+		return "percent"
+	case metadataCurrency:
+		return "currency"
+	case metadataMoneySchema:
+		return "money_schema"
+	case metadataAmountScale:
+		return "amount_scale"
+	case metadataPayloadMode:
+		return "payload_mode"
+	case metadataPayloadReason:
+		return "payload_reason"
+	default:
+		return "unknown"
+	}
+}
+
+func strictMetadataDiagnostic(field, family, class string, count int) error {
+	if _, ok := strictMetadataRules[field]; !ok {
+		field = "unknown"
+	}
+	if family == "" {
+		family = "unknown"
+	}
+	if count < 1 {
+		count = 1
+	}
+	return fmt.Errorf(
+		"strict_value_policy: request_trace_events.metadata field=%s family=%s class=%s count=%d",
+		field, family, class, count,
+	)
+}
+
+func strictMetadataDocumentDiagnostic(class string) error {
+	return fmt.Errorf(
+		"strict_value_policy: request_trace_events.metadata field=metadata family=document class=%s count=1",
+		class,
+	)
+}
+
 func strictMetadata(metadataText string) (map[string]interface{}, error) {
 	if metadataText == "" {
 		return map[string]interface{}{}, nil
 	}
 	if strings.TrimSpace(metadataText) != metadataText {
-		return nil, errors.New("strict_value_policy: request_trace_events.metadata class=noncanonical_json")
+		return nil, strictMetadataDocumentDiagnostic("noncanonical_json")
 	}
 	if err := rejectDuplicateJSONKeys([]byte(metadataText)); errors.Is(err, errDuplicateJSONKey) {
-		return nil, errors.New("strict_value_policy: request_trace_events.metadata class=duplicate_key")
+		return nil, strictMetadataDocumentDiagnostic("duplicate_key")
 	}
 	decoder := json.NewDecoder(strings.NewReader(metadataText))
 	decoder.UseNumber()
 	var raw map[string]interface{}
 	if err := decoder.Decode(&raw); err != nil || raw == nil {
-		return nil, errors.New("strict_value_policy: request_trace_events.metadata class=invalid_object")
+		return nil, strictMetadataDocumentDiagnostic("invalid_object")
 	}
 	var trailing interface{}
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		return nil, errors.New("strict_value_policy: request_trace_events.metadata class=trailing_data")
+		return nil, strictMetadataDocumentDiagnostic("trailing_data")
 	}
-	for key, value := range raw {
+	for _, key := range sortedKeys(raw) {
+		value := raw[key]
 		rule, ok := strictMetadataRules[key]
 		if !ok {
-			return nil, errors.New("strict_value_policy: request_trace_events.metadata class=unknown_key")
+			return nil, strictMetadataDiagnostic("unknown", "unknown_key", "unknown_key", 1)
 		}
 		if err := validateStrictMetadataValue(rule, value); err != nil {
-			return nil, errors.New("strict_value_policy: request_trace_events.metadata class=invalid_value")
+			return nil, strictMetadataDiagnostic(key, strictMetadataFamily(rule), err.Error(), 1)
 		}
 	}
 	if err := requireStrictMetadataSanitizerEquality(raw, traceutil.SanitizeMetadata); err != nil {
-		return nil, err
+		return nil, strictMetadataDocumentDiagnostic("sanitizer_mismatch")
 	}
 	return raw, nil
 }
@@ -1868,13 +1936,37 @@ func validateStrictMetadataValue(rule strictMetadataRule, value interface{}) err
 		if !ok {
 			return errors.New("type")
 		}
-		return validateStrictCodeValue(text, 256, false)
+		if class := strictCodeValueClass(text, 256, false); class != "" {
+			return errors.New(class)
+		}
+		return nil
 	case metadataCodeList:
 		text, ok := value.(string)
 		if !ok {
 			return errors.New("type")
 		}
-		return validateStrictCodeListValue(text, 256)
+		if class := strictCodeListValueClass(text, 256); class != "" {
+			return errors.New(class)
+		}
+		return nil
+	case metadataGuardrailDetectorVersion:
+		text, ok := value.(string)
+		if !ok {
+			return errors.New("type")
+		}
+		if class := strictGuardrailDetectorVersionClass(text); class != "" {
+			return errors.New(class)
+		}
+		return nil
+	case metadataLimitPolicyChain:
+		text, ok := value.(string)
+		if !ok {
+			return errors.New("type")
+		}
+		if class := strictLimitPolicyChainClass(text); class != "" {
+			return errors.New(class)
+		}
+		return nil
 	case metadataBool:
 		_, ok := value.(bool)
 		if !ok {
@@ -1884,7 +1976,7 @@ func validateStrictMetadataValue(rule strictMetadataRule, value interface{}) err
 	case metadataFalseBool:
 		boolean, ok := value.(bool)
 		if !ok || boolean {
-			return errors.New("blocked")
+			return errors.New("required_false")
 		}
 		return nil
 	case metadataInteger, metadataAmountScale:
@@ -1947,8 +2039,123 @@ func validateStrictMetadataValue(rule strictMetadataRule, value interface{}) err
 		}
 		return nil
 	default:
-		return errors.New("rule")
+		return errors.New("unknown_rule")
 	}
+}
+
+func strictCodeValueClass(value string, maxBytes int, allowEmpty bool) string {
+	if value == "" {
+		if allowEmpty {
+			return ""
+		}
+		return "empty"
+	}
+	if len(value) > maxBytes {
+		return "length"
+	}
+	if class := blockedStringClass(value); class != "" {
+		return class
+	}
+	if !strictCodePattern.MatchString(value) ||
+		strings.HasPrefix(value, "/") ||
+		strings.Contains(value, "//") ||
+		strings.Contains(value, "..") ||
+		strings.Contains(value, "\\") {
+		return "grammar"
+	}
+	return ""
+}
+
+func strictCodeListValueClass(value string, maxBytes int) string {
+	if value == "" {
+		return "empty"
+	}
+	if len(value) > maxBytes {
+		return "length"
+	}
+	if class := blockedStringClass(value); class != "" {
+		return class
+	}
+	if !strictCodeListPattern.MatchString(value) ||
+		strings.Contains(value, "//") ||
+		strings.Contains(value, "..") ||
+		strings.Contains(value, "\\") {
+		return "grammar"
+	}
+	return ""
+}
+
+func strictGuardrailDetectorVersionClass(value string) string {
+	if value == "" {
+		return "empty"
+	}
+	if len(value) > 80 {
+		return "length"
+	}
+	class := blockedStringClass(value)
+	if class == "ip" &&
+		net.ParseIP(value) == nil &&
+		strictDetectorVersionPattern.MatchString(value) &&
+		strictDottedVersionPattern.MatchString(value) {
+		class = ""
+	}
+	if class != "" {
+		return class
+	}
+	if !strictDetectorVersionPattern.MatchString(value) {
+		return "grammar"
+	}
+	return ""
+}
+
+func strictLimitPolicyChainClass(value string) string {
+	if value == "" {
+		return "empty"
+	}
+	if len(value) > 256 {
+		return "length"
+	}
+	if strictEmailPattern.MatchString(value) {
+		return "email"
+	}
+	if class := blockedStringClass(strings.ReplaceAll(value, "@", "_")); class != "" {
+		return class
+	}
+
+	entries := strings.Split(value, ",")
+	if len(entries) == 0 || len(entries) > 16 {
+		return "grammar"
+	}
+	for _, entry := range entries {
+		if strings.Count(entry, "@") != 1 ||
+			strings.Count(entry, "#") != 1 ||
+			strings.Count(entry, "=") != 1 ||
+			strings.Count(entry, "/") != 1 {
+			return "grammar"
+		}
+		at := strings.Index(entry, "@")
+		hash := strings.Index(entry, "#")
+		equal := strings.Index(entry, "=")
+		slash := strings.Index(entry, "/")
+		if at <= 0 || hash <= at+1 || equal <= hash+1 || slash <= equal+1 || slash == len(entry)-1 {
+			return "grammar"
+		}
+
+		policyRef := entry[:at]
+		version := entry[at+1 : hash]
+		selectorHash := entry[hash+1 : equal]
+		decision := entry[equal+1 : slash]
+		reason := entry[slash+1:]
+		if !strictIntegerPattern.MatchString(version) || version == "0" {
+			return "grammar"
+		}
+		for _, component := range []string{policyRef, selectorHash, decision, reason} {
+			if class := strictCodeValueClass(component, 128, false); class != "" {
+				return class
+			}
+		}
+	}
+	return ""
 }
 
 func receiverBlocksNumericMetadata(value float64) bool {
