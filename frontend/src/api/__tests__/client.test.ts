@@ -364,21 +364,33 @@ describe('API Client', () => {
     })
 
     it('uses the dedicated X-Insight connection and two-phase rotation routes', async () => {
+      const registration = {
+        schema_version: 'unirouter.xinsight.feed-credential-registration.v1',
+        token_format: 'ur-xf1-hex256.v1',
+        verifier_scheme: 'receiver_sha256_v1',
+        key_prefix: 'ur-xf1-0123456789abc',
+        verifier_sha256: 'a'.repeat(64),
+        operation_id: 'b'.repeat(32),
+      }
       mockJsonResponse({ connection_status: 'paused' })
       await api.getXInsightFeedConnection(22)
       expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/data-exchange/xinsight/connections/22')
 
       mockJsonResponse({ id: 42, lifecycle: 'staged' })
-      await api.createXInsightFeedCredential(22, { allowed_ip: '10.0.0.8/32' })
+      await api.createXInsightFeedCredential(22, { allowed_ip: '10.0.0.8/32', registration })
       expect(mockFetch.mock.calls[1][0]).toBe('/api/v1/data-exchange/xinsight/connections/22/credentials')
       expect(mockFetch.mock.calls[1][1]).toEqual(expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ allowed_ip: '10.0.0.8/32' }),
+        body: JSON.stringify({ allowed_ip: '10.0.0.8/32', registration }),
       }))
 
       mockJsonResponse({ id: 43, lifecycle: 'staged' })
-      await api.prepareXInsightFeedRotation(22)
+      await api.prepareXInsightFeedRotation(22, { registration })
       expect(mockFetch.mock.calls[2][0]).toBe('/api/v1/data-exchange/xinsight/connections/22/rotation/prepare')
+      expect(mockFetch.mock.calls[2][1]).toEqual(expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ registration }),
+      }))
 
       mockJsonResponse({ id: 43, lifecycle: 'active' })
       await api.activateXInsightFeedRotation(22, 43)

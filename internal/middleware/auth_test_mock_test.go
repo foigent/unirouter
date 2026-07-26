@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
@@ -18,8 +19,13 @@ import (
 
 func TestResolveAPIKey_Success(t *testing.T) {
 	budgetLimit := 10000
+	var verifierScheme any
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			if len(args) != 2 {
+				t.Fatalf("expected hash and verifier scheme, got %d arguments", len(args))
+			}
+			verifierScheme = args[1]
 			return &testutil.MockRow{
 				ScanFn: func(dest ...any) error {
 					*dest[0].(*int64) = 1            // id
@@ -67,6 +73,9 @@ func TestResolveAPIKey_Success(t *testing.T) {
 	}
 	if apiKey.KeyType != "personal" {
 		t.Fatalf("expected KeyType=personal, got %s", apiKey.KeyType)
+	}
+	if verifierScheme != auth.LegacyAPIVerifierScheme {
+		t.Fatalf("general gateway resolver accepted non-legacy verifier scheme: %v", verifierScheme)
 	}
 }
 

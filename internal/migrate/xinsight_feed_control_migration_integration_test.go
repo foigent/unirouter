@@ -48,6 +48,14 @@ func TestXInsightFeedControlMigrationEnforcesStagedAndRollbackLifecycle(t *testi
 		"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 	), "one project cannot have two staged replacements")
 
+	receiverDownSQL, err := os.ReadFile(filepath.Join(
+		testutil.MigrationsDir(t),
+		"000045_v1_receiver_feed_credential.down.sql",
+	))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(receiverDownSQL))
+	require.NoError(t, err)
+
 	downSQL, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t),
 		"000044_v1_xinsight_feed_control.down.sql",

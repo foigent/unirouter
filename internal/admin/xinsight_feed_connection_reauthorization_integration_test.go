@@ -82,7 +82,7 @@ func TestXInsightFeedControlReauthorizesAfterCommittedActorAndProjectChangesInte
 					request = apiKeyIntegrationRequest(
 						http.MethodPost,
 						fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d/credentials", fixture.projectID),
-						`{"allowed_ip":"127.0.0.1/32"}`,
+						xInsightFeedCreateBody(t, "reauthorization-"+test.name, "127.0.0.1/32"),
 						fixture.actorID,
 						fixture.orgID,
 						auth.RolePlatformAdmin,
@@ -223,7 +223,7 @@ func TestXInsightFeedControlRequiresActiveProjectForExpansionIntegration(t *test
 		request := xInsightFeedControlRequest(
 			http.MethodPost,
 			fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d/credentials", fixture.projectID),
-			`{"allowed_ip":"127.0.0.1/32"}`,
+			xInsightFeedCreateBody(t, "inactive-project-create", "127.0.0.1/32"),
 			fixture,
 			"inactive-project-create",
 		)

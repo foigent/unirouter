@@ -196,6 +196,7 @@ func resolveAPIKey(ctx context.Context, q db.DBQuerier, keyHash string) (*models
 		 LEFT JOIN users u ON u.id = ak.owner_user_id AND u.org_id = ak.org_id
 		 LEFT JOIN project_members pm ON pm.project_id = ak.project_id AND pm.user_id = ak.owner_user_id
 		 WHERE ak.key_hash = $1
+		   AND ak.verifier_scheme = $2
 		   AND (ak.project_id IS NULL OR p.status = 'active')
 		   AND (
 		       COALESCE(NULLIF(ak.key_type, ''), 'shared') <> 'personal'
@@ -205,6 +206,7 @@ func resolveAPIKey(ctx context.Context, q db.DBQuerier, keyHash string) (*models
 		       )
 		   )`,
 		keyHash,
+		auth.LegacyAPIVerifierScheme,
 	).Scan(
 		&apiKey.ID, &apiKey.OrgID, &projectID, &apiKey.Status, &apiKey.IPWhitelist,
 		&apiKey.AllowedModels, &apiKey.RPMLimit, &apiKey.QPSLimit,

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Descriptions, Input, Popconfirm, Select, SideSheet, Spin, Tag, Toast, Typography } from '@douyinfe/semi-ui';
+import { Button, Descriptions, Input, Popconfirm, Select, Spin, Tag, TextArea, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconRefresh } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
@@ -19,6 +19,8 @@ interface FeedCredential {
   id: number;
   key_prefix: string;
   lifecycle: 'active' | 'staged' | 'revoked';
+  verifier_scheme: 'legacy_hmac_sha256_v1' | 'receiver_sha256_v1';
+  operation_id: string;
   created_at: string;
   revoked_at?: string;
 }
@@ -43,14 +45,57 @@ interface FeedConnectionStatus {
   cursor_outside_retention: boolean;
 }
 
-interface OneTimeCredential {
+export interface ReceiverFeedCredentialRegistrationV1 {
+  schema_version: 'unirouter.xinsight.feed-credential-registration.v1';
+  token_format: 'ur-xf1-hex256.v1';
+  verifier_scheme: 'receiver_sha256_v1';
+  key_prefix: string;
+  verifier_sha256: string;
+  operation_id: string;
+}
+
+interface RegisteredCredential {
   id: number;
-  key: string;
   key_prefix: string;
   lifecycle: 'staged';
   project_id: number;
   purpose: 'xinsight.feed.read';
   key_type: 'service';
+  verifier_scheme: 'receiver_sha256_v1';
+  operation_id: string;
+}
+
+const registrationKeys = [
+  'schema_version',
+  'token_format',
+  'verifier_scheme',
+  'key_prefix',
+  'verifier_sha256',
+  'operation_id',
+] as const;
+
+export function parseReceiverRegistrationBundle(raw: string): ReceiverFeedCredentialRegistrationV1 {
+  const parsed = JSON.parse(raw) as Record<string, unknown>;
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+    throw new Error('registration 必须是 JSON object');
+  }
+  const keys = Object.keys(parsed).sort();
+  if (keys.length !== registrationKeys.length ||
+      keys.some((key, index) => key !== [...registrationKeys].sort()[index])) {
+    throw new Error('registration 字段必须与 Frozen Registration Bundle V1 完全一致');
+  }
+  if (parsed.schema_version !== 'unirouter.xinsight.feed-credential-registration.v1' ||
+      parsed.token_format !== 'ur-xf1-hex256.v1' ||
+      parsed.verifier_scheme !== 'receiver_sha256_v1' ||
+      typeof parsed.key_prefix !== 'string' ||
+      !/^ur-xf1-[0-9a-f]{13}$/.test(parsed.key_prefix) ||
+      typeof parsed.verifier_sha256 !== 'string' ||
+      !/^[0-9a-f]{64}$/.test(parsed.verifier_sha256) ||
+      typeof parsed.operation_id !== 'string' ||
+      !/^[0-9a-f]{32}$/.test(parsed.operation_id)) {
+    throw new Error('registration 不符合 Frozen Registration Bundle V1');
+  }
+  return parsed as unknown as ReceiverFeedCredentialRegistrationV1;
 }
 
 function credentialLabel(credential?: FeedCredential | null) {
@@ -72,7 +117,7 @@ export default function XInsightLiveConnection({
   const [status, setStatus] = useState<FeedConnectionStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [allowedIP, setAllowedIP] = useState('');
-  const [oneTimeCredential, setOneTimeCredential] = useState<OneTimeCredential | null>(null);
+  const [registrationJSON, setRegistrationJSON] = useState('');
 
   const loadProjects = useCallback(async () => {
     try {
@@ -120,9 +165,13 @@ export default function XInsightLiveConnection({
     if (!projectID) return;
     setLoading(true);
     try {
-      const created = await api.createXInsightFeedCredential(projectID, { allowed_ip: allowedIP }) as OneTimeCredential;
-      setOneTimeCredential(created);
-      Toast.success('已创建一个 staged feed-only 凭证；连接仍保持暂停');
+      const registration = parseReceiverRegistrationBundle(registrationJSON);
+      const created = await api.createXInsightFeedCredential(
+        projectID,
+        { allowed_ip: allowedIP, registration },
+      ) as RegisteredCredential;
+      setRegistrationJSON('');
+      Toast.success(`已登记 staged feed-only 凭证 #${created.id}（${created.key_prefix}）；连接仍保持暂停`);
       await loadStatus();
     } catch (error: any) {
       Toast.error(`创建失败${error?.message ? `：${error.message}` : ''}`);
@@ -135,9 +184,10 @@ export default function XInsightLiveConnection({
     if (!projectID) return;
     setLoading(true);
     try {
-      const created = await api.prepareXInsightFeedRotation(projectID) as OneTimeCredential;
-      setOneTimeCredential(created);
-      Toast.success('轮换已准备；旧凭证保持 active，新凭证仅在暂停态可认证');
+      const registration = parseReceiverRegistrationBundle(registrationJSON);
+      const created = await api.prepareXInsightFeedRotation(projectID, { registration }) as RegisteredCredential;
+      setRegistrationJSON('');
+      Toast.success(`轮换已准备（#${created.id} · ${created.key_prefix}）；旧凭证保持 active，新凭证仅在暂停态可认证`);
       await loadStatus();
     } catch (error: any) {
       Toast.error(`准备轮换失败${error?.message ? `：${error.message}` : ''}`);
@@ -159,6 +209,14 @@ export default function XInsightLiveConnection({
   const projectStatus = status?.project_status || selectedProject?.status;
   const projectActive = projectStatus === 'active';
   const expansionEnabled = projectActive && expansionAllowed;
+  const registrationReady = useMemo(() => {
+    try {
+      parseReceiverRegistrationBundle(registrationJSON);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [registrationJSON]);
 
   if (!projectID && projects.length === 0) {
     return <Spin tip="正在读取可用项目…" />;
@@ -184,6 +242,7 @@ export default function XInsightLiveConnection({
         <Tag>purpose=xinsight.feed.read</Tag>
         <Tag>无模型调用权限</Tag>
         <Tag>不向 X-Insight 提供管理员凭证</Tag>
+        <Tag color="purple">receiver-generated credential</Tag>
       </div>
 
       <Descriptions
@@ -237,6 +296,24 @@ export default function XInsightLiveConnection({
       </div>
 
       <div className="ur-toolbar" style={{ flexWrap: 'wrap' }}>
+        {((!status?.active_credential && !status?.staged_credential) ||
+          (status?.connection_status === 'paused' && status?.active_credential && !status?.staged_credential)) && (
+          <div style={{ width: '100%', display: 'grid', gap: 8 }}>
+            <Text strong>Frozen Registration Bundle V1（非秘密）</Text>
+            <Text type="tertiary">
+              X-Insight 在本机生成并保留 bearer token；此处只登记不可逆 verifier、公开 prefix 和 operation ID。
+              UniRouter 不接收、不返回、也不展示明文 token。
+            </Text>
+            <TextArea
+              aria-label="X-Insight feed credential registration bundle"
+              placeholder='{"schema_version":"unirouter.xinsight.feed-credential-registration.v1",...}'
+              value={registrationJSON}
+              onChange={setRegistrationJSON}
+              rows={7}
+              disabled={!expansionEnabled}
+            />
+          </div>
+        )}
         {!status?.active_credential && !status?.staged_credential && (
           <>
             <Input
@@ -247,7 +324,7 @@ export default function XInsightLiveConnection({
               disabled={!expansionEnabled}
               style={{ width: 250 }}
             />
-            <Button type="primary" disabled={!allowedIP || !expansionEnabled} onClick={createCredential}>创建初始 staged 凭证</Button>
+            <Button type="primary" disabled={!allowedIP || !registrationReady || !expansionEnabled} onClick={createCredential}>登记初始 staged 凭证</Button>
           </>
         )}
 
@@ -286,7 +363,7 @@ export default function XInsightLiveConnection({
         )}
 
         {status?.connection_status === 'paused' && status?.active_credential && !status?.staged_credential && (
-          <Button disabled={!expansionEnabled} onClick={prepareRotation}>准备两阶段轮换</Button>
+          <Button disabled={!expansionEnabled || !registrationReady} onClick={prepareRotation}>准备两阶段轮换</Button>
         )}
         {status?.connection_status === 'paused' && status?.active_credential && status?.staged_credential && (
           <>
@@ -338,26 +415,6 @@ export default function XInsightLiveConnection({
         </Text>
       </div>
 
-      <SideSheet
-        title="一次性 feed-only 凭证"
-        visible={Boolean(oneTimeCredential)}
-        onCancel={() => setOneTimeCredential(null)}
-        width={560}
-      >
-        {oneTimeCredential && (
-          <div style={{ display: 'grid', gap: 14 }}>
-            <Tag color="orange">关闭后不可再次读取明文</Tag>
-            <Text>用途：<Text code>{oneTimeCredential.purpose}</Text></Text>
-            <Text>生命周期：staged（连接保持 paused）</Text>
-            <Text>Key ID / Prefix：#{oneTimeCredential.id} · <Text code>{oneTimeCredential.key_prefix}</Text></Text>
-            <Input readOnly value={oneTimeCredential.key} aria-label="一次性 feed key" />
-            <Text type="tertiary">
-              将凭证直接安装到 X-Insight 的 systemd credential，随后关闭此面板。不得把管理员凭证或通用模型网关 key 交给 X。
-            </Text>
-            <Button type="primary" onClick={() => setOneTimeCredential(null)}>我已安全安装并关闭明文</Button>
-          </div>
-        )}
-      </SideSheet>
     </div>
   );
 }
