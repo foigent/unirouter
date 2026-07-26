@@ -125,6 +125,32 @@ func TestMaterializationRollbackAndReplayRemainSingleFinalItem(t *testing.T) {
 	require.Equal(t, 1, count)
 }
 
+func TestMaterializationCanonicalizesTerminalTimestampToPostgresPrecision(t *testing.T) {
+	pool, service, orgID, projectID := setupCompletedFeedIntegration(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	terminalAt := time.Date(2026, 7, 26, 9, 52, 52, 123456789, time.UTC)
+	record := completedFeedTerminalRecord(
+		"postgres-time-precision",
+		orgID,
+		projectID,
+		terminalAt,
+	)
+
+	materializeCompletedFeedRecord(t, ctx, pool, service, record)
+
+	window, err := service.reader.Read(ctx, orgID, projectID, 0, MaxPageItems+1)
+	require.NoError(t, err)
+	require.Len(t, window.Items, 1)
+	snapshot, err := DecodeSnapshot(window.Items[0].Snapshot)
+	require.NoError(t, err)
+	expected := terminalAt.Truncate(time.Microsecond)
+	require.True(t, expected.Equal(window.Items[0].TerminalAvailableAt))
+	require.True(t, expected.Equal(snapshot.Terminal.AvailableAt))
+	require.Zero(t, window.Items[0].TerminalAvailableAt.Nanosecond()%int(time.Microsecond))
+	require.Zero(t, snapshot.Terminal.AvailableAt.Nanosecond()%int(time.Microsecond))
+}
+
 func TestRetentionUsesPublicationOrderNotTerminalTime(t *testing.T) {
 	pool, service, orgID, projectID := setupCompletedFeedIntegration(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
