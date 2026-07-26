@@ -4,6 +4,7 @@ package admin
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -63,7 +64,7 @@ func TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration(t *testing.T)
 	createRequest := apiKeyIntegrationRequest(
 		http.MethodPost,
 		fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d/credentials", projectID),
-		`{"allowed_ip":"127.0.0.1/32"}`,
+		xInsightFeedCreateBody(t, "lifecycle-initial", "127.0.0.1/32"),
 		actorID,
 		orgID,
 		auth.RolePlatformAdmin,
@@ -78,15 +79,32 @@ func TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration(t *testing.T)
 	require.NoError(t, json.Unmarshal(createResponse.Body.Bytes(), &created))
 	keyID := int64(created["id"].(float64))
 	require.Equal(t, middleware.APIKeyPurposeXInsightFeedRead, created["purpose"])
+	require.NotContains(t, created, "key")
+	require.NotContains(t, createResponse.Body.String(), "verifier_sha256")
 
-	var storedStatus, storedPurpose, storedModels string
+	var storedStatus, storedPurpose, storedModels, storedScheme, storedOperation, storedHash string
 	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT status, purpose, allowed_models FROM api_keys WHERE id = $1`,
+		`SELECT status, purpose, allowed_models, verifier_scheme,
+		        registration_operation_id, key_hash
+		 FROM api_keys WHERE id = $1`,
 		keyID,
-	).Scan(&storedStatus, &storedPurpose, &storedModels))
+	).Scan(
+		&storedStatus,
+		&storedPurpose,
+		&storedModels,
+		&storedScheme,
+		&storedOperation,
+		&storedHash,
+	))
 	require.Equal(t, middleware.APIKeyStatusFeedStaged, storedStatus)
 	require.Equal(t, middleware.APIKeyPurposeXInsightFeedRead, storedPurpose)
 	require.Empty(t, storedModels)
+	require.Equal(t, auth.ReceiverFeedVerifierScheme, storedScheme)
+	initialRegistration, _ := testXInsightFeedRegistration(t, "lifecycle-initial")
+	require.Equal(t, initialRegistration.OperationID, storedOperation)
+	decodedVerifier, err := auth.DecodeReceiverFeedVerifier(initialRegistration.VerifierSHA256)
+	require.NoError(t, err)
+	require.Equal(t, auth.HashReceiverFeedVerifier(decodedVerifier, "completed-feed-admin-secret"), storedHash)
 
 	genericUpdate := apiKeyIntegrationRequest(
 		http.MethodPut,
@@ -166,7 +184,7 @@ func TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration(t *testing.T)
 	prepareRequest := apiKeyIntegrationRequest(
 		http.MethodPost,
 		fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d/rotation/prepare", projectID),
-		"",
+		xInsightFeedRotationBody(t, "lifecycle-rotation-one"),
 		actorID,
 		orgID,
 		auth.RolePlatformAdmin,
@@ -252,7 +270,11 @@ func TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration(t *testing.T)
 	require.Equal(t, "paused", controlStatus["connection_status"])
 	require.Equal(t, "next_requested_cursor_after_receiver_persistence", controlStatus["receiver_acknowledgement_semantics"])
 	require.Equal(t, float64(0), controlStatus["pending_item_count"])
-	require.Equal(t, float64(replacementID), controlStatus["active_credential"].(map[string]any)["id"])
+	activeCredential := controlStatus["active_credential"].(map[string]any)
+	require.Equal(t, float64(replacementID), activeCredential["id"])
+	require.Equal(t, auth.ReceiverFeedVerifierScheme, activeCredential["verifier_scheme"])
+	rotationRegistration, _ := testXInsightFeedRegistration(t, "lifecycle-rotation-one")
+	require.Equal(t, rotationRegistration.OperationID, activeCredential["operation_id"])
 	require.Nil(t, controlStatus["staged_credential"])
 
 	oldReactivate := apiKeyIntegrationRequest(
@@ -274,7 +296,7 @@ func TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration(t *testing.T)
 	secondPrepareRequest := apiKeyIntegrationRequest(
 		http.MethodPost,
 		fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d/rotation/prepare", projectID),
-		"",
+		xInsightFeedRotationBody(t, "lifecycle-rotation-two"),
 		actorID,
 		orgID,
 		auth.RolePlatformAdmin,
@@ -324,6 +346,23 @@ func TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration(t *testing.T)
 		projectID,
 	).Scan(&auditedActions))
 	require.Equal(t, 7, auditedActions)
+
+	var createAuditDetails string
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT detail::text
+		 FROM audit_logs
+		 WHERE project_id = $1
+		   AND action = 'data_exchange.xinsight.credential.create'
+		 ORDER BY id DESC
+		 LIMIT 1`,
+		projectID,
+	).Scan(&createAuditDetails))
+	_, initialRawToken := testXInsightFeedRegistration(t, "lifecycle-initial")
+	require.Contains(t, createAuditDetails, auth.ReceiverFeedVerifierScheme)
+	require.Contains(t, createAuditDetails, initialRegistration.OperationID)
+	require.NotContains(t, createAuditDetails, initialRegistration.VerifierSHA256)
+	require.NotContains(t, createAuditDetails, initialRawToken)
+	require.NotContains(t, createAuditDetails, storedHash)
 }
 
 type completedFeedControllerFixture struct{}
@@ -332,4 +371,43 @@ func (completedFeedControllerFixture) Enabled() bool          { return true }
 func (completedFeedControllerFixture) SourceInstance() string { return "integration-source" }
 func (completedFeedControllerFixture) EncodeSequence(_ int64, sequence int64) (string, error) {
 	return fmt.Sprintf("cursor-%d", sequence), nil
+}
+
+func testXInsightFeedRegistration(
+	t *testing.T,
+	label string,
+) (xInsightFeedCredentialRegistrationV1, string) {
+	t.Helper()
+	tokenDigest := sha256.Sum256([]byte("receiver-token:" + label))
+	rawToken := auth.ReceiverFeedTokenPrefix + fmt.Sprintf("%x", tokenDigest[:])
+	verifier, err := auth.ReceiverFeedVerifierHex(rawToken)
+	require.NoError(t, err)
+	operation := sha256.Sum256([]byte("receiver-operation:" + label))
+	return xInsightFeedCredentialRegistrationV1{
+		SchemaVersion:  auth.ReceiverFeedRegistrationSchema,
+		TokenFormat:    auth.ReceiverFeedTokenFormat,
+		VerifierScheme: auth.ReceiverFeedVerifierScheme,
+		KeyPrefix:      rawToken[:auth.ReceiverFeedCredentialPrefixLength],
+		VerifierSHA256: verifier,
+		OperationID:    fmt.Sprintf("%x", operation[:16]),
+	}, rawToken
+}
+
+func xInsightFeedCreateBody(t *testing.T, label, allowedIP string) string {
+	t.Helper()
+	registration, _ := testXInsightFeedRegistration(t, label)
+	body, err := json.Marshal(map[string]any{
+		"allowed_ip":   allowedIP,
+		"registration": registration,
+	})
+	require.NoError(t, err)
+	return string(body)
+}
+
+func xInsightFeedRotationBody(t *testing.T, label string) string {
+	t.Helper()
+	registration, _ := testXInsightFeedRegistration(t, label)
+	body, err := json.Marshal(map[string]any{"registration": registration})
+	require.NoError(t, err)
+	return string(body)
 }

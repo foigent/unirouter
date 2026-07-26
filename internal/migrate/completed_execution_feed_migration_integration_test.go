@@ -196,6 +196,14 @@ func TestCompletedExecutionFeedProjectScopeSurvivesGuardrailRollbackThenFeedRoll
 
 func rollbackXInsightFeedControl(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
+	receiverDownSQL, err := os.ReadFile(filepath.Join(
+		testutil.MigrationsDir(t),
+		"000045_v1_receiver_feed_credential.down.sql",
+	))
+	require.NoError(t, err)
+	_, err = pool.Exec(context.Background(), string(receiverDownSQL))
+	require.NoError(t, err)
+
 	downSQL, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t),
 		"000044_v1_xinsight_feed_control.down.sql",

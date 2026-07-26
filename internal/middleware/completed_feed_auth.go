@@ -8,7 +8,9 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/uniroute/unirouter/internal/agentcap"
+	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/db"
+	"github.com/uniroute/unirouter/internal/models"
 )
 
 const (
@@ -51,10 +53,11 @@ func CompletedExecutionFeedAuth(
 				writeGatewayAuthError(w, http.StatusUnauthorized, "auth_error.invalid_api_key", "Invalid API key")
 				return
 			}
-			apiKey, orgStatus, err := resolveAPIKey(
+			apiKey, orgStatus, err := resolveCompletedExecutionFeedAPIKey(
 				r.Context(),
 				q,
-				hashKey(rawCredential, apiKeyHashSecret),
+				rawCredential,
+				apiKeyHashSecret,
 			)
 			if err != nil {
 				completedFeedAuthDenials.WithLabelValues("invalid_credential").Inc()
@@ -98,4 +101,70 @@ func CompletedExecutionFeedAuth(
 			next.ServeHTTP(w, identifiedRequest.WithContext(ctx))
 		})
 	}
+}
+
+// resolveCompletedExecutionFeedAPIKey is intentionally feed-route-specific.
+// General gateway routes continue to resolve only the legacy raw-key HMAC.
+func resolveCompletedExecutionFeedAPIKey(
+	ctx context.Context,
+	q db.DBQuerier,
+	rawCredential, secret string,
+) (*models.ApiKey, string, error) {
+	legacyHash := auth.HashAPIKey(rawCredential, secret)
+	receiverHash, receiverPrefix, receiverErr := auth.HashReceiverFeedCredential(rawCredential, secret)
+	receiverCandidateValid := receiverErr == nil
+
+	var apiKey models.ApiKey
+	var orgStatus string
+	var projectID, ownerUserID int64
+	err := q.QueryRow(ctx,
+		`SELECT ak.id, ak.org_id, COALESCE(ak.project_id, 0), ak.status, ak.allowed_ips, ak.allowed_models,
+		        ak.rpm_limit, ak.qps_limit, ak.budget_limit, ak.key_prefix, ak.name,
+		        COALESCE(ak.owner_user_id, 0), COALESCE(NULLIF(ak.key_type, ''), 'shared'),
+		        COALESCE(ak.purpose, ''),
+		        o.status
+		 FROM api_keys ak
+		 JOIN orgs o ON o.id = ak.org_id
+		 LEFT JOIN projects p ON p.id = ak.project_id AND p.org_id = ak.org_id
+		 LEFT JOIN users u ON u.id = ak.owner_user_id AND u.org_id = ak.org_id
+		 LEFT JOIN project_members pm ON pm.project_id = ak.project_id AND pm.user_id = ak.owner_user_id
+		 WHERE (
+		       (ak.verifier_scheme = $1 AND ak.key_hash = $2)
+		       OR (
+		           $3::boolean
+		           AND ak.verifier_scheme = $4
+		           AND ak.key_hash = $5
+		           AND ak.key_prefix = $6
+		       )
+		   )
+		   AND (ak.project_id IS NULL OR p.status = 'active')
+		   AND (
+		       COALESCE(NULLIF(ak.key_type, ''), 'shared') <> 'personal'
+		       OR (
+		           u.status = 'active'
+		           AND (ak.project_id IS NULL OR pm.user_id IS NOT NULL)
+		       )
+		   )`,
+		auth.LegacyAPIVerifierScheme,
+		legacyHash,
+		receiverCandidateValid,
+		auth.ReceiverFeedVerifierScheme,
+		receiverHash,
+		receiverPrefix,
+	).Scan(
+		&apiKey.ID, &apiKey.OrgID, &projectID, &apiKey.Status, &apiKey.IPWhitelist,
+		&apiKey.AllowedModels, &apiKey.RPMLimit, &apiKey.QPSLimit,
+		&apiKey.BudgetLimit, &apiKey.KeyPrefix, &apiKey.Name, &ownerUserID,
+		&apiKey.KeyType, &apiKey.Purpose, &orgStatus,
+	)
+	if err != nil {
+		return nil, "", err
+	}
+	if projectID > 0 {
+		apiKey.ProjectID = &projectID
+	}
+	if ownerUserID > 0 {
+		apiKey.OwnerUserID = &ownerUserID
+	}
+	return &apiKey, orgStatus, nil
 }

@@ -204,7 +204,9 @@ Migrations `000043` and `000044` store serving and staged feed credentials as
 prevent converting them to ordinary `active`; this is the fail-closed
 compatibility invariant if operational ordering is missed. Binary rollback
 after explicit feed-key revocation is supported. Schema rollback remains
-stricter and refuses while a purpose key or retained feed state exists.
+stricter: migration `000045` refuses while a receiver-generated credential is
+serving or staged, and migration `000043` refuses while a purpose key or
+retained feed state exists.
 
 V1 uses TUF-inspired signed target metadata, hash/size checks and rollback/
 freeze resistance, plus an optional SLSA provenance digest. It does not claim

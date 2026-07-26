@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import DataExchangePage, { receiptPayload } from '../DataExchangePage';
+import { parseReceiverRegistrationBundle } from '../XInsightLiveConnection';
 import { useAuthStore } from '../../store/auth';
 
 const getItems = vi.fn();
@@ -12,6 +13,7 @@ const pauseConnection = vi.fn();
 const resumeConnection = vi.fn();
 const prepareRotation = vi.fn();
 const activateRotation = vi.fn();
+const createFeedCredential = vi.fn();
 
 const licensedAccess = {
   status: 'active',
@@ -38,7 +40,7 @@ vi.mock('../../api/client', () => ({
     resumeXInsightFeedConnection: (...args: any[]) => resumeConnection(...args),
     prepareXInsightFeedRotation: (...args: any[]) => prepareRotation(...args),
     activateXInsightFeedRotation: (...args: any[]) => activateRotation(...args),
-    createXInsightFeedCredential: vi.fn(),
+    createXInsightFeedCredential: (...args: any[]) => createFeedCredential(...args),
     activateInitialXInsightFeedCredential: vi.fn(),
     cancelXInsightFeedRotation: vi.fn(),
     revokeXInsightFeedCredential: vi.fn(),
@@ -126,6 +128,26 @@ describe('DataExchangePage', () => {
       pending_item_count: 2,
       cursor_outside_retention: false,
     });
+    createFeedCredential.mockResolvedValue({
+      id: 42,
+      key_prefix: 'ur-xf1-0123456789abc',
+      lifecycle: 'staged',
+      project_id: 22,
+      purpose: 'xinsight.feed.read',
+      key_type: 'service',
+      verifier_scheme: 'receiver_sha256_v1',
+      operation_id: 'b'.repeat(32),
+    });
+    prepareRotation.mockResolvedValue({
+      id: 42,
+      key_prefix: 'ur-xf1-0123456789abc',
+      lifecycle: 'staged',
+      project_id: 22,
+      purpose: 'xinsight.feed.read',
+      key_type: 'service',
+      verifier_scheme: 'receiver_sha256_v1',
+      operation_id: 'b'.repeat(32),
+    });
   });
 
   it('defaults to the product live connection and labels receiver acknowledgement truthfully', async () => {
@@ -137,6 +159,61 @@ describe('DataExchangePage', () => {
     expect(container.textContent).toContain('接收端提交确认 cursor');
     expect(container.textContent).toContain('不代表搜索、API 或 UI 已可见');
     expect(container.textContent).toContain('systemctl restart（不可 reload）');
+    expect(container.textContent).toContain('receiver-generated credential');
+  });
+
+  it('registers only the strict non-secret receiver bundle and never renders a plaintext key surface', async () => {
+    const registration = {
+      schema_version: 'unirouter.xinsight.feed-credential-registration.v1',
+      token_format: 'ur-xf1-hex256.v1',
+      verifier_scheme: 'receiver_sha256_v1',
+      key_prefix: 'ur-xf1-0123456789abc',
+      verifier_sha256: 'a'.repeat(64),
+      operation_id: 'b'.repeat(32),
+    } as const;
+    getFeedConnection.mockResolvedValueOnce({
+      project_id: 22,
+      project_name: 'Development',
+      project_status: 'active',
+      global_configured: true,
+      global_enabled: true,
+      source_instance: 'unirouter-dev-149a8220bf1e',
+      connection_status: 'paused',
+      active_credential: null,
+      staged_credential: null,
+      pending_item_count: 0,
+    });
+    const { container } = render(<DataExchangePage />);
+    const registrationInput = await screen.findByLabelText('X-Insight feed credential registration bundle');
+    fireEvent.change(registrationInput, { target: { value: JSON.stringify(registration) } });
+    fireEvent.change(screen.getByLabelText('X-Insight worker exact IP'), {
+      target: { value: '10.0.0.8/32' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '登记初始 staged 凭证' }));
+
+    await waitFor(() => expect(createFeedCredential).toHaveBeenCalledWith(22, {
+      allowed_ip: '10.0.0.8/32',
+      registration,
+    }));
+    expect(container.textContent).toContain('UniRouter 不接收、不返回、也不展示明文 token');
+    expect(screen.queryByLabelText('一次性 feed key')).toBeNull();
+    expect(container.textContent).not.toContain('关闭后不可再次读取明文');
+  });
+
+  it('rejects noncanonical or extended receiver registration bundles client-side', () => {
+    const valid = JSON.stringify({
+      schema_version: 'unirouter.xinsight.feed-credential-registration.v1',
+      token_format: 'ur-xf1-hex256.v1',
+      verifier_scheme: 'receiver_sha256_v1',
+      key_prefix: 'ur-xf1-0123456789abc',
+      verifier_sha256: 'a'.repeat(64),
+      operation_id: 'b'.repeat(32),
+    });
+    expect(parseReceiverRegistrationBundle(valid).key_prefix).toBe('ur-xf1-0123456789abc');
+    expect(() => parseReceiverRegistrationBundle(valid.replace(/a/g, 'A'))).toThrow();
+    expect(() => parseReceiverRegistrationBundle(
+      valid.replace(/}$/, ',"unknown":true}'),
+    )).toThrow('字段必须与 Frozen Registration Bundle V1 完全一致');
   });
 
   it('keeps the manual approval flow in a clearly historical tab', async () => {

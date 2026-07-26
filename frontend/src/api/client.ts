@@ -208,7 +208,17 @@ export const api = {
     request(`/data-exchange/xinsight/connections/${projectId}/pause`, { method: 'POST' }),
   resumeXInsightFeedConnection: (projectId: number) =>
     request(`/data-exchange/xinsight/connections/${projectId}/resume`, { method: 'POST' }),
-  createXInsightFeedCredential: (projectId: number, data: { allowed_ip: string }) =>
+  createXInsightFeedCredential: (projectId: number, data: {
+    allowed_ip: string;
+    registration: {
+      schema_version: string;
+      token_format: string;
+      verifier_scheme: string;
+      key_prefix: string;
+      verifier_sha256: string;
+      operation_id: string;
+    };
+  }) =>
     request(`/data-exchange/xinsight/connections/${projectId}/credentials`, { method: 'POST', body: JSON.stringify(data) }),
   activateInitialXInsightFeedCredential: (projectId: number, stagedCredentialId: number) =>
     request(`/data-exchange/xinsight/connections/${projectId}/credentials/activate`, {
@@ -217,8 +227,20 @@ export const api = {
     }),
   revokeXInsightFeedCredential: (projectId: number, credentialId: number) =>
     request(`/data-exchange/xinsight/connections/${projectId}/credentials/${credentialId}/revoke`, { method: 'POST' }),
-  prepareXInsightFeedRotation: (projectId: number) =>
-    request(`/data-exchange/xinsight/connections/${projectId}/rotation/prepare`, { method: 'POST' }),
+  prepareXInsightFeedRotation: (projectId: number, data: {
+    registration: {
+      schema_version: string;
+      token_format: string;
+      verifier_scheme: string;
+      key_prefix: string;
+      verifier_sha256: string;
+      operation_id: string;
+    };
+  }) =>
+    request(`/data-exchange/xinsight/connections/${projectId}/rotation/prepare`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
   activateXInsightFeedRotation: (projectId: number, stagedCredentialId: number) =>
     request(`/data-exchange/xinsight/connections/${projectId}/rotation/activate`, {
       method: 'POST',

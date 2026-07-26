@@ -6,13 +6,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/netip"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
 )
@@ -24,18 +27,23 @@ const (
 )
 
 var (
-	errXInsightFeedConflict     = errors.New("x-insight feed control state conflicts with the requested operation")
-	errXInsightFeedNotFound     = errors.New("x-insight feed project or credential was not found")
-	errXInsightFeedInvalidScope = errors.New("x-insight feed network binding must be one exact IPv4 /32 or IPv6 /128")
+	errXInsightFeedConflict      = errors.New("x-insight feed control state conflicts with the requested operation")
+	errXInsightFeedNotFound      = errors.New("x-insight feed project or credential was not found")
+	errXInsightFeedInvalidScope  = errors.New("x-insight feed network binding must be one exact IPv4 /32 or IPv6 /128")
+	errXInsightFeedRegistration  = errors.New("invalid receiver-generated feed credential registration")
+	xInsightFeedPrefixPattern    = regexp.MustCompile(`^ur-xf1-[0-9a-f]{13}$`)
+	xInsightFeedOperationPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 )
 
 type xInsightFeedCredential struct {
-	ID        int64      `json:"id"`
-	KeyPrefix string     `json:"key_prefix"`
-	Lifecycle string     `json:"lifecycle"`
-	CreatedAt time.Time  `json:"created_at"`
-	RevokedAt *time.Time `json:"revoked_at,omitempty"`
-	Status    string     `json:"-"`
+	ID             int64      `json:"id"`
+	KeyPrefix      string     `json:"key_prefix"`
+	Lifecycle      string     `json:"lifecycle"`
+	VerifierScheme string     `json:"verifier_scheme"`
+	OperationID    string     `json:"operation_id"`
+	CreatedAt      time.Time  `json:"created_at"`
+	RevokedAt      *time.Time `json:"revoked_at,omitempty"`
+	Status         string     `json:"-"`
 }
 
 type xInsightFeedConnectionStatus struct {
@@ -59,17 +67,32 @@ type xInsightFeedConnectionStatus struct {
 }
 
 type createXInsightFeedCredentialRequest struct {
-	AllowedIP string `json:"allowed_ip"`
+	AllowedIP    string                               `json:"allowed_ip"`
+	Registration xInsightFeedCredentialRegistrationV1 `json:"registration"`
+}
+
+type prepareXInsightFeedRotationRequest struct {
+	Registration xInsightFeedCredentialRegistrationV1 `json:"registration"`
+}
+
+type xInsightFeedCredentialRegistrationV1 struct {
+	SchemaVersion  string `json:"schema_version"`
+	TokenFormat    string `json:"token_format"`
+	VerifierScheme string `json:"verifier_scheme"`
+	KeyPrefix      string `json:"key_prefix"`
+	VerifierSHA256 string `json:"verifier_sha256"`
+	OperationID    string `json:"operation_id"`
 }
 
 type stagedXInsightFeedCredentialResponse struct {
-	ID        int64  `json:"id"`
-	Key       string `json:"key"`
-	KeyPrefix string `json:"key_prefix"`
-	Lifecycle string `json:"lifecycle"`
-	ProjectID int64  `json:"project_id"`
-	Purpose   string `json:"purpose"`
-	KeyType   string `json:"key_type"`
+	ID             int64  `json:"id"`
+	KeyPrefix      string `json:"key_prefix"`
+	Lifecycle      string `json:"lifecycle"`
+	ProjectID      int64  `json:"project_id"`
+	Purpose        string `json:"purpose"`
+	KeyType        string `json:"key_type"`
+	VerifierScheme string `json:"verifier_scheme"`
+	OperationID    string `json:"operation_id"`
 }
 
 type xInsightFeedCredentialIDRequest struct {
@@ -186,12 +209,15 @@ func (h *Handler) setXInsightFeedConnectionState(w http.ResponseWriter, r *http.
 
 func (h *Handler) CreateXInsightFeedCredential(w http.ResponseWriter, r *http.Request) {
 	var request createXInsightFeedCredentialRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Invalid JSON"})
+	if !decodeXInsightFeedControlJSON(w, r, &request) {
 		return
 	}
 	if !exactHostNetworkBinding(request.AllowedIP) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": errXInsightFeedInvalidScope.Error()})
+		return
+	}
+	if _, err := validateXInsightFeedRegistration(request.Registration); err != nil {
+		writeXInsightFeedControlError(w, err)
 		return
 	}
 	projectID, err := xInsightFeedProjectID(r)
@@ -204,7 +230,9 @@ func (h *Handler) CreateXInsightFeedCredential(w http.ResponseWriter, r *http.Re
 		writeXInsightFeedControlError(w, err)
 		return
 	}
-	response, err := h.createXInsightFeedStagedCredential(r, orgID, projectID, strings.TrimSpace(request.AllowedIP), false)
+	response, err := h.createXInsightFeedStagedCredential(
+		r, orgID, projectID, strings.TrimSpace(request.AllowedIP), request.Registration, false,
+	)
 	if err != nil {
 		writeXInsightFeedControlError(w, err)
 		return
@@ -214,6 +242,14 @@ func (h *Handler) CreateXInsightFeedCredential(w http.ResponseWriter, r *http.Re
 }
 
 func (h *Handler) PrepareXInsightFeedRotation(w http.ResponseWriter, r *http.Request) {
+	var request prepareXInsightFeedRotationRequest
+	if !decodeXInsightFeedControlJSON(w, r, &request) {
+		return
+	}
+	if _, err := validateXInsightFeedRegistration(request.Registration); err != nil {
+		writeXInsightFeedControlError(w, err)
+		return
+	}
 	projectID, err := xInsightFeedProjectID(r)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Invalid project ID"})
@@ -224,7 +260,9 @@ func (h *Handler) PrepareXInsightFeedRotation(w http.ResponseWriter, r *http.Req
 		writeXInsightFeedControlError(w, err)
 		return
 	}
-	response, err := h.createXInsightFeedStagedCredential(r, orgID, projectID, "", true)
+	response, err := h.createXInsightFeedStagedCredential(
+		r, orgID, projectID, "", request.Registration, true,
+	)
 	if err != nil {
 		writeXInsightFeedControlError(w, err)
 		return
@@ -237,125 +275,121 @@ func (h *Handler) createXInsightFeedStagedCredential(
 	r *http.Request,
 	orgID, projectID int64,
 	requestedAllowedIP string,
+	registration xInsightFeedCredentialRegistrationV1,
 	rotation bool,
 ) (stagedXInsightFeedCredentialResponse, error) {
-	for attempt := 0; attempt < apiKeyPrefixInsertMaxAttempts; attempt++ {
-		rawKey, keyPrefix, err := auth.GenerateAPIKey(orgID)
-		if err != nil {
-			return stagedXInsightFeedCredentialResponse{}, err
-		}
-		tx, err := h.db.Begin(r.Context())
-		if err != nil {
-			return stagedXInsightFeedCredentialResponse{}, err
-		}
-		committed := false
-		defer func() {
-			if !committed {
-				_ = tx.Rollback(r.Context())
-			}
-		}()
-		if err := h.reauthorizeXInsightFeedControlTx(
-			r.Context(), tx, orgID, projectID, apiKeyMutationCreate, true,
-		); err != nil {
-			return stagedXInsightFeedCredentialResponse{}, err
-		}
-		connectionStatus, err := lockXInsightFeedConnection(r.Context(), tx, orgID, projectID)
-		if err != nil {
-			return stagedXInsightFeedCredentialResponse{}, err
-		}
-		var activeCount, stagedCount int
-		var allowedIP string
-		var rpmLimit, qpsLimit int
-		if err := tx.QueryRow(r.Context(),
-			`SELECT COUNT(*) FILTER (WHERE status = 'feed_active'),
-			        COUNT(*) FILTER (WHERE status = 'feed_staged')
-			 FROM api_keys
-			 WHERE org_id = $1 AND project_id = $2
-			   AND purpose = 'xinsight.feed.read'`,
-			orgID, projectID,
-		).Scan(&activeCount, &stagedCount); err != nil {
-			return stagedXInsightFeedCredentialResponse{}, err
-		}
-		if connectionStatus != xInsightFeedConnectionPaused || stagedCount != 0 {
+	decodedVerifier, err := validateXInsightFeedRegistration(registration)
+	if err != nil {
+		return stagedXInsightFeedCredentialResponse{}, err
+	}
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		return stagedXInsightFeedCredentialResponse{}, err
+	}
+	defer tx.Rollback(r.Context())
+	if err := h.reauthorizeXInsightFeedControlTx(
+		r.Context(), tx, orgID, projectID, apiKeyMutationCreate, true,
+	); err != nil {
+		return stagedXInsightFeedCredentialResponse{}, err
+	}
+	connectionStatus, err := lockXInsightFeedConnection(r.Context(), tx, orgID, projectID)
+	if err != nil {
+		return stagedXInsightFeedCredentialResponse{}, err
+	}
+	var activeCount, stagedCount int
+	var allowedIP string
+	var rpmLimit, qpsLimit int
+	if err := tx.QueryRow(r.Context(),
+		`SELECT COUNT(*) FILTER (WHERE status = 'feed_active'),
+		        COUNT(*) FILTER (WHERE status = 'feed_staged')
+		 FROM api_keys
+		 WHERE org_id = $1 AND project_id = $2
+		   AND purpose = 'xinsight.feed.read'`,
+		orgID, projectID,
+	).Scan(&activeCount, &stagedCount); err != nil {
+		return stagedXInsightFeedCredentialResponse{}, err
+	}
+	if connectionStatus != xInsightFeedConnectionPaused || stagedCount != 0 {
+		return stagedXInsightFeedCredentialResponse{}, errXInsightFeedConflict
+	}
+	if rotation {
+		if activeCount != 1 {
 			return stagedXInsightFeedCredentialResponse{}, errXInsightFeedConflict
 		}
-		if rotation {
-			if activeCount != 1 {
-				return stagedXInsightFeedCredentialResponse{}, errXInsightFeedConflict
-			}
-			if err := tx.QueryRow(r.Context(),
-				`SELECT allowed_ips, rpm_limit, qps_limit
-				 FROM api_keys
-				 WHERE org_id = $1 AND project_id = $2
-				   AND purpose = 'xinsight.feed.read'
-				   AND status = 'feed_active'
-				 FOR UPDATE`,
-				orgID, projectID,
-			).Scan(&allowedIP, &rpmLimit, &qpsLimit); err != nil {
-				return stagedXInsightFeedCredentialResponse{}, err
-			}
-		} else {
-			if activeCount != 0 {
-				return stagedXInsightFeedCredentialResponse{}, errXInsightFeedConflict
-			}
-			allowedIP, rpmLimit, qpsLimit = requestedAllowedIP, 60, 1
-		}
-		if !exactHostNetworkBinding(allowedIP) {
-			return stagedXInsightFeedCredentialResponse{}, errXInsightFeedInvalidScope
-		}
-		keyHash := auth.HashAPIKey(rawKey, h.apiKeyHashSecret)
-		keyName := fmt.Sprintf("X-Insight feed %d %s", projectID, keyPrefix)
-		var keyID int64
-		err = tx.QueryRow(r.Context(),
-			`INSERT INTO api_keys (
-			    org_id, project_id, owner_user_id, key_type, name, key_hash, key_prefix,
-			    status, rpm_limit, qps_limit, budget_limit, allowed_ips, allowed_models,
-			    policy_labels, purpose, created_at, updated_at
-			 ) VALUES (
-			    $1, $2, NULL, 'service', $3, $4, $5,
-			    'feed_staged', $6, $7, 0, $8, '', '',
-			    'xinsight.feed.read', NOW(), NOW()
-			 ) RETURNING id`,
-			orgID, projectID, keyName, keyHash, keyPrefix, rpmLimit, qpsLimit, allowedIP,
-		).Scan(&keyID)
-		if err != nil {
-			_ = tx.Rollback(r.Context())
-			if isAPIKeyPrefixCollision(err) {
-				continue
-			}
+		if err := tx.QueryRow(r.Context(),
+			`SELECT allowed_ips, rpm_limit, qps_limit
+			 FROM api_keys
+			 WHERE org_id = $1 AND project_id = $2
+			   AND purpose = 'xinsight.feed.read'
+			   AND status = 'feed_active'
+			 FOR UPDATE`,
+			orgID, projectID,
+		).Scan(&allowedIP, &rpmLimit, &qpsLimit); err != nil {
 			return stagedXInsightFeedCredentialResponse{}, err
 		}
-		action := "data_exchange.xinsight.credential.create"
-		if rotation {
-			action = "data_exchange.xinsight.rotation.prepare"
+	} else {
+		if activeCount != 0 {
+			return stagedXInsightFeedCredentialResponse{}, errXInsightFeedConflict
 		}
-		if err := insertAuditEntry(r.Context(), tx, action, "xinsight_feed_connection", strconv.FormatInt(projectID, 10),
-			map[string]any{
-				"credential_id": keyID,
-				"after": map[string]any{
-					"credential_id": keyID,
-					"lifecycle":     "staged",
-					"purpose":       xInsightFeedKeyPurpose,
-					"key_type":      "service",
-					"network_bound": true,
-					"models":        0,
-					"policy_labels": 0,
-				},
-			},
-			requestAuditMeta(r, orgID, projectID),
-		); err != nil {
-			return stagedXInsightFeedCredentialResponse{}, err
-		}
-		if err := tx.Commit(r.Context()); err != nil {
-			return stagedXInsightFeedCredentialResponse{}, err
-		}
-		committed = true
-		return stagedXInsightFeedCredentialResponse{
-			ID: keyID, Key: rawKey, KeyPrefix: keyPrefix, Lifecycle: "staged",
-			ProjectID: projectID, Purpose: xInsightFeedKeyPurpose, KeyType: "service",
-		}, nil
+		allowedIP, rpmLimit, qpsLimit = requestedAllowedIP, 60, 1
 	}
-	return stagedXInsightFeedCredentialResponse{}, errors.New("failed to allocate a unique feed credential")
+	if !exactHostNetworkBinding(allowedIP) {
+		return stagedXInsightFeedCredentialResponse{}, errXInsightFeedInvalidScope
+	}
+	keyHash := auth.HashReceiverFeedVerifier(decodedVerifier, h.apiKeyHashSecret)
+	keyName := fmt.Sprintf("X-Insight feed %d %s", projectID, registration.KeyPrefix)
+	var keyID int64
+	err = tx.QueryRow(r.Context(),
+		`INSERT INTO api_keys (
+		    org_id, project_id, owner_user_id, key_type, name, key_hash, key_prefix,
+		    status, rpm_limit, qps_limit, budget_limit, allowed_ips, allowed_models,
+		    policy_labels, purpose, verifier_scheme, registration_operation_id,
+		    created_at, updated_at
+		 ) VALUES (
+		    $1, $2, NULL, 'service', $3, $4, $5,
+		    'feed_staged', $6, $7, 0, $8, '', '',
+		    'xinsight.feed.read', $9, $10, NOW(), NOW()
+		 ) RETURNING id`,
+		orgID, projectID, keyName, keyHash, registration.KeyPrefix,
+		rpmLimit, qpsLimit, allowedIP, registration.VerifierScheme, registration.OperationID,
+	).Scan(&keyID)
+	if err != nil {
+		if isXInsightFeedRegistrationCollision(err) {
+			return stagedXInsightFeedCredentialResponse{}, errXInsightFeedConflict
+		}
+		return stagedXInsightFeedCredentialResponse{}, err
+	}
+	action := "data_exchange.xinsight.credential.create"
+	if rotation {
+		action = "data_exchange.xinsight.rotation.prepare"
+	}
+	if err := insertAuditEntry(r.Context(), tx, action, "xinsight_feed_connection", strconv.FormatInt(projectID, 10),
+		map[string]any{
+			"credential_id": keyID,
+			"after": map[string]any{
+				"credential_id":   keyID,
+				"lifecycle":       "staged",
+				"purpose":         xInsightFeedKeyPurpose,
+				"key_type":        "service",
+				"network_bound":   true,
+				"models":          0,
+				"policy_labels":   0,
+				"verifier_scheme": registration.VerifierScheme,
+				"operation_id":    registration.OperationID,
+			},
+		},
+		requestAuditMeta(r, orgID, projectID),
+	); err != nil {
+		return stagedXInsightFeedCredentialResponse{}, err
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		return stagedXInsightFeedCredentialResponse{}, err
+	}
+	return stagedXInsightFeedCredentialResponse{
+		ID: keyID, KeyPrefix: registration.KeyPrefix, Lifecycle: "staged",
+		ProjectID: projectID, Purpose: xInsightFeedKeyPurpose, KeyType: "service",
+		VerifierScheme: registration.VerifierScheme, OperationID: registration.OperationID,
+	}, nil
 }
 
 func (h *Handler) ActivateInitialXInsightFeedCredential(w http.ResponseWriter, r *http.Request) {
@@ -781,13 +815,22 @@ func (h *Handler) readXInsightFeedCredential(
 	var credential xInsightFeedCredential
 	var updatedAt time.Time
 	err := h.db.QueryRow(ctx,
-		`SELECT id, key_prefix, status, created_at, updated_at
+		`SELECT id, key_prefix, status, verifier_scheme, registration_operation_id,
+		        created_at, updated_at
 		 FROM api_keys
 		 WHERE `+conditions+`
 		 ORDER BY updated_at DESC, id DESC
 		 LIMIT 1`,
 		args...,
-	).Scan(&credential.ID, &credential.KeyPrefix, &credential.Status, &credential.CreatedAt, &updatedAt)
+	).Scan(
+		&credential.ID,
+		&credential.KeyPrefix,
+		&credential.Status,
+		&credential.VerifierScheme,
+		&credential.OperationID,
+		&credential.CreatedAt,
+		&updatedAt,
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -874,6 +917,45 @@ func exactHostNetworkBinding(raw string) bool {
 		(prefix.Addr().Is6() && prefix.Bits() == 128)
 }
 
+func decodeXInsightFeedControlJSON(w http.ResponseWriter, r *http.Request, value any) bool {
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(value); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Invalid JSON"})
+		return false
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Only one JSON object is allowed"})
+		return false
+	}
+	return true
+}
+
+func validateXInsightFeedRegistration(
+	registration xInsightFeedCredentialRegistrationV1,
+) ([]byte, error) {
+	if registration.SchemaVersion != auth.ReceiverFeedRegistrationSchema ||
+		registration.TokenFormat != auth.ReceiverFeedTokenFormat ||
+		registration.VerifierScheme != auth.ReceiverFeedVerifierScheme ||
+		!xInsightFeedPrefixPattern.MatchString(registration.KeyPrefix) ||
+		!xInsightFeedOperationPattern.MatchString(registration.OperationID) {
+		return nil, errXInsightFeedRegistration
+	}
+	verifier, err := auth.DecodeReceiverFeedVerifier(registration.VerifierSHA256)
+	if err != nil {
+		return nil, errXInsightFeedRegistration
+	}
+	return verifier, nil
+}
+
+func isXInsightFeedRegistrationCollision(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505" &&
+		(pgErr.ConstraintName == "idx_api_keys_prefix" ||
+			pgErr.ConstraintName == "api_keys_receiver_feed_operation" ||
+			pgErr.ConstraintName == "api_keys_one_staged_xinsight_feed_per_project")
+}
+
 func xInsightFeedLifecycle(status string) string {
 	switch status {
 	case middleware.APIKeyStatusFeedActive:
@@ -894,6 +976,8 @@ func writeXInsightFeedControlError(w http.ResponseWriter, err error) {
 	case errors.Is(err, errXInsightFeedConflict):
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "X-Insight feed state conflicts with the requested operation"})
 	case errors.Is(err, errXInsightFeedInvalidScope):
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+	case errors.Is(err, errXInsightFeedRegistration):
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 	default:
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "X-Insight feed control operation failed"})

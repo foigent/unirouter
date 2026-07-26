@@ -57,6 +57,19 @@ The endpoint accepts only a project-bound `service` API key with the dedicated
 purpose `xinsight.feed.read` and a non-empty matching network/IP allowlist.
 That purpose is denied on every model-gateway route.
 
+New feed credentials are receiver-generated. X-Insight creates and retains the
+exact bearer `ur-xf1-{64 lowercase hex}`, then registers only the strict
+`unirouter.xinsight.feed-credential-registration.v1` public bundle through the
+dedicated connection control. The bundle contains the exact token format,
+first-20-character prefix, `receiver_sha256_v1` scheme, domain-separated
+SHA-256 verifier and independent 32-lowercase-hex operation ID. UniRouter
+persists only `HMAC-SHA256(decoded verifier, API-key server secret)`, the
+prefix, scheme and operation ID. It never receives or returns the raw bearer
+or persists the public verifier. Existing legacy feed credentials remain
+feed-route-compatible; receiver-generated credentials are resolved only on
+the completed-execution feed route, so model gateway authentication remains
+legacy-only.
+
 Feed credentials have purpose-specific lifecycles: `feed_staged`,
 `feed_active`, and terminal `feed_revoked`. They are read-only in generic key
 management and can be changed only from the X-Insight connection control.
@@ -126,7 +139,8 @@ is intentionally supported only after:
 4. start the older binary only after the preflight reports zero active
    purpose-scoped credentials.
 
-Schema rollback is stricter than binary rollback. Migration `000043` refuses
-down while any purpose-scoped key or retained feed state exists. Normal
-recovery is roll-forward; removing the retired exact key and feed state for a
-schema down is a separately controlled data-lifecycle action.
+Schema rollback is stricter than binary rollback. Migration `000045` refuses
+down while a receiver-generated credential is serving or staged. Migration
+`000043` refuses down while any purpose-scoped key or retained feed state
+exists. Normal recovery is roll-forward; removing the retired exact key and
+feed state for a schema down is a separately controlled data-lifecycle action.
