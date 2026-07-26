@@ -237,6 +237,52 @@ func TestHandlerFailsClosedOnRetainedSnapshotIntegrityMismatch(t *testing.T) {
 	requireErrorCode(t, response, "completed_execution_feed.integrity_failure")
 }
 
+func TestHandlerAcceptsEquivalentPostgresTimestampPrecision(t *testing.T) {
+	terminalAt := time.Date(2026, 7, 26, 9, 52, 52, 123456789, time.UTC)
+	item := storedFeedItem(t, 5, "handler-postgres-time-precision", terminalAt)
+	item.TerminalAvailableAt = terminalAt.Truncate(time.Microsecond)
+	service := newHandlerTestService(t, readerFunc(func(_ context.Context, _, _ int64, _ int64, _ int) (ReadWindow, error) {
+		return ReadWindow{
+			Items:         []StoredItem{item},
+			HighWatermark: 5,
+			Remaining:     1,
+		}, nil
+	}))
+	cursor, err := service.codec.Encode(22, 0)
+	require.NoError(t, err)
+	request := completedFeedHandlerRequest(t, service, "?cursor="+cursor)
+	response := httptest.NewRecorder()
+
+	service.Handler().ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	var page FeedPage
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &page))
+	require.Len(t, page.Items, 1)
+}
+
+func TestHandlerRejectsTimestampMismatchAtPostgresPrecision(t *testing.T) {
+	terminalAt := time.Date(2026, 7, 26, 9, 52, 52, 123456789, time.UTC)
+	item := storedFeedItem(t, 5, "handler-postgres-time-mismatch", terminalAt)
+	item.TerminalAvailableAt = terminalAt.Truncate(time.Microsecond).Add(time.Microsecond)
+	service := newHandlerTestService(t, readerFunc(func(_ context.Context, _, _ int64, _ int64, _ int) (ReadWindow, error) {
+		return ReadWindow{
+			Items:         []StoredItem{item},
+			HighWatermark: 5,
+			Remaining:     1,
+		}, nil
+	}))
+	cursor, err := service.codec.Encode(22, 0)
+	require.NoError(t, err)
+	request := completedFeedHandlerRequest(t, service, "?cursor="+cursor)
+	response := httptest.NewRecorder()
+
+	service.Handler().ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusInternalServerError, response.Code)
+	requireErrorCode(t, response, "completed_execution_feed.integrity_failure")
+}
+
 type readerFunc func(context.Context, int64, int64, int64, int) (ReadWindow, error)
 
 func (read readerFunc) Read(ctx context.Context, orgID, projectID, after int64, limit int) (ReadWindow, error) {

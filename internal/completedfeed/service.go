@@ -69,12 +69,13 @@ func (service *Service) MaterializeTerminalTx(ctx context.Context, tx pgx.Tx, re
 		feedMaterialized.WithLabelValues(record.Status, "not_project_scoped").Inc()
 		return nil
 	}
+	terminalAvailableAt := canonicalTerminalAvailableAt(record.OccurredAt)
 	_, snapshot, snapshotHash, err := BuildSnapshot(SnapshotInput{
 		RequestID:            record.RequestID,
 		OrgID:                record.OrgID,
 		ProjectID:            record.ProjectID,
 		TerminalStatus:       record.Status,
-		TerminalAvailableAt:  record.OccurredAt,
+		TerminalAvailableAt:  terminalAvailableAt,
 		Model:                record.Model,
 		PromptTokens:         record.PromptTokens,
 		UncachedPromptTokens: record.UncachedPromptTokens,
@@ -135,7 +136,7 @@ func (service *Service) MaterializeTerminalTx(ctx context.Context, tx pgx.Tx, re
 		record.ProjectID,
 		record.RequestID,
 		record.Status,
-		record.OccurredAt.UTC(),
+		terminalAvailableAt,
 		SnapshotRevision,
 		[]byte(snapshot),
 		snapshotHash,
@@ -163,6 +164,14 @@ func (service *Service) MaterializeTerminalTx(ctx context.Context, tx pgx.Tx, re
 	}
 	feedMaterialized.WithLabelValues(record.Status, "created").Inc()
 	return nil
+}
+
+// PostgreSQL TIMESTAMPTZ stores microsecond precision. Canonicalize the
+// terminal instant before persisting both the relational binding and its
+// immutable snapshot so the two representations cannot diverge below the
+// database's precision.
+func canonicalTerminalAvailableAt(value time.Time) time.Time {
+	return value.UTC().Truncate(time.Microsecond)
 }
 
 func (service *Service) RunRetention(ctx context.Context) {

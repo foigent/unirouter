@@ -169,7 +169,8 @@ func (service *Service) Handler() http.Handler {
 			if decodeErr != nil ||
 				snapshot.RequestID != stored.RequestID ||
 				snapshot.Terminal.Status != stored.TerminalStatus ||
-				!snapshot.Terminal.AvailableAt.Equal(stored.TerminalAvailableAt) ||
+				!canonicalTerminalAvailableAt(snapshot.Terminal.AvailableAt).
+					Equal(canonicalTerminalAvailableAt(stored.TerminalAvailableAt)) ||
 				stored.Revision != SnapshotRevision {
 				service.writeError(w, http.StatusInternalServerError, "completed_execution_feed.integrity_failure", "Retained completed-execution item failed integrity validation", false, "integrity_failure")
 				return
