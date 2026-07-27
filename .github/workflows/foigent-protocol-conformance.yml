@@ -1,0 +1,32 @@
+name: Foigent Protocol Conformance
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - contracts/foigent/event-connector-protocol.pin.json
+      - .github/workflows/foigent-protocol-conformance.yml
+  push:
+    branches: [main]
+    paths:
+      - contracts/foigent/event-connector-protocol.pin.json
+      - .github/workflows/foigent-protocol-conformance.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  protocol-pin:
+    name: UniRouter Protocol Pin
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout UniRouter
+        uses: actions/checkout@v4
+
+      - name: Verify Foigent protocol release and UniRouter pin
+        uses: foigent/event-connector-spec@c09bc93cc7750e2333752655d6b4e69802e6769d
+        with:
+          pin: contracts/foigent/event-connector-protocol.pin.json
+          product: unirouter

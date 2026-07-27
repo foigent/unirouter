@@ -1,0 +1,19 @@
+{
+  "pin_version": "foigent.protocol-pin.v1",
+  "product": "unirouter",
+  "protocol_version": "1.0.0",
+  "release_digest": "sha256:aaeb5b37b94a1fd603048d77b2180fa88be1ddbd6eeea6a1369edf0cea9c5e2b",
+  "authority": {
+    "repository": "https://github.com/foigent/event-connector-spec",
+    "repository_id": 1313391565,
+    "tag": "v1.0.0"
+  },
+  "components": {
+    "shared_ci_action": "sha256:d582bf286035d20fb99d67a35a637a697e62411de8d669340a549142381bdc38",
+    "source_projection_contract": "sha256:5425ab384bebcd9d4a7e81882bfa1bb1700df7cc397863b91f69e2855df12928",
+    "source_lifecycle_mapping": "sha256:1618c86e3d8fae206322e1d928b8b5f0401865623b4267f5b685d7ac02b2968f",
+    "source_identity_mapping": "sha256:0cdbcdcf42658ee12d14ae13ef5d43b54488dca7cec8182055047585eb62e890",
+    "canonical_vector_bundle": "sha256:50fc8e8be08c37381611d6423e29780894741fb108fc4569df7c895452e5d4db",
+    "conformance_contract": "sha256:f3ae834265170ff22088943283fd23dcb562bc2308571ccc722414c2c896dc23"
+  }
+}
