@@ -1,18 +1,17 @@
-package completedfeed
+package eventconnectorshadow
 
 import (
 	"bytes"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/uniroute/unirouter/internal/completedfeed"
 	"github.com/uniroute/unirouter/internal/eventconnector"
 	"github.com/uniroute/unirouter/internal/eventconnector/pullv1"
 )
@@ -32,7 +31,7 @@ func TestPhase2BThreePathReferenceDifferential(t *testing.T) {
 		{
 			fixture:        "valid-settled.json",
 			requestID:      "req_feed_v1_settled",
-			terminal:       TerminalSettled,
+			terminal:       completedfeed.TerminalSettled,
 			canonicalBytes: 4596,
 			envelopeHash:   "sha256:0d11f98f981427b7bcf175e82294511ca42981c0ecea8e02f841c3777743d1d2",
 			idempotencyKey: "sha256:c2822f0d940c01de77e2e06af1a5f6e1fd10fc66269be20fceb0939150c17b2e",
@@ -41,7 +40,7 @@ func TestPhase2BThreePathReferenceDifferential(t *testing.T) {
 		{
 			fixture:        "valid-cancelled.json",
 			requestID:      "req_feed_v1_cancelled",
-			terminal:       TerminalCancelled,
+			terminal:       completedfeed.TerminalCancelled,
 			canonicalBytes: 4629,
 			envelopeHash:   "sha256:c31445c779ffec9dae8cbc7f1f0344722a4e0fb696a366b2e321f58d0d07fbab",
 			idempotencyKey: "sha256:d342a560ade558edc557f2cd645a526178958540a012ceabe9ca7047e916796c",
@@ -57,7 +56,7 @@ func TestPhase2BThreePathReferenceDifferential(t *testing.T) {
 			exactSource := append([]byte(nil), payload...)
 
 			// Path 1: current production DTO and decoder.
-			snapshot, err := DecodeSnapshot(payload)
+			snapshot, err := completedfeed.DecodeSnapshot(payload)
 			if err != nil {
 				t.Fatalf("decode current Source DTO: %v", err)
 			}
@@ -68,7 +67,7 @@ func TestPhase2BThreePathReferenceDifferential(t *testing.T) {
 			}
 
 			// Path 2: Phase 2A compatibility bridge.
-			compatibility, err := BuildReferenceEnvelopeV1(payload, "unirouter-development")
+			compatibility, err := completedfeed.BuildReferenceEnvelopeV1(payload, "unirouter-development")
 			if err != nil {
 				t.Fatalf("build Phase 2A Reference Envelope: %v", err)
 			}
@@ -125,7 +124,7 @@ func TestPhase2BOpaqueUTF8Differential(t *testing.T) {
 		1,
 	))
 	sourceInstance := "unirouter-development"
-	compatibility, err := BuildReferenceEnvelopeV1(payload, sourceInstance)
+	compatibility, err := completedfeed.BuildReferenceEnvelopeV1(payload, sourceInstance)
 	if err != nil {
 		t.Fatalf("build Phase 2A opaque Envelope: %v", err)
 	}
@@ -147,7 +146,7 @@ func TestPhase2BOpaqueUTF8Differential(t *testing.T) {
 	}
 
 	sourceInstance = "unirouter-e\u0301"
-	compatibility, err = BuildReferenceEnvelopeV1(payload, sourceInstance)
+	compatibility, err = completedfeed.BuildReferenceEnvelopeV1(payload, sourceInstance)
 	if err != nil {
 		t.Fatalf("build Phase 2A opaque Source instance: %v", err)
 	}
@@ -161,6 +160,31 @@ func TestPhase2BOpaqueUTF8Differential(t *testing.T) {
 	producer := neutral.Envelope["producer"].(map[string]any)
 	if producer["instance"] != sourceInstance {
 		t.Fatalf("opaque producer instance=%q want=%q", producer["instance"], sourceInstance)
+	}
+}
+
+func TestPhase2BNeutralProducerInstanceRejectsUnicodeControls(t *testing.T) {
+	t.Parallel()
+
+	payload := readReferenceFixture(t, "valid-settled.json")
+	for _, sourceInstance := range []string{
+		"unirouter\x00development",
+		"unirouter\ndevelopment",
+		"unirouter\u0085development",
+	} {
+		sourceInstance := sourceInstance
+		t.Run(strconv.QuoteToASCII(sourceInstance), func(t *testing.T) {
+			t.Parallel()
+
+			_, err := BuildNeutralReferenceEnvelopeV1(payload, sourceInstance)
+			if err == nil ||
+				err.Category != "contract" ||
+				err.Code != "invalid_opaque_string" ||
+				err.Phase != "validate" ||
+				err.Operation != "validate_opaque_string" {
+				t.Fatalf("error=%#v", err)
+			}
+		})
 	}
 }
 
@@ -404,66 +428,68 @@ func TestPhase2BNoProductionRuntimeCallOrBridgeMutation(t *testing.T) {
 		bytes.Contains(bridge, []byte("NeutralReference")) {
 		t.Fatal("Phase 2A bridge now depends on the Phase 2B path")
 	}
+}
 
-	adapterPath := filepath.Join(repositoryRoot, "internal", "completedfeed", "reference_adapter.go")
-	forbiddenCalls := map[string]struct{}{
-		"BuildNeutralReferenceEnvelopeV1":       {},
-		"DecodeNeutralReferenceFeedErrorV1":     {},
-		"buildNeutralReferenceEventV1":          {},
-		"newCompletedExecutionReferenceAdapter": {},
-	}
-	err = filepath.WalkDir(repositoryRoot, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() {
-			switch entry.Name() {
-			case ".git", "node_modules":
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(path, ".go") ||
-			strings.HasSuffix(path, "_test.go") ||
-			path == adapterPath {
-			return nil
-		}
-		parsed, parseErr := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
-		if parseErr != nil {
-			t.Errorf("parse imports %s: %v", path, parseErr)
-			return nil
-		}
-		for _, importSpec := range parsed.Imports {
-			if importSpec.Path.Value == strconv.Quote("github.com/uniroute/unirouter/internal/eventconnector") &&
-				!strings.HasPrefix(path, filepath.Join(repositoryRoot, "internal", "eventconnector")+string(filepath.Separator)) {
-				t.Errorf("production file imports neutral kernel outside its private boundary: %s", path)
-			}
-		}
-		parsed, parseErr = parser.ParseFile(token.NewFileSet(), path, nil, 0)
-		if parseErr != nil {
-			t.Errorf("parse calls %s: %v", path, parseErr)
-			return nil
-		}
-		ast.Inspect(parsed, func(node ast.Node) bool {
-			call, ok := node.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			var name string
-			switch function := call.Fun.(type) {
-			case *ast.Ident:
-				name = function.Name
-			case *ast.SelectorExpr:
-				name = function.Sel.Name
-			}
-			if _, forbidden := forbiddenCalls[name]; forbidden {
-				t.Errorf("production runtime call %s found in %s", name, path)
-			}
-			return true
-		})
-		return nil
-	})
+func TestPhase2BProductionEntryDependencyGraphMatchesBase(t *testing.T) {
+	const (
+		baseCommit = "55302a569ddabc52132b86264b0fc0b047e6a600"
+		baseTree   = "af11c18123194a14043a7aa21f0cd1c6acb16f30"
+		baseDigest = "sha256:49e50af7c867f6fadf1f2e755a1d90312db6254b00f97b43a2dc4b65b69b2a63"
+		template   = `{{if not .Standard}}{{.ImportPath}}	{{join .Imports ","}}{{end}}`
+	)
+
+	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
-		t.Fatalf("walk production call graph: %v", err)
+		t.Fatalf("resolve repository root: %v", err)
 	}
+
+	command := exec.Command("go", "list", "-deps", "-f", template, "./cmd/...")
+	command.Dir = repositoryRoot
+	command.Env = append(
+		os.Environ(),
+		"GOOS=linux",
+		"GOARCH=amd64",
+		"CGO_ENABLED=0",
+	)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("resolve production dependency graph: %v\n%s", err, output)
+	}
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	filtered := lines[:0]
+	for _, line := range lines {
+		if line != "" {
+			filtered = append(filtered, line)
+		}
+	}
+	sort.Strings(filtered)
+	graph := []byte(strings.Join(filtered, "\n") + "\n")
+	if got := eventconnector.HashSourceBytes(graph); got != baseDigest {
+		t.Fatalf(
+			"linux/amd64 production entry dependency graph differs from base %s tree %s: %s want=%s",
+			baseCommit,
+			baseTree,
+			got,
+			baseDigest,
+		)
+	}
+	for _, shadowImport := range []string{
+		"github.com/uniroute/unirouter/internal/eventconnector\t",
+		"github.com/uniroute/unirouter/internal/eventconnectorshadow\t",
+	} {
+		if bytes.Contains(graph, []byte(shadowImport)) {
+			t.Fatalf("production dependency closure includes Phase 2B package %q", strings.TrimSuffix(shadowImport, "\t"))
+		}
+	}
+}
+
+func readReferenceFixture(t *testing.T, name string) []byte {
+	t.Helper()
+
+	path := filepath.Join("..", "..", "contracts", "completed-execution", "v1", "fixtures", name)
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read fixture %s: %v", name, err)
+	}
+	return payload
 }

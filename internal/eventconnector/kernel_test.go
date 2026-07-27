@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -176,6 +177,50 @@ func TestPhase2BCanonicalNumericTimeAndUnicodeVectors(t *testing.T) {
 	if _, err := CanonicalJSON(map[string]any{"n": int64(9_007_199_254_740_992)}); err == nil ||
 		err.Code != "canonicalization_failed" {
 		t.Fatalf("above-safe integer error=%v", err)
+	}
+}
+
+func TestPhase2BProducerInstanceRejectsXCompatibleUnicodeControls(t *testing.T) {
+	t.Parallel()
+
+	descriptor, err := NewDescriptor(phase2BTestDescriptorBinding())
+	if err != nil {
+		t.Fatalf("create descriptor: %v", err)
+	}
+	for _, producerInstance := range []string{
+		"source\x00instance",
+		"source\ninstance",
+		"source\u0085instance",
+	} {
+		producerInstance := producerInstance
+		t.Run(strconv.QuoteToASCII(producerInstance), func(t *testing.T) {
+			t.Parallel()
+
+			if _, artifactErr := NewSourceArtifact(
+				descriptor,
+				producerInstance,
+				"1",
+				[]byte(`{"id":"event-1"}`),
+				StrictJSONOptions{RejectNull: true},
+			); artifactErr == nil ||
+				artifactErr.Code != "invalid_opaque_string" ||
+				artifactErr.Operation != "validate_opaque_string" {
+				t.Fatalf("Source Artifact error=%#v", artifactErr)
+			}
+
+			if _, identityErr := BuildIdentityInput(IdentityComponents{
+				ProducerProduct:  "unirouter",
+				ProducerInstance: producerInstance,
+				OrgRef:           "101",
+				ProjectRef:       "202",
+				EventType:        "model.request.completed",
+				EventID:          "event-1",
+			}); identityErr == nil ||
+				identityErr.Code != "invalid_opaque_string" ||
+				identityErr.Operation != "validate_opaque_string" {
+				t.Fatalf("identity error=%#v", identityErr)
+			}
+		})
 	}
 }
 

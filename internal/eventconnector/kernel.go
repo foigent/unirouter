@@ -331,7 +331,7 @@ func NewSourceArtifact(
 	if descriptor.key == "" {
 		return SourceArtifact{}, contractError("descriptor_missing", "configure", "bind_source_artifact", "Pinned descriptor is missing", nil)
 	}
-	instance, err := NewOpaqueString("producer.instance", producerInstance, 1, 128, false)
+	instance, err := NewOpaqueString("producer.instance", producerInstance, 1, 128, true)
 	if err != nil {
 		return SourceArtifact{}, err
 	}
@@ -427,7 +427,7 @@ func BuildIdentityInput(identity IdentityComponents) ([]byte, *ConnectorError) {
 		len(eventType.String()) > 128 {
 		return nil, contractError("invalid_identity_component", "validate", "build_idempotency", "Protocol identity component is invalid", nil)
 	}
-	if _, err := NewOpaqueString("producer.instance", identity.ProducerInstance, 1, 128, false); err != nil {
+	if _, err := NewOpaqueString("producer.instance", identity.ProducerInstance, 1, 128, true); err != nil {
 		return nil, err
 	}
 	if _, err := NewOpaqueString("event_id", identity.EventID, 1, 128, true); err != nil {

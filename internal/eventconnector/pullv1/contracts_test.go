@@ -235,26 +235,60 @@ func TestPhase2BCheckpointProgressGates(t *testing.T) {
 	}
 }
 
+func TestPhase2BDeliveryRejectsControlProducerAndNULCheckpoints(t *testing.T) {
+	t.Parallel()
+
+	event := phase2BTestEvent(t, "event-1", "alpha")
+	batch := phase2BTestBatch([]eventconnector.ImmutableEvent{event})
+	batch.ProducerInstance = "source\u0085instance"
+	if err := batch.Validate(); err == nil || err.Code != "invalid_opaque_string" {
+		t.Fatalf("batch producer error=%#v", err)
+	}
+
+	batch = phase2BTestBatch([]eventconnector.ImmutableEvent{event})
+	batch.NextCursor = "cursor\x00next"
+	if err := batch.Validate(); err == nil || err.Code != "invalid_cursor" {
+		t.Fatalf("batch cursor error=%#v", err)
+	}
+	batch = phase2BTestBatch([]eventconnector.ImmutableEvent{event})
+	batch.HighWatermark = "high\x00watermark"
+	if err := batch.Validate(); err == nil || err.Code != "invalid_cursor" {
+		t.Fatalf("batch high-watermark error=%#v", err)
+	}
+
+	checkpoint := Checkpoint{
+		CheckpointVersion: CheckpointVersion,
+		ConnectorID:       phase2BConnectorID,
+		ConnectorVersion:  phase2BConnectorVersion,
+		ProducerInstance:  phase2BProducerInstance,
+		Cursor:            "cursor\x00checkpoint",
+		HighWatermark:     "high-0",
+		Phase:             "steady",
+		UpdatedAt:         phase2BTime,
+	}
+	if err := checkpoint.Validate(); err == nil || err.Code != "invalid_cursor" {
+		t.Fatalf("checkpoint cursor error=%#v", err)
+	}
+
+	receipt := phase2BCompletedReceipt()
+	receipt.CheckpointAfter = "cursor\x00receipt"
+	if err := receipt.Validate(); err == nil || err.Code != "invalid_cursor" {
+		t.Fatalf("receipt checkpoint error=%#v", err)
+	}
+}
+
 func TestPhase2BOperationalReceiptValidation(t *testing.T) {
 	t.Parallel()
 
-	receipt := OperationalReceipt{
-		ReceiptVersion:   OperationalReceiptVersion,
-		OperationID:      "operation-1",
-		ConnectorID:      phase2BConnectorID,
-		ProducerInstance: phase2BProducerInstance,
-		Operation:        "commit_page",
-		Status:           "completed",
-		Counts: ReceiptCounts{
-			Received: 1,
-			Inserted: 1,
-		},
-		CheckpointBefore: "cursor-0",
-		CheckpointAfter:  "cursor-1",
-		ObservedAt:       phase2BTime,
-	}
+	receipt := phase2BCompletedReceipt()
 	if err := receipt.Validate(); err != nil {
 		t.Fatalf("valid receipt rejected: %v", err)
+	}
+	duplicate := receipt
+	duplicate.Counts.Inserted = 0
+	duplicate.Counts.DuplicateNoop = 1
+	if err := duplicate.Validate(); err != nil {
+		t.Fatalf("valid duplicate-noop receipt rejected: %v", err)
 	}
 	wire, err := json.Marshal(receipt)
 	if err != nil {
@@ -284,6 +318,45 @@ func TestPhase2BOperationalReceiptValidation(t *testing.T) {
 	)
 	if err := receipt.Validate(); err == nil || err.Code != "receipt_retryability_mismatch" {
 		t.Fatalf("retryability mismatch error=%v", err)
+	}
+}
+
+func TestPhase2BCompletedReceiptRequiresFullConvergence(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range []struct {
+		name   string
+		counts ReceiptCounts
+	}{
+		{
+			name:   "unaccounted-received",
+			counts: ReceiptCounts{Received: 2, Inserted: 1},
+		},
+		{
+			name:   "too-many-successes",
+			counts: ReceiptCounts{Received: 1, Inserted: 1, DuplicateNoop: 1},
+		},
+		{
+			name:   "conflict",
+			counts: ReceiptCounts{Received: 1, Inserted: 1, Conflict: 1},
+		},
+		{
+			name:   "rejected",
+			counts: ReceiptCounts{Received: 1, Inserted: 1, Rejected: 1},
+		},
+	} {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			receipt := phase2BCompletedReceipt()
+			receipt.Counts = testCase.counts
+			if err := receipt.Validate(); err == nil ||
+				err.Code != "completed_receipt_count_mismatch" ||
+				err.Operation != "validate_receipt" {
+				t.Fatalf("error=%#v", err)
+			}
+		})
 	}
 }
 
@@ -420,5 +493,23 @@ func phase2BTestBatch(events []eventconnector.ImmutableEvent) EventBatch {
 		NextCursor:       "cursor-1",
 		HighWatermark:    "high-1",
 		HasMore:          true,
+	}
+}
+
+func phase2BCompletedReceipt() OperationalReceipt {
+	return OperationalReceipt{
+		ReceiptVersion:   OperationalReceiptVersion,
+		OperationID:      "operation-1",
+		ConnectorID:      phase2BConnectorID,
+		ProducerInstance: phase2BProducerInstance,
+		Operation:        "commit_page",
+		Status:           "completed",
+		Counts: ReceiptCounts{
+			Received: 1,
+			Inserted: 1,
+		},
+		CheckpointBefore: "cursor-0",
+		CheckpointAfter:  "cursor-1",
+		ObservedAt:       phase2BTime,
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/uniroute/unirouter/internal/eventconnector"
@@ -41,7 +42,7 @@ func (batch EventBatch) Validate() *eventconnector.ConnectorError {
 	if err := validateConnectorIdentity(batch.ConnectorID, batch.ConnectorVersion); err != nil {
 		return err
 	}
-	if _, err := eventconnector.NewOpaqueString("batch.producer_instance", batch.ProducerInstance, 1, 128, false); err != nil {
+	if _, err := eventconnector.NewOpaqueString("batch.producer_instance", batch.ProducerInstance, 1, 128, true); err != nil {
 		return err
 	}
 	if eventconnector.ValidateCanonicalMicrosecondTime(batch.GeneratedAt) != nil {
@@ -85,7 +86,7 @@ func (checkpoint Checkpoint) Validate() *eventconnector.ConnectorError {
 	if err := validateConnectorIdentity(checkpoint.ConnectorID, checkpoint.ConnectorVersion); err != nil {
 		return err
 	}
-	if _, err := eventconnector.NewOpaqueString("checkpoint.producer_instance", checkpoint.ProducerInstance, 1, 128, false); err != nil {
+	if _, err := eventconnector.NewOpaqueString("checkpoint.producer_instance", checkpoint.ProducerInstance, 1, 128, true); err != nil {
 		return err
 	}
 	if !validCursor(checkpoint.Cursor) || !validCursor(checkpoint.HighWatermark) {
@@ -278,7 +279,7 @@ func (receipt OperationalReceipt) Validate() *eventconnector.ConnectorError {
 	if !connectorIDPattern.MatchString(receipt.ConnectorID) || len(receipt.ConnectorID) > 160 {
 		return deliveryContractError("invalid_connector_id", "validate_receipt", "Operational Receipt connector_id is invalid")
 	}
-	if _, err := eventconnector.NewOpaqueString("receipt.producer_instance", receipt.ProducerInstance, 1, 128, false); err != nil {
+	if _, err := eventconnector.NewOpaqueString("receipt.producer_instance", receipt.ProducerInstance, 1, 128, true); err != nil {
 		return err
 	}
 	switch receipt.Operation {
@@ -308,6 +309,17 @@ func (receipt OperationalReceipt) Validate() *eventconnector.ConnectorError {
 		if value < 0 {
 			return deliveryContractError("invalid_receipt_count", "validate_receipt", "Operational Receipt "+name+" count is negative")
 		}
+	}
+	if receipt.Status == "completed" &&
+		(receipt.Counts.Conflict != 0 ||
+			receipt.Counts.Rejected != 0 ||
+			receipt.Counts.Inserted > receipt.Counts.Received ||
+			receipt.Counts.DuplicateNoop != receipt.Counts.Received-receipt.Counts.Inserted) {
+		return deliveryContractError(
+			"completed_receipt_count_mismatch",
+			"validate_receipt",
+			"Completed Operational Receipt counts must fully converge without conflicts or rejections",
+		)
 	}
 	if !validCursor(receipt.CheckpointBefore) || !validCursor(receipt.CheckpointAfter) {
 		return cursorError("invalid_cursor", "validate_receipt", "Operational Receipt checkpoint is invalid", false)
@@ -349,7 +361,7 @@ func (binding CheckpointBinding) Validate() *eventconnector.ConnectorError {
 		binding.ProducerInstance,
 		1,
 		128,
-		false,
+		true,
 	); err != nil {
 		return err
 	}
@@ -366,7 +378,9 @@ type ReceiptPort interface {
 }
 
 func validCursor(value string) bool {
-	return utf8.ValidString(value) && len(value) <= MaxCursorBytes
+	return utf8.ValidString(value) &&
+		len(value) <= MaxCursorBytes &&
+		!strings.ContainsRune(value, '\x00')
 }
 
 func validateConnectorIdentity(connectorID, connectorVersion string) *eventconnector.ConnectorError {

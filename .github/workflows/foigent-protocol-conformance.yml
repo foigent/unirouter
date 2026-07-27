@@ -8,10 +8,9 @@ on:
       - contracts/foigent/connector-registry.pin.v1.json
       - contracts/completed-execution/v1/**
       - internal/eventconnector/**
+      - internal/eventconnectorshadow/**
       - internal/completedfeed/reference_bridge.go
       - internal/completedfeed/reference_bridge_test.go
-      - internal/completedfeed/reference_adapter.go
-      - internal/completedfeed/reference_adapter_test.go
       - go.mod
       - go.sum
       - .github/workflows/foigent-protocol-conformance.yml
@@ -22,10 +21,9 @@ on:
       - contracts/foigent/connector-registry.pin.v1.json
       - contracts/completed-execution/v1/**
       - internal/eventconnector/**
+      - internal/eventconnectorshadow/**
       - internal/completedfeed/reference_bridge.go
       - internal/completedfeed/reference_bridge_test.go
-      - internal/completedfeed/reference_adapter.go
-      - internal/completedfeed/reference_adapter_test.go
       - go.mod
       - go.sum
       - .github/workflows/foigent-protocol-conformance.yml
@@ -57,6 +55,6 @@ jobs:
 
       - name: Verify Source bridge and neutral Connector conformance
         run: >-
-          go test ./internal/eventconnector/... ./internal/completedfeed
+          go test ./internal/eventconnector/... ./internal/eventconnectorshadow ./internal/completedfeed
           -run '^(TestReferenceEnvelope|TestPhase2B)'
           -count=1

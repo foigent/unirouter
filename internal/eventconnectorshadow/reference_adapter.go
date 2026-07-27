@@ -1,4 +1,4 @@
-package completedfeed
+package eventconnectorshadow
 
 import (
 	"bytes"
@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/uniroute/unirouter/internal/completedfeed"
 	"github.com/uniroute/unirouter/internal/eventconnector"
 )
 
@@ -58,7 +59,7 @@ func neutralReferenceDescriptorBinding() eventconnector.DescriptorBinding {
 		ConnectorID:          neutralConnectorID,
 		ConnectorVersion:     neutralConnectorVersion,
 		SourceSchema: eventconnector.SchemaBinding{
-			SchemaID: SnapshotSchemaVersion,
+			SchemaID: completedfeed.SnapshotSchemaVersion,
 			SHA256:   neutralSourceSchemaDigest,
 		},
 		EmittedEvents: []eventconnector.EventSchemaBinding{
@@ -84,7 +85,7 @@ func (adapter completedExecutionReferenceAdapter) Project(
 	if err != nil {
 		return eventconnector.EventDraft{}, referenceAdapterError(err)
 	}
-	snapshot, err := DecodeSnapshot(sourceBytes)
+	snapshot, err := completedfeed.DecodeSnapshot(sourceBytes)
 	if err != nil {
 		return eventconnector.EventDraft{}, referenceAdapterError(err)
 	}
@@ -128,7 +129,7 @@ func (adapter completedExecutionReferenceAdapter) Project(
 
 	orgRef := strconv.FormatInt(snapshot.OrgID, 10)
 	projectRef := strconv.FormatInt(snapshot.ProjectID, 10)
-	sourceGaps := make(map[string]CaptureGap, len(snapshot.CaptureGaps))
+	sourceGaps := make(map[string]completedfeed.CaptureGap, len(snapshot.CaptureGaps))
 	for _, gap := range snapshot.CaptureGaps {
 		sourceGaps[gap.Source] = gap
 	}
@@ -240,12 +241,12 @@ func (adapter completedExecutionReferenceAdapter) Project(
 func BuildNeutralReferenceEnvelopeV1(
 	snapshotBytes []byte,
 	sourceInstance string,
-) (ReferenceEnvelopeV1Result, *eventconnector.ConnectorError) {
+) (completedfeed.ReferenceEnvelopeV1Result, *eventconnector.ConnectorError) {
 	event, err := buildNeutralReferenceEventV1(snapshotBytes, sourceInstance)
 	if err != nil {
-		return ReferenceEnvelopeV1Result{}, err
+		return completedfeed.ReferenceEnvelopeV1Result{}, err
 	}
-	return ReferenceEnvelopeV1Result{
+	return completedfeed.ReferenceEnvelopeV1Result{
 		HashInput:       event.HashInput(),
 		CanonicalBytes:  event.HashInputBytes(),
 		Envelope:        event.Envelope(),
@@ -268,7 +269,7 @@ func buildNeutralReferenceEventV1(
 	artifact, err := eventconnector.NewSourceArtifact(
 		adapter.Descriptor(),
 		sourceInstance,
-		SnapshotRevision,
+		completedfeed.SnapshotRevision,
 		snapshotBytes,
 		eventconnector.StrictJSONOptions{RejectNull: true},
 	)
@@ -306,7 +307,7 @@ func neutralReferenceCaptureGap(
 	orgRef string,
 	projectRef string,
 	observedAt string,
-	gap CaptureGap,
+	gap completedfeed.CaptureGap,
 ) map[string]any {
 	return map[string]any{
 		"gap_id":          requestID + ":gap:" + gap.Source,
@@ -361,7 +362,7 @@ func referenceAdapterError(err error) *eventconnector.ConnectorError {
 	)
 }
 
-func neutralValidateSnapshotNumerics(snapshot Snapshot) *eventconnector.ConnectorError {
+func neutralValidateSnapshotNumerics(snapshot completedfeed.Snapshot) *eventconnector.ConnectorError {
 	values := []int{
 		snapshot.Usage.PromptTokens,
 		snapshot.Usage.UncachedPromptTokens,
@@ -415,7 +416,7 @@ func DecodeNeutralReferenceFeedErrorV1(payload []byte) *eventconnector.Connector
 	}
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.DisallowUnknownFields()
-	var response ErrorResponse
+	var response completedfeed.ErrorResponse
 	if err := decoder.Decode(&response); err != nil {
 		return eventconnector.NewConnectorError(
 			"contract",
