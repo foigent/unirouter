@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -153,6 +154,27 @@ func TestReferenceEnvelopePreservesOpaqueNonNFCSourceInstance(t *testing.T) {
 	producer := result.Envelope["producer"].(map[string]any)
 	if producer["instance"] != sourceInstance {
 		t.Fatalf("producer.instance=%q want=%q", producer["instance"], sourceInstance)
+	}
+}
+
+func TestReferenceEnvelopeRejectsControlProducerInstance(t *testing.T) {
+	t.Parallel()
+
+	payload := readReferenceFixture(t, "valid-settled.json")
+	for _, sourceInstance := range []string{
+		"unirouter\x00development",
+		"unirouter\ndevelopment",
+		"unirouter\u0085development",
+	} {
+		sourceInstance := sourceInstance
+		t.Run(strconv.QuoteToASCII(sourceInstance), func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := BuildReferenceEnvelopeV1(payload, sourceInstance); err == nil ||
+				!strings.Contains(err.Error(), "must not contain control characters") {
+				t.Fatalf("error=%v", err)
+			}
+		})
 	}
 }
 

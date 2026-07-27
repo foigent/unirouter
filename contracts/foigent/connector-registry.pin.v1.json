@@ -1,0 +1,75 @@
+{
+  "registry_version": "unirouter.event-connector-registry-pin.v1",
+  "product": "unirouter",
+  "protocol": {
+    "repository": "https://github.com/foigent/event-connector-spec",
+    "tag": "v1.0.0",
+    "commit": "c09bc93cc7750e2333752655d6b4e69802e6769d",
+    "version": "1.0.0",
+    "release_digest": "sha256:aaeb5b37b94a1fd603048d77b2180fa88be1ddbd6eeea6a1369edf0cea9c5e2b",
+    "components": {
+      "connector_manifest_schema": {
+        "path": "schemas/connector-manifest.v1.schema.json",
+        "sha256": "sha256:a6f43b37477002ab836a4d9ea7c4e462675cd4313f0637c0733cd98675fc0adf"
+      },
+      "event_envelope_schema": {
+        "path": "schemas/event-envelope.v1.schema.json",
+        "sha256": "sha256:6942e85d9b5d8b08ff9828b970c317596394184ef29908cbf2b8fc792187cf26"
+      },
+      "event_batch_schema": {
+        "path": "schemas/event-batch.v1.schema.json",
+        "sha256": "sha256:8e2133922bcb77cf032309290593665df1bf56cfa47e433dd573d0e42f36eef9"
+      },
+      "checkpoint_schema": {
+        "path": "schemas/connector-checkpoint.v1.schema.json",
+        "sha256": "sha256:8be2fd290d6db8d288a9b10ac6d9aa0b55a66ff21ea0fb55ac0af2d1b66bf800"
+      },
+      "operation_receipt_schema": {
+        "path": "schemas/operational-receipt.v1.schema.json",
+        "sha256": "sha256:3c3b99e009e208456039d3bfe26d84af7e3f1af23589e7fa62a1e1a61e0fb3c6"
+      },
+      "error_schema": {
+        "path": "schemas/connector-error.v1.schema.json",
+        "sha256": "sha256:f449ba6314f1f730be5a0b188dc6d2cc2704e8f5d84a4eebecac576221e4ca56"
+      },
+      "canonical_vector_bundle": {
+        "path": "vectors/canonical-vector-bundle.v1.json",
+        "sha256": "sha256:50fc8e8be08c37381611d6423e29780894741fb108fc4569df7c895452e5d4db"
+      },
+      "conformance_contract": {
+        "path": "conformance/conformance-contract.v1.json",
+        "sha256": "sha256:f3ae834265170ff22088943283fd23dcb562bc2308571ccc722414c2c896dc23"
+      },
+      "source_projection_contract": {
+        "path": "mappings/unirouter/source-snapshot-to-model-request-completed.v1.json",
+        "sha256": "sha256:5425ab384bebcd9d4a7e81882bfa1bb1700df7cc397863b91f69e2855df12928"
+      }
+    }
+  },
+  "connectors": [
+    {
+      "local_adapter_id": "unirouter.completedfeed.reference-v1",
+      "implementation_package": "github.com/uniroute/unirouter/internal/completedfeed",
+      "profile": "foigent.unirouter.completed-execution-v1",
+      "transport_profile": "foigent.contracted-pull-v1",
+      "connector_id": "foigent.unirouter.completed-execution",
+      "connector_version": "1.0.0",
+      "manifest": {
+        "path": "manifests/foigent.unirouter.completed-execution-1.0.0.json",
+        "sha256": "sha256:a3bc97bd5d5c7aab6452de9518be0b00f62776877deb431a91c175da5287de79"
+      },
+      "source_schema": {
+        "schema_id": "unirouter.completed-execution.v1",
+        "sha256": "sha256:4ae2897d4f8470c38624dfe21c54d72eaf6d995d2c9578c4420c94d244424fb2"
+      },
+      "emitted_events": [
+        {
+          "event_type": "model.request.completed",
+          "schema_ref": "foigent://events/model/request-completed/v1",
+          "schema_version": "1",
+          "sha256": "sha256:ea0ea7354f3d9f435bb86a34eb28284e4297e5a2d1a3d22a23058c7dcc514dc6"
+        }
+      ]
+    }
+  ]
+}
