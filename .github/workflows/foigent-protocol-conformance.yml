@@ -5,17 +5,29 @@ on:
     branches: [main]
     paths:
       - contracts/foigent/event-connector-protocol.pin.json
+      - contracts/foigent/connector-registry.pin.v1.json
       - contracts/completed-execution/v1/**
+      - internal/eventconnector/**
       - internal/completedfeed/reference_bridge.go
       - internal/completedfeed/reference_bridge_test.go
+      - internal/completedfeed/reference_adapter.go
+      - internal/completedfeed/reference_adapter_test.go
+      - go.mod
+      - go.sum
       - .github/workflows/foigent-protocol-conformance.yml
   push:
     branches: [main]
     paths:
       - contracts/foigent/event-connector-protocol.pin.json
+      - contracts/foigent/connector-registry.pin.v1.json
       - contracts/completed-execution/v1/**
+      - internal/eventconnector/**
       - internal/completedfeed/reference_bridge.go
       - internal/completedfeed/reference_bridge_test.go
+      - internal/completedfeed/reference_adapter.go
+      - internal/completedfeed/reference_adapter_test.go
+      - go.mod
+      - go.sum
       - .github/workflows/foigent-protocol-conformance.yml
   workflow_dispatch:
 
@@ -43,5 +55,8 @@ jobs:
           go-version: '1.25.12'
           cache: false
 
-      - name: Verify completed-execution Reference Connector bridge
-        run: go test ./internal/completedfeed -run '^TestReferenceEnvelope' -count=1
+      - name: Verify Source bridge and neutral Connector conformance
+        run: >-
+          go test ./internal/eventconnector/... ./internal/completedfeed
+          -run '^(TestReferenceEnvelope|TestPhase2B)'
+          -count=1
