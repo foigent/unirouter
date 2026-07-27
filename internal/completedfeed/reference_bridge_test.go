@@ -15,6 +15,7 @@ func TestReferenceEnvelopeGoldenCompatibility(t *testing.T) {
 		canonicalBytes   int
 		envelopeHash     string
 		idempotencyKey   string
+		sourceHash       string
 		expectedTerminal string
 	}{
 		{
@@ -22,6 +23,7 @@ func TestReferenceEnvelopeGoldenCompatibility(t *testing.T) {
 			canonicalBytes:   4596,
 			envelopeHash:     "sha256:0d11f98f981427b7bcf175e82294511ca42981c0ecea8e02f841c3777743d1d2",
 			idempotencyKey:   "sha256:c2822f0d940c01de77e2e06af1a5f6e1fd10fc66269be20fceb0939150c17b2e",
+			sourceHash:       "sha256:5e9eda0a2630d52c5589d38b8ec480604c47c2cc77391b75a57b2a159db6dd27",
 			expectedTerminal: TerminalSettled,
 		},
 		{
@@ -29,6 +31,7 @@ func TestReferenceEnvelopeGoldenCompatibility(t *testing.T) {
 			canonicalBytes:   4629,
 			envelopeHash:     "sha256:c31445c779ffec9dae8cbc7f1f0344722a4e0fb696a366b2e321f58d0d07fbab",
 			idempotencyKey:   "sha256:d342a560ade558edc557f2cd645a526178958540a012ceabe9ca7047e916796c",
+			sourceHash:       "sha256:31cbfeb23968c07d158b591c28efb3dd40cffba1fd6d1fd4202f43d63bfe9f2d",
 			expectedTerminal: TerminalCancelled,
 		},
 	}
@@ -47,6 +50,9 @@ func TestReferenceEnvelopeGoldenCompatibility(t *testing.T) {
 			}
 			if result.IdempotencyKey != testCase.idempotencyKey {
 				t.Fatalf("idempotency=%s want=%s", result.IdempotencyKey, testCase.idempotencyKey)
+			}
+			if result.SourceHash != testCase.sourceHash {
+				t.Fatalf("source hash=%s want=%s", result.SourceHash, testCase.sourceHash)
 			}
 			digest := sha256.Sum256(result.CanonicalBytes)
 			if got := "sha256:" + hex.EncodeToString(digest[:]); got != result.EnvelopeHash {
@@ -78,9 +84,15 @@ func TestReferenceEnvelopeExcludesDeliveryAndOperationalState(t *testing.T) {
 	for _, prohibited := range []string{
 		"source_cursor",
 		"next_cursor",
+		"cursor",
 		"high_watermark",
 		"generated_at",
+		"has_more",
+		"page",
+		"checkpoint",
+		"acknowledged_sequence",
 		"ingested_at",
+		"ingestion",
 		"retry",
 	} {
 		if strings.Contains(encoded, prohibited) {
@@ -104,20 +116,71 @@ func TestReferenceEnvelopeRejectsSubMicrosecondTerminal(t *testing.T) {
 }
 
 func TestReferenceEnvelopePreservesOpaqueNonNFCBytesInIdentity(t *testing.T) {
-	idempotency, err := referenceIdempotencyKey(
-		"unirouter",
-		"unirouter-development",
-		"",
-		"101",
-		"202",
-		foigentEventType,
+	payload := readReferenceFixture(t, "valid-settled.json")
+	payload = []byte(strings.Replace(
+		string(payload),
+		"req_feed_v1_settled",
 		"req_e\u0301",
+		1,
+	))
+	result, err := BuildReferenceEnvelopeV1(payload, "unirouter-development")
+	if err != nil {
+		t.Fatalf("build opaque Reference Envelope: %v", err)
+	}
+	if result.SourceRequestID != "req_e\u0301" ||
+		result.Envelope["event_id"] != "req_e\u0301" ||
+		hex.EncodeToString([]byte(result.SourceRequestID)) != "7265715f65cc81" {
+		t.Fatalf("opaque request ID changed: %q", result.SourceRequestID)
+	}
+	if result.IdempotencyKey != "sha256:fd256a506369a0fa05dad3ee68f2e577918b97810778e1802d11950112275447" {
+		t.Fatalf("idempotency=%s", result.IdempotencyKey)
+	}
+	digest := sha256.Sum256(payload)
+	if got := "sha256:" + hex.EncodeToString(digest[:]); result.SourceHash != got {
+		t.Fatalf("source hash=%s want=%s", result.SourceHash, got)
+	}
+}
+
+func TestReferenceEnvelopePreservesOpaqueNonNFCSourceInstance(t *testing.T) {
+	sourceInstance := "unirouter-e\u0301"
+	result, err := BuildReferenceEnvelopeV1(
+		readReferenceFixture(t, "valid-settled.json"),
+		sourceInstance,
 	)
 	if err != nil {
-		t.Fatalf("build opaque identity: %v", err)
+		t.Fatalf("build opaque Source instance: %v", err)
 	}
-	if idempotency != "sha256:fd256a506369a0fa05dad3ee68f2e577918b97810778e1802d11950112275447" {
-		t.Fatalf("idempotency=%s", idempotency)
+	producer := result.Envelope["producer"].(map[string]any)
+	if producer["instance"] != sourceInstance {
+		t.Fatalf("producer.instance=%q want=%q", producer["instance"], sourceInstance)
+	}
+}
+
+func TestReferenceEnvelopeRejectsInvalidSourceUTF8(t *testing.T) {
+	payload := readReferenceFixture(t, "valid-settled.json")
+	payload = append([]byte(nil), payload...)
+	index := strings.Index(string(payload), "req_feed_v1_settled")
+	if index < 0 {
+		t.Fatal("fixture request_id not found")
+	}
+	payload[index] = 0xff
+	if _, err := BuildReferenceEnvelopeV1(payload, "unirouter-development"); err == nil ||
+		!strings.Contains(err.Error(), "valid UTF-8") {
+		t.Fatalf("error=%v want invalid UTF-8 rejection", err)
+	}
+}
+
+func TestReferenceEnvelopeRejectsNestedDuplicateJSONKey(t *testing.T) {
+	payload := readReferenceFixture(t, "valid-settled.json")
+	payload = []byte(strings.Replace(
+		string(payload),
+		`"status": "settled"`,
+		`"status": "settled", "status": "settled"`,
+		1,
+	))
+	if _, err := BuildReferenceEnvelopeV1(payload, "unirouter-development"); err == nil ||
+		!strings.Contains(err.Error(), `duplicate key "status"`) {
+		t.Fatalf("error=%v want duplicate-key rejection", err)
 	}
 }
 

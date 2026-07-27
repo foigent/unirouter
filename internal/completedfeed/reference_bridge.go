@@ -5,8 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strconv"
 	"time"
@@ -49,6 +51,12 @@ type ReferenceEnvelopeV1Result struct {
 // Foigent Event Envelope V1. Delivery cursor, page time, retry state and
 // ingestion time are intentionally absent.
 func BuildReferenceEnvelopeV1(snapshotBytes []byte, sourceInstance string) (ReferenceEnvelopeV1Result, error) {
+	if !utf8.Valid(snapshotBytes) {
+		return ReferenceEnvelopeV1Result{}, errors.New("completed-execution source bytes must be valid UTF-8")
+	}
+	if err := rejectReferenceDuplicateJSONKeys(snapshotBytes); err != nil {
+		return ReferenceEnvelopeV1Result{}, err
+	}
 	if err := validateBoundedText("producer.instance", sourceInstance, 1, 128); err != nil {
 		return ReferenceEnvelopeV1Result{}, err
 	}
@@ -209,6 +217,75 @@ func BuildReferenceEnvelopeV1(snapshotBytes []byte, sourceInstance string) (Refe
 		SourceHash:      sourceHash,
 		SourceRequestID: snapshot.RequestID,
 	}, nil
+}
+
+func rejectReferenceDuplicateJSONKeys(payload []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	if err := walkReferenceJSONValue(decoder); err != nil {
+		return err
+	}
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		if err != nil {
+			return fmt.Errorf("decode completed-execution source JSON: %w", err)
+		}
+		return errors.New("completed-execution source JSON contains trailing content")
+	}
+	return nil
+}
+
+func walkReferenceJSONValue(decoder *json.Decoder) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return fmt.Errorf("decode completed-execution source JSON: %w", err)
+	}
+	delimiter, ok := token.(json.Delim)
+	if !ok {
+		return nil
+	}
+	switch delimiter {
+	case '{':
+		seen := make(map[string]struct{})
+		for decoder.More() {
+			keyToken, err := decoder.Token()
+			if err != nil {
+				return fmt.Errorf("decode completed-execution source JSON object key: %w", err)
+			}
+			key, ok := keyToken.(string)
+			if !ok {
+				return errors.New("completed-execution source JSON object key is not a string")
+			}
+			if _, exists := seen[key]; exists {
+				return fmt.Errorf("completed-execution source JSON contains duplicate key %q", key)
+			}
+			seen[key] = struct{}{}
+			if err := walkReferenceJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+		end, err := decoder.Token()
+		if err != nil {
+			return fmt.Errorf("decode completed-execution source JSON object: %w", err)
+		}
+		if end != json.Delim('}') {
+			return errors.New("completed-execution source JSON object is not closed")
+		}
+	case '[':
+		for decoder.More() {
+			if err := walkReferenceJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+		end, err := decoder.Token()
+		if err != nil {
+			return fmt.Errorf("decode completed-execution source JSON array: %w", err)
+		}
+		if end != json.Delim(']') {
+			return errors.New("completed-execution source JSON array is not closed")
+		}
+	default:
+		return errors.New("completed-execution source JSON contains an unexpected delimiter")
+	}
+	return nil
 }
 
 func referenceCaptureGap(requestID, orgRef, projectRef, observedAt string, gap CaptureGap) map[string]any {
