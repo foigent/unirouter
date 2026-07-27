@@ -5,11 +5,17 @@ on:
     branches: [main]
     paths:
       - contracts/foigent/event-connector-protocol.pin.json
+      - contracts/completed-execution/v1/**
+      - internal/completedfeed/reference_bridge.go
+      - internal/completedfeed/reference_bridge_test.go
       - .github/workflows/foigent-protocol-conformance.yml
   push:
     branches: [main]
     paths:
       - contracts/foigent/event-connector-protocol.pin.json
+      - contracts/completed-execution/v1/**
+      - internal/completedfeed/reference_bridge.go
+      - internal/completedfeed/reference_bridge_test.go
       - .github/workflows/foigent-protocol-conformance.yml
   workflow_dispatch:
 
@@ -30,3 +36,12 @@ jobs:
         with:
           pin: contracts/foigent/event-connector-protocol.pin.json
           product: unirouter
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.12'
+          cache: false
+
+      - name: Verify completed-execution Reference Connector bridge
+        run: go test ./internal/completedfeed -run '^TestReferenceEnvelope' -count=1
