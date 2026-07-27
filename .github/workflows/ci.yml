@@ -99,7 +99,7 @@ jobs:
       always() &&
       (needs.changes.result != 'success' || needs.changes.outputs.backend == 'true')
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 50
     concurrency:
       group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-backend
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -181,7 +181,9 @@ jobs:
       - name: Run admin integration tests
         env:
           REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/admin -count=1
+        # The race-enabled real-PostgreSQL suite can exceed Go's default
+        # 10-minute package timeout on a slower hosted runner.
+        run: go test -tags=integration -race ./internal/admin -count=1 -timeout=20m
 
       - name: Run V1 security migration integration tests
         env:
