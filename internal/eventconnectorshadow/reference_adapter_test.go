@@ -451,9 +451,11 @@ func TestPhase2BProductionEntryDependencyGraphMatchesBase(t *testing.T) {
 		"GOARCH=amd64",
 		"CGO_ENABLED=0",
 	)
-	output, err := command.CombinedOutput()
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	output, err := command.Output()
 	if err != nil {
-		t.Fatalf("resolve production dependency graph: %v\n%s", err, output)
+		t.Fatalf("resolve production dependency graph: %v\n%s", err, stderr.String())
 	}
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	filtered := lines[:0]
