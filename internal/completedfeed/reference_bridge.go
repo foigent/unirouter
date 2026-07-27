@@ -54,7 +54,14 @@ func BuildReferenceEnvelopeV1(snapshotBytes []byte, sourceInstance string) (Refe
 	if !utf8.Valid(snapshotBytes) {
 		return ReferenceEnvelopeV1Result{}, errors.New("completed-execution source bytes must be valid UTF-8")
 	}
+	if err := rejectReferenceInvalidUnicodeEscapes(snapshotBytes); err != nil {
+		return ReferenceEnvelopeV1Result{}, err
+	}
 	if err := rejectReferenceDuplicateJSONKeys(snapshotBytes); err != nil {
+		return ReferenceEnvelopeV1Result{}, err
+	}
+	estimateVersion, estimateVersionPresent, err := referenceEstimateVersion(snapshotBytes)
+	if err != nil {
 		return ReferenceEnvelopeV1Result{}, err
 	}
 	if err := validateBoundedText("producer.instance", sourceInstance, 1, 128); err != nil {
@@ -123,8 +130,8 @@ func BuildReferenceEnvelopeV1(snapshotBytes []byte, sourceInstance string) (Refe
 		"cache_usage_schema":     snapshot.Usage.CacheUsageSchema,
 		"cache_usage_status":     snapshot.Usage.CacheUsageStatus,
 	}
-	if snapshot.Usage.EstimateVersion != "" {
-		usage["estimate_version"] = snapshot.Usage.EstimateVersion
+	if estimateVersionPresent {
+		usage["estimate_version"] = estimateVersion
 	}
 
 	hashInput := map[string]any{
@@ -219,6 +226,64 @@ func BuildReferenceEnvelopeV1(snapshotBytes []byte, sourceInstance string) (Refe
 	}, nil
 }
 
+func rejectReferenceInvalidUnicodeEscapes(payload []byte) error {
+	inString := false
+	for index := 0; index < len(payload); index++ {
+		switch {
+		case !inString:
+			if payload[index] == '"' {
+				inString = true
+			}
+		case payload[index] == '"':
+			inString = false
+		case payload[index] == '\\':
+			if index+1 >= len(payload) {
+				return errors.New("completed-execution source JSON contains an unterminated escape")
+			}
+			if payload[index+1] != 'u' {
+				index++
+				continue
+			}
+			first, err := referenceHex16(payload[index+2:])
+			if err != nil {
+				return err
+			}
+			switch {
+			case first >= 0xd800 && first <= 0xdbff:
+				if index+12 > len(payload) ||
+					payload[index+6] != '\\' ||
+					payload[index+7] != 'u' {
+					return errors.New("completed-execution source JSON contains an unpaired high surrogate")
+				}
+				second, err := referenceHex16(payload[index+8:])
+				if err != nil {
+					return err
+				}
+				if second < 0xdc00 || second > 0xdfff {
+					return errors.New("completed-execution source JSON high surrogate is not followed by a low surrogate")
+				}
+				index += 11
+			case first >= 0xdc00 && first <= 0xdfff:
+				return errors.New("completed-execution source JSON contains an unpaired low surrogate")
+			default:
+				index += 5
+			}
+		}
+	}
+	return nil
+}
+
+func referenceHex16(input []byte) (uint16, error) {
+	if len(input) < 4 {
+		return 0, errors.New("completed-execution source JSON contains a short Unicode escape")
+	}
+	var decoded [2]byte
+	if _, err := hex.Decode(decoded[:], input[:4]); err != nil {
+		return 0, fmt.Errorf("completed-execution source JSON contains an invalid Unicode escape: %w", err)
+	}
+	return uint16(decoded[0])<<8 | uint16(decoded[1]), nil
+}
+
 func rejectReferenceDuplicateJSONKeys(payload []byte) error {
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	if err := walkReferenceJSONValue(decoder); err != nil {
@@ -233,10 +298,32 @@ func rejectReferenceDuplicateJSONKeys(payload []byte) error {
 	return nil
 }
 
+func referenceEstimateVersion(payload []byte) (string, bool, error) {
+	var source struct {
+		Usage struct {
+			EstimateVersion json.RawMessage `json:"estimate_version"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal(payload, &source); err != nil {
+		return "", false, fmt.Errorf("decode completed-execution estimate_version presence: %w", err)
+	}
+	if source.Usage.EstimateVersion == nil {
+		return "", false, nil
+	}
+	var value string
+	if err := json.Unmarshal(source.Usage.EstimateVersion, &value); err != nil {
+		return "", false, fmt.Errorf("decode completed-execution estimate_version: %w", err)
+	}
+	return value, true, nil
+}
+
 func walkReferenceJSONValue(decoder *json.Decoder) error {
 	token, err := decoder.Token()
 	if err != nil {
 		return fmt.Errorf("decode completed-execution source JSON: %w", err)
+	}
+	if token == nil {
+		return errors.New("completed-execution source JSON must not contain null")
 	}
 	delimiter, ok := token.(json.Delim)
 	if !ok {

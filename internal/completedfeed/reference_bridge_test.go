@@ -156,6 +156,25 @@ func TestReferenceEnvelopePreservesOpaqueNonNFCSourceInstance(t *testing.T) {
 	}
 }
 
+func TestReferenceEnvelopePreservesPresentEmptyEstimateVersion(t *testing.T) {
+	payload := readReferenceFixture(t, "valid-settled.json")
+	payload = []byte(strings.Replace(
+		string(payload),
+		`"contract_version": "usage.v1",`,
+		`"contract_version": "usage.v1", "estimate_version": "",`,
+		1,
+	))
+	result, err := BuildReferenceEnvelopeV1(payload, "unirouter-development")
+	if err != nil {
+		t.Fatalf("build present-empty estimate_version: %v", err)
+	}
+	usage := result.Envelope["payload"].(map[string]any)["usage"].(map[string]any)
+	value, present := usage["estimate_version"]
+	if !present || value != "" {
+		t.Fatalf("estimate_version presence/value changed: present=%v value=%#v", present, value)
+	}
+}
+
 func TestReferenceEnvelopeRejectsInvalidSourceUTF8(t *testing.T) {
 	payload := readReferenceFixture(t, "valid-settled.json")
 	payload = append([]byte(nil), payload...)
@@ -170,6 +189,37 @@ func TestReferenceEnvelopeRejectsInvalidSourceUTF8(t *testing.T) {
 	}
 }
 
+func TestReferenceEnvelopeRejectsUnpairedSurrogateEscape(t *testing.T) {
+	payload := readReferenceFixture(t, "valid-settled.json")
+	payload = []byte(strings.Replace(
+		string(payload),
+		"req_feed_v1_settled",
+		`req_\ud800`,
+		1,
+	))
+	if _, err := BuildReferenceEnvelopeV1(payload, "unirouter-development"); err == nil ||
+		!strings.Contains(err.Error(), "surrogate") {
+		t.Fatalf("error=%v want unpaired-surrogate rejection", err)
+	}
+}
+
+func TestReferenceEnvelopeAcceptsPairedSurrogateEscape(t *testing.T) {
+	payload := readReferenceFixture(t, "valid-settled.json")
+	payload = []byte(strings.Replace(
+		string(payload),
+		"req_feed_v1_settled",
+		`req_\ud83d\ude00`,
+		1,
+	))
+	result, err := BuildReferenceEnvelopeV1(payload, "unirouter-development")
+	if err != nil {
+		t.Fatalf("build paired-surrogate Source: %v", err)
+	}
+	if result.SourceRequestID != "req_😀" {
+		t.Fatalf("request ID=%q want=%q", result.SourceRequestID, "req_😀")
+	}
+}
+
 func TestReferenceEnvelopeRejectsNestedDuplicateJSONKey(t *testing.T) {
 	payload := readReferenceFixture(t, "valid-settled.json")
 	payload = []byte(strings.Replace(
@@ -181,6 +231,20 @@ func TestReferenceEnvelopeRejectsNestedDuplicateJSONKey(t *testing.T) {
 	if _, err := BuildReferenceEnvelopeV1(payload, "unirouter-development"); err == nil ||
 		!strings.Contains(err.Error(), `duplicate key "status"`) {
 		t.Fatalf("error=%v want duplicate-key rejection", err)
+	}
+}
+
+func TestReferenceEnvelopeRejectsLossyNullSourceScalar(t *testing.T) {
+	payload := readReferenceFixture(t, "valid-settled.json")
+	payload = []byte(strings.Replace(
+		string(payload),
+		`"source": "provider"`,
+		`"source": null`,
+		1,
+	))
+	if _, err := BuildReferenceEnvelopeV1(payload, "unirouter-development"); err == nil ||
+		!strings.Contains(err.Error(), "must not contain null") {
+		t.Fatalf("error=%v want null Source scalar rejection", err)
 	}
 }
 
