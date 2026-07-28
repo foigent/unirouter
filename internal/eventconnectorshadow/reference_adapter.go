@@ -15,9 +15,9 @@ import (
 
 const (
 	neutralReferenceLocalAdapterID = "unirouter.completedfeed.reference-v1"
-	neutralProtocolVersion         = "1.0.0"
-	neutralProtocolCommit          = "c09bc93cc7750e2333752655d6b4e69802e6769d"
-	neutralProtocolReleaseDigest   = "sha256:aaeb5b37b94a1fd603048d77b2180fa88be1ddbd6eeea6a1369edf0cea9c5e2b"
+	neutralProtocolVersion         = "1.1.0"
+	neutralProtocolCommit          = "434feebdf4865a876756c6b2faddd92e7a9854f9"
+	neutralProtocolReleaseDigest   = "sha256:3bb10a544ace17d3b6c4a44e19048c45c557eba19ad79d9cea81728336658c4d"
 	neutralManifestDigest          = "sha256:a3bc97bd5d5c7aab6452de9518be0b00f62776877deb431a91c175da5287de79"
 	neutralEnvelopeSchemaDigest    = "sha256:6942e85d9b5d8b08ff9828b970c317596394184ef29908cbf2b8fc792187cf26"
 	neutralSourceSchemaDigest      = "sha256:4ae2897d4f8470c38624dfe21c54d72eaf6d995d2c9578c4420c94d244424fb2"

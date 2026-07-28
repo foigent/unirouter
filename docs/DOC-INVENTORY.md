@@ -166,6 +166,7 @@
 | `docs/tech-ref/25-prd5-xinsight-sanitized-snapshot.md` | PRD5 X-Insight sanitized snapshot tool, handoff note, and handoff contract |
 | `docs/tech-ref/26-prd5-evidence-field-contract.md` | PRD5 structural evidence field dictionary and migration/writer plan |
 | `docs/tech-ref/27-signed-offline-upgrade.md` | V1 signed offline bundle, verification, sequence/schema and readback contract |
+| `docs/tech-ref/29-foigent-event-connector-protocol-pin.md` | Protocol v1.1 authority pin, completed-execution Reference runtime and LiteLLM conformance-only ownership boundary |
 | `docs/governance/ADR-TEMPLATE.md` | Architecture Decision Record template |
 | `docs/governance/adr/ADR-0001-prd4-plungein-ports.md` | PRD4 PlungeIn ports architecture decision |
 | `docs/governance/adr/ADR-0002-prd4-api-key-owner-usage.md` | PRD4 API key owner usage attribution decision draft |

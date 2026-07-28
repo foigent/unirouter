@@ -383,14 +383,14 @@ func TestPhase2BStaticRegistryPin(t *testing.T) {
 	if connectorErr != nil {
 		t.Fatalf("decode registry pin: %v", connectorErr)
 	}
-	if registry.Protocol.Tag != "v1.0.0" ||
-		registry.Protocol.Version != "1.0.0" ||
-		registry.Protocol.Commit != "c09bc93cc7750e2333752655d6b4e69802e6769d" ||
-		registry.Protocol.ReleaseDigest != "sha256:aaeb5b37b94a1fd603048d77b2180fa88be1ddbd6eeea6a1369edf0cea9c5e2b" {
+	if registry.Protocol.Tag != "v1.1.0" ||
+		registry.Protocol.Version != "1.1.0" ||
+		registry.Protocol.Commit != "434feebdf4865a876756c6b2faddd92e7a9854f9" ||
+		registry.Protocol.ReleaseDigest != "sha256:3bb10a544ace17d3b6c4a44e19048c45c557eba19ad79d9cea81728336658c4d" {
 		t.Fatalf("unexpected protocol identity: %#v", registry.Protocol)
 	}
 	expectedComponents := map[string]string{
-		"connector_manifest_schema":  "sha256:a6f43b37477002ab836a4d9ea7c4e462675cd4313f0637c0733cd98675fc0adf",
+		"connector_manifest_schema":  "sha256:59c405086310d0dfb2aaff37e55d73853e04319e6ccf659c66f98d8ba704a205",
 		"event_envelope_schema":      "sha256:6942e85d9b5d8b08ff9828b970c317596394184ef29908cbf2b8fc792187cf26",
 		"event_batch_schema":         "sha256:8e2133922bcb77cf032309290593665df1bf56cfa47e433dd573d0e42f36eef9",
 		"checkpoint_schema":          "sha256:8be2fd290d6db8d288a9b10ac6d9aa0b55a66ff21ea0fb55ac0af2d1b66bf800",

@@ -72,7 +72,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Verify Foigent protocol release and UniRouter pin
-        uses: foigent/event-connector-spec@c09bc93cc7750e2333752655d6b4e69802e6769d
+        uses: foigent/event-connector-spec@434feebdf4865a876756c6b2faddd92e7a9854f9
         with:
           pin: contracts/foigent/event-connector-protocol.pin.json
           product: unirouter
