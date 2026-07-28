@@ -2,6 +2,7 @@ package eventconnectorshadow
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -419,6 +420,65 @@ func TestPhase2BReferenceRegistryBinding(t *testing.T) {
 			registered.Binding(),
 			neutralReferenceDescriptorBinding(),
 		)
+	}
+}
+
+func TestPhase2CProtocolV11PinsLiteLLMConformanceWithoutRegisteringRuntime(t *testing.T) {
+	t.Parallel()
+
+	payload, err := os.ReadFile(filepath.Join("..", "..", "contracts", "foigent", "event-connector-protocol.pin.json"))
+	if err != nil {
+		t.Fatalf("read protocol pin: %v", err)
+	}
+	var pin struct {
+		ProtocolVersion string            `json:"protocol_version"`
+		ReleaseDigest   string            `json:"release_digest"`
+		Components      map[string]string `json:"components"`
+		Authority       struct {
+			Tag string `json:"tag"`
+		} `json:"authority"`
+	}
+	if err := json.Unmarshal(payload, &pin); err != nil {
+		t.Fatalf("decode protocol pin: %v", err)
+	}
+	expectedComponents := map[string]string{
+		"shared_ci_action":                "sha256:d582bf286035d20fb99d67a35a637a697e62411de8d669340a549142381bdc38",
+		"source_projection_contract":      "sha256:5425ab384bebcd9d4a7e81882bfa1bb1700df7cc397863b91f69e2855df12928",
+		"source_lifecycle_mapping":        "sha256:1618c86e3d8fae206322e1d928b8b5f0401865623b4267f5b685d7ac02b2968f",
+		"source_identity_mapping":         "sha256:0cdbcdcf42658ee12d14ae13ef5d43b54488dca7cec8182055047585eb62e890",
+		"canonical_vector_bundle":         "sha256:50fc8e8be08c37381611d6423e29780894741fb108fc4569df7c895452e5d4db",
+		"conformance_contract":            "sha256:f3ae834265170ff22088943283fd23dcb562bc2308571ccc722414c2c896dc23",
+		"litellm_connector_manifest":      "sha256:ee563ddefec738e67dfd750e0db8f56a457b737882fe607c94ea59a6ca87ccbe",
+		"litellm_upstream_source_mapping": "sha256:828a3d840ca880626ab5b1a3bc8836102265f209051f274d9da94e3decfbd08c",
+		"litellm_compatibility_matrix":    "sha256:3b0a2c5e3bfa89dc060299fa0b4351edcd33d92b2702cf95c99b1f26b51dd4ec",
+		"litellm_conformance_contract":    "sha256:9f6859446dce72c80762a49fc9b62926f1b1c6350af79bc6b50e8eec9e29fde2",
+		"litellm_vector_bundle":           "sha256:44681fdec12476284e3c88f8aab710e04bcd35456007e829ae5199421df995d4",
+	}
+	if pin.ProtocolVersion != "1.1.0" ||
+		pin.Authority.Tag != "v1.1.0" ||
+		pin.ReleaseDigest != "sha256:3bb10a544ace17d3b6c4a44e19048c45c557eba19ad79d9cea81728336658c4d" ||
+		!reflect.DeepEqual(pin.Components, expectedComponents) {
+		t.Fatalf("unexpected protocol pin: %#v", pin)
+	}
+
+	registryPayload, err := os.ReadFile(filepath.Join("..", "..", "contracts", "foigent", "connector-registry.pin.v1.json"))
+	if err != nil {
+		t.Fatalf("read registry pin: %v", err)
+	}
+	registry, connectorErr := eventconnector.DecodeRegistryPin(registryPayload)
+	if connectorErr != nil {
+		t.Fatalf("decode registry pin: %v", connectorErr)
+	}
+	if got, want := registry.ConnectorIDs(), []string{neutralReferenceLocalAdapterID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("runtime Connector IDs=%v want=%v", got, want)
+	}
+	binding := NeutralReferenceRuntimeBindingV1()
+	if binding.ProtocolVersion != "1.1.0" ||
+		binding.ProtocolCommit != "434feebdf4865a876756c6b2faddd92e7a9854f9" ||
+		binding.ReleaseDigest != pin.ReleaseDigest ||
+		binding.ConnectorID != "foigent.unirouter.completed-execution" ||
+		binding.ConnectorVersion != "1.0.0" {
+		t.Fatalf("unexpected Reference runtime binding: %#v", binding)
 	}
 }
 

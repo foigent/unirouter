@@ -3,14 +3,14 @@
   "product": "unirouter",
   "protocol": {
     "repository": "https://github.com/foigent/event-connector-spec",
-    "tag": "v1.0.0",
-    "commit": "c09bc93cc7750e2333752655d6b4e69802e6769d",
-    "version": "1.0.0",
-    "release_digest": "sha256:aaeb5b37b94a1fd603048d77b2180fa88be1ddbd6eeea6a1369edf0cea9c5e2b",
+    "tag": "v1.1.0",
+    "commit": "434feebdf4865a876756c6b2faddd92e7a9854f9",
+    "version": "1.1.0",
+    "release_digest": "sha256:3bb10a544ace17d3b6c4a44e19048c45c557eba19ad79d9cea81728336658c4d",
     "components": {
       "connector_manifest_schema": {
         "path": "schemas/connector-manifest.v1.schema.json",
-        "sha256": "sha256:a6f43b37477002ab836a4d9ea7c4e462675cd4313f0637c0733cd98675fc0adf"
+        "sha256": "sha256:59c405086310d0dfb2aaff37e55d73853e04319e6ccf659c66f98d8ba704a205"
       },
       "event_envelope_schema": {
         "path": "schemas/event-envelope.v1.schema.json",
