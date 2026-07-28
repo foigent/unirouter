@@ -2,20 +2,25 @@
 
 ## 当前绑定
 
-UniRouter 产品侧固定使用以下不可变协议权威：
+UniRouter 产品 CI 固定使用以下不可变协议权威：
 
 - repository: `https://github.com/foigent/event-connector-spec`
-- tag: `v1.1.0`
-- commit: `434feebdf4865a876756c6b2faddd92e7a9854f9`
-- tree: `93f942d8e6d4b809b4bef1878fe28bf7410c3506`
+- tag: `v1.1.1`
+- commit: `ef659a22c35911739d7f5c507126c826e70b9584`
+- tree: `4fe19c7148a5b284dc48a0a9d0c81436bdccf621`
 - content digest:
-  `sha256:3067581f2012c1239dbee1959facbc77ab1b18dc3bfc82172f57c3be894d09c5`
+  `sha256:c7204f26dbfe313da2da135369346156852ef8bd8d822efeb41359a9fe650651`
 - release digest:
-  `sha256:3bb10a544ace17d3b6c4a44e19048c45c557eba19ad79d9cea81728336658c4d`
+  `sha256:21a666a2c605271d64e3a1c1c8d7dd2af3c205967693adc8af2b02fc42a5173b`
 
 `contracts/foigent/event-connector-protocol.pin.json` 是产品 CI pin；
 `contracts/foigent/connector-registry.pin.v1.json` 是 UniRouter 本地运行时 registry
 pin。两者用途不同，不得相互替代。
+
+协议 `v1.1.1` 只修正 LiteLLM `startTime` coverage 文案。由于 Reference
+Connector 的 manifest、Schema、mapping、vector、Golden identity/hash 和
+实现 bytes 均未变化，本地 runtime registry 与 `ReferenceRuntimeBinding`
+继续保持已经验证的 `v1.1.0` 身份；本次不重写运行时描述符。
 
 ## 产品所有权边界
 
@@ -26,9 +31,9 @@ UniRouter 已持久化的 completed-execution Source bytes 生成共享
 确认语义。
 
 协议 v1.1.0 新增的 LiteLLM manifest、upstream mapping、compatibility
-matrix、conformance contract 和跨语言 vectors 只进入产品 pin 与共享 CI
-验证。它们证明 UniRouter 所依赖的共享协议仍可被第二种 Source Connector
-实现，不表示 UniRouter：
+matrix、conformance contract 和跨语言 vectors，以及 v1.1.1 对 LiteLLM
+coverage 的准确说明，只进入产品 pin 与共享 CI 验证。它们证明 UniRouter
+所依赖的共享协议仍可被第二种 Source Connector 实现，不表示 UniRouter：
 
 - 注册或运行 LiteLLM Connector；
 - 连接、部署或管理 LiteLLM；
@@ -41,8 +46,8 @@ owner 和 Consumer 产品的独立隔离运行时。
 
 ## 兼容性不变量
 
-协议 authority 从 v1.0.0 更新到 v1.1.0，但 Reference Connector 的下列内容
-保持不变：
+产品 CI authority 从 v1.1.0 更新到 v1.1.1，但 Reference Connector 的下列
+内容保持不变：
 
 - Connector manifest；
 - completed-execution Source Schema；
@@ -53,9 +58,9 @@ owner 和 Consumer 产品的独立隔离运行时。
 - settled/cancelled Golden Source bytes、Envelope bytes、source hash、
   envelope hash 和 idempotency key。
 
-因此 `ReferenceRuntimeBinding` 只更新协议 version/commit/release identity；
-Connector version 仍为 `1.0.0`。协议身份不进入 Source row、Feed item、Cursor、
-Checkpoint、billing record 或 Event hash。
+因此 `ReferenceRuntimeBinding`、本地 registry 和 Connector version 均保持
+原身份；Connector version 仍为 `1.0.0`。产品 CI pin 的协议身份不进入
+Source row、Feed item、Cursor、Checkpoint、billing record 或 Event hash。
 
 ## CI 与变更门
 

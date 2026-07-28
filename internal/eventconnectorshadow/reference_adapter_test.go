@@ -423,7 +423,7 @@ func TestPhase2BReferenceRegistryBinding(t *testing.T) {
 	}
 }
 
-func TestPhase2CProtocolV11PinsLiteLLMConformanceWithoutRegisteringRuntime(t *testing.T) {
+func TestPhase2CProtocolV111PinsLiteLLMConformanceWithoutChangingReferenceRuntime(t *testing.T) {
 	t.Parallel()
 
 	payload, err := os.ReadFile(filepath.Join("..", "..", "contracts", "foigent", "event-connector-protocol.pin.json"))
@@ -448,15 +448,15 @@ func TestPhase2CProtocolV11PinsLiteLLMConformanceWithoutRegisteringRuntime(t *te
 		"source_identity_mapping":         "sha256:0cdbcdcf42658ee12d14ae13ef5d43b54488dca7cec8182055047585eb62e890",
 		"canonical_vector_bundle":         "sha256:50fc8e8be08c37381611d6423e29780894741fb108fc4569df7c895452e5d4db",
 		"conformance_contract":            "sha256:f3ae834265170ff22088943283fd23dcb562bc2308571ccc722414c2c896dc23",
-		"litellm_connector_manifest":      "sha256:ee563ddefec738e67dfd750e0db8f56a457b737882fe607c94ea59a6ca87ccbe",
+		"litellm_connector_manifest":      "sha256:d4386de89b24271aef32014cd33a11b02865c8eab5a4d594d742a051dd65ae28",
 		"litellm_upstream_source_mapping": "sha256:828a3d840ca880626ab5b1a3bc8836102265f209051f274d9da94e3decfbd08c",
 		"litellm_compatibility_matrix":    "sha256:3b0a2c5e3bfa89dc060299fa0b4351edcd33d92b2702cf95c99b1f26b51dd4ec",
 		"litellm_conformance_contract":    "sha256:9f6859446dce72c80762a49fc9b62926f1b1c6350af79bc6b50e8eec9e29fde2",
 		"litellm_vector_bundle":           "sha256:44681fdec12476284e3c88f8aab710e04bcd35456007e829ae5199421df995d4",
 	}
-	if pin.ProtocolVersion != "1.1.0" ||
-		pin.Authority.Tag != "v1.1.0" ||
-		pin.ReleaseDigest != "sha256:3bb10a544ace17d3b6c4a44e19048c45c557eba19ad79d9cea81728336658c4d" ||
+	if pin.ProtocolVersion != "1.1.1" ||
+		pin.Authority.Tag != "v1.1.1" ||
+		pin.ReleaseDigest != "sha256:21a666a2c605271d64e3a1c1c8d7dd2af3c205967693adc8af2b02fc42a5173b" ||
 		!reflect.DeepEqual(pin.Components, expectedComponents) {
 		t.Fatalf("unexpected protocol pin: %#v", pin)
 	}
@@ -475,7 +475,7 @@ func TestPhase2CProtocolV11PinsLiteLLMConformanceWithoutRegisteringRuntime(t *te
 	binding := NeutralReferenceRuntimeBindingV1()
 	if binding.ProtocolVersion != "1.1.0" ||
 		binding.ProtocolCommit != "434feebdf4865a876756c6b2faddd92e7a9854f9" ||
-		binding.ReleaseDigest != pin.ReleaseDigest ||
+		binding.ReleaseDigest != "sha256:3bb10a544ace17d3b6c4a44e19048c45c557eba19ad79d9cea81728336658c4d" ||
 		binding.ConnectorID != "foigent.unirouter.completed-execution" ||
 		binding.ConnectorVersion != "1.0.0" {
 		t.Fatalf("unexpected Reference runtime binding: %#v", binding)
