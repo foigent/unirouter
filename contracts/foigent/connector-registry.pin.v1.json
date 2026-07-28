@@ -49,7 +49,7 @@
   "connectors": [
     {
       "local_adapter_id": "unirouter.completedfeed.reference-v1",
-      "implementation_package": "github.com/uniroute/unirouter/internal/completedfeed",
+      "implementation_package": "github.com/uniroute/unirouter/internal/eventconnectorshadow",
       "profile": "foigent.unirouter.completed-execution-v1",
       "transport_profile": "foigent.contracted-pull-v1",
       "connector_id": "foigent.unirouter.completed-execution",

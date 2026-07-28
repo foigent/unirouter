@@ -235,9 +235,9 @@ func (adapter completedExecutionReferenceAdapter) Project(
 	}, nil
 }
 
-// BuildNeutralReferenceEnvelopeV1 is the Phase 2B shadow path. It has no
-// production caller; the Phase 2A bridge remains the independent compatibility
-// oracle until a separately authorized runtime phase.
+// BuildNeutralReferenceEnvelopeV1 is the neutral Reference projector used by
+// the Phase 2C handler seam. It only maps immutable Source bytes in memory; it
+// owns no Feed wire, retained row, Cursor, acknowledgement or billing state.
 func BuildNeutralReferenceEnvelopeV1(
 	snapshotBytes []byte,
 	sourceInstance string,
@@ -256,6 +256,31 @@ func BuildNeutralReferenceEnvelopeV1(
 		SourceHash:      event.SourceHash(),
 		SourceRequestID: event.EventID(),
 	}, nil
+}
+
+// NeutralReferenceRuntimeBindingV1 exposes only the fixed, non-secret
+// protocol/Connector/Schema identity needed by the Phase 2C runtime
+// comparator. It does not expose or mutate delivery state.
+func NeutralReferenceRuntimeBindingV1() completedfeed.ReferenceRuntimeBinding {
+	binding := neutralReferenceDescriptorBinding()
+	event := binding.EmittedEvents[0]
+	return completedfeed.ReferenceRuntimeBinding{
+		ProtocolVersion:      binding.ProtocolVersion,
+		ProtocolCommit:       binding.ProtocolCommit,
+		ReleaseDigest:        binding.ReleaseDigest,
+		ManifestDigest:       binding.ManifestDigest,
+		EnvelopeSpecVersion:  binding.EnvelopeSpecVersion,
+		EnvelopeSchemaDigest: binding.EnvelopeSchemaDigest,
+		SourceProduct:        binding.SourceProduct,
+		ConnectorID:          binding.ConnectorID,
+		ConnectorVersion:     binding.ConnectorVersion,
+		SourceSchemaID:       binding.SourceSchema.SchemaID,
+		SourceSchemaDigest:   binding.SourceSchema.SHA256,
+		EventType:            event.EventType,
+		EventSchemaRef:       event.SchemaRef,
+		EventSchemaVersion:   event.SchemaVersion,
+		EventSchemaDigest:    event.SHA256,
+	}
 }
 
 func buildNeutralReferenceEventV1(

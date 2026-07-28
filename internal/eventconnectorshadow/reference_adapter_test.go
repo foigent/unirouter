@@ -388,6 +388,9 @@ func TestPhase2BReferenceDeliveryIsolation(t *testing.T) {
 func TestPhase2BReferenceRegistryBinding(t *testing.T) {
 	t.Parallel()
 
+	if got, want := NeutralReferenceRuntimeBindingV1(), completedfeed.ExpectedReferenceRuntimeBindingV1(); got != want {
+		t.Fatalf("neutral runtime binding=%#v want=%#v", got, want)
+	}
 	payload, err := os.ReadFile(filepath.Join("..", "..", "contracts", "foigent", "connector-registry.pin.v1.json"))
 	if err != nil {
 		t.Fatalf("read registry pin: %v", err)
@@ -395,6 +398,16 @@ func TestPhase2BReferenceRegistryBinding(t *testing.T) {
 	registry, connectorErr := eventconnector.DecodeRegistryPin(payload)
 	if connectorErr != nil {
 		t.Fatalf("decode registry pin: %v", connectorErr)
+	}
+	var registeredPackage string
+	for _, connector := range registry.Connectors {
+		if connector.LocalAdapterID == neutralReferenceLocalAdapterID {
+			registeredPackage = connector.ImplementationPackage
+			break
+		}
+	}
+	if registeredPackage != "github.com/uniroute/unirouter/internal/eventconnectorshadow" {
+		t.Fatalf("runtime Adapter package=%q", registeredPackage)
 	}
 	registered, connectorErr := registry.Descriptor(neutralReferenceLocalAdapterID)
 	if connectorErr != nil {
@@ -409,7 +422,7 @@ func TestPhase2BReferenceRegistryBinding(t *testing.T) {
 	}
 }
 
-func TestPhase2BNoProductionRuntimeCallOrBridgeMutation(t *testing.T) {
+func TestPhase2CReferenceBridgeRemainsIndependent(t *testing.T) {
 	t.Parallel()
 
 	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
@@ -426,18 +439,12 @@ func TestPhase2BNoProductionRuntimeCallOrBridgeMutation(t *testing.T) {
 	}
 	if bytes.Contains(bridge, []byte("eventconnector")) ||
 		bytes.Contains(bridge, []byte("NeutralReference")) {
-		t.Fatal("Phase 2A bridge now depends on the Phase 2B path")
+		t.Fatal("Phase 2A bridge now depends on the neutral runtime path")
 	}
 }
 
-func TestPhase2BProductionEntryDependencyGraphMatchesBase(t *testing.T) {
-	const (
-		baseCommit = "55302a569ddabc52132b86264b0fc0b047e6a600"
-		baseTree   = "af11c18123194a14043a7aa21f0cd1c6acb16f30"
-		baseDigest = "sha256:49e50af7c867f6fadf1f2e755a1d90312db6254b00f97b43a2dc4b65b69b2a63"
-		template   = `{{if not .Standard}}{{.ImportPath}}	{{join .Imports ","}}{{end}}`
-	)
-
+func TestPhase2CProductionEntryAllowsOnlyRuntimeBootstrap(t *testing.T) {
+	const template = `{{if not .Standard}}{{.ImportPath}}	{{join .Imports ","}}{{end}}`
 	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatalf("resolve repository root: %v", err)
@@ -458,30 +465,63 @@ func TestPhase2BProductionEntryDependencyGraphMatchesBase(t *testing.T) {
 		t.Fatalf("resolve production dependency graph: %v\n%s", err, stderr.String())
 	}
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	filtered := lines[:0]
+	shadowImporters := make([]string, 0, 1)
 	for _, line := range lines {
-		if line != "" {
-			filtered = append(filtered, line)
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		for _, imported := range strings.Split(parts[1], ",") {
+			if imported == "github.com/uniroute/unirouter/internal/eventconnectorshadow" {
+				shadowImporters = append(shadowImporters, parts[0])
+			}
 		}
 	}
-	sort.Strings(filtered)
-	graph := []byte(strings.Join(filtered, "\n") + "\n")
-	if got := eventconnector.HashSourceBytes(graph); got != baseDigest {
+	sort.Strings(shadowImporters)
+	if got, want := shadowImporters, []string{"github.com/uniroute/unirouter/cmd/uniroute"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf(
-			"linux/amd64 production entry dependency graph differs from base %s tree %s: %s want=%s",
-			baseCommit,
-			baseTree,
+			"neutral runtime Adapter importers=%v want=%v",
 			got,
-			baseDigest,
+			want,
 		)
 	}
-	for _, shadowImport := range []string{
-		"github.com/uniroute/unirouter/internal/eventconnector\t",
-		"github.com/uniroute/unirouter/internal/eventconnectorshadow\t",
-	} {
-		if bytes.Contains(graph, []byte(shadowImport)) {
-			t.Fatalf("production dependency closure includes Phase 2B package %q", strings.TrimSuffix(shadowImport, "\t"))
+
+	callers := make([]string, 0, 2)
+	err = filepath.WalkDir(repositoryRoot, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
+		if entry.IsDir() {
+			if entry.Name() == ".git" || entry.Name() == "node_modules" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		source, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		if bytes.Contains(source, []byte("BuildNeutralReferenceEnvelopeV1(")) {
+			relative, relativeErr := filepath.Rel(repositoryRoot, path)
+			if relativeErr != nil {
+				return relativeErr
+			}
+			callers = append(callers, filepath.ToSlash(relative))
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("inspect neutral runtime callers: %v", err)
+	}
+	sort.Strings(callers)
+	if got, want := callers, []string{
+		"cmd/uniroute/main.go",
+		"internal/eventconnectorshadow/reference_adapter.go",
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("neutral runtime call sites=%v want=%v", got, want)
 	}
 }
 

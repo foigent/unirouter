@@ -649,6 +649,54 @@ func TestLoadCompletedExecutionFeedRequiresStableSourceIdentity(t *testing.T) {
 	}
 }
 
+func TestLoadCompletedExecutionFeedReferenceMode(t *testing.T) {
+	for _, testCase := range []struct {
+		name    string
+		enabled string
+		mode    string
+		valid   bool
+	}{
+		{name: "default legacy", enabled: "false", mode: "", valid: true},
+		{name: "explicit legacy", enabled: "false", mode: "legacy", valid: true},
+		{name: "shadow", enabled: "true", mode: "shadow", valid: true},
+		{name: "neutral canary", enabled: "true", mode: "neutral_canary", valid: true},
+		{name: "unknown", enabled: "true", mode: "canary", valid: false},
+		{name: "whitespace malformed", enabled: "true", mode: " shadow ", valid: false},
+		{name: "shadow requires enabled feed", enabled: "false", mode: "shadow", valid: false},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Setenv("JWT_SECRET", "jwt-secret")
+			t.Setenv("API_KEY_HASH_SECRET", "api-key-secret")
+			t.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+			t.Setenv("COMPLETED_EXECUTION_FEED_ENABLED", testCase.enabled)
+			t.Setenv("COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE", "dev.unirouter:stable-1")
+			t.Setenv("COMPLETED_EXECUTION_FEED_REFERENCE_MODE", testCase.mode)
+
+			cfg, err := Load()
+			if !testCase.valid {
+				if err == nil {
+					t.Fatal("expected invalid Reference mode to fail startup validation")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("load completed-execution Reference mode: %v", err)
+			}
+			expected := testCase.mode
+			if expected == "" {
+				expected = CompletedExecutionFeedReferenceModeLegacy
+			}
+			if cfg.CompletedExecutionFeedReferenceMode != expected {
+				t.Fatalf(
+					"completed-execution Reference mode=%q want=%q",
+					cfg.CompletedExecutionFeedReferenceMode,
+					expected,
+				)
+			}
+		})
+	}
+}
+
 func TestLoad_Defaults(t *testing.T) {
 	// Clear all env vars to test defaults
 	envVars := []string{
@@ -663,7 +711,7 @@ func TestLoad_Defaults(t *testing.T) {
 		"GUARDRAIL_ORG_ACTIVE_POLICY_LIMIT", "GUARDRAIL_PLATFORM_ACTIVE_POLICY_LIMIT", "GUARDRAIL_CACHED_POLICY_LIMIT", "GUARDRAIL_CACHED_TENANT_LIMIT",
 		"RUNTIME_ENVIRONMENT", "RUNTIME_DEPLOYMENT_MODE", "TRUSTED_PROXY_CIDRS",
 		"RUNTIME_DEPLOYMENT_ROLE", "RUNTIME_VERSION", "RUNTIME_COMMIT", "PROMETHEUS_URL", "GRAFANA_URL",
-		"COMPLETED_EXECUTION_FEED_ENABLED", "COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE",
+		"COMPLETED_EXECUTION_FEED_ENABLED", "COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE", "COMPLETED_EXECUTION_FEED_REFERENCE_MODE",
 		"LICENSE_PUBLIC_KEY", "LICENSE_PUBLIC_KEYS", "LICENSE_DEPLOYMENT_ID", "LICENSE_EXPIRY_WARNING_DAYS", "LICENSE_REFRESH_SECONDS", "UPGRADE_PUBLIC_KEYS", "MIN_FREEZE_AMOUNT", "FREEZE_SAFETY_FACTOR", "DEFAULT_KEY_RPM", "DEFAULT_KEY_QPS",
 	}
 	for _, v := range envVars {
@@ -687,12 +735,16 @@ func TestLoad_Defaults(t *testing.T) {
 			"TRACE_EVENT_RETENTION_DAYS",
 			getEnvInt("LOG_RETENTION_DAYS", 30),
 		),
-		PayloadCaptureMode:                 traceutil.NormalizePayloadCaptureMode(getEnvStr("PAYLOAD_CAPTURE_MODE", traceutil.PayloadCaptureModeMetadataOnly)),
-		EvidenceContextTrustSecret:         getEnvStr("EVIDENCE_CONTEXT_TRUST_SECRET", ""),
-		NotificationWebhookSigningSecret:   getEnvStr("UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET", ""),
-		RuntimeEnvironment:                 getEnvStr("RUNTIME_ENVIRONMENT", "unspecified"),
-		RuntimeDeploymentMode:              getEnvStr("RUNTIME_DEPLOYMENT_MODE", "single-node"),
-		RuntimeDeploymentRole:              getEnvStr("RUNTIME_DEPLOYMENT_ROLE", "stable"),
+		PayloadCaptureMode:               traceutil.NormalizePayloadCaptureMode(getEnvStr("PAYLOAD_CAPTURE_MODE", traceutil.PayloadCaptureModeMetadataOnly)),
+		EvidenceContextTrustSecret:       getEnvStr("EVIDENCE_CONTEXT_TRUST_SECRET", ""),
+		NotificationWebhookSigningSecret: getEnvStr("UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET", ""),
+		RuntimeEnvironment:               getEnvStr("RUNTIME_ENVIRONMENT", "unspecified"),
+		RuntimeDeploymentMode:            getEnvStr("RUNTIME_DEPLOYMENT_MODE", "single-node"),
+		RuntimeDeploymentRole:            getEnvStr("RUNTIME_DEPLOYMENT_ROLE", "stable"),
+		CompletedExecutionFeedReferenceMode: getEnvStr(
+			"COMPLETED_EXECUTION_FEED_REFERENCE_MODE",
+			CompletedExecutionFeedReferenceModeLegacy,
+		),
 		MinFreezeCents:                     int64(getEnvInt("MIN_FREEZE_AMOUNT", 10)),
 		FreezeSafetyFactor:                 getEnvStr("FREEZE_SAFETY_FACTOR", "1.5"),
 		DefaultKeyRPM:                      getEnvInt("DEFAULT_KEY_RPM", 60),
@@ -775,6 +827,9 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if cfg.RuntimeEnvironment != "unspecified" || cfg.RuntimeDeploymentMode != "single-node" || cfg.RuntimeDeploymentRole != "stable" {
 		t.Fatalf("unexpected runtime defaults: env=%s mode=%s role=%s", cfg.RuntimeEnvironment, cfg.RuntimeDeploymentMode, cfg.RuntimeDeploymentRole)
+	}
+	if cfg.CompletedExecutionFeedReferenceMode != CompletedExecutionFeedReferenceModeLegacy {
+		t.Fatalf("unexpected completed-execution Reference mode default: %q", cfg.CompletedExecutionFeedReferenceMode)
 	}
 }
 
