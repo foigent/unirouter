@@ -31,6 +31,10 @@ var (
 		Name: "unirouter_completed_execution_feed_retention_deleted_total",
 		Help: "Completed-execution feed items deleted after the fixed replay window.",
 	})
+	feedReferenceProjectionComparisons = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "unirouter_completed_execution_feed_reference_projection_total",
+		Help: "Reference projection comparisons by fixed mode and bounded result.",
+	}, []string{"mode", "result"})
 )
 
 func init() {
@@ -42,5 +46,6 @@ func init() {
 		feedCursorLag,
 		feedOldestReadyAge,
 		feedRetentionDeleted,
+		feedReferenceProjectionComparisons,
 	)
 }

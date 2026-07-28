@@ -1,8 +1,10 @@
 package completedfeed
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -84,6 +86,195 @@ func TestHandlerCursorPageReplayAndHighWatermark(t *testing.T) {
 	high, err := service.codec.Decode(firstPage.HighWatermark, 22)
 	require.NoError(t, err)
 	require.EqualValues(t, 12, high)
+}
+
+func TestHandlerReferenceRuntimeModesPreserveLegacyWireAndFailCanaryClosed(t *testing.T) {
+	now := time.Date(2026, 7, 28, 4, 5, 6, 0, time.UTC)
+	item := storedFeedItem(t, 10, "handler-reference-mode", now.Add(-time.Minute))
+	window := ReadWindow{
+		Items:         []StoredItem{item},
+		HighWatermark: 10,
+		RetainedAfter: 3,
+		Remaining:     1,
+	}
+	buildService := func(mode ReferenceMode, projector ReferenceProjector) *Service {
+		service := newHandlerTestService(t, readerFunc(func(_ context.Context, _, _ int64, after int64, limit int) (ReadWindow, error) {
+			require.EqualValues(t, 9, after)
+			require.Equal(t, MaxPageItems+1, limit)
+			return window, nil
+		}))
+		service.now = func() time.Time { return now }
+		service.referenceMode = mode
+		service.referenceProjector = projector
+		return service
+	}
+	exactProjector := func(payload []byte, sourceInstance string) (ReferenceEnvelopeV1Result, error) {
+		return BuildReferenceEnvelopeV1(payload, sourceInstance)
+	}
+	mismatchProjector := func(payload []byte, sourceInstance string) (ReferenceEnvelopeV1Result, error) {
+		result, err := BuildReferenceEnvelopeV1(payload, sourceInstance)
+		require.NoError(t, err)
+		result.EnvelopeBytes = append([]byte(nil), result.EnvelopeBytes...)
+		result.EnvelopeBytes[0] ^= 1
+		return result, nil
+	}
+	errorProjector := func([]byte, string) (ReferenceEnvelopeV1Result, error) {
+		return ReferenceEnvelopeV1Result{}, errors.New("sensitive private projector failure")
+	}
+	panicProjector := func([]byte, string) (ReferenceEnvelopeV1Result, error) {
+		panic("sensitive private projector panic")
+	}
+	requestFor := func(service *Service) *http.Request {
+		cursor, err := service.codec.Encode(22, 9)
+		require.NoError(t, err)
+		return completedFeedHandlerRequest(t, service, "?cursor="+cursor)
+	}
+	run := func(service *Service) *httptest.ResponseRecorder {
+		response := httptest.NewRecorder()
+		service.Handler().ServeHTTP(response, requestFor(service))
+		return response
+	}
+
+	legacyCalls := 0
+	legacy := buildService(ReferenceModeLegacy, func([]byte, string) (ReferenceEnvelopeV1Result, error) {
+		legacyCalls++
+		return ReferenceEnvelopeV1Result{}, errors.New("legacy must not invoke neutral")
+	})
+	legacyResponse := run(legacy)
+	require.Equal(t, http.StatusOK, legacyResponse.Code)
+	require.Zero(t, legacyCalls)
+
+	for _, testCase := range []struct {
+		name      string
+		projector ReferenceProjector
+		result    string
+	}{
+		{name: "match", projector: exactProjector, result: ReferenceProjectionMatch},
+		{name: "mismatch", projector: mismatchProjector, result: ReferenceProjectionEnvelopeMismatch},
+		{name: "neutral error", projector: errorProjector, result: ReferenceProjectionNeutralError},
+		{name: "neutral panic", projector: panicProjector, result: ReferenceProjectionNeutralError},
+	} {
+		t.Run("shadow "+testCase.name, func(t *testing.T) {
+			service := buildService(ReferenceModeShadow, testCase.projector)
+			var observed []string
+			service.referenceObserve = func(_ ReferenceMode, result string) error {
+				observed = append(observed, result)
+				return errors.New("telemetry failure must not affect legacy")
+			}
+			response := run(service)
+			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+			require.True(t, bytes.Equal(legacyResponse.Body.Bytes(), response.Body.Bytes()))
+			require.Equal(t, []string{testCase.result}, observed)
+		})
+	}
+	shadowTelemetryPanic := buildService(ReferenceModeShadow, exactProjector)
+	shadowTelemetryPanic.referenceObserve = func(ReferenceMode, string) error {
+		panic("telemetry panic must not affect legacy")
+	}
+	shadowTelemetryPanicResponse := run(shadowTelemetryPanic)
+	require.Equal(t, http.StatusOK, shadowTelemetryPanicResponse.Code)
+	require.True(t, bytes.Equal(legacyResponse.Body.Bytes(), shadowTelemetryPanicResponse.Body.Bytes()))
+
+	canaryMatch := buildService(ReferenceModeNeutralCanary, exactProjector)
+	canaryMatchResponse := run(canaryMatch)
+	require.Equal(t, http.StatusOK, canaryMatchResponse.Code, canaryMatchResponse.Body.String())
+	require.True(t, bytes.Equal(legacyResponse.Body.Bytes(), canaryMatchResponse.Body.Bytes()))
+
+	for _, projector := range []ReferenceProjector{mismatchProjector, errorProjector, panicProjector} {
+		service := buildService(ReferenceModeNeutralCanary, projector)
+		response := run(service)
+		require.Equal(t, http.StatusInternalServerError, response.Code)
+		requireErrorCode(t, response, "completed_execution_feed.reference_projection_mismatch")
+		var body ErrorResponse
+		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
+		require.False(t, body.Error.Retryable)
+		require.NotContains(t, response.Body.String(), item.RequestID)
+		require.NotContains(t, response.Body.String(), item.SnapshotSHA256)
+		require.NotContains(t, response.Body.String(), "sensitive private")
+	}
+}
+
+func TestHandlerReferenceProjectionSkipsBootstrapPausedAndEmptyPages(t *testing.T) {
+	for _, testCase := range []struct {
+		name             string
+		query            string
+		connectionStatus string
+		window           ReadWindow
+		expectedStatus   int
+	}{
+		{
+			name:           "bootstrap",
+			window:         ReadWindow{HighWatermark: 10},
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:             "paused",
+			query:            "?cursor=placeholder",
+			connectionStatus: ConnectionStatusPaused,
+			window:           ReadWindow{HighWatermark: 10},
+			expectedStatus:   http.StatusServiceUnavailable,
+		},
+		{
+			name:           "empty page",
+			window:         ReadWindow{HighWatermark: 9},
+			expectedStatus: http.StatusOK,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			calls := 0
+			service := newHandlerTestService(t, readerFunc(func(_ context.Context, _, _ int64, _ int64, _ int) (ReadWindow, error) {
+				return testCase.window, nil
+			}))
+			service.referenceMode = ReferenceModeNeutralCanary
+			service.referenceProjector = func([]byte, string) (ReferenceEnvelopeV1Result, error) {
+				calls++
+				return ReferenceEnvelopeV1Result{}, nil
+			}
+			query := testCase.query
+			if testCase.name == "paused" {
+				cursor, err := service.codec.Encode(22, 9)
+				require.NoError(t, err)
+				query = "?cursor=" + cursor
+				service.access = &handlerAccessRecorder{connectionStatus: testCase.connectionStatus}
+			}
+			response := httptest.NewRecorder()
+			service.Handler().ServeHTTP(response, completedFeedHandlerRequest(t, service, query))
+			require.Equal(t, testCase.expectedStatus, response.Code, response.Body.String())
+			require.Zero(t, calls)
+		})
+	}
+}
+
+func TestHandlerCanaryFailureAcknowledgesOnlyOldCursor(t *testing.T) {
+	now := time.Date(2026, 7, 28, 5, 6, 7, 0, time.UTC)
+	service := newHandlerTestService(t, readerFunc(func(_ context.Context, _, _ int64, after int64, _ int) (ReadWindow, error) {
+		require.EqualValues(t, 9, after)
+		return ReadWindow{
+			Items:         []StoredItem{storedFeedItem(t, 10, "handler-canary-ack", now)},
+			HighWatermark: 10,
+			Remaining:     1,
+		}, nil
+	}))
+	service.referenceMode = ReferenceModeNeutralCanary
+	service.referenceProjector = func([]byte, string) (ReferenceEnvelopeV1Result, error) {
+		return ReferenceEnvelopeV1Result{}, errors.New("permanent mismatch")
+	}
+	access := &handlerAccessRecorder{connectionStatus: ConnectionStatusActive}
+	service.access = access
+	cursor, err := service.codec.Encode(22, 9)
+	require.NoError(t, err)
+	response := httptest.NewRecorder()
+
+	service.Handler().ServeHTTP(
+		response,
+		completedFeedHandlerCredentialRequest(t, middleware.APIKeyStatusFeedActive, "?cursor="+cursor),
+	)
+
+	require.Equal(t, http.StatusInternalServerError, response.Code)
+	require.Equal(t, 1, access.ackCalls)
+	require.EqualValues(t, 9, access.acknowledgedSequence)
+	require.NotContains(t, response.Body.String(), `"next_cursor"`)
+	require.NotContains(t, response.Body.String(), `"high_watermark"`)
 }
 
 func TestHandlerRejectsExpiredAndMalformedCursors(t *testing.T) {
@@ -294,12 +485,15 @@ func newHandlerTestService(t *testing.T, reader Reader) *Service {
 	codec, err := NewCursorCodec("handler-test-secret", "handler-test-source")
 	require.NoError(t, err)
 	return &Service{
-		reader:         reader,
-		codec:          codec,
-		sourceInstance: "handler-test-source",
-		enabled:        true,
-		now:            func() time.Time { return time.Now().UTC() },
-		readSlots:      make(chan struct{}, maxConcurrentFeedRead),
+		reader:           reader,
+		codec:            codec,
+		sourceInstance:   "handler-test-source",
+		enabled:          true,
+		now:              func() time.Time { return time.Now().UTC() },
+		readSlots:        make(chan struct{}, maxConcurrentFeedRead),
+		referenceMode:    ReferenceModeLegacy,
+		referenceBinding: expectedReferenceRuntimeBindingV1,
+		referenceObserve: observeReferenceProjection,
 	}
 }
 

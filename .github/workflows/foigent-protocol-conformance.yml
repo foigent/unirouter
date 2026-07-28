@@ -11,6 +11,21 @@ on:
       - internal/eventconnectorshadow/**
       - internal/completedfeed/reference_bridge.go
       - internal/completedfeed/reference_bridge_test.go
+      - internal/completedfeed/reference_runtime.go
+      - internal/completedfeed/reference_runtime_test.go
+      - internal/completedfeed/handler.go
+      - internal/completedfeed/handler_test.go
+      - internal/completedfeed/service.go
+      - internal/completedfeed/metrics.go
+      - internal/config/config.go
+      - internal/config/config_test.go
+      - cmd/uniroute/main.go
+      - cmd/uniroute/frontend_nginx_contract_test.go
+      - docker-compose.yml
+      - docker-compose.canary.yml
+      - deploy/customer/docker-compose.yml
+      - .env.example
+      - deploy/customer/.env.example
       - go.mod
       - go.sum
       - .github/workflows/foigent-protocol-conformance.yml
@@ -24,6 +39,21 @@ on:
       - internal/eventconnectorshadow/**
       - internal/completedfeed/reference_bridge.go
       - internal/completedfeed/reference_bridge_test.go
+      - internal/completedfeed/reference_runtime.go
+      - internal/completedfeed/reference_runtime_test.go
+      - internal/completedfeed/handler.go
+      - internal/completedfeed/handler_test.go
+      - internal/completedfeed/service.go
+      - internal/completedfeed/metrics.go
+      - internal/config/config.go
+      - internal/config/config_test.go
+      - cmd/uniroute/main.go
+      - cmd/uniroute/frontend_nginx_contract_test.go
+      - docker-compose.yml
+      - docker-compose.canary.yml
+      - deploy/customer/docker-compose.yml
+      - .env.example
+      - deploy/customer/.env.example
       - go.mod
       - go.sum
       - .github/workflows/foigent-protocol-conformance.yml
@@ -55,6 +85,6 @@ jobs:
 
       - name: Verify Source bridge and neutral Connector conformance
         run: >-
-          go test ./internal/eventconnector/... ./internal/eventconnectorshadow ./internal/completedfeed
-          -run '^(TestReferenceEnvelope|TestPhase2B)'
+          go test ./internal/eventconnector/... ./internal/eventconnectorshadow ./internal/completedfeed ./internal/config ./cmd/uniroute
+          -run '^(TestReferenceEnvelope|TestReferenceRuntime|TestReferenceProjection|TestHandlerReference|TestHandlerCanary|TestPhase2B|TestPhase2C|TestLoadCompletedExecutionFeedReferenceMode|TestSourceComposeBackendsShareCompletedExecutionFeedEnvironment|TestCompletedExecutionFeedReferenceModesStayAligned)'
           -count=1

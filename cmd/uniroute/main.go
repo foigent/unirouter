@@ -25,6 +25,7 @@ import (
 	"github.com/uniroute/unirouter/internal/completedfeed"
 	"github.com/uniroute/unirouter/internal/config"
 	"github.com/uniroute/unirouter/internal/db"
+	"github.com/uniroute/unirouter/internal/eventconnectorshadow"
 	"github.com/uniroute/unirouter/internal/filter"
 	"github.com/uniroute/unirouter/internal/gateway"
 	"github.com/uniroute/unirouter/internal/licensing"
@@ -128,15 +129,45 @@ func main() {
 		log.Fatalf("Invalid effective routing configuration: %v", err)
 	}
 	billingSvc := billing.NewBilling(postgres.Pool, redisClient.Client)
+	completedFeedOptions := make([]completedfeed.ServiceOption, 0, 1)
+	if cfg.CompletedExecutionFeedReferenceMode != config.CompletedExecutionFeedReferenceModeLegacy {
+		completedFeedOptions = append(
+			completedFeedOptions,
+			completedfeed.WithReferenceProjection(
+				cfg.CompletedExecutionFeedReferenceMode,
+				func(
+					snapshotBytes []byte,
+					sourceInstance string,
+				) (completedfeed.ReferenceEnvelopeV1Result, error) {
+					result, connectorErr := eventconnectorshadow.BuildNeutralReferenceEnvelopeV1(
+						snapshotBytes,
+						sourceInstance,
+					)
+					if connectorErr != nil {
+						return completedfeed.ReferenceEnvelopeV1Result{}, connectorErr
+					}
+					return result, nil
+				},
+				eventconnectorshadow.NeutralReferenceRuntimeBindingV1(),
+			),
+		)
+	}
 	completedFeedSvc, err := completedfeed.NewService(
 		postgres.Pool,
 		cfg.APIKeyHashSecret,
 		cfg.CompletedExecutionFeedSourceInstance,
 		cfg.CompletedExecutionFeedEnabled,
+		completedFeedOptions...,
 	)
 	if err != nil {
 		log.Fatalf("Failed to initialize completed-execution feed: %v", err)
 	}
+	log.Printf(
+		"Completed-execution Feed Reference runtime: mode=%s protocol_version=%s connector_id=%s",
+		cfg.CompletedExecutionFeedReferenceMode,
+		completedfeed.ReferenceProtocolVersionV1,
+		completedfeed.ReferenceConnectorIDV1,
+	)
 	billingSvc.SetTerminalMaterializer(completedFeedSvc)
 	outboxSvc, err := outbox.New(postgres.Pool, outbox.DefaultOptions())
 	if err != nil {

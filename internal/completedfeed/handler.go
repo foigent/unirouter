@@ -175,6 +175,23 @@ func (service *Service) Handler() http.Handler {
 				service.writeError(w, http.StatusInternalServerError, "completed_execution_feed.integrity_failure", "Retained completed-execution item failed integrity validation", false, "integrity_failure")
 				return
 			}
+			referenceMode := service.ReferenceMode()
+			if referenceMode != ReferenceModeLegacy {
+				referenceResult := service.compareReferenceProjection(stored.Snapshot)
+				service.observeReferenceProjection(referenceMode, referenceResult)
+				if referenceMode == ReferenceModeNeutralCanary &&
+					referenceResult != ReferenceProjectionMatch {
+					service.writeError(
+						w,
+						http.StatusInternalServerError,
+						"completed_execution_feed.reference_projection_mismatch",
+						"Completed-execution Reference projection failed compatibility validation",
+						false,
+						"reference_projection_mismatch",
+					)
+					return
+				}
+			}
 			items = append(items, FeedItem{
 				RequestID:           stored.RequestID,
 				TerminalAvailableAt: stored.TerminalAvailableAt.UTC(),

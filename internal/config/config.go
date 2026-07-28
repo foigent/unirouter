@@ -74,6 +74,7 @@ type Config struct {
 	GrafanaURL                           string
 	CompletedExecutionFeedEnabled        bool
 	CompletedExecutionFeedSourceInstance string
+	CompletedExecutionFeedReferenceMode  string
 
 	// License
 	LicensePublicKey         string
@@ -345,8 +346,26 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE must use 1-128 letters, numbers, dot, underscore, colon, or dash")
 		}
 	}
+	switch c.CompletedExecutionFeedReferenceMode {
+	case "", CompletedExecutionFeedReferenceModeLegacy:
+	case CompletedExecutionFeedReferenceModeShadow,
+		CompletedExecutionFeedReferenceModeNeutralCanary:
+		if !c.CompletedExecutionFeedEnabled {
+			return fmt.Errorf("COMPLETED_EXECUTION_FEED_REFERENCE_MODE requires COMPLETED_EXECUTION_FEED_ENABLED=true")
+		}
+	default:
+		return fmt.Errorf(
+			"COMPLETED_EXECUTION_FEED_REFERENCE_MODE must be legacy, shadow, or neutral_canary",
+		)
+	}
 	return nil
 }
+
+const (
+	CompletedExecutionFeedReferenceModeLegacy        = "legacy"
+	CompletedExecutionFeedReferenceModeShadow        = "shadow"
+	CompletedExecutionFeedReferenceModeNeutralCanary = "neutral_canary"
+)
 
 var completedExecutionSourceInstancePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
@@ -396,6 +415,10 @@ func Load() (*Config, error) {
 		GrafanaURL:                           strings.TrimRight(getEnvStr("GRAFANA_URL", ""), "/"),
 		CompletedExecutionFeedEnabled:        getEnvBool("COMPLETED_EXECUTION_FEED_ENABLED", false),
 		CompletedExecutionFeedSourceInstance: strings.TrimSpace(getEnvStr("COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE", "")),
+		CompletedExecutionFeedReferenceMode: getEnvStr(
+			"COMPLETED_EXECUTION_FEED_REFERENCE_MODE",
+			CompletedExecutionFeedReferenceModeLegacy,
+		),
 
 		LicensePublicKey:         getEnvStr("LICENSE_PUBLIC_KEY", ""),
 		LicensePublicKeys:        getEnvStr("LICENSE_PUBLIC_KEYS", ""),

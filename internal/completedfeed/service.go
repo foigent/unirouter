@@ -21,25 +21,48 @@ const (
 )
 
 type Service struct {
-	db             db.DBQuerier
-	reader         Reader
-	codec          *CursorCodec
-	sourceInstance string
-	enabled        bool
-	now            func() time.Time
-	readSlots      chan struct{}
-	access         accessRecorder
+	db                 db.DBQuerier
+	reader             Reader
+	codec              *CursorCodec
+	sourceInstance     string
+	enabled            bool
+	now                func() time.Time
+	readSlots          chan struct{}
+	access             accessRecorder
+	referenceMode      ReferenceMode
+	referenceProjector ReferenceProjector
+	referenceBinding   ReferenceRuntimeBinding
+	referenceObserve   ReferenceProjectionObserver
 }
 
-func NewService(database db.DBQuerier, cursorSecret, sourceInstance string, enabled bool) (*Service, error) {
+func NewService(
+	database db.DBQuerier,
+	cursorSecret, sourceInstance string,
+	enabled bool,
+	options ...ServiceOption,
+) (*Service, error) {
 	service := &Service{
-		db:             database,
-		reader:         postgresReader{db: database},
-		sourceInstance: sourceInstance,
-		enabled:        enabled,
-		now:            time.Now,
-		readSlots:      make(chan struct{}, maxConcurrentFeedRead),
-		access:         postgresAccessRecorder{db: database},
+		db:               database,
+		reader:           postgresReader{db: database},
+		sourceInstance:   sourceInstance,
+		enabled:          enabled,
+		now:              time.Now,
+		readSlots:        make(chan struct{}, maxConcurrentFeedRead),
+		access:           postgresAccessRecorder{db: database},
+		referenceMode:    ReferenceModeLegacy,
+		referenceBinding: expectedReferenceRuntimeBindingV1,
+		referenceObserve: observeReferenceProjection,
+	}
+	for _, option := range options {
+		if option == nil {
+			return nil, errors.New("completed-execution service option is required")
+		}
+		if err := option(service); err != nil {
+			return nil, err
+		}
+	}
+	if service.referenceMode != ReferenceModeLegacy && !enabled {
+		return nil, errors.New("completed-execution Reference runtime requires an enabled feed")
 	}
 	if !enabled {
 		return service, nil

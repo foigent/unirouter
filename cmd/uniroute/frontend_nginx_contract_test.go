@@ -4,6 +4,9 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/uniroute/unirouter/internal/completedfeed"
+	"github.com/uniroute/unirouter/internal/config"
 )
 
 func TestFrontendNginxAPIProxiesPreserveStreamingAndAppendForwardedPeer(t *testing.T) {
@@ -58,6 +61,7 @@ func TestSourceComposeBackendsShareCompletedExecutionFeedEnvironment(t *testing.
 	for _, name := range []string{
 		"../../docker-compose.yml",
 		"../../docker-compose.canary.yml",
+		"../../deploy/customer/docker-compose.yml",
 	} {
 		srcBytes, err := os.ReadFile(name)
 		if err != nil {
@@ -67,10 +71,23 @@ func TestSourceComposeBackendsShareCompletedExecutionFeedEnvironment(t *testing.
 		for _, mapping := range []string{
 			"COMPLETED_EXECUTION_FEED_ENABLED: ${COMPLETED_EXECUTION_FEED_ENABLED:-false}",
 			"COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE: ${COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE:-}",
+			"COMPLETED_EXECUTION_FEED_REFERENCE_MODE: ${COMPLETED_EXECUTION_FEED_REFERENCE_MODE:-legacy}",
 		} {
 			if count := strings.Count(src, mapping); count != 1 {
 				t.Fatalf("%s must contain exactly one %q mapping, got %d", name, mapping, count)
 			}
+		}
+	}
+}
+
+func TestCompletedExecutionFeedReferenceModesStayAligned(t *testing.T) {
+	for _, pair := range [][2]string{
+		{config.CompletedExecutionFeedReferenceModeLegacy, string(completedfeed.ReferenceModeLegacy)},
+		{config.CompletedExecutionFeedReferenceModeShadow, string(completedfeed.ReferenceModeShadow)},
+		{config.CompletedExecutionFeedReferenceModeNeutralCanary, string(completedfeed.ReferenceModeNeutralCanary)},
+	} {
+		if pair[0] != pair[1] {
+			t.Fatalf("config mode=%q runtime mode=%q", pair[0], pair[1])
 		}
 	}
 }
