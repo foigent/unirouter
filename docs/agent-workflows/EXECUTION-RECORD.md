@@ -89,8 +89,20 @@ persistent auto-selected Financial Truth inspector add no provider network,
 credential, database or customer-ledger write path. Exact evidence:
 `docs/ops/evidence/PRD7-B7-P7F09-provider-cogs-financial-truth-local-20260731.md`.
 
-**Current batch:** B8 route/policy simulator, progressive release and Provider
-Change Firewall.
+B8 is Local verified through a zero-persistence synthetic boundary. Gateway
+and the simulator now share one credential-free routing evaluator. The strict
+offline contract compares immutable route, full policy and Provider Pack
+snapshots; classifies Pack/SemVer/fixture/semantic changes; and proves
+deterministic progression, replay, CAS conflict and rollback evidence. All
+reports keep runtime mutation `none` and runtime promotion unauthorized.
+Platform-only no-store API/CLI and the persistent auto-selected Governance
+Inspector passed a 1-fixture/17-case golden runner, including the invariant
+that blocked breaking changes cannot advance even the offline release chain,
+plus full Go/frontend regression and 1440/390 synthetic browser verification.
+Exact evidence:
+`docs/ops/evidence/PRD7-B8-P7F04-P7F10-governance-simulation-local-20260731.md`.
+
+**Current batch:** B9 project-member lifecycle and provisioning conformance.
 
 **Authority boundary:** no deployment, traffic, credentials, live provider or
 IdP calls, non-test database mutation, cursor/checkpoint change, product-repo

@@ -431,6 +431,9 @@ export const api = {
   getProviderCOGSOfflineContract: () => request('/provider-cogs/offline-contract'),
   previewProviderCOGSOffline: (body: string) =>
     request('/provider-cogs/offline-preview', { method: 'POST', body }),
+  getGovernanceSimulationContract: () => request('/governance-simulation/offline-contract'),
+  previewGovernanceSimulation: (body: string) =>
+    request('/governance-simulation/offline-preview', { method: 'POST', body }),
 
   // Notifications
   getNotificationEvents: (page = 1, pageSize = 20, filters?: {

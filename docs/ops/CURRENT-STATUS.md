@@ -12,6 +12,22 @@
 > credentials/providers/IdPs, non-test database mutation, cursor/checkpoint
 > changes, push, PR and merge remain unauthorized. The completed-execution Feed
 > compatibility baseline and PRD5/PRD6 closeouts remain unchanged.
+> **2026-07-31 PRD7 B8 checkpoint:** P7-F04 and P7-F10 are Local verified
+> through a zero-persistence synthetic boundary. Gateway runtime selection and
+> offline simulation share one credential-free `routing-policy.v1` evaluator.
+> The strict 2 MiB contract compares immutable route, full policy and Provider
+> Pack snapshots; classifies exact schema/manifest/fixture/SemVer/semantic
+> changes; and emits CAS/replay/progression/rollback evidence without advancing
+> a blocked breaking change. One fixture passes a deterministic 17-case golden
+> report with SHA-256 `24ecba6e...`.
+> Platform-only no-store API/CLI and the persistent auto-selected Governance
+> Inspector passed full Go tests/vet, frontend 43-file/316-test suite,
+> type-check/build and 1440/390 synthetic browser checks. Every result keeps
+> runtime mutation `none`, runtime promotion unauthorized and an explicit
+> external promotion gate. Evidence:
+> `docs/ops/evidence/PRD7-B8-P7F04-P7F10-governance-simulation-local-20260731.md`.
+> No runtime release controller or live shadow/canary action was added; B9 is
+> next.
 > **2026-07-31 PRD7 B7 checkpoint:** P7-F09 is Local verified through a
 > zero-persistence offline/synthetic boundary. The strict Provider COGS
 > contract separates supplier cost, UniRouter estimate and customer revenue,

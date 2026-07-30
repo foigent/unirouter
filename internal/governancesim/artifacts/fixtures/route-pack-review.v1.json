@@ -1,0 +1,228 @@
+{
+  "schema_version": "unirouter.governance-simulation-fixture.v1",
+  "fixture_id": "route-pack-review.v1",
+  "request": {
+    "contract_version": "unirouter.governance-simulation.v1",
+    "simulation_id": "sim-b8-conformance-001",
+    "created_at": "2026-07-31T08:00:00.000000Z",
+    "selection_key": "fixture-request-001",
+    "evaluation_mode": "shadow",
+    "baseline": {
+      "policy": {
+        "max_retry_count": 1,
+        "circuit_breaker_threshold": 5,
+        "circuit_breaker_recover_seconds": 300,
+        "circuit_breaker_half_open_percent": 10,
+        "rate_limit_cooldown_seconds": 60,
+        "auth_failure_cooldown_seconds": 3600,
+        "key_failure_threshold": 3,
+        "snapshot_refresh_seconds": 1,
+        "snapshot_stale_seconds": 30,
+        "half_open_probe_lease_seconds": 15,
+        "max_candidate_count": 32,
+        "max_snapshot_count": 1024
+      },
+      "route_snapshot": {
+        "snapshot_id": "route-baseline-v1",
+        "model": "gpt-4.1",
+        "db_now": "2026-07-31T08:00:00.000000Z",
+        "source": "fixture",
+        "degraded": false,
+        "channels": [
+          {
+            "id": "1",
+            "name": "primary",
+            "provider": "openai",
+            "priority": 10,
+            "weight": 100,
+            "status": "active",
+            "circuit_state": "healthy",
+            "half_open_until": "",
+            "keys": [
+              {
+                "id": "11",
+                "status": "active",
+                "cooldown_until": "",
+                "allowed_models": ""
+              }
+            ]
+          },
+          {
+            "id": "2",
+            "name": "secondary",
+            "provider": "azure",
+            "priority": 20,
+            "weight": 100,
+            "status": "active",
+            "circuit_state": "healthy",
+            "half_open_until": "",
+            "keys": [
+              {
+                "id": "22",
+                "status": "active",
+                "cooldown_until": "",
+                "allowed_models": ""
+              }
+            ]
+          }
+        ]
+      },
+      "provider_packs": [
+        {
+          "schema_version": "unirouter.provider-pack.v1",
+          "schema_sha256": "sha256:f2252611cc0bb84c98ef39a1bba50284aeeb09ec782046f0a15847135896377e",
+          "pack_id": "unirouter.openai.core",
+          "pack_version": "1.0.0",
+          "manifest_sha256": "sha256:aca97cdb6199acab6cb5107ba4213eec88bb873c415d0085d4c4176c96a0ced9",
+          "provider": "openai",
+          "adapter_type": "openai_compatible",
+          "network_verified": false,
+          "endpoints": [
+            "/v1/chat/completions",
+            "/v1/embeddings"
+          ],
+          "modalities": [
+            "embeddings",
+            "text"
+          ],
+          "auth_profiles": [
+            "bearer:Authorization"
+          ],
+          "usage_signature": "authority=provider_reported;missing=missing_not_zero;cache=",
+          "error_signature": "classifier=unirouter.http-failure.v1;unknown=unknown_not_retryable_without_status_evidence",
+          "fixtures": [
+            {
+              "fixture_id": "openai-chat-success.v1",
+              "sha256": "sha256:6b95c320fb75b9e74e30dc2a5e07a282ad83e20329a19e4271d8fb79ac87a861"
+            },
+            {
+              "fixture_id": "openai-embeddings-success.v1",
+              "sha256": "sha256:5ba8db14c310d1ca60e953dc27806e2b71ea5dcaee3210b3ecd5849dc9d6b150"
+            }
+          ]
+        }
+      ]
+    },
+    "candidate": {
+      "policy": {
+        "max_retry_count": 1,
+        "circuit_breaker_threshold": 5,
+        "circuit_breaker_recover_seconds": 300,
+        "circuit_breaker_half_open_percent": 10,
+        "rate_limit_cooldown_seconds": 60,
+        "auth_failure_cooldown_seconds": 3600,
+        "key_failure_threshold": 3,
+        "snapshot_refresh_seconds": 1,
+        "snapshot_stale_seconds": 30,
+        "half_open_probe_lease_seconds": 15,
+        "max_candidate_count": 32,
+        "max_snapshot_count": 1024
+      },
+      "route_snapshot": {
+        "snapshot_id": "route-candidate-v1",
+        "model": "gpt-4.1",
+        "db_now": "2026-07-31T08:00:00.000000Z",
+        "source": "fixture",
+        "degraded": false,
+        "channels": [
+          {
+            "id": "1",
+            "name": "primary",
+            "provider": "openai",
+            "priority": 10,
+            "weight": 100,
+            "status": "disabled",
+            "circuit_state": "healthy",
+            "half_open_until": "",
+            "keys": [
+              {
+                "id": "11",
+                "status": "active",
+                "cooldown_until": "",
+                "allowed_models": ""
+              }
+            ]
+          },
+          {
+            "id": "2",
+            "name": "secondary",
+            "provider": "azure",
+            "priority": 20,
+            "weight": 100,
+            "status": "active",
+            "circuit_state": "healthy",
+            "half_open_until": "",
+            "keys": [
+              {
+                "id": "22",
+                "status": "active",
+                "cooldown_until": "",
+                "allowed_models": ""
+              }
+            ]
+          }
+        ]
+      },
+      "provider_packs": [
+        {
+          "schema_version": "unirouter.provider-pack.v1",
+          "schema_sha256": "sha256:f2252611cc0bb84c98ef39a1bba50284aeeb09ec782046f0a15847135896377e",
+          "pack_id": "unirouter.openai.core",
+          "pack_version": "1.1.0",
+          "manifest_sha256": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "provider": "openai",
+          "adapter_type": "openai_compatible",
+          "network_verified": false,
+          "endpoints": [
+            "/v1/chat/completions",
+            "/v1/embeddings",
+            "/v1/responses"
+          ],
+          "modalities": [
+            "embeddings",
+            "text"
+          ],
+          "auth_profiles": [
+            "bearer:Authorization"
+          ],
+          "usage_signature": "authority=provider_reported;missing=missing_not_zero;cache=",
+          "error_signature": "classifier=unirouter.http-failure.v1;unknown=unknown_not_retryable_without_status_evidence",
+          "fixtures": [
+            {
+              "fixture_id": "openai-chat-success.v1",
+              "sha256": "sha256:6b95c320fb75b9e74e30dc2a5e07a282ad83e20329a19e4271d8fb79ac87a861"
+            },
+            {
+              "fixture_id": "openai-embeddings-success.v1",
+              "sha256": "sha256:5ba8db14c310d1ca60e953dc27806e2b71ea5dcaee3210b3ecd5849dc9d6b150"
+            },
+            {
+              "fixture_id": "openai-responses-text.v1",
+              "sha256": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+            }
+          ]
+        }
+      ]
+    },
+    "release": {
+      "contract_version": "unirouter.progressive-release.v1",
+      "release_id": "release-b8-conformance",
+      "revision": "1",
+      "parent_revision": "0",
+      "action": "advance",
+      "from_stage": "draft",
+      "to_stage": "validated",
+      "rollback_to_revision": "",
+      "actor_ref": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "occurred_at": "2026-07-31T08:00:00.000000Z",
+      "reason": "offline fixture validation"
+    }
+  },
+  "expected": {
+    "overall_risk": "review_required",
+    "baseline_candidates": 2,
+    "candidate_candidates": 1,
+    "review_required": 4,
+    "runtime_mutation": "none"
+  }
+}

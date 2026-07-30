@@ -435,6 +435,29 @@ describe('API Client', () => {
     })
   })
 
+  describe('governance simulation offline preview', () => {
+    it('keeps the supplied immutable snapshot as the exact JSON request body', async () => {
+      const snapshot = '{"contract_version":"unirouter.governance-simulation.v1"}'
+      mockJsonResponse({ runtime_mutation: 'none' })
+
+      await api.previewGovernanceSimulation(snapshot)
+
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/governance-simulation/offline-preview')
+      expect(mockFetch.mock.calls[0][1]).toEqual(expect.objectContaining({
+        method: 'POST',
+        body: snapshot,
+      }))
+    })
+
+    it('reads the no-promotion contract', async () => {
+      mockJsonResponse({ contract_version: 'unirouter.governance-simulation.v1' })
+
+      await api.getGovernanceSimulationContract()
+
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/governance-simulation/offline-contract')
+    })
+  })
+
   describe('project developer APIs', () => {
     it('filters keys by project_id', async () => {
       mockJsonResponse({ data: [], total: 0 })

@@ -30,6 +30,7 @@ import DataExchangePage from './pages/DataExchangePage'
 import LimitPoliciesPage from './pages/LimitPoliciesPage'
 import GuardrailPoliciesPage from './pages/GuardrailPoliciesPage'
 import ProjectManagementPage from './pages/ProjectManagementPage'
+import GovernanceSimulationPage from './pages/GovernanceSimulationPage'
 import { profileNeedsRefresh, useAuthStore } from './store/auth'
 import { getDefaultPathForRole, isRouteAllowedForRole } from './navigation'
 
@@ -106,6 +107,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route index element={<HomeRoute />} />
             <Route path="developer" element={<RoleRoute><DeveloperConsolePage /></RoleRoute>} />
             <Route path="channels" element={<RoleRoute><ChannelsPage /></RoleRoute>} />
+            <Route path="governance-simulation" element={<RoleRoute><GovernanceSimulationPage /></RoleRoute>} />
             <Route path="keys" element={<RoleRoute><KeysPage /></RoleRoute>} />
             <Route path="limit-policies" element={<RoleRoute><LimitPoliciesPage /></RoleRoute>} />
             <Route path="guardrail-policies" element={<RoleRoute><GuardrailPoliciesPage /></RoleRoute>} />

@@ -1346,6 +1346,23 @@ body {
   margin: 12px 0 16px;
 }
 
+.ur-governance-explorer {
+  grid-template-columns: minmax(520px, 60fr) minmax(360px, 40fr);
+  height: min(820px, calc(100vh - 180px));
+}
+
+.ur-governance-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 16px;
+}
+
+.ur-governance-kpis {
+  margin: 16px 0;
+}
+
 .ur-financial-truth-kpis {
   margin: 16px 0;
 }

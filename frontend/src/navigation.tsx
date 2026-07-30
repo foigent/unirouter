@@ -104,6 +104,7 @@ const taskNavItems: NavItem[] = [
     icon: <IconSendStroked />,
     items: [
       { itemKey: '/channels', text: '上游通道', icon: <IconRoute /> },
+      { itemKey: '/governance-simulation', text: '变更防火墙', icon: <IconShield /> },
       { itemKey: '/channel-keys', text: '供应商凭证', icon: <IconLockStroked /> },
       { itemKey: '/model-governance', text: '模型治理', icon: <IconLayers />, licenseFeature: 'model_governance' },
       { itemKey: '/test', text: '连通性检测', icon: <IconTestScore />, licenseFeature: 'gateway' },

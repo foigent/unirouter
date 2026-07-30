@@ -46,7 +46,7 @@ function routeKeys(role: string): string[] {
 
 const expectedRoutes: Record<string, string[]> = {
   platform_admin: [
-    '/', '/channels', '/channel-keys', '/model-governance', '/test',
+    '/', '/channels', '/governance-simulation', '/channel-keys', '/model-governance', '/test',
     '/keys', '/project-management', '/limit-policies', '/guardrail-policies', '/users',
     '/logs', '/usage-analytics', '/notifications', '/status', '/audit-logs',
     '/wallet', '/model-prices', '/reconciliation',
@@ -128,8 +128,10 @@ describe('navigation role boundaries', () => {
   it('keeps platform-only controls out of tenant roles', () => {
     expect(isRouteAllowedForRole('/license', 'platform_admin')).toBe(true);
     expect(isRouteAllowedForRole('/data-exchange', 'platform_admin')).toBe(true);
+    expect(isRouteAllowedForRole('/governance-simulation', 'platform_admin')).toBe(true);
     expect(isRouteAllowedForRole('/license', 'org_admin')).toBe(false);
     expect(isRouteAllowedForRole('/data-exchange', 'org_admin')).toBe(false);
+    expect(isRouteAllowedForRole('/governance-simulation', 'org_admin')).toBe(false);
   });
 
   it('enforces the direct-route contract for the role-specific project workbench', () => {

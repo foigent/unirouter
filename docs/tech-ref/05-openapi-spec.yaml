@@ -1587,6 +1587,18 @@ paths:
     description: Evaluates at most 4 MiB of supplied offline supplier-cost evidence in memory. Request-level attribution requires unique upstream evidence; aggregate rows remain unattributed. The endpoint never persists data or mutates the customer ledger.
     post: *operation_create
 
+  /api/v1/governance-simulation/offline-contract:
+    x-unirouter-rbac:
+      get: [platform_admin]
+    description: Returns the strict zero-persistence route/policy simulator, progressive-release evidence and Provider Change Firewall contract, immutable artifact identities, a synthetic sample and credential-free current Provider Pack identities. It performs no provider call and grants no runtime promotion authority.
+    get: *operation_list
+
+  /api/v1/governance-simulation/offline-preview:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    description: Evaluates at most 2 MiB of supplied immutable baseline/candidate route, policy and Provider Pack snapshots in memory through the same credential-free routing kernel used by Gateway selection. Shadow, canary and enforced are evaluated target modes only; the endpoint persists nothing and cannot mutate or promote runtime state.
+    post: *operation_create
+
   /api/v1/users:
     x-unirouter-rbac:
       get: [platform_admin, org_admin]
