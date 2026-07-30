@@ -101,6 +101,7 @@ export const api = {
     request(`/channels/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteChannel: (id: number) =>
     request(`/channels/${id}`, { method: 'DELETE' }),
+  getProviderPacks: () => request('/provider-packs'),
   previewRouting: (model: string) =>
     request(`/routing/preview?model=${encodeURIComponent(model)}`),
 

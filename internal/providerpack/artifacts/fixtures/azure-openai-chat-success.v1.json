@@ -1,0 +1,83 @@
+{
+  "schema_version": "unirouter.provider-conformance-fixture.v1",
+  "fixture_id": "azure-openai-chat-success.v1",
+  "adapter_type": "azure_openai",
+  "request": {
+    "endpoint": "/v1/chat/completions",
+    "base_url": "https://contoso.openai.azure.com",
+    "requested_model": "company-chat",
+    "mapped_model": "gpt-4o-prod",
+    "request_id": "req-fixture-azure",
+    "adapter_config": {
+      "api_version": "2024-10-21",
+      "deployment": "gpt-4o-prod",
+      "auth_mode": "api_key"
+    },
+    "body": {
+      "model": "company-chat",
+      "messages": [
+        {
+          "role": "user",
+          "content": "synthetic fixture"
+        }
+      ],
+      "max_tokens": 16
+    },
+    "expected": {
+      "method": "POST",
+      "url": "https://contoso.openai.azure.com/openai/deployments/gpt-4o-prod/chat/completions?api-version=2024-10-21",
+      "auth_header": "api-key",
+      "model_on_wire": ""
+    }
+  },
+  "response": {
+    "status_code": 200,
+    "body": {
+      "id": "chatcmpl_fixture_azure",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "fixture response"
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 7,
+        "completion_tokens": 5,
+        "total_tokens": 12
+      }
+    },
+    "expected_usage": {
+      "prompt_tokens": 7,
+      "completion_tokens": 5,
+      "total_tokens": 12,
+      "authority": "provider_reported",
+      "finality": "final"
+    }
+  },
+  "missing_usage_response": {
+    "status_code": 200,
+    "body": {
+      "id": "chatcmpl_fixture_azure_missing",
+      "choices": []
+    },
+    "expected_authority": "none",
+    "expected_finality": "missing"
+  },
+  "error_cases": [
+    {
+      "status_code": 429,
+      "body": {
+        "error": {
+          "code": "RateLimitReached",
+          "message": "synthetic rate limit"
+        }
+      },
+      "expected_failure_kind": "rate_limit",
+      "expected_retryable": true
+    }
+  ]
+}

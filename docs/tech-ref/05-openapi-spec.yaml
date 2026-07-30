@@ -623,6 +623,17 @@ paths:
         "200":
           $ref: "#/components/responses/JSON"
 
+  /api/v1/provider-packs:
+    get:
+      tags: [Admin]
+      summary: List immutable fixture-verified Provider Conformance Packs
+      description: Returns credential-free offline compatibility claims and exact manifest/schema digests. It is not live network, account, billing or production evidence.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+
   /api/v1/routing/preview:
     get:
       tags: [Admin]

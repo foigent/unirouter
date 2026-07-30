@@ -9,6 +9,7 @@
 | `docs/PRD-Phase7.md` | Current accepted UniRouter product-iteration scope and architectural boundaries |
 | `docs/ops/PRD7-ACCEPTANCE-MATRIX.md` | Authoritative PRD7 row status, evidence level and decision gates |
 | `docs/planning/PRD7-IMPLEMENTATION-PLAN.md` | Active dependency-ordered implementation and verification plan |
+| `docs/ops/evidence/PRD7-B1-P7F02-P7F03-provider-conformance-local-20260731.md` | PRD7 B1 strict three-pack conformance, Azure OpenAI adapter, persistent Provider inspector, full local tests and synthetic browser evidence |
 | `docs/PROJECT-HANDOFF.md` | First-read handoff for agents |
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
 | `docs/planning/PRD6-START-HERE.md` | PRD6 Completed (Accepted Scope) state, preserved future boundaries and read order |
@@ -101,7 +102,7 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required single-owner execution, approval, evidence and optional-review workflow |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current completed V1 security/IA publication and seven-role target closeout, followed by the closed Post-PRD6 window and historical V1/PRD6/PRD5 evidence |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD7 repository-local batch and evidence, followed by historical Receipt V0, V1, PRD6 and PRD5 records |
 | `docs/agent-workflows/reviews/` | Optional immutable independent review results |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry pointing to the current execution record |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |
@@ -170,6 +171,7 @@
 | `docs/tech-ref/26-prd5-evidence-field-contract.md` | PRD5 structural evidence field dictionary and migration/writer plan |
 | `docs/tech-ref/27-signed-offline-upgrade.md` | V1 signed offline bundle, verification, sequence/schema and readback contract |
 | `docs/tech-ref/29-foigent-event-connector-protocol-pin.md` | Protocol v1.1 authority pin, completed-execution Reference runtime and LiteLLM conformance-only ownership boundary |
+| `docs/tech-ref/30-provider-conformance-pack-v1.md` | Product-local Provider Pack V1 identity, digests, zero-network runner, Azure OpenAI wire contract and compatibility claim boundary |
 | `docs/governance/ADR-TEMPLATE.md` | Architecture Decision Record template |
 | `docs/governance/adr/ADR-0001-prd4-plungein-ports.md` | PRD4 PlungeIn ports architecture decision |
 | `docs/governance/adr/ADR-0002-prd4-api-key-owner-usage.md` | PRD4 API key owner usage attribution decision draft |
@@ -236,7 +238,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 |------|------|
 | `docs/agent-workflows/README.md` | Agent workflow index |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Current Agent Protocol v2.1 |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current completed V1 security/IA publication and seven-role target closeout, followed by the closed Post-PRD6 window and historical V1/PRD6/PRD5 evidence |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD7 repository-local batch and evidence, followed by historical Receipt V0, V1, PRD6 and PRD5 records |
 | `docs/agent-workflows/reviews/README.md` | Independent review naming, contents and severity rules |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |

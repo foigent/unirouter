@@ -29,9 +29,19 @@ only after their explicit decision gates. Every batch requires focused tests,
 affected full suites, local evidence, one intentional local commit and a clean
 worktree.
 
-**Current batch:** B0 scope/governance freeze followed by B1 Provider
-Conformance Pack V1, Azure OpenAI adapter, three offline packs and a persistent
-Provider inspector.
+**Completed batches:** B0 froze scope/governance at `67e6d79`. B1 is Local
+verified: Provider Conformance Pack V1 embeds strict OpenAI, Anthropic and
+Azure OpenAI manifests/fixtures, a deterministic 3-pack/5-fixture/20-case offline
+runner, native deployment-scoped Azure OpenAI Chat/Embeddings, platform-admin
+catalog API and a persistent no-click Provider inspector. Provider claims bind
+`(provider, adapter_type)`, so compatible protocol reuse cannot fabricate a
+vendor pack result. Full Go tests/vet, 41-file/300-test frontend suite,
+type-check/build and synthetic 1440/1024/390 browser evidence passed. Exact
+evidence:
+`docs/ops/evidence/PRD7-B1-P7F02-P7F03-provider-conformance-local-20260731.md`.
+
+**Current batch:** B2 persistent Audit and Project inspectors with
+URL-restorable state and no second detail-open interaction.
 
 **Authority boundary:** no deployment, traffic, credentials, live provider or
 IdP calls, non-test database mutation, cursor/checkpoint change, product-repo

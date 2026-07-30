@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unirouter.local/schemas/provider-pack.v1.schema.json",
+  "title": "UniRouter Provider Conformance Pack V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "pack_id",
+    "pack_version",
+    "provider",
+    "adapter_type",
+    "conformance_level",
+    "network_verified",
+    "endpoints",
+    "modalities",
+    "auth_profiles",
+    "usage_profile",
+    "error_profile",
+    "fixtures"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "unirouter.provider-pack.v1"
+    },
+    "pack_id": {
+      "type": "string",
+      "pattern": "^unirouter\\.[a-z0-9.-]+$"
+    },
+    "pack_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "provider": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "adapter_type": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "conformance_level": {
+      "enum": [
+        "fixture_verified"
+      ]
+    },
+    "network_verified": {
+      "const": false
+    },
+    "endpoints": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "/v1/chat/completions",
+          "/v1/embeddings"
+        ]
+      }
+    },
+    "modalities": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "text",
+          "embeddings"
+        ]
+      }
+    },
+    "auth_profiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "wire_header"
+        ],
+        "properties": {
+          "type": {
+            "enum": [
+              "bearer",
+              "api_key",
+              "entra_bearer"
+            ]
+          },
+          "wire_header": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "usage_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authority_when_complete",
+        "missing_behavior",
+        "cache_classes"
+      ],
+      "properties": {
+        "authority_when_complete": {
+          "const": "provider_reported"
+        },
+        "missing_behavior": {
+          "const": "missing_not_zero"
+        },
+        "cache_classes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "uncached_input",
+              "cache_read",
+              "cache_creation",
+              "output"
+            ]
+          }
+        }
+      }
+    },
+    "error_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "classifier",
+        "unknown_behavior"
+      ],
+      "properties": {
+        "classifier": {
+          "const": "unirouter.http-failure.v1"
+        },
+        "unknown_behavior": {
+          "const": "unknown_not_retryable_without_status_evidence"
+        }
+      }
+    },
+    "fixtures": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "fixture_id",
+          "path",
+          "sha256"
+        ],
+        "properties": {
+          "fixture_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9.-]+$"
+          },
+          "path": {
+            "type": "string",
+            "pattern": "^fixtures/[a-z0-9.-]+\\.json$"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        }
+      }
+    }
+  }
+}

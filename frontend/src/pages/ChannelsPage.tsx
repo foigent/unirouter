@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { Button, Table, Modal, Form, Tag, Toast, Space, Tooltip, SideSheet, Input, Typography } from '@douyinfe/semi-ui';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Button, Table, Modal, Form, Tag, Toast, Space, Tooltip, SideSheet, Input, Typography, Descriptions } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api, ApiError } from '../api/client';
 import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
@@ -45,6 +45,24 @@ interface RoutingPreview {
   exclusions: RoutingPreviewCandidate[];
 }
 
+interface ProviderPackManifest {
+  pack_id: string;
+  pack_version: string;
+  provider: string;
+  adapter_type: string;
+  conformance_level: 'fixture_verified';
+  network_verified: boolean;
+  endpoints: string[];
+  modalities: string[];
+  auth_profiles: Array<{ type: string; wire_header: string }>;
+}
+
+interface ProviderPack {
+  manifest: ProviderPackManifest;
+  manifest_sha256: string;
+  schema_sha256: string;
+}
+
 const channelStatusOptions = [
   { label: '启用', value: 'active' },
   { label: '禁用', value: 'disabled' },
@@ -58,6 +76,9 @@ function channelUpdateErrorMessage(error: unknown) {
   }
   if (error.status === 400 && backendMessage.includes('adapter_type')) {
     return 'Adapter Type 不受支持';
+  }
+  if (error.status === 400 && backendMessage.includes('adapter_config')) {
+    return 'Adapter Config 与所选协议不兼容';
   }
   if (error.status === 400) return '通道配置无效，请检查字段后重试';
   if (error.status === 403) return '当前账号无权更新此通道';
@@ -86,6 +107,44 @@ const routingSourceLabel = (source: string) => ({
   last_known_good: '数据库异常时的短时备用快照',
 }[source] || source);
 
+function selectedChannelIDFromParams() {
+  const value = Number(new URLSearchParams(window.location.search).get('channel_id'));
+  return Number.isSafeInteger(value) && value > 0 ? value : undefined;
+}
+
+function syncSelectedChannelID(id?: number) {
+  const params = new URLSearchParams(window.location.search);
+  if (id) params.set('channel_id', String(id));
+  else params.delete('channel_id');
+  const query = params.toString();
+  window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
+}
+
+function adapterConfigFacts(channel: Channel) {
+  let config: Record<string, unknown> = {};
+  if (channel.adapter_config && typeof channel.adapter_config === 'object') {
+    config = channel.adapter_config;
+  } else if (typeof channel.adapter_config === 'string') {
+    try {
+      const parsed = JSON.parse(channel.adapter_config);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) config = parsed;
+    } catch {
+      return [{ key: 'config', label: '配置状态', value: '无法解析' }];
+    }
+  }
+  const allowed = channel.adapter_type === 'azure_openai'
+    ? [['deployment', 'Deployment'], ['api_version', 'API version'], ['auth_mode', 'Auth mode']]
+    : channel.adapter_type === 'anthropic_native'
+      ? [['anthropic_version', 'Anthropic version'], ['anthropic_beta', 'Anthropic beta']]
+      : [];
+  return allowed.flatMap(([key, label]) => {
+    const value = config[key];
+    return typeof value === 'string' && value.trim()
+      ? [{ key, label, value }]
+      : [];
+  });
+}
+
 export default function ChannelsPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -100,6 +159,9 @@ export default function ChannelsPage() {
   const [previewModel, setPreviewModel] = useState('');
   const [previewLoading, setPreviewLoading] = useState(false);
   const [preview, setPreview] = useState<RoutingPreview | null>(null);
+  const [providerPacks, setProviderPacks] = useState<ProviderPack[]>([]);
+  const [providerPackError, setProviderPackError] = useState('');
+  const [selectedChannelId, setSelectedChannelId] = useState<number | undefined>(() => selectedChannelIDFromParams());
 
   const load = (p = page, size = pageSize) => {
     const version = ++requestVersion.current;
@@ -110,11 +172,23 @@ export default function ChannelsPage() {
     api.getChannels(p, size)
       .then((data) => {
         if (version !== requestVersion.current) return;
-        setChannels(data.data || []);
+        const nextChannels = data.data || [];
+        setChannels(nextChannels);
         setTotal(data.total || 0);
+        setSelectedChannelId((current) => {
+          const preferred = nextChannels.some((item: Channel) => item.id === current)
+            ? current
+            : nextChannels[0]?.id;
+          syncSelectedChannelID(preferred);
+          return preferred;
+        });
       })
       .catch(() => {
-        if (version === requestVersion.current) setLoadError('无法加载上游通道列表。');
+        if (version === requestVersion.current) {
+          setLoadError('无法加载上游通道列表。');
+          setSelectedChannelId(undefined);
+          syncSelectedChannelID(undefined);
+        }
       })
       .finally(() => {
         if (version === requestVersion.current) setLoading(false);
@@ -122,6 +196,41 @@ export default function ChannelsPage() {
   };
 
   useEffect(() => { load(1, pageSize); }, []);
+  useEffect(() => {
+    let active = true;
+    setProviderPackError('');
+    api.getProviderPacks()
+      .then((data) => {
+        if (!active) return;
+        setProviderPacks(data.data || []);
+      })
+      .catch(() => {
+        if (!active) return;
+        setProviderPacks([]);
+        setProviderPackError('Provider Pack 目录不可用，当前兼容性状态不能判定。');
+      });
+    return () => { active = false; };
+  }, []);
+
+  const selectedChannel = useMemo(
+    () => channels.find((channel) => channel.id === selectedChannelId),
+    [channels, selectedChannelId],
+  );
+  const selectedPack = useMemo(
+    () => providerPacks.find((pack) =>
+      pack.manifest.provider.toLowerCase() === selectedChannel?.provider.toLowerCase() &&
+      pack.manifest.adapter_type === (selectedChannel?.adapter_type || 'openai_compatible')),
+    [providerPacks, selectedChannel],
+  );
+  const selectedConfigFacts = useMemo(
+    () => selectedChannel ? adapterConfigFacts(selectedChannel) : [],
+    [selectedChannel],
+  );
+
+  const selectChannel = (channel: Channel) => {
+    setSelectedChannelId(channel.id);
+    syncSelectedChannelID(channel.id);
+  };
 
   const closeDrawer = () => { setShowDrawer(false); setEditing(null); };
 
@@ -243,11 +352,23 @@ export default function ChannelsPage() {
 
   const columns = [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
-    { title: '名称', dataIndex: 'name', key: 'name' },
-    { title: '供应商', dataIndex: 'provider', key: 'provider' },
-    { title: '协议适配', dataIndex: 'adapter_type', key: 'adapter_type', render: (v: string) => v || 'openai_compatible' },
-    { title: '服务地址', dataIndex: 'base_url', key: 'base_url', ellipsis: true },
-    { title: '支持模型', dataIndex: 'models', key: 'models', ellipsis: true },
+    { title: '名称', dataIndex: 'name', key: 'name', width: 180 },
+    { title: '供应商', dataIndex: 'provider', key: 'provider', width: 100 },
+    { title: '协议适配', dataIndex: 'adapter_type', key: 'adapter_type', width: 160, render: (v: string) => v || 'openai_compatible' },
+    {
+      title: '一致性',
+      key: 'conformance',
+      width: 110,
+      render: (_: unknown, record: Channel) => {
+        if (providerPackError) return <Tag color="orange">unavailable</Tag>;
+        const pack = providerPacks.find((item) =>
+          item.manifest.provider.toLowerCase() === record.provider.toLowerCase() &&
+          item.manifest.adapter_type === (record.adapter_type || 'openai_compatible'));
+        return pack ? <Tag color="green">fixture verified</Tag> : <Tag color="orange">undeclared</Tag>;
+      },
+    },
+    { title: '服务地址', dataIndex: 'base_url', key: 'base_url', width: 220, ellipsis: true },
+    { title: '支持模型', dataIndex: 'models', key: 'models', width: 220, ellipsis: true },
     { title: '优先级', dataIndex: 'priority', key: 'priority', width: 80 },
     {
       title: '同级权重', dataIndex: 'routing_weight', key: 'routing_weight', width: 95,
@@ -276,8 +397,8 @@ export default function ChannelsPage() {
       width: 120,
       render: (_: any, record: Channel) => (
         <Space>
-          <Button aria-label={`编辑通道 ${record.name}`} icon={<IconEdit />} size="small" onClick={() => openEdit(record)} />
-          <Button aria-label={`删除通道 ${record.name}`} icon={<IconDelete />} size="small" type="danger" onClick={() => handleDelete(record.id)} />
+          <Button aria-label={`编辑通道 ${record.name}`} icon={<IconEdit />} size="small" onClick={(event) => { event.stopPropagation(); openEdit(record); }} />
+          <Button aria-label={`删除通道 ${record.name}`} icon={<IconDelete />} size="small" type="danger" onClick={(event) => { event.stopPropagation(); handleDelete(record.id); }} />
         </Space>
       ),
     },
@@ -292,28 +413,164 @@ export default function ChannelsPage() {
         actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增通道</Button>}
       />
 
-      <Surface title="通道列表" description="这里是通道配置的权威入口。先确认通道、凭证和状态，再使用下方路由预览解释候选顺序。">
-        <div className="ur-table-shell">
-          <Table
-            dataSource={channels}
-            columns={columns}
-            rowKey="id"
-            loading={loading}
-            empty={loadError ? (
-              <EmptyState title="上游通道加载失败" description={loadError} actions={<Button type="primary" onClick={() => load()}>重新加载上游通道</Button>} minHeight={220} />
-            ) : <EmptyState title="暂无上游通道" minHeight={220} />}
-            pagination={{
-              currentPage: page,
-              pageSize,
-              total,
-              pageSizeOpts: [20, 50, 100],
-              showSizeChanger: true,
-              onPageChange: (p: number) => { setPage(p); load(p, pageSize); },
-              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1, s); },
-            }}
-          />
-        </div>
-      </Surface>
+      <div className="ur-provider-explorer">
+        <main className="ur-explorer-panel">
+          <div className="ur-panel-title">
+            <div>
+              <Typography.Title heading={5} style={{ margin: 0 }}>通道列表</Typography.Title>
+              <Typography.Text className="ur-panel-hint">默认选择首条记录 · 右侧持续显示兼容性</Typography.Text>
+            </div>
+            <Tag size="small">{total} channels</Tag>
+          </div>
+          <div className="ur-table-shell">
+            <Table
+              dataSource={channels}
+              columns={columns}
+              rowKey="id"
+              loading={loading}
+              scroll={{ x: 1645 }}
+              onRow={(record) => ({
+                onClick: () => record && selectChannel(record as Channel),
+                onKeyDown: (event) => {
+                  if (record && (event.key === 'Enter' || event.key === ' ')) {
+                    event.preventDefault();
+                    selectChannel(record as Channel);
+                  }
+                },
+                tabIndex: 0,
+                'aria-selected': selectedChannelId === (record as Channel)?.id,
+                style: {
+                  cursor: 'pointer',
+                  background: selectedChannelId === (record as Channel)?.id ? 'var(--ur-bg-subtle)' : undefined,
+                },
+              })}
+              empty={loadError ? (
+                <EmptyState title="上游通道加载失败" description={loadError} actions={<Button type="primary" onClick={() => load()}>重新加载上游通道</Button>} minHeight={220} />
+              ) : <EmptyState title="暂无上游通道" minHeight={220} />}
+              pagination={{
+                currentPage: page,
+                pageSize,
+                total,
+                pageSizeOpts: [20, 50, 100],
+                showSizeChanger: true,
+                onPageChange: (p: number) => { setPage(p); load(p, pageSize); },
+                onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1, s); },
+              }}
+            />
+          </div>
+        </main>
+
+        <aside className="ur-explorer-panel ur-explorer-detail" aria-label="Provider 兼容性检查器">
+          <div className="ur-detail-header">
+            <div>
+              <Typography.Text className="ur-panel-hint">Provider Conformance</Typography.Text>
+              <Typography.Title heading={5} style={{ margin: 0 }}>兼容性检查器</Typography.Title>
+            </div>
+            <Tag size="small" color={selectedChannel ? 'blue' : undefined}>{selectedChannel ? '常驻检查器' : '等待通道'}</Tag>
+          </div>
+
+          {!selectedChannel ? (
+            <div className="ur-receipt-empty" role="status">
+              <Typography.Title heading={5}>{loadError ? '等待可验证的通道列表' : '暂无可检查通道'}</Typography.Title>
+              <Typography.Text type="tertiary">
+                {loadError
+                  ? '列表加载失败时不会保留旧兼容性结论。'
+                  : '通道出现后将自动选择首条记录，无需再次点击打开详情。'}
+              </Typography.Text>
+            </div>
+          ) : (
+            <div className="ur-detail-stack">
+              <div className="ur-detail-hero">
+                <div>
+                  <Typography.Text type="tertiary" size="small">当前通道</Typography.Text>
+                  <div><Typography.Text strong>{selectedChannel.name}</Typography.Text></div>
+                  <Typography.Text code size="small">channel:{selectedChannel.id}</Typography.Text>
+                </div>
+                <StatusTag status={selectedChannel.status}>{selectedChannel.status}</StatusTag>
+              </div>
+
+              <div className="ur-receipt-summary" aria-label="Provider Pack 摘要">
+                <div>
+                  <Typography.Text type="tertiary" size="small">Adapter</Typography.Text>
+                  <Typography.Text strong size="small">{selectedChannel.adapter_type || 'openai_compatible'}</Typography.Text>
+                </div>
+                <div>
+                  <Typography.Text type="tertiary" size="small">Conformance</Typography.Text>
+                  <StatusTag status={providerPackError || !selectedPack ? 'warning' : 'success'}>
+                    {providerPackError ? 'unavailable' : selectedPack ? 'fixture verified' : 'undeclared'}
+                  </StatusTag>
+                </div>
+                <div>
+                  <Typography.Text type="tertiary" size="small">Network</Typography.Text>
+                  <StatusTag status="warning">{selectedPack?.manifest.network_verified ? 'verified' : 'not verified'}</StatusTag>
+                </div>
+                <div>
+                  <Typography.Text type="tertiary" size="small">Circuit</Typography.Text>
+                  <StatusTag status={selectedChannel.circuit_state}>{selectedChannel.circuit_state}</StatusTag>
+                </div>
+              </div>
+
+              {providerPackError ? (
+                <div className="ur-detail-card ur-detail-card-error" role="alert">
+                  <Typography.Text className="ur-detail-card-title">兼容性目录不可用</Typography.Text>
+                  <Typography.Text size="small">{providerPackError}</Typography.Text>
+                </div>
+              ) : !selectedPack ? (
+                <div className="ur-detail-card" role="status">
+                  <Typography.Text className="ur-detail-card-title">未声明的适配器</Typography.Text>
+                  <Typography.Text type="tertiary" size="small">
+                    当前适配器没有权威 Provider Pack；不会把“可配置”解释为“已兼容”。
+                  </Typography.Text>
+                </div>
+              ) : (
+                <>
+                  <div className="ur-detail-card">
+                    <Typography.Text className="ur-detail-card-title">Pack 身份</Typography.Text>
+                    <Descriptions
+                      row
+                      size="small"
+                      data={[
+                        { key: 'Pack', value: `${selectedPack.manifest.pack_id}@${selectedPack.manifest.pack_version}` },
+                        { key: 'Provider', value: selectedPack.manifest.provider },
+                        { key: 'Manifest SHA-256', value: <Typography.Text code size="small">{selectedPack.manifest_sha256}</Typography.Text> },
+                        { key: 'Schema SHA-256', value: <Typography.Text code size="small">{selectedPack.schema_sha256}</Typography.Text> },
+                      ]}
+                    />
+                  </div>
+                  <div className="ur-detail-card">
+                    <Typography.Text className="ur-detail-card-title">声明能力</Typography.Text>
+                    <div className="ur-chip-row">
+                      {selectedPack.manifest.endpoints.map((endpoint) => <Tag key={endpoint} color="blue">{endpoint}</Tag>)}
+                      {selectedPack.manifest.modalities.map((modality) => <Tag key={modality} color="cyan">{modality}</Tag>)}
+                    </div>
+                    <Typography.Text type="tertiary" size="small">
+                      鉴权线缆：{selectedPack.manifest.auth_profiles.map((profile) => `${profile.type} → ${profile.wire_header}`).join('；')}
+                    </Typography.Text>
+                  </div>
+                </>
+              )}
+
+              <div className="ur-detail-card">
+                <Typography.Text className="ur-detail-card-title">当前绑定</Typography.Text>
+                <Descriptions
+                  row
+                  size="small"
+                  data={[
+                    { key: 'Base URL', value: selectedChannel.base_url },
+                    { key: 'Models', value: selectedChannel.models },
+                    ...selectedConfigFacts.map((fact) => ({ key: fact.label, value: fact.value })),
+                  ]}
+                />
+                <Typography.Text type="tertiary" size="small">
+                  敏感配置值不在检查器中回显；fixture verified 仅证明离线合成合同，不代表真实账号、网络、额度或账单。
+                </Typography.Text>
+              </div>
+
+              <Button icon={<IconEdit />} onClick={() => openEdit(selectedChannel)}>编辑当前通道</Button>
+            </div>
+          )}
+        </aside>
+      </div>
 
       <Surface
         title="路由预览"
@@ -390,9 +647,15 @@ export default function ChannelsPage() {
             optionList={[
               { label: 'OpenAI Compatible', value: 'openai_compatible' },
               { label: 'Anthropic Native', value: 'anthropic_native' },
+              { label: 'Azure OpenAI (deployment-scoped)', value: 'azure_openai' },
             ]}
           />
-          <Form.TextArea field="adapter_config" label="Adapter Config (JSON)" placeholder='{"anthropic_version":"2023-06-01"}' rows={4} />
+          <Form.TextArea
+            field="adapter_config"
+            label="Adapter Config (JSON)"
+            placeholder='Anthropic: {"anthropic_version":"2023-06-01"} · Azure: {"api_version":"2024-10-21","deployment":"gpt-4o-prod"}'
+            rows={4}
+          />
           <Form.InputNumber field="priority" label="优先级 (越小越优先)" initValue={100} />
           <Form.InputNumber field="routing_weight" label="同优先级权重 (1-1000)" initValue={100} extraText="只在优先级相同时分配流量；例如 100 与 200 约为 1:2。" />
           <Form.InputNumber field="degradation_threshold" label="熔断阈值 (连续失败次数)" initValue={10} extraText="达到次数后暂停该通道，恢复窗口到期后只允许一个探针请求。" />

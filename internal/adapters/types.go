@@ -11,6 +11,7 @@ import (
 const (
 	TypeOpenAICompatible = "openai_compatible"
 	TypeAnthropicNative  = "anthropic_native"
+	TypeAzureOpenAI      = "azure_openai"
 )
 
 type Endpoint string
@@ -161,4 +162,8 @@ type Adapter interface {
 	ParseResponse(ctx context.Context, in ResponseInput) (*NormalizedResponse, error)
 	Test(ctx context.Context, in TestInput) (*TestResult, error)
 	ClassifyHTTPStatus(statusCode int, body []byte) *NormalizedError
+}
+
+type ConfigValidator interface {
+	ValidateConfig(raw []byte) error
 }

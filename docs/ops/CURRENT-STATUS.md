@@ -12,6 +12,22 @@
 > credentials/providers/IdPs, non-test database mutation, cursor/checkpoint
 > changes, push, PR and merge remain unauthorized. The completed-execution Feed
 > compatibility baseline and PRD5/PRD6 closeouts remain unchanged.
+> **2026-07-31 PRD7 B1 checkpoint:** Provider Conformance Pack V1 and the
+> Provider portion of the persistent-inspector requirement are Local verified.
+> Three strict embedded packs (OpenAI, Anthropic, Azure OpenAI) pass a
+> deterministic zero-network 3-pack/5-fixture/20-case runner; the golden
+> report SHA-256 is `803111ec...`. Azure OpenAI now has a native deployment-scoped
+> Chat/Embeddings adapter with GA `2024-10-21`, strict config and atomic
+> type/config validation. The platform-admin catalog API and Channels UI
+> distinguish fixture, network and circuit facts, use `(provider,
+> adapter_type)` identity, auto-select a channel and keep the inspector
+> visible. Full Go tests/vet, 41-file/300-test frontend suite,
+> type-check/build, deterministic report comparison and synthetic
+> 1440/1024/390 browser checks passed. Evidence:
+> `docs/ops/evidence/PRD7-B1-P7F02-P7F03-provider-conformance-local-20260731.md`.
+> This is not real-provider, credential, billing, CI, Target or Production
+> evidence; no runtime/database/Feed/Cursor/protocol behavior changed. B2 is
+> next.
 > **2026-07-31 `UR-PRODUCT-ITERATION-RECEIPT-WORKSPACE-V0` checkpoint:**
 > the accepted first product-iteration slice is locally verified on
 > `codex/product-iteration-20260730` from baseline

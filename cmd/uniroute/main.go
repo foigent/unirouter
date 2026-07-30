@@ -540,6 +540,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">PUT</td><td><code>/api/v1/channels/{id}</code></td><td>Update channel</td></tr>
 <tr><td class="method">DELETE</td><td><code>/api/v1/channels/{id}</code></td><td>Delete channel</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/channels/{id}/test</code></td><td>Test channel</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/provider-packs</code></td><td>List immutable fixture-verified Provider Conformance Packs</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/routing/preview</code></td><td>Preview routing candidates and exclusions</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/channel-keys</code></td><td>List upstream credentials</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/channel-keys</code></td><td>Create upstream credential</td></tr>
@@ -658,6 +659,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("GET /api/v1/channels/{id}", platformRoute(adminHandler.GetChannel))
 	mux.Handle("PUT /api/v1/channels/{id}", platformRoute(adminHandler.UpdateChannel))
 	mux.Handle("DELETE /api/v1/channels/{id}", platformRoute(adminHandler.DeleteChannel))
+	mux.Handle("GET /api/v1/provider-packs", platformRoute(adminHandler.ListProviderPacks))
 	mux.Handle("GET /api/v1/routing/preview", platformRoute(adminHandler.PreviewRouting))
 
 	mux.Handle("GET /api/v1/keys", projectReadRoute(adminHandler.ListAPIKeys))
