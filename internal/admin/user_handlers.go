@@ -346,6 +346,7 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		if req.Status != nil {
 			nextStatus = *req.Status
 		}
+		securityPrincipalChanged := nextRole != targetRole || nextStatus != targetStatus
 		existingProjectIDs, err := listUserProjectIDsTx(r.Context(), tx, id, targetOrgID)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
@@ -394,6 +395,13 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if len(sets) > 0 {
+			// A role or account-status transition invalidates every previously
+			// issued administrator JWT. Without the epoch bump and session
+			// revoke, a suspended account could regain an old live session
+			// after reactivation.
+			if securityPrincipalChanged {
+				sets = append(sets, "auth_epoch = auth_epoch + 1")
+			}
 			sets = append(sets, "updated_at = NOW()")
 			idArg := argIdx
 			args = append(args, id)
@@ -421,6 +429,20 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
 			return
 		}
+		var revokedSessions int64
+		if securityPrincipalChanged {
+			tag, revokeErr := tx.Exec(r.Context(),
+				`UPDATE admin_sessions
+				 SET revoked_at = COALESCE(revoked_at, NOW())
+				 WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > NOW()`,
+				id,
+			)
+			if revokeErr != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Session revocation failed; no change was committed"})
+				return
+			}
+			revokedSessions = tag.RowsAffected()
+		}
 		if err := insertAuditEntry(r.Context(), tx, "user.update", "user", idStr, map[string]interface{}{
 			"before": map[string]interface{}{
 				"role":        targetRole,
@@ -428,9 +450,11 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 				"project_ids": existingProjectIDs,
 			},
 			"after": map[string]interface{}{
-				"role":        nextRole,
-				"status":      nextStatus,
-				"project_ids": desiredProjectIDs,
+				"role":                         nextRole,
+				"status":                       nextStatus,
+				"project_ids":                  desiredProjectIDs,
+				"security_principal_versioned": securityPrincipalChanged,
+				"live_sessions_revoked":        revokedSessions,
 			},
 		}, requestAuditMeta(r, targetOrgID, 0)); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})

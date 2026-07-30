@@ -458,6 +458,29 @@ describe('API Client', () => {
     })
   })
 
+  describe('member lifecycle offline preview', () => {
+    it('keeps the supplied lifecycle event as the exact JSON request body', async () => {
+      const event = '{"contract_version":"unirouter.member-lifecycle.v1"}'
+      mockJsonResponse({ runtime_mutation: 'none' })
+
+      await api.previewMemberLifecycle(event)
+
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/member-lifecycle/offline-preview')
+      expect(mockFetch.mock.calls[0][1]).toEqual(expect.objectContaining({
+        method: 'POST',
+        body: event,
+      }))
+    })
+
+    it('reads the IdP-neutral contract', async () => {
+      mockJsonResponse({ contract_version: 'unirouter.member-lifecycle.v1' })
+
+      await api.getMemberLifecycleContract()
+
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/member-lifecycle/offline-contract')
+    })
+  })
+
   describe('project developer APIs', () => {
     it('filters keys by project_id', async () => {
       mockJsonResponse({ data: [], total: 0 })

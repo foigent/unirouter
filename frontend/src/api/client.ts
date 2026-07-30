@@ -434,6 +434,9 @@ export const api = {
   getGovernanceSimulationContract: () => request('/governance-simulation/offline-contract'),
   previewGovernanceSimulation: (body: string) =>
     request('/governance-simulation/offline-preview', { method: 'POST', body }),
+  getMemberLifecycleContract: () => request('/member-lifecycle/offline-contract'),
+  previewMemberLifecycle: (body: string) =>
+    request('/member-lifecycle/offline-preview', { method: 'POST', body }),
 
   // Notifications
   getNotificationEvents: (page = 1, pageSize = 20, filters?: {

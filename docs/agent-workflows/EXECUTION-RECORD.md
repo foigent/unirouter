@@ -102,7 +102,18 @@ plus full Go/frontend regression and 1440/390 synthetic browser verification.
 Exact evidence:
 `docs/ops/evidence/PRD7-B8-P7F04-P7F10-governance-simulation-local-20260731.md`.
 
-**Current batch:** B9 project-member lifecycle and provisioning conformance.
+B9 is Local verified through a zero-network synthetic boundary. The strict
+IdP-neutral contract proves create/update/suspend/reactivate/terminal
+deprovision, assignment and capability revocation, semantic replay and CAS.
+Role/status mutations now version the principal and revoke live administrator
+sessions atomically so old JWTs cannot revive after account restoration. A
+1-fixture/17-case golden runner, no-store API/CLI and persistent Lifecycle
+Inspector are included; no SCIM vendor or IdP source of truth is selected.
+Exact evidence:
+`docs/ops/evidence/PRD7-B9-P7F11-member-lifecycle-local-20260731.md`.
+
+**Current batch:** B10 Agent Trust Firewall, signed decision receipt and
+Governance Digital Twin.
 
 **Authority boundary:** no deployment, traffic, credentials, live provider or
 IdP calls, non-test database mutation, cursor/checkpoint change, product-repo

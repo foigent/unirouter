@@ -1599,6 +1599,18 @@ paths:
     description: Evaluates at most 2 MiB of supplied immutable baseline/candidate route, policy and Provider Pack snapshots in memory through the same credential-free routing kernel used by Gateway selection. Shadow, canary and enforced are evaluated target modes only; the endpoint persists nothing and cannot mutate or promote runtime state.
     post: *operation_create
 
+  /api/v1/member-lifecycle/offline-contract:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+    description: Returns the strict IdP-neutral create/update/suspend/deprovision contract, immutable synthetic fixtures and conformance identities. It selects no SCIM vendor, accepts no credentials, performs no IdP call and changes no state.
+    get: *operation_list
+
+  /api/v1/member-lifecycle/offline-preview:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    description: Evaluates at most 1 MiB of one sanitized lifecycle event in memory. It computes effective membership/capability revocation and exact local projection controls without changing users, memberships, sessions, keys, agent capabilities, a directory or a database.
+    post: *operation_create
+
   /api/v1/users:
     x-unirouter-rbac:
       get: [platform_admin, org_admin]

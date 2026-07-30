@@ -168,3 +168,58 @@ func TestUpdateUserAllowsPlatformAdminDemotionWhenAnotherIsActive(t *testing.T) 
 		t.Fatalf("expected locked committed mutation, lock=%v mutation=%v commit=%v", advisoryCalled, mutationCalled, committed)
 	}
 }
+
+func TestUpdateUserVersionsPrincipalAndRevokesLiveSessions(t *testing.T) {
+	var userVersioned, sessionsRevoked, auditWritten, committed bool
+	tx := &testutil.MockTx{
+		QueryRowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				if !strings.Contains(sql, "FROM users") {
+					return pgx.ErrNoRows
+				}
+				*dest[0].(*int64) = 1
+				*dest[1].(*string) = auth.RoleOrgViewer
+				*dest[2].(*string) = "active"
+				return nil
+			}}
+		},
+		QueryFn: func(context.Context, string, ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{}, nil
+		},
+		ExecFn: func(_ context.Context, sql string, _ ...any) (pgconn.CommandTag, error) {
+			switch {
+			case strings.Contains(sql, "pg_advisory_xact_lock"):
+				return pgconn.NewCommandTag("SELECT 1"), nil
+			case strings.Contains(sql, "UPDATE users SET"):
+				userVersioned = strings.Contains(sql, "auth_epoch = auth_epoch + 1")
+				return pgconn.NewCommandTag("UPDATE 1"), nil
+			case strings.Contains(sql, "UPDATE admin_sessions"):
+				sessionsRevoked = strings.Contains(sql, "revoked_at = COALESCE")
+				return pgconn.NewCommandTag("UPDATE 2"), nil
+			case strings.Contains(sql, "INSERT INTO audit_logs"):
+				auditWritten = true
+				return pgconn.NewCommandTag("INSERT 1"), nil
+			default:
+				return pgconn.NewCommandTag("DELETE 0"), nil
+			}
+		},
+		CommitFn: func(context.Context) error {
+			committed = true
+			return nil
+		},
+	}
+	h := newTestHandler(&testutil.MockDB{BeginFn: func(context.Context) (pgx.Tx, error) { return tx, nil }})
+	req := userMutationRequest(http.MethodPut, "/api/v1/users/42", `{"status":"disabled"}`, 99)
+	req.SetPathValue("id", "42")
+	rec := httptest.NewRecorder()
+
+	h.UpdateUser(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !userVersioned || !sessionsRevoked || !auditWritten || !committed {
+		t.Fatalf("versioned=%v sessions=%v audit=%v committed=%v",
+			userVersioned, sessionsRevoked, auditWritten, committed)
+	}
+}

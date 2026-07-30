@@ -180,6 +180,8 @@ const endpointGroups = [
       ['POST', '/api/v1/provider-cogs/offline-preview', '在内存中校验供应商成本证据；聚合成本不归因且不会修改客户账'],
       ['GET', '/api/v1/governance-simulation/offline-contract', '平台管理员读取离线路由/策略模拟与 Provider Change Firewall 合同；不接收凭据、不提升运行时'],
       ['POST', '/api/v1/governance-simulation/offline-preview', '平台管理员用同一套路由内核比较不可变快照；shadow/canary/enforced 仅为模拟目标模式'],
+      ['GET', '/api/v1/member-lifecycle/offline-contract', '平台或组织管理员读取 IdP 中立的成员生命周期合同；不选择 SCIM 供应商'],
+      ['POST', '/api/v1/member-lifecycle/offline-preview', '离线评估创建、更新、暂停和退场事件；不修改用户、会话、成员、能力或目录'],
     ],
   },
   {

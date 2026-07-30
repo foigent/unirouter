@@ -10,7 +10,8 @@
 - [ops/evidence/PRD7-B2-P7F02-contextual-inspectors-local-20260731.md](ops/evidence/PRD7-B2-P7F02-contextual-inspectors-local-20260731.md) — Audit/Projects 常驻检查器、深链、本地视图、全量回归与响应式浏览器证据
 - [ops/evidence/PRD7-B6-P7F08-endpoint-protocol-conformance-local-20260731.md](ops/evidence/PRD7-B6-P7F08-endpoint-protocol-conformance-local-20260731.md) — Responses、Cohere Rerank V2、GPT Image 固定协议与 25 项零网络一致性证据
 - [ops/evidence/PRD7-B7-P7F09-provider-cogs-financial-truth-local-20260731.md](ops/evidence/PRD7-B7-P7F09-provider-cogs-financial-truth-local-20260731.md) — 供应商 COGS 离线合同、客户账分离、15 项一致性证据与常驻 Financial Truth 检查器
-- [ops/evidence/PRD7-B8-P7F04-P7F10-governance-simulation-local-20260731.md](ops/evidence/PRD7-B8-P7F04-P7F10-governance-simulation-local-20260731.md) — 同源路由模拟、Provider Change Firewall、渐进发布/回滚、16 项一致性和常驻 Governance Inspector
+- [ops/evidence/PRD7-B8-P7F04-P7F10-governance-simulation-local-20260731.md](ops/evidence/PRD7-B8-P7F04-P7F10-governance-simulation-local-20260731.md) — 同源路由模拟、Provider Change Firewall、渐进发布/回滚、17 项一致性和常驻 Governance Inspector
+- [ops/evidence/PRD7-B9-P7F11-member-lifecycle-local-20260731.md](ops/evidence/PRD7-B9-P7F11-member-lifecycle-local-20260731.md) — IdP 中立成员生命周期、访问收敛、旧会话失效、17 项一致性和常驻 Lifecycle Inspector
 - [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — Agent 接手项目的第一阅读入口
 - [ops/CURRENT-STATUS.md](ops/CURRENT-STATUS.md) — 当前已验证项目状态和明确非声明
 - [ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md](ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md) — 当前 `1.0.1` 七角色开发目标验收与清理证据
@@ -149,6 +150,7 @@
 - [tech-ref/30-provider-conformance-pack-v1.md](tech-ref/30-provider-conformance-pack-v1.md) — Provider Pack V1、Azure OpenAI 原生适配与离线/真实兼容性声明边界
 - [tech-ref/35-provider-cogs-offline.md](tech-ref/35-provider-cogs-offline.md) — Provider COGS 离线导入、证据归因、缺口、重放与客户账隔离合同
 - [tech-ref/36-governance-simulation-v1.md](tech-ref/36-governance-simulation-v1.md) — 同源路由内核、Provider Change Firewall、渐进发布/回滚证据与零运行时提升边界
+- [tech-ref/37-member-lifecycle-v1.md](tech-ref/37-member-lifecycle-v1.md) — 创建/更新/暂停/退场、成员与能力撤销、会话版本化及 SCIM 决策门
 
 ## 工程治理
 - [governance/README.md](governance/README.md) — PRD3 最低工程治理：ADR、API 兼容、migration/rollback、release、incident、deprecation

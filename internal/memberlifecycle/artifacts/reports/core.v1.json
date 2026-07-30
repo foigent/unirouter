@@ -1,0 +1,183 @@
+{
+  "schema_version": "unirouter.member-lifecycle-conformance-report.v1",
+  "contract_version": "unirouter.member-lifecycle.v1",
+  "schema": {
+    "path": "member-lifecycle.v1.schema.json",
+    "sha256": "sha256:3f871bfca5ee66e34a0d1d804e4181c5228be5f0ea7b831878e0a30add27b964"
+  },
+  "fixtures": [
+    {
+      "path": "fixtures/project-member-chain.v1.json",
+      "sha256": "sha256:dfdc04f263438b98f332aded4645393dac611fb6bd51d06634bbb292767919b8"
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "project-member-chain.v1/chain",
+      "case_classes": [
+        "cas",
+        "lifecycle"
+      ],
+      "passed": true,
+      "result": "create_update_suspend_reactivate_deprovision"
+    },
+    {
+      "case_id": "project-member-chain.v1/determinism",
+      "case_classes": [
+        "canonicalization",
+        "determinism",
+        "hash"
+      ],
+      "passed": true,
+      "result": "report_bytes_stable"
+    },
+    {
+      "case_id": "project-member-chain.v1/update-revocation",
+      "case_classes": [
+        "capability",
+        "membership",
+        "revocation"
+      ],
+      "passed": true,
+      "result": "removed_assignments_revoked"
+    },
+    {
+      "case_id": "project-member-chain.v1/suspend",
+      "case_classes": [
+        "lifecycle",
+        "revocation",
+        "session"
+      ],
+      "passed": true,
+      "result": "suspended_access_zero"
+    },
+    {
+      "case_id": "project-member-chain.v1/reactivate",
+      "case_classes": [
+        "lifecycle",
+        "resume"
+      ],
+      "passed": true,
+      "result": "suspended_subject_reactivated"
+    },
+    {
+      "case_id": "project-member-chain.v1/deprovision",
+      "case_classes": [
+        "capability",
+        "lifecycle",
+        "terminal"
+      ],
+      "passed": true,
+      "result": "deprovision_terminal_controls_exact"
+    },
+    {
+      "case_id": "replay/duplicate-noop",
+      "case_classes": [
+        "canonicalization",
+        "replay"
+      ],
+      "passed": true,
+      "result": "duplicate_noop"
+    },
+    {
+      "case_id": "replay/conflict",
+      "case_classes": [
+        "conflict",
+        "replay"
+      ],
+      "passed": true,
+      "result": "event_identity_conflict"
+    },
+    {
+      "case_id": "lifecycle/stale-cas",
+      "case_classes": [
+        "cas",
+        "conflict"
+      ],
+      "passed": true,
+      "result": "stale_revision_rejected"
+    },
+    {
+      "case_id": "lifecycle/terminal",
+      "case_classes": [
+        "conflict",
+        "terminal"
+      ],
+      "passed": true,
+      "result": "deprovision_is_terminal"
+    },
+    {
+      "case_id": "boundary/runtime",
+      "case_classes": [
+        "privacy",
+        "runtime_boundary",
+        "vendor_gate"
+      ],
+      "passed": true,
+      "result": "runtime_mutation_none_vendor_unbound"
+    },
+    {
+      "case_id": "negative/duplicate-key",
+      "case_classes": [
+        "negative",
+        "strict_json"
+      ],
+      "passed": true,
+      "result": "duplicate_rejected"
+    },
+    {
+      "case_id": "negative/vendor-field",
+      "case_classes": [
+        "negative",
+        "privacy",
+        "vendor_gate"
+      ],
+      "passed": true,
+      "result": "vendor_field_rejected"
+    },
+    {
+      "case_id": "negative/missing-required",
+      "case_classes": [
+        "negative",
+        "schema"
+      ],
+      "passed": true,
+      "result": "missing_field_rejected"
+    },
+    {
+      "case_id": "negative/submicrosecond-time",
+      "case_classes": [
+        "negative",
+        "precision",
+        "time"
+      ],
+      "passed": true,
+      "result": "submicrosecond_rejected"
+    },
+    {
+      "case_id": "boundary/int64-maximum",
+      "case_classes": [
+        "decimal",
+        "precision"
+      ],
+      "passed": true,
+      "result": "int64_maximum_accepted"
+    },
+    {
+      "case_id": "negative/int64-overflow",
+      "case_classes": [
+        "decimal",
+        "negative",
+        "precision"
+      ],
+      "passed": true,
+      "result": "int64_overflow_rejected"
+    }
+  ],
+  "summary": {
+    "fixtures": 1,
+    "cases": 17,
+    "passed": 17,
+    "failed": 0
+  }
+}

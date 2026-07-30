@@ -1,0 +1,284 @@
+{
+  "schema_version": "unirouter.member-lifecycle-fixture.v1",
+  "fixture_id": "project-member-chain.v1",
+  "events": [
+    {
+      "contract_version": "unirouter.member-lifecycle.v1",
+      "event_id": "member-event-create-001",
+      "subject_ref": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "source_ref": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "operation": "create",
+      "occurred_at": "2026-07-31T09:00:00.000000Z",
+      "parent_revision": "0",
+      "revision": "1",
+      "before": null,
+      "after": {
+        "status": "active",
+        "role": "developer",
+        "revision": "1",
+        "memberships": [
+          {
+            "project_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "role": "project_developer"
+          },
+          {
+            "project_ref": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "role": "project_developer"
+          }
+        ],
+        "capabilities": [
+          {
+            "capability_ref": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+            "kind": "admin_session",
+            "project_ref": "",
+            "status": "active"
+          },
+          {
+            "capability_ref": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "kind": "personal_api_key",
+            "project_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "status": "active"
+          },
+          {
+            "capability_ref": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "kind": "agent_capability_root",
+            "project_ref": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "status": "active"
+          }
+        ]
+      }
+    },
+    {
+      "contract_version": "unirouter.member-lifecycle.v1",
+      "event_id": "member-event-update-002",
+      "subject_ref": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "source_ref": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "operation": "update",
+      "occurred_at": "2026-07-31T09:01:00.000000Z",
+      "parent_revision": "1",
+      "revision": "2",
+      "before": {
+        "status": "active",
+        "role": "developer",
+        "revision": "1",
+        "memberships": [
+          {
+            "project_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "role": "project_developer"
+          },
+          {
+            "project_ref": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "role": "project_developer"
+          }
+        ],
+        "capabilities": [
+          {
+            "capability_ref": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+            "kind": "admin_session",
+            "project_ref": "",
+            "status": "active"
+          },
+          {
+            "capability_ref": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "kind": "personal_api_key",
+            "project_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "status": "active"
+          },
+          {
+            "capability_ref": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "kind": "agent_capability_root",
+            "project_ref": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "status": "active"
+          }
+        ]
+      },
+      "after": {
+        "status": "active",
+        "role": "developer",
+        "revision": "2",
+        "memberships": [
+          {
+            "project_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "role": "project_developer"
+          }
+        ],
+        "capabilities": [
+          {
+            "capability_ref": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+            "kind": "admin_session",
+            "project_ref": "",
+            "status": "active"
+          },
+          {
+            "capability_ref": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "kind": "personal_api_key",
+            "project_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "status": "active"
+          }
+        ]
+      }
+    },
+    {
+      "contract_version": "unirouter.member-lifecycle.v1",
+      "event_id": "member-event-suspend-003",
+      "subject_ref": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "source_ref": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "operation": "suspend",
+      "occurred_at": "2026-07-31T09:02:00.000000Z",
+      "parent_revision": "2",
+      "revision": "3",
+      "before": {
+        "status": "active",
+        "role": "developer",
+        "revision": "2",
+        "memberships": [
+          {
+            "project_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "role": "project_developer"
+          }
+        ],
+        "capabilities": [
+          {
+            "capability_ref": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+            "kind": "admin_session",
+            "project_ref": "",
+            "status": "active"
+          },
+          {
+            "capability_ref": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "kind": "personal_api_key",
+            "project_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "status": "active"
+          }
+        ]
+      },
+      "after": {
+        "status": "suspended",
+        "role": "developer",
+        "revision": "3",
+        "memberships": [
+          {
+            "project_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "role": "project_developer"
+          }
+        ],
+        "capabilities": [
+          {
+            "capability_ref": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+            "kind": "admin_session",
+            "project_ref": "",
+            "status": "active"
+          },
+          {
+            "capability_ref": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "kind": "personal_api_key",
+            "project_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "status": "active"
+          }
+        ]
+      }
+    },
+    {
+      "contract_version": "unirouter.member-lifecycle.v1",
+      "event_id": "member-event-reactivate-004",
+      "subject_ref": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "source_ref": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "operation": "update",
+      "occurred_at": "2026-07-31T09:03:00.000000Z",
+      "parent_revision": "3",
+      "revision": "4",
+      "before": {
+        "status": "suspended",
+        "role": "developer",
+        "revision": "3",
+        "memberships": [
+          {
+            "project_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "role": "project_developer"
+          }
+        ],
+        "capabilities": [
+          {
+            "capability_ref": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+            "kind": "admin_session",
+            "project_ref": "",
+            "status": "active"
+          },
+          {
+            "capability_ref": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "kind": "personal_api_key",
+            "project_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "status": "active"
+          }
+        ]
+      },
+      "after": {
+        "status": "active",
+        "role": "developer",
+        "revision": "4",
+        "memberships": [
+          {
+            "project_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "role": "project_developer"
+          }
+        ],
+        "capabilities": [
+          {
+            "capability_ref": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+            "kind": "admin_session",
+            "project_ref": "",
+            "status": "active"
+          },
+          {
+            "capability_ref": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "kind": "personal_api_key",
+            "project_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "status": "active"
+          }
+        ]
+      }
+    },
+    {
+      "contract_version": "unirouter.member-lifecycle.v1",
+      "event_id": "member-event-deprovision-005",
+      "subject_ref": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "source_ref": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "operation": "deprovision",
+      "occurred_at": "2026-07-31T09:04:00.000000Z",
+      "parent_revision": "4",
+      "revision": "5",
+      "before": {
+        "status": "active",
+        "role": "developer",
+        "revision": "4",
+        "memberships": [
+          {
+            "project_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "role": "project_developer"
+          }
+        ],
+        "capabilities": [
+          {
+            "capability_ref": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+            "kind": "admin_session",
+            "project_ref": "",
+            "status": "active"
+          },
+          {
+            "capability_ref": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "kind": "personal_api_key",
+            "project_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "status": "active"
+          }
+        ]
+      },
+      "after": {
+        "status": "deprovisioned",
+        "role": "developer",
+        "revision": "5",
+        "memberships": [],
+        "capabilities": []
+      }
+    }
+  ]
+}

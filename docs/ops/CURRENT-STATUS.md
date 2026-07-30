@@ -12,6 +12,16 @@
 > credentials/providers/IdPs, non-test database mutation, cursor/checkpoint
 > changes, push, PR and merge remain unauthorized. The completed-execution Feed
 > compatibility baseline and PRD5/PRD6 closeouts remain unchanged.
+> **2026-07-31 PRD7 B9 checkpoint:** P7-F11 is Local verified through an
+> IdP-neutral zero-network boundary. One lifecycle fixture passes a 17-case
+> golden report for create/update/suspend/reactivate/terminal deprovision,
+> membership/capability revocation, replay/CAS, strict JSON, time and int64
+> boundaries. Role/status changes now atomically increment `auth_epoch` and
+> revoke live administrator sessions, preventing old JWT resurrection after
+> restore. Platform/org-admin no-store API/CLI and a persistent Lifecycle
+> Inspector are included. No SCIM vendor, IdP source of truth, credential,
+> directory call or live provisioning is selected; B10 is next. Evidence:
+> `docs/ops/evidence/PRD7-B9-P7F11-member-lifecycle-local-20260731.md`.
 > **2026-07-31 PRD7 B8 checkpoint:** P7-F04 and P7-F10 are Local verified
 > through a zero-persistence synthetic boundary. Gateway runtime selection and
 > offline simulation share one credential-free `routing-policy.v1` evaluator.
