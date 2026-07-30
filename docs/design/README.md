@@ -12,7 +12,7 @@
 | [spec-v1.md](spec-v1.md) | 可实施的设计规范 | ✅ 定稿 |
 | [PRD1-UI-REDESIGN-SPEC.md](PRD1-UI-REDESIGN-SPEC.md) | PRD1 UI 重设计执行规范与验收清单 | ⏳ 本地已实现，待验收 |
 | [pages/dashboard-v2.md](pages/dashboard-v2.md) | Dashboard 线框图 | ✅ 已实现 |
-| [pages/logs-explorer-v2.md](pages/logs-explorer-v2.md) | Logs Explorer 规范 | ✅ 已实现 |
+| [pages/logs-explorer-v2.md](pages/logs-explorer-v2.md) | Logs Explorer v3 / 常驻执行决策凭证规范（兼容路径） | ✅ V0 已实现 |
 
 ## 设计决策摘要
 

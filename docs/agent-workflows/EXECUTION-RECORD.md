@@ -1,6 +1,56 @@
 # Current Execution Record
 
-## Current Repository Execution — Existing-ECS Replacement Lifecycle
+## Current Repository Execution — Execution Decision Receipt Workspace V0
+
+**Work item:** `UR-PRODUCT-ITERATION-RECEIPT-WORKSPACE-V0`
+
+**Owner:** UniRouter product/implementation owner
+
+**Risk:** R2 user-visible frontend behavior; no API, persistence, routing,
+billing, IAM or runtime semantic change
+
+**Authority:** User accepted closed-loop execution of the first product
+iteration slice on 2026-07-31. This acceptance covers the UniRouter
+Requests/Logs experience only; it does not accept the full PRD7 candidate
+backlog or authorize runtime/external actions.
+
+**Baseline:** `origin/main` and local start head
+`48a88bccbe182a3d3a6aec315d422f47d879a364`, tree
+`31b651fb1b2718a09efa9bd1c3a2abb244ebb44e`; branch
+`codex/product-iteration-20260730`.
+
+**Implemented behavior:** Requests/Logs now keeps an Execution Decision Receipt
+inspector visible. The first result from the existing server order
+`created_at DESC` is selected automatically; row click, `ArrowUp`/
+`ArrowDown`, and `log_id` deep links change selection. Decision, Attempts,
+Policy & Guardrail, Cost & Finality, and Provenance & Gaps views use the
+existing sanitized request-trace DTO.
+
+**Truth boundary:** only explicit billing terminal events can show financial
+finality. HTTP success and `call_logs.cost_micros` do not imply settlement.
+Missing actor, policy, route or gap evidence remains missing/undeclared rather
+than becoming a negative claim. Zero declared gaps does not claim complete
+cross-product capture.
+
+**Verification:** Local verified. Focused Logs test: 1 file / 24 tests passed.
+Frontend type-check passed. Full frontend suite: 41 files / 299 tests passed.
+Production build and focused Go trace/admin tests passed. A local static-mock
+browser pass at 1440, 1024 and 390 CSS pixels found and then verified the fix
+for a Semi Table nested-update loop; the receipt remains visible/reachable at
+all three widths. Final repository diff checks passed; this record closes with
+the local commit that contains it and the resulting clean worktree. Evidence:
+`docs/ops/evidence/UR-EXECUTION-DECISION-RECEIPT-V0-LOCAL-20260731.md`.
+
+**Claim boundary:** no backend/API/DTO/schema behavior, database, request
+record, routing, billing result, Outbox identity, feed endpoint, cursor,
+credential, deployment, traffic, X-Insight, protocol or external integration
+changed. Browser evidence used only synthetic in-memory responses; this is not
+CI, real-data/runtime, Target or Production evidence.
+
+**Next gate:** Any later product slice is a new explicit scope; no push, PR,
+merge or deployment is part of this work item.
+
+## Historical Repository Execution — Existing-ECS Replacement Lifecycle
 
 **Work item:** `FV-SOURCE-QUALIFICATION-CURRENT-ECS-REPLACEMENT`
 

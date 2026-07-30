@@ -1,6 +1,27 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
+> **2026-07-31 `UR-PRODUCT-ITERATION-RECEIPT-WORKSPACE-V0` checkpoint:**
+> the accepted first product-iteration slice is locally verified on
+> `codex/product-iteration-20260730` from baseline
+> `48a88bccbe182a3d3a6aec315d422f47d879a364`. Requests/Logs now keeps an
+> Execution Decision Receipt inspector visible, automatically selects the
+> newest server-ordered record, supports row/keyboard/`log_id` selection, and
+> separates Decision, Attempts, Policy & Guardrail, Cost & Finality, and
+> Provenance & Gaps. It reuses the existing sanitized trace DTO. Only explicit
+> billing terminal events establish financial finality; HTTP success and log
+> cost do not imply settlement, and absent evidence is not converted into a
+> negative claim. Focused tests passed 24/24; frontend type-check, the 41-file
+> / 299-test suite, production build, and focused trace/admin Go tests passed.
+> A synthetic local-browser check at 1440/1024/390 CSS pixels found and
+> verified a Semi Table nested-update fix and confirmed the receipt remains
+> visible/reachable without a detail-open click. Exact evidence:
+> `docs/ops/evidence/UR-EXECUTION-DECISION-RECEIPT-V0-LOCAL-20260731.md`.
+> This is not CI, real-data/runtime, Target or Production evidence. No backend/API/
+> DTO/schema, database, routing, billing result, Outbox/feed/cursor,
+> credential, deployment, traffic, X-Insight or protocol behavior changed;
+> PRD5/PRD6 remain closed and no other PRD7 candidate is accepted by this
+> slice.
 > **2026-07-21
 > `FV-SOURCE-QUALIFICATION-CURRENT-ECS-REPLACEMENT` checkpoint:** UniRouter
 > accepted the exact User
