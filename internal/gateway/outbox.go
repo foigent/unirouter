@@ -123,7 +123,7 @@ type callLogOutboxPayload struct {
 	OccurredAt                                time.Time   `json:"occurred_at"`
 }
 
-func (relay *Relay) enqueueTraceOutbox(ctx context.Context, payload traceOutboxPayload) error {
+func (relay *Relay) enqueueTraceOutbox(ctx context.Context, payload traceOutboxPayload) (bool, error) {
 	priority := outbox.PriorityTraceInfo
 	if payload.Severity == "warning" {
 		priority = outbox.PriorityTraceWarning
@@ -140,10 +140,10 @@ func (relay *Relay) enqueueTraceOutbox(ctx context.Context, payload traceOutboxP
 		payload.OccurredAt,
 	)
 	if err != nil {
-		return err
+		return false, err
 	}
-	_, _, err = relay.outbox.Enqueue(ctx, event)
-	return err
+	_, created, err := relay.outbox.Enqueue(ctx, event)
+	return created, err
 }
 
 func (relay *Relay) enqueueCallLogOutbox(ctx context.Context, payload callLogOutboxPayload) error {

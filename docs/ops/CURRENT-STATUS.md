@@ -12,6 +12,20 @@
 > credentials/providers/IdPs, non-test database mutation, cursor/checkpoint
 > changes, push, PR and merge remain unauthorized. The completed-execution Feed
 > compatibility baseline and PRD5/PRD6 closeouts remain unchanged.
+> **2026-07-31 PRD7 B3 checkpoint:** P7-F05 is Local verified.
+> `unirouter.telemetry-export.v1` is a default-off, Outbox-posted,
+> metadata-only OTLP/HTTP JSON exporter with a fixed non-blocking queue, one
+> worker, bounded batches/timeouts/retries and exact OpenInference
+> Chat/Embedding/Guardrail/Chain mapping. It recursively rejects restricted
+> content, exports only route-derived model identity, limits spans to 32
+> attributes, uses scoped hashed request references, does not export duplicate
+> Outbox observations, and treats HTTP 200 partial success as acknowledged.
+> Full Go tests/vet, exporter race tests, the 42-file/308-test frontend suite,
+> type-check/build, deterministic golden comparison and Compose YAML parsing
+> passed. Evidence:
+> `docs/ops/evidence/PRD7-B3-P7F05-otel-openinference-export-local-20260731.md`.
+> No collector, deployment, traffic, credential, database, Feed/cursor,
+> external integration, push, PR or merge action ran. B4 is next.
 > **2026-07-31 PRD7 B2 checkpoint:** P7-F02 is Local verified across Requests,
 > Providers, Audit and Projects. Audit and Projects now auto-select a valid
 > deep-linked or first current-page record, keep the read-only inspector

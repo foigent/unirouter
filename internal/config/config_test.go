@@ -541,6 +541,81 @@ func TestLoad_InvalidStreamPolicyFailsClosed(t *testing.T) {
 	}
 }
 
+func TestValidateOTelExportIsDefaultOffAndFailClosedWhenEnabled(t *testing.T) {
+	base := func() *Config {
+		return &Config{
+			JWTSecret:          "secret",
+			APIKeyHashSecret:   "api-key-secret",
+			EncryptionKey:      "0123456789abcdef0123456789abcdef",
+			FreezeSafetyFactor: "1",
+			TraceEventsEnabled: true,
+			OTelExportEnabled:  true,
+			OTelExportEndpoint: "http://otel-collector:4318",
+		}
+	}
+	if err := base().Validate(); err != nil {
+		t.Fatalf("expected valid metadata-only exporter config: %v", err)
+	}
+
+	missingEndpoint := base()
+	missingEndpoint.OTelExportEndpoint = ""
+	if err := missingEndpoint.Validate(); err == nil || !strings.Contains(err.Error(), "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") {
+		t.Fatalf("expected missing endpoint failure, got %v", err)
+	}
+	traceDisabled := base()
+	traceDisabled.TraceEventsEnabled = false
+	if err := traceDisabled.Validate(); err == nil || !strings.Contains(err.Error(), "TRACE_EVENTS_ENABLED") {
+		t.Fatalf("expected trace source dependency failure, got %v", err)
+	}
+	credentialURL := base()
+	credentialURL.OTelExportEndpoint = "http://user:secret@collector:4318/v1/traces"
+	if err := credentialURL.Validate(); err == nil {
+		t.Fatal("expected endpoint userinfo rejection")
+	}
+	oversizedQueue := base()
+	oversizedQueue.OTelExportQueueSize = 65537
+	if err := oversizedQueue.Validate(); err == nil {
+		t.Fatal("expected bounded queue validation failure")
+	}
+}
+
+func TestLoadOTelExportDefaultsAndOverrides(t *testing.T) {
+	t.Setenv("JWT_SECRET", "jwt-secret")
+	t.Setenv("API_KEY_HASH_SECRET", "api-key-secret")
+	t.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load default config: %v", err)
+	}
+	if cfg.OTelExportEnabled {
+		t.Fatal("OTLP export must be default off")
+	}
+	if cfg.OTelExportQueueSize != 256 || cfg.OTelExportBatchSize != 32 ||
+		cfg.OTelExportFlushIntervalMS != 500 || cfg.OTelExportTimeoutMS != 2000 ||
+		cfg.OTelExportMaxRetries != 2 {
+		t.Fatalf("unexpected bounded exporter defaults: %+v", cfg.TelemetryExportConfig())
+	}
+
+	t.Setenv("UNIROUTE_OTEL_EXPORT_ENABLED", "true")
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://otel-collector:4318/v1/traces")
+	t.Setenv("UNIROUTE_OTEL_EXPORT_QUEUE_SIZE", "64")
+	t.Setenv("UNIROUTE_OTEL_EXPORT_BATCH_SIZE", "8")
+	t.Setenv("UNIROUTE_OTEL_EXPORT_FLUSH_INTERVAL_MS", "100")
+	t.Setenv("UNIROUTE_OTEL_EXPORT_TIMEOUT_MS", "750")
+	t.Setenv("UNIROUTE_OTEL_EXPORT_MAX_RETRIES", "1")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("load exporter overrides: %v", err)
+	}
+	effective := cfg.TelemetryExportConfig()
+	if !effective.Enabled || effective.QueueSize != 64 || effective.BatchSize != 8 ||
+		effective.FlushInterval != 100*time.Millisecond || effective.Timeout != 750*time.Millisecond ||
+		effective.MaxRetries != 1 {
+		t.Fatalf("unexpected exporter overrides: %+v", effective)
+	}
+}
+
 func TestLoad_WorkloadAdmissionEnvOverrides(t *testing.T) {
 	t.Setenv("JWT_SECRET", "jwt-secret")
 	t.Setenv("API_KEY_HASH_SECRET", "api-key-secret")

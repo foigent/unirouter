@@ -17,6 +17,7 @@ import (
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/signing"
 	"github.com/uniroute/unirouter/internal/streampolicy"
+	"github.com/uniroute/unirouter/internal/telemetryexport"
 	"github.com/uniroute/unirouter/internal/traceutil"
 	"github.com/uniroute/unirouter/internal/workloadadmission"
 )
@@ -75,6 +76,13 @@ type Config struct {
 	CompletedExecutionFeedEnabled        bool
 	CompletedExecutionFeedSourceInstance string
 	CompletedExecutionFeedReferenceMode  string
+	OTelExportEnabled                    bool
+	OTelExportEndpoint                   string
+	OTelExportQueueSize                  int
+	OTelExportBatchSize                  int
+	OTelExportFlushIntervalMS            int
+	OTelExportTimeoutMS                  int
+	OTelExportMaxRetries                 int
 
 	// License
 	LicensePublicKey         string
@@ -282,6 +290,12 @@ func (c *Config) Validate() error {
 	if c.EvidenceContextTrustSecret != "" && len(c.EvidenceContextTrustSecret) < 16 {
 		return fmt.Errorf("EVIDENCE_CONTEXT_TRUST_SECRET must be at least 16 bytes when set")
 	}
+	if c.OTelExportEnabled && !c.TraceEventsEnabled {
+		return fmt.Errorf("UNIROUTE_OTEL_EXPORT_ENABLED requires TRACE_EVENTS_ENABLED=true")
+	}
+	if err := c.TelemetryExportConfig().Validate(); err != nil {
+		return err
+	}
 	if c.LogRetentionDays < 0 {
 		return fmt.Errorf("LOG_RETENTION_DAYS must be >= 0")
 	}
@@ -419,6 +433,13 @@ func Load() (*Config, error) {
 			"COMPLETED_EXECUTION_FEED_REFERENCE_MODE",
 			CompletedExecutionFeedReferenceModeLegacy,
 		),
+		OTelExportEnabled:         getEnvBool("UNIROUTE_OTEL_EXPORT_ENABLED", false),
+		OTelExportEndpoint:        strings.TrimSpace(getEnvStr("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")),
+		OTelExportQueueSize:       getEnvInt("UNIROUTE_OTEL_EXPORT_QUEUE_SIZE", 256),
+		OTelExportBatchSize:       getEnvInt("UNIROUTE_OTEL_EXPORT_BATCH_SIZE", 32),
+		OTelExportFlushIntervalMS: getEnvInt("UNIROUTE_OTEL_EXPORT_FLUSH_INTERVAL_MS", 500),
+		OTelExportTimeoutMS:       getEnvInt("UNIROUTE_OTEL_EXPORT_TIMEOUT_MS", 2000),
+		OTelExportMaxRetries:      getEnvInt("UNIROUTE_OTEL_EXPORT_MAX_RETRIES", 2),
 
 		LicensePublicKey:         getEnvStr("LICENSE_PUBLIC_KEY", ""),
 		LicensePublicKeys:        getEnvStr("LICENSE_PUBLIC_KEYS", ""),
@@ -592,6 +613,38 @@ func (c Config) PayloadLimits() payloadpolicy.Limits {
 		limits.OrgInFlightBytes = int64(c.PayloadOrgInFlightBytes)
 	}
 	return limits
+}
+
+func (c Config) TelemetryExportConfig() telemetryexport.Config {
+	defaults := telemetryexport.DefaultConfig()
+	options := telemetryexport.Config{
+		Enabled:          c.OTelExportEnabled,
+		Endpoint:         c.OTelExportEndpoint,
+		QueueSize:        c.OTelExportQueueSize,
+		BatchSize:        c.OTelExportBatchSize,
+		MaxRetries:       c.OTelExportMaxRetries,
+		ServiceName:      "unirouter",
+		ServiceNamespace: "foigent",
+		ServiceVersion:   c.RuntimeVersion,
+		DeploymentEnv:    c.RuntimeEnvironment,
+	}
+	if options.QueueSize == 0 {
+		options.QueueSize = defaults.QueueSize
+	}
+	if options.BatchSize == 0 {
+		options.BatchSize = defaults.BatchSize
+	}
+	if c.OTelExportFlushIntervalMS == 0 {
+		options.FlushInterval = defaults.FlushInterval
+	} else {
+		options.FlushInterval = time.Duration(c.OTelExportFlushIntervalMS) * time.Millisecond
+	}
+	if c.OTelExportTimeoutMS == 0 {
+		options.Timeout = defaults.Timeout
+	} else {
+		options.Timeout = time.Duration(c.OTelExportTimeoutMS) * time.Millisecond
+	}
+	return options
 }
 
 func (c Config) LicenseRefreshInterval() time.Duration {

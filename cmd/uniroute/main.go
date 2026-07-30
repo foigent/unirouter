@@ -39,6 +39,7 @@ import (
 	"github.com/uniroute/unirouter/internal/redisx"
 	"github.com/uniroute/unirouter/internal/releasetrust"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
+	"github.com/uniroute/unirouter/internal/telemetryexport"
 )
 
 // buildVersion and buildCommit are set by release builds through -ldflags.
@@ -219,6 +220,19 @@ func main() {
 	relay.SetTraceEvents(cfg.TraceEventsEnabled, cfg.TraceEventSampleRate)
 	relay.SetPayloadCaptureMode(cfg.PayloadCaptureMode)
 	relay.SetEvidenceContextTrustSecret(cfg.EvidenceContextTrustSecret)
+	var otelExporter *telemetryexport.Exporter
+	if cfg.OTelExportEnabled {
+		otelExporter, err = telemetryexport.New(cfg.TelemetryExportConfig(), nil)
+		if err != nil {
+			log.Fatalf("Failed to initialize metadata-only OTLP trace exporter: %v", err)
+		}
+		relay.SetTraceExporter(otelExporter)
+		log.Printf(
+			"Metadata-only OTLP trace export enabled: queue=%d batch=%d",
+			cfg.OTelExportQueueSize,
+			cfg.OTelExportBatchSize,
+		)
+	}
 	eventSvc := billing.NewEventService(postgres.Pool, cfg.NotificationWebhookSigningSecret)
 	eventSvc.SetOutbox(outboxSvc)
 	relay.SetEventService(eventSvc)
@@ -805,6 +819,21 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	}
 	if err := gateway.ShutdownStreamAdvisoryScheduler(ctx); err != nil {
 		log.Printf("Guardrail advisory workers did not flush before shutdown timeout: %v", err)
+	}
+	if otelExporter != nil {
+		if err := otelExporter.Close(ctx); err != nil {
+			log.Printf("OTLP trace exporter did not flush before shutdown timeout: %v", err)
+		}
+		stats := otelExporter.Stats()
+		log.Printf(
+			"OTLP trace exporter stopped: queued=%d exported=%d partial_rejected=%d dropped=%d failures=%d retries=%d",
+			stats.Queued,
+			stats.Exported,
+			stats.PartialRejected,
+			stats.DroppedRestricted+stats.DroppedInvalid+stats.DroppedQueueFull+stats.DroppedAfterClose,
+			stats.ExportFailures,
+			stats.Retries,
+		)
 	}
 	stopOutbox()
 	select {

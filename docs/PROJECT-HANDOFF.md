@@ -15,8 +15,11 @@
 > persistent no-click inspectors, URL-restorable state and bounded local
 > metadata views; evidence is
 > `docs/ops/evidence/PRD7-B2-P7F02-contextual-inspectors-local-20260731.md`.
-> The next dependency-ordered batch is B3 metadata-only OTel/OpenInference
-> export. Preserve
+> B3 completes P7-F05 with a default-off, Outbox-posted, bounded
+> metadata-only OTLP/HTTP exporter and exact OpenInference mapping; evidence is
+> `docs/ops/evidence/PRD7-B3-P7F05-otel-openinference-export-local-20260731.md`.
+> The next dependency-ordered batch is B4 secret references and local rotation
+> lifecycle. Preserve
 > PRD5/PRD6 and completed-execution Feed compatibility. No deployment, traffic,
 > credentials, external calls, non-test DB changes, cursor/checkpoint changes,
 > push, PR or merge is authorized by the product-iteration scope.

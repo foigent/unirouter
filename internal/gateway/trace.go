@@ -15,6 +15,7 @@ import (
 	"github.com/uniroute/unirouter/internal/logger"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/outbox"
+	"github.com/uniroute/unirouter/internal/telemetryexport"
 	"github.com/uniroute/unirouter/internal/traceutil"
 )
 
@@ -31,6 +32,7 @@ const (
 type evidenceSpanStateKey struct{}
 type attemptIDContextKey struct{}
 type routeAttemptContextKey struct{}
+type telemetryOperationKindKey struct{}
 
 type routeAttemptContext struct {
 	Sequence int
@@ -82,6 +84,26 @@ func routeAttemptFromContext(ctx context.Context) routeAttemptContext {
 		}
 	}
 	return routeAttemptContext{Sequence: 1, Total: 1}
+}
+
+func contextWithTelemetryOperationKind(ctx context.Context, kind string) context.Context {
+	if ctx == nil {
+		return ctx
+	}
+	switch kind {
+	case telemetryexport.OperationChatCompletion, telemetryexport.OperationEmbedding:
+		return context.WithValue(ctx, telemetryOperationKindKey{}, kind)
+	default:
+		return ctx
+	}
+}
+
+func telemetryOperationKindFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	kind, _ := ctx.Value(telemetryOperationKindKey{}).(string)
+	return kind
 }
 
 func parentSpanForEvent(ctx context.Context, spanID, sourceComponent, trustedParentSpanID string) string {
@@ -211,50 +233,54 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 		upstreamRequestID, captureGap, actorType, stringFromNullable(actorRefArg), evidenceContext.OnBehalfOf,
 		evidenceContext.SessionID, payloadCaptureMode, metadataJSON)
 	decisionKind, decisionResult, decisionReason := decisionEvidence(eventType, sanitizedMetadata)
+	occurredAt := time.Now().UTC()
+	payload := traceOutboxPayload{
+		RequestID:          requestID,
+		ClientRequestID:    requestIdentity.ClientRequestID,
+		IdempotencyKeyHash: requestIdentity.IdempotencyKeyHash,
+		OrgID:              orgID,
+		ProjectID:          int64Pointer(projectID),
+		APIKeyID:           int64Pointer(keyID),
+		OwnerUserID:        int64Pointer(ownerUserID),
+		KeyType:            keyType,
+		EventType:          eventType,
+		Stage:              stage,
+		Severity:           severity,
+		Model:              model,
+		RequestedModel:     requestedModel,
+		Provider:           provider,
+		Channel:            channel,
+		StatusCode:         intPointer(statusCode),
+		LatencyMS:          latencyMs,
+		Metadata:           json.RawMessage(metadataJSON),
+		TraceID:            traceID,
+		SpanID:             spanID,
+		ParentSpanID:       parentSpanID,
+		SchemaVersion:      evidenceSchemaVersion,
+		SourceComponent:    sourceComponent,
+		CaptureMode:        evidenceCaptureModeNative,
+		CaptureGap:         captureGap,
+		EvidenceRef:        evidenceRef,
+		UpstreamRequestID:  upstreamRequestID,
+		DecisionKind:       decisionKind,
+		DecisionResult:     decisionResult,
+		DecisionReason:     decisionReason,
+		ActorType:          actorType,
+		ActorRef:           stringFromNullable(actorRefArg),
+		OnBehalfOf:         evidenceContext.OnBehalfOf,
+		SessionID:          evidenceContext.SessionID,
+		WorkflowID:         evidenceContext.WorkflowID,
+		AgentID:            evidenceContext.AgentID,
+		AttemptID:          attemptID,
+		PayloadCaptureMode: payloadCaptureMode,
+		SourceEventHash:    sourceEventHash,
+		OccurredAt:         occurredAt,
+	}
 	if relay.outbox != nil {
-		payload := traceOutboxPayload{
-			RequestID:          requestID,
-			ClientRequestID:    requestIdentity.ClientRequestID,
-			IdempotencyKeyHash: requestIdentity.IdempotencyKeyHash,
-			OrgID:              orgID,
-			ProjectID:          int64Pointer(projectID),
-			APIKeyID:           int64Pointer(keyID),
-			OwnerUserID:        int64Pointer(ownerUserID),
-			KeyType:            keyType,
-			EventType:          eventType,
-			Stage:              stage,
-			Severity:           severity,
-			Model:              model,
-			RequestedModel:     requestedModel,
-			Provider:           provider,
-			Channel:            channel,
-			StatusCode:         intPointer(statusCode),
-			LatencyMS:          latencyMs,
-			Metadata:           json.RawMessage(metadataJSON),
-			TraceID:            traceID,
-			SpanID:             spanID,
-			ParentSpanID:       parentSpanID,
-			SchemaVersion:      evidenceSchemaVersion,
-			SourceComponent:    sourceComponent,
-			CaptureMode:        evidenceCaptureModeNative,
-			CaptureGap:         captureGap,
-			EvidenceRef:        evidenceRef,
-			UpstreamRequestID:  upstreamRequestID,
-			DecisionKind:       decisionKind,
-			DecisionResult:     decisionResult,
-			DecisionReason:     decisionReason,
-			ActorType:          actorType,
-			ActorRef:           stringFromNullable(actorRefArg),
-			OnBehalfOf:         evidenceContext.OnBehalfOf,
-			SessionID:          evidenceContext.SessionID,
-			WorkflowID:         evidenceContext.WorkflowID,
-			AgentID:            evidenceContext.AgentID,
-			AttemptID:          attemptID,
-			PayloadCaptureMode: payloadCaptureMode,
-			SourceEventHash:    sourceEventHash,
-			OccurredAt:         time.Now().UTC(),
-		}
-		if err := relay.enqueueTraceOutbox(ctx, payload); err == nil {
+		if created, err := relay.enqueueTraceOutbox(ctx, payload); err == nil {
+			if created {
+				relay.exportTraceSnapshot(payload, telemetryOperationKindFromContext(ctx), sanitizedMetadata)
+			}
 			return
 		} else {
 			logger.New(logger.Fields{RequestID: requestID, OrgID: uint(orgID), Module: "trace"}).Warn("Failed to enqueue trace event %s; falling back to synchronous insert: %v", eventType, err)
@@ -293,6 +319,46 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 	); err != nil {
 		logger.New(logger.Fields{RequestID: requestID, OrgID: uint(orgID), Module: "trace"}).Warn("Failed to record trace event %s: %v", eventType, err)
 	}
+}
+
+func (relay *Relay) exportTraceSnapshot(payload traceOutboxPayload, operationKind string, metadata map[string]any) {
+	if relay == nil || relay.traceExporter == nil {
+		return
+	}
+	projectID := int64(0)
+	if payload.ProjectID != nil {
+		projectID = *payload.ProjectID
+	}
+	statusCode := 0
+	if payload.StatusCode != nil {
+		statusCode = *payload.StatusCode
+	}
+	_ = relay.traceExporter.TryExport(telemetryexport.SourceEvent{
+		RequestID:          payload.RequestID,
+		OrgID:              payload.OrgID,
+		ProjectID:          projectID,
+		EventType:          payload.EventType,
+		Stage:              payload.Stage,
+		Severity:           payload.Severity,
+		Provider:           payload.Provider,
+		StatusCode:         statusCode,
+		Latency:            time.Duration(payload.LatencyMS) * time.Millisecond,
+		TraceID:            payload.TraceID,
+		SpanID:             payload.SpanID,
+		ParentSpanID:       payload.ParentSpanID,
+		SchemaVersion:      payload.SchemaVersion,
+		SourceComponent:    payload.SourceComponent,
+		CaptureMode:        payload.CaptureMode,
+		CaptureGap:         payload.CaptureGap,
+		PayloadCaptureMode: payload.PayloadCaptureMode,
+		SourceEventHash:    payload.SourceEventHash,
+		DecisionKind:       payload.DecisionKind,
+		DecisionResult:     payload.DecisionResult,
+		DecisionReason:     payload.DecisionReason,
+		OperationKind:      operationKind,
+		OccurredAt:         payload.OccurredAt,
+		Metadata:           metadata,
+	})
 }
 
 func (relay *Relay) recordPayloadPolicyDecision(ctx context.Context, requestID, model, requestedModel string, latencyMs int) {
