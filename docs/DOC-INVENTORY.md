@@ -11,6 +11,7 @@
 | `docs/planning/PRD7-IMPLEMENTATION-PLAN.md` | Active dependency-ordered implementation and verification plan |
 | `docs/ops/evidence/PRD7-B1-P7F02-P7F03-provider-conformance-local-20260731.md` | PRD7 B1 strict three-pack conformance, Azure OpenAI adapter, persistent Provider inspector, full local tests and synthetic browser evidence |
 | `docs/ops/evidence/PRD7-B2-P7F02-contextual-inspectors-local-20260731.md` | PRD7 B2 persistent Audit/Projects inspectors, deep links, bounded browser-local metadata views, full local tests and responsive synthetic browser evidence |
+| `docs/ops/evidence/PRD7-B6-P7F08-endpoint-protocol-conformance-local-20260731.md` | PRD7 B6 fixed Responses/Rerank/GPT Image profiles, strict offline conformance, immutable artifact digests and runtime/billing decision boundaries |
 | `docs/PROJECT-HANDOFF.md` | First-read handoff for agents |
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
 | `docs/planning/PRD6-START-HERE.md` | PRD6 Completed (Accepted Scope) state, preserved future boundaries and read order |

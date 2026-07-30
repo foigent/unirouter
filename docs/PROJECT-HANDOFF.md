@@ -30,8 +30,13 @@
 > tamper/outage/key-rotation negatives. Evidence is
 > `docs/ops/evidence/PRD7-B5-P7F07-exact-response-cache-local-20260731.md`.
 > Runtime serving is not wired: P7-D07 must first define the customer
-> response-cache price and ledger semantics. The next dependency-ordered batch
-> is B6 endpoint protocols. Preserve
+> response-cache price and ledger semantics. B6 completes P7-F08 through a
+> separate zero-network endpoint-contract boundary: fixed stateless Responses,
+> Cohere Rerank V2 and decision-gated GPT Image profiles, immutable synthetic
+> fixtures, strict finality/usage and 25 deterministic cases. Evidence is
+> `docs/ops/evidence/PRD7-B6-P7F08-endpoint-protocol-conformance-local-20260731.md`.
+> No Gateway route, customer billing or media runtime was added. The next
+> dependency-ordered batch is B7 provider COGS/Financial Truth. Preserve
 > PRD5/PRD6 and completed-execution Feed compatibility. No deployment, traffic,
 > credentials, external calls, non-test DB changes, cursor/checkpoint changes,
 > push, PR or merge is authorized by the product-iteration scope.

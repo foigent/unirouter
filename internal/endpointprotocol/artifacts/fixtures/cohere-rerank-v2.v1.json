@@ -1,0 +1,75 @@
+{
+  "schema_version": "unirouter.endpoint-conformance-fixture.v1",
+  "fixture_id": "cohere-rerank-v2.v1",
+  "profile_id": "unirouter.cohere.rerank.v2",
+  "request": {
+    "base_url": "https://api.cohere.example",
+    "requested_model": "company-rerank",
+    "mapped_model": "rerank-v3.5",
+    "request_id": "fixture-rerank-1",
+    "body": "{\"model\":\"company-rerank\",\"query\":\"synthetic query\",\"documents\":[\"document one\",\"document two\",\"document three\"],\"top_n\":2}",
+    "expected_method": "POST",
+    "expected_url": "https://api.cohere.example/v2/rerank",
+    "expected_request_id_header": "",
+    "expected_body": "{\"model\":\"rerank-v3.5\",\"query\":\"synthetic query\",\"documents\":[\"document one\",\"document two\",\"document three\"],\"top_n\":2}"
+  },
+  "response": {
+    "status_code": 200,
+    "body": "{\"id\":\"rerank_fixture\",\"results\":[{\"index\":2,\"relevance_score\":0.999999999999999999},{\"index\":0,\"relevance_score\":0.5}],\"meta\":{\"api_version\":{\"version\":\"2\",\"is_deprecated\":false,\"is_experimental\":false},\"billed_units\":{\"search_units\":1}}}",
+    "expected_outcome": {
+      "contract_version": "unirouter.endpoint-protocol.v1",
+      "profile_id": "unirouter.cohere.rerank.v2",
+      "provider_state": "completed",
+      "provider_object_id": "rerank_fixture",
+      "mapped_model": "rerank-v3.5",
+      "output_count": 2,
+      "units": [
+        {
+          "class": "search_units",
+          "quantity": "1",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        }
+      ]
+    }
+  },
+  "negative_requests": [
+    {
+      "case_id": "document-object-rejected",
+      "body": "{\"model\":\"company-rerank\",\"query\":\"synthetic query\",\"documents\":[{\"text\":\"document\"}]}",
+      "expected_code": "unsupported_document_objects"
+    },
+    {
+      "case_id": "return-documents-rejected",
+      "body": "{\"model\":\"company-rerank\",\"query\":\"synthetic query\",\"documents\":[\"document\"],\"return_documents\":true}",
+      "expected_code": "unsupported_return_documents"
+    }
+  ],
+  "negative_responses": [
+    {
+      "case_id": "order-rejected",
+      "body": "{\"id\":\"rerank_bad\",\"results\":[{\"index\":0,\"relevance_score\":0.1},{\"index\":1,\"relevance_score\":0.2}],\"meta\":{\"api_version\":{\"version\":\"2\"},\"billed_units\":{\"search_units\":1}}}",
+      "expected_code": "rerank_results_not_descending"
+    },
+    {
+      "case_id": "non-plain-units-rejected",
+      "body": "{\"id\":\"rerank_bad\",\"results\":[{\"index\":0,\"relevance_score\":0.9},{\"index\":1,\"relevance_score\":0.8}],\"meta\":{\"api_version\":{\"version\":\"2\"},\"billed_units\":{\"search_units\":1e0}}}",
+      "expected_code": "search_units_not_canonical_uint"
+    }
+  ],
+  "status_cases": [
+    {
+      "case_id": "timeout-retry",
+      "status_code": 408,
+      "expected_failure_kind": "channel_failure",
+      "expected_retryable": true
+    },
+    {
+      "case_id": "bad-request-stop",
+      "status_code": 400,
+      "expected_failure_kind": "client_request",
+      "expected_retryable": false
+    }
+  ]
+}

@@ -69,8 +69,17 @@ explicitly unpriced for the customer. P7-D07 gates Gateway hit serving and
 customer-ledger integration. Exact evidence:
 `docs/ops/evidence/PRD7-B5-P7F07-exact-response-cache-local-20260731.md`.
 
-**Current batch:** B6 Responses, rerank and image protocol contracts with
-explicit unsupported-semantics failures.
+B6 is Local verified through a separate zero-network endpoint-contract
+boundary. Three fixed profiles cover stateless text Responses, Cohere Rerank
+V2 and decision-gated GPT Image generation. Strict request/response semantics,
+provider finality, exact units, nested duplicate rejection and explicit
+unsupported-semantics failures pass a deterministic 3-profile/25-case runner.
+No Gateway route, adapter registry, Provider Pack V1 artifact, customer
+billing or media runtime changed. Exact evidence:
+`docs/ops/evidence/PRD7-B6-P7F08-endpoint-protocol-conformance-local-20260731.md`.
+
+**Current batch:** B7 provider COGS offline connector and Financial Truth
+workspace.
 
 **Authority boundary:** no deployment, traffic, credentials, live provider or
 IdP calls, non-test database mutation, cursor/checkpoint change, product-repo

@@ -12,6 +12,18 @@
 > credentials/providers/IdPs, non-test database mutation, cursor/checkpoint
 > changes, push, PR and merge remain unauthorized. The completed-execution Feed
 > compatibility baseline and PRD5/PRD6 closeouts remain unchanged.
+> **2026-07-31 PRD7 B6 checkpoint:** P7-F08 is Local verified through a
+> zero-network endpoint-contract boundary. Three fixed profiles cover OpenAI
+> Responses text-only/stateless requests, Cohere Rerank V2 string documents
+> and decision-gated GPT Image single-inline results. Strict nested duplicate
+> rejection, request bytes/model mapping, terminal shapes, exact int64/decimal
+> units, output semantics and HTTP retry classes pass a deterministic
+> 3-profile/25-case runner; golden SHA-256 is `ab3d4ec6...`. All observations
+> remain `provider_observed_not_customer_chargeable`; no Gateway route,
+> Provider Pack V1 artifact, adapter registry, billing or media runtime
+> changed. Evidence:
+> `docs/ops/evidence/PRD7-B6-P7F08-endpoint-protocol-conformance-local-20260731.md`.
+> P7-D03 still gates image runtime and B7 is next.
 > **2026-07-31 PRD7 B5 checkpoint:** P7-F07 is Local verified through the
 > standalone service and Redis-fixture boundary. `unirouter.response-cache.v1`
 > binds tenant/project/key/authorization/policy/model/pricing/region/schema

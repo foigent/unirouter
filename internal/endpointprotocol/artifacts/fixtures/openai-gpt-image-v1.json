@@ -1,0 +1,96 @@
+{
+  "schema_version": "unirouter.endpoint-conformance-fixture.v1",
+  "fixture_id": "openai-gpt-image-v1",
+  "profile_id": "unirouter.openai.images.gpt-image.v1",
+  "request": {
+    "base_url": "https://api.openai.example",
+    "requested_model": "company-image",
+    "mapped_model": "gpt-image-1",
+    "request_id": "fixture-image-1",
+    "body": "{\"model\":\"company-image\",\"prompt\":\"synthetic image fixture\",\"size\":\"1024x1024\",\"output_format\":\"png\"}",
+    "expected_method": "POST",
+    "expected_url": "https://api.openai.example/v1/images/generations",
+    "expected_request_id_header": "fixture-image-1",
+    "expected_body": "{\"model\":\"gpt-image-1\",\"prompt\":\"synthetic image fixture\",\"n\":1,\"size\":\"1024x1024\",\"output_format\":\"png\",\"stream\":false}"
+  },
+  "response": {
+    "status_code": 200,
+    "body": "{\"created\":123,\"data\":[{\"b64_json\":\"aW1hZ2U=\"}],\"usage\":{\"input_tokens\":10,\"input_tokens_details\":{\"text_tokens\":7,\"image_tokens\":3},\"output_tokens\":20,\"total_tokens\":30}}",
+    "expected_outcome": {
+      "contract_version": "unirouter.endpoint-protocol.v1",
+      "profile_id": "unirouter.openai.images.gpt-image.v1",
+      "provider_state": "completed",
+      "provider_object_id": "",
+      "mapped_model": "gpt-image-1",
+      "output_count": 1,
+      "units": [
+        {
+          "class": "input_tokens",
+          "quantity": "10",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        },
+        {
+          "class": "input_text_tokens",
+          "quantity": "7",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        },
+        {
+          "class": "input_image_tokens",
+          "quantity": "3",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        },
+        {
+          "class": "output_image_tokens",
+          "quantity": "20",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        }
+      ]
+    }
+  },
+  "negative_requests": [
+    {
+      "case_id": "multiple-images-rejected",
+      "body": "{\"model\":\"company-image\",\"prompt\":\"synthetic image fixture\",\"n\":2}",
+      "expected_code": "unsupported_multiple_images"
+    },
+    {
+      "case_id": "stream-rejected",
+      "body": "{\"model\":\"company-image\",\"prompt\":\"synthetic image fixture\",\"stream\":true}",
+      "expected_code": "unsupported_streaming"
+    }
+  ],
+  "negative_responses": [
+    {
+      "case_id": "hosted-url-rejected",
+      "body": "{\"created\":123,\"data\":[{\"url\":\"https://provider.example/image\"}],\"usage\":{\"input_tokens\":1,\"input_tokens_details\":{\"text_tokens\":1,\"image_tokens\":0},\"output_tokens\":1,\"total_tokens\":2}}",
+      "expected_code": "unsupported_provider_hosted_url"
+    },
+    {
+      "case_id": "partition-rejected",
+      "body": "{\"created\":123,\"data\":[{\"b64_json\":\"aW1hZ2U=\"}],\"usage\":{\"input_tokens\":10,\"input_tokens_details\":{\"text_tokens\":6,\"image_tokens\":3},\"output_tokens\":20,\"total_tokens\":30}}",
+      "expected_code": "image_input_partition_mismatch"
+    }
+  ],
+  "status_cases": [
+    {
+      "case_id": "provider-failure-retry",
+      "status_code": 503,
+      "expected_failure_kind": "channel_failure",
+      "expected_retryable": true
+    },
+    {
+      "case_id": "permission-stop",
+      "status_code": 403,
+      "expected_failure_kind": "auth",
+      "expected_retryable": false
+    }
+  ]
+}

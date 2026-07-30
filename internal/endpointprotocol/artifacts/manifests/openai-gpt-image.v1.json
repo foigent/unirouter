@@ -1,0 +1,46 @@
+{
+  "schema_version": "unirouter.endpoint-profile-manifest.v1",
+  "profile_id": "unirouter.openai.images.gpt-image.v1",
+  "profile_version": "1.0.0",
+  "provider": "openai",
+  "runtime_state": "decision_gated_p7_d03",
+  "conformance_level": "fixture_verified",
+  "network_verified": false,
+  "descriptor": {
+    "contract_version": "unirouter.endpoint-protocol.v1",
+    "profile_id": "unirouter.openai.images.gpt-image.v1",
+    "profile_version": "1.0.0",
+    "provider": "openai",
+    "endpoint_kind": "image_generation",
+    "downstream_endpoint": "/v1/images/generations",
+    "upstream_endpoint": "/v1/images/generations",
+    "authentication": "bearer",
+    "runtime_state": "decision_gated_p7_d03",
+    "provider_finality": "synchronous_single_image_with_provider_usage",
+    "customer_charge_state": "provider_observed_not_customer_chargeable",
+    "supported_modalities": [
+      "text_to_image"
+    ],
+    "observed_unit_classes": [
+      "input_tokens",
+      "input_text_tokens",
+      "input_image_tokens",
+      "output_image_tokens"
+    ],
+    "unsupported_semantics": [
+      "image_edit_or_variation",
+      "partial_images",
+      "provider_hosted_url",
+      "streaming",
+      "multiple_images",
+      "runtime_before_p7_d03"
+    ]
+  },
+  "fixtures": [
+    {
+      "fixture_id": "openai-gpt-image-v1",
+      "path": "fixtures/openai-gpt-image-v1.json",
+      "sha256": "sha256:3b802f15539ff4fe0309ca93a779a3639da5910b0f28df3087aa24520fa16755"
+    }
+  ]
+}
