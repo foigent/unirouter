@@ -60,8 +60,17 @@ metadata-only golden/audit evidence. Current credential/runtime paths remain
 unchanged and P7-D01 still gates a production backend. Exact evidence:
 `docs/ops/evidence/PRD7-B4-P7F06-secret-reference-local-20260731.md`.
 
-**Current batch:** B5 exact tenant-isolated response cache with explicit
-identity, encryption, finality and billing boundaries.
+B5 is Local verified through the standalone service and Redis-fixture
+boundary: exact authority/policy/model/pricing/request identity, opaque HMAC
+keys, versioned AES-256-GCM values, final-settled usage proof,
+TTL/generation-purge, single-owner leases and strict tamper/outage/eligibility
+negatives. A hit records zero current provider execution/cost but remains
+explicitly unpriced for the customer. P7-D07 gates Gateway hit serving and
+customer-ledger integration. Exact evidence:
+`docs/ops/evidence/PRD7-B5-P7F07-exact-response-cache-local-20260731.md`.
+
+**Current batch:** B6 Responses, rerank and image protocol contracts with
+explicit unsupported-semantics failures.
 
 **Authority boundary:** no deployment, traffic, credentials, live provider or
 IdP calls, non-test database mutation, cursor/checkpoint change, product-repo

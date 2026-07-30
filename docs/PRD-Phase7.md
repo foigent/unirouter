@@ -146,6 +146,7 @@ decisions. The following external/runtime choices must stop at their gate:
 | P7-D04 | Risk-routing promotion KPI, threshold and pilot cohort | replay, simulator, advice and shadow evidence |
 | P7-D05 | Real provider/COGS credentials, account scope and retention | offline connector/import contract and synthetic fixtures |
 | P7-D06 | Target deployment, traffic, migration and release authority | local implementation, isolated tests, evidence and local commits |
+| P7-D07 | Response-cache customer price, ledger unit and plan/version semantics | exact cache service contract, encryption, identity, finality, TTL/purge, stampede and outage tests; no Gateway hit serving or customer debt |
 
 Semantic response cache, managed billing, a plugin marketplace and a universal
 high-privilege plugin runtime are not accepted by this PRD.

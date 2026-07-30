@@ -68,6 +68,8 @@
 | `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md` | Accepted customer-revenue/provider-COGS boundary, competitor and supplier billing evidence, Four Quadrants, PRD6 non-claims and future cost/metering/media candidates |
 | `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | Historical candidate split retained as planning lineage; current accepted scope is in PRD7 and its matrix |
 | `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` | Accepted future Cache Service direction, service boundary, capacity planning triggers, SaaS cell reuse and non-authorization guardrails |
+| `docs/tech-ref/34-exact-response-cache.md` | PRD7 exact response-cache contract: exact authority/policy/request identity, encrypted values, TTL/purge, lease and billing truth |
+| `docs/ops/evidence/PRD7-B5-P7F07-exact-response-cache-local-20260731.md` | P7-F07 standalone service/Redis-fixture local verification and explicit P7-D07 runtime pricing gate |
 | `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md` | Version-fixed competitor audit, Four Quadrants and priority matrix |
 | `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md` | Third-round Four Quadrants, CARTA/shadow/collusion ownership, Killer Features and candidate acceptance rows |
 | `docs/planning/prd6-adaptive-trust-hardening/` | Evidence-bound adaptive-trust structural proposal, JSON, diagrams and option comparison; no implementation plan until selection |

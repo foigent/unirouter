@@ -12,6 +12,22 @@
 > credentials/providers/IdPs, non-test database mutation, cursor/checkpoint
 > changes, push, PR and merge remain unauthorized. The completed-execution Feed
 > compatibility baseline and PRD5/PRD6 closeouts remain unchanged.
+> **2026-07-31 PRD7 B5 checkpoint:** P7-F07 is Local verified through the
+> standalone service and Redis-fixture boundary. `unirouter.response-cache.v1`
+> binds tenant/project/key/authorization/policy/model/pricing/region/schema
+> identity plus exact post-policy request bytes into an opaque HMAC index,
+> encrypts values with versioned AES-256-GCM keys, admits only final settled
+> provider-reported text responses, and provides TTL, generation purge,
+> single-owner leases and bounded dependency/wait behavior. Tamper, ciphertext
+> relocation, duplicate JSON, tools/media, stale keys, outages and concurrent
+> misses fail safe. A hit states current provider requests/cost as `0`/`"0"`
+> but leaves customer charge explicitly
+> `requires_current_response_cache_pricing`; the supplier Prompt Cache ratio is
+> not reused. Evidence:
+> `docs/ops/evidence/PRD7-B5-P7F07-exact-response-cache-local-20260731.md`.
+> Gateway/admin/UI/billing integration and runtime hit serving remain
+> unchanged until P7-D07 defines the customer pricing/ledger semantics. B6 is
+> next.
 > **2026-07-31 PRD7 B4 checkpoint:** P7-F06 is Local verified through the
 > backend-neutral/in-memory-fixture boundary. `unirouter.secret-reference.v1`
 > defines strict metadata-only references, immutable secret versions, exact
@@ -24,8 +40,8 @@
 > metadata-only golden passed. Evidence:
 > `docs/ops/evidence/PRD7-B4-P7F06-secret-reference-local-20260731.md`.
 > Current `channel_keys`, Gateway/admin/exporter paths and all runtime state are
-> unchanged. P7-D01 still gates the first production backend/operator. B5 is
-> next.
+> unchanged. P7-D01 still gates the first production backend/operator. B5
+> followed.
 > **2026-07-31 PRD7 B3 checkpoint:** P7-F05 is Local verified.
 > `unirouter.telemetry-export.v1` is a default-off, Outbox-posted,
 > metadata-only OTLP/HTTP JSON exporter with a fixed non-blocking queue, one

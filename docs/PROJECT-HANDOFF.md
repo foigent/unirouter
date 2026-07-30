@@ -23,8 +23,15 @@
 > registry, stale-worker/outage rejection and metadata-only evidence; exact
 > evidence is
 > `docs/ops/evidence/PRD7-B4-P7F06-secret-reference-local-20260731.md`.
-> P7-D01 still gates a real secret backend, operator and runtime wiring. The
-> next dependency-ordered batch is B5 exact response cache. Preserve
+> P7-D01 still gates a real secret backend, operator and runtime wiring. B5
+> completes the exact response-cache service/Redis-fixture boundary with opaque
+> tenant/authority/policy/model/pricing/request identity, AES-256-GCM values,
+> final-settled proof, TTL/generation purge, one-owner leases and
+> tamper/outage/key-rotation negatives. Evidence is
+> `docs/ops/evidence/PRD7-B5-P7F07-exact-response-cache-local-20260731.md`.
+> Runtime serving is not wired: P7-D07 must first define the customer
+> response-cache price and ledger semantics. The next dependency-ordered batch
+> is B6 endpoint protocols. Preserve
 > PRD5/PRD6 and completed-execution Feed compatibility. No deployment, traffic,
 > credentials, external calls, non-test DB changes, cursor/checkpoint changes,
 > push, PR or merge is authorized by the product-iteration scope.

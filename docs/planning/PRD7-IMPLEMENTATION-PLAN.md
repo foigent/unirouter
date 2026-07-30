@@ -14,7 +14,7 @@
 | B2 | Persistent inspectors plus saved filters/deep links for Audit and Projects | Receipt inspector primitives | no second click for read-only detail; URL and responsive tests |
 | B3 | Metadata-only OTel/OpenInference export | event/outbox and provenance contracts | default off; bounded async delivery; raw-content and cardinality negatives |
 | B4 | Secret-reference interface and local rotation lifecycle | B1 | no secret readback/logging; stage/activate/rollback/revoke and stale-version tests |
-| B5 | Exact response cache | identity, policy, finality and secret boundaries | isolation, poison, stampede, TTL, purge, billing/finality and outage tests |
+| B5 | Exact response cache | identity, policy, finality and secret boundaries | isolation, poison, stampede, TTL, purge, billing/finality and outage tests; runtime hit serving remains gated by P7-D07 |
 | B6 | Responses/rerank/image protocols | B1/B5 | endpoint-specific conformance; unsupported semantics fail explicitly |
 | B7 | Provider COGS offline connector and Financial Truth workspace | B1, event/connector contract | supplier/customer authority separation; replay/gap/conflict fixtures |
 | B8 | Route/policy simulator, progressive release and Provider Change Firewall | B1/B7 | deterministic replay/diff/rollback; no runtime promotion |
