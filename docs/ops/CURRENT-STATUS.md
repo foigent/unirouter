@@ -12,6 +12,20 @@
 > credentials/providers/IdPs, non-test database mutation, cursor/checkpoint
 > changes, push, PR and merge remain unauthorized. The completed-execution Feed
 > compatibility baseline and PRD5/PRD6 closeouts remain unchanged.
+> **2026-07-31 PRD7 B4 checkpoint:** P7-F06 is Local verified through the
+> backend-neutral/in-memory-fixture boundary. `unirouter.secret-reference.v1`
+> defines strict metadata-only references, immutable secret versions, exact
+> lifecycle-revision CAS, separately monotonic active generations, a fixed
+> backend registry and stage/activate/rollback/revoke receipts. Old bindings
+> fail after activation/rollback; outages fail closed without stale fallback;
+> active versions cannot be revoked; callback error text and material never
+> enter returned evidence. Focused/race tests, full Go tests/vet, the
+> 42-file/308-test frontend suite, type-check/build and the deterministic
+> metadata-only golden passed. Evidence:
+> `docs/ops/evidence/PRD7-B4-P7F06-secret-reference-local-20260731.md`.
+> Current `channel_keys`, Gateway/admin/exporter paths and all runtime state are
+> unchanged. P7-D01 still gates the first production backend/operator. B5 is
+> next.
 > **2026-07-31 PRD7 B3 checkpoint:** P7-F05 is Local verified.
 > `unirouter.telemetry-export.v1` is a default-off, Outbox-posted,
 > metadata-only OTLP/HTTP JSON exporter with a fixed non-blocking queue, one
@@ -25,7 +39,7 @@
 > passed. Evidence:
 > `docs/ops/evidence/PRD7-B3-P7F05-otel-openinference-export-local-20260731.md`.
 > No collector, deployment, traffic, credential, database, Feed/cursor,
-> external integration, push, PR or merge action ran. B4 is next.
+> external integration, push, PR or merge action ran. B4 followed.
 > **2026-07-31 PRD7 B2 checkpoint:** P7-F02 is Local verified across Requests,
 > Providers, Audit and Projects. Audit and Projects now auto-select a valid
 > deep-linked or first current-page record, keep the read-only inspector

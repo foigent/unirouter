@@ -48,8 +48,20 @@ selection and bounded browser-local metadata views. Full Go tests/vet,
 Projects StrictMode table loop and a mobile flex-height defect. Exact evidence:
 `docs/ops/evidence/PRD7-B2-P7F02-contextual-inspectors-local-20260731.md`.
 
-**Current batch:** B3 default-off, metadata-only OTel/OpenInference export with
-bounded asynchronous delivery and strict raw-content/cardinality negatives.
+B3 is Local verified: a default-off, Outbox-posted metadata-only OTLP/HTTP
+exporter provides bounded asynchronous delivery, exact OpenInference mapping
+and strict raw-content/cardinality negatives. Exact evidence:
+`docs/ops/evidence/PRD7-B3-P7F05-otel-openinference-export-local-20260731.md`.
+
+B4 is Local verified through the backend-neutral/in-memory-fixture boundary:
+immutable secret versions, lifecycle CAS, active-generation stale-worker
+rejection, fixed backend registry, fail-closed outage behavior and
+metadata-only golden/audit evidence. Current credential/runtime paths remain
+unchanged and P7-D01 still gates a production backend. Exact evidence:
+`docs/ops/evidence/PRD7-B4-P7F06-secret-reference-local-20260731.md`.
+
+**Current batch:** B5 exact tenant-isolated response cache with explicit
+identity, encryption, finality and billing boundaries.
 
 **Authority boundary:** no deployment, traffic, credentials, live provider or
 IdP calls, non-test database mutation, cursor/checkpoint change, product-repo

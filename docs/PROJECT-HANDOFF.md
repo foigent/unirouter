@@ -18,8 +18,13 @@
 > B3 completes P7-F05 with a default-off, Outbox-posted, bounded
 > metadata-only OTLP/HTTP exporter and exact OpenInference mapping; evidence is
 > `docs/ops/evidence/PRD7-B3-P7F05-otel-openinference-export-local-20260731.md`.
-> The next dependency-ordered batch is B4 secret references and local rotation
-> lifecycle. Preserve
+> B4 completes P7-F06 through the backend-neutral/in-memory-fixture boundary:
+> immutable versions, CAS lifecycle revision, active generations, fixed backend
+> registry, stale-worker/outage rejection and metadata-only evidence; exact
+> evidence is
+> `docs/ops/evidence/PRD7-B4-P7F06-secret-reference-local-20260731.md`.
+> P7-D01 still gates a real secret backend, operator and runtime wiring. The
+> next dependency-ordered batch is B5 exact response cache. Preserve
 > PRD5/PRD6 and completed-execution Feed compatibility. No deployment, traffic,
 > credentials, external calls, non-test DB changes, cursor/checkpoint changes,
 > push, PR or merge is authorized by the product-iteration scope.

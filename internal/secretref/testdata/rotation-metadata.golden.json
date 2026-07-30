@@ -1,0 +1,112 @@
+{
+  "snapshot": {
+    "reference": {
+      "backend": "fixture",
+      "scope": "org-42/providers",
+      "name": "openai-primary"
+    },
+    "revision": 6,
+    "generation": 3,
+    "active": {
+      "reference": {
+        "backend": "fixture",
+        "scope": "org-42/providers",
+        "name": "openai-primary"
+      },
+      "version": "v1",
+      "generation": 3
+    },
+    "versions": [
+      {
+        "version": "v1",
+        "state": "active",
+        "staged_at": "2026-07-31T08:00:00Z",
+        "activated_at": "2026-07-31T08:00:04Z"
+      },
+      {
+        "version": "v2",
+        "state": "revoked",
+        "staged_at": "2026-07-31T08:00:02Z",
+        "activated_at": "2026-07-31T08:00:03Z",
+        "retired_at": "2026-07-31T08:00:04Z",
+        "revoked_at": "2026-07-31T08:00:05Z"
+      }
+    ]
+  },
+  "audit": [
+    {
+      "action": "stage",
+      "reference": {
+        "backend": "fixture",
+        "scope": "org-42/providers",
+        "name": "openai-primary"
+      },
+      "version": "v1",
+      "revision": 1,
+      "generation": 0,
+      "occurred_at": "2026-07-31T08:00:00Z"
+    },
+    {
+      "action": "activate",
+      "reference": {
+        "backend": "fixture",
+        "scope": "org-42/providers",
+        "name": "openai-primary"
+      },
+      "version": "v1",
+      "revision": 2,
+      "generation": 1,
+      "occurred_at": "2026-07-31T08:00:01Z"
+    },
+    {
+      "action": "stage",
+      "reference": {
+        "backend": "fixture",
+        "scope": "org-42/providers",
+        "name": "openai-primary"
+      },
+      "version": "v2",
+      "revision": 3,
+      "generation": 1,
+      "occurred_at": "2026-07-31T08:00:02Z"
+    },
+    {
+      "action": "activate",
+      "reference": {
+        "backend": "fixture",
+        "scope": "org-42/providers",
+        "name": "openai-primary"
+      },
+      "version": "v2",
+      "previous_version": "v1",
+      "revision": 4,
+      "generation": 2,
+      "occurred_at": "2026-07-31T08:00:03Z"
+    },
+    {
+      "action": "rollback",
+      "reference": {
+        "backend": "fixture",
+        "scope": "org-42/providers",
+        "name": "openai-primary"
+      },
+      "version": "v1",
+      "previous_version": "v2",
+      "revision": 5,
+      "generation": 3,
+      "occurred_at": "2026-07-31T08:00:04Z"
+    },
+    {
+      "action": "revoke",
+      "reference": {
+        "backend": "fixture",
+        "scope": "org-42/providers",
+        "name": "openai-primary"
+      },
+      "version": "v2",
+      "revision": 6,
+      "generation": 3,
+      "occurred_at": "2026-07-31T08:00:05Z"
+    }
+  ]
+}
