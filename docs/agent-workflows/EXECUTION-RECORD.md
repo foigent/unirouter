@@ -40,8 +40,16 @@ type-check/build and synthetic 1440/1024/390 browser evidence passed. Exact
 evidence:
 `docs/ops/evidence/PRD7-B1-P7F02-P7F03-provider-conformance-local-20260731.md`.
 
-**Current batch:** B2 persistent Audit and Project inspectors with
-URL-restorable state and no second detail-open interaction.
+B2 is Local verified: Audit and Projects now have persistent no-click
+inspectors, fail-closed URL-restorable scope/page/selection state, keyboard
+selection and bounded browser-local metadata views. Full Go tests/vet,
+42-file/308-test frontend suite, type-check/build and synthetic
+1440/1024/390 browser checks passed. The browser pass found and closed a
+Projects StrictMode table loop and a mobile flex-height defect. Exact evidence:
+`docs/ops/evidence/PRD7-B2-P7F02-contextual-inspectors-local-20260731.md`.
+
+**Current batch:** B3 default-off, metadata-only OTel/OpenInference export with
+bounded asynchronous delivery and strict raw-content/cardinality negatives.
 
 **Authority boundary:** no deployment, traffic, credentials, live provider or
 IdP calls, non-test database mutation, cursor/checkpoint change, product-repo

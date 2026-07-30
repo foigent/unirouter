@@ -77,6 +77,7 @@ Docker Compose（6 个容器）：
 - [OpenAPI 合同](docs/tech-ref/05-openapi-spec.yaml) — 当前网关与管理 API 路径
 - [贡献指南](CONTRIBUTING.md) 与 [Agent 协议](docs/agent-workflows/AGENT-PROTOCOL.md) — 开发、验证、PR 与授权边界
 - [当前执行记录](docs/agent-workflows/EXECUTION-RECORD.md) — 当前 PRD7 本地实施批次、证据与下一依赖；不重开 PRD5/PRD6
+- [PRD7 B2 本地证据](docs/ops/evidence/PRD7-B2-P7F02-contextual-inspectors-local-20260731.md) — Audit/Projects 常驻检查器、深链、本地元数据视图与响应式验收
 - [当前状态](docs/ops/CURRENT-STATUS.md) 与 [Open Issues](docs/issues/OPEN-ISSUES.md) — 已验证事实、缺口和后续决策
 - [文档目录](docs/README.md) 与 [文档清单](docs/DOC-INVENTORY.md) — 技术参考、不可变证据与历史 PRD 索引
 - [PRD6 最终完成证据](docs/ops/evidence/PRD6-FINAL-COMPLETION-20260714.md) — `Completed (Accepted Scope)` 的历史边界，不得静默重开

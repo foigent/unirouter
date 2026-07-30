@@ -8,12 +8,15 @@
 > `docs/ops/PRD7-ACCEPTANCE-MATRIX.md`,
 > `docs/planning/PRD7-IMPLEMENTATION-PLAN.md` and the first section of
 > `docs/agent-workflows/EXECUTION-RECORD.md`. Receipt V0 is locally verified at
-> `e361964`; B0 is committed at `67e6d79`, and B1 Provider Conformance Pack V1,
+> `e361964`; B0 is committed at `67e6d79`; B1 Provider Conformance Pack V1,
 > native Azure OpenAI and the persistent Provider inspector are Local verified
-> with evidence in
-> `docs/ops/evidence/PRD7-B1-P7F02-P7F03-provider-conformance-local-20260731.md`.
-> The next dependency-ordered batch is B2 persistent Audit and Project
-> inspectors with URL-restorable state. Preserve
+> in `docs/ops/evidence/PRD7-B1-P7F02-P7F03-provider-conformance-local-20260731.md`.
+> B2 completes P7-F02 across Requests, Providers, Audit and Projects with
+> persistent no-click inspectors, URL-restorable state and bounded local
+> metadata views; evidence is
+> `docs/ops/evidence/PRD7-B2-P7F02-contextual-inspectors-local-20260731.md`.
+> The next dependency-ordered batch is B3 metadata-only OTel/OpenInference
+> export. Preserve
 > PRD5/PRD6 and completed-execution Feed compatibility. No deployment, traffic,
 > credentials, external calls, non-test DB changes, cursor/checkpoint changes,
 > push, PR or merge is authorized by the product-iteration scope.

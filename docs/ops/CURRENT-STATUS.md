@@ -12,6 +12,20 @@
 > credentials/providers/IdPs, non-test database mutation, cursor/checkpoint
 > changes, push, PR and merge remain unauthorized. The completed-execution Feed
 > compatibility baseline and PRD5/PRD6 closeouts remain unchanged.
+> **2026-07-31 PRD7 B2 checkpoint:** P7-F02 is Local verified across Requests,
+> Providers, Audit and Projects. Audit and Projects now auto-select a valid
+> deep-linked or first current-page record, keep the read-only inspector
+> persistent, synchronize only their controlled URL state, support keyboard
+> selection and store at most 12 validated filter/workspace metadata views in
+> the current browser. Loading/failure clears stale cross-scope facts. Full Go
+> tests/vet, the 42-file/308-test frontend suite, type-check/build and synthetic
+> 1440/1024/390 browser checks passed. The browser pass found and closed a
+> StrictMode Semi Table update loop and a mobile 620px flex-height leak; final
+> page overflow is zero and product console errors are zero. Evidence:
+> `docs/ops/evidence/PRD7-B2-P7F02-contextual-inspectors-local-20260731.md`.
+> This is not synchronized saved-view, CI, Target or Production evidence and
+> changes no backend/API/database/IAM/routing/billing/Outbox/Feed/cursor/
+> credential/protocol behavior. B3 is next.
 > **2026-07-31 PRD7 B1 checkpoint:** Provider Conformance Pack V1 and the
 > Provider portion of the persistent-inspector requirement are Local verified.
 > Three strict embedded packs (OpenAI, Anthropic, Azure OpenAI) pass a

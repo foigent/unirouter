@@ -1307,7 +1307,8 @@ body {
   grid-template-columns: 240px minmax(320px, 1fr) minmax(360px, 420px);
 }
 
-.ur-provider-explorer {
+.ur-provider-explorer,
+.ur-context-explorer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(360px, 420px);
   min-height: 560px;
@@ -1317,6 +1318,19 @@ body {
   box-shadow: var(--ur-shadow-card);
   backdrop-filter: blur(18px);
   overflow: hidden;
+}
+
+.ur-context-explorer {
+  height: min(760px, calc(100vh - 170px));
+  min-height: 620px;
+}
+
+.ur-audit-explorer {
+  grid-template-columns: minmax(420px, 58fr) minmax(380px, 42fr);
+}
+
+.ur-project-explorer {
+  grid-template-columns: minmax(380px, 42fr) minmax(520px, 58fr);
 }
 
 .ur-explorer-panel {
@@ -1361,6 +1375,87 @@ body {
   color: var(--ur-text-muted) !important;
   font-size: 12px;
   font-weight: 650;
+}
+
+.ur-audit-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.ur-audit-date-range {
+  grid-column: span 2;
+}
+
+.ur-audit-filter-actions,
+.ur-project-view-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.ur-saved-view-bar {
+  display: grid;
+  grid-template-columns: minmax(210px, 1fr) minmax(180px, 0.8fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  min-width: min(100%, 680px);
+  margin-top: 12px;
+}
+
+.ur-project-view-bar .ur-saved-view-bar {
+  flex: 1 1 620px;
+  margin-top: 0;
+}
+
+.ur-saved-view-select {
+  width: 100%;
+}
+
+.ur-audit-fact-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.ur-audit-fact-grid > span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ur-audit-fact-grid code {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.ur-json-evidence {
+  max-height: 240px;
+  margin: 8px 0 0;
+  overflow: auto;
+  border: 1px solid var(--ur-border-soft);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.82);
+  padding: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.ur-project-workspace .ur-project-detail {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.ur-project-workspace .semi-tabs,
+.ur-project-workspace .semi-tabs-content {
+  min-width: 0;
 }
 
 .ur-filter-group {
@@ -1848,6 +1943,16 @@ body {
   }
 }
 
+@media (min-width: 900px) and (max-width: 1439px) {
+  .ur-audit-explorer {
+    grid-template-columns: minmax(320px, 54fr) minmax(340px, 46fr);
+  }
+
+  .ur-project-explorer {
+    grid-template-columns: minmax(320px, 44fr) minmax(400px, 56fr);
+  }
+}
+
 @media (max-width: 1023px) {
   .ur-provider-explorer {
     grid-template-columns: minmax(0, 1fr);
@@ -1861,18 +1966,58 @@ body {
   }
 }
 
+@media (max-width: 899px) {
+  .ur-context-explorer {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    min-height: auto;
+  }
+
+  .ur-context-explorer .ur-explorer-detail {
+    border-left: 0;
+    border-top: 3px solid rgba(53, 104, 232, 0.62);
+    box-shadow: inset 0 18px 34px rgba(53, 104, 232, 0.08);
+  }
+}
+
 @media (max-width: 1100px) {
-  .ur-provider-explorer .semi-table-pagination-info {
+  .ur-provider-explorer .semi-table-pagination-info,
+  .ur-context-explorer .semi-table-pagination-info {
     display: none;
   }
 
-  .ur-provider-explorer .semi-table-pagination-outer {
+  .ur-provider-explorer .semi-table-pagination-outer,
+  .ur-context-explorer .semi-table-pagination-outer {
     justify-content: flex-end;
   }
 }
 
 /* ── Mobile responsive ── */
 @media (max-width: 768px) {
+  .ur-audit-date-range {
+    grid-column: span 1;
+  }
+
+  .ur-audit-filter-actions,
+  .ur-project-view-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ur-saved-view-bar {
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+    width: 100%;
+  }
+
+  .ur-project-view-bar .ur-saved-view-bar {
+    flex: 0 1 auto;
+  }
+
+  .ur-audit-fact-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .stat-card {
     padding: 16px;
   }

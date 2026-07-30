@@ -7,6 +7,7 @@
 - [planning/PRD7-IMPLEMENTATION-PLAN.md](planning/PRD7-IMPLEMENTATION-PLAN.md) — 依赖顺序、批次验收和运行时边界
 - [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前 PRD7 批次、验证证据与下一依赖；不重开 PRD5/PRD6
 - [ops/evidence/PRD7-B1-P7F02-P7F03-provider-conformance-local-20260731.md](ops/evidence/PRD7-B1-P7F02-P7F03-provider-conformance-local-20260731.md) — 三个 Provider Pack、Azure OpenAI、常驻 Provider Inspector 与完整本地验证
+- [ops/evidence/PRD7-B2-P7F02-contextual-inspectors-local-20260731.md](ops/evidence/PRD7-B2-P7F02-contextual-inspectors-local-20260731.md) — Audit/Projects 常驻检查器、深链、本地视图、全量回归与响应式浏览器证据
 - [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — Agent 接手项目的第一阅读入口
 - [ops/CURRENT-STATUS.md](ops/CURRENT-STATUS.md) — 当前已验证项目状态和明确非声明
 - [ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md](ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md) — 当前 `1.0.1` 七角色开发目标验收与清理证据
