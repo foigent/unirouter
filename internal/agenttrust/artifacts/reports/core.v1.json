@@ -1,0 +1,230 @@
+{
+  "schema_version": "unirouter.agent-trust-conformance-report.v1",
+  "contract_version": "unirouter.agent-trust-review.v1",
+  "schema": {
+    "path": "agent-trust-review.v1.schema.json",
+    "sha256": "sha256:1e375c8febfd93e9972cdaab88c15c1aecf08537fc56ee1a2dfc5e6b037c6a37"
+  },
+  "fixtures": [
+    {
+      "path": "fixtures/trust-firewall-review.v1.json",
+      "sha256": "sha256:4a8bef5a7500149252516fc081b18547e8e6af8657830153aff125c221849dba"
+    }
+  ],
+  "dependencies": [
+    {
+      "path": "fixtures/route-pack-review.v1.json",
+      "sha256": "sha256:0ee09c4965e659f1c004ab9c1eea9be45f354fe960a39a645a55f07e0e95f1c7"
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "trust-firewall-review.v1/determinism",
+      "case_classes": [
+        "canonicalization",
+        "determinism",
+        "hash"
+      ],
+      "passed": true,
+      "result": "report_bytes_stable"
+    },
+    {
+      "case_id": "trust-firewall-review.v1/effective-tree",
+      "case_classes": [
+        "authority",
+        "tree"
+      ],
+      "passed": true,
+      "result": "effective_authority_tree_exact"
+    },
+    {
+      "case_id": "trust-firewall-review.v1/attenuation",
+      "case_classes": [
+        "attenuation",
+        "authority"
+      ],
+      "passed": true,
+      "result": "child_authority_only_reduced"
+    },
+    {
+      "case_id": "trust-firewall-review.v1/ancestor-budget",
+      "case_classes": [
+        "budget",
+        "lineage"
+      ],
+      "passed": true,
+      "result": "ancestor_budget_lineage_exact"
+    },
+    {
+      "case_id": "trust-firewall-review.v1/revocation",
+      "case_classes": [
+        "revocation",
+        "ttl"
+      ],
+      "passed": true,
+      "result": "revocation_proof_exact"
+    },
+    {
+      "case_id": "trust-firewall-review.v1/signed-receipt",
+      "case_classes": [
+        "receipt",
+        "signature",
+        "tenant"
+      ],
+      "passed": true,
+      "result": "signature_valid_fixture_trust_not_runtime"
+    },
+    {
+      "case_id": "trust-firewall-review.v1/key-boundary",
+      "case_classes": [
+        "privacy",
+        "signature"
+      ],
+      "passed": true,
+      "result": "public_evidence_only"
+    },
+    {
+      "case_id": "trust-firewall-review.v1/digital-twin",
+      "case_classes": [
+        "digital_twin",
+        "replay",
+        "routing"
+      ],
+      "passed": true,
+      "result": "b8_evaluator_reused_off_path"
+    },
+    {
+      "case_id": "trust-firewall-review.v1/decision",
+      "case_classes": [
+        "decision",
+        "shadow"
+      ],
+      "passed": true,
+      "result": "shadow_only_review"
+    },
+    {
+      "case_id": "trust-firewall-review.v1/replay",
+      "case_classes": [
+        "replay"
+      ],
+      "passed": true,
+      "result": "duplicate_noop"
+    },
+    {
+      "case_id": "trust-firewall-review.v1/runtime-boundary",
+      "case_classes": [
+        "runtime_boundary"
+      ],
+      "passed": true,
+      "result": "runtime_mutation_none"
+    },
+    {
+      "case_id": "negative/duplicate-key",
+      "case_classes": [
+        "negative",
+        "strict_json"
+      ],
+      "passed": true,
+      "result": "duplicate_rejected"
+    },
+    {
+      "case_id": "negative/root-secret-field",
+      "case_classes": [
+        "negative",
+        "privacy"
+      ],
+      "passed": true,
+      "result": "secret_field_rejected"
+    },
+    {
+      "case_id": "negative/authority-widening",
+      "case_classes": [
+        "attenuation",
+        "negative"
+      ],
+      "passed": true,
+      "result": "widening_rejected"
+    },
+    {
+      "case_id": "negative/ttl-widening",
+      "case_classes": [
+        "negative",
+        "ttl"
+      ],
+      "passed": true,
+      "result": "ttl_widening_rejected"
+    },
+    {
+      "case_id": "negative/missing-revocation-proof",
+      "case_classes": [
+        "negative",
+        "revocation"
+      ],
+      "passed": true,
+      "result": "missing_revocation_rejected"
+    },
+    {
+      "case_id": "negative/receipt-payload-tamper",
+      "case_classes": [
+        "negative",
+        "receipt",
+        "signature"
+      ],
+      "passed": true,
+      "result": "payload_tamper_rejected"
+    },
+    {
+      "case_id": "negative/receipt-key-version-tamper",
+      "case_classes": [
+        "key_version",
+        "negative",
+        "signature"
+      ],
+      "passed": true,
+      "result": "key_version_tamper_rejected"
+    },
+    {
+      "case_id": "negative/receipt-signature-tamper",
+      "case_classes": [
+        "negative",
+        "signature"
+      ],
+      "passed": true,
+      "result": "signature_tamper_rejected"
+    },
+    {
+      "case_id": "negative/audience",
+      "case_classes": [
+        "audience",
+        "negative"
+      ],
+      "passed": true,
+      "result": "wrong_audience_rejected"
+    },
+    {
+      "case_id": "negative/submicrosecond-time",
+      "case_classes": [
+        "negative",
+        "precision",
+        "time"
+      ],
+      "passed": true,
+      "result": "submicrosecond_rejected"
+    },
+    {
+      "case_id": "negative/digital-twin-mode",
+      "case_classes": [
+        "digital_twin",
+        "negative"
+      ],
+      "passed": true,
+      "result": "invalid_twin_rejected"
+    }
+  ],
+  "summary": {
+    "fixtures": 1,
+    "cases": 22,
+    "passed": 22,
+    "failed": 0
+  }
+}

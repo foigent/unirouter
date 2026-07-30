@@ -647,6 +647,8 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">POST</td><td><code>/api/v1/governance-simulation/offline-preview</code></td><td>Compare immutable route, policy and Provider Pack snapshots without runtime promotion</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/member-lifecycle/offline-contract</code></td><td>Read the IdP-neutral project-member lifecycle contract</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/member-lifecycle/offline-preview</code></td><td>Evaluate one bounded lifecycle event without user, membership, key, session or IdP mutation</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/agent-trust/offline-contract</code></td><td>Read the metadata-only Agent Trust, signed receipt and Governance Digital Twin contract</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/agent-trust/offline-preview</code></td><td>Verify bounded authority and signed receipt evidence without runtime trust or enforcement</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/limit-policies</code></td><td>List versioned shared RPM/RPS/TPM/concurrency policies</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/limit-policies</code></td><td>Create a disabled, shadow or enforced shared limit policy</td></tr>
 <tr><td class="method">PUT</td><td><code>/api/v1/limit-policies/{id}</code></td><td>Update a shared limit policy and increment its version</td></tr>
@@ -727,6 +729,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	registerProviderCOGSOfflineRoutes(mux, adminHandler, billingRoute)
 	registerGovernanceSimulationRoutes(mux, adminHandler, platformRoute)
 	registerMemberLifecycleRoutes(mux, adminHandler, orgAdminRoute)
+	registerAgentTrustRoutes(mux, adminHandler, orgAdminRoute)
 	registerModelGovernanceRoutes(mux, adminHandler, modelGovernanceRouteGuards{
 		organization: licensedRoute(licensing.FeatureModelGovernance, orgAdminRoute),
 		projectRead:  licensedRoute(licensing.FeatureModelGovernance, projectReadRoute),

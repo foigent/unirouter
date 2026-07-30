@@ -32,6 +32,7 @@ import GuardrailPoliciesPage from './pages/GuardrailPoliciesPage'
 import ProjectManagementPage from './pages/ProjectManagementPage'
 import GovernanceSimulationPage from './pages/GovernanceSimulationPage'
 import MemberLifecyclePage from './pages/MemberLifecyclePage'
+import AgentTrustPage from './pages/AgentTrustPage'
 import { profileNeedsRefresh, useAuthStore } from './store/auth'
 import { getDefaultPathForRole, isRouteAllowedForRole } from './navigation'
 
@@ -118,6 +119,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="users" element={<RoleRoute><UsersPage /></RoleRoute>} />
             <Route path="project-management" element={<RoleRoute><ProjectManagementPage /></RoleRoute>} />
             <Route path="member-lifecycle" element={<RoleRoute><MemberLifecyclePage /></RoleRoute>} />
+            <Route path="agent-trust" element={<RoleRoute><AgentTrustPage /></RoleRoute>} />
             <Route path="model-governance" element={<RoleRoute><ModelGovernancePage /></RoleRoute>} />
             <Route path="model-prices" element={<RoleRoute><ModelBillingPage /></RoleRoute>} />
             <Route path="org-model-prices" element={<Navigate to="/model-prices?tab=org" replace />} />

@@ -47,13 +47,13 @@ function routeKeys(role: string): string[] {
 const expectedRoutes: Record<string, string[]> = {
   platform_admin: [
     '/', '/channels', '/governance-simulation', '/channel-keys', '/model-governance', '/test',
-    '/keys', '/project-management', '/member-lifecycle', '/limit-policies', '/guardrail-policies', '/users',
+    '/keys', '/project-management', '/member-lifecycle', '/agent-trust', '/limit-policies', '/guardrail-policies', '/users',
     '/logs', '/usage-analytics', '/notifications', '/status', '/audit-logs',
     '/wallet', '/model-prices', '/reconciliation',
     '/license', '/data-exchange', '/docs',
   ],
   org_admin: [
-    '/', '/model-governance', '/keys', '/project-management', '/member-lifecycle', '/limit-policies', '/guardrail-policies', '/users',
+    '/', '/model-governance', '/keys', '/project-management', '/member-lifecycle', '/agent-trust', '/limit-policies', '/guardrail-policies', '/users',
     '/logs', '/usage-analytics', '/notifications', '/status', '/audit-logs',
     '/model-prices', '/docs',
   ],
@@ -131,10 +131,13 @@ describe('navigation role boundaries', () => {
     expect(isRouteAllowedForRole('/governance-simulation', 'platform_admin')).toBe(true);
     expect(isRouteAllowedForRole('/member-lifecycle', 'platform_admin')).toBe(true);
     expect(isRouteAllowedForRole('/member-lifecycle', 'org_admin')).toBe(true);
+    expect(isRouteAllowedForRole('/agent-trust', 'platform_admin')).toBe(true);
+    expect(isRouteAllowedForRole('/agent-trust', 'org_admin')).toBe(true);
     expect(isRouteAllowedForRole('/license', 'org_admin')).toBe(false);
     expect(isRouteAllowedForRole('/data-exchange', 'org_admin')).toBe(false);
     expect(isRouteAllowedForRole('/governance-simulation', 'org_admin')).toBe(false);
     expect(isRouteAllowedForRole('/member-lifecycle', 'billing_admin')).toBe(false);
+    expect(isRouteAllowedForRole('/agent-trust', 'billing_admin')).toBe(false);
   });
 
   it('enforces the direct-route contract for the role-specific project workbench', () => {

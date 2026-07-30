@@ -182,6 +182,8 @@ const endpointGroups = [
       ['POST', '/api/v1/governance-simulation/offline-preview', '平台管理员用同一套路由内核比较不可变快照；shadow/canary/enforced 仅为模拟目标模式'],
       ['GET', '/api/v1/member-lifecycle/offline-contract', '平台或组织管理员读取 IdP 中立的成员生命周期合同；不选择 SCIM 供应商'],
       ['POST', '/api/v1/member-lifecycle/offline-preview', '离线评估创建、更新、暂停和退场事件；不修改用户、会话、成员、能力或目录'],
+      ['GET', '/api/v1/agent-trust/offline-contract', '平台或组织管理员读取 Agent Trust、签名收据与数字孪生合同；fixture 公钥不是生产信任根'],
+      ['POST', '/api/v1/agent-trust/offline-preview', '离线校验权限衰减、祖先预算、TTL、撤销与签名；不接私钥、不授权运行时执行'],
     ],
   },
   {

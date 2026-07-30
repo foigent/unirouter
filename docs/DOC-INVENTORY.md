@@ -113,6 +113,8 @@
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required single-owner execution, approval, evidence and optional-review workflow |
 | `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD7 repository-local batch and evidence, followed by historical Receipt V0, V1, PRD6 and PRD5 records |
+| `docs/tech-ref/38-agent-trust-firewall.md` | PRD7 Agent Trust authority tree, signed receipt and direct B8 Digital Twin reuse boundary |
+| `docs/ops/evidence/PRD7-B10-P7F12-P7F13-P7F14-agent-trust-local-20260731.md` | PRD7 B10 local conformance, UI and non-runtime trust evidence |
 | `docs/agent-workflows/reviews/` | Optional immutable independent review results |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry pointing to the current execution record |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |

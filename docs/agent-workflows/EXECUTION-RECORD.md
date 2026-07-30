@@ -112,8 +112,19 @@ Inspector are included; no SCIM vendor or IdP source of truth is selected.
 Exact evidence:
 `docs/ops/evidence/PRD7-B9-P7F11-member-lifecycle-local-20260731.md`.
 
-**Current batch:** B10 Agent Trust Firewall, signed decision receipt and
-Governance Digital Twin.
+B10 is Local verified through a metadata-only synthetic boundary. The Agent
+Trust Firewall reuses the current Agent capability attenuation model and
+ancestor budget lineage, verifies exact TTL/revocation evidence and validates
+an Ed25519 metadata receipt whose key version, tenant, audience, decision and
+governance hashes are signed. The B8 Governance Digital Twin evaluator is
+called directly and pinned by its immutable artifact identities. One fixture
+passes 22 deterministic cases and the persistent Trust Inspector requires no
+detail-open click. Fixture cryptographic validity remains explicitly
+non-runtime trust; no signing private key, synchronous risk dependency,
+enforcement or policy promotion was added. Exact evidence:
+`docs/ops/evidence/PRD7-B10-P7F12-P7F13-P7F14-agent-trust-local-20260731.md`.
+
+**Current batch:** B11 Provenance Passport and second heterogeneous Connector.
 
 **Authority boundary:** no deployment, traffic, credentials, live provider or
 IdP calls, non-test database mutation, cursor/checkpoint change, product-repo

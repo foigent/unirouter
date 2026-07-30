@@ -12,6 +12,19 @@
 > credentials/providers/IdPs, non-test database mutation, cursor/checkpoint
 > changes, push, PR and merge remain unauthorized. The completed-execution Feed
 > compatibility baseline and PRD5/PRD6 closeouts remain unchanged.
+> **2026-07-31 PRD7 B10 checkpoint:** P7-F12, P7-F13 and P7-F14 are Local
+> verified through a metadata-only synthetic boundary. The Agent Trust
+> Firewall directly reuses current `agentcap.Limits` attenuation and the B8
+> governance evaluator; one fixture passes a deterministic 22-case report for
+> effective authority, ancestor budget lineage, TTL/revocation, canonical
+> Ed25519 receipt verification, tenant/audience/key-version binding, tamper
+> negatives and route/policy/Pack replay. The fixture public key proves
+> cryptographic bytes only and remains `runtime_trusted=false`; no private key,
+> synchronous risk dependency, runtime enforcement or policy promotion was
+> added. Platform/org-admin no-store API/CLI and a persistent Trust Inspector
+> are included. Evidence:
+> `docs/ops/evidence/PRD7-B10-P7F12-P7F13-P7F14-agent-trust-local-20260731.md`.
+> B11 is next.
 > **2026-07-31 PRD7 B9 checkpoint:** P7-F11 is Local verified through an
 > IdP-neutral zero-network boundary. One lifecycle fixture passes a 17-case
 > golden report for create/update/suspend/reactivate/terminal deprovision,

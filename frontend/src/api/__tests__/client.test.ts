@@ -481,6 +481,29 @@ describe('API Client', () => {
     })
   })
 
+  describe('Agent Trust offline preview', () => {
+    it('keeps the supplied trust review as the exact JSON request body', async () => {
+      const review = '{"contract_version":"unirouter.agent-trust-review.v1"}'
+      mockJsonResponse({ runtime_mutation: 'none' })
+
+      await api.previewAgentTrust(review)
+
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/agent-trust/offline-preview')
+      expect(mockFetch.mock.calls[0][1]).toEqual(expect.objectContaining({
+        method: 'POST',
+        body: review,
+      }))
+    })
+
+    it('reads the no-runtime-trust contract', async () => {
+      mockJsonResponse({ contract_version: 'unirouter.agent-trust-review.v1' })
+
+      await api.getAgentTrustContract()
+
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/agent-trust/offline-contract')
+    })
+  })
+
   describe('project developer APIs', () => {
     it('filters keys by project_id', async () => {
       mockJsonResponse({ data: [], total: 0 })

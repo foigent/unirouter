@@ -1,0 +1,388 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unirouter.local/schemas/agent-trust-review.v1.schema.json",
+  "title": "UniRouter Agent Trust Review V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "review_id",
+    "evaluated_at",
+    "tenant_ref",
+    "audience",
+    "subject_agent_ref",
+    "provenance_ref",
+    "authority",
+    "digital_twin",
+    "signed_receipt"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "unirouter.agent-trust-review.v1"
+    },
+    "review_id": {
+      "$ref": "#/$defs/portable_id"
+    },
+    "evaluated_at": {
+      "$ref": "#/$defs/utc_microsecond"
+    },
+    "tenant_ref": {
+      "$ref": "#/$defs/digest"
+    },
+    "audience": {
+      "const": "unirouter-governance-review"
+    },
+    "subject_agent_ref": {
+      "$ref": "#/$defs/digest"
+    },
+    "provenance_ref": {
+      "$ref": "#/$defs/digest"
+    },
+    "authority": {
+      "$ref": "#/$defs/authority"
+    },
+    "digital_twin": {
+      "type": "object",
+      "description": "Validated by the authoritative unirouter.governance-simulation.v1 evaluator rather than redefined here.",
+      "$comment": "Pinned local B8 schema SHA-256: 02e00f49039d813b7ef2a739c2c0f32200a7f9df68e0bd0356a84c1927d4e123"
+    },
+    "signed_receipt": {
+      "$ref": "#/$defs/signed_receipt"
+    }
+  },
+  "$defs": {
+    "portable_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "positive_decimal": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*$"
+    },
+    "utc_microsecond": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z$"
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_depth",
+        "max_children",
+        "max_descendants",
+        "cost_budget_cents",
+        "token_budget",
+        "rpm_limit",
+        "rps_limit",
+        "concurrency_limit",
+        "allowed_models",
+        "allowed_endpoints"
+      ],
+      "properties": {
+        "max_depth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16
+        },
+        "max_children": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "max_descendants": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "cost_budget_cents": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 900719925474
+        },
+        "token_budget": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "rpm_limit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rps_limit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "concurrency_limit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "allowed_models": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "allowed_endpoints": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "/v1/chat/completions",
+              "/v1/embeddings",
+              "/v1/models"
+            ]
+          }
+        }
+      }
+    },
+    "authority_node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agent_ref",
+        "parent_agent_ref",
+        "depth",
+        "authority_version",
+        "issued_at",
+        "expires_at",
+        "revoked_at",
+        "limits"
+      ],
+      "properties": {
+        "agent_ref": {
+          "$ref": "#/$defs/digest"
+        },
+        "parent_agent_ref": {
+          "oneOf": [
+            {
+              "const": ""
+            },
+            {
+              "$ref": "#/$defs/digest"
+            }
+          ]
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16
+        },
+        "authority_version": {
+          "$ref": "#/$defs/digest"
+        },
+        "issued_at": {
+          "$ref": "#/$defs/utc_microsecond"
+        },
+        "expires_at": {
+          "$ref": "#/$defs/utc_microsecond"
+        },
+        "revoked_at": {
+          "oneOf": [
+            {
+              "const": ""
+            },
+            {
+              "$ref": "#/$defs/utc_microsecond"
+            }
+          ]
+        },
+        "limits": {
+          "$ref": "#/$defs/limits"
+        }
+      }
+    },
+    "revocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event_ref",
+        "agent_ref",
+        "revoked_at",
+        "reason"
+      ],
+      "properties": {
+        "event_ref": {
+          "$ref": "#/$defs/digest"
+        },
+        "agent_ref": {
+          "$ref": "#/$defs/digest"
+        },
+        "revoked_at": {
+          "$ref": "#/$defs/utc_microsecond"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshot_ref",
+        "root_agent_ref",
+        "nodes",
+        "revocations"
+      ],
+      "properties": {
+        "snapshot_ref": {
+          "$ref": "#/$defs/digest"
+        },
+        "root_agent_ref": {
+          "$ref": "#/$defs/digest"
+        },
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/authority_node"
+          }
+        },
+        "revocations": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/revocation"
+          }
+        }
+      }
+    },
+    "receipt_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receipt_version",
+        "receipt_id",
+        "review_id",
+        "tenant_ref",
+        "audience",
+        "decision",
+        "decided_at",
+        "subject_ref",
+        "authority_snapshot_hash",
+        "governance_request_hash",
+        "baseline_policy_hash",
+        "candidate_policy_hash",
+        "baseline_route_hash",
+        "candidate_route_hash",
+        "provider_pack_set_hash",
+        "provenance_ref",
+        "synchronous_dependency",
+        "runtime_action_authorized"
+      ],
+      "properties": {
+        "receipt_version": {
+          "const": "unirouter.signed-decision-receipt.v1"
+        },
+        "receipt_id": {
+          "$ref": "#/$defs/portable_id"
+        },
+        "review_id": {
+          "$ref": "#/$defs/portable_id"
+        },
+        "tenant_ref": {
+          "$ref": "#/$defs/digest"
+        },
+        "audience": {
+          "const": "unirouter-governance-review"
+        },
+        "decision": {
+          "enum": [
+            "allow",
+            "shadow_only",
+            "deny"
+          ]
+        },
+        "decided_at": {
+          "$ref": "#/$defs/utc_microsecond"
+        },
+        "subject_ref": {
+          "$ref": "#/$defs/digest"
+        },
+        "authority_snapshot_hash": {
+          "$ref": "#/$defs/digest"
+        },
+        "governance_request_hash": {
+          "$ref": "#/$defs/digest"
+        },
+        "baseline_policy_hash": {
+          "$ref": "#/$defs/digest"
+        },
+        "candidate_policy_hash": {
+          "$ref": "#/$defs/digest"
+        },
+        "baseline_route_hash": {
+          "$ref": "#/$defs/digest"
+        },
+        "candidate_route_hash": {
+          "$ref": "#/$defs/digest"
+        },
+        "provider_pack_set_hash": {
+          "$ref": "#/$defs/digest"
+        },
+        "provenance_ref": {
+          "$ref": "#/$defs/digest"
+        },
+        "synchronous_dependency": {
+          "const": false
+        },
+        "runtime_action_authorized": {
+          "const": false
+        }
+      }
+    },
+    "signed_receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "payload",
+        "algorithm",
+        "key_id",
+        "key_version",
+        "public_key",
+        "signature",
+        "trust_profile"
+      ],
+      "properties": {
+        "payload": {
+          "$ref": "#/$defs/receipt_payload"
+        },
+        "algorithm": {
+          "const": "Ed25519"
+        },
+        "key_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,64}$"
+        },
+        "key_version": {
+          "$ref": "#/$defs/positive_decimal"
+        },
+        "public_key": {
+          "type": "string",
+          "contentEncoding": "base64"
+        },
+        "signature": {
+          "type": "string",
+          "contentEncoding": "base64"
+        },
+        "trust_profile": {
+          "const": "fixture_local"
+        }
+      }
+    }
+  }
+}

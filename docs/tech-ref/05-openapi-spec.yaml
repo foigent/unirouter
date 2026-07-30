@@ -1611,6 +1611,18 @@ paths:
     description: Evaluates at most 1 MiB of one sanitized lifecycle event in memory. It computes effective membership/capability revocation and exact local projection controls without changing users, memberships, sessions, keys, agent capabilities, a directory or a database.
     post: *operation_create
 
+  /api/v1/agent-trust/offline-contract:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+    description: Returns the strict metadata-only Agent Trust Firewall, signed receipt verification and Governance Digital Twin contract with immutable synthetic artifacts. It accepts no signing key, treats the fixture public key as non-runtime trust, performs no network call and changes no state.
+    get: *operation_list
+
+  /api/v1/agent-trust/offline-preview:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    description: Evaluates at most 3 MiB of effective authority, attenuation, ancestor budget, TTL/revocation and signed receipt evidence in memory while reusing the B8 routing simulator. It has no synchronous runtime dependency and cannot authorize enforcement, revoke live capability state or promote policy.
+    post: *operation_create
+
   /api/v1/users:
     x-unirouter-rbac:
       get: [platform_admin, org_admin]
