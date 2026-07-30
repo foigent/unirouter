@@ -1,6 +1,17 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
+> **2026-07-31 PRD7 active-program checkpoint:** the User accepted the
+> enterprise AI execution trust/control-plane direction and instructed the
+> implementation owner to close the planned iterations unless a material
+> product decision is required. `docs/PRD-Phase7.md`,
+> `docs/ops/PRD7-ACCEPTANCE-MATRIX.md` and
+> `docs/planning/PRD7-IMPLEMENTATION-PLAN.md` are now the active scope,
+> evidence and dependency-order sources. Repository-local code, tests,
+> fixtures, docs and local commits are authorized. Deployment, traffic, real
+> credentials/providers/IdPs, non-test database mutation, cursor/checkpoint
+> changes, push, PR and merge remain unauthorized. The completed-execution Feed
+> compatibility baseline and PRD5/PRD6 closeouts remain unchanged.
 > **2026-07-31 `UR-PRODUCT-ITERATION-RECEIPT-WORKSPACE-V0` checkpoint:**
 > the accepted first product-iteration slice is locally verified on
 > `codex/product-iteration-20260730` from baseline
@@ -19,9 +30,9 @@
 > `docs/ops/evidence/UR-EXECUTION-DECISION-RECEIPT-V0-LOCAL-20260731.md`.
 > This is not CI, real-data/runtime, Target or Production evidence. No backend/API/
 > DTO/schema, database, routing, billing result, Outbox/feed/cursor,
-> credential, deployment, traffic, X-Insight or protocol behavior changed;
-> PRD5/PRD6 remain closed and no other PRD7 candidate is accepted by this
-> slice.
+> credential, deployment, traffic, X-Insight or protocol behavior changed.
+> This historical slice did not accept other PRD7 candidates; the later
+> explicit program checkpoint above does.
 > **2026-07-21
 > `FV-SOURCE-QUALIFICATION-CURRENT-ECS-REPLACEMENT` checkpoint:** UniRouter
 > accepted the exact User

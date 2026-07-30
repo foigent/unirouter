@@ -2,6 +2,17 @@
 
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
+> **Current product iteration (2026-07-31):** PRD7 is accepted for
+> repository-local implementation and active on
+> `codex/product-iteration-20260730`. Read `docs/PRD-Phase7.md`,
+> `docs/ops/PRD7-ACCEPTANCE-MATRIX.md`,
+> `docs/planning/PRD7-IMPLEMENTATION-PLAN.md` and the first section of
+> `docs/agent-workflows/EXECUTION-RECORD.md`. Receipt V0 is locally verified at
+> `e361964`; the next dependency-ordered batch is Provider Conformance Pack V1
+> plus the third native Provider and persistent Provider inspector. Preserve
+> PRD5/PRD6 and completed-execution Feed compatibility. No deployment, traffic,
+> credentials, external calls, non-test DB changes, cursor/checkpoint changes,
+> push, PR or merge is authorized by the product-iteration scope.
 > **Newest checkpoint (2026-07-21
 > `FV-SOURCE-QUALIFICATION-CURRENT-ECS-REPLACEMENT`):** UniRouter accepted the
 > exact User

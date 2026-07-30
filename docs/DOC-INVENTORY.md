@@ -6,6 +6,9 @@
 
 | File | Role |
 |------|------|
+| `docs/PRD-Phase7.md` | Current accepted UniRouter product-iteration scope and architectural boundaries |
+| `docs/ops/PRD7-ACCEPTANCE-MATRIX.md` | Authoritative PRD7 row status, evidence level and decision gates |
+| `docs/planning/PRD7-IMPLEMENTATION-PLAN.md` | Active dependency-ordered implementation and verification plan |
 | `docs/PROJECT-HANDOFF.md` | First-read handoff for agents |
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
 | `docs/planning/PRD6-START-HERE.md` | PRD6 Completed (Accepted Scope) state, preserved future boundaries and read order |
@@ -61,7 +64,7 @@
 | `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` | Official competitor HA patterns, current UniRouter cluster facts, Four Quadrants and accepted D6-12 stream/HA boundary |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | Source-backed audit/reconciliation/correlation/UI/architecture/upgrade findings, Four Quadrants and PRD6 batches |
 | `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md` | Accepted customer-revenue/provider-COGS boundary, competitor and supplier billing evidence, Four Quadrants, PRD6 non-claims and future cost/metering/media candidates |
-| `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | PRD7 candidate split; one-time supplier-bill reconciliation is deferred/not executed, while recurring/productized reconciliation remains unimplemented candidate D7-COST-001/002; either path requires its own authorization |
+| `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | Historical candidate split retained as planning lineage; current accepted scope is in PRD7 and its matrix |
 | `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` | Accepted future Cache Service direction, service boundary, capacity planning triggers, SaaS cell reuse and non-authorization guardrails |
 | `docs/planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md` | Version-fixed competitor audit, Four Quadrants and priority matrix |
 | `docs/planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md` | Third-round Four Quadrants, CARTA/shadow/collusion ownership, Killer Features and candidate acceptance rows |

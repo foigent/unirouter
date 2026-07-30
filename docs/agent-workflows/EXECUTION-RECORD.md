@@ -1,6 +1,44 @@
 # Current Execution Record
 
-## Current Repository Execution — Execution Decision Receipt Workspace V0
+## Current Repository Execution — PRD7 Enterprise AI Execution Trust Control Plane
+
+**Work item:** `UR-PRD7-ENTERPRISE-EXECUTION-TRUST-CONTROL-PLANE`
+
+**Owner:** UniRouter product/implementation owner
+
+**Risk:** R2/R3 repository product implementation. Runtime, external systems and
+release actions remain separately gated.
+
+**Authority:** The User accepted the researched UniRouter product-iteration
+direction on 2026-07-30 and on 2026-07-31 instructed the implementation owner
+to close all planned iterations using the optimal architecture, stopping only
+for a material User decision.
+
+**Accepted source:** `docs/PRD-Phase7.md`,
+`docs/ops/PRD7-ACCEPTANCE-MATRIX.md` and
+`docs/planning/PRD7-IMPLEMENTATION-PLAN.md`. The older
+`PRD7-CANDIDATE-BACKLOG.md` remains historical planning lineage.
+
+**Start baseline:** branch `codex/product-iteration-20260730`; Receipt V0
+commit `e36196427b12dfd5a120aab12ba9114a43a14afb`, tree
+`87901d41e87f5913b0d79a0cd57a423f7d51c2b8`.
+
+**Execution order:** deterministic contracts and synthetic conformance first;
+persistent inspector UI and operability next; external adapters and enforcement
+only after their explicit decision gates. Every batch requires focused tests,
+affected full suites, local evidence, one intentional local commit and a clean
+worktree.
+
+**Current batch:** B0 scope/governance freeze followed by B1 Provider
+Conformance Pack V1, Azure OpenAI adapter, three offline packs and a persistent
+Provider inspector.
+
+**Authority boundary:** no deployment, traffic, credentials, live provider or
+IdP calls, non-test database mutation, cursor/checkpoint change, product-repo
+outside UniRouter, push, PR or merge. Existing completed-execution Feed and
+X-Insight compatibility behavior remain unchanged.
+
+## Historical Repository Execution — Execution Decision Receipt Workspace V0
 
 **Work item:** `UR-PRODUCT-ITERATION-RECEIPT-WORKSPACE-V0`
 
@@ -47,8 +85,8 @@ credential, deployment, traffic, X-Insight, protocol or external integration
 changed. Browser evidence used only synthetic in-memory responses; this is not
 CI, real-data/runtime, Target or Production evidence.
 
-**Next gate:** Any later product slice is a new explicit scope; no push, PR,
-merge or deployment is part of this work item.
+**Next gate:** closed by the later explicit PRD7 scope above. No push, PR,
+merge or deployment was part of this historical work item.
 
 ## Historical Repository Execution — Existing-ECS Replacement Lifecycle
 

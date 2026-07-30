@@ -2,6 +2,9 @@
 
 ## 当前入口
 
+- [PRD-Phase7.md](PRD-Phase7.md) — 当前已接受的企业 AI 执行可信控制面产品范围
+- [ops/PRD7-ACCEPTANCE-MATRIX.md](ops/PRD7-ACCEPTANCE-MATRIX.md) — 当前 PRD7 功能、证据等级与真实决策门
+- [planning/PRD7-IMPLEMENTATION-PLAN.md](planning/PRD7-IMPLEMENTATION-PLAN.md) — 依赖顺序、批次验收和运行时边界
 - [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前已完成的 V1 安全/信息架构发布与七角色目标验收；不重开 PRD6
 - [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — Agent 接手项目的第一阅读入口
 - [ops/CURRENT-STATUS.md](ops/CURRENT-STATUS.md) — 当前已验证项目状态和明确非声明
@@ -62,7 +65,7 @@
 - [ops/evidence/PRD6-FINAL-COMPLETION-20260714.md](ops/evidence/PRD6-FINAL-COMPLETION-20260714.md) — PRD6 最终完成审计、27/27 计数修正、正式阶段状态和后续边界
 - [planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md](planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md) — LiteLLM/New API/Portkey/Kong 高可用模式、UniRouter 集群事实和 D6-12 流式边界
 - [planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md](planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md) — UI、对账、链路身份、架构与 2B 升级审计
-- [planning/PRD7-CANDIDATE-BACKLOG.md](planning/PRD7-CANDIDATE-BACKLOG.md) — 未来首项方向已选；PRD6 已闭环，但实现仍按用户决定后置
+- [planning/PRD7-CANDIDATE-BACKLOG.md](planning/PRD7-CANDIDATE-BACKLOG.md) — 历史候选输入；当前已接受范围以 PRD7 与验收矩阵为准
 - [planning/PRD7-CACHE-SERVICE-CANDIDATE.md](planning/PRD7-CACHE-SERVICE-CANDIDATE.md) — 未来独立 Cache Service、容量拆分触发线和 SaaS cell 复用边界
 - [planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md](planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md) — LiteLLM/New API/One API 固定版本核验、四象限和优先级矩阵
 - [planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md](planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md) — CARTA、影子评测、反串谋、四象限、三平面边界和 Killer Features
