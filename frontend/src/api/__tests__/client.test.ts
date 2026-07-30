@@ -412,6 +412,29 @@ describe('API Client', () => {
     })
   })
 
+  describe('provider COGS offline preview', () => {
+    it('keeps the supplied evidence as the exact JSON request body', async () => {
+      const evidence = '{"contract_version":"unirouter.provider-cogs-offline.v1"}'
+      mockJsonResponse({ customer_ledger_mutation: 'none' })
+
+      await api.previewProviderCOGSOffline(evidence)
+
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/provider-cogs/offline-preview')
+      expect(mockFetch.mock.calls[0][1]).toEqual(expect.objectContaining({
+        method: 'POST',
+        body: evidence,
+      }))
+    })
+
+    it('reads the non-persistent contract', async () => {
+      mockJsonResponse({ contract_version: 'unirouter.provider-cogs-offline.v1' })
+
+      await api.getProviderCOGSOfflineContract()
+
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/provider-cogs/offline-contract')
+    })
+  })
+
   describe('project developer APIs', () => {
     it('filters keys by project_id', async () => {
       mockJsonResponse({ data: [], total: 0 })

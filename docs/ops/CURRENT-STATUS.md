@@ -12,6 +12,22 @@
 > credentials/providers/IdPs, non-test database mutation, cursor/checkpoint
 > changes, push, PR and merge remain unauthorized. The completed-execution Feed
 > compatibility baseline and PRD5/PRD6 closeouts remain unchanged.
+> **2026-07-31 PRD7 B7 checkpoint:** P7-F09 is Local verified through a
+> zero-persistence offline/synthetic boundary. The strict Provider COGS
+> contract separates supplier cost, UniRouter estimate and customer revenue,
+> uses exact decimal strings, canonical semantic replay, page/cursor/finality
+> checks and four fixed declared gaps. Request attribution requires one unique
+> upstream match; aggregate evidence never acquires request/customer debt.
+> Two fixtures pass a deterministic 15-case report with golden SHA-256
+> `87ddc260...`. Billing-authorized no-store API/CLI surfaces have no
+> database/provider-network/credential/customer-ledger write path. The
+> “财务真值” UI preserves customer usage reconciliation and adds a persistent
+> auto-selected supplier-evidence inspector. Full Go tests/vet, frontend
+> 42-file/311-test single-worker suite, type-check/build and golden byte
+> comparison passed. Evidence:
+> `docs/ops/evidence/PRD7-B7-P7F09-provider-cogs-financial-truth-local-20260731.md`.
+> P7-D05 still gates real provider accounts, credentials and retention; B8 is
+> next.
 > **2026-07-31 PRD7 B6 checkpoint:** P7-F08 is Local verified through a
 > zero-network endpoint-contract boundary. Three fixed profiles cover OpenAI
 > Responses text-only/stateless requests, Cohere Rerank V2 string documents

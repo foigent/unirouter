@@ -428,6 +428,9 @@ export const api = {
     if (filters?.usage_source) url += `&usage_source=${encodeURIComponent(filters.usage_source)}`;
     return request(url);
   },
+  getProviderCOGSOfflineContract: () => request('/provider-cogs/offline-contract'),
+  previewProviderCOGSOffline: (body: string) =>
+    request('/provider-cogs/offline-preview', { method: 'POST', body }),
 
   // Notifications
   getNotificationEvents: (page = 1, pageSize = 20, filters?: {

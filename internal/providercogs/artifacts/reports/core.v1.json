@@ -1,0 +1,167 @@
+{
+  "schema_version": "unirouter.provider-cogs-conformance-report.v1",
+  "contract_version": "unirouter.provider-cogs-offline.v1",
+  "source_snapshot_version": "unirouter.provider-attempt-snapshot.v1",
+  "schema": {
+    "path": "artifacts/provider-cogs-offline.v1.schema.json",
+    "sha256": "sha256:43a903f2eb31a6c7a0ffc46631d33cf40b28bc23dff4b31982480a28a713fb74"
+  },
+  "fixtures": [
+    {
+      "path": "artifacts/fixtures/provisional-aggregate-gaps.v1.json",
+      "sha256": "sha256:45acc838c7873d8a3d5a60f2460e48d203d5f2fd70f83401d9af5df2dab869f6"
+    },
+    {
+      "path": "artifacts/fixtures/request-and-pagination.v1.json",
+      "sha256": "sha256:ba1002ede765ef4ad272592baa9a1a27c4528bc637a07f3413824a6681f5b18d"
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "provisional-aggregate-gaps.v1/strict-input",
+      "case_classes": [
+        "schema_shape",
+        "strict_json"
+      ],
+      "passed": true,
+      "result": "strict_input_accepted"
+    },
+    {
+      "case_id": "provisional-aggregate-gaps.v1/evaluation",
+      "case_classes": [
+        "cursor",
+        "financial_authority",
+        "gap"
+      ],
+      "passed": true,
+      "result": "evaluation_accepted"
+    },
+    {
+      "case_id": "provisional-aggregate-gaps.v1/summary",
+      "case_classes": [
+        "duplicate",
+        "exact_decimal",
+        "finality"
+      ],
+      "passed": true,
+      "result": "summary_exact"
+    },
+    {
+      "case_id": "provisional-aggregate-gaps.v1/attribution",
+      "case_classes": [
+        "attribution",
+        "customer_ledger_separation",
+        "privacy"
+      ],
+      "passed": true,
+      "result": "authority_separated"
+    },
+    {
+      "case_id": "provisional-aggregate-gaps.v1/determinism",
+      "case_classes": [
+        "determinism",
+        "hash"
+      ],
+      "passed": true,
+      "result": "report_bytes_stable"
+    },
+    {
+      "case_id": "request-and-pagination.v1/strict-input",
+      "case_classes": [
+        "schema_shape",
+        "strict_json"
+      ],
+      "passed": true,
+      "result": "strict_input_accepted"
+    },
+    {
+      "case_id": "request-and-pagination.v1/evaluation",
+      "case_classes": [
+        "cursor",
+        "financial_authority",
+        "gap"
+      ],
+      "passed": true,
+      "result": "evaluation_accepted"
+    },
+    {
+      "case_id": "request-and-pagination.v1/summary",
+      "case_classes": [
+        "duplicate",
+        "exact_decimal",
+        "finality"
+      ],
+      "passed": true,
+      "result": "summary_exact"
+    },
+    {
+      "case_id": "request-and-pagination.v1/attribution",
+      "case_classes": [
+        "attribution",
+        "customer_ledger_separation",
+        "privacy"
+      ],
+      "passed": true,
+      "result": "authority_separated"
+    },
+    {
+      "case_id": "request-and-pagination.v1/determinism",
+      "case_classes": [
+        "determinism",
+        "hash"
+      ],
+      "passed": true,
+      "result": "report_bytes_stable"
+    },
+    {
+      "case_id": "replay/accepted",
+      "case_classes": [
+        "replay"
+      ],
+      "passed": true,
+      "result": "accepted"
+    },
+    {
+      "case_id": "replay/duplicate-noop",
+      "case_classes": [
+        "duplicate",
+        "replay"
+      ],
+      "passed": true,
+      "result": "duplicate_noop"
+    },
+    {
+      "case_id": "replay/semantic-noop",
+      "case_classes": [
+        "canonicalization",
+        "replay"
+      ],
+      "passed": true,
+      "result": "semantic_duplicate_noop"
+    },
+    {
+      "case_id": "replay/conflict",
+      "case_classes": [
+        "conflict",
+        "replay"
+      ],
+      "passed": true,
+      "result": "identity_conflict"
+    },
+    {
+      "case_id": "negative/cursor",
+      "case_classes": [
+        "cursor",
+        "negative"
+      ],
+      "passed": true,
+      "result": "cursor_rejected"
+    }
+  ],
+  "summary": {
+    "fixtures": 2,
+    "cases": 15,
+    "passed": 15,
+    "failed": 0
+  }
+}

@@ -176,6 +176,8 @@ const endpointGroups = [
       ['GET', '/api/v1/reconciliation', '估算/实际用量及供应商 Prompt Cache 分项对账'],
       ['POST', '/api/v1/provider-cost/reconciliations', '平台管理员处理未决供应商成本；请求不接受金额，collect 仅重放权威用量与冻结客户价'],
       ['GET', '/api/v1/provider-cost/pending', '平台管理员按明确组织查看最多 100 条未决供应商成本元数据'],
+      ['GET', '/api/v1/provider-cogs/offline-contract', '查看供应商成本离线预览合同；不接凭据、不访问供应商、不保存数据'],
+      ['POST', '/api/v1/provider-cogs/offline-preview', '在内存中校验供应商成本证据；聚合成本不归因且不会修改客户账'],
     ],
   },
   {
@@ -251,8 +253,9 @@ function endpointVisibleForRole(area: string, method: string, path: string, role
     if (isBillingRole(role)) {
       return method === 'GET' && (
         path.includes('/model-prices') || path.includes('/model-names') ||
-        path.includes('/org-model-prices') || path.endsWith('/reconciliation')
-      );
+        path.includes('/org-model-prices') || path.endsWith('/reconciliation') ||
+        path.endsWith('/provider-cogs/offline-contract')
+      ) || (method === 'POST' && path.endsWith('/provider-cogs/offline-preview'));
     }
     if (isProjectAdminRole(role)) return method === 'GET' && path === '/api/v1/model-sets';
     return false;

@@ -78,8 +78,19 @@ No Gateway route, adapter registry, Provider Pack V1 artifact, customer
 billing or media runtime changed. Exact evidence:
 `docs/ops/evidence/PRD7-B6-P7F08-endpoint-protocol-conformance-local-20260731.md`.
 
-**Current batch:** B7 provider COGS offline connector and Financial Truth
-workspace.
+B7 is Local verified through a zero-persistence offline/synthetic boundary.
+The Provider COGS contract keeps supplier cost, UniRouter estimate and customer
+revenue authority separate; exact request attribution requires one unique
+upstream match and aggregate evidence never creates customer debt. Exact
+decimal/page/cursor/finality, canonical replay, four fixed gaps,
+duplicate/conflict and privacy boundaries pass two fixtures and a deterministic
+15-case golden report. Billing-authorized no-store API/CLI surfaces and the
+persistent auto-selected Financial Truth inspector add no provider network,
+credential, database or customer-ledger write path. Exact evidence:
+`docs/ops/evidence/PRD7-B7-P7F09-provider-cogs-financial-truth-local-20260731.md`.
+
+**Current batch:** B8 route/policy simulator, progressive release and Provider
+Change Firewall.
 
 **Authority boundary:** no deployment, traffic, credentials, live provider or
 IdP calls, non-test database mutation, cursor/checkpoint change, product-repo

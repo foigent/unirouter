@@ -140,7 +140,7 @@ const taskNavItems: NavItem[] = [
     items: [
       { itemKey: '/wallet', text: '资金账户', icon: <IconCreditCard /> },
       { itemKey: '/model-prices', text: '模型计费', icon: <IconPriceTag /> },
-      { itemKey: '/reconciliation', text: '计量校验', icon: <IconFlowChartStroked /> },
+      { itemKey: '/reconciliation', text: '财务真值', icon: <IconFlowChartStroked /> },
     ],
   },
   {

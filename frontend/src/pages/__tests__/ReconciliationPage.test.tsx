@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ReconciliationPage from '../ReconciliationPage';
 
 const mockGetReconciliation = vi.fn();
 const mockGetModelNames = vi.fn();
 const mockGetOrganizations = vi.fn();
+const mockPreviewProviderCOGSOffline = vi.fn();
 const auth = vi.hoisted(() => ({ user: null as any }));
 
 vi.mock('../../api/client', () => ({
@@ -12,6 +13,7 @@ vi.mock('../../api/client', () => ({
     getReconciliation: (...args: any[]) => mockGetReconciliation(...args),
     getModelNames: (...args: any[]) => mockGetModelNames(...args),
     getOrganizations: (...args: any[]) => mockGetOrganizations(...args),
+    previewProviderCOGSOffline: (...args: any[]) => mockPreviewProviderCOGSOffline(...args),
   },
 }));
 
@@ -72,6 +74,49 @@ describe('ReconciliationPage', () => {
     mockGetReconciliation.mockResolvedValue(RECON_RESPONSE);
     mockGetModelNames.mockResolvedValue({ data: ['company-chat'] });
     mockGetOrganizations.mockResolvedValue({ data: [{ id: 7, name: '总部' }], total: 1 });
+    mockPreviewProviderCOGSOffline.mockResolvedValue({
+      report_version: 'unirouter.provider-cogs-report.v1',
+      contract_version: 'unirouter.provider-cogs-offline.v1',
+      import_id: 'import-test',
+      import_payload_hash: `sha256:${'1'.repeat(64)}`,
+      import_semantic_hash: `sha256:${'2'.repeat(64)}`,
+      source_snapshot_hash: `sha256:${'3'.repeat(64)}`,
+      provider: 'openai',
+      source_instance: `sha256:${'4'.repeat(64)}`,
+      currency: 'USD',
+      amount_scale: '1000000',
+      replay_status: 'accepted',
+      customer_ledger_mutation: 'none',
+      matches: [{
+        status: 'exact_request_matched',
+        evidence_level: 'exact_request_usage',
+        line_id: 'supplier-line-1',
+        request_id: 'req-financial-truth',
+        attempt_id: 'attempt-1',
+        upstream_request_id: 'upstream-1',
+        project_ref: `sha256:${'5'.repeat(64)}`,
+        provider_cost: { value_minor: '120', currency: 'USD', scale: '1000000', authority: 'supplier_reported' },
+        provider_estimate: { value_minor: '100', currency: 'USD', scale: '1000000', authority: 'unirouter_estimated' },
+        provider_variance_minor: '20',
+        customer_revenue: { value_minor: '5000', currency: 'CNY', scale: '1000000', authority: 'customer_ledger_snapshot' },
+        customer_debt_action: 'none',
+      }],
+      summary: {
+        pages: 1,
+        unique_supplier_lines: 1,
+        duplicate_noop_lines: 0,
+        source_attempts: 1,
+        exact_request_matches: 1,
+        supplier_only: 0,
+        aggregate_unattributed: 0,
+        ambiguous: 0,
+        source_only: 0,
+        supplier_evidence_pending: 0,
+        supplier_total_minor: '120',
+        matched_supplier_minor: '120',
+        unattributed_minor: '0',
+      },
+    });
   });
 
   it('loads reconciliation through the API client and renders full-query summary', async () => {
@@ -109,5 +154,24 @@ describe('ReconciliationPage', () => {
     render(<ReconciliationPage />);
 
     expect(await screen.findByText('来源筛选')).toBeTruthy();
+  });
+
+  it('previews supplier evidence and auto-opens the persistent financial inspector', async () => {
+    render(<ReconciliationPage />);
+
+    expect(screen.getByLabelText('供应商成本证据检查器')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('供应商成本离线证据 JSON'), {
+      target: { value: '{"contract_version":"unirouter.provider-cogs-offline.v1"}' },
+    });
+    fireEvent.click(screen.getByText('严格校验并预览'));
+
+    await waitFor(() => expect(mockPreviewProviderCOGSOffline).toHaveBeenCalledWith(
+      '{"contract_version":"unirouter.provider-cogs-offline.v1"}',
+    ));
+    expect(await screen.findByText('req-financial-truth')).toBeTruthy();
+    expect(screen.getByText(/req-financial-truth.*attempt-1/)).toBeTruthy();
+    expect(screen.getByText('客户账：none')).toBeTruthy();
+    expect(screen.getAllByText('请求级精确匹配').length).toBeGreaterThan(0);
+    expect(screen.getByText('5000 / 1000000 CNY')).toBeTruthy();
   });
 });

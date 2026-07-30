@@ -1,0 +1,142 @@
+{
+  "schema_version": "unirouter.provider-cogs-conformance-fixture.v1",
+  "fixture_id": "request-and-pagination.v1",
+  "request": {
+    "contract_version": "unirouter.provider-cogs-offline.v1",
+    "import_id": "import-fixture-request-001",
+    "provider": "openai",
+    "source_instance": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "currency": "USD",
+    "amount_scale": "1000000",
+    "coverage": {
+      "start_at": "2026-07-31T00:00:00.000000Z",
+      "end_at": "2026-08-01T00:00:00.000000Z",
+      "state": "closed",
+      "gaps": [
+        {
+          "code": "request_attribution_unavailable",
+          "provenance": "declared",
+          "detail": "Aggregate supplier rows cannot be split into request costs."
+        }
+      ]
+    },
+    "pages": [
+      {
+        "page_id": "page-0",
+        "page_index": "0",
+        "cursor_in": "",
+        "cursor_out": "cursor-1",
+        "is_last": false,
+        "lines": [
+          {
+            "line_id": "line-request",
+            "revision": "1",
+            "line_kind": "charge",
+            "granularity": "request",
+            "evidence_level": "exact_request_usage",
+            "observed_at": "2026-07-31T00:10:00.000000Z",
+            "period_start": "",
+            "period_end": "",
+            "project_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "upstream_request_id": "upstream-one",
+            "line_item": "Text model usage",
+            "amount_minor": "120",
+            "finality": "final"
+          }
+        ]
+      },
+      {
+        "page_id": "page-1",
+        "page_index": "1",
+        "cursor_in": "cursor-1",
+        "cursor_out": "",
+        "is_last": true,
+        "lines": [
+          {
+            "line_id": "line-request",
+            "revision": "1",
+            "line_kind": "charge",
+            "granularity": "request",
+            "evidence_level": "exact_request_usage",
+            "observed_at": "2026-07-31T00:10:00.000000Z",
+            "period_start": "",
+            "period_end": "",
+            "project_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "upstream_request_id": "upstream-one",
+            "line_item": "Text model usage",
+            "amount_minor": "120",
+            "finality": "final"
+          },
+          {
+            "line_id": "line-daily",
+            "revision": "1",
+            "line_kind": "charge",
+            "granularity": "project_bucket",
+            "evidence_level": "aggregate_cost_matched",
+            "observed_at": "2026-08-01T01:00:00.000000Z",
+            "period_start": "2026-07-31T00:00:00.000000Z",
+            "period_end": "2026-08-01T00:00:00.000000Z",
+            "project_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "upstream_request_id": "",
+            "line_item": "Daily project costs",
+            "amount_minor": "300",
+            "finality": "final"
+          }
+        ]
+      }
+    ],
+    "source_snapshot": {
+      "schema_version": "unirouter.provider-attempt-snapshot.v1",
+      "snapshot_id": "snapshot-fixture-request-001",
+      "created_at": "2026-08-01T01:30:00.000000Z",
+      "attempts": [
+        {
+          "org_ref": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "project_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "request_id": "req-one",
+          "attempt_id": "attempt-one",
+          "provider": "openai",
+          "source_instance": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "upstream_request_id": "upstream-one",
+          "occurred_at": "2026-07-31T00:09:00.000000Z",
+          "provider_estimate_minor": "100",
+          "provider_currency": "USD",
+          "provider_amount_scale": "1000000",
+          "customer_revenue_micros": "5000",
+          "customer_currency": "CNY",
+          "customer_amount_scale": "1000000"
+        },
+        {
+          "org_ref": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "project_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "request_id": "req-source-only",
+          "attempt_id": "attempt-source-only",
+          "provider": "openai",
+          "source_instance": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "upstream_request_id": "upstream-source-only",
+          "occurred_at": "2026-07-31T10:00:00.000000Z",
+          "provider_estimate_minor": "80",
+          "provider_currency": "USD",
+          "provider_amount_scale": "1000000",
+          "customer_revenue_micros": "4000",
+          "customer_currency": "CNY",
+          "customer_amount_scale": "1000000"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "pages": 2,
+    "unique_supplier_lines": 2,
+    "duplicate_noop_lines": 1,
+    "source_attempts": 2,
+    "exact_request_matches": 1,
+    "aggregate_unattributed": 1,
+    "source_only": 1,
+    "supplier_evidence_pending": 0,
+    "supplier_total_minor": "420",
+    "matched_supplier_minor": "120",
+    "unattributed_minor": "300",
+    "customer_ledger_mutation": "none"
+  }
+}

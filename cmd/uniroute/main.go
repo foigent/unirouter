@@ -641,6 +641,8 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">GET</td><td><code>/api/v1/reconciliation</code></td><td>Usage reconciliation</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/provider-cost/reconciliations</code></td><td>Platform-authorized provider cost reconciliation without a caller-supplied amount</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/provider-cost/pending</code></td><td>List bounded unresolved provider attempts for one explicit organization</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/provider-cogs/offline-contract</code></td><td>Read the zero-persistence supplier-cost preview contract</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/provider-cogs/offline-preview</code></td><td>Evaluate bounded supplier-cost evidence without network, persistence or customer-ledger mutation</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/limit-policies</code></td><td>List versioned shared RPM/RPS/TPM/concurrency policies</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/limit-policies</code></td><td>Create a disabled, shadow or enforced shared limit policy</td></tr>
 <tr><td class="method">PUT</td><td><code>/api/v1/limit-policies/{id}</code></td><td>Update a shared limit policy and increment its version</td></tr>
@@ -718,6 +720,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 
 	mux.Handle("GET /api/v1/reconciliation", billingRoute(adminHandler.ListReconciliation))
 	registerProviderCostRoutes(mux, adminHandler, platformRoute)
+	registerProviderCOGSOfflineRoutes(mux, adminHandler, billingRoute)
 	registerModelGovernanceRoutes(mux, adminHandler, modelGovernanceRouteGuards{
 		organization: licensedRoute(licensing.FeatureModelGovernance, orgAdminRoute),
 		projectRead:  licensedRoute(licensing.FeatureModelGovernance, projectReadRoute),

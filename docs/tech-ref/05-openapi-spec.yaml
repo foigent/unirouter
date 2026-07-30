@@ -1575,6 +1575,18 @@ paths:
     description: List at most 100 unresolved provider attempts for one required explicit organization. Returns bounded metadata only and never prompt, response, credential, or full provider URL.
     get: *operation_list
 
+  /api/v1/provider-cogs/offline-contract:
+    x-unirouter-rbac:
+      get: [platform_admin, billing_admin]
+    description: Returns the strict bounded supplier-cost preview contract. The endpoint discovers no accounts, accepts no credentials, performs no provider network call and changes no state.
+    get: *operation_list
+
+  /api/v1/provider-cogs/offline-preview:
+    x-unirouter-rbac:
+      post: [platform_admin, billing_admin]
+    description: Evaluates at most 4 MiB of supplied offline supplier-cost evidence in memory. Request-level attribution requires unique upstream evidence; aggregate rows remain unattributed. The endpoint never persists data or mutates the customer ledger.
+    post: *operation_create
+
   /api/v1/users:
     x-unirouter-rbac:
       get: [platform_admin, org_admin]
