@@ -46,14 +46,14 @@ function routeKeys(role: string): string[] {
 
 const expectedRoutes: Record<string, string[]> = {
   platform_admin: [
-    '/', '/channels', '/governance-simulation', '/channel-keys', '/model-governance', '/test',
+    '/', '/channels', '/governance-simulation', '/risk-control', '/channel-keys', '/model-governance', '/test',
     '/keys', '/project-management', '/member-lifecycle', '/agent-trust', '/limit-policies', '/guardrail-policies', '/users',
     '/logs', '/provenance-passport', '/usage-analytics', '/notifications', '/status', '/audit-logs',
     '/wallet', '/model-prices', '/reconciliation',
     '/license', '/data-exchange', '/docs',
   ],
   org_admin: [
-    '/', '/model-governance', '/keys', '/project-management', '/member-lifecycle', '/agent-trust', '/limit-policies', '/guardrail-policies', '/users',
+    '/', '/model-governance', '/risk-control', '/keys', '/project-management', '/member-lifecycle', '/agent-trust', '/limit-policies', '/guardrail-policies', '/users',
     '/logs', '/provenance-passport', '/usage-analytics', '/notifications', '/status', '/audit-logs',
     '/model-prices', '/docs',
   ],
@@ -129,6 +129,8 @@ describe('navigation role boundaries', () => {
     expect(isRouteAllowedForRole('/license', 'platform_admin')).toBe(true);
     expect(isRouteAllowedForRole('/data-exchange', 'platform_admin')).toBe(true);
     expect(isRouteAllowedForRole('/governance-simulation', 'platform_admin')).toBe(true);
+    expect(isRouteAllowedForRole('/risk-control', 'platform_admin')).toBe(true);
+    expect(isRouteAllowedForRole('/risk-control', 'org_admin')).toBe(true);
     expect(isRouteAllowedForRole('/member-lifecycle', 'platform_admin')).toBe(true);
     expect(isRouteAllowedForRole('/member-lifecycle', 'org_admin')).toBe(true);
     expect(isRouteAllowedForRole('/agent-trust', 'platform_admin')).toBe(true);
@@ -138,6 +140,7 @@ describe('navigation role boundaries', () => {
     expect(isRouteAllowedForRole('/license', 'org_admin')).toBe(false);
     expect(isRouteAllowedForRole('/data-exchange', 'org_admin')).toBe(false);
     expect(isRouteAllowedForRole('/governance-simulation', 'org_admin')).toBe(false);
+    expect(isRouteAllowedForRole('/risk-control', 'billing_admin')).toBe(false);
     expect(isRouteAllowedForRole('/member-lifecycle', 'billing_admin')).toBe(false);
     expect(isRouteAllowedForRole('/agent-trust', 'billing_admin')).toBe(false);
     expect(isRouteAllowedForRole('/provenance-passport', 'billing_admin')).toBe(false);

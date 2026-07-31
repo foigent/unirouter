@@ -105,6 +105,7 @@ const taskNavItems: NavItem[] = [
     items: [
       { itemKey: '/channels', text: '上游通道', icon: <IconRoute /> },
       { itemKey: '/governance-simulation', text: '变更防火墙', icon: <IconShield /> },
+      { itemKey: '/risk-control', text: '风险与控制建议', icon: <IconPulse /> },
       { itemKey: '/channel-keys', text: '供应商凭证', icon: <IconLockStroked /> },
       { itemKey: '/model-governance', text: '模型治理', icon: <IconLayers />, licenseFeature: 'model_governance' },
       { itemKey: '/test', text: '连通性检测', icon: <IconTestScore />, licenseFeature: 'gateway' },
@@ -164,7 +165,7 @@ const accessStateItem: NavItem = { itemKey: '/access', text: '访问状态', ico
 
 const platformRoutes = new Set(taskNavItems.flatMap(item => item.items?.map(child => child.itemKey) || [item.itemKey]));
 const orgAdminRoutes = new Set([
-  '/', '/model-governance', '/keys', '/project-management', '/member-lifecycle', '/agent-trust', '/limit-policies', '/guardrail-policies', '/users',
+  '/', '/model-governance', '/risk-control', '/keys', '/project-management', '/member-lifecycle', '/agent-trust', '/limit-policies', '/guardrail-policies', '/users',
   '/logs', '/provenance-passport', '/usage-analytics', '/notifications', '/status', '/audit-logs',
   '/model-prices', '/docs',
 ]);
@@ -330,6 +331,7 @@ export function isRouteAllowedForRole(path: string, role?: string | null) {
       '/project-management',
       '/member-lifecycle',
       '/agent-trust',
+      '/risk-control',
       '/limit-policies',
       '/guardrail-policies',
       '/logs',

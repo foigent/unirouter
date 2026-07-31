@@ -651,6 +651,8 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">POST</td><td><code>/api/v1/agent-trust/offline-preview</code></td><td>Verify bounded authority and signed receipt evidence without runtime trust or enforcement</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/provenance-passport/offline-contract</code></td><td>Read the exact Source provenance, Capture-Gap and Connector attestation contract</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/provenance-passport/offline-preview</code></td><td>Build a metadata-only passport without Feed, Connector registry or runtime mutation</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/risk-control/offline-contract</code></td><td>Read the bounded routing-advice and human-reviewed control-proposal contract</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/risk-control/offline-preview</code></td><td>Compose B8/B10/B11 evidence without traffic, promotion or runtime enforcement</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/limit-policies</code></td><td>List versioned shared RPM/RPS/TPM/concurrency policies</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/limit-policies</code></td><td>Create a disabled, shadow or enforced shared limit policy</td></tr>
 <tr><td class="method">PUT</td><td><code>/api/v1/limit-policies/{id}</code></td><td>Update a shared limit policy and increment its version</td></tr>
@@ -733,6 +735,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	registerMemberLifecycleRoutes(mux, adminHandler, orgAdminRoute)
 	registerAgentTrustRoutes(mux, adminHandler, orgAdminRoute)
 	registerProvenancePassportRoutes(mux, adminHandler, orgAdminRoute)
+	registerRiskControlRoutes(mux, adminHandler, orgAdminRoute)
 	registerModelGovernanceRoutes(mux, adminHandler, modelGovernanceRouteGuards{
 		organization: licensedRoute(licensing.FeatureModelGovernance, orgAdminRoute),
 		projectRead:  licensedRoute(licensing.FeatureModelGovernance, projectReadRoute),

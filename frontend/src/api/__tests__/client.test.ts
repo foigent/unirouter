@@ -527,6 +527,29 @@ describe('API Client', () => {
     })
   })
 
+  describe('Risk Control offline preview', () => {
+    it('keeps the supplied composition review as the exact JSON request body', async () => {
+      const review = '{"contract_version":"unirouter.risk-control-review.v1"}'
+      mockJsonResponse({ runtime_boundary: { runtime_mutation: 'none' } })
+
+      await api.previewRiskControl(review)
+
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/risk-control/offline-preview')
+      expect(mockFetch.mock.calls[0][1]).toEqual(expect.objectContaining({
+        method: 'POST',
+        body: review,
+      }))
+    })
+
+    it('reads the no-enforcement risk-control contract', async () => {
+      mockJsonResponse({ contract_version: 'unirouter.risk-control-review.v1' })
+
+      await api.getRiskControlContract()
+
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/risk-control/offline-contract')
+    })
+  })
+
   describe('project developer APIs', () => {
     it('filters keys by project_id', async () => {
       mockJsonResponse({ data: [], total: 0 })

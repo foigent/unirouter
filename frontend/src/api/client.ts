@@ -443,6 +443,9 @@ export const api = {
   getProvenancePassportContract: () => request('/provenance-passport/offline-contract'),
   previewProvenancePassport: (body: string) =>
     request('/provenance-passport/offline-preview', { method: 'POST', body }),
+  getRiskControlContract: () => request('/risk-control/offline-contract'),
+  previewRiskControl: (body: string) =>
+    request('/risk-control/offline-preview', { method: 'POST', body }),
 
   // Notifications
   getNotificationEvents: (page = 1, pageSize = 20, filters?: {
