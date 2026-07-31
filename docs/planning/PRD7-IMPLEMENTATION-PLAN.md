@@ -1,7 +1,8 @@
 # PRD7 Implementation Plan
 
 > Date: 2026-07-31
-> Status: Active
+> Status: Completed for authorized repository-local and pre-gate scope;
+> runtime/external decision gates remain open
 > Dependency rule: complete deterministic contracts and offline evidence before
 > external integrations or enforcement
 
@@ -23,6 +24,18 @@
 | B11 | Provenance Passport and second heterogeneous Connector | shared protocol pin, B3/B7 | no vendor branch in core; shared conformance reuse |
 | B12 | Risk advice/shadow and Evidence-to-Control workflow | B8/B10/B11 | bounded advice, human-reviewed proposal, simulation; enforcement still gated |
 | B13 | Async multimodal execution | User decision P7-D03 | pre-gate Schema, threat model and deterministic fixtures Local verified; runtime implementation must not begin before product semantics are chosen |
+
+## Repository-Local Completion Boundary
+
+B0 through B13 are complete at the evidence level allowed by their gates.
+P7-F19 is complete only as a pre-gate contract; it is not a running media
+plane. No batch is thereby authorized for deployment, live traffic,
+credentials, persistent imports, external directory/provider integration,
+runtime policy promotion, push, PR or merge.
+
+The next implementation step is not another autonomous batch. It requires the
+User to select one open product/runtime gate and provide its missing semantics.
+For the dependency sequence represented by B13, that gate is P7-D03.
 
 ## Verification Per Batch
 

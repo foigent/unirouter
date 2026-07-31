@@ -1,17 +1,20 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
-> **2026-07-31 PRD7 active-program checkpoint:** the User accepted the
+> **2026-07-31 PRD7 repository-local closeout:** the User accepted the
 > enterprise AI execution trust/control-plane direction and instructed the
 > implementation owner to close the planned iterations unless a material
-> product decision is required. `docs/PRD-Phase7.md`,
+> product decision is required. B0 through B13 are now complete for the
+> authorized repository-local and pre-gate scope. `docs/PRD-Phase7.md`,
 > `docs/ops/PRD7-ACCEPTANCE-MATRIX.md` and
-> `docs/planning/PRD7-IMPLEMENTATION-PLAN.md` are now the active scope,
-> evidence and dependency-order sources. Repository-local code, tests,
-> fixtures, docs and local commits are authorized. Deployment, traffic, real
-> credentials/providers/IdPs, non-test database mutation, cursor/checkpoint
-> changes, push, PR and merge remain unauthorized. The completed-execution Feed
-> compatibility baseline and PRD5/PRD6 closeouts remain unchanged.
+> `docs/planning/PRD7-IMPLEMENTATION-PLAN.md` are the completed-scope,
+> evidence and decision-gate sources. Full Go tests/vet, the 124-suite /
+> 332-test frontend regression, type-check and build pass on the final
+> implementation tree. Deployment, traffic, real credentials/providers/IdPs,
+> non-test database mutation, cursor/checkpoint changes, push, PR and merge
+> remain unauthorized. The completed-execution Feed compatibility baseline
+> and PRD5/PRD6 closeouts remain unchanged. Evidence:
+> `docs/ops/evidence/PRD7-REPOSITORY-LOCAL-CLOSEOUT-20260731.md`.
 > **2026-07-31 PRD7 B13 pre-gate checkpoint:** P7-F19 is Local verified only
 > through the work allowed before P7-D03. A strict metadata-only job-plan
 > Schema, text-to-image and image-to-video fixtures, explicit Source-neutral

@@ -2,7 +2,8 @@
 
 > Version: 0.1
 > Date: 2026-07-31
-> Status: Accepted for repository-local implementation; in progress
+> Status: Repository-local implementation complete for the authorized
+> pre-gate scope; runtime and external gates remain open
 > Product position: 企业 AI 执行可信控制面
 
 ## 1. Outcome
@@ -29,6 +30,12 @@ Acceptance authorizes code, tests, schemas, local fixtures, documentation and
 local commits in the UniRouter repository. It does not authorize deployment,
 traffic, live provider or IdP calls, credentials, database mutation outside
 isolated tests, push, pull request, merge, or production claims.
+
+The authorized repository-local sequence completed through B13 on 2026-07-31.
+This means each accepted row has Local evidence or an explicit pre-gate
+contract; it does not promote any row to CI, target, external-integration or
+production evidence. P7-D01 through P7-D07 retain their separate runtime and
+product decision authority.
 
 ## 2. Architectural Invariants
 

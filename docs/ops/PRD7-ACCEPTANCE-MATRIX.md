@@ -1,7 +1,8 @@
 # PRD7 Acceptance Matrix
 
 > Date: 2026-07-31
-> Status: Accepted repository-local scope; implementation in progress
+> Status: Authorized repository-local and pre-gate scope complete; runtime and
+> external gates remain open
 > Runtime boundary: no deployment, traffic, credentials, external calls, push,
 > PR or merge is authorized by this matrix
 
