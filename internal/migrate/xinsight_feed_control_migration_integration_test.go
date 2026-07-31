@@ -48,6 +48,7 @@ func TestXInsightFeedControlMigrationEnforcesStagedAndRollbackLifecycle(t *testi
 		"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 	), "one project cannot have two staged replacements")
 
+	rollbackAsyncMediaImageMigration(t, pool)
 	receiverDownSQL, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t),
 		"000045_v1_receiver_feed_credential.down.sql",

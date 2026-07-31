@@ -76,6 +76,10 @@ func TestReceiverFeedCredentialMigrationContractAndDownRefusal(t *testing.T) {
 	))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(downSQL))
+	require.ErrorContains(t, err, "later migrations must be reversed first")
+
+	rollbackAsyncMediaImageMigration(t, pool)
+	_, err = pool.Exec(ctx, string(downSQL))
 	require.ErrorContains(t, err, "serving or staged receiver credentials exist")
 
 	_, err = pool.Exec(ctx, `UPDATE api_keys SET status = 'feed_revoked' WHERE id = $1`, receiverID)
