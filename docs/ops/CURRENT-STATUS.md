@@ -12,6 +12,26 @@
 > credentials/providers/IdPs, non-test database mutation, cursor/checkpoint
 > changes, push, PR and merge remain unauthorized. The completed-execution Feed
 > compatibility baseline and PRD5/PRD6 closeouts remain unchanged.
+> **2026-07-31 PRD7 B13 pre-gate checkpoint:** P7-F19 is Local verified only
+> through the work allowed before P7-D03. A strict metadata-only job-plan
+> Schema, text-to-image and image-to-video fixtures, explicit Source-neutral
+> tenant/object/idempotency identity and nine required threat classes pass a
+> deterministic 55-case/36-class report. All four product choices remain
+> `unresolved_p7_d03`; video endpoint coverage is explicitly missing. No API,
+> queue, lease, object persistence, provider/callback traffic, credential,
+> retention, customer charge or runtime mutation was added. Evidence:
+> `docs/ops/evidence/PRD7-B13-P7F19-async-media-pre-gate-local-20260731.md`.
+> Runtime work now requires the User's P7-D03 decision.
+> **2026-07-31 PRD7 B12 checkpoint:** P7-F17 and P7-F18 are Local verified
+> through exact B8/B10/B11 composition. The bounded unsigned assertion is
+> tenant/Audience/TTL/epoch scoped and downscope-only; four evidence-derived
+> controls stop at human review. The B10 opaque tenant to B11 numeric Source
+> org/project mapping is explicitly `unverified_product_local_mapping`, never
+> inferred, and has its own IAM review control. One fixture passes 28 cases
+> across 32 classes; no remote risk dependency, traffic, policy read,
+> enforcement or promotion was added. Evidence:
+> `docs/ops/evidence/PRD7-B12-P7F17-P7F18-risk-control-local-20260731.md`.
+> B13 followed.
 > **2026-07-31 PRD7 B11 checkpoint:** P7-F15 and P7-F16 are Local verified
 > through an exact-Source, zero-network boundary. The Provenance Passport uses
 > the existing completedfeed compatibility bridge, preserves the settled
@@ -24,7 +44,7 @@
 > Source truth. One fixture passes 23 deterministic cases; platform/org-admin
 > no-store API/CLI and a persistent Passport Inspector are included. Evidence:
 > `docs/ops/evidence/PRD7-B11-P7F15-P7F16-provenance-passport-local-20260731.md`.
-> B12 is next.
+> B12 followed.
 > **2026-07-31 PRD7 B10 checkpoint:** P7-F12, P7-F13 and P7-F14 are Local
 > verified through a metadata-only synthetic boundary. The Agent Trust
 > Firewall directly reuses current `agentcap.Limits` attenuation and the B8

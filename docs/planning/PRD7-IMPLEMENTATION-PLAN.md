@@ -22,7 +22,7 @@
 | B10 | Agent Trust Firewall, signed receipts and Governance Digital Twin | B8/B9 | attenuation/revocation/tamper/replay proof and persistent inspector UI |
 | B11 | Provenance Passport and second heterogeneous Connector | shared protocol pin, B3/B7 | no vendor branch in core; shared conformance reuse |
 | B12 | Risk advice/shadow and Evidence-to-Control workflow | B8/B10/B11 | bounded advice, human-reviewed proposal, simulation; enforcement still gated |
-| B13 | Async multimodal execution | User decision P7-D03 | do not begin runtime implementation before product semantics are chosen |
+| B13 | Async multimodal execution | User decision P7-D03 | pre-gate Schema, threat model and deterministic fixtures Local verified; runtime implementation must not begin before product semantics are chosen |
 
 ## Verification Per Batch
 
