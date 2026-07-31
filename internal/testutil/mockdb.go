@@ -103,7 +103,9 @@ type MockTx struct {
 	RollbackFn func(ctx context.Context) error
 }
 
-func (m *MockTx) Begin(ctx context.Context) (pgx.Tx, error) { return nil, fmt.Errorf("nested begin not supported") }
+func (m *MockTx) Begin(ctx context.Context) (pgx.Tx, error) {
+	return nil, fmt.Errorf("nested begin not supported")
+}
 
 func (m *MockTx) Commit(ctx context.Context) error {
 	if m.CommitFn != nil {
@@ -124,7 +126,7 @@ func (m *MockTx) CopyFrom(ctx context.Context, tableName pgx.Identifier, columnN
 }
 
 func (m *MockTx) SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults { return nil }
-func (m *MockTx) LargeObjects() pgx.LargeObjects                                { return pgx.LargeObjects{} }
+func (m *MockTx) LargeObjects() pgx.LargeObjects                               { return pgx.LargeObjects{} }
 
 func (m *MockTx) Prepare(ctx context.Context, name, sql string) (*pgconn.StatementDescription, error) {
 	return nil, nil

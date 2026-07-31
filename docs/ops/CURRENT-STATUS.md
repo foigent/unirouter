@@ -4,27 +4,36 @@
 > **2026-07-31 PRD7 repository-local closeout:** the User accepted the
 > enterprise AI execution trust/control-plane direction and instructed the
 > implementation owner to close the planned iterations unless a material
-> product decision is required. B0 through B13 are now complete for the
-> authorized repository-local and pre-gate scope. `docs/PRD-Phase7.md`,
+> product decision is required. B0 through B14 are now complete for the
+> authorized repository-local scope. `docs/PRD-Phase7.md`,
 > `docs/ops/PRD7-ACCEPTANCE-MATRIX.md` and
 > `docs/planning/PRD7-IMPLEMENTATION-PLAN.md` are the completed-scope,
-> evidence and decision-gate sources. Full Go tests/vet, the 124-suite /
-> 332-test frontend regression, type-check and build pass on the final
-> implementation tree. Deployment, traffic, real credentials/providers/IdPs,
+> evidence and remaining external-gate sources. Full Go tests/vet, real
+> isolated-PostgreSQL integration, the 48-file/336-test frontend regression,
+> frontend type-check/build and 1440/1024/390 static-mock browser verification
+> pass. Deployment, traffic, real credentials/providers/IdPs/object stores,
 > non-test database mutation, cursor/checkpoint changes, push, PR and merge
 > remain unauthorized. The completed-execution Feed compatibility baseline
-> and PRD5/PRD6 closeouts remain unchanged. Evidence:
-> `docs/ops/evidence/PRD7-REPOSITORY-LOCAL-CLOSEOUT-20260731.md`.
-> **2026-07-31 PRD7 B13 pre-gate checkpoint:** P7-F19 is Local verified only
-> through the work allowed before P7-D03. A strict metadata-only job-plan
-> Schema, text-to-image and image-to-video fixtures, explicit Source-neutral
-> tenant/object/idempotency identity and nine required threat classes pass a
-> deterministic 55-case/36-class report. All four product choices remain
-> `unresolved_p7_d03`; video endpoint coverage is explicitly missing. No API,
-> queue, lease, object persistence, provider/callback traffic, credential,
-> retention, customer charge or runtime mutation was added. Evidence:
+> and PRD5/PRD6 closeouts remain unchanged.
+> **2026-07-31 PRD7 B14 / P7-D03 checkpoint:** the User resolved P7-D03 for
+> repository-local Image V1 as GPT Image V1 plus tenant-scoped S3-compatible
+> persistence, seven-day retention and a charge-eligibility fact only after
+> validated provider success and durable output. No wallet debit or inferred
+> media price is allowed; video remains disabled until it has an independent
+> Endpoint Profile. P7-F19 now includes strict public/admin metadata APIs,
+> tenant/API-key-scoped idempotency, PostgreSQL queue/lease/fence/recovery and
+> purge state, unknown-outcome fail-closed semantics, authenticated output
+> proxying, admission/capacity controls and an always-rendered console
+> Inspector. The Endpoint Profile records repository-local image runtime
+> evidence while Responses and rerank remain contract-only. No real provider
+> or object-store call was made. Evidence:
+> `docs/ops/evidence/PRD7-B14-P7F19-async-media-image-v1-runtime-local-20260731.md`.
+> **Historical B13 predecessor:** the immutable metadata-only job-plan Schema,
+> text-to-image/image-to-video fixtures and 55-case/36-class report remain the
+> pre-decision record in
 > `docs/ops/evidence/PRD7-B13-P7F19-async-media-pre-gate-local-20260731.md`.
-> Runtime work now requires the User's P7-D03 decision.
+> They are not rewritten as runtime evidence; their old
+> `unresolved_p7_d03` values describe that historical checkpoint only.
 > **2026-07-31 PRD7 B12 checkpoint:** P7-F17 and P7-F18 are Local verified
 > through exact B8/B10/B11 composition. The bounded unsigned assertion is
 > tenant/Audience/TTL/epoch scoped and downscope-only; four evidence-derived
@@ -114,7 +123,10 @@
 > Provider Pack V1 artifact, adapter registry, billing or media runtime
 > changed. Evidence:
 > `docs/ops/evidence/PRD7-B6-P7F08-endpoint-protocol-conformance-local-20260731.md`.
-> P7-D03 still gates image runtime and B7 is next.
+> At this historical B6 checkpoint P7-D03 still gated image runtime. B14 later
+> changed only the profile's repository-local runtime-evidence metadata; the
+> frozen wire fixture remains byte-identical and B14 records the current
+> Schema/manifest/report digests.
 > **2026-07-31 PRD7 B5 checkpoint:** P7-F07 is Local verified through the
 > standalone service and Redis-fixture boundary. `unirouter.response-cache.v1`
 > binds tenant/project/key/authorization/policy/model/pricing/region/schema

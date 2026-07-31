@@ -30,8 +30,8 @@ func TestRegistryIsFixedAndDescriptorsAreDefensive(t *testing.T) {
 			t.Fatalf("profile became charge authority: %+v", descriptor)
 		}
 	}
-	if descriptors[2].RuntimeState != RuntimeDecisionGate {
-		t.Fatalf("image runtime bypassed P7-D03: %+v", descriptors[2])
+	if descriptors[2].RuntimeState != RuntimeRepositoryImageV1 {
+		t.Fatalf("image runtime evidence drifted: %+v", descriptors[2])
 	}
 	descriptors[0].SupportedModalities[0] = "mutated"
 	if NewRegistry().Descriptors()[0].SupportedModalities[0] != "text" {
@@ -266,7 +266,17 @@ func TestCohereRerankRejectsDocumentObjects(t *testing.T) {
 	}
 }
 
-func TestOpenAIImageProfileIsDecisionGatedAndValidatesInlineOutput(t *testing.T) {
+func TestOpenAIImageProfileValidatesRepositoryRuntimeInlineOutput(t *testing.T) {
+	if MaxOpenAIImageBinaryBytes != 32<<20 ||
+		MaxOpenAIImageResponseBytes <= MaxOpenAIImageBinaryBytes ||
+		MaxOpenAIImageResponseBytes <= maxResponseBytes {
+		t.Fatalf(
+			"image response bounds binary=%d response=%d common=%d",
+			MaxOpenAIImageBinaryBytes,
+			MaxOpenAIImageResponseBytes,
+			maxResponseBytes,
+		)
+	}
 	profile := mustProfile(t, ProfileOpenAIImageGPT)
 	request, binding := mustBuild(t, profile, BuildInput{
 		BaseURL:        "https://api.openai.com",

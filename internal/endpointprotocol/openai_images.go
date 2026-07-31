@@ -9,6 +9,14 @@ import (
 	"strings"
 )
 
+const (
+	// MaxOpenAIImageBinaryBytes is the repository Image V1 output ceiling.
+	// Base64 expands by roughly 4/3; one additional MiB bounds the JSON usage
+	// and data envelope without silently lowering the binary limit.
+	MaxOpenAIImageBinaryBytes   = 32 << 20
+	MaxOpenAIImageResponseBytes = ((MaxOpenAIImageBinaryBytes + 2) / 3 * 4) + (1 << 20)
+)
+
 type openAIImageProfile struct{}
 
 type openAIImageRequest struct {
@@ -66,7 +74,7 @@ func (openAIImageProfile) Descriptor() Descriptor {
 		DownstreamEndpoint:  "/v1/images/generations",
 		UpstreamEndpoint:    "/v1/images/generations",
 		Authentication:      "bearer",
-		RuntimeState:        RuntimeDecisionGate,
+		RuntimeState:        RuntimeRepositoryImageV1,
 		ProviderFinality:    "synchronous_single_image_with_provider_usage",
 		CustomerChargeState: ChargeObservedOnly,
 		SupportedModalities: []string{"text_to_image"},
@@ -82,7 +90,6 @@ func (openAIImageProfile) Descriptor() Descriptor {
 			"provider_hosted_url",
 			"streaming",
 			"multiple_images",
-			"runtime_before_p7_d03",
 		},
 	}
 }
@@ -181,7 +188,11 @@ func (profile openAIImageProfile) ParseResponse(
 		return Outcome{}, err
 	}
 	var response openAIImageResponse
-	if err := decodeResponse(body, &response); err != nil {
+	if err := decodeResponseWithLimit(
+		body,
+		&response,
+		MaxOpenAIImageResponseBytes,
+	); err != nil {
 		return Outcome{}, err
 	}
 	if _, err := parseNonnegativeInt64(response.Created, "created"); err != nil {
@@ -198,7 +209,8 @@ func (profile openAIImageProfile) ParseResponse(
 			return Outcome{}, protocolError(ErrInvalidResponse, "image_base64_missing")
 		}
 		decoded, err := base64.StdEncoding.Strict().DecodeString(*data.B64JSON)
-		if err != nil || len(decoded) == 0 {
+		if err != nil || len(decoded) == 0 ||
+			len(decoded) > MaxOpenAIImageBinaryBytes {
 			return Outcome{}, protocolError(ErrInvalidResponse, "image_base64_invalid")
 		}
 	}

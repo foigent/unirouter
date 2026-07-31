@@ -48,22 +48,22 @@ const expectedRoutes: Record<string, string[]> = {
   platform_admin: [
     '/', '/channels', '/governance-simulation', '/risk-control', '/channel-keys', '/model-governance', '/test',
     '/keys', '/project-management', '/member-lifecycle', '/agent-trust', '/limit-policies', '/guardrail-policies', '/users',
-    '/logs', '/provenance-passport', '/usage-analytics', '/notifications', '/status', '/audit-logs',
+    '/logs', '/media-jobs', '/provenance-passport', '/usage-analytics', '/notifications', '/status', '/audit-logs',
     '/wallet', '/model-prices', '/reconciliation',
     '/license', '/data-exchange', '/docs',
   ],
   org_admin: [
     '/', '/model-governance', '/risk-control', '/keys', '/project-management', '/member-lifecycle', '/agent-trust', '/limit-policies', '/guardrail-policies', '/users',
-    '/logs', '/provenance-passport', '/usage-analytics', '/notifications', '/status', '/audit-logs',
+    '/logs', '/media-jobs', '/provenance-passport', '/usage-analytics', '/notifications', '/status', '/audit-logs',
     '/model-prices', '/docs',
   ],
   billing_admin: [
     '/', '/logs', '/usage-analytics', '/notifications',
     '/wallet', '/model-prices', '/reconciliation', '/docs',
   ],
-  project_admin: ['/developer', '/project-management', '/docs'],
-  developer: ['/developer', '/docs'],
-  viewer: ['/developer', '/docs'],
+  project_admin: ['/developer', '/project-management', '/media-jobs', '/docs'],
+  developer: ['/developer', '/media-jobs', '/docs'],
+  viewer: ['/developer', '/media-jobs', '/docs'],
   org_viewer: ['/', '/docs'],
   owner: ['/access', '/docs'],
 };

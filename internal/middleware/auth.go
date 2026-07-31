@@ -225,7 +225,9 @@ func resolveAPIKey(ctx context.Context, q db.DBQuerier, keyHash string) (*models
 }
 
 func isPaidGatewayEndpoint(path string) bool {
-	return path == "/v1/chat/completions" || path == "/v1/embeddings"
+	return path == "/v1/chat/completions" ||
+		path == "/v1/embeddings" ||
+		path == "/v1/media/jobs"
 }
 
 func providerCostAdmissionBlocked(ctx context.Context, q db.DBQuerier, orgID, apiKeyID int64) (bool, error) {

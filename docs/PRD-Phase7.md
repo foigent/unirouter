@@ -1,9 +1,9 @@
 # UniRouter PRD7: Enterprise AI Execution Trust Control Plane
 
-> Version: 0.1
+> Version: 0.2
 > Date: 2026-07-31
-> Status: Repository-local implementation complete for the authorized
-> pre-gate scope; runtime and external gates remain open
+> Status: Repository-local implementation complete through B14; target and
+> external gates remain open
 > Product position: 企业 AI 执行可信控制面
 
 ## 1. Outcome
@@ -31,10 +31,12 @@ local commits in the UniRouter repository. It does not authorize deployment,
 traffic, live provider or IdP calls, credentials, database mutation outside
 isolated tests, push, pull request, merge, or production claims.
 
-The authorized repository-local sequence completed through B13 on 2026-07-31.
-This means each accepted row has Local evidence or an explicit pre-gate
-contract; it does not promote any row to CI, target, external-integration or
-production evidence. P7-D01 through P7-D07 retain their separate runtime and
+The authorized repository-local sequence completed through B14 on 2026-07-31.
+This means each accepted row has Local evidence; it does not promote any row to
+CI, target, external-integration or production evidence. P7-D03 is resolved
+only for the repository-local GPT Image V1 design and implementation recorded
+in `docs/architecture/44-async-media-image-v1-runtime-contract.md`. P7-D01,
+P7-D02 and P7-D04 through P7-D07 retain their separate runtime, external and
 product decision authority.
 
 ## 2. Architectural Invariants
@@ -133,8 +135,9 @@ policy diffs and no synchronous dependency on risk analysis.
 - one heterogeneous second Reference Connector;
 - risk-adjusted routing promotion controls;
 - evidence-to-control proposal workflow;
-- asynchronous multimodal execution plane only after the media provider,
-  object-store, retention and charge-trigger decisions are made.
+- repository-local GPT Image V1 asynchronous execution after the media
+  provider, object-store, retention and charge-trigger decisions were made;
+  video remains disabled until it has an independent Endpoint Profile.
 
 Exit requires a Connector without core-engine vendor branches, reuse of the
 shared lifecycle/error/replay/conformance model and real-pilot evidence before
@@ -149,7 +152,7 @@ decisions. The following external/runtime choices must stop at their gate:
 |------|---------------------------|------------------------------|
 | P7-D01 | First production secret backend and operator ownership | backend-neutral contract, in-memory/file fixture backend, rotation state machine and tests |
 | P7-D02 | SCIM/IdP vendor and directory source of truth | project-member lifecycle, provisioning contract and synthetic conformance |
-| P7-D03 | Media provider, object store, retention and billing trigger | protocol/job schema, threat model and deterministic fixtures only |
+| P7-D03 | Resolved 2026-07-31 for repository-local Image V1: GPT Image V1, tenant-scoped S3-compatible storage, seven-day retention, charge fact only after validated success plus durable output, no wallet debit; video disabled | repository-local Image V1 API/worker/store/UI and isolated tests are complete; target migration, credentials, paid traffic and release remain gated by P7-D05/P7-D06 |
 | P7-D04 | Risk-routing promotion KPI, threshold and pilot cohort | replay, simulator, advice and shadow evidence |
 | P7-D05 | Real provider/COGS credentials, account scope and retention | offline connector/import contract and synthetic fixtures |
 | P7-D06 | Target deployment, traffic, migration and release authority | local implementation, isolated tests, evidence and local commits |

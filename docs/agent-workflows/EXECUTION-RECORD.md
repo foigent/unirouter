@@ -135,7 +135,39 @@ the no-store API/CLI and persistent Inspector require no detail-open click.
 Exact evidence:
 `docs/ops/evidence/PRD7-B11-P7F15-P7F16-provenance-passport-local-20260731.md`.
 
-**Current batch:** B12 risk advice/shadow and Evidence-to-Control workflow.
+B12 is Local verified through exact B8/B10/B11 composition. Its categorical
+assertion is tenant/Audience/TTL/epoch scoped and downscope-only; the Source
+scope binding is explicitly unverified rather than inferred. Advice/shadow
+results and four evidence-derived controls stop at human review and cannot
+promote runtime policy. One fixture passes 28 cases across 32 classes. Exact
+evidence:
+`docs/ops/evidence/PRD7-B12-P7F17-P7F18-risk-control-local-20260731.md`.
+
+B13 is the immutable pre-P7-D03 record. Its metadata-only job-plan Schema,
+text-to-image and image-to-video fixtures, nine threat classes and 55-case /
+36-class report remain unchanged and continue to describe the then-unresolved
+product decisions. They are not rewritten as runtime evidence. Exact evidence:
+`docs/ops/evidence/PRD7-B13-P7F19-async-media-pre-gate-local-20260731.md`.
+
+B14 is Local verified after the User resolved P7-D03 for repository-local
+Image V1. It binds the frozen GPT Image Endpoint Profile to strict public/admin
+metadata APIs, org/project/API-key idempotency, replay-before-capacity
+admission, PostgreSQL queue/lease/fence/recovery/purge state, fail-closed
+unknown provider outcomes, tenant-scoped immutable S3-compatible image and
+receipt objects, seven-day read expiry and authenticated content proxying. A
+charge-eligibility fact is written only after validated provider success plus
+durable output; no wallet debit or media price is inferred. Video remains
+disabled. Full Go/vet, media-job race tests, isolated PostgreSQL integration,
+48-file/336-test frontend regression, type-check/build, route/OpenAPI/Compose
+checks and 1440/1024/390 static-mock Chromium verification pass. Browser
+verification found and closed 1024px Inspector clipping and 390px internal
+horizontal overflow. No real provider/object-store call, target migration,
+credential, deployment or traffic occurred. Exact evidence:
+`docs/ops/evidence/PRD7-B14-P7F19-async-media-image-v1-runtime-local-20260731.md`.
+
+**Current batch:** B14 closed. There is no further autonomous repository-local
+batch in the accepted plan; the next step requires an explicit remaining
+P7-D01/D02/D04/D05/D06/D07 decision or authority.
 
 **Authority boundary:** no deployment, traffic, credentials, live provider or
 IdP calls, non-test database mutation, cursor/checkpoint change, product-repo

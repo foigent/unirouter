@@ -1,8 +1,8 @@
 # PRD7 Implementation Plan
 
 > Date: 2026-07-31
-> Status: Completed for authorized repository-local and pre-gate scope;
-> runtime/external decision gates remain open
+> Status: Completed for authorized repository-local scope through B14;
+> target/external decision gates remain open
 > Dependency rule: complete deterministic contracts and offline evidence before
 > external integrations or enforcement
 
@@ -24,18 +24,23 @@
 | B11 | Provenance Passport and second heterogeneous Connector | shared protocol pin, B3/B7 | no vendor branch in core; shared conformance reuse |
 | B12 | Risk advice/shadow and Evidence-to-Control workflow | B8/B10/B11 | bounded advice, human-reviewed proposal, simulation; enforcement still gated |
 | B13 | Async multimodal execution | User decision P7-D03 | pre-gate Schema, threat model and deterministic fixtures Local verified; runtime implementation must not begin before product semantics are chosen |
+| B14 | GPT Image V1 repository-local runtime | User-resolved P7-D03, B6/B13 | strict tenant/idempotency/capacity contract; PostgreSQL lease/fence/recovery; S3-compatible immutable output and seven-day expiry; charge fact without wallet debit; video disabled; full local, isolated-PostgreSQL and browser evidence |
 
 ## Repository-Local Completion Boundary
 
-B0 through B13 are complete at the evidence level allowed by their gates.
-P7-F19 is complete only as a pre-gate contract; it is not a running media
-plane. No batch is thereby authorized for deployment, live traffic,
+B0 through B14 are complete at the evidence level allowed by their gates.
+P7-F19 now has a repository-local Image V1 runtime implementation, but it is
+not deployed and has no real provider or object-store evidence. No batch is
+thereby authorized for deployment, live traffic,
 credentials, persistent imports, external directory/provider integration,
 runtime policy promotion, push, PR or merge.
 
-The next implementation step is not another autonomous batch. It requires the
-User to select one open product/runtime gate and provide its missing semantics.
-For the dependency sequence represented by B13, that gate is P7-D03.
+The accepted plan has no further autonomous repository-local batch. A next
+step requires the User to select and authorize one remaining material gate:
+P7-D01, P7-D02, P7-D04, P7-D05, P7-D06 or P7-D07. P7-D03 is resolved only for
+the repository-local Image V1 decisions recorded in
+`docs/architecture/44-async-media-image-v1-runtime-contract.md`; it does not
+authorize target migration, credentials, paid traffic or release.
 
 ## Verification Per Batch
 

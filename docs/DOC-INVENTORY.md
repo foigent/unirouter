@@ -15,6 +15,10 @@
 | `docs/ops/evidence/PRD7-B7-P7F09-provider-cogs-financial-truth-local-20260731.md` | PRD7 B7 zero-persistence Provider COGS contract, supplier/customer authority separation, exact replay/gap fixtures and persistent Financial Truth inspector |
 | `docs/ops/evidence/PRD7-B8-P7F04-P7F10-governance-simulation-local-20260731.md` | PRD7 B8 shared routing kernel, Provider Change Firewall, deterministic progressive-release/rollback evidence and persistent Governance Inspector |
 | `docs/ops/evidence/PRD7-B9-P7F11-member-lifecycle-local-20260731.md` | PRD7 B9 IdP-neutral member lifecycle, access revocation, session invalidation, offline conformance and persistent Lifecycle Inspector |
+| `docs/ops/evidence/PRD7-B12-P7F17-P7F18-risk-control-local-20260731.md` | PRD7 B12 evidence-bounded risk advice/shadow, human-reviewed control proposals and unresolved Source-scope mapping boundary |
+| `docs/ops/evidence/PRD7-B13-P7F19-async-media-pre-gate-local-20260731.md` | Immutable historical pre-P7-D03 async-media planning contract and 55-case/36-class evidence; not current runtime truth |
+| `docs/architecture/44-async-media-image-v1-runtime-contract.md` | User-resolved P7-D03 repository-local GPT Image V1 job, identity, state, persistence, expiry, billing and compatibility contract |
+| `docs/ops/evidence/PRD7-B14-P7F19-async-media-image-v1-runtime-local-20260731.md` | PRD7 B14 Image V1 API/worker/PostgreSQL/S3-compatible/UI implementation, isolated integration and multi-viewport Local evidence |
 | `docs/PROJECT-HANDOFF.md` | First-read handoff for agents |
 | `docs/ops/CURRENT-STATUS.md` | Current verified project state |
 | `docs/planning/PRD6-START-HERE.md` | PRD6 Completed (Accepted Scope) state, preserved future boundaries and read order |

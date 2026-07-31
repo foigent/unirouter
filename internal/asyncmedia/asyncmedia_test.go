@@ -145,8 +145,8 @@ func TestStrictFixtureRejectsContentAndRuntimeExpansion(t *testing.T) {
 	}
 }
 
-func TestDependenciesPinExactDecisionGatedImageEvidence(t *testing.T) {
-	dependencies, err := authoritativeDependencies()
+func TestDependenciesPreserveHistoricalPreGateEvidenceAfterRuntimeDecision(t *testing.T) {
+	dependencies, err := historicalDependencies()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,8 +174,9 @@ func TestDependenciesPinExactDecisionGatedImageEvidence(t *testing.T) {
 	}
 	for _, profile := range catalog {
 		if profile.Manifest.ProfileID == endpointprotocol.ProfileOpenAIImageGPT &&
-			profile.Manifest.RuntimeState != endpointprotocol.RuntimeDecisionGate {
-			t.Fatalf("image profile runtime state=%s", profile.Manifest.RuntimeState)
+			(profile.Manifest.RuntimeState != endpointprotocol.RuntimeRepositoryImageV1 ||
+				profile.Manifest.NetworkVerified) {
+			t.Fatalf("current image profile evidence=%+v", profile.Manifest)
 		}
 	}
 }

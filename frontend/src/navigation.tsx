@@ -132,6 +132,7 @@ const taskNavItems: NavItem[] = [
     icon: <IconMonitorStroked />,
     items: [
       { itemKey: '/logs', text: '请求日志', icon: <IconFile /> },
+      { itemKey: '/media-jobs', text: '图像任务', icon: <IconFile />, licenseFeature: 'gateway' },
       { itemKey: '/provenance-passport', text: '来源与缺口 Passport', icon: <IconFlowChartStroked /> },
       { itemKey: '/usage-analytics', text: '用量分析', icon: <IconBarChartVStroked /> },
       { itemKey: '/notifications', text: '通知中心', icon: <IconBell />, licenseFeature: 'notifications' },
@@ -167,14 +168,15 @@ const platformRoutes = new Set(taskNavItems.flatMap(item => item.items?.map(chil
 const orgAdminRoutes = new Set([
   '/', '/model-governance', '/risk-control', '/keys', '/project-management', '/member-lifecycle', '/agent-trust', '/limit-policies', '/guardrail-policies', '/users',
   '/logs', '/provenance-passport', '/usage-analytics', '/notifications', '/status', '/audit-logs',
+  '/media-jobs',
   '/model-prices', '/docs',
 ]);
 const billingRoutes = new Set([
   '/', '/logs', '/usage-analytics', '/notifications',
   '/wallet', '/model-prices', '/reconciliation', '/docs',
 ]);
-const projectAdminRoutes = new Set(['/project-management', '/docs']);
-const developerRoutes = new Set(['/docs']);
+const projectAdminRoutes = new Set(['/project-management', '/media-jobs', '/docs']);
+const developerRoutes = new Set(['/media-jobs', '/docs']);
 const orgViewerRoutes = new Set(['/', '/docs']);
 
 function filterTaskNavigation(allowedRoutes: Set<string>) {
@@ -243,6 +245,7 @@ const routeLicenseFeatures: Partial<Record<string, LicenseFeature>> = {
   '/test': 'gateway',
   '/guardrail-policies': 'guardrails',
   '/notifications': 'notifications',
+  '/media-jobs': 'gateway',
 };
 
 export function getRequiredLicenseFeatureForRoute(path: string): LicenseFeature | undefined {
@@ -335,6 +338,7 @@ export function isRouteAllowedForRole(path: string, role?: string | null) {
       '/limit-policies',
       '/guardrail-policies',
       '/logs',
+      '/media-jobs',
       '/provenance-passport',
       '/usage-analytics',
       '/notifications',
@@ -355,6 +359,7 @@ export function isRouteAllowedForRole(path: string, role?: string | null) {
   if (isProjectConsoleRole(role)) {
     if (isProjectAdminRole(role) && route === '/project-management') return true;
     if (isProjectAdminRole(role) && route === '/notifications') return hasPositiveProjectID(path);
+    if (route === '/media-jobs') return true;
     return false;
   }
 

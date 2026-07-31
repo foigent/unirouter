@@ -123,7 +123,11 @@ func decodeStrictRequest(body []byte, target any) error {
 }
 
 func decodeResponse(body []byte, target any) error {
-	if err := validateStrictJSON(body, maxResponseBytes, ErrInvalidResponse); err != nil {
+	return decodeResponseWithLimit(body, target, maxResponseBytes)
+}
+
+func decodeResponseWithLimit(body []byte, target any, maxBytes int) error {
+	if err := validateStrictJSON(body, maxBytes, ErrInvalidResponse); err != nil {
 		return err
 	}
 	decoder := json.NewDecoder(bytes.NewReader(body))

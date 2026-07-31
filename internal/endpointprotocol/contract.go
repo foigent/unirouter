@@ -1,5 +1,7 @@
-// Package endpointprotocol defines strict, fixture-verifiable wire contracts
-// for provider endpoints that are not yet wired into the UniRouter runtime.
+// Package endpointprotocol defines strict, fixture-verifiable provider wire
+// contracts. GPT Image V1 is wired only into UniRouter's repository-local
+// asynchronous image job plane; the Responses and rerank profiles remain
+// contract-only.
 package endpointprotocol
 
 import (
@@ -15,8 +17,8 @@ const (
 	ProfileCohereRerankV2      = "unirouter.cohere.rerank.v2"
 	ProfileOpenAIImageGPT      = "unirouter.openai.images.gpt-image.v1"
 
-	RuntimeContractOnly = "local_contract_only"
-	RuntimeDecisionGate = "decision_gated_p7_d03"
+	RuntimeContractOnly      = "local_contract_only"
+	RuntimeRepositoryImageV1 = "repository_local_image_v1"
 
 	ChargeObservedOnly = "provider_observed_not_customer_chargeable"
 )

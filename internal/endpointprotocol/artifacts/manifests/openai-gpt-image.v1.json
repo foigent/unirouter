@@ -3,7 +3,7 @@
   "profile_id": "unirouter.openai.images.gpt-image.v1",
   "profile_version": "1.0.0",
   "provider": "openai",
-  "runtime_state": "decision_gated_p7_d03",
+  "runtime_state": "repository_local_image_v1",
   "conformance_level": "fixture_verified",
   "network_verified": false,
   "descriptor": {
@@ -15,7 +15,7 @@
     "downstream_endpoint": "/v1/images/generations",
     "upstream_endpoint": "/v1/images/generations",
     "authentication": "bearer",
-    "runtime_state": "decision_gated_p7_d03",
+    "runtime_state": "repository_local_image_v1",
     "provider_finality": "synchronous_single_image_with_provider_usage",
     "customer_charge_state": "provider_observed_not_customer_chargeable",
     "supported_modalities": [
@@ -32,8 +32,7 @@
       "partial_images",
       "provider_hosted_url",
       "streaming",
-      "multiple_images",
-      "runtime_before_p7_d03"
+      "multiple_images"
     ]
   },
   "fixtures": [

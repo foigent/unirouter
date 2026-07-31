@@ -65,7 +65,7 @@ func RunConformance() (ConformanceReport, error) {
 	if len(fixtures) != 2 {
 		return ConformanceReport{}, errors.New("asyncmedia: expected two fixtures")
 	}
-	dependencies, err := authoritativeDependencies()
+	dependencies, err := historicalDependencies()
 	if err != nil {
 		return ConformanceReport{}, err
 	}
@@ -108,7 +108,7 @@ func MarshalConformanceReport(report ConformanceReport) ([]byte, error) {
 func runFixtureCases(fixture loadedFixture) []ConformanceCase {
 	first, firstErr := ValidateFixture(fixture.raw)
 	second, secondErr := ValidateFixture(fixture.raw)
-	dependencies, dependencyErr := authoritativeDependencies()
+	dependencies, dependencyErr := historicalDependencies()
 	plan := fixture.validated.Fixture.Plan
 	expected := fixture.validated.Fixture.Expected
 	actualGaps := make([]string, 0, len(plan.Gaps))

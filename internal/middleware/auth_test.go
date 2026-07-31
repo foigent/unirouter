@@ -518,6 +518,28 @@ func TestWriteGatewayAuthErrorIncludesDocURL(t *testing.T) {
 	}
 }
 
+func TestPaidGatewayEndpointIncludesAsyncMediaSubmissionOnly(t *testing.T) {
+	for _, path := range []string{
+		"/v1/chat/completions",
+		"/v1/embeddings",
+		"/v1/media/jobs",
+	} {
+		if !isPaidGatewayEndpoint(path) {
+			t.Fatalf("paid endpoint %q was not admission-blocked", path)
+		}
+	}
+	for _, path := range []string{
+		"/v1/models",
+		"/v1/media/jobs/mediajob_0123456789abcdef0123456789abcdef",
+		"/v1/media/jobs/mediajob_0123456789abcdef0123456789abcdef/cancel",
+		"/v1/media/jobs/mediajob_0123456789abcdef0123456789abcdef/content",
+	} {
+		if isPaidGatewayEndpoint(path) {
+			t.Fatalf("non-submission endpoint %q was treated as a new paid request", path)
+		}
+	}
+}
+
 // --- getClientIP boundary tests ---
 
 func TestGetClientIP_XForwardedFor_MultipleIPs(t *testing.T) {

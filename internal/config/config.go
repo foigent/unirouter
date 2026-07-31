@@ -84,6 +84,23 @@ type Config struct {
 	OTelExportTimeoutMS                  int
 	OTelExportMaxRetries                 int
 
+	// Isolated asynchronous image job plane. Credentials are resolved by the
+	// AWS SDK default provider chain and existing encrypted provider channels;
+	// no secret material is represented by these fields.
+	AsyncMediaEnabled             bool
+	AsyncMediaAdmissionEnabled    bool
+	AsyncMediaS3Region            string
+	AsyncMediaS3Bucket            string
+	AsyncMediaS3Endpoint          string
+	AsyncMediaS3Prefix            string
+	AsyncMediaS3ForcePathStyle    bool
+	AsyncMediaWorkerID            string
+	AsyncMediaLeaseSeconds        int
+	AsyncMediaPurgeLeaseSeconds   int
+	AsyncMediaPollMilliseconds    int
+	AsyncMediaProviderTimeoutSecs int
+	AsyncMediaMaxAttempts         int
+
 	// License
 	LicensePublicKey         string
 	LicensePublicKeys        string
@@ -296,6 +313,63 @@ func (c *Config) Validate() error {
 	if err := c.TelemetryExportConfig().Validate(); err != nil {
 		return err
 	}
+	if c.AsyncMediaAdmissionEnabled && !c.AsyncMediaEnabled {
+		return fmt.Errorf("ASYNC_MEDIA_ADMISSION_ENABLED requires ASYNC_MEDIA_ENABLED=true")
+	}
+	if c.AsyncMediaEnabled {
+		if strings.TrimSpace(c.AsyncMediaS3Region) == "" {
+			return fmt.Errorf("ASYNC_MEDIA_S3_REGION is required when async media is enabled")
+		}
+		if !validS3BucketName(c.AsyncMediaS3Bucket) {
+			return fmt.Errorf("ASYNC_MEDIA_S3_BUCKET is invalid")
+		}
+		if err := validateOptionalHTTPURL("ASYNC_MEDIA_S3_ENDPOINT", c.AsyncMediaS3Endpoint); err != nil {
+			return err
+		}
+		if c.AsyncMediaS3Endpoint != "" {
+			endpoint, _ := url.Parse(c.AsyncMediaS3Endpoint)
+			if endpoint != nil && endpoint.User != nil {
+				return fmt.Errorf("ASYNC_MEDIA_S3_ENDPOINT must not include userinfo or credentials")
+			}
+			if endpoint != nil && endpoint.Path != "" && endpoint.Path != "/" {
+				return fmt.Errorf("ASYNC_MEDIA_S3_ENDPOINT must be an origin without a path")
+			}
+			if endpoint != nil && endpoint.Scheme == "http" &&
+				!isLocalRuntimeEnvironment(c.RuntimeEnvironment) &&
+				!isLoopbackHost(endpoint.Hostname()) {
+				return fmt.Errorf("ASYNC_MEDIA_S3_ENDPOINT must use https outside local development")
+			}
+		}
+		if c.AsyncMediaS3Prefix == "" ||
+			strings.HasPrefix(c.AsyncMediaS3Prefix, "/") ||
+			strings.HasSuffix(c.AsyncMediaS3Prefix, "/") ||
+			strings.Contains(c.AsyncMediaS3Prefix, "..") ||
+			len(c.AsyncMediaS3Prefix) > 128 {
+			return fmt.Errorf("ASYNC_MEDIA_S3_PREFIX is invalid")
+		}
+		if c.AsyncMediaWorkerID != "" &&
+			!completedExecutionSourceInstancePattern.MatchString(c.AsyncMediaWorkerID) {
+			return fmt.Errorf("ASYNC_MEDIA_WORKER_ID must use a portable 1-128 character identifier")
+		}
+		if c.AsyncMediaLeaseSeconds < 60 || c.AsyncMediaLeaseSeconds > 1800 {
+			return fmt.Errorf("ASYNC_MEDIA_LEASE_SECONDS must be between 60 and 1800")
+		}
+		if c.AsyncMediaPurgeLeaseSeconds < 5 || c.AsyncMediaPurgeLeaseSeconds > 300 {
+			return fmt.Errorf("ASYNC_MEDIA_PURGE_LEASE_SECONDS must be between 5 and 300")
+		}
+		if c.AsyncMediaPollMilliseconds < 50 || c.AsyncMediaPollMilliseconds > 60000 {
+			return fmt.Errorf("ASYNC_MEDIA_POLL_MILLISECONDS must be between 50 and 60000")
+		}
+		if c.AsyncMediaProviderTimeoutSecs < 1 || c.AsyncMediaProviderTimeoutSecs > 900 {
+			return fmt.Errorf("ASYNC_MEDIA_PROVIDER_TIMEOUT_SECONDS must be between 1 and 900")
+		}
+		if c.AsyncMediaLeaseSeconds < c.AsyncMediaProviderTimeoutSecs+60 {
+			return fmt.Errorf("ASYNC_MEDIA_LEASE_SECONDS must exceed ASYNC_MEDIA_PROVIDER_TIMEOUT_SECONDS by at least 60 seconds")
+		}
+		if c.AsyncMediaMaxAttempts < 1 || c.AsyncMediaMaxAttempts > 10 {
+			return fmt.Errorf("ASYNC_MEDIA_MAX_ATTEMPTS must be between 1 and 10")
+		}
+	}
 	if c.LogRetentionDays < 0 {
 		return fmt.Errorf("LOG_RETENTION_DAYS must be >= 0")
 	}
@@ -386,6 +460,7 @@ var completedExecutionSourceInstancePattern = regexp.MustCompile(`^[A-Za-z0-9][A
 func Load() (*Config, error) {
 	jwtSecret := getEnvStr("JWT_SECRET", "")
 	logRetentionDays := getEnvInt("LOG_RETENTION_DAYS", 30)
+	asyncMediaEnabled := getEnvBool("ASYNC_MEDIA_ENABLED", false)
 	cfg := &Config{
 		ListenPort:          getEnvInt("LISTEN_PORT", 8080),
 		LogLevel:            getEnvStr("LOG_LEVEL", "info"),
@@ -440,6 +515,20 @@ func Load() (*Config, error) {
 		OTelExportFlushIntervalMS: getEnvInt("UNIROUTE_OTEL_EXPORT_FLUSH_INTERVAL_MS", 500),
 		OTelExportTimeoutMS:       getEnvInt("UNIROUTE_OTEL_EXPORT_TIMEOUT_MS", 2000),
 		OTelExportMaxRetries:      getEnvInt("UNIROUTE_OTEL_EXPORT_MAX_RETRIES", 2),
+
+		AsyncMediaEnabled:             asyncMediaEnabled,
+		AsyncMediaAdmissionEnabled:    getEnvBool("ASYNC_MEDIA_ADMISSION_ENABLED", false),
+		AsyncMediaS3Region:            strings.TrimSpace(getEnvStr("ASYNC_MEDIA_S3_REGION", "us-east-1")),
+		AsyncMediaS3Bucket:            strings.TrimSpace(getEnvStr("ASYNC_MEDIA_S3_BUCKET", "")),
+		AsyncMediaS3Endpoint:          strings.TrimRight(strings.TrimSpace(getEnvStr("ASYNC_MEDIA_S3_ENDPOINT", "")), "/"),
+		AsyncMediaS3Prefix:            strings.Trim(strings.TrimSpace(getEnvStr("ASYNC_MEDIA_S3_PREFIX", "unirouter-media")), "/"),
+		AsyncMediaS3ForcePathStyle:    getEnvBool("ASYNC_MEDIA_S3_FORCE_PATH_STYLE", false),
+		AsyncMediaWorkerID:            strings.TrimSpace(getEnvStr("ASYNC_MEDIA_WORKER_ID", "")),
+		AsyncMediaLeaseSeconds:        getEnvInt("ASYNC_MEDIA_LEASE_SECONDS", 300),
+		AsyncMediaPurgeLeaseSeconds:   getEnvInt("ASYNC_MEDIA_PURGE_LEASE_SECONDS", 60),
+		AsyncMediaPollMilliseconds:    getEnvInt("ASYNC_MEDIA_POLL_MILLISECONDS", 500),
+		AsyncMediaProviderTimeoutSecs: getEnvInt("ASYNC_MEDIA_PROVIDER_TIMEOUT_SECONDS", 180),
+		AsyncMediaMaxAttempts:         getEnvInt("ASYNC_MEDIA_MAX_ATTEMPTS", 3),
 
 		LicensePublicKey:         getEnvStr("LICENSE_PUBLIC_KEY", ""),
 		LicensePublicKeys:        getEnvStr("LICENSE_PUBLIC_KEYS", ""),
@@ -703,6 +792,36 @@ func validateOptionalHTTPURL(name, raw string) error {
 		return fmt.Errorf("%s must not include query string or fragment", name)
 	}
 	return nil
+}
+
+var s3BucketNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`)
+
+func validS3BucketName(value string) bool {
+	value = strings.TrimSpace(value)
+	if !s3BucketNamePattern.MatchString(value) ||
+		strings.Contains(value, "..") ||
+		strings.Contains(value, ".-") ||
+		strings.Contains(value, "-.") {
+		return false
+	}
+	return net.ParseIP(value) == nil
+}
+
+func isLocalRuntimeEnvironment(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "local", "development", "dev", "test":
+		return true
+	default:
+		return false
+	}
+}
+
+func isLoopbackHost(value string) bool {
+	if strings.EqualFold(value, "localhost") {
+		return true
+	}
+	address := net.ParseIP(value)
+	return address != nil && address.IsLoopback()
 }
 
 func getEnvStr(key, fallback string) string {

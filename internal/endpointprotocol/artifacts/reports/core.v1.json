@@ -1,6 +1,6 @@
 {
   "schema_version": "unirouter.endpoint-conformance-report.v1",
-  "schema_sha256": "sha256:e1546a5a7638e400f89b43ea6684e2879a072eb13f0a74a312979aea356752cc",
+  "schema_sha256": "sha256:75a3f5a6bf601c8b041f2f1f6aef00f0a97e55d72422d1cb0222b9d74391222f",
   "profiles": [
     {
       "profile_id": "unirouter.cohere.rerank.v2",
@@ -51,8 +51,8 @@
     {
       "profile_id": "unirouter.openai.images.gpt-image.v1",
       "profile_version": "1.0.0",
-      "runtime_state": "decision_gated_p7_d03",
-      "manifest_sha256": "sha256:792d54b5341ae13425afd24ffa864c068b705043f2b09f29c6c717963b9febd7",
+      "runtime_state": "repository_local_image_v1",
+      "manifest_sha256": "sha256:deef774305f8b6210c011d6e606420bd6cce2f215bc3d779effbdca217f7ed0c",
       "fixtures": [
         {
           "fixture_id": "openai-gpt-image-v1",

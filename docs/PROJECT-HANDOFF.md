@@ -7,39 +7,27 @@
 > `codex/product-iteration-20260730`. Read `docs/PRD-Phase7.md`,
 > `docs/ops/PRD7-ACCEPTANCE-MATRIX.md`,
 > `docs/planning/PRD7-IMPLEMENTATION-PLAN.md` and the first section of
-> `docs/agent-workflows/EXECUTION-RECORD.md`. Receipt V0 is locally verified at
-> `e361964`; B0 is committed at `67e6d79`; B1 Provider Conformance Pack V1,
-> native Azure OpenAI and the persistent Provider inspector are Local verified
-> in `docs/ops/evidence/PRD7-B1-P7F02-P7F03-provider-conformance-local-20260731.md`.
-> B2 completes P7-F02 across Requests, Providers, Audit and Projects with
-> persistent no-click inspectors, URL-restorable state and bounded local
-> metadata views; evidence is
-> `docs/ops/evidence/PRD7-B2-P7F02-contextual-inspectors-local-20260731.md`.
-> B3 completes P7-F05 with a default-off, Outbox-posted, bounded
-> metadata-only OTLP/HTTP exporter and exact OpenInference mapping; evidence is
-> `docs/ops/evidence/PRD7-B3-P7F05-otel-openinference-export-local-20260731.md`.
-> B4 completes P7-F06 through the backend-neutral/in-memory-fixture boundary:
-> immutable versions, CAS lifecycle revision, active generations, fixed backend
-> registry, stale-worker/outage rejection and metadata-only evidence; exact
-> evidence is
-> `docs/ops/evidence/PRD7-B4-P7F06-secret-reference-local-20260731.md`.
-> P7-D01 still gates a real secret backend, operator and runtime wiring. B5
-> completes the exact response-cache service/Redis-fixture boundary with opaque
-> tenant/authority/policy/model/pricing/request identity, AES-256-GCM values,
-> final-settled proof, TTL/generation purge, one-owner leases and
-> tamper/outage/key-rotation negatives. Evidence is
-> `docs/ops/evidence/PRD7-B5-P7F07-exact-response-cache-local-20260731.md`.
-> Runtime serving is not wired: P7-D07 must first define the customer
-> response-cache price and ledger semantics. B6 completes P7-F08 through a
-> separate zero-network endpoint-contract boundary: fixed stateless Responses,
-> Cohere Rerank V2 and decision-gated GPT Image profiles, immutable synthetic
-> fixtures, strict finality/usage and 25 deterministic cases. Evidence is
-> `docs/ops/evidence/PRD7-B6-P7F08-endpoint-protocol-conformance-local-20260731.md`.
-> No Gateway route, customer billing or media runtime was added. The next
-> dependency-ordered batch is B7 provider COGS/Financial Truth. Preserve
-> PRD5/PRD6 and completed-execution Feed compatibility. No deployment, traffic,
-> credentials, external calls, non-test DB changes, cursor/checkpoint changes,
-> push, PR or merge is authorized by the product-iteration scope.
+> `docs/agent-workflows/EXECUTION-RECORD.md`. B0 through B14 are complete at
+> the Local evidence level allowed by the accepted scope. B14 resolves the
+> repository-local P7-D03 dependency with an isolated GPT Image V1 job plane:
+> tenant/API-key-bound idempotency, PostgreSQL queue/lease/fence/recovery,
+> S3-compatible immutable output and recovery receipt, seven-day read expiry
+> and purge, fail-closed ambiguous provider outcomes, charge-eligibility facts
+> without wallet debit, public/admin metadata APIs and an always-rendered
+> Media Jobs Inspector. Exact contract and evidence:
+> `docs/architecture/44-async-media-image-v1-runtime-contract.md` and
+> `docs/ops/evidence/PRD7-B14-P7F19-async-media-image-v1-runtime-local-20260731.md`.
+> Video remains disabled until an independent Endpoint Profile exists.
+> Responses and rerank remain contract-only; the GPT Image Endpoint Profile
+> records repository-local runtime evidence, not provider-network evidence.
+> Full Go/vet, isolated PostgreSQL integration, 48-file/336-test frontend,
+> type-check/build and 1440/1024/390 static-mock browser checks pass. Preserve
+> all earlier B1-B13 evidence, PRD5/PRD6 and completed-execution Feed
+> compatibility. There is no next autonomous repository-local batch in the
+> accepted plan: a future step must explicitly resolve one of P7-D01, D02,
+> D04, D05, D06 or D07. No deployment, traffic, real credentials/providers/
+> object stores/IdPs, non-test DB changes, cursor/checkpoint changes, push, PR
+> or merge is authorized by the product-iteration scope.
 > **Newest checkpoint (2026-07-21
 > `FV-SOURCE-QUALIFICATION-CURRENT-ECS-REPLACEMENT`):** UniRouter accepted the
 > exact User

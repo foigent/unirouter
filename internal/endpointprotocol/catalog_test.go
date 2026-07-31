@@ -15,6 +15,11 @@ func TestCatalogCoversEveryFixedProfileWithImmutableEvidence(t *testing.T) {
 	if len(profiles) != 3 {
 		t.Fatalf("profiles=%d want 3", len(profiles))
 	}
+	wantRuntimeState := map[string]string{
+		ProfileOpenAIResponsesText: RuntimeContractOnly,
+		ProfileCohereRerankV2:      RuntimeContractOnly,
+		ProfileOpenAIImageGPT:      RuntimeRepositoryImageV1,
+	}
 	var schemaDigest string
 	for _, profile := range profiles {
 		if !artifactHashPattern.MatchString(profile.ManifestSHA256) ||
@@ -27,9 +32,16 @@ func TestCatalogCoversEveryFixedProfileWithImmutableEvidence(t *testing.T) {
 			t.Fatalf("schema digest drift: %s vs %s", profile.SchemaSHA256, schemaDigest)
 		}
 		if profile.Manifest.ConformanceLevel != "fixture_verified" ||
-			profile.Manifest.NetworkVerified ||
-			profile.Manifest.RuntimeState == "runtime_enabled" {
+			profile.Manifest.NetworkVerified {
 			t.Fatalf("profile overclaims evidence/runtime: %+v", profile.Manifest)
+		}
+		if want := wantRuntimeState[profile.Manifest.ProfileID]; profile.Manifest.RuntimeState != want {
+			t.Fatalf(
+				"profile %s runtime_state=%q want %q",
+				profile.Manifest.ProfileID,
+				profile.Manifest.RuntimeState,
+				want,
+			)
 		}
 	}
 }

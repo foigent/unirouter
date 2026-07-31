@@ -52,7 +52,7 @@ func ValidateFixture(body []byte) (ValidatedFixture, error) {
 	if err != nil {
 		return ValidatedFixture{}, err
 	}
-	dependencies, err := authoritativeDependencies()
+	dependencies, err := historicalDependencies()
 	if err != nil {
 		return ValidatedFixture{}, err
 	}

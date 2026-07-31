@@ -284,7 +284,8 @@ func validateManifest(manifest Manifest, profile Profile) error {
 		manifest.NetworkVerified {
 		return errors.New("manifest must be local fixture_verified evidence")
 	}
-	if manifest.RuntimeState != RuntimeContractOnly && manifest.RuntimeState != RuntimeDecisionGate {
+	if manifest.RuntimeState != RuntimeContractOnly &&
+		manifest.RuntimeState != RuntimeRepositoryImageV1 {
 		return errors.New("manifest runtime state is not allowed")
 	}
 	if !reflect.DeepEqual(manifest.Descriptor, descriptor) {

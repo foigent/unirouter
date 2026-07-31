@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mock fetch globally
 const mockFetch = vi.fn()
@@ -21,6 +21,13 @@ vi.stubGlobal('window', { location: { href: '/' } })
 
 // Import after mocks are set up
 const { api, ApiError } = await import('../client')
+
+afterAll(() => {
+  // This suite replaces the complete Window object to make navigation
+  // assertions deterministic. Restore jsdom for later files when Vitest runs
+  // the repository in one worker.
+  vi.unstubAllGlobals()
+})
 
 function mockJsonResponse(payload: unknown, status = 200) {
   mockFetch.mockResolvedValueOnce({

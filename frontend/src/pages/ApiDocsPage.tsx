@@ -43,6 +43,20 @@ const endpointGroups = [
     ],
   },
   {
+    area: 'Async Media',
+    endpoints: [
+      ['POST', '/v1/media/jobs', '项目根 API Key 提交单张 GPT Image V1 异步任务；必须提供 Idempotency-Key'],
+      ['GET', '/v1/media/jobs/{id}', '读取同一项目内的任务状态，不返回 Prompt、凭据或对象地址'],
+      ['POST', '/v1/media/jobs/{id}/cancel', '请求取消；终态成功竞争返回 too_late，不自动退款'],
+      ['GET', '/v1/media/jobs/{id}/content', '在固定七天期限内通过鉴权代理读取图像，不签发公开 URL'],
+      ['GET', '/api/v1/media-jobs/contract', '读取 Image V1 运行边界、启用状态、保留和计费事实合同'],
+      ['GET', '/api/v1/media-jobs', '按授权项目读取图像任务列表'],
+      ['GET', '/api/v1/media-jobs/{id}', '在常驻检查器中读取任务元数据'],
+      ['POST', '/api/v1/media-jobs/{id}/cancel', '项目操作员请求取消任务'],
+      ['GET', '/api/v1/media-jobs/{id}/content', '控制台通过 JWT 鉴权代理读取未到期图像'],
+    ],
+  },
+  {
     area: 'Private Integration',
     endpoints: [
       ['GET', '/api/v1/integrations/xinsight/completed-executions', 'X-Insight 使用项目绑定、网络绑定且不可调用模型的专用 service key 拉取终态执行元数据'],
@@ -222,6 +236,12 @@ const organizationModelGovernanceWrites = new Set([
 
 function endpointVisibleForRole(area: string, method: string, path: string, role?: string) {
   if (area === 'Auth' || area === 'Platform' || area === 'Gateway') return true;
+  if (area === 'Async Media') {
+    if (path.startsWith('/v1/')) return true;
+    if (isBillingRole(role) || isOrgViewerRole(role)) return false;
+    if (normalizeRole(role) === 'viewer') return method === 'GET';
+    return isPlatformAdminRole(role) || isOrgAdminRole(role) || isProjectConsoleRole(role);
+  }
   if (isPlatformAdminRole(role)) return true;
 
   if (area === '开发者工作台') {
@@ -327,7 +347,7 @@ export default function ApiDocsPage() {
             <Text><Text code>X-Request-ID</Text>：UniRouter 每次请求强制生成的操作 ID，用于串联网关、计费、审计和故障切换。</Text>
             <Text><Text code>X-UniRouter-Client-Request-ID</Text>：调用方自己的关联值，只用于查找，不作为全局财务主键。</Text>
             <Text><Text code>X-UniRouter-Limit-Policy-Version</Text>：本次网关准入实际使用的共享限额策略集合指纹，可与请求日志中的策略链一起排障。</Text>
-            <Text><Text code>Idempotency-Key</Text>：Chat / Embeddings 的 24 小时去重键，按组织、API Key 和请求内容隔离；当前仅返回状态回执，不保存或重放模型回答。</Text>
+            <Text><Text code>Idempotency-Key</Text>：Chat / Embeddings 使用 24 小时元数据去重；图像任务使用项目、API Key 与请求内容绑定的持久身份。两者都不会在准入响应中重放模型输出。</Text>
           </div>
         </Surface>
         <Surface title="Agent 能力边界" description="UniRouter 只授予模型网关调用权，不授予 Tool、IAM、数据库或导出权限。">

@@ -34,7 +34,7 @@
     "runtime_state": {
       "enum": [
         "local_contract_only",
-        "decision_gated_p7_d03"
+        "repository_local_image_v1"
       ]
     },
     "conformance_level": {

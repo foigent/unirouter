@@ -7,11 +7,12 @@
 ## Purpose
 
 This layer freezes strict, endpoint-specific request and response semantics for
-three protocols that are not yet part of the UniRouter Gateway runtime:
+three protocols:
 
 - OpenAI Responses, text-only stateless profile;
 - Cohere Rerank V2, string-document profile;
-- OpenAI GPT Image generation, single inline-image profile.
+- OpenAI GPT Image generation, single inline-image profile, now consumed only
+  by the repository-local asynchronous image job plane.
 
 It is deliberately separate from Provider Conformance Pack V1. The existing
 pack manifests and adapter behavior remain immutable. Endpoint Protocol V1
@@ -24,10 +25,12 @@ turn contract evidence into runtime support.
 |---------|---------------|---------------|--------------------|
 | `unirouter.openai.responses.text.v1` | `/v1/responses` | `local_contract_only` | one text input, stateless `store=false`, non-streaming text output |
 | `unirouter.cohere.rerank.v2` | `/v2/rerank` | `local_contract_only` | text query, 1–1000 string documents, bounded `top_n`, ordered exact relevance scores |
-| `unirouter.openai.images.gpt-image.v1` | `/v1/images/generations` | `decision_gated_p7_d03` | GPT Image model, one non-streamed base64 result and exact provider usage partitions |
+| `unirouter.openai.images.gpt-image.v1` | `/v1/images/generations` | `repository_local_image_v1` | GPT Image model, one non-streamed base64 result and exact provider usage partitions |
 
 The registry is closed over those three profiles. There is no runtime
-registration hook.
+registration hook. `repository_local_image_v1` records a source-code wiring
+fact, not deployment, credential, object-store, external-network, paid-traffic,
+or production evidence. Responses and rerank remain contract-only.
 
 ## Request Boundary
 
@@ -121,9 +124,16 @@ This batch does not change:
 - response-cache runtime integration;
 - deployment, traffic, credentials or external provider state.
 
-P7-D03 still gates an image/media runtime, object store, retention and billing
-trigger. A future runtime integration for Responses or rerank needs its own
-Gateway, pricing, persistence and target-evidence review.
+P7-D03 authorized the repository-local Image V1 job-plane implementation.
+Target deployment, storage lifecycle, credentials, paid traffic, and production
+proof remain separate gates. A future runtime integration for Responses,
+rerank, or video needs its own product decision, persistence/pricing model,
+Endpoint Profile where applicable, and target-evidence review.
+
+`internal/asyncmedia/artifacts` remains the immutable pre-P7-D03 planning
+snapshot. Its decision-gated fixtures and report describe what was true before
+the User decision; their dependency digests are historical evidence and do not
+track or redefine the current Endpoint Profile or Image V1 runtime contract.
 
 ## Primary Protocol References
 
