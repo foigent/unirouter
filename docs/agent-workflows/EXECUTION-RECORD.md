@@ -124,7 +124,18 @@ non-runtime trust; no signing private key, synchronous risk dependency,
 enforcement or policy promotion was added. Exact evidence:
 `docs/ops/evidence/PRD7-B10-P7F12-P7F13-P7F14-agent-trust-local-20260731.md`.
 
-**Current batch:** B11 Provenance Passport and second heterogeneous Connector.
+B11 is Local verified through an exact-Source, zero-network boundary. The
+Passport calls the existing completedfeed Reference compatibility bridge,
+preserves Source/Envelope/idempotency Golden identity, separates
+direct/derived/declared/missing facts and renders four fixed Capture Gaps. The
+shared-authority LiteLLM Connector is recorded as the heterogeneous
+Go/TypeScript conformance proof without entering UniRouter's runtime registry
+or credential/Checkpoint ownership. One fixture passes 23 deterministic cases;
+the no-store API/CLI and persistent Inspector require no detail-open click.
+Exact evidence:
+`docs/ops/evidence/PRD7-B11-P7F15-P7F16-provenance-passport-local-20260731.md`.
+
+**Current batch:** B12 risk advice/shadow and Evidence-to-Control workflow.
 
 **Authority boundary:** no deployment, traffic, credentials, live provider or
 IdP calls, non-test database mutation, cursor/checkpoint change, product-repo

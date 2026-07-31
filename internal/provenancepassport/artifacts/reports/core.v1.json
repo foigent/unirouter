@@ -1,0 +1,234 @@
+{
+  "schema_version": "unirouter.provenance-passport-conformance-report.v1",
+  "contract_version": "unirouter.provenance-passport.v1",
+  "schema": {
+    "path": "artifacts/provenance-passport.v1.schema.json",
+    "sha256": "sha256:4b577521cc5b7ce2a2e5ff6f38e21c34e367e7bde04153da399f02304fafe4db"
+  },
+  "fixtures": [
+    {
+      "path": "artifacts/fixtures/settled-passport.v1.json",
+      "sha256": "sha256:545b9555a83308c52ac62f6be728fb4ee2bae9571e0346857e716d95df0aee08"
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "settled-passport/determinism",
+      "case_classes": [
+        "canonicalization",
+        "determinism"
+      ],
+      "passed": true,
+      "result": "passport_bytes_stable"
+    },
+    {
+      "case_id": "settled-passport/source-bytes",
+      "case_classes": [
+        "hash",
+        "source_bytes"
+      ],
+      "passed": true,
+      "result": "source_bytes_hash_exact"
+    },
+    {
+      "case_id": "settled-passport/event-identity",
+      "case_classes": [
+        "hash",
+        "identity"
+      ],
+      "passed": true,
+      "result": "reference_identity_exact"
+    },
+    {
+      "case_id": "settled-passport/field-groups",
+      "case_classes": [
+        "classification",
+        "provenance"
+      ],
+      "passed": true,
+      "result": "direct_derived_declared_missing_exact"
+    },
+    {
+      "case_id": "settled-passport/capture-gaps",
+      "case_classes": [
+        "capture_gap",
+        "missing"
+      ],
+      "passed": true,
+      "result": "four_fixed_gaps_exact"
+    },
+    {
+      "case_id": "settled-passport/gap-provenance",
+      "case_classes": [
+        "capture_gap",
+        "provenance"
+      ],
+      "passed": true,
+      "result": "gap_field_provenance_exact"
+    },
+    {
+      "case_id": "settled-passport/compatibility",
+      "case_classes": [
+        "compatibility",
+        "cursor",
+        "feed"
+      ],
+      "passed": true,
+      "result": "feed_dto_identity_page_cursor_unchanged"
+    },
+    {
+      "case_id": "settled-passport/reference-connector",
+      "case_classes": [
+        "connector",
+        "reference"
+      ],
+      "passed": true,
+      "result": "reference_connector_runtime_baseline"
+    },
+    {
+      "case_id": "settled-passport/second-connector-identity",
+      "case_classes": [
+        "connector",
+        "heterogeneous",
+        "manifest"
+      ],
+      "passed": true,
+      "result": "litellm_authority_artifacts_exact"
+    },
+    {
+      "case_id": "settled-passport/second-connector-conformance",
+      "case_classes": [
+        "conformance",
+        "connector",
+        "cross_language"
+      ],
+      "passed": true,
+      "result": "go_typescript_shared_conformance_pass"
+    },
+    {
+      "case_id": "settled-passport/connector-isolation",
+      "case_classes": [
+        "connector",
+        "isolation",
+        "runtime_boundary"
+      ],
+      "passed": true,
+      "result": "second_connector_conformance_only"
+    },
+    {
+      "case_id": "settled-passport/openinference-observer",
+      "case_classes": [
+        "openinference",
+        "provenance"
+      ],
+      "passed": true,
+      "result": "metadata_observer_not_source_connector"
+    },
+    {
+      "case_id": "settled-passport/privacy",
+      "case_classes": [
+        "privacy",
+        "raw_content"
+      ],
+      "passed": true,
+      "result": "metadata_only_no_raw_content"
+    },
+    {
+      "case_id": "settled-passport/duplicate-noop",
+      "case_classes": [
+        "idempotency",
+        "replay"
+      ],
+      "passed": true,
+      "result": "duplicate_noop"
+    },
+    {
+      "case_id": "settled-passport/identity-conflict",
+      "case_classes": [
+        "conflict",
+        "replay"
+      ],
+      "passed": true,
+      "result": "same_identity_different_semantics_conflict"
+    },
+    {
+      "case_id": "settled-passport/duplicate-key-negative",
+      "case_classes": [
+        "negative",
+        "strict_json"
+      ],
+      "passed": true,
+      "result": "duplicate_key_rejected"
+    },
+    {
+      "case_id": "settled-passport/delivery-field-negative",
+      "case_classes": [
+        "delivery_state",
+        "negative",
+        "privacy"
+      ],
+      "passed": true,
+      "result": "cursor_field_rejected"
+    },
+    {
+      "case_id": "settled-passport/base64-negative",
+      "case_classes": [
+        "negative",
+        "source_bytes"
+      ],
+      "passed": true,
+      "result": "noncanonical_base64_rejected"
+    },
+    {
+      "case_id": "settled-passport/gap-negative",
+      "case_classes": [
+        "capture_gap",
+        "negative"
+      ],
+      "passed": true,
+      "result": "missing_fixed_gap_rejected"
+    },
+    {
+      "case_id": "settled-passport/raw-content-negative",
+      "case_classes": [
+        "negative",
+        "privacy"
+      ],
+      "passed": true,
+      "result": "raw_prompt_rejected"
+    },
+    {
+      "case_id": "settled-passport/revision-negative",
+      "case_classes": [
+        "negative",
+        "revision"
+      ],
+      "passed": true,
+      "result": "revision_mismatch_rejected"
+    },
+    {
+      "case_id": "settled-passport/projection-pin-negative",
+      "case_classes": [
+        "digest",
+        "negative",
+        "openinference"
+      ],
+      "passed": true,
+      "result": "projection_evidence_mismatch_rejected"
+    },
+    {
+      "case_id": "settled-passport/runtime-boundary",
+      "case_classes": [
+        "runtime_boundary"
+      ],
+      "passed": true,
+      "result": "runtime_mutation_none"
+    }
+  ],
+  "summary": {
+    "fixtures": 1,
+    "cases": 23,
+    "passed": 23,
+    "failed": 0
+  }
+}

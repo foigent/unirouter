@@ -504,6 +504,29 @@ describe('API Client', () => {
     })
   })
 
+  describe('Provenance Passport offline preview', () => {
+    it('keeps the supplied Source passport as the exact JSON request body', async () => {
+      const passport = '{"contract_version":"unirouter.provenance-passport.v1"}'
+      mockJsonResponse({ runtime_boundary: { runtime_mutation: 'none' } })
+
+      await api.previewProvenancePassport(passport)
+
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/provenance-passport/offline-preview')
+      expect(mockFetch.mock.calls[0][1]).toEqual(expect.objectContaining({
+        method: 'POST',
+        body: passport,
+      }))
+    })
+
+    it('reads the no-runtime-connector contract', async () => {
+      mockJsonResponse({ contract_version: 'unirouter.provenance-passport.v1' })
+
+      await api.getProvenancePassportContract()
+
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/provenance-passport/offline-contract')
+    })
+  })
+
   describe('project developer APIs', () => {
     it('filters keys by project_id', async () => {
       mockJsonResponse({ data: [], total: 0 })

@@ -184,6 +184,8 @@ const endpointGroups = [
       ['POST', '/api/v1/member-lifecycle/offline-preview', '离线评估创建、更新、暂停和退场事件；不修改用户、会话、成员、能力或目录'],
       ['GET', '/api/v1/agent-trust/offline-contract', '平台或组织管理员读取 Agent Trust、签名收据与数字孪生合同；fixture 公钥不是生产信任根'],
       ['POST', '/api/v1/agent-trust/offline-preview', '离线校验权限衰减、祖先预算、TTL、撤销与签名；不接私钥、不授权运行时执行'],
+      ['GET', '/api/v1/provenance-passport/offline-contract', '平台或组织管理员读取精确 Source、Capture Gap 与两类 Connector 证据合同'],
+      ['POST', '/api/v1/provenance-passport/offline-preview', '从完整 Source bytes 生成 Passport；不修改 Feed、Cursor、Checkpoint 或运行时 registry'],
     ],
   },
   {

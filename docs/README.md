@@ -13,6 +13,7 @@
 - [ops/evidence/PRD7-B8-P7F04-P7F10-governance-simulation-local-20260731.md](ops/evidence/PRD7-B8-P7F04-P7F10-governance-simulation-local-20260731.md) — 同源路由模拟、Provider Change Firewall、渐进发布/回滚、17 项一致性和常驻 Governance Inspector
 - [ops/evidence/PRD7-B9-P7F11-member-lifecycle-local-20260731.md](ops/evidence/PRD7-B9-P7F11-member-lifecycle-local-20260731.md) — IdP 中立成员生命周期、访问收敛、旧会话失效、17 项一致性和常驻 Lifecycle Inspector
 - [ops/evidence/PRD7-B10-P7F12-P7F13-P7F14-agent-trust-local-20260731.md](ops/evidence/PRD7-B10-P7F12-P7F13-P7F14-agent-trust-local-20260731.md) — Agent 有效权限树、祖先预算、衰减/撤销、签名收据、B8 数字孪生复用与常驻 Trust Inspector
+- [ops/evidence/PRD7-B11-P7F15-P7F16-provenance-passport-local-20260731.md](ops/evidence/PRD7-B11-P7F15-P7F16-provenance-passport-local-20260731.md) — 精确 Source Passport、四类 provenance、固定 Capture Gaps 与隔离的第二 Connector 一致性证明
 - [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — Agent 接手项目的第一阅读入口
 - [ops/CURRENT-STATUS.md](ops/CURRENT-STATUS.md) — 当前已验证项目状态和明确非声明
 - [ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md](ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md) — 当前 `1.0.1` 七角色开发目标验收与清理证据
@@ -152,6 +153,8 @@
 - [tech-ref/35-provider-cogs-offline.md](tech-ref/35-provider-cogs-offline.md) — Provider COGS 离线导入、证据归因、缺口、重放与客户账隔离合同
 - [tech-ref/36-governance-simulation-v1.md](tech-ref/36-governance-simulation-v1.md) — 同源路由内核、Provider Change Firewall、渐进发布/回滚证据与零运行时提升边界
 - [tech-ref/37-member-lifecycle-v1.md](tech-ref/37-member-lifecycle-v1.md) — 创建/更新/暂停/退场、成员与能力撤销、会话版本化及 SCIM 决策门
+- [tech-ref/38-agent-trust-firewall.md](tech-ref/38-agent-trust-firewall.md) — Agent 有效权限树、签名收据和 B8 数字孪生复用边界
+- [tech-ref/39-provenance-passport-and-second-connector.md](tech-ref/39-provenance-passport-and-second-connector.md) — 精确 Source provenance、Capture-Gap Passport、LiteLLM conformance-only 第二 Connector 与 OpenInference observer 边界
 
 ## 工程治理
 - [governance/README.md](governance/README.md) — PRD3 最低工程治理：ADR、API 兼容、migration/rollback、release、incident、deprecation

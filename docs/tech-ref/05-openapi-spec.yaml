@@ -1623,6 +1623,18 @@ paths:
     description: Evaluates at most 3 MiB of effective authority, attenuation, ancestor budget, TTL/revocation and signed receipt evidence in memory while reusing the B8 routing simulator. It has no synchronous runtime dependency and cannot authorize enforcement, revoke live capability state or promote policy.
     post: *operation_create
 
+  /api/v1/provenance-passport/offline-contract:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+    description: Returns the strict exact-Source provenance and Capture-Gap Passport contract, current Reference Connector identities and the shared-authority LiteLLM conformance-only attestation. It accepts no credential, Cursor or Checkpoint and does not register a second product runtime Connector.
+    get: *operation_list
+
+  /api/v1/provenance-passport/offline-preview:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    description: Evaluates at most 3 MiB of base64-preserved completed-execution Source bytes through the existing Reference projector. It groups direct, derived, declared and missing evidence, proves current Feed compatibility, and changes no Source, Feed, registry, delivery or runtime state.
+    post: *operation_create
+
   /api/v1/users:
     x-unirouter-rbac:
       get: [platform_admin, org_admin]

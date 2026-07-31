@@ -131,6 +131,7 @@ const taskNavItems: NavItem[] = [
     icon: <IconMonitorStroked />,
     items: [
       { itemKey: '/logs', text: '请求日志', icon: <IconFile /> },
+      { itemKey: '/provenance-passport', text: '来源与缺口 Passport', icon: <IconFlowChartStroked /> },
       { itemKey: '/usage-analytics', text: '用量分析', icon: <IconBarChartVStroked /> },
       { itemKey: '/notifications', text: '通知中心', icon: <IconBell />, licenseFeature: 'notifications' },
       { itemKey: '/status', text: '运行状态', icon: <IconPulse /> },
@@ -164,7 +165,7 @@ const accessStateItem: NavItem = { itemKey: '/access', text: '访问状态', ico
 const platformRoutes = new Set(taskNavItems.flatMap(item => item.items?.map(child => child.itemKey) || [item.itemKey]));
 const orgAdminRoutes = new Set([
   '/', '/model-governance', '/keys', '/project-management', '/member-lifecycle', '/agent-trust', '/limit-policies', '/guardrail-policies', '/users',
-  '/logs', '/usage-analytics', '/notifications', '/status', '/audit-logs',
+  '/logs', '/provenance-passport', '/usage-analytics', '/notifications', '/status', '/audit-logs',
   '/model-prices', '/docs',
 ]);
 const billingRoutes = new Set([
@@ -332,6 +333,7 @@ export function isRouteAllowedForRole(path: string, role?: string | null) {
       '/limit-policies',
       '/guardrail-policies',
       '/logs',
+      '/provenance-passport',
       '/usage-analytics',
       '/notifications',
       '/users',

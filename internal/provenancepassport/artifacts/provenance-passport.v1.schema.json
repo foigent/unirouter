@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unirouter.local/schemas/provenance-passport.v1.schema.json",
+  "title": "UniRouter Provenance Passport V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "passport_id",
+    "source_profile",
+    "source_instance",
+    "source_revision",
+    "source_snapshot_base64",
+    "openinference_evidence_sha256"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "unirouter.provenance-passport.v1"
+    },
+    "passport_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$"
+    },
+    "source_profile": {
+      "const": "unirouter.completedfeed.reference-v1"
+    },
+    "source_instance": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "source_revision": {
+      "const": "1"
+    },
+    "source_snapshot_base64": {
+      "type": "string",
+      "minLength": 4,
+      "maxLength": 1398104,
+      "contentEncoding": "base64"
+    },
+    "openinference_evidence_sha256": {
+      "const": "sha256:25cead642e4e9a59f47e514580b5a69e889d8f78022117f2c32dd4e8fd6efe56"
+    }
+  }
+}

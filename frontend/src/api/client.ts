@@ -440,6 +440,9 @@ export const api = {
   getAgentTrustContract: () => request('/agent-trust/offline-contract'),
   previewAgentTrust: (body: string) =>
     request('/agent-trust/offline-preview', { method: 'POST', body }),
+  getProvenancePassportContract: () => request('/provenance-passport/offline-contract'),
+  previewProvenancePassport: (body: string) =>
+    request('/provenance-passport/offline-preview', { method: 'POST', body }),
 
   // Notifications
   getNotificationEvents: (page = 1, pageSize = 20, filters?: {

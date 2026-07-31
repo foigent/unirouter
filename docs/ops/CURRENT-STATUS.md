@@ -12,6 +12,19 @@
 > credentials/providers/IdPs, non-test database mutation, cursor/checkpoint
 > changes, push, PR and merge remain unauthorized. The completed-execution Feed
 > compatibility baseline and PRD5/PRD6 closeouts remain unchanged.
+> **2026-07-31 PRD7 B11 checkpoint:** P7-F15 and P7-F16 are Local verified
+> through an exact-Source, zero-network boundary. The Provenance Passport uses
+> the existing completedfeed compatibility bridge, preserves the settled
+> Source bytes/hash, Envelope hash and idempotency key, and renders 9 direct,
+> 2 derived, 2 declared and 4 missing facts with exact Gap provenance. The
+> shared-authority LiteLLM Connector identities and independent Go/TypeScript
+> 20-case/11-class pass are pinned as the heterogeneous second Connector, but
+> LiteLLM remains outside UniRouter's runtime registry, credentials, Cursor and
+> Checkpoint ownership. OpenInference remains a metadata observer rather than
+> Source truth. One fixture passes 23 deterministic cases; platform/org-admin
+> no-store API/CLI and a persistent Passport Inspector are included. Evidence:
+> `docs/ops/evidence/PRD7-B11-P7F15-P7F16-provenance-passport-local-20260731.md`.
+> B12 is next.
 > **2026-07-31 PRD7 B10 checkpoint:** P7-F12, P7-F13 and P7-F14 are Local
 > verified through a metadata-only synthetic boundary. The Agent Trust
 > Firewall directly reuses current `agentcap.Limits` attenuation and the B8
@@ -24,7 +37,7 @@
 > added. Platform/org-admin no-store API/CLI and a persistent Trust Inspector
 > are included. Evidence:
 > `docs/ops/evidence/PRD7-B10-P7F12-P7F13-P7F14-agent-trust-local-20260731.md`.
-> B11 is next.
+> B11 followed.
 > **2026-07-31 PRD7 B9 checkpoint:** P7-F11 is Local verified through an
 > IdP-neutral zero-network boundary. One lifecycle fixture passes a 17-case
 > golden report for create/update/suspend/reactivate/terminal deprovision,
