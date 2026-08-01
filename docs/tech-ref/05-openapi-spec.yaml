@@ -1738,6 +1738,82 @@ paths:
     description: Evaluates at most 2 MiB of supplied immutable baseline/candidate route, policy and Provider Pack snapshots in memory through the same credential-free routing kernel used by Gateway selection. Shadow, canary and enforced are evaluated target modes only; the endpoint persists nothing and cannot mutate or promote runtime state.
     post: *operation_create
 
+  /api/v1/runtime-changes:
+    x-unirouter-rbac:
+      get: [platform_admin]
+      post: [platform_admin]
+    description: Product-local bounded runtime releases for channel admission, priority and weight. Provider Pack pins and deterministic simulation are mandatory; credentials, IAM, billing, retry and breaker policy are outside this hot-release surface.
+    get: *operation_list
+    post: *operation_create
+
+  /api/v1/runtime-changes/slot:
+    x-unirouter-rbac:
+      get: [platform_admin]
+    description: Reads the stable/canary assignment slot for one model without exposing credentials or mutating routing.
+    get: *operation_list
+
+  /api/v1/runtime-changes/{ref}:
+    x-unirouter-rbac:
+      get: [platform_admin]
+    description: Reads one immutable candidate, Provider Pack pins, simulation evidence and lifecycle revision.
+    get: *operation_list
+
+  /api/v1/runtime-changes/{ref}/validate:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    description: Rebuilds same-clock snapshots, verifies channel epochs and exact Provider Packs, and blocks breaking candidates using optimistic revision control.
+    post: *operation_create
+
+  /api/v1/runtime-changes/{ref}/shadow:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    description: Advances a validated candidate into a zero-traffic shadow stage; it does not change runtime routing.
+    post: *operation_create
+
+  /api/v1/runtime-changes/{ref}/canary:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    description: Activates a deterministic server-selection-key canary from 1 to 5000 basis points. Emergency disabled channels cannot be resurrected.
+    post: *operation_create
+
+  /api/v1/runtime-changes/{ref}/promote:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    description: Atomically promotes the current canary assignment to the stable slot after exact revision and channel-epoch checks.
+    post: *operation_create
+
+  /api/v1/runtime-changes/{ref}/rollback:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    description: Atomically removes a canary or restores the recorded parent stable assignment. It does not overwrite emergency channel disable state.
+    post: *operation_create
+
+  /api/v1/model-call-authorizations/contract:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+    description: Returns the product-local narrow-only PEP contract, environment, supported subjects/endpoints and deny/intersection precedence. It grants no Tool or MCP authority.
+    get: *operation_list
+
+  /api/v1/model-call-authorizations:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+      post: [platform_admin, org_admin]
+    description: Lists tenant-scoped policies or creates a draft. Drafts do not affect runtime; subject references must belong to the organization except explicit Agent identifiers.
+    get: *operation_list
+    post: *operation_create
+
+  /api/v1/model-call-authorizations/{ref}/activate:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    description: Activates a draft with optimistic revision control. Explicit deny wins and allow policies intersect across matching subjects; the policy can only narrow existing authority.
+    post: *operation_create
+
+  /api/v1/model-call-authorizations/{ref}/revoke:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    description: Revokes one active narrow-only policy with optimistic revision control and atomic audit evidence.
+    post: *operation_create
+
   /api/v1/member-lifecycle/offline-contract:
     x-unirouter-rbac:
       get: [platform_admin, org_admin]
@@ -1748,6 +1824,126 @@ paths:
     x-unirouter-rbac:
       post: [platform_admin, org_admin]
     description: Evaluates at most 1 MiB of one sanitized lifecycle event in memory. It computes effective membership/capability revocation and exact local projection controls without changing users, memberships, sessions, keys, agent capabilities, a directory or a database.
+    post: *operation_create
+
+  /api/v1/enterprise-directory/sources:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+    description: Returns tenant-scoped source metadata and independent connection, freshness, reconciliation and coverage health. It never returns connector credentials or provider-specific configuration and does not call an external directory.
+    get: *operation_list
+
+  /api/v1/enterprise-directory/tree:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+    description: Reads the current tenant-scoped, effective-dated local organization projection for one explicit source_ref. It never calls an HCM or IdP on the model request path.
+    get: *operation_list
+
+  /api/v1/enterprise-directory/iam-actions:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+    description: Returns tenant-scoped, durable local IAM convergence evidence produced from proven HCM or IdP terminal facts. It is read-only, exposes no connector credential, and cannot ingest facts, grant privileges or restore access.
+    get: *operation_list
+
+  /api/v1/enterprise-finance/fiscal-periods:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, billing_admin]
+      post: [platform_admin, billing_admin]
+    description: Lists or creates tenant-scoped fiscal periods. Creation rejects overlapping periods and always starts open; it does not mutate request settlement or a general ledger.
+    get: *operation_list
+    post: *operation_create
+
+  /api/v1/enterprise-finance/fiscal-periods/{period_ref}/transition:
+    x-unirouter-rbac:
+      post: [platform_admin, billing_admin]
+    description: Applies an expected-version fiscal state transition with durable actor and reason evidence. Closed periods cannot be reopened or rewritten.
+    post: *operation_create
+
+  /api/v1/enterprise-finance/cost-centers:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, billing_admin]
+      post: [platform_admin, billing_admin]
+    description: Lists effective cost-center master-data projections or appends a source- and revision-bound immutable version. It does not claim ERP or HCM authority.
+    get: *operation_list
+    post: *operation_create
+
+  /api/v1/enterprise-finance/budgets:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, billing_admin]
+      post: [platform_admin, billing_admin]
+    description: Lists latest enterprise budget versions or creates a report-only draft. Budgets never block model admission and never mutate the wallet ledger by themselves.
+    get: *operation_list
+    post: *operation_create
+
+  /api/v1/enterprise-finance/budgets/{budget_ref}/approve:
+    x-unirouter-rbac:
+      post: [platform_admin, billing_admin]
+    description: Appends an approved budget version using expected-version and maker-checker controls. It grants no runtime spend authority.
+    post: *operation_create
+
+  /api/v1/enterprise-finance/budget-positions:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, billing_admin]
+    description: Returns budget versus exact resolved allocation actuals with explicit coverage. Enterprise commitments and forecasts remain not_modeled rather than being fabricated as zero or inferred from settlement.
+    get: *operation_list
+
+  /api/v1/enterprise-finance/rate-cards:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, billing_admin]
+      post: [platform_admin, billing_admin]
+    description: Lists latest enterprise Rate Card versions or creates a draft with exact decimal quantities, economic-layer separation and component hashes. It does not change current request settlement.
+    get: *operation_list
+    post: *operation_create
+
+  /api/v1/enterprise-finance/rate-cards/{rate_card_ref}/approve:
+    x-unirouter-rbac:
+      post: [platform_admin, billing_admin]
+    description: Appends an approved Rate Card version using expected-version and maker-checker controls.
+    post: *operation_create
+
+  /api/v1/enterprise-finance/rate-cards/{rate_card_ref}/activate:
+    x-unirouter-rbac:
+      post: [platform_admin, billing_admin]
+    description: Activates an approved Rate Card only when no exact provider/model/layer/meter effective-window collision exists. Activation does not wire it into the model request path.
+    post: *operation_create
+
+  /api/v1/enterprise-finance/pricing-snapshots/{request_ref}:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, billing_admin]
+    description: Reads one tenant-scoped immutable pricing snapshot if a future authorized producer has persisted it. There is deliberately no public pricing-snapshot write endpoint.
+    get: *operation_list
+
+  /api/v1/enterprise-finance/allocation-runs:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, billing_admin]
+      post: [platform_admin, billing_admin]
+    description: Lists or applies deterministic, Source-revision- and rule-revision-bound reporting allocation runs. Every in-period request must be explicit as direct, rule-based, unallocated or conflict; allocation never changes customer settlement or creates debt.
+    get: *operation_list
+    post: *operation_create
+
+  /api/v1/enterprise-finance/allocation-runs/{allocation_run_ref}:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, billing_admin]
+    description: Reads one tenant-scoped immutable allocation run and all exact request results.
+    get: *operation_list
+
+  /api/v1/enterprise-finance/allocation-summary:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, billing_admin]
+    description: Returns Source totals, allocation coverage, unresolved counts and close readiness for one fiscal period without mutating settlement or a general ledger.
+    get: *operation_list
+
+  /api/v1/enterprise-finance/adjustment-journals:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, billing_admin]
+      post: [platform_admin, billing_admin]
+    description: Lists latest or creates draft post-close reporting adjustment and reversal journals. They are maker-checker controlled, append-only, not exported to a GL and have no customer-ledger authority.
+    get: *operation_list
+    post: *operation_create
+
+  /api/v1/enterprise-finance/adjustment-journals/{journal_ref}/approve:
+    x-unirouter-rbac:
+      post: [platform_admin, billing_admin]
+    description: Appends an approved adjustment-journal version using expected-version and maker-checker controls; no ERP or GL posting occurs.
     post: *operation_create
 
   /api/v1/agent-trust/offline-contract:

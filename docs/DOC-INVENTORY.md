@@ -6,9 +6,15 @@
 
 | File | Role |
 |------|------|
-| `docs/PRD-Phase7.md` | Current accepted UniRouter product-iteration scope and architectural boundaries |
-| `docs/ops/PRD7-ACCEPTANCE-MATRIX.md` | Authoritative PRD7 row status, evidence level and decision gates |
-| `docs/planning/PRD7-IMPLEMENTATION-PLAN.md` | Active dependency-ordered implementation and verification plan |
+| `docs/PRD-Phase8.md` | Active forward product boundary: UniRouter/X-Insight/Tool Gateway/MCP Gateway/shared-protocol ownership, UI exposure and non-goals |
+| `docs/ops/PRD8-BOUNDARY-MATRIX.md` | Authoritative P7-F01–F19 forward disposition; explicitly not implementation-migration evidence |
+| `docs/planning/PRD8-IMPLEMENTATION-PLAN.md` | Current dependency plan and exact stop gate; Local batches through ORG-2/FIN-3 plus bounded runtime release/authorization are complete, ORG-3/FIN-4 require real customer targets |
+| `docs/architecture/PRD8-ENTERPRISE-ORG-FINANCE-UI-MIGRATION-20260801.md` | Current UI/domain/code mapping and compatibility contract for the Local-verified organization and finance migration |
+| `docs/ops/evidence/PRD8-enterprise-org-finance-local-closeout-20260802.md` | Final Local regression, build/browser evidence, compatibility conclusion and explicit non-runtime/non-release boundary for the PRD8 autonomous sequence |
+| `docs/ops/evidence/PRD8-P7F04-P7F10-P7F12-runtime-controls-local-20260802.md` | Provider activation gate, bounded progressive route release, Model Call Authorization PEP, Local verification and compatibility boundary |
+| `docs/PRD-Phase7.md` | Completed repository-local implementation scope and immutable product/evidence baseline; subordinate to PRD8 for future ownership |
+| `docs/ops/PRD7-ACCEPTANCE-MATRIX.md` | Authoritative PRD7 row implementation/evidence level; no longer the forward ownership contract |
+| `docs/planning/PRD7-IMPLEMENTATION-PLAN.md` | Completed B0–B14 dependency order and external gates; historical execution reference |
 | `docs/ops/evidence/PRD7-B1-P7F02-P7F03-provider-conformance-local-20260731.md` | PRD7 B1 strict three-pack conformance, Azure OpenAI adapter, persistent Provider inspector, full local tests and synthetic browser evidence |
 | `docs/ops/evidence/PRD7-B2-P7F02-contextual-inspectors-local-20260731.md` | PRD7 B2 persistent Audit/Projects inspectors, deep links, bounded browser-local metadata views, full local tests and responsive synthetic browser evidence |
 | `docs/ops/evidence/PRD7-B6-P7F08-endpoint-protocol-conformance-local-20260731.md` | PRD7 B6 fixed Responses/Rerank/GPT Image profiles, strict offline conformance, immutable artifact digests and runtime/billing decision boundaries |
@@ -74,7 +80,7 @@
 | `docs/planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md` | Official competitor HA patterns, current UniRouter cluster facts, Four Quadrants and accepted D6-12 stream/HA boundary |
 | `docs/planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md` | Source-backed audit/reconciliation/correlation/UI/architecture/upgrade findings, Four Quadrants and PRD6 batches |
 | `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md` | Accepted customer-revenue/provider-COGS boundary, competitor and supplier billing evidence, Four Quadrants, PRD6 non-claims and future cost/metering/media candidates |
-| `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | Historical candidate split retained as planning lineage; current accepted scope is in PRD7 and its matrix |
+| `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | Historical candidate split retained as planning lineage; PRD7 preserves implementation facts while PRD8 governs forward ownership |
 | `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` | Accepted future Cache Service direction, service boundary, capacity planning triggers, SaaS cell reuse and non-authorization guardrails |
 | `docs/tech-ref/34-exact-response-cache.md` | PRD7 exact response-cache contract: exact authority/policy/request identity, encrypted values, TTL/purge, lease and billing truth |
 | `docs/tech-ref/35-provider-cogs-offline.md` | PRD7 Provider COGS offline contract, financial authority separation, exact attribution, capture gaps, replay and non-persistence boundary |
@@ -116,7 +122,7 @@
 | `docs/DOCS-GOVERNANCE.md` | Documentation rules |
 | `docs/governance/README.md` | Engineering governance minimum for ADR/API/migration/release/incident/deprecation rules |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Required single-owner execution, approval, evidence and optional-review workflow |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD7 repository-local batch and evidence, followed by historical Receipt V0, V1, PRD6 and PRD5 records |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD8 documentation freeze, followed by completed PRD7 and historical Receipt V0, V1, PRD6 and PRD5 records |
 | `docs/tech-ref/38-agent-trust-firewall.md` | PRD7 Agent Trust authority tree, signed receipt and direct B8 Digital Twin reuse boundary |
 | `docs/ops/evidence/PRD7-B10-P7F12-P7F13-P7F14-agent-trust-local-20260731.md` | PRD7 B10 local conformance, UI and non-runtime trust evidence |
 | `docs/tech-ref/39-provenance-passport-and-second-connector.md` | PRD7 exact Source provenance groups, Capture-Gap Passport, shared-authority second Connector and runtime-isolation boundary |
@@ -256,7 +262,7 @@ PDF copies in `docs/tech-ref/` are export artifacts and may lag Markdown/YAML.
 |------|------|
 | `docs/agent-workflows/README.md` | Agent workflow index |
 | `docs/agent-workflows/AGENT-PROTOCOL.md` | Current Agent Protocol v2.1 |
-| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD7 repository-local batch and evidence, followed by historical Receipt V0, V1, PRD6 and PRD5 records |
+| `docs/agent-workflows/EXECUTION-RECORD.md` | Current PRD8 documentation freeze, followed by completed PRD7 and historical Receipt V0, V1, PRD6 and PRD5 records |
 | `docs/agent-workflows/reviews/README.md` | Independent review naming, contents and severity rules |
 | `docs/agent-workflows/FIX-SIGNAL.md` | Protocol v1.x compatibility entry |
 | `docs/agent-workflows/VERIFY-RESULT.md` | Historical protocol v1.x result: PRD5 Batch 1V PASS 7/7 |

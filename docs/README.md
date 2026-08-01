@@ -2,10 +2,15 @@
 
 ## 当前入口
 
-- [PRD-Phase7.md](PRD-Phase7.md) — 当前已接受的企业 AI 执行可信控制面产品范围
-- [ops/PRD7-ACCEPTANCE-MATRIX.md](ops/PRD7-ACCEPTANCE-MATRIX.md) — 当前 PRD7 功能、证据等级与真实决策门
-- [planning/PRD7-IMPLEMENTATION-PLAN.md](planning/PRD7-IMPLEMENTATION-PLAN.md) — 依赖顺序、批次验收和运行时边界
-- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前 PRD7 批次、验证证据与下一依赖；不重开 PRD5/PRD6
+- [PRD-Phase8.md](PRD-Phase8.md) — 当前前向产品合同：UniRouter、X-Insight、Tool Gateway、MCP Gateway 和共享协议边界封板
+- [ops/PRD8-BOUNDARY-MATRIX.md](ops/PRD8-BOUNDARY-MATRIX.md) — PRD7 十九项能力的保留、收窄、迁出、UI 归并和兼容处置
+- [planning/PRD8-IMPLEMENTATION-PLAN.md](planning/PRD8-IMPLEMENTATION-PLAN.md) — UI、企业目录/财务、受控发布与模型调用授权的依赖顺序、已闭环 Local 批次和真实客户决策门
+- [architecture/PRD8-ENTERPRISE-ORG-FINANCE-UI-MIGRATION-20260801.md](architecture/PRD8-ENTERPRISE-ORG-FINANCE-UI-MIGRATION-20260801.md) — 企业组织、财务与 UI 的代码映射、兼容不变量和当前 Local 实现状态
+- [ops/evidence/PRD8-enterprise-org-finance-local-closeout-20260802.md](ops/evidence/PRD8-enterprise-org-finance-local-closeout-20260802.md) — UI-1..5、UI-PERF-1、DOMAIN-0、ORG-1..2、FIN-1..3 的最终 Local 回归与 ORG-3/FIN-4 停止门
+- [ops/evidence/PRD8-P7F04-P7F10-P7F12-runtime-controls-local-20260802.md](ops/evidence/PRD8-P7F04-P7F10-P7F12-runtime-controls-local-20260802.md) — Provider 激活门禁、有界渐进发布、模型调用授权 PEP 与兼容性 Local 证据
+- [PRD-Phase7.md](PRD-Phase7.md) 与 [ops/PRD7-ACCEPTANCE-MATRIX.md](ops/PRD7-ACCEPTANCE-MATRIX.md) — 已完成 repository-local 实现与证据基线；不再决定新增能力所有权
+- [planning/PRD7-IMPLEMENTATION-PLAN.md](planning/PRD7-IMPLEMENTATION-PLAN.md) — 已完成 B0–B14 的历史依赖顺序和仍未授权的外部门
+- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前 PRD8 文档封板和此前 PRD7 实施记录；不重开 PRD5/PRD6
 - [ops/evidence/PRD7-B1-P7F02-P7F03-provider-conformance-local-20260731.md](ops/evidence/PRD7-B1-P7F02-P7F03-provider-conformance-local-20260731.md) — 三个 Provider Pack、Azure OpenAI、常驻 Provider Inspector 与完整本地验证
 - [ops/evidence/PRD7-B2-P7F02-contextual-inspectors-local-20260731.md](ops/evidence/PRD7-B2-P7F02-contextual-inspectors-local-20260731.md) — Audit/Projects 常驻检查器、深链、本地视图、全量回归与响应式浏览器证据
 - [ops/evidence/PRD7-B6-P7F08-endpoint-protocol-conformance-local-20260731.md](ops/evidence/PRD7-B6-P7F08-endpoint-protocol-conformance-local-20260731.md) — Responses、Cohere Rerank V2、GPT Image 固定协议与 25 项零网络一致性证据
@@ -73,7 +78,7 @@
 - [ops/evidence/PRD6-FINAL-COMPLETION-20260714.md](ops/evidence/PRD6-FINAL-COMPLETION-20260714.md) — PRD6 最终完成审计、27/27 计数修正、正式阶段状态和后续边界
 - [planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md](planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md) — LiteLLM/New API/Portkey/Kong 高可用模式、UniRouter 集群事实和 D6-12 流式边界
 - [planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md](planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md) — UI、对账、链路身份、架构与 2B 升级审计
-- [planning/PRD7-CANDIDATE-BACKLOG.md](planning/PRD7-CANDIDATE-BACKLOG.md) — 历史候选输入；当前已接受范围以 PRD7 与验收矩阵为准
+- [planning/PRD7-CANDIDATE-BACKLOG.md](planning/PRD7-CANDIDATE-BACKLOG.md) — 历史候选输入；PRD7 与验收矩阵保留实现事实，未来所有权以 PRD8 为准
 - [planning/PRD7-CACHE-SERVICE-CANDIDATE.md](planning/PRD7-CACHE-SERVICE-CANDIDATE.md) — 未来独立 Cache Service、容量拆分触发线和 SaaS cell 复用边界
 - [tech-ref/34-exact-response-cache.md](tech-ref/34-exact-response-cache.md) — PRD7 exact response cache 身份、加密、TTL/purge、stampede 与计费边界
 - [ops/evidence/PRD7-B5-P7F07-exact-response-cache-local-20260731.md](ops/evidence/PRD7-B5-P7F07-exact-response-cache-local-20260731.md) — P7-F07 独立服务/Redis 夹具本地验证与 P7-D07 运行时门槛
@@ -106,7 +111,7 @@
 - [PRD-Phase3.md](PRD-Phase3.md) — 已完成 PRD3 一致性、语义、契约和架构清理范围
 - [planning/PRD3-CONSISTENCY-AUDIT.md](planning/PRD3-CONSISTENCY-AUDIT.md) — PRD3 范围审计和 PRD1→PRD2 遗留问题梳理
 - [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 当前未关闭问题列表
-- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前 PRD7 本地实施批次及此前 V1/PRD6/PRD5 历史边界
+- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前 PRD8 文档封板及此前 PRD7/V1/PRD6/PRD5 历史边界
 - [agent-workflows/reviews/README.md](agent-workflows/reviews/README.md) — 可选独立复核记录格式和问题级别规则
 - [ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md](ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md) — 单一执行负责人、Git/CI、高影响授权和复核规则的确认记录
 - [ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md](ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md) — Batch 1W 根因、代码、回归和目标证据边界
@@ -125,6 +130,8 @@
 </details>
 
 ## 核心文档
+- [PRD-Phase8.md](PRD-Phase8.md) — 当前前向产品所有权、跨产品集成和 UI 暴露边界
+- [PRD-Phase7.md](PRD-Phase7.md) — 已完成的 repository-local 产品实施与证据基线
 - [PRD-Phase6.md](PRD-Phase6.md) — PRD6 Completed (Accepted Scope)；proposed/deferred rows 仍需单独决定
 - [PRD-Phase5.md](PRD-Phase5.md) — PRD5 Accepted Scope Complete 历史事实
 - [PRD-Phase4.md](PRD-Phase4.md) — PRD4 已完成范围历史
@@ -185,7 +192,7 @@
 
 ## Agent 协作
 - [agent-workflows/AGENT-PROTOCOL.md](agent-workflows/AGENT-PROTOCOL.md) — 单一执行负责人、授权、证据和可选独立复核协议
-- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前 PRD7 批次、已关闭批次、延期项和历史测试/CI/部署记录
+- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前 PRD8 文档批次、已关闭批次、延期项和历史测试/CI/部署记录
 - [agent-workflows/reviews/README.md](agent-workflows/reviews/README.md) — 独立复核入口
 - [agent-workflows/FIX-SIGNAL.md](agent-workflows/FIX-SIGNAL.md) — 协议 v1.x 兼容入口
 - [agent-workflows/VERIFY-RESULT.md](agent-workflows/VERIFY-RESULT.md) — 协议 v1.x 历史结果

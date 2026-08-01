@@ -46,22 +46,22 @@ function routeKeys(role: string): string[] {
 
 const expectedRoutes: Record<string, string[]> = {
   platform_admin: [
-    '/', '/channels', '/governance-simulation', '/risk-control', '/channel-keys', '/model-governance', '/test',
-    '/keys', '/project-management', '/member-lifecycle', '/agent-trust', '/limit-policies', '/guardrail-policies', '/users',
-    '/logs', '/media-jobs', '/provenance-passport', '/usage-analytics', '/notifications', '/status', '/audit-logs',
+    '/', '/channels', '/channel-keys', '/model-governance', '/test',
+    '/keys', '/organization-members', '/agent-trust', '/limit-policies', '/guardrail-policies', '/audit-logs',
+    '/logs', '/media-jobs', '/usage-analytics', '/notifications', '/status',
     '/wallet', '/model-prices', '/reconciliation',
     '/license', '/data-exchange', '/docs',
   ],
   org_admin: [
-    '/', '/model-governance', '/risk-control', '/keys', '/project-management', '/member-lifecycle', '/agent-trust', '/limit-policies', '/guardrail-policies', '/users',
-    '/logs', '/media-jobs', '/provenance-passport', '/usage-analytics', '/notifications', '/status', '/audit-logs',
+    '/', '/model-governance', '/keys', '/organization-members', '/agent-trust', '/limit-policies', '/guardrail-policies', '/audit-logs',
+    '/logs', '/media-jobs', '/usage-analytics', '/notifications', '/status',
     '/model-prices', '/docs',
   ],
   billing_admin: [
     '/', '/logs', '/usage-analytics', '/notifications',
     '/wallet', '/model-prices', '/reconciliation', '/docs',
   ],
-  project_admin: ['/developer', '/project-management', '/media-jobs', '/docs'],
+  project_admin: ['/developer', '/organization-members', '/media-jobs', '/docs'],
   developer: ['/developer', '/media-jobs', '/docs'],
   viewer: ['/developer', '/media-jobs', '/docs'],
   org_viewer: ['/', '/docs'],
@@ -82,7 +82,7 @@ describe('navigation role boundaries', () => {
 
   it('uses one task taxonomy and keeps a shared route in the same section for every role', () => {
     expect(getNavItemsForRole('platform_admin').map(item => item.text)).toEqual([
-      '平台总览', '模型接入', '访问与安全', '监控与用量', '计费与资金', '系统与集成',
+      '平台总览', '模型接入', '访问与安全', '监控与用量', '成本与财务', '系统与集成',
     ]);
     expect(getNavItemsForRole('org_admin')[0]?.text).toBe('组织总览');
     expect(getNavItemsForRole('org_viewer')[0]?.text).toBe('组织总览');
@@ -133,6 +133,8 @@ describe('navigation role boundaries', () => {
     expect(isRouteAllowedForRole('/risk-control', 'org_admin')).toBe(true);
     expect(isRouteAllowedForRole('/member-lifecycle', 'platform_admin')).toBe(true);
     expect(isRouteAllowedForRole('/member-lifecycle', 'org_admin')).toBe(true);
+    expect(isRouteAllowedForRole('/project-management', 'project_admin')).toBe(true);
+    expect(isRouteAllowedForRole('/organization-members', 'project_admin')).toBe(true);
     expect(isRouteAllowedForRole('/agent-trust', 'platform_admin')).toBe(true);
     expect(isRouteAllowedForRole('/agent-trust', 'org_admin')).toBe(true);
     expect(isRouteAllowedForRole('/provenance-passport', 'platform_admin')).toBe(true);
@@ -195,7 +197,9 @@ describe('navigation role boundaries', () => {
     expect(routeKeys('project_admin')).not.toContain('/status');
     expect(isRouteAllowedForRole('/status', 'project_admin')).toBe(false);
     expect(routeKeys('project_admin')).toContain('/developer');
-    expect(routeKeys('project_admin')).toContain('/project-management');
+    expect(routeKeys('project_admin')).toContain('/organization-members');
+    expect(routeKeys('project_admin')).not.toContain('/project-management');
+    expect(isRouteAllowedForRole('/project-management', 'project_admin')).toBe(true);
     expect(routeKeys('project_admin')).not.toContain('/notifications');
     expect(isRouteAllowedForRole('/notifications?project_id=7', 'project_admin')).toBe(true);
     expect(canOpenUnscopedNotifications('project_admin')).toBe(false);
@@ -232,7 +236,7 @@ describe('navigation role boundaries', () => {
       disabled: true,
     });
     expect(platformChildren.find(item => item.itemKey === '/data-exchange')).toMatchObject({
-      text: 'X-Insight 数据交换控制',
+      text: 'X-Insight 数据交换',
     });
     expect(platformChildren.find(item => item.itemKey === '/data-exchange')?.licenseLocked).toBeUndefined();
     expect(platformChildren.find(item => item.itemKey === '/data-exchange')?.disabled).toBeUndefined();

@@ -489,7 +489,7 @@ export default function NotificationCenterPage() {
   return (
     <div className="ur-page ur-page-wide">
       <PageHeader
-        eyebrow={billing ? '计费与资金' : '监控与用量'}
+        eyebrow={billing ? '成本与财务' : '监控与用量'}
         title={billing ? '财务提醒' : '通知中心'}
         description={billing
           ? `查看并处理预算与计量质量提醒${projectID ? `；当前项目 #${projectID}` : ''}。投递结果仅供核对，Webhook 路由由组织或平台管理员维护。“未配置”表示事件已记录但没有匹配的启用路由。`

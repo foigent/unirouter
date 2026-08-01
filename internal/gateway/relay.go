@@ -28,6 +28,7 @@ import (
 	"github.com/uniroute/unirouter/internal/logger"
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/modelauthz"
 	"github.com/uniroute/unirouter/internal/modelgov"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/money"
@@ -89,6 +90,13 @@ type Relay struct {
 	guardrail                  *guardrail.Service
 	freezeSafetyFactor         string
 	minFreezeCents             int64
+	modelAuthorization         *modelauthz.Evaluator
+}
+
+func (relay *Relay) SetModelAuthorization(evaluator *modelauthz.Evaluator) {
+	if relay != nil {
+		relay.modelAuthorization = evaluator
+	}
 }
 
 // NewRelay creates a new Relay.
@@ -318,6 +326,9 @@ func routingPolicyTraceMetadata(policy routingpolicy.Config, route *RouteResult,
 		metadata["routing_weight"] = route.Channel.RoutingWeight
 		metadata["routing_selection_reason"] = route.SelectionReason
 		metadata["routing_requires_probe"] = route.RequiresProbe
+		metadata["runtime_release_ref"] = route.RuntimeReleaseRef
+		metadata["runtime_release_stage"] = route.RuntimeStage
+		metadata["runtime_assignment_id"] = route.RuntimeAssignmentID
 	}
 	return metadata
 }
@@ -3346,6 +3357,24 @@ func (relay *Relay) writeAuthorizedModelList(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to resolve authorized models")
 		return
+	}
+	if relay.modelAuthorization != nil {
+		apiKey := middleware.GetAPIKeyFromContext(r.Context())
+		input := modelauthz.Input{OrgID: orgID, ProjectID: projectID, Endpoint: "/v1/models"}
+		if apiKey != nil {
+			input.APIKeyID = apiKey.ID
+			if apiKey.OwnerUserID != nil {
+				input.OwnerUserID = *apiKey.OwnerUserID
+			}
+		}
+		if claims := middleware.GetAgentCapabilityFromContext(r.Context()); claims != nil {
+			input.AgentID = claims.AgentID
+		}
+		allowedModels, err = relay.modelAuthorization.FilterModels(r.Context(), input, allowedModels)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.model_authorization_unavailable", "Model authorization is temporarily unavailable")
+			return
+		}
 	}
 
 	listedModels := make([]map[string]interface{}, 0, len(allowedModels))

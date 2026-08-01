@@ -85,6 +85,7 @@ func TestAsyncMediaImageMigrationContractAndRollbackGuard(t *testing.T) {
 		"hmac-sha256:"+strings.Repeat("c", 64),
 	)
 	require.NoError(t, err)
+	rollbackEmptyPRD8Migrations(t, pool)
 
 	downSQL, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t),

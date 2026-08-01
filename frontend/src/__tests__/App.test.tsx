@@ -102,6 +102,16 @@ describe('App shell', () => {
     });
   });
 
+  it('keeps global utilities in a lightweight non-navigation toolbar', () => {
+    renderApp();
+
+    const toolbar = screen.getByRole('toolbar', { name: '全局工具栏' });
+    expect(toolbar.classList.contains('ur-topbar')).toBe(true);
+    expect(toolbar.querySelector('nav')).toBeNull();
+    expect(toolbar).toContainElement(screen.getByPlaceholderText('搜索请求日志：请求、模型、供应商、错误或证据标识'));
+    expect(toolbar).toContainElement(screen.getByRole('button', { name: '打开我的账号' }));
+  });
+
   it('routes empty topbar search to the logs overview', async () => {
     renderApp();
 
@@ -145,11 +155,20 @@ describe('App shell', () => {
     const { container } = renderApp();
 
     fireEvent.click(screen.getByRole('button', { name: '打开导航' }));
-    fireEvent.click(screen.getByText('监控与用量'));
     fireEvent.click(await screen.findByText('请求日志'));
 
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/logs'));
     expect(container.querySelector('.ur-sider.open')).toBeNull();
+  });
+
+  it('keeps every secondary navigation section expanded without another disclosure click', () => {
+    renderApp();
+
+    expect(screen.getByText('上游通道')).toBeTruthy();
+    expect(screen.getByText('组织与成员')).toBeTruthy();
+    expect(screen.getByText('请求日志')).toBeTruthy();
+    expect(screen.getByText('预算与成本中心')).toBeTruthy();
+    expect(screen.getByText('X-Insight 数据交换')).toBeTruthy();
   });
 
   it('hides request-log search from roles without request-log access', () => {
@@ -167,9 +186,7 @@ describe('App shell', () => {
   it('keeps licensed-by-role navigation visible but locked and disables the notification shortcut', async () => {
     renderApp('platform_admin', { licenseAccess: PARTIAL_LICENSE });
 
-    fireEvent.click(screen.getByText('模型接入'));
     expect(await screen.findByText('模型治理（授权未包含）')).toBeTruthy();
-    fireEvent.click(screen.getByText('访问与安全'));
     expect(await screen.findByText('内容安全（授权未包含）')).toBeTruthy();
     expect(screen.getByRole('button', { name: '通知（授权未包含）' }).hasAttribute('disabled')).toBe(true);
   });
@@ -203,6 +220,6 @@ describe('App shell', () => {
     });
 
     expect(screen.getByText('Data Exchange Safety Surface')).toBeTruthy();
-    expect(screen.queryByText('X-Insight 数据交换控制暂不可用')).toBeNull();
+    expect(screen.queryByText('X-Insight 数据交换暂不可用')).toBeNull();
   });
 });

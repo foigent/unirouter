@@ -160,7 +160,7 @@ export default function ModelPricesPage({ embedded = false }: { embedded?: boole
   return (
     <div className={embedded ? undefined : 'ur-page'}>
       {!embedded && <PageHeader
-        eyebrow="计费与资金"
+        eyebrow="成本与财务"
         title="模型定价"
         description={canMutate
           ? '按 CNY/百万 tokens 维护明确的基础价格和供应商 Prompt Cache 倍率；未配置价格的模型拒绝计费与路由。'

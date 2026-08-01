@@ -64,15 +64,15 @@ interface ProviderPack {
 }
 
 const channelStatusOptions = [
-  { label: '启用', value: 'active' },
-  { label: '禁用', value: 'disabled' },
+  { label: '待发布（staged）', value: 'staged' },
+  { label: '紧急禁用（disabled）', value: 'disabled' },
 ];
 
 function channelUpdateErrorMessage(error: unknown) {
   if (!(error instanceof ApiError)) return '更新失败，请稍后重试';
   const backendMessage = error.message.toLowerCase();
   if (error.status === 400 && backendMessage.includes('status must be')) {
-    return '通道状态仅支持 active 或 disabled';
+    return '通道状态仅支持 active、staged 或 disabled';
   }
   if (error.status === 400 && backendMessage.includes('adapter_type')) {
     return 'Adapter Type 不受支持';
@@ -85,6 +85,17 @@ function channelUpdateErrorMessage(error: unknown) {
   if (error.status === 404) return '通道不存在或已被删除';
   if (error.status >= 500) return '服务暂时无法更新通道，请稍后重试';
   return `更新失败（HTTP ${error.status}）`;
+}
+
+function channelConflictMessage(error: ApiError) {
+  const backendMessage = error.message.toLowerCase();
+  if (backendMessage.includes('active channel runtime fields')) {
+    return '生效通道的运行参数不能直接修改；请先改为 staged，再通过“模型治理 → 运行时发布”上线';
+  }
+  if (backendMessage.includes('direct channel activation')) {
+    return '不能直接启用通道；请通过“模型治理 → 运行时发布”完成验证、灰度与提升';
+  }
+  return '该通道已被其他管理员修改或正由运行时发布接管，请刷新后重试';
 }
 
 const routingReasonLabel = (reason: string) => ({
@@ -273,13 +284,13 @@ export default function ChannelsPage() {
         Toast.success('通道更新成功');
       } else {
         await api.createChannel(payload);
-        Toast.success('通道创建成功');
+        Toast.success('通道已创建为 staged；配置凭证后请在模型治理的运行时发布中验证和灰度');
       }
       closeDrawer();
       load();
     } catch (error) {
       if (editing && error instanceof ApiError && error.status === 409) {
-        Toast.error('该通道已被其他管理员修改，请关闭编辑页、刷新后重试');
+			Toast.error(channelConflictMessage(error));
       } else {
         Toast.error(editing ? channelUpdateErrorMessage(error) : '创建失败');
       }
@@ -382,7 +393,7 @@ export default function ChannelsPage() {
       width: 80,
       render: (v: string) => v === 'deprecated'
         ? <Tooltip content="该通道已废弃，建议尽快迁移到新通道"><Tag color="yellow">deprecated ⚠</Tag></Tooltip>
-        : <StatusTag status={v}>{v}</StatusTag>,
+        : <StatusTag status={v}>{v === 'staged' ? '待发布' : v === 'active' ? '生效' : v === 'disabled' ? '禁用' : v}</StatusTag>,
     },
     {
       title: '熔断',
@@ -409,7 +420,7 @@ export default function ChannelsPage() {
       <PageHeader
         eyebrow="模型接入"
         title="上游通道"
-        description="优先级决定先用哪一组通道；同级权重决定组内流量比例；熔断阈值决定连续失败多少次后暂停通道。"
+        description="新通道默认 staged；配置凭证后必须到“模型治理 → 运行时发布”完成 Provider Pack 校验、影子、灰度和提升。紧急禁用始终立即生效。"
         actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增通道</Button>}
       />
 
@@ -567,6 +578,7 @@ export default function ChannelsPage() {
               </div>
 
               <Button icon={<IconEdit />} onClick={() => openEdit(selectedChannel)}>编辑当前通道</Button>
+							{selectedChannel.status === 'staged' && <Typography.Text type="tertiary" size="small">下一步：配置供应商凭证，再到模型治理的“运行时发布”生成确定性证据并灰度上线。</Typography.Text>}
             </div>
           )}
         </aside>
@@ -659,7 +671,9 @@ export default function ChannelsPage() {
           <Form.InputNumber field="priority" label="优先级 (越小越优先)" initValue={100} />
           <Form.InputNumber field="routing_weight" label="同优先级权重 (1-1000)" initValue={100} extraText="只在优先级相同时分配流量；例如 100 与 200 约为 1:2。" />
           <Form.InputNumber field="degradation_threshold" label="熔断阈值 (连续失败次数)" initValue={10} extraText="达到次数后暂停该通道，恢复窗口到期后只允许一个探针请求。" />
-          {editing && <Form.Select field="status" label="状态" optionList={channelStatusOptions} />}
+          {editing && <Form.Select field="status" label="状态" optionList={editing.status === 'active'
+            ? [{ label: '保持生效（仅未改运行字段时）', value: 'active' }, ...channelStatusOptions]
+            : channelStatusOptions} extraText="staged/disabled 不能直接改回 active；请通过运行时发布提升。" />}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
             <Button onClick={closeDrawer}>取消</Button>
             <Button type="primary" onClick={() => formApi?.submitForm()}>{editing ? '更新' : '创建'}</Button>

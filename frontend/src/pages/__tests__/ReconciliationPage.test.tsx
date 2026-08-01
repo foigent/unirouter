@@ -6,6 +6,10 @@ const mockGetReconciliation = vi.fn();
 const mockGetModelNames = vi.fn();
 const mockGetOrganizations = vi.fn();
 const mockPreviewProviderCOGSOffline = vi.fn();
+const mockGetEnterpriseFiscalPeriods = vi.fn();
+const mockGetEnterpriseAllocationSummary = vi.fn();
+const mockGetEnterpriseAllocationRuns = vi.fn();
+const mockGetEnterpriseAdjustmentJournals = vi.fn();
 const auth = vi.hoisted(() => ({ user: null as any }));
 
 vi.mock('../../api/client', () => ({
@@ -14,6 +18,10 @@ vi.mock('../../api/client', () => ({
     getModelNames: (...args: any[]) => mockGetModelNames(...args),
     getOrganizations: (...args: any[]) => mockGetOrganizations(...args),
     previewProviderCOGSOffline: (...args: any[]) => mockPreviewProviderCOGSOffline(...args),
+    getEnterpriseFiscalPeriods: (...args: any[]) => mockGetEnterpriseFiscalPeriods(...args),
+    getEnterpriseAllocationSummary: (...args: any[]) => mockGetEnterpriseAllocationSummary(...args),
+    getEnterpriseAllocationRuns: (...args: any[]) => mockGetEnterpriseAllocationRuns(...args),
+    getEnterpriseAdjustmentJournals: (...args: any[]) => mockGetEnterpriseAdjustmentJournals(...args),
   },
 }));
 
@@ -74,6 +82,19 @@ describe('ReconciliationPage', () => {
     mockGetReconciliation.mockResolvedValue(RECON_RESPONSE);
     mockGetModelNames.mockResolvedValue({ data: ['company-chat'] });
     mockGetOrganizations.mockResolvedValue({ data: [{ id: 7, name: '总部' }], total: 1 });
+    mockGetEnterpriseFiscalPeriods.mockResolvedValue({
+      data: [{ period_ref: 'FY26-P08', state: 'reconciled', version: 3 }],
+    });
+    mockGetEnterpriseAllocationSummary.mockResolvedValue({
+      fiscal_period_ref: 'FY26-P08', period_state: 'reconciled', period_version: 3,
+      source_record_count: 2,
+      source_total: { value_minor: '3000000', currency: 'CNY', scale: 1000000 },
+      missing_record_count: 0, coverage_state: 'complete', close_ready: true,
+      ledger_mutation: 'none', customer_debt_action: 'none', gl_export_state: 'not_configured',
+      latest_run: { unallocated_count: 0, conflict_count: 0 },
+    });
+    mockGetEnterpriseAllocationRuns.mockResolvedValue({ data: [], total: 0 });
+    mockGetEnterpriseAdjustmentJournals.mockResolvedValue({ data: [], total: 0 });
     mockPreviewProviderCOGSOffline.mockResolvedValue({
       report_version: 'unirouter.provider-cogs-report.v1',
       contract_version: 'unirouter.provider-cogs-offline.v1',
@@ -139,6 +160,9 @@ describe('ReconciliationPage', () => {
     expect(screen.getByText(/读 30.*写 10/)).toBeTruthy();
     expect(screen.getByText(/读取费用 ¥0\.000030/)).toBeTruthy();
     expect(screen.getByText(/写入费用 ¥0\.000250/)).toBeTruthy();
+    expect(await screen.findByText('企业成本分摊与关账')).toBeTruthy();
+    expect(screen.getByText('关账就绪')).toBeTruthy();
+    expect(mockGetEnterpriseAllocationSummary).toHaveBeenCalledWith('FY26-P08', undefined);
   });
 
   it('scopes platform reconciliation to the JWT organization', async () => {

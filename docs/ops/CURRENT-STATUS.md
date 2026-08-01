@@ -1,6 +1,54 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
+> **2026-08-02 PRD8 bounded runtime-control Local checkpoint:** the remaining
+> UniRouter-owned P7-F04/P7-F10/P7-F12 product gap is implemented in the current
+> product-iteration working tree. Migration `000052` adds Provider Pack-pinned,
+> CAS-audited draft→validate→shadow→canary→active/rollback route releases whose
+> only hot fields are channel admission/priority/weight; deterministic canary is
+> capped at 50%, one canary exists per model, and emergency disabled wins.
+> Migration `000053` adds organization-scoped Model Call Authorization for API
+> Key/project/user/Agent subjects; deny wins, allow groups intersect, and the
+> PEP can only narrow existing authority. Full Go, `-race`, vet, isolated
+> PostgreSQL PRD8 integration, frontend 50-file/347-test regression, type-check,
+> production build and 1440/1024/768 responsive browser review pass locally.
+> Request/settlement/Outbox/Feed/Source hash
+> and Cursor identities remain compatible. P7-F17/P7-F18 remain read-only
+> offline/manual-stop evidence; ORG-3/FIN-4 still require a real customer
+> environment. The Product Owner has separately authorized commit/PR/CI and an
+> evidence-backed release to the existing UniRouter environment; CI, Target and
+> login/browser evidence remain pending until actually completed. Evidence:
+> `docs/ops/evidence/PRD8-P7F04-P7F10-P7F12-runtime-controls-local-20260802.md`.
+> **2026-08-02 PRD8 enterprise organization/finance Local closeout:** after the
+> separate PRD8 UI/code authorization, the complete autonomous sequence
+> `UI-1..5 -> UI-PERF-1 -> DOMAIN-0 -> ORG-1 -> ORG-2 -> FIN-1 -> FIN-2 ->
+> FIN-3` is implemented and Local verified in the existing product-iteration
+> working tree. Migrations `000047`–`000051` add source-neutral directory,
+> people/account/IAM convergence, fiscal period, cost-center, report-only
+> budget, five-layer Rate Card, immutable pricing evidence, allocation, close
+> and adjustment/reversal records. Full Go, required local-PostgreSQL
+> integration, complete migration rollback integration, race, vet,
+> 49-file/345-test frontend, type-check, production
+> build and 1440/1024/768 synthetic browser checks pass. Existing request
+> routing, pricing/settlement, Outbox, completed-execution Feed/Source hash and
+> Cursor behavior remain unchanged. `ORG-3` waits for an exact customer
+> HCM/IdP target; `FIN-4` waits for an actual ERP/GL and chargeback requirement.
+> No commit, push, PR, merge, deployment, credential, external traffic,
+> production DB, Cursor or Checkpoint mutation is claimed. Evidence:
+> `docs/ops/evidence/PRD8-enterprise-org-finance-local-closeout-20260802.md`.
+> **2026-08-01 PRD8 product-boundary freeze:** the User instructed the
+> implementation owner to re-audit PRD7 against X-Insight and future Tool/MCP
+> Gateway ownership, research current products/standards/papers and seal PRD8.
+> `docs/PRD-Phase8.md` and `docs/ops/PRD8-BOUNDARY-MATRIX.md` are now the active
+> forward-planning contract. UniRouter is narrowed to the model-execution and
+> economic-truth PEP; X-Insight owns cross-source investigation/analysis; Tool
+> Gateway owns tool authorization/credentials/execution; MCP Gateway owns MCP
+> protocol/session/federation; the shared Event/Connector authority owns only
+> contracts and conformance. PRD7 remains the immutable repository-local
+> implementation/evidence baseline. This documentation-only freeze changed no
+> route, API, DTO, database, IAM, routing, billing, Outbox, Feed, Cursor,
+> Checkpoint, credential or runtime state, and it does not authorize UI/code
+> migration, deployment, traffic, push, PR, merge or release.
 > **2026-07-31 PRD7 repository-local closeout:** the User accepted the
 > enterprise AI execution trust/control-plane direction and instructed the
 > implementation owner to close the planned iterations unless a material

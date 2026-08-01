@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import WalletPage, { parseYuanToCents, WalletTransactionsPanel } from '../WalletPage';
 import { useAuthStore } from '../../store/auth';
+import { yuanToMicrosString } from '../EnterpriseFinanceWorkspaces';
 
 const mockGetWallet = vi.fn();
 const mockTopUp = vi.fn();
@@ -10,6 +11,11 @@ const mockGetProjects = vi.fn();
 const mockGetOrganizations = vi.fn();
 const mockGetWalletTransactions = vi.fn();
 const mockExportWalletTransactions = vi.fn();
+const mockGetEnterpriseFiscalPeriods = vi.fn();
+const mockGetEnterpriseCostCenters = vi.fn();
+const mockGetEnterpriseBudgets = vi.fn();
+const mockGetEnterpriseBudgetPositions = vi.fn();
+const mockApproveEnterpriseBudget = vi.fn();
 
 vi.mock('../../api/client', () => ({
   api: {
@@ -20,6 +26,11 @@ vi.mock('../../api/client', () => ({
     getOrganizations: (...args: any[]) => mockGetOrganizations(...args),
     getWalletTransactions: (...args: any[]) => mockGetWalletTransactions(...args),
     exportWalletTransactions: (...args: any[]) => mockExportWalletTransactions(...args),
+    getEnterpriseFiscalPeriods: (...args: any[]) => mockGetEnterpriseFiscalPeriods(...args),
+    getEnterpriseCostCenters: (...args: any[]) => mockGetEnterpriseCostCenters(...args),
+    getEnterpriseBudgets: (...args: any[]) => mockGetEnterpriseBudgets(...args),
+    getEnterpriseBudgetPositions: (...args: any[]) => mockGetEnterpriseBudgetPositions(...args),
+    approveEnterpriseBudget: (...args: any[]) => mockApproveEnterpriseBudget(...args),
   },
 }));
 
@@ -49,13 +60,17 @@ describe('WalletPage', () => {
       total: 2,
     });
     mockGetWalletTransactions.mockResolvedValue({ data: [], total: 0 });
+    mockGetEnterpriseFiscalPeriods.mockResolvedValue({ data: [] });
+    mockGetEnterpriseCostCenters.mockResolvedValue({ data: [] });
+    mockGetEnterpriseBudgets.mockResolvedValue({ data: [] });
+    mockGetEnterpriseBudgetPositions.mockResolvedValue({ data: [] });
   });
 
   it('shows the financial actions authorized by the backend for a billing administrator', async () => {
     render(<WalletPage />);
 
     await waitFor(() => expect(mockGetWallet).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText('现金操作')).toBeTruthy();
+    expect(await screen.findByText('兼容结算操作')).toBeTruthy();
     expect(screen.getByRole('button', { name: '现金入账' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '现金调整' })).toBeTruthy();
   });
@@ -76,6 +91,16 @@ describe('WalletPage', () => {
     await waitFor(() => expect(mockGetProjects).toHaveBeenCalledTimes(1));
     expect(screen.getByText('暂无项目预算')).toBeTruthy();
     expect(screen.queryByText('成员与角色')).toBeNull();
+  });
+
+  it('shows the enterprise budget control layer without relabeling the settlement wallet', async () => {
+    render(<WalletPage />);
+
+    fireEvent.click(await screen.findByText('企业预算控制'));
+    expect((await screen.findAllByText('财务期间')).length).toBeGreaterThan(0);
+    expect(screen.getByText('请求路径影响')).toBeTruthy();
+    expect(screen.getByText('尚未建立财务期间')).toBeTruthy();
+    expect(mockGetEnterpriseBudgets).toHaveBeenCalledWith(22);
   });
 
   it('does not duplicate the billing-only budget panel for a platform administrator', async () => {
@@ -110,7 +135,7 @@ describe('WalletPage', () => {
     fireEvent.click(screen.getByRole('combobox', { name: '查看组织' }));
     fireEvent.click(await screen.findByText('南区组织（ID 2）'));
 
-    expect(await screen.findByText('无法加载资金账户信息')).toBeTruthy();
+    expect(await screen.findByText('无法加载预算与成本中心数据')).toBeTruthy();
     expect(screen.getAllByText(/temporarily unavailable/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/当前可用: ¥1200.00/)).toBeNull();
   });
@@ -138,6 +163,9 @@ describe('WalletPage', () => {
     expect(parseYuanToCents('-0.05')).toBe(-5);
     expect(parseYuanToCents('1abc')).toBeNull();
     expect(parseYuanToCents('1.001')).toBeNull();
+    expect(yuanToMicrosString('9007199254740993.000001')).toBe('9007199254740993000001');
+    expect(yuanToMicrosString('1.1234567')).toBeNull();
+    expect(yuanToMicrosString('01.00')).toBeNull();
   });
 
   it('clears prior transaction rows while a new organization scope is loading', async () => {

@@ -64,7 +64,7 @@ func TestUpdateChannel_AuditIncludesBeforeAfterState(t *testing.T) {
 				*dest[4].(*string) = "openai_compatible"
 				*dest[5].(*int) = map[bool]int{true: 1, false: 2}[snapshotCalls == 1]
 				*dest[6].(*int) = 3
-				*dest[7].(*string) = "active"
+				*dest[7].(*string) = "staged"
 				*dest[8].(*string) = "healthy"
 				*dest[9].(*int) = 0
 				return nil

@@ -83,7 +83,15 @@ func (r *Router) RouteAllWithKey(ctx context.Context, modelName, selectionKey st
 	if err != nil {
 		return nil, err
 	}
-	routes, _, _ := r.evaluateSnapshot(load, modelName, selectionKey)
+	assignment, err := r.resolveRuntimeAssignment(ctx, modelName, selectionKey, false)
+	if err != nil {
+		return nil, fmt.Errorf("resolve runtime routing assignment: %w", err)
+	}
+	load, err = applyRuntimeAssignment(load, assignment)
+	if err != nil {
+		return nil, err
+	}
+	routes, _, _ := r.evaluateSnapshot(load, modelName, selectionKey, assignment)
 	if len(routes) == 0 {
 		return nil, fmt.Errorf("no available channel for model %s", modelName)
 	}
@@ -97,7 +105,15 @@ func (r *Router) Preview(ctx context.Context, modelName string) (routingpolicy.P
 	if err != nil {
 		return routingpolicy.Preview{}, err
 	}
-	_, candidates, exclusions := r.evaluateSnapshot(load, modelName, "preview:"+modelName)
+	assignment, err := r.resolveRuntimeAssignment(ctx, modelName, "preview:"+modelName, true)
+	if err != nil {
+		return routingpolicy.Preview{}, fmt.Errorf("resolve stable routing assignment: %w", err)
+	}
+	load, err = applyRuntimeAssignment(load, assignment)
+	if err != nil {
+		return routingpolicy.Preview{}, err
+	}
+	_, candidates, exclusions := r.evaluateSnapshot(load, modelName, "preview:"+modelName, assignment)
 	return routingpolicy.Preview{
 		PolicyVersion:   routingpolicy.SelectionVersion,
 		ConfigVersion:   routingpolicy.Version,
@@ -120,6 +136,9 @@ func (r *Router) Invalidate() {
 	r.cacheMu.Lock()
 	r.cache = make(map[string]*routeSnapshot)
 	r.cacheMu.Unlock()
+	if r.runtime != nil {
+		r.runtime.Invalidate()
+	}
 }
 
 func (r *Router) loadRouteSnapshot(ctx context.Context, modelName string) (snapshotLoad, error) {
@@ -284,7 +303,7 @@ func routeSnapshotVersion(snapshot *routeSnapshot) string {
 	return "rs1_" + hex.EncodeToString(hash.Sum(nil)[:12])
 }
 
-func (r *Router) evaluateSnapshot(load snapshotLoad, modelName, selectionKey string) ([]RouteResult, []routingpolicy.PreviewCandidate, []routingpolicy.PreviewCandidate) {
+func (r *Router) evaluateSnapshot(load snapshotLoad, modelName, selectionKey string, assignment routingpolicy.RuntimeAssignment) ([]RouteResult, []routingpolicy.PreviewCandidate, []routingpolicy.PreviewCandidate) {
 	snapshot := load.Snapshot
 	policySnapshot := routingpolicy.SelectionSnapshot{
 		Model:    modelName,
@@ -344,8 +363,64 @@ func (r *Router) evaluateSnapshot(load snapshotLoad, modelName, selectionKey str
 			ExclusionReasons:     evaluation.ExclusionReasons,
 			SelectionReason:      item.Preview.Reason,
 			RequiresProbe:        item.RequiresProbe,
+			RuntimeReleaseRef:    assignment.ReleaseRef,
+			RuntimeStage:         assignment.Stage,
+			RuntimeAssignmentID:  assignment.Identity,
 		})
 		previews = append(previews, item.Preview)
 	}
 	return routes, previews, evaluation.Exclusions
+}
+
+func (r *Router) resolveRuntimeAssignment(ctx context.Context, modelName, selectionKey string, stable bool) (routingpolicy.RuntimeAssignment, error) {
+	if r == nil || r.runtime == nil {
+		return routingpolicy.RuntimeAssignment{}, nil
+	}
+	if stable {
+		return r.runtime.Stable(ctx, modelName)
+	}
+	return r.runtime.Resolve(ctx, modelName, selectionKey)
+}
+
+func applyRuntimeAssignment(load snapshotLoad, assignment routingpolicy.RuntimeAssignment) (snapshotLoad, error) {
+	if len(assignment.Overrides) == 0 {
+		return load, nil
+	}
+	normalized, err := routingpolicy.ValidateOverrides(assignment.Overrides)
+	if err != nil {
+		return snapshotLoad{}, fmt.Errorf("invalid runtime routing assignment: %w", err)
+	}
+	copySnapshot := *load.Snapshot
+	copySnapshot.Channels = append([]snapshotChannel(nil), load.Snapshot.Channels...)
+	index := make(map[int64]int, len(copySnapshot.Channels))
+	for position := range copySnapshot.Channels {
+		copySnapshot.Channels[position].Keys = append([]snapshotKey(nil), copySnapshot.Channels[position].Keys...)
+		index[copySnapshot.Channels[position].Channel.ID] = position
+	}
+	for _, override := range normalized {
+		position, exists := index[override.ChannelID]
+		if !exists {
+			return snapshotLoad{}, fmt.Errorf("runtime assignment channel %d is absent from model snapshot", override.ChannelID)
+		}
+		channel := &copySnapshot.Channels[position].Channel
+		if channel.RoutingEpoch != override.ExpectedRoutingEpoch {
+			return snapshotLoad{}, fmt.Errorf("runtime assignment channel %d epoch conflict", override.ChannelID)
+		}
+		// Emergency/manual disable remains stronger than a progressive release.
+		if override.Admission == routingpolicy.AdmissionAllow && channel.Status != "disabled" {
+			channel.Status = "active"
+		}
+		if override.Admission == routingpolicy.AdmissionDeny {
+			channel.Status = "disabled"
+		}
+		if override.Priority != nil {
+			channel.Priority = *override.Priority
+		}
+		if override.Weight != nil {
+			channel.RoutingWeight = *override.Weight
+		}
+	}
+	copySnapshot.Version = routeSnapshotVersion(&copySnapshot)
+	load.Snapshot = &copySnapshot
+	return load, nil
 }

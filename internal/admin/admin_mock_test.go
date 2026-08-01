@@ -3180,13 +3180,14 @@ func TestListChannelKeys_Success(t *testing.T) {
 						*dest[0].(*int64) = 1
 						*dest[1].(*int64) = 1
 						*dest[2].(*string) = "openai"
-						*dest[3].(*string) = "sk-...abc"
-						*dest[4].(*string) = ""
-						*dest[5].(*string) = "active"
-						*dest[6].(*int) = 0
-						*dest[7].(**time.Time) = nil
+						*dest[3].(*string) = "staged"
+						*dest[4].(*string) = "sk-...abc"
+						*dest[5].(*string) = ""
+						*dest[6].(*string) = "active"
+						*dest[7].(*int) = 0
 						*dest[8].(**time.Time) = nil
-						*dest[9].(*time.Time) = now
+						*dest[9].(**time.Time) = nil
+						*dest[10].(*time.Time) = now
 						return nil
 					},
 				},

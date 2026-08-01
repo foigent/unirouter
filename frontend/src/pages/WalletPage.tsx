@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
-import { Typography, Tag, Progress, Button, Modal, Input, Select, Space, Tabs } from '@douyinfe/semi-ui';
+import { Banner, Typography, Tag, Progress, Button, Modal, Input, Select, Space, Tabs } from '@douyinfe/semi-ui';
 import { Toast } from '@douyinfe/semi-ui';
 import { IconBell, IconCoinMoney, IconDownload, IconGift, IconLock, IconRefresh } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
@@ -7,9 +7,10 @@ import { EmptyState, MetricTile, MoneyText, PagedTable, PageHeader, Surface, for
 import { formatDateTime } from '../utils/formatDate';
 import { GrantCreditsPanel } from './GrantsPage';
 import { loadAllPages } from '../utils/loadAllPages';
-import { isBillingRole } from '../navigation';
+import { isBillingRole, isPlatformAdminRole } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import ProjectBudgetPanel from './ProjectBudgetPanel';
+import { EnterpriseBudgetWorkspace } from './EnterpriseFinanceWorkspaces';
 
 const { Text } = Typography;
 const { TabPane } = Tabs;
@@ -144,6 +145,7 @@ function createWalletOperationID(type: 'recharge' | 'adjust') {
 export default function WalletPage() {
   const role = useAuthStore(state => state.user?.role);
   const canManageProjectBudgets = isBillingRole(role);
+	const canManageEnterpriseFinance = isBillingRole(role) || isPlatformAdminRole(role);
   const [wallet, setWallet] = useState<WalletInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -152,8 +154,10 @@ export default function WalletPage() {
   const requestVersion = useRef(0);
   const initialTab = new URLSearchParams(window.location.search).get('tab');
   const allowedTabs = canManageProjectBudgets
-    ? ['summary', 'transactions', 'grants', 'budgets']
-    : ['summary', 'transactions', 'grants'];
+    ? ['summary', 'transactions', 'grants', 'budgets', 'enterprise']
+    : canManageEnterpriseFinance
+      ? ['summary', 'transactions', 'grants', 'enterprise']
+      : ['summary', 'transactions', 'grants'];
   const [activeTab, setActiveTab] = useState(allowedTabs.includes(initialTab || '') ? initialTab! : 'summary');
   const [modalVisible, setModalVisible] = useState(false);
   const [modalType, setModalType] = useState<'recharge' | 'adjust'>('recharge');
@@ -184,7 +188,7 @@ export default function WalletPage() {
       }
     } catch (error: any) {
       if (version !== requestVersion.current) return;
-      const message = `资金账户加载失败${error?.message ? `：${error.message}` : ''}`;
+      const message = `预算与成本中心数据加载失败${error?.message ? `：${error.message}` : ''}`;
       setLoadError(message);
       Toast.error(message);
     } finally {
@@ -268,7 +272,7 @@ export default function WalletPage() {
   if (loading) {
     return (
       <div className="ur-page">
-        <EmptyState title="加载资金账户信息..." minHeight={360} />
+        <EmptyState title="加载预算与成本中心数据..." minHeight={360} />
       </div>
     );
   }
@@ -277,8 +281,8 @@ export default function WalletPage() {
     return (
       <div className="ur-page">
         <EmptyState
-          title="无法加载资金账户信息"
-          description={loadError || '当前资金账户数据不可用。'}
+          title="无法加载预算与成本中心数据"
+          description={loadError || '当前结算与预算数据不可用。'}
           actions={<Button icon={<IconRefresh />} onClick={() => load(selectedOrgID)}>重试</Button>}
           minHeight={360}
         />
@@ -300,9 +304,9 @@ export default function WalletPage() {
   return (
     <div className="ur-page">
       <PageHeader
-        eyebrow="计费与资金"
-        title="资金账户"
-        description="围绕一个组织统一查看账户余额、资金流水和赠送额度；有权限的财务角色可在同一上下文完成资金操作。"
+        eyebrow="成本与财务"
+        title="预算与成本中心"
+        description="统一查看请求级结算、项目预算和兼容额度；现有 wallet 是运行时结算内核，不代表企业银行账户、总账或 ERP 应付事实。"
         actions={(
           <Space>
             {wallet.can_select_org && organizations.length > 0 ? (
@@ -323,22 +327,28 @@ export default function WalletPage() {
         )}
       />
 
+      <Banner
+        type="info"
+        description="请求结算、结算流水、兼容额度和项目预算继续按原语义运行；企业财务期间、成本中心和预算版本已作为独立控制层落地，默认仅报表且不冒充银行账户、ERP 总账或请求拦截策略。"
+        style={{ marginBottom: 16 }}
+      />
+
       <div className="ur-org-line" style={{ marginBottom: 12 }}>
         <Text>当前范围: <Tag color="blue">{displayedOrgName || `组织 #${displayedOrgID}`}</Tag></Text>
         <Text>权限: <Tag color={wallet.is_admin ? 'red' : 'grey' as any}>{wallet.is_admin ? '可管理资金' : '只读'}</Tag></Text>
       </div>
 
       <Tabs activeKey={activeTab} onChange={changeTab}>
-        <TabPane tab="账户总览" itemKey="summary">
+        <TabPane tab="结算账户" itemKey="summary">
           <div className="ur-kpi-grid">
-            <MetricTile label="可用现金" value={<MoneyText micros={wallet.balance_micros} strong tone="income" />} tone="blue" icon={<IconCoinMoney />} />
-            <MetricTile label="可用赠送额度" value={<MoneyText micros={wallet.granted_balance_micros} strong tone="income" />} tone="green" icon={<IconGift />} />
-            <MetricTile label="冻结金额" value={<MoneyText micros={wallet.frozen_micros} strong tone="warning" />} tone="amber" icon={<IconLock />} />
-            <MetricTile label="累计已结算" value={<MoneyText micros={wallet.total_spent_micros} strong tone="cost" />} tone="blue" icon={<IconCoinMoney />} />
-            <MetricTile label="低余额告警阈值" value={<MoneyText micros={wallet.threshold_micros} strong />} tone="violet" icon={<IconBell />} />
+            <MetricTile label="结算现金余额" value={<MoneyText micros={wallet.balance_micros} strong tone="income" />} tone="blue" icon={<IconCoinMoney />} />
+            <MetricTile label="兼容赠送额度" value={<MoneyText micros={wallet.granted_balance_micros} strong tone="income" />} tone="green" icon={<IconGift />} />
+            <MetricTile label="请求预留" value={<MoneyText micros={wallet.frozen_micros} strong tone="warning" />} tone="amber" icon={<IconLock />} />
+            <MetricTile label="累计客户结算" value={<MoneyText micros={wallet.total_spent_micros} strong tone="cost" />} tone="blue" icon={<IconCoinMoney />} />
+            <MetricTile label="结算告警阈值" value={<MoneyText micros={wallet.threshold_micros} strong />} tone="violet" icon={<IconBell />} />
           </div>
 
-          <Surface title="在途资金占用" description="可用金额已经扣除了冻结中的请求；冻结金额只表示尚未完成结算的占用，不会再次从可用余额扣减。">
+          <Surface title="请求级结算占用" description="可用金额已经扣除了请求预留；预留金额只表示尚未完成结算的占用，不会再次从可用余额扣减。">
             <div className="ur-wallet-budget">
               <Progress percent={usagePct} stroke={barColor} showInfo={false} />
               <Text className="ur-budget-caption">
@@ -349,8 +359,8 @@ export default function WalletPage() {
 
           {wallet.is_admin && (
             <Surface
-              title="现金操作"
-              description="现金入账只允许正数；现金调整允许正负数，服务端会基于最新余额原子校验并记录审计。赠送额度请使用上方独立页签。"
+              title="兼容结算操作"
+              description="这些操作只变更 UniRouter 结算账本：现金入账只允许正数；现金调整允许正负数，服务端会基于最新余额原子校验并记录审计。它们不是银行收款或总账过账。"
               actions={(
                 <Space>
                   <Button type="primary" onClick={() => openWalletModal('recharge')}>现金入账</Button>
@@ -358,14 +368,14 @@ export default function WalletPage() {
                 </Space>
               )}
             >
-              <Text type="tertiary">所有资金变动都可在“资金流水”中追溯。</Text>
+              <Text type="tertiary">所有结算变动都可在“结算流水”中追溯。</Text>
             </Surface>
           )}
         </TabPane>
-        <TabPane tab="资金流水" itemKey="transactions">
+        <TabPane tab="结算流水" itemKey="transactions">
           {activeTab === 'transactions' ? <WalletTransactionsPanel orgId={selectedOrgID} canExport={Boolean(wallet.can_export_transactions)} /> : null}
         </TabPane>
-        <TabPane tab="赠送额度" itemKey="grants">
+        <TabPane tab="兼容额度" itemKey="grants">
           {activeTab === 'grants' ? <GrantCreditsPanel orgId={selectedOrgID} canCreate={wallet.is_admin} onChanged={() => load(selectedOrgID)} /> : null}
         </TabPane>
         {canManageProjectBudgets ? (
@@ -373,6 +383,13 @@ export default function WalletPage() {
             {activeTab === 'budgets' ? <ProjectBudgetPanel /> : null}
           </TabPane>
         ) : null}
+		{canManageEnterpriseFinance ? (
+		  <TabPane tab="企业预算控制" itemKey="enterprise">
+			{activeTab === 'enterprise' ? (
+			  <EnterpriseBudgetWorkspace orgId={displayedOrgID} canManage={canManageEnterpriseFinance} />
+			) : null}
+		  </TabPane>
+		) : null}
       </Tabs>
 
       <Modal

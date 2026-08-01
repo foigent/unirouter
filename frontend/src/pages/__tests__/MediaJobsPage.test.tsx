@@ -104,7 +104,7 @@ describe('MediaJobsPage', () => {
   it('keeps the right inspector visible and exposes metadata without raw prompt or object locator', async () => {
     render(<MediaJobsPage />);
 
-    expect(screen.getByLabelText('图像任务检查器')).toBeTruthy();
+    expect(screen.getByLabelText('模型任务检查器')).toBeTruthy();
     expect((await screen.findAllByText('company-image')).length).toBeGreaterThan(0);
     expect(screen.getByText('pricing_pending_media_rate_card')).toBeTruthy();
     expect(screen.getByText(/没有扣减钱包或推断金额/)).toBeTruthy();
@@ -144,7 +144,7 @@ describe('MediaJobsPage', () => {
       amount_state: 'pricing_pending_media_rate_card',
     });
     render(<MediaJobsPage />);
-    expect(await screen.findByText(/未启用图像任务 worker 与对象存储/)).toBeTruthy();
+    expect(await screen.findByText(/未启用 Image V1 模型任务 worker 与对象存储/)).toBeTruthy();
     expect(screen.queryByText(/新任务受理已暂停/)).toBeNull();
     cleanup();
 

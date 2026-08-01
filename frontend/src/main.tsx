@@ -1,43 +1,42 @@
-import React from 'react'
+import React, { lazy, Suspense } from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { Button, Spin } from '@douyinfe/semi-ui'
 import './index.css'
-import App from './App'
-import LoginPage from './pages/LoginPage'
-import DashboardPage from './pages/DashboardPage'
-import DeveloperConsolePage from './pages/DeveloperConsolePage'
-import ChannelsPage from './pages/ChannelsPage'
-import KeysPage from './pages/KeysPage'
-import WalletPage from './pages/WalletPage'
-import ChannelKeysPage from './pages/ChannelKeysPage'
-import LogsPage from './pages/LogsPage'
-import SettingsPage from './pages/SettingsPage'
-import LicensePage from './pages/LicensePage'
-import UsersPage from './pages/UsersPage'
-import ModelGovernancePage from './pages/ModelGovernancePage'
-import ModelBillingPage from './pages/ModelBillingPage'
-import AuditLogsPage from './pages/AuditLogsPage'
-import ReconciliationPage from './pages/ReconciliationPage'
-import NotificationCenterPage from './pages/NotificationCenterPage'
-import UsageAnalyticsPage from './pages/UsageAnalyticsPage'
-import InternalStatusPage from './pages/InternalStatusPage'
-import TestPage from './pages/TestPage'
-import ApiDocsPage from './pages/ApiDocsPage'
-import AccessStatePage from './pages/AccessStatePage'
 import ErrorBoundary from './components/ErrorBoundary'
-import DataExchangePage from './pages/DataExchangePage'
-import LimitPoliciesPage from './pages/LimitPoliciesPage'
-import GuardrailPoliciesPage from './pages/GuardrailPoliciesPage'
-import ProjectManagementPage from './pages/ProjectManagementPage'
-import GovernanceSimulationPage from './pages/GovernanceSimulationPage'
-import MemberLifecyclePage from './pages/MemberLifecyclePage'
-import AgentTrustPage from './pages/AgentTrustPage'
-import ProvenancePassportPage from './pages/ProvenancePassportPage'
-import RiskControlPage from './pages/RiskControlPage'
-import MediaJobsPage from './pages/MediaJobsPage'
 import { profileNeedsRefresh, useAuthStore } from './store/auth'
 import { getDefaultPathForRole, isRouteAllowedForRole } from './navigation'
+
+const App = lazy(() => import('./App'))
+const LoginPage = lazy(() => import('./pages/LoginPage'))
+const DashboardPage = lazy(() => import('./pages/DashboardPage'))
+const DeveloperConsolePage = lazy(() => import('./pages/DeveloperConsolePage'))
+const ChannelsPage = lazy(() => import('./pages/ChannelsPage'))
+const KeysPage = lazy(() => import('./pages/KeysPage'))
+const WalletPage = lazy(() => import('./pages/WalletPage'))
+const ChannelKeysPage = lazy(() => import('./pages/ChannelKeysPage'))
+const LogsPage = lazy(() => import('./pages/LogsPage'))
+const SettingsPage = lazy(() => import('./pages/SettingsPage'))
+const LicensePage = lazy(() => import('./pages/LicensePage'))
+const ModelGovernancePage = lazy(() => import('./pages/ModelGovernancePage'))
+const ModelBillingPage = lazy(() => import('./pages/ModelBillingPage'))
+const AuditLogsPage = lazy(() => import('./pages/AuditLogsPage'))
+const ReconciliationPage = lazy(() => import('./pages/ReconciliationPage'))
+const NotificationCenterPage = lazy(() => import('./pages/NotificationCenterPage'))
+const UsageAnalyticsPage = lazy(() => import('./pages/UsageAnalyticsPage'))
+const InternalStatusPage = lazy(() => import('./pages/InternalStatusPage'))
+const TestPage = lazy(() => import('./pages/TestPage'))
+const ApiDocsPage = lazy(() => import('./pages/ApiDocsPage'))
+const AccessStatePage = lazy(() => import('./pages/AccessStatePage'))
+const DataExchangePage = lazy(() => import('./pages/DataExchangePage'))
+const LimitPoliciesPage = lazy(() => import('./pages/LimitPoliciesPage'))
+const GuardrailPoliciesPage = lazy(() => import('./pages/GuardrailPoliciesPage'))
+const GovernanceSimulationPage = lazy(() => import('./pages/GovernanceSimulationPage'))
+const AgentTrustPage = lazy(() => import('./pages/AgentTrustPage'))
+const ProvenancePassportPage = lazy(() => import('./pages/ProvenancePassportPage'))
+const RiskControlPage = lazy(() => import('./pages/RiskControlPage'))
+const MediaJobsPage = lazy(() => import('./pages/MediaJobsPage'))
+const OrganizationMembersPage = lazy(() => import('./pages/OrganizationMembersPage'))
 
 function RouteLoading() {
   return (
@@ -105,46 +104,49 @@ function UnknownRoute() {
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/" element={<ProtectedRoute><App /></ProtectedRoute>}>
-            <Route index element={<HomeRoute />} />
-            <Route path="developer" element={<RoleRoute><DeveloperConsolePage /></RoleRoute>} />
-            <Route path="channels" element={<RoleRoute><ChannelsPage /></RoleRoute>} />
-            <Route path="governance-simulation" element={<RoleRoute><GovernanceSimulationPage /></RoleRoute>} />
-            <Route path="keys" element={<RoleRoute><KeysPage /></RoleRoute>} />
-            <Route path="limit-policies" element={<RoleRoute><LimitPoliciesPage /></RoleRoute>} />
-            <Route path="guardrail-policies" element={<RoleRoute><GuardrailPoliciesPage /></RoleRoute>} />
-            <Route path="wallet" element={<RoleRoute><WalletPage /></RoleRoute>} />
-            <Route path="channel-keys" element={<RoleRoute><ChannelKeysPage /></RoleRoute>} />
-            <Route path="logs" element={<RoleRoute><LogsPage /></RoleRoute>} />
-            <Route path="users" element={<RoleRoute><UsersPage /></RoleRoute>} />
-            <Route path="project-management" element={<RoleRoute><ProjectManagementPage /></RoleRoute>} />
-            <Route path="member-lifecycle" element={<RoleRoute><MemberLifecyclePage /></RoleRoute>} />
-            <Route path="agent-trust" element={<RoleRoute><AgentTrustPage /></RoleRoute>} />
-            <Route path="provenance-passport" element={<RoleRoute><ProvenancePassportPage /></RoleRoute>} />
-            <Route path="risk-control" element={<RoleRoute><RiskControlPage /></RoleRoute>} />
-            <Route path="media-jobs" element={<RoleRoute><MediaJobsPage /></RoleRoute>} />
-            <Route path="model-governance" element={<RoleRoute><ModelGovernancePage /></RoleRoute>} />
-            <Route path="model-prices" element={<RoleRoute><ModelBillingPage /></RoleRoute>} />
-            <Route path="org-model-prices" element={<Navigate to="/model-prices?tab=org" replace />} />
-            <Route path="grants" element={<Navigate to="/wallet?tab=grants" replace />} />
-            <Route path="audit-logs" element={<RoleRoute><AuditLogsPage /></RoleRoute>} />
-            <Route path="data-exchange" element={<RoleRoute><DataExchangePage /></RoleRoute>} />
-            <Route path="reconciliation" element={<RoleRoute><ReconciliationPage /></RoleRoute>} />
-            <Route path="usage-analytics" element={<RoleRoute><UsageAnalyticsPage /></RoleRoute>} />
-            <Route path="notifications" element={<RoleRoute><NotificationCenterPage /></RoleRoute>} />
-            <Route path="status" element={<RoleRoute><InternalStatusPage /></RoleRoute>} />
-            <Route path="test" element={<RoleRoute><TestPage /></RoleRoute>} />
-            <Route path="settings" element={<RoleRoute><SettingsPage /></RoleRoute>} />
-            <Route path="license" element={<RoleRoute><LicensePage /></RoleRoute>} />
-            <Route path="access" element={<RoleRoute><AccessStatePage /></RoleRoute>} />
-            <Route path="docs" element={<ApiDocsPage />} />
-            <Route path="*" element={<UnknownRoute />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+      <Suspense fallback={<RouteLoading />}>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/" element={<ProtectedRoute><App /></ProtectedRoute>}>
+              <Route index element={<HomeRoute />} />
+              <Route path="developer" element={<RoleRoute><DeveloperConsolePage /></RoleRoute>} />
+              <Route path="channels" element={<RoleRoute><ChannelsPage /></RoleRoute>} />
+              <Route path="governance-simulation" element={<RoleRoute><GovernanceSimulationPage /></RoleRoute>} />
+              <Route path="keys" element={<RoleRoute><KeysPage /></RoleRoute>} />
+              <Route path="limit-policies" element={<RoleRoute><LimitPoliciesPage /></RoleRoute>} />
+              <Route path="guardrail-policies" element={<RoleRoute><GuardrailPoliciesPage /></RoleRoute>} />
+              <Route path="wallet" element={<RoleRoute><WalletPage /></RoleRoute>} />
+              <Route path="channel-keys" element={<RoleRoute><ChannelKeysPage /></RoleRoute>} />
+              <Route path="logs" element={<RoleRoute><LogsPage /></RoleRoute>} />
+              <Route path="organization-members" element={<RoleRoute><OrganizationMembersPage /></RoleRoute>} />
+              <Route path="users" element={<RoleRoute><Navigate to="/organization-members" replace /></RoleRoute>} />
+              <Route path="project-management" element={<RoleRoute><Navigate to="/organization-members?section=projects" replace /></RoleRoute>} />
+              <Route path="member-lifecycle" element={<RoleRoute><Navigate to="/organization-members?section=lifecycle" replace /></RoleRoute>} />
+              <Route path="agent-trust" element={<RoleRoute><AgentTrustPage /></RoleRoute>} />
+              <Route path="provenance-passport" element={<RoleRoute><ProvenancePassportPage /></RoleRoute>} />
+              <Route path="risk-control" element={<RoleRoute><RiskControlPage /></RoleRoute>} />
+              <Route path="media-jobs" element={<RoleRoute><MediaJobsPage /></RoleRoute>} />
+              <Route path="model-governance" element={<RoleRoute><ModelGovernancePage /></RoleRoute>} />
+              <Route path="model-prices" element={<RoleRoute><ModelBillingPage /></RoleRoute>} />
+              <Route path="org-model-prices" element={<Navigate to="/model-prices?tab=org" replace />} />
+              <Route path="grants" element={<Navigate to="/wallet?tab=grants" replace />} />
+              <Route path="audit-logs" element={<RoleRoute><AuditLogsPage /></RoleRoute>} />
+              <Route path="data-exchange" element={<RoleRoute><DataExchangePage /></RoleRoute>} />
+              <Route path="reconciliation" element={<RoleRoute><ReconciliationPage /></RoleRoute>} />
+              <Route path="usage-analytics" element={<RoleRoute><UsageAnalyticsPage /></RoleRoute>} />
+              <Route path="notifications" element={<RoleRoute><NotificationCenterPage /></RoleRoute>} />
+              <Route path="status" element={<RoleRoute><InternalStatusPage /></RoleRoute>} />
+              <Route path="test" element={<RoleRoute><TestPage /></RoleRoute>} />
+              <Route path="settings" element={<RoleRoute><SettingsPage /></RoleRoute>} />
+              <Route path="license" element={<RoleRoute><LicensePage /></RoleRoute>} />
+              <Route path="access" element={<RoleRoute><AccessStatePage /></RoleRoute>} />
+              <Route path="docs" element={<ApiDocsPage />} />
+              <Route path="*" element={<UnknownRoute />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </Suspense>
     </ErrorBoundary>
   </React.StrictMode>
 )

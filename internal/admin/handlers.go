@@ -12,9 +12,11 @@ import (
 	"github.com/uniroute/unirouter/internal/guardrail"
 	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/modelauthz"
 	"github.com/uniroute/unirouter/internal/oidc"
 	"github.com/uniroute/unirouter/internal/outbox"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
+	"github.com/uniroute/unirouter/internal/runtimechange"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
 )
 
@@ -65,6 +67,20 @@ type Handler struct {
 	providerCostReconciler       providerCostReconciler
 	guardrailController          guardrailController
 	completedFeedController      completedFeedController
+	modelAuthorizationEvaluator  *modelauthz.Evaluator
+	runtimeChangeManager         *runtimechange.Manager
+}
+
+func (h *Handler) SetModelAuthorizationEvaluator(evaluator *modelauthz.Evaluator) {
+	if h != nil {
+		h.modelAuthorizationEvaluator = evaluator
+	}
+}
+
+func (h *Handler) SetRuntimeChangeManager(manager *runtimechange.Manager) {
+	if h != nil {
+		h.runtimeChangeManager = manager
+	}
 }
 
 func (h *Handler) SetLimitPolicyReloader(reloader interface{ Refresh(context.Context) error }) {

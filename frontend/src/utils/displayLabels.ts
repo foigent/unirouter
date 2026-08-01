@@ -207,7 +207,7 @@ const notificationResourceLabels: Record<string, string> = {
   project: '项目',
   model: '模型',
   license: 'License',
-  wallet: '资金账户',
+  wallet: '预算与成本中心',
 };
 
 export function notificationResourceLabel(resource?: string, resourceId?: string | number | null) {

@@ -5,6 +5,7 @@ import MemberLifecyclePage from '../MemberLifecyclePage';
 const mocks = vi.hoisted(() => ({
   getMemberLifecycleContract: vi.fn(),
   previewMemberLifecycle: vi.fn(),
+  getEnterpriseDirectoryIAMActions: vi.fn(),
 }));
 
 vi.mock('../../api/client', async () => {
@@ -78,6 +79,7 @@ describe('MemberLifecyclePage', () => {
       },
     });
     mocks.previewMemberLifecycle.mockResolvedValue(REPORT);
+    mocks.getEnterpriseDirectoryIAMActions.mockResolvedValue({ data: [], total: 0 });
   });
 
   it('auto-selects and validates the first safe event with a persistent inspector', async () => {
@@ -85,12 +87,29 @@ describe('MemberLifecyclePage', () => {
 
     expect(screen.getByLabelText('成员生命周期检查器')).toBeTruthy();
     await waitFor(() => expect(mocks.getMemberLifecycleContract).toHaveBeenCalledTimes(1));
+		await waitFor(() => expect(mocks.getEnterpriseDirectoryIAMActions).toHaveBeenCalledWith(20, undefined));
     await waitFor(() => expect(mocks.previewMemberLifecycle).toHaveBeenCalledWith(JSON.stringify(EVENTS[0], null, 2)));
     expect(await screen.findByText('访问收敛证据')).toBeTruthy();
     expect(screen.getByText('replace_atomically')).toBeTruthy();
     expect(screen.getAllByText('否').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('none')).toBeTruthy();
   });
+
+	it('shows durable local convergence evidence separately from offline fixtures', async () => {
+		mocks.getEnterpriseDirectoryIAMActions.mockResolvedValue({
+			data: [{
+				id: 17, snapshot_ref: `sha256:${'f'.repeat(64)}`, subject_kind: 'account',
+				subject_ref: 'account-17', action: 'disable_user', reason: 'idp_account_disabled',
+				result: 'applied', before_status: 'active', after_status: 'disabled',
+				created_at: '2026-08-02T08:00:00Z',
+			}],
+		});
+		render(<MemberLifecyclePage />);
+
+		expect(await screen.findByText('account:account-17')).toBeTruthy();
+		expect(screen.getByText('idp_account_disabled · active → disabled')).toBeTruthy();
+		expect(screen.getByText('disable_user')).toBeTruthy();
+	});
 
   it('switches fixture stages without an open-detail action', async () => {
     mocks.previewMemberLifecycle

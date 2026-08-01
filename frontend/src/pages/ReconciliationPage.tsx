@@ -2,12 +2,13 @@ import { useState, useEffect } from 'react';
 import { Banner, Button, Table, Select, TextArea, Toast, Tag, Typography } from '@douyinfe/semi-ui';
 import { IconAlertTriangle, IconCoinMoney, IconRefresh, IconServer } from '@douyinfe/semi-icons';
 import { api, ApiError } from '../api/client';
-import { isPlatformAdminRole } from '../navigation';
+import { isBillingRole, isPlatformAdminRole } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, formatMoney, MetricTile, PageHeader, StatusTag, Surface } from '../ui';
 import { usageSourceLabel, usageSourceOptions } from '../utils/displayLabels';
 import { formatInteger, formatPercent, formatSignedInteger } from '../utils/formatNumber';
 import { loadAllPages } from '../utils/loadAllPages';
+import { EnterpriseAllocationWorkspace } from './EnterpriseFinanceWorkspaces';
 
 interface ReconRecord {
   id: number;
@@ -317,6 +318,7 @@ function ProviderCOGSOfflineWorkspace() {
 export default function ReconciliationPage() {
   const user = useAuthStore((state) => state.user);
   const platform = isPlatformAdminRole(user?.role);
+	const canManageEnterpriseFinance = platform || isBillingRole(user?.role);
   const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(platform ? user?.org_id : undefined);
   const [organizations, setOrganizations] = useState<Array<{ id: number; name: string }>>([]);
   const [records, setRecords] = useState<ReconRecord[]>([]);
@@ -442,10 +444,16 @@ export default function ReconciliationPage() {
   return (
     <div className="ur-page">
       <PageHeader
-        eyebrow="计费与资金"
-        title="财务真值"
-        description="分开呈现客户收入账、UniRouter 成本估算与供应商成本证据；任何估算、聚合账单或离线预览都不会自动变成客户欠款。"
+        eyebrow="成本与财务"
+        title="分摊与对账"
+        description="核对客户结算账、UniRouter 成本估算与供应商成本证据；任何估算、聚合账单或离线预览都不会自动变成应收、应付或总账事实。"
       />
+      <Banner
+        type="info"
+        description="当前已实现请求级对账、企业分摊运行、关账门禁、调整/冲销流水和离线供应商证据。ERP/总账导出仍未配置；跨期异常关联和深度调查继续由 X-Insight 承担。"
+        style={{ marginBottom: 16 }}
+      />
+	  <EnterpriseAllocationWorkspace orgId={targetOrgID} canManage={canManageEnterpriseFinance} />
       <Surface title="筛选条件">
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
           {platform && (

@@ -154,7 +154,7 @@ describe('KeysPage', () => {
     expect(await screen.findByText('X-Insight feed')).toBeTruthy();
     expect(screen.getByText('由实时连接控制')).toBeTruthy();
     expect(screen.getByText('无模型权限')).toBeTruthy();
-    expect(screen.getByText('请前往 X-Insight 数据交换控制')).toBeTruthy();
+    expect(screen.getByText('请前往 X-Insight 数据交换')).toBeTruthy();
     expect(screen.queryByRole('button', { name: '编辑访问凭证 X-Insight feed' })).toBeNull();
     expect(screen.queryByRole('button', { name: '启用访问凭证 X-Insight feed' })).toBeNull();
     expect(screen.queryByRole('button', { name: '停用访问凭证 X-Insight feed' })).toBeNull();

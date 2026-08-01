@@ -313,7 +313,7 @@ export default function DataExchangePage() {
     <div className="ur-page ur-page-wide">
       <PageHeader
         eyebrow="系统与集成"
-        title="X-Insight 数据交换控制"
+        title="X-Insight 数据交换"
         description="实时连接是 UniRouter → X-Insight 的产品化 metadata feed；旧审批与制品账本保留为独立的历史人工流程。"
         actions={(
           <Button

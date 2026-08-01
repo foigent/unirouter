@@ -117,7 +117,7 @@ func channelControlMutationCases() []channelControlMutationCase {
 			successStatus: http.StatusOK,
 			auditAction:   "channel.update",
 			invoke: func(h *Handler, recorder *httptest.ResponseRecorder) {
-				req := authenticatedChannelControlRequest(http.MethodPut, "/api/v1/channels/9", `{"name":"after","priority":2}`)
+				req := authenticatedChannelControlRequest(http.MethodPut, "/api/v1/channels/9", `{"name":"after","priority":2,"status":"staged"}`)
 				req.SetPathValue("id", "9")
 				h.UpdateChannel(recorder, req)
 			},
@@ -280,10 +280,13 @@ func newChannelControlAtomicityHandler(state *channelControlTransactionState) *H
 func channelControlSnapshotRow(state *channelControlTransactionState) pgx.Row {
 	return &testutil.MockRow{ScanFn: func(dest ...any) error {
 		name := "before"
+		status := "active"
 		if state.operation == "delete" {
 			name = "deleted"
+			status = "staged"
 		} else if state.mutatedInTx && state.snapshotCalls > 1 {
 			name = "after"
+			status = "staged"
 		}
 		*dest[0].(*string) = name
 		*dest[1].(*string) = "openai"
@@ -292,7 +295,7 @@ func channelControlSnapshotRow(state *channelControlTransactionState) pgx.Row {
 		*dest[4].(*string) = "openai_compatible"
 		*dest[5].(*int) = 1
 		*dest[6].(*int) = 3
-		*dest[7].(*string) = "active"
+		*dest[7].(*string) = status
 		*dest[8].(*string) = "healthy"
 		*dest[9].(*int) = 0
 		*dest[10].(*int) = 100

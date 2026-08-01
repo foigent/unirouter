@@ -140,3 +140,18 @@ func TestHandleChatCompletion_UsesEffectiveRetryBudgetAndTracePolicy(t *testing.
 		})
 	}
 }
+
+func TestRoutingPolicyTraceMetadataIncludesRuntimeAssignmentEvidence(t *testing.T) {
+	metadata := routingPolicyTraceMetadata(routingpolicy.Default(), &RouteResult{
+		Channel:             models.Channel{Priority: 10, RoutingWeight: 200},
+		RuntimeReleaseRef:   "rcr_company_chat_openai_v2",
+		RuntimeStage:        "canary",
+		RuntimeAssignmentID: "runtime-assignment.v1:request-42",
+	}, 2, 1)
+
+	if metadata["runtime_release_ref"] != "rcr_company_chat_openai_v2" ||
+		metadata["runtime_release_stage"] != "canary" ||
+		metadata["runtime_assignment_id"] != "runtime-assignment.v1:request-42" {
+		t.Fatalf("runtime assignment evidence missing from trace metadata: %#v", metadata)
+	}
+}

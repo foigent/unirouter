@@ -86,7 +86,7 @@ function formatList(values?: string[]) {
     guardrails: '内容安全',
     notifications: '通知中心',
     model_governance: '模型治理',
-    data_exchange: 'X-Insight 数据交换控制',
+    data_exchange: 'X-Insight 数据交换',
   };
   return values.map((value) => labels[value] || value).join('、');
 }

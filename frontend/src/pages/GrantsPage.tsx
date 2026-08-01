@@ -157,9 +157,9 @@ export default function GrantsPage() {
   return (
     <div className="ur-page">
       <PageHeader
-        eyebrow="计费与资金"
+        eyebrow="成本与财务"
         title="赠送额度"
-        description="查看并发放组织赠送额度。正式入口已合并到资金账户，本路径仅保留兼容。"
+        description="查看并发放兼容赠送额度。正式入口已合并到“预算与成本中心”，本路径仅保留旧链接兼容。"
       />
       <GrantCreditsPanel />
     </div>
