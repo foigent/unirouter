@@ -96,10 +96,17 @@ func TestSharedConcurrencyIsReplicaInvariant(t *testing.T) {
 		t.Fatal(err)
 	}
 	second.snapshot.Store(&policySnapshot{policies: []Policy{policy}})
+	// This test exercises atomic shared concurrency across clients, not Redis
+	// script bootstrap. Preload once so concurrent first use cannot turn a
+	// transient NOSCRIPT/EVAL bootstrap error into an unrelated reservation
+	// result under race instrumentation.
+	if err := reserveScript.Load(context.Background(), first.rdb).Err(); err != nil {
+		t.Fatalf("preload shared concurrency script: %v", err)
+	}
 
 	var admitted atomic.Int64
 	var denied atomic.Int64
-	var unexpected atomic.Int64
+	unexpectedErrors := make(chan error, 20)
 	var wg sync.WaitGroup
 	for index := 0; index < 20; index++ {
 		wg.Add(1)
@@ -116,13 +123,18 @@ func TestSharedConcurrencyIsReplicaInvariant(t *testing.T) {
 			case errors.Is(reserveErr, ErrConcurrencyExceeded):
 				denied.Add(1)
 			default:
-				unexpected.Add(1)
+				unexpectedErrors <- reserveErr
 			}
 		}(index)
 	}
 	wg.Wait()
-	if admitted.Load() != 3 || denied.Load() != 17 || unexpected.Load() != 0 {
-		t.Fatalf("admitted=%d denied=%d unexpected=%d", admitted.Load(), denied.Load(), unexpected.Load())
+	close(unexpectedErrors)
+	unexpected := make([]error, 0, len(unexpectedErrors))
+	for err := range unexpectedErrors {
+		unexpected = append(unexpected, err)
+	}
+	if admitted.Load() != 3 || denied.Load() != 17 || len(unexpected) != 0 {
+		t.Fatalf("admitted=%d denied=%d unexpected=%d errors=%v", admitted.Load(), denied.Load(), len(unexpected), unexpected)
 	}
 }
 
