@@ -127,6 +127,24 @@ export const api = {
   getProviderPacks: () => request('/provider-packs'),
   previewRouting: (model: string) =>
     request(`/routing/preview?model=${encodeURIComponent(model)}`),
+  getRuntimeChanges: (model?: string) =>
+    request(appendParams('/runtime-changes', { model })),
+  getRuntimeChange: (releaseRef: string) =>
+    request(`/runtime-changes/${encodeURIComponent(releaseRef)}`),
+  getRuntimeChangeSlot: (model: string) =>
+    request(appendParams('/runtime-changes/slot', { model })),
+  createRuntimeChange: (data: any) =>
+    request('/runtime-changes', { method: 'POST', body: JSON.stringify(data) }),
+  validateRuntimeChange: (releaseRef: string, expectedVersion: number) =>
+    request(`/runtime-changes/${encodeURIComponent(releaseRef)}/validate`, { method: 'POST', body: JSON.stringify({ expected_version: expectedVersion }) }),
+  shadowRuntimeChange: (releaseRef: string, expectedVersion: number) =>
+    request(`/runtime-changes/${encodeURIComponent(releaseRef)}/shadow`, { method: 'POST', body: JSON.stringify({ expected_version: expectedVersion }) }),
+  canaryRuntimeChange: (releaseRef: string, expectedVersion: number, canaryBasisPoints: number) =>
+    request(`/runtime-changes/${encodeURIComponent(releaseRef)}/canary`, { method: 'POST', body: JSON.stringify({ expected_version: expectedVersion, canary_basis_points: canaryBasisPoints }) }),
+  promoteRuntimeChange: (releaseRef: string, expectedVersion: number) =>
+    request(`/runtime-changes/${encodeURIComponent(releaseRef)}/promote`, { method: 'POST', body: JSON.stringify({ expected_version: expectedVersion }) }),
+  rollbackRuntimeChange: (releaseRef: string, expectedVersion: number) =>
+    request(`/runtime-changes/${encodeURIComponent(releaseRef)}/rollback`, { method: 'POST', body: JSON.stringify({ expected_version: expectedVersion }) }),
 
   // Keys
   getKeys: (page = 1, pageSize = 20, filters?: { project_id?: number }) =>
@@ -169,6 +187,51 @@ export const api = {
     request('/wallet/topup', { method: 'POST', body: JSON.stringify(data) }),
   adjustWallet: (data: { org_id?: number; delta_cents: number; description: string; client_request_id: string }) =>
     request('/wallet/adjust', { method: 'POST', body: JSON.stringify(data) }),
+
+  // PRD8 enterprise finance. These records are product-local planning,
+  // allocation and evidence surfaces; they do not replace wallet settlement.
+  getEnterpriseFiscalPeriods: (orgId?: number) =>
+    request(appendParams('/enterprise-finance/fiscal-periods', { org_id: orgId })),
+  createEnterpriseFiscalPeriod: (data: any) =>
+    request('/enterprise-finance/fiscal-periods', { method: 'POST', body: JSON.stringify(data) }),
+  transitionEnterpriseFiscalPeriod: (periodRef: string, data: any) =>
+    request(`/enterprise-finance/fiscal-periods/${encodeURIComponent(periodRef)}/transition`, { method: 'POST', body: JSON.stringify(data) }),
+  getEnterpriseCostCenters: (orgId?: number, effectiveAt?: string) =>
+    request(appendParams('/enterprise-finance/cost-centers', { org_id: orgId, effective_at: effectiveAt })),
+  createEnterpriseCostCenterVersion: (data: any) =>
+    request('/enterprise-finance/cost-centers', { method: 'POST', body: JSON.stringify(data) }),
+  getEnterpriseBudgets: (orgId?: number) =>
+    request(appendParams('/enterprise-finance/budgets', { org_id: orgId })),
+  getEnterpriseBudgetPositions: (orgId?: number) =>
+    request(appendParams('/enterprise-finance/budget-positions', { org_id: orgId })),
+  createEnterpriseBudgetDraft: (data: any) =>
+    request('/enterprise-finance/budgets', { method: 'POST', body: JSON.stringify(data) }),
+  approveEnterpriseBudget: (budgetRef: string, data: any) =>
+    request(`/enterprise-finance/budgets/${encodeURIComponent(budgetRef)}/approve`, { method: 'POST', body: JSON.stringify(data) }),
+  getEnterpriseRateCards: (orgId?: number) =>
+    request(appendParams('/enterprise-finance/rate-cards', { org_id: orgId })),
+  createEnterpriseRateCardDraft: (data: any) =>
+    request('/enterprise-finance/rate-cards', { method: 'POST', body: JSON.stringify(data) }),
+  approveEnterpriseRateCard: (rateCardRef: string, data: any) =>
+    request(`/enterprise-finance/rate-cards/${encodeURIComponent(rateCardRef)}/approve`, { method: 'POST', body: JSON.stringify(data) }),
+  activateEnterpriseRateCard: (rateCardRef: string, data: any) =>
+    request(`/enterprise-finance/rate-cards/${encodeURIComponent(rateCardRef)}/activate`, { method: 'POST', body: JSON.stringify(data) }),
+  getEnterprisePricingSnapshot: (requestRef: string, orgId?: number) =>
+    request(appendParams(`/enterprise-finance/pricing-snapshots/${encodeURIComponent(requestRef)}`, { org_id: orgId })),
+  getEnterpriseAllocationRuns: (periodRef: string, orgId?: number) =>
+    request(appendParams('/enterprise-finance/allocation-runs', { period_ref: periodRef, org_id: orgId })),
+  getEnterpriseAllocationRun: (runRef: string, orgId?: number) =>
+    request(appendParams(`/enterprise-finance/allocation-runs/${encodeURIComponent(runRef)}`, { org_id: orgId })),
+  createEnterpriseAllocationRun: (data: any) =>
+    request('/enterprise-finance/allocation-runs', { method: 'POST', body: JSON.stringify(data) }),
+  getEnterpriseAllocationSummary: (periodRef: string, orgId?: number) =>
+    request(appendParams('/enterprise-finance/allocation-summary', { period_ref: periodRef, org_id: orgId })),
+  getEnterpriseAdjustmentJournals: (periodRef: string, orgId?: number) =>
+    request(appendParams('/enterprise-finance/adjustment-journals', { period_ref: periodRef, org_id: orgId })),
+  createEnterpriseAdjustmentJournal: (data: any) =>
+    request('/enterprise-finance/adjustment-journals', { method: 'POST', body: JSON.stringify(data) }),
+  approveEnterpriseAdjustmentJournal: (journalRef: string, data: any) =>
+    request(`/enterprise-finance/adjustment-journals/${encodeURIComponent(journalRef)}/approve`, { method: 'POST', body: JSON.stringify(data) }),
 
   // Logs (with optional filters)
   getLogs: (page = 1, pageSize = 20, filters?: {
@@ -352,6 +415,22 @@ export const api = {
   getModelCatalog: (page = 1, pageSize = 20, filters?: { project_id?: number; org_id?: number }) =>
     request(appendParams('/model-catalog', { page, page_size: pageSize, project_id: filters?.project_id, org_id: filters?.org_id })),
 
+  // Product-local model-call authorization. These policies can only narrow
+  // existing API-key/project/user/Agent authority and never grant Tool/MCP use.
+  getModelAuthorizationContract: () => request('/model-call-authorizations/contract'),
+  getModelAuthorizations: (orgId?: number, status?: string) =>
+    request(appendParams('/model-call-authorizations', { org_id: orgId, status })),
+  createModelAuthorization: (data: any) =>
+    request('/model-call-authorizations', { method: 'POST', body: JSON.stringify(data) }),
+  activateModelAuthorization: (authorizationRef: string, expectedRevision: number, orgId?: number) =>
+    request(`/model-call-authorizations/${encodeURIComponent(authorizationRef)}/activate`, {
+      method: 'POST', body: JSON.stringify({ expected_revision: expectedRevision, ...(orgId ? { org_id: orgId } : {}) }),
+    }),
+  revokeModelAuthorization: (authorizationRef: string, expectedRevision: number, orgId?: number) =>
+    request(`/model-call-authorizations/${encodeURIComponent(authorizationRef)}/revoke`, {
+      method: 'POST', body: JSON.stringify({ expected_revision: expectedRevision, ...(orgId ? { org_id: orgId } : {}) }),
+    }),
+
   // Model governance
   getModelRegistry: (page = 1, pageSize = 20, filters?: { lifecycle?: string; approved_only?: boolean; q?: string; org_id?: number }) =>
     request(appendParams('/model-registry', {
@@ -416,6 +495,16 @@ export const api = {
   // Users
   getOrganizations: (page = 1, pageSize = 100) =>
     request(`/organizations?page=${page}&page_size=${pageSize}`),
+  getEnterpriseDirectorySources: (orgId?: number) =>
+    request(appendParams('/enterprise-directory/sources', { org_id: orgId })),
+  getEnterpriseDirectoryTree: (sourceRef: string, effectiveAt?: string, orgId?: number) =>
+    request(appendParams('/enterprise-directory/tree', {
+      source_ref: sourceRef,
+      effective_at: effectiveAt,
+      org_id: orgId,
+    })),
+  getEnterpriseDirectoryIAMActions: (limit = 100, orgId?: number) =>
+    request(appendParams('/enterprise-directory/iam-actions', { limit, org_id: orgId })),
   getUsers: (page = 1, pageSize = 20) =>
     request(`/users?page=${page}&page_size=${pageSize}`),
   createUser: (data: any) =>

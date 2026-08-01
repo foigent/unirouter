@@ -14,6 +14,7 @@ import (
 
 	"github.com/uniroute/unirouter/internal/logger"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/modelauthz"
 	"github.com/uniroute/unirouter/internal/outbox"
 	"github.com/uniroute/unirouter/internal/telemetryexport"
 	"github.com/uniroute/unirouter/internal/traceutil"
@@ -188,6 +189,16 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 		if route.MappedModel != "" {
 			metadata["mapped_model"] = route.MappedModel
 		}
+	}
+	if decision, ok := modelauthz.DecisionFromContext(ctx); ok {
+		if metadata == nil {
+			metadata = map[string]interface{}{}
+		}
+		metadata["model_authorization_contract"] = decision.ContractVersion
+		metadata["model_authorization_result"] = "allow"
+		metadata["model_authorization_reason"] = decision.Reason
+		metadata["model_authorization_policy_refs"] = strings.Join(decision.PolicyRefs, ",")
+		metadata["model_authorization_environment"] = decision.Environment
 	}
 	provider := ""
 	channel := ""

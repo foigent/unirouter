@@ -17,7 +17,7 @@ import (
 
 func validChannelStatus(status string) bool {
 	switch status {
-	case "active", "disabled":
+	case "active", "staged", "disabled":
 		return true
 	default:
 		return false
@@ -146,7 +146,7 @@ func (h *Handler) CreateChannel(w http.ResponseWriter, r *http.Request) {
 
 	err := store.QueryRow(r.Context(),
 		`INSERT INTO channels (name, provider, base_url, models, adapter_type, adapter_config, priority, degradation_threshold, routing_weight, status, circuit_state, fail_count, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, 'active', 'healthy', 0, NOW(), NOW())
+		 VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, 'staged', 'healthy', 0, NOW(), NOW())
 		 RETURNING id`,
 		req.Name, req.Provider, req.BaseURL, req.Models, req.AdapterType, string(req.AdapterConfig), req.Priority, req.DegradationThreshold, req.RoutingWeight,
 	).Scan(&id)
@@ -158,7 +158,7 @@ func (h *Handler) CreateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	after := channelAuditState(id, req.Name, req.Provider, req.BaseURL, req.Models, req.AdapterType, req.Priority, req.DegradationThreshold, "active", "healthy", 0)
+	after := channelAuditState(id, req.Name, req.Provider, req.BaseURL, req.Models, req.AdapterType, req.Priority, req.DegradationThreshold, "staged", "healthy", 0)
 	after["routing_weight"] = req.RoutingWeight
 	after["routing_epoch"] = int64(1)
 	detail := map[string]interface{}{"after": after}
@@ -223,7 +223,7 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 		req.AdapterConfig = &empty
 	}
 	if req.Status != nil && !validChannelStatus(*req.Status) {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "status must be active or disabled"})
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "status must be active, staged, or disabled"})
 		return
 	}
 	if (req.Priority != nil && (*req.Priority < 1 || *req.Priority > 10000)) ||
@@ -351,6 +351,27 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	before, beforeFound := h.channelAuditSnapshot(r.Context(), store, id, tx != nil)
+	if beforeFound {
+		beforeStatus, _ := before["status"].(string)
+		runtimeFieldsChanged := req.Provider != nil || req.BaseURL != nil || req.Models != nil ||
+			req.AdapterType != nil || req.AdapterConfig != nil || req.Priority != nil ||
+			req.RoutingWeight != nil || req.DegradationThreshold != nil
+		leavesActive := req.Status == nil || *req.Status == "active"
+		if beforeStatus == "active" && runtimeFieldsChanged && leavesActive {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{
+				"error":     "Active channel runtime fields require staging before change",
+				"next_step": "set status to staged in the same update, then use Runtime Change Control for activation",
+			})
+			return
+		}
+		if req.Status != nil && *req.Status == "active" && beforeStatus != "active" {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{
+				"error":     "Direct channel activation is disabled",
+				"next_step": "validate and promote a Runtime Change Control release",
+			})
+			return
+		}
+	}
 
 	sets = append(sets, "routing_epoch = routing_epoch + 1", "updated_at = NOW()")
 	args = append(args, id)
@@ -359,6 +380,20 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 		argIdx++
 		where += fmt.Sprintf(" AND routing_epoch = $%d", argIdx)
 		args = append(args, *req.ExpectedRoutingEpoch)
+	}
+	emergencyDisableOnly := req.Status != nil && *req.Status == "disabled" &&
+		req.Name == nil && req.Provider == nil && req.BaseURL == nil && req.Models == nil &&
+		req.AdapterType == nil && req.AdapterConfig == nil && req.Priority == nil &&
+		req.RoutingWeight == nil && req.DegradationThreshold == nil
+	if !emergencyDisableOnly {
+		where += ` AND NOT EXISTS (
+            SELECT 1
+              FROM runtime_change_slots rcs
+              JOIN runtime_change_releases rcr ON rcr.id = rcs.stable_release_id AND rcr.stage = 'active'
+              CROSS JOIN LATERAL jsonb_array_elements(rcr.candidate->'overrides') AS runtime_override
+             WHERE (runtime_override->>'channel_id')::bigint = channels.id
+               AND runtime_override->>'admission' = 'allow'
+        )`
 	}
 
 	query := fmt.Sprintf("UPDATE channels SET %s WHERE %s", joinStrings(sets, ", "), where)
@@ -464,13 +499,24 @@ func (h *Handler) DeleteChannel(w http.ResponseWriter, r *http.Request) {
 
 	before, beforeFound := h.channelAuditSnapshot(r.Context(), store, id, tx != nil)
 
-	tag, err := store.Exec(r.Context(), `DELETE FROM channels WHERE id = $1`, id)
+	tag, err := store.Exec(r.Context(), `
+DELETE FROM channels
+ WHERE id = $1
+   AND status <> 'active'
+   AND NOT EXISTS (
+       SELECT 1
+         FROM runtime_change_slots rcs
+         JOIN runtime_change_releases rcr ON rcr.id = rcs.stable_release_id AND rcr.stage = 'active'
+         CROSS JOIN LATERAL jsonb_array_elements(rcr.candidate->'overrides') AS runtime_override
+        WHERE (runtime_override->>'channel_id')::bigint = channels.id
+          AND runtime_override->>'admission' = 'allow'
+   )`, id)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to delete channel"})
 		return
 	}
 	if tag.RowsAffected() == 0 {
-		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Channel not found"})
+		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Active channel must be staged or disabled before deletion"})
 		return
 	}
 

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Banner, Button, Table, Tag, TextArea, Typography } from '@douyinfe/semi-ui';
 import { api, ApiError } from '../api/client';
-import { EmptyState, MetricTile, PageHeader } from '../ui';
+import { useAuthStore } from '../store/auth';
+import { EmptyState, MetricTile, PageHeader, Surface } from '../ui';
 import { formatInteger } from '../utils/formatNumber';
 
 interface ArtifactIdentity {
@@ -71,6 +72,20 @@ interface LifecycleReport {
   runtime_mutation: string;
 }
 
+interface IAMConvergenceAction {
+  id: number;
+  snapshot_ref: string;
+  subject_kind: string;
+  subject_ref: string;
+  local_user_id?: number;
+  action: string;
+  reason: string;
+  result: string;
+  before_status: string;
+  after_status: string;
+  created_at: string;
+}
+
 const operationNames: Record<string, string> = {
   create: '创建',
   update: '更新 / 恢复',
@@ -84,13 +99,17 @@ const statusNames: Record<string, string> = {
   deprovisioned: '已退场',
 };
 
-export default function MemberLifecyclePage() {
+export default function MemberLifecyclePage({ embedded = false }: { embedded?: boolean }) {
+	const orgId = useAuthStore(state => state.user?.org_id);
   const [contract, setContract] = useState<LifecycleContract | null>(null);
   const [input, setInput] = useState('');
   const [report, setReport] = useState<LifecycleReport | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+	const [iamActions, setIAMActions] = useState<IAMConvergenceAction[]>([]);
+	const [iamEvidenceLoading, setIAMEvidenceLoading] = useState(true);
+	const [iamEvidenceError, setIAMEvidenceError] = useState('');
 
   const preview = (body: string) => {
     setLoading(true);
@@ -128,6 +147,27 @@ export default function MemberLifecyclePage() {
     return () => { active = false; };
   }, []);
 
+	useEffect(() => {
+		let active = true;
+		setIAMEvidenceLoading(true);
+		setIAMEvidenceError('');
+		api.getEnterpriseDirectoryIAMActions(20, orgId)
+			.then((payload: any) => {
+				if (!active) return;
+				setIAMActions(Array.isArray(payload?.data) ? payload.data as IAMConvergenceAction[] : []);
+			})
+			.catch((loadError: unknown) => {
+				if (!active) return;
+				setIAMEvidenceError(loadError instanceof ApiError
+					? `本地证据读取失败（${loadError.status}）：${loadError.message}`
+					: '本地收敛证据暂不可用。');
+			})
+			.finally(() => {
+				if (active) setIAMEvidenceLoading(false);
+			});
+		return () => { active = false; };
+	}, [orgId]);
+
   const selectEvent = (event: LifecycleEvent, index: number) => {
     const body = JSON.stringify(event, null, 2);
     setSelectedIndex(index);
@@ -151,17 +191,53 @@ export default function MemberLifecyclePage() {
   ], []);
 
   return (
-    <div className="ur-page">
-      <PageHeader
+    <div className={embedded ? 'ur-embedded-page' : 'ur-page'}>
+      {embedded ? (
+        <div className="ur-embedded-heading">
+          <div>
+            <Typography.Title heading={4} style={{ margin: 0 }}>生命周期合同证据</Typography.Title>
+            <Typography.Text type="tertiary">验证 Joiner、Mover、Leaver 的本地访问收敛；这不是已经连接的企业目录。</Typography.Text>
+          </div>
+          <Tag color="blue">离线合同</Tag>
+        </div>
+      ) : <PageHeader
         eyebrow="访问与安全"
         title="成员生命周期"
         description="先用供应商无关的合同证明创建、更新、暂停和退场会收敛成员关系、会话与 Agent 能力，再由未来单独批准的目录适配器接入。"
-      />
+      />}
       <Banner
         type="info"
-        description="当前只做离线预演：不会连接 SCIM / IdP，不接收凭据，不写用户、项目成员、会话、API Key、Agent 能力或数据库。"
+        description="页面中的 JSON 预演始终只读，不连接 SCIM / IdP、不接收凭据也不写数据库。下方另行展示已有本地投影产生的收敛证据；当前没有外部目录 Connector 或公开写入端点。"
         style={{ marginBottom: 16 }}
       />
+
+		<Surface
+			title="本地 IAM 收敛证据"
+			description="只有覆盖完整的明确终止、明确禁用或显式 tombstone 才能暂停已绑定账号；入职、调岗和复职不会自动授予或恢复权限。"
+		>
+			{iamEvidenceLoading ? (
+				<Typography.Text type="tertiary">正在读取本地收敛记录…</Typography.Text>
+			) : iamEvidenceError ? (
+				<Banner type="warning" description={iamEvidenceError} />
+			) : iamActions.length === 0 ? (
+				<Typography.Text type="tertiary">尚无本地收敛记录；不会用离线示例冒充真实目录动作。</Typography.Text>
+			) : (
+				<div className="ur-directory-source-list">
+					{iamActions.slice(0, 5).map(action => (
+						<div className="ur-directory-source-row" key={action.id}>
+							<div>
+								<Typography.Text strong>{action.subject_kind}:{action.subject_ref}</Typography.Text>
+								<Typography.Text type="tertiary">{action.reason} · {action.before_status || '无'} → {action.after_status || '无'}</Typography.Text>
+							</div>
+							<div className="ur-directory-health-tags">
+								<Tag color={action.action === 'disable_user' ? 'red' : action.action === 'review_required' ? 'orange' : 'grey'}>{action.action}</Tag>
+								<Tag color={action.result === 'applied' ? 'green' : action.result === 'conflict' ? 'red' : 'blue'}>{action.result}</Tag>
+							</div>
+						</div>
+					))}
+				</div>
+			)}
+		</Surface>
 
       <div className="ur-context-explorer ur-governance-explorer">
         <main className="ur-explorer-panel">

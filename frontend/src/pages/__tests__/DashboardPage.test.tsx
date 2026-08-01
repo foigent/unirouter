@@ -153,7 +153,7 @@ describe('DashboardPage', () => {
     expect(screen.getByText('暂无请求记录')).toBeTruthy();
   });
 
-  it('derives role-specific task entries from the same navigation contract', async () => {
+  it('does not duplicate the sidebar task taxonomy inside the dashboard', async () => {
     useAuthStore.setState({
       user: { id: 2, username: 'billing', role: 'billing_admin', org_id: 1, org_name: '北区组织' },
     });
@@ -161,17 +161,17 @@ describe('DashboardPage', () => {
     renderDashboard();
 
     expect(await screen.findByText('财务与用量总览')).toBeTruthy();
-    expect(screen.getByText('任务入口')).toBeTruthy();
-    expect(screen.getByRole('button', { name: '资金账户' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '财务真值' })).toBeTruthy();
+    expect(screen.queryByText('任务入口')).toBeNull();
+    expect(screen.queryByRole('button', { name: '预算与成本中心' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '分摊与对账' })).toBeNull();
     expect(screen.queryByRole('button', { name: '上游通道' })).toBeNull();
     expect(screen.queryByRole('button', { name: '用户管理' })).toBeNull();
-    expect(screen.getByText('可用余额')).toBeTruthy();
+    expect(screen.getByText('结算可用额度')).toBeTruthy();
     expect(screen.queryByText('健康通道')).toBeNull();
     expect(screen.queryByText('通道健康状态')).toBeNull();
   });
 
-  it('mirrors partial-license locks in task cards without adding role-forbidden entries', async () => {
+  it('does not reproduce licensed navigation controls as dashboard task cards', async () => {
     useAuthStore.setState({
       user: {
         id: 2,
@@ -186,10 +186,9 @@ describe('DashboardPage', () => {
     renderDashboard();
 
     expect(await screen.findByText('组织运营总览')).toBeTruthy();
-    expect(screen.getByRole('button', { name: '模型治理（授权未包含）' }).hasAttribute('disabled')).toBe(true);
-    expect(screen.getByRole('button', { name: '内容安全（授权未包含）' }).hasAttribute('disabled')).toBe(true);
-    expect(screen.getByRole('button', { name: '通知中心' }).hasAttribute('disabled')).toBe(false);
-    expect(screen.queryByRole('button', { name: /X-Insight 数据交换控制/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: '模型治理（授权未包含）' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '内容安全（授权未包含）' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /X-Insight 数据交换/ })).toBeNull();
   });
 
   it('passes time range params to API', async () => {
@@ -215,7 +214,7 @@ describe('DashboardPage', () => {
     const { container } = renderDashboard();
     await waitFor(() => {
       const html = container.textContent || '';
-      expect(html).toContain('可用余额');
+      expect(html).toContain('结算可用额度');
       expect(html).toContain('¥1200.00');
       expect(html).toContain('余额正常');
       expect(html).toContain('阈值 ¥10.00');
@@ -340,7 +339,7 @@ describe('DashboardPage', () => {
 
     expect(await screen.findByText('组织只读总览')).toBeTruthy();
     expect(screen.getByText(/当前只读角色不提供日志明细入口/)).toBeTruthy();
-    expect(screen.queryByText('可用余额')).toBeNull();
+    expect(screen.queryByText('结算可用额度')).toBeNull();
     expect(screen.queryByText('健康通道')).toBeNull();
     expect(screen.queryByText('通道健康状态')).toBeNull();
     fireEvent.click(screen.getByText(/req-abc-123/));

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, Input, Select, Table, Toast, Typography } from '@douyinfe/semi-ui';
+import { Banner, Button, Input, Select, Table, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconCoinMoney, IconDownload, IconRefresh, IconSearch, IconServer } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { isPlatformAdminRole } from '../navigation';
@@ -179,6 +179,11 @@ export default function UsageAnalyticsPage() {
         title="用量分析"
           description="按总览、项目、访问凭证、Key Owner、凭证类型、模型、供应商、上游通道、请求状态和计量来源查看当前权限范围内的请求量、Token、费用与估算占比。"
         actions={<Button icon={<IconDownload />} onClick={downloadCSV}>导出 CSV</Button>}
+      />
+      <Banner
+        type="info"
+        description="当前可按项目、访问凭证和 Key Owner 等已证实维度分析；Key Owner 不等于实际调用人。部门、经理链和成本中心维度必须等待企业目录投影与请求时归属快照，当前不做猜测归因。"
+        style={{ marginBottom: 16 }}
       />
 
       <Surface

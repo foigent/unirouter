@@ -27,7 +27,7 @@ func (h *Handler) ListChannelKeys(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := h.db.Query(r.Context(),
-		`SELECT ck.id, ck.channel_id, c.name as channel_name, ck.key_enc, ck.allowed_models, ck.status,
+		`SELECT ck.id, ck.channel_id, c.name as channel_name, c.status AS channel_status, ck.key_enc, ck.allowed_models, ck.status,
 		        ck.fail_count, ck.last_used_at, ck.cooldown_until, ck.created_at
 		 FROM channel_keys ck
 		 JOIN channels c ON c.id = ck.channel_id
@@ -42,16 +42,16 @@ func (h *Handler) ListChannelKeys(w http.ResponseWriter, r *http.Request) {
 	keys := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var id, channelID int64
-		var channelName, keyEnc, allowedModels, status string
+		var channelName, channelStatus, keyEnc, allowedModels, status string
 		var failCount int
 		var lastUsedAt, cooldownUntil *time.Time
 		var createdAt time.Time
-		if err := rows.Scan(&id, &channelID, &channelName, &keyEnc, &allowedModels, &status, &failCount, &lastUsedAt, &cooldownUntil, &createdAt); err != nil {
+		if err := rows.Scan(&id, &channelID, &channelName, &channelStatus, &keyEnc, &allowedModels, &status, &failCount, &lastUsedAt, &cooldownUntil, &createdAt); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 			return
 		}
 		keys = append(keys, map[string]interface{}{
-			"id": id, "channel_id": channelID, "channel_name": channelName,
+			"id": id, "channel_id": channelID, "channel_name": channelName, "channel_status": channelStatus,
 			"key_prefix": maskKey(keyEnc), "allowed_models": allowedModels, "status": status,
 			"fail_count": failCount, "last_used_at": lastUsedAt, "cooldown_until": cooldownUntil, "created_at": createdAt,
 		})
@@ -94,7 +94,16 @@ func (h *Handler) CreateChannelKey(w http.ResponseWriter, r *http.Request) {
 	if isUnauthenticatedUnitContext(r.Context()) {
 		err = h.db.QueryRow(r.Context(),
 			`INSERT INTO channel_keys (channel_id, key_enc, allowed_models, status, fail_count, created_at, updated_at)
-			 VALUES ($1, $2, $3, 'active', 0, NOW(), NOW())
+			 SELECT $1, $2, $3, 'active', 0, NOW(), NOW()
+			   FROM channels c
+			  WHERE c.id=$1 AND c.status IN ('staged','disabled')
+			    AND NOT EXISTS (
+			        SELECT 1
+			          FROM runtime_change_slots rcs
+			          JOIN runtime_change_releases rcr ON rcr.id=rcs.stable_release_id AND rcr.stage='active'
+			          CROSS JOIN LATERAL jsonb_array_elements(rcr.candidate->'overrides') AS runtime_override
+			         WHERE (runtime_override->>'channel_id')::bigint=c.id
+			           AND runtime_override->>'admission'='allow')
 			 RETURNING id`,
 			req.ChannelID, keyEnc, req.AllowedModels,
 		).Scan(&id)
@@ -108,7 +117,16 @@ func (h *Handler) CreateChannelKey(w http.ResponseWriter, r *http.Request) {
 			defer tx.Rollback(r.Context())
 			err = tx.QueryRow(r.Context(),
 				`INSERT INTO channel_keys (channel_id, key_enc, allowed_models, status, fail_count, created_at, updated_at)
-				 VALUES ($1, $2, $3, 'active', 0, NOW(), NOW())
+				 SELECT $1, $2, $3, 'active', 0, NOW(), NOW()
+				   FROM channels c
+				  WHERE c.id=$1 AND c.status IN ('staged','disabled')
+				    AND NOT EXISTS (
+				        SELECT 1
+				          FROM runtime_change_slots rcs
+				          JOIN runtime_change_releases rcr ON rcr.id=rcs.stable_release_id AND rcr.stage='active'
+				          CROSS JOIN LATERAL jsonb_array_elements(rcr.candidate->'overrides') AS runtime_override
+				         WHERE (runtime_override->>'channel_id')::bigint=c.id
+				           AND runtime_override->>'admission'='allow')
 				 RETURNING id`,
 				req.ChannelID, keyEnc, req.AllowedModels,
 			).Scan(&id)
@@ -122,6 +140,10 @@ func (h *Handler) CreateChannelKey(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err != nil {
+		if err == pgx.ErrNoRows {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Channel must be staged or disabled before adding credentials"})
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to create channel key"})
 		return
 	}
@@ -204,6 +226,18 @@ func (h *Handler) UpdateChannelKey(w http.ResponseWriter, r *http.Request) {
 	args = append(args, id)
 
 	query := fmt.Sprintf("UPDATE channel_keys SET %s WHERE id = $%d", joinStrings(sets, ", "), argIdx)
+	emergencyDisableOnly := req.Status != nil && *req.Status == "disabled" && req.ChannelID == nil && req.Key == nil && req.AllowedModels == nil
+	if !emergencyDisableOnly {
+		targetChannel := "channel_keys.channel_id"
+		if req.ChannelID != nil {
+			targetChannel = strconv.FormatInt(*req.ChannelID, 10)
+		}
+		query += " AND EXISTS (SELECT 1 FROM channels c WHERE c.id=" + targetChannel + " AND c.status IN ('staged','disabled')" +
+			" AND NOT EXISTS (SELECT 1 FROM runtime_change_slots rcs" +
+			" JOIN runtime_change_releases rcr ON rcr.id=rcs.stable_release_id AND rcr.stage='active'" +
+			" CROSS JOIN LATERAL jsonb_array_elements(rcr.candidate->'overrides') AS runtime_override" +
+			" WHERE (runtime_override->>'channel_id')::bigint=c.id AND runtime_override->>'admission'='allow'))"
+	}
 	auditDetail := map[string]interface{}{
 		"channel_id_updated":     req.ChannelID != nil,
 		"key_updated":            req.Key != nil,
@@ -236,6 +270,10 @@ func (h *Handler) UpdateChannelKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if tag.RowsAffected() == 0 {
+		if !emergencyDisableOnly {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Channel must be staged or disabled before changing credentials"})
+			return
+		}
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Channel key not found"})
 		return
 	}
@@ -275,7 +313,14 @@ func (h *Handler) DeleteChannelKey(w http.ResponseWriter, r *http.Request) {
 
 	var tag pgconn.CommandTag
 	if isUnauthenticatedUnitContext(r.Context()) {
-		tag, err = h.db.Exec(r.Context(), `DELETE FROM channel_keys WHERE id = $1`, id)
+		tag, err = h.db.Exec(r.Context(), `
+DELETE FROM channel_keys ck USING channels c
+ WHERE ck.id=$1 AND c.id=ck.channel_id AND c.status IN ('staged','disabled')
+   AND NOT EXISTS (
+       SELECT 1 FROM runtime_change_slots rcs
+       JOIN runtime_change_releases rcr ON rcr.id=rcs.stable_release_id AND rcr.stage='active'
+       CROSS JOIN LATERAL jsonb_array_elements(rcr.candidate->'overrides') AS runtime_override
+       WHERE (runtime_override->>'channel_id')::bigint=c.id AND runtime_override->>'admission'='allow')`, id)
 		if err == nil && tag.RowsAffected() > 0 {
 			h.recordAudit(r.Context(), "channelkey.delete", "channel_key", idStr, map[string]interface{}{}, r.RemoteAddr)
 		}
@@ -284,7 +329,14 @@ func (h *Handler) DeleteChannelKey(w http.ResponseWriter, r *http.Request) {
 		tx, err = h.db.Begin(r.Context())
 		if err == nil {
 			defer tx.Rollback(r.Context())
-			tag, err = tx.Exec(r.Context(), `DELETE FROM channel_keys WHERE id = $1`, id)
+			tag, err = tx.Exec(r.Context(), `
+DELETE FROM channel_keys ck USING channels c
+ WHERE ck.id=$1 AND c.id=ck.channel_id AND c.status IN ('staged','disabled')
+   AND NOT EXISTS (
+       SELECT 1 FROM runtime_change_slots rcs
+       JOIN runtime_change_releases rcr ON rcr.id=rcs.stable_release_id AND rcr.stage='active'
+       CROSS JOIN LATERAL jsonb_array_elements(rcr.candidate->'overrides') AS runtime_override
+       WHERE (runtime_override->>'channel_id')::bigint=c.id AND runtime_override->>'admission'='allow')`, id)
 		}
 		if err == nil && tag.RowsAffected() > 0 {
 			err = insertAuditEntry(r.Context(), tx, "channelkey.delete", "channel_key", idStr, map[string]interface{}{},
@@ -299,7 +351,7 @@ func (h *Handler) DeleteChannelKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if tag.RowsAffected() == 0 {
-		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Channel key not found"})
+		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Channel must be staged or disabled before deleting credentials"})
 		return
 	}
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Table, Modal, Form, Tag, Toast, SideSheet } from '@douyinfe/semi-ui';
+import { Button, Table, Modal, Form, Tag, Toast, SideSheet, Typography } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api, ApiError } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
@@ -35,7 +35,7 @@ const apiErrorCode = (error: ApiError) => {
   return typeof code === 'string' ? code : '';
 };
 
-export default function UsersPage() {
+export default function UsersPage({ embedded = false }: { embedded?: boolean }) {
   const currentUser = useAuthStore((state) => state.user);
   const [users, setUsers] = useState<any[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
@@ -285,13 +285,21 @@ export default function UsersPage() {
   ];
 
   return (
-    <div className="ur-page">
-      <PageHeader
+    <div className={embedded ? 'ur-embedded-page' : 'ur-page'}>
+      {embedded ? (
+        <div className="ur-embedded-heading">
+          <div>
+            <Typography.Title heading={4} style={{ margin: 0 }}>账号与身份</Typography.Title>
+            <Typography.Text type="tertiary">无需企业目录即可创建本地账号并配置角色和项目归属；账号、人员和调用主体仍是不同实体，不把 Key Owner 当成实际调用人。</Typography.Text>
+          </div>
+          <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增本地用户</Button>
+        </div>
+      ) : <PageHeader
         eyebrow="访问与安全"
         title="用户管理"
         description="管理本地账号及企业 OIDC 映射账号的角色与状态；企业密码和目录资料由身份提供方维护，项目角色还需要项目成员关系。"
         actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增本地用户</Button>}
-      />
+      />}
 
       <Surface>
         <div className="ur-table-shell">

@@ -23,7 +23,7 @@ import { api } from '../api/client';
 import { EmptyState, LatencyText, MetricTile, MoneyText, PageHeader, StatusTag, Surface, formatMoney, microsToChartYuan, parseMicros } from '../ui';
 import { formatCompactNumber } from '../utils/formatNumber';
 import { useAuthStore } from '../store/auth';
-import { getNavItemsForRole, isBillingRole, isOrgViewerRole, isPlatformAdminRole, isRouteAllowedForRole } from '../navigation';
+import { isBillingRole, isOrgViewerRole, isPlatformAdminRole, isRouteAllowedForRole } from '../navigation';
 import { loadAllPages } from '../utils/loadAllPages';
 
 const { Text } = Typography;
@@ -303,15 +303,6 @@ export default function DashboardPage() {
     : isBillingRole(user?.role)
       ? '统一观察用量、费用、余额和近期请求状态。'
       : '统一观察当前组织的请求量、成功率、延迟和费用。';
-  const taskGroups = getNavItemsForRole(user?.role, user?.license_access)
-    .filter(item => item.itemKey !== '/')
-    .map(item => ({
-      key: item.itemKey,
-      title: item.text,
-      icon: item.icon,
-      links: item.items || [{ itemKey: item.itemKey, text: item.text, icon: item.icon }],
-    }));
-
   const recentCols = useMemo(() => [
     {
       title: 'Request ID',
@@ -464,7 +455,7 @@ export default function DashboardPage() {
               <div className="ur-dashboard-status-card">
                 <IconCoinMoney />
                 <div>
-                  <Text>可用余额</Text>
+                  <Text>结算可用额度</Text>
 				  <strong>{formatMoney(walletAvailable)}</strong>
                   <div style={{ marginTop: 4 }}>
                     {hasWalletThreshold ? (
@@ -476,39 +467,6 @@ export default function DashboardPage() {
             )}
           </div>
         </section>
-
-        {taskGroups.length > 0 && (
-          <Surface title="任务入口" description="只展示当前角色可进入的功能；当前商业授权未包含的功能保留为锁定入口，并与左侧导航使用同一权限配置。">
-            <div className="ur-dashboard-task-grid">
-              {taskGroups.map(group => (
-                <div className="ur-dashboard-task-group" key={group.key}>
-                  <div className="ur-dashboard-task-title">
-                    {group.icon}
-                    <Text strong>{group.title}</Text>
-                  </div>
-                  <div className="ur-dashboard-task-links">
-                    {group.links.map(link => {
-                      const button = (
-                        <Button
-                          key={link.itemKey}
-                          size="small"
-                          disabled={link.disabled || link.licenseLocked}
-                          aria-label={link.text}
-                          onClick={() => navigate(link.itemKey)}
-                        >
-                          {link.text}
-                        </Button>
-                      );
-                      return link.licenseLocked ? (
-                        <Tooltip key={link.itemKey} content={link.licenseReason}>{button}</Tooltip>
-                      ) : button;
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Surface>
-        )}
 
         <div className="ur-kpi-grid">
           <MetricTile

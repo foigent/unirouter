@@ -142,6 +142,28 @@ func TestSanitizeMetadata_RoutingPolicyFields(t *testing.T) {
 	}
 }
 
+func TestSanitizeMetadata_RuntimeReleaseAndModelAuthorizationFields(t *testing.T) {
+	input := map[string]interface{}{
+		"runtime_release_ref":             "rcr_company_chat_openai_v2",
+		"runtime_release_stage":           "canary",
+		"runtime_assignment_id":           "runtime-assignment.v1:request-42",
+		"model_authorization_contract":    "unirouter.model-call-authorization.v1",
+		"model_authorization_result":      "allow",
+		"model_authorization_reason":      "allow_intersection",
+		"model_authorization_policy_refs": "mca_project_company_chat,mca_user_finance",
+		"model_authorization_environment": "production",
+	}
+	metadata, gap := SanitizeMetadataWithGap(input)
+	if gap != "" || len(metadata) != len(input) {
+		t.Fatalf("runtime governance evidence was dropped: gap=%q metadata=%#v", gap, metadata)
+	}
+	for key, value := range input {
+		if metadata[key] != value {
+			t.Fatalf("metadata[%q] = %#v, want %#v", key, metadata[key], value)
+		}
+	}
+}
+
 func TestSanitizeMetadata_StreamPolicyFields(t *testing.T) {
 	metadata, gap := SanitizeMetadataWithGap(map[string]interface{}{
 		"stream_policy_version":     "stream-transport.v1",

@@ -17,10 +17,20 @@ import (
 type Router struct {
 	db           db.DBQuerier
 	policy       routingpolicy.Config
+	runtime      routingpolicy.RuntimeResolver
 	cacheMu      sync.RWMutex
 	cache        map[string]*routeSnapshot
 	refreshGroup singleflight.Group
 	now          func() time.Time
+}
+
+// SetRuntimeResolver attaches the product-local progressive release store.
+// A nil resolver preserves the pre-PRD8 routing behavior byte-for-byte.
+func (r *Router) SetRuntimeResolver(resolver routingpolicy.RuntimeResolver) {
+	if r == nil {
+		return
+	}
+	r.runtime = resolver
 }
 
 // NewRouter creates a new Router.
@@ -67,6 +77,9 @@ type RouteResult struct {
 	SelectionReason      string
 	RequiresProbe        bool
 	ProbeToken           string
+	RuntimeReleaseRef    string
+	RuntimeStage         string
+	RuntimeAssignmentID  string
 }
 
 // MarkChannelSuccess records a successful request for a channel.

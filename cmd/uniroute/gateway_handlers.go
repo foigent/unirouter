@@ -13,6 +13,7 @@ import (
 	"github.com/uniroute/unirouter/internal/admin"
 	"github.com/uniroute/unirouter/internal/gateway"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/modelauthz"
 	"github.com/uniroute/unirouter/internal/modelgov"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/outbox"
@@ -25,7 +26,7 @@ func newGatewayChatHandler(pool *pgxpool.Pool, relay *gateway.Relay, outboxServi
 		outboxService = outboxServices[0]
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		governedRequest, ok := prepareGatewayModelRequest(w, r, pool, outboxService)
+		governedRequest, ok := prepareGatewayModelRequest(w, r, pool, relay, outboxService)
 		if !ok {
 			return
 		}
@@ -39,7 +40,7 @@ func newGatewayEmbeddingsHandler(pool *pgxpool.Pool, relay *gateway.Relay, outbo
 		outboxService = outboxServices[0]
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		governedRequest, ok := prepareGatewayModelRequest(w, r, pool, outboxService)
+		governedRequest, ok := prepareGatewayModelRequest(w, r, pool, relay, outboxService)
 		if !ok {
 			return
 		}
@@ -47,7 +48,7 @@ func newGatewayEmbeddingsHandler(pool *pgxpool.Pool, relay *gateway.Relay, outbo
 	}
 }
 
-func prepareGatewayModelRequest(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, outboxService *outbox.Service) (*http.Request, bool) {
+func prepareGatewayModelRequest(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, relay *gateway.Relay, outboxService *outbox.Service) (*http.Request, bool) {
 	apiKey := middleware.GetAPIKeyFromContext(r.Context())
 	if apiKey == nil {
 		http.Error(w, `{"error":{"type":"auth_error.invalid_api_key","message":"No API key"}}`, http.StatusUnauthorized)
@@ -81,9 +82,28 @@ func prepareGatewayModelRequest(w http.ResponseWriter, r *http.Request, pool *pg
 
 	if req.Model != "" {
 		var ok bool
-		r, bodyBytes, _, ok = applyModelGovernance(w, r, pool, outboxService, apiKey, req.Model, bodyBytes)
+		var resolvedModel string
+		r, bodyBytes, resolvedModel, ok = applyModelGovernance(w, r, pool, outboxService, apiKey, req.Model, bodyBytes)
 		if !ok {
 			return nil, false
+		}
+		if relay != nil {
+			decision, decisionErr := relay.EvaluateModelAuthorization(r.Context(), r.URL.Path, req.Model, resolvedModel)
+			if decisionErr != nil {
+				http.Error(w, `{"error":{"type":"server_error.model_authorization_unavailable","message":"Model authorization is temporarily unavailable"}}`, http.StatusServiceUnavailable)
+				return nil, false
+			}
+			if !decision.Allowed {
+				recordModelAuthorizationDenial(r.Context(), pool, outboxService, apiKey, decision)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]interface{}{
+					"type": "auth_error.model_call_not_authorized", "message": "Model call is outside the active enterprise authorization policy",
+					"model": req.Model, "reason": decision.Reason, "policy_refs": decision.PolicyRefs,
+				}})
+				return nil, false
+			}
+			r = r.WithContext(modelauthz.WithDecision(r.Context(), decision))
 		}
 	}
 
@@ -95,6 +115,43 @@ func prepareGatewayModelRequest(w http.ResponseWriter, r *http.Request, pool *pg
 		return nil, false
 	}
 	return r, true
+}
+
+func recordModelAuthorizationDenial(ctx context.Context, pool *pgxpool.Pool, outboxService *outbox.Service, apiKey *models.ApiKey, decision modelauthz.Decision) {
+	if pool == nil || apiKey == nil {
+		return
+	}
+	projectID := int64(0)
+	if apiKey.ProjectID != nil {
+		projectID = *apiKey.ProjectID
+	}
+	detail := map[string]interface{}{
+		"api_key_id": apiKey.ID, "model": decision.RequestedModel, "resolved_model": decision.ResolvedModel,
+		"endpoint": decision.Endpoint, "reason": decision.Reason, "policy_refs": decision.PolicyRefs,
+		"runtime_mutation": "none",
+	}
+	if outboxService != nil {
+		if err := admin.EnqueueGatewayAudit(ctx, outboxService, apiKey.OrgID, projectID,
+			"model_authorization.deny", "model_authorization", decision.RequestedModel, detail); err == nil {
+			return
+		}
+	}
+	body, _ := json.Marshal(detail)
+	var project interface{}
+	if projectID > 0 {
+		project = projectID
+	}
+	_, _ = pool.Exec(ctx, `INSERT INTO audit_logs
+        (org_id,user_id,action,resource,resource_id,detail,ip,user_agent,request_id,source,project_id,before_state,after_state,created_at)
+        VALUES ($1,0,'model_authorization.deny','model_authorization',$2,$3::jsonb,'','',$4,'gateway_api',$5,'{}'::jsonb,'{}'::jsonb,NOW())`,
+		apiKey.OrgID, truncateAuditResource(decision.RequestedModel), string(body), middleware.GetRequestIDFromContext(ctx), project)
+}
+
+func truncateAuditResource(value string) string {
+	if len(value) > 64 {
+		return value[:64]
+	}
+	return value
 }
 
 func applyModelGovernance(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, outboxService *outbox.Service, apiKey *models.ApiKey, requestedModel string, bodyBytes []byte) (*http.Request, []byte, string, bool) {

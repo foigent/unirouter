@@ -321,8 +321,8 @@ export default function MediaJobsPage() {
     <div className="ur-page">
       <PageHeader
         eyebrow="异步执行控制面"
-        title="图像任务"
-        description="GPT Image V1 的租户隔离任务、持久化输出、取消与结算事实。右侧检查器始终可见。"
+        title="模型任务"
+        description="异步模型执行的统一工作区；Image V1 是当前首个 Endpoint Profile，不代表图像被定义为独立业务域。右侧检查器始终可见。"
         actions={(
           <Space>
             <Select
@@ -345,7 +345,7 @@ export default function MediaJobsPage() {
       {contract && !contract.runtime_enabled && (
         <Banner
           type="warning"
-          description="当前部署未启用图像任务 worker 与对象存储；仅任务元数据和合同证据可读取。"
+          description="当前部署未启用 Image V1 模型任务 worker 与对象存储；仅任务元数据和合同证据可读取。"
           closeIcon={null}
         />
       )}
@@ -383,7 +383,7 @@ export default function MediaJobsPage() {
           {projects.length === 0 ? (
             <EmptyState title="没有可见项目" description="当前账号没有可读取的项目范围。" />
           ) : jobs.length === 0 && !loading ? (
-            <EmptyState title="暂无图像任务" description="通过项目 API Key 提交任务后，状态会在这里出现。" />
+            <EmptyState title="暂无模型任务" description="通过项目 API Key 提交已支持的异步任务后，状态会在这里出现。" />
           ) : (
             <Table
               rowKey="job_id"
@@ -396,7 +396,7 @@ export default function MediaJobsPage() {
           )}
         </main>
 
-        <aside className="ur-explorer-panel ur-explorer-detail" aria-label="图像任务检查器">
+        <aside className="ur-explorer-panel ur-explorer-detail" aria-label="模型任务检查器">
           <div className="ur-panel-title">
             <div>
               <Title heading={5}>任务检查器</Title>

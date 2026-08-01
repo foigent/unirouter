@@ -112,7 +112,7 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
     expect((await screen.findAllByText('primary-cn')).length).toBeGreaterThan(0);
     expect(mocks.getChannels).toHaveBeenCalledWith(1, 20);
     expect(screen.getByText('同级权重')).toBeTruthy();
-    expect(screen.getByText(/熔断阈值决定连续失败多少次/)).toBeTruthy();
+    expect(screen.getByText(/新通道默认 staged/)).toBeTruthy();
     expect(screen.getByText(/真实请求仍以服务器请求 ID 进行稳定选择/)).toBeTruthy();
 
     fireEvent.change(screen.getByPlaceholderText('模型名称，例如 gpt-4o'), { target: { value: 'gpt-4o' } });
@@ -149,7 +149,7 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
     expect(screen.getByRole('button', { name: '重新加载上游通道' })).toBeTruthy();
   });
 
-  it('restores Kimi and disabled status when editing and sends the selected status', async () => {
+  it('restores Kimi and only permits a disabled channel to move to staged', async () => {
     mocks.getChannels.mockResolvedValueOnce({
       data: [{
         id: 8,
@@ -178,12 +178,13 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
     expect(await screen.findByRole('combobox', { name: '供应商' })).toHaveTextContent('Kimi');
     expect(screen.getByRole('combobox', { name: '状态' })).toHaveTextContent('禁用');
     fireEvent.click(screen.getByRole('combobox', { name: '状态' }));
-    fireEvent.click(await screen.findByText('启用'));
+    expect(screen.queryByText('启用')).toBeNull();
+    fireEvent.click(await screen.findByText('待发布（staged）'));
     fireEvent.click(screen.getByRole('button', { name: '更新' }));
 
     await waitFor(() => expect(mocks.updateChannel).toHaveBeenCalledWith(8, expect.objectContaining({
       provider: 'kimi',
-      status: 'active',
+      status: 'staged',
       expected_routing_epoch: 4,
     })));
   });
@@ -195,10 +196,10 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
     render(<ChannelsPage />);
     fireEvent.click(await screen.findByRole('button', { name: '编辑通道 primary-cn' }));
     fireEvent.click(screen.getByRole('button', { name: '更新' }));
-    expect(await screen.findByText('通道状态仅支持 active 或 disabled')).toBeTruthy();
+    expect(await screen.findByText('通道状态仅支持 active、staged 或 disabled')).toBeTruthy();
 
     mocks.updateChannel.mockRejectedValueOnce(new ApiError('stale', 409, null));
     fireEvent.click(screen.getByRole('button', { name: '更新' }));
-    expect(await screen.findByText('该通道已被其他管理员修改，请关闭编辑页、刷新后重试')).toBeTruthy();
+    expect(await screen.findByText('该通道已被其他管理员修改或正由运行时发布接管，请刷新后重试')).toBeTruthy();
   });
 });

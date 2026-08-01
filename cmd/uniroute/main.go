@@ -35,6 +35,7 @@ import (
 	"github.com/uniroute/unirouter/internal/mediajob"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/migrate"
+	"github.com/uniroute/unirouter/internal/modelauthz"
 	"github.com/uniroute/unirouter/internal/modelgov"
 	"github.com/uniroute/unirouter/internal/oidc"
 	"github.com/uniroute/unirouter/internal/outbox"
@@ -42,6 +43,7 @@ import (
 	"github.com/uniroute/unirouter/internal/policybilling"
 	"github.com/uniroute/unirouter/internal/redisx"
 	"github.com/uniroute/unirouter/internal/releasetrust"
+	"github.com/uniroute/unirouter/internal/runtimechange"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
 	"github.com/uniroute/unirouter/internal/telemetryexport"
 )
@@ -133,6 +135,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("Invalid effective routing configuration: %v", err)
 	}
+	modelAuthorizationEvaluator, err := modelauthz.NewEvaluator(postgres.Pool, cfg.RuntimeEnvironment)
+	if err != nil {
+		log.Fatalf("Failed to initialize model-call authorization: %v", err)
+	}
+	runtimeChangeManager, err := runtimechange.NewManager(postgres.Pool, router, effectiveConfig.RoutingPolicy.Config)
+	if err != nil {
+		log.Fatalf("Failed to initialize runtime change control: %v", err)
+	}
+	router.SetRuntimeResolver(runtimeChangeManager)
 	mediaStore, err := mediajob.NewPostgresStore(postgres.Pool)
 	if err != nil {
 		log.Fatalf("Failed to initialize async-media store: %v", err)
@@ -170,7 +181,29 @@ func main() {
 		case accessErr != nil:
 			return mediajob.ModelAuthorization{}, mediajob.ErrUnavailable
 		default:
-			return mediajob.ModelAuthorization{RoutingModel: access.ResolvedModel}, nil
+			routingModel := access.ResolvedModel
+			if routingModel == "" {
+				routingModel = requestedModel
+			}
+			apiKey := middleware.GetAPIKeyFromContext(ctx)
+			if apiKey == nil {
+				return mediajob.ModelAuthorization{}, mediajob.ErrForbidden
+			}
+			input := modelauthz.Input{
+				OrgID: scope.OrgID, ProjectID: scope.ProjectID, APIKeyID: apiKey.ID,
+				Endpoint: "/v1/media/jobs", RequestedModel: requestedModel, ResolvedModel: routingModel,
+			}
+			if apiKey.OwnerUserID != nil {
+				input.OwnerUserID = *apiKey.OwnerUserID
+			}
+			decision, decisionErr := modelAuthorizationEvaluator.Evaluate(ctx, input)
+			if decisionErr != nil {
+				return mediajob.ModelAuthorization{}, mediajob.ErrUnavailable
+			}
+			if !decision.Allowed {
+				return mediajob.ModelAuthorization{}, mediajob.ErrForbidden
+			}
+			return mediajob.ModelAuthorization{RoutingModel: routingModel}, nil
 		}
 	})
 	mediaService, err := mediajob.NewService(
@@ -321,6 +354,7 @@ func main() {
 	relay.SetPayloadBudget(payloadBudget)
 	relay.SetGuardrail(guardrailService)
 	relay.SetOutbox(outboxSvc)
+	relay.SetModelAuthorization(modelAuthorizationEvaluator)
 	if err := relay.SetStreamPolicy(effectiveConfig.StreamTransport.Config); err != nil {
 		log.Fatalf("Invalid effective stream transport configuration: %v", err)
 	}
@@ -348,6 +382,8 @@ func main() {
 	adminHandler.SetOutbox(outboxSvc)
 	adminHandler.SetCompletedFeedController(completedFeedSvc)
 	adminHandler.SetRoutingController(router)
+	adminHandler.SetRuntimeChangeManager(runtimeChangeManager)
+	adminHandler.SetModelAuthorizationEvaluator(modelAuthorizationEvaluator)
 	adminHandler.SetGuardrailController(guardrailService)
 	adminHandler.SetProviderCostReconciler(billingSvc)
 	adminHandler.SetLimitPolicyReloader(limitPolicyService)
@@ -767,6 +803,20 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">POST</td><td><code>/api/v1/provider-cogs/offline-preview</code></td><td>Evaluate bounded supplier-cost evidence without network, persistence or customer-ledger mutation</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/governance-simulation/offline-contract</code></td><td>Read the zero-persistence route/policy and Provider Change Firewall contract</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/governance-simulation/offline-preview</code></td><td>Compare immutable route, policy and Provider Pack snapshots without runtime promotion</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/runtime-changes</code></td><td>List bounded route-assignment releases</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/runtime-changes</code></td><td>Create an epoch- and Provider-Pack-pinned release draft</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/runtime-changes/slot</code></td><td>Read stable and canary assignment for one model</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/runtime-changes/{ref}</code></td><td>Read release evidence and lifecycle</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/validate</code></td><td>Revalidate same-clock snapshots and block breaking changes</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/shadow</code></td><td>Advance a validated release to zero-traffic shadow</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/canary</code></td><td>Start a deterministic bounded canary</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/promote</code></td><td>Promote the current canary to stable</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/rollback</code></td><td>Restore the parent stable assignment</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/model-call-authorizations/contract</code></td><td>Read narrow-only model-call authorization semantics</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/model-call-authorizations</code></td><td>List tenant-scoped model-call authorization policies</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-call-authorizations</code></td><td>Create a non-enforcing authorization draft</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-call-authorizations/{ref}/activate</code></td><td>Activate deny-first, allow-intersection model-call authorization</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-call-authorizations/{ref}/revoke</code></td><td>Revoke one model-call authorization policy</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/member-lifecycle/offline-contract</code></td><td>Read the IdP-neutral project-member lifecycle contract</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/member-lifecycle/offline-preview</code></td><td>Evaluate one bounded lifecycle event without user, membership, key, session or IdP mutation</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/agent-trust/offline-contract</code></td><td>Read the metadata-only Agent Trust, signed receipt and Governance Digital Twin contract</td></tr>
@@ -854,7 +904,13 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	registerProviderCostRoutes(mux, adminHandler, platformRoute)
 	registerProviderCOGSOfflineRoutes(mux, adminHandler, billingRoute)
 	registerGovernanceSimulationRoutes(mux, adminHandler, platformRoute)
+	registerRuntimeChangeRoutes(mux, adminHandler, platformRoute)
+	registerModelAuthorizationRoutes(mux, adminHandler, orgAdminRoute)
 	registerMemberLifecycleRoutes(mux, adminHandler, orgAdminRoute)
+	registerEnterpriseDirectoryRoutes(mux, adminHandler, orgAdminRoute)
+	registerEnterpriseFinanceRoutes(mux, adminHandler, enterpriseFinanceRouteGuards{
+		read: pricingReadRoute, write: billingRoute,
+	})
 	registerAgentTrustRoutes(mux, adminHandler, orgAdminRoute)
 	registerProvenancePassportRoutes(mux, adminHandler, orgAdminRoute)
 	registerRiskControlRoutes(mux, adminHandler, orgAdminRoute)

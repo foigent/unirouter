@@ -324,7 +324,7 @@ export default function KeysPage() {
     {
       title: '操作', key: 'actions', width: 180,
       render: (_: any, record: ApiKey) => record.purpose === 'xinsight.feed.read' ? (
-        <Text type="tertiary">请前往 X-Insight 数据交换控制</Text>
+        <Text type="tertiary">请前往 X-Insight 数据交换</Text>
       ) : (
         <Space>
           <Button aria-label={`编辑访问凭证 ${record.name}`} icon={<IconEdit />} size="small" onClick={() => openEdit(record)}>编辑</Button>

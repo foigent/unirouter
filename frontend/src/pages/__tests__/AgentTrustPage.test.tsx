@@ -5,6 +5,11 @@ import AgentTrustPage from '../AgentTrustPage';
 const mocks = vi.hoisted(() => ({
   getAgentTrustContract: vi.fn(),
   previewAgentTrust: vi.fn(),
+  getModelAuthorizationContract: vi.fn(),
+  getModelAuthorizations: vi.fn(),
+  createModelAuthorization: vi.fn(),
+  activateModelAuthorization: vi.fn(),
+  revokeModelAuthorization: vi.fn(),
 }));
 
 vi.mock('../../api/client', async () => {
@@ -101,6 +106,35 @@ const REPORT = {
 describe('AgentTrustPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.getModelAuthorizationContract.mockResolvedValue({
+      contract_version: 'unirouter.model-call-authorization.v1',
+      environment: 'production',
+      subjects: ['api_key', 'project', 'user', 'agent'],
+      effects: ['allow', 'deny'],
+      endpoints: ['/v1/chat/completions', '/v1/embeddings'],
+      precedence: 'deny_first_then_allow_intersection',
+      authority: 'unirouter_model_execution_only',
+      tool_or_mcp_authority: 'none',
+    });
+    mocks.getModelAuthorizations.mockResolvedValue({
+      data: [{
+        id: 12,
+        org_id: 7,
+        authorization_ref: 'mca_project_company_chat',
+        subject_type: 'project',
+        subject_ref: '42',
+        environment: 'production',
+        effect: 'allow',
+        allowed_models: ['company-chat'],
+        allowed_endpoints: ['/v1/chat/completions'],
+        status: 'active',
+        revision: 2,
+        reason: '生产项目仅允许企业模型别名',
+        created_at: '2026-08-01T08:00:00Z',
+        updated_at: '2026-08-01T08:01:00Z',
+      }],
+      total: 1,
+    });
     mocks.getAgentTrustContract.mockResolvedValue({
       contract_version: 'unirouter.agent-trust-review.v1',
       report_version: 'unirouter.agent-trust-report.v1',
@@ -122,8 +156,20 @@ describe('AgentTrustPage', () => {
     mocks.previewAgentTrust.mockResolvedValue(REPORT);
   });
 
+  it('opens on the live model-call authorization workspace with a persistent inspector', async () => {
+    render(<AgentTrustPage />);
+
+    expect(screen.getByRole('tab', { name: '运行时授权策略' })).toHaveAttribute('aria-selected', 'true');
+    expect((await screen.findAllByText('mca_project_company_chat')).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByRole('complementary', { name: '模型调用授权检查器' })).toBeTruthy();
+    expect(screen.getByText('显式拒绝优先，多个主体的允许范围取交集', { exact: false })).toBeTruthy();
+    expect(mocks.getAgentTrustContract).not.toHaveBeenCalled();
+  });
+
   it('auto-runs the safe review and keeps the inspector present', async () => {
     render(<AgentTrustPage />);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Agent 离线证据' }));
 
     expect(screen.getByLabelText('Agent Trust 检查器')).toBeTruthy();
     await waitFor(() => expect(mocks.previewAgentTrust).toHaveBeenCalledWith(JSON.stringify(SAMPLE, null, 2)));
@@ -135,6 +181,7 @@ describe('AgentTrustPage', () => {
 
   it('changes the selected Agent without a detail-open action', async () => {
     render(<AgentTrustPage />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Agent 离线证据' }));
     await waitFor(() => expect(screen.getAllByText(/sha256:bbbb/).length).toBeGreaterThanOrEqual(1));
 
     fireEvent.click(screen.getByText(/sha256:dddd/));

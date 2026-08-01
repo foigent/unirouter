@@ -159,7 +159,7 @@ function centsFromYuan(yuan: unknown) {
   return Number.isFinite(value) && value >= 0 && value <= maxProjectBudgetYuan ? Math.round(value * 100) : -1;
 }
 
-export default function ProjectManagementPage() {
+export default function ProjectManagementPage({ embedded = false }: { embedded?: boolean }) {
   const currentUser = useAuthStore(state => state.user);
   const role = currentUser?.role || '';
   const platform = isPlatformAdminRole(role);
@@ -659,8 +659,19 @@ export default function ProjectManagementPage() {
   })), [eligibleUsers]);
 
   return (
-    <div className="ur-page ur-page-wide">
-      <PageHeader
+    <div className={embedded ? 'ur-embedded-page' : 'ur-page ur-page-wide'}>
+      {embedded ? (
+        <div className="ur-embedded-heading">
+          <div>
+            <Typography.Title heading={4} style={{ margin: 0 }}>项目与成员</Typography.Title>
+            <Text type="tertiary">项目是 UniRouter 本地权限和成本归属范围；人员可同时属于多个项目。</Text>
+          </div>
+          <Space>
+            <Button icon={<IconRefresh />} loading={projectLoading} onClick={() => setReloadVersion(version => version + 1)}>刷新</Button>
+            {canCreateProject && <Button type="primary" icon={<IconPlus />} onClick={() => setCreateSheet(true)}>新建项目</Button>}
+          </Space>
+        </div>
+      ) : <PageHeader
         eyebrow="访问与安全"
         title="项目与成员"
         description="项目列表与工作区保持并列；首个项目自动进入检查器，无需再次打开详情。"
@@ -668,7 +679,7 @@ export default function ProjectManagementPage() {
           <Button icon={<IconRefresh />} loading={projectLoading} onClick={() => setReloadVersion(version => version + 1)}>刷新</Button>
           {canCreateProject && <Button type="primary" icon={<IconPlus />} onClick={() => setCreateSheet(true)}>新建项目</Button>}
         </Space>}
-      />
+      />}
 
       <Surface title="工作区视图" description="组织、项目、分页和当前 Tab 会写入 URL；命名视图只保存在当前浏览器。">
         <div className="ur-project-view-bar">

@@ -1,6 +1,125 @@
 # Current Execution Record
 
-## Current Repository Execution — PRD7 Enterprise AI Execution Trust Control Plane
+## Current Repository Execution — PRD8 Enterprise Control Plane Delivery
+
+**Work item:** `UR-PRD8-ENTERPRISE-CONTROL-PLANE`
+
+**Owner:** UniRouter product/implementation owner
+
+**Risk:** `R2` for UI, `R3` for directory/IAM/finance persistence and `R4` for
+the bounded route-release and model-call authorization PEP. External directory,
+ERP and Provider integrations remain separately gated.
+
+**Authority:** On 2026-08-02 the User instructed the implementation owner to
+list the complete long-running task and close every non-decision batch, stopping
+only where a material product decision or discussion is required. The User
+later separately authorized commit/PR/CI and release to the existing UniRouter
+environment after verification. The frozen
+product contract is `docs/PRD-Phase8.md`; the exact dependency plan and stop
+conditions are `docs/planning/PRD8-IMPLEMENTATION-PLAN.md`.
+
+**Baseline:** branch `codex/product-iteration-20260730`, commit/tree
+`c0182861c7ec1079e335e317863f7ec5bcabd731` /
+`0bfeed8938eb6235ec20db05450f2472e43460a3`. This work continues in the
+existing product-iteration working tree and preserves all prior changes.
+
+**Current result:** the complete autonomous dependency sequence is implemented
+and Local verified in the working tree: `UI-1` through `UI-5`, `UI-PERF-1`,
+`DOMAIN-0`, `ORG-1`, `ORG-2`, `FIN-1`, `FIN-2`, `FIN-3`, `RUNTIME-1` and
+`AUTHZ-1`. This includes
+source-neutral directory health/tree projection, people/account binding,
+fail-closed IAM convergence, fiscal periods, cost centers, report-only budgets,
+five-layer Rate Cards, immutable pricing evidence, exact allocation, close
+gates and adjustment/reversal journals, plus Provider Pack-pinned bounded
+route releases and a runtime-backed Model Call Authorization PEP. `ORG-3` and
+`FIN-4` are now the exact
+stop gates because no real customer directory or ERP/GL target has been
+selected. Evidence:
+`docs/ops/evidence/PRD8-ORG1-enterprise-directory-foundation-local-20260802.md`,
+`docs/ops/evidence/PRD8-ORG2-enterprise-directory-iam-convergence-local-20260802.md`,
+`docs/ops/evidence/PRD8-FIN1-FIN3-enterprise-finance-local-20260802.md`, and
+`docs/ops/evidence/PRD8-enterprise-org-finance-local-closeout-20260802.md`, and
+`docs/ops/evidence/PRD8-P7F04-P7F10-P7F12-runtime-controls-local-20260802.md`.
+
+**Current local verification:** full Go tests, required PostgreSQL integration
+selection, complete migration integration rollback suite, full race run and
+`go vet` pass. Frontend 50/50 files and 347/347 tests, type-check and
+production build pass. The current production entry is `275.35 kB` minified /
+`87.11 kB` gzip; the largest minified chunk is
+`376.63 kB` / `100.87 kB` gzip, and the build has no 500 kB warning. Rendered
+budget, Rate Card and allocation/close smoke at 1440/1024/768 used synthetic
+API data, had no document-width overflow, and produced zero browser console
+errors or warnings. This remains Local, not Target or Production evidence.
+
+**Compatibility boundary:** route release intentionally changes only bounded
+channel admission/priority/weight assignment and Model Call Authorization can
+only deny/narrow an otherwise-authorized model call. No completed batch changes
+request DTO/storage, credential/endpoint configuration, billing settlement,
+Outbox identity, completed-execution Source bytes/hash, Feed/Cursor behavior or
+the no-default-source-instance rule.
+
+**Delivery boundary:** commit/PR/CI and release to the existing UniRouter
+environment are separately authorized, but cannot be claimed until executed
+and verified. Real directory/ERP credentials, Provider test traffic,
+Cursor/Checkpoint changes and ORG-3/FIN-4 remain unauthorized/unselected.
+
+## Completed Repository Execution — PRD8 Product Boundary Freeze
+
+**Work item:** `UR-PRD8-FOUR-PRODUCT-BOUNDARY-FREEZE`
+
+**Owner:** UniRouter product/implementation owner
+
+**Risk:** R2 documentation and product-semantics change. No code or runtime
+migration is part of this batch.
+
+**Authority:** On 2026-08-01 the User requested a fresh audit of the latest PRD,
+comprehensive X-Insight/Tool Gateway/MCP Gateway research, removal of misplaced
+UniRouter ownership and a sealed PRD8. The User explicitly allowed independent
+agents to review the cooperation/X-Insight context.
+
+**Baseline:** branch `codex/product-iteration-20260730`, commit
+`8467715efa270ea884ca6dc28b70c3dd5ed09bff`, clean worktree before this batch.
+
+**Current product sources:** `docs/PRD-Phase8.md` and
+`docs/ops/PRD8-BOUNDARY-MATRIX.md`. PRD7 and all B0–B14 evidence remain frozen
+implementation history.
+
+**Result:** Product ownership is split among UniRouter model execution,
+X-Insight evidence/investigation, Tool Gateway tool/action mediation, MCP
+Gateway protocol/session mediation and the shared Event/Connector contract.
+P7-F01–F19 have an explicit keep/narrow/merge/relocate disposition. The UI
+boundary removes duplicated cross-product workspaces from future UniRouter
+navigation and resolves `图像任务` to the model-domain `模型任务` concept.
+
+**Verification:** repository/document searches, exact PRD7/governance/status
+inspection, current navigation/source audit, read-only X-Insight and cooperation
+boundary review, primary-source review of seven gateway products/projects, MCP
+official architecture/security guidance, AgentDojo, ToolEmu and recent gateway
+research. Final checks: `git diff --check` PASS; all local links in the ten
+changed Markdown files resolve; P7-F01–F19 occur once each in exact order; no
+stale “PRD7 is current” wording remains in current entrypoints; independent
+read-only boundary/evidence review PASS. No application test was run because
+this batch changes documentation only.
+
+**Read-only external identities:** X-Insight `origin/main` commit/tree
+`c2012ae74ccc15dab9149bf8c673cb177e5c1c44` /
+`ccc60e517d269d1228a523d81e0783a6509e9e16`; the explicitly unmerged local
+candidate reviewed only for product-boundary direction is commit/tree
+`37abf091d2e87bca5574a125b258b2d382542226` /
+`19cc52dfd109382ab7c4402314d2a769d46c8934`. Cooperation evidence digests:
+Phase4A shared-SDK ADR candidate `525211d2d733f3bbf330e9ec69caa8c9fe3c88a5182b7f46faf7789e040a963d`;
+LiteLLM second-Connector closure
+`2a33338dd4651fcbaaf5487cfc0809642f8a05c880d8188fbcf510d455c36024`;
+X-Insight/UniRouter product handoffs
+`cc4ce112775efb246f244fe753ce3b229ec46c3e0d39217e265abd70ef9fa0f9` /
+`7f6d9815eee4ceb139160c0a1ff889b61323d7aa81c76c0a6a64fbd60ea1b8b6`.
+
+**Non-goals:** no route or code deletion; no API/DTO/Schema/DB/IAM/routing/
+billing/Outbox/Feed/Cursor/Checkpoint change; no counterpart-repository write;
+no Tool/MCP Gateway implementation; no deployment, credentials, traffic, push,
+PR, merge or release.
+
+## Completed Repository Execution — PRD7 Enterprise AI Execution Trust Control Plane
 
 **Work item:** `UR-PRD7-ENTERPRISE-EXECUTION-TRUST-CONTROL-PLANE`
 

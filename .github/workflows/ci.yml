@@ -185,6 +185,15 @@ jobs:
         # 10-minute package timeout on a slower hosted runner.
         run: go test -tags=integration -race ./internal/admin -count=1 -timeout=20m
 
+      - name: Run PRD8 enterprise and runtime-control integration tests
+        env:
+          REQUIRE_TEST_DATABASE: "1"
+        run: >-
+          go test -tags=integration -race
+          ./internal/orgdirectory ./internal/enterprisefinance ./internal/runtimechange ./internal/migrate ./cmd/uniroute
+          -run '^(Test(PostgresStore|ProjectionStore|Enterprise|Allocation|PRD8RuntimeChange|PRD8RuntimeControl|PRD8GatewayModelAuthorization).*)$'
+          -count=1 -timeout=20m
+
       - name: Run V1 security migration integration tests
         env:
           REQUIRE_TEST_DATABASE: "1"

@@ -3,6 +3,7 @@ import { Banner, Button, Table, Tag, TextArea, Typography } from '@douyinfe/semi
 import { api, ApiError } from '../api/client';
 import { EmptyState, MetricTile, PageHeader } from '../ui';
 import { formatInteger } from '../utils/formatNumber';
+import ModelAuthorizationWorkspace from './ModelAuthorizationWorkspace';
 
 interface ArtifactIdentity {
   path: string;
@@ -121,7 +122,7 @@ const compactRef = (value: string) => value.length > 24
   ? `${value.slice(0, 15)}…${value.slice(-8)}`
   : value;
 
-export default function AgentTrustPage() {
+function OfflineAgentTrustWorkspace() {
   const [contract, setContract] = useState<AgentTrustContract | null>(null);
   const [input, setInput] = useState('');
   const [report, setReport] = useState<AgentTrustReport | null>(null);
@@ -214,15 +215,10 @@ export default function AgentTrustPage() {
   };
 
   return (
-    <div className="ur-page">
-      <PageHeader
-        eyebrow="访问与安全"
-        title="Agent Trust Firewall"
-        description="把有效权限树、祖先预算、权限衰减、TTL、撤销、签名收据与治理数字孪生放在同一个可复核工作区。"
-      />
+    <div>
       <Banner
         type="info"
-        description="当前为离线元数据审查：不接收签名私钥，不读取运行时能力，不同步依赖风险服务，不晋级策略或执行撤销。Fixture 公钥只证明密码学有效，不是生产信任根。"
+        description="离线 Agent 能力证据仍保留为人工审查工具：不接收签名私钥，不读取运行时能力，不同步依赖风险服务，也不会晋级策略或执行撤销。Fixture 公钥只证明密码学有效，不是生产信任根。"
         style={{ marginBottom: 16 }}
       />
 
@@ -230,12 +226,12 @@ export default function AgentTrustPage() {
         <main className="ur-explorer-panel">
           <div className="ur-panel-title">
             <div>
-              <Typography.Title heading={5} style={{ margin: 0 }}>有效权限树与数字孪生</Typography.Title>
+              <Typography.Title heading={5} style={{ margin: 0 }}>模型调用授权树与离线证据</Typography.Title>
               <Typography.Text className="ur-panel-hint">
                 {contract ? `${contract.contract_version} · ${contract.receipt_version}` : '正在读取离线合同'}
               </Typography.Text>
             </div>
-            <Tag color="blue">metadata-only</Tag>
+            <Tag color="grey">规划中 · metadata-only</Tag>
           </div>
 
           <div className="ur-table-shell">
@@ -322,6 +318,24 @@ export default function AgentTrustPage() {
           )}
         </aside>
       </div>
+    </div>
+  );
+}
+
+export default function AgentTrustPage() {
+  const [view, setView] = useState<'authorization' | 'evidence'>('authorization');
+  return (
+    <div className="ur-page ur-page-wide">
+      <PageHeader
+        eyebrow="访问与安全"
+        title="模型调用授权"
+        description="按访问凭证、项目、人员或 Agent 收窄可调用模型与端点；右侧固定显示适用原因与生命周期操作，不扩展 Tool 或 MCP 权限。"
+      />
+      <div className="ur-modelgov-tabs" role="tablist" aria-label="模型调用授权视图">
+        <Button role="tab" aria-selected={view === 'authorization'} type={view === 'authorization' ? 'primary' : 'tertiary'} theme={view === 'authorization' ? 'solid' : 'borderless'} onClick={() => setView('authorization')}>运行时授权策略</Button>
+        <Button role="tab" aria-selected={view === 'evidence'} type={view === 'evidence' ? 'primary' : 'tertiary'} theme={view === 'evidence' ? 'solid' : 'borderless'} onClick={() => setView('evidence')}>Agent 离线证据</Button>
+      </div>
+      {view === 'authorization' ? <ModelAuthorizationWorkspace /> : <OfflineAgentTrustWorkspace />}
     </div>
   );
 }

@@ -104,8 +104,6 @@ const taskNavItems: NavItem[] = [
     icon: <IconSendStroked />,
     items: [
       { itemKey: '/channels', text: '上游通道', icon: <IconRoute /> },
-      { itemKey: '/governance-simulation', text: '变更防火墙', icon: <IconShield /> },
-      { itemKey: '/risk-control', text: '风险与控制建议', icon: <IconPulse /> },
       { itemKey: '/channel-keys', text: '供应商凭证', icon: <IconLockStroked /> },
       { itemKey: '/model-governance', text: '模型治理', icon: <IconLayers />, licenseFeature: 'model_governance' },
       { itemKey: '/test', text: '连通性检测', icon: <IconTestScore />, licenseFeature: 'gateway' },
@@ -117,12 +115,10 @@ const taskNavItems: NavItem[] = [
     icon: <IconShieldStroked />,
     items: [
       { itemKey: '/keys', text: '访问凭证', icon: <IconKeyStroked /> },
-      { itemKey: '/project-management', text: '项目与成员', icon: <IconUserGroup /> },
-      { itemKey: '/member-lifecycle', text: '成员生命周期', icon: <IconShield /> },
-      { itemKey: '/agent-trust', text: 'Agent 信任防火墙', icon: <IconShieldStroked /> },
+      { itemKey: '/organization-members', text: '组织与成员', icon: <IconUserGroup /> },
+      { itemKey: '/agent-trust', text: '模型调用授权', icon: <IconShieldStroked /> },
       { itemKey: '/limit-policies', text: '共享限额', icon: <IconPulse /> },
       { itemKey: '/guardrail-policies', text: '内容安全', icon: <IconShieldStroked />, licenseFeature: 'guardrails' },
-      { itemKey: '/users', text: '用户管理', icon: <IconUserGroup /> },
       { itemKey: '/audit-logs', text: '审计日志', icon: <IconChecklistStroked /> },
     ],
   },
@@ -132,8 +128,7 @@ const taskNavItems: NavItem[] = [
     icon: <IconMonitorStroked />,
     items: [
       { itemKey: '/logs', text: '请求日志', icon: <IconFile /> },
-      { itemKey: '/media-jobs', text: '图像任务', icon: <IconFile />, licenseFeature: 'gateway' },
-      { itemKey: '/provenance-passport', text: '来源与缺口 Passport', icon: <IconFlowChartStroked /> },
+      { itemKey: '/media-jobs', text: '模型任务', icon: <IconFile />, licenseFeature: 'gateway' },
       { itemKey: '/usage-analytics', text: '用量分析', icon: <IconBarChartVStroked /> },
       { itemKey: '/notifications', text: '通知中心', icon: <IconBell />, licenseFeature: 'notifications' },
       { itemKey: '/status', text: '运行状态', icon: <IconPulse /> },
@@ -141,12 +136,12 @@ const taskNavItems: NavItem[] = [
   },
   {
     itemKey: 'g-billing',
-    text: '计费与资金',
+    text: '成本与财务',
     icon: <IconCoinMoney />,
     items: [
-      { itemKey: '/wallet', text: '资金账户', icon: <IconCreditCard /> },
-      { itemKey: '/model-prices', text: '模型计费', icon: <IconPriceTag /> },
-      { itemKey: '/reconciliation', text: '财务真值', icon: <IconFlowChartStroked /> },
+      { itemKey: '/wallet', text: '预算与成本中心', icon: <IconCreditCard /> },
+      { itemKey: '/model-prices', text: '费率与计价', icon: <IconPriceTag /> },
+      { itemKey: '/reconciliation', text: '分摊与对账', icon: <IconFlowChartStroked /> },
     ],
   },
   {
@@ -155,7 +150,7 @@ const taskNavItems: NavItem[] = [
     icon: <IconSettingStroked />,
     items: [
       { itemKey: '/license', text: '商业授权', icon: <IconShield /> },
-      { itemKey: '/data-exchange', text: 'X-Insight 数据交换控制', icon: <IconConnectionPoint1 /> },
+      { itemKey: '/data-exchange', text: 'X-Insight 数据交换', icon: <IconConnectionPoint1 /> },
       { itemKey: '/docs', text: 'API 文档', icon: <IconBookOpenStroked /> },
     ],
   },
@@ -165,8 +160,12 @@ const projectOverviewItem: NavItem = { itemKey: '/developer', text: '项目工�
 const accessStateItem: NavItem = { itemKey: '/access', text: '访问状态', icon: <IconShieldStroked /> };
 
 const platformRoutes = new Set(taskNavItems.flatMap(item => item.items?.map(child => child.itemKey) || [item.itemKey]));
+const compatibilityRoutes = new Set([
+  '/governance-simulation', '/risk-control', '/member-lifecycle', '/users', '/project-management',
+  '/provenance-passport', '/org-model-prices', '/grants',
+]);
 const orgAdminRoutes = new Set([
-  '/', '/model-governance', '/risk-control', '/keys', '/project-management', '/member-lifecycle', '/agent-trust', '/limit-policies', '/guardrail-policies', '/users',
+  '/', '/model-governance', '/risk-control', '/keys', '/organization-members', '/project-management', '/member-lifecycle', '/agent-trust', '/limit-policies', '/guardrail-policies', '/users',
   '/logs', '/provenance-passport', '/usage-analytics', '/notifications', '/status', '/audit-logs',
   '/media-jobs',
   '/model-prices', '/docs',
@@ -175,7 +174,7 @@ const billingRoutes = new Set([
   '/', '/logs', '/usage-analytics', '/notifications',
   '/wallet', '/model-prices', '/reconciliation', '/docs',
 ]);
-const projectAdminRoutes = new Set(['/project-management', '/media-jobs', '/docs']);
+const projectAdminRoutes = new Set(['/organization-members', '/media-jobs', '/docs']);
 const developerRoutes = new Set(['/media-jobs', '/docs']);
 const orgViewerRoutes = new Set(['/', '/docs']);
 
@@ -274,7 +273,7 @@ export function licenseFeatureLabel(feature: LicenseFeature) {
     guardrails: '内容安全',
     notifications: '通知中心',
     model_governance: '模型治理',
-    data_exchange: 'X-Insight 数据交换控制',
+    data_exchange: 'X-Insight 数据交换',
   };
   return labels[feature];
 }
@@ -323,7 +322,7 @@ export function isRouteAllowedForRole(path: string, role?: string | null) {
   // surface. Platform and organization admins use their own task dashboard.
   if (route === '/developer') return isProjectConsoleRole(role);
 
-  if (!platformRoutes.has(route) && !['/org-model-prices', '/grants'].includes(route)) return false;
+  if (!platformRoutes.has(route) && !compatibilityRoutes.has(route)) return false;
 
   if (isPlatformAdminRole(role)) return true;
 
@@ -331,6 +330,7 @@ export function isRouteAllowedForRole(path: string, role?: string | null) {
     return [
       '/',
       '/keys',
+      '/organization-members',
       '/project-management',
       '/member-lifecycle',
       '/agent-trust',
@@ -357,7 +357,7 @@ export function isRouteAllowedForRole(path: string, role?: string | null) {
   }
 
   if (isProjectConsoleRole(role)) {
-    if (isProjectAdminRole(role) && route === '/project-management') return true;
+    if (isProjectAdminRole(role) && ['/organization-members', '/project-management'].includes(route)) return true;
     if (isProjectAdminRole(role) && route === '/notifications') return hasPositiveProjectID(path);
     if (route === '/media-jobs') return true;
     return false;

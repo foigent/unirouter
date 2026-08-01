@@ -1,6 +1,6 @@
-import { useState, useCallback, useEffect } from 'react';
+import { Suspense, useState, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Nav, Button, Input, Tag, Typography, Avatar, Toast } from '@douyinfe/semi-ui';
+import { Layout, Nav, Button, Input, Tag, Typography, Avatar, Spin, Toast } from '@douyinfe/semi-ui';
 import {
   IconExit,
   IconBolt,
@@ -14,7 +14,6 @@ import {
   canOpenUnscopedNotifications,
   canSearchRequestLogs,
   getNavItemsForRole,
-  getOpenKeysForPath,
   getRequiredLicenseFeatureForRoute,
   hasLicensedFeature,
   isPlatformAdminRole,
@@ -44,8 +43,7 @@ export default function App() {
   const licenseAccess = user?.license_access;
   const routeWithSearch = `${location.pathname}${location.search}`;
   const navItems = getNavItemsForRole(role, licenseAccess);
-  const routeOpenKey = getOpenKeysForPath(routeWithSearch, role, licenseAccess)[0] || '';
-  const [openKeys, setOpenKeys] = useState<string[]>(routeOpenKey ? [routeOpenKey] : []);
+  const openKeys = navItems.filter(item => item.items?.length).map(item => item.itemKey);
   const currentRoleLabel = roleLabel(role, '未加载角色');
   const canOpenNotifications = canOpenUnscopedNotifications(role);
   const notificationsLicensed = hasLicensedFeature(licenseAccess, 'notifications');
@@ -61,10 +59,6 @@ export default function App() {
   const restrictionMessage = requiredLicenseFeature && licenseAccess
     ? licenseRestrictionMessage(licenseAccess, requiredLicenseFeature)
     : '';
-
-  useEffect(() => {
-    setOpenKeys(routeOpenKey ? [routeOpenKey] : []);
-  }, [routeOpenKey]);
 
   const handleNavClick = (data: { itemKey?: string | number; domEvent?: MouseEvent; isOpen?: boolean }) => {
     const key = data.itemKey;
@@ -124,9 +118,6 @@ export default function App() {
           openKeys={openKeys}
           items={navItems}
           onClick={handleNavClick}
-          onOpenChange={({ itemKey, isOpen }) => {
-            setOpenKeys(isOpen && itemKey !== undefined ? [String(itemKey)] : []);
-          }}
           style={{ border: 'none' }}
         />
         <div className="ur-sider-footer">
@@ -153,7 +144,11 @@ export default function App() {
         </div>
       </Sider>
       <Content className="ur-content">
-        <div className="ur-topbar">
+        <header
+          className={`ur-topbar${canSearchLogs ? '' : ' ur-topbar-without-search'}`}
+          role="toolbar"
+          aria-label="全局工具栏"
+        >
           {canSearchLogs && (
             <Input
               className="ur-global-search"
@@ -168,7 +163,7 @@ export default function App() {
               showClear
             />
           )}
-          <div className="ur-topbar-actions" style={!canSearchLogs ? { gridColumn: '1 / -1' } : undefined}>
+          <div className="ur-topbar-actions">
             <Tag className="ur-env-pill" color={envBadge.color as never}>{envBadge.label}</Tag>
             {canOpenNotifications && (
               <Button
@@ -195,7 +190,7 @@ export default function App() {
               </div>
             </button>
           </div>
-        </div>
+        </header>
         {licenseRestricted && requiredLicenseFeature && licenseAccess ? (
           <div className="ur-page">
             <PageHeader
@@ -214,7 +209,11 @@ export default function App() {
               />
             </Surface>
           </div>
-        ) : <Outlet />}
+        ) : (
+          <Suspense fallback={<div className="ur-route-loading" role="status" aria-label="正在加载页面"><Spin size="large" /></div>}>
+            <Outlet />
+          </Suspense>
+        )}
       </Content>
     </Layout>
     </>

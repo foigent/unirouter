@@ -150,7 +150,7 @@ export default function OrgModelPricesPage({ embedded = false }: { embedded?: bo
   return (
     <div className={embedded ? undefined : 'ur-page'}>
       {!embedded && <PageHeader
-        eyebrow="计费与资金"
+        eyebrow="成本与财务"
         title="组织计费倍率"
         description={canMutate
           ? '按组织设置基础模型价格的乘数；例如 1.2× 表示按基础价格的 1.2 倍计费。'

@@ -6,6 +6,7 @@ import { isPlatformAdminRole } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
 import { loadAllPages } from '../utils/loadAllPages';
+import RuntimeChangeControlWorkspace from './RuntimeChangeControlWorkspace';
 
 const { Text } = Typography;
 
@@ -26,7 +27,7 @@ const approvedOptions = [
   { label: '仅内部可见', value: 'false' },
 ];
 
-type TabKey = 'registry' | 'aliases' | 'sets' | 'assignments';
+type TabKey = 'registry' | 'aliases' | 'sets' | 'assignments' | 'releases';
 
 interface ModelRegistryItem {
   id: number;
@@ -191,6 +192,7 @@ export default function ModelGovernancePage() {
     { key: 'aliases' as const, label: '企业别名' },
     { key: 'sets' as const, label: '模型集' },
     { key: 'assignments' as const, label: '项目分配' },
+    ...(platform ? [{ key: 'releases' as const, label: '运行时发布' }] : []),
   ];
   const targetOrgID = platform ? selectedOrgID : undefined;
 
@@ -685,7 +687,7 @@ export default function ModelGovernancePage() {
       <PageHeader
         eyebrow="模型接入"
         title="模型治理"
-        description="维护企业内部模型目录、生命周期、企业别名、模型集和项目可访问模型范围。"
+        description="维护企业模型目录、别名、模型集与项目范围；平台管理员还可在同一工作区完成通道变更的验证、影子、灰度、提升和回滚。"
         actions={(
           <Space>
             {platform && (
@@ -702,7 +704,7 @@ export default function ModelGovernancePage() {
                 />
               </Space>
             )}
-            <Button icon={<IconRefresh />} onClick={() => activeTab === 'assignments' ? loadAssignmentBase() : activeTab === 'sets' ? loadModelSets() : activeTab === 'aliases' ? loadAliases() : loadRegistry()}>刷新</Button>
+            {activeTab !== 'releases' && <Button icon={<IconRefresh />} onClick={() => activeTab === 'assignments' ? loadAssignmentBase() : activeTab === 'sets' ? loadModelSets() : activeTab === 'aliases' ? loadAliases() : loadRegistry()}>刷新</Button>}
           </Space>
         )}
       />
@@ -899,6 +901,8 @@ export default function ModelGovernancePage() {
           )}
         </Surface>
       )}
+
+      {activeTab === 'releases' && platform && <RuntimeChangeControlWorkspace />}
 
       <SideSheet title={registrySheet?.mode === 'edit' ? '编辑模型' : '新增模型'} visible={!!registrySheet} onCancel={closeRegistrySheet} width={560}>
         <Form getFormApi={(apiRef: any) => setRegistryFormApi(apiRef)} onSubmit={handleRegistrySubmit}>
